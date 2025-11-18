@@ -1,13 +1,22 @@
 # llamacpp
 
-Provides native Go support to use the llamacpp libraries.
+This project lets you use Go for hardware accelerated local inference with llama.cpp directly integrated into your applications. It provides a high level API based on the [yzma](https://github.com/hybridgroup/yzma) module.
 
-### Notes
+Copyright 2025 Ardan Labs  
+hello@ardanlabs.com
 
-This is a work in progress and more information is coming soon.
+## My Information
+
+```
+Name:    Bill Kennedy
+Company: Ardan Labs
+Title:   Managing Partner
+Email:   bill@ardanlabs.com
+Twitter: goinggodotnet
+```
 
 ### Examples
 
-You can find examples in the ArdanLabs AI training repo at example13
+You can find examples in the ArdanLabs AI training repo at example13:
 
 https://github.com/ardanlabs/ai-training/tree/main/cmd/examples/example13
