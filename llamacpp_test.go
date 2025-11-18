@@ -3,10 +3,7 @@ package llamacpp_test
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"os"
-	"path"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -30,7 +27,7 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	if err := installLlamaCPP(libPath, download.CPU, true); err != nil {
+	if err := llamacpp.InstallLlama(libPath, download.CPU, true); err != nil {
 		fmt.Printf("unable to install llamacpp: %v", err)
 		os.Exit(1)
 	}
@@ -38,7 +35,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestChatCompletions(t *testing.T) {
-	modelFile, err := installModel(modelChatCompletionsURL, modelPath)
+	modelFile, err := llamacpp.InstallModel(modelChatCompletionsURL, modelPath)
 	if err != nil {
 		t.Fatalf("unable to install model: %v", err)
 	}
@@ -105,12 +102,12 @@ func TestChatCompletions(t *testing.T) {
 }
 
 func TestChatVision(t *testing.T) {
-	modelFile, err := installModel(modelChatVisionURL, modelPath)
+	modelFile, err := llamacpp.InstallModel(modelChatVisionURL, modelPath)
 	if err != nil {
 		t.Fatalf("unable to install model: %v", err)
 	}
 
-	projFile, err := installModel(projChatVisionURL, modelPath)
+	projFile, err := llamacpp.InstallModel(projChatVisionURL, modelPath)
 	if err != nil {
 		t.Fatalf("unable to install model: %v", err)
 	}
@@ -177,7 +174,7 @@ func TestChatVision(t *testing.T) {
 }
 
 func TestEmbedding(t *testing.T) {
-	modelFile, err := installModel(modelEmbedURL, modelPath)
+	modelFile, err := llamacpp.InstallModel(modelEmbedURL, modelPath)
 	if err != nil {
 		t.Fatalf("unable to install embedding model: %v", err)
 	}
@@ -225,49 +222,4 @@ func TestEmbedding(t *testing.T) {
 	}
 
 	wg.Wait()
-}
-
-// =============================================================================
-
-func installLlamaCPP(libPath string, processor download.Processor, allowUpgrade bool) error {
-	fmt.Print("- check llamacpp installation: ")
-
-	if err := download.InstallLibraries(libPath, processor, allowUpgrade); err != nil {
-		file := filepath.Join(libPath, "libmtmd.dylib")
-		if _, err := os.Stat(file); !os.IsNotExist(err) {
-			fmt.Println("✓")
-			return nil
-		}
-
-		fmt.Println("X")
-		return fmt.Errorf("unable to install llamacpp: %w", err)
-	}
-
-	fmt.Println("✓")
-
-	return nil
-}
-
-func installModel(modelURL string, modelPath string) (string, error) {
-	u, err := url.Parse(modelURL)
-	if err != nil {
-		return "", fmt.Errorf("unable to parse modelURL: %w", err)
-	}
-
-	localPath := filepath.Join(modelPath, path.Base(u.Path))
-
-	fmt.Printf("- check %q installation: ", localPath)
-	if _, err := os.Stat(localPath); !os.IsNotExist(err) {
-		fmt.Println("✓")
-		return localPath, nil
-	}
-
-	if err := download.GetModel(modelURL, modelPath); err != nil {
-		fmt.Println("X")
-		return "", fmt.Errorf("unable to download model: %w", err)
-	}
-
-	fmt.Println("✓")
-
-	return localPath, nil
 }
