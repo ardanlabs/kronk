@@ -4,7 +4,7 @@ import "github.com/hybridgroup/yzma/pkg/llama"
 
 // Params represents the different sample options when using a model.
 type Params struct {
-	TopK float32
+	TopK int32
 	TopP float32
 	Temp float32
 }
@@ -13,7 +13,7 @@ func (p Params) sampler() llama.Sampler {
 	sampler := llama.SamplerChainInit(llama.SamplerChainDefaultParams())
 
 	if p.TopK > 0 {
-		llama.SamplerChainAdd(sampler, llama.SamplerInitTopK(int32(p.TopK)))
+		llama.SamplerChainAdd(sampler, llama.SamplerInitTopK(p.TopK))
 	}
 	if p.TopP > 0 {
 		llama.SamplerChainAdd(sampler, llama.SamplerInitTopP(p.TopP, 0))
