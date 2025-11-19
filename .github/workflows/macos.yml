@@ -32,6 +32,8 @@ jobs:
         run: |
           mkdir -p ./libraries
           cp ./lib/build/bin/* ./libraries
+          pwd ./libraries
+          ls -l ./libraries
       - name: Cache test models
         id: cache-models
         uses: actions/cache@v4
