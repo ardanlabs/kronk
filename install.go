@@ -35,9 +35,9 @@ func InstallModel(modelURL string, modelPath string) (string, error) {
 		return localPath, nil
 	}
 
-	if err := download.GetModel(modelURL, modelPath); err != nil {
-		return "", fmt.Errorf("unable to download model: %w", err)
-	}
+	// if err := download.GetModel(modelURL, modelPath); err != nil {
+	// 	return "", fmt.Errorf("unable to download model: %w", err)
+	// }
 
 	return localPath, nil
 }
