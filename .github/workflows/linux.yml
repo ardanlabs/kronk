@@ -40,7 +40,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: models
-          key: ${{ runner.os }}-models-v3
+          key: ${{ runner.os }}-models-v4
       - name: Download test models
         if: steps.cache-models.outputs.cache-hit != 'true'
         run: |
@@ -52,4 +52,4 @@ jobs:
       - name: Run unit tests
         run: |
           export TEST_MODEL_WORKSPACE=$GITHUB_WORKSPACE
-          go test -count=1
+          go test -v -count=1

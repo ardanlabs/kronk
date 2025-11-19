@@ -28,6 +28,10 @@ var (
 )
 
 func TestMain(m *testing.M) {
+	fmt.Println("libpath:", libPath)
+	fmt.Println("modelPath:", modelPath)
+	fmt.Println("imageFile:", imageFile)
+
 	if err := llamacpp.InstallLlama(libPath, download.CPU, true); err != nil {
 		fmt.Printf("unable to install llamacpp: %v", err)
 		os.Exit(1)
