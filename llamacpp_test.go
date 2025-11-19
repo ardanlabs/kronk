@@ -28,9 +28,9 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	fmt.Println("libpath        :", libPath)
-	fmt.Println("modelPath      :", modelPath)
-	fmt.Println("imageFile      :", imageFile)
+	fmt.Println("libpath        :", filepath.Join(os.Getenv("GITHUB_WORKSPACE"), libPath))
+	fmt.Println("modelPath      :", filepath.Join(os.Getenv("GITHUB_WORKSPACE"), modelPath))
+	fmt.Println("imageFile      :", filepath.Join(os.Getenv("GITHUB_WORKSPACE"), imageFile))
 	fmt.Println("LD_LIBRARY_PATH:", os.Getenv("LD_LIBRARY_PATH"))
 
 	if err := filepath.Walk(modelPath, func(path string, info os.FileInfo, err error) error {
