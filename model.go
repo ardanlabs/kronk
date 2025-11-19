@@ -27,8 +27,8 @@ func newModel(libPath string, modelFile string, cfg Config, options ...func(m *m
 
 	// -------------------------------------------------------------------------
 
+	cfg.setLog()
 	llama.Init()
-	llama.LogSet(llama.LogSilent())
 
 	// -------------------------------------------------------------------------
 
@@ -37,13 +37,9 @@ func newModel(libPath string, modelFile string, cfg Config, options ...func(m *m
 		return nil, fmt.Errorf("unable to load model: %w", err)
 	}
 
-	// We will validate that we can init the current model.
-	lctx, err := llama.InitFromModel(mdl, cfg.ctxParams())
-	if err != nil {
-		return nil, fmt.Errorf("unable to init model: %w", err)
+	if mdl == 0 {
+		return nil, fmt.Errorf("unable to load model: bad handle: %d", mdl)
 	}
-	llama.Synchronize(lctx)
-	llama.Free(lctx)
 
 	vocab := llama.ModelGetVocab(mdl)
 

@@ -1,11 +1,23 @@
 package llamacpp
 
-import "github.com/hybridgroup/yzma/pkg/llama"
+import (
+	"github.com/hybridgroup/yzma/pkg/llama"
+)
 
 // Config represents model level configuration.
 type Config struct {
+	LogSet        uintptr
 	ContextWindow uint32
 	Embeddings    bool
+}
+
+func (cfg Config) setLog() {
+	switch cfg.LogSet {
+	case llama.LogSilent():
+		llama.LogSet(llama.LogSilent())
+	default:
+		llama.LogSet(llama.LogNormal)
+	}
 }
 
 func (cfg Config) ctxParams() llama.ContextParams {

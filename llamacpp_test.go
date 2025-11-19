@@ -22,8 +22,8 @@ var (
 )
 
 var (
-	libPath   = "libraries/"
-	modelPath = "models/"
+	libPath   = "libraries"
+	modelPath = "models"
 	imageFile = "samples/giraffe.jpg"
 )
 
@@ -59,10 +59,10 @@ func TestChatCompletions(t *testing.T) {
 
 	// -------------------------------------------------------------------------
 
-	const concurrency = 3
+	const concurrency = 1
 
 	llm, err := llamacpp.New(concurrency, libPath, modelFile, llamacpp.Config{
-		ContextWindow: 8196,
+		ContextWindow: 1024 * 32,
 	})
 	if err != nil {
 		t.Fatalf("unable to load model: %v", err)
@@ -134,7 +134,7 @@ func TestChatVision(t *testing.T) {
 	const concurrency = 3
 
 	cfg := llamacpp.Config{
-		ContextWindow: 4096,
+		ContextWindow: 1024 * 32,
 	}
 
 	llm, err := llamacpp.New(concurrency, libPath, modelFile, cfg, llamacpp.WithProjection(projFile))
@@ -201,7 +201,7 @@ func TestEmbedding(t *testing.T) {
 	const concurrency = 3
 
 	cfg := llamacpp.Config{
-		ContextWindow: 4096,
+		ContextWindow: 1024 * 32,
 		Embeddings:    true,
 	}
 
