@@ -32,15 +32,12 @@ jobs:
         run: |
           mkdir -p ./libraries
           cp ./lib/build/bin/* ./libraries
-      - name: Add llama.cpp libraries to path
-        run: |
-          echo "LD_LIBRARY_PATH=$GITHUB_WORKSPACE/libraries" >> "$GITHUB_ENV"
       - name: Cache test models
         id: cache-models
         uses: actions/cache@v4
         with:
           path: models
-          key: ${{ runner.os }}-models-v4
+          key: ${{ runner.os }}-models-v3
       - name: Download test models
         if: steps.cache-models.outputs.cache-hit != 'true'
         run: |
@@ -51,5 +48,5 @@ jobs:
           curl -Lo ./models/embeddinggemma-300m-qat-Q8_0.gguf https://huggingface.co/ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/resolve/main/embeddinggemma-300m-qat-Q8_0.gguf?download=true
       - name: Run unit tests
         run: |
-          export TEST_MODEL_WORKSPACE=$GITHUB_WORKSPACE
+          export TEST_MODEL_WORKSPACE=./
           go test -v -count=1
