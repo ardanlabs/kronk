@@ -1,0 +1,51 @@
+name: macOS
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Install Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "stable"
+      - name: Download llama.cpp
+        uses: robinraju/release-downloader@v1
+        with:
+          repository: "ggml-org/llama.cpp"
+          latest: true
+          fileName: "llama-*-bin-macos-arm64.zip"
+          out-file-path: "lib"
+          extract: true
+      - name: Move llama.cpp files to root directory
+        run: |
+          mkdir -p ./libraries
+          cp ./lib/build/bin/* ./libraries
+      - name: Cache test models
+        id: cache-models
+        uses: actions/cache@v4
+        with:
+          path: models
+          key: ${{ runner.os }}-models-v3
+      - name: Download test models
+        if: steps.cache-models.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ./models
+          curl -Lo ./models/qwen2.5-0.5b-instruct-fp16.gguf https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-fp16.gguf?download=true
+          curl -Lo ./models/Qwen2.5-VL-3B-Instruct-Q8_0.gguf https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/Qwen2.5-VL-3B-Instruct-Q8_0.gguf?download=true
+          curl -Lo ./models/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf?download=true
+          curl -Lo ./models/embeddinggemma-300m-qat-Q8_0.gguf https://huggingface.co/ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/resolve/main/embeddinggemma-300m-qat-Q8_0.gguf?download=true
+      - name: Run unit tests
+        run: |
+          go test -v -count=1
