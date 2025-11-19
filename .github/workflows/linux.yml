@@ -50,4 +50,5 @@ jobs:
         run: |
           export LD_LIBRARY_PATH=libraries
           export YZMA_LIB=libraries
+          export CONCURRENCY=1
           go test -v -count=1

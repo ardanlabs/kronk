@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -21,9 +22,10 @@ var (
 )
 
 var (
-	libPath   = "libraries"
-	modelPath = "models"
-	imageFile = "samples/giraffe.jpg"
+	libPath     = "libraries"
+	modelPath   = "models"
+	imageFile   = "samples/giraffe.jpg"
+	concurrency = 1
 )
 
 func TestMain(m *testing.M) {
@@ -33,6 +35,17 @@ func TestMain(m *testing.M) {
 	fmt.Println("LD_LIBRARY_PATH:", os.Getenv("LD_LIBRARY_PATH"))
 	fmt.Println("YZMA_LIB       :", os.Getenv("YZMA_LIB"))
 
+	if os.Getenv("CONCURRENCY") != "" {
+		var err error
+		concurrency, err = strconv.Atoi(os.Getenv("CONCURRENCY"))
+		if err != nil {
+			concurrency = 1
+		}
+	}
+
+	fmt.Println("CONCURRENCY    :", concurrency)
+
+	fmt.Println("LIBRARIES      :")
 	if err := filepath.Walk(libPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -43,6 +56,7 @@ func TestMain(m *testing.M) {
 		fmt.Printf("error walking model path: %v\n", err)
 	}
 
+	fmt.Println("MODELS         :")
 	if err := filepath.Walk(modelPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -60,8 +74,6 @@ func testChatCompletions(t *testing.T) {
 	modelFile := modelChatCompletionsFile
 
 	// -------------------------------------------------------------------------
-
-	const concurrency = 1
 
 	llm, err := llamacpp.New(concurrency, libPath, modelFile, llamacpp.Config{
 		ContextWindow: 1024 * 32,
@@ -111,7 +123,7 @@ func testChatCompletions(t *testing.T) {
 		}
 	}
 
-	g := concurrency * 5
+	g := concurrency
 	var wg sync.WaitGroup
 	for range g {
 		wg.Go(f)
@@ -125,8 +137,6 @@ func TestChatVision(t *testing.T) {
 	projFile := projChatVisionFile
 
 	// -------------------------------------------------------------------------
-
-	const concurrency = 3
 
 	cfg := llamacpp.Config{
 		LogSet:        llamacpp.LogSilent,
@@ -177,7 +187,7 @@ func TestChatVision(t *testing.T) {
 		}
 	}
 
-	g := concurrency * 2
+	g := concurrency
 	var wg sync.WaitGroup
 	for range g {
 		wg.Go(f)
@@ -190,8 +200,6 @@ func TestEmbedding(t *testing.T) {
 	modelFile := modelEmbedFile
 
 	// -------------------------------------------------------------------------
-
-	const concurrency = 3
 
 	cfg := llamacpp.Config{
 		LogSet:        llamacpp.LogSilent,
@@ -226,7 +234,7 @@ func TestEmbedding(t *testing.T) {
 		}
 	}
 
-	g := concurrency * 2
+	g := concurrency
 	var wg sync.WaitGroup
 	for range g {
 		wg.Go(f)

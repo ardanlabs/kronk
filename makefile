@@ -8,6 +8,7 @@ SHELL = $(if $(wildcard $(SHELL_PATH)),/bin/ash,/bin/bash)
 test:
 	export LD_LIBRARY_PATH=libraries && \
 	export YZMA_LIB=libraries && \
+	export CONCURRENCY=3 && \
 	go test -v -count=1
 
 # ==============================================================================
