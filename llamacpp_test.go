@@ -80,7 +80,7 @@ func TestChatCompletions(t *testing.T) {
 
 	llm, err := llamacpp.New(concurrency, libPath, modelFile, llamacpp.Config{
 		LogSet:        llamacpp.LogSilent,
-		ContextWindow: 1024 * 32,
+		ContextWindow: 1024 * 4,
 	})
 	if err != nil {
 		t.Fatalf("unable to load model: %v", err)
@@ -148,7 +148,7 @@ func TestChatVision(t *testing.T) {
 	// -------------------------------------------------------------------------
 
 	cfg := llamacpp.Config{
-		ContextWindow: 1024 * 32,
+		ContextWindow: 1024 * 4,
 	}
 
 	llm, err := llamacpp.New(concurrency, libPath, modelFile, cfg, llamacpp.WithProjection(projFile))
@@ -213,7 +213,7 @@ func TestEmbedding(t *testing.T) {
 	// -------------------------------------------------------------------------
 
 	cfg := llamacpp.Config{
-		ContextWindow: 1024 * 32,
+		ContextWindow: 1024 * 4,
 		Embeddings:    true,
 	}
 
