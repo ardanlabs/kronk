@@ -11,14 +11,13 @@ import (
 	"time"
 
 	"github.com/ardanlabs/llamacpp"
-	"github.com/hybridgroup/yzma/pkg/download"
 )
 
 var (
-	modelChatCompletionsURL = "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-fp16.gguf?download=true"
-	modelChatVisionURL      = "https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/Qwen2.5-VL-3B-Instruct-Q8_0.gguf?download=true"
-	projChatVisionURL       = "https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf?download=true"
-	modelEmbedURL           = "https://huggingface.co/ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/resolve/main/embeddinggemma-300m-qat-Q8_0.gguf?download=true"
+	modelChatCompletionsFile = "models/qwen2.5-0.5b-instruct-fp16.gguf"
+	modelChatVisionFile      = "models/Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
+	projChatVisionFile       = "models/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
+	modelEmbedFile           = "models/embeddinggemma-300m-qat-Q8_0.gguf"
 )
 
 var (
@@ -43,19 +42,11 @@ func TestMain(m *testing.M) {
 		fmt.Printf("error walking model path: %v\n", err)
 	}
 
-	if err := llamacpp.InstallLlama(libPath, download.CPU, true); err != nil {
-		fmt.Printf("unable to install llamacpp: %v", err)
-		os.Exit(1)
-	}
-
 	os.Exit(m.Run())
 }
 
 func testChatCompletions(t *testing.T) {
-	modelFile, err := llamacpp.InstallModel(modelChatCompletionsURL, modelPath)
-	if err != nil {
-		t.Fatalf("unable to install model: %v", err)
-	}
+	modelFile := modelChatCompletionsFile
 
 	// -------------------------------------------------------------------------
 
@@ -119,15 +110,8 @@ func testChatCompletions(t *testing.T) {
 }
 
 func TestChatVision(t *testing.T) {
-	modelFile, err := llamacpp.InstallModel(modelChatVisionURL, modelPath)
-	if err != nil {
-		t.Fatalf("unable to install model: %v", err)
-	}
-
-	projFile, err := llamacpp.InstallModel(projChatVisionURL, modelPath)
-	if err != nil {
-		t.Fatalf("unable to install model: %v", err)
-	}
+	modelFile := modelChatVisionFile
+	projFile := projChatVisionFile
 
 	// -------------------------------------------------------------------------
 
@@ -192,10 +176,7 @@ func TestChatVision(t *testing.T) {
 }
 
 func TestEmbedding(t *testing.T) {
-	modelFile, err := llamacpp.InstallModel(modelEmbedURL, modelPath)
-	if err != nil {
-		t.Fatalf("unable to install embedding model: %v", err)
-	}
+	modelFile := modelEmbedFile
 
 	// -------------------------------------------------------------------------
 
