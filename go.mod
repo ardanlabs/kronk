@@ -3,7 +3,7 @@ module github.com/ardanlabs/kronk
 go 1.25.3
 
 require (
-	github.com/hybridgroup/yzma v0.9.1-0.20251120131549-db9280ad28ab
+	github.com/hybridgroup/yzma v0.9.1-0.20251120164156-5baf93239e3e
 	golang.org/x/sync v0.18.0
 )
 

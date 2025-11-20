@@ -17,8 +17,8 @@ github.com/hashicorp/go-safetemp v1.0.0 h1:2HR189eFNrjHQyENnQMMpCiBAsRxzbTMIgBhE
 github.com/hashicorp/go-safetemp v1.0.0/go.mod h1:oaerMy3BhqiTbVye6QuFhFtIceqFoDHxNAB65b+Rj1I=
 github.com/hashicorp/go-version v1.7.0 h1:5tqGy27NaOTB8yJKUZELlFAS/LTKJkrmONwQKeRZfjY=
 github.com/hashicorp/go-version v1.7.0/go.mod h1:fltr4n8CU8Ke44wwGCBoEymUuxUHl09ZGVZPK5anwXA=
-github.com/hybridgroup/yzma v0.9.1-0.20251120131549-db9280ad28ab h1:c0wiujpXAPE/RcXeCd/rovq9PK+I3iN2Lw6STN9CmiM=
-github.com/hybridgroup/yzma v0.9.1-0.20251120131549-db9280ad28ab/go.mod h1:0j0lGvdDPSe+WnwmCQJWep37K6htvK+VN7lL9NHQ1V4=
+github.com/hybridgroup/yzma v0.9.1-0.20251120164156-5baf93239e3e h1:8Mo1b0/2nKL5Ol+bh5YzJ3qbFUzrHXR+MFgbZbVcRj4=
+github.com/hybridgroup/yzma v0.9.1-0.20251120164156-5baf93239e3e/go.mod h1:0j0lGvdDPSe+WnwmCQJWep37K6htvK+VN7lL9NHQ1V4=
 github.com/jupiterrider/ffi v0.5.1 h1:l7ANXU+Ex33LilVa283HNaf/sTzCrrht7D05k6T6nlc=
 github.com/jupiterrider/ffi v0.5.1/go.mod h1:x7xdNKo8h0AmLuXfswDUBxUsd2OqUP4ekC8sCnsmbvo=
 github.com/klauspost/compress v1.18.1 h1:bcSGx7UbpBqMChDtsF28Lw6v/G94LPrrbMbdC3JH2co=
