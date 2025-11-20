@@ -1,4 +1,4 @@
-package llamacpp
+package kronk
 
 // ModelInfo represents the model's card information.
 type ModelInfo struct {

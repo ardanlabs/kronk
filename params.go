@@ -1,4 +1,4 @@
-package llamacpp
+package kronk
 
 import "github.com/hybridgroup/yzma/pkg/llama"
 

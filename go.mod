@@ -1,4 +1,4 @@
-module github.com/ardanlabs/llamacpp
+module github.com/ardanlabs/kronk
 
 go 1.25.3
 

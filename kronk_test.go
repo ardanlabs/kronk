@@ -1,4 +1,4 @@
-package llamacpp_test
+package kronk_test
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ardanlabs/llamacpp"
+	"github.com/ardanlabs/kronk"
 	"github.com/hybridgroup/yzma/pkg/download"
 	"golang.org/x/sync/errgroup"
 )
@@ -49,7 +49,7 @@ func TestMain(m *testing.M) {
 	fmt.Println("CONCURRENCY    :", concurrency)
 
 	fmt.Println("LIBRARIES      :")
-	llamacpp.InstallLlama(libPath, download.CPU, false)
+	kronk.InstallLlama(libPath, download.CPU, false)
 	if err := filepath.Walk(libPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -79,8 +79,8 @@ func TestChatCompletions(t *testing.T) {
 
 	// -------------------------------------------------------------------------
 
-	llm, err := llamacpp.New(concurrency, libPath, modelFile, llamacpp.Config{
-		LogSet:        llamacpp.LogSilent,
+	llm, err := kronk.New(concurrency, libPath, modelFile, kronk.Config{
+		LogSet:        kronk.LogSilent,
 		ContextWindow: 1024 * 4,
 	})
 	if err != nil {
@@ -92,14 +92,14 @@ func TestChatCompletions(t *testing.T) {
 
 	question := "Echo back the word: Gorilla"
 
-	messages := []llamacpp.ChatMessage{
+	messages := []kronk.ChatMessage{
 		{
 			Role:    "user",
 			Content: question,
 		},
 	}
 
-	params := llamacpp.Params{
+	params := kronk.Params{
 		TopK: 1.0,
 		TopP: 0.9,
 		Temp: 0.7,
@@ -152,11 +152,11 @@ func TestChatVision(t *testing.T) {
 
 	// -------------------------------------------------------------------------
 
-	cfg := llamacpp.Config{
+	cfg := kronk.Config{
 		ContextWindow: 1024 * 4,
 	}
 
-	llm, err := llamacpp.New(concurrency, libPath, modelFile, cfg, llamacpp.WithProjection(projFile))
+	llm, err := kronk.New(concurrency, libPath, modelFile, cfg, kronk.WithProjection(projFile))
 	if err != nil {
 		t.Fatalf("unable to create inference model: %v", err)
 	}
@@ -166,12 +166,12 @@ func TestChatVision(t *testing.T) {
 
 	question := "What is in this picture?"
 
-	message := llamacpp.ChatMessage{
+	message := kronk.ChatMessage{
 		Role:    "user",
 		Content: question,
 	}
 
-	params := llamacpp.Params{
+	params := kronk.Params{
 		TopK: 1.0,
 		TopP: 0.9,
 		Temp: 0.7,
@@ -217,12 +217,12 @@ func TestEmbedding(t *testing.T) {
 
 	// -------------------------------------------------------------------------
 
-	cfg := llamacpp.Config{
+	cfg := kronk.Config{
 		ContextWindow: 1024 * 4,
 		Embeddings:    true,
 	}
 
-	llm, err := llamacpp.New(concurrency, libPath, modelFile, cfg)
+	llm, err := kronk.New(concurrency, libPath, modelFile, cfg)
 	if err != nil {
 		t.Fatalf("unable to create inference model: %v", err)
 	}

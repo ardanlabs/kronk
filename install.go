@@ -1,4 +1,4 @@
-package llamacpp
+package kronk
 
 import (
 	"fmt"

@@ -1,5 +1,5 @@
-// Package llamacpp provides support for working with models using llamacpp.
-package llamacpp
+// Package kronk provides support for working with models using llamacpp via yzma.
+package kronk
 
 import (
 	"context"
