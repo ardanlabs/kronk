@@ -1,3 +1,5 @@
+![kronk logo](images/project/kronk_logo.png)
+
 # kronk
 
 This project lets you use Go for hardware accelerated local inference with llama.cpp directly integrated into your applications. It provides a high level API based on the [yzma](https://github.com/hybridgroup/yzma) module.
