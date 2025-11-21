@@ -40,5 +40,4 @@ jobs:
         run: |
           export LD_LIBRARY_PATH=$GITHUB_WORKSPACE/libraries
           export CONCURRENCY=1
-          mkdir -p ./libraries
           go test -v -count=1
