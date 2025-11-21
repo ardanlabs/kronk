@@ -51,8 +51,8 @@ import (
 
 const (
 	modelURL  = "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q8_0.gguf?download=true"
-	libPath   = "libraries"
-	modelPath = "models"
+	libPath   = "zarf/llamacpp"
+	modelPath = "zarf/models"
 )
 
 func main() {
@@ -147,13 +147,11 @@ func run() error {
 This example can produce the following output:
 
 ````
-$ export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:libraries
-$ go run example/main.go 2>/dev/null
+$ export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:zarf/llamacpp
+$ go run cmd/examples/example13/step1/*.go 2>/dev/null
 
 Output:
 
-export LD_LIBRARY_PATH=:libraries && \
-	go run cmd/examples/example13/step1/*.go 2>/dev/null
 - check llamacpp installation: ✓
 - check "qwen2.5-0.5b-instruct-q8_0" installation: ✓
 
