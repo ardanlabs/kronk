@@ -34,7 +34,7 @@ jobs:
         run: |
           mkdir -p ./libraries
           cp ./lib/build/bin/* ./libraries
-          l -ls $GITHUB_WORKSPACE/libraries
+          ls -l $GITHUB_WORKSPACE/libraries
       - name: Cache test models
         id: cache-models
         uses: actions/cache@v4
