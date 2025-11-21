@@ -31,7 +31,10 @@ jobs:
           out-file-path: "lib"
           extract: true
       - name: Move llama.cpp files to root directory
-        run: cp ./lib/build/bin/* ./libraries
+        run: |
+          mkdir -p ./libraries
+          cp ./lib/build/bin/* ./libraries
+          l -ls $GITHUB_WORKSPACE/libraries
       - name: Cache test models
         id: cache-models
         uses: actions/cache@v4
@@ -50,5 +53,4 @@ jobs:
         run: |
           export LD_LIBRARY_PATH=$GITHUB_WORKSPACE/libraries
           export CONCURRENCY=1
-          mkdir -p ./libraries
-          go test -v -count=1
+          CGO_ENABLED=0 go test -v -count=1
