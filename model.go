@@ -238,20 +238,6 @@ func (m *model) applyChatVisionTemplate(message ChatMessage) string {
 
 func (m *model) processBitmap(lctx llama.Context, mtmdCtx mtmd.Context, imageFile string, prompt string) (mtmd.Bitmap, error) {
 	bitmap := mtmd.BitmapInitFromFile(mtmdCtx, imageFile)
-	// Assuming bitmap check if needed, currently the library might not return error on InitFromFile directly?
-	// If it returns nil or zero value on failure, we should check.
-	// Looking at typical C-bindings, nil/null often means error.
-	// Since I don't have the library docs, I will assume if it's nil/empty it might be an issue,
-	// but the Oracle suggested checking if bitmap == nil.
-	// However, mtmd.Bitmap is likely a struct or pointer.
-	// If I can't confirm, I will leave it or add a simple check if the oracle was sure.
-	// Oracle said: "Guard BitmapInitFromFile if it can fail (check API)".
-	// I'll assume it's valid for now or check if I can check it.
-	// Actually, let's look at how it's used.
-
-	// Based on previous code, it returns `mtmd.Bitmap`.
-	// I'll stick to the plan but add the error return to the signature.
-
 	output := mtmd.InputChunksInit()
 	input := mtmd.NewInputText(prompt, true, true)
 

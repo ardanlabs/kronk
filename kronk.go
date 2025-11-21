@@ -30,7 +30,7 @@ var (
 	initErr         error
 )
 
-// Init initializes the llamacpp and yzma libraries.
+// Init initializes the Kronk backend suport.
 func Init(libPath string, logLevel LogLevel) error {
 	initOnce.Do(func() {
 		if err := llama.Load(libPath); err != nil {
@@ -53,16 +53,16 @@ func Init(libPath string, logLevel LogLevel) error {
 	return initErr
 }
 
-// Llama represents a concurrency group of a specified model.
-type Llama struct {
+// Kronk provides a concurrently safe api for using llamacpp to access models.
+type Kronk struct {
 	modelName string
-	llama     chan *model
+	models    chan *model
 	wg        sync.WaitGroup
 	closed    uint32
 }
 
 // New provides the ability to use models in a concurrently safe way.
-func New(concurrency int, modelFile string, cfg Config, options ...func(llg *model) error) (*Llama, error) {
+func New(concurrency int, modelFile string, cfg Config, options ...func(llg *model) error) (*Kronk, error) {
 	if libraryLocation == "" {
 		return nil, fmt.Errorf("the Init() function has not been called")
 	}
@@ -71,28 +71,28 @@ func New(concurrency int, modelFile string, cfg Config, options ...func(llg *mod
 		return nil, fmt.Errorf("concurrency must be > 0, got %d", concurrency)
 	}
 
-	ch := make(chan *model, concurrency)
+	models := make(chan *model, concurrency)
 
 	for range concurrency {
-		l, err := newModel(modelFile, cfg, options...)
+		model, err := newModel(modelFile, cfg, options...)
 		if err != nil {
-			close(ch)
-			for m := range ch {
-				m.unload()
+			close(models)
+			for model := range models {
+				model.unload()
 			}
 
 			return nil, err
 		}
 
-		ch <- l
+		models <- model
 	}
 
-	mgr := Llama{
+	krn := Kronk{
 		modelName: strings.TrimSuffix(filepath.Base(modelFile), filepath.Ext(modelFile)),
-		llama:     ch,
+		models:    models,
 	}
 
-	return &mgr, nil
+	return &krn, nil
 }
 
 func WithProjection(projFile string) func(m *model) error {
@@ -108,155 +108,58 @@ func WithProjection(projFile string) func(m *model) error {
 }
 
 // ModelName returns the model name.
-func (llm *Llama) ModelName() string {
-	return llm.modelName
+func (krn *Kronk) ModelName() string {
+	return krn.modelName
 }
 
 // Unload will close down all loaded models. You should call this only when you
 // are completely done using the group.
-func (llm *Llama) Unload() {
-	if !atomic.CompareAndSwapUint32(&llm.closed, 0, 1) {
+func (krn *Kronk) Unload() {
+	if !atomic.CompareAndSwapUint32(&krn.closed, 0, 1) {
 		return
 	}
 
-	llm.wg.Wait()
+	krn.wg.Wait()
 
-	close(llm.llama)
-	for llama := range llm.llama {
-		llama.unload()
+	close(krn.models)
+	for model := range krn.models {
+		model.unload()
 	}
 }
 
 // ModelInfo provides support to extract the model card information.
-func (llm *Llama) ModelInfo(ctx context.Context) (ModelInfo, error) {
-	if atomic.LoadUint32(&llm.closed) == 1 {
-		return ModelInfo{}, fmt.Errorf("Llama has been unloaded")
-	}
-
-	select {
-	case <-ctx.Done():
-		return ModelInfo{}, ctx.Err()
-
-	case llama, ok := <-llm.llama:
-		if !ok {
-			return ModelInfo{}, fmt.Errorf("Llama has been unloaded")
-		}
-
-		llm.wg.Add(1)
-		defer func() {
-			llm.llama <- llama
-			llm.wg.Done()
-		}()
-
+func (krn *Kronk) ModelInfo(ctx context.Context) (ModelInfo, error) {
+	return nonStreaming(ctx, krn, &krn.closed, func(llama *model) (ModelInfo, error) {
 		return llama.modelInfo(), nil
-	}
+	})
 }
 
 // ChatCompletions provides support to interact with an inference model.
 // It will block until a model becomes available or the context times out.
-func (llm *Llama) ChatCompletions(ctx context.Context, messages []ChatMessage, params Params) (<-chan ChatResponse, error) {
-	if atomic.LoadUint32(&llm.closed) == 1 {
-		return nil, fmt.Errorf("Llama has been unloaded")
-	}
-
-	ch := make(chan ChatResponse)
-
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-
-	case llama, ok := <-llm.llama:
-		if !ok {
-			return nil, fmt.Errorf("Llama has been unloaded")
-		}
-
-		llm.wg.Add(1)
-		go func() {
-			defer func() {
-				close(ch)
-				llm.llama <- llama
-				llm.wg.Done()
-			}()
-
-			lch := llama.chatCompletions(ctx, messages, params)
-			for msg := range lch {
-				ch <- msg
-			}
-		}()
-	}
-
-	return ch, nil
+func (krn *Kronk) ChatCompletions(ctx context.Context, messages []ChatMessage, params Params) (<-chan ChatResponse, error) {
+	return streaming(ctx, krn, &krn.closed, func(llama *model) <-chan ChatResponse {
+		return llama.chatCompletions(ctx, messages, params)
+	})
 }
 
 // ChatVision provides support to interact with a vision language model. It will
 // block until a model becomes available or the context times out.
-func (llm *Llama) ChatVision(ctx context.Context, message ChatMessage, imageFile string, params Params) (<-chan ChatResponse, error) {
-	if atomic.LoadUint32(&llm.closed) == 1 {
-		return nil, fmt.Errorf("Llama has been unloaded")
-	}
-
-	ch := make(chan ChatResponse)
-
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-
-	case llama, ok := <-llm.llama:
-		if !ok {
-			return nil, fmt.Errorf("Llama has been unloaded")
-		}
-
-		llm.wg.Add(1)
-		go func() {
-			defer func() {
-				close(ch)
-				llm.llama <- llama
-				llm.wg.Done()
-			}()
-
-			lch := llama.chatVision(ctx, message, imageFile, params)
-			for msg := range lch {
-				ch <- msg
-			}
-		}()
-	}
-
-	return ch, nil
+func (krn *Kronk) ChatVision(ctx context.Context, message ChatMessage, imageFile string, params Params) (<-chan ChatResponse, error) {
+	return streaming(ctx, krn, &krn.closed, func(llama *model) <-chan ChatResponse {
+		return llama.chatVision(ctx, message, imageFile, params)
+	})
 }
 
 // Embed provides support to interact with an embedding model. It will block
 // until a model becomes available or the context times out.
-func (llm *Llama) Embed(ctx context.Context, text string) ([]float32, error) {
-	if atomic.LoadUint32(&llm.closed) == 1 {
-		return nil, fmt.Errorf("Llama has been unloaded")
-	}
-
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-
-	case llama, ok := <-llm.llama:
-		if !ok {
-			return nil, fmt.Errorf("Llama has been unloaded")
-		}
-
-		llm.wg.Add(1)
-		defer func() {
-			llm.llama <- llama
-			llm.wg.Done()
-		}()
-
-		vec, err := llama.embed(ctx, text)
-		if err != nil {
-			return nil, err
-		}
-
-		return vec, nil
-	}
+func (krn *Kronk) Embed(ctx context.Context, text string) ([]float32, error) {
+	return nonStreaming(ctx, krn, &krn.closed, func(llama *model) ([]float32, error) {
+		return llama.embed(ctx, text)
+	})
 }
 
 // Rerank provides support to rerank a set of embeddings.
-func (llm *Llama) Rerank(rankingDocs []RankingDocument) ([]Ranking, error) {
+func (krn *Kronk) Rerank(rankingDocs []RankingDocument) ([]Ranking, error) {
 	rerankedDocs := make([]Ranking, len(rankingDocs))
 
 	// Simple scoring based on embedding magnitude and positive values.
