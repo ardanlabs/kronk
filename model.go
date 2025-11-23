@@ -21,7 +21,7 @@ type model struct {
 	projFile  string
 }
 
-func newModel(modelFile string, cfg ModelConfig, options ...func(m *model) error) (*model, error) {
+func newModel(modelFile string, projFile string, cfg ModelConfig) (*model, error) {
 	mdl, err := llama.ModelLoadFromFile(modelFile, llama.ModelDefaultParams())
 	if err != nil {
 		return nil, fmt.Errorf("ModelLoadFromFile: %w", err)
@@ -50,14 +50,7 @@ func newModel(modelFile string, cfg ModelConfig, options ...func(m *model) error
 		vocab:     vocab,
 		ctxParams: modelCtxParams(cfg),
 		template:  template,
-	}
-
-	for _, option := range options {
-		if err := option(&m); err != nil {
-			llama.ModelFree(mdl)
-			llama.BackendFree()
-			return nil, err
-		}
+		projFile:  projFile,
 	}
 
 	return &m, nil

@@ -38,6 +38,11 @@ func Init(libPath string, logLevel LogLevel) error {
 			return
 		}
 
+		if err := mtmd.Load(libPath); err != nil {
+			initErr = fmt.Errorf("unable to load mtmd library: %w", err)
+			return
+		}
+
 		libraryLocation = libPath
 
 		llama.Init()
@@ -45,8 +50,10 @@ func Init(libPath string, logLevel LogLevel) error {
 		switch logLevel {
 		case LogSilent:
 			llama.LogSet(llama.LogSilent())
+			mtmd.LogSet(llama.LogSilent())
 		default:
 			llama.LogSet(llama.LogNormal)
+			mtmd.LogSet(llama.LogNormal)
 		}
 	})
 
@@ -63,7 +70,7 @@ type Kronk struct {
 }
 
 // New provides the ability to use models in a concurrently safe way.
-func New(concurrency int, modelFile string, cfg ModelConfig, options ...func(llg *model) error) (*Kronk, error) {
+func New(concurrency int, modelFile string, projFile string, cfg ModelConfig) (*Kronk, error) {
 	if libraryLocation == "" {
 		return nil, fmt.Errorf("the Init() function has not been called")
 	}
@@ -76,7 +83,7 @@ func New(concurrency int, modelFile string, cfg ModelConfig, options ...func(llg
 	var firstModel *model
 
 	for range concurrency {
-		m, err := newModel(modelFile, cfg, options...)
+		m, err := newModel(modelFile, projFile, cfg)
 		if err != nil {
 			close(models)
 			for model := range models {
@@ -100,18 +107,6 @@ func New(concurrency int, modelFile string, cfg ModelConfig, options ...func(llg
 	}
 
 	return &krn, nil
-}
-
-func WithProjection(projFile string) func(m *model) error {
-	return func(m *model) error {
-		if err := mtmd.Load(libraryLocation); err != nil {
-			return fmt.Errorf("unable to load mtmd library: %w", err)
-		}
-
-		m.projFile = projFile
-
-		return nil
-	}
 }
 
 // ModelConfig returns a copy of the configuration being used. This may be

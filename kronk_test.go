@@ -91,7 +91,7 @@ func initChatTest(t *testing.T) (*kronk.Kronk, []kronk.ChatMessage, kronk.Params
 
 	// -------------------------------------------------------------------------
 
-	krn, err := kronk.New(concurrency, modelFile, kronk.ModelConfig{
+	krn, err := kronk.New(concurrency, modelFile, "", kronk.ModelConfig{
 		ContextWindow: 1024 * 4,
 	})
 	if err != nil {
@@ -204,7 +204,7 @@ func initVisionTest(t *testing.T) (*kronk.Kronk, kronk.ChatMessage, kronk.Params
 		ContextWindow: 1024 * 4,
 	}
 
-	krn, err := kronk.New(concurrency, modelFile, cfg, kronk.WithProjection(projFile))
+	krn, err := kronk.New(concurrency, modelFile, projFile, cfg)
 	if err != nil {
 		t.Fatalf("unable to create inference model: %v", err)
 	}
@@ -307,7 +307,7 @@ func TestEmbedding(t *testing.T) {
 		Embeddings:    true,
 	}
 
-	krn, err := kronk.New(concurrency, modelFile, cfg)
+	krn, err := kronk.New(concurrency, modelFile, "", cfg)
 	if err != nil {
 		t.Fatalf("unable to create inference model: %v", err)
 	}

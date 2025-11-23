@@ -20,7 +20,7 @@ test:
 	export CONCURRENCY=1 && \
 	export RUN_MACOS=1 && \
 	export INSTALL_LLAMA=1 && \
-	CGO_ENABLED=0 go test -v -count=1 -run TestChat
+	CGO_ENABLED=0 go test -v -count=1
 
 test-upgrade: deps-upgrade
 	export LD_LIBRARY_PATH=libraries && \

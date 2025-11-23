@@ -23,3 +23,5 @@ require (
 	github.com/ulikunitz/xz v0.5.15 // indirect
 	golang.org/x/sys v0.38.0 // indirect
 )
+
+// replace github.com/hybridgroup/yzma => ../../hybridgroup/yzma
