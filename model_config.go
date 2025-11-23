@@ -65,7 +65,11 @@ func modelCtxParams(cfg ModelConfig) llama.ContextParams {
 		ctxParams.Embeddings = 1
 	}
 
+	// When NBatch is > 64k I get a panic using vision models.
+	// So I will limit it to 64k for now.
+
 	if cfg.ContextWindow > 0 {
+		ctxParams.NBatch = min(uint32(cfg.ContextWindow), 64*1024)
 		ctxParams.NUbatch = uint32(cfg.ContextWindow)
 		ctxParams.NCtx = uint32(cfg.ContextWindow)
 	}
