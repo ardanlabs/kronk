@@ -105,7 +105,7 @@ func (m *model) modelInfo() ModelInfo {
 	}
 }
 
-func (m *model) processTokens(ctx context.Context, mode string, prompt string, lctx llama.Context, sampler llama.Sampler, ch chan<- ChatResponse) {
+func (m *model) processTokens(ctx context.Context, lctx llama.Context, mode string, prompt string, params Params, ch chan<- ChatResponse) {
 	var inputTokens int
 	var outputTokens int
 	var contextTokens int
@@ -113,6 +113,9 @@ func (m *model) processTokens(ctx context.Context, mode string, prompt string, l
 
 	var tokens []llama.Token
 	var batch llama.Batch
+
+	params = adjustParams(params)
+	sampler := toSampler(params)
 
 	tokens = llama.Tokenize(m.vocab, prompt, true, true)
 	batch = llama.BatchGetOne(tokens)
@@ -134,7 +137,7 @@ func (m *model) processTokens(ctx context.Context, mode string, prompt string, l
 	const bufferSize = 32 * 1024
 	buf := make([]byte, bufferSize)
 
-	for totalOutTokens <= m.cfg.MaxTokens {
+	for totalOutTokens <= params.MaxTokens {
 		select {
 		case <-ctx.Done():
 			ch <- ChatResponse{

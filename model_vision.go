@@ -73,7 +73,7 @@ func (m *model) visionStreaming(ctx context.Context, message ChatMessage, imageF
 		}
 		defer mtmd.BitmapFree(bitmap)
 
-		m.processTokens(ctx, modeVision, prompt, lctx, toSampler(params), ch)
+		m.processTokens(ctx, lctx, modeVision, prompt, params, ch)
 	}()
 
 	return ch

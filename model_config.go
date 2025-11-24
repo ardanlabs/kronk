@@ -9,17 +9,18 @@ import (
 
 const (
 	defContextWindow = 4 * 1024
-	defMaxTokens     = 512
 )
 
 // ModelConfig represents model level configuration. These values if configured
-// incorrectly can cause the system to panic.
+// incorrectly can cause the system to panic. The defaults are
+// used when these values are set to 0.
 //
 // ContextWindow when set to 0 will use the model's default context window. If
 // the model's default context window can't be identified, then a default
 // context window of 4k will be used.
 //
-// MaxTokens when set to 0 will use the Kronk default value of 512.
+// Embeddings is a boolean that determines if the model you are using is an
+// embedding model. This must be true when using an embedding model.
 //
 // Device is the device to use for the model. If not set, the default device
 // will be used. To see what devices are available, run the following command
@@ -27,14 +28,12 @@ const (
 // $ llama-bench --list-devices
 type ModelConfig struct {
 	ContextWindow int
-	MaxTokens     int
 	Embeddings    bool
 	Device        string
 }
 
 func adjustConfig(cfg ModelConfig, model llama.Model) ModelConfig {
 	cfg = adjustContextWindow(cfg, model)
-	cfg = adjusttMaxTokens(cfg)
 
 	return cfg
 }
@@ -51,14 +50,6 @@ func adjustContextWindow(cfg ModelConfig, model llama.Model) ModelConfig {
 
 	if cfg.ContextWindow <= 0 {
 		cfg.ContextWindow = modelCW
-	}
-
-	return cfg
-}
-
-func adjusttMaxTokens(cfg ModelConfig) ModelConfig {
-	if cfg.MaxTokens <= 0 {
-		cfg.MaxTokens = defMaxTokens
 	}
 
 	return cfg

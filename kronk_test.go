@@ -120,13 +120,7 @@ func initChatTest(t *testing.T) (*kronk.Kronk, []kronk.ChatMessage, kronk.Params
 		},
 	}
 
-	params := kronk.Params{
-		TopK: 1.0,
-		TopP: 0.9,
-		Temp: 0.7,
-	}
-
-	return krn, messages, params
+	return krn, messages, kronk.Params{}
 }
 
 func TestChat(t *testing.T) {

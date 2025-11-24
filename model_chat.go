@@ -48,7 +48,7 @@ func (m *model) chatStreaming(ctx context.Context, messages []ChatMessage, param
 		}()
 
 		prompt := m.applyChatTemplate(messages)
-		m.processTokens(ctx, modeChat, prompt, lctx, toSampler(params), ch)
+		m.processTokens(ctx, lctx, modeChat, prompt, params, ch)
 	}()
 
 	return ch
