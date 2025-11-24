@@ -1,4 +1,4 @@
-<img src="images/project/kronk_logo1.png?v4" width="200" alt="Kronk logo" align="left" style="margin-right: 10px">
+<img src="images/project/kronk_logo1_color.png?v4" width="200" alt="Kronk logo" align="left" style="margin-right: 10px">
 
 ### Kronk
 
