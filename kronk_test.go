@@ -219,7 +219,7 @@ func testResponse(msg kronk.ChatResponse, modelFile string, object string, reaso
 // =============================================================================
 
 func initChatTest(t *testing.T, modelFile string) (*kronk.Kronk, []kronk.ChatMessage, kronk.Params) {
-	krn, err := kronk.New(concurrency, modelFile, "", kronk.ModelConfig{})
+	krn, err := kronk.New(concurrency, modelFile, "", kronk.ModelConfig{NBatch: 512})
 	if err != nil {
 		t.Fatalf("unable to load model: %v", err)
 	}
@@ -330,7 +330,7 @@ func testChatStreaming(t *testing.T, modelFile string, reasoning bool) {
 // =============================================================================
 
 func initVisionTest(t *testing.T, modelFile, projFile string) (*kronk.Kronk, kronk.ChatMessage, kronk.Params) {
-	krn, err := kronk.New(concurrency, modelFile, projFile, kronk.ModelConfig{})
+	krn, err := kronk.New(concurrency, modelFile, projFile, kronk.ModelConfig{NBatch: 512})
 	if err != nil {
 		t.Fatalf("unable to create inference model: %v", err)
 	}
@@ -426,6 +426,7 @@ func testVisionStreaming(t *testing.T, modelFile string, profFile string) {
 
 func testEmbedding(t *testing.T, modelFile string) {
 	cfg := kronk.ModelConfig{
+		NBatch:     512,
 		Embeddings: true,
 	}
 
