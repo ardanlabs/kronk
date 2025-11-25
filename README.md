@@ -235,26 +235,26 @@ func modelResponse(krn *kronk.Kronk, messages []kronk.ChatMessage, ch <-chan kro
 
 This example can produce the following output:
 
-<pre>
+```
 $ export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:zarf/llamacpp
 $ go run cmd/examples/example13/step1/*.go
 
 Output:
 
- - check llamacpp installation: ✓
-   - latest version : b7157
-   - current version: b7157
- - check "gpt-oss-20b-Q8_0" installation: ✓
- - contextWindow: 131072
- - embeddings   : false
+- check llamacpp installation: ✓
+  - latest version : b7157
+  - current version: b7157
+- check "gpt-oss-20b-Q8_0" installation: ✓
+- contextWindow: 131072
+- embeddings   : false
 
 USER> hello model
 
-MODEL> <span style="color: #d27474ff;">We have a conversation. The user says "hello model". The system instructions: The user is speaking as a student, wants to solve a math problem. The user hasn't asked a question yet. They just said "hello model". We need to respond appropriately. According to the instruction, we should ask the user what problem they need help with. The user hasn't asked a math question yet. We should respond politely, asking what problem they need help with.</span>
+MODEL> We have a conversation. The user says "hello model". The system instructions: The user is speaking as a student, wants to solve a math problem. The user hasn't asked a question yet. They just said "hello model". We need to respond appropriately. According to the instruction, we should ask the user what problem they need help with. The user hasn't asked a math question yet. We should respond politely, asking what problem they need help with.
 
 Hello! How can I help you with your math problem today?
 
 Input: 9  Reasoning: 92  Completion: 14  Output: 106  Window: 23 (0% of 128K) TPS: 92.59
 
 USER>
-</pre>
+```
