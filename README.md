@@ -129,10 +129,7 @@ func newKronk(modelFile string) (*kronk.Kronk, error) {
 
 	const concurrency = 1
 
-	krn, err := kronk.New(concurrency, modelFile, "", kronk.ModelConfig{
-		ContextWindow: 0,
-		Embeddings:    false,
-	})
+	krn, err := kronk.New(concurrency, modelFile, "", kronk.ModelConfig{})
 	if err != nil {
 		return nil, fmt.Errorf("unable to create inference model: %w", err)
 	}
@@ -163,9 +160,6 @@ func userInput(messages []kronk.ChatMessage) ([]kronk.ChatMessage, error) {
 
 func performChat(ctx context.Context, krn *kronk.Kronk, messages []kronk.ChatMessage) (<-chan kronk.ChatResponse, error) {
 	ch, err := krn.ChatStreaming(ctx, messages, kronk.Params{
-		TopK:      1.0,
-		TopP:      0.9,
-		Temp:      0.7,
 		MaxTokens: 2048,
 	})
 	if err != nil {
@@ -221,55 +215,28 @@ func modelResponse(krn *kronk.Kronk, messages []kronk.ChatMessage, ch <-chan kro
 
 This example can produce the following output:
 
-````
+```
 $ export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:zarf/llamacpp
 $ go run cmd/examples/example13/step1/*.go
 
 Output:
 
 - check llamacpp installation: ✓
+  - latest version : b7151
+  - current version: b7151
 - check "Qwen3-8B-Q8_0" installation: ✓
 - contextWindow: 40960
-- maxTokens    : 512
 - embeddings   : false
 
 USER> hello model
 
 MODEL> <think>
-Okay, the user said "hello model." I need to respond appropriately. First, I should acknowledge their greeting. Since they mentioned "model," maybe they're referring to me as a language model. I should clarify that I'm Qwen, a large language model developed by Alibaba Cloud. I should keep the response friendly and open-ended, inviting them to ask questions or share topics they're interested in. Also, I should make sure the tone is welcoming and helpful. Let me check if there's any specific context I need to consider. The user might be testing the model or just starting a conversation. I'll keep it simple and positive.
+Okay, the user said "hello model". I need to respond appropriately. First, I should acknowledge their greeting. Since they used "model", maybe they're referring to me as an AI model. I should confirm that and offer assistance. Let me make sure to keep the tone friendly and open. I can ask how I can help them today. Also, maybe check if they have any specific questions or need information on a particular topic. Keep it simple and welcoming.
 </think>
 
-Hello! I'm Qwen, a large language model developed by Alibaba Cloud. How can I assist you today? Whether you have questions, need help with something, or just want to chat, feel free to let me know! 😊
+Hello! I'm Qwen, a large language model developed by Alibaba Cloud. How can I assist you today? Whether you have questions, need information, or just want to chat, feel free to let me know! 😊
 
-Input: 22  Output: 180  Context: 202 (0% of 40K) TPS: 43.11
-
-USER> write a hello world program in Go and only show the code
-
-MODEL> <think>
-Okay, the user asked for a "hello world" program in Go and wants only the code shown. Let me recall the basic structure of a Go program.
-
-First, the package declaration. In Go, the main package is required for executable programs. So I'll start with "package main".
-
-Next, the import section. The "fmt" package is needed for printing to the console. So I'll include "import "fmt"".
-
-Then the main function. The main function is the entry point. So "func main() { ... }".
-
-Inside the main function, use fmt.Println("Hello, World!") to print the message. That's the standard hello world.
-
-Wait, the user said only show the code. So I need to make sure there's no extra text. Just the code block. Let me check the syntax again to avoid any errors. Yes, that's correct. The code should be concise and straightforward. No explanations, just the code. Alright, that should do it.
-</think>
-
-```go
-package main
-
-import "fmt"
-
-func main() {
-    fmt.Println("Hello, World!")
-}
-```
-
-Input: 430  Output: 228  Context: 658 (2% of 40K) TPS: 42.97
+Input: 22  Output: 143  Context: 165 (0% of 40K) TPS: 45.97
 
 USER>
-````
+```
