@@ -34,6 +34,87 @@ var (
 )
 
 func TestMain(m *testing.M) {
+	install()
+
+	if err := kronk.Init(libPath, kronk.LogSilent); err != nil {
+		fmt.Printf("Failed to init the llamacpp library: %s: error: %s\n", libPath, err)
+		os.Exit(1)
+	}
+
+	os.Exit(m.Run())
+}
+
+// =============================================================================
+
+func TestSimpleChat(t *testing.T) {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("Skipping test in GitHub Actions")
+	}
+
+	testChat(t, modelSimpleChatFile, false)
+}
+
+func TestThinkChat(t *testing.T) {
+	testChat(t, modelThinkChatFile, true)
+}
+
+func TestGPTChat(t *testing.T) {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("Skipping test in GitHub Actions")
+	}
+
+	testChat(t, modelGPTChatFile, true)
+}
+
+// =============================================================================
+
+func TestSimpleChatStreaming(t *testing.T) {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("Skipping test in GitHub Actions")
+	}
+
+	testChatStreaming(t, modelSimpleChatFile, false)
+}
+
+func TestThinkChatStreaming(t *testing.T) {
+	testChatStreaming(t, modelThinkChatFile, true)
+}
+
+func TestGPTChatStreaming(t *testing.T) {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("Skipping test in GitHub Actions")
+	}
+
+	testChatStreaming(t, modelGPTChatFile, true)
+}
+
+// =============================================================================
+
+func TestSimpleVision(t *testing.T) {
+	if runtime.GOOS == "darwin" && os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("skipping test since it takes too long to run")
+	}
+
+	testVision(t, modelSimpleVisionFile, projSimpleVisionFile)
+}
+
+func TestSimpleVisionStreaming(t *testing.T) {
+	if runtime.GOOS == "darwin" && os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("skipping test since it takes too long to run")
+	}
+
+	testVisionStreaming(t, modelSimpleVisionFile, projSimpleVisionFile)
+}
+
+// =============================================================================
+
+func TestEmbedding(t *testing.T) {
+	testEmbedding(t, modelEmbedFile)
+}
+
+// =============================================================================
+
+func install() {
 	fmt.Println("libpath        :", libPath)
 	fmt.Println("modelPath      :", modelPath)
 	fmt.Println("imageFile      :", imageFile)
@@ -88,13 +169,51 @@ func TestMain(m *testing.M) {
 	}); err != nil {
 		fmt.Printf("error walking model path: %v\n", err)
 	}
+}
 
-	if err := kronk.Init(libPath, kronk.LogSilent); err != nil {
-		fmt.Printf("Failed to init the llamacpp library: %s: error: %s\n", libPath, err)
-		os.Exit(1)
+func testResponse(msg kronk.ChatResponse, modelFile string, object string, reasoning bool) error {
+	if msg.ID == "" {
+		return fmt.Errorf("expected id")
 	}
 
-	os.Exit(m.Run())
+	if msg.Object != object {
+		return fmt.Errorf("expected object type to be %s, got %s", object, msg.Object)
+	}
+
+	if msg.Created == 0 {
+		return fmt.Errorf("expected created time")
+	}
+
+	modelName := filepath.Base(modelFile)
+	modelName = strings.TrimSuffix(modelName, filepath.Ext(modelName))
+
+	if msg.Model != modelName {
+		return fmt.Errorf("expected model to be %s, got %s", modelName, msg.Model)
+	}
+
+	if len(msg.Choice) == 0 {
+		return fmt.Errorf("expected choice, got %d", len(msg.Choice))
+	}
+
+	if msg.Choice[0].FinishReason == "" && msg.Choice[0].Delta.Content == "" && msg.Choice[0].Delta.Reasoning == "" {
+		return fmt.Errorf("expected delta content and reasoning empty")
+	}
+
+	if msg.Choice[0].FinishReason == "" && msg.Choice[0].Delta.Role != "assistant" {
+		return fmt.Errorf("expected delta role to be assistant, got %s", msg.Choice[0].Delta.Role)
+	}
+
+	if msg.Choice[0].FinishReason == "stop" && msg.Choice[0].Delta.Content == "" {
+		return fmt.Errorf("expected final content")
+	}
+
+	if reasoning {
+		if msg.Choice[0].FinishReason == "stop" && msg.Choice[0].Delta.Reasoning == "" {
+			return fmt.Errorf("expected final reasoning")
+		}
+	}
+
+	return nil
 }
 
 // =============================================================================
@@ -104,8 +223,6 @@ func initChatTest(t *testing.T, modelFile string) (*kronk.Kronk, []kronk.ChatMes
 	if err != nil {
 		t.Fatalf("unable to load model: %v", err)
 	}
-
-	// -------------------------------------------------------------------------
 
 	question := "Echo back the word: Gorilla"
 
@@ -119,8 +236,8 @@ func initChatTest(t *testing.T, modelFile string) (*kronk.Kronk, []kronk.ChatMes
 	return krn, messages, kronk.Params{}
 }
 
-func TestSimpleChat(t *testing.T) {
-	krn, messages, params := initChatTest(t, modelSimpleChatFile)
+func testChat(t *testing.T, modelFile string, reasoning bool) {
+	krn, messages, params := initChatTest(t, modelFile)
 	defer krn.Unload()
 
 	f := func() error {
@@ -132,13 +249,19 @@ func TestSimpleChat(t *testing.T) {
 			return fmt.Errorf("chat streaming: %w", err)
 		}
 
-		if err := testResponse(resp, modelSimpleChatFile, "chat"); err != nil {
+		if err := testResponse(resp, modelFile, "chat", reasoning); err != nil {
 			return err
 		}
 
 		find := "Gorilla"
 		if !strings.Contains(resp.Choice[0].Delta.Content, find) {
 			return fmt.Errorf("expected %q, got %q", find, resp.Choice[0].Delta.Content)
+		}
+
+		if reasoning {
+			if !strings.Contains(resp.Choice[0].Delta.Reasoning, find) {
+				return fmt.Errorf("expected %q, got %q", find, resp.Choice[0].Delta.Content)
+			}
 		}
 
 		return nil
@@ -154,86 +277,8 @@ func TestSimpleChat(t *testing.T) {
 	}
 }
 
-func TestThinkChat(t *testing.T) {
-	krn, messages, params := initChatTest(t, modelThinkChatFile)
-	defer krn.Unload()
-
-	f := func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*5*time.Second)
-		defer cancel()
-
-		resp, err := krn.Chat(ctx, messages, params)
-		if err != nil {
-			return fmt.Errorf("chat streaming: %w", err)
-		}
-
-		if err := testResponse(resp, modelThinkChatFile, "chat"); err != nil {
-			return err
-		}
-
-		find := "Gorilla"
-		if !strings.Contains(resp.Choice[0].Delta.Content, find) {
-			return fmt.Errorf("expected %q, got %q", find, resp.Choice[0].Delta.Content)
-		}
-
-		if !strings.Contains(resp.Choice[0].Delta.Reasoning, find) {
-			return fmt.Errorf("expected %q, got %q", find, resp.Choice[0].Delta.Reasoning)
-		}
-
-		return nil
-	}
-
-	var g errgroup.Group
-	for range concurrency {
-		g.Go(f)
-	}
-
-	if err := g.Wait(); err != nil {
-		t.Errorf("error: %v", err)
-	}
-}
-
-func TestGPTChat(t *testing.T) {
-	krn, messages, params := initChatTest(t, modelGPTChatFile)
-	defer krn.Unload()
-
-	f := func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*5*time.Second)
-		defer cancel()
-
-		resp, err := krn.Chat(ctx, messages, params)
-		if err != nil {
-			return fmt.Errorf("chat streaming: %w", err)
-		}
-
-		if err := testResponse(resp, modelGPTChatFile, "chat"); err != nil {
-			return err
-		}
-
-		find := "Gorilla"
-		if !strings.Contains(resp.Choice[0].Delta.Content, find) {
-			return fmt.Errorf("expected %q, got %q", find, resp.Choice[0].Delta.Content)
-		}
-
-		if !strings.Contains(resp.Choice[0].Delta.Reasoning, find) {
-			return fmt.Errorf("expected %q, got %q", find, resp.Choice[0].Delta.Reasoning)
-		}
-
-		return nil
-	}
-
-	var g errgroup.Group
-	for range concurrency {
-		g.Go(f)
-	}
-
-	if err := g.Wait(); err != nil {
-		t.Errorf("error: %v", err)
-	}
-}
-
-func TestSimpleChatStreaming(t *testing.T) {
-	krn, messages, params := initChatTest(t, modelSimpleChatFile)
+func testChatStreaming(t *testing.T, modelFile string, reasoning bool) {
+	krn, messages, params := initChatTest(t, modelFile)
 	defer krn.Unload()
 
 	f := func() error {
@@ -247,20 +292,26 @@ func TestSimpleChatStreaming(t *testing.T) {
 
 		var lastResp kronk.ChatResponse
 		for resp := range ch {
-			if err := testResponse(resp, modelSimpleChatFile, "chat"); err != nil {
+			if err := testResponse(resp, modelFile, "chat", reasoning); err != nil {
 				return err
 			}
 
 			lastResp = resp
 		}
 
-		if err := testResponse(lastResp, modelSimpleChatFile, "chat"); err != nil {
+		if err := testResponse(lastResp, modelFile, "chat", reasoning); err != nil {
 			return err
 		}
 
 		find := "Gorilla"
 		if !strings.Contains(lastResp.Choice[0].Delta.Content, find) {
 			return fmt.Errorf("expected %q, got %q", find, lastResp.Choice[0].Delta.Content)
+		}
+
+		if reasoning {
+			if !strings.Contains(lastResp.Choice[0].Delta.Reasoning, find) {
+				return fmt.Errorf("expected %q, got %q", find, lastResp.Choice[0].Delta.Content)
+			}
 		}
 
 		return nil
@@ -279,18 +330,10 @@ func TestSimpleChatStreaming(t *testing.T) {
 // =============================================================================
 
 func initVisionTest(t *testing.T, modelFile, projFile string) (*kronk.Kronk, kronk.ChatMessage, kronk.Params) {
-	if runtime.GOOS == "darwin" && os.Getenv("RUN_MACOS") == "" {
-		t.Skip("skipping test since it takes too long to run")
-	}
-
-	// -------------------------------------------------------------------------
-
 	krn, err := kronk.New(concurrency, modelFile, projFile, kronk.ModelConfig{})
 	if err != nil {
 		t.Fatalf("unable to create inference model: %v", err)
 	}
-
-	// -------------------------------------------------------------------------
 
 	question := "What is in this picture?"
 
@@ -302,8 +345,8 @@ func initVisionTest(t *testing.T, modelFile, projFile string) (*kronk.Kronk, kro
 	return krn, message, kronk.Params{}
 }
 
-func TestSimpleVision(t *testing.T) {
-	krn, message, params := initVisionTest(t, modelSimpleVisionFile, projSimpleVisionFile)
+func testVision(t *testing.T, modelFile string, profFile string) {
+	krn, message, params := initVisionTest(t, modelFile, profFile)
 	defer krn.Unload()
 
 	f := func() error {
@@ -315,7 +358,7 @@ func TestSimpleVision(t *testing.T) {
 			return fmt.Errorf("vision streaming: %w", err)
 		}
 
-		if err := testResponse(resp, modelSimpleVisionFile, "vision"); err != nil {
+		if err := testResponse(resp, modelFile, "vision", false); err != nil {
 			return err
 		}
 
@@ -337,8 +380,8 @@ func TestSimpleVision(t *testing.T) {
 	}
 }
 
-func TestSimpleVisionStreaming(t *testing.T) {
-	krn, message, params := initVisionTest(t, modelSimpleVisionFile, projSimpleVisionFile)
+func testVisionStreaming(t *testing.T, modelFile string, profFile string) {
+	krn, message, params := initVisionTest(t, modelFile, profFile)
 	defer krn.Unload()
 
 	f := func() error {
@@ -352,14 +395,14 @@ func TestSimpleVisionStreaming(t *testing.T) {
 
 		var lastResp kronk.ChatResponse
 		for resp := range ch {
-			if err := testResponse(resp, modelSimpleVisionFile, "vision"); err != nil {
+			if err := testResponse(resp, modelFile, "vision", false); err != nil {
 				return err
 			}
 
 			lastResp = resp
 		}
 
-		if err := testResponse(lastResp, modelSimpleVisionFile, "vision"); err != nil {
+		if err := testResponse(lastResp, modelFile, "vision", false); err != nil {
 			return err
 		}
 
@@ -381,11 +424,7 @@ func TestSimpleVisionStreaming(t *testing.T) {
 	}
 }
 
-func TestEmbedding(t *testing.T) {
-	modelFile := modelEmbedFile
-
-	// -------------------------------------------------------------------------
-
+func testEmbedding(t *testing.T, modelFile string) {
 	cfg := kronk.ModelConfig{
 		Embeddings: true,
 	}
@@ -424,45 +463,4 @@ func TestEmbedding(t *testing.T) {
 	if err := g.Wait(); err != nil {
 		t.Errorf("error: %v", err)
 	}
-}
-
-// =============================================================================
-
-func testResponse(msg kronk.ChatResponse, modelFile string, object string) error {
-	if msg.ID == "" {
-		return fmt.Errorf("expected id")
-	}
-
-	if msg.Object != object {
-		return fmt.Errorf("expected object type to be %s, got %s", object, msg.Object)
-	}
-
-	if msg.Created == 0 {
-		return fmt.Errorf("expected created time")
-	}
-
-	modelName := filepath.Base(modelFile)
-	modelName = strings.TrimSuffix(modelName, filepath.Ext(modelName))
-
-	if msg.Model != modelName {
-		return fmt.Errorf("expected model to be %s, got %s", modelName, msg.Model)
-	}
-
-	if len(msg.Choice) == 0 {
-		return fmt.Errorf("expected choice, got %d", len(msg.Choice))
-	}
-
-	if msg.Choice[0].FinishReason == "" && msg.Choice[0].Delta.Content == "" {
-		return fmt.Errorf("expected delta content, got %s", msg.Choice[0].Delta.Content)
-	}
-
-	if msg.Choice[0].FinishReason == "stop" && msg.Choice[0].Delta.Content == "" {
-		return fmt.Errorf("expected generated text, got %s", msg.Choice[0].Delta.Content)
-	}
-
-	if msg.Choice[0].FinishReason == "" && msg.Choice[0].Delta.Role != "assistant" {
-		return fmt.Errorf("expected delta role to be assistant, got %s", msg.Choice[0].Delta.Role)
-	}
-
-	return nil
 }

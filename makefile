@@ -37,7 +37,6 @@ test:
 test-upgrade: deps-upgrade
 	export LD_LIBRARY_PATH=libraries && \
 	export CONCURRENCY=3 && \
-	export RUN_MACOS=1 && \
 	export INSTALL_LLAMA=1 && \
 	CGO_ENABLED=0 go test -v -count=1
 
