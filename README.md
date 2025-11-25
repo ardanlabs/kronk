@@ -63,7 +63,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/ardanlabs/ai-training/cmd/examples/example13/install"
@@ -192,46 +191,30 @@ func performChat(ctx context.Context, krn *kronk.Kronk, messages []kronk.ChatMes
 func modelResponse(krn *kronk.Kronk, messages []kronk.ChatMessage, ch <-chan kronk.ChatResponse) ([]kronk.ChatMessage, error) {
 	fmt.Print("\nMODEL> ")
 
-	var finalResponse strings.Builder
-	var contextTokens int
-	var inputTokens int
-	var outputTokens int
-
-	now := time.Now()
-
-    // -------------------------------------------------------------------------
-
-	for msg := range ch {
-		if msg.Err != nil {
-			return messages, fmt.Errorf("error from model: %w", msg.Err)
+	var lr kronk.ChatResponse
+	for resp := range ch {
+		if resp.Choice[0].FinishReason == kronk.FinishReasonError {
+			return messages, fmt.Errorf("error from model: %s", resp.Choice[0].GeneratedText)
 		}
 
-		fmt.Print(msg.Response)
-		finalResponse.WriteString(msg.Response)
-
-		contextTokens = msg.Tokens.Context
-		inputTokens = msg.Tokens.Input
-		outputTokens += msg.Tokens.Output
+		fmt.Print(resp.Choice[0].Delta.Content)
+		lr = resp
 	}
+
+	messages = append(messages, kronk.ChatMessage{
+		Role:    "assistant",
+		Content: lr.Choice[0].GeneratedText,
+	})
 
 	// -------------------------------------------------------------------------
 
-	elapsedSeconds := time.Since(now).Seconds()
-	tokensPerSecond := float64(outputTokens) / elapsedSeconds
-
+	contextTokens := lr.Usage.InputTokens + lr.Usage.CompletionTokens
 	contextWindow := krn.ModelConfig().ContextWindow
 	percentage := (float64(contextTokens) / float64(contextWindow)) * 100
 	of := float32(contextWindow) / float32(1024)
 
 	fmt.Printf("\n\n\u001b[90mInput: %d  Output: %d  Context: %d (%.0f%% of %.0fK) TPS: %.2f\u001b[0m\n",
-		inputTokens, outputTokens, contextTokens, percentage, of, tokensPerSecond)
-
-    // -------------------------------------------------------------------------
-
-	messages = append(messages, kronk.ChatMessage{
-		Role:    "assistant",
-		Content: finalResponse.String(),
-	})
+		lr.Usage.InputTokens, lr.Usage.OutputTokens, contextTokens, percentage, of, lr.Usage.TokensPerSecond)
 
 	return messages, nil
 }
