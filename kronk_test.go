@@ -47,16 +47,12 @@ func TestMain(m *testing.M) {
 // =============================================================================
 
 func TestSimpleChat(t *testing.T) {
-	// Run on MacOS in GitHub Actions.
-	if os.Getenv("GITHUB_ACTIONS") == "true" && runtime.GOOS == "linux" {
-		t.Skip("Skipping test in GitHub Actions")
-	}
-
+	// Run on all platforms.
 	testChat(t, modelSimpleChatFile, false)
 }
 
 func TestThinkChat(t *testing.T) {
-	// Run on Linux in GitHub Actions.
+	// Run on Linux only in GitHub Actions.
 	if os.Getenv("GITHUB_ACTIONS") == "true" && runtime.GOOS == "darwin" {
 		t.Skip("Skipping test in GitHub Actions")
 	}
@@ -76,16 +72,12 @@ func TestGPTChat(t *testing.T) {
 // =============================================================================
 
 func TestSimpleChatStreaming(t *testing.T) {
-	// Run on MacOS in GitHub Actions.
-	if os.Getenv("GITHUB_ACTIONS") == "true" && runtime.GOOS == "linux" {
-		t.Skip("Skipping test in GitHub Actions")
-	}
-
+	// Run on all platforms.
 	testChatStreaming(t, modelSimpleChatFile, false)
 }
 
 func TestThinkChatStreaming(t *testing.T) {
-	// Run on Linux in GitHub Actions.
+	// Run on Linux only in GitHub Actions.
 	if os.Getenv("GITHUB_ACTIONS") == "true" && runtime.GOOS == "darwin" {
 		t.Skip("Skipping test in GitHub Actions")
 	}
@@ -105,7 +97,7 @@ func TestGPTChatStreaming(t *testing.T) {
 // =============================================================================
 
 func TestSimpleVision(t *testing.T) {
-	// Run on Linux in GitHub Actions.
+	// Run on Linux only in GitHub Actions.
 	if os.Getenv("GITHUB_ACTIONS") == "true" && runtime.GOOS == "darwin" {
 		t.Skip("Skipping test in GitHub Actions")
 	}
@@ -114,7 +106,7 @@ func TestSimpleVision(t *testing.T) {
 }
 
 func TestSimpleVisionStreaming(t *testing.T) {
-	// Run on Linux in GitHub Actions.
+	// Run on Linux only in GitHub Actions.
 	if os.Getenv("GITHUB_ACTIONS") == "true" && runtime.GOOS == "darwin" {
 		t.Skip("Skipping test in GitHub Actions")
 	}
