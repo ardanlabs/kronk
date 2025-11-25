@@ -54,7 +54,7 @@ func TestMain(m *testing.M) {
 			os.Exit(1)
 		}
 
-		fmt.Printf("Latest version: %s, Current version: %s\n", vi.Latest, vi.Current)
+		fmt.Printf("Latest version : %s, Current version: %s\n", vi.Latest, vi.Current)
 
 		if vi.Current != vi.Latest {
 			fmt.Printf("LIBRARIES      : Installing at %s\n", libPath)
@@ -102,9 +102,7 @@ func initChatTest(t *testing.T) (*kronk.Kronk, []kronk.ChatMessage, kronk.Params
 
 	// -------------------------------------------------------------------------
 
-	krn, err := kronk.New(concurrency, modelFile, "", kronk.ModelConfig{
-		ContextWindow: 1024 * 4,
-	})
+	krn, err := kronk.New(concurrency, modelFile, "", kronk.ModelConfig{})
 	if err != nil {
 		t.Fatalf("unable to load model: %v", err)
 	}
@@ -205,11 +203,7 @@ func initVisionTest(t *testing.T) (*kronk.Kronk, kronk.ChatMessage, kronk.Params
 
 	// -------------------------------------------------------------------------
 
-	cfg := kronk.ModelConfig{
-		ContextWindow: 1024 * 4,
-	}
-
-	krn, err := kronk.New(concurrency, modelFile, projFile, cfg)
+	krn, err := kronk.New(concurrency, modelFile, projFile, kronk.ModelConfig{})
 	if err != nil {
 		t.Fatalf("unable to create inference model: %v", err)
 	}
@@ -223,13 +217,7 @@ func initVisionTest(t *testing.T) (*kronk.Kronk, kronk.ChatMessage, kronk.Params
 		Content: question,
 	}
 
-	params := kronk.Params{
-		TopK: 1.0,
-		TopP: 0.9,
-		Temp: 0.7,
-	}
-
-	return krn, message, params
+	return krn, message, kronk.Params{}
 }
 
 func TestVision(t *testing.T) {
@@ -308,8 +296,7 @@ func TestEmbedding(t *testing.T) {
 	// -------------------------------------------------------------------------
 
 	cfg := kronk.ModelConfig{
-		ContextWindow: 1024 * 4,
-		Embeddings:    true,
+		Embeddings: true,
 	}
 
 	krn, err := kronk.New(concurrency, modelFile, "", cfg)

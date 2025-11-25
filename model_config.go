@@ -9,15 +9,39 @@ import (
 
 const (
 	defContextWindow = 4 * 1024
+	defNBatch        = 2 * 1024
+	defNUBatch       = 512
 )
 
 // ModelConfig represents model level configuration. These values if configured
-// incorrectly can cause the system to panic. The defaults are
-// used when these values are set to 0.
+// incorrectly can cause the system to panic. The defaults are used when these
+// values are set to 0.
 //
-// ContextWindow when set to 0 will use the model's default context window. If
-// the model's default context window can't be identified, then a default
-// context window of 4k will be used.
+// ContextWindow (often referred to as context length) is the maximum number of
+// tokens that a large language model can process and consider at one time when
+// generating a response. It defines the model's effective "memory" for a single
+// conversation or text generation task.
+// When set to 0, the default value is 4096.
+//
+// NBatch is the logical batch size or the maximum number of tokens that can be
+// in a single forward pass through the model at any given time.  It defines
+// the maximum capacity of the processing batch. If you are processing a very
+// long prompt or multiple prompts simultaneously, the total number of tokens
+// processed in one go will not exceed NBatch. Increasing n_batch can improve
+// performance (throughput) if your hardware can handle it, as it better
+// utilizes parallel computation. However, a very high n_batch can lead to
+// out-of-memory errors on systems with limited VRAM.
+// When set to 0, the default value is 2048.
+//
+// NUBatch is the physical batch size or the maximum number of tokens processed
+// together during the initial prompt processing phase (also called "prompt
+// ingestion") to populate the KV cache. It specifically optimizes the initial
+// loading of prompt tokens into the KV cache. If a prompt is longer than
+// NUBatch, it will be broken down and processed in chunks of n_ubatch tokens
+// sequentially. This parameter is crucial for tuning performance on specific
+// hardware (especially GPUs) because different values might yield better prompt
+// processing times depending on the memory architecture.
+// When set to 0, the default value is 512.
 //
 // Embeddings is a boolean that determines if the model you are using is an
 // embedding model. This must be true when using an embedding model.
@@ -28,12 +52,28 @@ const (
 // $ llama-bench --list-devices
 type ModelConfig struct {
 	ContextWindow int
+	NBatch        int
+	NUBatch       int
 	Embeddings    bool
 	Device        string
 }
 
 func adjustConfig(cfg ModelConfig, model llama.Model) ModelConfig {
 	cfg = adjustContextWindow(cfg, model)
+
+	if cfg.NBatch <= 0 {
+		cfg.NBatch = defNBatch
+	}
+
+	if cfg.NUBatch <= 0 {
+		cfg.NUBatch = defNUBatch
+	}
+
+	// NBatch is generally greater than or equal to NUBatch. The entire
+	// NUBatch of tokens must fit into a physical batch for processing.
+	if cfg.NUBatch > cfg.NBatch {
+		cfg.NUBatch = cfg.NBatch
+	}
 
 	return cfg
 }
@@ -66,8 +106,8 @@ func modelCtxParams(cfg ModelConfig) llama.ContextParams {
 	// So I will limit it to 64k for now.
 
 	if cfg.ContextWindow > 0 {
-		ctxParams.NBatch = min(uint32(cfg.ContextWindow), 64*1024)
-		ctxParams.NUbatch = uint32(cfg.ContextWindow)
+		ctxParams.NBatch = uint32(cfg.NBatch)
+		ctxParams.NUbatch = uint32(cfg.NUBatch)
 		ctxParams.NCtx = uint32(cfg.ContextWindow)
 	}
 
