@@ -25,8 +25,8 @@ var (
 
 var (
 	gw          = os.Getenv("GITHUB_WORKSPACE")
-	libPath     = filepath.Join(gw, "libraries")
-	modelPath   = filepath.Join(gw, "models")
+	libPath     = filepath.Join(gw, "tests/libraries")
+	modelPath   = filepath.Join(gw, "tests/models")
 	imageFile   = filepath.Join(gw, "images/samples", "giraffe.jpg")
 	concurrency = 1
 )
