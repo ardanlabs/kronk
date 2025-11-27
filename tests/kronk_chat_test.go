@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path"
 	"runtime"
 	"strings"
 	"testing"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/ardanlabs/kronk"
 	"github.com/ardanlabs/kronk/model"
+	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -65,7 +67,7 @@ func Test_GPTChatStreaming(t *testing.T) {
 // =============================================================================
 
 func initChatTest(t *testing.T, modelFile string) (*kronk.Kronk, model.ChatRequest) {
-	krn, err := kronk.New(concurrency, modelFile, "", model.Config{})
+	krn, err := kronk.New(modelInstances, modelFile, "", model.Config{})
 	if err != nil {
 		t.Fatalf("unable to load model: %v", err)
 	}
@@ -82,6 +84,8 @@ func initChatTest(t *testing.T, modelFile string) (*kronk.Kronk, model.ChatReque
 }
 
 func testChat(t *testing.T, modelFile string, reasoning bool) {
+	t.Parallel()
+
 	krn, req := initChatTest(t, modelFile)
 	defer krn.Unload()
 
@@ -89,8 +93,15 @@ func testChat(t *testing.T, modelFile string, reasoning bool) {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*5*time.Second)
 		defer cancel()
 
-		resp, err := krn.Chat(ctx, req)
+		id := uuid.New().String()
+		now := time.Now()
+		defer func() {
+			name := strings.TrimSuffix(modelFile, path.Ext(modelFile))
+			done := time.Now()
+			t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, name, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
+		}()
 
+		resp, err := krn.Chat(ctx, req)
 		if err != nil {
 			return fmt.Errorf("chat streaming: %w", err)
 		}
@@ -114,7 +125,7 @@ func testChat(t *testing.T, modelFile string, reasoning bool) {
 	}
 
 	var g errgroup.Group
-	for range concurrency {
+	for range goroutines {
 		g.Go(f)
 	}
 
@@ -124,12 +135,22 @@ func testChat(t *testing.T, modelFile string, reasoning bool) {
 }
 
 func testChatStreaming(t *testing.T, modelFile string, reasoning bool) {
+	t.Parallel()
+
 	krn, cr := initChatTest(t, modelFile)
 	defer krn.Unload()
 
 	f := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*5*time.Second)
 		defer cancel()
+
+		id := uuid.New().String()
+		now := time.Now()
+		defer func() {
+			name := strings.TrimSuffix(modelFile, path.Ext(modelFile))
+			done := time.Now()
+			t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, name, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
+		}()
 
 		ch, err := krn.ChatStreaming(ctx, cr)
 		if err != nil {
@@ -164,7 +185,7 @@ func testChatStreaming(t *testing.T, modelFile string, reasoning bool) {
 	}
 
 	var g errgroup.Group
-	for range concurrency {
+	for range goroutines {
 		g.Go(f)
 	}
 

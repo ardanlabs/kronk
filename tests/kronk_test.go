@@ -24,11 +24,12 @@ var (
 )
 
 var (
-	gw          = os.Getenv("GITHUB_WORKSPACE")
-	libPath     = filepath.Join(gw, "tests/libraries")
-	modelPath   = filepath.Join(gw, "tests/models")
-	imageFile   = filepath.Join(gw, "images/samples", "giraffe.jpg")
-	concurrency = 1
+	gw             = os.Getenv("GITHUB_WORKSPACE")
+	libPath        = filepath.Join(gw, "tests/libraries")
+	modelPath      = filepath.Join(gw, "tests/models")
+	imageFile      = filepath.Join(gw, "images/samples", "giraffe.jpg")
+	goroutines     = 1
+	modelInstances = 1
 )
 
 func TestMain(m *testing.M) {
@@ -43,20 +44,29 @@ func TestMain(m *testing.M) {
 }
 
 func installer() {
+	if os.Getenv("MODEL_INSTANCES") != "" {
+		var err error
+		modelInstances, err = strconv.Atoi(os.Getenv("MODEL_INSTANCES"))
+		if err != nil {
+			modelInstances = 1
+		}
+	}
+
+	if os.Getenv("GOROUTINES") != "" {
+		var err error
+		goroutines, err = strconv.Atoi(os.Getenv("GOROUTINES"))
+		if err != nil {
+			goroutines = 1
+		}
+	}
+
 	fmt.Println("libpath        :", libPath)
 	fmt.Println("modelPath      :", modelPath)
 	fmt.Println("imageFile      :", imageFile)
 	fmt.Println("LD_LIBRARY_PATH:", os.Getenv("LD_LIBRARY_PATH"))
-
-	if os.Getenv("CONCURRENCY") != "" {
-		var err error
-		concurrency, err = strconv.Atoi(os.Getenv("CONCURRENCY"))
-		if err != nil {
-			concurrency = 1
-		}
-	}
-
-	fmt.Println("CONCURRENCY    :", concurrency)
+	fmt.Println("MODEL INSTANCES:", modelInstances)
+	fmt.Println("GOROUTINES     :", goroutines)
+	fmt.Println("INSTALL_LLAMA  :", os.Getenv("INSTALL_LLAMA"))
 
 	if os.Getenv("INSTALL_LLAMA") == "1" {
 		vi, err := install.VersionInformation(libPath)

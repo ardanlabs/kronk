@@ -77,19 +77,22 @@ type Kronk struct {
 }
 
 // New provides the ability to use models in a concurrently safe way.
-func New(concurrency int, modelFile string, projFile string, cfg model.Config) (*Kronk, error) {
+//
+// modelInstances represents the number of instances of the model to create. Unless
+// you have more than 1 GPU, the recommended number of instances is 1.
+func New(modelInstances int, modelFile string, projFile string, cfg model.Config) (*Kronk, error) {
 	if libraryLocation == "" {
 		return nil, fmt.Errorf("the Init() function has not been called")
 	}
 
-	if concurrency <= 0 {
-		return nil, fmt.Errorf("concurrency must be > 0, got %d", concurrency)
+	if modelInstances <= 0 {
+		return nil, fmt.Errorf("instances must be > 0, got %d", modelInstances)
 	}
 
-	models := make(chan *model.Model, concurrency)
+	models := make(chan *model.Model, modelInstances)
 	var firstModel *model.Model
 
-	for range concurrency {
+	for range modelInstances {
 		m, err := model.NewModel(modelFile, projFile, cfg)
 		if err != nil {
 			close(models)

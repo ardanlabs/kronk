@@ -40,7 +40,8 @@ jobs:
       - name: Run unit tests
         run: |
           export LD_LIBRARY_PATH=$GITHUB_WORKSPACE/tests/libraries
-          export CONCURRENCY=1
+          export MODEL_INSTANCES=1
+          export GOROUTINES=1
           export INSTALL_LLAMA=1
           mkdir -p ./tests/libraries
           CGO_ENABLED=0 go test -v -count=1 ./tests
