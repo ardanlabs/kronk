@@ -35,6 +35,7 @@ test:
 	export GOROUTINES=3 && \
 	export RUN_MACOS=1 && \
 	export INSTALL_LLAMA=1 && \
+	export RUN_IN_PARALLEL=1 && \
 	export GITHUB_WORKSPACE=$(shell pwd) && \
 	CGO_ENABLED=0 go test -v -count=1 ./tests
 

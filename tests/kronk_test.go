@@ -30,6 +30,7 @@ var (
 	imageFile      = filepath.Join(gw, "images/samples", "giraffe.jpg")
 	goroutines     = 1
 	modelInstances = 1
+	runInParallel  = false
 )
 
 func TestMain(m *testing.M) {
@@ -60,6 +61,10 @@ func installer() {
 		}
 	}
 
+	if os.Getenv("RUN_IN_PARALLEL") == "1" {
+		runInParallel = true
+	}
+
 	fmt.Println("libpath        :", libPath)
 	fmt.Println("modelPath      :", modelPath)
 	fmt.Println("imageFile      :", imageFile)
@@ -67,6 +72,7 @@ func installer() {
 	fmt.Println("MODEL INSTANCES:", modelInstances)
 	fmt.Println("GOROUTINES     :", goroutines)
 	fmt.Println("INSTALL_LLAMA  :", os.Getenv("INSTALL_LLAMA"))
+	fmt.Println("RUN_IN_PARALLEL:", runInParallel)
 
 	if os.Getenv("INSTALL_LLAMA") == "1" {
 		vi, err := install.VersionInformation(libPath)

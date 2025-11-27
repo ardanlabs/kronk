@@ -56,7 +56,9 @@ func initVisionTest(t *testing.T, modelFile, projFile string, imageFile string) 
 }
 
 func testVision(t *testing.T, modelFile string, profFile string) {
-	t.Parallel()
+	if runInParallel {
+		t.Parallel()
+	}
 
 	krn, vr := initVisionTest(t, modelFile, profFile, imageFile)
 	defer krn.Unload()
@@ -101,7 +103,9 @@ func testVision(t *testing.T, modelFile string, profFile string) {
 }
 
 func testVisionStreaming(t *testing.T, modelFile string, profFile string) {
-	t.Parallel()
+	if runInParallel {
+		t.Parallel()
+	}
 
 	krn, vr := initVisionTest(t, modelFile, profFile, imageFile)
 	defer krn.Unload()

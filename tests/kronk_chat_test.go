@@ -84,7 +84,9 @@ func initChatTest(t *testing.T, modelFile string) (*kronk.Kronk, model.ChatReque
 }
 
 func testChat(t *testing.T, modelFile string, reasoning bool) {
-	t.Parallel()
+	if runInParallel {
+		t.Parallel()
+	}
 
 	krn, req := initChatTest(t, modelFile)
 	defer krn.Unload()
@@ -135,7 +137,9 @@ func testChat(t *testing.T, modelFile string, reasoning bool) {
 }
 
 func testChatStreaming(t *testing.T, modelFile string, reasoning bool) {
-	t.Parallel()
+	if runInParallel {
+		t.Parallel()
+	}
 
 	krn, cr := initChatTest(t, modelFile)
 	defer krn.Unload()

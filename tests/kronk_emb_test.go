@@ -20,7 +20,9 @@ func Test_Embedding(t *testing.T) {
 }
 
 func testEmbedding(t *testing.T, modelFile string) {
-	t.Parallel()
+	if runInParallel {
+		t.Parallel()
+	}
 
 	cfg := model.Config{
 		Embeddings: true,
