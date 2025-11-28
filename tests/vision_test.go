@@ -25,7 +25,7 @@ func Test_SimpleVision(t *testing.T) {
 	testVision(t, modelSimpleVisionFile, projSimpleVisionFile)
 }
 
-func Test_SimpleVisionStreaming(t *testing.T) {
+func Test_SimpleStreamingVision(t *testing.T) {
 	// Run on Linux only in GitHub Actions.
 	if os.Getenv("GITHUB_ACTIONS") == "true" && runtime.GOOS == "darwin" {
 		t.Skip("Skipping test in GitHub Actions")
@@ -53,6 +53,9 @@ func initVisionTest(t *testing.T, modelFile, projFile string, imageFile string) 
 		Message: model.ChatMessage{
 			Role:    "user",
 			Content: question,
+		},
+		Params: model.Params{
+			MaxTokens: 4096,
 		},
 	}
 

@@ -21,7 +21,7 @@ func Test_SimpleChat(t *testing.T) {
 	testChat(t, modelSimpleChatFile, false)
 }
 
-func Test_SimpleChatStreaming(t *testing.T) {
+func Test_SimpleStreamingChat(t *testing.T) {
 	// Run on all platforms.
 	testChatStreaming(t, modelSimpleChatFile, false)
 }
@@ -35,7 +35,7 @@ func Test_ThinkChat(t *testing.T) {
 	testChat(t, modelThinkChatFile, true)
 }
 
-func Test_ThinkChatStreaming(t *testing.T) {
+func Test_ThinkStreamingChat(t *testing.T) {
 	// Run on Linux only in GitHub Actions.
 	if os.Getenv("GITHUB_ACTIONS") == "true" && runtime.GOOS == "darwin" {
 		t.Skip("Skipping test in GitHub Actions")
@@ -53,7 +53,7 @@ func Test_GPTChat(t *testing.T) {
 	testChat(t, modelGPTChatFile, true)
 }
 
-func Test_GPTChatStreaming(t *testing.T) {
+func Test_GPTStreamingChat(t *testing.T) {
 	// Don't run at all on GitHub Actions.
 	if os.Getenv("GITHUB_ACTIONS") == "true" {
 		t.Skip("Skipping test in GitHub Actions")
@@ -78,6 +78,9 @@ func initChatTest(t *testing.T, modelFile string) (*kronk.Kronk, model.ChatReque
 	cr := model.ChatRequest{
 		Messages: []model.ChatMessage{
 			{Role: "user", Content: question},
+		},
+		Params: model.Params{
+			MaxTokens: 4096,
 		},
 	}
 
