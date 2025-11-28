@@ -41,7 +41,7 @@ jobs:
         run: |
           export LD_LIBRARY_PATH=$GITHUB_WORKSPACE/tests/libraries
           export MODEL_INSTANCES=1
-          export GOROUTINES=2
+          export GOROUTINES=1
           export RUN_IN_PARALLEL=0
           export INSTALL_LLAMA=1
           mkdir -p ./tests/libraries

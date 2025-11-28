@@ -19,6 +19,8 @@ func Test_Embedding(t *testing.T) {
 	testEmbedding(t, modelEmbedFile)
 }
 
+// =============================================================================
+
 func testEmbedding(t *testing.T, modelFile string) {
 	if runInParallel {
 		t.Parallel()

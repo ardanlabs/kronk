@@ -21,6 +21,11 @@ func Test_SimpleChat(t *testing.T) {
 	testChat(t, modelSimpleChatFile, false)
 }
 
+func Test_SimpleChatStreaming(t *testing.T) {
+	// Run on all platforms.
+	testChatStreaming(t, modelSimpleChatFile, false)
+}
+
 func Test_ThinkChat(t *testing.T) {
 	// Run on Linux only in GitHub Actions.
 	if os.Getenv("GITHUB_ACTIONS") == "true" && runtime.GOOS == "darwin" {
@@ -30,22 +35,6 @@ func Test_ThinkChat(t *testing.T) {
 	testChat(t, modelThinkChatFile, true)
 }
 
-func Test_GPTChat(t *testing.T) {
-	// Don't run at all on GitHub Actions.
-	if os.Getenv("GITHUB_ACTIONS") == "true" {
-		t.Skip("Skipping test in GitHub Actions")
-	}
-
-	testChat(t, modelGPTChatFile, true)
-}
-
-// =============================================================================
-
-func Test_SimpleChatStreaming(t *testing.T) {
-	// Run on all platforms.
-	testChatStreaming(t, modelSimpleChatFile, false)
-}
-
 func Test_ThinkChatStreaming(t *testing.T) {
 	// Run on Linux only in GitHub Actions.
 	if os.Getenv("GITHUB_ACTIONS") == "true" && runtime.GOOS == "darwin" {
@@ -53,6 +42,15 @@ func Test_ThinkChatStreaming(t *testing.T) {
 	}
 
 	testChatStreaming(t, modelThinkChatFile, true)
+}
+
+func Test_GPTChat(t *testing.T) {
+	// Don't run at all on GitHub Actions.
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("Skipping test in GitHub Actions")
+	}
+
+	testChat(t, modelGPTChatFile, true)
 }
 
 func Test_GPTChatStreaming(t *testing.T) {

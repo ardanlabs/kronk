@@ -18,7 +18,7 @@ import (
 )
 
 // Version contains the current version of the kronk package.
-const Version = "0.14.0"
+const Version = "0.15.0"
 
 // =============================================================================
 
@@ -170,7 +170,6 @@ func (krn *Kronk) Chat(ctx context.Context, cr model.ChatRequest) (model.ChatRes
 }
 
 // ChatStreaming provides support to interact with an inference model.
-// It will block until a model becomes available or the context times out.
 func (krn *Kronk) ChatStreaming(ctx context.Context, cr model.ChatRequest) (<-chan model.ChatResponse, error) {
 	f := func(m *model.Model) <-chan model.ChatResponse {
 		return m.ChatStreaming(ctx, cr)
@@ -181,39 +180,6 @@ func (krn *Kronk) ChatStreaming(ctx context.Context, cr model.ChatRequest) (<-ch
 	}
 
 	return streaming(ctx, krn, &krn.closed, f, ef)
-}
-
-// Vision provides support to interact with a vision inference model.
-func (krn *Kronk) Vision(ctx context.Context, vr model.VisionRequest) (model.ChatResponse, error) {
-	f := func(m *model.Model) (model.ChatResponse, error) {
-		return m.Vision(ctx, vr)
-	}
-
-	return nonStreaming(ctx, krn, &krn.closed, f)
-}
-
-// VisionStreaming provides support to interact with a vision language model.
-// It will block until a model becomes available or the context times out.
-func (krn *Kronk) VisionStreaming(ctx context.Context, vr model.VisionRequest) (<-chan model.ChatResponse, error) {
-	f := func(m *model.Model) <-chan model.ChatResponse {
-		return m.VisionStreaming(ctx, vr)
-	}
-
-	ef := func(err error) model.ChatResponse {
-		return model.ChatResponseErr("panic", model.ObjectVision, "", 0, err, model.Usage{})
-	}
-
-	return streaming(ctx, krn, &krn.closed, f, ef)
-}
-
-// Embed provides support to interact with an embedding model. It will block
-// until a model becomes available or the context times out.
-func (krn *Kronk) Embed(ctx context.Context, text string) ([]float32, error) {
-	f := func(m *model.Model) ([]float32, error) {
-		return m.Embed(ctx, text)
-	}
-
-	return nonStreaming(ctx, krn, &krn.closed, f)
 }
 
 // Logger is a function type for logging.
@@ -279,6 +245,39 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, log Logger, w http.Resp
 		lr.Usage.InputTokens, lr.Usage.OutputTokens, contextTokens, percentage, of, lr.Usage.TokensPerSecond)
 
 	return nil
+}
+
+// Vision provides support to interact with a vision inference model.
+func (krn *Kronk) Vision(ctx context.Context, vr model.VisionRequest) (model.ChatResponse, error) {
+	f := func(m *model.Model) (model.ChatResponse, error) {
+		return m.Vision(ctx, vr)
+	}
+
+	return nonStreaming(ctx, krn, &krn.closed, f)
+}
+
+// VisionStreaming provides support to interact with a vision language model.
+// It will block until a model becomes available or the context times out.
+func (krn *Kronk) VisionStreaming(ctx context.Context, vr model.VisionRequest) (<-chan model.ChatResponse, error) {
+	f := func(m *model.Model) <-chan model.ChatResponse {
+		return m.VisionStreaming(ctx, vr)
+	}
+
+	ef := func(err error) model.ChatResponse {
+		return model.ChatResponseErr("panic", model.ObjectVision, "", 0, err, model.Usage{})
+	}
+
+	return streaming(ctx, krn, &krn.closed, f, ef)
+}
+
+// Embed provides support to interact with an embedding model. It will block
+// until a model becomes available or the context times out.
+func (krn *Kronk) Embed(ctx context.Context, text string) ([]float32, error) {
+	f := func(m *model.Model) ([]float32, error) {
+		return m.Embed(ctx, text)
+	}
+
+	return nonStreaming(ctx, krn, &krn.closed, f)
 }
 
 // =============================================================================
