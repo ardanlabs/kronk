@@ -72,9 +72,8 @@ import (
 )
 
 const (
-	// modelURL  = "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q8_0.gguf?download=true"
-	// modelURL = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf?download=true"
-	modelURL  = "https://huggingface.co/unsloth/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-Q8_0.gguf?download=true"
+	modelURL = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf?download=true"
+	// modelURL  = "https://huggingface.co/unsloth/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-Q8_0.gguf?download=true"
 	libPath   = "zarf/llamacpp"
 	modelPath = "zarf/models"
 )
@@ -100,6 +99,8 @@ func run() error {
 
 	// -------------------------------------------------------------------------
 
+	tools := tools()
+
 	var messages []model.ChatMessage
 
 	for {
@@ -112,7 +113,7 @@ func run() error {
 			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 			defer cancel()
 
-			ch, err := performChat(ctx, krn, messages)
+			ch, err := performChat(ctx, krn, messages, tools)
 			if err != nil {
 				return nil, fmt.Errorf("unable to perform chat: %w", err)
 			}
@@ -151,13 +152,17 @@ func newKronk(modelFile string) (*kronk.Kronk, error) {
 
 	const modelInstances = 1
 
-	krn, err := kronk.New(modelInstances, modelFile, "", model.Config{})
+	krn, err := kronk.New(modelInstances, model.Config{
+		ModelFile: modelFile,
+	})
+
 	if err != nil {
 		return nil, fmt.Errorf("unable to create inference model: %w", err)
 	}
 
 	fmt.Println("- contextWindow:", krn.ModelConfig().ContextWindow)
 	fmt.Println("- embeddings   :", krn.ModelConfig().Embeddings)
+	fmt.Println("- isGPT        :", krn.ModelInfo().IsGPT)
 
 	return krn, nil
 }
@@ -180,9 +185,24 @@ func userInput(messages []model.ChatMessage) ([]model.ChatMessage, error) {
 	return messages, nil
 }
 
-func performChat(ctx context.Context, krn *kronk.Kronk, messages []model.ChatMessage) (<-chan model.ChatResponse, error) {
+func tools() []model.Tool {
+	tool := model.NewToolFunction(
+		"get_weather",
+		"Get the weather for a place",
+		model.ToolParameter{
+			Name:        "location",
+			Type:        "string",
+			Description: "The location to get the weather for, e.g. San Francisco, CA",
+		},
+	)
+
+	return []model.Tool{tool}
+}
+
+func performChat(ctx context.Context, krn *kronk.Kronk, messages []model.ChatMessage, tools []model.Tool) (<-chan model.ChatResponse, error) {
 	ch, err := krn.ChatStreaming(ctx, model.ChatRequest{
 		Messages: messages,
+		Tools:    tools,
 		Params: model.Params{
 			MaxTokens: 2048,
 		},
@@ -203,33 +223,51 @@ func modelResponse(krn *kronk.Kronk, messages []model.ChatMessage, ch <-chan mod
 
 loop:
 	for resp := range ch {
-		switch resp.Choice[0].FinishReason {
-		case model.FinishReasonStop:
-			break loop
+		lr = resp
 
+		switch resp.Choice[0].FinishReason {
 		case model.FinishReasonError:
 			return messages, fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
-		}
 
-		if resp.Choice[0].Delta.Reasoning != "" {
-			fmt.Printf("\u001b[91m%s\u001b[0m", resp.Choice[0].Delta.Reasoning)
-			reasoning = true
-			continue
-		}
+		case model.FinishReasonStop:
+			messages = append(messages, model.ChatMessage{
+				Role:    "assistant",
+				Content: resp.Choice[0].Delta.Content,
+			})
+			break loop
 
-		if reasoning {
-			reasoning = false
-			fmt.Print("\n\n")
-		}
+		case model.FinishReasonTool:
+			fmt.Println()
+			fmt.Printf("\u001b[92mModel Asking For Tool Call:\nToolID[%s]: %s(%s)\u001b[0m\n",
+				resp.Choice[0].Delta.ToolCalls[0].ID,
+				resp.Choice[0].Delta.ToolCalls[0].Name,
+				resp.Choice[0].Delta.ToolCalls[0].Arguments,
+			)
 
-		fmt.Printf("%s", resp.Choice[0].Delta.Content)
-		lr = resp
+			messages = append(messages, model.ChatMessage{
+				Role: "tool",
+				Content: fmt.Sprintf("Tool call %s: %s(%v)",
+					resp.Choice[0].Delta.ToolCalls[0].ID,
+					resp.Choice[0].Delta.ToolCalls[0].Name,
+					resp.Choice[0].Delta.ToolCalls[0].Arguments),
+			})
+			break loop
+
+		default:
+			if resp.Choice[0].Delta.Reasoning != "" {
+				fmt.Printf("\u001b[91m%s\u001b[0m", resp.Choice[0].Delta.Reasoning)
+				reasoning = true
+				continue
+			}
+
+			if reasoning {
+				reasoning = false
+				fmt.Println()
+			}
+
+			fmt.Printf("%s", resp.Choice[0].Delta.Content)
+		}
 	}
-
-	messages = append(messages, model.ChatMessage{
-		Role:    "assistant",
-		Content: lr.Choice[0].Delta.Content,
-	})
 
 	// -------------------------------------------------------------------------
 
@@ -238,7 +276,7 @@ loop:
 	percentage := (float64(contextTokens) / float64(contextWindow)) * 100
 	of := float32(contextWindow) / float32(1024)
 
-	fmt.Printf("\n\n\u001b[90mInput: %d  Reasoning: %d  Completion: %d  Output: %d  Window: %d (%.0f%% of %.0fK) TPS: %.2f\u001b[0m\n",
+	fmt.Printf("\n\u001b[90mInput: %d  Reasoning: %d  Completion: %d  Output: %d  Window: %d (%.0f%% of %.0fK) TPS: %.2f\u001b[0m\n",
 		lr.Usage.InputTokens, lr.Usage.ReasoningTokens, lr.Usage.CompletionTokens, lr.Usage.OutputTokens, contextTokens, percentage, of, lr.Usage.TokensPerSecond)
 
 	return messages, nil
@@ -254,19 +292,28 @@ $ go run cmd/examples/example13/step1/*.go
 Output:
 
 - check llamacpp installation: ✓
-  - latest version : b7157
-  - current version: b7157
-- check "gpt-oss-20b-Q8_0" installation: ✓
-- contextWindow: 131072
+  - latest version : b7192
+  - current version: b7192
+- check "Qwen3-8B-Q8_0" installation: ✓
+- contextWindow: 40960
 - embeddings   : false
+- isGPT        : false
 
 USER> hello model
 
-MODEL> We have a conversation. The user says "hello model". The system instructions: The user is speaking as a student, wants to solve a math problem. The user hasn't asked a question yet. They just said "hello model". We need to respond appropriately. According to the instruction, we should ask the user what problem they need help with. The user hasn't asked a math question yet. We should respond politely, asking what problem they need help with.
+MODEL> Okay, the user said "hello model". I need to respond appropriately. Since there's no specific query here, just a greeting, I should acknowledge their greeting and offer assistance. Let me check if any tools are needed. The available tool is get_weather, but the user didn't ask for weather. So, no function call required. Just a friendly reply.
 
-Hello! How can I help you with your math problem today?
+Hello! How can I assist you today? If you have any questions or need information, feel free to ask!
+Input: 141  Reasoning: 74  Completion: 24  Output: 98  Window: 165 (0% of 40K) TPS: 45.40
 
-Input: 9  Reasoning: 92  Completion: 14  Output: 106  Window: 23 (0% of 128K) TPS: 92.59
+USER> what is the weather in NYC
+
+MODEL> Okay, the user is asking for the weather in NYC. Let me check the tools provided. There's a function called get_weather that takes a location parameter. The location needs to be a string like "San Francisco, CA". The user mentioned NYC, which is New York City. I should format the location as "New York City, NY" to match the expected input. I'll call the get_weather function with that location. No other tools are available, so this is the only function needed. Let me make sure the JSON is correctly structured with the name and arguments.
+
+Model Asking For Tool Call:
+ToolID[8bd768c8-2b23-4c84-8baa-bcf8dcbc4f43]: get_weather(map[location:New York City, NY])
+
+Input: 181  Reasoning: 117  Completion: 23  Output: 140  Window: 204 (0% of 40K) TPS: 46.36
 
 USER>
 ```
