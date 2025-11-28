@@ -113,8 +113,8 @@ type Tool struct {
 	Function ToolFunction `json:"function"`
 }
 
-// NewFunctionTool initialized a function tool for the model.
-func NewFunctionTool(name string, description string, params ...ToolParameter) Tool {
+// NewToolFunction initialized a function tool for the model.
+func NewToolFunction(name string, description string, params ...ToolParameter) Tool {
 	tool := Tool{
 		Type: "function",
 		Function: ToolFunction{
@@ -155,12 +155,18 @@ type VisionRequest struct {
 
 // =============================================================================
 
+type ResponseToolCall struct {
+	ID        string         `json:"id"`
+	Name      string         `json:"name"`
+	Arguments map[string]any `json:"arguments,omitempty"`
+}
+
 // ResponseMessage represents a single message in a response.
 type ResponseMessage struct {
-	Role      string `json:"role"`
-	Content   string `json:"content"`
-	Reasoning string `json:"reasoning"`
-	Tooling   string `json:"tooling"`
+	Role      string             `json:"role"`
+	Content   string             `json:"content"`
+	Reasoning string             `json:"reasoning"`
+	ToolCalls []ResponseToolCall `json:"tool_calls,omitempty"`
 }
 
 // Choice represents a single choice in a response.
@@ -226,9 +232,9 @@ func forReasoning(content string, reasoning bool) string {
 	return ""
 }
 
-func chatResponseFinal(id string, object string, model string, index int, content string, reasoning string, tooling string, u Usage) ChatResponse {
+func chatResponseFinal(id string, object string, model string, index int, content string, reasoning string, respToolCall ResponseToolCall, u Usage) ChatResponse {
 	finishReason := FinishReasonStop
-	if tooling != "" {
+	if respToolCall.ID != "" {
 		finishReason = FinishReasonTool
 	}
 
@@ -244,7 +250,7 @@ func chatResponseFinal(id string, object string, model string, index int, conten
 					Role:      RoleAssistant,
 					Content:   content,
 					Reasoning: reasoning,
-					Tooling:   tooling,
+					ToolCalls: []ResponseToolCall{respToolCall},
 				},
 				FinishReason: finishReason,
 			},

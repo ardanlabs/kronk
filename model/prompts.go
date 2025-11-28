@@ -15,6 +15,10 @@ import (
 )
 
 func (m *Model) applyChatRequestJinjaTemplate(cr ChatRequest, addAssistantPrompt bool) (string, error) {
+	// If the call to process the jinja template fails, we fall back to the
+	// default template if we are working with a GPT model. We currently have
+	// a bug processing GPT based jinja templates.
+
 	t, err := m.applyJinjaTemplate(cr.Messages, cr.Tools, addAssistantPrompt)
 	if err != nil {
 		if m.modelInfo.IsGPT {
@@ -28,6 +32,8 @@ func (m *Model) applyChatRequestJinjaTemplate(cr ChatRequest, addAssistantPrompt
 }
 
 func (m *Model) applyVisionRequestJinjaTemplate(vr VisionRequest, addAssistantPrompt bool) (string, error) {
+	// If we don't add the mtmd marker, the model will not be able to understand
+	// the vision request.
 	messages := []ChatMessage{
 		vr.Message,
 		{
