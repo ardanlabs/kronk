@@ -23,7 +23,7 @@ const (
 // FinishReasons represent the different reasons a response can be finished.
 const (
 	FinishReasonStop  = "stop"
-	FinishReasonTool  = "tool"
+	FinishReasonTool  = "tool_calls"
 	FinishReasonError = "error"
 )
 
