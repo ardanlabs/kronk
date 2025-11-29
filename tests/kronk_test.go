@@ -95,14 +95,6 @@ func TestMain(m *testing.M) {
 }
 
 func installer() {
-	if os.Getenv("MODEL_INSTANCES") != "" {
-		var err error
-		modelInstances, err = strconv.Atoi(os.Getenv("MODEL_INSTANCES"))
-		if err != nil {
-			modelInstances = 1
-		}
-	}
-
 	if os.Getenv("GOROUTINES") != "" {
 		var err error
 		goroutines, err = strconv.Atoi(os.Getenv("GOROUTINES"))
