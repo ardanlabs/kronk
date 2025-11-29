@@ -17,7 +17,7 @@ import (
 )
 
 // Version contains the current version of the kronk package.
-const Version = "0.22.0"
+const Version = "0.23.0"
 
 // =============================================================================
 
@@ -68,11 +68,12 @@ func Init(libPath string, logLevel LogLevel) error {
 
 // Kronk provides a concurrently safe api for using llamacpp to access models.
 type Kronk struct {
-	cfg       model.Config
-	models    chan *model.Model
-	wg        sync.WaitGroup
-	closed    uint32
-	modelInfo model.ModelInfo
+	cfg           model.Config
+	models        chan *model.Model
+	activeStreams atomic.Int32
+	shutdown      sync.Mutex
+	shutdownFlag  bool
+	modelInfo     model.ModelInfo
 }
 
 // New provides the ability to use models in a concurrently safe way.
@@ -132,14 +133,29 @@ func (krn *Kronk) ModelInfo() model.ModelInfo {
 	return krn.modelInfo
 }
 
+// ActiveStreams returns the number of active streams.
+func (krn *Kronk) ActiveStreams() int {
+	return int(krn.activeStreams.Load())
+}
+
 // Unload will close down all loaded models. You should call this only when you
 // are completely done using the group.
 func (krn *Kronk) Unload() error {
-	if !atomic.CompareAndSwapUint32(&krn.closed, 0, 1) {
-		return fmt.Errorf("already unloaded")
-	}
+	krn.shutdown.Lock()
+	{
+		if krn.shutdownFlag {
+			krn.shutdown.Unlock()
+			return fmt.Errorf("already unloaded")
+		}
 
-	krn.wg.Wait()
+		if n := krn.activeStreams.Load(); n > 0 {
+			krn.shutdown.Unlock()
+			return fmt.Errorf("cannot unload: %d active streams", n)
+		}
+
+		krn.shutdownFlag = true
+	}
+	krn.shutdown.Unlock()
 
 	var sb strings.Builder
 
@@ -167,7 +183,7 @@ func (krn *Kronk) Chat(ctx context.Context, cr model.ChatRequest) (model.ChatRes
 		return m.Chat(ctx, cr)
 	}
 
-	return nonStreaming(ctx, krn, &krn.closed, f)
+	return nonStreaming(ctx, krn, f)
 }
 
 // ChatStreaming provides support to interact with an inference model.
@@ -184,7 +200,7 @@ func (krn *Kronk) ChatStreaming(ctx context.Context, cr model.ChatRequest) (<-ch
 		return model.ChatResponseErr("panic", model.ObjectChat, "", 0, err, model.Usage{})
 	}
 
-	return streaming(ctx, krn, &krn.closed, f, ef)
+	return streaming(ctx, krn, f, ef)
 }
 
 // Logger is a function type for logging.
@@ -266,7 +282,7 @@ func (krn *Kronk) Vision(ctx context.Context, vr model.VisionRequest) (model.Cha
 		return m.Vision(ctx, vr)
 	}
 
-	return nonStreaming(ctx, krn, &krn.closed, f)
+	return nonStreaming(ctx, krn, f)
 }
 
 // VisionStreaming provides support to interact with a vision language model.
@@ -283,7 +299,7 @@ func (krn *Kronk) VisionStreaming(ctx context.Context, vr model.VisionRequest) (
 		return model.ChatResponseErr("panic", model.ObjectVision, "", 0, err, model.Usage{})
 	}
 
-	return streaming(ctx, krn, &krn.closed, f, ef)
+	return streaming(ctx, krn, f, ef)
 }
 
 // Embed provides support to interact with an embedding model.
@@ -296,83 +312,54 @@ func (krn *Kronk) Embed(ctx context.Context, text string) ([]float32, error) {
 		return m.Embed(ctx, text)
 	}
 
-	return nonStreaming(ctx, krn, &krn.closed, f)
+	return nonStreaming(ctx, krn, f)
 }
 
 // =============================================================================
 
 type nonStreamingFunc[T any] func(llama *model.Model) (T, error)
 
-func nonStreaming[T any](ctx context.Context, krn *Kronk, closed *uint32, f nonStreamingFunc[T]) (T, error) {
+func nonStreaming[T any](ctx context.Context, krn *Kronk, f nonStreamingFunc[T]) (T, error) {
 	var zero T
 
-	if atomic.LoadUint32(closed) == 1 {
-		return zero, fmt.Errorf("Kronk has been unloaded")
+	llama, err := krn.acquireModel(ctx)
+	if err != nil {
+		return zero, err
 	}
+	defer krn.releaseModel(llama)
 
-	select {
-	case <-ctx.Done():
-		return zero, ctx.Err()
-
-	case llama, ok := <-krn.models:
-		if !ok {
-			return zero, fmt.Errorf("Kronk has been unloaded")
-		}
-
-		krn.wg.Add(1)
-
-		defer func() {
-			krn.models <- llama
-			krn.wg.Done()
-		}()
-
-		return f(llama)
-	}
+	return f(llama)
 }
 
 type streamingFunc[T any] func(llama *model.Model) <-chan T
 type errorFunc[T any] func(err error) T
 
-func streaming[T any](ctx context.Context, krn *Kronk, closed *uint32, f streamingFunc[T], ef errorFunc[T]) (<-chan T, error) {
-	var zero chan T
-
-	if atomic.LoadUint32(closed) == 1 {
-		return zero, fmt.Errorf("Kronk has been unloaded")
+func streaming[T any](ctx context.Context, krn *Kronk, f streamingFunc[T], ef errorFunc[T]) (<-chan T, error) {
+	llama, err := krn.acquireModel(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	ch := make(chan T)
 
-	select {
-	case <-ctx.Done():
-		return zero, ctx.Err()
-
-	case llama, ok := <-krn.models:
-		if !ok {
-			return zero, fmt.Errorf("Kronk has been unloaded")
-		}
-
-		krn.wg.Add(1)
-
-		go func() {
-			defer func() {
-				if rec := recover(); rec != nil {
-					sendError(ctx, ch, ef, rec)
-				}
-
-				close(ch)
-				krn.models <- llama
-				krn.wg.Done()
-			}()
-
-			lch := f(llama)
-
-			for msg := range lch {
-				if err := sendMessage(ctx, ch, msg); err != nil {
-					break
-				}
+	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				sendError(ctx, ch, ef, rec)
 			}
+
+			close(ch)
+			krn.releaseModel(llama)
 		}()
-	}
+
+		lch := f(llama)
+
+		for msg := range lch {
+			if err := sendMessage(ctx, ch, msg); err != nil {
+				break
+			}
+		}
+	}()
 
 	return ch, nil
 }
@@ -403,4 +390,36 @@ func sendError[T any](ctx context.Context, ch chan T, ef errorFunc[T], rec any) 
 	case ch <- ef(fmt.Errorf("%v", rec)):
 	default:
 	}
+}
+
+// =============================================================================
+
+func (krn *Kronk) acquireModel(ctx context.Context) (*model.Model, error) {
+	krn.shutdown.Lock()
+	{
+		if krn.shutdownFlag {
+			krn.shutdown.Unlock()
+			return nil, fmt.Errorf("Kronk has been unloaded")
+		}
+		krn.activeStreams.Add(1)
+	}
+	krn.shutdown.Unlock()
+
+	select {
+	case <-ctx.Done():
+		krn.activeStreams.Add(-1)
+		return nil, ctx.Err()
+
+	case llama, ok := <-krn.models:
+		if !ok {
+			krn.activeStreams.Add(-1)
+			return nil, fmt.Errorf("Kronk has been unloaded")
+		}
+		return llama, nil
+	}
+}
+
+func (krn *Kronk) releaseModel(llama *model.Model) {
+	krn.models <- llama
+	krn.activeStreams.Add(-1)
 }

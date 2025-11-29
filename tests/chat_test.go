@@ -94,6 +94,8 @@ func testChat(t *testing.T, modelFile string, tooling bool) {
 
 	krn, cr := initChatTest(t, modelFile, tooling)
 	defer func() {
+		t.Logf("active streams: %d", krn.ActiveStreams())
+		t.Log("unload Kronk")
 		if err := krn.Unload(); err != nil {
 			t.Errorf("failed to unload model: %v", err)
 		}
@@ -117,12 +119,14 @@ func testChat(t *testing.T, modelFile string, tooling bool) {
 
 		if tooling {
 			if err := testChatResponse(resp, krn.ModelInfo().Name, model.ObjectChat, "London", "get_weather", "location"); err != nil {
+				t.Logf("%#v", resp)
 				return err
 			}
 			return nil
 		}
 
 		if err := testChatResponse(resp, krn.ModelInfo().Name, model.ObjectChat, "Gorilla", "", ""); err != nil {
+			t.Logf("%#v", resp)
 			return err
 		}
 
@@ -146,6 +150,8 @@ func testChatStreaming(t *testing.T, modelFile string, tooling bool) {
 
 	krn, cr := initChatTest(t, modelFile, tooling)
 	defer func() {
+		t.Logf("active streams: %d", krn.ActiveStreams())
+		t.Log("unload Kronk")
 		if err := krn.Unload(); err != nil {
 			t.Errorf("failed to unload model: %v", err)
 		}
@@ -172,18 +178,21 @@ func testChatStreaming(t *testing.T, modelFile string, tooling bool) {
 			lastResp = resp
 
 			if err := testChatBasics(resp, krn.ModelInfo().Name, model.ObjectChat, true); err != nil {
+				t.Logf("%#v", resp)
 				return err
 			}
 		}
 
 		if tooling {
 			if err := testChatResponse(lastResp, krn.ModelInfo().Name, model.ObjectChat, "London", "get_weather", "location"); err != nil {
+				t.Logf("%#v", lastResp)
 				return err
 			}
 			return nil
 		}
 
 		if err := testChatResponse(lastResp, krn.ModelInfo().Name, model.ObjectChat, "Gorilla", "", ""); err != nil {
+			t.Logf("%#v", lastResp)
 			return err
 		}
 

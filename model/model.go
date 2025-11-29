@@ -215,17 +215,15 @@ loop:
 		elapsedSeconds := time.Since(now).Seconds()
 		tokensPerSecond = float64(outputTokens) / elapsedSeconds
 
+		// ---------------------------------------------------------------------
+
 		// We want to return the tool calling in a single response to make
 		// it easier for developers to process. We expect the model to stop
 		// processing tokens once the tool call is complete.
 		if toolFlag > 0 {
-			select {
-			case <-ctx.Done():
+			if err := m.storeFinalToolContent(ctx, &finalTooling, content); err != nil {
 				break loop
-			default:
 			}
-
-			finalTooling.WriteString(content)
 
 			batch = m.nextBatch(token)
 			completionTokens += int(batch.NTokens)
@@ -235,7 +233,8 @@ loop:
 		}
 
 		// ---------------------------------------------------------------------
-		// We have reasoning or completion content to return to the client.
+		// We have reasoning or completion content to return to the client and
+		// store for the final response.
 
 		err = m.sendDeltaResponse(ctx, ch, id, object, index, content, reasonFlag,
 			Usage{
@@ -251,15 +250,7 @@ loop:
 			return
 		}
 
-		// ---------------------------------------------------------------------
-		// Store the content for the final response.
-
-		switch {
-		case reasonFlag > 0:
-			finalReasoning.WriteString(content)
-		default:
-			finalContent.WriteString(content)
-		}
+		m.storeFinalContent(&finalReasoning, &finalContent, content, reasonFlag)
 
 		// ---------------------------------------------------------------------
 		// Get the next batch to process the next piece of content.
@@ -289,7 +280,7 @@ loop:
 
 	// Send the final response that contains eveything we have sent plus
 	// the final usage numbers.
-	m.sendFinalResponse(ctx, ch, id, object, index, finalContent.String(), finalReasoning.String(), respToolCall,
+	m.sendFinalResponse(ctx, ch, id, object, index, &finalContent, &finalReasoning, respToolCall,
 		Usage{
 			InputTokens:      inputTokens,
 			ReasoningTokens:  reasonTokens,
@@ -475,6 +466,27 @@ func (m *Model) isUnncessaryCRLF(reasoning int, tooling int, completion int, con
 	return false
 }
 
+func (m *Model) storeFinalContent(finalReasoning *strings.Builder, finalContent *strings.Builder, content string, reasonFlag int) {
+	switch {
+	case reasonFlag > 0:
+		finalReasoning.WriteString(content)
+	default:
+		finalContent.WriteString(content)
+	}
+}
+
+func (m *Model) storeFinalToolContent(ctx context.Context, finalTooling *strings.Builder, content string) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	finalTooling.WriteString(content)
+
+	return nil
+}
+
 func (m *Model) sendDeltaResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, index int, content string, reasonFlag int, usage Usage) error {
 	select {
 	case <-ctx.Done():
@@ -491,7 +503,7 @@ func (m *Model) sendDeltaResponse(ctx context.Context, ch chan<- ChatResponse, i
 	return nil
 }
 
-func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, index int, finalContent string, finalReasoning string, respToolCall ResponseToolCall, usage Usage) {
+func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, index int, finalContent *strings.Builder, finalReasoning *strings.Builder, respToolCall ResponseToolCall, usage Usage) {
 	select {
 	case <-ctx.Done():
 		select {
@@ -500,8 +512,8 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 		}
 
 	case ch <- chatResponseFinal(id, object, m.modelInfo.Name, index,
-		finalContent,
-		finalReasoning,
+		finalContent.String(),
+		finalReasoning.String(),
 		respToolCall,
 		usage):
 	}

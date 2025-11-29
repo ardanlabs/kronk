@@ -34,6 +34,8 @@ func testEmbedding(t *testing.T, modelFile string) {
 		t.Fatalf("unable to create inference model: %v", err)
 	}
 	defer func() {
+		t.Logf("active streams: %d", krn.ActiveStreams())
+		t.Log("unload Kronk")
 		if err := krn.Unload(); err != nil {
 			t.Errorf("failed to unload model: %v", err)
 		}

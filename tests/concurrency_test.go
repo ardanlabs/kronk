@@ -13,6 +13,8 @@ import (
 )
 
 func Test_ConTest1(t *testing.T) {
+	// This test cancels the context before the channel loop starts.
+
 	ctx, cancel := context.WithTimeout(context.Background(), testDuration)
 	defer cancel()
 
@@ -25,7 +27,13 @@ func Test_ConTest1(t *testing.T) {
 	}()
 
 	krn, cr := initChatTest(t, modelThinkToolChatFile, false)
-	defer krn.Unload()
+	defer func() {
+		t.Logf("active streams: %d", krn.ActiveStreams())
+		t.Log("unload Kronk")
+		if err := krn.Unload(); err != nil {
+			t.Errorf("should not receive an error unloading Kronk: %s", err)
+		}
+	}()
 
 	ch, err := krn.ChatStreaming(ctx, cr)
 	if err != nil {
@@ -34,6 +42,8 @@ func Test_ConTest1(t *testing.T) {
 
 	t.Log("start processing stream")
 	defer t.Log("end processing stream")
+
+	t.Logf("active streams: %d", krn.ActiveStreams())
 
 	t.Log("cancel context before channel loop")
 	cancel()
@@ -55,6 +65,8 @@ func Test_ConTest1(t *testing.T) {
 }
 
 func Test_ConTest2(t *testing.T) {
+	// This test cancels the context inside the channel loop.
+
 	ctx, cancel := context.WithTimeout(context.Background(), testDuration)
 	defer cancel()
 
@@ -67,7 +79,13 @@ func Test_ConTest2(t *testing.T) {
 	}()
 
 	krn, cr := initChatTest(t, modelThinkToolChatFile, false)
-	defer krn.Unload()
+	defer func() {
+		t.Logf("active streams: %d", krn.ActiveStreams())
+		t.Log("unload Kronk")
+		if err := krn.Unload(); err != nil {
+			t.Errorf("should not receive an error unloading Kronk: %s", err)
+		}
+	}()
 
 	ch, err := krn.ChatStreaming(ctx, cr)
 	if err != nil {
@@ -76,6 +94,8 @@ func Test_ConTest2(t *testing.T) {
 
 	t.Log("start processing stream")
 	defer t.Log("end processing stream")
+
+	t.Logf("active streams: %d", krn.ActiveStreams())
 
 	var lastResp model.ChatResponse
 	var index int
@@ -104,6 +124,9 @@ func Test_ConTest2(t *testing.T) {
 }
 
 func Test_ConTest3(t *testing.T) {
+	// This test breaks out the channel loop before the context is canceled.
+	// Then the context is cancelled and checks the system shuts down properly.
+
 	ctx, cancel := context.WithTimeout(context.Background(), testDuration)
 	defer cancel()
 
@@ -116,7 +139,13 @@ func Test_ConTest3(t *testing.T) {
 	}()
 
 	krn, cr := initChatTest(t, modelThinkToolChatFile, false)
-	defer krn.Unload()
+	defer func() {
+		t.Logf("active streams: %d", krn.ActiveStreams())
+		t.Log("unload Kronk")
+		if err := krn.Unload(); err != nil {
+			t.Errorf("should not receive an error unloading Kronk: %s", err)
+		}
+	}()
 
 	ch, err := krn.ChatStreaming(ctx, cr)
 	if err != nil {
@@ -126,12 +155,20 @@ func Test_ConTest3(t *testing.T) {
 	t.Log("start processing stream")
 	defer t.Log("end processing stream")
 
+	t.Logf("active streams: %d", krn.ActiveStreams())
+
 	var index int
 	for range ch {
 		index++
 		if index == 5 {
 			break
 		}
+	}
+
+	t.Log("attempt to unload Knonk, should get error")
+
+	if err := krn.Unload(); err == nil {
+		t.Errorf("should receive an error unloading Kronk: %s", err)
 	}
 
 	t.Log("cancel context after breaking channel loop")

@@ -55,6 +55,8 @@ func testVision(t *testing.T, modelFile string, projFile string, imageFile strin
 
 	krn, vr := initVisionTest(t, modelFile, projFile, imageFile)
 	defer func() {
+		t.Logf("active streams: %d", krn.ActiveStreams())
+		t.Log("unload Kronk")
 		if err := krn.Unload(); err != nil {
 			t.Errorf("failed to unload model: %v", err)
 		}
@@ -77,6 +79,7 @@ func testVision(t *testing.T, modelFile string, projFile string, imageFile strin
 		}
 
 		if err := testVisionResponse(resp, krn.ModelInfo().Name, "vision", "giraffes"); err != nil {
+			t.Logf("%#v", resp)
 			return err
 		}
 
@@ -100,6 +103,8 @@ func testVisionStreaming(t *testing.T, modelFile string, projFile string, imageF
 
 	krn, vr := initVisionTest(t, modelFile, projFile, imageFile)
 	defer func() {
+		t.Logf("active streams: %d", krn.ActiveStreams())
+		t.Log("unload Kronk")
 		if err := krn.Unload(); err != nil {
 			t.Errorf("failed to unload model: %v", err)
 		}
@@ -124,12 +129,15 @@ func testVisionStreaming(t *testing.T, modelFile string, projFile string, imageF
 		var lastResp model.ChatResponse
 		for resp := range ch {
 			lastResp = resp
+
 			if err := testChatBasics(resp, krn.ModelInfo().Name, model.ObjectVision, false); err != nil {
+				t.Logf("%#v", resp)
 				return err
 			}
 		}
 
 		if err := testVisionResponse(lastResp, krn.ModelInfo().Name, model.ObjectVision, "giraffes"); err != nil {
+			t.Logf("%#v", lastResp)
 			return err
 		}
 
