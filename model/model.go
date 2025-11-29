@@ -225,12 +225,16 @@ loop:
 
 		select {
 		case <-ctx.Done():
-			ch <- ChatResponseErr(id, object, m.modelInfo.Name, index, ctx.Err(), Usage{
+			select {
+			case ch <- ChatResponseErr(id, object, m.modelInfo.Name, index, ctx.Err(), Usage{
 				InputTokens:      inputTokens,
 				ReasoningTokens:  reasonTokens,
 				CompletionTokens: completionTokens,
 				OutputTokens:     outputTokens,
-				TokensPerSecond:  tokensPerSecond})
+				TokensPerSecond:  tokensPerSecond}):
+			default:
+			}
+
 			return
 
 		case ch <- chatResponseDelta(id, object, m.modelInfo.Name, index, content, reasonFlag > 0, Usage{
@@ -279,7 +283,19 @@ loop:
 
 	// Send the final response that contains eveything we have sent plus
 	// the final usage numbers.
-	ch <- chatResponseFinal(
+	select {
+	case <-ctx.Done():
+		select {
+		case ch <- ChatResponseErr(id, object, m.modelInfo.Name, index, ctx.Err(), Usage{
+			InputTokens:      inputTokens,
+			ReasoningTokens:  reasonTokens,
+			CompletionTokens: completionTokens,
+			OutputTokens:     outputTokens,
+			TokensPerSecond:  tokensPerSecond}):
+		default:
+		}
+
+	case ch <- chatResponseFinal(
 		id,
 		object,
 		m.modelInfo.Name,
@@ -292,8 +308,8 @@ loop:
 			ReasoningTokens:  reasonTokens,
 			CompletionTokens: completionTokens,
 			OutputTokens:     reasonTokens + completionTokens,
-			TokensPerSecond:  tokensPerSecond},
-	)
+			TokensPerSecond:  tokensPerSecond}):
+	}
 }
 
 func (m *Model) startProcessing(lctx llama.Context, object string, prompt string, params Params) (llama.Sampler, llama.Batch, int, int) {

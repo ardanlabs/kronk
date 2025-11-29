@@ -16,7 +16,7 @@ import (
 )
 
 // Version contains the current version of the kronk package.
-const Version = "0.20.0"
+const Version = "0.21.0"
 
 // =============================================================================
 
@@ -323,7 +323,11 @@ func streaming[T any](ctx context.Context, krn *Kronk, closed *uint32, f streami
 		go func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					ch <- ef(fmt.Errorf("%v", rec))
+					select {
+					case <-ctx.Done():
+					case ch <- ef(fmt.Errorf("%v", rec)):
+					default:
+					}
 				}
 
 				close(ch)
@@ -333,7 +337,11 @@ func streaming[T any](ctx context.Context, krn *Kronk, closed *uint32, f streami
 
 			lch := f(llama)
 			for msg := range lch {
-				ch <- msg
+				select {
+				case <-ctx.Done():
+					return
+				case ch <- msg:
+				}
 			}
 		}()
 	}
