@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"runtime"
 	"testing"
 	"time"
 
@@ -15,38 +14,18 @@ import (
 )
 
 func Test_ThinkChat(t *testing.T) {
-	// Run on Linux only in GitHub Actions.
-	if os.Getenv("GITHUB_ACTIONS") == "true" && runtime.GOOS == "darwin" {
-		t.Skip("Skipping test in GitHub Actions")
-	}
-
 	testChat(t, krnThinkToolChat, false)
 }
 
 func Test_ThinkStreamingChat(t *testing.T) {
-	// Run on Linux only in GitHub Actions.
-	if os.Getenv("GITHUB_ACTIONS") == "true" && runtime.GOOS == "darwin" {
-		t.Skip("Skipping test in GitHub Actions")
-	}
-
 	testChatStreaming(t, krnThinkToolChat, false)
 }
 
 func Test_ToolChat(t *testing.T) {
-	// Run on Linux only in GitHub Actions.
-	if os.Getenv("GITHUB_ACTIONS") == "true" && runtime.GOOS == "darwin" {
-		t.Skip("Skipping test in GitHub Actions")
-	}
-
 	testChat(t, krnThinkToolChat, true)
 }
 
 func Test_ToolStreamingChat(t *testing.T) {
-	// Run on Linux only in GitHub Actions.
-	if os.Getenv("GITHUB_ACTIONS") == "true" && runtime.GOOS == "darwin" {
-		t.Skip("Skipping test in GitHub Actions")
-	}
-
 	testChatStreaming(t, krnThinkToolChat, true)
 }
 
