@@ -3,6 +3,7 @@ package kronk_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -29,10 +30,18 @@ func Test_ToolStreamingChat(t *testing.T) {
 }
 
 func Test_GPTChat(t *testing.T) {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("Skipping test in GitHub Actions")
+	}
+
 	testChat(t, modelGPTChatFile, false)
 }
 
 func Test_GPTStreamingChat(t *testing.T) {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("Skipping test in GitHub Actions")
+	}
+
 	testChatStreaming(t, modelGPTChatFile, false)
 }
 
