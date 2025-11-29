@@ -16,23 +16,13 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func Test_SimpleChat(t *testing.T) {
-	// Run on all platforms.
-	testChat(t, modelSimpleChatFile, false)
-}
-
-func Test_SimpleStreamingChat(t *testing.T) {
-	// Run on all platforms.
-	testChatStreaming(t, modelSimpleChatFile, false)
-}
-
 func Test_ThinkChat(t *testing.T) {
 	// Run on Linux only in GitHub Actions.
 	if os.Getenv("GITHUB_ACTIONS") == "true" && runtime.GOOS == "darwin" {
 		t.Skip("Skipping test in GitHub Actions")
 	}
 
-	testChat(t, modelThinkChatFile, true)
+	testChat(t, modelThinkToolChatFile, false)
 }
 
 func Test_ThinkStreamingChat(t *testing.T) {
@@ -41,7 +31,25 @@ func Test_ThinkStreamingChat(t *testing.T) {
 		t.Skip("Skipping test in GitHub Actions")
 	}
 
-	testChatStreaming(t, modelThinkChatFile, true)
+	testChatStreaming(t, modelThinkToolChatFile, false)
+}
+
+func Test_ToolChat(t *testing.T) {
+	// Run on Linux only in GitHub Actions.
+	if os.Getenv("GITHUB_ACTIONS") == "true" && runtime.GOOS == "darwin" {
+		t.Skip("Skipping test in GitHub Actions")
+	}
+
+	testChat(t, modelThinkToolChatFile, true)
+}
+
+func Test_ToolStreamingChat(t *testing.T) {
+	// Run on Linux only in GitHub Actions.
+	if os.Getenv("GITHUB_ACTIONS") == "true" && runtime.GOOS == "darwin" {
+		t.Skip("Skipping test in GitHub Actions")
+	}
+
+	testChatStreaming(t, modelThinkToolChatFile, true)
 }
 
 func Test_GPTChat(t *testing.T) {
@@ -50,7 +58,7 @@ func Test_GPTChat(t *testing.T) {
 		t.Skip("Skipping test in GitHub Actions")
 	}
 
-	testChat(t, modelGPTChatFile, true)
+	testChat(t, modelGPTChatFile, false)
 }
 
 func Test_GPTStreamingChat(t *testing.T) {
@@ -59,12 +67,12 @@ func Test_GPTStreamingChat(t *testing.T) {
 		t.Skip("Skipping test in GitHub Actions")
 	}
 
-	testChatStreaming(t, modelGPTChatFile, true)
+	testChatStreaming(t, modelGPTChatFile, false)
 }
 
 // =============================================================================
 
-func initChatTest(t *testing.T, modelFile string) (*kronk.Kronk, model.ChatRequest) {
+func initChatTest(t *testing.T, modelFile string, tooling bool) (*kronk.Kronk, model.ChatRequest) {
 	krn, err := kronk.New(modelInstances, model.Config{
 		ModelFile: modelFile,
 	})
@@ -73,12 +81,29 @@ func initChatTest(t *testing.T, modelFile string) (*kronk.Kronk, model.ChatReque
 		t.Fatalf("unable to load model: %v", err)
 	}
 
+	var tools []model.Tool
 	question := "Echo back the word: Gorilla"
+
+	if tooling {
+		question = "What is the weather like in London, England?"
+		tools = []model.Tool{
+			model.NewToolFunction(
+				"get_weather",
+				"Get the weather for a place",
+				model.ToolParameter{
+					Name:        "location",
+					Type:        "string",
+					Description: "The location to get the weather for, e.g. San Francisco, CA",
+				},
+			),
+		}
+	}
 
 	cr := model.ChatRequest{
 		Messages: []model.ChatMessage{
 			{Role: "user", Content: question},
 		},
+		Tools: tools,
 		Params: model.Params{
 			MaxTokens: 4096,
 		},
@@ -87,12 +112,12 @@ func initChatTest(t *testing.T, modelFile string) (*kronk.Kronk, model.ChatReque
 	return krn, cr
 }
 
-func testChat(t *testing.T, modelFile string, reasoning bool) {
+func testChat(t *testing.T, modelFile string, tooling bool) {
 	if runInParallel {
 		t.Parallel()
 	}
 
-	krn, req := initChatTest(t, modelFile)
+	krn, req := initChatTest(t, modelFile, tooling)
 	defer krn.Unload()
 
 	f := func() error {
@@ -112,19 +137,15 @@ func testChat(t *testing.T, modelFile string, reasoning bool) {
 			return fmt.Errorf("chat streaming: %w", err)
 		}
 
-		if err := testChatResponse(resp, modelFile, "chat", reasoning); err != nil {
-			return err
-		}
-
-		find := "Gorilla"
-		if !strings.Contains(resp.Choice[0].Delta.Content, find) {
-			return fmt.Errorf("expected %q, got %q", find, resp.Choice[0].Delta.Content)
-		}
-
-		if reasoning {
-			if !strings.Contains(resp.Choice[0].Delta.Reasoning, find) {
-				return fmt.Errorf("expected %q, got %q", find, resp.Choice[0].Delta.Content)
+		if tooling {
+			if err := testChatResponse(resp, modelFile, model.ObjectChat, "London", "get_weather", "location"); err != nil {
+				return err
 			}
+			return nil
+		}
+
+		if err := testChatResponse(resp, modelFile, model.ObjectChat, "Gorilla", "", ""); err != nil {
+			return err
 		}
 
 		return nil
@@ -140,12 +161,12 @@ func testChat(t *testing.T, modelFile string, reasoning bool) {
 	}
 }
 
-func testChatStreaming(t *testing.T, modelFile string, reasoning bool) {
+func testChatStreaming(t *testing.T, modelFile string, tooling bool) {
 	if runInParallel {
 		t.Parallel()
 	}
 
-	krn, cr := initChatTest(t, modelFile)
+	krn, cr := initChatTest(t, modelFile, tooling)
 	defer krn.Unload()
 
 	f := func() error {
@@ -167,26 +188,22 @@ func testChatStreaming(t *testing.T, modelFile string, reasoning bool) {
 
 		var lastResp model.ChatResponse
 		for resp := range ch {
-			if err := testChatResponse(resp, modelFile, "chat", reasoning); err != nil {
+			lastResp = resp
+
+			if err := testChatBasics(resp, modelFile, model.ObjectChat, true); err != nil {
 				return err
 			}
-
-			lastResp = resp
 		}
 
-		if err := testChatResponse(lastResp, modelFile, "chat", reasoning); err != nil {
-			return err
-		}
-
-		find := "Gorilla"
-		if !strings.Contains(lastResp.Choice[0].Delta.Content, find) {
-			return fmt.Errorf("expected %q, got %q", find, lastResp.Choice[0].Delta.Content)
-		}
-
-		if reasoning {
-			if !strings.Contains(lastResp.Choice[0].Delta.Reasoning, find) {
-				return fmt.Errorf("expected %q, got %q", find, lastResp.Choice[0].Delta.Content)
+		if tooling {
+			if err := testChatResponse(lastResp, modelFile, model.ObjectChat, "London", "get_weather", "location"); err != nil {
+				return err
 			}
+			return nil
+		}
+
+		if err := testChatResponse(lastResp, modelFile, model.ObjectChat, "Gorilla", "", ""); err != nil {
+			return err
 		}
 
 		return nil

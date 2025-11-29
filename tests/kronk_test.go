@@ -15,12 +15,11 @@ import (
 )
 
 var (
-	modelSimpleChatFile   = "models/qwen2.5-0.5b-instruct-q8_0.gguf"
-	modelThinkChatFile    = "models/Qwen3-8B-Q8_0.gguf"
-	modelGPTChatFile      = "models/gpt-oss-20b-Q8_0.gguf"
-	modelSimpleVisionFile = "models/Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
-	projSimpleVisionFile  = "models/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
-	modelEmbedFile        = "models/embeddinggemma-300m-qat-Q8_0.gguf"
+	modelThinkToolChatFile = "models/Qwen3-8B-Q8_0.gguf"
+	modelGPTChatFile       = "models/gpt-oss-20b-Q8_0.gguf"
+	modelSimpleVisionFile  = "models/Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
+	projSimpleVisionFile   = "models/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
+	modelEmbedFile         = "models/embeddinggemma-300m-qat-Q8_0.gguf"
 )
 
 var (
@@ -115,46 +114,99 @@ func installer() {
 	}
 }
 
-func testChatResponse(msg model.ChatResponse, modelFile string, object string, reasoning bool) error {
-	if msg.ID == "" {
+func testChatBasics(resp model.ChatResponse, modelFile string, object string, reasoning bool) error {
+	if resp.ID == "" {
 		return fmt.Errorf("expected id")
 	}
 
-	if msg.Object != object {
-		return fmt.Errorf("expected object type to be %s, got %s", object, msg.Object)
+	if resp.Object != object {
+		return fmt.Errorf("expected object type to be %s, got %s", object, resp.Object)
 	}
 
-	if msg.Created == 0 {
+	if resp.Created == 0 {
 		return fmt.Errorf("expected created time")
 	}
 
 	modelName := filepath.Base(modelFile)
 	modelName = strings.TrimSuffix(modelName, filepath.Ext(modelName))
 
-	if msg.Model != modelName {
-		return fmt.Errorf("expected model to be %s, got %s", modelName, msg.Model)
+	if resp.Model != modelName {
+		return fmt.Errorf("basics: expected model to be %s, got %s", modelName, resp.Model)
 	}
 
-	if len(msg.Choice) == 0 {
-		return fmt.Errorf("expected choice, got %d", len(msg.Choice))
+	if len(resp.Choice) == 0 {
+		return fmt.Errorf("basics: expected choice, got %d", len(resp.Choice))
 	}
 
-	if msg.Choice[0].FinishReason == "" && msg.Choice[0].Delta.Content == "" && msg.Choice[0].Delta.Reasoning == "" {
-		return fmt.Errorf("expected delta content and reasoning empty")
+	if resp.Choice[0].FinishReason == "" && resp.Choice[0].Delta.Content == "" && resp.Choice[0].Delta.Reasoning == "" {
+		return fmt.Errorf("basics: expected delta content and reasoning to be non-empty")
 	}
 
-	if msg.Choice[0].FinishReason == "" && msg.Choice[0].Delta.Role != "assistant" {
-		return fmt.Errorf("expected delta role to be assistant, got %s", msg.Choice[0].Delta.Role)
+	if resp.Choice[0].FinishReason == "" && resp.Choice[0].Delta.Role != "assistant" {
+		return fmt.Errorf("basics: expected delta role to be assistant, got %s", resp.Choice[0].Delta.Role)
 	}
 
-	if msg.Choice[0].FinishReason == "stop" && msg.Choice[0].Delta.Content == "" {
-		return fmt.Errorf("expected final content")
+	if resp.Choice[0].FinishReason == "stop" && resp.Choice[0].Delta.Content == "" {
+		return fmt.Errorf("basics: expected final content to be non-empty")
+	}
+
+	if resp.Choice[0].FinishReason == "tool" && len(resp.Choice[0].Delta.ToolCalls) == 0 {
+		return fmt.Errorf("basics: expected tool calls to be non-empty")
 	}
 
 	if reasoning {
-		if msg.Choice[0].FinishReason == "stop" && msg.Choice[0].Delta.Reasoning == "" {
-			return fmt.Errorf("expected final reasoning")
+		if resp.Choice[0].FinishReason == "stop" && resp.Choice[0].Delta.Reasoning == "" {
+			return fmt.Errorf("basics: expected final reasoning")
 		}
+	}
+
+	return nil
+}
+
+func testChatResponse(resp model.ChatResponse, modelFile string, object string, find string, funct string, arg string) error {
+	if err := testChatBasics(resp, modelFile, object, true); err != nil {
+		return err
+	}
+
+	if !strings.Contains(resp.Choice[0].Delta.Reasoning, find) {
+		return fmt.Errorf("reasoning: expected %q, got %q", find, resp.Choice[0].Delta.Content)
+	}
+
+	if resp.Choice[0].FinishReason == "stop" {
+		if !strings.Contains(resp.Choice[0].Delta.Content, find) {
+			return fmt.Errorf("content: expected %q, got %q", find, resp.Choice[0].Delta.Content)
+		}
+	}
+
+	if resp.Choice[0].FinishReason == "tool" {
+		if !strings.Contains(resp.Choice[0].Delta.ToolCalls[0].Name, funct) {
+			return fmt.Errorf("tooling: expected %q, got %q", funct, resp.Choice[0].Delta.ToolCalls[0].Name)
+		}
+
+		if len(resp.Choice[0].Delta.ToolCalls[0].Arguments) == 0 {
+			return fmt.Errorf("tooling: expected arguments to be non-empty, got %v", resp.Choice[0].Delta.ToolCalls[0].Arguments)
+		}
+
+		location, exists := resp.Choice[0].Delta.ToolCalls[0].Arguments[arg]
+		if !exists {
+			return fmt.Errorf("tooling: expected an argument named %s", arg)
+		}
+
+		if !strings.Contains(location.(string), find) {
+			return fmt.Errorf("tooling: expected %q, got %q", find, location.(string))
+		}
+	}
+
+	return nil
+}
+
+func testVisionResponse(resp model.ChatResponse, modelFile string, object string, find string) error {
+	if err := testChatBasics(resp, modelFile, object, false); err != nil {
+		return err
+	}
+
+	if !strings.Contains(resp.Choice[0].Delta.Content, find) {
+		return fmt.Errorf("expected %q, got %q", find, resp.Choice[0].Delta.Content)
 	}
 
 	return nil

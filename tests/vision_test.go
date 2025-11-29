@@ -87,13 +87,8 @@ func testVision(t *testing.T, modelFile string, profFile string) {
 			return fmt.Errorf("vision streaming: %w", err)
 		}
 
-		if err := testChatResponse(resp, modelFile, "vision", false); err != nil {
+		if err := testVisionResponse(resp, modelFile, "vision", "giraffes"); err != nil {
 			return err
-		}
-
-		find := "giraffes"
-		if !strings.Contains(resp.Choice[0].Delta.Content, find) {
-			return fmt.Errorf("expected %q, got %q", find, resp.Choice[0].Delta.Content)
 		}
 
 		return nil
@@ -136,20 +131,14 @@ func testVisionStreaming(t *testing.T, modelFile string, profFile string) {
 
 		var lastResp model.ChatResponse
 		for resp := range ch {
-			if err := testChatResponse(resp, modelFile, "vision", false); err != nil {
+			lastResp = resp
+			if err := testChatBasics(resp, modelFile, model.ObjectVision, false); err != nil {
 				return err
 			}
-
-			lastResp = resp
 		}
 
-		if err := testChatResponse(lastResp, modelFile, "vision", false); err != nil {
+		if err := testVisionResponse(lastResp, modelFile, model.ObjectVision, "giraffes"); err != nil {
 			return err
-		}
-
-		find := "giraffes"
-		if !strings.Contains(lastResp.Choice[0].Delta.Content, find) {
-			return fmt.Errorf("expected %q, got %q", find, lastResp.Choice[0].Delta.Content)
 		}
 
 		return nil
