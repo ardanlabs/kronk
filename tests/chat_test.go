@@ -96,13 +96,13 @@ func initChatTest(t *testing.T, modelFile string, tooling bool) (*kronk.Kronk, m
 			d["tools"] = []model.D{
 				{
 					"type": "function",
-					"function": map[string]any{
+					"function": model.D{
 						"name":        "get_weather",
 						"description": "Get the current weather for a location",
-						"parameters": map[string]any{
+						"parameters": model.D{
 							"type": "object",
-							"properties": map[string]any{
-								"location": map[string]any{
+							"properties": model.D{
+								"location": model.D{
 									"type":        "string",
 									"description": "The location to get the weather for, e.g. San Francisco, CA",
 								},
