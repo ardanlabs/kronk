@@ -36,7 +36,7 @@ func testEmbedding(t *testing.T, modelFile string) {
 	defer func() {
 		t.Logf("active streams: %d", krn.ActiveStreams())
 		t.Log("unload Kronk")
-		if err := krn.Unload(); err != nil {
+		if err := krn.Unload(context.Background()); err != nil {
 			t.Errorf("failed to unload model: %v", err)
 		}
 	}()

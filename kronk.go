@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/ardanlabs/kronk/model"
 	"github.com/hybridgroup/yzma/pkg/llama"
@@ -17,7 +18,7 @@ import (
 )
 
 // Version contains the current version of the kronk package.
-const Version = "0.23.0"
+const Version = "0.24.0"
 
 // =============================================================================
 
@@ -97,7 +98,7 @@ func New(modelInstances int, cfg model.Config) (*Kronk, error) {
 		if err != nil {
 			close(models)
 			for model := range models {
-				model.Unload()
+				model.Unload(context.Background())
 			}
 
 			return nil, err
@@ -140,7 +141,13 @@ func (krn *Kronk) ActiveStreams() int {
 
 // Unload will close down all loaded models. You should call this only when you
 // are completely done using the group.
-func (krn *Kronk) Unload() error {
+func (krn *Kronk) Unload(ctx context.Context) error {
+	if _, exists := ctx.Deadline(); !exists {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+	}
+
 	krn.shutdown.Lock()
 	{
 		if krn.shutdownFlag {
@@ -148,9 +155,17 @@ func (krn *Kronk) Unload() error {
 			return fmt.Errorf("already unloaded")
 		}
 
-		if n := krn.activeStreams.Load(); n > 0 {
+		for krn.activeStreams.Load() > 0 {
 			krn.shutdown.Unlock()
-			return fmt.Errorf("cannot unload: %d active streams", n)
+
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("cannot unload: %d active streams: %w", krn.activeStreams.Load(), ctx.Err())
+
+			case <-time.After(100 * time.Millisecond):
+			}
+
+			krn.shutdown.Lock()
 		}
 
 		krn.shutdownFlag = true
@@ -161,7 +176,7 @@ func (krn *Kronk) Unload() error {
 
 	close(krn.models)
 	for model := range krn.models {
-		if err := model.Unload(); err != nil {
+		if err := model.Unload(ctx); err != nil {
 			sb.WriteString(fmt.Sprintf("failed to unload model: %s: %v\n", model.ModelInfo().Name, err))
 		}
 	}
