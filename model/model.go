@@ -94,9 +94,20 @@ func retrieveTemplate(cfg Config, mdl llama.Model) (string, error) {
 	return template, nil
 }
 
-func (m *Model) Unload() error {
-	if m.activeStreams.Load() > 0 {
-		return fmt.Errorf("cannot unload: %d active streams", m.activeStreams.Load())
+func (m *Model) Unload(ctx context.Context) error {
+	if _, exists := ctx.Deadline(); !exists {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+	}
+
+	for m.activeStreams.Load() > 0 {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("cannot unload: %d active streams: %w", m.activeStreams.Load(), ctx.Err())
+
+		case <-time.After(100 * time.Millisecond):
+		}
 	}
 
 	llama.ModelFree(m.model)

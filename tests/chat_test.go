@@ -96,7 +96,7 @@ func testChat(t *testing.T, modelFile string, tooling bool) {
 	defer func() {
 		t.Logf("active streams: %d", krn.ActiveStreams())
 		t.Log("unload Kronk")
-		if err := krn.Unload(); err != nil {
+		if err := krn.Unload(context.Background()); err != nil {
 			t.Errorf("failed to unload model: %v", err)
 		}
 	}()
@@ -152,7 +152,7 @@ func testChatStreaming(t *testing.T, modelFile string, tooling bool) {
 	defer func() {
 		t.Logf("active streams: %d", krn.ActiveStreams())
 		t.Log("unload Kronk")
-		if err := krn.Unload(); err != nil {
+		if err := krn.Unload(context.Background()); err != nil {
 			t.Errorf("failed to unload model: %v", err)
 		}
 	}()

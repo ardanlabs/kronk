@@ -30,7 +30,7 @@ func Test_ConTest1(t *testing.T) {
 	defer func() {
 		t.Logf("active streams: %d", krn.ActiveStreams())
 		t.Log("unload Kronk")
-		if err := krn.Unload(); err != nil {
+		if err := krn.Unload(context.Background()); err != nil {
 			t.Errorf("should not receive an error unloading Kronk: %s", err)
 		}
 	}()
@@ -82,7 +82,7 @@ func Test_ConTest2(t *testing.T) {
 	defer func() {
 		t.Logf("active streams: %d", krn.ActiveStreams())
 		t.Log("unload Kronk")
-		if err := krn.Unload(); err != nil {
+		if err := krn.Unload(context.Background()); err != nil {
 			t.Errorf("should not receive an error unloading Kronk: %s", err)
 		}
 	}()
@@ -142,7 +142,7 @@ func Test_ConTest3(t *testing.T) {
 	defer func() {
 		t.Logf("active streams: %d", krn.ActiveStreams())
 		t.Log("unload Kronk")
-		if err := krn.Unload(); err != nil {
+		if err := krn.Unload(context.Background()); err != nil {
 			t.Errorf("should not receive an error unloading Kronk: %s", err)
 		}
 	}()
@@ -167,7 +167,10 @@ func Test_ConTest3(t *testing.T) {
 
 	t.Log("attempt to unload Knonk, should get error")
 
-	if err := krn.Unload(); err == nil {
+	shortCtx, shortCancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer shortCancel()
+
+	if err := krn.Unload(shortCtx); err == nil {
 		t.Errorf("should receive an error unloading Kronk: %s", err)
 	}
 
