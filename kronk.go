@@ -111,10 +111,8 @@ func New(modelInstances int, cfg model.Config) (*Kronk, error) {
 		}
 	}
 
-	cfg = firstModel.Config()
-
 	krn := Kronk{
-		cfg:       cfg,
+		cfg:       firstModel.Config(),
 		models:    models,
 		modelInfo: firstModel.ModelInfo(),
 	}
@@ -148,29 +146,34 @@ func (krn *Kronk) Unload(ctx context.Context) error {
 		defer cancel()
 	}
 
-	krn.shutdown.Lock()
-	{
+	// -------------------------------------------------------------------------
+
+	err := func() error {
+		krn.shutdown.Lock()
+		defer krn.shutdown.Unlock()
+
 		if krn.shutdownFlag {
-			krn.shutdown.Unlock()
 			return fmt.Errorf("already unloaded")
 		}
 
 		for krn.activeStreams.Load() > 0 {
-			krn.shutdown.Unlock()
-
 			select {
 			case <-ctx.Done():
 				return fmt.Errorf("cannot unload: %d active streams: %w", krn.activeStreams.Load(), ctx.Err())
 
 			case <-time.After(100 * time.Millisecond):
 			}
-
-			krn.shutdown.Lock()
 		}
 
 		krn.shutdownFlag = true
+		return nil
+	}()
+
+	if err != nil {
+		return err
 	}
-	krn.shutdown.Unlock()
+
+	// -------------------------------------------------------------------------
 
 	var sb strings.Builder
 
@@ -410,15 +413,23 @@ func sendError[T any](ctx context.Context, ch chan T, ef errorFunc[T], rec any) 
 // =============================================================================
 
 func (krn *Kronk) acquireModel(ctx context.Context) (*model.Model, error) {
-	krn.shutdown.Lock()
-	{
+	err := func() error {
+		krn.shutdown.Lock()
+		defer krn.shutdown.Unlock()
+
 		if krn.shutdownFlag {
-			krn.shutdown.Unlock()
-			return nil, fmt.Errorf("Kronk has been unloaded")
+			return fmt.Errorf("Kronk has been unloaded")
 		}
+
 		krn.activeStreams.Add(1)
+		return nil
+	}()
+
+	if err != nil {
+		return nil, err
 	}
-	krn.shutdown.Unlock()
+
+	// -------------------------------------------------------------------------
 
 	select {
 	case <-ctx.Done():
@@ -430,6 +441,7 @@ func (krn *Kronk) acquireModel(ctx context.Context) (*model.Model, error) {
 			krn.activeStreams.Add(-1)
 			return nil, fmt.Errorf("Kronk has been unloaded")
 		}
+
 		return llama, nil
 	}
 }
