@@ -24,6 +24,10 @@ var (
 )
 
 var (
+	modelGPTJinjaFile = "jinja/gpt-oss.jinja"
+)
+
+var (
 	gw             = os.Getenv("GITHUB_WORKSPACE")
 	libPath        = filepath.Join(gw, "tests/libraries")
 	modelPath      = filepath.Join(gw, "tests/models")

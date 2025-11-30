@@ -32,7 +32,7 @@ llama-bench:
 
 test:
 	export LD_LIBRARY_PATH=tests/libraries && \
-	export GOROUTINES=3 && \
+	export GOROUTINES=1 && \
 	export INSTALL_LLAMA=1 && \
 	export RUN_IN_PARALLEL=1 && \
 	export GITHUB_WORKSPACE=$(shell pwd) && \

@@ -14,19 +14,19 @@ import (
 )
 
 func Test_ThinkChat(t *testing.T) {
-	testChat(t, modelThinkToolChatFile, false)
+	testChat(t, modelThinkToolChatFile, "", false)
 }
 
 func Test_ThinkStreamingChat(t *testing.T) {
-	testChatStreaming(t, modelThinkToolChatFile, false)
+	testChatStreaming(t, modelThinkToolChatFile, "", false)
 }
 
 func Test_ToolChat(t *testing.T) {
-	testChat(t, modelThinkToolChatFile, true)
+	testChat(t, modelThinkToolChatFile, "", true)
 }
 
 func Test_ToolStreamingChat(t *testing.T) {
-	testChatStreaming(t, modelThinkToolChatFile, true)
+	testChatStreaming(t, modelThinkToolChatFile, "", true)
 }
 
 func Test_GPTChat(t *testing.T) {
@@ -34,7 +34,7 @@ func Test_GPTChat(t *testing.T) {
 		t.Skip("Skipping test in GitHub Actions")
 	}
 
-	testChat(t, modelGPTChatFile, false)
+	testChat(t, modelGPTChatFile, modelGPTJinjaFile, false)
 }
 
 func Test_GPTStreamingChat(t *testing.T) {
@@ -42,57 +42,44 @@ func Test_GPTStreamingChat(t *testing.T) {
 		t.Skip("Skipping test in GitHub Actions")
 	}
 
-	testChatStreaming(t, modelGPTChatFile, false)
+	testChatStreaming(t, modelGPTChatFile, modelGPTJinjaFile, false)
+}
+
+func Test_ToolGPTChat(t *testing.T) {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("Skipping test in GitHub Actions")
+	}
+
+	testChat(t, modelGPTChatFile, modelGPTJinjaFile, true)
+}
+
+func Test_ToolGPTStreamingChat(t *testing.T) {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("Skipping test in GitHub Actions")
+	}
+
+	testChatStreaming(t, modelGPTChatFile, modelGPTJinjaFile, true)
 }
 
 // =============================================================================
 
-func initChatTest(t *testing.T, modelFile string, tooling bool) (*kronk.Kronk, model.Params, model.D) {
+func initChatTest(t *testing.T, modelFile string, jinjaFile string, tooling bool) (*kronk.Kronk, model.Params, model.D) {
 	krn, err := kronk.New(modelInstances, model.Config{
 		ModelFile: modelFile,
+		JinjaFile: jinjaFile,
 	})
 
 	if err != nil {
 		t.Fatalf("unable to load model: %s: %v", modelFile, err)
 	}
 
+	params := model.Params{
+		MaxTokens: 4096,
+	}
+
 	question := "Echo back the word: Gorilla"
-
-	// gptTool := []model.D{
-	// 		{
-	// 			"type": "function",
-	// 			"function": map[string]any{
-	// 				"name":        "get_weather",
-	// 				"description": "Get the current weather for a location",
-	// 				"parameters": map[string]any{
-	// 					"type": "object",
-	// 					"properties": map[string]any{
-	// 						"location": map[string]any{
-	// 							"type":        "string",
-	// 							"description": "The location to get the weather for, e.g. San Francisco, CA",
-	// 						},
-	// 					},
-	// 					"required": []any{"location"},
-	// 				},
-	// 			},
-	// 		},
-	// 	}
-	// }
-
-	regTool := []model.D{
-		{
-			"type": "function",
-			"function": model.D{
-				"name":        "get_weather",
-				"description": "Get the current weather for a location",
-				"arguments": model.D{
-					"location": model.D{
-						"type":        "string",
-						"description": "The location to get the weather for, e.g. San Francisco, CA",
-					},
-				},
-			},
-		},
+	if tooling {
+		question = "What is the weather in London, England?"
 	}
 
 	d := model.D{
@@ -105,22 +92,56 @@ func initChatTest(t *testing.T, modelFile string, tooling bool) (*kronk.Kronk, m
 	}
 
 	if tooling {
-		d["tools"] = regTool
-	}
+		switch krn.ModelInfo().IsGPT {
+		case true:
+			d["tools"] = []model.D{
+				{
+					"type": "function",
+					"function": map[string]any{
+						"name":        "get_weather",
+						"description": "Get the current weather for a location",
+						"parameters": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"location": map[string]any{
+									"type":        "string",
+									"description": "The location to get the weather for, e.g. San Francisco, CA",
+								},
+							},
+							"required": []any{"location"},
+						},
+					},
+				},
+			}
 
-	params := model.Params{
-		MaxTokens: 4096,
+		default:
+			d["tools"] = []model.D{
+				{
+					"type": "function",
+					"function": model.D{
+						"name":        "get_weather",
+						"description": "Get the current weather for a location",
+						"arguments": model.D{
+							"location": model.D{
+								"type":        "string",
+								"description": "The location to get the weather for, e.g. San Francisco, CA",
+							},
+						},
+					},
+				},
+			}
+		}
 	}
 
 	return krn, params, d
 }
 
-func testChat(t *testing.T, modelFile string, tooling bool) {
+func testChat(t *testing.T, modelFile string, jinjaFile string, tooling bool) {
 	if runInParallel {
 		t.Parallel()
 	}
 
-	krn, params, d := initChatTest(t, modelFile, tooling)
+	krn, params, d := initChatTest(t, modelFile, jinjaFile, tooling)
 	defer func() {
 		t.Logf("active streams: %d", krn.ActiveStreams())
 		t.Log("unload Kronk")
@@ -171,12 +192,12 @@ func testChat(t *testing.T, modelFile string, tooling bool) {
 	}
 }
 
-func testChatStreaming(t *testing.T, modelFile string, tooling bool) {
+func testChatStreaming(t *testing.T, modelFile string, jinjaFile string, tooling bool) {
 	if runInParallel {
 		t.Parallel()
 	}
 
-	krn, params, d := initChatTest(t, modelFile, tooling)
+	krn, params, d := initChatTest(t, modelFile, jinjaFile, tooling)
 	defer func() {
 		t.Logf("active streams: %d", krn.ActiveStreams())
 		t.Log("unload Kronk")

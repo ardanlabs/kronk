@@ -87,7 +87,6 @@ func retrieveTemplate(cfg Config, mdl llama.Model) (string, error) {
 	}
 
 	if template == "" {
-		fmt.Println("Using default template")
 		template = llama.ModelChatTemplate(mdl, "")
 		if template == "" {
 			template, _ = llama.ModelMetaValStr(mdl, "tokenizer.chat_template")
@@ -174,6 +173,10 @@ loop:
 		// For the given batch, extract the response.
 		content, token, err := m.batchResponse(lctx, batch, sampler, buf)
 		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break loop
+			}
+
 			m.sendErrorResponse(ctx, ch, id, object, index, err, Usage{})
 			return
 		}
