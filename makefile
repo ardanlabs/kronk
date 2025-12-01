@@ -27,6 +27,11 @@ install-reranker-model:
 llama-bench:
 	libraries/llama-bench --list-devices
 
+# Use this to rebuild tooling when new versions of Go are released.
+dev-gotooling:
+	go install honnef.co/go/tools/cmd/staticcheck@latest
+	go install golang.org/x/vuln/cmd/govulncheck@latest
+
 # ==============================================================================
 # Tests
 

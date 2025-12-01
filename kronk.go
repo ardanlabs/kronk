@@ -127,6 +127,36 @@ func (krn *Kronk) ModelConfig() model.Config {
 	return krn.cfg
 }
 
+// SystemInfo returns system information.
+func (krn *Kronk) SystemInfo() map[string]string {
+	// Metal : EMBED_LIBRARY = 1 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | DOTPROD = 1 | LLAMAFILE = 1 | ACCELERATE = 1 | REPACK = 1 |
+
+	result := make(map[string]string)
+
+	for part := range strings.SplitSeq(llama.PrintSystemInfo(), "|") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+
+		// Remove the "= 1" or similar suffix
+		if idx := strings.Index(part, "="); idx != -1 {
+			part = strings.TrimSpace(part[:idx])
+		}
+
+		// Check for "Key : Value" pattern
+		if kv := strings.SplitN(part, ":", 2); len(kv) == 2 {
+			key := strings.TrimSpace(kv[0])
+			value := strings.TrimSpace(kv[1])
+			result[key] = value
+		} else {
+			result[part] = "on"
+		}
+	}
+
+	return result
+}
+
 // ModelInfo returns the model information.
 func (krn *Kronk) ModelInfo() model.ModelInfo {
 	return krn.modelInfo
@@ -335,6 +365,47 @@ func (krn *Kronk) Embed(ctx context.Context, text string) ([]float32, error) {
 
 // =============================================================================
 
+func (krn *Kronk) acquireModel(ctx context.Context) (*model.Model, error) {
+	err := func() error {
+		krn.shutdown.Lock()
+		defer krn.shutdown.Unlock()
+
+		if krn.shutdownFlag {
+			return fmt.Errorf("Kronk has been unloaded")
+		}
+
+		krn.activeStreams.Add(1)
+		return nil
+	}()
+
+	if err != nil {
+		return nil, err
+	}
+
+	// -------------------------------------------------------------------------
+
+	select {
+	case <-ctx.Done():
+		krn.activeStreams.Add(-1)
+		return nil, ctx.Err()
+
+	case llama, ok := <-krn.models:
+		if !ok {
+			krn.activeStreams.Add(-1)
+			return nil, fmt.Errorf("Kronk has been unloaded")
+		}
+
+		return llama, nil
+	}
+}
+
+func (krn *Kronk) releaseModel(llama *model.Model) {
+	krn.models <- llama
+	krn.activeStreams.Add(-1)
+}
+
+// =============================================================================
+
 type nonStreamingFunc[T any] func(llama *model.Model) (T, error)
 
 func nonStreaming[T any](ctx context.Context, krn *Kronk, f nonStreamingFunc[T]) (T, error) {
@@ -408,45 +479,4 @@ func sendError[T any](ctx context.Context, ch chan T, ef errorFunc[T], rec any) 
 	case ch <- ef(fmt.Errorf("%v", rec)):
 	default:
 	}
-}
-
-// =============================================================================
-
-func (krn *Kronk) acquireModel(ctx context.Context) (*model.Model, error) {
-	err := func() error {
-		krn.shutdown.Lock()
-		defer krn.shutdown.Unlock()
-
-		if krn.shutdownFlag {
-			return fmt.Errorf("Kronk has been unloaded")
-		}
-
-		krn.activeStreams.Add(1)
-		return nil
-	}()
-
-	if err != nil {
-		return nil, err
-	}
-
-	// -------------------------------------------------------------------------
-
-	select {
-	case <-ctx.Done():
-		krn.activeStreams.Add(-1)
-		return nil, ctx.Err()
-
-	case llama, ok := <-krn.models:
-		if !ok {
-			krn.activeStreams.Add(-1)
-			return nil, fmt.Errorf("Kronk has been unloaded")
-		}
-
-		return llama, nil
-	}
-}
-
-func (krn *Kronk) releaseModel(llama *model.Model) {
-	krn.models <- llama
-	krn.activeStreams.Add(-1)
 }

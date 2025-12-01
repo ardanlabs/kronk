@@ -104,6 +104,12 @@ func newKronk(modelFile string, projFile string) (*kronk.Kronk, error) {
 		return nil, fmt.Errorf("unable to create inference model: %w", err)
 	}
 
+	fmt.Print("- system info:\n\t")
+	for k, v := range krn.SystemInfo() {
+		fmt.Printf("%s:%v, ", k, v)
+	}
+	fmt.Println()
+
 	fmt.Println("- contextWindow:", krn.ModelConfig().ContextWindow)
 	fmt.Println("- embeddings   :", krn.ModelConfig().Embeddings)
 	fmt.Println("- isGPT        :", krn.ModelInfo().IsGPT)

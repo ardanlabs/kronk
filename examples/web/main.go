@@ -84,6 +84,12 @@ func run() error {
 		}
 	}()
 
+	fmt.Print("- system info:\n\t")
+	for k, v := range krnChat.SystemInfo() {
+		fmt.Printf("%s:%v, ", k, v)
+	}
+	fmt.Println()
+
 	fmt.Println("- contextWindow:", krnChat.ModelConfig().ContextWindow)
 	fmt.Println("- embeddings   :", krnChat.ModelConfig().Embeddings)
 	fmt.Println("- isGPT        :", krnChat.ModelInfo().IsGPT)

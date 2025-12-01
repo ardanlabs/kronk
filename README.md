@@ -110,7 +110,6 @@ func run() error {
 
 	krn, err := kronk.New(modelInstances, model.Config{
 		ModelFile:  modelFile,
-		Embeddings: true,
 	})
 
 	if err != nil {
