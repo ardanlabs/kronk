@@ -3,6 +3,7 @@ package kronk_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -22,7 +23,18 @@ func Test_SimpleStreamingVision(t *testing.T) {
 
 // =============================================================================
 
-func initVisionTest(t *testing.T, modelFile string, projFile string, imageFile string) (*kronk.Kronk, model.Params, model.D) {
+func initVisionTest(t *testing.T, modelFile string, projFile string, imageFile string) (*kronk.Kronk, model.Params, model.D, []byte) {
+	if _, err := os.Stat(imageFile); err != nil {
+		t.Fatalf("error accessing file %q: %s", imageFile, err)
+	}
+
+	image, err := os.ReadFile(imageFile)
+	if err != nil {
+		t.Fatalf("error reading file %q: %s", imageFile, err)
+	}
+
+	// -------------------------------------------------------------------------
+
 	krn, err := kronk.New(modelInstances, model.Config{
 		ModelFile:      modelFile,
 		ProjectionFile: projFile,
@@ -32,13 +44,13 @@ func initVisionTest(t *testing.T, modelFile string, projFile string, imageFile s
 		t.Fatalf("unable to load model: %s: %v", modelFile, err)
 	}
 
-	question := "What is in this picture?"
+	// -------------------------------------------------------------------------
 
 	d := model.D{
 		"messages": []model.D{
 			{
 				"role":    "user",
-				"content": question,
+				"content": "What is in this picture?",
 			},
 		},
 	}
@@ -47,7 +59,7 @@ func initVisionTest(t *testing.T, modelFile string, projFile string, imageFile s
 		MaxTokens: 4096,
 	}
 
-	return krn, params, d
+	return krn, params, d, image
 }
 
 func testVision(t *testing.T, modelFile string, projFile string, imageFile string) {
@@ -55,7 +67,7 @@ func testVision(t *testing.T, modelFile string, projFile string, imageFile strin
 		t.Parallel()
 	}
 
-	krn, params, d := initVisionTest(t, modelFile, projFile, imageFile)
+	krn, params, d, image := initVisionTest(t, modelFile, projFile, imageFile)
 	defer func() {
 		t.Logf("active streams: %d", krn.ActiveStreams())
 		t.Log("unload Kronk")
@@ -75,7 +87,7 @@ func testVision(t *testing.T, modelFile string, projFile string, imageFile strin
 			t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, krn.ModelInfo().Name, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
 		}()
 
-		resp, err := krn.Vision(ctx, imageFile, params, d)
+		resp, err := krn.Vision(ctx, image, params, d)
 		if err != nil {
 			return fmt.Errorf("vision streaming: %w", err)
 		}
@@ -103,7 +115,7 @@ func testVisionStreaming(t *testing.T, modelFile string, projFile string, imageF
 		t.Parallel()
 	}
 
-	krn, params, d := initVisionTest(t, modelFile, projFile, imageFile)
+	krn, params, d, image := initVisionTest(t, modelFile, projFile, imageFile)
 	defer func() {
 		t.Logf("active streams: %d", krn.ActiveStreams())
 		t.Log("unload Kronk")
@@ -123,7 +135,7 @@ func testVisionStreaming(t *testing.T, modelFile string, projFile string, imageF
 			t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, krn.ModelInfo().Name, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
 		}()
 
-		ch, err := krn.VisionStreaming(ctx, imageFile, params, d)
+		ch, err := krn.VisionStreaming(ctx, image, params, d)
 		if err != nil {
 			return fmt.Errorf("vision streaming: %w", err)
 		}

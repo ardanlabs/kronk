@@ -3,7 +3,6 @@ package model
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/google/uuid"
 	"github.com/hybridgroup/yzma/pkg/llama"
@@ -11,8 +10,8 @@ import (
 )
 
 // Vision performs a vision request and returns the final response.
-func (m *Model) Vision(ctx context.Context, imageFile string, params Params, d D) (ChatResponse, error) {
-	ch := m.VisionStreaming(ctx, imageFile, params, d)
+func (m *Model) Vision(ctx context.Context, image []byte, params Params, d D) (ChatResponse, error) {
+	ch := m.VisionStreaming(ctx, image, params, d)
 
 	var lastMsg ChatResponse
 	for msg := range ch {
@@ -23,7 +22,7 @@ func (m *Model) Vision(ctx context.Context, imageFile string, params Params, d D
 }
 
 // VisionStreaming performs a vision request and streams the response.
-func (m *Model) VisionStreaming(ctx context.Context, imageFile string, params Params, d D) <-chan ChatResponse {
+func (m *Model) VisionStreaming(ctx context.Context, image []byte, params Params, d D) <-chan ChatResponse {
 	m.activeStreams.Add(1)
 	defer m.activeStreams.Add(-1)
 
@@ -72,7 +71,7 @@ func (m *Model) VisionStreaming(ctx context.Context, imageFile string, params Pa
 			return
 		}
 
-		bitmap, err := m.processBitmap(lctx, mtmdCtx, imageFile, prompt)
+		bitmap, err := m.processBitmap(lctx, mtmdCtx, image, prompt)
 		if err != nil {
 			m.sendVisionError(ctx, ch, id, err)
 			return
@@ -85,12 +84,8 @@ func (m *Model) VisionStreaming(ctx context.Context, imageFile string, params Pa
 	return ch
 }
 
-func (m *Model) processBitmap(lctx llama.Context, mtmdCtx mtmd.Context, imageFile string, prompt string) (mtmd.Bitmap, error) {
-	if _, err := os.Stat(imageFile); err != nil {
-		return 0, fmt.Errorf("error accessing file %q: %w", imageFile, err)
-	}
-
-	bitmap := mtmd.BitmapInitFromFile(mtmdCtx, imageFile)
+func (m *Model) processBitmap(lctx llama.Context, mtmdCtx mtmd.Context, image []byte, prompt string) (mtmd.Bitmap, error) {
+	bitmap := mtmd.BitmapInitFromBuf(mtmdCtx, &image[0], uint64(len(image)))
 	output := mtmd.InputChunksInit()
 	input := mtmd.NewInputText(prompt, true, true)
 

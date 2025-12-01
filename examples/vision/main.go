@@ -118,6 +118,11 @@ func newKronk(modelFile string, projFile string) (*kronk.Kronk, error) {
 }
 
 func performChat(ctx context.Context, krn *kronk.Kronk, question string, imageFile string) (<-chan model.ChatResponse, error) {
+	image, err := readImage(imageFile)
+	if err != nil {
+		return nil, fmt.Errorf("read image: %w", err)
+	}
+
 	fmt.Printf("\nQuestion: %s\n", question)
 
 	params := model.Params{
@@ -130,7 +135,7 @@ func performChat(ctx context.Context, krn *kronk.Kronk, question string, imageFi
 		),
 	}
 
-	ch, err := krn.VisionStreaming(ctx, imageFile, params, d)
+	ch, err := krn.VisionStreaming(ctx, image, params, d)
 
 	if err != nil {
 		return nil, fmt.Errorf("vision streaming: %w", err)
@@ -182,4 +187,17 @@ loop:
 		lr.Usage.InputTokens, lr.Usage.ReasoningTokens, lr.Usage.CompletionTokens, lr.Usage.OutputTokens, contextTokens, percentage, of, lr.Usage.TokensPerSecond)
 
 	return nil
+}
+
+func readImage(imageFile string) ([]byte, error) {
+	if _, err := os.Stat(imageFile); err != nil {
+		return nil, fmt.Errorf("error accessing file %q: %w", imageFile, err)
+	}
+
+	image, err := os.ReadFile(imageFile)
+	if err != nil {
+		return nil, fmt.Errorf("error reading file %q: %w", imageFile, err)
+	}
+
+	return image, nil
 }
