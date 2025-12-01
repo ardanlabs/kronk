@@ -53,21 +53,25 @@ func newModelInfo(cfg Config, model llama.Model) ModelInfo {
 	metadata := make(map[string]string)
 
 	for i := range count {
-		key, ok := llama.ModelMetaKeyByIndex(model, i)
-		if !ok {
-			continue
-		}
+		func() {
+			defer func() {
+				if rec := recover(); rec != nil {
+					return
+				}
+			}()
 
-		if key == "tokenizer.chat_template" {
-			continue
-		}
+			key, ok := llama.ModelMetaKeyByIndex(model, i)
+			if !ok {
+				return
+			}
 
-		value, ok := llama.ModelMetaValStrByIndex(model, i)
-		if !ok {
-			continue
-		}
+			value, ok := llama.ModelMetaValStrByIndex(model, i)
+			if !ok {
+				return
+			}
 
-		metadata[key] = value
+			metadata[key] = value
+		}()
 	}
 
 	filename := filepath.Base(cfg.ModelFile)

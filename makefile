@@ -48,6 +48,9 @@ deps-upgrade:
 	go get -u -v ./...
 	go mod tidy
 
+yzma-latest:
+	GOPROXY=direct go get github.com/hybridgroup/yzma@main
+
 # ==============================================================================
 # Examples
 
