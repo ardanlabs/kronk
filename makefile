@@ -47,3 +47,50 @@ tidy:
 deps-upgrade:
 	go get -u -v ./...
 	go mod tidy
+
+# ==============================================================================
+# Examples
+
+example-chat:
+	export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:tests/libraries && \
+	CGO_ENABLED=0 go run examples/chat/main.go
+
+example-embedding:
+	export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:tests/libraries && \
+	CGO_ENABLED=0 go run examples/embedding/main.go
+
+example-question:
+	export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:tests/libraries && \
+	CGO_ENABLED=0 go run examples/question/main.go
+
+example-vision:
+	export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:tests/libraries && \
+	CGO_ENABLED=0 go run examples/vision/main.go
+
+example-web:
+	export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:tests/libraries && \
+	CGO_ENABLED=0 go run examples/web/main.go
+
+example-web-curl1:
+	curl -i -X POST http://0.0.0.0:8080/chat \
+     -H "Content-Type: application/json" \
+     -d '{ \
+		"messages": [ \
+			{ \
+				"role": "user", \
+				"content": "How do you declare an interface in Go?" \
+			} \
+		] \
+    }'
+
+example-web-curl2:
+	curl -i -X POST http://0.0.0.0:8080/chat \
+     -H "Content-Type: application/json" \
+     -d '{ \
+		"messages": [ \
+			{ \
+				"role": "user", \
+				"content": "What is the weather in London, England?" \
+			} \
+		] \
+    }'
