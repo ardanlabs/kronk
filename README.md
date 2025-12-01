@@ -202,8 +202,9 @@ func installSystem() (string, error) {
 This example can produce the following output:
 
 ```
-$ export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:zarf/llamacpp
-$ go run cmd/examples/example13/step1/*.go
+$ make example-question
+export LD_LIBRARY_PATH=:tests/libraries && \
+	CGO_ENABLED=0 go run examples/question/main.go
 
 Output:
 
