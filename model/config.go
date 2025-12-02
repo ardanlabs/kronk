@@ -29,6 +29,11 @@ const (
 // JinjaFile is the path to the jinja file. This is not required and can be
 // used if you want to override the templated provided by the model metadata.
 //
+// Device is the device to use for the model. If not set, the default device
+// will be used. To see what devices are available, run the following command
+// which will be found where you installed llama.cpp.
+// $ llama-bench --list-devices
+//
 // ContextWindow (often referred to as context length) is the maximum number of
 // tokens that a large language model can process and consider at one time when
 // generating a response. It defines the model's effective "memory" for a single
@@ -63,22 +68,17 @@ const (
 //
 // Embeddings is a boolean that determines if the model you are using is an
 // embedding model. This must be true when using an embedding model.
-//
-// Device is the device to use for the model. If not set, the default device
-// will be used. To see what devices are available, run the following command
-// which will be found where you installed llama.cpp.
-// $ llama-bench --list-devices
 type Config struct {
 	ModelFile      string
 	ProjectionFile string
 	JinjaFile      string
+	Device         string
 	ContextWindow  int
 	NBatch         int
 	NUBatch        int
 	NThreads       int
 	NThreadsBatch  int
 	Embeddings     bool
-	Device         string
 }
 
 func validateConfig(cfg Config) error {
