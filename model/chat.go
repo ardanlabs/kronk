@@ -60,8 +60,6 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 
 		if m.projFile != "" {
 			mctxParams := mtmd.ContextParamsDefault()
-			mctxParams.UseGPU = true
-			mctxParams.FlashAttentionType = llama.FlashAttentionTypeAuto
 
 			mtmdCtx, err = mtmd.InitFromFile(m.projFile, m.model, mctxParams)
 			if err != nil {
@@ -95,7 +93,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 			}()
 		}
 
-		m.processTokens(ctx, id, lctx, object, prompt, params, ch)
+		m.processChatRequest(ctx, id, lctx, object, prompt, params, ch)
 	}()
 
 	return ch

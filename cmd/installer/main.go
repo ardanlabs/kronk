@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	libPath = "libraries"
+	libPath = "tests/libraries"
 )
 
 func main() {

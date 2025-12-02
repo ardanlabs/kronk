@@ -182,6 +182,23 @@ func tools(isGPT bool) []model.D {
 					},
 				},
 			},
+			model.D{
+				"type": "function",
+				"function": model.D{
+					"name":        "invoke_cli_command",
+					"description": "Use this anytime you need to run a CLI command of any kind",
+					"parameters": model.D{
+						"type": "object",
+						"properties": model.D{
+							"call": model.D{
+								"type":        "string",
+								"description": "The full set of parameters to pass to the CLI command",
+							},
+						},
+						"required": []any{"call"},
+					},
+				},
+			},
 		)
 	}
 
@@ -197,6 +214,20 @@ func tools(isGPT bool) []model.D {
 						"description": "The location to get the weather for, e.g. San Francisco, CA",
 					},
 				},
+			},
+		},
+		model.D{
+			"type": "function",
+			"function": model.D{
+				"name":        "invoke_cli_command",
+				"description": "Use this anytime you need to run a CLI command of any kind",
+				"arguments": model.D{
+					"call": model.D{
+						"type":        "string",
+						"description": "The full set of parameters to pass to the CLI command",
+					},
+				},
+				"required": []any{"call"},
 			},
 		},
 	)

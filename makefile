@@ -7,7 +7,7 @@ SHELL = $(if $(wildcard $(SHELL_PATH)),/bin/ash,/bin/bash)
 
 # Use this to install or update llama.cpp to the latest version. Needed to
 # run tests locally.
-install-llama.cpp:
+install-llamacpp:
 	go run cmd/installer/main.go
 
 # Use this to install models. Needed to run tests locally.
