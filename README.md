@@ -76,8 +76,11 @@ You can find more examples in the ArdanLabs AI training repo at [Example13](http
 package main
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -88,7 +91,8 @@ import (
 )
 
 const (
-	modelURL       = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf?download=true"
+	modelURL = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf?download=true"
+	// modelURL  = "https://huggingface.co/unsloth/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-Q8_0.gguf?download=true"
 	libPath        = "tests/libraries"
 	modelPath      = "tests/models"
 	modelInstances = 1
@@ -107,18 +111,10 @@ func run() error {
 		return fmt.Errorf("unable to installation system: %w", err)
 	}
 
-	if err := kronk.Init(libPath, kronk.LogSilent); err != nil {
+	krn, err := newKronk(modelFile)
+	if err != nil {
 		return fmt.Errorf("unable to init kronk: %w", err)
 	}
-
-	krn, err := kronk.New(modelInstances, model.Config{
-		ModelFile: modelFile,
-	})
-
-	if err != nil {
-		return fmt.Errorf("unable to create inference model: %w", err)
-	}
-
 	defer func() {
 		fmt.Println("\nUnloading Kronk")
 		if err := krn.Unload(context.Background()); err != nil {
@@ -128,63 +124,47 @@ func run() error {
 
 	// -------------------------------------------------------------------------
 
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
+	messages := model.DocumentArray()
 
-	question := "Hello model"
+	for {
+		messages, err = userInput(messages)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return fmt.Errorf("user input: %w", err)
+		}
 
-	fmt.Println()
-	fmt.Println("QUESTION:", question)
-	fmt.Println()
+		messages, err = func() ([]model.D, error) {
+			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+			defer cancel()
 
-	d := model.D{
-		"messages": model.DocumentArray(
-			model.TextMessage("user", question),
-		),
-	}
-
-	params := model.Params{
-		Temperature: 0.7,
-		TopP:        0.9,
-		TopK:        40,
-		MaxTokens:   2048,
-	}
-
-	ch, err := krn.ChatStreaming(ctx, params, d)
-	if err != nil {
-		return fmt.Errorf("chat streaming: %w", err)
-	}
-
-	// -------------------------------------------------------------------------
-
-	var reasoning bool
-
-	for resp := range ch {
-		switch resp.Choice[0].FinishReason {
-		case model.FinishReasonError:
-			return fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
-
-		case model.FinishReasonStop:
-			return nil
-
-		default:
-			if resp.Choice[0].Delta.Reasoning != "" {
-				reasoning = true
-				fmt.Printf("\u001b[91m%s\u001b[0m", resp.Choice[0].Delta.Reasoning)
-				continue
+			d := model.D{
+				"messages":    messages,
+				"tools":       tools(krn.ModelInfo().IsGPT),
+				"max_tokens":  2048,
+				"temperature": 0.7,
+				"top_p":       0.9,
+				"top_k":       40,
 			}
 
-			if reasoning {
-				reasoning = false
-				fmt.Println()
-				continue
+			ch, err := performChat(ctx, krn, d)
+			if err != nil {
+				return nil, fmt.Errorf("unable to perform chat: %w", err)
 			}
 
-			fmt.Printf("%s", resp.Choice[0].Delta.Content)
+			messages, err = modelResponse(krn, messages, ch)
+			if err != nil {
+				return nil, fmt.Errorf("model response: %w", err)
+			}
+
+			return messages, nil
+		}()
+
+		if err != nil {
+			return fmt.Errorf("unable to perform chat: %w", err)
 		}
 	}
-
-	return nil
 }
 
 func installSystem() (string, error) {
@@ -198,6 +178,207 @@ func installSystem() (string, error) {
 	}
 
 	return modelFile, nil
+}
+
+func newKronk(modelFile string) (*kronk.Kronk, error) {
+	if err := kronk.Init(libPath, kronk.LogSilent); err != nil {
+		return nil, fmt.Errorf("unable to init kronk: %w", err)
+	}
+
+	krn, err := kronk.New(modelInstances, model.Config{
+		ModelFile: modelFile,
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("unable to create inference model: %w", err)
+	}
+
+	fmt.Print("- system info:\n\t")
+	for k, v := range krn.SystemInfo() {
+		fmt.Printf("%s:%v, ", k, v)
+	}
+	fmt.Println()
+
+	fmt.Println("- contextWindow:", krn.ModelConfig().ContextWindow)
+	fmt.Println("- embeddings   :", krn.ModelConfig().Embeddings)
+	fmt.Println("- isGPT        :", krn.ModelInfo().IsGPT)
+
+	return krn, nil
+}
+
+func userInput(messages []model.D) ([]model.D, error) {
+	fmt.Print("\nUSER> ")
+
+	reader := bufio.NewReader(os.Stdin)
+
+	userInput, err := reader.ReadString('\n')
+	if err != nil {
+		return messages, fmt.Errorf("unable to read user input: %w", err)
+	}
+
+	if userInput == "quit\n" {
+		return nil, io.EOF
+	}
+
+	messages = append(messages,
+		model.TextMessage("user", userInput),
+	)
+
+	return messages, nil
+}
+
+func tools(isGPT bool) []model.D {
+	if isGPT {
+		return model.DocumentArray(
+			model.D{
+				"type": "function",
+				"function": model.D{
+					"name":        "get_weather",
+					"description": "Get the current weather for a location",
+					"parameters": model.D{
+						"type": "object",
+						"properties": model.D{
+							"location": model.D{
+								"type":        "string",
+								"description": "The location to get the weather for, e.g. San Francisco, CA",
+							},
+						},
+						"required": []any{"location"},
+					},
+				},
+			},
+			model.D{
+				"type": "function",
+				"function": model.D{
+					"name":        "invoke_cli_command",
+					"description": "Use this anytime you need to run a CLI command of any kind",
+					"parameters": model.D{
+						"type": "object",
+						"properties": model.D{
+							"call": model.D{
+								"type":        "string",
+								"description": "The full set of parameters to pass to the CLI command",
+							},
+						},
+						"required": []any{"call"},
+					},
+				},
+			},
+		)
+	}
+
+	return model.DocumentArray(
+		model.D{
+			"type": "function",
+			"function": model.D{
+				"name":        "get_weather",
+				"description": "Get the current weather for a location",
+				"arguments": model.D{
+					"location": model.D{
+						"type":        "string",
+						"description": "The location to get the weather for, e.g. San Francisco, CA",
+					},
+				},
+			},
+		},
+		model.D{
+			"type": "function",
+			"function": model.D{
+				"name":        "invoke_cli_command",
+				"description": "Use this anytime you need to run a CLI command of any kind",
+				"arguments": model.D{
+					"call": model.D{
+						"type":        "string",
+						"description": "The full set of parameters to pass to the CLI command",
+					},
+				},
+				"required": []any{"call"},
+			},
+		},
+	)
+}
+
+func performChat(ctx context.Context, krn *kronk.Kronk, d model.D) (<-chan model.ChatResponse, error) {
+	ch, err := krn.ChatStreaming(ctx, d)
+	if err != nil {
+		return nil, fmt.Errorf("chat streaming: %w", err)
+	}
+
+	return ch, nil
+}
+
+func modelResponse(krn *kronk.Kronk, messages []model.D, ch <-chan model.ChatResponse) ([]model.D, error) {
+	fmt.Print("\nMODEL> ")
+
+	var reasoning bool
+	var lr model.ChatResponse
+
+loop:
+	for resp := range ch {
+		lr = resp
+
+		switch resp.Choice[0].FinishReason {
+		case model.FinishReasonError:
+			return messages, fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
+
+		case model.FinishReasonStop:
+			messages = append(messages,
+				model.TextMessage("assistant", resp.Choice[0].Delta.Content),
+			)
+			break loop
+
+		case model.FinishReasonTool:
+			fmt.Println()
+			if krn.ModelInfo().IsGPT {
+				fmt.Println()
+			}
+
+			fmt.Printf("\u001b[92mModel Asking For Tool Call:\nToolID[%s]: %s(%s)\u001b[0m",
+				resp.Choice[0].Delta.ToolCalls[0].ID,
+				resp.Choice[0].Delta.ToolCalls[0].Name,
+				resp.Choice[0].Delta.ToolCalls[0].Arguments,
+			)
+
+			messages = append(messages,
+				model.TextMessage("tool", fmt.Sprintf("Tool call %s: %s(%v)",
+					resp.Choice[0].Delta.ToolCalls[0].ID,
+					resp.Choice[0].Delta.ToolCalls[0].Name,
+					resp.Choice[0].Delta.ToolCalls[0].Arguments),
+				),
+			)
+			break loop
+
+		default:
+			if resp.Choice[0].Delta.Reasoning != "" {
+				fmt.Printf("\u001b[91m%s\u001b[0m", resp.Choice[0].Delta.Reasoning)
+				reasoning = true
+				continue
+			}
+
+			if reasoning {
+				reasoning = false
+
+				fmt.Println()
+				if krn.ModelInfo().IsGPT {
+					fmt.Println()
+				}
+			}
+
+			fmt.Printf("%s", resp.Choice[0].Delta.Content)
+		}
+	}
+
+	// -------------------------------------------------------------------------
+
+	contextTokens := lr.Usage.InputTokens + lr.Usage.CompletionTokens
+	contextWindow := krn.ModelConfig().ContextWindow
+	percentage := (float64(contextTokens) / float64(contextWindow)) * 100
+	of := float32(contextWindow) / float32(1024)
+
+	fmt.Printf("\n\n\u001b[90mInput: %d  Reasoning: %d  Completion: %d  Output: %d  Window: %d (%.0f%% of %.0fK) TPS: %.2f\u001b[0m\n",
+		lr.Usage.InputTokens, lr.Usage.ReasoningTokens, lr.Usage.CompletionTokens, lr.Usage.OutputTokens, contextTokens, percentage, of, lr.Usage.TokensPerSecond)
+
+	return messages, nil
 }
 ```
 
