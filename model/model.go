@@ -140,7 +140,7 @@ func (m *Model) ModelInfo() ModelInfo {
 	return m.modelInfo
 }
 
-func (m *Model) processTokens(ctx context.Context, id string, lctx llama.Context, object string, prompt string, params Params, ch chan<- ChatResponse) {
+func (m *Model) processChatRequest(ctx context.Context, id string, lctx llama.Context, object string, prompt string, params Params, ch chan<- ChatResponse) {
 	var inputTokens int
 	var completionTokens int
 	var reasonTokens int
@@ -173,6 +173,18 @@ func (m *Model) processTokens(ctx context.Context, id string, lctx llama.Context
 	sampler, batch, inputTokens, outputTokens := m.startProcessing(lctx, object, prompt, params)
 	defer llama.SamplerFree(sampler)
 
+	// Check that we have not exceeded the context window.
+	if inputTokens > m.cfg.ContextWindow {
+		err := fmt.Errorf("input tokens %d exceed context window %d", inputTokens, m.cfg.ContextWindow)
+		m.sendErrorResponse(ctx, ch, id, object, 0, prompt, err, Usage{
+			InputTokens:      inputTokens,
+			ReasoningTokens:  reasonTokens,
+			CompletionTokens: completionTokens,
+			OutputTokens:     outputTokens,
+		})
+		return
+	}
+
 	// -------------------------------------------------------------------------
 
 	// Capture the time we start processing the request for a wall clock.
@@ -189,7 +201,12 @@ loop:
 				break loop
 			}
 
-			m.sendErrorResponse(ctx, ch, id, object, index, prompt, err, Usage{})
+			m.sendErrorResponse(ctx, ch, id, object, index, prompt, err, Usage{
+				InputTokens:      inputTokens,
+				ReasoningTokens:  reasonTokens,
+				CompletionTokens: completionTokens,
+				OutputTokens:     outputTokens,
+			})
 			return
 		}
 
@@ -208,7 +225,12 @@ loop:
 		case "<tool_call>":
 			content, err = m.toolCall(lctx, token, sampler, buf)
 			if err != nil {
-				m.sendErrorResponse(ctx, ch, id, object, index, prompt, err, Usage{})
+				m.sendErrorResponse(ctx, ch, id, object, index, prompt, err, Usage{
+					InputTokens:      inputTokens,
+					ReasoningTokens:  reasonTokens,
+					CompletionTokens: completionTokens,
+					OutputTokens:     outputTokens,
+				})
 				return
 			}
 
@@ -219,7 +241,12 @@ loop:
 		case "<|channel|>":
 			batch, content, err = m.gptChannel(lctx, token, sampler, buf)
 			if err != nil {
-				m.sendErrorResponse(ctx, ch, id, object, index, prompt, err, Usage{})
+				m.sendErrorResponse(ctx, ch, id, object, index, prompt, err, Usage{
+					InputTokens:      inputTokens,
+					ReasoningTokens:  reasonTokens,
+					CompletionTokens: completionTokens,
+					OutputTokens:     outputTokens,
+				})
 				return
 			}
 
@@ -241,7 +268,12 @@ loop:
 		case "<|end|>":
 			batch, err = m.gptEnd(lctx, token, sampler, buf)
 			if err != nil {
-				m.sendErrorResponse(ctx, ch, id, object, index, prompt, err, Usage{})
+				m.sendErrorResponse(ctx, ch, id, object, index, prompt, err, Usage{
+					InputTokens:      inputTokens,
+					ReasoningTokens:  reasonTokens,
+					CompletionTokens: completionTokens,
+					OutputTokens:     outputTokens,
+				})
 				return
 			}
 			continue

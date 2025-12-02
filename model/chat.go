@@ -93,7 +93,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 			}()
 		}
 
-		m.processTokens(ctx, id, lctx, object, prompt, params, ch)
+		m.processChatRequest(ctx, id, lctx, object, prompt, params, ch)
 	}()
 
 	return ch
