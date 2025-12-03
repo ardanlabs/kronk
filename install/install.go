@@ -2,6 +2,7 @@
 package install
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -105,8 +106,16 @@ func swapTempForLib(libPath string, tempPath string) error {
 	return nil
 }
 
+// =============================================================================
+
 // Model installs the model at the specified URL to the specified path.
 func Model(modelURL string, modelPath string) (string, error) {
+	return ModelWithProgress(modelURL, modelPath, nil)
+}
+
+// ModelWithProgress installs the model at the specified URL to the specified
+// path with progress tracking.
+func ModelWithProgress(modelURL string, modelPath string, progress ProgressFunc) (string, error) {
 	u, err := url.Parse(modelURL)
 	if err != nil {
 		return "", fmt.Errorf("unable to parse modelURL: %w", err)
@@ -114,11 +123,17 @@ func Model(modelURL string, modelPath string) (string, error) {
 
 	file := filepath.Join(modelPath, path.Base(u.Path))
 
-	if _, err := os.Stat(file); err == nil {
-		return file, nil
+	// The downloader can check if we have the full file and if it's of the
+	// correct size. If we are not given a progress function, we can't check
+	// the file size and the existence of the file is all we can do not to
+	// start a download.
+	if progress == nil {
+		if _, err := os.Stat(file); err == nil {
+			return file, nil
+		}
 	}
 
-	if err := download.GetModel(modelURL, modelPath); err != nil {
+	if err := pullFile(context.Background(), modelURL, modelPath, progress); err != nil {
 		return "", fmt.Errorf("unable to download model: %w", err)
 	}
 

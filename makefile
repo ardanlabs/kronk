@@ -34,8 +34,11 @@ dev-gotooling:
 # ==============================================================================
 # Server
 
-server-build:
-	go build -o bin/kronk cmd/server/main.go
+kronk-build:
+	go build -o bin/kronk cmd/kronk/main.go
+
+kronk-pull:
+	go run cmd/kronk/main.go pull "https://huggingface.co/unsloth/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-Q8_0.gguf?download=true"
 
 # ==============================================================================
 # Tests

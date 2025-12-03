@@ -68,13 +68,18 @@ func Model(modelURL string, modelPath string) (string, error) {
 	name := strings.TrimSuffix(filename, path.Ext(filename))
 	fmt.Printf("- check %q installation: ", name)
 
-	localPath, err := install.Model(modelURL, modelPath)
+	f := func(src string, currentSize int64, totalSize int64, mibPerSec float64) {
+		fmt.Printf("\rDownloading %s... %d MiB of %d MiB (%.2f MiB/s)  ", src, currentSize/(1024*1024), totalSize/(1024*1024), mibPerSec)
+	}
+
+	localPath, err := install.ModelWithProgress(modelURL, modelPath, f)
 	if err != nil {
 		fmt.Println("X")
 		return "", fmt.Errorf("unable to download model: %w", err)
 	}
 
-	fmt.Println("✓")
+	fmt.Println()
+	fmt.Printf("- check %q installation: ✓\n", name)
 
 	return localPath, nil
 }

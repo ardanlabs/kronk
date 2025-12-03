@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/ardanlabs/kronk/install"
 	"github.com/spf13/cobra"
 )
 
@@ -115,7 +116,12 @@ func runServe(cmd *cobra.Command, args []string) {
 }
 
 func runPull(cmd *cobra.Command, args []string) {
-	fmt.Println("pull command not implemented")
+	f := func(src string, currentSize int64, totalSize int64, mibPerSec float64) {
+		fmt.Printf("\rDownloading %s... %d MiB of %d MiB (%.2f MiB/s)  ", src, currentSize/(1024*1024), totalSize/(1024*1024), mibPerSec)
+	}
+
+	url := args[0]
+	install.ModelWithProgress(url, "./models", f)
 }
 
 func runList(cmd *cobra.Command, args []string) {
