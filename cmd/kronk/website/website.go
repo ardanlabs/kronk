@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	modelChatURL       = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf?download=true"
+	modelChatURL       = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
 	libPath            = "tests/libraries"
 	modelPath          = "tests/models"
 	modelInstances     = 1

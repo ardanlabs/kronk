@@ -108,17 +108,20 @@ func swapTempForLib(libPath string, tempPath string) error {
 
 // =============================================================================
 
-// Model installs the model at the specified URL to the specified path.
-func Model(modelURL string, modelPath string) (string, error) {
+// Model installs the model at the specified URL to the specified path. The name
+// of the file and a flag that indicates if an actual download occurred is
+// returned.
+func Model(modelURL string, modelPath string) (string, bool, error) {
 	return ModelWithProgress(modelURL, modelPath, nil)
 }
 
 // ModelWithProgress installs the model at the specified URL to the specified
-// path with progress tracking.
-func ModelWithProgress(modelURL string, modelPath string, progress ProgressFunc) (string, error) {
+// path with progress tracking. The name of the file and a flag that indicates
+// if an actual download occurred is returned.
+func ModelWithProgress(modelURL string, modelPath string, progress ProgressFunc) (string, bool, error) {
 	u, err := url.Parse(modelURL)
 	if err != nil {
-		return "", fmt.Errorf("unable to parse modelURL: %w", err)
+		return "", false, fmt.Errorf("unable to parse modelURL: %w", err)
 	}
 
 	file := filepath.Join(modelPath, path.Base(u.Path))
@@ -129,13 +132,14 @@ func ModelWithProgress(modelURL string, modelPath string, progress ProgressFunc)
 	// start a download.
 	if progress == nil {
 		if _, err := os.Stat(file); err == nil {
-			return file, nil
+			return file, false, nil
 		}
 	}
 
-	if err := pullFile(context.Background(), modelURL, modelPath, progress); err != nil {
-		return "", fmt.Errorf("unable to download model: %w", err)
+	downloaded, err := pullFile(context.Background(), modelURL, modelPath, progress)
+	if err != nil {
+		return "", false, fmt.Errorf("unable to download model: %w", err)
 	}
 
-	return file, nil
+	return file, downloaded, nil
 }

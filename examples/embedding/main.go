@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	modelURL       = "https://huggingface.co/ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/resolve/main/embeddinggemma-300m-qat-Q8_0.gguf?download=true"
+	modelURL       = "https://huggingface.co/ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/resolve/main/embeddinggemma-300m-qat-Q8_0.gguf"
 	libPath        = "tests/libraries"
 	modelPath      = "tests/models"
 	modelInstances = 1

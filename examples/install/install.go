@@ -5,9 +5,7 @@ package install
 import (
 	"fmt"
 	"net/url"
-	"os"
 	"path"
-	"path/filepath"
 	"strings"
 
 	"github.com/ardanlabs/kronk/install"
@@ -42,20 +40,6 @@ func Libraries(libPath string, processor download.Processor, allowUpgrade bool) 
 		fmt.Println("  - failed to install new version, using current version")
 	}
 
-	f := func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		fmt.Println("lib:", path)
-		return nil
-	}
-
-	if err := filepath.Walk(libPath, f); err != nil {
-		fmt.Println("x")
-		return fmt.Errorf("error walking model path: %v", err)
-	}
-
 	fmt.Print("- updated llama.cpp installation: ")
 	fmt.Println("✓")
 	fmt.Printf("  - old version    : %s\n  - current version: %s\n", orgVI.Current, vi.Current)
@@ -68,18 +52,24 @@ func Model(modelURL string, modelPath string) (string, error) {
 	name := strings.TrimSuffix(filename, path.Ext(filename))
 	fmt.Printf("- check %q installation: ", name)
 
-	f := func(src string, currentSize int64, totalSize int64, mibPerSec float64) {
-		fmt.Printf("\rDownloading %s... %d MiB of %d MiB (%.2f MiB/s)  ", src, currentSize/(1024*1024), totalSize/(1024*1024), mibPerSec)
+	f := func(src string, currentSize int64, totalSize int64, mibPerSec float64, complete bool) {
+		fmt.Printf("\r\x1b[KDownloading %s... %d MiB of %d MiB (%.2f MiB/s)", src, currentSize/(1024*1024), totalSize/(1024*1024), mibPerSec)
+		if complete {
+			fmt.Println()
+		}
 	}
 
-	localPath, err := install.ModelWithProgress(modelURL, modelPath, f)
+	localPath, downloaded, err := install.ModelWithProgress(modelURL, modelPath, f)
 	if err != nil {
-		fmt.Println("X")
+		fmt.Printf("\r\x1b[K- check %q installation: x\n", name)
 		return "", fmt.Errorf("unable to download model: %w", err)
 	}
 
+	fmt.Print("✓")
+	if downloaded {
+		fmt.Printf("\r\x1b[K- check %q installation: ✓", name)
+	}
 	fmt.Println()
-	fmt.Printf("- check %q installation: ✓\n", name)
 
 	return localPath, nil
 }
