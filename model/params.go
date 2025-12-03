@@ -8,10 +8,45 @@ import (
 )
 
 const (
-	defTopK      = 40
-	defTopP      = 0.9
-	defTemp      = 0.7
-	defMaxTokens = 512
+	defTopK            = 40
+	defTopP            = 0.9
+	defTemp            = 0.7
+	defMaxTokens       = 512
+	defEnableThinking  = ThinkingEnabled
+	defReasoningEffort = ReasoningEffortMedium
+)
+
+const (
+	// The model will perform thinking. This is the default setting.
+	ThinkingEnabled = "true"
+
+	// The model will not perform thinking.
+	ThinkingDisabled = "false"
+)
+
+const (
+	// The model does not perform reasoning This setting is fastest and lowest
+	// cost, ideal for latency-sensitive tasks that do not require complex logic,
+	// such as simple translation or data reformatting.
+	ReasoningEffortNone = "none"
+
+	// GPT: A very low amount of internal reasoning, optimized for throughput
+	// and speed.
+	ReasoningEffortMinimal = "minimal"
+
+	// GPT: Light reasoning that favors speed and lower token usage, suitable
+	// for triage or short answers.
+	ReasoningEffortLow = "low"
+
+	// GPT: The default setting, providing a balance between speed and reasoning
+	// accuracy. This is a good general-purpose choice for most tasks like
+	// content drafting or standard Q&A.
+	ReasoningEffortMedium = "medium"
+
+	// GPT: Extensive reasoning for complex, multi-step problems. This setting
+	// leads to the most thorough and accurate analysis but increases latency
+	// and cost due to a larger number of internal reasoning tokens used.
+	ReasoningEffortHigh = "high"
 )
 
 // Params represents the different options when using a model. The defaults are
@@ -42,11 +77,21 @@ const (
 // MaxTokens defines the maximum number of output tokens to generate for a
 // single response.
 // When set to 0, the default value is 512.
+//
+// EnableThinking determines if the model should think or not. It is used for
+// most non-GPT models. It accepts 1, t, T, TRUE, true, True, 0, f, F, FALSE,
+// false, False.
+// When set to an empty string, the default value is "true".
+//
+// ReasoningEffort is a string that specifies the level of reasoning effort to
+// use for GPT models.
 type Params struct {
-	Temperature float32 `json:"temperature"`
-	TopK        int32   `json:"top_k"`
-	TopP        float32 `json:"top_p"`
-	MaxTokens   int     `json:"max_tokens"`
+	Temperature     float32 `json:"temperature"`
+	TopK            int32   `json:"top_k"`
+	TopP            float32 `json:"top_p"`
+	MaxTokens       int     `json:"max_tokens"`
+	Thinking        string  `json:"enable_thinking"`
+	ReasoningEffort string  `json:"reasoning_effort"`
 }
 
 // AddParams can be used to add the configured parameters to the
@@ -56,6 +101,8 @@ func AddParams(p Params, d D) {
 	d["top_k"] = p.TopK
 	d["top_p"] = p.TopP
 	d["max_tokens"] = p.MaxTokens
+	d["enable_thinking"] = (p.Thinking != "false")
+	d["reasoning_effort"] = p.ReasoningEffort
 }
 
 func parseParams(d D) (Params, error) {
@@ -95,11 +142,31 @@ func parseParams(d D) (Params, error) {
 		}
 	}
 
+	enableThinking := true
+	if enableThinkingVal, exists := d["enable_thinking"]; exists {
+		var err error
+		enableThinking, err = parseBool("enable_thinking", enableThinkingVal)
+		if err != nil {
+			return Params{}, err
+		}
+	}
+
+	reasoningEffort := ReasoningEffortMedium
+	if reasoningEffortVal, exists := d["reasoning_effort"]; exists {
+		var err error
+		reasoningEffort, err = parseReasoningString("reasoning_effort", reasoningEffortVal)
+		if err != nil {
+			return Params{}, err
+		}
+	}
+
 	params := Params{
-		Temperature: temp,
-		TopK:        int32(topK),
-		TopP:        topP,
-		MaxTokens:   maxTokens,
+		Temperature:     temp,
+		TopK:            int32(topK),
+		TopP:            topP,
+		MaxTokens:       maxTokens,
+		Thinking:        strconv.FormatBool(enableThinking),
+		ReasoningEffort: reasoningEffort,
 	}
 
 	return adjustParams(params), nil
@@ -122,6 +189,14 @@ func adjustParams(p Params) Params {
 		p.MaxTokens = defMaxTokens
 	}
 
+	if p.Thinking == "" {
+		p.Thinking = defEnableThinking
+	}
+
+	if p.ReasoningEffort == "" {
+		p.ReasoningEffort = defReasoningEffort
+	}
+
 	return p
 }
 
@@ -136,14 +211,14 @@ func toSampler(p Params) llama.Sampler {
 	return sampler
 }
 
-func parseFloat32(name string, val any) (float32, error) {
+func parseFloat32(fieldName string, val any) (float32, error) {
 	var result float32
 
 	switch v := val.(type) {
 	case string:
 		temp32, err := strconv.ParseFloat(v, 32)
 		if err != nil {
-			return 0, fmt.Errorf("%s is not valid: %w", name, err)
+			return 0, fmt.Errorf("%s is not valid: %w", fieldName, err)
 		}
 		result = float32(temp32)
 
@@ -163,20 +238,20 @@ func parseFloat32(name string, val any) (float32, error) {
 		result = float32(v)
 
 	default:
-		return 0, fmt.Errorf("%s is not a valid type", name)
+		return 0, fmt.Errorf("%s is not a valid type", fieldName)
 	}
 
 	return result, nil
 }
 
-func parseInt(name string, val any) (int, error) {
+func parseInt(fieldName string, val any) (int, error) {
 	var result int
 
 	switch v := val.(type) {
 	case string:
 		temp32, err := strconv.ParseFloat(v, 32)
 		if err != nil {
-			return 0, fmt.Errorf("%s is not valid: %w", name, err)
+			return 0, fmt.Errorf("%s is not valid: %w", fieldName, err)
 		}
 		result = int(temp32)
 
@@ -196,7 +271,46 @@ func parseInt(name string, val any) (int, error) {
 		result = int(v)
 
 	default:
-		return 0, fmt.Errorf("%s is not a valid type", name)
+		return 0, fmt.Errorf("%s is not a valid type", fieldName)
+	}
+
+	return result, nil
+}
+
+func parseBool(fieldName string, val any) (bool, error) {
+	result := true
+
+	switch v := val.(type) {
+	case string:
+		if v == "" {
+			break
+		}
+
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return false, fmt.Errorf("%s is not valid: %w", fieldName, err)
+		}
+
+		result = b
+	}
+
+	return result, nil
+}
+
+func parseReasoningString(fieldName string, val any) (string, error) {
+	result := ReasoningEffortMedium
+
+	switch v := val.(type) {
+	case string:
+		if v != ReasoningEffortNone &&
+			v != ReasoningEffortMinimal &&
+			v != ReasoningEffortLow &&
+			v != ReasoningEffortMedium &&
+			v != ReasoningEffortHigh {
+			return "", fmt.Errorf("%s is not valid option: %s", fieldName, v)
+		}
+
+		result = v
 	}
 
 	return result, nil

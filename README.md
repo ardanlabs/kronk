@@ -392,14 +392,29 @@ export LD_LIBRARY_PATH=:tests/libraries && \
 Output:
 
 - check llama.cpp installation: ✓
-  - latest version : b7211
-  - current version: b7211
+  - latest version : b7248
+  - current version: b7248
 - check "Qwen3-8B-Q8_0" installation: ✓
+- system info:
+	CPU:NEON, ARM_FMA:on, FP16_VA:on, DOTPROD:on, LLAMAFILE:on, ACCELERATE:on, REPACK:on, Metal:EMBED_LIBRARY,
+- contextWindow: 40960
+- embeddings   : false
+- isGPT        : false
 
-QUESTION: Hello model
+USER> hello model
 
-Okay, the user said "Hello model." I need to respond appropriately. First, I should acknowledge their greeting. Since they mentioned "model," maybe they're referring to me as a language model. I should clarify that I'm Qwen, a large language model developed by Alibaba Cloud. I should keep the response friendly and open-ended to encourage them to ask questions or share what they need help with. Let me make sure the tone is welcoming and not too formal. Also, check for any possible misunderstandings. They might be testing if I recognize the term "model," so confirming my identity as Qwen is important. Alright, time to put it all together in a concise and friendly manner.
+MODEL> Okay, the user said "hello model". Let me think about how to respond.
 
-! I'm Qwen, a large language model developed by Alibaba Cloud. How can I assist you today? 😊
-Unloading Kronk
+First, I need to check if there's any function I should call here. The available tools are get_weather and invoke_cli_command. The user's message is just a greeting, so probably no function is needed.
+
+The user might just be testing or starting a conversation. My role is to greet them back and offer help. I should keep it friendly and open-ended. Let me make sure there's no hidden request in their message. Nope, it's straightforward.
+
+So, the best move is to acknowledge their greeting and ask how I can assist. That's standard for such interactions. No tool calls required here
+.
+
+Hello! How can I assist you today?
+
+Input: 199  Reasoning: 143  Completion: 10  Output: 153  Window: 209 (1% of 40K) TPS: 46.54
+
+USER>
 ```
