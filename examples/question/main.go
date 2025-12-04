@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk"
+	"github.com/ardanlabs/kronk/defaults"
 	"github.com/ardanlabs/kronk/examples/install"
 	"github.com/ardanlabs/kronk/model"
 	"github.com/hybridgroup/yzma/pkg/download"
@@ -22,9 +23,12 @@ import (
 
 const (
 	modelURL       = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
-	libPath        = "tests/libraries"
-	modelPath      = "tests/models"
 	modelInstances = 1
+)
+
+var (
+	libPath   = defaults.LibsDir()
+	modelPath = defaults.ModelsDir()
 )
 
 func main() {

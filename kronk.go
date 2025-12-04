@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -40,6 +41,11 @@ var (
 // Init initializes the Kronk backend suport.
 func Init(libPath string, logLevel LogLevel) error {
 	initOnce.Do(func() {
+		if v := os.Getenv("LD_LIBRARY_PATH"); v != libPath {
+			initErr = fmt.Errorf("mismatch: LD_LIBRARY_PATH %q, libPath %q", v, libPath)
+			return
+		}
+
 		if err := llama.Load(libPath); err != nil {
 			initErr = fmt.Errorf("unable to load library: %w", err)
 			return

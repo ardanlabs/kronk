@@ -2,22 +2,15 @@
 package pull
 
 import (
-	"errors"
 	"fmt"
 	"net/url"
 
-	"github.com/ardanlabs/kronk/cmd/kronk/defaults"
+	"github.com/ardanlabs/kronk/defaults"
 	"github.com/ardanlabs/kronk/install"
 )
 
-var ErrInvalidArguments = errors.New("invalid arguments")
-
 // Run executes the pull command.
 func Run(args []string) error {
-	if len(args) == 0 {
-		return ErrInvalidArguments
-	}
-
 	modelPath := defaults.ModelsDir()
 	modelURL := args[0]
 
@@ -25,6 +18,7 @@ func Run(args []string) error {
 		return fmt.Errorf("invalid URL: %s", modelURL)
 	}
 
+	fmt.Println()
 	fmt.Println("ModelURL :", modelURL)
 	fmt.Println("ModelPath:", modelPath)
 

@@ -8,7 +8,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/ardanlabs/kronk/cmd/kronk/defaults"
+	"github.com/ardanlabs/kronk/defaults"
 )
 
 var ErrInvalidArguments = errors.New("invalid arguments")

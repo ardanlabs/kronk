@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk"
+	"github.com/ardanlabs/kronk/defaults"
 	"github.com/ardanlabs/kronk/examples/install"
 	"github.com/ardanlabs/kronk/examples/web/website"
 	"github.com/ardanlabs/kronk/model"
@@ -35,14 +36,17 @@ import (
 
 const (
 	modelChatURL       = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
-	libPath            = "tests/libraries"
-	modelPath          = "tests/models"
 	modelInstances     = 1
 	WebReadTimeout     = 10 * time.Second
 	WebWriteTimeout    = 120 * time.Second
 	WebIdleTimeout     = 120 * time.Second
 	WebShutdownTimeout = 20 * time.Second
 	WebAPIHost         = "0.0.0.0:8080"
+)
+
+var (
+	libPath   = defaults.LibsDir()
+	modelPath = defaults.ModelsDir()
 )
 
 func main() {

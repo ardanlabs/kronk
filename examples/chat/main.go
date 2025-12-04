@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk"
+	"github.com/ardanlabs/kronk/defaults"
 	"github.com/ardanlabs/kronk/examples/install"
 	"github.com/ardanlabs/kronk/model"
 	"github.com/hybridgroup/yzma/pkg/download"
@@ -28,9 +29,12 @@ import (
 const (
 	modelURL = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
 	// modelURL  = "https://huggingface.co/unsloth/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-Q8_0.gguf"
-	libPath        = "tests/libraries"
-	modelPath      = "tests/models"
 	modelInstances = 1
+)
+
+var (
+	libPath   = defaults.LibsDir()
+	modelPath = defaults.ModelsDir()
 )
 
 func main() {
@@ -46,7 +50,7 @@ func run() error {
 		return fmt.Errorf("unable to installation system: %w", err)
 	}
 
-	krn, err := newKronk(modelFile)
+	krn, err := newKronk(libPath, modelFile)
 	if err != nil {
 		return fmt.Errorf("unable to init kronk: %w", err)
 	}
@@ -115,7 +119,7 @@ func installSystem() (string, error) {
 	return modelFile, nil
 }
 
-func newKronk(modelFile string) (*kronk.Kronk, error) {
+func newKronk(libPath string, modelFile string) (*kronk.Kronk, error) {
 	if err := kronk.Init(libPath, kronk.LogSilent); err != nil {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}

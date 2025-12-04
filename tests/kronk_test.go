@@ -10,23 +10,24 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk"
+	"github.com/ardanlabs/kronk/defaults"
 	"github.com/ardanlabs/kronk/install"
 	"github.com/ardanlabs/kronk/model"
 	"github.com/hybridgroup/yzma/pkg/download"
 )
 
 var (
-	modelThinkToolChatFile = "models/Qwen3-8B-Q8_0.gguf"
-	modelGPTChatFile       = "models/gpt-oss-20b-Q8_0.gguf"
-	modelSimpleVisionFile  = "models/Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
-	projSimpleVisionFile   = "models/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
-	modelEmbedFile         = "models/embeddinggemma-300m-qat-Q8_0.gguf"
+	modelThinkToolChatFile = filepath.Join(defaults.ModelsDir(), "Qwen3-8B-Q8_0.gguf")
+	modelGPTChatFile       = filepath.Join(defaults.ModelsDir(), "gpt-oss-20b-Q8_0.gguf")
+	modelSimpleVisionFile  = filepath.Join(defaults.ModelsDir(), "Qwen2.5-VL-3B-Instruct-Q8_0.gguf")
+	projSimpleVisionFile   = filepath.Join(defaults.ModelsDir(), "mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf")
+	modelEmbedFile         = filepath.Join(defaults.ModelsDir(), "embeddinggemma-300m-qat-Q8_0.gguf")
 )
 
 var (
 	gw             = os.Getenv("GITHUB_WORKSPACE")
-	libPath        = filepath.Join(gw, "tests/libraries")
-	modelPath      = filepath.Join(gw, "tests/models")
+	libPath        = defaults.LibsDir()
+	modelPath      = defaults.ModelsDir()
 	imageFile      = filepath.Join(gw, "examples/samples/giraffe.jpg")
 	goroutines     = 1
 	modelInstances = 1
@@ -62,6 +63,7 @@ func installer() {
 	fmt.Println("libpath        :", libPath)
 	fmt.Println("modelPath      :", modelPath)
 	fmt.Println("imageFile      :", imageFile)
+	fmt.Println("processor      :", "cpu")
 	fmt.Println("testDuration   :", testDuration)
 	fmt.Println("LD_LIBRARY_PATH:", os.Getenv("LD_LIBRARY_PATH"))
 	fmt.Println("MODEL INSTANCES:", modelInstances)
