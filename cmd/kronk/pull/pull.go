@@ -14,12 +14,18 @@ func Run(args []string) error {
 	modelPath := defaults.ModelsDir()
 	modelURL := args[0]
 
+	var projURL string
+	if len(args) == 2 {
+		projURL = args[1]
+	}
+
 	if _, err := url.ParseRequestURI(modelURL); err != nil {
 		return fmt.Errorf("invalid URL: %s", modelURL)
 	}
 
 	fmt.Println()
 	fmt.Println("ModelURL :", modelURL)
+	fmt.Println("ProjURL  :", projURL)
 	fmt.Println("ModelPath:", modelPath)
 
 	f := func(src string, currentSize int64, totalSize int64, mibPerSec float64, complete bool) {
@@ -29,12 +35,12 @@ func Run(args []string) error {
 		}
 	}
 
-	_, downloaded, err := install.ModelWithProgress(modelURL, modelPath, f)
+	info, err := install.Model(modelURL, projURL, modelPath, f)
 	if err != nil {
 		return err
 	}
 
-	if !downloaded {
+	if !info.Downloaded {
 		fmt.Println("Already downloaded")
 		return nil
 	}

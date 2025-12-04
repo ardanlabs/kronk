@@ -111,12 +111,12 @@ func installSystem() (string, error) {
 		return "", fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
-	modelFile, err := install.Model(modelURL, modelPath)
+	info, err := install.Model(modelURL, "", modelPath)
 	if err != nil {
 		return "", fmt.Errorf("unable to install model: %w", err)
 	}
 
-	return modelFile, nil
+	return info.ModelFile, nil
 }
 
 func newKronk(libPath string, modelFile string) (*kronk.Kronk, error) {

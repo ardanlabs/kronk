@@ -48,7 +48,7 @@ func Libraries(libPath string, processor download.Processor, allowUpgrade bool) 
 	return nil
 }
 
-func Model(modelURL string, modelPath string) (string, error) {
+func Model(modelURL string, projURL string, modelPath string) (install.Info, error) {
 	u, _ := url.Parse(modelURL)
 	filename := path.Base(u.Path)
 	name := strings.TrimSuffix(filename, path.Ext(filename))
@@ -61,17 +61,17 @@ func Model(modelURL string, modelPath string) (string, error) {
 		}
 	}
 
-	localPath, downloaded, err := install.ModelWithProgress(modelURL, modelPath, f)
+	info, err := install.Model(modelURL, projURL, modelPath, f)
 	if err != nil {
 		fmt.Printf("\r\x1b[K- check %q installation: x\n", name)
-		return "", fmt.Errorf("unable to download model: %w", err)
+		return install.Info{}, fmt.Errorf("unable to download model: %w", err)
 	}
 
 	fmt.Print("✓")
-	if downloaded {
+	if info.Downloaded {
 		fmt.Printf("\r\x1b[K- check %q installation: ✓", name)
 	}
 	fmt.Println()
 
-	return localPath, nil
+	return info, nil
 }

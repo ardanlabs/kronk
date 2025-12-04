@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/hybridgroup/yzma/pkg/download"
 )
@@ -108,38 +109,137 @@ func swapTempForLib(libPath string, tempPath string) error {
 
 // =============================================================================
 
-// Model installs the model at the specified URL to the specified path. The name
-// of the file and a flag that indicates if an actual download occurred is
-// returned.
-func Model(modelURL string, modelPath string) (string, bool, error) {
-	return ModelWithProgress(modelURL, modelPath, nil)
-}
-
-// ModelWithProgress installs the model at the specified URL to the specified
-// path with progress tracking. The name of the file and a flag that indicates
-// if an actual download occurred is returned.
-func ModelWithProgress(modelURL string, modelPath string, progress ProgressFunc) (string, bool, error) {
-	u, err := url.Parse(modelURL)
+// FindModel locates the physical location on disk and returns the full path.
+func FindModel(modelName string, modelPath string) (string, error) {
+	entries, err := os.ReadDir(modelPath)
 	if err != nil {
-		return "", false, fmt.Errorf("unable to parse modelURL: %w", err)
+		return "", fmt.Errorf("reading models directory: %w", err)
 	}
 
-	file := filepath.Join(modelPath, path.Base(u.Path))
+	for _, orgEntry := range entries {
+		if !orgEntry.IsDir() {
+			continue
+		}
+
+		org := orgEntry.Name()
+
+		modelEntries, err := os.ReadDir(fmt.Sprintf("%s/%s", modelPath, org))
+		if err != nil {
+			continue
+		}
+
+		for _, modelEntry := range modelEntries {
+			if !modelEntry.IsDir() {
+				continue
+			}
+			model := modelEntry.Name()
+
+			fileEntries, err := os.ReadDir(fmt.Sprintf("%s/%s/%s", modelPath, org, model))
+			if err != nil {
+				continue
+			}
+
+			for _, fileEntry := range fileEntries {
+				if fileEntry.IsDir() {
+					continue
+				}
+
+				if fileEntry.Name() == ".DS_Store" {
+					continue
+				}
+
+				if fileEntry.Name() == modelName {
+					return filepath.Join(modelPath, org, model, fileEntry.Name()), nil
+				}
+			}
+		}
+	}
+
+	return "", fmt.Errorf("model %q not found", modelName)
+}
+
+// =============================================================================
+
+// Info provides information about the models that were installed.
+type Info struct {
+	ModelFile  string
+	ProjFile   string
+	Downloaded bool
+}
+
+// Model installs the model at the specified URL to the specified path with
+// progress tracking. The name of the file and a flag that indicates if an
+// actual download occurred is returned.
+func Model(modelURL string, projURL string, modelPath string, progress ProgressFunc) (Info, error) {
+	modelFile, downloadedMF, err := pull(modelURL, modelPath, progress)
+	if err != nil {
+		return Info{}, err
+	}
+
+	if projURL == "" {
+		return Info{ModelFile: modelFile, Downloaded: downloadedMF}, nil
+	}
+
+	modelFileName := filepath.Base(modelFile)
+	profFileName := fmt.Sprintf("mmproj-%s", modelFileName)
+	newProjFile := strings.Replace(modelFile, modelFileName, profFileName, 1)
+
+	if _, err := os.Stat(newProjFile); err == nil {
+		inf := Info{
+			ModelFile:  modelFile,
+			ProjFile:   newProjFile,
+			Downloaded: downloadedMF || false,
+		}
+
+		return inf, nil
+	}
+
+	projFile, downloadedPF, err := pull(projURL, modelPath, progress)
+	if err != nil {
+		return Info{}, err
+	}
+
+	if err := os.Rename(projFile, newProjFile); err != nil {
+		return Info{}, fmt.Errorf("unable to rename projector file: %w", err)
+	}
+
+	inf := Info{
+		ModelFile:  modelFile,
+		ProjFile:   newProjFile,
+		Downloaded: downloadedMF || downloadedPF,
+	}
+
+	return inf, nil
+}
+
+func pull(fileURL string, filePath string, progress ProgressFunc) (string, bool, error) {
+	mURL, err := url.Parse(fileURL)
+	if err != nil {
+		return "", false, fmt.Errorf("unable to parse fileURL: %w", err)
+	}
+
+	parts := strings.Split(mURL.Path, "/")
+	if len(parts) < 3 {
+		return "", false, fmt.Errorf("invalid huggingface url: %q", mURL.Path)
+	}
+
+	filePath = filepath.Join(filePath, parts[1], parts[2])
+	mFile := filepath.Join(filePath, path.Base(mURL.Path))
 
 	// The downloader can check if we have the full file and if it's of the
 	// correct size. If we are not given a progress function, we can't check
 	// the file size and the existence of the file is all we can do not to
 	// start a download.
 	if progress == nil {
-		if _, err := os.Stat(file); err == nil {
-			return file, false, nil
+		if _, err := os.Stat(mFile); err == nil {
+			return mFile, false, nil
 		}
 	}
 
-	downloaded, err := pullFile(context.Background(), modelURL, modelPath, progress)
+	downloaded, err := pullFile(context.Background(), fileURL, filePath, progress)
 	if err != nil {
 		return "", false, fmt.Errorf("unable to download model: %w", err)
 	}
 
-	return file, downloaded, nil
+	return mFile, downloaded, nil
 }

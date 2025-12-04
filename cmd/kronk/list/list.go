@@ -24,20 +24,55 @@ func Run(args []string) error {
 
 	fmt.Println()
 
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "NAME\tSIZE\tMODIFIED")
+	// ORG         /MODEL              /FILE
+	// mradermacher/Qwen2-Audio-7B-GGUF/Qwen2-Audio-7B.Q8_0.gguf
 
-	for _, entry := range entries {
-		info, err := entry.Info()
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
+	fmt.Fprintln(w, "ORG\tMODEL\tFILE\tSIZE\tMODIFIED")
+
+	for _, orgEntry := range entries {
+		if !orgEntry.IsDir() {
+			continue
+		}
+
+		org := orgEntry.Name()
+
+		modelEntries, err := os.ReadDir(fmt.Sprintf("%s/%s", modelPath, org))
 		if err != nil {
 			continue
 		}
 
-		name := entry.Name()
-		size := formatSize(info.Size())
-		modified := formatTime(info.ModTime())
+		for _, modelEntry := range modelEntries {
+			if !modelEntry.IsDir() {
+				continue
+			}
+			model := modelEntry.Name()
 
-		fmt.Fprintf(w, "%s\t%s\t%s\n", name, size, modified)
+			fileEntries, err := os.ReadDir(fmt.Sprintf("%s/%s/%s", modelPath, org, model))
+			if err != nil {
+				continue
+			}
+
+			for _, fileEntry := range fileEntries {
+				if fileEntry.IsDir() {
+					continue
+				}
+
+				if fileEntry.Name() == ".DS_Store" {
+					continue
+				}
+
+				info, err := fileEntry.Info()
+				if err != nil {
+					continue
+				}
+
+				size := formatSize(info.Size())
+				modified := formatTime(info.ModTime())
+
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", org, model, fileEntry.Name(), size, modified)
+			}
+		}
 	}
 
 	w.Flush()

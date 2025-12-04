@@ -63,7 +63,7 @@ func run() error {
 		return fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
-	modelChatFile, err := install.Model(modelChatURL, modelPath)
+	info, err := install.Model(modelChatURL, "", modelPath)
 	if err != nil {
 		return fmt.Errorf("unable to install chat model: %w", err)
 	}
@@ -75,7 +75,7 @@ func run() error {
 	}
 
 	krnChat, err := kronk.New(modelInstances, model.Config{
-		ModelFile: modelChatFile,
+		ModelFile: info.ModelFile,
 		NBatch:    32 * 1024,
 	})
 	if err != nil {

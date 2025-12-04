@@ -75,9 +75,9 @@ Environment Variables:
 }
 
 var pullCmd = &cobra.Command{
-	Use:   "pull <MODEL_URL>",
-	Short: "Pull a model from a registry",
-	Long: `Pull a model from a registry
+	Use:   "pull <MODEL_URL> <MMPROJ_URL>",
+	Short: "Pull a model from a registry, the mmproj file is optional",
+	Long: `Pull a model from a registry, the mmproj file is optional
 
 Environment Variables:
       KRONK_MODELS  (default: $HOME/kronk/models)  The path to the models directory`,

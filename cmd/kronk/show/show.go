@@ -4,19 +4,22 @@ package show
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 
 	"github.com/ardanlabs/kronk"
 	"github.com/ardanlabs/kronk/defaults"
+	"github.com/ardanlabs/kronk/install"
 	"github.com/ardanlabs/kronk/model"
 )
 
 // Run executes the pull command.
 func Run(args []string) error {
-	modelInstances := 1
 	modelPath := defaults.ModelsDir()
 	modelName := args[0]
-	modelFile := filepath.Join(modelPath, modelName)
+
+	modelFile, err := install.FindModel(modelName, modelPath)
+	if err != nil {
+		return err
+	}
 
 	libPath := defaults.LibsDir()
 
@@ -24,6 +27,7 @@ func Run(args []string) error {
 		return fmt.Errorf("unable to init kronk: %w", err)
 	}
 
+	const modelInstances = 1
 	krn, err := kronk.New(modelInstances, model.Config{
 		ModelFile: modelFile,
 	})
