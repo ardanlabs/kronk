@@ -101,8 +101,14 @@ func AddParams(p Params, d D) {
 	d["top_k"] = p.TopK
 	d["top_p"] = p.TopP
 	d["max_tokens"] = p.MaxTokens
-	d["enable_thinking"] = (p.Thinking != "false")
-	d["reasoning_effort"] = p.ReasoningEffort
+
+	if p.Thinking != "" {
+		d["enable_thinking"] = (p.Thinking != "false")
+	}
+
+	if p.ReasoningEffort != "" {
+		d["reasoning_effort"] = p.ReasoningEffort
+	}
 }
 
 func parseParams(d D) (Params, error) {

@@ -49,6 +49,10 @@ func Libraries(libPath string, processor download.Processor, allowUpgrade bool) 
 }
 
 func Model(modelURL string, projURL string, modelPath string) (install.Info, error) {
+	fmt.Println("- modelPath :", modelPath)
+	fmt.Println("- modelURL  :", modelURL)
+	fmt.Println("- projURL   :", projURL)
+
 	u, _ := url.Parse(modelURL)
 	filename := path.Base(u.Path)
 	name := strings.TrimSuffix(filename, path.Ext(filename))
