@@ -81,7 +81,7 @@ var pullCmd = &cobra.Command{
 
 Environment Variables:
       KRONK_MODELS  (default: $HOME/kronk/models)  The path to the models directory`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.RangeArgs(1, 2),
 	Run:  runPull,
 }
 
