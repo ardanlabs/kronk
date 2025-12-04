@@ -388,8 +388,7 @@ This example can produce the following output:
 
 ```
 $ make example-question
-export LD_LIBRARY_PATH=:tests/libraries && \
-	CGO_ENABLED=0 go run examples/question/main.go
+CGO_ENABLED=0 go run examples/question/main.go
 
 Output:
 

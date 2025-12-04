@@ -65,7 +65,6 @@ func installer() {
 	fmt.Println("imageFile      :", imageFile)
 	fmt.Println("processor      :", "cpu")
 	fmt.Println("testDuration   :", testDuration)
-	fmt.Println("LD_LIBRARY_PATH:", os.Getenv("LD_LIBRARY_PATH"))
 	fmt.Println("MODEL INSTANCES:", modelInstances)
 	fmt.Println("GOROUTINES     :", goroutines)
 	fmt.Println("INSTALL_LLAMA  :", os.Getenv("INSTALL_LLAMA"))
@@ -86,16 +85,6 @@ func installer() {
 			if err != nil {
 				fmt.Printf("Failed to install libraries: %s: error: %s\n", libPath, err)
 				os.Exit(1)
-			}
-
-			if err := filepath.Walk(libPath, func(path string, info os.FileInfo, err error) error {
-				if err != nil {
-					return err
-				}
-				fmt.Println("lib:", path)
-				return nil
-			}); err != nil {
-				fmt.Printf("error walking library path: %v\n", err)
 			}
 		}
 	}

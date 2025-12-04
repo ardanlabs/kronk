@@ -48,14 +48,12 @@ kronk-list:
 
 # make kronk-show FILE="Qwen3-8B-Q8_0.gguf"
 kronk-show:
-	export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:$$HOME/kronk/libraries && \
 	go run cmd/kronk/main.go show "$(FILE)"
 
 # ==============================================================================
 # Tests
 
 test:
-	export LD_LIBRARY_PATH=$$HOME/kronk/libraries && \
 	export GOROUTINES=1 && \
 	export INSTALL_LLAMA=1 && \
 	export RUN_IN_PARALLEL=1 && \
@@ -79,31 +77,24 @@ yzma-latest:
 # Examples
 
 example-audio:
-	export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:$$HOME/kronk/libraries && \
 	CGO_ENABLED=0 go run examples/audio/main.go
 
 example-chat:
-	export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:$$HOME/kronk/libraries && \
 	CGO_ENABLED=0 go run examples/chat/main.go
 
 example-embedding:
-	export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:$$HOME/kronk/libraries && \
 	CGO_ENABLED=0 go run examples/embedding/main.go
 
 example-question:
-	export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:$$HOME/kronk/libraries && \
 	CGO_ENABLED=0 go run examples/question/main.go
 
 example-rerank:
-	export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:$$HOME/kronk/libraries && \
 	CGO_ENABLED=0 go run examples/rerank/main.go
 
 example-vision:
-	export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:$$HOME/kronk/libraries && \
 	CGO_ENABLED=0 go run examples/vision/main.go
 
 example-web:
-	export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:$$HOME/kronk/libraries && \
 	CGO_ENABLED=0 go run examples/web/main.go
 
 example-web-curl1:

@@ -42,8 +42,7 @@ var (
 func Init(libPath string, logLevel LogLevel) error {
 	initOnce.Do(func() {
 		if v := os.Getenv("LD_LIBRARY_PATH"); !strings.Contains(v, libPath) {
-			initErr = fmt.Errorf("libpath (%q) is missing from LD_LIBRARY_PATH (%q), set your LD_LIBRARY_PATH with your libpath", libPath, v)
-			return
+			os.Setenv("LD_LIBRARY_PATH", fmt.Sprintf("%s:%s", libPath, v))
 		}
 
 		if err := llama.Load(libPath); err != nil {

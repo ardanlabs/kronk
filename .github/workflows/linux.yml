@@ -37,7 +37,6 @@ jobs:
           curl -Lo $HOME/kronk/models/embeddinggemma-300m-qat-Q8_0.gguf https://huggingface.co/ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/resolve/main/embeddinggemma-300m-qat-Q8_0.gguf
       - name: Run unit tests
         run: |
-          export LD_LIBRARY_PATH=$HOME/kronk/libraries
           export GOROUTINES=1
           export RUN_IN_PARALLEL=0
           export INSTALL_LLAMA=1
