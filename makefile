@@ -41,6 +41,9 @@ kronk-build:
 kronk-pull:
 	go run cmd/kronk/main.go pull "$(URL)"
 
+kronk-list:
+	go run cmd/kronk/main.go list
+
 # ==============================================================================
 # Tests
 

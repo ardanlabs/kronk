@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/ardanlabs/kronk/cmd/kronk/list"
 	"github.com/ardanlabs/kronk/cmd/kronk/pull"
 	"github.com/spf13/cobra"
 )
@@ -31,7 +32,7 @@ func init() {
 	rootCmd.Flags().BoolP("version", "v", false, "Show version information")
 	rootCmd.SetVersionTemplate(version)
 
-	rootCmd.AddCommand(serveCmd)
+	rootCmd.AddCommand(serverCmd)
 	rootCmd.AddCommand(pullCmd)
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(showCmd)
@@ -39,28 +40,27 @@ func init() {
 	rootCmd.AddCommand(rmCmd)
 }
 
-var serveCmd = &cobra.Command{
-	Use:     "serve",
+var serverCmd = &cobra.Command{
+	Use:     "server",
 	Aliases: []string{"start"},
-	Short:   "Start kronk",
-	Long: `Start kronk
+	Short:   "Start kronk server",
+	Long: `Start kronk server
 
 Environment Variables:
-      KRONK_HOST                  (default: 127.0.0.1:11434) IP Address for the kronk server 
-      KRONK_MODELS                (default: ./models)        The path to the models directory
-      KRONK_LLM_LIBRARY           (default: ./libraries)     Set LLM library to bypass autodetection
-      KRONK_DEVICE                (default: autodetection)   Device to use for inference 
-      KRONK_MODEL_INSTANCES       (default: 1)               Maximum number of parallel requests
-      KRONK_MODEL_CONTEXT_WINDOW  (default: 4096)            Context window to use for inference 
-      KRONK_MODEL_NBatch          (default: 2048)            Logical batch size or the maximum number of tokens that can be in a single forward pass through the model at any given time
-      KRONK_MODEL_NUBatch         (default: 512)             Physical batch size or the maximum number of tokens processed together during the initial prompt processing phase (also called "prompt ingestion") to populate the KV cache
-      KRONK_MODEL_NThreads        (default: llama.cpp)       Number of threads to use for generation
-      KRONK_MODEL_NThreadsBatch   (default: llama.cpp)       Number of threads to use for batch processing`,
-	Run: runServe,
+      KRONK_HOST                  (default: 127.0.0.1:11434)     IP Address for the kronk server 
+      KRONK_MODELS                (default: $HOME/kronk/models)  The path to the models directory
+      KRONK_DEVICE                (default: autodetection)       Device to use for inference 
+      KRONK_MODEL_INSTANCES       (default: 1)                   Maximum number of parallel requests
+      KRONK_MODEL_CONTEXT_WINDOW  (default: 4096)                Context window to use for inference 
+      KRONK_MODEL_NBatch          (default: 2048)                Logical batch size or the maximum number of tokens that can be in a single forward pass through the model at any given time
+      KRONK_MODEL_NUBatch         (default: 512)                 Physical batch size or the maximum number of tokens processed together during the initial prompt processing phase (also called "prompt ingestion") to populate the KV cache
+      KRONK_MODEL_NThreads        (default: llama.cpp)           Number of threads to use for generation
+      KRONK_MODEL_NThreadsBatch   (default: llama.cpp)           Number of threads to use for batch processing`,
+	Run: runServer,
 }
 
 var pullCmd = &cobra.Command{
-	Use:   "pull MODEL_URL",
+	Use:   "pull <MODEL_URL>",
 	Short: "Pull a model from a registry",
 	Long: `Pull a model from a registry
 
@@ -81,7 +81,7 @@ Environment Variables:
 }
 
 var showCmd = &cobra.Command{
-	Use:   "show MODEL_NAME",
+	Use:   "show <MODEL_NAME>",
 	Short: "Show information for a model",
 	Long: `Show information for a model
 
@@ -112,8 +112,8 @@ Environment Variables:
 	Run:  runRm,
 }
 
-func runServe(cmd *cobra.Command, args []string) {
-	fmt.Println("serve command not implemented")
+func runServer(cmd *cobra.Command, args []string) {
+	fmt.Println("server command not implemented")
 }
 
 func runPull(cmd *cobra.Command, args []string) {
@@ -129,7 +129,15 @@ func runPull(cmd *cobra.Command, args []string) {
 }
 
 func runList(cmd *cobra.Command, args []string) {
-	fmt.Println("list command not implemented")
+	if err := list.Run(args); err != nil {
+		if errors.Is(err, list.ErrInvalidArguments) {
+			cmd.Help()
+			os.Exit(1)
+		}
+
+		fmt.Println("ERROR:", err)
+		os.Exit(1)
+	}
 }
 
 func runShow(cmd *cobra.Command, args []string) {
