@@ -38,7 +38,7 @@ func (a *app) libs(ctx context.Context, r *http.Request) web.Encoder {
 
 	if orgVI.Current == orgVI.Latest {
 		a.log.Info(ctx, "mngtapp-libs", "status", "current already installed", "latest", orgVI.Latest, "current", orgVI.Current)
-		return toAppVersion(orgVI, libPath, processor)
+		return toAppVersion("latest already installed", libPath, processor, orgVI)
 	}
 
 	a.log.Info(ctx, "mngtapp-libs", "status", "llama.cpp installation", "libPath", libPath, "processor", processor)
@@ -56,7 +56,7 @@ func (a *app) libs(ctx context.Context, r *http.Request) web.Encoder {
 
 	a.log.Info(ctx, "mngtapp-libs", "status", "updated llama.cpp installation", "libPath", "old version", orgVI.Current, "current", vi.Current)
 
-	return toAppVersion(vi, libPath, processor)
+	return toAppVersion("new version installed", libPath, processor, vi)
 }
 
 func (a *app) list(ctx context.Context, r *http.Request) web.Encoder {

@@ -9,6 +9,7 @@ import (
 
 // Version returns information about the installed libraries.
 type Version struct {
+	Status    string `json:"status"`
 	LibsPath  string `json:"libs_paths"`
 	Processor string `json:"processor"`
 	Latest    string `json:"latest"`
@@ -21,8 +22,9 @@ func (app Version) Encode() ([]byte, string, error) {
 	return data, "application/json", err
 }
 
-func toAppVersion(krn install.Version, libsPath string, processor download.Processor) Version {
+func toAppVersion(status string, libsPath string, processor download.Processor, krn install.Version) Version {
 	return Version{
+		Status:    status,
 		LibsPath:  libsPath,
 		Processor: processor.String(),
 		Latest:    krn.Latest,
