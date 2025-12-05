@@ -26,6 +26,24 @@ Email:   bill@ardanlabs.com
 Twitter: goinggodotnet
 ```
 
+## Architecture
+
+The architecture of Kronk is designed to be simple and scalable. You have the Kronk API that allows you to write the applications you need to interact with GGUF local open source models (supported by llama.cpp) that provide inference for text and media (vision and audio).
+
+Check out the [examples](#examples) section below.
+
+If you want an OpenAI compatible model server, the Kronk model server leverages the power of the API to give you a concurrent and scalable web api.
+
+Run `make kronk-server` to check it out.
+
+The diagram below shows how the Kronk model server supports access to multiple models. The model server manages kronk API instances that each provide access to a model. The Kronk API allows concurrent access to the models in a safe and reliable way.
+
+```
+                   -> Kronk API -> Yzma -> Llama.cpp -> Model 1 (1 instance)
+Client -> Kronk MS -> Kronk API -> Yzma -> Llama.cpp -> Model 2 (1 instance)
+                   -> Kronk API -> Yzma -> Llama.cpp -> Model 3 (1 instance)
+```
+
 ## Models
 
 Kronk uses models in the GGUF format supported by llama.cpp. You can find many models in GGUF format on Hugging Face (over 147k at last count):
