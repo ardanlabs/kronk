@@ -38,17 +38,17 @@ llama-bench:
 	libraries/llama-bench --list-devices
 
 # Use this to rebuild tooling when new versions of Go are released.
-dev-gotooling:
+install-gotooling:
 	go install honnef.co/go/tools/cmd/staticcheck@latest
 	go install golang.org/x/vuln/cmd/govulncheck@latest
 
 # ==============================================================================
-# Server
+# Kronk CLI
 
-kronk-build:
-	go build -o bin/kronk cmd/kronk/main.go
+kronk-server:
+	go run cmd/kronk/main.go server | go run cmd/kronk/website/api/tooling/logfmt/main.go
 
-kronk-libs: install-llamacpp
+kronk-libs: install-libraries
 
 # make kronk-pull URL="https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
 kronk-pull:
@@ -131,3 +131,12 @@ example-web-curl2:
 			} \
 		] \
     }'
+
+# ==============================================================================
+# Kronk Endpoints
+
+liveness:
+	curl -i http://localhost:3000/v1/liveness
+
+readiness:
+	curl -i http://localhost:3000/v1/readiness
