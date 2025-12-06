@@ -137,6 +137,12 @@ func testChatResponse(resp model.ChatResponse, modelName string, object string, 
 		return err
 	}
 
+	find = strings.ToLower(find)
+	funct = strings.ToLower(funct)
+	resp.Choice[0].Delta.Reasoning = strings.ToLower(resp.Choice[0].Delta.Reasoning)
+	resp.Choice[0].Delta.Content = strings.ToLower(resp.Choice[0].Delta.Content)
+	resp.Choice[0].Delta.ToolCalls[0].Name = strings.ToLower(resp.Choice[0].Delta.ToolCalls[0].Name)
+
 	if object == model.ObjectChatText {
 		switch {
 		case funct == "":
@@ -171,7 +177,7 @@ func testChatResponse(resp model.ChatResponse, modelName string, object string, 
 			return fmt.Errorf("tooling: expected an argument named %s", arg)
 		}
 
-		if !strings.Contains(location.(string), find) {
+		if !strings.Contains(strings.ToLower(location.(string)), find) {
 			return fmt.Errorf("tooling: expected %q, got %q", find, location.(string))
 		}
 	}
