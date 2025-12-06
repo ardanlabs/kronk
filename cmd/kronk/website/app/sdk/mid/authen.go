@@ -40,12 +40,12 @@ func HandleAuthentication(ctx context.Context, ath *auth.Auth, authorizationHead
 	}
 
 	if claims.Subject == "" {
-		return ctx, errs.Newf(errs.Unauthenticated, "authorize: you are not authorized for that action, no claims")
+		return ctx, errs.Errorf(errs.Unauthenticated, "authorize: you are not authorized for that action, no claims")
 	}
 
 	subjectID, err := uuid.Parse(claims.Subject)
 	if err != nil {
-		return ctx, errs.Newf(errs.Unauthenticated, "parsing subject: %s", err)
+		return ctx, errs.Errorf(errs.Unauthenticated, "parsing subject: %s", err)
 	}
 
 	ctx = setUserID(ctx, subjectID)

@@ -50,16 +50,47 @@ kronk-server:
 
 kronk-libs: install-libraries
 
+kronk-list:
+	go run cmd/kronk/main.go list
+
 # make kronk-pull URL="https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
 kronk-pull:
 	go run cmd/kronk/main.go pull "$(URL)"
 
-kronk-list:
-	go run cmd/kronk/main.go list
+# make kronk-remove FILE="Qwen3-8B-Q8_0.gguf"
+kronk-remove:
+	go run cmd/kronk/main.go remove "$(FILE)"
 
 # make kronk-show FILE="Qwen3-8B-Q8_0.gguf"
 kronk-show:
 	go run cmd/kronk/main.go show "$(FILE)"
+
+# ==============================================================================
+# Kronk Endpoints
+
+curl-liveness:
+	curl -i -X GET http://localhost:3000/v1/liveness
+
+curl-readiness:
+	curl -i -X GET http://localhost:3000/v1/readiness
+
+curl-libs:
+	curl -i -X GET http://localhost:3000/v1/tool/libs
+
+curl-model-list:
+	curl -i -X GET http://localhost:3000/v1/tool/model/list
+
+curl-kronk-pull:
+	curl -i -X POST http://localhost:3000/v1/tool/model/pull \
+	-d '{ \
+		"model_url": "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf" \
+	}'
+
+curl-kronk-remove:
+	curl -i -X DELETE http://localhost:3000/v1/tool/model/remove/Qwen3-8B-Q8_0.gguf
+
+curl-kronk-show:
+	curl -i -X GET http://localhost:3000/v1/tool/model/show/Qwen3-8B-Q8_0.gguf
 
 # ==============================================================================
 # Tests
@@ -132,23 +163,3 @@ example-web-curl2:
 		] \
     }'
 
-# ==============================================================================
-# Kronk Endpoints
-
-curl-liveness:
-	curl -i http://localhost:3000/v1/liveness
-
-curl-readiness:
-	curl -i http://localhost:3000/v1/readiness
-
-curl-libs:
-	curl -i http://localhost:3000/v1/mngt/libs
-
-curl-model-list:
-	curl -i http://localhost:3000/v1/mngt/model/list
-
-curl-kronk-pull:
-	curl -i -X POST http://localhost:3000/v1/mngt/model/pull \
-	-d '{ \
-		"model_url": "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf" \
-	}'

@@ -39,11 +39,11 @@ func init() {
 
 	rootCmd.AddCommand(serverCmd)
 	rootCmd.AddCommand(libsCmd)
-	rootCmd.AddCommand(pullCmd)
 	rootCmd.AddCommand(listCmd)
+	rootCmd.AddCommand(pullCmd)
+	rootCmd.AddCommand(removeCmd)
 	rootCmd.AddCommand(showCmd)
 	rootCmd.AddCommand(psCmd)
-	rootCmd.AddCommand(rmCmd)
 }
 
 var serverCmd = &cobra.Command{
@@ -75,7 +75,7 @@ func runServer(cmd *cobra.Command, args []string) {
 			os.Exit(1)
 		}
 
-		fmt.Println("ERROR:", err)
+		fmt.Println("\nERROR:", err)
 		os.Exit(1)
 	}
 }
@@ -100,7 +100,7 @@ func runLibs(cmd *cobra.Command, args []string) {
 			os.Exit(1)
 		}
 
-		fmt.Println("ERROR:", err)
+		fmt.Println("\nERROR:", err)
 		os.Exit(1)
 	}
 }
@@ -125,7 +125,7 @@ func runList(cmd *cobra.Command, args []string) {
 			os.Exit(1)
 		}
 
-		fmt.Println("ERROR:", err)
+		fmt.Println("\nERROR:", err)
 		os.Exit(1)
 	}
 }
@@ -161,27 +161,27 @@ Environment Variables:
 
 func runPull(cmd *cobra.Command, args []string) {
 	if err := pull.Run(args); err != nil {
-		fmt.Println("ERROR:", err)
+		fmt.Println("\nERROR:", err)
 		os.Exit(1)
 	}
 }
 
 // =============================================================================
 
-var rmCmd = &cobra.Command{
-	Use:   "rm MODEL_NAME",
+var removeCmd = &cobra.Command{
+	Use:   "remove MODEL_NAME",
 	Short: "Remove a model",
 	Long: `Remove a model
 
 Environment Variables:
       KRONK_HOST  IP Address for the kronk server (default 127.0.0.1:11434)`,
 	Args: cobra.ExactArgs(1),
-	Run:  runRm,
+	Run:  runRemove,
 }
 
-func runRm(cmd *cobra.Command, args []string) {
+func runRemove(cmd *cobra.Command, args []string) {
 	if err := remove.Run(args); err != nil {
-		fmt.Println("ERROR:", err)
+		fmt.Println("\nERROR:", err)
 		os.Exit(1)
 	}
 }
@@ -201,7 +201,7 @@ Environment Variables:
 
 func runShow(cmd *cobra.Command, args []string) {
 	if err := show.Run(args); err != nil {
-		fmt.Println("ERROR:", err)
+		fmt.Println("\nERROR:", err)
 		os.Exit(1)
 	}
 }

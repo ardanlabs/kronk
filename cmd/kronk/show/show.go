@@ -2,45 +2,24 @@
 package show
 
 import (
-	"context"
 	"fmt"
 
-	"github.com/ardanlabs/kronk"
 	"github.com/ardanlabs/kronk/defaults"
-	"github.com/ardanlabs/kronk/model"
 	"github.com/ardanlabs/kronk/tools"
 )
 
 // Run executes the pull command.
 func Run(args []string) error {
+	libPath := defaults.LibsDir()
 	modelPath := defaults.ModelsDir()
 	modelName := args[0]
 
-	fi, err := tools.FindModel(modelPath, modelName)
+	mi, err := tools.ShowModel(libPath, modelPath, modelName)
 	if err != nil {
 		return err
 	}
 
-	libPath := defaults.LibsDir()
-
-	if err := kronk.Init(libPath, kronk.LogSilent); err != nil {
-		return fmt.Errorf("unable to init kronk: %w", err)
-	}
-
-	const modelInstances = 1
-	krn, err := kronk.New(modelInstances, model.Config{
-		ModelFile: fi.ModelFile,
-	})
-	if err != nil {
-		return fmt.Errorf("unable to load kronk: %w", err)
-	}
-
-	defer krn.Unload(context.Background())
-
-	mi := krn.ModelInfo()
-
-	fmt.Printf("Model Path: %s\n\n", modelPath)
-
+	fmt.Println()
 	fmt.Printf("Name:        %s\n", mi.Name)
 	fmt.Printf("Desc:        %s\n", mi.Desc)
 	fmt.Printf("Size:        %.2f MiB\n", float64(mi.Size)/(1024*1024))

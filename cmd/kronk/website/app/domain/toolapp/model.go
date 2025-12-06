@@ -1,9 +1,10 @@
-package mngtapp
+package toolapp
 
 import (
 	"encoding/json"
 	"time"
 
+	"github.com/ardanlabs/kronk/model"
 	"github.com/ardanlabs/kronk/tools"
 	"github.com/hybridgroup/yzma/pkg/download"
 )
@@ -80,4 +81,38 @@ type PullRequest struct {
 // Decode implements the decoder interface.
 func (pr *PullRequest) Decode(data []byte) error {
 	return json.Unmarshal(data, pr)
+}
+
+// =============================================================================
+
+type ModelInfo struct {
+	Name        string            `json:"name"`
+	Desc        string            `json:"desc"`
+	Size        uint64            `json:"size"`
+	HasEncoder  bool              `json:"has_encoder"`
+	HasDecoder  bool              `json:"has_decoder"`
+	IsRecurrent bool              `json:"is_recurrent"`
+	IsHybrid    bool              `json:"is_hybrid"`
+	IsGPT       bool              `json:"is_gpt"`
+	Metadata    map[string]string `json:"metadata"`
+}
+
+// Encode implements the encoder interface.
+func (app ModelInfo) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(app)
+	return data, "application/json", err
+}
+
+func toModelInfo(model model.ModelInfo) ModelInfo {
+	return ModelInfo{
+		Name:        model.Name,
+		Desc:        model.Desc,
+		Size:        model.Size,
+		HasEncoder:  model.HasEncoder,
+		HasDecoder:  model.HasDecoder,
+		IsRecurrent: model.IsRecurrent,
+		IsHybrid:    model.IsHybrid,
+		IsGPT:       model.IsGPT,
+		Metadata:    model.Metadata,
+	}
 }

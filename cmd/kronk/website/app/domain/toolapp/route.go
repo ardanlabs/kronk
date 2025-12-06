@@ -1,4 +1,4 @@
-package mngtapp
+package toolapp
 
 import (
 	"net/http"
@@ -25,9 +25,9 @@ func Routes(app *web.App, cfg Config) {
 
 	api := newApp(cfg.Log, cfg.KrnMngr)
 
-	app.HandlerFunc(http.MethodGet, version, "/mngt/libs", api.libs, bearer)
-	app.HandlerFunc(http.MethodGet, version, "/mngt/model/list", api.list, bearer)
-	app.HandlerFunc(http.MethodGet, version, "/mngt/model/show/{model}", api.show, bearer)
-	app.HandlerFunc(http.MethodPost, version, "/mngt/model/pull", api.pull, bearer)
-	app.HandlerFunc(http.MethodPost, version, "/mngt/model/remove", api.remove, bearer)
+	app.HandlerFunc(http.MethodGet, version, "/tool/libs", api.libs, bearer)
+	app.HandlerFunc(http.MethodGet, version, "/tool/model/list", api.list, bearer)
+	app.HandlerFunc(http.MethodGet, version, "/tool/model/show/{model}", api.show, bearer)
+	app.HandlerFunc(http.MethodPost, version, "/tool/model/pull", api.pull, bearer)
+	app.HandlerFunc(http.MethodDelete, version, "/tool/model/remove/{model}", api.remove, bearer)
 }
