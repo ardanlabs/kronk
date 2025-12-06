@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk"
-	"github.com/ardanlabs/kronk/install"
 	"github.com/ardanlabs/kronk/model"
+	"github.com/ardanlabs/kronk/tools"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
@@ -21,7 +21,7 @@ func Test_Embedding(t *testing.T) {
 
 // =============================================================================
 
-func testEmbedding(t *testing.T, fi install.FileInfo) {
+func testEmbedding(t *testing.T, fi tools.ModelFileInfo) {
 	if runInParallel {
 		t.Parallel()
 	}

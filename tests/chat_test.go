@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk"
-	"github.com/ardanlabs/kronk/install"
 	"github.com/ardanlabs/kronk/model"
+	"github.com/ardanlabs/kronk/tools"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
@@ -64,7 +64,7 @@ func Test_ToolGPTStreamingChat(t *testing.T) {
 
 // =============================================================================
 
-func testChat(t *testing.T, fi install.FileInfo, tooling bool) {
+func testChat(t *testing.T, fi tools.ModelFileInfo, tooling bool) {
 	if runInParallel {
 		t.Parallel()
 	}
@@ -120,7 +120,7 @@ func testChat(t *testing.T, fi install.FileInfo, tooling bool) {
 	}
 }
 
-func testChatStreaming(t *testing.T, fi install.FileInfo, tooling bool) {
+func testChatStreaming(t *testing.T, fi tools.ModelFileInfo, tooling bool) {
 	if runInParallel {
 		t.Parallel()
 	}
@@ -186,7 +186,7 @@ func testChatStreaming(t *testing.T, fi install.FileInfo, tooling bool) {
 	}
 }
 
-func initChatTest(t *testing.T, fi install.FileInfo, tooling bool) (*kronk.Kronk, model.D) {
+func initChatTest(t *testing.T, fi tools.ModelFileInfo, tooling bool) (*kronk.Kronk, model.D) {
 	krn, err := kronk.New(modelInstances, model.Config{
 		ModelFile: fi.ModelFile,
 	})

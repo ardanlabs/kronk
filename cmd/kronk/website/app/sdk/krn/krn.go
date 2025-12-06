@@ -11,8 +11,8 @@ import (
 	"github.com/ardanlabs/kronk"
 	"github.com/ardanlabs/kronk/cmd/kronk/website/foundation/logger"
 	"github.com/ardanlabs/kronk/defaults"
-	"github.com/ardanlabs/kronk/install"
 	"github.com/ardanlabs/kronk/model"
+	"github.com/ardanlabs/kronk/tools"
 	"github.com/hybridgroup/yzma/pkg/download"
 	"github.com/maypok86/otter/v2"
 )
@@ -39,7 +39,7 @@ import (
 // being used.
 type Config struct {
 	Log            *logger.Logger
-	LibsPath       string
+	LibPath        string
 	Processor      download.Processor
 	ModelPath      string
 	Device         string
@@ -73,7 +73,7 @@ func validateConfig(cfg Config) Config {
 // APIs and will unload over time if not in use.
 type Manager struct {
 	log           *logger.Logger
-	libsPath      string
+	libPath       string
 	processor     download.Processor
 	modelPath     string
 	device        string
@@ -90,7 +90,7 @@ func NewManager(cfg Config) (*Manager, error) {
 	mgr := Manager{
 		log:           cfg.Log,
 		processor:     cfg.Processor,
-		libsPath:      cfg.LibsPath,
+		libPath:       cfg.LibPath,
 		modelPath:     cfg.ModelPath,
 		device:        cfg.Device,
 		instances:     cfg.ModelInstances,
@@ -135,9 +135,9 @@ func (mgr *Manager) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-// LibsPath returns the location of the llama.cpp libraries.
-func (mgr *Manager) LibsPath() string {
-	return mgr.libsPath
+// LibPath returns the location of the llama.cpp libraries.
+func (mgr *Manager) LibPath() string {
+	return mgr.libPath
 }
 
 // Processor returns the processor being used.
@@ -153,7 +153,7 @@ func (mgr *Manager) AquireModel(ctx context.Context, modelName string) (*kronk.K
 		return krn, nil
 	}
 
-	fi, err := install.FindModel(mgr.modelPath, modelName)
+	fi, err := tools.FindModel(mgr.modelPath, modelName)
 	if err != nil {
 		return nil, fmt.Errorf("find model: %w", err)
 	}

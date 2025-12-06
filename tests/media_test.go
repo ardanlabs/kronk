@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk"
-	"github.com/ardanlabs/kronk/install"
 	"github.com/ardanlabs/kronk/model"
+	"github.com/ardanlabs/kronk/tools"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
@@ -24,7 +24,7 @@ func Test_SimpleMediaStreaming(t *testing.T) {
 
 // =============================================================================
 
-func testMedia(t *testing.T, fi install.FileInfo, imageFile string) {
+func testMedia(t *testing.T, fi tools.ModelFileInfo, imageFile string) {
 	if runInParallel {
 		t.Parallel()
 	}
@@ -72,7 +72,7 @@ func testMedia(t *testing.T, fi install.FileInfo, imageFile string) {
 	}
 }
 
-func testMediaStreaming(t *testing.T, fi install.FileInfo, imageFile string) {
+func testMediaStreaming(t *testing.T, fi tools.ModelFileInfo, imageFile string) {
 	if runInParallel {
 		t.Parallel()
 	}
@@ -130,7 +130,7 @@ func testMediaStreaming(t *testing.T, fi install.FileInfo, imageFile string) {
 	}
 }
 
-func initMediaTest(t *testing.T, fi install.FileInfo, mediaFile string) (*kronk.Kronk, model.D) {
+func initMediaTest(t *testing.T, fi tools.ModelFileInfo, mediaFile string) (*kronk.Kronk, model.D) {
 	if _, err := os.Stat(mediaFile); err != nil {
 		t.Fatalf("error accessing file %q: %s", mediaFile, err)
 	}

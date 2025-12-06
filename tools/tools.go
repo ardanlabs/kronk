@@ -1,5 +1,5 @@
-// Package install provides functions for installing and upgrading llama.cpp.
-package install
+// Package tools provides functions for installing and upgrading llama.cpp.
+package tools
 
 import (
 	"context"

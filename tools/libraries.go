@@ -1,4 +1,4 @@
-package install
+package tools
 
 import (
 	"context"
@@ -16,9 +16,9 @@ type tag struct {
 	TagName string `json:"tag_name"`
 }
 
-// Version provides information about what is installed and what is the
+// LibVersion provides information about what is installed and what is the
 // latest version of llama.cpp available.
-type Version struct {
+type LibVersion struct {
 	Latest  string
 	Current string
 }
@@ -27,10 +27,10 @@ type Version struct {
 
 // DownloadLibraries performs a complete workflow for downloading and installing
 // the latest version of llama.cpp.
-func DownloadLibraries(ctx context.Context, log Logger, libPath string, processor download.Processor, allowUpgrade bool) (Version, error) {
+func DownloadLibraries(ctx context.Context, log Logger, libPath string, processor download.Processor, allowUpgrade bool) (LibVersion, error) {
 	orgVI, err := VersionInformation(libPath)
 	if err != nil {
-		return Version{}, fmt.Errorf("error retrieving version info: %w", err)
+		return LibVersion{}, fmt.Errorf("error retrieving version info: %w", err)
 	}
 
 	log(ctx, "download-libs", "status", "check llama.cpp installation", "lib-path", libPath, "processor", processor, "latest", orgVI.Latest, "current", orgVI.Current)
@@ -47,7 +47,7 @@ func DownloadLibraries(ctx context.Context, log Logger, libPath string, processo
 		log(ctx, "download-libs", "status", "llama.cpp installation", "ERROR", err)
 
 		if _, err := InstalledVersion(libPath); err != nil {
-			return Version{}, fmt.Errorf("failed to install llama: %q: error: %w", libPath, err)
+			return LibVersion{}, fmt.Errorf("failed to install llama: %q: error: %w", libPath, err)
 		}
 
 		log(ctx, "download-libs", "status", "failed to install new version, using current version")
@@ -77,31 +77,31 @@ func InstalledVersion(libPath string) (string, error) {
 
 // VersionInformation retrieves the current version of llama.cpp that is
 // published on GitHub and the current installed version.
-func VersionInformation(libPath string) (Version, error) {
+func VersionInformation(libPath string) (LibVersion, error) {
 	cv, _ := InstalledVersion(libPath)
 
 	version, err := download.LlamaLatestVersion()
 	if err != nil {
-		return Version{Latest: "unknown", Current: cv}, fmt.Errorf("unable to get latest version of llama.cpp: %w", err)
+		return LibVersion{Latest: "unknown", Current: cv}, fmt.Errorf("unable to get latest version of llama.cpp: %w", err)
 	}
 
-	return Version{Latest: version, Current: cv}, nil
+	return LibVersion{Latest: version, Current: cv}, nil
 }
 
 // =============================================================================
 
-func downloadLibraries(libPath string, processor download.Processor, allowUpgrade bool) (Version, error) {
+func downloadLibraries(libPath string, processor download.Processor, allowUpgrade bool) (LibVersion, error) {
 	cv, _ := InstalledVersion(libPath)
 	tempPath := filepath.Join(libPath, "temp")
 
 	if err := download.InstallLibraries(tempPath, processor, allowUpgrade); err != nil {
 		os.RemoveAll(tempPath)
-		return Version{Latest: "unknown", Current: cv}, fmt.Errorf("unable to install llama.cpp: %w", err)
+		return LibVersion{Latest: "unknown", Current: cv}, fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
 	if err := swapTempForLib(libPath, tempPath); err != nil {
 		os.RemoveAll(tempPath)
-		return Version{Latest: "unknown", Current: cv}, fmt.Errorf("unable to swap temp for lib: %w", err)
+		return LibVersion{Latest: "unknown", Current: cv}, fmt.Errorf("unable to swap temp for lib: %w", err)
 	}
 
 	return VersionInformation(libPath)

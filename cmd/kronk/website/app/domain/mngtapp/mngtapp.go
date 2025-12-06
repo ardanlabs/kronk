@@ -9,7 +9,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/kronk/website/app/sdk/krn"
 	"github.com/ardanlabs/kronk/cmd/kronk/website/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/kronk/website/foundation/web"
-	"github.com/ardanlabs/kronk/install"
+	"github.com/ardanlabs/kronk/tools"
 )
 
 type app struct {
@@ -26,10 +26,10 @@ func newApp(log *logger.Logger, krnMgr *krn.Manager) *app {
 }
 
 func (a *app) libs(ctx context.Context, r *http.Request) web.Encoder {
-	libPath := a.krnMgr.LibsPath()
+	libPath := a.krnMgr.LibPath()
 	processor := a.krnMgr.Processor()
 
-	vi, err := install.DownloadLibraries(ctx, install.FmtLogger, libPath, processor, true)
+	vi, err := tools.DownloadLibraries(ctx, tools.FmtLogger, libPath, processor, true)
 	if err != nil {
 		return errs.Newf(errs.Internal, "unable to install llama.cpp: %s", err)
 	}

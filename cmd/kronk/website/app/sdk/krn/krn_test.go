@@ -16,7 +16,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/kronk/website/app/sdk/krn"
 	"github.com/ardanlabs/kronk/cmd/kronk/website/foundation/logger"
 	"github.com/ardanlabs/kronk/defaults"
-	"github.com/ardanlabs/kronk/install"
+	"github.com/ardanlabs/kronk/tools"
 )
 
 func Test_NewManager(t *testing.T) {
@@ -348,22 +348,22 @@ func Test_Eviction(t *testing.T) {
 // =============================================================================
 
 func initKronk(t *testing.T) *logger.Logger {
-	libsPath := defaults.LibsDir()
+	libPath := defaults.LibsDir()
 	processor, err := defaults.Processor()
 	if err != nil {
 		t.Fatalf("invalid processor specified: %s", processor)
 	}
 
-	t.Logf("installing/updating libraries: libsPath[%s], processor[%s]", libsPath, processor)
+	t.Logf("installing/updating libraries: libPath[%s], processor[%s]", libPath, processor)
 
-	vi, err := install.DownloadLibraries(context.Background(), install.FmtLogger, libsPath, processor, true)
+	vi, err := tools.DownloadLibraries(context.Background(), tools.FmtLogger, libPath, processor, true)
 	if err != nil {
 		t.Fatalf("unable to install llama.cpp: %s", err)
 	}
 
 	t.Logf("libraries installed: current[%s] latest[%s]", vi.Current, vi.Latest)
 
-	if err := kronk.Init(libsPath, kronk.LogLevel(kronk.LogSilent)); err != nil {
+	if err := kronk.Init(libPath, kronk.LogLevel(kronk.LogSilent)); err != nil {
 		t.Fatalf("installation invalid: %s", err)
 	}
 

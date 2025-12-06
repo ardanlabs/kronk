@@ -3,14 +3,14 @@ package mngtapp
 import (
 	"encoding/json"
 
-	"github.com/ardanlabs/kronk/install"
+	"github.com/ardanlabs/kronk/tools"
 	"github.com/hybridgroup/yzma/pkg/download"
 )
 
 // Version returns information about the installed libraries.
 type Version struct {
 	Status    string `json:"status"`
-	LibsPath  string `json:"libs_paths"`
+	LibPath   string `json:"libs_paths"`
 	Processor string `json:"processor"`
 	Latest    string `json:"latest"`
 	Current   string `json:"current"`
@@ -22,10 +22,10 @@ func (app Version) Encode() ([]byte, string, error) {
 	return data, "application/json", err
 }
 
-func toAppVersion(status string, libsPath string, processor download.Processor, krn install.Version) Version {
+func toAppVersion(status string, libPath string, processor download.Processor, krn tools.LibVersion) Version {
 	return Version{
 		Status:    status,
-		LibsPath:  libsPath,
+		LibPath:   libPath,
 		Processor: processor.String(),
 		Latest:    krn.Latest,
 		Current:   krn.Current,

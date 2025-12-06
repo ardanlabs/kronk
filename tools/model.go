@@ -1,4 +1,4 @@
-package install
+package tools
 
 import (
 	"context"
@@ -10,21 +10,22 @@ import (
 	"strings"
 )
 
-type FileInfo struct {
+// ModelFileInfo returns file information about a model.
+type ModelFileInfo struct {
 	ModelFile string
 	ProjFile  string
 }
 
 // FindModel locates the physical location on disk and returns the full path.
-func FindModel(modelPath string, modelName string) (FileInfo, error) {
+func FindModel(modelPath string, modelName string) (ModelFileInfo, error) {
 	entries, err := os.ReadDir(modelPath)
 	if err != nil {
-		return FileInfo{}, fmt.Errorf("reading models directory: %w", err)
+		return ModelFileInfo{}, fmt.Errorf("reading models directory: %w", err)
 	}
 
 	projName := fmt.Sprintf("mmproj-%s", modelName)
 
-	var fi FileInfo
+	var fi ModelFileInfo
 
 	for _, orgEntry := range entries {
 		if !orgEntry.IsDir() {
@@ -72,13 +73,13 @@ func FindModel(modelPath string, modelName string) (FileInfo, error) {
 	}
 
 	if fi.ModelFile == "" {
-		return FileInfo{}, fmt.Errorf("model %q not found", modelName)
+		return ModelFileInfo{}, fmt.Errorf("model %q not found", modelName)
 	}
 
 	return fi, nil
 }
 
-func MustFindModel(modelPath string, modelName string) FileInfo {
+func MustFindModel(modelPath string, modelName string) ModelFileInfo {
 	fi, err := FindModel(modelPath, modelName)
 	if err != nil {
 		panic(err.Error())
@@ -89,8 +90,8 @@ func MustFindModel(modelPath string, modelName string) FileInfo {
 
 // =============================================================================
 
-// Info provides information about the models that were installed.
-type Info struct {
+// ModelDownloadInfo provides information about the models that were downloaded.
+type ModelDownloadInfo struct {
 	ModelFile  string
 	ProjFile   string
 	Downloaded bool
@@ -98,7 +99,7 @@ type Info struct {
 
 // DownloadModel performs a complete workflow for downloading and installing
 // the specified model.
-func DownloadModel(ctx context.Context, log Logger, modelURL string, projURL string, modelPath string) (Info, error) {
+func DownloadModel(ctx context.Context, log Logger, modelURL string, projURL string, modelPath string) (ModelDownloadInfo, error) {
 	u, _ := url.Parse(modelURL)
 	filename := path.Base(u.Path)
 	name := strings.TrimSuffix(filename, path.Ext(filename))
@@ -113,7 +114,7 @@ func DownloadModel(ctx context.Context, log Logger, modelURL string, projURL str
 
 	info, err := downloadModel(modelURL, projURL, modelPath, f)
 	if err != nil {
-		return Info{}, fmt.Errorf("unable to download model: %w", err)
+		return ModelDownloadInfo{}, fmt.Errorf("unable to download model: %w", err)
 	}
 
 	switch info.Downloaded {
@@ -129,14 +130,14 @@ func DownloadModel(ctx context.Context, log Logger, modelURL string, projURL str
 
 // =============================================================================
 
-func downloadModel(modelURL string, projURL string, modelPath string, progress ProgressFunc) (Info, error) {
+func downloadModel(modelURL string, projURL string, modelPath string, progress ProgressFunc) (ModelDownloadInfo, error) {
 	modelFile, downloadedMF, err := pull(modelURL, modelPath, progress)
 	if err != nil {
-		return Info{}, err
+		return ModelDownloadInfo{}, err
 	}
 
 	if projURL == "" {
-		return Info{ModelFile: modelFile, Downloaded: downloadedMF}, nil
+		return ModelDownloadInfo{ModelFile: modelFile, Downloaded: downloadedMF}, nil
 	}
 
 	modelFileName := filepath.Base(modelFile)
@@ -144,7 +145,7 @@ func downloadModel(modelURL string, projURL string, modelPath string, progress P
 	newProjFile := strings.Replace(modelFile, modelFileName, profFileName, 1)
 
 	if _, err := os.Stat(newProjFile); err == nil {
-		inf := Info{
+		inf := ModelDownloadInfo{
 			ModelFile:  modelFile,
 			ProjFile:   newProjFile,
 			Downloaded: downloadedMF || false,
@@ -155,14 +156,14 @@ func downloadModel(modelURL string, projURL string, modelPath string, progress P
 
 	projFile, downloadedPF, err := pull(projURL, modelPath, progress)
 	if err != nil {
-		return Info{}, err
+		return ModelDownloadInfo{}, err
 	}
 
 	if err := os.Rename(projFile, newProjFile); err != nil {
-		return Info{}, fmt.Errorf("unable to rename projector file: %w", err)
+		return ModelDownloadInfo{}, fmt.Errorf("unable to rename projector file: %w", err)
 	}
 
-	inf := Info{
+	inf := ModelDownloadInfo{
 		ModelFile:  modelFile,
 		ProjFile:   newProjFile,
 		Downloaded: downloadedMF || downloadedPF,
@@ -195,7 +196,7 @@ func pull(fileURL string, filePath string, progress ProgressFunc) (string, bool,
 		}
 	}
 
-	downloaded, err := pullFile(context.Background(), fileURL, filePath, progress)
+	downloaded, err := DownloadFile(context.Background(), fileURL, filePath, progress)
 	if err != nil {
 		return "", false, fmt.Errorf("unable to download model: %w", err)
 	}

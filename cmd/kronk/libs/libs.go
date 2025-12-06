@@ -8,7 +8,7 @@ import (
 
 	"github.com/ardanlabs/kronk"
 	"github.com/ardanlabs/kronk/defaults"
-	"github.com/ardanlabs/kronk/install"
+	"github.com/ardanlabs/kronk/tools"
 )
 
 var ErrInvalidArguments = errors.New("invalid arguments")
@@ -22,7 +22,7 @@ func Run(args []string) error {
 		return err
 	}
 
-	_, err = install.DownloadLibraries(context.Background(), install.FmtLogger, libPath, processor, true)
+	_, err = tools.DownloadLibraries(context.Background(), tools.FmtLogger, libPath, processor, true)
 	if err != nil {
 		return fmt.Errorf("unable to install llama.cpp: %w", err)
 	}

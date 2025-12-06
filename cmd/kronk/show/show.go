@@ -7,8 +7,8 @@ import (
 
 	"github.com/ardanlabs/kronk"
 	"github.com/ardanlabs/kronk/defaults"
-	"github.com/ardanlabs/kronk/install"
 	"github.com/ardanlabs/kronk/model"
+	"github.com/ardanlabs/kronk/tools"
 )
 
 // Run executes the pull command.
@@ -16,7 +16,7 @@ func Run(args []string) error {
 	modelPath := defaults.ModelsDir()
 	modelName := args[0]
 
-	fi, err := install.FindModel(modelPath, modelName)
+	fi, err := tools.FindModel(modelPath, modelName)
 	if err != nil {
 		return err
 	}

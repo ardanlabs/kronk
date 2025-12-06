@@ -29,8 +29,8 @@ import (
 	"github.com/ardanlabs/kronk"
 	"github.com/ardanlabs/kronk/defaults"
 	"github.com/ardanlabs/kronk/examples/web/website"
-	"github.com/ardanlabs/kronk/install"
 	"github.com/ardanlabs/kronk/model"
+	"github.com/ardanlabs/kronk/tools"
 	"github.com/hybridgroup/yzma/pkg/download"
 )
 
@@ -59,12 +59,12 @@ func main() {
 }
 
 func run() error {
-	_, err := install.DownloadLibraries(context.Background(), install.FmtLogger, libPath, download.CPU, true)
+	_, err := tools.DownloadLibraries(context.Background(), tools.FmtLogger, libPath, download.CPU, true)
 	if err != nil {
 		return fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
-	info, err := install.DownloadModel(context.Background(), install.FmtLogger, modelChatURL, "", modelPath)
+	info, err := tools.DownloadModel(context.Background(), tools.FmtLogger, modelChatURL, "", modelPath)
 	if err != nil {
 		return fmt.Errorf("unable to install chat model: %w", err)
 	}

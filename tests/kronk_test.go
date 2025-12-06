@@ -11,24 +11,24 @@ import (
 
 	"github.com/ardanlabs/kronk"
 	"github.com/ardanlabs/kronk/defaults"
-	"github.com/ardanlabs/kronk/install"
 	"github.com/ardanlabs/kronk/model"
+	"github.com/ardanlabs/kronk/tools"
 )
 
 var (
-	fiThinkToolChatFile install.FileInfo
-	fiGPTChatFile       install.FileInfo
-	fiSimpleVisionFile  install.FileInfo
-	fiEmbedFile         install.FileInfo
+	fiThinkToolChatFile tools.ModelFileInfo
+	fiGPTChatFile       tools.ModelFileInfo
+	fiSimpleVisionFile  tools.ModelFileInfo
+	fiEmbedFile         tools.ModelFileInfo
 )
 
 func init() {
-	fiThinkToolChatFile = install.MustFindModel(defaults.ModelsDir(), "Qwen3-8B-Q8_0.gguf")
-	fiSimpleVisionFile = install.MustFindModel(defaults.ModelsDir(), "Qwen2.5-VL-3B-Instruct-Q8_0.gguf")
-	fiEmbedFile = install.MustFindModel(defaults.ModelsDir(), "embeddinggemma-300m-qat-Q8_0.gguf")
+	fiThinkToolChatFile = tools.MustFindModel(defaults.ModelsDir(), "Qwen3-8B-Q8_0.gguf")
+	fiSimpleVisionFile = tools.MustFindModel(defaults.ModelsDir(), "Qwen2.5-VL-3B-Instruct-Q8_0.gguf")
+	fiEmbedFile = tools.MustFindModel(defaults.ModelsDir(), "embeddinggemma-300m-qat-Q8_0.gguf")
 
 	if os.Getenv("GITHUB_ACTIONS") != "true" {
-		fiGPTChatFile = install.MustFindModel(defaults.ModelsDir(), "gpt-oss-20b-Q8_0.gguf")
+		fiGPTChatFile = tools.MustFindModel(defaults.ModelsDir(), "gpt-oss-20b-Q8_0.gguf")
 	}
 }
 
@@ -77,7 +77,7 @@ func printInfo() {
 	fmt.Println("GOROUTINES     :", goroutines)
 	fmt.Println("RUN_IN_PARALLEL:", runInParallel)
 
-	currentVersion, err := install.InstalledVersion(libPath)
+	currentVersion, err := tools.InstalledVersion(libPath)
 	if err != nil {
 		fmt.Printf("Failed to retrieve version info: %v\n", err)
 		os.Exit(1)

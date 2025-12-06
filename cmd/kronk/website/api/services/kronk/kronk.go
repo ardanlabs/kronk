@@ -24,7 +24,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/kronk/website/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/kronk/website/foundation/otel"
 	"github.com/ardanlabs/kronk/defaults"
-	"github.com/ardanlabs/kronk/install"
+	"github.com/ardanlabs/kronk/tools"
 	"github.com/hybridgroup/yzma/pkg/download"
 )
 
@@ -102,7 +102,7 @@ func run(ctx context.Context, log *logger.Logger) error {
 		}
 		LlamaLog  int    `conf:"default:1"`
 		Processor string `conf:"default:cpu"`
-		LibsPath  string
+		LibPath   string
 	}{
 		Version: conf.Version{
 			Build: build,
@@ -120,8 +120,8 @@ func run(ctx context.Context, log *logger.Logger) error {
 		return fmt.Errorf("parsing config: %w", err)
 	}
 
-	if cfg.LibsPath == "" {
-		cfg.LibsPath = defaults.LibsDir()
+	if cfg.LibPath == "" {
+		cfg.LibPath = defaults.LibsDir()
 	}
 
 	if cfg.Model.Path == "" {
@@ -218,22 +218,22 @@ func run(ctx context.Context, log *logger.Logger) error {
 		}
 	}
 
-	log.Info(ctx, "startup", "status", "installing/updating libraries", "libsPath", cfg.LibsPath, "processor", processor)
+	log.Info(ctx, "startup", "status", "installing/updating libraries", "libPath", cfg.LibPath, "processor", processor)
 
-	vi, err := install.DownloadLibraries(context.Background(), install.FmtLogger, cfg.LibsPath, processor, true)
+	vi, err := tools.DownloadLibraries(context.Background(), tools.FmtLogger, cfg.LibPath, processor, true)
 	if err != nil {
 		return fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
 	log.Info(ctx, "startup", "status", "libraries installed", "current", vi.Current, "latest", vi.Latest)
 
-	if err := kronk.Init(cfg.LibsPath, kronk.LogLevel(cfg.LlamaLog)); err != nil {
+	if err := kronk.Init(cfg.LibPath, kronk.LogLevel(cfg.LlamaLog)); err != nil {
 		return fmt.Errorf("installation invalid: %w", err)
 	}
 
 	krnMngr, err := krn.NewManager(krn.Config{
 		Log:            log,
-		LibsPath:       cfg.LibsPath,
+		LibPath:        cfg.LibPath,
 		Processor:      processor,
 		ModelPath:      cfg.Model.Path,
 		Device:         cfg.Model.Device,
