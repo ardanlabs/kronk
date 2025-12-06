@@ -69,9 +69,9 @@ func run(ctx context.Context, log *logger.Logger) error {
 	cfg := struct {
 		conf.Version
 		Web struct {
-			ReadTimeout        time.Duration `conf:"default:5s"`
-			WriteTimeout       time.Duration `conf:"default:180s"`
-			IdleTimeout        time.Duration `conf:"default:180s"`
+			ReadTimeout        time.Duration `conf:"default:25s"`
+			WriteTimeout       time.Duration `conf:"default:360s"`
+			IdleTimeout        time.Duration `conf:"default:360s"`
 			ShutdownTimeout    time.Duration `conf:"default:45s"`
 			APIHost            string        `conf:"default:0.0.0.0:3000"`
 			DebugHost          string        `conf:"default:0.0.0.0:3010"`

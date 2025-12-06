@@ -8,7 +8,6 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
-	"text/tabwriter"
 	"time"
 )
 
@@ -105,33 +104,31 @@ func DownloadModel(ctx context.Context, log Logger, modelURL string, projURL str
 	u, _ := url.Parse(modelURL)
 	filename := path.Base(u.Path)
 	name := strings.TrimSuffix(filename, path.Ext(filename))
-	log(ctx, "download-model", "status", "check model installation", "model-path", modelPath, "model-url", modelURL, "proj-url", projURL, "model-name", name)
+	log(ctx, fmt.Sprintf("download-model: model-path[%s] model-url[%s] proj-url[%s] model-name[%s]", modelPath, modelURL, projURL, name))
+	log(ctx, "download-model: Waiting to start downloading...")
 
 	f := func(src string, currentSize int64, totalSize int64, mibPerSec float64, complete bool) {
-		log(ctx, fmt.Sprintf("\x1b[1A\r\x1b[KDownloading %s... %d MiB of %d MiB (%.2f MiB/s)", src, currentSize/(1024*1024), totalSize/(1024*1024), mibPerSec))
-		if complete {
-			log(ctx, "download complete")
-		}
+		log(ctx, fmt.Sprintf("\x1b[1A\r\x1b[Kdownload-model: Downloading %s... %d MiB of %d MiB (%.2f MiB/s)", src, currentSize/(1024*1024), totalSize/(1024*1024), mibPerSec))
 	}
 
-	info, err := downloadModel(modelURL, projURL, modelPath, f)
+	info, err := downloadModel(ctx, modelURL, projURL, modelPath, f)
 	if err != nil {
 		return DownloadModelInfo{}, fmt.Errorf("unable to download model: %w", err)
 	}
 
 	switch info.Downloaded {
 	case true:
-		log(ctx, "download-model", "status", "model downloaded", "model-file", info.ModelFile, "proj-file", info.ProjFile)
+		log(ctx, fmt.Sprintf("download-model: status[downloaded] model-file[%s] proj-file[%s]", info.ModelFile, info.ProjFile))
 
 	default:
-		log(ctx, "download-model", "status", "model already existed", "model-file", info.ModelFile, "proj-file", info.ProjFile)
+		log(ctx, fmt.Sprintf("download-model: status[already existed] model-file[%s] proj-file[%s]", info.ModelFile, info.ProjFile))
 	}
 
 	return info, nil
 }
 
-func downloadModel(modelURL string, projURL string, modelPath string, progress ProgressFunc) (DownloadModelInfo, error) {
-	modelFile, downloadedMF, err := pullModel(modelURL, modelPath, progress)
+func downloadModel(ctx context.Context, modelURL string, projURL string, modelPath string, progress ProgressFunc) (DownloadModelInfo, error) {
+	modelFile, downloadedMF, err := pullModel(ctx, modelURL, modelPath, progress)
 	if err != nil {
 		return DownloadModelInfo{}, err
 	}
@@ -154,7 +151,7 @@ func downloadModel(modelURL string, projURL string, modelPath string, progress P
 		return inf, nil
 	}
 
-	projFile, downloadedPF, err := pullModel(projURL, modelPath, progress)
+	projFile, downloadedPF, err := pullModel(ctx, projURL, modelPath, progress)
 	if err != nil {
 		return DownloadModelInfo{}, err
 	}
@@ -172,7 +169,7 @@ func downloadModel(modelURL string, projURL string, modelPath string, progress P
 	return inf, nil
 }
 
-func pullModel(fileURL string, filePath string, progress ProgressFunc) (string, bool, error) {
+func pullModel(ctx context.Context, fileURL string, filePath string, progress ProgressFunc) (string, bool, error) {
 	mURL, err := url.Parse(fileURL)
 	if err != nil {
 		return "", false, fmt.Errorf("unable to parse fileURL: %w", err)
@@ -196,7 +193,7 @@ func pullModel(fileURL string, filePath string, progress ProgressFunc) (string, 
 		}
 	}
 
-	downloaded, err := DownloadFile(context.Background(), fileURL, filePath, progress)
+	downloaded, err := DownloadFile(ctx, fileURL, filePath, progress)
 	if err != nil {
 		return "", false, fmt.Errorf("unable to download model: %w", err)
 	}
@@ -273,77 +270,4 @@ func ListModels(modelPath string) ([]ListModelInfo, error) {
 	}
 
 	return list, nil
-}
-
-func ListModelsFmt(models []ListModelInfo) {
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "ORG\tMODEL\tFILE\tSIZE\tMODIFIED")
-
-	for _, model := range models {
-		size := formatSize(model.Size)
-		modified := formatTime(model.Modified)
-
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", model.Organization, model.ModelName, model.ModelFile, size, modified)
-	}
-
-	w.Flush()
-}
-
-func formatSize(bytes int64) string {
-	const (
-		KB = 1024
-		MB = KB * 1024
-		GB = MB * 1024
-	)
-
-	switch {
-	case bytes >= GB:
-		return fmt.Sprintf("%.1f GB", float64(bytes)/GB)
-	case bytes >= MB:
-		return fmt.Sprintf("%.1f MB", float64(bytes)/MB)
-	case bytes >= KB:
-		return fmt.Sprintf("%.1f KB", float64(bytes)/KB)
-	default:
-		return fmt.Sprintf("%d B", bytes)
-	}
-}
-
-func formatTime(t time.Time) string {
-	now := time.Now()
-	diff := now.Sub(t)
-
-	switch {
-	case diff < time.Minute:
-		return "just now"
-	case diff < time.Hour:
-		mins := int(diff.Minutes())
-		if mins == 1 {
-			return "1 minute ago"
-		}
-		return fmt.Sprintf("%d minutes ago", mins)
-	case diff < 24*time.Hour:
-		hours := int(diff.Hours())
-		if hours == 1 {
-			return "1 hour ago"
-		}
-		return fmt.Sprintf("%d hours ago", hours)
-	case diff < 7*24*time.Hour:
-		days := int(diff.Hours() / 24)
-		if days == 1 {
-			return "1 day ago"
-		}
-		return fmt.Sprintf("%d days ago", days)
-	case diff < 30*24*time.Hour:
-		weeks := int(diff.Hours() / 24 / 7)
-		if weeks == 1 {
-			return "1 week ago"
-		}
-		return fmt.Sprintf("%d weeks ago", weeks)
-	default:
-		months := int(diff.Hours() / 24 / 30)
-		if months == 1 {
-			return "1 month ago"
-		}
-		return fmt.Sprintf("%d months ago", months)
-	}
 }

@@ -146,3 +146,9 @@ curl-libs:
 
 curl-model-list:
 	curl -i http://localhost:3000/v1/mngt/model/list
+
+curl-kronk-pull:
+	curl -i -X POST http://localhost:3000/v1/mngt/model/pull \
+	-d '{ \
+		"model_url": "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf" \
+	}'

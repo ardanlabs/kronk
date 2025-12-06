@@ -3,7 +3,10 @@ package mngtapp
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/ardanlabs/kronk/cmd/kronk/website/app/sdk/errs"
 	"github.com/ardanlabs/kronk/cmd/kronk/website/app/sdk/krn"
@@ -49,7 +52,57 @@ func (a *app) list(ctx context.Context, r *http.Request) web.Encoder {
 }
 
 func (a *app) pull(ctx context.Context, r *http.Request) web.Encoder {
-	return nil
+	var req PullRequest
+	if err := web.Decode(r, &req); err != nil {
+		return errs.New(errs.InvalidArgument, err)
+	}
+
+	if _, err := url.ParseRequestURI(req.ModelURL); err != nil {
+		return errs.Newf(errs.InvalidArgument, "invalid model URL: %s", req.ModelURL)
+	}
+
+	if req.ProjURL != "" {
+		if _, err := url.ParseRequestURI(req.ProjURL); err != nil {
+			return errs.Newf(errs.InvalidArgument, "invalid project URL: %s", req.ProjURL)
+		}
+	}
+
+	// -------------------------------------------------------------------------
+
+	w := web.GetWriter(ctx)
+
+	f, ok := w.(http.Flusher)
+	if !ok {
+		return errs.Newf(errs.Internal, "streaming not supported")
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Transfer-Encoding", "chunked")
+	w.WriteHeader(http.StatusOK)
+	f.Flush()
+
+	// -------------------------------------------------------------------------
+
+	modelPath := a.krnMgr.ModelPath()
+
+	logger := func(ctx context.Context, msg string, args ...any) {
+		var sb strings.Builder
+		for i := 0; i < len(args); i += 2 {
+			if i+1 < len(args) {
+				sb.WriteString(fmt.Sprintf(" %v[%v]", args[i], args[i+1]))
+			}
+		}
+
+		fmt.Fprintf(w, "%s:%s\n", msg, sb.String())
+		f.Flush()
+	}
+
+	_, err := tools.DownloadModel(ctx, logger, req.ModelURL, req.ProjURL, modelPath)
+	if err != nil {
+		return errs.Newf(errs.Internal, "unable to install model: %s", err)
+	}
+
+	return web.NewNoResponse()
 }
 
 func (a *app) remove(ctx context.Context, r *http.Request) web.Encoder {

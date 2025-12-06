@@ -68,3 +68,16 @@ func toListModelsInfo(models []tools.ListModelInfo) ListModelsInfo {
 
 	return list
 }
+
+// =============================================================================
+
+// PullRequest represents the input for the pull command.
+type PullRequest struct {
+	ModelURL string `json:"model_url"`
+	ProjURL  string `json:"proj_url"`
+}
+
+// Decode implements the decoder interface.
+func (pr *PullRequest) Decode(data []byte) error {
+	return json.Unmarshal(data, pr)
+}
