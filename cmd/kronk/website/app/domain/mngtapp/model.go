@@ -53,7 +53,7 @@ type ListModelInfo struct {
 	Modified     time.Time `json:"modified"`
 }
 
-func toListModelsInfo(models []tools.ListModelInfo) ListModelsInfo {
+func toListModelsInfo(models []tools.ModelFile) ListModelsInfo {
 	var list ListModelsInfo
 
 	for _, model := range models {

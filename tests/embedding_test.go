@@ -16,18 +16,18 @@ import (
 )
 
 func Test_Embedding(t *testing.T) {
-	testEmbedding(t, fiEmbedFile)
+	testEmbedding(t, mpEmbed)
 }
 
 // =============================================================================
 
-func testEmbedding(t *testing.T, fi tools.FindModelInfo) {
+func testEmbedding(t *testing.T, mp tools.ModelPath) {
 	if runInParallel {
 		t.Parallel()
 	}
 
 	krn, err := kronk.New(modelInstances, model.Config{
-		ModelFile:  fi.ModelFile,
+		ModelFile:  mp.ModelFile,
 		Embeddings: true,
 	})
 
@@ -53,7 +53,7 @@ func testEmbedding(t *testing.T, fi tools.FindModelInfo) {
 		id := uuid.New().String()
 		now := time.Now()
 		defer func() {
-			name := strings.TrimSuffix(fi.ModelFile, path.Ext(fi.ModelFile))
+			name := strings.TrimSuffix(mp.ModelFile, path.Ext(mp.ModelFile))
 			done := time.Now()
 			t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, name, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
 		}()

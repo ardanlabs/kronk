@@ -15,21 +15,21 @@ import (
 )
 
 func Test_SimpleMedia(t *testing.T) {
-	testMedia(t, fiSimpleVisionFile, imageFile)
+	testMedia(t, mpSimpleVision, imageFile)
 }
 
 func Test_SimpleMediaStreaming(t *testing.T) {
-	testMediaStreaming(t, fiSimpleVisionFile, imageFile)
+	testMediaStreaming(t, mpSimpleVision, imageFile)
 }
 
 // =============================================================================
 
-func testMedia(t *testing.T, fi tools.FindModelInfo, imageFile string) {
+func testMedia(t *testing.T, mp tools.ModelPath, imageFile string) {
 	if runInParallel {
 		t.Parallel()
 	}
 
-	krn, d := initMediaTest(t, fi, imageFile)
+	krn, d := initMediaTest(t, mp, imageFile)
 	defer func() {
 		t.Logf("active streams: %d", krn.ActiveStreams())
 		t.Log("unload Kronk")
@@ -72,12 +72,12 @@ func testMedia(t *testing.T, fi tools.FindModelInfo, imageFile string) {
 	}
 }
 
-func testMediaStreaming(t *testing.T, fi tools.FindModelInfo, imageFile string) {
+func testMediaStreaming(t *testing.T, mp tools.ModelPath, imageFile string) {
 	if runInParallel {
 		t.Parallel()
 	}
 
-	krn, d := initMediaTest(t, fi, imageFile)
+	krn, d := initMediaTest(t, mp, imageFile)
 	defer func() {
 		t.Logf("active streams: %d", krn.ActiveStreams())
 		t.Log("unload Kronk")
@@ -130,7 +130,7 @@ func testMediaStreaming(t *testing.T, fi tools.FindModelInfo, imageFile string) 
 	}
 }
 
-func initMediaTest(t *testing.T, fi tools.FindModelInfo, mediaFile string) (*kronk.Kronk, model.D) {
+func initMediaTest(t *testing.T, mp tools.ModelPath, mediaFile string) (*kronk.Kronk, model.D) {
 	if _, err := os.Stat(mediaFile); err != nil {
 		t.Fatalf("error accessing file %q: %s", mediaFile, err)
 	}
@@ -143,12 +143,12 @@ func initMediaTest(t *testing.T, fi tools.FindModelInfo, mediaFile string) (*kro
 	// -------------------------------------------------------------------------
 
 	krn, err := kronk.New(modelInstances, model.Config{
-		ModelFile:      fi.ModelFile,
-		ProjectionFile: fi.ProjFile,
+		ModelFile:      mp.ModelFile,
+		ProjectionFile: mp.ProjFile,
 	})
 
 	if err != nil {
-		t.Fatalf("unable to load model: %s: %v", fi.ModelFile, err)
+		t.Fatalf("unable to load model: %s: %v", mp.ModelFile, err)
 	}
 
 	// -------------------------------------------------------------------------

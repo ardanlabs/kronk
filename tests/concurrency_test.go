@@ -21,12 +21,12 @@ func Test_ConTest1(t *testing.T) {
 	id := uuid.New().String()
 	now := time.Now()
 	defer func() {
-		name := strings.TrimSuffix(fiThinkToolChatFile.ModelFile, path.Ext(fiThinkToolChatFile.ModelFile))
+		name := strings.TrimSuffix(mpThinkToolChat.ModelFile, path.Ext(mpThinkToolChat.ModelFile))
 		done := time.Now()
 		t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, name, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
 	}()
 
-	krn, d := initChatTest(t, fiThinkToolChatFile, false)
+	krn, d := initChatTest(t, mpThinkToolChat, false)
 	defer func() {
 		t.Logf("active streams: %d", krn.ActiveStreams())
 		t.Log("unload Kronk")
@@ -73,12 +73,12 @@ func Test_ConTest2(t *testing.T) {
 	id := uuid.New().String()
 	now := time.Now()
 	defer func() {
-		name := strings.TrimSuffix(fiThinkToolChatFile.ModelFile, path.Ext(fiThinkToolChatFile.ModelFile))
+		name := strings.TrimSuffix(mpThinkToolChat.ModelFile, path.Ext(mpThinkToolChat.ModelFile))
 		done := time.Now()
 		t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, name, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
 	}()
 
-	krn, d := initChatTest(t, fiThinkToolChatFile, false)
+	krn, d := initChatTest(t, mpThinkToolChat, false)
 	defer func() {
 		t.Logf("active streams: %d", krn.ActiveStreams())
 		t.Log("unload Kronk")
@@ -133,12 +133,12 @@ func Test_ConTest3(t *testing.T) {
 	id := uuid.New().String()
 	now := time.Now()
 	defer func() {
-		name := strings.TrimSuffix(fiThinkToolChatFile.ModelFile, path.Ext(fiThinkToolChatFile.ModelFile))
+		name := strings.TrimSuffix(mpThinkToolChat.ModelFile, path.Ext(mpThinkToolChat.ModelFile))
 		done := time.Now()
 		t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, name, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
 	}()
 
-	krn, d := initChatTest(t, fiThinkToolChatFile, false)
+	krn, d := initChatTest(t, mpThinkToolChat, false)
 	defer func() {
 		t.Logf("active streams: %d", krn.ActiveStreams())
 		t.Log("unload Kronk")

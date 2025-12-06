@@ -15,19 +15,19 @@ import (
 )
 
 func Test_ThinkChat(t *testing.T) {
-	testChat(t, fiThinkToolChatFile, false)
+	testChat(t, mpThinkToolChat, false)
 }
 
 func Test_ThinkStreamingChat(t *testing.T) {
-	testChatStreaming(t, fiThinkToolChatFile, false)
+	testChatStreaming(t, mpThinkToolChat, false)
 }
 
 func Test_ToolChat(t *testing.T) {
-	testChat(t, fiThinkToolChatFile, true)
+	testChat(t, mpThinkToolChat, true)
 }
 
 func Test_ToolStreamingChat(t *testing.T) {
-	testChatStreaming(t, fiThinkToolChatFile, true)
+	testChatStreaming(t, mpThinkToolChat, true)
 }
 
 func Test_GPTChat(t *testing.T) {
@@ -35,7 +35,7 @@ func Test_GPTChat(t *testing.T) {
 		t.Skip("Skipping test in GitHub Actions")
 	}
 
-	testChat(t, fiGPTChatFile, false)
+	testChat(t, mpGPTChat, false)
 }
 
 func Test_GPTStreamingChat(t *testing.T) {
@@ -43,7 +43,7 @@ func Test_GPTStreamingChat(t *testing.T) {
 		t.Skip("Skipping test in GitHub Actions")
 	}
 
-	testChatStreaming(t, fiGPTChatFile, false)
+	testChatStreaming(t, mpGPTChat, false)
 }
 
 func Test_ToolGPTChat(t *testing.T) {
@@ -51,7 +51,7 @@ func Test_ToolGPTChat(t *testing.T) {
 		t.Skip("Skipping test in GitHub Actions")
 	}
 
-	testChat(t, fiGPTChatFile, true)
+	testChat(t, mpGPTChat, true)
 }
 
 func Test_ToolGPTStreamingChat(t *testing.T) {
@@ -59,17 +59,17 @@ func Test_ToolGPTStreamingChat(t *testing.T) {
 		t.Skip("Skipping test in GitHub Actions")
 	}
 
-	testChatStreaming(t, fiGPTChatFile, true)
+	testChatStreaming(t, mpGPTChat, true)
 }
 
 // =============================================================================
 
-func testChat(t *testing.T, fi tools.FindModelInfo, tooling bool) {
+func testChat(t *testing.T, mp tools.ModelPath, tooling bool) {
 	if runInParallel {
 		t.Parallel()
 	}
 
-	krn, d := initChatTest(t, fi, tooling)
+	krn, d := initChatTest(t, mp, tooling)
 	defer func() {
 		t.Logf("active streams: %d", krn.ActiveStreams())
 		t.Log("unload Kronk")
@@ -120,12 +120,12 @@ func testChat(t *testing.T, fi tools.FindModelInfo, tooling bool) {
 	}
 }
 
-func testChatStreaming(t *testing.T, fi tools.FindModelInfo, tooling bool) {
+func testChatStreaming(t *testing.T, mp tools.ModelPath, tooling bool) {
 	if runInParallel {
 		t.Parallel()
 	}
 
-	krn, d := initChatTest(t, fi, tooling)
+	krn, d := initChatTest(t, mp, tooling)
 	defer func() {
 		t.Logf("active streams: %d", krn.ActiveStreams())
 		t.Log("unload Kronk")
@@ -186,13 +186,13 @@ func testChatStreaming(t *testing.T, fi tools.FindModelInfo, tooling bool) {
 	}
 }
 
-func initChatTest(t *testing.T, fi tools.FindModelInfo, tooling bool) (*kronk.Kronk, model.D) {
+func initChatTest(t *testing.T, mp tools.ModelPath, tooling bool) (*kronk.Kronk, model.D) {
 	krn, err := kronk.New(modelInstances, model.Config{
-		ModelFile: fi.ModelFile,
+		ModelFile: mp.ModelFile,
 	})
 
 	if err != nil {
-		t.Fatalf("unable to load model: %s: %v", fi.ModelFile, err)
+		t.Fatalf("unable to load model: %s: %v", mp.ModelFile, err)
 	}
 
 	question := "Echo back the word: Gorilla"

@@ -28,7 +28,7 @@ func Run(args []string) error {
 	return nil
 }
 
-func print(models []tools.ListModelInfo) {
+func print(models []tools.ModelFile) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(w, "ORG\tMODEL\tFILE\tSIZE\tMODIFIED")
 
