@@ -23,9 +23,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/kronk/website/foundation/keystore"
 	"github.com/ardanlabs/kronk/cmd/kronk/website/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/kronk/website/foundation/otel"
-	"github.com/ardanlabs/kronk/defaults"
 	"github.com/ardanlabs/kronk/tools"
-	"github.com/hybridgroup/yzma/pkg/download"
 )
 
 var build = "develop"
@@ -100,9 +98,12 @@ func run(ctx context.Context, log *logger.Logger) error {
 			ContextWindow int           `conf:"default:0"`
 			CacheTTL      time.Duration `conf:"default:5m"`
 		}
-		LlamaLog  int    `conf:"default:1"`
-		Processor string `conf:"default:cpu"`
-		LibPath   string
+		LibPath      string
+		Arch         string
+		OS           string
+		Processor    string
+		AllowUpgrade bool `conf:"default:true"`
+		LlamaLog     int  `conf:"default:1"`
 	}{
 		Version: conf.Version{
 			Build: build,
@@ -118,14 +119,6 @@ func run(ctx context.Context, log *logger.Logger) error {
 			return nil
 		}
 		return fmt.Errorf("parsing config: %w", err)
-	}
-
-	if cfg.LibPath == "" {
-		cfg.LibPath = defaults.LibsDir()
-	}
-
-	if cfg.Model.Path == "" {
-		cfg.Model.Path = defaults.ModelsDir()
 	}
 
 	// -------------------------------------------------------------------------
@@ -209,23 +202,29 @@ func run(ctx context.Context, log *logger.Logger) error {
 	// Init Kronk
 
 	log.Info(ctx, "startup", "status", "initializing kronk")
+	log.Info(ctx, "startup", "status", "installing/updating libraries", "libPath", cfg.LibPath, "arch", cfg.Arch, "os", cfg.OS, "processor", cfg.Processor, "update", cfg.AllowUpgrade)
 
-	processor := download.CPU
-	if cfg.Processor != "" {
-		processor, err = download.ParseProcessor(cfg.Processor)
-		if err != nil {
-			return err
-		}
+	libCfg, err := tools.NewLibConfig(
+		cfg.LibPath,
+		cfg.Arch,
+		cfg.OS,
+		cfg.Processor,
+		cfg.AllowUpgrade,
+	)
+
+	if err != nil {
+		return err
 	}
 
-	log.Info(ctx, "startup", "status", "installing/updating libraries", "libPath", cfg.LibPath, "processor", processor)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
 
-	vi, err := tools.DownloadLibraries(context.Background(), tools.FmtLogger, cfg.LibPath, processor, true)
+	tag, err := tools.DownloadLibraries(ctx, log.Info, libCfg)
 	if err != nil {
 		return fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
-	log.Info(ctx, "startup", "status", "libraries installed", "current", vi.Current, "latest", vi.Latest)
+	log.Info(ctx, "startup", "status", "libraries installed", "current", tag.Version, "latest", tag.Latest)
 
 	if err := kronk.Init(cfg.LibPath, kronk.LogLevel(cfg.LlamaLog)); err != nil {
 		return fmt.Errorf("installation invalid: %w", err)
@@ -233,8 +232,10 @@ func run(ctx context.Context, log *logger.Logger) error {
 
 	krnMngr, err := krn.NewManager(krn.Config{
 		Log:            log,
-		LibPath:        cfg.LibPath,
-		Processor:      processor,
+		LibPath:        libCfg.LibPath,
+		Arch:           libCfg.Arch,
+		OS:             libCfg.OS,
+		Processor:      libCfg.Processor,
 		ModelPath:      cfg.Model.Path,
 		Device:         cfg.Model.Device,
 		MaxInCache:     cfg.Model.MaxInCache,

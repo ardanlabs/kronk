@@ -13,6 +13,8 @@ import (
 type Version struct {
 	Status    string `json:"status"`
 	LibPath   string `json:"libs_paths"`
+	Arch      string `json:"arch"`
+	OS        string `json:"os"`
 	Processor string `json:"processor"`
 	Latest    string `json:"latest"`
 	Current   string `json:"current"`
@@ -24,13 +26,15 @@ func (app Version) Encode() ([]byte, string, error) {
 	return data, "application/json", err
 }
 
-func toAppVersion(status string, libPath string, processor download.Processor, krn tools.LibVersion) Version {
+func toAppVersion(status string, libPath string, arch download.Arch, os download.OS, processor download.Processor, krn tools.VersionTag) Version {
 	return Version{
 		Status:    status,
 		LibPath:   libPath,
+		Arch:      arch.String(),
+		OS:        os.String(),
 		Processor: processor.String(),
 		Latest:    krn.Latest,
-		Current:   krn.Current,
+		Current:   krn.Version,
 	}
 }
 

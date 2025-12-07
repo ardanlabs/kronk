@@ -5,29 +5,75 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
+	"os"
+	"runtime"
+	"time"
 
 	"github.com/ardanlabs/kronk"
+	"github.com/ardanlabs/kronk/cmd/kronk/client"
+	"github.com/ardanlabs/kronk/cmd/kronk/website/app/domain/toolapp"
+	"github.com/ardanlabs/kronk/cmd/kronk/website/app/sdk/errs"
 	"github.com/ardanlabs/kronk/defaults"
 	"github.com/ardanlabs/kronk/tools"
 )
 
 var ErrInvalidArguments = errors.New("invalid arguments")
 
-// Run executes the pull command.
-func Run(args []string) error {
-	libPath := defaults.LibsDir()
+// RunWeb executes the libs command against the model server.
+func RunWeb(args []string) error {
+	host := "127.0.0.1:3000"
+	if v := os.Getenv("KRONK_HOST"); v != "" {
+		host = v
+	}
 
-	processor, err := defaults.Processor()
+	u := &url.URL{
+		Scheme: "http",
+		Host:   host,
+		Path:   "/v1/tool/libs",
+	}
+
+	endpoint, err := url.JoinPath(u.String(), "v1", "tool", "libs")
+	if err != nil {
+		return fmt.Errorf("invalid host information %q: %w", host, err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	client := client.New(client.FmtLogger)
+
+	var version toolapp.Version
+	if err := client.Do(ctx, http.MethodGet, endpoint, nil, &version); err != nil {
+		return fmt.Errorf("unable to get version: %w", err)
+	}
+
+	return nil
+}
+
+// RunLocal executes the libs command locally.
+func RunLocal(args []string) error {
+	libCfg, err := tools.NewLibConfig(
+		defaults.LibsDir(""),
+		runtime.GOARCH,
+		runtime.GOOS,
+		"cpu",
+		true,
+	)
 	if err != nil {
 		return err
 	}
 
-	_, err = tools.DownloadLibraries(context.Background(), tools.FmtLogger, libPath, processor, true)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	_, err = tools.DownloadLibraries(ctx, tools.FmtLogger, libCfg)
 	if err != nil {
-		return fmt.Errorf("unable to install llama.cpp: %w", err)
+		return errs.Errorf(errs.Internal, "unable to install llama.cpp: %s", err)
 	}
 
-	if err := kronk.Init(libPath, kronk.LogSilent); err != nil {
+	if err := kronk.Init(libCfg.LibPath, kronk.LogSilent); err != nil {
 		return fmt.Errorf("installation invalid: %w", err)
 	}
 

@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -45,8 +46,8 @@ const (
 )
 
 var (
-	libPath   = defaults.LibsDir()
-	modelPath = defaults.ModelsDir()
+	libPath   = defaults.LibsDir("")
+	modelPath = defaults.ModelsDir("")
 )
 
 func main() {
@@ -59,7 +60,18 @@ func main() {
 }
 
 func run() error {
-	_, err := tools.DownloadLibraries(context.Background(), tools.FmtLogger, libPath, download.CPU, true)
+	libCfg, err := tools.NewLibConfig(
+		libPath,
+		runtime.GOARCH,
+		runtime.GOOS,
+		download.CPU.String(),
+		true,
+	)
+	if err != nil {
+		return err
+	}
+
+	_, err = tools.DownloadLibraries(context.Background(), tools.FmtLogger, libCfg)
 	if err != nil {
 		return fmt.Errorf("unable to install llama.cpp: %w", err)
 	}

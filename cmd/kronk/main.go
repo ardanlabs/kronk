@@ -38,9 +38,10 @@ func init() {
 	rootCmd.SetVersionTemplate(version)
 
 	rootCmd.AddCommand(serverCmd)
-	rootCmd.AddCommand(libsCmd)
+	rootCmd.AddCommand(libsLocalCmd)
+	rootCmd.AddCommand(libsWebCmd)
 	rootCmd.AddCommand(listCmd)
-	rootCmd.AddCommand(pullCmd)
+	rootCmd.AddCommand(pullLocalCmd)
 	rootCmd.AddCommand(removeCmd)
 	rootCmd.AddCommand(showCmd)
 	rootCmd.AddCommand(psCmd)
@@ -82,19 +83,43 @@ func runServer(cmd *cobra.Command, args []string) {
 
 // =============================================================================
 
-var libsCmd = &cobra.Command{
+var libsWebCmd = &cobra.Command{
 	Use:   "libs",
 	Short: "Install or upgrade llama.cpp libraries",
 	Long: `Install or upgrade llama.cpp libraries
 
 Environment Variables:
+      KRONK_HOST       (default 127.0.0.1:3000)  IP Address for the kronk server 
       KRONK_PROCESSOR  (default: cpu)  Options: cpu, cuda, metal, vulkan`,
 	Args: cobra.NoArgs,
-	Run:  runLibs,
+	Run:  runLibsWeb,
 }
 
-func runLibs(cmd *cobra.Command, args []string) {
-	if err := libs.Run(args); err != nil {
+func runLibsWeb(cmd *cobra.Command, args []string) {
+	if err := libs.RunWeb(args); err != nil {
+		if errors.Is(err, libs.ErrInvalidArguments) {
+			cmd.Help()
+			os.Exit(1)
+		}
+
+		fmt.Println("\nERROR:", err)
+		os.Exit(1)
+	}
+}
+
+var libsLocalCmd = &cobra.Command{
+	Use:   "libs-local",
+	Short: "Install or upgrade llama.cpp libraries without running the model server",
+	Long: `Install or upgrade llama.cpp libraries without running the model server
+
+Environment Variables:
+      KRONK_PROCESSOR  (default: cpu)  Options: cpu, cuda, metal, vulkan`,
+	Args: cobra.NoArgs,
+	Run:  runLibsLocal,
+}
+
+func runLibsLocal(cmd *cobra.Command, args []string) {
+	if err := libs.RunLocal(args); err != nil {
 		if errors.Is(err, libs.ErrInvalidArguments) {
 			cmd.Help()
 			os.Exit(1)
@@ -148,19 +173,19 @@ func runPs(cmd *cobra.Command, args []string) {
 
 // =============================================================================
 
-var pullCmd = &cobra.Command{
-	Use:   "pull <MODEL_URL> <MMPROJ_URL>",
-	Short: "Pull a model from the web, the mmproj file is optional",
-	Long: `Pull a model from the web, the mmproj file is optional
+var pullLocalCmd = &cobra.Command{
+	Use:   "pull-local <MODEL_URL> <MMPROJ_URL>",
+	Short: "Pull a model from the web without running the model server, the mmproj file is optional without running the model server",
+	Long: `Pull a model from the web without running the model server, the mmproj file is optional
 
 Environment Variables:
       KRONK_MODELS  (default: $HOME/kronk/models)  The path to the models directory`,
 	Args: cobra.RangeArgs(1, 2),
-	Run:  runPull,
+	Run:  runPullLocal,
 }
 
-func runPull(cmd *cobra.Command, args []string) {
-	if err := pull.Run(args); err != nil {
+func runPullLocal(cmd *cobra.Command, args []string) {
+	if err := pull.RunLocal(args); err != nil {
 		fmt.Println("\nERROR:", err)
 		os.Exit(1)
 	}
@@ -174,7 +199,7 @@ var removeCmd = &cobra.Command{
 	Long: `Remove a model
 
 Environment Variables:
-      KRONK_HOST  IP Address for the kronk server (default 127.0.0.1:11434)`,
+      KRONK_HOST  IP Address for the kronk server (default 127.0.0.1:3000)`,
 	Args: cobra.ExactArgs(1),
 	Run:  runRemove,
 }

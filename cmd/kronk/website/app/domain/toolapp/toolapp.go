@@ -29,15 +29,46 @@ func newApp(log *logger.Logger, krnMgr *krn.Manager) *app {
 }
 
 func (a *app) libs(ctx context.Context, r *http.Request) web.Encoder {
-	libPath := a.krnMgr.LibPath()
-	processor := a.krnMgr.Processor()
+	w := web.GetWriter(ctx)
 
-	vi, err := tools.DownloadLibraries(ctx, tools.FmtLogger, libPath, processor, true)
+	f, ok := w.(http.Flusher)
+	if !ok {
+		return errs.Errorf(errs.Internal, "streaming not supported")
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Transfer-Encoding", "chunked")
+	w.WriteHeader(http.StatusOK)
+	f.Flush()
+
+	// -------------------------------------------------------------------------
+
+	logger := func(ctx context.Context, msg string, args ...any) {
+		var sb strings.Builder
+		for i := 0; i < len(args); i += 2 {
+			if i+1 < len(args) {
+				sb.WriteString(fmt.Sprintf(" %v[%v]", args[i], args[i+1]))
+			}
+		}
+
+		fmt.Fprintf(w, "%s:%s\n", msg, sb.String())
+		f.Flush()
+	}
+
+	cfg := tools.LibConfig{
+		LibPath:      a.krnMgr.LibPath(),
+		Arch:         a.krnMgr.Arch(),
+		OS:           a.krnMgr.OS(),
+		AllowUpgrade: true,
+		Processor:    a.krnMgr.Processor(),
+	}
+
+	vi, err := tools.DownloadLibraries(ctx, logger, cfg)
 	if err != nil {
 		return errs.Errorf(errs.Internal, "unable to install llama.cpp: %s", err)
 	}
 
-	return toAppVersion("installed", libPath, processor, vi)
+	return toAppVersion("installed", cfg.LibPath, cfg.Arch, cfg.OS, cfg.Processor, vi)
 }
 
 func (a *app) list(ctx context.Context, r *http.Request) web.Encoder {

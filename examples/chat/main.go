@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"time"
 
 	"github.com/ardanlabs/kronk"
@@ -33,8 +34,8 @@ const (
 )
 
 var (
-	libPath   = defaults.LibsDir()
-	modelPath = defaults.ModelsDir()
+	libPath   = defaults.LibsDir("")
+	modelPath = defaults.ModelsDir("")
 )
 
 func main() {
@@ -107,7 +108,18 @@ func run() error {
 }
 
 func installSystem() (tools.ModelPath, error) {
-	_, err := tools.DownloadLibraries(context.Background(), tools.FmtLogger, libPath, download.CPU, true)
+	libCfg, err := tools.NewLibConfig(
+		libPath,
+		runtime.GOARCH,
+		runtime.GOOS,
+		download.CPU.String(),
+		true,
+	)
+	if err != nil {
+		return tools.ModelPath{}, err
+	}
+
+	_, err = tools.DownloadLibraries(context.Background(), tools.FmtLogger, libCfg)
 	if err != nil {
 		return tools.ModelPath{}, fmt.Errorf("unable to install llama.cpp: %w", err)
 	}

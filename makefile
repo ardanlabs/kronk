@@ -13,23 +13,23 @@ install-kronk:
 
 # Use this to install or update llama.cpp to the latest version. Needed to
 # run tests locally.
-install-libraries: install-kronk
+install-libraries:
 	@echo ========== INSTALL LIBRARIES ==========
-	go run cmd/kronk/main.go libs
+	go run cmd/kronk/main.go libs-local
 	@echo
 
 # Use this to install models. Needed to run tests locally.
 install-models: install-kronk
 	@echo ========== INSTALL MODELS ==========
-	kronk pull "https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/Qwen2.5-VL-3B-Instruct-Q8_0.gguf" "https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
+	kronk pull-local "https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/Qwen2.5-VL-3B-Instruct-Q8_0.gguf" "https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
 	@echo
-	kronk pull "https://huggingface.co/unsloth/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-Q8_0.gguf"
+	kronk pull-local "https://huggingface.co/unsloth/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-Q8_0.gguf"
 	@echo
-	kronk pull "https://huggingface.co/mradermacher/Qwen2-Audio-7B-GGUF/resolve/main/Qwen2-Audio-7B.Q8_0.gguf"
+	kronk pull-local "https://huggingface.co/mradermacher/Qwen2-Audio-7B-GGUF/resolve/main/Qwen2-Audio-7B.Q8_0.gguf"
 	@echo
-	kronk pull "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
+	kronk pull-local "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
 	@echo
-	kronk pull "https://huggingface.co/ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/resolve/main/embeddinggemma-300m-qat-Q8_0.gguf"
+	kronk pull-local "https://huggingface.co/ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/resolve/main/embeddinggemma-300m-qat-Q8_0.gguf"
 	@echo
 
 # Use this to see what devices are available on your machine. You need to
@@ -53,9 +53,9 @@ kronk-libs: install-libraries
 kronk-list:
 	go run cmd/kronk/main.go list
 
-# make kronk-pull URL="https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
-kronk-pull:
-	go run cmd/kronk/main.go pull "$(URL)"
+# make kronk-pull-local URL="https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
+kronk-pull-local:
+	go run cmd/kronk/main.go pull-local "$(URL)"
 
 # make kronk-remove FILE="Qwen3-8B-Q8_0.gguf"
 kronk-remove:

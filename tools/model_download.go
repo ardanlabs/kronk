@@ -16,14 +16,15 @@ func DownloadModel(ctx context.Context, log Logger, modelURL string, projURL str
 	u, _ := url.Parse(modelURL)
 	filename := path.Base(u.Path)
 	name := strings.TrimSuffix(filename, path.Ext(filename))
-	log(ctx, fmt.Sprintf("download-model: model-path[%s] model-url[%s] proj-url[%s] model-name[%s]", modelPath, modelURL, projURL, name))
-	log(ctx, "download-model: Waiting to start downloading...")
 
-	f := func(src string, currentSize int64, totalSize int64, mibPerSec float64, complete bool) {
+	log(ctx, fmt.Sprintf("download-model: model-path[%s] model-url[%s] proj-url[%s] model-name[%s]", modelPath, modelURL, projURL, name))
+	log(ctx, "download-model: waiting to start download...")
+
+	progress := func(src string, currentSize int64, totalSize int64, mibPerSec float64, complete bool) {
 		log(ctx, fmt.Sprintf("\x1b[1A\r\x1b[Kdownload-model: Downloading %s... %d MiB of %d MiB (%.2f MiB/s)", src, currentSize/(1024*1024), totalSize/(1024*1024), mibPerSec))
 	}
 
-	info, err := downloadModel(ctx, modelURL, projURL, modelPath, f)
+	info, err := downloadModel(ctx, modelURL, projURL, modelPath, progress)
 	if err != nil {
 		return ModelPath{}, fmt.Errorf("unable to download model: %w", err)
 	}
@@ -33,7 +34,7 @@ func DownloadModel(ctx context.Context, log Logger, modelURL string, projURL str
 		log(ctx, fmt.Sprintf("download-model: status[downloaded] model-file[%s] proj-file[%s]", info.ModelFile, info.ProjFile))
 
 	default:
-		log(ctx, fmt.Sprintf("download-model: status[already existed] model-file[%s] proj-file[%s]", info.ModelFile, info.ProjFile))
+		log(ctx, fmt.Sprintf("download-model: status[already exists] model-file[%s] proj-file[%s]", info.ModelFile, info.ProjFile))
 	}
 
 	return info, nil
@@ -75,7 +76,7 @@ func downloadModel(ctx context.Context, modelURL string, projURL string, modelPa
 	inf := ModelPath{
 		ModelFile:  modelFile,
 		ProjFile:   newProjFile,
-		Downloaded: downloadedMF || downloadedPF,
+		Downloaded: downloadedMF && downloadedPF,
 	}
 
 	return inf, nil
@@ -105,7 +106,7 @@ func pullModel(ctx context.Context, fileURL string, filePath string, progress Pr
 		}
 	}
 
-	downloaded, err := DownloadFile(ctx, fileURL, filePath, progress)
+	downloaded, err := DownloadFile(ctx, fileURL, filePath, progress, SizeIntervalMIB100)
 	if err != nil {
 		return "", false, fmt.Errorf("unable to download model: %w", err)
 	}

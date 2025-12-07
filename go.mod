@@ -8,7 +8,7 @@ require (
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-getter v1.8.3
-	github.com/hybridgroup/yzma v1.0.1
+	github.com/hybridgroup/yzma v1.1.0
 	github.com/maypok86/otter/v2 v2.2.1
 	github.com/nikolalohinski/gonja/v2 v2.5.0
 	github.com/open-policy-agent/opa v1.11.0

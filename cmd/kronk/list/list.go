@@ -16,7 +16,7 @@ var ErrInvalidArguments = errors.New("invalid arguments")
 
 // Run executes the pull command.
 func Run(args []string) error {
-	modelPath := defaults.ModelsDir()
+	modelPath := defaults.ModelsDir("")
 
 	models, err := tools.ListModels(modelPath)
 	if err != nil {

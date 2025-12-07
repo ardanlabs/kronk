@@ -10,9 +10,9 @@ import (
 	"github.com/ardanlabs/kronk/tools"
 )
 
-// Run executes the pull command.
-func Run(args []string) error {
-	modelPath := defaults.ModelsDir()
+// RunLocal executes the pull command.
+func RunLocal(args []string) error {
+	modelPath := defaults.ModelsDir("")
 	modelURL := args[0]
 
 	var projURL string

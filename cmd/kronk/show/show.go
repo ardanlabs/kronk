@@ -10,8 +10,8 @@ import (
 
 // Run executes the pull command.
 func Run(args []string) error {
-	libPath := defaults.LibsDir()
-	modelPath := defaults.ModelsDir()
+	libPath := defaults.LibsDir("")
+	modelPath := defaults.ModelsDir("")
 	modelName := args[0]
 
 	mi, err := tools.ShowModel(libPath, modelPath, modelName)

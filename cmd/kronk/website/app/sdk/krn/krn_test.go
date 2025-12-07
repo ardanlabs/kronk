@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -25,7 +26,7 @@ func Test_NewManager(t *testing.T) {
 	t.Run("default config values", func(t *testing.T) {
 		cfg := krn.Config{
 			Log:       log,
-			ModelPath: defaults.ModelsDir(),
+			ModelPath: defaults.ModelsDir(""),
 		}
 
 		mgr, err := krn.NewManager(cfg)
@@ -38,7 +39,7 @@ func Test_NewManager(t *testing.T) {
 	t.Run("custom config values", func(t *testing.T) {
 		cfg := krn.Config{
 			Log:            log,
-			ModelPath:      defaults.ModelsDir(),
+			ModelPath:      defaults.ModelsDir(""),
 			MaxInCache:     5,
 			ModelInstances: 2,
 			TTL:            10 * time.Minute,
@@ -60,7 +61,7 @@ func Test_AcquireModel(t *testing.T) {
 
 	cfg := krn.Config{
 		Log:            log,
-		ModelPath:      defaults.ModelsDir(),
+		ModelPath:      defaults.ModelsDir(""),
 		MaxInCache:     3,
 		ModelInstances: 1,
 		TTL:            5 * time.Minute,
@@ -117,7 +118,7 @@ func Test_Shutdown(t *testing.T) {
 	t.Run("shutdown empty cache", func(t *testing.T) {
 		cfg := krn.Config{
 			Log:       log,
-			ModelPath: defaults.ModelsDir(),
+			ModelPath: defaults.ModelsDir(""),
 		}
 
 		mgr, err := krn.NewManager(cfg)
@@ -136,7 +137,7 @@ func Test_Shutdown(t *testing.T) {
 	t.Run("shutdown with loaded models", func(t *testing.T) {
 		cfg := krn.Config{
 			Log:            log,
-			ModelPath:      defaults.ModelsDir(),
+			ModelPath:      defaults.ModelsDir(""),
 			MaxInCache:     3,
 			ModelInstances: 1,
 			TTL:            5 * time.Minute,
@@ -166,7 +167,7 @@ func Test_Shutdown(t *testing.T) {
 	t.Run("shutdown timeout expires", func(t *testing.T) {
 		cfg := krn.Config{
 			Log:            log,
-			ModelPath:      defaults.ModelsDir(),
+			ModelPath:      defaults.ModelsDir(""),
 			MaxInCache:     3,
 			ModelInstances: 1,
 			TTL:            5 * time.Minute,
@@ -197,7 +198,7 @@ func Test_Shutdown(t *testing.T) {
 	t.Run("shutdown with cancelled context", func(t *testing.T) {
 		cfg := krn.Config{
 			Log:            log,
-			ModelPath:      defaults.ModelsDir(),
+			ModelPath:      defaults.ModelsDir(""),
 			MaxInCache:     3,
 			ModelInstances: 1,
 			TTL:            5 * time.Minute,
@@ -226,7 +227,7 @@ func Test_Shutdown(t *testing.T) {
 	t.Run("shutdown blocks until eviction completes", func(t *testing.T) {
 		cfg := krn.Config{
 			Log:            log,
-			ModelPath:      defaults.ModelsDir(),
+			ModelPath:      defaults.ModelsDir(""),
 			MaxInCache:     3,
 			ModelInstances: 1,
 			TTL:            5 * time.Minute,
@@ -278,7 +279,7 @@ func Test_Eviction(t *testing.T) {
 	t.Run("eviction on TTL expiry", func(t *testing.T) {
 		cfg := krn.Config{
 			Log:            log,
-			ModelPath:      defaults.ModelsDir(),
+			ModelPath:      defaults.ModelsDir(""),
 			MaxInCache:     3,
 			ModelInstances: 1,
 			TTL:            500 * time.Millisecond,
@@ -313,7 +314,7 @@ func Test_Eviction(t *testing.T) {
 	t.Run("eviction on capacity exceeded", func(t *testing.T) {
 		cfg := krn.Config{
 			Log:            log,
-			ModelPath:      defaults.ModelsDir(),
+			ModelPath:      defaults.ModelsDir(""),
 			MaxInCache:     1,
 			ModelInstances: 1,
 			TTL:            5 * time.Minute,
@@ -348,20 +349,42 @@ func Test_Eviction(t *testing.T) {
 // =============================================================================
 
 func initKronk(t *testing.T) *logger.Logger {
-	libPath := defaults.LibsDir()
-	processor, err := defaults.Processor()
+	libPath := defaults.LibsDir("")
+
+	arch, err := defaults.Arch("")
+	if err != nil {
+		t.Fatalf("invalid arch specified: %s", runtime.GOARCH)
+	}
+
+	opSys, err := defaults.OS("")
+	if err != nil {
+		t.Fatalf("invalid processor specified: %s", runtime.GOOS)
+	}
+
+	processor, err := defaults.Processor("")
 	if err != nil {
 		t.Fatalf("invalid processor specified: %s", processor)
 	}
 
-	t.Logf("installing/updating libraries: libPath[%s], processor[%s]", libPath, processor)
+	t.Logf("installing/updating libraries: libPath[%s], arch[%s] os[%s] processor[%s]", libPath, arch, opSys, processor)
 
-	vi, err := tools.DownloadLibraries(context.Background(), tools.FmtLogger, libPath, processor, true)
+	cfg := tools.LibConfig{
+		LibPath:      libPath,
+		Arch:         arch,
+		OS:           opSys,
+		Processor:    processor,
+		AllowUpgrade: true,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	tag, err := tools.DownloadLibraries(ctx, tools.FmtLogger, cfg)
 	if err != nil {
 		t.Fatalf("unable to install llama.cpp: %s", err)
 	}
 
-	t.Logf("libraries installed: current[%s] latest[%s]", vi.Current, vi.Latest)
+	t.Logf("libraries installed: current[%s] latest[%s]", tag.Version, tag.Latest)
 
 	if err := kronk.Init(libPath, kronk.LogLevel(kronk.LogSilent)); err != nil {
 		t.Fatalf("installation invalid: %s", err)
@@ -380,7 +403,7 @@ func initKronk(t *testing.T) *logger.Logger {
 }
 
 func findAvailableModel(t *testing.T, notModelName string) string {
-	modelPath := defaults.ModelsDir()
+	modelPath := defaults.ModelsDir("")
 
 	var modelNames []string
 	filepath.WalkDir(modelPath, func(path string, d os.DirEntry, err error) error {

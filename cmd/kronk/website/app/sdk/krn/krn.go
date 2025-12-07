@@ -40,6 +40,8 @@ import (
 type Config struct {
 	Log            *logger.Logger
 	LibPath        string
+	Arch           download.Arch
+	OS             download.OS
 	Processor      download.Processor
 	ModelPath      string
 	Device         string
@@ -50,9 +52,8 @@ type Config struct {
 }
 
 func validateConfig(cfg Config) Config {
-	if cfg.ModelPath == "" {
-		cfg.ModelPath = defaults.ModelsDir()
-	}
+	cfg.LibPath = defaults.ModelsDir(cfg.LibPath)
+	cfg.ModelPath = defaults.ModelsDir(cfg.ModelPath)
 
 	if cfg.MaxInCache <= 0 {
 		cfg.MaxInCache = 3
@@ -74,6 +75,8 @@ func validateConfig(cfg Config) Config {
 type Manager struct {
 	log           *logger.Logger
 	libPath       string
+	arch          download.Arch
+	os            download.OS
 	processor     download.Processor
 	modelPath     string
 	device        string
@@ -89,6 +92,8 @@ func NewManager(cfg Config) (*Manager, error) {
 
 	mgr := Manager{
 		log:           cfg.Log,
+		arch:          cfg.Arch,
+		os:            cfg.OS,
 		processor:     cfg.Processor,
 		libPath:       cfg.LibPath,
 		modelPath:     cfg.ModelPath,
@@ -143,6 +148,16 @@ func (mgr *Manager) LibPath() string {
 // ModelPath returns the location of the models.
 func (mgr *Manager) ModelPath() string {
 	return mgr.modelPath
+}
+
+// Arch returns the hardware being used.
+func (mgr *Manager) Arch() download.Arch {
+	return mgr.arch
+}
+
+// OS returns the operating system being used.
+func (mgr *Manager) OS() download.OS {
+	return mgr.os
 }
 
 // Processor returns the processor being used.

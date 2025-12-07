@@ -9,7 +9,7 @@ import (
 // Logger provides a function for logging messages from DownloadLibraries.
 type Logger func(ctx context.Context, msg string, args ...any)
 
-// FmtLogger provides a basic Logger that writes to stdout.
+// FmtLogger provides a basic logger that writes to stdout.
 var FmtLogger = func(ctx context.Context, msg string, args ...any) {
 	fmt.Print(msg)
 	for i := 0; i < len(args); i += 2 {
