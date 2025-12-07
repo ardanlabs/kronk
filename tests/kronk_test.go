@@ -23,12 +23,12 @@ var (
 )
 
 func init() {
-	mpThinkToolChat = tools.MustFindModel(defaults.ModelsDir(""), "Qwen3-8B-Q8_0.gguf")
-	mpSimpleVision = tools.MustFindModel(defaults.ModelsDir(""), "Qwen2.5-VL-3B-Instruct-Q8_0.gguf")
-	mpEmbed = tools.MustFindModel(defaults.ModelsDir(""), "embeddinggemma-300m-qat-Q8_0.gguf")
+	mpThinkToolChat = tools.MustFindModel(defaults.ModelsDir(""), "Qwen3-8B-Q8_0")
+	mpSimpleVision = tools.MustFindModel(defaults.ModelsDir(""), "Qwen2.5-VL-3B-Instruct-Q8_0")
+	mpEmbed = tools.MustFindModel(defaults.ModelsDir(""), "embeddinggemma-300m-qat-Q8_0")
 
 	if os.Getenv("GITHUB_ACTIONS") != "true" {
-		mpGPTChat = tools.MustFindModel(defaults.ModelsDir(""), "gpt-oss-20b-Q8_0.gguf")
+		mpGPTChat = tools.MustFindModel(defaults.ModelsDir(""), "gpt-oss-20b-Q8_0")
 	}
 }
 
