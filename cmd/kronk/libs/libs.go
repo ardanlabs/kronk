@@ -37,7 +37,7 @@ func RunWeb(args []string) error {
 
 	endpoint, err := url.JoinPath(u.String(), "v1", "tool", "libs")
 	if err != nil {
-		return fmt.Errorf("invalid host information %q: %w", host, err)
+		return fmt.Errorf("libs:invalid host information %q: %w", host, err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -47,7 +47,7 @@ func RunWeb(args []string) error {
 
 	var version toolapp.Version
 	if err := client.Do(ctx, http.MethodGet, endpoint, nil, &version); err != nil {
-		return fmt.Errorf("unable to get version: %w", err)
+		return fmt.Errorf("libs:unable to get version: %w", err)
 	}
 
 	return nil
@@ -72,11 +72,11 @@ func RunLocal(args []string) error {
 
 	_, err = tools.DownloadLibraries(ctx, tools.FmtLogger, libCfg)
 	if err != nil {
-		return errs.Errorf(errs.Internal, "unable to install llama.cpp: %s", err)
+		return errs.Errorf(errs.Internal, "libs:unable to install llama.cpp: %s", err)
 	}
 
 	if err := kronk.Init(libCfg.LibPath, kronk.LogSilent); err != nil {
-		return fmt.Errorf("installation invalid: %w", err)
+		return fmt.Errorf("libs:installation invalid: %w", err)
 	}
 
 	return nil

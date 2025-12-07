@@ -49,21 +49,21 @@ func (m *Model) applyRequestJinjaTemplate(d D) (string, [][]byte, error) {
 
 func (m *Model) applyJinjaTemplate(d D) (string, error) {
 	if m.template == "" {
-		return "", errors.New("no template found")
+		return "", errors.New("apply-jinja-template:no template found")
 	}
 
 	gonja.DefaultLoader = &noFSLoader{}
 
 	t, err := newTemplateWithFixedItems(m.template)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse template: %w", err)
+		return "", fmt.Errorf("apply-jinja-template:failed to parse template: %w", err)
 	}
 
 	data := exec.NewContext(d)
 
 	s, err := t.ExecuteToString(data)
 	if err != nil {
-		return "", fmt.Errorf("failed to execute template: %w", err)
+		return "", fmt.Errorf("apply-jinja-template:failed to execute template: %w", err)
 	}
 
 	return s, nil
@@ -74,15 +74,15 @@ func (m *Model) applyJinjaTemplate(d D) (string, error) {
 type noFSLoader struct{}
 
 func (nl *noFSLoader) Read(path string) (io.Reader, error) {
-	return nil, errors.New("filesystem access disabled")
+	return nil, errors.New("no-fs-loader:filesystem access disabled")
 }
 
 func (nl *noFSLoader) Resolve(path string) (string, error) {
-	return "", errors.New("filesystem access disabled")
+	return "", errors.New("no-fs-loader:filesystem access disabled")
 }
 
 func (nl *noFSLoader) Inherit(from string) (loaders.Loader, error) {
-	return nil, errors.New("filesystem access disabled")
+	return nil, errors.New("no-fs-loader:filesystem access disabled")
 }
 
 // =============================================================================
@@ -159,7 +159,7 @@ func newTemplateWithFixedItems(source string) (*exec.Template, error) {
 func readJinjaTemplate(fileName string) (string, error) {
 	data, err := os.ReadFile(fileName)
 	if err != nil {
-		return "", fmt.Errorf("failed to read file: %w", err)
+		return "", fmt.Errorf("read-jinja-template:failed to read file: %w", err)
 	}
 
 	return string(data), nil

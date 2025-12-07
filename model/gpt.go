@@ -86,7 +86,7 @@ func (m *Model) gptToolCall(msg string, batch llama.Batch, lctx llama.Context, s
 	arguments := make(map[string]any)
 	err := json.Unmarshal([]byte(args.String()), &arguments)
 	if err != nil {
-		return raw, fmt.Errorf("failed to unmarshal tool call arguments: %w", err)
+		return raw, fmt.Errorf("gpt-tool-call:failed to unmarshal tool call arguments: %w", err)
 	}
 
 	rtc := struct {
@@ -99,7 +99,7 @@ func (m *Model) gptToolCall(msg string, batch llama.Batch, lctx llama.Context, s
 
 	data, err := json.Marshal(rtc)
 	if err != nil {
-		return raw, fmt.Errorf("failed to marshal tool call: %w", err)
+		return raw, fmt.Errorf("gpt-tool-call:failed to marshal tool call: %w", err)
 	}
 
 	return string(data), nil

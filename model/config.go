@@ -83,7 +83,7 @@ type Config struct {
 
 func validateConfig(cfg Config) error {
 	if cfg.ModelFile == "" {
-		return fmt.Errorf("model file is required")
+		return fmt.Errorf("validate-config:model file is required")
 	}
 
 	return nil
@@ -119,7 +119,7 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 
 func adjustContextWindow(cfg Config, model llama.Model) Config {
 	modelCW := defContextWindow
-	v, found := searchModelMeta(model, "context_length")
+	v, found := searchModelMeta(model, "adjust-context-window:context_length")
 	if found {
 		ctxLen, err := strconv.Atoi(v)
 		if err == nil {

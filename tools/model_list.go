@@ -3,7 +3,6 @@ package tools
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -19,10 +18,10 @@ type ModelFile struct {
 }
 
 // ListModels lists all the models in the given directory.
-func ListModels(modelPath string) ([]ModelFile, error) {
-	entries, err := os.ReadDir(modelPath)
+func ListModels(modelBasePath string) ([]ModelFile, error) {
+	entries, err := os.ReadDir(modelBasePath)
 	if err != nil {
-		return nil, fmt.Errorf("reading models directory: %w", err)
+		return nil, fmt.Errorf("list-models:reading models directory: %w", err)
 	}
 
 	var list []ModelFile
@@ -34,7 +33,7 @@ func ListModels(modelPath string) ([]ModelFile, error) {
 
 		org := orgEntry.Name()
 
-		modelEntries, err := os.ReadDir(fmt.Sprintf("%s/%s", modelPath, org))
+		modelEntries, err := os.ReadDir(fmt.Sprintf("%s/%s", modelBasePath, org))
 		if err != nil {
 			continue
 		}
@@ -45,7 +44,7 @@ func ListModels(modelPath string) ([]ModelFile, error) {
 			}
 			modelFamily := modelEntry.Name()
 
-			fileEntries, err := os.ReadDir(fmt.Sprintf("%s/%s/%s", modelPath, org, modelFamily))
+			fileEntries, err := os.ReadDir(fmt.Sprintf("%s/%s/%s", modelBasePath, org, modelFamily))
 			if err != nil {
 				continue
 			}
@@ -68,10 +67,8 @@ func ListModels(modelPath string) ([]ModelFile, error) {
 					continue
 				}
 
-				modelID := strings.TrimSuffix(fileEntry.Name(), filepath.Ext(fileEntry.Name()))
-
 				list = append(list, ModelFile{
-					ID:           modelID,
+					ID:           extractModelID(fileEntry.Name()),
 					Organization: org,
 					ModelFamily:  modelFamily,
 					Size:         info.Size(),

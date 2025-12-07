@@ -12,94 +12,129 @@ import (
 
 // DownloadModel performs a complete workflow for downloading and installing
 // the specified model.
-func DownloadModel(ctx context.Context, log Logger, modelURL string, projURL string, modelPath string) (ModelPath, error) {
-	u, _ := url.Parse(modelURL)
-	filename := path.Base(u.Path)
-	name := strings.TrimSuffix(filename, path.Ext(filename))
+func DownloadModel(ctx context.Context, log Logger, modelFileURL string, projURL string, modelBasePath string) (ModelPath, error) {
+	modelFileName, err := extractFileName(modelFileURL)
+	if err != nil {
+		return ModelPath{}, fmt.Errorf("download-model:unable to extract file name: %w", err)
+	}
 
-	log(ctx, fmt.Sprintf("download-model: model-path[%s] model-url[%s] proj-url[%s] model-name[%s]", modelPath, modelURL, projURL, name))
-	log(ctx, "download-model: waiting to start download...")
+	modelID := extractModelID(modelFileName)
+
+	log(ctx, fmt.Sprintf("download-model: model-dest[%s] model-url[%s] proj-url[%s] model-id[%s]", modelBasePath, modelFileURL, projURL, modelID))
+	log(ctx, "download-model: waiting to check model status...")
 
 	progress := func(src string, currentSize int64, totalSize int64, mibPerSec float64, complete bool) {
 		log(ctx, fmt.Sprintf("\x1b[1A\r\x1b[Kdownload-model: Downloading %s... %d MiB of %d MiB (%.2f MiB/s)", src, currentSize/(1024*1024), totalSize/(1024*1024), mibPerSec))
 	}
 
-	info, err := downloadModel(ctx, modelURL, projURL, modelPath, progress)
+	mp, err := downloadModel(ctx, modelFileURL, projURL, modelBasePath, progress)
 	if err != nil {
-		return ModelPath{}, fmt.Errorf("unable to download model: %w", err)
+		if mp, err = FindModel(modelBasePath, modelID); err == nil {
+			log(ctx, fmt.Sprintf("download-model: status[using installed version of model] model-file[%s] proj-file[%s]", mp.ModelFile, mp.ProjFile))
+			return mp, nil
+		}
+
+		return ModelPath{}, fmt.Errorf("download-model:unable to download model: %w", err)
 	}
 
-	switch info.Downloaded {
+	switch mp.Downloaded {
 	case true:
-		log(ctx, fmt.Sprintf("download-model: status[downloaded] model-file[%s] proj-file[%s]", info.ModelFile, info.ProjFile))
+		log(ctx, fmt.Sprintf("download-model: status[downloaded] model-file[%s] proj-file[%s]", mp.ModelFile, mp.ProjFile))
 
 	default:
-		log(ctx, fmt.Sprintf("download-model: status[already exists] model-file[%s] proj-file[%s]", info.ModelFile, info.ProjFile))
+		log(ctx, fmt.Sprintf("download-model: status[already exists] model-file[%s] proj-file[%s]", mp.ModelFile, mp.ProjFile))
 	}
 
-	return info, nil
+	return mp, nil
 }
 
-func downloadModel(ctx context.Context, modelURL string, projURL string, modelPath string, progress ProgressFunc) (ModelPath, error) {
-	modelFile, downloadedMF, err := pullModel(ctx, modelURL, modelPath, progress)
+func downloadModel(ctx context.Context, modelFileURL string, projFileURL string, modelBasePath string, progress ProgressFunc) (ModelPath, error) {
+	modelFileName, downloadedMF, err := pullModel(ctx, modelFileURL, modelBasePath, progress)
 	if err != nil {
 		return ModelPath{}, err
 	}
 
-	if projURL == "" {
-		return ModelPath{ModelFile: modelFile, Downloaded: downloadedMF}, nil
+	if projFileURL == "" {
+		return ModelPath{ModelFile: modelFileName, Downloaded: downloadedMF}, nil
 	}
 
-	modelFileName := filepath.Base(modelFile)
-	profFileName := fmt.Sprintf("mmproj-%s", modelFileName)
-	newProjFile := strings.Replace(modelFile, modelFileName, profFileName, 1)
+	projFileName := createProjFileName(modelFileName)
 
-	if _, err := os.Stat(newProjFile); err == nil {
+	if _, err := os.Stat(projFileName); err == nil {
 		inf := ModelPath{
-			ModelFile:  modelFile,
-			ProjFile:   newProjFile,
+			ModelFile:  modelFileName,
+			ProjFile:   projFileName,
 			Downloaded: downloadedMF || false,
 		}
 
 		return inf, nil
 	}
 
-	projFile, downloadedPF, err := pullModel(ctx, projURL, modelPath, progress)
+	orjProjFile, downloadedPF, err := pullModel(ctx, projFileURL, modelBasePath, progress)
 	if err != nil {
 		return ModelPath{}, err
 	}
 
-	if err := os.Rename(projFile, newProjFile); err != nil {
-		return ModelPath{}, fmt.Errorf("unable to rename projector file: %w", err)
+	if err := os.Rename(orjProjFile, projFileName); err != nil {
+		return ModelPath{}, fmt.Errorf("download-model:unable to rename projector file: %w", err)
 	}
 
 	inf := ModelPath{
-		ModelFile:  modelFile,
-		ProjFile:   newProjFile,
+		ModelFile:  modelFileName,
+		ProjFile:   projFileName,
 		Downloaded: downloadedMF && downloadedPF,
 	}
 
 	return inf, nil
 }
 
-func pullModel(ctx context.Context, fileURL string, filePath string, progress ProgressFunc) (string, bool, error) {
-	mURL, err := url.Parse(fileURL)
+func pullModel(ctx context.Context, modelFileURL string, modelBasePath string, progress ProgressFunc) (string, bool, error) {
+	modelFilePath, modelFileName, err := modelFilePathAndName(modelFileURL, modelBasePath)
 	if err != nil {
-		return "", false, fmt.Errorf("unable to parse fileURL: %w", err)
+		return "", false, fmt.Errorf("pull-model:unable to extract file-path: %w", err)
+	}
+
+	downloaded, err := DownloadFile(ctx, modelFileURL, modelFilePath, progress, SizeIntervalMIB100)
+	if err != nil {
+		return "", false, fmt.Errorf("pull-model:unable to download model: %w", err)
+	}
+
+	return modelFileName, downloaded, nil
+}
+
+func modelFilePathAndName(modelFileURL string, modelBasePath string) (string, string, error) {
+	mURL, err := url.Parse(modelFileURL)
+	if err != nil {
+		return "", "", fmt.Errorf("pull-model:unable to parse fileURL: %w", err)
 	}
 
 	parts := strings.Split(mURL.Path, "/")
 	if len(parts) < 3 {
-		return "", false, fmt.Errorf("invalid huggingface url: %q", mURL.Path)
+		return "", "", fmt.Errorf("pull-model:invalid huggingface url: %q", mURL.Path)
 	}
 
-	filePath = filepath.Join(filePath, parts[1], parts[2])
-	mFile := filepath.Join(filePath, path.Base(mURL.Path))
+	modelFilePath := filepath.Join(modelBasePath, parts[1], parts[2])
+	modelFileName := filepath.Join(modelFilePath, path.Base(mURL.Path))
 
-	downloaded, err := DownloadFile(ctx, fileURL, filePath, progress, SizeIntervalMIB100)
+	return modelFilePath, modelFileName, nil
+}
+
+func createProjFileName(modelFileName string) string {
+	modelID := extractModelID(modelFileName)
+	profFileName := fmt.Sprintf("mmproj-%s", modelID)
+
+	return strings.Replace(modelFileName, modelID, profFileName, 1)
+}
+
+func extractModelID(modelFileName string) string {
+	return strings.TrimSuffix(path.Base(modelFileName), path.Ext(modelFileName))
+}
+
+func extractFileName(modelFileURL string) (string, error) {
+	u, err := url.Parse(modelFileURL)
 	if err != nil {
-		return "", false, fmt.Errorf("unable to download model: %w", err)
+		return "", fmt.Errorf("extractFileName:parse error: %w", err)
 	}
 
-	return mFile, downloaded, nil
+	return path.Base(u.Path), nil
 }

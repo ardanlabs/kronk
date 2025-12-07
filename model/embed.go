@@ -12,7 +12,7 @@ import (
 func (m *Model) Embed(ctx context.Context, text string) ([]float32, error) {
 	lctx, err := llama.InitFromModel(m.model, m.ctxParams)
 	if err != nil {
-		return nil, fmt.Errorf("unable to init from model: %w", err)
+		return nil, fmt.Errorf("embed:unable to init from model: %w", err)
 	}
 
 	defer func() {
@@ -33,7 +33,7 @@ func (m *Model) Embed(ctx context.Context, text string) ([]float32, error) {
 	dimensions := llama.ModelNEmbd(m.model)
 	vec, err := llama.GetEmbeddingsSeq(lctx, 0, dimensions)
 	if err != nil {
-		return nil, fmt.Errorf("unable to get embeddings: %w", err)
+		return nil, fmt.Errorf("embed:unable to get embeddings: %w", err)
 	}
 
 	var sum float64

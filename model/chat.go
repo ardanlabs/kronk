@@ -47,7 +47,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 
 		lctx, err := llama.InitFromModel(m.model, m.ctxParams)
 		if err != nil {
-			m.sendChatError(ctx, ch, id, fmt.Errorf("unable to init model: %w", err))
+			m.sendChatError(ctx, ch, id, fmt.Errorf("chat-streaming:unable to init model: %w", err))
 			return
 		}
 
@@ -63,7 +63,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 
 			mtmdCtx, err = mtmd.InitFromFile(m.projFile, m.model, mctxParams)
 			if err != nil {
-				m.sendChatError(ctx, ch, id, fmt.Errorf("unable to init projection: %w", err))
+				m.sendChatError(ctx, ch, id, fmt.Errorf("chat-streaming:unable to init projection: %w", err))
 				return
 			}
 			defer mtmd.Free(mtmdCtx)
@@ -71,7 +71,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 
 		prompt, media, err := m.applyRequestJinjaTemplate(d)
 		if err != nil {
-			m.sendChatError(ctx, ch, id, fmt.Errorf("unable to apply jinja template: %w", err))
+			m.sendChatError(ctx, ch, id, fmt.Errorf("chat-streaming:unable to apply jinja template: %w", err))
 			return
 		}
 
@@ -102,11 +102,11 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 func (m *Model) validateDocument(d D) (Params, error) {
 	messages, exists := d["messages"]
 	if !exists {
-		return Params{}, errors.New("no messages found in request")
+		return Params{}, errors.New("validate-document:no messages found in request")
 	}
 
 	if _, ok := messages.([]D); !ok {
-		return Params{}, errors.New("messages is not a slice of documents")
+		return Params{}, errors.New("validate-document:messages is not a slice of documents")
 	}
 
 	params, err := parseParams(d)

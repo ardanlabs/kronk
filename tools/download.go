@@ -20,7 +20,7 @@ const (
 type ProgressFunc func(src string, currentSize int64, totalSize int64, mibPerSec float64, complete bool)
 
 // DownloadFile pulls down a single file from a url to a specified destination.
-func DownloadFile(ctx context.Context, url string, dest string, progress ProgressFunc, sizeInterval int64) (bool, error) {
+func DownloadFile(ctx context.Context, src string, dest string, progress ProgressFunc, sizeInterval int64) (bool, error) {
 	var pr ProgressReader
 
 	if progress != nil {
@@ -32,14 +32,14 @@ func DownloadFile(ctx context.Context, url string, dest string, progress Progres
 
 	client := getter.Client{
 		Ctx:              ctx,
-		Src:              url,
+		Src:              src,
 		Dst:              dest,
 		Mode:             getter.ClientModeAny,
 		ProgressListener: getter.ProgressTracker(&pr),
 	}
 
 	if err := client.Get(); err != nil {
-		return false, fmt.Errorf("failed to download model: %w", err)
+		return false, fmt.Errorf("downlaod-file:failed to download model: %T %w", err, err)
 	}
 
 	if pr.currentSize == 0 {

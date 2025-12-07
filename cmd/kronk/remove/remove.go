@@ -32,7 +32,7 @@ func RunLocal(args []string) error {
 	}
 
 	if err := tools.RemoveModel(mp); err != nil {
-		return fmt.Errorf("failed to remove model: %w", err)
+		return fmt.Errorf("remove:failed to remove model: %w", err)
 	}
 
 	fmt.Println("Remove complete")

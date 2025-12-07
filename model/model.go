@@ -31,21 +31,21 @@ type Model struct {
 
 func NewModel(cfg Config) (*Model, error) {
 	if err := validateConfig(cfg); err != nil {
-		return nil, fmt.Errorf("unable to validate config: %w", err)
+		return nil, fmt.Errorf("new-model:unable to validate config: %w", err)
 	}
 
 	mparams := llama.ModelDefaultParams()
 	if cfg.Device != "" {
 		dev := llama.GGMLBackendDeviceByName(cfg.Device)
 		if dev == 0 {
-			return nil, fmt.Errorf("unknown device: %s", cfg.Device)
+			return nil, fmt.Errorf("new-model:unknown device: %s", cfg.Device)
 		}
 		mparams.SetDevices([]llama.GGMLBackendDevice{dev})
 	}
 
 	mdl, err := llama.ModelLoadFromFile(cfg.ModelFile, mparams)
 	if err != nil {
-		return nil, fmt.Errorf("unable to load model: %w", err)
+		return nil, fmt.Errorf("new-model:unable to load model: %w", err)
 	}
 
 	cfg = adjustConfig(cfg, mdl)
@@ -57,7 +57,7 @@ func NewModel(cfg Config) (*Model, error) {
 
 	template, err := retrieveTemplate(cfg, mdl, modelInfo)
 	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve model template: %w", err)
+		return nil, fmt.Errorf("new-model:failed to retrieve model template: %w", err)
 	}
 
 	// -------------------------------------------------------------------------
@@ -81,11 +81,11 @@ func retrieveTemplate(cfg Config, mdl llama.Model, modelInfo ModelInfo) (string,
 	if cfg.JinjaFile != "" {
 		data, err := readJinjaTemplate(cfg.JinjaFile)
 		if err != nil {
-			return "", fmt.Errorf("failed to read jinja template: %w", err)
+			return "", fmt.Errorf("retrieve-template:failed to read jinja template: %w", err)
 		}
 
 		if data == "" {
-			return "", fmt.Errorf("jinja template is empty")
+			return "", fmt.Errorf("retrieve-template:jinja template is empty")
 		}
 
 		template = data
@@ -95,7 +95,7 @@ func retrieveTemplate(cfg Config, mdl llama.Model, modelInfo ModelInfo) (string,
 		if modelInfo.IsGPT {
 			data, err := jinjaFS.ReadFile("jinja/gpt-oss.jinja")
 			if err != nil {
-				return "", fmt.Errorf("failed to read gpt-oss.jinja template: %w", err)
+				return "", fmt.Errorf("retrieve-template:failed to read gpt-oss.jinja template: %w", err)
 			}
 
 			return string(data), nil
@@ -120,7 +120,7 @@ func (m *Model) Unload(ctx context.Context) error {
 	for m.activeStreams.Load() > 0 {
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("cannot unload: %d active streams: %w", m.activeStreams.Load(), ctx.Err())
+			return fmt.Errorf("unload:cannot unload: %d active streams: %w", m.activeStreams.Load(), ctx.Err())
 
 		case <-time.After(100 * time.Millisecond):
 		}
@@ -175,7 +175,7 @@ func (m *Model) processChatRequest(ctx context.Context, id string, lctx llama.Co
 
 	// Check that we have not exceeded the context window.
 	if inputTokens > m.cfg.ContextWindow {
-		err := fmt.Errorf("input tokens %d exceed context window %d", inputTokens, m.cfg.ContextWindow)
+		err := fmt.Errorf("process-chat-request:input tokens %d exceed context window %d", inputTokens, m.cfg.ContextWindow)
 		m.sendErrorResponse(ctx, ch, id, object, 0, prompt, err, Usage{
 			InputTokens:      inputTokens,
 			ReasoningTokens:  reasonTokens,

@@ -15,10 +15,10 @@ type ModelPath struct {
 }
 
 // FindModel locates the physical location on disk and returns the full path.
-func FindModel(modelPath string, modelID string) (ModelPath, error) {
-	entries, err := os.ReadDir(modelPath)
+func FindModel(modelBasePath string, modelID string) (ModelPath, error) {
+	entries, err := os.ReadDir(modelBasePath)
 	if err != nil {
-		return ModelPath{}, fmt.Errorf("reading models directory: %w", err)
+		return ModelPath{}, fmt.Errorf("find-model:reading models directory: %w", err)
 	}
 
 	projID := fmt.Sprintf("mmproj-%s", modelID)
@@ -32,7 +32,7 @@ func FindModel(modelPath string, modelID string) (ModelPath, error) {
 
 		org := orgEntry.Name()
 
-		modelEntries, err := os.ReadDir(fmt.Sprintf("%s/%s", modelPath, org))
+		modelEntries, err := os.ReadDir(fmt.Sprintf("%s/%s", modelBasePath, org))
 		if err != nil {
 			continue
 		}
@@ -43,7 +43,7 @@ func FindModel(modelPath string, modelID string) (ModelPath, error) {
 			}
 			model := modelEntry.Name()
 
-			fileEntries, err := os.ReadDir(fmt.Sprintf("%s/%s/%s", modelPath, org, model))
+			fileEntries, err := os.ReadDir(fmt.Sprintf("%s/%s/%s", modelBasePath, org, model))
 			if err != nil {
 				continue
 			}
@@ -60,12 +60,12 @@ func FindModel(modelPath string, modelID string) (ModelPath, error) {
 				id := strings.TrimSuffix(fileEntry.Name(), filepath.Ext(fileEntry.Name()))
 
 				if id == modelID {
-					fi.ModelFile = filepath.Join(modelPath, org, model, fileEntry.Name())
+					fi.ModelFile = filepath.Join(modelBasePath, org, model, fileEntry.Name())
 					continue
 				}
 
 				if id == projID {
-					fi.ProjFile = filepath.Join(modelPath, org, model, fileEntry.Name())
+					fi.ProjFile = filepath.Join(modelBasePath, org, model, fileEntry.Name())
 					continue
 				}
 			}
@@ -73,14 +73,14 @@ func FindModel(modelPath string, modelID string) (ModelPath, error) {
 	}
 
 	if fi.ModelFile == "" {
-		return ModelPath{}, fmt.Errorf("model %q not found", modelID)
+		return ModelPath{}, fmt.Errorf("find-model:model %q not found", modelID)
 	}
 
 	return fi, nil
 }
 
-func MustFindModel(modelPath string, modelName string) ModelPath {
-	fi, err := FindModel(modelPath, modelName)
+func MustFindModel(modelBasePath string, modelName string) ModelPath {
+	fi, err := FindModel(modelBasePath, modelName)
 	if err != nil {
 		panic(err.Error())
 	}

@@ -10,14 +10,14 @@ import (
 )
 
 // ShowModel provides details for the specified model.
-func ShowModel(libPath string, modelPath string, modelName string) (model.ModelInfo, error) {
-	fi, err := FindModel(modelPath, modelName)
+func ShowModel(libPath string, modelBasePath string, modelID string) (model.ModelInfo, error) {
+	fi, err := FindModel(modelBasePath, modelID)
 	if err != nil {
 		return model.ModelInfo{}, err
 	}
 
 	if err := kronk.Init(libPath, kronk.LogSilent); err != nil {
-		return model.ModelInfo{}, fmt.Errorf("unable to init kronk: %w", err)
+		return model.ModelInfo{}, fmt.Errorf("show-model:unable to init kronk: %w", err)
 	}
 
 	const modelInstances = 1
@@ -27,7 +27,7 @@ func ShowModel(libPath string, modelPath string, modelName string) (model.ModelI
 	})
 
 	if err != nil {
-		return model.ModelInfo{}, fmt.Errorf("unable to load kronk: %w", err)
+		return model.ModelInfo{}, fmt.Errorf("show-model:unable to load kronk: %w", err)
 	}
 
 	defer func() {

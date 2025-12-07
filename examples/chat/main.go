@@ -48,7 +48,7 @@ func main() {
 func run() error {
 	info, err := installSystem()
 	if err != nil {
-		return fmt.Errorf("unable to installation system: %w", err)
+		return fmt.Errorf("run:unable to installation system: %w", err)
 	}
 
 	krn, err := newKronk(libPath, info)
@@ -58,7 +58,7 @@ func run() error {
 	defer func() {
 		fmt.Println("\nUnloading Kronk")
 		if err := krn.Unload(context.Background()); err != nil {
-			fmt.Printf("failed to unload model: %v", err)
+			fmt.Printf("run:failed to unload model: %v", err)
 		}
 	}()
 
@@ -72,7 +72,7 @@ func run() error {
 			if errors.Is(err, io.EOF) {
 				return nil
 			}
-			return fmt.Errorf("user input: %w", err)
+			return fmt.Errorf("run:user input: %w", err)
 		}
 
 		messages, err = func() ([]model.D, error) {
@@ -90,24 +90,27 @@ func run() error {
 
 			ch, err := performChat(ctx, krn, d)
 			if err != nil {
-				return nil, fmt.Errorf("unable to perform chat: %w", err)
+				return nil, fmt.Errorf("run:unable to perform chat: %w", err)
 			}
 
 			messages, err = modelResponse(krn, messages, ch)
 			if err != nil {
-				return nil, fmt.Errorf("model response: %w", err)
+				return nil, fmt.Errorf("run:model response: %w", err)
 			}
 
 			return messages, nil
 		}()
 
 		if err != nil {
-			return fmt.Errorf("unable to perform chat: %w", err)
+			return fmt.Errorf("run:unable to perform chat: %w", err)
 		}
 	}
 }
 
 func installSystem() (tools.ModelPath, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
 	libCfg, err := tools.NewLibConfig(
 		libPath,
 		runtime.GOARCH,
@@ -120,14 +123,14 @@ func installSystem() (tools.ModelPath, error) {
 		return tools.ModelPath{}, err
 	}
 
-	_, err = tools.DownloadLibraries(context.Background(), tools.FmtLogger, libCfg)
+	_, err = tools.DownloadLibraries(ctx, tools.FmtLogger, libCfg)
 	if err != nil {
-		return tools.ModelPath{}, fmt.Errorf("unable to install llama.cpp: %w", err)
+		return tools.ModelPath{}, fmt.Errorf("install-system:unable to install llama.cpp: %w", err)
 	}
 
-	info, err := tools.DownloadModel(context.Background(), tools.FmtLogger, modelURL, "", modelPath)
+	info, err := tools.DownloadModel(ctx, tools.FmtLogger, modelURL, "", modelPath)
 	if err != nil {
-		return tools.ModelPath{}, fmt.Errorf("unable to install model: %w", err)
+		return tools.ModelPath{}, fmt.Errorf("install-system:unable to install model: %w", err)
 	}
 
 	return info, nil

@@ -86,37 +86,44 @@ func NewLibConfig(libPath string, archStr string, osStr string, procStr string, 
 // DownloadLibraries performs a complete workflow for downloading and installing
 // the latest version of llama.cpp.
 func DownloadLibraries(ctx context.Context, log Logger, libCfg LibConfig) (VersionTag, error) {
+	log(ctx, "download-libraries", "status", "check libraries version information", "lib-path", libCfg.LibPath, "arch", libCfg.Arch, "os", libCfg.OS, "processor", libCfg.Processor)
+
 	tag, err := VersionInformation(libCfg.LibPath)
 	if err != nil {
-		return VersionTag{}, fmt.Errorf("error retrieving version info: %w", err)
+		if tag.Version == "" {
+			return VersionTag{}, fmt.Errorf("download-libraries:error retrieving version info: %w", err)
+		}
+
+		log(ctx, "download-libraries", "status", "unable to check latest verion, using installed version", "lib-path", libCfg.LibPath, "arch", libCfg.Arch, "os", libCfg.OS, "processor", libCfg.Processor, "latest", tag.Latest, "current", tag.Version)
+		return tag, nil
 	}
 
-	log(ctx, "download-libs", "status", "check llama.cpp installation", "lib-path", libCfg.LibPath, "arch", libCfg.Arch, "os", libCfg.OS, "processor", libCfg.Processor, "latest", tag.Latest, "current", tag.Version)
+	log(ctx, "download-libraries", "status", "check llama.cpp installation", "lib-path", libCfg.LibPath, "arch", libCfg.Arch, "os", libCfg.OS, "processor", libCfg.Processor, "latest", tag.Latest, "current", tag.Version)
 
 	if isTagMatch(tag, libCfg) {
-		log(ctx, "download-libs", "status", "already installed", "latest", tag.Latest, "current", tag.Version)
+		log(ctx, "download-libraries", "status", "already installed", "latest", tag.Latest, "current", tag.Version)
 		return tag, nil
 	}
 
 	if !libCfg.AllowUpgrade {
-		log(ctx, "download-libs", "status", "bypassing upgrade", "latest", tag.Latest, "current", tag.Version)
+		log(ctx, "download-libraries", "status", "bypassing upgrade", "latest", tag.Latest, "current", tag.Version)
 		return tag, nil
 	}
 
-	log(ctx, "download-libs: waiting to start download...")
+	log(ctx, "download-libraries: waiting to start download...")
 
-	newTag, err := downloadLibraries(ctx, log, libCfg, tag.Latest)
+	newTag, err := downloadLibs(ctx, log, libCfg, tag.Latest)
 	if err != nil {
-		log(ctx, "download-libs", "status", "llama.cpp installation", "ERROR", err)
+		log(ctx, "download-libraries", "status", "llama.cpp installation", "ERROR", err)
 
 		if _, err := InstalledVersion(libCfg.LibPath); err != nil {
-			return VersionTag{}, fmt.Errorf("failed to install llama: %q: error: %w", libCfg.LibPath, err)
+			return VersionTag{}, fmt.Errorf("download-libraries:failed to install llama: %q: error: %w", libCfg.LibPath, err)
 		}
 
-		log(ctx, "download-libs", "status", "failed to install new version, using current version")
+		log(ctx, "download-libraries", "status", "failed to install new version, using current version")
 	}
 
-	log(ctx, "download-libs", "status", "updated llama.cpp installed", "lib-path", libCfg.LibPath, "old-version", tag.Version, "current", newTag.Version)
+	log(ctx, "download-libraries", "status", "updated llama.cpp installed", "lib-path", libCfg.LibPath, "old-version", tag.Version, "current", newTag.Version)
 
 	return newTag, nil
 }
@@ -127,12 +134,12 @@ func InstalledVersion(libPath string) (VersionTag, error) {
 
 	d, err := os.ReadFile(versionInfoPath)
 	if err != nil {
-		return VersionTag{}, fmt.Errorf("unable to read version info file: %w", err)
+		return VersionTag{}, fmt.Errorf("installed-version:unable to read version info file: %w", err)
 	}
 
 	var tag VersionTag
 	if err := json.Unmarshal(d, &tag); err != nil {
-		return VersionTag{}, fmt.Errorf("unable to parse version info file: %w", err)
+		return VersionTag{}, fmt.Errorf("installed-version:unable to parse version info file: %w", err)
 	}
 
 	return tag, nil
@@ -145,7 +152,7 @@ func VersionInformation(libPath string) (VersionTag, error) {
 
 	version, err := download.LlamaLatestVersion()
 	if err != nil {
-		return VersionTag{}, fmt.Errorf("unable to get latest version of llama.cpp: %w", err)
+		return tag, fmt.Errorf("version-information:unable to get latest version of llama.cpp: %w", err)
 	}
 
 	tag.Latest = version
@@ -155,7 +162,7 @@ func VersionInformation(libPath string) (VersionTag, error) {
 
 // =============================================================================
 
-func downloadLibraries(ctx context.Context, log Logger, cfg LibConfig, version string) (VersionTag, error) {
+func downloadLibs(ctx context.Context, log Logger, cfg LibConfig, version string) (VersionTag, error) {
 	tempPath := filepath.Join(cfg.LibPath, "temp")
 
 	progress := func(src string, currentSize int64, totalSize int64, mibPerSec float64, complete bool) {
@@ -167,16 +174,16 @@ func downloadLibraries(ctx context.Context, log Logger, cfg LibConfig, version s
 	err := download.GetWithProgress(cfg.Arch.String(), cfg.OS.String(), cfg.Processor.String(), version, tempPath, pr)
 	if err != nil {
 		os.RemoveAll(tempPath)
-		return VersionTag{}, fmt.Errorf("unable to install llama.cpp: %w", err)
+		return VersionTag{}, fmt.Errorf("download-libs:unable to install llama.cpp: %w", err)
 	}
 
 	if err := swapTempForLib(cfg.LibPath, tempPath); err != nil {
 		os.RemoveAll(tempPath)
-		return VersionTag{}, fmt.Errorf("unable to swap temp for lib: %w", err)
+		return VersionTag{}, fmt.Errorf("download-libs:unable to swap temp for lib: %w", err)
 	}
 
 	if err := createVersionFile(cfg, version); err != nil {
-		return VersionTag{}, fmt.Errorf("unable to create version file: %w", err)
+		return VersionTag{}, fmt.Errorf("download-libs:unable to create version file: %w", err)
 	}
 
 	return VersionInformation(cfg.LibPath)
@@ -185,7 +192,7 @@ func downloadLibraries(ctx context.Context, log Logger, cfg LibConfig, version s
 func swapTempForLib(libPath string, tempPath string) error {
 	entries, err := os.ReadDir(libPath)
 	if err != nil {
-		return fmt.Errorf("unable to read libPath: %w", err)
+		return fmt.Errorf("swap:unable to read libPath: %w", err)
 	}
 
 	for _, entry := range entries {
@@ -198,14 +205,14 @@ func swapTempForLib(libPath string, tempPath string) error {
 
 	tempEntries, err := os.ReadDir(tempPath)
 	if err != nil {
-		return fmt.Errorf("unable to read temp: %w", err)
+		return fmt.Errorf("swap:unable to read temp: %w", err)
 	}
 
 	for _, entry := range tempEntries {
 		src := filepath.Join(tempPath, entry.Name())
 		dst := filepath.Join(libPath, entry.Name())
 		if err := os.Rename(src, dst); err != nil {
-			return fmt.Errorf("unable to move %s: %w", entry.Name(), err)
+			return fmt.Errorf("swap:unable to move %s: %w", entry.Name(), err)
 		}
 	}
 
@@ -219,7 +226,7 @@ func createVersionFile(cfg LibConfig, version string) error {
 
 	f, err := os.Create(versionInfoPath)
 	if err != nil {
-		return fmt.Errorf("error creating version info file: %w", err)
+		return fmt.Errorf("create-version-file:creating version info file: %w", err)
 	}
 	defer f.Close()
 
@@ -232,11 +239,11 @@ func createVersionFile(cfg LibConfig, version string) error {
 
 	d, err := json.Marshal(t)
 	if err != nil {
-		return fmt.Errorf("error marshalling version info: %w", err)
+		return fmt.Errorf("create-version-file:marshalling version info: %w", err)
 	}
 
 	if _, err := f.Write(d); err != nil {
-		return fmt.Errorf("error writing version info: %w", err)
+		return fmt.Errorf("create-version-file:writing version info: %w", err)
 	}
 
 	return nil
