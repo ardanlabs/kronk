@@ -224,7 +224,7 @@ func (krn *Kronk) Unload(ctx context.Context) error {
 	close(krn.models)
 	for model := range krn.models {
 		if err := model.Unload(ctx); err != nil {
-			sb.WriteString(fmt.Sprintf("failed to unload model: %s: %v\n", model.ModelInfo().Name, err))
+			sb.WriteString(fmt.Sprintf("failed to unload model: %s: %v\n", model.ModelInfo().ID, err))
 		}
 	}
 
@@ -259,7 +259,7 @@ func (krn *Kronk) ChatStreaming(ctx context.Context, d model.D) (<-chan model.Ch
 	}
 
 	ef := func(err error) model.ChatResponse {
-		return model.ChatResponseErr("panic", model.ObjectChatUnknown, krn.ModelInfo().Name, 0, "", err, model.Usage{})
+		return model.ChatResponseErr("panic", model.ObjectChatUnknown, krn.ModelInfo().ID, 0, "", err, model.Usage{})
 	}
 
 	return streaming(ctx, krn, f, ef)

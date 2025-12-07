@@ -96,16 +96,6 @@ func pullModel(ctx context.Context, fileURL string, filePath string, progress Pr
 	filePath = filepath.Join(filePath, parts[1], parts[2])
 	mFile := filepath.Join(filePath, path.Base(mURL.Path))
 
-	// The downloader can check if we have the full file and if it's of the
-	// correct size. If we are not given a progress function, we can't check
-	// the file size and the existence of the file is all we can do not to
-	// start a download.
-	if progress == nil {
-		if _, err := os.Stat(mFile); err == nil {
-			return mFile, false, nil
-		}
-	}
-
 	downloaded, err := DownloadFile(ctx, fileURL, filePath, progress, SizeIntervalMIB100)
 	if err != nil {
 		return "", false, fmt.Errorf("unable to download model: %w", err)

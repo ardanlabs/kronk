@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // ModelPath returns file path information about a model.
@@ -14,13 +15,13 @@ type ModelPath struct {
 }
 
 // FindModel locates the physical location on disk and returns the full path.
-func FindModel(modelPath string, modelName string) (ModelPath, error) {
+func FindModel(modelPath string, modelID string) (ModelPath, error) {
 	entries, err := os.ReadDir(modelPath)
 	if err != nil {
 		return ModelPath{}, fmt.Errorf("reading models directory: %w", err)
 	}
 
-	projName := fmt.Sprintf("mmproj-%s", modelName)
+	projID := fmt.Sprintf("mmproj-%s", modelID)
 
 	var fi ModelPath
 
@@ -56,12 +57,14 @@ func FindModel(modelPath string, modelName string) (ModelPath, error) {
 					continue
 				}
 
-				if fileEntry.Name() == modelName {
+				id := strings.TrimSuffix(fileEntry.Name(), filepath.Ext(fileEntry.Name()))
+
+				if id == modelID {
 					fi.ModelFile = filepath.Join(modelPath, org, model, fileEntry.Name())
 					continue
 				}
 
-				if fileEntry.Name() == projName {
+				if id == projID {
 					fi.ProjFile = filepath.Join(modelPath, org, model, fileEntry.Name())
 					continue
 				}
@@ -70,7 +73,7 @@ func FindModel(modelPath string, modelName string) (ModelPath, error) {
 	}
 
 	if fi.ModelFile == "" {
-		return ModelPath{}, fmt.Errorf("model %q not found", modelName)
+		return ModelPath{}, fmt.Errorf("model %q not found", modelID)
 	}
 
 	return fi, nil

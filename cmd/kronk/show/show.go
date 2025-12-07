@@ -8,8 +8,8 @@ import (
 	"github.com/ardanlabs/kronk/tools"
 )
 
-// Run executes the pull command.
-func Run(args []string) error {
+// RunLocal executes the pull command.
+func RunLocal(args []string) error {
 	libPath := defaults.LibsDir("")
 	modelPath := defaults.ModelsDir("")
 	modelName := args[0]
@@ -20,9 +20,10 @@ func Run(args []string) error {
 	}
 
 	fmt.Println()
-	fmt.Printf("Name:        %s\n", mi.Name)
+	fmt.Printf("ID:          %s\n", mi.ID)
 	fmt.Printf("Desc:        %s\n", mi.Desc)
 	fmt.Printf("Size:        %.2f MiB\n", float64(mi.Size)/(1024*1024))
+	fmt.Printf("HasProj:     %t\n", mi.HasProjection)
 	fmt.Printf("HasEncoder:  %t\n", mi.HasEncoder)
 	fmt.Printf("HasDecoder:  %t\n", mi.HasDecoder)
 	fmt.Printf("IsRecurrent: %t\n", mi.IsRecurrent)

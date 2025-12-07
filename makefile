@@ -50,8 +50,8 @@ kronk-server:
 
 kronk-libs: install-libraries
 
-kronk-list:
-	go run cmd/kronk/main.go list
+kronk-list-local:
+	go run cmd/kronk/main.go list-local
 
 # make kronk-pull-local URL="https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
 kronk-pull-local:
@@ -61,7 +61,7 @@ kronk-pull-local:
 kronk-remove:
 	go run cmd/kronk/main.go remove "$(FILE)"
 
-# make kronk-show FILE="Qwen3-8B-Q8_0.gguf"
+# make kronk-show FILE="Qwen2-Audio-7B.Q8_0"
 kronk-show:
 	go run cmd/kronk/main.go show "$(FILE)"
 
@@ -75,22 +75,22 @@ curl-readiness:
 	curl -i -X GET http://localhost:3000/v1/readiness
 
 curl-libs:
-	curl -i -X GET http://localhost:3000/v1/tool/libs
+	curl -i -X GET http://localhost:3000/v1/libs
 
 curl-model-list:
-	curl -i -X GET http://localhost:3000/v1/tool/model/list
+	curl -i -X GET http://localhost:3000/v1/models
 
 curl-kronk-pull:
-	curl -i -X POST http://localhost:3000/v1/tool/model/pull \
+	curl -i -X POST http://localhost:3000/v1/models/pull \
 	-d '{ \
 		"model_url": "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf" \
 	}'
 
 curl-kronk-remove:
-	curl -i -X DELETE http://localhost:3000/v1/tool/model/remove/Qwen3-8B-Q8_0.gguf
+	curl -i -X DELETE http://localhost:3000/v1/models/Qwen3-8B-Q8_0.gguf
 
 curl-kronk-show:
-	curl -i -X GET http://localhost:3000/v1/tool/model/show/Qwen3-8B-Q8_0.gguf
+	curl -i -X GET http://localhost:3000/v1/models/Qwen3-8B-Q8_0.gguf
 
 # ==============================================================================
 # Tests

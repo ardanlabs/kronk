@@ -32,15 +32,16 @@ const (
 
 // ModelInfo represents the model's card information.
 type ModelInfo struct {
-	Name        string
-	Desc        string
-	Size        uint64
-	HasEncoder  bool
-	HasDecoder  bool
-	IsRecurrent bool
-	IsHybrid    bool
-	IsGPT       bool
-	Metadata    map[string]string
+	ID            string
+	HasProjection bool
+	Desc          string
+	Size          uint64
+	HasEncoder    bool
+	HasDecoder    bool
+	IsRecurrent   bool
+	IsHybrid      bool
+	IsGPT         bool
+	Metadata      map[string]string
 }
 
 func newModelInfo(cfg Config, model llama.Model) ModelInfo {
@@ -76,23 +77,24 @@ func newModelInfo(cfg Config, model llama.Model) ModelInfo {
 	}
 
 	filename := filepath.Base(cfg.ModelFile)
-	modelName := strings.TrimSuffix(filename, path.Ext(filename))
+	modelID := strings.TrimSuffix(filename, path.Ext(filename))
 
 	var isGPTModel bool
-	if strings.Contains(modelName, "gpt") {
+	if strings.Contains(modelID, "gpt") {
 		isGPTModel = true
 	}
 
 	return ModelInfo{
-		Name:        modelName,
-		Desc:        desc,
-		Size:        size,
-		HasEncoder:  encoder,
-		HasDecoder:  decoder,
-		IsRecurrent: recurrent,
-		IsHybrid:    hybrid,
-		IsGPT:       isGPTModel,
-		Metadata:    metadata,
+		ID:            modelID,
+		HasProjection: cfg.ProjectionFile != "",
+		Desc:          desc,
+		Size:          size,
+		HasEncoder:    encoder,
+		HasDecoder:    decoder,
+		IsRecurrent:   recurrent,
+		IsHybrid:      hybrid,
+		IsGPT:         isGPTModel,
+		Metadata:      metadata,
 	}
 }
 

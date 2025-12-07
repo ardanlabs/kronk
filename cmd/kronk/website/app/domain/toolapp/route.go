@@ -25,9 +25,9 @@ func Routes(app *web.App, cfg Config) {
 
 	api := newApp(cfg.Log, cfg.KrnMngr)
 
-	app.HandlerFunc(http.MethodGet, version, "/tool/libs", api.libs, bearer)
-	app.HandlerFunc(http.MethodGet, version, "/tool/model/list", api.list, bearer)
-	app.HandlerFunc(http.MethodGet, version, "/tool/model/show/{model}", api.show, bearer)
-	app.HandlerFunc(http.MethodPost, version, "/tool/model/pull", api.pull, bearer)
-	app.HandlerFunc(http.MethodDelete, version, "/tool/model/remove/{model}", api.remove, bearer)
+	app.HandlerFunc(http.MethodPost, version, "/libs", api.libs, bearer)
+	app.HandlerFunc(http.MethodGet, version, "/models", api.list, bearer)
+	app.HandlerFunc(http.MethodGet, version, "/models/{model}", api.show, bearer)
+	app.HandlerFunc(http.MethodPost, version, "/models/pull", api.pull, bearer)
+	app.HandlerFunc(http.MethodDelete, version, "/models/{model}", api.remove, bearer)
 }

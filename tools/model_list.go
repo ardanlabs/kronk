@@ -3,14 +3,17 @@ package tools
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 )
 
 // ModelFile provides information about a model.
 type ModelFile struct {
+	ID           string
 	Organization string
-	ModelName    string
-	ModelFile    string
+	ModelFamily  string
 	Size         int64
 	Modified     time.Time
 }
@@ -40,9 +43,9 @@ func ListModels(modelPath string) ([]ModelFile, error) {
 			if !modelEntry.IsDir() {
 				continue
 			}
-			model := modelEntry.Name()
+			modelFamily := modelEntry.Name()
 
-			fileEntries, err := os.ReadDir(fmt.Sprintf("%s/%s/%s", modelPath, org, model))
+			fileEntries, err := os.ReadDir(fmt.Sprintf("%s/%s/%s", modelPath, org, modelFamily))
 			if err != nil {
 				continue
 			}
@@ -56,21 +59,37 @@ func ListModels(modelPath string) ([]ModelFile, error) {
 					continue
 				}
 
+				if strings.HasPrefix(fileEntry.Name(), "mmproj") {
+					continue
+				}
+
 				info, err := fileEntry.Info()
 				if err != nil {
 					continue
 				}
 
+				modelID := strings.TrimSuffix(fileEntry.Name(), filepath.Ext(fileEntry.Name()))
+
 				list = append(list, ModelFile{
+					ID:           modelID,
 					Organization: org,
-					ModelName:    model,
-					ModelFile:    fileEntry.Name(),
+					ModelFamily:  modelFamily,
 					Size:         info.Size(),
 					Modified:     info.ModTime(),
 				})
 			}
 		}
 	}
+
+	slices.SortFunc(list, func(a, b ModelFile) int {
+		if a.ID < b.ID {
+			return -1
+		}
+		if a.ID > b.ID {
+			return 1
+		}
+		return 0
+	})
 
 	return list, nil
 }

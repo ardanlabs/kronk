@@ -86,7 +86,7 @@ func testChat(t *testing.T, mp tools.ModelPath, tooling bool) {
 		now := time.Now()
 		defer func() {
 			done := time.Now()
-			t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, krn.ModelInfo().Name, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
+			t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, krn.ModelInfo().ID, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
 		}()
 
 		resp, err := krn.Chat(ctx, d)
@@ -95,14 +95,14 @@ func testChat(t *testing.T, mp tools.ModelPath, tooling bool) {
 		}
 
 		if tooling {
-			if err := testChatResponse(resp, krn.ModelInfo().Name, model.ObjectChatText, "London", "get_weather", "location"); err != nil {
+			if err := testChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatText, "London", "get_weather", "location"); err != nil {
 				t.Logf("%#v", resp)
 				return err
 			}
 			return nil
 		}
 
-		if err := testChatResponse(resp, krn.ModelInfo().Name, model.ObjectChatText, "Gorilla", "", ""); err != nil {
+		if err := testChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatText, "Gorilla", "", ""); err != nil {
 			t.Logf("%#v", resp)
 			return err
 		}
@@ -142,7 +142,7 @@ func testChatStreaming(t *testing.T, mp tools.ModelPath, tooling bool) {
 		now := time.Now()
 		defer func() {
 			done := time.Now()
-			t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, krn.ModelInfo().Name, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
+			t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, krn.ModelInfo().ID, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
 		}()
 
 		ch, err := krn.ChatStreaming(ctx, d)
@@ -154,21 +154,21 @@ func testChatStreaming(t *testing.T, mp tools.ModelPath, tooling bool) {
 		for resp := range ch {
 			lastResp = resp
 
-			if err := testChatBasics(resp, krn.ModelInfo().Name, model.ObjectChatText, true); err != nil {
+			if err := testChatBasics(resp, krn.ModelInfo().ID, model.ObjectChatText, true); err != nil {
 				t.Logf("%#v", resp)
 				return err
 			}
 		}
 
 		if tooling {
-			if err := testChatResponse(lastResp, krn.ModelInfo().Name, model.ObjectChatText, "London", "get_weather", "location"); err != nil {
+			if err := testChatResponse(lastResp, krn.ModelInfo().ID, model.ObjectChatText, "London", "get_weather", "location"); err != nil {
 				t.Logf("%#v", lastResp)
 				return err
 			}
 			return nil
 		}
 
-		if err := testChatResponse(lastResp, krn.ModelInfo().Name, model.ObjectChatText, "Gorilla", "", ""); err != nil {
+		if err := testChatResponse(lastResp, krn.ModelInfo().ID, model.ObjectChatText, "Gorilla", "", ""); err != nil {
 			t.Logf("%#v", lastResp)
 			return err
 		}

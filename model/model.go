@@ -439,13 +439,13 @@ func (m *Model) sendDeltaResponse(ctx context.Context, ch chan<- ChatResponse, i
 	select {
 	case <-ctx.Done():
 		select {
-		case ch <- ChatResponseErr(id, object, m.modelInfo.Name, index, prompt, ctx.Err(), usage):
+		case ch <- ChatResponseErr(id, object, m.modelInfo.ID, index, prompt, ctx.Err(), usage):
 		default:
 		}
 
 		return ctx.Err()
 
-	case ch <- chatResponseDelta(id, object, m.modelInfo.Name, index, content, reasonFlag > 0, usage):
+	case ch <- chatResponseDelta(id, object, m.modelInfo.ID, index, content, reasonFlag > 0, usage):
 	}
 
 	return nil
@@ -455,11 +455,11 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 	select {
 	case <-ctx.Done():
 		select {
-		case ch <- ChatResponseErr(id, object, m.modelInfo.Name, index, prompt, ctx.Err(), usage):
+		case ch <- ChatResponseErr(id, object, m.modelInfo.ID, index, prompt, ctx.Err(), usage):
 		default:
 		}
 
-	case ch <- chatResponseFinal(id, object, m.modelInfo.Name, index, prompt,
+	case ch <- chatResponseFinal(id, object, m.modelInfo.ID, index, prompt,
 		finalContent.String(),
 		finalReasoning.String(),
 		respToolCall,
@@ -471,7 +471,7 @@ func (m *Model) sendErrorResponse(ctx context.Context, ch chan<- ChatResponse, i
 	select {
 	case <-ctx.Done():
 
-	case ch <- ChatResponseErr(id, object, m.modelInfo.Name, index, prompt,
+	case ch <- ChatResponseErr(id, object, m.modelInfo.ID, index, prompt,
 		err,
 		usage):
 

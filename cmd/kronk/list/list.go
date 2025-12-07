@@ -14,8 +14,8 @@ import (
 
 var ErrInvalidArguments = errors.New("invalid arguments")
 
-// Run executes the pull command.
-func Run(args []string) error {
+// RunLocal executes the list command.
+func RunLocal(args []string) error {
 	modelPath := defaults.ModelsDir("")
 
 	models, err := tools.ListModels(modelPath)
@@ -30,13 +30,13 @@ func Run(args []string) error {
 
 func print(models []tools.ModelFile) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "ORG\tMODEL\tFILE\tSIZE\tMODIFIED")
+	fmt.Fprintln(w, "ID\tORG\tMODEL FAMILY\tSIZE\tMODIFIED")
 
 	for _, model := range models {
 		size := formatSize(model.Size)
 		modified := formatTime(model.Modified)
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", model.Organization, model.ModelName, model.ModelFile, size, modified)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", model.ID, model.Organization, model.ModelFamily, size, modified)
 	}
 
 	w.Flush()

@@ -40,34 +40,43 @@ func toAppVersion(status string, libPath string, arch download.Arch, os download
 
 // =============================================================================
 
-// ListModelsInfo represents a collection of model information.
-type ListModelsInfo []ListModelInfo
+// ListModelInfo contains the list of models loaded in the system.
+type ListModelInfo struct {
+	Object string            `json:"object"`
+	Data   []ListModelDetail `json:"data"`
+}
 
 // Encode implements the encoder interface.
-func (app ListModelsInfo) Encode() ([]byte, string, error) {
+func (app ListModelInfo) Encode() ([]byte, string, error) {
 	data, err := json.Marshal(app)
 	return data, "application/json", err
 }
 
-// ListModelInfo provides information about a model.
-type ListModelInfo struct {
-	Organization string    `json:"organization"`
-	ModelName    string    `json:"model_name"`
-	ModelFile    string    `json:"model_file"`
-	Size         int64     `json:"size"`
-	Modified     time.Time `json:"modified"`
+// ListModelDetail provides information about a model.
+type ListModelDetail struct {
+	ModelID     string    `json:"id"`
+	Object      string    `json:"object"`
+	Created     int64     `json:"created"`
+	OwnedBy     string    `json:"owned_by"`
+	ModelFamily string    `json:"model_family"`
+	Size        int64     `json:"size"`
+	Modified    time.Time `json:"modified"`
 }
 
-func toListModelsInfo(models []tools.ModelFile) ListModelsInfo {
-	var list ListModelsInfo
+func toListModelsInfo(models []tools.ModelFile) ListModelInfo {
+	list := ListModelInfo{
+		Object: "list",
+	}
 
 	for _, model := range models {
-		list = append(list, ListModelInfo{
-			Organization: model.Organization,
-			ModelName:    model.ModelName,
-			ModelFile:    model.ModelFile,
-			Size:         model.Size,
-			Modified:     model.Modified,
+		list.Data = append(list.Data, ListModelDetail{
+			ModelID:     model.ID,
+			Object:      "model",
+			Created:     model.Modified.UnixMilli(),
+			OwnedBy:     model.Organization,
+			ModelFamily: model.ModelFamily,
+			Size:        model.Size,
+			Modified:    model.Modified,
 		})
 	}
 
@@ -90,7 +99,7 @@ func (pr *PullRequest) Decode(data []byte) error {
 // =============================================================================
 
 type ModelInfo struct {
-	Name        string            `json:"name"`
+	ID          string            `json:"id"`
 	Desc        string            `json:"desc"`
 	Size        uint64            `json:"size"`
 	HasEncoder  bool              `json:"has_encoder"`
@@ -109,7 +118,7 @@ func (app ModelInfo) Encode() ([]byte, string, error) {
 
 func toModelInfo(model model.ModelInfo) ModelInfo {
 	return ModelInfo{
-		Name:        model.Name,
+		ID:          model.ID,
 		Desc:        model.Desc,
 		Size:        model.Size,
 		HasEncoder:  model.HasEncoder,

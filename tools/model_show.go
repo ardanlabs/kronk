@@ -22,7 +22,8 @@ func ShowModel(libPath string, modelPath string, modelName string) (model.ModelI
 
 	const modelInstances = 1
 	krn, err := kronk.New(modelInstances, model.Config{
-		ModelFile: fi.ModelFile,
+		ModelFile:      fi.ModelFile,
+		ProjectionFile: fi.ProjFile,
 	})
 
 	if err != nil {

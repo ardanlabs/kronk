@@ -40,10 +40,10 @@ func init() {
 	rootCmd.AddCommand(serverCmd)
 	rootCmd.AddCommand(libsLocalCmd)
 	rootCmd.AddCommand(libsWebCmd)
-	rootCmd.AddCommand(listCmd)
+	rootCmd.AddCommand(listLocalCmd)
 	rootCmd.AddCommand(pullLocalCmd)
-	rootCmd.AddCommand(removeCmd)
-	rootCmd.AddCommand(showCmd)
+	rootCmd.AddCommand(removeLocalCmd)
+	rootCmd.AddCommand(showLocalCmd)
 	rootCmd.AddCommand(psCmd)
 }
 
@@ -113,6 +113,7 @@ var libsLocalCmd = &cobra.Command{
 	Long: `Install or upgrade llama.cpp libraries without running the model server
 
 Environment Variables:
+	  KRONK_MODELS  (default: $HOME/kronk/libraries)  The path to the libraries directory,
       KRONK_PROCESSOR  (default: cpu)  Options: cpu, cuda, metal, vulkan`,
 	Args: cobra.NoArgs,
 	Run:  runLibsLocal,
@@ -132,19 +133,19 @@ func runLibsLocal(cmd *cobra.Command, args []string) {
 
 // =============================================================================
 
-var listCmd = &cobra.Command{
-	Use:   "list",
+var listLocalCmd = &cobra.Command{
+	Use:   "list-local",
 	Short: "List models",
 	Long: `List models
 
 Environment Variables:
       KRONK_MODELS  (default: $HOME/kronk/models)  The path to the models directory`,
 	Args: cobra.NoArgs,
-	Run:  runList,
+	Run:  runListLocal,
 }
 
-func runList(cmd *cobra.Command, args []string) {
-	if err := list.Run(args); err != nil {
+func runListLocal(cmd *cobra.Command, args []string) {
+	if err := list.RunLocal(args); err != nil {
 		if errors.Is(err, list.ErrInvalidArguments) {
 			cmd.Help()
 			os.Exit(1)
@@ -193,19 +194,19 @@ func runPullLocal(cmd *cobra.Command, args []string) {
 
 // =============================================================================
 
-var removeCmd = &cobra.Command{
-	Use:   "remove MODEL_NAME",
+var removeLocalCmd = &cobra.Command{
+	Use:   "remove-local MODEL_NAME",
 	Short: "Remove a model",
 	Long: `Remove a model
 
 Environment Variables:
-      KRONK_HOST  IP Address for the kronk server (default 127.0.0.1:3000)`,
+      KRONK_MODELS  (default: $HOME/kronk/models)  The path to the models directory`,
 	Args: cobra.ExactArgs(1),
-	Run:  runRemove,
+	Run:  runRemoveLocal,
 }
 
-func runRemove(cmd *cobra.Command, args []string) {
-	if err := remove.Run(args); err != nil {
+func runRemoveLocal(cmd *cobra.Command, args []string) {
+	if err := remove.RunLocal(args); err != nil {
 		fmt.Println("\nERROR:", err)
 		os.Exit(1)
 	}
@@ -213,19 +214,19 @@ func runRemove(cmd *cobra.Command, args []string) {
 
 // =============================================================================
 
-var showCmd = &cobra.Command{
-	Use:   "show <MODEL_NAME>",
+var showLocalCmd = &cobra.Command{
+	Use:   "show-local <MODEL_NAME>",
 	Short: "Show information for a model",
 	Long: `Show information for a model
 
 Environment Variables:
       KRONK_MODELS  (default: $HOME/kronk/models)  The path to the models directory`,
 	Args: cobra.ExactArgs(1),
-	Run:  runShow,
+	Run:  runShowLocal,
 }
 
-func runShow(cmd *cobra.Command, args []string) {
-	if err := show.Run(args); err != nil {
+func runShowLocal(cmd *cobra.Command, args []string) {
+	if err := show.RunLocal(args); err != nil {
 		fmt.Println("\nERROR:", err)
 		os.Exit(1)
 	}

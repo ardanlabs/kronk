@@ -46,7 +46,7 @@ func testMedia(t *testing.T, mp tools.ModelPath, imageFile string) {
 		now := time.Now()
 		defer func() {
 			done := time.Now()
-			t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, krn.ModelInfo().Name, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
+			t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, krn.ModelInfo().ID, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
 		}()
 
 		resp, err := krn.Chat(ctx, d)
@@ -54,7 +54,7 @@ func testMedia(t *testing.T, mp tools.ModelPath, imageFile string) {
 			return fmt.Errorf("chat streaming: %w", err)
 		}
 
-		if err := testChatResponse(resp, krn.ModelInfo().Name, model.ObjectChatMedia, "giraffes", "", ""); err != nil {
+		if err := testChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatMedia, "giraffes", "", ""); err != nil {
 			t.Logf("%#v", resp)
 			return err
 		}
@@ -94,7 +94,7 @@ func testMediaStreaming(t *testing.T, mp tools.ModelPath, imageFile string) {
 		now := time.Now()
 		defer func() {
 			done := time.Now()
-			t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, krn.ModelInfo().Name, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
+			t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, krn.ModelInfo().ID, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
 		}()
 
 		ch, err := krn.ChatStreaming(ctx, d)
@@ -106,13 +106,13 @@ func testMediaStreaming(t *testing.T, mp tools.ModelPath, imageFile string) {
 		for resp := range ch {
 			lastResp = resp
 
-			if err := testChatBasics(resp, krn.ModelInfo().Name, model.ObjectChatMedia, false); err != nil {
+			if err := testChatBasics(resp, krn.ModelInfo().ID, model.ObjectChatMedia, false); err != nil {
 				t.Logf("%#v", resp)
 				return err
 			}
 		}
 
-		if err := testChatResponse(lastResp, krn.ModelInfo().Name, model.ObjectChatMedia, "giraffes", "", ""); err != nil {
+		if err := testChatResponse(lastResp, krn.ModelInfo().ID, model.ObjectChatMedia, "giraffes", "", ""); err != nil {
 			t.Logf("%#v", lastResp)
 			return err
 		}
