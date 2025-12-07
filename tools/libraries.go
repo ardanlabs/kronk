@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/ardanlabs/kronk"
 	"github.com/ardanlabs/kronk/defaults"
 	"github.com/hybridgroup/yzma/pkg/download"
 )
@@ -34,11 +35,20 @@ type LibConfig struct {
 	Arch         download.Arch
 	OS           download.OS
 	Processor    download.Processor
+	LlamaLog     kronk.LogLevel
 	AllowUpgrade bool
 }
 
-// NewLibConfig constructs a valid library config for downloading.
-func NewLibConfig(libPath string, archStr string, osStr string, procStr string, allowUpgrade bool) (LibConfig, error) {
+// NewLibConfig constructs a valid library config for downloading based on raw
+// values that would come from configuration. It sets defaults for the specified
+// values when the parameters are empty.
+// libPath     : represents the path the llama.cpp libraries will/are installed in.
+// archStr     : string representation of a `download.Arch`.
+// osStr       : string representation of a `download.OS`.
+// procStr     : string representation of a `download.Processor`.
+// llamaLog    : int representation of `kronk.LogSilent` or `kronk.LogNormal`.
+// allowUpgrade: true or false to determine to upgrade libraries when avaiable.
+func NewLibConfig(libPath string, archStr string, osStr string, procStr string, llamaLog int, allowUpgrade bool) (LibConfig, error) {
 	arch, err := defaults.Arch(archStr)
 	if err != nil {
 		return LibConfig{}, err
@@ -54,11 +64,19 @@ func NewLibConfig(libPath string, archStr string, osStr string, procStr string, 
 		return LibConfig{}, err
 	}
 
+	log, err := defaults.LlamaLog(llamaLog)
+	if err != nil {
+		return LibConfig{}, err
+	}
+
+	libPath = defaults.LibsDir(libPath)
+
 	cfg := LibConfig{
 		LibPath:      libPath,
 		Arch:         arch,
 		OS:           opSys,
 		Processor:    processor,
+		LlamaLog:     log,
 		AllowUpgrade: allowUpgrade,
 	}
 
@@ -67,38 +85,38 @@ func NewLibConfig(libPath string, archStr string, osStr string, procStr string, 
 
 // DownloadLibraries performs a complete workflow for downloading and installing
 // the latest version of llama.cpp.
-func DownloadLibraries(ctx context.Context, log Logger, cfg LibConfig) (VersionTag, error) {
-	tag, err := VersionInformation(cfg.LibPath)
+func DownloadLibraries(ctx context.Context, log Logger, libCfg LibConfig) (VersionTag, error) {
+	tag, err := VersionInformation(libCfg.LibPath)
 	if err != nil {
 		return VersionTag{}, fmt.Errorf("error retrieving version info: %w", err)
 	}
 
-	log(ctx, "download-libs", "status", "check llama.cpp installation", "lib-path", cfg.LibPath, "arch", cfg.Arch, "os", cfg.OS, "processor", cfg.Processor, "latest", tag.Latest, "current", tag.Version)
+	log(ctx, "download-libs", "status", "check llama.cpp installation", "lib-path", libCfg.LibPath, "arch", libCfg.Arch, "os", libCfg.OS, "processor", libCfg.Processor, "latest", tag.Latest, "current", tag.Version)
 
-	if isTagMatch(tag, cfg) {
+	if isTagMatch(tag, libCfg) {
 		log(ctx, "download-libs", "status", "already installed", "latest", tag.Latest, "current", tag.Version)
 		return tag, nil
 	}
 
-	if !cfg.AllowUpgrade {
+	if !libCfg.AllowUpgrade {
 		log(ctx, "download-libs", "status", "bypassing upgrade", "latest", tag.Latest, "current", tag.Version)
 		return tag, nil
 	}
 
 	log(ctx, "download-libs: waiting to start download...")
 
-	newTag, err := downloadLibraries(ctx, log, cfg, tag.Latest)
+	newTag, err := downloadLibraries(ctx, log, libCfg, tag.Latest)
 	if err != nil {
 		log(ctx, "download-libs", "status", "llama.cpp installation", "ERROR", err)
 
-		if _, err := InstalledVersion(cfg.LibPath); err != nil {
-			return VersionTag{}, fmt.Errorf("failed to install llama: %q: error: %w", cfg.LibPath, err)
+		if _, err := InstalledVersion(libCfg.LibPath); err != nil {
+			return VersionTag{}, fmt.Errorf("failed to install llama: %q: error: %w", libCfg.LibPath, err)
 		}
 
 		log(ctx, "download-libs", "status", "failed to install new version, using current version")
 	}
 
-	log(ctx, "download-libs", "status", "updated llama.cpp installed", "lib-path", cfg.LibPath, "old-version", tag.Version, "current", newTag.Version)
+	log(ctx, "download-libs", "status", "updated llama.cpp installed", "lib-path", libCfg.LibPath, "old-version", tag.Version, "current", newTag.Version)
 
 	return newTag, nil
 }

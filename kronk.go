@@ -28,6 +28,11 @@ const Version = "1.0.8"
 // LogLevel represents the logging level.
 type LogLevel int
 
+// Int returns the integer value.
+func (ll LogLevel) Int() int {
+	return int(ll)
+}
+
 // Set of logging levels supported by llama.cpp.
 const (
 	LogSilent LogLevel = iota + 1

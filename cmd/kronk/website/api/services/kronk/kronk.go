@@ -202,13 +202,13 @@ func run(ctx context.Context, log *logger.Logger) error {
 	// Init Kronk
 
 	log.Info(ctx, "startup", "status", "initializing kronk")
-	log.Info(ctx, "startup", "status", "installing/updating libraries", "libPath", cfg.LibPath, "arch", cfg.Arch, "os", cfg.OS, "processor", cfg.Processor, "update", cfg.AllowUpgrade)
 
 	libCfg, err := tools.NewLibConfig(
 		cfg.LibPath,
 		cfg.Arch,
 		cfg.OS,
 		cfg.Processor,
+		cfg.LlamaLog,
 		cfg.AllowUpgrade,
 	)
 
@@ -216,17 +216,16 @@ func run(ctx context.Context, log *logger.Logger) error {
 		return err
 	}
 
+	log.Info(ctx, "startup", "status", "installing/updating libraries", "libPath", libCfg.LibPath, "arch", libCfg.Arch, "os", libCfg.OS, "processor", libCfg.Processor, "update", libCfg.AllowUpgrade)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	tag, err := tools.DownloadLibraries(ctx, log.Info, libCfg)
-	if err != nil {
+	if _, err := tools.DownloadLibraries(ctx, log.Info, libCfg); err != nil {
 		return fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
-	log.Info(ctx, "startup", "status", "libraries installed", "current", tag.Version, "latest", tag.Latest)
-
-	if err := kronk.Init(cfg.LibPath, kronk.LogLevel(cfg.LlamaLog)); err != nil {
+	if err := kronk.Init(libCfg.LibPath, libCfg.LlamaLog); err != nil {
 		return fmt.Errorf("installation invalid: %w", err)
 	}
 

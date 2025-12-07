@@ -17,6 +17,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/kronk/website/app/sdk/errs"
 	"github.com/ardanlabs/kronk/defaults"
 	"github.com/ardanlabs/kronk/tools"
+	"github.com/hybridgroup/yzma/pkg/download"
 )
 
 var ErrInvalidArguments = errors.New("invalid arguments")
@@ -58,7 +59,8 @@ func RunLocal(args []string) error {
 		defaults.LibsDir(""),
 		runtime.GOARCH,
 		runtime.GOOS,
-		"cpu",
+		download.CPU.String(),
+		kronk.LogSilent.Int(),
 		true,
 	)
 	if err != nil {
