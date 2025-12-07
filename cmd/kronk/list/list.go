@@ -2,17 +2,42 @@
 package list
 
 import (
-	"errors"
+	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"text/tabwriter"
 	"time"
 
+	"github.com/ardanlabs/kronk/cmd/kronk/client"
+	"github.com/ardanlabs/kronk/cmd/kronk/website/app/domain/toolapp"
 	"github.com/ardanlabs/kronk/defaults"
 	"github.com/ardanlabs/kronk/tools"
 )
 
-var ErrInvalidArguments = errors.New("invalid arguments")
+// RunWeb executes the list command against the model server.
+func RunWeb(args []string) error {
+	url, err := client.DefaultURL("/v1/models")
+	if err != nil {
+		return fmt.Errorf("run-web: default: %w", err)
+	}
+
+	fmt.Println("URL:", url)
+
+	client := client.New(client.FmtLogger)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var info toolapp.ListModelInfo
+	if err := client.Do(ctx, http.MethodGet, url, nil, &info); err != nil {
+		return fmt.Errorf("libs:unable to get model list: %w", err)
+	}
+
+	printWeb(info.Data)
+
+	return nil
+}
 
 // RunLocal executes the list command.
 func RunLocal(args []string) error {
@@ -23,20 +48,36 @@ func RunLocal(args []string) error {
 		return err
 	}
 
-	print(models)
+	printLocal(models)
 
 	return nil
 }
 
-func print(models []tools.ModelFile) {
+// =============================================================================
+
+func printWeb(models []toolapp.ListModelDetail) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "ID\tORG\tMODEL FAMILY\tSIZE\tMODIFIED")
+	fmt.Fprintln(w, "ID\tOWNED BY\tMODEL FAMILY\tSIZE\tMODIFIED")
 
 	for _, model := range models {
 		size := formatSize(model.Size)
 		modified := formatTime(model.Modified)
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", model.ID, model.Organization, model.ModelFamily, size, modified)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", model.ID, model.OwnedBy, model.ModelFamily, size, modified)
+	}
+
+	w.Flush()
+}
+
+func printLocal(models []tools.ModelFile) {
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
+	fmt.Fprintln(w, "ID\tOWNED BY\tMODEL FAMILY\tSIZE\tMODIFIED")
+
+	for _, model := range models {
+		size := formatSize(model.Size)
+		modified := formatTime(model.Modified)
+
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", model.ID, model.OwnedBy, model.ModelFamily, size, modified)
 	}
 
 	w.Flush()

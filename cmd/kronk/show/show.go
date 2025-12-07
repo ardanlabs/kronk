@@ -2,12 +2,40 @@
 package show
 
 import (
+	"context"
 	"fmt"
+	"net/http"
 	"time"
 
+	"github.com/ardanlabs/kronk/cmd/kronk/client"
+	"github.com/ardanlabs/kronk/cmd/kronk/website/app/domain/toolapp"
 	"github.com/ardanlabs/kronk/defaults"
 	"github.com/ardanlabs/kronk/tools"
 )
+
+// RunWeb executes the show command against the model server.
+func RunWeb(args []string) error {
+	url, err := client.DefaultURL(fmt.Sprintf("/v1/models/%s", args[0]))
+	if err != nil {
+		return fmt.Errorf("run-web: default: %w", err)
+	}
+
+	fmt.Println("URL:", url)
+
+	client := client.New(client.FmtLogger)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var info toolapp.ModelInfo
+	if err := client.Do(ctx, http.MethodGet, url, nil, &info); err != nil {
+		return fmt.Errorf("libs:unable to get mode information: %w", err)
+	}
+
+	printWeb(info)
+
+	return nil
+}
 
 // RunLocal executes the pull command.
 func RunLocal(args []string) error {
@@ -20,7 +48,33 @@ func RunLocal(args []string) error {
 		return err
 	}
 
-	fmt.Println()
+	printLocal(mi)
+
+	return nil
+}
+
+// =============================================================================
+
+func printWeb(mi toolapp.ModelInfo) {
+	fmt.Printf("ID:          %s\n", mi.ID)
+	fmt.Printf("Object:      %s\n", mi.Object)
+	fmt.Printf("Created:     %v\n", time.UnixMilli(mi.Created))
+	fmt.Printf("OwnedBy:     %s\n", mi.OwnedBy)
+	fmt.Printf("Desc:        %s\n", mi.Desc)
+	fmt.Printf("Size:        %.2f MiB\n", float64(mi.Size)/(1024*1024))
+	fmt.Printf("HasProj:     %t\n", mi.HasProjection)
+	fmt.Printf("HasEncoder:  %t\n", mi.HasEncoder)
+	fmt.Printf("HasDecoder:  %t\n", mi.HasDecoder)
+	fmt.Printf("IsRecurrent: %t\n", mi.IsRecurrent)
+	fmt.Printf("IsHybrid:    %t\n", mi.IsHybrid)
+	fmt.Printf("IsGPT:       %t\n", mi.IsGPT)
+	fmt.Println("Metadata:")
+	for k, v := range mi.Metadata {
+		fmt.Printf("  %s: %s\n", k, v)
+	}
+}
+
+func printLocal(mi tools.ModelInfo) {
 	fmt.Printf("ID:          %s\n", mi.ID)
 	fmt.Printf("Object:      %s\n", mi.Object)
 	fmt.Printf("Created:     %v\n", time.UnixMilli(mi.Created))
@@ -37,6 +91,4 @@ func RunLocal(args []string) error {
 	for k, v := range mi.Details.Metadata {
 		fmt.Printf("  %s: %s\n", k, v)
 	}
-
-	return nil
 }

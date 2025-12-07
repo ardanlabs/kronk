@@ -48,10 +48,16 @@ install-gotooling:
 kronk-server:
 	go run cmd/kronk/main.go server | go run cmd/kronk/website/api/tooling/logfmt/main.go
 
-kronk-libs: install-libraries
+kronk-libs-local: install-libraries
+
+kronk-libs:
+	go run cmd/kronk/main.go libs
 
 kronk-list-local:
 	go run cmd/kronk/main.go list-local
+
+kronk-list:
+	go run cmd/kronk/main.go list
 
 # make kronk-pull-local URL="https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
 kronk-pull-local:
@@ -64,6 +70,10 @@ kronk-remove:
 # make kronk-show-local FILE="Qwen2-Audio-7B.Q8_0"
 kronk-show-local:
 	go run cmd/kronk/main.go show-local "$(FILE)"
+
+# make kronk-show FILE="Qwen2-Audio-7B.Q8_0"
+kronk-show:
+	go run cmd/kronk/main.go show "$(FILE)"
 
 # ==============================================================================
 # Kronk Endpoints

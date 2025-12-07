@@ -10,11 +10,11 @@ import (
 
 // ModelFile provides information about a model.
 type ModelFile struct {
-	ID           string
-	Organization string
-	ModelFamily  string
-	Size         int64
-	Modified     time.Time
+	ID          string
+	OwnedBy     string
+	ModelFamily string
+	Size        int64
+	Modified    time.Time
 }
 
 // ListModels lists all the models in the given directory.
@@ -68,11 +68,11 @@ func ListModels(modelBasePath string) ([]ModelFile, error) {
 				}
 
 				list = append(list, ModelFile{
-					ID:           extractModelID(fileEntry.Name()),
-					Organization: org,
-					ModelFamily:  modelFamily,
-					Size:         info.Size(),
-					Modified:     info.ModTime(),
+					ID:          extractModelID(fileEntry.Name()),
+					OwnedBy:     org,
+					ModelFamily: modelFamily,
+					Size:        info.Size(),
+					Modified:    info.ModTime(),
 				})
 			}
 		}

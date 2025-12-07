@@ -53,7 +53,7 @@ func (app ListModelInfo) Encode() ([]byte, string, error) {
 
 // ListModelDetail provides information about a model.
 type ListModelDetail struct {
-	ModelID     string    `json:"id"`
+	ID          string    `json:"id"`
 	Object      string    `json:"object"`
 	Created     int64     `json:"created"`
 	OwnedBy     string    `json:"owned_by"`
@@ -69,10 +69,10 @@ func toListModelsInfo(models []tools.ModelFile) ListModelInfo {
 
 	for _, model := range models {
 		list.Data = append(list.Data, ListModelDetail{
-			ModelID:     model.ID,
+			ID:          model.ID,
 			Object:      "model",
 			Created:     model.Modified.UnixMilli(),
-			OwnedBy:     model.Organization,
+			OwnedBy:     model.OwnedBy,
 			ModelFamily: model.ModelFamily,
 			Size:        model.Size,
 			Modified:    model.Modified,
@@ -98,18 +98,19 @@ func (pr *PullRequest) Decode(data []byte) error {
 // =============================================================================
 
 type ModelInfo struct {
-	ID          string            `json:"id"`
-	Object      string            `json:"object"`
-	Created     int64             `json:"created"`
-	OwnedBy     string            `json:"owned_by"`
-	Desc        string            `json:"desc"`
-	Size        uint64            `json:"size"`
-	HasEncoder  bool              `json:"has_encoder"`
-	HasDecoder  bool              `json:"has_decoder"`
-	IsRecurrent bool              `json:"is_recurrent"`
-	IsHybrid    bool              `json:"is_hybrid"`
-	IsGPT       bool              `json:"is_gpt"`
-	Metadata    map[string]string `json:"metadata"`
+	ID            string            `json:"id"`
+	Object        string            `json:"object"`
+	Created       int64             `json:"created"`
+	OwnedBy       string            `json:"owned_by"`
+	Desc          string            `json:"desc"`
+	Size          uint64            `json:"size"`
+	HasProjection bool              `json:"has_projection"`
+	HasEncoder    bool              `json:"has_encoder"`
+	HasDecoder    bool              `json:"has_decoder"`
+	IsRecurrent   bool              `json:"is_recurrent"`
+	IsHybrid      bool              `json:"is_hybrid"`
+	IsGPT         bool              `json:"is_gpt"`
+	Metadata      map[string]string `json:"metadata"`
 }
 
 // Encode implements the encoder interface.
@@ -120,17 +121,18 @@ func (app ModelInfo) Encode() ([]byte, string, error) {
 
 func toModelInfo(model tools.ModelInfo) ModelInfo {
 	return ModelInfo{
-		ID:          model.ID,
-		Object:      model.Object,
-		Created:     model.Created,
-		OwnedBy:     model.OwnedBy,
-		Desc:        model.Details.Desc,
-		Size:        model.Details.Size,
-		HasEncoder:  model.Details.HasEncoder,
-		HasDecoder:  model.Details.HasDecoder,
-		IsRecurrent: model.Details.IsRecurrent,
-		IsHybrid:    model.Details.IsHybrid,
-		IsGPT:       model.Details.IsGPT,
-		Metadata:    model.Details.Metadata,
+		ID:            model.ID,
+		Object:        model.Object,
+		Created:       model.Created,
+		OwnedBy:       model.OwnedBy,
+		Desc:          model.Details.Desc,
+		Size:          model.Details.Size,
+		HasProjection: model.Details.HasProjection,
+		HasEncoder:    model.Details.HasEncoder,
+		HasDecoder:    model.Details.HasDecoder,
+		IsRecurrent:   model.Details.IsRecurrent,
+		IsHybrid:      model.Details.IsHybrid,
+		IsGPT:         model.Details.IsGPT,
+		Metadata:      model.Details.Metadata,
 	}
 }

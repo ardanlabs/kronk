@@ -63,7 +63,7 @@ func ShowModel(libPath string, modelBasePath string, modelID string) (ModelInfo,
 		ID:      modelFile.ID,
 		Object:  "model",
 		Created: modelFile.Modified.UnixMilli(),
-		OwnedBy: modelFile.Organization,
+		OwnedBy: modelFile.OwnedBy,
 		Details: krn.ModelInfo(),
 	}
 

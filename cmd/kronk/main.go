@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"os"
 
@@ -41,8 +40,10 @@ func init() {
 	rootCmd.AddCommand(libsLocalCmd)
 	rootCmd.AddCommand(libsWebCmd)
 	rootCmd.AddCommand(listLocalCmd)
+	rootCmd.AddCommand(listWebCmd)
 	rootCmd.AddCommand(pullLocalCmd)
 	rootCmd.AddCommand(removeLocalCmd)
+	rootCmd.AddCommand(showWebCmd)
 	rootCmd.AddCommand(showLocalCmd)
 	rootCmd.AddCommand(psCmd)
 }
@@ -71,11 +72,6 @@ Environment Variables:
 
 func runServer(cmd *cobra.Command, args []string) {
 	if err := kronk.Run(); err != nil {
-		if errors.Is(err, libs.ErrInvalidArguments) {
-			cmd.Help()
-			os.Exit(1)
-		}
-
 		fmt.Println("\nERROR:", err)
 		os.Exit(1)
 	}
@@ -90,18 +86,13 @@ var libsWebCmd = &cobra.Command{
 
 Environment Variables:
       KRONK_HOST       (default 127.0.0.1:3000)  IP Address for the kronk server 
-      KRONK_PROCESSOR  (default: cpu)  Options: cpu, cuda, metal, vulkan`,
+      KRONK_PROCESSOR  (default: cpu)            Options: cpu, cuda, metal, vulkan`,
 	Args: cobra.NoArgs,
 	Run:  runLibsWeb,
 }
 
 func runLibsWeb(cmd *cobra.Command, args []string) {
 	if err := libs.RunWeb(args); err != nil {
-		if errors.Is(err, libs.ErrInvalidArguments) {
-			cmd.Help()
-			os.Exit(1)
-		}
-
 		fmt.Println("\nERROR:", err)
 		os.Exit(1)
 	}
@@ -113,25 +104,39 @@ var libsLocalCmd = &cobra.Command{
 	Long: `Install or upgrade llama.cpp libraries without running the model server
 
 Environment Variables:
-	  KRONK_MODELS  (default: $HOME/kronk/libraries)  The path to the libraries directory,
-      KRONK_PROCESSOR  (default: cpu)  Options: cpu, cuda, metal, vulkan`,
+	  KRONK_MODELS     (default: $HOME/kronk/libraries)  The path to the libraries directory,
+      KRONK_PROCESSOR  (default: cpu)                    Options: cpu, cuda, metal, vulkan`,
 	Args: cobra.NoArgs,
 	Run:  runLibsLocal,
 }
 
 func runLibsLocal(cmd *cobra.Command, args []string) {
 	if err := libs.RunLocal(args); err != nil {
-		if errors.Is(err, libs.ErrInvalidArguments) {
-			cmd.Help()
-			os.Exit(1)
-		}
-
 		fmt.Println("\nERROR:", err)
 		os.Exit(1)
 	}
 }
 
 // =============================================================================
+
+var listWebCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List models",
+	Long: `List models
+
+Environment Variables:
+	  KRONK_HOST    (default 127.0.0.1:3000)       IP Address for the kronk server 
+      KRONK_MODELS  (default: $HOME/kronk/models)  The path to the models directory`,
+	Args: cobra.NoArgs,
+	Run:  runListWeb,
+}
+
+func runListWeb(cmd *cobra.Command, args []string) {
+	if err := list.RunWeb(args); err != nil {
+		fmt.Println("\nERROR:", err)
+		os.Exit(1)
+	}
+}
 
 var listLocalCmd = &cobra.Command{
 	Use:   "list-local",
@@ -146,11 +151,6 @@ Environment Variables:
 
 func runListLocal(cmd *cobra.Command, args []string) {
 	if err := list.RunLocal(args); err != nil {
-		if errors.Is(err, list.ErrInvalidArguments) {
-			cmd.Help()
-			os.Exit(1)
-		}
-
 		fmt.Println("\nERROR:", err)
 		os.Exit(1)
 	}
@@ -164,7 +164,7 @@ var psCmd = &cobra.Command{
 	Long: `List running models
 
 Environment Variables:
-      KRONK_HOST  IP Address for the kronk server (default 127.0.0.1:11434)`,
+      KRONK_HOST  (default 127.0.0.1:11434)  IP Address for the kronk server`,
 	Run: runPs,
 }
 
@@ -213,6 +213,25 @@ func runRemoveLocal(cmd *cobra.Command, args []string) {
 }
 
 // =============================================================================
+
+var showWebCmd = &cobra.Command{
+	Use:   "show <MODEL_NAME>",
+	Short: "Show information for a model",
+	Long: `Show information for a model
+
+Environment Variables:
+	  KRONK_HOST    (default 127.0.0.1:11434)      IP Address for the kronk server 
+      KRONK_MODELS  (default: $HOME/kronk/models)  The path to the models directory`,
+	Args: cobra.ExactArgs(1),
+	Run:  runShowWeb,
+}
+
+func runShowWeb(cmd *cobra.Command, args []string) {
+	if err := show.RunWeb(args); err != nil {
+		fmt.Println("\nERROR:", err)
+		os.Exit(1)
+	}
+}
 
 var showLocalCmd = &cobra.Command{
 	Use:   "show-local <MODEL_NAME>",

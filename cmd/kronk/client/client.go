@@ -92,14 +92,8 @@ func (cln *Client) Do(ctx context.Context, method string, endpoint string, body 
 		return fmt.Errorf("client: copy error: %w", err)
 	}
 
-	switch d := v.(type) {
-	case *string:
-		*d = string(data)
-
-	default:
-		if err := json.Unmarshal(data, v); err != nil {
-			return fmt.Errorf("client: response: %s, decoding error: %w ", string(data), err)
-		}
+	if err := json.Unmarshal(data, v); err != nil {
+		return fmt.Errorf("client: response: %s, decoding error: %w ", string(data), err)
 	}
 
 	return nil
