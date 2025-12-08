@@ -28,7 +28,7 @@ import (
 
 var build = "develop"
 
-func Run() error {
+func Run(showHelp bool) error {
 	var log *logger.Logger
 
 	events := logger.Events{
@@ -47,19 +47,21 @@ func Run() error {
 
 	ctx := context.Background()
 
-	if err := run(ctx, log); err != nil {
+	if err := run(ctx, log, showHelp); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func run(ctx context.Context, log *logger.Logger) error {
+func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	// -------------------------------------------------------------------------
 	// GOMAXPROCS
 
-	log.Info(ctx, "startup", "GOMAXPROCS", runtime.GOMAXPROCS(0))
+	if !showHelp {
+		log.Info(ctx, "startup", "GOMAXPROCS", runtime.GOMAXPROCS(0))
+	}
 
 	// -------------------------------------------------------------------------
 	// Configuration
@@ -112,11 +114,18 @@ func run(ctx context.Context, log *logger.Logger) error {
 	}
 
 	const prefix = "KRONK"
+	if showHelp {
+		help, err := conf.UsageInfo(prefix, &cfg)
+		if err != nil {
+			return fmt.Errorf("parsing config: %w", err)
+		}
+		return fmt.Errorf("%s", help)
+	}
+
 	help, err := conf.Parse(prefix, &cfg)
 	if err != nil {
 		if errors.Is(err, conf.ErrHelpWanted) {
 			fmt.Println(help)
-			return nil
 		}
 		return fmt.Errorf("parsing config: %w", err)
 	}

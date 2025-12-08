@@ -4,6 +4,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"os"
 )
 
 // Logger provides a function for logging messages from DownloadLibraries.
@@ -18,4 +19,13 @@ var FmtLogger = func(ctx context.Context, msg string, args ...any) {
 		}
 	}
 	fmt.Println()
+}
+
+func fileSize(filePath string) (int, error) {
+	info, err := os.Stat(filePath)
+	if err != nil {
+		return 0, err
+	}
+
+	return int(info.Size()), nil
 }

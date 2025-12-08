@@ -23,6 +23,9 @@ func FindModel(modelBasePath string, modelID string) (ModelPath, error) {
 
 	projID := fmt.Sprintf("mmproj-%s", modelID)
 
+	modelID = strings.ToLower(modelID)
+	projID = strings.ToLower(projID)
+
 	var fi ModelPath
 
 	for _, orgEntry := range entries {
@@ -57,7 +60,7 @@ func FindModel(modelBasePath string, modelID string) (ModelPath, error) {
 					continue
 				}
 
-				id := strings.TrimSuffix(fileEntry.Name(), filepath.Ext(fileEntry.Name()))
+				id := strings.ToLower(strings.TrimSuffix(fileEntry.Name(), filepath.Ext(fileEntry.Name())))
 
 				if id == modelID {
 					fi.ModelFile = filepath.Join(modelBasePath, org, model, fileEntry.Name())
@@ -79,8 +82,8 @@ func FindModel(modelBasePath string, modelID string) (ModelPath, error) {
 	return fi, nil
 }
 
-func MustFindModel(modelBasePath string, modelName string) ModelPath {
-	fi, err := FindModel(modelBasePath, modelName)
+func MustFindModel(modelBasePath string, modelID string) ModelPath {
+	fi, err := FindModel(modelBasePath, modelID)
 	if err != nil {
 		panic(err.Error())
 	}

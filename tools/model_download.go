@@ -13,10 +13,6 @@ import (
 // DownloadModel performs a complete workflow for downloading and installing
 // the specified model.
 func DownloadModel(ctx context.Context, log Logger, modelFileURL string, projURL string, modelBasePath string) (ModelPath, error) {
-	modelFileURL = strings.ToLower(modelFileURL)
-	projURL = strings.ToLower(projURL)
-	modelBasePath = strings.ToLower(modelBasePath)
-
 	modelFileName, err := extractFileName(modelFileURL)
 	if err != nil {
 		return ModelPath{}, fmt.Errorf("download-model:unable to extract file name: %w", err)
@@ -31,9 +27,21 @@ func DownloadModel(ctx context.Context, log Logger, modelFileURL string, projURL
 		log(ctx, fmt.Sprintf("\x1b[1A\r\x1b[Kdownload-model: Downloading %s... %d MiB of %d MiB (%.2f MiB/s)", src, currentSize/(1024*1024), totalSize/(1024*1024), mibPerSec))
 	}
 
-	mp, err := downloadModel(ctx, modelFileURL, projURL, modelBasePath, progress)
-	if err != nil {
-		if mp, err = FindModel(modelBasePath, modelID); err == nil {
+	mp, errOrg := downloadModel(ctx, modelFileURL, projURL, modelBasePath, progress)
+	if errOrg != nil {
+		log(ctx, "download-model:", "ERROR", errOrg, "model-file-url", modelFileURL)
+
+		if mp, err := FindModel(modelBasePath, modelID); err == nil {
+			size, err := fileSize(mp.ModelFile)
+			if err != nil {
+				return ModelPath{}, fmt.Errorf("download-model:unable to check file size of model: %w", err)
+			}
+
+			if size == 0 {
+				os.Remove(mp.ModelFile)
+				return ModelPath{}, fmt.Errorf("download-model:unable to download file: %w", errOrg)
+			}
+
 			log(ctx, fmt.Sprintf("download-model: status[using installed version of model] model-file[%s] proj-file[%s]", mp.ModelFile, mp.ProjFile))
 			return mp, nil
 		}
@@ -68,7 +76,7 @@ func downloadModel(ctx context.Context, modelFileURL string, projFileURL string,
 		inf := ModelPath{
 			ModelFile:  modelFileName,
 			ProjFile:   projFileName,
-			Downloaded: downloadedMF || false,
+			Downloaded: downloadedMF,
 		}
 
 		return inf, nil

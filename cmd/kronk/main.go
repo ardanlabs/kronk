@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/ardanlabs/kronk/cmd/kronk/libs"
 	"github.com/ardanlabs/kronk/cmd/kronk/list"
@@ -36,6 +37,21 @@ func init() {
 	rootCmd.Flags().BoolP("version", "v", false, "Show version information")
 	rootCmd.SetVersionTemplate(version)
 
+	// Pull the environment settings from the model server.
+	if len(os.Args) >= 3 {
+		if os.Args[1] == "server" && strings.Contains(os.Args[2], "help") {
+			err := kronk.Run(true)
+			serverCmd = &cobra.Command{
+				Use:     "server",
+				Aliases: []string{"start"},
+				Short:   "Start kronk server",
+				Long:    fmt.Sprintf("Start kronk server\n\n%s", err.Error()),
+				Args:    cobra.NoArgs,
+				Run:     runServer,
+			}
+		}
+	}
+
 	rootCmd.AddCommand(serverCmd)
 	rootCmd.AddCommand(libsLocalCmd)
 	rootCmd.AddCommand(libsWebCmd)
@@ -52,26 +68,13 @@ var serverCmd = &cobra.Command{
 	Use:     "server",
 	Aliases: []string{"start"},
 	Short:   "Start kronk server",
-	Long: `Start kronk server
-
-Environment Variables:
-      KRONK_WEB_API_HOST          (default: 0.0.0.0:3000)        IP Address for the app endpoints 
-	  KRONK_WEB_DEBUG_HOST        (default: 0.0.0.0:3010)        IP Address for the debug endpoints
-      KRONK_MODELS                (default: $HOME/kronk/models)  The path to the models directory
-	  KRONK_PROCESSOR             (default: cpu)                 Options: cpu, cuda, metal, vulkan
-      KRONK_DEVICE                (default: autodetection)       Device to use for inference 
-      KRONK_MODEL_INSTANCES       (default: 1)                   Maximum number of parallel requests
-      KRONK_MODEL_CONTEXT_WINDOW  (default: 4096)                Context window to use for inference 
-      KRONK_MODEL_NBatch          (default: 2048)                Logical batch size or the maximum number of tokens that can be in a single forward pass through the model at any given time
-      KRONK_MODEL_NUBatch         (default: 512)                 Physical batch size or the maximum number of tokens processed together during the initial prompt processing phase (also called "prompt ingestion") to populate the KV cache
-      KRONK_MODEL_NThreads        (default: llama.cpp)           Number of threads to use for generation
-      KRONK_MODEL_NThreadsBatch   (default: llama.cpp)           Number of threads to use for batch processing`,
-	Args: cobra.NoArgs,
-	Run:  runServer,
+	Long:    `Start kronk server. Use --help to get environment settings`,
+	Args:    cobra.NoArgs,
+	Run:     runServer,
 }
 
 func runServer(cmd *cobra.Command, args []string) {
-	if err := kronk.Run(); err != nil {
+	if err := kronk.Run(false); err != nil {
 		fmt.Println("\nERROR:", err)
 		os.Exit(1)
 	}
@@ -85,8 +88,7 @@ var libsWebCmd = &cobra.Command{
 	Long: `Install or upgrade llama.cpp libraries
 
 Environment Variables:
-      KRONK_WEB_API_HOST  (default localhost:3000)  IP Address for the kronk server 
-      KRONK_PROCESSOR     (default: cpu)            Options: cpu, cuda, metal, vulkan`,
+      KRONK_WEB_API_HOST  (default localhost:3000)  IP Address for the kronk server.`,
 	Args: cobra.NoArgs,
 	Run:  runLibsWeb,
 }
@@ -104,7 +106,9 @@ var libsLocalCmd = &cobra.Command{
 	Long: `Install or upgrade llama.cpp libraries without running the model server
 
 Environment Variables:
-	  KRONK_MODELS     (default: $HOME/kronk/libraries)  The path to the libraries directory,
+      KRONK_ARCH       (default: runtime.GOARCH)         The architecture to install.
+      KRONK_LIB_PATH   (default: $HOME/kronk/libraries)  The path to the libraries directory,
+      KRONK_OS         (default: runtime.GOOS)           The operating system to install.
       KRONK_PROCESSOR  (default: cpu)                    Options: cpu, cuda, metal, vulkan`,
 	Args: cobra.NoArgs,
 	Run:  runLibsLocal,
@@ -125,8 +129,7 @@ var listWebCmd = &cobra.Command{
 	Long: `List models
 
 Environment Variables:
-	  KRONK_WEB_API_HOST  (default localhost:3000)       IP Address for the kronk server 
-      KRONK_MODELS        (default: $HOME/kronk/models)  The path to the models directory`,
+	  KRONK_WEB_API_HOST  (default localhost:3000)  IP Address for the kronk server`,
 	Args: cobra.NoArgs,
 	Run:  runListWeb,
 }
@@ -220,8 +223,7 @@ var showWebCmd = &cobra.Command{
 	Long: `Show information for a model
 
 Environment Variables:
-	  KRONK_WEB_API_HOST  (default localhost:3000)       IP Address for the kronk server 
-      KRONK_MODELS        (default: $HOME/kronk/models)  The path to the models directory`,
+	  KRONK_WEB_API_HOST  (default localhost:3000)  IP Address for the kronk server`,
 	Args: cobra.ExactArgs(1),
 	Run:  runShowWeb,
 }

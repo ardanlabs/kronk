@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ardanlabs/kronk"
@@ -20,6 +21,8 @@ type ModelInfo struct {
 
 // ShowModel provides details for the specified model.
 func ShowModel(libPath string, modelBasePath string, modelID string) (ModelInfo, error) {
+	modelID = strings.ToLower(modelID)
+
 	fi, err := FindModel(modelBasePath, modelID)
 	if err != nil {
 		return ModelInfo{}, err
@@ -53,7 +56,8 @@ func ShowModel(libPath string, modelBasePath string, modelID string) (ModelInfo,
 
 	var modelFile ModelFile
 	for _, model := range models {
-		if model.ID == modelID {
+		id := strings.ToLower(model.ID)
+		if id == modelID {
 			modelFile = model
 			break
 		}
