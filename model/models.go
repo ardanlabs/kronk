@@ -12,7 +12,7 @@ import (
 // Objects represent the different types of data that is being processed.
 const (
 	ObjectChatUnknown = "chat.unknown"
-	ObjectChatText    = "chat.text"
+	ObjectChatText    = "chat.completion.chunk"
 	ObjectChatMedia   = "chat.media"
 )
 
@@ -154,10 +154,11 @@ type Choice struct {
 
 // Usage provides details usage information for the request.
 type Usage struct {
-	InputTokens      int     `json:"input_tokens"`
+	PromptTokens     int     `json:"prompt_tokens"`
 	ReasoningTokens  int     `json:"reasoning_tokens"`
 	CompletionTokens int     `json:"completion_tokens"`
 	OutputTokens     int     `json:"output_tokens"`
+	TotalTokens      int     `json:"total_tokens"`
 	TokensPerSecond  float64 `json:"tokens_per_second"`
 }
 

@@ -63,17 +63,17 @@ kronk-list:
 kronk-pull-local:
 	go run cmd/kronk/main.go pull-local "$(URL)"
 
-# make kronk-remove FILE="Qwen3-8B-Q8_0.gguf"
+# make kronk-remove ID="qwen3-8b-q8_0"
 kronk-remove:
-	go run cmd/kronk/main.go remove "$(FILE)"
+	go run cmd/kronk/main.go remove "$(ID)"
 
-# make kronk-show-local FILE="Qwen2-Audio-7B.Q8_0"
+# make kronk-show-local ID="qwen3-8b-q8_0"
 kronk-show-local:
-	go run cmd/kronk/main.go show-local "$(FILE)"
+	go run cmd/kronk/main.go show-local "$(ID)"
 
-# make kronk-show FILE="Qwen2-Audio-7B.Q8_0"
+# make kronk-show ID="qwen3-8b-q8_0"
 kronk-show:
-	go run cmd/kronk/main.go show "$(FILE)"
+	go run cmd/kronk/main.go show "$(ID)"
 
 # ==============================================================================
 # Kronk Endpoints
@@ -97,10 +97,23 @@ curl-kronk-pull:
 	}'
 
 curl-kronk-remove:
-	curl -i -X DELETE http://localhost:3000/v1/models/Qwen3-8B-Q8_0
+	curl -i -X DELETE http://localhost:3000/v1/models/qwen3-8b-q8_0
 
 curl-kronk-show:
-	curl -i -X GET http://localhost:3000/v1/models/Qwen3-8B-Q8_0
+	curl -i -X GET http://localhost:3000/v1/models/qwen3-8b-q8_0
+
+curl-kronk-chat:
+	curl -i -X POST http://localhost:3000/v1/chat/completions \
+     -H "Content-Type: application/json" \
+     -d '{ \
+	 	"model": "qwen3-8b-q8_0", \
+		"messages": [ \
+			{ \
+				"role": "user", \
+				"content": "How do you declare an interface in Go?" \
+			} \
+		] \
+    }'
 
 # ==============================================================================
 # Tests

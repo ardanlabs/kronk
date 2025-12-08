@@ -266,24 +266,54 @@ func (krn *Kronk) ChatStreaming(ctx context.Context, d model.D) (<-chan model.Ch
 }
 
 // Logger is a function type for logging.
-type Logger func(ctx context.Context, format string, a ...any)
+type Logger func(ctx context.Context, msg string, args ...any)
 
-// ChatStreamingHTTP streams the response to an HTTP client.
-func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, log Logger, w http.ResponseWriter, d model.D) error {
+// ChatCompletions streams the response to an HTTP client.
+func (krn *Kronk) ChatCompletions(ctx context.Context, log Logger, w http.ResponseWriter, d model.D) (model.ChatResponse, error) {
 	if _, exists := ctx.Deadline(); !exists {
-		return fmt.Errorf("chat-streaming-http:context has no deadline, provide a reasonable timeout")
+		return model.ChatResponse{}, fmt.Errorf("chat-streaming-http:context has no deadline, provide a reasonable timeout")
 	}
 
-	log(ctx, "streamResponse: started")
+	var stream bool
+	streamReq, ok := d["stream"].(bool)
+	if ok {
+		stream = streamReq
+	}
+
+	// -------------------------------------------------------------------------
+
+	if !stream {
+		log(ctx, "chat-completions:REQUEST", "STREAM", "false")
+
+		resp, err := krn.Chat(ctx, d)
+		if err != nil {
+			return model.ChatResponse{}, fmt.Errorf("chat-streaming-http:stream-response: %w", err)
+		}
+
+		d, err := json.Marshal(resp)
+		if err != nil {
+			return resp, fmt.Errorf("chat-streaming-http:marshal: %w", err)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(d)
+
+		return resp, nil
+	}
+
+	// -------------------------------------------------------------------------
+
+	log(ctx, "chat-completions:REQUEST", "STREAM", "true")
 
 	f, ok := w.(http.Flusher)
 	if !ok {
-		return fmt.Errorf("chat-streaming-http:streaming not supported")
+		return model.ChatResponse{}, fmt.Errorf("chat-streaming-http:streaming not supported")
 	}
 
 	ch, err := krn.ChatStreaming(ctx, d)
 	if err != nil {
-		return fmt.Errorf("chat-streaming-http:streamResponse: %w", err)
+		return model.ChatResponse{}, fmt.Errorf("chat-streaming-http:stream-response: %w", err)
 	}
 
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -296,20 +326,24 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, log Logger, w http.Resp
 	for resp := range ch {
 		if err := ctx.Err(); err != nil {
 			if errors.Is(err, context.Canceled) {
-				return errors.New("chat-streaming-http:client disconnected, do not send response")
+				return resp, errors.New("chat-streaming-http:client disconnected, do not send response")
 			}
+		}
+
+		switch reason := resp.Choice[0].FinishReason; reason {
+		case model.FinishReasonStop:
+			// OpenAI does not expect the final delta to have content or reasoning.
+			// Kronk returns the entire streamed content in the final chunk.
+			resp.Choice[0].Delta = model.ResponseMessage{}
+			resp.Prompt = ""
+
+		case model.FinishReasonError:
+			log(ctx, "chat-completions:RESPONSE", "ERROR", resp.Choice[0].Delta.Content)
 		}
 
 		d, err := json.Marshal(resp)
 		if err != nil {
-			return fmt.Errorf("json.Marshal: %w", err)
-		}
-
-		if resp.Choice[0].FinishReason == model.FinishReasonError {
-			log(ctx, "streamResponse: ERROR: %s", resp.Choice[0].Delta.Content)
-			fmt.Fprintf(w, "data: %s\n", d)
-			f.Flush()
-			break
+			return resp, fmt.Errorf("chat-streaming-http:marshal: %w", err)
 		}
 
 		fmt.Fprintf(w, "data: %s\n", d)
@@ -323,15 +357,15 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, log Logger, w http.Resp
 
 	// -------------------------------------------------------------------------
 
-	contextTokens := lr.Usage.InputTokens + lr.Usage.CompletionTokens
+	contextTokens := lr.Usage.PromptTokens + lr.Usage.CompletionTokens
 	contextWindow := krn.ModelConfig().ContextWindow
 	percentage := (float64(contextTokens) / float64(contextWindow)) * 100
 	of := float32(contextWindow) / float32(1024)
 
-	log(ctx, "streamResponse: Input: %d  Output: %d  Context: %d (%.0f%% of %.0fK) TPS: %.2f",
-		lr.Usage.InputTokens, lr.Usage.OutputTokens, contextTokens, percentage, of, lr.Usage.TokensPerSecond)
+	log(ctx, "chat-completions:USAGE", "Input", lr.Usage.PromptTokens, "Output", lr.Usage.OutputTokens,
+		"Context", contextTokens, "down", fmt.Sprintf("(%.0f%% of %.0fK) TPS: %.2f", percentage, of, lr.Usage.TokensPerSecond))
 
-	return nil
+	return lr, nil
 }
 
 // Embed provides support to interact with an embedding model.

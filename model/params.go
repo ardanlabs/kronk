@@ -10,8 +10,9 @@ import (
 const (
 	defTopK            = 40
 	defTopP            = 0.9
-	defTemp            = 0.7
-	defMaxTokens       = 512
+	defMinP            = 0.0
+	defTemp            = 0.8
+	defMaxTokens       = 128
 	defEnableThinking  = ThinkingEnabled
 	defReasoningEffort = ReasoningEffortMedium
 )
@@ -68,6 +69,10 @@ const (
 // number of most probable tokens required to reach the cumulative probability P.
 // When set to 0, the default value is 0.9.
 //
+// MinP, is a dynamic sampling threshold that helps balance the coherence
+// (quality) and diversity (creativity) of the generated text.
+// When set to 0, the default value is 0.0.
+//
 // These parameters (TopK, TopP, Temperature) are typically used together. The
 // sampling process usually applies temperature first, then filters the token
 // list using Top-K, and finally filters it again using Top-P before selecting
@@ -89,6 +94,7 @@ type Params struct {
 	Temperature     float32 `json:"temperature"`
 	TopK            int32   `json:"top_k"`
 	TopP            float32 `json:"top_p"`
+	MinP            float32 `json:"min_p"`
 	MaxTokens       int     `json:"max_tokens"`
 	Thinking        string  `json:"enable_thinking"`
 	ReasoningEffort string  `json:"reasoning_effort"`
@@ -100,6 +106,7 @@ func AddParams(p Params, d D) {
 	d["temperature"] = p.Temperature
 	d["top_k"] = p.TopK
 	d["top_p"] = p.TopP
+	d["min_p"] = p.MinP
 	d["max_tokens"] = p.MaxTokens
 
 	if p.Thinking != "" {
@@ -139,6 +146,15 @@ func parseParams(d D) (Params, error) {
 		}
 	}
 
+	var minP float32
+	if minPVal, exists := d["min_p"]; exists {
+		var err error
+		minP, err = parseFloat32("min_p", minPVal)
+		if err != nil {
+			return Params{}, err
+		}
+	}
+
 	var maxTokens int
 	if maxTokensVal, exists := d["max_tokens"]; exists {
 		var err error
@@ -170,6 +186,7 @@ func parseParams(d D) (Params, error) {
 		Temperature:     temp,
 		TopK:            int32(topK),
 		TopP:            topP,
+		MinP:            minP,
 		MaxTokens:       maxTokens,
 		Thinking:        strconv.FormatBool(enableThinking),
 		ReasoningEffort: reasoningEffort,
@@ -189,6 +206,10 @@ func adjustParams(p Params) Params {
 
 	if p.TopP <= 0 {
 		p.TopP = defTopP
+	}
+
+	if p.MinP <= 0 {
+		p.TopP = defMinP
 	}
 
 	if p.MaxTokens <= 0 {
@@ -212,6 +233,7 @@ func toSampler(p Params) llama.Sampler {
 	llama.SamplerChainAdd(sampler, llama.SamplerInitTempExt(p.Temperature, 0, 1.0))
 	llama.SamplerChainAdd(sampler, llama.SamplerInitTopK(p.TopK))
 	llama.SamplerChainAdd(sampler, llama.SamplerInitTopP(p.TopP, 0))
+	llama.SamplerChainAdd(sampler, llama.SamplerInitMinP(p.MinP, 0))
 	llama.SamplerChainAdd(sampler, llama.SamplerInitDist(llama.DefaultSeed))
 
 	return sampler

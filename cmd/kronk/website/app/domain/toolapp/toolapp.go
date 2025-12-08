@@ -16,7 +16,6 @@ import (
 )
 
 type app struct {
-	build  string
 	log    *logger.Logger
 	krnMgr *krn.Manager
 }

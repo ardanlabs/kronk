@@ -7,20 +7,40 @@ import (
 )
 
 // DefaultURL is a convience function for getting a url using the
-// default local model server host:port or pulling from KRONK_HOST.
+// default local model server host:port or pulling from KRONK_WEB_API_HOST.
 func DefaultURL(path string) (string, error) {
-	host := "http://127.0.0.1:3000"
-	if v := os.Getenv("KRONK_HOST"); v != "" {
+	host := "http://localhost:3000"
+	if v := os.Getenv("KRONK_WEB_API_HOST"); v != "" {
 		host = v
 	}
 
 	path, err := url.JoinPath(host, path)
 	if err != nil {
-		return "", fmt.Errorf("run-web: join-path: %w", err)
+		return "", fmt.Errorf("default-url: join path, host[%s] path[%s]: %w", host, path, err)
 	}
 
 	if _, err := url.Parse(path); err != nil {
-		return "", fmt.Errorf("run-web: url path not valid: %w", err)
+		return "", fmt.Errorf("default-url: parse, path[%s]: %w", path, err)
+	}
+
+	return path, nil
+}
+
+// DefaultDebugURL is a convience function for getting a url using the
+// default local model server host:port or pulling from KRONK_WEB_DEBUG_HOST.
+func DefaultDebugURL(path string) (string, error) {
+	host := "http://localhost:3010"
+	if v := os.Getenv("KRONK_WEB_DEBUG_HOST"); v != "" {
+		host = v
+	}
+
+	path, err := url.JoinPath(host, path)
+	if err != nil {
+		return "", fmt.Errorf("default-debug-url: join path, host[%s] path[%s]: %w", host, path, err)
+	}
+
+	if _, err := url.Parse(path); err != nil {
+		return "", fmt.Errorf("default-debug-url: parse, path[%s]: %w", path, err)
 	}
 
 	return path, nil

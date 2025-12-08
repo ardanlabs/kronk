@@ -13,6 +13,10 @@ import (
 // DownloadModel performs a complete workflow for downloading and installing
 // the specified model.
 func DownloadModel(ctx context.Context, log Logger, modelFileURL string, projURL string, modelBasePath string) (ModelPath, error) {
+	modelFileURL = strings.ToLower(modelFileURL)
+	projURL = strings.ToLower(projURL)
+	modelBasePath = strings.ToLower(modelBasePath)
+
 	modelFileName, err := extractFileName(modelFileURL)
 	if err != nil {
 		return ModelPath{}, fmt.Errorf("download-model:unable to extract file name: %w", err)

@@ -85,8 +85,8 @@ var libsWebCmd = &cobra.Command{
 	Long: `Install or upgrade llama.cpp libraries
 
 Environment Variables:
-      KRONK_HOST       (default 127.0.0.1:3000)  IP Address for the kronk server 
-      KRONK_PROCESSOR  (default: cpu)            Options: cpu, cuda, metal, vulkan`,
+      KRONK_WEB_API_HOST  (default localhost:3000)  IP Address for the kronk server 
+      KRONK_PROCESSOR     (default: cpu)            Options: cpu, cuda, metal, vulkan`,
 	Args: cobra.NoArgs,
 	Run:  runLibsWeb,
 }
@@ -125,8 +125,8 @@ var listWebCmd = &cobra.Command{
 	Long: `List models
 
 Environment Variables:
-	  KRONK_HOST    (default 127.0.0.1:3000)       IP Address for the kronk server 
-      KRONK_MODELS  (default: $HOME/kronk/models)  The path to the models directory`,
+	  KRONK_WEB_API_HOST  (default localhost:3000)       IP Address for the kronk server 
+      KRONK_MODELS        (default: $HOME/kronk/models)  The path to the models directory`,
 	Args: cobra.NoArgs,
 	Run:  runListWeb,
 }
@@ -164,7 +164,7 @@ var psCmd = &cobra.Command{
 	Long: `List running models
 
 Environment Variables:
-      KRONK_HOST  (default 127.0.0.1:11434)  IP Address for the kronk server`,
+      KRONK_WEB_API_HOST  (default localhost:3000)  IP Address for the kronk server`,
 	Run: runPs,
 }
 
@@ -220,8 +220,8 @@ var showWebCmd = &cobra.Command{
 	Long: `Show information for a model
 
 Environment Variables:
-	  KRONK_HOST    (default 127.0.0.1:11434)      IP Address for the kronk server 
-      KRONK_MODELS  (default: $HOME/kronk/models)  The path to the models directory`,
+	  KRONK_WEB_API_HOST  (default localhost:3000)       IP Address for the kronk server 
+      KRONK_MODELS        (default: $HOME/kronk/models)  The path to the models directory`,
 	Args: cobra.ExactArgs(1),
 	Run:  runShowWeb,
 }

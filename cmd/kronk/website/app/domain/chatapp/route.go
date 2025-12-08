@@ -1,4 +1,4 @@
-package toolapp
+package chatapp
 
 import (
 	"net/http"
@@ -19,18 +19,11 @@ type Config struct {
 
 // Routes adds specific routes for this group.
 func Routes(app *web.App, cfg Config) {
-	const version = ""
+	const version = "v1"
 
 	bearer := mid.Bearer(cfg.Auth)
 
 	api := newApp(cfg.Log, cfg.KrnMngr)
 
-	app.HandlerFunc(http.MethodPost, version, "/v1/libs", api.libs, bearer)
-	app.HandlerFunc(http.MethodGet, version, "/v1/models", api.list, bearer)
-	app.HandlerFunc(http.MethodGet, version, "/v1/models/{model}", api.show, bearer)
-	app.HandlerFunc(http.MethodPost, version, "/v1/models/pull", api.pull, bearer)
-	app.HandlerFunc(http.MethodDelete, version, "/v1/models/{model}", api.remove, bearer)
-
-	app.HandlerFunc(http.MethodGet, version, "/api/tags", api.list, bearer)
-	app.HandlerFunc(http.MethodGet, version, "/api/ps", api.list, bearer)
+	app.HandlerFunc(http.MethodPost, version, "/chat/completions", api.chatCompletions, bearer)
 }

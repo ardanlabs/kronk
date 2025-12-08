@@ -177,10 +177,11 @@ func (m *Model) processChatRequest(ctx context.Context, id string, lctx llama.Co
 	if inputTokens > m.cfg.ContextWindow {
 		err := fmt.Errorf("process-chat-request:input tokens %d exceed context window %d", inputTokens, m.cfg.ContextWindow)
 		m.sendErrorResponse(ctx, ch, id, object, 0, prompt, err, Usage{
-			InputTokens:      inputTokens,
+			PromptTokens:     inputTokens,
 			ReasoningTokens:  reasonTokens,
 			CompletionTokens: completionTokens,
 			OutputTokens:     outputTokens,
+			TotalTokens:      inputTokens + outputTokens,
 		})
 		return
 	}
@@ -202,10 +203,11 @@ loop:
 			}
 
 			m.sendErrorResponse(ctx, ch, id, object, index, prompt, err, Usage{
-				InputTokens:      inputTokens,
+				PromptTokens:     inputTokens,
 				ReasoningTokens:  reasonTokens,
 				CompletionTokens: completionTokens,
 				OutputTokens:     outputTokens,
+				TotalTokens:      inputTokens + outputTokens,
 			})
 			return
 		}
@@ -226,10 +228,11 @@ loop:
 			content, err = m.toolCall(lctx, token, sampler, buf)
 			if err != nil {
 				m.sendErrorResponse(ctx, ch, id, object, index, prompt, err, Usage{
-					InputTokens:      inputTokens,
+					PromptTokens:     inputTokens,
 					ReasoningTokens:  reasonTokens,
 					CompletionTokens: completionTokens,
 					OutputTokens:     outputTokens,
+					TotalTokens:      inputTokens + outputTokens,
 				})
 				return
 			}
@@ -242,10 +245,11 @@ loop:
 			batch, content, err = m.gptChannel(lctx, token, sampler, buf)
 			if err != nil {
 				m.sendErrorResponse(ctx, ch, id, object, index, prompt, err, Usage{
-					InputTokens:      inputTokens,
+					PromptTokens:     inputTokens,
 					ReasoningTokens:  reasonTokens,
 					CompletionTokens: completionTokens,
 					OutputTokens:     outputTokens,
+					TotalTokens:      inputTokens + outputTokens,
 				})
 				return
 			}
@@ -269,10 +273,11 @@ loop:
 			batch, err = m.gptEnd(lctx, token, sampler, buf)
 			if err != nil {
 				m.sendErrorResponse(ctx, ch, id, object, index, prompt, err, Usage{
-					InputTokens:      inputTokens,
+					PromptTokens:     inputTokens,
 					ReasoningTokens:  reasonTokens,
 					CompletionTokens: completionTokens,
 					OutputTokens:     outputTokens,
+					TotalTokens:      inputTokens + outputTokens,
 				})
 				return
 			}
@@ -299,10 +304,11 @@ loop:
 
 		err = m.sendDeltaResponse(ctx, ch, id, object, index, prompt, content, reasonFlag,
 			Usage{
-				InputTokens:      inputTokens,
+				PromptTokens:     inputTokens,
 				ReasoningTokens:  reasonTokens,
 				CompletionTokens: completionTokens,
 				OutputTokens:     outputTokens,
+				TotalTokens:      inputTokens + outputTokens,
 				TokensPerSecond:  tokensPerSecond,
 			},
 		)
@@ -356,16 +362,18 @@ loop:
 	// the final usage numbers.
 	m.sendFinalResponse(ctx, ch, id, object, index, prompt, &finalContent, &finalReasoning, respToolCall,
 		Usage{
-			InputTokens:      inputTokens,
+			PromptTokens:     inputTokens,
 			ReasoningTokens:  reasonTokens,
 			CompletionTokens: completionTokens,
 			OutputTokens:     outputTokens,
+			TotalTokens:      inputTokens + outputTokens,
 			TokensPerSecond:  tokensPerSecond,
 		},
 	)
 }
 
 func (m *Model) startProcessing(lctx llama.Context, object string, prompt string, params Params) (llama.Sampler, llama.Batch, int, int) {
+	// Apply any parameters to this request like temperature or top_p.
 	sampler := toSampler(params)
 
 	// Process the prompt and get the number of tokens plus the initial batch
