@@ -41,7 +41,7 @@ jobs:
       - name: Install Libs
         run: |
           mkdir -p $HOME/kronk/libraries
-          kronk libs-local
+          kronk libs --local
       - name: Download test models
         if: steps.cache-models.outputs.cache-hit != 'true'
         run: |
