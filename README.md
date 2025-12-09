@@ -34,6 +34,34 @@ To install the Kronk tool run the following command:
 $ go install github.com/ardanlabs/kronk/cmd/kronk@latest
 ```
 
+Here is the help screen.
+
+```
+$ kronk help
+
+Go for hardware accelerated local inference with llama.cpp directly integrated into your applications via the yzma. Kronk provides a high-level API that feels similar to using an OpenAI compatible API.
+
+Usage:
+  kronk [flags]
+  kronk [command]
+
+Available Commands:
+  help        Help about any command
+  libs        Install or upgrade llama.cpp libraries
+  list        List models
+  ps          List running models
+  pull        Pull a model from the web
+  remove      Remove a model
+  server      Start Kronk model server
+  show        Show information for a model
+
+Flags:
+  -h, --help      help for kronk
+  -v, --version   version for kronk
+
+Use "kronk [command] --help" for more information about a command.
+```
+
 ## Architecture
 
 The architecture of Kronk is designed to be simple and scalable. The Kronk API allows you to write applications that can diectly interact with local open source GGUF models (supported by llama.cpp) that provide inference for text and media (vision and audio).
@@ -50,6 +78,14 @@ The diagram below shows how the Kronk model server supports access to multiple m
                    -> Kronk API -> Yzma -> Llama.cpp -> Model 1 (1 instance)
 Client -> Kronk MS -> Kronk API -> Yzma -> Llama.cpp -> Model 2 (1 instance)
                    -> Kronk API -> Yzma -> Llama.cpp -> Model 3 (1 instance)
+```
+
+You can configure the number of Models that stay loaded in memory (default: 3) through configuration how long they will stay in memory (default: 5m) when not being used. This allows you to manage the resouces on the hardware.
+
+For more details on the settings, run the following command after installing Kronk:
+
+```
+$ kronk server --help
 ```
 
 ## Models

@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	k "github.com/ardanlabs/kronk"
 	"github.com/ardanlabs/kronk/cmd/kronk/libs"
 	"github.com/ardanlabs/kronk/cmd/kronk/list"
 	"github.com/ardanlabs/kronk/cmd/kronk/pull"
@@ -14,7 +15,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var version = "dev"
+var version = k.Version
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
@@ -34,8 +35,7 @@ var rootCmd = &cobra.Command{
 
 func init() {
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
-	rootCmd.Flags().BoolP("version", "v", false, "Show version information")
-	rootCmd.SetVersionTemplate(version)
+	rootCmd.Version = version
 
 	// Pull the environment settings from the model server.
 	if len(os.Args) >= 3 {
@@ -64,8 +64,8 @@ func init() {
 var serverCmd = &cobra.Command{
 	Use:     "server",
 	Aliases: []string{"start"},
-	Short:   "Start kronk server",
-	Long:    `Start kronk server. Use --help to get environment settings`,
+	Short:   "Start Kronk model server",
+	Long:    `Start Kronk model server. Use --help to get environment settings`,
 	Args:    cobra.NoArgs,
 	Run:     runServer,
 }
@@ -97,7 +97,7 @@ Environment Variables (--local mode):
 }
 
 func init() {
-	libsCmd.Flags().Bool("local", false, "Run without the model server")
+
 }
 
 func runLibs(cmd *cobra.Command, args []string) {

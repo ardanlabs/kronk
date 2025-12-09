@@ -48,7 +48,7 @@ type Config struct {
 	MaxInCache     int
 	ModelInstances int
 	ContextWindow  int
-	TTL            time.Duration
+	CacheTTL       time.Duration
 }
 
 func validateConfig(cfg Config) Config {
@@ -63,8 +63,8 @@ func validateConfig(cfg Config) Config {
 		cfg.ModelInstances = 1
 	}
 
-	if cfg.TTL <= 0 {
-		cfg.TTL = 5 * time.Minute
+	if cfg.CacheTTL <= 0 {
+		cfg.CacheTTL = 5 * time.Minute
 	}
 
 	return cfg
@@ -104,7 +104,7 @@ func NewManager(cfg Config) (*Manager, error) {
 
 	opt := otter.Options[string, *kronk.Kronk]{
 		MaximumSize:      cfg.MaxInCache,
-		ExpiryCalculator: otter.ExpiryAccessing[string, *kronk.Kronk](cfg.TTL),
+		ExpiryCalculator: otter.ExpiryAccessing[string, *kronk.Kronk](cfg.CacheTTL),
 		OnDeletion:       mgr.eviction,
 	}
 

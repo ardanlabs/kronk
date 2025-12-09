@@ -42,7 +42,7 @@ func Test_NewManager(t *testing.T) {
 			ModelPath:      defaults.ModelsDir(""),
 			MaxInCache:     5,
 			ModelInstances: 2,
-			TTL:            10 * time.Minute,
+			CacheTTL:       10 * time.Minute,
 		}
 
 		mgr, err := krn.NewManager(cfg)
@@ -64,7 +64,7 @@ func Test_AcquireModel(t *testing.T) {
 		ModelPath:      defaults.ModelsDir(""),
 		MaxInCache:     3,
 		ModelInstances: 1,
-		TTL:            5 * time.Minute,
+		CacheTTL:       5 * time.Minute,
 	}
 
 	mgr, err := krn.NewManager(cfg)
@@ -140,7 +140,7 @@ func Test_Shutdown(t *testing.T) {
 			ModelPath:      defaults.ModelsDir(""),
 			MaxInCache:     3,
 			ModelInstances: 1,
-			TTL:            5 * time.Minute,
+			CacheTTL:       5 * time.Minute,
 		}
 
 		mgr, err := krn.NewManager(cfg)
@@ -170,7 +170,7 @@ func Test_Shutdown(t *testing.T) {
 			ModelPath:      defaults.ModelsDir(""),
 			MaxInCache:     3,
 			ModelInstances: 1,
-			TTL:            5 * time.Minute,
+			CacheTTL:       5 * time.Minute,
 		}
 
 		mgr, err := krn.NewManager(cfg)
@@ -201,7 +201,7 @@ func Test_Shutdown(t *testing.T) {
 			ModelPath:      defaults.ModelsDir(""),
 			MaxInCache:     3,
 			ModelInstances: 1,
-			TTL:            5 * time.Minute,
+			CacheTTL:       5 * time.Minute,
 		}
 
 		mgr, err := krn.NewManager(cfg)
@@ -230,7 +230,7 @@ func Test_Shutdown(t *testing.T) {
 			ModelPath:      defaults.ModelsDir(""),
 			MaxInCache:     3,
 			ModelInstances: 1,
-			TTL:            5 * time.Minute,
+			CacheTTL:       5 * time.Minute,
 		}
 
 		mgr, err := krn.NewManager(cfg)
@@ -282,7 +282,7 @@ func Test_Eviction(t *testing.T) {
 			ModelPath:      defaults.ModelsDir(""),
 			MaxInCache:     3,
 			ModelInstances: 1,
-			TTL:            500 * time.Millisecond,
+			CacheTTL:       500 * time.Millisecond,
 		}
 
 		mgr, err := krn.NewManager(cfg)
@@ -317,7 +317,7 @@ func Test_Eviction(t *testing.T) {
 			ModelPath:      defaults.ModelsDir(""),
 			MaxInCache:     1,
 			ModelInstances: 1,
-			TTL:            5 * time.Minute,
+			CacheTTL:       5 * time.Minute,
 		}
 
 		mgr, err := krn.NewManager(cfg)

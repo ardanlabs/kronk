@@ -29,10 +29,6 @@ import (
 var build = "develop"
 
 func Run(showHelp bool) error {
-	fmt.Println(logo)
-
-	// -------------------------------------------------------------------------
-
 	var log *logger.Logger
 
 	events := logger.Events{
@@ -150,6 +146,8 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	expvar.NewString("build").Set(cfg.Build)
 
+	fmt.Println(logo)
+
 	// -------------------------------------------------------------------------
 	// Initialize authentication support
 
@@ -253,6 +251,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		MaxInCache:     cfg.Model.MaxInCache,
 		ModelInstances: cfg.Model.MaxInstances,
 		ContextWindow:  cfg.Model.ContextWindow,
+		CacheTTL:       cfg.Model.CacheTTL,
 	})
 
 	if err != nil {
