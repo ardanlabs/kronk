@@ -44,19 +44,27 @@ func (h *handlers) chat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("traceID: %s: chat: msgs: %#v\n", traceID, req.Messages)
+	fmt.Printf("traceID: %s: chat: stream[%v] msgs[%#v]\n", traceID, req.Stream, req.Messages)
 
 	ctx, cancel := context.WithTimeout(context.Background(), h.timeout)
 	defer cancel()
 
-	log := func(ctx context.Context, format string, a ...any) {
-		fmt.Printf("traceID: %s: chat: log: %s\n", traceID, fmt.Sprintf(format, a...))
+	log := func(ctx context.Context, msg string, args ...any) {
+		fmt.Print(msg)
+		for i := 0; i < len(args); i += 2 {
+			if i+1 < len(args) {
+				fmt.Printf(" %v[%v]", args[i], args[i+1])
+			}
+		}
+		fmt.Printf(" traceID[%v]", traceID)
+		fmt.Println()
 	}
 
 	params := getParams(traceID, req)
 
 	d := model.D{
 		"messages": h.compileChatMessages(traceID, req),
+		"stream":   req.Stream,
 		"tools": []model.D{
 			{
 				"type": "function",

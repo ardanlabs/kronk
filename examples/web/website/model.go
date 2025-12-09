@@ -13,6 +13,7 @@ type Message struct {
 
 type Request struct {
 	Messages    []Message `json:"messages"`
+	Stream      bool      `json:"stream"`
 	TopK        *int32    `json:"top_k"`
 	TopP        *float32  `json:"top_p"`
 	Temperature *float32  `json:"temperature"`

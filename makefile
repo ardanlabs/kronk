@@ -162,6 +162,15 @@ example-vision:
 example-web:
 	CGO_ENABLED=0 go run examples/web/main.go
 
+example-web-npm-install:
+	cd examples/web/react/app && npm install
+
+example13-web-npm-build:
+	cd examples/web/react/app && npm run build
+
+example13-web-npm-run:
+	cd examples/web/react/app && npm run dev
+
 example-web-curl1:
 	curl -i -X POST http://0.0.0.0:8080/chat \
      -H "Content-Type: application/json" \
