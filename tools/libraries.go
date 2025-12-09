@@ -47,7 +47,7 @@ type LibConfig struct {
 // osStr       : string representation of a `download.OS`.
 // procStr     : string representation of a `download.Processor`.
 // llamaLog    : int representation of `kronk.LogSilent` or `kronk.LogNormal`.
-// allowUpgrade: true or false to determine to upgrade libraries when avaiable.
+// allowUpgrade: true or false to determine to upgrade libraries when available.
 func NewLibConfig(libPath string, archStr string, osStr string, procStr string, llamaLog int, allowUpgrade bool) (LibConfig, error) {
 	arch, err := defaults.Arch(archStr)
 	if err != nil {

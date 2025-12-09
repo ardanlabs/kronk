@@ -39,7 +39,7 @@ func DownloadFile(ctx context.Context, src string, dest string, progress Progres
 	}
 
 	if err := client.Get(); err != nil {
-		return false, fmt.Errorf("downlaod-file:failed to download model: %T %w", err, err)
+		return false, fmt.Errorf("download-file:failed to download model: %T %w", err, err)
 	}
 
 	if pr.currentSize == 0 {
@@ -82,7 +82,7 @@ func (pr *ProgressReader) TrackProgress(src string, currentSize, totalSize int64
 	return pr
 }
 
-// Read performs a partical read of the download which gives us the
+// Read performs a partial read of the download which gives us the
 // ability to get stats.
 func (pr *ProgressReader) Read(p []byte) (int, error) {
 	n, err := pr.reader.Read(p)
