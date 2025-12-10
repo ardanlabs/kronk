@@ -41,7 +41,7 @@ func RunWeb(args []string) error {
 
 func printWeb(models []toolapp.ModelDetail) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "ID\tOWNED BY\tMODEL FAMILY\tSIZE\tEXPIRES\tSessions\tT")
+	fmt.Fprintln(w, "ID\tOWNED BY\tMODEL FAMILY\tSIZE\tEXPIRES\tSESSIONS")
 
 	for _, model := range models {
 		size := formatSize(model.Size)
