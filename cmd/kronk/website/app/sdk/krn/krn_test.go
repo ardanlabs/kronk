@@ -5,10 +5,7 @@ import (
 	"context"
 	"io"
 	"math/rand"
-	"os"
-	"path/filepath"
 	"runtime"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -403,38 +400,19 @@ func initKronk(t *testing.T) *logger.Logger {
 }
 
 func findAvailableModel(t *testing.T, notModelName string) string {
-	modelPath := defaults.ModelsDir("")
-
-	var modelNames []string
-	filepath.WalkDir(modelPath, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-
-		if d.IsDir() {
-			return nil
-		}
-
-		if strings.HasSuffix(d.Name(), ".gguf") && !strings.HasPrefix(d.Name(), "mmproj-") {
-			modelNames = append(modelNames, d.Name())
-			return nil
-		}
-
-		return nil
-	})
-
-	if len(modelNames) == 0 {
+	modelFiles, err := tools.ListModels(defaults.ModelsDir(""))
+	if err != nil {
 		t.Skip("no models available for testing - skipping")
 	}
 
-	var modelName string
-	for range len(modelNames) {
-		idx := rand.Intn(len(modelNames))
-		if modelNames[idx] != notModelName {
-			modelName = modelNames[idx]
+	var modelID string
+	for range len(modelFiles) {
+		idx := rand.Intn(len(modelFiles))
+		if modelFiles[idx].ID != notModelName {
+			modelID = modelFiles[idx].ID
 		}
 	}
 
-	t.Logf("using model: %s", modelName)
-	return modelName
+	t.Logf("using model: %s", modelID)
+	return modelID
 }

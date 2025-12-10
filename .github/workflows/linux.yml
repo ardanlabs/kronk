@@ -54,6 +54,7 @@ jobs:
           export GOROUTINES=1
           export RUN_IN_PARALLEL=0
           CGO_ENABLED=0 go test -v -count=1 ./tests
+          CGO_ENABLED=0 go test -v -count=1 ./cmd/kronk/website/app/sdk/krn
       - name: Delete existing models cache
         if: github.ref == 'refs/heads/main' && steps.cache-models.outputs.cache-hit != 'true'
         env:
