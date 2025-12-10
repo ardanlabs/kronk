@@ -15,10 +15,10 @@ import (
 
 	"github.com/ardanlabs/conf/v3"
 	"github.com/ardanlabs/kronk"
+	"github.com/ardanlabs/kronk/cache"
 	"github.com/ardanlabs/kronk/cmd/kronk/website/api/services/kronk/build/all"
 	"github.com/ardanlabs/kronk/cmd/kronk/website/app/sdk/auth"
 	"github.com/ardanlabs/kronk/cmd/kronk/website/app/sdk/debug"
-	"github.com/ardanlabs/kronk/cmd/kronk/website/app/sdk/krn"
 	"github.com/ardanlabs/kronk/cmd/kronk/website/app/sdk/mux"
 	"github.com/ardanlabs/kronk/cmd/kronk/website/foundation/keystore"
 	"github.com/ardanlabs/kronk/cmd/kronk/website/foundation/logger"
@@ -240,7 +240,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		return fmt.Errorf("installation invalid: %w", err)
 	}
 
-	krnMngr, err := krn.NewManager(krn.Config{
+	cache, err := cache.NewCache(cache.Config{
 		Log:            log,
 		LibPath:        libCfg.LibPath,
 		Arch:           libCfg.Arch,
@@ -264,7 +264,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		ctx, cancel := context.WithTimeout(context.Background(), cfg.Web.ShutdownTimeout)
 		defer cancel()
 
-		if err := krnMngr.Shutdown(ctx); err != nil {
+		if err := cache.Shutdown(ctx); err != nil {
 			log.Error(ctx, "kronk manager", "ERROR", err)
 		}
 	}()
@@ -289,11 +289,11 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
 
 	cfgMux := mux.Config{
-		Build:   build,
-		Log:     log,
-		Auth:    ath,
-		Tracer:  tracer,
-		KrnMngr: krnMngr,
+		Build:  build,
+		Log:    log,
+		Auth:   ath,
+		Tracer: tracer,
+		Cache:  cache,
 	}
 
 	webAPI := mux.WebAPI(cfgMux,

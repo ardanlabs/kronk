@@ -8,22 +8,22 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/ardanlabs/kronk/cache"
 	"github.com/ardanlabs/kronk/cmd/kronk/website/app/sdk/errs"
-	"github.com/ardanlabs/kronk/cmd/kronk/website/app/sdk/krn"
 	"github.com/ardanlabs/kronk/cmd/kronk/website/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/kronk/website/foundation/web"
 	"github.com/ardanlabs/kronk/tools"
 )
 
 type app struct {
-	log    *logger.Logger
-	krnMgr *krn.Manager
+	log   *logger.Logger
+	cache *cache.Cache
 }
 
-func newApp(log *logger.Logger, krnMgr *krn.Manager) *app {
+func newApp(log *logger.Logger, cache *cache.Cache) *app {
 	return &app{
-		log:    log,
-		krnMgr: krnMgr,
+		log:   log,
+		cache: cache,
 	}
 }
 
@@ -43,11 +43,11 @@ func (a *app) pullLibs(ctx context.Context, r *http.Request) web.Encoder {
 	// -------------------------------------------------------------------------
 
 	cfg := tools.LibConfig{
-		LibPath:      a.krnMgr.LibPath(),
-		Arch:         a.krnMgr.Arch(),
-		OS:           a.krnMgr.OS(),
+		LibPath:      a.cache.LibPath(),
+		Arch:         a.cache.Arch(),
+		OS:           a.cache.OS(),
 		AllowUpgrade: true,
-		Processor:    a.krnMgr.Processor(),
+		Processor:    a.cache.Processor(),
 	}
 
 	logger := func(ctx context.Context, msg string, args ...any) {
@@ -87,7 +87,7 @@ func (a *app) pullLibs(ctx context.Context, r *http.Request) web.Encoder {
 }
 
 func (a *app) listModels(ctx context.Context, r *http.Request) web.Encoder {
-	modelPath := a.krnMgr.ModelPath()
+	modelPath := a.cache.ModelPath()
 
 	models, err := tools.ListModels(modelPath)
 	if err != nil {
@@ -129,7 +129,7 @@ func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
 
 	// -------------------------------------------------------------------------
 
-	modelPath := a.krnMgr.ModelPath()
+	modelPath := a.cache.ModelPath()
 
 	logger := func(ctx context.Context, msg string, args ...any) {
 		var sb strings.Builder
@@ -168,7 +168,7 @@ func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
 }
 
 func (a *app) removeModel(ctx context.Context, r *http.Request) web.Encoder {
-	modelPath := a.krnMgr.ModelPath()
+	modelPath := a.cache.ModelPath()
 	modelName := web.Param(r, "model")
 
 	a.log.Info(ctx, "tool-remove", "modelName", modelName)
@@ -186,8 +186,8 @@ func (a *app) removeModel(ctx context.Context, r *http.Request) web.Encoder {
 }
 
 func (a *app) showModel(ctx context.Context, r *http.Request) web.Encoder {
-	libPath := a.krnMgr.LibPath()
-	modelPath := a.krnMgr.ModelPath()
+	libPath := a.cache.LibPath()
+	modelPath := a.cache.ModelPath()
 	modelName := web.Param(r, "model")
 
 	mi, err := tools.ShowModel(libPath, modelPath, modelName)

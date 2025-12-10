@@ -3,8 +3,8 @@ package embedapp
 import (
 	"net/http"
 
+	"github.com/ardanlabs/kronk/cache"
 	"github.com/ardanlabs/kronk/cmd/kronk/website/app/sdk/auth"
-	"github.com/ardanlabs/kronk/cmd/kronk/website/app/sdk/krn"
 	"github.com/ardanlabs/kronk/cmd/kronk/website/app/sdk/mid"
 	"github.com/ardanlabs/kronk/cmd/kronk/website/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/kronk/website/foundation/web"
@@ -12,9 +12,9 @@ import (
 
 // Config contains all the mandatory systems required by handlers.
 type Config struct {
-	Log     *logger.Logger
-	Auth    *auth.Auth
-	KrnMngr *krn.Manager
+	Log   *logger.Logger
+	Auth  *auth.Auth
+	Cache *cache.Cache
 }
 
 // Routes adds specific routes for this group.
@@ -23,7 +23,7 @@ func Routes(app *web.App, cfg Config) {
 
 	bearer := mid.Bearer(cfg.Auth)
 
-	api := newApp(cfg.Log, cfg.KrnMngr)
+	api := newApp(cfg.Log, cfg.Cache)
 
 	app.HandlerFunc(http.MethodPost, version, "/embeddings", api.embeddings, bearer)
 }
