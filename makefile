@@ -45,8 +45,17 @@ install-gotooling:
 # ==============================================================================
 # Kronk CLI
 
+kronk-server-detach:
+	go run cmd/kronk/main.go server --detach
+
 kronk-server:
 	go run cmd/kronk/main.go server | go run cmd/kronk/website/api/tooling/logfmt/main.go
+
+kronk-server-logs:
+	go run cmd/kronk/main.go logs
+
+kronk-server-stop:
+	go run cmd/kronk/main.go stop
 
 kronk-libs:
 	go run cmd/kronk/main.go libs
@@ -116,11 +125,12 @@ curl-kronk-chat:
 	curl -i -X POST http://localhost:3000/v1/chat/completions \
      -H "Content-Type: application/json" \
      -d '{ \
+	 	"stream": true, \
 	 	"model": "qwen3-8b-q8_0", \
 		"messages": [ \
 			{ \
 				"role": "user", \
-				"content": "How do you declare an interface in Go?" \
+				"content": "Hello model" \
 			} \
 		] \
     }'

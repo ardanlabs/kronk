@@ -11,6 +11,22 @@ import (
 	"github.com/hybridgroup/yzma/pkg/download"
 )
 
+var (
+	basePath  = ".kronk"
+	libsPath  = "libraries"
+	modelPath = "models"
+)
+
+// BaseDir is the default base folder location for kronk files.
+func BaseDir() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Sprintf("./%s", basePath)
+	}
+
+	return filepath.Join(homeDir, basePath)
+}
+
 // LibsDir returns the default location for the libraries folder. It will check
 // the KRONK_LIB_PATH env var first and then default to the home directory if
 // one can be identified. Last resort it will choose the current directory.
@@ -25,10 +41,10 @@ func LibsDir(override string) string {
 
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return "./kronk/libraries"
+		return fmt.Sprintf("./%s/%s", basePath, libsPath)
 	}
 
-	return filepath.Join(homeDir, "kronk/libraries")
+	return filepath.Join(homeDir, basePath, libsPath)
 }
 
 // ModelsDir returns the default location for the models folder. It will check
@@ -45,10 +61,10 @@ func ModelsDir(override string) string {
 
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return "./kronk/models"
+		return fmt.Sprintf("./%s/%s", basePath, modelPath)
 	}
 
-	return filepath.Join(homeDir, "kronk/models")
+	return filepath.Join(homeDir, basePath, modelPath)
 }
 
 // Arch will check the KRONK_ARCH var first and check it's value against the

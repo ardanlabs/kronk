@@ -3,7 +3,6 @@
 ### MODEL SERVER / TOOLING
 
 - Add and finish the PS command
-- Detach option on the model server
 - There is a setting that allows the model to return multiple
   tool calls. Parallel bool json:"parallel"
 - Solidfy the auth system

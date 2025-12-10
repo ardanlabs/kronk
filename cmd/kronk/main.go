@@ -3,7 +3,11 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 
 	k "github.com/ardanlabs/kronk"
 	"github.com/ardanlabs/kronk/cmd/kronk/libs"
@@ -12,6 +16,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/kronk/remove"
 	"github.com/ardanlabs/kronk/cmd/kronk/show"
 	"github.com/ardanlabs/kronk/cmd/kronk/website/api/services/kronk"
+	"github.com/ardanlabs/kronk/defaults"
 	"github.com/spf13/cobra"
 )
 
@@ -52,7 +57,11 @@ func init() {
 		}
 	}
 
+	serverCmd.Flags().BoolP("detach", "d", false, "Run server in the background")
+
 	rootCmd.AddCommand(serverCmd)
+	rootCmd.AddCommand(stopCmd)
+	rootCmd.AddCommand(logsCmd)
 	rootCmd.AddCommand(libsCmd)
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(pullCmd)
@@ -60,6 +69,9 @@ func init() {
 	rootCmd.AddCommand(showCmd)
 	rootCmd.AddCommand(psCmd)
 }
+
+// =============================================================================
+// Server
 
 var serverCmd = &cobra.Command{
 	Use:     "server",
@@ -71,13 +83,121 @@ var serverCmd = &cobra.Command{
 }
 
 func runServer(cmd *cobra.Command, args []string) {
+	detach, _ := cmd.Flags().GetBool("detach")
+
+	if detach {
+		exePath, err := os.Executable()
+		if err != nil {
+			fmt.Println("\nERROR:", err)
+			os.Exit(1)
+		}
+
+		logFile, _ := os.Create(logFilePath())
+
+		proc := exec.Command(exePath, "server")
+		proc.Stdout = logFile
+		proc.Stderr = logFile
+		proc.Stdin = nil
+		proc.SysProcAttr = &syscall.SysProcAttr{
+			Setsid: true,
+		}
+
+		if err := proc.Start(); err != nil {
+			fmt.Println("\nERROR:", err)
+			os.Exit(1)
+		}
+
+		pidFile := pidFilePath()
+		if err := os.WriteFile(pidFile, []byte(strconv.Itoa(proc.Process.Pid)), 0644); err != nil {
+			fmt.Println("\nERROR: failed to write pid file:", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("Kronk server started in background (PID: %d)\n", proc.Process.Pid)
+		return
+	}
+
 	if err := kronk.Run(false); err != nil {
 		fmt.Println("\nERROR:", err)
 		os.Exit(1)
 	}
 }
 
+func logFilePath() string {
+	return filepath.Join(defaults.BaseDir(), "kronk.log")
+}
+
 // =============================================================================
+// STOP
+
+var stopCmd = &cobra.Command{
+	Use:   "stop",
+	Short: "Stop the running Kronk model server",
+	Long:  `Stop the running Kronk model server by sending SIGTERM`,
+	Args:  cobra.NoArgs,
+	Run:   runStop,
+}
+
+func runStop(cmd *cobra.Command, args []string) {
+	pidFile := pidFilePath()
+
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		fmt.Println("ERROR: no running server found (pid file not found)")
+		os.Exit(1)
+	}
+
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		fmt.Println("ERROR: invalid pid file")
+		os.Exit(1)
+	}
+
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		fmt.Println("ERROR: could not find process:", err)
+		os.Exit(1)
+	}
+
+	if err := process.Signal(syscall.SIGTERM); err != nil {
+		fmt.Println("ERROR: failed to send signal:", err)
+		os.Exit(1)
+	}
+
+	os.Remove(pidFile)
+	fmt.Printf("Sent SIGTERM to Kronk server (PID: %d)\n", pid)
+}
+
+func pidFilePath() string {
+	return filepath.Join(defaults.BaseDir(), "kronk.pid")
+}
+
+// =============================================================================
+// LOGS
+
+var logsCmd = &cobra.Command{
+	Use:   "logs",
+	Short: "Stream server logs",
+	Long:  `Stream the Kronk model server logs (tail -f)`,
+	Args:  cobra.NoArgs,
+	Run:   runLogs,
+}
+
+func runLogs(cmd *cobra.Command, args []string) {
+	logFile := logFilePath()
+
+	tail := exec.Command("tail", "-f", logFile)
+	tail.Stdout = os.Stdout
+	tail.Stderr = os.Stderr
+
+	if err := tail.Run(); err != nil {
+		fmt.Println("ERROR:", err)
+		os.Exit(1)
+	}
+}
+
+// =============================================================================
+// LIBS
 
 var libsCmd = &cobra.Command{
 	Use:   "libs",
@@ -119,6 +239,7 @@ func runLibs(cmd *cobra.Command, args []string) {
 }
 
 // =============================================================================
+// LIST
 
 var listCmd = &cobra.Command{
 	Use:   "list",
@@ -157,6 +278,7 @@ func runList(cmd *cobra.Command, args []string) {
 }
 
 // =============================================================================
+// PS
 
 var psCmd = &cobra.Command{
 	Use:   "ps",
@@ -173,6 +295,7 @@ func runPs(cmd *cobra.Command, args []string) {
 }
 
 // =============================================================================
+// PULL
 
 var pullCmd = &cobra.Command{
 	Use:   "pull <MODEL_URL> [MMPROJ_URL]",
@@ -208,6 +331,7 @@ func runPull(cmd *cobra.Command, args []string) {
 }
 
 // =============================================================================
+// REMOVE
 
 var removeCmd = &cobra.Command{
 	Use:   "remove MODEL_NAME",
@@ -243,6 +367,7 @@ func runRemove(cmd *cobra.Command, args []string) {
 }
 
 // =============================================================================
+// SHOW
 
 var showCmd = &cobra.Command{
 	Use:   "show <MODEL_NAME>",

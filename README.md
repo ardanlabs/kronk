@@ -51,11 +51,13 @@ Available Commands:
   help        Help about any command
   libs        Install or upgrade llama.cpp libraries
   list        List models
+  logs        Stream Kronk model server logs
   ps          List running models
   pull        Pull a model from the web
   remove      Remove a model
   server      Start Kronk model server
   show        Show information for a model
+  stop        Stop the running Kronk model server
 
 Flags:
   -h, --help      help for kronk
