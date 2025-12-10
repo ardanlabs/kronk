@@ -124,8 +124,8 @@ func newKronk(libPath string, mp tools.ModelPath) (*kronk.Kronk, error) {
 	fmt.Println()
 
 	fmt.Println("- contextWindow:", krn.ModelConfig().ContextWindow)
-	fmt.Println("- embeddings   :", krn.ModelConfig().Embeddings)
-	fmt.Println("- isGPT        :", krn.ModelInfo().IsGPT)
+	fmt.Println("- embeddings   :", krn.ModelInfo().IsEmbedModel)
+	fmt.Println("- isGPT        :", krn.ModelInfo().IsGPTModel)
 
 	return krn, nil
 }

@@ -175,7 +175,7 @@ func (mgr *Manager) AquireModel(ctx context.Context, modelName string) (*kronk.K
 
 	fi, err := tools.FindModel(mgr.modelPath, modelName)
 	if err != nil {
-		return nil, fmt.Errorf("find model: %w", err)
+		return nil, fmt.Errorf("aquire-model: %w", err)
 	}
 
 	krn, err = kronk.New(mgr.instances, model.Config{
@@ -183,7 +183,6 @@ func (mgr *Manager) AquireModel(ctx context.Context, modelName string) (*kronk.K
 		ProjectionFile: fi.ProjFile,
 		Device:         mgr.device,
 		ContextWindow:  mgr.contextWindow,
-		Embeddings:     true,
 	})
 
 	if err != nil {
@@ -206,10 +205,10 @@ func (mgr *Manager) AquireModel(ctx context.Context, modelName string) (*kronk.K
 	info = append(info, modelName)
 	info = append(info, "contextWindow")
 	info = append(info, krn.ModelConfig().ContextWindow)
-	info = append(info, "embeddings")
-	info = append(info, krn.ModelConfig().Embeddings)
-	info = append(info, "isGPT")
-	info = append(info, krn.ModelInfo().IsGPT)
+	info = append(info, "isGPTModel")
+	info = append(info, krn.ModelInfo().IsGPTModel)
+	info = append(info, "isEmbedModel")
+	info = append(info, krn.ModelInfo().IsEmbedModel)
 
 	mgr.log.Info(ctx, "acquire-model", info...)
 
@@ -221,9 +220,9 @@ func (mgr *Manager) eviction(event otter.DeletionEvent[string, *kronk.Kronk]) {
 	ctx, cancel := context.WithTimeout(context.Background(), unloadTimeout)
 	defer cancel()
 
-	mgr.log.Info(ctx, "kronk cache delete", "key", event.Key, "cause", event.Cause, "was-evicted", event.WasEvicted())
+	mgr.log.Info(ctx, "kronk cache eviction", "key", event.Key, "cause", event.Cause, "was-evicted", event.WasEvicted())
 	if err := event.Value.Unload(ctx); err != nil {
-		mgr.log.Info(ctx, "kronk cache delete", "key", event.Key, "ERROR", err)
+		mgr.log.Info(ctx, "kronk cache eviction", "key", event.Key, "ERROR", err)
 	}
 
 	mgr.itemsInCache.Add(-1)

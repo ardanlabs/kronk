@@ -29,7 +29,7 @@ import (
 
 const (
 	modelURL = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
-	// modelURL  = "https://huggingface.co/unsloth/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-Q8_0.gguf"
+	// modelURL       = "https://huggingface.co/unsloth/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-Q8_0.gguf"
 	modelInstances = 1
 )
 
@@ -81,7 +81,7 @@ func run() error {
 
 			d := model.D{
 				"messages":    messages,
-				"tools":       toolDocuments(krn.ModelInfo().IsGPT),
+				"tools":       toolDocuments(krn.ModelInfo().IsGPTModel),
 				"max_tokens":  2048,
 				"temperature": 0.7,
 				"top_p":       0.9,
@@ -156,8 +156,8 @@ func newKronk(libPath string, mp tools.ModelPath) (*kronk.Kronk, error) {
 	fmt.Println()
 
 	fmt.Println("- contextWindow:", krn.ModelConfig().ContextWindow)
-	fmt.Println("- embeddings   :", krn.ModelConfig().Embeddings)
-	fmt.Println("- isGPT        :", krn.ModelInfo().IsGPT)
+	fmt.Println("- embeddings   :", krn.ModelInfo().IsEmbedModel)
+	fmt.Println("- isGPT        :", krn.ModelInfo().IsGPTModel)
 
 	return krn, nil
 }
@@ -285,7 +285,7 @@ loop:
 
 		case model.FinishReasonTool:
 			fmt.Println()
-			if krn.ModelInfo().IsGPT {
+			if krn.ModelInfo().IsGPTModel {
 				fmt.Println()
 			}
 
@@ -315,7 +315,7 @@ loop:
 				reasoning = false
 
 				fmt.Println()
-				if krn.ModelInfo().IsGPT {
+				if krn.ModelInfo().IsGPTModel {
 					fmt.Println()
 				}
 			}

@@ -27,8 +27,7 @@ func testEmbedding(t *testing.T, mp tools.ModelPath) {
 	}
 
 	krn, err := kronk.New(modelInstances, model.Config{
-		ModelFile:  mp.ModelFile,
-		Embeddings: true,
+		ModelFile: mp.ModelFile,
 	})
 
 	if err != nil {
@@ -58,12 +57,36 @@ func testEmbedding(t *testing.T, mp tools.ModelPath) {
 			t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, name, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
 		}()
 
-		embed, err := krn.Embed(ctx, text)
+		embed, err := krn.Embeddings(ctx, text)
 		if err != nil {
 			return fmt.Errorf("embed: %w", err)
 		}
 
-		if embed[0] == 0 || embed[len(embed)-1] == 0 {
+		if embed.Object != "list" {
+			return fmt.Errorf("unexpected object: got %s, exp %s", embed.Object, "list")
+		}
+
+		if embed.Model != krn.ModelInfo().ID {
+			return fmt.Errorf("unexpected model: got %s, exp %s", embed.Model, krn.ModelInfo().ID)
+		}
+
+		if embed.Created == 0 {
+			return fmt.Errorf("unexpected created: got %d", embed.Created)
+		}
+
+		if len(embed.Data) == 0 {
+			return fmt.Errorf("unexpected data length: got %d", len(embed.Data))
+		}
+
+		if embed.Data[0].Object != "embedding" {
+			return fmt.Errorf("unexpected data object: got %s, exp %s", embed.Data[0].Object, "embedding")
+		}
+
+		if embed.Data[0].Index != 0 {
+			return fmt.Errorf("unexpected index: got %d", embed.Data[0].Index)
+		}
+
+		if embed.Data[0].Embedding[0] == 0 || embed.Data[0].Embedding[len(embed.Data[0].Embedding)-1] == 0 {
 			return fmt.Errorf("expected to have values in the embedding")
 		}
 

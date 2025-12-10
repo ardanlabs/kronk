@@ -1,5 +1,5 @@
-// Package chatapp provides the chat api endpoints.
-package chatapp
+// Package embedapp provides the embedding api endpoints.
+package embedapp
 
 import (
 	"context"
@@ -26,7 +26,7 @@ func newApp(log *logger.Logger, krnMgr *krn.Manager) *app {
 	}
 }
 
-func (a *app) chatCompletions(ctx context.Context, r *http.Request) web.Encoder {
+func (a *app) embeddings(ctx context.Context, r *http.Request) web.Encoder {
 	var req model.D
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		return errs.New(errs.InvalidArgument, err)
@@ -47,16 +47,18 @@ func (a *app) chatCompletions(ctx context.Context, r *http.Request) web.Encoder 
 		return errs.New(errs.InvalidArgument, err)
 	}
 
+	if !krn.ModelInfo().IsEmbedModel {
+		return errs.Errorf(errs.InvalidArgument, "model doesn't support embedding")
+	}
+
 	ctx, cancel := context.WithTimeout(ctx, 180*time.Minute)
 	defer cancel()
 
 	d := model.MapToModelD(req)
 
-	delete(req, "messages")
-	delete(req, "tools")
-	a.log.Info(ctx, "chat-completions:REQUEST", "req", req)
+	a.log.Info(ctx, "embedding:REQUEST", "req", req)
 
-	if _, err := krn.ChatStreamingHTTP(ctx, a.log.Info, web.GetWriter(ctx), d); err != nil {
+	if _, err := krn.EmbeddingsHTTP(ctx, a.log.Info, web.GetWriter(ctx), d); err != nil {
 		return errs.New(errs.Internal, err)
 	}
 

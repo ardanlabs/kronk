@@ -109,8 +109,8 @@ func run() error {
 	fmt.Println()
 
 	fmt.Println("- contextWindow:", krnChat.ModelConfig().ContextWindow)
-	fmt.Println("- embeddings   :", krnChat.ModelConfig().Embeddings)
-	fmt.Println("- isGPT        :", krnChat.ModelInfo().IsGPT)
+	fmt.Println("- embeddings   :", krnChat.ModelInfo().IsEmbedModel)
+	fmt.Println("- isGPT        :", krnChat.ModelInfo().IsGPTModel)
 
 	// -------------------------------------------------------------------------
 

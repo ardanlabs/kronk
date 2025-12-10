@@ -168,7 +168,7 @@ func toModelInfo(model tools.ModelInfo) ModelInfoResponse {
 		HasDecoder:    model.Details.HasDecoder,
 		IsRecurrent:   model.Details.IsRecurrent,
 		IsHybrid:      model.Details.IsHybrid,
-		IsGPT:         model.Details.IsGPT,
+		IsGPT:         model.Details.IsGPTModel,
 		Metadata:      model.Details.Metadata,
 	}
 }

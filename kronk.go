@@ -24,12 +24,17 @@ import (
 	- PS command
 	- Detach option on the model server
 	- Expose Embedding endpoint
+	- There is a setting that allows the model to return multiple
+	  tool calls. Parallel bool json:"parallel"
 */
 
 // Version contains the current version of the kronk package.
 const Version = "1.1.4"
 
 // =============================================================================
+
+// Logger is a function type for logging.
+type Logger func(ctx context.Context, msg string, args ...any)
 
 // LogLevel represents the logging level.
 type LogLevel int
@@ -271,11 +276,8 @@ func (krn *Kronk) ChatStreaming(ctx context.Context, d model.D) (<-chan model.Ch
 	return streaming(ctx, krn, f, ef)
 }
 
-// Logger is a function type for logging.
-type Logger func(ctx context.Context, msg string, args ...any)
-
-// ChatCompletions streams the response to an HTTP client.
-func (krn *Kronk) ChatCompletions(ctx context.Context, log Logger, w http.ResponseWriter, d model.D) (model.ChatResponse, error) {
+// ChatStreamingHTTP provides http handler support for a chat/completions call.
+func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, log Logger, w http.ResponseWriter, d model.D) (model.ChatResponse, error) {
 	if _, exists := ctx.Deadline(); !exists {
 		return model.ChatResponse{}, fmt.Errorf("chat-streaming-http:context has no deadline, provide a reasonable timeout")
 	}
@@ -296,14 +298,14 @@ func (krn *Kronk) ChatCompletions(ctx context.Context, log Logger, w http.Respon
 			return model.ChatResponse{}, fmt.Errorf("chat-streaming-http:stream-response: %w", err)
 		}
 
-		d, err := json.Marshal(resp)
+		data, err := json.Marshal(resp)
 		if err != nil {
 			return resp, fmt.Errorf("chat-streaming-http:marshal: %w", err)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write(d)
+		w.Write(data)
 
 		return resp, nil
 	}
@@ -374,17 +376,56 @@ func (krn *Kronk) ChatCompletions(ctx context.Context, log Logger, w http.Respon
 	return lr, nil
 }
 
-// Embed provides support to interact with an embedding model.
-func (krn *Kronk) Embed(ctx context.Context, text string) ([]float32, error) {
-	if _, exists := ctx.Deadline(); !exists {
-		return []float32{}, fmt.Errorf("embed:context has no deadline, provide a reasonable timeout")
+// Embeddings provides support to interact with an embedding model.
+func (krn *Kronk) Embeddings(ctx context.Context, input string) (model.EmbedReponse, error) {
+	if !krn.ModelInfo().IsEmbedModel {
+		return model.EmbedReponse{}, fmt.Errorf("embed:model doesn't support embedding")
 	}
 
-	f := func(m *model.Model) ([]float32, error) {
-		return m.Embed(ctx, text)
+	if _, exists := ctx.Deadline(); !exists {
+		return model.EmbedReponse{}, fmt.Errorf("embed:context has no deadline, provide a reasonable timeout")
+	}
+
+	f := func(m *model.Model) (model.EmbedReponse, error) {
+		return m.Embeddings(ctx, input)
 	}
 
 	return nonStreaming(ctx, krn, f)
+}
+
+// EmbeddingsHTTP provides http handler support for an embeddings call.
+func (krn *Kronk) EmbeddingsHTTP(ctx context.Context, log Logger, w http.ResponseWriter, d model.D) (model.EmbedReponse, error) {
+	if _, exists := ctx.Deadline(); !exists {
+		return model.EmbedReponse{}, fmt.Errorf("embeddings:context has no deadline, provide a reasonable timeout")
+	}
+
+	log(ctx, "embeddings:REQUEST")
+
+	var input string
+	inputReq, ok := d["input"].(string)
+	if ok {
+		input = inputReq
+	}
+
+	if input == "" {
+		return model.EmbedReponse{}, fmt.Errorf("embeddings:missing input parameter")
+	}
+
+	resp, err := krn.Embeddings(ctx, input)
+	if err != nil {
+		return model.EmbedReponse{}, fmt.Errorf("chat-streaming-http:stream-response: %w", err)
+	}
+
+	data, err := json.Marshal(resp)
+	if err != nil {
+		return resp, fmt.Errorf("chat-streaming-http:marshal: %w", err)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(data)
+
+	return resp, nil
 }
 
 // =============================================================================

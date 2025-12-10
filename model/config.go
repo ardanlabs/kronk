@@ -78,7 +78,6 @@ type Config struct {
 	NUBatch        int
 	NThreads       int
 	NThreadsBatch  int
-	Embeddings     bool
 }
 
 func validateConfig(cfg Config) error {
@@ -134,10 +133,10 @@ func adjustContextWindow(cfg Config, model llama.Model) Config {
 	return cfg
 }
 
-func modelCtxParams(cfg Config) llama.ContextParams {
+func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 	ctxParams := llama.ContextDefaultParams()
 
-	if cfg.Embeddings {
+	if mi.IsEmbedModel {
 		ctxParams.Embeddings = 1
 	}
 

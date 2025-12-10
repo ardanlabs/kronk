@@ -53,7 +53,7 @@ func NewModel(cfg Config) (*Model, error) {
 
 	// -------------------------------------------------------------------------
 
-	modelInfo := newModelInfo(cfg, mdl)
+	modelInfo := toModelInfo(cfg, mdl)
 
 	template, err := retrieveTemplate(cfg, mdl, modelInfo)
 	if err != nil {
@@ -66,7 +66,7 @@ func NewModel(cfg Config) (*Model, error) {
 		cfg:       cfg,
 		model:     mdl,
 		vocab:     vocab,
-		ctxParams: modelCtxParams(cfg),
+		ctxParams: modelCtxParams(cfg, modelInfo),
 		template:  template,
 		projFile:  cfg.ProjectionFile,
 		modelInfo: modelInfo,
@@ -92,7 +92,7 @@ func retrieveTemplate(cfg Config, mdl llama.Model, modelInfo ModelInfo) (string,
 	}
 
 	if template == "" {
-		if modelInfo.IsGPT {
+		if modelInfo.IsGPTModel {
 			data, err := jinjaFS.ReadFile("jinja/gpt-oss.jinja")
 			if err != nil {
 				return "", fmt.Errorf("retrieve-template:failed to read gpt-oss.jinja template: %w", err)

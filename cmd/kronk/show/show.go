@@ -86,7 +86,7 @@ func printLocal(mi tools.ModelInfo) {
 	fmt.Printf("HasDecoder:  %t\n", mi.Details.HasDecoder)
 	fmt.Printf("IsRecurrent: %t\n", mi.Details.IsRecurrent)
 	fmt.Printf("IsHybrid:    %t\n", mi.Details.IsHybrid)
-	fmt.Printf("IsGPT:       %t\n", mi.Details.IsGPT)
+	fmt.Printf("IsGPT:       %t\n", mi.Details.IsGPTModel)
 	fmt.Println("Metadata:")
 	for k, v := range mi.Details.Metadata {
 		fmt.Printf("  %s: %s\n", k, v)

@@ -63,13 +63,18 @@ func run() error {
 
 	question := "Why is the sky blue?"
 
-	queryVector, err := krn.Embed(ctx, question)
+	resp, err := krn.Embeddings(ctx, question)
 	if err != nil {
-		return fmt.Errorf("embed: %w", err)
+		return err
 	}
 
 	fmt.Println()
-	fmt.Printf("Query Vector: [%v...%v]\n", queryVector[:3], queryVector[len(queryVector)-3:])
+	fmt.Println("Model  :", resp.Model)
+	fmt.Println("Object :", resp.Object)
+	fmt.Println("Created:", time.UnixMilli(resp.Created))
+	fmt.Println("  Index    :", resp.Data[0].Index)
+	fmt.Println("  Object   :", resp.Data[0].Object)
+	fmt.Printf("  Embedding: [%v...%v]\n", resp.Data[0].Embedding[:3], resp.Data[0].Embedding[len(resp.Data[0].Embedding)-3:])
 
 	return nil
 }
@@ -106,8 +111,7 @@ func newKronk(libPath string, mp tools.ModelPath) (*kronk.Kronk, error) {
 	}
 
 	krn, err := kronk.New(modelInstances, model.Config{
-		ModelFile:  mp.ModelFile,
-		Embeddings: true,
+		ModelFile: mp.ModelFile,
 	})
 
 	if err != nil {
@@ -121,8 +125,8 @@ func newKronk(libPath string, mp tools.ModelPath) (*kronk.Kronk, error) {
 	fmt.Println()
 
 	fmt.Println("  - contextWindow:", krn.ModelConfig().ContextWindow)
-	fmt.Println("  - embeddings   :", krn.ModelConfig().Embeddings)
-	fmt.Println("  - isGPT        :", krn.ModelInfo().IsGPT)
+	fmt.Println("  - embeddings   :", krn.ModelInfo().IsEmbedModel)
+	fmt.Println("  - isGPT        :", krn.ModelInfo().IsGPTModel)
 
 	return krn, nil
 }

@@ -4,6 +4,7 @@ package all
 import (
 	"github.com/ardanlabs/kronk/cmd/kronk/website/app/domain/chatapp"
 	"github.com/ardanlabs/kronk/cmd/kronk/website/app/domain/checkapp"
+	"github.com/ardanlabs/kronk/cmd/kronk/website/app/domain/embedapp"
 	"github.com/ardanlabs/kronk/cmd/kronk/website/app/domain/toolapp"
 	"github.com/ardanlabs/kronk/cmd/kronk/website/app/sdk/mux"
 	"github.com/ardanlabs/kronk/cmd/kronk/website/foundation/web"
@@ -31,6 +32,12 @@ func (add) Add(app *web.App, cfg mux.Config) {
 	})
 
 	chatapp.Routes(app, chatapp.Config{
+		Log:     cfg.Log,
+		Auth:    cfg.Auth,
+		KrnMngr: cfg.KrnMngr,
+	})
+
+	embedapp.Routes(app, embedapp.Config{
 		Log:     cfg.Log,
 		Auth:    cfg.Auth,
 		KrnMngr: cfg.KrnMngr,

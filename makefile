@@ -124,6 +124,14 @@ curl-kronk-chat:
 		] \
     }'
 
+curl-kronk-embeddings:
+	curl -i -X POST http://localhost:3000/v1/embeddings \
+     -H "Content-Type: application/json" \
+     -d '{ \
+	 	"model": "embeddinggemma-300m-qat-Q8_0", \
+  		"input": "Why is the sky blue?" \
+    }'
+
 # ==============================================================================
 # Running OpenWebUI 
 

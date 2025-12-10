@@ -40,11 +40,12 @@ type ModelInfo struct {
 	HasDecoder    bool
 	IsRecurrent   bool
 	IsHybrid      bool
-	IsGPT         bool
+	IsGPTModel    bool
+	IsEmbedModel  bool
 	Metadata      map[string]string
 }
 
-func newModelInfo(cfg Config, model llama.Model) ModelInfo {
+func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 	desc := llama.ModelDesc(model)
 	size := llama.ModelSize(model)
 	encoder := llama.ModelHasEncoder(model)
@@ -84,6 +85,11 @@ func newModelInfo(cfg Config, model llama.Model) ModelInfo {
 		isGPTModel = true
 	}
 
+	var isEmbedModel bool
+	if strings.Contains(modelID, "embed") {
+		isEmbedModel = true
+	}
+
 	return ModelInfo{
 		ID:            modelID,
 		HasProjection: cfg.ProjectionFile != "",
@@ -93,12 +99,16 @@ func newModelInfo(cfg Config, model llama.Model) ModelInfo {
 		HasDecoder:    decoder,
 		IsRecurrent:   recurrent,
 		IsHybrid:      hybrid,
-		IsGPT:         isGPTModel,
+		IsGPTModel:    isGPTModel,
+		IsEmbedModel:  isEmbedModel,
 		Metadata:      metadata,
 	}
 }
 
 // =============================================================================
+
+// D represents a generic docment of fields and values.
+type D map[string]any
 
 // TextMessage create a new text message.
 func TextMessage(role string, content string) D {
@@ -123,8 +133,49 @@ func DocumentArray(doc ...D) []D {
 	return msgs
 }
 
-// D represents a generic docment of fields and values.
-type D map[string]any
+// MapToModelD converts a map[string]any to a D.
+func MapToModelD(m map[string]any) D {
+	d := make(D, len(m))
+
+	for k, v := range m {
+		d[k] = convertValue(v)
+	}
+
+	return d
+}
+
+func convertValue(v any) any {
+	switch val := v.(type) {
+	case map[string]any:
+		return MapToModelD(val)
+
+	case []any:
+		allMaps := true
+		for _, elem := range val {
+			if _, ok := elem.(map[string]any); !ok {
+				allMaps = false
+				break
+			}
+		}
+
+		if allMaps {
+			result := make([]D, len(val))
+			for i, elem := range val {
+				result[i] = convertValue(elem).(D)
+			}
+			return result
+		}
+
+		for i, elem := range val {
+			val[i] = convertValue(elem)
+		}
+
+		return val
+
+	default:
+		return v
+	}
+}
 
 // =============================================================================
 
@@ -162,7 +213,7 @@ type Usage struct {
 	TokensPerSecond  float64 `json:"tokens_per_second"`
 }
 
-// ChatResponse represents output for chat and vision models.
+// ChatResponse represents output for inference models.
 type ChatResponse struct {
 	ID      string   `json:"id"`
 	Object  string   `json:"object"`
@@ -256,5 +307,37 @@ func ChatResponseErr(id string, object string, model string, index int, prompt s
 		},
 		Usage:  u,
 		Prompt: prompt,
+	}
+}
+
+// =============================================================================
+
+// EmbedData represents the data associated with an embedding call.
+type EmbedData struct {
+	Object    string    `json:"object"`
+	Index     int       `json:"index"`
+	Embedding []float32 `json:"embedding"`
+}
+
+// EmbedReponse represents the output for an embedding call.
+type EmbedReponse struct {
+	Object  string      `json:"object"`
+	Created int64       `json:"created"`
+	Model   string      `json:"model"`
+	Data    []EmbedData `json:"data"`
+}
+
+func toEmbedResponse(modelID string, vec []float32) EmbedReponse {
+	return EmbedReponse{
+		Object:  "list",
+		Created: time.Now().UnixMilli(),
+		Model:   modelID,
+		Data: []EmbedData{
+			{
+				Object:    "embedding",
+				Index:     0,
+				Embedding: vec,
+			},
+		},
 	}
 }

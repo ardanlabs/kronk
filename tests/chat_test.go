@@ -211,7 +211,7 @@ func initChatTest(t *testing.T, mp tools.ModelPath, tooling bool) (*kronk.Kronk,
 	}
 
 	if tooling {
-		switch krn.ModelInfo().IsGPT {
+		switch krn.ModelInfo().IsGPTModel {
 		case true:
 			d["tools"] = []model.D{
 				{
