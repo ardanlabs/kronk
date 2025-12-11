@@ -2,63 +2,44 @@ package model
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
-func (m *Model) thinkStart(token llama.Token, reasonFlag *int, reasonTokens *int) llama.Batch {
-	*reasonFlag = 1
+func parseGPTToolCall(content string) []ResponseToolCall {
+	// .get_weather <|constrain|>json<|message|>{"location":"NYC"}
+	// .get_weather <|constrain|>json<|message|>{"location":"NYC"}
 
-	batch := m.nextBatch(token)
-	*reasonTokens += int(batch.NTokens)
+	var jsonCalls []string
 
-	return batch
-}
-
-func (m *Model) thinkStop(token llama.Token, reasonFlag *int, completionTokens *int) llama.Batch {
-	*reasonFlag = 0
-
-	batch := m.nextBatch(token)
-	*completionTokens += int(batch.NTokens)
-
-	return batch
-}
-
-func (m *Model) toolCall(lctx llama.Context, token llama.Token, sampler llama.Sampler, buf []byte) (llama.Batch, string, error) {
-	var batch llama.Batch
-	var content string
-	var err error
-	var data strings.Builder
-
-	// Collect the content up to the location of </tool_call>.
-	for {
-		batch = m.nextBatch(token)
-		content, token, err = m.batchResponse(lctx, batch, sampler, buf)
-		if err != nil {
-			return batch, "", err
+	for call := range strings.SplitSeq(content, "\n") {
+		if call == "" {
+			continue
 		}
 
-		if content == "</tool_call>" {
-			break
+		// Extract tool name (remove leading dot)
+		parts := strings.SplitN(call, " ", 2)
+		name := strings.TrimPrefix(parts[0], ".")
+
+		// Extract arguments JSON after <|message|>
+		var args string
+		if idx := strings.Index(call, "<|message|>"); idx != -1 {
+			args = call[idx+11:]
 		}
 
-		data.WriteString(content)
+		// Build JSON: {"name":"get_weather","arguments":{"location":"NYC"}}
+		jsonCall := `{"name":"` + name + `","arguments":` + args + `}`
+		jsonCalls = append(jsonCalls, jsonCall)
 	}
 
-	content = strings.Trim(data.String(), "\n")
-	content = fmt.Sprintf("%s\n", content)
-
-	batch = m.nextBatch(token)
-
-	return batch, content, nil
+	return parseToolCall(strings.Join(jsonCalls, "\n"))
 }
 
-// =============================================================================
-
 func parseToolCall(content string) []ResponseToolCall {
+	// {"name":"get_weather", "arguments":{"location":"NYC"})
+	// {"name":"get_weather", "arguments":{"location":"NYC"})
+
 	var toolCalls []ResponseToolCall
 
 	for call := range strings.SplitSeq(content, "\n") {
@@ -74,8 +55,8 @@ func parseToolCall(content string) []ResponseToolCall {
 
 		default:
 			if err := json.Unmarshal([]byte(call), &toolCall); err != nil {
-				toolCall.Error = err.Error()
 				toolCall.Status = 2
+				toolCall.Error = err.Error()
 			}
 		}
 

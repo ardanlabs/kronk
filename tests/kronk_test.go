@@ -141,7 +141,9 @@ func testChatResponse(resp model.ChatResponse, modelName string, object string, 
 	funct = strings.ToLower(funct)
 	resp.Choice[0].Delta.Reasoning = strings.ToLower(resp.Choice[0].Delta.Reasoning)
 	resp.Choice[0].Delta.Content = strings.ToLower(resp.Choice[0].Delta.Content)
-	resp.Choice[0].Delta.ToolCalls[0].Name = strings.ToLower(resp.Choice[0].Delta.ToolCalls[0].Name)
+	if len(resp.Choice[0].Delta.ToolCalls) > 0 {
+		resp.Choice[0].Delta.ToolCalls[0].Name = strings.ToLower(resp.Choice[0].Delta.ToolCalls[0].Name)
+	}
 
 	if object == model.ObjectChatText {
 		switch {

@@ -2,8 +2,6 @@
 
 ### MODEL SERVER / TOOLING
 
-- There is a setting that allows the model to return multiple
-  tool calls. Parallel bool json:"parallel"
 - Solidfy the auth system
   - CLI tooling to create tokens
   - Provide Auth at the endpoint level (completion/embeddings)

@@ -191,12 +191,32 @@ func (m *Model) processChatRequest(ctx context.Context, id string, lctx llama.Co
 	// Capture the time we start processing the request for a wall clock.
 	now := time.Now()
 
+	// We need to know if we are processing a standard or GPT model.
+	isGTP := m.modelInfo.IsGPTModel
+
+	// Create a processor to process the tokens.
+	processor := newProcessor(m)
+
 loop:
 	for outputTokens <= params.MaxTokens {
+		var err error
+		var token llama.Token
+		var resp response
+
 		index++
 
-		// For the given batch, extract the response.
-		content, token, err := m.batchResponse(lctx, batch, sampler, buf)
+		// ---------------------------------------------------------------------
+
+		// Process a set of tokens based on the model class.
+		switch isGTP {
+		case true:
+			resp, token, err = processor.gpt(lctx, batch, sampler, buf)
+
+		default:
+			resp, token, err = processor.standard(lctx, batch, sampler, buf)
+		}
+
+		// Did we get an error or are we at the end of the token stream.
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				break loop
@@ -213,125 +233,92 @@ loop:
 		}
 
 		// ---------------------------------------------------------------------
-		// Look for special tags that we will parse out of the response.
 
-		switch content {
-		case "<think>":
-			batch = m.thinkStart(token, &reasonFlag, &reasonTokens)
-			continue
+		// Set the flags so we know how to process the response.
+		switch resp.status {
+		case statusReasoning:
+			reasonFlag++
+			completionFlag = 0
+			toolFlag = 0
 
-		case "</think>":
-			batch = m.thinkStop(token, &reasonFlag, &completionTokens)
-			continue
+		case statusCompletion:
+			reasonFlag = 0
+			completionFlag++
+			toolFlag = 0
 
-		case "<tool_call>":
-			batch, content, err = m.toolCall(lctx, token, sampler, buf)
-			if err != nil {
-				m.sendErrorResponse(ctx, ch, id, object, index, prompt, err, Usage{
-					PromptTokens:     inputTokens,
-					ReasoningTokens:  reasonTokens,
-					CompletionTokens: completionTokens,
-					OutputTokens:     outputTokens,
-					TotalTokens:      inputTokens + outputTokens,
-				})
-				return
-			}
+		case statusTooling:
+			reasonFlag = 0
+			completionFlag = 0
+			toolFlag++
 
-			toolFlag = 1
-			finalTooling.WriteString(content)
-			continue
-
-		case "<|channel|>":
-			batch, content, err = m.gptChannel(lctx, token, sampler, buf)
-			if err != nil {
-				m.sendErrorResponse(ctx, ch, id, object, index, prompt, err, Usage{
-					PromptTokens:     inputTokens,
-					ReasoningTokens:  reasonTokens,
-					CompletionTokens: completionTokens,
-					OutputTokens:     outputTokens,
-					TotalTokens:      inputTokens + outputTokens,
-				})
-				return
-			}
-
-			switch {
-			case content == "<|reasoning|>":
-				reasonFlag = 1
-				continue
-
-			case content == "<|completion|>":
-				reasonFlag = 0
-				continue
-
-			case content[:13] == "<|tool_call|>":
-				toolFlag = 1
-				finalTooling.WriteString(content[13:])
-				break loop
-			}
-
-		case "<|end|>":
-			batch, err = m.gptEnd(lctx, token, sampler, buf)
-			if err != nil {
-				m.sendErrorResponse(ctx, ch, id, object, index, prompt, err, Usage{
-					PromptTokens:     inputTokens,
-					ReasoningTokens:  reasonTokens,
-					CompletionTokens: completionTokens,
-					OutputTokens:     outputTokens,
-					TotalTokens:      inputTokens + outputTokens,
-				})
-				return
-			}
-			continue
-		}
-
-		// ---------------------------------------------------------------------
-
-		// At the start or end of a mode we might have an extra CRLF we
-		// don't need.
-		if m.isUnncessaryCRLF(reasonFlag, completionFlag, content) {
+		default:
 			batch = m.nextBatch(token)
 			continue
 		}
 
+		// ---------------------------------------------------------------------
+
 		// Capture the time it took to process these tokens and calculate
 		// the tokens per second.
+
 		elapsedSeconds := time.Since(now).Seconds()
 		tokensPerSecond = float64(outputTokens) / elapsedSeconds
 
 		// ---------------------------------------------------------------------
-		// We have reasoning or completion content to return to the client and
-		// store for the final response.
 
-		err = m.sendDeltaResponse(ctx, ch, id, object, index, prompt, content, reasonFlag,
-			Usage{
-				PromptTokens:     inputTokens,
-				ReasoningTokens:  reasonTokens,
-				CompletionTokens: completionTokens,
-				OutputTokens:     outputTokens,
-				TotalTokens:      inputTokens + outputTokens,
-				TokensPerSecond:  tokensPerSecond,
-			},
-		)
+		// Do this if we are not processing tooling tokens.
+		if toolFlag == 0 {
+			// At the start or end of a mode we might have an extra CRLF we don't need.
+			if m.isUnncessaryCRLF(reasonFlag, completionFlag, resp.content) {
+				batch = m.nextBatch(token)
+				continue
+			}
 
-		if err != nil {
-			return
+			// We have reasoning or completion content to return to the client.
+			err = m.sendDeltaResponse(ctx, ch, id, object, index, prompt, resp.content, reasonFlag,
+				Usage{
+					PromptTokens:     inputTokens,
+					ReasoningTokens:  reasonTokens,
+					CompletionTokens: completionTokens,
+					OutputTokens:     outputTokens,
+					TotalTokens:      inputTokens + outputTokens,
+					TokensPerSecond:  tokensPerSecond,
+				},
+			)
+
+			if err != nil {
+				return
+			}
 		}
 
-		m.storeFinalContent(&finalReasoning, &finalContent, content, reasonFlag)
+		// ---------------------------------------------------------------------
+
+		// Store content for the final response.
+		switch {
+		case reasonFlag > 0:
+			finalReasoning.WriteString(resp.content)
+
+		case toolFlag > 0:
+			finalTooling.WriteString(resp.content)
+
+		default:
+			finalContent.WriteString(resp.content)
+		}
 
 		// ---------------------------------------------------------------------
-		// Get the next batch to process the next piece of content.
 
+		// Get the next batch to process the next piece of content.
 		batch = m.nextBatch(token)
 
+		// ---------------------------------------------------------------------
+
+		// Calculate token counts.
 		switch {
 		case reasonFlag > 0:
 			reasonTokens += int(batch.NTokens)
-			reasonFlag++
 
 		default:
 			completionTokens += int(batch.NTokens)
-			completionFlag++
 		}
 
 		outputTokens = reasonTokens + completionTokens
@@ -339,9 +326,10 @@ loop:
 
 	// -------------------------------------------------------------------------
 
-	// Parse the tool call response to structured data.
+	// If a tool call was provided, count tokens and process the tool call
+	// response into the slice of ResponseToolCall.
 	var respToolCalls []ResponseToolCall
-	if toolFlag == 1 {
+	if toolFlag > 0 {
 		content := finalTooling.String()
 		content = strings.TrimSuffix(content, "\n")
 
@@ -355,8 +343,15 @@ loop:
 			outputTokens = reasonTokens + completionTokens
 		}
 
-		respToolCalls = parseToolCall(content)
+		switch isGTP {
+		case true:
+			respToolCalls = parseGPTToolCall(content)
+		default:
+			respToolCalls = parseToolCall(content)
+		}
 	}
+
+	// -------------------------------------------------------------------------
 
 	// Send the final response that contains eveything we have sent plus
 	// the final usage numbers.
@@ -427,20 +422,11 @@ func (m *Model) isUnncessaryCRLF(reasonFlag int, completionFlag int, content str
 	}
 
 	// We just started completion so remove leading CR.
-	if reasonFlag == 0 && completionFlag == 0 && (content == "\x0A\x0A" || content == "\x0A") {
+	if completionFlag == 1 && (content == "\x0A\x0A" || content == "\x0A") {
 		return true
 	}
 
 	return false
-}
-
-func (m *Model) storeFinalContent(finalReasoning *strings.Builder, finalContent *strings.Builder, content string, reasonFlag int) {
-	switch {
-	case reasonFlag > 0:
-		finalReasoning.WriteString(content)
-	default:
-		finalContent.WriteString(content)
-	}
 }
 
 func (m *Model) sendDeltaResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, index int, prompt string, content string, reasonFlag int, usage Usage) error {
