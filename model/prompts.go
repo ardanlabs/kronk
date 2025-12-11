@@ -156,8 +156,6 @@ func newTemplateWithFixedItems(source string) (*exec.Template, error) {
 	return exec.NewTemplate(rootID, gonja.DefaultConfig, shiftedLoader, &env)
 }
 
-// =============================================================================
-
 func readJinjaTemplate(fileName string) (string, error) {
 	data, err := os.ReadFile(fileName)
 	if err != nil {
@@ -167,187 +165,114 @@ func readJinjaTemplate(fileName string) (string, error) {
 	return string(data), nil
 }
 
-func isOpenAIMediaRequest(req D) bool {
-	messages, ok := req["messages"].([]D)
-	if !ok {
-		return false
+// =============================================================================
+
+func isOpenAIMediaRequest(req D) (chatMessages, bool, error) {
+	msgs, err := toChatMessages(req)
+	if err != nil {
+		return chatMessages{}, false, fmt.Errorf("chat message conversion: %w", err)
 	}
 
-	for _, doc := range messages {
-		contentField, exists := doc["content"]
-		if !exists {
-			continue
-		}
-
-		contentDocs, ok := contentField.([]D)
-		if !ok {
-			continue
-		}
-
-		for _, contentDoc := range contentDocs {
-			typ, _ := contentDoc["type"].(string)
-			if typ == "image_url" || typ == "image" || typ == "video_url" || typ == "audio_url" {
-				return true
-			}
+	for _, msg := range msgs.Messages {
+		_, ok := msg.Content.([]chatMessageContent)
+		if ok {
+			return msgs, true, nil
 		}
 	}
 
-	return false
+	return msgs, false, nil
 }
 
-func openAIToMediaMessage(req D) (D, error) {
-	type tm struct {
+func toMediaMessage(req D, msgs chatMessages) (D, error) {
+	type mediaMessage struct {
 		text string
 		data []byte
 	}
 
-	var textMedia []tm
+	var mediaMessages []mediaMessage
 
-	// OpenAI spec.
-	// Understand the template for a model can be coded differently
-	// but I've noticed they all support the content field having the
-	// raw media. So this code will conform to that standard.
-	// Look at model.ImageMessage for the format.
+	var found int
+	var mediaText string
+	var mediaData string
 
-	messages, ok := req["messages"].([]D)
-	if !ok {
-		return nil, errors.New("missing messages field")
-	}
+	// -------------------------------------------------------------------------
 
-	// Iterate over the message documents looking for media content.
-	for _, doc := range messages {
-		// We expect to find a content field.
-		contentField, exists := doc["content"]
-		if !exists {
-			return nil, errors.New("expecting content field")
-		}
-
-		// If the content field is a string, we only have text and no
-		// media to go this is message.
-		contentText, ok := contentField.(string)
-		if ok {
-			textMedia = append(textMedia, tm{
-				text: contentText,
+	for _, msg := range msgs.Messages {
+		switch content := msg.Content.(type) {
+		case string:
+			mediaMessages = append(mediaMessages, mediaMessage{
+				text: content,
 			})
 			continue
-		}
 
-		// Check if the content is the binary data or OpenAI spec.
-		contentDocs, ok := contentField.([]D)
-		if !ok {
-			return nil, fmt.Errorf("expecting the content field to be an array of docs, %T", contentField)
-		}
+		default:
+			for _, cm := range msg.Content.([]chatMessageContent) {
+				switch cm.Type {
+				case "text":
+					found++
+					mediaText = cm.Text
 
-		// WE NOW HAVE MEDIA
+				case "image_url":
+					found++
+					mediaData = cm.ImageURL.URL
 
-		// The text and media will be in 2 separate documents.
-		// We expect to have text with the media.
-		if len(contentDocs) != 2 {
-			return nil, errors.New("expecting 2 documents inside the content field")
-		}
+				case "input_audio":
+					found++
+					mediaData = cm.AudioData.Data
+				}
 
-		var found int
-		var mediaText string
-		var mediaData []byte
-
-		for _, contentDoc := range contentDocs {
-			// We should have a text field of type string. I don't need
-			// to check the type because I'll just get the zero value
-			// string if the caller made a mistake.
-			typ, _ := contentDoc["type"].(string)
-
-			// If the type is "text" we need to capture this content.
-			if typ == "text" {
-				textContent, _ := contentDoc["text"].(string)
-
-				// We found text so let's mark that.
-				found++
-
-				mediaText = textContent
-
-				// If we found both the text and data, save it.
 				if found == 2 {
-					textMedia = append(textMedia, tm{
+					decoded, err := decodeMediaData(mediaData)
+					if err != nil {
+						return req, err
+					}
+
+					mediaMessages = append(mediaMessages, mediaMessage{
 						text: mediaText,
-						data: mediaData,
+						data: decoded,
 					})
 
 					found = 0
 					mediaText = ""
-					mediaData = nil
+					mediaData = ""
 				}
-
-				// Continue on to the next document in the slice.
-				continue
-			}
-
-			// We expect to have a field that matched the type value.
-			mediaContent, exists := contentDoc[typ]
-			if !exists {
-				return nil, fmt.Errorf("missing %q field under content", typ)
-			}
-
-			// We expect this field to be a document.
-			mediaField, ok := mediaContent.(D)
-			if !ok {
-				return nil, fmt.Errorf("%q field is not a document, %T", typ, mediaField)
-			}
-
-			// We expect this document to have a url field.
-			base64Data, exists := mediaField["url"]
-			if !exists {
-				base64Data, exists = mediaField["data"]
-				if !exists {
-					return nil, errors.New("expecting url or data field")
-				}
-			}
-
-			data, ok := base64Data.(string)
-			if !ok {
-				return nil, errors.New("expecting media to be a base64 string")
-			}
-
-			// Remove the data URI marker if present (e.g., "data:image/png;base64,")
-			if idx := strings.Index(data, ";base64,"); idx != -1 && strings.HasPrefix(data, "data:") {
-				data = data[idx+8:]
-			}
-
-			// Decode the base64 data back to binary data.
-			decoded, err := base64.StdEncoding.DecodeString(data)
-			if err != nil {
-				return nil, fmt.Errorf("unable to decode base64 data: %w", err)
-			}
-
-			// We found media so let's mark that.
-			found++
-			mediaData = decoded
-
-			// If we found both the text and data, save it.
-			if found == 2 {
-				textMedia = append(textMedia, tm{
-					text: mediaText,
-					data: mediaData,
-				})
-
-				found = 0
-				mediaText = ""
-				mediaData = nil
 			}
 		}
 	}
 
-	docs := make([]D, 0, len(textMedia))
-	for _, tm := range textMedia {
-		if len(tm.data) > 0 {
-			msgs := MediaMessage(tm.text, tm.data)
+	// -------------------------------------------------------------------------
+
+	// Here is take all the data we found (text, data) and convert everything
+	// to the MediaMessage format is a generic format most model templates
+	// support.
+
+	docs := make([]D, 0, len(mediaMessages))
+
+	for _, mm := range mediaMessages {
+		if len(mm.data) > 0 {
+			msgs := MediaMessage(mm.text, mm.data)
 			docs = append(docs, msgs...)
 			continue
 		}
 
-		docs = append(docs, TextMessage("user", tm.text))
+		docs = append(docs, TextMessage("user", mm.text))
 	}
 
 	req["messages"] = docs
 
 	return req, nil
+}
+
+func decodeMediaData(data string) ([]byte, error) {
+	if idx := strings.Index(data, ";base64,"); idx != -1 && strings.HasPrefix(data, "data:") {
+		data = data[idx+8:]
+	}
+
+	// Decode the base64 data back to binary data.
+	decoded, err := base64.StdEncoding.DecodeString(data)
+	if err != nil {
+		return nil, fmt.Errorf("unable to decode base64 data: %w", err)
+	}
+
+	return decoded, nil
 }
