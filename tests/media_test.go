@@ -154,10 +154,7 @@ func initMediaTest(t *testing.T, mp tools.ModelPath, mediaFile string) (*kronk.K
 	// -------------------------------------------------------------------------
 
 	d := model.D{
-		"messages": model.DocumentArray(
-			model.TextMessage("user", "What is in this picture?"),
-			model.MediaMessage(media),
-		),
+		"messages":   model.MediaMessage("What is in this picture?", media),
 		"max_tokens": 2048,
 	}
 

@@ -181,6 +181,7 @@ test: install-libraries install-models
 	export GITHUB_WORKSPACE=$(shell pwd) && \
 	CGO_ENABLED=0 go test -v -count=1 ./tests
 	CGO_ENABLED=0 go test -v -count=1 ./cache
+	CGO_ENABLED=0 go test -v -count=1 ./model
 
 # ==============================================================================
 # Go Modules support

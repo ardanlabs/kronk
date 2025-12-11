@@ -21,7 +21,7 @@ import (
 )
 
 // Version contains the current version of the kronk package.
-const Version = "1.2.0"
+const Version = "1.2.1"
 
 // =============================================================================
 
@@ -147,8 +147,6 @@ func (krn *Kronk) ModelConfig() model.Config {
 
 // SystemInfo returns system information.
 func (krn *Kronk) SystemInfo() map[string]string {
-	// Metal : EMBED_LIBRARY = 1 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | DOTPROD = 1 | LLAMAFILE = 1 | ACCELERATE = 1 | REPACK = 1 |
-
 	result := make(map[string]string)
 
 	for part := range strings.SplitSeq(llama.PrintSystemInfo(), "|") {
@@ -163,11 +161,12 @@ func (krn *Kronk) SystemInfo() map[string]string {
 		}
 
 		// Check for "Key : Value" pattern
-		if kv := strings.SplitN(part, ":", 2); len(kv) == 2 {
+		switch kv := strings.SplitN(part, ":", 2); len(kv) {
+		case 2:
 			key := strings.TrimSpace(kv[0])
 			value := strings.TrimSpace(kv[1])
 			result[key] = value
-		} else {
+		default:
 			result[part] = "on"
 		}
 	}

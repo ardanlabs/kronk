@@ -86,7 +86,7 @@ func NewLibConfig(libPath string, archStr string, osStr string, procStr string, 
 // DownloadLibraries performs a complete workflow for downloading and installing
 // the latest version of llama.cpp.
 func DownloadLibraries(ctx context.Context, log kronk.Logger, libCfg LibConfig) (VersionTag, error) {
-	log(ctx, "download-libraries", "status", "check libraries version information", "arch", libCfg.Arch, "os", libCfg.OS, "processor", libCfg.Processor)
+	log(ctx, "download-libraries:", "status", "check libraries version information", "arch", libCfg.Arch, "os", libCfg.OS, "processor", libCfg.Processor)
 
 	tag, err := VersionInformation(libCfg.LibPath)
 	if err != nil {
@@ -94,19 +94,19 @@ func DownloadLibraries(ctx context.Context, log kronk.Logger, libCfg LibConfig) 
 			return VersionTag{}, fmt.Errorf("download-libraries:error retrieving version info: %w", err)
 		}
 
-		log(ctx, "download-libraries", "status", "unable to check latest verion, using installed version", "arch", libCfg.Arch, "os", libCfg.OS, "processor", libCfg.Processor, "latest", tag.Latest, "current", tag.Version)
+		log(ctx, "download-libraries:", "status", "unable to check latest verion, using installed version", "arch", libCfg.Arch, "os", libCfg.OS, "processor", libCfg.Processor, "latest", tag.Latest, "current", tag.Version)
 		return tag, nil
 	}
 
-	log(ctx, "download-libraries", "status", "check llama.cpp installation", "arch", libCfg.Arch, "os", libCfg.OS, "processor", libCfg.Processor, "latest", tag.Latest, "current", tag.Version)
+	log(ctx, "download-libraries:", "status", "check llama.cpp installation", "arch", libCfg.Arch, "os", libCfg.OS, "processor", libCfg.Processor, "latest", tag.Latest, "current", tag.Version)
 
 	if isTagMatch(tag, libCfg) {
-		log(ctx, "download-libraries", "status", "already installed", "latest", tag.Latest, "current", tag.Version)
+		log(ctx, "download-libraries:", "status", "already installed", "latest", tag.Latest, "current", tag.Version)
 		return tag, nil
 	}
 
 	if !libCfg.AllowUpgrade {
-		log(ctx, "download-libraries", "status", "bypassing upgrade", "latest", tag.Latest, "current", tag.Version)
+		log(ctx, "download-libraries:", "status", "bypassing upgrade", "latest", tag.Latest, "current", tag.Version)
 		return tag, nil
 	}
 
@@ -114,16 +114,16 @@ func DownloadLibraries(ctx context.Context, log kronk.Logger, libCfg LibConfig) 
 
 	newTag, err := downloadLibs(ctx, log, libCfg, tag.Latest)
 	if err != nil {
-		log(ctx, "download-libraries", "status", "llama.cpp installation", "ERROR", err)
+		log(ctx, "download-libraries:", "status", "llama.cpp installation", "ERROR", err)
 
 		if _, err := InstalledVersion(libCfg.LibPath); err != nil {
 			return VersionTag{}, fmt.Errorf("download-libraries:failed to install llama: %q: error: %w", libCfg.LibPath, err)
 		}
 
-		log(ctx, "download-libraries", "status", "failed to install new version, using current version")
+		log(ctx, "download-libraries:", "status", "failed to install new version, using current version")
 	}
 
-	log(ctx, "download-libraries", "status", "updated llama.cpp installed", "old-version", tag.Version, "current", newTag.Version)
+	log(ctx, "download-libraries:", "status", "updated llama.cpp installed", "old-version", tag.Version, "current", newTag.Version)
 
 	return newTag, nil
 }
@@ -166,7 +166,7 @@ func downloadLibs(ctx context.Context, log kronk.Logger, cfg LibConfig, version 
 	tempPath := filepath.Join(cfg.LibPath, "temp")
 
 	progress := func(src string, currentSize int64, totalSize int64, mibPerSec float64, complete bool) {
-		log(ctx, fmt.Sprintf("\x1b[1A\r\x1b[Kdownload-libs: Downloading %s... %d MiB of %d MiB (%.2f MiB/s)", src, currentSize/(1024*1024), totalSize/(1024*1024), mibPerSec))
+		log(ctx, fmt.Sprintf("\x1b[1A\r\x1b[Kdownload-libraries: Downloading %s... %d MiB of %d MiB (%.2f MiB/s)", src, currentSize/(1024*1024), totalSize/(1024*1024), mibPerSec))
 	}
 
 	pr := NewProgressReader(progress, SizeIntervalMIB10)

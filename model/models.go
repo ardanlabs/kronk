@@ -1,6 +1,9 @@
 package model
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
 	"path"
 	"path/filepath"
 	"strings"
@@ -119,9 +122,16 @@ func TextMessage(role string, content string) D {
 }
 
 // MediaMessage create a new media message.
-func MediaMessage(media []byte) D {
-	return D{
-		"content": media,
+func MediaMessage(text string, media []byte) []D {
+	return []D{
+		{
+			"role":    "user",
+			"content": media,
+		},
+		{
+			"role":    "user",
+			"content": text,
+		},
 	}
 }
 
@@ -340,4 +350,89 @@ func toEmbedResponse(modelID string, vec []float32) EmbedReponse {
 			},
 		},
 	}
+}
+
+// =============================================================================
+
+type chatMessageImageData struct {
+	// Only base64 encoded image is currently supported.
+	URL string `json:"url"`
+}
+
+type chatMessageAudioData struct {
+	// Only base64 encoded audio is currently supported.
+	Data string `json:"data"`
+}
+
+type chatMessageContent struct {
+	Type      string               `json:"type"`
+	Text      string               `json:"text"`
+	ImageURL  chatMessageImageData `json:"image_url"`
+	AudioData chatMessageAudioData `json:"input_audio"`
+}
+
+type chatMessage struct {
+	Role    string `json:"role"`
+	Content any    `json:"content"` // string | []chatMessageContent
+}
+
+func (ccm *chatMessage) UnmarshalJSON(b []byte) error {
+	var app struct {
+		Role    string          `json:"role"`
+		Content json.RawMessage `json:"content"`
+	}
+
+	if err := json.Unmarshal(b, &app); err != nil {
+		return err
+	}
+
+	if len(app.Content) == 0 {
+		return errors.New("invalid input document")
+	}
+
+	var content any
+
+	switch app.Content[0] {
+	case '"':
+		var str string
+		err := json.Unmarshal(app.Content, &str)
+		if err != nil {
+			return err
+		}
+
+		content = str
+
+	default:
+		var multiContent []chatMessageContent
+		if err := json.Unmarshal(app.Content, &multiContent); err != nil {
+			return err
+		}
+
+		content = multiContent
+	}
+
+	*ccm = chatMessage{
+		Role:    app.Role,
+		Content: content,
+	}
+
+	return nil
+}
+
+type chatMessages struct {
+	Messages []chatMessage `json:"messages"`
+}
+
+func toChatMessages(d D) (chatMessages, error) {
+	jsonData, err := json.Marshal(d)
+	if err != nil {
+		return chatMessages{}, fmt.Errorf("marshaling: %w", err)
+	}
+
+	var msgs chatMessages
+	if err := json.Unmarshal(jsonData, &msgs); err != nil {
+		return chatMessages{}, fmt.Errorf("unmarshaling: %w", err)
+	}
+
+	return msgs, nil
 }

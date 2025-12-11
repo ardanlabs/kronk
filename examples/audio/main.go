@@ -139,10 +139,7 @@ func performChat(ctx context.Context, krn *kronk.Kronk, question string, imageFi
 	fmt.Printf("\nQuestion: %s\n", question)
 
 	d := model.D{
-		"messages": model.DocumentArray(
-			model.TextMessage("user", question),
-			model.MediaMessage(image),
-		),
+		"messages":    model.MediaMessage(question, image),
 		"max_tokens":  2048,
 		"temperature": 0.7,
 		"top_p":       0.9,

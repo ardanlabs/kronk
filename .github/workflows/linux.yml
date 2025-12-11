@@ -55,6 +55,7 @@ jobs:
           export RUN_IN_PARALLEL=0
           CGO_ENABLED=0 go test -v -count=1 ./tests
           CGO_ENABLED=0 go test -v -count=1 ./cache
+          CGO_ENABLED=0 go test -v -count=1 ./model
       - name: Delete existing models cache
         if: github.ref == 'refs/heads/main' && steps.cache-models.outputs.cache-hit != 'true'
         env:
