@@ -89,7 +89,7 @@ func (a *app) pullLibs(ctx context.Context, r *http.Request) web.Encoder {
 func (a *app) listModels(ctx context.Context, r *http.Request) web.Encoder {
 	modelPath := a.cache.ModelPath()
 
-	models, err := tools.ListModels(modelPath)
+	models, err := tools.RetrieveModelFiles(modelPath)
 	if err != nil {
 		return errs.Errorf(errs.Internal, "unable to retrieve model list: %s", err)
 	}
@@ -173,7 +173,7 @@ func (a *app) removeModel(ctx context.Context, r *http.Request) web.Encoder {
 
 	a.log.Info(ctx, "tool-remove", "modelName", modelName)
 
-	mp, err := tools.FindModel(modelPath, modelName)
+	mp, err := tools.RetrieveModelPath(modelPath, modelName)
 	if err != nil {
 		return errs.New(errs.InvalidArgument, err)
 	}
@@ -190,7 +190,7 @@ func (a *app) showModel(ctx context.Context, r *http.Request) web.Encoder {
 	modelPath := a.cache.ModelPath()
 	modelName := web.Param(r, "model")
 
-	mi, err := tools.ShowModel(libPath, modelPath, modelName)
+	mi, err := tools.RetrieveModelInfo(libPath, modelPath, modelName)
 	if err != nil {
 		return errs.New(errs.Internal, err)
 	}

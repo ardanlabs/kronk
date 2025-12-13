@@ -177,7 +177,7 @@ func (c *Cache) ModelStatus() ([]ModelDetail, error) {
 	}
 
 	// Retrieve the models installed locally.
-	list, err := tools.ListModels(defaults.ModelsDir(""))
+	list, err := tools.RetrieveModelFiles(defaults.ModelsDir(""))
 	if err != nil {
 		return nil, err
 	}
@@ -217,7 +217,7 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 		return krn, nil
 	}
 
-	fi, err := tools.FindModel(c.modelPath, modelID)
+	fi, err := tools.RetrieveModelPath(c.modelPath, modelID)
 	if err != nil {
 		return nil, fmt.Errorf("aquire-model: %w", err)
 	}

@@ -19,7 +19,7 @@ import (
 func RunWeb(args []string) error {
 	url, err := client.DefaultURL("/v1/models/pull")
 	if err != nil {
-		return fmt.Errorf("pull: default: %w", err)
+		return fmt.Errorf("default-url: %w", err)
 	}
 
 	fmt.Println("URL:", url)
@@ -41,7 +41,7 @@ func RunWeb(args []string) error {
 
 	ch := make(chan toolapp.PullResponse)
 	if err := cln.Do(ctx, http.MethodPost, url, body, ch); err != nil {
-		return fmt.Errorf("pull: unable to download model: %w", err)
+		return fmt.Errorf("do: unable to download model: %w", err)
 	}
 
 	for ver := range ch {
@@ -55,7 +55,7 @@ func RunWeb(args []string) error {
 
 // RunLocal executes the pull command.
 func RunLocal(args []string) error {
-	modelPath := defaults.ModelsDir("")
+	modelBasePath := defaults.ModelsDir("")
 	modelURL := args[0]
 
 	var projURL string
@@ -64,21 +64,21 @@ func RunLocal(args []string) error {
 	}
 
 	if _, err := url.ParseRequestURI(modelURL); err != nil {
-		return fmt.Errorf("pull:invalid URL: %s", modelURL)
+		return fmt.Errorf("parse-request-uri: invalid URL: %s", modelURL)
 	}
 
 	if projURL != "" {
 		if _, err := url.ParseRequestURI(projURL); err != nil {
-			return fmt.Errorf("pull:invalid project URL: %s", projURL)
+			return fmt.Errorf("parse-request-uri: invalid project URL: %s", projURL)
 		}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	_, err := tools.DownloadModel(ctx, kronk.FmtLogger, modelURL, projURL, modelPath)
+	_, err := tools.DownloadModel(ctx, kronk.FmtLogger, modelURL, projURL, modelBasePath)
 	if err != nil {
-		return fmt.Errorf("pull:unable to install model: %w", err)
+		return fmt.Errorf("download-model: %w", err)
 	}
 
 	return nil

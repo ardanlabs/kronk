@@ -400,7 +400,7 @@ func initKronk(t *testing.T) *logger.Logger {
 }
 
 func findAvailableModel(t *testing.T, notModelID string) string {
-	modelFiles, err := tools.ListModels(defaults.ModelsDir(""))
+	modelFiles, err := tools.RetrieveModelFiles(defaults.ModelsDir(""))
 	if err != nil {
 		t.Skip("no models available for testing - skipping")
 	}

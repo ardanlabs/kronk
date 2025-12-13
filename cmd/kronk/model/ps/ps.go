@@ -17,7 +17,7 @@ import (
 func RunWeb(args []string) error {
 	url, err := client.DefaultURL("/v1/models/status")
 	if err != nil {
-		return fmt.Errorf("list: default: %w", err)
+		return fmt.Errorf("default-url: %w", err)
 	}
 
 	fmt.Println("URL:", url)
@@ -29,7 +29,7 @@ func RunWeb(args []string) error {
 
 	var info []toolapp.ModelDetail
 	if err := client.Do(ctx, http.MethodGet, url, nil, &info); err != nil {
-		return fmt.Errorf("libs: unable to get model list: %w", err)
+		return fmt.Errorf("do: unable to get model list: %w", err)
 	}
 
 	printWeb(info)

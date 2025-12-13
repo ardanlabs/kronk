@@ -15,9 +15,11 @@ import (
 
 // RunWeb executes the show command against the model server.
 func RunWeb(args []string) error {
-	url, err := client.DefaultURL(fmt.Sprintf("/v1/models/%s", args[0]))
+	modelID := args[0]
+
+	url, err := client.DefaultURL(fmt.Sprintf("/v1/models/%s", modelID))
 	if err != nil {
-		return fmt.Errorf("show: default: %w", err)
+		return fmt.Errorf("default-url: %w", err)
 	}
 
 	fmt.Println("URL:", url)
@@ -29,7 +31,7 @@ func RunWeb(args []string) error {
 
 	var info toolapp.ModelInfoResponse
 	if err := client.Do(ctx, http.MethodGet, url, nil, &info); err != nil {
-		return fmt.Errorf("show: unable to get mode information: %w", err)
+		return fmt.Errorf("do: unable to get mode information: %w", err)
 	}
 
 	printWeb(info)
@@ -40,10 +42,10 @@ func RunWeb(args []string) error {
 // RunLocal executes the pull command.
 func RunLocal(args []string) error {
 	libPath := defaults.LibsDir("")
-	modelPath := defaults.ModelsDir("")
-	modelName := args[0]
+	modelBasePath := defaults.ModelsDir("")
+	modelID := args[0]
 
-	mi, err := tools.ShowModel(libPath, modelPath, modelName)
+	mi, err := tools.RetrieveModelInfo(libPath, modelBasePath, modelID)
 	if err != nil {
 		return err
 	}

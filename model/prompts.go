@@ -216,6 +216,10 @@ func toMediaMessage(req D, msgs chatMessages) (D, error) {
 					found++
 					mediaData = cm.ImageURL.URL
 
+				case "video_url":
+					found++
+					mediaData = cm.VideoURL.URL
+
 				case "input_audio":
 					found++
 					mediaData = cm.AudioData.Data
@@ -264,11 +268,14 @@ func toMediaMessage(req D, msgs chatMessages) (D, error) {
 }
 
 func decodeMediaData(data string) ([]byte, error) {
+	if strings.HasPrefix(data, "http://") || strings.HasPrefix(data, "https://") {
+		return nil, fmt.Errorf("to-media-message: URLs are not supported, provide base64 encoded data")
+	}
+
 	if idx := strings.Index(data, ";base64,"); idx != -1 && strings.HasPrefix(data, "data:") {
 		data = data[idx+8:]
 	}
 
-	// Decode the base64 data back to binary data.
 	decoded, err := base64.StdEncoding.DecodeString(data)
 	if err != nil {
 		return nil, fmt.Errorf("to-media-message: unable to decode base64 data: %w", err)

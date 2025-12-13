@@ -4,8 +4,7 @@
 
 ### MODEL SERVER / TOOLING
 
-- Improve the kronk model server logging for a chat/completion
-  - Requires the model package to accept a logging function.
+- Model catelog web support
 - Solidfy the auth system
   - CLI tooling to create tokens
   - Provide Auth at the endpoint level (completion/embeddings)

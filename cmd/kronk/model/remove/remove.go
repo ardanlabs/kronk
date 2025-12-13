@@ -16,7 +16,7 @@ import (
 func RunWeb(args []string) error {
 	url, err := client.DefaultURL("/v1/models")
 	if err != nil {
-		return fmt.Errorf("pull: default: %w", err)
+		return fmt.Errorf("default-url: %w", err)
 	}
 
 	url = fmt.Sprintf("%s/%s", url, args[0])
@@ -39,7 +39,7 @@ func RunWeb(args []string) error {
 	defer cancel()
 
 	if err := client.Do(ctx, http.MethodDelete, url, nil, nil); err != nil {
-		return fmt.Errorf("remove: unable to remove model: %w", err)
+		return fmt.Errorf("remove-model: %w", err)
 	}
 
 	fmt.Println("Remove complete")
@@ -50,17 +50,17 @@ func RunWeb(args []string) error {
 // RunLocal executes the remove command.
 func RunLocal(args []string) error {
 	modelPath := defaults.ModelsDir("")
-	modelName := args[0]
+	modelID := args[0]
 
 	fmt.Println("Model Path: ", modelPath)
-	fmt.Println("Model Name: ", modelName)
+	fmt.Println("Model ID  : ", modelID)
 
-	mp, err := tools.FindModel(modelPath, modelName)
+	mp, err := tools.RetrieveModelPath(modelPath, modelID)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("\nAre you sure you want to remove %q? (y/n): ", modelName)
+	fmt.Printf("\nAre you sure you want to remove %q? (y/n): ", modelID)
 
 	var response string
 	fmt.Scanln(&response)
@@ -71,7 +71,7 @@ func RunLocal(args []string) error {
 	}
 
 	if err := tools.RemoveModel(mp); err != nil {
-		return fmt.Errorf("remove: failed to remove model: %w", err)
+		return fmt.Errorf("remove-model: %w", err)
 	}
 
 	fmt.Println("Remove complete")

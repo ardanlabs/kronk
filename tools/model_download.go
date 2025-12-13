@@ -8,13 +8,23 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/ardanlabs/kronk"
+	"go.yaml.in/yaml/v2"
 )
+
+var indexFile = "index.yaml"
 
 // DownloadModel performs a complete workflow for downloading and installing
 // the specified model.
 func DownloadModel(ctx context.Context, log kronk.Logger, modelFileURL string, projURL string, modelBasePath string) (ModelPath, error) {
+	defer func() {
+		if err := buildIndex(modelBasePath); err != nil {
+			log(ctx, "download-model: unable to create index", "ERROR", err)
+		}
+	}()
+
 	modelFileName, err := extractFileName(modelFileURL)
 	if err != nil {
 		return ModelPath{}, fmt.Errorf("download-model: unable to extract file name: %w", err)
@@ -33,7 +43,7 @@ func DownloadModel(ctx context.Context, log kronk.Logger, modelFileURL string, p
 	if errOrg != nil {
 		log(ctx, "download-model:", "ERROR", errOrg, "model-file-url", modelFileURL)
 
-		if mp, err := FindModel(modelBasePath, modelID); err == nil {
+		if mp, err := RetrieveModelPath(modelBasePath, modelID); err == nil {
 			size, err := fileSize(mp.ModelFile)
 			if err != nil {
 				return ModelPath{}, fmt.Errorf("download-model: unable to check file size of model: %w", err)
@@ -61,6 +71,8 @@ func DownloadModel(ctx context.Context, log kronk.Logger, modelFileURL string, p
 
 	return mp, nil
 }
+
+// =============================================================================
 
 func downloadModel(ctx context.Context, modelFileURL string, projFileURL string, modelBasePath string, progress ProgressFunc) (ModelPath, error) {
 	modelFileName, downloadedMF, err := pullModel(ctx, modelFileURL, modelBasePath, progress)
@@ -100,6 +112,15 @@ func downloadModel(ctx context.Context, modelFileURL string, projFileURL string,
 	}
 
 	return inf, nil
+}
+
+func fileSize(filePath string) (int, error) {
+	info, err := os.Stat(filePath)
+	if err != nil {
+		return 0, err
+	}
+
+	return int(info.Size()), nil
 }
 
 func pullModel(ctx context.Context, modelFileURL string, modelBasePath string, progress ProgressFunc) (string, bool, error) {
@@ -151,4 +172,94 @@ func extractFileName(modelFileURL string) (string, error) {
 	}
 
 	return path.Base(u.Path), nil
+}
+
+var biMutex sync.Mutex
+
+func buildIndex(modelBasePath string) error {
+	biMutex.Lock()
+	defer biMutex.Unlock()
+
+	entries, err := os.ReadDir(modelBasePath)
+	if err != nil {
+		return fmt.Errorf("list-models: reading models directory: %w", err)
+	}
+
+	index := make(map[string]ModelPath)
+
+	for _, orgEntry := range entries {
+		if !orgEntry.IsDir() {
+			continue
+		}
+
+		org := orgEntry.Name()
+
+		modelEntries, err := os.ReadDir(fmt.Sprintf("%s/%s", modelBasePath, org))
+		if err != nil {
+			continue
+		}
+
+		for _, modelEntry := range modelEntries {
+			if !modelEntry.IsDir() {
+				continue
+			}
+
+			modelFamily := modelEntry.Name()
+
+			fileEntries, err := os.ReadDir(fmt.Sprintf("%s/%s/%s", modelBasePath, org, modelFamily))
+			if err != nil {
+				continue
+			}
+
+			modelfiles := make(map[string]string)
+			projFiles := make(map[string]string)
+
+			for _, fileEntry := range fileEntries {
+				if fileEntry.IsDir() {
+					continue
+				}
+
+				name := fileEntry.Name()
+
+				if name == ".DS_Store" {
+					continue
+				}
+
+				if strings.HasPrefix(name, "mmproj") {
+					modelID := extractModelID(name[7:])
+					projFiles[modelID] = filepath.Join(modelBasePath, org, modelFamily, fileEntry.Name())
+					continue
+				}
+
+				modelID := extractModelID(fileEntry.Name())
+				modelfiles[modelID] = filepath.Join(modelBasePath, org, modelFamily, fileEntry.Name())
+			}
+
+			for modelID, modelFile := range modelfiles {
+				mp := ModelPath{
+					ModelFile:  modelFile,
+					Downloaded: true,
+				}
+
+				if projFile, exists := projFiles[modelID]; exists {
+					mp.ProjFile = projFile
+				}
+
+				modelID = strings.ToLower(modelID)
+				index[modelID] = mp
+			}
+		}
+	}
+
+	indexData, err := yaml.Marshal(&index)
+	if err != nil {
+		return fmt.Errorf("marshal index: %w", err)
+	}
+
+	indexPath := filepath.Join(modelBasePath, indexFile)
+	if err := os.WriteFile(indexPath, indexData, 0644); err != nil {
+		return fmt.Errorf("write index file: %w", err)
+	}
+
+	return nil
 }

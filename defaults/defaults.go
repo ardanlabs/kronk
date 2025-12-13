@@ -18,7 +18,11 @@ var (
 )
 
 // BaseDir is the default base folder location for kronk files.
-func BaseDir() string {
+func BaseDir(override string) string {
+	if override != "" {
+		return override
+	}
+
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Sprintf("./%s", basePath)

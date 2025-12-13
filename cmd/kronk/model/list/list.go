@@ -19,7 +19,7 @@ import (
 func RunWeb(args []string) error {
 	url, err := client.DefaultURL("/v1/models")
 	if err != nil {
-		return fmt.Errorf("list: default: %w", err)
+		return fmt.Errorf("default-url: %w", err)
 	}
 
 	fmt.Println("URL:", url)
@@ -31,7 +31,7 @@ func RunWeb(args []string) error {
 
 	var info toolapp.ListModelInfoResponse
 	if err := client.Do(ctx, http.MethodGet, url, nil, &info); err != nil {
-		return fmt.Errorf("libs: unable to get model list: %w", err)
+		return fmt.Errorf("do: unable to get model list: %w", err)
 	}
 
 	printWeb(info.Data)
@@ -43,7 +43,7 @@ func RunWeb(args []string) error {
 func RunLocal(args []string) error {
 	modelPath := defaults.ModelsDir("")
 
-	models, err := tools.ListModels(modelPath)
+	models, err := tools.RetrieveModelFiles(modelPath)
 	if err != nil {
 		return err
 	}
