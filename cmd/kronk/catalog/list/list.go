@@ -42,7 +42,7 @@ type row struct {
 }
 
 func catalogList(basePath string) ([]row, map[string]struct{}, error) {
-	catalogs, err := catalog.Retrieve(basePath)
+	catalogs, err := catalog.RetrieveCatalogs(basePath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("catalog list: %w", err)
 	}

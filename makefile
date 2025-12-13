@@ -111,6 +111,10 @@ kronk-catalog-update-local:
 kronk-catalog-list-local:
 	go run cmd/kronk/main.go catalog list --local
 
+# make kronk-catalog-show-local ID="qwen3-8b-q8_0"
+kronk-catalog-show-local:
+	go run cmd/kronk/main.go catalog show --local "$(ID)"
+
 # ==============================================================================
 # Kronk Endpoints
 

@@ -15,7 +15,9 @@ import (
 
 // RunWeb executes the show command against the model server.
 func RunWeb(args []string) error {
-	url, err := client.DefaultURL(fmt.Sprintf("/v1/models/%s", args[0]))
+	modelID := args[0]
+
+	url, err := client.DefaultURL(fmt.Sprintf("/v1/models/%s", modelID))
 	if err != nil {
 		return fmt.Errorf("show: default: %w", err)
 	}

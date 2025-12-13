@@ -7,9 +7,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-)
+	"strings"
 
-const localFolder = "catalogs"
+	"go.yaml.in/yaml/v2"
+)
 
 var files = []string{
 	"https://raw.githubusercontent.com/ardanlabs/kronk_catalogs/refs/heads/main/catalogs/audio_text_to_text.yaml",
@@ -26,8 +27,14 @@ func Download(ctx context.Context, basePath string) error {
 		}
 	}
 
+	if err := buildIndex(basePath); err != nil {
+		return fmt.Errorf("build-index: %w", err)
+	}
+
 	return nil
 }
+
+// =============================================================================
 
 func downloadCatalog(ctx context.Context, basePath string, url string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -58,6 +65,56 @@ func downloadCatalog(ctx context.Context, basePath string, url string) error {
 	filePath := filepath.Join(catalogDir, filepath.Base(url))
 	if err := os.WriteFile(filePath, body, 0644); err != nil {
 		return fmt.Errorf("writing catalog file: %w", err)
+	}
+
+	return nil
+}
+
+func buildIndex(basePath string) error {
+	catalogDir := filepath.Join(basePath, localFolder)
+
+	entries, err := os.ReadDir(catalogDir)
+	if err != nil {
+		return fmt.Errorf("read catalog dir: %w", err)
+	}
+
+	index := make(Index)
+
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".yaml" {
+			continue
+		}
+
+		if entry.Name() == indexFile {
+			continue
+		}
+
+		filePath := filepath.Join(catalogDir, entry.Name())
+
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			return fmt.Errorf("read file %s: %w", entry.Name(), err)
+		}
+
+		var catalog Catalog
+		if err := yaml.Unmarshal(data, &catalog); err != nil {
+			return fmt.Errorf("unmarshal %s: %w", entry.Name(), err)
+		}
+
+		for _, model := range catalog.Models {
+			modelID := strings.ToLower(model.ID)
+			index[modelID] = entry.Name()
+		}
+	}
+
+	indexData, err := yaml.Marshal(&index)
+	if err != nil {
+		return fmt.Errorf("marshal index: %w", err)
+	}
+
+	indexPath := filepath.Join(catalogDir, indexFile)
+	if err := os.WriteFile(indexPath, indexData, 0644); err != nil {
+		return fmt.Errorf("write index file: %w", err)
 	}
 
 	return nil

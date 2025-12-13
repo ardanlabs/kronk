@@ -4,6 +4,9 @@ import (
 	"time"
 )
 
+// Index maps model IDs to their catalog file names.
+type Index map[string]string
+
 // Metadata represents extra information about the model.
 type Metadata struct {
 	Created     time.Time
@@ -41,7 +44,7 @@ type Model struct {
 	Category     string       `yaml:"category"`
 	OwnedBy      string       `yaml:"owned_by"`
 	ModelFamily  string       `yaml:"model_family"`
-	WebPage      string       `yaml:"webpage"`
+	WebPage      string       `yaml:"web_page"`
 	Files        Files        `yaml:"files"`
 	Capabilities Capabilities `yaml:"capabilities"`
 	Metadata     Metadata     `yaml:"metadata"`

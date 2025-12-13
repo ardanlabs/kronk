@@ -6,6 +6,7 @@ require (
 	github.com/ardanlabs/conf/v3 v3.10.0
 	github.com/arl/statsviz v0.8.0
 	github.com/golang-jwt/jwt/v4 v4.5.2
+	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-getter v1.8.3
 	github.com/hybridgroup/yzma v1.3.0
