@@ -112,18 +112,27 @@ var catalogListCmd = &cobra.Command{
 	Short: "List catalog models",
 	Long: `List catalog models
 
+Flags (--local mode):
+      --filter-category  Filter catalogs by category name (substring match)
+
 Environment Variables (web mode - default):
       KRONK_WEB_API_HOST  (default localhost:3000)  IP Address for the kronk server`,
-	Args: cobra.NoArgs,
+	Args: cobra.ArbitraryArgs,
 	Run:  runCatalogList,
 }
 
 func init() {
 	catalogListCmd.Flags().Bool("local", false, "Run without the model server")
+	catalogListCmd.Flags().String("filter-category", "", "Filter catalogs by category name (substring match)")
 }
 
 func runCatalogList(cmd *cobra.Command, args []string) {
 	local, _ := cmd.Flags().GetBool("local")
+	filterCategory, _ := cmd.Flags().GetString("filter-category")
+
+	if filterCategory != "" {
+		args = append(args, "--filter-category", filterCategory)
+	}
 
 	var err error
 

@@ -3,6 +3,7 @@ package list
 
 import (
 	"cmp"
+	"flag"
 	"fmt"
 	"os"
 	"slices"
@@ -22,9 +23,17 @@ func RunWeb(args []string) error {
 
 // RunLocal executes the catalog list command locally.
 func RunLocal(args []string) error {
+	var filterCategory string
+
+	fs := flag.NewFlagSet("catalog list", flag.ContinueOnError)
+	fs.StringVar(&filterCategory, "filter-category", "", "filter catalogs by category name (substring match)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
 	basePath := defaults.BaseDir("")
 
-	rows, pulledModels, err := catalogList(basePath)
+	rows, pulledModels, err := catalogList(basePath, filterCategory)
 	if err != nil {
 		return fmt.Errorf("catalog-list: %w", err)
 	}
@@ -41,7 +50,7 @@ type row struct {
 	model       catalog.Model
 }
 
-func catalogList(basePath string) ([]row, map[string]struct{}, error) {
+func catalogList(basePath string, filterCategory string) ([]row, map[string]struct{}, error) {
 	catalogs, err := catalog.RetrieveCatalogs(basePath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("catalog list: %w", err)
@@ -59,8 +68,14 @@ func catalogList(basePath string) ([]row, map[string]struct{}, error) {
 		pulledModels[strings.ToLower(mf.ID)] = struct{}{}
 	}
 
+	filterLower := strings.ToLower(filterCategory)
+
 	var rows []row
 	for _, cat := range catalogs {
+		if filterCategory != "" && !strings.Contains(strings.ToLower(cat.Name), filterLower) {
+			continue
+		}
+
 		for _, model := range cat.Models {
 			rows = append(rows, row{catalogName: cat.Name, model: model})
 		}
