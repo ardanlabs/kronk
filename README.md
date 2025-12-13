@@ -41,24 +41,19 @@ Here is the help screen.
 ```
 $ kronk help
 
-Go for hardware accelerated local inference with llama.cpp directly integrated
-into your applications via the yzma. Kronk provides a high-level API that feels
-similar to using an OpenAI compatible API.
+Go for hardware accelerated local inference with llama.cpp directly integrated into your applications via the yzma. Kronk provides a high-level API that feels similar to using an OpenAI compatible API.
 
 Usage:
   kronk [flags]
   kronk [command]
 
 Available Commands:
+  catalog     Manage model catalog
   help        Help about any command
   libs        Install or upgrade llama.cpp libraries
-  list        List models
-  logs        Stream Kronk model server logs
-  ps          List running models
-  pull        Pull a model from the web
-  remove      Remove a model
+  logs        Stream server logs
+  model       Manage models
   server      Start Kronk model server
-  show        Show information for a model
   stop        Stop the running Kronk model server
 
 Flags:
