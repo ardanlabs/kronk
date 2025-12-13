@@ -73,11 +73,11 @@ kronk-model-list-local:
 	go run cmd/kronk/main.go model list --local
 
 
-# make kronk-pull URL="https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
+# make kronk-model-pull URL="https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
 kronk-model-pull:
 	go run cmd/kronk/main.go model pull "$(URL)"
 
-# make kronk-pull-local URL="https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
+# make kronk-model-pull-local URL="https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
 kronk-model-pull-local:
 	go run cmd/kronk/main.go model pull --local "$(URL)"
 
@@ -99,7 +99,7 @@ kronk-model-remove-local:
 kronk-model-show:
 	go run cmd/kronk/main.go model show "$(ID)"
 
-# make kronk-show-local ID="qwen3-8b-q8_0"
+# make kronk-model-show-local ID="qwen3-8b-q8_0"
 kronk-model-show-local:
 	go run cmd/kronk/main.go model show --local "$(ID)"
 

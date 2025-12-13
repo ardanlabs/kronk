@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"go.yaml.in/yaml/v2"
 )
@@ -70,7 +71,12 @@ func downloadCatalog(ctx context.Context, basePath string, url string) error {
 	return nil
 }
 
+var biMutex sync.Mutex
+
 func buildIndex(basePath string) error {
+	biMutex.Lock()
+	defer biMutex.Unlock()
+
 	catalogDir := filepath.Join(basePath, localFolder)
 
 	entries, err := os.ReadDir(catalogDir)
@@ -78,7 +84,7 @@ func buildIndex(basePath string) error {
 		return fmt.Errorf("read catalog dir: %w", err)
 	}
 
-	index := make(Index)
+	index := make(map[string]string)
 
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".yaml" {

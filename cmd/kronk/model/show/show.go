@@ -42,10 +42,10 @@ func RunWeb(args []string) error {
 // RunLocal executes the pull command.
 func RunLocal(args []string) error {
 	libPath := defaults.LibsDir("")
-	modelPath := defaults.ModelsDir("")
-	modelName := args[0]
+	modelBasePath := defaults.ModelsDir("")
+	modelID := args[0]
 
-	mi, err := tools.RetrieveModelInfo(libPath, modelPath, modelName)
+	mi, err := tools.RetrieveModelInfo(libPath, modelBasePath, modelID)
 	if err != nil {
 		return err
 	}

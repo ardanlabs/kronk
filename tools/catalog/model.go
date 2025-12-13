@@ -4,9 +4,6 @@ import (
 	"time"
 )
 
-// Index maps model IDs to their catalog file names.
-type Index map[string]string
-
 // Metadata represents extra information about the model.
 type Metadata struct {
 	Created     time.Time

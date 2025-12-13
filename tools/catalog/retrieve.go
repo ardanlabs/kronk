@@ -58,30 +58,17 @@ func RetrieveCatalog(basePath string, catalogFile string) (Catalog, error) {
 
 // RetrieveCatalogs reads the catalogs from a previous download.
 func RetrieveCatalogs(basePath string) ([]Catalog, error) {
-	catalogDir := filepath.Join(basePath, localFolder)
-
-	entries, err := os.ReadDir(catalogDir)
+	index, err := loadIndex(basePath)
 	if err != nil {
-		return nil, fmt.Errorf("read catalog dir: %w", err)
+		return nil, fmt.Errorf("load-index: %w", err)
 	}
 
 	var catalogs []Catalog
 
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-
-		name := entry.Name()
-		ext := filepath.Ext(entry.Name())
-
-		if ext != ".yaml" || name == "index.yaml" {
-			continue
-		}
-
-		catalog, err := RetrieveCatalog(basePath, name)
+	for _, catalogFile := range index {
+		catalog, err := RetrieveCatalog(basePath, catalogFile)
 		if err != nil {
-			return nil, fmt.Errorf("retrieve-catalog: %q: %w", name, err)
+			return nil, fmt.Errorf("retrieve-catalog: %q: %w", catalogFile, err)
 		}
 
 		catalogs = append(catalogs, catalog)
@@ -93,17 +80,23 @@ func RetrieveCatalogs(basePath string) ([]Catalog, error) {
 // =============================================================================
 
 // LoadIndex returns the catalog index.
-func loadIndex(basePath string) (Index, error) {
-	indexPath := filepath.Join(basePath, localFolder, indexFile)
+func loadIndex(modelBasePath string) (map[string]string, error) {
+	indexPath := filepath.Join(modelBasePath, localFolder, indexFile)
 
 	data, err := os.ReadFile(indexPath)
 	if err != nil {
-		return nil, fmt.Errorf("read index file: %w", err)
+		if err := buildIndex(modelBasePath); err != nil {
+			return nil, fmt.Errorf("build-index: %w", err)
+		}
+		data, err = os.ReadFile(indexPath)
+		if err != nil {
+			return nil, fmt.Errorf("read-index: %w", err)
+		}
 	}
 
-	var index Index
+	var index map[string]string
 	if err := yaml.Unmarshal(data, &index); err != nil {
-		return nil, fmt.Errorf("unmarshal index: %w", err)
+		return nil, fmt.Errorf("unmarshal-index: %w", err)
 	}
 
 	return index, nil

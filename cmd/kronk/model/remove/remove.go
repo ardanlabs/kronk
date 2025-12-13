@@ -50,17 +50,17 @@ func RunWeb(args []string) error {
 // RunLocal executes the remove command.
 func RunLocal(args []string) error {
 	modelPath := defaults.ModelsDir("")
-	modelName := args[0]
+	modelID := args[0]
 
 	fmt.Println("Model Path: ", modelPath)
-	fmt.Println("Model Name: ", modelName)
+	fmt.Println("Model ID  : ", modelID)
 
-	mp, err := tools.RetrieveModelPath(modelPath, modelName)
+	mp, err := tools.RetrieveModelPath(modelPath, modelID)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("\nAre you sure you want to remove %q? (y/n): ", modelName)
+	fmt.Printf("\nAre you sure you want to remove %q? (y/n): ", modelID)
 
 	var response string
 	fmt.Scanln(&response)

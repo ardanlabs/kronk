@@ -11,6 +11,7 @@ import (
 
 	"github.com/ardanlabs/kronk"
 	"github.com/ardanlabs/kronk/model"
+	"go.yaml.in/yaml/v2"
 )
 
 // ModelFile provides information about a model.
@@ -24,63 +25,31 @@ type ModelFile struct {
 
 // RetrieveModelFiles returns all the models in the given model directory.
 func RetrieveModelFiles(modelBasePath string) ([]ModelFile, error) {
-	entries, err := os.ReadDir(modelBasePath)
-	if err != nil {
-		return nil, fmt.Errorf("list-models: reading models directory: %w", err)
-	}
-
 	var list []ModelFile
 
-	for _, orgEntry := range entries {
-		if !orgEntry.IsDir() {
-			continue
-		}
+	index, err := loadIndex(modelBasePath)
+	if err != nil {
+		return nil, fmt.Errorf("unable to load index: %w", err)
+	}
 
-		org := orgEntry.Name()
-
-		modelEntries, err := os.ReadDir(fmt.Sprintf("%s/%s", modelBasePath, org))
+	for modelID, mp := range index {
+		info, err := os.Stat(mp.ModelFile)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("stat: %w", err)
 		}
 
-		for _, modelEntry := range modelEntries {
-			if !modelEntry.IsDir() {
-				continue
-			}
-			modelFamily := modelEntry.Name()
+		modelPath := strings.TrimLeft(mp.ModelFile, modelBasePath)
+		parts := strings.Split(modelPath, "/")
 
-			fileEntries, err := os.ReadDir(fmt.Sprintf("%s/%s/%s", modelBasePath, org, modelFamily))
-			if err != nil {
-				continue
-			}
-
-			for _, fileEntry := range fileEntries {
-				if fileEntry.IsDir() {
-					continue
-				}
-
-				if fileEntry.Name() == ".DS_Store" {
-					continue
-				}
-
-				if strings.HasPrefix(fileEntry.Name(), "mmproj") {
-					continue
-				}
-
-				info, err := fileEntry.Info()
-				if err != nil {
-					continue
-				}
-
-				list = append(list, ModelFile{
-					ID:          extractModelID(fileEntry.Name()),
-					OwnedBy:     org,
-					ModelFamily: modelFamily,
-					Size:        info.Size(),
-					Modified:    info.ModTime(),
-				})
-			}
+		mf := ModelFile{
+			ID:          modelID,
+			OwnedBy:     parts[0],
+			ModelFamily: parts[1],
+			Size:        info.Size(),
+			Modified:    info.ModTime(),
 		}
+
+		list = append(list, mf)
 	}
 
 	slices.SortFunc(list, func(a, b ModelFile) int {
@@ -94,6 +63,32 @@ func RetrieveModelFiles(modelBasePath string) ([]ModelFile, error) {
 	})
 
 	return list, nil
+}
+
+// retrieveModelFile finds the model and returns the model file information.
+func retrieveModelFile(modelBasePath string, modelID string) (ModelFile, error) {
+	mp, err := RetrieveModelPath(modelBasePath, modelID)
+	if err != nil {
+		return ModelFile{}, fmt.Errorf("retrieve-model-path: %w", err)
+	}
+
+	info, err := os.Stat(mp.ModelFile)
+	if err != nil {
+		return ModelFile{}, fmt.Errorf("stat: %w", err)
+	}
+
+	modelPath := strings.TrimLeft(mp.ModelFile, modelBasePath)
+	parts := strings.Split(modelPath, "/")
+
+	mf := ModelFile{
+		ID:          modelID,
+		OwnedBy:     parts[0],
+		ModelFamily: parts[1],
+		Size:        info.Size(),
+		Modified:    info.ModTime(),
+	}
+
+	return mf, nil
 }
 
 // =============================================================================
@@ -111,7 +106,7 @@ type ModelInfo struct {
 func RetrieveModelInfo(libPath string, modelBasePath string, modelID string) (ModelInfo, error) {
 	modelID = strings.ToLower(modelID)
 
-	fi, err := RetrieveModelPath(modelBasePath, modelID)
+	mp, err := RetrieveModelPath(modelBasePath, modelID)
 	if err != nil {
 		return ModelInfo{}, err
 	}
@@ -122,8 +117,8 @@ func RetrieveModelInfo(libPath string, modelBasePath string, modelID string) (Mo
 
 	const modelInstances = 1
 	krn, err := kronk.New(modelInstances, model.Config{
-		ModelFile:      fi.ModelFile,
-		ProjectionFile: fi.ProjFile,
+		ModelFile:      mp.ModelFile,
+		ProjectionFile: mp.ProjFile,
 	})
 
 	if err != nil {
@@ -137,25 +132,16 @@ func RetrieveModelInfo(libPath string, modelBasePath string, modelID string) (Mo
 		krn.Unload(ctx)
 	}()
 
-	models, err := RetrieveModelFiles(modelBasePath)
+	mf, err := retrieveModelFile(modelBasePath, modelID)
 	if err != nil {
 		return ModelInfo{}, fmt.Errorf("show-model: unable to get model file information: %w", err)
 	}
 
-	var modelFile ModelFile
-	for _, model := range models {
-		id := strings.ToLower(model.ID)
-		if id == modelID {
-			modelFile = model
-			break
-		}
-	}
-
 	mi := ModelInfo{
-		ID:      modelFile.ID,
+		ID:      mf.ID,
 		Object:  "model",
-		Created: modelFile.Modified.UnixMilli(),
-		OwnedBy: modelFile.OwnedBy,
+		Created: mf.Modified.UnixMilli(),
+		OwnedBy: mf.OwnedBy,
 		Details: krn.ModelInfo(),
 	}
 
@@ -173,70 +159,19 @@ type ModelPath struct {
 
 // RetrieveModelPath locates the physical location on disk and returns the full path.
 func RetrieveModelPath(modelBasePath string, modelID string) (ModelPath, error) {
-	entries, err := os.ReadDir(modelBasePath)
+	index, err := loadIndex(modelBasePath)
 	if err != nil {
-		return ModelPath{}, fmt.Errorf("find-model: reading models directory: %w", err)
+		return ModelPath{}, fmt.Errorf("load-index: %w", err)
 	}
-
-	projID := fmt.Sprintf("mmproj-%s", modelID)
 
 	modelID = strings.ToLower(modelID)
-	projID = strings.ToLower(projID)
 
-	var fi ModelPath
-
-	for _, orgEntry := range entries {
-		if !orgEntry.IsDir() {
-			continue
-		}
-
-		org := orgEntry.Name()
-
-		modelEntries, err := os.ReadDir(fmt.Sprintf("%s/%s", modelBasePath, org))
-		if err != nil {
-			continue
-		}
-
-		for _, modelEntry := range modelEntries {
-			if !modelEntry.IsDir() {
-				continue
-			}
-			model := modelEntry.Name()
-
-			fileEntries, err := os.ReadDir(fmt.Sprintf("%s/%s/%s", modelBasePath, org, model))
-			if err != nil {
-				continue
-			}
-
-			for _, fileEntry := range fileEntries {
-				if fileEntry.IsDir() {
-					continue
-				}
-
-				if fileEntry.Name() == ".DS_Store" {
-					continue
-				}
-
-				id := strings.ToLower(strings.TrimSuffix(fileEntry.Name(), filepath.Ext(fileEntry.Name())))
-
-				if id == modelID {
-					fi.ModelFile = filepath.Join(modelBasePath, org, model, fileEntry.Name())
-					continue
-				}
-
-				if id == projID {
-					fi.ProjFile = filepath.Join(modelBasePath, org, model, fileEntry.Name())
-					continue
-				}
-			}
-		}
+	modelPath, exists := index[modelID]
+	if !exists {
+		return ModelPath{}, fmt.Errorf("model %q not found", modelID)
 	}
 
-	if fi.ModelFile == "" {
-		return ModelPath{}, fmt.Errorf("find-model: model id %q not found", modelID)
-	}
-
-	return fi, nil
+	return modelPath, nil
 }
 
 // MustRetrieveModel finds a model and panics if the model was not found. This
@@ -248,4 +183,29 @@ func MustRetrieveModel(modelBasePath string, modelID string) ModelPath {
 	}
 
 	return fi
+}
+
+// =============================================================================
+
+// LoadIndex returns the catalog index.
+func loadIndex(modelBasePath string) (map[string]ModelPath, error) {
+	indexPath := filepath.Join(modelBasePath, indexFile)
+
+	data, err := os.ReadFile(indexPath)
+	if err != nil {
+		if err := buildIndex(modelBasePath); err != nil {
+			return nil, fmt.Errorf("build-index: %w", err)
+		}
+		data, err = os.ReadFile(indexPath)
+		if err != nil {
+			return nil, fmt.Errorf("read-index: %w", err)
+		}
+	}
+
+	var index map[string]ModelPath
+	if err := yaml.Unmarshal(data, &index); err != nil {
+		return nil, fmt.Errorf("unmarshal-index: %w", err)
+	}
+
+	return index, nil
 }
