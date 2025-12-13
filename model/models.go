@@ -354,21 +354,22 @@ func toEmbedResponse(modelID string, vec []float32) EmbedReponse {
 
 // =============================================================================
 
-type chatMessageImageData struct {
+type chatMessageURLData struct {
 	// Only base64 encoded image is currently supported.
 	URL string `json:"url"`
 }
 
-type chatMessageAudioData struct {
+type chatMessageRawData struct {
 	// Only base64 encoded audio is currently supported.
 	Data string `json:"data"`
 }
 
 type chatMessageContent struct {
-	Type      string               `json:"type"`
-	Text      string               `json:"text"`
-	ImageURL  chatMessageImageData `json:"image_url"`
-	AudioData chatMessageAudioData `json:"input_audio"`
+	Type      string             `json:"type"`
+	Text      string             `json:"text"`
+	ImageURL  chatMessageURLData `json:"image_url"`
+	VideoURL  chatMessageURLData `json:"video_url"`
+	AudioData chatMessageRawData `json:"input_audio"`
 }
 
 type chatMessage struct {
