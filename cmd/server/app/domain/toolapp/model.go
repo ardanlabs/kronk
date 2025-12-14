@@ -7,6 +7,7 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/cache"
 	"github.com/ardanlabs/kronk/sdk/tools"
+	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 )
 
 // VersionResponse returns information about the installed libraries.
@@ -186,17 +187,17 @@ type ModelDetail struct {
 	ActiveStreams int       `json:"active_streams"`
 }
 
-// ModelDetails is a collection of model detail.
-type ModelDetails []ModelDetail
+// ModelDetailsResponse is a collection of model detail.
+type ModelDetailsResponse []ModelDetail
 
 // Encode implements the encoder interface.
-func (app ModelDetails) Encode() ([]byte, string, error) {
+func (app ModelDetailsResponse) Encode() ([]byte, string, error) {
 	data, err := json.Marshal(app)
 	return data, "application/json", err
 }
 
-func toModelDetails(models []cache.ModelDetail) ModelDetails {
-	details := make(ModelDetails, len(models))
+func toModelDetails(models []cache.ModelDetail) ModelDetailsResponse {
+	details := make(ModelDetailsResponse, len(models))
 
 	for i, model := range models {
 		details[i] = ModelDetail{
@@ -210,4 +211,114 @@ func toModelDetails(models []cache.ModelDetail) ModelDetails {
 	}
 
 	return details
+}
+
+// =============================================================================
+
+// CatalogMetadata represents extra information about the model.
+type CatalogMetadata struct {
+	Created     time.Time `json:"created"`
+	Collections string    `json:"collections"`
+	Description string    `json:"description"`
+}
+
+// CatalogCapabilities represents the capabilities of a model.
+type CatalogCapabilities struct {
+	Endpoint  string `json:"endpoint"`
+	Images    bool   `json:"images"`
+	Audio     bool   `json:"audio"`
+	Video     bool   `json:"video"`
+	Streaming bool   `json:"streaming"`
+	Reasoning bool   `json:"reasoning"`
+	Tooling   bool   `json:"tooling"`
+}
+
+// CatalogFile represents the actual file url and size.
+type CatalogFile struct {
+	URL  string `json:"url"`
+	Size string `json:"size"`
+}
+
+// CatalogFiles represents file information for a model.
+type CatalogFiles struct {
+	Model CatalogFile `json:"model"`
+	Proj  CatalogFile `json:"proj"`
+	Jinja CatalogFile `json:"jinja"`
+}
+
+// CatalogModelResponse represents information for a model.
+type CatalogModelResponse struct {
+	ID           string              `json:"id"`
+	Category     string              `json:"category"`
+	OwnedBy      string              `json:"owned_by"`
+	ModelFamily  string              `json:"model_family"`
+	WebPage      string              `json:"web_page"`
+	Files        CatalogFiles        `json:"files"`
+	Capabilities CatalogCapabilities `json:"capabilities"`
+	Metadata     CatalogMetadata     `json:"metadata"`
+	Downloaded   bool                `json:"downloaded"`
+}
+
+// Encode implements the encoder interface.
+func (app CatalogModelResponse) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(app)
+	return data, "application/json", err
+}
+
+// CatalogModelsResponse represents a list of catalog models.
+type CatalogModelsResponse []CatalogModelResponse
+
+// Encode implements the encoder interface.
+func (app CatalogModelsResponse) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(app)
+	return data, "application/json", err
+}
+
+func toCatalogModelResponse(model catalog.Model) CatalogModelResponse {
+	return CatalogModelResponse{
+		ID:          model.ID,
+		Category:    model.Category,
+		OwnedBy:     model.OwnedBy,
+		ModelFamily: model.ModelFamily,
+		WebPage:     model.WebPage,
+		Files: CatalogFiles{
+			Model: CatalogFile{
+				URL:  model.Files.Model.URL,
+				Size: model.Files.Model.Size,
+			},
+			Proj: CatalogFile{
+				URL:  model.Files.Proj.URL,
+				Size: model.Files.Proj.Size,
+			},
+			Jinja: CatalogFile{
+				URL:  model.Files.Jinja.URL,
+				Size: model.Files.Jinja.Size,
+			},
+		},
+		Capabilities: CatalogCapabilities{
+			Endpoint:  model.Capabilities.Endpoint,
+			Images:    model.Capabilities.Images,
+			Audio:     model.Capabilities.Audio,
+			Video:     model.Capabilities.Video,
+			Streaming: model.Capabilities.Streaming,
+			Reasoning: model.Capabilities.Reasoning,
+			Tooling:   model.Capabilities.Tooling,
+		},
+		Metadata: CatalogMetadata{
+			Created:     model.Metadata.Created,
+			Collections: model.Metadata.Collections,
+			Description: model.Metadata.Description,
+		},
+		Downloaded: model.Downloaded,
+	}
+}
+
+func toCatalogModelsResponse(list []catalog.Model) CatalogModelsResponse {
+	catalogModels := make([]CatalogModelResponse, len(list))
+
+	for i, model := range list {
+		catalogModels[i] = toCatalogModelResponse(model)
+	}
+
+	return catalogModels
 }

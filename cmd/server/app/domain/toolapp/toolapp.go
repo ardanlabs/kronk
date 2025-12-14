@@ -12,7 +12,9 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/cache"
+	"github.com/ardanlabs/kronk/sdk/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools"
+	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 )
 
 type app struct {
@@ -198,7 +200,7 @@ func (a *app) showModel(ctx context.Context, r *http.Request) web.Encoder {
 	return toModelInfo(mi)
 }
 
-func (a *app) modelStatus(ctx context.Context, r *http.Request) web.Encoder {
+func (a *app) modelPS(ctx context.Context, r *http.Request) web.Encoder {
 	models, err := a.cache.ModelStatus()
 	if err != nil {
 		return errs.New(errs.Internal, err)
@@ -207,4 +209,92 @@ func (a *app) modelStatus(ctx context.Context, r *http.Request) web.Encoder {
 	a.log.Info(ctx, "models", "len", len(models))
 
 	return toModelDetails(models)
+}
+
+func (a *app) listCatalog(ctx context.Context, r *http.Request) web.Encoder {
+	basePath := defaults.BaseDir("")
+	filterCategory := web.Param(r, "filter")
+
+	list, err := catalog.CatalogModelList(basePath, filterCategory)
+	if err != nil {
+		return errs.New(errs.Internal, err)
+	}
+
+	return toCatalogModelsResponse(list)
+}
+
+func (a *app) pullCatalog(ctx context.Context, r *http.Request) web.Encoder {
+	modelID := web.Param(r, "model")
+
+	basePath := defaults.BaseDir("")
+
+	model, err := catalog.RetrieveModelDetails(basePath, modelID)
+	if err != nil {
+		return errs.New(errs.Internal, err)
+	}
+
+	// -------------------------------------------------------------------------
+
+	w := web.GetWriter(ctx)
+
+	f, ok := w.(http.Flusher)
+	if !ok {
+		return errs.Errorf(errs.Internal, "streaming not supported")
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Transfer-Encoding", "chunked")
+	w.WriteHeader(http.StatusOK)
+	f.Flush()
+
+	// -------------------------------------------------------------------------
+
+	modelPath := a.cache.ModelPath()
+
+	logger := func(ctx context.Context, msg string, args ...any) {
+		var sb strings.Builder
+		for i := 0; i < len(args); i += 2 {
+			if i+1 < len(args) {
+				sb.WriteString(fmt.Sprintf(" %v[%v]", args[i], args[i+1]))
+			}
+		}
+
+		status := fmt.Sprintf("%s:%s\n", msg, sb.String())
+		ver := toAppPull(status, tools.ModelPath{})
+
+		a.log.Info(ctx, "pull-model", "info", ver[:len(ver)-1])
+		fmt.Fprint(w, ver)
+		f.Flush()
+	}
+
+	mp, err := tools.DownloadModel(ctx, logger, model.Files.Model.URL, model.Files.Proj.URL, modelPath)
+	if err != nil {
+		ver := toAppPull(err.Error(), tools.ModelPath{})
+
+		a.log.Info(ctx, "pull-model", "info", ver[:len(ver)-1])
+		fmt.Fprint(w, ver)
+		f.Flush()
+
+		return errs.Errorf(errs.Internal, "unable to install model: %s", err)
+	}
+
+	ver := toAppPull("downloaded", mp)
+
+	a.log.Info(ctx, "pull-model", "info", ver[:len(ver)-1])
+	fmt.Fprint(w, ver)
+	f.Flush()
+
+	return web.NewNoResponse()
+}
+
+func (a *app) showCatalogModel(ctx context.Context, r *http.Request) web.Encoder {
+	modelID := web.Param(r, "model")
+	basePath := defaults.BaseDir("")
+
+	model, err := catalog.RetrieveModelDetails(basePath, modelID)
+	if err != nil {
+		return errs.New(errs.Internal, err)
+	}
+
+	return toCatalogModelResponse(model)
 }

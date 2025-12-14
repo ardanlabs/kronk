@@ -1,13 +1,62 @@
 package catalog
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
+	"github.com/ardanlabs/kronk/sdk/defaults"
+	"github.com/ardanlabs/kronk/sdk/tools"
 	"go.yaml.in/yaml/v2"
 )
+
+// CatalogModelList returns the collection of models in the catalog with
+// some filtering capabilities.
+func CatalogModelList(basePath string, filterCategory string) ([]Model, error) {
+	catalogs, err := RetrieveCatalogs(basePath)
+	if err != nil {
+		return nil, fmt.Errorf("catalog list: %w", err)
+	}
+
+	modelBasePath := defaults.ModelsDir("")
+
+	modelFiles, err := tools.RetrieveModelFiles(modelBasePath)
+	if err != nil {
+		return nil, fmt.Errorf("retrieve-model-files: %w", err)
+	}
+
+	pulledModels := make(map[string]struct{})
+	for _, mf := range modelFiles {
+		pulledModels[strings.ToLower(mf.ID)] = struct{}{}
+	}
+
+	filterLower := strings.ToLower(filterCategory)
+
+	var list []Model
+	for _, cat := range catalogs {
+		if filterCategory != "" && !strings.Contains(strings.ToLower(cat.Name), filterLower) {
+			continue
+		}
+
+		for _, model := range cat.Models {
+			_, downloaded := pulledModels[strings.ToLower(model.ID)]
+			model.Downloaded = downloaded
+			list = append(list, model)
+		}
+	}
+
+	slices.SortFunc(list, func(a, b Model) int {
+		if c := cmp.Compare(strings.ToLower(a.Category), strings.ToLower(b.Category)); c != 0 {
+			return c
+		}
+		return cmp.Compare(strings.ToLower(a.ID), strings.ToLower(b.ID))
+	})
+
+	return list, nil
+}
 
 // RetrieveModelDetails returns the full model information for the
 // specified model.
@@ -58,17 +107,23 @@ func RetrieveCatalog(basePath string, catalogFile string) (Catalog, error) {
 
 // RetrieveCatalogs reads the catalogs from a previous download.
 func RetrieveCatalogs(basePath string) ([]Catalog, error) {
-	index, err := loadIndex(basePath)
+	catalogDir := filepath.Join(basePath, localFolder)
+
+	entries, err := os.ReadDir(catalogDir)
 	if err != nil {
-		return nil, fmt.Errorf("load-index: %w", err)
+		return nil, fmt.Errorf("read catalog dir: %w", err)
 	}
 
 	var catalogs []Catalog
 
-	for _, catalogFile := range index {
-		catalog, err := RetrieveCatalog(basePath, catalogFile)
+	for _, entry := range entries {
+		if entry.IsDir() || entry.Name() == indexFile {
+			continue
+		}
+
+		catalog, err := RetrieveCatalog(basePath, entry.Name())
 		if err != nil {
-			return nil, fmt.Errorf("retrieve-catalog: %q: %w", catalogFile, err)
+			return nil, fmt.Errorf("retrieve-catalog: %q: %w", entry.Name(), err)
 		}
 
 		catalogs = append(catalogs, catalog)
@@ -88,6 +143,7 @@ func loadIndex(modelBasePath string) (map[string]string, error) {
 		if err := buildIndex(modelBasePath); err != nil {
 			return nil, fmt.Errorf("build-index: %w", err)
 		}
+
 		data, err = os.ReadFile(indexPath)
 		if err != nil {
 			return nil, fmt.Errorf("read-index: %w", err)

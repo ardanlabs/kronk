@@ -4,7 +4,7 @@
 
 ### MODEL SERVER / TOOLING
 
-- Model catelog web support
+- Add tests to the tooling package
 - Solidfy the auth system
   - CLI tooling to create tokens
   - Provide Auth at the endpoint level (completion/embeddings)

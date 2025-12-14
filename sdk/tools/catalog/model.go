@@ -6,9 +6,9 @@ import (
 
 // Metadata represents extra information about the model.
 type Metadata struct {
-	Created     time.Time
-	Collections string
-	Description string
+	Created     time.Time `yaml:"created"`
+	Collections string    `yaml:"collections"`
+	Description string    `yaml:"description"`
 }
 
 // Capabilities represents the capabilities of a model.
@@ -45,6 +45,7 @@ type Model struct {
 	Files        Files        `yaml:"files"`
 	Capabilities Capabilities `yaml:"capabilities"`
 	Metadata     Metadata     `yaml:"metadata"`
+	Downloaded   bool
 }
 
 // Catalog represents a set of models for a given catalog.

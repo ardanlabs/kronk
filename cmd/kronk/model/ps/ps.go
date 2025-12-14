@@ -15,7 +15,7 @@ import (
 
 // RunWeb executes the ps command against the model server.
 func RunWeb(args []string) error {
-	url, err := client.DefaultURL("/v1/models/status")
+	url, err := client.DefaultURL("/v1/models/ps")
 	if err != nil {
 		return fmt.Errorf("default-url: %w", err)
 	}

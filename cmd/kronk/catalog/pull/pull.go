@@ -4,8 +4,11 @@ package pull
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
+	"github.com/ardanlabs/kronk/cmd/kronk/client"
+	"github.com/ardanlabs/kronk/cmd/server/app/domain/toolapp"
 	"github.com/ardanlabs/kronk/sdk/defaults"
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/tools"
@@ -15,9 +18,32 @@ import (
 // RunWeb executes the catalog pull command against the model server.
 func RunWeb(args []string) error {
 	modelID := args[0]
-	_ = modelID
 
-	fmt.Println("catalog pull: not implemented")
+	path := fmt.Sprintf("/v1/catalog/pull/%s", modelID)
+
+	url, err := client.DefaultURL(path)
+	if err != nil {
+		return fmt.Errorf("default-url: %w", err)
+	}
+
+	fmt.Println("URL:", url)
+
+	cln := client.NewSSE[toolapp.PullResponse](client.FmtLogger)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	ch := make(chan toolapp.PullResponse)
+	if err := cln.Do(ctx, http.MethodPost, url, nil, ch); err != nil {
+		return fmt.Errorf("do: unable to download model: %w", err)
+	}
+
+	for ver := range ch {
+		fmt.Print(ver.Status)
+	}
+
+	fmt.Println()
+
 	return nil
 }
 

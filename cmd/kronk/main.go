@@ -86,7 +86,49 @@ func init() {
 }
 
 // =============================================================================
-// Model
+// LIBRARIES
+
+var libsCmd = &cobra.Command{
+	Use:   "libs",
+	Short: "Install or upgrade llama.cpp libraries",
+	Long: `Install or upgrade llama.cpp libraries
+
+Environment Variables (web mode - default):
+      KRONK_WEB_API_HOST  (default localhost:3000)  IP Address for the kronk server.
+
+Environment Variables (--local mode):
+      KRONK_ARCH       (default: runtime.GOARCH)         The architecture to install.
+      KRONK_LIB_PATH   (default: $HOME/kronk/libraries)  The path to the libraries directory,
+      KRONK_OS         (default: runtime.GOOS)           The operating system to install.
+      KRONK_PROCESSOR  (default: cpu)                    Options: cpu, cuda, metal, vulkan`,
+	Args: cobra.NoArgs,
+	Run:  runLibs,
+}
+
+func init() {
+	libsCmd.Flags().Bool("local", false, "Run without the model server")
+}
+
+func runLibs(cmd *cobra.Command, args []string) {
+	local, _ := cmd.Flags().GetBool("local")
+
+	var err error
+
+	switch local {
+	case true:
+		err = libs.RunLocal(args)
+	default:
+		err = libs.RunWeb(args)
+	}
+
+	if err != nil {
+		fmt.Println("\nERROR:", err)
+		os.Exit(1)
+	}
+}
+
+// =============================================================================
+// MODEL
 
 var modelCmd = &cobra.Command{
 	Use:   "model",
@@ -98,160 +140,7 @@ var modelCmd = &cobra.Command{
 }
 
 // =============================================================================
-// Catalog
-
-var catalogCmd = &cobra.Command{
-	Use:   "catalog",
-	Short: "Manage model catalog",
-	Long:  `Manage model catalog - list and update available models`,
-	Run: func(cmd *cobra.Command, args []string) {
-		cmd.Help()
-	},
-}
-
-var catalogListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List catalog models",
-	Long: `List catalog models
-
-Flags (--local mode):
-      --filter-category  Filter catalogs by category name (substring match)
-
-Environment Variables (web mode - default):
-      KRONK_WEB_API_HOST  (default localhost:3000)  IP Address for the kronk server`,
-	Args: cobra.ArbitraryArgs,
-	Run:  runCatalogList,
-}
-
-func init() {
-	catalogListCmd.Flags().Bool("local", false, "Run without the model server")
-	catalogListCmd.Flags().String("filter-category", "", "Filter catalogs by category name (substring match)")
-}
-
-func runCatalogList(cmd *cobra.Command, args []string) {
-	local, _ := cmd.Flags().GetBool("local")
-	filterCategory, _ := cmd.Flags().GetString("filter-category")
-
-	if filterCategory != "" {
-		args = append(args, "--filter-category", filterCategory)
-	}
-
-	var err error
-
-	switch local {
-	case true:
-		err = cataloglist.RunLocal(args)
-	default:
-		err = cataloglist.RunWeb(args)
-	}
-
-	if err != nil {
-		fmt.Println("\nERROR:", err)
-		os.Exit(1)
-	}
-}
-
-var catalogPullCmd = &cobra.Command{
-	Use:   "pull <MODEL_ID>",
-	Short: "Pull a model from the catalog",
-	Long: `Pull a model from the catalog
-
-Environment Variables (web mode - default):
-      KRONK_WEB_API_HOST  (default localhost:3000)  IP Address for the kronk server`,
-	Args: cobra.ExactArgs(1),
-	Run:  runCatalogPull,
-}
-
-func init() {
-	catalogPullCmd.Flags().Bool("local", false, "Run without the model server")
-}
-
-func runCatalogPull(cmd *cobra.Command, args []string) {
-	local, _ := cmd.Flags().GetBool("local")
-
-	var err error
-
-	switch local {
-	case true:
-		err = catalogpull.RunLocal(args)
-	default:
-		err = catalogpull.RunWeb(args)
-	}
-
-	if err != nil {
-		fmt.Println("\nERROR:", err)
-		os.Exit(1)
-	}
-}
-
-var catalogShowCmd = &cobra.Command{
-	Use:   "show <MODEL_ID>",
-	Short: "Show catalog model information",
-	Long: `Show catalog model information
-
-Environment Variables (web mode - default):
-      KRONK_WEB_API_HOST  (default localhost:3000)  IP Address for the kronk server`,
-	Args: cobra.ExactArgs(1),
-	Run:  runCatalogShow,
-}
-
-func init() {
-	catalogShowCmd.Flags().Bool("local", false, "Run without the model server")
-}
-
-func runCatalogShow(cmd *cobra.Command, args []string) {
-	local, _ := cmd.Flags().GetBool("local")
-
-	var err error
-
-	switch local {
-	case true:
-		err = catalogshow.RunLocal(args)
-	default:
-		err = catalogshow.RunWeb(args)
-	}
-
-	if err != nil {
-		fmt.Println("\nERROR:", err)
-		os.Exit(1)
-	}
-}
-
-var catalogUpdateCmd = &cobra.Command{
-	Use:   "update",
-	Short: "Update the model catalog",
-	Long: `Update the model catalog
-
-Environment Variables (web mode - default):
-      KRONK_WEB_API_HOST  (default localhost:3000)  IP Address for the kronk server`,
-	Args: cobra.NoArgs,
-	Run:  runCatalogUpdate,
-}
-
-func init() {
-	catalogUpdateCmd.Flags().Bool("local", false, "Run without the model server")
-}
-
-func runCatalogUpdate(cmd *cobra.Command, args []string) {
-	local, _ := cmd.Flags().GetBool("local")
-
-	var err error
-
-	switch local {
-	case true:
-		err = catalogupdate.RunLocal(args)
-	default:
-		err = catalogupdate.RunWeb(args)
-	}
-
-	if err != nil {
-		fmt.Println("\nERROR:", err)
-		os.Exit(1)
-	}
-}
-
-// =============================================================================
-// Server
+// MODEL SERVER
 
 var serverCmd = &cobra.Command{
 	Use:     "server",
@@ -308,7 +197,7 @@ func logFilePath() string {
 }
 
 // =============================================================================
-// STOP
+// MODEL STOP
 
 var stopCmd = &cobra.Command{
 	Use:   "stop",
@@ -353,7 +242,7 @@ func pidFilePath() string {
 }
 
 // =============================================================================
-// LOGS
+// MODEL SERVER LOGS
 
 var logsCmd = &cobra.Command{
 	Use:   "logs",
@@ -377,49 +266,7 @@ func runLogs(cmd *cobra.Command, args []string) {
 }
 
 // =============================================================================
-// LIBS
-
-var libsCmd = &cobra.Command{
-	Use:   "libs",
-	Short: "Install or upgrade llama.cpp libraries",
-	Long: `Install or upgrade llama.cpp libraries
-
-Environment Variables (web mode - default):
-      KRONK_WEB_API_HOST  (default localhost:3000)  IP Address for the kronk server.
-
-Environment Variables (--local mode):
-      KRONK_ARCH       (default: runtime.GOARCH)         The architecture to install.
-      KRONK_LIB_PATH   (default: $HOME/kronk/libraries)  The path to the libraries directory,
-      KRONK_OS         (default: runtime.GOOS)           The operating system to install.
-      KRONK_PROCESSOR  (default: cpu)                    Options: cpu, cuda, metal, vulkan`,
-	Args: cobra.NoArgs,
-	Run:  runLibs,
-}
-
-func init() {
-	libsCmd.Flags().Bool("local", false, "Run without the model server")
-}
-
-func runLibs(cmd *cobra.Command, args []string) {
-	local, _ := cmd.Flags().GetBool("local")
-
-	var err error
-
-	switch local {
-	case true:
-		err = libs.RunLocal(args)
-	default:
-		err = libs.RunWeb(args)
-	}
-
-	if err != nil {
-		fmt.Println("\nERROR:", err)
-		os.Exit(1)
-	}
-}
-
-// =============================================================================
-// LIST
+// MODEL LIST
 
 var listCmd = &cobra.Command{
 	Use:   "list",
@@ -458,7 +305,7 @@ func runList(cmd *cobra.Command, args []string) {
 }
 
 // =============================================================================
-// PS
+// MODEL SERVER PS
 
 var psCmd = &cobra.Command{
 	Use:   "ps",
@@ -478,7 +325,7 @@ func runPs(cmd *cobra.Command, args []string) {
 }
 
 // =============================================================================
-// PULL
+// MODEL PULL
 
 var pullCmd = &cobra.Command{
 	Use:   "pull <MODEL_URL> [MMPROJ_URL]",
@@ -514,7 +361,7 @@ func runPull(cmd *cobra.Command, args []string) {
 }
 
 // =============================================================================
-// REMOVE
+// MODEL REMOVE
 
 var removeCmd = &cobra.Command{
 	Use:   "remove MODEL_NAME",
@@ -550,7 +397,7 @@ func runRemove(cmd *cobra.Command, args []string) {
 }
 
 // =============================================================================
-// SHOW
+// MODEL SHOW
 
 var showCmd = &cobra.Command{
 	Use:   "show <MODEL_NAME>",
@@ -580,6 +427,168 @@ func runShow(cmd *cobra.Command, args []string) {
 		err = show.RunLocal(args)
 	default:
 		err = show.RunWeb(args)
+	}
+
+	if err != nil {
+		fmt.Println("\nERROR:", err)
+		os.Exit(1)
+	}
+}
+
+// =============================================================================
+// CATALOG LIST
+
+var catalogCmd = &cobra.Command{
+	Use:   "catalog",
+	Short: "Manage model catalog",
+	Long:  `Manage model catalog - list and update available models`,
+	Run: func(cmd *cobra.Command, args []string) {
+		cmd.Help()
+	},
+}
+
+var catalogListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List catalog models",
+	Long: `List catalog models
+
+Flags (--local mode):
+      --filter-category  Filter catalogs by category name (substring match)
+
+Environment Variables (web mode - default):
+      KRONK_WEB_API_HOST  (default localhost:3000)  IP Address for the kronk server`,
+	Args: cobra.ArbitraryArgs,
+	Run:  runCatalogList,
+}
+
+func init() {
+	catalogListCmd.Flags().Bool("local", false, "Run without the model server")
+	catalogListCmd.Flags().String("filter-category", "", "Filter catalogs by category name (substring match)")
+}
+
+func runCatalogList(cmd *cobra.Command, args []string) {
+	local, _ := cmd.Flags().GetBool("local")
+	filterCategory, _ := cmd.Flags().GetString("filter-category")
+
+	if filterCategory != "" {
+		args = append(args, "--filter-category", filterCategory)
+	}
+
+	var err error
+
+	switch local {
+	case true:
+		err = cataloglist.RunLocal(args)
+	default:
+		err = cataloglist.RunWeb(args)
+	}
+
+	if err != nil {
+		fmt.Println("\nERROR:", err)
+		os.Exit(1)
+	}
+}
+
+// =============================================================================
+// CATALOG PULL
+
+var catalogPullCmd = &cobra.Command{
+	Use:   "pull <MODEL_ID>",
+	Short: "Pull a model from the catalog",
+	Long: `Pull a model from the catalog
+
+Environment Variables (web mode - default):
+      KRONK_WEB_API_HOST  (default localhost:3000)  IP Address for the kronk server`,
+	Args: cobra.ExactArgs(1),
+	Run:  runCatalogPull,
+}
+
+func init() {
+	catalogPullCmd.Flags().Bool("local", false, "Run without the model server")
+}
+
+func runCatalogPull(cmd *cobra.Command, args []string) {
+	local, _ := cmd.Flags().GetBool("local")
+
+	var err error
+
+	switch local {
+	case true:
+		err = catalogpull.RunLocal(args)
+	default:
+		err = catalogpull.RunWeb(args)
+	}
+
+	if err != nil {
+		fmt.Println("\nERROR:", err)
+		os.Exit(1)
+	}
+}
+
+// =============================================================================
+// CATALOG SHOW
+
+var catalogShowCmd = &cobra.Command{
+	Use:   "show <MODEL_ID>",
+	Short: "Show catalog model information",
+	Long: `Show catalog model information
+
+Environment Variables (web mode - default):
+      KRONK_WEB_API_HOST  (default localhost:3000)  IP Address for the kronk server`,
+	Args: cobra.ExactArgs(1),
+	Run:  runCatalogShow,
+}
+
+func init() {
+	catalogShowCmd.Flags().Bool("local", false, "Run without the model server")
+}
+
+func runCatalogShow(cmd *cobra.Command, args []string) {
+	local, _ := cmd.Flags().GetBool("local")
+
+	var err error
+
+	switch local {
+	case true:
+		err = catalogshow.RunLocal(args)
+	default:
+		err = catalogshow.RunWeb(args)
+	}
+
+	if err != nil {
+		fmt.Println("\nERROR:", err)
+		os.Exit(1)
+	}
+}
+
+// =============================================================================
+// CATALOG UPDATE
+
+var catalogUpdateCmd = &cobra.Command{
+	Use:   "update",
+	Short: "Update the model catalog",
+	Long: `Update the model catalog
+
+Environment Variables (web mode - default):
+      KRONK_WEB_API_HOST  (default localhost:3000)  IP Address for the kronk server`,
+	Args: cobra.NoArgs,
+	Run:  runCatalogUpdate,
+}
+
+func init() {
+	catalogUpdateCmd.Flags().Bool("local", false, "Run without the model server")
+}
+
+func runCatalogUpdate(cmd *cobra.Command, args []string) {
+	local, _ := cmd.Flags().GetBool("local")
+
+	var err error
+
+	switch local {
+	case true:
+		err = catalogupdate.RunLocal(args)
+	default:
+		err = catalogupdate.RunWeb(args)
 	}
 
 	if err != nil {

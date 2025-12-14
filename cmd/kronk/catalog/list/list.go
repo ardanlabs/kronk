@@ -2,22 +2,41 @@
 package list
 
 import (
-	"cmp"
+	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
-	"slices"
-	"strings"
 	"text/tabwriter"
+	"time"
 
+	"github.com/ardanlabs/kronk/cmd/kronk/client"
+	"github.com/ardanlabs/kronk/cmd/server/app/domain/toolapp"
 	"github.com/ardanlabs/kronk/sdk/defaults"
-	"github.com/ardanlabs/kronk/sdk/tools"
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 )
 
 // RunWeb executes the catalog list command against the model server.
 func RunWeb(args []string) error {
-	fmt.Println("catalog list: not implemented")
+	url, err := client.DefaultURL("/v1/catalog")
+	if err != nil {
+		return fmt.Errorf("default-url: %w", err)
+	}
+
+	fmt.Println("URL:", url)
+
+	client := client.New(client.FmtLogger)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	var list []toolapp.CatalogModelResponse
+	if err := client.Do(ctx, http.MethodGet, url, nil, &list); err != nil {
+		return fmt.Errorf("do: unable to get model list: %w", err)
+	}
+
+	printWeb(list)
+
 	return nil
 }
 
@@ -33,82 +52,56 @@ func RunLocal(args []string) error {
 
 	basePath := defaults.BaseDir("")
 
-	rows, pulledModels, err := catalogList(basePath, filterCategory)
+	list, err := catalog.CatalogModelList(basePath, filterCategory)
 	if err != nil {
 		return fmt.Errorf("catalog-list: %w", err)
 	}
 
-	print(rows, pulledModels)
+	print(list)
 
 	return nil
 }
 
 // =============================================================================
 
-type row struct {
-	catalogName string
-	model       catalog.Model
-}
-
-func catalogList(basePath string, filterCategory string) ([]row, map[string]struct{}, error) {
-	catalogs, err := catalog.RetrieveCatalogs(basePath)
-	if err != nil {
-		return nil, nil, fmt.Errorf("catalog list: %w", err)
-	}
-
-	modelBasePath := defaults.ModelsDir("")
-
-	modelFiles, err := tools.RetrieveModelFiles(modelBasePath)
-	if err != nil {
-		return nil, nil, fmt.Errorf("retrieve-model-files: %w", err)
-	}
-
-	pulledModels := make(map[string]struct{})
-	for _, mf := range modelFiles {
-		pulledModels[strings.ToLower(mf.ID)] = struct{}{}
-	}
-
-	filterLower := strings.ToLower(filterCategory)
-
-	var rows []row
-	for _, cat := range catalogs {
-		if filterCategory != "" && !strings.Contains(strings.ToLower(cat.Name), filterLower) {
-			continue
-		}
-
-		for _, model := range cat.Models {
-			rows = append(rows, row{catalogName: cat.Name, model: model})
-		}
-	}
-
-	slices.SortFunc(rows, func(a, b row) int {
-		if c := cmp.Compare(strings.ToLower(a.catalogName), strings.ToLower(b.catalogName)); c != 0 {
-			return c
-		}
-		return cmp.Compare(strings.ToLower(a.model.ID), strings.ToLower(b.model.ID))
-	})
-
-	return rows, pulledModels, nil
-}
-
-func print(rows []row, pulledModels map[string]struct{}) {
+func printWeb(list []toolapp.CatalogModelResponse) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(w, "CATALOG\tMODEL ID\tPULLED\tENDPOINT\tIMAGES\tAUDIO\tVIDEO\tSTREAMING\tREASONING\tTOOLING")
 
-	for _, r := range rows {
-		_, onDisk := pulledModels[strings.ToLower(r.model.ID)]
-
+	for _, m := range list {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			r.catalogName,
-			r.model.ID,
-			boolToStr(onDisk),
-			r.model.Capabilities.Endpoint,
-			boolToStr(r.model.Capabilities.Images),
-			boolToStr(r.model.Capabilities.Audio),
-			boolToStr(r.model.Capabilities.Video),
-			boolToStr(r.model.Capabilities.Streaming),
-			boolToStr(r.model.Capabilities.Reasoning),
-			boolToStr(r.model.Capabilities.Tooling),
+			m.Category,
+			m.ID,
+			boolToStr(m.Downloaded),
+			m.Capabilities.Endpoint,
+			boolToStr(m.Capabilities.Images),
+			boolToStr(m.Capabilities.Audio),
+			boolToStr(m.Capabilities.Video),
+			boolToStr(m.Capabilities.Streaming),
+			boolToStr(m.Capabilities.Reasoning),
+			boolToStr(m.Capabilities.Tooling),
+		)
+	}
+
+	w.Flush()
+}
+
+func print(list []catalog.Model) {
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
+	fmt.Fprintln(w, "CATALOG\tMODEL ID\tPULLED\tENDPOINT\tIMAGES\tAUDIO\tVIDEO\tSTREAMING\tREASONING\tTOOLING")
+
+	for _, m := range list {
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			m.Category,
+			m.ID,
+			boolToStr(m.Downloaded),
+			m.Capabilities.Endpoint,
+			boolToStr(m.Capabilities.Images),
+			boolToStr(m.Capabilities.Audio),
+			boolToStr(m.Capabilities.Video),
+			boolToStr(m.Capabilities.Streaming),
+			boolToStr(m.Capabilities.Reasoning),
+			boolToStr(m.Capabilities.Tooling),
 		)
 	}
 

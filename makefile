@@ -108,12 +108,26 @@ kronk-model-show-local:
 kronk-catalog-update-local:
 	go run cmd/kronk/main.go catalog update --local
 
+
+kronk-catalog-list:
+	go run cmd/kronk/main.go catalog list
+
 kronk-catalog-list-local:
 	go run cmd/kronk/main.go catalog list --local
+
+
+# make kronk-catalog-show ID="qwen3-8b-q8_0"
+kronk-catalog-show:
+	go run cmd/kronk/main.go catalog show "$(ID)"
 
 # make kronk-catalog-show-local ID="qwen3-8b-q8_0"
 kronk-catalog-show-local:
 	go run cmd/kronk/main.go catalog show --local "$(ID)"
+
+
+# make kronk-catalog-pull ID="qwen3-8b-q8_0"
+kronk-catalog-pull:
+	go run cmd/kronk/main.go catalog pull "$(ID)"
 
 # make kronk-catalog-pull-local ID="qwen3-8b-q8_0"
 kronk-catalog-pull-local:
@@ -202,9 +216,9 @@ test: install-libraries install-models
 	export RUN_IN_PARALLEL=1 && \
 	export GITHUB_WORKSPACE=$(shell pwd) && \
 	CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk
-	CGO_ENABLED=0 go test -v -count=1 ./sdk//cache
-	CGO_ENABLED=0 go test -v -count=1 ./sdk//model
-	CGO_ENABLED=0 go test -v -count=1 ./sdk//tools/catalog
+	CGO_ENABLED=0 go test -v -count=1 ./sdk/cache
+	CGO_ENABLED=0 go test -v -count=1 ./sdk/model
+	CGO_ENABLED=0 go test -v -count=1 ./sdk/tools/catalog
 
 # ==============================================================================
 # Go Modules support
