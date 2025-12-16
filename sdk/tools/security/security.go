@@ -45,6 +45,7 @@ func New(log *logger.Logger, cfg Config) (*Security, error) {
 		return nil, fmt.Errorf("load-by-file-system: %w", err)
 	}
 
+	// There are no keys in the system yet, create the master key.
 	if n == 0 {
 		if err := generatePrivateKey(keysPath, "master"); err != nil {
 			return nil, fmt.Errorf("generate-private-key: %w", err)
@@ -68,8 +69,10 @@ func New(log *logger.Logger, cfg Config) (*Security, error) {
 		ks:   ks,
 	}
 
+	// We need an admin token and a new private key for moving forward with
+	// creating user tokens.
 	if n == 0 {
-		if err := sec.generateSuperUserToken(keysPath); err != nil {
+		if err := sec.generateAdminToken(keysPath); err != nil {
 			return nil, fmt.Errorf("generate-super-user-token: %w", err)
 		}
 
@@ -80,7 +83,6 @@ func New(log *logger.Logger, cfg Config) (*Security, error) {
 		if _, err := ks.LoadByFileSystem(os.DirFS(keysPath)); err != nil {
 			return nil, fmt.Errorf("load-by-file-system: %w", err)
 		}
-
 	}
 
 	return &sec, nil
@@ -107,7 +109,7 @@ func (sec *Security) GenerateToken(subject string, admin bool, endpoints map[str
 	return token, nil
 }
 
-func (sec *Security) generateSuperUserToken(keysPath string) error {
+func (sec *Security) generateAdminToken(keysPath string) error {
 	const admin = true
 
 	endpoints := map[string]bool{
