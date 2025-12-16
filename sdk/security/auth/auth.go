@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/open-policy-agent/opa/v1/rego"
 )
@@ -41,7 +40,6 @@ type KeyLookup interface {
 
 // Config represents information required to initialize auth.
 type Config struct {
-	Log       *logger.Logger
 	KeyLookup KeyLookup
 	Issuer    string
 	Enabled   bool
@@ -50,7 +48,6 @@ type Config struct {
 // Auth is used to authenticate clients. It can generate a token for a
 // set of user claims and recreate the claims by parsing the token.
 type Auth struct {
-	log       *logger.Logger
 	keyLookup KeyLookup
 	method    jwt.SigningMethod
 	parser    *jwt.Parser
@@ -61,7 +58,6 @@ type Auth struct {
 // New creates an Auth to support authentication/authorization.
 func New(cfg Config) *Auth {
 	return &Auth{
-		log:       cfg.Log,
 		keyLookup: cfg.KeyLookup,
 		method:    jwt.GetSigningMethod(jwt.SigningMethodRS256.Name),
 		parser:    jwt.NewParser(jwt.WithValidMethods([]string{jwt.SigningMethodRS256.Name})),
@@ -136,8 +132,7 @@ func (a *Auth) Authenticate(ctx context.Context, bearerToken string) (Claims, er
 	}
 
 	if err := a.opaPolicyEvaluation(ctx, regoAuthentication, RuleAuthenticate, input, ErrInvalidAuthOPA); err != nil {
-		a.log.Info(ctx, "**Authenticate-FAILED**", "token", jwtUnverified, "userID", claims.Subject)
-		return Claims{}, fmt.Errorf("authentication failed: %w", err)
+		return Claims{}, fmt.Errorf("authentication failed: token[%s] subject[%s]: %w", jwtUnverified, claims.Subject, err)
 	}
 
 	return claims, nil
@@ -167,8 +162,7 @@ func (a *Auth) opaPolicyEvaluation(ctx context.Context, regoScript string, rule 
 
 	result, ok := results[0].Bindings["x"].(bool)
 	if !ok || !result {
-		a.log.Info(ctx, "OPA policy evaluation details", "rule", rule, "results", results, "ok", ok)
-		return fmt.Errorf("%w: OPA policy rule %q not satisfied", baseError, rule)
+		return fmt.Errorf("%w: OPA policy rule %q not satisfied: results[%s] ok[%v]", baseError, rule, results, ok)
 	}
 
 	return nil

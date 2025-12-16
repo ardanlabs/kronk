@@ -47,17 +47,12 @@ func New(log *logger.Logger, cfg Config) (*Security, error) {
 
 	// There are no keys in the system yet, create the master key.
 	if n == 0 {
-		if err := generatePrivateKey(keysPath, "master"); err != nil {
-			return nil, fmt.Errorf("generate-private-key: %w", err)
-		}
-
-		if _, err := ks.LoadByFileSystem(os.DirFS(keysPath)); err != nil {
-			return nil, fmt.Errorf("load-by-file-system: %w", err)
+		if err := generateNewPrivateKey(ks, keysPath, "master"); err != nil {
+			return nil, fmt.Errorf("generate-new-key: %w", err)
 		}
 	}
 
 	authCfg := auth.Config{
-		Log:       log,
 		KeyLookup: ks,
 		Issuer:    cfg.Issuer,
 		Enabled:   cfg.Enabled,
@@ -76,12 +71,8 @@ func New(log *logger.Logger, cfg Config) (*Security, error) {
 			return nil, fmt.Errorf("generate-super-user-token: %w", err)
 		}
 
-		if err := generatePrivateKey(keysPath, uuid.NewString()); err != nil {
-			return nil, fmt.Errorf("generate-private-key: %w", err)
-		}
-
-		if _, err := ks.LoadByFileSystem(os.DirFS(keysPath)); err != nil {
-			return nil, fmt.Errorf("load-by-file-system: %w", err)
+		if err := generateNewPrivateKey(ks, keysPath, uuid.NewString()); err != nil {
+			return nil, fmt.Errorf("generate-new-key: %w", err)
 		}
 	}
 
@@ -107,6 +98,20 @@ func (sec *Security) GenerateToken(subject string, admin bool, endpoints map[str
 	}
 
 	return token, nil
+}
+
+// =============================================================================
+
+func generateNewPrivateKey(ks *keystore.KeyStore, keysPath string, keyName string) error {
+	if err := generatePrivateKey(keysPath, keyName); err != nil {
+		return fmt.Errorf("generate-private-key: %w", err)
+	}
+
+	if _, err := ks.LoadByFileSystem(os.DirFS(keysPath)); err != nil {
+		return fmt.Errorf("load-by-file-system: %w", err)
+	}
+
+	return nil
 }
 
 func (sec *Security) generateAdminToken(keysPath string) error {

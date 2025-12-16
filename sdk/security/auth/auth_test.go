@@ -1,23 +1,17 @@
 package auth_test
 
 import (
-	"bytes"
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/auth"
-	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
+	"github.com/ardanlabs/kronk/sdk/security/auth"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
 )
 
 func Test_Auth(t *testing.T) {
-	log := newUnit(t)
-
 	ath := auth.New(auth.Config{
-		Log:       log,
 		KeyLookup: &keyStore{},
 		Issuer:    "service project",
 	})
@@ -36,7 +30,7 @@ func test1(ath *auth.Auth) func(t *testing.T) {
 			},
 		}
 
-		token, err := ath.GenerateToken(kid, claims)
+		token, err := ath.GenerateToken(claims)
 		if err != nil {
 			t.Fatalf("Should be able to generate a JWT : %s", err)
 		}
@@ -60,27 +54,10 @@ func test1(ath *auth.Auth) func(t *testing.T) {
 
 // =============================================================================
 
-func newUnit(t *testing.T) *logger.Logger {
-	var buf bytes.Buffer
-	log := logger.New(&buf, logger.LevelInfo, "TEST", func(context.Context) string { return "00000000-0000-0000-0000-000000000000" })
-
-	t.Cleanup(func() {
-		t.Helper()
-
-		fmt.Println("******************** LOGS ********************")
-		fmt.Print(buf.String())
-		fmt.Println("******************** LOGS ********************")
-	})
-
-	return log
-}
-
-// =============================================================================
-
 type keyStore struct{}
 
-func (ks *keyStore) PrivateKey(kid string) (string, error) {
-	return privateKeyPEM, nil
+func (ks *keyStore) PrivateKey() (string, string) {
+	return kid, privateKeyPEM
 }
 
 func (ks *keyStore) PublicKey(kid string) (string, error) {
