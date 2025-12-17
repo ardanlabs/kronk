@@ -149,7 +149,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	log.Info(ctx, "startup", "status", "initializing authentication support")
 
-	sec, err := security.New(log, security.Config{
+	sec, err := security.New(security.Config{
 		Issuer:  cfg.Auth.Issuer,
 		Enabled: cfg.Auth.Enabled,
 	})

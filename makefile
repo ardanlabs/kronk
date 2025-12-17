@@ -133,6 +133,11 @@ kronk-catalog-pull:
 kronk-catalog-pull-local:
 	go run cmd/kronk/main.go catalog pull --local "$(ID)"
 
+# ------------------------------------------------------------------------------
+
+kronk-security-help:
+	go run cmd/kronk/main.go security --help
+
 # ==============================================================================
 # Kronk Endpoints
 

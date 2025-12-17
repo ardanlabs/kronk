@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/sdk/kronk/defaults"
 	"github.com/ardanlabs/kronk/sdk/security/auth"
 	"github.com/ardanlabs/kronk/sdk/security/keystore"
@@ -35,7 +34,7 @@ type Security struct {
 }
 
 // New constructs a Security API.
-func New(log *logger.Logger, cfg Config) (*Security, error) {
+func New(cfg Config) (*Security, error) {
 	ks := keystore.New()
 
 	sec := Security{
