@@ -9,7 +9,11 @@ import (
 var Cmd = &cobra.Command{
 	Use:   "security",
 	Short: "Manage security",
-	Long:  `Manage security - tokens and access control`,
+	Long: `Manage security - tokens and access control
+
+Environment Variables:
+  KRONK_TOKEN    Admin level token required for authentication. Must be set
+                 before running any security commands.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Help()
 	},

@@ -10,9 +10,9 @@ import (
 )
 
 func init() {
-	// Pull the environment settings from the model server.
-	if len(os.Args) >= 3 {
-		if os.Args[1] == "server" && strings.Contains(os.Args[2], "help") {
+	if len(os.Args) > 1 {
+		v := strings.Join(os.Args[1:], " ")
+		if v == "server start --help" || v == "help server start" {
 			err := kronk.Run(true)
 			Cmd = &cobra.Command{
 				Use:   "start",
@@ -25,7 +25,6 @@ func init() {
 	}
 
 	Cmd.Flags().BoolP("detach", "d", false, "Run server in the background")
-
 }
 
 var Cmd = &cobra.Command{
