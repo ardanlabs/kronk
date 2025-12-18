@@ -2,16 +2,14 @@
 package logs
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/defaults"
-	"github.com/spf13/cobra"
 )
 
-func runLogs(cmd *cobra.Command, args []string) {
+func runLocal() error {
 	logFile := logFilePath()
 
 	tail := exec.Command("tail", "-f", logFile)
@@ -19,9 +17,10 @@ func runLogs(cmd *cobra.Command, args []string) {
 	tail.Stderr = os.Stderr
 
 	if err := tail.Run(); err != nil {
-		fmt.Println("ERROR:", err)
-		os.Exit(1)
+		return err
 	}
+
+	return nil
 }
 
 func logFilePath() string {

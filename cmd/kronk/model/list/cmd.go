@@ -18,14 +18,21 @@ Environment Variables (web mode - default):
 Environment Variables (--local mode):
       KRONK_MODELS  (default: $HOME/kronk/models)  The path to the models directory`,
 	Args: cobra.NoArgs,
-	Run:  runList,
+	Run:  main,
 }
 
 func init() {
 	Cmd.Flags().Bool("local", false, "Run without the model server")
 }
 
-func runList(cmd *cobra.Command, args []string) {
+func main(cmd *cobra.Command, args []string) {
+	if err := run(cmd); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+}
+
+func run(cmd *cobra.Command) error {
 	local, _ := cmd.Flags().GetBool("local")
 
 	var err error
@@ -38,7 +45,8 @@ func runList(cmd *cobra.Command, args []string) {
 	}
 
 	if err != nil {
-		fmt.Println("\nERROR:", err)
-		os.Exit(1)
+		return err
 	}
+
+	return nil
 }

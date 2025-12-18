@@ -138,6 +138,11 @@ kronk-catalog-pull-local:
 kronk-security-help:
 	go run cmd/kronk/main.go security --help
 
+
+# make kronk-security-create-token U="bill" D="5m" E="chat-completions"
+kronk-security-create-token:
+	go run cmd/kronk/main.go security create token --username "$(U)" --duration "$(D)" --endpoints "$(E)"
+
 # ==============================================================================
 # Kronk Endpoints
 

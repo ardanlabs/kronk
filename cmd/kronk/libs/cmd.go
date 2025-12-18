@@ -21,14 +21,21 @@ Environment Variables (--local mode):
       KRONK_OS         (default: runtime.GOOS)           The operating system to install.
       KRONK_PROCESSOR  (default: cpu)                    Options: cpu, cuda, metal, vulkan`,
 	Args: cobra.NoArgs,
-	Run:  runLibs,
+	Run:  main,
 }
 
 func init() {
 	Cmd.Flags().Bool("local", false, "Run without the model server")
 }
 
-func runLibs(cmd *cobra.Command, args []string) {
+func main(cmd *cobra.Command, args []string) {
+	if err := run(cmd); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+}
+
+func run(cmd *cobra.Command) error {
 	local, _ := cmd.Flags().GetBool("local")
 
 	var err error
@@ -41,7 +48,8 @@ func runLibs(cmd *cobra.Command, args []string) {
 	}
 
 	if err != nil {
-		fmt.Println("\nERROR:", err)
-		os.Exit(1)
+		return err
 	}
+
+	return nil
 }

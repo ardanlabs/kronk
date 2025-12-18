@@ -18,7 +18,7 @@ Flags (--local mode):
 Environment Variables (web mode - default):
       KRONK_WEB_API_HOST  (default localhost:3000)  IP Address for the kronk server`,
 	Args: cobra.ArbitraryArgs,
-	Run:  runCatalogList,
+	Run:  main,
 }
 
 func init() {
@@ -26,7 +26,14 @@ func init() {
 	Cmd.Flags().String("filter-category", "", "Filter catalogs by category name (substring match)")
 }
 
-func runCatalogList(cmd *cobra.Command, args []string) {
+func main(cmd *cobra.Command, args []string) {
+	if err := run(cmd, args); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+}
+
+func run(cmd *cobra.Command, args []string) error {
 	local, _ := cmd.Flags().GetBool("local")
 	filterCategory, _ := cmd.Flags().GetString("filter-category")
 
@@ -44,7 +51,8 @@ func runCatalogList(cmd *cobra.Command, args []string) {
 	}
 
 	if err != nil {
-		fmt.Println("\nERROR:", err)
-		os.Exit(1)
+		return err
 	}
+
+	return nil
 }

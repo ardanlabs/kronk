@@ -12,12 +12,16 @@ var Cmd = &cobra.Command{
 	Short: "Stop the Kronk model server",
 	Long:  `Stop the Kronk model server by sending SIGTERM`,
 	Args:  cobra.NoArgs,
-	Run:   runStop,
+	Run:   main,
 }
 
-func runStop(cmd *cobra.Command, args []string) {
-	if err := runLocal(); err != nil {
-		fmt.Println("\nERROR:", err)
+func main(cmd *cobra.Command, args []string) {
+	if err := run(); err != nil {
+		fmt.Println(err)
 		os.Exit(1)
 	}
+}
+
+func run() error {
+	return runLocal()
 }
