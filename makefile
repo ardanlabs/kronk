@@ -46,16 +46,16 @@ install-gotooling:
 # Kronk CLI
 
 kronk-server:
-	go run cmd/kronk/main.go server | go run cmd/server/api/tooling/logfmt/main.go
+	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
 
 kronk-server-detach:
-	go run cmd/kronk/main.go server --detach
+	go run cmd/kronk/main.go server start --detach
 
 kronk-server-logs:
-	go run cmd/kronk/main.go logs
+	go run cmd/kronk/main.go server logs
 
 kronk-server-stop:
-	go run cmd/kronk/main.go stop
+	go run cmd/kronk/main.go server stop
 
 # ------------------------------------------------------------------------------
 
@@ -175,6 +175,7 @@ curl-model-status:
 
 curl-kronk-chat:
 	curl -i -X POST http://localhost:3000/v1/chat/completions \
+	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
      -d '{ \
 	 	"stream": true, \
@@ -189,6 +190,7 @@ curl-kronk-chat:
 
 curl-kronk-embeddings:
 	curl -i -X POST http://localhost:3000/v1/embeddings \
+	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
      -d '{ \
 	 	"model": "embeddinggemma-300m-qat-Q8_0", \

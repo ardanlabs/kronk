@@ -26,8 +26,8 @@ var (
 // Claims represents the authorization claims transmitted via a JWT.
 type Claims struct {
 	jwt.RegisteredClaims
-	Admin     bool
-	Endpoints map[string]bool
+	Admin     bool            `json:"admin"`
+	Endpoints map[string]bool `json:"endpoints"`
 }
 
 // KeyLookup declares a method set of behavior for looking up
@@ -48,22 +48,45 @@ type Config struct {
 // Auth is used to authenticate clients. It can generate a token for a
 // set of user claims and recreate the claims by parsing the token.
 type Auth struct {
-	keyLookup KeyLookup
-	method    jwt.SigningMethod
-	parser    *jwt.Parser
-	issuer    string
-	enabled   bool
+	keyLookup         KeyLookup
+	method            jwt.SigningMethod
+	parser            *jwt.Parser
+	issuer            string
+	enabled           bool
+	authenticateQuery rego.PreparedEvalQuery
+	authorizeQuery    rego.PreparedEvalQuery
 }
 
 // New creates an Auth to support authentication/authorization.
-func New(cfg Config) *Auth {
-	return &Auth{
-		keyLookup: cfg.KeyLookup,
-		method:    jwt.GetSigningMethod(jwt.SigningMethodRS256.Name),
-		parser:    jwt.NewParser(jwt.WithValidMethods([]string{jwt.SigningMethodRS256.Name})),
-		issuer:    cfg.Issuer,
-		enabled:   cfg.Enabled,
+func New(cfg Config) (*Auth, error) {
+	const rule = "auth"
+	query := fmt.Sprintf("x = data.%s.%s", opaPackage, rule)
+
+	authenticateQuery, err := rego.New(
+		rego.Query(query),
+		rego.Module("policy.rego", regoAuthentication),
+	).PrepareForEval(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("preparing authentication policy: %w", err)
 	}
+
+	authorizeQuery, err := rego.New(
+		rego.Query(query),
+		rego.Module("policy.rego", regoAuthorization),
+	).PrepareForEval(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("preparing authorization policy: %w", err)
+	}
+
+	return &Auth{
+		keyLookup:         cfg.KeyLookup,
+		method:            jwt.GetSigningMethod(jwt.SigningMethodRS256.Name),
+		parser:            jwt.NewParser(jwt.WithValidMethods([]string{jwt.SigningMethodRS256.Name})),
+		issuer:            cfg.Issuer,
+		enabled:           cfg.Enabled,
+		authenticateQuery: authenticateQuery,
+		authorizeQuery:    authorizeQuery,
+	}, nil
 }
 
 // Issuer provides the configured issuer used to authenticate tokens.
@@ -131,39 +154,96 @@ func (a *Auth) Authenticate(ctx context.Context, bearerToken string) (Claims, er
 		"ISS":   a.issuer,
 	}
 
-	if err := a.opaPolicyEvaluation(ctx, regoAuthentication, RuleAuthenticate, input, ErrInvalidAuthOPA); err != nil {
+	if err := a.opaAuthentication(ctx, input); err != nil {
 		return Claims{}, fmt.Errorf("authentication failed: token[%s] subject[%s]: %w", jwtUnverified, claims.Subject, err)
 	}
 
 	return claims, nil
 }
 
-// opaPolicyEvaluation asks opa to evaluate the token against the specified token
-// policy and public key.
-func (a *Auth) opaPolicyEvaluation(ctx context.Context, regoScript string, rule string, input any, baseError error) error {
-	query := fmt.Sprintf("x = data.%s.%s", opaPackage, rule)
+// Authorize checks if the claims have the required admin and endpoint permissions.
+func (a *Auth) Authorize(ctx context.Context, claims Claims, requireAdmin bool, endpoint string) error {
+	input := map[string]any{
+		"Claim": map[string]any{
+			"Admin":     claims.Admin,
+			"Endpoints": claims.Endpoints,
+		},
+		"Requires": map[string]any{
+			"Admin":    requireAdmin,
+			"Endpoint": endpoint,
+		},
+	}
 
-	q, err := rego.New(
-		rego.Query(query),
-		rego.Module("policy.rego", regoScript),
-	).PrepareForEval(ctx)
+	result, err := a.opaAuthorization(ctx, input)
 	if err != nil {
-		return fmt.Errorf("OPA prepare for eval failed for rule %q: %w", rule, err)
+		return fmt.Errorf("authorization failed: %w", err)
 	}
 
-	results, err := q.Eval(ctx, rego.EvalInput(input))
-	if err != nil {
-		return fmt.Errorf("OPA eval failed for rule %q: %w", rule, err)
+	if !result.Admin {
+		return fmt.Errorf("%w: admin access required", ErrForbidden)
 	}
 
-	if len(results) == 0 {
-		return fmt.Errorf("%w: OPA policy evaluation for rule %q yielded no results", baseError, rule)
-	}
-
-	result, ok := results[0].Bindings["x"].(bool)
-	if !ok || !result {
-		return fmt.Errorf("%w: OPA policy rule %q not satisfied: results[%s] ok[%v]", baseError, rule, results, ok)
+	if !result.Endpoint {
+		return fmt.Errorf("%w: endpoint %q not authorized", ErrForbidden, endpoint)
 	}
 
 	return nil
+}
+
+// =============================================================================
+
+// opaAuthentication asks opa to evaluate the token against the specified token
+// policy and public key.
+func (a *Auth) opaAuthentication(ctx context.Context, input any) error {
+	results, err := a.authenticateQuery.Eval(ctx, rego.EvalInput(input))
+	if err != nil {
+		return fmt.Errorf("OPA eval failed: %w", err)
+	}
+
+	if len(results) == 0 {
+		return fmt.Errorf("%w: no results", ErrInvalidAuthOPA)
+	}
+
+	resultMap, ok := results[0].Bindings["x"].(map[string]any)
+	if !ok {
+		return fmt.Errorf("%w: unexpected result type", ErrInvalidAuthOPA)
+	}
+
+	valid, _ := resultMap["valid"].(bool)
+	if !valid {
+		errMsg, _ := resultMap["error"].(string)
+		return fmt.Errorf("%w: %s", ErrInvalidAuthOPA, errMsg)
+	}
+
+	return nil
+}
+
+type authResult struct {
+	Admin    bool
+	Endpoint bool
+}
+
+// opaAuthorization evaluates the authorization policy and returns the result document.
+func (a *Auth) opaAuthorization(ctx context.Context, input any) (authResult, error) {
+	results, err := a.authorizeQuery.Eval(ctx, rego.EvalInput(input))
+	if err != nil {
+		return authResult{}, fmt.Errorf("OPA eval failed: %w", err)
+	}
+
+	if len(results) == 0 {
+		return authResult{}, fmt.Errorf("%w: no results", ErrInvalidAuthzOPA)
+	}
+
+	resultMap, ok := results[0].Bindings["x"].(map[string]any)
+	if !ok {
+		return authResult{}, fmt.Errorf("%w: unexpected result type", ErrInvalidAuthzOPA)
+	}
+
+	adminVal, _ := resultMap["Admin"].(bool)
+	endpointVal, _ := resultMap["Endpoint"].(bool)
+
+	return authResult{
+		Admin:    adminVal,
+		Endpoint: endpointVal,
+	}, nil
 }

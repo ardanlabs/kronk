@@ -22,8 +22,9 @@ func Routes(app *web.App, cfg Config) {
 	const version = "v1"
 
 	bearer := mid.Bearer(cfg.Security.Auth)
+	authorizeEndpoint := mid.Authorize(cfg.Security.Auth, false, "chat-completions")
 
 	api := newApp(cfg.Log, cfg.Cache)
 
-	app.HandlerFunc(http.MethodPost, version, "/chat/completions", api.chatCompletions, bearer)
+	app.HandlerFunc(http.MethodPost, version, "/chat/completions", api.chatCompletions, bearer, authorizeEndpoint)
 }

@@ -11,15 +11,21 @@ import (
 )
 
 func Test_Auth(t *testing.T) {
-	ath := auth.New(auth.Config{
+	ath, err := auth.New(auth.Config{
 		KeyLookup: &keyStore{},
 		Issuer:    "service project",
+		Enabled:   true,
 	})
 
-	t.Run("test1", test1(ath))
+	if err != nil {
+		t.Fatalf("should be able to construct auth api : %s", err)
+	}
+
+	t.Run("authenticate", authenticate(ath))
+	t.Run("authorize", authorize(ath))
 }
 
-func test1(ath *auth.Auth) func(t *testing.T) {
+func authenticate(ath *auth.Auth) func(t *testing.T) {
 	f := func(t *testing.T) {
 		claims := auth.Claims{
 			RegisteredClaims: jwt.RegisteredClaims{
@@ -27,6 +33,10 @@ func test1(ath *auth.Auth) func(t *testing.T) {
 				Subject:   "5cf37266-3473-4006-984f-9325122678b7",
 				ExpiresAt: jwt.NewNumericDate(time.Now().UTC().Add(time.Hour)),
 				IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
+			},
+			Admin: true,
+			Endpoints: map[string]bool{
+				"chat-completions": true,
 			},
 		}
 
@@ -47,6 +57,88 @@ func test1(ath *auth.Auth) func(t *testing.T) {
 		if parsedClaims.Subject != claims.Subject {
 			t.Fatalf("Should be able to get back the same claims : %s", err)
 		}
+	}
+
+	return f
+}
+
+func authorize(ath *auth.Auth) func(t *testing.T) {
+	f := func(t *testing.T) {
+		userClaims := auth.Claims{
+			RegisteredClaims: jwt.RegisteredClaims{
+				Issuer:  "kronk project",
+				Subject: "bill",
+			},
+			Admin: false,
+			Endpoints: map[string]bool{
+				"chat-completions": true,
+			},
+		}
+
+		adminClaims := auth.Claims{
+			RegisteredClaims: jwt.RegisteredClaims{
+				Issuer:  "kronk project",
+				Subject: "admin",
+			},
+			Admin: true,
+			Endpoints: map[string]bool{
+				"chat-completions": true,
+				"embeddings":       true,
+			},
+		}
+
+		ctx := context.Background()
+
+		// Admin tests
+		t.Run("admin required with admin claims", func(t *testing.T) {
+			err := ath.Authorize(ctx, adminClaims, true, "chat-completions")
+			if err != nil {
+				t.Fatalf("admin should be authorized: %s", err)
+			}
+		})
+
+		t.Run("admin required with user claims", func(t *testing.T) {
+			err := ath.Authorize(ctx, userClaims, true, "chat-completions")
+			if err == nil {
+				t.Fatal("user should not be authorized for admin")
+			}
+		})
+
+		t.Run("admin not required with user claims", func(t *testing.T) {
+			err := ath.Authorize(ctx, userClaims, false, "chat-completions")
+			if err != nil {
+				t.Fatalf("user should be authorized when admin not required: %s", err)
+			}
+		})
+
+		// Endpoint tests
+		t.Run("user has endpoint", func(t *testing.T) {
+			err := ath.Authorize(ctx, userClaims, false, "chat-completions")
+			if err != nil {
+				t.Fatalf("user should be authorized for chat-completions: %s", err)
+			}
+		})
+
+		t.Run("user missing endpoint", func(t *testing.T) {
+			err := ath.Authorize(ctx, userClaims, false, "embeddings")
+			if err == nil {
+				t.Fatal("user should not be authorized for embeddings")
+			}
+		})
+
+		t.Run("admin has endpoint", func(t *testing.T) {
+			err := ath.Authorize(ctx, adminClaims, false, "embeddings")
+			if err != nil {
+				t.Fatalf("admin should be authorized for embeddings: %s", err)
+			}
+		})
+
+		t.Run("admin missing endpoint", func(t *testing.T) {
+			err := ath.Authorize(ctx, adminClaims, false, "unknown-endpoint")
+			if err == nil {
+				t.Fatal("admin should not be authorized for unknown-endpoint")
+			}
+		})
 	}
 
 	return f

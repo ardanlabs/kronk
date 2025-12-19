@@ -37,14 +37,19 @@ type Security struct {
 func New(cfg Config) (*Security, error) {
 	ks := keystore.New()
 
+	a, err := auth.New(auth.Config{
+		KeyLookup: ks,
+		Issuer:    cfg.Issuer,
+		Enabled:   cfg.Enabled,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("auth: %w", err)
+	}
+
 	sec := Security{
-		Auth: auth.New(auth.Config{
-			KeyLookup: ks,
-			Issuer:    cfg.Issuer,
-			Enabled:   cfg.Enabled,
-		}),
-		cfg: cfg,
-		ks:  ks,
+		Auth: a,
+		cfg:  cfg,
+		ks:   ks,
 	}
 
 	if err := sec.addSystemKeys(cfg.KeysFolder); err != nil {

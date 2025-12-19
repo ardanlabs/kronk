@@ -299,3 +299,7 @@ func (a *app) showCatalogModel(ctx context.Context, r *http.Request) web.Encoder
 
 	return toCatalogModelResponse(model)
 }
+
+func (a *app) createToken(ctx context.Context, r *http.Request) web.Encoder {
+	return nil
+}

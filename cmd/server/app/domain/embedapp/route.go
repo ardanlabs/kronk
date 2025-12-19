@@ -22,8 +22,9 @@ func Routes(app *web.App, cfg Config) {
 	const version = "v1"
 
 	bearer := mid.Bearer(cfg.Security.Auth)
+	authorizeEndpoint := mid.Authorize(cfg.Security.Auth, false, "embeddings")
 
 	api := newApp(cfg.Log, cfg.Cache)
 
-	app.HandlerFunc(http.MethodPost, version, "/embeddings", api.embeddings, bearer)
+	app.HandlerFunc(http.MethodPost, version, "/embeddings", api.embeddings, bearer, authorizeEndpoint)
 }

@@ -22,6 +22,7 @@ func Routes(app *web.App, cfg Config) {
 	const version = ""
 
 	bearer := mid.Bearer(cfg.Security.Auth)
+	authorizeAdmin := mid.Authorize(cfg.Security.Auth, true, "")
 
 	api := newApp(cfg.Log, cfg.Cache)
 
@@ -37,4 +38,6 @@ func Routes(app *web.App, cfg Config) {
 	app.HandlerFunc(http.MethodGet, version, "/v1/catalog/filter/{filter}", api.listCatalog, bearer)
 	app.HandlerFunc(http.MethodGet, version, "/v1/catalog/{model}", api.showCatalogModel, bearer)
 	app.HandlerFunc(http.MethodPost, version, "/v1/catalog/pull/{model}", api.pullCatalog, bearer)
+
+	app.HandlerFunc(http.MethodPost, version, "/v1/security/token/create", api.createToken, bearer, authorizeAdmin)
 }
