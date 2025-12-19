@@ -15,17 +15,14 @@ type config struct {
 	Duration   time.Duration
 }
 
-func runWeb(cfg config) error {
-	fmt.Println("RunWeb: token create")
-	fmt.Printf("  AdminToken: %s\n", cfg.AdminToken)
-	fmt.Printf("  Duration: %s\n", cfg.Duration)
-	fmt.Printf("  Endpoints: %v\n", cfg.Endpoints)
+func runWeb() error {
+	fmt.Println("Not Implemented")
 
 	return nil
 }
 
 func runLocal(cfg config) error {
-	fmt.Println("RunLocal: token create")
+	fmt.Println("Token create")
 	fmt.Printf("  Duration: %s\n", cfg.Duration)
 	fmt.Printf("  Endpoints: %v\n", cfg.Endpoints)
 

@@ -14,7 +14,7 @@ var Cmd = &cobra.Command{
 	Long: `Create a security token
 
 Flags:
-      --admin-token  Admin token for authentication
+	  --username     The user to apply to the token
       --duration     Token duration (e.g., 1h, 1d, 1m, 1y)
       --endpoints    Comma-separated list of allowed endpoints`,
 	Args: cobra.NoArgs,
@@ -67,7 +67,7 @@ func run(cmd *cobra.Command) error {
 	case true:
 		err = runLocal(cfg)
 	default:
-		err = runWeb(cfg)
+		err = runWeb()
 	}
 
 	if err != nil {
