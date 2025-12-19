@@ -3,7 +3,7 @@
 #
 
 zarf/docker/openwebui
-node_modules/
+node_modules
 
 # Binaries for programs and plugins
 *.exe
