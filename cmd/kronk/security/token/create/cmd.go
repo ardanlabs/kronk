@@ -67,7 +67,7 @@ func run(cmd *cobra.Command) error {
 	case true:
 		err = runLocal(cfg)
 	default:
-		err = runWeb()
+		err = runWeb(cfg)
 	}
 
 	if err != nil {

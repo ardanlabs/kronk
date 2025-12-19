@@ -24,7 +24,7 @@ func Routes(app *web.App, cfg Config) {
 	bearer := mid.Bearer(cfg.Security.Auth)
 	authorizeAdmin := mid.Authorize(cfg.Security.Auth, true, "")
 
-	api := newApp(cfg.Log, cfg.Cache)
+	api := newApp(cfg.Log, cfg.Cache, cfg.Security)
 
 	app.HandlerFunc(http.MethodPost, version, "/v1/libs/pull", api.pullLibs, bearer)
 
@@ -40,4 +40,6 @@ func Routes(app *web.App, cfg Config) {
 	app.HandlerFunc(http.MethodPost, version, "/v1/catalog/pull/{model}", api.pullCatalog, bearer)
 
 	app.HandlerFunc(http.MethodPost, version, "/v1/security/token/create", api.createToken, bearer, authorizeAdmin)
+	app.HandlerFunc(http.MethodPost, version, "/v1/security/keys/add", api.addKey, bearer, authorizeAdmin)
+	app.HandlerFunc(http.MethodPost, version, "/v1/security/keys/remove/{keyid}", api.removeKey, bearer, authorizeAdmin)
 }

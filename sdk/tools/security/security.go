@@ -21,9 +21,9 @@ var (
 
 // Config represents the config needed to constuct the security API.
 type Config struct {
-	KeysFolder string
-	Issuer     string
-	Enabled    bool
+	OverrideBaseKeysFolder string
+	Issuer                 string
+	Enabled                bool
 }
 
 // Security provides security support APIs.
@@ -52,11 +52,16 @@ func New(cfg Config) (*Security, error) {
 		ks:   ks,
 	}
 
-	if err := sec.addSystemKeys(cfg.KeysFolder); err != nil {
+	if err := sec.addSystemKeys(); err != nil {
 		return nil, fmt.Errorf("add-system-keys: %w", err)
 	}
 
 	return &sec, nil
+}
+
+// BaseKeysFolder returns the location of the base keys folder being used.
+func (sec *Security) BaseKeysFolder() string {
+	return sec.cfg.OverrideBaseKeysFolder
 }
 
 // GenerateToken generates a new token with the specified claims.
@@ -80,10 +85,49 @@ func (sec *Security) GenerateToken(subject string, admin bool, endpoints map[str
 	return token, nil
 }
 
+// AddPrivateKey adds a new private key to the system. You can override the
+// default location of the keys folder by passing a non-empty string.
+func (sec *Security) AddPrivateKey() error {
+	basePath := defaults.BaseDir(sec.cfg.OverrideBaseKeysFolder)
+	keysPath := filepath.Join(basePath, localFolder)
+
+	if err := generatePrivateKey(keysPath, uuid.NewString()); err != nil {
+		return fmt.Errorf("generate-private-key: %w", err)
+	}
+
+	if _, err := sec.ks.LoadByFileSystem(os.DirFS(keysPath)); err != nil {
+		return fmt.Errorf("load-by-file-system: %w", err)
+	}
+
+	return nil
+}
+
+// DeletePrivateKey removes a key from the system. Once this happens no tokens
+// created with this key will authenticate.
+func (sec *Security) DeletePrivateKey(keyID string) error {
+	basePath := defaults.BaseDir(sec.cfg.OverrideBaseKeysFolder)
+	keysPath := filepath.Join(basePath, localFolder)
+	keyFile := filepath.Join(keysPath, fmt.Sprintf("%s.pem", keyID))
+
+	if _, err := os.Stat(keyFile); os.IsNotExist(err) {
+		return fmt.Errorf("key %q does not exist", keyID)
+	}
+
+	if err := os.Remove(keyFile); err != nil {
+		return fmt.Errorf("delete-key: %w", err)
+	}
+
+	if _, err := sec.ks.LoadByFileSystem(os.DirFS(keysPath)); err != nil {
+		return fmt.Errorf("load-by-file-system: %w", err)
+	}
+
+	return nil
+}
+
 // =============================================================================
 
-func (sec *Security) addSystemKeys(keysFolder string) error {
-	basePath := defaults.BaseDir(keysFolder)
+func (sec *Security) addSystemKeys() error {
+	basePath := defaults.BaseDir(sec.cfg.OverrideBaseKeysFolder)
 	keysPath := filepath.Join(basePath, localFolder)
 
 	os.MkdirAll(keysPath, 0755)

@@ -51,6 +51,11 @@ func New() *KeyStore {
 // Example: ks.LoadByFileSystem(os.DirFS("/zarf/keys/"))
 // Example: /zarf/keys/54bb2165-71e1-41a6-af3e-7da4a0e1e2c1.pem
 func (ks *KeyStore) LoadByFileSystem(fsys fs.FS) (int, error) {
+	ks.mu.Lock()
+	defer ks.mu.Unlock()
+
+	store := make(map[string]Key)
+
 	var youngestKey Key
 	var youngestTime time.Time
 
@@ -105,9 +110,7 @@ func (ks *KeyStore) LoadByFileSystem(fsys fs.FS) (int, error) {
 			youngestKey = key
 		}
 
-		ks.mu.Lock()
-		defer ks.mu.Unlock()
-		ks.store[keyID] = key
+		store[keyID] = key
 
 		return nil
 	}
@@ -117,9 +120,8 @@ func (ks *KeyStore) LoadByFileSystem(fsys fs.FS) (int, error) {
 	}
 
 	ks.activeKey = youngestKey
+	ks.store = store
 
-	ks.mu.RLock()
-	defer ks.mu.RUnlock()
 	return len(ks.store), nil
 }
 

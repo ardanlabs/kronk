@@ -323,3 +323,29 @@ func toCatalogModelsResponse(list []catalog.Model) CatalogModelsResponse {
 
 	return catalogModels
 }
+
+// =============================================================================
+
+// TokenRequest represents the input for the create token command.
+type TokenRequest struct {
+	UserName  string        `json:"user_name"`
+	Admin     bool          `json:"admin"`
+	Endpoints []string      `json:"endpoints"`
+	Duration  time.Duration `json:"duration"`
+}
+
+// Decode implements the decoder interface.
+func (app *TokenRequest) Decode(data []byte) error {
+	return json.Unmarshal(data, app)
+}
+
+// TokenResponse represents the response for a successful token creation.
+type TokenResponse struct {
+	Token string `json:"token"`
+}
+
+// Encode implements the encoder interface.
+func (app TokenResponse) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(app)
+	return data, "application/json", err
+}

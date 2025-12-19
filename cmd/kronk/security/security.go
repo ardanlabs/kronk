@@ -4,6 +4,7 @@ package security
 import (
 	"os"
 
+	"github.com/ardanlabs/kronk/cmd/kronk/security/key"
 	"github.com/ardanlabs/kronk/cmd/kronk/security/token"
 	"github.com/spf13/cobra"
 )
@@ -22,6 +23,7 @@ Environment Variables:
 }
 
 func init() {
+	Cmd.AddCommand(key.Cmd)
 	Cmd.AddCommand(token.Cmd)
 
 	if os.Getenv("KRONK_TOKEN") == "" {
