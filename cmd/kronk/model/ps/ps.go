@@ -9,12 +9,11 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/ardanlabs/kronk/cmd/kronk/client"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/toolapp"
+	"github.com/ardanlabs/kronk/sdk/client"
 )
 
-// RunWeb executes the ps command against the model server.
-func RunWeb(args []string) error {
+func runWeb() error {
 	url, err := client.DefaultURL("/v1/models/ps")
 	if err != nil {
 		return fmt.Errorf("default-url: %w", err)

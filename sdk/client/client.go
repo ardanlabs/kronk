@@ -16,6 +16,7 @@ import (
 
 const version = "v1.0.0"
 
+// ErrUnauthorized is returned when the API refuses to authorize the request.
 var ErrUnauthorized = errors.New("api understands the request but refuses to authorize it")
 
 var defaultClient = http.Client{
@@ -36,10 +37,13 @@ var defaultClient = http.Client{
 
 // =============================================================================
 
+// Logger represents a function for logging client operations.
 type Logger func(context.Context, string, ...any)
 
+// NoopLogger is a logger that discards all log output.
 var NoopLogger = func(ctx context.Context, msg string, v ...any) {}
 
+// FmtLogger is a logger that writes to stdout using fmt.
 var FmtLogger = func(ctx context.Context, msg string, args ...any) {
 	fmt.Print(msg)
 	for i := 0; i < len(args); i += 2 {
@@ -52,11 +56,14 @@ var FmtLogger = func(ctx context.Context, msg string, args ...any) {
 
 // =============================================================================
 
+// Client provides support for making HTTP requests to an API.
 type Client struct {
-	log  Logger
-	http *http.Client
+	log    Logger
+	http   *http.Client
+	bearer string
 }
 
+// New constructs a Client with the provided logger and options.
 func New(log Logger, options ...func(cln *Client)) *Client {
 	cln := Client{
 		log:  log,
@@ -70,12 +77,21 @@ func New(log Logger, options ...func(cln *Client)) *Client {
 	return &cln
 }
 
+// WithClient sets a custom HTTP client for the Client.
 func WithClient(http *http.Client) func(cln *Client) {
 	return func(cln *Client) {
 		cln.http = http
 	}
 }
 
+// WithBearer sets a bearer token for API authentication.
+func WithBearer(token string) func(cln *Client) {
+	return func(cln *Client) {
+		cln.bearer = token
+	}
+}
+
+// Do sends an HTTP request and decodes the JSON response into v.
 func (cln *Client) Do(ctx context.Context, method string, endpoint string, body D, v any) error {
 	resp, err := do(ctx, cln, method, endpoint, body)
 	if err != nil {
@@ -101,10 +117,12 @@ func (cln *Client) Do(ctx context.Context, method string, endpoint string, body 
 
 // =============================================================================
 
+// SSEClient provides support for Server-Sent Events streaming responses.
 type SSEClient[T any] struct {
 	*Client
 }
 
+// NewSSE constructs an SSEClient with the provided logger and options.
 func NewSSE[T any](log Logger, options ...func(cln *Client)) *SSEClient[T] {
 	cln := New(log, options...)
 
@@ -113,6 +131,7 @@ func NewSSE[T any](log Logger, options ...func(cln *Client)) *SSEClient[T] {
 	}
 }
 
+// Do sends an HTTP request and streams SSE responses to the provided channel.
 func (cln *SSEClient[T]) Do(ctx context.Context, method string, endpoint string, body D, ch chan T) error {
 	resp, err := do(ctx, cln.Client, method, endpoint, body)
 	if err != nil {
@@ -177,6 +196,10 @@ func do(ctx context.Context, cln *Client, method string, endpoint string, body a
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", fmt.Sprintf("Ardan Labs AI Training Sample Go Client: %s", version))
+
+	if cln.bearer != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", cln.bearer))
+	}
 
 	resp, err := cln.http.Do(req)
 	if err != nil {

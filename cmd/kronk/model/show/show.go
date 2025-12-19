@@ -7,14 +7,13 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ardanlabs/kronk/cmd/kronk/client"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/toolapp"
+	"github.com/ardanlabs/kronk/sdk/client"
 	"github.com/ardanlabs/kronk/sdk/kronk/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-// RunWeb executes the show command against the model server.
-func RunWeb(args []string) error {
+func runWeb(args []string) error {
 	modelID := args[0]
 
 	url, err := client.DefaultURL(fmt.Sprintf("/v1/models/%s", modelID))
@@ -39,8 +38,7 @@ func RunWeb(args []string) error {
 	return nil
 }
 
-// RunLocal executes the pull command.
-func RunLocal(args []string) error {
+func runLocal(args []string) error {
 	libPath := defaults.LibsDir("")
 	modelBasePath := defaults.ModelsDir("")
 	modelID := args[0]

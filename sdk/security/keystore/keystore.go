@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"crypto/rsa"
 	"crypto/x509"
-	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -15,6 +14,7 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"time"
 )
 
 // ErrKeyNotFound is returned when a key identified by a kid is not found.
@@ -22,8 +22,9 @@ var ErrKeyNotFound = errors.New("key not found")
 
 const maxPEMFileSize = 1024 * 1024 // 1 MiB
 
-// key represents key information.
-type key struct {
+// Key represents Key information.
+type Key struct {
+	keyID      string
 	privatePEM string
 	publicPEM  string
 }
@@ -31,55 +32,33 @@ type key struct {
 // KeyStore represents an in memory store implementation of the
 // KeyLookup interface for use with the auth package.
 type KeyStore struct {
-	store map[string]key
-	mu    sync.RWMutex
+	activeKey Key
+	store     map[string]Key
+	mu        sync.RWMutex
 }
 
 // New constructs an empty KeyStore ready for use.
 func New() *KeyStore {
 	return &KeyStore{
-		store: make(map[string]key),
+		store: make(map[string]Key),
 	}
-}
-
-// LoadByJSON is given a JSON document read with two fields, key and pem
-// (private key).
-func (ks *KeyStore) LoadByJSON(document string) (int, error) {
-	if document == "" {
-		return 0, nil
-	}
-
-	var d struct {
-		Key string `json:"key"`
-		PEM string `json:"pem"`
-	}
-	if err := json.Unmarshal([]byte(document), &d); err != nil {
-		return len(ks.store), fmt.Errorf("unable to marshal document: %w", err)
-	}
-
-	publicPEM, err := toPublicPEM(d.PEM)
-	if err != nil {
-		return 0, fmt.Errorf("converting private PEM to public: %w", err)
-	}
-
-	key := key{
-		privatePEM: d.PEM,
-		publicPEM:  publicPEM,
-	}
-
-	ks.mu.Lock()
-	defer ks.mu.Unlock()
-	ks.store[d.Key] = key
-
-	return len(ks.store), nil
 }
 
 // LoadByFileSystem loads a set of RSA PEM files rooted inside of a directory. The
-// name of each PEM file will be used as the key id. The function also returns
-// the total number of keys in the store.
-// Example: ks.LoadRSAKeys(os.DirFS("/zarf/keys/"))
+// name of each PEM file will be used as the key id. The youngest file by
+// modification time becomes the active key. The function also returns the total
+// number of keys in the store.
+// Example: ks.LoadByFileSystem(os.DirFS("/zarf/keys/"))
 // Example: /zarf/keys/54bb2165-71e1-41a6-af3e-7da4a0e1e2c1.pem
 func (ks *KeyStore) LoadByFileSystem(fsys fs.FS) (int, error) {
+	ks.mu.Lock()
+	defer ks.mu.Unlock()
+
+	store := make(map[string]Key)
+
+	var youngestKey Key
+	var youngestTime time.Time
+
 	fn := func(fileName string, dirEntry fs.DirEntry, err error) error {
 		if err != nil {
 			return fmt.Errorf("walkdir failure: %w", err)
@@ -113,14 +92,25 @@ func (ks *KeyStore) LoadByFileSystem(fsys fs.FS) (int, error) {
 			return fmt.Errorf("converting private PEM to public: %w", err)
 		}
 
-		key := key{
+		keyID := strings.TrimSuffix(path.Base(fileName), ".pem")
+
+		key := Key{
+			keyID:      keyID,
 			privatePEM: privatePEM,
 			publicPEM:  publicPEM,
 		}
 
-		ks.mu.Lock()
-		defer ks.mu.Unlock()
-		ks.store[strings.TrimSuffix(dirEntry.Name(), ".pem")] = key
+		info, err := dirEntry.Info()
+		if err != nil {
+			return fmt.Errorf("getting file info: %w", err)
+		}
+
+		if info.ModTime().After(youngestTime) {
+			youngestTime = info.ModTime()
+			youngestKey = key
+		}
+
+		store[keyID] = key
 
 		return nil
 	}
@@ -129,22 +119,18 @@ func (ks *KeyStore) LoadByFileSystem(fsys fs.FS) (int, error) {
 		return 0, fmt.Errorf("walking directory: %w", err)
 	}
 
-	ks.mu.RLock()
-	defer ks.mu.RUnlock()
+	ks.activeKey = youngestKey
+	ks.store = store
+
 	return len(ks.store), nil
 }
 
-// PrivateKey searches the key store for a given kid and returns the private key.
-func (ks *KeyStore) PrivateKey(kid string) (string, error) {
+// PrivateKey returns the current active private key.
+func (ks *KeyStore) PrivateKey() (string, string) {
 	ks.mu.RLock()
 	defer ks.mu.RUnlock()
 
-	key, found := ks.store[kid]
-	if !found {
-		return "", ErrKeyNotFound
-	}
-
-	return key.privatePEM, nil
+	return ks.activeKey.keyID, ks.activeKey.privatePEM
 }
 
 // PublicKey searches the key store for a given kid and returns the public key.

@@ -7,16 +7,15 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ardanlabs/kronk/cmd/kronk/client"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/toolapp"
+	"github.com/ardanlabs/kronk/sdk/client"
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-// RunWeb executes the catalog pull command against the model server.
-func RunWeb(args []string) error {
+func runWeb(args []string) error {
 	modelID := args[0]
 
 	path := fmt.Sprintf("/v1/catalog/pull/%s", modelID)
@@ -47,8 +46,7 @@ func RunWeb(args []string) error {
 	return nil
 }
 
-// RunLocal executes the catalog pull command locally.
-func RunLocal(args []string) error {
+func runLocal(args []string) error {
 	modelID := args[0]
 
 	basePath := defaults.BaseDir("")

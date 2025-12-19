@@ -53,10 +53,12 @@ jobs:
         run: |
           export GOROUTINES=1
           export RUN_IN_PARALLEL=0
-          CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/tests
+          CGO_ENABLED=0 go test -v -count=1 ./sdk/security/auth
+          CGO_ENABLED=0 go test -v -count=1 ./sdk/tools/security
+          CGO_ENABLED=0 go test -v -count=1 ./sdk/tools/catalog
           CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/cache
           CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/model
-          CGO_ENABLED=0 go test -v -count=1 ./sdk/tools/catalog
+          CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/tests
       - name: Delete existing models cache
         if: github.ref == 'refs/heads/main' && steps.cache-models.outputs.cache-hit != 'true'
         env:

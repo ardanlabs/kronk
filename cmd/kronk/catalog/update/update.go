@@ -10,14 +10,12 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 )
 
-// RunWeb executes the catalog update command against the model server.
-func RunWeb(args []string) error {
+func runWeb() error {
 	fmt.Println("catalog update: not implemented")
 	return nil
 }
 
-// RunLocal executes the catalog update command locally.
-func RunLocal(args []string) error {
+func runLocal() error {
 	basePath := defaults.BaseDir("")
 
 	fmt.Println("Starting Update")

@@ -5,8 +5,6 @@
 ### MODEL SERVER / TOOLING
 
 - Solidfy the auth system
-  - CLI tooling to create tokens
-  - Provide Auth at the endpoint level (completion/embeddings)
   - Rate limiting
 - Apply OTEL Spans to critical areas beyond start/stop request
 - Maintain stats at a model level

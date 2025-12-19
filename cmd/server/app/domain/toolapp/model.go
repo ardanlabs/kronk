@@ -9,6 +9,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
+	"github.com/ardanlabs/kronk/sdk/tools/security"
 )
 
 // VersionResponse returns information about the installed libraries.
@@ -322,4 +323,60 @@ func toCatalogModelsResponse(list []catalog.Model) CatalogModelsResponse {
 	}
 
 	return catalogModels
+}
+
+// =============================================================================
+
+// KeyResponse represents a key in the system.
+type KeyResponse struct {
+	ID      string    `json:"id"`
+	Created time.Time `json:"created"`
+}
+
+// KeysResponse is a collection of keys.
+type KeysResponse []KeyResponse
+
+// Encode implements the encoder interface.
+func (app KeysResponse) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(app)
+	return data, "application/json", err
+}
+
+func toKeys(keys []security.Key) KeysResponse {
+	keyResponse := make([]KeyResponse, len(keys))
+
+	for i, key := range keys {
+		keyResponse[i] = KeyResponse{
+			ID:      key.ID,
+			Created: key.Created,
+		}
+	}
+
+	return keyResponse
+}
+
+// =============================================================================
+
+// TokenRequest represents the input for the create token command.
+type TokenRequest struct {
+	UserName  string        `json:"user_name"`
+	Admin     bool          `json:"admin"`
+	Endpoints []string      `json:"endpoints"`
+	Duration  time.Duration `json:"duration"`
+}
+
+// Decode implements the decoder interface.
+func (app *TokenRequest) Decode(data []byte) error {
+	return json.Unmarshal(data, app)
+}
+
+// TokenResponse represents the response for a successful token creation.
+type TokenResponse struct {
+	Token string `json:"token"`
+}
+
+// Encode implements the encoder interface.
+func (app TokenResponse) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(app)
+	return data, "application/json", err
 }

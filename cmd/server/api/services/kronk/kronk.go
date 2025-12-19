@@ -15,15 +15,14 @@ import (
 
 	"github.com/ardanlabs/conf/v3"
 	"github.com/ardanlabs/kronk/cmd/server/api/services/kronk/build"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/auth"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/debug"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mux"
-	"github.com/ardanlabs/kronk/cmd/server/foundation/keystore"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/otel"
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/cache"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
+	"github.com/ardanlabs/kronk/sdk/tools/security"
 )
 
 var tag = "develop"
@@ -78,11 +77,8 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			CORSAllowedOrigins []string      `conf:"default:*"`
 		}
 		Auth struct {
-			KeysJSON   string `conf:"mask"`
-			KeysFolder string `conf:"default:cmd/server/zarf/keys/"`
-			ActiveKID  string `conf:"default:54bb2165-71e1-41a6-af3e-7da4a0e1e2c1"`
-			Issuer     string `conf:"default:kronk project"`
-			Enabled    bool   `conf:"default:false"`
+			Issuer  string `conf:"default:kronk project"`
+			Enabled bool   `conf:"default:false"`
 		}
 		Tempo struct {
 			Host        string  // `conf:"default:tempo:4317"`
@@ -153,35 +149,14 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	log.Info(ctx, "startup", "status", "initializing authentication support")
 
-	// Check the environment first to see if a key is being provided. Then
-	// load any private keys files from disk. We can assume some system like
-	// Vault has created these files already. How that happens is not our
-	// concern.
+	sec, err := security.New(security.Config{
+		Issuer:  cfg.Auth.Issuer,
+		Enabled: cfg.Auth.Enabled,
+	})
 
-	ks := keystore.New()
-
-	n1, err := ks.LoadByJSON(cfg.Auth.KeysJSON)
 	if err != nil {
-		return fmt.Errorf("loading keys by env: %w", err)
+		return fmt.Errorf("unable to initialize security system: %w", err)
 	}
-
-	n2, err := ks.LoadByFileSystem(os.DirFS(cfg.Auth.KeysFolder))
-	if err != nil {
-		return fmt.Errorf("loading keys by fs: %w", err)
-	}
-
-	if n1+n2 == 0 {
-		return errors.New("no keys exist")
-	}
-
-	authCfg := auth.Config{
-		Log:       log,
-		KeyLookup: ks,
-		Issuer:    cfg.Auth.Issuer,
-		Enabled:   cfg.Auth.Enabled,
-	}
-
-	ath := auth.New(authCfg)
 
 	// -------------------------------------------------------------------------
 	// Start Tracing Support
@@ -289,11 +264,11 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
 
 	cfgMux := mux.Config{
-		Build:  tag,
-		Log:    log,
-		Auth:   ath,
-		Tracer: tracer,
-		Cache:  cache,
+		Build:    tag,
+		Log:      log,
+		Security: sec,
+		Tracer:   tracer,
+		Cache:    cache,
 	}
 
 	webAPI := mux.WebAPI(cfgMux,

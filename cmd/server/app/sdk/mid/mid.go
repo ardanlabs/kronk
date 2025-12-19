@@ -3,10 +3,9 @@ package mid
 
 import (
 	"context"
-	"errors"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/auth"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
+	"github.com/ardanlabs/kronk/sdk/security/auth"
 	"github.com/google/uuid"
 )
 
@@ -25,11 +24,6 @@ type ctxKey int
 
 const (
 	claimKey ctxKey = iota + 1
-	userIDKey
-	userKey
-	productKey
-	homeKey
-	trKey
 )
 
 func setClaims(ctx context.Context, claims auth.Claims) context.Context {
@@ -55,18 +49,4 @@ func GetSubjectID(ctx context.Context) uuid.UUID {
 	}
 
 	return subjectID
-}
-
-func setUserID(ctx context.Context, userID uuid.UUID) context.Context {
-	return context.WithValue(ctx, userIDKey, userID)
-}
-
-// GetUserID returns the user id from the context.
-func GetUserID(ctx context.Context) (uuid.UUID, error) {
-	v, ok := ctx.Value(userIDKey).(uuid.UUID)
-	if !ok {
-		return uuid.UUID{}, errors.New("user id not found in context")
-	}
-
-	return v, nil
 }

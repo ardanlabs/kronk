@@ -7,13 +7,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ardanlabs/kronk/cmd/kronk/client"
+	"github.com/ardanlabs/kronk/sdk/client"
 	"github.com/ardanlabs/kronk/sdk/kronk/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-// RunWeb executes the remove command.
-func RunWeb(args []string) error {
+func runWeb(args []string) error {
 	url, err := client.DefaultURL("/v1/models")
 	if err != nil {
 		return fmt.Errorf("default-url: %w", err)
@@ -47,8 +46,7 @@ func RunWeb(args []string) error {
 	return nil
 }
 
-// RunLocal executes the remove command.
-func RunLocal(args []string) error {
+func runLocal(args []string) error {
 	modelPath := defaults.ModelsDir("")
 	modelID := args[0]
 

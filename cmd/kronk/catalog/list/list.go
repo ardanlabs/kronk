@@ -10,14 +10,13 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/ardanlabs/kronk/cmd/kronk/client"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/toolapp"
+	"github.com/ardanlabs/kronk/sdk/client"
 	"github.com/ardanlabs/kronk/sdk/kronk/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 )
 
-// RunWeb executes the catalog list command against the model server.
-func RunWeb(args []string) error {
+func runWeb(args []string) error {
 	url, err := client.DefaultURL("/v1/catalog")
 	if err != nil {
 		return fmt.Errorf("default-url: %w", err)
@@ -40,8 +39,7 @@ func RunWeb(args []string) error {
 	return nil
 }
 
-// RunLocal executes the catalog list command locally.
-func RunLocal(args []string) error {
+func runLocal(args []string) error {
 	var filterCategory string
 
 	fs := flag.NewFlagSet("catalog list", flag.ContinueOnError)

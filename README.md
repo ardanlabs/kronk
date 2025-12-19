@@ -51,10 +51,9 @@ Available Commands:
   catalog     Manage model catalog
   help        Help about any command
   libs        Install or upgrade llama.cpp libraries
-  logs        Stream server logs
   model       Manage models
-  server      Start Kronk model server
-  stop        Stop the running Kronk model server
+  security    Manage security
+  server      Manage model server
 
 Flags:
   -h, --help      help for kronk

@@ -46,16 +46,16 @@ install-gotooling:
 # Kronk CLI
 
 kronk-server:
-	go run cmd/kronk/main.go server | go run cmd/server/api/tooling/logfmt/main.go
+	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
 
 kronk-server-detach:
-	go run cmd/kronk/main.go server --detach
+	go run cmd/kronk/main.go server start --detach
 
 kronk-server-logs:
-	go run cmd/kronk/main.go logs
+	go run cmd/kronk/main.go server logs
 
 kronk-server-stop:
-	go run cmd/kronk/main.go stop
+	go run cmd/kronk/main.go server stop
 
 # ------------------------------------------------------------------------------
 
@@ -133,6 +133,23 @@ kronk-catalog-pull:
 kronk-catalog-pull-local:
 	go run cmd/kronk/main.go catalog pull --local "$(ID)"
 
+# ------------------------------------------------------------------------------
+
+kronk-security-help:
+	go run cmd/kronk/main.go security --help
+
+
+kronk-security-key-list:
+	go run cmd/kronk/main.go security key list
+
+kronk-security-key-list-local:
+	go run cmd/kronk/main.go security key list --local
+
+
+# make kronk-security-token-create-local U="bill" D="5m" E="chat-completions"
+kronk-security-token-create-local:
+	go run cmd/kronk/main.go security token create --local --username "$(U)" --duration "$(D)" --endpoints "$(E)"
+
 # ==============================================================================
 # Kronk Endpoints
 
@@ -165,6 +182,7 @@ curl-model-status:
 
 curl-kronk-chat:
 	curl -i -X POST http://localhost:3000/v1/chat/completions \
+	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
      -d '{ \
 	 	"stream": true, \
@@ -179,6 +197,7 @@ curl-kronk-chat:
 
 curl-kronk-embeddings:
 	curl -i -X POST http://localhost:3000/v1/embeddings \
+	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
      -d '{ \
 	 	"model": "embeddinggemma-300m-qat-Q8_0", \
@@ -215,10 +234,12 @@ test: install-libraries install-models
 	export GOROUTINES=1 && \
 	export RUN_IN_PARALLEL=1 && \
 	export GITHUB_WORKSPACE=$(shell pwd) && \
+	CGO_ENABLED=0 go test -v -count=1 ./sdk/security/auth && \
+	CGO_ENABLED=0 go test -v -count=1 ./sdk/tools/security && \
+	CGO_ENABLED=0 go test -v -count=1 ./sdk/tools/catalog && \
+	CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/cache && \
+	CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/model && \
 	CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/tests
-	CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/cache
-	CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/model
-	CGO_ENABLED=0 go test -v -count=1 ./sdk/tools/catalog
 
 # ==============================================================================
 # Go Modules support

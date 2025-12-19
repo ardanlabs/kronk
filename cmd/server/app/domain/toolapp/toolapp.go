@@ -16,17 +16,20 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
+	"github.com/ardanlabs/kronk/sdk/tools/security"
 )
 
 type app struct {
-	log   *logger.Logger
-	cache *cache.Cache
+	log      *logger.Logger
+	cache    *cache.Cache
+	security *security.Security
 }
 
-func newApp(log *logger.Logger, cache *cache.Cache) *app {
+func newApp(log *logger.Logger, cache *cache.Cache, security *security.Security) *app {
 	return &app{
-		log:   log,
-		cache: cache,
+		log:      log,
+		cache:    cache,
+		security: security,
 	}
 }
 
@@ -298,4 +301,55 @@ func (a *app) showCatalogModel(ctx context.Context, r *http.Request) web.Encoder
 	}
 
 	return toCatalogModelResponse(model)
+}
+
+func (a *app) listKeys(ctx context.Context, r *http.Request) web.Encoder {
+	keys, err := a.security.ListKeys()
+	if err != nil {
+		return errs.New(errs.Internal, err)
+	}
+
+	return toKeys(keys)
+}
+
+func (a *app) createToken(ctx context.Context, r *http.Request) web.Encoder {
+	var req TokenRequest
+	if err := web.Decode(r, &req); err != nil {
+		return errs.New(errs.InvalidArgument, err)
+	}
+
+	endpoints := make(map[string]bool)
+	for _, endpoint := range req.Endpoints {
+		endpoints[endpoint] = true
+	}
+
+	token, err := a.security.GenerateToken(req.UserName, req.Admin, endpoints, req.Duration)
+	if err != nil {
+		return errs.New(errs.Internal, err)
+	}
+
+	return TokenResponse{
+		Token: token,
+	}
+}
+
+func (a *app) addKey(ctx context.Context, r *http.Request) web.Encoder {
+	if err := a.security.AddPrivateKey(); err != nil {
+		return errs.New(errs.Internal, err)
+	}
+
+	return nil
+}
+
+func (a *app) removeKey(ctx context.Context, r *http.Request) web.Encoder {
+	keyID := web.Param(r, "keyid")
+	if keyID == "" {
+		return errs.Errorf(errs.InvalidArgument, "missing key id")
+	}
+
+	if err := a.security.DeletePrivateKey(keyID); err != nil {
+		return errs.New(errs.Internal, err)
+	}
+
+	return nil
 }

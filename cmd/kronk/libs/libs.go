@@ -7,16 +7,15 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ardanlabs/kronk/cmd/kronk/client"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/toolapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
+	"github.com/ardanlabs/kronk/sdk/client"
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 )
 
-// RunWeb executes the libs command against the model server.
-func RunWeb(args []string) error {
+func runWeb() error {
 	url, err := client.DefaultURL("/v1/libs/pull")
 	if err != nil {
 		return fmt.Errorf("libs: default: %w", err)
@@ -43,8 +42,7 @@ func RunWeb(args []string) error {
 	return nil
 }
 
-// RunLocal executes the libs command locally.
-func RunLocal(args []string) error {
+func runLocal() error {
 	arch, err := defaults.Arch("")
 	if err != nil {
 		return err

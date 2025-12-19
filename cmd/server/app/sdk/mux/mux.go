@@ -5,11 +5,11 @@ package mux
 import (
 	"net/http"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/auth"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mid"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/kronk/cache"
+	"github.com/ardanlabs/kronk/sdk/tools/security"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -27,11 +27,11 @@ func WithCORS(origins []string) func(opts *Options) {
 
 // Config contains all the mandatory systems required by handlers.
 type Config struct {
-	Build  string
-	Log    *logger.Logger
-	Auth   *auth.Auth
-	Tracer trace.Tracer
-	Cache  *cache.Cache
+	Build    string
+	Log      *logger.Logger
+	Security *security.Security
+	Tracer   trace.Tracer
+	Cache    *cache.Cache
 }
 
 // RouteAdder defines behavior that sets the routes to bind for an instance
