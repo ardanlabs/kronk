@@ -28,8 +28,8 @@ func (app VersionResponse) Encode() ([]byte, string, error) {
 	return data, "application/json", err
 }
 
-func toAppVersion(status string, vt libs.VersionTag) string {
-	vi := VersionResponse{
+func toAppVersionTag(status string, vt libs.VersionTag) VersionResponse {
+	return VersionResponse{
 		Status:    status,
 		Arch:      vt.Arch,
 		OS:        vt.OS,
@@ -37,6 +37,10 @@ func toAppVersion(status string, vt libs.VersionTag) string {
 		Latest:    vt.Latest,
 		Current:   vt.Version,
 	}
+}
+
+func toAppVersion(status string, vt libs.VersionTag) string {
+	vi := toAppVersionTag(status, vt)
 
 	d, err := json.Marshal(vi)
 	if err != nil {

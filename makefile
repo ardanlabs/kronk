@@ -43,12 +43,32 @@ install-gotooling:
 	go install golang.org/x/vuln/cmd/govulncheck@latest
 
 # ==============================================================================
+# Kronk BUI
+
+BUI_DIR := cmd/server/api/frontends/bui
+
+bui-install:
+	cd $(BUI_DIR) && npm install
+
+bui-run:
+	cd $(BUI_DIR) && npm run dev
+
+bui-build:
+	cd $(BUI_DIR) && npm run build
+
+bui-upgrade:
+	cd $(BUI_DIR) && npm update
+
+bui-upgrade-latest:
+	cd $(BUI_DIR) && npx npm-check-updates -u && npm install
+
+# ==============================================================================
 # Kronk CLI
 
-kronk-server:
+kronk-server: bui-build
 	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
 
-kronk-server-detach:
+kronk-server-detach: bui-build
 	go run cmd/kronk/main.go server start --detach
 
 kronk-server-logs:

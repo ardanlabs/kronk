@@ -1,0 +1,122 @@
+export interface ListModelDetail {
+  id: string;
+  object: string;
+  created: number;
+  owned_by: string;
+  model_family: string;
+  size: number;
+  modified: string;
+}
+
+export interface ListModelInfoResponse {
+  object: string;
+  data: ListModelDetail[];
+}
+
+export interface ModelDetail {
+  id: string;
+  owned_by: string;
+  model_family: string;
+  size: number;
+  expires_at: string;
+  active_streams: number;
+}
+
+export type ModelDetailsResponse = ModelDetail[];
+
+export interface ModelInfoResponse {
+  id: string;
+  object: string;
+  created: number;
+  owned_by: string;
+  desc: string;
+  size: number;
+  has_projection: boolean;
+  has_encoder: boolean;
+  has_decoder: boolean;
+  is_recurrent: boolean;
+  is_hybrid: boolean;
+  is_gpt: boolean;
+  metadata: Record<string, string>;
+}
+
+export interface CatalogMetadata {
+  created: string;
+  collections: string;
+  description: string;
+}
+
+export interface CatalogCapabilities {
+  endpoint: string;
+  images: boolean;
+  audio: boolean;
+  video: boolean;
+  streaming: boolean;
+  reasoning: boolean;
+  tooling: boolean;
+}
+
+export interface CatalogFile {
+  url: string;
+  size: string;
+}
+
+export interface CatalogFiles {
+  model: CatalogFile;
+  proj: CatalogFile;
+  jinja: CatalogFile;
+}
+
+export interface CatalogModelResponse {
+  id: string;
+  category: string;
+  owned_by: string;
+  model_family: string;
+  web_page: string;
+  files: CatalogFiles;
+  capabilities: CatalogCapabilities;
+  metadata: CatalogMetadata;
+  downloaded: boolean;
+}
+
+export type CatalogModelsResponse = CatalogModelResponse[];
+
+export interface KeyResponse {
+  id: string;
+  created: string;
+}
+
+export type KeysResponse = KeyResponse[];
+
+export interface PullResponse {
+  status: string;
+  model_file?: string;
+  proj_file?: string;
+  downloaded?: boolean;
+}
+
+export interface VersionResponse {
+  status: string;
+  arch?: string;
+  os?: string;
+  processor?: string;
+  latest?: string;
+  current?: string;
+}
+
+export interface TokenRequest {
+  user_name: string;
+  admin: boolean;
+  endpoints: string[];
+  duration: number;
+}
+
+export interface TokenResponse {
+  token: string;
+}
+
+export interface ApiError {
+  error: {
+    message: string;
+  };
+}
