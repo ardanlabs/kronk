@@ -28,6 +28,24 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: "stable"
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Build static website
+        if: github.ref != 'refs/heads/main'
+        run: |
+          cd cmd/server/api/frontends/bui
+          npm install
+          npm run build
+      - name: Commit static files
+        if: github.ref != 'refs/heads/main'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add cmd/server/services/kronk/static/
+          git diff --staged --quiet || git commit -m "Update static files [skip ci]"
+          git push
       - name: Restore models cache
         id: cache-models
         uses: actions/cache/restore@v4

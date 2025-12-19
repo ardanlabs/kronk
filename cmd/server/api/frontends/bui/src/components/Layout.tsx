@@ -26,7 +26,6 @@ const menuStructure: MenuCategory[] = [
     items: [
       { id: 'model-list', label: 'List' },
       { id: 'model-ps', label: 'Running' },
-      { id: 'model-show', label: 'Show' },
       { id: 'model-pull', label: 'Pull' },
       { id: 'model-remove', label: 'Remove' },
     ],
@@ -36,7 +35,6 @@ const menuStructure: MenuCategory[] = [
     label: 'Catalog',
     items: [
       { id: 'catalog-list', label: 'List' },
-      { id: 'catalog-show', label: 'Show' },
       { id: 'catalog-pull', label: 'Pull' },
     ],
   },

@@ -2,11 +2,11 @@ import { useState } from 'react';
 import Layout from './components/Layout';
 import ModelList from './components/ModelList';
 import ModelPs from './components/ModelPs';
-import ModelShow from './components/ModelShow';
+
 import ModelPull from './components/ModelPull';
 import ModelRemove from './components/ModelRemove';
 import CatalogList from './components/CatalogList';
-import CatalogShow from './components/CatalogShow';
+
 import CatalogPull from './components/CatalogPull';
 import LibsPull from './components/LibsPull';
 import SecurityKeyList from './components/SecurityKeyList';
@@ -19,11 +19,9 @@ export type Page =
   | 'home'
   | 'model-list'
   | 'model-ps'
-  | 'model-show'
   | 'model-pull'
   | 'model-remove'
   | 'catalog-list'
-  | 'catalog-show'
   | 'catalog-pull'
   | 'libs-pull'
   | 'security-key-list'
@@ -40,16 +38,12 @@ function App() {
         return <ModelList />;
       case 'model-ps':
         return <ModelPs />;
-      case 'model-show':
-        return <ModelShow />;
       case 'model-pull':
         return <ModelPull />;
       case 'model-remove':
         return <ModelRemove />;
       case 'catalog-list':
         return <CatalogList />;
-      case 'catalog-show':
-        return <CatalogShow />;
       case 'catalog-pull':
         return <CatalogPull />;
       case 'libs-pull':
