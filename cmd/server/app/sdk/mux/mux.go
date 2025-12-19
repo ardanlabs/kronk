@@ -3,6 +3,7 @@
 package mux
 
 import (
+	"embed"
 	"net/http"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mid"
@@ -13,15 +14,36 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+// StaticSite represents a static site to run.
+type StaticSite struct {
+	react      bool
+	static     embed.FS
+	staticDir  string
+	staticPath string
+}
+
 // Options represent optional parameters.
 type Options struct {
 	corsOrigin []string
+	sites      []StaticSite
 }
 
 // WithCORS provides configuration options for CORS.
 func WithCORS(origins []string) func(opts *Options) {
 	return func(opts *Options) {
 		opts.corsOrigin = origins
+	}
+}
+
+// WithFileServer provides configuration options for file server.
+func WithFileServer(react bool, static embed.FS, dir string, path string) func(opts *Options) {
+	return func(opts *Options) {
+		opts.sites = append(opts.sites, StaticSite{
+			react:      react,
+			static:     static,
+			staticDir:  dir,
+			staticPath: path,
+		})
 	}
 }
 
@@ -62,6 +84,16 @@ func WebAPI(cfg Config, routeAdder RouteAdder, options ...func(opts *Options)) h
 	}
 
 	routeAdder.Add(app, cfg)
+
+	for _, site := range opts.sites {
+		switch site.react {
+		case true:
+			app.FileServerReact(site.static, site.staticDir, site.staticPath)
+
+		default:
+			app.FileServer(site.static, site.staticDir, site.staticPath)
+		}
+	}
 
 	return app
 }

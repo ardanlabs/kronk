@@ -26,6 +26,7 @@ func Routes(app *web.App, cfg Config) {
 
 	api := newApp(cfg.Log, cfg.Cache, cfg.Security)
 
+	app.HandlerFunc(http.MethodGet, version, "/v1/libs", api.listLibs, bearer)
 	app.HandlerFunc(http.MethodPost, version, "/v1/libs/pull", api.pullLibs, bearer)
 
 	app.HandlerFunc(http.MethodGet, version, "/v1/models", api.listModels, bearer)

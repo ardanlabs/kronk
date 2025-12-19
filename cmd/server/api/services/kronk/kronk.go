@@ -3,6 +3,7 @@ package kronk
 
 import (
 	"context"
+	"embed"
 	"errors"
 	"expvar"
 	"fmt"
@@ -24,6 +25,9 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/security"
 )
+
+//go:embed static
+var static embed.FS
 
 var tag = "develop"
 
@@ -274,6 +278,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	webAPI := mux.WebAPI(cfgMux,
 		build.Routes(),
 		mux.WithCORS(cfg.Web.CORSAllowedOrigins),
+		mux.WithFileServer(true, static, "static", "/"),
 	)
 
 	api := http.Server{

@@ -33,6 +33,15 @@ func newApp(log *logger.Logger, cache *cache.Cache, security *security.Security)
 	}
 }
 
+func (a *app) listLibs(ctx context.Context, r *http.Request) web.Encoder {
+	versionTag, err := libs.VersionInformation(a.cache.LibPath())
+	if err != nil {
+		return errs.New(errs.Internal, err)
+	}
+
+	return toAppVersionTag("retrieve", versionTag)
+}
+
 func (a *app) pullLibs(ctx context.Context, r *http.Request) web.Encoder {
 	w := web.GetWriter(ctx)
 
