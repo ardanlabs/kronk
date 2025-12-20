@@ -1,8 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { api } from '../services/api';
-import type { CatalogModelResponse, CatalogModelsResponse } from '../types';
+import { useModelList } from '../contexts/ModelListContext';
+import type { CatalogModelResponse, CatalogModelsResponse, PullResponse } from '../types';
+
+type DetailTab = 'details' | 'pull';
 
 export default function CatalogList() {
+  const { invalidate } = useModelList();
   const [data, setData] = useState<CatalogModelsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -10,6 +14,11 @@ export default function CatalogList() {
   const [modelInfo, setModelInfo] = useState<CatalogModelResponse | null>(null);
   const [infoLoading, setInfoLoading] = useState(false);
   const [infoError, setInfoError] = useState<string | null>(null);
+
+  const [activeTab, setActiveTab] = useState<DetailTab>('details');
+  const [pulling, setPulling] = useState(false);
+  const [pullMessages, setPullMessages] = useState<Array<{ text: string; type: 'info' | 'error' | 'success' }>>([]);
+  const closeRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     loadCatalog();
@@ -32,10 +41,14 @@ export default function CatalogList() {
     if (selectedId === id) {
       setSelectedId(null);
       setModelInfo(null);
+      setActiveTab('details');
+      setPullMessages([]);
       return;
     }
 
     setSelectedId(id);
+    setActiveTab('details');
+    setPullMessages([]);
     setInfoLoading(true);
     setInfoError(null);
     setModelInfo(null);
@@ -49,6 +62,72 @@ export default function CatalogList() {
       setInfoLoading(false);
     }
   };
+
+  const handlePull = () => {
+    if (!selectedId) return;
+
+    setPulling(true);
+    setPullMessages([]);
+    setActiveTab('pull');
+
+    const ANSI_INLINE = '\x1b[1A\r\x1b[K';
+
+    const addMessage = (text: string, type: 'info' | 'error' | 'success') => {
+      setPullMessages((prev) => [...prev, { text, type }]);
+    };
+
+    const updateLastMessage = (text: string, type: 'info' | 'error' | 'success') => {
+      setPullMessages((prev) => {
+        if (prev.length === 0) {
+          return [{ text, type }];
+        }
+        const updated = [...prev];
+        updated[updated.length - 1] = { text, type };
+        return updated;
+      });
+    };
+
+    closeRef.current = api.pullCatalogModel(
+      selectedId,
+      (data: PullResponse) => {
+        if (data.status) {
+          if (data.status.startsWith(ANSI_INLINE)) {
+            const cleanText = data.status.slice(ANSI_INLINE.length);
+            updateLastMessage(cleanText, 'info');
+          } else {
+            addMessage(data.status, 'info');
+          }
+        }
+        if (data.model_file) {
+          addMessage(`Model file: ${data.model_file}`, 'info');
+        }
+        if (data.proj_file) {
+          addMessage(`Projection file: ${data.proj_file}`, 'info');
+        }
+      },
+      (errorMsg: string) => {
+        addMessage(errorMsg, 'error');
+        setPulling(false);
+      },
+      () => {
+        addMessage('Pull complete!', 'success');
+        setPulling(false);
+        invalidate();
+        loadCatalog();
+      }
+    );
+  };
+
+  const handleCancelPull = () => {
+    if (closeRef.current) {
+      closeRef.current();
+      closeRef.current = null;
+    }
+    setPulling(false);
+    setPullMessages((prev) => [...prev, { text: 'Cancelled', type: 'error' }]);
+  };
+
+  const isDownloaded = data?.find((m) => m.id === selectedId)?.downloaded ?? false;
 
   return (
     <div>
@@ -138,18 +217,37 @@ export default function CatalogList() {
           </div>
         )}
 
-        <div style={{ marginTop: '16px' }}>
+        <div style={{ marginTop: '16px', display: 'flex', gap: '8px' }}>
           <button
             className="btn btn-secondary"
             onClick={() => {
               loadCatalog();
               setSelectedId(null);
               setModelInfo(null);
+              setPullMessages([]);
+              setActiveTab('details');
             }}
             disabled={loading}
           >
             Refresh
           </button>
+          {selectedId && (
+            <button
+              className="btn btn-primary"
+              onClick={handlePull}
+              disabled={pulling || isDownloaded}
+            >
+              {pulling ? 'Pulling...' : isDownloaded ? 'Already Downloaded' : 'Pull Model'}
+            </button>
+          )}
+          {pulling && (
+            <button
+              className="btn btn-danger"
+              onClick={handleCancelPull}
+            >
+              Cancel
+            </button>
+          )}
         </div>
       </div>
 
@@ -161,133 +259,179 @@ export default function CatalogList() {
         </div>
       )}
 
-      {modelInfo && !infoLoading && (
+      {selectedId && !infoLoading && (modelInfo || pullMessages.length > 0) && (
         <div className="card">
-          <h3 style={{ marginBottom: '16px' }}>{modelInfo.id}</h3>
-
-          <div className="model-meta">
-            <div className="model-meta-item">
-              <label>Category</label>
-              <span>{modelInfo.category}</span>
-            </div>
-            <div className="model-meta-item">
-              <label>Owner</label>
-              <span>{modelInfo.owned_by}</span>
-            </div>
-            <div className="model-meta-item">
-              <label>Family</label>
-              <span>{modelInfo.model_family}</span>
-            </div>
-            <div className="model-meta-item">
-              <label>Downloaded</label>
-              <span className={`badge ${modelInfo.downloaded ? 'badge-yes' : 'badge-no'}`}>
-                {modelInfo.downloaded ? 'Yes' : 'No'}
-              </span>
-            </div>
-            <div className="model-meta-item">
-              <label>Endpoint</label>
-              <span>{modelInfo.capabilities.endpoint}</span>
-            </div>
-            <div className="model-meta-item">
-              <label>Web Page</label>
-              <span>
-                {modelInfo.web_page ? (
-                  <a href={modelInfo.web_page} target="_blank" rel="noopener noreferrer">
-                    {modelInfo.web_page}
-                  </a>
-                ) : (
-                  '-'
-                )}
-              </span>
-            </div>
+          <div className="tabs">
+            <button
+              className={`tab ${activeTab === 'details' ? 'active' : ''}`}
+              onClick={() => setActiveTab('details')}
+            >
+              Details
+            </button>
+            <button
+              className={`tab ${activeTab === 'pull' ? 'active' : ''}`}
+              onClick={() => setActiveTab('pull')}
+              disabled={pullMessages.length === 0 && !pulling}
+            >
+              Pull Output
+            </button>
           </div>
 
-          <div style={{ marginTop: '24px' }}>
-            <h4 style={{ marginBottom: '12px' }}>Capabilities</h4>
-            <div className="model-meta">
-              <div className="model-meta-item">
-                <label>Images</label>
-                <span className={`badge ${modelInfo.capabilities.images ? 'badge-yes' : 'badge-no'}`}>
-                  {modelInfo.capabilities.images ? 'Yes' : 'No'}
-                </span>
-              </div>
-              <div className="model-meta-item">
-                <label>Audio</label>
-                <span className={`badge ${modelInfo.capabilities.audio ? 'badge-yes' : 'badge-no'}`}>
-                  {modelInfo.capabilities.audio ? 'Yes' : 'No'}
-                </span>
-              </div>
-              <div className="model-meta-item">
-                <label>Video</label>
-                <span className={`badge ${modelInfo.capabilities.video ? 'badge-yes' : 'badge-no'}`}>
-                  {modelInfo.capabilities.video ? 'Yes' : 'No'}
-                </span>
-              </div>
-              <div className="model-meta-item">
-                <label>Streaming</label>
-                <span className={`badge ${modelInfo.capabilities.streaming ? 'badge-yes' : 'badge-no'}`}>
-                  {modelInfo.capabilities.streaming ? 'Yes' : 'No'}
-                </span>
-              </div>
-              <div className="model-meta-item">
-                <label>Reasoning</label>
-                <span className={`badge ${modelInfo.capabilities.reasoning ? 'badge-yes' : 'badge-no'}`}>
-                  {modelInfo.capabilities.reasoning ? 'Yes' : 'No'}
-                </span>
-              </div>
-              <div className="model-meta-item">
-                <label>Tooling</label>
-                <span className={`badge ${modelInfo.capabilities.tooling ? 'badge-yes' : 'badge-no'}`}>
-                  {modelInfo.capabilities.tooling ? 'Yes' : 'No'}
-                </span>
-              </div>
-            </div>
-          </div>
+          {activeTab === 'details' && modelInfo && (
+            <>
+              <h3 style={{ marginBottom: '16px' }}>{modelInfo.id}</h3>
 
-          <div style={{ marginTop: '24px' }}>
-            <h4 style={{ marginBottom: '12px' }}>Files</h4>
-            <div className="model-meta">
-              <div className="model-meta-item">
-                <label>Model</label>
-                <span>
-                  {modelInfo.files.model.url || '-'} {modelInfo.files.model.size && `(${modelInfo.files.model.size})`}
-                </span>
+              <div className="model-meta">
+                <div className="model-meta-item">
+                  <label>Category</label>
+                  <span>{modelInfo.category}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>Owner</label>
+                  <span>{modelInfo.owned_by}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>Family</label>
+                  <span>{modelInfo.model_family}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>Downloaded</label>
+                  <span className={`badge ${modelInfo.downloaded ? 'badge-yes' : 'badge-no'}`}>
+                    {modelInfo.downloaded ? 'Yes' : 'No'}
+                  </span>
+                </div>
+                <div className="model-meta-item">
+                  <label>Endpoint</label>
+                  <span>{modelInfo.capabilities.endpoint}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>Web Page</label>
+                  <span>
+                    {modelInfo.web_page ? (
+                      <a href={modelInfo.web_page} target="_blank" rel="noopener noreferrer">
+                        {modelInfo.web_page}
+                      </a>
+                    ) : (
+                      '-'
+                    )}
+                  </span>
+                </div>
               </div>
-              <div className="model-meta-item">
-                <label>Projection</label>
-                <span>
-                  {modelInfo.files.proj.url || '-'} {modelInfo.files.proj.size && `(${modelInfo.files.proj.size})`}
-                </span>
-              </div>
-              <div className="model-meta-item">
-                <label>Jinja</label>
-                <span>
-                  {modelInfo.files.jinja.url || '-'} {modelInfo.files.jinja.size && `(${modelInfo.files.jinja.size})`}
-                </span>
-              </div>
-            </div>
-          </div>
 
-          {modelInfo.metadata.description && (
-            <div style={{ marginTop: '24px' }}>
-              <h4 style={{ marginBottom: '12px' }}>Description</h4>
-              <p>{modelInfo.metadata.description}</p>
-            </div>
+              <div style={{ marginTop: '24px' }}>
+                <h4 style={{ marginBottom: '12px' }}>Capabilities</h4>
+                <div className="model-meta">
+                  <div className="model-meta-item">
+                    <label>Images</label>
+                    <span className={`badge ${modelInfo.capabilities.images ? 'badge-yes' : 'badge-no'}`}>
+                      {modelInfo.capabilities.images ? 'Yes' : 'No'}
+                    </span>
+                  </div>
+                  <div className="model-meta-item">
+                    <label>Audio</label>
+                    <span className={`badge ${modelInfo.capabilities.audio ? 'badge-yes' : 'badge-no'}`}>
+                      {modelInfo.capabilities.audio ? 'Yes' : 'No'}
+                    </span>
+                  </div>
+                  <div className="model-meta-item">
+                    <label>Video</label>
+                    <span className={`badge ${modelInfo.capabilities.video ? 'badge-yes' : 'badge-no'}`}>
+                      {modelInfo.capabilities.video ? 'Yes' : 'No'}
+                    </span>
+                  </div>
+                  <div className="model-meta-item">
+                    <label>Streaming</label>
+                    <span className={`badge ${modelInfo.capabilities.streaming ? 'badge-yes' : 'badge-no'}`}>
+                      {modelInfo.capabilities.streaming ? 'Yes' : 'No'}
+                    </span>
+                  </div>
+                  <div className="model-meta-item">
+                    <label>Reasoning</label>
+                    <span className={`badge ${modelInfo.capabilities.reasoning ? 'badge-yes' : 'badge-no'}`}>
+                      {modelInfo.capabilities.reasoning ? 'Yes' : 'No'}
+                    </span>
+                  </div>
+                  <div className="model-meta-item">
+                    <label>Tooling</label>
+                    <span className={`badge ${modelInfo.capabilities.tooling ? 'badge-yes' : 'badge-no'}`}>
+                      {modelInfo.capabilities.tooling ? 'Yes' : 'No'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ marginTop: '24px' }}>
+                <h4 style={{ marginBottom: '12px' }}>Files</h4>
+                <div className="model-meta">
+                  <div className="model-meta-item">
+                    <label>Model</label>
+                    <span>
+                      {modelInfo.files.model.url || '-'} {modelInfo.files.model.size && `(${modelInfo.files.model.size})`}
+                    </span>
+                  </div>
+                  <div className="model-meta-item">
+                    <label>Projection</label>
+                    <span>
+                      {modelInfo.files.proj.url || '-'} {modelInfo.files.proj.size && `(${modelInfo.files.proj.size})`}
+                    </span>
+                  </div>
+                  <div className="model-meta-item">
+                    <label>Jinja</label>
+                    <span>
+                      {modelInfo.files.jinja.url || '-'} {modelInfo.files.jinja.size && `(${modelInfo.files.jinja.size})`}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {modelInfo.metadata.description && (
+                <div style={{ marginTop: '24px' }}>
+                  <h4 style={{ marginBottom: '12px' }}>Description</h4>
+                  <p>{modelInfo.metadata.description}</p>
+                </div>
+              )}
+
+              <div style={{ marginTop: '24px' }}>
+                <h4 style={{ marginBottom: '12px' }}>Metadata</h4>
+                <div className="model-meta">
+                  <div className="model-meta-item">
+                    <label>Created</label>
+                    <span>{new Date(modelInfo.metadata.created).toLocaleString()}</span>
+                  </div>
+                  <div className="model-meta-item">
+                    <label>Collections</label>
+                    <span>{modelInfo.metadata.collections || '-'}</span>
+                  </div>
+                </div>
+              </div>
+            </>
           )}
 
-          <div style={{ marginTop: '24px' }}>
-            <h4 style={{ marginBottom: '12px' }}>Metadata</h4>
-            <div className="model-meta">
-              <div className="model-meta-item">
-                <label>Created</label>
-                <span>{new Date(modelInfo.metadata.created).toLocaleString()}</span>
-              </div>
-              <div className="model-meta-item">
-                <label>Collections</label>
-                <span>{modelInfo.metadata.collections || '-'}</span>
-              </div>
+          {activeTab === 'pull' && (
+            <div>
+              <h3 style={{ marginBottom: '16px' }}>Pull Output: {selectedId}</h3>
+              {pullMessages.length > 0 ? (
+                <div className="status-box">
+                  {pullMessages.map((msg, idx) => (
+                    <div key={idx} className={`status-line ${msg.type}`}>
+                      {msg.text}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p>No pull output yet.</p>
+              )}
+              {pulling && (
+                <button
+                  className="btn btn-danger"
+                  onClick={handleCancelPull}
+                  style={{ marginTop: '16px' }}
+                >
+                  Cancel
+                </button>
+              )}
             </div>
-          </div>
+          )}
         </div>
       )}
     </div>

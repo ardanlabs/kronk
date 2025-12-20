@@ -3,11 +3,12 @@ import Layout from './components/Layout';
 import ModelList from './components/ModelList';
 import ModelPs from './components/ModelPs';
 
+
 import ModelPull from './components/ModelPull';
-import ModelRemove from './components/ModelRemove';
+
 import CatalogList from './components/CatalogList';
 
-import CatalogPull from './components/CatalogPull';
+
 import LibsPull from './components/LibsPull';
 import SecurityKeyList from './components/SecurityKeyList';
 import SecurityKeyCreate from './components/SecurityKeyCreate';
@@ -20,9 +21,7 @@ export type Page =
   | 'model-list'
   | 'model-ps'
   | 'model-pull'
-  | 'model-remove'
   | 'catalog-list'
-  | 'catalog-pull'
   | 'libs-pull'
   | 'security-key-list'
   | 'security-key-create'
@@ -40,12 +39,8 @@ function App() {
         return <ModelPs />;
       case 'model-pull':
         return <ModelPull />;
-      case 'model-remove':
-        return <ModelRemove />;
       case 'catalog-list':
         return <CatalogList />;
-      case 'catalog-pull':
-        return <CatalogPull />;
       case 'libs-pull':
         return <LibsPull />;
       case 'security-key-list':
