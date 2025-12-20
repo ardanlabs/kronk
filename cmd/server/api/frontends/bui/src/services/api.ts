@@ -38,6 +38,16 @@ class ApiService {
     return this.request<ListModelInfoResponse>('/models');
   }
 
+  async rebuildModelIndex(): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/models/index`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error?.message || `HTTP ${response.status}`);
+    }
+  }
+
   async listRunningModels(): Promise<ModelDetailsResponse> {
     return this.request<ModelDetailsResponse>('/models/ps');
   }

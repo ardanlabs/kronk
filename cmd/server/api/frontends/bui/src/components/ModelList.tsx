@@ -21,6 +21,28 @@ export default function ModelList() {
   const [modelInfo, setModelInfo] = useState<ModelInfoResponse | null>(null);
   const [infoLoading, setInfoLoading] = useState(false);
   const [infoError, setInfoError] = useState<string | null>(null);
+  const [rebuildingIndex, setRebuildingIndex] = useState(false);
+  const [rebuildError, setRebuildError] = useState<string | null>(null);
+  const [rebuildSuccess, setRebuildSuccess] = useState(false);
+
+  const handleRebuildIndex = async () => {
+    setRebuildingIndex(true);
+    setRebuildError(null);
+    setRebuildSuccess(false);
+    try {
+      await api.rebuildModelIndex();
+      invalidate();
+      loadModels();
+      setSelectedModelId(null);
+      setModelInfo(null);
+      setRebuildSuccess(true);
+      setTimeout(() => setRebuildSuccess(false), 3000);
+    } catch (err) {
+      setRebuildError(err instanceof Error ? err.message : 'Failed to rebuild index');
+    } finally {
+      setRebuildingIndex(false);
+    }
+  };
 
   useEffect(() => {
     loadModels();
@@ -99,7 +121,7 @@ export default function ModelList() {
           </div>
         )}
 
-        <div style={{ marginTop: '16px' }}>
+        <div style={{ marginTop: '16px', display: 'flex', gap: '8px' }}>
           <button
             className="btn btn-secondary"
             onClick={() => {
@@ -112,7 +134,16 @@ export default function ModelList() {
           >
             Refresh
           </button>
+          <button
+            className="btn btn-secondary"
+            onClick={handleRebuildIndex}
+            disabled={rebuildingIndex || loading}
+          >
+            {rebuildingIndex ? 'Rebuilding...' : 'Rebuild Index'}
+          </button>
         </div>
+        {rebuildError && <div className="alert alert-error" style={{ marginTop: '8px' }}>{rebuildError}</div>}
+        {rebuildSuccess && <div className="alert alert-success" style={{ marginTop: '8px' }}>Index rebuilt successfully</div>}
       </div>
 
       {infoError && <div className="alert alert-error">{infoError}</div>}
