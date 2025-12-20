@@ -29,7 +29,7 @@ func runWeb(args []string) error {
 
 	cln := client.NewSSE[toolapp.PullResponse](client.FmtLogger)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
 	ch := make(chan toolapp.PullResponse)

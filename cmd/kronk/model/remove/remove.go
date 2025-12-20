@@ -68,7 +68,7 @@ func runLocal(args []string) error {
 		return nil
 	}
 
-	if err := models.Remove(mp); err != nil {
+	if err := models.Remove(modelPath, mp); err != nil {
 		return fmt.Errorf("remove-model: %w", err)
 	}
 

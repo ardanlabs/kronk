@@ -86,6 +86,13 @@ kronk-libs-local: install-libraries
 
 # ------------------------------------------------------------------------------
 
+kronk-model-index:
+	go run cmd/kronk/main.go model index
+
+kronk-model-index-local:
+	go run cmd/kronk/main.go model index --local
+
+
 kronk-model-list:
 	go run cmd/kronk/main.go model list
 
@@ -106,11 +113,11 @@ kronk-model-ps:
 	go run cmd/kronk/main.go model ps
 
 
-# make kronk-remove ID="qwen3-8b-q8_0"
+# make kronk-model-remove ID="cerebras_qwen3-coder-reap-25b-a3b-q8_0"
 kronk-model-remove:
 	go run cmd/kronk/main.go model remove "$(ID)"
 
-# make kronk-remove-local ID="qwen3-8b-q8_0"
+# make kronk-model-remove-local ID="cerebras_qwen3-coder-reap-25b-a3b-q8_0"
 kronk-model-remove-local:
 	go run cmd/kronk/main.go model remove --local "$(ID)"
 

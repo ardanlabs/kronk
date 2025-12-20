@@ -114,9 +114,25 @@ func newTemplateWithFixedItems(source string) (*exec.Template, error) {
 		return "", errors.New(msg)
 	})
 
+	customFilters := builtins.Filters.Update(exec.NewFilterSet(map[string]exec.FilterFunction{}))
+	customFilters.Register("items", func(e *exec.Evaluator, in *exec.Value, params *exec.VarArgs) *exec.Value {
+		if !in.IsDict() {
+			return exec.AsValue([][]any{})
+		}
+		dict := in.ToGoSimpleType(false)
+		if m, ok := dict.(map[string]any); ok {
+			items := make([][]any, 0, len(m))
+			for key, value := range m {
+				items = append(items, []any{key, value})
+			}
+			return exec.AsValue(items)
+		}
+		return exec.AsValue([][]any{})
+	})
+
 	env := exec.Environment{
 		Context:           customContext,
-		Filters:           builtins.Filters,
+		Filters:           customFilters,
 		Tests:             builtins.Tests,
 		ControlStructures: builtins.ControlStructures,
 		Methods: exec.Methods{

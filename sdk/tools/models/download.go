@@ -8,11 +8,9 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/tools/downloader"
-	"go.yaml.in/yaml/v2"
 )
 
 var indexFile = "index.yaml"
@@ -21,7 +19,7 @@ var indexFile = "index.yaml"
 // the specified model.
 func Download(ctx context.Context, log kronk.Logger, modelFileURL string, projURL string, modelBasePath string) (Path, error) {
 	defer func() {
-		if err := buildIndex(modelBasePath); err != nil {
+		if err := BuildIndex(modelBasePath); err != nil {
 			log(ctx, "download-model: unable to create index", "ERROR", err)
 		}
 	}()
@@ -173,94 +171,4 @@ func extractFileName(modelFileURL string) (string, error) {
 	}
 
 	return path.Base(u.Path), nil
-}
-
-var biMutex sync.Mutex
-
-func buildIndex(modelBasePath string) error {
-	biMutex.Lock()
-	defer biMutex.Unlock()
-
-	entries, err := os.ReadDir(modelBasePath)
-	if err != nil {
-		return fmt.Errorf("list-models: reading models directory: %w", err)
-	}
-
-	index := make(map[string]Path)
-
-	for _, orgEntry := range entries {
-		if !orgEntry.IsDir() {
-			continue
-		}
-
-		org := orgEntry.Name()
-
-		modelEntries, err := os.ReadDir(fmt.Sprintf("%s/%s", modelBasePath, org))
-		if err != nil {
-			continue
-		}
-
-		for _, modelEntry := range modelEntries {
-			if !modelEntry.IsDir() {
-				continue
-			}
-
-			modelFamily := modelEntry.Name()
-
-			fileEntries, err := os.ReadDir(fmt.Sprintf("%s/%s/%s", modelBasePath, org, modelFamily))
-			if err != nil {
-				continue
-			}
-
-			modelfiles := make(map[string]string)
-			projFiles := make(map[string]string)
-
-			for _, fileEntry := range fileEntries {
-				if fileEntry.IsDir() {
-					continue
-				}
-
-				name := fileEntry.Name()
-
-				if name == ".DS_Store" {
-					continue
-				}
-
-				if strings.HasPrefix(name, "mmproj") {
-					modelID := extractModelID(name[7:])
-					projFiles[modelID] = filepath.Join(modelBasePath, org, modelFamily, fileEntry.Name())
-					continue
-				}
-
-				modelID := extractModelID(fileEntry.Name())
-				modelfiles[modelID] = filepath.Join(modelBasePath, org, modelFamily, fileEntry.Name())
-			}
-
-			for modelID, modelFile := range modelfiles {
-				mp := Path{
-					ModelFile:  modelFile,
-					Downloaded: true,
-				}
-
-				if projFile, exists := projFiles[modelID]; exists {
-					mp.ProjFile = projFile
-				}
-
-				modelID = strings.ToLower(modelID)
-				index[modelID] = mp
-			}
-		}
-	}
-
-	indexData, err := yaml.Marshal(&index)
-	if err != nil {
-		return fmt.Errorf("marshal index: %w", err)
-	}
-
-	indexPath := filepath.Join(modelBasePath, indexFile)
-	if err := os.WriteFile(indexPath, indexData, 0644); err != nil {
-		return fmt.Errorf("write index file: %w", err)
-	}
-
-	return nil
 }

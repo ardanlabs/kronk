@@ -193,9 +193,87 @@ func parseGPTToolCall(content string) []ResponseToolCall {
 }
 
 func parseToolCall(content string) []ResponseToolCall {
-	// {"name":"get_weather", "arguments":{"location":"NYC"})
-	// {"name":"get_weather", "arguments":{"location":"NYC"})
 
+	// {"name":"get_weather", "arguments":{"location":"NYC"}
+	if strings.HasPrefix(content, "{\"name\"") {
+		return parseJSONFormat(content)
+	}
+
+	// <function=get_weather>\n<parameter=location>\nNYC\n</parameter>\n</function>
+	// <function=invoke_cli_command>\n<parameter=call>\ngo version\n</parameter>\n</function>
+	if strings.HasPrefix(content, "<function=") {
+		return parseFunctionFormat(content)
+	}
+
+	return nil
+}
+
+func parseFunctionFormat(content string) []ResponseToolCall {
+	var toolCalls []ResponseToolCall
+
+	// Handle escaped newlines (literal \n) by converting to actual newlines
+	content = strings.ReplaceAll(content, "\\n", "\n")
+
+	for {
+		funcStart := strings.Index(content, "<function=")
+		if funcStart == -1 {
+			break
+		}
+
+		funcEnd := strings.Index(content[funcStart:], ">")
+		if funcEnd == -1 {
+			break
+		}
+
+		name := content[funcStart+10 : funcStart+funcEnd]
+
+		closeFunc := strings.Index(content, "</function>")
+		if closeFunc == -1 {
+			break
+		}
+
+		funcBody := content[funcStart+funcEnd+1 : closeFunc]
+		args := make(map[string]any)
+
+		remaining := funcBody
+		for {
+			paramStart := strings.Index(remaining, "<parameter=")
+			if paramStart == -1 {
+				break
+			}
+
+			paramNameEnd := strings.Index(remaining[paramStart:], ">")
+			if paramNameEnd == -1 {
+				break
+			}
+
+			paramName := remaining[paramStart+11 : paramStart+paramNameEnd]
+
+			paramClose := strings.Index(remaining, "</parameter>")
+			if paramClose == -1 {
+				break
+			}
+
+			paramValue := strings.TrimSpace(remaining[paramStart+paramNameEnd+1 : paramClose])
+			args[paramName] = paramValue
+
+			remaining = remaining[paramClose+12:]
+		}
+
+		toolCalls = append(toolCalls, ResponseToolCall{
+			ID:        uuid.NewString(),
+			Name:      name,
+			Arguments: args,
+			Raw:       content[funcStart : closeFunc+11],
+		})
+
+		content = content[closeFunc+11:]
+	}
+
+	return toolCalls
+}
+
+func parseJSONFormat(content string) []ResponseToolCall {
 	var toolCalls []ResponseToolCall
 
 	for call := range strings.SplitSeq(content, "\n") {

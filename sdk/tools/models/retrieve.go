@@ -193,7 +193,7 @@ func loadIndex(modelBasePath string) (map[string]Path, error) {
 
 	data, err := os.ReadFile(indexPath)
 	if err != nil {
-		if err := buildIndex(modelBasePath); err != nil {
+		if err := BuildIndex(modelBasePath); err != nil {
 			return nil, fmt.Errorf("build-index: %w", err)
 		}
 		data, err = os.ReadFile(indexPath)

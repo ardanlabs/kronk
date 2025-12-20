@@ -2,6 +2,7 @@
 package model
 
 import (
+	"github.com/ardanlabs/kronk/cmd/kronk/model/index"
 	"github.com/ardanlabs/kronk/cmd/kronk/model/list"
 	"github.com/ardanlabs/kronk/cmd/kronk/model/ps"
 	"github.com/ardanlabs/kronk/cmd/kronk/model/pull"
@@ -20,6 +21,7 @@ var Cmd = &cobra.Command{
 }
 
 func init() {
+	Cmd.AddCommand(index.Cmd)
 	Cmd.AddCommand(list.Cmd)
 	Cmd.AddCommand(pull.Cmd)
 	Cmd.AddCommand(remove.Cmd)

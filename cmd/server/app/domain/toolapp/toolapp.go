@@ -101,6 +101,16 @@ func (a *app) pullLibs(ctx context.Context, r *http.Request) web.Encoder {
 	return web.NewNoResponse()
 }
 
+func (a *app) indexModels(ctx context.Context, r *http.Request) web.Encoder {
+	modelPath := a.cache.ModelPath()
+
+	if err := models.BuildIndex(modelPath); err != nil {
+		return errs.Errorf(errs.Internal, "unable to build model index: %s", err)
+	}
+
+	return nil
+}
+
 func (a *app) listModels(ctx context.Context, r *http.Request) web.Encoder {
 	modelPath := a.cache.ModelPath()
 
@@ -193,7 +203,7 @@ func (a *app) removeModel(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.New(errs.InvalidArgument, err)
 	}
 
-	if err := models.Remove(mp); err != nil {
+	if err := models.Remove(modelPath, mp); err != nil {
 		return errs.Errorf(errs.Internal, "failed to remove model: %s", err)
 	}
 
