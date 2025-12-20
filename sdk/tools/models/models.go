@@ -113,9 +113,11 @@ func removeEmptyDirs(modelBasePath string) error {
 		if err != nil {
 			return err
 		}
+
 		if d.IsDir() && path != modelBasePath {
 			dirs = append(dirs, path)
 		}
+
 		return nil
 	})
 
@@ -129,10 +131,24 @@ func removeEmptyDirs(modelBasePath string) error {
 			continue
 		}
 
-		if len(entries) == 0 {
+		if isDirEffectivelyEmpty(entries) {
+			// Remove any .DS_Store before removing directory
+			dsStore := filepath.Join(dirs[i], ".DS_Store")
+			os.Remove(dsStore)
 			os.Remove(dirs[i])
 		}
 	}
 
 	return nil
+}
+
+// isDirEffectivelyEmpty returns true if directory only contains ignorable files like .DS_Store
+func isDirEffectivelyEmpty(entries []os.DirEntry) bool {
+	for _, e := range entries {
+		if e.Name() != ".DS_Store" {
+			return false
+		}
+	}
+
+	return true
 }

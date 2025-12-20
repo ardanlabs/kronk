@@ -184,6 +184,15 @@ tr:hover td {
   background: var(--color-gray-100);
 }
 
+tr.selected td {
+  background: rgba(240, 181, 49, 0.15);
+  border-bottom-color: var(--color-orange);
+}
+
+tr.selected:hover td {
+  background: rgba(240, 181, 49, 0.2);
+}
+
 .form-group {
   margin-bottom: 20px;
 }
@@ -437,4 +446,38 @@ tr:hover td {
   font-size: 64px;
   color: var(--color-orange);
   margin-bottom: 24px;
+}
+
+.tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--color-gray-200);
+  margin-bottom: 20px;
+}
+
+.tab {
+  padding: 10px 20px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-gray-600);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tab:hover:not(:disabled) {
+  color: var(--color-gray-800);
+}
+
+.tab.active {
+  color: var(--color-orange);
+  border-bottom-color: var(--color-orange);
+}
+
+.tab:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }

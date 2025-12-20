@@ -18,8 +18,21 @@ export default function ModelPull() {
     setPulling(true);
     setMessages([]);
 
+    const ANSI_INLINE = '\x1b[1A\r\x1b[K';
+
     const addMessage = (text: string, type: 'info' | 'error' | 'success') => {
       setMessages((prev) => [...prev, { text, type }]);
+    };
+
+    const updateLastMessage = (text: string, type: 'info' | 'error' | 'success') => {
+      setMessages((prev) => {
+        if (prev.length === 0) {
+          return [{ text, type }];
+        }
+        const updated = [...prev];
+        updated[updated.length - 1] = { text, type };
+        return updated;
+      });
     };
 
     closeRef.current = api.pullModel(
@@ -27,7 +40,12 @@ export default function ModelPull() {
       projUrl.trim(),
       (data: PullResponse) => {
         if (data.status) {
-          addMessage(data.status, 'info');
+          if (data.status.startsWith(ANSI_INLINE)) {
+            const cleanText = data.status.slice(ANSI_INLINE.length);
+            updateLastMessage(cleanText, 'info');
+          } else {
+            addMessage(data.status, 'info');
+          }
         }
         if (data.model_file) {
           addMessage(`Model file: ${data.model_file}`, 'info');

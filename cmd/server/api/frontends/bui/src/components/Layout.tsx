@@ -27,16 +27,12 @@ const menuStructure: MenuCategory[] = [
       { id: 'model-list', label: 'List' },
       { id: 'model-ps', label: 'Running' },
       { id: 'model-pull', label: 'Pull' },
-      { id: 'model-remove', label: 'Remove' },
     ],
   },
   {
     id: 'catalog',
     label: 'Catalog',
-    items: [
-      { id: 'catalog-list', label: 'List' },
-      { id: 'catalog-pull', label: 'Pull' },
-    ],
+    items: [{ id: 'catalog-list', label: 'List' }],
   },
   {
     id: 'libs',

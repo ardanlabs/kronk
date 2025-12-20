@@ -6,7 +6,13 @@
 
 - Solidfy the auth system
   - Rate limiting
+
+### Telemetry
+
 - Apply OTEL Spans to critical areas beyond start/stop request
+- TTFT reporting
+- Cache Usage
+- Tokens/sec reported against a bucketed list of context sizes from the incoming requests
 - Maintain stats at a model level
 
 ### API
@@ -15,10 +21,3 @@
   https://github.com/charmbracelet/fantasy/pull/92#issuecomment-3636479873
 
 ### FRONTEND
-
-- Maybe a Kronk model server BUI
-  - Need local DB, maybe duck or postgres lite (CGO considerations)
-  - Show loaded models
-  - Show model stats
-  - Tools support
-  - Create tokens (need admin user)

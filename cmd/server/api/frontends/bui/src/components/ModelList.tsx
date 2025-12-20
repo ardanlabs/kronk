@@ -25,6 +25,11 @@ export default function ModelList() {
   const [rebuildError, setRebuildError] = useState<string | null>(null);
   const [rebuildSuccess, setRebuildSuccess] = useState(false);
 
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
+  const [removeSuccess, setRemoveSuccess] = useState<string | null>(null);
+
   const handleRebuildIndex = async () => {
     setRebuildingIndex(true);
     setRebuildError(null);
@@ -52,10 +57,14 @@ export default function ModelList() {
     if (selectedModelId === modelId) {
       setSelectedModelId(null);
       setModelInfo(null);
+      setConfirmingRemove(false);
       return;
     }
 
     setSelectedModelId(modelId);
+    setConfirmingRemove(false);
+    setRemoveError(null);
+    setRemoveSuccess(null);
     setInfoLoading(true);
     setInfoError(null);
     setModelInfo(null);
@@ -70,6 +79,38 @@ export default function ModelList() {
     }
   };
 
+  const handleRemoveClick = () => {
+    if (!selectedModelId) return;
+    setConfirmingRemove(true);
+  };
+
+  const handleConfirmRemove = async () => {
+    if (!selectedModelId) return;
+
+    setRemoving(true);
+    setConfirmingRemove(false);
+    setRemoveError(null);
+    setRemoveSuccess(null);
+
+    try {
+      await api.removeModel(selectedModelId);
+      setRemoveSuccess(`Model "${selectedModelId}" removed successfully`);
+      setSelectedModelId(null);
+      setModelInfo(null);
+      invalidate();
+      await loadModels();
+      setTimeout(() => setRemoveSuccess(null), 3000);
+    } catch (err) {
+      setRemoveError(err instanceof Error ? err.message : 'Failed to remove model');
+    } finally {
+      setRemoving(false);
+    }
+  };
+
+  const handleCancelRemove = () => {
+    setConfirmingRemove(false);
+  };
+
   return (
     <div>
       <div className="page-header">
@@ -81,6 +122,8 @@ export default function ModelList() {
         {loading && <div className="loading">Loading models</div>}
 
         {error && <div className="alert alert-error">{error}</div>}
+        {removeError && <div className="alert alert-error">{removeError}</div>}
+        {removeSuccess && <div className="alert alert-success">{removeSuccess}</div>}
 
         {!loading && !error && models && (
           <div className="table-container">
@@ -129,6 +172,7 @@ export default function ModelList() {
               loadModels();
               setSelectedModelId(null);
               setModelInfo(null);
+              setConfirmingRemove(false);
             }}
             disabled={loading}
           >
@@ -141,6 +185,25 @@ export default function ModelList() {
           >
             {rebuildingIndex ? 'Rebuilding...' : 'Rebuild Index'}
           </button>
+          {selectedModelId && !confirmingRemove && (
+            <button
+              className="btn btn-danger"
+              onClick={handleRemoveClick}
+              disabled={removing}
+            >
+              Remove Model
+            </button>
+          )}
+          {selectedModelId && confirmingRemove && (
+            <>
+              <button className="btn btn-danger" onClick={handleConfirmRemove} disabled={removing}>
+                {removing ? 'Removing...' : 'Yes, Remove'}
+              </button>
+              <button className="btn btn-secondary" onClick={handleCancelRemove} disabled={removing}>
+                Cancel
+              </button>
+            </>
+          )}
         </div>
         {rebuildError && <div className="alert alert-error" style={{ marginTop: '8px' }}>{rebuildError}</div>}
         {rebuildSuccess && <div className="alert alert-success" style={{ marginTop: '8px' }}>Index rebuilt successfully</div>}
