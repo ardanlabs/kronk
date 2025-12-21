@@ -337,12 +337,7 @@ func (a *app) createToken(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.New(errs.InvalidArgument, err)
 	}
 
-	endpoints := make(map[string]bool)
-	for _, endpoint := range req.Endpoints {
-		endpoints[endpoint] = true
-	}
-
-	token, err := a.security.GenerateToken(req.UserName, req.Admin, endpoints, req.Duration)
+	token, err := a.security.GenerateToken(req.UserName, req.Admin, req.Endpoints, req.Duration)
 	if err != nil {
 		return errs.New(errs.Internal, err)
 	}

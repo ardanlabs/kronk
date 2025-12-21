@@ -26,20 +26,20 @@ func (all) Add(app *web.App, cfg mux.Config) {
 	})
 
 	toolapp.Routes(app, toolapp.Config{
-		Log:      cfg.Log,
-		Security: cfg.Security,
-		Cache:    cfg.Cache,
+		Log:        cfg.Log,
+		AuthClient: cfg.AuthClient,
+		Cache:      cfg.Cache,
 	})
 
 	chatapp.Routes(app, chatapp.Config{
-		Log:      cfg.Log,
-		Security: cfg.Security,
-		Cache:    cfg.Cache,
+		Log:        cfg.Log,
+		AuthClient: cfg.AuthClient,
+		Cache:      cfg.Cache,
 	})
 
 	embedapp.Routes(app, embedapp.Config{
-		Log:      cfg.Log,
-		Security: cfg.Security,
-		Cache:    cfg.Cache,
+		Log:        cfg.Log,
+		AuthClient: cfg.AuthClient,
+		Cache:      cfg.Cache,
 	})
 }

@@ -17,8 +17,7 @@ func init() {
 	if (len(os.Args) > 1 && os.Args[1] == "security") ||
 		(len(os.Args) > 2 && os.Args[2] == "security") {
 		sec, err := security.New(security.Config{
-			Issuer:  "kronk project",
-			Enabled: true,
+			Issuer: "kronk project",
 		})
 
 		if err != nil {

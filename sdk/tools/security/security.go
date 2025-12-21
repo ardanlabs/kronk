@@ -23,7 +23,6 @@ var (
 type Config struct {
 	OverrideBaseKeysFolder string
 	Issuer                 string
-	Enabled                bool
 }
 
 // Security provides security support APIs.
@@ -40,7 +39,6 @@ func New(cfg Config) (*Security, error) {
 	a, err := auth.New(auth.Config{
 		KeyLookup: ks,
 		Issuer:    cfg.Issuer,
-		Enabled:   cfg.Enabled,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("auth: %w", err)
@@ -65,7 +63,8 @@ func (sec *Security) BaseKeysFolder() string {
 }
 
 // GenerateToken generates a new token with the specified claims.
-func (sec *Security) GenerateToken(subject string, admin bool, endpoints map[string]bool, duration time.Duration) (string, error) {
+func (sec *Security) GenerateToken(subject string, admin bool, endpoints []string, duration time.Duration) (string, error) {
+
 	claims := auth.Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    sec.cfg.Issuer,
@@ -205,10 +204,7 @@ func (sec *Security) addSystemKeys() error {
 func (sec *Security) generateAdminToken(keysPath string) error {
 	const admin = true
 
-	endpoints := map[string]bool{
-		"chat-completions": true,
-		"embeddings":       true,
-	}
+	endpoints := []string{"chat-completions", "embeddings"}
 
 	const tenYears = time.Minute * 526000
 

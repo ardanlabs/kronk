@@ -15,15 +15,12 @@ func TestGenerateToken(t *testing.T) {
 	sec, err := security.New(security.Config{
 		OverrideBaseKeysFolder: tmpDir,
 		Issuer:                 "test-issuer",
-		Enabled:                true,
 	})
 	if err != nil {
 		t.Fatalf("failed to create security: %v", err)
 	}
 
-	endpoints := map[string]bool{
-		"chat-completions": true,
-	}
+	endpoints := []string{"chat-completions"}
 
 	token, err := sec.GenerateToken("test-subject", true, endpoints, time.Hour)
 	if err != nil {
@@ -41,7 +38,6 @@ func TestAddPrivateKey(t *testing.T) {
 	sec, err := security.New(security.Config{
 		OverrideBaseKeysFolder: tmpDir,
 		Issuer:                 "test-issuer",
-		Enabled:                true,
 	})
 
 	if err != nil {
@@ -67,7 +63,6 @@ func TestDeletePrivateKey(t *testing.T) {
 	sec, err := security.New(security.Config{
 		OverrideBaseKeysFolder: tmpDir,
 		Issuer:                 "test-issuer",
-		Enabled:                true,
 	})
 
 	if err != nil {
@@ -97,7 +92,6 @@ func TestDeletePrivateKey_NotFound(t *testing.T) {
 	sec, err := security.New(security.Config{
 		OverrideBaseKeysFolder: tmpDir,
 		Issuer:                 "test-issuer",
-		Enabled:                true,
 	})
 
 	if err != nil {

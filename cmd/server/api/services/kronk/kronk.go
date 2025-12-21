@@ -7,6 +7,7 @@ import (
 	"errors"
 	"expvar"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -16,6 +17,8 @@ import (
 
 	"github.com/ardanlabs/conf/v3"
 	"github.com/ardanlabs/kronk/cmd/server/api/services/kronk/build"
+	"github.com/ardanlabs/kronk/cmd/server/app/domain/authapp"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/debug"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mux"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
@@ -24,6 +27,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/cache"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/security"
+	"google.golang.org/grpc/test/bufconn"
 )
 
 //go:embed static
@@ -81,8 +85,8 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			CORSAllowedOrigins []string      `conf:"default:*"`
 		}
 		Auth struct {
-			Issuer  string `conf:"default:kronk project"`
-			Enabled bool   `conf:"default:false"`
+			Issuer string `conf:"default:kronk project"`
+			Host   string
 		}
 		Tempo struct {
 			Host        string  // `conf:"default:tempo:4317"`
@@ -149,20 +153,6 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	fmt.Println(logo)
 
 	// -------------------------------------------------------------------------
-	// Initialize authentication support
-
-	log.Info(ctx, "startup", "status", "initializing authentication support")
-
-	sec, err := security.New(security.Config{
-		Issuer:  cfg.Auth.Issuer,
-		Enabled: cfg.Auth.Enabled,
-	})
-
-	if err != nil {
-		return fmt.Errorf("unable to initialize security system: %w", err)
-	}
-
-	// -------------------------------------------------------------------------
 	// Start Tracing Support
 
 	log.Info(ctx, "startup", "status", "initializing tracing support")
@@ -187,6 +177,75 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	}()
 
 	tracer := traceProvider.Tracer(cfg.Tempo.ServiceName)
+
+	// -------------------------------------------------------------------------
+	// Initialize authentication support
+
+	log.Info(ctx, "startup", "status", "initializing authentication support")
+
+	sec, err := security.New(security.Config{
+		Issuer: cfg.Auth.Issuer,
+	})
+
+	if err != nil {
+		return fmt.Errorf("unable to initialize security system: %w", err)
+	}
+
+	var authClientOpts []func(*authclient.Client)
+
+	// -------------------------------------------------------------------------
+	// If no host is provided for the auth service, we will start it ourselves
+	// with a bufconn listener.
+
+	if cfg.Auth.Host == "" {
+		log.Info(ctx, "startup", "status", "starting local auth service")
+
+		lis := bufconn.Listen(1024 * 1024)
+
+		authApp, err := authapp.New(authapp.Config{
+			Log:      log,
+			Security: sec,
+			Listener: lis,
+			Tracer:   tracer,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create auth server: %w", err)
+		}
+
+		go func() {
+			log.Info(ctx, "startup", "status", "auth service started")
+
+			if err := authApp.Start(ctx); err != nil {
+				log.Error(ctx, "startup", "status", "auth server error", "err", err)
+			}
+		}()
+
+		defer func() {
+			authApp.Stop(ctx)
+			log.Info(ctx, "startup", "status", "auth service stopped")
+		}()
+
+		authClientOpts = append(authClientOpts, authclient.WithDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			return lis.Dial()
+		}))
+	}
+
+	// -------------------------------------------------------------------------
+	// Now initialize the auth client for handling authorization checks.
+
+	log.Info(ctx, "startup", "status", "initializing authentication client")
+
+	authHost := cfg.Auth.Host
+	if len(authClientOpts) > 0 {
+		authHost = "passthrough:///bufnet"
+	}
+
+	authClient, err := authclient.New(log, authHost, authClientOpts...)
+	if err != nil {
+		return fmt.Errorf("failed to initialize authentication client: %w", err)
+	}
+
+	defer authClient.Close()
 
 	// -------------------------------------------------------------------------
 	// Init Kronk
@@ -268,11 +327,12 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
 
 	cfgMux := mux.Config{
-		Build:    tag,
-		Log:      log,
-		Security: sec,
-		Tracer:   tracer,
-		Cache:    cache,
+		Build:      tag,
+		Log:        log,
+		AuthClient: authClient,
+		Security:   sec,
+		Tracer:     tracer,
+		Cache:      cache,
 	}
 
 	webAPI := mux.WebAPI(cfgMux,

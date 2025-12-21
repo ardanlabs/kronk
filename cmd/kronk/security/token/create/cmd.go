@@ -46,11 +46,6 @@ func run(cmd *cobra.Command) error {
 		return fmt.Errorf("username required")
 	}
 
-	endpoints := make(map[string]bool)
-	for _, endpoint := range flagEndpoints {
-		endpoints[endpoint] = true
-	}
-
 	duration, err := time.ParseDuration(flagDuration)
 	if err != nil {
 		return fmt.Errorf("parse-duration: %w", err)
@@ -59,7 +54,7 @@ func run(cmd *cobra.Command) error {
 	cfg := config{
 		AdminToken: adminToken,
 		UserName:   username,
-		Endpoints:  endpoints,
+		Endpoints:  flagEndpoints,
 		Duration:   duration,
 	}
 

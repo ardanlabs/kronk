@@ -21,9 +21,15 @@ admin_check := false if {
 }
 
 endpoint_check := true if {
-	input.Claim.Endpoints[input.Requires.Endpoint]
+	some ep in input.Claim.Endpoints
+	ep == input.Requires.Endpoint
 }
 
 endpoint_check := false if {
-	not input.Claim.Endpoints[input.Requires.Endpoint]
+	not endpoint_match
+}
+
+endpoint_match if {
+	some ep in input.Claim.Endpoints
+	ep == input.Requires.Endpoint
 }

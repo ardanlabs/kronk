@@ -5,8 +5,6 @@ import (
 	"context"
 
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
-	"github.com/ardanlabs/kronk/sdk/security/auth"
-	"github.com/google/uuid"
 )
 
 func checkIsError(e web.Encoder) error {
@@ -23,30 +21,32 @@ func checkIsError(e web.Encoder) error {
 type ctxKey int
 
 const (
-	claimKey ctxKey = iota + 1
+	subjectKey ctxKey = iota + 1
+	tokenIDKey
 )
 
-func setClaims(ctx context.Context, claims auth.Claims) context.Context {
-	return context.WithValue(ctx, claimKey, claims)
+func setSubject(ctx context.Context, subject string) context.Context {
+	return context.WithValue(ctx, subjectKey, subject)
 }
 
-// GetClaims returns the claims from the context.
-func GetClaims(ctx context.Context) auth.Claims {
-	v, ok := ctx.Value(claimKey).(auth.Claims)
+// GetSubject returns the subject from the context.
+func GetSubject(ctx context.Context) string {
+	v, ok := ctx.Value(subjectKey).(string)
 	if !ok {
-		return auth.Claims{}
+		return ""
 	}
 	return v
 }
 
-// GetSubjectID returns the subject id from the claims.
-func GetSubjectID(ctx context.Context) uuid.UUID {
-	v := GetClaims(ctx)
+func setTokenID(ctx context.Context, tokenID string) context.Context {
+	return context.WithValue(ctx, tokenIDKey, tokenID)
+}
 
-	subjectID, err := uuid.Parse(v.Subject)
-	if err != nil {
-		return uuid.UUID{}
+// GetTokenID returns the token id from the context.
+func GetTokenID(ctx context.Context) string {
+	v, ok := ctx.Value(tokenIDKey).(string)
+	if !ok {
+		return ""
 	}
-
-	return subjectID
+	return v
 }

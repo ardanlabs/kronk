@@ -14,7 +14,7 @@ import (
 type config struct {
 	AdminToken string
 	UserName   string
-	Endpoints  map[string]bool
+	Endpoints  []string
 	Duration   time.Duration
 }
 
@@ -31,15 +31,10 @@ func runWeb(cfg config) error {
 
 	fmt.Println("URL:", url)
 
-	endpoints := make([]string, 0, len(cfg.Endpoints))
-	for endpoint := range cfg.Endpoints {
-		endpoints = append(endpoints, endpoint)
-	}
-
 	req := client.D{
 		"user_name": cfg.UserName,
 		"admin":     false,
-		"endpoints": endpoints,
+		"endpoints": cfg.Endpoints,
 		"duration":  cfg.Duration,
 	}
 

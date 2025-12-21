@@ -3,6 +3,7 @@ package toolapp
 import (
 	"net/http"
 
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mid"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
@@ -12,37 +13,38 @@ import (
 
 // Config contains all the mandatory systems required by handlers.
 type Config struct {
-	Log      *logger.Logger
-	Security *security.Security
-	Cache    *cache.Cache
+	Log        *logger.Logger
+	AuthClient *authclient.Client
+	Security   *security.Security
+	Cache      *cache.Cache
 }
 
 // Routes adds specific routes for this group.
 func Routes(app *web.App, cfg Config) {
 	const version = ""
 
-	bearer := mid.Bearer(cfg.Security.Auth)
-	authorizeAdmin := mid.Authorize(cfg.Security.Auth, true, "")
-
 	api := newApp(cfg.Log, cfg.Cache, cfg.Security)
 
-	app.HandlerFunc(http.MethodGet, version, "/v1/libs", api.listLibs, bearer)
-	app.HandlerFunc(http.MethodPost, version, "/v1/libs/pull", api.pullLibs, bearer)
+	auth := mid.Authenticate(true, cfg.AuthClient, false, "")
+	authAdmin := mid.Authenticate(true, cfg.AuthClient, true, "")
 
-	app.HandlerFunc(http.MethodGet, version, "/v1/models", api.listModels, bearer)
-	app.HandlerFunc(http.MethodGet, version, "/v1/models/{model}", api.showModel, bearer)
-	app.HandlerFunc(http.MethodGet, version, "/v1/models/ps", api.modelPS, bearer)
-	app.HandlerFunc(http.MethodPost, version, "/v1/models/index", api.indexModels, bearer)
-	app.HandlerFunc(http.MethodPost, version, "/v1/models/pull", api.pullModels, bearer)
-	app.HandlerFunc(http.MethodDelete, version, "/v1/models/{model}", api.removeModel, bearer)
+	app.HandlerFunc(http.MethodGet, version, "/v1/libs", api.listLibs, auth)
+	app.HandlerFunc(http.MethodPost, version, "/v1/libs/pull", api.pullLibs, auth)
 
-	app.HandlerFunc(http.MethodGet, version, "/v1/catalog", api.listCatalog, bearer)
-	app.HandlerFunc(http.MethodGet, version, "/v1/catalog/filter/{filter}", api.listCatalog, bearer)
-	app.HandlerFunc(http.MethodGet, version, "/v1/catalog/{model}", api.showCatalogModel, bearer)
-	app.HandlerFunc(http.MethodPost, version, "/v1/catalog/pull/{model}", api.pullCatalog, bearer)
+	app.HandlerFunc(http.MethodGet, version, "/v1/models", api.listModels, auth)
+	app.HandlerFunc(http.MethodGet, version, "/v1/models/{model}", api.showModel, auth)
+	app.HandlerFunc(http.MethodGet, version, "/v1/models/ps", api.modelPS, auth)
+	app.HandlerFunc(http.MethodPost, version, "/v1/models/index", api.indexModels, auth)
+	app.HandlerFunc(http.MethodPost, version, "/v1/models/pull", api.pullModels, auth)
+	app.HandlerFunc(http.MethodDelete, version, "/v1/models/{model}", api.removeModel, auth)
 
-	app.HandlerFunc(http.MethodPost, version, "/v1/security/token/create", api.createToken, bearer, authorizeAdmin)
-	app.HandlerFunc(http.MethodGet, version, "/v1/security/keys", api.listKeys, bearer, authorizeAdmin)
-	app.HandlerFunc(http.MethodPost, version, "/v1/security/keys/add", api.addKey, bearer, authorizeAdmin)
-	app.HandlerFunc(http.MethodPost, version, "/v1/security/keys/remove/{keyid}", api.removeKey, bearer, authorizeAdmin)
+	app.HandlerFunc(http.MethodGet, version, "/v1/catalog", api.listCatalog, auth)
+	app.HandlerFunc(http.MethodGet, version, "/v1/catalog/filter/{filter}", api.listCatalog, auth)
+	app.HandlerFunc(http.MethodGet, version, "/v1/catalog/{model}", api.showCatalogModel, auth)
+	app.HandlerFunc(http.MethodPost, version, "/v1/catalog/pull/{model}", api.pullCatalog, auth)
+
+	app.HandlerFunc(http.MethodPost, version, "/v1/security/token/create", api.createToken, authAdmin)
+	app.HandlerFunc(http.MethodGet, version, "/v1/security/keys", api.listKeys, authAdmin)
+	app.HandlerFunc(http.MethodPost, version, "/v1/security/keys/add", api.addKey, authAdmin)
+	app.HandlerFunc(http.MethodPost, version, "/v1/security/keys/remove/{keyid}", api.removeKey, authAdmin)
 }

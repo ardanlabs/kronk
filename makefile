@@ -41,6 +41,21 @@ llama-bench:
 install-gotooling:
 	go install honnef.co/go/tools/cmd/staticcheck@latest
 	go install golang.org/x/vuln/cmd/govulncheck@latest
+	go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+install-tooling:
+	brew list protobuf || brew install protobuf
+	brew list grpcurl || brew install grpcurl
+
+# ==============================================================================
+# Protobuf support
+
+proto-gen:
+	protoc --go_out=cmd/server/app/domain/authapp --go_opt=paths=source_relative \
+		--go-grpc_out=cmd/server/app/domain/authapp --go-grpc_opt=paths=source_relative \
+		--proto_path=cmd/server/zarf/proto \
+		cmd/server/zarf/proto/auth.proto
 
 # ==============================================================================
 # Kronk BUI

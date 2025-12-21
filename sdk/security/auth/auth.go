@@ -26,8 +26,8 @@ var (
 // Claims represents the authorization claims transmitted via a JWT.
 type Claims struct {
 	jwt.RegisteredClaims
-	Admin     bool            `json:"admin"`
-	Endpoints map[string]bool `json:"endpoints"`
+	Admin     bool     `json:"admin"`
+	Endpoints []string `json:"endpoints"`
 }
 
 // KeyLookup declares a method set of behavior for looking up
@@ -42,7 +42,6 @@ type KeyLookup interface {
 type Config struct {
 	KeyLookup KeyLookup
 	Issuer    string
-	Enabled   bool
 }
 
 // Auth is used to authenticate clients. It can generate a token for a
@@ -83,7 +82,6 @@ func New(cfg Config) (*Auth, error) {
 		method:            jwt.GetSigningMethod(jwt.SigningMethodRS256.Name),
 		parser:            jwt.NewParser(jwt.WithValidMethods([]string{jwt.SigningMethodRS256.Name})),
 		issuer:            cfg.Issuer,
-		enabled:           cfg.Enabled,
 		authenticateQuery: authenticateQuery,
 		authorizeQuery:    authorizeQuery,
 	}, nil

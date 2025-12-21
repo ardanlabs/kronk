@@ -14,7 +14,6 @@ func Test_Auth(t *testing.T) {
 	ath, err := auth.New(auth.Config{
 		KeyLookup: &keyStore{},
 		Issuer:    "service project",
-		Enabled:   true,
 	})
 
 	if err != nil {
@@ -34,10 +33,8 @@ func authenticate(ath *auth.Auth) func(t *testing.T) {
 				ExpiresAt: jwt.NewNumericDate(time.Now().UTC().Add(time.Hour)),
 				IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
 			},
-			Admin: true,
-			Endpoints: map[string]bool{
-				"chat-completions": true,
-			},
+			Admin:     true,
+			Endpoints: []string{"chat-completions"},
 		}
 
 		token, err := ath.GenerateToken(claims)
@@ -69,10 +66,8 @@ func authorize(ath *auth.Auth) func(t *testing.T) {
 				Issuer:  "kronk project",
 				Subject: "bill",
 			},
-			Admin: false,
-			Endpoints: map[string]bool{
-				"chat-completions": true,
-			},
+			Admin:     false,
+			Endpoints: []string{"chat-completions"},
 		}
 
 		adminClaims := auth.Claims{
@@ -80,11 +75,8 @@ func authorize(ath *auth.Auth) func(t *testing.T) {
 				Issuer:  "kronk project",
 				Subject: "admin",
 			},
-			Admin: true,
-			Endpoints: map[string]bool{
-				"chat-completions": true,
-				"embeddings":       true,
-			},
+			Admin:     true,
+			Endpoints: []string{"chat-completions", "embeddings"},
 		}
 
 		ctx := context.Background()
