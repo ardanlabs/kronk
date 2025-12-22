@@ -30,6 +30,8 @@ func TestGenerateToken(t *testing.T) {
 		t.Fatalf("failed to generate token: %v", err)
 	}
 
+	defer sec.Close()
+
 	if token == "" {
 		t.Fatal("expected non-empty token")
 	}

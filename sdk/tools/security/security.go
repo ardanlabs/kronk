@@ -2,6 +2,8 @@
 package security
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +12,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/defaults"
 	"github.com/ardanlabs/kronk/sdk/security/auth"
 	"github.com/ardanlabs/kronk/sdk/security/keystore"
+	"github.com/ardanlabs/kronk/sdk/security/rate"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
 )
@@ -27,9 +30,10 @@ type Config struct {
 
 // Security provides security support APIs.
 type Security struct {
-	Auth *auth.Auth
-	cfg  Config
-	ks   *keystore.KeyStore
+	auth    *auth.Auth
+	limiter *rate.Limiter
+	cfg     Config
+	ks      *keystore.KeyStore
 }
 
 // New constructs a Security API.
@@ -40,14 +44,31 @@ func New(cfg Config) (*Security, error) {
 		KeyLookup: ks,
 		Issuer:    cfg.Issuer,
 	})
+
 	if err != nil {
 		return nil, fmt.Errorf("auth: %w", err)
 	}
 
+	// -------------------------------------------------------------------------
+
+	basePath := defaults.BaseDir(cfg.OverrideBaseKeysFolder)
+	dbPath := filepath.Join(basePath, "badger")
+
+	limiter, err := rate.New(rate.Config{
+		DBPath: dbPath,
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("rate limiter: %w", err)
+	}
+
+	// -------------------------------------------------------------------------
+
 	sec := Security{
-		Auth: a,
-		cfg:  cfg,
-		ks:   ks,
+		auth:    a,
+		limiter: limiter,
+		cfg:     cfg,
+		ks:      ks,
 	}
 
 	if err := sec.addSystemKeys(); err != nil {
@@ -57,9 +78,47 @@ func New(cfg Config) (*Security, error) {
 	return &sec, nil
 }
 
+// Close shutdown the security system.
+func (sec *Security) Close() error {
+	return sec.limiter.Close()
+}
+
 // BaseKeysFolder returns the location of the base keys folder being used.
 func (sec *Security) BaseKeysFolder() string {
 	return sec.cfg.OverrideBaseKeysFolder
+}
+
+// Authenticate tests the token against the requirements.
+func (sec *Security) Authenticate(ctx context.Context, bearerToken string, admin bool, endpoint string) (auth.Claims, error) {
+	claims, err := sec.auth.Authenticate(ctx, bearerToken)
+	if err != nil {
+		return auth.Claims{}, fmt.Errorf("invalid token: %w", err)
+	}
+
+	err = sec.auth.Authorize(ctx, claims, admin, endpoint)
+	if err != nil {
+		if errors.Is(err, auth.ErrForbidden) {
+			return auth.Claims{}, fmt.Errorf("not authorized: %w", err)
+		}
+
+		return auth.Claims{}, fmt.Errorf("authorization failed: %w", err)
+	}
+
+	if claims.Admin {
+		return claims, nil
+	}
+
+	limit := claims.Endpoints[endpoint]
+
+	if err := sec.limiter.Check(claims.Subject, endpoint, limit); err != nil {
+		if errors.Is(err, rate.ErrRateLimitExceeded) {
+			return auth.Claims{}, fmt.Errorf("rate limit exceeded: %w", err)
+		}
+
+		return auth.Claims{}, fmt.Errorf("rate limit check failed: %w", err)
+	}
+
+	return claims, nil
 }
 
 // GenerateToken generates a new token with the specified claims.
@@ -75,7 +134,7 @@ func (sec *Security) GenerateToken(admin bool, endpoints map[string]auth.RateLim
 		Endpoints: endpoints,
 	}
 
-	token, err := sec.Auth.GenerateToken(claims)
+	token, err := sec.auth.GenerateToken(claims)
 	if err != nil {
 		return "", fmt.Errorf("generate-token: %w", err)
 	}

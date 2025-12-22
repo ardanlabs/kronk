@@ -22,7 +22,6 @@ type ctxKey int
 
 const (
 	subjectKey ctxKey = iota + 1
-	tokenIDKey
 )
 
 func setSubject(ctx context.Context, subject string) context.Context {
@@ -32,19 +31,6 @@ func setSubject(ctx context.Context, subject string) context.Context {
 // GetSubject returns the subject from the context.
 func GetSubject(ctx context.Context) string {
 	v, ok := ctx.Value(subjectKey).(string)
-	if !ok {
-		return ""
-	}
-	return v
-}
-
-func setTokenID(ctx context.Context, tokenID string) context.Context {
-	return context.WithValue(ctx, tokenIDKey, tokenID)
-}
-
-// GetTokenID returns the token id from the context.
-func GetTokenID(ctx context.Context) string {
-	v, ok := ctx.Value(tokenIDKey).(string)
 	if !ok {
 		return ""
 	}

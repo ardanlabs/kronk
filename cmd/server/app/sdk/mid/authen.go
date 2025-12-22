@@ -23,7 +23,6 @@ func Authenticate(enabled bool, client *authclient.Client, admin bool, endpoint 
 			}
 
 			ctx = setSubject(ctx, ar.Subject)
-			ctx = setTokenID(ctx, ar.TokenID)
 
 			return next(ctx, r)
 		}

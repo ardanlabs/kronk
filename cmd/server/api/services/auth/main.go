@@ -114,6 +114,8 @@ func run(ctx context.Context, log *logger.Logger) error {
 		return fmt.Errorf("unable to initialize security system: %w", err)
 	}
 
+	defer sec.Close()
+
 	// -------------------------------------------------------------------------
 	// Start Tracing Support
 

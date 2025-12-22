@@ -3,7 +3,6 @@ package authapp
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"time"
@@ -12,6 +11,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/otel"
 	"github.com/ardanlabs/kronk/sdk/security/auth"
 	"github.com/ardanlabs/kronk/sdk/tools/security"
+	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -82,8 +82,7 @@ func (a *App) Authenticate(ctx context.Context, req *AuthenticateRequest) (*Auth
 		a.log.Info(ctx, "***> auth", "status", "authentication disabled")
 
 		arb := AuthenticateResponse_builder{
-			TokenId: proto.String("123"),
-			Subject: proto.String("no user"),
+			Subject: proto.String(uuid.Nil.String()),
 		}
 
 		return arb.Build(), nil
@@ -101,29 +100,13 @@ func (a *App) Authenticate(ctx context.Context, req *AuthenticateRequest) (*Auth
 		return nil, fmt.Errorf("unauthorized: no authorization header")
 	}
 
-	claims, err := a.security.Auth.Authenticate(ctx, bearerToken[0])
+	claims, err := a.security.Authenticate(ctx, bearerToken[0], req.GetAdmin(), req.GetEndpoint())
 	if err != nil {
 		a.log.Error(ctx, "authenticate", "err", err)
-		return nil, status.Error(codes.Unauthenticated, "invalid token")
+		return nil, status.Error(codes.Unauthenticated, err.Error())
 	}
-
-	a.log.Info(ctx, "auth", "method", "checking authorization")
-
-	err = a.security.Auth.Authorize(ctx, claims, req.GetAdmin(), req.GetEndpoint())
-	if err != nil {
-		if errors.Is(err, auth.ErrForbidden) {
-			a.log.Error(ctx, "authorize", "err", err)
-			return nil, status.Error(codes.PermissionDenied, "not authorized")
-		}
-
-		a.log.Error(ctx, "authorize", "err", err)
-		return nil, status.Error(codes.Internal, "authorization failed")
-	}
-
-	tokenID := "not-implemented"
 
 	arb := AuthenticateResponse_builder{
-		TokenId: proto.String(tokenID),
 		Subject: proto.String(claims.Subject),
 	}
 

@@ -6,12 +6,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/ardanlabs/kronk/sdk/security/auth"
 	"github.com/ardanlabs/kronk/sdk/tools/security"
 )
 
 var Security *security.Security
-var Claims auth.Claims
 
 func init() {
 	if (len(os.Args) > 1 && os.Args[1] == "security") ||
@@ -25,20 +23,16 @@ func init() {
 			os.Exit(1)
 		}
 
+		defer sec.Close()
+
 		ctx := context.Background()
 		bearerToken := fmt.Sprintf("Bearer %s", os.Getenv("KRONK_TOKEN"))
-		claims, err := sec.Auth.Authenticate(ctx, bearerToken)
-		if err != nil {
-			fmt.Println("\nNOT AUTHORIZED, Invalid Token")
-			os.Exit(1)
-		}
 
-		if !claims.Admin {
-			fmt.Println("\nNOT AUTHORIZED, NOT Admin")
+		if _, err := sec.Authenticate(ctx, bearerToken, true, ""); err != nil {
+			fmt.Println("\nNOT AUTHORIZED:", err)
 			os.Exit(1)
 		}
 
 		Security = sec
-		Claims = claims
 	}
 }

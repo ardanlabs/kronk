@@ -4,9 +4,6 @@
 
 ### MODEL SERVER / TOOLING
 
-- Solidfy the auth system
-  - Rate limiting
-
 ### Telemetry
 
 - Apply OTEL Spans to critical areas beyond start/stop request

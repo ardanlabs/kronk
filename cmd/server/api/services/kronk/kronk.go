@@ -183,22 +183,29 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	tracer := traceProvider.Tracer(cfg.Tempo.ServiceName)
 
 	// -------------------------------------------------------------------------
-	// Start Auth Server
+	// Start the auth server
 
 	var authClientOpts []func(*authclient.Client)
 
 	// If no host is provided for the auth service, we will start it ourselves
 	// with a bufconn listener.
 	if cfg.Auth.Host == "" {
-		authApp, lis, err := startAuthServer(ctx, log, cfg.Auth.Local.Enabled, cfg.Auth.Local.Issuer, tracer)
+		sec, err := security.New(security.Config{
+			Issuer: cfg.Auth.Local.Issuer,
+		})
+
+		if err != nil {
+			return fmt.Errorf("unable to initialize security system: %w", err)
+		}
+
+		defer sec.Close()
+
+		authApp, lis, err := startAuthServer(ctx, log, sec, cfg.Auth.Local.Enabled, tracer)
 		if err != nil {
 			return err
 		}
 
-		defer func() {
-			authApp.Stop(ctx)
-			log.Info(ctx, "startup", "status", "auth server stopped")
-		}()
+		defer authApp.Stop(ctx)
 
 		authClientOpts = append(authClientOpts, authclient.WithDialer(func(ctx context.Context, _ string) (net.Conn, error) {
 			return lis.Dial()
@@ -355,16 +362,8 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	return nil
 }
 
-func startAuthServer(ctx context.Context, log *logger.Logger, enabled bool, issuer string, tracer trace.Tracer) (*authapp.App, *bufconn.Listener, error) {
+func startAuthServer(ctx context.Context, log *logger.Logger, sec *security.Security, enabled bool, tracer trace.Tracer) (*authapp.App, *bufconn.Listener, error) {
 	log.Info(ctx, "startup", "status", "starting auth server")
-
-	sec, err := security.New(security.Config{
-		Issuer: issuer,
-	})
-
-	if err != nil {
-		return nil, nil, fmt.Errorf("unable to initialize security system: %w", err)
-	}
 
 	lis := bufconn.Listen(1024 * 1024)
 

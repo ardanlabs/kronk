@@ -4,13 +4,11 @@ import "github.com/ardanlabs/kronk/cmd/server/app/domain/authapp"
 
 // AuthenticateReponse is the response for the auth service.
 type AuthenticateReponse struct {
-	TokenID string
 	Subject string
 }
 
 func toAuthenticateReponse(req *authapp.AuthenticateResponse) AuthenticateReponse {
 	return AuthenticateReponse{
-		TokenID: req.GetTokenId(),
 		Subject: req.GetSubject(),
 	}
 }

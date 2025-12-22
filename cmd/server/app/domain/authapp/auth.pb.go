@@ -133,9 +133,10 @@ func (b0 RateLimit_builder) Build() *RateLimit {
 type CreateTokenRequest struct {
 	state                  protoimpl.MessageState `protogen:"opaque.v1"`
 	xxx_hidden_Token       *string                `protobuf:"bytes,1,opt,name=token"`
-	xxx_hidden_Admin       bool                   `protobuf:"varint,2,opt,name=admin"`
-	xxx_hidden_Duration    *string                `protobuf:"bytes,3,opt,name=duration"`
-	xxx_hidden_Endpoints   map[string]*RateLimit  `protobuf:"bytes,4,rep,name=endpoints" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	xxx_hidden_UserName    *string                `protobuf:"bytes,2,opt,name=user_name,json=userName"`
+	xxx_hidden_Admin       bool                   `protobuf:"varint,3,opt,name=admin"`
+	xxx_hidden_Duration    *string                `protobuf:"bytes,4,opt,name=duration"`
+	xxx_hidden_Endpoints   map[string]*RateLimit  `protobuf:"bytes,5,rep,name=endpoints" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	XXX_raceDetectHookData protoimpl.RaceDetectHookData
 	XXX_presence           [1]uint32
 	unknownFields          protoimpl.UnknownFields
@@ -177,6 +178,16 @@ func (x *CreateTokenRequest) GetToken() string {
 	return ""
 }
 
+func (x *CreateTokenRequest) GetUserName() string {
+	if x != nil {
+		if x.xxx_hidden_UserName != nil {
+			return *x.xxx_hidden_UserName
+		}
+		return ""
+	}
+	return ""
+}
+
 func (x *CreateTokenRequest) GetAdmin() bool {
 	if x != nil {
 		return x.xxx_hidden_Admin
@@ -203,17 +214,22 @@ func (x *CreateTokenRequest) GetEndpoints() map[string]*RateLimit {
 
 func (x *CreateTokenRequest) SetToken(v string) {
 	x.xxx_hidden_Token = &v
-	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 0, 4)
+	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 0, 5)
+}
+
+func (x *CreateTokenRequest) SetUserName(v string) {
+	x.xxx_hidden_UserName = &v
+	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 1, 5)
 }
 
 func (x *CreateTokenRequest) SetAdmin(v bool) {
 	x.xxx_hidden_Admin = v
-	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 1, 4)
+	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 2, 5)
 }
 
 func (x *CreateTokenRequest) SetDuration(v string) {
 	x.xxx_hidden_Duration = &v
-	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 2, 4)
+	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 3, 5)
 }
 
 func (x *CreateTokenRequest) SetEndpoints(v map[string]*RateLimit) {
@@ -227,18 +243,25 @@ func (x *CreateTokenRequest) HasToken() bool {
 	return protoimpl.X.Present(&(x.XXX_presence[0]), 0)
 }
 
-func (x *CreateTokenRequest) HasAdmin() bool {
+func (x *CreateTokenRequest) HasUserName() bool {
 	if x == nil {
 		return false
 	}
 	return protoimpl.X.Present(&(x.XXX_presence[0]), 1)
 }
 
-func (x *CreateTokenRequest) HasDuration() bool {
+func (x *CreateTokenRequest) HasAdmin() bool {
 	if x == nil {
 		return false
 	}
 	return protoimpl.X.Present(&(x.XXX_presence[0]), 2)
+}
+
+func (x *CreateTokenRequest) HasDuration() bool {
+	if x == nil {
+		return false
+	}
+	return protoimpl.X.Present(&(x.XXX_presence[0]), 3)
 }
 
 func (x *CreateTokenRequest) ClearToken() {
@@ -246,13 +269,18 @@ func (x *CreateTokenRequest) ClearToken() {
 	x.xxx_hidden_Token = nil
 }
 
-func (x *CreateTokenRequest) ClearAdmin() {
+func (x *CreateTokenRequest) ClearUserName() {
 	protoimpl.X.ClearPresent(&(x.XXX_presence[0]), 1)
+	x.xxx_hidden_UserName = nil
+}
+
+func (x *CreateTokenRequest) ClearAdmin() {
+	protoimpl.X.ClearPresent(&(x.XXX_presence[0]), 2)
 	x.xxx_hidden_Admin = false
 }
 
 func (x *CreateTokenRequest) ClearDuration() {
-	protoimpl.X.ClearPresent(&(x.XXX_presence[0]), 2)
+	protoimpl.X.ClearPresent(&(x.XXX_presence[0]), 3)
 	x.xxx_hidden_Duration = nil
 }
 
@@ -260,6 +288,7 @@ type CreateTokenRequest_builder struct {
 	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
 
 	Token     *string
+	UserName  *string
 	Admin     *bool
 	Duration  *string
 	Endpoints map[string]*RateLimit
@@ -270,15 +299,19 @@ func (b0 CreateTokenRequest_builder) Build() *CreateTokenRequest {
 	b, x := &b0, m0
 	_, _ = b, x
 	if b.Token != nil {
-		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 0, 4)
+		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 0, 5)
 		x.xxx_hidden_Token = b.Token
 	}
+	if b.UserName != nil {
+		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 1, 5)
+		x.xxx_hidden_UserName = b.UserName
+	}
 	if b.Admin != nil {
-		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 1, 4)
+		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 2, 5)
 		x.xxx_hidden_Admin = *b.Admin
 	}
 	if b.Duration != nil {
-		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 2, 4)
+		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 3, 5)
 		x.xxx_hidden_Duration = b.Duration
 	}
 	x.xxx_hidden_Endpoints = b.Endpoints
@@ -509,8 +542,7 @@ func (b0 AuthenticateRequest_builder) Build() *AuthenticateRequest {
 // Response message for authentication.
 type AuthenticateResponse struct {
 	state                  protoimpl.MessageState `protogen:"opaque.v1"`
-	xxx_hidden_TokenId     *string                `protobuf:"bytes,1,opt,name=token_id,json=tokenId"`
-	xxx_hidden_Subject     *string                `protobuf:"bytes,2,opt,name=subject"`
+	xxx_hidden_Subject     *string                `protobuf:"bytes,1,opt,name=subject"`
 	XXX_raceDetectHookData protoimpl.RaceDetectHookData
 	XXX_presence           [1]uint32
 	unknownFields          protoimpl.UnknownFields
@@ -542,16 +574,6 @@ func (x *AuthenticateResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-func (x *AuthenticateResponse) GetTokenId() string {
-	if x != nil {
-		if x.xxx_hidden_TokenId != nil {
-			return *x.xxx_hidden_TokenId
-		}
-		return ""
-	}
-	return ""
-}
-
 func (x *AuthenticateResponse) GetSubject() string {
 	if x != nil {
 		if x.xxx_hidden_Subject != nil {
@@ -562,44 +584,26 @@ func (x *AuthenticateResponse) GetSubject() string {
 	return ""
 }
 
-func (x *AuthenticateResponse) SetTokenId(v string) {
-	x.xxx_hidden_TokenId = &v
-	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 0, 2)
-}
-
 func (x *AuthenticateResponse) SetSubject(v string) {
 	x.xxx_hidden_Subject = &v
-	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 1, 2)
-}
-
-func (x *AuthenticateResponse) HasTokenId() bool {
-	if x == nil {
-		return false
-	}
-	return protoimpl.X.Present(&(x.XXX_presence[0]), 0)
+	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 0, 1)
 }
 
 func (x *AuthenticateResponse) HasSubject() bool {
 	if x == nil {
 		return false
 	}
-	return protoimpl.X.Present(&(x.XXX_presence[0]), 1)
-}
-
-func (x *AuthenticateResponse) ClearTokenId() {
-	protoimpl.X.ClearPresent(&(x.XXX_presence[0]), 0)
-	x.xxx_hidden_TokenId = nil
+	return protoimpl.X.Present(&(x.XXX_presence[0]), 0)
 }
 
 func (x *AuthenticateResponse) ClearSubject() {
-	protoimpl.X.ClearPresent(&(x.XXX_presence[0]), 1)
+	protoimpl.X.ClearPresent(&(x.XXX_presence[0]), 0)
 	x.xxx_hidden_Subject = nil
 }
 
 type AuthenticateResponse_builder struct {
 	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
 
-	TokenId *string
 	Subject *string
 }
 
@@ -607,12 +611,8 @@ func (b0 AuthenticateResponse_builder) Build() *AuthenticateResponse {
 	m0 := &AuthenticateResponse{}
 	b, x := &b0, m0
 	_, _ = b, x
-	if b.TokenId != nil {
-		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 0, 2)
-		x.xxx_hidden_TokenId = b.TokenId
-	}
 	if b.Subject != nil {
-		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 1, 2)
+		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 0, 1)
 		x.xxx_hidden_Subject = b.Subject
 	}
 	return m0
@@ -1053,12 +1053,13 @@ const file_auth_proto_rawDesc = "" +
 	"auth.proto\x12\aauthapp\"9\n" +
 	"\tRateLimit\x12\x14\n" +
 	"\x05limit\x18\x01 \x01(\x05R\x05limit\x12\x16\n" +
-	"\x06window\x18\x02 \x01(\tR\x06window\"\xf8\x01\n" +
+	"\x06window\x18\x02 \x01(\tR\x06window\"\x95\x02\n" +
 	"\x12CreateTokenRequest\x12\x14\n" +
-	"\x05token\x18\x01 \x01(\tR\x05token\x12\x14\n" +
-	"\x05admin\x18\x02 \x01(\bR\x05admin\x12\x1a\n" +
-	"\bduration\x18\x03 \x01(\tR\bduration\x12H\n" +
-	"\tendpoints\x18\x04 \x03(\v2*.authapp.CreateTokenRequest.EndpointsEntryR\tendpoints\x1aP\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\x12\x1b\n" +
+	"\tuser_name\x18\x02 \x01(\tR\buserName\x12\x14\n" +
+	"\x05admin\x18\x03 \x01(\bR\x05admin\x12\x1a\n" +
+	"\bduration\x18\x04 \x01(\tR\bduration\x12H\n" +
+	"\tendpoints\x18\x05 \x03(\v2*.authapp.CreateTokenRequest.EndpointsEntryR\tendpoints\x1aP\n" +
 	"\x0eEndpointsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12(\n" +
 	"\x05value\x18\x02 \x01(\v2\x12.authapp.RateLimitR\x05value:\x028\x01\"+\n" +
@@ -1067,10 +1068,9 @@ const file_auth_proto_rawDesc = "" +
 	"\x13AuthenticateRequest\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12\x14\n" +
 	"\x05admin\x18\x02 \x01(\bR\x05admin\x12\x1a\n" +
-	"\bendpoint\x18\x03 \x01(\tR\bendpoint\"K\n" +
-	"\x14AuthenticateResponse\x12\x19\n" +
-	"\btoken_id\x18\x01 \x01(\tR\atokenId\x12\x18\n" +
-	"\asubject\x18\x02 \x01(\tR\asubject\"\x11\n" +
+	"\bendpoint\x18\x03 \x01(\tR\bendpoint\"0\n" +
+	"\x14AuthenticateResponse\x12\x18\n" +
+	"\asubject\x18\x01 \x01(\tR\asubject\"\x11\n" +
 	"\x0fListKeysRequest\"4\n" +
 	"\x10ListKeysResponse\x12 \n" +
 	"\x04keys\x18\x01 \x03(\v2\f.authapp.KeyR\x04keys\"/\n" +
