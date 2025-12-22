@@ -60,6 +60,7 @@ func WithDialer(dialer func(context.Context, string) (net.Conn, error)) func(cln
 	}
 }
 
+// Close is used to close the connections.
 func (cln *Client) Close() error {
 	if cln.grpcConn != nil {
 		return cln.grpcConn.Close()
