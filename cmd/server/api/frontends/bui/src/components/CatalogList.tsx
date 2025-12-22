@@ -375,12 +375,7 @@ export default function CatalogList() {
                       {modelInfo.files.proj.url || '-'} {modelInfo.files.proj.size && `(${modelInfo.files.proj.size})`}
                     </span>
                   </div>
-                  <div className="model-meta-item">
-                    <label>Jinja</label>
-                    <span>
-                      {modelInfo.files.jinja.url || '-'} {modelInfo.files.jinja.size && `(${modelInfo.files.jinja.size})`}
-                    </span>
-                  </div>
+
                 </div>
               </div>
 

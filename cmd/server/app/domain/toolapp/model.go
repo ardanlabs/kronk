@@ -250,7 +250,6 @@ type CatalogFile struct {
 type CatalogFiles struct {
 	Model CatalogFile `json:"model"`
 	Proj  CatalogFile `json:"proj"`
-	Jinja CatalogFile `json:"jinja"`
 }
 
 // CatalogModelResponse represents information for a model.
@@ -296,10 +295,6 @@ func toCatalogModelResponse(model catalog.Model) CatalogModelResponse {
 			Proj: CatalogFile{
 				URL:  model.Files.Proj.URL,
 				Size: model.Files.Proj.Size,
-			},
-			Jinja: CatalogFile{
-				URL:  model.Files.Jinja.URL,
-				Size: model.Files.Jinja.Size,
 			},
 		},
 		Capabilities: CatalogCapabilities{

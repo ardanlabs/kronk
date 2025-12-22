@@ -72,9 +72,6 @@ func printWeb(model toolapp.CatalogModelResponse) {
 	if model.Files.Proj.URL != "" {
 		fmt.Printf("Proj:         %s (%s)\n", model.Files.Proj.URL, model.Files.Proj.Size)
 	}
-	if model.Files.Jinja.URL != "" {
-		fmt.Printf("Jinja:        %s (%s)\n", model.Files.Jinja.URL, model.Files.Jinja.Size)
-	}
 	fmt.Println()
 
 	fmt.Println("Capabilities")
@@ -111,9 +108,6 @@ func print(model catalog.Model) {
 	fmt.Printf("Model:        %s (%s)\n", model.Files.Model.URL, model.Files.Model.Size)
 	if model.Files.Proj.URL != "" {
 		fmt.Printf("Proj:         %s (%s)\n", model.Files.Proj.URL, model.Files.Proj.Size)
-	}
-	if model.Files.Jinja.URL != "" {
-		fmt.Printf("Jinja:        %s (%s)\n", model.Files.Jinja.URL, model.Files.Jinja.Size)
 	}
 	fmt.Println()
 
