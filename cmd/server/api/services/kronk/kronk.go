@@ -27,7 +27,6 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/cache"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/security"
-	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/test/bufconn"
 )
 
@@ -200,12 +199,19 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 		defer sec.Close()
 
-		authApp, lis, err := startAuthServer(ctx, log, sec, cfg.Auth.Local.Enabled, tracer)
-		if err != nil {
-			return err
-		}
+		log.Info(ctx, "startup", "status", "starting auth server")
 
-		defer authApp.Stop(ctx)
+		lis := bufconn.Listen(1024 * 1024)
+
+		authApp := authapp.Start(ctx, authapp.Config{
+			Log:      log,
+			Security: sec,
+			Listener: lis,
+			Tracer:   tracer,
+			Enabled:  cfg.Auth.Local.Enabled,
+		})
+
+		defer authApp.Shutdown(ctx)
 
 		authClientOpts = append(authClientOpts, authclient.WithDialer(func(ctx context.Context, _ string) (net.Conn, error) {
 			return lis.Dial()
@@ -360,34 +366,6 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	}
 
 	return nil
-}
-
-func startAuthServer(ctx context.Context, log *logger.Logger, sec *security.Security, enabled bool, tracer trace.Tracer) (*authapp.App, *bufconn.Listener, error) {
-	log.Info(ctx, "startup", "status", "starting auth server")
-
-	lis := bufconn.Listen(1024 * 1024)
-
-	app, err := authapp.New(authapp.Config{
-		Log:      log,
-		Security: sec,
-		Listener: lis,
-		Tracer:   tracer,
-		Enabled:  enabled,
-	})
-
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to start auth server: %w", err)
-	}
-
-	go func() {
-		log.Info(ctx, "startup", "status", "auth server started")
-
-		if err := app.Start(ctx); err != nil {
-			log.Error(ctx, "startup", "status", "auth server error", "err", err)
-		}
-	}()
-
-	return app, lis, nil
 }
 
 var logo = `

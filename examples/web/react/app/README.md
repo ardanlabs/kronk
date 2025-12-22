@@ -24,4 +24,4 @@ The static files will be generated in the `dist` folder.
 
 ## Usage
 
-Make sure your chat API is running on `http://localhost:3000` before using the app.
+Make sure your chat API is running on `http://localhost:8080` before using the app.

@@ -51,11 +51,11 @@ install-tooling:
 # ==============================================================================
 # Protobuf support
 
-proto-gen:
+authapp-proto-gen:
 	protoc --go_out=cmd/server/app/domain/authapp --go_opt=paths=source_relative \
 		--go-grpc_out=cmd/server/app/domain/authapp --go-grpc_opt=paths=source_relative \
-		--proto_path=cmd/server/zarf/proto \
-		cmd/server/zarf/proto/auth.proto
+		--proto_path=cmd/server/app/domain/authapp \
+		cmd/server/app/domain/authapp/authapp.proto
 
 # ==============================================================================
 # Kronk BUI

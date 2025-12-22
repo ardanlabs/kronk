@@ -16,19 +16,9 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
-
-// Config holds the dependencies for the auth handlers.
-type Config struct {
-	Log      *logger.Logger
-	Security *security.Security
-	Listener net.Listener
-	Tracer   trace.Tracer
-	Enabled  bool
-}
 
 // App represents the grpc handlers for the auth service.
 type App struct {
@@ -41,37 +31,18 @@ type App struct {
 	gs       *grpc.Server
 }
 
-// New creates a new auth api.
-func New(cfg Config) (*App, error) {
-	app := App{
+func newApp(cfg Config) *App {
+	return &App{
 		log:      cfg.Log,
 		security: cfg.Security,
 		lis:      cfg.Listener,
 		tracer:   cfg.Tracer,
 		enabled:  cfg.Enabled,
 	}
-
-	s := grpc.NewServer(
-		grpc.UnaryInterceptor(app.authInterceptor),
-	)
-	app.gs = s
-
-	app.log.Info(context.Background(), "auth service", "status", "register auth server")
-
-	RegisterAuthServer(s, &app)
-	reflection.Register(s)
-
-	return &app, nil
 }
 
-// Start starts the gRPC service.
-func (a *App) Start(ctx context.Context) error {
-	a.log.Info(ctx, "startup", "status", "auth server started")
-	return a.gs.Serve(a.lis)
-}
-
-// Stop stops the gRPC service.
-func (a *App) Stop(ctx context.Context) {
+// Shutdown stops the server.
+func (a *App) Shutdown(ctx context.Context) {
 	a.log.Info(ctx, "shutdown", "status", "auth server stopped")
 	a.gs.GracefulStop()
 }

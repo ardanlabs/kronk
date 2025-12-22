@@ -151,14 +151,6 @@ func run(ctx context.Context, log *logger.Logger) error {
 	}()
 
 	// -------------------------------------------------------------------------
-	// Start API Service
-
-	log.Info(ctx, "startup", "status", "initializing V1 API support")
-
-	shutdown := make(chan os.Signal, 1)
-	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
-
-	// -------------------------------------------------------------------------
 	// Start Auth Service
 
 	log.Info(ctx, "startup", "status", "initializing auth server")
@@ -168,7 +160,7 @@ func run(ctx context.Context, log *logger.Logger) error {
 		return fmt.Errorf("failed to listen on host %s : %w", cfg.Auth.Host, err)
 	}
 
-	authApp, err := authapp.New(authapp.Config{
+	authApp := authapp.Start(ctx, authapp.Config{
 		Log:      log,
 		Security: sec,
 		Listener: lis,
@@ -176,22 +168,16 @@ func run(ctx context.Context, log *logger.Logger) error {
 		Enabled:  cfg.Auth.Enabled,
 	})
 
-	if err != nil {
-		return fmt.Errorf("failed to create auth server: %w", err)
-	}
-
-	go func() {
-		if err := authApp.Start(ctx); err != nil {
-			log.Error(ctx, "startup", "status", "auth server error", "err", err)
-		}
-	}()
-
-	defer authApp.Stop(ctx)
+	defer authApp.Shutdown(ctx)
 
 	// -------------------------------------------------------------------------
-	// Shutdown
+	// Wait and Shutdown
+
+	shutdown := make(chan os.Signal, 1)
+	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
 
 	sig := <-shutdown
+
 	log.Info(ctx, "shutdown", "status", "shutdown started", "signal", sig)
 	defer log.Info(ctx, "shutdown", "status", "shutdown complete", "signal", sig)
 
