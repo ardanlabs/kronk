@@ -46,13 +46,11 @@ func runWeb(args []string) error {
 	return nil
 }
 
-func runLocal(args []string) error {
+func runLocal(catalog *catalog.Catalog, args []string) error {
 	modelID := args[0]
-
-	basePath := defaults.BaseDir("")
 	modelBasePath := defaults.ModelsDir("")
 
-	model, err := catalog.RetrieveModelDetails(basePath, modelID)
+	model, err := catalog.RetrieveModelDetails(modelID)
 	if err != nil {
 		return fmt.Errorf("retrieve-model-details: %w", err)
 	}

@@ -87,9 +87,18 @@ func run() error {
 		return fmt.Errorf("unable to install chat model: %w", err)
 	}
 
-	if err := catalog.Download(ctx, defaults.BaseDir("")); err != nil {
+	// -------------------------------------------------------------------------
+
+	catalog, err := catalog.New(defaults.BaseDir(""), "")
+	if err != nil {
+		return fmt.Errorf("unable to create catalog system: %w", err)
+	}
+
+	if err := catalog.Download(ctx); err != nil {
 		return fmt.Errorf("unable to download catalog: %w", err)
 	}
+
+	// -------------------------------------------------------------------------
 
 	templates, err := templates.New(defaults.BaseDir(""), "")
 	if err != nil {

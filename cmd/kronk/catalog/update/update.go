@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ardanlabs/kronk/sdk/kronk/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 )
 
@@ -15,15 +14,13 @@ func runWeb() error {
 	return nil
 }
 
-func runLocal() error {
-	basePath := defaults.BaseDir("")
-
+func runLocal(catalog *catalog.Catalog) error {
 	fmt.Println("Starting Update")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	if err := catalog.Download(ctx, basePath); err != nil {
+	if err := catalog.Download(ctx); err != nil {
 		return fmt.Errorf("download: %w", err)
 	}
 

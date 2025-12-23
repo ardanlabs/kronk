@@ -53,7 +53,13 @@ func TestMain(m *testing.M) {
 
 	ctx := context.Background()
 
-	if err := catalog.Download(ctx, basePath); err != nil {
+	catalog, err := catalog.New(basePath, "")
+	if err != nil {
+		fmt.Printf("unable to create template system: %s", err)
+		os.Exit(1)
+	}
+
+	if err := catalog.Download(ctx); err != nil {
 		fmt.Printf("unable to download catalog: %s", err)
 		os.Exit(1)
 	}

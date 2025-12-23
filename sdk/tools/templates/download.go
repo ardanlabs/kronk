@@ -1,4 +1,4 @@
-package catalog
+package templates
 
 import (
 	"context"
@@ -12,32 +12,51 @@ import (
 	"time"
 )
 
-const (
-	shaFile = ".catalog_shas.json"
-)
-
-// Download retrieves the catalog from the github repo. Only files modified
+// Download retrieves the templates from the github repo. Only files modified
 // after the last download are fetched.
-func (c *Catalog) Download(ctx context.Context) error {
+func (t *Templates) Download(ctx context.Context) error {
 	if !hasNetwork() {
 		return nil
 	}
 
-	files, err := c.listGitHubFolder(ctx)
+	files, err := t.listGitHubFolder(ctx)
 	if err != nil {
-		return fmt.Errorf("listing catalogs: %w", err)
+		return fmt.Errorf("listing templates: %w", err)
 	}
 
 	for _, file := range files {
-		if err := c.downloadCatalog(ctx, file); err != nil {
-			return fmt.Errorf("download-catalog: %w", err)
+		if err := t.downloadFile(ctx, file); err != nil {
+			return fmt.Errorf("download-template: %w", err)
 		}
 	}
 
-	if len(files) > 0 {
-		if err := c.buildIndex(); err != nil {
-			return fmt.Errorf("build-index: %w", err)
-		}
+	return nil
+}
+
+func (t *Templates) downloadFile(ctx context.Context, url string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("fetching file: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status: %s", resp.Status)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("reading response: %w", err)
+	}
+
+	filePath := filepath.Join(t.templatePath, filepath.Base(url))
+	if err := os.WriteFile(filePath, body, 0644); err != nil {
+		return fmt.Errorf("writing file: %w", err)
 	}
 
 	return nil
@@ -52,8 +71,8 @@ type gitHubFile struct {
 	Type        string `json:"type"`
 }
 
-func (c *Catalog) listGitHubFolder(ctx context.Context) ([]string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.githubRepoPath, nil)
+func (t *Templates) listGitHubFolder(ctx context.Context) ([]string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, t.githubRepoPath, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
@@ -74,7 +93,7 @@ func (c *Catalog) listGitHubFolder(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
 
-	localSHAs := c.readLocalSHAs()
+	localSHAs := t.readLocalSHAs()
 
 	var files []string
 	for _, item := range items {
@@ -86,44 +105,15 @@ func (c *Catalog) listGitHubFolder(ctx context.Context) ([]string, error) {
 		}
 	}
 
-	if err := c.writeLocalSHAs(items); err != nil {
+	if err := t.writeLocalSHAs(items); err != nil {
 		return nil, fmt.Errorf("writing SHA file: %w", err)
 	}
 
 	return files, nil
 }
 
-func (c *Catalog) downloadCatalog(ctx context.Context, url string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return fmt.Errorf("creating request: %w", err)
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("fetching catalog: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status: %s", resp.Status)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("reading response: %w", err)
-	}
-
-	filePath := filepath.Join(c.catalogDir, filepath.Base(url))
-	if err := os.WriteFile(filePath, body, 0644); err != nil {
-		return fmt.Errorf("writing catalog file: %w", err)
-	}
-
-	return nil
-}
-
-func (c *Catalog) readLocalSHAs() map[string]string {
-	data, err := os.ReadFile(filepath.Join(c.catalogDir, shaFile))
+func (t *Templates) readLocalSHAs() map[string]string {
+	data, err := os.ReadFile(filepath.Join(t.templatePath, shaFile))
 	if err != nil {
 		return make(map[string]string)
 	}
@@ -136,7 +126,7 @@ func (c *Catalog) readLocalSHAs() map[string]string {
 	return shas
 }
 
-func (c *Catalog) writeLocalSHAs(items []gitHubFile) error {
+func (t *Templates) writeLocalSHAs(items []gitHubFile) error {
 	shas := make(map[string]string)
 	for _, item := range items {
 		if item.Type == "file" {
@@ -149,7 +139,7 @@ func (c *Catalog) writeLocalSHAs(items []gitHubFile) error {
 		return err
 	}
 
-	return os.WriteFile(filepath.Join(c.catalogDir, shaFile), data, 0644)
+	return os.WriteFile(filepath.Join(t.templatePath, shaFile), data, 0644)
 }
 
 // =============================================================================

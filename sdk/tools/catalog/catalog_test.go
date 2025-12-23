@@ -15,7 +15,7 @@ import (
 //go:embed test_data/*
 var testData embed.FS
 
-var testBasePath string
+var cat *catalog.Catalog
 
 func TestMain(m *testing.M) {
 	basePath, err := os.MkdirTemp("", "catalog-test-*")
@@ -30,7 +30,12 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	testBasePath = basePath
+	cat, err = catalog.New(basePath, "")
+	if err != nil {
+		os.RemoveAll(basePath)
+		fmt.Fprintf(os.Stderr, "setup test catalog: %v\n", err)
+		os.Exit(1)
+	}
 
 	code := m.Run()
 	defer func() {
@@ -42,12 +47,12 @@ func TestMain(m *testing.M) {
 }
 
 func Test_Catalog(t *testing.T) {
-	catalogs, err := catalog.RetrieveCatalogs(testBasePath)
+	catalogs, err := cat.RetrieveCatalogs()
 	if err != nil {
 		t.Fatalf("retrieve catalog: %v", err)
 	}
 
-	expCat := catalog.Catalog{
+	expCat := catalog.CatalogModels{
 		Name: "Text-Generation",
 		Models: []catalog.Model{
 			{
@@ -84,13 +89,14 @@ func Test_Catalog(t *testing.T) {
 		t.Fatal("no catalogs returned")
 	}
 
-	var gotCat catalog.Catalog
-	for _, cat := range catalogs {
-		if len(cat.Models) == 0 {
+	var gotCat catalog.CatalogModels
+	for _, catalog := range catalogs {
+		if len(catalog.Models) == 0 {
 			continue
 		}
-		if cat.Models[0].ID == expCat.Models[0].ID {
-			gotCat = cat
+
+		if catalog.Models[0].ID == expCat.Models[0].ID {
+			gotCat = catalog
 			break
 		}
 	}
@@ -109,7 +115,7 @@ func Test_Catalog(t *testing.T) {
 }
 
 func Test_RetrieveCatalogs(t *testing.T) {
-	catalogs, err := catalog.RetrieveCatalogs(testBasePath)
+	catalogs, err := cat.RetrieveCatalogs()
 	if err != nil {
 		t.Fatalf("retrieve catalogs: %v", err)
 	}
@@ -132,21 +138,21 @@ func Test_RetrieveCatalogs(t *testing.T) {
 }
 
 func Test_RetrieveCatalog(t *testing.T) {
-	cat, err := catalog.RetrieveCatalog(testBasePath, "text_generation.yaml")
+	catalog, err := cat.RetrieveCatalog("text_generation.yaml")
 	if err != nil {
 		t.Fatalf("retrieve catalog: %v", err)
 	}
 
-	if cat.Name != "Text-Generation" {
-		t.Errorf("expected catalog name %q, got %q", "Text-Generation", cat.Name)
+	if catalog.Name != "Text-Generation" {
+		t.Errorf("expected catalog name %q, got %q", "Text-Generation", catalog.Name)
 	}
 
-	if len(cat.Models) != 2 {
-		t.Errorf("expected 2 models, got %d", len(cat.Models))
+	if len(catalog.Models) != 2 {
+		t.Errorf("expected 2 models, got %d", len(catalog.Models))
 	}
 
 	modelIDs := make(map[string]bool)
-	for _, model := range cat.Models {
+	for _, model := range catalog.Models {
 		modelIDs[model.ID] = true
 	}
 
@@ -160,7 +166,7 @@ func Test_RetrieveCatalog(t *testing.T) {
 }
 
 func Test_RetrieveModelDetails(t *testing.T) {
-	model, err := catalog.RetrieveModelDetails(testBasePath, "qwen3-8b-q8_0")
+	model, err := cat.RetrieveModelDetails("qwen3-8b-q8_0")
 	if err != nil {
 		t.Fatalf("retrieve model details: %v", err)
 	}

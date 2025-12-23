@@ -8,6 +8,8 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/kronk/cache"
+	"github.com/ardanlabs/kronk/sdk/tools/catalog"
+	"github.com/ardanlabs/kronk/sdk/tools/templates"
 )
 
 // Config contains all the mandatory systems required by handlers.
@@ -15,13 +17,15 @@ type Config struct {
 	Log        *logger.Logger
 	AuthClient *authclient.Client
 	Cache      *cache.Cache
+	catalog    *catalog.Catalog
+	templates  *templates.Templates
 }
 
 // Routes adds specific routes for this group.
 func Routes(app *web.App, cfg Config) {
 	const version = ""
 
-	api := newApp(cfg.Log, cfg.Cache, cfg.AuthClient)
+	api := newApp(cfg)
 
 	auth := mid.Authenticate(true, cfg.AuthClient, false, "")
 

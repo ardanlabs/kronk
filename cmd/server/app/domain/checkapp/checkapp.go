@@ -16,10 +16,10 @@ type app struct {
 	log   *logger.Logger
 }
 
-func newApp(build string, log *logger.Logger) *app {
+func newApp(cfg Config) *app {
 	return &app{
-		build: build,
-		log:   log,
+		build: cfg.Build,
+		log:   cfg.Log,
 	}
 }
 

@@ -15,8 +15,8 @@ import (
 
 // CatalogModelList returns the collection of models in the catalog with
 // some filtering capabilities.
-func CatalogModelList(basePath string, filterCategory string) ([]Model, error) {
-	catalogs, err := RetrieveCatalogs(basePath)
+func (c *Catalog) CatalogModelList(filterCategory string) ([]Model, error) {
+	catalogs, err := c.RetrieveCatalogs()
 	if err != nil {
 		return nil, fmt.Errorf("catalog list: %w", err)
 	}
@@ -60,8 +60,8 @@ func CatalogModelList(basePath string, filterCategory string) ([]Model, error) {
 
 // RetrieveModelDetails returns the full model information for the
 // specified model.
-func RetrieveModelDetails(basePath string, modelID string) (Model, error) {
-	index, err := loadIndex(basePath)
+func (c *Catalog) RetrieveModelDetails(modelID string) (Model, error) {
+	index, err := c.loadIndex()
 	if err != nil {
 		return Model{}, fmt.Errorf("load-index: %w", err)
 	}
@@ -73,7 +73,7 @@ func RetrieveModelDetails(basePath string, modelID string) (Model, error) {
 		return Model{}, fmt.Errorf("model %q not found in index", modelID)
 	}
 
-	catalog, err := RetrieveCatalog(basePath, catalogFile)
+	catalog, err := c.RetrieveCatalog(catalogFile)
 	if err != nil {
 		return Model{}, fmt.Errorf("retrieve-catalog: %w", err)
 	}
@@ -89,32 +89,30 @@ func RetrieveModelDetails(basePath string, modelID string) (Model, error) {
 }
 
 // RetrieveCatalog returns an individual catalog by the base catalog file name.
-func RetrieveCatalog(basePath string, catalogFile string) (Catalog, error) {
-	filePath := filepath.Join(basePath, localFolder, catalogFile)
+func (c *Catalog) RetrieveCatalog(catalogFile string) (CatalogModels, error) {
+	filePath := filepath.Join(c.catalogDir, catalogFile)
 
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return Catalog{}, fmt.Errorf("read file %s: %w", catalogFile, err)
+		return CatalogModels{}, fmt.Errorf("read file %s: %w", catalogFile, err)
 	}
 
-	var catalog Catalog
+	var catalog CatalogModels
 	if err := yaml.Unmarshal(data, &catalog); err != nil {
-		return Catalog{}, fmt.Errorf("unmarshal %s: %w", catalogFile, err)
+		return CatalogModels{}, fmt.Errorf("unmarshal %s: %w", catalogFile, err)
 	}
 
 	return catalog, nil
 }
 
 // RetrieveCatalogs reads the catalogs from a previous download.
-func RetrieveCatalogs(basePath string) ([]Catalog, error) {
-	catalogDir := filepath.Join(basePath, localFolder)
-
-	entries, err := os.ReadDir(catalogDir)
+func (c *Catalog) RetrieveCatalogs() ([]CatalogModels, error) {
+	entries, err := os.ReadDir(c.catalogDir)
 	if err != nil {
 		return nil, fmt.Errorf("read catalog dir: %w", err)
 	}
 
-	var catalogs []Catalog
+	var catalogs []CatalogModels
 
 	for _, entry := range entries {
 		if entry.IsDir() ||
@@ -124,7 +122,7 @@ func RetrieveCatalogs(basePath string) ([]Catalog, error) {
 			continue
 		}
 
-		catalog, err := RetrieveCatalog(basePath, entry.Name())
+		catalog, err := c.RetrieveCatalog(entry.Name())
 		if err != nil {
 			return nil, fmt.Errorf("retrieve-catalog: %q: %w", entry.Name(), err)
 		}
@@ -137,13 +135,63 @@ func RetrieveCatalogs(basePath string) ([]Catalog, error) {
 
 // =============================================================================
 
-// LoadIndex returns the catalog index.
-func loadIndex(modelBasePath string) (map[string]string, error) {
-	indexPath := filepath.Join(modelBasePath, localFolder, indexFile)
+func (c *Catalog) buildIndex() error {
+	c.biMutex.Lock()
+	defer c.biMutex.Unlock()
+
+	entries, err := os.ReadDir(c.catalogDir)
+	if err != nil {
+		return fmt.Errorf("read catalog dir: %w", err)
+	}
+
+	index := make(map[string]string)
+
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".yaml" {
+			continue
+		}
+
+		if entry.Name() == indexFile {
+			continue
+		}
+
+		filePath := filepath.Join(c.catalogDir, entry.Name())
+
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			return fmt.Errorf("read file %s: %w", entry.Name(), err)
+		}
+
+		var catModels CatalogModels
+		if err := yaml.Unmarshal(data, &catModels); err != nil {
+			return fmt.Errorf("unmarshal %s: %w", entry.Name(), err)
+		}
+
+		for _, model := range catModels.Models {
+			modelID := strings.ToLower(model.ID)
+			index[modelID] = entry.Name()
+		}
+	}
+
+	indexData, err := yaml.Marshal(&index)
+	if err != nil {
+		return fmt.Errorf("marshal index: %w", err)
+	}
+
+	indexPath := filepath.Join(c.catalogDir, indexFile)
+	if err := os.WriteFile(indexPath, indexData, 0644); err != nil {
+		return fmt.Errorf("write index file: %w", err)
+	}
+
+	return nil
+}
+
+func (c *Catalog) loadIndex() (map[string]string, error) {
+	indexPath := filepath.Join(c.catalogDir, indexFile)
 
 	data, err := os.ReadFile(indexPath)
 	if err != nil {
-		if err := buildIndex(modelBasePath); err != nil {
+		if err := c.buildIndex(); err != nil {
 			return nil, fmt.Errorf("build-index: %w", err)
 		}
 

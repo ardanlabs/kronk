@@ -19,10 +19,10 @@ type app struct {
 	cache *cache.Cache
 }
 
-func newApp(log *logger.Logger, cache *cache.Cache) *app {
+func newApp(cfg Config) *app {
 	return &app{
-		log:   log,
-		cache: cache,
+		log:   cfg.Log,
+		cache: cfg.Cache,
 	}
 }
 

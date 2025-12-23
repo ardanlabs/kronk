@@ -12,7 +12,6 @@ import (
 
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/toolapp"
 	"github.com/ardanlabs/kronk/sdk/client"
-	"github.com/ardanlabs/kronk/sdk/kronk/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 )
 
@@ -39,7 +38,7 @@ func runWeb(args []string) error {
 	return nil
 }
 
-func runLocal(args []string) error {
+func runLocal(catalog *catalog.Catalog, args []string) error {
 	var filterCategory string
 
 	fs := flag.NewFlagSet("catalog list", flag.ContinueOnError)
@@ -48,9 +47,7 @@ func runLocal(args []string) error {
 		return err
 	}
 
-	basePath := defaults.BaseDir("")
-
-	list, err := catalog.CatalogModelList(basePath, filterCategory)
+	list, err := catalog.CatalogModelList(filterCategory)
 	if err != nil {
 		return fmt.Errorf("catalog-list: %w", err)
 	}

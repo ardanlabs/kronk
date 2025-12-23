@@ -107,9 +107,18 @@ func installSystem() (models.Path, error) {
 		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
 	}
 
-	if err := catalog.Download(ctx, defaults.BaseDir("")); err != nil {
+	// -------------------------------------------------------------------------
+
+	catalog, err := catalog.New(defaults.BaseDir(""), "")
+	if err != nil {
+		return models.Path{}, fmt.Errorf("unable to create catalog system: %w", err)
+	}
+
+	if err := catalog.Download(ctx); err != nil {
 		return models.Path{}, fmt.Errorf("unable to download catalog: %w", err)
 	}
+
+	// -------------------------------------------------------------------------
 
 	templates, err := templates.New(defaults.BaseDir(""), "")
 	if err != nil {

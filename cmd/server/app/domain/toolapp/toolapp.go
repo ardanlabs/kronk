@@ -14,10 +14,10 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/kronk/cache"
-	"github.com/ardanlabs/kronk/sdk/kronk/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
+	"github.com/ardanlabs/kronk/sdk/tools/templates"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -25,13 +25,17 @@ type app struct {
 	log        *logger.Logger
 	cache      *cache.Cache
 	authClient *authclient.Client
+	catalog    *catalog.Catalog
+	templates  *templates.Templates
 }
 
-func newApp(log *logger.Logger, cache *cache.Cache, authClient *authclient.Client) *app {
+func newApp(cfg Config) *app {
 	return &app{
-		log:        log,
-		cache:      cache,
-		authClient: authClient,
+		log:        cfg.Log,
+		cache:      cfg.Cache,
+		authClient: cfg.AuthClient,
+		catalog:    cfg.catalog,
+		templates:  cfg.templates,
 	}
 }
 
@@ -242,10 +246,9 @@ func (a *app) modelPS(ctx context.Context, r *http.Request) web.Encoder {
 }
 
 func (a *app) listCatalog(ctx context.Context, r *http.Request) web.Encoder {
-	basePath := defaults.BaseDir("")
 	filterCategory := web.Param(r, "filter")
 
-	list, err := catalog.CatalogModelList(basePath, filterCategory)
+	list, err := a.catalog.CatalogModelList(filterCategory)
 	if err != nil {
 		return errs.New(errs.Internal, err)
 	}
@@ -256,9 +259,7 @@ func (a *app) listCatalog(ctx context.Context, r *http.Request) web.Encoder {
 func (a *app) pullCatalog(ctx context.Context, r *http.Request) web.Encoder {
 	modelID := web.Param(r, "model")
 
-	basePath := defaults.BaseDir("")
-
-	model, err := catalog.RetrieveModelDetails(basePath, modelID)
+	model, err := a.catalog.RetrieveModelDetails(modelID)
 	if err != nil {
 		return errs.New(errs.Internal, err)
 	}
@@ -319,9 +320,8 @@ func (a *app) pullCatalog(ctx context.Context, r *http.Request) web.Encoder {
 
 func (a *app) showCatalogModel(ctx context.Context, r *http.Request) web.Encoder {
 	modelID := web.Param(r, "model")
-	basePath := defaults.BaseDir("")
 
-	model, err := catalog.RetrieveModelDetails(basePath, modelID)
+	model, err := a.catalog.RetrieveModelDetails(modelID)
 	if err != nil {
 		return errs.New(errs.Internal, err)
 	}

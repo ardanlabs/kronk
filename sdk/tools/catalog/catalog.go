@@ -2,22 +2,42 @@
 package catalog
 
 import (
-	"net"
-	"time"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
 )
 
 const (
-	localFolder = "catalogs"
-	indexFile   = ".index.yaml"
+	defaultGithubPath = "https://api.github.com/repos/ardanlabs/kronk_catalogs/contents/catalogs"
+	localFolder       = "catalogs"
+	indexFile         = ".index.yaml"
 )
 
-func hasNetwork() bool {
-	conn, err := net.DialTimeout("tcp", "8.8.8.8:53", 3*time.Second)
-	if err != nil {
-		return false
+// Catalog manages the catalog system.
+type Catalog struct {
+	catalogDir     string
+	githubRepoPath string
+	biMutex        sync.Mutex
+}
+
+// New constructs the catalog system, using the specified github
+// repo path. If the path is empty, the default repo is used.
+func New(basePath string, githubRepoPath string) (*Catalog, error) {
+	if githubRepoPath == "" {
+		githubRepoPath = defaultGithubPath
 	}
 
-	conn.Close()
+	catalogDir := filepath.Join(basePath, localFolder)
 
-	return true
+	if err := os.MkdirAll(catalogDir, 0755); err != nil {
+		return nil, fmt.Errorf("creating catalogs directory: %w", err)
+	}
+
+	c := Catalog{
+		catalogDir:     catalogDir,
+		githubRepoPath: githubRepoPath,
+	}
+
+	return &c, nil
 }

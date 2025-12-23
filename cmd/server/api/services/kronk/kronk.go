@@ -243,9 +243,18 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	log.Info(ctx, "startup", "status", "downloading catalog")
 
-	if err := catalog.Download(ctx, defaults.BaseDir("")); err != nil {
+	// -------------------------------------------------------------------------
+
+	catalog, err := catalog.New(defaults.BaseDir(""), "")
+	if err != nil {
+		return fmt.Errorf("unable to create catalog system: %w", err)
+	}
+
+	if err := catalog.Download(ctx); err != nil {
 		return fmt.Errorf("unable to download catalog: %w", err)
 	}
+
+	// -------------------------------------------------------------------------
 
 	log.Info(ctx, "startup", "status", "downloading templates")
 

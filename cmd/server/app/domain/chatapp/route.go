@@ -21,7 +21,7 @@ type Config struct {
 func Routes(app *web.App, cfg Config) {
 	const version = "v1"
 
-	api := newApp(cfg.Log, cfg.Cache)
+	api := newApp(cfg)
 
 	auth := mid.Authenticate(cfg.AuthClient != nil, cfg.AuthClient, false, "chat-completions")
 

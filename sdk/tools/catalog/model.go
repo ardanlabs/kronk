@@ -48,8 +48,8 @@ type Model struct {
 	Downloaded   bool
 }
 
-// Catalog represents a set of models for a given catalog.
-type Catalog struct {
+// CatalogModels represents a set of models for a given catalog.
+type CatalogModels struct {
 	Name   string  `yaml:"catalog"`
 	Models []Model `yaml:"models"`
 }
