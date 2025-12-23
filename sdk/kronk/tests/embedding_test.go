@@ -10,7 +10,7 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/ardanlabs/kronk/sdk/kronk/templater"
+	"github.com/ardanlabs/kronk/sdk/kronk/template"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
@@ -27,9 +27,8 @@ func testEmbedding(t *testing.T, mp models.Path) {
 		t.Parallel()
 	}
 
-	krn, err := kronk.New(modelInstances, model.Config{
+	krn, err := kronk.New(modelInstances, template.New(), model.Config{
 		ModelFile: mp.ModelFile,
-		Templater: templater.New(),
 	})
 
 	if err != nil {

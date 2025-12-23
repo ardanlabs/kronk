@@ -104,7 +104,7 @@ type Kronk struct {
 //
 // modelInstances represents the number of instances of the model to create. Unless
 // you have more than 1 GPU, the recommended number of instances is 1.
-func New(modelInstances int, cfg model.Config) (*Kronk, error) {
+func New(modelInstances int, templater model.Templater, cfg model.Config) (*Kronk, error) {
 	if libraryLocation == "" {
 		return nil, fmt.Errorf("new:the Init() function has not been called")
 	}
@@ -117,7 +117,7 @@ func New(modelInstances int, cfg model.Config) (*Kronk, error) {
 	var firstModel *model.Model
 
 	for range modelInstances {
-		m, err := model.NewModel(cfg)
+		m, err := model.NewModel(templater, cfg)
 		if err != nil {
 			close(models)
 			for model := range models {

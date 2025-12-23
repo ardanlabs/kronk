@@ -116,10 +116,9 @@ func RetrieveInfo(libPath string, modelBasePath string, modelID string) (Info, e
 	}
 
 	const modelInstances = 1
-	krn, err := kronk.New(modelInstances, model.Config{
+	krn, err := kronk.New(modelInstances, &templater{}, model.Config{
 		ModelFile: mp.ModelFile,
 		ProjFile:  mp.ProjFile,
-		Templater: &templater{},
 	})
 
 	if err != nil {

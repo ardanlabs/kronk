@@ -29,10 +29,13 @@ type Model struct {
 	projFile      string
 	modelInfo     ModelInfo
 	activeStreams atomic.Int32
-	templater     Templater
 }
 
-func NewModel(cfg Config) (*Model, error) {
+func NewModel(templater Templater, cfg Config) (*Model, error) {
+	if templater == nil {
+		return nil, fmt.Errorf("templater required, use templater.New()")
+	}
+
 	if err := validateConfig(cfg); err != nil {
 		return nil, fmt.Errorf("new-model: unable to validate config: %w", err)
 	}
@@ -62,7 +65,7 @@ func NewModel(cfg Config) (*Model, error) {
 
 	modelInfo := toModelInfo(cfg, mdl)
 
-	template, err := retrieveTemplate(cfg, mdl, modelInfo)
+	template, err := retrieveTemplate(templater, cfg, mdl, modelInfo)
 	if err != nil {
 		return nil, fmt.Errorf("new-model: failed to retrieve model template: %w", err)
 	}
@@ -92,7 +95,7 @@ func NewModel(cfg Config) (*Model, error) {
 	return &m, nil
 }
 
-func retrieveTemplate(cfg Config, mdl llama.Model, modelInfo ModelInfo) (Template, error) {
+func retrieveTemplate(templater Templater, cfg Config, mdl llama.Model, modelInfo ModelInfo) (Template, error) {
 	if cfg.JinjaFile != "" {
 		data, err := readJinjaTemplate(cfg.JinjaFile)
 		if err != nil {
@@ -109,8 +112,8 @@ func retrieveTemplate(cfg Config, mdl llama.Model, modelInfo ModelInfo) (Templat
 		}, nil
 	}
 
-	if cfg.Templater != nil {
-		template, err := cfg.Templater.Retrieve(modelInfo.ID)
+	if templater != nil {
+		template, err := templater.Retrieve(modelInfo.ID)
 		if err == nil {
 			return template, nil
 		}

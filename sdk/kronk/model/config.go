@@ -85,16 +85,11 @@ type Config struct {
 	NUBatch       int
 	NThreads      int
 	NThreadsBatch int
-	Templater     Templater
 }
 
 func validateConfig(cfg Config) error {
 	if cfg.ModelFile == "" {
 		return fmt.Errorf("validate-config: model file is required")
-	}
-
-	if cfg.Templater == nil {
-		return fmt.Errorf("validate-config: templater required, use templater.New()")
 	}
 
 	return nil

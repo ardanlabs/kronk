@@ -1,6 +1,6 @@
-// Package templater implements the model templater interface for
+// Package template implements the model templater interface for
 // template access.
-package templater
+package template
 
 import (
 	"errors"
@@ -12,18 +12,18 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/templates"
 )
 
-// Templater provides access to the template tooling.
-type Templater struct {
+// Template provides access to retrieving templates for models.
+type Template struct {
 }
 
-// New creates a new templater.
-func New() *Templater {
-	return &Templater{}
+// New creates a new template.
+func New() *Template {
+	return &Template{}
 }
 
 // Retrieve locates the model id in the catalog system and if the model
 // has a template it will be returned.
-func (t *Templater) Retrieve(modelID string) (model.Template, error) {
+func (t *Template) Retrieve(modelID string) (model.Template, error) {
 	m, err := catalog.RetrieveModelDetails(defaults.BaseDir(""), modelID)
 	if err != nil {
 		return model.Template{}, fmt.Errorf("retrieve-model-details: %w", err)
