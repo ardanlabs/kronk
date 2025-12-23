@@ -102,6 +102,12 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			// 0.05 should be enough for most systems. Some might want to have
 			// this even lower.
 		}
+		Catalog struct {
+			GithubRepo string `conf:"default:https://api.github.com/repos/ardanlabs/kronk_catalogs/contents/catalogs"`
+		}
+		Templates struct {
+			GithubRepo string `conf:"default:https://api.github.com/repos/ardanlabs/kronk_catalogs/contents/templates"`
+		}
 		Model struct {
 			Device        string
 			MaxInstances  int           `conf:"default:1"`
@@ -268,7 +274,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	log.Info(ctx, "startup", "status", "downloading catalog")
 
-	catalog, err := catalog.New()
+	catalog, err := catalog.NewWithSettings("", cfg.Catalog.GithubRepo)
 	if err != nil {
 		return fmt.Errorf("unable to create catalog system: %w", err)
 	}
@@ -282,7 +288,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	log.Info(ctx, "startup", "status", "downloading templates")
 
-	templates, err := templates.New()
+	templates, err := templates.NewWithSettings("", cfg.Templates.GithubRepo, catalog)
 	if err != nil {
 		return fmt.Errorf("unable to create template system: %w", err)
 	}
@@ -302,6 +308,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	cache, err := cache.NewCache(cache.Config{
 		Log:            log,
+		Templates:      templates,
 		Arch:           libs.Arch(),
 		OS:             libs.OS(),
 		Processor:      libs.Processor(),

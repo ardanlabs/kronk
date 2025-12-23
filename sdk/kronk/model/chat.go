@@ -95,7 +95,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		//       ADD A SPAN HERE
 		//       METRICS
 
-		prompt, media, err := m.applyRequestJinjaTemplate(d)
+		prompt, media, err := m.applyRequestJinjaTemplate(ctx, d)
 		if err != nil {
 			m.sendChatError(ctx, ch, id, fmt.Errorf("apply-request-jinja-template: unable to apply jinja template: %w", err))
 			return

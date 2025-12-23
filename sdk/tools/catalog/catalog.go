@@ -27,12 +27,12 @@ type Catalog struct {
 
 // New constructs the catalog system using defaults paths.
 func New() (*Catalog, error) {
-	return NewWithPaths("", "")
+	return NewWithSettings("", "")
 }
 
-// NewWithPaths constructs the catalog system, using the specified github
+// NewWithSettings constructs the catalog system, using the specified github
 // repo path. If either path is empty, the default paths are used.
-func NewWithPaths(basePath string, githubRepoPath string) (*Catalog, error) {
+func NewWithSettings(basePath string, githubRepoPath string) (*Catalog, error) {
 	basePath = defaults.BaseDir(basePath)
 
 	if githubRepoPath == "" {

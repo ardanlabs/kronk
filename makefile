@@ -237,6 +237,21 @@ curl-kronk-chat:
 		] \
     }'
 
+curl-kronk-chat-gpt:
+	curl -i -X POST http://localhost:8080/v1/chat/completions \
+	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
+     -H "Content-Type: application/json" \
+     -d '{ \
+	 	"stream": true, \
+	 	"model": "gpt-oss-20b-Q8_0", \
+		"messages": [ \
+			{ \
+				"role": "user", \
+				"content": "Hello model" \
+			} \
+		] \
+    }'
+
 curl-kronk-embeddings:
 	curl -i -X POST http://localhost:8080/v1/embeddings \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \

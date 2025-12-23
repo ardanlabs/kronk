@@ -2,6 +2,7 @@ package model
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
@@ -20,7 +21,7 @@ import (
 	"github.com/nikolalohinski/gonja/v2/loaders"
 )
 
-func (m *Model) applyRequestJinjaTemplate(d D) (string, [][]byte, error) {
+func (m *Model) applyRequestJinjaTemplate(ctx context.Context, d D) (string, [][]byte, error) {
 	dCopy := make(D, len(d))
 	maps.Copy(dCopy, d)
 
@@ -41,7 +42,7 @@ func (m *Model) applyRequestJinjaTemplate(d D) (string, [][]byte, error) {
 		}
 	}
 
-	prompt, err := m.applyJinjaTemplate(dCopy)
+	prompt, err := m.applyJinjaTemplate(ctx, dCopy)
 	if err != nil {
 		return "", nil, err
 	}
@@ -49,7 +50,9 @@ func (m *Model) applyRequestJinjaTemplate(d D) (string, [][]byte, error) {
 	return prompt, media, nil
 }
 
-func (m *Model) applyJinjaTemplate(d D) (string, error) {
+func (m *Model) applyJinjaTemplate(ctx context.Context, d D) (string, error) {
+	m.log(ctx, "applyJinjaTemplate", "template", m.template.FileName)
+
 	if m.template.Script == "" {
 		return "", errors.New("apply-jinja-template: no template found")
 	}

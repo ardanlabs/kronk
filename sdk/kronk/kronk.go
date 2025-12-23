@@ -100,17 +100,17 @@ func InitWithSettings(libPath string, logLevel LogLevel) error {
 // =============================================================================
 
 type options struct {
-	templateRepo string
+	templates *templates.Templates
 }
 
 // Option represents a functional option for configuring Kronk.
 type Option func(*options)
 
-// WithTemplateRepo sets a custom Github repo for templates.
+// WithTemplates sets a custom Github repo for templates.
 // If not set, the default repo will be used.
-func WithTemplateRepo(repo string) Option {
+func WithTemplates(templates *templates.Templates) Option {
 	return func(o *options) {
-		o.templateRepo = repo
+		o.templates = templates
 	}
 }
 
@@ -131,11 +131,6 @@ type Kronk struct {
 // modelInstances represents the number of instances of the model to create. Unless
 // you have more than 1 GPU, the recommended number of instances is 1.
 func New(modelInstances int, cfg model.Config, opts ...Option) (*Kronk, error) {
-	var o options
-	for _, opt := range opts {
-		opt(&o)
-	}
-
 	if libraryLocation == "" {
 		return nil, fmt.Errorf("the Init() function has not been called")
 	}
@@ -144,9 +139,20 @@ func New(modelInstances int, cfg model.Config, opts ...Option) (*Kronk, error) {
 		return nil, fmt.Errorf("instances must be > 0, got %d", modelInstances)
 	}
 
-	tmlpRetriever, err := templates.NewWithPaths("", o.templateRepo)
-	if err != nil {
-		return nil, fmt.Errorf("template new: %w", err)
+	// -------------------------------------------------------------------------
+
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
+
+	if o.templates == nil {
+		templates, err := templates.New()
+		if err != nil {
+			return nil, fmt.Errorf("template new: %w", err)
+		}
+
+		o.templates = templates
 	}
 
 	// -------------------------------------------------------------------------
@@ -155,7 +161,7 @@ func New(modelInstances int, cfg model.Config, opts ...Option) (*Kronk, error) {
 	var firstModel *model.Model
 
 	for range modelInstances {
-		m, err := model.NewModel(tmlpRetriever, cfg)
+		m, err := model.NewModel(o.templates, cfg)
 		if err != nil {
 			close(models)
 			for model := range models {

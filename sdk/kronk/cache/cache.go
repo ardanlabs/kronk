@@ -14,15 +14,18 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
+	"github.com/ardanlabs/kronk/sdk/tools/templates"
 	"github.com/hybridgroup/yzma/pkg/download"
 	"github.com/maypok86/otter/v2"
 )
 
 // Config represents setting for the kronk manager.
 //
-// LibPath: Location of libraries. Leave empty for default location.
+// CatalogRepo represents the Github repo for where the catalog is. If left empty
+// then api.github.com/repos/ardanlabs/kronk_catalogs/contents/catalogs is used.
 //
-// ModelPath: Location of models. Leave empty for default location.
+// TemplateRepo represents the Github repo for where the templates are. If left empty
+// then api.github.com/repos/ardanlabs/kronk_catalogs/contents/templates is used.
 //
 // Device: Specify a specific device. To see the list of devices run this command:
 // $HOME/kronk/libraries/llama-bench --list-devices
@@ -42,6 +45,7 @@ import (
 // being used.
 type Config struct {
 	Log            *logger.Logger
+	Templates      *templates.Templates
 	Arch           download.Arch
 	OS             download.OS
 	Processor      download.Processor
@@ -52,7 +56,16 @@ type Config struct {
 	CacheTTL       time.Duration
 }
 
-func validateConfig(cfg Config) Config {
+func validateConfig(cfg Config) (Config, error) {
+	if cfg.Templates == nil {
+		templates, err := templates.New()
+		if err != nil {
+			return Config{}, err
+		}
+
+		cfg.Templates = templates
+	}
+
 	if cfg.MaxInCache <= 0 {
 		cfg.MaxInCache = 3
 	}
@@ -65,13 +78,14 @@ func validateConfig(cfg Config) Config {
 		cfg.CacheTTL = 5 * time.Minute
 	}
 
-	return cfg
+	return cfg, nil
 }
 
 // Cache manages a set of Kronk APIs for use. It maintains a cache of these
 // APIs and will unload over time if not in use.
 type Cache struct {
 	log           *logger.Logger
+	templates     *templates.Templates
 	arch          download.Arch
 	os            download.OS
 	processor     download.Processor
@@ -85,7 +99,10 @@ type Cache struct {
 
 // NewCache constructs the manager for use.
 func NewCache(cfg Config) (*Cache, error) {
-	cfg = validateConfig(cfg)
+	cfg, err := validateConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
 
 	models, err := models.New()
 	if err != nil {
@@ -94,6 +111,7 @@ func NewCache(cfg Config) (*Cache, error) {
 
 	c := Cache{
 		log:           cfg.Log,
+		templates:     cfg.Templates,
 		arch:          cfg.Arch,
 		os:            cfg.OS,
 		processor:     cfg.Processor,
@@ -211,13 +229,17 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 		return nil, fmt.Errorf("aquire-model: %w", err)
 	}
 
-	krn, err = kronk.New(c.instances, model.Config{
+	cfg := model.Config{
 		Log:           c.log.Info,
 		ModelFile:     fi.ModelFile,
 		ProjFile:      fi.ProjFile,
 		Device:        c.device,
 		ContextWindow: c.contextWindow,
-	})
+	}
+
+	krn, err = kronk.New(c.instances, cfg,
+		kronk.WithTemplates(c.templates),
+	)
 
 	if err != nil {
 		return nil, fmt.Errorf("unable to create inference model: %w", err)
