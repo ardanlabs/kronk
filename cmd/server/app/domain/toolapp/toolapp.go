@@ -25,6 +25,7 @@ type app struct {
 	log        *logger.Logger
 	cache      *cache.Cache
 	authClient *authclient.Client
+	libs       *libs.Libs
 	models     *models.Models
 	catalog    *catalog.Catalog
 	templates  *templates.Templates
@@ -35,6 +36,7 @@ func newApp(cfg Config) *app {
 		log:        cfg.Log,
 		cache:      cfg.Cache,
 		authClient: cfg.AuthClient,
+		libs:       cfg.Libs,
 		models:     cfg.Models,
 		catalog:    cfg.Catalog,
 		templates:  cfg.Templates,
@@ -42,7 +44,7 @@ func newApp(cfg Config) *app {
 }
 
 func (a *app) listLibs(ctx context.Context, r *http.Request) web.Encoder {
-	versionTag, err := libs.VersionInformation(a.cache.LibPath())
+	versionTag, err := a.libs.VersionInformation()
 	if err != nil {
 		return errs.New(errs.Internal, err)
 	}
@@ -65,14 +67,6 @@ func (a *app) pullLibs(ctx context.Context, r *http.Request) web.Encoder {
 
 	// -------------------------------------------------------------------------
 
-	cfg := libs.Config{
-		LibPath:      a.cache.LibPath(),
-		Arch:         a.cache.Arch(),
-		OS:           a.cache.OS(),
-		AllowUpgrade: true,
-		Processor:    a.cache.Processor(),
-	}
-
 	logger := func(ctx context.Context, msg string, args ...any) {
 		var sb strings.Builder
 		for i := 0; i < len(args); i += 2 {
@@ -89,7 +83,7 @@ func (a *app) pullLibs(ctx context.Context, r *http.Request) web.Encoder {
 		f.Flush()
 	}
 
-	vi, err := libs.Download(ctx, logger, cfg)
+	vi, err := a.libs.Download(ctx, logger)
 	if err != nil {
 		ver := toAppVersion(err.Error(), libs.VersionTag{})
 
@@ -211,10 +205,14 @@ func (a *app) removeModel(ctx context.Context, r *http.Request) web.Encoder {
 	return nil
 }
 
-func (a *app) showModel(ctx context.Context, r *http.Request) web.Encoder {
-	modelName := web.Param(r, "model")
+func (a *app) missingModel(ctx context.Context, r *http.Request) web.Encoder {
+	return errs.New(errs.InvalidArgument, fmt.Errorf("model parameter is required"))
+}
 
-	mi, err := a.models.RetrieveInfo(modelName)
+func (a *app) showModel(ctx context.Context, r *http.Request) web.Encoder {
+	modelID := web.Param(r, "model")
+
+	mi, err := a.models.RetrieveInfo(modelID)
 	if err != nil {
 		return errs.New(errs.Internal, err)
 	}

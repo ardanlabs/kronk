@@ -45,7 +45,7 @@ func NewWithPaths(basePath string, githubRepoPath string) (*Catalog, error) {
 		return nil, fmt.Errorf("creating catalogs directory: %w", err)
 	}
 
-	models, err := models.NewWithPaths(basePath)
+	models, err := models.New()
 	if err != nil {
 		return nil, fmt.Errorf("creating models system: %w", err)
 	}

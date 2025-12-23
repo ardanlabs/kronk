@@ -12,6 +12,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/kronk/cache"
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
+	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/ardanlabs/kronk/sdk/tools/templates"
 	"go.opentelemetry.io/otel/trace"
@@ -57,6 +58,7 @@ type Config struct {
 	AuthClient *authclient.Client
 	Tracer     trace.Tracer
 	Cache      *cache.Cache
+	Libs       *libs.Libs
 	Models     *models.Models
 	Catalog    *catalog.Catalog
 	Templates  *templates.Templates

@@ -29,6 +29,7 @@ func (all) Add(app *web.App, cfg mux.Config) {
 		Log:        cfg.Log,
 		AuthClient: cfg.AuthClient,
 		Cache:      cfg.Cache,
+		Libs:       cfg.Libs,
 		Models:     cfg.Models,
 		Catalog:    cfg.Catalog,
 		Templates:  cfg.Templates,

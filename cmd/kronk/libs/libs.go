@@ -8,10 +8,8 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/toolapp"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/sdk/client"
 	"github.com/ardanlabs/kronk/sdk/kronk"
-	"github.com/ardanlabs/kronk/sdk/kronk/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 )
 
@@ -43,38 +41,16 @@ func runWeb() error {
 }
 
 func runLocal() error {
-	arch, err := defaults.Arch("")
-	if err != nil {
-		return err
-	}
-
-	os, err := defaults.OS("")
-	if err != nil {
-		return err
-	}
-
-	proc, err := defaults.Processor("")
-	if err != nil {
-		return err
-	}
-
-	libCfg, err := libs.NewConfig(
-		defaults.LibsDir(""),
-		arch.String(),
-		os.String(),
-		proc.String(),
-		true,
-	)
-	if err != nil {
-		return err
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
-	_, err = libs.Download(ctx, kronk.FmtLogger, libCfg)
+	libs, err := libs.New()
 	if err != nil {
-		return errs.Errorf(errs.Internal, "libs:unable to install llama.cpp: %s", err)
+		return err
+	}
+
+	if _, err := libs.Download(ctx, kronk.FmtLogger); err != nil {
+		return fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
 	if err := kronk.Init(); err != nil {

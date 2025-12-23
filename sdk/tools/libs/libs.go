@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/downloader"
 	"github.com/hybridgroup/yzma/pkg/download"
@@ -19,6 +18,9 @@ const (
 	localFolder = "libraries"
 )
 
+// Logger represents a logger for capturing events.
+type Logger func(ctx context.Context, msg string, args ...any)
+
 // VersionTag represents information about the installed version of llama.cpp.
 type VersionTag struct {
 	Version   string `json:"version"`
@@ -28,91 +30,129 @@ type VersionTag struct {
 	Latest    string `json:"-"`
 }
 
-func isTagMatch(tag VersionTag, cfg Config) bool {
-	return tag.Latest == tag.Version && tag.Arch == cfg.Arch.String() && tag.OS == cfg.OS.String() && tag.Processor == cfg.Processor.String()
+// Libs manages the library system.
+type Libs struct {
+	path         string
+	arch         download.Arch
+	os           download.OS
+	processor    download.Processor
+	allowUpgrade bool
 }
 
-// =============================================================================
+// New uses defaults based on the system run are running on. It will use CPU
+// as the processor.
+func New() (*Libs, error) {
+	arch, err := defaults.Arch("")
+	if err != nil {
+		return nil, err
+	}
 
-// Config contains all the required parameters to download llama.cpp.
-type Config struct {
-	LibPath      string
-	Arch         download.Arch
-	OS           download.OS
-	Processor    download.Processor
-	AllowUpgrade bool
+	opSys, err := defaults.OS("")
+	if err != nil {
+		return nil, err
+	}
+
+	processor, err := defaults.Processor("")
+	if err != nil {
+		return nil, err
+	}
+
+	return NewWithSettings("", arch, opSys, processor, true)
 }
 
-// NewConfig constructs a valid library config for downloading based on raw
+// NewWithProcessor uses defaults based on the system run are running on, but
+// will let you specify the processor.
+func NewWithProcessor(processor download.Processor) (*Libs, error) {
+	arch, err := defaults.Arch("")
+	if err != nil {
+		return nil, err
+	}
+
+	opSys, err := defaults.OS("")
+	if err != nil {
+		return nil, err
+	}
+
+	return NewWithSettings("", arch, opSys, processor, true)
+}
+
+// NewWithSettings constructs a valid library config for downloading based on raw
 // values that would come from configuration. It sets defaults for the specified
 // values when the parameters are empty.
 // basePath    : represents the base path the llama.cpp libraries will/are installed in.
-// archStr     : string representation of a `download.Arch`.
-// osStr       : string representation of a `download.OS`.
-// procStr     : string representation of a `download.Processor`.
+// arch        : represents the architecture.
+// opSys       : represents the operating system.
+// processor   : represents the hardare.
 // allowUpgrade: true or false to determine to upgrade libraries when available.
-func NewConfig(basePath string, archStr string, osStr string, procStr string, allowUpgrade bool) (Config, error) {
-	arch, err := defaults.Arch(archStr)
-	if err != nil {
-		return Config{}, err
+func NewWithSettings(basePath string, arch download.Arch, opSys download.OS, processor download.Processor, allowUpgrade bool) (*Libs, error) {
+	basePath = defaults.BaseDir(basePath)
+
+	lib := Libs{
+		path:         filepath.Join(basePath, localFolder),
+		arch:         arch,
+		os:           opSys,
+		processor:    processor,
+		allowUpgrade: allowUpgrade,
 	}
 
-	opSys, err := defaults.OS(osStr)
-	if err != nil {
-		return Config{}, err
-	}
+	return &lib, nil
+}
 
-	processor, err := defaults.Processor(procStr)
-	if err != nil {
-		return Config{}, err
-	}
+// LibsPath returns the location of the libraries path.
+func (lib *Libs) LibsPath() string {
+	return lib.path
+}
 
-	cfg := Config{
-		LibPath:      filepath.Join(basePath, localFolder),
-		Arch:         arch,
-		OS:           opSys,
-		Processor:    processor,
-		AllowUpgrade: allowUpgrade,
-	}
+// Arch returns the current architecture being used.
+func (lib *Libs) Arch() download.Arch {
+	return lib.arch
+}
 
-	return cfg, nil
+// OS returns the current operating system being used.
+func (lib *Libs) OS() download.OS {
+	return lib.os
+}
+
+// Processor returns the hardware system being used.
+func (lib *Libs) Processor() download.Processor {
+	return lib.processor
 }
 
 // Download performs a complete workflow for downloading and installing
 // the latest version of llama.cpp.
-func Download(ctx context.Context, log kronk.Logger, libCfg Config) (VersionTag, error) {
-	log(ctx, "download-libraries", "status", "check libraries version information", "arch", libCfg.Arch, "os", libCfg.OS, "processor", libCfg.Processor)
+func (lib *Libs) Download(ctx context.Context, log Logger) (VersionTag, error) {
+	log(ctx, "download-libraries", "status", "check libraries version information", "arch", lib.arch, "os", lib.os, "processor", lib.processor)
 
-	tag, err := VersionInformation(libCfg.LibPath)
+	tag, err := lib.VersionInformation()
 	if err != nil {
 		if tag.Version == "" {
 			return VersionTag{}, fmt.Errorf("download-libraries: error retrieving version info: %w", err)
 		}
 
-		log(ctx, "download-libraries", "status", "unable to check latest verion, using installed version", "arch", libCfg.Arch, "os", libCfg.OS, "processor", libCfg.Processor, "latest", tag.Latest, "current", tag.Version)
+		log(ctx, "download-libraries", "status", "unable to check latest verion, using installed version", "arch", lib.arch, "os", lib.os, "processor", lib.processor, "latest", tag.Latest, "current", tag.Version)
 		return tag, nil
 	}
 
-	log(ctx, "download-libraries", "status", "check llama.cpp installation", "arch", libCfg.Arch, "os", libCfg.OS, "processor", libCfg.Processor, "latest", tag.Latest, "current", tag.Version)
+	log(ctx, "download-libraries", "status", "check llama.cpp installation", "arch", lib.arch, "os", lib.os, "processor", lib.processor, "latest", tag.Latest, "current", tag.Version)
 
-	if isTagMatch(tag, libCfg) {
+	if isTagMatch(tag, lib) {
 		log(ctx, "download-libraries", "status", "already installed", "latest", tag.Latest, "current", tag.Version)
 		return tag, nil
 	}
 
-	if !libCfg.AllowUpgrade {
+	if !lib.allowUpgrade {
 		log(ctx, "download-libraries", "status", "bypassing upgrade", "latest", tag.Latest, "current", tag.Version)
 		return tag, nil
 	}
 
 	log(ctx, "download-libraries waiting to start download...")
 
-	newTag, err := downloadLibs(ctx, log, libCfg, tag.Latest)
+	newTag, err := lib.download(ctx, log, tag.Latest)
 	if err != nil {
 		log(ctx, "download-libraries", "status", "llama.cpp installation", "ERROR", err)
 
-		if _, err := InstalledVersion(libCfg.LibPath); err != nil {
-			return VersionTag{}, fmt.Errorf("download-libraries: failed to install llama: %q: error: %w", libCfg.LibPath, err)
+		if _, err := lib.InstalledVersion(); err != nil {
+			return VersionTag{}, fmt.Errorf("download-libraries: failed to install llama: %q: error: %w", lib.path, err)
 		}
 
 		log(ctx, "download-libraries", "status", "failed to install new version, using current version")
@@ -124,8 +164,8 @@ func Download(ctx context.Context, log kronk.Logger, libCfg Config) (VersionTag,
 }
 
 // InstalledVersion retrieves the current version of llama.cpp installed.
-func InstalledVersion(libPath string) (VersionTag, error) {
-	versionInfoPath := filepath.Join(libPath, versionFile)
+func (lib *Libs) InstalledVersion() (VersionTag, error) {
+	versionInfoPath := filepath.Join(lib.path, versionFile)
 
 	d, err := os.ReadFile(versionInfoPath)
 	if err != nil {
@@ -142,8 +182,8 @@ func InstalledVersion(libPath string) (VersionTag, error) {
 
 // VersionInformation retrieves the current version of llama.cpp that is
 // published on GitHub and the current installed version.
-func VersionInformation(libPath string) (VersionTag, error) {
-	tag, _ := InstalledVersion(libPath)
+func (lib *Libs) VersionInformation() (VersionTag, error) {
+	tag, _ := lib.InstalledVersion()
 
 	version, err := download.LlamaLatestVersion()
 	if err != nil {
@@ -157,8 +197,8 @@ func VersionInformation(libPath string) (VersionTag, error) {
 
 // =============================================================================
 
-func downloadLibs(ctx context.Context, log kronk.Logger, cfg Config, version string) (VersionTag, error) {
-	tempPath := filepath.Join(cfg.LibPath, "temp")
+func (lib *Libs) download(ctx context.Context, log Logger, version string) (VersionTag, error) {
+	tempPath := filepath.Join(lib.path, "temp")
 
 	progress := func(src string, currentSize int64, totalSize int64, mibPerSec float64, complete bool) {
 		log(ctx, fmt.Sprintf("\x1b[1A\r\x1b[Kdownload-libraries: Downloading %s... %d MiB of %d MiB (%.2f MiB/s)", src, currentSize/(1024*1024), totalSize/(1024*1024), mibPerSec))
@@ -166,26 +206,26 @@ func downloadLibs(ctx context.Context, log kronk.Logger, cfg Config, version str
 
 	pr := downloader.NewProgressReader(progress, downloader.SizeIntervalMIB10)
 
-	err := download.GetWithContext(ctx, cfg.Arch.String(), cfg.OS.String(), cfg.Processor.String(), version, tempPath, pr)
+	err := download.GetWithContext(ctx, lib.arch.String(), lib.os.String(), lib.processor.String(), version, tempPath, pr)
 	if err != nil {
 		os.RemoveAll(tempPath)
 		return VersionTag{}, fmt.Errorf("download-libs: unable to install llama.cpp: %w", err)
 	}
 
-	if err := swapTempForLib(cfg.LibPath, tempPath); err != nil {
+	if err := lib.swapTempForLib(tempPath); err != nil {
 		os.RemoveAll(tempPath)
 		return VersionTag{}, fmt.Errorf("download-libs: unable to swap temp for lib: %w", err)
 	}
 
-	if err := createVersionFile(cfg, version); err != nil {
+	if err := lib.createVersionFile(version); err != nil {
 		return VersionTag{}, fmt.Errorf("download-libs: unable to create version file: %w", err)
 	}
 
-	return VersionInformation(cfg.LibPath)
+	return lib.VersionInformation()
 }
 
-func swapTempForLib(libPath string, tempPath string) error {
-	entries, err := os.ReadDir(libPath)
+func (lib *Libs) swapTempForLib(tempPath string) error {
+	entries, err := os.ReadDir(lib.path)
 	if err != nil {
 		return fmt.Errorf("swap-temp-for-lib: unable to read libPath: %w", err)
 	}
@@ -195,7 +235,7 @@ func swapTempForLib(libPath string, tempPath string) error {
 			continue
 		}
 
-		os.Remove(filepath.Join(libPath, entry.Name()))
+		os.Remove(filepath.Join(lib.path, entry.Name()))
 	}
 
 	tempEntries, err := os.ReadDir(tempPath)
@@ -205,7 +245,7 @@ func swapTempForLib(libPath string, tempPath string) error {
 
 	for _, entry := range tempEntries {
 		src := filepath.Join(tempPath, entry.Name())
-		dst := filepath.Join(libPath, entry.Name())
+		dst := filepath.Join(lib.path, entry.Name())
 		if err := os.Rename(src, dst); err != nil {
 			return fmt.Errorf("swap-temp-for-lib: unable to move %s: %w", entry.Name(), err)
 		}
@@ -216,8 +256,8 @@ func swapTempForLib(libPath string, tempPath string) error {
 	return nil
 }
 
-func createVersionFile(cfg Config, version string) error {
-	versionInfoPath := filepath.Join(cfg.LibPath, versionFile)
+func (lib *Libs) createVersionFile(version string) error {
+	versionInfoPath := filepath.Join(lib.path, versionFile)
 
 	f, err := os.Create(versionInfoPath)
 	if err != nil {
@@ -227,9 +267,9 @@ func createVersionFile(cfg Config, version string) error {
 
 	t := VersionTag{
 		Version:   version,
-		Arch:      cfg.Arch.String(),
-		OS:        cfg.OS.String(),
-		Processor: cfg.Processor.String(),
+		Arch:      lib.arch.String(),
+		OS:        lib.os.String(),
+		Processor: lib.processor.String(),
 	}
 
 	d, err := json.Marshal(t)
@@ -242,4 +282,10 @@ func createVersionFile(cfg Config, version string) error {
 	}
 
 	return nil
+}
+
+// =============================================================================
+
+func isTagMatch(tag VersionTag, libs *Libs) bool {
+	return tag.Latest == tag.Version && tag.Arch == libs.arch.String() && tag.OS == libs.os.String() && tag.Processor == libs.processor.String()
 }

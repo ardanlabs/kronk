@@ -34,7 +34,7 @@ func runWeb() error {
 }
 
 func runLocal(models *models.Models) error {
-	fmt.Println("Model Path:", models.ModelsPath())
+	fmt.Println("Model Path:", models.Path())
 
 	if err := models.BuildIndex(); err != nil {
 		return fmt.Errorf("build-index: %w", err)

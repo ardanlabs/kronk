@@ -48,7 +48,7 @@ func runWeb(args []string) error {
 func runLocal(models *models.Models, args []string) error {
 	modelID := args[0]
 
-	fmt.Println("Model Path: ", models.ModelsPath())
+	fmt.Println("Model Path: ", models.Path())
 	fmt.Println("Model ID  : ", modelID)
 
 	mp, err := models.RetrievePath(modelID)

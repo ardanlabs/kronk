@@ -103,14 +103,12 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			// this even lower.
 		}
 		Model struct {
-			Path          string
 			Device        string
 			MaxInstances  int           `conf:"default:1"`
 			MaxInCache    int           `conf:"default:3"`
 			ContextWindow int           `conf:"default:0"`
 			CacheTTL      time.Duration `conf:"default:5m"`
 		}
-		LibPath      string
 		Arch         string
 		OS           string
 		Processor    string
@@ -239,7 +237,26 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	defer authClient.Close()
 
 	// -------------------------------------------------------------------------
-	// Models
+	// Library System
+
+	log.Info(ctx, "startup", "status", "downloading libraries")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	libs, err := libs.New()
+	if err != nil {
+		return fmt.Errorf("unable to create libs api: %w", err)
+	}
+
+	log.Info(ctx, "startup", "status", "installing/updating libraries", "libPath", libs.LibsPath(), "arch", libs.Arch(), "os", libs.OS(), "processor", libs.Processor(), "update", true)
+
+	if _, err := libs.Download(ctx, kronk.FmtLogger); err != nil {
+		return fmt.Errorf("unable to install llama.cpp: %w", err)
+	}
+
+	// -------------------------------------------------------------------------
+	// Model System
 
 	models, err := models.New()
 	if err != nil {
@@ -247,6 +264,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	}
 
 	// -------------------------------------------------------------------------
+	// Catalog System
 
 	log.Info(ctx, "startup", "status", "downloading catalog")
 
@@ -260,6 +278,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	}
 
 	// -------------------------------------------------------------------------
+	// Template System
 
 	log.Info(ctx, "startup", "status", "downloading templates")
 
@@ -277,38 +296,15 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	log.Info(ctx, "startup", "status", "initializing kronk")
 
-	libCfg, err := libs.NewConfig(
-		cfg.LibPath,
-		cfg.Arch,
-		cfg.OS,
-		cfg.Processor,
-		cfg.AllowUpgrade,
-	)
-
-	if err != nil {
-		return err
-	}
-
-	log.Info(ctx, "startup", "status", "installing/updating libraries", "libPath", libCfg.LibPath, "arch", libCfg.Arch, "os", libCfg.OS, "processor", libCfg.Processor, "update", libCfg.AllowUpgrade)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
-	if _, err := libs.Download(ctx, log.Info, libCfg); err != nil {
-		return fmt.Errorf("unable to install llama.cpp: %w", err)
-	}
-
-	if err := kronk.InitWithSettings(libCfg.LibPath, kronk.LogLevel(cfg.LlamaLog)); err != nil {
+	if err := kronk.Init(); err != nil {
 		return fmt.Errorf("installation invalid: %w", err)
 	}
 
 	cache, err := cache.NewCache(cache.Config{
 		Log:            log,
-		LibPath:        libCfg.LibPath,
-		Arch:           libCfg.Arch,
-		OS:             libCfg.OS,
-		Processor:      libCfg.Processor,
-		ModelPath:      cfg.Model.Path,
+		Arch:           libs.Arch(),
+		OS:             libs.OS(),
+		Processor:      libs.Processor(),
 		Device:         cfg.Model.Device,
 		MaxInCache:     cfg.Model.MaxInCache,
 		ModelInstances: cfg.Model.MaxInstances,
@@ -356,6 +352,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		AuthClient: authClient,
 		Tracer:     tracer,
 		Cache:      cache,
+		Libs:       libs,
 		Models:     models,
 		Catalog:    catalog,
 		Templates:  templates,

@@ -137,7 +137,7 @@ kronk-model-remove-local:
 	go run cmd/kronk/main.go model remove --local "$(ID)"
 
 
-# make kronk-show ID="qwen3-8b-q8_0"
+# make kronk-model-show ID="qwen3-8b-q8_0"
 kronk-model-show:
 	go run cmd/kronk/main.go model show "$(ID)"
 

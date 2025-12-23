@@ -5,7 +5,6 @@ import (
 	"context"
 	"io"
 	"math/rand"
-	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -13,7 +12,6 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/cache"
-	"github.com/ardanlabs/kronk/sdk/kronk/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
@@ -23,8 +21,7 @@ func Test_NewManager(t *testing.T) {
 
 	t.Run("default config values", func(t *testing.T) {
 		cfg := cache.Config{
-			Log:       log,
-			ModelPath: defaults.ModelsDir(""),
+			Log: log,
 		}
 
 		mgr, err := cache.NewCache(cfg)
@@ -37,7 +34,6 @@ func Test_NewManager(t *testing.T) {
 	t.Run("custom config values", func(t *testing.T) {
 		cfg := cache.Config{
 			Log:            log,
-			ModelPath:      defaults.ModelsDir(""),
 			MaxInCache:     5,
 			ModelInstances: 2,
 			CacheTTL:       10 * time.Minute,
@@ -59,7 +55,6 @@ func Test_AcquireModel(t *testing.T) {
 
 	cfg := cache.Config{
 		Log:            log,
-		ModelPath:      defaults.ModelsDir(""),
 		MaxInCache:     3,
 		ModelInstances: 1,
 		CacheTTL:       5 * time.Minute,
@@ -115,8 +110,7 @@ func Test_Shutdown(t *testing.T) {
 
 	t.Run("shutdown empty cache", func(t *testing.T) {
 		cfg := cache.Config{
-			Log:       log,
-			ModelPath: defaults.ModelsDir(""),
+			Log: log,
 		}
 
 		mgr, err := cache.NewCache(cfg)
@@ -135,7 +129,6 @@ func Test_Shutdown(t *testing.T) {
 	t.Run("shutdown with loaded models", func(t *testing.T) {
 		cfg := cache.Config{
 			Log:            log,
-			ModelPath:      defaults.ModelsDir(""),
 			MaxInCache:     3,
 			ModelInstances: 1,
 			CacheTTL:       5 * time.Minute,
@@ -165,7 +158,6 @@ func Test_Shutdown(t *testing.T) {
 	t.Run("shutdown timeout expires", func(t *testing.T) {
 		cfg := cache.Config{
 			Log:            log,
-			ModelPath:      defaults.ModelsDir(""),
 			MaxInCache:     3,
 			ModelInstances: 1,
 			CacheTTL:       5 * time.Minute,
@@ -196,7 +188,6 @@ func Test_Shutdown(t *testing.T) {
 	t.Run("shutdown with cancelled context", func(t *testing.T) {
 		cfg := cache.Config{
 			Log:            log,
-			ModelPath:      defaults.ModelsDir(""),
 			MaxInCache:     3,
 			ModelInstances: 1,
 			CacheTTL:       5 * time.Minute,
@@ -225,7 +216,6 @@ func Test_Shutdown(t *testing.T) {
 	t.Run("shutdown blocks until eviction completes", func(t *testing.T) {
 		cfg := cache.Config{
 			Log:            log,
-			ModelPath:      defaults.ModelsDir(""),
 			MaxInCache:     3,
 			ModelInstances: 1,
 			CacheTTL:       5 * time.Minute,
@@ -277,7 +267,6 @@ func Test_Eviction(t *testing.T) {
 	t.Run("eviction on TTL expiry", func(t *testing.T) {
 		cfg := cache.Config{
 			Log:            log,
-			ModelPath:      defaults.ModelsDir(""),
 			MaxInCache:     3,
 			ModelInstances: 1,
 			CacheTTL:       500 * time.Millisecond,
@@ -312,7 +301,6 @@ func Test_Eviction(t *testing.T) {
 	t.Run("eviction on capacity exceeded", func(t *testing.T) {
 		cfg := cache.Config{
 			Log:            log,
-			ModelPath:      defaults.ModelsDir(""),
 			MaxInCache:     1,
 			ModelInstances: 1,
 			CacheTTL:       5 * time.Minute,
@@ -347,35 +335,17 @@ func Test_Eviction(t *testing.T) {
 // =============================================================================
 
 func initKronk(t *testing.T) *logger.Logger {
-	arch, err := defaults.Arch("")
+	libs, err := libs.New()
 	if err != nil {
-		t.Fatalf("invalid arch specified: %s", runtime.GOARCH)
+		t.Fatalf("unable to create libs api: %s", err)
 	}
 
-	opSys, err := defaults.OS("")
-	if err != nil {
-		t.Fatalf("invalid processor specified: %s", runtime.GOOS)
-	}
-
-	processor, err := defaults.Processor("")
-	if err != nil {
-		t.Fatalf("invalid processor specified: %s", processor)
-	}
-
-	t.Logf("installing/updating libraries: libPath[%s], arch[%s] os[%s] processor[%s]", defaults.LibsDir(""), arch, opSys, processor)
-
-	cfg := libs.Config{
-		LibPath:      defaults.LibsDir(""),
-		Arch:         arch,
-		OS:           opSys,
-		Processor:    processor,
-		AllowUpgrade: true,
-	}
+	t.Logf("installing/updating libraries, current version: libPath[%s], arch[%s] os[%s] processor[%s]", libs.LibsPath(), libs.Arch(), libs.OS(), libs.Processor())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	tag, err := libs.Download(ctx, kronk.FmtLogger, cfg)
+	tag, err := libs.Download(ctx, kronk.FmtLogger)
 	if err != nil {
 		t.Fatalf("unable to install llama.cpp: %s", err)
 	}

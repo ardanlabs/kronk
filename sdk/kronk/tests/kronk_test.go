@@ -108,7 +108,13 @@ func printInfo() {
 	fmt.Println("GOROUTINES     :", goroutines)
 	fmt.Println("RUN_IN_PARALLEL:", runInParallel)
 
-	currentVersion, err := libs.InstalledVersion(defaults.LibsDir(""))
+	libs, err := libs.New()
+	if err != nil {
+		fmt.Printf("Failed to construct the libs api: %v\n", err)
+		os.Exit(1)
+	}
+
+	currentVersion, err := libs.InstalledVersion()
 	if err != nil {
 		fmt.Printf("Failed to retrieve version info: %v\n", err)
 		os.Exit(1)

@@ -64,6 +64,10 @@ func (m *Models) RetrieveFiles() ([]File, error) {
 
 // retrieveFile finds the model and returns the model file information.
 func (m *Models) retrieveFile(modelID string) (File, error) {
+	if modelID == "" {
+		return File{}, fmt.Errorf("missing model id")
+	}
+
 	mp, err := m.RetrievePath(modelID)
 	if err != nil {
 		return File{}, fmt.Errorf("retrieve-model-path: %w", err)

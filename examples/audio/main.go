@@ -12,15 +12,12 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"runtime"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
-	"github.com/ardanlabs/kronk/sdk/kronk/defaults"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
-	"github.com/hybridgroup/yzma/pkg/download"
 )
 
 const (
@@ -28,10 +25,6 @@ const (
 	projURL        = "https://huggingface.co/mradermacher/Qwen2-Audio-7B-GGUF/resolve/main/Qwen2-Audio-7B.mmproj-Q8_0.gguf"
 	audioFile      = "examples/samples/jfk.wav"
 	modelInstances = 1
-)
-
-var (
-	libPath = defaults.LibsDir("")
 )
 
 func main() {
@@ -47,7 +40,7 @@ func run() error {
 		return fmt.Errorf("unable to install system: %w", err)
 	}
 
-	krn, err := newKronk(libPath, info)
+	krn, err := newKronk(info)
 	if err != nil {
 		return fmt.Errorf("unable to init kronk: %w", err)
 	}
@@ -78,28 +71,26 @@ func run() error {
 }
 
 func installSystem() (models.Path, error) {
-	libCfg, err := libs.NewConfig(
-		libPath,
-		runtime.GOARCH,
-		runtime.GOOS,
-		download.CPU.String(),
-		true,
-	)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+
+	libs, err := libs.New()
 	if err != nil {
 		return models.Path{}, err
 	}
 
-	_, err = libs.Download(context.Background(), kronk.FmtLogger, libCfg)
-	if err != nil {
+	if _, err := libs.Download(ctx, kronk.FmtLogger); err != nil {
 		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
+
+	// -------------------------------------------------------------------------
 
 	modelTool, err := models.New()
 	if err != nil {
 		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
-	mp, err := modelTool.Download(context.Background(), kronk.FmtLogger, modelURL, projURL)
+	mp, err := modelTool.Download(ctx, kronk.FmtLogger, modelURL, projURL)
 	if err != nil {
 		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
 	}
@@ -107,7 +98,7 @@ func installSystem() (models.Path, error) {
 	return mp, nil
 }
 
-func newKronk(libPath string, mp models.Path) (*kronk.Kronk, error) {
+func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	if err := kronk.Init(); err != nil {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}

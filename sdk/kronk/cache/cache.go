@@ -12,7 +12,6 @@ import (
 
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/sdk/kronk"
-	"github.com/ardanlabs/kronk/sdk/kronk/defaults"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/hybridgroup/yzma/pkg/download"
@@ -43,11 +42,9 @@ import (
 // being used.
 type Config struct {
 	Log            *logger.Logger
-	LibPath        string
 	Arch           download.Arch
 	OS             download.OS
 	Processor      download.Processor
-	ModelPath      string
 	Device         string
 	MaxInCache     int
 	ModelInstances int
@@ -56,9 +53,6 @@ type Config struct {
 }
 
 func validateConfig(cfg Config) Config {
-	cfg.LibPath = defaults.LibsDir(cfg.LibPath)
-	cfg.ModelPath = defaults.ModelsDir(cfg.ModelPath)
-
 	if cfg.MaxInCache <= 0 {
 		cfg.MaxInCache = 3
 	}
@@ -78,7 +72,6 @@ func validateConfig(cfg Config) Config {
 // APIs and will unload over time if not in use.
 type Cache struct {
 	log           *logger.Logger
-	libPath       string
 	arch          download.Arch
 	os            download.OS
 	processor     download.Processor
@@ -94,14 +87,13 @@ type Cache struct {
 func NewCache(cfg Config) (*Cache, error) {
 	cfg = validateConfig(cfg)
 
-	models, err := models.NewWithPaths(cfg.ModelPath)
+	models, err := models.New()
 	if err != nil {
 		return nil, fmt.Errorf("creating models system: %w", err)
 	}
 
 	c := Cache{
 		log:           cfg.Log,
-		libPath:       cfg.LibPath,
 		arch:          cfg.Arch,
 		os:            cfg.OS,
 		processor:     cfg.Processor,
@@ -147,11 +139,6 @@ func (c *Cache) Shutdown(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-// LibPath returns the location of the llama.cpp libraries.
-func (c *Cache) LibPath() string {
-	return c.libPath
 }
 
 // Arch returns the hardware being used.

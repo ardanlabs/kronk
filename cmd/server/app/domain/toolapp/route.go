@@ -9,6 +9,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/kronk/cache"
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
+	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/ardanlabs/kronk/sdk/tools/templates"
 )
@@ -18,6 +19,7 @@ type Config struct {
 	Log        *logger.Logger
 	AuthClient *authclient.Client
 	Cache      *cache.Cache
+	Libs       *libs.Libs
 	Models     *models.Models
 	Catalog    *catalog.Catalog
 	Templates  *templates.Templates
@@ -35,6 +37,7 @@ func Routes(app *web.App, cfg Config) {
 	app.HandlerFunc(http.MethodPost, version, "/v1/libs/pull", api.pullLibs, auth)
 
 	app.HandlerFunc(http.MethodGet, version, "/v1/models", api.listModels, auth)
+	app.HandlerFunc(http.MethodGet, version, "/v1/models/", api.missingModel, auth)
 	app.HandlerFunc(http.MethodGet, version, "/v1/models/{model}", api.showModel, auth)
 	app.HandlerFunc(http.MethodGet, version, "/v1/models/ps", api.modelPS, auth)
 	app.HandlerFunc(http.MethodPost, version, "/v1/models/index", api.indexModels, auth)

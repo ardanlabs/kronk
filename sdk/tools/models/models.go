@@ -37,8 +37,8 @@ func NewWithPaths(modelBasePath string) (*Models, error) {
 	return &m, nil
 }
 
-// ModelsPath returns the location of the models path.
-func (m *Models) ModelsPath() string {
+// Path returns the location of the models path.
+func (m *Models) Path() string {
 	return m.modelsPath
 }
 

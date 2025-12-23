@@ -31,7 +31,7 @@ func runWeb(args []string) error {
 
 	var info toolapp.ModelInfoResponse
 	if err := client.Do(ctx, http.MethodGet, url, nil, &info); err != nil {
-		return fmt.Errorf("do: unable to get mode information: %w", err)
+		return fmt.Errorf("do: unable to get model information: %w", err)
 	}
 
 	printWeb(info)
