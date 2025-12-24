@@ -309,7 +309,7 @@ else
 endif
 
 metrics-view:
-	expvarmon -ports="localhost:8090" -vars="service_goroutines,service_requests,service_errors,service_panics,model_load_avg,model_prompt_creation_avg,model_prefill_nonmedia_avg,model_ttft_avg"
+	expvarmon -ports="localhost:8090" -vars="service_goroutines,service_requests,service_errors,service_panics,model_load_avg,model_prompt_creation_avg,model_prefill_nonmedia_avg,model_ttft_avg,mem:memstats.HeapAlloc,mem:memstats.HeapSys,mem:memstats.Sys"
 
 grafana:
 	$(OPEN_CMD) http://localhost:3100/

@@ -4,9 +4,6 @@
 
 ### MODEL SERVER / TOOLING
 
-- Tool does the conversion - admin tooling
-- Convert Jinja templates to Go templates
-
 ### Telemetry
 
 - Apply OTEL Spans to critical areas beyond start/stop request
