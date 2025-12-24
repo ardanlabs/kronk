@@ -4,6 +4,8 @@
 
 ### MODEL SERVER / TOOLING
 
+- Adding logging to catalog and templates to show downloading details.
+
 ### Telemetry
 
 - Apply OTEL Spans to critical areas beyond start/stop request
