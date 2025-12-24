@@ -43,7 +43,7 @@ jobs:
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add cmd/server/services/kronk/static/
+          git add cmd/server/api/services/kronk/static/
           git diff --staged --quiet || git commit -m "Update static files [skip ci]"
           git push
       - name: Restore models cache
