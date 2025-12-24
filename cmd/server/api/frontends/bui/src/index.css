@@ -27,7 +27,8 @@ body {
 
 .app {
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .sidebar {
@@ -36,6 +37,10 @@ body {
   color: var(--color-white);
   padding: 20px 0;
   flex-shrink: 0;
+  height: 100vh;
+  overflow-y: auto;
+  position: sticky;
+  top: 0;
 }
 
 .sidebar-header {
@@ -127,6 +132,7 @@ body {
   flex: 1;
   padding: 30px;
   overflow-y: auto;
+  height: 100vh;
 }
 
 .page-header {

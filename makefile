@@ -307,6 +307,9 @@ else
 	OPEN_CMD := xdg-open
 endif
 
+website:
+	$(OPEN_CMD) http://localhost:8080/
+
 metrics-view:
 	expvarmon -ports="localhost:8090" -vars="service_goroutines,service_requests,service_errors,service_panics,model_load_avg,model_prompt_creation_avg,model_prefill_nonmedia_avg,model_ttft_avg,mem:memstats.HeapAlloc,mem:memstats.HeapSys,mem:memstats.Sys"
 
