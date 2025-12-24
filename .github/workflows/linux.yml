@@ -52,6 +52,10 @@ jobs:
         with:
           path: ~/.kronk/models
           key: ${{ runner.os }}-models-v3
+      - name: Install tools
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@latest
       - name: Install kronk command
         run: |
           cd cmd/kronk
@@ -75,6 +79,11 @@ jobs:
           CGO_ENABLED=0 go test -v -count=1 ./sdk/tools/...
           CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/...
           CGO_ENABLED=0 go test -v -count=1 ./cmd/server/app/sdk/...
+      - name: Run static analysis
+        run: |
+          CGO_ENABLED=0 go vet ./...
+          staticcheck -checks=all ./...
+          govulncheck ./...
       - name: Delete existing models cache
         if: github.ref == 'refs/heads/main' && steps.cache-models.outputs.cache-hit != 'true'
         env:
