@@ -294,9 +294,8 @@ test: install-libraries install-models
 	export GITHUB_WORKSPACE=$(shell pwd) && \
 	CGO_ENABLED=0 go test -v -count=1 ./sdk/security/... && \
 	CGO_ENABLED=0 go test -v -count=1 ./sdk/tools/... && \
-	CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/cache && \
-	CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/model && \
-	CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/tests
+	CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/... && \
+	CGO_ENABLED=0 go test -v -count=1 ./cmd/server/app/sdk/...
 
 # ==============================================================================
 # Metrics and Tracing

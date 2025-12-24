@@ -10,7 +10,7 @@ import (
 	"syscall"
 
 	"github.com/ardanlabs/kronk/cmd/server/api/services/kronk"
-	"github.com/ardanlabs/kronk/sdk/kronk/defaults"
+	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/spf13/cobra"
 )
 

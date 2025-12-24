@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/ardanlabs/kronk/sdk/kronk/defaults"
+	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"go.yaml.in/yaml/v2"
 )
 
