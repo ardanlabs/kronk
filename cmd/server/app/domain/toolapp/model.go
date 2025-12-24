@@ -6,9 +6,8 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
-	"github.com/ardanlabs/kronk/sdk/kronk/cache"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/cache"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/ardanlabs/kronk/sdk/security/auth"
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
@@ -360,11 +359,17 @@ func toKeys(keys []authclient.Key) KeysResponse {
 
 // =============================================================================
 
+// RateLimit defines the rate limit configuration for an endpoint.
+type RateLimit struct {
+	Limit  int    `json:"limit"`
+	Window string `json:"window"`
+}
+
 // TokenRequest represents the input for the create token command.
 type TokenRequest struct {
-	Admin     bool                      `json:"admin"`
-	Endpoints map[string]auth.RateLimit `json:"endpoints"`
-	Duration  time.Duration             `json:"duration"`
+	Admin     bool                 `json:"admin"`
+	Endpoints map[string]RateLimit `json:"endpoints"`
+	Duration  time.Duration        `json:"duration"`
 }
 
 // Decode implements the decoder interface.

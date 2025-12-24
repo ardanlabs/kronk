@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/cache"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/sdk/kronk"
-	"github.com/ardanlabs/kronk/sdk/kronk/cache"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"

@@ -14,6 +14,11 @@ import SecurityKeyList from './components/SecurityKeyList';
 import SecurityKeyCreate from './components/SecurityKeyCreate';
 import SecurityKeyDelete from './components/SecurityKeyDelete';
 import SecurityTokenCreate from './components/SecurityTokenCreate';
+import DocsSDK from './components/DocsSDK';
+import DocsSDKKronk from './components/DocsSDKKronk';
+import DocsSDKModel from './components/DocsSDKModel';
+import DocsCLI from './components/DocsCLI';
+import DocsWebAPI from './components/DocsWebAPI';
 import { ModelListProvider } from './contexts/ModelListContext';
 
 export type Page =
@@ -26,7 +31,12 @@ export type Page =
   | 'security-key-list'
   | 'security-key-create'
   | 'security-key-delete'
-  | 'security-token-create';
+  | 'security-token-create'
+  | 'docs-sdk'
+  | 'docs-sdk-kronk'
+  | 'docs-sdk-model'
+  | 'docs-cli'
+  | 'docs-webapi';
 
 function App() {
   const [currentPage, setCurrentPage] = useState<Page>('home');
@@ -51,6 +61,16 @@ function App() {
         return <SecurityKeyDelete />;
       case 'security-token-create':
         return <SecurityTokenCreate />;
+      case 'docs-sdk':
+        return <DocsSDK />;
+      case 'docs-sdk-kronk':
+        return <DocsSDKKronk />;
+      case 'docs-sdk-model':
+        return <DocsSDKModel />;
+      case 'docs-cli':
+        return <DocsCLI />;
+      case 'docs-webapi':
+        return <DocsWebAPI />;
       default:
         return (
           <div className="welcome">

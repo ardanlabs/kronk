@@ -23,30 +23,6 @@ var (
 	ErrInvalidAuthzOPA = errors.New("OPA policy evaluation failed for authorization")
 )
 
-// RateWindow represents the time period for rate limiting.
-type RateWindow string
-
-// Set of rate limit units.
-const (
-	RateDay       RateWindow = "day"
-	RateMonth     RateWindow = "month"
-	RateYear      RateWindow = "year"
-	RateUnlimited RateWindow = "unlimited"
-)
-
-// RateLimit defines the rate limit configuration for an endpoint.
-type RateLimit struct {
-	Limit  int        `json:"limit"`
-	Window RateWindow `json:"window"`
-}
-
-// Claims represents the authorization claims transmitted via a JWT.
-type Claims struct {
-	jwt.RegisteredClaims
-	Admin     bool                 `json:"admin"`
-	Endpoints map[string]RateLimit `json:"endpoints"`
-}
-
 // KeyLookup declares a method set of behavior for looking up
 // private and public keys for JWT use. The return could be a
 // PEM encoded string or a JWS based key.

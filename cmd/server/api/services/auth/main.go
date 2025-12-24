@@ -16,7 +16,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/authapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/debug"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
-	"github.com/ardanlabs/kronk/sdk/kronk/otel"
+	"github.com/ardanlabs/kronk/sdk/observ/otel"
 	"github.com/ardanlabs/kronk/sdk/tools/security"
 )
 

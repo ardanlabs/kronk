@@ -13,7 +13,8 @@ import (
 )
 
 var (
-	indexFile = ".index.yaml"
+	localFolder = "models"
+	indexFile   = ".index.yaml"
 )
 
 // Models manages the model system.
@@ -27,11 +28,19 @@ func New() (*Models, error) {
 	return NewWithPaths("")
 }
 
-// NewWithPaths constructs the models system, If the modelBasePath is empty, the
+// NewWithPaths constructs the models system, If the basePath is empty, the
 // default location is used.
-func NewWithPaths(modelBasePath string) (*Models, error) {
+func NewWithPaths(basePath string) (*Models, error) {
+	basePath = defaults.BaseDir(basePath)
+
+	modelPath := filepath.Join(basePath, localFolder)
+
+	if err := os.MkdirAll(modelPath, 0755); err != nil {
+		return nil, fmt.Errorf("creating catalogs directory: %w", err)
+	}
+
 	m := Models{
-		modelsPath: defaults.ModelsDir(modelBasePath),
+		modelsPath: modelPath,
 	}
 
 	return &m, nil

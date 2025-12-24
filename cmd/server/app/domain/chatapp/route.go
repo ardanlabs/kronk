@@ -7,7 +7,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mid"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
-	"github.com/ardanlabs/kronk/sdk/kronk/cache"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/cache"
 )
 
 // Config contains all the mandatory systems required by handlers.

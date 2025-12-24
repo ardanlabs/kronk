@@ -11,9 +11,7 @@ import (
 )
 
 var (
-	basePath  = ".kronk"
-	libsPath  = "libraries"
-	modelPath = "models"
+	basePath = ".kronk"
 )
 
 // BaseDir is the default base folder location for kronk files.
@@ -28,46 +26,6 @@ func BaseDir(override string) string {
 	}
 
 	return filepath.Join(homeDir, basePath)
-}
-
-// LibsDir returns the default location for the libraries folder. It will check
-// the KRONK_LIB_PATH env var first and then default to the home directory if
-// one can be identified. Last resort it will choose the current directory.
-func LibsDir(override string) string {
-	if override != "" {
-		return override
-	}
-
-	if v := os.Getenv("KRONK_LIB_PATH"); v != "" {
-		return v
-	}
-
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Sprintf("./%s/%s", basePath, libsPath)
-	}
-
-	return filepath.Join(homeDir, basePath, libsPath)
-}
-
-// ModelsDir returns the default location for the models folder. It will check
-// the KRONK_MODELS env var first and then default to the home directory if one
-// can be identified. Last resort it will choose the current directory.
-func ModelsDir(override string) string {
-	if override != "" {
-		return override
-	}
-
-	if v := os.Getenv("KRONK_MODELS"); v != "" {
-		return v
-	}
-
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Sprintf("./%s/%s", basePath, modelPath)
-	}
-
-	return filepath.Join(homeDir, basePath, modelPath)
 }
 
 // Arch will check the KRONK_ARCH var first and check it's value against the

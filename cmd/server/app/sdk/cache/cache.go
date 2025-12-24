@@ -237,7 +237,7 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 	}
 
 	krn, err = kronk.New(c.instances, cfg,
-		kronk.WithTemplates(c.templates),
+		kronk.WithTemplateRetriever(c.templates),
 	)
 
 	if err != nil {

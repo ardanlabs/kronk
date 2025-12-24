@@ -7,7 +7,7 @@ import (
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
-	"github.com/ardanlabs/kronk/sdk/kronk/metrics"
+	"github.com/ardanlabs/kronk/sdk/observ/metrics"
 )
 
 // Panics recovers from panics and converts the panic to an error so it is

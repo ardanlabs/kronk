@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
-	"github.com/ardanlabs/kronk/sdk/kronk/defaults"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
@@ -25,7 +24,16 @@ var (
 	mpEmbed         models.Path
 )
 
-func init() {
+var (
+	gw             = os.Getenv("GITHUB_WORKSPACE")
+	imageFile      = filepath.Join(gw, "examples/samples/giraffe.jpg")
+	goroutines     = 1
+	modelInstances = 1
+	runInParallel  = false
+	testDuration   = 60 * 5 * time.Second
+)
+
+func TestMain(m *testing.M) {
 	models, err := models.New()
 	if err != nil {
 		fmt.Printf("creating models system: %s\n", err)
@@ -39,19 +47,10 @@ func init() {
 	if os.Getenv("GITHUB_ACTIONS") != "true" {
 		mpGPTChat = models.MustRetrieveModel("gpt-oss-20b-Q8_0")
 	}
-}
 
-var (
-	gw             = os.Getenv("GITHUB_WORKSPACE")
-	imageFile      = filepath.Join(gw, "examples/samples/giraffe.jpg")
-	goroutines     = 1
-	modelInstances = 1
-	runInParallel  = false
-	testDuration   = 60 * 5 * time.Second
-)
+	// -------------------------------------------------------------------------
 
-func TestMain(m *testing.M) {
-	printInfo()
+	printInfo(models)
 
 	ctx := context.Background()
 
@@ -79,7 +78,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func printInfo() {
+func printInfo(models *models.Models) {
 	if os.Getenv("GOROUTINES") != "" {
 		var err error
 		goroutines, err = strconv.Atoi(os.Getenv("GOROUTINES"))
@@ -92,8 +91,8 @@ func printInfo() {
 		runInParallel = true
 	}
 
-	fmt.Println("libpath        :", defaults.LibsDir(""))
-	fmt.Println("modelPath      :", defaults.ModelsDir(""))
+	fmt.Println("libpath        :", libs.Path(""))
+	fmt.Println("modelPath      :", models.Path())
 	fmt.Println("imageFile      :", imageFile)
 	fmt.Println("processor      :", "cpu")
 	fmt.Println("testDuration   :", testDuration)

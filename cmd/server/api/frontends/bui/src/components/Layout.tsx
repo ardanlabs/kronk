@@ -22,7 +22,7 @@ interface MenuItem {
 const menuStructure: MenuCategory[] = [
   {
     id: 'model',
-    label: 'Model',
+    label: 'Models',
     items: [
       { id: 'model-list', label: 'List' },
       { id: 'model-ps', label: 'Running' },
@@ -57,6 +57,24 @@ const menuStructure: MenuCategory[] = [
         label: 'Token',
         items: [{ id: 'security-token-create', label: 'Create' }],
       },
+    ],
+  },
+  {
+    id: 'docs',
+    label: 'Docs',
+    subcategories: [
+      {
+        id: 'docs-sdk',
+        label: 'SDK',
+        items: [
+          { id: 'docs-sdk-kronk', label: 'Kronk' },
+          { id: 'docs-sdk-model', label: 'Model' },
+        ],
+      },
+    ],
+    items: [
+      { id: 'docs-cli', label: 'CLI' },
+      { id: 'docs-webapi', label: 'WebAPI' },
     ],
   },
 ];

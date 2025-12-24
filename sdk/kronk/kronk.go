@@ -14,8 +14,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ardanlabs/kronk/sdk/kronk/defaults"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/templates"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
@@ -57,19 +57,19 @@ func Init() error {
 // InitWithSettings initializes the Kronk backend suport.
 func InitWithSettings(libPath string, logLevel LogLevel) error {
 	initOnce.Do(func() {
-		libPath := defaults.LibsDir(libPath)
+		libPath := libs.Path(libPath)
 
 		if v := os.Getenv("LD_LIBRARY_PATH"); !strings.Contains(v, libPath) {
 			os.Setenv("LD_LIBRARY_PATH", fmt.Sprintf("%s:%s", libPath, v))
 		}
 
 		if err := llama.Load(libPath); err != nil {
-			initErr = fmt.Errorf("init:unable to load library: %w", err)
+			initErr = fmt.Errorf("unable to load library: %w", err)
 			return
 		}
 
 		if err := mtmd.Load(libPath); err != nil {
-			initErr = fmt.Errorf("init:unable to load mtmd library: %w", err)
+			initErr = fmt.Errorf("unable to load mtmd library: %w", err)
 			return
 		}
 
@@ -100,17 +100,17 @@ func InitWithSettings(libPath string, logLevel LogLevel) error {
 // =============================================================================
 
 type options struct {
-	templates *templates.Templates
+	tr model.TemplateRetriever
 }
 
 // Option represents a functional option for configuring Kronk.
 type Option func(*options)
 
-// WithTemplates sets a custom Github repo for templates.
+// WithTemplateRetriever sets a custom Github repo for templates.
 // If not set, the default repo will be used.
-func WithTemplates(templates *templates.Templates) Option {
+func WithTemplateRetriever(templates model.TemplateRetriever) Option {
 	return func(o *options) {
-		o.templates = templates
+		o.tr = templates
 	}
 }
 
@@ -146,13 +146,13 @@ func New(modelInstances int, cfg model.Config, opts ...Option) (*Kronk, error) {
 		opt(&o)
 	}
 
-	if o.templates == nil {
+	if o.tr == nil {
 		templates, err := templates.New()
 		if err != nil {
 			return nil, fmt.Errorf("template new: %w", err)
 		}
 
-		o.templates = templates
+		o.tr = templates
 	}
 
 	// -------------------------------------------------------------------------
@@ -161,7 +161,7 @@ func New(modelInstances int, cfg model.Config, opts ...Option) (*Kronk, error) {
 	var firstModel *model.Model
 
 	for range modelInstances {
-		m, err := model.NewModel(o.templates, cfg)
+		m, err := model.NewModel(o.tr, cfg)
 		if err != nil {
 			close(models)
 			for model := range models {

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ardanlabs/kronk/sdk/kronk/metrics"
+	"github.com/ardanlabs/kronk/sdk/observ/metrics"
 	"github.com/google/uuid"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"

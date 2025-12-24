@@ -30,6 +30,8 @@ type VersionTag struct {
 	Latest    string `json:"-"`
 }
 
+// =============================================================================
+
 // Libs manages the library system.
 type Libs struct {
 	path         string

@@ -39,9 +39,9 @@ func NewWithSettings(basePath string, githubRepoPath string) (*Catalog, error) {
 		githubRepoPath = defaultGithubPath
 	}
 
-	catalogDir := filepath.Join(basePath, localFolder)
+	catalogPath := filepath.Join(basePath, localFolder)
 
-	if err := os.MkdirAll(catalogDir, 0755); err != nil {
+	if err := os.MkdirAll(catalogPath, 0755); err != nil {
 		return nil, fmt.Errorf("creating catalogs directory: %w", err)
 	}
 
@@ -51,7 +51,7 @@ func NewWithSettings(basePath string, githubRepoPath string) (*Catalog, error) {
 	}
 
 	c := Catalog{
-		catalogPath:    catalogDir,
+		catalogPath:    catalogPath,
 		githubRepoPath: githubRepoPath,
 		models:         models,
 	}

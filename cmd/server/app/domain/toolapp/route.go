@@ -7,7 +7,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mid"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
-	"github.com/ardanlabs/kronk/sdk/kronk/cache"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/cache"
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
