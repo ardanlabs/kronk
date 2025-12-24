@@ -17,6 +17,7 @@ import SecurityTokenCreate from './components/SecurityTokenCreate';
 import DocsSDK from './components/DocsSDK';
 import DocsSDKKronk from './components/DocsSDKKronk';
 import DocsSDKModel from './components/DocsSDKModel';
+import DocsSDKExamples from './components/DocsSDKExamples';
 import DocsCLI from './components/DocsCLI';
 import DocsWebAPI from './components/DocsWebAPI';
 import { ModelListProvider } from './contexts/ModelListContext';
@@ -35,6 +36,7 @@ export type Page =
   | 'docs-sdk'
   | 'docs-sdk-kronk'
   | 'docs-sdk-model'
+  | 'docs-sdk-examples'
   | 'docs-cli'
   | 'docs-webapi';
 
@@ -67,6 +69,8 @@ function App() {
         return <DocsSDKKronk />;
       case 'docs-sdk-model':
         return <DocsSDKModel />;
+      case 'docs-sdk-examples':
+        return <DocsSDKExamples />;
       case 'docs-cli':
         return <DocsCLI />;
       case 'docs-webapi':
@@ -74,9 +78,13 @@ function App() {
       default:
         return (
           <div className="welcome">
-            <div className="logo">◆</div>
+            <img
+              src="https://raw.githubusercontent.com/ardanlabs/kronk/refs/heads/main/images/project/kronk_banner.jpg"
+              alt="Kronk Banner"
+              className="welcome-banner"
+            />
             <h2>Welcome to Kronk</h2>
-            <p>Select an option from the sidebar to manage your models, catalog, and security settings.</p>
+            <p>Select an option from the sidebar to manage your Kronk environment.</p>
           </div>
         );
     }

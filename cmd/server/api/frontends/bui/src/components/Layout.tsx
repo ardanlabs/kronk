@@ -69,12 +69,19 @@ const menuStructure: MenuCategory[] = [
         items: [
           { id: 'docs-sdk-kronk', label: 'Kronk' },
           { id: 'docs-sdk-model', label: 'Model' },
+          { id: 'docs-sdk-examples', label: 'Examples' },
         ],
       },
-    ],
-    items: [
-      { id: 'docs-cli', label: 'CLI' },
-      { id: 'docs-webapi', label: 'WebAPI' },
+      {
+        id: 'docs-cli-sub',
+        label: 'CLI',
+        items: [{ id: 'docs-cli', label: 'Overview' }],
+      },
+      {
+        id: 'docs-webapi-sub',
+        label: 'WebAPI',
+        items: [{ id: 'docs-webapi', label: 'Overview' }],
+      },
     ],
   },
 ];
@@ -128,8 +135,8 @@ export default function Layout({ children, currentPage, onNavigate }: LayoutProp
           <span className={`menu-category-arrow ${isExpanded ? 'expanded' : ''}`}>▶</span>
         </div>
         <div className={`menu-items ${isExpanded ? 'expanded' : ''}`}>
-          {category.items?.map(renderMenuItem)}
           {category.subcategories?.map((sub) => renderCategory(sub, true))}
+          {category.items?.map(renderMenuItem)}
         </div>
       </div>
     );

@@ -128,12 +128,6 @@ make example-question
 make example-vision
 ```
 
-[WEB](examples/web/main.go) - This example shows you a web service that provides a chat endpoint for asking questions to a model with a browser based chat UI.
-
-```shell
-make example-web
-```
-
 You can find more examples in the ArdanLabs AI training repo at [Example13](https://github.com/ardanlabs/ai-training/tree/main/cmd/examples/example13).
 
 ## Kronk Model Server
