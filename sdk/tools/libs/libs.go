@@ -5,8 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/downloader"
@@ -123,6 +125,16 @@ func (lib *Libs) Processor() download.Processor {
 // Download performs a complete workflow for downloading and installing
 // the latest version of llama.cpp.
 func (lib *Libs) Download(ctx context.Context, log Logger) (VersionTag, error) {
+	if !hasNetwork() {
+		vt, err := lib.InstalledVersion()
+		if err != nil {
+			return VersionTag{}, fmt.Errorf("download-libraries: no network available: %w", err)
+		}
+
+		log(ctx, "download-libraries", "status", "no network available, using current version")
+		return vt, nil
+	}
+
 	log(ctx, "download-libraries", "status", "check libraries version information", "arch", lib.arch, "os", lib.os, "processor", lib.processor)
 
 	tag, err := lib.VersionInformation()
@@ -290,4 +302,15 @@ func (lib *Libs) createVersionFile(version string) error {
 
 func isTagMatch(tag VersionTag, libs *Libs) bool {
 	return tag.Latest == tag.Version && tag.Arch == libs.arch.String() && tag.OS == libs.os.String() && tag.Processor == libs.processor.String()
+}
+
+func hasNetwork() bool {
+	conn, err := net.DialTimeout("tcp", "8.8.8.8:53", 3*time.Second)
+	if err != nil {
+		return false
+	}
+
+	conn.Close()
+
+	return true
 }

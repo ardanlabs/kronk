@@ -3,11 +3,13 @@ package models
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/ardanlabs/kronk/sdk/tools/downloader"
 )
@@ -18,6 +20,10 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // Download performs a complete workflow for downloading and installing
 // the specified model.
 func (m *Models) Download(ctx context.Context, log Logger, modelFileURL string, projURL string) (Path, error) {
+	if !hasNetwork() {
+		return Path{}, fmt.Errorf("download-model: no network available")
+	}
+
 	defer func() {
 		if err := m.BuildIndex(); err != nil {
 			log(ctx, "download-model: unable to create index", "ERROR", err)
@@ -173,4 +179,15 @@ func extractFileName(modelFileURL string) (string, error) {
 	}
 
 	return path.Base(u.Path), nil
+}
+
+func hasNetwork() bool {
+	conn, err := net.DialTimeout("tcp", "8.8.8.8:53", 3*time.Second)
+	if err != nil {
+		return false
+	}
+
+	conn.Close()
+
+	return true
 }

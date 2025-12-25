@@ -19,11 +19,11 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/api/services/kronk/build"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/authapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/cache"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/debug"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mux"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/sdk/kronk"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/cache"
 	"github.com/ardanlabs/kronk/sdk/observ/otel"
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
@@ -257,7 +257,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	log.Info(ctx, "startup", "status", "installing/updating libraries", "libPath", libs.LibsPath(), "arch", libs.Arch(), "os", libs.OS(), "processor", libs.Processor(), "update", true)
 
-	if _, err := libs.Download(ctx, kronk.FmtLogger); err != nil {
+	if _, err := libs.Download(ctx, log.Info); err != nil {
 		return fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
@@ -274,12 +274,12 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	log.Info(ctx, "startup", "status", "downloading catalog")
 
-	catalog, err := catalog.NewWithSettings("", cfg.Catalog.GithubRepo)
+	ctlg, err := catalog.NewWithSettings("", cfg.Catalog.GithubRepo)
 	if err != nil {
 		return fmt.Errorf("unable to create catalog system: %w", err)
 	}
 
-	if err := catalog.Download(ctx); err != nil {
+	if err := ctlg.Download(ctx, catalog.WithLogger(log.Info)); err != nil {
 		return fmt.Errorf("unable to download catalog: %w", err)
 	}
 
@@ -288,12 +288,12 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	log.Info(ctx, "startup", "status", "downloading templates")
 
-	templates, err := templates.NewWithSettings("", cfg.Templates.GithubRepo, catalog)
+	tmplts, err := templates.NewWithSettings("", cfg.Templates.GithubRepo, ctlg)
 	if err != nil {
 		return fmt.Errorf("unable to create template system: %w", err)
 	}
 
-	if err := templates.Download(ctx); err != nil {
+	if err := tmplts.Download(ctx, templates.WithLogger(log.Info)); err != nil {
 		return fmt.Errorf("unable to download templates: %w", err)
 	}
 
@@ -308,7 +308,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	cache, err := cache.NewCache(cache.Config{
 		Log:            log.Info,
-		Templates:      templates,
+		Templates:      tmplts,
 		Arch:           libs.Arch(),
 		OS:             libs.OS(),
 		Processor:      libs.Processor(),
@@ -361,8 +361,8 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		Cache:      cache,
 		Libs:       libs,
 		Models:     models,
-		Catalog:    catalog,
-		Templates:  templates,
+		Catalog:    ctlg,
+		Templates:  tmplts,
 	}
 
 	webAPI := mux.WebAPI(cfgMux,

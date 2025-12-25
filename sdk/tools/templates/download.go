@@ -12,21 +12,56 @@ import (
 	"time"
 )
 
+// Logger represents a logger for capturing events.
+type Logger func(ctx context.Context, msg string, args ...any)
+
+type options struct {
+	log Logger
+}
+
+// Option represents a functional option for configuring Kronk.
+type Option func(*options)
+
+// WithLogger sets a logger for the download call.
+func WithLogger(log Logger) Option {
+	return func(o *options) {
+		o.log = log
+	}
+}
+
 // Download retrieves the templates from the github repo. Only files modified
 // after the last download are fetched.
-func (t *Templates) Download(ctx context.Context) error {
+func (t *Templates) Download(ctx context.Context, opts ...Option) error {
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
+
+	log := func(ctx context.Context, msg string, args ...any) {
+		if o.log != nil {
+			o.log(ctx, msg, args...)
+		}
+	}
+
 	if !hasNetwork() {
+		log(ctx, "template-download", "status", "no network avaialble")
 		return nil
 	}
+
+	log(ctx, "template-download", "status", "retrieving template files", "github", t.githubRepoPath)
 
 	files, err := t.listGitHubFolder(ctx)
 	if err != nil {
 		return fmt.Errorf("listing templates: %w", err)
 	}
 
-	for _, file := range files {
-		if err := t.downloadFile(ctx, file); err != nil {
-			return fmt.Errorf("download-template: %w", err)
+	if len(files) > 0 {
+		log(ctx, "template-download", "status", "download template changes")
+
+		for _, file := range files {
+			if err := t.downloadFile(ctx, file); err != nil {
+				return fmt.Errorf("download-template: %w", err)
+			}
 		}
 	}
 

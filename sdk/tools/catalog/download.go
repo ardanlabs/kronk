@@ -16,25 +16,60 @@ const (
 	shaFile = ".catalog_shas.json"
 )
 
+// Logger represents a logger for capturing events.
+type Logger func(ctx context.Context, msg string, args ...any)
+
+type options struct {
+	log Logger
+}
+
+// Option represents a functional option for configuring Kronk.
+type Option func(*options)
+
+// WithLogger sets a logger for the download call.
+func WithLogger(log Logger) Option {
+	return func(o *options) {
+		o.log = log
+	}
+}
+
 // Download retrieves the catalog from the github repo. Only files modified
 // after the last download are fetched.
-func (c *Catalog) Download(ctx context.Context) error {
+func (c *Catalog) Download(ctx context.Context, opts ...Option) error {
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
+
+	log := func(ctx context.Context, msg string, args ...any) {
+		if o.log != nil {
+			o.log(ctx, msg, args...)
+		}
+	}
+
 	if !hasNetwork() {
+		log(ctx, "catalog-download", "status", "no network avaialble")
 		return nil
 	}
+
+	log(ctx, "catalog-download", "status", "retrieving catalog files", "github", c.githubRepoPath)
 
 	files, err := c.listGitHubFolder(ctx)
 	if err != nil {
 		return fmt.Errorf("listing catalogs: %w", err)
 	}
 
-	for _, file := range files {
-		if err := c.downloadCatalog(ctx, file); err != nil {
-			return fmt.Errorf("download-catalog: %w", err)
-		}
-	}
-
 	if len(files) > 0 {
+		log(ctx, "catalog-download", "status", "download catalog changes")
+
+		for _, file := range files {
+			if err := c.downloadCatalog(ctx, file); err != nil {
+				return fmt.Errorf("download-catalog: %w", err)
+			}
+		}
+
+		log(ctx, "catalog-download", "status", "building index")
+
 		if err := c.buildIndex(); err != nil {
 			return fmt.Errorf("build-index: %w", err)
 		}
