@@ -25,7 +25,11 @@ Endpoint format:
 Examples:
       --endpoints chat-completions,embeddings
       --endpoints "chat-completions:1000/day,embeddings:unlimited"
-      --endpoints "chat-completions:100/month,embeddings:500/year"`,
+      --endpoints "chat-completions:100/month,embeddings:500/year"
+
+Environment Variables (web mode - default):
+      KRONK_TOKEN         (required when auth enabled)  Authentication token for the kronk server.
+      KRONK_WEB_API_HOST  (default localhost:8080)  IP Address for the kronk server.`,
 	Args: cobra.NoArgs,
 	Run:  main,
 }

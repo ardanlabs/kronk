@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
@@ -24,13 +25,16 @@ func runWeb(args []string) error {
 
 	fmt.Println("URL:", url)
 
-	client := client.New(client.FmtLogger)
+	cln := client.New(
+		client.FmtLogger,
+		client.WithBearer(os.Getenv("KRONK_TOKEN")),
+	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
 	var model toolapp.CatalogModelResponse
-	if err := client.Do(ctx, http.MethodGet, url, nil, &model); err != nil {
+	if err := cln.Do(ctx, http.MethodGet, url, nil, &model); err != nil {
 		return fmt.Errorf("do: unable to get model list: %w", err)
 	}
 

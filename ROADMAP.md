@@ -4,7 +4,7 @@
 
 ### MODEL SERVER / TOOLING
 
-- Adding logging to catalog and templates to show downloading details.
+- Add more models to the catalog. Look at Ollama's catalog.
 
 ### Telemetry
 

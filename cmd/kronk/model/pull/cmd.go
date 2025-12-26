@@ -13,8 +13,12 @@ var Cmd = &cobra.Command{
 	Short: "Pull a model from the web",
 	Long: `Pull a model from the web, the mmproj file is optional
 
+Environment Variables (web mode - default):
+      KRONK_TOKEN         (required when auth enabled)  Authentication token for the kronk server.
+      KRONK_WEB_API_HOST  (default localhost:8080)  IP Address for the kronk server.
+
 Environment Variables (--local mode):
-      KRONK_MODELS  (default: $HOME/kronk/models)  The path to the models directory`,
+      KRONK_MODELS  (default: $HOME/.kronk/models)  The path to the models directory`,
 	Args: cobra.RangeArgs(1, 2),
 	Run:  main,
 }

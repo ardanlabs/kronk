@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
@@ -31,12 +32,15 @@ func runWeb(args []string) error {
 		return nil
 	}
 
-	client := client.New(client.FmtLogger)
+	cln := client.New(
+		client.FmtLogger,
+		client.WithBearer(os.Getenv("KRONK_TOKEN")),
+	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
-	if err := client.Do(ctx, http.MethodDelete, url, nil, nil); err != nil {
+	if err := cln.Do(ctx, http.MethodDelete, url, nil, nil); err != nil {
 		return fmt.Errorf("remove-model: %w", err)
 	}
 

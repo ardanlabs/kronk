@@ -14,10 +14,11 @@ var Cmd = &cobra.Command{
 	Long: `Show information for a model
 
 Environment Variables (web mode - default):
-      KRONK_WEB_API_HOST  (default localhost:8080)  IP Address for the kronk server
+      KRONK_TOKEN         (required when auth enabled)  Authentication token for the kronk server.
+      KRONK_WEB_API_HOST  (default localhost:8080)  IP Address for the kronk server.
 
 Environment Variables (--local mode):
-      KRONK_MODELS  (default: $HOME/kronk/models)  The path to the models directory`,
+      KRONK_MODELS  (default: $HOME/.kronk/models)  The path to the models directory`,
 	Args: cobra.ExactArgs(1),
 	Run:  main,
 }

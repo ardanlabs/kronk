@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
@@ -19,12 +20,15 @@ func runWeb() error {
 
 	fmt.Println("URL:", url)
 
-	client := client.New(client.FmtLogger)
+	cln := client.New(
+		client.FmtLogger,
+		client.WithBearer(os.Getenv("KRONK_TOKEN")),
+	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
-	if err := client.Do(ctx, http.MethodPost, url, nil, nil); err != nil {
+	if err := cln.Do(ctx, http.MethodPost, url, nil, nil); err != nil {
 		return fmt.Errorf("build-index: %w", err)
 	}
 

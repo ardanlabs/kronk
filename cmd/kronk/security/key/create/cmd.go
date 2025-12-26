@@ -10,7 +10,11 @@ import (
 var Cmd = &cobra.Command{
 	Use:   "create",
 	Short: "Create a new private key",
-	Long:  `Create a new private key and add it to the keystore`,
+	Long: `Create a new private key and add it to the keystore
+
+Environment Variables (web mode - default):
+      KRONK_TOKEN         (required when auth enabled)  Authentication token for the kronk server.
+      KRONK_WEB_API_HOST  (default localhost:8080)  IP Address for the kronk server.`,
 	Args:  cobra.NoArgs,
 	Run:   main,
 }

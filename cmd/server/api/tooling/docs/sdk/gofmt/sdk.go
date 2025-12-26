@@ -1,5 +1,5 @@
-// Package main provides a documentation generator for the BUI frontend.
-package main
+// Package gofmt provides a documentation generator for sdk/docs/kronk and models.
+package gofmt
 
 import (
 	"flag"
@@ -50,7 +50,7 @@ type function struct {
 
 // =============================================================================
 
-func sdk() error {
+func Run() error {
 	pkg := flag.String("pkg", "all", "Package to generate docs for: kronk, model, or all")
 	flag.Parse()
 
@@ -776,6 +776,7 @@ func toAnchor(s string) string {
 	s = strings.ToLower(s)
 	s = strings.ReplaceAll(s, ".", "-")
 	s = strings.ReplaceAll(s, " ", "-")
+
 	return s
 }
 

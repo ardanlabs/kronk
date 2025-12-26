@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
@@ -32,7 +33,10 @@ func runWeb(args []string) error {
 		"proj_url":  modelProj,
 	}
 
-	cln := client.NewSSE[toolapp.PullResponse](client.FmtLogger)
+	cln := client.NewSSE[toolapp.PullResponse](
+		client.FmtLogger,
+		client.WithBearer(os.Getenv("KRONK_TOKEN")),
+	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()

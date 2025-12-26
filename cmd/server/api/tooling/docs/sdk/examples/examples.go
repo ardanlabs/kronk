@@ -1,4 +1,5 @@
-package main
+// Package examples provides a documentation generator for sdk/docs/examples.
+package examples
 
 import (
 	"fmt"
@@ -27,7 +28,7 @@ var exampleMeta = map[string]struct {
 
 var exampleOrder = []string{"question", "chat", "embedding", "vision", "audio"}
 
-func examples() error {
+func Run() error {
 	examplesDir := "/Users/bill/code/go/src/github.com/ardanlabs/kronk/examples"
 	outputDir := "/Users/bill/code/go/src/github.com/ardanlabs/kronk/cmd/server/api/frontends/bui/src/components"
 
@@ -150,5 +151,14 @@ func escapeForTemplateLiteral(s string) string {
 	s = strings.ReplaceAll(s, "\\", "\\\\")
 	s = strings.ReplaceAll(s, "`", "\\`")
 	s = strings.ReplaceAll(s, "${", "\\${")
+
+	return s
+}
+
+func toAnchor(s string) string {
+	s = strings.ToLower(s)
+	s = strings.ReplaceAll(s, ".", "-")
+	s = strings.ReplaceAll(s, " ", "-")
+
 	return s
 }

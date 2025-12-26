@@ -20,6 +20,11 @@ interface MenuItem {
 
 const menuStructure: MenuCategory[] = [
   {
+    id: 'settings',
+    label: 'Settings',
+    items: [{ page: 'settings', label: 'API Token' }],
+  },
+  {
     id: 'model',
     label: 'Models',
     items: [
@@ -74,7 +79,13 @@ const menuStructure: MenuCategory[] = [
       {
         id: 'docs-cli-sub',
         label: 'CLI',
-        items: [{ page: 'docs-cli', label: 'Overview' }],
+        items: [
+          { page: 'docs-cli-catalog', label: 'catalog' },
+          { page: 'docs-cli-libs', label: 'libs' },
+          { page: 'docs-cli-model', label: 'model' },
+          { page: 'docs-cli-security', label: 'security' },
+          { page: 'docs-cli-server', label: 'server' },
+        ],
       },
       {
         id: 'docs-webapi-sub',

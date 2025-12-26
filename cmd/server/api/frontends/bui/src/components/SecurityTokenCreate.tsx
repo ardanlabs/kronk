@@ -1,5 +1,7 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../services/api';
+import { useToken } from '../contexts/TokenContext';
 import { RateLimit, RateWindow } from '../types';
 
 const AVAILABLE_ENDPOINTS = [
@@ -29,7 +31,7 @@ const defaultEndpointConfig = (): EndpointConfig => ({
 });
 
 export default function SecurityTokenCreate() {
-  const [adminToken, setAdminToken] = useState('');
+  const { token: storedToken } = useToken();
   const [isAdmin, setIsAdmin] = useState(false);
   const [endpointConfigs, setEndpointConfigs] = useState<EndpointConfigs>(() => {
     const configs: EndpointConfigs = {};
@@ -56,7 +58,7 @@ export default function SecurityTokenCreate() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!adminToken.trim()) return;
+    if (!storedToken) return;
 
     setLoading(true);
     setError(null);
@@ -90,7 +92,7 @@ export default function SecurityTokenCreate() {
     });
 
     try {
-      const response = await api.createToken(adminToken.trim(), {
+      const response = await api.createToken(storedToken, {
         admin: isAdmin,
         endpoints,
         duration: durationNs,
@@ -110,108 +112,75 @@ export default function SecurityTokenCreate() {
         <p>Generate a new authentication token</p>
       </div>
 
-      <div className="card">
-        <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label htmlFor="adminToken">Admin Token</label>
-            <input
-              type="password"
-              id="adminToken"
-              value={adminToken}
-              onChange={(e) => setAdminToken(e.target.value)}
-              placeholder="Enter admin token (KRONK_TOKEN)"
-            />
-          </div>
+      {!storedToken && (
+        <div className="alert alert-error">
+          No API token configured. <Link to="/settings">Configure your token in Settings</Link>
+        </div>
+      )}
 
-          <div className="form-group">
-            <label>
-              <input
-                type="checkbox"
-                checked={isAdmin}
-                onChange={(e) => setIsAdmin(e.target.checked)}
-              />
-              Admin privileges
-            </label>
-          </div>
+      {storedToken && (
+        <div className="card">
+          <form onSubmit={handleSubmit}>
+            <div className="form-group">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={isAdmin}
+                  onChange={(e) => setIsAdmin(e.target.checked)}
+                />
+                Admin privileges
+              </label>
+            </div>
 
-          <div className="form-group">
-            <label>Endpoints &amp; Rate Limits</label>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {AVAILABLE_ENDPOINTS.map((endpoint) => {
-                const config = endpointConfigs[endpoint.value];
-                return (
-                  <div
-                    key={endpoint.value}
-                    style={{
-                      padding: '12px',
-                      background: config.enabled
-                        ? 'rgba(240, 181, 49, 0.1)'
-                        : 'var(--color-gray-100)',
-                      borderRadius: '6px',
-                      border: config.enabled
-                        ? '1px solid rgba(240, 181, 49, 0.3)'
-                        : '1px solid transparent',
-                    }}
-                  >
-                    <label
+            <div className="form-group">
+              <label>Endpoints &amp; Rate Limits</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {AVAILABLE_ENDPOINTS.map((endpoint) => {
+                  const config = endpointConfigs[endpoint.value];
+                  return (
+                    <div
+                      key={endpoint.value}
                       style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        cursor: 'pointer',
-                        fontWeight: 500,
+                        padding: '12px',
+                        background: config.enabled
+                          ? 'rgba(240, 181, 49, 0.1)'
+                          : 'var(--color-gray-100)',
+                        borderRadius: '6px',
+                        border: config.enabled
+                          ? '1px solid rgba(240, 181, 49, 0.3)'
+                          : '1px solid transparent',
                       }}
                     >
-                      <input
-                        type="checkbox"
-                        checked={config.enabled}
-                        onChange={(e) =>
-                          updateEndpointConfig(endpoint.value, {
-                            enabled: e.target.checked,
-                          })
-                        }
-                        style={{ marginRight: '8px' }}
-                      />
-                      {endpoint.label}
-                    </label>
-
-                    {config.enabled && (
-                      <div
+                      <label
                         style={{
                           display: 'flex',
-                          gap: '12px',
-                          marginTop: '10px',
-                          paddingLeft: '24px',
+                          alignItems: 'center',
+                          cursor: 'pointer',
+                          fontWeight: 500,
                         }}
                       >
-                        <div style={{ flex: 1 }}>
-                          <label
-                            style={{
-                              fontSize: '12px',
-                              color: 'var(--color-gray-600)',
-                              display: 'block',
-                              marginBottom: '4px',
-                            }}
-                          >
-                            Rate Limit
-                          </label>
-                          <select
-                            value={config.window}
-                            onChange={(e) =>
-                              updateEndpointConfig(endpoint.value, {
-                                window: e.target.value as RateWindow,
-                              })
-                            }
-                            style={{ width: '100%' }}
-                          >
-                            {RATE_WINDOWS.map((w) => (
-                              <option key={w.value} value={w.value}>
-                                {w.label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
+                        <input
+                          type="checkbox"
+                          checked={config.enabled}
+                          onChange={(e) =>
+                            updateEndpointConfig(endpoint.value, {
+                              enabled: e.target.checked,
+                            })
+                          }
+                          style={{ marginRight: '8px' }}
+                        />
+                        {endpoint.label}
+                      </label>
 
-                        {config.window !== 'unlimited' && (
+                      {config.enabled && (
+                        <div
+                          style={{
+                            display: 'flex',
+                            gap: '12px',
+                            marginTop: '10px',
+                            paddingLeft: '24px',
+                          }}
+                        >
                           <div style={{ flex: 1 }}>
                             <label
                               style={{
@@ -221,64 +190,94 @@ export default function SecurityTokenCreate() {
                                 marginBottom: '4px',
                               }}
                             >
-                              Max Requests
+                              Rate Limit
                             </label>
-                            <input
-                              type="number"
-                              value={config.limit}
+                            <select
+                              value={config.window}
                               onChange={(e) =>
                                 updateEndpointConfig(endpoint.value, {
-                                  limit: parseInt(e.target.value) || 0,
+                                  window: e.target.value as RateWindow,
                                 })
                               }
-                              min="1"
                               style={{ width: '100%' }}
-                            />
+                            >
+                              {RATE_WINDOWS.map((w) => (
+                                <option key={w.value} value={w.value}>
+                                  {w.label}
+                                </option>
+                              ))}
+                            </select>
                           </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
 
-          <div className="form-row">
-            <div className="form-group">
-              <label htmlFor="duration">Duration</label>
-              <input
-                type="number"
-                id="duration"
-                value={duration}
-                onChange={(e) => setDuration(e.target.value)}
-                min="1"
-              />
+                          {config.window !== 'unlimited' && (
+                            <div style={{ flex: 1 }}>
+                              <label
+                                style={{
+                                  fontSize: '12px',
+                                  color: 'var(--color-gray-600)',
+                                  display: 'block',
+                                  marginBottom: '4px',
+                                }}
+                              >
+                                Max Requests
+                              </label>
+                              <input
+                                type="number"
+                                value={config.limit}
+                                onChange={(e) =>
+                                  updateEndpointConfig(endpoint.value, {
+                                    limit: parseInt(e.target.value) || 0,
+                                  })
+                                }
+                                min="1"
+                                style={{ width: '100%' }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-            <div className="form-group">
-              <label htmlFor="durationUnit">Unit</label>
-              <select
-                id="durationUnit"
-                value={durationUnit}
-                onChange={(e) => setDurationUnit(e.target.value as 'h' | 'd' | 'M' | 'y')}
-              >
-                <option value="h">Hours</option>
-                <option value="d">Days</option>
-                <option value="M">Months</option>
-                <option value="y">Years</option>
-              </select>
-            </div>
-          </div>
 
-          <button
-            className="btn btn-primary"
-            type="submit"
-            disabled={loading || !adminToken.trim()}
-          >
-            {loading ? 'Creating...' : 'Create Token'}
-          </button>
-        </form>
-      </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label htmlFor="duration">Duration</label>
+                <input
+                  type="number"
+                  id="duration"
+                  value={duration}
+                  onChange={(e) => setDuration(e.target.value)}
+                  min="1"
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="durationUnit">Unit</label>
+                <select
+                  id="durationUnit"
+                  value={durationUnit}
+                  onChange={(e) => setDurationUnit(e.target.value as 'h' | 'd' | 'M' | 'y')}
+                >
+                  <option value="h">Hours</option>
+                  <option value="d">Days</option>
+                  <option value="M">Months</option>
+                  <option value="y">Years</option>
+                </select>
+              </div>
+            </div>
+
+            <button
+              className="btn btn-primary"
+              type="submit"
+              disabled={loading}
+            >
+              {loading ? 'Creating...' : 'Create Token'}
+            </button>
+          </form>
+        </div>
+      )}
 
       {error && <div className="alert alert-error">{error}</div>}
 

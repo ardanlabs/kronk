@@ -10,13 +10,9 @@ import (
 )
 
 // Authenticate calls out to the auth service to authenticate the call.
-func Authenticate(enabled bool, client *authclient.Client, admin bool, endpoint string) web.MidFunc {
+func Authenticate(client *authclient.Client, admin bool, endpoint string) web.MidFunc {
 	m := func(next web.HandlerFunc) web.HandlerFunc {
 		h := func(ctx context.Context, r *http.Request) web.Encoder {
-			if !enabled {
-				return next(ctx, r)
-			}
-
 			ar, err := client.Authenticate(ctx, r.Header.Get("authorization"), admin, endpoint)
 			if err != nil {
 				return errs.New(errs.Unauthenticated, err)

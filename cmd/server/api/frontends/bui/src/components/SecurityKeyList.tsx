@@ -1,21 +1,22 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../services/api';
+import { useToken } from '../contexts/TokenContext';
 import type { KeysResponse } from '../types';
 
 export default function SecurityKeyList() {
-  const [token, setToken] = useState('');
+  const { token: storedToken } = useToken();
   const [data, setData] = useState<KeysResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!token.trim()) return;
+  const loadKeys = async () => {
+    if (!storedToken) return;
 
     setLoading(true);
     setError(null);
     try {
-      const response = await api.listKeys(token.trim());
+      const response = await api.listKeys(storedToken);
       setData(response);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load keys');
@@ -25,6 +26,12 @@ export default function SecurityKeyList() {
     }
   };
 
+  useEffect(() => {
+    if (storedToken) {
+      loadKeys();
+    }
+  }, [storedToken]);
+
   return (
     <div>
       <div className="page-header">
@@ -32,23 +39,19 @@ export default function SecurityKeyList() {
         <p>List all security keys (requires admin token)</p>
       </div>
 
-      <div className="card">
-        <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label htmlFor="adminToken">Admin Token</label>
-            <input
-              type="password"
-              id="adminToken"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              placeholder="Enter admin token (KRONK_TOKEN)"
-            />
-          </div>
-          <button className="btn btn-primary" type="submit" disabled={loading || !token.trim()}>
-            {loading ? 'Loading...' : 'List Keys'}
+      {!storedToken && (
+        <div className="alert alert-error">
+          No API token configured. <Link to="/settings">Configure your token in Settings</Link>
+        </div>
+      )}
+
+      {storedToken && (
+        <div className="card">
+          <button className="btn btn-primary" onClick={loadKeys} disabled={loading}>
+            {loading ? 'Loading...' : 'Refresh Keys'}
           </button>
-        </form>
-      </div>
+        </div>
+      )}
 
       {error && <div className="alert alert-error">{error}</div>}
 
