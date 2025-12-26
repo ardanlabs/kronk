@@ -15,7 +15,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 )
 
-func runWeb(args []string) error {
+func runWeb() error {
 	url, err := client.DefaultURL("/v1/catalog")
 	if err != nil {
 		return fmt.Errorf("default-url: %w", err)
@@ -23,13 +23,16 @@ func runWeb(args []string) error {
 
 	fmt.Println("URL:", url)
 
-	client := client.New(client.FmtLogger)
+	cln := client.New(
+		client.FmtLogger,
+		client.WithBearer(os.Getenv("KRONK_TOKEN")),
+	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
 	var list []toolapp.CatalogModelResponse
-	if err := client.Do(ctx, http.MethodGet, url, nil, &list); err != nil {
+	if err := cln.Do(ctx, http.MethodGet, url, nil, &list); err != nil {
 		return fmt.Errorf("do: unable to get model list: %w", err)
 	}
 

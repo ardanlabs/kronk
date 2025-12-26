@@ -3,6 +3,13 @@ SHELL_PATH = /bin/ash
 SHELL = $(if $(wildcard $(SHELL_PATH)),/bin/ash,/bin/bash)
 
 # ==============================================================================
+# Setup
+
+# Configure git to use project hooks so pre-commit runs for all developers.
+setup:
+	git config core.hooksPath .githooks
+
+# ==============================================================================
 # Install
 
 # Install the kronk cli.

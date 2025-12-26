@@ -24,14 +24,15 @@ func runWeb(keyID string) error {
 
 	fmt.Println("URL:", url)
 
-	adminToken := os.Getenv("KRONK_TOKEN")
-
-	c := client.New(client.FmtLogger, client.WithBearer(adminToken))
+	cln := client.New(
+		client.FmtLogger,
+		client.WithBearer(os.Getenv("KRONK_TOKEN")),
+	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
-	if err := c.Do(ctx, http.MethodPost, url, nil, nil); err != nil {
+	if err := cln.Do(ctx, http.MethodPost, url, nil, nil); err != nil {
 		return fmt.Errorf("do: unable to delete key: %w", err)
 	}
 

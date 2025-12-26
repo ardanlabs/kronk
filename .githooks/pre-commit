@@ -1,0 +1,8 @@
+#!/bin/bash
+set -e
+
+make kronk-docs
+make bui-build
+
+# Stage any generated changes
+git add -A

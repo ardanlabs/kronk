@@ -21,13 +21,16 @@ func runWeb() error {
 
 	fmt.Println("URL:", url)
 
-	client := client.New(client.FmtLogger)
+	cln := client.New(
+		client.FmtLogger,
+		client.WithBearer(os.Getenv("KRONK_TOKEN")),
+	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
 	var info []toolapp.ModelDetail
-	if err := client.Do(ctx, http.MethodGet, url, nil, &info); err != nil {
+	if err := cln.Do(ctx, http.MethodGet, url, nil, &info); err != nil {
 		return fmt.Errorf("do: unable to get model list: %w", err)
 	}
 

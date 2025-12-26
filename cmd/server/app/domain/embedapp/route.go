@@ -4,10 +4,10 @@ import (
 	"net/http"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/cache"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mid"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/cache"
 )
 
 // Config contains all the mandatory systems required by handlers.
@@ -23,7 +23,7 @@ func Routes(app *web.App, cfg Config) {
 
 	api := newApp(cfg)
 
-	auth := mid.Authenticate(cfg.AuthClient != nil, cfg.AuthClient, false, "embeddings")
+	auth := mid.Authenticate(cfg.AuthClient, false, "embeddings")
 
 	app.HandlerFunc(http.MethodPost, version, "/embeddings", api.embeddings, auth)
 }

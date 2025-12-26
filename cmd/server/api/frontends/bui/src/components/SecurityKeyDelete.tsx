@@ -1,8 +1,10 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../services/api';
+import { useToken } from '../contexts/TokenContext';
 
 export default function SecurityKeyDelete() {
-  const [token, setToken] = useState('');
+  const { token: storedToken } = useToken();
   const [keyId, setKeyId] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -10,13 +12,13 @@ export default function SecurityKeyDelete() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!token.trim() || !keyId.trim()) return;
+    if (!storedToken || !keyId.trim()) return;
 
     setLoading(true);
     setError(null);
     setSuccess(null);
     try {
-      await api.deleteKey(token.trim(), keyId.trim());
+      await api.deleteKey(storedToken, keyId.trim());
       setSuccess(`Key "${keyId}" deleted successfully`);
       setKeyId('');
     } catch (err) {
@@ -33,40 +35,38 @@ export default function SecurityKeyDelete() {
         <p>Remove a security key (requires admin token)</p>
       </div>
 
-      <div className="card">
-        {error && <div className="alert alert-error">{error}</div>}
-        {success && <div className="alert alert-success">{success}</div>}
+      {!storedToken && (
+        <div className="alert alert-error">
+          No API token configured. <Link to="/settings">Configure your token in Settings</Link>
+        </div>
+      )}
 
-        <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label htmlFor="adminToken">Admin Token</label>
-            <input
-              type="password"
-              id="adminToken"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              placeholder="Enter admin token (KRONK_TOKEN)"
-            />
-          </div>
-          <div className="form-group">
-            <label htmlFor="keyId">Key ID</label>
-            <input
-              type="text"
-              id="keyId"
-              value={keyId}
-              onChange={(e) => setKeyId(e.target.value)}
-              placeholder="Enter key ID to delete"
-            />
-          </div>
-          <button
-            className="btn btn-danger"
-            type="submit"
-            disabled={loading || !token.trim() || !keyId.trim()}
-          >
-            {loading ? 'Deleting...' : 'Delete Key'}
-          </button>
-        </form>
-      </div>
+      {storedToken && (
+        <div className="card">
+          {error && <div className="alert alert-error">{error}</div>}
+          {success && <div className="alert alert-success">{success}</div>}
+
+          <form onSubmit={handleSubmit}>
+            <div className="form-group">
+              <label htmlFor="keyId">Key ID</label>
+              <input
+                type="text"
+                id="keyId"
+                value={keyId}
+                onChange={(e) => setKeyId(e.target.value)}
+                placeholder="Enter key ID to delete"
+              />
+            </div>
+            <button
+              className="btn btn-danger"
+              type="submit"
+              disabled={loading || !keyId.trim()}
+            >
+              {loading ? 'Deleting...' : 'Delete Key'}
+            </button>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

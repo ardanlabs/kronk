@@ -537,7 +537,7 @@ tr.selected:hover td {
 .doc-index-header {
   display: block;
   font-weight: 600;
-  font-size: 13px;
+  font-size: 15px;
   color: var(--color-blue);
   margin-bottom: 8px;
   text-decoration: none;
@@ -560,7 +560,7 @@ tr.selected:hover td {
 .doc-index-section li a {
   color: var(--color-gray-600);
   text-decoration: none;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .doc-index-section li a:hover {
@@ -649,4 +649,42 @@ tr.selected:hover td {
 .code-go code {
   white-space: pre;
   font-family: inherit;
+}
+
+/* CLI docs flags table */
+.flags-table {
+  width: 100%;
+  margin: 12px 0;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.flags-table th {
+  text-align: left;
+  padding: 8px 12px;
+  background: var(--color-gray-100);
+  color: var(--color-gray-600);
+  font-weight: 600;
+  font-size: 12px;
+  border-bottom: 1px solid var(--color-gray-200);
+}
+
+.flags-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-gray-200);
+  color: var(--color-gray-800);
+}
+
+.flags-table code {
+  background: var(--color-gray-100);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.doc-section h5 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-gray-700);
+  margin: 16px 0 8px 0;
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -38,7 +39,10 @@ func runWeb(cfg config) error {
 		"duration":  cfg.Duration,
 	}
 
-	c := client.New(client.FmtLogger, client.WithBearer(cfg.AdminToken))
+	cln := client.New(
+		client.FmtLogger,
+		client.WithBearer(os.Getenv("KRONK_TOKEN")),
+	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -46,7 +50,7 @@ func runWeb(cfg config) error {
 	var resp struct {
 		Token string `json:"token"`
 	}
-	if err := c.Do(ctx, http.MethodPost, url, req, &resp); err != nil {
+	if err := cln.Do(ctx, http.MethodPost, url, req, &resp); err != nil {
 		return fmt.Errorf("do: unable to create token: %w", err)
 	}
 
