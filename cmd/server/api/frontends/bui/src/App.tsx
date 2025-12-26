@@ -19,7 +19,9 @@ import DocsCLILibs from './components/DocsCLILibs';
 import DocsCLIModel from './components/DocsCLIModel';
 import DocsCLISecurity from './components/DocsCLISecurity';
 import DocsCLIServer from './components/DocsCLIServer';
-import DocsWebAPI from './components/DocsWebAPI';
+import DocsAPIChat from './components/DocsAPIChat';
+import DocsAPIEmbeddings from './components/DocsAPIEmbeddings';
+import DocsAPITools from './components/DocsAPITools';
 import { ModelListProvider } from './contexts/ModelListContext';
 import { TokenProvider } from './contexts/TokenContext';
 
@@ -44,7 +46,9 @@ export type Page =
   | 'docs-cli-model'
   | 'docs-cli-security'
   | 'docs-cli-server'
-  | 'docs-webapi';
+  | 'docs-api-chat'
+  | 'docs-api-embeddings'
+  | 'docs-api-tools';
 
 export const routeMap: Record<Page, string> = {
   'home': '/',
@@ -67,7 +71,9 @@ export const routeMap: Record<Page, string> = {
   'docs-cli-model': '/docs/cli/model',
   'docs-cli-security': '/docs/cli/security',
   'docs-cli-server': '/docs/cli/server',
-  'docs-webapi': '/docs/webapi',
+  'docs-api-chat': '/docs/api/chat',
+  'docs-api-embeddings': '/docs/api/embeddings',
+  'docs-api-tools': '/docs/api/tools',
 };
 
 export const pathToPage: Record<string, Page> = Object.fromEntries(
@@ -115,7 +121,9 @@ function App() {
             <Route path="/docs/cli/model" element={<DocsCLIModel />} />
             <Route path="/docs/cli/security" element={<DocsCLISecurity />} />
             <Route path="/docs/cli/server" element={<DocsCLIServer />} />
-            <Route path="/docs/webapi" element={<DocsWebAPI />} />
+            <Route path="/docs/api/chat" element={<DocsAPIChat />} />
+            <Route path="/docs/api/embeddings" element={<DocsAPIEmbeddings />} />
+            <Route path="/docs/api/tools" element={<DocsAPITools />} />
           </Routes>
           </Layout>
         </ModelListProvider>

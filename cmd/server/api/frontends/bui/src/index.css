@@ -607,6 +607,13 @@ tr.selected:hover td {
   line-height: 1.5;
 }
 
+.example-label {
+  margin-top: 16px;
+  margin-bottom: 4px;
+  font-size: 14px;
+  color: var(--color-gray-800);
+}
+
 .code-block {
   background: var(--color-gray-100);
   border: 1px solid var(--color-gray-200);

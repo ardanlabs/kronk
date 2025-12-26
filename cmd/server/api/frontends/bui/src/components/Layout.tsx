@@ -88,9 +88,13 @@ const menuStructure: MenuCategory[] = [
         ],
       },
       {
-        id: 'docs-webapi-sub',
-        label: 'WebAPI',
-        items: [{ page: 'docs-webapi', label: 'Overview' }],
+        id: 'docs-api-sub',
+        label: 'Web API',
+        items: [
+          { page: 'docs-api-chat', label: 'Chat' },
+          { page: 'docs-api-embeddings', label: 'Embeddings' },
+          { page: 'docs-api-tools', label: 'Tools' },
+        ],
       },
     ],
   },
