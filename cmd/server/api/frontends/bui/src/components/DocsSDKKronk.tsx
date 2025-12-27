@@ -187,7 +187,7 @@ export default function DocsSDKKronk() {
             <div className="doc-section" id="const-version">
               <h4>Version</h4>
               <pre className="code-block">
-                <code>{`const Version = "1.9.8"`}</code>
+                <code>{`const Version = "1.9.9"`}</code>
               </pre>
               <p className="doc-description">Version contains the current version of the kronk package.</p>
             </div>

@@ -162,8 +162,9 @@ export default function Layout({ children }: LayoutProps) {
     <div className="app">
       <aside className="sidebar">
         <div className="sidebar-header">
-          <Link to="/" style={{ textDecoration: 'none', color: 'inherit' }}>
-            <h1>Kronk</h1>
+          <Link to="/" style={{ textDecoration: 'none', color: 'inherit' }} className="sidebar-brand">
+            <img src="/kronk-logo.png" alt="Kronk Logo" className="sidebar-logo" />
+            <h1>Model Server</h1>
           </Link>
         </div>
         <nav>{menuStructure.map((category) => renderCategory(category))}</nav>
