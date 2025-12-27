@@ -82,14 +82,44 @@ export const pathToPage: Record<string, Page> = Object.fromEntries(
 
 function HomePage() {
   return (
-    <div className="welcome">
-      <img
-        src="https://raw.githubusercontent.com/ardanlabs/kronk/refs/heads/main/images/project/kronk_banner.jpg"
-        alt="Kronk Banner"
-        className="welcome-banner"
-      />
-      <h2>Welcome to Kronk</h2>
-      <p>Select an option from the sidebar to manage your Kronk environment.</p>
+    <div className="home-page">
+      <div className="hero-section">
+        <img
+          src="https://raw.githubusercontent.com/ardanlabs/kronk/refs/heads/main/images/project/kronk_banner.jpg"
+          alt="Kronk Banner"
+          className="hero-banner"
+        />
+        <p className="hero-tagline">
+          Hardware-accelerated local inference with llama.cpp directly integrated into your Go applications
+        </p>
+      </div>
+
+      <div className="features-grid">
+        <div className="feature-card">
+          <div className="feature-icon">🚀</div>
+          <h3>High-Level Go API</h3>
+          <p>Feels similar to using an OpenAI compatible API, but runs entirely on your hardware</p>
+        </div>
+        <div className="feature-card">
+          <div className="feature-icon">🔧</div>
+          <h3>OpenAI Compatible Server</h3>
+          <p>Model server for chat completions and embeddings, compatible with OpenWebUI</p>
+        </div>
+        <div className="feature-card">
+          <div className="feature-icon">🎯</div>
+          <h3>Multimodal Support</h3>
+          <p>Text, vision, and audio models with full hardware acceleration</p>
+        </div>
+        <div className="feature-card">
+          <div className="feature-icon">⚡</div>
+          <h3>GPU Acceleration</h3>
+          <p>Metal on macOS, CUDA/Vulkan/ROCm on Linux, CUDA/Vulkan on Windows</p>
+        </div>
+      </div>
+
+      <div className="home-cta">
+        <p>Use the sidebar to manage models, browse the catalog, or explore the SDK documentation.</p>
+      </div>
     </div>
   );
 }
