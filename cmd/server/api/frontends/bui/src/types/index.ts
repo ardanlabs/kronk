@@ -77,6 +77,7 @@ export interface CatalogModelResponse {
   capabilities: CatalogCapabilities;
   metadata: CatalogMetadata;
   downloaded: boolean;
+  gated_model: boolean;
 }
 
 export type CatalogModelsResponse = CatalogModelResponse[];

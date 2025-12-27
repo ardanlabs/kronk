@@ -57,6 +57,12 @@ func runLocal(catalog *catalog.Catalog, models *models.Models, args []string) er
 		return fmt.Errorf("retrieve-model-details: %w", err)
 	}
 
+	if model.GatedModel {
+		if os.Getenv("KRONK_HF_TOKEN") == "" {
+			return fmt.Errorf("gated model requires KRONK_HF_TOKEN to be set with HF token")
+		}
+	}
+
 	modelURLs, projURLs := model.Files.ToURLS()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)

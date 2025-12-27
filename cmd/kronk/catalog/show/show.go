@@ -66,6 +66,7 @@ func printWeb(model toolapp.CatalogModelResponse) {
 	fmt.Printf("Owned By:     %s\n", model.OwnedBy)
 	fmt.Printf("Model Family: %s\n", model.ModelFamily)
 	fmt.Printf("Web Page:     %s\n", model.WebPage)
+	fmt.Printf("Gated Model:  %t\n", model.GatedModel)
 	fmt.Println()
 
 	fmt.Println("Files")

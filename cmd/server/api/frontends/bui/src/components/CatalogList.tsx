@@ -299,20 +299,14 @@ export default function CatalogList() {
                   </span>
                 </div>
                 <div className="model-meta-item">
-                  <label>Endpoint</label>
-                  <span>{modelInfo.capabilities.endpoint}</span>
+                  <label>Gated Model</label>
+                  <span className={`badge ${modelInfo.gated_model ? 'badge-yes' : 'badge-no'}`}>
+                    {modelInfo.gated_model ? 'Yes' : 'No'}
+                  </span>
                 </div>
                 <div className="model-meta-item">
-                  <label>Web Page</label>
-                  <span>
-                    {modelInfo.web_page ? (
-                      <a href={modelInfo.web_page} target="_blank" rel="noopener noreferrer">
-                        {modelInfo.web_page}
-                      </a>
-                    ) : (
-                      '-'
-                    )}
-                  </span>
+                  <label>Endpoint</label>
+                  <span>{modelInfo.capabilities.endpoint}</span>
                 </div>
               </div>
 
@@ -359,39 +353,52 @@ export default function CatalogList() {
               </div>
 
               <div style={{ marginTop: '24px' }}>
+                <h4 style={{ marginBottom: '12px' }}>Web Page</h4>
+                <div className="model-meta-item">
+                  <span>
+                    {modelInfo.web_page ? (
+                      <a href={modelInfo.web_page} target="_blank" rel="noopener noreferrer">
+                        {modelInfo.web_page}
+                      </a>
+                    ) : '-'}
+                  </span>
+                </div>
+              </div>
+
+              <div style={{ marginTop: '24px' }}>
                 <h4 style={{ marginBottom: '12px' }}>Files</h4>
-                <div className="model-meta">
-                  <div className="model-meta-item">
-                    <label>Models</label>
-                    <span>
-                      {modelInfo.files.model.length > 0 ? (
-                        modelInfo.files.model.map((file, idx) => (
-                          <div key={idx}>{file.url} {file.size && `(${file.size})`}</div>
-                        ))
-                      ) : '-'}
-                    </span>
-                  </div>
-                  <div className="model-meta-item">
-                    <label>Projections</label>
-                    <span>
-                      {modelInfo.files.proj.length > 0 ? (
-                        modelInfo.files.proj.map((file, idx) => (
-                          <div key={idx}>{file.url} {file.size && `(${file.size})`}</div>
-                        ))
-                      ) : '-'}
-                    </span>
-                  </div>
-                  <div className="model-meta-item">
-                    <label>Template</label>
-                    <span>{modelInfo.template || '-'}</span>
-                  </div>
+                <div className="model-meta-item" style={{ marginBottom: '12px' }}>
+                  <label>Model URL</label>
+                  <span>
+                    {modelInfo.files.model.length > 0 ? (
+                      modelInfo.files.model.map((file, idx) => (
+                        <div key={idx}>{file.url} {file.size && `(${file.size})`}</div>
+                      ))
+                    ) : '-'}
+                  </span>
+                </div>
+                <div className="model-meta-item" style={{ marginBottom: '12px' }}>
+                  <label>Projection URL</label>
+                  <span>
+                    {modelInfo.files.proj.length > 0 ? (
+                      modelInfo.files.proj.map((file, idx) => (
+                        <div key={idx}>{file.url} {file.size && `(${file.size})`}</div>
+                      ))
+                    ) : '-'}
+                  </span>
+                </div>
+                <div className="model-meta-item">
+                  <label>Template File</label>
+                  <span>{modelInfo.template || '-'}</span>
                 </div>
               </div>
 
               {modelInfo.metadata.description && (
                 <div style={{ marginTop: '24px' }}>
                   <h4 style={{ marginBottom: '12px' }}>Description</h4>
-                  <p>{modelInfo.metadata.description}</p>
+                  <div className="model-meta-item">
+                    <span>{modelInfo.metadata.description}</span>
+                  </div>
                 </div>
               )}
 

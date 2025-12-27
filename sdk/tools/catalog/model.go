@@ -58,6 +58,7 @@ type Model struct {
 	OwnedBy      string       `yaml:"owned_by"`
 	ModelFamily  string       `yaml:"model_family"`
 	WebPage      string       `yaml:"web_page"`
+	GatedModel   bool         `yaml:"gated_model"`
 	Template     string       `yaml:"template"`
 	Files        Files        `yaml:"files"`
 	Capabilities Capabilities `yaml:"capabilities"`

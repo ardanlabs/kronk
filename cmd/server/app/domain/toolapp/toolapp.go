@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/authapp"
@@ -253,6 +254,12 @@ func (a *app) pullCatalog(ctx context.Context, r *http.Request) web.Encoder {
 	model, err := a.catalog.RetrieveModelDetails(modelID)
 	if err != nil {
 		return errs.New(errs.Internal, err)
+	}
+
+	if model.GatedModel {
+		if os.Getenv("KRONK_HF_TOKEN") == "" {
+			return errs.Errorf(errs.FailedPrecondition, "gated model requires KRONK_HF_TOKEN to be set with HF token")
+		}
 	}
 
 	// -------------------------------------------------------------------------
