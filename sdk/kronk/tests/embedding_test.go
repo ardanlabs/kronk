@@ -27,7 +27,7 @@ func testEmbedding(t *testing.T, mp models.Path) {
 	}
 
 	krn, err := kronk.New(modelInstances, model.Config{
-		ModelFile: mp.ModelFile,
+		ModelFiles: mp.ModelFiles,
 	})
 
 	if err != nil {
@@ -52,7 +52,7 @@ func testEmbedding(t *testing.T, mp models.Path) {
 		id := uuid.New().String()
 		now := time.Now()
 		defer func() {
-			name := strings.TrimSuffix(mp.ModelFile, path.Ext(mp.ModelFile))
+			name := strings.TrimSuffix(mp.ModelFiles[0], path.Ext(mp.ModelFiles[0]))
 			done := time.Now()
 			t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, name, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
 		}()

@@ -30,20 +30,33 @@ func (m *Models) RetrieveFiles() ([]File, error) {
 	}
 
 	for modelID, mp := range index {
-		info, err := os.Stat(mp.ModelFile)
-		if err != nil {
-			return nil, fmt.Errorf("stat: %w", err)
+		if len(mp.ModelFiles) == 0 {
+			continue
 		}
 
-		modelPath := strings.TrimLeft(mp.ModelFile, m.modelsPath)
+		var totalSize int64
+		var modified time.Time
+
+		for _, f := range mp.ModelFiles {
+			info, err := os.Stat(f)
+			if err != nil {
+				return nil, fmt.Errorf("stat: %w", err)
+			}
+			totalSize += info.Size()
+			if info.ModTime().After(modified) {
+				modified = info.ModTime()
+			}
+		}
+
+		modelPath := strings.TrimLeft(mp.ModelFiles[0], m.modelsPath)
 		parts := strings.Split(modelPath, "/")
 
 		mf := File{
 			ID:          modelID,
 			OwnedBy:     parts[0],
 			ModelFamily: parts[1],
-			Size:        info.Size(),
-			Modified:    info.ModTime(),
+			Size:        totalSize,
+			Modified:    modified,
 		}
 
 		list = append(list, mf)
@@ -73,20 +86,33 @@ func (m *Models) retrieveFile(modelID string) (File, error) {
 		return File{}, fmt.Errorf("retrieve-model-path: %w", err)
 	}
 
-	info, err := os.Stat(mp.ModelFile)
-	if err != nil {
-		return File{}, fmt.Errorf("stat: %w", err)
+	if len(mp.ModelFiles) == 0 {
+		return File{}, fmt.Errorf("no model files found")
 	}
 
-	modelPath := strings.TrimLeft(mp.ModelFile, m.modelsPath)
+	var totalSize int64
+	var modified time.Time
+
+	for _, f := range mp.ModelFiles {
+		info, err := os.Stat(f)
+		if err != nil {
+			return File{}, fmt.Errorf("stat: %w", err)
+		}
+		totalSize += info.Size()
+		if info.ModTime().After(modified) {
+			modified = info.ModTime()
+		}
+	}
+
+	modelPath := strings.TrimLeft(mp.ModelFiles[0], m.modelsPath)
 	parts := strings.Split(modelPath, "/")
 
 	mf := File{
 		ID:          modelID,
 		OwnedBy:     parts[0],
 		ModelFamily: parts[1],
-		Size:        info.Size(),
-		Modified:    info.ModTime(),
+		Size:        totalSize,
+		Modified:    modified,
 	}
 
 	return mf, nil
@@ -125,9 +151,9 @@ func (m *Models) RetrieveInfo(modelID string) (Info, error) {
 
 // Path returns file path information about a model.
 type Path struct {
-	ModelFile  string
-	ProjFile   string
-	Downloaded bool
+	ModelFiles []string `yaml:"model_files"`
+	ProjFile   string   `yaml:"proj_file"`
+	Downloaded bool     `yaml:"downloaded"`
 }
 
 // RetrievePath locates the physical location on disk and returns the full path.

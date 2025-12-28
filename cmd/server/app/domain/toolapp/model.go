@@ -111,10 +111,10 @@ func (app *PullRequest) Decode(data []byte) error {
 
 // PullResponse returns information about a model being downloaded.
 type PullResponse struct {
-	Status     string `json:"status"`
-	ModelFile  string `json:"model_file,omitempty"`
-	ProjFile   string `json:"proj_file,omitempty"`
-	Downloaded bool   `json:"downloaded,omitempty"`
+	Status     string   `json:"status"`
+	ModelFiles []string `json:"model_files,omitempty"`
+	ProjFile   string   `json:"proj_file,omitempty"`
+	Downloaded bool     `json:"downloaded,omitempty"`
 }
 
 // Encode implements the encoder interface.
@@ -126,7 +126,7 @@ func (app PullResponse) Encode() ([]byte, string, error) {
 func toAppPull(status string, mp models.Path) string {
 	pr := PullResponse{
 		Status:     status,
-		ModelFile:  mp.ModelFile,
+		ModelFiles: mp.ModelFiles,
 		ProjFile:   mp.ProjFile,
 		Downloaded: mp.Downloaded,
 	}
@@ -249,7 +249,7 @@ type CatalogFile struct {
 // CatalogFiles represents file information for a model.
 type CatalogFiles struct {
 	Models []CatalogFile `json:"model"`
-	Projs  []CatalogFile `json:"proj"`
+	Proj   CatalogFile   `json:"proj"`
 }
 
 // CatalogModelResponse represents information for a model.
@@ -288,11 +288,6 @@ func toCatalogModelResponse(model catalog.Model) CatalogModelResponse {
 		models[i] = CatalogFile(model)
 	}
 
-	projs := make([]CatalogFile, len(model.Files.Projs))
-	for i, proj := range model.Files.Projs {
-		projs[i] = CatalogFile(proj)
-	}
-
 	return CatalogModelResponse{
 		ID:          model.ID,
 		Category:    model.Category,
@@ -303,7 +298,7 @@ func toCatalogModelResponse(model catalog.Model) CatalogModelResponse {
 		Template:    model.Template,
 		Files: CatalogFiles{
 			Models: models,
-			Projs:  projs,
+			Proj:   CatalogFile(model.Files.Proj),
 		},
 		Capabilities: CatalogCapabilities{
 			Endpoint:  model.Capabilities.Endpoint,

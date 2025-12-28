@@ -61,7 +61,7 @@ func runLocal(models *models.Models, args []string) error {
 	}
 
 	krn, err := kronk.New(1, model.Config{
-		ModelFile: mp.ModelFile,
+		ModelFiles: mp.ModelFiles,
 	})
 
 	if err != nil {

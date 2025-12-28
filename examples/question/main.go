@@ -33,7 +33,7 @@ func main() {
 }
 
 func run() error {
-	info, err := installSystem()
+	mp, err := installSystem()
 	if err != nil {
 		return fmt.Errorf("unable to installation system: %w", err)
 	}
@@ -43,7 +43,7 @@ func run() error {
 	}
 
 	krn, err := kronk.New(modelInstances, model.Config{
-		ModelFile: info.ModelFile,
+		ModelFiles: mp.ModelFiles,
 	})
 
 	if err != nil {

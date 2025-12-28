@@ -53,9 +53,20 @@ func NewModel(tmlpRetriever TemplateRetriever, cfg Config) (*Model, error) {
 	// OTEL: WANT TO KNOW HOW LONG THESE FUNCTION CALLS TAKES
 	start := time.Now()
 
-	mdl, err := llama.ModelLoadFromFile(cfg.ModelFile, mparams)
-	if err != nil {
-		return nil, fmt.Errorf("new-model: unable to load model: %w", err)
+	var err error
+	var mdl llama.Model
+	switch len(cfg.ModelFiles) {
+	case 1:
+		mdl, err = llama.ModelLoadFromFile(cfg.ModelFiles[0], mparams)
+		if err != nil {
+			return nil, fmt.Errorf("new-model: unable to load model: %w", err)
+		}
+
+	default:
+		mdl, err = llama.ModelLoadFromSplits(cfg.ModelFiles, mparams)
+		if err != nil {
+			return nil, fmt.Errorf("new-model: unable to load model from split: %w", err)
+		}
 	}
 
 	metrics.AddModelFileLoadTime(time.Since(start))

@@ -27,9 +27,9 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // ModelInstances is the number of instances of the model to create. Unless
 // you have more than 1 GPU, the recommended number of instances is 1.
 //
-// ModelFile is the path to the model file. This is mandatory to provide.
+// ModelFiles is the path to the model files. This is mandatory to provide.
 //
-// ProjFile is the path to the projection file. This is mandatory for media
+// ProjFiles is the path to the projection files. This is mandatory for media
 // based models like vision and audio.
 //
 // JinjaFile is the path to the jinja file. This is not required and can be
@@ -76,7 +76,7 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // embedding model. This must be true when using an embedding model.
 type Config struct {
 	Log           Logger
-	ModelFile     string
+	ModelFiles    []string
 	ProjFile      string
 	JinjaFile     string
 	Device        string
@@ -88,7 +88,7 @@ type Config struct {
 }
 
 func validateConfig(cfg Config) error {
-	if cfg.ModelFile == "" {
+	if len(cfg.ModelFiles) == 0 {
 		return fmt.Errorf("validate-config: model file is required")
 	}
 

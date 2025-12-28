@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"path"
 	"path/filepath"
 	"strings"
@@ -82,7 +83,14 @@ func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 		}()
 	}
 
-	filename := filepath.Base(cfg.ModelFile)
+	var filename string
+	switch len(cfg.ModelFiles) {
+	case 1:
+		filename = filepath.Base(cfg.ModelFiles[0])
+	default:
+		filename = extractFolderName(cfg.ModelFiles[0])
+	}
+
 	modelID := strings.TrimSuffix(filename, path.Ext(filename))
 
 	var isGPTModel bool
@@ -108,6 +116,16 @@ func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 		IsEmbedModel:  isEmbedModel,
 		Metadata:      metadata,
 	}
+}
+
+func extractFolderName(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+
+	dir := path.Dir(u.Path)
+	return path.Base(dir)
 }
 
 // =============================================================================
