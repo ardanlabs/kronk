@@ -143,12 +143,12 @@ func initMediaTest(t *testing.T, mp models.Path, mediaFile string) (*kronk.Kronk
 	// -------------------------------------------------------------------------
 
 	krn, err := kronk.New(modelInstances, model.Config{
-		ModelFile: mp.ModelFile,
-		ProjFile:  mp.ProjFile,
+		ModelFiles: mp.ModelFiles,
+		ProjFile:   mp.ProjFile,
 	})
 
 	if err != nil {
-		t.Fatalf("unable to load model: %s: %v", mp.ModelFile, err)
+		t.Fatalf("unable to load model: %v: %v", mp.ModelFiles, err)
 	}
 
 	// -------------------------------------------------------------------------

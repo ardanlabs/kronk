@@ -63,12 +63,12 @@ func runLocal(catalog *catalog.Catalog, models *models.Models, args []string) er
 		}
 	}
 
-	modelURLs, projURLs := model.Files.ToURLS()
+	modelURLs := model.Files.ToURLS()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	_, err = models.DownloadShards(ctx, kronk.FmtLogger, modelURLs, projURLs)
+	_, err = models.DownloadShards(ctx, kronk.FmtLogger, modelURLs, model.Files.Proj.URL)
 	if err != nil {
 		return fmt.Errorf("download-model: %w", err)
 	}

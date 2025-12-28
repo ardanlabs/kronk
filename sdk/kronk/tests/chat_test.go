@@ -188,11 +188,11 @@ func testChatStreaming(t *testing.T, mp models.Path, tooling bool) {
 
 func initChatTest(t *testing.T, mp models.Path, tooling bool) (*kronk.Kronk, model.D) {
 	krn, err := kronk.New(modelInstances, model.Config{
-		ModelFile: mp.ModelFile,
+		ModelFiles: mp.ModelFiles,
 	})
 
 	if err != nil {
-		t.Fatalf("unable to load model: %s: %v", mp.ModelFile, err)
+		t.Fatalf("unable to load model: %v: %v", mp.ModelFiles, err)
 	}
 
 	question := "Echo back the word: Gorilla"

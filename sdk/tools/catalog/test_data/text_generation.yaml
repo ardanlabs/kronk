@@ -58,9 +58,9 @@ models:
           size: 39.8 GiB
         - url: https://huggingface.co/unsloth/Llama-3.3-70B-Instruct-GGUF/resolve/main/Llama-3.3-70B-Instruct-Q8_0/Llama-3.3-70B-Instruct-Q8_0-00002-of-00002.gguf
           size: 35.2 GiB
-      projs:
-        - url: "projs: just for testing"
-          size: 0.0 GiB
+      proj:
+        url: "proj: just for testing"
+        size: 0.0 GiB
     capabilities:
       endpoint: chat_completion
       images: false

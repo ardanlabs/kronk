@@ -230,7 +230,7 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 
 	cfg := model.Config{
 		Log:           c.log,
-		ModelFile:     fi.ModelFile,
+		ModelFiles:    fi.ModelFiles,
 		ProjFile:      fi.ProjFile,
 		Device:        c.device,
 		ContextWindow: c.contextWindow,

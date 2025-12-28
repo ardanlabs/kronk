@@ -31,24 +31,18 @@ type File struct {
 // Files represents file information for a model.
 type Files struct {
 	Models []File `yaml:"models"`
-	Projs  []File `yaml:"projs"`
+	Proj   File   `yaml:"proj"`
 }
 
 // ToURLS converts a slice of File to a string of the URLs.
-func (f Files) ToURLS() (models []string, projs []string) {
-	models = make([]string, len(f.Models))
+func (f Files) ToURLS() []string {
+	models := make([]string, len(f.Models))
 
 	for i, file := range f.Models {
 		models[i] = file.URL
 	}
 
-	projs = make([]string, len(f.Projs))
-
-	for i, file := range f.Projs {
-		projs[i] = file.URL
-	}
-
-	return models, projs
+	return models
 }
 
 // Model represents information for a model.

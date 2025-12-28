@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
@@ -91,7 +92,7 @@ func (m *Models) BuildIndex() error {
 				continue
 			}
 
-			modelfiles := make(map[string]string)
+			modelfiles := make(map[string][]string)
 			projFiles := make(map[string]string)
 
 			for _, fileEntry := range fileEntries {
@@ -112,12 +113,15 @@ func (m *Models) BuildIndex() error {
 				}
 
 				modelID := extractModelID(fileEntry.Name())
-				modelfiles[modelID] = filepath.Join(m.modelsPath, org, modelFamily, fileEntry.Name())
+				filePath := filepath.Join(m.modelsPath, org, modelFamily, fileEntry.Name())
+				modelfiles[modelID] = append(modelfiles[modelID], filePath)
 			}
 
-			for modelID, modelFile := range modelfiles {
+			for modelID, files := range modelfiles {
+				slices.Sort(files)
+
 				mp := Path{
-					ModelFile:  modelFile,
+					ModelFiles: files,
 					Downloaded: true,
 				}
 

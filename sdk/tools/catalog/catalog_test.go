@@ -72,11 +72,9 @@ func Test_Catalog(t *testing.T) {
 							Size: "35.2 GiB",
 						},
 					},
-					Projs: []catalog.File{
-						{
-							URL:  "projs: just for testing",
-							Size: "0.0 GiB",
-						},
+					Proj: catalog.File{
+						URL:  "proj: just for testing",
+						Size: "0.0 GiB",
 					},
 				},
 				Capabilities: catalog.Capabilities{

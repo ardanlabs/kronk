@@ -43,7 +43,7 @@ func Download(ctx context.Context, src string, dest string, progress ProgressFun
 	if os.Getenv("KRONK_HF_TOKEN") != "" {
 		httpGetter := &getter.HttpGetter{
 			Header: map[string][]string{
-				"Authorization": {"Bearer " + os.Getenv("HF_TOKEN")},
+				"Authorization": {"Bearer " + os.Getenv("KRONK_HF_TOKEN")},
 			},
 		}
 

@@ -170,18 +170,6 @@ func installSystem() (models.Path, error) {
 
 	// -------------------------------------------------------------------------
 
-	mdls, err := models.New()
-	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
-	}
-
-	mp, err := mdls.Download(ctx, kronk.FmtLogger, modelURL, projURL)
-	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
-	}
-
-	// -------------------------------------------------------------------------
-
 	templates, err := templates.New()
 	if err != nil {
 		return models.Path{}, fmt.Errorf("unable to create template system: %w", err)
@@ -195,6 +183,18 @@ func installSystem() (models.Path, error) {
 		return models.Path{}, fmt.Errorf("unable to download catalog: %w", err)
 	}
 
+	// -------------------------------------------------------------------------
+
+	mdls, err := models.New()
+	if err != nil {
+		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
+	}
+
+	mp, err := mdls.Download(ctx, kronk.FmtLogger, modelURL, projURL)
+	if err != nil {
+		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
+	}
+
 	return mp, nil
 }
 
@@ -204,8 +204,8 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	}
 
 	krn, err := kronk.New(modelInstances, model.Config{
-		ModelFile: mp.ModelFile,
-		ProjFile:  mp.ProjFile,
+		ModelFiles: mp.ModelFiles,
+		ProjFile:   mp.ProjFile,
 	})
 
 	if err != nil {
@@ -221,6 +221,7 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("- contextWindow:", krn.ModelConfig().ContextWindow)
 	fmt.Println("- embeddings   :", krn.ModelInfo().IsEmbedModel)
 	fmt.Println("- isGPT        :", krn.ModelInfo().IsGPTModel)
+	fmt.Println("- template     :", krn.ModelInfo().Template.FileName)
 
 	return krn, nil
 }

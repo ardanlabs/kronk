@@ -21,7 +21,7 @@ func Test_ConTest1(t *testing.T) {
 	id := uuid.New().String()
 	now := time.Now()
 	defer func() {
-		name := strings.TrimSuffix(mpThinkToolChat.ModelFile, path.Ext(mpThinkToolChat.ModelFile))
+		name := strings.TrimSuffix(mpThinkToolChat.ModelFiles[0], path.Ext(mpThinkToolChat.ModelFiles[0]))
 		done := time.Now()
 		t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, name, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
 	}()
@@ -73,7 +73,7 @@ func Test_ConTest2(t *testing.T) {
 	id := uuid.New().String()
 	now := time.Now()
 	defer func() {
-		name := strings.TrimSuffix(mpThinkToolChat.ModelFile, path.Ext(mpThinkToolChat.ModelFile))
+		name := strings.TrimSuffix(mpThinkToolChat.ModelFiles[0], path.Ext(mpThinkToolChat.ModelFiles[0]))
 		done := time.Now()
 		t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, name, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
 	}()
@@ -133,7 +133,7 @@ func Test_ConTest3(t *testing.T) {
 	id := uuid.New().String()
 	now := time.Now()
 	defer func() {
-		name := strings.TrimSuffix(mpThinkToolChat.ModelFile, path.Ext(mpThinkToolChat.ModelFile))
+		name := strings.TrimSuffix(mpThinkToolChat.ModelFiles[0], path.Ext(mpThinkToolChat.ModelFiles[0]))
 		done := time.Now()
 		t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, name, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
 	}()

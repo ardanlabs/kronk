@@ -10,9 +10,9 @@ models:
       models:
         - url: https://huggingface.co/mradermacher/Qwen2-Audio-7B-GGUF/resolve/main/Qwen2-Audio-7B.Q8_0.gguf
           size: 8.25 GiB
-      projs:
-        - url: https://huggingface.co/mradermacher/Qwen2-Audio-7B-GGUF/resolve/main/Qwen2-Audio-7B.mmproj-Q8_0.gguf
-          size: 695 MiB
+      proj:
+        url: https://huggingface.co/mradermacher/Qwen2-Audio-7B-GGUF/resolve/main/Qwen2-Audio-7B.mmproj-Q8_0.gguf
+        size: 695 MiB
     capabilities:
       endpoint: chat_completion
       images: false
