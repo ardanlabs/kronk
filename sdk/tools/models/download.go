@@ -202,14 +202,14 @@ func fileSize(filePath string) (int, error) {
 
 func createProjFileName(modelFileName string) string {
 	modelID := extractModelID(modelFileName)
-	profFileName := fmt.Sprintf("mmproj-%s", modelID)
+	profFileName := fmt.Sprintf("mmproj-%s%s", modelID, path.Ext(modelFileName))
 
 	dir, _ := path.Split(modelFileName)
 	name := path.Join(dir, profFileName)
 
 	// modelFileName: /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf
 	// modelID:       Qwen3-8B-Q8_0
-	// profFileName:  mmproj-Qwen3-8B-Q8_0
+	// profFileName:  mmproj-Qwen3-8B-Q8_0.gguf
 	// dir:           /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF
 	// name:          /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/mmproj-Qwen3-8B-Q8_0.gguf
 
