@@ -127,7 +127,7 @@ func question(krn *kronk.Kronk) error {
 
 	d := model.D{
 		"messages": model.DocumentArray(
-			model.TextMessage("user", question),
+			model.TextMessage(model.RoleUser, question),
 		),
 		"temperature": 0.7,
 		"top_p":       0.9,

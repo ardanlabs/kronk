@@ -10,7 +10,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-getter v1.8.3
-	github.com/hybridgroup/yzma v1.3.1-0.20251228110848-706dbbe75310
+	github.com/hybridgroup/yzma v1.4.0
 	github.com/maypok86/otter/v2 v2.3.0
 	github.com/nikolalohinski/gonja/v2 v2.5.1
 	github.com/open-policy-agent/opa v1.12.1
@@ -84,7 +84,7 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.7 // indirect
 	github.com/googleapis/gax-go/v2 v2.16.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
-	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.3 // indirect
+	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.4 // indirect
 	github.com/hashicorp/aws-sdk-go-base/v2 v2.0.0-beta.70 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-version v1.8.0 // indirect

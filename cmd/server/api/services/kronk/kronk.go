@@ -96,7 +96,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		}
 		Tempo struct {
 			Host        string  // `conf:"default:tempo:4317"`
-			ServiceName string  `conf:"default:sales"`
+			ServiceName string  `conf:"default:kronk"`
 			Probability float64 `conf:"default:0.05"`
 			// Shouldn't use a high Probability value in non-developer systems.
 			// 0.05 should be enough for most systems. Some might want to have

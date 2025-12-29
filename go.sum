@@ -161,8 +161,8 @@ github.com/googleapis/gax-go/v2 v2.16.0 h1:iHbQmKLLZrexmb0OSsNGTeSTS0HO4YvFOG8g5
 github.com/googleapis/gax-go/v2 v2.16.0/go.mod h1:o1vfQjjNZn4+dPnRdl/4ZD7S9414Y4xA+a/6Icj6l14=
 github.com/gorilla/websocket v1.5.3 h1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aNNg=
 github.com/gorilla/websocket v1.5.3/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
-github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.3 h1:NmZ1PKzSTQbuGHw9DGPFomqkkLWMC+vZCkfs+FHv1Vg=
-github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.3/go.mod h1:zQrxl1YP88HQlA6i9c63DSVPFklWpGX4OWAc9bFuaH4=
+github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.4 h1:kEISI/Gx67NzH3nJxAmY/dGac80kKZgZt134u7Y/k1s=
+github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.4/go.mod h1:6Nz966r3vQYCqIzWsuEl9d7cf7mRhtDmm++sOxlnfxI=
 github.com/hashicorp/aws-sdk-go-base/v2 v2.0.0-beta.70 h1:0HADrxxqaQkGycO1JoUUA+B4FnIkuo8d2bz/hSaTFFQ=
 github.com/hashicorp/aws-sdk-go-base/v2 v2.0.0-beta.70/go.mod h1:fm2FdDCzJdtbXF7WKAMvBb5NEPouXPHFbGNYs9ShFns=
 github.com/hashicorp/go-cleanhttp v0.5.2 h1:035FKYIWjmULyFRBKPs8TBQoi0x6d9G4xc9neXJWAZQ=
@@ -171,8 +171,8 @@ github.com/hashicorp/go-getter v1.8.3 h1:gIS+oTNv3kyYAvlUVgMR46MiG0bM0KuSON/KZEv
 github.com/hashicorp/go-getter v1.8.3/go.mod h1:CUTt9x2bCtJ/sV8ihgrITL3IUE+0BE1j/e4n5P/GIM4=
 github.com/hashicorp/go-version v1.8.0 h1:KAkNb1HAiZd1ukkxDFGmokVZe1Xy9HG6NUp+bPle2i4=
 github.com/hashicorp/go-version v1.8.0/go.mod h1:fltr4n8CU8Ke44wwGCBoEymUuxUHl09ZGVZPK5anwXA=
-github.com/hybridgroup/yzma v1.3.1-0.20251228110848-706dbbe75310 h1:QHeq1gFN6qhvCWftTiagKsNElKr1CKnLqs3OAB8ZwtM=
-github.com/hybridgroup/yzma v1.3.1-0.20251228110848-706dbbe75310/go.mod h1:UUYw+DLlrgtBYm+B+9XD3boB1ZcDpfbAnYHKW3VKKZ4=
+github.com/hybridgroup/yzma v1.4.0 h1:Ote1qmHwcj+F50E0ANeoyjvC3ogTqn9wQ+cfsdCFe6U=
+github.com/hybridgroup/yzma v1.4.0/go.mod h1:UUYw+DLlrgtBYm+B+9XD3boB1ZcDpfbAnYHKW3VKKZ4=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
 github.com/json-iterator/go v1.1.12 h1:PV8peI4a0ysnczrg+LtxykD8LfKY9ML6u2jnxaEnrnM=

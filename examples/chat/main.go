@@ -201,7 +201,7 @@ func userInput(messages []model.D) ([]model.D, error) {
 	}
 
 	messages = append(messages,
-		model.TextMessage("user", userInput),
+		model.TextMessage(model.RoleUser, userInput),
 	)
 
 	return messages, nil

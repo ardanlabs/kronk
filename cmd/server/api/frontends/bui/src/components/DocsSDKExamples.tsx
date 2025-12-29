@@ -150,7 +150,7 @@ func question(krn *kronk.Kronk) error {
 
 	d := model.D{
 		"messages": model.DocumentArray(
-			model.TextMessage("user", question),
+			model.TextMessage(model.RoleUser, question),
 		),
 		"temperature": 0.7,
 		"top_p":       0.9,
@@ -399,7 +399,7 @@ func userInput(messages []model.D) ([]model.D, error) {
 	}
 
 	messages = append(messages,
-		model.TextMessage("user", userInput),
+		model.TextMessage(model.RoleUser, userInput),
 	)
 
 	return messages, nil

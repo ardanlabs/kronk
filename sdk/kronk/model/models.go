@@ -22,7 +22,9 @@ const (
 
 // Roles represent the different roles that can be used in a chat.
 const (
+	RoleUser      = "user"
 	RoleAssistant = "assistant"
+	RoleSystem    = "system"
 )
 
 // FinishReasons represent the different reasons a response can be finished.

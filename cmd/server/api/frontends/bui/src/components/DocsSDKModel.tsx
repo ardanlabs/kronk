@@ -301,6 +301,18 @@ export default function DocsSDKModel() {
               <p className="doc-description">Objects represent the different types of data that is being processed.</p>
             </div>
 
+            <div className="doc-section" id="const-roleuser">
+              <h4>RoleUser</h4>
+              <pre className="code-block">
+                <code>{`const (
+	RoleUser      = "user"
+	RoleAssistant = "assistant"
+	RoleSystem    = "system"
+)`}</code>
+              </pre>
+              <p className="doc-description">Roles represent the different roles that can be used in a chat.</p>
+            </div>
+
             <div className="doc-section" id="const-finishreasonstop">
               <h4>FinishReasonStop</h4>
               <pre className="code-block">
@@ -355,16 +367,6 @@ export default function DocsSDKModel() {
 )`}</code>
               </pre>
             </div>
-
-            <div className="doc-section" id="const-roleassistant">
-              <h4>RoleAssistant</h4>
-              <pre className="code-block">
-                <code>{`const (
-	RoleAssistant = "assistant"
-)`}</code>
-              </pre>
-              <p className="doc-description">Roles represent the different roles that can be used in a chat.</p>
-            </div>
           </div>
         </div>
 
@@ -412,10 +414,10 @@ export default function DocsSDKModel() {
               <a href="#constants" className="doc-index-header">Constants</a>
               <ul>
                 <li><a href="#const-objectchatunknown">ObjectChatUnknown</a></li>
+                <li><a href="#const-roleuser">RoleUser</a></li>
                 <li><a href="#const-finishreasonstop">FinishReasonStop</a></li>
                 <li><a href="#const-thinkingenabled">ThinkingEnabled</a></li>
                 <li><a href="#const-reasoningeffortnone">ReasoningEffortNone</a></li>
-                <li><a href="#const-roleassistant">RoleAssistant</a></li>
               </ul>
             </div>
           </div>

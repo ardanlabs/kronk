@@ -64,6 +64,7 @@ func (l *Limiter) Check(subject string, endpoint string, limit auth.RateLimit) e
 			count = 0
 			return nil
 		}
+
 		if err != nil {
 			return err
 		}
