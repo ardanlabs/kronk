@@ -294,7 +294,7 @@ func (a *app) pullCatalog(ctx context.Context, r *http.Request) web.Encoder {
 		f.Flush()
 	}
 
-	modelURLs := model.Files.ToURLS()
+	modelURLs := model.Files.ToModelURLS()
 
 	mp, err := a.models.DownloadShards(ctx, logger, modelURLs, model.Files.Proj.URL)
 	if err != nil {

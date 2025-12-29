@@ -180,6 +180,12 @@ func (m *Models) modelFilePathAndName(modelFileURL string) (string, string, erro
 	modelFilePath := filepath.Join(m.modelsPath, parts[1], parts[2])
 	modelFileName := filepath.Join(modelFilePath, fileName)
 
+	// modelFileURL:  https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf
+	// parts:         huggingface.co, Qwen, Qwen3-8B-GGUF, resolve, main, Qwen3-8B-Q8_0.gguf
+	// fileName:      Qwen3-8B-Q8_0.gguf
+	// modelFilePath: /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF
+	// modelFileName: /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf
+
 	return modelFilePath, modelFileName, nil
 }
 
@@ -198,7 +204,16 @@ func createProjFileName(modelFileName string) string {
 	modelID := extractModelID(modelFileName)
 	profFileName := fmt.Sprintf("mmproj-%s", modelID)
 
-	return strings.Replace(modelFileName, modelID, profFileName, 1)
+	dir, _ := path.Split(modelFileName)
+	name := path.Join(dir, profFileName)
+
+	// modelFileName: /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf
+	// modelID:       Qwen3-8B-Q8_0
+	// profFileName:  mmproj-Qwen3-8B-Q8_0
+	// dir:           /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF
+	// name:          /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/mmproj-Qwen3-8B-Q8_0.gguf
+
+	return name
 }
 
 var shardPattern = regexp.MustCompile(`-\d+-of-\d+$`)
@@ -206,6 +221,13 @@ var shardPattern = regexp.MustCompile(`-\d+-of-\d+$`)
 func extractModelID(modelFileName string) string {
 	name := strings.TrimSuffix(path.Base(modelFileName), path.Ext(modelFileName))
 	name = shardPattern.ReplaceAllString(name, "")
+
+	// modelFileName: /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf
+	// name: Qwen3-8B-Q8_0
+
+	// modelFileName: /Users/bill/.kronk/models/unsloth/Llama-3.3-70B-Instruct-GGUF/Llama-3.3-70B-Instruct-Q8_0-00001-of-00002.gguf
+	// name: Llama-3.3-70B-Instruct-Q8_0-00001-of-00002
+	// name: Llama-3.3-70B-Instruct-Q8_0
 
 	return name
 }
@@ -216,7 +238,12 @@ func extractFileName(modelFileURL string) (string, error) {
 		return "", fmt.Errorf("extract-file-name: parse error: %w", err)
 	}
 
-	return path.Base(u.Path), nil
+	name := path.Base(u.Path)
+
+	// modelFileURL: https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf
+	// name:         Qwen3-8B-Q8_0.gguf
+
+	return name, nil
 }
 
 func hasNetwork() bool {

@@ -63,7 +63,7 @@ func runLocal(catalog *catalog.Catalog, models *models.Models, args []string) er
 		}
 	}
 
-	modelURLs := model.Files.ToURLS()
+	modelURLs := model.Files.ToModelURLS()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
