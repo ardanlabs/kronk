@@ -61,16 +61,9 @@ func run() error {
 		return fmt.Errorf("unable to installation system: %w", err)
 	}
 
-	if err := kronk.Init(); err != nil {
-		return fmt.Errorf("unable to init kronk: %w", err)
-	}
-
-	krn, err := kronk.New(modelInstances, model.Config{
-		ModelFiles: mp.ModelFiles,
-	})
-
+	krn, err := newKronk(mp)
 	if err != nil {
-		return fmt.Errorf("unable to create inference model: %w", err)
+		return fmt.Errorf("unable to init kronk: %w", err)
 	}
 
 	defer func() {
@@ -80,8 +73,72 @@ func run() error {
 		}
 	}()
 
+	if err := question(krn); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func installSystem() (models.Path, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+
+	libs, err := libs.New()
+	if err != nil {
+		return models.Path{}, err
+	}
+
+	if _, err := libs.Download(ctx, kronk.FmtLogger); err != nil {
+		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
+	}
+
 	// -------------------------------------------------------------------------
 
+	mdls, err := models.New()
+	if err != nil {
+		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
+	}
+
+	mp, err := mdls.Download(ctx, kronk.FmtLogger, modelURL, "")
+	if err != nil {
+		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
+	}
+
+	// -------------------------------------------------------------------------
+	// You could also download this model using the catalog system.
+	// templates.Catalog().DownloadModel("Qwen3-8B-Q8_0")
+
+	return mp, nil
+}
+
+func newKronk(mp models.Path) (*kronk.Kronk, error) {
+	if err := kronk.Init(); err != nil {
+		return nil, fmt.Errorf("unable to init kronk: %w", err)
+	}
+
+	krn, err := kronk.New(modelInstances, model.Config{
+		ModelFiles: mp.ModelFiles,
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("unable to create inference model: %w", err)
+	}
+
+	fmt.Print("- system info:\\n\\t")
+	for k, v := range krn.SystemInfo() {
+		fmt.Printf("%s:%v, ", k, v)
+	}
+	fmt.Println()
+
+	fmt.Println("  - contextWindow:", krn.ModelConfig().ContextWindow)
+	fmt.Println("  - embeddings   :", krn.ModelInfo().IsEmbedModel)
+	fmt.Println("  - isGPT        :", krn.ModelInfo().IsGPTModel)
+
+	return krn, nil
+}
+
+func question(krn *kronk.Kronk) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
@@ -137,34 +194,6 @@ func run() error {
 
 	return nil
 }
-
-func installSystem() (models.Path, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-	defer cancel()
-
-	libs, err := libs.New()
-	if err != nil {
-		return models.Path{}, err
-	}
-
-	if _, err := libs.Download(ctx, kronk.FmtLogger); err != nil {
-		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
-	}
-
-	// -------------------------------------------------------------------------
-
-	mdls, err := models.New()
-	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
-	}
-
-	mp, err := mdls.Download(ctx, kronk.FmtLogger, modelURL, "")
-	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
-	}
-
-	return mp, nil
-}
 `;
 
 const chatExample = `// This example shows you how to create a simple chat application against an
@@ -217,6 +246,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("unable to init kronk: %w", err)
 	}
+
 	defer func() {
 		fmt.Println("\\nUnloading Kronk")
 		if err := krn.Unload(context.Background()); err != nil {
@@ -224,11 +254,96 @@ func run() error {
 		}
 	}()
 
+	if err := chat(krn); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func installSystem() (models.Path, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
+	defer cancel()
+
+	libs, err := libs.New()
+	if err != nil {
+		return models.Path{}, err
+	}
+
+	if _, err := libs.Download(ctx, kronk.FmtLogger); err != nil {
+		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
+	}
+
+	// -------------------------------------------------------------------------
+	// This is not mandatory if you won't be using models from the catalog. That
+	// being said, if you are using a model that is part of the catalog with
+	// a corrected jinja file, having the catalog system up to date will allow
+	// the system to pull that jinja file.
+
+	templates, err := templates.New()
+	if err != nil {
+		return models.Path{}, fmt.Errorf("unable to create template system: %w", err)
+	}
+
+	if err := templates.Download(ctx); err != nil {
+		return models.Path{}, fmt.Errorf("unable to download templates: %w", err)
+	}
+
+	if err := templates.Catalog().Download(ctx); err != nil {
+		return models.Path{}, fmt.Errorf("unable to download catalog: %w", err)
+	}
+
 	// -------------------------------------------------------------------------
 
+	mdls, err := models.New()
+	if err != nil {
+		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
+	}
+
+	mp, err := mdls.Download(ctx, kronk.FmtLogger, modelURL, "")
+	if err != nil {
+		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
+	}
+
+	// -------------------------------------------------------------------------
+	// You could also download this model using the catalog system.
+	// templates.Catalog().DownloadModel("Qwen3-8B-Q8_0")
+
+	return mp, nil
+}
+
+func newKronk(mp models.Path) (*kronk.Kronk, error) {
+	if err := kronk.Init(); err != nil {
+		return nil, fmt.Errorf("unable to init kronk: %w", err)
+	}
+
+	krn, err := kronk.New(modelInstances, model.Config{
+		ModelFiles: mp.ModelFiles,
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("unable to create inference model: %w", err)
+	}
+
+	fmt.Print("- system info:\\n\\t")
+	for k, v := range krn.SystemInfo() {
+		fmt.Printf("%s:%v, ", k, v)
+	}
+	fmt.Println()
+
+	fmt.Println("- contextWindow:", krn.ModelConfig().ContextWindow)
+	fmt.Println("- embeddings   :", krn.ModelInfo().IsEmbedModel)
+	fmt.Println("- isGPT        :", krn.ModelInfo().IsGPTModel)
+	fmt.Println("- template     :", krn.ModelInfo().Template.FileName)
+
+	return krn, nil
+}
+
+func chat(krn *kronk.Kronk) error {
 	messages := model.DocumentArray()
 
 	for {
+		var err error
 		messages, err = userInput(messages)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
@@ -267,76 +382,6 @@ func run() error {
 			return fmt.Errorf("run: unable to perform chat: %w", err)
 		}
 	}
-}
-
-func installSystem() (models.Path, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
-	defer cancel()
-
-	libs, err := libs.New()
-	if err != nil {
-		return models.Path{}, err
-	}
-
-	if _, err := libs.Download(ctx, kronk.FmtLogger); err != nil {
-		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
-	}
-
-	// -------------------------------------------------------------------------
-
-	templates, err := templates.New()
-	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to create template system: %w", err)
-	}
-
-	if err := templates.Download(ctx); err != nil {
-		return models.Path{}, fmt.Errorf("unable to download templates: %w", err)
-	}
-
-	if err := templates.Catalog().Download(ctx); err != nil {
-		return models.Path{}, fmt.Errorf("unable to download catalog: %w", err)
-	}
-
-	// -------------------------------------------------------------------------
-
-	mdls, err := models.New()
-	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
-	}
-
-	mp, err := mdls.Download(ctx, kronk.FmtLogger, modelURL, "")
-	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
-	}
-
-	return mp, nil
-}
-
-func newKronk(mp models.Path) (*kronk.Kronk, error) {
-	if err := kronk.Init(); err != nil {
-		return nil, fmt.Errorf("unable to init kronk: %w", err)
-	}
-
-	krn, err := kronk.New(modelInstances, model.Config{
-		ModelFiles: mp.ModelFiles,
-	})
-
-	if err != nil {
-		return nil, fmt.Errorf("unable to create inference model: %w", err)
-	}
-
-	fmt.Print("- system info:\\n\\t")
-	for k, v := range krn.SystemInfo() {
-		fmt.Printf("%s:%v, ", k, v)
-	}
-	fmt.Println()
-
-	fmt.Println("- contextWindow:", krn.ModelConfig().ContextWindow)
-	fmt.Println("- embeddings   :", krn.ModelInfo().IsEmbedModel)
-	fmt.Println("- isGPT        :", krn.ModelInfo().IsGPTModel)
-	fmt.Println("- template     :", krn.ModelInfo().Template.FileName)
-
-	return krn, nil
 }
 
 func userInput(messages []model.D) ([]model.D, error) {
@@ -533,6 +578,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("unable to init kronk: %w", err)
 	}
+
 	defer func() {
 		fmt.Println("\\nUnloading Kronk")
 		if err := krn.Unload(context.Background()); err != nil {
@@ -540,25 +586,9 @@ func run() error {
 		}
 	}()
 
-	// -------------------------------------------------------------------------
-
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	question := "Why is the sky blue?"
-
-	resp, err := krn.Embeddings(ctx, question)
-	if err != nil {
+	if err := embedding(krn); err != nil {
 		return err
 	}
-
-	fmt.Println()
-	fmt.Println("Model  :", resp.Model)
-	fmt.Println("Object :", resp.Object)
-	fmt.Println("Created:", time.UnixMilli(resp.Created))
-	fmt.Println("  Index    :", resp.Data[0].Index)
-	fmt.Println("  Object   :", resp.Data[0].Object)
-	fmt.Printf("  Embedding: [%v...%v]\\n", resp.Data[0].Embedding[:3], resp.Data[0].Embedding[len(resp.Data[0].Embedding)-3:])
 
 	return nil
 }
@@ -603,6 +633,10 @@ func installSystem() (models.Path, error) {
 		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
 	}
 
+	// -------------------------------------------------------------------------
+	// You could also download this model using the catalog system.
+	// templates.Catalog().DownloadModel("embeddinggemma-300m-qat-Q8_0")
+
 	return mp, nil
 }
 
@@ -631,6 +665,28 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 
 	return krn, nil
 }
+
+func embedding(krn *kronk.Kronk) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	question := "Why is the sky blue?"
+
+	resp, err := krn.Embeddings(ctx, question)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println()
+	fmt.Println("Model  :", resp.Model)
+	fmt.Println("Object :", resp.Object)
+	fmt.Println("Created:", time.UnixMilli(resp.Created))
+	fmt.Println("  Index    :", resp.Data[0].Index)
+	fmt.Println("  Object   :", resp.Data[0].Object)
+	fmt.Printf("  Embedding: [%v...%v]\\n", resp.Data[0].Embedding[:3], resp.Data[0].Embedding[len(resp.Data[0].Embedding)-3:])
+
+	return nil
+}
 `;
 
 const visionExample = `// This example shows you how to execute a simple prompt against a vision model.
@@ -657,10 +713,8 @@ import (
 )
 
 const (
-	modelURL = "https://huggingface.co/google/gemma-3-4b-it-qat-q4_0-gguf/resolve/main/gemma-3-4b-it-q4_0.gguf"
-	projURL  = "https://huggingface.co/google/gemma-3-4b-it-qat-q4_0-gguf/resolve/main/mmproj-model-f16-4B.gguf"
-	// modelURL       = "https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
-	// projURL        = "https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
+	modelURL       = "https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
+	projURL        = "https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
 	imageFile      = "examples/samples/giraffe.jpg"
 	modelInstances = 1
 )
@@ -682,6 +736,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("unable to init kronk: %w", err)
 	}
+
 	defer func() {
 		fmt.Println("\\nUnloading Kronk")
 		if err := krn.Unload(context.Background()); err != nil {
@@ -689,8 +744,89 @@ func run() error {
 		}
 	}()
 
+	if err := vision(krn); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func installSystem() (models.Path, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+
+	libs, err := libs.New()
+	if err != nil {
+		return models.Path{}, err
+	}
+
+	if _, err := libs.Download(ctx, kronk.FmtLogger); err != nil {
+		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
+	}
+
 	// -------------------------------------------------------------------------
 
+	templates, err := templates.New()
+	if err != nil {
+		return models.Path{}, fmt.Errorf("unable to create template system: %w", err)
+	}
+
+	if err := templates.Download(ctx); err != nil {
+		return models.Path{}, fmt.Errorf("unable to download templates: %w", err)
+	}
+
+	if err := templates.Catalog().Download(ctx); err != nil {
+		return models.Path{}, fmt.Errorf("unable to download catalog: %w", err)
+	}
+
+	// -------------------------------------------------------------------------
+
+	mdls, err := models.New()
+	if err != nil {
+		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
+	}
+
+	mp, err := mdls.Download(ctx, kronk.FmtLogger, modelURL, projURL)
+	if err != nil {
+		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
+	}
+
+	// -------------------------------------------------------------------------
+	// You could also download this model using the catalog system.
+	// templates.Catalog().DownloadModel("Qwen2.5-VL-3B-Instruct-Q8_0")
+
+	return mp, nil
+}
+
+func newKronk(mp models.Path) (*kronk.Kronk, error) {
+	if err := kronk.Init(); err != nil {
+		return nil, fmt.Errorf("unable to init kronk: %w", err)
+	}
+
+	krn, err := kronk.New(modelInstances, model.Config{
+		ModelFiles: mp.ModelFiles,
+		ProjFile:   mp.ProjFile,
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("unable to create inference model: %w", err)
+	}
+
+	fmt.Print("- system info:\\n\\t")
+	for k, v := range krn.SystemInfo() {
+		fmt.Printf("%s:%v, ", k, v)
+	}
+	fmt.Println()
+
+	fmt.Println("- contextWindow:", krn.ModelConfig().ContextWindow)
+	fmt.Println("- embeddings   :", krn.ModelInfo().IsEmbedModel)
+	fmt.Println("- isGPT        :", krn.ModelInfo().IsGPTModel)
+	fmt.Println("- template     :", krn.ModelInfo().Template.FileName)
+
+	return krn, nil
+}
+
+func vision(krn *kronk.Kronk) error {
 	question := "What is in this picture?"
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
@@ -789,77 +925,6 @@ func readImage(imageFile string) ([]byte, error) {
 
 	return image, nil
 }
-
-func installSystem() (models.Path, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-	defer cancel()
-
-	libs, err := libs.New()
-	if err != nil {
-		return models.Path{}, err
-	}
-
-	if _, err := libs.Download(ctx, kronk.FmtLogger); err != nil {
-		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
-	}
-
-	// -------------------------------------------------------------------------
-
-	templates, err := templates.New()
-	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to create template system: %w", err)
-	}
-
-	if err := templates.Download(ctx); err != nil {
-		return models.Path{}, fmt.Errorf("unable to download templates: %w", err)
-	}
-
-	if err := templates.Catalog().Download(ctx); err != nil {
-		return models.Path{}, fmt.Errorf("unable to download catalog: %w", err)
-	}
-
-	// -------------------------------------------------------------------------
-
-	mdls, err := models.New()
-	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
-	}
-
-	mp, err := mdls.Download(ctx, kronk.FmtLogger, modelURL, projURL)
-	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
-	}
-
-	return mp, nil
-}
-
-func newKronk(mp models.Path) (*kronk.Kronk, error) {
-	if err := kronk.Init(); err != nil {
-		return nil, fmt.Errorf("unable to init kronk: %w", err)
-	}
-
-	krn, err := kronk.New(modelInstances, model.Config{
-		ModelFiles: mp.ModelFiles,
-		ProjFile:   mp.ProjFile,
-	})
-
-	if err != nil {
-		return nil, fmt.Errorf("unable to create inference model: %w", err)
-	}
-
-	fmt.Print("- system info:\\n\\t")
-	for k, v := range krn.SystemInfo() {
-		fmt.Printf("%s:%v, ", k, v)
-	}
-	fmt.Println()
-
-	fmt.Println("- contextWindow:", krn.ModelConfig().ContextWindow)
-	fmt.Println("- embeddings   :", krn.ModelInfo().IsEmbedModel)
-	fmt.Println("- isGPT        :", krn.ModelInfo().IsGPTModel)
-	fmt.Println("- template     :", krn.ModelInfo().Template.FileName)
-
-	return krn, nil
-}
 `;
 
 const audioExample = `// This example shows you how to execute a simple prompt against a vision model.
@@ -909,6 +974,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("unable to init kronk: %w", err)
 	}
+
 	defer func() {
 		fmt.Println("\\nUnloading Kronk")
 		if err := krn.Unload(context.Background()); err != nil {
@@ -916,20 +982,8 @@ func run() error {
 		}
 	}()
 
-	// -------------------------------------------------------------------------
-
-	question := "Please describe what you hear in the following audio clip."
-
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	ch, err := performChat(ctx, krn, question, audioFile)
-	if err != nil {
-		return fmt.Errorf("perform chat: %w", err)
-	}
-
-	if err := modelResponse(krn, ch); err != nil {
-		return fmt.Errorf("model response: %w", err)
+	if err := audio(krn); err != nil {
+		return err
 	}
 
 	return nil
@@ -975,6 +1029,10 @@ func installSystem() (models.Path, error) {
 		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
 	}
 
+	// -------------------------------------------------------------------------
+	// You could also download this model using the catalog system.
+	// templates.Catalog().DownloadModel("Qwen2-Audio-7B.Q8_0")
+
 	return mp, nil
 }
 
@@ -1003,6 +1061,24 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("- isGPT        :", krn.ModelInfo().IsGPTModel)
 
 	return krn, nil
+}
+
+func audio(krn *kronk.Kronk) error {
+	question := "Please describe what you hear in the following audio clip."
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	ch, err := performChat(ctx, krn, question, audioFile)
+	if err != nil {
+		return fmt.Errorf("perform chat: %w", err)
+	}
+
+	if err := modelResponse(krn, ch); err != nil {
+		return fmt.Errorf("model response: %w", err)
+	}
+
+	return nil
 }
 
 func performChat(ctx context.Context, krn *kronk.Kronk, question string, imageFile string) (<-chan model.ChatResponse, error) {

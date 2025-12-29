@@ -34,8 +34,8 @@ type Files struct {
 	Proj   File   `yaml:"proj"`
 }
 
-// ToURLS converts a slice of File to a string of the URLs.
-func (f Files) ToURLS() []string {
+// ToModelURLS converts a slice of File to a string of the URLs.
+func (f Files) ToModelURLS() []string {
 	models := make([]string, len(f.Models))
 
 	for i, file := range f.Models {

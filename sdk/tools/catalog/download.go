@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
 const (
@@ -76,6 +78,16 @@ func (c *Catalog) Download(ctx context.Context, opts ...Option) error {
 	}
 
 	return nil
+}
+
+// DownloadModel downloads the specified model from the catalog system.
+func (c *Catalog) DownloadModel(ctx context.Context, log Logger, modelID string) (models.Path, error) {
+	model, err := c.RetrieveModelDetails(modelID)
+	if err != nil {
+		return models.Path{}, fmt.Errorf("retrieve-model-details: %w", err)
+	}
+
+	return c.models.DownloadShards(ctx, models.Logger(log), model.Files.ToModelURLS(), model.Files.Proj.URL)
 }
 
 // =============================================================================

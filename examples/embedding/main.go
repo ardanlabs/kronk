@@ -43,6 +43,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("unable to init kronk: %w", err)
 	}
+
 	defer func() {
 		fmt.Println("\nUnloading Kronk")
 		if err := krn.Unload(context.Background()); err != nil {
@@ -50,25 +51,9 @@ func run() error {
 		}
 	}()
 
-	// -------------------------------------------------------------------------
-
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	question := "Why is the sky blue?"
-
-	resp, err := krn.Embeddings(ctx, question)
-	if err != nil {
+	if err := embedding(krn); err != nil {
 		return err
 	}
-
-	fmt.Println()
-	fmt.Println("Model  :", resp.Model)
-	fmt.Println("Object :", resp.Object)
-	fmt.Println("Created:", time.UnixMilli(resp.Created))
-	fmt.Println("  Index    :", resp.Data[0].Index)
-	fmt.Println("  Object   :", resp.Data[0].Object)
-	fmt.Printf("  Embedding: [%v...%v]\n", resp.Data[0].Embedding[:3], resp.Data[0].Embedding[len(resp.Data[0].Embedding)-3:])
 
 	return nil
 }
@@ -113,6 +98,10 @@ func installSystem() (models.Path, error) {
 		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
 	}
 
+	// -------------------------------------------------------------------------
+	// You could also download this model using the catalog system.
+	// templates.Catalog().DownloadModel("embeddinggemma-300m-qat-Q8_0")
+
 	return mp, nil
 }
 
@@ -140,4 +129,26 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("  - isGPT        :", krn.ModelInfo().IsGPTModel)
 
 	return krn, nil
+}
+
+func embedding(krn *kronk.Kronk) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	question := "Why is the sky blue?"
+
+	resp, err := krn.Embeddings(ctx, question)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println()
+	fmt.Println("Model  :", resp.Model)
+	fmt.Println("Object :", resp.Object)
+	fmt.Println("Created:", time.UnixMilli(resp.Created))
+	fmt.Println("  Index    :", resp.Data[0].Index)
+	fmt.Println("  Object   :", resp.Data[0].Object)
+	fmt.Printf("  Embedding: [%v...%v]\n", resp.Data[0].Embedding[:3], resp.Data[0].Embedding[len(resp.Data[0].Embedding)-3:])
+
+	return nil
 }

@@ -45,6 +45,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("unable to init kronk: %w", err)
 	}
+
 	defer func() {
 		fmt.Println("\nUnloading Kronk")
 		if err := krn.Unload(context.Background()); err != nil {
@@ -52,20 +53,8 @@ func run() error {
 		}
 	}()
 
-	// -------------------------------------------------------------------------
-
-	question := "Please describe what you hear in the following audio clip."
-
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	ch, err := performChat(ctx, krn, question, audioFile)
-	if err != nil {
-		return fmt.Errorf("perform chat: %w", err)
-	}
-
-	if err := modelResponse(krn, ch); err != nil {
-		return fmt.Errorf("model response: %w", err)
+	if err := audio(krn); err != nil {
+		return err
 	}
 
 	return nil
@@ -111,6 +100,10 @@ func installSystem() (models.Path, error) {
 		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
 	}
 
+	// -------------------------------------------------------------------------
+	// You could also download this model using the catalog system.
+	// templates.Catalog().DownloadModel("Qwen2-Audio-7B.Q8_0")
+
 	return mp, nil
 }
 
@@ -139,6 +132,24 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("- isGPT        :", krn.ModelInfo().IsGPTModel)
 
 	return krn, nil
+}
+
+func audio(krn *kronk.Kronk) error {
+	question := "Please describe what you hear in the following audio clip."
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	ch, err := performChat(ctx, krn, question, audioFile)
+	if err != nil {
+		return fmt.Errorf("perform chat: %w", err)
+	}
+
+	if err := modelResponse(krn, ch); err != nil {
+		return fmt.Errorf("model response: %w", err)
+	}
+
+	return nil
 }
 
 func performChat(ctx context.Context, krn *kronk.Kronk, question string, imageFile string) (<-chan model.ChatResponse, error) {
