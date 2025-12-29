@@ -178,6 +178,8 @@ func New(t *testing.T, testName string) *Test {
 	t.Cleanup(func() {
 		t.Helper()
 
+		ctx := context.Background()
+
 		if err := cache.Shutdown(ctx); err != nil {
 			t.Fatal(err)
 		}

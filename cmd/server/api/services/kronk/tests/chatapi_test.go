@@ -3,12 +3,9 @@ package chatapi_test
 import (
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/apitest"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/ardanlabs/kronk/sdk/security/auth"
-	"github.com/ardanlabs/kronk/sdk/tools/security"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
@@ -54,70 +51,28 @@ func chatNonStream200(tokens map[string]string) []apitest.Table {
 				Prompt: "<|im_start|>user\nEcho back the word: Gorilla<|im_end|>\n<|im_start|>assistant\n",
 			},
 			CmpFunc: func(got any, exp any) string {
-				return cmp.Diff(got, exp,
-					cmpopts.IgnoreUnexported(&model.ChatResponse{}, "ID", "Created", "Usage"),
-					cmpopts.IgnoreUnexported(model.Choice{}, "Index", "FinishReason"),
-					cmpopts.IgnoreUnexported(model.ResponseMessage{}, "Content", "Reasoning", "ToolCalls"),
+				diff := cmp.Diff(got, exp,
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage"),
+					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReason"),
+					cmpopts.IgnoreFields(model.ResponseMessage{}, "Content", "Reasoning", "ToolCalls"),
 				)
+
+				if diff != "" {
+					return diff
+				}
+
+				return validateResponse(got).
+					hasValidUUID().
+					hasCreated().
+					hasPrompt().
+					hasValidChoice().
+					hasContentOrReasoning().
+					containsInContent("gorilla").
+					containsInReasoning("gorilla").
+					result()
 			},
 		},
 	}
 
 	return table
-}
-
-// =============================================================================
-
-func createTokens(t *testing.T, sec *security.Security) map[string]string {
-	tokens := make(map[string]string)
-
-	token, err := sec.GenerateToken(true, nil, 60*time.Hour)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	tokens["admin"] = token
-
-	// -------------------------------------------------------------------------
-
-	token, err = sec.GenerateToken(true, nil, 60*time.Hour)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	tokens["non-admin-no-endpoints"] = token
-
-	// -------------------------------------------------------------------------
-
-	endpoints := map[string]auth.RateLimit{
-		"chat-completions": {
-			Limit:  0,
-			Window: auth.RateUnlimited,
-		},
-	}
-
-	token, err = sec.GenerateToken(false, endpoints, 60*time.Hour)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	tokens["chat-completions"] = token
-
-	// -------------------------------------------------------------------------
-
-	endpoints = map[string]auth.RateLimit{
-		"embeddings": {
-			Limit:  0,
-			Window: auth.RateUnlimited,
-		},
-	}
-
-	token, err = sec.GenerateToken(false, endpoints, 60*time.Hour)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	tokens["embeddings"] = token
-
-	return tokens
 }
