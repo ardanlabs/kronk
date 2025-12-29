@@ -94,9 +94,13 @@ kronk-docs:
 	go run cmd/server/api/tooling/docs/*.go
 
 kronk-server: kronk-build
+	export KRONK_WEB_API_HOST=127.0.0.1:8080 &&\
+	export KRONK_WEB_DEBUG_HOST=127.0.0.1:8090 && \
 	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
 
 kronk-server-detach: bui-build
+	export KRONK_WEB_API_HOST=127.0.0.1:8080 &&\
+	export KRONK_WEB_DEBUG_HOST=127.0.0.1:8090 && \
 	go run cmd/kronk/main.go server start --detach
 
 kronk-server-logs:
