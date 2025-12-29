@@ -29,8 +29,8 @@ var exampleMeta = map[string]struct {
 var exampleOrder = []string{"question", "chat", "embedding", "vision", "audio"}
 
 func Run() error {
-	examplesDir := "/Users/bill/code/go/src/github.com/ardanlabs/kronk/examples"
-	outputDir := "/Users/bill/code/go/src/github.com/ardanlabs/kronk/cmd/server/api/frontends/bui/src/components"
+	examplesDir := "examples"
+	outputDir := "cmd/server/api/frontends/bui/src/components"
 
 	var exs []example
 

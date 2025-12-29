@@ -58,7 +58,7 @@ func Run() error {
 	packages["kronk"] = "github.com/ardanlabs/kronk/sdk/kronk"
 	packages["model"] = "github.com/ardanlabs/kronk/sdk/kronk/model"
 
-	outputDir := "/Users/bill/code/go/src/github.com/ardanlabs/kronk/cmd/server/api/frontends/bui/src/components"
+	outputDir := "cmd/server/api/frontends/bui/src/components"
 
 	switch *pkg {
 	case "kronk":

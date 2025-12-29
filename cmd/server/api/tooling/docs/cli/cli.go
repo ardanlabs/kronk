@@ -39,7 +39,7 @@ type envVar struct {
 	Description string
 }
 
-var outputDir = "/Users/bill/code/go/src/github.com/ardanlabs/kronk/cmd/server/api/frontends/bui/src/components"
+var outputDir = "cmd/server/api/frontends/bui/src/components"
 
 func Run() error {
 	commands := []command{
