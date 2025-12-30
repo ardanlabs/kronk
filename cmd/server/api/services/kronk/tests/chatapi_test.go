@@ -2,27 +2,18 @@ package chatapi_test
 
 import (
 	"net/http"
-	"testing"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/apitest"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
-func Test_API(t *testing.T) {
-	test := apitest.New(t, "Test_API")
-
-	tokens := createTokens(t, test.Sec)
-
-	test.Run(t, chatNonStream200(tokens), "chatnonstream-200")
-	test.RunStreaming(t, chatStream200(tokens), "chatstream-200")
-}
-
 func chatNonStream200(tokens map[string]string) []apitest.Table {
 	table := []apitest.Table{
 		{
-			Name:       "basic",
+			Name:       "good-token",
 			URL:        "/v1/chat/completions",
 			Token:      tokens["chat-completions"],
 			Method:     http.MethodPost,
@@ -82,7 +73,7 @@ func chatNonStream200(tokens map[string]string) []apitest.Table {
 func chatStream200(tokens map[string]string) []apitest.Table {
 	table := []apitest.Table{
 		{
-			Name:       "basic",
+			Name:       "good-token",
 			URL:        "/v1/chat/completions",
 			Token:      tokens["chat-completions"],
 			Method:     http.MethodPost,
@@ -134,6 +125,73 @@ func chatStream200(tokens map[string]string) []apitest.Table {
 					containsInContent("gorilla").
 					containsInReasoning("gorilla").
 					result()
+			},
+		},
+	}
+
+	return table
+}
+
+// =============================================================================
+
+func chatEndpoint401(tokens map[string]string) []apitest.Table {
+	table := []apitest.Table{
+		{
+			Name:       "bad-token",
+			URL:        "/v1/chat/completions",
+			Token:      tokens["embeddings"],
+			Method:     http.MethodPost,
+			StatusCode: http.StatusUnauthorized,
+			Input: model.D{
+				"model": "Qwen3-8B-Q8_0",
+				"messages": model.DocumentArray(
+					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
+				),
+			},
+			GotResp: &errs.Error{},
+			ExpResp: &errs.Error{
+				Code:    errs.Unauthenticated,
+				Message: "rpc error: code = Unauthenticated desc = not authorized: attempted action is not allowed: endpoint \"chat-completions\" not authorized",
+			},
+			CmpFunc: func(got any, exp any) string {
+				diff := cmp.Diff(got, exp,
+					cmpopts.IgnoreFields(errs.Error{}, "FuncName", "FileName"),
+				)
+
+				if diff != "" {
+					return diff
+				}
+
+				return ""
+			},
+		},
+		{
+			Name:       "admin-only-token",
+			URL:        "/v1/chat/completions",
+			Token:      tokens["admin"],
+			Method:     http.MethodPost,
+			StatusCode: http.StatusUnauthorized,
+			Input: model.D{
+				"model": "Qwen3-8B-Q8_0",
+				"messages": model.DocumentArray(
+					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
+				),
+			},
+			GotResp: &errs.Error{},
+			ExpResp: &errs.Error{
+				Code:    errs.Unauthenticated,
+				Message: "rpc error: code = Unauthenticated desc = not authorized: attempted action is not allowed: endpoint \"chat-completions\" not authorized",
+			},
+			CmpFunc: func(got any, exp any) string {
+				diff := cmp.Diff(got, exp,
+					cmpopts.IgnoreFields(errs.Error{}, "FuncName", "FileName"),
+				)
+
+				if diff != "" {
+					return diff
+				}
+
+				return ""
 			},
 		},
 	}
