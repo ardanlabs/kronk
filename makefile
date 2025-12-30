@@ -319,7 +319,7 @@ test-only: install-libraries install-models
 test: test-only lint vuln-check
 
 bill:
-	CGO_ENABLED=0 go test -v -count=1 -run Test_API/chatnonstream-200 ./cmd/server/api/services/kronk/tests
+	CGO_ENABLED=0 go test -v -count=1 -run Test_API/chatstream-200 ./cmd/server/api/services/kronk/tests
 
 # ==============================================================================
 # Metrics and Tracing

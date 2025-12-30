@@ -41,6 +41,36 @@ func (v responseValidator) hasPrompt() responseValidator {
 	return v
 }
 
+func (v responseValidator) hasUsage() responseValidator {
+	u := v.resp.Usage
+
+	if u.PromptTokens <= 0 {
+		v.errors = append(v.errors, "expected prompt_tokens to be greater than 0")
+	}
+
+	if u.ReasoningTokens <= 0 {
+		v.errors = append(v.errors, "expected reasoning_tokens to be greater than 0")
+	}
+
+	if u.CompletionTokens <= 0 {
+		v.errors = append(v.errors, "expected completion_tokens to be greater than 0")
+	}
+
+	if u.OutputTokens <= 0 {
+		v.errors = append(v.errors, "expected output_tokens to be greater than 0")
+	}
+
+	if u.TotalTokens <= 0 {
+		v.errors = append(v.errors, "expected total_tokens to be greater than 0")
+	}
+
+	if u.TokensPerSecond <= 0 {
+		v.errors = append(v.errors, "expected tokens_per_second to be greater than 0")
+	}
+
+	return v
+}
+
 func (v responseValidator) hasValidChoice() responseValidator {
 	if len(v.resp.Choice) == 0 || v.resp.Choice[0].Index <= 0 {
 		v.errors = append(v.errors, "expected index to be greater than 0")
