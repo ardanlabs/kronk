@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -52,6 +53,10 @@ func (at *Test) Run(t *testing.T, table []Table, testName string, options ...Opt
 
 	for _, tt := range table {
 		f := func(t *testing.T) {
+			if tt.SkipInGH && os.Getenv("GITHUB_ACTIONS") == "true" {
+				t.Skip("Skipping test in GitHub Actions")
+			}
+
 			r := httptest.NewRequest(tt.Method, tt.URL, nil)
 			w := httptest.NewRecorder()
 
