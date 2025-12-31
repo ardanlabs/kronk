@@ -212,7 +212,7 @@ func (m *Model) processChatRequest(ctx context.Context, id string, lctx llama.Co
 	// Check that we have not exceeded the context window.
 	if inputTokens > m.cfg.ContextWindow {
 		err := fmt.Errorf("process-chat-request: input tokens %d exceed context window %d", inputTokens, m.cfg.ContextWindow)
-		m.sendErrorResponse(ctx, ch, id, object, 0, prompt, err, Usage{
+		m.sendErrorResponse(ctx, ch, id, object, 1, prompt, err, Usage{
 			PromptTokens:     inputTokens,
 			ReasoningTokens:  reasonTokens,
 			CompletionTokens: completionTokens,

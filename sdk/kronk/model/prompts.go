@@ -273,7 +273,7 @@ func toMediaMessage(req D, msgs chatMessages) (D, error) {
 
 	for _, mm := range mediaMessages {
 		if len(mm.data) > 0 {
-			msgs := MediaMessage(mm.text, mm.data)
+			msgs := RawMediaMessage(mm.text, mm.data)
 			docs = append(docs, msgs...)
 			continue
 		}

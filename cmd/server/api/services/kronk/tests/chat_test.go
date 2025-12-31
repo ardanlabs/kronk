@@ -2,6 +2,7 @@ package chatapi_test
 
 import (
 	"net/http"
+	"testing"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/apitest"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
@@ -10,7 +11,17 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
-func chatNonStream200(tokens map[string]string) []apitest.Table {
+func chatNonStream200(t *testing.T, tokens map[string]string) []apitest.Table {
+	image, err := readFile(imageFile)
+	if err != nil {
+		t.Fatalf("read image: %s", err)
+	}
+
+	audio, err := readFile(audioFile)
+	if err != nil {
+		t.Fatalf("read image: %s", err)
+	}
+
 	table := []apitest.Table{
 		{
 			Name:       "good-token",
@@ -56,12 +67,108 @@ func chatNonStream200(tokens map[string]string) []apitest.Table {
 				return validateResponse(got).
 					hasValidUUID().
 					hasCreated().
-					hasPrompt().
 					hasValidChoice().
-					hasUsage().
-					hasContentOrReasoning().
+					hasUsage(true).
+					hasContent().
+					hasReasoning().
 					containsInContent("gorilla").
 					containsInReasoning("gorilla").
+					result()
+			},
+		},
+		{
+			Name:       "image-good-token",
+			URL:        "/v1/chat/completions",
+			Token:      tokens["chat-completions"],
+			Method:     http.MethodPost,
+			StatusCode: http.StatusOK,
+			Input: model.D{
+				"model":       "Qwen2.5-VL-3B-Instruct-Q8_0",
+				"messages":    model.ImageMessage("what's in the picture", image, "jpg"),
+				"max_tokens":  2048,
+				"temperature": 0.7,
+				"top_p":       0.9,
+				"top_k":       40,
+			},
+			GotResp: &model.ChatResponse{},
+			ExpResp: &model.ChatResponse{
+				Choice: []model.Choice{
+					{
+						Delta: model.ResponseMessage{
+							Role: "assistant",
+						},
+						FinishReason: "stop",
+					},
+				},
+				Model:  "Qwen2.5-VL-3B-Instruct-Q8_0",
+				Object: "chat.media",
+			},
+			CmpFunc: func(got any, exp any) string {
+				diff := cmp.Diff(got, exp,
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "Prompt"),
+					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReason"),
+					cmpopts.IgnoreFields(model.ResponseMessage{}, "Content", "Reasoning", "ToolCalls"),
+				)
+
+				if diff != "" {
+					return diff
+				}
+
+				return validateResponse(got).
+					hasValidUUID().
+					hasCreated().
+					hasValidChoice().
+					hasUsage(false).
+					hasContent().
+					containsInContent("giraffes").
+					result()
+			},
+		},
+		{
+			Name:       "audio-good-token",
+			URL:        "/v1/chat/completions",
+			Token:      tokens["chat-completions"],
+			Method:     http.MethodPost,
+			StatusCode: http.StatusOK,
+			Input: model.D{
+				"model":       "Qwen2-Audio-7B.Q8_0",
+				"messages":    model.AudioMessage("please describe if you hear speech or not in this clip.", audio, "wav"),
+				"max_tokens":  2048,
+				"temperature": 0.7,
+				"top_p":       0.9,
+				"top_k":       40,
+			},
+			GotResp: &model.ChatResponse{},
+			ExpResp: &model.ChatResponse{
+				Choice: []model.Choice{
+					{
+						Delta: model.ResponseMessage{
+							Role: "assistant",
+						},
+						FinishReason: "stop",
+					},
+				},
+				Model:  "Qwen2-Audio-7B.Q8_0",
+				Object: "chat.media",
+			},
+			CmpFunc: func(got any, exp any) string {
+				diff := cmp.Diff(got, exp,
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "Prompt"),
+					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReason"),
+					cmpopts.IgnoreFields(model.ResponseMessage{}, "Content", "Reasoning", "ToolCalls"),
+				)
+
+				if diff != "" {
+					return diff
+				}
+
+				return validateResponse(got).
+					hasValidUUID().
+					hasCreated().
+					hasValidChoice().
+					hasUsage(false).
+					hasContent().
+					containsInContent("speech").
 					result()
 			},
 		},
@@ -118,10 +225,10 @@ func chatStream200(tokens map[string]string) []apitest.Table {
 				return validateResponse(got).
 					hasValidUUID().
 					hasCreated().
-					hasPrompt().
 					hasValidChoice().
-					hasUsage().
-					hasContentOrReasoning().
+					hasUsage(true).
+					hasContent().
+					hasReasoning().
 					containsInContent("gorilla").
 					containsInReasoning("gorilla").
 					result()

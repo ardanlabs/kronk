@@ -74,25 +74,25 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 			defer mtmd.Free(mtmdCtx)
 
 			metrics.AddProjFileLoadTime(time.Since(start))
-		}
 
-		// ---------------------------------------------------------------------
+			// -----------------------------------------------------------------
+			// We want to use a raw media message format for processing media
+			// since we need the raw bytes.
 
-		chatMessages, ok, err := isOpenAIMediaRequest(d)
-		if err != nil {
-			m.sendChatError(ctx, ch, id, fmt.Errorf("is-open-ai-media-request: unable to check is document is openai request: %w", err))
-			return
-		}
-
-		if ok {
-			d, err = toMediaMessage(d, chatMessages)
+			chatMessages, ok, err := isOpenAIMediaRequest(d)
 			if err != nil {
-				m.sendChatError(ctx, ch, id, fmt.Errorf("to-media-message: unable to convert document to media message: %w", err))
+				m.sendChatError(ctx, ch, id, fmt.Errorf("is-open-ai-media-request: unable to check is document is openai request: %w", err))
 				return
 			}
-		}
 
-		// ---------------------------------------------------------------------
+			if ok {
+				d, err = toMediaMessage(d, chatMessages)
+				if err != nil {
+					m.sendChatError(ctx, ch, id, fmt.Errorf("to-media-message: unable to convert document to media message: %w", err))
+					return
+				}
+			}
+		}
 
 		// OTEL: WANT TO KNOW HOW LONG THESE FUNCTION CALLS TAKES
 		start := time.Now()

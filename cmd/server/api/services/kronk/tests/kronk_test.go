@@ -2,6 +2,8 @@ package chatapi_test
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -13,15 +15,23 @@ import (
 	"github.com/google/uuid"
 )
 
+var (
+	gw        = os.Getenv("GITHUB_WORKSPACE")
+	imageFile = filepath.Join(gw, "examples/samples/giraffe.jpg")
+	audioFile = filepath.Join(gw, "examples/samples/jfk.wav")
+)
+
 func Test_API(t *testing.T) {
 	test := apitest.New(t, "Test_API")
 
 	tokens := createTokens(t, test.Sec)
 
-	test.Run(t, chatNonStream200(tokens), "chatnonstream-200")
+	test.Run(t, chatNonStream200(t, tokens), "chatns-200")
 	test.RunStreaming(t, chatStream200(tokens), "chatstream-200")
 	test.Run(t, chatEndpoint401(tokens), "chatEndpoint-401")
 
+	test.Run(t, chatEmbed200(tokens), "embedding-200")
+	test.Run(t, embed401(tokens), "embedding-401")
 }
 
 // =============================================================================
@@ -80,6 +90,19 @@ func createTokens(t *testing.T, sec *security.Security) map[string]string {
 	return tokens
 }
 
+func readFile(file string) ([]byte, error) {
+	if _, err := os.Stat(file); err != nil {
+		return nil, fmt.Errorf("error accessing file %q: %w", file, err)
+	}
+
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return nil, fmt.Errorf("error reading file %q: %w", file, err)
+	}
+
+	return data, nil
+}
+
 // =============================================================================
 
 type responseValidator struct {
@@ -107,22 +130,14 @@ func (v responseValidator) hasCreated() responseValidator {
 	return v
 }
 
-func (v responseValidator) hasPrompt() responseValidator {
-	if v.resp.Prompt == "" {
-		v.errors = append(v.errors, "expected to have a prompt")
-	}
-
-	return v
-}
-
-func (v responseValidator) hasUsage() responseValidator {
+func (v responseValidator) hasUsage(reasoning bool) responseValidator {
 	u := v.resp.Usage
 
 	if u.PromptTokens <= 0 {
 		v.errors = append(v.errors, "expected prompt_tokens to be greater than 0")
 	}
 
-	if u.ReasoningTokens <= 0 {
+	if reasoning && u.ReasoningTokens <= 0 {
 		v.errors = append(v.errors, "expected reasoning_tokens to be greater than 0")
 	}
 
@@ -153,14 +168,27 @@ func (v responseValidator) hasValidChoice() responseValidator {
 	return v
 }
 
-func (v responseValidator) hasContentOrReasoning() responseValidator {
+func (v responseValidator) hasContent() responseValidator {
 	if len(v.resp.Choice) == 0 {
 		v.errors = append(v.errors, "expected at least one choice")
 		return v
 	}
 
-	if v.resp.Choice[0].Delta.Content == "" && v.resp.Choice[0].Delta.Reasoning == "" {
-		v.errors = append(v.errors, "expected content or reasoning to be non-empty")
+	if v.resp.Choice[0].Delta.Content == "" {
+		v.errors = append(v.errors, "expected content to be non-empty")
+	}
+
+	return v
+}
+
+func (v responseValidator) hasReasoning() responseValidator {
+	if len(v.resp.Choice) == 0 {
+		v.errors = append(v.errors, "expected at least one choice")
+		return v
+	}
+
+	if v.resp.Choice[0].Delta.Reasoning == "" {
+		v.errors = append(v.errors, "expected reasoning to be non-empty")
 	}
 
 	return v

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -143,8 +144,11 @@ func TextMessage(role string, content string) D {
 	}
 }
 
-// MediaMessage create a new media message.
-func MediaMessage(text string, media []byte) []D {
+// RawMediaMessage creates a new media message and should not be used for
+// http based requests. On a http request, binary data is automatically
+// converted to base64 and the system won't recognize this as media.
+// Use ImageMessage, AudioMessage, or VideoMessage instead.
+func RawMediaMessage(text string, media []byte) []D {
 	return []D{
 		{
 			"role":    "user",
@@ -153,6 +157,78 @@ func MediaMessage(text string, media []byte) []D {
 		{
 			"role":    "user",
 			"content": text,
+		},
+	}
+}
+
+// ImageMessage create a new media message.
+func ImageMessage(text string, media []byte, typ string) []D {
+	encoded := base64.StdEncoding.EncodeToString(media)
+	url := fmt.Sprintf("data:image/%s;base64,%s", typ, encoded)
+
+	return []D{
+		{
+			"role": "user",
+			"content": []D{
+				{
+					"type": "text",
+					"text": text,
+				},
+				{
+					"type": "image_url",
+					"image_url": D{
+						"url": url,
+					},
+				},
+			},
+		},
+	}
+}
+
+// AudioMessage create a new media message.
+func AudioMessage(text string, media []byte, typ string) []D {
+	encoded := base64.StdEncoding.EncodeToString(media)
+	data := fmt.Sprintf("data:audio/%s;base64,%s", typ, encoded)
+
+	return []D{
+		{
+			"role": "user",
+			"content": []D{
+				{
+					"type": "text",
+					"text": text,
+				},
+				{
+					"type": "input_audio",
+					"input_audio": D{
+						"data": data,
+					},
+				},
+			},
+		},
+	}
+}
+
+// VideoMessage create a new media message.
+func VideoMessage(text string, media []byte, typ string) []D {
+	encoded := base64.StdEncoding.EncodeToString(media)
+	url := fmt.Sprintf("data:video/%s;base64,%s", typ, encoded)
+
+	return []D{
+		{
+			"role": "user",
+			"content": []D{
+				{
+					"type": "text",
+					"text": text,
+				},
+				{
+					"type": "video_url",
+					"video_url": D{
+						"url": url,
+					},
+				},
+			},
 		},
 	}
 }

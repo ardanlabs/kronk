@@ -319,9 +319,6 @@ test-only: install-libraries install-models
 
 test: test-only lint vuln-check
 
-bill:
-	CGO_ENABLED=0 go test -v -count=1 ./cmd/server/api/services/kronk/tests
-
 # ==============================================================================
 # Metrics and Tracing
 

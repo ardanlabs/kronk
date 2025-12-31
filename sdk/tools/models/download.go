@@ -29,8 +29,20 @@ func (m *Models) Download(ctx context.Context, log Logger, modelURL string, proj
 // the specified model. If you need to set your HuggingFace token, use the
 // environment variable KRONK_HF_TOKEN.
 func (m *Models) DownloadShards(ctx context.Context, log Logger, modelURLs []string, projURL string) (Path, error) {
+	modelFileName, err := extractFileName(modelURLs[0])
+	if err != nil {
+		return Path{}, fmt.Errorf("download-model: unable to extract file name: %w", err)
+	}
+
+	modelID := extractModelID(modelFileName)
+
 	if !hasNetwork() {
-		return Path{}, fmt.Errorf("download-model: no network available")
+		mp, err := m.RetrievePath(modelID)
+		if err != nil {
+			return Path{}, fmt.Errorf("download-model: no network available: %w", err)
+		}
+
+		return mp, nil
 	}
 
 	defer func() {
@@ -38,13 +50,6 @@ func (m *Models) DownloadShards(ctx context.Context, log Logger, modelURLs []str
 			log(ctx, "download-model: unable to create index", "ERROR", err)
 		}
 	}()
-
-	modelFileName, err := extractFileName(modelURLs[0])
-	if err != nil {
-		return Path{}, fmt.Errorf("download-model: unable to extract file name: %w", err)
-	}
-
-	modelID := extractModelID(modelFileName)
 
 	result := Path{
 		ModelFiles: make([]string, len(modelURLs)),
