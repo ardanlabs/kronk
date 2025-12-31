@@ -56,10 +56,10 @@ func run(ctx context.Context, log *logger.Logger) error {
 	cfg := struct {
 		conf.Version
 		Web struct {
-			DebugHost string `conf:"default:0.0.0.0:6010"`
+			DebugHost string `conf:"default:localhost:6010"`
 		}
 		Auth struct {
-			Host    string `conf:"default:0.0.0.0:6000"`
+			Host    string `conf:"default:localhost:6000"`
 			Issuer  string `conf:"default:kronk project"`
 			Enabled bool   `conf:"default:false"`
 		}

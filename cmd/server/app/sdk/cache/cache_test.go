@@ -385,6 +385,16 @@ func findAvailableModel(t *testing.T, notModelID string) string {
 		idx := rand.Intn(len(modelFiles))
 		if modelFiles[idx].ID != notModelID {
 			modelID = modelFiles[idx].ID
+			break
+		}
+	}
+
+	if modelID == "" {
+		for _, mf := range modelFiles {
+			if mf.ID != notModelID {
+				modelID = mf.ID
+				break
+			}
 		}
 	}
 
