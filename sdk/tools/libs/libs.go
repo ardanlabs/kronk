@@ -161,7 +161,7 @@ func (lib *Libs) Download(ctx context.Context, log Logger) (VersionTag, error) {
 
 	log(ctx, "download-libraries waiting to start download...")
 
-	newTag, err := lib.download(ctx, log, tag.Latest)
+	newTag, err := lib.DownloadVersion(ctx, log, tag.Latest)
 	if err != nil {
 		log(ctx, "download-libraries", "status", "llama.cpp installation", "ERROR", err)
 
@@ -209,9 +209,10 @@ func (lib *Libs) VersionInformation() (VersionTag, error) {
 	return tag, nil
 }
 
-// =============================================================================
-
-func (lib *Libs) download(ctx context.Context, log Logger, version string) (VersionTag, error) {
+// DownloadVersion allows you to download a specific version of llama.cpp. This
+// function will not check for existing versions or any of the workflow provided
+// by Download.
+func (lib *Libs) DownloadVersion(ctx context.Context, log Logger, version string) (VersionTag, error) {
 	tempPath := filepath.Join(lib.path, "temp")
 
 	progress := func(src string, currentSize int64, totalSize int64, mibPerSec float64, complete bool) {
@@ -237,6 +238,8 @@ func (lib *Libs) download(ctx context.Context, log Logger, version string) (Vers
 
 	return lib.VersionInformation()
 }
+
+// =============================================================================
 
 func (lib *Libs) swapTempForLib(tempPath string) error {
 	entries, err := os.ReadDir(lib.path)
