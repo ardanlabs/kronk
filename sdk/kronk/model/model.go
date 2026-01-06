@@ -465,7 +465,7 @@ func (m *Model) batchResponse(lctx llama.Context, batch llama.Batch, sampler lla
 		return "", 0, io.EOF
 	}
 
-	l := llama.TokenToPiece(m.vocab, token, buf, 0, false)
+	l := llama.TokenToPiece(m.vocab, token, buf, 0, true)
 
 	content := string(buf[:l])
 	if content == "" {

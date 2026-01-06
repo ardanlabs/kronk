@@ -3,6 +3,7 @@ package kronk_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -29,37 +30,37 @@ func Test_ToolStreamingChat(t *testing.T) {
 	testChatStreaming(t, mpThinkToolChat, true)
 }
 
-// func Test_GPTChat(t *testing.T) {
-// 	if os.Getenv("GITHUB_ACTIONS") == "true" {
-// 		t.Skip("Skipping test in GitHub Actions")
-// 	}
+func Test_GPTChat(t *testing.T) {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("Skipping test in GitHub Actions")
+	}
 
-// 	testChat(t, mpGPTChat, false)
-// }
+	testChat(t, mpGPTChat, false)
+}
 
-// func Test_GPTStreamingChat(t *testing.T) {
-// 	if os.Getenv("GITHUB_ACTIONS") == "true" {
-// 		t.Skip("Skipping test in GitHub Actions")
-// 	}
+func Test_GPTStreamingChat(t *testing.T) {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("Skipping test in GitHub Actions")
+	}
 
-// 	testChatStreaming(t, mpGPTChat, false)
-// }
+	testChatStreaming(t, mpGPTChat, false)
+}
 
-// func Test_ToolGPTChat(t *testing.T) {
-// 	if os.Getenv("GITHUB_ACTIONS") == "true" {
-// 		t.Skip("Skipping test in GitHub Actions")
-// 	}
+func Test_ToolGPTChat(t *testing.T) {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("Skipping test in GitHub Actions")
+	}
 
-// 	testChat(t, mpGPTChat, true)
-// }
+	testChat(t, mpGPTChat, true)
+}
 
-// func Test_ToolGPTStreamingChat(t *testing.T) {
-// 	if os.Getenv("GITHUB_ACTIONS") == "true" {
-// 		t.Skip("Skipping test in GitHub Actions")
-// 	}
+func Test_ToolGPTStreamingChat(t *testing.T) {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("Skipping test in GitHub Actions")
+	}
 
-// 	testChatStreaming(t, mpGPTChat, true)
-// }
+	testChatStreaming(t, mpGPTChat, true)
+}
 
 // =============================================================================
 
