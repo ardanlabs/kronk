@@ -19,15 +19,6 @@
     token you saw in the UI is a KRONK token not a HF token.
     If you agree then let's remove this from the ROADMAP.
 
----
-
-- CLI flags are not working, env vars must be used to configure the server start
-
-  - FLORIN: I will figure this out. I would like this to work since I want
-    people to be able to start the server from the CLI.
-
----
-
 - No obvious way to configure the `.kronk` storage directory. A full path, including the final name should be allowed
 
   - FLORIN: There is a `BaseDir` defaults function. All of the tools package

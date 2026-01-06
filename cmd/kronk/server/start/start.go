@@ -17,6 +17,8 @@ import (
 func runLocal(cmd *cobra.Command) error {
 	detach, _ := cmd.Flags().GetBool("detach")
 
+	envVars := buildEnvVars(cmd)
+
 	if detach {
 		exePath, err := os.Executable()
 		if err != nil {
@@ -29,6 +31,7 @@ func runLocal(cmd *cobra.Command) error {
 		proc.Stdout = logFile
 		proc.Stderr = logFile
 		proc.Stdin = nil
+		proc.Env = append(os.Environ(), envVars...)
 		proc.SysProcAttr = &syscall.SysProcAttr{
 			Setsid: true,
 		}
@@ -47,11 +50,70 @@ func runLocal(cmd *cobra.Command) error {
 		return nil
 	}
 
+	for _, env := range envVars {
+		parts := splitEnvVar(env)
+		if len(parts) == 2 {
+			os.Setenv(parts[0], parts[1])
+		}
+	}
+
 	if err := kronk.Run(false); err != nil {
 		return fmt.Errorf("run: %w", err)
 	}
 
 	return nil
+}
+
+func buildEnvVars(cmd *cobra.Command) []string {
+	var envVars []string
+
+	if v, _ := cmd.Flags().GetString("api-host"); v != "" {
+		envVars = append(envVars, "KRONK_WEB_API_HOST="+v)
+	}
+
+	if v, _ := cmd.Flags().GetString("debug-host"); v != "" {
+		envVars = append(envVars, "KRONK_WEB_DEBUG_HOST="+v)
+	}
+
+	if cmd.Flags().Changed("auth-enabled") {
+		v, _ := cmd.Flags().GetBool("auth-enabled")
+		envVars = append(envVars, "KRONK_AUTH_LOCAL_ENABLED="+strconv.FormatBool(v))
+	}
+
+	if v, _ := cmd.Flags().GetString("device"); v != "" {
+		envVars = append(envVars, "KRONK_MODEL_DEVICE="+v)
+	}
+
+	if v, _ := cmd.Flags().GetInt("max-instances"); v != 0 {
+		envVars = append(envVars, "KRONK_MODEL_MAX_INSTANCES="+strconv.Itoa(v))
+	}
+
+	if v, _ := cmd.Flags().GetInt("max-in-cache"); v != 0 {
+		envVars = append(envVars, "KRONK_MODEL_MAX_IN_CACHE="+strconv.Itoa(v))
+	}
+
+	if v, _ := cmd.Flags().GetInt("context-window"); v != 0 {
+		envVars = append(envVars, "KRONK_MODEL_CONTEXT_WINDOW="+strconv.Itoa(v))
+	}
+
+	if v, _ := cmd.Flags().GetString("cache-ttl"); v != "" {
+		envVars = append(envVars, "KRONK_MODEL_CACHE_TTL="+v)
+	}
+
+	if v, _ := cmd.Flags().GetInt("llama-log"); v != -1 {
+		envVars = append(envVars, "KRONK_LLAMA_LOG="+strconv.Itoa(v))
+	}
+
+	return envVars
+}
+
+func splitEnvVar(env string) []string {
+	for i := 0; i < len(env); i++ {
+		if env[i] == '=' {
+			return []string{env[:i], env[i+1:]}
+		}
+	}
+	return []string{env}
 }
 
 func logFilePath() string {
