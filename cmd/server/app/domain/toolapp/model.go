@@ -98,10 +98,22 @@ func toListModelsInfo(models []models.File) ListModelInfoResponse {
 
 // =============================================================================
 
+// AsyncResponse returns the session id for the session.
+type AsyncResponse struct {
+	SessionID string `json:"session_id"`
+}
+
+// Encode implements the encoder interface.
+func (ar AsyncResponse) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(ar)
+	return data, "application/json", err
+}
+
 // PullRequest represents the input for the pull command.
 type PullRequest struct {
 	ModelURL string `json:"model_url"`
 	ProjURL  string `json:"proj_url"`
+	Async    bool   `json:"async"`
 }
 
 // Decode implements the decoder interface.

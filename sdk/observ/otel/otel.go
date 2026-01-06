@@ -105,7 +105,7 @@ func InjectTracing(ctx context.Context, tracer trace.Tracer) context.Context {
 	if traceID == defaultTraceID { // Use defined constant
 		traceID = uuid.NewString()
 	}
-	ctx = setTraceID(ctx, traceID)
+	ctx = SetTraceID(ctx, traceID)
 
 	return ctx
 }

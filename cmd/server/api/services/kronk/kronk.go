@@ -22,6 +22,8 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/cache"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/debug"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mux"
+	"github.com/ardanlabs/kronk/cmd/server/foundation/async"
+	"github.com/ardanlabs/kronk/cmd/server/foundation/async/stores/dbsession"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/observ/otel"
@@ -107,6 +109,11 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		}
 		Templates struct {
 			GithubRepo string `conf:"default:https://api.github.com/repos/ardanlabs/kronk_catalogs/contents/templates"`
+		}
+		Async struct {
+			TaskTimeout time.Duration `conf:"default:30m"`
+			CallTimeout time.Duration `conf:"default:10s"`
+			TimeToLive  time.Duration `conf:"default:1h"`
 		}
 		Model struct {
 			Device        string
@@ -270,6 +277,8 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		return fmt.Errorf("unable to create catalog system: %w", err)
 	}
 
+	models.BuildIndex()
+
 	// -------------------------------------------------------------------------
 	// Catalog System
 
@@ -297,6 +306,22 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	if err := tmplts.Download(ctx, templates.WithLogger(log.Info)); err != nil {
 		return fmt.Errorf("unable to download templates: %w", err)
 	}
+
+	// -------------------------------------------------------------------------
+	// Async support
+
+	store, err := dbsession.NewStore(cfg.Async.CallTimeout, cfg.Async.TimeToLive)
+	if err != nil {
+		return fmt.Errorf("unable to create session store: %w", err)
+	}
+
+	async := async.New(log, store, cfg.Async.TaskTimeout)
+	defer func() {
+		ctx, cancel := context.WithTimeout(ctx, cfg.Web.ShutdownTimeout)
+		defer cancel()
+
+		async.Shutdown(ctx)
+	}()
 
 	// -------------------------------------------------------------------------
 	// Init Kronk
@@ -413,10 +438,10 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 }
 
 var logo = `
-██╗  ██╗██████╗  ██████╗ ███╗   ██╗██╗  ██╗
-██║ ██╔╝██╔══██╗██╔═══██╗████╗  ██║██║ ██╔╝
-█████╔╝ ██████╔╝██║   ██║██╔██╗ ██║█████╔╝ 
-██╔═██╗ ██╔══██╗██║   ██║██║╚██╗██║██╔═██╗ 
-██║  ██╗██║  ██║╚██████╔╝██║ ╚████║██║  ██╗
-╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝╚═╝  ╚═╝
+██╗  ██╗██████╗  ██████╗ ███╗   ██╗██╗  ██╗    ███╗   ███╗███████╗
+██║ ██╔╝██╔══██╗██╔═══██╗████╗  ██║██║ ██╔╝    ████╗ ████║██╔════╝
+█████╔╝ ██████╔╝██║   ██║██╔██╗ ██║█████╔╝     ██╔████╔██║███████╗
+██╔═██╗ ██╔══██╗██║   ██║██║╚██╗██║██╔═██╗     ██║╚██╔╝██║╚════██║
+██║  ██╗██║  ██║╚██████╔╝██║ ╚████║██║  ██╗    ██║ ╚═╝ ██║███████║
+╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝╚═╝  ╚═╝    ╚═╝     ╚═╝╚══════╝                                                                                         
 `

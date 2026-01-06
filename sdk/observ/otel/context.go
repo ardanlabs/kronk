@@ -17,7 +17,8 @@ func setTracer(ctx context.Context, tracer trace.Tracer) context.Context {
 	return context.WithValue(ctx, tracerKey, tracer)
 }
 
-func setTraceID(ctx context.Context, traceID string) context.Context {
+// SetTraceID sets the traceID in the context.
+func SetTraceID(ctx context.Context, traceID string) context.Context {
 	return context.WithValue(ctx, traceIDKey, traceID)
 }
 
