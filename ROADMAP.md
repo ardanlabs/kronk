@@ -15,6 +15,10 @@
 
 ---
 
+    Add support to Release to update Proxy server
+
+---
+
 - No obvious way to configure the `.kronk` storage directory. A full path, including the final name should be allowed
 
   - FLORIN: There is a `BaseDir` defaults function. All of the tools package
