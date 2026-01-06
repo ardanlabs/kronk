@@ -11,13 +11,6 @@
 
 ---
 
-- Model download page will break when navigating away during a download in progress
-
-  - FLORIN: I will try to create an async feature for the model server using
-    Badger.
-
----
-
 - `KRONK_HF_TOKEN` needs to be configured in the CLI runner during `kronk server start` as
   the HF token configured via UI doesn't work. To verify this, pull a gated model from HF, e.g. gemma
 
@@ -61,6 +54,9 @@
     on startup to help. When people are using the CLI or writing
     programs, they will need to do this manually. The CLI tooling
     extends a command for this.
+
+  - SOLUTION: On the KMS startup the model index file is rebuilt. There is a CLI
+    command that can also be used to rebuild the index.
 
 ### MODEL SERVER / TOOLING
 

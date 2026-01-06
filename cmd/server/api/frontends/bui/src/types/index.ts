@@ -92,7 +92,12 @@ export type KeysResponse = KeyResponse[];
 export interface PullResponse {
   status: string;
   model_file?: string;
+  model_files?: string[];
   downloaded?: boolean;
+}
+
+export interface AsyncPullResponse {
+  session_id: string;
 }
 
 export interface VersionResponse {

@@ -41,6 +41,8 @@ body {
     overflow-y: auto;
     position: sticky;
     top: 0;
+    display: flex;
+    flex-direction: column;
 }
 
 .sidebar-header {
@@ -753,4 +755,71 @@ tr.selected:hover td {
     font-weight: 600;
     color: var(--color-gray-700);
     margin: 16px 0 8px 0;
+}
+
+/* Download Indicator */
+.download-indicator {
+    margin-top: auto;
+    padding: 12px 16px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.download-indicator-link {
+    display: block;
+    padding: 10px 12px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    text-decoration: none;
+    color: var(--color-white);
+    transition: background 0.2s;
+}
+
+.download-indicator-link:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.download-indicator-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.download-indicator-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: var(--color-orange);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.download-indicator-icon {
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.download-indicator-icon.success {
+    color: var(--color-success);
+}
+
+.download-indicator-icon.error {
+    color: var(--color-error);
+}
+
+.download-indicator-title {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.download-indicator-url {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.6);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }

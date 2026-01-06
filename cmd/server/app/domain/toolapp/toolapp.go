@@ -3,27 +3,22 @@ package toolapp
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/authapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/cache"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
-	"github.com/ardanlabs/kronk/cmd/server/foundation/async"
-	"github.com/ardanlabs/kronk/cmd/server/foundation/async/stores/dbsession"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/ardanlabs/kronk/sdk/tools/templates"
-	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -35,7 +30,6 @@ type app struct {
 	models     *models.Models
 	catalog    *catalog.Catalog
 	templates  *templates.Templates
-	async      *async.Async
 }
 
 func newApp(cfg Config) *app {
@@ -47,7 +41,6 @@ func newApp(cfg Config) *app {
 		models:     cfg.Models,
 		catalog:    cfg.Catalog,
 		templates:  cfg.Templates,
-		async:      cfg.Async,
 	}
 }
 
@@ -128,62 +121,6 @@ func (a *app) listModels(ctx context.Context, r *http.Request) web.Encoder {
 	return toListModelsInfo(models)
 }
 
-func (a *app) pullModelsSession(ctx context.Context, r *http.Request) web.Encoder {
-	sessionID := web.Param(r, "sessionid")
-
-	id, err := uuid.Parse(sessionID)
-	if err != nil {
-		return errs.New(errs.InvalidArgument, err)
-	}
-
-	sd, err := a.async.Session(ctx, id)
-	if err != nil {
-		return errs.New(errs.InvalidArgument, err)
-	}
-
-	// -------------------------------------------------------------------------
-
-	w := web.GetWriter(ctx)
-
-	f, ok := w.(http.Flusher)
-	if !ok {
-		return errs.New(errs.Internal, errors.New("streaming not supported"))
-	}
-
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Transfer-Encoding", "chunked")
-	w.WriteHeader(http.StatusOK)
-	f.Flush()
-
-	// -------------------------------------------------------------------------
-
-	for {
-		w.Write(sd.Result)
-		w.Write([]byte("\n\n"))
-		f.Flush()
-
-		if sd.Status != dbsession.Processing {
-			break
-		}
-
-		select {
-		case <-ctx.Done():
-			w.Write([]byte(ctx.Err().Error()))
-			f.Flush()
-			return web.NewNoResponse()
-
-		case <-time.After(time.Second):
-		}
-
-		sd, err = a.async.Session(ctx, id)
-		if err != nil {
-			return errs.New(errs.InvalidArgument, err)
-		}
-	}
-
-	return web.NewNoResponse()
-}
-
 func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
 	var req PullRequest
 	if err := web.Decode(r, &req); err != nil {
@@ -200,52 +137,7 @@ func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
 		}
 	}
 
-	// -------------------------------------------------------------------------
-	// Async
-
-	if req.Async {
-		task := func(ctx context.Context, sessionID uuid.UUID) (data []byte, err error) {
-			logger := func(ctx context.Context, msg string, args ...any) {
-				var sb strings.Builder
-				for i := 0; i < len(args); i += 2 {
-					if i+1 < len(args) {
-						sb.WriteString(fmt.Sprintf(" %v[%v]", args[i], args[i+1]))
-					}
-				}
-
-				status := fmt.Sprintf("%s:%s\n", msg, sb.String())
-				ver := toAppPull(status, models.Path{})
-
-				a.log.Info(ctx, "pull-model", "info", ver[:len(ver)-1])
-
-				a.async.Store().UpdateSessionStatus(sessionID, dbsession.Processing, []byte(ver[:len(ver)-1]))
-			}
-
-			mp, err := a.models.Download(ctx, logger, req.ModelURL, req.ProjURL)
-			if err != nil {
-				ver := toAppPull(err.Error(), models.Path{})
-				a.log.Info(ctx, "pull-model", "info", ver[:len(ver)-1])
-				return nil, err
-			}
-
-			ver := toAppPull("downloaded", mp)
-			a.log.Info(ctx, "pull-model", "info", ver[:len(ver)-1])
-
-			return []byte(ver[:len(ver)-1]), err
-		}
-
-		sessionID, err := a.async.Run(ctx, task)
-		if err != nil {
-			return errs.New(errs.InternalOnlyLog, err)
-		}
-
-		return AsyncResponse{
-			SessionID: sessionID.String(),
-		}
-	}
-
-	// -------------------------------------------------------------------------
-	// Non-Async
+	a.log.Info(ctx, "pull-models", "model", req.ModelURL, "proj", req.ProjURL)
 
 	w := web.GetWriter(ctx)
 

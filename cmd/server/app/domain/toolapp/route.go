@@ -6,7 +6,6 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/cache"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mid"
-	"github.com/ardanlabs/kronk/cmd/server/foundation/async"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
@@ -24,7 +23,6 @@ type Config struct {
 	Models     *models.Models
 	Catalog    *catalog.Catalog
 	Templates  *templates.Templates
-	Async      *async.Async
 }
 
 // Routes adds specific routes for this group.
@@ -45,7 +43,6 @@ func Routes(app *web.App, cfg Config) {
 	app.HandlerFunc(http.MethodGet, version, "/models/ps", api.modelPS, auth)
 	app.HandlerFunc(http.MethodPost, version, "/models/index", api.indexModels, authAdmin)
 	app.HandlerFunc(http.MethodPost, version, "/models/pull", api.pullModels, authAdmin)
-	app.HandlerFunc(http.MethodGet, version, "/models/pull/{sessionid}", api.pullModelsSession, authAdmin)
 	app.HandlerFunc(http.MethodDelete, version, "/models/{model}", api.removeModel, authAdmin)
 
 	app.HandlerFunc(http.MethodGet, version, "/catalog", api.listCatalog, auth)

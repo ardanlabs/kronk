@@ -24,6 +24,7 @@ import DocsAPIEmbeddings from './components/DocsAPIEmbeddings';
 import DocsAPITools from './components/DocsAPITools';
 import { ModelListProvider } from './contexts/ModelListContext';
 import { TokenProvider } from './contexts/TokenContext';
+import { DownloadProvider } from './contexts/DownloadContext';
 
 export type Page =
   | 'home'
@@ -129,33 +130,35 @@ function App() {
     <BrowserRouter>
       <TokenProvider>
         <ModelListProvider>
-          <Layout>
-            <Routes>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/models" element={<ModelList />} />
-            <Route path="/models/running" element={<ModelPs />} />
-            <Route path="/models/pull" element={<ModelPull />} />
-            <Route path="/catalog" element={<CatalogList />} />
-            <Route path="/libs/pull" element={<LibsPull />} />
-            <Route path="/security/keys" element={<SecurityKeyList />} />
-            <Route path="/security/keys/create" element={<SecurityKeyCreate />} />
-            <Route path="/security/keys/delete" element={<SecurityKeyDelete />} />
-            <Route path="/security/tokens/create" element={<SecurityTokenCreate />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/docs/sdk" element={<DocsSDK />} />
-            <Route path="/docs/sdk/kronk" element={<DocsSDKKronk />} />
-            <Route path="/docs/sdk/model" element={<DocsSDKModel />} />
-            <Route path="/docs/sdk/examples" element={<DocsSDKExamples />} />
-            <Route path="/docs/cli/catalog" element={<DocsCLICatalog />} />
-            <Route path="/docs/cli/libs" element={<DocsCLILibs />} />
-            <Route path="/docs/cli/model" element={<DocsCLIModel />} />
-            <Route path="/docs/cli/security" element={<DocsCLISecurity />} />
-            <Route path="/docs/cli/server" element={<DocsCLIServer />} />
-            <Route path="/docs/api/chat" element={<DocsAPIChat />} />
-            <Route path="/docs/api/embeddings" element={<DocsAPIEmbeddings />} />
-            <Route path="/docs/api/tools" element={<DocsAPITools />} />
-          </Routes>
-          </Layout>
+          <DownloadProvider>
+            <Layout>
+              <Routes>
+                <Route path="/" element={<HomePage />} />
+                <Route path="/models" element={<ModelList />} />
+                <Route path="/models/running" element={<ModelPs />} />
+                <Route path="/models/pull" element={<ModelPull />} />
+                <Route path="/catalog" element={<CatalogList />} />
+                <Route path="/libs/pull" element={<LibsPull />} />
+                <Route path="/security/keys" element={<SecurityKeyList />} />
+                <Route path="/security/keys/create" element={<SecurityKeyCreate />} />
+                <Route path="/security/keys/delete" element={<SecurityKeyDelete />} />
+                <Route path="/security/tokens/create" element={<SecurityTokenCreate />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="/docs/sdk" element={<DocsSDK />} />
+                <Route path="/docs/sdk/kronk" element={<DocsSDKKronk />} />
+                <Route path="/docs/sdk/model" element={<DocsSDKModel />} />
+                <Route path="/docs/sdk/examples" element={<DocsSDKExamples />} />
+                <Route path="/docs/cli/catalog" element={<DocsCLICatalog />} />
+                <Route path="/docs/cli/libs" element={<DocsCLILibs />} />
+                <Route path="/docs/cli/model" element={<DocsCLIModel />} />
+                <Route path="/docs/cli/security" element={<DocsCLISecurity />} />
+                <Route path="/docs/cli/server" element={<DocsCLIServer />} />
+                <Route path="/docs/api/chat" element={<DocsAPIChat />} />
+                <Route path="/docs/api/embeddings" element={<DocsAPIEmbeddings />} />
+                <Route path="/docs/api/tools" element={<DocsAPITools />} />
+              </Routes>
+            </Layout>
+          </DownloadProvider>
         </ModelListProvider>
       </TokenProvider>
     </BrowserRouter>

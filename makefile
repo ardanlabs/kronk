@@ -234,7 +234,7 @@ curl-kronk-pull-async:
 	}'
 
 curl-kronk-pull-session:
-	curl -i -X GET http://localhost:8080/v1/models/pull\SESSIONID
+	curl -i -X GET http://localhost:8080/v1/models/pull/18ed36ec-d4d5-4074-bb0f-256b70a060e4
 
 curl-kronk-remove:
 	curl -i -X DELETE http://localhost:8080/v1/models/qwen3-8b-q8_0

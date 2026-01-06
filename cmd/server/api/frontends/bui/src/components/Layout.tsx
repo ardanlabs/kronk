@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { type Page, routeMap, pathToPage } from '../App';
+import { useDownload } from '../contexts/DownloadContext';
 
 interface LayoutProps {
   children: ReactNode;
@@ -104,6 +105,7 @@ export default function Layout({ children }: LayoutProps) {
   const location = useLocation();
   const currentPage = pathToPage[location.pathname] || 'home';
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  const { download, isDownloading } = useDownload();
 
   const toggleCategory = (id: string) => {
     setExpandedCategories((prev) => {
@@ -168,6 +170,27 @@ export default function Layout({ children }: LayoutProps) {
           </Link>
         </div>
         <nav>{menuStructure.map((category) => renderCategory(category))}</nav>
+        {download && (
+          <div className="download-indicator">
+            <Link to={routeMap['model-pull']} className="download-indicator-link">
+              <div className="download-indicator-header">
+                {isDownloading ? (
+                  <span className="download-indicator-spinner" />
+                ) : download.status === 'complete' ? (
+                  <span className="download-indicator-icon success">✓</span>
+                ) : (
+                  <span className="download-indicator-icon error">✗</span>
+                )}
+                <span className="download-indicator-title">
+                  {isDownloading ? 'Downloading...' : download.status === 'complete' ? 'Complete' : 'Failed'}
+                </span>
+              </div>
+              <div className="download-indicator-url" title={download.modelUrl}>
+                {download.modelUrl.split('/').pop()}
+              </div>
+            </Link>
+          </div>
+        )}
       </aside>
       <main className="main-content">{children}</main>
     </div>
