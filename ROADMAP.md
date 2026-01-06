@@ -19,6 +19,8 @@
     token you saw in the UI is a KRONK token not a HF token.
     If you agree then let's remove this from the ROADMAP.
 
+---
+
 - No obvious way to configure the `.kronk` storage directory. A full path, including the final name should be allowed
 
   - FLORIN: There is a `BaseDir` defaults function. All of the tools package
