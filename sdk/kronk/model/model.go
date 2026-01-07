@@ -33,11 +33,16 @@ type Model struct {
 }
 
 func NewModel(tmlpRetriever TemplateRetriever, cfg Config) (*Model, error) {
+	l := cfg.Log
+	if cfg.Log == nil {
+		l = func(ctx context.Context, msg string, args ...any) {}
+	}
+
 	if tmlpRetriever == nil {
 		return nil, fmt.Errorf("templater required, use templater.New()")
 	}
 
-	if err := validateConfig(cfg); err != nil {
+	if err := validateConfig(cfg, l); err != nil {
 		return nil, fmt.Errorf("new-model: unable to validate config: %w", err)
 	}
 
@@ -84,13 +89,6 @@ func NewModel(tmlpRetriever TemplateRetriever, cfg Config) (*Model, error) {
 	}
 
 	modelInfo.Template = template
-
-	// -------------------------------------------------------------------------
-
-	l := cfg.Log
-	if cfg.Log == nil {
-		l = func(ctx context.Context, msg string, args ...any) {}
-	}
 
 	// -------------------------------------------------------------------------
 

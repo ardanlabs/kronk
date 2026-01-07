@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -87,9 +88,25 @@ type Config struct {
 	NThreadsBatch int
 }
 
-func validateConfig(cfg Config) error {
+func validateConfig(cfg Config, log Logger) error {
 	if len(cfg.ModelFiles) == 0 {
 		return fmt.Errorf("validate-config: model file is required")
+	}
+
+	for _, modelFile := range cfg.ModelFiles {
+		log(context.Background(), "checking-model-integrity", "model-file", modelFile)
+
+		if err := models.CheckModel(modelFile, true); err != nil {
+			return fmt.Errorf("validate-config: checking-model-integrity: %w", err)
+		}
+	}
+
+	if cfg.ProjFile != "" {
+		log(context.Background(), "checking-model-integrity", "model-file", cfg.ProjFile)
+
+		if err := models.CheckModel(cfg.ProjFile, true); err != nil {
+			return fmt.Errorf("validate-config: checking-model-integrity: %w", err)
+		}
 	}
 
 	return nil

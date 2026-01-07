@@ -34,21 +34,6 @@
 
 ---
 
-- Model download cache can be corrupted if a model download fails. The `.index.yaml` will show as `downloaded: true` even if it's not true.
-
-  - FLORIN: This is complicated. It's hard to know if we have the full file or
-    not. I will work out a solution.
-
-    switch out `resolve` for `raw` and check the size in bytes
-    Perform the sha256 and check that
-    Add SHA256 to the catalog
-
-    https://huggingface.co/unsloth/gpt-oss-20b-GGUF/raw/main/gpt-oss-20b-Q8_0.gguf
-    https://huggingface.co/Qwen/Qwen3-8B-GGUF/raw/main/Qwen3-8B-Q8_0.gguf
-    https://huggingface.co/ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/raw/main/embeddinggemma-300m-qat-Q8_0.gguf
-
----
-
 ### MODEL SERVER / TOOLING
 
 - Add more models to the catalog. Look at Ollama's catalog.
