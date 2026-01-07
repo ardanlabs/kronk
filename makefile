@@ -285,7 +285,7 @@ else
 endif
 
 install-owu:
-	docker pull ghcr.io/open-webui/open-webui:v0.6.41
+	docker pull ghcr.io/open-webui/open-webui:v0.6.43
 
 owu-up:
 	docker compose -f zarf/docker/compose.yaml up openwebui
