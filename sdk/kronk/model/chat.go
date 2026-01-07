@@ -139,7 +139,7 @@ func (m *Model) validateDocument(d D) (Params, error) {
 		return Params{}, errors.New("validate-document: messages is not a slice of documents")
 	}
 
-	params, err := parseParams(d)
+	params, err := m.parseParams(d)
 	if err != nil {
 		return Params{}, err
 	}

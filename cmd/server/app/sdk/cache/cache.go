@@ -44,6 +44,7 @@ import (
 // being used.
 type Config struct {
 	Log                   model.Logger
+	BasePath              string
 	Templates             *templates.Templates
 	Arch                  download.Arch
 	OS                    download.OS
@@ -105,7 +106,7 @@ func NewCache(cfg Config) (*Cache, error) {
 		return nil, err
 	}
 
-	models, err := models.New()
+	models, err := models.NewWithPaths(cfg.BasePath)
 	if err != nil {
 		return nil, fmt.Errorf("creating models system: %w", err)
 	}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/ardanlabs/kronk/cmd/kronk/client"
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/spf13/cobra"
 )
@@ -19,7 +20,10 @@ Flags (--local mode):
 
 Environment Variables (web mode - default):
       KRONK_TOKEN         (required when auth enabled)  Authentication token for the kronk server.
-      KRONK_WEB_API_HOST  (default localhost:8080)  IP Address for the kronk server.`,
+      KRONK_WEB_API_HOST  (default localhost:8080)  IP Address for the kronk server.
+
+Environment Variables (--local mode):
+      KRONK_BASE_PATH  Base path for kronk data (models, templates, catalog)`,
 	Args: cobra.ArbitraryArgs,
 	Run:  main,
 }
@@ -44,7 +48,7 @@ func run(cmd *cobra.Command, args []string) error {
 		args = append(args, "--filter-category", filterCategory)
 	}
 
-	catalog, err := catalog.New()
+	catalog, err := catalog.NewWithSettings(client.GetBasePath(cmd), "")
 	if err != nil {
 		return fmt.Errorf("unable to create catalog system: %w", err)
 	}

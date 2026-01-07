@@ -37,6 +37,8 @@ func init() {
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
 	rootCmd.Version = version
 
+	rootCmd.PersistentFlags().String("base-path", "", "Base path for kronk data (models, templates, catalog)")
+
 	rootCmd.AddCommand(server.Cmd)
 	rootCmd.AddCommand(libs.Cmd)
 	rootCmd.AddCommand(model.Cmd)

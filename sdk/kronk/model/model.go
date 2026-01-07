@@ -419,44 +419,65 @@ func (m *Model) startProcessing(lctx llama.Context, object string, prompt string
 	start := time.Now()
 
 	tokens := llama.Tokenize(m.vocab, prompt, true, true)
+	inputTokens := len(tokens)
 
-	if object != ObjectChatMedia {
-		metrics.AddPrefillNonMediaTime(time.Since(start))
-	}
+	metrics.AddTimeToFirstToken(time.Since(start))
 
-	batch := llama.BatchGetOne(tokens)
-	inputTokens := int(batch.NTokens)
-
-	if object != ObjectChatMedia {
-		metrics.AddTimeToFirstToken(time.Since(start))
-	}
-
-	// If this is a chat with media, then input processing has already happened
-	// using the mtmd package. This will provide the initial batch for the
-	// model response.
-
+	var batch llama.Batch
 	var outputTokens int
-	if object == ObjectChatMedia {
 
-		// OTEL: WANT TO KNOW HOW LONG THESE FUNCTION CALLS TAKES
-		start := time.Now()
-
+	switch object {
+	case ObjectChatMedia:
+		// Media was already processed by mtmd.HelperEvalChunks in processBitmap.
+		// Just sample the first token to start generation.
 		batch = m.nextBatch(llama.SamplerSample(sampler, lctx, -1))
 		outputTokens = int(batch.NTokens)
 
-		metrics.AddTimeToFirstToken(time.Since(start))
+	default:
+		// Prefill Phase (prompt processing)
+		// - BatchGetOne: Wraps tokens into a batch structure for the model.
+		// - Decode: Processes the batch, updating the model's internal KV cache
+		//           with attention states.
+		// - After all chunks: The model "understands" the full prompt.
+
+		nBatch := int(m.ctxParams.NBatch)
+
+		switch {
+		case inputTokens <= nBatch:
+			batch = llama.BatchGetOne(tokens)
+			llama.Decode(lctx, batch)
+
+		default:
+			for i := 0; i < len(tokens); i += nBatch {
+				end := min(i+nBatch, len(tokens))
+				chunk := tokens[i:end]
+				batch = llama.BatchGetOne(chunk)
+				llama.Decode(lctx, batch)
+			}
+		}
+
+		metrics.AddPrefillNonMediaTime(time.Since(start))
 	}
 
 	return sampler, batch, inputTokens, outputTokens
 }
 
+// nextBatch wraps a single sampled token into a batch for the next
+// autoregressive decode step. Creates a 1-token batch from the sampled
+// tokens which prepares us for next iteration.
 func (m *Model) nextBatch(token llama.Token) llama.Batch {
 	tokens := []llama.Token{token}
 	return llama.BatchGetOne(tokens)
 }
 
+// batchResponse decodes the current batch into the model context, samples the
+// next token, and returns its string representation. Returns io.EOF when an
+// end-of-generation token is sampled.
 func (m *Model) batchResponse(lctx llama.Context, batch llama.Batch, sampler llama.Sampler, buf []byte) (string, llama.Token, error) {
+	// Add the token to the KV cache and compute attention.
 	llama.Decode(lctx, batch)
+
+	// Predict the next token from the model's output distribution.
 	token := llama.SamplerSample(sampler, lctx, -1)
 
 	if llama.VocabIsEOG(m.vocab, token) {
