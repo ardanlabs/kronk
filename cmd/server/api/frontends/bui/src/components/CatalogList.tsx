@@ -145,6 +145,7 @@ export default function CatalogList() {
               <table>
                 <thead>
                   <tr>
+                    <th style={{ width: '40px', textAlign: 'center' }} title="Validated">✓</th>
                     <th>ID</th>
                     <th>Category</th>
                     <th>Owner</th>
@@ -161,6 +162,7 @@ export default function CatalogList() {
                       className={selectedId === model.id ? 'selected' : ''}
                       style={{ cursor: 'pointer' }}
                     >
+                      <td style={{ textAlign: 'center', color: model.validated ? 'inherit' : '#e74c3c' }}>{model.validated ? '✓' : '✗'}</td>
                       <td>{model.id}</td>
                       <td>{model.category}</td>
                       <td>{model.owned_by}</td>
@@ -224,6 +226,7 @@ export default function CatalogList() {
               setModelInfo(null);
               setPullMessages([]);
               setActiveTab('details');
+              setInfoError(null);
             }}
             disabled={loading}
           >

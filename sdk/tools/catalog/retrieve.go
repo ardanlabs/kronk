@@ -25,8 +25,13 @@ func (c *Catalog) CatalogModelList(filterCategory string) ([]Model, error) {
 	}
 
 	pulledModels := make(map[string]struct{})
+	validatedModels := make(map[string]struct{})
+
 	for _, mf := range modelFiles {
 		pulledModels[strings.ToLower(mf.ID)] = struct{}{}
+		if mf.Validated {
+			validatedModels[strings.ToLower(mf.ID)] = struct{}{}
+		}
 	}
 
 	filterLower := strings.ToLower(filterCategory)
@@ -40,6 +45,10 @@ func (c *Catalog) CatalogModelList(filterCategory string) ([]Model, error) {
 		for _, model := range cat.Models {
 			_, downloaded := pulledModels[strings.ToLower(model.ID)]
 			model.Downloaded = downloaded
+
+			_, validated := validatedModels[strings.ToLower(model.ID)]
+			model.Validated = validated
+
 			list = append(list, model)
 		}
 	}

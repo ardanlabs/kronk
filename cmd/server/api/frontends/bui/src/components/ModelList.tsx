@@ -131,6 +131,7 @@ export default function ModelList() {
               <table>
                 <thead>
                   <tr>
+                    <th style={{ width: '40px', textAlign: 'center' }} title="Validated">✓</th>
                     <th>ID</th>
                     <th>Owner</th>
                     <th>Family</th>
@@ -146,6 +147,7 @@ export default function ModelList() {
                       className={selectedModelId === model.id ? 'selected' : ''}
                       style={{ cursor: 'pointer' }}
                     >
+                      <td style={{ textAlign: 'center', color: model.validated ? 'inherit' : '#e74c3c' }}>{model.validated ? '✓' : '✗'}</td>
                       <td>{model.id}</td>
                       <td>{model.owned_by}</td>
                       <td>{model.model_family}</td>
@@ -173,6 +175,11 @@ export default function ModelList() {
               setSelectedModelId(null);
               setModelInfo(null);
               setConfirmingRemove(false);
+              setRemoveError(null);
+              setRemoveSuccess(null);
+              setInfoError(null);
+              setRebuildError(null);
+              setRebuildSuccess(false);
             }}
             disabled={loading}
           >

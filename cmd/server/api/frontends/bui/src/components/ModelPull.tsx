@@ -18,7 +18,8 @@ export default function ModelPull() {
     <div>
       <div className="page-header">
         <h2>Pull Model</h2>
-        <p>Download a model from a URL</p>
+              <p>Download a model from a URL</p>
+              <p>Example: https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf</p>
       </div>
 
       <div className="card">

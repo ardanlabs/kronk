@@ -62,6 +62,7 @@ type ListModelDetail struct {
 	ModelFamily string    `json:"model_family"`
 	Size        int64     `json:"size"`
 	Modified    time.Time `json:"modified"`
+	Validated   bool      `json:"validated"`
 }
 
 // ListModelInfoResponse contains the list of models loaded in the system.
@@ -90,6 +91,7 @@ func toListModelsInfo(models []models.File) ListModelInfoResponse {
 			ModelFamily: model.ModelFamily,
 			Size:        model.Size,
 			Modified:    model.Modified,
+			Validated:   model.Validated,
 		})
 	}
 
@@ -265,6 +267,7 @@ type CatalogModelResponse struct {
 	Capabilities CatalogCapabilities `json:"capabilities"`
 	Metadata     CatalogMetadata     `json:"metadata"`
 	Downloaded   bool                `json:"downloaded"`
+	Validated    bool                `json:"validated"`
 }
 
 // Encode implements the encoder interface.
@@ -315,6 +318,7 @@ func toCatalogModelResponse(model catalog.Model) CatalogModelResponse {
 			Description: model.Metadata.Description,
 		},
 		Downloaded: model.Downloaded,
+		Validated:  model.Validated,
 	}
 }
 

@@ -109,11 +109,12 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			GithubRepo string `conf:"default:https://api.github.com/repos/ardanlabs/kronk_catalogs/contents/templates"`
 		}
 		Model struct {
-			Device        string
-			MaxInstances  int           `conf:"default:1"`
-			MaxInCache    int           `conf:"default:3"`
-			ContextWindow int           `conf:"default:0"`
-			CacheTTL      time.Duration `conf:"default:5m"`
+			Device                string
+			MaxInstances          int           `conf:"default:1"`
+			MaxInCache            int           `conf:"default:3"`
+			ContextWindow         int           `conf:"default:0"`
+			CacheTTL              time.Duration `conf:"default:5m"`
+			IgnorelIntegrityCheck bool          `conf:"default:true"`
 		}
 		Arch         string
 		OS           string
@@ -270,7 +271,9 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		return fmt.Errorf("unable to create catalog system: %w", err)
 	}
 
-	models.BuildIndex()
+	log.Info(ctx, "startup", "status", "model integrity checks, may take a few seconds")
+
+	models.BuildIndex(log.Info)
 
 	// -------------------------------------------------------------------------
 	// Catalog System
@@ -310,16 +313,17 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	}
 
 	cache, err := cache.NewCache(cache.Config{
-		Log:            log.Info,
-		Templates:      tmplts,
-		Arch:           libs.Arch(),
-		OS:             libs.OS(),
-		Processor:      libs.Processor(),
-		Device:         cfg.Model.Device,
-		MaxInCache:     cfg.Model.MaxInCache,
-		ModelInstances: cfg.Model.MaxInstances,
-		ContextWindow:  cfg.Model.ContextWindow,
-		CacheTTL:       cfg.Model.CacheTTL,
+		Log:                   log.Info,
+		Templates:             tmplts,
+		Arch:                  libs.Arch(),
+		OS:                    libs.OS(),
+		Processor:             libs.Processor(),
+		Device:                cfg.Model.Device,
+		MaxInCache:            cfg.Model.MaxInCache,
+		ModelInstances:        cfg.Model.MaxInstances,
+		ContextWindow:         cfg.Model.ContextWindow,
+		CacheTTL:              cfg.Model.CacheTTL,
+		IgnorelIntegrityCheck: cfg.Model.IgnorelIntegrityCheck,
 	})
 
 	if err != nil {

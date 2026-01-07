@@ -241,7 +241,7 @@ curl-kronk-chat:
      -H "Content-Type: application/json" \
      -d '{ \
 	 	"stream": true, \
-	 	"model": "qwen3-8b-q8_0", \
+	 	"model": "cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0", \
 		"messages": [ \
 			{ \
 				"role": "user", \
