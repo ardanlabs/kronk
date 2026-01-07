@@ -116,6 +116,8 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			CacheTTL              time.Duration `conf:"default:5m"`
 			IgnorelIntegrityCheck bool          `conf:"default:true"`
 		}
+		BasePath     string
+		LibPath      string
 		Arch         string
 		OS           string
 		Processor    string
@@ -266,7 +268,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	// -------------------------------------------------------------------------
 	// Model System
 
-	models, err := models.New()
+	models, err := models.NewWithPaths(cfg.BasePath)
 	if err != nil {
 		return fmt.Errorf("unable to create catalog system: %w", err)
 	}
@@ -280,7 +282,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	log.Info(ctx, "startup", "status", "downloading catalog")
 
-	ctlg, err := catalog.NewWithSettings("", cfg.Catalog.GithubRepo)
+	ctlg, err := catalog.NewWithSettings(cfg.BasePath, cfg.Catalog.GithubRepo)
 	if err != nil {
 		return fmt.Errorf("unable to create catalog system: %w", err)
 	}
@@ -294,7 +296,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	log.Info(ctx, "startup", "status", "downloading templates")
 
-	tmplts, err := templates.NewWithSettings("", cfg.Templates.GithubRepo, ctlg)
+	tmplts, err := templates.NewWithSettings(cfg.BasePath, cfg.Templates.GithubRepo, ctlg)
 	if err != nil {
 		return fmt.Errorf("unable to create template system: %w", err)
 	}

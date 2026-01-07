@@ -19,21 +19,6 @@
 
 ---
 
-- No obvious way to configure the `.kronk` storage directory. A full path, including the final name should be allowed
-
-  - FLORIN: There is a `BaseDir` defaults function. All of the tools package
-    allow you to override this. When you contruct the Kronk API, you can specify
-    the `WithTemplateRetriever` implementation. This is an opportunity to use a
-    different location. Same with downloading models and libs. There is always a
-    `NewWithSettings` that let's you control this. I wanted the APIs for the
-    defaults to be very simple.
-    If you agree then let's remove this from the ROADMAP.
-
-  - BILL: I will add support to the CLI and SERVER to override default locations
-    for models, libs, catalog, and templates. Use a unified ENV VAR / flag
-
----
-
 ### MODEL SERVER / TOOLING
 
 - Add more models to the catalog. Look at Ollama's catalog.
