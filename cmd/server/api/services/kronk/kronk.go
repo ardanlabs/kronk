@@ -26,6 +26,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/observ/otel"
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
+	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/ardanlabs/kronk/sdk/tools/security"
@@ -251,15 +252,30 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	log.Info(ctx, "startup", "status", "downloading libraries")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	defer cancel()
+	arch, err := defaults.Arch(cfg.Arch)
+	if err != nil {
+		return err
+	}
 
-	libs, err := libs.New()
+	opSys, err := defaults.OS(cfg.OS)
+	if err != nil {
+		return err
+	}
+
+	processor, err := defaults.Processor(cfg.Processor)
+	if err != nil {
+		return err
+	}
+
+	libs, err := libs.NewWithSettings(cfg.LibPath, arch, opSys, processor, cfg.AllowUpgrade)
 	if err != nil {
 		return fmt.Errorf("unable to create libs api: %w", err)
 	}
 
 	log.Info(ctx, "startup", "status", "installing/updating libraries", "libPath", libs.LibsPath(), "arch", libs.Arch(), "os", libs.OS(), "processor", libs.Processor(), "update", true)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
 
 	if _, err := libs.Download(ctx, log.Info); err != nil {
 		return fmt.Errorf("unable to install llama.cpp: %w", err)
