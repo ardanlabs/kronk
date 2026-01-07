@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"os"
 	"sort"
 	"strings"
@@ -22,9 +21,6 @@ import (
 )
 
 func (m *Model) applyRequestJinjaTemplate(ctx context.Context, d D) (string, [][]byte, error) {
-	dCopy := make(D, len(d))
-	maps.Copy(dCopy, d)
-
 	// We need to identify if there is media in the request. If there is
 	// we want to replace the actual media with a media marker `<__media__>`.
 	// We will move the media to it's own slice. The next call that will happen
@@ -32,7 +28,7 @@ func (m *Model) applyRequestJinjaTemplate(ctx context.Context, d D) (string, [][
 
 	var media [][]byte
 
-	for _, doc := range dCopy["messages"].([]D) {
+	for _, doc := range d["messages"].([]D) {
 		if content, exists := doc["content"]; exists {
 			switch value := content.(type) {
 			case []byte:
@@ -42,7 +38,7 @@ func (m *Model) applyRequestJinjaTemplate(ctx context.Context, d D) (string, [][
 		}
 	}
 
-	prompt, err := m.applyJinjaTemplate(ctx, dCopy)
+	prompt, err := m.applyJinjaTemplate(ctx, d)
 	if err != nil {
 		return "", nil, err
 	}

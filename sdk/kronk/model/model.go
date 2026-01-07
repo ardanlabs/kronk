@@ -203,6 +203,9 @@ func (m *Model) processChatRequest(ctx context.Context, id string, lctx llama.Co
 
 	// -------------------------------------------------------------------------
 
+	// Start timing for time-to-first-token metric.
+	ttftStart := time.Now()
+
 	// Process the prompt and get the first batch for the response.
 	sampler, batch, inputTokens, outputTokens := m.startProcessing(lctx, object, prompt, params)
 	defer llama.SamplerFree(sampler)
@@ -231,6 +234,10 @@ func (m *Model) processChatRequest(ctx context.Context, id string, lctx llama.Co
 	// Create a processor to process the tokens.
 	processor := newProcessor(m)
 
+	// Track whether this is the first iteration. After prefill, the logits are
+	// already computed so we sample directly without re-decoding the prompt.
+	firstIteration := true
+
 loop:
 	for outputTokens <= params.MaxTokens {
 		var err error
@@ -243,8 +250,18 @@ loop:
 		// ---------------------------------------------------------------------
 
 		// Process a set of tokens based on the model class.
-		switch isGTP {
-		case true:
+		switch {
+		case firstIteration && isGTP:
+			resp, token, err = processor.gptFirst(lctx, sampler, buf)
+			metrics.AddTimeToFirstToken(time.Since(ttftStart))
+			firstIteration = false
+
+		case firstIteration:
+			resp, token, err = processor.standardFirst(lctx, sampler, buf)
+			metrics.AddTimeToFirstToken(time.Since(ttftStart))
+			firstIteration = false
+
+		case isGTP:
 			resp, token, err = processor.gpt(lctx, batch, sampler, buf)
 
 		default:
@@ -415,13 +432,8 @@ func (m *Model) startProcessing(lctx llama.Context, object string, prompt string
 	// for the model response. If this is a media call, we are just doing this
 	// for the input token count and the batch will be ignored.
 
-	// OTEL: WANT TO KNOW HOW LONG THESE FUNCTION CALLS TAKES
-	start := time.Now()
-
 	tokens := llama.Tokenize(m.vocab, prompt, true, true)
 	inputTokens := len(tokens)
-
-	metrics.AddTimeToFirstToken(time.Since(start))
 
 	var batch llama.Batch
 	var outputTokens int
@@ -438,21 +450,21 @@ func (m *Model) startProcessing(lctx llama.Context, object string, prompt string
 		// - BatchGetOne: Wraps tokens into a batch structure for the model.
 		// - Decode: Processes the batch, updating the model's internal KV cache
 		//           with attention states.
-		// - After all chunks: The model "understands" the full prompt.
+		// - After prefill: Logits are ready, first token is sampled in processChatRequest.
+
+		start := time.Now()
 
 		nBatch := int(m.ctxParams.NBatch)
 
 		switch {
 		case inputTokens <= nBatch:
-			batch = llama.BatchGetOne(tokens)
-			llama.Decode(lctx, batch)
+			llama.Decode(lctx, llama.BatchGetOne(tokens))
 
 		default:
 			for i := 0; i < len(tokens); i += nBatch {
 				end := min(i+nBatch, len(tokens))
 				chunk := tokens[i:end]
-				batch = llama.BatchGetOne(chunk)
-				llama.Decode(lctx, batch)
+				llama.Decode(lctx, llama.BatchGetOne(chunk))
 			}
 		}
 
@@ -474,10 +486,13 @@ func (m *Model) nextBatch(token llama.Token) llama.Batch {
 // next token, and returns its string representation. Returns io.EOF when an
 // end-of-generation token is sampled.
 func (m *Model) batchResponse(lctx llama.Context, batch llama.Batch, sampler llama.Sampler, buf []byte) (string, llama.Token, error) {
-	// Add the token to the KV cache and compute attention.
 	llama.Decode(lctx, batch)
+	return m.sampleToken(lctx, sampler, buf)
+}
 
-	// Predict the next token from the model's output distribution.
+// sampleToken samples the next token from the current logits without decoding.
+// Use this after prefill when logits are already computed.
+func (m *Model) sampleToken(lctx llama.Context, sampler llama.Sampler, buf []byte) (string, llama.Token, error) {
 	token := llama.SamplerSample(sampler, lctx, -1)
 
 	if llama.VocabIsEOG(m.vocab, token) {
