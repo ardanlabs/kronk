@@ -45,9 +45,12 @@ func (m *Models) DownloadShards(ctx context.Context, log Logger, modelURLs []str
 		return mp, nil
 	}
 
+	var downloaded bool
 	defer func() {
-		if err := m.BuildIndex(log); err != nil {
-			log(ctx, "download-model: unable to create index", "ERROR", err)
+		if downloaded {
+			if err := m.BuildIndex(log); err != nil {
+				log(ctx, "download-model: unable to create index", "ERROR", err)
+			}
 		}
 	}()
 
@@ -91,6 +94,8 @@ func (m *Models) DownloadShards(ctx context.Context, log Logger, modelURLs []str
 			return Path{}, fmt.Errorf("download-model: unable to download model file: %w", errOrg)
 		}
 
+		downloaded = mp.Downloaded
+
 		switch mp.Downloaded {
 		case true:
 			log(ctx, "download-model: status[downloaded]")
@@ -113,42 +118,63 @@ func (m *Models) DownloadShards(ctx context.Context, log Logger, modelURLs []str
 // =============================================================================
 
 func (m *Models) downloadModel(ctx context.Context, modelFileURL string, projFileURL string, progress downloader.ProgressFunc) (Path, error) {
+	// Validate the URL is the correct HF download URL.
 	if !strings.Contains(modelFileURL, "/resolve/") {
 		return Path{}, fmt.Errorf("invalid model download url, missing /resolve/: %s", modelFileURL)
 	}
 
+	// If we have a proj file, then check that URL as well.
 	if projFileURL != "" {
 		if !strings.Contains(projFileURL, "/resolve/") {
 			return Path{}, fmt.Errorf("invalid proj download url, missing /resolve/: %s", projFileURL)
 		}
 	}
 
-	// -------------------------------------------------------------------------
-	// Download the model sha and file
+	// Check the index to see if this model has already been downloaded and
+	// is validated.
 
-	if _, err := m.pullModelShaFile(modelFileURL, progress); err != nil {
+	modelFileName, err := extractFileName(modelFileURL)
+	if err != nil {
+		return Path{}, fmt.Errorf("unable to extract file name: %w", err)
+	}
+
+	mp, found := m.loadIndex()[strings.ToLower(extractModelID(modelFileName))]
+	if found && mp.Validated {
+		mp.Downloaded = false
+		return mp, nil
+	}
+
+	// -------------------------------------------------------------------------
+
+	// Download the model sha file.
+	if _, err := m.pullShaFile(modelFileURL, progress); err != nil {
 		return Path{}, fmt.Errorf("pull-model: unable to download sha file: %w", err)
 	}
 
-	modelFileName, downloadedMF, err := m.pullModel(ctx, modelFileURL, progress)
+	// Download the model file.
+	modelFileName, downloadedMF, err := m.pullFile(ctx, modelFileURL, progress)
 	if err != nil {
 		return Path{}, err
 	}
 
+	// Check the model file matches what is in the sha file.
 	if err := CheckModel(modelFileName, true); err != nil {
 		return Path{}, fmt.Errorf("check-model: %w", err)
 	}
 
+	// If there is no proj file we are done.
 	if projFileURL == "" {
 		return Path{ModelFiles: []string{modelFileName}, Downloaded: downloadedMF}, nil
 	}
 
 	// -------------------------------------------------------------------------
-	// Download the Sha file for the proj model file
+
+	// Download the Sha file for the proj model file and rename the sha to
+	// match what the proj file will be called.
 
 	projFileName := createProjFileName(modelFileName)
 
-	orgShaFileName, err := m.pullModelShaFile(projFileURL, progress)
+	orgShaFileName, err := m.pullShaFile(projFileURL, progress)
 	if err != nil {
 		return Path{}, fmt.Errorf("pull-model: unable to download sha file: %w", err)
 	}
@@ -163,8 +189,9 @@ func (m *Models) downloadModel(ctx context.Context, modelFileURL string, projFil
 	}
 
 	// -------------------------------------------------------------------------
-	// Download the proj model file
 
+	// Check if the proj file already exists on disk, and if so check the file
+	// against the sha file.
 	if _, err := os.Stat(projFileName); err == nil {
 		if err := CheckModel(projFileName, true); err == nil {
 			inf := Path{
@@ -177,15 +204,18 @@ func (m *Models) downloadModel(ctx context.Context, modelFileURL string, projFil
 		}
 	}
 
-	orjProjFile, downloadedPF, err := m.pullModel(ctx, projFileURL, progress)
+	// Download the proj file.
+	orjProjFile, downloadedPF, err := m.pullFile(ctx, projFileURL, progress)
 	if err != nil {
 		return Path{}, err
 	}
 
+	// Rename the proj file to match our naming convention.
 	if err := os.Rename(orjProjFile, projFileName); err != nil {
 		return Path{}, fmt.Errorf("download-model: unable to rename projector file: %w", err)
 	}
 
+	// Check the model file matches what is in the sha file.
 	if err := CheckModel(projFileName, true); err != nil {
 		return Path{}, fmt.Errorf("check-model: %w", err)
 	}
@@ -199,7 +229,7 @@ func (m *Models) downloadModel(ctx context.Context, modelFileURL string, projFil
 	return inf, nil
 }
 
-func (m *Models) pullModelShaFile(modelFileURL string, progress downloader.ProgressFunc) (string, error) {
+func (m *Models) pullShaFile(modelFileURL string, progress downloader.ProgressFunc) (string, error) {
 	// modelFileURL: https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf
 	// rawFileURL:   https://huggingface.co/Qwen/Qwen3-8B-GGUF/raw/main/Qwen3-8B-Q8_0.gguf
 	rawFileURL := strings.Replace(modelFileURL, "resolve", "raw", 1)
@@ -218,16 +248,14 @@ func (m *Models) pullModelShaFile(modelFileURL string, progress downloader.Progr
 		return shaFile, nil
 	}
 
-	if _, err := os.Stat(shaFile); os.IsNotExist(err) {
-		if _, err := downloader.Download(context.Background(), rawFileURL, shaDest, progress, 0); err != nil {
-			return "", fmt.Errorf("download-sha: %w", err)
-		}
+	if _, err := downloader.Download(context.Background(), rawFileURL, shaDest, progress, 0); err != nil {
+		return "", fmt.Errorf("download-sha: %w", err)
 	}
 
 	return shaFile, nil
 }
 
-func (m *Models) pullModel(ctx context.Context, fileURL string, progress downloader.ProgressFunc) (string, bool, error) {
+func (m *Models) pullFile(ctx context.Context, fileURL string, progress downloader.ProgressFunc) (string, bool, error) {
 	modelFilePath, modelFileName, err := m.modelFilePathAndName(fileURL)
 	if err != nil {
 		return "", false, fmt.Errorf("pull-model: unable to extract file-path: %w", err)

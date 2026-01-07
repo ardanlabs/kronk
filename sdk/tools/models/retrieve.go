@@ -25,10 +25,7 @@ type File struct {
 func (m *Models) RetrieveFiles() ([]File, error) {
 	var list []File
 
-	index, err := m.loadIndex()
-	if err != nil {
-		return nil, fmt.Errorf("unable to load index: %w", err)
-	}
+	index := m.loadIndex()
 
 	for modelID, mp := range index {
 		if len(mp.ModelFiles) == 0 {
@@ -163,10 +160,7 @@ type Path struct {
 
 // RetrievePath locates the physical location on disk and returns the full path.
 func (m *Models) RetrievePath(modelID string) (Path, error) {
-	index, err := m.loadIndex()
-	if err != nil {
-		return Path{}, fmt.Errorf("load-index: %w", err)
-	}
+	index := m.loadIndex()
 
 	modelID = strings.ToLower(modelID)
 
@@ -192,7 +186,7 @@ func (m *Models) MustRetrieveModel(modelID string) Path {
 // =============================================================================
 
 // LoadIndex returns the catalog index.
-func (m *Models) loadIndex() (map[string]Path, error) {
+func (m *Models) loadIndex() map[string]Path {
 	m.biMutex.Lock()
 	defer m.biMutex.Unlock()
 
@@ -200,13 +194,13 @@ func (m *Models) loadIndex() (map[string]Path, error) {
 
 	data, err := os.ReadFile(indexPath)
 	if err != nil {
-		return nil, fmt.Errorf("read-index: %w", err)
+		return make(map[string]Path)
 	}
 
 	var index map[string]Path
 	if err := yaml.Unmarshal(data, &index); err != nil {
-		return nil, fmt.Errorf("unmarshal-index: %w", err)
+		return make(map[string]Path)
 	}
 
-	return index, nil
+	return index
 }

@@ -56,12 +56,7 @@ func (m *Models) Path() string {
 
 // BuildIndex builds the model index for fast model access.
 func (m *Models) BuildIndex(log Logger) error {
-	// The index may not exist and that is ok. We just want to know
-	// id the model has been validated already. An empty map will work.
-	currentIndex, _ := m.loadIndex()
-	if currentIndex == nil {
-		currentIndex = make(map[string]Path)
-	}
+	currentIndex := m.loadIndex()
 
 	m.biMutex.Lock()
 	defer m.biMutex.Unlock()
@@ -147,17 +142,17 @@ func (m *Models) BuildIndex(log Logger) error {
 
 				if !isValidated {
 					for _, file := range files {
-						log(ctx, "running checking", "model", path.Base(file))
+						log(ctx, "running check ", "model", path.Base(file))
 						if err := CheckModel(file, true); err != nil {
-							log(ctx, "checking model ERROR", "model", path.Base(file), "ERROR", err)
+							log(ctx, "running check ", "model", path.Base(file), "ERROR", err)
 							validated = false
 						}
 					}
 
 					if mp.ProjFile != "" {
-						log(ctx, "running checking", "model", path.Base(mp.ProjFile))
+						log(ctx, "running check ", "proj", path.Base(mp.ProjFile))
 						if err := CheckModel(mp.ProjFile, true); err != nil {
-							log(ctx, "checking model ERROR", "model", path.Base(mp.ProjFile), "ERROR", err)
+							log(ctx, "running check ", "proj", path.Base(mp.ProjFile), "ERROR", err)
 							validated = false
 						}
 					}
