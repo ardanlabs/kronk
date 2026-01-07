@@ -226,16 +226,6 @@ curl-kronk-pull:
 		"model_url": "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf" \
 	}'
 
-curl-kronk-pull-async:
-	curl -i -X POST http://localhost:8080/v1/models/pull \
-	-d '{ \
-		"model_url": "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf", \
-		"async": true \
-	}'
-
-curl-kronk-pull-session:
-	curl -i -X GET http://localhost:8080/v1/models/pull/18ed36ec-d4d5-4074-bb0f-256b70a060e4
-
 curl-kronk-remove:
 	curl -i -X DELETE http://localhost:8080/v1/models/qwen3-8b-q8_0
 
