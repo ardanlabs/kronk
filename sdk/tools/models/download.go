@@ -46,7 +46,7 @@ func (m *Models) DownloadShards(ctx context.Context, log Logger, modelURLs []str
 	}
 
 	defer func() {
-		if err := m.BuildIndex(); err != nil {
+		if err := m.BuildIndex(log); err != nil {
 			log(ctx, "download-model: unable to create index", "ERROR", err)
 		}
 	}()
@@ -117,7 +117,7 @@ func (m *Models) downloadModel(ctx context.Context, modelFileURL string, projFil
 		return Path{}, fmt.Errorf("invalid model download url, missing /resolve/: %s", modelFileURL)
 	}
 
-	if projFileURL == "" {
+	if projFileURL != "" {
 		if !strings.Contains(projFileURL, "/resolve/") {
 			return Path{}, fmt.Errorf("invalid proj download url, missing /resolve/: %s", projFileURL)
 		}

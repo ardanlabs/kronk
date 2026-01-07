@@ -6,6 +6,7 @@ export interface ListModelDetail {
   model_family: string;
   size: number;
   modified: string;
+  validated: boolean;
 }
 
 export interface ListModelInfoResponse {
@@ -78,6 +79,7 @@ export interface CatalogModelResponse {
   metadata: CatalogMetadata;
   downloaded: boolean;
   gated_model: boolean;
+  validated: boolean;
 }
 
 export type CatalogModelsResponse = CatalogModelResponse[];

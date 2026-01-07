@@ -18,6 +18,7 @@ type File struct {
 	ModelFamily string
 	Size        int64
 	Modified    time.Time
+	Validated   bool
 }
 
 // RetrieveFiles returns all the models in the given model directory.
@@ -42,6 +43,7 @@ func (m *Models) RetrieveFiles() ([]File, error) {
 			if err != nil {
 				return nil, fmt.Errorf("stat: %w", err)
 			}
+
 			totalSize += info.Size()
 			if info.ModTime().After(modified) {
 				modified = info.ModTime()
@@ -57,6 +59,7 @@ func (m *Models) RetrieveFiles() ([]File, error) {
 			ModelFamily: parts[1],
 			Size:        totalSize,
 			Modified:    modified,
+			Validated:   mp.Validated,
 		}
 
 		list = append(list, mf)
@@ -98,6 +101,7 @@ func (m *Models) retrieveFile(modelID string) (File, error) {
 		if err != nil {
 			return File{}, fmt.Errorf("stat: %w", err)
 		}
+
 		totalSize += info.Size()
 		if info.ModTime().After(modified) {
 			modified = info.ModTime()
@@ -154,6 +158,7 @@ type Path struct {
 	ModelFiles []string `yaml:"model_files"`
 	ProjFile   string   `yaml:"proj_file"`
 	Downloaded bool     `yaml:"downloaded"`
+	Validated  bool     `yaml:"validated"`
 }
 
 // RetrievePath locates the physical location on disk and returns the full path.
@@ -188,18 +193,14 @@ func (m *Models) MustRetrieveModel(modelID string) Path {
 
 // LoadIndex returns the catalog index.
 func (m *Models) loadIndex() (map[string]Path, error) {
+	m.biMutex.Lock()
+	defer m.biMutex.Unlock()
+
 	indexPath := filepath.Join(m.modelsPath, indexFile)
 
 	data, err := os.ReadFile(indexPath)
 	if err != nil {
-		if err := m.BuildIndex(); err != nil {
-			return nil, fmt.Errorf("build-index: %w", err)
-		}
-
-		data, err = os.ReadFile(indexPath)
-		if err != nil {
-			return nil, fmt.Errorf("read-index: %w", err)
-		}
+		return nil, fmt.Errorf("read-index: %w", err)
 	}
 
 	var index map[string]Path

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
+	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
@@ -70,7 +71,7 @@ func runLocal(models *models.Models, args []string) error {
 		return nil
 	}
 
-	if err := models.Remove(mp); err != nil {
+	if err := models.Remove(mp, kronk.FmtLogger); err != nil {
 		return fmt.Errorf("remove-model: %w", err)
 	}
 
