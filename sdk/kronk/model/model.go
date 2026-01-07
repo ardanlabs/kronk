@@ -434,6 +434,12 @@ func (m *Model) startProcessing(lctx llama.Context, object string, prompt string
 		outputTokens = int(batch.NTokens)
 
 	default:
+		// Prefill Phase (prompt processing)
+		// - BatchGetOne: Wraps tokens into a batch structure for the model.
+		// - Decode: Processes the batch, updating the model's internal KV cache
+		//           with attention states.
+		// - After all chunks: The model "understands" the full prompt.
+
 		nBatch := int(m.ctxParams.NBatch)
 
 		switch {
@@ -456,13 +462,22 @@ func (m *Model) startProcessing(lctx llama.Context, object string, prompt string
 	return sampler, batch, inputTokens, outputTokens
 }
 
+// nextBatch wraps a single sampled token into a batch for the next
+// autoregressive decode step. Creates a 1-token batch from the sampled
+// tokens which prepares us for next iteration.
 func (m *Model) nextBatch(token llama.Token) llama.Batch {
 	tokens := []llama.Token{token}
 	return llama.BatchGetOne(tokens)
 }
 
+// batchResponse decodes the current batch into the model context, samples the
+// next token, and returns its string representation. Returns io.EOF when an
+// end-of-generation token is sampled.
 func (m *Model) batchResponse(lctx llama.Context, batch llama.Batch, sampler llama.Sampler, buf []byte) (string, llama.Token, error) {
+	// Add the token to the KV cache and compute attention.
 	llama.Decode(lctx, batch)
+
+	// Predict the next token from the model's output distribution.
 	token := llama.SamplerSample(sampler, lctx, -1)
 
 	if llama.VocabIsEOG(m.vocab, token) {
