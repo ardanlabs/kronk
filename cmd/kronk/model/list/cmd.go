@@ -37,7 +37,7 @@ func main(cmd *cobra.Command, args []string) {
 func run(cmd *cobra.Command) error {
 	local, _ := cmd.Flags().GetBool("local")
 
-	models, err := models.New()
+	models, err := models.NewWithPaths("")
 	if err != nil {
 		return fmt.Errorf("unable to create models system: %w", err)
 	}

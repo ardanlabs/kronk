@@ -419,13 +419,24 @@ func (m *Model) startProcessing(lctx llama.Context, object string, prompt string
 	start := time.Now()
 
 	tokens := llama.Tokenize(m.vocab, prompt, true, true)
+	inputTokens := len(tokens)
+
+	// Process tokens in chunks that fit within n_batch to avoid assertion errors
+	// when the prompt is larger than the batch size.
+	nBatch := int(m.ctxParams.NBatch)
+	for i := 0; i < len(tokens); i += nBatch {
+		end := min(i+nBatch, len(tokens))
+		chunk := tokens[i:end]
+		batch := llama.BatchGetOne(chunk)
+		llama.Decode(lctx, batch)
+	}
 
 	if object != ObjectChatMedia {
 		metrics.AddPrefillNonMediaTime(time.Since(start))
 	}
 
-	batch := llama.BatchGetOne(tokens)
-	inputTokens := int(batch.NTokens)
+	// Sample the first output token after processing all input chunks.
+	batch := m.nextBatch(llama.SamplerSample(sampler, lctx, -1))
 
 	if object != ObjectChatMedia {
 		metrics.AddTimeToFirstToken(time.Since(start))

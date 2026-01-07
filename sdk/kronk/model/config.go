@@ -12,7 +12,7 @@ import (
 
 const (
 	defContextWindow = 4 * 1024
-	defNBatch        = 4 * 1024
+	defNBatch        = 2 * 1024
 	defNUBatch       = 512
 )
 

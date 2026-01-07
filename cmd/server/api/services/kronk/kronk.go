@@ -316,6 +316,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	cache, err := cache.NewCache(cache.Config{
 		Log:                   log.Info,
+		BasePath:              cfg.BasePath,
 		Templates:             tmplts,
 		Arch:                  libs.Arch(),
 		OS:                    libs.OS(),

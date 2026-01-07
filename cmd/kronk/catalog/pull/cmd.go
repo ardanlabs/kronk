@@ -36,7 +36,7 @@ func main(cmd *cobra.Command, args []string) {
 func run(cmd *cobra.Command, args []string) error {
 	local, _ := cmd.Flags().GetBool("local")
 
-	catalog, err := catalog.New()
+	catalog, err := catalog.NewWithSettings("", "")
 	if err != nil {
 		return fmt.Errorf("unable to create catalog system: %w", err)
 	}
@@ -45,7 +45,7 @@ func run(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("unable to download catalog: %w", err)
 	}
 
-	models, err := models.New()
+	models, err := models.NewWithPaths("")
 	if err != nil {
 		return fmt.Errorf("unable to create models system: %w", err)
 	}
