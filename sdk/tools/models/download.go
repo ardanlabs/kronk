@@ -142,6 +142,16 @@ func (m *Models) PullModelShaFile(ctx context.Context, modelFileURL string, prog
 // =============================================================================
 
 func (m *Models) downloadModel(ctx context.Context, modelFileURL string, projFileURL string, progress downloader.ProgressFunc) (Path, error) {
+	if !strings.Contains(modelFileURL, "/resolve/") {
+		return Path{}, fmt.Errorf("invalid model download url, missing /resolve/: %s", modelFileURL)
+	}
+
+	if projFileURL == "" {
+		if !strings.Contains(projFileURL, "/resolve/") {
+			return Path{}, fmt.Errorf("invalid proj download url, missing /resolve/: %s", projFileURL)
+		}
+	}
+
 	// -------------------------------------------------------------------------
 	// Download the model sha and file
 
