@@ -208,7 +208,7 @@ func (m *Model) adjustParams(p Params) Params {
 	}
 
 	if p.MinP <= 0 {
-		p.TopP = defMinP
+		p.MinP = defMinP
 	}
 
 	if p.MaxTokens <= 0 {

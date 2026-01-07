@@ -43,7 +43,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 
 		params, err := m.validateDocument(d)
 		if err != nil {
-			m.sendChatError(ctx, ch, "", err)
+			m.sendChatError(ctx, ch, id, err)
 			return
 		}
 
@@ -107,7 +107,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 
 		object := ObjectChatText
 
-		if len(media) > 0 {
+		if m.projFile != "" && len(media) > 0 {
 			object = ObjectChatMedia
 
 			bitmap, err := m.processBitmap(lctx, mtmdCtx, prompt, media)

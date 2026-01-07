@@ -36,16 +36,28 @@ func newProcessor(m *Model) *processor {
 	}
 }
 
-func (p *processor) standard(lctx llama.Context, batch llama.Batch, sampler llama.Sampler, buf []byte) (response, llama.Token, error) {
-	content, token, err := p.model.batchResponse(lctx, batch, sampler, buf)
+// standardFirst samples the first token after prefill without re-decoding.
+// Use this for the first token after prefill when logits are already computed.
+func (p *processor) standardFirst(lctx llama.Context, sampler llama.Sampler, buf []byte) (response, llama.Token, error) {
+	content, token, err := p.model.sampleToken(lctx, sampler, buf)
 	if err != nil {
-		if errors.Is(err, io.EOF) {
-			return response{}, token, io.EOF
-		}
-
 		return response{}, token, err
 	}
 
+	return p.standardProcess(lctx, content, token, sampler, buf)
+}
+
+func (p *processor) standard(lctx llama.Context, batch llama.Batch, sampler llama.Sampler, buf []byte) (response, llama.Token, error) {
+	content, token, err := p.model.batchResponse(lctx, batch, sampler, buf)
+	if err != nil {
+		return response{}, token, err
+	}
+
+	return p.standardProcess(lctx, content, token, sampler, buf)
+}
+
+// standardProcess handles token content for standard (non-GPT) models.
+func (p *processor) standardProcess(lctx llama.Context, content string, token llama.Token, sampler llama.Sampler, buf []byte) (response, llama.Token, error) {
 	switch content {
 	case "<think>":
 		p.status = statusReasoning
@@ -60,9 +72,9 @@ func (p *processor) standard(lctx llama.Context, batch llama.Batch, sampler llam
 		var w strings.Builder
 
 		for {
-			batch, content, err = p.standardToolCall(lctx, token, sampler, buf)
+			batch, content, err := p.standardToolCall(lctx, token, sampler, buf)
 			if err != nil {
-				return response{}, token, nil
+				return response{}, token, err
 			}
 
 			w.WriteString(content)
@@ -118,16 +130,28 @@ func (p *processor) standardToolCall(lctx llama.Context, token llama.Token, samp
 
 // =============================================================================
 
-func (p *processor) gpt(lctx llama.Context, batch llama.Batch, sampler llama.Sampler, buf []byte) (response, llama.Token, error) {
-	content, token, err := p.model.batchResponse(lctx, batch, sampler, buf)
+// gptFirst samples the first token after prefill without re-decoding.
+// Use this for the first token after prefill when logits are already computed.
+func (p *processor) gptFirst(lctx llama.Context, sampler llama.Sampler, buf []byte) (response, llama.Token, error) {
+	content, token, err := p.model.sampleToken(lctx, sampler, buf)
 	if err != nil {
-		if errors.Is(err, io.EOF) {
-			return response{}, token, io.EOF
-		}
-
 		return response{}, token, err
 	}
 
+	return p.gptProcess(content, token)
+}
+
+func (p *processor) gpt(lctx llama.Context, batch llama.Batch, sampler llama.Sampler, buf []byte) (response, llama.Token, error) {
+	content, token, err := p.model.batchResponse(lctx, batch, sampler, buf)
+	if err != nil {
+		return response{}, token, err
+	}
+
+	return p.gptProcess(content, token)
+}
+
+// gptProcess handles token content for GPT models.
+func (p *processor) gptProcess(content string, token llama.Token) (response, llama.Token, error) {
 	if p.collecting {
 		if content == "<|end|>" || content == "<|call|>" {
 			p.collecting = false
