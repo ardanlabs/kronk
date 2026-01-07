@@ -421,41 +421,36 @@ func (m *Model) startProcessing(lctx llama.Context, object string, prompt string
 	tokens := llama.Tokenize(m.vocab, prompt, true, true)
 	inputTokens := len(tokens)
 
-	// Process tokens in chunks that fit within n_batch to avoid assertion errors
-	// when the prompt is larger than the batch size.
-	nBatch := int(m.ctxParams.NBatch)
-	for i := 0; i < len(tokens); i += nBatch {
-		end := min(i+nBatch, len(tokens))
-		chunk := tokens[i:end]
-		batch := llama.BatchGetOne(chunk)
-		llama.Decode(lctx, batch)
-	}
+	metrics.AddTimeToFirstToken(time.Since(start))
 
-	if object != ObjectChatMedia {
-		metrics.AddPrefillNonMediaTime(time.Since(start))
-	}
-
-	// Sample the first output token after processing all input chunks.
-	batch := m.nextBatch(llama.SamplerSample(sampler, lctx, -1))
-
-	if object != ObjectChatMedia {
-		metrics.AddTimeToFirstToken(time.Since(start))
-	}
-
-	// If this is a chat with media, then input processing has already happened
-	// using the mtmd package. This will provide the initial batch for the
-	// model response.
-
+	var batch llama.Batch
 	var outputTokens int
-	if object == ObjectChatMedia {
 
-		// OTEL: WANT TO KNOW HOW LONG THESE FUNCTION CALLS TAKES
-		start := time.Now()
-
+	switch object {
+	case ObjectChatMedia:
+		// Media was already processed by mtmd.HelperEvalChunks in processBitmap.
+		// Just sample the first token to start generation.
 		batch = m.nextBatch(llama.SamplerSample(sampler, lctx, -1))
 		outputTokens = int(batch.NTokens)
 
-		metrics.AddTimeToFirstToken(time.Since(start))
+	default:
+		nBatch := int(m.ctxParams.NBatch)
+
+		switch {
+		case inputTokens <= nBatch:
+			batch = llama.BatchGetOne(tokens)
+			llama.Decode(lctx, batch)
+
+		default:
+			for i := 0; i < len(tokens); i += nBatch {
+				end := min(i+nBatch, len(tokens))
+				chunk := tokens[i:end]
+				batch = llama.BatchGetOne(chunk)
+				llama.Decode(lctx, batch)
+			}
+		}
+
+		metrics.AddPrefillNonMediaTime(time.Since(start))
 	}
 
 	return sampler, batch, inputTokens, outputTokens

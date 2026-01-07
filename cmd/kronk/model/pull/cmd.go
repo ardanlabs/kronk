@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/ardanlabs/kronk/cmd/kronk/client"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/spf13/cobra"
 )
@@ -18,7 +19,8 @@ Environment Variables (web mode - default):
       KRONK_WEB_API_HOST  (default localhost:8080)  IP Address for the kronk server.
 
 Environment Variables (--local mode):
-      KRONK_MODELS  (default: $HOME/.kronk/models)  The path to the models directory`,
+      KRONK_BASE_PATH  Base path for kronk data (models, templates, catalog)
+      KRONK_MODELS     (default: $HOME/.kronk/models)  The path to the models directory`,
 	Args: cobra.RangeArgs(1, 2),
 	Run:  main,
 }
@@ -37,7 +39,7 @@ func main(cmd *cobra.Command, args []string) {
 func run(cmd *cobra.Command, args []string) error {
 	local, _ := cmd.Flags().GetBool("local")
 
-	models, err := models.NewWithPaths("")
+	models, err := models.NewWithPaths(client.GetBasePath(cmd))
 	if err != nil {
 		return fmt.Errorf("unable to create models system: %w", err)
 	}

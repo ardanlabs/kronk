@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/ardanlabs/kronk/cmd/kronk/client"
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/spf13/cobra"
@@ -17,7 +18,10 @@ var Cmd = &cobra.Command{
 
 Environment Variables (web mode - default):
       KRONK_TOKEN         (required when auth enabled)  Authentication token for the kronk server.
-      KRONK_WEB_API_HOST  (default localhost:8080)  IP Address for the kronk server.`,
+      KRONK_WEB_API_HOST  (default localhost:8080)  IP Address for the kronk server.
+
+Environment Variables (--local mode):
+      KRONK_BASE_PATH  Base path for kronk data (models, templates, catalog)`,
 	Args: cobra.ExactArgs(1),
 	Run:  main,
 }
@@ -36,7 +40,7 @@ func main(cmd *cobra.Command, args []string) {
 func run(cmd *cobra.Command, args []string) error {
 	local, _ := cmd.Flags().GetBool("local")
 
-	catalog, err := catalog.NewWithSettings("", "")
+	catalog, err := catalog.NewWithSettings(client.GetBasePath(cmd), "")
 	if err != nil {
 		return fmt.Errorf("unable to create catalog system: %w", err)
 	}
@@ -45,7 +49,7 @@ func run(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("unable to download catalog: %w", err)
 	}
 
-	models, err := models.NewWithPaths("")
+	models, err := models.NewWithPaths(client.GetBasePath(cmd))
 	if err != nil {
 		return fmt.Errorf("unable to create models system: %w", err)
 	}
