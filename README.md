@@ -152,7 +152,7 @@ make example-question
 make example-vision
 ```
 
-[YZMA](examples/yzma/main.go) - This example shows you how to the yzma api at it's basic level.
+[YZMA](examples/yzma/main.go) - This example shows you how to use the yzma api at it's basic level.
 
 ```shell
 make example-yzma
