@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -32,7 +33,7 @@ type Model struct {
 	activeStreams atomic.Int32
 }
 
-func NewModel(tmlpRetriever TemplateRetriever, cfg Config) (*Model, error) {
+func NewModel(ctx context.Context, tmlpRetriever TemplateRetriever, cfg Config) (*Model, error) {
 	l := cfg.Log
 	if cfg.Log == nil {
 		l = func(ctx context.Context, msg string, args ...any) {}
@@ -57,7 +58,7 @@ func NewModel(tmlpRetriever TemplateRetriever, cfg Config) (*Model, error) {
 
 	// -------------------------------------------------------------------------
 
-	l(context.Background(), "loading model from file", "status", "started")
+	l(ctx, "loading model from file", "status", "started", "model", path.Base(cfg.ModelFiles[0]))
 
 	// OTEL: WANT TO KNOW HOW LONG THESE FUNCTION CALLS TAKES
 	start := time.Now()
@@ -80,7 +81,7 @@ func NewModel(tmlpRetriever TemplateRetriever, cfg Config) (*Model, error) {
 
 	metrics.AddModelFileLoadTime(time.Since(start))
 
-	l(context.Background(), "loading model from file", "status", "completed")
+	l(ctx, "loading model from file", "status", "completed", "model", path.Base(cfg.ModelFiles[0]))
 
 	// -------------------------------------------------------------------------
 

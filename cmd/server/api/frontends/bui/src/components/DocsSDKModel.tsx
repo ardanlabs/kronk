@@ -37,7 +37,7 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="func-newmodel">
               <h4>NewModel</h4>
               <pre className="code-block">
-                <code>func NewModel(tmlpRetriever TemplateRetriever, cfg Config) (*Model, error)</code>
+                <code>func NewModel(ctx context.Context, tmlpRetriever TemplateRetriever, cfg Config) (*Model, error)</code>
               </pre>
             </div>
           </div>
