@@ -2,6 +2,14 @@
 
 ### BUGS / ISSUES
 
+---
+
+Review CLI Tooling docs are updating new flags.
+
+Fix TraceID for logs with loading model file.
+
+---
+
 - Poor performance compared to other LLM runners
 
   - E.g. ~ 8 t/s response vs ~61 t/s and degrades considerably for every new message in the chat stream

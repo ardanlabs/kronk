@@ -148,6 +148,12 @@ make example-question
 make example-vision
 ```
 
+[YZMA](examples/yzma/main.go) - This example shows you how to the yzma api at it's basic level.
+
+```shell
+make example-yzma
+```
+
 You can find more examples in the ArdanLabs AI training repo at [Example13](https://github.com/ardanlabs/ai-training/tree/main/cmd/examples/example13).
 
 ## Kronk Model Server

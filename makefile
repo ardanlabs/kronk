@@ -370,3 +370,6 @@ example-question:
 
 example-vision:
 	CGO_ENABLED=0 go run examples/vision/main.go
+
+example-yzma:
+	CGO_ENABLED=0 go run examples/yzma/main.go
