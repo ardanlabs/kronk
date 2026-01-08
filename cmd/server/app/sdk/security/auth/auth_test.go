@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ardanlabs/kronk/sdk/security/auth"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
 )
@@ -72,9 +72,9 @@ func authorize(ath *auth.Auth) func(t *testing.T) {
 			Endpoints: map[string]auth.RateLimit{
 				"chat-completions": {Limit: 1000, Window: auth.RateDay},
 			},
-			}
+		}
 
-			adminClaims := auth.Claims{
+		adminClaims := auth.Claims{
 			RegisteredClaims: jwt.RegisteredClaims{
 				Issuer:  "kronk project",
 				Subject: "admin",
@@ -84,7 +84,7 @@ func authorize(ath *auth.Auth) func(t *testing.T) {
 				"chat-completions": {Limit: 0, Window: auth.RateUnlimited},
 				"embeddings":       {Limit: 0, Window: auth.RateUnlimited},
 			},
-			}
+		}
 
 		ctx := context.Background()
 

@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/ardanlabs/kronk/sdk/security/auth"
-	"github.com/ardanlabs/kronk/sdk/security/rate"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/rate"
 )
 
 func Test_Rate(t *testing.T) {
