@@ -74,6 +74,8 @@ The architecture of Kronk is designed to be simple and scalable. The Kronk SDK a
 
 Check out the [examples](#examples) section below.
 
+Watch this [video](https://www.youtube.com/live/gjSrYkYc-yo) to learn more about the project and the architecture.
+
 If you want an OpenAI compatible model server, the Kronk model server leverages the power of the Kronk API to give you a concurrent and scalable web api.
 
 Run `make kronk-server` to check it out.
