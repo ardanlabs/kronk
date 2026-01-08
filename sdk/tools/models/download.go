@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/downloader"
 )
 
@@ -158,7 +159,7 @@ func (m *Models) downloadModel(ctx context.Context, modelFileURL string, projFil
 	}
 
 	// Check the model file matches what is in the sha file.
-	if err := CheckModel(modelFileName, true); err != nil {
+	if err := model.CheckModel(modelFileName, true); err != nil {
 		return Path{}, fmt.Errorf("check-model: %w", err)
 	}
 
@@ -193,7 +194,7 @@ func (m *Models) downloadModel(ctx context.Context, modelFileURL string, projFil
 	// Check if the proj file already exists on disk, and if so check the file
 	// against the sha file.
 	if _, err := os.Stat(projFileName); err == nil {
-		if err := CheckModel(projFileName, true); err == nil {
+		if err := model.CheckModel(projFileName, true); err == nil {
 			inf := Path{
 				ModelFiles: []string{modelFileName},
 				ProjFile:   projFileName,
@@ -216,7 +217,7 @@ func (m *Models) downloadModel(ctx context.Context, modelFileURL string, projFil
 	}
 
 	// Check the model file matches what is in the sha file.
-	if err := CheckModel(projFileName, true); err != nil {
+	if err := model.CheckModel(projFileName, true); err != nil {
 		return Path{}, fmt.Errorf("check-model: %w", err)
 	}
 

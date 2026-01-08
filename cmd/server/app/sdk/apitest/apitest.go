@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ardanlabs/kronk/sdk/security/auth"
-	"github.com/ardanlabs/kronk/sdk/tools/security"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
 )

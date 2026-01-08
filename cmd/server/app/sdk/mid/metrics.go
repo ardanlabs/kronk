@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
-	"github.com/ardanlabs/kronk/sdk/observ/metrics"
+	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 )
 
 // Metrics updates program counters.

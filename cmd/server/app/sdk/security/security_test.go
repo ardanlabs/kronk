@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ardanlabs/kronk/sdk/security/auth"
-	"github.com/ardanlabs/kronk/sdk/tools/security"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
 )
 
 func TestGenerateToken(t *testing.T) {

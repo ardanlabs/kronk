@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"go.yaml.in/yaml/v2"
 )
@@ -143,7 +144,7 @@ func (m *Models) BuildIndex(log Logger) error {
 				if !isValidated {
 					for _, file := range files {
 						log(ctx, "running check ", "model", path.Base(file))
-						if err := CheckModel(file, true); err != nil {
+						if err := model.CheckModel(file, true); err != nil {
 							log(ctx, "running check ", "model", path.Base(file), "ERROR", err)
 							validated = false
 						}
@@ -151,7 +152,7 @@ func (m *Models) BuildIndex(log Logger) error {
 
 					if mp.ProjFile != "" {
 						log(ctx, "running check ", "proj", path.Base(mp.ProjFile))
-						if err := CheckModel(mp.ProjFile, true); err != nil {
+						if err := model.CheckModel(mp.ProjFile, true); err != nil {
 							log(ctx, "running check ", "proj", path.Base(mp.ProjFile), "ERROR", err)
 							validated = false
 						}

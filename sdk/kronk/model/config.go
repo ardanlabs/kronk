@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -113,7 +112,7 @@ func validateConfig(cfg Config, log Logger) error {
 		for _, modelFile := range cfg.ModelFiles {
 			log(context.Background(), "checking-model-integrity", "model-file", modelFile)
 
-			if err := models.CheckModel(modelFile, true); err != nil {
+			if err := CheckModel(modelFile, true); err != nil {
 				return fmt.Errorf("validate-config: checking-model-integrity: %w", err)
 			}
 		}
@@ -121,7 +120,7 @@ func validateConfig(cfg Config, log Logger) error {
 		if cfg.ProjFile != "" {
 			log(context.Background(), "checking-model-integrity", "model-file", cfg.ProjFile)
 
-			if err := models.CheckModel(cfg.ProjFile, true); err != nil {
+			if err := CheckModel(cfg.ProjFile, true); err != nil {
 				return fmt.Errorf("validate-config: checking-model-integrity: %w", err)
 			}
 		}

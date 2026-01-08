@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/apitest"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/ardanlabs/kronk/sdk/security/auth"
-	"github.com/ardanlabs/kronk/sdk/tools/security"
 	"github.com/google/uuid"
 )
 

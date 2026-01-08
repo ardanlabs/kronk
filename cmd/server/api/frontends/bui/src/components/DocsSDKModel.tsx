@@ -26,6 +26,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">AddParams can be used to add the configured parameters to the specified document.</p>
             </div>
 
+            <div className="doc-section" id="func-checkmodel">
+              <h4>CheckModel</h4>
+              <pre className="code-block">
+                <code>func CheckModel(modelFile string, checkSHA bool) error</code>
+              </pre>
+              <p className="doc-description">CheckModel is check if the downloaded model is valid based on it's sha file. If no sha file exists, this check will return with no error.</p>
+            </div>
+
             <div className="doc-section" id="func-newmodel">
               <h4>NewModel</h4>
               <pre className="code-block">
@@ -377,6 +385,7 @@ export default function DocsSDKModel() {
               <a href="#functions" className="doc-index-header">Functions</a>
               <ul>
                 <li><a href="#func-addparams">AddParams</a></li>
+                <li><a href="#func-checkmodel">CheckModel</a></li>
                 <li><a href="#func-newmodel">NewModel</a></li>
               </ul>
             </div>

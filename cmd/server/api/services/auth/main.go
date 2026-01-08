@@ -15,9 +15,9 @@ import (
 	"github.com/ardanlabs/conf/v3"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/authapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/debug"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
-	"github.com/ardanlabs/kronk/sdk/observ/otel"
-	"github.com/ardanlabs/kronk/sdk/tools/security"
+	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 )
 
 var tag = "develop"

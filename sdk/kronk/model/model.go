@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ardanlabs/kronk/sdk/observ/metrics"
+	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/ardanlabs/kronk/sdk/tools/security"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
 )
 
 var Security *security.Security
