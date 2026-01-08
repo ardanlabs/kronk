@@ -57,6 +57,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("unable to init context: %w", err)
 	}
+	defer llama.Free(lctx)
 
 	fmt.Println()
 
