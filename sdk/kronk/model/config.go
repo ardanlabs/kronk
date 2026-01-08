@@ -10,6 +10,21 @@ import (
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
+/*
+Workload							NBatch		NUBatch		Rationale
+Interactive chat (single user)		512–1024	512			Low latency; small batches
+Long prompts/RAG					2048–4096	512–1024	Faster prompt ingestion
+Batch inference (multiple prompts)	2048–4096	512			Higher throughput
+Low VRAM (<8GB)						512			256–512		Avoid OOM
+High VRAM (24GB+)					4096+		1024+		Maximize parallelism
+
+Key principles:
+- NUBatch ≤ NBatch always (you already enforce this at line 139)
+- NUBatch primarily affects prompt processing speed; keep it ≤512 for stability on most consumer GPUs
+- NBatch closer to ContextWindow improves throughput but uses more VRAM
+- Powers of 2 are slightly more efficient on most hardware
+*/
+
 const (
 	defContextWindow = 4 * 1024
 	defNBatch        = 2 * 1024

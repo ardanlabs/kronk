@@ -63,6 +63,8 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		if m.projFile != "" {
 			mctxParams := mtmd.ContextParamsDefault()
 
+			m.log(context.Background(), "loading prof from file", "status", "started")
+
 			// OTEL: WANT TO KNOW HOW LONG THESE FUNCTION CALLS TAKES
 			start := time.Now()
 
@@ -74,6 +76,8 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 			defer mtmd.Free(mtmdCtx)
 
 			metrics.AddProjFileLoadTime(time.Since(start))
+
+			m.log(context.Background(), "loading prof from file", "status", "completed")
 
 			// -----------------------------------------------------------------
 			// We want to use a raw media message format for processing media
