@@ -15,24 +15,24 @@ import (
 // Logger represents a logger for capturing events.
 type Logger func(ctx context.Context, msg string, args ...any)
 
-type options struct {
+type downloadOptions struct {
 	log Logger
 }
 
-// Option represents a functional option for configuring Kronk.
-type Option func(*options)
+// DownloadOption represents options for downloading.
+type DownloadOption func(*downloadOptions)
 
 // WithLogger sets a logger for the download call.
-func WithLogger(log Logger) Option {
-	return func(o *options) {
+func WithLogger(log Logger) DownloadOption {
+	return func(o *downloadOptions) {
 		o.log = log
 	}
 }
 
 // Download retrieves the templates from the github repo. Only files modified
 // after the last download are fetched.
-func (t *Templates) Download(ctx context.Context, opts ...Option) error {
-	var o options
+func (t *Templates) Download(ctx context.Context, opts ...DownloadOption) error {
+	var o downloadOptions
 	for _, opt := range opts {
 		opt(&o)
 	}
@@ -48,7 +48,7 @@ func (t *Templates) Download(ctx context.Context, opts ...Option) error {
 		return nil
 	}
 
-	log(ctx, "template-download", "status", "retrieving template files", "github", t.githubRepoPath)
+	log(ctx, "template-download", "status", "retrieving template files", "github", t.githubRepo)
 
 	files, err := t.listGitHubFolder(ctx)
 	if err != nil {
@@ -107,7 +107,7 @@ type gitHubFile struct {
 }
 
 func (t *Templates) listGitHubFolder(ctx context.Context) ([]string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, t.githubRepoPath, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, t.githubRepo, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}

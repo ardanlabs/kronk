@@ -17,43 +17,68 @@ const (
 	indexFile         = ".index.yaml"
 )
 
+// =============================================================================
+
+type options struct {
+	basePath   string
+	githubRepo string
+}
+
+// Option represents options for configuring catalog.
+type Option func(*options)
+
+// WithBasePath sets a custom base path on disk for the templates.
+func WithBasePath(basePath string) Option {
+	return func(o *options) {
+		o.basePath = basePath
+	}
+}
+
+// WithGithubRepo sets a custom github repo url.
+func WithGithubRepo(githubRepo string) Option {
+	return func(o *options) {
+		o.githubRepo = githubRepo
+	}
+}
+
+// =============================================================================
+
 // Catalog manages the catalog system.
 type Catalog struct {
-	catalogPath    string
-	githubRepoPath string
-	models         *models.Models
-	biMutex        sync.Mutex
+	catalogPath string
+	githubRepo  string
+	models      *models.Models
+	biMutex     sync.Mutex
 }
 
 // New constructs the catalog system using defaults paths.
-func New() (*Catalog, error) {
-	return NewWithSettings("", "")
-}
-
-// NewWithSettings constructs the catalog system, using the specified github
-// repo path. If either path is empty, the default paths are used.
-func NewWithSettings(basePath string, githubRepoPath string) (*Catalog, error) {
-	basePath = defaults.BaseDir(basePath)
-
-	if githubRepoPath == "" {
-		githubRepoPath = defaultGithubPath
+func New(opts ...Option) (*Catalog, error) {
+	var o options
+	for _, opt := range opts {
+		opt(&o)
 	}
 
-	catalogPath := filepath.Join(basePath, localFolder)
+	o.basePath = defaults.BaseDir(o.basePath)
+
+	if o.githubRepo == "" {
+		o.githubRepo = defaultGithubPath
+	}
+
+	catalogPath := filepath.Join(o.basePath, localFolder)
 
 	if err := os.MkdirAll(catalogPath, 0755); err != nil {
 		return nil, fmt.Errorf("creating catalogs directory: %w", err)
 	}
 
-	models, err := models.NewWithPaths(basePath)
+	models, err := models.NewWithPaths(o.basePath)
 	if err != nil {
 		return nil, fmt.Errorf("creating models system: %w", err)
 	}
 
 	c := Catalog{
-		catalogPath:    catalogPath,
-		githubRepoPath: githubRepoPath,
-		models:         models,
+		catalogPath: catalogPath,
+		githubRepo:  o.githubRepo,
+		models:      models,
 	}
 
 	return &c, nil

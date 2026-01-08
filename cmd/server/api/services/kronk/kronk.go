@@ -298,7 +298,9 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	log.Info(ctx, "startup", "status", "downloading catalog")
 
-	ctlg, err := catalog.NewWithSettings(cfg.BasePath, cfg.Catalog.GithubRepo)
+	ctlg, err := catalog.New(
+		catalog.WithBasePath(cfg.BasePath),
+		catalog.WithGithubRepo(cfg.Catalog.GithubRepo))
 	if err != nil {
 		return fmt.Errorf("unable to create catalog system: %w", err)
 	}
@@ -312,7 +314,10 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	log.Info(ctx, "startup", "status", "downloading templates")
 
-	tmplts, err := templates.NewWithSettings(cfg.BasePath, cfg.Templates.GithubRepo, ctlg)
+	tmplts, err := templates.New(
+		templates.WithBasePath(cfg.BasePath),
+		templates.WithGithubRepo(cfg.Templates.GithubRepo),
+		templates.WithCatalog(ctlg))
 	if err != nil {
 		return fmt.Errorf("unable to create template system: %w", err)
 	}

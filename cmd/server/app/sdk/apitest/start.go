@@ -128,7 +128,7 @@ func New(t *testing.T, testName string) *Test {
 	// -------------------------------------------------------------------------
 	// Catalog System
 
-	ctlg, err := catalog.NewWithSettings("", "https://api.github.com/repos/ardanlabs/kronk_catalogs/contents/catalogs")
+	ctlg, err := catalog.New()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func New(t *testing.T, testName string) *Test {
 	// -------------------------------------------------------------------------
 	// Template System
 
-	tmplts, err := templates.NewWithSettings("", "https://api.github.com/repos/ardanlabs/kronk_catalogs/contents/templates", ctlg)
+	tmplts, err := templates.New(templates.WithCatalog(ctlg))
 	if err != nil {
 		t.Fatal(err)
 	}

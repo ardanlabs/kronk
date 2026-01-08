@@ -18,7 +18,7 @@ import (
 )
 
 // Version contains the current version of the kronk package.
-const Version = "1.11.2"
+const Version = "1.11.3"
 
 // =============================================================================
 
@@ -27,7 +27,7 @@ type options struct {
 	ctx context.Context
 }
 
-// Option represents a functional option for configuring Kronk.
+// Option represents options for configuring Kronk.
 type Option func(*options)
 
 // WithTemplateRetriever sets a custom Github repo for templates.

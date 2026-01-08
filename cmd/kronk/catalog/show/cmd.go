@@ -39,7 +39,7 @@ func main(cmd *cobra.Command, args []string) {
 func run(cmd *cobra.Command, args []string) error {
 	local, _ := cmd.Flags().GetBool("local")
 
-	catalog, err := catalog.NewWithSettings(client.GetBasePath(cmd), "")
+	catalog, err := catalog.New(catalog.WithBasePath(client.GetBasePath(cmd)))
 	if err != nil {
 		return fmt.Errorf("unable to create catalog system: %w", err)
 	}

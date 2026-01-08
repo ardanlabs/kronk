@@ -30,7 +30,7 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	cat, err = catalog.NewWithSettings(basePath, "")
+	cat, err = catalog.New(catalog.WithBasePath(basePath))
 	if err != nil {
 		os.RemoveAll(basePath)
 		fmt.Fprintf(os.Stderr, "setup test catalog: %v\n", err)
