@@ -68,7 +68,9 @@ Here is the existing [FEATURES](FEATURES.md) list for the project. The features 
 
 ## Architecture
 
-The architecture of Kronk is designed to be simple and scalable. The Kronk API allows you to write applications that can diectly interact with local open source GGUF models (supported by llama.cpp) that provide inference for text and media (vision and audio).
+The architecture of Kronk is designed to be simple and scalable. The Kronk SDK allows you to write applications that can diectly interact with local open source GGUF models (supported by llama.cpp) that provide inference for text and media (vision and audio).
+
+![api arch](./images/design/sdk.png?v1)
 
 Check out the [examples](#examples) section below.
 

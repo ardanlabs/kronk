@@ -36,6 +36,27 @@ export default function DocsCLIServer() {
                     <td><code>-d, --detach</code></td>
                     <td>Run server in the background</td>
                   </tr>
+                  <tr>
+                    <td><code>--base-path &lt;string&gt;</code></td>
+                    <td>Base path for kronk data (models, catalogs, templates)</td>
+                  </tr>
+                </tbody>
+              </table>
+              <h5>Environment Variables</h5>
+              <table className="flags-table">
+                <thead>
+                  <tr>
+                    <th>Variable</th>
+                    <th>Default</th>
+                    <th>Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>KRONK_BASE_PATH</code></td>
+                    <td>$HOME/kronk</td>
+                    <td>Base path for kronk data directories</td>
+                  </tr>
                 </tbody>
               </table>
               <h5>Example</h5>

@@ -37,6 +37,10 @@ export default function DocsCLICatalog() {
                     <td>Run without the model server</td>
                   </tr>
                   <tr>
+                    <td><code>--base-path &lt;string&gt;</code></td>
+                    <td>Base path for kronk data (models, catalogs, templates)</td>
+                  </tr>
+                  <tr>
                     <td><code>--filter-category &lt;string&gt;</code></td>
                     <td>Filter catalogs by category name (substring match)</td>
                   </tr>
@@ -61,6 +65,11 @@ export default function DocsCLICatalog() {
                     <td><code>KRONK_WEB_API_HOST</code></td>
                     <td>localhost:8080</td>
                     <td>IP Address for the kronk server (web mode)</td>
+                  </tr>
+                  <tr>
+                    <td><code>KRONK_BASE_PATH</code></td>
+                    <td>$HOME/kronk</td>
+                    <td>Base path for kronk data directories (local mode)</td>
                   </tr>
                 </tbody>
               </table>
@@ -95,6 +104,10 @@ kronk catalog list --filter-category embedding`}</code>
                     <td><code>--local</code></td>
                     <td>Run without the model server</td>
                   </tr>
+                  <tr>
+                    <td><code>--base-path &lt;string&gt;</code></td>
+                    <td>Base path for kronk data (models, catalogs, templates)</td>
+                  </tr>
                 </tbody>
               </table>
               <h5>Environment Variables</h5>
@@ -116,6 +129,11 @@ kronk catalog list --filter-category embedding`}</code>
                     <td><code>KRONK_WEB_API_HOST</code></td>
                     <td>localhost:8080</td>
                     <td>IP Address for the kronk server (web mode)</td>
+                  </tr>
+                  <tr>
+                    <td><code>KRONK_BASE_PATH</code></td>
+                    <td>$HOME/kronk</td>
+                    <td>Base path for kronk data directories (local mode)</td>
                   </tr>
                 </tbody>
               </table>
@@ -147,6 +165,10 @@ kronk catalog pull llama-3.2-1b-q4 --local`}</code>
                     <td><code>--local</code></td>
                     <td>Run without the model server</td>
                   </tr>
+                  <tr>
+                    <td><code>--base-path &lt;string&gt;</code></td>
+                    <td>Base path for kronk data (models, catalogs, templates)</td>
+                  </tr>
                 </tbody>
               </table>
               <h5>Environment Variables</h5>
@@ -168,6 +190,11 @@ kronk catalog pull llama-3.2-1b-q4 --local`}</code>
                     <td><code>KRONK_WEB_API_HOST</code></td>
                     <td>localhost:8080</td>
                     <td>IP Address for the kronk server (web mode)</td>
+                  </tr>
+                  <tr>
+                    <td><code>KRONK_BASE_PATH</code></td>
+                    <td>$HOME/kronk</td>
+                    <td>Base path for kronk data directories (local mode)</td>
                   </tr>
                 </tbody>
               </table>
@@ -199,6 +226,10 @@ kronk catalog show llama-3.2-1b-q4 --local`}</code>
                     <td><code>--local</code></td>
                     <td>Run without the model server</td>
                   </tr>
+                  <tr>
+                    <td><code>--base-path &lt;string&gt;</code></td>
+                    <td>Base path for kronk data (models, catalogs, templates)</td>
+                  </tr>
                 </tbody>
               </table>
               <h5>Environment Variables</h5>
@@ -220,6 +251,11 @@ kronk catalog show llama-3.2-1b-q4 --local`}</code>
                     <td><code>KRONK_WEB_API_HOST</code></td>
                     <td>localhost:8080</td>
                     <td>IP Address for the kronk server (web mode)</td>
+                  </tr>
+                  <tr>
+                    <td><code>KRONK_BASE_PATH</code></td>
+                    <td>$HOME/kronk</td>
+                    <td>Base path for kronk data directories (local mode)</td>
                   </tr>
                 </tbody>
               </table>
