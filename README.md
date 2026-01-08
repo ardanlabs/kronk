@@ -163,12 +163,15 @@ You will need to load a model if this is the first time you're using the system.
 ```shell
 kronk catalog list --local
 
-CATALOG              MODEL ID
-Audio-Text-to-Text   Qwen2-Audio-7B.Q8_0
-Embedding            embeddinggemma-300m-qat-Q8_0
-Image-Text-to-Text   Qwen2.5-VL-3B-Instruct-Q8_0
-Text-Generation      gpt-oss-20b-Q8_0
-Text-Generation      Qwen3-8B-Q8_0
+CATALOG              MODEL ID                            PULLED   ENDPOINT
+Audio-Text-to-Text   Qwen2-Audio-7B.Q8_0                 yes      chat_completion
+Embedding            embeddinggemma-300m-qat-Q8_0        yes      embeddings
+Image-Text-to-Text   gemma-3-4b-it-q4_0                  yes      chat_completion
+Image-Text-to-Text   Qwen2.5-VL-3B-Instruct-Q8_0         yes      chat_completion
+Text-Generation      gpt-oss-20b-Q8_0                    yes      chat_completion
+Text-Generation      Llama-3.3-70B-Instruct-Q8_0         yes      chat_completion
+Text-Generation      Qwen3-8B-Q8_0                       yes      chat_completion
+Text-Generation      Qwen3-Coder-30B-A3B-Instruct-Q8_0   yes      chat_completion
 ```
 
 Then download the `Qwen3-8B-Q8_0` model using the catalog pull command:
