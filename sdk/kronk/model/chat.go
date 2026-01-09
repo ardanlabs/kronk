@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
+	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/google/uuid"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // Chat performs a chat request and returns the final response.
@@ -59,88 +62,86 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		}()
 
 		var mtmdCtx mtmd.Context
+		object := ObjectChatText
 
 		if m.projFile != "" {
-			mctxParams := mtmd.ContextParamsDefault()
+			object = ObjectChatMedia
 
-			m.log(context.Background(), "loading prof from file", "status", "started")
-
-			// OTEL: WANT TO KNOW HOW LONG THESE FUNCTION CALLS TAKES
-			start := time.Now()
-
-			mtmdCtx, err = mtmd.InitFromFile(m.projFile, m.model, mctxParams)
+			mtmdCtx, err = m.loadProjFile(ctx)
 			if err != nil {
 				m.sendChatError(ctx, ch, id, fmt.Errorf("init-from-file: unable to init projection: %w", err))
 				return
 			}
 			defer mtmd.Free(mtmdCtx)
 
-			metrics.AddProjFileLoadTime(time.Since(start))
-
-			m.log(context.Background(), "loading prof from file", "status", "completed")
-
-			// -----------------------------------------------------------------
-			// We want to use a raw media message format for processing media
-			// since we need the raw bytes.
-
-			chatMessages, ok, err := isOpenAIMediaRequest(d)
+			d, err = convertToRawMediaMessage(d)
 			if err != nil {
-				m.sendChatError(ctx, ch, id, fmt.Errorf("is-open-ai-media-request: unable to check is document is openai request: %w", err))
+				m.sendChatError(ctx, ch, id, fmt.Errorf("convert-media-message: unable to convert document to media message: %w", err))
 				return
-			}
-
-			if ok {
-				d, err = toMediaMessage(d, chatMessages)
-				if err != nil {
-					m.sendChatError(ctx, ch, id, fmt.Errorf("to-media-message: unable to convert document to media message: %w", err))
-					return
-				}
 			}
 		}
 
-		// OTEL: WANT TO KNOW HOW LONG THESE FUNCTION CALLS TAKES
-		start := time.Now()
-
-		prompt, media, err := m.applyRequestJinjaTemplate(ctx, d)
+		prompt, media, err := m.createPrompt(ctx, d)
 		if err != nil {
-			m.sendChatError(ctx, ch, id, fmt.Errorf("apply-request-jinja-template: unable to apply jinja template: %w", err))
+			m.sendChatError(ctx, ch, id, fmt.Errorf("create-prompt: unable to apply jinja template: %w", err))
 			return
 		}
 
-		metrics.AddPromptCreationTime(time.Since(start))
-
-		object := ObjectChatText
-
-		if m.projFile != "" && len(media) > 0 {
-			object = ObjectChatMedia
-
-			bitmap, err := m.processBitmap(lctx, mtmdCtx, prompt, media)
-			if err != nil {
-				m.sendChatError(ctx, ch, id, err)
-				return
-			}
-
-			defer func() {
-				for _, b := range bitmap {
-					mtmd.BitmapFree(b)
-				}
-			}()
-		}
-
-		m.processChatRequest(ctx, id, lctx, object, prompt, params, ch)
+		m.processChatRequest(ctx, id, lctx, mtmdCtx, object, prompt, media, params, ch)
 	}()
 
 	return ch
 }
 
+func (m *Model) loadProjFile(ctx context.Context) (mtmd.Context, error) {
+	baseProjFile := path.Base(m.projFile)
+
+	m.log(context.Background(), "loading prof file", "status", "started", "proj", baseProjFile)
+	defer m.log(context.Background(), "loading prof file", "status", "completed", "proj", baseProjFile)
+
+	_, span := otel.AddSpan(ctx, "proj-file-load-time",
+		attribute.String("proj-file", baseProjFile),
+	)
+	defer span.End()
+
+	start := time.Now()
+	defer func() {
+		metrics.AddProjFileLoadTime(time.Since(start))
+	}()
+
+	mtmdCtx, err := mtmd.InitFromFile(m.projFile, m.model, mtmd.ContextParamsDefault())
+	if err != nil {
+		return 0, err
+	}
+
+	return mtmdCtx, nil
+}
+
+func (m *Model) createPrompt(ctx context.Context, d D) (string, [][]byte, error) {
+	ctx, span := otel.AddSpan(ctx, "create-prompt")
+	defer span.End()
+
+	start := time.Now()
+	defer func() {
+		metrics.AddPromptCreationTime(time.Since(start))
+	}()
+
+	prompt, media, err := m.applyRequestJinjaTemplate(ctx, d)
+	if err != nil {
+		return "", nil, err
+	}
+
+	return prompt, media, nil
+}
+
 func (m *Model) validateDocument(d D) (Params, error) {
 	messages, exists := d["messages"]
 	if !exists {
-		return Params{}, errors.New("validate-document: no messages found in request")
+		return Params{}, errors.New("no messages found in request")
 	}
 
 	if _, ok := messages.([]D); !ok {
-		return Params{}, errors.New("validate-document: messages is not a slice of documents")
+		return Params{}, errors.New("messages is not a slice of documents")
 	}
 
 	params, err := m.parseParams(d)
@@ -149,28 +150,6 @@ func (m *Model) validateDocument(d D) (Params, error) {
 	}
 
 	return params, nil
-}
-
-func (m *Model) processBitmap(lctx llama.Context, mtmdCtx mtmd.Context, prompt string, media [][]byte) ([]mtmd.Bitmap, error) {
-	bitmaps := make([]mtmd.Bitmap, len(media))
-	for i, med := range media {
-		bitmaps[i] = mtmd.BitmapInitFromBuf(mtmdCtx, &med[0], uint64(len(med)))
-	}
-
-	output := mtmd.InputChunksInit()
-	input := mtmd.NewInputText(prompt, true, true)
-
-	mtmd.Tokenize(mtmdCtx, output, input, bitmaps)
-
-	// OTEL: WANT TO KNOW HOW LONG THESE FUNCTION CALLS TAKES
-	start := time.Now()
-
-	var n llama.Pos
-	mtmd.HelperEvalChunks(mtmdCtx, lctx, output, 0, 0, int32(m.ctxParams.NBatch), true, &n)
-
-	metrics.AddPrefillMediaTime(time.Since(start))
-
-	return bitmaps, nil
 }
 
 func (m *Model) sendChatError(ctx context.Context, ch chan<- ChatResponse, id string, err error) {

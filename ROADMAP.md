@@ -10,9 +10,6 @@
     - Performance after setting the KV cache to FP8
     - Processing of tokens in batches
 
-    OTEL tags for metrics!
-    Add Spans
-
 ---
 
     Add support to Release to update Proxy server
@@ -26,8 +23,6 @@
 
 ### Telemetry
 
-- Apply OTEL Spans to critical areas beyond start/stop request
-- TTFT reporting
 - Cache Usage
 - Tokens/sec reported against a bucketed list of context sizes from the incoming requests
 - Maintain stats at a model level

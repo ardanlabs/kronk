@@ -12,7 +12,10 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
+	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/hybridgroup/yzma/pkg/llama"
+	"github.com/hybridgroup/yzma/pkg/mtmd"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // TemplateRetriever returns a configured template for a model.
@@ -44,54 +47,34 @@ func NewModel(ctx context.Context, tmlpRetriever TemplateRetriever, cfg Config) 
 	}
 
 	if err := validateConfig(cfg, l); err != nil {
-		return nil, fmt.Errorf("new-model: unable to validate config: %w", err)
+		return nil, fmt.Errorf("validate-config: unable to validate config: %w", err)
 	}
 
 	mparams := llama.ModelDefaultParams()
+
 	if cfg.Device != "" {
 		dev := llama.GGMLBackendDeviceByName(cfg.Device)
 		if dev == 0 {
-			return nil, fmt.Errorf("new-model: unknown device: %s", cfg.Device)
+			return nil, fmt.Errorf("ggml-backend-device-by-name: unknown device: %s", cfg.Device)
 		}
 		mparams.SetDevices([]llama.GGMLBackendDevice{dev})
 	}
 
 	// -------------------------------------------------------------------------
 
-	l(ctx, "loading model from file", "status", "started", "model", path.Base(cfg.ModelFiles[0]))
-
-	// OTEL: WANT TO KNOW HOW LONG THESE FUNCTION CALLS TAKES
-	start := time.Now()
-
-	var err error
-	var mdl llama.Model
-	switch len(cfg.ModelFiles) {
-	case 1:
-		mdl, err = llama.ModelLoadFromFile(cfg.ModelFiles[0], mparams)
-		if err != nil {
-			return nil, fmt.Errorf("new-model: unable to load model: %w", err)
-		}
-
-	default:
-		mdl, err = llama.ModelLoadFromSplits(cfg.ModelFiles, mparams)
-		if err != nil {
-			return nil, fmt.Errorf("new-model: unable to load model from split: %w", err)
-		}
+	mdl, err := loadModelFromFiles(ctx, l, cfg.ModelFiles, mparams)
+	if err != nil {
+		return nil, fmt.Errorf("load-model-from-files: unable to load model: %w", err)
 	}
-
-	metrics.AddModelFileLoadTime(time.Since(start))
-
-	l(ctx, "loading model from file", "status", "completed", "model", path.Base(cfg.ModelFiles[0]))
 
 	// -------------------------------------------------------------------------
 
 	cfg = adjustConfig(cfg, mdl)
-	vocab := llama.ModelGetVocab(mdl)
-
 	modelInfo := toModelInfo(cfg, mdl)
+
 	template, err := retrieveTemplate(tmlpRetriever, cfg, mdl, modelInfo)
 	if err != nil {
-		return nil, fmt.Errorf("new-model: failed to retrieve model template: %w", err)
+		return nil, fmt.Errorf("retrieve-template: failed to retrieve model template: %w", err)
 	}
 
 	modelInfo.Template = template
@@ -102,7 +85,7 @@ func NewModel(ctx context.Context, tmlpRetriever TemplateRetriever, cfg Config) 
 		cfg:       cfg,
 		log:       l,
 		model:     mdl,
-		vocab:     vocab,
+		vocab:     llama.ModelGetVocab(mdl),
 		ctxParams: modelCtxParams(cfg, modelInfo),
 		template:  template,
 		projFile:  cfg.ProjFile,
@@ -112,15 +95,51 @@ func NewModel(ctx context.Context, tmlpRetriever TemplateRetriever, cfg Config) 
 	return &m, nil
 }
 
+func loadModelFromFiles(ctx context.Context, log Logger, modelFiles []string, params llama.ModelParams) (llama.Model, error) {
+	baseModelFile := path.Base(modelFiles[0])
+
+	log(ctx, "loading model from file", "status", "started", "model", baseModelFile)
+	defer log(ctx, "loading model from file", "status", "completed", "model", baseModelFile)
+
+	_, span := otel.AddSpan(ctx, "proj-file-load-time",
+		attribute.String("model-file", baseModelFile),
+	)
+	defer span.End()
+
+	start := time.Now()
+	defer func() {
+		metrics.AddModelFileLoadTime(time.Since(start))
+	}()
+
+	var err error
+	var mdl llama.Model
+
+	switch len(modelFiles) {
+	case 1:
+		mdl, err = llama.ModelLoadFromFile(modelFiles[0], params)
+		if err != nil {
+			return 0, fmt.Errorf("model-load-from-file: unable to load model: %w", err)
+		}
+
+	default:
+		mdl, err = llama.ModelLoadFromSplits(modelFiles, params)
+		if err != nil {
+			return 0, fmt.Errorf("model-load-from-splits: unable to load model from split: %w", err)
+		}
+	}
+
+	return mdl, nil
+}
+
 func retrieveTemplate(tmlpRetriever TemplateRetriever, cfg Config, mdl llama.Model, modelInfo ModelInfo) (Template, error) {
 	if cfg.JinjaFile != "" {
 		data, err := readJinjaTemplate(cfg.JinjaFile)
 		if err != nil {
-			return Template{}, fmt.Errorf("retrieve-template: failed to read jinja template: %w", err)
+			return Template{}, fmt.Errorf("read-jinja-template: failed to read jinja template: %w", err)
 		}
 
 		if data == "" {
-			return Template{}, fmt.Errorf("retrieve-template: jinja template is empty")
+			return Template{}, fmt.Errorf("read-jinja-template: jinja template is empty")
 		}
 
 		return Template{
@@ -177,7 +196,13 @@ func (m *Model) ModelInfo() ModelInfo {
 	return m.modelInfo
 }
 
-func (m *Model) processChatRequest(ctx context.Context, id string, lctx llama.Context, object string, prompt string, params Params, ch chan<- ChatResponse) {
+func (m *Model) processChatRequest(ctx context.Context, id string, lctx llama.Context, mtmdCtx mtmd.Context, object string, prompt string, media [][]byte, params Params, ch chan<- ChatResponse) {
+	ctx, span := otel.AddSpan(ctx, "process-chat-request",
+		attribute.String("id", id),
+		attribute.String("object", object),
+	)
+	defer span.End()
+
 	// These are for token counting.
 	var (
 		inputTokens      int
@@ -213,12 +238,17 @@ func (m *Model) processChatRequest(ctx context.Context, id string, lctx llama.Co
 	ttftStart := time.Now()
 
 	// Process the prompt and get the first batch for the response.
-	sampler, batch, inputTokens, outputTokens := m.startProcessing(lctx, object, prompt, params)
+	sampler, batch, inputTokens, outputTokens, bitmaps := m.processInputTokens(ctx, lctx, mtmdCtx, object, prompt, media, params)
 	defer llama.SamplerFree(sampler)
+	defer func() {
+		for _, b := range bitmaps {
+			mtmd.BitmapFree(b)
+		}
+	}()
 
 	// Check that we have not exceeded the context window.
 	if inputTokens > m.cfg.ContextWindow {
-		err := fmt.Errorf("process-chat-request: input tokens %d exceed context window %d", inputTokens, m.cfg.ContextWindow)
+		err := fmt.Errorf("input tokens %d exceed context window %d", inputTokens, m.cfg.ContextWindow)
 		m.sendErrorResponse(ctx, ch, id, object, 1, prompt, err, Usage{
 			PromptTokens:     inputTokens,
 			ReasoningTokens:  reasonTokens,
@@ -259,13 +289,23 @@ loop:
 		switch {
 		case firstIteration && isGTP:
 			resp, token, err = processor.gptFirst(lctx, sampler, buf)
-			metrics.AddTimeToFirstToken(time.Since(ttftStart))
 			firstIteration = false
+
+			since := time.Since(ttftStart)
+			metrics.AddTimeToFirstToken(since)
+			span.SetAttributes(
+				attribute.String("ttft", since.String()),
+			)
 
 		case firstIteration:
 			resp, token, err = processor.standardFirst(lctx, sampler, buf)
-			metrics.AddTimeToFirstToken(time.Since(ttftStart))
 			firstIteration = false
+
+			since := time.Since(ttftStart)
+			metrics.AddTimeToFirstToken(since)
+			span.SetAttributes(
+				attribute.String("ttft", since.String()),
+			)
 
 		case isGTP:
 			resp, token, err = processor.gpt(lctx, batch, sampler, buf)
@@ -411,10 +451,21 @@ loop:
 
 	// -------------------------------------------------------------------------
 
-	// OTEL: ADD DATA TO OTEL SPAN
-
 	totalTokens := inputTokens + outputTokens
+
+	// Add all this data to metrics and otel.
+	span.SetAttributes(
+		attribute.Int("prompt_tokens", inputTokens),
+		attribute.Int("reasoning_tokens", reasonTokens),
+		attribute.Int("completion_tokens", completionTokens),
+		attribute.Int("output_tokens", outputTokens),
+		attribute.Int("total_tokens", totalTokens),
+		attribute.Float64("tokens_per_second", tokensPerSecond),
+	)
+
 	metrics.AddChatCompletionsUsage(inputTokens, reasonTokens, completionTokens, outputTokens, totalTokens, tokensPerSecond)
+
+	// -------------------------------------------------------------------------
 
 	// Send the final response that contains eveything we have sent plus
 	// the final usage numbers.
@@ -430,43 +481,75 @@ loop:
 	)
 }
 
-func (m *Model) startProcessing(lctx llama.Context, object string, prompt string, params Params) (llama.Sampler, llama.Batch, int, int) {
+// processInputTokens handles the prefill phase for both text and media requests.
+// It tokenizes the prompt, processes any media attachments, and prepares the
+// model's KV cache for autoregressive generation. Returns a sampler configured
+// with the request parameters, an initial batch for generation, token counts,
+// and any bitmaps that need to be freed by the caller.
+func (m *Model) processInputTokens(ctx context.Context, lctx llama.Context, mtmdCtx mtmd.Context, object string, prompt string, media [][]byte, params Params) (llama.Sampler, llama.Batch, int, int, []mtmd.Bitmap) {
+	_, span := otel.AddSpan(ctx, "process-input-tokens")
+	defer span.End()
+
 	// Apply any parameters to this request like temperature or top_p.
 	sampler := toSampler(params)
 
-	// Process the prompt and get the number of tokens plus the initial batch
-	// for the model response. If this is a media call, we are just doing this
-	// for the input token count and the batch will be ignored.
-
+	// Tokenize the prompt to get the input token count.
 	tokens := llama.Tokenize(m.vocab, prompt, true, true)
 	inputTokens := len(tokens)
 
 	var batch llama.Batch
 	var outputTokens int
+	var bitmaps []mtmd.Bitmap
 
 	switch object {
 	case ObjectChatMedia:
-		// Media was already processed by mtmd.HelperEvalChunks in processBitmap.
-		// Just sample the first token to start generation.
+		// Convert raw media bytes into bitmap structures for the vision encoder.
+		bitmaps = make([]mtmd.Bitmap, len(media))
+		for i, med := range media {
+			bitmaps[i] = mtmd.BitmapInitFromBuf(mtmdCtx, &med[0], uint64(len(med)))
+		}
+
+		// Create input chunks that interleave text tokens with image embeddings.
+		output := mtmd.InputChunksInit()
+		input := mtmd.NewInputText(prompt, true, true)
+
+		// Tokenize produces a sequence of chunks: text tokens and image patches.
+		mtmd.Tokenize(mtmdCtx, output, input, bitmaps)
+
+		start := time.Now()
+
+		// Prefill: Process all chunks through the model, populating the KV cache.
+		// This handles both text token decoding and vision encoder forward passes.
+		var n llama.Pos
+		mtmd.HelperEvalChunks(mtmdCtx, lctx, output, 0, 0, int32(m.ctxParams.NBatch), true, &n)
+
+		since := time.Since(start)
+		metrics.AddPrefillMediaTime(since)
+		span.SetAttributes(
+			attribute.String("prefill-media", since.String()),
+		)
+
+		// Sample the first token to start autoregressive generation.
 		batch = m.nextBatch(llama.SamplerSample(sampler, lctx, -1))
 		outputTokens = int(batch.NTokens)
 
 	default:
-		// Prefill Phase (prompt processing)
+		// Text-only prefill phase:
 		// - BatchGetOne: Wraps tokens into a batch structure for the model.
 		// - Decode: Processes the batch, updating the model's internal KV cache
 		//           with attention states.
-		// - After prefill: Logits are ready, first token is sampled in processChatRequest.
-
-		start := time.Now()
+		// - After prefill: Logits are ready for sampling in processChatRequest.
 
 		nBatch := int(m.ctxParams.NBatch)
+		start := time.Now()
 
 		switch {
 		case inputTokens <= nBatch:
+			// Small prompt: process in a single batch.
 			llama.Decode(lctx, llama.BatchGetOne(tokens))
 
 		default:
+			// Large prompt: chunk into multiple batches to avoid memory issues.
 			for i := 0; i < len(tokens); i += nBatch {
 				end := min(i+nBatch, len(tokens))
 				chunk := tokens[i:end]
@@ -474,10 +557,14 @@ func (m *Model) startProcessing(lctx llama.Context, object string, prompt string
 			}
 		}
 
-		metrics.AddPrefillNonMediaTime(time.Since(start))
+		since := time.Since(start)
+		metrics.AddPrefillNonMediaTime(since)
+		span.SetAttributes(
+			attribute.String("prefill-nonmedia", since.String()),
+		)
 	}
 
-	return sampler, batch, inputTokens, outputTokens
+	return sampler, batch, inputTokens, outputTokens, bitmaps
 }
 
 // nextBatch wraps a single sampled token into a batch for the next

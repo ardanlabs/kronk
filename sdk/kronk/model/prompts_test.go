@@ -18,16 +18,7 @@ func Test_OpenAIToMediaMessage(t *testing.T) {
 		),
 	}
 
-	chatMessages, ok, err := isOpenAIMediaRequest(d)
-	if err != nil {
-		t.Fatalf("check if we have an openai message: %s", err)
-	}
-
-	if !ok {
-		t.Fatalf("we expected to have an openai message")
-	}
-
-	d, err = toMediaMessage(d, chatMessages)
+	d, err := convertToRawMediaMessage(d)
 	if err != nil {
 		t.Fatalf("convering openai to media message: %s", err)
 	}

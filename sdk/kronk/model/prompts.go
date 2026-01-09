@@ -182,20 +182,31 @@ func readJinjaTemplate(fileName string) (string, error) {
 
 // =============================================================================
 
-func isOpenAIMediaRequest(req D) (chatMessages, bool, error) {
+// convertToRawMediaMessage is needed because we want to use a raw media message
+// format for processing media since we need the raw bytes.
+func convertToRawMediaMessage(req D) (D, error) {
 	msgs, err := toChatMessages(req)
 	if err != nil {
-		return chatMessages{}, false, fmt.Errorf("is-open-ai-media-request: chat message conversion: %w", err)
+		return nil, fmt.Errorf("chat message conversion: %w", err)
 	}
 
+	var isOpenAIMediaMessage bool
 	for _, msg := range msgs.Messages {
 		_, ok := msg.Content.([]chatMessageContent)
 		if ok {
-			return msgs, true, nil
+			isOpenAIMediaMessage = true
+			break
 		}
 	}
 
-	return msgs, false, nil
+	if isOpenAIMediaMessage {
+		req, err = toMediaMessage(req, msgs)
+		if err != nil {
+			return nil, fmt.Errorf("media message conversion: %w", err)
+		}
+	}
+
+	return req, nil
 }
 
 func toMediaMessage(req D, msgs chatMessages) (D, error) {
