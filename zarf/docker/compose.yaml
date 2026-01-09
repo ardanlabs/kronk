@@ -13,10 +13,101 @@ services:
       - host.docker.internal:host-gateway
     ports:
       - "8081:8080"
+
+  grafana:
+    image: grafana/grafana:12.3.0
+    container_name: grafana
+    restart: always
+    environment:
+      - GF_ANALYTICS_REPORTING_ENABLED=false
+      - GF_ANALYTICS_CHECK_FOR_UPDATES=false
+      - GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES=false
+      - GF_FEATURE_TOGGLES_ENABLE=traceqlEditor
+      - GF_SERVER_HTTP_PORT=3100
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/dashboards/kronk.json
+    ports:
+      - "3100:3100"
     volumes:
-      - ./openwebui:/app/backend/data
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/dashboards:/etc/dashboards
+    networks:
+      - kronk-net
+    depends_on:
+      - loki
+      - prometheus
+      - tempo
+
+  loki:
+    image: grafana/loki:3.6.0
+    container_name: loki
+    restart: always
+    command: -config.file=/loki-conf/loki.yaml -config.expand-env
+    ports:
+      - "3101:3101"
+    volumes:
+      - ./loki:/loki-conf
+    networks:
+      - kronk-net
+
+  prometheus:
+    image: prom/prometheus:v3.8.0
+    container_name: prometheus
+    restart: always
+    command:
+      - "--storage.tsdb.retention.time=1m"
+      - "--config.file=/prom-conf/prometheus.yaml"
+      - "--storage.tsdb.path=/prometheus/"
+      - "--log.level=debug"
+      - "--web.enable-remote-write-receiver"
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus:/prom-conf
+    networks:
+      - kronk-net
+
+  promtail:
+    image: grafana/promtail:3.6.0
+    container_name: promtail
+    restart: always
+    command: -config.file=/etc/promtail/promtail.yaml
+    ports:
+      - "3102:3102"
+    volumes:
+      - ./promtail:/etc/promtail
+      - promtail-positions:/run/promtail
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    networks:
+      - kronk-net
+    depends_on:
+      - loki
+
+  tempo:
+    image: grafana/tempo:2.9.0
+    container_name: tempo
+    restart: always
+    command: -config.file=/tempo-conf/tempo.yaml
+    ports:
+      - "3200:3200"
+      - "4317:4317"
+      - "4318:4318"
+      - "9411:9411"
+      - "14268:14268"
+    volumes:
+      - ./tempo:/tempo-conf
+    networks:
+      - kronk-net
+
+networks:
+  kronk-net:
+    driver: bridge
 
 volumes:
-  openwebui:
-    external: true
-    name: openwebui
+  promtail-positions:

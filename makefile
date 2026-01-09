@@ -2,6 +2,13 @@
 SHELL_PATH = /bin/ash
 SHELL = $(if $(wildcard $(SHELL_PATH)),/bin/ash,/bin/bash)
 
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+	OPEN_CMD := open
+else
+	OPEN_CMD := xdg-open
+endif
+
 # ==============================================================================
 # Setup
 
@@ -50,11 +57,27 @@ install-gotooling:
 	go install golang.org/x/vuln/cmd/govulncheck@latest
 	go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
-	go install github.com/divan/expvarmon@latest
 
 install-tooling:
 	brew list protobuf || brew install protobuf
 	brew list grpcurl || brew install grpcurl
+
+OPENWEBUI  := ghcr.io/open-webui/open-webui:v0.6.43
+GRAFANA    := grafana/grafana:12.3.0
+PROMETHEUS := prom/prometheus:v3.8.0
+TEMPO      := grafana/tempo:2.9.0
+LOKI       := grafana/loki:3.6.0
+PROMTAIL   := grafana/promtail:3.6.0
+
+# Install the docker images.
+install-docker:
+	docker pull docker.io/$(OPENWEBUI) & \
+	docker pull docker.io/$(GRAFANA) & \
+	docker pull docker.io/$(PROMETHEUS) & \
+	docker pull docker.io/$(TEMPO) & \
+	docker pull docker.io/$(LOKI) & \
+	docker pull docker.io/$(PROMTAIL) & \
+	wait;
 
 # ==============================================================================
 # Protobuf support
@@ -277,16 +300,6 @@ curl-kronk-embeddings:
 # ==============================================================================
 # Running OpenWebUI 
 
-UNAME_S := $(shell uname -s)
-ifeq ($(UNAME_S),Darwin)
-	OPEN_CMD := open
-else
-	OPEN_CMD := xdg-open
-endif
-
-install-owu:
-	docker pull ghcr.io/open-webui/open-webui:v0.6.43
-
 owu-up:
 	docker compose -f zarf/docker/compose.yaml up openwebui
 
@@ -331,14 +344,17 @@ endif
 website:
 	$(OPEN_CMD) http://localhost:8080/
 
-metrics-view:
-	expvarmon -ports="localhost:8090" -vars="service_goroutines,service_requests,service_errors,service_panics,model_load_avg,model_prompt_creation_avg,model_prefill_nonmedia_avg,model_ttft_avg,mem:memstats.HeapAlloc,mem:memstats.HeapSys,mem:memstats.Sys"
-
-grafana:
-	$(OPEN_CMD) http://localhost:3100/
-
 statsviz:
 	$(OPEN_CMD) http://localhost:8090/debug/statsviz
+
+grafana-up:
+	docker compose -f zarf/docker/compose.yaml up grafana loki prometheus promtail tempo
+
+grafana-down:
+	docker compose -f zarf/docker/compose.yaml down grafana loki prometheus promtail tempo
+
+grafana-browse:
+	$(OPEN_CMD) http://localhost:3100/
 
 # ==============================================================================
 # Go Modules support

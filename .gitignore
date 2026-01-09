@@ -2,9 +2,7 @@
 # https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
 #
 
-zarf/docker/openwebui
 node_modules
-
 .DS_Store
 
 # Binaries for programs and plugins

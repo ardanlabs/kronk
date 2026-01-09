@@ -24,6 +24,8 @@
 
 ### API
 
+- Log endpoint calls to missing endpoints
+
 - Investigate why OpenWebUI doesn't generate a "Follow-up" compared to when using other LLM runners
 
 - Add responses API
