@@ -374,7 +374,6 @@ import (
 )
 
 const (
-	//modelURL = "https://huggingface.co/bartowski/cerebras_Qwen3-Coder-REAP-25B-A3B-GGUF/resolve/main/cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0.gguf"
 	//modelURL = "https://huggingface.co/unsloth/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-Q8_0.gguf"
 	modelURL       = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
 	modelInstances = 1
@@ -572,23 +571,6 @@ func toolDocuments() []model.D {
 						},
 					},
 					"required": []any{"location"},
-				},
-			},
-		},
-		model.D{
-			"type": "function",
-			"function": model.D{
-				"name":        "invoke_cli_command",
-				"description": "Use this anytime you need to run a CLI command of any kind",
-				"parameters": model.D{
-					"type": "object",
-					"properties": model.D{
-						"call": model.D{
-							"type":        "string",
-							"description": "The full set of parameters to pass to the CLI command",
-						},
-					},
-					"required": []any{"call"},
 				},
 			},
 		},
