@@ -4,6 +4,7 @@ package otel
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"time"
 
@@ -37,6 +38,18 @@ func InitTracing(log *logger.Logger, cfg Config) (trace.TracerProvider, func(ctx
 	// WARNING: The current settings are using defaults which may not be
 	// compatible with your project. Please review the documentation for
 	// opentelemetry.
+
+	if cfg.Host != "" {
+		conn, err := net.DialTimeout("tcp", cfg.Host, 2*time.Second)
+		switch err {
+		case nil:
+			conn.Close()
+
+		default:
+			log.Info(context.Background(), "OTEL", "status", "collector unreachable, using NOOP", "host", cfg.Host)
+			cfg.Host = ""
+		}
+	}
 
 	exporter, err := otlptrace.New(
 		context.Background(),
