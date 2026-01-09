@@ -9,6 +9,75 @@ import (
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
+// GGMLType represents a ggml data type for the KV cache.
+// These values correspond to the ggml_type enum in llama.cpp.
+type GGMLType int32
+
+const (
+	GGMLTypeF32  GGMLType = 0  // 32-bit floating point (default)
+	GGMLTypeF16  GGMLType = 1  // 16-bit floating point
+	GGMLTypeQ4_0 GGMLType = 2  // 4-bit quantization (type 0)
+	GGMLTypeQ4_1 GGMLType = 3  // 4-bit quantization (type 1)
+	GGMLTypeQ5_0 GGMLType = 6  // 5-bit quantization (type 0)
+	GGMLTypeQ5_1 GGMLType = 7  // 5-bit quantization (type 1)
+	GGMLTypeQ8_0 GGMLType = 8  // 8-bit quantization (type 0)
+	GGMLTypeBF16 GGMLType = 30 // Brain floating point 16-bit
+	GGMLTypeAuto GGMLType = -1 // Use default from llama.cpp
+)
+
+// String returns the string representation of a GGMLType.
+func (t GGMLType) String() string {
+	switch t {
+	case GGMLTypeF32:
+		return "f32"
+	case GGMLTypeF16:
+		return "f16"
+	case GGMLTypeQ4_0:
+		return "q4_0"
+	case GGMLTypeQ4_1:
+		return "q4_1"
+	case GGMLTypeQ5_0:
+		return "q5_0"
+	case GGMLTypeQ5_1:
+		return "q5_1"
+	case GGMLTypeQ8_0:
+		return "q8_0"
+	case GGMLTypeBF16:
+		return "bf16"
+	case GGMLTypeAuto:
+		return "auto"
+	default:
+		return fmt.Sprintf("unknown(%d)", t)
+	}
+}
+
+// ParseGGMLType parses a string into a GGMLType.
+// Supported values: "f32", "f16", "q4_0", "q4_1", "q5_0", "q5_1", "q8_0", "bf16", "auto".
+func ParseGGMLType(s string) (GGMLType, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "f32", "fp32":
+		return GGMLTypeF32, nil
+	case "f16", "fp16":
+		return GGMLTypeF16, nil
+	case "q4_0", "q4":
+		return GGMLTypeQ4_0, nil
+	case "q4_1":
+		return GGMLTypeQ4_1, nil
+	case "q5_0", "q5":
+		return GGMLTypeQ5_0, nil
+	case "q5_1":
+		return GGMLTypeQ5_1, nil
+	case "q8_0", "q8":
+		return GGMLTypeQ8_0, nil
+	case "bf16", "bfloat16":
+		return GGMLTypeBF16, nil
+	case "auto", "":
+		return GGMLTypeAuto, nil
+	default:
+		return GGMLTypeAuto, fmt.Errorf("unknown ggml type: %s", s)
+	}
+}
+
 /*
 Workload							NBatch		NUBatch		Rationale
 Interactive chat (single user)		512–1024	512			Low latency; small batches
@@ -87,6 +156,15 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // NThreadsBatch is the number of threads to use for batch processing. When set
 // to 0, the default llama.cpp value is used.
 //
+// CacheTypeK is the data type for the K (key) cache. This controls the precision
+// of the key vectors in the KV cache. Lower precision types (like Q8_0 or Q4_0)
+// reduce memory usage but may slightly affect quality. When set to GGMLTypeAuto
+// or left as zero value, the default llama.cpp value (F16) is used.
+//
+// CacheTypeV is the data type for the V (value) cache. This controls the precision
+// of the value vectors in the KV cache. When set to GGMLTypeAuto or left as zero
+// value, the default llama.cpp value (F16) is used.
+//
 // IgnorelIntegrityCheck is a boolean that determines if the system should ignore
 // a model integrity check before trying to use it.
 type Config struct {
@@ -100,6 +178,8 @@ type Config struct {
 	NUBatch               int
 	NThreads              int
 	NThreadsBatch         int
+	CacheTypeK            GGMLType
+	CacheTypeV            GGMLType
 	IgnorelIntegrityCheck bool
 }
 
@@ -187,6 +267,14 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 		ctxParams.NCtx = uint32(cfg.ContextWindow)
 		ctxParams.NThreads = int32(cfg.NThreads)
 		ctxParams.NThreadsBatch = int32(cfg.NThreadsBatch)
+	}
+
+	if cfg.CacheTypeK != GGMLTypeAuto && cfg.CacheTypeK >= 0 {
+		ctxParams.TypeK = int32(cfg.CacheTypeK)
+	}
+
+	if cfg.CacheTypeV != GGMLTypeAuto && cfg.CacheTypeV >= 0 {
+		ctxParams.TypeV = int32(cfg.CacheTypeV)
 	}
 
 	return ctxParams

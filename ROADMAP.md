@@ -14,7 +14,6 @@
 ### MODEL SERVER / TOOLING
 
 - Add more models to the catalog. Look at Ollama's catalog.
-- Add support for setting the KV cache type to different formats (FP8, FP16, FP4, etc)
 
 ### TELEMETRY
 
