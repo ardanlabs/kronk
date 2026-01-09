@@ -269,11 +269,11 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 		ctxParams.NThreadsBatch = int32(cfg.NThreadsBatch)
 	}
 
-	if cfg.CacheTypeK != GGMLTypeAuto && cfg.CacheTypeK >= 0 {
+	if cfg.CacheTypeK > 0 {
 		ctxParams.TypeK = int32(cfg.CacheTypeK)
 	}
 
-	if cfg.CacheTypeV != GGMLTypeAuto && cfg.CacheTypeV >= 0 {
+	if cfg.CacheTypeV > 0 {
 		ctxParams.TypeV = int32(cfg.CacheTypeV)
 	}
 

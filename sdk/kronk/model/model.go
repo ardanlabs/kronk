@@ -209,11 +209,9 @@ func (m *Model) ModelInfo() ModelInfo {
 }
 
 func (m *Model) resetContext() {
-	llama.Synchronize(m.lctx)
-
 	mem, err := llama.GetMemory(m.lctx)
 	if err == nil {
-		llama.MemoryClear(mem, true)
+		llama.MemoryClear(mem, false)
 	}
 }
 
@@ -639,7 +637,7 @@ func (m *Model) isUnncessaryCRLF(reasonFlag int, completionFlag int, content str
 }
 
 func (m *Model) sendDeltaResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, index int, prompt string, content string, reasonFlag int, usage Usage) error {
-	if index%100 == 0 {
+	if index%500 == 0 {
 		m.log(ctx, "chat-completion", "status", "delta", "id", id, "index", index, "object", object, "reasoning", reasonFlag, "content", len(content))
 	}
 
