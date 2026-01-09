@@ -30,6 +30,7 @@ type Model struct {
 	model         llama.Model
 	vocab         llama.Vocab
 	ctxParams     llama.ContextParams
+	lctx          llama.Context
 	template      Template
 	projFile      string
 	modelInfo     ModelInfo
@@ -81,12 +82,21 @@ func NewModel(ctx context.Context, tmlpRetriever TemplateRetriever, cfg Config) 
 
 	// -------------------------------------------------------------------------
 
+	ctxParams := modelCtxParams(cfg, modelInfo)
+
+	lctx, err := llama.InitFromModel(mdl, ctxParams)
+	if err != nil {
+		llama.ModelFree(mdl)
+		return nil, fmt.Errorf("init-from-model: unable to init context: %w", err)
+	}
+
 	m := Model{
 		cfg:       cfg,
 		log:       l,
 		model:     mdl,
 		vocab:     llama.ModelGetVocab(mdl),
-		ctxParams: modelCtxParams(cfg, modelInfo),
+		ctxParams: ctxParams,
+		lctx:      lctx,
 		template:  template,
 		projFile:  cfg.ProjFile,
 		modelInfo: modelInfo,
@@ -182,6 +192,8 @@ func (m *Model) Unload(ctx context.Context) error {
 		}
 	}
 
+	llama.Synchronize(m.lctx)
+	llama.Free(m.lctx)
 	llama.ModelFree(m.model)
 	llama.BackendFree()
 
@@ -194,6 +206,15 @@ func (m *Model) Config() Config {
 
 func (m *Model) ModelInfo() ModelInfo {
 	return m.modelInfo
+}
+
+func (m *Model) resetContext() {
+	llama.Synchronize(m.lctx)
+
+	mem, err := llama.GetMemory(m.lctx)
+	if err == nil {
+		llama.MemoryClear(mem, true)
+	}
 }
 
 func (m *Model) processChatRequest(ctx context.Context, id string, lctx llama.Context, mtmdCtx mtmd.Context, object string, prompt string, media [][]byte, params Params, ch chan<- ChatResponse) {
@@ -511,9 +532,10 @@ func (m *Model) processInputTokens(ctx context.Context, lctx llama.Context, mtmd
 
 		// Create input chunks that interleave text tokens with image embeddings.
 		output := mtmd.InputChunksInit()
-		input := mtmd.NewInputText(prompt, true, true)
+		defer mtmd.InputChunksFree(output)
 
 		// Tokenize produces a sequence of chunks: text tokens and image patches.
+		input := mtmd.NewInputText(prompt, true, true)
 		mtmd.Tokenize(mtmdCtx, output, input, bitmaps)
 
 		start := time.Now()
@@ -617,7 +639,7 @@ func (m *Model) isUnncessaryCRLF(reasonFlag int, completionFlag int, content str
 }
 
 func (m *Model) sendDeltaResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, index int, prompt string, content string, reasonFlag int, usage Usage) error {
-	if index%100 == 0 {
+	if index%500 == 0 {
 		m.log(ctx, "chat-completion", "status", "delta", "id", id, "index", index, "object", object, "reasoning", reasonFlag, "content", len(content))
 	}
 

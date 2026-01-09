@@ -43,18 +43,18 @@ import (
 // CacheTTL: Defines the time an existing model can live in the cache without
 // being used.
 type Config struct {
-	Log                   model.Logger
-	BasePath              string
-	Templates             *templates.Templates
-	Arch                  download.Arch
-	OS                    download.OS
-	Processor             download.Processor
-	Device                string
-	MaxInCache            int
-	ModelInstances        int
-	ContextWindow         int
-	CacheTTL              time.Duration
-	IgnorelIntegrityCheck bool
+	Log                  model.Logger
+	BasePath             string
+	Templates            *templates.Templates
+	Arch                 download.Arch
+	OS                   download.OS
+	Processor            download.Processor
+	Device               string
+	MaxInCache           int
+	ModelInstances       int
+	ContextWindow        int
+	CacheTTL             time.Duration
+	IgnoreIntegrityCheck bool
 }
 
 func validateConfig(cfg Config) (Config, error) {
@@ -85,18 +85,18 @@ func validateConfig(cfg Config) (Config, error) {
 // Cache manages a set of Kronk APIs for use. It maintains a cache of these
 // APIs and will unload over time if not in use.
 type Cache struct {
-	log                   model.Logger
-	templates             *templates.Templates
-	arch                  download.Arch
-	os                    download.OS
-	processor             download.Processor
-	device                string
-	instances             int
-	contextWindow         int
-	ignorelIntegrityCheck bool
-	cache                 *otter.Cache[string, *kronk.Kronk]
-	itemsInCache          atomic.Int32
-	models                *models.Models
+	log                  model.Logger
+	templates            *templates.Templates
+	arch                 download.Arch
+	os                   download.OS
+	processor            download.Processor
+	device               string
+	instances            int
+	contextWindow        int
+	ignoreIntegrityCheck bool
+	cache                *otter.Cache[string, *kronk.Kronk]
+	itemsInCache         atomic.Int32
+	models               *models.Models
 }
 
 // NewCache constructs the manager for use.
@@ -112,16 +112,16 @@ func NewCache(cfg Config) (*Cache, error) {
 	}
 
 	c := Cache{
-		log:                   cfg.Log,
-		templates:             cfg.Templates,
-		arch:                  cfg.Arch,
-		os:                    cfg.OS,
-		processor:             cfg.Processor,
-		device:                cfg.Device,
-		instances:             cfg.ModelInstances,
-		contextWindow:         cfg.ContextWindow,
-		ignorelIntegrityCheck: cfg.IgnorelIntegrityCheck,
-		models:                models,
+		log:                  cfg.Log,
+		templates:            cfg.Templates,
+		arch:                 cfg.Arch,
+		os:                   cfg.OS,
+		processor:            cfg.Processor,
+		device:               cfg.Device,
+		instances:            cfg.ModelInstances,
+		contextWindow:        cfg.ContextWindow,
+		ignoreIntegrityCheck: cfg.IgnoreIntegrityCheck,
+		models:               models,
 	}
 
 	opt := otter.Options[string, *kronk.Kronk]{
@@ -233,12 +233,12 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 	}
 
 	cfg := model.Config{
-		Log:                   c.log,
-		ModelFiles:            fi.ModelFiles,
-		ProjFile:              fi.ProjFile,
-		Device:                c.device,
-		ContextWindow:         c.contextWindow,
-		IgnorelIntegrityCheck: c.ignorelIntegrityCheck,
+		Log:                  c.log,
+		ModelFiles:           fi.ModelFiles,
+		ProjFile:             fi.ProjFile,
+		Device:               c.device,
+		ContextWindow:        c.contextWindow,
+		IgnoreIntegrityCheck: c.ignoreIntegrityCheck,
 	}
 
 	krn, err = kronk.New(c.instances, cfg,

@@ -14,13 +14,22 @@
 ### MODEL SERVER / TOOLING
 
 - Add more models to the catalog. Look at Ollama's catalog.
-- Add support for setting the KV cache type to different formats (FP8, FP16, FP4, etc)
 
 ### TELEMETRY
 
-- Cache Usage
 - Tokens/sec reported against a bucketed list of context sizes from the incoming requests
 - Maintain stats at a model level
+
+- Cache Usage
+  Yes, yzma provides some memory information:
+  Available APIs:
+  llama.ModelSize(model) - Returns total tensor size in bytes. You're already using this in models.go to populate ModelInfo.Size.
+  llama.GetMemory(ctx) - Returns a Memory handle for KV cache management (used in your resetContext() function).
+  - Not available in yzma:
+    Real-time VRAM usage per GPU
+    Memory breakdown by component (weights vs. KV cache)
+    Allocated vs. free memory stats
+    For detailed runtime memory monitoring, you'd need OS-level tools or Go's runtime.MemStats for system RAM.
 
 ### API
 

@@ -110,12 +110,12 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			GithubRepo string `conf:"default:https://api.github.com/repos/ardanlabs/kronk_catalogs/contents/templates"`
 		}
 		Model struct {
-			Device                string
-			MaxInstances          int           `conf:"default:1"`
-			MaxInCache            int           `conf:"default:3"`
-			ContextWindow         int           `conf:"default:0"`
-			CacheTTL              time.Duration `conf:"default:5m"`
-			IgnorelIntegrityCheck bool          `conf:"default:true"`
+			Device               string
+			MaxInstances         int           `conf:"default:1"`
+			MaxInCache           int           `conf:"default:3"`
+			ContextWindow        int           `conf:"default:0"`
+			CacheTTL             time.Duration `conf:"default:5m"`
+			IgnoreIntegrityCheck bool          `conf:"default:true"`
 		}
 		BasePath     string
 		LibPath      string
@@ -336,18 +336,18 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	}
 
 	cache, err := cache.NewCache(cache.Config{
-		Log:                   log.Info,
-		BasePath:              cfg.BasePath,
-		Templates:             tmplts,
-		Arch:                  libs.Arch(),
-		OS:                    libs.OS(),
-		Processor:             libs.Processor(),
-		Device:                cfg.Model.Device,
-		MaxInCache:            cfg.Model.MaxInCache,
-		ModelInstances:        cfg.Model.MaxInstances,
-		ContextWindow:         cfg.Model.ContextWindow,
-		CacheTTL:              cfg.Model.CacheTTL,
-		IgnorelIntegrityCheck: cfg.Model.IgnorelIntegrityCheck,
+		Log:                  log.Info,
+		BasePath:             cfg.BasePath,
+		Templates:            tmplts,
+		Arch:                 libs.Arch(),
+		OS:                   libs.OS(),
+		Processor:            libs.Processor(),
+		Device:               cfg.Model.Device,
+		MaxInCache:           cfg.Model.MaxInCache,
+		ModelInstances:       cfg.Model.MaxInstances,
+		ContextWindow:        cfg.Model.ContextWindow,
+		CacheTTL:             cfg.Model.CacheTTL,
+		IgnoreIntegrityCheck: cfg.Model.IgnoreIntegrityCheck,
 	})
 
 	if err != nil {

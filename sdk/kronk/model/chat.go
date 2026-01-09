@@ -10,7 +10,6 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/google/uuid"
-	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
 	"go.opentelemetry.io/otel/attribute"
 )
@@ -44,22 +43,13 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 			close(ch)
 		}()
 
+		defer m.resetContext()
+
 		params, err := m.validateDocument(d)
 		if err != nil {
 			m.sendChatError(ctx, ch, id, err)
 			return
 		}
-
-		lctx, err := llama.InitFromModel(m.model, m.ctxParams)
-		if err != nil {
-			m.sendChatError(ctx, ch, id, fmt.Errorf("init-from-model: unable to init model: %w", err))
-			return
-		}
-
-		defer func() {
-			llama.Synchronize(lctx)
-			llama.Free(lctx)
-		}()
 
 		var mtmdCtx mtmd.Context
 		object := ObjectChatText
@@ -87,7 +77,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 			return
 		}
 
-		m.processChatRequest(ctx, id, lctx, mtmdCtx, object, prompt, media, params, ch)
+		m.processChatRequest(ctx, id, m.lctx, mtmdCtx, object, prompt, media, params, ch)
 	}()
 
 	return ch

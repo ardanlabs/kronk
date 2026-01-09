@@ -34,6 +34,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">CheckModel is check if the downloaded model is valid based on it's sha file. If no sha file exists, this check will return with no error.</p>
             </div>
 
+            <div className="doc-section" id="func-parseggmltype">
+              <h4>ParseGGMLType</h4>
+              <pre className="code-block">
+                <code>func ParseGGMLType(s string) (GGMLType, error)</code>
+              </pre>
+              <p className="doc-description">ParseGGMLType parses a string into a GGMLType. Supported values: "f32", "f16", "q4_0", "q4_1", "q5_0", "q5_1", "q8_0", "bf16", "auto".</p>
+            </div>
+
             <div className="doc-section" id="func-newmodel">
               <h4>NewModel</h4>
               <pre className="code-block">
@@ -77,20 +85,24 @@ export default function DocsSDKModel() {
               <h4>Config</h4>
               <pre className="code-block">
                 <code>{`type Config struct {
-	Log                   Logger
-	ModelFiles            []string
-	ProjFile              string
-	JinjaFile             string
-	Device                string
-	ContextWindow         int
-	NBatch                int
-	NUBatch               int
-	NThreads              int
-	NThreadsBatch         int
-	IgnorelIntegrityCheck bool
+	Log                  Logger
+	ModelFiles           []string
+	ProjFile             string
+	JinjaFile            string
+	Device               string
+	ContextWindow        int
+	NBatch               int
+	NUBatch              int
+	NThreads             int
+	NThreadsBatch        int
+	CacheTypeK           GGMLType
+	CacheTypeV           GGMLType
+	FlashAttention       FlashAttentionType
+	DefragThold          float32
+	IgnoreIntegrityCheck bool
 }`}</code>
               </pre>
-              <p className="doc-description">Config represents model level configuration. These values if configured incorrectly can cause the system to panic. The defaults are used when these values are set to 0. ModelInstances is the number of instances of the model to create. Unless you have more than 1 GPU, the recommended number of instances is 1. ModelFiles is the path to the model files. This is mandatory to provide. ProjFiles is the path to the projection files. This is mandatory for media based models like vision and audio. JinjaFile is the path to the jinja file. This is not required and can be used if you want to override the templated provided by the model metadata. Device is the device to use for the model. If not set, the default device will be used. To see what devices are available, run the following command which will be found where you installed llama.cpp. $ llama-bench --list-devices ContextWindow (often referred to as context length) is the maximum number of tokens that a large language model can process and consider at one time when generating a response. It defines the model's effective "memory" for a single conversation or text generation task. When set to 0, the default value is 4096. NBatch is the logical batch size or the maximum number of tokens that can be in a single forward pass through the model at any given time. It defines the maximum capacity of the processing batch. If you are processing a very long prompt or multiple prompts simultaneously, the total number of tokens processed in one go will not exceed NBatch. Increasing n_batch can improve performance (throughput) if your hardware can handle it, as it better utilizes parallel computation. However, a very high n_batch can lead to out-of-memory errors on systems with limited VRAM. When set to 0, the default value is 2048. NUBatch is the physical batch size or the maximum number of tokens processed together during the initial prompt processing phase (also called "prompt ingestion") to populate the KV cache. It specifically optimizes the initial loading of prompt tokens into the KV cache. If a prompt is longer than NUBatch, it will be broken down and processed in chunks of n_ubatch tokens sequentially. This parameter is crucial for tuning performance on specific hardware (especially GPUs) because different values might yield better prompt processing times depending on the memory architecture. When set to 0, the default value is 512. NThreads is the number of threads to use for generation. When set to 0, the default llama.cpp value is used. NThreadsBatch is the number of threads to use for batch processing. When set to 0, the default llama.cpp value is used. IgnorelIntegrityCheck is a boolean that determines if the system should ignore a model integrity check before trying to use it.</p>
+              <p className="doc-description">Config represents model level configuration. These values if configured incorrectly can cause the system to panic. The defaults are used when these values are set to 0. ModelInstances is the number of instances of the model to create. Unless you have more than 1 GPU, the recommended number of instances is 1. ModelFiles is the path to the model files. This is mandatory to provide. ProjFiles is the path to the projection files. This is mandatory for media based models like vision and audio. JinjaFile is the path to the jinja file. This is not required and can be used if you want to override the templated provided by the model metadata. Device is the device to use for the model. If not set, the default device will be used. To see what devices are available, run the following command which will be found where you installed llama.cpp. $ llama-bench --list-devices ContextWindow (often referred to as context length) is the maximum number of tokens that a large language model can process and consider at one time when generating a response. It defines the model's effective "memory" for a single conversation or text generation task. When set to 0, the default value is 4096. NBatch is the logical batch size or the maximum number of tokens that can be in a single forward pass through the model at any given time. It defines the maximum capacity of the processing batch. If you are processing a very long prompt or multiple prompts simultaneously, the total number of tokens processed in one go will not exceed NBatch. Increasing n_batch can improve performance (throughput) if your hardware can handle it, as it better utilizes parallel computation. However, a very high n_batch can lead to out-of-memory errors on systems with limited VRAM. When set to 0, the default value is 2048. NUBatch is the physical batch size or the maximum number of tokens processed together during the initial prompt processing phase (also called "prompt ingestion") to populate the KV cache. It specifically optimizes the initial loading of prompt tokens into the KV cache. If a prompt is longer than NUBatch, it will be broken down and processed in chunks of n_ubatch tokens sequentially. This parameter is crucial for tuning performance on specific hardware (especially GPUs) because different values might yield better prompt processing times depending on the memory architecture. When set to 0, the default value is 512. NThreads is the number of threads to use for generation. When set to 0, the default llama.cpp value is used. NThreadsBatch is the number of threads to use for batch processing. When set to 0, the default llama.cpp value is used. CacheTypeK is the data type for the K (key) cache. This controls the precision of the key vectors in the KV cache. Lower precision types (like Q8_0 or Q4_0) reduce memory usage but may slightly affect quality. When set to GGMLTypeAuto or left as zero value, the default llama.cpp value (F16) is used. CacheTypeV is the data type for the V (value) cache. This controls the precision of the value vectors in the KV cache. When set to GGMLTypeAuto or left as zero value, the default llama.cpp value (F16) is used. FlashAttention controls Flash Attention mode. Flash Attention reduces memory usage and speeds up attention computation, especially for large context windows. When left as zero value, FlashAttentionEnabled is used (default on). Set to FlashAttentionDisabled to disable, or FlashAttentionAuto to let llama.cpp decide. DefragThold is the KV cache defragmentation threshold. When the ratio of fragmented (holes) to total cache size exceeds this threshold, the cache is automatically defragmented. When left as zero value, defragmentation is disabled. A typical value is 0.1 (10%). IgnorelIntegrityCheck is a boolean that determines if the system should ignore a model integrity check before trying to use it.</p>
             </div>
 
             <div className="doc-section" id="type-d">
@@ -124,6 +136,22 @@ export default function DocsSDKModel() {
 }`}</code>
               </pre>
               <p className="doc-description">EmbedReponse represents the output for an embedding call.</p>
+            </div>
+
+            <div className="doc-section" id="type-flashattentiontype">
+              <h4>FlashAttentionType</h4>
+              <pre className="code-block">
+                <code>{`type FlashAttentionType int32`}</code>
+              </pre>
+              <p className="doc-description">FlashAttentionType controls when to enable Flash Attention. Flash Attention reduces memory usage and speeds up attention computation, especially beneficial for large context windows.</p>
+            </div>
+
+            <div className="doc-section" id="type-ggmltype">
+              <h4>GGMLType</h4>
+              <pre className="code-block">
+                <code>{`type GGMLType int32`}</code>
+              </pre>
+              <p className="doc-description">GGMLType represents a ggml data type for the KV cache. These values correspond to the ggml_type enum in llama.cpp.</p>
             </div>
 
             <div className="doc-section" id="type-logger">
@@ -248,6 +276,14 @@ export default function DocsSDKModel() {
 
           <div className="card" id="methods">
             <h3>Methods</h3>
+
+            <div className="doc-section" id="method-ggmltype-string">
+              <h4>GGMLType.String</h4>
+              <pre className="code-block">
+                <code>func (t GGMLType) String() string</code>
+              </pre>
+              <p className="doc-description">String returns the string representation of a GGMLType.</p>
+            </div>
 
             <div className="doc-section" id="method-model-chat">
               <h4>Model.Chat</h4>
@@ -386,6 +422,7 @@ export default function DocsSDKModel() {
               <ul>
                 <li><a href="#func-addparams">AddParams</a></li>
                 <li><a href="#func-checkmodel">CheckModel</a></li>
+                <li><a href="#func-parseggmltype">ParseGGMLType</a></li>
                 <li><a href="#func-newmodel">NewModel</a></li>
               </ul>
             </div>
@@ -398,6 +435,8 @@ export default function DocsSDKModel() {
                 <li><a href="#type-d">D</a></li>
                 <li><a href="#type-embeddata">EmbedData</a></li>
                 <li><a href="#type-embedreponse">EmbedReponse</a></li>
+                <li><a href="#type-flashattentiontype">FlashAttentionType</a></li>
+                <li><a href="#type-ggmltype">GGMLType</a></li>
                 <li><a href="#type-logger">Logger</a></li>
                 <li><a href="#type-model">Model</a></li>
                 <li><a href="#type-modelinfo">ModelInfo</a></li>
@@ -412,6 +451,7 @@ export default function DocsSDKModel() {
             <div className="doc-index-section">
               <a href="#methods" className="doc-index-header">Methods</a>
               <ul>
+                <li><a href="#method-ggmltype-string">GGMLType.String</a></li>
                 <li><a href="#method-model-chat">Model.Chat</a></li>
                 <li><a href="#method-model-chatstreaming">Model.ChatStreaming</a></li>
                 <li><a href="#method-model-config">Model.Config</a></li>
