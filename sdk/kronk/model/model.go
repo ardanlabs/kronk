@@ -511,9 +511,10 @@ func (m *Model) processInputTokens(ctx context.Context, lctx llama.Context, mtmd
 
 		// Create input chunks that interleave text tokens with image embeddings.
 		output := mtmd.InputChunksInit()
-		input := mtmd.NewInputText(prompt, true, true)
+		defer mtmd.InputChunksFree(output)
 
 		// Tokenize produces a sequence of chunks: text tokens and image patches.
+		input := mtmd.NewInputText(prompt, true, true)
 		mtmd.Tokenize(mtmdCtx, output, input, bitmaps)
 
 		start := time.Now()
