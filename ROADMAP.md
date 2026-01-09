@@ -33,4 +33,4 @@
 
 ### AI-TRAINING
 
-- Replease Ollama for KMS
+- Remove Ollama for KMS
