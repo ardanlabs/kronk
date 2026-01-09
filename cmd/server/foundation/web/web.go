@@ -195,8 +195,9 @@ func (a *App) RawHandlerFunc(method string, group string, path string, rawHandle
 
 // FileServerReact starts a file server based on the specified file system and
 // directory inside that file system for a statically built react webapp.
-func (a *App) FileServerReact(static embed.FS, dir string, path string) error {
+func (a *App) FileServerReact(static embed.FS, dir string, path string, apiPrefixes []string) error {
 	fileMatcher := regexp.MustCompile(`\.[a-zA-Z]*$`)
+	apiMatcher := regexp.MustCompile(`^/(` + joinPrefixes(apiPrefixes) + `)(/|$)`)
 
 	fSys, err := fs.Sub(static, dir)
 	if err != nil {
@@ -206,6 +207,12 @@ func (a *App) FileServerReact(static embed.FS, dir string, path string) error {
 	fileServer := http.StripPrefix(path, http.FileServer(http.FS(fSys)))
 
 	h := func(w http.ResponseWriter, r *http.Request) {
+		if apiMatcher.MatchString(r.URL.Path) {
+			a.log(r.Context(), "not-found", "method", r.Method, "path", r.URL.Path, "remoteaddr", r.RemoteAddr)
+			http.Error(w, "Not Found", http.StatusNotFound)
+			return
+		}
+
 		if !fileMatcher.MatchString(r.URL.Path) {
 			p, err := static.ReadFile(fmt.Sprintf("%s/index.html", dir))
 			if err != nil {
@@ -227,6 +234,17 @@ func (a *App) FileServerReact(static embed.FS, dir string, path string) error {
 	return nil
 }
 
+func joinPrefixes(prefixes []string) string {
+	if len(prefixes) == 0 {
+		return ""
+	}
+	result := prefixes[0]
+	for _, p := range prefixes[1:] {
+		result += "|" + p
+	}
+	return result
+}
+
 // FileServer starts a file server based on the specified file system and
 // directory inside that file system.
 func (a *App) FileServer(static embed.FS, dir string, path string) error {
@@ -240,4 +258,15 @@ func (a *App) FileServer(static embed.FS, dir string, path string) error {
 	a.mux.Handle(fmt.Sprintf("GET %s", path), fileServer)
 
 	return nil
+}
+
+// NotFoundHandler registers a catch-all handler that logs requests to
+// endpoints that are not configured in the server mux.
+func (a *App) NotFoundHandler() {
+	h := func(w http.ResponseWriter, r *http.Request) {
+		a.log(r.Context(), "not-found", "method", r.Method, "path", r.URL.Path, "remoteaddr", r.RemoteAddr)
+		http.Error(w, "Not Found", http.StatusNotFound)
+	}
+
+	a.mux.HandleFunc("/", h)
 }
