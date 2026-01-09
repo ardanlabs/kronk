@@ -25,6 +25,17 @@ const (
 	GGMLTypeAuto GGMLType = -1 // Use default from llama.cpp
 )
 
+// FlashAttentionType controls when to enable Flash Attention.
+// Flash Attention reduces memory usage and speeds up attention computation,
+// especially beneficial for large context windows.
+type FlashAttentionType int32
+
+const (
+	FlashAttentionAuto     FlashAttentionType = -1 // Automatically enable when appropriate
+	FlashAttentionDisabled FlashAttentionType = 0  // Disable Flash Attention
+	FlashAttentionEnabled  FlashAttentionType = 1  // Enable Flash Attention
+)
+
 // String returns the string representation of a GGMLType.
 func (t GGMLType) String() string {
 	switch t {
@@ -165,6 +176,17 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // of the value vectors in the KV cache. When set to GGMLTypeAuto or left as zero
 // value, the default llama.cpp value (F16) is used.
 //
+// FlashAttention controls Flash Attention mode. Flash Attention reduces memory
+// usage and speeds up attention computation, especially for large context windows.
+// When left as zero value, FlashAttentionEnabled is used as the default.
+// Set to FlashAttentionDisabled to explicitly disable, or FlashAttentionAuto to
+// let llama.cpp decide.
+//
+// DefragThold is the KV cache defragmentation threshold. When the ratio of
+// fragmented (holes) to total cache size exceeds this threshold, the cache is
+// automatically defragmented. When left as zero value, 0.1 (10%) is used as
+// the default. Set to a negative value to disable automatic defragmentation.
+//
 // IgnorelIntegrityCheck is a boolean that determines if the system should ignore
 // a model integrity check before trying to use it.
 type Config struct {
@@ -180,6 +202,8 @@ type Config struct {
 	NThreadsBatch        int
 	CacheTypeK           GGMLType
 	CacheTypeV           GGMLType
+	FlashAttention       FlashAttentionType
+	DefragThold          float32
 	IgnoreIntegrityCheck bool
 }
 
@@ -275,6 +299,24 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 
 	if cfg.CacheTypeV > 0 {
 		ctxParams.TypeV = int32(cfg.CacheTypeV)
+	}
+
+	switch cfg.FlashAttention {
+	case FlashAttentionDisabled:
+		ctxParams.FlashAttentionType = llama.FlashAttentionType(FlashAttentionDisabled)
+	case FlashAttentionAuto:
+		ctxParams.FlashAttentionType = llama.FlashAttentionType(FlashAttentionAuto)
+	default:
+		ctxParams.FlashAttentionType = llama.FlashAttentionType(FlashAttentionEnabled)
+	}
+
+	switch {
+	case cfg.DefragThold < 0:
+		// Negative value disables defragmentation
+	case cfg.DefragThold > 0:
+		ctxParams.DefragThold = cfg.DefragThold
+	default:
+		ctxParams.DefragThold = 0.1
 	}
 
 	return ctxParams
