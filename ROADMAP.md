@@ -24,8 +24,6 @@
 
 ### API
 
-- Log endpoint calls to missing endpoints
-
 - Investigate why OpenWebUI doesn't generate a "Follow-up" compared to when using other LLM runners
 
 - Add responses API
@@ -33,4 +31,4 @@
 
 ### AI-TRAINING
 
-- Replease Ollama for KMS
+- Remove Ollama for KMS
