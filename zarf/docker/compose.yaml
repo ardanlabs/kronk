@@ -1,6 +1,6 @@
 services:
   openwebui:
-    image: ghcr.io/open-webui/open-webui:v0.6.43
+    image: ghcr.io/open-webui/open-webui:v0.7.0
     container_name: openwebui
     restart: always
     pull_policy: never

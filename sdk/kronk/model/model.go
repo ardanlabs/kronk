@@ -209,9 +209,11 @@ func (m *Model) ModelInfo() ModelInfo {
 }
 
 func (m *Model) resetContext() {
+	llama.Synchronize(m.lctx)
+
 	mem, err := llama.GetMemory(m.lctx)
 	if err == nil {
-		llama.MemoryClear(mem, false)
+		llama.MemoryClear(mem, true)
 	}
 }
 

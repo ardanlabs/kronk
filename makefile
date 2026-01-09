@@ -51,7 +51,7 @@ install-models: install-kronk
 llama-bench:
 	$$HOME/.kronk/libraries/llama-bench --list-devices
 
-# Use this to rebuild tooling when new versions of Go are released.
+# Use this to rebuild tooling when https://files.slack.com/files-pri/T032G0ZL4-F0A8991CEJV/download/chat-export-1767998185593.json?origin_team=T032G0ZL4new versions of Go are released.
 install-gotooling:
 	go install honnef.co/go/tools/cmd/staticcheck@latest
 	go install golang.org/x/vuln/cmd/govulncheck@latest
@@ -62,7 +62,7 @@ install-tooling:
 	brew list protobuf || brew install protobuf
 	brew list grpcurl || brew install grpcurl
 
-OPENWEBUI  := ghcr.io/open-webui/open-webui:v0.6.43
+OPENWEBUI  := ghcr.io/open-webui/open-webui:v0.7.0
 GRAFANA    := grafana/grafana:12.3.0
 PROMETHEUS := prom/prometheus:v3.8.0
 TEMPO      := grafana/tempo:2.9.0
