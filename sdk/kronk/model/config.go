@@ -168,19 +168,19 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // IgnorelIntegrityCheck is a boolean that determines if the system should ignore
 // a model integrity check before trying to use it.
 type Config struct {
-	Log                   Logger
-	ModelFiles            []string
-	ProjFile              string
-	JinjaFile             string
-	Device                string
-	ContextWindow         int
-	NBatch                int
-	NUBatch               int
-	NThreads              int
-	NThreadsBatch         int
-	CacheTypeK            GGMLType
-	CacheTypeV            GGMLType
-	IgnorelIntegrityCheck bool
+	Log                  Logger
+	ModelFiles           []string
+	ProjFile             string
+	JinjaFile            string
+	Device               string
+	ContextWindow        int
+	NBatch               int
+	NUBatch              int
+	NThreads             int
+	NThreadsBatch        int
+	CacheTypeK           GGMLType
+	CacheTypeV           GGMLType
+	IgnoreIntegrityCheck bool
 }
 
 func validateConfig(cfg Config, log Logger) error {
@@ -188,7 +188,7 @@ func validateConfig(cfg Config, log Logger) error {
 		return fmt.Errorf("validate-config: model file is required")
 	}
 
-	if !cfg.IgnorelIntegrityCheck {
+	if !cfg.IgnoreIntegrityCheck {
 		for _, modelFile := range cfg.ModelFiles {
 			log(context.Background(), "checking-model-integrity", "model-file", modelFile)
 
