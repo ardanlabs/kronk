@@ -134,9 +134,17 @@ func NewCache(cfg Config) (*Cache, error) {
 		os:                   cfg.OS,
 		processor:            cfg.Processor,
 		device:               cfg.Device,
-		instances:            cfg.ModelInstances,
 		contextWindow:        cfg.ContextWindow,
+		nBatch:               cfg.NBatch,
+		nUBatch:              cfg.NUBatch,
+		nThreads:             cfg.NThreads,
+		nThreadsBatch:        cfg.NThreadsBatch,
+		cacheTypeK:           cfg.CacheTypeK,
+		cacheTypeV:           cfg.CacheTypeV,
+		flashAttention:       cfg.FlashAttention,
+		defragThold:          cfg.DefragThold,
 		ignoreIntegrityCheck: cfg.IgnoreIntegrityCheck,
+		instances:            cfg.ModelInstances,
 		models:               models,
 	}
 
