@@ -128,19 +128,25 @@ _The first time you run these programs the system will download and install the 
 make example-audio
 ```
 
-[CHAT](examples/chat/main.go) - This example shows you how to create a simple chat application against an inference model using kronk. Thanks to Kronk and yzma, reasoning and tool calling is enabled.
+[CHAT](examples/chat/main.go) - This example shows you how to chat with the chat-completion api.
 
 ```shell
 make example-chat
 ```
 
-[EMBEDDING](examples/embedding/main.go) - This example shows you how to use an embedding model.
+[EMBEDDING](examples/embedding/main.go) - This example shows you a basic program using Kronk to perform an embedding operation.
 
 ```shell
 make example-embedding
 ```
 
-[QUESTION](examples/question/main.go) - This example shows you a basic program of using Kronk to ask a model a question.
+[QUESTION](examples/question/main.go) - This example shows you how to ask a simple question with the chat-completion api.
+
+```shell
+make example-question
+```
+
+[RESPONSE](examples/response/main.go) - This example shows you how to chat with the response api.
 
 ```shell
 make example-question

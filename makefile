@@ -389,6 +389,9 @@ example-embedding:
 example-question:
 	CGO_ENABLED=0 go run examples/question/main.go
 
+example-response:
+	CGO_ENABLED=0 go run examples/response/main.go
+
 example-vision:
 	CGO_ENABLED=0 go run examples/vision/main.go
 

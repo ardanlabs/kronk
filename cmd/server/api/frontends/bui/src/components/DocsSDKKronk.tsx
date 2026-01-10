@@ -54,6 +54,26 @@ export default function DocsSDKKronk() {
           <div className="card" id="types">
             <h3>Types</h3>
 
+            <div className="doc-section" id="type-incompletedetail">
+              <h4>IncompleteDetail</h4>
+              <pre className="code-block">
+                <code>{`type IncompleteDetail struct {
+	Reason string \`json:"reason"\`
+}`}</code>
+              </pre>
+              <p className="doc-description">IncompleteDetail provides details about why a response is incomplete.</p>
+            </div>
+
+            <div className="doc-section" id="type-inputtokensdetails">
+              <h4>InputTokensDetails</h4>
+              <pre className="code-block">
+                <code>{`type InputTokensDetails struct {
+	CachedTokens int \`json:"cached_tokens"\`
+}`}</code>
+              </pre>
+              <p className="doc-description">InputTokensDetails provides breakdown of input tokens.</p>
+            </div>
+
             <div className="doc-section" id="type-kronk">
               <h4>Kronk</h4>
               <pre className="code-block">
@@ -86,6 +106,155 @@ export default function DocsSDKKronk() {
                 <code>{`type Option func(*options)`}</code>
               </pre>
               <p className="doc-description">Option represents options for configuring Kronk.</p>
+            </div>
+
+            <div className="doc-section" id="type-outputtokensdetails">
+              <h4>OutputTokensDetails</h4>
+              <pre className="code-block">
+                <code>{`type OutputTokensDetails struct {
+	ReasoningTokens int \`json:"reasoning_tokens"\`
+}`}</code>
+              </pre>
+              <p className="doc-description">OutputTokensDetails provides breakdown of output tokens.</p>
+            </div>
+
+            <div className="doc-section" id="type-responsecontentitem">
+              <h4>ResponseContentItem</h4>
+              <pre className="code-block">
+                <code>{`type ResponseContentItem struct {
+	Type        string   \`json:"type"\`
+	Text        string   \`json:"text"\`
+	Annotations []string \`json:"annotations"\`
+}`}</code>
+              </pre>
+              <p className="doc-description">ResponseContentItem represents a content item within an output message.</p>
+            </div>
+
+            <div className="doc-section" id="type-responseerror">
+              <h4>ResponseError</h4>
+              <pre className="code-block">
+                <code>{`type ResponseError struct {
+	Code    string \`json:"code"\`
+	Message string \`json:"message"\`
+}`}</code>
+              </pre>
+              <p className="doc-description">ResponseError represents an error in the response.</p>
+            </div>
+
+            <div className="doc-section" id="type-responseformattype">
+              <h4>ResponseFormatType</h4>
+              <pre className="code-block">
+                <code>{`type ResponseFormatType struct {
+	Type string \`json:"type"\`
+}`}</code>
+              </pre>
+              <p className="doc-description">ResponseFormatType specifies the format type.</p>
+            </div>
+
+            <div className="doc-section" id="type-responseoutputitem">
+              <h4>ResponseOutputItem</h4>
+              <pre className="code-block">
+                <code>{`type ResponseOutputItem struct {
+	Type      string                \`json:"type"\`
+	ID        string                \`json:"id"\`
+	Status    string                \`json:"status,omitempty"\`
+	Role      string                \`json:"role,omitempty"\`
+	Content   []ResponseContentItem \`json:"content,omitempty"\`
+	CallID    string                \`json:"call_id,omitempty"\`
+	Name      string                \`json:"name,omitempty"\`
+	Arguments string                \`json:"arguments,omitempty"\`
+}`}</code>
+              </pre>
+              <p className="doc-description">ResponseOutputItem represents an item in the output array. For type="message": ID, Status, Role, Content are used. For type="function_call": ID, Status, CallID, Name, Arguments are used.</p>
+            </div>
+
+            <div className="doc-section" id="type-responsereasoning">
+              <h4>ResponseReasoning</h4>
+              <pre className="code-block">
+                <code>{`type ResponseReasoning struct {
+	Effort  *string \`json:"effort"\`
+	Summary *string \`json:"summary"\`
+}`}</code>
+              </pre>
+              <p className="doc-description">ResponseReasoning contains reasoning configuration/output.</p>
+            </div>
+
+            <div className="doc-section" id="type-responseresponse">
+              <h4>ResponseResponse</h4>
+              <pre className="code-block">
+                <code>{`type ResponseResponse struct {
+	ID               string                 \`json:"id"\`
+	Object           string                 \`json:"object"\`
+	CreatedAt        int64                  \`json:"created_at"\`
+	Status           string                 \`json:"status"\`
+	CompletedAt      *int64                 \`json:"completed_at"\`
+	Error            *ResponseError         \`json:"error"\`
+	IncompleteDetail *IncompleteDetail      \`json:"incomplete_details"\`
+	Instructions     *string                \`json:"instructions"\`
+	MaxOutputTokens  *int                   \`json:"max_output_tokens"\`
+	Model            string                 \`json:"model"\`
+	Output           []ResponseOutputItem   \`json:"output"\`
+	ParallelToolCall bool                   \`json:"parallel_tool_calls"\`
+	PrevResponseID   *string                \`json:"previous_response_id"\`
+	Reasoning        ResponseReasoning      \`json:"reasoning"\`
+	Store            bool                   \`json:"store"\`
+	Temperature      float64                \`json:"temperature"\`
+	Text             ResponseTextFormat     \`json:"text"\`
+	ToolChoice       string                 \`json:"tool_choice"\`
+	Tools            []any                  \`json:"tools"\`
+	TopP             float64                \`json:"top_p"\`
+	Truncation       string                 \`json:"truncation"\`
+	Usage            ResponseUsage          \`json:"usage"\`
+	User             *string                \`json:"user"\`
+	Metadata         map[string]interface{} \`json:"metadata"\`
+}`}</code>
+              </pre>
+              <p className="doc-description">ResponseResponse represents the OpenAI Responses API response format.</p>
+            </div>
+
+            <div className="doc-section" id="type-responsestreamevent">
+              <h4>ResponseStreamEvent</h4>
+              <pre className="code-block">
+                <code>{`type ResponseStreamEvent struct {
+	Type           string               \`json:"type"\`
+	SequenceNumber int                  \`json:"sequence_number"\`
+	Response       *ResponseResponse    \`json:"response,omitempty"\`
+	OutputIndex    *int                 \`json:"output_index,omitempty"\`
+	ContentIndex   *int                 \`json:"content_index,omitempty"\`
+	ItemID         string               \`json:"item_id,omitempty"\`
+	Item           *ResponseOutputItem  \`json:"item,omitempty"\`
+	Part           *ResponseContentItem \`json:"part,omitempty"\`
+	Delta          string               \`json:"delta,omitempty"\`
+	Text           string               \`json:"text,omitempty"\`
+	Arguments      string               \`json:"arguments,omitempty"\`
+	Name           string               \`json:"name,omitempty"\`
+}`}</code>
+              </pre>
+              <p className="doc-description">ResponseStreamEvent represents a streaming event for the Responses API.</p>
+            </div>
+
+            <div className="doc-section" id="type-responsetextformat">
+              <h4>ResponseTextFormat</h4>
+              <pre className="code-block">
+                <code>{`type ResponseTextFormat struct {
+	Format ResponseFormatType \`json:"format"\`
+}`}</code>
+              </pre>
+              <p className="doc-description">ResponseTextFormat specifies the text format configuration.</p>
+            </div>
+
+            <div className="doc-section" id="type-responseusage">
+              <h4>ResponseUsage</h4>
+              <pre className="code-block">
+                <code>{`type ResponseUsage struct {
+	InputTokens        int                 \`json:"input_tokens"\`
+	InputTokensDetails InputTokensDetails  \`json:"input_tokens_details"\`
+	OutputTokens       int                 \`json:"output_tokens"\`
+	OutputTokenDetail  OutputTokensDetails \`json:"output_tokens_details"\`
+	TotalTokens        int                 \`json:"total_tokens"\`
+}`}</code>
+              </pre>
+              <p className="doc-description">ResponseUsage contains token usage information.</p>
             </div>
           </div>
 
@@ -154,6 +323,22 @@ export default function DocsSDKKronk() {
                 <code>func (krn *Kronk) ModelInfo() model.ModelInfo</code>
               </pre>
               <p className="doc-description">ModelInfo returns the model information.</p>
+            </div>
+
+            <div className="doc-section" id="method-kronk-response">
+              <h4>Kronk.Response</h4>
+              <pre className="code-block">
+                <code>func (krn *Kronk) Response(ctx context.Context, d model.D) (ResponseResponse, error)</code>
+              </pre>
+              <p className="doc-description">Response provides support to interact with an inference model.</p>
+            </div>
+
+            <div className="doc-section" id="method-kronk-responsestreaming">
+              <h4>Kronk.ResponseStreaming</h4>
+              <pre className="code-block">
+                <code>func (krn *Kronk) ResponseStreaming(ctx context.Context, d model.D) (&lt;-chan ResponseStreamEvent, error)</code>
+              </pre>
+              <p className="doc-description">ResponseStreaming provides streaming support for the Responses API.</p>
             </div>
 
             <div className="doc-section" id="method-kronk-systeminfo">
@@ -244,10 +429,22 @@ export default function DocsSDKKronk() {
             <div className="doc-index-section">
               <a href="#types" className="doc-index-header">Types</a>
               <ul>
+                <li><a href="#type-incompletedetail">IncompleteDetail</a></li>
+                <li><a href="#type-inputtokensdetails">InputTokensDetails</a></li>
                 <li><a href="#type-kronk">Kronk</a></li>
                 <li><a href="#type-loglevel">LogLevel</a></li>
                 <li><a href="#type-logger">Logger</a></li>
                 <li><a href="#type-option">Option</a></li>
+                <li><a href="#type-outputtokensdetails">OutputTokensDetails</a></li>
+                <li><a href="#type-responsecontentitem">ResponseContentItem</a></li>
+                <li><a href="#type-responseerror">ResponseError</a></li>
+                <li><a href="#type-responseformattype">ResponseFormatType</a></li>
+                <li><a href="#type-responseoutputitem">ResponseOutputItem</a></li>
+                <li><a href="#type-responsereasoning">ResponseReasoning</a></li>
+                <li><a href="#type-responseresponse">ResponseResponse</a></li>
+                <li><a href="#type-responsestreamevent">ResponseStreamEvent</a></li>
+                <li><a href="#type-responsetextformat">ResponseTextFormat</a></li>
+                <li><a href="#type-responseusage">ResponseUsage</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
@@ -261,6 +458,8 @@ export default function DocsSDKKronk() {
                 <li><a href="#method-kronk-embeddingshttp">Kronk.EmbeddingsHTTP</a></li>
                 <li><a href="#method-kronk-modelconfig">Kronk.ModelConfig</a></li>
                 <li><a href="#method-kronk-modelinfo">Kronk.ModelInfo</a></li>
+                <li><a href="#method-kronk-response">Kronk.Response</a></li>
+                <li><a href="#method-kronk-responsestreaming">Kronk.ResponseStreaming</a></li>
                 <li><a href="#method-kronk-systeminfo">Kronk.SystemInfo</a></li>
                 <li><a href="#method-kronk-unload">Kronk.Unload</a></li>
                 <li><a href="#method-loglevel-int">LogLevel.Int</a></li>
