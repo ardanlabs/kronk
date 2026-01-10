@@ -330,8 +330,8 @@ test-only: install-libraries install-models
 	CGO_ENABLED=0 go test -v -count=1 ./cmd/server/app/sdk/cache && \
 	CGO_ENABLED=0 go test -v -count=1 ./cmd/server/app/sdk/security/... && \
 	CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/model && \
-	CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/tests && \
 	CGO_ENABLED=0 go test -v -count=1 ./sdk/tools/... && \
+	CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/tests && \
 	CGO_ENABLED=0 go test -v -count=1 ./cmd/server/api/services/kronk/tests
 
 test: test-only lint vuln-check

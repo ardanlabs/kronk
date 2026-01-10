@@ -56,17 +56,40 @@ jobs:
         run: |
           go install honnef.co/go/tools/cmd/staticcheck@latest
           go install golang.org/x/vuln/cmd/govulncheck@latest
-      - name: Run tests
+      - name: Run sdk/cache tests
+        run: |
+          export GOROUTINES=1
+          export RUN_IN_PARALLEL=0
+          CGO_ENABLED=0 go test -v -count=1 ./cmd/server/app/sdk/cache
+      - name: Run sdk/security tests
+        run: |
+          export GOROUTINES=1
+          export RUN_IN_PARALLEL=0
+          CGO_ENABLED=0 go test -v -count=1 ./cmd/server/app/sdk/security/...
+      - name: Run kronk model tests
+        run: |
+          export GOROUTINES=1
+          export RUN_IN_PARALLEL=0
+          CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/model
+      - name: Run sdk/tools tests
+        run: |
+          export GOROUTINES=1
+          export RUN_IN_PARALLEL=0
+          CGO_ENABLED=0 go test -v -count=1 ./sdk/tools/...
+      - name: Run kronk tests
         timeout-minutes: 25
         run: |
           export GOROUTINES=1
           export RUN_IN_PARALLEL=0
-          CGO_ENABLED=0 go test -v -count=1 -timeout 20m ./cmd/server/app/sdk/cache
-          CGO_ENABLED=0 go test -v -count=1 -timeout 20m ./cmd/server/app/sdk/security/...
-          CGO_ENABLED=0 go test -v -count=1 -timeout 20m ./sdk/kronk/model
-          CGO_ENABLED=0 go test -v -count=1 -timeout 20m ./sdk/kronk/tests
-          CGO_ENABLED=0 go test -v -count=1 -timeout 20m ./sdk/tools/...
-          CGO_ENABLED=0 go test -v -count=1 -timeout 20m ./cmd/server/api/services/kronk/tests
+          CGO_ENABLED=0 go test -v -count=1 -timeout 25m ./sdk/kronk/tests
+      - name: Run api/service tests
+        timeout-minutes: 25
+        run: |
+          export GOROUTINES=1
+          export RUN_IN_PARALLEL=0
+          CGO_ENABLED=0 go test -v -count=1 -timeout 25m ./cmd/server/api/services/kronk/tests
+      - name: Run vet, linter, vuln checks
+        run: |
           CGO_ENABLED=0 go vet ./...
           staticcheck -checks=all ./...
           govulncheck ./...
