@@ -17,9 +17,17 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-func Test_NewManager(t *testing.T) {
-	log := initKronk(t)
+var log model.Logger
 
+func Test_Cache(t *testing.T) {
+	log = initKronk(t)
+	t.Run("new-manager", newManager)
+	t.Run("acquire-model", acquireModel)
+	t.Run("shutdown", shutdown)
+	t.Run("eviction", eviction)
+}
+
+func newManager(t *testing.T) {
 	t.Run("default config values", func(t *testing.T) {
 		cfg := cache.Config{
 			Log: log,
@@ -48,8 +56,7 @@ func Test_NewManager(t *testing.T) {
 	})
 }
 
-func Test_AcquireModel(t *testing.T) {
-	initKronk(t)
+func acquireModel(t *testing.T) {
 	log := logger.New(io.Discard, logger.LevelInfo, "test", nil)
 
 	modelID := findAvailableModel(t, "")
@@ -104,9 +111,7 @@ func Test_AcquireModel(t *testing.T) {
 	})
 }
 
-func Test_Shutdown(t *testing.T) {
-	log := initKronk(t)
-
+func shutdown(t *testing.T) {
 	modelID := findAvailableModel(t, "")
 
 	t.Run("shutdown empty cache", func(t *testing.T) {
@@ -259,9 +264,7 @@ func Test_Shutdown(t *testing.T) {
 	})
 }
 
-func Test_Eviction(t *testing.T) {
-	log := initKronk(t)
-
+func eviction(t *testing.T) {
 	modelID1 := findAvailableModel(t, "")
 	modelID2 := findAvailableModel(t, modelID1)
 
