@@ -160,7 +160,7 @@ func chat(krn *kronk.Kronk) error {
 			defer cancel()
 
 			d := model.D{
-				"messages":    messages,
+				"input":       messages,
 				"tools":       toolDocuments(),
 				"max_tokens":  2048,
 				"temperature": 0.7,

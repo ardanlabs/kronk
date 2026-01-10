@@ -273,6 +273,43 @@ curl-kronk-chat:
 		] \
     }'
 
+curl-kronk-chat-bad:
+	curl -i -X POST http://localhost:8080/v1/chat/completions \
+	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
+     -H "Content-Type: application/json" \
+     -d '{ \
+	 	"stream": true, \
+	 	"model": "Qwen2.5-VL-3B-Instruct-Q8_0", \
+		"messages": [ \
+			{ \
+				"role": "user", \
+				"content": "What is in this image?" \
+			}, \
+			{ \
+				"role": "user", \
+				"content": "$$(base64 -i examples/samples/giraffe.jpg)" \
+			} \
+		] \
+    }'
+
+curl-kronk-chat-image:
+	curl -i -X POST http://localhost:8080/v1/chat/completions \
+	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
+     -H "Content-Type: application/json" \
+     -d '{ \
+	 	"stream": true, \
+	 	"model": "Qwen2.5-VL-3B-Instruct-Q8_0", \
+		"messages": [ \
+			{ \
+				"role": "user", \
+				"content": [ \
+					{"type": "text", "text": "What is in this image?"}, \
+					{"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,'$$(base64 -i examples/samples/giraffe.jpg)'"}} \
+				] \
+			} \
+		] \
+    }'
+
 curl-kronk-chat-gpt:
 	curl -i -X POST http://localhost:8080/v1/chat/completions \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
@@ -304,10 +341,24 @@ curl-kronk-responses:
      -d '{ \
 	 	"stream": true, \
 	 	"model": "cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0", \
-		"messages": [ \
+		"input": "Hello model" \
+    }'
+
+curl-kronk-responses-image:
+	curl -i -X POST http://localhost:8080/v1/responses \
+	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
+     -H "Content-Type: application/json" \
+     -d '{ \
+	 	"stream": true, \
+	 	"model": "Qwen2.5-VL-3B-Instruct-Q8_0", \
+		"input": [ \
 			{ \
-				"role": "user", \
-				"content": "Hello model" \
+				"type": "input_text", \
+				"text": "What is in this image?" \
+			}, \
+			{ \
+				"type": "input_image", \
+				"image_url": "data:image/jpeg;base64,'$$(base64 -i examples/samples/giraffe.jpg)'" \
 			} \
 		] \
     }'

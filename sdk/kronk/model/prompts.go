@@ -182,34 +182,34 @@ func readJinjaTemplate(fileName string) (string, error) {
 
 // =============================================================================
 
-// convertToRawMediaMessage is needed because we want to use a raw media message
-// format for processing media since we need the raw bytes.
-func convertToRawMediaMessage(req D) (D, error) {
-	msgs, err := toChatMessages(req)
+func isOpenAIMediaMessage(d D) (bool, chatMessages, error) {
+	msgs, err := toChatMessages(d)
 	if err != nil {
-		return nil, fmt.Errorf("chat message conversion: %w", err)
+		return false, chatMessages{}, fmt.Errorf("chat message conversion: %w", err)
 	}
 
-	var isOpenAIMediaMessage bool
 	for _, msg := range msgs.Messages {
 		_, ok := msg.Content.([]chatMessageContent)
 		if ok {
-			isOpenAIMediaMessage = true
-			break
+			return true, msgs, nil
 		}
 	}
 
-	if isOpenAIMediaMessage {
-		req, err = toMediaMessage(req, msgs)
-		if err != nil {
-			return nil, fmt.Errorf("media message conversion: %w", err)
-		}
-	}
-
-	return req, nil
+	return false, chatMessages{}, nil
 }
 
-func toMediaMessage(req D, msgs chatMessages) (D, error) {
+// convertToRawMediaMessage is needed because we want to use a raw media message
+// format for processing media since we need the raw bytes.
+func convertToRawMediaMessage(d D, msgs chatMessages) (D, error) {
+	d, err := toMediaMessage(d, msgs)
+	if err != nil {
+		return nil, fmt.Errorf("media message conversion: %w", err)
+	}
+
+	return d, nil
+}
+
+func toMediaMessage(d D, msgs chatMessages) (D, error) {
 	type mediaMessage struct {
 		text string
 		data []byte
@@ -254,7 +254,7 @@ func toMediaMessage(req D, msgs chatMessages) (D, error) {
 				if found == 2 {
 					decoded, err := decodeMediaData(mediaData)
 					if err != nil {
-						return req, err
+						return d, err
 					}
 
 					mediaMessages = append(mediaMessages, mediaMessage{
@@ -288,9 +288,9 @@ func toMediaMessage(req D, msgs chatMessages) (D, error) {
 		docs = append(docs, TextMessage("user", mm.text))
 	}
 
-	req["messages"] = docs
+	d["messages"] = docs
 
-	return req, nil
+	return d, nil
 }
 
 func decodeMediaData(data string) ([]byte, error) {

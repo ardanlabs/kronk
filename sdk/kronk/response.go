@@ -137,6 +137,8 @@ func (krn *Kronk) Response(ctx context.Context, d model.D) (ResponseResponse, er
 		return ResponseResponse{}, fmt.Errorf("chat:context has no deadline, provide a reasonable timeout")
 	}
 
+	d = convertInputToMessages(d)
+
 	f := func(m *model.Model) (model.ChatResponse, error) {
 		return m.Chat(ctx, d)
 	}
@@ -154,6 +156,8 @@ func (krn *Kronk) ResponseStreaming(ctx context.Context, d model.D) (<-chan Resp
 	if _, exists := ctx.Deadline(); !exists {
 		return nil, fmt.Errorf("responses-streaming:context has no deadline, provide a reasonable timeout")
 	}
+
+	d = convertInputToMessages(d)
 
 	f := func(m *model.Model) <-chan model.ChatResponse {
 		return m.ChatStreaming(ctx, d)
@@ -306,15 +310,21 @@ func (ss *streamState) process(chatResp model.ChatResponse) []ResponseStreamEven
 		return nil
 	}
 
-	var events []ResponseStreamEvent
 	choice := chatResp.Choice[0]
 
-	if delta := choice.Delta.Reasoning; delta != "" {
-		events = append(events, ss.handleReasoningDelta(delta)...)
-	}
+	var events []ResponseStreamEvent
 
-	if delta := choice.Delta.Content; delta != "" {
-		events = append(events, ss.handleTextDelta(delta)...)
+	// When FinishReason is set, the text/reasoning content is duplicated from
+	// previous chunks, so skip processing it. However, tool calls may only
+	// arrive with the final response, so we must still process those.
+	if choice.FinishReason == "" {
+		if delta := choice.Delta.Reasoning; delta != "" {
+			events = append(events, ss.handleReasoningDelta(delta)...)
+		}
+
+		if delta := choice.Delta.Content; delta != "" {
+			events = append(events, ss.handleTextDelta(delta)...)
+		}
 	}
 
 	if len(choice.Delta.ToolCalls) > 0 {
@@ -780,4 +790,91 @@ func extractTools(d model.D) []any {
 	}
 
 	return result
+}
+
+func convertInputToMessages(d model.D) model.D {
+	if _, hasMessages := d["messages"]; hasMessages {
+		return d
+	}
+
+	input, hasInput := d["input"]
+	if !hasInput {
+		return d
+	}
+
+	d["messages"] = inputToMessages(input)
+	delete(d, "input")
+
+	return d
+}
+
+func inputToMessages(input any) []model.D {
+	inputItems, ok := input.([]any)
+	if !ok {
+		if str, ok := input.(string); ok {
+			return []model.D{
+				{"role": "user", "content": str},
+			}
+		}
+		if docs, ok := input.([]model.D); ok {
+			return docs
+		}
+		return nil
+	}
+
+	if len(inputItems) == 0 {
+		return nil
+	}
+
+	firstItem, ok := inputItems[0].(map[string]any)
+	if !ok {
+		if firstDoc, ok := inputItems[0].(model.D); ok {
+			firstItem = firstDoc
+		} else {
+			return nil
+		}
+	}
+
+	if _, hasRole := firstItem["role"]; hasRole {
+		var messages []model.D
+		for _, item := range inputItems {
+			if itemMap, ok := item.(map[string]any); ok {
+				messages = append(messages, model.D(itemMap))
+			} else if itemDoc, ok := item.(model.D); ok {
+				messages = append(messages, itemDoc)
+			}
+		}
+		return messages
+	}
+
+	var content []model.D
+	for _, item := range inputItems {
+		var itemMap map[string]any
+		if m, ok := item.(map[string]any); ok {
+			itemMap = m
+		} else if d, ok := item.(model.D); ok {
+			itemMap = d
+		} else {
+			continue
+		}
+
+		switch itemMap["type"] {
+		case "input_text":
+			content = append(content, model.D{
+				"type": "text",
+				"text": itemMap["text"],
+			})
+		case "input_image":
+			content = append(content, model.D{
+				"type": "image_url",
+				"image_url": model.D{
+					"url": itemMap["image_url"],
+				},
+			})
+		}
+	}
+
+	return []model.D{
+		{"role": "user", "content": content},
+	}
 }

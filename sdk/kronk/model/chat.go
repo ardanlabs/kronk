@@ -64,7 +64,16 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 			}
 			defer mtmd.Free(mtmdCtx)
 
-			d, err = convertToRawMediaMessage(d)
+		}
+
+		isMedia, msgs, err := isOpenAIMediaMessage(d)
+		if err != nil {
+			m.sendChatError(ctx, ch, id, fmt.Errorf("is-media: unable to check document: %w", err))
+			return
+		}
+
+		if isMedia {
+			d, err = convertToRawMediaMessage(d, msgs)
 			if err != nil {
 				m.sendChatError(ctx, ch, id, fmt.Errorf("convert-media-message: unable to convert document to media message: %w", err))
 				return

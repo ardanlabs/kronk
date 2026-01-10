@@ -165,14 +165,19 @@ func respStream200(tokens map[string]string) []apitest.Table {
 				"top_p":       0.9,
 				"stream":      true,
 			},
-			GotResp: &kronk.ResponseResponse{},
+			GotResp: &kronk.ResponseStreamEvent{},
 			ExpResp: &kronk.ResponseResponse{
 				Object: "response",
 				Status: "completed",
 				Model:  "Qwen3-8B-Q8_0",
 			},
 			CmpFunc: func(got any, exp any) string {
-				diff := cmp.Diff(got, exp,
+				event := got.(*kronk.ResponseStreamEvent)
+				if event.Response == nil {
+					return "expected response.completed event with Response field"
+				}
+
+				diff := cmp.Diff(event.Response, exp,
 					cmpopts.IgnoreFields(kronk.ResponseResponse{}, "ID", "CreatedAt", "CompletedAt", "Usage", "Output", "Temperature", "TopP", "ToolChoice", "Truncation", "Tools", "Metadata", "Text", "Reasoning", "ParallelToolCall", "Store"),
 				)
 
@@ -180,7 +185,7 @@ func respStream200(tokens map[string]string) []apitest.Table {
 					return diff
 				}
 
-				return validateRespResponse(got).
+				return validateRespResponse(event.Response).
 					hasValidID().
 					hasCreatedAt().
 					hasStatus("completed").
