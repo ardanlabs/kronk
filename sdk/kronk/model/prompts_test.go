@@ -18,9 +18,16 @@ func Test_OpenAIToMediaMessage(t *testing.T) {
 		),
 	}
 
-	d, err := convertToRawMediaMessage(d)
+	isMedia, chMsgs, err := isOpenAIMediaMessage(d)
 	if err != nil {
-		t.Fatalf("convering openai to media message: %s", err)
+		t.Fatalf("is-media: unable to check document: %s", err)
+	}
+
+	if isMedia {
+		d, err = convertToRawMediaMessage(d, chMsgs)
+		if err != nil {
+			t.Fatalf("convering openai to media message: %s", err)
+		}
 	}
 
 	msgs := d["messages"].([]D)

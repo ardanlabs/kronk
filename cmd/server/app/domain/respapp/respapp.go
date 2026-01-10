@@ -53,6 +53,7 @@ func (a *app) responses(ctx context.Context, r *http.Request) web.Encoder {
 	d := model.MapToModelD(req)
 
 	delete(req, "messages")
+	delete(req, "input")
 	a.log.Info(ctx, "response", "request-input", req)
 
 	if _, err := krn.ResponseStreamingHTTP(ctx, web.GetWriter(ctx), d); err != nil {
