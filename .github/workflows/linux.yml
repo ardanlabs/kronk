@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   test:
-    runs-on: Kronk
+    runs-on: kronk
     steps:
       - name: Runner specs
         run: |
