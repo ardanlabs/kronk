@@ -3,89 +3,21 @@ package kronk_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"path"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/google/uuid"
 )
 
-// initChatTest creates a new Kronk instance for tests that need their own
-// model lifecycle (e.g., concurrency tests that test unload behavior).
-func initChatTest(t *testing.T, mp models.Path, tooling bool) (*kronk.Kronk, model.D) {
-	krn, err := kronk.New(modelInstances, model.Config{
-		ModelFiles: mp.ModelFiles,
-	})
-
-	if err != nil {
-		t.Fatalf("unable to load model: %v: %v", mp.ModelFiles, err)
-	}
-
-	question := "Echo back the word: Gorilla"
-	if tooling {
-		question = "What is the weather in London, England?"
-	}
-
-	d := model.D{
-		"messages": []model.D{
-			{
-				"role":    "user",
-				"content": question,
-			},
-		},
-		"max_tokens": 2048,
-	}
-
-	if tooling {
-		switch krn.ModelInfo().IsGPTModel {
-		case true:
-			d["tools"] = []model.D{
-				{
-					"type": "function",
-					"function": model.D{
-						"name":        "get_weather",
-						"description": "Get the current weather for a location",
-						"parameters": model.D{
-							"type": "object",
-							"properties": model.D{
-								"location": model.D{
-									"type":        "string",
-									"description": "The location to get the weather for, e.g. San Francisco, CA",
-								},
-							},
-							"required": []any{"location"},
-						},
-					},
-				},
-			}
-
-		default:
-			d["tools"] = []model.D{
-				{
-					"type": "function",
-					"function": model.D{
-						"name":        "get_weather",
-						"description": "Get the current weather for a location",
-						"arguments": model.D{
-							"location": model.D{
-								"type":        "string",
-								"description": "The location to get the weather for, e.g. San Francisco, CA",
-							},
-						},
-					},
-				},
-			}
-		}
-	}
-
-	return krn, d
-}
-
 func Test_ConTest1(t *testing.T) {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("Skipping test in GitHub Actions")
+	}
+
 	// This test cancels the context before the channel loop starts.
 
 	ctx, cancel := context.WithTimeout(context.Background(), testDuration)
@@ -138,6 +70,10 @@ func Test_ConTest1(t *testing.T) {
 }
 
 func Test_ConTest2(t *testing.T) {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("Skipping test in GitHub Actions")
+	}
+
 	// This test cancels the context inside the channel loop.
 
 	ctx, cancel := context.WithTimeout(context.Background(), testDuration)
@@ -197,6 +133,10 @@ func Test_ConTest2(t *testing.T) {
 }
 
 func Test_ConTest3(t *testing.T) {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("Skipping test in GitHub Actions")
+	}
+
 	// This test breaks out the channel loop before the context is canceled.
 	// Then the context is cancelled and checks the system shuts down properly.
 

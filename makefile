@@ -62,7 +62,7 @@ install-tooling:
 	brew list protobuf || brew install protobuf
 	brew list grpcurl || brew install grpcurl
 
-OPENWEBUI  := ghcr.io/open-webui/open-webui:v0.7.0
+OPENWEBUI  := ghcr.io/open-webui/open-webui:v0.7.2
 GRAFANA    := grafana/grafana:12.3.0
 PROMETHEUS := prom/prometheus:v3.8.0
 TEMPO      := grafana/tempo:2.9.0
