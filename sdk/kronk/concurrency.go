@@ -83,3 +83,57 @@ func sendError[T any](ctx context.Context, ch chan T, ef errorFunc[T], rec any) 
 	default:
 	}
 }
+
+// =============================================================================
+
+type streamProcessor[T, U any] struct {
+	Start    func() []U
+	Process  func(T) []U
+	Complete func(T) []U
+}
+
+func streamingWith[T, U any](ctx context.Context, krn *Kronk, f streamingFunc[T], p streamProcessor[T, U], ef errorFunc[U]) (<-chan U, error) {
+	llama, err := krn.acquireModel(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	ch := make(chan U)
+
+	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				sendError(ctx, ch, ef, rec)
+			}
+
+			close(ch)
+			krn.releaseModel(llama)
+		}()
+
+		for _, msg := range p.Start() {
+			if err := sendMessage(ctx, ch, msg); err != nil {
+				return
+			}
+		}
+
+		lch := f(llama)
+
+		var lastChunk T
+		for chunk := range lch {
+			lastChunk = chunk
+			for _, msg := range p.Process(chunk) {
+				if err := sendMessage(ctx, ch, msg); err != nil {
+					return
+				}
+			}
+		}
+
+		for _, msg := range p.Complete(lastChunk) {
+			if err := sendMessage(ctx, ch, msg); err != nil {
+				return
+			}
+		}
+	}()
+
+	return ch, nil
+}

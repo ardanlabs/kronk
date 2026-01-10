@@ -153,62 +153,43 @@ func (krn *Kronk) ResponseStreaming(ctx context.Context, d model.D) (<-chan Resp
 		return nil, fmt.Errorf("responses-streaming:context has no deadline, provide a reasonable timeout")
 	}
 
-	llama, err := krn.acquireModel(ctx)
-	if err != nil {
-		return nil, err
+	f := func(m *model.Model) <-chan model.ChatResponse {
+		return m.ChatStreaming(ctx, d)
 	}
 
-	outCh := make(chan ResponseStreamEvent)
+	ss := &streamState{
+		responseID: "resp_" + uuid.New().String(),
+		createdAt:  time.Now().Unix(),
+		modelID:    krn.ModelInfo().ID,
+		tools:      extractTools(d),
+		params:     extractInputParams(d),
+		d:          d,
+	}
 
-	go func() {
-		defer func() {
-			close(outCh)
-			krn.releaseModel(llama)
-		}()
+	p := streamProcessor[model.ChatResponse, ResponseStreamEvent]{
+		Start:    ss.start,
+		Process:  ss.process,
+		Complete: ss.complete,
+	}
 
-		inputCh := llama.ChatStreaming(ctx, d)
-
-		responseID := "resp_" + uuid.New().String()
-		tools := extractTools(d)
-		inputParams := extractInputParams(d)
-		createdAt := time.Now().Unix()
-
-		ss := &streamState{
-			ctx:        ctx,
-			outCh:      outCh,
-			responseID: responseID,
-			createdAt:  createdAt,
-			modelID:    krn.ModelInfo().ID,
-			tools:      tools,
-			params:     inputParams,
+	ef := func(err error) ResponseStreamEvent {
+		return ResponseStreamEvent{
+			Type: "error",
 		}
+	}
 
-		ss.emitResponseCreated()
-		ss.emitResponseInProgress()
-
-		var lastResp model.ChatResponse
-
-		for chatResp := range inputCh {
-			lastResp = chatResp
-			ss.processChunk(chatResp)
-		}
-
-		ss.finalize(lastResp, d)
-	}()
-
-	return outCh, nil
+	return streamingWith(ctx, krn, f, p, ef)
 }
 
 // =============================================================================
 
 type streamState struct {
-	ctx             context.Context
-	outCh           chan ResponseStreamEvent
 	responseID      string
 	createdAt       int64
 	modelID         string
 	tools           []any
 	params          inputParams
+	d               model.D
 	seq             int
 	outputIndex     int
 	contentIndex    int
@@ -222,24 +203,76 @@ type streamState struct {
 	toolCallsSeenID map[string]int
 }
 
-func (ss *streamState) emitResponseCreated() {
+func (ss *streamState) start() []ResponseStreamEvent {
 	resp := ss.buildInProgressResponse()
-	sendEvent(ss.ctx, ss.outCh, ResponseStreamEvent{
-		Type:           "response.created",
-		SequenceNumber: ss.seq,
-		Response:       &resp,
-	})
-	ss.seq++
-}
 
-func (ss *streamState) emitResponseInProgress() {
-	resp := ss.buildInProgressResponse()
-	sendEvent(ss.ctx, ss.outCh, ResponseStreamEvent{
+	events := []ResponseStreamEvent{
+		{
+			Type:           "response.created",
+			SequenceNumber: ss.seq,
+			Response:       &resp,
+		},
+	}
+	ss.seq++
+
+	resp2 := ss.buildInProgressResponse()
+	events = append(events, ResponseStreamEvent{
 		Type:           "response.in_progress",
 		SequenceNumber: ss.seq,
-		Response:       &resp,
+		Response:       &resp2,
 	})
 	ss.seq++
+
+	return events
+}
+
+func (ss *streamState) process(chatResp model.ChatResponse) []ResponseStreamEvent {
+	if len(chatResp.Choice) == 0 {
+		return nil
+	}
+
+	var events []ResponseStreamEvent
+	choice := chatResp.Choice[0]
+
+	if delta := choice.Delta.Reasoning; delta != "" {
+		events = append(events, ss.handleReasoningDelta(delta)...)
+	}
+
+	if delta := choice.Delta.Content; delta != "" {
+		events = append(events, ss.handleTextDelta(delta)...)
+	}
+
+	if len(choice.Delta.ToolCalls) > 0 {
+		events = append(events, ss.handleToolCalls(choice.Delta.ToolCalls)...)
+	}
+
+	return events
+}
+
+func (ss *streamState) complete(lastResp model.ChatResponse) []ResponseStreamEvent {
+	var events []ResponseStreamEvent
+
+	if ss.msgItemEmitted {
+		events = append(events, ss.finalizeMessageItem()...)
+	}
+
+	events = append(events, ss.finalizeToolCalls()...)
+
+	finalResp := toChatResponseToResponses(lastResp, ss.d)
+	finalResp.ID = ss.responseID
+	finalResp.CreatedAt = ss.createdAt
+
+	if len(finalResp.Output) > 0 && ss.msgItemEmitted {
+		finalResp.Output[0].ID = ss.msgID
+	}
+
+	events = append(events, ResponseStreamEvent{
+		Type:           "response.completed",
+		SequenceNumber: ss.seq,
+		Response:       &finalResp,
+	})
+
+	return events
 }
 
 func (ss *streamState) buildInProgressResponse() ResponseResponse {
@@ -264,43 +297,26 @@ func (ss *streamState) buildInProgressResponse() ResponseResponse {
 	}
 }
 
-func (ss *streamState) processChunk(chatResp model.ChatResponse) {
-	if len(chatResp.Choice) == 0 {
-		return
-	}
-
-	choice := chatResp.Choice[0]
-
-	if delta := choice.Delta.Reasoning; delta != "" {
-		ss.handleReasoningDelta(delta)
-	}
-
-	if delta := choice.Delta.Content; delta != "" {
-		ss.handleTextDelta(delta)
-	}
-
-	if len(choice.Delta.ToolCalls) > 0 {
-		ss.handleToolCalls(choice.Delta.ToolCalls)
-	}
-}
-
-func (ss *streamState) handleReasoningDelta(delta string) {
+func (ss *streamState) handleReasoningDelta(delta string) []ResponseStreamEvent {
 	ss.fullReasoning += delta
-	sendEvent(ss.ctx, ss.outCh, ResponseStreamEvent{
+	event := ResponseStreamEvent{
 		Type:           "response.reasoning_summary_text.delta",
 		SequenceNumber: ss.seq,
 		Delta:          delta,
-	})
+	}
 	ss.seq++
+	return []ResponseStreamEvent{event}
 }
 
-func (ss *streamState) handleTextDelta(delta string) {
+func (ss *streamState) handleTextDelta(delta string) []ResponseStreamEvent {
+	var events []ResponseStreamEvent
+
 	if !ss.msgItemEmitted {
-		ss.emitMessageItemAdded()
+		events = append(events, ss.emitMessageItemAdded()...)
 	}
 
 	ss.fullText += delta
-	sendEvent(ss.ctx, ss.outCh, ResponseStreamEvent{
+	events = append(events, ResponseStreamEvent{
 		Type:           "response.output_text.delta",
 		SequenceNumber: ss.seq,
 		ItemID:         ss.msgID,
@@ -309,9 +325,11 @@ func (ss *streamState) handleTextDelta(delta string) {
 		Delta:          delta,
 	})
 	ss.seq++
+
+	return events
 }
 
-func (ss *streamState) emitMessageItemAdded() {
+func (ss *streamState) emitMessageItemAdded() []ResponseStreamEvent {
 	ss.msgID = "msg_" + uuid.New().String()
 	ss.msgItemEmitted = true
 
@@ -325,16 +343,18 @@ func (ss *streamState) emitMessageItemAdded() {
 		},
 	}
 
-	sendEvent(ss.ctx, ss.outCh, ResponseStreamEvent{
-		Type:           "response.output_item.added",
-		SequenceNumber: ss.seq,
-		OutputIndex:    &ss.outputIndex,
-		Item:           &outputItem,
-	})
+	events := []ResponseStreamEvent{
+		{
+			Type:           "response.output_item.added",
+			SequenceNumber: ss.seq,
+			OutputIndex:    &ss.outputIndex,
+			Item:           &outputItem,
+		},
+	}
 	ss.seq++
 
 	contentPart := ResponseContentItem{Type: "output_text", Text: "", Annotations: []string{}}
-	sendEvent(ss.ctx, ss.outCh, ResponseStreamEvent{
+	events = append(events, ResponseStreamEvent{
 		Type:           "response.content_part.added",
 		SequenceNumber: ss.seq,
 		ItemID:         ss.msgID,
@@ -343,12 +363,16 @@ func (ss *streamState) emitMessageItemAdded() {
 		Part:           &contentPart,
 	})
 	ss.seq++
+
+	return events
 }
 
-func (ss *streamState) handleToolCalls(toolCalls []model.ResponseToolCall) {
+func (ss *streamState) handleToolCalls(toolCalls []model.ResponseToolCall) []ResponseStreamEvent {
 	if ss.toolCallsSeenID == nil {
 		ss.toolCallsSeenID = make(map[string]int)
 	}
+
+	var events []ResponseStreamEvent
 
 	for _, tc := range toolCalls {
 		idx, seen := ss.toolCallsSeenID[tc.ID]
@@ -374,7 +398,7 @@ func (ss *streamState) handleToolCalls(toolCalls []model.ResponseToolCall) {
 			ss.fcItems = append(ss.fcItems, fcItem)
 
 			outIdx := ss.outputIndex + idx
-			sendEvent(ss.ctx, ss.outCh, ResponseStreamEvent{
+			events = append(events, ResponseStreamEvent{
 				Type:           "response.output_item.added",
 				SequenceNumber: ss.seq,
 				OutputIndex:    &outIdx,
@@ -389,7 +413,7 @@ func (ss *streamState) handleToolCalls(toolCalls []model.ResponseToolCall) {
 		ss.fcArgsAccum[idx] = argsDelta
 
 		outIdx := ss.outputIndex + idx
-		sendEvent(ss.ctx, ss.outCh, ResponseStreamEvent{
+		events = append(events, ResponseStreamEvent{
 			Type:           "response.function_call_arguments.delta",
 			SequenceNumber: ss.seq,
 			ItemID:         ss.fcIDs[idx],
@@ -398,43 +422,25 @@ func (ss *streamState) handleToolCalls(toolCalls []model.ResponseToolCall) {
 		})
 		ss.seq++
 	}
+
+	return events
 }
 
-func (ss *streamState) finalize(lastResp model.ChatResponse, d model.D) {
-	if ss.msgItemEmitted {
-		ss.finalizeMessageItem()
+func (ss *streamState) finalizeMessageItem() []ResponseStreamEvent {
+	events := []ResponseStreamEvent{
+		{
+			Type:           "response.output_text.done",
+			SequenceNumber: ss.seq,
+			ItemID:         ss.msgID,
+			OutputIndex:    &ss.outputIndex,
+			ContentIndex:   &ss.contentIndex,
+			Text:           ss.fullText,
+		},
 	}
-
-	ss.finalizeToolCalls()
-
-	finalResp := toChatResponseToResponses(lastResp, d)
-	finalResp.ID = ss.responseID
-	finalResp.CreatedAt = ss.createdAt
-
-	if len(finalResp.Output) > 0 && ss.msgItemEmitted {
-		finalResp.Output[0].ID = ss.msgID
-	}
-
-	sendEvent(ss.ctx, ss.outCh, ResponseStreamEvent{
-		Type:           "response.completed",
-		SequenceNumber: ss.seq,
-		Response:       &finalResp,
-	})
-}
-
-func (ss *streamState) finalizeMessageItem() {
-	sendEvent(ss.ctx, ss.outCh, ResponseStreamEvent{
-		Type:           "response.output_text.done",
-		SequenceNumber: ss.seq,
-		ItemID:         ss.msgID,
-		OutputIndex:    &ss.outputIndex,
-		ContentIndex:   &ss.contentIndex,
-		Text:           ss.fullText,
-	})
 	ss.seq++
 
 	contentPart := ResponseContentItem{Type: "output_text", Text: ss.fullText, Annotations: []string{}}
-	sendEvent(ss.ctx, ss.outCh, ResponseStreamEvent{
+	events = append(events, ResponseStreamEvent{
 		Type:           "response.content_part.done",
 		SequenceNumber: ss.seq,
 		ItemID:         ss.msgID,
@@ -453,23 +459,27 @@ func (ss *streamState) finalizeMessageItem() {
 			{Type: "output_text", Text: ss.fullText, Annotations: []string{}},
 		},
 	}
-	sendEvent(ss.ctx, ss.outCh, ResponseStreamEvent{
+	events = append(events, ResponseStreamEvent{
 		Type:           "response.output_item.done",
 		SequenceNumber: ss.seq,
 		OutputIndex:    &ss.outputIndex,
 		Item:           &outputItem,
 	})
 	ss.seq++
+
+	return events
 }
 
-func (ss *streamState) finalizeToolCalls() {
+func (ss *streamState) finalizeToolCalls() []ResponseStreamEvent {
+	var events []ResponseStreamEvent
+
 	for i, fcItem := range ss.fcItems {
 		outIdx := ss.outputIndex + i
 		if ss.msgItemEmitted {
 			outIdx = ss.outputIndex + i + 1
 		}
 
-		sendEvent(ss.ctx, ss.outCh, ResponseStreamEvent{
+		events = append(events, ResponseStreamEvent{
 			Type:           "response.function_call_arguments.done",
 			SequenceNumber: ss.seq,
 			ItemID:         ss.fcIDs[i],
@@ -481,7 +491,7 @@ func (ss *streamState) finalizeToolCalls() {
 
 		fcItem.Status = "completed"
 		fcItem.Arguments = ss.fcArgsAccum[i]
-		sendEvent(ss.ctx, ss.outCh, ResponseStreamEvent{
+		events = append(events, ResponseStreamEvent{
 			Type:           "response.output_item.done",
 			SequenceNumber: ss.seq,
 			OutputIndex:    &outIdx,
@@ -489,13 +499,8 @@ func (ss *streamState) finalizeToolCalls() {
 		})
 		ss.seq++
 	}
-}
 
-func sendEvent(ctx context.Context, ch chan ResponseStreamEvent, event ResponseStreamEvent) {
-	select {
-	case <-ctx.Done():
-	case ch <- event:
-	}
+	return events
 }
 
 // =============================================================================
