@@ -50,11 +50,19 @@ type Config struct {
 	OS                   download.OS
 	Processor            download.Processor
 	Device               string
+	ContextWindow        int
+	NBatch               int
+	NUBatch              int
+	NThreads             int
+	NThreadsBatch        int
+	CacheTypeK           model.GGMLType
+	CacheTypeV           model.GGMLType
+	FlashAttention       model.FlashAttentionType
+	DefragThold          float32
+	IgnoreIntegrityCheck bool
 	MaxInCache           int
 	ModelInstances       int
-	ContextWindow        int
 	CacheTTL             time.Duration
-	IgnoreIntegrityCheck bool
 }
 
 func validateConfig(cfg Config) (Config, error) {
@@ -91,9 +99,17 @@ type Cache struct {
 	os                   download.OS
 	processor            download.Processor
 	device               string
-	instances            int
 	contextWindow        int
+	nBatch               int
+	nUBatch              int
+	nThreads             int
+	nThreadsBatch        int
+	cacheTypeK           model.GGMLType
+	cacheTypeV           model.GGMLType
+	flashAttention       model.FlashAttentionType
+	defragThold          float32
 	ignoreIntegrityCheck bool
+	instances            int
 	cache                *otter.Cache[string, *kronk.Kronk]
 	itemsInCache         atomic.Int32
 	models               *models.Models
@@ -238,6 +254,14 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 		ProjFile:             fi.ProjFile,
 		Device:               c.device,
 		ContextWindow:        c.contextWindow,
+		NBatch:               c.nBatch,
+		NUBatch:              c.nUBatch,
+		NThreads:             c.nThreads,
+		NThreadsBatch:        c.nThreadsBatch,
+		CacheTypeK:           c.cacheTypeK,
+		CacheTypeV:           c.cacheTypeV,
+		FlashAttention:       c.flashAttention,
+		DefragThold:          c.defragThold,
 		IgnoreIntegrityCheck: c.ignoreIntegrityCheck,
 	}
 

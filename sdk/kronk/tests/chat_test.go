@@ -189,6 +189,8 @@ func testChatStreaming(t *testing.T, mp models.Path, tooling bool) {
 func initChatTest(t *testing.T, mp models.Path, tooling bool) (*kronk.Kronk, model.D) {
 	krn, err := kronk.New(modelInstances, model.Config{
 		ModelFiles: mp.ModelFiles,
+		CacheTypeK: model.GGMLTypeQ8_0,
+		CacheTypeV: model.GGMLTypeQ8_0,
 	})
 
 	if err != nil {

@@ -15,7 +15,7 @@
 
 - Add more models to the catalog. Look at Ollama's catalog.
 
-- We need to figure out a way to configure the context window at the model level.
+- We need to figure out a way to configure the model setting for a specific model.
 
 ### TELEMETRY
 
