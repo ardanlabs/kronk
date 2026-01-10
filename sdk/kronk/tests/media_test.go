@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,6 +21,14 @@ func Test_SimpleMedia(t *testing.T) {
 
 func Test_SimpleMediaStreaming(t *testing.T) {
 	testMediaStreaming(t, mpSimpleVision, imageFile)
+}
+
+func Test_SimpleMediaResponse(t *testing.T) {
+	testMediaResponse(t, mpSimpleVision, imageFile)
+}
+
+func Test_SimpleMediaResponseStreaming(t *testing.T) {
+	testMediaResponseStreaming(t, mpSimpleVision, imageFile)
 }
 
 // =============================================================================
@@ -130,6 +139,140 @@ func testMediaStreaming(t *testing.T, mp models.Path, imageFile string) {
 	}
 }
 
+func testMediaResponse(t *testing.T, mp models.Path, imageFile string) {
+	if runInParallel {
+		t.Parallel()
+	}
+
+	krn, d := initMediaTest(t, mp, imageFile)
+	defer func() {
+		t.Logf("active streams: %d", krn.ActiveStreams())
+		t.Log("unload Kronk")
+		if err := krn.Unload(context.Background()); err != nil {
+			t.Errorf("failed to unload model: %v", err)
+		}
+	}()
+
+	f := func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+		defer cancel()
+
+		id := uuid.New().String()
+		now := time.Now()
+		defer func() {
+			done := time.Now()
+			t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, krn.ModelInfo().ID, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
+		}()
+
+		resp, err := krn.Response(ctx, d)
+		if err != nil {
+			return fmt.Errorf("response: %w", err)
+		}
+
+		if err := testMediaResponseResponse(resp, krn.ModelInfo().ID, "giraffes"); err != nil {
+			t.Logf("%#v", resp)
+			return err
+		}
+
+		return nil
+	}
+
+	var g errgroup.Group
+	for range goroutines {
+		g.Go(f)
+	}
+
+	if err := g.Wait(); err != nil {
+		t.Errorf("error: %v", err)
+	}
+}
+
+func testMediaResponseStreaming(t *testing.T, mp models.Path, imageFile string) {
+	if runInParallel {
+		t.Parallel()
+	}
+
+	krn, d := initMediaTest(t, mp, imageFile)
+	defer func() {
+		t.Logf("active streams: %d", krn.ActiveStreams())
+		t.Log("unload Kronk")
+		if err := krn.Unload(context.Background()); err != nil {
+			t.Errorf("failed to unload model: %v", err)
+		}
+	}()
+
+	f := func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+		defer cancel()
+
+		id := uuid.New().String()
+		now := time.Now()
+		defer func() {
+			done := time.Now()
+			t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, krn.ModelInfo().ID, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
+		}()
+
+		ch, err := krn.ResponseStreaming(ctx, d)
+		if err != nil {
+			return fmt.Errorf("response streaming: %w", err)
+		}
+
+		var finalResp *kronk.ResponseResponse
+		var hasTextDelta bool
+
+		for event := range ch {
+			switch event.Type {
+			case "response.created":
+				if event.Response == nil {
+					return fmt.Errorf("response.created: expected response")
+				}
+				if event.Response.Status != "in_progress" {
+					return fmt.Errorf("response.created: expected status in_progress, got %s", event.Response.Status)
+				}
+
+			case "response.output_text.delta":
+				if event.Delta == "" {
+					return fmt.Errorf("response.output_text.delta: expected delta")
+				}
+				hasTextDelta = true
+
+			case "response.completed":
+				if event.Response == nil {
+					return fmt.Errorf("response.completed: expected response")
+				}
+				if event.Response.Status != "completed" {
+					return fmt.Errorf("response.completed: expected status completed, got %s", event.Response.Status)
+				}
+				finalResp = event.Response
+			}
+		}
+
+		if finalResp == nil {
+			return fmt.Errorf("expected response.completed event")
+		}
+
+		if !hasTextDelta {
+			return fmt.Errorf("expected output_text.delta events")
+		}
+
+		if err := testMediaResponseResponse(*finalResp, krn.ModelInfo().ID, "giraffes"); err != nil {
+			t.Logf("%#v", finalResp)
+			return err
+		}
+
+		return nil
+	}
+
+	var g errgroup.Group
+	for range goroutines {
+		g.Go(f)
+	}
+
+	if err := g.Wait(); err != nil {
+		t.Errorf("error: %v", err)
+	}
+}
+
 func initMediaTest(t *testing.T, mp models.Path, mediaFile string) (*kronk.Kronk, model.D) {
 	if _, err := os.Stat(mediaFile); err != nil {
 		t.Fatalf("error accessing file %q: %s", mediaFile, err)
@@ -159,4 +302,47 @@ func initMediaTest(t *testing.T, mp models.Path, mediaFile string) (*kronk.Kronk
 	}
 
 	return krn, d
+}
+
+func testMediaResponseResponse(resp kronk.ResponseResponse, modelName string, find string) error {
+	if resp.ID == "" {
+		return fmt.Errorf("expected id")
+	}
+
+	if resp.Object != "response" {
+		return fmt.Errorf("expected object type to be response, got %s", resp.Object)
+	}
+
+	if resp.CreatedAt == 0 {
+		return fmt.Errorf("expected created time")
+	}
+
+	if resp.Model != modelName {
+		return fmt.Errorf("expected model to be %s, got %s", modelName, resp.Model)
+	}
+
+	if resp.Status != "completed" {
+		return fmt.Errorf("expected status to be completed, got %s", resp.Status)
+	}
+
+	if len(resp.Output) == 0 {
+		return fmt.Errorf("expected output, got %d", len(resp.Output))
+	}
+
+	find = strings.ToLower(find)
+
+	for _, output := range resp.Output {
+		if output.Type == "message" {
+			for _, content := range output.Content {
+				if content.Type == "output_text" {
+					text := strings.ToLower(content.Text)
+					if strings.Contains(text, find) {
+						return nil
+					}
+				}
+			}
+		}
+	}
+
+	return fmt.Errorf("expected to find %q in output", find)
 }

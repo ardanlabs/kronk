@@ -341,6 +341,14 @@ export default function DocsSDKKronk() {
               <p className="doc-description">ResponseStreaming provides streaming support for the Responses API.</p>
             </div>
 
+            <div className="doc-section" id="method-kronk-responsestreaminghttp">
+              <h4>Kronk.ResponseStreamingHTTP</h4>
+              <pre className="code-block">
+                <code>func (krn *Kronk) ResponseStreamingHTTP(ctx context.Context, w http.ResponseWriter, d model.D) (ResponseResponse, error)</code>
+              </pre>
+              <p className="doc-description">ResponseStreamingHTTP provides http handler support for a responses call.</p>
+            </div>
+
             <div className="doc-section" id="method-kronk-systeminfo">
               <h4>Kronk.SystemInfo</h4>
               <pre className="code-block">
@@ -460,6 +468,7 @@ export default function DocsSDKKronk() {
                 <li><a href="#method-kronk-modelinfo">Kronk.ModelInfo</a></li>
                 <li><a href="#method-kronk-response">Kronk.Response</a></li>
                 <li><a href="#method-kronk-responsestreaming">Kronk.ResponseStreaming</a></li>
+                <li><a href="#method-kronk-responsestreaminghttp">Kronk.ResponseStreamingHTTP</a></li>
                 <li><a href="#method-kronk-systeminfo">Kronk.SystemInfo</a></li>
                 <li><a href="#method-kronk-unload">Kronk.Unload</a></li>
                 <li><a href="#method-loglevel-int">LogLevel.Int</a></li>

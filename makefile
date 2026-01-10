@@ -297,6 +297,21 @@ curl-kronk-embeddings:
   		"input": "Why is the sky blue?" \
     }'
 
+curl-kronk-responses:
+	curl -i -X POST http://localhost:8080/v1/responses \
+	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
+     -H "Content-Type: application/json" \
+     -d '{ \
+	 	"stream": true, \
+	 	"model": "cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0", \
+		"messages": [ \
+			{ \
+				"role": "user", \
+				"content": "Hello model" \
+			} \
+		] \
+    }'
+
 # ==============================================================================
 # Running OpenWebUI 
 

@@ -66,6 +66,7 @@ var outputDir = "cmd/server/api/frontends/bui/src/components"
 func Run() error {
 	docs := []apiDoc{
 		chatDoc(),
+		responsesDoc(),
 		embeddingsDoc(),
 		toolsDoc(),
 	}
@@ -462,6 +463,211 @@ func chatDoc() apiDoc {
 				},
 			},
 			messageFormatsGroup(),
+		},
+	}
+}
+
+func responsesDoc() apiDoc {
+	return apiDoc{
+		Name:        "Responses API",
+		Description: "Generate responses using language models. Compatible with the OpenAI Responses API.",
+		Filename:    "DocsAPIResponses.tsx",
+		Component:   "DocsAPIResponses",
+		Groups: []endpointGroup{
+			{
+				Name:        "Responses",
+				Description: "Create responses with language models using the Responses API format.",
+				Endpoints: []endpoint{
+					{
+						Method:      "POST",
+						Path:        "/responses",
+						Description: "Create a response. Supports streaming responses with Server-Sent Events.",
+						Auth:        "Required when auth is enabled. Token must have 'responses' endpoint access.",
+						Headers: []header{
+							{Name: "Authorization", Description: "Bearer token for authentication", Required: true},
+							{Name: "Content-Type", Description: "Must be application/json", Required: true},
+						},
+						RequestBody: &requestBody{
+							ContentType: "application/json",
+							Fields:      responsesFields(),
+						},
+						Response: &response{
+							ContentType: "application/json or text/event-stream",
+							Description: "Returns a response object, or streams Server-Sent Events if stream=true.",
+						},
+						Examples: responsesExamples(),
+					},
+				},
+			},
+			responsesFormatsGroup(),
+		},
+	}
+}
+
+func responsesFields() []field {
+	fields := []field{
+		{Name: "model", Type: "string", Required: true, Description: "ID of the model to use"},
+		{Name: "input", Type: "array", Required: true, Description: "Array of input messages (same format as chat messages)"},
+		{Name: "stream", Type: "boolean", Required: false, Description: "Enable streaming responses (default: false)"},
+		{Name: "instructions", Type: "string", Required: false, Description: "System instructions for the model"},
+		{Name: "tools", Type: "array", Required: false, Description: "List of tools the model can use"},
+		{Name: "tool_choice", Type: "string", Required: false, Description: "How the model should use tools: auto, none, or required"},
+		{Name: "parallel_tool_calls", Type: "boolean", Required: false, Description: "Allow parallel tool calls (default: true)"},
+		{Name: "store", Type: "boolean", Required: false, Description: "Whether to store the response (default: true)"},
+		{Name: "truncation", Type: "string", Required: false, Description: "Truncation strategy: auto or disabled (default: disabled)"},
+	}
+
+	fields = append(fields, paramsToFields()...)
+
+	return fields
+}
+
+func responsesExamples() []example {
+	return []example{
+		{
+			Description: "Basic response:",
+			Code: `curl -X POST http://localhost:8080/v1/responses \
+  -H "Authorization: Bearer $KRONK_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen3-8b-q8_0",
+    "input": [
+      {"role": "user", "content": "Hello, how are you?"}
+    ]
+  }'`,
+		},
+		{
+			Description: "Streaming response:",
+			Code: `curl -X POST http://localhost:8080/v1/responses \
+  -H "Authorization: Bearer $KRONK_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen3-8b-q8_0",
+    "input": [
+      {"role": "user", "content": "Write a short poem about coding"}
+    ],
+    "stream": true
+  }'`,
+		},
+		{
+			Description: "With tools:",
+			Code: `curl -X POST http://localhost:8080/v1/responses \
+  -H "Authorization: Bearer $KRONK_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen3-8b-q8_0",
+    "input": [
+      {"role": "user", "content": "What is the weather in London?"}
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "get_weather",
+          "description": "Get the current weather for a location",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "location": {"type": "string", "description": "City name"}
+            },
+            "required": ["location"]
+          }
+        }
+      }
+    ]
+  }'`,
+		},
+	}
+}
+
+func responsesFormatsGroup() endpointGroup {
+	return endpointGroup{
+		Name:        "Response Format",
+		Description: "The Responses API returns a structured response object with output items.",
+		Endpoints: []endpoint{
+			{
+				Method:      "",
+				Path:        "Response Object",
+				Description: "The response object contains metadata, output items, and usage information.",
+				Examples: []example{
+					{
+						Code: `{
+  "id": "resp_abc123",
+  "object": "response",
+  "created_at": 1234567890,
+  "status": "completed",
+  "model": "qwen3-8b-q8_0",
+  "output": [
+    {
+      "type": "message",
+      "id": "msg_xyz789",
+      "status": "completed",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "Hello! I'm doing well, thank you for asking.",
+          "annotations": []
+        }
+      ]
+    }
+  ],
+  "usage": {
+    "input_tokens": 12,
+    "output_tokens": 15,
+    "total_tokens": 27
+  }
+}`,
+					},
+				},
+			},
+			{
+				Method:      "",
+				Path:        "Streaming Events",
+				Description: "When stream=true, the API returns Server-Sent Events with different event types.",
+				Examples: []example{
+					{
+						Code: `event: response.created
+data: {"type":"response.created","response":{...}}
+
+event: response.in_progress
+data: {"type":"response.in_progress","response":{...}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","item":{...}}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","delta":"Hello"}
+
+event: response.output_text.done
+data: {"type":"response.output_text.done","text":"Hello! How are you?"}
+
+event: response.completed
+data: {"type":"response.completed","response":{...}}`,
+					},
+				},
+			},
+			{
+				Method:      "",
+				Path:        "Function Call Output",
+				Description: "When the model calls a tool, the output contains a function_call item instead of a message.",
+				Examples: []example{
+					{
+						Code: `{
+  "output": [
+    {
+      "type": "function_call",
+      "id": "fc_abc123",
+      "call_id": "call_xyz789",
+      "name": "get_weather",
+      "arguments": "{\"location\":\"London\"}",
+      "status": "completed"
+    }
+  ]
+}`,
+					},
+				},
+			},
 		},
 	}
 }

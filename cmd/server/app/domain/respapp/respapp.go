@@ -53,9 +53,9 @@ func (a *app) responses(ctx context.Context, r *http.Request) web.Encoder {
 	d := model.MapToModelD(req)
 
 	delete(req, "messages")
-	a.log.Info(ctx, "chat-completions", "request-input", req)
+	a.log.Info(ctx, "response", "request-input", req)
 
-	if _, err := krn.ChatStreamingHTTP(ctx, web.GetWriter(ctx), d); err != nil {
+	if _, err := krn.ResponseStreamingHTTP(ctx, web.GetWriter(ctx), d); err != nil {
 		return errs.New(errs.Internal, err)
 	}
 

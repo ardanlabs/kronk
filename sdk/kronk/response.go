@@ -3,7 +3,9 @@ package kronk
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
@@ -179,6 +181,79 @@ func (krn *Kronk) ResponseStreaming(ctx context.Context, d model.D) (<-chan Resp
 	}
 
 	return streamingWith(ctx, krn, f, p, ef)
+}
+
+// ResponseStreamingHTTP provides http handler support for a responses call.
+func (krn *Kronk) ResponseStreamingHTTP(ctx context.Context, w http.ResponseWriter, d model.D) (ResponseResponse, error) {
+	if _, exists := ctx.Deadline(); !exists {
+		return ResponseResponse{}, fmt.Errorf("responses-streaming-http:context has no deadline, provide a reasonable timeout")
+	}
+
+	var stream bool
+	if streamReq, ok := d["stream"].(bool); ok {
+		stream = streamReq
+	}
+
+	// -------------------------------------------------------------------------
+
+	if !stream {
+		resp, err := krn.Response(ctx, d)
+		if err != nil {
+			return ResponseResponse{}, fmt.Errorf("responses-streaming-http:response: %w", err)
+		}
+
+		data, err := json.Marshal(resp)
+		if err != nil {
+			return resp, fmt.Errorf("responses-streaming-http:marshal: %w", err)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(data)
+
+		return resp, nil
+	}
+
+	// -------------------------------------------------------------------------
+
+	f, ok := w.(http.Flusher)
+	if !ok {
+		return ResponseResponse{}, fmt.Errorf("responses-streaming-http:streaming not supported")
+	}
+
+	ch, err := krn.ResponseStreaming(ctx, d)
+	if err != nil {
+		return ResponseResponse{}, fmt.Errorf("responses-streaming-http:stream-response: %w", err)
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Transfer-Encoding", "chunked")
+	w.WriteHeader(http.StatusOK)
+	f.Flush()
+
+	var lr ResponseResponse
+
+	for event := range ch {
+		if err := ctx.Err(); err != nil {
+			if errors.Is(err, context.Canceled) {
+				return lr, errors.New("responses-streaming-http:client disconnected, do not send response")
+			}
+		}
+
+		data, err := json.Marshal(event)
+		if err != nil {
+			return lr, fmt.Errorf("responses-streaming-http:marshal: %w", err)
+		}
+
+		fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event.Type, data)
+		f.Flush()
+
+		if event.Response != nil {
+			lr = *event.Response
+		}
+	}
+
+	return lr, nil
 }
 
 // =============================================================================

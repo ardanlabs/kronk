@@ -20,6 +20,7 @@ import DocsCLIModel from './components/DocsCLIModel';
 import DocsCLISecurity from './components/DocsCLISecurity';
 import DocsCLIServer from './components/DocsCLIServer';
 import DocsAPIChat from './components/DocsAPIChat';
+import DocsAPIResponses from './components/DocsAPIResponses';
 import DocsAPIEmbeddings from './components/DocsAPIEmbeddings';
 import DocsAPITools from './components/DocsAPITools';
 import { ModelListProvider } from './contexts/ModelListContext';
@@ -48,6 +49,7 @@ export type Page =
   | 'docs-cli-security'
   | 'docs-cli-server'
   | 'docs-api-chat'
+  | 'docs-api-responses'
   | 'docs-api-embeddings'
   | 'docs-api-tools';
 
@@ -73,6 +75,7 @@ export const routeMap: Record<Page, string> = {
   'docs-cli-security': '/docs/cli/security',
   'docs-cli-server': '/docs/cli/server',
   'docs-api-chat': '/docs/api/chat',
+  'docs-api-responses': '/docs/api/responses',
   'docs-api-embeddings': '/docs/api/embeddings',
   'docs-api-tools': '/docs/api/tools',
 };
@@ -154,6 +157,7 @@ function App() {
                 <Route path="/docs/cli/security" element={<DocsCLISecurity />} />
                 <Route path="/docs/cli/server" element={<DocsCLIServer />} />
                 <Route path="/docs/api/chat" element={<DocsAPIChat />} />
+                <Route path="/docs/api/responses" element={<DocsAPIResponses />} />
                 <Route path="/docs/api/embeddings" element={<DocsAPIEmbeddings />} />
                 <Route path="/docs/api/tools" element={<DocsAPITools />} />
               </Routes>
