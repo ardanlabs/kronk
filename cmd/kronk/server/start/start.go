@@ -100,6 +100,10 @@ func buildEnvVars(cmd *cobra.Command) []string {
 		envVars = append(envVars, "KRONK_MODEL_CACHE_TTL="+v)
 	}
 
+	if v, _ := cmd.Flags().GetString("model-config-file"); v != "" {
+		envVars = append(envVars, "KRONK_MODEL_CONFIG_FILE="+v)
+	}
+
 	if v, _ := cmd.Flags().GetInt("llama-log"); v != -1 {
 		envVars = append(envVars, "KRONK_LLAMA_LOG="+strconv.Itoa(v))
 	}

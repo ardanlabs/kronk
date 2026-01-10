@@ -25,7 +25,6 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/sdk/kronk"
-	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
@@ -117,14 +116,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			ContextWindow        int           `conf:"default:23552"`
 			CacheTTL             time.Duration `conf:"default:5m"`
 			IgnoreIntegrityCheck bool          `conf:"default:true"`
-			NBatch               int
-			NUBatch              int
-			NThreads             int
-			NThreadsBatch        int
-			CacheTypeK           model.GGMLType
-			CacheTypeV           model.GGMLType
-			FlashAttention       model.FlashAttentionType
-			DefragThold          float32
+			ConfigFile           string
 		}
 		BasePath     string
 		LibPath      string
@@ -352,19 +344,11 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		OS:                   libs.OS(),
 		Processor:            libs.Processor(),
 		Device:               cfg.Model.Device,
-		ContextWindow:        cfg.Model.ContextWindow,
-		NBatch:               cfg.Model.NBatch,
-		NUBatch:              cfg.Model.NUBatch,
-		NThreads:             cfg.Model.NThreads,
-		NThreadsBatch:        cfg.Model.NThreadsBatch,
-		CacheTypeK:           cfg.Model.CacheTypeK,
-		CacheTypeV:           cfg.Model.CacheTypeV,
-		FlashAttention:       cfg.Model.FlashAttention,
-		DefragThold:          cfg.Model.DefragThold,
-		IgnoreIntegrityCheck: cfg.Model.IgnoreIntegrityCheck,
 		MaxInCache:           cfg.Model.MaxInCache,
 		ModelInstances:       cfg.Model.MaxInstances,
 		CacheTTL:             cfg.Model.CacheTTL,
+		IgnoreIntegrityCheck: cfg.Model.IgnoreIntegrityCheck,
+		ModelConfigFile:      cfg.Model.ConfigFile,
 	})
 
 	if err != nil {

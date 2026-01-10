@@ -18,7 +18,6 @@ var Cmd = &cobra.Command{
 
 func init() {
 	Cmd.Flags().BoolP("detach", "d", false, "Run server in the background")
-
 	Cmd.Flags().String("api-host", "", "API host address (e.g., localhost:8080)")
 	Cmd.Flags().String("debug-host", "", "Debug host address (e.g., localhost:8090)")
 	Cmd.Flags().Bool("auth-enabled", false, "Enable local authentication")
@@ -27,6 +26,7 @@ func init() {
 	Cmd.Flags().Int("max-in-cache", 0, "Maximum models in cache")
 	Cmd.Flags().Int("context-window", 0, "Context window size")
 	Cmd.Flags().String("cache-ttl", "", "Cache TTL duration (e.g., 5m, 1h)")
+	Cmd.Flags().String("model-config-file", "", "Special config file for model specific config")
 	Cmd.Flags().Int("llama-log", -1, "Llama log level (0=off, 1=on)")
 
 	Cmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {

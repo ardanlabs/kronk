@@ -586,7 +586,16 @@ func serverCommand() command {
 				Usage: "kronk server start [flags]",
 				Flags: []flag{
 					{Name: "-d, --detach", Description: "Run server in the background"},
-					{Name: "--base-path <string>", Description: "Base path for kronk data (models, catalogs, templates)"},
+					{Name: "--api-host <string>", Description: "API host address (e.g., localhost:8080)"},
+					{Name: "--debug-host <string>", Description: "Debug host address (e.g., localhost:8090)"},
+					{Name: "--auth-enabled", Description: "Enable local authentication"},
+					{Name: "--device <string>", Description: "Device to use for inference (e.g., cuda, metal)"},
+					{Name: "--max-instances <int>", Description: "Maximum model instances"},
+					{Name: "--max-in-cache <int>", Description: "Maximum models in cache"},
+					{Name: "--context-window <int>", Description: "Context window size"},
+					{Name: "--cache-ttl <duration>", Description: "Cache TTL duration (e.g., 5m, 1h)"},
+					{Name: "--model-config-file <string>", Description: "Special config file for model specific config"},
+					{Name: "--llama-log <int>", Description: "Llama log level (0=off, 1=on)"},
 				},
 				EnvVars: []envVar{
 					{Name: "KRONK_BASE_PATH", Default: "$HOME/kronk", Description: "Base path for kronk data directories"},
