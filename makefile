@@ -319,14 +319,19 @@ lint:
 vuln-check:
 	govulncheck ./...
 
+# Don't change the order of these tests. This order is solving a test
+# build issue with time it takes to build the test binary due to building
+# the binary with the libraries.
 test-only: install-libraries install-models
 	@echo ========== RUN TESTS ==========
 	export GOROUTINES=1 && \
 	export RUN_IN_PARALLEL=1 && \
 	export GITHUB_WORKSPACE=$(shell pwd) && \
+	CGO_ENABLED=0 go test -v -count=1 ./cmd/server/app/sdk/cache && \
+	CGO_ENABLED=0 go test -v -count=1 ./cmd/server/app/sdk/security/... && \
+	CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/model && \
+	CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/tests && \
 	CGO_ENABLED=0 go test -v -count=1 ./sdk/tools/... && \
-	CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/... && \
-	CGO_ENABLED=0 go test -v -count=1 ./cmd/server/app/sdk/... && \
 	CGO_ENABLED=0 go test -v -count=1 ./cmd/server/api/services/kronk/tests
 
 test: test-only lint vuln-check

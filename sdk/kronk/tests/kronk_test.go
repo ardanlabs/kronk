@@ -17,6 +17,10 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/templates"
 )
 
+func init() {
+	fmt.Println("kronk_test init starting...")
+}
+
 var (
 	mpThinkToolChat models.Path
 	mpGPTChat       models.Path
@@ -34,14 +38,20 @@ var (
 )
 
 func TestMain(m *testing.M) {
+	fmt.Println("Initializing models system...")
 	models, err := models.New()
 	if err != nil {
 		fmt.Printf("creating models system: %s\n", err)
 		os.Exit(1)
 	}
 
+	fmt.Println("MustRetrieveModel Qwen3-8B-Q8_0...")
 	mpThinkToolChat = models.MustRetrieveModel("Qwen3-8B-Q8_0")
+
+	fmt.Println("MustRetrieveModel Qwen2.5-VL-3B-Instruct-Q8_0...")
 	mpSimpleVision = models.MustRetrieveModel("Qwen2.5-VL-3B-Instruct-Q8_0")
+
+	fmt.Println("MustRetrieveModel embeddinggemma-300m-qat-Q8_0...")
 	mpEmbed = models.MustRetrieveModel("embeddinggemma-300m-qat-Q8_0")
 
 	if os.Getenv("GITHUB_ACTIONS") != "true" {
@@ -60,16 +70,19 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
+	fmt.Println("Downloading Templates...")
 	if err := templates.Download(ctx); err != nil {
 		fmt.Printf("unable to download templates: %s", err)
 		os.Exit(1)
 	}
 
+	fmt.Println("Downloading Catalog...")
 	if err := templates.Catalog().Download(ctx); err != nil {
 		fmt.Printf("unable to download catalog: %s", err)
 		os.Exit(1)
 	}
 
+	fmt.Println("Init Kronk...")
 	if err := kronk.Init(); err != nil {
 		fmt.Printf("Failed to init the llama.cpp library: error: %s\n", err)
 		os.Exit(1)
