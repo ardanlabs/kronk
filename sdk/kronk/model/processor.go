@@ -24,9 +24,10 @@ type response struct {
 }
 
 type processor struct {
-	model      *Model
-	status     int
-	collecting bool
+	model           *Model
+	status          int
+	collecting      bool
+	awaitingChannel bool
 }
 
 func newProcessor(m *Model) *processor {
@@ -151,9 +152,19 @@ func (p *processor) gpt(lctx llama.Context, batch llama.Batch, sampler llama.Sam
 }
 
 // gptProcess handles token content for GPT models.
+// Template format:
+//   - Reasoning: <|start|>assistant<|channel|>analysis<|message|>...content...<|end|>
+//   - Final: <|start|>assistant<|channel|>final<|message|>...content...<|return|>
+//   - Tool call: <|start|>assistant to=functions.name<|channel|>commentary json<|message|>...args...<|call|>
 func (p *processor) gptProcess(content string, token llama.Token) (response, llama.Token, error) {
 	if p.collecting {
-		if content == "<|end|>" || content == "<|call|>" {
+		if content == "<|return|>" || content == "<|call|>" {
+			p.collecting = false
+			p.status = statusNone
+			return response{}, token, io.EOF
+		}
+
+		if content == "<|end|>" {
 			p.collecting = false
 			p.status = statusNone
 			return response{}, token, nil
@@ -162,17 +173,32 @@ func (p *processor) gptProcess(content string, token llama.Token) (response, lla
 		return response{status: p.status, content: content}, token, nil
 	}
 
+	if p.awaitingChannel {
+		p.awaitingChannel = false
+		switch content {
+		case "analysis":
+			p.status = statusReasoning
+		case "final":
+			p.status = statusCompletion
+		case "commentary":
+			p.status = statusTooling
+		}
+		return response{}, token, nil
+	}
+
 	switch content {
+	case "<|start|>":
+		p.status = statusNone
+		p.collecting = false
+		p.awaitingChannel = false
+		return response{}, token, nil
+
+	case "<|channel|>":
+		p.awaitingChannel = true
+		return response{}, token, nil
+
 	case "<|message|>":
 		p.collecting = true
-		return response{}, token, nil
-
-	case "analysis":
-		p.status = statusReasoning
-		return response{}, token, nil
-
-	case "final":
-		p.status = statusCompletion
 		return response{}, token, nil
 
 	case "functions":
