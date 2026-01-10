@@ -37,9 +37,6 @@
 
 - Investigate why OpenWebUI doesn't generate a "Follow-up" compared to when using other LLM runners
 
-- Add responses API
-  - https://docs.ollama.com/api/openai-compatibility
-
 ### AI-TRAINING
 
 - Remove Ollama for KMS
