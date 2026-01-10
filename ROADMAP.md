@@ -15,6 +15,8 @@
 
 - Add more models to the catalog. Look at Ollama's catalog.
 
+- We need to figure out a way to configure the context window at the model level.
+
 ### TELEMETRY
 
 - Tokens/sec reported against a bucketed list of context sizes from the incoming requests

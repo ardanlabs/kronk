@@ -115,6 +115,18 @@ export default function DocsAPIChat() {
                     <td>Maximum output tokens to generate (default: 2)</td>
                   </tr>
                   <tr>
+                    <td><code>repeat_penalty</code></td>
+                    <td><code>float32</code></td>
+                    <td>No</td>
+                    <td></td>
+                  </tr>
+                  <tr>
+                    <td><code>repeat_last_n</code></td>
+                    <td><code>int32</code></td>
+                    <td>No</td>
+                    <td></td>
+                  </tr>
+                  <tr>
                     <td><code>enable_thinking</code></td>
                     <td><code>string</code></td>
                     <td>No</td>

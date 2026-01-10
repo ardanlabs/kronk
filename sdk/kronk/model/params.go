@@ -12,6 +12,8 @@ const (
 	defTopP            = 0.9
 	defMinP            = 0.0
 	defTemp            = 0.8
+	defRepeatPenalty   = 1.1
+	defRepeatLastN     = 64
 	defEnableThinking  = ThinkingEnabled
 	defReasoningEffort = ReasoningEffortMedium
 )
@@ -89,12 +91,23 @@ const (
 //
 // ReasoningEffort is a string that specifies the level of reasoning effort to
 // use for GPT models.
+//
+// RepeatPenalty applies a penalty to tokens that have already appeared in the
+// output, reducing repetitive text. A value of 1.0 means no penalty. Values
+// above 1.0 reduce repetition (e.g., 1.1 is a mild penalty, 1.5 is strong).
+// When set to 0, the default value is 1.1.
+//
+// RepeatLastN specifies how many recent tokens to consider when applying the
+// repetition penalty. A larger value considers more context but may be slower.
+// When set to 0, the default value is 64.
 type Params struct {
 	Temperature     float32 `json:"temperature"`
 	TopK            int32   `json:"top_k"`
 	TopP            float32 `json:"top_p"`
 	MinP            float32 `json:"min_p"`
 	MaxTokens       int     `json:"max_tokens"`
+	RepeatPenalty   float32 `json:"repeat_penalty"`
+	RepeatLastN     int32   `json:"repeat_last_n"`
 	Thinking        string  `json:"enable_thinking"`
 	ReasoningEffort string  `json:"reasoning_effort"`
 }
@@ -215,6 +228,14 @@ func (m *Model) adjustParams(p Params) Params {
 		p.MaxTokens = m.cfg.ContextWindow
 	}
 
+	if p.RepeatPenalty <= 0 {
+		p.RepeatPenalty = defRepeatPenalty
+	}
+
+	if p.RepeatLastN <= 0 {
+		p.RepeatLastN = defRepeatLastN
+	}
+
 	if p.Thinking == "" {
 		p.Thinking = defEnableThinking
 	}
@@ -229,6 +250,7 @@ func (m *Model) adjustParams(p Params) Params {
 func toSampler(p Params) llama.Sampler {
 	sampler := llama.SamplerChainInit(llama.SamplerChainDefaultParams())
 
+	llama.SamplerChainAdd(sampler, llama.SamplerInitPenalties(p.RepeatLastN, p.RepeatPenalty, 0, 0))
 	llama.SamplerChainAdd(sampler, llama.SamplerInitTempExt(p.Temperature, 0, 1.0))
 	llama.SamplerChainAdd(sampler, llama.SamplerInitTopK(p.TopK))
 	llama.SamplerChainAdd(sampler, llama.SamplerInitTopP(p.TopP, 0))
