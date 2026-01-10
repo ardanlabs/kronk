@@ -113,7 +113,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			Device               string
 			MaxInstances         int           `conf:"default:1"`
 			MaxInCache           int           `conf:"default:3"`
-			ContextWindow        int           `conf:"default:0"`
+			ContextWindow        int           `conf:"default:23552"`
 			CacheTTL             time.Duration `conf:"default:5m"`
 			IgnoreIntegrityCheck bool          `conf:"default:true"`
 		}
