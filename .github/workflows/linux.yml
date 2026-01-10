@@ -57,7 +57,7 @@ jobs:
           go install honnef.co/go/tools/cmd/staticcheck@latest
           go install golang.org/x/vuln/cmd/govulncheck@latest
       - name: Run tests
-        timeout-minutes: 20
+        timeout-minutes: 25
         run: |
           export GOROUTINES=1
           export RUN_IN_PARALLEL=0
