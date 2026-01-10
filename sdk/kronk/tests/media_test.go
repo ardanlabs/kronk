@@ -145,8 +145,6 @@ func initMediaTest(t *testing.T, mp models.Path, mediaFile string) (*kronk.Kronk
 	krn, err := kronk.New(modelInstances, model.Config{
 		ModelFiles: mp.ModelFiles,
 		ProjFile:   mp.ProjFile,
-		CacheTypeK: model.GGMLTypeQ8_0,
-		CacheTypeV: model.GGMLTypeQ8_0,
 	})
 
 	if err != nil {
