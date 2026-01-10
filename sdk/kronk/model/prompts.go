@@ -26,9 +26,19 @@ func (m *Model) applyRequestJinjaTemplate(ctx context.Context, d D) (string, [][
 	// We will move the media to it's own slice. The next call that will happen
 	// is `processBitmap` which will process the prompt and media.
 
+	// Shallow copy d and its messages to avoid mutating the
+	// original input document.
+	d = d.Clone()
+	origMsgs := d["messages"].([]D)
+	clonedMsgs := make([]D, len(origMsgs))
+	for i, doc := range origMsgs {
+		clonedMsgs[i] = doc.Clone()
+	}
+	d["messages"] = clonedMsgs
+
 	var media [][]byte
 
-	for _, doc := range d["messages"].([]D) {
+	for _, doc := range clonedMsgs {
 		if content, exists := doc["content"]; exists {
 			switch value := content.(type) {
 			case []byte:

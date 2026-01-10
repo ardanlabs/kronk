@@ -279,6 +279,22 @@ export default function DocsSDKModel() {
           <div className="card" id="methods">
             <h3>Methods</h3>
 
+            <div className="doc-section" id="method-d-clone">
+              <h4>D.Clone</h4>
+              <pre className="code-block">
+                <code>func (d D) Clone() D</code>
+              </pre>
+              <p className="doc-description">Clone creates a shallow copy of the document. This is useful when you need to modify the document without affecting the original.</p>
+            </div>
+
+            <div className="doc-section" id="method-d-logsafe">
+              <h4>D.LogSafe</h4>
+              <pre className="code-block">
+                <code>func (d D) LogSafe() D</code>
+              </pre>
+              <p className="doc-description">LogSafe returns a copy of the document containing only fields that are safe to log. This excludes sensitive fields like messages and input which may contain private user data.</p>
+            </div>
+
             <div className="doc-section" id="method-ggmltype-string">
               <h4>GGMLType.String</h4>
               <pre className="code-block">
@@ -453,6 +469,8 @@ export default function DocsSDKModel() {
             <div className="doc-index-section">
               <a href="#methods" className="doc-index-header">Methods</a>
               <ul>
+                <li><a href="#method-d-clone">D.Clone</a></li>
+                <li><a href="#method-d-logsafe">D.LogSafe</a></li>
                 <li><a href="#method-ggmltype-string">GGMLType.String</a></li>
                 <li><a href="#method-model-chat">Model.Chat</a></li>
                 <li><a href="#method-model-chatstreaming">Model.ChatStreaming</a></li>

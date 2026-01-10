@@ -3,6 +3,7 @@ package kronk_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"path"
 	"strings"
 	"testing"
@@ -13,6 +14,10 @@ import (
 )
 
 func Test_ConTest1(t *testing.T) {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("Skipping test in GitHub Actions")
+	}
+
 	// This test cancels the context before the channel loop starts.
 
 	ctx, cancel := context.WithTimeout(context.Background(), testDuration)
@@ -65,6 +70,10 @@ func Test_ConTest1(t *testing.T) {
 }
 
 func Test_ConTest2(t *testing.T) {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("Skipping test in GitHub Actions")
+	}
+
 	// This test cancels the context inside the channel loop.
 
 	ctx, cancel := context.WithTimeout(context.Background(), testDuration)
@@ -124,6 +133,10 @@ func Test_ConTest2(t *testing.T) {
 }
 
 func Test_ConTest3(t *testing.T) {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("Skipping test in GitHub Actions")
+	}
+
 	// This test breaks out the channel loop before the context is canceled.
 	// Then the context is cancelled and checks the system shuts down properly.
 

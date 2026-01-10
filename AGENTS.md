@@ -81,3 +81,58 @@ All commands support web mode (default) and `--local` mode.
 - Structs: unexported fields, exported types; use `Config` pattern for constructors
 - No CGO in tests: `CGO_ENABLED=0 go test ...`
 - Imports: stdlib first, then external, then internal (goimports order)
+
+## Streaming Architecture (sdk/kronk/)
+
+**Response Streaming Pattern** (`response.go`, `concurrency.go`):
+- Uses `streamingWith[T, U]` generic function for 1:N event transformation
+- `streamProcessor` has three phases: `Start()`, `Process(chunk)`, `Complete(lastChunk)`
+- `streamState` struct maintains response ID, sequence numbers, aggregated usage
+- SSE format: `event: <type>\ndata: <json>\n\n`
+
+**Key streaming events** (OpenAI Responses format):
+- `response.created`, `response.in_progress` → emitted at start
+- `response.output_text.delta`, `response.reasoning_summary_text.delta` → per chunk
+- `response.function_call_arguments.delta` → for tool calls
+- `*.done` events emitted at completion before `response.completed`
+
+**FinishReason handling** (`response.go`):
+- When `FinishReason != ""`, skip text/reasoning deltas (they duplicate previous content)
+- Always process tool calls even with FinishReason set (may only arrive in final chunk)
+
+## Model & Inference (sdk/kronk/model/)
+
+**Context Pooling** (`model.go`):
+- `llama.Context` is created once in `NewModel` and reused across requests
+- Call `resetContext()` (uses `llama.MemoryClear`) between requests to clear KV cache
+- Avoids Vulkan memory fragmentation from repeated context alloc/dealloc
+
+**KV Cache Type Configuration** (`config.go`):
+- `CacheTypeK` and `CacheTypeV` fields on `Config` control cache precision
+- Uses `GGMLType` constants: `GGMLTypeF16=1`, `GGMLTypeQ8_0=8`, `GGMLTypeBF16=30`, etc.
+- `GGMLTypeAuto=-1` uses llama.cpp defaults
+
+**Resource Lifecycle**:
+- Sampler chain freed via `defer llama.SamplerFree(sampler)` in `processChatRequest`
+- Media path: `mtmd.InputChunksInit()` must be freed with `mtmd.InputChunksFree(output)`
+
+## GPT-OSS Processor (sdk/kronk/processor.go)
+
+**Token handling for gpt-oss template**:
+- `<|return|>` and `<|call|>` return `io.EOF` (end of generation)
+- `<|end|>` is a section terminator (continues to next section)
+- `<|channel|>commentary` triggers tool call mode (`statusTooling`)
+- State machine: `awaitingChannel` → `collectingName` → content collection
+
+**Repetition penalty**: Applied via `llama.SamplerInitPenalties` with defaults `RepeatPenalty=1.1`, `RepeatLastN=64`
+
+## API Handler Notes (cmd/server/app/domain/)
+
+**Logging requests**: Delete both `messages` and `input` fields before logging to avoid logging images:
+```go
+delete(req, "messages")
+delete(req, "input")
+a.log.Info(ctx, "response", "request-input", req)
+```
+
+**Input format conversion**: Both streaming and non-streaming Response APIs must call `convertInputToMessages(d)` to handle OpenAI Responses `input` field format

@@ -47,14 +47,12 @@ func (a *app) responses(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.New(errs.InvalidArgument, err)
 	}
 
+	a.log.Info(ctx, "response", "request-input", req.LogSafe())
+
 	ctx, cancel := context.WithTimeout(ctx, 180*time.Minute)
 	defer cancel()
 
 	d := model.MapToModelD(req)
-
-	delete(req, "messages")
-	delete(req, "input")
-	a.log.Info(ctx, "response", "request-input", req)
 
 	if _, err := krn.ResponseStreamingHTTP(ctx, web.GetWriter(ctx), d); err != nil {
 		return errs.New(errs.Internal, err)

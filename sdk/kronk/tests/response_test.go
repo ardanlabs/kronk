@@ -9,42 +9,32 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
 
 func Test_ThinkResponse(t *testing.T) {
-	testResponse(t, mpThinkToolChat, false)
+	testResponse(t, krnThinkToolChat, dResponseNoTool, false)
 }
 
 func Test_ThinkStreamingResponse(t *testing.T) {
-	testResponseStreaming(t, mpThinkToolChat, false)
+	testResponseStreaming(t, krnThinkToolChat, dResponseNoTool, false)
 }
 
 func Test_ToolResponse(t *testing.T) {
-	testResponse(t, mpThinkToolChat, true)
+	testResponse(t, krnThinkToolChat, dResponseTool, true)
 }
 
 func Test_ToolStreamingResponse(t *testing.T) {
-	testResponseStreaming(t, mpThinkToolChat, true)
+	testResponseStreaming(t, krnThinkToolChat, dResponseTool, true)
 }
 
 // =============================================================================
 
-func testResponse(t *testing.T, mp models.Path, tooling bool) {
+func testResponse(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
 	if runInParallel {
 		t.Parallel()
 	}
-
-	krn, d := initResponseTest(t, mp, tooling)
-	defer func() {
-		t.Logf("active streams: %d", krn.ActiveStreams())
-		t.Log("unload Kronk")
-		if err := krn.Unload(context.Background()); err != nil {
-			t.Errorf("failed to unload model: %v", err)
-		}
-	}()
 
 	f := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), testDuration)
@@ -88,19 +78,10 @@ func testResponse(t *testing.T, mp models.Path, tooling bool) {
 	}
 }
 
-func testResponseStreaming(t *testing.T, mp models.Path, tooling bool) {
+func testResponseStreaming(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
 	if runInParallel {
 		t.Parallel()
 	}
-
-	krn, d := initResponseTest(t, mp, tooling)
-	defer func() {
-		t.Logf("active streams: %d", krn.ActiveStreams())
-		t.Log("unload Kronk")
-		if err := krn.Unload(context.Background()); err != nil {
-			t.Errorf("failed to unload model: %v", err)
-		}
-	}()
 
 	f := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), testDuration)
@@ -204,51 +185,6 @@ func testResponseStreaming(t *testing.T, mp models.Path, tooling bool) {
 	if err := g.Wait(); err != nil {
 		t.Errorf("error: %v", err)
 	}
-}
-
-func initResponseTest(t *testing.T, mp models.Path, tooling bool) (*kronk.Kronk, model.D) {
-	krn, err := kronk.New(modelInstances, model.Config{
-		ModelFiles: mp.ModelFiles,
-	})
-
-	if err != nil {
-		t.Fatalf("unable to load model: %v: %v", mp.ModelFiles, err)
-	}
-
-	question := "Echo back the word: Gorilla"
-	if tooling {
-		question = "What is the weather in London, England?"
-	}
-
-	d := model.D{
-		"messages": []model.D{
-			{
-				"role":    "user",
-				"content": question,
-			},
-		},
-		"max_tokens": 2048,
-	}
-
-	if tooling {
-		d["tools"] = []model.D{
-			{
-				"type": "function",
-				"function": model.D{
-					"name":        "get_weather",
-					"description": "Get the current weather for a location",
-					"arguments": model.D{
-						"location": model.D{
-							"type":        "string",
-							"description": "The location to get the weather for, e.g. San Francisco, CA",
-						},
-					},
-				},
-			},
-		}
-	}
-
-	return krn, d
 }
 
 func testResponseBasics(resp kronk.ResponseResponse, modelName string) error {

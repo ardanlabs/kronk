@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"path"
 	"path/filepath"
@@ -135,6 +136,45 @@ func extractFolderName(rawURL string) string {
 
 // D represents a generic docment of fields and values.
 type D map[string]any
+
+// Clone creates a shallow copy of the document. This is useful when you need
+// to modify the document without affecting the original.
+func (d D) Clone() D {
+	clone := make(D, len(d))
+	maps.Copy(clone, d)
+	return clone
+}
+
+// logSafeKeys defines the allowlist of fields that are safe to log.
+// Fields like "messages" and "input" are excluded for privacy.
+var logSafeKeys = []string{
+	"model",
+	"max_tokens",
+	"temperature",
+	"top_p",
+	"top_k",
+	"stream",
+	"tools",
+	"tool_choice",
+	"presence_penalty",
+	"frequency_penalty",
+	"stop",
+	"seed",
+	"n",
+}
+
+// LogSafe returns a copy of the document containing only fields that are
+// safe to log. This excludes sensitive fields like messages and input
+// which may contain private user data.
+func (d D) LogSafe() D {
+	safe := make(D, len(logSafeKeys))
+	for _, key := range logSafeKeys {
+		if v, ok := d[key]; ok {
+			safe[key] = v
+		}
+	}
+	return safe
+}
 
 // TextMessage create a new text message.
 func TextMessage(role string, content string) D {
