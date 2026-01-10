@@ -527,6 +527,9 @@ func (m *Model) processInputTokens(ctx context.Context, lctx llama.Context, mtmd
 		// Convert raw media bytes into bitmap structures for the vision encoder.
 		bitmaps = make([]mtmd.Bitmap, len(media))
 		for i, med := range media {
+			if len(med) == 0 {
+				continue
+			}
 			bitmaps[i] = mtmd.BitmapInitFromBuf(mtmdCtx, &med[0], uint64(len(med)))
 		}
 
