@@ -34,10 +34,10 @@ func Test_NewManager(t *testing.T) {
 
 	t.Run("custom config values", func(t *testing.T) {
 		cfg := cache.Config{
-			Log:              log,
-			MaxModelsInCache: 5,
-			ModelInstances:   2,
-			CacheTTL:         10 * time.Minute,
+			Log:            log,
+			ModelsInCache:  5,
+			ModelInstances: 2,
+			CacheTTL:       10 * time.Minute,
 		}
 
 		mgr, err := cache.NewCache(cfg)
@@ -55,10 +55,10 @@ func Test_AcquireModel(t *testing.T) {
 	modelID := findAvailableModel(t, "")
 
 	cfg := cache.Config{
-		Log:              log.Info,
-		MaxModelsInCache: 3,
-		ModelInstances:   1,
-		CacheTTL:         5 * time.Minute,
+		Log:            log.Info,
+		ModelsInCache:  3,
+		ModelInstances: 1,
+		CacheTTL:       5 * time.Minute,
 	}
 
 	mgr, err := cache.NewCache(cfg)
@@ -129,10 +129,10 @@ func Test_Shutdown(t *testing.T) {
 
 	t.Run("shutdown with loaded models", func(t *testing.T) {
 		cfg := cache.Config{
-			Log:              log,
-			MaxModelsInCache: 3,
-			ModelInstances:   1,
-			CacheTTL:         5 * time.Minute,
+			Log:            log,
+			ModelsInCache:  3,
+			ModelInstances: 1,
+			CacheTTL:       5 * time.Minute,
 		}
 
 		mgr, err := cache.NewCache(cfg)
@@ -158,10 +158,10 @@ func Test_Shutdown(t *testing.T) {
 
 	t.Run("shutdown timeout expires", func(t *testing.T) {
 		cfg := cache.Config{
-			Log:              log,
-			MaxModelsInCache: 3,
-			ModelInstances:   1,
-			CacheTTL:         5 * time.Minute,
+			Log:            log,
+			ModelsInCache:  3,
+			ModelInstances: 1,
+			CacheTTL:       5 * time.Minute,
 		}
 
 		mgr, err := cache.NewCache(cfg)
@@ -188,10 +188,10 @@ func Test_Shutdown(t *testing.T) {
 
 	t.Run("shutdown with cancelled context", func(t *testing.T) {
 		cfg := cache.Config{
-			Log:              log,
-			MaxModelsInCache: 3,
-			ModelInstances:   1,
-			CacheTTL:         5 * time.Minute,
+			Log:            log,
+			ModelsInCache:  3,
+			ModelInstances: 1,
+			CacheTTL:       5 * time.Minute,
 		}
 
 		mgr, err := cache.NewCache(cfg)
@@ -216,10 +216,10 @@ func Test_Shutdown(t *testing.T) {
 
 	t.Run("shutdown blocks until eviction completes", func(t *testing.T) {
 		cfg := cache.Config{
-			Log:              log,
-			MaxModelsInCache: 3,
-			ModelInstances:   1,
-			CacheTTL:         5 * time.Minute,
+			Log:            log,
+			ModelsInCache:  3,
+			ModelInstances: 1,
+			CacheTTL:       5 * time.Minute,
 		}
 
 		mgr, err := cache.NewCache(cfg)
@@ -267,10 +267,10 @@ func Test_Eviction(t *testing.T) {
 
 	t.Run("eviction on TTL expiry", func(t *testing.T) {
 		cfg := cache.Config{
-			Log:              log,
-			MaxModelsInCache: 3,
-			ModelInstances:   1,
-			CacheTTL:         500 * time.Millisecond,
+			Log:            log,
+			ModelsInCache:  3,
+			ModelInstances: 1,
+			CacheTTL:       500 * time.Millisecond,
 		}
 
 		mgr, err := cache.NewCache(cfg)
@@ -301,10 +301,10 @@ func Test_Eviction(t *testing.T) {
 
 	t.Run("eviction on capacity exceeded", func(t *testing.T) {
 		cfg := cache.Config{
-			Log:              log,
-			MaxModelsInCache: 1,
-			ModelInstances:   1,
-			CacheTTL:         5 * time.Minute,
+			Log:            log,
+			ModelsInCache:  1,
+			ModelInstances: 1,
+			CacheTTL:       5 * time.Minute,
 		}
 
 		mgr, err := cache.NewCache(cfg)

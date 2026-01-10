@@ -110,8 +110,8 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			GithubRepo string `conf:"default:https://api.github.com/repos/ardanlabs/kronk_catalogs/contents/templates"`
 		}
 		Cache struct {
-			MaxInstances         int           `conf:"default:1"`
-			MaxModels            int           `conf:"default:3"`
+			ModelInstances       int           `conf:"default:1"`
+			ModelsInCache        int           `conf:"default:3"`
 			TTL                  time.Duration `conf:"default:5m"`
 			IgnoreIntegrityCheck bool          `conf:"default:true"`
 			ModelConfigFile      string
@@ -338,8 +338,8 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		Log:                  log.Info,
 		BasePath:             cfg.BasePath,
 		Templates:            tmplts,
-		MaxModelsInCache:     cfg.Cache.MaxModels,
-		ModelInstances:       cfg.Cache.MaxInstances,
+		ModelsInCache:        cfg.Cache.ModelsInCache,
+		ModelInstances:       cfg.Cache.ModelInstances,
 		CacheTTL:             cfg.Cache.TTL,
 		IgnoreIntegrityCheck: cfg.Cache.IgnoreIntegrityCheck,
 		ModelConfigFile:      cfg.Cache.ModelConfigFile,

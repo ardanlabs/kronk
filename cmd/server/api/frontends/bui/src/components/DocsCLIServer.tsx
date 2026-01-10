@@ -57,12 +57,8 @@ export default function DocsCLIServer() {
                     <td>Maximum model instances</td>
                   </tr>
                   <tr>
-                    <td><code>--max-in-cache &lt;int&gt;</code></td>
+                    <td><code>--models-in-cache &lt;int&gt;</code></td>
                     <td>Maximum models in cache</td>
-                  </tr>
-                  <tr>
-                    <td><code>--context-window &lt;int&gt;</code></td>
-                    <td>Context window size</td>
                   </tr>
                   <tr>
                     <td><code>--cache-ttl &lt;duration&gt;</code></td>

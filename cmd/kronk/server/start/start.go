@@ -80,15 +80,15 @@ func buildEnvVars(cmd *cobra.Command) []string {
 		envVars = append(envVars, "KRONK_AUTH_LOCAL_ENABLED="+strconv.FormatBool(v))
 	}
 
-	if v, _ := cmd.Flags().GetInt("max-instances"); v != 0 {
-		envVars = append(envVars, "KRONK_CACHE_MAX_INSTANCES="+strconv.Itoa(v))
+	if v, _ := cmd.Flags().GetInt("model-instances"); v != 0 {
+		envVars = append(envVars, "KRONK_CACHE_MODEL_INSTANCES="+strconv.Itoa(v))
 	}
 
-	if v, _ := cmd.Flags().GetInt("max-models"); v != 0 {
-		envVars = append(envVars, "KRONK_CACHE_MAX_MODELS="+strconv.Itoa(v))
+	if v, _ := cmd.Flags().GetInt("models-in-cache"); v != 0 {
+		envVars = append(envVars, "KRONK_CACHE_MODELS-IN-CACHE="+strconv.Itoa(v))
 	}
 
-	if v, _ := cmd.Flags().GetString("ttl"); v != "" {
+	if v, _ := cmd.Flags().GetString("cache-ttl"); v != "" {
 		envVars = append(envVars, "KRONK_CACHE_TTL="+v)
 	}
 

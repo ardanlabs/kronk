@@ -43,7 +43,7 @@ type Config struct {
 	Log                  model.Logger
 	BasePath             string
 	Templates            *templates.Templates
-	MaxModelsInCache     int
+	ModelsInCache        int
 	ModelInstances       int
 	CacheTTL             time.Duration
 	IgnoreIntegrityCheck bool
@@ -60,8 +60,8 @@ func validateConfig(cfg Config) (Config, error) {
 		cfg.Templates = templates
 	}
 
-	if cfg.MaxModelsInCache <= 0 {
-		cfg.MaxModelsInCache = 3
+	if cfg.ModelsInCache <= 0 {
+		cfg.ModelsInCache = 3
 	}
 
 	if cfg.ModelInstances <= 0 {
@@ -134,7 +134,7 @@ func NewCache(cfg Config) (*Cache, error) {
 	}
 
 	opt := otter.Options[string, *kronk.Kronk]{
-		MaximumSize:      cfg.MaxModelsInCache,
+		MaximumSize:      cfg.ModelsInCache,
 		ExpiryCalculator: otter.ExpiryWriting[string, *kronk.Kronk](cfg.CacheTTL),
 		OnDeletion:       c.eviction,
 	}
