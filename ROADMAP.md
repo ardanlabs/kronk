@@ -35,6 +35,9 @@
 
 ### API
 
+- Use the catalog for known models to check if they support things for the call
+  they are being used for. ie images/audio/embedding
+
 - Investigate why OpenWebUI doesn't generate a "Follow-up" compared to when using other LLM runners
 
 ### AI-TRAINING
