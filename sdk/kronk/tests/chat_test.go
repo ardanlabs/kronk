@@ -9,25 +9,24 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
 
 func Test_ThinkChat(t *testing.T) {
-	testChat(t, mpThinkToolChat, false)
+	testChat(t, krnThinkToolChat, dChatNoTool, false)
 }
 
 func Test_ThinkStreamingChat(t *testing.T) {
-	testChatStreaming(t, mpThinkToolChat, false)
+	testChatStreaming(t, krnThinkToolChat, dChatNoTool, false)
 }
 
 func Test_ToolChat(t *testing.T) {
-	testChat(t, mpThinkToolChat, true)
+	testChat(t, krnThinkToolChat, dChatTool, true)
 }
 
 func Test_ToolStreamingChat(t *testing.T) {
-	testChatStreaming(t, mpThinkToolChat, true)
+	testChatStreaming(t, krnThinkToolChat, dChatTool, true)
 }
 
 func Test_GPTChat(t *testing.T) {
@@ -35,7 +34,7 @@ func Test_GPTChat(t *testing.T) {
 		t.Skip("Skipping test in GitHub Actions")
 	}
 
-	testChat(t, mpGPTChat, false)
+	testChat(t, krnGPTChat, dChatNoTool, false)
 }
 
 func Test_GPTStreamingChat(t *testing.T) {
@@ -43,7 +42,7 @@ func Test_GPTStreamingChat(t *testing.T) {
 		t.Skip("Skipping test in GitHub Actions")
 	}
 
-	testChatStreaming(t, mpGPTChat, false)
+	testChatStreaming(t, krnGPTChat, dChatNoTool, false)
 }
 
 func Test_ToolGPTChat(t *testing.T) {
@@ -51,7 +50,7 @@ func Test_ToolGPTChat(t *testing.T) {
 		t.Skip("Skipping test in GitHub Actions")
 	}
 
-	testChat(t, mpGPTChat, true)
+	testChat(t, krnGPTChat, dChatToolGPT, true)
 }
 
 func Test_ToolGPTStreamingChat(t *testing.T) {
@@ -59,24 +58,15 @@ func Test_ToolGPTStreamingChat(t *testing.T) {
 		t.Skip("Skipping test in GitHub Actions")
 	}
 
-	testChatStreaming(t, mpGPTChat, true)
+	testChatStreaming(t, krnGPTChat, dChatToolGPT, true)
 }
 
 // =============================================================================
 
-func testChat(t *testing.T, mp models.Path, tooling bool) {
+func testChat(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
 	if runInParallel {
 		t.Parallel()
 	}
-
-	krn, d := initChatTest(t, mp, tooling)
-	defer func() {
-		t.Logf("active streams: %d", krn.ActiveStreams())
-		t.Log("unload Kronk")
-		if err := krn.Unload(context.Background()); err != nil {
-			t.Errorf("failed to unload model: %v", err)
-		}
-	}()
 
 	f := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), testDuration)
@@ -120,19 +110,10 @@ func testChat(t *testing.T, mp models.Path, tooling bool) {
 	}
 }
 
-func testChatStreaming(t *testing.T, mp models.Path, tooling bool) {
+func testChatStreaming(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
 	if runInParallel {
 		t.Parallel()
 	}
-
-	krn, d := initChatTest(t, mp, tooling)
-	defer func() {
-		t.Logf("active streams: %d", krn.ActiveStreams())
-		t.Log("unload Kronk")
-		if err := krn.Unload(context.Background()); err != nil {
-			t.Errorf("failed to unload model: %v", err)
-		}
-	}()
 
 	f := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), testDuration)
@@ -184,73 +165,4 @@ func testChatStreaming(t *testing.T, mp models.Path, tooling bool) {
 	if err := g.Wait(); err != nil {
 		t.Errorf("error: %v", err)
 	}
-}
-
-func initChatTest(t *testing.T, mp models.Path, tooling bool) (*kronk.Kronk, model.D) {
-	krn, err := kronk.New(modelInstances, model.Config{
-		ModelFiles: mp.ModelFiles,
-	})
-
-	if err != nil {
-		t.Fatalf("unable to load model: %v: %v", mp.ModelFiles, err)
-	}
-
-	question := "Echo back the word: Gorilla"
-	if tooling {
-		question = "What is the weather in London, England?"
-	}
-
-	d := model.D{
-		"messages": []model.D{
-			{
-				"role":    "user",
-				"content": question,
-			},
-		},
-		"max_tokens": 2048,
-	}
-
-	if tooling {
-		switch krn.ModelInfo().IsGPTModel {
-		case true:
-			d["tools"] = []model.D{
-				{
-					"type": "function",
-					"function": model.D{
-						"name":        "get_weather",
-						"description": "Get the current weather for a location",
-						"parameters": model.D{
-							"type": "object",
-							"properties": model.D{
-								"location": model.D{
-									"type":        "string",
-									"description": "The location to get the weather for, e.g. San Francisco, CA",
-								},
-							},
-							"required": []any{"location"},
-						},
-					},
-				},
-			}
-
-		default:
-			d["tools"] = []model.D{
-				{
-					"type": "function",
-					"function": model.D{
-						"name":        "get_weather",
-						"description": "Get the current weather for a location",
-						"arguments": model.D{
-							"location": model.D{
-								"type":        "string",
-								"description": "The location to get the weather for, e.g. San Francisco, CA",
-							},
-						},
-					},
-				},
-			}
-		}
-	}
-
-	return krn, d
 }

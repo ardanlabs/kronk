@@ -88,7 +88,30 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	os.Exit(m.Run())
+	fmt.Println("Loading chat models...")
+	if err := initChatModels(); err != nil {
+		fmt.Printf("Failed to init chat models: %s\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("Loading media models...")
+	if err := initMediaModels(); err != nil {
+		fmt.Printf("Failed to init media models: %s\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("Initializing response inputs...")
+	initResponseInputs()
+
+	code := m.Run()
+
+	fmt.Println("Unloading media models...")
+	unloadMediaModels()
+
+	fmt.Println("Unloading chat models...")
+	unloadChatModels()
+
+	os.Exit(code)
 }
 
 func printInfo(models *models.Models) {

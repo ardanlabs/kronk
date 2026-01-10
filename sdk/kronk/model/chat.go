@@ -73,7 +73,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		}
 
 		if isMedia {
-			d, err = convertToRawMediaMessage(d, msgs)
+			d, err = convertToRawMediaMessage(d.Clone(), msgs)
 			if err != nil {
 				m.sendChatError(ctx, ch, id, fmt.Errorf("convert-media-message: unable to convert document to media message: %w", err))
 				return
