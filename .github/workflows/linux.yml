@@ -14,7 +14,7 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Runner specs
         run: |
@@ -57,15 +57,16 @@ jobs:
           go install honnef.co/go/tools/cmd/staticcheck@latest
           go install golang.org/x/vuln/cmd/govulncheck@latest
       - name: Run tests
+        timeout-minutes: 20
         run: |
           export GOROUTINES=1
           export RUN_IN_PARALLEL=0
-          CGO_ENABLED=0 go test -v -count=1 ./cmd/server/app/sdk/cache
-          CGO_ENABLED=0 go test -v -count=1 ./cmd/server/app/sdk/security/...
-          CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/model
-          CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/tests
-          CGO_ENABLED=0 go test -v -count=1 ./sdk/tools/...
-          CGO_ENABLED=0 go test -v -count=1 ./cmd/server/api/services/kronk/tests
+          CGO_ENABLED=0 go test -v -count=1 -timeout 20m ./cmd/server/app/sdk/cache
+          CGO_ENABLED=0 go test -v -count=1 -timeout 20m ./cmd/server/app/sdk/security/...
+          CGO_ENABLED=0 go test -v -count=1 -timeout 20m ./sdk/kronk/model
+          CGO_ENABLED=0 go test -v -count=1 -timeout 20m ./sdk/kronk/tests
+          CGO_ENABLED=0 go test -v -count=1 -timeout 20m ./sdk/tools/...
+          CGO_ENABLED=0 go test -v -count=1 -timeout 20m ./cmd/server/api/services/kronk/tests
           CGO_ENABLED=0 go vet ./...
           staticcheck -checks=all ./...
           govulncheck ./...

@@ -15,7 +15,6 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/ardanlabs/kronk/sdk/tools/templates"
-	"github.com/hybridgroup/yzma/pkg/download"
 	"github.com/maypok86/otter/v2"
 	"gopkg.in/yaml.v3"
 )
@@ -27,10 +26,6 @@ import (
 //
 // TemplateRepo represents the Github repo for where the templates are. If left empty
 // then api.github.com/repos/ardanlabs/kronk_catalogs/contents/templates is used.
-//
-// Device: Specify a specific device. To see the list of devices run this command:
-// $HOME/kronk/libraries/llama-bench --list-devices
-// Leave empty for the system to pick the device.
 //
 // MaxInCache: Defines the maximum number of unique models will be available at a
 // time. Defaults to 3 if the value is 0.
@@ -48,11 +43,7 @@ type Config struct {
 	Log                  model.Logger
 	BasePath             string
 	Templates            *templates.Templates
-	Arch                 download.Arch
-	OS                   download.OS
-	Processor            download.Processor
-	Device               string
-	MaxInCache           int
+	MaxModelsInCache     int
 	ModelInstances       int
 	CacheTTL             time.Duration
 	IgnoreIntegrityCheck bool
@@ -69,8 +60,8 @@ func validateConfig(cfg Config) (Config, error) {
 		cfg.Templates = templates
 	}
 
-	if cfg.MaxInCache <= 0 {
-		cfg.MaxInCache = 3
+	if cfg.MaxModelsInCache <= 0 {
+		cfg.MaxModelsInCache = 3
 	}
 
 	if cfg.ModelInstances <= 0 {
@@ -87,6 +78,7 @@ func validateConfig(cfg Config) (Config, error) {
 // =============================================================================
 
 type modelConfig struct {
+	Device               string                   `yaml:"device"`
 	ContextWindow        int                      `yaml:"context-window"`
 	NBatch               int                      `yaml:"nbatch"`
 	NUBatch              int                      `yaml:"nubatch"`
@@ -104,10 +96,6 @@ type modelConfig struct {
 type Cache struct {
 	log                  model.Logger
 	templates            *templates.Templates
-	arch                 download.Arch
-	os                   download.OS
-	processor            download.Processor
-	device               string
 	instances            int
 	cache                *otter.Cache[string, *kronk.Kronk]
 	itemsInCache         atomic.Int32
@@ -139,10 +127,6 @@ func NewCache(cfg Config) (*Cache, error) {
 	c := Cache{
 		log:                  cfg.Log,
 		templates:            cfg.Templates,
-		arch:                 cfg.Arch,
-		os:                   cfg.OS,
-		processor:            cfg.Processor,
-		device:               cfg.Device,
 		instances:            cfg.ModelInstances,
 		models:               models,
 		ignoreIntegrityCheck: cfg.IgnoreIntegrityCheck,
@@ -150,7 +134,7 @@ func NewCache(cfg Config) (*Cache, error) {
 	}
 
 	opt := otter.Options[string, *kronk.Kronk]{
-		MaximumSize:      cfg.MaxInCache,
+		MaximumSize:      cfg.MaxModelsInCache,
 		ExpiryCalculator: otter.ExpiryWriting[string, *kronk.Kronk](cfg.CacheTTL),
 		OnDeletion:       c.eviction,
 	}
@@ -185,21 +169,6 @@ func (c *Cache) Shutdown(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-// Arch returns the hardware being used.
-func (c *Cache) Arch() download.Arch {
-	return c.arch
-}
-
-// OS returns the operating system being used.
-func (c *Cache) OS() download.OS {
-	return c.os
-}
-
-// Processor returns the processor being used.
-func (c *Cache) Processor() download.Processor {
-	return c.processor
 }
 
 // ModelStatus returns information about the current models in the cache.
@@ -270,7 +239,7 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 		Log:                  c.log,
 		ModelFiles:           fi.ModelFiles,
 		ProjFile:             fi.ProjFile,
-		Device:               c.device,
+		Device:               mc.Device,
 		ContextWindow:        mc.ContextWindow,
 		NBatch:               mc.NBatch,
 		NUBatch:              mc.NUBatch,

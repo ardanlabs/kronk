@@ -109,14 +109,12 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		Templates struct {
 			GithubRepo string `conf:"default:https://api.github.com/repos/ardanlabs/kronk_catalogs/contents/templates"`
 		}
-		Model struct {
-			Device               string
+		Cache struct {
 			MaxInstances         int           `conf:"default:1"`
-			MaxInCache           int           `conf:"default:3"`
-			ContextWindow        int           `conf:"default:23552"`
-			CacheTTL             time.Duration `conf:"default:5m"`
+			MaxModels            int           `conf:"default:3"`
+			TTL                  time.Duration `conf:"default:5m"`
 			IgnoreIntegrityCheck bool          `conf:"default:true"`
-			ConfigFile           string
+			ModelConfigFile      string
 		}
 		BasePath     string
 		LibPath      string
@@ -340,15 +338,11 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		Log:                  log.Info,
 		BasePath:             cfg.BasePath,
 		Templates:            tmplts,
-		Arch:                 libs.Arch(),
-		OS:                   libs.OS(),
-		Processor:            libs.Processor(),
-		Device:               cfg.Model.Device,
-		MaxInCache:           cfg.Model.MaxInCache,
-		ModelInstances:       cfg.Model.MaxInstances,
-		CacheTTL:             cfg.Model.CacheTTL,
-		IgnoreIntegrityCheck: cfg.Model.IgnoreIntegrityCheck,
-		ModelConfigFile:      cfg.Model.ConfigFile,
+		MaxModelsInCache:     cfg.Cache.MaxModels,
+		ModelInstances:       cfg.Cache.MaxInstances,
+		CacheTTL:             cfg.Cache.TTL,
+		IgnoreIntegrityCheck: cfg.Cache.IgnoreIntegrityCheck,
+		ModelConfigFile:      cfg.Cache.ModelConfigFile,
 	})
 
 	if err != nil {
