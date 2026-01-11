@@ -90,6 +90,7 @@ type modelConfig struct {
 	FlashAttention       model.FlashAttentionType `yaml:"flash-attention"`
 	DefragThold          float32                  `yaml:"defrag-thold"`
 	IgnoreIntegrityCheck bool                     `yaml:"ignore-integrity-check"`
+	NGpuLayers           int                      `yaml:"ngpu-layers"`
 }
 
 // Cache manages a set of Kronk APIs for use. It maintains a cache of these
@@ -258,6 +259,7 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 		UseDirectIO:          mc.UseDirectIO,
 		DefragThold:          mc.DefragThold,
 		IgnoreIntegrityCheck: mc.IgnoreIntegrityCheck,
+		NGpuLayers:           mc.NGpuLayers,
 	}
 
 	krn, err = kronk.New(c.instances, cfg,
@@ -316,7 +318,7 @@ func loadModelConfig(modelConfigFile string) (map[string]modelConfig, error) {
 
 	var configs map[string]modelConfig
 	if err := yaml.Unmarshal(data, &configs); err != nil {
-		return nil, fmt.Errorf("unmarshaling model config: %w", err)
+		return nil, fmt.Errorf("unmarshalling model config: %w", err)
 	}
 
 	// Normalize keys to lowercase for case-insensitive lookup.

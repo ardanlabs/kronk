@@ -206,6 +206,11 @@ type Logger func(ctx context.Context, msg string, args ...any)
 //
 // IgnoreIntegrityCheck is a boolean that determines if the system should ignore
 // a model integrity check before trying to use it.
+//
+// NGpuLayers controls how many layers are offloaded to the device
+// -1 = CPU only, 0 = all layers (default), N = specific count
+// Notice: This is inverted from what llama.cpp uses, where -1 is all layers and
+// 0 is CPU only.
 type Config struct {
 	Log                  Logger
 	ModelFiles           []string
@@ -226,6 +231,7 @@ type Config struct {
 	UseDirectIO          bool
 	DefragThold          float32 // Deprecated: llama.cpp deprecated this
 	IgnoreIntegrityCheck bool
+	NGpuLayers           int
 }
 
 func validateConfig(ctx context.Context, cfg Config, log Logger) error {
@@ -283,6 +289,16 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 	// NUBatch of tokens must fit into a physical batch for processing.
 	if cfg.NUBatch > cfg.NBatch {
 		cfg.NUBatch = cfg.NBatch
+	}
+
+	// llama.cpp has a -1 default for loading all layers into the GPU
+	// However, we want to make it convenient to write the configuration.
+	// So, we default to invert these two values after loading them.
+	switch cfg.NGpuLayers {
+	case -1:
+		cfg.NGpuLayers = 0
+	case 0:
+		cfg.NGpuLayers = -1
 	}
 
 	return cfg
