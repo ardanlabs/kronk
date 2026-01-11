@@ -10,7 +10,11 @@ import (
 )
 
 // Embeddings provides support to interact with an embedding model.
-func (krn *Kronk) Embeddings(ctx context.Context, input string) (model.EmbedReponse, error) {
+// Supported options in d:
+//   - input (string): the text to embed (required)
+//   - truncate (bool): if true, truncate input to fit context window (default: false)
+//   - truncate_direction (string): "right" (default) or "left"
+func (krn *Kronk) Embeddings(ctx context.Context, d model.D) (model.EmbedReponse, error) {
 	if !krn.ModelInfo().IsEmbedModel {
 		return model.EmbedReponse{}, fmt.Errorf("embed:model doesn't support embedding")
 	}
@@ -20,7 +24,7 @@ func (krn *Kronk) Embeddings(ctx context.Context, input string) (model.EmbedRepo
 	}
 
 	f := func(m *model.Model) (model.EmbedReponse, error) {
-		return m.Embeddings(ctx, input)
+		return m.Embeddings(ctx, d)
 	}
 
 	return nonStreaming(ctx, krn, f)
@@ -32,17 +36,7 @@ func (krn *Kronk) EmbeddingsHTTP(ctx context.Context, log Logger, w http.Respons
 		return model.EmbedReponse{}, fmt.Errorf("embeddings:context has no deadline, provide a reasonable timeout")
 	}
 
-	var input string
-	inputReq, ok := d["input"].(string)
-	if ok {
-		input = inputReq
-	}
-
-	if input == "" {
-		return model.EmbedReponse{}, fmt.Errorf("embeddings:missing input parameter")
-	}
-
-	resp, err := krn.Embeddings(ctx, input)
+	resp, err := krn.Embeddings(ctx, d)
 	if err != nil {
 		return model.EmbedReponse{}, fmt.Errorf("chat-streaming-http:stream-response: %w", err)
 	}

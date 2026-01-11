@@ -57,7 +57,7 @@ func testEmbedding(t *testing.T, mp models.Path) {
 			t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, name, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
 		}()
 
-		embed, err := krn.Embeddings(ctx, text)
+		embed, err := krn.Embeddings(ctx, model.D{"input": text})
 		if err != nil {
 			return fmt.Errorf("embed: %w", err)
 		}

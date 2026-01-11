@@ -654,9 +654,13 @@ func embedding(krn *kronk.Kronk) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	question := "Why is the sky blue?"
+	d := model.D{
+		"input":              "Why is the sky blue?",
+		"truncate":           true,
+		"truncate_direction": "right",
+	}
 
-	resp, err := krn.Embeddings(ctx, question)
+	resp, err := krn.Embeddings(ctx, d)
 	if err != nil {
 		return err
 	}

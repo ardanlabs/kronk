@@ -337,9 +337,9 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="method-model-embeddings">
               <h4>Model.Embeddings</h4>
               <pre className="code-block">
-                <code>func (m *Model) Embeddings(ctx context.Context, input string) (EmbedReponse, error)</code>
+                <code>func (m *Model) Embeddings(ctx context.Context, d D) (EmbedReponse, error)</code>
               </pre>
-              <p className="doc-description">Embeddings performs an embedding request and returns the final response.</p>
+              <p className="doc-description">Embeddings performs an embedding request and returns the final response. Supported options in d: - input (string): the text to embed (required) - truncate (bool): if true, truncate input to fit context window (default: false) - truncate_direction (string): "right" (default) or "left"</p>
             </div>
 
             <div className="doc-section" id="method-model-modelinfo">

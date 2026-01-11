@@ -9,9 +9,18 @@ import (
 )
 
 // Embeddings performs an embedding request and returns the final response.
-func (m *Model) Embeddings(ctx context.Context, input string) (EmbedReponse, error) {
+// Supported options in d:
+//   - input (string): the text to embed (required)
+//   - truncate (bool): if true, truncate input to fit context window (default: false)
+//   - truncate_direction (string): "right" (default) or "left"
+func (m *Model) Embeddings(ctx context.Context, d D) (EmbedReponse, error) {
 	if !m.modelInfo.IsEmbedModel {
 		return EmbedReponse{}, fmt.Errorf("embeddings: model doesn't support embedding")
+	}
+
+	input, _ := d["input"].(string)
+	if input == "" {
+		return EmbedReponse{}, fmt.Errorf("embeddings: missing input parameter")
 	}
 
 	lctx, err := llama.InitFromModel(m.model, m.ctxParams)
@@ -31,6 +40,22 @@ func (m *Model) Embeddings(ctx context.Context, input string) (EmbedReponse, err
 	}
 
 	tokens := llama.Tokenize(m.vocab, input, true, true)
+
+	if truncate, _ := d["truncate"].(bool); truncate {
+		maxTokens := int(llama.NCtx(lctx))
+
+		if len(tokens) > maxTokens {
+			direction, _ := d["truncate_direction"].(string)
+
+			switch direction {
+			case "left":
+				tokens = tokens[len(tokens)-maxTokens:]
+			default:
+				tokens = tokens[:maxTokens]
+			}
+		}
+	}
+
 	batch := llama.BatchGetOne(tokens)
 	llama.Decode(lctx, batch)
 

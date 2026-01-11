@@ -296,9 +296,9 @@ export default function DocsSDKKronk() {
             <div className="doc-section" id="method-kronk-embeddings">
               <h4>Kronk.Embeddings</h4>
               <pre className="code-block">
-                <code>func (krn *Kronk) Embeddings(ctx context.Context, input string) (model.EmbedReponse, error)</code>
+                <code>func (krn *Kronk) Embeddings(ctx context.Context, d model.D) (model.EmbedReponse, error)</code>
               </pre>
-              <p className="doc-description">Embeddings provides support to interact with an embedding model.</p>
+              <p className="doc-description">Embeddings provides support to interact with an embedding model. Supported options in d: - input (string): the text to embed (required) - truncate (bool): if true, truncate input to fit context window (default: false) - truncate_direction (string): "right" (default) or "left"</p>
             </div>
 
             <div className="doc-section" id="method-kronk-embeddingshttp">
