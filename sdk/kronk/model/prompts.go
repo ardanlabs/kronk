@@ -4,13 +4,11 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/hybridgroup/yzma/pkg/mtmd"
@@ -188,134 +186,4 @@ func readJinjaTemplate(fileName string) (string, error) {
 	}
 
 	return string(data), nil
-}
-
-// =============================================================================
-
-func isOpenAIMediaMessage(d D) (bool, chatMessages, error) {
-	msgs, err := toChatMessages(d)
-	if err != nil {
-		return false, chatMessages{}, fmt.Errorf("chat message conversion: %w", err)
-	}
-
-	for _, msg := range msgs.Messages {
-		_, ok := msg.Content.([]chatMessageContent)
-		if ok {
-			return true, msgs, nil
-		}
-	}
-
-	return false, chatMessages{}, nil
-}
-
-// convertToRawMediaMessage is needed because we want to use a raw media message
-// format for processing media since we need the raw bytes.
-func convertToRawMediaMessage(d D, msgs chatMessages) (D, error) {
-	d, err := toMediaMessage(d, msgs)
-	if err != nil {
-		return nil, fmt.Errorf("media message conversion: %w", err)
-	}
-
-	return d, nil
-}
-
-func toMediaMessage(d D, msgs chatMessages) (D, error) {
-	type mediaMessage struct {
-		text string
-		data []byte
-	}
-
-	var mediaMessages []mediaMessage
-
-	var found int
-	var mediaText string
-	var mediaData string
-
-	// -------------------------------------------------------------------------
-
-	for _, msg := range msgs.Messages {
-		switch content := msg.Content.(type) {
-		case string:
-			mediaMessages = append(mediaMessages, mediaMessage{
-				text: content,
-			})
-			continue
-
-		default:
-			for _, cm := range msg.Content.([]chatMessageContent) {
-				switch cm.Type {
-				case "text":
-					found++
-					mediaText = cm.Text
-
-				case "image_url":
-					found++
-					mediaData = cm.ImageURL.URL
-
-				case "video_url":
-					found++
-					mediaData = cm.VideoURL.URL
-
-				case "input_audio":
-					found++
-					mediaData = cm.AudioData.Data
-				}
-
-				if found == 2 {
-					decoded, err := decodeMediaData(mediaData)
-					if err != nil {
-						return d, err
-					}
-
-					mediaMessages = append(mediaMessages, mediaMessage{
-						text: mediaText,
-						data: decoded,
-					})
-
-					found = 0
-					mediaText = ""
-					mediaData = ""
-				}
-			}
-		}
-	}
-
-	// -------------------------------------------------------------------------
-
-	// Here is take all the data we found (text, data) and convert everything
-	// to the MediaMessage format is a generic format most model templates
-	// support.
-
-	docs := make([]D, 0, len(mediaMessages))
-
-	for _, mm := range mediaMessages {
-		if len(mm.data) > 0 {
-			msgs := RawMediaMessage(mm.text, mm.data)
-			docs = append(docs, msgs...)
-			continue
-		}
-
-		docs = append(docs, TextMessage("user", mm.text))
-	}
-
-	d["messages"] = docs
-
-	return d, nil
-}
-
-func decodeMediaData(data string) ([]byte, error) {
-	if strings.HasPrefix(data, "http://") || strings.HasPrefix(data, "https://") {
-		return nil, fmt.Errorf("to-media-message: URLs are not supported, provide base64 encoded data")
-	}
-
-	if idx := strings.Index(data, ";base64,"); idx != -1 && strings.HasPrefix(data, "data:") {
-		data = data[idx+8:]
-	}
-
-	decoded, err := base64.StdEncoding.DecodeString(data)
-	if err != nil {
-		return nil, fmt.Errorf("to-media-message: unable to decode base64 data: %w", err)
-	}
-
-	return decoded, nil
 }

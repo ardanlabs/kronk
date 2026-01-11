@@ -81,6 +81,7 @@ All commands support web mode (default) and `--local` mode.
 - Structs: unexported fields, exported types; use `Config` pattern for constructors
 - No CGO in tests: `CGO_ENABLED=0 go test ...`
 - Imports: stdlib first, then external, then internal (goimports order)
+- Avoid `else` and `else if` clauses; prefer `switch` statements or early returns
 
 ## Streaming Architecture (sdk/kronk/)
 

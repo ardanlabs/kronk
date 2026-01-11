@@ -45,7 +45,7 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="func-newmodel">
               <h4>NewModel</h4>
               <pre className="code-block">
-                <code>func NewModel(ctx context.Context, tmlpRetriever TemplateRetriever, cfg Config) (*Model, error)</code>
+                <code>func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) (*Model, error)</code>
               </pre>
             </div>
           </div>
@@ -98,7 +98,8 @@ export default function DocsSDKModel() {
 	CacheTypeK           GGMLType
 	CacheTypeV           GGMLType
 	FlashAttention       FlashAttentionType
-	DefragThold          float32
+	UseDirectIO          bool
+	DefragThold          float32 // Deprecated: llama.cpp deprecated this
 	IgnoreIntegrityCheck bool
 }`}</code>
               </pre>
@@ -303,6 +304,13 @@ export default function DocsSDKModel() {
               <p className="doc-description">String returns the string representation of a GGMLType.</p>
             </div>
 
+            <div className="doc-section" id="method-ggmltype-toyzmatype">
+              <h4>GGMLType.ToYZMAType</h4>
+              <pre className="code-block">
+                <code>func (t GGMLType) ToYZMAType() llama.GGMLType</code>
+              </pre>
+            </div>
+
             <div className="doc-section" id="method-model-chat">
               <h4>Model.Chat</h4>
               <pre className="code-block">
@@ -472,6 +480,7 @@ export default function DocsSDKModel() {
                 <li><a href="#method-d-clone">D.Clone</a></li>
                 <li><a href="#method-d-logsafe">D.LogSafe</a></li>
                 <li><a href="#method-ggmltype-string">GGMLType.String</a></li>
+                <li><a href="#method-ggmltype-toyzmatype">GGMLType.ToYZMAType</a></li>
                 <li><a href="#method-model-chat">Model.Chat</a></li>
                 <li><a href="#method-model-chatstreaming">Model.ChatStreaming</a></li>
                 <li><a href="#method-model-config">Model.Config</a></li>

@@ -273,7 +273,9 @@ curl-kronk-chat:
 		] \
     }'
 
-curl-kronk-chat-bad:
+FILE_GIRAFFE := $(shell base64 < examples/samples/giraffe.jpg)
+
+curl-kronk-chat-image:
 	curl -i -X POST http://localhost:8080/v1/chat/completions \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
@@ -287,12 +289,12 @@ curl-kronk-chat-bad:
 			}, \
 			{ \
 				"role": "user", \
-				"content": "$$(base64 -i examples/samples/giraffe.jpg)" \
+				"content": "$(FILE_GIRAFFE)" \
 			} \
 		] \
     }'
 
-curl-kronk-chat-image:
+curl-kronk-chat-openai-image:
 	curl -i -X POST http://localhost:8080/v1/chat/completions \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
@@ -304,7 +306,7 @@ curl-kronk-chat-image:
 				"role": "user", \
 				"content": [ \
 					{"type": "text", "text": "What is in this image?"}, \
-					{"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,'$$(base64 -i examples/samples/giraffe.jpg)'"}} \
+					{"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,'$(FILE_GIRAFFE)'"}} \
 				] \
 			} \
 		] \
@@ -358,7 +360,7 @@ curl-kronk-responses-image:
 			}, \
 			{ \
 				"type": "input_image", \
-				"image_url": "data:image/jpeg;base64,'$$(base64 -i examples/samples/giraffe.jpg)'" \
+				"image_url": "data:image/jpeg;base64,'$(FILE_GIRAFFE)'" \
 			} \
 		] \
     }'

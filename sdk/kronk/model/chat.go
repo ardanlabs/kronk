@@ -51,33 +51,13 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 			return
 		}
 
-		var mtmdCtx mtmd.Context
-		object := ObjectChatText
-
-		if m.projFile != "" {
-			object = ObjectChatMedia
-
-			mtmdCtx, err = m.loadProjFile(ctx)
-			if err != nil {
-				m.sendChatError(ctx, ch, id, fmt.Errorf("init-from-file: unable to init projection: %w", err))
-				return
-			}
-			defer mtmd.Free(mtmdCtx)
-
-		}
-
-		isMedia, msgs, err := isOpenAIMediaMessage(d)
+		d, object, mtmdCtx, err := m.prepareMediaContext(ctx, d)
 		if err != nil {
-			m.sendChatError(ctx, ch, id, fmt.Errorf("is-media: unable to check document: %w", err))
+			m.sendChatError(ctx, ch, id, err)
 			return
 		}
-
-		if isMedia {
-			d, err = convertToRawMediaMessage(d.Clone(), msgs)
-			if err != nil {
-				m.sendChatError(ctx, ch, id, fmt.Errorf("convert-media-message: unable to convert document to media message: %w", err))
-				return
-			}
+		if mtmdCtx != 0 {
+			defer mtmd.Free(mtmdCtx)
 		}
 
 		prompt, media, err := m.createPrompt(ctx, d)
@@ -90,6 +70,42 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 	}()
 
 	return ch
+}
+
+func (m *Model) prepareMediaContext(ctx context.Context, d D) (D, string, mtmd.Context, error) {
+	hasMedia, isOpenAIFormat, msgs, err := detectMediaContent(d)
+	if err != nil {
+		return nil, "", 0, fmt.Errorf("detect-media: %w", err)
+	}
+
+	if hasMedia && m.projFile == "" {
+		return nil, "", 0, fmt.Errorf("media detected in request but model does not support media processing")
+	}
+
+	var mtmdCtx mtmd.Context
+	object := ObjectChatText
+
+	if m.projFile != "" {
+		object = ObjectChatMedia
+
+		mtmdCtx, err = m.loadProjFile(ctx)
+		if err != nil {
+			return nil, "", 0, fmt.Errorf("init-from-file: unable to init projection: %w", err)
+		}
+	}
+
+	switch {
+	case isOpenAIFormat:
+		d, err = convertToRawMediaMessage(d.Clone(), msgs)
+		if err != nil {
+			return nil, "", 0, fmt.Errorf("convert-media-message: unable to convert document to media message: %w", err)
+		}
+
+	case hasMedia:
+		d = convertPlainBase64ToBytes(d)
+	}
+
+	return d, object, mtmdCtx, nil
 }
 
 func (m *Model) loadProjFile(ctx context.Context) (mtmd.Context, error) {
