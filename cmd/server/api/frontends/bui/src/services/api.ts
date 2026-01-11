@@ -10,6 +10,8 @@ import type {
   PullResponse,
   AsyncPullResponse,
   VersionResponse,
+  ChatRequest,
+  ChatStreamResponse,
 } from '../types';
 
 class ApiService {
@@ -385,6 +387,68 @@ class ApiService {
       },
       body: JSON.stringify(request),
     });
+  }
+
+  streamChat(
+    request: ChatRequest,
+    onMessage: (data: ChatStreamResponse) => void,
+    onError: (error: string) => void,
+    onComplete: () => void
+  ): () => void {
+    const controller = new AbortController();
+
+    fetch(`${this.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...request, stream: true }),
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          const error = await response.json();
+          onError(error.error?.message || `HTTP ${response.status}`);
+          return;
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) {
+          onError('Streaming not supported');
+          return;
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (!line.trim() || line === 'data: [DONE]') continue;
+            const jsonStr = line.startsWith('data: ') ? line.slice(6) : line;
+            if (!jsonStr.trim()) continue;
+            try {
+              const data = JSON.parse(jsonStr) as ChatStreamResponse;
+              onMessage(data);
+            } catch {
+              // Skip malformed JSON
+            }
+          }
+        }
+
+        onComplete();
+      })
+      .catch((err) => {
+        if (err.name !== 'AbortError') {
+          onError(err.message || 'Connection error');
+        }
+      });
+
+    return () => controller.abort();
   }
 }
 

@@ -84,6 +84,7 @@ const menuStructure: MenuCategory[] = [
           { page: 'docs-cli-catalog', label: 'catalog' },
           { page: 'docs-cli-libs', label: 'libs' },
           { page: 'docs-cli-model', label: 'model' },
+          { page: 'docs-cli-run', label: 'run' },
           { page: 'docs-cli-security', label: 'security' },
           { page: 'docs-cli-server', label: 'server' },
         ],
@@ -99,6 +100,11 @@ const menuStructure: MenuCategory[] = [
         ],
       },
     ],
+  },
+  {
+    id: 'run',
+    label: 'Run',
+    items: [{ page: 'chat', label: 'Chat' }],
   },
 ];
 

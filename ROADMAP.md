@@ -46,8 +46,6 @@
 
 ### OLLAMA FEATURE PARITY
 
-- **Add `kronk run` Interactive Mode** - A simple REPL for quick testing like `kronk run Qwen3-8B-Q8_0`
-
 - **Anthropic API Compatibility** - `/v1/messages` endpoint enables tools like Claude Code to work with Kronk
 
 - **`/v1/completions` Endpoint** - Raw text completion (non-chat) API for legacy tool compatibility

@@ -10,6 +10,7 @@ import SecurityKeyCreate from './components/SecurityKeyCreate';
 import SecurityKeyDelete from './components/SecurityKeyDelete';
 import SecurityTokenCreate from './components/SecurityTokenCreate';
 import Settings from './components/Settings';
+import Chat from './components/Chat';
 import DocsSDK from './components/DocsSDK';
 import DocsSDKKronk from './components/DocsSDKKronk';
 import DocsSDKModel from './components/DocsSDKModel';
@@ -17,6 +18,7 @@ import DocsSDKExamples from './components/DocsSDKExamples';
 import DocsCLICatalog from './components/DocsCLICatalog';
 import DocsCLILibs from './components/DocsCLILibs';
 import DocsCLIModel from './components/DocsCLIModel';
+import DocsCLIRun from './components/DocsCLIRun';
 import DocsCLISecurity from './components/DocsCLISecurity';
 import DocsCLIServer from './components/DocsCLIServer';
 import DocsAPIChat from './components/DocsAPIChat';
@@ -29,6 +31,7 @@ import { DownloadProvider } from './contexts/DownloadContext';
 
 export type Page =
   | 'home'
+  | 'chat'
   | 'model-list'
   | 'model-ps'
   | 'model-pull'
@@ -46,6 +49,7 @@ export type Page =
   | 'docs-cli-catalog'
   | 'docs-cli-libs'
   | 'docs-cli-model'
+  | 'docs-cli-run'
   | 'docs-cli-security'
   | 'docs-cli-server'
   | 'docs-api-chat'
@@ -55,6 +59,7 @@ export type Page =
 
 export const routeMap: Record<Page, string> = {
   'home': '/',
+  'chat': '/chat',
   'model-list': '/models',
   'model-ps': '/models/running',
   'model-pull': '/models/pull',
@@ -72,6 +77,7 @@ export const routeMap: Record<Page, string> = {
   'docs-cli-catalog': '/docs/cli/catalog',
   'docs-cli-libs': '/docs/cli/libs',
   'docs-cli-model': '/docs/cli/model',
+  'docs-cli-run': '/docs/cli/run',
   'docs-cli-security': '/docs/cli/security',
   'docs-cli-server': '/docs/cli/server',
   'docs-api-chat': '/docs/api/chat',
@@ -137,6 +143,7 @@ function App() {
             <Layout>
               <Routes>
                 <Route path="/" element={<HomePage />} />
+                <Route path="/chat" element={<Chat />} />
                 <Route path="/models" element={<ModelList />} />
                 <Route path="/models/running" element={<ModelPs />} />
                 <Route path="/models/pull" element={<ModelPull />} />
@@ -154,6 +161,7 @@ function App() {
                 <Route path="/docs/cli/catalog" element={<DocsCLICatalog />} />
                 <Route path="/docs/cli/libs" element={<DocsCLILibs />} />
                 <Route path="/docs/cli/model" element={<DocsCLIModel />} />
+                <Route path="/docs/cli/run" element={<DocsCLIRun />} />
                 <Route path="/docs/cli/security" element={<DocsCLISecurity />} />
                 <Route path="/docs/cli/server" element={<DocsCLIServer />} />
                 <Route path="/docs/api/chat" element={<DocsAPIChat />} />
