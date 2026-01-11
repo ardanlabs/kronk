@@ -186,12 +186,25 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // When left as zero value, FlashAttentionEnabled is used (default on).
 // Set to FlashAttentionDisabled to disable, or FlashAttentionAuto to let llama.cpp decide.
 //
+// NSeqMax is the maximum number of parallel sequences that can be processed
+// simultaneously. This is useful for batch inference or when using continuous
+// batching. When left as zero value, defaults to 1 (single sequence).
+//
+// OffloadKQV controls whether to offload K, Q, V tensors to GPU. When true (default),
+// these tensors are placed on the GPU for faster attention computation.
+// Set to false to keep them on CPU (useful for memory-constrained scenarios).
+// When nil (pointer not set), defaults to true.
+//
+// OpOffload controls whether to offload host tensor operations to the device.
+// When true (default), operations are offloaded for better performance.
+// When nil (pointer not set), defaults to true.
+//
 // DefragThold is the KV cache defragmentation threshold. When the ratio of
 // fragmented (holes) to total cache size exceeds this threshold, the cache is
 // automatically defragmented. When left as zero value, defragmentation is disabled.
 // A typical value is 0.1 (10%).
 //
-// IgnorelIntegrityCheck is a boolean that determines if the system should ignore
+// IgnoreIntegrityCheck is a boolean that determines if the system should ignore
 // a model integrity check before trying to use it.
 type Config struct {
 	Log                  Logger
@@ -204,9 +217,12 @@ type Config struct {
 	NUBatch              int
 	NThreads             int
 	NThreadsBatch        int
+	NSeqMax              int
 	CacheTypeK           GGMLType
 	CacheTypeV           GGMLType
 	FlashAttention       FlashAttentionType
+	OffloadKQV           *bool
+	OpOffload            *bool
 	UseDirectIO          bool
 	DefragThold          float32 // Deprecated: llama.cpp deprecated this
 	IgnoreIntegrityCheck bool
@@ -329,6 +345,25 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 
 	if cfg.DefragThold > 0 {
 		ctxParams.DefragThold = cfg.DefragThold
+	}
+
+	if cfg.NSeqMax > 0 {
+		ctxParams.NSeqMax = uint32(cfg.NSeqMax)
+	}
+
+	// Offload KQV cache to CPU.
+	// llama.cpp has this as default set to true
+	ctxParams.Offload_kqv = 1
+	if cfg.OffloadKQV != nil &&
+		!*cfg.OffloadKQV {
+		ctxParams.Offload_kqv = 0
+	}
+
+	// Offload host tensor operations to device.
+	// llama.cpp has this as default set to true
+	ctxParams.OpOffload = 1
+	if cfg.OpOffload != nil && !*cfg.OpOffload {
+		ctxParams.OpOffload = 0
 	}
 
 	return ctxParams
