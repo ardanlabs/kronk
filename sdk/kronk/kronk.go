@@ -75,12 +75,12 @@ func New(modelInstances int, cfg model.Config, opts ...Option) (*Kronk, error) {
 	}
 
 	if o.tr == nil {
-		templates, err := templates.New()
+		templs, err := templates.New()
 		if err != nil {
 			return nil, fmt.Errorf("template new: %w", err)
 		}
 
-		o.tr = templates
+		o.tr = templs
 	}
 
 	ctx := context.Background()
@@ -97,8 +97,8 @@ func New(modelInstances int, cfg model.Config, opts ...Option) (*Kronk, error) {
 		m, err := model.NewModel(ctx, o.tr, cfg)
 		if err != nil {
 			close(models)
-			for model := range models {
-				model.Unload(context.Background())
+			for mdl := range models {
+				mdl.Unload(ctx)
 			}
 
 			return nil, err
@@ -109,6 +109,10 @@ func New(modelInstances int, cfg model.Config, opts ...Option) (*Kronk, error) {
 		if firstModel == nil {
 			firstModel = m
 		}
+	}
+
+	if firstModel == nil {
+		return nil, fmt.Errorf("no models loaded")
 	}
 
 	krn := Kronk{
@@ -207,9 +211,9 @@ func (krn *Kronk) Unload(ctx context.Context) error {
 	var sb strings.Builder
 
 	close(krn.models)
-	for model := range krn.models {
-		if err := model.Unload(ctx); err != nil {
-			sb.WriteString(fmt.Sprintf("unload:failed to unload model: %s: %v\n", model.ModelInfo().ID, err))
+	for mdl := range krn.models {
+		if err := mdl.Unload(ctx); err != nil {
+			sb.WriteString(fmt.Sprintf("unload:failed to unload model: %s: %v\n", mdl.ModelInfo().ID, err))
 		}
 	}
 

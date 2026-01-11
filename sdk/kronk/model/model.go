@@ -37,33 +37,33 @@ type Model struct {
 	activeStreams atomic.Int32
 }
 
-func NewModel(ctx context.Context, tmlpRetriever TemplateRetriever, cfg Config) (*Model, error) {
+func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) (*Model, error) {
 	l := cfg.Log
 	if cfg.Log == nil {
 		l = func(ctx context.Context, msg string, args ...any) {}
 	}
 
-	if tmlpRetriever == nil {
+	if tmplRetriever == nil {
 		return nil, fmt.Errorf("templater required, use templater.New()")
 	}
 
-	if err := validateConfig(cfg, l); err != nil {
+	if err := validateConfig(ctx, cfg, l); err != nil {
 		return nil, fmt.Errorf("validate-config: unable to validate config: %w", err)
 	}
 
-	mparams := llama.ModelDefaultParams()
+	mParams := llama.ModelDefaultParams()
 
 	if cfg.Device != "" {
 		dev := llama.GGMLBackendDeviceByName(cfg.Device)
 		if dev == 0 {
 			return nil, fmt.Errorf("ggml-backend-device-by-name: unknown device: %s", cfg.Device)
 		}
-		mparams.SetDevices([]llama.GGMLBackendDevice{dev})
+		mParams.SetDevices([]llama.GGMLBackendDevice{dev})
 	}
 
 	// -------------------------------------------------------------------------
 
-	mdl, err := loadModelFromFiles(ctx, l, cfg.ModelFiles, mparams)
+	mdl, err := loadModelFromFiles(ctx, l, cfg.ModelFiles, mParams)
 	if err != nil {
 		return nil, fmt.Errorf("load-model-from-files: unable to load model: %w", err)
 	}
@@ -73,7 +73,7 @@ func NewModel(ctx context.Context, tmlpRetriever TemplateRetriever, cfg Config) 
 	cfg = adjustConfig(cfg, mdl)
 	modelInfo := toModelInfo(cfg, mdl)
 
-	template, err := retrieveTemplate(tmlpRetriever, cfg, mdl, modelInfo)
+	template, err := retrieveTemplate(tmplRetriever, cfg, mdl, modelInfo)
 	if err != nil {
 		return nil, fmt.Errorf("retrieve-template: failed to retrieve model template: %w", err)
 	}

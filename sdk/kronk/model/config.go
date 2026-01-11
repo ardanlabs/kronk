@@ -14,15 +14,15 @@ import (
 type GGMLType int32
 
 const (
-	GGMLTypeF32  GGMLType = 0  // 32-bit floating point (default)
+	GGMLTypeAuto GGMLType = -1 // Use default from llama.cpp
+	GGMLTypeF32  GGMLType = 0  // 32-bit floating point
 	GGMLTypeF16  GGMLType = 1  // 16-bit floating point
 	GGMLTypeQ4_0 GGMLType = 2  // 4-bit quantization (type 0)
 	GGMLTypeQ4_1 GGMLType = 3  // 4-bit quantization (type 1)
 	GGMLTypeQ5_0 GGMLType = 6  // 5-bit quantization (type 0)
 	GGMLTypeQ5_1 GGMLType = 7  // 5-bit quantization (type 1)
-	GGMLTypeQ8_0 GGMLType = 8  // 8-bit quantization (type 0)
+	GGMLTypeQ8_0 GGMLType = 8  // 8-bit quantization (type 0) (default)
 	GGMLTypeBF16 GGMLType = 30 // Brain floating point 16-bit
-	GGMLTypeAuto GGMLType = -1 // Use default from llama.cpp
 )
 
 // FlashAttentionType controls when to enable Flash Attention.
@@ -62,6 +62,10 @@ func (t GGMLType) String() string {
 	}
 }
 
+func (t GGMLType) ToYZMAType() llama.GGMLType {
+	return llama.GGMLType(t)
+}
+
 // ParseGGMLType parses a string into a GGMLType.
 // Supported values: "f32", "f16", "q4_0", "q4_1", "q5_0", "q5_1", "q8_0", "bf16", "auto".
 func ParseGGMLType(s string) (GGMLType, error) {
@@ -78,7 +82,7 @@ func ParseGGMLType(s string) (GGMLType, error) {
 		return GGMLTypeQ5_0, nil
 	case "q5_1":
 		return GGMLTypeQ5_1, nil
-	case "q8_0", "q8":
+	case "f8", "q8_0", "q8":
 		return GGMLTypeQ8_0, nil
 	case "bf16", "bfloat16":
 		return GGMLTypeBF16, nil
@@ -105,7 +109,7 @@ Key principles:
 */
 
 const (
-	defContextWindow = 4 * 1024
+	defContextWindow = 8 * 1024
 	defNBatch        = 2 * 1024
 	defNUBatch       = 512
 )
@@ -202,18 +206,19 @@ type Config struct {
 	CacheTypeK           GGMLType
 	CacheTypeV           GGMLType
 	FlashAttention       FlashAttentionType
-	DefragThold          float32
+	UseDirectIO          bool
+	DefragThold          float32 // Deprecated: llama.cpp deprecated this
 	IgnoreIntegrityCheck bool
 }
 
-func validateConfig(cfg Config, log Logger) error {
+func validateConfig(ctx context.Context, cfg Config, log Logger) error {
 	if len(cfg.ModelFiles) == 0 {
 		return fmt.Errorf("validate-config: model file is required")
 	}
 
 	if !cfg.IgnoreIntegrityCheck {
 		for _, modelFile := range cfg.ModelFiles {
-			log(context.Background(), "checking-model-integrity", "model-file", modelFile)
+			log(ctx, "checking-model-integrity", "model-file", modelFile)
 
 			if err := CheckModel(modelFile, true); err != nil {
 				return fmt.Errorf("validate-config: checking-model-integrity: %w", err)
@@ -221,7 +226,7 @@ func validateConfig(cfg Config, log Logger) error {
 		}
 
 		if cfg.ProjFile != "" {
-			log(context.Background(), "checking-model-integrity", "model-file", cfg.ProjFile)
+			log(ctx, "checking-model-integrity", "model-file", cfg.ProjFile)
 
 			if err := CheckModel(cfg.ProjFile, true); err != nil {
 				return fmt.Errorf("validate-config: checking-model-integrity: %w", err)
@@ -292,12 +297,18 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 		ctxParams.NThreadsBatch = int32(cfg.NThreadsBatch)
 	}
 
-	if cfg.CacheTypeK > 0 {
-		ctxParams.TypeK = int32(cfg.CacheTypeK)
+	switch {
+	case cfg.CacheTypeK > -2 && cfg.CacheTypeK < 41:
+		ctxParams.TypeK = cfg.CacheTypeK.ToYZMAType()
+	default:
+		ctxParams.TypeK = GGMLTypeQ8_0.ToYZMAType()
 	}
 
-	if cfg.CacheTypeV > 0 {
-		ctxParams.TypeV = int32(cfg.CacheTypeV)
+	switch {
+	case cfg.CacheTypeV > -2 && cfg.CacheTypeV < 41:
+		ctxParams.TypeV = cfg.CacheTypeV.ToYZMAType()
+	default:
+		ctxParams.TypeV = GGMLTypeQ8_0.ToYZMAType()
 	}
 
 	switch cfg.FlashAttention {

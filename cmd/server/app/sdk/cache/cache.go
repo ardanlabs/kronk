@@ -86,6 +86,7 @@ type modelConfig struct {
 	NThreadsBatch        int                      `yaml:"nthreads-batch"`
 	CacheTypeK           model.GGMLType           `yaml:"cache-type-k"`
 	CacheTypeV           model.GGMLType           `yaml:"cache-type-v"`
+	UseDirectIO          bool                     `yaml:"use-direct-io"`
 	FlashAttention       model.FlashAttentionType `yaml:"flash-attention"`
 	DefragThold          float32                  `yaml:"defrag-thold"`
 	IgnoreIntegrityCheck bool                     `yaml:"ignore-integrity-check"`
@@ -248,6 +249,7 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 		CacheTypeK:           mc.CacheTypeK,
 		CacheTypeV:           mc.CacheTypeV,
 		FlashAttention:       mc.FlashAttention,
+		UseDirectIO:          mc.UseDirectIO,
 		DefragThold:          mc.DefragThold,
 		IgnoreIntegrityCheck: mc.IgnoreIntegrityCheck,
 	}
