@@ -85,14 +85,14 @@ func testChat(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
 		}
 
 		if tooling {
-			if err := testChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatText, "London", "get_weather", "location"); err != nil {
+			if err := testChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatText, "London", "get_weather", "location", false); err != nil {
 				t.Logf("%#v", resp)
 				return err
 			}
 			return nil
 		}
 
-		if err := testChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatText, "Gorilla", "", ""); err != nil {
+		if err := testChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatText, "Gorilla", "", "", false); err != nil {
 			t.Logf("%#v", resp)
 			return err
 		}
@@ -135,21 +135,21 @@ func testChatStreaming(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) 
 		for resp := range ch {
 			lastResp = resp
 
-			if err := testChatBasics(resp, krn.ModelInfo().ID, model.ObjectChatText, true); err != nil {
+			if err := testChatBasics(resp, krn.ModelInfo().ID, model.ObjectChatText, true, true); err != nil {
 				t.Logf("%#v", resp)
 				return err
 			}
 		}
 
 		if tooling {
-			if err := testChatResponse(lastResp, krn.ModelInfo().ID, model.ObjectChatText, "London", "get_weather", "location"); err != nil {
+			if err := testChatResponse(lastResp, krn.ModelInfo().ID, model.ObjectChatText, "London", "get_weather", "location", true); err != nil {
 				t.Logf("%#v", lastResp)
 				return err
 			}
 			return nil
 		}
 
-		if err := testChatResponse(lastResp, krn.ModelInfo().ID, model.ObjectChatText, "Gorilla", "", ""); err != nil {
+		if err := testChatResponse(lastResp, krn.ModelInfo().ID, model.ObjectChatText, "Gorilla", "", "", true); err != nil {
 			t.Logf("%#v", lastResp)
 			return err
 		}

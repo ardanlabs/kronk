@@ -599,10 +599,15 @@ func toChatResponseToResponses(chatResp model.ChatResponse, d model.D) ResponseR
 	var reasoning string
 
 	if len(chatResp.Choice) > 0 {
-		outputText = chatResp.Choice[0].Delta.Content
-		finishReason = chatResp.Choice[0].FinishReason
-		toolCalls = chatResp.Choice[0].Delta.ToolCalls
-		reasoning = chatResp.Choice[0].Delta.Reasoning
+		choice := chatResp.Choice[0]
+		msg := choice.Message
+		if msg.Content == "" && msg.Role == "" {
+			msg = choice.Delta
+		}
+		outputText = msg.Content
+		finishReason = choice.FinishReason
+		toolCalls = msg.ToolCalls
+		reasoning = msg.Reasoning
 	}
 
 	status := "completed"

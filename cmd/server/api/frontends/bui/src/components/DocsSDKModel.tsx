@@ -74,7 +74,8 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>{`type Choice struct {
 	Index        int             \`json:"index"\`
-	Delta        ResponseMessage \`json:"delta"\`
+	Message      ResponseMessage \`json:"message,omitempty"\`
+	Delta        ResponseMessage \`json:"delta,omitempty"\`
 	FinishReason string          \`json:"finish_reason"\`
 }`}</code>
               </pre>

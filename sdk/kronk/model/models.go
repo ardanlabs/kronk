@@ -161,6 +161,8 @@ var logSafeKeys = []string{
 	"stop",
 	"seed",
 	"n",
+	"truncate",
+	"truncate_direction",
 }
 
 // LogSafe returns a copy of the document containing only fields that are
@@ -347,7 +349,8 @@ type ResponseMessage struct {
 // Choice represents a single choice in a response.
 type Choice struct {
 	Index        int             `json:"index"`
-	Delta        ResponseMessage `json:"delta"`
+	Message      ResponseMessage `json:"message,omitempty"`
+	Delta        ResponseMessage `json:"delta,omitempty"`
 	FinishReason string          `json:"finish_reason"`
 }
 

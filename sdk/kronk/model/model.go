@@ -218,6 +218,9 @@ func (m *Model) resetContext() {
 }
 
 func (m *Model) processChatRequest(ctx context.Context, id string, lctx llama.Context, mtmdCtx mtmd.Context, object string, prompt string, media [][]byte, params Params, ch chan<- ChatResponse) {
+	m.log(ctx, "process-chat-request", "status", "started", "id", id, "object", object)
+	defer m.log(ctx, "process-chat-request", "status", "completed", "id", id, "object", object)
+
 	ctx, span := otel.AddSpan(ctx, "process-chat-request",
 		attribute.String("id", id),
 		attribute.String("object", object),
@@ -255,6 +258,8 @@ func (m *Model) processChatRequest(ctx context.Context, id string, lctx llama.Co
 
 	// -------------------------------------------------------------------------
 
+	m.log(ctx, "process-chat-request", "status", "process input tokens")
+
 	// Start timing for time-to-first-token metric.
 	ttftStart := time.Now()
 
@@ -281,6 +286,8 @@ func (m *Model) processChatRequest(ctx context.Context, id string, lctx llama.Co
 	}
 
 	// -------------------------------------------------------------------------
+
+	m.log(ctx, "process-chat-request", "status", "start processing loop")
 
 	// Capture the time we start processing the request for a wall clock.
 	start := time.Now()

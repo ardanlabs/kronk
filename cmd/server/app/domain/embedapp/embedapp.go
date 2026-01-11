@@ -51,7 +51,7 @@ func (a *app) embeddings(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.Errorf(errs.InvalidArgument, "model doesn't support embedding")
 	}
 
-	a.log.Info(ctx, "embedding", "req", req)
+	a.log.Info(ctx, "embedding", "request-input", req.LogSafe())
 
 	ctx, cancel := context.WithTimeout(ctx, 180*time.Minute)
 	defer cancel()

@@ -151,7 +151,14 @@ func printInfo(models *models.Models) {
 	fmt.Printf("Current version: %s\n", currentVersion)
 }
 
-func testChatBasics(resp model.ChatResponse, modelName string, object string, reasoning bool) error {
+func getMsg(choice model.Choice, streaming bool) model.ResponseMessage {
+	if streaming {
+		return choice.Delta
+	}
+	return choice.Message
+}
+
+func testChatBasics(resp model.ChatResponse, modelName string, object string, reasoning bool, streaming bool) error {
 	if resp.ID == "" {
 		return fmt.Errorf("expected id")
 	}
@@ -172,24 +179,26 @@ func testChatBasics(resp model.ChatResponse, modelName string, object string, re
 		return fmt.Errorf("basics: expected choice, got %d", len(resp.Choice))
 	}
 
-	if resp.Choice[0].FinishReason == "" && resp.Choice[0].Delta.Content == "" && resp.Choice[0].Delta.Reasoning == "" {
+	msg := getMsg(resp.Choice[0], streaming)
+
+	if resp.Choice[0].FinishReason == "" && msg.Content == "" && msg.Reasoning == "" {
 		return fmt.Errorf("basics: expected delta content and reasoning to be non-empty")
 	}
 
-	if resp.Choice[0].FinishReason == "" && resp.Choice[0].Delta.Role != "assistant" {
-		return fmt.Errorf("basics: expected delta role to be assistant, got %s", resp.Choice[0].Delta.Role)
+	if resp.Choice[0].FinishReason == "" && msg.Role != "assistant" {
+		return fmt.Errorf("basics: expected delta role to be assistant, got %s", msg.Role)
 	}
 
-	if resp.Choice[0].FinishReason == "stop" && resp.Choice[0].Delta.Content == "" {
+	if resp.Choice[0].FinishReason == "stop" && msg.Content == "" {
 		return fmt.Errorf("basics: expected final content to be non-empty")
 	}
 
-	if resp.Choice[0].FinishReason == "tool" && len(resp.Choice[0].Delta.ToolCalls) == 0 {
+	if resp.Choice[0].FinishReason == "tool" && len(msg.ToolCalls) == 0 {
 		return fmt.Errorf("basics: expected tool calls to be non-empty")
 	}
 
 	if reasoning {
-		if resp.Choice[0].FinishReason == "stop" && resp.Choice[0].Delta.Reasoning == "" {
+		if resp.Choice[0].FinishReason == "stop" && msg.Reasoning == "" {
 			return fmt.Errorf("basics: expected final reasoning")
 		}
 	}
@@ -197,49 +206,51 @@ func testChatBasics(resp model.ChatResponse, modelName string, object string, re
 	return nil
 }
 
-func testChatResponse(resp model.ChatResponse, modelName string, object string, find string, funct string, arg string) error {
-	if err := testChatBasics(resp, modelName, object, object == model.ObjectChatText); err != nil {
+func testChatResponse(resp model.ChatResponse, modelName string, object string, find string, funct string, arg string, streaming bool) error {
+	if err := testChatBasics(resp, modelName, object, object == model.ObjectChatText, streaming); err != nil {
 		return err
 	}
 
+	msg := getMsg(resp.Choice[0], streaming)
+
 	find = strings.ToLower(find)
 	funct = strings.ToLower(funct)
-	resp.Choice[0].Delta.Reasoning = strings.ToLower(resp.Choice[0].Delta.Reasoning)
-	resp.Choice[0].Delta.Content = strings.ToLower(resp.Choice[0].Delta.Content)
-	if len(resp.Choice[0].Delta.ToolCalls) > 0 {
-		resp.Choice[0].Delta.ToolCalls[0].Name = strings.ToLower(resp.Choice[0].Delta.ToolCalls[0].Name)
+	msg.Reasoning = strings.ToLower(msg.Reasoning)
+	msg.Content = strings.ToLower(msg.Content)
+	if len(msg.ToolCalls) > 0 {
+		msg.ToolCalls[0].Name = strings.ToLower(msg.ToolCalls[0].Name)
 	}
 
 	if object == model.ObjectChatText {
 		switch {
 		case funct == "":
-			if !strings.Contains(resp.Choice[0].Delta.Reasoning, find) {
-				return fmt.Errorf("reasoning: expected %q, got %q", find, resp.Choice[0].Delta.Reasoning)
+			if !strings.Contains(msg.Reasoning, find) {
+				return fmt.Errorf("reasoning: expected %q, got %q", find, msg.Reasoning)
 			}
 
 		case funct != "":
-			if !strings.Contains(resp.Choice[0].Delta.Reasoning, funct) {
-				return fmt.Errorf("reasoning: expected %q, got %q", funct, resp.Choice[0].Delta.Reasoning)
+			if !strings.Contains(msg.Reasoning, funct) {
+				return fmt.Errorf("reasoning: expected %q, got %q", funct, msg.Reasoning)
 			}
 		}
 	}
 
 	if resp.Choice[0].FinishReason == "stop" {
-		if !strings.Contains(resp.Choice[0].Delta.Content, find) {
-			return fmt.Errorf("content: expected %q, got %q", find, resp.Choice[0].Delta.Content)
+		if !strings.Contains(msg.Content, find) {
+			return fmt.Errorf("content: expected %q, got %q", find, msg.Content)
 		}
 	}
 
 	if resp.Choice[0].FinishReason == "tool" {
-		if !strings.Contains(resp.Choice[0].Delta.ToolCalls[0].Name, funct) {
-			return fmt.Errorf("tooling: expected %q, got %q", funct, resp.Choice[0].Delta.ToolCalls[0].Name)
+		if !strings.Contains(msg.ToolCalls[0].Name, funct) {
+			return fmt.Errorf("tooling: expected %q, got %q", funct, msg.ToolCalls[0].Name)
 		}
 
-		if len(resp.Choice[0].Delta.ToolCalls[0].Arguments) == 0 {
-			return fmt.Errorf("tooling: expected arguments to be non-empty, got %v", resp.Choice[0].Delta.ToolCalls[0].Arguments)
+		if len(msg.ToolCalls[0].Arguments) == 0 {
+			return fmt.Errorf("tooling: expected arguments to be non-empty, got %v", msg.ToolCalls[0].Arguments)
 		}
 
-		location, exists := resp.Choice[0].Delta.ToolCalls[0].Arguments[arg]
+		location, exists := msg.ToolCalls[0].Arguments[arg]
 		if !exists {
 			return fmt.Errorf("tooling: expected an argument named %s", arg)
 		}

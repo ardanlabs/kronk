@@ -41,19 +41,29 @@ func (m *Model) Embeddings(ctx context.Context, d D) (EmbedReponse, error) {
 
 	tokens := llama.Tokenize(m.vocab, input, true, true)
 
-	if truncate, _ := d["truncate"].(bool); truncate {
-		maxTokens := int(llama.NCtx(lctx))
+	maxTokens := int(llama.NUBatch(lctx))
+	ctxTokens := int(llama.NCtx(lctx))
+	if ctxTokens < maxTokens {
+		maxTokens = ctxTokens
+	}
 
-		if len(tokens) > maxTokens {
-			direction, _ := d["truncate_direction"].(string)
-
-			switch direction {
-			case "left":
-				tokens = tokens[len(tokens)-maxTokens:]
-			default:
-				tokens = tokens[:maxTokens]
-			}
+	if len(tokens) > maxTokens {
+		truncate, _ := d["truncate"].(bool)
+		if !truncate {
+			return EmbedReponse{}, fmt.Errorf("embeddings: input has %d tokens but max is %d (set truncate=true to auto-truncate)", len(tokens), maxTokens)
 		}
+
+		direction, _ := d["truncate_direction"].(string)
+		originalLen := len(tokens)
+
+		switch direction {
+		case "left":
+			tokens = tokens[len(tokens)-maxTokens:]
+		default:
+			tokens = tokens[:maxTokens]
+		}
+
+		m.log(ctx, "embeddings: truncated input", "original_tokens", originalLen, "max_tokens", maxTokens, "direction", direction, "truncated_tokens", len(tokens))
 	}
 
 	batch := llama.BatchGetOne(tokens)

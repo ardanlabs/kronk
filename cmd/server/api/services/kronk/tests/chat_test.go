@@ -43,7 +43,7 @@ func chatNonStream200(t *testing.T, tokens map[string]string) []apitest.Table {
 			ExpResp: &model.ChatResponse{
 				Choice: []model.Choice{
 					{
-						Delta: model.ResponseMessage{
+						Message: model.ResponseMessage{
 							Role: "assistant",
 						},
 						FinishReason: "stop",
@@ -64,7 +64,7 @@ func chatNonStream200(t *testing.T, tokens map[string]string) []apitest.Table {
 					return diff
 				}
 
-				return validateResponse(got).
+				return validateResponse(got, false).
 					hasValidUUID().
 					hasCreated().
 					hasValidChoice().
@@ -94,7 +94,7 @@ func chatNonStream200(t *testing.T, tokens map[string]string) []apitest.Table {
 			ExpResp: &model.ChatResponse{
 				Choice: []model.Choice{
 					{
-						Delta: model.ResponseMessage{
+						Message: model.ResponseMessage{
 							Role: "assistant",
 						},
 						FinishReason: "stop",
@@ -114,7 +114,7 @@ func chatNonStream200(t *testing.T, tokens map[string]string) []apitest.Table {
 					return diff
 				}
 
-				return validateResponse(got).
+				return validateResponse(got, false).
 					hasValidUUID().
 					hasCreated().
 					hasValidChoice().
@@ -143,7 +143,7 @@ func chatNonStream200(t *testing.T, tokens map[string]string) []apitest.Table {
 			ExpResp: &model.ChatResponse{
 				Choice: []model.Choice{
 					{
-						Delta: model.ResponseMessage{
+						Message: model.ResponseMessage{
 							Role: "assistant",
 						},
 						FinishReason: "stop",
@@ -163,7 +163,7 @@ func chatNonStream200(t *testing.T, tokens map[string]string) []apitest.Table {
 					return diff
 				}
 
-				return validateResponse(got).
+				return validateResponse(got, false).
 					hasValidUUID().
 					hasCreated().
 					hasValidChoice().
@@ -223,7 +223,7 @@ func chatStream200(tokens map[string]string) []apitest.Table {
 					return diff
 				}
 
-				return validateResponse(got).
+				return validateResponse(got, true).
 					hasValidUUID().
 					hasCreated().
 					hasValidChoice().
