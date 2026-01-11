@@ -3,7 +3,6 @@ package model
 import (
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"maps"
 	"net/url"
@@ -329,13 +328,73 @@ func convertValue(v any) any {
 
 // =============================================================================
 
+// ToolCallArguments represents tool call arguments that marshal to a JSON
+// string per OpenAI API spec, but can unmarshal from either a string or object.
+type ToolCallArguments map[string]any
+
+func (a ToolCallArguments) MarshalJSON() ([]byte, error) {
+	if a == nil {
+		return []byte(`""`), nil
+	}
+
+	inner, err := json.Marshal(map[string]any(a))
+	if err != nil {
+		return nil, err
+	}
+
+	return json.Marshal(string(inner))
+}
+
+func (a *ToolCallArguments) UnmarshalJSON(data []byte) error {
+	if len(data) == 0 || string(data) == "null" {
+		*a = nil
+		return nil
+	}
+
+	// Try string first (OpenAI compliant format).
+	if data[0] == '"' {
+		var s string
+		if err := json.Unmarshal(data, &s); err != nil {
+			return err
+		}
+
+		if s == "" {
+			*a = nil
+			return nil
+		}
+
+		var m map[string]any
+		if err := json.Unmarshal([]byte(s), &m); err != nil {
+			return err
+		}
+
+		*a = m
+		return nil
+	}
+
+	// Fall back to object (non-compliant but some clients send this).
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		return err
+	}
+
+	*a = m
+	return nil
+}
+
+type ResponseToolCallFunction struct {
+	Name      string            `json:"name"`
+	Arguments ToolCallArguments `json:"arguments"`
+}
+
 type ResponseToolCall struct {
-	ID        string         `json:"id"`
-	Name      string         `json:"name"`
-	Arguments map[string]any `json:"arguments"`
-	Status    int            `json:"status"`
-	Raw       string         `json:"raw"`
-	Error     string         `json:"error"`
+	ID       string                   `json:"id"`
+	Index    int                      `json:"index"`
+	Type     string                   `json:"type"`
+	Function ResponseToolCallFunction `json:"function"`
+	Status   int                      `json:"status,omitempty"`
+	Raw      string                   `json:"raw,omitempty"`
+	Error    string                   `json:"error,omitempty"`
 }
 
 // ResponseMessage represents a single message in a response.
@@ -470,15 +529,22 @@ type EmbedData struct {
 	Embedding []float32 `json:"embedding"`
 }
 
+// EmbedUsage provides token usage information for embeddings.
+type EmbedUsage struct {
+	PromptTokens int `json:"prompt_tokens"`
+	TotalTokens  int `json:"total_tokens"`
+}
+
 // EmbedReponse represents the output for an embedding call.
 type EmbedReponse struct {
 	Object  string      `json:"object"`
 	Created int64       `json:"created"`
 	Model   string      `json:"model"`
 	Data    []EmbedData `json:"data"`
+	Usage   EmbedUsage  `json:"usage"`
 }
 
-func toEmbedResponse(modelID string, vec []float32) EmbedReponse {
+func toEmbedResponse(modelID string, vec []float32, promptTokens int) EmbedReponse {
 	return EmbedReponse{
 		Object:  "list",
 		Created: time.Now().UnixMilli(),
@@ -489,6 +555,10 @@ func toEmbedResponse(modelID string, vec []float32) EmbedReponse {
 				Index:     0,
 				Embedding: vec,
 			},
+		},
+		Usage: EmbedUsage{
+			PromptTokens: promptTokens,
+			TotalTokens:  promptTokens,
 		},
 	}
 }
@@ -515,7 +585,7 @@ type chatMessageContent struct {
 
 type chatMessage struct {
 	Role    string `json:"role"`
-	Content any    `json:"content"` // string | []chatMessageContent
+	Content any    `json:"content"` // string | []chatMessageContent | nil
 }
 
 func (ccm *chatMessage) UnmarshalJSON(b []byte) error {
@@ -528,8 +598,14 @@ func (ccm *chatMessage) UnmarshalJSON(b []byte) error {
 		return err
 	}
 
-	if len(app.Content) == 0 {
-		return errors.New("invalid input document")
+	// Content can be empty for assistant messages with tool_calls,
+	// or for tool role messages where content is optional.
+	if len(app.Content) == 0 || string(app.Content) == "null" {
+		*ccm = chatMessage{
+			Role:    app.Role,
+			Content: nil,
+		}
+		return nil
 	}
 
 	var content any

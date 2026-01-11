@@ -218,7 +218,7 @@ func testChatResponse(resp model.ChatResponse, modelName string, object string, 
 	msg.Reasoning = strings.ToLower(msg.Reasoning)
 	msg.Content = strings.ToLower(msg.Content)
 	if len(msg.ToolCalls) > 0 {
-		msg.ToolCalls[0].Name = strings.ToLower(msg.ToolCalls[0].Name)
+		msg.ToolCalls[0].Function.Name = strings.ToLower(msg.ToolCalls[0].Function.Name)
 	}
 
 	if object == model.ObjectChatText {
@@ -242,15 +242,15 @@ func testChatResponse(resp model.ChatResponse, modelName string, object string, 
 	}
 
 	if resp.Choice[0].FinishReason == "tool" {
-		if !strings.Contains(msg.ToolCalls[0].Name, funct) {
-			return fmt.Errorf("tooling: expected %q, got %q", funct, msg.ToolCalls[0].Name)
+		if !strings.Contains(msg.ToolCalls[0].Function.Name, funct) {
+			return fmt.Errorf("tooling: expected %q, got %q", funct, msg.ToolCalls[0].Function.Name)
 		}
 
-		if len(msg.ToolCalls[0].Arguments) == 0 {
-			return fmt.Errorf("tooling: expected arguments to be non-empty, got %v", msg.ToolCalls[0].Arguments)
+		if len(msg.ToolCalls[0].Function.Arguments) == 0 {
+			return fmt.Errorf("tooling: expected arguments to be non-empty, got %v", msg.ToolCalls[0].Function.Arguments)
 		}
 
-		location, exists := msg.ToolCalls[0].Arguments[arg]
+		location, exists := msg.ToolCalls[0].Function.Arguments[arg]
 		if !exists {
 			return fmt.Errorf("tooling: expected an argument named %s", arg)
 		}

@@ -112,6 +112,7 @@ const (
 	defContextWindow = 8 * 1024
 	defNBatch        = 2 * 1024
 	defNUBatch       = 512
+	defNUBatchVision = 2 * 1024
 )
 
 // Logger provides a function for logging messages from different APIs.
@@ -245,7 +246,13 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 	}
 
 	if cfg.NUBatch <= 0 {
-		cfg.NUBatch = defNUBatch
+		// Vision models require n_ubatch >= n_tokens for the image encoder's
+		// non-causal attention. Use a larger default when ProjFile is set.
+		if cfg.ProjFile != "" {
+			cfg.NUBatch = defNUBatchVision
+		} else {
+			cfg.NUBatch = defNUBatch
+		}
 	}
 
 	if cfg.NThreads < 0 {

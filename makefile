@@ -117,6 +117,7 @@ kronk-docs:
 	go run cmd/server/api/tooling/docs/*.go
 
 kronk-server: kronk-build
+	export KRONK_CACHE_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
 	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
 
 kronk-server-detach: bui-build
@@ -264,13 +265,48 @@ curl-kronk-show:
 curl-model-status:
 	curl -i -X GET http://localhost:8080/v1/models/status
 
+curl-kronk-chat-tool:
+	curl -i -X POST http://localhost:8080/v1/chat/completions \
+	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
+     -H "Content-Type: application/json" \
+     -d '{ \
+	 	"model": "cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0", \
+		"stream": true, \
+		"messages": [ \
+			{ \
+				"role": "user", \
+				"content": "what is the weather in NYC" \
+			} \
+		], \
+		"tool_selection": "auto", \
+		"tools": [ \
+			{ \
+				"type": "function", \
+				"function": { \
+					"name": "get_weather", \
+					"description": "Get the current weather for a location", \
+					"parameters": { \
+						"type": "object", \
+						"properties": { \
+							"location": { \
+								"type": "string", \
+								"description": "The location to get the weather for, e.g. San Francisco, CA" \
+							} \
+						}, \
+						"required": ["location"] \
+					} \
+				} \
+			} \
+		] \
+    }'
+
 curl-kronk-chat:
 	curl -i -X POST http://localhost:8080/v1/chat/completions \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
      -d '{ \
-	 	"stream": true, \
-	 	"model": "cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0", \
+	 	"model": "gpt-oss-20b-Q8_0", \
+		"stream": true, \
 		"messages": [ \
 			{ \
 				"role": "user", \

@@ -37,6 +37,10 @@ func chatEmbed200(tokens map[string]string) []apitest.Table {
 						Index:  0,
 					},
 				},
+				Usage: model.EmbedUsage{
+					PromptTokens: 5,
+					TotalTokens:  5,
+				},
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,

@@ -227,10 +227,16 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 		return nil, fmt.Errorf("aquire-model: %w", err)
 	}
 
-	mc, found := c.modelConfig[modelID]
-	if found {
-		c.log(ctx, "found model config", "mc", fmt.Sprintf("%#v", mc))
-	}
+	c.log(ctx, "model config lookup", "modelID", modelID, "available-keys", fmt.Sprintf("%v", func() []string {
+		keys := make([]string, 0, len(c.modelConfig))
+		for k := range c.modelConfig {
+			keys = append(keys, k)
+		}
+		return keys
+	}()))
+
+	mc, found := c.modelConfig[strings.ToLower(modelID)]
+	c.log(ctx, "model config result", "found", found, "mc", fmt.Sprintf("%#v", mc))
 
 	if c.ignoreIntegrityCheck {
 		mc.IgnoreIntegrityCheck = true
@@ -313,5 +319,11 @@ func loadModelConfig(modelConfigFile string) (map[string]modelConfig, error) {
 		return nil, fmt.Errorf("unmarshaling model config: %w", err)
 	}
 
-	return configs, nil
+	// Normalize keys to lowercase for case-insensitive lookup.
+	normalized := make(map[string]modelConfig, len(configs))
+	for k, v := range configs {
+		normalized[strings.ToLower(k)] = v
+	}
+
+	return normalized, nil
 }

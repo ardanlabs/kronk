@@ -225,8 +225,8 @@ import (
 )
 
 const (
-	//modelURL = "https://huggingface.co/unsloth/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-Q8_0.gguf"
-	modelURL       = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
+	modelURL = "https://huggingface.co/unsloth/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-Q8_0.gguf"
+	//modelURL       = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
 	modelInstances = 1
 )
 
@@ -468,15 +468,15 @@ loop:
 			for _, tool := range resp.Choice[0].Delta.ToolCalls {
 				fmt.Printf("\\u001b[92mToolID[%s]: %s(%s)\\n\\u001b[0m",
 					tool.ID,
-					tool.Name,
-					tool.Arguments,
+					tool.Function.Name,
+					tool.Function.Arguments,
 				)
 
 				messages = append(messages,
 					model.TextMessage("tool", fmt.Sprintf("Tool call %s: %s(%v)\\n",
 						tool.ID,
-						tool.Name,
-						tool.Arguments),
+						tool.Function.Name,
+						tool.Function.Arguments),
 					),
 				)
 			}

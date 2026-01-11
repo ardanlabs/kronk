@@ -311,10 +311,13 @@ func parseFunctionFormat(content string) []ResponseToolCall {
 		}
 
 		toolCalls = append(toolCalls, ResponseToolCall{
-			ID:        uuid.NewString(),
-			Name:      name,
-			Arguments: args,
-			Raw:       content[funcStart : closeFunc+11],
+			ID:   uuid.NewString(),
+			Type: "function",
+			Function: ResponseToolCallFunction{
+				Name:      name,
+				Arguments: args,
+			},
+			Raw: content[funcStart : closeFunc+11],
 		})
 
 		content = content[closeFunc+11:]
@@ -328,8 +331,9 @@ func parseJSONFormat(content string) []ResponseToolCall {
 
 	for call := range strings.SplitSeq(content, "\n") {
 		toolCall := ResponseToolCall{
-			ID:  uuid.NewString(),
-			Raw: call,
+			ID:   uuid.NewString(),
+			Type: "function",
+			Raw:  call,
 		}
 
 		switch {
@@ -338,7 +342,7 @@ func parseJSONFormat(content string) []ResponseToolCall {
 			toolCall.Error = "response missing"
 
 		default:
-			if err := json.Unmarshal([]byte(call), &toolCall); err != nil {
+			if err := json.Unmarshal([]byte(call), &toolCall.Function); err != nil {
 				toolCall.Status = 2
 				toolCall.Error = err.Error()
 			}

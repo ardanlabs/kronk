@@ -39,7 +39,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		m.activeStreams.Add(1)
 		defer m.activeStreams.Add(-1)
 
-		id := uuid.New().String()
+		id := fmt.Sprintf("chatcmpl-%s", uuid.New().String())
 
 		defer func() {
 			if rec := recover(); rec != nil {

@@ -80,7 +80,7 @@ func (m *Model) Embeddings(ctx context.Context, d D) (EmbedReponse, error) {
 		sum += float64(v * v)
 	}
 
-	resp := toEmbedResponse(m.modelInfo.ID, vec)
+	resp := toEmbedResponse(m.modelInfo.ID, vec, len(tokens))
 
 	if sum == 0 {
 		return resp, nil

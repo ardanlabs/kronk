@@ -143,9 +143,21 @@ func (v responseValidator) getMsg() model.ResponseMessage {
 }
 
 func (v responseValidator) hasValidUUID() responseValidator {
-	if _, err := uuid.Parse(v.resp.ID); err != nil {
-		v.errors = append(v.errors, "expected id to be a UUID")
+	id := v.resp.ID
+
+	// Try parsing as-is first.
+	if _, err := uuid.Parse(id); err == nil {
+		return v
 	}
+
+	// Try extracting UUID from the last 36 characters (after prefix).
+	if len(id) >= 36 {
+		if _, err := uuid.Parse(id[len(id)-36:]); err == nil {
+			return v
+		}
+	}
+
+	v.errors = append(v.errors, "expected id to contain a valid UUID")
 
 	return v
 }

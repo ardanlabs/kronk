@@ -209,14 +209,17 @@ func toMediaMessage(d D, msgs chatMessages) (D, error) {
 
 	for _, msg := range msgs.Messages {
 		switch content := msg.Content.(type) {
+		case nil:
+			continue
+
 		case string:
 			mediaMessages = append(mediaMessages, mediaMessage{
 				text: content,
 			})
 			continue
 
-		default:
-			for _, cm := range msg.Content.([]chatMessageContent) {
+		case []chatMessageContent:
+			for _, cm := range content {
 				switch cm.Type {
 				case "text":
 					found++

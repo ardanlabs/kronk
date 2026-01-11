@@ -135,9 +135,21 @@ export default function DocsSDKModel() {
 	Created int64       \`json:"created"\`
 	Model   string      \`json:"model"\`
 	Data    []EmbedData \`json:"data"\`
+	Usage   EmbedUsage  \`json:"usage"\`
 }`}</code>
               </pre>
               <p className="doc-description">EmbedReponse represents the output for an embedding call.</p>
+            </div>
+
+            <div className="doc-section" id="type-embedusage">
+              <h4>EmbedUsage</h4>
+              <pre className="code-block">
+                <code>{`type EmbedUsage struct {
+	PromptTokens int \`json:"prompt_tokens"\`
+	TotalTokens  int \`json:"total_tokens"\`
+}`}</code>
+              </pre>
+              <p className="doc-description">EmbedUsage provides token usage information for embeddings.</p>
             </div>
 
             <div className="doc-section" id="type-flashattentiontype">
@@ -231,12 +243,23 @@ export default function DocsSDKModel() {
               <h4>ResponseToolCall</h4>
               <pre className="code-block">
                 <code>{`type ResponseToolCall struct {
-	ID        string         \`json:"id"\`
-	Name      string         \`json:"name"\`
-	Arguments map[string]any \`json:"arguments"\`
-	Status    int            \`json:"status"\`
-	Raw       string         \`json:"raw"\`
-	Error     string         \`json:"error"\`
+	ID       string                   \`json:"id"\`
+	Index    int                      \`json:"index"\`
+	Type     string                   \`json:"type"\`
+	Function ResponseToolCallFunction \`json:"function"\`
+	Status   int                      \`json:"status,omitempty"\`
+	Raw      string                   \`json:"raw,omitempty"\`
+	Error    string                   \`json:"error,omitempty"\`
+}`}</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="type-responsetoolcallfunction">
+              <h4>ResponseToolCallFunction</h4>
+              <pre className="code-block">
+                <code>{`type ResponseToolCallFunction struct {
+	Name      string            \`json:"name"\`
+	Arguments ToolCallArguments \`json:"arguments"\`
 }`}</code>
               </pre>
             </div>
@@ -260,6 +283,14 @@ export default function DocsSDKModel() {
 }`}</code>
               </pre>
               <p className="doc-description">TemplateRetriever returns a configured template for a model.</p>
+            </div>
+
+            <div className="doc-section" id="type-toolcallarguments">
+              <h4>ToolCallArguments</h4>
+              <pre className="code-block">
+                <code>{`type ToolCallArguments map[string]any`}</code>
+              </pre>
+              <p className="doc-description">ToolCallArguments represents tool call arguments that marshal to a JSON string per OpenAI API spec, but can unmarshal from either a string or object.</p>
             </div>
 
             <div className="doc-section" id="type-usage">
@@ -354,6 +385,20 @@ export default function DocsSDKModel() {
               <h4>Model.Unload</h4>
               <pre className="code-block">
                 <code>func (m *Model) Unload(ctx context.Context) error</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="method-toolcallarguments-marshaljson">
+              <h4>ToolCallArguments.MarshalJSON</h4>
+              <pre className="code-block">
+                <code>func (a ToolCallArguments) MarshalJSON() ([]byte, error)</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="method-toolcallarguments-unmarshaljson">
+              <h4>ToolCallArguments.UnmarshalJSON</h4>
+              <pre className="code-block">
+                <code>func (a *ToolCallArguments) UnmarshalJSON(data []byte) error</code>
               </pre>
             </div>
           </div>
@@ -462,6 +507,7 @@ export default function DocsSDKModel() {
                 <li><a href="#type-d">D</a></li>
                 <li><a href="#type-embeddata">EmbedData</a></li>
                 <li><a href="#type-embedreponse">EmbedReponse</a></li>
+                <li><a href="#type-embedusage">EmbedUsage</a></li>
                 <li><a href="#type-flashattentiontype">FlashAttentionType</a></li>
                 <li><a href="#type-ggmltype">GGMLType</a></li>
                 <li><a href="#type-logger">Logger</a></li>
@@ -470,8 +516,10 @@ export default function DocsSDKModel() {
                 <li><a href="#type-params">Params</a></li>
                 <li><a href="#type-responsemessage">ResponseMessage</a></li>
                 <li><a href="#type-responsetoolcall">ResponseToolCall</a></li>
+                <li><a href="#type-responsetoolcallfunction">ResponseToolCallFunction</a></li>
                 <li><a href="#type-template">Template</a></li>
                 <li><a href="#type-templateretriever">TemplateRetriever</a></li>
+                <li><a href="#type-toolcallarguments">ToolCallArguments</a></li>
                 <li><a href="#type-usage">Usage</a></li>
               </ul>
             </div>
@@ -488,6 +536,8 @@ export default function DocsSDKModel() {
                 <li><a href="#method-model-embeddings">Model.Embeddings</a></li>
                 <li><a href="#method-model-modelinfo">Model.ModelInfo</a></li>
                 <li><a href="#method-model-unload">Model.Unload</a></li>
+                <li><a href="#method-toolcallarguments-marshaljson">ToolCallArguments.MarshalJSON</a></li>
+                <li><a href="#method-toolcallarguments-unmarshaljson">ToolCallArguments.UnmarshalJSON</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
