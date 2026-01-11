@@ -46,6 +46,7 @@ func Run() error {
 		catalogCommand(),
 		libsCommand(),
 		modelCommand(),
+		runCommand(),
 		securityCommand(),
 		serverCommand(),
 	}
@@ -482,6 +483,39 @@ func modelCommand() command {
 				Examples: []string{
 					"# Show model information\nkronk model show llama-3.2-1b-q4",
 					"# Show with local mode\nkronk model show llama-3.2-1b-q4 --local",
+				},
+			},
+		},
+	}
+}
+
+func runCommand() command {
+	return command{
+		Name:  "run",
+		Short: "Run an interactive chat session with a model.",
+		Long:  "Run an interactive chat session with a local model (REPL mode)",
+		Usage: "kronk run <MODEL_NAME> [flags]",
+		Subcommands: []subcommand{
+			{
+				Name:  "flags",
+				Short: "Available flags for the run command.",
+				Usage: "kronk run <MODEL_NAME> [flags]",
+				Flags: []flag{
+					{Name: "--instances <int>", Description: "Number of model instances to load (default: 1)"},
+					{Name: "--max-tokens <int>", Description: "Maximum tokens for response (default: 2048)"},
+					{Name: "--temperature <float>", Description: "Temperature for sampling (default: 0.7)"},
+					{Name: "--top-p <float>", Description: "Top-p for sampling (default: 0.9)"},
+					{Name: "--top-k <int>", Description: "Top-k for sampling (default: 40)"},
+					{Name: "--base-path <string>", Description: "Base path for kronk data (models, catalogs, templates)"},
+				},
+				EnvVars: []envVar{
+					{Name: "KRONK_BASE_PATH", Default: "$HOME/kronk", Description: "Base path for kronk data directories"},
+					{Name: "KRONK_MODELS", Default: "$HOME/kronk/models", Description: "The path to the models directory"},
+				},
+				Examples: []string{
+					"# Start an interactive chat with a model\nkronk run Qwen3-8B-Q8_0",
+					"# Run with custom sampling parameters\nkronk run Qwen3-8B-Q8_0 --temperature 0.5 --top-p 0.95",
+					"# Run with higher token limit\nkronk run Qwen3-8B-Q8_0 --max-tokens 4096",
 				},
 			},
 		},

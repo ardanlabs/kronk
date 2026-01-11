@@ -43,3 +43,27 @@
 ### AI-TRAINING
 
 - Remove Ollama for KMS
+
+### OLLAMA FEATURE PARITY
+
+- **Add `kronk run` Interactive Mode** - A simple REPL for quick testing like `kronk run Qwen3-8B-Q8_0`
+
+- **Anthropic API Compatibility** - `/v1/messages` endpoint enables tools like Claude Code to work with Kronk
+
+- **`/v1/completions` Endpoint** - Raw text completion (non-chat) API for legacy tool compatibility
+
+- **Logprobs** - Return token log probabilities for prompt engineering and debugging
+
+- **Structured Outputs (JSON Schema)** - Support `format` as a JSON schema, not just `json` boolean
+
+- **Web Search/Fetch API** - Provide `api/web_search` and `api/web_fetch` endpoints for RAG augmentation
+
+- **`suffix` Parameter** - Fill-in-the-middle completion support
+
+- **Embedding `dimensions`** - Allow reducing embedding dimensions on request
+
+- **Embedding `truncate`** - Auto-truncate long inputs to fit context length
+
+- **`kronk push`** - Push custom models to a registry
+
+- **`kronk signin/signout`** - User authentication for cloud features
