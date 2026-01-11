@@ -251,10 +251,10 @@ func toSampler(p Params) llama.Sampler {
 	sampler := llama.SamplerChainInit(llama.SamplerChainDefaultParams())
 
 	llama.SamplerChainAdd(sampler, llama.SamplerInitPenalties(p.RepeatLastN, p.RepeatPenalty, 0, 0))
-	llama.SamplerChainAdd(sampler, llama.SamplerInitTempExt(p.Temperature, 0, 1.0))
 	llama.SamplerChainAdd(sampler, llama.SamplerInitTopK(p.TopK))
 	llama.SamplerChainAdd(sampler, llama.SamplerInitTopP(p.TopP, 0))
 	llama.SamplerChainAdd(sampler, llama.SamplerInitMinP(p.MinP, 0))
+	llama.SamplerChainAdd(sampler, llama.SamplerInitTempExt(p.Temperature, 0, 1.0))
 	llama.SamplerChainAdd(sampler, llama.SamplerInitDist(llama.DefaultSeed))
 
 	return sampler
