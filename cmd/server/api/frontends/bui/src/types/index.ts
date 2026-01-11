@@ -133,3 +133,47 @@ export interface ApiError {
     message: string;
   };
 }
+
+export interface ChatMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+}
+
+export interface ChatRequest {
+  model: string;
+  messages: ChatMessage[];
+  stream?: boolean;
+  max_tokens?: number;
+  temperature?: number;
+  top_p?: number;
+  top_k?: number;
+}
+
+export interface ChatDelta {
+  role?: string;
+  content?: string;
+  reasoning?: string;
+}
+
+export interface ChatChoice {
+  index: number;
+  delta: ChatDelta;
+  finish_reason: string | null;
+}
+
+export interface ChatUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  reasoning_tokens: number;
+  output_tokens: number;
+  tokens_per_second: number;
+}
+
+export interface ChatStreamResponse {
+  id: string;
+  object: string;
+  created: number;
+  model: string;
+  choices: ChatChoice[];
+  usage?: ChatUsage;
+}

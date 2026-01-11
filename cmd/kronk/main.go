@@ -7,6 +7,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/kronk/catalog"
 	"github.com/ardanlabs/kronk/cmd/kronk/libs"
 	"github.com/ardanlabs/kronk/cmd/kronk/model"
+	"github.com/ardanlabs/kronk/cmd/kronk/run"
 	"github.com/ardanlabs/kronk/cmd/kronk/security"
 	"github.com/ardanlabs/kronk/cmd/kronk/server"
 	k "github.com/ardanlabs/kronk/sdk/kronk"
@@ -44,4 +45,5 @@ func init() {
 	rootCmd.AddCommand(model.Cmd)
 	rootCmd.AddCommand(catalog.Cmd)
 	rootCmd.AddCommand(security.Cmd)
+	rootCmd.AddCommand(run.Cmd)
 }

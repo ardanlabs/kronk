@@ -228,6 +228,12 @@ kronk-security-key-list-local:
 kronk-security-token-create-local:
 	go run cmd/kronk/main.go security token create --local --username "$(U)" --duration "$(D)" --endpoints "$(E)"
 
+# ------------------------------------------------------------------------------
+
+# make kronk-run ID="cerebras_qwen3-coder-reap-25b-a3b-q8_0"
+kronk-run:
+	go run cmd/kronk/main.go run "$(ID)"
+
 # ==============================================================================
 # Kronk Endpoints
 
