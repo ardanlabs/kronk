@@ -55,6 +55,18 @@ jobs:
         run: |
           go install honnef.co/go/tools/cmd/staticcheck@latest
           go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Run api/service tests
+        timeout-minutes: 25
+        run: |
+          export GOROUTINES=1
+          export RUN_IN_PARALLEL=0
+          CGO_ENABLED=0 go test -v -count=1 -timeout 25m ./cmd/server/api/services/kronk/tests
+      - name: Run kronk tests
+        timeout-minutes: 25
+        run: |
+          export GOROUTINES=1
+          export RUN_IN_PARALLEL=0
+          CGO_ENABLED=0 go test -v -count=1 -timeout 25m ./sdk/kronk/tests
       - name: Run sdk/cache tests
         run: |
           export GOROUTINES=1
@@ -75,18 +87,6 @@ jobs:
           export GOROUTINES=1
           export RUN_IN_PARALLEL=0
           CGO_ENABLED=0 go test -v -count=1 ./sdk/tools/...
-      - name: Run kronk tests
-        timeout-minutes: 25
-        run: |
-          export GOROUTINES=1
-          export RUN_IN_PARALLEL=0
-          CGO_ENABLED=0 go test -v -count=1 -timeout 25m ./sdk/kronk/tests
-      - name: Run api/service tests
-        timeout-minutes: 25
-        run: |
-          export GOROUTINES=1
-          export RUN_IN_PARALLEL=0
-          CGO_ENABLED=0 go test -v -count=1 -timeout 25m ./cmd/server/api/services/kronk/tests
       - name: Run vet, linter, vuln checks
         run: |
           CGO_ENABLED=0 go vet ./...
