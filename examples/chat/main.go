@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
@@ -27,8 +28,8 @@ import (
 )
 
 const (
-	modelURL = "https://huggingface.co/unsloth/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-Q8_0.gguf"
-	//modelURL       = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
+	//modelURL = "https://huggingface.co/unsloth/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-Q8_0.gguf"
+	modelURL       = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
 	modelInstances = 1
 )
 
@@ -120,13 +121,26 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
-	krn, err := kronk.New(modelInstances, model.Config{
+	cfg := model.Config{
 		ModelFiles: mp.ModelFiles,
 		CacheTypeK: model.GGMLTypeF16,
 		CacheTypeV: model.GGMLTypeF16,
 		NBatch:     1024,
 		NUBatch:    256,
-	})
+	}
+
+	if path.Base(mp.ModelFiles[0]) == "gpt-oss-20b-Q8_0" {
+		cfg = model.Config{
+			ModelFiles:    mp.ModelFiles,
+			ContextWindow: 8192,
+			NBatch:        4096,
+			NUBatch:       1024,
+			CacheTypeK:    model.GGMLTypeQ8_0,
+			CacheTypeV:    model.GGMLTypeQ8_0,
+		}
+	}
+
+	krn, err := kronk.New(modelInstances, cfg)
 
 	if err != nil {
 		return nil, fmt.Errorf("unable to create inference model: %w", err)
