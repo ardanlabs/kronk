@@ -21,6 +21,7 @@ import (
 type testOption struct {
 	skip    bool
 	skipMsg string
+	retries int
 }
 
 // OptionFunc represents a function that can set options.
@@ -31,6 +32,13 @@ func WithSkip(skip bool, msg string) OptionFunc {
 	return func(to *testOption) {
 		to.skip = skip
 		to.skipMsg = msg
+	}
+}
+
+// WithRetries sets the number of retry attempts for flaky LLM-based tests.
+func WithRetries(n int) OptionFunc {
+	return func(to *testOption) {
+		to.retries = n
 	}
 }
 
@@ -57,43 +65,57 @@ func (at *Test) Run(t *testing.T, table []Table, testName string, options ...Opt
 				t.Skip("Skipping test in GitHub Actions")
 			}
 
-			r := httptest.NewRequest(tt.Method, tt.URL, nil)
-			w := httptest.NewRecorder()
+			maxAttempts := to.retries + 1
+			var lastDiff string
 
-			if tt.Input != nil {
-				d, err := json.Marshal(tt.Input)
-				if err != nil {
-					t.Fatalf("Should be able to marshal the model : %s", err)
+			for attempt := range maxAttempts {
+				r := httptest.NewRequest(tt.Method, tt.URL, nil)
+				w := httptest.NewRecorder()
+
+				if tt.Input != nil {
+					d, err := json.Marshal(tt.Input)
+					if err != nil {
+						t.Fatalf("Should be able to marshal the model : %s", err)
+					}
+
+					r = httptest.NewRequest(tt.Method, tt.URL, bytes.NewBuffer(d))
 				}
 
-				r = httptest.NewRequest(tt.Method, tt.URL, bytes.NewBuffer(d))
+				r.Header.Set("Authorization", "Bearer "+tt.Token)
+				at.mux.ServeHTTP(w, r)
+
+				if w.Code != tt.StatusCode {
+					t.Fatalf("%s: Should receive a status code of %d for the response : %d", tt.Name, tt.StatusCode, w.Code)
+				}
+
+				if tt.StatusCode == http.StatusNoContent {
+					return
+				}
+
+				if err := json.Unmarshal(w.Body.Bytes(), tt.GotResp); err != nil {
+					t.Fatalf("Should be able to unmarshal the response : %s", err)
+				}
+
+				lastDiff = tt.CmpFunc(tt.GotResp, tt.ExpResp)
+				if lastDiff == "" {
+					if attempt > 0 {
+						t.Logf("Passed on retry attempt %d", attempt+1)
+					}
+					return
+				}
+
+				if attempt < maxAttempts-1 {
+					t.Logf("Attempt %d failed, retrying...", attempt+1)
+				}
 			}
 
-			r.Header.Set("Authorization", "Bearer "+tt.Token)
-			at.mux.ServeHTTP(w, r)
-
-			if w.Code != tt.StatusCode {
-				t.Fatalf("%s: Should receive a status code of %d for the response : %d", tt.Name, tt.StatusCode, w.Code)
-			}
-
-			if tt.StatusCode == http.StatusNoContent {
-				return
-			}
-
-			if err := json.Unmarshal(w.Body.Bytes(), tt.GotResp); err != nil {
-				t.Fatalf("Should be able to unmarshal the response : %s", err)
-			}
-
-			diff := tt.CmpFunc(tt.GotResp, tt.ExpResp)
-			if diff != "" {
-				t.Log("DIFF")
-				t.Logf("%s", diff)
-				t.Log("GOT")
-				t.Logf("%#v", tt.GotResp)
-				t.Log("EXP")
-				t.Logf("%#v", tt.ExpResp)
-				t.Fatalf("Should get the expected response")
-			}
+			t.Log("DIFF")
+			t.Logf("%s", lastDiff)
+			t.Log("GOT")
+			t.Logf("%#v", tt.GotResp)
+			t.Log("EXP")
+			t.Logf("%#v", tt.ExpResp)
+			t.Fatalf("Should get the expected response")
 		}
 
 		t.Run(testName+"-"+tt.Name, f)
@@ -114,59 +136,73 @@ func (at *Test) RunStreaming(t *testing.T, table []Table, testName string, optio
 
 	for _, tt := range table {
 		f := func(t *testing.T) {
-			r := httptest.NewRequest(tt.Method, tt.URL, nil)
-			w := httptest.NewRecorder()
+			maxAttempts := to.retries + 1
+			var lastDiff string
 
-			if tt.Input != nil {
-				d, err := json.Marshal(tt.Input)
-				if err != nil {
-					t.Fatalf("Should be able to marshal the model : %s", err)
+			for attempt := range maxAttempts {
+				r := httptest.NewRequest(tt.Method, tt.URL, nil)
+				w := httptest.NewRecorder()
+
+				if tt.Input != nil {
+					d, err := json.Marshal(tt.Input)
+					if err != nil {
+						t.Fatalf("Should be able to marshal the model : %s", err)
+					}
+
+					r = httptest.NewRequest(tt.Method, tt.URL, bytes.NewBuffer(d))
 				}
 
-				r = httptest.NewRequest(tt.Method, tt.URL, bytes.NewBuffer(d))
-			}
+				r.Header.Set("Authorization", "Bearer "+tt.Token)
+				at.mux.ServeHTTP(w, r)
 
-			r.Header.Set("Authorization", "Bearer "+tt.Token)
-			at.mux.ServeHTTP(w, r)
+				if w.Code != tt.StatusCode {
+					t.Fatalf("%s: Should receive a status code of %d for the response : %d", tt.Name, tt.StatusCode, w.Code)
+				}
 
-			if w.Code != tt.StatusCode {
-				t.Fatalf("%s: Should receive a status code of %d for the response : %d", tt.Name, tt.StatusCode, w.Code)
-			}
+				if tt.StatusCode == http.StatusNoContent {
+					return
+				}
 
-			if tt.StatusCode == http.StatusNoContent {
-				return
-			}
-
-			var lastData string
-			scanner := bufio.NewScanner(w.Body)
-			for scanner.Scan() {
-				line := scanner.Text()
-				if after, ok := strings.CutPrefix(line, "data: "); ok {
-					data := after
-					if data != "[DONE]" {
-						lastData = data
+				var lastData string
+				scanner := bufio.NewScanner(w.Body)
+				for scanner.Scan() {
+					line := scanner.Text()
+					if after, ok := strings.CutPrefix(line, "data: "); ok {
+						data := after
+						if data != "[DONE]" {
+							lastData = data
+						}
 					}
 				}
+
+				if lastData == "" {
+					t.Fatalf("Should have received at least one SSE data event")
+				}
+
+				if err := json.Unmarshal([]byte(lastData), tt.GotResp); err != nil {
+					t.Fatalf("Should be able to unmarshal the response : %s", err)
+				}
+
+				lastDiff = tt.CmpFunc(tt.GotResp, tt.ExpResp)
+				if lastDiff == "" {
+					if attempt > 0 {
+						t.Logf("Passed on retry attempt %d", attempt+1)
+					}
+					return
+				}
+
+				if attempt < maxAttempts-1 {
+					t.Logf("Attempt %d failed, retrying...", attempt+1)
+				}
 			}
 
-			if lastData == "" {
-				t.Fatalf("Should have received at least one SSE data event")
-			}
-
-			if err := json.Unmarshal([]byte(lastData), tt.GotResp); err != nil {
-				t.Fatalf("Should be able to unmarshal the response : %s", err)
-			}
-
-			diff := tt.CmpFunc(tt.GotResp, tt.ExpResp)
-			if diff != "" {
-				t.Log("DIFF")
-				t.Logf("%s", diff)
-				t.Log("GOT")
-				t.Logf("%#v", tt.GotResp)
-				t.Log("EXP")
-				t.Logf("%#v", tt.ExpResp)
-				t.Fatalf("Should get the expected response")
-			}
+			t.Log("DIFF")
+			t.Logf("%s", lastDiff)
+			t.Log("GOT")
+			t.Logf("%#v", tt.GotResp)
+			t.Log("EXP")
+			t.Logf("%#v", tt.ExpResp)
+			t.Fatalf("Should get the expected response")
 		}
 
 		t.Run(testName+"-"+tt.Name, f)

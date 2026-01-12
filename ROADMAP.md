@@ -55,6 +55,9 @@
 - **Structured Outputs (JSON Schema)** - Support `format` as a JSON schema, not just `json` boolean
 
 - **`suffix` Parameter** - Fill-in-the-middle completion support
+  - yzma exposes FIM token functions: `VocabFIMPre()`, `VocabFIMSuf()`, `VocabFIMMid()`, etc.
+  - Implementation: construct prompt as `<FIM_PRE>{prefix}<FIM_SUF>{suffix}<FIM_MID>`, model generates the middle
+  - Caveat: FIM must be trained into the model; only certain models support it (CodeLlama, StarCoder, CodeGemma, etc.)
 
 - **`kronk push`** - Push custom models to a registry
 
