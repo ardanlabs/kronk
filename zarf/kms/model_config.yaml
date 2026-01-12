@@ -8,6 +8,10 @@
 #   cache-type-v: q8_0        # KV cache value type: f32, f16, q8_0, q4_0, bf16, auto
 #   flash-attention: enabled  # Flash Attention: enabled, disabled, auto
 #   device: ""                # Device to use (run llama-bench --list-devices)
+#   nseq-max: 0               # Max parallel sequences for batched inference (0 = default)
+#   offload-kqv: true         # Offload KV cache to GPU (false = keep on CPU)
+#   op-offload: true          # Offload tensor operations to GPU (false = keep on CPU)
+#   ngpu-layers: 0            # GPU layers to offload (0 = all, -1 = none, N = specific count)
 
 gpt-oss-20b-Q8_0:
   context-window: 8192
