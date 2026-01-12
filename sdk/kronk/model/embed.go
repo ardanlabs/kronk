@@ -13,6 +13,7 @@ import (
 //   - input (string): the text to embed (required)
 //   - truncate (bool): if true, truncate input to fit context window (default: false)
 //   - truncate_direction (string): "right" (default) or "left"
+//   - dimensions (int): reduce output to first N dimensions (for Matryoshka models)
 func (m *Model) Embeddings(ctx context.Context, d D) (EmbedReponse, error) {
 	if !m.modelInfo.IsEmbedModel {
 		return EmbedReponse{}, fmt.Errorf("embeddings: model doesn't support embedding")
@@ -69,10 +70,19 @@ func (m *Model) Embeddings(ctx context.Context, d D) (EmbedReponse, error) {
 	batch := llama.BatchGetOne(tokens)
 	llama.Decode(lctx, batch)
 
-	dimensions := llama.ModelNEmbd(m.model)
-	vec, err := llama.GetEmbeddingsSeq(lctx, 0, dimensions)
+	nativeDim := llama.ModelNEmbd(m.model)
+	vec, err := llama.GetEmbeddingsSeq(lctx, 0, nativeDim)
 	if err != nil {
 		return EmbedReponse{}, fmt.Errorf("embeddings: unable to get embeddings: %w", err)
+	}
+
+	requestedDim, _ := d["dimensions"].(float64)
+	if requestedDim > 0 {
+		if int(requestedDim) > int(nativeDim) {
+			return EmbedReponse{}, fmt.Errorf("embeddings: requested %d dimensions but model only has %d", int(requestedDim), nativeDim)
+		}
+
+		vec = vec[:int(requestedDim)]
 	}
 
 	var sum float64

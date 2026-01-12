@@ -15,8 +15,6 @@
 
 - Add more models to the catalog. Look at Ollama's catalog.
 
-- We need to figure out a way to configure the model setting for a specific model.
-
 ### TELEMETRY
 
 - Tokens/sec reported against a bucketed list of context sizes from the incoming requests
@@ -38,31 +36,25 @@
 - Use the catalog for known models to check if they support things for the call
   they are being used for. ie images/audio/embedding
 
-### AI-TRAINING
-
-- Remove Ollama for KMS
-
 ### TESTING
 
 - Missing tool call tests in api.
+
+### MCP and TOOL CALLING
+
+- Support making tool calls on behalf of the user.
+- Add a set of tools like web_search and web_fetch.
+- Allow users to register/configure MCP tools.
 
 ### OLLAMA FEATURE PARITY
 
 - **Anthropic API Compatibility** - `/v1/messages` endpoint enables tools like Claude Code to work with Kronk
 
-- **`/v1/completions` Endpoint** - Raw text completion (non-chat) API for legacy tool compatibility
-
 - **Logprobs** - Return token log probabilities for prompt engineering and debugging
 
 - **Structured Outputs (JSON Schema)** - Support `format` as a JSON schema, not just `json` boolean
 
-- **Web Search/Fetch API** - Provide `api/web_search` and `api/web_fetch` endpoints for RAG augmentation
-
 - **`suffix` Parameter** - Fill-in-the-middle completion support
-
-- **Embedding `dimensions`** - Allow reducing embedding dimensions on request
-
-- **Embedding `truncate`** - Auto-truncate long inputs to fit context length
 
 - **`kronk push`** - Push custom models to a registry
 
