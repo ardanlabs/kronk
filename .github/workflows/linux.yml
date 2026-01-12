@@ -82,10 +82,11 @@ jobs:
           export RUN_IN_PARALLEL=0
           CGO_ENABLED=0 go test -v -count=1 -timeout 25m ./sdk/kronk/tests
       - name: Run api/service tests
+        timeout-minutes: 25
         run: |
           export GOROUTINES=1
           export RUN_IN_PARALLEL=0
-          CGO_ENABLED=0 go test -v -count=1 ./cmd/server/api/services/kronk/tests
+          CGO_ENABLED=0 go test -v -count=1 -timeout 25m ./cmd/server/api/services/kronk/tests
       - name: Run vet, linter, vuln checks
         run: |
           CGO_ENABLED=0 go vet ./...
