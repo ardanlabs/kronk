@@ -61,9 +61,7 @@ func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) 
 		mParams.SetDevices([]llama.GGMLBackendDevice{dev})
 	}
 
-	if cfg.NGpuLayers != 0 {
-		mParams.NGpuLayers = int32(cfg.NGpuLayers)
-	}
+	mParams.NGpuLayers = int32(cfg.NGpuLayers)
 
 	// -------------------------------------------------------------------------
 
