@@ -489,6 +489,9 @@ func chatResponseFinal(id string, object string, model string, index int, prompt
 					Reasoning: reasoning,
 					ToolCalls: respToolCalls,
 				},
+				Delta: ResponseMessage{
+					ToolCalls: respToolCalls,
+				},
 				FinishReason: finishReason,
 			},
 		},

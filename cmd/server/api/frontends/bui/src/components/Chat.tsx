@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { api } from '../services/api';
 import { useModelList } from '../contexts/ModelListContext';
-import type { ChatMessage, ChatUsage } from '../types';
+import type { ChatMessage, ChatUsage, ChatToolCall } from '../types';
 
 interface DisplayMessage {
   role: 'user' | 'assistant';
   content: string;
   reasoning?: string;
   usage?: ChatUsage;
+  toolCalls?: ChatToolCall[];
 }
 
 function highlightCode(code: string, lang: string): string {
@@ -151,6 +152,7 @@ export default function Chat() {
     let currentContent = '';
     let currentReasoning = '';
     let lastUsage: ChatUsage | undefined;
+    let currentToolCalls: ChatToolCall[] = [];
 
     setMessages(prev => [...prev, { role: 'assistant', content: '', reasoning: '' }]);
 
@@ -171,6 +173,9 @@ export default function Chat() {
         if (choice?.delta?.reasoning) {
           currentReasoning += choice.delta.reasoning;
         }
+        if (choice?.delta?.tool_calls && choice.delta.tool_calls.length > 0) {
+          currentToolCalls = [...currentToolCalls, ...choice.delta.tool_calls];
+        }
         if (data.usage) {
           lastUsage = data.usage;
         }
@@ -182,6 +187,7 @@ export default function Chat() {
             content: currentContent,
             reasoning: currentReasoning,
             usage: lastUsage,
+            toolCalls: currentToolCalls.length ? currentToolCalls : undefined,
           };
           return updated;
         });
@@ -322,6 +328,15 @@ export default function Chat() {
             <div className="chat-message-content">
               {msg.content ? renderContent(msg.content) : (isStreaming && idx === messages.length - 1 ? '...' : '')}
             </div>
+            {msg.toolCalls && msg.toolCalls.length > 0 && (
+              <div className="chat-message-tool-calls">
+                {msg.toolCalls.map((tc) => (
+                  <div key={tc.id} className="chat-tool-call">
+                    Tool call {tc.id}: {tc.function.name}({tc.function.arguments})
+                  </div>
+                ))}
+              </div>
+            )}
             {msg.usage && (
               <div className="chat-message-usage">
                 Input: {msg.usage.prompt_tokens} | 

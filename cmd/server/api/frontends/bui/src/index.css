@@ -961,6 +961,22 @@ tr.selected:hover td {
     white-space: pre-wrap;
 }
 
+.chat-message-tool-calls {
+    margin: 8px 0;
+    padding: 8px;
+    background: rgba(68, 187, 68, 0.1);
+    border-radius: 4px;
+    border-left: 3px solid var(--color-success);
+}
+
+.chat-tool-call {
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, monospace;
+    font-size: 13px;
+    color: var(--color-gray-800);
+    padding: 4px 0;
+    word-break: break-all;
+}
+
 .chat-message-content {
     white-space: pre-wrap;
     word-break: break-word;

@@ -197,6 +197,10 @@ func testChatBasics(resp model.ChatResponse, modelName string, object string, re
 		return fmt.Errorf("basics: expected tool calls to be non-empty")
 	}
 
+	if streaming && resp.Choice[0].FinishReason == "tool" && len(resp.Choice[0].Delta.ToolCalls) == 0 {
+		return fmt.Errorf("basics: expected tool calls in Delta for OpenAI streaming compatibility")
+	}
+
 	if reasoning {
 		if resp.Choice[0].FinishReason == "stop" && msg.Reasoning == "" {
 			return fmt.Errorf("basics: expected final reasoning")
