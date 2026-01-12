@@ -204,7 +204,7 @@ func chatStream200(tokens map[string]string) []apitest.Table {
 			ExpResp: &model.ChatResponse{
 				Choice: []model.Choice{
 					{
-						Delta: model.ResponseMessage{
+						Message: model.ResponseMessage{
 							Role: "assistant",
 						},
 						FinishReason: "stop",

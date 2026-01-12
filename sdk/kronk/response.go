@@ -327,8 +327,8 @@ func (ss *streamState) process(chatResp model.ChatResponse) []ResponseStreamEven
 		}
 	}
 
-	if len(choice.Delta.ToolCalls) > 0 {
-		events = append(events, ss.handleToolCalls(choice.Delta.ToolCalls)...)
+	if len(choice.Message.ToolCalls) > 0 {
+		events = append(events, ss.handleToolCalls(choice.Message.ToolCalls)...)
 	}
 
 	return events

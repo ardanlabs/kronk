@@ -136,7 +136,7 @@ func validateResponse(got any, streaming bool) responseValidator {
 }
 
 func (v responseValidator) getMsg() model.ResponseMessage {
-	if v.streaming {
+	if v.streaming && v.resp.Choice[0].FinishReason == "" {
 		return v.resp.Choice[0].Delta
 	}
 	return v.resp.Choice[0].Message

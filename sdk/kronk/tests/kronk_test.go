@@ -152,7 +152,7 @@ func printInfo(models *models.Models) {
 }
 
 func getMsg(choice model.Choice, streaming bool) model.ResponseMessage {
-	if streaming {
+	if streaming && choice.FinishReason == "" {
 		return choice.Delta
 	}
 	return choice.Message
