@@ -919,6 +919,7 @@ func embeddingsDoc() apiDoc {
 							Fields: []field{
 								{Name: "model", Type: "string", Required: true, Description: "Embedding model ID (e.g., 'embeddinggemma-300m-qat-Q8_0')"},
 								{Name: "input", Type: "string|array", Required: true, Description: "Text to generate embeddings for. Can be a string or array of strings."},
+								{Name: "dimensions", Type: "integer", Required: false, Description: "Reduce output to first N dimensions (for Matryoshka models). Must be <= model's native dimensions."},
 							},
 						},
 						Response: &response{
