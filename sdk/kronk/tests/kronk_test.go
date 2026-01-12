@@ -152,7 +152,7 @@ func printInfo(models *models.Models) {
 }
 
 func getMsg(choice model.Choice, streaming bool) model.ResponseMessage {
-	if streaming {
+	if streaming && choice.FinishReason == "" {
 		return choice.Delta
 	}
 	return choice.Message
@@ -195,6 +195,10 @@ func testChatBasics(resp model.ChatResponse, modelName string, object string, re
 
 	if resp.Choice[0].FinishReason == "tool" && len(msg.ToolCalls) == 0 {
 		return fmt.Errorf("basics: expected tool calls to be non-empty")
+	}
+
+	if streaming && resp.Choice[0].FinishReason == "tool" && len(resp.Choice[0].Delta.ToolCalls) == 0 {
+		return fmt.Errorf("basics: expected tool calls in Delta for OpenAI streaming compatibility")
 	}
 
 	if reasoning {

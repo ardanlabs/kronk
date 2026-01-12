@@ -27,7 +27,13 @@ func testEmbedding(t *testing.T, mp models.Path) {
 	}
 
 	krn, err := kronk.New(modelInstances, model.Config{
-		ModelFiles: mp.ModelFiles,
+		ModelFiles:     mp.ModelFiles,
+		ContextWindow:  2048,
+		NBatch:         2048,
+		NUBatch:        512,
+		CacheTypeK:     model.GGMLTypeQ8_0,
+		CacheTypeV:     model.GGMLTypeQ8_0,
+		FlashAttention: model.FlashAttentionEnabled,
 	})
 
 	if err != nil {

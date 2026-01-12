@@ -72,6 +72,12 @@ export default function DocsAPIEmbeddings() {
                     <td>Yes</td>
                     <td>Text to generate embeddings for. Can be a string or array of strings.</td>
                   </tr>
+                  <tr>
+                    <td><code>dimensions</code></td>
+                    <td><code>integer</code></td>
+                    <td>No</td>
+                    <td>Reduce output to first N dimensions (for Matryoshka models). Must be &lt;= model's native dimensions.</td>
+                  </tr>
                 </tbody>
               </table>
               <h5>Response</h5>

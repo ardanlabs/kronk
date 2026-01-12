@@ -9,90 +9,6 @@ import (
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
-// GGMLType represents a ggml data type for the KV cache.
-// These values correspond to the ggml_type enum in llama.cpp.
-type GGMLType int32
-
-const (
-	GGMLTypeAuto GGMLType = -1 // Use default from llama.cpp
-	GGMLTypeF32  GGMLType = 0  // 32-bit floating point
-	GGMLTypeF16  GGMLType = 1  // 16-bit floating point
-	GGMLTypeQ4_0 GGMLType = 2  // 4-bit quantization (type 0)
-	GGMLTypeQ4_1 GGMLType = 3  // 4-bit quantization (type 1)
-	GGMLTypeQ5_0 GGMLType = 6  // 5-bit quantization (type 0)
-	GGMLTypeQ5_1 GGMLType = 7  // 5-bit quantization (type 1)
-	GGMLTypeQ8_0 GGMLType = 8  // 8-bit quantization (type 0) (default)
-	GGMLTypeBF16 GGMLType = 30 // Brain floating point 16-bit
-)
-
-// FlashAttentionType controls when to enable Flash Attention.
-// Flash Attention reduces memory usage and speeds up attention computation,
-// especially beneficial for large context windows.
-type FlashAttentionType int32
-
-const (
-	FlashAttentionEnabled  FlashAttentionType = 0 // Default: enable Flash Attention
-	FlashAttentionDisabled FlashAttentionType = 1 // Disable Flash Attention
-	FlashAttentionAuto     FlashAttentionType = 2 // Let llama.cpp decide
-)
-
-// String returns the string representation of a GGMLType.
-func (t GGMLType) String() string {
-	switch t {
-	case GGMLTypeF32:
-		return "f32"
-	case GGMLTypeF16:
-		return "f16"
-	case GGMLTypeQ4_0:
-		return "q4_0"
-	case GGMLTypeQ4_1:
-		return "q4_1"
-	case GGMLTypeQ5_0:
-		return "q5_0"
-	case GGMLTypeQ5_1:
-		return "q5_1"
-	case GGMLTypeQ8_0:
-		return "q8_0"
-	case GGMLTypeBF16:
-		return "bf16"
-	case GGMLTypeAuto:
-		return "auto"
-	default:
-		return fmt.Sprintf("unknown(%d)", t)
-	}
-}
-
-func (t GGMLType) ToYZMAType() llama.GGMLType {
-	return llama.GGMLType(t)
-}
-
-// ParseGGMLType parses a string into a GGMLType.
-// Supported values: "f32", "f16", "q4_0", "q4_1", "q5_0", "q5_1", "q8_0", "bf16", "auto".
-func ParseGGMLType(s string) (GGMLType, error) {
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "f32", "fp32":
-		return GGMLTypeF32, nil
-	case "f16", "fp16":
-		return GGMLTypeF16, nil
-	case "q4_0", "q4":
-		return GGMLTypeQ4_0, nil
-	case "q4_1":
-		return GGMLTypeQ4_1, nil
-	case "q5_0", "q5":
-		return GGMLTypeQ5_0, nil
-	case "q5_1":
-		return GGMLTypeQ5_1, nil
-	case "f8", "q8_0", "q8":
-		return GGMLTypeQ8_0, nil
-	case "bf16", "bfloat16":
-		return GGMLTypeBF16, nil
-	case "auto", "":
-		return GGMLTypeAuto, nil
-	default:
-		return GGMLTypeAuto, fmt.Errorf("unknown ggml type: %s", s)
-	}
-}
-
 /*
 Workload							NBatch		NUBatch		Rationale
 Interactive chat (single user)		512–1024	512			Low latency; small batches
@@ -186,13 +102,24 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // When left as zero value, FlashAttentionEnabled is used (default on).
 // Set to FlashAttentionDisabled to disable, or FlashAttentionAuto to let llama.cpp decide.
 //
-// DefragThold is the KV cache defragmentation threshold. When the ratio of
-// fragmented (holes) to total cache size exceeds this threshold, the cache is
-// automatically defragmented. When left as zero value, defragmentation is disabled.
-// A typical value is 0.1 (10%).
-//
-// IgnorelIntegrityCheck is a boolean that determines if the system should ignore
+// IgnoreIntegrityCheck is a boolean that determines if the system should ignore
 // a model integrity check before trying to use it.
+//
+// NSeqMax is the maximum number of sequences that can be processed in parallel.
+// This is useful for batched inference where multiple prompts are processed
+// simultaneously. When set to 0, the default llama.cpp value is used.
+//
+// OffloadKQV controls whether the KV cache is offloaded to the GPU. When nil or
+// true, the KV cache is stored on the GPU (default behavior). Set to false to
+// keep the KV cache on the CPU, which reduces VRAM usage but may slow inference.
+//
+// OpOffload controls whether host tensor operations are offloaded to the device
+// (GPU). When nil or true, operations are offloaded (default behavior). Set to
+// false to keep operations on the CPU.
+//
+// NGpuLayers is the number of model layers to offload to the GPU. When set to 0,
+// all layers are offloaded (default). Set to -1 to keep all layers on CPU. Any
+// positive value specifies the exact number of layers to offload.
 type Config struct {
 	Log                  Logger
 	ModelFiles           []string
@@ -208,8 +135,11 @@ type Config struct {
 	CacheTypeV           GGMLType
 	FlashAttention       FlashAttentionType
 	UseDirectIO          bool
-	DefragThold          float32 // Deprecated: llama.cpp deprecated this
 	IgnoreIntegrityCheck bool
+	NSeqMax              int
+	OffloadKQV           *bool
+	OpOffload            *bool
+	NGpuLayers           int
 }
 
 func validateConfig(ctx context.Context, cfg Config, log Logger) error {
@@ -233,6 +163,16 @@ func validateConfig(ctx context.Context, cfg Config, log Logger) error {
 				return fmt.Errorf("validate-config: checking-model-integrity: %w", err)
 			}
 		}
+	}
+
+	// llama.cpp has a -1 default for loading all layers into the GPU
+	// However, we want to make it convenient to write the configuration.
+	// So, we default to invert these two values after loading them.
+	switch cfg.NGpuLayers {
+	case -1:
+		cfg.NGpuLayers = 0
+	case 0:
+		cfg.NGpuLayers = -1
 	}
 
 	return nil
@@ -327,8 +267,23 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 		ctxParams.FlashAttentionType = llama.FlashAttentionTypeEnabled
 	}
 
-	if cfg.DefragThold > 0 {
-		ctxParams.DefragThold = cfg.DefragThold
+	if cfg.NSeqMax > 0 {
+		ctxParams.NSeqMax = uint32(cfg.NSeqMax)
+	}
+
+	// Offload KQV cache to CPU.
+	// llama.cpp has this as default set to true
+	ctxParams.Offload_kqv = 1
+	if cfg.OffloadKQV != nil &&
+		!*cfg.OffloadKQV {
+		ctxParams.Offload_kqv = 0
+	}
+
+	// Offload host tensor operations to device.
+	// llama.cpp has this as default set to true
+	ctxParams.OpOffload = 1
+	if cfg.OpOffload != nil && !*cfg.OpOffload {
+		ctxParams.OpOffload = 0
 	}
 
 	return ctxParams
@@ -354,4 +309,128 @@ func searchModelMeta(model llama.Model, find string) (string, bool) {
 	}
 
 	return "", false
+}
+
+// =============================================================================
+
+// GGMLType represents a ggml data type for the KV cache.
+// These values correspond to the ggml_type enum in llama.cpp.
+type GGMLType int32
+
+const (
+	GGMLTypeAuto GGMLType = -1 // Use default from llama.cpp
+	GGMLTypeF32  GGMLType = 0  // 32-bit floating point
+	GGMLTypeF16  GGMLType = 1  // 16-bit floating point
+	GGMLTypeQ4_0 GGMLType = 2  // 4-bit quantization (type 0)
+	GGMLTypeQ4_1 GGMLType = 3  // 4-bit quantization (type 1)
+	GGMLTypeQ5_0 GGMLType = 6  // 5-bit quantization (type 0)
+	GGMLTypeQ5_1 GGMLType = 7  // 5-bit quantization (type 1)
+	GGMLTypeQ8_0 GGMLType = 8  // 8-bit quantization (type 0) (default)
+	GGMLTypeBF16 GGMLType = 30 // Brain floating point 16-bit
+)
+
+// FlashAttentionType controls when to enable Flash Attention.
+// Flash Attention reduces memory usage and speeds up attention computation,
+// especially beneficial for large context windows.
+type FlashAttentionType int32
+
+const (
+	FlashAttentionEnabled  FlashAttentionType = 0 // Default: enable Flash Attention
+	FlashAttentionDisabled FlashAttentionType = 1 // Disable Flash Attention
+	FlashAttentionAuto     FlashAttentionType = 2 // Let llama.cpp decide
+)
+
+// UnmarshalYAML implements yaml.Unmarshaler to parse string values.
+func (t *FlashAttentionType) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var s string
+	if err := unmarshal(&s); err != nil {
+		return err
+	}
+
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "enabled", "on", "true", "1":
+		*t = FlashAttentionEnabled
+	case "disabled", "off", "false", "0":
+		*t = FlashAttentionDisabled
+	case "auto", "":
+		*t = FlashAttentionAuto
+	default:
+		return fmt.Errorf("unknown flash attention type: %s", s)
+	}
+
+	return nil
+}
+
+// String returns the string representation of a GGMLType.
+func (t GGMLType) String() string {
+	switch t {
+	case GGMLTypeF32:
+		return "f32"
+	case GGMLTypeF16:
+		return "f16"
+	case GGMLTypeQ4_0:
+		return "q4_0"
+	case GGMLTypeQ4_1:
+		return "q4_1"
+	case GGMLTypeQ5_0:
+		return "q5_0"
+	case GGMLTypeQ5_1:
+		return "q5_1"
+	case GGMLTypeQ8_0:
+		return "q8_0"
+	case GGMLTypeBF16:
+		return "bf16"
+	case GGMLTypeAuto:
+		return "auto"
+	default:
+		return fmt.Sprintf("unknown(%d)", t)
+	}
+}
+
+func (t GGMLType) ToYZMAType() llama.GGMLType {
+	return llama.GGMLType(t)
+}
+
+// UnmarshalYAML implements yaml.Unmarshaler to parse string values like "f16".
+func (t *GGMLType) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var s string
+	if err := unmarshal(&s); err != nil {
+		return err
+	}
+
+	parsed, err := ParseGGMLType(s)
+	if err != nil {
+		return err
+	}
+
+	*t = parsed
+
+	return nil
+}
+
+// ParseGGMLType parses a string into a GGMLType.
+// Supported values: "f32", "f16", "q4_0", "q4_1", "q5_0", "q5_1", "q8_0", "bf16", "auto".
+func ParseGGMLType(s string) (GGMLType, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "f32", "fp32":
+		return GGMLTypeF32, nil
+	case "f16", "fp16":
+		return GGMLTypeF16, nil
+	case "q4_0", "q4":
+		return GGMLTypeQ4_0, nil
+	case "q4_1":
+		return GGMLTypeQ4_1, nil
+	case "q5_0", "q5":
+		return GGMLTypeQ5_0, nil
+	case "q5_1":
+		return GGMLTypeQ5_1, nil
+	case "f8", "q8_0", "q8":
+		return GGMLTypeQ8_0, nil
+	case "bf16", "bfloat16":
+		return GGMLTypeBF16, nil
+	case "auto", "":
+		return GGMLTypeAuto, nil
+	default:
+		return GGMLTypeAuto, fmt.Errorf("unknown ggml type: %s", s)
+	}
 }

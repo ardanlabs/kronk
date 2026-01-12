@@ -88,8 +88,11 @@ type modelConfig struct {
 	CacheTypeV           model.GGMLType           `yaml:"cache-type-v"`
 	UseDirectIO          bool                     `yaml:"use-direct-io"`
 	FlashAttention       model.FlashAttentionType `yaml:"flash-attention"`
-	DefragThold          float32                  `yaml:"defrag-thold"`
 	IgnoreIntegrityCheck bool                     `yaml:"ignore-integrity-check"`
+	NSeqMax              int                      `yaml:"nseq-max"`
+	OffloadKQV           *bool                    `yaml:"offload-kqv"`
+	OpOffload            *bool                    `yaml:"op-offload"`
+	NGpuLayers           int                      `yaml:"ngpu-layers"`
 }
 
 // Cache manages a set of Kronk APIs for use. It maintains a cache of these
@@ -256,8 +259,11 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 		CacheTypeV:           mc.CacheTypeV,
 		FlashAttention:       mc.FlashAttention,
 		UseDirectIO:          mc.UseDirectIO,
-		DefragThold:          mc.DefragThold,
 		IgnoreIntegrityCheck: mc.IgnoreIntegrityCheck,
+		NSeqMax:              mc.NSeqMax,
+		OffloadKQV:           mc.OffloadKQV,
+		OpOffload:            mc.OpOffload,
+		NGpuLayers:           mc.NGpuLayers,
 	}
 
 	krn, err = kronk.New(c.instances, cfg,

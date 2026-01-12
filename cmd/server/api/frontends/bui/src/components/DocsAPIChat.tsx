@@ -276,6 +276,59 @@ export default function DocsAPIChat() {
             </div>
           </div>
 
+          <div className="card" id="response-formats">
+            <h3>Response Formats</h3>
+            <p>The response format differs between streaming and non-streaming requests.</p>
+
+            <div className="doc-section" id="response-formats--non-streaming-response">
+              <h4>Non-Streaming Response</h4>
+              <p className="doc-description">For non-streaming requests (stream=false or omitted), the response uses the 'message' field in each choice. The 'delta' field is empty.</p>
+              <h5>Example</h5>
+              <pre className="code-block">
+                <code>{`{
+  "id": "chatcmpl-abc123",
+  "object": "chat.completion",
+  "created": 1234567890,
+  "model": "qwen3-8b-q8_0",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Hello! I'm doing well, thank you for asking.",
+        "reasoning": ""
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 25,
+    "reasoning_tokens": 0,
+    "completion_tokens": 12,
+    "output_tokens": 12,
+    "total_tokens": 37,
+    "tokens_per_second": 85.5
+  }
+}`}</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="response-formats--streaming-response">
+              <h4>Streaming Response</h4>
+              <p className="doc-description">For streaming requests (stream=true), the response uses the 'delta' field in each choice. Multiple chunks are sent as Server-Sent Events, with incremental content in each delta.</p>
+              <h5>Example</h5>
+              <pre className="code-block">
+                <code>{`// Each chunk contains partial content in the delta field
+data: {"id":"chatcmpl-abc123","choices":[{"index":0,"delta":{"role":"assistant","content":"Hello"},"finish_reason":""}]}
+data: {"id":"chatcmpl-abc123","choices":[{"index":0,"delta":{"content":"!"},"finish_reason":""}]}
+data: {"id":"chatcmpl-abc123","choices":[{"index":0,"delta":{"content":" How"},"finish_reason":""}]}
+data: {"id":"chatcmpl-abc123","choices":[{"index":0,"delta":{"content":" are you?"},"finish_reason":""}]}
+data: {"id":"chatcmpl-abc123","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{...}}
+data: [DONE]`}</code>
+              </pre>
+            </div>
+          </div>
+
           <div className="card" id="message-formats">
             <h3>Message Formats</h3>
             <p>The messages array supports several formats depending on the content type and model capabilities.</p>
@@ -372,6 +425,60 @@ export default function DocsAPIChat() {
 }`}</code>
               </pre>
             </div>
+
+            <div className="doc-section" id="message-formats--tool-call-response-(non-streaming)">
+              <h4>Tool Call Response (Non-Streaming)</h4>
+              <p className="doc-description">For non-streaming requests (stream=false), when the model calls a tool, the response uses the 'message' field with 'tool_calls' array. The finish_reason is 'tool_calls'.</p>
+              <h5>Example</h5>
+              <pre className="code-block">
+                <code>{`{
+  "id": "chatcmpl-abc123",
+  "object": "chat.completion",
+  "created": 1234567890,
+  "model": "qwen3-8b-q8_0",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "call_xyz789",
+            "index": 0,
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "arguments": "{\\"location\\":\\"Tokyo\\"}"
+            }
+          }
+        ]
+      },
+      "finish_reason": "tool_calls"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 50,
+    "completion_tokens": 25,
+    "total_tokens": 75
+  }
+}`}</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="message-formats--tool-call-response-(streaming)">
+              <h4>Tool Call Response (Streaming)</h4>
+              <p className="doc-description">For streaming requests (stream=true), tool calls are returned in the 'delta' field. Each chunk contains partial tool call data that should be accumulated.</p>
+              <h5>Example</h5>
+              <pre className="code-block">
+                <code>{`// Streaming chunks with tool calls use delta instead of message
+data: {"id":"chatcmpl-abc123","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"id":"call_xyz789","index":0,"type":"function","function":{"name":"get_weather","arguments":""}}]},"finish_reason":""}]}
+data: {"id":"chatcmpl-abc123","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"location\\":"}}]},"finish_reason":""}]}
+data: {"id":"chatcmpl-abc123","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\\"Tokyo\\"}"}}]},"finish_reason":""}]}
+data: {"id":"chatcmpl-abc123","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],"usage":{...}}
+data: [DONE]`}</code>
+              </pre>
+            </div>
           </div>
         </div>
 
@@ -387,12 +494,21 @@ export default function DocsAPIChat() {
               </ul>
             </div>
             <div className="doc-index-section">
+              <a href="#response-formats" className="doc-index-header">Response Formats</a>
+              <ul>
+                <li><a href="#response-formats--non-streaming-response">Non-Streaming Response</a></li>
+                <li><a href="#response-formats--streaming-response">Streaming Response</a></li>
+              </ul>
+            </div>
+            <div className="doc-index-section">
               <a href="#message-formats" className="doc-index-header">Message Formats</a>
               <ul>
                 <li><a href="#message-formats--text-messages">Text Messages</a></li>
                 <li><a href="#message-formats--multi-part-content-(vision)">Multi-part Content (Vision)</a></li>
                 <li><a href="#message-formats--audio-content">Audio Content</a></li>
                 <li><a href="#message-formats--tool-definitions">Tool Definitions</a></li>
+                <li><a href="#message-formats--tool-call-response-(non-streaming)">Tool Call Response (Non-Streaming)</a></li>
+                <li><a href="#message-formats--tool-call-response-(streaming)">Tool Call Response (Streaming)</a></li>
               </ul>
             </div>
           </div>

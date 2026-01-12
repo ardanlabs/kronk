@@ -483,10 +483,13 @@ func chatResponseFinal(id string, object string, model string, index int, prompt
 		Choice: []Choice{
 			{
 				Index: index,
-				Delta: ResponseMessage{
+				Message: ResponseMessage{
 					Role:      RoleAssistant,
 					Content:   content,
 					Reasoning: reasoning,
+					ToolCalls: respToolCalls,
+				},
+				Delta: ResponseMessage{
 					ToolCalls: respToolCalls,
 				},
 				FinishReason: finishReason,

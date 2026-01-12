@@ -102,7 +102,7 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 		// Kronk returns the entire streamed content in the final chunk.
 		if resp.Choice[0].FinishReason == model.FinishReasonStop {
 			if kfc, ok := d["keep_final_content"].(bool); !ok || !kfc {
-				resp.Choice[0].Delta = model.ResponseMessage{}
+				resp.Choice[0].Message = model.ResponseMessage{}
 				resp.Prompt = ""
 			}
 		}

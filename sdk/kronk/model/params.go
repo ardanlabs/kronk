@@ -125,6 +125,8 @@ func AddParams(p Params, d D) {
 	d["top_p"] = p.TopP
 	d["min_p"] = p.MinP
 	d["max_tokens"] = p.MaxTokens
+	d["repeat_penalty"] = p.RepeatPenalty
+	d["repeat_last_n"] = p.RepeatLastN
 
 	if p.Thinking != "" {
 		d["enable_thinking"] = (p.Thinking != "false")
@@ -212,12 +214,32 @@ func (m *Model) parseParams(d D) (Params, error) {
 		}
 	}
 
+	var repeatPenalty float32
+	if repeatPenaltyVal, exists := d["repeat_penalty"]; exists {
+		var err error
+		repeatPenalty, err = parseFloat32("repeat_penalty", repeatPenaltyVal)
+		if err != nil {
+			return Params{}, err
+		}
+	}
+
+	var repeatLastN int
+	if repeatLastNVal, exists := d["repeat_last_n"]; exists {
+		var err error
+		repeatLastN, err = parseInt("repeat_last_n", repeatLastNVal)
+		if err != nil {
+			return Params{}, err
+		}
+	}
+
 	params := Params{
 		Temperature:     temp,
 		TopK:            int32(topK),
 		TopP:            topP,
 		MinP:            minP,
 		MaxTokens:       maxTokens,
+		RepeatPenalty:   repeatPenalty,
+		RepeatLastN:     int32(repeatLastN),
 		Thinking:        strconv.FormatBool(enableThinking),
 		ReasoningEffort: reasoningEffort,
 		ReturnPrompt:    returnPrompt,

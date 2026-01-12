@@ -34,10 +34,11 @@ func chatNonStream200(t *testing.T, tokens map[string]string) []apitest.Table {
 				"messages": model.DocumentArray(
 					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
 				),
-				"max_tokens":  2048,
-				"temperature": 0.7,
-				"top_p":       0.9,
-				"top_k":       40,
+				"max_tokens":    2048,
+				"temperature":   0.7,
+				"top_p":         0.9,
+				"top_k":         40,
+				"return_prompt": true,
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
@@ -105,7 +106,7 @@ func chatNonStream200(t *testing.T, tokens map[string]string) []apitest.Table {
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "Prompt"),
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage"),
 					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReason"),
 					cmpopts.IgnoreFields(model.ResponseMessage{}, "Content", "Reasoning", "ToolCalls"),
 				)
@@ -154,7 +155,7 @@ func chatNonStream200(t *testing.T, tokens map[string]string) []apitest.Table {
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "Prompt"),
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage"),
 					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReason"),
 					cmpopts.IgnoreFields(model.ResponseMessage{}, "Content", "Reasoning", "ToolCalls"),
 				)
@@ -197,12 +198,13 @@ func chatStream200(tokens map[string]string) []apitest.Table {
 				"top_k":              40,
 				"stream":             true,
 				"keep_final_content": true,
+				"return_prompt":      true,
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
 				Choice: []model.Choice{
 					{
-						Delta: model.ResponseMessage{
+						Message: model.ResponseMessage{
 							Role: "assistant",
 						},
 						FinishReason: "stop",

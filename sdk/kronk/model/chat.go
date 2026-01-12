@@ -23,11 +23,6 @@ func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error) {
 		lastMsg = msg
 	}
 
-	if len(lastMsg.Choice) > 0 {
-		lastMsg.Choice[0].Message = lastMsg.Choice[0].Delta
-		lastMsg.Choice[0].Delta = ResponseMessage{}
-	}
-
 	return lastMsg, nil
 }
 

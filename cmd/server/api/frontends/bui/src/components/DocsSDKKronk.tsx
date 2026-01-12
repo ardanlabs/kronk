@@ -298,7 +298,7 @@ export default function DocsSDKKronk() {
               <pre className="code-block">
                 <code>func (krn *Kronk) Embeddings(ctx context.Context, d model.D) (model.EmbedReponse, error)</code>
               </pre>
-              <p className="doc-description">Embeddings provides support to interact with an embedding model. Supported options in d: - input (string): the text to embed (required) - truncate (bool): if true, truncate input to fit context window (default: false) - truncate_direction (string): "right" (default) or "left"</p>
+              <p className="doc-description">Embeddings provides support to interact with an embedding model. Supported options in d: - input (string): the text to embed (required) - truncate (bool): if true, truncate input to fit context window (default: false) - truncate_direction (string): "right" (default) or "left" - dimensions (int): reduce output to first N dimensions (for Matryoshka models)</p>
             </div>
 
             <div className="doc-section" id="method-kronk-embeddingshttp">
@@ -380,7 +380,7 @@ export default function DocsSDKKronk() {
             <div className="doc-section" id="const-version">
               <h4>Version</h4>
               <pre className="code-block">
-                <code>{`const Version = "1.12.6"`}</code>
+                <code>{`const Version = "1.12.7"`}</code>
               </pre>
               <p className="doc-description">Version contains the current version of the kronk package.</p>
             </div>

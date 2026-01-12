@@ -14,6 +14,7 @@ import (
 //   - input (string): the text to embed (required)
 //   - truncate (bool): if true, truncate input to fit context window (default: false)
 //   - truncate_direction (string): "right" (default) or "left"
+//   - dimensions (int): reduce output to first N dimensions (for Matryoshka models)
 func (krn *Kronk) Embeddings(ctx context.Context, d model.D) (model.EmbedReponse, error) {
 	if !krn.ModelInfo().IsEmbedModel {
 		return model.EmbedReponse{}, fmt.Errorf("embed:model doesn't support embedding")

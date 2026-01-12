@@ -149,10 +149,23 @@ export interface ChatRequest {
   top_k?: number;
 }
 
+export interface ChatToolCallFunction {
+  name: string;
+  arguments: string;
+}
+
+export interface ChatToolCall {
+  id: string;
+  index: number;
+  type: string;
+  function: ChatToolCallFunction;
+}
+
 export interface ChatDelta {
   role?: string;
   content?: string;
   reasoning?: string;
+  tool_calls?: ChatToolCall[];
 }
 
 export interface ChatChoice {

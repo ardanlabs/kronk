@@ -462,7 +462,67 @@ func chatDoc() apiDoc {
 					},
 				},
 			},
+			chatResponseFormatsGroup(),
 			messageFormatsGroup(),
+		},
+	}
+}
+
+func chatResponseFormatsGroup() endpointGroup {
+	return endpointGroup{
+		Name:        "Response Formats",
+		Description: "The response format differs between streaming and non-streaming requests.",
+		Endpoints: []endpoint{
+			{
+				Method:      "",
+				Path:        "Non-Streaming Response",
+				Description: "For non-streaming requests (stream=false or omitted), the response uses the 'message' field in each choice. The 'delta' field is empty.",
+				Examples: []example{
+					{
+						Code: `{
+  "id": "chatcmpl-abc123",
+  "object": "chat.completion",
+  "created": 1234567890,
+  "model": "qwen3-8b-q8_0",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Hello! I'm doing well, thank you for asking.",
+        "reasoning": ""
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 25,
+    "reasoning_tokens": 0,
+    "completion_tokens": 12,
+    "output_tokens": 12,
+    "total_tokens": 37,
+    "tokens_per_second": 85.5
+  }
+}`,
+					},
+				},
+			},
+			{
+				Method:      "",
+				Path:        "Streaming Response",
+				Description: "For streaming requests (stream=true), the response uses the 'delta' field in each choice. Multiple chunks are sent as Server-Sent Events, with incremental content in each delta.",
+				Examples: []example{
+					{
+						Code: `// Each chunk contains partial content in the delta field
+data: {"id":"chatcmpl-abc123","choices":[{"index":0,"delta":{"role":"assistant","content":"Hello"},"finish_reason":""}]}
+data: {"id":"chatcmpl-abc123","choices":[{"index":0,"delta":{"content":"!"},"finish_reason":""}]}
+data: {"id":"chatcmpl-abc123","choices":[{"index":0,"delta":{"content":" How"},"finish_reason":""}]}
+data: {"id":"chatcmpl-abc123","choices":[{"index":0,"delta":{"content":" are you?"},"finish_reason":""}]}
+data: {"id":"chatcmpl-abc123","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{...}}
+data: [DONE]`,
+					},
+				},
+			},
 		},
 	}
 }
@@ -774,6 +834,62 @@ func messageFormatsGroup() endpointGroup {
 					},
 				},
 			},
+			{
+				Method:      "",
+				Path:        "Tool Call Response (Non-Streaming)",
+				Description: "For non-streaming requests (stream=false), when the model calls a tool, the response uses the 'message' field with 'tool_calls' array. The finish_reason is 'tool_calls'.",
+				Examples: []example{
+					{
+						Code: `{
+  "id": "chatcmpl-abc123",
+  "object": "chat.completion",
+  "created": 1234567890,
+  "model": "qwen3-8b-q8_0",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "call_xyz789",
+            "index": 0,
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "arguments": "{\"location\":\"Tokyo\"}"
+            }
+          }
+        ]
+      },
+      "finish_reason": "tool_calls"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 50,
+    "completion_tokens": 25,
+    "total_tokens": 75
+  }
+}`,
+					},
+				},
+			},
+			{
+				Method:      "",
+				Path:        "Tool Call Response (Streaming)",
+				Description: "For streaming requests (stream=true), tool calls are returned in the 'delta' field. Each chunk contains partial tool call data that should be accumulated.",
+				Examples: []example{
+					{
+						Code: `// Streaming chunks with tool calls use delta instead of message
+data: {"id":"chatcmpl-abc123","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"id":"call_xyz789","index":0,"type":"function","function":{"name":"get_weather","arguments":""}}]},"finish_reason":""}]}
+data: {"id":"chatcmpl-abc123","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"location\":"}}]},"finish_reason":""}]}
+data: {"id":"chatcmpl-abc123","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"Tokyo\"}"}}]},"finish_reason":""}]}
+data: {"id":"chatcmpl-abc123","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],"usage":{...}}
+data: [DONE]`,
+					},
+				},
+			},
 		},
 	}
 }
@@ -803,6 +919,7 @@ func embeddingsDoc() apiDoc {
 							Fields: []field{
 								{Name: "model", Type: "string", Required: true, Description: "Embedding model ID (e.g., 'embeddinggemma-300m-qat-Q8_0')"},
 								{Name: "input", Type: "string|array", Required: true, Description: "Text to generate embeddings for. Can be a string or array of strings."},
+								{Name: "dimensions", Type: "integer", Required: false, Description: "Reduce output to first N dimensions (for Matryoshka models). Must be <= model's native dimensions."},
 							},
 						},
 						Response: &response{
