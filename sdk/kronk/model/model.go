@@ -274,8 +274,13 @@ func (m *Model) processChatRequest(ctx context.Context, id string, lctx llama.Co
 
 	// Check that we have not exceeded the context window.
 	if inputTokens > m.cfg.ContextWindow {
+		returnPrompt := ""
+		if params.ReturnPrompt {
+			returnPrompt = prompt
+		}
+
 		err := fmt.Errorf("input tokens %d exceed context window %d", inputTokens, m.cfg.ContextWindow)
-		m.sendErrorResponse(ctx, ch, id, object, 1, prompt, err, Usage{
+		m.sendErrorResponse(ctx, ch, id, object, 1, returnPrompt, err, Usage{
 			PromptTokens:     inputTokens,
 			ReasoningTokens:  reasonTokens,
 			CompletionTokens: completionTokens,
@@ -348,7 +353,12 @@ loop:
 				break loop
 			}
 
-			m.sendErrorResponse(ctx, ch, id, object, index, prompt, err, Usage{
+			returnPrompt := ""
+			if params.ReturnPrompt {
+				returnPrompt = prompt
+			}
+
+			m.sendErrorResponse(ctx, ch, id, object, index, returnPrompt, err, Usage{
 				PromptTokens:     inputTokens,
 				ReasoningTokens:  reasonTokens,
 				CompletionTokens: completionTokens,
@@ -497,7 +507,12 @@ loop:
 
 	// Send the final response that contains eveything we have sent plus
 	// the final usage numbers.
-	m.sendFinalResponse(ctx, ch, id, object, index, prompt, &finalContent, &finalReasoning, respToolCalls,
+	returnPrompt := ""
+	if params.ReturnPrompt {
+		returnPrompt = prompt
+	}
+
+	m.sendFinalResponse(ctx, ch, id, object, index, returnPrompt, &finalContent, &finalReasoning, respToolCalls,
 		Usage{
 			PromptTokens:     inputTokens,
 			ReasoningTokens:  reasonTokens,

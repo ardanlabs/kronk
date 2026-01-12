@@ -16,6 +16,7 @@ const (
 	defRepeatLastN     = 64
 	defEnableThinking  = ThinkingEnabled
 	defReasoningEffort = ReasoningEffortMedium
+	defReturnPrompt    = false
 )
 
 const (
@@ -100,6 +101,9 @@ const (
 // RepeatLastN specifies how many recent tokens to consider when applying the
 // repetition penalty. A larger value considers more context but may be slower.
 // When set to 0, the default value is 64.
+//
+// ReturnPrompt determines whether to include the prompt in the final response.
+// When set to true, the prompt will be included. Default is false.
 type Params struct {
 	Temperature     float32 `json:"temperature"`
 	TopK            int32   `json:"top_k"`
@@ -110,6 +114,7 @@ type Params struct {
 	RepeatLastN     int32   `json:"repeat_last_n"`
 	Thinking        string  `json:"enable_thinking"`
 	ReasoningEffort string  `json:"reasoning_effort"`
+	ReturnPrompt    bool    `json:"return_prompt"`
 }
 
 // AddParams can be used to add the configured parameters to the
@@ -127,6 +132,10 @@ func AddParams(p Params, d D) {
 
 	if p.ReasoningEffort != "" {
 		d["reasoning_effort"] = p.ReasoningEffort
+	}
+
+	if p.ReturnPrompt {
+		d["return_prompt"] = p.ReturnPrompt
 	}
 }
 
@@ -194,6 +203,15 @@ func (m *Model) parseParams(d D) (Params, error) {
 		}
 	}
 
+	returnPrompt := defReturnPrompt
+	if returnPromptVal, exists := d["return_prompt"]; exists {
+		var err error
+		returnPrompt, err = parseBool("return_prompt", returnPromptVal)
+		if err != nil {
+			return Params{}, err
+		}
+	}
+
 	params := Params{
 		Temperature:     temp,
 		TopK:            int32(topK),
@@ -202,6 +220,7 @@ func (m *Model) parseParams(d D) (Params, error) {
 		MaxTokens:       maxTokens,
 		Thinking:        strconv.FormatBool(enableThinking),
 		ReasoningEffort: reasoningEffort,
+		ReturnPrompt:    returnPrompt,
 	}
 
 	return m.adjustParams(params), nil

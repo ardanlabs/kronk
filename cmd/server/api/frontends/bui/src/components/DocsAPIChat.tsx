@@ -138,6 +138,12 @@ export default function DocsAPIChat() {
                     <td>No</td>
                     <td>Reasoning level for GPT models: none, minimal, low, medium, high</td>
                   </tr>
+                  <tr>
+                    <td><code>return_prompt</code></td>
+                    <td><code>bool</code></td>
+                    <td>No</td>
+                    <td></td>
+                  </tr>
                 </tbody>
               </table>
               <h5>Response</h5>

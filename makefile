@@ -265,41 +265,6 @@ curl-kronk-show:
 curl-model-status:
 	curl -i -X GET http://localhost:8080/v1/models/status
 
-curl-kronk-chat-tool:
-	curl -i -X POST http://localhost:8080/v1/chat/completions \
-	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
-     -H "Content-Type: application/json" \
-     -d '{ \
-	 	"model": "cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0", \
-		"stream": true, \
-		"messages": [ \
-			{ \
-				"role": "user", \
-				"content": "what is the weather in NYC" \
-			} \
-		], \
-		"tool_selection": "auto", \
-		"tools": [ \
-			{ \
-				"type": "function", \
-				"function": { \
-					"name": "get_weather", \
-					"description": "Get the current weather for a location", \
-					"parameters": { \
-						"type": "object", \
-						"properties": { \
-							"location": { \
-								"type": "string", \
-								"description": "The location to get the weather for, e.g. San Francisco, CA" \
-							} \
-						}, \
-						"required": ["location"] \
-					} \
-				} \
-			} \
-		] \
-    }'
-
 curl-kronk-chat:
 	curl -i -X POST http://localhost:8080/v1/chat/completions \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
@@ -406,6 +371,97 @@ curl-kronk-responses-image:
 			} \
 		] \
     }'
+
+curl-kronk-chat-tool:
+	curl -i -X POST http://localhost:8080/v1/chat/completions \
+	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
+     -H "Content-Type: application/json" \
+     -d '{ \
+	 	"model": "Qwen3-8B-Q8_0", \
+		"stream": true, \
+		"messages": [ \
+			{ \
+				"role": "user", \
+				"content": "what is the weather in NYC" \
+			} \
+		], \
+		"tool_selection": "auto", \
+		"tools": [ \
+			{ \
+				"type": "function", \
+				"function": { \
+					"name": "get_weather", \
+					"description": "Get the current weather for a location", \
+					"parameters": { \
+						"type": "object", \
+						"properties": { \
+							"location": { \
+								"type": "string", \
+								"description": "The location to get the weather for, e.g. San Francisco, CA" \
+							} \
+						}, \
+						"required": ["location"] \
+					} \
+				} \
+			} \
+		] \
+    }'
+
+curl-kronk-tool-response:
+	curl -i -X POST http://localhost:8080/v1/chat/completions \
+	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
+     -H "Content-Type: application/json" \
+     -d '{ \
+		"model": "Qwen3-8B-Q8_0", \
+		"max_tokens": 32768, \
+		"temperature": 0.1, \
+		"top_p": 0.1, \
+		"top_k": 50, \
+		"messages": [ \
+			{ \
+				"role": "user", \
+				"content": "What is the weather like in San Fran?" \
+			}, \
+			{ \
+				"role": "assistant", \
+				"tool_calls": [ \
+					{ \
+						"id": "76803ff7-339e-44c4-b51e-769c2b5fa68e", \
+						"type": "function", \
+						"function": { \
+							"name": "tool_get_weather", \
+							"arguments": "{\"location\":\"San Francisco\"}" \
+						} \
+					} \
+				] \
+			}, \
+			{ \
+				"role": "tool", \
+				"tool_call_id": "76803ff7-339e-44c4-b51e-769c2b5fa68e", \
+				"content": "{\"status\":\"SUCCESS\",\"data\":{\"description\":\"The weather in San Francisco, CA is hot and humid\\n\",\"humidity\":80,\"temperature\":28,\"wind_speed\":10}}" \
+			} \
+		], \
+		"tool_selection": "auto", \
+		"tools": [ \
+			{ \
+				"type": "function", \
+				"function": { \
+					"name": "tool_get_weather", \
+					"description": "Get the current weather for a location", \
+					"parameters": { \
+						"type": "object", \
+						"properties": { \
+							"location": { \
+								"type": "string", \
+								"description": "The location to get the weather for, e.g. San Francisco, CA" \
+							} \
+						}, \
+						"required": ["location"] \
+					} \
+				} \
+			} \
+		] \
+	}'
 
 # ==============================================================================
 # Running OpenWebUI 
