@@ -16,6 +16,10 @@ import (
 func initChatTest(t *testing.T, mp models.Path, tooling bool) (*kronk.Kronk, model.D) {
 	krn, err := kronk.New(modelInstances, model.Config{
 		ModelFiles: mp.ModelFiles,
+		CacheTypeK: model.GGMLTypeF16,
+		CacheTypeV: model.GGMLTypeF16,
+		NBatch:     1024,
+		NUBatch:    256,
 	})
 
 	if err != nil {
@@ -98,6 +102,10 @@ func initChatModels() error {
 	fmt.Println("Loading krnThinkToolChat (Qwen3-8B-Q8_0)...")
 	krnThinkToolChat, err = kronk.New(modelInstances, model.Config{
 		ModelFiles: mpThinkToolChat.ModelFiles,
+		CacheTypeK: model.GGMLTypeF16,
+		CacheTypeV: model.GGMLTypeF16,
+		NBatch:     1024,
+		NUBatch:    256,
 	})
 	if err != nil {
 		return fmt.Errorf("loading ThinkToolChat model: %w", err)

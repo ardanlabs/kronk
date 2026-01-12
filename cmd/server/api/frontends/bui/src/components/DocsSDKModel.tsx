@@ -329,6 +329,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">LogSafe returns a copy of the document containing only fields that are safe to log. This excludes sensitive fields like messages and input which may contain private user data.</p>
             </div>
 
+            <div className="doc-section" id="method-flashattentiontype-unmarshalyaml">
+              <h4>FlashAttentionType.UnmarshalYAML</h4>
+              <pre className="code-block">
+                <code>func (t *FlashAttentionType) UnmarshalYAML(unmarshal func(interface&#123;&#125;) error) error</code>
+              </pre>
+              <p className="doc-description">UnmarshalYAML implements yaml.Unmarshaler to parse string values.</p>
+            </div>
+
             <div className="doc-section" id="method-ggmltype-string">
               <h4>GGMLType.String</h4>
               <pre className="code-block">
@@ -342,6 +350,14 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func (t GGMLType) ToYZMAType() llama.GGMLType</code>
               </pre>
+            </div>
+
+            <div className="doc-section" id="method-ggmltype-unmarshalyaml">
+              <h4>GGMLType.UnmarshalYAML</h4>
+              <pre className="code-block">
+                <code>func (t *GGMLType) UnmarshalYAML(unmarshal func(interface&#123;&#125;) error) error</code>
+              </pre>
+              <p className="doc-description">UnmarshalYAML implements yaml.Unmarshaler to parse string values like "f16".</p>
             </div>
 
             <div className="doc-section" id="method-model-chat">
@@ -529,8 +545,10 @@ export default function DocsSDKModel() {
               <ul>
                 <li><a href="#method-d-clone">D.Clone</a></li>
                 <li><a href="#method-d-logsafe">D.LogSafe</a></li>
+                <li><a href="#method-flashattentiontype-unmarshalyaml">FlashAttentionType.UnmarshalYAML</a></li>
                 <li><a href="#method-ggmltype-string">GGMLType.String</a></li>
                 <li><a href="#method-ggmltype-toyzmatype">GGMLType.ToYZMAType</a></li>
+                <li><a href="#method-ggmltype-unmarshalyaml">GGMLType.UnmarshalYAML</a></li>
                 <li><a href="#method-model-chat">Model.Chat</a></li>
                 <li><a href="#method-model-chatstreaming">Model.ChatStreaming</a></li>
                 <li><a href="#method-model-config">Model.Config</a></li>

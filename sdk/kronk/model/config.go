@@ -9,90 +9,6 @@ import (
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
-// GGMLType represents a ggml data type for the KV cache.
-// These values correspond to the ggml_type enum in llama.cpp.
-type GGMLType int32
-
-const (
-	GGMLTypeAuto GGMLType = -1 // Use default from llama.cpp
-	GGMLTypeF32  GGMLType = 0  // 32-bit floating point
-	GGMLTypeF16  GGMLType = 1  // 16-bit floating point
-	GGMLTypeQ4_0 GGMLType = 2  // 4-bit quantization (type 0)
-	GGMLTypeQ4_1 GGMLType = 3  // 4-bit quantization (type 1)
-	GGMLTypeQ5_0 GGMLType = 6  // 5-bit quantization (type 0)
-	GGMLTypeQ5_1 GGMLType = 7  // 5-bit quantization (type 1)
-	GGMLTypeQ8_0 GGMLType = 8  // 8-bit quantization (type 0) (default)
-	GGMLTypeBF16 GGMLType = 30 // Brain floating point 16-bit
-)
-
-// FlashAttentionType controls when to enable Flash Attention.
-// Flash Attention reduces memory usage and speeds up attention computation,
-// especially beneficial for large context windows.
-type FlashAttentionType int32
-
-const (
-	FlashAttentionEnabled  FlashAttentionType = 0 // Default: enable Flash Attention
-	FlashAttentionDisabled FlashAttentionType = 1 // Disable Flash Attention
-	FlashAttentionAuto     FlashAttentionType = 2 // Let llama.cpp decide
-)
-
-// String returns the string representation of a GGMLType.
-func (t GGMLType) String() string {
-	switch t {
-	case GGMLTypeF32:
-		return "f32"
-	case GGMLTypeF16:
-		return "f16"
-	case GGMLTypeQ4_0:
-		return "q4_0"
-	case GGMLTypeQ4_1:
-		return "q4_1"
-	case GGMLTypeQ5_0:
-		return "q5_0"
-	case GGMLTypeQ5_1:
-		return "q5_1"
-	case GGMLTypeQ8_0:
-		return "q8_0"
-	case GGMLTypeBF16:
-		return "bf16"
-	case GGMLTypeAuto:
-		return "auto"
-	default:
-		return fmt.Sprintf("unknown(%d)", t)
-	}
-}
-
-func (t GGMLType) ToYZMAType() llama.GGMLType {
-	return llama.GGMLType(t)
-}
-
-// ParseGGMLType parses a string into a GGMLType.
-// Supported values: "f32", "f16", "q4_0", "q4_1", "q5_0", "q5_1", "q8_0", "bf16", "auto".
-func ParseGGMLType(s string) (GGMLType, error) {
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "f32", "fp32":
-		return GGMLTypeF32, nil
-	case "f16", "fp16":
-		return GGMLTypeF16, nil
-	case "q4_0", "q4":
-		return GGMLTypeQ4_0, nil
-	case "q4_1":
-		return GGMLTypeQ4_1, nil
-	case "q5_0", "q5":
-		return GGMLTypeQ5_0, nil
-	case "q5_1":
-		return GGMLTypeQ5_1, nil
-	case "f8", "q8_0", "q8":
-		return GGMLTypeQ8_0, nil
-	case "bf16", "bfloat16":
-		return GGMLTypeBF16, nil
-	case "auto", "":
-		return GGMLTypeAuto, nil
-	default:
-		return GGMLTypeAuto, fmt.Errorf("unknown ggml type: %s", s)
-	}
-}
-
 /*
 Workload							NBatch		NUBatch		Rationale
 Interactive chat (single user)		512–1024	512			Low latency; small batches
@@ -354,4 +270,128 @@ func searchModelMeta(model llama.Model, find string) (string, bool) {
 	}
 
 	return "", false
+}
+
+// =============================================================================
+
+// GGMLType represents a ggml data type for the KV cache.
+// These values correspond to the ggml_type enum in llama.cpp.
+type GGMLType int32
+
+const (
+	GGMLTypeAuto GGMLType = -1 // Use default from llama.cpp
+	GGMLTypeF32  GGMLType = 0  // 32-bit floating point
+	GGMLTypeF16  GGMLType = 1  // 16-bit floating point
+	GGMLTypeQ4_0 GGMLType = 2  // 4-bit quantization (type 0)
+	GGMLTypeQ4_1 GGMLType = 3  // 4-bit quantization (type 1)
+	GGMLTypeQ5_0 GGMLType = 6  // 5-bit quantization (type 0)
+	GGMLTypeQ5_1 GGMLType = 7  // 5-bit quantization (type 1)
+	GGMLTypeQ8_0 GGMLType = 8  // 8-bit quantization (type 0) (default)
+	GGMLTypeBF16 GGMLType = 30 // Brain floating point 16-bit
+)
+
+// FlashAttentionType controls when to enable Flash Attention.
+// Flash Attention reduces memory usage and speeds up attention computation,
+// especially beneficial for large context windows.
+type FlashAttentionType int32
+
+const (
+	FlashAttentionEnabled  FlashAttentionType = 0 // Default: enable Flash Attention
+	FlashAttentionDisabled FlashAttentionType = 1 // Disable Flash Attention
+	FlashAttentionAuto     FlashAttentionType = 2 // Let llama.cpp decide
+)
+
+// UnmarshalYAML implements yaml.Unmarshaler to parse string values.
+func (t *FlashAttentionType) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var s string
+	if err := unmarshal(&s); err != nil {
+		return err
+	}
+
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "enabled", "on", "true", "1":
+		*t = FlashAttentionEnabled
+	case "disabled", "off", "false", "0":
+		*t = FlashAttentionDisabled
+	case "auto", "":
+		*t = FlashAttentionAuto
+	default:
+		return fmt.Errorf("unknown flash attention type: %s", s)
+	}
+
+	return nil
+}
+
+// String returns the string representation of a GGMLType.
+func (t GGMLType) String() string {
+	switch t {
+	case GGMLTypeF32:
+		return "f32"
+	case GGMLTypeF16:
+		return "f16"
+	case GGMLTypeQ4_0:
+		return "q4_0"
+	case GGMLTypeQ4_1:
+		return "q4_1"
+	case GGMLTypeQ5_0:
+		return "q5_0"
+	case GGMLTypeQ5_1:
+		return "q5_1"
+	case GGMLTypeQ8_0:
+		return "q8_0"
+	case GGMLTypeBF16:
+		return "bf16"
+	case GGMLTypeAuto:
+		return "auto"
+	default:
+		return fmt.Sprintf("unknown(%d)", t)
+	}
+}
+
+func (t GGMLType) ToYZMAType() llama.GGMLType {
+	return llama.GGMLType(t)
+}
+
+// UnmarshalYAML implements yaml.Unmarshaler to parse string values like "f16".
+func (t *GGMLType) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var s string
+	if err := unmarshal(&s); err != nil {
+		return err
+	}
+
+	parsed, err := ParseGGMLType(s)
+	if err != nil {
+		return err
+	}
+
+	*t = parsed
+
+	return nil
+}
+
+// ParseGGMLType parses a string into a GGMLType.
+// Supported values: "f32", "f16", "q4_0", "q4_1", "q5_0", "q5_1", "q8_0", "bf16", "auto".
+func ParseGGMLType(s string) (GGMLType, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "f32", "fp32":
+		return GGMLTypeF32, nil
+	case "f16", "fp16":
+		return GGMLTypeF16, nil
+	case "q4_0", "q4":
+		return GGMLTypeQ4_0, nil
+	case "q4_1":
+		return GGMLTypeQ4_1, nil
+	case "q5_0", "q5":
+		return GGMLTypeQ5_0, nil
+	case "q5_1":
+		return GGMLTypeQ5_1, nil
+	case "f8", "q8_0", "q8":
+		return GGMLTypeQ8_0, nil
+	case "bf16", "bfloat16":
+		return GGMLTypeBF16, nil
+	case "auto", "":
+		return GGMLTypeAuto, nil
+	default:
+		return GGMLTypeAuto, fmt.Errorf("unknown ggml type: %s", s)
+	}
 }

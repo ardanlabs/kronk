@@ -122,6 +122,10 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 
 	krn, err := kronk.New(modelInstances, model.Config{
 		ModelFiles: mp.ModelFiles,
+		CacheTypeK: model.GGMLTypeF16,
+		CacheTypeV: model.GGMLTypeF16,
+		NBatch:     1024,
+		NUBatch:    256,
 	})
 
 	if err != nil {

@@ -157,11 +157,12 @@ func New(t *testing.T, testName string) *Test {
 	}
 
 	cache, err := cache.NewCache(cache.Config{
-		Log:            log.Info,
-		Templates:      tmplts,
-		ModelsInCache:  3,
-		ModelInstances: 1,
-		CacheTTL:       5 * time.Minute,
+		Log:             log.Info,
+		Templates:       tmplts,
+		ModelsInCache:   3,
+		ModelInstances:  1,
+		CacheTTL:        5 * time.Minute,
+		ModelConfigFile: "../../../../../../zarf/kms/model_config.yaml",
 	})
 
 	if err != nil {
