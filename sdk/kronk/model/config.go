@@ -102,13 +102,24 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // When left as zero value, FlashAttentionEnabled is used (default on).
 // Set to FlashAttentionDisabled to disable, or FlashAttentionAuto to let llama.cpp decide.
 //
-// DefragThold is the KV cache defragmentation threshold. When the ratio of
-// fragmented (holes) to total cache size exceeds this threshold, the cache is
-// automatically defragmented. When left as zero value, defragmentation is disabled.
-// A typical value is 0.1 (10%).
-//
-// IgnorelIntegrityCheck is a boolean that determines if the system should ignore
+// IgnoreIntegrityCheck is a boolean that determines if the system should ignore
 // a model integrity check before trying to use it.
+//
+// NSeqMax is the maximum number of sequences that can be processed in parallel.
+// This is useful for batched inference where multiple prompts are processed
+// simultaneously. When set to 0, the default llama.cpp value is used.
+//
+// OffloadKQV controls whether the KV cache is offloaded to the GPU. When nil or
+// true, the KV cache is stored on the GPU (default behavior). Set to false to
+// keep the KV cache on the CPU, which reduces VRAM usage but may slow inference.
+//
+// OpOffload controls whether host tensor operations are offloaded to the device
+// (GPU). When nil or true, operations are offloaded (default behavior). Set to
+// false to keep operations on the CPU.
+//
+// NGpuLayers is the number of model layers to offload to the GPU. When set to 0,
+// all layers are offloaded (default). Set to -1 to keep all layers on CPU. Any
+// positive value specifies the exact number of layers to offload.
 type Config struct {
 	Log                  Logger
 	ModelFiles           []string
@@ -124,8 +135,11 @@ type Config struct {
 	CacheTypeV           GGMLType
 	FlashAttention       FlashAttentionType
 	UseDirectIO          bool
-	DefragThold          float32 // Deprecated: llama.cpp deprecated this
 	IgnoreIntegrityCheck bool
+	NSeqMax              int
+	OffloadKQV           *bool
+	OpOffload            *bool
+	NGpuLayers           int
 }
 
 func validateConfig(ctx context.Context, cfg Config, log Logger) error {
@@ -149,6 +163,16 @@ func validateConfig(ctx context.Context, cfg Config, log Logger) error {
 				return fmt.Errorf("validate-config: checking-model-integrity: %w", err)
 			}
 		}
+	}
+
+	// llama.cpp has a -1 default for loading all layers into the GPU
+	// However, we want to make it convenient to write the configuration.
+	// So, we default to invert these two values after loading them.
+	switch cfg.NGpuLayers {
+	case -1:
+		cfg.NGpuLayers = 0
+	case 0:
+		cfg.NGpuLayers = -1
 	}
 
 	return nil
@@ -243,8 +267,23 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 		ctxParams.FlashAttentionType = llama.FlashAttentionTypeEnabled
 	}
 
-	if cfg.DefragThold > 0 {
-		ctxParams.DefragThold = cfg.DefragThold
+	if cfg.NSeqMax > 0 {
+		ctxParams.NSeqMax = uint32(cfg.NSeqMax)
+	}
+
+	// Offload KQV cache to CPU.
+	// llama.cpp has this as default set to true
+	ctxParams.Offload_kqv = 1
+	if cfg.OffloadKQV != nil &&
+		!*cfg.OffloadKQV {
+		ctxParams.Offload_kqv = 0
+	}
+
+	// Offload host tensor operations to device.
+	// llama.cpp has this as default set to true
+	ctxParams.OpOffload = 1
+	if cfg.OpOffload != nil && !*cfg.OpOffload {
+		ctxParams.OpOffload = 0
 	}
 
 	return ctxParams
