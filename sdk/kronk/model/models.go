@@ -153,8 +153,6 @@ var logSafeKeys = []string{
 	"top_p",
 	"top_k",
 	"stream",
-	"tools",
-	"tool_choice",
 	"presence_penalty",
 	"frequency_penalty",
 	"stop",

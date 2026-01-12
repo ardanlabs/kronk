@@ -1,2 +1,4 @@
 gpt-oss-20b-Q8_0:
   context-window: 32768
+Qwen3-8B-Q8_0:
+  context-window: 32768
