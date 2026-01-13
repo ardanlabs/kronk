@@ -147,7 +147,7 @@ type Config struct {
 	NSeqMax              int
 	OffloadKQV           *bool
 	OpOffload            *bool
-	NGpuLayers           int
+	NGpuLayers           *int32
 	SplitMode            SplitMode
 }
 
@@ -172,16 +172,6 @@ func validateConfig(ctx context.Context, cfg Config, log Logger) error {
 				return fmt.Errorf("validate-config: checking-model-integrity: %w", err)
 			}
 		}
-	}
-
-	// llama.cpp has a -1 default for loading all layers into the GPU
-	// However, we want to make it convenient to write the configuration.
-	// So, we default to invert these two values after loading them.
-	switch cfg.NGpuLayers {
-	case -1:
-		cfg.NGpuLayers = 0
-	case 0:
-		cfg.NGpuLayers = -1
 	}
 
 	return nil

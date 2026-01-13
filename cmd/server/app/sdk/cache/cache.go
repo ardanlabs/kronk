@@ -92,7 +92,7 @@ type modelConfig struct {
 	NSeqMax              int                      `yaml:"nseq-max"`
 	OffloadKQV           *bool                    `yaml:"offload-kqv"`
 	OpOffload            *bool                    `yaml:"op-offload"`
-	NGpuLayers           int                      `yaml:"ngpu-layers"`
+	NGpuLayers           *int32                   `yaml:"ngpu-layers"`
 	SplitMode            model.SplitMode          `yaml:"split-mode"`
 }
 
