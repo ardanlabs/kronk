@@ -101,7 +101,6 @@ type modelConfig struct {
 type Cache struct {
 	log                  model.Logger
 	templates            *templates.Templates
-	instances            int
 	cache                *otter.Cache[string, *kronk.Kronk]
 	itemsInCache         atomic.Int32
 	models               *models.Models
@@ -132,7 +131,6 @@ func NewCache(cfg Config) (*Cache, error) {
 	c := Cache{
 		log:                  cfg.Log,
 		templates:            cfg.Templates,
-		instances:            cfg.ModelInstances,
 		models:               models,
 		ignoreIntegrityCheck: cfg.IgnoreIntegrityCheck,
 		modelConfig:          mc,
@@ -268,7 +266,7 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 		SplitMode:            mc.SplitMode,
 	}
 
-	krn, err = kronk.New(c.instances, cfg,
+	krn, err = kronk.New(cfg,
 		kronk.WithTemplateRetriever(c.templates),
 		kronk.WithContext(ctx),
 	)

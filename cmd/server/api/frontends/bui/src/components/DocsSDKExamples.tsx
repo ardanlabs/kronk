@@ -35,7 +35,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
@@ -74,17 +73,9 @@ func run() error {
 		}
 	}()
 
-	var wg sync.WaitGroup
-
-	for range 2 {
-		wg.Go(func() {
-			if err := question(krn); err != nil {
-				fmt.Println(err)
-			}
-		})
+	if err := question(krn); err != nil {
+		fmt.Println(err)
 	}
-
-	wg.Wait()
 
 	return nil
 }
@@ -126,13 +117,12 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
-	krn, err := kronk.New(2, model.Config{
+	krn, err := kronk.New(model.Config{
 		ModelFiles: mp.ModelFiles,
 		CacheTypeK: model.GGMLTypeF16,
 		CacheTypeV: model.GGMLTypeF16,
 		NBatch:     1024,
 		NUBatch:    256,
-		NSeqMax:    2,
 	})
 
 	if err != nil {
@@ -242,7 +232,7 @@ import (
 const (
 	//modelURL = "https://huggingface.co/unsloth/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-Q8_0.gguf"
 	modelURL       = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
-	modelInstances = 1
+	modelInstances = 2
 )
 
 func main() {
@@ -353,7 +343,7 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		}
 	}
 
-	krn, err := kronk.New(modelInstances, cfg)
+	krn, err := kronk.New(cfg)
 
 	if err != nil {
 		return nil, fmt.Errorf("unable to create inference model: %w", err)
@@ -662,7 +652,7 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
-	krn, err := kronk.New(modelInstances, model.Config{
+	krn, err := kronk.New(model.Config{
 		ModelFiles:     mp.ModelFiles,
 		ContextWindow:  2048,
 		NBatch:         2048,
@@ -830,7 +820,7 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
-	krn, err := kronk.New(modelInstances, model.Config{
+	krn, err := kronk.New(model.Config{
 		ModelFiles:    mp.ModelFiles,
 		ProjFile:      mp.ProjFile,
 		ContextWindow: 8192,
@@ -1073,7 +1063,7 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
-	krn, err := kronk.New(modelInstances, model.Config{
+	krn, err := kronk.New(model.Config{
 		ModelFiles:    mp.ModelFiles,
 		ProjFile:      mp.ProjFile,
 		ContextWindow: 8192,

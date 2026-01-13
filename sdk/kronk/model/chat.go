@@ -80,7 +80,6 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 
 		// Use batch engine for text-only requests when available.
 		if m.batch != nil && object == ObjectChatText {
-
 			job := chatJob{
 				id:      id,
 				ctx:     ctx,

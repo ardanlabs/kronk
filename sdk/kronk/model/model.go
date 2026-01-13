@@ -110,6 +110,8 @@ func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) 
 
 	ctxParams := modelCtxParams(cfg, modelInfo)
 
+	l(ctx, "context-params", "NCtx", ctxParams.NCtx, "NBatch", ctxParams.NBatch, "NUBatch", ctxParams.NUbatch, "NSeqMax", ctxParams.NSeqMax, "TypeK", ctxParams.TypeK, "TypeV", ctxParams.TypeV, "NThreads", ctxParams.NThreads, "NThreadsBatch", ctxParams.NThreadsBatch)
+
 	lctx, err := llama.InitFromModel(mdl, ctxParams)
 	if err != nil {
 		llama.ModelFree(mdl)

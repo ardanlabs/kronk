@@ -188,4 +188,13 @@ Existing tests run with default config → use existing sequential path
 New tests explicitly set NParallel > 1 → exercise the batch engine
 This gives you a safe rollout where you can toggle between paths via config and compare results.
 
-Ready to start Phase 1?
+You have coded Phase 1, 2, and 3. We have 3 working with a single request when we use the batch engine (NSeqMax > 2).
+
+These files that have been changed are these:
+
+NEW: sdk/kronk/model/batch.go
+MODIFIED: sdk/kronk/model/model.go
+MODIFIED: sdk/kronk/model/processor.go
+
+There is a sample working program here with what we are trying to add to the model package.
+examples/yzma-parallel/step2/main.go

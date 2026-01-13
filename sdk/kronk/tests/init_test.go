@@ -14,7 +14,7 @@ import (
 // initChatTest creates a new Kronk instance for tests that need their own
 // model lifecycle (e.g., concurrency tests that test unload behavior).
 func initChatTest(t *testing.T, mp models.Path, tooling bool) (*kronk.Kronk, model.D) {
-	krn, err := kronk.New(modelInstances, model.Config{
+	krn, err := kronk.New(model.Config{
 		ModelFiles:    mp.ModelFiles,
 		ContextWindow: 32768,
 		NBatch:        1024,
@@ -101,7 +101,7 @@ func initChatModels() error {
 	var err error
 
 	fmt.Println("Loading krnThinkToolChat (Qwen3-8B-Q8_0)...")
-	krnThinkToolChat, err = kronk.New(modelInstances, model.Config{
+	krnThinkToolChat, err = kronk.New(model.Config{
 		ModelFiles:    mpThinkToolChat.ModelFiles,
 		ContextWindow: 32768,
 		NBatch:        1024,
@@ -115,7 +115,7 @@ func initChatModels() error {
 
 	if os.Getenv("GITHUB_ACTIONS") != "true" {
 		fmt.Println("Loading krnGPTChat (gpt-oss-20b-Q8_0)...")
-		krnGPTChat, err = kronk.New(modelInstances, model.Config{
+		krnGPTChat, err = kronk.New(model.Config{
 			ModelFiles:    mpGPTChat.ModelFiles,
 			ContextWindow: 8192,
 			NBatch:        2048,
@@ -231,7 +231,7 @@ func initMediaModels() error {
 	}
 
 	fmt.Println("Loading krnSimpleVision (Qwen2.5-VL-3B-Instruct-Q8_0)...")
-	krnSimpleVision, err = kronk.New(modelInstances, model.Config{
+	krnSimpleVision, err = kronk.New(model.Config{
 		ModelFiles:    mpSimpleVision.ModelFiles,
 		ProjFile:      mpSimpleVision.ProjFile,
 		ContextWindow: 8192,

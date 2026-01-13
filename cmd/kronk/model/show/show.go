@@ -60,7 +60,7 @@ func runLocal(models *models.Models, args []string) error {
 		return fmt.Errorf("unable to retrieve model path: %w", err)
 	}
 
-	krn, err := kronk.New(1, model.Config{
+	krn, err := kronk.New(model.Config{
 		ModelFiles: mp.ModelFiles,
 	})
 

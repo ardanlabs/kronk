@@ -16,7 +16,7 @@ func nonStreaming[T any](ctx context.Context, krn *Kronk, f nonStreamingFunc[T])
 	if err != nil {
 		return zero, err
 	}
-	defer krn.releaseModel(llama)
+	defer krn.releaseModel()
 
 	return f(llama)
 }
@@ -41,7 +41,7 @@ func streaming[T any](ctx context.Context, krn *Kronk, f streamingFunc[T], ef er
 			}
 
 			close(ch)
-			krn.releaseModel(llama)
+			krn.releaseModel()
 		}()
 
 		lch := f(llama)
@@ -107,7 +107,7 @@ func streamingWith[T, U any](ctx context.Context, krn *Kronk, f streamingFunc[T]
 			}
 
 			close(ch)
-			krn.releaseModel(llama)
+			krn.releaseModel()
 		}()
 
 		for _, msg := range p.Start() {

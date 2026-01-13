@@ -30,7 +30,7 @@ import (
 const (
 	//modelURL = "https://huggingface.co/unsloth/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-Q8_0.gguf"
 	modelURL       = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
-	modelInstances = 1
+	modelInstances = 2
 )
 
 func main() {
@@ -141,7 +141,7 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		}
 	}
 
-	krn, err := kronk.New(modelInstances, cfg)
+	krn, err := kronk.New(cfg)
 
 	if err != nil {
 		return nil, fmt.Errorf("unable to create inference model: %w", err)

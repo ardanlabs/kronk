@@ -45,9 +45,9 @@ export default function DocsSDKKronk() {
             <div className="doc-section" id="func-new">
               <h4>New</h4>
               <pre className="code-block">
-                <code>func New(modelInstances int, cfg model.Config, opts ...Option) (*Kronk, error)</code>
+                <code>func New(cfg model.Config, opts ...Option) (*Kronk, error)</code>
               </pre>
-              <p className="doc-description">New provides the ability to use models in a concurrently safe way. modelInstances represents the number of instances of the model to create. Unless you have more than 1 GPU, the recommended number of instances is 1.</p>
+              <p className="doc-description">New provides the ability to use models in a concurrently safe way. The cfg.NSeqMax field controls how many concurrent requests can be processed in parallel. When NSeqMax &gt; 1, the batch engine is used for parallel inference.</p>
             </div>
           </div>
 
@@ -362,7 +362,7 @@ export default function DocsSDKKronk() {
               <pre className="code-block">
                 <code>func (krn *Kronk) Unload(ctx context.Context) error</code>
               </pre>
-              <p className="doc-description">Unload will close down all loaded models. You should call this only when you are completely done using the group.</p>
+              <p className="doc-description">Unload will close down the loaded model. You should call this only when you are completely done using Kronk.</p>
             </div>
 
             <div className="doc-section" id="method-loglevel-int">

@@ -112,7 +112,7 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
-	krn, err := kronk.New(modelInstances, model.Config{
+	krn, err := kronk.New(model.Config{
 		ModelFiles:    mp.ModelFiles,
 		ProjFile:      mp.ProjFile,
 		ContextWindow: 8192,

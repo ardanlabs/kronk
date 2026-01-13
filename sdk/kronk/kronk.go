@@ -47,7 +47,8 @@ func WithContext(ctx context.Context) Option {
 // Kronk provides a concurrently safe api for using llama.cpp to access models.
 type Kronk struct {
 	cfg           model.Config
-	models        chan *model.Model
+	model         *model.Model
+	sem           chan struct{}
 	activeStreams atomic.Int32
 	shutdown      sync.Mutex
 	shutdownFlag  bool
@@ -56,15 +57,11 @@ type Kronk struct {
 
 // New provides the ability to use models in a concurrently safe way.
 //
-// modelInstances represents the number of instances of the model to create. Unless
-// you have more than 1 GPU, the recommended number of instances is 1.
-func New(modelInstances int, cfg model.Config, opts ...Option) (*Kronk, error) {
+// The cfg.NSeqMax field controls how many concurrent requests can be processed
+// in parallel. When NSeqMax > 1, the batch engine is used for parallel inference.
+func New(cfg model.Config, opts ...Option) (*Kronk, error) {
 	if libraryLocation == "" {
 		return nil, fmt.Errorf("the Init() function has not been called")
-	}
-
-	if modelInstances <= 0 {
-		return nil, fmt.Errorf("instances must be > 0, got %d", modelInstances)
 	}
 
 	// -------------------------------------------------------------------------
@@ -90,35 +87,21 @@ func New(modelInstances int, cfg model.Config, opts ...Option) (*Kronk, error) {
 
 	// -------------------------------------------------------------------------
 
-	models := make(chan *model.Model, modelInstances)
-	var firstModel *model.Model
-
 	m, err := model.NewModel(ctx, o.tr, cfg)
 	if err != nil {
-		close(models)
-		for mdl := range models {
-			mdl.Unload(ctx)
-		}
-
 		return nil, err
 	}
 
-	for range cfg.NSeqMax {
-		models <- m
-
-		if firstModel == nil {
-			firstModel = m
-		}
-	}
-
-	if firstModel == nil {
-		return nil, fmt.Errorf("no models loaded")
-	}
+	// Determine semaphore capacity based on NSeqMax.
+	// When batch engine is active (NSeqMax > 1), allow that many concurrent acquires.
+	// Otherwise, only allow 1 (sequential processing).
+	semCapacity := max(cfg.NSeqMax, 1)
 
 	krn := Kronk{
-		cfg:       firstModel.Config(),
-		models:    models,
-		modelInfo: firstModel.ModelInfo(),
+		cfg:       m.Config(),
+		model:     m,
+		sem:       make(chan struct{}, semCapacity),
+		modelInfo: m.ModelInfo(),
 	}
 
 	return &krn, nil
@@ -170,8 +153,8 @@ func (krn *Kronk) ActiveStreams() int {
 	return int(krn.activeStreams.Load())
 }
 
-// Unload will close down all loaded models. You should call this only when you
-// are completely done using the group.
+// Unload will close down the loaded model. You should call this only when you
+// are completely done using Kronk.
 func (krn *Kronk) Unload(ctx context.Context) error {
 	if _, exists := ctx.Deadline(); !exists {
 		var cancel context.CancelFunc
@@ -208,17 +191,8 @@ func (krn *Kronk) Unload(ctx context.Context) error {
 
 	// -------------------------------------------------------------------------
 
-	var sb strings.Builder
-
-	close(krn.models)
-	for mdl := range krn.models {
-		if err := mdl.Unload(ctx); err != nil {
-			sb.WriteString(fmt.Sprintf("unload:failed to unload model: %s: %v\n", mdl.ModelInfo().ID, err))
-		}
-	}
-
-	if sb.Len() > 0 {
-		return fmt.Errorf("%s", sb.String())
+	if err := krn.model.Unload(ctx); err != nil {
+		return fmt.Errorf("unload:failed to unload model: %s: %w", krn.model.ModelInfo().ID, err)
 	}
 
 	return nil

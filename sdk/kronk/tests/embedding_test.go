@@ -26,7 +26,7 @@ func testEmbedding(t *testing.T, mp models.Path) {
 		t.Parallel()
 	}
 
-	krn, err := kronk.New(modelInstances, model.Config{
+	krn, err := kronk.New(model.Config{
 		ModelFiles:     mp.ModelFiles,
 		ContextWindow:  2048,
 		NBatch:         2048,

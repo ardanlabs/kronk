@@ -12,7 +12,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
@@ -51,17 +50,9 @@ func run() error {
 		}
 	}()
 
-	var wg sync.WaitGroup
-
-	for range 2 {
-		wg.Go(func() {
-			if err := question(krn); err != nil {
-				fmt.Println(err)
-			}
-		})
+	if err := question(krn); err != nil {
+		fmt.Println(err)
 	}
-
-	wg.Wait()
 
 	return nil
 }
@@ -103,13 +94,12 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
-	krn, err := kronk.New(2, model.Config{
+	krn, err := kronk.New(model.Config{
 		ModelFiles: mp.ModelFiles,
 		CacheTypeK: model.GGMLTypeF16,
 		CacheTypeV: model.GGMLTypeF16,
 		NBatch:     1024,
 		NUBatch:    256,
-		NSeqMax:    2,
 	})
 
 	if err != nil {

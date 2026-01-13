@@ -307,6 +307,23 @@ curl-kronk-chat:
 		] \
     }'
 
+curl-kronk-chat-load:
+	for i in {1..3}; do \
+		curl -i -X POST http://localhost:8080/v1/chat/completions \
+		-H "Authorization: Bearer ${KRONK_TOKEN}" \
+		-H "Content-Type: application/json" \
+		-d '{ \
+			"model": "gpt-oss-20b-Q8_0", \
+			"stream": true, \
+			"messages": [ \
+				{ \
+					"role": "user", \
+					"content": "Hello model" \
+				} \
+			] \
+		}' & \
+	done; wait
+
 FILE_GIRAFFE := $(shell base64 < examples/samples/giraffe.jpg)
 
 curl-kronk-chat-image:
