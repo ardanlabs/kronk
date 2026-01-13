@@ -61,7 +61,19 @@ func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) 
 		mParams.SetDevices([]llama.GGMLBackendDevice{dev})
 	}
 
-	mParams.NGpuLayers = int32(cfg.NGpuLayers)
+	// llama.cpp has a -1 default for loading all layers into the GPU
+	// However, we want to make it convenient to write the configuration.
+	// So, we default to invert these two values after loading them.
+	switch {
+	case cfg.NGpuLayers == nil:
+		mParams.NGpuLayers = -1
+	case *cfg.NGpuLayers == 0:
+		mParams.NGpuLayers = -1
+	case *cfg.NGpuLayers == -1:
+		mParams.NGpuLayers = 0
+	default:
+		mParams.NGpuLayers = *cfg.NGpuLayers
+	}
 
 	// -------------------------------------------------------------------------
 

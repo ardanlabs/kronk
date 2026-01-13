@@ -92,7 +92,7 @@ type modelConfig struct {
 	NSeqMax              int                      `yaml:"nseq-max"`
 	OffloadKQV           *bool                    `yaml:"offload-kqv"`
 	OpOffload            *bool                    `yaml:"op-offload"`
-	NGpuLayers           int                      `yaml:"ngpu-layers"`
+	NGpuLayers           *int32                   `yaml:"ngpu-layers"`
 }
 
 // Cache manages a set of Kronk APIs for use. It maintains a cache of these
