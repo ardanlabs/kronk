@@ -176,6 +176,27 @@ All commands support web mode (default) and `--local` mode.
 
 - Handle `nil` content in `toMediaMessage` with `case nil: continue`
 
+## Model Acquire/Release & Cleanup (sdk/kronk/)
+
+**Model Pool Pattern:**
+- Models are pooled via a channel (`krn.models`) for single-writer access
+- `acquireModel()` blocks until a model is available, increments `activeStreams`
+- `releaseModel()` returns the model to the pool, decrements `activeStreams`
+
+**Cleanup Flow (ensures clean state before release):**
+1. `streaming()` / `streamingWith()` acquire model, defer `releaseModel()` in wrapper goroutine
+2. Wrapper calls `ChatStreaming()` which runs in its own goroutine
+3. `ChatStreaming` defers `m.resetContext()` before any processing
+4. When generation completes, `resetContext()` runs first:
+   - `llama.Synchronize(m.lctx)` - waits for GPU operations to complete
+   - `llama.MemoryClear(mem, true)` - clears KV cache
+5. Then channel closes, wrapper goroutine exits, `releaseModel()` runs
+6. Model returns to pool in clean state for next request
+
+**Key invariant:** `resetContext()` always runs before model release due to defer ordering:
+- Inner goroutine (`ChatStreaming`): `defer m.resetContext()` runs on exit
+- Outer goroutine (concurrency wrapper): `defer krn.releaseModel()` runs after inner channel drains
+
 ## Model Configuration (sdk/kronk/model/config.go)
 
 **Config Fields Reference:**
