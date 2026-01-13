@@ -192,21 +192,18 @@ func chatStream200(tokens map[string]string) []apitest.Table {
 				"messages": model.DocumentArray(
 					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
 				),
-				"max_tokens":         2048,
-				"temperature":        0.7,
-				"top_p":              0.9,
-				"top_k":              40,
-				"stream":             true,
-				"keep_final_content": true,
-				"return_prompt":      true,
+				"max_tokens":    2048,
+				"temperature":   0.7,
+				"top_p":         0.9,
+				"top_k":         40,
+				"stream":        true,
+				"return_prompt": true,
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
 				Choice: []model.Choice{
 					{
-						Message: model.ResponseMessage{
-							Role: "assistant",
-						},
+						Message:      model.ResponseMessage{},
 						FinishReason: "stop",
 					},
 				},
@@ -218,7 +215,6 @@ func chatStream200(tokens map[string]string) []apitest.Table {
 				diff := cmp.Diff(got, exp,
 					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage"),
 					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReason"),
-					cmpopts.IgnoreFields(model.ResponseMessage{}, "Content", "Reasoning", "ToolCalls"),
 				)
 
 				if diff != "" {
@@ -230,10 +226,6 @@ func chatStream200(tokens map[string]string) []apitest.Table {
 					hasCreated().
 					hasValidChoice().
 					hasUsage(true).
-					hasContent().
-					hasReasoning().
-					containsInContent("gorilla").
-					containsInReasoning("gorilla").
 					result()
 			},
 		},

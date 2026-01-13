@@ -563,3 +563,35 @@ example-vision:
 
 example-yzma:
 	CGO_ENABLED=0 go run examples/yzma/main.go
+
+# Defaults for yzma-parallel example
+MODEL ?= /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf
+PARALLEL ?= 2
+SEQUENCES ?= 4
+PREDICT ?= 64
+
+example-yzma-parallel-step1:
+	CGO_ENABLED=0 go run examples/yzma-parallel/step1/main.go -model $(MODEL) -parallel $(PARALLEL) -sequences $(SEQUENCES) -predict $(PREDICT)
+
+example-yzma-parallel-step2:
+	CGO_ENABLED=0 go run examples/yzma-parallel/step2/main.go -model $(MODEL) -parallel $(PARALLEL) -predict $(PREDICT)
+
+example-yzma-parallel-curl1:
+	curl -X POST http://localhost:8090/v1/completions \
+	-H "Content-Type: application/json" \
+	-d '{"prompt": "Hello, how are you?", "max_tokens": 50}'
+
+example-yzma-parallel-curl2:
+	curl -X POST http://localhost:8090/v1/completions \
+	-H "Content-Type: application/json" \
+	-d '{"prompt": "Hello", "max_tokens": 50, "stream": true}'
+
+example-yzma-parallel-curl3:
+	curl http://localhost:8090/v1/stats
+
+example-yzma-parallel-load:
+	for i in {1..20}; do \
+		curl -s -X POST http://localhost:8090/v1/completions \
+		-H "Content-Type: application/json" \
+		-d "{\"prompt\": \"Request $$i: Hello\", \"max_tokens\": 30}" & \
+	done; wait
