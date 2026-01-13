@@ -39,6 +39,7 @@ func respNonStream200(t *testing.T, tokens map[string]string) []apitest.Table {
 				"max_tokens":  2048,
 				"temperature": 0.7,
 				"top_p":       0.9,
+				"top_k":       40,
 			},
 			GotResp: &kronk.ResponseResponse{},
 			ExpResp: &kronk.ResponseResponse{
@@ -77,6 +78,7 @@ func respNonStream200(t *testing.T, tokens map[string]string) []apitest.Table {
 				"max_tokens":  2048,
 				"temperature": 0.7,
 				"top_p":       0.9,
+				"top_k":       40,
 			},
 			GotResp: &kronk.ResponseResponse{},
 			ExpResp: &kronk.ResponseResponse{
@@ -116,6 +118,7 @@ func respNonStream200(t *testing.T, tokens map[string]string) []apitest.Table {
 				"max_tokens":  2048,
 				"temperature": 0.7,
 				"top_p":       0.9,
+				"top_k":       40,
 			},
 			GotResp: &kronk.ResponseResponse{},
 			ExpResp: &kronk.ResponseResponse{
@@ -163,6 +166,7 @@ func respStream200(tokens map[string]string) []apitest.Table {
 				"max_tokens":  2048,
 				"temperature": 0.7,
 				"top_p":       0.9,
+				"top_k":       40,
 				"stream":      true,
 			},
 			GotResp: &kronk.ResponseStreamEvent{},
