@@ -243,14 +243,12 @@ func (m *Model) Unload(ctx context.Context) error {
 		}
 	}
 
-	// When batch engine was used, skip low-level cleanup - causes crashes.
-	// The process exit will clean up. This is a workaround until we figure
-	// out the correct cleanup order for batch engine resources.
+	// Free batch buffer before context (batch references context internals).
 	if hasBatch {
-		llama.ModelFree(m.model)
-		return nil
+		m.batch.freeBatch()
 	}
 
+	// Synchronize ensures all GPU operations complete before freeing.
 	llama.Synchronize(m.lctx)
 	llama.Free(m.lctx)
 	llama.ModelFree(m.model)

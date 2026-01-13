@@ -233,7 +233,7 @@ func run() error {
 
 	var wg sync.WaitGroup
 
-	for range 1 {
+	for range 2 {
 		wg.Go(func() {
 			if err := question(krn); err != nil {
 				fmt.Println(err)
@@ -242,16 +242,6 @@ func run() error {
 	}
 
 	wg.Wait()
-
-	// for range 1 {
-	// 	wg.Go(func() {
-	// 		if err := question(krn); err != nil {
-	// 			fmt.Println(err)
-	// 		}
-	// 	})
-	// }
-
-	// wg.Wait()
 
 	return nil
 }
