@@ -31,10 +31,13 @@ type Model struct {
 	vocab         llama.Vocab
 	ctxParams     llama.ContextParams
 	lctx          llama.Context
+	mem           llama.Memory
+	batch         *batchEngine
 	template      Template
 	projFile      string
 	modelInfo     ModelInfo
 	activeStreams atomic.Int32
+	unloaded      atomic.Bool
 }
 
 func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) (*Model, error) {
@@ -113,6 +116,13 @@ func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) 
 		return nil, fmt.Errorf("init-from-model: unable to init context: %w", err)
 	}
 
+	mem, err := llama.GetMemory(lctx)
+	if err != nil {
+		llama.Free(lctx)
+		llama.ModelFree(mdl)
+		return nil, fmt.Errorf("get-memory: unable to get memory: %w", err)
+	}
+
 	m := Model{
 		cfg:       cfg,
 		log:       l,
@@ -120,9 +130,17 @@ func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) 
 		vocab:     llama.ModelGetVocab(mdl),
 		ctxParams: ctxParams,
 		lctx:      lctx,
+		mem:       mem,
 		template:  template,
 		projFile:  cfg.ProjFile,
 		modelInfo: modelInfo,
+	}
+
+	// Initialize batch engine for parallel inference if configured.
+	// Only enabled for text-only models (no ProjFile) with NSeqMax > 1.
+	if cfg.NSeqMax > 1 && cfg.ProjFile == "" {
+		m.batch = newBatchEngine(&m, cfg.NSeqMax)
+		m.batch.start()
 	}
 
 	return &m, nil
@@ -200,10 +218,20 @@ func retrieveTemplate(tmlpRetriever TemplateRetriever, cfg Config, mdl llama.Mod
 }
 
 func (m *Model) Unload(ctx context.Context) error {
+	if !m.unloaded.CompareAndSwap(false, true) {
+		return nil // Already unloaded
+	}
+
 	if _, exists := ctx.Deadline(); !exists {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
+	}
+
+	// Stop the batch engine if running.
+	hasBatch := m.batch != nil
+	if hasBatch {
+		m.batch.stop()
 	}
 
 	for m.activeStreams.Load() > 0 {
@@ -213,6 +241,14 @@ func (m *Model) Unload(ctx context.Context) error {
 
 		case <-time.After(100 * time.Millisecond):
 		}
+	}
+
+	// When batch engine was used, skip low-level cleanup - causes crashes.
+	// The process exit will clean up. This is a workaround until we figure
+	// out the correct cleanup order for batch engine resources.
+	if hasBatch {
+		llama.ModelFree(m.model)
+		return nil
 	}
 
 	llama.Synchronize(m.lctx)

@@ -127,6 +127,7 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		CacheTypeV: model.GGMLTypeF16,
 		NBatch:     1024,
 		NUBatch:    256,
+		NSeqMax:    2,
 	}
 
 	if path.Base(mp.ModelFiles[0]) == "gpt-oss-20b-Q8_0" {

@@ -28,6 +28,10 @@ type processor struct {
 	status          int
 	collecting      bool
 	awaitingChannel bool
+
+	// For accumulating tool call content across tokens (batch engine use).
+	toolCallBuf strings.Builder
+	inToolCall  bool
 }
 
 func newProcessor(m *Model) *processor {
@@ -352,4 +356,125 @@ func parseJSONFormat(content string) []ResponseToolCall {
 	}
 
 	return toolCalls
+}
+
+// =============================================================================
+// Step methods for batch engine (no llama calls - pure state machine)
+// =============================================================================
+
+// stepStandard processes a single token for standard models without calling llama.
+// This is used by the batch engine where decode/sample happens externally.
+// Returns (response, endOfGeneration).
+func (p *processor) stepStandard(content string) (response, bool) {
+	// Handle tool call accumulation mode.
+	if p.inToolCall {
+		switch content {
+		case "<tool_call>":
+			// Nested or repeated tag, skip.
+			return response{}, false
+
+		case "</tool_call>":
+			// End of one tool call block. Check if we have accumulated content.
+			toolContent := strings.Trim(p.toolCallBuf.String(), "\n")
+			if toolContent != "" {
+				toolContent = fmt.Sprintf("%s\n", toolContent)
+			}
+			p.toolCallBuf.Reset()
+			// Stay in tool call mode in case there are more tool calls.
+			// The caller will handle EOG detection separately.
+			return response{status: statusTooling, content: toolContent}, false
+
+		default:
+			// Accumulate tool call content.
+			p.toolCallBuf.WriteString(content)
+			return response{}, false
+		}
+	}
+
+	// Normal token processing.
+	switch content {
+	case "<think>":
+		p.status = statusReasoning
+		return response{}, false
+
+	case "</think>":
+		p.status = statusCompletion
+		return response{}, false
+
+	case "<tool_call>":
+		p.status = statusTooling
+		p.inToolCall = true
+		p.toolCallBuf.Reset()
+		return response{}, false
+
+	default:
+		return response{status: p.status, content: content}, false
+	}
+}
+
+// stepGPT processes a single token for GPT models without calling llama.
+// This is used by the batch engine where decode/sample happens externally.
+// Returns (response, endOfGeneration).
+func (p *processor) stepGPT(content string) (response, bool) {
+	if p.collecting {
+		if content == "<|return|>" || content == "<|call|>" {
+			p.collecting = false
+			p.status = statusNone
+			return response{}, true // End of generation
+		}
+
+		if content == "<|end|>" {
+			p.collecting = false
+			p.status = statusNone
+			return response{}, false
+		}
+
+		return response{status: p.status, content: content}, false
+	}
+
+	if p.awaitingChannel {
+		p.awaitingChannel = false
+		switch content {
+		case "analysis":
+			p.status = statusReasoning
+		case "final":
+			p.status = statusCompletion
+		case "commentary":
+			p.status = statusTooling
+		}
+		return response{}, false
+	}
+
+	switch content {
+	case "<|start|>":
+		p.status = statusNone
+		p.collecting = false
+		p.awaitingChannel = false
+		return response{}, false
+
+	case "<|channel|>":
+		p.awaitingChannel = true
+		return response{}, false
+
+	case "<|message|>":
+		p.collecting = true
+		return response{}, false
+
+	case "functions":
+		p.collecting = true
+		p.status = statusTooling
+		return response{}, false
+
+	default:
+		return response{}, false
+	}
+}
+
+// resetState resets the processor state for reuse in a new slot.
+func (p *processor) resetState() {
+	p.status = statusCompletion
+	p.collecting = false
+	p.awaitingChannel = false
+	p.toolCallBuf.Reset()
+	p.inToolCall = false
 }

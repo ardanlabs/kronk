@@ -32,18 +32,21 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 
 	go func() {
 		m.activeStreams.Add(1)
-		defer m.activeStreams.Add(-1)
 
 		id := fmt.Sprintf("chatcmpl-%s", uuid.New().String())
+
+		batching := false
 
 		defer func() {
 			if rec := recover(); rec != nil {
 				m.sendChatError(ctx, ch, id, fmt.Errorf("%v", rec))
 			}
-			close(ch)
-		}()
 
-		defer m.resetContext()
+			if !batching {
+				close(ch)
+				m.activeStreams.Add(-1)
+			}
+		}()
 
 		params, err := m.validateDocument(d)
 		if err != nil {
@@ -56,15 +59,57 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 			m.sendChatError(ctx, ch, id, err)
 			return
 		}
-		if mtmdCtx != 0 {
-			defer mtmd.Free(mtmdCtx)
-		}
+
+		defer func() {
+			if !batching {
+				if mtmdCtx != 0 {
+					mtmd.Free(mtmdCtx)
+				}
+
+				m.resetContext()
+			}
+		}()
 
 		prompt, media, err := m.createPrompt(ctx, d)
 		if err != nil {
 			m.sendChatError(ctx, ch, id, fmt.Errorf("create-prompt: unable to apply jinja template: %w", err))
 			return
 		}
+
+		// ---------------------------------------------------------------------
+
+		// Use batch engine for text-only requests when available.
+		if m.batch != nil && object == ObjectChatText {
+			fmt.Println("**********> USING BATCH ENGINE")
+
+			job := chatJob{
+				id:      id,
+				ctx:     ctx,
+				d:       d,
+				object:  object,
+				prompt:  prompt,
+				media:   media,
+				params:  params,
+				mtmdCtx: mtmdCtx,
+				ch:      ch,
+			}
+
+			// Engine manages activeStreams for submitted jobs.
+			if err := m.batch.submit(&job); err != nil {
+				m.sendChatError(ctx, ch, id, err)
+				return
+			}
+
+			batching = true
+
+			// Channel closed and activeStreams decremented by
+			// engine when job completes.
+			return
+		}
+
+		// ---------------------------------------------------------------------
+
+		// Sequential path for media requests or when engine is not available.
 
 		m.processChatRequest(ctx, id, m.lctx, mtmdCtx, object, prompt, media, params, ch)
 	}()

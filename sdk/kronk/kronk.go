@@ -93,17 +93,17 @@ func New(modelInstances int, cfg model.Config, opts ...Option) (*Kronk, error) {
 	models := make(chan *model.Model, modelInstances)
 	var firstModel *model.Model
 
-	for range modelInstances {
-		m, err := model.NewModel(ctx, o.tr, cfg)
-		if err != nil {
-			close(models)
-			for mdl := range models {
-				mdl.Unload(ctx)
-			}
-
-			return nil, err
+	m, err := model.NewModel(ctx, o.tr, cfg)
+	if err != nil {
+		close(models)
+		for mdl := range models {
+			mdl.Unload(ctx)
 		}
 
+		return nil, err
+	}
+
+	for range cfg.NSeqMax {
 		models <- m
 
 		if firstModel == nil {

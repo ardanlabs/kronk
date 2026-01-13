@@ -35,6 +35,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
@@ -73,9 +74,27 @@ func run() error {
 		}
 	}()
 
-	if err := question(krn); err != nil {
-		return err
+	var wg sync.WaitGroup
+
+	for range 1 {
+		wg.Go(func() {
+			if err := question(krn); err != nil {
+				fmt.Println(err)
+			}
+		})
 	}
+
+	wg.Wait()
+
+	// for range 1 {
+	// 	wg.Go(func() {
+	// 		if err := question(krn); err != nil {
+	// 			fmt.Println(err)
+	// 		}
+	// 	})
+	// }
+
+	// wg.Wait()
 
 	return nil
 }
@@ -117,12 +136,13 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
-	krn, err := kronk.New(modelInstances, model.Config{
+	krn, err := kronk.New(2, model.Config{
 		ModelFiles: mp.ModelFiles,
 		CacheTypeK: model.GGMLTypeF16,
 		CacheTypeV: model.GGMLTypeF16,
 		NBatch:     1024,
 		NUBatch:    256,
+		NSeqMax:    2,
 	})
 
 	if err != nil {
@@ -329,6 +349,7 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		CacheTypeV: model.GGMLTypeF16,
 		NBatch:     1024,
 		NUBatch:    256,
+		NSeqMax:    2,
 	}
 
 	if path.Base(mp.ModelFiles[0]) == "gpt-oss-20b-Q8_0" {

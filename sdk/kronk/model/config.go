@@ -267,7 +267,8 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 	}
 
 	if cfg.NSeqMax > 0 {
-		ctxParams.NSeqMax = uint32(cfg.NSeqMax)
+		// +1 to allow seqIDs 1..NSeqMax (seqID 0 reserved).
+		ctxParams.NSeqMax = uint32(cfg.NSeqMax + 1)
 	}
 
 	// Offload KQV cache to CPU.
