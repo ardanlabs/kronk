@@ -120,6 +120,14 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // NGpuLayers is the number of model layers to offload to the GPU. When set to 0,
 // all layers are offloaded (default). Set to -1 to keep all layers on CPU. Any
 // positive value specifies the exact number of layers to offload.
+//
+// SplitMode controls how the model is split across multiple GPUs:
+//   - SplitModeNone (0): single GPU
+//   - SplitModeLayer (1): split layers and KV across GPUs
+//   - SplitModeRow (2): split layers and KV across GPUs with tensor parallelism
+//     (recommended for MoE models like Qwen3-MoE, Mixtral, DeepSeek)
+//
+// When not set, defaults to SplitModeRow for optimal MoE performance.
 type Config struct {
 	Log                  Logger
 	ModelFiles           []string
@@ -140,6 +148,7 @@ type Config struct {
 	OffloadKQV           *bool
 	OpOffload            *bool
 	NGpuLayers           *int32
+	SplitMode            SplitMode
 }
 
 func validateConfig(ctx context.Context, cfg Config, log Logger) error {
@@ -422,5 +431,75 @@ func ParseGGMLType(s string) (GGMLType, error) {
 		return GGMLTypeAuto, nil
 	default:
 		return GGMLTypeAuto, fmt.Errorf("unknown ggml type: %s", s)
+	}
+}
+
+// =============================================================================
+
+// SplitMode controls how the model is split across multiple GPUs.
+// This is particularly important for Mixture of Experts (MoE) models.
+type SplitMode int32
+
+const (
+	// SplitModeNone uses a single GPU (default).
+	SplitModeNone SplitMode = 0
+
+	// SplitModeLayer splits layers and KV cache across GPUs.
+	SplitModeLayer SplitMode = 1
+
+	// SplitModeRow splits layers and KV across GPUs with tensor parallelism.
+	// This enables expert-parallel execution for MoE models (Qwen3-MoE, Mixtral, DeepSeek).
+	// Equivalent to vLLM's --enable-expert-parallel flag.
+	SplitModeRow SplitMode = 2
+)
+
+// String returns the string representation of a SplitMode.
+func (s SplitMode) String() string {
+	switch s {
+	case SplitModeNone:
+		return "none"
+	case SplitModeLayer:
+		return "layer"
+	case SplitModeRow:
+		return "row"
+	default:
+		return fmt.Sprintf("unknown(%d)", s)
+	}
+}
+
+// ToYZMAType converts to the yzma/llama.cpp SplitMode type.
+func (s SplitMode) ToYZMAType() llama.SplitMode {
+	return llama.SplitMode(s)
+}
+
+// UnmarshalYAML implements yaml.Unmarshaler to parse string values.
+func (s *SplitMode) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var str string
+	if err := unmarshal(&str); err != nil {
+		return err
+	}
+
+	parsed, err := ParseSplitMode(str)
+	if err != nil {
+		return err
+	}
+
+	*s = parsed
+
+	return nil
+}
+
+// ParseSplitMode parses a string into a SplitMode.
+// Supported values: "none", "layer", "row", "expert-parallel", "tensor-parallel".
+func ParseSplitMode(s string) (SplitMode, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "none", "single", "0", "":
+		return SplitModeNone, nil
+	case "layer", "1":
+		return SplitModeLayer, nil
+	case "row", "tensor", "tensor-parallel", "expert-parallel", "2":
+		return SplitModeRow, nil
+	default:
+		return SplitModeNone, fmt.Errorf("unknown split mode: %s (valid: none, layer, row, expert-parallel)", s)
 	}
 }

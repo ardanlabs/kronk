@@ -48,6 +48,14 @@ export default function DocsSDKModel() {
                 <code>func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) (*Model, error)</code>
               </pre>
             </div>
+
+            <div className="doc-section" id="func-parsesplitmode">
+              <h4>ParseSplitMode</h4>
+              <pre className="code-block">
+                <code>func ParseSplitMode(s string) (SplitMode, error)</code>
+              </pre>
+              <p className="doc-description">ParseSplitMode parses a string into a SplitMode. Supported values: "none", "layer", "row", "expert-parallel", "tensor-parallel".</p>
+            </div>
           </div>
 
           <div className="card" id="types">
@@ -105,9 +113,10 @@ export default function DocsSDKModel() {
 	OffloadKQV           *bool
 	OpOffload            *bool
 	NGpuLayers           int
+	SplitMode            SplitMode
 }`}</code>
               </pre>
-              <p className="doc-description">Config represents model level configuration. These values if configured incorrectly can cause the system to panic. The defaults are used when these values are set to 0. ModelInstances is the number of instances of the model to create. Unless you have more than 1 GPU, the recommended number of instances is 1. ModelFiles is the path to the model files. This is mandatory to provide. ProjFiles is the path to the projection files. This is mandatory for media based models like vision and audio. JinjaFile is the path to the jinja file. This is not required and can be used if you want to override the templated provided by the model metadata. Device is the device to use for the model. If not set, the default device will be used. To see what devices are available, run the following command which will be found where you installed llama.cpp. $ llama-bench --list-devices ContextWindow (often referred to as context length) is the maximum number of tokens that a large language model can process and consider at one time when generating a response. It defines the model's effective "memory" for a single conversation or text generation task. When set to 0, the default value is 4096. NBatch is the logical batch size or the maximum number of tokens that can be in a single forward pass through the model at any given time. It defines the maximum capacity of the processing batch. If you are processing a very long prompt or multiple prompts simultaneously, the total number of tokens processed in one go will not exceed NBatch. Increasing n_batch can improve performance (throughput) if your hardware can handle it, as it better utilizes parallel computation. However, a very high n_batch can lead to out-of-memory errors on systems with limited VRAM. When set to 0, the default value is 2048. NUBatch is the physical batch size or the maximum number of tokens processed together during the initial prompt processing phase (also called "prompt ingestion") to populate the KV cache. It specifically optimizes the initial loading of prompt tokens into the KV cache. If a prompt is longer than NUBatch, it will be broken down and processed in chunks of n_ubatch tokens sequentially. This parameter is crucial for tuning performance on specific hardware (especially GPUs) because different values might yield better prompt processing times depending on the memory architecture. When set to 0, the default value is 512. NThreads is the number of threads to use for generation. When set to 0, the default llama.cpp value is used. NThreadsBatch is the number of threads to use for batch processing. When set to 0, the default llama.cpp value is used. CacheTypeK is the data type for the K (key) cache. This controls the precision of the key vectors in the KV cache. Lower precision types (like Q8_0 or Q4_0) reduce memory usage but may slightly affect quality. When set to GGMLTypeAuto or left as zero value, the default llama.cpp value (F16) is used. CacheTypeV is the data type for the V (value) cache. This controls the precision of the value vectors in the KV cache. When set to GGMLTypeAuto or left as zero value, the default llama.cpp value (F16) is used. FlashAttention controls Flash Attention mode. Flash Attention reduces memory usage and speeds up attention computation, especially for large context windows. When left as zero value, FlashAttentionEnabled is used (default on). Set to FlashAttentionDisabled to disable, or FlashAttentionAuto to let llama.cpp decide. IgnoreIntegrityCheck is a boolean that determines if the system should ignore a model integrity check before trying to use it. NSeqMax is the maximum number of sequences that can be processed in parallel. This is useful for batched inference where multiple prompts are processed simultaneously. When set to 0, the default llama.cpp value is used. OffloadKQV controls whether the KV cache is offloaded to the GPU. When nil or true, the KV cache is stored on the GPU (default behavior). Set to false to keep the KV cache on the CPU, which reduces VRAM usage but may slow inference. OpOffload controls whether host tensor operations are offloaded to the device (GPU). When nil or true, operations are offloaded (default behavior). Set to false to keep operations on the CPU. NGpuLayers is the number of model layers to offload to the GPU. When set to 0, all layers are offloaded (default). Set to -1 to keep all layers on CPU. Any positive value specifies the exact number of layers to offload.</p>
+              <p className="doc-description">Config represents model level configuration. These values if configured incorrectly can cause the system to panic. The defaults are used when these values are set to 0. ModelInstances is the number of instances of the model to create. Unless you have more than 1 GPU, the recommended number of instances is 1. ModelFiles is the path to the model files. This is mandatory to provide. ProjFiles is the path to the projection files. This is mandatory for media based models like vision and audio. JinjaFile is the path to the jinja file. This is not required and can be used if you want to override the templated provided by the model metadata. Device is the device to use for the model. If not set, the default device will be used. To see what devices are available, run the following command which will be found where you installed llama.cpp. $ llama-bench --list-devices ContextWindow (often referred to as context length) is the maximum number of tokens that a large language model can process and consider at one time when generating a response. It defines the model's effective "memory" for a single conversation or text generation task. When set to 0, the default value is 4096. NBatch is the logical batch size or the maximum number of tokens that can be in a single forward pass through the model at any given time. It defines the maximum capacity of the processing batch. If you are processing a very long prompt or multiple prompts simultaneously, the total number of tokens processed in one go will not exceed NBatch. Increasing n_batch can improve performance (throughput) if your hardware can handle it, as it better utilizes parallel computation. However, a very high n_batch can lead to out-of-memory errors on systems with limited VRAM. When set to 0, the default value is 2048. NUBatch is the physical batch size or the maximum number of tokens processed together during the initial prompt processing phase (also called "prompt ingestion") to populate the KV cache. It specifically optimizes the initial loading of prompt tokens into the KV cache. If a prompt is longer than NUBatch, it will be broken down and processed in chunks of n_ubatch tokens sequentially. This parameter is crucial for tuning performance on specific hardware (especially GPUs) because different values might yield better prompt processing times depending on the memory architecture. When set to 0, the default value is 512. NThreads is the number of threads to use for generation. When set to 0, the default llama.cpp value is used. NThreadsBatch is the number of threads to use for batch processing. When set to 0, the default llama.cpp value is used. CacheTypeK is the data type for the K (key) cache. This controls the precision of the key vectors in the KV cache. Lower precision types (like Q8_0 or Q4_0) reduce memory usage but may slightly affect quality. When set to GGMLTypeAuto or left as zero value, the default llama.cpp value (F16) is used. CacheTypeV is the data type for the V (value) cache. This controls the precision of the value vectors in the KV cache. When set to GGMLTypeAuto or left as zero value, the default llama.cpp value (F16) is used. FlashAttention controls Flash Attention mode. Flash Attention reduces memory usage and speeds up attention computation, especially for large context windows. When left as zero value, FlashAttentionEnabled is used (default on). Set to FlashAttentionDisabled to disable, or FlashAttentionAuto to let llama.cpp decide. IgnoreIntegrityCheck is a boolean that determines if the system should ignore a model integrity check before trying to use it. NSeqMax is the maximum number of sequences that can be processed in parallel. This is useful for batched inference where multiple prompts are processed simultaneously. When set to 0, the default llama.cpp value is used. OffloadKQV controls whether the KV cache is offloaded to the GPU. When nil or true, the KV cache is stored on the GPU (default behavior). Set to false to keep the KV cache on the CPU, which reduces VRAM usage but may slow inference. OpOffload controls whether host tensor operations are offloaded to the device (GPU). When nil or true, operations are offloaded (default behavior). Set to false to keep operations on the CPU. NGpuLayers is the number of model layers to offload to the GPU. When set to 0, all layers are offloaded (default). Set to -1 to keep all layers on CPU. Any positive value specifies the exact number of layers to offload. SplitMode controls how the model is split across multiple GPUs: - SplitModeNone (0): single GPU - SplitModeLayer (1): split layers and KV across GPUs - SplitModeRow (2): split layers and KV across GPUs with tensor parallelism (recommended for MoE models like Qwen3-MoE, Mixtral, DeepSeek) When not set, defaults to SplitModeRow for optimal MoE performance.</p>
             </div>
 
             <div className="doc-section" id="type-d">
@@ -268,6 +277,14 @@ export default function DocsSDKModel() {
               </pre>
             </div>
 
+            <div className="doc-section" id="type-splitmode">
+              <h4>SplitMode</h4>
+              <pre className="code-block">
+                <code>{`type SplitMode int32`}</code>
+              </pre>
+              <p className="doc-description">SplitMode controls how the model is split across multiple GPUs. This is particularly important for Mixture of Experts (MoE) models.</p>
+            </div>
+
             <div className="doc-section" id="type-template">
               <h4>Template</h4>
               <pre className="code-block">
@@ -408,6 +425,30 @@ export default function DocsSDKModel() {
               </pre>
             </div>
 
+            <div className="doc-section" id="method-splitmode-string">
+              <h4>SplitMode.String</h4>
+              <pre className="code-block">
+                <code>func (s SplitMode) String() string</code>
+              </pre>
+              <p className="doc-description">String returns the string representation of a SplitMode.</p>
+            </div>
+
+            <div className="doc-section" id="method-splitmode-toyzmatype">
+              <h4>SplitMode.ToYZMAType</h4>
+              <pre className="code-block">
+                <code>func (s SplitMode) ToYZMAType() llama.SplitMode</code>
+              </pre>
+              <p className="doc-description">ToYZMAType converts to the yzma/llama.cpp SplitMode type.</p>
+            </div>
+
+            <div className="doc-section" id="method-splitmode-unmarshalyaml">
+              <h4>SplitMode.UnmarshalYAML</h4>
+              <pre className="code-block">
+                <code>func (s *SplitMode) UnmarshalYAML(unmarshal func(interface&#123;&#125;) error) error</code>
+              </pre>
+              <p className="doc-description">UnmarshalYAML implements yaml.Unmarshaler to parse string values.</p>
+            </div>
+
             <div className="doc-section" id="method-toolcallarguments-marshaljson">
               <h4>ToolCallArguments.MarshalJSON</h4>
               <pre className="code-block">
@@ -516,6 +557,7 @@ export default function DocsSDKModel() {
                 <li><a href="#func-checkmodel">CheckModel</a></li>
                 <li><a href="#func-parseggmltype">ParseGGMLType</a></li>
                 <li><a href="#func-newmodel">NewModel</a></li>
+                <li><a href="#func-parsesplitmode">ParseSplitMode</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
@@ -537,6 +579,7 @@ export default function DocsSDKModel() {
                 <li><a href="#type-responsemessage">ResponseMessage</a></li>
                 <li><a href="#type-responsetoolcall">ResponseToolCall</a></li>
                 <li><a href="#type-responsetoolcallfunction">ResponseToolCallFunction</a></li>
+                <li><a href="#type-splitmode">SplitMode</a></li>
                 <li><a href="#type-template">Template</a></li>
                 <li><a href="#type-templateretriever">TemplateRetriever</a></li>
                 <li><a href="#type-toolcallarguments">ToolCallArguments</a></li>
@@ -558,6 +601,9 @@ export default function DocsSDKModel() {
                 <li><a href="#method-model-embeddings">Model.Embeddings</a></li>
                 <li><a href="#method-model-modelinfo">Model.ModelInfo</a></li>
                 <li><a href="#method-model-unload">Model.Unload</a></li>
+                <li><a href="#method-splitmode-string">SplitMode.String</a></li>
+                <li><a href="#method-splitmode-toyzmatype">SplitMode.ToYZMAType</a></li>
+                <li><a href="#method-splitmode-unmarshalyaml">SplitMode.UnmarshalYAML</a></li>
                 <li><a href="#method-toolcallarguments-marshaljson">ToolCallArguments.MarshalJSON</a></li>
                 <li><a href="#method-toolcallarguments-unmarshaljson">ToolCallArguments.UnmarshalJSON</a></li>
               </ul>

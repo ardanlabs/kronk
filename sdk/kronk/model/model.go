@@ -75,6 +75,15 @@ func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) 
 		mParams.NGpuLayers = *cfg.NGpuLayers
 	}
 
+	// Set split mode for multi-GPU and tensor parallelism (expert-parallel for MoE).
+	// Default to SplitModeRow (tensor parallelism) when not explicitly configured,
+	// as it provides the best performance for MoE models and works well for dense models.
+	if cfg.SplitMode == SplitModeNone {
+		mParams.SplitMode = SplitModeRow.ToYZMAType()
+	} else {
+		mParams.SplitMode = cfg.SplitMode.ToYZMAType()
+	}
+
 	// -------------------------------------------------------------------------
 
 	mdl, err := loadModelFromFiles(ctx, l, cfg.ModelFiles, mParams)
