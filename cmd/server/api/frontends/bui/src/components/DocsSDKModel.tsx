@@ -112,7 +112,7 @@ export default function DocsSDKModel() {
 	NSeqMax              int
 	OffloadKQV           *bool
 	OpOffload            *bool
-	NGpuLayers           int
+	NGpuLayers           *int32
 	SplitMode            SplitMode
 }`}</code>
               </pre>

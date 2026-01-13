@@ -328,59 +328,36 @@ const (
 	GGMLTypeBF16 GGMLType = 30 // Brain floating point 16-bit
 )
 
-// FlashAttentionType controls when to enable Flash Attention.
-// Flash Attention reduces memory usage and speeds up attention computation,
-// especially beneficial for large context windows.
-type FlashAttentionType int32
-
-const (
-	FlashAttentionEnabled  FlashAttentionType = 0 // Default: enable Flash Attention
-	FlashAttentionDisabled FlashAttentionType = 1 // Disable Flash Attention
-	FlashAttentionAuto     FlashAttentionType = 2 // Let llama.cpp decide
-)
-
-// UnmarshalYAML implements yaml.Unmarshaler to parse string values.
-func (t *FlashAttentionType) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	var s string
-	if err := unmarshal(&s); err != nil {
-		return err
-	}
-
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "enabled", "on", "true", "1":
-		*t = FlashAttentionEnabled
-	case "disabled", "off", "false", "0":
-		*t = FlashAttentionDisabled
-	case "auto", "":
-		*t = FlashAttentionAuto
-	default:
-		return fmt.Errorf("unknown flash attention type: %s", s)
-	}
-
-	return nil
-}
-
 // String returns the string representation of a GGMLType.
 func (t GGMLType) String() string {
 	switch t {
 	case GGMLTypeF32:
 		return "f32"
+
 	case GGMLTypeF16:
 		return "f16"
+
 	case GGMLTypeQ4_0:
 		return "q4_0"
+
 	case GGMLTypeQ4_1:
 		return "q4_1"
+
 	case GGMLTypeQ5_0:
 		return "q5_0"
+
 	case GGMLTypeQ5_1:
 		return "q5_1"
+
 	case GGMLTypeQ8_0:
 		return "q8_0"
+
 	case GGMLTypeBF16:
 		return "bf16"
+
 	case GGMLTypeAuto:
 		return "auto"
+
 	default:
 		return fmt.Sprintf("unknown(%d)", t)
 	}
@@ -413,25 +390,71 @@ func ParseGGMLType(s string) (GGMLType, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "f32", "fp32":
 		return GGMLTypeF32, nil
+
 	case "f16", "fp16":
 		return GGMLTypeF16, nil
+
 	case "q4_0", "q4":
 		return GGMLTypeQ4_0, nil
+
 	case "q4_1":
 		return GGMLTypeQ4_1, nil
+
 	case "q5_0", "q5":
 		return GGMLTypeQ5_0, nil
+
 	case "q5_1":
 		return GGMLTypeQ5_1, nil
+
 	case "f8", "q8_0", "q8":
 		return GGMLTypeQ8_0, nil
+
 	case "bf16", "bfloat16":
 		return GGMLTypeBF16, nil
+
 	case "auto", "":
 		return GGMLTypeAuto, nil
+
 	default:
 		return GGMLTypeAuto, fmt.Errorf("unknown ggml type: %s", s)
 	}
+}
+
+// =============================================================================
+
+// FlashAttentionType controls when to enable Flash Attention.
+// Flash Attention reduces memory usage and speeds up attention computation,
+// especially beneficial for large context windows.
+type FlashAttentionType int32
+
+const (
+	FlashAttentionEnabled  FlashAttentionType = 0 // Default: enable Flash Attention
+	FlashAttentionDisabled FlashAttentionType = 1 // Disable Flash Attention
+	FlashAttentionAuto     FlashAttentionType = 2 // Let llama.cpp decide
+)
+
+// UnmarshalYAML implements yaml.Unmarshaler to parse string values.
+func (t *FlashAttentionType) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var s string
+	if err := unmarshal(&s); err != nil {
+		return err
+	}
+
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "enabled", "on", "true", "1":
+		*t = FlashAttentionEnabled
+
+	case "disabled", "off", "false", "0":
+		*t = FlashAttentionDisabled
+
+	case "auto", "":
+		*t = FlashAttentionAuto
+
+	default:
+		return fmt.Errorf("unknown flash attention type: %s", s)
+	}
+
+	return nil
 }
 
 // =============================================================================
@@ -458,10 +481,13 @@ func (s SplitMode) String() string {
 	switch s {
 	case SplitModeNone:
 		return "none"
+
 	case SplitModeLayer:
 		return "layer"
+
 	case SplitModeRow:
 		return "row"
+
 	default:
 		return fmt.Sprintf("unknown(%d)", s)
 	}
@@ -495,10 +521,13 @@ func ParseSplitMode(s string) (SplitMode, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "none", "single", "0", "":
 		return SplitModeNone, nil
+
 	case "layer", "1":
 		return SplitModeLayer, nil
+
 	case "row", "tensor", "tensor-parallel", "expert-parallel", "2":
 		return SplitModeRow, nil
+
 	default:
 		return SplitModeNone, fmt.Errorf("unknown split mode: %s (valid: none, layer, row, expert-parallel)", s)
 	}
