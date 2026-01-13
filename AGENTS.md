@@ -1,5 +1,7 @@
 # AGENTS.md
 
+Your name is Dave and developers will use your name when interacting with you.
+
 ## Build & Test Commands
 
 - Install CLI: `go install ./cmd/kronk`
@@ -179,11 +181,13 @@ All commands support web mode (default) and `--local` mode.
 ## Model Acquire/Release & Cleanup (sdk/kronk/)
 
 **Model Pool Pattern:**
+
 - Models are pooled via a channel (`krn.models`) for single-writer access
 - `acquireModel()` blocks until a model is available, increments `activeStreams`
 - `releaseModel()` returns the model to the pool, decrements `activeStreams`
 
 **Cleanup Flow (ensures clean state before release):**
+
 1. `streaming()` / `streamingWith()` acquire model, defer `releaseModel()` in wrapper goroutine
 2. Wrapper calls `ChatStreaming()` which runs in its own goroutine
 3. `ChatStreaming` defers `m.resetContext()` before any processing
@@ -194,6 +198,7 @@ All commands support web mode (default) and `--local` mode.
 6. Model returns to pool in clean state for next request
 
 **Key invariant:** `resetContext()` always runs before model release due to defer ordering:
+
 - Inner goroutine (`ChatStreaming`): `defer m.resetContext()` runs on exit
 - Outer goroutine (concurrency wrapper): `defer krn.releaseModel()` runs after inner channel drains
 
