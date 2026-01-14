@@ -46,10 +46,16 @@ func streaming[T any](ctx context.Context, krn *Kronk, f streamingFunc[T], ef er
 
 		lch := f(llama)
 
+		var cancelled bool
 		for msg := range lch {
 			if err := sendMessage(ctx, ch, msg); err != nil {
+				cancelled = true
 				break
 			}
+		}
+
+		if cancelled {
+			sendError(ctx, ch, ef, ctx.Err())
 		}
 	}()
 
@@ -101,9 +107,15 @@ func streamingWith[T, U any](ctx context.Context, krn *Kronk, f streamingFunc[T]
 	ch := make(chan U)
 
 	go func() {
+		var cancelled bool
+
 		defer func() {
 			if rec := recover(); rec != nil {
 				sendError(ctx, ch, ef, rec)
+			}
+
+			if cancelled {
+				sendError(ctx, ch, ef, ctx.Err())
 			}
 
 			close(ch)
@@ -112,6 +124,7 @@ func streamingWith[T, U any](ctx context.Context, krn *Kronk, f streamingFunc[T]
 
 		for _, msg := range p.Start() {
 			if err := sendMessage(ctx, ch, msg); err != nil {
+				cancelled = true
 				return
 			}
 		}
@@ -123,6 +136,7 @@ func streamingWith[T, U any](ctx context.Context, krn *Kronk, f streamingFunc[T]
 			lastChunk = chunk
 			for _, msg := range p.Process(chunk) {
 				if err := sendMessage(ctx, ch, msg); err != nil {
+					cancelled = true
 					return
 				}
 			}
@@ -130,6 +144,7 @@ func streamingWith[T, U any](ctx context.Context, krn *Kronk, f streamingFunc[T]
 
 		for _, msg := range p.Complete(lastChunk) {
 			if err := sendMessage(ctx, ch, msg); err != nil {
+				cancelled = true
 				return
 			}
 		}
