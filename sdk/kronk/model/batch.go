@@ -10,8 +10,11 @@ import (
 	"unsafe"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
+	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // chatJob represents a validated chat request ready for batch processing.
@@ -54,6 +57,7 @@ type slot struct {
 	respToolCalls  []ResponseToolCall
 
 	startTime   time.Time
+	span        trace.Span
 	iBatch      int32
 	sampled     llama.Token
 	active      bool
@@ -76,6 +80,7 @@ func (s *slot) reset() {
 	s.finalReasoning.Reset()
 	s.finalTooling.Reset()
 	s.respToolCalls = nil
+	s.span = nil
 	s.iBatch = -1
 	s.sampled = 0
 	s.active = false
@@ -216,7 +221,7 @@ func (e *batchEngine) processBatch(buf []byte) {
 	}
 
 	// Fill empty slots from queue.
-	e.fillSlots(buf)
+	e.fillSlots()
 
 	// Nothing to process.
 	if e.batch.NTokens == 0 {
@@ -241,7 +246,7 @@ func (e *batchEngine) processBatch(buf []byte) {
 }
 
 // fillSlots assigns pending requests to available slots.
-func (e *batchEngine) fillSlots(buf []byte) {
+func (e *batchEngine) fillSlots() {
 	for _, s := range e.slots {
 		if s.active {
 			continue
@@ -250,7 +255,7 @@ func (e *batchEngine) fillSlots(buf []byte) {
 		// Try to get a request from the queue.
 		select {
 		case job := <-e.requestQ:
-			e.startSlot(s, job, buf)
+			e.startSlot(s, job)
 			return // Only prefill one slot per iteration to avoid exceeding NBatch
 
 		default:
@@ -260,12 +265,18 @@ func (e *batchEngine) fillSlots(buf []byte) {
 }
 
 // startSlot initializes a slot with a new request.
-func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
+func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 	s.reset()
 	s.active = true
 	s.job = job
 	s.startTime = time.Now()
 	s.seqID = llama.SeqId(s.id + 1)
+
+	// Start span for this chat request.
+	_, s.span = otel.AddSpan(job.ctx, "batch-chat-request",
+		attribute.String("id", job.id),
+		attribute.Int("slot", s.id),
+	)
 
 	// Create sampler for this request.
 	s.sampler = toSampler(job.params)
@@ -282,12 +293,19 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 		return
 	}
 
+	// Track prefill time.
+	prefillStart := time.Now()
+
 	// Add prompt tokens to batch for prefill.
 	for i, tok := range tokens {
 		logits := i == len(tokens)-1 // Only need logits for last token
 		batchAdd(&e.batch, tok, s.nPast, []llama.SeqId{s.seqID}, logits)
 		s.nPast++
 	}
+
+	prefillDuration := time.Since(prefillStart)
+	metrics.AddPrefillNonMediaTime(prefillDuration)
+	s.span.SetAttributes(attribute.String("prefill-nonmedia", prefillDuration.String()))
 
 	s.iBatch = e.batch.NTokens - 1
 
@@ -425,7 +443,13 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		return
 	}
 
-	defer e.model.activeStreams.Add(-1)
+	defer func() {
+		close(s.job.ch)
+		s.span.End()
+		s.reset()
+		e.freeSlotResources(s)
+		e.model.activeStreams.Add(-1)
+	}()
 
 	ctx := s.job.ctx
 	elapsed := time.Since(s.startTime)
@@ -444,9 +468,6 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		}
 
 		e.model.sendErrorResponse(ctx, s.job.ch, s.job.id, s.job.object, s.index, "", err, usage)
-		close(s.job.ch)
-		e.freeSlotResources(s)
-		s.reset()
 
 		return
 	}
@@ -482,6 +503,16 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		TokensPerSecond:  tokensPerSecond,
 	}
 
+	// Add span attributes and end span.
+	s.span.SetAttributes(
+		attribute.Int("prompt_tokens", s.nPrompt),
+		attribute.Int("reasoning_tokens", s.reasonTokens),
+		attribute.Int("completion_tokens", s.completionTokens),
+		attribute.Int("output_tokens", outputTokens),
+		attribute.Int("total_tokens", totalTokens),
+		attribute.Float64("tokens_per_second", tokensPerSecond),
+	)
+
 	// Add metrics.
 	metrics.AddChatCompletionsUsage(s.nPrompt, s.reasonTokens, s.completionTokens, outputTokens, totalTokens, tokensPerSecond)
 
@@ -494,13 +525,8 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	e.model.sendFinalResponse(ctx, s.job.ch, s.job.id, s.job.object, s.index, returnPrompt,
 		&s.finalContent, &s.finalReasoning, s.respToolCalls, usage)
 
-	close(s.job.ch)
-
 	e.model.log(ctx, "batch-engine", "status", "slot-finished", "slot", s.id, "id", s.job.id,
 		"prompt", s.nPrompt, "output", outputTokens, "time", elapsed.String())
-
-	e.freeSlotResources(s)
-	s.reset()
 }
 
 func (e *batchEngine) freeSlotResources(s *slot) {
