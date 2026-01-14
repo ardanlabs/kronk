@@ -11,7 +11,6 @@
 ### PARALLEL INFERENCE RESEARCH & IMPLEMENTATION
 
 - Multimode for Images (look before for details).
-- Batching Engine for Embeddings.
 
 ### SDK
 

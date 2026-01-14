@@ -22,17 +22,33 @@ func (m *Model) Embeddings(ctx context.Context, d D) (EmbedReponse, error) {
 	}
 
 	var inputs []string
-	input, ok := d["input"].(string)
-	if ok {
-		inputs = []string{input}
+
+	switch v := d["input"].(type) {
+	case string:
+		inputs = []string{v}
+
+	case []string:
+		inputs = v
+
+	case []any:
+		inputs = make([]string, len(v))
+		for i, item := range v {
+			s, ok := item.(string)
+			if !ok {
+				return EmbedReponse{}, fmt.Errorf("embeddings: input[%d] is not a string", i)
+			}
+			inputs[i] = s
+		}
+
+	default:
+		return EmbedReponse{}, fmt.Errorf("embeddings: missing or invalid input parameter (expected string or []string)")
 	}
 
-	if inputs == nil {
-		inputs, ok := d["input"].([]string)
-		if !ok || len(inputs) == 0 {
-			return EmbedReponse{}, fmt.Errorf("embeddings: missing or invalid input parameter (expected string or []string)")
-		}
+	if len(inputs) == 0 {
+		return EmbedReponse{}, fmt.Errorf("embeddings: input cannot be empty")
 	}
+
+	// -------------------------------------------------------------------------
 
 	lctx, err := llama.InitFromModel(m.model, m.ctxParams)
 	if err != nil {
@@ -59,19 +75,17 @@ func (m *Model) Embeddings(ctx context.Context, d D) (EmbedReponse, error) {
 
 	truncate, _ := d["truncate"].(bool)
 	direction, _ := d["truncate_direction"].(string)
+	nativeDim := llama.ModelNEmbd(m.model)
+	requestedDim, _ := d["dimensions"].(float64)
 
-	type tokenizedInput struct {
-		tokens []llama.Token
-		seqID  llama.SeqId
+	if requestedDim > 0 && int(requestedDim) > int(nativeDim) {
+		return EmbedReponse{}, fmt.Errorf("embeddings: requested %d dimensions but model only has %d", int(requestedDim), nativeDim)
 	}
 
-	tokenizedInputs := make([]tokenizedInput, len(inputs))
-	totalPromptTokens := 0
+	// -------------------------------------------------------------------------
 
-	nSeqs := int32(len(inputs))
-	batch := llama.BatchInit(int32(ctxTokens), 0, nSeqs)
-	defer llama.BatchFree(batch)
-
+	// Tokenize all inputs upfront.
+	allTokens := make([][]llama.Token, len(inputs))
 	for i, input := range inputs {
 		tokens := llama.Tokenize(m.vocab, input, true, true)
 
@@ -93,56 +107,87 @@ func (m *Model) Embeddings(ctx context.Context, d D) (EmbedReponse, error) {
 			m.log(ctx, "embeddings: truncated input", "index", i, "original_tokens", originalLen, "max_tokens", maxTokens, "direction", direction, "truncated_tokens", len(tokens))
 		}
 
-		seqID := llama.SeqId(i)
-		tokenizedInputs[i] = tokenizedInput{
-			tokens: tokens,
-			seqID:  seqID,
-		}
-
-		totalPromptTokens += len(tokens)
-
-		for pos, token := range tokens {
-			isLast := pos == len(tokens)-1
-			batchAdd(&batch, token, llama.Pos(pos), []llama.SeqId{seqID}, isLast)
-		}
+		allTokens[i] = tokens
 	}
 
-	ret, err := llama.Decode(lctx, batch)
-	if err != nil {
-		return EmbedReponse{}, fmt.Errorf("embeddings: decode failed: %w", err)
-	}
-
-	if ret != 0 {
-		return EmbedReponse{}, fmt.Errorf("embeddings: decode returned non-zero: %d", ret)
-	}
-
-	nativeDim := llama.ModelNEmbd(m.model)
-	requestedDim, _ := d["dimensions"].(float64)
-
-	if requestedDim > 0 && int(requestedDim) > int(nativeDim) {
-		return EmbedReponse{}, fmt.Errorf("embeddings: requested %d dimensions but model only has %d", int(requestedDim), nativeDim)
-	}
+	// -------------------------------------------------------------------------
 
 	embedData := make([]EmbedData, len(inputs))
+	totalPromptTokens := 0
 
-	for i, ti := range tokenizedInputs {
-		vec, err := llama.GetEmbeddingsSeq(lctx, ti.seqID, nativeDim)
+	// Determine max sequences per batch from NSeqMax config.
+	maxSeqs := max(int(m.ctxParams.NSeqMax), 1)
+
+	// Process inputs in chunks respecting NSeqMax.
+	for chunkStart := 0; chunkStart < len(inputs); chunkStart += maxSeqs {
+		select {
+		case <-ctx.Done():
+			return EmbedReponse{}, ctx.Err()
+
+		default:
+		}
+
+		chunkEnd := min(chunkStart+maxSeqs, len(inputs))
+		chunkSize := chunkEnd - chunkStart
+
+		batch := llama.BatchInit(int32(ctxTokens), 0, int32(chunkSize))
+
+		// Add all tokens for this chunk to the batch.
+		for i := range chunkSize {
+			globalIdx := chunkStart + i
+			tokens := allTokens[globalIdx]
+			seqID := llama.SeqId(i)
+			totalPromptTokens += len(tokens)
+
+			for pos, token := range tokens {
+				isLast := pos == len(tokens)-1
+				batchAdd(&batch, token, llama.Pos(pos), []llama.SeqId{seqID}, isLast)
+			}
+		}
+
+		// Single decode for the entire chunk.
+		ret, err := llama.Decode(lctx, batch)
 		if err != nil {
-			return EmbedReponse{}, fmt.Errorf("embeddings: unable to get embeddings for input[%d]: %w", i, err)
+			llama.BatchFree(batch)
+			return EmbedReponse{}, fmt.Errorf("embeddings: decode failed: %w", err)
 		}
 
-		if requestedDim > 0 {
-			vec = vec[:int(requestedDim)]
+		if ret != 0 {
+			llama.BatchFree(batch)
+			return EmbedReponse{}, fmt.Errorf("embeddings: decode returned non-zero: %d", ret)
 		}
 
-		vec = normalizeVector(vec)
+		// Extract embeddings for each sequence in this chunk.
+		for i := range chunkSize {
+			globalIdx := chunkStart + i
+			seqID := llama.SeqId(i)
 
-		embedData[i] = EmbedData{
-			Object:    "embedding",
-			Index:     i,
-			Embedding: vec,
+			vec, err := llama.GetEmbeddingsSeq(lctx, seqID, nativeDim)
+			if err != nil {
+				llama.BatchFree(batch)
+				return EmbedReponse{}, fmt.Errorf("embeddings: unable to get embeddings for input[%d]: %w", globalIdx, err)
+			}
+
+			if requestedDim > 0 {
+				vec = vec[:int(requestedDim)]
+			}
+
+			vec = normalizeVector(vec)
+
+			embedData[globalIdx] = EmbedData{
+				Object:    "embedding",
+				Index:     globalIdx,
+				Embedding: vec,
+			}
+
+			// Clear KV cache for this sequence before next chunk.
+			llama.MemorySeqRm(m.mem, seqID, -1, -1)
 		}
+
+		llama.BatchFree(batch)
 	}
+
+	// -------------------------------------------------------------------------
 
 	er := EmbedReponse{
 		Object:  "list",

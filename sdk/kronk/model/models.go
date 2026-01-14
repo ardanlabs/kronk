@@ -545,25 +545,6 @@ type EmbedReponse struct {
 	Usage   EmbedUsage  `json:"usage"`
 }
 
-func toEmbedResponse(modelID string, vec []float32, promptTokens int) EmbedReponse {
-	return EmbedReponse{
-		Object:  "list",
-		Created: time.Now().UnixMilli(),
-		Model:   modelID,
-		Data: []EmbedData{
-			{
-				Object:    "embedding",
-				Index:     0,
-				Embedding: vec,
-			},
-		},
-		Usage: EmbedUsage{
-			PromptTokens: promptTokens,
-			TotalTokens:  promptTokens,
-		},
-	}
-}
-
 // =============================================================================
 
 type chatMessageURLData struct {
