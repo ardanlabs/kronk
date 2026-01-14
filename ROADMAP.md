@@ -119,34 +119,6 @@ This ensures only one prompt prefills at a time, avoiding the combined token ove
 
 Option 1 (chunked prefill) is the correct long-term solution for parallel prefill throughput, but requires tracking per-slot prefill progress and splitting tokens across multiple decode iterations—more complex state management.
 
-### Embedding Key Observations:
-
-Different execution model: Embeddings create a fresh llama.Context per request (line 27), then decode once and extract embeddings. No autoregressive loop.
-
-Uses llama.GetEmbeddingsSeq(lctx, 0, nativeDim): This extracts embeddings for sequence ID 0.
-
-Single decode call: Just llama.Decode(lctx, batch) → get embeddings. No sampling.
-
-Can batching help?
-
-Yes, but differently than chat. The pattern would be:
-
-Chat Batching Embedding Batching
-Multiple sequences, autoregressive sampling Multiple sequences, single forward pass
-Stream tokens over time Return all embeddings at once
-Shared KV cache across iterations One-shot prefill, extract embeddings
-For embeddings, batching would:
-
-Tokenize multiple inputs
-Add all to a single batch with different sequence IDs
-Single llama.Decode() call
-Extract embeddings per sequence via llama.GetEmbeddingsSeq(lctx, seqID, ...)
-This is simpler than chat batching—no loop, just batch the prefill.
-
-However, the current code creates a new lctx per request. To batch, we'd need a shared context like the chat batch engine.
-
-Want me to design an embedding batch engine?
-
 ### Multimode for Images
 
 Good news: The yzma bindings DO support sequence IDs for multimodal!
