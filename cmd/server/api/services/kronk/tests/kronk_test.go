@@ -11,6 +11,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/apitest"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
+	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/google/uuid"
 )
@@ -235,30 +236,6 @@ func (v responseValidator) hasReasoning() responseValidator {
 	return v
 }
 
-func (v responseValidator) containsInContent(find string) responseValidator {
-	if len(v.resp.Choice) == 0 {
-		return v
-	}
-
-	if !strings.Contains(strings.ToLower(v.getMsg().Content), find) {
-		v.errors = append(v.errors, fmt.Sprintf("expected to find %q in content", find))
-	}
-
-	return v
-}
-
-func (v responseValidator) containsInReasoning(find string) responseValidator {
-	if len(v.resp.Choice) == 0 {
-		return v
-	}
-
-	if !strings.Contains(strings.ToLower(v.getMsg().Reasoning), find) {
-		v.errors = append(v.errors, fmt.Sprintf("expected to find %q in reasoning", find))
-	}
-
-	return v
-}
-
 func (v responseValidator) warnContainsInContent(find string) responseValidator {
 	if len(v.resp.Choice) == 0 {
 		return v
@@ -291,18 +268,106 @@ func (v responseValidator) result() string {
 	return strings.Join(v.errors, "; ")
 }
 
-func (v responseValidator) resultWithWarnings() string {
-	result := ""
-	if len(v.errors) > 0 {
-		result = strings.Join(v.errors, "; ")
+// =============================================================================
+
+type respResponseValidator struct {
+	resp     *kronk.ResponseResponse
+	errors   []string
+	warnings []string
+}
+
+func validateRespResponse(got any) respResponseValidator {
+	return respResponseValidator{resp: got.(*kronk.ResponseResponse)}
+}
+
+func (v respResponseValidator) hasValidID() respResponseValidator {
+	if v.resp.ID == "" || len(v.resp.ID) < 5 {
+		v.errors = append(v.errors, "expected id to be a valid response ID")
 	}
 
-	if len(v.warnings) > 0 {
-		if result != "" {
-			result += " | "
+	return v
+}
+
+func (v respResponseValidator) hasCreatedAt() respResponseValidator {
+	if v.resp.CreatedAt <= 0 {
+		v.errors = append(v.errors, "expected created_at to be greater than 0")
+	}
+
+	return v
+}
+
+func (v respResponseValidator) hasStatus(expected string) respResponseValidator {
+	if v.resp.Status != expected {
+		v.errors = append(v.errors, "expected status to be "+expected)
+	}
+
+	return v
+}
+
+func (v respResponseValidator) hasOutput() respResponseValidator {
+	if len(v.resp.Output) == 0 {
+		v.errors = append(v.errors, "expected at least one output item")
+	}
+
+	return v
+}
+
+func (v respResponseValidator) hasOutputText() respResponseValidator {
+	if len(v.resp.Output) == 0 {
+		return v
+	}
+
+	for _, item := range v.resp.Output {
+		if item.Type == "message" && len(item.Content) > 0 {
+			for _, content := range item.Content {
+				if content.Type == "output_text" && content.Text != "" {
+					return v
+				}
+			}
 		}
-		result += strings.Join(v.warnings, "; ")
+	}
+
+	v.errors = append(v.errors, "expected output to contain text content")
+	return v
+}
+
+func (v respResponseValidator) warnContainsInContent(find string) respResponseValidator {
+	if len(v.resp.Output) == 0 {
+		return v
+	}
+
+	for _, item := range v.resp.Output {
+		if item.Type == "message" && len(item.Content) > 0 {
+			for _, content := range item.Content {
+				if content.Type == "output_text" {
+					if containsIgnoreCase(content.Text, find) {
+						return v
+					}
+				}
+			}
+		}
+	}
+
+	v.warnings = append(v.warnings, "WARNING: expected to find \""+find+"\" in content")
+	return v
+}
+
+func (v respResponseValidator) result() string {
+	if len(v.errors) == 0 {
+		return ""
+	}
+
+	result := ""
+	for i, err := range v.errors {
+		if i > 0 {
+			result += "; "
+		}
+		result += err
 	}
 
 	return result
+}
+
+func containsIgnoreCase(s, substr string) bool {
+	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
 }
