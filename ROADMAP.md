@@ -1,17 +1,17 @@
 ## ROADMAP
 
-### Automation
+### AUTOMATION
 
 - Look at what Llama.cpp vs Yzma vs Kronk and identify changes.
 
-### Parallel Inference Research & Implementation
+- New a github workflow for released: add support to Release to update Proxy server.
 
-- We have a working code example for this. We need to review it and then
-  figure out changes to the kronk SDK.
+- Our own machine for running test.
 
-### BUGS / ISSUES
+### PARALLEL INFERENCE RESEARCH & IMPLEMENTATION
 
-- New a github workflow for released: add support to Release to update Proxy server
+- Multimode for Images (look before for details).
+- Batching Engine for Embeddings.
 
 ### SDK
 
@@ -56,6 +56,10 @@
   - Caveat: FIM must be trained into the model; only certain models support it (CodeLlama, StarCoder, CodeGemma, etc.)
 
 - **`kronk push`** - Push custom models to a registry
+
+### SGLANG FEATURE PARITY
+
+https://medium.com/@aadishagrawal/sglang-how-a-secret-weapon-is-turbocharging-llm-inference-b9a7bd9ea43e
 
 ### TELEMETRY
 
@@ -116,7 +120,7 @@ This ensures only one prompt prefills at a time, avoiding the combined token ove
 
 Option 1 (chunked prefill) is the correct long-term solution for parallel prefill throughput, but requires tracking per-slot prefill progress and splitting tokens across multiple decode iterations—more complex state management.
 
-### EMBEDDING Key observations:
+### Embedding Key Observations:
 
 Different execution model: Embeddings create a fresh llama.Context per request (line 27), then decode once and extract embeddings. No autoregressive loop.
 
