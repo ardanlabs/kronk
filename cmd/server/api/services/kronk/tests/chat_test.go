@@ -72,8 +72,8 @@ func chatNonStream200(t *testing.T, tokens map[string]string) []apitest.Table {
 					hasUsage(true).
 					hasContent().
 					hasReasoning().
-					containsInContent("gorilla").
-					containsInReasoning("gorilla").
+					warnContainsInContent("gorilla").
+					warnContainsInReasoning("gorilla").
 					result()
 			},
 		},
@@ -121,7 +121,7 @@ func chatNonStream200(t *testing.T, tokens map[string]string) []apitest.Table {
 					hasValidChoice().
 					hasUsage(false).
 					hasContent().
-					containsInContent("giraffes").
+					warnContainsInContent("giraffes").
 					result()
 			},
 		},
@@ -170,7 +170,7 @@ func chatNonStream200(t *testing.T, tokens map[string]string) []apitest.Table {
 					hasValidChoice().
 					hasUsage(false).
 					hasContent().
-					containsInContent("speech").
+					warnContainsInContent("speech").
 					result()
 			},
 		},

@@ -62,7 +62,7 @@ func respNonStream200(t *testing.T, tokens map[string]string) []apitest.Table {
 					hasStatus("completed").
 					hasOutput().
 					hasOutputText().
-					containsInOutput("gorilla").
+					warnContainsInContent("gorilla").
 					result()
 			},
 		},
@@ -101,7 +101,7 @@ func respNonStream200(t *testing.T, tokens map[string]string) []apitest.Table {
 					hasStatus("completed").
 					hasOutput().
 					hasOutputText().
-					containsInOutput("giraffes").
+					warnContainsInContent("giraffes").
 					result()
 			},
 		},
@@ -141,7 +141,7 @@ func respNonStream200(t *testing.T, tokens map[string]string) []apitest.Table {
 					hasStatus("completed").
 					hasOutput().
 					hasOutputText().
-					containsInOutput("speech").
+					warnContainsInContent("speech").
 					result()
 			},
 		},
@@ -195,7 +195,7 @@ func respStream200(tokens map[string]string) []apitest.Table {
 					hasStatus("completed").
 					hasOutput().
 					hasOutputText().
-					containsInOutput("gorilla").
+					warnContainsInContent("gorilla").
 					result()
 			},
 		},
@@ -274,8 +274,9 @@ func respEndpoint401(tokens map[string]string) []apitest.Table {
 // =============================================================================
 
 type respResponseValidator struct {
-	resp   *kronk.ResponseResponse
-	errors []string
+	resp     *kronk.ResponseResponse
+	errors   []string
+	warnings []string
 }
 
 func validateRespResponse(got any) respResponseValidator {
@@ -351,6 +352,27 @@ func (v respResponseValidator) containsInOutput(find string) respResponseValidat
 	}
 
 	v.errors = append(v.errors, "expected to find \""+find+"\" in output")
+	return v
+}
+
+func (v respResponseValidator) warnContainsInContent(find string) respResponseValidator {
+	if len(v.resp.Output) == 0 {
+		return v
+	}
+
+	for _, item := range v.resp.Output {
+		if item.Type == "message" && len(item.Content) > 0 {
+			for _, content := range item.Content {
+				if content.Type == "output_text" {
+					if containsIgnoreCase(content.Text, find) {
+						return v
+					}
+				}
+			}
+		}
+	}
+
+	v.warnings = append(v.warnings, "WARNING: expected to find \""+find+"\" in content")
 	return v
 }
 

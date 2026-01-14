@@ -21,6 +21,7 @@ func initChatTest(t *testing.T, mp models.Path, tooling bool) (*kronk.Kronk, mod
 		NUBatch:       256,
 		CacheTypeK:    model.GGMLTypeF16,
 		CacheTypeV:    model.GGMLTypeF16,
+		NSeqMax:       2,
 	})
 
 	if err != nil {
@@ -108,6 +109,7 @@ func initChatModels() error {
 		NUBatch:       256,
 		CacheTypeK:    model.GGMLTypeF16,
 		CacheTypeV:    model.GGMLTypeF16,
+		NSeqMax:       2,
 	})
 	if err != nil {
 		return fmt.Errorf("loading ThinkToolChat model: %w", err)
@@ -122,6 +124,7 @@ func initChatModels() error {
 			NUBatch:       512,
 			CacheTypeK:    model.GGMLTypeQ8_0,
 			CacheTypeV:    model.GGMLTypeQ8_0,
+			NSeqMax:       2,
 		})
 		if err != nil {
 			return fmt.Errorf("loading GPTChat model: %w", err)

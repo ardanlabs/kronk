@@ -201,7 +201,7 @@ func (e *batchEngine) processBatch(buf []byte) {
 
 		// Check if client cancelled.
 		if s.job.ctx.Err() != nil {
-			e.finishSlot(s, fmt.Errorf("client cancelled"))
+			e.finishSlot(s, s.job.ctx.Err())
 			continue
 		}
 
@@ -247,6 +247,7 @@ func (e *batchEngine) fillSlots(buf []byte) {
 		select {
 		case job := <-e.requestQ:
 			e.startSlot(s, job, buf)
+			return // Only prefill one slot per iteration to avoid exceeding NBatch
 		default:
 			return
 		}
@@ -467,7 +468,11 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	metrics.AddChatCompletionsUsage(s.nPrompt, s.reasonTokens, s.completionTokens, outputTokens, totalTokens, tokensPerSecond)
 
 	// Send final response.
-	e.model.sendFinalResponse(ctx, s.job.ch, s.job.id, s.job.object, s.index, "",
+	returnPrompt := ""
+	if s.job.params.ReturnPrompt {
+		returnPrompt = s.job.prompt
+	}
+	e.model.sendFinalResponse(ctx, s.job.ch, s.job.id, s.job.object, s.index, returnPrompt,
 		&s.finalContent, &s.finalReasoning, s.respToolCalls, usage)
 
 	close(s.job.ch)

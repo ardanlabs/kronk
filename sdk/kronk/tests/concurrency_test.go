@@ -111,7 +111,7 @@ func Test_ConTest2(t *testing.T) {
 	for resp := range ch {
 		lastResp = resp
 		index++
-		if index == 5 {
+		if index == 2 {
 			t.Log("cancel context inside channel loop")
 			cancel()
 		}
@@ -173,7 +173,7 @@ func Test_ConTest3(t *testing.T) {
 	var index int
 	for range ch {
 		index++
-		if index == 5 {
+		if index == 2 {
 			break
 		}
 	}

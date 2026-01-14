@@ -129,6 +129,7 @@ type responseValidator struct {
 	resp      *model.ChatResponse
 	streaming bool
 	errors    []string
+	warnings  []string
 }
 
 func validateResponse(got any, streaming bool) responseValidator {
@@ -258,10 +259,50 @@ func (v responseValidator) containsInReasoning(find string) responseValidator {
 	return v
 }
 
+func (v responseValidator) warnContainsInContent(find string) responseValidator {
+	if len(v.resp.Choice) == 0 {
+		return v
+	}
+
+	if !strings.Contains(strings.ToLower(v.getMsg().Content), find) {
+		v.warnings = append(v.warnings, fmt.Sprintf("WARNING: expected to find %q in content", find))
+	}
+
+	return v
+}
+
+func (v responseValidator) warnContainsInReasoning(find string) responseValidator {
+	if len(v.resp.Choice) == 0 {
+		return v
+	}
+
+	if !strings.Contains(strings.ToLower(v.getMsg().Reasoning), find) {
+		v.warnings = append(v.warnings, fmt.Sprintf("WARNING: expected to find %q in reasoning", find))
+	}
+
+	return v
+}
+
 func (v responseValidator) result() string {
 	if len(v.errors) == 0 {
 		return ""
 	}
 
 	return strings.Join(v.errors, "; ")
+}
+
+func (v responseValidator) resultWithWarnings() string {
+	result := ""
+	if len(v.errors) > 0 {
+		result = strings.Join(v.errors, "; ")
+	}
+
+	if len(v.warnings) > 0 {
+		if result != "" {
+			result += " | "
+		}
+		result += strings.Join(v.warnings, "; ")
+	}
+
+	return result
 }

@@ -125,6 +125,7 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		CacheTypeV: model.GGMLTypeF16,
 		NBatch:     1024,
 		NUBatch:    256,
+		NSeqMax:    2,
 	})
 
 	if err != nil {

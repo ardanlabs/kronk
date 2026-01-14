@@ -495,6 +495,7 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 			NUBatch:       1024,
 			CacheTypeK:    model.GGMLTypeQ8_0,
 			CacheTypeV:    model.GGMLTypeQ8_0,
+			NSeqMax:       2,
 		}
 	}
 
