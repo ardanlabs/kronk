@@ -31,7 +31,7 @@ func Test_ToolStreamingChat(t *testing.T) {
 
 func Test_GPTChat(t *testing.T) {
 	if os.Getenv("GITHUB_ACTIONS") == "true" {
-		t.Skip("Skipping test in GitHub Actions")
+		t.Skip("Skipping test in GitHub Actions (requires more resources)")
 	}
 
 	testChat(t, krnGPTChat, dChatNoTool, false)
@@ -39,7 +39,7 @@ func Test_GPTChat(t *testing.T) {
 
 func Test_GPTStreamingChat(t *testing.T) {
 	if os.Getenv("GITHUB_ACTIONS") == "true" {
-		t.Skip("Skipping test in GitHub Actions")
+		t.Skip("Skipping test in GitHub Actions (requires more resources)")
 	}
 
 	testChatStreaming(t, krnGPTChat, dChatNoTool, false)
@@ -47,7 +47,7 @@ func Test_GPTStreamingChat(t *testing.T) {
 
 func Test_ToolGPTChat(t *testing.T) {
 	if os.Getenv("GITHUB_ACTIONS") == "true" {
-		t.Skip("Skipping test in GitHub Actions")
+		t.Skip("Skipping test in GitHub Actions (requires more resources)")
 	}
 
 	testChat(t, krnGPTChat, dChatToolGPT, true)
@@ -55,7 +55,7 @@ func Test_ToolGPTChat(t *testing.T) {
 
 func Test_ToolGPTStreamingChat(t *testing.T) {
 	if os.Getenv("GITHUB_ACTIONS") == "true" {
-		t.Skip("Skipping test in GitHub Actions")
+		t.Skip("Skipping test in GitHub Actions (requires more resources)")
 	}
 
 	testChatStreaming(t, krnGPTChat, dChatToolGPT, true)

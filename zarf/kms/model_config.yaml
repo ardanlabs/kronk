@@ -50,4 +50,3 @@ embeddinggemma-300m-qat-Q8_0:
   cache-type-k: q8_0
   cache-type-v: q8_0
   flash-attention: enabled
-  nseq-max: 2

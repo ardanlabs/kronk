@@ -15,7 +15,7 @@ import (
 
 func Test_ConTest1(t *testing.T) {
 	if os.Getenv("GITHUB_ACTIONS") == "true" {
-		t.Skip("Skipping test in GitHub Actions")
+		t.Skip("Skipping test in GitHub Actions (requires more resources)")
 	}
 
 	// This test cancels the context before the channel loop starts.
@@ -71,7 +71,7 @@ func Test_ConTest1(t *testing.T) {
 
 func Test_ConTest2(t *testing.T) {
 	if os.Getenv("GITHUB_ACTIONS") == "true" {
-		t.Skip("Skipping test in GitHub Actions")
+		t.Skip("Skipping test in GitHub Actions (requires more resources)")
 	}
 
 	// This test cancels the context inside the channel loop.
@@ -134,7 +134,7 @@ func Test_ConTest2(t *testing.T) {
 
 func Test_ConTest3(t *testing.T) {
 	if os.Getenv("GITHUB_ACTIONS") == "true" {
-		t.Skip("Skipping test in GitHub Actions")
+		t.Skip("Skipping test in GitHub Actions (requires more resources)")
 	}
 
 	// This test breaks out the channel loop before the context is canceled.

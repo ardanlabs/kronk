@@ -34,7 +34,6 @@ func testEmbedding(t *testing.T, mp models.Path) {
 		CacheTypeK:     model.GGMLTypeQ8_0,
 		CacheTypeV:     model.GGMLTypeQ8_0,
 		FlashAttention: model.FlashAttentionEnabled,
-		NSeqMax:        2,
 	})
 
 	if err != nil {

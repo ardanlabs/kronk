@@ -21,6 +21,12 @@ func (m *Model) Embeddings(ctx context.Context, d D) (EmbedReponse, error) {
 		return EmbedReponse{}, fmt.Errorf("embeddings: model doesn't support embedding")
 	}
 
+	// Note: Multi-sequence batching doesn't work for embedding models
+	// because GetEmbeddingsSeq only returns valid data for seqID 0.
+	if m.cfg.NSeqMax > 1 {
+		m.log(ctx, "embeddings: NSeqMax > 1 has no effect for embedding models (parallel sequence extraction not supported)")
+	}
+
 	var inputs []string
 
 	switch v := d["input"].(type) {
@@ -59,6 +65,11 @@ func (m *Model) Embeddings(ctx context.Context, d D) (EmbedReponse, error) {
 		llama.Synchronize(lctx)
 		llama.Free(lctx)
 	}()
+
+	mem, err := llama.GetMemory(lctx)
+	if err != nil {
+		return EmbedReponse{}, fmt.Errorf("embeddings: unable to get memory: %w", err)
+	}
 
 	select {
 	case <-ctx.Done():
@@ -112,14 +123,12 @@ func (m *Model) Embeddings(ctx context.Context, d D) (EmbedReponse, error) {
 
 	// -------------------------------------------------------------------------
 
+	// Process each input sequentially within the same context.
+
 	embedData := make([]EmbedData, len(inputs))
 	totalPromptTokens := 0
 
-	// Determine max sequences per batch from NSeqMax config.
-	maxSeqs := max(int(m.ctxParams.NSeqMax), 1)
-
-	// Process inputs in chunks respecting NSeqMax.
-	for chunkStart := 0; chunkStart < len(inputs); chunkStart += maxSeqs {
+	for i, tokens := range allTokens {
 		select {
 		case <-ctx.Done():
 			return EmbedReponse{}, ctx.Err()
@@ -127,64 +136,38 @@ func (m *Model) Embeddings(ctx context.Context, d D) (EmbedReponse, error) {
 		default:
 		}
 
-		chunkEnd := min(chunkStart+maxSeqs, len(inputs))
-		chunkSize := chunkEnd - chunkStart
+		totalPromptTokens += len(tokens)
 
-		batch := llama.BatchInit(int32(ctxTokens), 0, int32(chunkSize))
+		batch := llama.BatchGetOne(tokens)
 
-		// Add all tokens for this chunk to the batch.
-		for i := range chunkSize {
-			globalIdx := chunkStart + i
-			tokens := allTokens[globalIdx]
-			seqID := llama.SeqId(i)
-			totalPromptTokens += len(tokens)
-
-			for pos, token := range tokens {
-				isLast := pos == len(tokens)-1
-				batchAdd(&batch, token, llama.Pos(pos), []llama.SeqId{seqID}, isLast)
-			}
-		}
-
-		// Single decode for the entire chunk.
 		ret, err := llama.Decode(lctx, batch)
 		if err != nil {
-			llama.BatchFree(batch)
-			return EmbedReponse{}, fmt.Errorf("embeddings: decode failed: %w", err)
+			return EmbedReponse{}, fmt.Errorf("embeddings: decode failed for input[%d]: %w", i, err)
 		}
 
 		if ret != 0 {
-			llama.BatchFree(batch)
-			return EmbedReponse{}, fmt.Errorf("embeddings: decode returned non-zero: %d", ret)
+			return EmbedReponse{}, fmt.Errorf("embeddings: decode returned non-zero for input[%d]: %d", i, ret)
 		}
 
-		// Extract embeddings for each sequence in this chunk.
-		for i := range chunkSize {
-			globalIdx := chunkStart + i
-			seqID := llama.SeqId(i)
-
-			vec, err := llama.GetEmbeddingsSeq(lctx, seqID, nativeDim)
-			if err != nil {
-				llama.BatchFree(batch)
-				return EmbedReponse{}, fmt.Errorf("embeddings: unable to get embeddings for input[%d]: %w", globalIdx, err)
-			}
-
-			if requestedDim > 0 {
-				vec = vec[:int(requestedDim)]
-			}
-
-			vec = normalizeVector(vec)
-
-			embedData[globalIdx] = EmbedData{
-				Object:    "embedding",
-				Index:     globalIdx,
-				Embedding: vec,
-			}
-
-			// Clear KV cache for this sequence before next chunk.
-			llama.MemorySeqRm(m.mem, seqID, -1, -1)
+		vec, err := llama.GetEmbeddingsSeq(lctx, 0, nativeDim)
+		if err != nil {
+			return EmbedReponse{}, fmt.Errorf("embeddings: unable to get embeddings for input[%d]: %w", i, err)
 		}
 
-		llama.BatchFree(batch)
+		if requestedDim > 0 {
+			vec = vec[:int(requestedDim)]
+		}
+
+		vec = normalizeVector(vec)
+
+		embedData[i] = EmbedData{
+			Object:    "embedding",
+			Index:     i,
+			Embedding: vec,
+		}
+
+		// Clear KV cache before next input.
+		llama.MemoryClear(mem, true)
 	}
 
 	// -------------------------------------------------------------------------
