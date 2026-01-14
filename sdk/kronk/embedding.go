@@ -17,11 +17,11 @@ import (
 //   - dimensions (int): reduce output to first N dimensions (for Matryoshka models)
 func (krn *Kronk) Embeddings(ctx context.Context, d model.D) (model.EmbedReponse, error) {
 	if !krn.ModelInfo().IsEmbedModel {
-		return model.EmbedReponse{}, fmt.Errorf("embed:model doesn't support embedding")
+		return model.EmbedReponse{}, fmt.Errorf("embed: model doesn't support embedding")
 	}
 
 	if _, exists := ctx.Deadline(); !exists {
-		return model.EmbedReponse{}, fmt.Errorf("embed:context has no deadline, provide a reasonable timeout")
+		return model.EmbedReponse{}, fmt.Errorf("embed: context has no deadline, provide a reasonable timeout")
 	}
 
 	f := func(m *model.Model) (model.EmbedReponse, error) {
@@ -34,17 +34,17 @@ func (krn *Kronk) Embeddings(ctx context.Context, d model.D) (model.EmbedReponse
 // EmbeddingsHTTP provides http handler support for an embeddings call.
 func (krn *Kronk) EmbeddingsHTTP(ctx context.Context, log Logger, w http.ResponseWriter, d model.D) (model.EmbedReponse, error) {
 	if _, exists := ctx.Deadline(); !exists {
-		return model.EmbedReponse{}, fmt.Errorf("embeddings:context has no deadline, provide a reasonable timeout")
+		return model.EmbedReponse{}, fmt.Errorf("embeddings: context has no deadline, provide a reasonable timeout")
 	}
 
 	resp, err := krn.Embeddings(ctx, d)
 	if err != nil {
-		return model.EmbedReponse{}, fmt.Errorf("chat-streaming-http:stream-response: %w", err)
+		return model.EmbedReponse{}, fmt.Errorf("chat-streaming-http: stream-response: %w", err)
 	}
 
 	data, err := json.Marshal(resp)
 	if err != nil {
-		return resp, fmt.Errorf("chat-streaming-http:marshal: %w", err)
+		return resp, fmt.Errorf("chat-streaming-http: marshal: %w", err)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

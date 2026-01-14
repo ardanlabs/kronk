@@ -55,7 +55,9 @@ func Test_ConTest1(t *testing.T) {
 
 	var lastResp model.ChatResponse
 	for resp := range ch {
-		lastResp = resp
+		if resp.Choice[0].FinishReason == model.FinishReasonError {
+			lastResp = resp // Only capture the error response
+		}
 	}
 
 	t.Log("check conditions")
@@ -109,7 +111,10 @@ func Test_ConTest2(t *testing.T) {
 	var lastResp model.ChatResponse
 	var index int
 	for resp := range ch {
-		lastResp = resp
+		if resp.Choice[0].FinishReason == model.FinishReasonError {
+			lastResp = resp // Only capture the error response
+		}
+
 		index++
 		if index == 2 {
 			t.Log("cancel context inside channel loop")

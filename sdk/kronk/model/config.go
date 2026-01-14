@@ -158,18 +158,18 @@ func validateConfig(ctx context.Context, cfg Config, log Logger) error {
 
 	if !cfg.IgnoreIntegrityCheck {
 		for _, modelFile := range cfg.ModelFiles {
-			log(ctx, "checking-model-integrity", "model-file", modelFile)
+			log(ctx, "validate-config", "model-file", modelFile)
 
 			if err := CheckModel(modelFile, true); err != nil {
-				return fmt.Errorf("validate-config: checking-model-integrity: %w", err)
+				return fmt.Errorf("validate-config: %w", err)
 			}
 		}
 
 		if cfg.ProjFile != "" {
-			log(ctx, "checking-model-integrity", "model-file", cfg.ProjFile)
+			log(ctx, "validate-config", "model-file", cfg.ProjFile)
 
 			if err := CheckModel(cfg.ProjFile, true); err != nil {
-				return fmt.Errorf("validate-config: checking-model-integrity: %w", err)
+				return fmt.Errorf("validate-config: prog-file[%s]: %w", cfg.ProjFile, err)
 			}
 		}
 	}

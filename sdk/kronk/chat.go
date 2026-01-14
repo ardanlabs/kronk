@@ -13,7 +13,7 @@ import (
 // Chat provides support to interact with an inference model.
 func (krn *Kronk) Chat(ctx context.Context, d model.D) (model.ChatResponse, error) {
 	if _, exists := ctx.Deadline(); !exists {
-		return model.ChatResponse{}, fmt.Errorf("chat:context has no deadline, provide a reasonable timeout")
+		return model.ChatResponse{}, fmt.Errorf("chat: context has no deadline, provide a reasonable timeout")
 	}
 
 	f := func(m *model.Model) (model.ChatResponse, error) {
@@ -26,7 +26,7 @@ func (krn *Kronk) Chat(ctx context.Context, d model.D) (model.ChatResponse, erro
 // ChatStreaming provides support to interact with an inference model.
 func (krn *Kronk) ChatStreaming(ctx context.Context, d model.D) (<-chan model.ChatResponse, error) {
 	if _, exists := ctx.Deadline(); !exists {
-		return nil, fmt.Errorf("chat-streaming:context has no deadline, provide a reasonable timeout")
+		return nil, fmt.Errorf("chat-streaming: context has no deadline, provide a reasonable timeout")
 	}
 
 	f := func(m *model.Model) <-chan model.ChatResponse {
@@ -43,7 +43,7 @@ func (krn *Kronk) ChatStreaming(ctx context.Context, d model.D) (<-chan model.Ch
 // ChatStreamingHTTP provides http handler support for a chat/completions call.
 func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, d model.D) (model.ChatResponse, error) {
 	if _, exists := ctx.Deadline(); !exists {
-		return model.ChatResponse{}, fmt.Errorf("chat-streaming-http:context has no deadline, provide a reasonable timeout")
+		return model.ChatResponse{}, fmt.Errorf("chat-streaming-http: context has no deadline, provide a reasonable timeout")
 	}
 
 	var stream bool
@@ -57,7 +57,7 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 	if !stream {
 		resp, err := krn.Chat(ctx, d)
 		if err != nil {
-			return model.ChatResponse{}, fmt.Errorf("chat-streaming-http:stream-response: %w", err)
+			return model.ChatResponse{}, fmt.Errorf("chat-streaming-http: stream-response: %w", err)
 		}
 
 		data, err := json.Marshal(resp)
@@ -76,12 +76,12 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 
 	f, ok := w.(http.Flusher)
 	if !ok {
-		return model.ChatResponse{}, fmt.Errorf("chat-streaming-http:streaming not supported")
+		return model.ChatResponse{}, fmt.Errorf("chat-streaming-http: streaming not supported")
 	}
 
 	ch, err := krn.ChatStreaming(ctx, d)
 	if err != nil {
-		return model.ChatResponse{}, fmt.Errorf("chat-streaming-http:stream-response: %w", err)
+		return model.ChatResponse{}, fmt.Errorf("chat-streaming-http: stream-response: %w", err)
 	}
 
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -94,7 +94,7 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 	for resp := range ch {
 		if err := ctx.Err(); err != nil {
 			if errors.Is(err, context.Canceled) {
-				return resp, errors.New("chat-streaming-http:client disconnected, do not send response")
+				return resp, errors.New("chat-streaming-http: client disconnected, do not send response")
 			}
 		}
 

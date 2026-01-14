@@ -123,7 +123,7 @@ func printInfo(models *models.Models) {
 		}
 	}
 
-	if os.Getenv("RUN_IN_PARALLEL") == "1" {
+	if os.Getenv("RUN_IN_PARALLEL") == "yes" {
 		runInParallel = true
 	}
 

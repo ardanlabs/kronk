@@ -28,7 +28,7 @@ func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error) {
 
 // ChatStreaming performs a chat request and streams the response.
 func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
-	ch := make(chan ChatResponse)
+	ch := make(chan ChatResponse, 1)
 
 	go func() {
 		m.activeStreams.Add(1)
@@ -133,7 +133,7 @@ func (m *Model) prepareMediaContext(ctx context.Context, d D) (D, string, mtmd.C
 
 		mtmdCtx, err = m.loadProjFile(ctx)
 		if err != nil {
-			return nil, "", 0, fmt.Errorf("init-from-file: unable to init projection: %w", err)
+			return nil, "", 0, fmt.Errorf("load-prof-file: unable to init projection: %w", err)
 		}
 	}
 

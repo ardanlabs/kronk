@@ -3,6 +3,7 @@ package kronk
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
@@ -32,7 +33,7 @@ func streaming[T any](ctx context.Context, krn *Kronk, f streamingFunc[T], ef er
 		return nil, err
 	}
 
-	ch := make(chan T)
+	ch := make(chan T, 1)
 
 	go func() {
 		defer func() {
@@ -84,9 +85,8 @@ func sendMessage[T any](ctx context.Context, ch chan T, msg T) error {
 
 func sendError[T any](ctx context.Context, ch chan T, ef errorFunc[T], rec any) {
 	select {
-	case <-ctx.Done():
 	case ch <- ef(fmt.Errorf("%v", rec)):
-	default:
+	case <-time.After(100 * time.Millisecond):
 	}
 }
 
@@ -104,7 +104,7 @@ func streamingWith[T, U any](ctx context.Context, krn *Kronk, f streamingFunc[T]
 		return nil, err
 	}
 
-	ch := make(chan U)
+	ch := make(chan U, 1)
 
 	go func() {
 		var cancelled bool
