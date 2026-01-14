@@ -138,10 +138,11 @@ func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) 
 		modelInfo: modelInfo,
 	}
 
-	// Initialize batch engine for parallel inference if configured.
-	// Only enabled for text-only models (no ProjFile) with NSeqMax > 1.
-	if cfg.NSeqMax > 1 && cfg.ProjFile == "" {
-		m.batch = newBatchEngine(&m, cfg.NSeqMax)
+	// Initialize batch engine for text-only models (no ProjFile).
+	// Batching is faster even for single-sequence inference.
+	if cfg.ProjFile == "" {
+		nSlots := max(cfg.NSeqMax, 1)
+		m.batch = newBatchEngine(&m, nSlots)
 		m.batch.start()
 	}
 

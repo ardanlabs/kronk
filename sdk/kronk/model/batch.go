@@ -80,6 +80,7 @@ func (s *slot) reset() {
 	s.sampled = 0
 	s.active = false
 	s.prefillDone = false
+
 	if s.proc != nil {
 		s.proc.resetState()
 	}
@@ -161,8 +162,10 @@ func (e *batchEngine) submit(job *chatJob) error {
 	select {
 	case e.requestQ <- job:
 		return nil
+
 	case <-e.shutdownCh:
 		return fmt.Errorf("engine shutting down")
+
 	case <-job.ctx.Done():
 		return job.ctx.Err()
 	}
@@ -182,6 +185,7 @@ func (e *batchEngine) processLoop() {
 		case <-e.shutdownCh:
 			e.drainSlots()
 			return
+
 		case <-ticker.C:
 			e.processBatch(buf)
 		}
@@ -248,6 +252,7 @@ func (e *batchEngine) fillSlots(buf []byte) {
 		case job := <-e.requestQ:
 			e.startSlot(s, job, buf)
 			return // Only prefill one slot per iteration to avoid exceeding NBatch
+
 		default:
 			return
 		}
@@ -319,9 +324,11 @@ func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 	var resp response
 	var eog bool
 
-	if isGPT {
+	switch isGPT {
+	case true:
 		resp, eog = s.proc.stepGPT(content)
-	} else {
+
+	default:
 		resp, eog = s.proc.stepStandard(content)
 	}
 
@@ -336,14 +343,17 @@ func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 		s.reasonFlag++
 		s.completionFlag = 0
 		s.toolFlag = 0
+
 	case statusCompletion:
 		s.completionFlag++
 		s.reasonFlag = 0
 		s.toolFlag = 0
+
 	case statusTooling:
 		s.toolFlag++
 		s.reasonFlag = 0
 		s.completionFlag = 0
+
 	default:
 		// No content to process.
 		s.iBatch = -1
@@ -383,16 +393,20 @@ func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 	switch {
 	case s.reasonFlag > 0:
 		s.finalReasoning.WriteString(resp.content)
+
 	case s.toolFlag > 0:
 		s.finalTooling.WriteString(resp.content)
+
 	default:
 		s.finalContent.WriteString(resp.content)
 	}
 
 	// Update token counts.
-	if s.reasonFlag > 0 {
+	switch {
+	case s.reasonFlag > 0:
 		s.reasonTokens++
-	} else {
+
+	default:
 		s.completionTokens++
 	}
 
@@ -428,10 +442,12 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 			OutputTokens:     s.reasonTokens + s.completionTokens,
 			TotalTokens:      s.nPrompt + s.reasonTokens + s.completionTokens,
 		}
+
 		e.model.sendErrorResponse(ctx, s.job.ch, s.job.id, s.job.object, s.index, "", err, usage)
 		close(s.job.ch)
 		e.freeSlotResources(s)
 		s.reset()
+
 		return
 	}
 
@@ -442,9 +458,11 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 			tokens := llama.Tokenize(e.model.vocab, content, true, true)
 			s.completionTokens += len(tokens)
 
-			if e.model.modelInfo.IsGPTModel {
+			switch {
+			case e.model.modelInfo.IsGPTModel:
 				s.respToolCalls = parseGPTToolCall(content)
-			} else {
+
+			default:
 				s.respToolCalls = parseToolCall(content)
 			}
 		}
@@ -472,6 +490,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	if s.job.params.ReturnPrompt {
 		returnPrompt = s.job.prompt
 	}
+
 	e.model.sendFinalResponse(ctx, s.job.ch, s.job.id, s.job.object, s.index, returnPrompt,
 		&s.finalContent, &s.finalReasoning, s.respToolCalls, usage)
 
