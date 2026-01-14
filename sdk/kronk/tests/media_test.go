@@ -52,9 +52,15 @@ func testMedia(t *testing.T, krn *kronk.Kronk) {
 			return fmt.Errorf("chat streaming: %w", err)
 		}
 
-		if err := testChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatMedia, "giraffes", "", "", false); err != nil {
+		result := testChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatMedia, "giraffes", "", "", false)
+
+		for _, w := range result.Warnings {
+			t.Logf("WARNING: %s", w)
+		}
+
+		if result.Err != nil {
 			t.Logf("%#v", resp)
-			return err
+			return result.Err
 		}
 
 		return nil
@@ -101,9 +107,15 @@ func testMediaStreaming(t *testing.T, krn *kronk.Kronk) {
 			}
 		}
 
-		if err := testChatResponse(lastResp, krn.ModelInfo().ID, model.ObjectChatMedia, "giraffes", "", "", true); err != nil {
+		result := testChatResponse(lastResp, krn.ModelInfo().ID, model.ObjectChatMedia, "giraffes", "", "", true)
+
+		for _, w := range result.Warnings {
+			t.Logf("WARNING: %s", w)
+		}
+
+		if result.Err != nil {
 			t.Logf("%#v", lastResp)
-			return err
+			return result.Err
 		}
 
 		return nil
