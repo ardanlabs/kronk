@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -30,15 +29,18 @@ var (
 )
 
 var (
-	gw             = os.Getenv("GITHUB_WORKSPACE")
-	imageFile      = filepath.Join(gw, "examples/samples/giraffe.jpg")
-	goroutines     = 1
-	modelInstances = 1
-	runInParallel  = false
-	testDuration   = 60 * 5 * time.Second
+	gw            = os.Getenv("GITHUB_WORKSPACE")
+	imageFile     = filepath.Join(gw, "examples/samples/giraffe.jpg")
+	goroutines    = 2
+	runInParallel = false
+	testDuration  = 60 * 5 * time.Second
 )
 
 func TestMain(m *testing.M) {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		goroutines = 1
+	}
+
 	fmt.Println("Initializing models system...")
 	models, err := models.New()
 	if err != nil {
@@ -116,14 +118,6 @@ func TestMain(m *testing.M) {
 }
 
 func printInfo(models *models.Models) {
-	if os.Getenv("GOROUTINES") != "" {
-		var err error
-		goroutines, err = strconv.Atoi(os.Getenv("GOROUTINES"))
-		if err != nil {
-			goroutines = 1
-		}
-	}
-
 	if os.Getenv("RUN_IN_PARALLEL") == "yes" {
 		runInParallel = true
 	}
@@ -133,9 +127,8 @@ func printInfo(models *models.Models) {
 	fmt.Println("modelPath        :", models.Path())
 	fmt.Println("imageFile        :", imageFile)
 	fmt.Println("processor        :", "cpu")
+	fmt.Println("goroutines       :", goroutines)
 	fmt.Println("testDuration     :", testDuration)
-	fmt.Println("MODEL INSTANCES. :", modelInstances)
-	fmt.Println("GOROUTINES       :", goroutines)
 	fmt.Println("RUN_IN_PARALLEL  :", runInParallel)
 
 	libs, err := libs.New(libs.WithVersion(defaults.LibVersion("")))

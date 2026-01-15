@@ -13,22 +13,21 @@ import (
 )
 
 // Test_BatchChatConcurrent verifies that the batch engine correctly handles
-// multiple concurrent chat requests. It launches N goroutines simultaneously
+// multiple concurrent chat requests. It launches 10 goroutines simultaneously
 // and verifies all responses are correct (no corruption from parallel processing).
 //
-// Run with: GOROUTINES=4 go test -v -run Test_BatchChatConcurrent
+// Run with: go test -v -run Test_BatchChatConcurrent
 func Test_BatchChatConcurrent(t *testing.T) {
 	if os.Getenv("GITHUB_ACTIONS") == "true" {
 		t.Skip("Skipping batch test in GitHub Actions (requires more resources)")
 	}
 
-	// Minimum 4 to test batching
-	n := max(goroutines, 4)
+	g := 10
 
-	t.Logf("Testing batch inference with %d concurrent requests", n)
+	t.Logf("Testing batch inference with %d concurrent requests", g)
 
 	var wg sync.WaitGroup
-	wg.Add(n)
+	wg.Add(g)
 
 	// Use a barrier to ensure all goroutines start at the same time.
 	startBarrier := make(chan struct{})
@@ -38,9 +37,9 @@ func Test_BatchChatConcurrent(t *testing.T) {
 		duration time.Duration
 		err      error
 		content  string
-	}, n)
+	}, g)
 
-	for i := range n {
+	for i := range g {
 		go func(idx int) {
 			defer wg.Done()
 
@@ -105,8 +104,8 @@ func Test_BatchChatConcurrent(t *testing.T) {
 		t.FailNow()
 	}
 
-	avgDuration := totalDuration / time.Duration(n)
-	t.Logf("All %d requests completed. Average duration: %s", n, avgDuration)
+	avgDuration := totalDuration / time.Duration(g)
+	t.Logf("All %d requests completed. Average duration: %s", g, avgDuration)
 }
 
 // Test_BatchEmbeddingsConcurrent verifies that the embeddings batch function
@@ -135,7 +134,6 @@ func Test_BatchEmbeddingsConcurrent(t *testing.T) {
 		CacheTypeK:     model.GGMLTypeQ8_0,
 		CacheTypeV:     model.GGMLTypeQ8_0,
 		FlashAttention: model.FlashAttentionEnabled,
-		NSeqMax:        4, // Allow 4 sequences for batch testing
 	})
 	if err != nil {
 		t.Fatalf("Failed to create embedding model: %v", err)
@@ -182,77 +180,125 @@ func Test_BatchEmbeddingsConcurrent(t *testing.T) {
 	t.Logf("Usage: prompt_tokens=%d, total_tokens=%d", resp.Usage.PromptTokens, resp.Usage.TotalTokens)
 }
 
-// Test_BatchThroughput measures throughput improvement from batching.
-// Compares sequential vs concurrent request processing times.
-func Test_BatchThroughput(t *testing.T) {
+// Test_BatchEmbeddingsConcurrentParallel verifies that embeddings handles
+// multiple concurrent goroutine calls correctly, similar to Test_BatchChatConcurrent.
+//
+// Run with: go test -v -run Test_BatchEmbeddingsConcurrentParallel
+func Test_BatchEmbeddingsConcurrentParallel(t *testing.T) {
 	if os.Getenv("GITHUB_ACTIONS") == "true" {
 		t.Skip("Skipping batch test in GitHub Actions (requires more resources)")
 	}
 
-	n := goroutines
-	if n < 2 {
-		n = 2
+	ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+	defer cancel()
+
+	krn, err := kronk.New(model.Config{
+		ModelFiles:     mpEmbed.ModelFiles,
+		ContextWindow:  2048,
+		NBatch:         2048,
+		NUBatch:        512,
+		CacheTypeK:     model.GGMLTypeQ8_0,
+		CacheTypeV:     model.GGMLTypeQ8_0,
+		FlashAttention: model.FlashAttentionEnabled,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create embedding model: %v", err)
 	}
+	defer krn.Unload(ctx)
 
-	t.Logf("Measuring throughput with %d requests", n)
+	g := 4
 
-	// Sequential baseline.
-	t.Log("Running sequential baseline...")
-	seqStart := time.Now()
-	for i := range n {
-		ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+	t.Logf("Testing batch embeddings with %d concurrent requests", g)
 
-		ch, err := krnThinkToolChat.ChatStreaming(ctx, dChatNoTool)
-		if err != nil {
-			cancel()
-			t.Fatalf("Sequential request %d failed: %v", i, err)
-		}
-
-		for range ch {
-		}
-		cancel()
-	}
-	seqDuration := time.Since(seqStart)
-	t.Logf("Sequential: %d requests in %s (%.2f req/s)", n, seqDuration, float64(n)/seqDuration.Seconds())
-
-	// Concurrent with batching.
-	t.Log("Running concurrent batch...")
 	var wg sync.WaitGroup
-	wg.Add(n)
+	wg.Add(g)
 
 	startBarrier := make(chan struct{})
-	concStart := time.Now()
 
-	for i := range n {
+	results := make([]struct {
+		id         int
+		duration   time.Duration
+		err        error
+		embeddings [][]float32
+	}, g)
+
+	inputs := []string{
+		"The quick brown fox jumps over the lazy dog",
+		"Machine learning is a subset of artificial intelligence",
+		"Go is a statically typed programming language",
+		"Embeddings convert text into numerical vectors",
+	}
+
+	for i := range g {
 		go func(idx int) {
 			defer wg.Done()
+
 			<-startBarrier
 
-			ctx, cancel := context.WithTimeout(context.Background(), testDuration)
-			defer cancel()
+			start := time.Now()
 
-			ch, err := krnThinkToolChat.ChatStreaming(ctx, dChatNoTool)
+			resp, err := krn.Embeddings(ctx, model.D{
+				"input": inputs,
+			})
 			if err != nil {
-				t.Errorf("Concurrent request %d failed: %v", idx, err)
+				results[idx].err = fmt.Errorf("goroutine %d: embeddings error: %w", idx, err)
 				return
 			}
 
-			for range ch {
+			results[idx].duration = time.Since(start)
+			results[idx].id = idx
+
+			if len(resp.Data) != len(inputs) {
+				results[idx].err = fmt.Errorf("goroutine %d: expected %d embeddings, got %d", idx, len(inputs), len(resp.Data))
+				return
+			}
+
+			results[idx].embeddings = make([][]float32, len(resp.Data))
+			for i, data := range resp.Data {
+				results[idx].embeddings[i] = data.Embedding
 			}
 		}(i)
 	}
 
 	close(startBarrier)
 	wg.Wait()
-	concDuration := time.Since(concStart)
 
-	t.Logf("Concurrent: %d requests in %s (%.2f req/s)", n, concDuration, float64(n)/concDuration.Seconds())
+	var errors []error
+	var totalDuration time.Duration
+	for _, r := range results {
+		if r.err != nil {
+			errors = append(errors, r.err)
+			continue
+		}
 
-	speedup := float64(seqDuration) / float64(concDuration)
-	t.Logf("Speedup: %.2fx", speedup)
+		totalDuration += r.duration
+		t.Logf("Request %d completed in %s (embeddings=%d, dims=%d)", r.id, r.duration, len(r.embeddings), len(r.embeddings[0]))
 
-	// Batching should provide at least some improvement with NSeqMax > 1.
-	if speedup < 1.0 {
-		t.Logf("Warning: No speedup observed (speedup=%.2fx). This may be expected for small models or limited parallelism.", speedup)
+		for i, emb := range r.embeddings {
+			if len(emb) == 0 {
+				errors = append(errors, fmt.Errorf("request %d embedding %d: empty", r.id, i))
+				continue
+			}
+
+			// Check normalization.
+			var sum float64
+			for _, v := range emb {
+				sum += float64(v * v)
+			}
+
+			if sum < 0.99 || sum > 1.01 {
+				errors = append(errors, fmt.Errorf("request %d embedding %d: not normalized (L2=%f)", r.id, i, sum))
+			}
+		}
 	}
+
+	if len(errors) > 0 {
+		for _, err := range errors {
+			t.Error(err)
+		}
+		t.FailNow()
+	}
+
+	avgDuration := totalDuration / time.Duration(g)
+	t.Logf("All %d requests completed. Average duration: %s", g, avgDuration)
 }

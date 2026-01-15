@@ -39,7 +39,7 @@ export default function DocsSDKKronk() {
               <pre className="code-block">
                 <code>func New(cfg model.Config, opts ...Option) (*Kronk, error)</code>
               </pre>
-              <p className="doc-description">New provides the ability to use models in a concurrently safe way. The cfg.NSeqMax field controls how many concurrent requests can be processed in parallel. When NSeqMax &gt; 1, the batch engine is used for parallel inference.</p>
+              <p className="doc-description">New provides the ability to use models in a concurrently safe way.</p>
             </div>
           </div>
 

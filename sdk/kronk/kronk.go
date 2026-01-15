@@ -56,9 +56,6 @@ type Kronk struct {
 }
 
 // New provides the ability to use models in a concurrently safe way.
-//
-// The cfg.NSeqMax field controls how many concurrent requests can be processed
-// in parallel. When NSeqMax > 1, the batch engine is used for parallel inference.
 func New(cfg model.Config, opts ...Option) (*Kronk, error) {
 	if libraryLocation == "" {
 		return nil, fmt.Errorf("new: the Init() function has not been called")
@@ -92,10 +89,36 @@ func New(cfg model.Config, opts ...Option) (*Kronk, error) {
 		return nil, err
 	}
 
-	// Determine semaphore capacity based on NSeqMax.
-	// When batch engine is active (NSeqMax > 1), allow that many concurrent acquires.
-	// Otherwise, only allow 1 (sequential processing).
-	semCapacity := max(cfg.NSeqMax, 1)
+	// -------------------------------------------------------------------------
+
+	// The cfg.NSeqMax field controls how many concurrent requests can be processed
+	// in parallel. Parallel processing only works for text inference. Vision,
+	// audio, and embeddings are restricted to sequential processing.
+
+	if cfg.NSeqMax > 1 {
+		if cfg.ProjFile != "" {
+			return nil, fmt.Errorf("new: NSeqMax > 1 not supported for multimodal models (ProjFile is set)")
+		}
+
+		if m.ModelInfo().IsEmbedModel {
+			return nil, fmt.Errorf("new: NSeqMax > 1 not supported for embedding models")
+		}
+	}
+
+	var semCapacity int
+
+	switch {
+	case cfg.ProjFile != "":
+		semCapacity = 1
+
+	case m.ModelInfo().IsEmbedModel:
+		semCapacity = 1
+
+	default:
+		semCapacity = max(cfg.NSeqMax, 1) * 2
+	}
+
+	// -------------------------------------------------------------------------
 
 	krn := Kronk{
 		cfg:       m.Config(),

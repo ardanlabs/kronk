@@ -107,7 +107,9 @@ type Logger func(ctx context.Context, msg string, args ...any)
 //
 // NSeqMax is the maximum number of sequences that can be processed in parallel.
 // This is useful for batched inference where multiple prompts are processed
-// simultaneously. When set to 0, the default llama.cpp value is used.
+// simultaneously. When set to 0, a default of 1 is used. This only works for
+// text inference. Vision, audio, and embeddings are restricted to sequential
+// processing.
 //
 // OffloadKQV controls whether the KV cache is offloaded to the GPU. When nil or
 // true, the KV cache is stored on the GPU (default behavior). Set to false to

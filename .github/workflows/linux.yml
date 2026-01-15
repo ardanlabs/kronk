@@ -58,33 +58,27 @@ jobs:
       - name: Run api/service tests
         timeout-minutes: 25
         run: |
-          export GOROUTINES=1
           export RUN_IN_PARALLEL=no
           CGO_ENABLED=0 go test -v -count=1 -timeout 25m ./cmd/server/api/services/kronk/tests
       - name: Run kronk tests
         timeout-minutes: 25
         run: |
-          export GOROUTINES=1
           export RUN_IN_PARALLEL=no
           CGO_ENABLED=0 go test -v -count=1 -timeout 25m ./sdk/kronk/tests
       - name: Run sdk/cache tests
         run: |
-          export GOROUTINES=1
           export RUN_IN_PARALLEL=no
           CGO_ENABLED=0 go test -v -count=1 ./cmd/server/app/sdk/cache
       - name: Run sdk/security tests
         run: |
-          export GOROUTINES=1
           export RUN_IN_PARALLEL=no
           CGO_ENABLED=0 go test -v -count=1 ./cmd/server/app/sdk/security/...
       - name: Run kronk model tests
         run: |
-          export GOROUTINES=1
           export RUN_IN_PARALLEL=no
           CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/model
       - name: Run sdk/tools tests
         run: |
-          export GOROUTINES=1
           export RUN_IN_PARALLEL=no
           CGO_ENABLED=0 go test -v -count=1 ./sdk/tools/...
       - name: Run vet, linter, vuln checks
