@@ -116,12 +116,12 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 }
 
 func (m *Model) prepareMediaContext(ctx context.Context, d D) (D, string, mtmd.Context, error) {
-	hasMedia, isOpenAIFormat, msgs, err := detectMediaContent(d)
+	mediaType, isOpenAIFormat, msgs, err := detectMediaContent(d)
 	if err != nil {
 		return nil, "", 0, fmt.Errorf("prepare-media-context: %w", err)
 	}
 
-	if hasMedia && m.projFile == "" {
+	if mediaType != MediaTypeNone && m.projFile == "" {
 		return nil, "", 0, fmt.Errorf("prepare-media-context: media detected in request but model does not support media processing")
 	}
 
@@ -135,6 +135,20 @@ func (m *Model) prepareMediaContext(ctx context.Context, d D) (D, string, mtmd.C
 		if err != nil {
 			return nil, "", 0, fmt.Errorf("prepare-media-context: unable to init projection: %w", err)
 		}
+
+		switch mediaType {
+		case MediaTypeVision:
+			if !mtmd.SupportVision(mtmdCtx) {
+				mtmd.Free(mtmdCtx)
+				return nil, "", 0, fmt.Errorf("prepare-media-context: image/video detected but model does not support vision")
+			}
+
+		case MediaTypeAudio:
+			if !mtmd.SupportAudio(mtmdCtx) {
+				mtmd.Free(mtmdCtx)
+				return nil, "", 0, fmt.Errorf("prepare-media-context: audio detected but model does not support audio")
+			}
+		}
 	}
 
 	switch {
@@ -144,7 +158,7 @@ func (m *Model) prepareMediaContext(ctx context.Context, d D) (D, string, mtmd.C
 			return nil, "", 0, fmt.Errorf("prepare-media-context: unable to convert document to media message: %w", err)
 		}
 
-	case hasMedia:
+	case mediaType != MediaTypeNone:
 		d = convertPlainBase64ToBytes(d)
 	}
 

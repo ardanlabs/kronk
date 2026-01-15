@@ -188,6 +188,13 @@ export default function DocsSDKModel() {
               <p className="doc-description">Logger provides a function for logging messages from different APIs.</p>
             </div>
 
+            <div className="doc-section" id="type-mediatype">
+              <h4>MediaType</h4>
+              <pre className="code-block">
+                <code>{`type MediaType int`}</code>
+              </pre>
+            </div>
+
             <div className="doc-section" id="type-model">
               <h4>Model</h4>
               <pre className="code-block">
@@ -573,6 +580,7 @@ export default function DocsSDKModel() {
                 <li><a href="#type-flashattentiontype">FlashAttentionType</a></li>
                 <li><a href="#type-ggmltype">GGMLType</a></li>
                 <li><a href="#type-logger">Logger</a></li>
+                <li><a href="#type-mediatype">MediaType</a></li>
                 <li><a href="#type-model">Model</a></li>
                 <li><a href="#type-modelinfo">ModelInfo</a></li>
                 <li><a href="#type-params">Params</a></li>

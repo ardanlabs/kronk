@@ -612,3 +612,13 @@ example-yzma-parallel-load:
 		-H "Content-Type: application/json" \
 		-d "{\"prompt\": \"Request $$i: Hello\", \"max_tokens\": 30}" & \
 	done; wait
+
+# ==============================================================================
+# yzma-multimodal example
+
+VISION_MODEL ?= /Users/bill/.kronk/models/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/Qwen2.5-VL-3B-Instruct-Q8_0.gguf
+VISION_PROJ ?= /Users/bill/.kronk/models/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf
+VISION_IMAGE ?= examples/samples/giraffe.jpg
+
+example-yzma-multimodal:
+	CGO_ENABLED=0 go run examples/yzma-multimodal/main.go -model $(VISION_MODEL) -proj $(VISION_PROJ) -image $(VISION_IMAGE)

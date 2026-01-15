@@ -18,12 +18,12 @@ func Test_OpenAIToMediaMessage(t *testing.T) {
 		),
 	}
 
-	hasMedia, isOpenAIFormat, chMsgs, err := detectMediaContent(d)
+	mediaType, isOpenAIFormat, chMsgs, err := detectMediaContent(d)
 	if err != nil {
 		t.Fatalf("detect-media: unable to check document: %s", err)
 	}
 
-	if !hasMedia {
+	if mediaType == MediaTypeNone {
 		t.Fatal("expected media to be detected")
 	}
 
@@ -71,13 +71,13 @@ func Test_PlainBase64MediaDetection(t *testing.T) {
 		),
 	}
 
-	hasMedia, isOpenAIFormat, _, err := detectMediaContent(d)
+	mediaType, isOpenAIFormat, _, err := detectMediaContent(d)
 	if err != nil {
 		t.Fatalf("detect-media: %s", err)
 	}
 
-	if !hasMedia {
-		t.Fatal("expected media to be detected for plain base64 JPEG")
+	if mediaType != MediaTypeVision {
+		t.Fatalf("expected MediaTypeVision, got %v", mediaType)
 	}
 
 	if isOpenAIFormat {
@@ -116,13 +116,13 @@ func Test_PlainBase64WithDataURI(t *testing.T) {
 		),
 	}
 
-	hasMedia, isOpenAIFormat, _, err := detectMediaContent(d)
+	mediaType, isOpenAIFormat, _, err := detectMediaContent(d)
 	if err != nil {
 		t.Fatalf("detect-media: %s", err)
 	}
 
-	if !hasMedia {
-		t.Fatal("expected media to be detected for data URI PNG")
+	if mediaType != MediaTypeVision {
+		t.Fatalf("expected MediaTypeVision, got %v", mediaType)
 	}
 
 	if isOpenAIFormat {
@@ -144,13 +144,13 @@ func Test_NoMediaDetection(t *testing.T) {
 		),
 	}
 
-	hasMedia, isOpenAIFormat, _, err := detectMediaContent(d)
+	mediaType, isOpenAIFormat, _, err := detectMediaContent(d)
 	if err != nil {
 		t.Fatalf("detect-media: %s", err)
 	}
 
-	if hasMedia {
-		t.Fatal("expected no media to be detected for plain text")
+	if mediaType != MediaTypeNone {
+		t.Fatalf("expected MediaTypeNone, got %v", mediaType)
 	}
 
 	if isOpenAIFormat {
@@ -176,13 +176,13 @@ func Test_PlainBase64AudioDetection(t *testing.T) {
 		),
 	}
 
-	hasMedia, isOpenAIFormat, _, err := detectMediaContent(d)
+	mediaType, isOpenAIFormat, _, err := detectMediaContent(d)
 	if err != nil {
 		t.Fatalf("detect-media: %s", err)
 	}
 
-	if !hasMedia {
-		t.Fatal("expected media to be detected for plain base64 WAV")
+	if mediaType != MediaTypeAudio {
+		t.Fatalf("expected MediaTypeAudio, got %v", mediaType)
 	}
 
 	if isOpenAIFormat {
@@ -219,13 +219,13 @@ func Test_LongTextNotMedia(t *testing.T) {
 		),
 	}
 
-	hasMedia, _, _, err := detectMediaContent(d)
+	mediaType, _, _, err := detectMediaContent(d)
 	if err != nil {
 		t.Fatalf("detect-media: %s", err)
 	}
 
-	if hasMedia {
-		t.Fatal("expected no media for long plain text")
+	if mediaType != MediaTypeNone {
+		t.Fatalf("expected MediaTypeNone for long plain text, got %v", mediaType)
 	}
 }
 
