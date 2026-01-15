@@ -614,7 +614,7 @@ example-yzma-parallel-load:
 	done; wait
 
 # ==============================================================================
-# yzma-multimodal example
+# yzma-multimodal example (NOT WORKING)
 
 VISION_MODEL ?= /Users/bill/.kronk/models/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/Qwen2.5-VL-3B-Instruct-Q8_0.gguf
 VISION_PROJ ?= /Users/bill/.kronk/models/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf
