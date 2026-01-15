@@ -14,6 +14,8 @@
 
 ### SDK
 
+- Add Tokenize API to SDK and MKS
+
 - Add model_config defaults to the catalog which can be overridden by model_config
   or through the config with kronk.New
 
