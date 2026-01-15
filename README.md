@@ -56,9 +56,9 @@ $ go install github.com/ardanlabs/kronk/cmd/kronk@latest
 $ kronk --help
 ```
 
-## Roadmap
+## Issues/Features
 
-Here is the existing [ROADMAP](ROADMAP.md) for the project and the things being worked on or things that would be nice to have. The roadmap is not in any particular order.
+Here is the existing [Issues/Features](https://github.com/ardanlabs/kronk/issues) for the project and the things being worked on or things that would be nice to have.
 
 If you are interested in helping in any way, please send an email to [Bill Kennedy](mailto:bill@ardanlabs.com).
 
