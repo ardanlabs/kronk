@@ -26,7 +26,7 @@ type ProgressFunc func(src string, currentSize int64, totalSize int64, mibPerSec
 // Download pulls down a single file from a url to a specified destination.
 func Download(ctx context.Context, src string, dest string, progress ProgressFunc, sizeInterval int64) (bool, error) {
 	if !hasNetwork() {
-		return false, errors.New("no network available")
+		return false, errors.New("download: no network available")
 	}
 
 	var pr ProgressReader
@@ -63,7 +63,7 @@ func Download(ctx context.Context, src string, dest string, progress ProgressFun
 	}
 
 	if err := client.Get(); err != nil {
-		return false, fmt.Errorf("download-file: failed to download model: %T %w", err, err)
+		return false, fmt.Errorf("download: failed to download model type[%T]: %w", err, err)
 	}
 
 	if pr.currentSize == 0 {

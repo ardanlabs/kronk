@@ -21,17 +21,9 @@ export default function DocsSDKKronk() {
             <div className="doc-section" id="func-init">
               <h4>Init</h4>
               <pre className="code-block">
-                <code>func Init() error</code>
+                <code>func Init(opts ...InitOption) error</code>
               </pre>
-              <p className="doc-description">Init initializes the Kronk backend suport.</p>
-            </div>
-
-            <div className="doc-section" id="func-initwithsettings">
-              <h4>InitWithSettings</h4>
-              <pre className="code-block">
-                <code>func InitWithSettings(libPath string, logLevel LogLevel) error</code>
-              </pre>
-              <p className="doc-description">InitWithSettings initializes the Kronk backend suport.</p>
+              <p className="doc-description">Init initializes the Kronk backend support.</p>
             </div>
 
             <div className="doc-section" id="func-setfmtloggertraceid">
@@ -62,6 +54,14 @@ export default function DocsSDKKronk() {
 }`}</code>
               </pre>
               <p className="doc-description">IncompleteDetail provides details about why a response is incomplete.</p>
+            </div>
+
+            <div className="doc-section" id="type-initoption">
+              <h4>InitOption</h4>
+              <pre className="code-block">
+                <code>{`type InitOption func(*initOptions)`}</code>
+              </pre>
+              <p className="doc-description">InitOption represents options for configuring Init.</p>
             </div>
 
             <div className="doc-section" id="type-inputtokensdetails">
@@ -429,7 +429,6 @@ export default function DocsSDKKronk() {
               <a href="#functions" className="doc-index-header">Functions</a>
               <ul>
                 <li><a href="#func-init">Init</a></li>
-                <li><a href="#func-initwithsettings">InitWithSettings</a></li>
                 <li><a href="#func-setfmtloggertraceid">SetFmtLoggerTraceID</a></li>
                 <li><a href="#func-new">New</a></li>
               </ul>
@@ -438,6 +437,7 @@ export default function DocsSDKKronk() {
               <a href="#types" className="doc-index-header">Types</a>
               <ul>
                 <li><a href="#type-incompletedetail">IncompleteDetail</a></li>
+                <li><a href="#type-initoption">InitOption</a></li>
                 <li><a href="#type-inputtokensdetails">InputTokensDetails</a></li>
                 <li><a href="#type-kronk">Kronk</a></li>
                 <li><a href="#type-loglevel">LogLevel</a></li>

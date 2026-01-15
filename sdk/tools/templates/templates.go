@@ -72,13 +72,13 @@ func New(opts ...Option) (*Templates, error) {
 
 	catalog, err := catalog.New(catalog.WithBasePath(o.basePath))
 	if err != nil {
-		return nil, fmt.Errorf("catalog new: %w", err)
+		return nil, fmt.Errorf("new: unable to create catalog: %w", err)
 	}
 
 	templatesPath := filepath.Join(o.basePath, localFolder)
 
 	if err := os.MkdirAll(templatesPath, 0755); err != nil {
-		return nil, fmt.Errorf("creating templates directory: %w", err)
+		return nil, fmt.Errorf("new: creating templates directory: %w", err)
 	}
 
 	t := Templates{

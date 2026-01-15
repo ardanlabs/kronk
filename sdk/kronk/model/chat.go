@@ -72,7 +72,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 
 		prompt, media, err := m.createPrompt(ctx, d)
 		if err != nil {
-			m.sendChatError(ctx, ch, id, fmt.Errorf("create-prompt: unable to apply jinja template: %w", err))
+			m.sendChatError(ctx, ch, id, fmt.Errorf("create-streaming: unable to apply jinja template: %w", err))
 			return
 		}
 
@@ -118,11 +118,11 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 func (m *Model) prepareMediaContext(ctx context.Context, d D) (D, string, mtmd.Context, error) {
 	hasMedia, isOpenAIFormat, msgs, err := detectMediaContent(d)
 	if err != nil {
-		return nil, "", 0, fmt.Errorf("detect-media: %w", err)
+		return nil, "", 0, fmt.Errorf("prepare-media-context: %w", err)
 	}
 
 	if hasMedia && m.projFile == "" {
-		return nil, "", 0, fmt.Errorf("media detected in request but model does not support media processing")
+		return nil, "", 0, fmt.Errorf("prepare-media-context: media detected in request but model does not support media processing")
 	}
 
 	var mtmdCtx mtmd.Context
@@ -133,7 +133,7 @@ func (m *Model) prepareMediaContext(ctx context.Context, d D) (D, string, mtmd.C
 
 		mtmdCtx, err = m.loadProjFile(ctx)
 		if err != nil {
-			return nil, "", 0, fmt.Errorf("load-prof-file: unable to init projection: %w", err)
+			return nil, "", 0, fmt.Errorf("prepare-media-context: unable to init projection: %w", err)
 		}
 	}
 
@@ -141,7 +141,7 @@ func (m *Model) prepareMediaContext(ctx context.Context, d D) (D, string, mtmd.C
 	case isOpenAIFormat:
 		d, err = convertToRawMediaMessage(d.Clone(), msgs)
 		if err != nil {
-			return nil, "", 0, fmt.Errorf("convert-media-message: unable to convert document to media message: %w", err)
+			return nil, "", 0, fmt.Errorf("prepare-media-context: unable to convert document to media message: %w", err)
 		}
 
 	case hasMedia:
@@ -154,8 +154,8 @@ func (m *Model) prepareMediaContext(ctx context.Context, d D) (D, string, mtmd.C
 func (m *Model) loadProjFile(ctx context.Context) (mtmd.Context, error) {
 	baseProjFile := path.Base(m.projFile)
 
-	m.log(context.Background(), "loading prof file", "status", "started", "proj", baseProjFile)
-	defer m.log(context.Background(), "loading prof file", "status", "completed", "proj", baseProjFile)
+	m.log(context.Background(), "loading-prof-file", "status", "started", "proj", baseProjFile)
+	defer m.log(context.Background(), "loading-prof-file", "status", "completed", "proj", baseProjFile)
 
 	_, span := otel.AddSpan(ctx, "proj-file-load-time",
 		attribute.String("proj-file", baseProjFile),
@@ -195,11 +195,11 @@ func (m *Model) createPrompt(ctx context.Context, d D) (string, [][]byte, error)
 func (m *Model) validateDocument(d D) (Params, error) {
 	messages, exists := d["messages"]
 	if !exists {
-		return Params{}, errors.New("no messages found in request")
+		return Params{}, errors.New("validate-document: no messages found in request")
 	}
 
 	if _, ok := messages.([]D); !ok {
-		return Params{}, errors.New("messages is not a slice of documents")
+		return Params{}, errors.New("validate-document: messages is not a slice of documents")
 	}
 
 	params, err := m.parseParams(d)

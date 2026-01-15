@@ -458,7 +458,7 @@ func (t *FlashAttentionType) UnmarshalYAML(unmarshal func(interface{}) error) er
 		*t = FlashAttentionAuto
 
 	default:
-		return fmt.Errorf("unknown flash attention type: %s", s)
+		return fmt.Errorf("unmarshal-yaml: unknown flash attention type: %s", s)
 	}
 
 	return nil
@@ -536,6 +536,6 @@ func ParseSplitMode(s string) (SplitMode, error) {
 		return SplitModeRow, nil
 
 	default:
-		return SplitModeNone, fmt.Errorf("unknown split mode: %s (valid: none, layer, row, expert-parallel)", s)
+		return SplitModeNone, fmt.Errorf("parse-split-mode: unknown split mode: %s (valid: none, layer, row, expert-parallel)", s)
 	}
 }

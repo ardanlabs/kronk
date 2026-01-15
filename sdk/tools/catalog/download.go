@@ -102,23 +102,23 @@ type gitHubFile struct {
 func (c *Catalog) listGitHubFolder(ctx context.Context) ([]string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.githubRepo, nil)
 	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
+		return nil, fmt.Errorf("list-git-hub-folder: creating request: %w", err)
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("fetching folder listing: %w", err)
+		return nil, fmt.Errorf("list-git-hub-folder: fetching folder listing: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status: %s", resp.Status)
+		return nil, fmt.Errorf("list-git-hub-folder: unexpected status: %s", resp.Status)
 	}
 
 	var items []gitHubFile
 	if err := json.NewDecoder(resp.Body).Decode(&items); err != nil {
-		return nil, fmt.Errorf("decoding response: %w", err)
+		return nil, fmt.Errorf("list-git-hub-folder: decoding response: %w", err)
 	}
 
 	localSHAs := c.readLocalSHAs()
@@ -134,7 +134,7 @@ func (c *Catalog) listGitHubFolder(ctx context.Context) ([]string, error) {
 	}
 
 	if err := c.writeLocalSHAs(items); err != nil {
-		return nil, fmt.Errorf("writing SHA file: %w", err)
+		return nil, fmt.Errorf("list-git-hub-folder: writing SHA file: %w", err)
 	}
 
 	return files, nil
@@ -143,27 +143,27 @@ func (c *Catalog) listGitHubFolder(ctx context.Context) ([]string, error) {
 func (c *Catalog) downloadCatalog(ctx context.Context, url string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return fmt.Errorf("creating request: %w", err)
+		return fmt.Errorf("download-catalog: creating request: %w", err)
 	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("fetching catalog: %w", err)
+		return fmt.Errorf("download-catalog: fetching catalog: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status: %s", resp.Status)
+		return fmt.Errorf("download-catalog: unexpected status: %s", resp.Status)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("reading response: %w", err)
+		return fmt.Errorf("download-catalog: reading response: %w", err)
 	}
 
 	filePath := filepath.Join(c.catalogPath, filepath.Base(url))
 	if err := os.WriteFile(filePath, body, 0644); err != nil {
-		return fmt.Errorf("writing catalog file: %w", err)
+		return fmt.Errorf("download-catalog: writing catalog file: %w", err)
 	}
 
 	return nil

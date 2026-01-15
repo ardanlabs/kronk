@@ -143,7 +143,7 @@ func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) 
 	if cfg.ProjFile == "" {
 		nSlots := max(cfg.NSeqMax, 1)
 		m.batch = newBatchEngine(&m, nSlots)
-		m.batch.start()
+		m.batch.start(ctx)
 	}
 
 	return &m, nil
@@ -234,7 +234,7 @@ func (m *Model) Unload(ctx context.Context) error {
 	// Stop the batch engine if running.
 	hasBatch := m.batch != nil
 	if hasBatch {
-		m.batch.stop()
+		m.batch.stop(ctx)
 	}
 
 	for m.activeStreams.Load() > 0 {

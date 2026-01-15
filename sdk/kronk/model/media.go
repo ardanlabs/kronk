@@ -12,7 +12,7 @@ import (
 func detectMediaContent(d D) (hasMedia bool, isOpenAIFormat bool, msgs chatMessages, err error) {
 	msgs, err = toChatMessages(d)
 	if err != nil {
-		return false, false, chatMessages{}, fmt.Errorf("chat message conversion: %w", err)
+		return false, false, chatMessages{}, fmt.Errorf("detect-media-content: chat message conversion: %w", err)
 	}
 
 	for _, msg := range msgs.Messages {
@@ -187,7 +187,7 @@ func looksLikeMedia(s string) bool {
 func convertToRawMediaMessage(d D, msgs chatMessages) (D, error) {
 	d, err := toMediaMessage(d, msgs)
 	if err != nil {
-		return nil, fmt.Errorf("media message conversion: %w", err)
+		return nil, fmt.Errorf("convert-to-raw-media-message: media message conversion: %w", err)
 	}
 
 	return d, nil
@@ -282,7 +282,7 @@ func toMediaMessage(d D, msgs chatMessages) (D, error) {
 
 func decodeMediaData(data string) ([]byte, error) {
 	if strings.HasPrefix(data, "http://") || strings.HasPrefix(data, "https://") {
-		return nil, fmt.Errorf("to-media-message: URLs are not supported, provide base64 encoded data")
+		return nil, fmt.Errorf("decode-media-message: URLs are not supported, provide base64 encoded data")
 	}
 
 	if idx := strings.Index(data, ";base64,"); idx != -1 && strings.HasPrefix(data, "data:") {
@@ -291,7 +291,7 @@ func decodeMediaData(data string) ([]byte, error) {
 
 	decoded, err := base64.StdEncoding.DecodeString(data)
 	if err != nil {
-		return nil, fmt.Errorf("to-media-message: unable to decode base64 data: %w", err)
+		return nil, fmt.Errorf("decode-media-message: unable to decode base64 data: %w", err)
 	}
 
 	return decoded, nil

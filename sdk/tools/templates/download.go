@@ -52,7 +52,7 @@ func (t *Templates) Download(ctx context.Context, opts ...DownloadOption) error 
 
 	files, err := t.listGitHubFolder(ctx)
 	if err != nil {
-		return fmt.Errorf("listing templates: %w", err)
+		return fmt.Errorf("download: listing templates: %w", err)
 	}
 
 	if len(files) > 0 {
@@ -71,27 +71,27 @@ func (t *Templates) Download(ctx context.Context, opts ...DownloadOption) error 
 func (t *Templates) downloadFile(ctx context.Context, url string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return fmt.Errorf("creating request: %w", err)
+		return fmt.Errorf("download-file: creating request: %w", err)
 	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("fetching file: %w", err)
+		return fmt.Errorf("download-file: fetching file: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status: %s", resp.Status)
+		return fmt.Errorf("download-file: unexpected status: %s", resp.Status)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("reading response: %w", err)
+		return fmt.Errorf("download-file: reading response: %w", err)
 	}
 
 	filePath := filepath.Join(t.templatePath, filepath.Base(url))
 	if err := os.WriteFile(filePath, body, 0644); err != nil {
-		return fmt.Errorf("writing file: %w", err)
+		return fmt.Errorf("download-file: writing file: %w", err)
 	}
 
 	return nil
@@ -109,18 +109,18 @@ type gitHubFile struct {
 func (t *Templates) listGitHubFolder(ctx context.Context) ([]string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, t.githubRepo, nil)
 	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
+		return nil, fmt.Errorf("list-git-hub-folder: creating request: %w", err)
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("fetching folder listing: %w", err)
+		return nil, fmt.Errorf("list-git-hub-folder: fetching folder listing: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status: %s", resp.Status)
+		return nil, fmt.Errorf("list-git-hub-folder: unexpected status: %s", resp.Status)
 	}
 
 	var items []gitHubFile
@@ -141,7 +141,7 @@ func (t *Templates) listGitHubFolder(ctx context.Context) ([]string, error) {
 	}
 
 	if err := t.writeLocalSHAs(items); err != nil {
-		return nil, fmt.Errorf("writing SHA file: %w", err)
+		return nil, fmt.Errorf("list-git-hub-folder: writing SHA file: %w", err)
 	}
 
 	return files, nil

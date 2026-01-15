@@ -16,7 +16,7 @@ func (m *Models) Remove(mp Path, log Logger) (err error) {
 
 	for _, modelFile := range mp.ModelFiles {
 		if err := os.Remove(modelFile); err != nil {
-			return fmt.Errorf("remove-model: unable to remove model: %q", modelFile)
+			return fmt.Errorf("remove: unable to remove model: %q", modelFile)
 		}
 
 		dir := filepath.Dir(modelFile)
@@ -24,13 +24,13 @@ func (m *Models) Remove(mp Path, log Logger) (err error) {
 		shaFile := filepath.Join(dir, "sha", base)
 
 		if err := os.Remove(shaFile); err != nil {
-			return fmt.Errorf("remove-model: unable to remove model: %q", shaFile)
+			return fmt.Errorf("remove: unable to remove model: %q", shaFile)
 		}
 	}
 
 	if mp.ProjFile != "" {
 		if err := os.Remove(mp.ProjFile); err != nil {
-			return fmt.Errorf("remove-model: unable to remove mmproj: %q", mp.ProjFile)
+			return fmt.Errorf("remove: unable to remove mmproj: %q", mp.ProjFile)
 		}
 
 		dir := filepath.Dir(mp.ProjFile)
@@ -38,7 +38,7 @@ func (m *Models) Remove(mp Path, log Logger) (err error) {
 		shaFile := filepath.Join(dir, "sha", base)
 
 		if err := os.Remove(shaFile); err != nil {
-			return fmt.Errorf("remove-model: unable to remove model: %q", shaFile)
+			return fmt.Errorf("remove: unable to remove model: %q", shaFile)
 		}
 	}
 

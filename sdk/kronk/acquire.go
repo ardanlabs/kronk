@@ -13,7 +13,7 @@ func (krn *Kronk) acquireModel(ctx context.Context) (*model.Model, error) {
 		defer krn.shutdown.Unlock()
 
 		if krn.shutdownFlag {
-			return fmt.Errorf("acquire-model:kronk has been unloaded")
+			return fmt.Errorf("acquire-model: kronk has been unloaded")
 		}
 
 		krn.activeStreams.Add(1)

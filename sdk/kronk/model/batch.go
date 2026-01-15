@@ -131,14 +131,14 @@ func newBatchEngine(m *Model, nSlots int) *batchEngine {
 }
 
 // start begins the batch processing loop.
-func (e *batchEngine) start() {
+func (e *batchEngine) start(ctx context.Context) {
 	e.wg.Add(1)
-	go e.processLoop()
-	e.model.log(context.Background(), "batch-engine", "status", "started", "slots", e.nSlots)
+	go e.processLoop(ctx)
+	e.model.log(ctx, "batch-engine", "status", "started", "slots", e.nSlots)
 }
 
 // stop signals shutdown and waits for completion.
-func (e *batchEngine) stop() {
+func (e *batchEngine) stop(ctx context.Context) {
 	if !e.stopped.CompareAndSwap(false, true) {
 		return // Already stopped
 	}
@@ -154,7 +154,7 @@ func (e *batchEngine) stop() {
 		}
 	}
 
-	e.model.log(context.Background(), "batch-engine", "status", "stopped")
+	e.model.log(ctx, "batch-engine", "status", "stopped")
 }
 
 // freeBatch frees the batch buffer. Called from Model.Unload.
@@ -169,7 +169,7 @@ func (e *batchEngine) submit(job *chatJob) error {
 		return nil
 
 	case <-e.shutdownCh:
-		return fmt.Errorf("engine shutting down")
+		return fmt.Errorf("submit: engine shutting down")
 
 	case <-job.ctx.Done():
 		return job.ctx.Err()
@@ -177,7 +177,7 @@ func (e *batchEngine) submit(job *chatJob) error {
 }
 
 // processLoop is the main batch processing goroutine.
-func (e *batchEngine) processLoop() {
+func (e *batchEngine) processLoop(ctx context.Context) {
 	defer e.wg.Done()
 
 	ticker := time.NewTicker(1 * time.Millisecond)
@@ -192,13 +192,13 @@ func (e *batchEngine) processLoop() {
 			return
 
 		case <-ticker.C:
-			e.processBatch(buf)
+			e.processBatch(ctx, buf)
 		}
 	}
 }
 
 // processBatch handles one iteration of the batch processing loop.
-func (e *batchEngine) processBatch(buf []byte) {
+func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	// Clear the batch.
 	batchClear(&e.batch)
 
@@ -231,7 +231,7 @@ func (e *batchEngine) processBatch(buf []byte) {
 	// Decode the batch.
 	ret, err := llama.Decode(e.model.lctx, e.batch)
 	if err != nil || ret != 0 {
-		e.model.log(context.Background(), "batch-engine", "status", "decode-error", "ret", ret, "err", err)
+		e.model.log(ctx, "batch-engine", "status", "decode-error", "ret", ret, "err", err)
 		return
 	}
 
@@ -287,7 +287,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 
 	// Check context window.
 	if s.nPrompt > e.model.cfg.ContextWindow {
-		err := fmt.Errorf("input tokens %d exceed context window %d", s.nPrompt, e.model.cfg.ContextWindow)
+		err := fmt.Errorf("start-slot: input tokens [%d] exceed context window [%d]", s.nPrompt, e.model.cfg.ContextWindow)
 		e.sendSlotError(s, err)
 		s.reset()
 		return
@@ -546,7 +546,7 @@ func (e *batchEngine) sendSlotError(s *slot, err error) {
 func (e *batchEngine) drainSlots() {
 	for _, s := range e.slots {
 		if s.active {
-			e.finishSlot(s, fmt.Errorf("engine shutting down"))
+			e.finishSlot(s, fmt.Errorf("darin-slots: engine shutting down"))
 		}
 	}
 }

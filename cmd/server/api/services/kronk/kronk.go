@@ -334,7 +334,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		return fmt.Errorf("installation invalid: %w", err)
 	}
 
-	cache, err := cache.NewCache(cache.Config{
+	cache, err := cache.New(cache.Config{
 		Log:                  log.Info,
 		BasePath:             cfg.BasePath,
 		Templates:            tmplts,

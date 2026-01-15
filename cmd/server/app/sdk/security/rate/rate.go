@@ -31,7 +31,7 @@ func New(cfg Config) (*Limiter, error) {
 
 	db, err := badger.Open(opts)
 	if err != nil {
-		return nil, fmt.Errorf("opening badger db: %w", err)
+		return nil, fmt.Errorf("new: unable to open badger db: %w", err)
 	}
 
 	l := Limiter{
@@ -76,7 +76,7 @@ func (l *Limiter) Check(subject string, endpoint string, limit auth.RateLimit) e
 	})
 
 	if err != nil {
-		return fmt.Errorf("reading rate limit: %w", err)
+		return fmt.Errorf("check: unable to read rate limit: %w", err)
 	}
 
 	if count >= limit.Limit {
@@ -120,7 +120,7 @@ func (l *Limiter) record(key []byte, window auth.RateWindow) error {
 	}
 
 	if err := l.db.Update(f); err != nil {
-		return fmt.Errorf("recording rate limit: %w", err)
+		return fmt.Errorf("record: unable to update rate limit: %w", err)
 	}
 
 	return nil

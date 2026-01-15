@@ -108,8 +108,8 @@ type Cache struct {
 	modelConfig          map[string]modelConfig
 }
 
-// NewCache constructs the manager for use.
-func NewCache(cfg Config) (*Cache, error) {
+// New constructs the manager for use.
+func New(cfg Config) (*Cache, error) {
 	cfg, err := validateConfig(cfg)
 	if err != nil {
 		return nil, err
@@ -117,14 +117,14 @@ func NewCache(cfg Config) (*Cache, error) {
 
 	models, err := models.NewWithPaths(cfg.BasePath)
 	if err != nil {
-		return nil, fmt.Errorf("creating models system: %w", err)
+		return nil, fmt.Errorf("new: creating models system: %w", err)
 	}
 
 	var mc map[string]modelConfig
 	if cfg.ModelConfigFile != "" {
 		mc, err = loadModelConfig(cfg.ModelConfigFile)
 		if err != nil {
-			return nil, fmt.Errorf("loading model config: %w", err)
+			return nil, fmt.Errorf("new: loading model config: %w", err)
 		}
 	}
 
@@ -144,7 +144,7 @@ func NewCache(cfg Config) (*Cache, error) {
 
 	cache, err := otter.New(&opt)
 	if err != nil {
-		return nil, fmt.Errorf("constructing cache: %w", err)
+		return nil, fmt.Errorf("new: constructing cache: %w", err)
 	}
 
 	c.cache = cache
@@ -226,7 +226,7 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 
 	fi, err := c.models.RetrievePath(modelID)
 	if err != nil {
-		return nil, fmt.Errorf("aquire-model: %w", err)
+		return nil, fmt.Errorf("aquire-model: unable to retrieve path: %w", err)
 	}
 
 	c.log(ctx, "model config lookup", "modelID", modelID, "available-keys", fmt.Sprintf("%v", func() []string {
@@ -272,7 +272,7 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 	)
 
 	if err != nil {
-		return nil, fmt.Errorf("unable to create inference model: %w", err)
+		return nil, fmt.Errorf("aquire-model: unable to create inference model: %w", err)
 	}
 
 	c.cache.Set(modelID, krn)
@@ -317,12 +317,12 @@ func (c *Cache) eviction(event otter.DeletionEvent[string, *kronk.Kronk]) {
 func loadModelConfig(modelConfigFile string) (map[string]modelConfig, error) {
 	data, err := os.ReadFile(modelConfigFile)
 	if err != nil {
-		return nil, fmt.Errorf("reading model config file: %w", err)
+		return nil, fmt.Errorf("load-model-config: reading model config file: %w", err)
 	}
 
 	var configs map[string]modelConfig
 	if err := yaml.Unmarshal(data, &configs); err != nil {
-		return nil, fmt.Errorf("unmarshaling model config: %w", err)
+		return nil, fmt.Errorf("load-model-config: unmarshaling model config: %w", err)
 	}
 
 	// Normalize keys to lowercase for case-insensitive lookup.

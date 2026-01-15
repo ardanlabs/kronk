@@ -308,7 +308,7 @@ func parseFloat32(fieldName string, val any) (float32, error) {
 	case string:
 		temp32, err := strconv.ParseFloat(v, 32)
 		if err != nil {
-			return 0, fmt.Errorf("%s is not valid: %w", fieldName, err)
+			return 0, fmt.Errorf("parse-float32: field-name[%s] is not valid: %w", fieldName, err)
 		}
 		result = float32(temp32)
 
@@ -328,7 +328,7 @@ func parseFloat32(fieldName string, val any) (float32, error) {
 		result = float32(v)
 
 	default:
-		return 0, fmt.Errorf("parse-float32: %s is not a valid type", fieldName)
+		return 0, fmt.Errorf("parse-float32: field-name[%s] is not a valid type", fieldName)
 	}
 
 	return result, nil
@@ -341,7 +341,7 @@ func parseInt(fieldName string, val any) (int, error) {
 	case string:
 		temp32, err := strconv.ParseFloat(v, 32)
 		if err != nil {
-			return 0, fmt.Errorf("%s is not valid: %w", fieldName, err)
+			return 0, fmt.Errorf("parse-int: field-name[%s] is not valid: %w", fieldName, err)
 		}
 		result = int(temp32)
 
@@ -361,7 +361,7 @@ func parseInt(fieldName string, val any) (int, error) {
 		result = int(v)
 
 	default:
-		return 0, fmt.Errorf("parse-int: %s is not a valid type", fieldName)
+		return 0, fmt.Errorf("parse-int: field-name[%s] is not a valid type", fieldName)
 	}
 
 	return result, nil
@@ -378,7 +378,7 @@ func parseBool(fieldName string, val any) (bool, error) {
 
 		b, err := strconv.ParseBool(v)
 		if err != nil {
-			return false, fmt.Errorf("parse-bool: %s is not valid: %w", fieldName, err)
+			return false, fmt.Errorf("parse-bool: field-name[%s] is not valid: %w", fieldName, err)
 		}
 
 		result = b
@@ -397,7 +397,7 @@ func parseReasoningString(fieldName string, val any) (string, error) {
 			v != ReasoningEffortLow &&
 			v != ReasoningEffortMedium &&
 			v != ReasoningEffortHigh {
-			return "", fmt.Errorf("parse-reasoning-string: %s is not valid option: %s", fieldName, v)
+			return "", fmt.Errorf("parse-reasoning-string: field-name[%s] is not valid option[%s]", fieldName, v)
 		}
 
 		result = v

@@ -59,7 +59,7 @@ func New(cfg Config) (*Security, error) {
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("rate limiter: %w", err)
+		return nil, fmt.Errorf("new: rate limiter: %w", err)
 	}
 
 	// -------------------------------------------------------------------------
@@ -72,7 +72,7 @@ func New(cfg Config) (*Security, error) {
 	}
 
 	if err := sec.addSystemKeys(); err != nil {
-		return nil, fmt.Errorf("add-system-keys: %w", err)
+		return nil, fmt.Errorf("new: unable to add system keys: %w", err)
 	}
 
 	return &sec, nil
@@ -92,16 +92,16 @@ func (sec *Security) BaseKeysFolder() string {
 func (sec *Security) Authenticate(ctx context.Context, bearerToken string, admin bool, endpoint string) (auth.Claims, error) {
 	claims, err := sec.auth.Authenticate(ctx, bearerToken)
 	if err != nil {
-		return auth.Claims{}, fmt.Errorf("invalid token: %w", err)
+		return auth.Claims{}, fmt.Errorf("authenticate: invalid token: %w", err)
 	}
 
 	err = sec.auth.Authorize(ctx, claims, admin, endpoint)
 	if err != nil {
 		if errors.Is(err, auth.ErrForbidden) {
-			return auth.Claims{}, fmt.Errorf("not authorized: %w", err)
+			return auth.Claims{}, fmt.Errorf("authenticate: not authorized: %w", err)
 		}
 
-		return auth.Claims{}, fmt.Errorf("authorization failed: %w", err)
+		return auth.Claims{}, fmt.Errorf("authenticate: authorization failed: %w", err)
 	}
 
 	if claims.Admin {
@@ -112,10 +112,10 @@ func (sec *Security) Authenticate(ctx context.Context, bearerToken string, admin
 
 	if err := sec.limiter.Check(claims.Subject, endpoint, limit); err != nil {
 		if errors.Is(err, rate.ErrRateLimitExceeded) {
-			return auth.Claims{}, fmt.Errorf("rate limit exceeded: %w", err)
+			return auth.Claims{}, fmt.Errorf("authenticate: rate limit exceeded: %w", err)
 		}
 
-		return auth.Claims{}, fmt.Errorf("rate limit check failed: %w", err)
+		return auth.Claims{}, fmt.Errorf("authenticate: rate limit check failed: %w", err)
 	}
 
 	return claims, nil
@@ -136,7 +136,7 @@ func (sec *Security) GenerateToken(admin bool, endpoints map[string]auth.RateLim
 
 	token, err := sec.auth.GenerateToken(claims)
 	if err != nil {
-		return "", fmt.Errorf("generate-token: %w", err)
+		return "", fmt.Errorf("generate-token: unable to generate token: %w", err)
 	}
 
 	return token, nil
@@ -149,7 +149,7 @@ func (sec *Security) ListKeys() ([]Key, error) {
 
 	entries, err := os.ReadDir(keysPath)
 	if err != nil {
-		return nil, fmt.Errorf("read-dir: %w", err)
+		return nil, fmt.Errorf("list-keys: unable to read directory: %w", err)
 	}
 
 	var keys []Key
@@ -165,7 +165,7 @@ func (sec *Security) ListKeys() ([]Key, error) {
 
 		info, err := entry.Info()
 		if err != nil {
-			return nil, fmt.Errorf("file-info: %w", err)
+			return nil, fmt.Errorf("list-keys: unable to get entry info: %w", err)
 		}
 
 		key := Key{
@@ -186,11 +186,11 @@ func (sec *Security) AddPrivateKey() error {
 	keysPath := filepath.Join(basePath, localFolder)
 
 	if err := generatePrivateKey(keysPath, uuid.NewString()); err != nil {
-		return fmt.Errorf("generate-private-key: %w", err)
+		return fmt.Errorf("add-private-key: unable to generate private key: %w", err)
 	}
 
 	if _, err := sec.ks.LoadByFileSystem(os.DirFS(keysPath)); err != nil {
-		return fmt.Errorf("load-by-file-system: %w", err)
+		return fmt.Errorf("add-private-key: unable to load by file system: %w", err)
 	}
 
 	return nil
@@ -204,15 +204,15 @@ func (sec *Security) DeletePrivateKey(keyID string) error {
 	keyFile := filepath.Join(keysPath, fmt.Sprintf("%s.pem", keyID))
 
 	if _, err := os.Stat(keyFile); os.IsNotExist(err) {
-		return fmt.Errorf("key %q does not exist", keyID)
+		return fmt.Errorf("delete-private-key: key %q does not exist", keyID)
 	}
 
 	if err := os.Remove(keyFile); err != nil {
-		return fmt.Errorf("delete-key: %w", err)
+		return fmt.Errorf("delete-private-key: unable to remove: %w", err)
 	}
 
 	if _, err := sec.ks.LoadByFileSystem(os.DirFS(keysPath)); err != nil {
-		return fmt.Errorf("load-by-file-system: %w", err)
+		return fmt.Errorf("delete-private-key: unable to load by file system: %w", err)
 	}
 
 	return nil
@@ -228,7 +228,7 @@ func (sec *Security) addSystemKeys() error {
 
 	n, err := sec.ks.LoadByFileSystem(os.DirFS(keysPath))
 	if err != nil {
-		return fmt.Errorf("load-by-file-system: %w", err)
+		return fmt.Errorf("add-system-keys: unable to load by file system: %w", err)
 	}
 
 	// If the keys already exist, we are done.
@@ -237,23 +237,23 @@ func (sec *Security) addSystemKeys() error {
 	}
 
 	if err := generatePrivateKey(keysPath, masterFile); err != nil {
-		return fmt.Errorf("generate-private-key: %w", err)
+		return fmt.Errorf("add-system-keys: unable to generate private key: %w", err)
 	}
 
 	if _, err := sec.ks.LoadByFileSystem(os.DirFS(keysPath)); err != nil {
-		return fmt.Errorf("load-by-file-system: %w", err)
+		return fmt.Errorf("add-system-keys: unable to load by file system: %w", err)
 	}
 
 	if err := sec.generateAdminToken(keysPath); err != nil {
-		return fmt.Errorf("generate-admin-token: %w", err)
+		return fmt.Errorf("add-system-keys: unable to generate admin token: %w", err)
 	}
 
 	if err := generatePrivateKey(keysPath, uuid.NewString()); err != nil {
-		return fmt.Errorf("generate-private-key: %w", err)
+		return fmt.Errorf("add-system-keys: unable to generate private key: %w", err)
 	}
 
 	if _, err := sec.ks.LoadByFileSystem(os.DirFS(keysPath)); err != nil {
-		return fmt.Errorf("load-by-file-system: %w", err)
+		return fmt.Errorf("add-system-keys: unable to load by file system: %w", err)
 	}
 
 	return nil
@@ -271,13 +271,13 @@ func (sec *Security) generateAdminToken(keysPath string) error {
 
 	token, err := sec.GenerateToken(admin, endpoints, tenYears)
 	if err != nil {
-		return fmt.Errorf("generate admin token: %w", err)
+		return fmt.Errorf("generate-admin-token: unable to generate token: %w", err)
 	}
 
 	fileName := filepath.Join(keysPath, fmt.Sprintf("%s.jwt", masterFile))
 
 	if err := os.WriteFile(fileName, []byte(token), 0600); err != nil {
-		return fmt.Errorf("write superuser token: %w", err)
+		return fmt.Errorf("generate-admin-token: unable to write superuser token: %w", err)
 	}
 
 	return nil

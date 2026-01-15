@@ -24,7 +24,7 @@ func (m *Model) Embeddings(ctx context.Context, d D) (EmbedReponse, error) {
 	// Note: Multi-sequence batching doesn't work for embedding models
 	// because GetEmbeddingsSeq only returns valid data for seqID 0.
 	if m.cfg.NSeqMax > 1 {
-		m.log(ctx, "embeddings: NSeqMax > 1 has no effect for embedding models (parallel sequence extraction not supported)")
+		m.log(ctx, "embeddings", "status", "NSeqMax > 1 has no effect for embedding models (parallel sequence extraction not supported)")
 	}
 
 	var inputs []string
@@ -115,7 +115,7 @@ func (m *Model) Embeddings(ctx context.Context, d D) (EmbedReponse, error) {
 				tokens = tokens[:maxTokens]
 			}
 
-			m.log(ctx, "embeddings: truncated input", "index", i, "original_tokens", originalLen, "max_tokens", maxTokens, "direction", direction, "truncated_tokens", len(tokens))
+			m.log(ctx, "embeddings", "status", "truncated input", "index", i, "original_tokens", originalLen, "max_tokens", maxTokens, "direction", direction, "truncated_tokens", len(tokens))
 		}
 
 		allTokens[i] = tokens

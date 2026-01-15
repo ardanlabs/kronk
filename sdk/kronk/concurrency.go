@@ -38,7 +38,7 @@ func streaming[T any](ctx context.Context, krn *Kronk, f streamingFunc[T], ef er
 	go func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				sendError(ctx, ch, ef, rec)
+				sendError(ch, ef, rec)
 			}
 
 			close(ch)
@@ -56,7 +56,7 @@ func streaming[T any](ctx context.Context, krn *Kronk, f streamingFunc[T], ef er
 		}
 
 		if cancelled {
-			sendError(ctx, ch, ef, ctx.Err())
+			sendError(ch, ef, ctx.Err())
 		}
 	}()
 
@@ -83,7 +83,7 @@ func sendMessage[T any](ctx context.Context, ch chan T, msg T) error {
 	}
 }
 
-func sendError[T any](ctx context.Context, ch chan T, ef errorFunc[T], rec any) {
+func sendError[T any](ch chan T, ef errorFunc[T], rec any) {
 	select {
 	case ch <- ef(fmt.Errorf("%v", rec)):
 	case <-time.After(100 * time.Millisecond):
@@ -111,11 +111,11 @@ func streamingWith[T, U any](ctx context.Context, krn *Kronk, f streamingFunc[T]
 
 		defer func() {
 			if rec := recover(); rec != nil {
-				sendError(ctx, ch, ef, rec)
+				sendError(ch, ef, rec)
 			}
 
 			if cancelled {
-				sendError(ctx, ch, ef, ctx.Err())
+				sendError(ch, ef, ctx.Err())
 			}
 
 			close(ch)

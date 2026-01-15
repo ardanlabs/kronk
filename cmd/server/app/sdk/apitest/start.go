@@ -156,7 +156,7 @@ func New(t *testing.T, testName string) *Test {
 		t.Fatal(err)
 	}
 
-	cache, err := cache.NewCache(cache.Config{
+	cache, err := cache.New(cache.Config{
 		Log:             log.Info,
 		Templates:       tmplts,
 		ModelsInCache:   3,

@@ -15,7 +15,7 @@ func generatePrivateKey(keysPath string, keyName string) error {
 	// Generate a new private key.
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
-		return fmt.Errorf("generating key: %w", err)
+		return fmt.Errorf("generate-private-key: unable to generate key: %w", err)
 	}
 
 	fileName := fmt.Sprintf("%s.pem", keyName)
@@ -36,7 +36,7 @@ func generatePrivateKey(keysPath string, keyName string) error {
 
 	// Write the private key to the private key file.
 	if err := pem.Encode(privateFile, &privateBlock); err != nil {
-		return fmt.Errorf("encoding to private file: %w", err)
+		return fmt.Errorf("generate-private-key: unable to encode: %w", err)
 	}
 
 	return nil

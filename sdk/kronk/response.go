@@ -134,7 +134,7 @@ type ResponseStreamEvent struct {
 // Response provides support to interact with an inference model.
 func (krn *Kronk) Response(ctx context.Context, d model.D) (ResponseResponse, error) {
 	if _, exists := ctx.Deadline(); !exists {
-		return ResponseResponse{}, fmt.Errorf("chat:context has no deadline, provide a reasonable timeout")
+		return ResponseResponse{}, fmt.Errorf("response: context has no deadline, provide a reasonable timeout")
 	}
 
 	d = convertInputToMessages(d)
@@ -154,7 +154,7 @@ func (krn *Kronk) Response(ctx context.Context, d model.D) (ResponseResponse, er
 // ResponseStreaming provides streaming support for the Responses API.
 func (krn *Kronk) ResponseStreaming(ctx context.Context, d model.D) (<-chan ResponseStreamEvent, error) {
 	if _, exists := ctx.Deadline(); !exists {
-		return nil, fmt.Errorf("responses-streaming:context has no deadline, provide a reasonable timeout")
+		return nil, fmt.Errorf("responses-streaming: context has no deadline, provide a reasonable timeout")
 	}
 
 	d = convertInputToMessages(d)
@@ -190,7 +190,7 @@ func (krn *Kronk) ResponseStreaming(ctx context.Context, d model.D) (<-chan Resp
 // ResponseStreamingHTTP provides http handler support for a responses call.
 func (krn *Kronk) ResponseStreamingHTTP(ctx context.Context, w http.ResponseWriter, d model.D) (ResponseResponse, error) {
 	if _, exists := ctx.Deadline(); !exists {
-		return ResponseResponse{}, fmt.Errorf("responses-streaming-http:context has no deadline, provide a reasonable timeout")
+		return ResponseResponse{}, fmt.Errorf("responses-streaming-http: context has no deadline, provide a reasonable timeout")
 	}
 
 	var stream bool
@@ -203,12 +203,12 @@ func (krn *Kronk) ResponseStreamingHTTP(ctx context.Context, w http.ResponseWrit
 	if !stream {
 		resp, err := krn.Response(ctx, d)
 		if err != nil {
-			return ResponseResponse{}, fmt.Errorf("responses-streaming-http:response: %w", err)
+			return ResponseResponse{}, fmt.Errorf("responses-streaming-http: response: %w", err)
 		}
 
 		data, err := json.Marshal(resp)
 		if err != nil {
-			return resp, fmt.Errorf("responses-streaming-http:marshal: %w", err)
+			return resp, fmt.Errorf("responses-streaming-http: marshal: %w", err)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -222,12 +222,12 @@ func (krn *Kronk) ResponseStreamingHTTP(ctx context.Context, w http.ResponseWrit
 
 	f, ok := w.(http.Flusher)
 	if !ok {
-		return ResponseResponse{}, fmt.Errorf("responses-streaming-http:streaming not supported")
+		return ResponseResponse{}, fmt.Errorf("responses-streaming-http: streaming not supported")
 	}
 
 	ch, err := krn.ResponseStreaming(ctx, d)
 	if err != nil {
-		return ResponseResponse{}, fmt.Errorf("responses-streaming-http:stream-response: %w", err)
+		return ResponseResponse{}, fmt.Errorf("responses-streaming-http: stream-response: %w", err)
 	}
 
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -240,13 +240,13 @@ func (krn *Kronk) ResponseStreamingHTTP(ctx context.Context, w http.ResponseWrit
 	for event := range ch {
 		if err := ctx.Err(); err != nil {
 			if errors.Is(err, context.Canceled) {
-				return lr, errors.New("responses-streaming-http:client disconnected, do not send response")
+				return lr, errors.New("responses-streaming-http: client disconnected, do not send response")
 			}
 		}
 
 		data, err := json.Marshal(event)
 		if err != nil {
-			return lr, fmt.Errorf("responses-streaming-http:marshal: %w", err)
+			return lr, fmt.Errorf("responses-streaming-http: marshal: %w", err)
 		}
 
 		fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event.Type, data)

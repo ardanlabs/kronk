@@ -33,7 +33,7 @@ func newManager(t *testing.T) {
 			Log: log,
 		}
 
-		mgr, err := cache.NewCache(cfg)
+		mgr, err := cache.New(cfg)
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -48,7 +48,7 @@ func newManager(t *testing.T) {
 			CacheTTL:       10 * time.Minute,
 		}
 
-		mgr, err := cache.NewCache(cfg)
+		mgr, err := cache.New(cfg)
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -68,7 +68,7 @@ func acquireModel(t *testing.T) {
 		CacheTTL:       5 * time.Minute,
 	}
 
-	mgr, err := cache.NewCache(cfg)
+	mgr, err := cache.New(cfg)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -119,7 +119,7 @@ func shutdown(t *testing.T) {
 			Log: log,
 		}
 
-		mgr, err := cache.NewCache(cfg)
+		mgr, err := cache.New(cfg)
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -140,7 +140,7 @@ func shutdown(t *testing.T) {
 			CacheTTL:       5 * time.Minute,
 		}
 
-		mgr, err := cache.NewCache(cfg)
+		mgr, err := cache.New(cfg)
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -169,7 +169,7 @@ func shutdown(t *testing.T) {
 			CacheTTL:       5 * time.Minute,
 		}
 
-		mgr, err := cache.NewCache(cfg)
+		mgr, err := cache.New(cfg)
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -199,7 +199,7 @@ func shutdown(t *testing.T) {
 			CacheTTL:       5 * time.Minute,
 		}
 
-		mgr, err := cache.NewCache(cfg)
+		mgr, err := cache.New(cfg)
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -227,7 +227,7 @@ func shutdown(t *testing.T) {
 			CacheTTL:       5 * time.Minute,
 		}
 
-		mgr, err := cache.NewCache(cfg)
+		mgr, err := cache.New(cfg)
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -276,7 +276,7 @@ func eviction(t *testing.T) {
 			CacheTTL:       500 * time.Millisecond,
 		}
 
-		mgr, err := cache.NewCache(cfg)
+		mgr, err := cache.New(cfg)
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -310,7 +310,7 @@ func eviction(t *testing.T) {
 			CacheTTL:       5 * time.Minute,
 		}
 
-		mgr, err := cache.NewCache(cfg)
+		mgr, err := cache.New(cfg)
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}

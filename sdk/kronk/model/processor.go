@@ -379,7 +379,9 @@ func (p *processor) stepStandard(content string) (response, bool) {
 			if toolContent != "" {
 				toolContent = fmt.Sprintf("%s\n", toolContent)
 			}
+
 			p.toolCallBuf.Reset()
+
 			// Stay in tool call mode in case there are more tool calls.
 			// The caller will handle EOG detection separately.
 			return response{status: statusTooling, content: toolContent}, false
@@ -437,11 +439,14 @@ func (p *processor) stepGPT(content string) (response, bool) {
 		switch content {
 		case "analysis":
 			p.status = statusReasoning
+
 		case "final":
 			p.status = statusCompletion
+
 		case "commentary":
 			p.status = statusTooling
 		}
+
 		return response{}, false
 	}
 

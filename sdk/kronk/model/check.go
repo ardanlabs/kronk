@@ -23,7 +23,7 @@ func CheckModel(modelFile string, checkSHA bool) error {
 		if os.IsNotExist(err) {
 			return nil
 		}
-		return fmt.Errorf("opening sha file: %w", err)
+		return fmt.Errorf("check-model: opening sha file: %w", err)
 	}
 	defer data.Close()
 
@@ -42,39 +42,39 @@ func CheckModel(modelFile string, checkSHA bool) error {
 			sizeStr := strings.TrimPrefix(line, "size ")
 			expectedSize, err = strconv.ParseInt(sizeStr, 10, 64)
 			if err != nil {
-				return fmt.Errorf("parsing size from sha file: %w", err)
+				return fmt.Errorf("check-model: parsing size from sha file: %w", err)
 			}
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("reading sha file: %w", err)
+		return fmt.Errorf("check-model: reading sha file: %w", err)
 	}
 
 	info, err := os.Stat(modelFile)
 	if err != nil {
-		return fmt.Errorf("stat model file: %w", err)
+		return fmt.Errorf("check-model: stat model file: %w", err)
 	}
 
 	if info.Size() != expectedSize {
-		return fmt.Errorf("size mismatch: expected %d, got %d", expectedSize, info.Size())
+		return fmt.Errorf("check-model: size mismatch: expected %d, got %d", expectedSize, info.Size())
 	}
 
 	if checkSHA {
 		f, err := os.Open(modelFile)
 		if err != nil {
-			return fmt.Errorf("opening model file for sha check: %w", err)
+			return fmt.Errorf("check-model: opening model file for sha check: %w", err)
 		}
 		defer f.Close()
 
 		h := sha256.New()
 		if _, err := io.Copy(h, f); err != nil {
-			return fmt.Errorf("computing sha256: %w", err)
+			return fmt.Errorf("check-model: computing sha256: %w", err)
 		}
 
 		actualSHA := fmt.Sprintf("%x", h.Sum(nil))
 		if actualSHA != expectedSHA {
-			return fmt.Errorf("sha256 mismatch: expected %s, got %s", expectedSHA, actualSHA)
+			return fmt.Errorf("check-model: sha256 mismatch: expected %s, got %s", expectedSHA, actualSHA)
 		}
 	}
 

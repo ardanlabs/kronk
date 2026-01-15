@@ -61,7 +61,7 @@ type Kronk struct {
 // in parallel. When NSeqMax > 1, the batch engine is used for parallel inference.
 func New(cfg model.Config, opts ...Option) (*Kronk, error) {
 	if libraryLocation == "" {
-		return nil, fmt.Errorf("the Init() function has not been called")
+		return nil, fmt.Errorf("new: the Init() function has not been called")
 	}
 
 	// -------------------------------------------------------------------------
@@ -74,7 +74,7 @@ func New(cfg model.Config, opts ...Option) (*Kronk, error) {
 	if o.tr == nil {
 		templs, err := templates.New()
 		if err != nil {
-			return nil, fmt.Errorf("template new: %w", err)
+			return nil, fmt.Errorf("new: unable to create template: %w", err)
 		}
 
 		o.tr = templs
@@ -169,13 +169,13 @@ func (krn *Kronk) Unload(ctx context.Context) error {
 		defer krn.shutdown.Unlock()
 
 		if krn.shutdownFlag {
-			return fmt.Errorf("unload:already unloaded")
+			return fmt.Errorf("unload: already unloaded")
 		}
 
 		for krn.activeStreams.Load() > 0 {
 			select {
 			case <-ctx.Done():
-				return fmt.Errorf("unload:cannot unload: %d active streams: %w", krn.activeStreams.Load(), ctx.Err())
+				return fmt.Errorf("unload: cannot unload, too many active-streams[%d]: %w", krn.activeStreams.Load(), ctx.Err())
 
 			case <-time.After(100 * time.Millisecond):
 			}
@@ -192,7 +192,7 @@ func (krn *Kronk) Unload(ctx context.Context) error {
 	// -------------------------------------------------------------------------
 
 	if err := krn.model.Unload(ctx); err != nil {
-		return fmt.Errorf("unload:failed to unload model: %s: %w", krn.model.ModelInfo().ID, err)
+		return fmt.Errorf("unload: failed to unload model, model-id[%s]: %w", krn.model.ModelInfo().ID, err)
 	}
 
 	return nil

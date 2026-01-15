@@ -62,7 +62,7 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 
 		data, err := json.Marshal(resp)
 		if err != nil {
-			return resp, fmt.Errorf("chat-streaming-http:marshal: %w", err)
+			return resp, fmt.Errorf("chat-streaming-http: marshal: %w", err)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -106,7 +106,7 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 
 		d, err := json.Marshal(resp)
 		if err != nil {
-			return resp, fmt.Errorf("chat-streaming-http:marshal: %w", err)
+			return resp, fmt.Errorf("chat-streaming-http: marshal: %w", err)
 		}
 
 		fmt.Fprintf(w, "data: %s\n", d)

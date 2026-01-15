@@ -128,14 +128,14 @@ func (lib *Libs) Download(ctx context.Context, log Logger) (VersionTag, error) {
 	if !hasNetwork() {
 		vt, err := lib.InstalledVersion()
 		if err != nil {
-			return VersionTag{}, fmt.Errorf("download-libraries: no network available: %w", err)
+			return VersionTag{}, fmt.Errorf("download: no network available: %w", err)
 		}
 
-		log(ctx, "download-libraries", "status", "no network available, using current version")
+		log(ctx, "download-libraries: no network available, using current version")
 		return vt, nil
 	}
 
-	log(ctx, "download-libraries", "status", "check libraries version information", "arch", lib.arch, "os", lib.os, "processor", lib.processor)
+	log(ctx, "download-libraries: check libraries version information", "arch", lib.arch, "os", lib.os, "processor", lib.processor)
 
 	tag, err := lib.VersionInformation()
 	if err != nil {
@@ -143,19 +143,19 @@ func (lib *Libs) Download(ctx context.Context, log Logger) (VersionTag, error) {
 			return VersionTag{}, fmt.Errorf("download-libraries: error retrieving version info: %w", err)
 		}
 
-		log(ctx, "download-libraries", "status", "unable to check latest verion, using installed version", "arch", lib.arch, "os", lib.os, "processor", lib.processor, "latest", tag.Latest, "current", tag.Version)
+		log(ctx, "download-libraries: unable to check latest verion, using installed version", "arch", lib.arch, "os", lib.os, "processor", lib.processor, "latest", tag.Latest, "current", tag.Version)
 		return tag, nil
 	}
 
-	log(ctx, "download-libraries", "status", "check llama.cpp installation", "arch", lib.arch, "os", lib.os, "processor", lib.processor, "latest", tag.Latest, "current", tag.Version)
+	log(ctx, "download-libraries: check llama.cpp installation", "arch", lib.arch, "os", lib.os, "processor", lib.processor, "latest", tag.Latest, "current", tag.Version)
 
 	if isTagMatch(tag, lib) {
-		log(ctx, "download-libraries", "status", "already installed", "latest", tag.Latest, "current", tag.Version)
+		log(ctx, "download-libraries: already installed", "latest", tag.Latest, "current", tag.Version)
 		return tag, nil
 	}
 
 	if !lib.allowUpgrade {
-		log(ctx, "download-libraries", "status", "bypassing upgrade", "latest", tag.Latest, "current", tag.Version)
+		log(ctx, "download-libraries: bypassing upgrade", "latest", tag.Latest, "current", tag.Version)
 		return tag, nil
 	}
 
@@ -163,16 +163,16 @@ func (lib *Libs) Download(ctx context.Context, log Logger) (VersionTag, error) {
 
 	newTag, err := lib.DownloadVersion(ctx, log, tag.Latest)
 	if err != nil {
-		log(ctx, "download-libraries", "status", "llama.cpp installation", "ERROR", err)
+		log(ctx, "download-libraries: llama.cpp installation", "ERROR", err)
 
 		if _, err := lib.InstalledVersion(); err != nil {
-			return VersionTag{}, fmt.Errorf("download-libraries: failed to install llama: %q: error: %w", lib.path, err)
+			return VersionTag{}, fmt.Errorf("download: failed to install llama: %q: error: %w", lib.path, err)
 		}
 
-		log(ctx, "download-libraries", "status", "failed to install new version, using current version")
+		log(ctx, "download-libraries: failed to install new version, using current version")
 	}
 
-	log(ctx, "download-libraries", "status", "updated llama.cpp installed", "old-version", tag.Version, "current", newTag.Version)
+	log(ctx, "download-libraries: updated llama.cpp installed", "old-version", tag.Version, "current", newTag.Version)
 
 	return newTag, nil
 }
@@ -224,16 +224,16 @@ func (lib *Libs) DownloadVersion(ctx context.Context, log Logger, version string
 	err := download.GetWithContext(ctx, lib.arch.String(), lib.os.String(), lib.processor.String(), version, tempPath, pr)
 	if err != nil {
 		os.RemoveAll(tempPath)
-		return VersionTag{}, fmt.Errorf("download-libs: unable to install llama.cpp: %w", err)
+		return VersionTag{}, fmt.Errorf("download-version: unable to install llama.cpp: %w", err)
 	}
 
 	if err := lib.swapTempForLib(tempPath); err != nil {
 		os.RemoveAll(tempPath)
-		return VersionTag{}, fmt.Errorf("download-libs: unable to swap temp for lib: %w", err)
+		return VersionTag{}, fmt.Errorf("download-version: unable to swap temp for lib: %w", err)
 	}
 
 	if err := lib.createVersionFile(version); err != nil {
-		return VersionTag{}, fmt.Errorf("download-libs: unable to create version file: %w", err)
+		return VersionTag{}, fmt.Errorf("download-version: unable to create version file: %w", err)
 	}
 
 	return lib.VersionInformation()

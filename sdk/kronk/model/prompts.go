@@ -83,15 +83,15 @@ func (m *Model) applyJinjaTemplate(ctx context.Context, d D) (string, error) {
 type noFSLoader struct{}
 
 func (nl *noFSLoader) Read(path string) (io.Reader, error) {
-	return nil, errors.New("no-fs-loader:filesystem access disabled")
+	return nil, errors.New("no-fs-loader-read: filesystem access disabled")
 }
 
 func (nl *noFSLoader) Resolve(path string) (string, error) {
-	return "", errors.New("no-fs-loader:filesystem access disabled")
+	return "", errors.New("no-fs-loader-resolve: filesystem access disabled")
 }
 
 func (nl *noFSLoader) Inherit(from string) (loaders.Loader, error) {
-	return nil, errors.New("no-fs-loader:filesystem access disabled")
+	return nil, errors.New("no-fs-loader-inherit: filesystem access disabled")
 }
 
 // =============================================================================

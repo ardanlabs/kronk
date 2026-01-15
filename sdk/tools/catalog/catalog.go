@@ -67,12 +67,12 @@ func New(opts ...Option) (*Catalog, error) {
 	catalogPath := filepath.Join(o.basePath, localFolder)
 
 	if err := os.MkdirAll(catalogPath, 0755); err != nil {
-		return nil, fmt.Errorf("creating catalogs directory: %w", err)
+		return nil, fmt.Errorf("new: creating catalogs directory: %w", err)
 	}
 
 	models, err := models.NewWithPaths(o.basePath)
 	if err != nil {
-		return nil, fmt.Errorf("creating models system: %w", err)
+		return nil, fmt.Errorf("new: creating models system: %w", err)
 	}
 
 	c := Catalog{

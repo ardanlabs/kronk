@@ -78,16 +78,16 @@ func (m *Models) RetrieveFiles() ([]File, error) {
 // retrieveFile finds the model and returns the model file information.
 func (m *Models) retrieveFile(modelID string) (File, error) {
 	if modelID == "" {
-		return File{}, fmt.Errorf("missing model id")
+		return File{}, fmt.Errorf("retrieve-file: missing model id")
 	}
 
 	mp, err := m.RetrievePath(modelID)
 	if err != nil {
-		return File{}, fmt.Errorf("retrieve-model-path: %w", err)
+		return File{}, fmt.Errorf("retrieve-file: unable to retrieve path: %w", err)
 	}
 
 	if len(mp.ModelFiles) == 0 {
-		return File{}, fmt.Errorf("no model files found")
+		return File{}, fmt.Errorf("retrieve-file: no model files found")
 	}
 
 	var totalSize int64
@@ -135,7 +135,7 @@ func (m *Models) RetrieveInfo(modelID string) (Info, error) {
 
 	mf, err := m.retrieveFile(modelID)
 	if err != nil {
-		return Info{}, fmt.Errorf("show-model: unable to get model file information: %w", err)
+		return Info{}, fmt.Errorf("retrieve-info: unable to get model file information: %w", err)
 	}
 
 	mi := Info{
@@ -166,7 +166,7 @@ func (m *Models) RetrievePath(modelID string) (Path, error) {
 
 	modelPath, exists := index[modelID]
 	if !exists {
-		return Path{}, fmt.Errorf("model %q not found", modelID)
+		return Path{}, fmt.Errorf("retrieve-path: model %q not found", modelID)
 	}
 
 	return modelPath, nil

@@ -25,6 +25,7 @@ func endpoint(parameters trace.SamplingParameters) string {
 		switch attr.Key {
 		case "url.path":
 			path = attr.Value.AsString()
+
 		case "url.query":
 			query = attr.Value.AsString()
 		}
