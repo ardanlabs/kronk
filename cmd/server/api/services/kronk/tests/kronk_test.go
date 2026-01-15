@@ -28,14 +28,14 @@ func Test_API(t *testing.T) {
 	tokens := createTokens(t, test.Sec)
 
 	test.Run(t, chatNonStream200(t, tokens), "chatns-200")
-	test.RunStreaming(t, chatStream200(tokens), "chatstream-200")
+	test.RunStreaming(t, chatStream200(t, tokens), "chatstream-200")
 	test.Run(t, chatEndpoint401(tokens), "chatEndpoint-401")
 
 	test.Run(t, chatEmbed200(tokens), "embedding-200")
 	test.Run(t, embed401(tokens), "embedding-401")
 
 	test.Run(t, respNonStream200(t, tokens), "respns-200")
-	test.RunStreaming(t, respStream200(tokens), "respstream-200")
+	test.RunStreaming(t, respStream200(t, tokens), "respstream-200")
 	test.Run(t, respEndpoint401(tokens), "respEndpoint-401")
 }
 
@@ -260,7 +260,11 @@ func (v responseValidator) warnContainsInReasoning(find string) responseValidato
 	return v
 }
 
-func (v responseValidator) result() string {
+func (v responseValidator) result(t *testing.T) string {
+	for _, w := range v.warnings {
+		t.Log(w)
+	}
+
 	if len(v.errors) == 0 {
 		return ""
 	}
@@ -352,20 +356,16 @@ func (v respResponseValidator) warnContainsInContent(find string) respResponseVa
 	return v
 }
 
-func (v respResponseValidator) result() string {
+func (v respResponseValidator) result(t *testing.T) string {
+	for _, w := range v.warnings {
+		t.Log(w)
+	}
+
 	if len(v.errors) == 0 {
 		return ""
 	}
 
-	result := ""
-	for i, err := range v.errors {
-		if i > 0 {
-			result += "; "
-		}
-		result += err
-	}
-
-	return result
+	return strings.Join(v.errors, "; ")
 }
 
 func containsIgnoreCase(s, substr string) bool {

@@ -62,7 +62,7 @@ func respNonStream200(t *testing.T, tokens map[string]string) []apitest.Table {
 					hasOutput().
 					hasOutputText().
 					warnContainsInContent("gorilla").
-					result()
+					result(t)
 			},
 		},
 		{
@@ -101,7 +101,7 @@ func respNonStream200(t *testing.T, tokens map[string]string) []apitest.Table {
 					hasOutput().
 					hasOutputText().
 					warnContainsInContent("giraffes").
-					result()
+					result(t)
 			},
 		},
 		{
@@ -141,7 +141,7 @@ func respNonStream200(t *testing.T, tokens map[string]string) []apitest.Table {
 					hasOutput().
 					hasOutputText().
 					warnContainsInContent("speech").
-					result()
+					result(t)
 			},
 		},
 	}
@@ -149,7 +149,7 @@ func respNonStream200(t *testing.T, tokens map[string]string) []apitest.Table {
 	return table
 }
 
-func respStream200(tokens map[string]string) []apitest.Table {
+func respStream200(t *testing.T, tokens map[string]string) []apitest.Table {
 	table := []apitest.Table{
 		{
 			Name:       "good-token",
@@ -195,7 +195,7 @@ func respStream200(tokens map[string]string) []apitest.Table {
 					hasOutput().
 					hasOutputText().
 					warnContainsInContent("gorilla").
-					result()
+					result(t)
 			},
 		},
 	}

@@ -118,6 +118,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		}
 		BasePath     string
 		LibPath      string
+		LibVersion   string `conf:"default:b7737"`
 		Arch         string
 		OS           string
 		Processor    string
@@ -266,7 +267,14 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		return err
 	}
 
-	libs, err := libs.NewWithSettings(cfg.LibPath, arch, opSys, processor, cfg.AllowUpgrade)
+	libs, err := libs.New(
+		libs.WithBasePath(cfg.LibPath),
+		libs.WithArch(arch),
+		libs.WithOS(opSys),
+		libs.WithProcessor(processor),
+		libs.WithAllowUpgrade(cfg.AllowUpgrade),
+		libs.WithVersion(cfg.LibVersion),
+	)
 	if err != nil {
 		return fmt.Errorf("unable to create libs api: %w", err)
 	}

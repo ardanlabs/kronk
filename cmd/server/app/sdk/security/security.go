@@ -92,16 +92,16 @@ func (sec *Security) BaseKeysFolder() string {
 func (sec *Security) Authenticate(ctx context.Context, bearerToken string, admin bool, endpoint string) (auth.Claims, error) {
 	claims, err := sec.auth.Authenticate(ctx, bearerToken)
 	if err != nil {
-		return auth.Claims{}, fmt.Errorf("authenticate: invalid token: %w", err)
+		return auth.Claims{}, fmt.Errorf("invalid token: %w", err)
 	}
 
 	err = sec.auth.Authorize(ctx, claims, admin, endpoint)
 	if err != nil {
 		if errors.Is(err, auth.ErrForbidden) {
-			return auth.Claims{}, fmt.Errorf("authenticate: not authorized: %w", err)
+			return auth.Claims{}, fmt.Errorf("not authorized: %w", err)
 		}
 
-		return auth.Claims{}, fmt.Errorf("authenticate: authorization failed: %w", err)
+		return auth.Claims{}, fmt.Errorf("authorization failed: %w", err)
 	}
 
 	if claims.Admin {
@@ -112,10 +112,10 @@ func (sec *Security) Authenticate(ctx context.Context, bearerToken string, admin
 
 	if err := sec.limiter.Check(claims.Subject, endpoint, limit); err != nil {
 		if errors.Is(err, rate.ErrRateLimitExceeded) {
-			return auth.Claims{}, fmt.Errorf("authenticate: rate limit exceeded: %w", err)
+			return auth.Claims{}, fmt.Errorf("rate limit exceeded: %w", err)
 		}
 
-		return auth.Claims{}, fmt.Errorf("authenticate: rate limit check failed: %w", err)
+		return auth.Claims{}, fmt.Errorf("rate limit check failed: %w", err)
 	}
 
 	return claims, nil

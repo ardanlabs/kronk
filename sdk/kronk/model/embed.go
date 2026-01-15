@@ -149,10 +149,14 @@ func (m *Model) Embeddings(ctx context.Context, d D) (EmbedReponse, error) {
 			return EmbedReponse{}, fmt.Errorf("embeddings: decode returned non-zero for input[%d]: %d", i, ret)
 		}
 
-		vec, err := llama.GetEmbeddingsSeq(lctx, 0, nativeDim)
+		rawVec, err := llama.GetEmbeddingsSeq(lctx, 0, nativeDim)
 		if err != nil {
 			return EmbedReponse{}, fmt.Errorf("embeddings: unable to get embeddings for input[%d]: %w", i, err)
 		}
+
+		// Copy the vector since llama memory is invalidated by MemoryClear.
+		vec := make([]float32, len(rawVec))
+		copy(vec, rawVec)
 
 		if requestedDim > 0 {
 			vec = vec[:int(requestedDim)]

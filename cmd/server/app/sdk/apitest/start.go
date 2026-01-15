@@ -24,6 +24,8 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 )
 
+const useLibVersion = "b7737"
+
 // New initialized the system to run a test.
 func New(t *testing.T, testName string) *Test {
 	ctx := context.Background()
@@ -109,7 +111,9 @@ func New(t *testing.T, testName string) *Test {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
-	libs, err := libs.New()
+	libs, err := libs.New(
+		libs.WithVersion(useLibVersion),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -21,6 +21,8 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/templates"
 )
 
+const useLibVersion = "b7737"
+
 const (
 	modelURL       = "https://huggingface.co/mradermacher/Qwen2-Audio-7B-GGUF/resolve/main/Qwen2-Audio-7B.Q8_0.gguf"
 	projURL        = "https://huggingface.co/mradermacher/Qwen2-Audio-7B-GGUF/resolve/main/Qwen2-Audio-7B.mmproj-Q8_0.gguf"
@@ -64,7 +66,9 @@ func installSystem() (models.Path, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
-	libs, err := libs.New()
+	libs, err := libs.New(
+		libs.WithVersion(useLibVersion),
+	)
 	if err != nil {
 		return models.Path{}, err
 	}

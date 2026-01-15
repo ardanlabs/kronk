@@ -17,6 +17,8 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/templates"
 )
 
+const useLibVersion = "b7737"
+
 func init() {
 	fmt.Println("kronk_test init starting...")
 }
@@ -127,16 +129,17 @@ func printInfo(models *models.Models) {
 		runInParallel = true
 	}
 
-	fmt.Println("libpath        :", libs.Path(""))
-	fmt.Println("modelPath      :", models.Path())
-	fmt.Println("imageFile      :", imageFile)
-	fmt.Println("processor      :", "cpu")
-	fmt.Println("testDuration   :", testDuration)
-	fmt.Println("MODEL INSTANCES:", modelInstances)
-	fmt.Println("GOROUTINES     :", goroutines)
-	fmt.Println("RUN_IN_PARALLEL:", runInParallel)
+	fmt.Println("libpath          :", libs.Path(""))
+	fmt.Println("useLibVersion    :", useLibVersion)
+	fmt.Println("modelPath        :", models.Path())
+	fmt.Println("imageFile        :", imageFile)
+	fmt.Println("processor        :", "cpu")
+	fmt.Println("testDuration     :", testDuration)
+	fmt.Println("MODEL INSTANCES. :", modelInstances)
+	fmt.Println("GOROUTINES       :", goroutines)
+	fmt.Println("RUN_IN_PARALLEL  :", runInParallel)
 
-	libs, err := libs.New()
+	libs, err := libs.New(libs.WithVersion(useLibVersion))
 	if err != nil {
 		fmt.Printf("Failed to construct the libs api: %v\n", err)
 		os.Exit(1)
@@ -148,7 +151,7 @@ func printInfo(models *models.Models) {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Current version: %s\n", currentVersion)
+	fmt.Printf("Installed version: %s\n", currentVersion)
 }
 
 func getMsg(choice model.Choice, streaming bool) model.ResponseMessage {

@@ -101,7 +101,7 @@ vuln-check:
 # Don't change the order of these tests. This order is solving a test
 # build issue with time it takes to build the test binary due to building
 # the binary with the libraries.
-test-only: install-libraries install-models
+test-only: install-models
 	@echo ========== RUN TESTS ==========
 	export GOROUTINES=1 && \
 	export RUN_IN_PARALLEL=yes && \

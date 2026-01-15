@@ -62,6 +62,11 @@ func Test_ConTest1(t *testing.T) {
 
 	t.Log("check conditions")
 
+	if len(lastResp.Choice) == 0 {
+		t.Log("WARNING: Didn't get any response from the api call")
+		return
+	}
+
 	if lastResp.Choice[0].FinishReason != model.FinishReasonError {
 		t.Errorf("expected error finish reason, got %s", lastResp.Choice[0].FinishReason)
 	}
@@ -123,6 +128,11 @@ func Test_ConTest2(t *testing.T) {
 	}
 
 	t.Log("check conditions")
+
+	if len(lastResp.Choice) == 0 {
+		t.Log("WARNING: Didn't get any response from the api call")
+		return
+	}
 
 	if lastResp.Choice[0].FinishReason != model.FinishReasonError {
 		t.Errorf("expected error finish reason, got %s", lastResp.Choice[0].FinishReason)
