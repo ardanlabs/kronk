@@ -109,7 +109,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 
 		// Sequential path for media requests or when engine is not available.
 
-		m.processChatRequest(ctx, id, m.lctx, mtmdCtx, object, prompt, media, params, ch)
+		m.sequentialChatRequest(ctx, id, m.lctx, mtmdCtx, object, prompt, media, params, ch)
 	}()
 
 	return ch

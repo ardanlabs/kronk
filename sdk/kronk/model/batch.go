@@ -203,7 +203,10 @@ func (e *batchEngine) processLoop(ctx context.Context) {
 		case job := <-e.requestQ:
 			// Requeue job for fillSlots to handle in correct order
 			// (after batchClear but before decode).
+			// Wake up the goroutine instantly.
 			e.requestQ <- job
+
+			// This will immediately trigger the timer.
 			timer.Reset(0)
 
 		case <-timer.C:

@@ -277,7 +277,7 @@ func (m *Model) resetContext() {
 	}
 }
 
-func (m *Model) processChatRequest(ctx context.Context, id string, lctx llama.Context, mtmdCtx mtmd.Context, object string, prompt string, media [][]byte, params Params, ch chan<- ChatResponse) {
+func (m *Model) sequentialChatRequest(ctx context.Context, id string, lctx llama.Context, mtmdCtx mtmd.Context, object string, prompt string, media [][]byte, params Params, ch chan<- ChatResponse) {
 	m.log(ctx, "process-chat-request", "status", "started", "id", id, "object", object)
 	defer m.log(ctx, "process-chat-request", "status", "completed", "id", id, "object", object)
 
