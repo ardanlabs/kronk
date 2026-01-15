@@ -9,6 +9,28 @@
 //
 // Run the example like this from the root of the project:
 // $ go run examples/yzma-multimodal/main.go -model /path/to/vision-model.gguf -proj /path/to/mmproj.gguf -image examples/samples/giraffe.jpg
+//
+// Summary of what we accomplished:
+//
+// Fixed defer-in-loop bug - Changed defer llama.BatchFree(batch) inside loops
+// to immediate llama.BatchFree(batch) calls
+//
+// Fixed sequence ID mismatch - Generation now uses the same sequence ID as
+// prefill via createTokenBatch
+//
+// Added M-RoPE support - Created createEmbdBatchMRoPE with proper 2D position
+// grid layout for Qwen2.5-VL
+//
+// Fixed position advancement - Now uses InputChunkGetNPos (returns max(nx,ny)
+// for M-RoPE) instead of nTokens
+//
+// Current state: The example runs without crashing, processes image chunks
+// correctly, but generation produces no output (sampler returns EOG immediately).
+//
+// Remaining issue: The model isn't generating text after prefill. This likely
+// means the logits from prefill aren't being computed properly, or there's
+// still something wrong with how the M-RoPE batch positions are being
+// interpreted by llama.cpp.
 
 package main
 

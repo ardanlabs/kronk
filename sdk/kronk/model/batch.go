@@ -62,6 +62,9 @@ type slot struct {
 	sampled     llama.Token
 	active      bool
 	prefillDone bool
+
+	prefillTokens []llama.Token
+	nPrefilled    int
 }
 
 func (s *slot) reset() {
@@ -85,6 +88,8 @@ func (s *slot) reset() {
 	s.sampled = 0
 	s.active = false
 	s.prefillDone = false
+	s.prefillTokens = nil
+	s.nPrefilled = 0
 
 	if s.proc != nil {
 		s.proc.resetState()
@@ -237,6 +242,21 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	// Clear the batch.
 	batchClear(&e.batch)
 
+	// Continue prefill for slots that are still prefilling.
+	for _, s := range e.slots {
+		if !s.active || s.prefillTokens == nil {
+			continue
+		}
+
+		// Check if client cancelled.
+		if s.job.ctx.Err() != nil {
+			e.finishSlot(s, s.job.ctx.Err())
+			continue
+		}
+
+		e.addPrefillChunk(s)
+	}
+
 	// Add tokens from active slots that have completed prefill.
 	for _, s := range e.slots {
 		if !s.active || !s.prefillDone {
@@ -328,23 +348,49 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 		return
 	}
 
-	// Track prefill time.
+	// Store tokens for chunked prefill.
+	s.prefillTokens = tokens
+	s.nPrefilled = 0
+
+	// Add first chunk of prompt tokens to batch.
+	e.addPrefillChunk(s)
+
+	e.model.log(job.ctx, "batch-engine", "status", "slot-started", "slot", s.id, "id", job.id, "prompt_tokens", s.nPrompt)
+}
+
+// addPrefillChunk adds the next chunk of prefill tokens to the batch.
+// Returns true if prefill is complete after this chunk.
+func (e *batchEngine) addPrefillChunk(s *slot) {
+	if s.prefillTokens == nil || s.nPrefilled >= len(s.prefillTokens) {
+		return
+	}
+
 	prefillStart := time.Now()
 
-	// Add prompt tokens to batch for prefill.
-	for i, tok := range tokens {
-		logits := i == len(tokens)-1 // Only need logits for last token
-		batchAdd(&e.batch, tok, s.nPast, []llama.SeqId{s.seqID}, logits)
+	nBatch := e.model.cfg.NBatch
+	remaining := len(s.prefillTokens) - s.nPrefilled
+	chunkSize := min(remaining, nBatch)
+
+	// Add chunk of tokens to batch.
+	for i := 0; i < chunkSize; i++ {
+		tok := s.prefillTokens[s.nPrefilled+i]
+		isLast := s.nPrefilled+i == len(s.prefillTokens)-1
+		batchAdd(&e.batch, tok, s.nPast, []llama.SeqId{s.seqID}, isLast)
 		s.nPast++
 	}
+	s.nPrefilled += chunkSize
 
 	prefillDuration := time.Since(prefillStart)
 	metrics.AddPrefillNonMediaTime(prefillDuration)
-	s.span.SetAttributes(attribute.String("prefill-nonmedia", prefillDuration.String()))
 
-	s.iBatch = e.batch.NTokens - 1
-
-	e.model.log(job.ctx, "batch-engine", "status", "slot-started", "slot", s.id, "id", job.id, "prompt_tokens", s.nPrompt)
+	// Check if prefill is complete.
+	if s.nPrefilled >= len(s.prefillTokens) {
+		s.iBatch = e.batch.NTokens - 1
+		s.prefillTokens = nil
+		s.span.SetAttributes(attribute.String("prefill-nonmedia", prefillDuration.String()))
+	} else {
+		s.iBatch = -1
+	}
 }
 
 // processSlotToken handles a sampled token for a slot.
