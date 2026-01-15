@@ -214,6 +214,11 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 		cfg.NUBatch = cfg.NBatch
 	}
 
+	// This value must be 1 to properly configure the batch engine.
+	if cfg.NSeqMax <= 0 {
+		cfg.NSeqMax = 1
+	}
+
 	return cfg
 }
 
@@ -272,10 +277,10 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 		ctxParams.FlashAttentionType = llama.FlashAttentionTypeEnabled
 	}
 
-	if cfg.NSeqMax > 0 {
-		// +1 to allow seqIDs 1..NSeqMax (seqID 0 reserved).
-		ctxParams.NSeqMax = uint32(cfg.NSeqMax + 1)
-	}
+	// +1 to allow seqIDs 1..NSeqMax (seqID 0 reserved).
+	// When NSeqMax is 0, we still need at least 2 for single-slot batch engine.
+	nSeqMax := max(cfg.NSeqMax, 1)
+	ctxParams.NSeqMax = uint32(nSeqMax + 1)
 
 	// Offload KQV cache to CPU.
 	// llama.cpp has this as default set to true
