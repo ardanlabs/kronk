@@ -20,8 +20,9 @@ const Version = "1.13.3"
 // =============================================================================
 
 type options struct {
-	tr  model.TemplateRetriever
-	ctx context.Context
+	tr         model.TemplateRetriever
+	ctx        context.Context
+	queueDepth int
 }
 
 // Option represents options for configuring Kronk.
@@ -39,6 +40,18 @@ func WithTemplateRetriever(templates model.TemplateRetriever) Option {
 func WithContext(ctx context.Context) Option {
 	return func(o *options) {
 		o.ctx = ctx
+	}
+}
+
+// WithQueueDepth sets the multiplier for semaphore capacity when using the
+// batch engine (NSeqMax > 1). This controls how many requests can queue while
+// the current batch is processing. Default is 2, meaning NSeqMax * 2 requests
+// can be in-flight. Only applies to text inference models.
+func WithQueueDepth(multiplier int) Option {
+	return func(o *options) {
+		if multiplier > 0 {
+			o.queueDepth = multiplier
+		}
 	}
 }
 
@@ -63,7 +76,10 @@ func New(cfg model.Config, opts ...Option) (*Kronk, error) {
 
 	// -------------------------------------------------------------------------
 
-	var o options
+	o := options{
+		queueDepth: 2,
+	}
+
 	for _, opt := range opts {
 		opt(&o)
 	}
@@ -115,7 +131,7 @@ func New(cfg model.Config, opts ...Option) (*Kronk, error) {
 		semCapacity = 1
 
 	default:
-		semCapacity = max(cfg.NSeqMax, 1) * 2
+		semCapacity = max(cfg.NSeqMax, 1) * o.queueDepth
 	}
 
 	// -------------------------------------------------------------------------
