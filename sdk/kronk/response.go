@@ -132,6 +132,10 @@ type ResponseStreamEvent struct {
 // =============================================================================
 
 // Response provides support to interact with an inference model.
+// Text inference requests can run concurrently based on the NSeqMax config
+// value, which controls parallel sequence processing. However, requests that
+// include vision or audio content are processed sequentially due to media
+// pipeline constraints.
 func (krn *Kronk) Response(ctx context.Context, d model.D) (ResponseResponse, error) {
 	if _, exists := ctx.Deadline(); !exists {
 		return ResponseResponse{}, fmt.Errorf("response: context has no deadline, provide a reasonable timeout")
@@ -152,6 +156,10 @@ func (krn *Kronk) Response(ctx context.Context, d model.D) (ResponseResponse, er
 }
 
 // ResponseStreaming provides streaming support for the Responses API.
+// Text inference requests can run concurrently based on the NSeqMax config
+// value, which controls parallel sequence processing. However, requests that
+// include vision or audio content are processed sequentially due to media
+// pipeline constraints.
 func (krn *Kronk) ResponseStreaming(ctx context.Context, d model.D) (<-chan ResponseStreamEvent, error) {
 	if _, exists := ctx.Deadline(); !exists {
 		return nil, fmt.Errorf("responses-streaming: context has no deadline, provide a reasonable timeout")
@@ -188,6 +196,10 @@ func (krn *Kronk) ResponseStreaming(ctx context.Context, d model.D) (<-chan Resp
 }
 
 // ResponseStreamingHTTP provides http handler support for a responses call.
+// Text inference requests can run concurrently based on the NSeqMax config
+// value, which controls parallel sequence processing. However, requests that
+// include vision or audio content are processed sequentially due to media
+// pipeline constraints.
 func (krn *Kronk) ResponseStreamingHTTP(ctx context.Context, w http.ResponseWriter, d model.D) (ResponseResponse, error) {
 	if _, exists := ctx.Deadline(); !exists {
 		return ResponseResponse{}, fmt.Errorf("responses-streaming-http: context has no deadline, provide a reasonable timeout")

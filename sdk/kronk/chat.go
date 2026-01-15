@@ -11,6 +11,10 @@ import (
 )
 
 // Chat provides support to interact with an inference model.
+// Text inference requests can run concurrently based on the NSeqMax config
+// value, which controls parallel sequence processing. However, requests that
+// include vision or audio content are processed sequentially due to media
+// pipeline constraints.
 func (krn *Kronk) Chat(ctx context.Context, d model.D) (model.ChatResponse, error) {
 	if _, exists := ctx.Deadline(); !exists {
 		return model.ChatResponse{}, fmt.Errorf("chat: context has no deadline, provide a reasonable timeout")
@@ -24,6 +28,10 @@ func (krn *Kronk) Chat(ctx context.Context, d model.D) (model.ChatResponse, erro
 }
 
 // ChatStreaming provides support to interact with an inference model.
+// Text inference requests can run concurrently based on the NSeqMax config
+// value, which controls parallel sequence processing. However, requests that
+// include vision or audio content are processed sequentially due to media
+// pipeline constraints.
 func (krn *Kronk) ChatStreaming(ctx context.Context, d model.D) (<-chan model.ChatResponse, error) {
 	if _, exists := ctx.Deadline(); !exists {
 		return nil, fmt.Errorf("chat-streaming: context has no deadline, provide a reasonable timeout")
@@ -41,6 +49,10 @@ func (krn *Kronk) ChatStreaming(ctx context.Context, d model.D) (<-chan model.Ch
 }
 
 // ChatStreamingHTTP provides http handler support for a chat/completions call.
+// Text inference requests can run concurrently based on the NSeqMax config
+// value, which controls parallel sequence processing. However, requests that
+// include vision or audio content are processed sequentially due to media
+// pipeline constraints.
 func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, d model.D) (model.ChatResponse, error) {
 	if _, exists := ctx.Deadline(); !exists {
 		return model.ChatResponse{}, fmt.Errorf("chat-streaming-http: context has no deadline, provide a reasonable timeout")
