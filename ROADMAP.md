@@ -36,23 +36,35 @@
 
 ### OLLAMA FEATURE PARITY
 
-- **Anthropic API Compatibility** - `/v1/messages` endpoint enables tools like Claude Code to work with Kronk
+#### Anthropic API Compatibility
 
-- **Logprobs** - Return token log probabilities for prompt engineering and debugging
+`/v1/messages` endpoint enables tools like Claude Code to work with Kronk
 
-  Yzma exposes raw logits via GetLogits() and GetLogitsIth() in pkg/llama/context.go, returning []float32 arrays. You would need to manually apply log-softmax to convert these to log probabilities.
+#### Logprobs - Return token log probabilities for prompt engineering and debugging
 
-  What's missing: No direct access to llama_sampler_get_data() or convenience wrappers for per-token log probabilities during sampling. So implementing Logprobs in kronk is possible but would require additional work to expose and compute the values from raw logits.
+Yzma exposes raw logits via GetLogits() and GetLogitsIth() in pkg/llama/context.go, returning []float32 arrays. You would need to manually apply log-softmax to convert these to log probabilities.
 
-- **Structured Outputs (JSON Schema)** - Support `format` as a JSON schema, not just `json` boolean
+What's missing: No direct access to llama_sampler_get_data() or convenience wrappers for per-token log probabilities during sampling. So implementing Logprobs in kronk is possible but would require additional work to expose and compute the values from raw logits.
 
-- **`suffix` Parameter** - Fill-in-the-middle completion support
+#### Structured Outputs (JSON Schema) - Support `format` as a JSON schema, not just `json` boolean
 
-  - yzma exposes FIM token functions: `VocabFIMPre()`, `VocabFIMSuf()`, `VocabFIMMid()`, etc.
-  - Implementation: construct prompt as `<FIM_PRE>{prefix}<FIM_SUF>{suffix}<FIM_MID>`, model generates the middle
-  - Caveat: FIM must be trained into the model; only certain models support it (CodeLlama, StarCoder, CodeGemma, etc.)
+Yes, the OpenAI Chat Completions API supports Structured Outputs via the response_format parameter. You can set response_format: { type: "json_schema", json_schema: {...}, strict: true } to ensure model outputs match your supplied JSON schema exactly. This works with gpt-4o-mini, gpt-4o-2024-08-06, and later models.
 
-- **`kronk push`** - Push custom models to a registry
+Based on the search results, Structured Outputs works with OpenAI's GPT models and their reasoning models (o1, o3, o3-pro, o4-mini). It's an OpenAI API feature that requires models specifically trained for schema adherence.
+
+For local models via llama.cpp (like kronk uses), you'd need to implement constrained decoding using grammars—llama.cpp supports GBNF grammars to constrain output to valid JSON matching a schema, which achieves similar results through a different mechanism.
+
+#### `suffix` Parameter - Fill-in-the-middle completion support
+
+yzma exposes FIM token functions: `VocabFIMPre()`, `VocabFIMSuf()`, `VocabFIMMid()`, etc.
+
+Implementation: construct prompt as `<FIM_PRE>{prefix}<FIM_SUF>{suffix}<FIM_MID>`, model generates the middle
+
+Caveat: FIM must be trained into the model; only certain models support it (CodeLlama, StarCoder, CodeGemma, etc.)
+
+#### `kronk push`
+
+Push custom models to a registry
 
 ### SGLANG FEATURE PARITY
 
