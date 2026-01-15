@@ -392,7 +392,7 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error)</code>
               </pre>
-              <p className="doc-description">Chat performs a chat request and returns the final response.</p>
+              <p className="doc-description">Chat performs a chat request and returns the final response. Text inference requests can run concurrently based on the NSeqMax config value, which controls parallel sequence processing. However, requests that include vision or audio content are processed sequentially due to media pipeline constraints.</p>
             </div>
 
             <div className="doc-section" id="method-model-chatstreaming">
@@ -400,7 +400,7 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func (m *Model) ChatStreaming(ctx context.Context, d D) &lt;-chan ChatResponse</code>
               </pre>
-              <p className="doc-description">ChatStreaming performs a chat request and streams the response.</p>
+              <p className="doc-description">ChatStreaming performs a chat request and streams the response. Text inference requests can run concurrently based on the NSeqMax config value, which controls parallel sequence processing. However, requests that include vision or audio content are processed sequentially due to media pipeline constraints.</p>
             </div>
 
             <div className="doc-section" id="method-model-config">
@@ -415,7 +415,7 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func (m *Model) Embeddings(ctx context.Context, d D) (EmbedReponse, error)</code>
               </pre>
-              <p className="doc-description">Embeddings performs batch embedding for multiple inputs in a single forward pass. This is more efficient than calling Embeddings multiple times. Supported options in d: - input ([]string): the texts to embed (required) - truncate (bool): if true, truncate inputs to fit context window (default: false) - truncate_direction (string): "right" (default) or "left" - dimensions (int): reduce output to first N dimensions (for Matryoshka models)</p>
+              <p className="doc-description">Embeddings performs batch embedding for multiple inputs in a single forward pass. This is more efficient than calling Embeddings multiple times. Supported options in d: - input ([]string): the texts to embed (required) - truncate (bool): if true, truncate inputs to fit context window (default: false) - truncate_direction (string): "right" (default) or "left" - dimensions (int): reduce output to first N dimensions (for Matryoshka models) Embedding calls are processed sequentially (llama.cpp only supports sequence 0 for embedding extraction). Batch multiple texts in the input parameter for better performance.</p>
             </div>
 
             <div className="doc-section" id="method-model-modelinfo">

@@ -11,11 +11,16 @@ import (
 
 // Embeddings performs batch embedding for multiple inputs in a single
 // forward pass. This is more efficient than calling Embeddings multiple times.
+//
 // Supported options in d:
 //   - input ([]string): the texts to embed (required)
 //   - truncate (bool): if true, truncate inputs to fit context window (default: false)
 //   - truncate_direction (string): "right" (default) or "left"
 //   - dimensions (int): reduce output to first N dimensions (for Matryoshka models)
+//
+// Embedding calls are processed sequentially (llama.cpp only supports sequence 0
+// for embedding extraction). Batch multiple texts in the input parameter for
+// better performance.
 func (m *Model) Embeddings(ctx context.Context, d D) (EmbedReponse, error) {
 	if !m.modelInfo.IsEmbedModel {
 		return EmbedReponse{}, fmt.Errorf("embeddings: model doesn't support embedding")

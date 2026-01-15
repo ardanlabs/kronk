@@ -15,6 +15,10 @@ import (
 )
 
 // Chat performs a chat request and returns the final response.
+// Text inference requests can run concurrently based on the NSeqMax config
+// value, which controls parallel sequence processing. However, requests that
+// include vision or audio content are processed sequentially due to media
+// pipeline constraints.
 func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error) {
 	ch := m.ChatStreaming(ctx, d)
 
@@ -27,6 +31,10 @@ func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error) {
 }
 
 // ChatStreaming performs a chat request and streams the response.
+// Text inference requests can run concurrently based on the NSeqMax config
+// value, which controls parallel sequence processing. However, requests that
+// include vision or audio content are processed sequentially due to media
+// pipeline constraints.
 func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 	ch := make(chan ChatResponse, 1)
 

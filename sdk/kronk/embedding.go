@@ -10,11 +10,16 @@ import (
 )
 
 // Embeddings provides support to interact with an embedding model.
+//
 // Supported options in d:
 //   - input (string): the text to embed (required)
 //   - truncate (bool): if true, truncate input to fit context window (default: false)
 //   - truncate_direction (string): "right" (default) or "left"
 //   - dimensions (int): reduce output to first N dimensions (for Matryoshka models)
+//
+// Embedding calls are processed sequentially (llama.cpp only supports sequence 0
+// for embedding extraction). Batch multiple texts in the input parameter for
+// better performance.
 func (krn *Kronk) Embeddings(ctx context.Context, d model.D) (model.EmbedReponse, error) {
 	if !krn.ModelInfo().IsEmbedModel {
 		return model.EmbedReponse{}, fmt.Errorf("embeddings: model doesn't support embedding")
