@@ -153,6 +153,7 @@ func respStream200(t *testing.T, tokens map[string]string) []apitest.Table {
 	table := []apitest.Table{
 		{
 			Name:       "good-token",
+			SkipInGH:   true,
 			URL:        "/v1/responses",
 			Token:      tokens["responses"],
 			Method:     http.MethodPost,
