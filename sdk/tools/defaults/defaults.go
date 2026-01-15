@@ -12,7 +12,7 @@ import (
 
 var (
 	basePath   = ".kronk"
-	libVersion = "b7737"
+	libVersion = ""
 )
 
 // LibVersion returns the default library version, checking the KRONK_LIB_VERSION
