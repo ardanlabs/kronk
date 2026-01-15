@@ -16,18 +16,16 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/ardanlabs/kronk/sdk/tools/templates"
 )
 
-const useLibVersion = "b7737"
-
 const (
-	modelURL       = "https://huggingface.co/mradermacher/Qwen2-Audio-7B-GGUF/resolve/main/Qwen2-Audio-7B.Q8_0.gguf"
-	projURL        = "https://huggingface.co/mradermacher/Qwen2-Audio-7B-GGUF/resolve/main/Qwen2-Audio-7B.mmproj-Q8_0.gguf"
-	audioFile      = "examples/samples/jfk.wav"
-	modelInstances = 1
+	modelURL  = "https://huggingface.co/mradermacher/Qwen2-Audio-7B-GGUF/resolve/main/Qwen2-Audio-7B.Q8_0.gguf"
+	projURL   = "https://huggingface.co/mradermacher/Qwen2-Audio-7B-GGUF/resolve/main/Qwen2-Audio-7B.mmproj-Q8_0.gguf"
+	audioFile = "examples/samples/jfk.wav"
 )
 
 func main() {
@@ -67,7 +65,7 @@ func installSystem() (models.Path, error) {
 	defer cancel()
 
 	libs, err := libs.New(
-		libs.WithVersion(useLibVersion),
+		libs.WithVersion(defaults.LibVersion("")),
 	)
 	if err != nil {
 		return models.Path{}, err

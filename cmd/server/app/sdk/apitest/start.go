@@ -18,13 +18,12 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
+	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/ardanlabs/kronk/sdk/tools/templates"
 	"google.golang.org/grpc/test/bufconn"
 )
-
-const useLibVersion = "b7737"
 
 // New initialized the system to run a test.
 func New(t *testing.T, testName string) *Test {
@@ -112,7 +111,7 @@ func New(t *testing.T, testName string) *Test {
 	defer cancel()
 
 	libs, err := libs.New(
-		libs.WithVersion(useLibVersion),
+		libs.WithVersion(defaults.LibVersion("")),
 	)
 	if err != nil {
 		t.Fatal(err)

@@ -12,12 +12,11 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/ardanlabs/kronk/sdk/tools/templates"
 )
-
-const useLibVersion = "b7737"
 
 func init() {
 	fmt.Println("kronk_test init starting...")
@@ -130,7 +129,7 @@ func printInfo(models *models.Models) {
 	}
 
 	fmt.Println("libpath          :", libs.Path(""))
-	fmt.Println("useLibVersion    :", useLibVersion)
+	fmt.Println("useLibVersion    :", defaults.LibVersion(""))
 	fmt.Println("modelPath        :", models.Path())
 	fmt.Println("imageFile        :", imageFile)
 	fmt.Println("processor        :", "cpu")
@@ -139,7 +138,7 @@ func printInfo(models *models.Models) {
 	fmt.Println("GOROUTINES       :", goroutines)
 	fmt.Println("RUN_IN_PARALLEL  :", runInParallel)
 
-	libs, err := libs.New(libs.WithVersion(useLibVersion))
+	libs, err := libs.New(libs.WithVersion(defaults.LibVersion("")))
 	if err != nil {
 		fmt.Printf("Failed to construct the libs api: %v\n", err)
 		os.Exit(1)

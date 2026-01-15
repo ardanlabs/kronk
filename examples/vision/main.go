@@ -16,12 +16,11 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/ardanlabs/kronk/sdk/tools/templates"
 )
-
-const useLibVersion = "b7737"
 
 const (
 	modelURL  = "https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
@@ -66,7 +65,7 @@ func installSystem() (models.Path, error) {
 	defer cancel()
 
 	libs, err := libs.New(
-		libs.WithVersion(useLibVersion),
+		libs.WithVersion(defaults.LibVersion("")),
 	)
 	if err != nil {
 		return models.Path{}, err
