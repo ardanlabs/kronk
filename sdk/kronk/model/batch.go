@@ -176,14 +176,23 @@ func (e *batchEngine) submit(job *chatJob) error {
 	}
 }
 
-// processLoop is the main batch processing goroutine.
+// processLoop is the main batch processing goroutine using a signal-based wake
+// algorithm. Instead of polling at a fixed interval, it wakes immediately when
+// new requests arrive on requestQ, eliminating up to 1ms latency on request
+// pickup. When slots are actively generating, it polls at 100µs for low-latency
+// token streaming. When idle, it backs off to 5ms to reduce CPU usage.
 func (e *batchEngine) processLoop(ctx context.Context) {
 	defer e.wg.Done()
 
-	ticker := time.NewTicker(1 * time.Millisecond)
-	defer ticker.Stop()
-
 	buf := make([]byte, 32*1024)
+
+	const (
+		activeInterval = 100 * time.Microsecond // Fast poll when slots are generating
+		idleInterval   = 5 * time.Millisecond   // Slow poll when no active slots
+	)
+
+	timer := time.NewTimer(idleInterval)
+	defer timer.Stop()
 
 	for {
 		select {
@@ -191,10 +200,33 @@ func (e *batchEngine) processLoop(ctx context.Context) {
 			e.drainSlots()
 			return
 
-		case <-ticker.C:
-			e.processBatch(ctx, buf)
+		case job := <-e.requestQ:
+			// Requeue job for fillSlots to handle in correct order
+			// (after batchClear but before decode).
+			e.requestQ <- job
+			timer.Reset(0)
+
+		case <-timer.C:
+			switch e.hasActiveSlots() || len(e.requestQ) > 0 {
+			case true:
+				e.processBatch(ctx, buf)
+				timer.Reset(activeInterval)
+
+			case false:
+				timer.Reset(idleInterval)
+			}
 		}
 	}
+}
+
+// hasActiveSlots returns true if any slot is currently processing.
+func (e *batchEngine) hasActiveSlots() bool {
+	for _, s := range e.slots {
+		if s.active {
+			return true
+		}
+	}
+	return false
 }
 
 // processBatch handles one iteration of the batch processing loop.
@@ -472,13 +504,11 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		return
 	}
 
-	// Process tool calls if any.
+	// Process tool calls if any. Token counts are already tracked
+	// per-token in processSlotToken, so no re-tokenization needed.
 	if s.toolFlag > 0 {
 		content := strings.TrimSuffix(s.finalTooling.String(), "\n")
 		if len(content) > 0 {
-			tokens := llama.Tokenize(e.model.vocab, content, true, true)
-			s.completionTokens += len(tokens)
-
 			switch {
 			case e.model.modelInfo.IsGPTModel:
 				s.respToolCalls = parseGPTToolCall(content)

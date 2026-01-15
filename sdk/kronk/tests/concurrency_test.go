@@ -63,7 +63,7 @@ func Test_ConTest1(t *testing.T) {
 	t.Log("check conditions")
 
 	if len(lastResp.Choice) == 0 {
-		t.Log("WARNING: Didn't get any response from the api call")
+		t.Log("WARNING: Didn't get any response from the api call, but channel is closed")
 		return
 	}
 
@@ -130,7 +130,7 @@ func Test_ConTest2(t *testing.T) {
 	t.Log("check conditions")
 
 	if len(lastResp.Choice) == 0 {
-		t.Log("WARNING: Didn't get any response from the api call")
+		t.Log("WARNING: Didn't get any response from the api call, but channel is closed")
 		return
 	}
 
