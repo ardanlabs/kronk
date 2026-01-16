@@ -7,16 +7,76 @@ import (
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
+// dry_allowed_length is the minimum n-gram length before DRY applies. Default is 2.
+//
+// dry_base is the base for exponential penalty growth in DRY. Default is 1.75.
+//
+// dry_multiplier controls the DRY (Don't Repeat Yourself) sampler which penalizes
+// n-gram pattern repetition. Must be > 0 to activate. Default is 0.0 (disabled).
+//
+// dry_penalty_last_n limits how many recent tokens DRY considers. Default of 0
+// means full context.
+//
+// enable_thinking determines if the model should think or not. It is used for
+// most non-GPT models. It accepts 1, t, T, TRUE, true, True, 0, f, F, FALSE,
+// false, False. Default is "true".
+//
+// min_p is a dynamic sampling threshold that helps balance the coherence
+// (quality) and diversity (creativity) of the generated text. Default is 0.0.
+//
+// reasoning_effort is a string that specifies the level of reasoning effort to
+// use for GPT models. Default is ReasoningEffortMedium
+//
+// repeat_last_n specifies how many recent tokens to consider when applying the
+// repetition penalty. A larger value considers more context but may be slower.
+// Default is 64.
+//
+// repeat_penalty applies a penalty to tokens that have already appeared in the
+// output, reducing repetitive text. A value of 1.0 means no penalty. Values
+// above 1.0 reduce repetition (e.g., 1.1 is a mild penalty, 1.5 is strong).
+// Default is 1.1.
+//
+// return_prompt determines whether to include the prompt in the final response.
+// When set to true, the prompt will be included. Default is false.
+//
+// temperature controls the randomness of the output. It rescales the probability
+// distribution of possible next tokens. Default is 0.8.
+//
+// top_k limits the pool of possible next tokens to the K number of most probable
+// tokens. If a model predicts 10,000 possible next tokens, setting top_k to 50
+// means only the 50 tokens with the highest probabilities are considered for
+// selection (after temperature scaling). The rest are ignored. Default is 40.
+//
+// top_p, also known as nucleus sampling, works differently than top_k by
+// selecting a dynamic pool of tokens whose cumulative probability exceeds a
+// threshold P. Instead of a fixed number of tokens (K), it selects the minimum
+// number of most probable tokens required to reach the cumulative probability P.
+// Default is 0.9.
+//
+// xtc_min_keep is the minimum tokens to keep after XTC culling. Default is 1.
+//
+// xtc_probability controls XTC (eXtreme Token Culling) which randomly removes
+// tokens close to top probability. Must be > 0 to activate. Default is
+// 0.0 (disabled).
+//
+// xtc_threshold is the probability threshold for XTC culling. Default is 0.1.
 const (
+	defDryAllowedLen   = 2
+	defDryBase         = 1.75
+	defDryMultiplier   = 0.0
+	defDryPenaltyLast  = 0
+	defEnableThinking  = ThinkingEnabled
+	defMinP            = 0.0
+	defReasoningEffort = ReasoningEffortMedium
+	defRepeatLastN     = 64
+	defRepeatPenalty   = 1.1
+	defReturnPrompt    = false
+	defTemp            = 0.8
 	defTopK            = 40
 	defTopP            = 0.9
-	defMinP            = 0.0
-	defTemp            = 0.8
-	defRepeatPenalty   = 1.1
-	defRepeatLastN     = 64
-	defEnableThinking  = ThinkingEnabled
-	defReasoningEffort = ReasoningEffortMedium
-	defReturnPrompt    = false
+	defXtcMinKeep      = 1
+	defXtcProbability  = 0.0
+	defXtcThreshold    = 0.1
 )
 
 const (
@@ -52,59 +112,7 @@ const (
 	ReasoningEffortHigh = "high"
 )
 
-// Params represents the different options when using a model. The defaults are
-// used when these values are set to 0.
-//
-// Temperature controls the randomness of the output. It rescales the probability
-// distribution of possible next tokens.
-// When set to 0, the default value is 0.7.
-//
-// TopK limits the pool of possible next tokens to the K number of most probable
-// tokens. If a model predicts 10,000 possible next tokens, setting Top-K to 50
-// means only the 50 tokens with the highest probabilities are considered for
-// selection (after temperature scaling). The rest are ignored.
-// When set to 0, the default value is 40.
-//
-// TopP, also known as nucleus sampling, works differently than Top-K by
-// selecting a dynamic pool of tokens whose cumulative probability exceeds a
-// threshold P. Instead of a fixed number of tokens (K), it selects the minimum
-// number of most probable tokens required to reach the cumulative probability P.
-// When set to 0, the default value is 0.9.
-//
-// MinP, is a dynamic sampling threshold that helps balance the coherence
-// (quality) and diversity (creativity) of the generated text.
-// When set to 0, the default value is 0.0.
-//
-// These parameters (TopK, TopP, Temperature) are typically used together. The
-// sampling process usually applies temperature first, then filters the token
-// list using Top-K, and finally filters it again using Top-P before selecting
-// the next token randomly from the remaining pool based on their (now adjusted)
-// probabilities.
-//
-// MaxTokens defines the maximum number of output tokens to generate for a
-// single response.
-// When set to 0, the default value is 512.
-//
-// EnableThinking determines if the model should think or not. It is used for
-// most non-GPT models. It accepts 1, t, T, TRUE, true, True, 0, f, F, FALSE,
-// false, False.
-// When set to an empty string, the default value is "true".
-//
-// ReasoningEffort is a string that specifies the level of reasoning effort to
-// use for GPT models.
-//
-// RepeatPenalty applies a penalty to tokens that have already appeared in the
-// output, reducing repetitive text. A value of 1.0 means no penalty. Values
-// above 1.0 reduce repetition (e.g., 1.1 is a mild penalty, 1.5 is strong).
-// When set to 0, the default value is 1.1.
-//
-// RepeatLastN specifies how many recent tokens to consider when applying the
-// repetition penalty. A larger value considers more context but may be slower.
-// When set to 0, the default value is 64.
-//
-// ReturnPrompt determines whether to include the prompt in the final response.
-// When set to true, the prompt will be included. Default is false.
-type Params struct {
+type params struct {
 	Temperature     float32 `json:"temperature"`
 	TopK            int32   `json:"top_k"`
 	TopP            float32 `json:"top_p"`
@@ -112,42 +120,25 @@ type Params struct {
 	MaxTokens       int     `json:"max_tokens"`
 	RepeatPenalty   float32 `json:"repeat_penalty"`
 	RepeatLastN     int32   `json:"repeat_last_n"`
+	DryMultiplier   float32 `json:"dry_multiplier"`
+	DryBase         float32 `json:"dry_base"`
+	DryAllowedLen   int32   `json:"dry_allowed_length"`
+	DryPenaltyLast  int32   `json:"dry_penalty_last_n"`
+	XtcProbability  float32 `json:"xtc_probability"`
+	XtcThreshold    float32 `json:"xtc_threshold"`
+	XtcMinKeep      uint32  `json:"xtc_min_keep"`
 	Thinking        string  `json:"enable_thinking"`
 	ReasoningEffort string  `json:"reasoning_effort"`
 	ReturnPrompt    bool    `json:"return_prompt"`
 }
 
-// AddParams can be used to add the configured parameters to the
-// specified document.
-func AddParams(p Params, d D) {
-	d["temperature"] = p.Temperature
-	d["top_k"] = p.TopK
-	d["top_p"] = p.TopP
-	d["min_p"] = p.MinP
-	d["max_tokens"] = p.MaxTokens
-	d["repeat_penalty"] = p.RepeatPenalty
-	d["repeat_last_n"] = p.RepeatLastN
-
-	if p.Thinking != "" {
-		d["enable_thinking"] = (p.Thinking != "false")
-	}
-
-	if p.ReasoningEffort != "" {
-		d["reasoning_effort"] = p.ReasoningEffort
-	}
-
-	if p.ReturnPrompt {
-		d["return_prompt"] = p.ReturnPrompt
-	}
-}
-
-func (m *Model) parseParams(d D) (Params, error) {
+func (m *Model) parseParams(d D) (params, error) {
 	var temp float32
 	if tempVal, exists := d["temperature"]; exists {
 		var err error
 		temp, err = parseFloat32("temperature", tempVal)
 		if err != nil {
-			return Params{}, err
+			return params{}, err
 		}
 	}
 
@@ -156,7 +147,7 @@ func (m *Model) parseParams(d D) (Params, error) {
 		var err error
 		topK, err = parseInt("top_k", topKVal)
 		if err != nil {
-			return Params{}, err
+			return params{}, err
 		}
 	}
 
@@ -165,7 +156,7 @@ func (m *Model) parseParams(d D) (Params, error) {
 		var err error
 		topP, err = parseFloat32("top_p", topPVal)
 		if err != nil {
-			return Params{}, err
+			return params{}, err
 		}
 	}
 
@@ -174,7 +165,7 @@ func (m *Model) parseParams(d D) (Params, error) {
 		var err error
 		minP, err = parseFloat32("min_p", minPVal)
 		if err != nil {
-			return Params{}, err
+			return params{}, err
 		}
 	}
 
@@ -183,7 +174,7 @@ func (m *Model) parseParams(d D) (Params, error) {
 		var err error
 		maxTokens, err = parseInt("max_tokens", maxTokensVal)
 		if err != nil {
-			return Params{}, err
+			return params{}, err
 		}
 	}
 
@@ -192,7 +183,7 @@ func (m *Model) parseParams(d D) (Params, error) {
 		var err error
 		enableThinking, err = parseBool("enable_thinking", enableThinkingVal)
 		if err != nil {
-			return Params{}, err
+			return params{}, err
 		}
 	}
 
@@ -201,7 +192,7 @@ func (m *Model) parseParams(d D) (Params, error) {
 		var err error
 		reasoningEffort, err = parseReasoningString("reasoning_effort", reasoningEffortVal)
 		if err != nil {
-			return Params{}, err
+			return params{}, err
 		}
 	}
 
@@ -210,7 +201,7 @@ func (m *Model) parseParams(d D) (Params, error) {
 		var err error
 		returnPrompt, err = parseBool("return_prompt", returnPromptVal)
 		if err != nil {
-			return Params{}, err
+			return params{}, err
 		}
 	}
 
@@ -219,7 +210,7 @@ func (m *Model) parseParams(d D) (Params, error) {
 		var err error
 		repeatPenalty, err = parseFloat32("repeat_penalty", repeatPenaltyVal)
 		if err != nil {
-			return Params{}, err
+			return params{}, err
 		}
 	}
 
@@ -228,11 +219,74 @@ func (m *Model) parseParams(d D) (Params, error) {
 		var err error
 		repeatLastN, err = parseInt("repeat_last_n", repeatLastNVal)
 		if err != nil {
-			return Params{}, err
+			return params{}, err
 		}
 	}
 
-	params := Params{
+	var dryMultiplier float32
+	if val, exists := d["dry_multiplier"]; exists {
+		var err error
+		dryMultiplier, err = parseFloat32("dry_multiplier", val)
+		if err != nil {
+			return params{}, err
+		}
+	}
+
+	var dryBase float32
+	if val, exists := d["dry_base"]; exists {
+		var err error
+		dryBase, err = parseFloat32("dry_base", val)
+		if err != nil {
+			return params{}, err
+		}
+	}
+
+	var dryAllowedLen int
+	if val, exists := d["dry_allowed_length"]; exists {
+		var err error
+		dryAllowedLen, err = parseInt("dry_allowed_length", val)
+		if err != nil {
+			return params{}, err
+		}
+	}
+
+	var dryPenaltyLast int
+	if val, exists := d["dry_penalty_last_n"]; exists {
+		var err error
+		dryPenaltyLast, err = parseInt("dry_penalty_last_n", val)
+		if err != nil {
+			return params{}, err
+		}
+	}
+
+	var xtcProbability float32
+	if val, exists := d["xtc_probability"]; exists {
+		var err error
+		xtcProbability, err = parseFloat32("xtc_probability", val)
+		if err != nil {
+			return params{}, err
+		}
+	}
+
+	var xtcThreshold float32
+	if val, exists := d["xtc_threshold"]; exists {
+		var err error
+		xtcThreshold, err = parseFloat32("xtc_threshold", val)
+		if err != nil {
+			return params{}, err
+		}
+	}
+
+	var xtcMinKeep int
+	if val, exists := d["xtc_min_keep"]; exists {
+		var err error
+		xtcMinKeep, err = parseInt("xtc_min_keep", val)
+		if err != nil {
+			return params{}, err
+		}
+	}
+
+	p := params{
 		Temperature:     temp,
 		TopK:            int32(topK),
 		TopP:            topP,
@@ -240,15 +294,22 @@ func (m *Model) parseParams(d D) (Params, error) {
 		MaxTokens:       maxTokens,
 		RepeatPenalty:   repeatPenalty,
 		RepeatLastN:     int32(repeatLastN),
+		DryMultiplier:   dryMultiplier,
+		DryBase:         dryBase,
+		DryAllowedLen:   int32(dryAllowedLen),
+		DryPenaltyLast:  int32(dryPenaltyLast),
+		XtcProbability:  xtcProbability,
+		XtcThreshold:    xtcThreshold,
+		XtcMinKeep:      uint32(xtcMinKeep),
 		Thinking:        strconv.FormatBool(enableThinking),
 		ReasoningEffort: reasoningEffort,
 		ReturnPrompt:    returnPrompt,
 	}
 
-	return m.adjustParams(params), nil
+	return m.adjustParams(p), nil
 }
 
-func (m *Model) adjustParams(p Params) Params {
+func (m *Model) adjustParams(p params) params {
 	if p.Temperature <= 0 {
 		p.Temperature = defTemp
 	}
@@ -277,6 +338,34 @@ func (m *Model) adjustParams(p Params) Params {
 		p.RepeatLastN = defRepeatLastN
 	}
 
+	if p.DryMultiplier <= 0 {
+		p.DryMultiplier = defDryMultiplier
+	}
+
+	if p.DryBase <= 0 {
+		p.DryBase = defDryBase
+	}
+
+	if p.DryAllowedLen <= 0 {
+		p.DryAllowedLen = defDryAllowedLen
+	}
+
+	if p.DryPenaltyLast < 0 {
+		p.DryPenaltyLast = defDryPenaltyLast
+	}
+
+	if p.XtcProbability <= 0 {
+		p.XtcProbability = defXtcProbability
+	}
+
+	if p.XtcThreshold <= 0 {
+		p.XtcThreshold = defXtcThreshold
+	}
+
+	if p.XtcMinKeep <= 0 {
+		p.XtcMinKeep = defXtcMinKeep
+	}
+
 	if p.Thinking == "" {
 		p.Thinking = defEnableThinking
 	}
@@ -288,13 +377,22 @@ func (m *Model) adjustParams(p Params) Params {
 	return p
 }
 
-func toSampler(p Params) llama.Sampler {
+func (m *Model) toSampler(p params) llama.Sampler {
 	sampler := llama.SamplerChainInit(llama.SamplerChainDefaultParams())
+
+	// TODO: DRY sampler disabled - yzma crashes when seqBreakers is nil.
+	// Waiting for yzma fix to properly handle empty sequence breakers.
+	// if p.DryMultiplier > 0 {
+	// 	llama.SamplerChainAdd(sampler, llama.SamplerInitDry(m.vocab, int32(m.cfg.ContextWindow), p.DryMultiplier, p.DryBase, p.DryAllowedLen, p.DryPenaltyLast, nil, 0))
+	// }
 
 	llama.SamplerChainAdd(sampler, llama.SamplerInitPenalties(p.RepeatLastN, p.RepeatPenalty, 0, 0))
 	llama.SamplerChainAdd(sampler, llama.SamplerInitTopK(p.TopK))
 	llama.SamplerChainAdd(sampler, llama.SamplerInitTopP(p.TopP, 0))
 	llama.SamplerChainAdd(sampler, llama.SamplerInitMinP(p.MinP, 0))
+	if p.XtcProbability > 0 {
+		llama.SamplerChainAdd(sampler, llama.SamplerInitXTC(p.XtcProbability, p.XtcThreshold, p.XtcMinKeep, llama.DefaultSeed))
+	}
 	llama.SamplerChainAdd(sampler, llama.SamplerInitTempExt(p.Temperature, 0, 1.0))
 	llama.SamplerChainAdd(sampler, llama.SamplerInitDist(llama.DefaultSeed))
 

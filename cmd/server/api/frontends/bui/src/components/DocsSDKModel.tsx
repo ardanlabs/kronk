@@ -18,14 +18,6 @@ export default function DocsSDKModel() {
           <div className="card" id="functions">
             <h3>Functions</h3>
 
-            <div className="doc-section" id="func-addparams">
-              <h4>AddParams</h4>
-              <pre className="code-block">
-                <code>func AddParams(p Params, d D)</code>
-              </pre>
-              <p className="doc-description">AddParams can be used to add the configured parameters to the specified document.</p>
-            </div>
-
             <div className="doc-section" id="func-checkmodel">
               <h4>CheckModel</h4>
               <pre className="code-block">
@@ -225,25 +217,6 @@ export default function DocsSDKModel() {
 }`}</code>
               </pre>
               <p className="doc-description">ModelInfo represents the model's card information.</p>
-            </div>
-
-            <div className="doc-section" id="type-params">
-              <h4>Params</h4>
-              <pre className="code-block">
-                <code>{`type Params struct {
-	Temperature     float32 \`json:"temperature"\`
-	TopK            int32   \`json:"top_k"\`
-	TopP            float32 \`json:"top_p"\`
-	MinP            float32 \`json:"min_p"\`
-	MaxTokens       int     \`json:"max_tokens"\`
-	RepeatPenalty   float32 \`json:"repeat_penalty"\`
-	RepeatLastN     int32   \`json:"repeat_last_n"\`
-	Thinking        string  \`json:"enable_thinking"\`
-	ReasoningEffort string  \`json:"reasoning_effort"\`
-	ReturnPrompt    bool    \`json:"return_prompt"\`
-}`}</code>
-              </pre>
-              <p className="doc-description">Params represents the different options when using a model. The defaults are used when these values are set to 0. Temperature controls the randomness of the output. It rescales the probability distribution of possible next tokens. When set to 0, the default value is 0.7. TopK limits the pool of possible next tokens to the K number of most probable tokens. If a model predicts 10,000 possible next tokens, setting Top-K to 50 means only the 50 tokens with the highest probabilities are considered for selection (after temperature scaling). The rest are ignored. When set to 0, the default value is 40. TopP, also known as nucleus sampling, works differently than Top-K by selecting a dynamic pool of tokens whose cumulative probability exceeds a threshold P. Instead of a fixed number of tokens (K), it selects the minimum number of most probable tokens required to reach the cumulative probability P. When set to 0, the default value is 0.9. MinP, is a dynamic sampling threshold that helps balance the coherence (quality) and diversity (creativity) of the generated text. When set to 0, the default value is 0.0. These parameters (TopK, TopP, Temperature) are typically used together. The sampling process usually applies temperature first, then filters the token list using Top-K, and finally filters it again using Top-P before selecting the next token randomly from the remaining pool based on their (now adjusted) probabilities. MaxTokens defines the maximum number of output tokens to generate for a single response. When set to 0, the default value is 512. EnableThinking determines if the model should think or not. It is used for most non-GPT models. It accepts 1, t, T, TRUE, true, True, 0, f, F, FALSE, false, False. When set to an empty string, the default value is "true". ReasoningEffort is a string that specifies the level of reasoning effort to use for GPT models. RepeatPenalty applies a penalty to tokens that have already appeared in the output, reducing repetitive text. A value of 1.0 means no penalty. Values above 1.0 reduce repetition (e.g., 1.1 is a mild penalty, 1.5 is strong). When set to 0, the default value is 1.1. RepeatLastN specifies how many recent tokens to consider when applying the repetition penalty. A larger value considers more context but may be slower. When set to 0, the default value is 64. ReturnPrompt determines whether to include the prompt in the final response. When set to true, the prompt will be included. Default is false.</p>
             </div>
 
             <div className="doc-section" id="type-responsemessage">
@@ -560,7 +533,6 @@ export default function DocsSDKModel() {
             <div className="doc-index-section">
               <a href="#functions" className="doc-index-header">Functions</a>
               <ul>
-                <li><a href="#func-addparams">AddParams</a></li>
                 <li><a href="#func-checkmodel">CheckModel</a></li>
                 <li><a href="#func-parseggmltype">ParseGGMLType</a></li>
                 <li><a href="#func-newmodel">NewModel</a></li>
@@ -583,7 +555,6 @@ export default function DocsSDKModel() {
                 <li><a href="#type-mediatype">MediaType</a></li>
                 <li><a href="#type-model">Model</a></li>
                 <li><a href="#type-modelinfo">ModelInfo</a></li>
-                <li><a href="#type-params">Params</a></li>
                 <li><a href="#type-responsemessage">ResponseMessage</a></li>
                 <li><a href="#type-responsetoolcall">ResponseToolCall</a></li>
                 <li><a href="#type-responsetoolcallfunction">ResponseToolCallFunction</a></li>

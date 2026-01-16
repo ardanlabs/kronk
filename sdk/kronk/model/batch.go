@@ -25,7 +25,7 @@ type chatJob struct {
 	object  string
 	prompt  string
 	media   [][]byte
-	params  Params
+	params  params
 	mtmdCtx mtmd.Context
 	ch      chan<- ChatResponse
 }
@@ -334,7 +334,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 	)
 
 	// Create sampler for this request.
-	s.sampler = toSampler(job.params)
+	s.sampler = e.model.toSampler(job.params)
 
 	// Tokenize the prompt.
 	tokens := llama.Tokenize(e.model.vocab, job.prompt, true, true)
