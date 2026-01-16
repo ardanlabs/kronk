@@ -55,6 +55,8 @@ export interface CatalogCapabilities {
   streaming: boolean;
   reasoning: boolean;
   tooling: boolean;
+  embedding: boolean;
+  rerank: boolean;
 }
 
 export interface CatalogFile {

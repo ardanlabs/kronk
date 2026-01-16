@@ -244,8 +244,12 @@ func adjustContextWindow(cfg Config, model llama.Model) Config {
 func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 	ctxParams := llama.ContextDefaultParams()
 
-	if mi.IsEmbedModel {
+	if mi.IsEmbedModel || mi.IsRerankModel {
 		ctxParams.Embeddings = 1
+	}
+
+	if mi.IsRerankModel {
+		ctxParams.PoolingType = llama.PoolingTypeRank
 	}
 
 	if cfg.ContextWindow > 0 {

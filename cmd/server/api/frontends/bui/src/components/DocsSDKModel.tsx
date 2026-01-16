@@ -211,12 +211,50 @@ export default function DocsSDKModel() {
 	IsHybrid      bool
 	IsGPTModel    bool
 	IsEmbedModel  bool
+	IsRerankModel bool
 	Metadata      map[string]string
 	TemplateFile  string
 	Template      Template
 }`}</code>
               </pre>
               <p className="doc-description">ModelInfo represents the model's card information.</p>
+            </div>
+
+            <div className="doc-section" id="type-rerankresponse">
+              <h4>RerankResponse</h4>
+              <pre className="code-block">
+                <code>{`type RerankResponse struct {
+	Object  string         \`json:"object"\`
+	Created int64          \`json:"created"\`
+	Model   string         \`json:"model"\`
+	Data    []RerankResult \`json:"data"\`
+	Usage   RerankUsage    \`json:"usage"\`
+}`}</code>
+              </pre>
+              <p className="doc-description">RerankResponse represents the output for a reranking call.</p>
+            </div>
+
+            <div className="doc-section" id="type-rerankresult">
+              <h4>RerankResult</h4>
+              <pre className="code-block">
+                <code>{`type RerankResult struct {
+	Index          int     \`json:"index"\`
+	RelevanceScore float32 \`json:"relevance_score"\`
+	Document       string  \`json:"document,omitempty"\`
+}`}</code>
+              </pre>
+              <p className="doc-description">RerankResult represents a single document's reranking result.</p>
+            </div>
+
+            <div className="doc-section" id="type-rerankusage">
+              <h4>RerankUsage</h4>
+              <pre className="code-block">
+                <code>{`type RerankUsage struct {
+	PromptTokens int \`json:"prompt_tokens"\`
+	TotalTokens  int \`json:"total_tokens"\`
+}`}</code>
+              </pre>
+              <p className="doc-description">RerankUsage provides token usage information for reranking.</p>
             </div>
 
             <div className="doc-section" id="type-responsemessage">
@@ -398,6 +436,14 @@ export default function DocsSDKModel() {
               </pre>
             </div>
 
+            <div className="doc-section" id="method-model-rerank">
+              <h4>Model.Rerank</h4>
+              <pre className="code-block">
+                <code>func (m *Model) Rerank(ctx context.Context, d D) (RerankResponse, error)</code>
+              </pre>
+              <p className="doc-description">Rerank performs reranking for a query against multiple documents. It scores each document's relevance to the query and returns results sorted by relevance score (highest first). Supported options in d: - query (string): the query to rank documents against (required) - documents ([]string): the documents to rank (required) - top_n (int): return only the top N results (optional, default: all) - return_documents (bool): include document text in results (default: false) Reranking calls are processed sequentially, with one forward pass per document.</p>
+            </div>
+
             <div className="doc-section" id="method-model-unload">
               <h4>Model.Unload</h4>
               <pre className="code-block">
@@ -555,6 +601,9 @@ export default function DocsSDKModel() {
                 <li><a href="#type-mediatype">MediaType</a></li>
                 <li><a href="#type-model">Model</a></li>
                 <li><a href="#type-modelinfo">ModelInfo</a></li>
+                <li><a href="#type-rerankresponse">RerankResponse</a></li>
+                <li><a href="#type-rerankresult">RerankResult</a></li>
+                <li><a href="#type-rerankusage">RerankUsage</a></li>
                 <li><a href="#type-responsemessage">ResponseMessage</a></li>
                 <li><a href="#type-responsetoolcall">ResponseToolCall</a></li>
                 <li><a href="#type-responsetoolcallfunction">ResponseToolCallFunction</a></li>
@@ -579,6 +628,7 @@ export default function DocsSDKModel() {
                 <li><a href="#method-model-config">Model.Config</a></li>
                 <li><a href="#method-model-embeddings">Model.Embeddings</a></li>
                 <li><a href="#method-model-modelinfo">Model.ModelInfo</a></li>
+                <li><a href="#method-model-rerank">Model.Rerank</a></li>
                 <li><a href="#method-model-unload">Model.Unload</a></li>
                 <li><a href="#method-splitmode-string">SplitMode.String</a></li>
                 <li><a href="#method-splitmode-toyzmatype">SplitMode.ToYZMAType</a></li>

@@ -26,6 +26,7 @@ var (
 	mpGPTChat       models.Path
 	mpSimpleVision  models.Path
 	mpEmbed         models.Path
+	mpRerank        models.Path
 )
 
 var (
@@ -56,6 +57,9 @@ func TestMain(m *testing.M) {
 
 	fmt.Println("MustRetrieveModel embeddinggemma-300m-qat-Q8_0...")
 	mpEmbed = models.MustRetrieveModel("embeddinggemma-300m-qat-Q8_0")
+
+	fmt.Println("MustRetrieveModel bge-reranker-v2-m3-Q8_0...")
+	mpRerank = models.MustRetrieveModel("bge-reranker-v2-m3-Q8_0")
 
 	if os.Getenv("GITHUB_ACTIONS") != "true" {
 		mpGPTChat = models.MustRetrieveModel("gpt-oss-20b-Q8_0")

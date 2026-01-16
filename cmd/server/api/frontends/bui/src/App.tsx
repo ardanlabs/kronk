@@ -24,6 +24,7 @@ import DocsCLIServer from './components/DocsCLIServer';
 import DocsAPIChat from './components/DocsAPIChat';
 import DocsAPIResponses from './components/DocsAPIResponses';
 import DocsAPIEmbeddings from './components/DocsAPIEmbeddings';
+import DocsAPIRerank from './components/DocsAPIRerank';
 import DocsAPITools from './components/DocsAPITools';
 import { ModelListProvider } from './contexts/ModelListContext';
 import { TokenProvider } from './contexts/TokenContext';
@@ -55,6 +56,7 @@ export type Page =
   | 'docs-api-chat'
   | 'docs-api-responses'
   | 'docs-api-embeddings'
+  | 'docs-api-rerank'
   | 'docs-api-tools';
 
 export const routeMap: Record<Page, string> = {
@@ -83,6 +85,7 @@ export const routeMap: Record<Page, string> = {
   'docs-api-chat': '/docs/api/chat',
   'docs-api-responses': '/docs/api/responses',
   'docs-api-embeddings': '/docs/api/embeddings',
+  'docs-api-rerank': '/docs/api/rerank',
   'docs-api-tools': '/docs/api/tools',
 };
 
@@ -167,6 +170,7 @@ function App() {
                 <Route path="/docs/api/chat" element={<DocsAPIChat />} />
                 <Route path="/docs/api/responses" element={<DocsAPIResponses />} />
                 <Route path="/docs/api/embeddings" element={<DocsAPIEmbeddings />} />
+                <Route path="/docs/api/rerank" element={<DocsAPIRerank />} />
                 <Route path="/docs/api/tools" element={<DocsAPITools />} />
               </Routes>
             </Layout>

@@ -7,7 +7,7 @@ hello@ardanlabs.com
 
 This project lets you use Go for hardware accelerated local inference with llama.cpp directly integrated into your applications via the [yzma](https://github.com/hybridgroup/yzma) module. Kronk provides a high-level API that feels similar to using an OpenAI compatible API.
 
-This project also provides a model server for chat completions, responses, and embeddings. The server is compatible with the OpebWebUI and Cline projects.
+This project also provides a model server for chat completions, responses, embeddings, and reranking. The server is compatible with the OpebWebUI and Cline projects.
 
 Here is the current [catalog](https://github.com/ardanlabs/kronk_catalogs) of models that have been verified to work with Kronk.
 
@@ -159,6 +159,12 @@ make example-embedding
 
 ```shell
 make example-question
+```
+
+[RERANK](examples/rerank/main.go) - This example shows you how to use a rerank model.
+
+```shell
+make example-rerank
 ```
 
 [RESPONSE](examples/response/main.go) - This example shows you how to chat with the response api.

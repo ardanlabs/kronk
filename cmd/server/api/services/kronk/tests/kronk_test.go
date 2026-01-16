@@ -34,6 +34,9 @@ func Test_API(t *testing.T) {
 	test.Run(t, chatEmbed200(tokens), "embedding-200")
 	test.Run(t, embed401(tokens), "embedding-401")
 
+	test.Run(t, rerank200(tokens), "rerank-200")
+	test.Run(t, rerank401(tokens), "rerank-401")
+
 	test.Run(t, respNonStream200(t, tokens), "respns-200")
 	test.RunStreaming(t, respStream200(t, tokens), "respstream-200")
 	test.Run(t, respEndpoint401(tokens), "respEndpoint-401")
@@ -107,6 +110,22 @@ func createTokens(t *testing.T, sec *security.Security) map[string]string {
 	}
 
 	tokens["responses"] = token
+
+	// -------------------------------------------------------------------------
+
+	endpoints = map[string]auth.RateLimit{
+		"rerank": {
+			Limit:  0,
+			Window: auth.RateUnlimited,
+		},
+	}
+
+	token, err = sec.GenerateToken(false, endpoints, 60*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tokens["rerank"] = token
 
 	return tokens
 }

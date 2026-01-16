@@ -104,7 +104,9 @@ func (c *Catalog) listGitHubFolder(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list-git-hub-folder: creating request: %w", err)
 	}
+
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("Cache-Control", "no-cache")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -145,6 +147,8 @@ func (c *Catalog) downloadCatalog(ctx context.Context, url string) error {
 	if err != nil {
 		return fmt.Errorf("download-catalog: creating request: %w", err)
 	}
+
+	req.Header.Set("Cache-Control", "no-cache")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

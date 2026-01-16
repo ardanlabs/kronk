@@ -68,6 +68,7 @@ func Run() error {
 		chatDoc(),
 		responsesDoc(),
 		embeddingsDoc(),
+		rerankDoc(),
 		toolsDoc(),
 	}
 
@@ -935,6 +936,65 @@ func embeddingsDoc() apiDoc {
   -d '{
     "model": "embeddinggemma-300m-qat-Q8_0",
     "input": "Why is the sky blue?"
+  }'`,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func rerankDoc() apiDoc {
+	return apiDoc{
+		Name:        "Rerank API",
+		Description: "Rerank documents by relevance to a query. Used for semantic search result ordering.",
+		Filename:    "DocsAPIRerank.tsx",
+		Component:   "DocsAPIRerank",
+		Groups: []endpointGroup{
+			{
+				Name:        "Reranking",
+				Description: "Score and reorder documents by relevance to a query.",
+				Endpoints: []endpoint{
+					{
+						Method:      "POST",
+						Path:        "/rerank",
+						Description: "Rerank documents by their relevance to a query. The model must support reranking.",
+						Auth:        "Required when auth is enabled. Token must have 'rerank' endpoint access.",
+						Headers: []header{
+							{Name: "Authorization", Description: "Bearer token for authentication", Required: true},
+							{Name: "Content-Type", Description: "Must be application/json", Required: true},
+						},
+						RequestBody: &requestBody{
+							ContentType: "application/json",
+							Fields: []field{
+								{Name: "model", Type: "string", Required: true, Description: "Reranker model ID (e.g., 'bge-reranker-v2-m3-Q8_0')"},
+								{Name: "query", Type: "string", Required: true, Description: "The query to rank documents against."},
+								{Name: "documents", Type: "array", Required: true, Description: "Array of document strings to rank."},
+								{Name: "top_n", Type: "integer", Required: false, Description: "Return only the top N results. Defaults to all documents."},
+								{Name: "return_documents", Type: "boolean", Required: false, Description: "Include document text in results. Defaults to false."},
+							},
+						},
+						Response: &response{
+							ContentType: "application/json",
+							Description: "Returns a list of reranked results with index and relevance_score, sorted by score descending.",
+						},
+						Examples: []example{
+							{
+								Description: "Rerank documents for a query:",
+								Code: `curl -X POST http://localhost:8080/v1/rerank \
+  -H "Authorization: Bearer $KRONK_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "bge-reranker-v2-m3-Q8_0",
+    "query": "What is machine learning?",
+    "documents": [
+      "Machine learning is a subset of artificial intelligence.",
+      "The weather today is sunny.",
+      "Deep learning uses neural networks."
+    ],
+    "top_n": 2
   }'`,
 							},
 						},

@@ -20,6 +20,8 @@ type Capabilities struct {
 	Streaming bool   `yaml:"streaming"`
 	Reasoning bool   `yaml:"reasoning"`
 	Tooling   bool   `yaml:"tooling"`
+	Embedding bool   `yaml:"embedding"`
+	Rerank    bool   `yaml:"rerank"`
 }
 
 // File represents the actual file url and size.

@@ -74,6 +74,8 @@ func (t *Templates) downloadFile(ctx context.Context, url string) error {
 		return fmt.Errorf("download-file: creating request: %w", err)
 	}
 
+	req.Header.Set("Cache-Control", "no-cache")
+
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("download-file: fetching file: %w", err)
@@ -111,7 +113,9 @@ func (t *Templates) listGitHubFolder(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list-git-hub-folder: creating request: %w", err)
 	}
+
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("Cache-Control", "no-cache")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

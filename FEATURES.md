@@ -16,6 +16,8 @@ The SDK API (`sdk/kronk`) provides a high-level, concurrently safe interface for
 | **HTTP Streaming** | Built-in HTTP handler support for Server-Sent Events (SSE) streaming |
 | **Embeddings** | Generate embeddings from embedding models |
 | **HTTP Embeddings** | Built-in HTTP handler for embedding requests |
+| **Reranking** | Rerank documents by relevance to a query |
+| **HTTP Reranking** | Built-in HTTP handler for reranking requests |
 | **Responses API** | OpenAI Responses API support with rich event streaming |
 | **HTTP Responses** | Built-in HTTP handler for Responses API requests |
 | **Model Info** | Retrieve model metadata and configuration |
@@ -33,6 +35,7 @@ The SDK API (`sdk/kronk`) provides a high-level, concurrently safe interface for
 | **Vision Models** | Multimodal image+text inference |
 | **Audio Models** | Audio-to-text inference |
 | **Embedding Models** | Text embedding generation |
+| **Reranker Models** | Document relevance scoring and reordering |
 | **Tool Calling** | Function/tool calling support |
 
 ### Configuration Options
@@ -95,6 +98,15 @@ The Kronk Model Server is an OpenAI-compatible model server for chat completions
 |---------|-------------|
 | **OpenAI Compatibility** | Compatible with OpenAI embeddings API format |
 | **Model Selection** | Dynamically select embedding models per request |
+
+#### Rerank (`/v1/rerank`)
+
+| Feature | Description |
+|---------|-------------|
+| **Document Reranking** | Score and reorder documents by relevance to a query |
+| **Model Selection** | Dynamically select reranker models per request |
+| **Top-N Filtering** | Return only the top N most relevant results |
+| **Document Return** | Optionally include document text in results |
 
 ### Server Management Features
 
@@ -301,7 +313,7 @@ The Catalog system (`sdk/tools/catalog`) provides a curated registry of verified
 | Feature | Description |
 |---------|-------------|
 | **Remote Catalog** | Syncs with the official [kronk_catalogs](https://github.com/ardanlabs/kronk_catalogs) GitHub repository |
-| **Category Filtering** | Filter models by type: Text-Generation, Embedding, Vision, Audio |
+| **Category Filtering** | Filter models by type: Text-Generation, Embedding, Rerank, Vision, Audio |
 | **Model Metadata** | Stores model info including endpoint type, capabilities, and download URLs |
 | **Index Management** | Local index file for fast lookups without network requests |
 | **Custom Catalog Repos** | Support for custom GitHub repository sources |

@@ -325,6 +325,22 @@ export default function DocsSDKKronk() {
               <p className="doc-description">ModelInfo returns the model information.</p>
             </div>
 
+            <div className="doc-section" id="method-kronk-rerank">
+              <h4>Kronk.Rerank</h4>
+              <pre className="code-block">
+                <code>func (krn *Kronk) Rerank(ctx context.Context, d model.D) (model.RerankResponse, error)</code>
+              </pre>
+              <p className="doc-description">Rerank provides support to interact with a reranker model. Supported options in d: - query (string): the query to rank documents against (required) - documents ([]string): the documents to rank (required) - top_n (int): return only the top N results (optional, default: all) - return_documents (bool): include document text in results (default: false) Reranking calls are processed sequentially, with one forward pass per document.</p>
+            </div>
+
+            <div className="doc-section" id="method-kronk-rerankhttp">
+              <h4>Kronk.RerankHTTP</h4>
+              <pre className="code-block">
+                <code>func (krn *Kronk) RerankHTTP(ctx context.Context, log Logger, w http.ResponseWriter, d model.D) (model.RerankResponse, error)</code>
+              </pre>
+              <p className="doc-description">RerankHTTP provides http handler support for a rerank call.</p>
+            </div>
+
             <div className="doc-section" id="method-kronk-response">
               <h4>Kronk.Response</h4>
               <pre className="code-block">
@@ -466,6 +482,8 @@ export default function DocsSDKKronk() {
                 <li><a href="#method-kronk-embeddingshttp">Kronk.EmbeddingsHTTP</a></li>
                 <li><a href="#method-kronk-modelconfig">Kronk.ModelConfig</a></li>
                 <li><a href="#method-kronk-modelinfo">Kronk.ModelInfo</a></li>
+                <li><a href="#method-kronk-rerank">Kronk.Rerank</a></li>
+                <li><a href="#method-kronk-rerankhttp">Kronk.RerankHTTP</a></li>
                 <li><a href="#method-kronk-response">Kronk.Response</a></li>
                 <li><a href="#method-kronk-responsestreaming">Kronk.ResponseStreaming</a></li>
                 <li><a href="#method-kronk-responsestreaminghttp">Kronk.ResponseStreamingHTTP</a></li>
