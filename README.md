@@ -7,7 +7,7 @@ hello@ardanlabs.com
 
 This project lets you use Go for hardware accelerated local inference with llama.cpp directly integrated into your applications via the [yzma](https://github.com/hybridgroup/yzma) module. Kronk provides a high-level API that feels similar to using an OpenAI compatible API.
 
-This project also provides a model server for chat completions and embeddings. The server is compatible with the OpebWebUI project.
+This project also provides a model server for chat completions, responses, and embeddings. The server is compatible with the OpebWebUI and Cline projects.
 
 Here is the current [catalog](https://github.com/ardanlabs/kronk_catalogs) of models that have been verified to work with Kronk.
 
@@ -82,10 +82,19 @@ Run `make kronk-server` to check it out.
 
 The diagram below shows how the Kronk model server supports access to multiple models. The model server manages kronk API instances that each provide access to a model. The Kronk API allows concurrent access to the models in a safe and reliable way.
 
-```
-                   -> Kronk API -> Yzma -> Llama.cpp -> Model 1 (1 instance)
-Client -> Kronk MS -> Kronk API -> Yzma -> Llama.cpp -> Model 2 (1 instance)
-                   -> Kronk API -> Yzma -> Llama.cpp -> Model 3 (1 instance)
+```mermaid
+flowchart LR
+    Client([Client]) --> KMS[Kronk Model Server]
+
+    subgraph Inference Stack
+        KMS --> API1[Kronk API]
+        KMS --> API2[Kronk API]
+        KMS --> API3[Kronk API]
+
+        API1 --> Y1[Yzma] --> LC1[Llama.cpp] --> M1[(Model 1)]
+        API2 --> Y2[Yzma] --> LC2[Llama.cpp] --> M2[(Model 2)]
+        API3 --> Y3[Yzma] --> LC3[Llama.cpp] --> M3[(Model 3)]
+    end
 ```
 
 You can configure the number of Models that stay loaded in memory (default: 3) through configuration how long they will stay in memory (default: 5m) when not being used. This allows you to manage the resouces on the hardware.
@@ -95,6 +104,12 @@ For more details on the settings, run the following command after installing Kro
 ```shell
 kronk server --help
 ```
+
+## Parallel Text Inference
+
+Kronk supports parallel text inference through its batch engine, allowing multiple chat requests to be processed concurrently on a single model. This is controlled by the `NSeqMax` configuration value, which sets the maximum number of sequences that can be processed in parallel. When `NSeqMax` is greater than 1, incoming requests are batched together and processed simultaneously, improving throughput for high-concurrency workloads.
+
+Note: Parallel inference is only supported for text models. Multimodal models (vision/audio) and embedding models require sequential processing.
 
 ## Models
 
