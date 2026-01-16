@@ -2,6 +2,13 @@
 SHELL_PATH = /bin/ash
 SHELL = $(if $(wildcard $(SHELL_PATH)),/bin/ash,/bin/bash)
 
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+	OPEN_CMD := open
+else
+	OPEN_CMD := xdg-open
+endif
+
 # ==============================================================================
 # Setup
 
@@ -44,17 +51,33 @@ install-models: install-kronk
 llama-bench:
 	$$HOME/.kronk/libraries/llama-bench --list-devices
 
-# Use this to rebuild tooling when new versions of Go are released.
+# Use this to rebuild tooling when https://files.slack.com/files-pri/T032G0ZL4-F0A8991CEJV/download/chat-export-1767998185593.json?origin_team=T032G0ZL4new versions of Go are released.
 install-gotooling:
 	go install honnef.co/go/tools/cmd/staticcheck@latest
 	go install golang.org/x/vuln/cmd/govulncheck@latest
 	go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
-	go install github.com/divan/expvarmon@latest
 
 install-tooling:
 	brew list protobuf || brew install protobuf
 	brew list grpcurl || brew install grpcurl
+
+OPENWEBUI  := ghcr.io/open-webui/open-webui:v0.7.2
+GRAFANA    := grafana/grafana:12.3.0
+PROMETHEUS := prom/prometheus:v3.8.0
+TEMPO      := grafana/tempo:2.9.0
+LOKI       := grafana/loki:3.6.0
+PROMTAIL   := grafana/promtail:3.6.0
+
+# Install the docker images.
+install-docker:
+	docker pull docker.io/$(OPENWEBUI) & \
+	docker pull docker.io/$(GRAFANA) & \
+	docker pull docker.io/$(PROMETHEUS) & \
+	docker pull docker.io/$(TEMPO) & \
+	docker pull docker.io/$(LOKI) & \
+	docker pull docker.io/$(PROMTAIL) & \
+	wait;
 
 # ==============================================================================
 # Protobuf support
@@ -64,6 +87,32 @@ authapp-proto-gen:
 		--go-grpc_out=cmd/server/app/domain/authapp --go-grpc_opt=paths=source_relative \
 		--proto_path=cmd/server/app/domain/authapp \
 		cmd/server/app/domain/authapp/authapp.proto
+
+# ==============================================================================
+# Tests
+
+lint:
+	CGO_ENABLED=0 go vet ./...
+	staticcheck -checks=all ./...
+
+vuln-check:
+	govulncheck ./...
+
+# Don't change the order of these tests. This order is solving a test
+# build issue with time it takes to build the test binary due to building
+# the binary with the libraries.
+test-only: install-models
+	@echo ========== RUN TESTS ==========
+	export RUN_IN_PARALLEL=yes && \
+	export GITHUB_WORKSPACE=$(shell pwd) && \
+	CGO_ENABLED=0 go test -v -count=1 ./cmd/server/api/services/kronk/tests && \
+	CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/tests && \
+	CGO_ENABLED=0 go test -v -count=1 ./cmd/server/app/sdk/cache && \
+	CGO_ENABLED=0 go test -v -count=1 ./cmd/server/app/sdk/security/... && \
+	CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/model && \
+	CGO_ENABLED=0 go test -v -count=1 ./sdk/tools/...
+
+test: test-only lint vuln-check
 
 # ==============================================================================
 # Kronk BUI
@@ -94,6 +143,7 @@ kronk-docs:
 	go run cmd/server/api/tooling/docs/*.go
 
 kronk-server: kronk-build
+	export KRONK_CACHE_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
 	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
 
 kronk-server-detach: bui-build
@@ -205,6 +255,12 @@ kronk-security-key-list-local:
 kronk-security-token-create-local:
 	go run cmd/kronk/main.go security token create --local --username "$(U)" --duration "$(D)" --endpoints "$(E)"
 
+# ------------------------------------------------------------------------------
+
+# make kronk-run ID="cerebras_qwen3-coder-reap-25b-a3b-q8_0"
+kronk-run:
+	go run cmd/kronk/main.go run "$(ID)"
+
 # ==============================================================================
 # Kronk Endpoints
 
@@ -240,12 +296,68 @@ curl-kronk-chat:
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
      -d '{ \
-	 	"stream": true, \
-	 	"model": "qwen3-8b-q8_0", \
+	 	"model": "gpt-oss-20b-Q8_0", \
+		"stream": true, \
 		"messages": [ \
 			{ \
 				"role": "user", \
 				"content": "Hello model" \
+			} \
+		] \
+    }'
+
+curl-kronk-chat-load:
+	for i in {1..3}; do \
+		curl -i -X POST http://localhost:8080/v1/chat/completions \
+		-H "Authorization: Bearer ${KRONK_TOKEN}" \
+		-H "Content-Type: application/json" \
+		-d '{ \
+			"model": "gpt-oss-20b-Q8_0", \
+			"stream": true, \
+			"messages": [ \
+				{ \
+					"role": "user", \
+					"content": "Hello model" \
+				} \
+			] \
+		}' & \
+	done; wait
+
+FILE_GIRAFFE := $(shell base64 < examples/samples/giraffe.jpg)
+
+curl-kronk-chat-image:
+	curl -i -X POST http://localhost:8080/v1/chat/completions \
+	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
+     -H "Content-Type: application/json" \
+     -d '{ \
+	 	"stream": true, \
+	 	"model": "Qwen2.5-VL-3B-Instruct-Q8_0", \
+		"messages": [ \
+			{ \
+				"role": "user", \
+				"content": "What is in this image?" \
+			}, \
+			{ \
+				"role": "user", \
+				"content": "$(FILE_GIRAFFE)" \
+			} \
+		] \
+    }'
+
+curl-kronk-chat-openai-image:
+	curl -i -X POST http://localhost:8080/v1/chat/completions \
+	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
+     -H "Content-Type: application/json" \
+     -d '{ \
+	 	"stream": true, \
+	 	"model": "Qwen2.5-VL-3B-Instruct-Q8_0", \
+		"messages": [ \
+			{ \
+				"role": "user", \
+				"content": [ \
+					{"type": "text", "text": "What is in this image?"}, \
+					{"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,'$(FILE_GIRAFFE)'"}} \
+				] \
 			} \
 		] \
     }'
@@ -274,18 +386,128 @@ curl-kronk-embeddings:
   		"input": "Why is the sky blue?" \
     }'
 
+curl-kronk-responses:
+	curl -i -X POST http://localhost:8080/v1/responses \
+	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
+     -H "Content-Type: application/json" \
+     -d '{ \
+	 	"stream": true, \
+	 	"model": "cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0", \
+		"input": "Hello model" \
+    }'
+
+curl-kronk-responses-image:
+	curl -i -X POST http://localhost:8080/v1/responses \
+	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
+     -H "Content-Type: application/json" \
+     -d '{ \
+	 	"stream": true, \
+	 	"model": "Qwen2.5-VL-3B-Instruct-Q8_0", \
+		"input": [ \
+			{ \
+				"type": "input_text", \
+				"text": "What is in this image?" \
+			}, \
+			{ \
+				"type": "input_image", \
+				"image_url": "data:image/jpeg;base64,'$(FILE_GIRAFFE)'" \
+			} \
+		] \
+    }'
+
+curl-kronk-chat-tool:
+	curl -i -X POST http://localhost:8080/v1/chat/completions \
+	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
+     -H "Content-Type: application/json" \
+     -d '{ \
+	 	"model": "Qwen3-8B-Q8_0", \
+		"stream": true, \
+		"messages": [ \
+			{ \
+				"role": "user", \
+				"content": "what is the weather in NYC" \
+			} \
+		], \
+		"tool_selection": "auto", \
+		"tools": [ \
+			{ \
+				"type": "function", \
+				"function": { \
+					"name": "get_weather", \
+					"description": "Get the current weather for a location", \
+					"parameters": { \
+						"type": "object", \
+						"properties": { \
+							"location": { \
+								"type": "string", \
+								"description": "The location to get the weather for, e.g. San Francisco, CA" \
+							} \
+						}, \
+						"required": ["location"] \
+					} \
+				} \
+			} \
+		] \
+    }'
+
+curl-kronk-tool-response:
+	curl -i -X POST http://localhost:8080/v1/chat/completions \
+	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
+     -H "Content-Type: application/json" \
+     -d '{ \
+		"model": "Qwen3-8B-Q8_0", \
+		"max_tokens": 32768, \
+		"temperature": 0.1, \
+		"top_p": 0.1, \
+		"top_k": 50, \
+		"messages": [ \
+			{ \
+				"role": "user", \
+				"content": "What is the weather like in San Fran?" \
+			}, \
+			{ \
+				"role": "assistant", \
+				"tool_calls": [ \
+					{ \
+						"id": "76803ff7-339e-44c4-b51e-769c2b5fa68e", \
+						"type": "function", \
+						"function": { \
+							"name": "tool_get_weather", \
+							"arguments": "{\"location\":\"San Francisco\"}" \
+						} \
+					} \
+				] \
+			}, \
+			{ \
+				"role": "tool", \
+				"tool_call_id": "76803ff7-339e-44c4-b51e-769c2b5fa68e", \
+				"content": "{\"status\":\"SUCCESS\",\"data\":{\"description\":\"The weather in San Francisco, CA is hot and humid\\n\",\"humidity\":80,\"temperature\":28,\"wind_speed\":10}}" \
+			} \
+		], \
+		"tool_selection": "auto", \
+		"tools": [ \
+			{ \
+				"type": "function", \
+				"function": { \
+					"name": "tool_get_weather", \
+					"description": "Get the current weather for a location", \
+					"parameters": { \
+						"type": "object", \
+						"properties": { \
+							"location": { \
+								"type": "string", \
+								"description": "The location to get the weather for, e.g. San Francisco, CA" \
+							} \
+						}, \
+						"required": ["location"] \
+					} \
+				} \
+			} \
+		] \
+	}'
+
 # ==============================================================================
 # Running OpenWebUI 
-
-UNAME_S := $(shell uname -s)
-ifeq ($(UNAME_S),Darwin)
-	OPEN_CMD := open
-else
-	OPEN_CMD := xdg-open
-endif
-
-install-owu:
-	docker pull ghcr.io/open-webui/open-webui:v0.6.41
 
 owu-up:
 	docker compose -f zarf/docker/compose.yaml up openwebui
@@ -295,29 +517,6 @@ owu-down:
 
 owu-browse:
 	$(OPEN_CMD) http://localhost:8081/
-
-# ==============================================================================
-# Tests
-
-lint:
-	CGO_ENABLED=0 go vet ./...
-	staticcheck -checks=all ./...
-
-vuln-check:
-	govulncheck ./...
-
-test-only: install-libraries install-models
-	@echo ========== RUN TESTS ==========
-	export GOROUTINES=1 && \
-	export RUN_IN_PARALLEL=1 && \
-	export GITHUB_WORKSPACE=$(shell pwd) && \
-	CGO_ENABLED=0 go test -v -count=1 ./sdk/security/... && \
-	CGO_ENABLED=0 go test -v -count=1 ./sdk/tools/... && \
-	CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/... && \
-	CGO_ENABLED=0 go test -v -count=1 ./cmd/server/app/sdk/... && \
-	CGO_ENABLED=0 go test -v -count=1 ./cmd/server/api/services/kronk/tests
-
-test: test-only lint vuln-check
 
 # ==============================================================================
 # Metrics and Tracing
@@ -332,14 +531,17 @@ endif
 website:
 	$(OPEN_CMD) http://localhost:8080/
 
-metrics-view:
-	expvarmon -ports="localhost:8090" -vars="service_goroutines,service_requests,service_errors,service_panics,model_load_avg,model_prompt_creation_avg,model_prefill_nonmedia_avg,model_ttft_avg,mem:memstats.HeapAlloc,mem:memstats.HeapSys,mem:memstats.Sys"
-
-grafana:
-	$(OPEN_CMD) http://localhost:3100/
-
 statsviz:
 	$(OPEN_CMD) http://localhost:8090/debug/statsviz
+
+grafana-up:
+	docker compose -f zarf/docker/compose.yaml up grafana loki prometheus promtail tempo
+
+grafana-down:
+	docker compose -f zarf/docker/compose.yaml down grafana loki prometheus promtail tempo
+
+grafana-browse:
+	$(OPEN_CMD) http://localhost:3100/
 
 # ==============================================================================
 # Go Modules support
@@ -369,5 +571,53 @@ example-embedding:
 example-question:
 	CGO_ENABLED=0 go run examples/question/main.go
 
+example-response:
+	CGO_ENABLED=0 go run examples/response/main.go
+
 example-vision:
 	CGO_ENABLED=0 go run examples/vision/main.go
+
+example-yzma:
+	CGO_ENABLED=0 go run examples/yzma/main.go
+
+# Defaults for yzma-parallel example
+MODEL ?= /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf
+PARALLEL ?= 2
+SEQUENCES ?= 4
+PREDICT ?= 64
+
+example-yzma-parallel-step1:
+	CGO_ENABLED=0 go run examples/yzma-parallel/step1/main.go -model $(MODEL) -parallel $(PARALLEL) -sequences $(SEQUENCES) -predict $(PREDICT)
+
+example-yzma-parallel-step2:
+	CGO_ENABLED=0 go run examples/yzma-parallel/step2/main.go -model $(MODEL) -parallel $(PARALLEL) -predict $(PREDICT)
+
+example-yzma-parallel-curl1:
+	curl -X POST http://localhost:8090/v1/completions \
+	-H "Content-Type: application/json" \
+	-d '{"prompt": "Hello, how are you?", "max_tokens": 50}'
+
+example-yzma-parallel-curl2:
+	curl -X POST http://localhost:8090/v1/completions \
+	-H "Content-Type: application/json" \
+	-d '{"prompt": "Hello", "max_tokens": 50, "stream": true}'
+
+example-yzma-parallel-curl3:
+	curl http://localhost:8090/v1/stats
+
+example-yzma-parallel-load:
+	for i in {1..20}; do \
+		curl -s -X POST http://localhost:8090/v1/completions \
+		-H "Content-Type: application/json" \
+		-d "{\"prompt\": \"Request $$i: Hello\", \"max_tokens\": 30}" & \
+	done; wait
+
+# ==============================================================================
+# yzma-multimodal example (NOT WORKING)
+
+VISION_MODEL ?= /Users/bill/.kronk/models/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/Qwen2.5-VL-3B-Instruct-Q8_0.gguf
+VISION_PROJ ?= /Users/bill/.kronk/models/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf
+VISION_IMAGE ?= examples/samples/giraffe.jpg
+
+example-yzma-multimodal-step1:
+	CGO_ENABLED=0 go run examples/yzma-multimodal/step1/main.go -model $(VISION_MODEL) -proj $(VISION_PROJ) -image $(VISION_IMAGE)

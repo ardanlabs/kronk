@@ -46,6 +46,7 @@ func Run() error {
 		catalogCommand(),
 		libsCommand(),
 		modelCommand(),
+		runCommand(),
 		securityCommand(),
 		serverCommand(),
 	}
@@ -262,11 +263,13 @@ func catalogCommand() command {
 				Usage: "kronk catalog list [flags]",
 				Flags: []flag{
 					{Name: "--local", Description: "Run without the model server"},
+					{Name: "--base-path <string>", Description: "Base path for kronk data (models, catalogs, templates)"},
 					{Name: "--filter-category <string>", Description: "Filter catalogs by category name (substring match)"},
 				},
 				EnvVars: []envVar{
 					{Name: "KRONK_TOKEN", Default: "", Description: "Authentication token for the kronk server (required when auth enabled)"},
 					{Name: "KRONK_WEB_API_HOST", Default: "localhost:8080", Description: "IP Address for the kronk server (web mode)"},
+					{Name: "KRONK_BASE_PATH", Default: "$HOME/kronk", Description: "Base path for kronk data directories (local mode)"},
 				},
 				Examples: []string{
 					"# List all catalog models\nkronk catalog list",
@@ -280,10 +283,12 @@ func catalogCommand() command {
 				Usage: "kronk catalog pull <MODEL_ID> [flags]",
 				Flags: []flag{
 					{Name: "--local", Description: "Run without the model server"},
+					{Name: "--base-path <string>", Description: "Base path for kronk data (models, catalogs, templates)"},
 				},
 				EnvVars: []envVar{
 					{Name: "KRONK_TOKEN", Default: "", Description: "Authentication token for the kronk server (required when auth enabled)"},
 					{Name: "KRONK_WEB_API_HOST", Default: "localhost:8080", Description: "IP Address for the kronk server (web mode)"},
+					{Name: "KRONK_BASE_PATH", Default: "$HOME/kronk", Description: "Base path for kronk data directories (local mode)"},
 				},
 				Examples: []string{
 					"# Pull a model from the catalog\nkronk catalog pull llama-3.2-1b-q4",
@@ -296,10 +301,12 @@ func catalogCommand() command {
 				Usage: "kronk catalog show <MODEL_ID> [flags]",
 				Flags: []flag{
 					{Name: "--local", Description: "Run without the model server"},
+					{Name: "--base-path <string>", Description: "Base path for kronk data (models, catalogs, templates)"},
 				},
 				EnvVars: []envVar{
 					{Name: "KRONK_TOKEN", Default: "", Description: "Authentication token for the kronk server (required when auth enabled)"},
 					{Name: "KRONK_WEB_API_HOST", Default: "localhost:8080", Description: "IP Address for the kronk server (web mode)"},
+					{Name: "KRONK_BASE_PATH", Default: "$HOME/kronk", Description: "Base path for kronk data directories (local mode)"},
 				},
 				Examples: []string{
 					"# Show details for a specific model\nkronk catalog show llama-3.2-1b-q4",
@@ -312,10 +319,12 @@ func catalogCommand() command {
 				Usage: "kronk catalog update [flags]",
 				Flags: []flag{
 					{Name: "--local", Description: "Run without the model server"},
+					{Name: "--base-path <string>", Description: "Base path for kronk data (models, catalogs, templates)"},
 				},
 				EnvVars: []envVar{
 					{Name: "KRONK_TOKEN", Default: "", Description: "Authentication token for the kronk server (required when auth enabled)"},
 					{Name: "KRONK_WEB_API_HOST", Default: "localhost:8080", Description: "IP Address for the kronk server (web mode)"},
+					{Name: "KRONK_BASE_PATH", Default: "$HOME/kronk", Description: "Base path for kronk data directories (local mode)"},
 				},
 				Examples: []string{
 					"# Update the catalog from remote source\nkronk catalog update",
@@ -339,10 +348,12 @@ func libsCommand() command {
 				Usage: "kronk libs [flags]",
 				Flags: []flag{
 					{Name: "--local", Description: "Run without the model server"},
+					{Name: "--base-path <string>", Description: "Base path for kronk data (models, catalogs, templates)"},
 				},
 				EnvVars: []envVar{
 					{Name: "KRONK_TOKEN", Default: "", Description: "Authentication token for the kronk server (required when auth enabled)"},
 					{Name: "KRONK_WEB_API_HOST", Default: "localhost:8080", Description: "IP Address for the kronk server (web mode)"},
+					{Name: "KRONK_BASE_PATH", Default: "$HOME/kronk", Description: "Base path for kronk data directories (local mode)"},
 					{Name: "KRONK_ARCH", Default: "runtime.GOARCH", Description: "The architecture to install (local mode)"},
 					{Name: "KRONK_LIB_PATH", Default: "$HOME/kronk/libraries", Description: "The path to the libraries directory (local mode)"},
 					{Name: "KRONK_OS", Default: "runtime.GOOS", Description: "The operating system to install (local mode)"},
@@ -371,10 +382,12 @@ func modelCommand() command {
 				Usage: "kronk model index [flags]",
 				Flags: []flag{
 					{Name: "--local", Description: "Run without the model server"},
+					{Name: "--base-path <string>", Description: "Base path for kronk data (models, catalogs, templates)"},
 				},
 				EnvVars: []envVar{
 					{Name: "KRONK_TOKEN", Default: "", Description: "Authentication token for the kronk server (required when auth enabled)"},
 					{Name: "KRONK_WEB_API_HOST", Default: "localhost:8080", Description: "IP Address for the kronk server (web mode)"},
+					{Name: "KRONK_BASE_PATH", Default: "$HOME/kronk", Description: "Base path for kronk data directories (local mode)"},
 					{Name: "KRONK_MODELS", Default: "$HOME/kronk/models", Description: "The path to the models directory (local mode)"},
 				},
 				Examples: []string{
@@ -388,10 +401,12 @@ func modelCommand() command {
 				Usage: "kronk model list [flags]",
 				Flags: []flag{
 					{Name: "--local", Description: "Run without the model server"},
+					{Name: "--base-path <string>", Description: "Base path for kronk data (models, catalogs, templates)"},
 				},
 				EnvVars: []envVar{
 					{Name: "KRONK_TOKEN", Default: "", Description: "Authentication token for the kronk server (required when auth enabled)"},
 					{Name: "KRONK_WEB_API_HOST", Default: "localhost:8080", Description: "IP Address for the kronk server (web mode)"},
+					{Name: "KRONK_BASE_PATH", Default: "$HOME/kronk", Description: "Base path for kronk data directories (local mode)"},
 					{Name: "KRONK_MODELS", Default: "$HOME/kronk/models", Description: "The path to the models directory (local mode)"},
 				},
 				Examples: []string{
@@ -418,10 +433,12 @@ func modelCommand() command {
 				Usage: "kronk model pull <MODEL_URL> [MMPROJ_URL] [flags]",
 				Flags: []flag{
 					{Name: "--local", Description: "Run without the model server"},
+					{Name: "--base-path <string>", Description: "Base path for kronk data (models, catalogs, templates)"},
 				},
 				EnvVars: []envVar{
 					{Name: "KRONK_TOKEN", Default: "", Description: "Authentication token for the kronk server (required when auth enabled)"},
 					{Name: "KRONK_WEB_API_HOST", Default: "localhost:8080", Description: "IP Address for the kronk server (web mode)"},
+					{Name: "KRONK_BASE_PATH", Default: "$HOME/kronk", Description: "Base path for kronk data directories (local mode)"},
 					{Name: "KRONK_MODELS", Default: "$HOME/kronk/models", Description: "The path to the models directory (local mode)"},
 				},
 				Examples: []string{
@@ -436,10 +453,12 @@ func modelCommand() command {
 				Usage: "kronk model remove <MODEL_NAME> [flags]",
 				Flags: []flag{
 					{Name: "--local", Description: "Run without the model server"},
+					{Name: "--base-path <string>", Description: "Base path for kronk data (models, catalogs, templates)"},
 				},
 				EnvVars: []envVar{
 					{Name: "KRONK_TOKEN", Default: "", Description: "Authentication token for the kronk server (required when auth enabled)"},
 					{Name: "KRONK_WEB_API_HOST", Default: "localhost:8080", Description: "IP Address for the kronk server (web mode)"},
+					{Name: "KRONK_BASE_PATH", Default: "$HOME/kronk", Description: "Base path for kronk data directories (local mode)"},
 					{Name: "KRONK_MODELS", Default: "$HOME/kronk/models", Description: "The path to the models directory (local mode)"},
 				},
 				Examples: []string{
@@ -453,15 +472,50 @@ func modelCommand() command {
 				Usage: "kronk model show <MODEL_NAME> [flags]",
 				Flags: []flag{
 					{Name: "--local", Description: "Run without the model server"},
+					{Name: "--base-path <string>", Description: "Base path for kronk data (models, catalogs, templates)"},
 				},
 				EnvVars: []envVar{
 					{Name: "KRONK_TOKEN", Default: "", Description: "Authentication token for the kronk server (required when auth enabled)"},
 					{Name: "KRONK_WEB_API_HOST", Default: "localhost:8080", Description: "IP Address for the kronk server (web mode)"},
+					{Name: "KRONK_BASE_PATH", Default: "$HOME/kronk", Description: "Base path for kronk data directories (local mode)"},
 					{Name: "KRONK_MODELS", Default: "$HOME/kronk/models", Description: "The path to the models directory (local mode)"},
 				},
 				Examples: []string{
 					"# Show model information\nkronk model show llama-3.2-1b-q4",
 					"# Show with local mode\nkronk model show llama-3.2-1b-q4 --local",
+				},
+			},
+		},
+	}
+}
+
+func runCommand() command {
+	return command{
+		Name:  "run",
+		Short: "Run an interactive chat session with a model.",
+		Long:  "Run an interactive chat session with a local model (REPL mode)",
+		Usage: "kronk run <MODEL_NAME> [flags]",
+		Subcommands: []subcommand{
+			{
+				Name:  "flags",
+				Short: "Available flags for the run command.",
+				Usage: "kronk run <MODEL_NAME> [flags]",
+				Flags: []flag{
+					{Name: "--instances <int>", Description: "Number of model instances to load (default: 1)"},
+					{Name: "--max-tokens <int>", Description: "Maximum tokens for response (default: 2048)"},
+					{Name: "--temperature <float>", Description: "Temperature for sampling (default: 0.7)"},
+					{Name: "--top-p <float>", Description: "Top-p for sampling (default: 0.9)"},
+					{Name: "--top-k <int>", Description: "Top-k for sampling (default: 40)"},
+					{Name: "--base-path <string>", Description: "Base path for kronk data (models, catalogs, templates)"},
+				},
+				EnvVars: []envVar{
+					{Name: "KRONK_BASE_PATH", Default: "$HOME/kronk", Description: "Base path for kronk data directories"},
+					{Name: "KRONK_MODELS", Default: "$HOME/kronk/models", Description: "The path to the models directory"},
+				},
+				Examples: []string{
+					"# Start an interactive chat with a model\nkronk run Qwen3-8B-Q8_0",
+					"# Run with custom sampling parameters\nkronk run Qwen3-8B-Q8_0 --temperature 0.5 --top-p 0.95",
+					"# Run with higher token limit\nkronk run Qwen3-8B-Q8_0 --max-tokens 4096",
 				},
 			},
 		},
@@ -566,8 +620,19 @@ func serverCommand() command {
 				Usage: "kronk server start [flags]",
 				Flags: []flag{
 					{Name: "-d, --detach", Description: "Run server in the background"},
+					{Name: "--api-host <string>", Description: "API host address (e.g., localhost:8080)"},
+					{Name: "--debug-host <string>", Description: "Debug host address (e.g., localhost:8090)"},
+					{Name: "--auth-enabled", Description: "Enable local authentication"},
+					{Name: "--device <string>", Description: "Device to use for inference (e.g., cuda, metal)"},
+					{Name: "--max-instances <int>", Description: "Maximum model instances"},
+					{Name: "--models-in-cache <int>", Description: "Maximum models in cache"},
+					{Name: "--cache-ttl <duration>", Description: "Cache TTL duration (e.g., 5m, 1h)"},
+					{Name: "--model-config-file <string>", Description: "Special config file for model specific config"},
+					{Name: "--llama-log <int>", Description: "Llama log level (0=off, 1=on)"},
 				},
-				EnvVars: []envVar{},
+				EnvVars: []envVar{
+					{Name: "KRONK_BASE_PATH", Default: "$HOME/kronk", Description: "Base path for kronk data directories"},
+				},
 				Examples: []string{
 					"# Start the server in foreground\nkronk server start",
 					"# Start the server in background\nkronk server start -d",

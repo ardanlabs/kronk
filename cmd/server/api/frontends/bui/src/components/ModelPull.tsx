@@ -1,81 +1,25 @@
-import { useState, useRef } from 'react';
-import { api } from '../services/api';
-import { useModelList } from '../contexts/ModelListContext';
-import type { PullResponse } from '../types';
+import { useState } from 'react';
+import { useDownload } from '../contexts/DownloadContext';
 
 export default function ModelPull() {
-  const { invalidate } = useModelList();
+  const { download, isDownloading, startDownload, cancelDownload, clearDownload } = useDownload();
   const [modelUrl, setModelUrl] = useState('');
-  const [pulling, setPulling] = useState(false);
-  const [messages, setMessages] = useState<Array<{ text: string; type: 'info' | 'error' | 'success' }>>([]);
-  const closeRef = useRef<(() => void) | null>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!modelUrl.trim()) return;
-
-    setPulling(true);
-    setMessages([]);
-
-    const ANSI_INLINE = '\x1b[1A\r\x1b[K';
-
-    const addMessage = (text: string, type: 'info' | 'error' | 'success') => {
-      setMessages((prev) => [...prev, { text, type }]);
-    };
-
-    const updateLastMessage = (text: string, type: 'info' | 'error' | 'success') => {
-      setMessages((prev) => {
-        if (prev.length === 0) {
-          return [{ text, type }];
-        }
-        const updated = [...prev];
-        updated[updated.length - 1] = { text, type };
-        return updated;
-      });
-    };
-
-    closeRef.current = api.pullModel(
-      modelUrl.trim(),
-      (data: PullResponse) => {
-        if (data.status) {
-          if (data.status.startsWith(ANSI_INLINE)) {
-            const cleanText = data.status.slice(ANSI_INLINE.length);
-            updateLastMessage(cleanText, 'info');
-          } else {
-            addMessage(data.status, 'info');
-          }
-        }
-        if (data.model_file) {
-          addMessage(`Model file: ${data.model_file}`, 'info');
-        }
-
-      },
-      (error: string) => {
-        addMessage(error, 'error');
-        setPulling(false);
-      },
-      () => {
-        addMessage('Pull complete!', 'success');
-        setPulling(false);
-        invalidate();
-      }
-    );
+    if (!modelUrl.trim() || isDownloading) return;
+    startDownload(modelUrl.trim());
   };
 
-  const handleCancel = () => {
-    if (closeRef.current) {
-      closeRef.current();
-      closeRef.current = null;
-    }
-    setPulling(false);
-    setMessages((prev) => [...prev, { text: 'Cancelled', type: 'error' }]);
-  };
+  const isComplete = download?.status === 'complete';
+  const hasError = download?.status === 'error';
 
   return (
     <div>
       <div className="page-header">
         <h2>Pull Model</h2>
-        <p>Download a model from a URL</p>
+              <p>Download a model from a URL</p>
+              <p>Example: https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf</p>
       </div>
 
       <div className="card">
@@ -88,25 +32,34 @@ export default function ModelPull() {
               value={modelUrl}
               onChange={(e) => setModelUrl(e.target.value)}
               placeholder="https://huggingface.co/..."
-              disabled={pulling}
+              disabled={isDownloading}
             />
           </div>
 
           <div style={{ display: 'flex', gap: '12px' }}>
-            <button className="btn btn-primary" type="submit" disabled={pulling || !modelUrl.trim()}>
-              {pulling ? 'Pulling...' : 'Pull Model'}
+            <button
+              className="btn btn-primary"
+              type="submit"
+              disabled={isDownloading || !modelUrl.trim()}
+            >
+              {isDownloading ? 'Downloading...' : 'Pull Model'}
             </button>
-            {pulling && (
-              <button className="btn btn-danger" type="button" onClick={handleCancel}>
+            {isDownloading && (
+              <button className="btn btn-danger" type="button" onClick={cancelDownload}>
                 Cancel
+              </button>
+            )}
+            {(isComplete || hasError) && (
+              <button className="btn" type="button" onClick={clearDownload}>
+                Clear
               </button>
             )}
           </div>
         </form>
 
-        {messages.length > 0 && (
+        {download && download.messages.length > 0 && (
           <div className="status-box">
-            {messages.map((msg, idx) => (
+            {download.messages.map((msg, idx) => (
               <div key={idx} className={`status-line ${msg.type}`}>
                 {msg.text}
               </div>

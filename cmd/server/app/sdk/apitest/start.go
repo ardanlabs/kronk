@@ -12,14 +12,15 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/cache"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mux"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/sdk/kronk"
-	"github.com/ardanlabs/kronk/sdk/observ/otel"
-	"github.com/ardanlabs/kronk/sdk/security/auth"
+	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
+	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
-	"github.com/ardanlabs/kronk/sdk/tools/security"
 	"github.com/ardanlabs/kronk/sdk/tools/templates"
 	"google.golang.org/grpc/test/bufconn"
 )
@@ -109,7 +110,9 @@ func New(t *testing.T, testName string) *Test {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
-	libs, err := libs.New()
+	libs, err := libs.New(
+		libs.WithVersion(defaults.LibVersion("")),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +131,7 @@ func New(t *testing.T, testName string) *Test {
 	// -------------------------------------------------------------------------
 	// Catalog System
 
-	ctlg, err := catalog.NewWithSettings("", "https://api.github.com/repos/ardanlabs/kronk_catalogs/contents/catalogs")
+	ctlg, err := catalog.New()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +143,7 @@ func New(t *testing.T, testName string) *Test {
 	// -------------------------------------------------------------------------
 	// Template System
 
-	tmplts, err := templates.NewWithSettings("", "https://api.github.com/repos/ardanlabs/kronk_catalogs/contents/templates", ctlg)
+	tmplts, err := templates.New(templates.WithCatalog(ctlg))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,17 +159,13 @@ func New(t *testing.T, testName string) *Test {
 		t.Fatal(err)
 	}
 
-	cache, err := cache.NewCache(cache.Config{
-		Log:            log.Info,
-		Templates:      tmplts,
-		Arch:           libs.Arch(),
-		OS:             libs.OS(),
-		Processor:      libs.Processor(),
-		Device:         "",
-		MaxInCache:     3,
-		ModelInstances: 1,
-		ContextWindow:  0,
-		CacheTTL:       5 * time.Minute,
+	cache, err := cache.New(cache.Config{
+		Log:             log.Info,
+		Templates:       tmplts,
+		ModelsInCache:   3,
+		ModelInstances:  1,
+		CacheTTL:        5 * time.Minute,
+		ModelConfigFile: "../../../../../../zarf/kms/model_config.yaml",
 	})
 
 	if err != nil {

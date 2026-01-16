@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
+	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 )
 
 const (
@@ -16,49 +16,75 @@ const (
 	shaFile           = ".template_shas.json"
 )
 
+// =============================================================================
+
+type options struct {
+	basePath   string
+	githubRepo string
+	catalog    *catalog.Catalog
+}
+
+// Option represents options for configuring catalog.
+type Option func(*options)
+
+// WithBasePath sets a custom base path on disk for the templates.
+func WithBasePath(basePath string) Option {
+	return func(o *options) {
+		o.basePath = basePath
+	}
+}
+
+// WithGithubRepo sets a custom github repo url.
+func WithGithubRepo(githubRepo string) Option {
+	return func(o *options) {
+		o.githubRepo = githubRepo
+	}
+}
+
+// WithCatalog sets a custom catalog api.
+func WithCatalog(catalog *catalog.Catalog) Option {
+	return func(o *options) {
+		o.catalog = catalog
+	}
+}
+
+// =============================================================================
+
 // Templates manages the template system.
 type Templates struct {
-	templatePath   string
-	githubRepoPath string
-	catalog        *catalog.Catalog
+	templatePath string
+	githubRepo   string
+	catalog      *catalog.Catalog
 }
 
 // New constructs the template system using defaults paths.
-func New() (*Templates, error) {
-	basePath := defaults.BaseDir("")
+func New(opts ...Option) (*Templates, error) {
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
 
-	catalog, err := catalog.NewWithSettings(basePath, "")
+	o.basePath = defaults.BaseDir(o.basePath)
+
+	if o.githubRepo == "" {
+		o.githubRepo = defaultGithubPath
+	}
+
+	catalog, err := catalog.New(catalog.WithBasePath(o.basePath))
 	if err != nil {
-		return nil, fmt.Errorf("catalog new: %w", err)
+		return nil, fmt.Errorf("new: unable to create catalog: %w", err)
 	}
 
-	return NewWithSettings("", "", catalog)
-}
-
-// NewWithCatalog constructs the template system using defaults paths.
-func NewWithCatalog(catalog *catalog.Catalog) (*Templates, error) {
-	return NewWithSettings("", "", catalog)
-}
-
-// NewWithSettings constructs the template system, using the specified settings.
-// If either path is empty, the default paths are used.
-func NewWithSettings(basePath string, githubRepoPath string, catalog *catalog.Catalog) (*Templates, error) {
-	basePath = defaults.BaseDir(basePath)
-
-	if githubRepoPath == "" {
-		githubRepoPath = defaultGithubPath
-	}
-
-	templatesPath := filepath.Join(basePath, localFolder)
+	templatesPath := filepath.Join(o.basePath, localFolder)
 
 	if err := os.MkdirAll(templatesPath, 0755); err != nil {
-		return nil, fmt.Errorf("creating templates directory: %w", err)
+		return nil, fmt.Errorf("new: creating templates directory: %w", err)
 	}
 
 	t := Templates{
-		templatePath:   templatesPath,
-		githubRepoPath: githubRepoPath,
-		catalog:        catalog,
+		templatePath: templatesPath,
+		githubRepo:   o.githubRepo,
+		catalog:      catalog,
 	}
 
 	return &t, nil

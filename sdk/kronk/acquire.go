@@ -13,7 +13,7 @@ func (krn *Kronk) acquireModel(ctx context.Context) (*model.Model, error) {
 		defer krn.shutdown.Unlock()
 
 		if krn.shutdownFlag {
-			return fmt.Errorf("acquire-model:kronk has been unloaded")
+			return fmt.Errorf("acquire-model: kronk has been unloaded")
 		}
 
 		krn.activeStreams.Add(1)
@@ -31,17 +31,12 @@ func (krn *Kronk) acquireModel(ctx context.Context) (*model.Model, error) {
 		krn.activeStreams.Add(-1)
 		return nil, ctx.Err()
 
-	case llama, ok := <-krn.models:
-		if !ok {
-			krn.activeStreams.Add(-1)
-			return nil, fmt.Errorf("acquire-model:kronk has been unloaded")
-		}
-
-		return llama, nil
+	case krn.sem <- struct{}{}: // Acquire a slot
+		return krn.model, nil
 	}
 }
 
-func (krn *Kronk) releaseModel(llama *model.Model) {
-	krn.models <- llama
+func (krn *Kronk) releaseModel() {
+	<-krn.sem // Release the slot
 	krn.activeStreams.Add(-1)
 }

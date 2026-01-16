@@ -4,15 +4,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path"
 	"time"
 
-	"github.com/ardanlabs/kronk/sdk/observ/metrics"
+	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
+	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/google/uuid"
-	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // Chat performs a chat request and returns the final response.
+// Text inference requests can run concurrently based on the NSeqMax config
+// value, which controls parallel sequence processing. However, requests that
+// include vision or audio content are processed sequentially due to media
+// pipeline constraints.
 func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error) {
 	ch := m.ChatStreaming(ctx, d)
 
@@ -25,108 +31,187 @@ func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error) {
 }
 
 // ChatStreaming performs a chat request and streams the response.
+// Text inference requests can run concurrently based on the NSeqMax config
+// value, which controls parallel sequence processing. However, requests that
+// include vision or audio content are processed sequentially due to media
+// pipeline constraints.
 func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
-	ch := make(chan ChatResponse)
+	ch := make(chan ChatResponse, 1)
 
 	go func() {
 		m.activeStreams.Add(1)
-		defer m.activeStreams.Add(-1)
 
-		id := uuid.New().String()
+		id := fmt.Sprintf("chatcmpl-%s", uuid.New().String())
+
+		batching := false
 
 		defer func() {
 			if rec := recover(); rec != nil {
 				m.sendChatError(ctx, ch, id, fmt.Errorf("%v", rec))
 			}
-			close(ch)
+
+			if !batching {
+				close(ch)
+				m.activeStreams.Add(-1)
+			}
 		}()
 
 		params, err := m.validateDocument(d)
 		if err != nil {
-			m.sendChatError(ctx, ch, "", err)
+			m.sendChatError(ctx, ch, id, err)
 			return
 		}
 
-		lctx, err := llama.InitFromModel(m.model, m.ctxParams)
+		d, object, mtmdCtx, err := m.prepareMediaContext(ctx, d)
 		if err != nil {
-			m.sendChatError(ctx, ch, id, fmt.Errorf("init-from-model: unable to init model: %w", err))
+			m.sendChatError(ctx, ch, id, err)
 			return
 		}
 
 		defer func() {
-			llama.Synchronize(lctx)
-			llama.Free(lctx)
+			if !batching {
+				if mtmdCtx != 0 {
+					mtmd.Free(mtmdCtx)
+				}
+
+				m.resetContext()
+			}
 		}()
 
-		var mtmdCtx mtmd.Context
-
-		if m.projFile != "" {
-			mctxParams := mtmd.ContextParamsDefault()
-
-			// OTEL: WANT TO KNOW HOW LONG THESE FUNCTION CALLS TAKES
-			start := time.Now()
-
-			mtmdCtx, err = mtmd.InitFromFile(m.projFile, m.model, mctxParams)
-			if err != nil {
-				m.sendChatError(ctx, ch, id, fmt.Errorf("init-from-file: unable to init projection: %w", err))
-				return
-			}
-			defer mtmd.Free(mtmdCtx)
-
-			metrics.AddProjFileLoadTime(time.Since(start))
-
-			// -----------------------------------------------------------------
-			// We want to use a raw media message format for processing media
-			// since we need the raw bytes.
-
-			chatMessages, ok, err := isOpenAIMediaRequest(d)
-			if err != nil {
-				m.sendChatError(ctx, ch, id, fmt.Errorf("is-open-ai-media-request: unable to check is document is openai request: %w", err))
-				return
-			}
-
-			if ok {
-				d, err = toMediaMessage(d, chatMessages)
-				if err != nil {
-					m.sendChatError(ctx, ch, id, fmt.Errorf("to-media-message: unable to convert document to media message: %w", err))
-					return
-				}
-			}
-		}
-
-		// OTEL: WANT TO KNOW HOW LONG THESE FUNCTION CALLS TAKES
-		start := time.Now()
-
-		prompt, media, err := m.applyRequestJinjaTemplate(ctx, d)
+		prompt, media, err := m.createPrompt(ctx, d)
 		if err != nil {
-			m.sendChatError(ctx, ch, id, fmt.Errorf("apply-request-jinja-template: unable to apply jinja template: %w", err))
+			m.sendChatError(ctx, ch, id, fmt.Errorf("create-streaming: unable to apply jinja template: %w", err))
 			return
 		}
 
-		metrics.AddPromptCreationTime(time.Since(start))
+		// ---------------------------------------------------------------------
 
-		object := ObjectChatText
+		// Use batch engine for text-only requests when available.
+		if m.batch != nil && object == ObjectChatText {
+			job := chatJob{
+				id:      id,
+				ctx:     ctx,
+				d:       d,
+				object:  object,
+				prompt:  prompt,
+				media:   media,
+				params:  params,
+				mtmdCtx: mtmdCtx,
+				ch:      ch,
+			}
 
-		if len(media) > 0 {
-			object = ObjectChatMedia
-
-			bitmap, err := m.processBitmap(lctx, mtmdCtx, prompt, media)
-			if err != nil {
+			// Engine manages activeStreams for submitted jobs.
+			if err := m.batch.submit(&job); err != nil {
 				m.sendChatError(ctx, ch, id, err)
 				return
 			}
 
-			defer func() {
-				for _, b := range bitmap {
-					mtmd.BitmapFree(b)
-				}
-			}()
+			batching = true
+
+			// Channel closed and activeStreams decremented by
+			// engine when job completes.
+			return
 		}
 
-		m.processChatRequest(ctx, id, lctx, object, prompt, params, ch)
+		// ---------------------------------------------------------------------
+
+		// Sequential path for media requests or when engine is not available.
+
+		m.sequentialChatRequest(ctx, id, m.lctx, mtmdCtx, object, prompt, media, params, ch)
 	}()
 
 	return ch
+}
+
+func (m *Model) prepareMediaContext(ctx context.Context, d D) (D, string, mtmd.Context, error) {
+	mediaType, isOpenAIFormat, msgs, err := detectMediaContent(d)
+	if err != nil {
+		return nil, "", 0, fmt.Errorf("prepare-media-context: %w", err)
+	}
+
+	if mediaType != MediaTypeNone && m.projFile == "" {
+		return nil, "", 0, fmt.Errorf("prepare-media-context: media detected in request but model does not support media processing")
+	}
+
+	var mtmdCtx mtmd.Context
+	object := ObjectChatText
+
+	if m.projFile != "" {
+		object = ObjectChatMedia
+
+		mtmdCtx, err = m.loadProjFile(ctx)
+		if err != nil {
+			return nil, "", 0, fmt.Errorf("prepare-media-context: unable to init projection: %w", err)
+		}
+
+		switch mediaType {
+		case MediaTypeVision:
+			if !mtmd.SupportVision(mtmdCtx) {
+				mtmd.Free(mtmdCtx)
+				return nil, "", 0, fmt.Errorf("prepare-media-context: image/video detected but model does not support vision")
+			}
+
+		case MediaTypeAudio:
+			if !mtmd.SupportAudio(mtmdCtx) {
+				mtmd.Free(mtmdCtx)
+				return nil, "", 0, fmt.Errorf("prepare-media-context: audio detected but model does not support audio")
+			}
+		}
+	}
+
+	switch {
+	case isOpenAIFormat:
+		d, err = convertToRawMediaMessage(d.Clone(), msgs)
+		if err != nil {
+			return nil, "", 0, fmt.Errorf("prepare-media-context: unable to convert document to media message: %w", err)
+		}
+
+	case mediaType != MediaTypeNone:
+		d = convertPlainBase64ToBytes(d)
+	}
+
+	return d, object, mtmdCtx, nil
+}
+
+func (m *Model) loadProjFile(ctx context.Context) (mtmd.Context, error) {
+	baseProjFile := path.Base(m.projFile)
+
+	m.log(context.Background(), "loading-prof-file", "status", "started", "proj", baseProjFile)
+	defer m.log(context.Background(), "loading-prof-file", "status", "completed", "proj", baseProjFile)
+
+	_, span := otel.AddSpan(ctx, "proj-file-load-time",
+		attribute.String("proj-file", baseProjFile),
+	)
+	defer span.End()
+
+	start := time.Now()
+	defer func() {
+		metrics.AddProjFileLoadTime(time.Since(start))
+	}()
+
+	mtmdCtx, err := mtmd.InitFromFile(m.projFile, m.model, mtmd.ContextParamsDefault())
+	if err != nil {
+		return 0, err
+	}
+
+	return mtmdCtx, nil
+}
+
+func (m *Model) createPrompt(ctx context.Context, d D) (string, [][]byte, error) {
+	ctx, span := otel.AddSpan(ctx, "create-prompt")
+	defer span.End()
+
+	start := time.Now()
+	defer func() {
+		metrics.AddPromptCreationTime(time.Since(start))
+	}()
+
+	prompt, media, err := m.applyRequestJinjaTemplate(ctx, d)
+	if err != nil {
+		return "", nil, err
+	}
+
+	return prompt, media, nil
 }
 
 func (m *Model) validateDocument(d D) (Params, error) {
@@ -139,34 +224,12 @@ func (m *Model) validateDocument(d D) (Params, error) {
 		return Params{}, errors.New("validate-document: messages is not a slice of documents")
 	}
 
-	params, err := parseParams(d)
+	params, err := m.parseParams(d)
 	if err != nil {
 		return Params{}, err
 	}
 
 	return params, nil
-}
-
-func (m *Model) processBitmap(lctx llama.Context, mtmdCtx mtmd.Context, prompt string, media [][]byte) ([]mtmd.Bitmap, error) {
-	bitmaps := make([]mtmd.Bitmap, len(media))
-	for i, med := range media {
-		bitmaps[i] = mtmd.BitmapInitFromBuf(mtmdCtx, &med[0], uint64(len(med)))
-	}
-
-	output := mtmd.InputChunksInit()
-	input := mtmd.NewInputText(prompt, true, true)
-
-	mtmd.Tokenize(mtmdCtx, output, input, bitmaps)
-
-	// OTEL: WANT TO KNOW HOW LONG THESE FUNCTION CALLS TAKES
-	start := time.Now()
-
-	var n llama.Pos
-	mtmd.HelperEvalChunks(mtmdCtx, lctx, output, 0, 0, int32(m.ctxParams.NBatch), true, &n)
-
-	metrics.AddPrefillMediaTime(time.Since(start))
-
-	return bitmaps, nil
 }
 
 func (m *Model) sendChatError(ctx context.Context, ch chan<- ChatResponse, id string, err error) {

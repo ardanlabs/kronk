@@ -16,15 +16,13 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/ardanlabs/kronk/sdk/tools/templates"
 )
 
-const (
-	modelURL       = "https://huggingface.co/ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/resolve/main/embeddinggemma-300m-qat-Q8_0.gguf"
-	modelInstances = 1
-)
+const modelURL = "https://huggingface.co/ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/resolve/main/embeddinggemma-300m-qat-Q8_0.gguf"
 
 func main() {
 	if err := run(); err != nil {
@@ -62,7 +60,9 @@ func installSystem() (models.Path, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
-	libs, err := libs.New()
+	libs, err := libs.New(
+		libs.WithVersion(defaults.LibVersion("")),
+	)
 	if err != nil {
 		return models.Path{}, err
 	}
@@ -110,8 +110,14 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
-	krn, err := kronk.New(modelInstances, model.Config{
-		ModelFiles: mp.ModelFiles,
+	krn, err := kronk.New(model.Config{
+		ModelFiles:     mp.ModelFiles,
+		ContextWindow:  2048,
+		NBatch:         2048,
+		NUBatch:        512,
+		CacheTypeK:     model.GGMLTypeQ8_0,
+		CacheTypeV:     model.GGMLTypeQ8_0,
+		FlashAttention: model.FlashAttentionEnabled,
 	})
 
 	if err != nil {
@@ -135,9 +141,13 @@ func embedding(krn *kronk.Kronk) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	question := "Why is the sky blue?"
+	d := model.D{
+		"input":              "Why is the sky blue?",
+		"truncate":           true,
+		"truncate_direction": "right",
+	}
 
-	resp, err := krn.Embeddings(ctx, question)
+	resp, err := krn.Embeddings(ctx, d)
 	if err != nil {
 		return err
 	}

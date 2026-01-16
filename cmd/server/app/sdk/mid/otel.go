@@ -2,10 +2,11 @@ package mid
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
-	"github.com/ardanlabs/kronk/sdk/observ/otel"
+	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -13,6 +14,10 @@ import (
 func Otel(tracer trace.Tracer) web.MidFunc {
 	m := func(next web.HandlerFunc) web.HandlerFunc {
 		h := func(ctx context.Context, r *http.Request) web.Encoder {
+			spanName := fmt.Sprintf("%s %s", r.Method, r.URL.Path)
+			ctx, span := tracer.Start(ctx, spanName)
+			defer span.End()
+
 			ctx = otel.InjectTracing(ctx, tracer)
 
 			return next(ctx, r)

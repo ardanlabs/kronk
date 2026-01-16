@@ -26,8 +26,14 @@ func testEmbedding(t *testing.T, mp models.Path) {
 		t.Parallel()
 	}
 
-	krn, err := kronk.New(modelInstances, model.Config{
-		ModelFiles: mp.ModelFiles,
+	krn, err := kronk.New(model.Config{
+		ModelFiles:     mp.ModelFiles,
+		ContextWindow:  2048,
+		NBatch:         2048,
+		NUBatch:        512,
+		CacheTypeK:     model.GGMLTypeQ8_0,
+		CacheTypeV:     model.GGMLTypeQ8_0,
+		FlashAttention: model.FlashAttentionEnabled,
 	})
 
 	if err != nil {
@@ -57,7 +63,7 @@ func testEmbedding(t *testing.T, mp models.Path) {
 			t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, name, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
 		}()
 
-		embed, err := krn.Embeddings(ctx, text)
+		embed, err := krn.Embeddings(ctx, model.D{"input": text})
 		if err != nil {
 			return fmt.Errorf("embed: %w", err)
 		}

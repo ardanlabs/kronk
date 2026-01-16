@@ -56,9 +56,9 @@ $ go install github.com/ardanlabs/kronk/cmd/kronk@latest
 $ kronk --help
 ```
 
-## Roadmap
+## Issues/Features
 
-Here is the existing [ROADMAP](ROADMAP.md) for the project and the things being worked on or things that would be nice to have. The roadmap is not in any particular order.
+Here is the existing [Issues/Features](https://github.com/ardanlabs/kronk/issues) for the project and the things being worked on or things that would be nice to have.
 
 If you are interested in helping in any way, please send an email to [Bill Kennedy](mailto:bill@ardanlabs.com).
 
@@ -68,9 +68,13 @@ Here is the existing [FEATURES](FEATURES.md) list for the project. The features 
 
 ## Architecture
 
-The architecture of Kronk is designed to be simple and scalable. The Kronk API allows you to write applications that can diectly interact with local open source GGUF models (supported by llama.cpp) that provide inference for text and media (vision and audio).
+The architecture of Kronk is designed to be simple and scalable. The Kronk SDK allows you to write applications that can diectly interact with local open source GGUF models (supported by llama.cpp) that provide inference for text and media (vision and audio).
+
+![api arch](./images/design/sdk.png?v1)
 
 Check out the [examples](#examples) section below.
+
+Watch this [video](https://www.youtube.com/live/gjSrYkYc-yo) to learn more about the project and the architecture.
 
 If you want an OpenAI compatible model server, the Kronk model server leverages the power of the Kronk API to give you a concurrent and scalable web api.
 
@@ -124,19 +128,25 @@ _The first time you run these programs the system will download and install the 
 make example-audio
 ```
 
-[CHAT](examples/chat/main.go) - This example shows you how to create a simple chat application against an inference model using kronk. Thanks to Kronk and yzma, reasoning and tool calling is enabled.
+[CHAT](examples/chat/main.go) - This example shows you how to chat with the chat-completion api.
 
 ```shell
 make example-chat
 ```
 
-[EMBEDDING](examples/embedding/main.go) - This example shows you how to use an embedding model.
+[EMBEDDING](examples/embedding/main.go) - This example shows you a basic program using Kronk to perform an embedding operation.
 
 ```shell
 make example-embedding
 ```
 
-[QUESTION](examples/question/main.go) - This example shows you a basic program of using Kronk to ask a model a question.
+[QUESTION](examples/question/main.go) - This example shows you how to ask a simple question with the chat-completion api.
+
+```shell
+make example-question
+```
+
+[RESPONSE](examples/response/main.go) - This example shows you how to chat with the response api.
 
 ```shell
 make example-question
@@ -146,6 +156,12 @@ make example-question
 
 ```shell
 make example-vision
+```
+
+[YZMA](examples/yzma/main.go) - This example shows you how to use the yzma api at it's basic level.
+
+```shell
+make example-yzma
 ```
 
 You can find more examples in the ArdanLabs AI training repo at [Example13](https://github.com/ardanlabs/ai-training/tree/main/cmd/examples/example13).
@@ -163,12 +179,15 @@ You will need to load a model if this is the first time you're using the system.
 ```shell
 kronk catalog list --local
 
-CATALOG              MODEL ID
-Audio-Text-to-Text   Qwen2-Audio-7B.Q8_0
-Embedding            embeddinggemma-300m-qat-Q8_0
-Image-Text-to-Text   Qwen2.5-VL-3B-Instruct-Q8_0
-Text-Generation      gpt-oss-20b-Q8_0
-Text-Generation      Qwen3-8B-Q8_0
+CATALOG              MODEL ID                            PULLED   ENDPOINT
+Audio-Text-to-Text   Qwen2-Audio-7B.Q8_0                 yes      chat_completion
+Embedding            embeddinggemma-300m-qat-Q8_0        yes      embeddings
+Image-Text-to-Text   gemma-3-4b-it-q4_0                  yes      chat_completion
+Image-Text-to-Text   Qwen2.5-VL-3B-Instruct-Q8_0         yes      chat_completion
+Text-Generation      gpt-oss-20b-Q8_0                    yes      chat_completion
+Text-Generation      Llama-3.3-70B-Instruct-Q8_0         yes      chat_completion
+Text-Generation      Qwen3-8B-Q8_0                       yes      chat_completion
+Text-Generation      Qwen3-Coder-30B-A3B-Instruct-Q8_0   yes      chat_completion
 ```
 
 Then download the `Qwen3-8B-Q8_0` model using the catalog pull command:

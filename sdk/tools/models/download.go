@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/downloader"
 )
 
@@ -31,7 +32,7 @@ func (m *Models) Download(ctx context.Context, log Logger, modelURL string, proj
 func (m *Models) DownloadShards(ctx context.Context, log Logger, modelURLs []string, projURL string) (Path, error) {
 	modelFileName, err := extractFileName(modelURLs[0])
 	if err != nil {
-		return Path{}, fmt.Errorf("download-model: unable to extract file name: %w", err)
+		return Path{}, fmt.Errorf("download-shards: unable to extract file name: %w", err)
 	}
 
 	modelID := extractModelID(modelFileName)
@@ -39,15 +40,18 @@ func (m *Models) DownloadShards(ctx context.Context, log Logger, modelURLs []str
 	if !hasNetwork() {
 		mp, err := m.RetrievePath(modelID)
 		if err != nil {
-			return Path{}, fmt.Errorf("download-model: no network available: %w", err)
+			return Path{}, fmt.Errorf("download-shards: no network available: %w", err)
 		}
 
 		return mp, nil
 	}
 
+	var downloaded bool
 	defer func() {
-		if err := m.BuildIndex(); err != nil {
-			log(ctx, "download-model: unable to create index", "ERROR", err)
+		if downloaded {
+			if err := m.BuildIndex(log); err != nil {
+				log(ctx, "download-shards: unable to create index", "ERROR", err)
+			}
 		}
 	}()
 
@@ -61,7 +65,7 @@ func (m *Models) DownloadShards(ctx context.Context, log Logger, modelURLs []str
 		}
 
 		log(ctx, fmt.Sprintf("download-model: model-url[%s] proj-url[%s] model-id[%s]", modelURL, projURL, modelID))
-		log(ctx, "download-model: waiting to check model status...")
+		log(ctx, "download-shards: waiting to check model status...")
 
 		progress := func(src string, currentSize int64, totalSize int64, mibPerSec float64, complete bool) {
 			log(ctx, fmt.Sprintf("\x1b[1A\r\x1b[Kdownload-model: Downloading %s... %d MiB of %d MiB (%.2f MiB/s)", src, currentSize/(1024*1024), totalSize/(1024*1024), mibPerSec))
@@ -69,7 +73,7 @@ func (m *Models) DownloadShards(ctx context.Context, log Logger, modelURLs []str
 
 		mp, errOrg := m.downloadModel(ctx, modelURL, projURL, progress)
 		if errOrg != nil {
-			log(ctx, "download-model:", "ERROR", errOrg, "model-file-url", modelURL)
+			log(ctx, "download-shards:", "ERROR", errOrg, "model-file-url", modelURL)
 
 			if mp, err := m.RetrievePath(modelID); err == nil && len(mp.ModelFiles) > 0 {
 				size, err := fileSize(mp.ModelFiles[0])
@@ -84,19 +88,21 @@ func (m *Models) DownloadShards(ctx context.Context, log Logger, modelURLs []str
 					return Path{}, fmt.Errorf("download-model: unable to download file: %w", errOrg)
 				}
 
-				log(ctx, "download-model: status[using installed version of model files]")
+				log(ctx, "download-shards: using installed version of model files")
 				return mp, nil
 			}
 
 			return Path{}, fmt.Errorf("download-model: unable to download model file: %w", errOrg)
 		}
 
+		downloaded = mp.Downloaded
+
 		switch mp.Downloaded {
 		case true:
-			log(ctx, "download-model: status[downloaded]")
+			log(ctx, "download-shards: status[downloaded]")
 
 		default:
-			log(ctx, "download-model: status[already exists]")
+			log(ctx, "download-shards: status[already exists]")
 		}
 
 		result.ModelFiles[i] = mp.ModelFiles[0]
@@ -113,34 +119,106 @@ func (m *Models) DownloadShards(ctx context.Context, log Logger, modelURLs []str
 // =============================================================================
 
 func (m *Models) downloadModel(ctx context.Context, modelFileURL string, projFileURL string, progress downloader.ProgressFunc) (Path, error) {
-	modelFileName, downloadedMF, err := m.pullModel(ctx, modelFileURL, progress)
+	// Validate the URL is the correct HF download URL.
+	if !strings.Contains(modelFileURL, "/resolve/") {
+		return Path{}, fmt.Errorf("download-model: invalid model download url, missing /resolve/: %s", modelFileURL)
+	}
+
+	// If we have a proj file, then check that URL as well.
+	if projFileURL != "" {
+		if !strings.Contains(projFileURL, "/resolve/") {
+			return Path{}, fmt.Errorf("download-model: invalid proj download url, missing /resolve/: %s", projFileURL)
+		}
+	}
+
+	// Check the index to see if this model has already been downloaded and
+	// is validated.
+
+	modelFileName, err := extractFileName(modelFileURL)
+	if err != nil {
+		return Path{}, fmt.Errorf("download-model: unable to extract file name: %w", err)
+	}
+
+	mp, found := m.loadIndex()[strings.ToLower(extractModelID(modelFileName))]
+	if found && mp.Validated {
+		mp.Downloaded = false
+		return mp, nil
+	}
+
+	// -------------------------------------------------------------------------
+
+	// Download the model sha file.
+	if _, err := m.pullShaFile(modelFileURL, progress); err != nil {
+		return Path{}, fmt.Errorf("download-model: unable to download sha file: %w", err)
+	}
+
+	// Download the model file.
+	modelFileName, downloadedMF, err := m.pullFile(ctx, modelFileURL, progress)
 	if err != nil {
 		return Path{}, err
 	}
 
+	// Check the model file matches what is in the sha file.
+	if err := model.CheckModel(modelFileName, true); err != nil {
+		return Path{}, fmt.Errorf("download-model: unable to check model: %w", err)
+	}
+
+	// If there is no proj file we are done.
 	if projFileURL == "" {
 		return Path{ModelFiles: []string{modelFileName}, Downloaded: downloadedMF}, nil
 	}
 
+	// -------------------------------------------------------------------------
+
+	// Download the Sha file for the proj model file and rename the sha to
+	// match what the proj file will be called.
+
 	projFileName := createProjFileName(modelFileName)
 
-	if _, err := os.Stat(projFileName); err == nil {
-		inf := Path{
-			ModelFiles: []string{modelFileName},
-			ProjFile:   projFileName,
-			Downloaded: downloadedMF,
-		}
-
-		return inf, nil
+	orgShaFileName, err := m.pullShaFile(projFileURL, progress)
+	if err != nil {
+		return Path{}, fmt.Errorf("download-model: unable to download sha file: %w", err)
 	}
 
-	orjProjFile, downloadedPF, err := m.pullModel(ctx, projFileURL, progress)
+	// projFileName:   /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/mmproj-Qwen2-Audio-7B.Q8_0.gguf
+	// orgShaFileName: /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/sha/Qwen2-Audio-7B.mmproj-Q8_0.gguf
+	// shaFileName:    /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/sha/mmproj-Qwen2-Audio-7B.Q8_0.gguf
+	shaFileName := filepath.Join(path.Dir(orgShaFileName), path.Base(projFileName))
+
+	if err := os.Rename(orgShaFileName, shaFileName); err != nil {
+		return Path{}, fmt.Errorf("download-model: unable to rename projector sha file: %w", err)
+	}
+
+	// -------------------------------------------------------------------------
+
+	// Check if the proj file already exists on disk, and if so check the file
+	// against the sha file.
+	if _, err := os.Stat(projFileName); err == nil {
+		if err := model.CheckModel(projFileName, true); err == nil {
+			inf := Path{
+				ModelFiles: []string{modelFileName},
+				ProjFile:   projFileName,
+				Downloaded: downloadedMF,
+			}
+
+			return inf, nil
+		}
+	}
+
+	// Download the proj file.
+	orjProjFile, downloadedPF, err := m.pullFile(ctx, projFileURL, progress)
 	if err != nil {
 		return Path{}, err
 	}
 
+	// Rename the proj file to match our naming convention.
 	if err := os.Rename(orjProjFile, projFileName); err != nil {
 		return Path{}, fmt.Errorf("download-model: unable to rename projector file: %w", err)
+	}
+
+	// Check the model file matches what is in the sha file.
+	if err := model.CheckModel(projFileName, true); err != nil {
+		return Path{}, fmt.Errorf("download-model: unable to check model: %w", err)
 	}
 
 	inf := Path{
@@ -152,15 +230,41 @@ func (m *Models) downloadModel(ctx context.Context, modelFileURL string, projFil
 	return inf, nil
 }
 
-func (m *Models) pullModel(ctx context.Context, modelFileURL string, progress downloader.ProgressFunc) (string, bool, error) {
+func (m *Models) pullShaFile(modelFileURL string, progress downloader.ProgressFunc) (string, error) {
+	// modelFileURL: https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf
+	// rawFileURL:   https://huggingface.co/Qwen/Qwen3-8B-GGUF/raw/main/Qwen3-8B-Q8_0.gguf
+	rawFileURL := strings.Replace(modelFileURL, "resolve", "raw", 1)
+
 	modelFilePath, modelFileName, err := m.modelFilePathAndName(modelFileURL)
 	if err != nil {
-		return "", false, fmt.Errorf("pull-model: unable to extract file-path: %w", err)
+		return "", err
 	}
 
-	downloaded, err := downloader.Download(ctx, modelFileURL, modelFilePath, progress, downloader.SizeIntervalMIB100)
+	// /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF
+	// /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/sha
+	shaDest := filepath.Join(modelFilePath, "sha")
+	shaFile := filepath.Join(shaDest, path.Base(modelFileName))
+
+	if !hasNetwork() {
+		return shaFile, nil
+	}
+
+	if _, err := downloader.Download(context.Background(), rawFileURL, shaDest, progress, 0); err != nil {
+		return "", fmt.Errorf("pull-sha-file: unable to download sha: %w", err)
+	}
+
+	return shaFile, nil
+}
+
+func (m *Models) pullFile(ctx context.Context, fileURL string, progress downloader.ProgressFunc) (string, bool, error) {
+	modelFilePath, modelFileName, err := m.modelFilePathAndName(fileURL)
 	if err != nil {
-		return "", false, fmt.Errorf("pull-model: unable to download model: %w", err)
+		return "", false, fmt.Errorf("pull-sha-file: unable to extract file-path: %w", err)
+	}
+
+	downloaded, err := downloader.Download(ctx, fileURL, modelFilePath, progress, downloader.SizeIntervalMIB100)
+	if err != nil {
+		return "", false, fmt.Errorf("pull-sha-file: unable to download model: %w", err)
 	}
 
 	return modelFileName, downloaded, nil

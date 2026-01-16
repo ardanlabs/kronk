@@ -8,7 +8,10 @@ import type {
   TokenRequest,
   TokenResponse,
   PullResponse,
+  AsyncPullResponse,
   VersionResponse,
+  ChatRequest,
+  ChatStreamResponse,
 } from '../types';
 
 class ApiService {
@@ -62,6 +65,88 @@ class ApiService {
 
   async getLibsVersion(): Promise<VersionResponse> {
     return this.request<VersionResponse>('/libs');
+  }
+
+  async pullModelAsync(modelUrl: string): Promise<AsyncPullResponse> {
+    const response = await fetch(`${this.baseUrl}/models/pull`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model_url: modelUrl, async: true }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error?.message || `HTTP ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  streamPullSession(
+    sessionId: string,
+    onMessage: (data: PullResponse) => void,
+    onError: (error: string) => void,
+    onComplete: () => void
+  ): () => void {
+    const controller = new AbortController();
+
+    fetch(`${this.baseUrl}/models/pull/${encodeURIComponent(sessionId)}`, {
+      method: 'GET',
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (response.status === 400) {
+          onError('Session closed');
+          return;
+        }
+        if (!response.ok) {
+          onError(`HTTP ${response.status}`);
+          return;
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) {
+          onError('Streaming not supported');
+          return;
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            const jsonStr = line.startsWith('data: ') ? line.slice(6) : line;
+            if (!jsonStr.trim()) continue;
+            try {
+              const data = JSON.parse(jsonStr) as PullResponse;
+              onMessage(data);
+              if (data.status === 'downloaded' || data.downloaded) {
+                onComplete();
+                return;
+              }
+            } catch {
+              onError('Failed to parse response');
+            }
+          }
+        }
+
+        onComplete();
+      })
+      .catch((err) => {
+        if (err.name !== 'AbortError') {
+          onError('Connection error');
+        }
+      });
+
+    return () => controller.abort();
   }
 
   pullModel(
@@ -302,6 +387,68 @@ class ApiService {
       },
       body: JSON.stringify(request),
     });
+  }
+
+  streamChat(
+    request: ChatRequest,
+    onMessage: (data: ChatStreamResponse) => void,
+    onError: (error: string) => void,
+    onComplete: () => void
+  ): () => void {
+    const controller = new AbortController();
+
+    fetch(`${this.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...request, stream: true }),
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          const error = await response.json();
+          onError(error.error?.message || `HTTP ${response.status}`);
+          return;
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) {
+          onError('Streaming not supported');
+          return;
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (!line.trim() || line === 'data: [DONE]') continue;
+            const jsonStr = line.startsWith('data: ') ? line.slice(6) : line;
+            if (!jsonStr.trim()) continue;
+            try {
+              const data = JSON.parse(jsonStr) as ChatStreamResponse;
+              onMessage(data);
+            } catch {
+              // Skip malformed JSON
+            }
+          }
+        }
+
+        onComplete();
+      })
+      .catch((err) => {
+        if (err.name !== 'AbortError') {
+          onError(err.message || 'Connection error');
+        }
+      });
+
+    return () => controller.abort();
   }
 }
 

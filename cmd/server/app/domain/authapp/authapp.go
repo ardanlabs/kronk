@@ -7,10 +7,10 @@ import (
 	"net"
 	"time"
 
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
-	"github.com/ardanlabs/kronk/sdk/observ/otel"
-	"github.com/ardanlabs/kronk/sdk/security/auth"
-	"github.com/ardanlabs/kronk/sdk/tools/security"
+	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"

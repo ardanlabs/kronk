@@ -24,9 +24,14 @@ type response struct {
 }
 
 type processor struct {
-	model      *Model
-	status     int
-	collecting bool
+	model           *Model
+	status          int
+	collecting      bool
+	awaitingChannel bool
+
+	// For accumulating tool call content across tokens (batch engine use).
+	toolCallBuf strings.Builder
+	inToolCall  bool
 }
 
 func newProcessor(m *Model) *processor {
@@ -36,16 +41,28 @@ func newProcessor(m *Model) *processor {
 	}
 }
 
-func (p *processor) standard(lctx llama.Context, batch llama.Batch, sampler llama.Sampler, buf []byte) (response, llama.Token, error) {
-	content, token, err := p.model.batchResponse(lctx, batch, sampler, buf)
+// standardFirst samples the first token after prefill without re-decoding.
+// Use this for the first token after prefill when logits are already computed.
+func (p *processor) standardFirst(lctx llama.Context, sampler llama.Sampler, buf []byte) (response, llama.Token, error) {
+	content, token, err := p.model.sampleToken(lctx, sampler, buf)
 	if err != nil {
-		if errors.Is(err, io.EOF) {
-			return response{}, token, io.EOF
-		}
-
 		return response{}, token, err
 	}
 
+	return p.standardProcess(lctx, content, token, sampler, buf)
+}
+
+func (p *processor) standard(lctx llama.Context, batch llama.Batch, sampler llama.Sampler, buf []byte) (response, llama.Token, error) {
+	content, token, err := p.model.batchResponse(lctx, batch, sampler, buf)
+	if err != nil {
+		return response{}, token, err
+	}
+
+	return p.standardProcess(lctx, content, token, sampler, buf)
+}
+
+// standardProcess handles token content for standard (non-GPT) models.
+func (p *processor) standardProcess(lctx llama.Context, content string, token llama.Token, sampler llama.Sampler, buf []byte) (response, llama.Token, error) {
 	switch content {
 	case "<think>":
 		p.status = statusReasoning
@@ -60,9 +77,9 @@ func (p *processor) standard(lctx llama.Context, batch llama.Batch, sampler llam
 		var w strings.Builder
 
 		for {
-			batch, content, err = p.standardToolCall(lctx, token, sampler, buf)
+			batch, content, err := p.standardToolCall(lctx, token, sampler, buf)
 			if err != nil {
-				return response{}, token, nil
+				return response{}, token, err
 			}
 
 			w.WriteString(content)
@@ -118,18 +135,40 @@ func (p *processor) standardToolCall(lctx llama.Context, token llama.Token, samp
 
 // =============================================================================
 
-func (p *processor) gpt(lctx llama.Context, batch llama.Batch, sampler llama.Sampler, buf []byte) (response, llama.Token, error) {
-	content, token, err := p.model.batchResponse(lctx, batch, sampler, buf)
+// gptFirst samples the first token after prefill without re-decoding.
+// Use this for the first token after prefill when logits are already computed.
+func (p *processor) gptFirst(lctx llama.Context, sampler llama.Sampler, buf []byte) (response, llama.Token, error) {
+	content, token, err := p.model.sampleToken(lctx, sampler, buf)
 	if err != nil {
-		if errors.Is(err, io.EOF) {
-			return response{}, token, io.EOF
-		}
-
 		return response{}, token, err
 	}
 
+	return p.gptProcess(content, token)
+}
+
+func (p *processor) gpt(lctx llama.Context, batch llama.Batch, sampler llama.Sampler, buf []byte) (response, llama.Token, error) {
+	content, token, err := p.model.batchResponse(lctx, batch, sampler, buf)
+	if err != nil {
+		return response{}, token, err
+	}
+
+	return p.gptProcess(content, token)
+}
+
+// gptProcess handles token content for GPT models.
+// Template format:
+//   - Reasoning: <|start|>assistant<|channel|>analysis<|message|>...content...<|end|>
+//   - Final: <|start|>assistant<|channel|>final<|message|>...content...<|return|>
+//   - Tool call: <|start|>assistant to=functions.name<|channel|>commentary json<|message|>...args...<|call|>
+func (p *processor) gptProcess(content string, token llama.Token) (response, llama.Token, error) {
 	if p.collecting {
-		if content == "<|end|>" || content == "<|call|>" {
+		if content == "<|return|>" || content == "<|call|>" {
+			p.collecting = false
+			p.status = statusNone
+			return response{}, token, io.EOF
+		}
+
+		if content == "<|end|>" {
 			p.collecting = false
 			p.status = statusNone
 			return response{}, token, nil
@@ -138,17 +177,32 @@ func (p *processor) gpt(lctx llama.Context, batch llama.Batch, sampler llama.Sam
 		return response{status: p.status, content: content}, token, nil
 	}
 
+	if p.awaitingChannel {
+		p.awaitingChannel = false
+		switch content {
+		case "analysis":
+			p.status = statusReasoning
+		case "final":
+			p.status = statusCompletion
+		case "commentary":
+			p.status = statusTooling
+		}
+		return response{}, token, nil
+	}
+
 	switch content {
+	case "<|start|>":
+		p.status = statusNone
+		p.collecting = false
+		p.awaitingChannel = false
+		return response{}, token, nil
+
+	case "<|channel|>":
+		p.awaitingChannel = true
+		return response{}, token, nil
+
 	case "<|message|>":
 		p.collecting = true
-		return response{}, token, nil
-
-	case "analysis":
-		p.status = statusReasoning
-		return response{}, token, nil
-
-	case "final":
-		p.status = statusCompletion
 		return response{}, token, nil
 
 	case "functions":
@@ -261,10 +315,13 @@ func parseFunctionFormat(content string) []ResponseToolCall {
 		}
 
 		toolCalls = append(toolCalls, ResponseToolCall{
-			ID:        uuid.NewString(),
-			Name:      name,
-			Arguments: args,
-			Raw:       content[funcStart : closeFunc+11],
+			ID:   uuid.NewString(),
+			Type: "function",
+			Function: ResponseToolCallFunction{
+				Name:      name,
+				Arguments: args,
+			},
+			Raw: content[funcStart : closeFunc+11],
 		})
 
 		content = content[closeFunc+11:]
@@ -278,8 +335,9 @@ func parseJSONFormat(content string) []ResponseToolCall {
 
 	for call := range strings.SplitSeq(content, "\n") {
 		toolCall := ResponseToolCall{
-			ID:  uuid.NewString(),
-			Raw: call,
+			ID:   uuid.NewString(),
+			Type: "function",
+			Raw:  call,
 		}
 
 		switch {
@@ -288,7 +346,7 @@ func parseJSONFormat(content string) []ResponseToolCall {
 			toolCall.Error = "response missing"
 
 		default:
-			if err := json.Unmarshal([]byte(call), &toolCall); err != nil {
+			if err := json.Unmarshal([]byte(call), &toolCall.Function); err != nil {
 				toolCall.Status = 2
 				toolCall.Error = err.Error()
 			}
@@ -298,4 +356,130 @@ func parseJSONFormat(content string) []ResponseToolCall {
 	}
 
 	return toolCalls
+}
+
+// =============================================================================
+// Step methods for batch engine (no llama calls - pure state machine)
+// =============================================================================
+
+// stepStandard processes a single token for standard models without calling llama.
+// This is used by the batch engine where decode/sample happens externally.
+// Returns (response, endOfGeneration).
+func (p *processor) stepStandard(content string) (response, bool) {
+	// Handle tool call accumulation mode.
+	if p.inToolCall {
+		switch content {
+		case "<tool_call>":
+			// Nested or repeated tag, skip.
+			return response{}, false
+
+		case "</tool_call>":
+			// End of one tool call block. Check if we have accumulated content.
+			toolContent := strings.Trim(p.toolCallBuf.String(), "\n")
+			if toolContent != "" {
+				toolContent = fmt.Sprintf("%s\n", toolContent)
+			}
+
+			p.toolCallBuf.Reset()
+
+			// Stay in tool call mode in case there are more tool calls.
+			// The caller will handle EOG detection separately.
+			return response{status: statusTooling, content: toolContent}, false
+
+		default:
+			// Accumulate tool call content.
+			p.toolCallBuf.WriteString(content)
+			return response{}, false
+		}
+	}
+
+	// Normal token processing.
+	switch content {
+	case "<think>":
+		p.status = statusReasoning
+		return response{}, false
+
+	case "</think>":
+		p.status = statusCompletion
+		return response{}, false
+
+	case "<tool_call>":
+		p.status = statusTooling
+		p.inToolCall = true
+		p.toolCallBuf.Reset()
+		return response{}, false
+
+	default:
+		return response{status: p.status, content: content}, false
+	}
+}
+
+// stepGPT processes a single token for GPT models without calling llama.
+// This is used by the batch engine where decode/sample happens externally.
+// Returns (response, endOfGeneration).
+func (p *processor) stepGPT(content string) (response, bool) {
+	if p.collecting {
+		if content == "<|return|>" || content == "<|call|>" {
+			p.collecting = false
+			p.status = statusNone
+			return response{}, true // End of generation
+		}
+
+		if content == "<|end|>" {
+			p.collecting = false
+			p.status = statusNone
+			return response{}, false
+		}
+
+		return response{status: p.status, content: content}, false
+	}
+
+	if p.awaitingChannel {
+		p.awaitingChannel = false
+		switch content {
+		case "analysis":
+			p.status = statusReasoning
+
+		case "final":
+			p.status = statusCompletion
+
+		case "commentary":
+			p.status = statusTooling
+		}
+
+		return response{}, false
+	}
+
+	switch content {
+	case "<|start|>":
+		p.status = statusNone
+		p.collecting = false
+		p.awaitingChannel = false
+		return response{}, false
+
+	case "<|channel|>":
+		p.awaitingChannel = true
+		return response{}, false
+
+	case "<|message|>":
+		p.collecting = true
+		return response{}, false
+
+	case "functions":
+		p.collecting = true
+		p.status = statusTooling
+		return response{}, false
+
+	default:
+		return response{}, false
+	}
+}
+
+// resetState resets the processor state for reuse in a new slot.
+func (p *processor) resetState() {
+	p.status = statusCompletion
+	p.collecting = false
+	p.awaitingChannel = false
+	p.toolCallBuf.Reset()
+	p.inToolCall = false
 }

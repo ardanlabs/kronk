@@ -7,10 +7,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/cache"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/cache"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
@@ -51,12 +51,12 @@ func (a *app) embeddings(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.Errorf(errs.InvalidArgument, "model doesn't support embedding")
 	}
 
+	a.log.Info(ctx, "embedding", "request-input", req.LogSafe())
+
 	ctx, cancel := context.WithTimeout(ctx, 180*time.Minute)
 	defer cancel()
 
 	d := model.MapToModelD(req)
-
-	a.log.Info(ctx, "embedding", "req", req)
 
 	if _, err := krn.EmbeddingsHTTP(ctx, a.log.Info, web.GetWriter(ctx), d); err != nil {
 		return errs.New(errs.Internal, err)

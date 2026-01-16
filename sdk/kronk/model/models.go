@@ -3,8 +3,8 @@ package model
 import (
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"path"
 	"path/filepath"
@@ -135,6 +135,45 @@ func extractFolderName(rawURL string) string {
 
 // D represents a generic docment of fields and values.
 type D map[string]any
+
+// Clone creates a shallow copy of the document. This is useful when you need
+// to modify the document without affecting the original.
+func (d D) Clone() D {
+	clone := make(D, len(d))
+	maps.Copy(clone, d)
+	return clone
+}
+
+// logSafeKeys defines the allowlist of fields that are safe to log.
+// Fields like "messages" and "input" are excluded for privacy.
+var logSafeKeys = []string{
+	"model",
+	"max_tokens",
+	"temperature",
+	"top_p",
+	"top_k",
+	"stream",
+	"presence_penalty",
+	"frequency_penalty",
+	"stop",
+	"seed",
+	"n",
+	"truncate",
+	"truncate_direction",
+}
+
+// LogSafe returns a copy of the document containing only fields that are
+// safe to log. This excludes sensitive fields like messages and input
+// which may contain private user data.
+func (d D) LogSafe() D {
+	safe := make(D, len(logSafeKeys))
+	for _, key := range logSafeKeys {
+		if v, ok := d[key]; ok {
+			safe[key] = v
+		}
+	}
+	return safe
+}
 
 // TextMessage create a new text message.
 func TextMessage(role string, content string) D {
@@ -287,13 +326,73 @@ func convertValue(v any) any {
 
 // =============================================================================
 
+// ToolCallArguments represents tool call arguments that marshal to a JSON
+// string per OpenAI API spec, but can unmarshal from either a string or object.
+type ToolCallArguments map[string]any
+
+func (a ToolCallArguments) MarshalJSON() ([]byte, error) {
+	if a == nil {
+		return []byte(`""`), nil
+	}
+
+	inner, err := json.Marshal(map[string]any(a))
+	if err != nil {
+		return nil, err
+	}
+
+	return json.Marshal(string(inner))
+}
+
+func (a *ToolCallArguments) UnmarshalJSON(data []byte) error {
+	if len(data) == 0 || string(data) == "null" {
+		*a = nil
+		return nil
+	}
+
+	// Try string first (OpenAI compliant format).
+	if data[0] == '"' {
+		var s string
+		if err := json.Unmarshal(data, &s); err != nil {
+			return err
+		}
+
+		if s == "" {
+			*a = nil
+			return nil
+		}
+
+		var m map[string]any
+		if err := json.Unmarshal([]byte(s), &m); err != nil {
+			return err
+		}
+
+		*a = m
+		return nil
+	}
+
+	// Fall back to object (non-compliant but some clients send this).
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		return err
+	}
+
+	*a = m
+	return nil
+}
+
+type ResponseToolCallFunction struct {
+	Name      string            `json:"name"`
+	Arguments ToolCallArguments `json:"arguments"`
+}
+
 type ResponseToolCall struct {
-	ID        string         `json:"id"`
-	Name      string         `json:"name"`
-	Arguments map[string]any `json:"arguments"`
-	Status    int            `json:"status"`
-	Raw       string         `json:"raw"`
-	Error     string         `json:"error"`
+	ID       string                   `json:"id"`
+	Index    int                      `json:"index"`
+	Type     string                   `json:"type"`
+	Function ResponseToolCallFunction `json:"function"`
+	Status   int                      `json:"status,omitempty"`
+	Raw      string                   `json:"raw,omitempty"`
+	Error    string                   `json:"error,omitempty"`
 }
 
 // ResponseMessage represents a single message in a response.
@@ -307,7 +406,8 @@ type ResponseMessage struct {
 // Choice represents a single choice in a response.
 type Choice struct {
 	Index        int             `json:"index"`
-	Delta        ResponseMessage `json:"delta"`
+	Message      ResponseMessage `json:"message,omitempty"`
+	Delta        ResponseMessage `json:"delta,omitempty"`
 	FinishReason string          `json:"finish_reason"`
 }
 
@@ -383,10 +483,13 @@ func chatResponseFinal(id string, object string, model string, index int, prompt
 		Choice: []Choice{
 			{
 				Index: index,
-				Delta: ResponseMessage{
+				Message: ResponseMessage{
 					Role:      RoleAssistant,
 					Content:   content,
 					Reasoning: reasoning,
+					ToolCalls: respToolCalls,
+				},
+				Delta: ResponseMessage{
 					ToolCalls: respToolCalls,
 				},
 				FinishReason: finishReason,
@@ -427,27 +530,19 @@ type EmbedData struct {
 	Embedding []float32 `json:"embedding"`
 }
 
+// EmbedUsage provides token usage information for embeddings.
+type EmbedUsage struct {
+	PromptTokens int `json:"prompt_tokens"`
+	TotalTokens  int `json:"total_tokens"`
+}
+
 // EmbedReponse represents the output for an embedding call.
 type EmbedReponse struct {
 	Object  string      `json:"object"`
 	Created int64       `json:"created"`
 	Model   string      `json:"model"`
 	Data    []EmbedData `json:"data"`
-}
-
-func toEmbedResponse(modelID string, vec []float32) EmbedReponse {
-	return EmbedReponse{
-		Object:  "list",
-		Created: time.Now().UnixMilli(),
-		Model:   modelID,
-		Data: []EmbedData{
-			{
-				Object:    "embedding",
-				Index:     0,
-				Embedding: vec,
-			},
-		},
-	}
+	Usage   EmbedUsage  `json:"usage"`
 }
 
 // =============================================================================
@@ -472,7 +567,7 @@ type chatMessageContent struct {
 
 type chatMessage struct {
 	Role    string `json:"role"`
-	Content any    `json:"content"` // string | []chatMessageContent
+	Content any    `json:"content"` // string | []chatMessageContent | nil
 }
 
 func (ccm *chatMessage) UnmarshalJSON(b []byte) error {
@@ -485,8 +580,14 @@ func (ccm *chatMessage) UnmarshalJSON(b []byte) error {
 		return err
 	}
 
-	if len(app.Content) == 0 {
-		return errors.New("invalid input document")
+	// Content can be empty for assistant messages with tool_calls,
+	// or for tool role messages where content is optional.
+	if len(app.Content) == 0 || string(app.Content) == "null" {
+		*ccm = chatMessage{
+			Role:    app.Role,
+			Content: nil,
+		}
+		return nil
 	}
 
 	var content any

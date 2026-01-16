@@ -64,10 +64,10 @@ func runLocal(catalog *catalog.Catalog, args []string) error {
 
 func printWeb(list []toolapp.CatalogModelResponse) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "CATALOG\tMODEL ID\tPULLED\tENDPOINT\tIMAGES\tAUDIO\tVIDEO\tSTREAMING\tREASONING\tTOOLING")
+	fmt.Fprintln(w, "CATALOG\tMODEL ID\tPULLED\tENDPOINT\tIMAGES\tAUDIO\tVIDEO\tSTREAMING\tREASONING\tTOOLING\tVAL")
 
 	for _, m := range list {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%v\n",
 			m.Category,
 			m.ID,
 			boolToStr(m.Downloaded),
@@ -78,6 +78,7 @@ func printWeb(list []toolapp.CatalogModelResponse) {
 			boolToStr(m.Capabilities.Streaming),
 			boolToStr(m.Capabilities.Reasoning),
 			boolToStr(m.Capabilities.Tooling),
+			m.Validated,
 		)
 	}
 
@@ -86,10 +87,10 @@ func printWeb(list []toolapp.CatalogModelResponse) {
 
 func print(list []catalog.Model) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "CATALOG\tMODEL ID\tPULLED\tENDPOINT\tIMAGES\tAUDIO\tVIDEO\tSTREAMING\tREASONING\tTOOLING")
+	fmt.Fprintln(w, "CATALOG\tMODEL ID\tPULLED\tENDPOINT\tIMAGES\tAUDIO\tVIDEO\tSTREAMING\tREASONING\tTOOLING\tVAL")
 
 	for _, m := range list {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%v\n",
 			m.Category,
 			m.ID,
 			boolToStr(m.Downloaded),
@@ -100,6 +101,7 @@ func print(list []catalog.Model) {
 			boolToStr(m.Capabilities.Streaming),
 			boolToStr(m.Capabilities.Reasoning),
 			boolToStr(m.Capabilities.Tooling),
+			m.Validated,
 		)
 	}
 

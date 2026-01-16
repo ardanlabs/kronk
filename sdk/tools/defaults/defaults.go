@@ -11,8 +11,23 @@ import (
 )
 
 var (
-	basePath = ".kronk"
+	basePath   = ".kronk"
+	libVersion = ""
 )
+
+// LibVersion returns the default library version, checking the KRONK_LIB_VERSION
+// env var first. If an override is provided, it takes precedence.
+func LibVersion(override string) string {
+	if override != "" {
+		return override
+	}
+
+	if v := os.Getenv("KRONK_LIB_VERSION"); v != "" {
+		return v
+	}
+
+	return libVersion
+}
 
 // BaseDir is the default base folder location for kronk files.
 func BaseDir(override string) string {

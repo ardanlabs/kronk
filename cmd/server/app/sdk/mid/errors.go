@@ -9,7 +9,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
-	"github.com/ardanlabs/kronk/sdk/observ/otel"
+	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 )
 
 // Errors handles errors coming out of the call chain.

@@ -58,6 +58,7 @@ type Model struct {
 	Capabilities Capabilities `yaml:"capabilities"`
 	Metadata     Metadata     `yaml:"metadata"`
 	Downloaded   bool
+	Validated    bool
 }
 
 // CatalogModels represents a set of models for a given catalog.

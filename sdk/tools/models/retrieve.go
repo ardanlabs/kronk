@@ -18,16 +18,14 @@ type File struct {
 	ModelFamily string
 	Size        int64
 	Modified    time.Time
+	Validated   bool
 }
 
 // RetrieveFiles returns all the models in the given model directory.
 func (m *Models) RetrieveFiles() ([]File, error) {
 	var list []File
 
-	index, err := m.loadIndex()
-	if err != nil {
-		return nil, fmt.Errorf("unable to load index: %w", err)
-	}
+	index := m.loadIndex()
 
 	for modelID, mp := range index {
 		if len(mp.ModelFiles) == 0 {
@@ -42,6 +40,7 @@ func (m *Models) RetrieveFiles() ([]File, error) {
 			if err != nil {
 				return nil, fmt.Errorf("stat: %w", err)
 			}
+
 			totalSize += info.Size()
 			if info.ModTime().After(modified) {
 				modified = info.ModTime()
@@ -57,6 +56,7 @@ func (m *Models) RetrieveFiles() ([]File, error) {
 			ModelFamily: parts[1],
 			Size:        totalSize,
 			Modified:    modified,
+			Validated:   mp.Validated,
 		}
 
 		list = append(list, mf)
@@ -78,16 +78,16 @@ func (m *Models) RetrieveFiles() ([]File, error) {
 // retrieveFile finds the model and returns the model file information.
 func (m *Models) retrieveFile(modelID string) (File, error) {
 	if modelID == "" {
-		return File{}, fmt.Errorf("missing model id")
+		return File{}, fmt.Errorf("retrieve-file: missing model id")
 	}
 
 	mp, err := m.RetrievePath(modelID)
 	if err != nil {
-		return File{}, fmt.Errorf("retrieve-model-path: %w", err)
+		return File{}, fmt.Errorf("retrieve-file: unable to retrieve path: %w", err)
 	}
 
 	if len(mp.ModelFiles) == 0 {
-		return File{}, fmt.Errorf("no model files found")
+		return File{}, fmt.Errorf("retrieve-file: no model files found")
 	}
 
 	var totalSize int64
@@ -98,6 +98,7 @@ func (m *Models) retrieveFile(modelID string) (File, error) {
 		if err != nil {
 			return File{}, fmt.Errorf("stat: %w", err)
 		}
+
 		totalSize += info.Size()
 		if info.ModTime().After(modified) {
 			modified = info.ModTime()
@@ -134,7 +135,7 @@ func (m *Models) RetrieveInfo(modelID string) (Info, error) {
 
 	mf, err := m.retrieveFile(modelID)
 	if err != nil {
-		return Info{}, fmt.Errorf("show-model: unable to get model file information: %w", err)
+		return Info{}, fmt.Errorf("retrieve-info: unable to get model file information: %w", err)
 	}
 
 	mi := Info{
@@ -154,20 +155,18 @@ type Path struct {
 	ModelFiles []string `yaml:"model_files"`
 	ProjFile   string   `yaml:"proj_file"`
 	Downloaded bool     `yaml:"downloaded"`
+	Validated  bool     `yaml:"validated"`
 }
 
 // RetrievePath locates the physical location on disk and returns the full path.
 func (m *Models) RetrievePath(modelID string) (Path, error) {
-	index, err := m.loadIndex()
-	if err != nil {
-		return Path{}, fmt.Errorf("load-index: %w", err)
-	}
+	index := m.loadIndex()
 
 	modelID = strings.ToLower(modelID)
 
 	modelPath, exists := index[modelID]
 	if !exists {
-		return Path{}, fmt.Errorf("model %q not found", modelID)
+		return Path{}, fmt.Errorf("retrieve-path: model %q not found", modelID)
 	}
 
 	return modelPath, nil
@@ -187,25 +186,21 @@ func (m *Models) MustRetrieveModel(modelID string) Path {
 // =============================================================================
 
 // LoadIndex returns the catalog index.
-func (m *Models) loadIndex() (map[string]Path, error) {
+func (m *Models) loadIndex() map[string]Path {
+	m.biMutex.Lock()
+	defer m.biMutex.Unlock()
+
 	indexPath := filepath.Join(m.modelsPath, indexFile)
 
 	data, err := os.ReadFile(indexPath)
 	if err != nil {
-		if err := m.BuildIndex(); err != nil {
-			return nil, fmt.Errorf("build-index: %w", err)
-		}
-
-		data, err = os.ReadFile(indexPath)
-		if err != nil {
-			return nil, fmt.Errorf("read-index: %w", err)
-		}
+		return make(map[string]Path)
 	}
 
 	var index map[string]Path
 	if err := yaml.Unmarshal(data, &index); err != nil {
-		return nil, fmt.Errorf("unmarshal-index: %w", err)
+		return make(map[string]Path)
 	}
 
-	return index, nil
+	return index
 }

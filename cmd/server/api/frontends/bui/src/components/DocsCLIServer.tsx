@@ -36,6 +36,59 @@ export default function DocsCLIServer() {
                     <td><code>-d, --detach</code></td>
                     <td>Run server in the background</td>
                   </tr>
+                  <tr>
+                    <td><code>--api-host &lt;string&gt;</code></td>
+                    <td>API host address (e.g., localhost:8080)</td>
+                  </tr>
+                  <tr>
+                    <td><code>--debug-host &lt;string&gt;</code></td>
+                    <td>Debug host address (e.g., localhost:8090)</td>
+                  </tr>
+                  <tr>
+                    <td><code>--auth-enabled</code></td>
+                    <td>Enable local authentication</td>
+                  </tr>
+                  <tr>
+                    <td><code>--device &lt;string&gt;</code></td>
+                    <td>Device to use for inference (e.g., cuda, metal)</td>
+                  </tr>
+                  <tr>
+                    <td><code>--max-instances &lt;int&gt;</code></td>
+                    <td>Maximum model instances</td>
+                  </tr>
+                  <tr>
+                    <td><code>--models-in-cache &lt;int&gt;</code></td>
+                    <td>Maximum models in cache</td>
+                  </tr>
+                  <tr>
+                    <td><code>--cache-ttl &lt;duration&gt;</code></td>
+                    <td>Cache TTL duration (e.g., 5m, 1h)</td>
+                  </tr>
+                  <tr>
+                    <td><code>--model-config-file &lt;string&gt;</code></td>
+                    <td>Special config file for model specific config</td>
+                  </tr>
+                  <tr>
+                    <td><code>--llama-log &lt;int&gt;</code></td>
+                    <td>Llama log level (0=off, 1=on)</td>
+                  </tr>
+                </tbody>
+              </table>
+              <h5>Environment Variables</h5>
+              <table className="flags-table">
+                <thead>
+                  <tr>
+                    <th>Variable</th>
+                    <th>Default</th>
+                    <th>Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>KRONK_BASE_PATH</code></td>
+                    <td>$HOME/kronk</td>
+                    <td>Base path for kronk data directories</td>
+                  </tr>
                 </tbody>
               </table>
               <h5>Example</h5>

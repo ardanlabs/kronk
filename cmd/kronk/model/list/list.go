@@ -55,13 +55,13 @@ func runLocal(models *models.Models) error {
 
 func printWeb(models []toolapp.ListModelDetail) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "ID\tOWNED BY\tMODEL FAMILY\tSIZE\tMODIFIED")
+	fmt.Fprintln(w, "ID\tOWNED BY\tMODEL FAMILY\tSIZE\tMODIFIED\tVAL")
 
 	for _, model := range models {
 		size := formatSize(model.Size)
 		modified := formatTime(model.Modified)
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", model.ID, model.OwnedBy, model.ModelFamily, size, modified)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%v\n", model.ID, model.OwnedBy, model.ModelFamily, size, modified, model.Validated)
 	}
 
 	w.Flush()
@@ -69,13 +69,13 @@ func printWeb(models []toolapp.ListModelDetail) {
 
 func printLocal(files []models.File) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "ID\tOWNED BY\tMODEL FAMILY\tSIZE\tMODIFIED")
+	fmt.Fprintln(w, "ID\tOWNED BY\tMODEL FAMILY\tSIZE\tMODIFIED\tVAL")
 
 	for _, model := range files {
 		size := formatSize(model.Size)
 		modified := formatTime(model.Modified)
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", model.ID, model.OwnedBy, model.ModelFamily, size, modified)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%v\n", model.ID, model.OwnedBy, model.ModelFamily, size, modified, model.Validated)
 	}
 
 	w.Flush()

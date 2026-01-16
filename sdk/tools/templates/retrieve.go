@@ -15,7 +15,7 @@ func (t *Templates) RetrieveTemplate(templateFileName string) (string, error) {
 
 	content, err := os.ReadFile(filePath)
 	if err != nil {
-		return "", fmt.Errorf("reading template file: %w", err)
+		return "", fmt.Errorf("retrieve-template: reading template file: %w", err)
 	}
 
 	return string(content), nil
@@ -25,16 +25,16 @@ func (t *Templates) RetrieveTemplate(templateFileName string) (string, error) {
 func (t *Templates) Retrieve(modelID string) (model.Template, error) {
 	m, err := t.catalog.RetrieveModelDetails(modelID)
 	if err != nil {
-		return model.Template{}, fmt.Errorf("retrieve-model-details: %w", err)
+		return model.Template{}, fmt.Errorf("retrieve: unable to retrieve model details: %w", err)
 	}
 
 	if m.Template == "" {
-		return model.Template{}, errors.New("no template configured")
+		return model.Template{}, errors.New("retrieve: no template configured")
 	}
 
 	content, err := t.RetrieveTemplate(m.Template)
 	if err != nil {
-		return model.Template{}, fmt.Errorf("template-retrieve: %w", err)
+		return model.Template{}, fmt.Errorf("retrieve: unable to retrieve template: %w", err)
 	}
 
 	mt := model.Template{

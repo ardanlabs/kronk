@@ -3,7 +3,6 @@ on:
   push:
     branches:
       - main
-  pull_request:
   workflow_dispatch:
   schedule:
     - cron: "0 0 * * *"
@@ -16,13 +15,17 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
+      - name: Runner specs
+        run: |
+          nproc
+          free -h
+          cat /proc/cpuinfo | grep "model name" | head -1
       - name: Free disk space
         run: |
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /usr/local/lib/android
           sudo rm -rf /opt/ghc
           sudo rm -rf /opt/hostedtoolcache/CodeQL
-          df -h
       - name: Checkout
         uses: actions/checkout@v5
       - name: Install Go
@@ -35,14 +38,8 @@ jobs:
         with:
           path: ~/.kronk/models
           key: ${{ runner.os }}-models-v3
-      - name: Install tools
-        run: |
-          go install honnef.co/go/tools/cmd/staticcheck@latest
-          go install golang.org/x/vuln/cmd/govulncheck@latest
       - name: Install kronk command
-        run: |
-          cd cmd/kronk
-          go install .
+        run: go install ./cmd/kronk
       - name: Install Libs
         run: |
           mkdir -p $HOME/.kronk/libraries
@@ -54,16 +51,37 @@ jobs:
           kronk model pull --local https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/Qwen2.5-VL-3B-Instruct-Q8_0.gguf https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf
           kronk model pull --local https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf
           kronk model pull --local https://huggingface.co/ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/resolve/main/embeddinggemma-300m-qat-Q8_0.gguf
-      - name: Run unit tests
+      - name: Install static analysis tools
         run: |
-          export GOROUTINES=1
-          export RUN_IN_PARALLEL=0
-          CGO_ENABLED=0 go test -v -count=1 ./sdk/security/...
+          go install honnef.co/go/tools/cmd/staticcheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Run api/service tests
+        timeout-minutes: 25
+        run: |
+          export RUN_IN_PARALLEL=no
+          CGO_ENABLED=0 go test -v -count=1 -timeout 25m ./cmd/server/api/services/kronk/tests
+      - name: Run kronk tests
+        timeout-minutes: 25
+        run: |
+          export RUN_IN_PARALLEL=no
+          CGO_ENABLED=0 go test -v -count=1 -timeout 25m ./sdk/kronk/tests
+      - name: Run sdk/cache tests
+        run: |
+          export RUN_IN_PARALLEL=no
+          CGO_ENABLED=0 go test -v -count=1 ./cmd/server/app/sdk/cache
+      - name: Run sdk/security tests
+        run: |
+          export RUN_IN_PARALLEL=no
+          CGO_ENABLED=0 go test -v -count=1 ./cmd/server/app/sdk/security/...
+      - name: Run kronk model tests
+        run: |
+          export RUN_IN_PARALLEL=no
+          CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/model
+      - name: Run sdk/tools tests
+        run: |
+          export RUN_IN_PARALLEL=no
           CGO_ENABLED=0 go test -v -count=1 ./sdk/tools/...
-          CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/...
-          CGO_ENABLED=0 go test -v -count=1 ./cmd/server/app/sdk/...
-          CGO_ENABLED=0 go test -v -count=1 ./cmd/server/api/services/kronk/tests
-      - name: Run static analysis
+      - name: Run vet, linter, vuln checks
         run: |
           CGO_ENABLED=0 go vet ./...
           staticcheck -checks=all ./...

@@ -22,13 +22,14 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/cache"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/debug"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mux"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/sdk/kronk"
-	"github.com/ardanlabs/kronk/sdk/observ/otel"
+	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
+	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
-	"github.com/ardanlabs/kronk/sdk/tools/security"
 	"github.com/ardanlabs/kronk/sdk/tools/templates"
 	"google.golang.org/grpc/test/bufconn"
 )
@@ -95,11 +96,11 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			}
 		}
 		Tempo struct {
-			Host        string  // `conf:"default:tempo:4317"`
+			Host        string  `conf:"default:localhost:4317"`
 			ServiceName string  `conf:"default:kronk"`
-			Probability float64 `conf:"default:0.05"`
+			Probability float64 `conf:"default:0.25"`
 			// Shouldn't use a high Probability value in non-developer systems.
-			// 0.05 should be enough for most systems. Some might want to have
+			// 25% should be enough for most systems. Some might want to have
 			// this even lower.
 		}
 		Catalog struct {
@@ -108,13 +109,16 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		Templates struct {
 			GithubRepo string `conf:"default:https://api.github.com/repos/ardanlabs/kronk_catalogs/contents/templates"`
 		}
-		Model struct {
-			Device        string
-			MaxInstances  int           `conf:"default:1"`
-			MaxInCache    int           `conf:"default:3"`
-			ContextWindow int           `conf:"default:0"`
-			CacheTTL      time.Duration `conf:"default:5m"`
+		Cache struct {
+			ModelInstances       int           `conf:"default:1"`
+			ModelsInCache        int           `conf:"default:3"`
+			TTL                  time.Duration `conf:"default:5m"`
+			IgnoreIntegrityCheck bool          `conf:"default:true"`
+			ModelConfigFile      string
 		}
+		BasePath     string
+		LibPath      string
+		LibVersion   string
 		Arch         string
 		OS           string
 		Processor    string
@@ -248,15 +252,37 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	log.Info(ctx, "startup", "status", "downloading libraries")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	defer cancel()
+	arch, err := defaults.Arch(cfg.Arch)
+	if err != nil {
+		return err
+	}
 
-	libs, err := libs.New()
+	opSys, err := defaults.OS(cfg.OS)
+	if err != nil {
+		return err
+	}
+
+	processor, err := defaults.Processor(cfg.Processor)
+	if err != nil {
+		return err
+	}
+
+	libs, err := libs.New(
+		libs.WithBasePath(cfg.LibPath),
+		libs.WithArch(arch),
+		libs.WithOS(opSys),
+		libs.WithProcessor(processor),
+		libs.WithAllowUpgrade(cfg.AllowUpgrade),
+		libs.WithVersion(defaults.LibVersion(cfg.LibVersion)),
+	)
 	if err != nil {
 		return fmt.Errorf("unable to create libs api: %w", err)
 	}
 
 	log.Info(ctx, "startup", "status", "installing/updating libraries", "libPath", libs.LibsPath(), "arch", libs.Arch(), "os", libs.OS(), "processor", libs.Processor(), "update", true)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
 
 	if _, err := libs.Download(ctx, log.Info); err != nil {
 		return fmt.Errorf("unable to install llama.cpp: %w", err)
@@ -265,17 +291,23 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	// -------------------------------------------------------------------------
 	// Model System
 
-	models, err := models.New()
+	models, err := models.NewWithPaths(cfg.BasePath)
 	if err != nil {
 		return fmt.Errorf("unable to create catalog system: %w", err)
 	}
+
+	log.Info(ctx, "startup", "status", "model integrity checks, may take a few seconds")
+
+	models.BuildIndex(log.Info)
 
 	// -------------------------------------------------------------------------
 	// Catalog System
 
 	log.Info(ctx, "startup", "status", "downloading catalog")
 
-	ctlg, err := catalog.NewWithSettings("", cfg.Catalog.GithubRepo)
+	ctlg, err := catalog.New(
+		catalog.WithBasePath(cfg.BasePath),
+		catalog.WithGithubRepo(cfg.Catalog.GithubRepo))
 	if err != nil {
 		return fmt.Errorf("unable to create catalog system: %w", err)
 	}
@@ -289,7 +321,10 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	log.Info(ctx, "startup", "status", "downloading templates")
 
-	tmplts, err := templates.NewWithSettings("", cfg.Templates.GithubRepo, ctlg)
+	tmplts, err := templates.New(
+		templates.WithBasePath(cfg.BasePath),
+		templates.WithGithubRepo(cfg.Templates.GithubRepo),
+		templates.WithCatalog(ctlg))
 	if err != nil {
 		return fmt.Errorf("unable to create template system: %w", err)
 	}
@@ -307,17 +342,15 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		return fmt.Errorf("installation invalid: %w", err)
 	}
 
-	cache, err := cache.NewCache(cache.Config{
-		Log:            log.Info,
-		Templates:      tmplts,
-		Arch:           libs.Arch(),
-		OS:             libs.OS(),
-		Processor:      libs.Processor(),
-		Device:         cfg.Model.Device,
-		MaxInCache:     cfg.Model.MaxInCache,
-		ModelInstances: cfg.Model.MaxInstances,
-		ContextWindow:  cfg.Model.ContextWindow,
-		CacheTTL:       cfg.Model.CacheTTL,
+	cache, err := cache.New(cache.Config{
+		Log:                  log.Info,
+		BasePath:             cfg.BasePath,
+		Templates:            tmplts,
+		ModelsInCache:        cfg.Cache.ModelsInCache,
+		ModelInstances:       cfg.Cache.ModelInstances,
+		CacheTTL:             cfg.Cache.TTL,
+		IgnoreIntegrityCheck: cfg.Cache.IgnoreIntegrityCheck,
+		ModelConfigFile:      cfg.Cache.ModelConfigFile,
 	})
 
 	if err != nil {
@@ -369,7 +402,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	webAPI := mux.WebAPI(cfgMux,
 		build.Routes(),
 		mux.WithCORS(cfg.Web.CORSAllowedOrigins),
-		mux.WithFileServer(true, static, "static", "/"),
+		mux.WithFileServer(true, static, "static", "/", []string{"v1"}),
 	)
 
 	api := http.Server{
@@ -413,10 +446,10 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 }
 
 var logo = `
-██╗  ██╗██████╗  ██████╗ ███╗   ██╗██╗  ██╗
-██║ ██╔╝██╔══██╗██╔═══██╗████╗  ██║██║ ██╔╝
-█████╔╝ ██████╔╝██║   ██║██╔██╗ ██║█████╔╝ 
-██╔═██╗ ██╔══██╗██║   ██║██║╚██╗██║██╔═██╗ 
-██║  ██╗██║  ██║╚██████╔╝██║ ╚████║██║  ██╗
-╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝╚═╝  ╚═╝
+██╗  ██╗██████╗  ██████╗ ███╗   ██╗██╗  ██╗    ███╗   ███╗███████╗
+██║ ██╔╝██╔══██╗██╔═══██╗████╗  ██║██║ ██╔╝    ████╗ ████║██╔════╝
+█████╔╝ ██████╔╝██║   ██║██╔██╗ ██║█████╔╝     ██╔████╔██║███████╗
+██╔═██╗ ██╔══██╗██║   ██║██║╚██╗██║██╔═██╗     ██║╚██╔╝██║╚════██║
+██║  ██╗██║  ██║╚██████╔╝██║ ╚████║██║  ██╗    ██║ ╚═╝ ██║███████║
+╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝╚═╝  ╚═╝    ╚═╝     ╚═╝╚══════╝                                                                                         
 `

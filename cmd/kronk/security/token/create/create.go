@@ -12,7 +12,7 @@ import (
 
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
 	"github.com/ardanlabs/kronk/cmd/kronk/security/sec"
-	"github.com/ardanlabs/kronk/sdk/security/auth"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
 )
 
 type config struct {

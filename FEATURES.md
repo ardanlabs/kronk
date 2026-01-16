@@ -273,3 +273,43 @@ Available Commands:
 | **OpenAI SDK** | Compatible with OpenAI client libraries |
 | **GGUF Models** | Support for all GGUF format models from Hugging Face |
 | **yzma** | Direct integration with llama.cpp via the yzma module |
+
+---
+
+## Model Catalog System
+
+The Catalog system (`sdk/tools/catalog`) provides a curated registry of verified models.
+
+| Feature | Description |
+|---------|-------------|
+| **Remote Catalog** | Syncs with the official [kronk_catalogs](https://github.com/ardanlabs/kronk_catalogs) GitHub repository |
+| **Category Filtering** | Filter models by type: Text-Generation, Embedding, Vision, Audio |
+| **Model Metadata** | Stores model info including endpoint type, capabilities, and download URLs |
+| **Index Management** | Local index file for fast lookups without network requests |
+| **Custom Catalog Repos** | Support for custom GitHub repository sources |
+
+---
+
+## Template System
+
+The Template system (`sdk/tools/templates`) provides prompt template management for models.
+
+| Feature | Description |
+|---------|-------------|
+| **Remote Templates** | Syncs templates from the official kronk_catalogs repository |
+| **Model-Specific Templates** | Templates tied to specific model architectures |
+| **Local Caching** | Templates cached locally with SHA-based change detection |
+| **Custom Template Repos** | Support for custom GitHub repository sources |
+
+---
+
+## Defaults & Configuration
+
+The Defaults system (`sdk/tools/defaults`) provides environment-aware configuration.
+
+| Feature | Description |
+|---------|-------------|
+| **Base Directory** | Configurable Kronk home directory (default: `~/.kronk`) |
+| **Architecture Detection** | Auto-detect or override via `KRONK_ARCH` environment variable |
+| **OS Detection** | Auto-detect or override via `KRONK_OS` environment variable |
+| **Processor Selection** | Select hardware backend (cpu, cuda, metal, vulkan) via `KRONK_PROCESSOR` |

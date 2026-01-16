@@ -16,17 +16,22 @@ import (
 func (c *Catalog) CatalogModelList(filterCategory string) ([]Model, error) {
 	catalogs, err := c.RetrieveCatalogs()
 	if err != nil {
-		return nil, fmt.Errorf("catalog list: %w", err)
+		return nil, fmt.Errorf("catalog-model-list: catalog list: %w", err)
 	}
 
 	modelFiles, err := c.models.RetrieveFiles()
 	if err != nil {
-		return nil, fmt.Errorf("retrieve-model-files: %w", err)
+		return nil, fmt.Errorf("catalog-model-list: retrieve-model-files: %w", err)
 	}
 
 	pulledModels := make(map[string]struct{})
+	validatedModels := make(map[string]struct{})
+
 	for _, mf := range modelFiles {
 		pulledModels[strings.ToLower(mf.ID)] = struct{}{}
+		if mf.Validated {
+			validatedModels[strings.ToLower(mf.ID)] = struct{}{}
+		}
 	}
 
 	filterLower := strings.ToLower(filterCategory)
@@ -40,6 +45,10 @@ func (c *Catalog) CatalogModelList(filterCategory string) ([]Model, error) {
 		for _, model := range cat.Models {
 			_, downloaded := pulledModels[strings.ToLower(model.ID)]
 			model.Downloaded = downloaded
+
+			_, validated := validatedModels[strings.ToLower(model.ID)]
+			model.Validated = validated
+
 			list = append(list, model)
 		}
 	}
@@ -59,19 +68,19 @@ func (c *Catalog) CatalogModelList(filterCategory string) ([]Model, error) {
 func (c *Catalog) RetrieveModelDetails(modelID string) (Model, error) {
 	index, err := c.loadIndex()
 	if err != nil {
-		return Model{}, fmt.Errorf("load-index: %w", err)
+		return Model{}, fmt.Errorf("retrieve-model-details: load-index: %w", err)
 	}
 
 	modelID = strings.ToLower(modelID)
 
 	catalogFile := index[modelID]
 	if catalogFile == "" {
-		return Model{}, fmt.Errorf("model %q not found in index", modelID)
+		return Model{}, fmt.Errorf("retrieve-model-details: model[%s] not found in index", modelID)
 	}
 
 	catalog, err := c.RetrieveCatalog(catalogFile)
 	if err != nil {
-		return Model{}, fmt.Errorf("retrieve-catalog: %w", err)
+		return Model{}, fmt.Errorf("retrieve-model-details: retrieve-catalog: %w", err)
 	}
 
 	for _, model := range catalog.Models {
@@ -81,7 +90,7 @@ func (c *Catalog) RetrieveModelDetails(modelID string) (Model, error) {
 		}
 	}
 
-	return Model{}, fmt.Errorf("model %q not found", modelID)
+	return Model{}, fmt.Errorf("retrieve-model-details: model[%s] not found", modelID)
 }
 
 // RetrieveCatalog returns an individual catalog by the base catalog file name.
@@ -90,12 +99,12 @@ func (c *Catalog) RetrieveCatalog(catalogFile string) (CatalogModels, error) {
 
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return CatalogModels{}, fmt.Errorf("read file %s: %w", catalogFile, err)
+		return CatalogModels{}, fmt.Errorf("retrieve-catalog: read file catalog-file[%s]: %w", catalogFile, err)
 	}
 
 	var catalog CatalogModels
 	if err := yaml.Unmarshal(data, &catalog); err != nil {
-		return CatalogModels{}, fmt.Errorf("unmarshal %s: %w", catalogFile, err)
+		return CatalogModels{}, fmt.Errorf("retrieve-catalog: unmarshal catalog-file[%s]: %w", catalogFile, err)
 	}
 
 	return catalog, nil
@@ -105,7 +114,7 @@ func (c *Catalog) RetrieveCatalog(catalogFile string) (CatalogModels, error) {
 func (c *Catalog) RetrieveCatalogs() ([]CatalogModels, error) {
 	entries, err := os.ReadDir(c.catalogPath)
 	if err != nil {
-		return nil, fmt.Errorf("read catalog dir: %w", err)
+		return nil, fmt.Errorf("retrieve-catalogs: read catalog dir: %w", err)
 	}
 
 	var catalogs []CatalogModels
@@ -120,7 +129,7 @@ func (c *Catalog) RetrieveCatalogs() ([]CatalogModels, error) {
 
 		catalog, err := c.RetrieveCatalog(entry.Name())
 		if err != nil {
-			return nil, fmt.Errorf("retrieve-catalog: %q: %w", entry.Name(), err)
+			return nil, fmt.Errorf("retrieve-catalogs: retrieve-catalog name[%s]: %w", entry.Name(), err)
 		}
 
 		catalogs = append(catalogs, catalog)
@@ -137,7 +146,7 @@ func (c *Catalog) buildIndex() error {
 
 	entries, err := os.ReadDir(c.catalogPath)
 	if err != nil {
-		return fmt.Errorf("read catalog dir: %w", err)
+		return fmt.Errorf("build-index: read catalog dir: %w", err)
 	}
 
 	index := make(map[string]string)
@@ -155,12 +164,12 @@ func (c *Catalog) buildIndex() error {
 
 		data, err := os.ReadFile(filePath)
 		if err != nil {
-			return fmt.Errorf("read file %s: %w", entry.Name(), err)
+			return fmt.Errorf("build-index: read file name[%s]: %w", entry.Name(), err)
 		}
 
 		var catModels CatalogModels
 		if err := yaml.Unmarshal(data, &catModels); err != nil {
-			return fmt.Errorf("unmarshal %s: %w", entry.Name(), err)
+			return fmt.Errorf("build-index: unmarshal name[%s]: %w", entry.Name(), err)
 		}
 
 		for _, model := range catModels.Models {
@@ -171,12 +180,12 @@ func (c *Catalog) buildIndex() error {
 
 	indexData, err := yaml.Marshal(&index)
 	if err != nil {
-		return fmt.Errorf("marshal index: %w", err)
+		return fmt.Errorf("build-index: marshal index: %w", err)
 	}
 
 	indexPath := filepath.Join(c.catalogPath, indexFile)
 	if err := os.WriteFile(indexPath, indexData, 0644); err != nil {
-		return fmt.Errorf("write index file: %w", err)
+		return fmt.Errorf("build-index: write index file: %w", err)
 	}
 
 	return nil
@@ -188,18 +197,18 @@ func (c *Catalog) loadIndex() (map[string]string, error) {
 	data, err := os.ReadFile(indexPath)
 	if err != nil {
 		if err := c.buildIndex(); err != nil {
-			return nil, fmt.Errorf("build-index: %w", err)
+			return nil, fmt.Errorf("load-index: build-index: %w", err)
 		}
 
 		data, err = os.ReadFile(indexPath)
 		if err != nil {
-			return nil, fmt.Errorf("read-index: %w", err)
+			return nil, fmt.Errorf("load-index: read-index: %w", err)
 		}
 	}
 
 	var index map[string]string
 	if err := yaml.Unmarshal(data, &index); err != nil {
-		return nil, fmt.Errorf("unmarshal-index: %w", err)
+		return nil, fmt.Errorf("load-index: unmarshal-index: %w", err)
 	}
 
 	return index, nil

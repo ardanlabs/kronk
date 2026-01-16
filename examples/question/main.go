@@ -16,14 +16,12 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-const (
-	modelURL       = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
-	modelInstances = 1
-)
+const modelURL = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
 
 func main() {
 	if err := run(); err != nil {
@@ -51,7 +49,7 @@ func run() error {
 	}()
 
 	if err := question(krn); err != nil {
-		return err
+		fmt.Println(err)
 	}
 
 	return nil
@@ -61,7 +59,9 @@ func installSystem() (models.Path, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
-	libs, err := libs.New()
+	libs, err := libs.New(
+		libs.WithVersion(defaults.LibVersion("")),
+	)
 	if err != nil {
 		return models.Path{}, err
 	}
@@ -94,8 +94,12 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
-	krn, err := kronk.New(modelInstances, model.Config{
+	krn, err := kronk.New(model.Config{
 		ModelFiles: mp.ModelFiles,
+		CacheTypeK: model.GGMLTypeF16,
+		CacheTypeV: model.GGMLTypeF16,
+		NBatch:     1024,
+		NUBatch:    256,
 	})
 
 	if err != nil {

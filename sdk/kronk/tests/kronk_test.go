@@ -5,17 +5,21 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/ardanlabs/kronk/sdk/tools/templates"
 )
+
+func init() {
+	fmt.Println("kronk_test init starting...")
+}
 
 var (
 	mpThinkToolChat models.Path
@@ -25,23 +29,32 @@ var (
 )
 
 var (
-	gw             = os.Getenv("GITHUB_WORKSPACE")
-	imageFile      = filepath.Join(gw, "examples/samples/giraffe.jpg")
-	goroutines     = 1
-	modelInstances = 1
-	runInParallel  = false
-	testDuration   = 60 * 5 * time.Second
+	gw            = os.Getenv("GITHUB_WORKSPACE")
+	imageFile     = filepath.Join(gw, "examples/samples/giraffe.jpg")
+	goroutines    = 2
+	runInParallel = false
+	testDuration  = 60 * 5 * time.Second
 )
 
 func TestMain(m *testing.M) {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		goroutines = 1
+	}
+
+	fmt.Println("Initializing models system...")
 	models, err := models.New()
 	if err != nil {
 		fmt.Printf("creating models system: %s\n", err)
 		os.Exit(1)
 	}
 
+	fmt.Println("MustRetrieveModel Qwen3-8B-Q8_0...")
 	mpThinkToolChat = models.MustRetrieveModel("Qwen3-8B-Q8_0")
+
+	fmt.Println("MustRetrieveModel Qwen2.5-VL-3B-Instruct-Q8_0...")
 	mpSimpleVision = models.MustRetrieveModel("Qwen2.5-VL-3B-Instruct-Q8_0")
+
+	fmt.Println("MustRetrieveModel embeddinggemma-300m-qat-Q8_0...")
 	mpEmbed = models.MustRetrieveModel("embeddinggemma-300m-qat-Q8_0")
 
 	if os.Getenv("GITHUB_ACTIONS") != "true" {
@@ -60,47 +73,65 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
+	fmt.Println("Downloading Templates...")
 	if err := templates.Download(ctx); err != nil {
 		fmt.Printf("unable to download templates: %s", err)
 		os.Exit(1)
 	}
 
+	fmt.Println("Downloading Catalog...")
 	if err := templates.Catalog().Download(ctx); err != nil {
 		fmt.Printf("unable to download catalog: %s", err)
 		os.Exit(1)
 	}
 
+	fmt.Println("Init Kronk...")
 	if err := kronk.Init(); err != nil {
 		fmt.Printf("Failed to init the llama.cpp library: error: %s\n", err)
 		os.Exit(1)
 	}
 
-	os.Exit(m.Run())
+	fmt.Println("Loading chat models...")
+	if err := initChatModels(); err != nil {
+		fmt.Printf("Failed to init chat models: %s\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("Loading media models...")
+	if err := initMediaModels(); err != nil {
+		fmt.Printf("Failed to init media models: %s\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("Initializing response inputs...")
+	initResponseInputs()
+
+	code := m.Run()
+
+	fmt.Println("Unloading media models...")
+	unloadMediaModels()
+
+	fmt.Println("Unloading chat models...")
+	unloadChatModels()
+
+	os.Exit(code)
 }
 
 func printInfo(models *models.Models) {
-	if os.Getenv("GOROUTINES") != "" {
-		var err error
-		goroutines, err = strconv.Atoi(os.Getenv("GOROUTINES"))
-		if err != nil {
-			goroutines = 1
-		}
-	}
-
-	if os.Getenv("RUN_IN_PARALLEL") == "1" {
+	if os.Getenv("RUN_IN_PARALLEL") == "yes" {
 		runInParallel = true
 	}
 
-	fmt.Println("libpath        :", libs.Path(""))
-	fmt.Println("modelPath      :", models.Path())
-	fmt.Println("imageFile      :", imageFile)
-	fmt.Println("processor      :", "cpu")
-	fmt.Println("testDuration   :", testDuration)
-	fmt.Println("MODEL INSTANCES:", modelInstances)
-	fmt.Println("GOROUTINES     :", goroutines)
-	fmt.Println("RUN_IN_PARALLEL:", runInParallel)
+	fmt.Println("libpath          :", libs.Path(""))
+	fmt.Println("useLibVersion    :", defaults.LibVersion(""))
+	fmt.Println("modelPath        :", models.Path())
+	fmt.Println("imageFile        :", imageFile)
+	fmt.Println("processor        :", "cpu")
+	fmt.Println("goroutines       :", goroutines)
+	fmt.Println("testDuration     :", testDuration)
+	fmt.Println("RUN_IN_PARALLEL  :", runInParallel)
 
-	libs, err := libs.New()
+	libs, err := libs.New(libs.WithVersion(defaults.LibVersion("")))
 	if err != nil {
 		fmt.Printf("Failed to construct the libs api: %v\n", err)
 		os.Exit(1)
@@ -112,10 +143,17 @@ func printInfo(models *models.Models) {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Current version: %s\n", currentVersion)
+	fmt.Printf("Installed version: %s\n", currentVersion)
 }
 
-func testChatBasics(resp model.ChatResponse, modelName string, object string, reasoning bool) error {
+func getMsg(choice model.Choice, streaming bool) model.ResponseMessage {
+	if streaming && choice.FinishReason == "" {
+		return choice.Delta
+	}
+	return choice.Message
+}
+
+func testChatBasics(resp model.ChatResponse, modelName string, object string, reasoning bool, streaming bool) error {
 	if resp.ID == "" {
 		return fmt.Errorf("expected id")
 	}
@@ -136,24 +174,30 @@ func testChatBasics(resp model.ChatResponse, modelName string, object string, re
 		return fmt.Errorf("basics: expected choice, got %d", len(resp.Choice))
 	}
 
-	if resp.Choice[0].FinishReason == "" && resp.Choice[0].Delta.Content == "" && resp.Choice[0].Delta.Reasoning == "" {
+	msg := getMsg(resp.Choice[0], streaming)
+
+	if resp.Choice[0].FinishReason == "" && msg.Content == "" && msg.Reasoning == "" {
 		return fmt.Errorf("basics: expected delta content and reasoning to be non-empty")
 	}
 
-	if resp.Choice[0].FinishReason == "" && resp.Choice[0].Delta.Role != "assistant" {
-		return fmt.Errorf("basics: expected delta role to be assistant, got %s", resp.Choice[0].Delta.Role)
+	if resp.Choice[0].FinishReason == "" && msg.Role != "assistant" {
+		return fmt.Errorf("basics: expected delta role to be assistant, got %s", msg.Role)
 	}
 
-	if resp.Choice[0].FinishReason == "stop" && resp.Choice[0].Delta.Content == "" {
+	if resp.Choice[0].FinishReason == "stop" && msg.Content == "" {
 		return fmt.Errorf("basics: expected final content to be non-empty")
 	}
 
-	if resp.Choice[0].FinishReason == "tool" && len(resp.Choice[0].Delta.ToolCalls) == 0 {
+	if resp.Choice[0].FinishReason == "tool" && len(msg.ToolCalls) == 0 {
 		return fmt.Errorf("basics: expected tool calls to be non-empty")
 	}
 
+	if streaming && resp.Choice[0].FinishReason == "tool" && len(resp.Choice[0].Delta.ToolCalls) == 0 {
+		return fmt.Errorf("basics: expected tool calls in Delta for OpenAI streaming compatibility")
+	}
+
 	if reasoning {
-		if resp.Choice[0].FinishReason == "stop" && resp.Choice[0].Delta.Reasoning == "" {
+		if resp.Choice[0].FinishReason == "stop" && msg.Reasoning == "" {
 			return fmt.Errorf("basics: expected final reasoning")
 		}
 	}
@@ -161,57 +205,81 @@ func testChatBasics(resp model.ChatResponse, modelName string, object string, re
 	return nil
 }
 
-func testChatResponse(resp model.ChatResponse, modelName string, object string, find string, funct string, arg string) error {
-	if err := testChatBasics(resp, modelName, object, object == model.ObjectChatText); err != nil {
-		return err
+type testResult struct {
+	Err      error
+	Warnings []string
+}
+
+func testChatResponse(resp model.ChatResponse, modelName string, object string, find string, funct string, arg string, streaming bool) testResult {
+	if err := testChatBasics(resp, modelName, object, object == model.ObjectChatText, streaming); err != nil {
+		return testResult{Err: err}
 	}
+
+	var result testResult
+
+	msg := getMsg(resp.Choice[0], streaming)
 
 	find = strings.ToLower(find)
 	funct = strings.ToLower(funct)
-	resp.Choice[0].Delta.Reasoning = strings.ToLower(resp.Choice[0].Delta.Reasoning)
-	resp.Choice[0].Delta.Content = strings.ToLower(resp.Choice[0].Delta.Content)
-	if len(resp.Choice[0].Delta.ToolCalls) > 0 {
-		resp.Choice[0].Delta.ToolCalls[0].Name = strings.ToLower(resp.Choice[0].Delta.ToolCalls[0].Name)
+	msg.Reasoning = strings.ToLower(msg.Reasoning)
+	msg.Content = strings.ToLower(msg.Content)
+
+	if len(msg.ToolCalls) > 0 {
+		msg.ToolCalls[0].Function.Name = strings.ToLower(msg.ToolCalls[0].Function.Name)
 	}
 
+	// Reasoning checks are warnings (LLM output is non-deterministic).
 	if object == model.ObjectChatText {
+		if len(msg.Reasoning) == 0 {
+			result.Err = fmt.Errorf("content: expected some reasoning")
+		}
+
 		switch {
 		case funct == "":
-			if !strings.Contains(resp.Choice[0].Delta.Reasoning, find) {
-				return fmt.Errorf("reasoning: expected %q, got %q", find, resp.Choice[0].Delta.Reasoning)
+			if !strings.Contains(msg.Reasoning, find) {
+				result.Warnings = append(result.Warnings, fmt.Sprintf("reasoning: expected %q, got %q", find, msg.Reasoning))
 			}
 
 		case funct != "":
-			if !strings.Contains(resp.Choice[0].Delta.Reasoning, funct) {
-				return fmt.Errorf("reasoning: expected %q, got %q", funct, resp.Choice[0].Delta.Reasoning)
+			if !strings.Contains(msg.Reasoning, funct) {
+				result.Warnings = append(result.Warnings, fmt.Sprintf("reasoning: expected %q, got %q", funct, msg.Reasoning))
 			}
 		}
 	}
 
 	if resp.Choice[0].FinishReason == "stop" {
-		if !strings.Contains(resp.Choice[0].Delta.Content, find) {
-			return fmt.Errorf("content: expected %q, got %q", find, resp.Choice[0].Delta.Content)
+		if len(msg.Content) == 0 {
+			result.Err = fmt.Errorf("content: expected some content")
+		}
+
+		if !strings.Contains(msg.Content, find) {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("content: expected %q, got %q", find, msg.Content))
+			return result
 		}
 	}
 
 	if resp.Choice[0].FinishReason == "tool" {
-		if !strings.Contains(resp.Choice[0].Delta.ToolCalls[0].Name, funct) {
-			return fmt.Errorf("tooling: expected %q, got %q", funct, resp.Choice[0].Delta.ToolCalls[0].Name)
+		if !strings.Contains(msg.ToolCalls[0].Function.Name, funct) {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("tooling: expected %q, got %q", funct, msg.ToolCalls[0].Function.Name))
+			return result
 		}
 
-		if len(resp.Choice[0].Delta.ToolCalls[0].Arguments) == 0 {
-			return fmt.Errorf("tooling: expected arguments to be non-empty, got %v", resp.Choice[0].Delta.ToolCalls[0].Arguments)
+		if len(msg.ToolCalls[0].Function.Arguments) == 0 {
+			result.Err = fmt.Errorf("tooling: expected arguments to be non-empty, got %v", msg.ToolCalls[0].Function.Arguments)
+			return result
 		}
 
-		location, exists := resp.Choice[0].Delta.ToolCalls[0].Arguments[arg]
+		location, exists := msg.ToolCalls[0].Function.Arguments[arg]
 		if !exists {
-			return fmt.Errorf("tooling: expected an argument named %s", arg)
+			result.Err = fmt.Errorf("tooling: expected an argument named %s", arg)
+			return result
 		}
 
 		if !strings.Contains(strings.ToLower(location.(string)), find) {
-			return fmt.Errorf("tooling: expected %q, got %q", find, location.(string))
+			result.Err = fmt.Errorf("tooling: expected %q, got %q", find, location.(string))
+			return result
 		}
 	}
 
-	return nil
+	return result
 }

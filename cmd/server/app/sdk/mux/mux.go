@@ -7,10 +7,10 @@ import (
 	"net/http"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/cache"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mid"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/cache"
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
@@ -20,10 +20,11 @@ import (
 
 // StaticSite represents a static site to run.
 type StaticSite struct {
-	react      bool
-	static     embed.FS
-	staticDir  string
-	staticPath string
+	react       bool
+	static      embed.FS
+	staticDir   string
+	staticPath  string
+	apiPrefixes []string
 }
 
 // Options represent optional parameters.
@@ -40,13 +41,14 @@ func WithCORS(origins []string) func(opts *Options) {
 }
 
 // WithFileServer provides configuration options for file server.
-func WithFileServer(react bool, static embed.FS, dir string, path string) func(opts *Options) {
+func WithFileServer(react bool, static embed.FS, dir string, path string, apiPrefixes []string) func(opts *Options) {
 	return func(opts *Options) {
 		opts.sites = append(opts.sites, StaticSite{
-			react:      react,
-			static:     static,
-			staticDir:  dir,
-			staticPath: path,
+			react:       react,
+			static:      static,
+			staticDir:   dir,
+			staticPath:  path,
+			apiPrefixes: apiPrefixes,
 		})
 	}
 }
@@ -96,12 +98,14 @@ func WebAPI(cfg Config, routeAdder RouteAdder, options ...func(opts *Options)) h
 	for _, site := range opts.sites {
 		switch site.react {
 		case true:
-			app.FileServerReact(site.static, site.staticDir, site.staticPath)
+			app.FileServerReact(site.static, site.staticDir, site.staticPath, site.apiPrefixes)
 
 		default:
 			app.FileServer(site.static, site.staticDir, site.staticPath)
 		}
 	}
+
+	app.NotFoundHandler()
 
 	return app
 }

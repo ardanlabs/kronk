@@ -3,10 +3,7 @@ package kronk
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"net/http"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -18,15 +15,17 @@ import (
 )
 
 // Version contains the current version of the kronk package.
-const Version = "1.10.3"
+const Version = "1.13.4"
 
 // =============================================================================
 
 type options struct {
-	tr model.TemplateRetriever
+	tr         model.TemplateRetriever
+	ctx        context.Context
+	queueDepth int
 }
 
-// Option represents a functional option for configuring Kronk.
+// Option represents options for configuring Kronk.
 type Option func(*options)
 
 // WithTemplateRetriever sets a custom Github repo for templates.
@@ -37,12 +36,32 @@ func WithTemplateRetriever(templates model.TemplateRetriever) Option {
 	}
 }
 
+// WithContext sets a context into the call to support logging trace ids.
+func WithContext(ctx context.Context) Option {
+	return func(o *options) {
+		o.ctx = ctx
+	}
+}
+
+// WithQueueDepth sets the multiplier for semaphore capacity when using the
+// batch engine (NSeqMax > 1). This controls how many requests can queue while
+// the current batch is processing. Default is 2, meaning NSeqMax * 2 requests
+// can be in-flight. Only applies to text inference models.
+func WithQueueDepth(multiplier int) Option {
+	return func(o *options) {
+		if multiplier > 0 {
+			o.queueDepth = multiplier
+		}
+	}
+}
+
 // =============================================================================
 
 // Kronk provides a concurrently safe api for using llama.cpp to access models.
 type Kronk struct {
 	cfg           model.Config
-	models        chan *model.Model
+	model         *model.Model
+	sem           chan struct{}
 	activeStreams atomic.Int32
 	shutdown      sync.Mutex
 	shutdownFlag  bool
@@ -50,61 +69,78 @@ type Kronk struct {
 }
 
 // New provides the ability to use models in a concurrently safe way.
-//
-// modelInstances represents the number of instances of the model to create. Unless
-// you have more than 1 GPU, the recommended number of instances is 1.
-func New(modelInstances int, cfg model.Config, opts ...Option) (*Kronk, error) {
+func New(cfg model.Config, opts ...Option) (*Kronk, error) {
 	if libraryLocation == "" {
-		return nil, fmt.Errorf("the Init() function has not been called")
-	}
-
-	if modelInstances <= 0 {
-		return nil, fmt.Errorf("instances must be > 0, got %d", modelInstances)
+		return nil, fmt.Errorf("new: the Init() function has not been called")
 	}
 
 	// -------------------------------------------------------------------------
 
-	var o options
+	o := options{
+		queueDepth: 2,
+	}
+
 	for _, opt := range opts {
 		opt(&o)
 	}
 
 	if o.tr == nil {
-		templates, err := templates.New()
+		templs, err := templates.New()
 		if err != nil {
-			return nil, fmt.Errorf("template new: %w", err)
+			return nil, fmt.Errorf("new: unable to create template: %w", err)
 		}
 
-		o.tr = templates
+		o.tr = templs
+	}
+
+	ctx := context.Background()
+	if o.ctx != nil {
+		ctx = o.ctx
 	}
 
 	// -------------------------------------------------------------------------
 
-	models := make(chan *model.Model, modelInstances)
-	var firstModel *model.Model
+	m, err := model.NewModel(ctx, o.tr, cfg)
+	if err != nil {
+		return nil, err
+	}
 
-	for range modelInstances {
-		m, err := model.NewModel(o.tr, cfg)
-		if err != nil {
-			close(models)
-			for model := range models {
-				model.Unload(context.Background())
-			}
+	// -------------------------------------------------------------------------
 
-			return nil, err
+	// The cfg.NSeqMax field controls how many concurrent requests can be processed
+	// in parallel. Parallel processing only works for text inference. Vision,
+	// audio, and embeddings are restricted to sequential processing.
+
+	if cfg.NSeqMax > 1 {
+		if cfg.ProjFile != "" {
+			return nil, fmt.Errorf("new: NSeqMax > 1 not supported for multimodal models (ProjFile is set)")
 		}
 
-		models <- m
-
-		if firstModel == nil {
-			firstModel = m
+		if m.ModelInfo().IsEmbedModel {
+			return nil, fmt.Errorf("new: NSeqMax > 1 not supported for embedding models")
 		}
 	}
 
+	var semCapacity int
+
+	switch {
+	case cfg.ProjFile != "":
+		semCapacity = 1
+
+	case m.ModelInfo().IsEmbedModel:
+		semCapacity = 1
+
+	default:
+		semCapacity = max(cfg.NSeqMax, 1) * o.queueDepth
+	}
+
+	// -------------------------------------------------------------------------
+
 	krn := Kronk{
-		cfg:       firstModel.Config(),
-		models:    models,
-		modelInfo: firstModel.ModelInfo(),
+		cfg:       m.Config(),
+		model:     m,
+		sem:       make(chan struct{}, semCapacity),
+		modelInfo: m.ModelInfo(),
 	}
 
 	return &krn, nil
@@ -156,8 +192,8 @@ func (krn *Kronk) ActiveStreams() int {
 	return int(krn.activeStreams.Load())
 }
 
-// Unload will close down all loaded models. You should call this only when you
-// are completely done using the group.
+// Unload will close down the loaded model. You should call this only when you
+// are completely done using Kronk.
 func (krn *Kronk) Unload(ctx context.Context) error {
 	if _, exists := ctx.Deadline(); !exists {
 		var cancel context.CancelFunc
@@ -172,13 +208,13 @@ func (krn *Kronk) Unload(ctx context.Context) error {
 		defer krn.shutdown.Unlock()
 
 		if krn.shutdownFlag {
-			return fmt.Errorf("unload:already unloaded")
+			return fmt.Errorf("unload: already unloaded")
 		}
 
 		for krn.activeStreams.Load() > 0 {
 			select {
 			case <-ctx.Done():
-				return fmt.Errorf("unload:cannot unload: %d active streams: %w", krn.activeStreams.Load(), ctx.Err())
+				return fmt.Errorf("unload: cannot unload, too many active-streams[%d]: %w", krn.activeStreams.Load(), ctx.Err())
 
 			case <-time.After(100 * time.Millisecond):
 			}
@@ -194,182 +230,9 @@ func (krn *Kronk) Unload(ctx context.Context) error {
 
 	// -------------------------------------------------------------------------
 
-	var sb strings.Builder
-
-	close(krn.models)
-	for model := range krn.models {
-		if err := model.Unload(ctx); err != nil {
-			sb.WriteString(fmt.Sprintf("unload:failed to unload model: %s: %v\n", model.ModelInfo().ID, err))
-		}
-	}
-
-	if sb.Len() > 0 {
-		return fmt.Errorf("%s", sb.String())
+	if err := krn.model.Unload(ctx); err != nil {
+		return fmt.Errorf("unload: failed to unload model, model-id[%s]: %w", krn.model.ModelInfo().ID, err)
 	}
 
 	return nil
-}
-
-// Chat provides support to interact with an inference model.
-func (krn *Kronk) Chat(ctx context.Context, d model.D) (model.ChatResponse, error) {
-	if _, exists := ctx.Deadline(); !exists {
-		return model.ChatResponse{}, fmt.Errorf("chat:context has no deadline, provide a reasonable timeout")
-	}
-
-	f := func(m *model.Model) (model.ChatResponse, error) {
-		return m.Chat(ctx, d)
-	}
-
-	return nonStreaming(ctx, krn, f)
-}
-
-// ChatStreaming provides support to interact with an inference model.
-func (krn *Kronk) ChatStreaming(ctx context.Context, d model.D) (<-chan model.ChatResponse, error) {
-	if _, exists := ctx.Deadline(); !exists {
-		return nil, fmt.Errorf("chat-streaming:context has no deadline, provide a reasonable timeout")
-	}
-
-	f := func(m *model.Model) <-chan model.ChatResponse {
-		return m.ChatStreaming(ctx, d)
-	}
-
-	ef := func(err error) model.ChatResponse {
-		return model.ChatResponseErr("panic", model.ObjectChatUnknown, krn.ModelInfo().ID, 0, "", err, model.Usage{})
-	}
-
-	return streaming(ctx, krn, f, ef)
-}
-
-// ChatStreamingHTTP provides http handler support for a chat/completions call.
-func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, d model.D) (model.ChatResponse, error) {
-	if _, exists := ctx.Deadline(); !exists {
-		return model.ChatResponse{}, fmt.Errorf("chat-streaming-http:context has no deadline, provide a reasonable timeout")
-	}
-
-	var stream bool
-	streamReq, ok := d["stream"].(bool)
-	if ok {
-		stream = streamReq
-	}
-
-	// -------------------------------------------------------------------------
-
-	if !stream {
-		resp, err := krn.Chat(ctx, d)
-		if err != nil {
-			return model.ChatResponse{}, fmt.Errorf("chat-streaming-http:stream-response: %w", err)
-		}
-
-		data, err := json.Marshal(resp)
-		if err != nil {
-			return resp, fmt.Errorf("chat-streaming-http:marshal: %w", err)
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write(data)
-
-		return resp, nil
-	}
-
-	// -------------------------------------------------------------------------
-
-	f, ok := w.(http.Flusher)
-	if !ok {
-		return model.ChatResponse{}, fmt.Errorf("chat-streaming-http:streaming not supported")
-	}
-
-	ch, err := krn.ChatStreaming(ctx, d)
-	if err != nil {
-		return model.ChatResponse{}, fmt.Errorf("chat-streaming-http:stream-response: %w", err)
-	}
-
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Transfer-Encoding", "chunked")
-	w.WriteHeader(http.StatusOK)
-	f.Flush()
-
-	var lr model.ChatResponse
-
-	for resp := range ch {
-		if err := ctx.Err(); err != nil {
-			if errors.Is(err, context.Canceled) {
-				return resp, errors.New("chat-streaming-http:client disconnected, do not send response")
-			}
-		}
-
-		// OpenAI does not expect the final delta to have content or reasoning.
-		// Kronk returns the entire streamed content in the final chunk.
-		if resp.Choice[0].FinishReason == model.FinishReasonStop {
-			if kfc, ok := d["keep_final_content"].(bool); !ok || !kfc {
-				resp.Choice[0].Delta = model.ResponseMessage{}
-				resp.Prompt = ""
-			}
-		}
-
-		d, err := json.Marshal(resp)
-		if err != nil {
-			return resp, fmt.Errorf("chat-streaming-http:marshal: %w", err)
-		}
-
-		fmt.Fprintf(w, "data: %s\n", d)
-		f.Flush()
-
-		lr = resp
-	}
-
-	w.Write([]byte("data: [DONE]\n"))
-	f.Flush()
-
-	return lr, nil
-}
-
-// Embeddings provides support to interact with an embedding model.
-func (krn *Kronk) Embeddings(ctx context.Context, input string) (model.EmbedReponse, error) {
-	if !krn.ModelInfo().IsEmbedModel {
-		return model.EmbedReponse{}, fmt.Errorf("embed:model doesn't support embedding")
-	}
-
-	if _, exists := ctx.Deadline(); !exists {
-		return model.EmbedReponse{}, fmt.Errorf("embed:context has no deadline, provide a reasonable timeout")
-	}
-
-	f := func(m *model.Model) (model.EmbedReponse, error) {
-		return m.Embeddings(ctx, input)
-	}
-
-	return nonStreaming(ctx, krn, f)
-}
-
-// EmbeddingsHTTP provides http handler support for an embeddings call.
-func (krn *Kronk) EmbeddingsHTTP(ctx context.Context, log Logger, w http.ResponseWriter, d model.D) (model.EmbedReponse, error) {
-	if _, exists := ctx.Deadline(); !exists {
-		return model.EmbedReponse{}, fmt.Errorf("embeddings:context has no deadline, provide a reasonable timeout")
-	}
-
-	var input string
-	inputReq, ok := d["input"].(string)
-	if ok {
-		input = inputReq
-	}
-
-	if input == "" {
-		return model.EmbedReponse{}, fmt.Errorf("embeddings:missing input parameter")
-	}
-
-	resp, err := krn.Embeddings(ctx, input)
-	if err != nil {
-		return model.EmbedReponse{}, fmt.Errorf("chat-streaming-http:stream-response: %w", err)
-	}
-
-	data, err := json.Marshal(resp)
-	if err != nil {
-		return resp, fmt.Errorf("chat-streaming-http:marshal: %w", err)
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write(data)
-
-	return resp, nil
 }

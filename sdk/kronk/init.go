@@ -12,27 +12,49 @@ import (
 	"github.com/nikolalohinski/gonja/v2"
 )
 
-// Init initializes the Kronk backend suport.
-func Init() error {
-	return InitWithSettings("", LogSilent)
+type initOptions struct {
+	libPath  string
+	logLevel LogLevel
 }
 
-// InitWithSettings initializes the Kronk backend suport.
-func InitWithSettings(libPath string, logLevel LogLevel) error {
+// InitOption represents options for configuring Init.
+type InitOption func(*initOptions)
+
+// WithLibPath sets a custom library path.
+func WithLibPath(libPath string) InitOption {
+	return func(o *initOptions) {
+		o.libPath = libPath
+	}
+}
+
+// WithLogLevel sets the log level for the backend.
+func WithLogLevel(logLevel LogLevel) InitOption {
+	return func(o *initOptions) {
+		o.logLevel = logLevel
+	}
+}
+
+// Init initializes the Kronk backend support.
+func Init(opts ...InitOption) error {
 	initOnce.Do(func() {
-		libPath := libs.Path(libPath)
+		var o initOptions
+		for _, opt := range opts {
+			opt(&o)
+		}
+
+		libPath := libs.Path(o.libPath)
 
 		if v := os.Getenv("LD_LIBRARY_PATH"); !strings.Contains(v, libPath) {
 			os.Setenv("LD_LIBRARY_PATH", fmt.Sprintf("%s:%s", libPath, v))
 		}
 
 		if err := llama.Load(libPath); err != nil {
-			initErr = fmt.Errorf("unable to load library: %w", err)
+			initErr = fmt.Errorf("init: unable to load library: %w", err)
 			return
 		}
 
 		if err := mtmd.Load(libPath); err != nil {
-			initErr = fmt.Errorf("unable to load mtmd library: %w", err)
+			initErr = fmt.Errorf("init: unable to load mtmd library: %w", err)
 			return
 		}
 
@@ -41,11 +63,11 @@ func InitWithSettings(libPath string, logLevel LogLevel) error {
 
 		// ---------------------------------------------------------------------
 
-		if logLevel < 1 || logLevel > 2 {
-			logLevel = LogSilent
+		if o.logLevel < 1 || o.logLevel > 2 {
+			o.logLevel = LogSilent
 		}
 
-		switch logLevel {
+		switch o.logLevel {
 		case LogSilent:
 			llama.LogSet(llama.LogSilent())
 			mtmd.LogSet(llama.LogSilent())

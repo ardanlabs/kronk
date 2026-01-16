@@ -6,6 +6,7 @@ package cache
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -14,8 +15,8 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/ardanlabs/kronk/sdk/tools/templates"
-	"github.com/hybridgroup/yzma/pkg/download"
 	"github.com/maypok86/otter/v2"
+	"gopkg.in/yaml.v3"
 )
 
 // Config represents setting for the kronk manager.
@@ -25,10 +26,6 @@ import (
 //
 // TemplateRepo represents the Github repo for where the templates are. If left empty
 // then api.github.com/repos/ardanlabs/kronk_catalogs/contents/templates is used.
-//
-// Device: Specify a specific device. To see the list of devices run this command:
-// $HOME/kronk/libraries/llama-bench --list-devices
-// Leave empty for the system to pick the device.
 //
 // MaxInCache: Defines the maximum number of unique models will be available at a
 // time. Defaults to 3 if the value is 0.
@@ -43,16 +40,14 @@ import (
 // CacheTTL: Defines the time an existing model can live in the cache without
 // being used.
 type Config struct {
-	Log            model.Logger
-	Templates      *templates.Templates
-	Arch           download.Arch
-	OS             download.OS
-	Processor      download.Processor
-	Device         string
-	MaxInCache     int
-	ModelInstances int
-	ContextWindow  int
-	CacheTTL       time.Duration
+	Log                  model.Logger
+	BasePath             string
+	Templates            *templates.Templates
+	ModelsInCache        int
+	ModelInstances       int
+	CacheTTL             time.Duration
+	IgnoreIntegrityCheck bool
+	ModelConfigFile      string
 }
 
 func validateConfig(cfg Config) (Config, error) {
@@ -65,8 +60,8 @@ func validateConfig(cfg Config) (Config, error) {
 		cfg.Templates = templates
 	}
 
-	if cfg.MaxInCache <= 0 {
-		cfg.MaxInCache = 3
+	if cfg.ModelsInCache <= 0 {
+		cfg.ModelsInCache = 3
 	}
 
 	if cfg.ModelInstances <= 0 {
@@ -80,55 +75,76 @@ func validateConfig(cfg Config) (Config, error) {
 	return cfg, nil
 }
 
+// =============================================================================
+
+type modelConfig struct {
+	Device               string                   `yaml:"device"`
+	ContextWindow        int                      `yaml:"context-window"`
+	NBatch               int                      `yaml:"nbatch"`
+	NUBatch              int                      `yaml:"nubatch"`
+	NThreads             int                      `yaml:"nthreads"`
+	NThreadsBatch        int                      `yaml:"nthreads-batch"`
+	CacheTypeK           model.GGMLType           `yaml:"cache-type-k"`
+	CacheTypeV           model.GGMLType           `yaml:"cache-type-v"`
+	UseDirectIO          bool                     `yaml:"use-direct-io"`
+	FlashAttention       model.FlashAttentionType `yaml:"flash-attention"`
+	IgnoreIntegrityCheck bool                     `yaml:"ignore-integrity-check"`
+	NSeqMax              int                      `yaml:"nseq-max"`
+	OffloadKQV           *bool                    `yaml:"offload-kqv"`
+	OpOffload            *bool                    `yaml:"op-offload"`
+	NGpuLayers           *int32                   `yaml:"ngpu-layers"`
+	SplitMode            model.SplitMode          `yaml:"split-mode"`
+}
+
 // Cache manages a set of Kronk APIs for use. It maintains a cache of these
 // APIs and will unload over time if not in use.
 type Cache struct {
-	log           model.Logger
-	templates     *templates.Templates
-	arch          download.Arch
-	os            download.OS
-	processor     download.Processor
-	device        string
-	instances     int
-	contextWindow int
-	cache         *otter.Cache[string, *kronk.Kronk]
-	itemsInCache  atomic.Int32
-	models        *models.Models
+	log                  model.Logger
+	templates            *templates.Templates
+	cache                *otter.Cache[string, *kronk.Kronk]
+	itemsInCache         atomic.Int32
+	models               *models.Models
+	ignoreIntegrityCheck bool
+	modelConfig          map[string]modelConfig
 }
 
-// NewCache constructs the manager for use.
-func NewCache(cfg Config) (*Cache, error) {
+// New constructs the manager for use.
+func New(cfg Config) (*Cache, error) {
 	cfg, err := validateConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	models, err := models.New()
+	models, err := models.NewWithPaths(cfg.BasePath)
 	if err != nil {
-		return nil, fmt.Errorf("creating models system: %w", err)
+		return nil, fmt.Errorf("new: creating models system: %w", err)
+	}
+
+	var mc map[string]modelConfig
+	if cfg.ModelConfigFile != "" {
+		mc, err = loadModelConfig(cfg.ModelConfigFile)
+		if err != nil {
+			return nil, fmt.Errorf("new: loading model config: %w", err)
+		}
 	}
 
 	c := Cache{
-		log:           cfg.Log,
-		templates:     cfg.Templates,
-		arch:          cfg.Arch,
-		os:            cfg.OS,
-		processor:     cfg.Processor,
-		device:        cfg.Device,
-		instances:     cfg.ModelInstances,
-		contextWindow: cfg.ContextWindow,
-		models:        models,
+		log:                  cfg.Log,
+		templates:            cfg.Templates,
+		models:               models,
+		ignoreIntegrityCheck: cfg.IgnoreIntegrityCheck,
+		modelConfig:          mc,
 	}
 
 	opt := otter.Options[string, *kronk.Kronk]{
-		MaximumSize:      cfg.MaxInCache,
+		MaximumSize:      cfg.ModelsInCache,
 		ExpiryCalculator: otter.ExpiryWriting[string, *kronk.Kronk](cfg.CacheTTL),
 		OnDeletion:       c.eviction,
 	}
 
 	cache, err := otter.New(&opt)
 	if err != nil {
-		return nil, fmt.Errorf("constructing cache: %w", err)
+		return nil, fmt.Errorf("new: constructing cache: %w", err)
 	}
 
 	c.cache = cache
@@ -156,21 +172,6 @@ func (c *Cache) Shutdown(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-// Arch returns the hardware being used.
-func (c *Cache) Arch() download.Arch {
-	return c.arch
-}
-
-// OS returns the operating system being used.
-func (c *Cache) OS() download.OS {
-	return c.os
-}
-
-// Processor returns the processor being used.
-func (c *Cache) Processor() download.Processor {
-	return c.processor
 }
 
 // ModelStatus returns information about the current models in the cache.
@@ -225,23 +226,53 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 
 	fi, err := c.models.RetrievePath(modelID)
 	if err != nil {
-		return nil, fmt.Errorf("aquire-model: %w", err)
+		return nil, fmt.Errorf("aquire-model: unable to retrieve path: %w", err)
+	}
+
+	c.log(ctx, "model config lookup", "modelID", modelID, "available-keys", fmt.Sprintf("%v", func() []string {
+		keys := make([]string, 0, len(c.modelConfig))
+		for k := range c.modelConfig {
+			keys = append(keys, k)
+		}
+		return keys
+	}()))
+
+	mc, found := c.modelConfig[strings.ToLower(modelID)]
+	c.log(ctx, "model config result", "found", found, "mc", fmt.Sprintf("%#v", mc))
+
+	if c.ignoreIntegrityCheck {
+		mc.IgnoreIntegrityCheck = true
 	}
 
 	cfg := model.Config{
-		Log:           c.log,
-		ModelFiles:    fi.ModelFiles,
-		ProjFile:      fi.ProjFile,
-		Device:        c.device,
-		ContextWindow: c.contextWindow,
+		Log:                  c.log,
+		ModelFiles:           fi.ModelFiles,
+		ProjFile:             fi.ProjFile,
+		Device:               mc.Device,
+		ContextWindow:        mc.ContextWindow,
+		NBatch:               mc.NBatch,
+		NUBatch:              mc.NUBatch,
+		NThreads:             mc.NThreads,
+		NThreadsBatch:        mc.NThreadsBatch,
+		CacheTypeK:           mc.CacheTypeK,
+		CacheTypeV:           mc.CacheTypeV,
+		FlashAttention:       mc.FlashAttention,
+		UseDirectIO:          mc.UseDirectIO,
+		IgnoreIntegrityCheck: mc.IgnoreIntegrityCheck,
+		NSeqMax:              mc.NSeqMax,
+		OffloadKQV:           mc.OffloadKQV,
+		OpOffload:            mc.OpOffload,
+		NGpuLayers:           mc.NGpuLayers,
+		SplitMode:            mc.SplitMode,
 	}
 
-	krn, err = kronk.New(c.instances, cfg,
+	krn, err = kronk.New(cfg,
 		kronk.WithTemplateRetriever(c.templates),
+		kronk.WithContext(ctx),
 	)
 
 	if err != nil {
-		return nil, fmt.Errorf("unable to create inference model: %w", err)
+		return nil, fmt.Errorf("aquire-model: unable to create inference model: %w", err)
 	}
 
 	c.cache.Set(modelID, krn)
@@ -281,4 +312,24 @@ func (c *Cache) eviction(event otter.DeletionEvent[string, *kronk.Kronk]) {
 	}
 
 	c.itemsInCache.Add(-1)
+}
+
+func loadModelConfig(modelConfigFile string) (map[string]modelConfig, error) {
+	data, err := os.ReadFile(modelConfigFile)
+	if err != nil {
+		return nil, fmt.Errorf("load-model-config: reading model config file: %w", err)
+	}
+
+	var configs map[string]modelConfig
+	if err := yaml.Unmarshal(data, &configs); err != nil {
+		return nil, fmt.Errorf("load-model-config: unmarshaling model config: %w", err)
+	}
+
+	// Normalize keys to lowercase for case-insensitive lookup.
+	normalized := make(map[string]modelConfig, len(configs))
+	for k, v := range configs {
+		normalized[strings.ToLower(k)] = v
+	}
+
+	return normalized, nil
 }

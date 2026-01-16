@@ -15,9 +15,9 @@ import (
 	"github.com/ardanlabs/conf/v3"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/authapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/debug"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
-	"github.com/ardanlabs/kronk/sdk/observ/otel"
-	"github.com/ardanlabs/kronk/sdk/tools/security"
+	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 )
 
 var tag = "develop"
@@ -101,6 +101,8 @@ func run(ctx context.Context, log *logger.Logger) error {
 
 	expvar.NewString("build").Set(cfg.Build)
 
+	fmt.Println(logo)
+
 	// -------------------------------------------------------------------------
 	// Initialize authentication support
 
@@ -183,3 +185,12 @@ func run(ctx context.Context, log *logger.Logger) error {
 
 	return nil
 }
+
+var logo = `
+██╗  ██╗██████╗  ██████╗ ███╗   ██╗██╗  ██╗     █████╗ ██╗   ██╗████████╗██╗  ██╗
+██║ ██╔╝██╔══██╗██╔═══██╗████╗  ██║██║ ██╔╝    ██╔══██╗██║   ██║╚══██╔══╝██║  ██║
+█████╔╝ ██████╔╝██║   ██║██╔██╗ ██║█████╔╝     ███████║██║   ██║   ██║   ███████║
+██╔═██╗ ██╔══██╗██║   ██║██║╚██╗██║██╔═██╗     ██╔══██║██║   ██║   ██║   ██╔══██║
+██║  ██╗██║  ██║╚██████╔╝██║ ╚████║██║  ██╗    ██║  ██║╚██████╔╝   ██║   ██║  ██║
+╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝╚═╝  ╚═╝    ╚═╝  ╚═╝ ╚═════╝    ╚═╝   ╚═╝  ╚═╝                                                                                 
+`

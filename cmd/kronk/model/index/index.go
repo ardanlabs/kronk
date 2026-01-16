@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
+	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
@@ -40,7 +41,7 @@ func runWeb() error {
 func runLocal(models *models.Models) error {
 	fmt.Println("Model Path:", models.Path())
 
-	if err := models.BuildIndex(); err != nil {
+	if err := models.BuildIndex(kronk.FmtLogger); err != nil {
 		return fmt.Errorf("build-index: %w", err)
 	}
 

@@ -12,9 +12,11 @@ const (
 	defTopP            = 0.9
 	defMinP            = 0.0
 	defTemp            = 0.8
-	defMaxTokens       = 1024
+	defRepeatPenalty   = 1.1
+	defRepeatLastN     = 64
 	defEnableThinking  = ThinkingEnabled
 	defReasoningEffort = ReasoningEffortMedium
+	defReturnPrompt    = false
 )
 
 const (
@@ -90,14 +92,29 @@ const (
 //
 // ReasoningEffort is a string that specifies the level of reasoning effort to
 // use for GPT models.
+//
+// RepeatPenalty applies a penalty to tokens that have already appeared in the
+// output, reducing repetitive text. A value of 1.0 means no penalty. Values
+// above 1.0 reduce repetition (e.g., 1.1 is a mild penalty, 1.5 is strong).
+// When set to 0, the default value is 1.1.
+//
+// RepeatLastN specifies how many recent tokens to consider when applying the
+// repetition penalty. A larger value considers more context but may be slower.
+// When set to 0, the default value is 64.
+//
+// ReturnPrompt determines whether to include the prompt in the final response.
+// When set to true, the prompt will be included. Default is false.
 type Params struct {
 	Temperature     float32 `json:"temperature"`
 	TopK            int32   `json:"top_k"`
 	TopP            float32 `json:"top_p"`
 	MinP            float32 `json:"min_p"`
 	MaxTokens       int     `json:"max_tokens"`
+	RepeatPenalty   float32 `json:"repeat_penalty"`
+	RepeatLastN     int32   `json:"repeat_last_n"`
 	Thinking        string  `json:"enable_thinking"`
 	ReasoningEffort string  `json:"reasoning_effort"`
+	ReturnPrompt    bool    `json:"return_prompt"`
 }
 
 // AddParams can be used to add the configured parameters to the
@@ -108,6 +125,8 @@ func AddParams(p Params, d D) {
 	d["top_p"] = p.TopP
 	d["min_p"] = p.MinP
 	d["max_tokens"] = p.MaxTokens
+	d["repeat_penalty"] = p.RepeatPenalty
+	d["repeat_last_n"] = p.RepeatLastN
 
 	if p.Thinking != "" {
 		d["enable_thinking"] = (p.Thinking != "false")
@@ -116,9 +135,13 @@ func AddParams(p Params, d D) {
 	if p.ReasoningEffort != "" {
 		d["reasoning_effort"] = p.ReasoningEffort
 	}
+
+	if p.ReturnPrompt {
+		d["return_prompt"] = p.ReturnPrompt
+	}
 }
 
-func parseParams(d D) (Params, error) {
+func (m *Model) parseParams(d D) (Params, error) {
 	var temp float32
 	if tempVal, exists := d["temperature"]; exists {
 		var err error
@@ -182,20 +205,50 @@ func parseParams(d D) (Params, error) {
 		}
 	}
 
+	returnPrompt := defReturnPrompt
+	if returnPromptVal, exists := d["return_prompt"]; exists {
+		var err error
+		returnPrompt, err = parseBool("return_prompt", returnPromptVal)
+		if err != nil {
+			return Params{}, err
+		}
+	}
+
+	var repeatPenalty float32
+	if repeatPenaltyVal, exists := d["repeat_penalty"]; exists {
+		var err error
+		repeatPenalty, err = parseFloat32("repeat_penalty", repeatPenaltyVal)
+		if err != nil {
+			return Params{}, err
+		}
+	}
+
+	var repeatLastN int
+	if repeatLastNVal, exists := d["repeat_last_n"]; exists {
+		var err error
+		repeatLastN, err = parseInt("repeat_last_n", repeatLastNVal)
+		if err != nil {
+			return Params{}, err
+		}
+	}
+
 	params := Params{
 		Temperature:     temp,
 		TopK:            int32(topK),
 		TopP:            topP,
 		MinP:            minP,
 		MaxTokens:       maxTokens,
+		RepeatPenalty:   repeatPenalty,
+		RepeatLastN:     int32(repeatLastN),
 		Thinking:        strconv.FormatBool(enableThinking),
 		ReasoningEffort: reasoningEffort,
+		ReturnPrompt:    returnPrompt,
 	}
 
-	return adjustParams(params), nil
+	return m.adjustParams(params), nil
 }
 
-func adjustParams(p Params) Params {
+func (m *Model) adjustParams(p Params) Params {
 	if p.Temperature <= 0 {
 		p.Temperature = defTemp
 	}
@@ -209,11 +262,19 @@ func adjustParams(p Params) Params {
 	}
 
 	if p.MinP <= 0 {
-		p.TopP = defMinP
+		p.MinP = defMinP
 	}
 
 	if p.MaxTokens <= 0 {
-		p.MaxTokens = defMaxTokens
+		p.MaxTokens = m.cfg.ContextWindow
+	}
+
+	if p.RepeatPenalty <= 0 {
+		p.RepeatPenalty = defRepeatPenalty
+	}
+
+	if p.RepeatLastN <= 0 {
+		p.RepeatLastN = defRepeatLastN
 	}
 
 	if p.Thinking == "" {
@@ -230,10 +291,11 @@ func adjustParams(p Params) Params {
 func toSampler(p Params) llama.Sampler {
 	sampler := llama.SamplerChainInit(llama.SamplerChainDefaultParams())
 
-	llama.SamplerChainAdd(sampler, llama.SamplerInitTempExt(p.Temperature, 0, 1.0))
+	llama.SamplerChainAdd(sampler, llama.SamplerInitPenalties(p.RepeatLastN, p.RepeatPenalty, 0, 0))
 	llama.SamplerChainAdd(sampler, llama.SamplerInitTopK(p.TopK))
 	llama.SamplerChainAdd(sampler, llama.SamplerInitTopP(p.TopP, 0))
 	llama.SamplerChainAdd(sampler, llama.SamplerInitMinP(p.MinP, 0))
+	llama.SamplerChainAdd(sampler, llama.SamplerInitTempExt(p.Temperature, 0, 1.0))
 	llama.SamplerChainAdd(sampler, llama.SamplerInitDist(llama.DefaultSeed))
 
 	return sampler
@@ -246,7 +308,7 @@ func parseFloat32(fieldName string, val any) (float32, error) {
 	case string:
 		temp32, err := strconv.ParseFloat(v, 32)
 		if err != nil {
-			return 0, fmt.Errorf("%s is not valid: %w", fieldName, err)
+			return 0, fmt.Errorf("parse-float32: field-name[%s] is not valid: %w", fieldName, err)
 		}
 		result = float32(temp32)
 
@@ -266,7 +328,7 @@ func parseFloat32(fieldName string, val any) (float32, error) {
 		result = float32(v)
 
 	default:
-		return 0, fmt.Errorf("parse-float32: %s is not a valid type", fieldName)
+		return 0, fmt.Errorf("parse-float32: field-name[%s] is not a valid type", fieldName)
 	}
 
 	return result, nil
@@ -279,7 +341,7 @@ func parseInt(fieldName string, val any) (int, error) {
 	case string:
 		temp32, err := strconv.ParseFloat(v, 32)
 		if err != nil {
-			return 0, fmt.Errorf("%s is not valid: %w", fieldName, err)
+			return 0, fmt.Errorf("parse-int: field-name[%s] is not valid: %w", fieldName, err)
 		}
 		result = int(temp32)
 
@@ -299,7 +361,7 @@ func parseInt(fieldName string, val any) (int, error) {
 		result = int(v)
 
 	default:
-		return 0, fmt.Errorf("parse-int: %s is not a valid type", fieldName)
+		return 0, fmt.Errorf("parse-int: field-name[%s] is not a valid type", fieldName)
 	}
 
 	return result, nil
@@ -316,7 +378,7 @@ func parseBool(fieldName string, val any) (bool, error) {
 
 		b, err := strconv.ParseBool(v)
 		if err != nil {
-			return false, fmt.Errorf("parse-bool: %s is not valid: %w", fieldName, err)
+			return false, fmt.Errorf("parse-bool: field-name[%s] is not valid: %w", fieldName, err)
 		}
 
 		result = b
@@ -335,7 +397,7 @@ func parseReasoningString(fieldName string, val any) (string, error) {
 			v != ReasoningEffortLow &&
 			v != ReasoningEffortMedium &&
 			v != ReasoningEffortHigh {
-			return "", fmt.Errorf("parse-reasoning-string: %s is not valid option: %s", fieldName, v)
+			return "", fmt.Errorf("parse-reasoning-string: field-name[%s] is not valid option[%s]", fieldName, v)
 		}
 
 		result = v

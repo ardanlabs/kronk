@@ -11,6 +11,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/toolapp"
 	"github.com/ardanlabs/kronk/sdk/kronk"
+	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 )
 
@@ -48,7 +49,9 @@ func runLocal() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
-	libs, err := libs.New()
+	libs, err := libs.New(
+		libs.WithVersion(defaults.LibVersion("")),
+	)
 	if err != nil {
 		return err
 	}

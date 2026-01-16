@@ -2,13 +2,16 @@
 package models
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"go.yaml.in/yaml/v2"
 )
@@ -53,7 +56,9 @@ func (m *Models) Path() string {
 }
 
 // BuildIndex builds the model index for fast model access.
-func (m *Models) BuildIndex() error {
+func (m *Models) BuildIndex(log Logger) error {
+	currentIndex := m.loadIndex()
+
 	m.biMutex.Lock()
 	defer m.biMutex.Unlock()
 
@@ -117,7 +122,14 @@ func (m *Models) BuildIndex() error {
 				modelfiles[modelID] = append(modelfiles[modelID], filePath)
 			}
 
+			ctx := context.Background()
+
+			validated := true
 			for modelID, files := range modelfiles {
+				isValidated := currentIndex[strings.ToLower(modelID)].Validated
+
+				log(ctx, "checking model", "modelID", modelID, "isValidated", isValidated)
+
 				slices.Sort(files)
 
 				mp := Path{
@@ -128,6 +140,26 @@ func (m *Models) BuildIndex() error {
 				if projFile, exists := projFiles[modelID]; exists {
 					mp.ProjFile = projFile
 				}
+
+				if !isValidated {
+					for _, file := range files {
+						log(ctx, "running check ", "model", path.Base(file))
+						if err := model.CheckModel(file, true); err != nil {
+							log(ctx, "running check ", "model", path.Base(file), "ERROR", err)
+							validated = false
+						}
+					}
+
+					if mp.ProjFile != "" {
+						log(ctx, "running check ", "proj", path.Base(mp.ProjFile))
+						if err := model.CheckModel(mp.ProjFile, true); err != nil {
+							log(ctx, "running check ", "proj", path.Base(mp.ProjFile), "ERROR", err)
+							validated = false
+						}
+					}
+				}
+
+				mp.Validated = validated
 
 				modelID = strings.ToLower(modelID)
 				index[modelID] = mp

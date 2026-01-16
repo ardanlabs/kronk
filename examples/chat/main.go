@@ -17,19 +17,20 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/ardanlabs/kronk/sdk/tools/templates"
 )
 
-const (
-	modelURL       = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
-	modelInstances = 1
-)
+//const modelURL = "https://huggingface.co/unsloth/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-Q8_0.gguf"
+
+const modelURL = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
 
 func main() {
 	if err := run(); err != nil {
@@ -67,7 +68,9 @@ func installSystem() (models.Path, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
 	defer cancel()
 
-	libs, err := libs.New()
+	libs, err := libs.New(
+		libs.WithVersion(defaults.LibVersion("")),
+	)
 	if err != nil {
 		return models.Path{}, err
 	}
@@ -119,9 +122,28 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
-	krn, err := kronk.New(modelInstances, model.Config{
+	cfg := model.Config{
 		ModelFiles: mp.ModelFiles,
-	})
+		CacheTypeK: model.GGMLTypeF16,
+		CacheTypeV: model.GGMLTypeF16,
+		NBatch:     1024,
+		NUBatch:    256,
+		NSeqMax:    2,
+	}
+
+	if path.Base(mp.ModelFiles[0]) == "gpt-oss-20b-Q8_0" {
+		cfg = model.Config{
+			ModelFiles:    mp.ModelFiles,
+			ContextWindow: 8192,
+			NBatch:        4096,
+			NUBatch:       1024,
+			CacheTypeK:    model.GGMLTypeQ8_0,
+			CacheTypeV:    model.GGMLTypeQ8_0,
+			NSeqMax:       2,
+		}
+	}
+
+	krn, err := kronk.New(cfg)
 
 	if err != nil {
 		return nil, fmt.Errorf("unable to create inference model: %w", err)
@@ -226,23 +248,6 @@ func toolDocuments() []model.D {
 				},
 			},
 		},
-		model.D{
-			"type": "function",
-			"function": model.D{
-				"name":        "invoke_cli_command",
-				"description": "Use this anytime you need to run a CLI command of any kind",
-				"parameters": model.D{
-					"type": "object",
-					"properties": model.D{
-						"call": model.D{
-							"type":        "string",
-							"description": "The full set of parameters to pass to the CLI command",
-						},
-					},
-					"required": []any{"call"},
-				},
-			},
-		},
 	)
 }
 
@@ -286,15 +291,15 @@ loop:
 			for _, tool := range resp.Choice[0].Delta.ToolCalls {
 				fmt.Printf("\u001b[92mToolID[%s]: %s(%s)\n\u001b[0m",
 					tool.ID,
-					tool.Name,
-					tool.Arguments,
+					tool.Function.Name,
+					tool.Function.Arguments,
 				)
 
 				messages = append(messages,
 					model.TextMessage("tool", fmt.Sprintf("Tool call %s: %s(%v)\n",
 						tool.ID,
-						tool.Name,
-						tool.Arguments),
+						tool.Function.Name,
+						tool.Function.Arguments),
 					),
 				)
 			}
