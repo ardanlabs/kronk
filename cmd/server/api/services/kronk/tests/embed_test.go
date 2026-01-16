@@ -62,7 +62,7 @@ func chatEmbed200(tokens map[string]string) []apitest.Table {
 				}
 
 				if len(expResp.Data[0].Embedding) != 768 {
-					return "expecting a vector of 768 dimentions"
+					return "expecting a vector of 768 dimensions"
 				}
 
 				return ""
@@ -117,11 +117,11 @@ func chatEmbed200(tokens map[string]string) []apitest.Table {
 				}
 
 				if len(expResp.Data[0].Embedding) != 768 {
-					return "expecting a vector of 768 dimentions"
+					return "expecting a vector of 768 dimensions"
 				}
 
 				if len(expResp.Data[1].Embedding) != 768 {
-					return "expecting a vector of 768 dimentions"
+					return "expecting a vector of 768 dimensions"
 				}
 
 				return ""

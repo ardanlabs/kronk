@@ -226,7 +226,7 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 
 	fi, err := c.models.RetrievePath(modelID)
 	if err != nil {
-		return nil, fmt.Errorf("aquire-model: unable to retrieve path: %w", err)
+		return nil, fmt.Errorf("acquire-model: unable to retrieve path: %w", err)
 	}
 
 	c.log(ctx, "model config lookup", "modelID", modelID, "available-keys", fmt.Sprintf("%v", func() []string {
@@ -272,7 +272,7 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 	)
 
 	if err != nil {
-		return nil, fmt.Errorf("aquire-model: unable to create inference model: %w", err)
+		return nil, fmt.Errorf("acquire-model: unable to create inference model: %w", err)
 	}
 
 	c.cache.Set(modelID, krn)

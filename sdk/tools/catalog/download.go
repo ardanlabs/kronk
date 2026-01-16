@@ -50,7 +50,7 @@ func (c *Catalog) Download(ctx context.Context, opts ...DownloadOption) error {
 	}
 
 	if !hasNetwork() {
-		log(ctx, "catalog-download", "status", "no network avaialble")
+		log(ctx, "catalog-download", "status", "no network available")
 		return nil
 	}
 

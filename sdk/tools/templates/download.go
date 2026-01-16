@@ -44,7 +44,7 @@ func (t *Templates) Download(ctx context.Context, opts ...DownloadOption) error 
 	}
 
 	if !hasNetwork() {
-		log(ctx, "template-download", "status", "no network avaialble")
+		log(ctx, "template-download", "status", "no network available")
 		return nil
 	}
 
