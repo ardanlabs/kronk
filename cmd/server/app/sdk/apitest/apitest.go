@@ -136,6 +136,10 @@ func (at *Test) RunStreaming(t *testing.T, table []Table, testName string, optio
 
 	for _, tt := range table {
 		f := func(t *testing.T) {
+			if tt.SkipInGH && os.Getenv("GITHUB_ACTIONS") == "true" {
+				t.Skip("Skipping test in GitHub Actions")
+			}
+
 			maxAttempts := to.retries + 1
 			var lastDiff string
 
