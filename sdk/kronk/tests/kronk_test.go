@@ -73,6 +73,12 @@ func TestMain(m *testing.M) {
 
 	// -------------------------------------------------------------------------
 
+	if os.Getenv("RUN_IN_PARALLEL") == "yes" {
+		runInParallel = true
+	}
+
+	// -------------------------------------------------------------------------
+
 	printInfo(models)
 
 	ctx := context.Background()
@@ -111,10 +117,6 @@ func TestMain(m *testing.M) {
 }
 
 func printInfo(models *models.Models) {
-	if os.Getenv("RUN_IN_PARALLEL") == "yes" {
-		runInParallel = true
-	}
-
 	fmt.Println("libpath          :", libs.Path(""))
 	fmt.Println("useLibVersion    :", defaults.LibVersion(""))
 	fmt.Println("modelPath        :", models.Path())

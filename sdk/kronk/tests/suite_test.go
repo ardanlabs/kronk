@@ -9,9 +9,14 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
-// TestSuite - runs all tests grouped by model to minimize load/unload cycles
+// TestSuite - runs all tests grouped by model to minimize load/unload cycles.
+// Set RUN_IN_PARALLEL=yes to run model groups concurrently (requires more resources).
 func TestSuite(t *testing.T) {
 	t.Run("Chat/Qwen3", func(t *testing.T) {
+		if runInParallel {
+			t.Parallel()
+		}
+
 		withModel(t, cfgThinkToolChat(), func(t *testing.T, krn *kronk.Kronk) {
 			t.Run("ThinkChat", func(t *testing.T) { testChat(t, krn, dChatNoTool, false) })
 			t.Run("ThinkStreamingChat", func(t *testing.T) { testChatStreaming(t, krn, dChatNoTool, false) })
@@ -25,6 +30,10 @@ func TestSuite(t *testing.T) {
 	})
 
 	t.Run("Media/Qwen2.5-VL", func(t *testing.T) {
+		if runInParallel {
+			t.Parallel()
+		}
+
 		withModel(t, cfgSimpleVision(), func(t *testing.T, krn *kronk.Kronk) {
 			t.Run("SimpleMedia", func(t *testing.T) { testMedia(t, krn) })
 			t.Run("SimpleMediaStreaming", func(t *testing.T) { testMediaStreaming(t, krn) })
@@ -34,12 +43,20 @@ func TestSuite(t *testing.T) {
 	})
 
 	t.Run("Embed/embeddinggemma", func(t *testing.T) {
+		if runInParallel {
+			t.Parallel()
+		}
+
 		withModel(t, cfgEmbed(), func(t *testing.T, krn *kronk.Kronk) {
 			t.Run("Embedding", func(t *testing.T) { testEmbedding(t, krn) })
 		})
 	})
 
 	t.Run("Rerank/bge-reranker", func(t *testing.T) {
+		if runInParallel {
+			t.Parallel()
+		}
+
 		withModel(t, cfgRerank(), func(t *testing.T, krn *kronk.Kronk) {
 			t.Run("Rerank", func(t *testing.T) { testRerank(t, krn) })
 		})
@@ -48,6 +65,10 @@ func TestSuite(t *testing.T) {
 	t.Run("Chat/GPT", func(t *testing.T) {
 		if os.Getenv("GITHUB_ACTIONS") == "true" {
 			t.Skip("Skipping GPT tests in GitHub Actions (requires more resources)")
+		}
+
+		if runInParallel {
+			t.Parallel()
 		}
 
 		withModel(t, cfgGPTChat(), func(t *testing.T, krn *kronk.Kronk) {
@@ -61,6 +82,10 @@ func TestSuite(t *testing.T) {
 	t.Run("Audio/Qwen2-Audio", func(t *testing.T) {
 		if os.Getenv("GITHUB_ACTIONS") == "true" {
 			t.Skip("Skipping Audio tests in GitHub Actions (requires more resources)")
+		}
+
+		if runInParallel {
+			t.Parallel()
 		}
 
 		withModel(t, cfgAudio(), func(t *testing.T, krn *kronk.Kronk) {
