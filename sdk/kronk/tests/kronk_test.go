@@ -25,6 +25,7 @@ var (
 	mpThinkToolChat models.Path
 	mpGPTChat       models.Path
 	mpSimpleVision  models.Path
+	mpAudio         models.Path
 	mpEmbed         models.Path
 	mpRerank        models.Path
 )
@@ -32,6 +33,7 @@ var (
 var (
 	gw            = os.Getenv("GITHUB_WORKSPACE")
 	imageFile     = filepath.Join(gw, "examples/samples/giraffe.jpg")
+	audioFile     = filepath.Join(gw, "examples/samples/jfk.wav")
 	goroutines    = 2
 	runInParallel = false
 	testDuration  = 60 * 5 * time.Second
@@ -62,7 +64,11 @@ func TestMain(m *testing.M) {
 	mpRerank = models.MustRetrieveModel("bge-reranker-v2-m3-Q8_0")
 
 	if os.Getenv("GITHUB_ACTIONS") != "true" {
+		fmt.Println("MustRetrieveModel gpt-oss-20b-Q8_0...")
 		mpGPTChat = models.MustRetrieveModel("gpt-oss-20b-Q8_0")
+
+		fmt.Println("MustRetrieveModel Qwen2-Audio-7B.Q8_0...")
+		mpAudio = models.MustRetrieveModel("Qwen2-Audio-7B.Q8_0")
 	}
 
 	// -------------------------------------------------------------------------
@@ -95,30 +101,13 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	fmt.Println("Loading chat models...")
-	if err := initChatModels(); err != nil {
-		fmt.Printf("Failed to init chat models: %s\n", err)
+	fmt.Println("Initializing test inputs...")
+	if err := initChatTestInputs(); err != nil {
+		fmt.Printf("Failed to init test inputs: %s\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Println("Loading media models...")
-	if err := initMediaModels(); err != nil {
-		fmt.Printf("Failed to init media models: %s\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Println("Initializing response inputs...")
-	initResponseInputs()
-
-	code := m.Run()
-
-	fmt.Println("Unloading media models...")
-	unloadMediaModels()
-
-	fmt.Println("Unloading chat models...")
-	unloadChatModels()
-
-	os.Exit(code)
+	os.Exit(m.Run())
 }
 
 func printInfo(models *models.Models) {

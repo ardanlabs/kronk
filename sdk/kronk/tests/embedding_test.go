@@ -3,51 +3,19 @@ package kronk_test
 import (
 	"context"
 	"fmt"
-	"path"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
 
-func Test_Embedding(t *testing.T) {
-	testEmbedding(t, mpEmbed)
-}
-
-// =============================================================================
-
-func testEmbedding(t *testing.T, mp models.Path) {
+func testEmbedding(t *testing.T, krn *kronk.Kronk) {
 	if runInParallel {
 		t.Parallel()
 	}
-
-	krn, err := kronk.New(model.Config{
-		ModelFiles:     mp.ModelFiles,
-		ContextWindow:  2048,
-		NBatch:         2048,
-		NUBatch:        512,
-		CacheTypeK:     model.GGMLTypeQ8_0,
-		CacheTypeV:     model.GGMLTypeQ8_0,
-		FlashAttention: model.FlashAttentionEnabled,
-	})
-
-	if err != nil {
-		t.Fatalf("unable to create inference model: %v", err)
-	}
-	defer func() {
-		t.Logf("active streams: %d", krn.ActiveStreams())
-		t.Log("unload Kronk")
-		if err := krn.Unload(context.Background()); err != nil {
-			t.Errorf("failed to unload model: %v", err)
-		}
-	}()
-
-	// -------------------------------------------------------------------------
 
 	text := "Embed this sentence"
 
@@ -58,9 +26,8 @@ func testEmbedding(t *testing.T, mp models.Path) {
 		id := uuid.New().String()
 		now := time.Now()
 		defer func() {
-			name := strings.TrimSuffix(mp.ModelFiles[0], path.Ext(mp.ModelFiles[0]))
 			done := time.Now()
-			t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, name, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
+			t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, krn.ModelInfo().ID, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
 		}()
 
 		embed, err := krn.Embeddings(ctx, model.D{"input": text})

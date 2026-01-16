@@ -11,18 +11,13 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
-func chatNonStream200(t *testing.T, tokens map[string]string) []apitest.Table {
-	image, err := readFile(imageFile)
-	if err != nil {
-		t.Fatalf("read image: %s", err)
-	}
+// =============================================================================
+// Tests grouped by model to minimize model loading/unloading in CI.
+// =============================================================================
 
-	audio, err := readFile(audioFile)
-	if err != nil {
-		t.Fatalf("read image: %s", err)
-	}
-
-	table := []apitest.Table{
+// chatNonStreamQwen3 returns chat tests for Qwen3-8B-Q8_0 model (text).
+func chatNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
+	return []apitest.Table{
 		{
 			Name:       "good-token",
 			URL:        "/v1/chat/completions",
@@ -77,6 +72,17 @@ func chatNonStream200(t *testing.T, tokens map[string]string) []apitest.Table {
 					result(t)
 			},
 		},
+	}
+}
+
+// chatImageQwen25VL returns chat tests for Qwen2.5-VL-3B-Instruct-Q8_0 model (vision).
+func chatImageQwen25VL(t *testing.T, tokens map[string]string) []apitest.Table {
+	image, err := readFile(imageFile)
+	if err != nil {
+		t.Fatalf("read image: %s", err)
+	}
+
+	return []apitest.Table{
 		{
 			Name:       "image-good-token",
 			URL:        "/v1/chat/completions",
@@ -125,6 +131,17 @@ func chatNonStream200(t *testing.T, tokens map[string]string) []apitest.Table {
 					result(t)
 			},
 		},
+	}
+}
+
+// chatAudioQwen2Audio returns chat tests for Qwen2-Audio-7B.Q8_0 model (audio).
+func chatAudioQwen2Audio(t *testing.T, tokens map[string]string) []apitest.Table {
+	audio, err := readFile(audioFile)
+	if err != nil {
+		t.Fatalf("read audio: %s", err)
+	}
+
+	return []apitest.Table{
 		{
 			Name:       "audio-good-token",
 			SkipInGH:   true,
@@ -175,12 +192,11 @@ func chatNonStream200(t *testing.T, tokens map[string]string) []apitest.Table {
 			},
 		},
 	}
-
-	return table
 }
 
-func chatStream200(t *testing.T, tokens map[string]string) []apitest.Table {
-	table := []apitest.Table{
+// chatStreamQwen3 returns streaming chat tests for Qwen3-8B-Q8_0 model.
+func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
+	return []apitest.Table{
 		{
 			Name:       "good-token",
 			URL:        "/v1/chat/completions",
@@ -230,8 +246,6 @@ func chatStream200(t *testing.T, tokens map[string]string) []apitest.Table {
 			},
 		},
 	}
-
-	return table
 }
 
 // =============================================================================

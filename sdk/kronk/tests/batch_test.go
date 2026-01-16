@@ -22,90 +22,87 @@ func Test_BatchChatConcurrent(t *testing.T) {
 		t.Skip("Skipping batch test in GitHub Actions (requires more resources)")
 	}
 
-	g := 10
+	withModel(t, cfgThinkToolChat(), func(t *testing.T, krn *kronk.Kronk) {
+		g := 10
 
-	t.Logf("Testing batch inference with %d concurrent requests", g)
+		t.Logf("Testing batch inference with %d concurrent requests", g)
 
-	var wg sync.WaitGroup
-	wg.Add(g)
+		var wg sync.WaitGroup
+		wg.Add(g)
 
-	// Use a barrier to ensure all goroutines start at the same time.
-	startBarrier := make(chan struct{})
+		startBarrier := make(chan struct{})
 
-	results := make([]struct {
-		id       int
-		duration time.Duration
-		err      error
-		content  string
-	}, g)
+		results := make([]struct {
+			id       int
+			duration time.Duration
+			err      error
+			content  string
+		}, g)
 
-	for i := range g {
-		go func(idx int) {
-			defer wg.Done()
+		for i := range g {
+			go func(idx int) {
+				defer wg.Done()
 
-			// Wait for all goroutines to be ready.
-			<-startBarrier
+				<-startBarrier
 
-			ctx, cancel := context.WithTimeout(context.Background(), testDuration)
-			defer cancel()
+				ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+				defer cancel()
 
-			start := time.Now()
+				start := time.Now()
 
-			ch, err := krnThinkToolChat.ChatStreaming(ctx, dChatNoTool)
-			if err != nil {
-				results[idx].err = fmt.Errorf("goroutine %d: chat streaming error: %w", idx, err)
-				return
-			}
+				ch, err := krn.ChatStreaming(ctx, dChatNoTool)
+				if err != nil {
+					results[idx].err = fmt.Errorf("goroutine %d: chat streaming error: %w", idx, err)
+					return
+				}
 
-			var lastResp model.ChatResponse
-			for resp := range ch {
-				lastResp = resp
-			}
+				var lastResp model.ChatResponse
+				for resp := range ch {
+					lastResp = resp
+				}
 
-			results[idx].duration = time.Since(start)
-			results[idx].id = idx
+				results[idx].duration = time.Since(start)
+				results[idx].id = idx
 
-			if lastResp.Choice[0].FinishReason == model.FinishReasonError {
-				results[idx].err = fmt.Errorf("goroutine %d: got error response: %s", idx, lastResp.Choice[0].Delta.Content)
-				return
-			}
+				if lastResp.Choice[0].FinishReason == model.FinishReasonError {
+					results[idx].err = fmt.Errorf("goroutine %d: got error response: %s", idx, lastResp.Choice[0].Delta.Content)
+					return
+				}
 
-			msg := getMsg(lastResp.Choice[0], true)
-			results[idx].content = msg.Content
-		}(i)
-	}
-
-	// Release all goroutines at once.
-	close(startBarrier)
-	wg.Wait()
-
-	// Check results.
-	var errors []error
-	var totalDuration time.Duration
-	for _, r := range results {
-		if r.err != nil {
-			errors = append(errors, r.err)
-			continue
+				msg := getMsg(lastResp.Choice[0], true)
+				results[idx].content = msg.Content
+			}(i)
 		}
 
-		totalDuration += r.duration
-		t.Logf("Request %d completed in %s", r.id, r.duration)
+		close(startBarrier)
+		wg.Wait()
 
-		// Verify response contains expected content.
-		if r.content == "" {
-			errors = append(errors, fmt.Errorf("request %d: empty content", r.id))
+		var errors []error
+		var totalDuration time.Duration
+		for _, r := range results {
+			if r.err != nil {
+				errors = append(errors, r.err)
+				continue
+			}
+
+			totalDuration += r.duration
+			t.Logf("Request %d completed in %s", r.id, r.duration)
+
+			if r.content == "" {
+				errors = append(errors, fmt.Errorf("request %d: empty content", r.id))
+			}
 		}
-	}
 
-	if len(errors) > 0 {
-		for _, err := range errors {
-			t.Error(err)
+		if len(errors) > 0 {
+			for _, err := range errors {
+				t.Error(err)
+			}
+			t.FailNow()
 		}
-		t.FailNow()
-	}
 
-	avgDuration := totalDuration / time.Duration(g)
-	t.Logf("All %d requests completed. Average duration: %s", g, avgDuration)
+		avgDuration := totalDuration / time.Duration(g)
+		t.Logf("All %d requests completed. Average duration: %s", g, avgDuration)
+	})
 }
 
 // Test_BatchEmbeddingsConcurrent verifies that the embeddings batch function

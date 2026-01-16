@@ -13,24 +13,6 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func Test_ThinkResponse(t *testing.T) {
-	testResponse(t, krnThinkToolChat, dResponseNoTool, false)
-}
-
-func Test_ThinkStreamingResponse(t *testing.T) {
-	testResponseStreaming(t, krnThinkToolChat, dResponseNoTool, false)
-}
-
-func Test_ToolResponse(t *testing.T) {
-	testResponse(t, krnThinkToolChat, dResponseTool, true)
-}
-
-func Test_ToolStreamingResponse(t *testing.T) {
-	testResponseStreaming(t, krnThinkToolChat, dResponseTool, true)
-}
-
-// =============================================================================
-
 func testResponse(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
 	if runInParallel {
 		t.Parallel()
