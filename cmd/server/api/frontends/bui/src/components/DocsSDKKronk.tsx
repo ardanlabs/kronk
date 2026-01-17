@@ -274,7 +274,7 @@ export default function DocsSDKKronk() {
               <pre className="code-block">
                 <code>func (krn *Kronk) Chat(ctx context.Context, d model.D) (model.ChatResponse, error)</code>
               </pre>
-              <p className="doc-description">Chat provides support to interact with an inference model. Text inference requests can run concurrently based on the NSeqMax config value, which controls parallel sequence processing. However, requests that include vision or audio content are processed sequentially due to media pipeline constraints.</p>
+              <p className="doc-description">Chat provides support to interact with an inference model. For text models, NSeqMax controls parallel sequence processing within a single model instance. For vision/audio models, NSeqMax creates multiple model instances in a pool for concurrent request handling.</p>
             </div>
 
             <div className="doc-section" id="method-kronk-chatstreaming">
@@ -282,7 +282,7 @@ export default function DocsSDKKronk() {
               <pre className="code-block">
                 <code>func (krn *Kronk) ChatStreaming(ctx context.Context, d model.D) (&lt;-chan model.ChatResponse, error)</code>
               </pre>
-              <p className="doc-description">ChatStreaming provides support to interact with an inference model. Text inference requests can run concurrently based on the NSeqMax config value, which controls parallel sequence processing. However, requests that include vision or audio content are processed sequentially due to media pipeline constraints.</p>
+              <p className="doc-description">ChatStreaming provides support to interact with an inference model. For text models, NSeqMax controls parallel sequence processing within a single model instance. For vision/audio models, NSeqMax creates multiple model instances in a pool for concurrent request handling.</p>
             </div>
 
             <div className="doc-section" id="method-kronk-chatstreaminghttp">
@@ -290,7 +290,7 @@ export default function DocsSDKKronk() {
               <pre className="code-block">
                 <code>func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, d model.D) (model.ChatResponse, error)</code>
               </pre>
-              <p className="doc-description">ChatStreamingHTTP provides http handler support for a chat/completions call. Text inference requests can run concurrently based on the NSeqMax config value, which controls parallel sequence processing. However, requests that include vision or audio content are processed sequentially due to media pipeline constraints.</p>
+              <p className="doc-description">ChatStreamingHTTP provides http handler support for a chat/completions call. For text models, NSeqMax controls parallel sequence processing within a single model instance. For vision/audio models, NSeqMax creates multiple model instances in a pool for concurrent request handling.</p>
             </div>
 
             <div className="doc-section" id="method-kronk-embeddings">
@@ -298,7 +298,7 @@ export default function DocsSDKKronk() {
               <pre className="code-block">
                 <code>func (krn *Kronk) Embeddings(ctx context.Context, d model.D) (model.EmbedReponse, error)</code>
               </pre>
-              <p className="doc-description">Embeddings provides support to interact with an embedding model. Supported options in d: - input (string): the text to embed (required) - truncate (bool): if true, truncate input to fit context window (default: false) - truncate_direction (string): "right" (default) or "left" - dimensions (int): reduce output to first N dimensions (for Matryoshka models) Embedding calls are processed sequentially (llama.cpp only supports sequence 0 for embedding extraction). Batch multiple texts in the input parameter for better performance.</p>
+              <p className="doc-description">Embeddings provides support to interact with an embedding model. Supported options in d: - input (string): the text to embed (required) - truncate (bool): if true, truncate input to fit context window (default: false) - truncate_direction (string): "right" (default) or "left" - dimensions (int): reduce output to first N dimensions (for Matryoshka models) Each model instance processes calls sequentially (llama.cpp only supports sequence 0 for embedding extraction). Use NSeqMax &gt; 1 to create multiple model instances for concurrent request handling. Batch multiple texts in the input parameter for better performance within a single request.</p>
             </div>
 
             <div className="doc-section" id="method-kronk-embeddingshttp">
@@ -330,7 +330,7 @@ export default function DocsSDKKronk() {
               <pre className="code-block">
                 <code>func (krn *Kronk) Rerank(ctx context.Context, d model.D) (model.RerankResponse, error)</code>
               </pre>
-              <p className="doc-description">Rerank provides support to interact with a reranker model. Supported options in d: - query (string): the query to rank documents against (required) - documents ([]string): the documents to rank (required) - top_n (int): return only the top N results (optional, default: all) - return_documents (bool): include document text in results (default: false) Reranking calls are processed sequentially, with one forward pass per document.</p>
+              <p className="doc-description">Rerank provides support to interact with a reranker model. Supported options in d: - query (string): the query to rank documents against (required) - documents ([]string): the documents to rank (required) - top_n (int): return only the top N results (optional, default: all) - return_documents (bool): include document text in results (default: false) Each model instance processes calls sequentially (llama.cpp only supports sequence 0 for rerank extraction). Use NSeqMax &gt; 1 to create multiple model instances for concurrent request handling. Batch multiple texts in the input parameter for better performance within a single request.</p>
             </div>
 
             <div className="doc-section" id="method-kronk-rerankhttp">
@@ -346,7 +346,7 @@ export default function DocsSDKKronk() {
               <pre className="code-block">
                 <code>func (krn *Kronk) Response(ctx context.Context, d model.D) (ResponseResponse, error)</code>
               </pre>
-              <p className="doc-description">Response provides support to interact with an inference model. Text inference requests can run concurrently based on the NSeqMax config value, which controls parallel sequence processing. However, requests that include vision or audio content are processed sequentially due to media pipeline constraints.</p>
+              <p className="doc-description">Response provides support to interact with an inference model. For text models, NSeqMax controls parallel sequence processing within a single model instance. For vision/audio models, NSeqMax creates multiple model instances in a pool for concurrent request handling.</p>
             </div>
 
             <div className="doc-section" id="method-kronk-responsestreaming">
@@ -354,7 +354,7 @@ export default function DocsSDKKronk() {
               <pre className="code-block">
                 <code>func (krn *Kronk) ResponseStreaming(ctx context.Context, d model.D) (&lt;-chan ResponseStreamEvent, error)</code>
               </pre>
-              <p className="doc-description">ResponseStreaming provides streaming support for the Responses API. Text inference requests can run concurrently based on the NSeqMax config value, which controls parallel sequence processing. However, requests that include vision or audio content are processed sequentially due to media pipeline constraints.</p>
+              <p className="doc-description">ResponseStreaming provides streaming support for the Responses API. For text models, NSeqMax controls parallel sequence processing within a single model instance. For vision/audio models, NSeqMax creates multiple model instances in a pool for concurrent request handling.</p>
             </div>
 
             <div className="doc-section" id="method-kronk-responsestreaminghttp">
@@ -362,7 +362,7 @@ export default function DocsSDKKronk() {
               <pre className="code-block">
                 <code>func (krn *Kronk) ResponseStreamingHTTP(ctx context.Context, w http.ResponseWriter, d model.D) (ResponseResponse, error)</code>
               </pre>
-              <p className="doc-description">ResponseStreamingHTTP provides http handler support for a responses call. Text inference requests can run concurrently based on the NSeqMax config value, which controls parallel sequence processing. However, requests that include vision or audio content are processed sequentially due to media pipeline constraints.</p>
+              <p className="doc-description">ResponseStreamingHTTP provides http handler support for a responses call. For text models, NSeqMax controls parallel sequence processing within a single model instance. For vision/audio models, NSeqMax creates multiple model instances in a pool for concurrent request handling.</p>
             </div>
 
             <div className="doc-section" id="method-kronk-systeminfo">

@@ -17,7 +17,10 @@ import (
 //   - top_n (int): return only the top N results (optional, default: all)
 //   - return_documents (bool): include document text in results (default: false)
 //
-// Reranking calls are processed sequentially, with one forward pass per document.
+// Each model instance processes calls sequentially (llama.cpp only supports
+// sequence 0 for rerank extraction). Use NSeqMax > 1 to create multiple
+// model instances for concurrent request handling. Batch multiple texts in the
+// input parameter for better performance within a single request.
 func (krn *Kronk) Rerank(ctx context.Context, d model.D) (model.RerankResponse, error) {
 	if !krn.ModelInfo().IsRerankModel {
 		return model.RerankResponse{}, fmt.Errorf("rerank: model doesn't support reranking")

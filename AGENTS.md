@@ -206,7 +206,7 @@ All commands support web mode (default) and `--local` mode.
 
 **Config Fields Reference:**
 
-- `NSeqMax`: Max parallel sequences for batched inference (0 = default)
+- `NSeqMax`: For text models, max parallel sequences for batched inference. For sequential models (embed/rerank/vision/audio), creates that many model instances in a pool. (0 = default of 1)
 - `OffloadKQV`: KV cache on GPU (nil/true) or CPU (false)
 - `OpOffload`: Tensor ops on GPU (nil/true) or CPU (false)
 - `NGpuLayers`: Layers to offload (0 = all, -1 = none, N = specific count)

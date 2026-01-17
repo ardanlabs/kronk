@@ -56,7 +56,7 @@ The SDK API (`sdk/kronk`) provides a high-level, concurrently safe interface for
 | **FlashAttention** | Flash Attention mode (enabled, disabled, auto) |
 | **UseDirectIO** | Enable direct I/O for model loading |
 | **IgnoreIntegrityCheck** | Skip model integrity verification |
-| **NSeqMax** | Maximum parallel sequences for batched inference |
+| **NSeqMax** | For text models: parallel sequences for batched inference. For sequential models: number of pooled model instances |
 | **OffloadKQV** | KV cache on GPU (true) or CPU (false) |
 | **OpOffload** | Tensor operations on GPU (true) or CPU (false) |
 | **NGpuLayers** | Layers to offload to GPU (0=all, -1=none) |

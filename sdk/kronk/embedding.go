@@ -17,9 +17,10 @@ import (
 //   - truncate_direction (string): "right" (default) or "left"
 //   - dimensions (int): reduce output to first N dimensions (for Matryoshka models)
 //
-// Embedding calls are processed sequentially (llama.cpp only supports sequence 0
-// for embedding extraction). Batch multiple texts in the input parameter for
-// better performance.
+// Each model instance processes calls sequentially (llama.cpp only supports
+// sequence 0 for embedding extraction). Use NSeqMax > 1 to create multiple
+// model instances for concurrent request handling. Batch multiple texts in the
+// input parameter for better performance within a single request.
 func (krn *Kronk) Embeddings(ctx context.Context, d model.D) (model.EmbedReponse, error) {
 	if !krn.ModelInfo().IsEmbedModel {
 		return model.EmbedReponse{}, fmt.Errorf("embeddings: model doesn't support embedding")

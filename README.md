@@ -105,11 +105,13 @@ For more details on the settings, run the following command after installing Kro
 kronk server --help
 ```
 
-## Parallel Text Inference
+## Parallel Inference
 
-Kronk supports parallel text inference through its batch engine, allowing multiple chat requests to be processed concurrently on a single model. This is controlled by the `NSeqMax` configuration value, which sets the maximum number of sequences that can be processed in parallel. When `NSeqMax` is greater than 1, incoming requests are batched together and processed simultaneously, improving throughput for high-concurrency workloads.
+Kronk supports concurrent request handling through the `NSeqMax` configuration value:
 
-Note: Parallel inference is only supported for text models. Multimodal models (vision/audio) and embedding models require sequential processing.
+- **Text models**: `NSeqMax` controls parallel sequence processing within a single model instance. Multiple chat requests are batched together and processed simultaneously, improving throughput for high-concurrency workloads.
+
+- **Sequential models** (embeddings, reranking, vision, audio): `NSeqMax` creates that many model instances in a pool. Each instance handles one request at a time, but multiple instances allow concurrent request handling.
 
 ## Models
 
