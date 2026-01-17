@@ -6,9 +6,11 @@ import (
 	"os"
 	"path"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/google/uuid"
 )
@@ -221,4 +223,252 @@ func Test_ConTest3(t *testing.T) {
 	if !closed {
 		t.Errorf("expected channel to be closed")
 	}
+}
+
+// =============================================================================
+// Pool behavior tests for sequential models (embed/rerank) with NSeqMax > 1
+
+// Test_PooledEmbeddings verifies that NSeqMax creates multiple model instances
+// for embedding models and that concurrent requests execute in parallel.
+func Test_PooledEmbeddings(t *testing.T) {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("Skipping pool test in GitHub Actions (requires more resources)")
+	}
+
+	const numInstances = 2
+
+	ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+	defer cancel()
+
+	krn, err := kronk.New(model.Config{
+		ModelFiles:     mpEmbed.ModelFiles,
+		ContextWindow:  2048,
+		NBatch:         2048,
+		NUBatch:        512,
+		CacheTypeK:     model.GGMLTypeQ8_0,
+		CacheTypeV:     model.GGMLTypeQ8_0,
+		FlashAttention: model.FlashAttentionEnabled,
+		NSeqMax:        numInstances,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create embedding model with NSeqMax=%d: %v", numInstances, err)
+	}
+	defer krn.Unload(ctx)
+
+	t.Logf("Testing pooled embeddings with NSeqMax=%d", numInstances)
+
+	var wg sync.WaitGroup
+	wg.Add(numInstances)
+
+	startBarrier := make(chan struct{})
+	durations := make([]time.Duration, numInstances)
+	errors := make([]error, numInstances)
+
+	for i := range numInstances {
+		go func(idx int) {
+			defer wg.Done()
+
+			<-startBarrier
+
+			start := time.Now()
+
+			resp, err := krn.Embeddings(ctx, model.D{
+				"input": "The quick brown fox jumps over the lazy dog",
+			})
+			if err != nil {
+				errors[idx] = fmt.Errorf("goroutine %d: %w", idx, err)
+				return
+			}
+
+			durations[idx] = time.Since(start)
+
+			if len(resp.Data) != 1 {
+				errors[idx] = fmt.Errorf("goroutine %d: expected 1 embedding, got %d", idx, len(resp.Data))
+			}
+		}(i)
+	}
+
+	close(startBarrier)
+	wg.Wait()
+
+	for i, err := range errors {
+		if err != nil {
+			t.Errorf("Request %d failed: %v", i, err)
+		}
+	}
+
+	if t.Failed() {
+		return
+	}
+
+	for i, d := range durations {
+		t.Logf("Request %d completed in %s", i, d)
+	}
+
+	t.Logf("All %d concurrent embedding requests completed successfully", numInstances)
+}
+
+// Test_PooledRerank verifies that NSeqMax creates multiple model instances
+// for rerank models and that concurrent requests execute in parallel.
+func Test_PooledRerank(t *testing.T) {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("Skipping pool test in GitHub Actions (requires more resources)")
+	}
+
+	const numInstances = 2
+
+	ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+	defer cancel()
+
+	krn, err := kronk.New(model.Config{
+		ModelFiles:     mpRerank.ModelFiles,
+		ContextWindow:  2048,
+		NBatch:         2048,
+		NUBatch:        512,
+		CacheTypeK:     model.GGMLTypeQ8_0,
+		CacheTypeV:     model.GGMLTypeQ8_0,
+		FlashAttention: model.FlashAttentionEnabled,
+		NSeqMax:        numInstances,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create rerank model with NSeqMax=%d: %v", numInstances, err)
+	}
+	defer krn.Unload(ctx)
+
+	t.Logf("Testing pooled rerank with NSeqMax=%d", numInstances)
+
+	query := "What is the capital of France?"
+	documents := []string{
+		"Paris is the capital of France.",
+		"Berlin is the capital of Germany.",
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(numInstances)
+
+	startBarrier := make(chan struct{})
+	durations := make([]time.Duration, numInstances)
+	errors := make([]error, numInstances)
+
+	for i := range numInstances {
+		go func(idx int) {
+			defer wg.Done()
+
+			<-startBarrier
+
+			start := time.Now()
+
+			resp, err := krn.Rerank(ctx, model.D{
+				"query":     query,
+				"documents": documents,
+			})
+			if err != nil {
+				errors[idx] = fmt.Errorf("goroutine %d: %w", idx, err)
+				return
+			}
+
+			durations[idx] = time.Since(start)
+
+			if len(resp.Data) == 0 {
+				errors[idx] = fmt.Errorf("goroutine %d: expected rerank results, got none", idx)
+			}
+		}(i)
+	}
+
+	close(startBarrier)
+	wg.Wait()
+
+	for i, err := range errors {
+		if err != nil {
+			t.Errorf("Request %d failed: %v", i, err)
+		}
+	}
+
+	if t.Failed() {
+		return
+	}
+
+	for i, d := range durations {
+		t.Logf("Request %d completed in %s", i, d)
+	}
+
+	t.Logf("All %d concurrent rerank requests completed successfully", numInstances)
+}
+
+// Test_PooledVision verifies that NSeqMax creates multiple model instances
+// for vision models (ProjFile set) and that concurrent requests execute in parallel.
+func Test_PooledVision(t *testing.T) {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("Skipping pool test in GitHub Actions (requires more resources)")
+	}
+
+	const numInstances = 2
+
+	ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+	defer cancel()
+
+	krn, err := kronk.New(model.Config{
+		ModelFiles:    mpSimpleVision.ModelFiles,
+		ProjFile:      mpSimpleVision.ProjFile,
+		ContextWindow: 8192,
+		NBatch:        2048,
+		NUBatch:       2048,
+		CacheTypeK:    model.GGMLTypeQ8_0,
+		CacheTypeV:    model.GGMLTypeQ8_0,
+		NSeqMax:       numInstances,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create vision model with NSeqMax=%d: %v", numInstances, err)
+	}
+	defer krn.Unload(ctx)
+
+	t.Logf("Testing pooled vision with NSeqMax=%d", numInstances)
+
+	var wg sync.WaitGroup
+	wg.Add(numInstances)
+
+	startBarrier := make(chan struct{})
+	durations := make([]time.Duration, numInstances)
+	errors := make([]error, numInstances)
+
+	for i := range numInstances {
+		go func(idx int) {
+			defer wg.Done()
+
+			<-startBarrier
+
+			start := time.Now()
+
+			resp, err := krn.Chat(ctx, dMedia)
+			if err != nil {
+				errors[idx] = fmt.Errorf("goroutine %d: %w", idx, err)
+				return
+			}
+
+			durations[idx] = time.Since(start)
+
+			if len(resp.Choice) == 0 {
+				errors[idx] = fmt.Errorf("goroutine %d: expected response choices, got none", idx)
+			}
+		}(i)
+	}
+
+	close(startBarrier)
+	wg.Wait()
+
+	for i, err := range errors {
+		if err != nil {
+			t.Errorf("Request %d failed: %v", i, err)
+		}
+	}
+
+	if t.Failed() {
+		return
+	}
+
+	for i, d := range durations {
+		t.Logf("Request %d completed in %s", i, d)
+	}
+
+	t.Logf("All %d concurrent vision requests completed successfully", numInstances)
 }

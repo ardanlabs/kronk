@@ -15,7 +15,7 @@ import (
 )
 
 // Version contains the current version of the kronk package.
-const Version = "1.13.6"
+const Version = "1.13.7"
 
 // =============================================================================
 
@@ -60,7 +60,8 @@ func WithQueueDepth(multiplier int) Option {
 // Kronk provides a concurrently safe api for using llama.cpp to access models.
 type Kronk struct {
 	cfg           model.Config
-	model         *model.Model
+	models        []*model.Model
+	pool          chan *model.Model
 	sem           chan struct{}
 	activeStreams atomic.Int32
 	shutdown      sync.Mutex
@@ -99,39 +100,53 @@ func New(cfg model.Config, opts ...Option) (*Kronk, error) {
 	}
 
 	// -------------------------------------------------------------------------
+	// Determine if this is a sequential model (embed/rerank/vision) that
+	// benefits from instance pooling rather than batch parallelism.
 
-	m, err := model.NewModel(ctx, o.tr, cfg)
+	// We need to check model info, so create the first instance.
+	firstModel, err := model.NewModel(ctx, o.tr, cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	// -------------------------------------------------------------------------
+	isSingleFlight := cfg.ProjFile != ""
 
-	// The cfg.NSeqMax field controls how many concurrent requests can be processed
-	// in parallel. Parallel processing only works for text inference. Vision,
-	// audio, and embeddings are restricted to sequential processing.
-
-	if cfg.NSeqMax > 1 {
-		if cfg.ProjFile != "" {
-			return nil, fmt.Errorf("new: NSeqMax > 1 not supported for multimodal models (ProjFile is set)")
-		}
-
-		if m.ModelInfo().IsEmbedModel {
-			return nil, fmt.Errorf("new: NSeqMax > 1 not supported for embedding models")
-		}
+	mi := firstModel.ModelInfo()
+	if mi.IsEmbedModel || mi.IsRerankModel {
+		isSingleFlight = true
 	}
 
-	var semCapacity int
+	// -------------------------------------------------------------------------
+	// For sequential models with NSeqMax > 1, create a pool of model instances.
+	// For text models, NSeqMax controls batch parallelism within a single instance.
+
+	var (
+		models      = []*model.Model{firstModel}
+		pool        chan *model.Model
+		semCapacity int
+	)
 
 	switch {
-	case cfg.ProjFile != "":
-		semCapacity = 1
+	case isSingleFlight:
+		numInstances := max(cfg.NSeqMax, 1)
+		semCapacity = numInstances
 
-	case m.ModelInfo().IsEmbedModel:
-		semCapacity = 1
+		if numInstances > 1 {
+			pool = make(chan *model.Model, numInstances)
+			pool <- firstModel
 
-	case m.ModelInfo().IsRerankModel:
-		semCapacity = 1
+			for range numInstances - 1 {
+				m, err := model.NewModel(ctx, o.tr, cfg)
+				if err != nil {
+					for _, mdl := range models {
+						mdl.Unload(ctx)
+					}
+					return nil, err
+				}
+				models = append(models, m)
+				pool <- m
+			}
+		}
 
 	default:
 		semCapacity = max(cfg.NSeqMax, 1) * o.queueDepth
@@ -140,10 +155,11 @@ func New(cfg model.Config, opts ...Option) (*Kronk, error) {
 	// -------------------------------------------------------------------------
 
 	krn := Kronk{
-		cfg:       m.Config(),
-		model:     m,
+		cfg:       firstModel.Config(),
+		models:    models,
+		pool:      pool,
 		sem:       make(chan struct{}, semCapacity),
-		modelInfo: m.ModelInfo(),
+		modelInfo: mi,
 	}
 
 	return &krn, nil
@@ -233,8 +249,15 @@ func (krn *Kronk) Unload(ctx context.Context) error {
 
 	// -------------------------------------------------------------------------
 
-	if err := krn.model.Unload(ctx); err != nil {
-		return fmt.Errorf("unload: failed to unload model, model-id[%s]: %w", krn.model.ModelInfo().ID, err)
+	var errs []error
+	for _, m := range krn.models {
+		if err := m.Unload(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("unload: failed to unload model, model-id[%s]: %w", m.ModelInfo().ID, err))
+		}
+	}
+
+	if len(errs) > 0 {
+		return errs[0]
 	}
 
 	return nil

@@ -176,12 +176,6 @@ func validateConfig(ctx context.Context, cfg Config, log Logger) error {
 		}
 	}
 
-	// Parallel inference (NSeqMax > 1) is not supported for vision/audio models.
-	// These models require exclusive access to the context for media processing.
-	if cfg.NSeqMax > 1 && cfg.ProjFile != "" {
-		return fmt.Errorf("validate-config: NSeqMax > 1 is not supported for vision/audio models (ProjFile is set)")
-	}
-
 	return nil
 }
 

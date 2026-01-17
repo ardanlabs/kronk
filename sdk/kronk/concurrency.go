@@ -13,13 +13,13 @@ type nonStreamingFunc[T any] func(llama *model.Model) (T, error)
 func nonStreaming[T any](ctx context.Context, krn *Kronk, f nonStreamingFunc[T]) (T, error) {
 	var zero T
 
-	llama, err := krn.acquireModel(ctx)
+	mdl, err := krn.acquireModel(ctx)
 	if err != nil {
 		return zero, err
 	}
-	defer krn.releaseModel()
+	defer krn.releaseModel(mdl)
 
-	return f(llama)
+	return f(mdl)
 }
 
 // =============================================================================
@@ -28,7 +28,7 @@ type streamingFunc[T any] func(llama *model.Model) <-chan T
 type errorFunc[T any] func(err error) T
 
 func streaming[T any](ctx context.Context, krn *Kronk, f streamingFunc[T], ef errorFunc[T]) (<-chan T, error) {
-	llama, err := krn.acquireModel(ctx)
+	mdl, err := krn.acquireModel(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -42,10 +42,10 @@ func streaming[T any](ctx context.Context, krn *Kronk, f streamingFunc[T], ef er
 			}
 
 			close(ch)
-			krn.releaseModel()
+			krn.releaseModel(mdl)
 		}()
 
-		lch := f(llama)
+		lch := f(mdl)
 
 		var cancelled bool
 		for msg := range lch {
@@ -99,7 +99,7 @@ type streamProcessor[T, U any] struct {
 }
 
 func streamingWith[T, U any](ctx context.Context, krn *Kronk, f streamingFunc[T], p streamProcessor[T, U], ef errorFunc[U]) (<-chan U, error) {
-	llama, err := krn.acquireModel(ctx)
+	mdl, err := krn.acquireModel(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +119,7 @@ func streamingWith[T, U any](ctx context.Context, krn *Kronk, f streamingFunc[T]
 			}
 
 			close(ch)
-			krn.releaseModel()
+			krn.releaseModel(mdl)
 		}()
 
 		for _, msg := range p.Start() {
@@ -129,7 +129,7 @@ func streamingWith[T, U any](ctx context.Context, krn *Kronk, f streamingFunc[T]
 			}
 		}
 
-		lch := f(llama)
+		lch := f(mdl)
 
 		var lastChunk T
 		for chunk := range lch {
