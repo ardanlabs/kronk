@@ -143,5 +143,7 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
+replace github.com/hybridgroup/yzma => /Users/bill/code/go/src/github.com/ardanlabs/yzma
+
 //replace github.com/hybridgroup/yzma => ../yzma
 //replace github.com/hybridgroup/yzma => /Users/bill/code/go/src/github.com/hybridgroup/yzma

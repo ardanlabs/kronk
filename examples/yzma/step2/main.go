@@ -15,6 +15,7 @@ import (
 	"io"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 	"unsafe"
@@ -75,7 +76,12 @@ func run() error {
 	flag.Parse()
 
 	if *modelPath == "" {
-		return fmt.Errorf("model path is required: use -model flag")
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("unable to get home dir: %w", err)
+		}
+
+		*modelPath = filepath.Join(home, ".kronk/models/Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf")
 	}
 
 	if err := kronk.Init(); err != nil {

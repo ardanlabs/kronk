@@ -600,20 +600,22 @@ example-response:
 example-vision:
 	CGO_ENABLED=0 go run examples/vision/main.go
 
-example-yzma:
-	CGO_ENABLED=0 go run examples/yzma/main.go
+# ------------------------------------------------------------------------------
 
-# Defaults for yzma-parallel example
-MODEL ?= /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf
-PARALLEL ?= 2
-SEQUENCES ?= 4
-PREDICT ?= 64
+example-yzma-step1:
+	CGO_ENABLED=0 go run examples/yzma/step1/main.go
 
-example-yzma-parallel-step1:
-	CGO_ENABLED=0 go run examples/yzma-parallel/step1/main.go -model $(MODEL) -parallel $(PARALLEL) -sequences $(SEQUENCES) -predict $(PREDICT)
+example-yzma-step2:
+	CGO_ENABLED=0 go run examples/yzma/step2/main.go
 
-example-yzma-parallel-step2:
-	CGO_ENABLED=0 go run examples/yzma-parallel/step2/main.go -model $(MODEL) -parallel $(PARALLEL) -predict $(PREDICT)
+example-yzma-step3:
+	CGO_ENABLED=0 go run examples/yzma/step3/main.go
+
+example-yzma-step4:
+	CGO_ENABLED=0 go run examples/yzma/step4/main.go
+
+example-yzma-step5:
+	CGO_ENABLED=0 go run examples/yzma/step5/main.go
 
 example-yzma-parallel-curl1:
 	curl -X POST http://localhost:8090/v1/completions \

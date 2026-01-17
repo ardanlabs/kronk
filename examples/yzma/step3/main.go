@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -38,8 +39,12 @@ func main() {
 	flag.Parse()
 
 	if *modelPath == "" {
-		fmt.Println("Error: -model flag is required")
-		os.Exit(1)
+		home, err := os.UserHomeDir()
+		if err != nil {
+			log.Fatalf("Unable to get home dir: %v", err)
+		}
+
+		*modelPath = filepath.Join(home, ".kronk/models/Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf")
 	}
 
 	// Create batch processor.
