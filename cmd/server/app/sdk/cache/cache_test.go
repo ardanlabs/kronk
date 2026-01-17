@@ -43,10 +43,9 @@ func newManager(t *testing.T) {
 
 	t.Run("custom config values", func(t *testing.T) {
 		cfg := cache.Config{
-			Log:            log,
-			ModelsInCache:  5,
-			ModelInstances: 2,
-			CacheTTL:       10 * time.Minute,
+			Log:           log,
+			ModelsInCache: 1,
+			CacheTTL:      10 * time.Minute,
 		}
 
 		mgr, err := cache.New(cfg)
@@ -63,10 +62,9 @@ func acquireModel(t *testing.T) {
 	modelID := findAvailableModel(t, "")
 
 	cfg := cache.Config{
-		Log:            log.Info,
-		ModelsInCache:  3,
-		ModelInstances: 1,
-		CacheTTL:       5 * time.Minute,
+		Log:           log.Info,
+		ModelsInCache: 1,
+		CacheTTL:      5 * time.Minute,
 	}
 
 	mgr, err := cache.New(cfg)
@@ -135,10 +133,9 @@ func shutdown(t *testing.T) {
 
 	t.Run("shutdown with loaded models", func(t *testing.T) {
 		cfg := cache.Config{
-			Log:            log,
-			ModelsInCache:  3,
-			ModelInstances: 1,
-			CacheTTL:       5 * time.Minute,
+			Log:           log,
+			ModelsInCache: 1,
+			CacheTTL:      5 * time.Minute,
 		}
 
 		mgr, err := cache.New(cfg)
@@ -164,10 +161,9 @@ func shutdown(t *testing.T) {
 
 	t.Run("shutdown timeout expires", func(t *testing.T) {
 		cfg := cache.Config{
-			Log:            log,
-			ModelsInCache:  3,
-			ModelInstances: 1,
-			CacheTTL:       5 * time.Minute,
+			Log:           log,
+			ModelsInCache: 1,
+			CacheTTL:      5 * time.Minute,
 		}
 
 		mgr, err := cache.New(cfg)
@@ -194,10 +190,9 @@ func shutdown(t *testing.T) {
 
 	t.Run("shutdown with cancelled context", func(t *testing.T) {
 		cfg := cache.Config{
-			Log:            log,
-			ModelsInCache:  3,
-			ModelInstances: 1,
-			CacheTTL:       5 * time.Minute,
+			Log:           log,
+			ModelsInCache: 1,
+			CacheTTL:      5 * time.Minute,
 		}
 
 		mgr, err := cache.New(cfg)
@@ -222,10 +217,9 @@ func shutdown(t *testing.T) {
 
 	t.Run("shutdown blocks until eviction completes", func(t *testing.T) {
 		cfg := cache.Config{
-			Log:            log,
-			ModelsInCache:  3,
-			ModelInstances: 1,
-			CacheTTL:       5 * time.Minute,
+			Log:           log,
+			ModelsInCache: 1,
+			CacheTTL:      5 * time.Minute,
 		}
 
 		mgr, err := cache.New(cfg)
@@ -271,10 +265,9 @@ func eviction(t *testing.T) {
 
 	t.Run("eviction on TTL expiry", func(t *testing.T) {
 		cfg := cache.Config{
-			Log:            log,
-			ModelsInCache:  3,
-			ModelInstances: 1,
-			CacheTTL:       500 * time.Millisecond,
+			Log:           log,
+			ModelsInCache: 1,
+			CacheTTL:      500 * time.Millisecond,
 		}
 
 		mgr, err := cache.New(cfg)
@@ -305,10 +298,9 @@ func eviction(t *testing.T) {
 
 	t.Run("eviction on capacity exceeded", func(t *testing.T) {
 		cfg := cache.Config{
-			Log:            log,
-			ModelsInCache:  1,
-			ModelInstances: 1,
-			CacheTTL:       5 * time.Minute,
+			Log:           log,
+			ModelsInCache: 1,
+			CacheTTL:      5 * time.Minute,
 		}
 
 		mgr, err := cache.New(cfg)

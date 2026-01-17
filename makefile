@@ -45,6 +45,8 @@ install-models: install-kronk
 	@echo
 	kronk model pull --local "https://huggingface.co/ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/resolve/main/embeddinggemma-300m-qat-Q8_0.gguf"
 	@echo
+	kronk model pull --local "https://huggingface.co/gpustack/bge-reranker-v2-m3-GGUF/resolve/main/bge-reranker-v2-m3-Q8_0.gguf"
+	@echo
 
 # Use this to see what devices are available on your machine. You need to
 # install llama first.

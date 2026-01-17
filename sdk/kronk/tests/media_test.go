@@ -13,24 +13,6 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func Test_SimpleMedia(t *testing.T) {
-	testMedia(t, krnSimpleVision)
-}
-
-func Test_SimpleMediaStreaming(t *testing.T) {
-	testMediaStreaming(t, krnSimpleVision)
-}
-
-func Test_SimpleMediaResponse(t *testing.T) {
-	testMediaResponse(t, krnSimpleVision)
-}
-
-func Test_SimpleMediaResponseStreaming(t *testing.T) {
-	testMediaResponseStreaming(t, krnSimpleVision)
-}
-
-// =============================================================================
-
 func testMedia(t *testing.T, krn *kronk.Kronk) {
 	if runInParallel {
 		t.Parallel()
@@ -288,4 +270,107 @@ func testMediaResponseResponse(resp kronk.ResponseResponse, modelName string, fi
 	}
 
 	return fmt.Errorf("expected to find %q in output", find)
+}
+
+// =============================================================================
+// Audio Tests
+
+func testAudio(t *testing.T, krn *kronk.Kronk) {
+	if runInParallel {
+		t.Parallel()
+	}
+
+	f := func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+		defer cancel()
+
+		id := uuid.New().String()
+		now := time.Now()
+		defer func() {
+			done := time.Now()
+			t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, krn.ModelInfo().ID, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
+		}()
+
+		resp, err := krn.Chat(ctx, dAudio)
+		if err != nil {
+			return fmt.Errorf("chat: %w", err)
+		}
+
+		result := testChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatMedia, "kennedy", "", "", false)
+
+		for _, w := range result.Warnings {
+			t.Logf("WARNING: %s", w)
+		}
+
+		if result.Err != nil {
+			t.Logf("%#v", resp)
+			return result.Err
+		}
+
+		return nil
+	}
+
+	var g errgroup.Group
+	for range goroutines {
+		g.Go(f)
+	}
+
+	if err := g.Wait(); err != nil {
+		t.Errorf("error: %v", err)
+	}
+}
+
+func testAudioStreaming(t *testing.T, krn *kronk.Kronk) {
+	if runInParallel {
+		t.Parallel()
+	}
+
+	f := func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+		defer cancel()
+
+		id := uuid.New().String()
+		now := time.Now()
+		defer func() {
+			done := time.Now()
+			t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, krn.ModelInfo().ID, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
+		}()
+
+		ch, err := krn.ChatStreaming(ctx, dAudio)
+		if err != nil {
+			return fmt.Errorf("chat streaming: %w", err)
+		}
+
+		var lastResp model.ChatResponse
+		for resp := range ch {
+			lastResp = resp
+
+			if err := testChatBasics(resp, krn.ModelInfo().ID, model.ObjectChatMedia, false, true); err != nil {
+				t.Logf("%#v", resp)
+				return err
+			}
+		}
+
+		result := testChatResponse(lastResp, krn.ModelInfo().ID, model.ObjectChatMedia, "kennedy", "", "", true)
+
+		for _, w := range result.Warnings {
+			t.Logf("WARNING: %s", w)
+		}
+
+		if result.Err != nil {
+			t.Logf("%#v", lastResp)
+			return result.Err
+		}
+
+		return nil
+	}
+
+	var g errgroup.Group
+	for range goroutines {
+		g.Go(f)
+	}
+
+	if err := g.Wait(); err != nil {
+		t.Errorf("error: %v", err)
+	}
 }

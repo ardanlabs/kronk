@@ -44,7 +44,6 @@ type Config struct {
 	BasePath             string
 	Templates            *templates.Templates
 	ModelsInCache        int
-	ModelInstances       int
 	CacheTTL             time.Duration
 	IgnoreIntegrityCheck bool
 	ModelConfigFile      string
@@ -62,10 +61,6 @@ func validateConfig(cfg Config) (Config, error) {
 
 	if cfg.ModelsInCache <= 0 {
 		cfg.ModelsInCache = 3
-	}
-
-	if cfg.ModelInstances <= 0 {
-		cfg.ModelInstances = 1
 	}
 
 	if cfg.CacheTTL <= 0 {
