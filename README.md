@@ -68,34 +68,47 @@ Here is the existing [FEATURES](FEATURES.md) list for the project. The features 
 
 ## Architecture
 
-The architecture of Kronk is designed to be simple and scalable. The Kronk SDK allows you to write applications that can diectly interact with local open source GGUF models (supported by llama.cpp) that provide inference for text and media (vision and audio).
+The architecture of Kronk is designed to be simple and scalable.
+
+Watch this [video](https://www.youtube.com/live/gjSrYkYc-yo) to learn more about the project and the architecture.
+
+### SDK
+
+The Kronk SDK allows you to write applications that can diectly interact with local open source GGUF models (supported by llama.cpp) that provide inference for text and media (vision and audio).
 
 ![api arch](./images/design/sdk.png?v1)
 
 Check out the [examples](#examples) section below.
 
-Watch this [video](https://www.youtube.com/live/gjSrYkYc-yo) to learn more about the project and the architecture.
+### Kronk Model Server (KMS)
 
 If you want an OpenAI compatible model server, the Kronk model server leverages the power of the Kronk API to give you a concurrent and scalable web api.
 
 Run `make kronk-server` to check it out.
 
-The diagram below shows how the Kronk model server supports access to multiple models. The model server manages kronk API instances that each provide access to a model. The Kronk API allows concurrent access to the models in a safe and reliable way.
+#### Parallel Inference Options
 
-```mermaid
-flowchart LR
-    Client([Client]) --> KMS[Kronk Model Server]
+Kronk supports concurrent request handling through the `NSeqMax` configuration value:
 
-    subgraph Inference Stack
-        KMS --> API1[Kronk API]
-        KMS --> API2[Kronk API]
-        KMS --> API3[Kronk API]
+- **Text models**: `NSeqMax` controls parallel sequence processing within a single model instance. Multiple chat requests are batched together and processed simultaneously, improving throughput for high-concurrency workloads.
 
-        API1 --> Y1[Yzma] --> LC1[Llama.cpp] --> M1[(Model 1)]
-        API2 --> Y2[Yzma] --> LC2[Llama.cpp] --> M2[(Model 2)]
-        API3 --> Y3[Yzma] --> LC3[Llama.cpp] --> M3[(Model 3)]
-    end
-```
+- **Sequential models** (embeddings, reranking, vision, audio): `NSeqMax` creates that many model instances in a pool. Each instance handles one request at a time, but multiple instances allow concurrent request handling.
+
+#### Sequential Inference Archtecture
+
+Sequential inference for multi-modal, embedding, and rerank models: multiple model instances (A and B) each handle requests through dedicated goroutines, sharing the underlying llama.cpp backend with one request processed at a time per instance.
+
+You have the option in this mode to load multiple instances of the same model for parallel processing.
+
+![sequential inference.](./images/design/sequential-inference.png?v1)
+
+#### Parallel Inference Archtecture
+
+Parallel inference flow showing requests queued in a channel (NSeqMax × 2 capacity), batched in groups of 2, processed through concurrent goroutines, and executed via llama.cpp on the chat model.
+
+![parallel inference.](./images/design/parallel-inference.png?v1)
+
+#### Model Caching
 
 You can configure the number of Models that stay loaded in memory (default: 3) through configuration how long they will stay in memory (default: 5m) when not being used. This allows you to manage the resouces on the hardware.
 
@@ -104,14 +117,6 @@ For more details on the settings, run the following command after installing Kro
 ```shell
 kronk server --help
 ```
-
-## Parallel Inference
-
-Kronk supports concurrent request handling through the `NSeqMax` configuration value:
-
-- **Text models**: `NSeqMax` controls parallel sequence processing within a single model instance. Multiple chat requests are batched together and processed simultaneously, improving throughput for high-concurrency workloads.
-
-- **Sequential models** (embeddings, reranking, vision, audio): `NSeqMax` creates that many model instances in a pool. Each instance handles one request at a time, but multiple instances allow concurrent request handling.
 
 ## Models
 
