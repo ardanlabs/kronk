@@ -8,6 +8,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/kronk/model/pull"
 	"github.com/ardanlabs/kronk/cmd/kronk/model/remove"
 	"github.com/ardanlabs/kronk/cmd/kronk/model/show"
+	"github.com/ardanlabs/kronk/cmd/kronk/model/vram"
 	"github.com/spf13/cobra"
 )
 
@@ -27,4 +28,5 @@ func init() {
 	Cmd.AddCommand(remove.Cmd)
 	Cmd.AddCommand(show.Cmd)
 	Cmd.AddCommand(ps.Cmd)
+	Cmd.AddCommand(vram.Cmd)
 }
