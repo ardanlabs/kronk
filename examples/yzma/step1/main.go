@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/hybridgroup/yzma/pkg/llama"
@@ -38,7 +39,12 @@ func run() error {
 	// Load the model from disk into memory, extract the vocabulary, and create
 	// a context for inference.
 
-	modelFile := "/Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("unable to get home dir: %w", err)
+	}
+
+	modelFile := filepath.Join(home, ".kronk/models/Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf")
 
 	mparams := llama.ModelDefaultParams()
 

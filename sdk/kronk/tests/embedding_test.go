@@ -3,53 +3,19 @@ package kronk_test
 import (
 	"context"
 	"fmt"
-	"path"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
 
-func Test_Embedding(t *testing.T) {
-	testEmbedding(t, mpEmbed)
-}
-
-// =============================================================================
-
-func testEmbedding(t *testing.T, mp models.Path) {
+func testEmbedding(t *testing.T, krn *kronk.Kronk) {
 	if runInParallel {
 		t.Parallel()
 	}
-
-	krn, err := kronk.New(model.Config{
-		ModelFiles:     mp.ModelFiles,
-		ContextWindow:  2048,
-		NBatch:         2048,
-		NUBatch:        512,
-		CacheTypeK:     model.GGMLTypeQ8_0,
-		CacheTypeV:     model.GGMLTypeQ8_0,
-		FlashAttention: model.FlashAttentionEnabled,
-	})
-
-	if err != nil {
-		t.Fatalf("unable to create inference model: %v", err)
-	}
-	defer func() {
-		t.Logf("active streams: %d", krn.ActiveStreams())
-		t.Log("unload Kronk")
-		if err := krn.Unload(context.Background()); err != nil {
-			t.Errorf("failed to unload model: %v", err)
-		}
-	}()
-
-	// -------------------------------------------------------------------------
-
-	text := "Embed this sentence"
 
 	f := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), testDuration)
@@ -58,12 +24,18 @@ func testEmbedding(t *testing.T, mp models.Path) {
 		id := uuid.New().String()
 		now := time.Now()
 		defer func() {
-			name := strings.TrimSuffix(mp.ModelFiles[0], path.Ext(mp.ModelFiles[0]))
 			done := time.Now()
-			t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, name, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
+			t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, krn.ModelInfo().ID, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
 		}()
 
-		embed, err := krn.Embeddings(ctx, model.D{"input": text})
+		inputs := []string{
+			"The quick brown fox jumps over the lazy dog",
+			"Machine learning is a subset of artificial intelligence",
+			"Go is a statically typed programming language",
+			"Embeddings convert text into numerical vectors",
+		}
+
+		embed, err := krn.Embeddings(ctx, model.D{"input": inputs})
 		if err != nil {
 			return fmt.Errorf("embed: %w", err)
 		}
@@ -80,20 +52,26 @@ func testEmbedding(t *testing.T, mp models.Path) {
 			return fmt.Errorf("unexpected created: got %d", embed.Created)
 		}
 
-		if len(embed.Data) == 0 {
-			return fmt.Errorf("unexpected data length: got %d", len(embed.Data))
+		if len(embed.Data) != len(inputs) {
+			return fmt.Errorf("unexpected data length: got %d, exp %d", len(embed.Data), len(inputs))
 		}
 
-		if embed.Data[0].Object != "embedding" {
-			return fmt.Errorf("unexpected data object: got %s, exp %s", embed.Data[0].Object, "embedding")
-		}
+		for i, data := range embed.Data {
+			if data.Object != "embedding" {
+				return fmt.Errorf("data[%d]: unexpected object: got %s, exp %s", i, data.Object, "embedding")
+			}
 
-		if embed.Data[0].Index != 0 {
-			return fmt.Errorf("unexpected index: got %d", embed.Data[0].Index)
-		}
+			if data.Index != i {
+				return fmt.Errorf("data[%d]: unexpected index: got %d", i, data.Index)
+			}
 
-		if embed.Data[0].Embedding[0] == 0 || embed.Data[0].Embedding[len(embed.Data[0].Embedding)-1] == 0 {
-			return fmt.Errorf("expected to have values in the embedding")
+			if len(data.Embedding) == 0 {
+				return fmt.Errorf("data[%d]: empty embedding", i)
+			}
+
+			if data.Embedding[0] == 0 && data.Embedding[len(data.Embedding)-1] == 0 {
+				return fmt.Errorf("data[%d]: expected to have values in the embedding", i)
+			}
 		}
 
 		return nil

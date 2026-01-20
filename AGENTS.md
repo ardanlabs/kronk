@@ -98,122 +98,17 @@ All commands support web mode (default) and `--local` mode.
 - Imports: stdlib first, then external, then internal (goimports order)
 - Avoid `else` and `else if` clauses; prefer `switch` statements or early returns
 
-## Streaming Architecture (sdk/kronk/)
+## Core SDK Documentation
 
-**Response Streaming Pattern** (`response.go`, `concurrency.go`):
+Detailed documentation for the core inference packages is maintained in their respective directories:
 
-- Uses `streamingWith[T, U]` generic function for 1:N event transformation
-- `streamProcessor` has three phases: `Start()`, `Process(chunk)`, `Complete(lastChunk)`
-- `streamState` struct maintains response ID, sequence numbers, aggregated usage
-- SSE format: `event: <type>\ndata: <json>\n\n`
-
-**Key streaming events** (OpenAI Responses format):
-
-- `response.created`, `response.in_progress` → emitted at start
-- `response.output_text.delta`, `response.reasoning_summary_text.delta` → per chunk
-- `response.function_call_arguments.delta` → for tool calls
-- `*.done` events emitted at completion before `response.completed`
-
-**FinishReason handling** (`response.go`):
-
-- When `FinishReason != ""`, skip text/reasoning deltas (they duplicate previous content)
-- Always process tool calls even with FinishReason set (may only arrive in final chunk)
-
-**Message vs Delta in final chunks** (`chat.go`, `model/models.go`):
-
-- Final chunk uses `Message` for full content (non-streaming compatibility)
-- Tool calls are populated in **both** `Message` and `Delta` for streaming compatibility
-- HTTP streaming clears `Choice[0].Message` on final chunk (`FinishReasonStop`) per OpenAI spec
-- Test helpers: use `Delta` only if streaming AND `FinishReason` is empty; otherwise use `Message`
-
-## Model & Inference (sdk/kronk/model/)
-
-**Context Pooling** (`model.go`):
-
-- `llama.Context` is created once in `NewModel` and reused across requests
-- Call `resetContext()` (uses `llama.MemoryClear`) between requests to clear KV cache
-- Avoids Vulkan memory fragmentation from repeated context alloc/dealloc
-
-**KV Cache Type Configuration** (`config.go`):
-
-- `CacheTypeK` and `CacheTypeV` fields on `Config` control cache precision
-- Uses `GGMLType` constants: `GGMLTypeF16=1`, `GGMLTypeQ8_0=8`, `GGMLTypeBF16=30`, etc.
-- `GGMLTypeAuto=-1` uses llama.cpp defaults
-
-**Resource Lifecycle**:
-
-- Sampler chain freed via `defer llama.SamplerFree(sampler)` in `processChatRequest`
-- Media path: `mtmd.InputChunksInit()` must be freed with `mtmd.InputChunksFree(output)`
-
-## GPT-OSS Processor (sdk/kronk/processor.go)
-
-**Token handling for gpt-oss template**:
-
-- `<|return|>` and `<|call|>` return `io.EOF` (end of generation)
-- `<|end|>` is a section terminator (continues to next section)
-- `<|channel|>commentary` triggers tool call mode (`statusTooling`)
-- State machine: `awaitingChannel` → `collectingName` → content collection
-
-**Repetition penalty**: Applied via `llama.SamplerInitPenalties` with defaults `RepeatPenalty=1.1`, `RepeatLastN=64`
+- **`sdk/kronk/AGENTS.md`** - Streaming architecture, model pool acquire/release, cleanup flow, GPT-OSS processor
+- **`sdk/kronk/model/AGENTS.md`** - Context pooling, KV cache configuration, resource lifecycle, tool call handling, model config fields
 
 ## API Handler Notes (cmd/server/app/domain/)
 
 **Input format conversion**: Both streaming and non-streaming Response APIs must call `convertInputToMessages(d)` to handle OpenAI Responses `input` field format
 
-## Tool Call Handling (sdk/kronk/model/)
+## Reference Threads
 
-**chatMessage Unmarshaling** (`models.go`):
-
-- `Content` can be `nil` for assistant messages with tool_calls or tool role messages
-- Handle `len(app.Content) == 0 || string(app.Content) == "null"` as valid empty content
-
-**ToolCallArguments type** (`models.go`):
-
-- Custom type that marshals to JSON string (OpenAI spec) but unmarshals from either string or object
-- Used in `ResponseToolCallFunction.Arguments` field
-- `MarshalJSON`: wraps `map[string]any` as a JSON-encoded string
-- `UnmarshalJSON`: tries string first, falls back to object for non-compliant clients
-
-**Media processing** (`media.go`):
-
-- Handle `nil` content in `toMediaMessage` with `case nil: continue`
-
-## Model Acquire/Release & Cleanup (sdk/kronk/)
-
-**Model Pool Pattern:**
-
-- Models are pooled via a channel (`krn.models`) for single-writer access
-- `acquireModel()` blocks until a model is available, increments `activeStreams`
-- `releaseModel()` returns the model to the pool, decrements `activeStreams`
-
-**Cleanup Flow (ensures clean state before release):**
-
-1. `streaming()` / `streamingWith()` acquire model, defer `releaseModel()` in wrapper goroutine
-2. Wrapper calls `ChatStreaming()` which runs in its own goroutine
-3. `ChatStreaming` defers `m.resetContext()` before any processing
-4. When generation completes, `resetContext()` runs first:
-   - `llama.Synchronize(m.lctx)` - waits for GPU operations to complete
-   - `llama.MemoryClear(mem, true)` - clears KV cache
-5. Then channel closes, wrapper goroutine exits, `releaseModel()` runs
-6. Model returns to pool in clean state for next request
-
-**Key invariant:** `resetContext()` always runs before model release due to defer ordering:
-
-- Inner goroutine (`ChatStreaming`): `defer m.resetContext()` runs on exit
-- Outer goroutine (concurrency wrapper): `defer krn.releaseModel()` runs after inner channel drains
-
-## Model Configuration (sdk/kronk/model/config.go)
-
-**Config Fields Reference:**
-
-- `NSeqMax`: Max parallel sequences for batched inference (0 = default)
-- `OffloadKQV`: KV cache on GPU (nil/true) or CPU (false)
-- `OpOffload`: Tensor ops on GPU (nil/true) or CPU (false)
-- `NGpuLayers`: Layers to offload (0 = all, -1 = none, N = specific count)
-- `SplitMode`: Multi-GPU split (`SplitModeNone=0`, `SplitModeLayer=1`, `SplitModeRow=2` for MoE)
-
-**Model-Specific Tuning Guidelines:**
-
-- Vision/Audio models: keep `NUBatch` high (≥2048) for image/audio token processing
-- MoE models: use `SplitModeRow` for multi-GPU, be cautious with aggressive cache quantization
-- Embedding models: `NBatch` can equal `ContextWindow`, align `NUBatch` with sliding window
+See `THREADS.md` for important past conversations worth preserving.

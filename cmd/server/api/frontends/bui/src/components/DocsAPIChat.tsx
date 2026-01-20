@@ -88,61 +88,43 @@ export default function DocsAPIChat() {
                     <td><code>temperature</code></td>
                     <td><code>float32</code></td>
                     <td>No</td>
-                    <td>Controls randomness of output by rescaling probability distribution</td>
+                    <td>Controls randomness of output (default: 0.8)</td>
                   </tr>
                   <tr>
                     <td><code>top_k</code></td>
                     <td><code>int32</code></td>
                     <td>No</td>
-                    <td>Limits token pool to K most probable tokens</td>
+                    <td>Limits token pool to K most probable tokens (default: 40)</td>
                   </tr>
                   <tr>
                     <td><code>top_p</code></td>
                     <td><code>float32</code></td>
                     <td>No</td>
-                    <td>Nucleus sampling - selects tokens whose cumulative probability exceeds threshold</td>
+                    <td>Nucleus sampling threshold (default: 0.9)</td>
                   </tr>
                   <tr>
                     <td><code>min_p</code></td>
                     <td><code>float32</code></td>
                     <td>No</td>
-                    <td>Dynamic sampling threshold balancing coherence and diversity (default: 0.0)</td>
+                    <td>Dynamic sampling threshold (default: 0.0)</td>
                   </tr>
                   <tr>
                     <td><code>max_tokens</code></td>
                     <td><code>int</code></td>
                     <td>No</td>
-                    <td>Maximum output tokens to generate (default: 2)</td>
-                  </tr>
-                  <tr>
-                    <td><code>repeat_penalty</code></td>
-                    <td><code>float32</code></td>
-                    <td>No</td>
-                    <td></td>
-                  </tr>
-                  <tr>
-                    <td><code>repeat_last_n</code></td>
-                    <td><code>int32</code></td>
-                    <td>No</td>
-                    <td></td>
+                    <td>Maximum output tokens (default: 1024)</td>
                   </tr>
                   <tr>
                     <td><code>enable_thinking</code></td>
-                    <td><code>string</code></td>
+                    <td><code>boolean</code></td>
                     <td>No</td>
-                    <td>Enable model thinking/reasoning for non-GPT models</td>
+                    <td>Enable model thinking for non-GPT models (default: true)</td>
                   </tr>
                   <tr>
                     <td><code>reasoning_effort</code></td>
                     <td><code>string</code></td>
                     <td>No</td>
-                    <td>Reasoning level for GPT models: none, minimal, low, medium, high</td>
-                  </tr>
-                  <tr>
-                    <td><code>return_prompt</code></td>
-                    <td><code>bool</code></td>
-                    <td>No</td>
-                    <td></td>
+                    <td>Reasoning level for GPT models (default: medium)</td>
                   </tr>
                 </tbody>
               </table>

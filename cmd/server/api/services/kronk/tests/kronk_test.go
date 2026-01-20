@@ -27,16 +27,47 @@ func Test_API(t *testing.T) {
 
 	tokens := createTokens(t, test.Sec)
 
-	test.Run(t, chatNonStream200(t, tokens), "chatns-200")
-	test.RunStreaming(t, chatStream200(t, tokens), "chatstream-200")
-	test.Run(t, chatEndpoint401(tokens), "chatEndpoint-401")
+	// =========================================================================
+	// Tests are organized by model to minimize model loading/unloading.
+	// Each model group runs all its tests before moving to the next model.
+
+	// -------------------------------------------------------------------------
+	// Model: Qwen3-8B-Q8_0 (text chat and responses)
+
+	test.Run(t, chatNonStreamQwen3(t, tokens), "chat-nonstream-qwen3")
+	test.RunStreaming(t, chatStreamQwen3(t, tokens), "chat-stream-qwen3")
+	test.Run(t, respNonStreamQwen3(t, tokens), "resp-nonstream-qwen3")
+	test.RunStreaming(t, respStreamQwen3(t, tokens), "resp-stream-qwen3")
+
+	// -------------------------------------------------------------------------
+	// Model: Qwen2.5-VL-3B-Instruct-Q8_0 (vision)
+
+	test.Run(t, chatImageQwen25VL(t, tokens), "chat-image-qwen25vl")
+	test.Run(t, respImageQwen25VL(t, tokens), "resp-image-qwen25vl")
+
+	// -------------------------------------------------------------------------
+	// Model: Qwen2-Audio-7B.Q8_0 (audio)
+
+	test.Run(t, chatAudioQwen2Audio(t, tokens), "chat-audio-qwen2audio")
+	test.Run(t, respAudioQwen2Audio(t, tokens), "resp-audio-qwen2audio")
+
+	// -------------------------------------------------------------------------
+	// Model: embeddinggemma-300m-qat-Q8_0
 
 	test.Run(t, chatEmbed200(tokens), "embedding-200")
-	test.Run(t, embed401(tokens), "embedding-401")
 
-	test.Run(t, respNonStream200(t, tokens), "respns-200")
-	test.RunStreaming(t, respStream200(t, tokens), "respstream-200")
+	// -------------------------------------------------------------------------
+	// Model: bge-reranker-v2-m3-Q8_0
+
+	test.Run(t, rerank200(tokens), "rerank-200")
+
+	// -------------------------------------------------------------------------
+	// Auth tests (don't require model loading, use invalid tokens)
+
+	test.Run(t, chatEndpoint401(tokens), "chatEndpoint-401")
 	test.Run(t, respEndpoint401(tokens), "respEndpoint-401")
+	test.Run(t, embed401(tokens), "embedding-401")
+	test.Run(t, rerank401(tokens), "rerank-401")
 }
 
 // =============================================================================
@@ -107,6 +138,22 @@ func createTokens(t *testing.T, sec *security.Security) map[string]string {
 	}
 
 	tokens["responses"] = token
+
+	// -------------------------------------------------------------------------
+
+	endpoints = map[string]auth.RateLimit{
+		"rerank": {
+			Limit:  0,
+			Window: auth.RateUnlimited,
+		},
+	}
+
+	token, err = sec.GenerateToken(false, endpoints, 60*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tokens["rerank"] = token
 
 	return tokens
 }

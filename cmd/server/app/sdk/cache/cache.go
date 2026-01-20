@@ -44,7 +44,6 @@ type Config struct {
 	BasePath             string
 	Templates            *templates.Templates
 	ModelsInCache        int
-	ModelInstances       int
 	CacheTTL             time.Duration
 	IgnoreIntegrityCheck bool
 	ModelConfigFile      string
@@ -62,10 +61,6 @@ func validateConfig(cfg Config) (Config, error) {
 
 	if cfg.ModelsInCache <= 0 {
 		cfg.ModelsInCache = 3
-	}
-
-	if cfg.ModelInstances <= 0 {
-		cfg.ModelInstances = 1
 	}
 
 	if cfg.CacheTTL <= 0 {
@@ -226,7 +221,7 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 
 	fi, err := c.models.RetrievePath(modelID)
 	if err != nil {
-		return nil, fmt.Errorf("aquire-model: unable to retrieve path: %w", err)
+		return nil, fmt.Errorf("acquire-model: unable to retrieve path: %w", err)
 	}
 
 	c.log(ctx, "model config lookup", "modelID", modelID, "available-keys", fmt.Sprintf("%v", func() []string {
@@ -272,7 +267,7 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 	)
 
 	if err != nil {
-		return nil, fmt.Errorf("aquire-model: unable to create inference model: %w", err)
+		return nil, fmt.Errorf("acquire-model: unable to create inference model: %w", err)
 	}
 
 	c.cache.Set(modelID, krn)

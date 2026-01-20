@@ -35,7 +35,6 @@ var rootCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.CompletionOptions.DisableDefaultCmd = true
 	rootCmd.Version = version
 
 	rootCmd.PersistentFlags().String("base-path", "", "Base path for kronk data (models, templates, catalog)")

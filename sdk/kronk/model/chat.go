@@ -214,22 +214,22 @@ func (m *Model) createPrompt(ctx context.Context, d D) (string, [][]byte, error)
 	return prompt, media, nil
 }
 
-func (m *Model) validateDocument(d D) (Params, error) {
+func (m *Model) validateDocument(d D) (params, error) {
 	messages, exists := d["messages"]
 	if !exists {
-		return Params{}, errors.New("validate-document: no messages found in request")
+		return params{}, errors.New("validate-document: no messages found in request")
 	}
 
 	if _, ok := messages.([]D); !ok {
-		return Params{}, errors.New("validate-document: messages is not a slice of documents")
+		return params{}, errors.New("validate-document: messages is not a slice of documents")
 	}
 
-	params, err := m.parseParams(d)
+	p, err := m.parseParams(d)
 	if err != nil {
-		return Params{}, err
+		return params{}, err
 	}
 
-	return params, nil
+	return p, nil
 }
 
 func (m *Model) sendChatError(ctx context.Context, ch chan<- ChatResponse, id string, err error) {

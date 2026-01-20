@@ -49,6 +49,7 @@ type ModelInfo struct {
 	IsHybrid      bool
 	IsGPTModel    bool
 	IsEmbedModel  bool
+	IsRerankModel bool
 	Metadata      map[string]string
 	TemplateFile  string
 	Template      Template
@@ -106,6 +107,11 @@ func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 		isEmbedModel = true
 	}
 
+	var isRerankModel bool
+	if strings.Contains(modelID, "rerank") {
+		isRerankModel = true
+	}
+
 	return ModelInfo{
 		ID:            modelID,
 		HasProjection: cfg.ProjFile != "",
@@ -117,6 +123,7 @@ func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 		IsHybrid:      hybrid,
 		IsGPTModel:    isGPTModel,
 		IsEmbedModel:  isEmbedModel,
+		IsRerankModel: isRerankModel,
 		Metadata:      metadata,
 	}
 }
@@ -160,6 +167,8 @@ var logSafeKeys = []string{
 	"n",
 	"truncate",
 	"truncate_direction",
+	"top_n",
+	"return_documents",
 }
 
 // LogSafe returns a copy of the document containing only fields that are
@@ -543,6 +552,30 @@ type EmbedReponse struct {
 	Model   string      `json:"model"`
 	Data    []EmbedData `json:"data"`
 	Usage   EmbedUsage  `json:"usage"`
+}
+
+// =============================================================================
+
+// RerankResult represents a single document's reranking result.
+type RerankResult struct {
+	Index          int     `json:"index"`
+	RelevanceScore float32 `json:"relevance_score"`
+	Document       string  `json:"document,omitempty"`
+}
+
+// RerankUsage provides token usage information for reranking.
+type RerankUsage struct {
+	PromptTokens int `json:"prompt_tokens"`
+	TotalTokens  int `json:"total_tokens"`
+}
+
+// RerankResponse represents the output for a reranking call.
+type RerankResponse struct {
+	Object  string         `json:"object"`
+	Created int64          `json:"created"`
+	Model   string         `json:"model"`
+	Data    []RerankResult `json:"data"`
+	Usage   RerankUsage    `json:"usage"`
 }
 
 // =============================================================================

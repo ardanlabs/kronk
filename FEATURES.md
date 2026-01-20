@@ -16,6 +16,10 @@ The SDK API (`sdk/kronk`) provides a high-level, concurrently safe interface for
 | **HTTP Streaming** | Built-in HTTP handler support for Server-Sent Events (SSE) streaming |
 | **Embeddings** | Generate embeddings from embedding models |
 | **HTTP Embeddings** | Built-in HTTP handler for embedding requests |
+| **Reranking** | Rerank documents by relevance to a query |
+| **HTTP Reranking** | Built-in HTTP handler for reranking requests |
+| **Responses API** | OpenAI Responses API support with rich event streaming |
+| **HTTP Responses** | Built-in HTTP handler for Responses API requests |
 | **Model Info** | Retrieve model metadata and configuration |
 | **System Info** | Access llama.cpp system information (GPU, CPU features) |
 | **Active Stream Tracking** | Monitor the number of active inference streams |
@@ -31,23 +35,38 @@ The SDK API (`sdk/kronk`) provides a high-level, concurrently safe interface for
 | **Vision Models** | Multimodal image+text inference |
 | **Audio Models** | Audio-to-text inference |
 | **Embedding Models** | Text embedding generation |
+| **Reranker Models** | Document relevance scoring and reordering |
 | **Tool Calling** | Function/tool calling support |
 
 ### Configuration Options
 
 | Option | Description |
 |--------|-------------|
-| **Model Instances** | Configure the number of concurrent model instances |
-| **Temperature** | Control randomness of outputs |
-| **Top-P / Top-K** | Nucleus and top-k sampling parameters |
-| **Max Tokens** | Limit response length |
-| **Context Length** | Configure context window size |
+| **ModelFiles** | Path to the model files (mandatory) |
+| **ProjFile** | Path to projection files for vision/audio models |
+| **JinjaFile** | Optional custom Jinja template file |
+| **Device** | GPU device selection (use `llama-bench --list-devices` to see available) |
+| **ContextWindow** | Maximum tokens the model can process at once (default: 8192) |
+| **NBatch** | Logical batch size for forward passes (default: 2048) |
+| **NUBatch** | Physical batch size for prompt processing (default: 512, 2048 for vision) |
+| **NThreads** | Threads for generation |
+| **NThreadsBatch** | Threads for batch processing |
+| **CacheTypeK** | KV cache key precision (f32, f16, q8_0, q4_0, bf16, auto) |
+| **CacheTypeV** | KV cache value precision (f32, f16, q8_0, q4_0, bf16, auto) |
+| **FlashAttention** | Flash Attention mode (enabled, disabled, auto) |
+| **UseDirectIO** | Enable direct I/O for model loading |
+| **IgnoreIntegrityCheck** | Skip model integrity verification |
+| **NSeqMax** | For text models: parallel sequences for batched inference. For sequential models: number of pooled model instances |
+| **OffloadKQV** | KV cache on GPU (true) or CPU (false) |
+| **OpOffload** | Tensor operations on GPU (true) or CPU (false) |
+| **NGpuLayers** | Layers to offload to GPU (0=all, -1=none) |
+| **SplitMode** | Multi-GPU split mode (none, layer, row for MoE models) |
 
 ---
 
 ## Kronk Model Server (KMS)
 
-The Kronk Model Server is an OpenAI-compatible model server for chat completions and embeddings, compatible with OpenWebUI.
+The Kronk Model Server is an OpenAI-compatible model server for chat completions, responses, and embeddings, compatible with OpenWebUI and Cline.
 
 ### Server Endpoints
 
@@ -60,6 +79,18 @@ The Kronk Model Server is an OpenAI-compatible model server for chat completions
 | **Non-Streaming** | Standard request/response mode |
 | **Model Selection** | Dynamically select models per request |
 | **Automatic Model Loading** | Models loaded on-demand from cache |
+| **Tool Calling** | Function/tool calling support with JSON arguments |
+
+#### Responses (`/v1/responses`)
+
+| Feature | Description |
+|---------|-------------|
+| **OpenAI Responses API** | Compatible with OpenAI Responses API format |
+| **Streaming Support** | Server-Sent Events with rich event types |
+| **Non-Streaming** | Standard request/response mode |
+| **Tool Calling** | Function call support with parallel tool calls |
+| **Reasoning Support** | Support for reasoning models with summary output |
+| **Input Format Conversion** | Automatic conversion from `input` to `messages` format |
 
 #### Embeddings (`/v1/embeddings`)
 
@@ -67,6 +98,15 @@ The Kronk Model Server is an OpenAI-compatible model server for chat completions
 |---------|-------------|
 | **OpenAI Compatibility** | Compatible with OpenAI embeddings API format |
 | **Model Selection** | Dynamically select embedding models per request |
+
+#### Rerank (`/v1/rerank`)
+
+| Feature | Description |
+|---------|-------------|
+| **Document Reranking** | Score and reorder documents by relevance to a query |
+| **Model Selection** | Dynamically select reranker models per request |
+| **Top-N Filtering** | Return only the top N most relevant results |
+| **Document Return** | Optionally include document text in results |
 
 ### Server Management Features
 
@@ -78,38 +118,28 @@ The Kronk Model Server is an OpenAI-compatible model server for chat completions
 
 ---
 
-## Tools API
+#### Tools API Endpoints
 
-The Tools API (`cmd/server/app/domain/toolapp`) provides endpoints for managing models, libraries, and security.
+The Tools API provides endpoints for managing models, libraries, security, and catalog.
 
-### Library Management
-
-| Feature | Description |
-|---------|-------------|
-| **List Libraries** | View installed llama.cpp library version information |
-| **Pull Libraries** | Download and install llama.cpp libraries with streaming progress |
-| **Auto-Upgrade** | Automatic upgrade support for new llama.cpp releases |
-| **Platform Detection** | Automatic detection of OS, architecture, and processor type |
-
-### Model Management
-
-| Feature | Description |
-|---------|-------------|
-| **List Models** | View all locally installed models |
-| **Pull Models** | Download models from URLs with streaming progress |
-| **Remove Models** | Delete models from local storage |
-| **Show Model** | Display detailed model information and metadata |
-| **Model PS** | View currently loaded/running models |
-| **Index Models** | Build model index for fast lookups |
-
-### Catalog Management
-
-| Feature | Description |
-|---------|-------------|
-| **List Catalog** | View available models from the official catalog |
-| **Filter by Category** | Filter catalog by model type (Text-Generation, Embedding, Vision, Audio) |
-| **Pull from Catalog** | Download models directly from the catalog by model ID |
-| **Show Catalog Model** | View detailed information about a catalog model |
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/v1/libs` | GET | List installed llama.cpp library version information |
+| `/v1/libs/pull` | POST | Download and install llama.cpp libraries (admin) |
+| `/v1/models` | GET | List all locally installed models |
+| `/v1/models/{model}` | GET | Show detailed model information and metadata |
+| `/v1/models/ps` | GET | View currently loaded/running models |
+| `/v1/models/index` | POST | Build model index for fast lookups (admin) |
+| `/v1/models/pull` | POST | Download models from URLs with streaming progress (admin) |
+| `/v1/models/{model}` | DELETE | Remove a model from local storage (admin) |
+| `/v1/catalog` | GET | List available models from the official catalog |
+| `/v1/catalog/filter/{filter}` | GET | Filter catalog by model type |
+| `/v1/catalog/{model}` | GET | Show detailed catalog model information |
+| `/v1/catalog/pull/{model}` | POST | Download models from the catalog |
+| `/v1/security/token/create` | POST | Create API tokens |
+| `/v1/security/keys` | GET | List registered API keys |
+| `/v1/security/keys/add` | POST | Add a new API key |
+| `/v1/security/keys/remove/{keyid}` | POST | Remove an API key |
 
 ---
 
@@ -161,36 +191,28 @@ Kronk includes a comprehensive security system with JWT-based authentication and
 
 Kronk includes a built-in browser-based management interface for administering the system.
 
-### Model Management
+### Features
 
 | Feature | Description |
 |---------|-------------|
+| **Chat Interface** | Interactive chat interface for testing models |
 | **Model List** | View all installed models |
 | **Running Models** | Monitor currently loaded/running models |
 | **Model Pull** | Download models from URLs with progress tracking |
-| **Model Remove** | Delete installed models |
+| **Catalog Browser** | Browse and download from the official model catalog |
+| **Library Management** | Install or upgrade llama.cpp libraries |
+| **API Key Management** | Create, list, and delete API keys |
+| **Token Management** | Generate tokens with custom rate limits and permissions |
+| **Settings** | Configure server connection and authentication |
 
-### Catalog Management
-
-| Feature | Description |
-|---------|-------------|
-| **Catalog List** | Browse available models from the official catalog |
-| **Catalog Pull** | Download models from the catalog |
-
-### Library Management
+### Documentation
 
 | Feature | Description |
 |---------|-------------|
-| **Libs Pull** | Install or upgrade llama.cpp libraries |
-
-### Security Management
-
-| Feature | Description |
-|---------|-------------|
-| **Key List** | View registered API keys |
-| **Key Create** | Generate new API keys |
-| **Key Delete** | Remove API keys |
-| **Token Create** | Generate tokens with custom rate limits and permissions |
+| **SDK Documentation** | Auto-generated docs for kronk and model packages |
+| **CLI Documentation** | Reference for all CLI commands |
+| **API Documentation** | OpenAPI-style docs for Chat, Responses, Embeddings, and Tools endpoints |
+| **Code Examples** | Working examples from the examples directory |
 
 ---
 
@@ -207,6 +229,7 @@ Available Commands:
   catalog     Manage model catalog
   libs        Install or upgrade llama.cpp libraries
   model       Manage models
+  run         Run an interactive chat session with a model
   security    Manage security
   server      Manage model server
 ```
@@ -224,6 +247,12 @@ Available Commands:
 | Command | Description |
 |---------|-------------|
 | `kronk libs` | Install or upgrade llama.cpp libraries |
+
+### Run Commands
+
+| Command | Description |
+|---------|-------------|
+| `kronk run <MODEL>` | Run an interactive chat session with a model (REPL mode) |
 
 ### Model Commands
 
@@ -270,6 +299,7 @@ Available Commands:
 | Integration | Description |
 |-------------|-------------|
 | **OpenWebUI** | Full compatibility with OpenWebUI for browser-based chat interface |
+| **Cline** | Compatible with Cline AI coding assistant |
 | **OpenAI SDK** | Compatible with OpenAI client libraries |
 | **GGUF Models** | Support for all GGUF format models from Hugging Face |
 | **yzma** | Direct integration with llama.cpp via the yzma module |
@@ -283,7 +313,7 @@ The Catalog system (`sdk/tools/catalog`) provides a curated registry of verified
 | Feature | Description |
 |---------|-------------|
 | **Remote Catalog** | Syncs with the official [kronk_catalogs](https://github.com/ardanlabs/kronk_catalogs) GitHub repository |
-| **Category Filtering** | Filter models by type: Text-Generation, Embedding, Vision, Audio |
+| **Category Filtering** | Filter models by type: Text-Generation, Embedding, Rerank, Vision, Audio |
 | **Model Metadata** | Stores model info including endpoint type, capabilities, and download URLs |
 | **Index Management** | Local index file for fast lookups without network requests |
 | **Custom Catalog Repos** | Support for custom GitHub repository sources |

@@ -105,11 +105,11 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // IgnoreIntegrityCheck is a boolean that determines if the system should ignore
 // a model integrity check before trying to use it.
 //
-// NSeqMax is the maximum number of sequences that can be processed in parallel.
-// This is useful for batched inference where multiple prompts are processed
-// simultaneously. When set to 0, a default of 1 is used. This only works for
-// text inference. Vision, audio, and embeddings are restricted to sequential
-// processing.
+// NSeqMax controls concurrency behavior based on model type. For text inference
+// models, it sets the maximum number of sequences processed in parallel within
+// a single model instance (batched inference). For sequential models (embeddings,
+// reranking, vision, audio), it creates that many model instances in a pool for
+// concurrent request handling. When set to 0, a default of 1 is used.
 //
 // OffloadKQV controls whether the KV cache is offloaded to the GPU. When nil or
 // true, the KV cache is stored on the GPU (default behavior). Set to false to
@@ -176,12 +176,6 @@ func validateConfig(ctx context.Context, cfg Config, log Logger) error {
 		}
 	}
 
-	// Parallel inference (NSeqMax > 1) is not supported for vision/audio models.
-	// These models require exclusive access to the context for media processing.
-	if cfg.NSeqMax > 1 && cfg.ProjFile != "" {
-		return fmt.Errorf("validate-config: NSeqMax > 1 is not supported for vision/audio models (ProjFile is set)")
-	}
-
 	return nil
 }
 
@@ -244,8 +238,12 @@ func adjustContextWindow(cfg Config, model llama.Model) Config {
 func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 	ctxParams := llama.ContextDefaultParams()
 
-	if mi.IsEmbedModel {
+	if mi.IsEmbedModel || mi.IsRerankModel {
 		ctxParams.Embeddings = 1
+	}
+
+	if mi.IsRerankModel {
+		ctxParams.PoolingType = llama.PoolingTypeRank
 	}
 
 	if cfg.ContextWindow > 0 {

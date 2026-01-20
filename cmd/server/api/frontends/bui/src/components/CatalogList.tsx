@@ -203,6 +203,16 @@ export default function CatalogList() {
                             Tooling
                           </span>
                         )}
+                        {model.capabilities.embedding && (
+                          <span className="badge badge-yes" style={{ marginRight: 4 }}>
+                            Embedding
+                          </span>
+                        )}
+                        {model.capabilities.rerank && (
+                          <span className="badge badge-yes" style={{ marginRight: 4 }}>
+                            Rerank
+                          </span>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -350,6 +360,18 @@ export default function CatalogList() {
                     <label>Tooling</label>
                     <span className={`badge ${modelInfo.capabilities.tooling ? 'badge-yes' : 'badge-no'}`}>
                       {modelInfo.capabilities.tooling ? 'Yes' : 'No'}
+                    </span>
+                  </div>
+                  <div className="model-meta-item">
+                    <label>Embedding</label>
+                    <span className={`badge ${modelInfo.capabilities.embedding ? 'badge-yes' : 'badge-no'}`}>
+                      {modelInfo.capabilities.embedding ? 'Yes' : 'No'}
+                    </span>
+                  </div>
+                  <div className="model-meta-item">
+                    <label>Rerank</label>
+                    <span className={`badge ${modelInfo.capabilities.rerank ? 'badge-yes' : 'badge-no'}`}>
+                      {modelInfo.capabilities.rerank ? 'Yes' : 'No'}
                     </span>
                   </div>
                 </div>

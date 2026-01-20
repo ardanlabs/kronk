@@ -3,7 +3,6 @@ package kronk_test
 import (
 	"context"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
@@ -12,56 +11,6 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
-
-func Test_ThinkChat(t *testing.T) {
-	testChat(t, krnThinkToolChat, dChatNoTool, false)
-}
-
-func Test_ThinkStreamingChat(t *testing.T) {
-	testChatStreaming(t, krnThinkToolChat, dChatNoTool, false)
-}
-
-func Test_ToolChat(t *testing.T) {
-	testChat(t, krnThinkToolChat, dChatTool, true)
-}
-
-func Test_ToolStreamingChat(t *testing.T) {
-	testChatStreaming(t, krnThinkToolChat, dChatTool, true)
-}
-
-func Test_GPTChat(t *testing.T) {
-	if os.Getenv("GITHUB_ACTIONS") == "true" {
-		t.Skip("Skipping test in GitHub Actions (requires more resources)")
-	}
-
-	testChat(t, krnGPTChat, dChatNoTool, false)
-}
-
-func Test_GPTStreamingChat(t *testing.T) {
-	if os.Getenv("GITHUB_ACTIONS") == "true" {
-		t.Skip("Skipping test in GitHub Actions (requires more resources)")
-	}
-
-	testChatStreaming(t, krnGPTChat, dChatNoTool, false)
-}
-
-func Test_ToolGPTChat(t *testing.T) {
-	if os.Getenv("GITHUB_ACTIONS") == "true" {
-		t.Skip("Skipping test in GitHub Actions (requires more resources)")
-	}
-
-	testChat(t, krnGPTChat, dChatToolGPT, true)
-}
-
-func Test_ToolGPTStreamingChat(t *testing.T) {
-	if os.Getenv("GITHUB_ACTIONS") == "true" {
-		t.Skip("Skipping test in GitHub Actions (requires more resources)")
-	}
-
-	testChatStreaming(t, krnGPTChat, dChatToolGPT, true)
-}
-
-// =============================================================================
 
 func testChat(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
 	if runInParallel {

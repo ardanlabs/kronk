@@ -91,6 +91,8 @@ func printWeb(model toolapp.CatalogModelResponse) {
 	fmt.Printf("Streaming:    %t\n", model.Capabilities.Streaming)
 	fmt.Printf("Reasoning:    %t\n", model.Capabilities.Reasoning)
 	fmt.Printf("Tooling:      %t\n", model.Capabilities.Tooling)
+	fmt.Printf("Embedding:    %t\n", model.Capabilities.Embedding)
+	fmt.Printf("Rerank:       %t\n", model.Capabilities.Rerank)
 	fmt.Println()
 
 	fmt.Println("Metadata")
@@ -134,6 +136,8 @@ func print(model catalog.Model) {
 	fmt.Printf("Streaming:    %t\n", model.Capabilities.Streaming)
 	fmt.Printf("Reasoning:    %t\n", model.Capabilities.Reasoning)
 	fmt.Printf("Tooling:      %t\n", model.Capabilities.Tooling)
+	fmt.Printf("Embedding:    %t\n", model.Capabilities.Embedding)
+	fmt.Printf("Rerank:       %t\n", model.Capabilities.Rerank)
 	fmt.Println()
 
 	fmt.Println("Metadata")

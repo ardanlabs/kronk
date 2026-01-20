@@ -23,10 +23,12 @@ var exampleMeta = map[string]struct {
 	"chat":      {"Chat", "Interactive chat with conversation history"},
 	"embedding": {"Embedding", "Generate embeddings for semantic search"},
 	"question":  {"Question", "Ask a single question to a model"},
+	"rerank":    {"Rerank", "Rerank documents by relevance to a query"},
+	"response":  {"Response", "Interactive chat using the Response API with tool calling"},
 	"vision":    {"Vision", "Analyze images using vision models"},
 }
 
-var exampleOrder = []string{"question", "chat", "embedding", "vision", "audio"}
+var exampleOrder = []string{"question", "chat", "response", "embedding", "rerank", "vision", "audio"}
 
 func Run() error {
 	examplesDir := "examples"

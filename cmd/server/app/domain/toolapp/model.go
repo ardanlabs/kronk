@@ -240,6 +240,8 @@ type CatalogCapabilities struct {
 	Streaming bool   `json:"streaming"`
 	Reasoning bool   `json:"reasoning"`
 	Tooling   bool   `json:"tooling"`
+	Embedding bool   `json:"embedding"`
+	Rerank    bool   `json:"rerank"`
 }
 
 // CatalogFile represents the actual file url and size.

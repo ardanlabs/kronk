@@ -12,18 +12,13 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
-func respNonStream200(t *testing.T, tokens map[string]string) []apitest.Table {
-	image, err := readFile(imageFile)
-	if err != nil {
-		t.Fatalf("read image: %s", err)
-	}
+// =============================================================================
+// Tests grouped by model to minimize model loading/unloading in CI.
+// =============================================================================
 
-	audio, err := readFile(audioFile)
-	if err != nil {
-		t.Fatalf("read audio: %s", err)
-	}
-
-	table := []apitest.Table{
+// respNonStreamQwen3 returns response tests for Qwen3-8B-Q8_0 model (text).
+func respNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
+	return []apitest.Table{
 		{
 			Name:       "good-token",
 			URL:        "/v1/responses",
@@ -65,6 +60,17 @@ func respNonStream200(t *testing.T, tokens map[string]string) []apitest.Table {
 					result(t)
 			},
 		},
+	}
+}
+
+// respImageQwen25VL returns response tests for Qwen2.5-VL-3B-Instruct-Q8_0 model (vision).
+func respImageQwen25VL(t *testing.T, tokens map[string]string) []apitest.Table {
+	image, err := readFile(imageFile)
+	if err != nil {
+		t.Fatalf("read image: %s", err)
+	}
+
+	return []apitest.Table{
 		{
 			Name:       "image-good-token",
 			URL:        "/v1/responses",
@@ -104,6 +110,17 @@ func respNonStream200(t *testing.T, tokens map[string]string) []apitest.Table {
 					result(t)
 			},
 		},
+	}
+}
+
+// respAudioQwen2Audio returns response tests for Qwen2-Audio-7B.Q8_0 model (audio).
+func respAudioQwen2Audio(t *testing.T, tokens map[string]string) []apitest.Table {
+	audio, err := readFile(audioFile)
+	if err != nil {
+		t.Fatalf("read audio: %s", err)
+	}
+
+	return []apitest.Table{
 		{
 			Name:       "audio-good-token",
 			SkipInGH:   true,
@@ -145,15 +162,13 @@ func respNonStream200(t *testing.T, tokens map[string]string) []apitest.Table {
 			},
 		},
 	}
-
-	return table
 }
 
-func respStream200(t *testing.T, tokens map[string]string) []apitest.Table {
-	table := []apitest.Table{
+// respStreamQwen3 returns streaming response tests for Qwen3-8B-Q8_0 model.
+func respStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
+	return []apitest.Table{
 		{
 			Name:       "good-token",
-			SkipInGH:   true,
 			URL:        "/v1/responses",
 			Token:      tokens["responses"],
 			Method:     http.MethodPost,
@@ -200,8 +215,6 @@ func respStream200(t *testing.T, tokens map[string]string) []apitest.Table {
 			},
 		},
 	}
-
-	return table
 }
 
 // =============================================================================

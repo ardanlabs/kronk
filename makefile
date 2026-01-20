@@ -45,6 +45,8 @@ install-models: install-kronk
 	@echo
 	kronk model pull --local "https://huggingface.co/ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/resolve/main/embeddinggemma-300m-qat-Q8_0.gguf"
 	@echo
+	kronk model pull --local "https://huggingface.co/gpustack/bge-reranker-v2-m3-GGUF/resolve/main/bge-reranker-v2-m3-Q8_0.gguf"
+	@echo
 
 # Use this to see what devices are available on your machine. You need to
 # install llama first.
@@ -377,44 +379,6 @@ curl-kronk-chat-gpt:
 		] \
     }'
 
-curl-kronk-embeddings:
-	curl -i -X POST http://localhost:8080/v1/embeddings \
-	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
-     -H "Content-Type: application/json" \
-     -d '{ \
-	 	"model": "embeddinggemma-300m-qat-Q8_0", \
-  		"input": "Why is the sky blue?" \
-    }'
-
-curl-kronk-responses:
-	curl -i -X POST http://localhost:8080/v1/responses \
-	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
-     -H "Content-Type: application/json" \
-     -d '{ \
-	 	"stream": true, \
-	 	"model": "cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0", \
-		"input": "Hello model" \
-    }'
-
-curl-kronk-responses-image:
-	curl -i -X POST http://localhost:8080/v1/responses \
-	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
-     -H "Content-Type: application/json" \
-     -d '{ \
-	 	"stream": true, \
-	 	"model": "Qwen2.5-VL-3B-Instruct-Q8_0", \
-		"input": [ \
-			{ \
-				"type": "input_text", \
-				"text": "What is in this image?" \
-			}, \
-			{ \
-				"type": "input_image", \
-				"image_url": "data:image/jpeg;base64,'$(FILE_GIRAFFE)'" \
-			} \
-		] \
-    }'
-
 curl-kronk-chat-tool:
 	curl -i -X POST http://localhost:8080/v1/chat/completions \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
@@ -446,6 +410,62 @@ curl-kronk-chat-tool:
 						"required": ["location"] \
 					} \
 				} \
+			} \
+		] \
+    }'
+
+curl-kronk-embeddings:
+	curl -i -X POST http://localhost:8080/v1/embeddings \
+	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
+     -H "Content-Type: application/json" \
+     -d '{ \
+	 	"model": "embeddinggemma-300m-qat-Q8_0", \
+  		"input": "Why is the sky blue?" \
+    }'
+
+curl-kronk-rerank:
+	curl -i -X POST http://localhost:8080/v1/rerank \
+	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
+     -H "Content-Type: application/json" \
+     -d '{ \
+	 	"model": "bge-reranker-v2-m3-Q8_0", \
+  		"query": "What is the capital of France?", \
+		"documents": [ \
+			"Paris is the capital and largest city of France.", \
+			"Berlin is the capital of Germany.", \
+			"The Eiffel Tower is located in Paris.", \
+			"London is the capital of England.", \
+			"France is a country in Western Europe." \
+		], \
+		"top_n": 3, \
+		"return_documents": true \
+    }'
+
+curl-kronk-responses:
+	curl -i -X POST http://localhost:8080/v1/responses \
+	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
+     -H "Content-Type: application/json" \
+     -d '{ \
+	 	"stream": true, \
+	 	"model": "cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0", \
+		"input": "Hello model" \
+    }'
+
+curl-kronk-responses-image:
+	curl -i -X POST http://localhost:8080/v1/responses \
+	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
+     -H "Content-Type: application/json" \
+     -d '{ \
+	 	"stream": true, \
+	 	"model": "Qwen2.5-VL-3B-Instruct-Q8_0", \
+		"input": [ \
+			{ \
+				"type": "input_text", \
+				"text": "What is in this image?" \
+			}, \
+			{ \
+				"type": "input_image", \
+				"image_url": "data:image/jpeg;base64,'$(FILE_GIRAFFE)'" \
 			} \
 		] \
     }'
@@ -568,6 +588,9 @@ example-chat:
 example-embedding:
 	CGO_ENABLED=0 go run examples/embedding/main.go
 
+example-rerank:
+	CGO_ENABLED=0 go run examples/rerank/main.go
+
 example-question:
 	CGO_ENABLED=0 go run examples/question/main.go
 
@@ -577,20 +600,22 @@ example-response:
 example-vision:
 	CGO_ENABLED=0 go run examples/vision/main.go
 
-example-yzma:
-	CGO_ENABLED=0 go run examples/yzma/main.go
+# ------------------------------------------------------------------------------
 
-# Defaults for yzma-parallel example
-MODEL ?= /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf
-PARALLEL ?= 2
-SEQUENCES ?= 4
-PREDICT ?= 64
+example-yzma-step1:
+	CGO_ENABLED=0 go run examples/yzma/step1/main.go
 
-example-yzma-parallel-step1:
-	CGO_ENABLED=0 go run examples/yzma-parallel/step1/main.go -model $(MODEL) -parallel $(PARALLEL) -sequences $(SEQUENCES) -predict $(PREDICT)
+example-yzma-step2:
+	CGO_ENABLED=0 go run examples/yzma/step2/main.go
 
-example-yzma-parallel-step2:
-	CGO_ENABLED=0 go run examples/yzma-parallel/step2/main.go -model $(MODEL) -parallel $(PARALLEL) -predict $(PREDICT)
+example-yzma-step3:
+	CGO_ENABLED=0 go run examples/yzma/step3/main.go
+
+example-yzma-step4:
+	CGO_ENABLED=0 go run examples/yzma/step4/main.go
+
+example-yzma-step5:
+	CGO_ENABLED=0 go run examples/yzma/step5/main.go
 
 example-yzma-parallel-curl1:
 	curl -X POST http://localhost:8090/v1/completions \
@@ -611,13 +636,3 @@ example-yzma-parallel-load:
 		-H "Content-Type: application/json" \
 		-d "{\"prompt\": \"Request $$i: Hello\", \"max_tokens\": 30}" & \
 	done; wait
-
-# ==============================================================================
-# yzma-multimodal example (NOT WORKING)
-
-VISION_MODEL ?= /Users/bill/.kronk/models/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/Qwen2.5-VL-3B-Instruct-Q8_0.gguf
-VISION_PROJ ?= /Users/bill/.kronk/models/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf
-VISION_IMAGE ?= examples/samples/giraffe.jpg
-
-example-yzma-multimodal-step1:
-	CGO_ENABLED=0 go run examples/yzma-multimodal/step1/main.go -model $(VISION_MODEL) -proj $(VISION_PROJ) -image $(VISION_IMAGE)
