@@ -46,13 +46,13 @@ func chatNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 					},
 				},
 				Model:  "Qwen3-8B-Q8_0",
-				Object: "chat.completion.chunk",
+				Object: "chat.completion",
 				Prompt: "<|im_start|>user\nEcho back the word: Gorilla<|im_end|>\n<|im_start|>assistant\n",
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
 					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage"),
-					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReason"),
+					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReason", "Delta"),
 					cmpopts.IgnoreFields(model.ResponseMessage{}, "Content", "Reasoning", "ToolCalls"),
 				)
 
@@ -113,7 +113,7 @@ func chatImageQwen25VL(t *testing.T, tokens map[string]string) []apitest.Table {
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
 					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage"),
-					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReason"),
+					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReason", "Delta"),
 					cmpopts.IgnoreFields(model.ResponseMessage{}, "Content", "Reasoning", "ToolCalls"),
 				)
 
@@ -173,7 +173,7 @@ func chatAudioQwen2Audio(t *testing.T, tokens map[string]string) []apitest.Table
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
 					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage"),
-					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReason"),
+					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReason", "Delta"),
 					cmpopts.IgnoreFields(model.ResponseMessage{}, "Content", "Reasoning", "ToolCalls"),
 				)
 
@@ -230,7 +230,7 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
 					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage"),
-					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReason"),
+					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReason", "Delta"),
 				)
 
 				if diff != "" {

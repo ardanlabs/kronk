@@ -309,9 +309,6 @@ func (m *Model) sequentialChatRequest(ctx context.Context, id string, lctx llama
 		finalTooling   strings.Builder
 	)
 
-	// Index is used to provide the index for each response.
-	var index int
-
 	// The buffer is used to process tokens.
 	const bufferSize = 32 * 1024
 	buf := make([]byte, bufferSize)
@@ -373,9 +370,6 @@ loop:
 		var token llama.Token
 		var resp response
 
-		// Index is used to provide the index for each response.
-		index++
-
 		// ---------------------------------------------------------------------
 
 		// Process a set of tokens based on the model class.
@@ -418,7 +412,7 @@ loop:
 				returnPrompt = prompt
 			}
 
-			m.sendErrorResponse(ctx, ch, id, object, index, returnPrompt, err, Usage{
+			m.sendErrorResponse(ctx, ch, id, object, 0, returnPrompt, err, Usage{
 				PromptTokens:     inputTokens,
 				ReasoningTokens:  reasonTokens,
 				CompletionTokens: completionTokens,
@@ -471,7 +465,7 @@ loop:
 			}
 
 			// We have reasoning or completion content to return to the client.
-			err = m.sendDeltaResponse(ctx, ch, id, object, index, prompt, resp.content, reasonFlag,
+			err = m.sendDeltaResponse(ctx, ch, id, object, 0, prompt, resp.content, reasonFlag,
 				Usage{
 					PromptTokens:     inputTokens,
 					ReasoningTokens:  reasonTokens,
@@ -572,7 +566,7 @@ loop:
 		returnPrompt = prompt
 	}
 
-	m.sendFinalResponse(ctx, ch, id, object, index, returnPrompt, &finalContent, &finalReasoning, respToolCalls,
+	m.sendFinalResponse(ctx, ch, id, object, 0, returnPrompt, &finalContent, &finalReasoning, respToolCalls,
 		Usage{
 			PromptTokens:     inputTokens,
 			ReasoningTokens:  reasonTokens,
@@ -723,37 +717,37 @@ func (m *Model) isUnncessaryCRLF(reasonFlag int, completionFlag int, content str
 	return false
 }
 
-func (m *Model) sendDeltaResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, index int, prompt string, content string, reasonFlag int, usage Usage) error {
-	if index%500 == 0 {
-		m.log(ctx, "chat-completion", "status", "delta", "id", id, "index", index, "object", object, "reasoning", reasonFlag, "content", len(content))
+func (m *Model) sendDeltaResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, prompt string, content string, reasonFlag int, usage Usage) error {
+	if usage.OutputTokens%500 == 0 {
+		m.log(ctx, "chat-completion", "status", "delta", "id", id, "tokens", usage.OutputTokens, "object", object, "reasoning", reasonFlag, "content", len(content))
 	}
 
 	select {
 	case <-ctx.Done():
 		select {
-		case ch <- ChatResponseErr(id, object, m.modelInfo.ID, index, prompt, ctx.Err(), usage):
+		case ch <- ChatResponseErr(id, object, m.modelInfo.ID, choiceIndex, prompt, ctx.Err(), usage):
 		default:
 		}
 
 		return ctx.Err()
 
-	case ch <- chatResponseDelta(id, object, m.modelInfo.ID, index, content, reasonFlag > 0, usage):
+	case ch <- chatResponseDelta(id, object, m.modelInfo.ID, choiceIndex, content, reasonFlag > 0, usage):
 	}
 
 	return nil
 }
 
-func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, index int, prompt string, finalContent *strings.Builder, finalReasoning *strings.Builder, respToolCalls []ResponseToolCall, usage Usage) {
-	m.log(ctx, "chat-completion", "status", "final", "id", id, "index", index, "object", object, "tooling", len(respToolCalls) > 0, "reasoning", finalReasoning.Len(), "content", finalContent.Len())
+func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, prompt string, finalContent *strings.Builder, finalReasoning *strings.Builder, respToolCalls []ResponseToolCall, usage Usage) {
+	m.log(ctx, "chat-completion", "status", "final", "id", id, "tokens", usage.OutputTokens, "object", object, "tooling", len(respToolCalls) > 0, "reasoning", finalReasoning.Len(), "content", finalContent.Len())
 
 	select {
 	case <-ctx.Done():
 		select {
-		case ch <- ChatResponseErr(id, object, m.modelInfo.ID, index, prompt, ctx.Err(), usage):
+		case ch <- ChatResponseErr(id, object, m.modelInfo.ID, choiceIndex, prompt, ctx.Err(), usage):
 		default:
 		}
 
-	case ch <- chatResponseFinal(id, object, m.modelInfo.ID, index, prompt,
+	case ch <- chatResponseFinal(id, object, m.modelInfo.ID, choiceIndex, prompt,
 		finalContent.String(),
 		finalReasoning.String(),
 		respToolCalls,
@@ -769,13 +763,13 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 		"context", contextTokens, "down", fmt.Sprintf("(%.0f%% of %.0fK) TPS: %.2f", percentage, of, usage.TokensPerSecond))
 }
 
-func (m *Model) sendErrorResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, index int, prompt string, err error, usage Usage) {
-	m.log(ctx, "chat-completion", "status", "ERROR", "msg", err, "id", id, "object", object, "index", index)
+func (m *Model) sendErrorResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, prompt string, err error, usage Usage) {
+	m.log(ctx, "chat-completion", "status", "ERROR", "msg", err, "id", id, "object", object)
 
 	select {
 	case <-ctx.Done():
 
-	case ch <- ChatResponseErr(id, object, m.modelInfo.ID, index, prompt,
+	case ch <- ChatResponseErr(id, object, m.modelInfo.ID, choiceIndex, prompt,
 		err,
 		usage):
 

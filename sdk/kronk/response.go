@@ -610,8 +610,8 @@ func toChatResponseToResponses(chatResp model.ChatResponse, d model.D) ResponseR
 	if len(chatResp.Choice) > 0 {
 		choice := chatResp.Choice[0]
 		msg := choice.Message
-		if msg.Content == "" && msg.Role == "" {
-			msg = choice.Delta
+		if msg.Content == "" && msg.Role == "" && choice.Delta != nil {
+			msg = *choice.Delta
 		}
 		outputText = msg.Content
 		finishReason = choice.FinishReason

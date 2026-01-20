@@ -73,8 +73,12 @@ func Test_ConTest1(t *testing.T) {
 		t.Errorf("expected error finish reason, got %s", lastResp.Choice[0].FinishReason)
 	}
 
-	if lastResp.Choice[0].Delta.Content != "context canceled" {
-		t.Errorf("expected error context canceled, got %s", lastResp.Choice[0].Delta.Content)
+	if lastResp.Choice[0].Delta == nil || lastResp.Choice[0].Delta.Content != "context canceled" {
+		errContent := ""
+		if lastResp.Choice[0].Delta != nil {
+			errContent = lastResp.Choice[0].Delta.Content
+		}
+		t.Errorf("expected error context canceled, got %s", errContent)
 	}
 }
 
@@ -140,8 +144,12 @@ func Test_ConTest2(t *testing.T) {
 		t.Errorf("expected error finish reason, got %s", lastResp.Choice[0].FinishReason)
 	}
 
-	if lastResp.Choice[0].Delta.Content != "context canceled" {
-		t.Errorf("expected error context canceled, got %s", lastResp.Choice[0].Delta.Content)
+	if lastResp.Choice[0].Delta == nil || lastResp.Choice[0].Delta.Content != "context canceled" {
+		errContent := ""
+		if lastResp.Choice[0].Delta != nil {
+			errContent = lastResp.Choice[0].Delta.Content
+		}
+		t.Errorf("expected error context canceled, got %s", errContent)
 	}
 
 	if t.Failed() {

@@ -16,9 +16,10 @@ import (
 
 // Objects represent the different types of data that is being processed.
 const (
-	ObjectChatUnknown = "chat.unknown"
-	ObjectChatText    = "chat.completion.chunk"
-	ObjectChatMedia   = "chat.media"
+	ObjectChatUnknown   = "chat.unknown"
+	ObjectChatText      = "chat.completion.chunk"
+	ObjectChatTextFinal = "chat.completion"
+	ObjectChatMedia     = "chat.media"
 )
 
 // Roles represent the different roles that can be used in a chat.
@@ -414,10 +415,10 @@ type ResponseMessage struct {
 
 // Choice represents a single choice in a response.
 type Choice struct {
-	Index        int             `json:"index"`
-	Message      ResponseMessage `json:"message,omitempty"`
-	Delta        ResponseMessage `json:"delta,omitempty"`
-	FinishReason string          `json:"finish_reason"`
+	Index        int              `json:"index"`
+	Message      ResponseMessage  `json:"message,omitempty"`
+	Delta        *ResponseMessage `json:"delta,omitempty"`
+	FinishReason string           `json:"finish_reason"`
 }
 
 // Usage provides details usage information for the request.
@@ -450,7 +451,7 @@ func chatResponseDelta(id string, object string, model string, index int, conten
 		Choice: []Choice{
 			{
 				Index: index,
-				Delta: ResponseMessage{
+				Delta: &ResponseMessage{
 					Role:      RoleAssistant,
 					Content:   forContent(content, reasoning),
 					Reasoning: forReasoning(content, reasoning),
@@ -498,7 +499,7 @@ func chatResponseFinal(id string, object string, model string, index int, prompt
 					Reasoning: reasoning,
 					ToolCalls: respToolCalls,
 				},
-				Delta: ResponseMessage{
+				Delta: &ResponseMessage{
 					ToolCalls: respToolCalls,
 				},
 				FinishReason: finishReason,
@@ -518,7 +519,7 @@ func ChatResponseErr(id string, object string, model string, index int, prompt s
 		Choice: []Choice{
 			{
 				Index: index,
-				Delta: ResponseMessage{
+				Delta: &ResponseMessage{
 					Role:    RoleAssistant,
 					Content: err.Error(),
 				},

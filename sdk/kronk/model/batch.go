@@ -481,7 +481,7 @@ func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 			TokensPerSecond:  tokensPerSecond,
 		}
 
-		err := e.model.sendDeltaResponse(s.job.ctx, s.job.ch, s.job.id, s.job.object, s.index, "", resp.content, s.reasonFlag, usage)
+		err := e.model.sendDeltaResponse(s.job.ctx, s.job.ch, s.job.id, s.job.object, 0, "", resp.content, s.reasonFlag, usage)
 		if err != nil {
 			e.finishSlot(s, err)
 			return
@@ -548,7 +548,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 			TotalTokens:      s.nPrompt + s.reasonTokens + s.completionTokens,
 		}
 
-		e.model.sendErrorResponse(ctx, s.job.ch, s.job.id, s.job.object, s.index, "", err, usage)
+		e.model.sendErrorResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, "", err, usage)
 
 		return
 	}
@@ -601,7 +601,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		returnPrompt = s.job.prompt
 	}
 
-	e.model.sendFinalResponse(ctx, s.job.ch, s.job.id, s.job.object, s.index, returnPrompt,
+	e.model.sendFinalResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, returnPrompt,
 		&s.finalContent, &s.finalReasoning, s.respToolCalls, usage)
 
 	e.model.log(ctx, "batch-engine", "status", "slot-finished", "slot", s.id, "id", s.job.id,

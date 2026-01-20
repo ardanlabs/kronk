@@ -65,7 +65,11 @@ func Test_BatchChatConcurrent(t *testing.T) {
 				results[idx].id = idx
 
 				if lastResp.Choice[0].FinishReason == model.FinishReasonError {
-					results[idx].err = fmt.Errorf("goroutine %d: got error response: %s", idx, lastResp.Choice[0].Delta.Content)
+					errContent := ""
+					if lastResp.Choice[0].Delta != nil {
+						errContent = lastResp.Choice[0].Delta.Content
+					}
+					results[idx].err = fmt.Errorf("goroutine %d: got error response: %s", idx, errContent)
 					return
 				}
 

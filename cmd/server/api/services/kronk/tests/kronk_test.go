@@ -185,8 +185,8 @@ func validateResponse(got any, streaming bool) responseValidator {
 }
 
 func (v responseValidator) getMsg() model.ResponseMessage {
-	if v.streaming && v.resp.Choice[0].FinishReason == "" {
-		return v.resp.Choice[0].Delta
+	if v.streaming && v.resp.Choice[0].FinishReason == "" && v.resp.Choice[0].Delta != nil {
+		return *v.resp.Choice[0].Delta
 	}
 	return v.resp.Choice[0].Message
 }
@@ -250,8 +250,12 @@ func (v responseValidator) hasUsage(reasoning bool) responseValidator {
 }
 
 func (v responseValidator) hasValidChoice() responseValidator {
-	if len(v.resp.Choice) == 0 || v.resp.Choice[0].Index <= 0 {
-		v.errors = append(v.errors, "expected index to be greater than 0")
+	switch {
+	case len(v.resp.Choice) == 0:
+		v.errors = append(v.errors, "expected at least one choice")
+
+	case v.resp.Choice[0].Index != 0:
+		v.errors = append(v.errors, "expected index to be 0")
 	}
 
 	return v

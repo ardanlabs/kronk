@@ -142,8 +142,8 @@ func printInfo(models *models.Models) {
 }
 
 func getMsg(choice model.Choice, streaming bool) model.ResponseMessage {
-	if streaming && choice.FinishReason == "" {
-		return choice.Delta
+	if streaming && choice.FinishReason == "" && choice.Delta != nil {
+		return *choice.Delta
 	}
 	return choice.Message
 }
@@ -187,7 +187,7 @@ func testChatBasics(resp model.ChatResponse, modelName string, object string, re
 		return fmt.Errorf("basics: expected tool calls to be non-empty")
 	}
 
-	if streaming && resp.Choice[0].FinishReason == "tool" && len(resp.Choice[0].Delta.ToolCalls) == 0 {
+	if streaming && resp.Choice[0].FinishReason == "tool" && resp.Choice[0].Delta != nil && len(resp.Choice[0].Delta.ToolCalls) == 0 {
 		return fmt.Errorf("basics: expected tool calls in Delta for OpenAI streaming compatibility")
 	}
 
@@ -206,7 +206,7 @@ type testResult struct {
 }
 
 func testChatResponse(resp model.ChatResponse, modelName string, object string, find string, funct string, arg string, streaming bool) testResult {
-	if err := testChatBasics(resp, modelName, object, object == model.ObjectChatText, streaming); err != nil {
+	if err := testChatBasics(resp, modelName, object, object == model.ObjectChatText || object == model.ObjectChatTextFinal, streaming); err != nil {
 		return testResult{Err: err}
 	}
 
@@ -224,7 +224,7 @@ func testChatResponse(resp model.ChatResponse, modelName string, object string, 
 	}
 
 	// Reasoning checks are warnings (LLM output is non-deterministic).
-	if object == model.ObjectChatText {
+	if object == model.ObjectChatText || object == model.ObjectChatTextFinal {
 		if len(msg.Reasoning) == 0 {
 			result.Err = fmt.Errorf("content: expected some reasoning")
 		}
