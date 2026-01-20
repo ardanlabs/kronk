@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 )
@@ -30,12 +29,12 @@ func runLocal() error {
 		return fmt.Errorf("find-process: %w", err)
 	}
 
-	if err := process.Signal(syscall.SIGTERM); err != nil {
-		return fmt.Errorf("signal: %w", err)
+	if err := terminateProcess(process); err != nil {
+		return fmt.Errorf("terminate: %w", err)
 	}
 
 	os.Remove(pidFile)
-	fmt.Printf("Sent SIGTERM to Kronk server (PID: %d)\n", pid)
+	fmt.Printf("Stopped Kronk server (PID: %d)\n", pid)
 
 	return nil
 }
