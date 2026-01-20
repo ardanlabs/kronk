@@ -28,29 +28,27 @@ func (m *Model) applyRequestJinjaTemplate(ctx context.Context, d D) (string, [][
 	// We will move the media to it's own slice. The next call that will happen
 	// is `processBitmap` which will process the prompt and media.
 
-	// Shallow copy d and its messages to avoid mutating the
-	// original input document.
-	d = d.Clone()
-	origMsgs := d["messages"].([]D)
-	clonedMsgs := make([]D, len(origMsgs))
-	for i, doc := range origMsgs {
-		clonedMsgs[i] = doc.Clone()
-	}
-	d["messages"] = clonedMsgs
+	// Deep copy and normalize d to ensure all nested maps are plain
+	// map[string]any types. This avoids reflection errors in gonja when
+	// templates call .items() on nested structures like tool_calls arguments.
+	normalized := deepNormalize(d)
 
 	var media [][]byte
 
-	for _, doc := range clonedMsgs {
-		if content, exists := doc["content"]; exists {
-			switch value := content.(type) {
-			case []byte:
-				media = append(media, value)
-				doc["content"] = fmt.Sprintf("%s\n", mtmd.DefaultMarker())
+	if msgs, ok := normalized["messages"].([]any); ok {
+		for _, msg := range msgs {
+			if doc, ok := msg.(map[string]any); ok {
+				if content, exists := doc["content"]; exists {
+					if value, ok := content.([]byte); ok {
+						media = append(media, value)
+						doc["content"] = fmt.Sprintf("%s\n", mtmd.DefaultMarker())
+					}
+				}
 			}
 		}
 	}
 
-	prompt, err := m.applyJinjaTemplate(ctx, d)
+	prompt, err := m.applyJinjaTemplate(ctx, normalized)
 	if err != nil {
 		return "", nil, err
 	}
@@ -58,7 +56,7 @@ func (m *Model) applyRequestJinjaTemplate(ctx context.Context, d D) (string, [][
 	return prompt, media, nil
 }
 
-func (m *Model) applyJinjaTemplate(ctx context.Context, d D) (string, error) {
+func (m *Model) applyJinjaTemplate(ctx context.Context, d map[string]any) (string, error) {
 	m.log(ctx, "applyJinjaTemplate", "template", m.template.FileName)
 
 	if m.template.Script == "" {
@@ -124,6 +122,14 @@ func newTemplateWithFixedItems(source string) (*exec.Template, error) {
 	customContext.Set("raise_exception", func(msg string) (string, error) {
 		return "", errors.New(msg)
 	})
+	// Override namespace to unwrap *exec.Value to plain Go values
+	customContext.Set("namespace", func(e *exec.Evaluator, params *exec.VarArgs) map[string]any {
+		ns := make(map[string]any)
+		for key, value := range params.KwArgs {
+			ns[key] = value.ToGoSimpleType(true)
+		}
+		return ns
+	})
 
 	customFilters := builtins.Filters.Update(exec.NewFilterSet(map[string]exec.FilterFunction{}))
 	customFilters.Register("tojson", func(e *exec.Evaluator, in *exec.Value, params *exec.VarArgs) *exec.Value {
@@ -161,7 +167,9 @@ func newTemplateWithFixedItems(source string) (*exec.Template, error) {
 		if m, ok := dict.(map[string]any); ok {
 			items := make([][]any, 0, len(m))
 			for key, value := range m {
-				items = append(items, []any{key, value})
+				// Use ToGoSimpleType to avoid unexported field reflection errors
+				v := exec.AsValue(value).ToGoSimpleType(true)
+				items = append(items, []any{key, v})
 			}
 			return exec.AsValue(items)
 		}
@@ -192,9 +200,11 @@ func newTemplateWithFixedItems(source string) (*exec.Template, error) {
 					}
 					// Return [][]any where each inner slice is [key, value]
 					// This allows gonja to unpack: for k, v in dict.items()
+					// Use ToGoSimpleType to avoid unexported field reflection errors
 					items := make([][]any, 0, len(self))
 					for key, value := range self {
-						items = append(items, []any{key, value})
+						v := exec.AsValue(value).ToGoSimpleType(true)
+						items = append(items, []any{key, v})
 					}
 					return items, nil
 				},
@@ -217,4 +227,64 @@ func readJinjaTemplate(fileName string) (string, error) {
 	}
 
 	return string(data), nil
+}
+
+// =============================================================================
+
+// deepNormalize recursively converts all nested structures to plain Go types
+// (map[string]any and []any) to avoid reflection errors in gonja templates.
+// Returns plain map[string]any, NOT the named type D.
+func deepNormalize(v any) map[string]any {
+	switch m := v.(type) {
+	case D:
+		result := make(map[string]any, len(m))
+		for k, val := range m {
+			result[k] = deepNormalizeValue(val)
+		}
+		return result
+	case map[string]any:
+		result := make(map[string]any, len(m))
+		for k, val := range m {
+			result[k] = deepNormalizeValue(val)
+		}
+		return result
+	}
+	return nil
+}
+
+func deepNormalizeValue(v any) any {
+	switch val := v.(type) {
+	case map[string]any:
+		result := make(map[string]any, len(val))
+		for k, v := range val {
+			result[k] = deepNormalizeValue(v)
+		}
+		return result
+	case D:
+		result := make(map[string]any, len(val))
+		for k, v := range val {
+			result[k] = deepNormalizeValue(v)
+		}
+		return result
+	case []any:
+		result := make([]any, len(val))
+		for i, v := range val {
+			result[i] = deepNormalizeValue(v)
+		}
+		return result
+	case []D:
+		result := make([]any, len(val))
+		for i, v := range val {
+			result[i] = deepNormalizeValue(v)
+		}
+		return result
+	case []map[string]any:
+		result := make([]any, len(val))
+		for i, v := range val {
+			result[i] = deepNormalizeValue(v)
+		}
+		return result
+	default:
+		return v
+	}
 }
