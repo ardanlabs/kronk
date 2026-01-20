@@ -51,10 +51,13 @@ func (m *Models) RetrieveFiles() ([]File, error) {
 		modelPath = strings.TrimPrefix(modelPath, string(filepath.Separator))
 		parts := strings.Split(modelPath, string(filepath.Separator))
 
-		var ownedBy, modelFamily string
+		var ownedBy string
+		var modelFamily string
+
 		if len(parts) > 0 {
 			ownedBy = parts[0]
 		}
+
 		if len(parts) > 1 {
 			modelFamily = parts[1]
 		}
@@ -118,10 +121,13 @@ func (m *Models) retrieveFile(modelID string) (File, error) {
 	modelPath = strings.TrimPrefix(modelPath, string(filepath.Separator))
 	parts := strings.Split(modelPath, string(filepath.Separator))
 
-	var ownedBy, modelFamily string
+	var ownedBy string
+	var modelFamily string
+
 	if len(parts) > 0 {
 		ownedBy = parts[0]
 	}
+
 	if len(parts) > 1 {
 		modelFamily = parts[1]
 	}

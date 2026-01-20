@@ -51,6 +51,7 @@ func Init(opts ...InitOption) error {
 			if v := os.Getenv("PATH"); !strings.Contains(v, libPath) {
 				os.Setenv("PATH", fmt.Sprintf("%s;%s", libPath, v))
 			}
+
 		default:
 			if v := os.Getenv("LD_LIBRARY_PATH"); !strings.Contains(v, libPath) {
 				os.Setenv("LD_LIBRARY_PATH", fmt.Sprintf("%s:%s", libPath, v))
