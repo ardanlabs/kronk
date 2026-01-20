@@ -100,13 +100,13 @@ Sequential inference for multi-modal, embedding, and rerank models: multiple mod
 
 You have the option in this mode to load multiple instances of the same model for parallel processing.
 
-![sequential inference.](./images/design/sequential-inference.png?v1)
+![sequential inference](./images/design/sequential-inference.png?v1)
 
 #### Parallel Inference Archtecture
 
 Parallel inference flow showing requests queued in a channel (NSeqMax × 2 capacity), batched in groups of 2, processed through concurrent goroutines, and executed via llama.cpp on the chat model.
 
-![parallel inference.](./images/design/parallel-inference.png?v1)
+![parallel inference](./images/design/parallel-inference.png?v1)
 
 #### Model Caching
 
