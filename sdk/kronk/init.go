@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
@@ -44,8 +45,16 @@ func Init(opts ...InitOption) error {
 
 		libPath := libs.Path(o.libPath)
 
-		if v := os.Getenv("LD_LIBRARY_PATH"); !strings.Contains(v, libPath) {
-			os.Setenv("LD_LIBRARY_PATH", fmt.Sprintf("%s:%s", libPath, v))
+		// Windows uses PATH for DLL discovery, Unix uses LD_LIBRARY_PATH.
+		switch runtime.GOOS {
+		case "windows":
+			if v := os.Getenv("PATH"); !strings.Contains(v, libPath) {
+				os.Setenv("PATH", fmt.Sprintf("%s;%s", libPath, v))
+			}
+		default:
+			if v := os.Getenv("LD_LIBRARY_PATH"); !strings.Contains(v, libPath) {
+				os.Setenv("LD_LIBRARY_PATH", fmt.Sprintf("%s:%s", libPath, v))
+			}
 		}
 
 		if err := llama.Load(libPath); err != nil {

@@ -1,0 +1,49 @@
+Windows related issues:
+
+#1 ===========================================================
+$ go install github.com/ardanlabs/kronk/cmd/kronk@latest
+go: downloading github.com/ardanlabs/kronk v1.13.8
+go: downloading github.com/sirupsen/logrus v1.9.4
+go: downloading github.com/klauspost/compress v1.18.3
+# github.com/ardanlabs/kronk/cmd/kronk/server/start
+C:\Users\Ramon\go\pkg\mod\github.com\ardanlabs\kronk@v1.13.8\cmd\kronk\server\start\start.go:36:4: unknown field Setsid in struct literal of type "syscall".SysProcAttr
+
+For now, just commented the block:
+//	proc.SysProcAttr = &syscall.SysProcAttr{
+		//		Setsid: true,
+		//	}
+
+#2 ==========================================================
+$ kronk server start
+...
+{"time":"2026-01-19T07:31:12.087656-03:00","level":"INFO","file":"kronk.go:282","msg":"startup","service":"KRONK","status":"installing/updating libraries","libPath":"C:\\Users\\Ramon\\.kronk\\libraries","arch":"amd64","os":"windows","processor":"cpu","update":true,"trace_id":"00000000000000000000000000000000"}
+{"time":"2026-01-19T07:31:12.1283154-03:00","level":"INFO","file":"libs.go:180","msg":"download-libraries: check libraries version information","service":"KRONK","arch":"amd64","os":"windows","processor":"cpu","trace_id":"00000000000000000000000000000000"}
+{"time":"2026-01-19T07:31:12.5370353-03:00","level":"INFO","file":"libs.go:196","msg":"download-libraries: check llama.cpp installation","service":"KRONK","arch":"amd64","os":"windows","processor":"cpu","latest":"b7772","current":"b7772","trace_id":"00000000000000000000000000000000"}
+{"time":"2026-01-19T07:31:12.5375951-03:00","level":"INFO","file":"libs.go:199","msg":"download-libraries: already installed","service":"KRONK","latest":"b7772","current":"b7772","trace_id":"00000000000000000000000000000000"}
+{"time":"2026-01-19T07:31:12.5381297-03:00","level":"INFO","file":"kronk.go:299","msg":"startup","service":"KRONK","status":"model integrity checks, may take a few seconds","trace_id":"00000000000000000000000000000000"}
+{"time":"2026-01-19T07:31:12.5423283-03:00","level":"INFO","file":"models.go:131","msg":"checking model","service":"KRONK","modelID":"qwen2.5-1.5b-instruct-q8_0","isValidated":true,"trace_id":"00000000000000000000000000000000"}
+{"time":"2026-01-19T07:31:12.5473022-03:00","level":"INFO","file":"kronk.go:306","msg":"startup","service":"KRONK","status":"downloading catalog","trace_id":"00000000000000000000000000000000"}
+{"time":"2026-01-19T07:31:12.5883147-03:00","level":"INFO","file":"download.go:48","msg":"catalog-download","service":"KRONK","status":"retrieving 
+catalog files","github":"https://api.github.com/repos/ardanlabs/kronk_catalogs/contents/catalogs","trace_id":"00000000000000000000000000000000"}   
+{"time":"2026-01-19T07:31:12.7954469-03:00","level":"INFO","file":"kronk.go:322","msg":"startup","service":"KRONK","status":"downloading templates","trace_id":"00000000000000000000000000000000"}
+{"time":"2026-01-19T07:31:12.8403669-03:00","level":"INFO","file":"download.go:42","msg":"template-download","service":"KRONK","status":"retrieving template files","github":"https://api.github.com/repos/ardanlabs/kronk_catalogs/contents/templates","trace_id":"00000000000000000000000000000000"}{"time":"2026-01-19T07:31:13.0802324-03:00","level":"INFO","file":"kronk.go:339","msg":"startup","service":"KRONK","status":"initializing kronk","trace_id":"00000000000000000000000000000000"}
+{"time":"2026-01-19T07:31:13.0868915-03:00","level":"INFO","file":"authapp.go:46","msg":"shutdown","service":"KRONK","status":"auth server stopped","trace_id":"00000000000000000000000000000000"}
+{"time":"2026-01-19T07:31:13.0930896-03:00","level":"INFO","file":"kronk.go:190","msg":"shutdown","service":"KRONK","status":"teardown otel","trace_id":"00000000000000000000000000000000"}
+{"time":"2026-01-19T07:31:13.0957522-03:00","level":"INFO","file":"kronk.go:446","msg":"shutdown complete","service":"KRONK","trace_id":"00000000000000000000000000000000"}
+run: installation invalid: init: unable to load library: C:\Users\Ramon\.kronk\libraries\ggml.dll: error loading library: Não foi possível encontrar o módulo especificado.
+
+ On Windows, the LD_LIBRARY_PATH environment variable (line 47-49) is a Linux/macOS concept. Windows uses PATH instead for DLL search.
+ On Windows, when ggml.dll is loaded, it has dependencies (like ggml-cpu.dll, ggml-base.dll, etc.). Windows looks for these in:
+
+	Same directory as the .exe
+	System directories
+	Directories in PATH
+
+Solution:Change LD_LIBRARY_PATH to PATH, when on Windows, in sdk/kronk/init.go
+
+#3 ==========================================================
+Two problems in sdk/tools/models/retrieve.go:
+
+1> strings.TrimLeft is wrong here—it trims characters, not a prefix. Should use strings.TrimPrefix.
+
+2> Hardcoded / separator—Windows uses \. Should use filepath.Separator or filepath.SplitList.

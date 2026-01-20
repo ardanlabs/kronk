@@ -47,13 +47,22 @@ func (m *Models) RetrieveFiles() ([]File, error) {
 			}
 		}
 
-		modelPath := strings.TrimLeft(mp.ModelFiles[0], m.modelsPath)
-		parts := strings.Split(modelPath, "/")
+		modelPath := strings.TrimPrefix(mp.ModelFiles[0], m.modelsPath)
+		modelPath = strings.TrimPrefix(modelPath, string(filepath.Separator))
+		parts := strings.Split(modelPath, string(filepath.Separator))
+
+		var ownedBy, modelFamily string
+		if len(parts) > 0 {
+			ownedBy = parts[0]
+		}
+		if len(parts) > 1 {
+			modelFamily = parts[1]
+		}
 
 		mf := File{
 			ID:          modelID,
-			OwnedBy:     parts[0],
-			ModelFamily: parts[1],
+			OwnedBy:     ownedBy,
+			ModelFamily: modelFamily,
 			Size:        totalSize,
 			Modified:    modified,
 			Validated:   mp.Validated,
@@ -105,13 +114,22 @@ func (m *Models) retrieveFile(modelID string) (File, error) {
 		}
 	}
 
-	modelPath := strings.TrimLeft(mp.ModelFiles[0], m.modelsPath)
-	parts := strings.Split(modelPath, "/")
+	modelPath := strings.TrimPrefix(mp.ModelFiles[0], m.modelsPath)
+	modelPath = strings.TrimPrefix(modelPath, string(filepath.Separator))
+	parts := strings.Split(modelPath, string(filepath.Separator))
+
+	var ownedBy, modelFamily string
+	if len(parts) > 0 {
+		ownedBy = parts[0]
+	}
+	if len(parts) > 1 {
+		modelFamily = parts[1]
+	}
 
 	mf := File{
 		ID:          modelID,
-		OwnedBy:     parts[0],
-		ModelFamily: parts[1],
+		OwnedBy:     ownedBy,
+		ModelFamily: modelFamily,
 		Size:        totalSize,
 		Modified:    modified,
 	}
