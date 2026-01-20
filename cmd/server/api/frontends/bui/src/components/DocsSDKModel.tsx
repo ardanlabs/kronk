@@ -73,10 +73,10 @@ export default function DocsSDKModel() {
               <h4>Choice</h4>
               <pre className="code-block">
                 <code>{`type Choice struct {
-	Index        int             \`json:"index"\`
-	Message      ResponseMessage \`json:"message,omitempty"\`
-	Delta        ResponseMessage \`json:"delta,omitempty"\`
-	FinishReason string          \`json:"finish_reason"\`
+	Index        int              \`json:"index"\`
+	Message      ResponseMessage  \`json:"message,omitempty"\`
+	Delta        *ResponseMessage \`json:"delta,omitempty"\`
+	FinishReason string           \`json:"finish_reason"\`
 }`}</code>
               </pre>
               <p className="doc-description">Choice represents a single choice in a response.</p>
@@ -497,9 +497,10 @@ export default function DocsSDKModel() {
               <h4>ObjectChatUnknown</h4>
               <pre className="code-block">
                 <code>{`const (
-	ObjectChatUnknown = "chat.unknown"
-	ObjectChatText    = "chat.completion.chunk"
-	ObjectChatMedia   = "chat.media"
+	ObjectChatUnknown   = "chat.unknown"
+	ObjectChatText      = "chat.completion.chunk"
+	ObjectChatTextFinal = "chat.completion"
+	ObjectChatMedia     = "chat.media"
 )`}</code>
               </pre>
               <p className="doc-description">Objects represent the different types of data that is being processed.</p>

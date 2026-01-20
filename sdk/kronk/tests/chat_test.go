@@ -35,9 +35,9 @@ func testChat(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
 
 		var result testResult
 		if tooling {
-			result = testChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatText, "London", "get_weather", "location", false)
+			result = testChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatTextFinal, "London", "get_weather", "location", false)
 		} else {
-			result = testChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatText, "Gorilla", "", "", false)
+			result = testChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatTextFinal, "Gorilla", "", "", false)
 		}
 
 		for _, w := range result.Warnings {

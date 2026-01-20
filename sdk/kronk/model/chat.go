@@ -27,6 +27,15 @@ func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error) {
 		lastMsg = msg
 	}
 
+	if lastMsg.Object == ObjectChatText {
+		lastMsg.Object = ObjectChatTextFinal
+	}
+
+	if len(lastMsg.Choice) > 0 {
+		lastMsg.Choice[0].Index = 0
+		lastMsg.Choice[0].Delta = nil
+	}
+
 	return lastMsg, nil
 }
 
