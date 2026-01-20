@@ -39,10 +39,10 @@ func chatNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			ExpResp: &model.ChatResponse{
 				Choice: []model.Choice{
 					{
-						Message: model.ResponseMessage{
+						Message: &model.ResponseMessage{
 							Role: "assistant",
 						},
-						FinishReason: "stop",
+						FinishReason: stringPointer("stop"),
 					},
 				},
 				Model:  "Qwen3-8B-Q8_0",
@@ -101,10 +101,10 @@ func chatImageQwen25VL(t *testing.T, tokens map[string]string) []apitest.Table {
 			ExpResp: &model.ChatResponse{
 				Choice: []model.Choice{
 					{
-						Message: model.ResponseMessage{
+						Message: &model.ResponseMessage{
 							Role: "assistant",
 						},
-						FinishReason: "stop",
+						FinishReason: stringPointer("stop"),
 					},
 				},
 				Model:  "Qwen2.5-VL-3B-Instruct-Q8_0",
@@ -161,10 +161,10 @@ func chatAudioQwen2Audio(t *testing.T, tokens map[string]string) []apitest.Table
 			ExpResp: &model.ChatResponse{
 				Choice: []model.Choice{
 					{
-						Message: model.ResponseMessage{
+						Message: &model.ResponseMessage{
 							Role: "assistant",
 						},
-						FinishReason: "stop",
+						FinishReason: stringPointer("stop"),
 					},
 				},
 				Model:  "Qwen2-Audio-7B.Q8_0",
@@ -219,8 +219,8 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 			ExpResp: &model.ChatResponse{
 				Choice: []model.Choice{
 					{
-						Message:      model.ResponseMessage{},
-						FinishReason: "stop",
+						Message:      nil,
+						FinishReason: stringPointer("stop"),
 					},
 				},
 				Model:  "Qwen3-8B-Q8_0",

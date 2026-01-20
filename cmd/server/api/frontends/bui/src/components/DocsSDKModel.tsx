@@ -63,7 +63,7 @@ export default function DocsSDKModel() {
 	Model   string   \`json:"model"\`
 	Choice  []Choice \`json:"choices"\`
 	Usage   Usage    \`json:"usage"\`
-	Prompt  string   \`json:"prompt"\`
+	Prompt  string   \`json:"prompt,omitempty"\`
 }`}</code>
               </pre>
               <p className="doc-description">ChatResponse represents output for inference models.</p>
@@ -74,9 +74,9 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>{`type Choice struct {
 	Index        int              \`json:"index"\`
-	Message      ResponseMessage  \`json:"message,omitempty"\`
+	Message      *ResponseMessage \`json:"message,omitempty"\`
 	Delta        *ResponseMessage \`json:"delta,omitempty"\`
-	FinishReason string           \`json:"finish_reason"\`
+	FinishReason *string          \`json:"finish_reason"\`
 }`}</code>
               </pre>
               <p className="doc-description">Choice represents a single choice in a response.</p>
@@ -261,9 +261,9 @@ export default function DocsSDKModel() {
               <h4>ResponseMessage</h4>
               <pre className="code-block">
                 <code>{`type ResponseMessage struct {
-	Role      string             \`json:"role"\`
-	Content   string             \`json:"content"\`
-	Reasoning string             \`json:"reasoning"\`
+	Role      string             \`json:"role,omitempty"\`
+	Content   string             \`json:"content,omitempty"\`
+	Reasoning string             \`json:"reasoning_content,omitempty"\`
 	ToolCalls []ResponseToolCall \`json:"tool_calls,omitempty"\`
 }`}</code>
               </pre>

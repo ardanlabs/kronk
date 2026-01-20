@@ -14,7 +14,7 @@
 #   ngpu-layers: 0            # GPU layers to offload (0 = all, -1 = none, N = specific count)
 
 gpt-oss-20b-Q8_0:
-  context-window: 8192
+  context-window: 98304
   nbatch: 2048
   nubatch: 512
   cache-type-k: q8_0

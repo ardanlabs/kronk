@@ -194,7 +194,7 @@ loop:
 	for resp := range ch {
 		lr = resp
 
-		switch resp.Choice[0].FinishReason {
+		switch stringValue(resp.Choice[0].FinishReason) {
 		case model.FinishReasonStop:
 			break loop
 
@@ -240,4 +240,11 @@ func readImage(imageFile string) ([]byte, error) {
 	}
 
 	return image, nil
+}
+
+func stringValue(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return *v
 }

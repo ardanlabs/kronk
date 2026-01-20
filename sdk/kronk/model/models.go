@@ -407,18 +407,18 @@ type ResponseToolCall struct {
 
 // ResponseMessage represents a single message in a response.
 type ResponseMessage struct {
-	Role      string             `json:"role"`
-	Content   string             `json:"content"`
-	Reasoning string             `json:"reasoning"`
+	Role      string             `json:"role,omitempty"`
+	Content   string             `json:"content,omitempty"`
+	Reasoning string             `json:"reasoning_content,omitempty"`
 	ToolCalls []ResponseToolCall `json:"tool_calls,omitempty"`
 }
 
 // Choice represents a single choice in a response.
 type Choice struct {
 	Index        int              `json:"index"`
-	Message      ResponseMessage  `json:"message,omitempty"`
+	Message      *ResponseMessage `json:"message,omitempty"`
 	Delta        *ResponseMessage `json:"delta,omitempty"`
-	FinishReason string           `json:"finish_reason"`
+	FinishReason *string          `json:"finish_reason"`
 }
 
 // Usage provides details usage information for the request.
@@ -439,14 +439,14 @@ type ChatResponse struct {
 	Model   string   `json:"model"`
 	Choice  []Choice `json:"choices"`
 	Usage   Usage    `json:"usage"`
-	Prompt  string   `json:"prompt"`
+	Prompt  string   `json:"prompt,omitempty"`
 }
 
 func chatResponseDelta(id string, object string, model string, index int, content string, reasoning bool, u Usage) ChatResponse {
 	return ChatResponse{
 		ID:      id,
 		Object:  object,
-		Created: time.Now().UnixMilli(),
+		Created: time.Now().Unix(),
 		Model:   model,
 		Choice: []Choice{
 			{
@@ -456,7 +456,7 @@ func chatResponseDelta(id string, object string, model string, index int, conten
 					Content:   forContent(content, reasoning),
 					Reasoning: forReasoning(content, reasoning),
 				},
-				FinishReason: "",
+				FinishReason: nil,
 			},
 		},
 		Usage: u,
@@ -488,21 +488,19 @@ func chatResponseFinal(id string, object string, model string, index int, prompt
 	return ChatResponse{
 		ID:      id,
 		Object:  object,
-		Created: time.Now().UnixMilli(),
+		Created: time.Now().Unix(),
 		Model:   model,
 		Choice: []Choice{
 			{
 				Index: index,
-				Message: ResponseMessage{
+				Message: &ResponseMessage{
 					Role:      RoleAssistant,
 					Content:   content,
 					Reasoning: reasoning,
 					ToolCalls: respToolCalls,
 				},
-				Delta: &ResponseMessage{
-					ToolCalls: respToolCalls,
-				},
-				FinishReason: finishReason,
+				Delta:        &ResponseMessage{},
+				FinishReason: &finishReason,
 			},
 		},
 		Usage:  u,
@@ -511,10 +509,11 @@ func chatResponseFinal(id string, object string, model string, index int, prompt
 }
 
 func ChatResponseErr(id string, object string, model string, index int, prompt string, err error, u Usage) ChatResponse {
+	finishReason := FinishReasonError
 	return ChatResponse{
 		ID:      id,
 		Object:  object,
-		Created: time.Now().UnixMilli(),
+		Created: time.Now().Unix(),
 		Model:   model,
 		Choice: []Choice{
 			{
@@ -523,7 +522,7 @@ func ChatResponseErr(id string, object string, model string, index int, prompt s
 					Role:    RoleAssistant,
 					Content: err.Error(),
 				},
-				FinishReason: FinishReasonError,
+				FinishReason: &finishReason,
 			},
 		},
 		Usage:  u,

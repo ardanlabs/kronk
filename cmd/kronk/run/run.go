@@ -200,7 +200,7 @@ loop:
 	for resp := range ch {
 		lr = resp
 
-		switch resp.Choice[0].FinishReason {
+		switch stringValue(resp.Choice[0].FinishReason) {
 		case model.FinishReasonError:
 			return messages, fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
 
@@ -265,4 +265,11 @@ loop:
 		lr.Usage.PromptTokens, lr.Usage.ReasoningTokens, lr.Usage.CompletionTokens, lr.Usage.OutputTokens, contextTokens, percentage, of, lr.Usage.TokensPerSecond)
 
 	return messages, nil
+}
+
+func stringValue(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return *v
 }

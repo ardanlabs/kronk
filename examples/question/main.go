@@ -149,7 +149,7 @@ func question(krn *kronk.Kronk) error {
 	var reasoning bool
 
 	for resp := range ch {
-		switch resp.Choice[0].FinishReason {
+		switch stringValue(resp.Choice[0].FinishReason) {
 		case model.FinishReasonError:
 			return fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
 
@@ -174,4 +174,11 @@ func question(krn *kronk.Kronk) error {
 	}
 
 	return nil
+}
+
+func stringValue(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return *v
 }

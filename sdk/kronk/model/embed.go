@@ -178,7 +178,7 @@ func (m *Model) Embeddings(ctx context.Context, d D) (EmbedReponse, error) {
 
 	er := EmbedReponse{
 		Object:  "list",
-		Created: time.Now().UnixMilli(),
+		Created: time.Now().Unix(),
 		Model:   m.modelInfo.ID,
 		Data:    embedData,
 		Usage: EmbedUsage{

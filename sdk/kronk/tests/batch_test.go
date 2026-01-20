@@ -64,7 +64,7 @@ func Test_BatchChatConcurrent(t *testing.T) {
 				results[idx].duration = time.Since(start)
 				results[idx].id = idx
 
-				if lastResp.Choice[0].FinishReason == model.FinishReasonError {
+				if stringValue(lastResp.Choice[0].FinishReason) == model.FinishReasonError {
 					errContent := ""
 					if lastResp.Choice[0].Delta != nil {
 						errContent = lastResp.Choice[0].Delta.Content
