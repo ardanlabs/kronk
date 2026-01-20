@@ -415,10 +415,19 @@ type ResponseMessage struct {
 
 // Choice represents a single choice in a response.
 type Choice struct {
-	Index        int              `json:"index"`
-	Message      *ResponseMessage `json:"message,omitempty"`
-	Delta        *ResponseMessage `json:"delta,omitempty"`
-	FinishReason *string          `json:"finish_reason"`
+	Index           int              `json:"index"`
+	Message         *ResponseMessage `json:"message,omitempty"`
+	Delta           *ResponseMessage `json:"delta,omitempty"`
+	FinishReasonPtr *string          `json:"finish_reason"`
+}
+
+// FinishReason return the finish reason as an empty
+// string if it is nil.
+func (c Choice) FinishReason() string {
+	if c.FinishReasonPtr == nil {
+		return ""
+	}
+	return *c.FinishReasonPtr
 }
 
 // Usage provides details usage information for the request.
@@ -456,7 +465,7 @@ func chatResponseDelta(id string, object string, model string, index int, conten
 					Content:   forContent(content, reasoning),
 					Reasoning: forReasoning(content, reasoning),
 				},
-				FinishReason: nil,
+				FinishReasonPtr: nil,
 			},
 		},
 		Usage: u,
@@ -499,8 +508,8 @@ func chatResponseFinal(id string, object string, model string, index int, prompt
 					Reasoning: reasoning,
 					ToolCalls: respToolCalls,
 				},
-				Delta:        &ResponseMessage{},
-				FinishReason: &finishReason,
+				Delta:           &ResponseMessage{},
+				FinishReasonPtr: &finishReason,
 			},
 		},
 		Usage:  u,
@@ -522,7 +531,7 @@ func ChatResponseErr(id string, object string, model string, index int, prompt s
 					Role:    RoleAssistant,
 					Content: err.Error(),
 				},
-				FinishReason: &finishReason,
+				FinishReasonPtr: &finishReason,
 			},
 		},
 		Usage:  u,

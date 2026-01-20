@@ -172,7 +172,7 @@ func question(krn *kronk.Kronk) error {
 	var reasoning bool
 
 	for resp := range ch {
-		switch stringValue(resp.Choice[0].FinishReason) {
+		switch resp.Choice[0].FinishReason() {
 		case model.FinishReasonError:
 			return fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
 
@@ -197,13 +197,6 @@ func question(krn *kronk.Kronk) error {
 	}
 
 	return nil
-}
-
-func stringValue(v *string) string {
-	if v == nil {
-		return ""
-	}
-	return *v
 }
 `;
 
@@ -483,7 +476,7 @@ loop:
 	for resp := range ch {
 		lr = resp
 
-		switch stringValue(resp.Choice[0].FinishReason) {
+		switch resp.Choice[0].FinishReason() {
 		case model.FinishReasonError:
 			return messages, fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
 
@@ -550,13 +543,6 @@ loop:
 		lr.Usage.PromptTokens, lr.Usage.ReasoningTokens, lr.Usage.CompletionTokens, lr.Usage.OutputTokens, contextTokens, percentage, of, lr.Usage.TokensPerSecond)
 
 	return messages, nil
-}
-
-func stringValue(v *string) string {
-	if v == nil {
-		return ""
-	}
-	return *v
 }
 `;
 
@@ -1424,7 +1410,7 @@ loop:
 	for resp := range ch {
 		lr = resp
 
-		switch stringValue(resp.Choice[0].FinishReason) {
+		switch resp.Choice[0].FinishReason() {
 		case model.FinishReasonStop:
 			break loop
 
@@ -1470,13 +1456,6 @@ func readImage(imageFile string) ([]byte, error) {
 	}
 
 	return image, nil
-}
-
-func stringValue(v *string) string {
-	if v == nil {
-		return ""
-	}
-	return *v
 }
 `;
 
@@ -1675,7 +1654,7 @@ loop:
 	for resp := range ch {
 		lr = resp
 
-		switch stringValue(resp.Choice[0].FinishReason) {
+		switch resp.Choice[0].FinishReason() {
 		case model.FinishReasonStop:
 			break loop
 
@@ -1721,13 +1700,6 @@ func readImage(imageFile string) ([]byte, error) {
 	}
 
 	return image, nil
-}
-
-func stringValue(v *string) string {
-	if v == nil {
-		return ""
-	}
-	return *v
 }
 `;
 

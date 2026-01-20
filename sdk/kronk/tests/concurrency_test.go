@@ -57,7 +57,7 @@ func Test_ConTest1(t *testing.T) {
 
 	var lastResp model.ChatResponse
 	for resp := range ch {
-		if stringValue(resp.Choice[0].FinishReason) == model.FinishReasonError {
+		if resp.Choice[0].FinishReason() == model.FinishReasonError {
 			lastResp = resp // Only capture the error response
 		}
 	}
@@ -69,7 +69,7 @@ func Test_ConTest1(t *testing.T) {
 		return
 	}
 
-	if v := stringValue(lastResp.Choice[0].FinishReason); v != model.FinishReasonError {
+	if v := lastResp.Choice[0].FinishReason(); v != model.FinishReasonError {
 		t.Errorf("expected error finish reason, got %s", v)
 	}
 
@@ -122,7 +122,7 @@ func Test_ConTest2(t *testing.T) {
 	var lastResp model.ChatResponse
 	var index int
 	for resp := range ch {
-		if stringValue(resp.Choice[0].FinishReason) == model.FinishReasonError {
+		if resp.Choice[0].FinishReason() == model.FinishReasonError {
 			lastResp = resp // Only capture the error response
 		}
 
@@ -140,7 +140,7 @@ func Test_ConTest2(t *testing.T) {
 		return
 	}
 
-	if v := stringValue(lastResp.Choice[0].FinishReason); v != model.FinishReasonError {
+	if v := lastResp.Choice[0].FinishReason(); v != model.FinishReasonError {
 		t.Errorf("expected error finish reason, got %s", v)
 	}
 

@@ -142,7 +142,7 @@ func printInfo(models *models.Models) {
 }
 
 func getMsg(choice model.Choice, streaming bool) model.ResponseMessage {
-	if streaming && stringValue(choice.FinishReason) == "" && choice.Delta != nil {
+	if streaming && choice.FinishReason() == "" && choice.Delta != nil {
 		return *choice.Delta
 	}
 	if choice.Message != nil {
@@ -174,28 +174,28 @@ func testChatBasics(resp model.ChatResponse, modelName string, object string, re
 
 	msg := getMsg(resp.Choice[0], streaming)
 
-	if stringValue(resp.Choice[0].FinishReason) == "" && msg.Content == "" && msg.Reasoning == "" {
+	if resp.Choice[0].FinishReason() == "" && msg.Content == "" && msg.Reasoning == "" {
 		return fmt.Errorf("basics: expected delta content and reasoning to be non-empty")
 	}
 
-	if stringValue(resp.Choice[0].FinishReason) == "" && msg.Role != "assistant" {
+	if resp.Choice[0].FinishReason() == "" && msg.Role != "assistant" {
 		return fmt.Errorf("basics: expected delta role to be assistant, got %s", msg.Role)
 	}
 
-	if stringValue(resp.Choice[0].FinishReason) == "stop" && msg.Content == "" {
+	if resp.Choice[0].FinishReason() == "stop" && msg.Content == "" {
 		return fmt.Errorf("basics: expected final content to be non-empty")
 	}
 
-	if stringValue(resp.Choice[0].FinishReason) == "tool" && len(msg.ToolCalls) == 0 {
+	if resp.Choice[0].FinishReason() == "tool" && len(msg.ToolCalls) == 0 {
 		return fmt.Errorf("basics: expected tool calls to be non-empty")
 	}
 
-	if streaming && stringValue(resp.Choice[0].FinishReason) == "tool" && resp.Choice[0].Delta != nil && len(resp.Choice[0].Delta.ToolCalls) == 0 {
+	if streaming && resp.Choice[0].FinishReason() == "tool" && resp.Choice[0].Delta != nil && len(resp.Choice[0].Delta.ToolCalls) == 0 {
 		return fmt.Errorf("basics: expected tool calls in Delta for OpenAI streaming compatibility")
 	}
 
 	if reasoning {
-		if stringValue(resp.Choice[0].FinishReason) == "stop" && msg.Reasoning == "" {
+		if resp.Choice[0].FinishReason() == "stop" && msg.Reasoning == "" {
 			return fmt.Errorf("basics: expected final reasoning")
 		}
 	}
@@ -245,7 +245,7 @@ func testChatResponse(resp model.ChatResponse, modelName string, object string, 
 		}
 	}
 
-	if stringValue(resp.Choice[0].FinishReason) == "stop" {
+	if resp.Choice[0].FinishReason() == "stop" {
 		if len(msg.Content) == 0 {
 			result.Err = fmt.Errorf("content: expected some content")
 		}
@@ -256,7 +256,7 @@ func testChatResponse(resp model.ChatResponse, modelName string, object string, 
 		}
 	}
 
-	if stringValue(resp.Choice[0].FinishReason) == "tool" {
+	if resp.Choice[0].FinishReason() == "tool" {
 		if !strings.Contains(msg.ToolCalls[0].Function.Name, funct) {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("tooling: expected %q, got %q", funct, msg.ToolCalls[0].Function.Name))
 			return result
@@ -280,11 +280,4 @@ func testChatResponse(resp model.ChatResponse, modelName string, object string, 
 	}
 
 	return result
-}
-
-func stringValue(v *string) string {
-	if v == nil {
-		return ""
-	}
-	return *v
 }

@@ -73,10 +73,10 @@ export default function DocsSDKModel() {
               <h4>Choice</h4>
               <pre className="code-block">
                 <code>{`type Choice struct {
-	Index        int              \`json:"index"\`
-	Message      *ResponseMessage \`json:"message,omitempty"\`
-	Delta        *ResponseMessage \`json:"delta,omitempty"\`
-	FinishReason *string          \`json:"finish_reason"\`
+	Index           int              \`json:"index"\`
+	Message         *ResponseMessage \`json:"message,omitempty"\`
+	Delta           *ResponseMessage \`json:"delta,omitempty"\`
+	FinishReasonPtr *string          \`json:"finish_reason"\`
 }`}</code>
               </pre>
               <p className="doc-description">Choice represents a single choice in a response.</p>
@@ -351,6 +351,14 @@ export default function DocsSDKModel() {
           <div className="card" id="methods">
             <h3>Methods</h3>
 
+            <div className="doc-section" id="method-choice-finishreason">
+              <h4>Choice.FinishReason</h4>
+              <pre className="code-block">
+                <code>func (c Choice) FinishReason() string</code>
+              </pre>
+              <p className="doc-description">FinishReason return the finish reason as an empty string if it is nil.</p>
+            </div>
+
             <div className="doc-section" id="method-d-clone">
               <h4>D.Clone</h4>
               <pre className="code-block">
@@ -618,6 +626,7 @@ export default function DocsSDKModel() {
             <div className="doc-index-section">
               <a href="#methods" className="doc-index-header">Methods</a>
               <ul>
+                <li><a href="#method-choice-finishreason">Choice.FinishReason</a></li>
                 <li><a href="#method-d-clone">D.Clone</a></li>
                 <li><a href="#method-d-logsafe">D.LogSafe</a></li>
                 <li><a href="#method-flashattentiontype-unmarshalyaml">FlashAttentionType.UnmarshalYAML</a></li>

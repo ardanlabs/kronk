@@ -72,13 +72,6 @@ func Test_API(t *testing.T) {
 
 // =============================================================================
 
-func stringValue(v *string) string {
-	if v == nil {
-		return ""
-	}
-	return *v
-}
-
 func stringPointer(v string) *string {
 	return &v
 }
@@ -196,7 +189,7 @@ func validateResponse(got any, streaming bool) responseValidator {
 }
 
 func (v responseValidator) getMsg() model.ResponseMessage {
-	if v.streaming && stringValue(v.resp.Choice[0].FinishReason) == "" && v.resp.Choice[0].Delta != nil {
+	if v.streaming && v.resp.Choice[0].FinishReason() == "" && v.resp.Choice[0].Delta != nil {
 		return *v.resp.Choice[0].Delta
 	}
 	if v.resp.Choice[0].Message != nil {
