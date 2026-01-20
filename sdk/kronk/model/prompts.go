@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -122,11 +123,38 @@ func newTemplateWithFixedItems(source string) (*exec.Template, error) {
 	})
 
 	customFilters := builtins.Filters.Update(exec.NewFilterSet(map[string]exec.FilterFunction{}))
+	customFilters.Register("tojson", func(e *exec.Evaluator, in *exec.Value, params *exec.VarArgs) *exec.Value {
+		if in.IsError() {
+			return in
+		}
+		// Handle lists specially to avoid unexported field issues
+		if in.IsList() {
+			inCast := make([]any, in.Len())
+			for i := range inCast {
+				item := in.Index(i)
+				inCast[i] = item.ToGoSimpleType(true)
+			}
+			in = exec.AsValue(inCast)
+		}
+		params.ExpectKwArgs([]*exec.KwArg{
+			{Name: "ensure_ascii", Default: exec.AsValue(true)},
+			{Name: "indent", Default: exec.AsValue(nil)},
+		})
+		casted := in.ToGoSimpleType(true)
+		if err, ok := casted.(error); ok {
+			return exec.AsValue(err)
+		}
+		data, err := json.Marshal(casted)
+		if err != nil {
+			return exec.AsValue("")
+		}
+		return exec.AsValue(string(data))
+	})
 	customFilters.Register("items", func(e *exec.Evaluator, in *exec.Value, params *exec.VarArgs) *exec.Value {
 		if !in.IsDict() {
 			return exec.AsValue([][]any{})
 		}
-		dict := in.ToGoSimpleType(false)
+		dict := in.ToGoSimpleType(true)
 		if m, ok := dict.(map[string]any); ok {
 			items := make([][]any, 0, len(m))
 			for key, value := range m {

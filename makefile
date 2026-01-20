@@ -236,7 +236,7 @@ kronk-catalog-show-local:
 kronk-catalog-pull:
 	go run cmd/kronk/main.go catalog pull "$(ID)"
 
-# make kronk-catalog-pull-local ID="qwen3-8b-q8_0"
+# make kronk-catalog-pull-local ID="Qwen3-Coder-30B-A3B-Instruct-Q8_0"
 kronk-catalog-pull-local:
 	go run cmd/kronk/main.go catalog pull --local "$(ID)"
 
