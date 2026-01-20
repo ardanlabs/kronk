@@ -227,11 +227,13 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
+	"github.com/ardanlabs/kronk/sdk/tools/templates"
 )
 
 // const modelURL = "https://huggingface.co/unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF/resolve/main/Qwen3-Coder-30B-A3B-Instruct-Q8_0.gguf"
-// const modelURL = "https://huggingface.co/unsloth/GLM-4.7-Flash-GGUF/resolve/main/GLM-4.7-Flash-Q8_0.gguf"
 // const modelURL = "https://huggingface.co/unsloth/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-Q8_0.gguf"
+// const modelURL = "https://huggingface.co/unsloth/GLM-4.7-Flash-GGUF/resolve/main/GLM-4.7-Flash-Q8_0.gguf"
+
 const modelURL = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
 
 func main() {
@@ -287,18 +289,18 @@ func installSystem() (models.Path, error) {
 	// a corrected jinja file, having the catalog system up to date will allow
 	// the system to pull that jinja file.
 
-	// templates, err := templates.New()
-	// if err != nil {
-	// 	return models.Path{}, fmt.Errorf("unable to create template system: %w", err)
-	// }
+	templates, err := templates.New()
+	if err != nil {
+		return models.Path{}, fmt.Errorf("unable to create template system: %w", err)
+	}
 
-	// if err := templates.Download(ctx); err != nil {
-	// 	return models.Path{}, fmt.Errorf("unable to download templates: %w", err)
-	// }
+	if err := templates.Download(ctx); err != nil {
+		return models.Path{}, fmt.Errorf("unable to download templates: %w", err)
+	}
 
-	// if err := templates.Catalog().Download(ctx); err != nil {
-	// 	return models.Path{}, fmt.Errorf("unable to download catalog: %w", err)
-	// }
+	if err := templates.Catalog().Download(ctx); err != nil {
+		return models.Path{}, fmt.Errorf("unable to download catalog: %w", err)
+	}
 
 	// -------------------------------------------------------------------------
 
