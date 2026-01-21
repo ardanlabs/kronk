@@ -447,11 +447,11 @@ type ChatResponse struct {
 	Created int64    `json:"created"`
 	Model   string   `json:"model"`
 	Choice  []Choice `json:"choices"`
-	Usage   Usage    `json:"usage"`
+	Usage   *Usage   `json:"usage,omitempty"`
 	Prompt  string   `json:"prompt,omitempty"`
 }
 
-func chatResponseDelta(id string, object string, model string, index int, content string, reasoning bool, u Usage) ChatResponse {
+func chatResponseDelta(id string, object string, model string, index int, content string, reasoning bool) ChatResponse {
 	return ChatResponse{
 		ID:      id,
 		Object:  object,
@@ -468,7 +468,6 @@ func chatResponseDelta(id string, object string, model string, index int, conten
 				FinishReasonPtr: nil,
 			},
 		},
-		Usage: u,
 	}
 }
 
@@ -517,7 +516,7 @@ func chatResponseFinal(id string, object string, model string, index int, prompt
 				FinishReasonPtr: &finishReason,
 			},
 		},
-		Usage:  u,
+		Usage:  &u,
 		Prompt: prompt,
 	}
 }
@@ -539,7 +538,7 @@ func ChatResponseErr(id string, object string, model string, index int, prompt s
 				FinishReasonPtr: &finishReason,
 			},
 		},
-		Usage:  u,
+		Usage:  &u,
 		Prompt: prompt,
 	}
 }

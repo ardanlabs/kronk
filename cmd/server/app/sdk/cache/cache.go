@@ -5,6 +5,7 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -18,6 +19,9 @@ import (
 	"github.com/maypok86/otter/v2"
 	"gopkg.in/yaml.v3"
 )
+
+// ErrServerBusy is returned when all model slots are occupied with active streams.
+var ErrServerBusy = errors.New("server busy: all model slots have active requests")
 
 // Config represents setting for the kronk manager.
 //
@@ -73,24 +77,46 @@ func validateConfig(cfg Config) (Config, error) {
 // =============================================================================
 
 type modelConfig struct {
-	Device               string                   `yaml:"device"`
-	ContextWindow        int                      `yaml:"context-window"`
-	NBatch               int                      `yaml:"nbatch"`
-	NUBatch              int                      `yaml:"nubatch"`
-	NThreads             int                      `yaml:"nthreads"`
-	NThreadsBatch        int                      `yaml:"nthreads-batch"`
-	CacheTypeK           model.GGMLType           `yaml:"cache-type-k"`
-	CacheTypeV           model.GGMLType           `yaml:"cache-type-v"`
-	UseDirectIO          bool                     `yaml:"use-direct-io"`
-	FlashAttention       model.FlashAttentionType `yaml:"flash-attention"`
-	IgnoreIntegrityCheck bool                     `yaml:"ignore-integrity-check"`
-	NSeqMax              int                      `yaml:"nseq-max"`
-	OffloadKQV           *bool                    `yaml:"offload-kqv"`
-	OpOffload            *bool                    `yaml:"op-offload"`
-	NGpuLayers           *int32                   `yaml:"ngpu-layers"`
+	Device                     string                   `yaml:"device"`
+	ContextWindow              int                      `yaml:"context-window"`
+	NBatch                     int                      `yaml:"nbatch"`
+	NUBatch                    int                      `yaml:"nubatch"`
+	NThreads                   int                      `yaml:"nthreads"`
+	NThreadsBatch              int                      `yaml:"nthreads-batch"`
+	CacheTypeK                 model.GGMLType           `yaml:"cache-type-k"`
+	CacheTypeV                 model.GGMLType           `yaml:"cache-type-v"`
+	UseDirectIO                bool                     `yaml:"use-direct-io"`
+	FlashAttention             model.FlashAttentionType `yaml:"flash-attention"`
+	IgnoreIntegrityCheck       bool                     `yaml:"ignore-integrity-check"`
+	NSeqMax                    int                      `yaml:"nseq-max"`
+	OffloadKQV                 *bool                    `yaml:"offload-kqv"`
+	OpOffload                  *bool                    `yaml:"op-offload"`
+	NGpuLayers                 *int32                   `yaml:"ngpu-layers"`
 	SplitMode                  model.SplitMode          `yaml:"split-mode"`
 	SystemPromptCache          bool                     `yaml:"system-prompt-cache"`
 	SystemPromptCacheMinTokens int                      `yaml:"system-prompt-cache-min-tokens"`
+}
+
+func (mc modelConfig) String() string {
+	formatBoolPtr := func(p *bool) string {
+		if p == nil {
+			return "nil"
+		}
+		return fmt.Sprintf("%t", *p)
+	}
+
+	formatInt32Ptr := func(p *int32) string {
+		if p == nil {
+			return "nil"
+		}
+		return fmt.Sprintf("%d", *p)
+	}
+
+	return fmt.Sprintf("{Device:%q ContextWindow:%d NBatch:%d NUBatch:%d NThreads:%d NThreadsBatch:%d CacheTypeK:%d CacheTypeV:%d UseDirectIO:%t FlashAttention:%d IgnoreIntegrityCheck:%t NSeqMax:%d OffloadKQV:%s OpOffload:%s NGpuLayers:%s SplitMode:%d SystemPromptCache:%t SystemPromptCacheMinTokens:%d}",
+		mc.Device, mc.ContextWindow, mc.NBatch, mc.NUBatch, mc.NThreads, mc.NThreadsBatch,
+		mc.CacheTypeK, mc.CacheTypeV, mc.UseDirectIO, mc.FlashAttention, mc.IgnoreIntegrityCheck,
+		mc.NSeqMax, formatBoolPtr(mc.OffloadKQV), formatBoolPtr(mc.OpOffload),
+		formatInt32Ptr(mc.NGpuLayers), mc.SplitMode, mc.SystemPromptCache, mc.SystemPromptCacheMinTokens)
 }
 
 // Cache manages a set of Kronk APIs for use. It maintains a cache of these
@@ -100,6 +126,7 @@ type Cache struct {
 	templates            *templates.Templates
 	cache                *otter.Cache[string, *kronk.Kronk]
 	itemsInCache         atomic.Int32
+	maxModelsInCache     int
 	models               *models.Models
 	ignoreIntegrityCheck bool
 	modelConfig          map[string]modelConfig
@@ -128,6 +155,7 @@ func New(cfg Config) (*Cache, error) {
 	c := Cache{
 		log:                  cfg.Log,
 		templates:            cfg.Templates,
+		maxModelsInCache:     cfg.ModelsInCache,
 		models:               models,
 		ignoreIntegrityCheck: cfg.IgnoreIntegrityCheck,
 		modelConfig:          mc,
@@ -135,7 +163,7 @@ func New(cfg Config) (*Cache, error) {
 
 	opt := otter.Options[string, *kronk.Kronk]{
 		MaximumSize:      cfg.ModelsInCache,
-		ExpiryCalculator: otter.ExpiryWriting[string, *kronk.Kronk](cfg.CacheTTL),
+		ExpiryCalculator: otter.ExpiryAccessing[string, *kronk.Kronk](cfg.CacheTTL),
 		OnDeletion:       c.eviction,
 	}
 
@@ -221,6 +249,10 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 		return krn, nil
 	}
 
+	if c.allSlotsActive() {
+		return nil, ErrServerBusy
+	}
+
 	fi, err := c.models.RetrievePath(modelID)
 	if err != nil {
 		return nil, fmt.Errorf("acquire-model: unable to retrieve path: %w", err)
@@ -235,31 +267,31 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 	}()))
 
 	mc, found := c.modelConfig[strings.ToLower(modelID)]
-	c.log(ctx, "model config result", "found", found, "mc", fmt.Sprintf("%#v", mc))
+	c.log(ctx, "model config result", "found", found, "mc", mc.String())
 
 	if c.ignoreIntegrityCheck {
 		mc.IgnoreIntegrityCheck = true
 	}
 
 	cfg := model.Config{
-		Log:                  c.log,
-		ModelFiles:           fi.ModelFiles,
-		ProjFile:             fi.ProjFile,
-		Device:               mc.Device,
-		ContextWindow:        mc.ContextWindow,
-		NBatch:               mc.NBatch,
-		NUBatch:              mc.NUBatch,
-		NThreads:             mc.NThreads,
-		NThreadsBatch:        mc.NThreadsBatch,
-		CacheTypeK:           mc.CacheTypeK,
-		CacheTypeV:           mc.CacheTypeV,
-		FlashAttention:       mc.FlashAttention,
-		UseDirectIO:          mc.UseDirectIO,
-		IgnoreIntegrityCheck: mc.IgnoreIntegrityCheck,
-		NSeqMax:              mc.NSeqMax,
-		OffloadKQV:           mc.OffloadKQV,
-		OpOffload:            mc.OpOffload,
-		NGpuLayers:           mc.NGpuLayers,
+		Log:                        c.log,
+		ModelFiles:                 fi.ModelFiles,
+		ProjFile:                   fi.ProjFile,
+		Device:                     mc.Device,
+		ContextWindow:              mc.ContextWindow,
+		NBatch:                     mc.NBatch,
+		NUBatch:                    mc.NUBatch,
+		NThreads:                   mc.NThreads,
+		NThreadsBatch:              mc.NThreadsBatch,
+		CacheTypeK:                 mc.CacheTypeK,
+		CacheTypeV:                 mc.CacheTypeV,
+		FlashAttention:             mc.FlashAttention,
+		UseDirectIO:                mc.UseDirectIO,
+		IgnoreIntegrityCheck:       mc.IgnoreIntegrityCheck,
+		NSeqMax:                    mc.NSeqMax,
+		OffloadKQV:                 mc.OffloadKQV,
+		OpOffload:                  mc.OpOffload,
+		NGpuLayers:                 mc.NGpuLayers,
 		SplitMode:                  mc.SplitMode,
 		SystemPromptCache:          mc.SystemPromptCache,
 		SystemPromptCacheMinTokens: mc.SystemPromptCacheMinTokens,
@@ -302,12 +334,35 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 	return krn, nil
 }
 
+// allSlotsActive returns true if all model slots are occupied and every
+// cached model has at least one active stream.
+func (c *Cache) allSlotsActive() bool {
+	count := 0
+	for entry := range c.cache.Hottest() {
+		count++
+		if entry.Value.ActiveStreams() == 0 {
+			return false
+		}
+	}
+
+	return count >= c.maxModelsInCache
+}
+
 func (c *Cache) eviction(event otter.DeletionEvent[string, *kronk.Kronk]) {
 	const unloadTimeout = 5 * time.Second
 	ctx, cancel := context.WithTimeout(context.Background(), unloadTimeout)
 	defer cancel()
 
-	c.log(ctx, "kronk cache eviction", "key", event.Key, "cause", event.Cause, "was-evicted", event.WasEvicted())
+	c.log(ctx, "kronk cache eviction", "key", event.Key, "cause", event.Cause, "was-evicted", event.WasEvicted(), "active-streams", event.Value.ActiveStreams())
+
+	// If there are active streams and this was an automatic eviction (not explicit),
+	// re-insert the model to prevent eviction while requests are in flight.
+	if event.Value.ActiveStreams() > 0 && event.WasEvicted() {
+		c.log(ctx, "kronk cache eviction prevented", "key", event.Key, "active-streams", event.Value.ActiveStreams())
+		c.cache.Set(event.Key, event.Value)
+		return
+	}
+
 	if err := event.Value.Unload(ctx); err != nil {
 		c.log(ctx, "kronk cache eviction", "key", event.Key, "ERROR", err)
 	}

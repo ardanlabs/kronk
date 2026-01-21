@@ -474,16 +474,8 @@ loop:
 			}
 
 			// We have reasoning or completion content to return to the client.
-			err = m.sendDeltaResponse(ctx, ch, id, object, 0, prompt, resp.content, reasonFlag,
-				Usage{
-					PromptTokens:     inputTokens,
-					ReasoningTokens:  reasonTokens,
-					CompletionTokens: completionTokens,
-					OutputTokens:     outputTokens,
-					TotalTokens:      inputTokens + outputTokens,
-					TokensPerSecond:  tokensPerSecond,
-				},
-			)
+			// Per OpenAI spec, usage is only sent in the final response, not deltas.
+			err = m.sendDeltaResponse(ctx, ch, id, object, 0, prompt, resp.content, reasonFlag, outputTokens)
 
 			if err != nil {
 				return
@@ -726,21 +718,21 @@ func (m *Model) isUnncessaryCRLF(reasonFlag int, completionFlag int, content str
 	return false
 }
 
-func (m *Model) sendDeltaResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, prompt string, content string, reasonFlag int, usage Usage) error {
-	if usage.OutputTokens%500 == 0 {
-		m.log(ctx, "chat-completion", "status", "delta", "id", id, "tokens", usage.OutputTokens, "object", object, "reasoning", reasonFlag, "content", len(content))
+func (m *Model) sendDeltaResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, prompt string, content string, reasonFlag int, outputTokens int) error {
+	if outputTokens%500 == 0 {
+		m.log(ctx, "chat-completion", "status", "delta", "id", id, "tokens", outputTokens, "object", object, "reasoning", reasonFlag, "content", len(content))
 	}
 
 	select {
 	case <-ctx.Done():
 		select {
-		case ch <- ChatResponseErr(id, object, m.modelInfo.ID, choiceIndex, prompt, ctx.Err(), usage):
+		case ch <- ChatResponseErr(id, object, m.modelInfo.ID, choiceIndex, prompt, ctx.Err(), Usage{}):
 		default:
 		}
 
 		return ctx.Err()
 
-	case ch <- chatResponseDelta(id, object, m.modelInfo.ID, choiceIndex, content, reasonFlag > 0, usage):
+	case ch <- chatResponseDelta(id, object, m.modelInfo.ID, choiceIndex, content, reasonFlag > 0):
 	}
 
 	return nil
