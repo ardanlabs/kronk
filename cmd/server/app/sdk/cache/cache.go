@@ -97,6 +97,28 @@ type modelConfig struct {
 	SystemPromptCacheMinTokens int                      `yaml:"system-prompt-cache-min-tokens"`
 }
 
+func (mc modelConfig) String() string {
+	formatBoolPtr := func(p *bool) string {
+		if p == nil {
+			return "nil"
+		}
+		return fmt.Sprintf("%t", *p)
+	}
+
+	formatInt32Ptr := func(p *int32) string {
+		if p == nil {
+			return "nil"
+		}
+		return fmt.Sprintf("%d", *p)
+	}
+
+	return fmt.Sprintf("{Device:%q ContextWindow:%d NBatch:%d NUBatch:%d NThreads:%d NThreadsBatch:%d CacheTypeK:%d CacheTypeV:%d UseDirectIO:%t FlashAttention:%d IgnoreIntegrityCheck:%t NSeqMax:%d OffloadKQV:%s OpOffload:%s NGpuLayers:%s SplitMode:%d SystemPromptCache:%t SystemPromptCacheMinTokens:%d}",
+		mc.Device, mc.ContextWindow, mc.NBatch, mc.NUBatch, mc.NThreads, mc.NThreadsBatch,
+		mc.CacheTypeK, mc.CacheTypeV, mc.UseDirectIO, mc.FlashAttention, mc.IgnoreIntegrityCheck,
+		mc.NSeqMax, formatBoolPtr(mc.OffloadKQV), formatBoolPtr(mc.OpOffload),
+		formatInt32Ptr(mc.NGpuLayers), mc.SplitMode, mc.SystemPromptCache, mc.SystemPromptCacheMinTokens)
+}
+
 // Cache manages a set of Kronk APIs for use. It maintains a cache of these
 // APIs and will unload over time if not in use.
 type Cache struct {
@@ -245,7 +267,7 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 	}()))
 
 	mc, found := c.modelConfig[strings.ToLower(modelID)]
-	c.log(ctx, "model config result", "found", found, "mc", fmt.Sprintf("%#v", mc))
+	c.log(ctx, "model config result", "found", found, "mc", mc.String())
 
 	if c.ignoreIntegrityCheck {
 		mc.IgnoreIntegrityCheck = true
