@@ -89,6 +89,7 @@ type modelConfig struct {
 	OpOffload            *bool                    `yaml:"op-offload"`
 	NGpuLayers           *int32                   `yaml:"ngpu-layers"`
 	SplitMode            model.SplitMode          `yaml:"split-mode"`
+	SystemPromptCache    bool                     `yaml:"system-prompt-cache"`
 }
 
 // Cache manages a set of Kronk APIs for use. It maintains a cache of these
@@ -259,6 +260,7 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 		OpOffload:            mc.OpOffload,
 		NGpuLayers:           mc.NGpuLayers,
 		SplitMode:            mc.SplitMode,
+		SystemPromptCache:    mc.SystemPromptCache,
 	}
 
 	krn, err = kronk.New(cfg,
@@ -290,6 +292,8 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 	info = append(info, krn.ModelInfo().IsGPTModel)
 	info = append(info, "isEmbedModel")
 	info = append(info, krn.ModelInfo().IsEmbedModel)
+	info = append(info, "isRerankModel")
+	info = append(info, krn.ModelInfo().IsRerankModel)
 
 	c.log(ctx, "acquire-model", info...)
 

@@ -29,17 +29,19 @@ Core API package for model loading, chat, embeddings, rerank, and metrics.
 - `response.function_call_arguments.delta` → for tool calls
 - `*.done` events emitted at completion before `response.completed`
 
-**FinishReason handling** (`response.go`):
+**FinishReason handling** (`response.go`, `model/models.go`):
 
-- When `FinishReason != ""`, skip text/reasoning deltas (they duplicate previous content)
+- `FinishReasonPtr *string` field with `FinishReason()` accessor (returns empty string if nil)
+- Constants: `FinishReasonStop="stop"`, `FinishReasonTool="tool_calls"`, `FinishReasonError="error"`
+- When `FinishReasonPtr != nil`, skip text/reasoning deltas (they duplicate previous content)
 - Always process tool calls even with FinishReason set (may only arrive in final chunk)
 
-**Message vs Delta in final chunks** (`chat.go`, `model/models.go`):
+**Message and Delta structure** (`model/models.go`):
 
-- Final chunk uses `Message` for full content (non-streaming compatibility)
-- Tool calls are populated in **both** `Message` and `Delta` for streaming compatibility
-- HTTP streaming clears `Choice[0].Message` on final chunk (`FinishReasonStop`) per OpenAI spec
-- Test helpers: use `Delta` only if streaming AND `FinishReason` is empty; otherwise use `Message`
+- Both `Message` and `Delta` use `*ResponseMessage` type (unified structure)
+- `ResponseMessage` has: `Role`, `Content`, `Reasoning` (reasoning_content), `ToolCalls`
+- Final chunk populates **both** `Message` and `Delta` with full content and tool calls
+- Test helpers: use `Delta` only if streaming AND `FinishReasonPtr` is nil; otherwise use `Message`
 
 ## NSeqMax and Model Pooling Strategy
 

@@ -130,6 +130,13 @@ type Logger func(ctx context.Context, msg string, args ...any)
 //     (recommended for MoE models like Qwen3-MoE, Mixtral, DeepSeek)
 //
 // When not set, defaults to SplitModeRow for optimal MoE performance.
+//
+// SystemPromptCache enables caching of the system prompt's KV state in sequence 0.
+// When enabled, the system prompt is evaluated once and its KV cache is copied to
+// all client sequences on subsequent requests with the same system prompt. This
+// avoids redundant prefill computation for applications that use a consistent
+// system prompt across requests. The cache is automatically invalidated and
+// re-evaluated when the system prompt changes.
 type Config struct {
 	Log                  Logger
 	ModelFiles           []string
@@ -151,6 +158,7 @@ type Config struct {
 	OpOffload            *bool
 	NGpuLayers           *int32
 	SplitMode            SplitMode
+	SystemPromptCache    bool
 }
 
 func validateConfig(ctx context.Context, cfg Config, log Logger) error {

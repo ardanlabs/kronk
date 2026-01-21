@@ -10,6 +10,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/google/uuid"
+	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
 	"go.opentelemetry.io/otel/attribute"
 )
@@ -87,6 +88,17 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 			}
 		}()
 
+		var sysPromptNPast llama.Pos
+		var sysPromptCached bool
+
+		if m.cfg.SystemPromptCache && object == ObjectChatText {
+			d, sysPromptNPast, sysPromptCached, err = m.ensureSystemPromptCached(ctx, d)
+			if err != nil {
+				m.sendChatError(ctx, ch, id, err)
+				return
+			}
+		}
+
 		prompt, media, err := m.createPrompt(ctx, d)
 		if err != nil {
 			m.sendChatError(ctx, ch, id, fmt.Errorf("create-streaming: unable to apply jinja template: %w", err))
@@ -98,15 +110,17 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		// Use batch engine for text-only requests when available.
 		if m.batch != nil && object == ObjectChatText {
 			job := chatJob{
-				id:      id,
-				ctx:     ctx,
-				d:       d,
-				object:  object,
-				prompt:  prompt,
-				media:   media,
-				params:  params,
-				mtmdCtx: mtmdCtx,
-				ch:      ch,
+				id:              id,
+				ctx:             ctx,
+				d:               d,
+				object:          object,
+				prompt:          prompt,
+				media:           media,
+				params:          params,
+				mtmdCtx:         mtmdCtx,
+				ch:              ch,
+				sysPromptNPast:  sysPromptNPast,
+				sysPromptCached: sysPromptCached,
 			}
 
 			// Engine manages activeStreams for submitted jobs.
