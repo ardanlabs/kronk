@@ -92,9 +92,7 @@ func (m *Model) ensureSystemPromptCached(ctx context.Context, d D) (modifiedD D,
 
 	m.log(ctx, "sys-prompt-cache", "status", "cached", "role", msgInfo.role, "tokens", nTokens, "hash", newHash[:8])
 
-	modifiedD = removeFirstMessage(d)
-
-	return modifiedD, llama.Pos(nTokens), true, nil
+	return d, 0, false, nil
 }
 
 // copySystemPromptToSeq copies the cached system prompt KV cache from sequence 0
@@ -172,7 +170,7 @@ func hashFirstMessage(info firstMessageInfo) string {
 // from the messages slice.
 func removeFirstMessage(d D) D {
 	messages, ok := d["messages"].([]D)
-	if !ok || len(messages) == 0 {
+	if !ok || len(messages) <= 1 {
 		return d
 	}
 
