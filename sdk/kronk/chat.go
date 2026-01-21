@@ -107,10 +107,10 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 			}
 		}
 
-		// OpenAI does not expect the final delta to have content or reasoning.
-		// Kronk returns the entire streamed content in the final chunk.
-		if resp.Choice[0].FinishReason == model.FinishReasonStop {
-			resp.Choice[0].Message = model.ResponseMessage{}
+		// OpenAI does not expect the final chunk to have a message field.
+		// The delta should be empty {} per OpenAI spec.
+		if resp.Choice[0].FinishReason() == model.FinishReasonStop {
+			resp.Choice[0].Message = nil
 		}
 
 		d, err := json.Marshal(resp)
@@ -118,13 +118,13 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 			return resp, fmt.Errorf("chat-streaming-http: marshal: %w", err)
 		}
 
-		fmt.Fprintf(w, "data: %s\n", d)
+		fmt.Fprintf(w, "data: %s\n\n", d)
 		f.Flush()
 
 		lr = resp
 	}
 
-	w.Write([]byte("data: [DONE]\n"))
+	w.Write([]byte("data: [DONE]\n\n"))
 	f.Flush()
 
 	return lr, nil

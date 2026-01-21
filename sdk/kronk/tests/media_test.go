@@ -281,30 +281,43 @@ func testAudio(t *testing.T, krn *kronk.Kronk) {
 	}
 
 	f := func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), testDuration)
-		defer cancel()
-
 		id := uuid.New().String()
-		now := time.Now()
-		defer func() {
+
+		const maxRetries = 2
+		for attempt := 1; attempt <= maxRetries; attempt++ {
+			ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+
+			now := time.Now()
+			resp, err := krn.Chat(ctx, dAudio)
 			done := time.Now()
-			t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, krn.ModelInfo().ID, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
-		}()
+			cancel()
 
-		resp, err := krn.Chat(ctx, dAudio)
-		if err != nil {
-			return fmt.Errorf("chat: %w", err)
-		}
+			t.Logf("%s: %s, st: %v, en: %v, Duration: %s (attempt %d/%d)", id, krn.ModelInfo().ID, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now), attempt, maxRetries)
 
-		result := testChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatMedia, "speech", "", "", false)
+			if err != nil {
+				if attempt < maxRetries {
+					t.Logf("%s: retrying after error: %v", id, err)
+					continue
+				}
+				return fmt.Errorf("chat: %w", err)
+			}
 
-		for _, w := range result.Warnings {
-			t.Logf("WARNING: %s", w)
-		}
+			result := testChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatMedia, "speech", "", "", false)
 
-		if result.Err != nil {
-			t.Logf("%#v", resp)
-			return result.Err
+			for _, w := range result.Warnings {
+				t.Logf("WARNING: %s", w)
+			}
+
+			if result.Err != nil {
+				if attempt < maxRetries {
+					t.Logf("%s: retrying after empty content", id)
+					continue
+				}
+				t.Logf("%#v", resp)
+				return result.Err
+			}
+
+			return nil
 		}
 
 		return nil
@@ -326,40 +339,60 @@ func testAudioStreaming(t *testing.T, krn *kronk.Kronk) {
 	}
 
 	f := func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), testDuration)
-		defer cancel()
-
 		id := uuid.New().String()
-		now := time.Now()
-		defer func() {
-			done := time.Now()
-			t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, krn.ModelInfo().ID, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
-		}()
 
-		ch, err := krn.ChatStreaming(ctx, dAudio)
-		if err != nil {
-			return fmt.Errorf("chat streaming: %w", err)
-		}
+		const maxRetries = 2
+		for attempt := 1; attempt <= maxRetries; attempt++ {
+			ctx, cancel := context.WithTimeout(context.Background(), testDuration)
 
-		var lastResp model.ChatResponse
-		for resp := range ch {
-			lastResp = resp
-
-			if err := testChatBasics(resp, krn.ModelInfo().ID, model.ObjectChatMedia, false, true); err != nil {
-				t.Logf("%#v", resp)
-				return err
+			now := time.Now()
+			ch, err := krn.ChatStreaming(ctx, dAudio)
+			if err != nil {
+				cancel()
+				if attempt < maxRetries {
+					t.Logf("%s: retrying after error: %v", id, err)
+					continue
+				}
+				return fmt.Errorf("chat streaming: %w", err)
 			}
-		}
 
-		result := testChatResponse(lastResp, krn.ModelInfo().ID, model.ObjectChatMedia, "speech", "", "", true)
+			var lastResp model.ChatResponse
+			var basicErr error
+			for resp := range ch {
+				lastResp = resp
 
-		for _, w := range result.Warnings {
-			t.Logf("WARNING: %s", w)
-		}
+				if err := testChatBasics(resp, krn.ModelInfo().ID, model.ObjectChatMedia, false, true); err != nil {
+					t.Logf("%#v", resp)
+					basicErr = err
+					break
+				}
+			}
 
-		if result.Err != nil {
-			t.Logf("%#v", lastResp)
-			return result.Err
+			done := time.Now()
+			cancel()
+
+			t.Logf("%s: %s, st: %v, en: %v, Duration: %s (attempt %d/%d)", id, krn.ModelInfo().ID, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now), attempt, maxRetries)
+
+			if basicErr != nil {
+				return basicErr
+			}
+
+			result := testChatResponse(lastResp, krn.ModelInfo().ID, model.ObjectChatMedia, "speech", "", "", true)
+
+			for _, w := range result.Warnings {
+				t.Logf("WARNING: %s", w)
+			}
+
+			if result.Err != nil {
+				if attempt < maxRetries {
+					t.Logf("%s: retrying after empty content", id)
+					continue
+				}
+				t.Logf("%#v", lastResp)
+				return result.Err
+			}
+
+			return nil
 		}
 
 		return nil

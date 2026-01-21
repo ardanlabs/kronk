@@ -31,7 +31,6 @@ import (
 // const modelURL = "https://huggingface.co/unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF/resolve/main/Qwen3-Coder-30B-A3B-Instruct-Q8_0.gguf"
 // const modelURL = "https://huggingface.co/unsloth/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-Q8_0.gguf"
 // const modelURL = "https://huggingface.co/unsloth/GLM-4.7-Flash-GGUF/resolve/main/GLM-4.7-Flash-Q8_0.gguf"
-
 const modelURL = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
 
 func main() {
@@ -168,11 +167,6 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 func chat(krn *kronk.Kronk) error {
 	messages := model.DocumentArray()
 
-	if krn.ModelInfo().ID == "Qwen3-Coder-30B-A3B-Instruct-Q8_0" {
-		fmt.Println("Adding System Message")
-		messages = append(messages, model.TextMessage("system", "Never forget to start a tool call with <tool_call>"))
-	}
-
 	for {
 		var err error
 		messages, err = userInput(messages)
@@ -188,12 +182,13 @@ func chat(krn *kronk.Kronk) error {
 			defer cancel()
 
 			d := model.D{
-				"messages":    messages,
-				"tools":       toolDocuments(),
-				"max_tokens":  2048,
-				"temperature": 0.7,
-				"top_p":       0.9,
-				"top_k":       40,
+				"messages":       messages,
+				"tools":          toolDocuments(),
+				"max_tokens":     2048,
+				"temperature":    0.7,
+				"top_p":          0.8,
+				"top_k":          20,
+				"repeat_penalty": 1.05,
 			}
 
 			ch, err := performChat(ctx, krn, d)
@@ -277,7 +272,7 @@ loop:
 	for resp := range ch {
 		lr = resp
 
-		switch resp.Choice[0].FinishReason {
+		switch resp.Choice[0].FinishReason() {
 		case model.FinishReasonError:
 			return messages, fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
 

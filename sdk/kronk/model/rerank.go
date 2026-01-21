@@ -183,7 +183,7 @@ func (m *Model) Rerank(ctx context.Context, d D) (RerankResponse, error) {
 
 	rr := RerankResponse{
 		Object:  "list",
-		Created: time.Now().UnixMilli(),
+		Created: time.Now().Unix(),
 		Model:   m.modelInfo.ID,
 		Data:    results,
 		Usage: RerankUsage{

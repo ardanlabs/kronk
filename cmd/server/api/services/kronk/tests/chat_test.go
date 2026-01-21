@@ -39,10 +39,10 @@ func chatNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			ExpResp: &model.ChatResponse{
 				Choice: []model.Choice{
 					{
-						Message: model.ResponseMessage{
+						Message: &model.ResponseMessage{
 							Role: "assistant",
 						},
-						FinishReason: "stop",
+						FinishReasonPtr: stringPointer("stop"),
 					},
 				},
 				Model:  "Qwen3-8B-Q8_0",
@@ -52,7 +52,7 @@ func chatNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
 					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage"),
-					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReason", "Delta"),
+					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
 					cmpopts.IgnoreFields(model.ResponseMessage{}, "Content", "Reasoning", "ToolCalls"),
 				)
 
@@ -101,10 +101,10 @@ func chatImageQwen25VL(t *testing.T, tokens map[string]string) []apitest.Table {
 			ExpResp: &model.ChatResponse{
 				Choice: []model.Choice{
 					{
-						Message: model.ResponseMessage{
+						Message: &model.ResponseMessage{
 							Role: "assistant",
 						},
-						FinishReason: "stop",
+						FinishReasonPtr: stringPointer("stop"),
 					},
 				},
 				Model:  "Qwen2.5-VL-3B-Instruct-Q8_0",
@@ -113,7 +113,7 @@ func chatImageQwen25VL(t *testing.T, tokens map[string]string) []apitest.Table {
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
 					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage"),
-					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReason", "Delta"),
+					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
 					cmpopts.IgnoreFields(model.ResponseMessage{}, "Content", "Reasoning", "ToolCalls"),
 				)
 
@@ -161,10 +161,10 @@ func chatAudioQwen2Audio(t *testing.T, tokens map[string]string) []apitest.Table
 			ExpResp: &model.ChatResponse{
 				Choice: []model.Choice{
 					{
-						Message: model.ResponseMessage{
+						Message: &model.ResponseMessage{
 							Role: "assistant",
 						},
-						FinishReason: "stop",
+						FinishReasonPtr: stringPointer("stop"),
 					},
 				},
 				Model:  "Qwen2-Audio-7B.Q8_0",
@@ -173,7 +173,7 @@ func chatAudioQwen2Audio(t *testing.T, tokens map[string]string) []apitest.Table
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
 					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage"),
-					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReason", "Delta"),
+					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
 					cmpopts.IgnoreFields(model.ResponseMessage{}, "Content", "Reasoning", "ToolCalls"),
 				)
 
@@ -219,8 +219,8 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 			ExpResp: &model.ChatResponse{
 				Choice: []model.Choice{
 					{
-						Message:      model.ResponseMessage{},
-						FinishReason: "stop",
+						Message:         nil,
+						FinishReasonPtr: stringPointer("stop"),
 					},
 				},
 				Model:  "Qwen3-8B-Q8_0",
@@ -230,7 +230,7 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
 					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage"),
-					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReason", "Delta"),
+					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
 				)
 
 				if diff != "" {

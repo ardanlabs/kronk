@@ -194,7 +194,7 @@ loop:
 	for resp := range ch {
 		lr = resp
 
-		switch resp.Choice[0].FinishReason {
+		switch resp.Choice[0].FinishReason() {
 		case model.FinishReasonStop:
 			break loop
 

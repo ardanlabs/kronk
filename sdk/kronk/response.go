@@ -326,7 +326,7 @@ func (ss *streamState) process(chatResp model.ChatResponse) []ResponseStreamEven
 	// When FinishReason is set, the text/reasoning content is duplicated from
 	// previous chunks, so skip processing it. However, tool calls may only
 	// arrive with the final response, so we must still process those.
-	if choice.FinishReason == "" {
+	if choice.FinishReasonPtr == nil {
 		if delta := choice.Delta.Reasoning; delta != "" {
 			events = append(events, ss.handleReasoningDelta(delta)...)
 		}
@@ -336,7 +336,7 @@ func (ss *streamState) process(chatResp model.ChatResponse) []ResponseStreamEven
 		}
 	}
 
-	if len(choice.Message.ToolCalls) > 0 {
+	if choice.Message != nil && len(choice.Message.ToolCalls) > 0 {
 		events = append(events, ss.handleToolCalls(choice.Message.ToolCalls)...)
 	}
 
@@ -610,13 +610,17 @@ func toChatResponseToResponses(chatResp model.ChatResponse, d model.D) ResponseR
 	if len(chatResp.Choice) > 0 {
 		choice := chatResp.Choice[0]
 		msg := choice.Message
-		if msg.Content == "" && msg.Role == "" && choice.Delta != nil {
-			msg = *choice.Delta
+		if msg == nil && choice.Delta != nil {
+			msg = choice.Delta
 		}
-		outputText = msg.Content
-		finishReason = choice.FinishReason
-		toolCalls = msg.ToolCalls
-		reasoning = msg.Reasoning
+		if msg != nil {
+			outputText = msg.Content
+			toolCalls = msg.ToolCalls
+			reasoning = msg.Reasoning
+		}
+		if choice.FinishReasonPtr != nil {
+			finishReason = *choice.FinishReasonPtr
+		}
 	}
 
 	status := "completed"

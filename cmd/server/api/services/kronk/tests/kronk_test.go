@@ -72,6 +72,10 @@ func Test_API(t *testing.T) {
 
 // =============================================================================
 
+func stringPointer(v string) *string {
+	return &v
+}
+
 func createTokens(t *testing.T, sec *security.Security) map[string]string {
 	tokens := make(map[string]string)
 
@@ -185,10 +189,13 @@ func validateResponse(got any, streaming bool) responseValidator {
 }
 
 func (v responseValidator) getMsg() model.ResponseMessage {
-	if v.streaming && v.resp.Choice[0].FinishReason == "" && v.resp.Choice[0].Delta != nil {
+	if v.streaming && v.resp.Choice[0].FinishReason() == "" && v.resp.Choice[0].Delta != nil {
 		return *v.resp.Choice[0].Delta
 	}
-	return v.resp.Choice[0].Message
+	if v.resp.Choice[0].Message != nil {
+		return *v.resp.Choice[0].Message
+	}
+	return model.ResponseMessage{}
 }
 
 func (v responseValidator) hasValidUUID() responseValidator {
