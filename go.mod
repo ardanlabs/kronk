@@ -12,7 +12,7 @@ require (
 	github.com/hashicorp/go-getter v1.8.4
 	github.com/hybridgroup/yzma v1.5.1
 	github.com/maypok86/otter/v2 v2.3.0
-	github.com/nikolalohinski/gonja/v2 v2.5.1
+	github.com/nikolalohinski/gonja/v2 v2.5.2-0.20260121144741-01203fad98af
 	github.com/open-policy-agent/opa v1.12.3
 	github.com/prometheus/client_golang v1.23.2
 	github.com/spf13/cobra v1.10.2

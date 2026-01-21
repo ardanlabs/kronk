@@ -576,6 +576,9 @@ deps-upgrade: bui-upgrade
 yzma-latest:
 	GOPROXY=direct go get github.com/hybridgroup/yzma@main
 
+gonja-latest:
+	GOPROXY=direct go get github.com/nikolalohinski/gonja/v2@master
+
 # ==============================================================================
 # Examples
 
