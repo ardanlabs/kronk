@@ -440,7 +440,7 @@ func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 	content := string(buf[:l])
 
 	// DEBUG: Show raw token output
-	//fmt.Printf("[DEBUG] token=%d content=%q\n", token, content)
+	// fmt.Printf("[DEBUG] token=%d content=%q\n", token, content)
 
 	if content == "" {
 		e.finishSlot(s, nil)
