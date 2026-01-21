@@ -119,10 +119,9 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 
 	krn, err := kronk.New(model.Config{
 		ModelFiles: mp.ModelFiles,
-		CacheTypeK: model.GGMLTypeF16,
-		CacheTypeV: model.GGMLTypeF16,
-		NBatch:     1024,
-		NUBatch:    256,
+		CacheTypeK: model.GGMLTypeQ8_0,
+		CacheTypeV: model.GGMLTypeQ8_0,
+		NSeqMax:    2,
 	})
 
 	if err != nil {
@@ -219,7 +218,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
@@ -230,9 +228,10 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/templates"
 )
 
-// const modelURL = "https://huggingface.co/unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF/resolve/main/Qwen3-Coder-30B-A3B-Instruct-Q8_0.gguf"
-// const modelURL = "https://huggingface.co/unsloth/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-Q8_0.gguf"
-// const modelURL = "https://huggingface.co/unsloth/GLM-4.7-Flash-GGUF/resolve/main/GLM-4.7-Flash-Q8_0.gguf"
+//const modelURL = "https://huggingface.co/unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF/resolve/main/Qwen3-Coder-30B-A3B-Instruct-Q8_0.gguf"
+//const modelURL = "https://huggingface.co/unsloth/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-Q8_0.gguf"
+//const modelURL = "https://huggingface.co/unsloth/GLM-4.7-Flash-GGUF/resolve/main/GLM-4.7-Flash-Q8_0.gguf"
+
 const modelURL = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
 
 func main() {
@@ -326,24 +325,11 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	}
 
 	cfg := model.Config{
-		ModelFiles: mp.ModelFiles,
-		CacheTypeK: model.GGMLTypeF16,
-		CacheTypeV: model.GGMLTypeF16,
-		NBatch:     1024,
-		NUBatch:    256,
-		NSeqMax:    2,
-	}
-
-	if path.Base(mp.ModelFiles[0]) == "gpt-oss-20b-Q8_0" {
-		cfg = model.Config{
-			ModelFiles:    mp.ModelFiles,
-			ContextWindow: 8192,
-			NBatch:        4096,
-			NUBatch:       1024,
-			CacheTypeK:    model.GGMLTypeQ8_0,
-			CacheTypeV:    model.GGMLTypeQ8_0,
-			NSeqMax:       2,
-		}
+		ModelFiles:        mp.ModelFiles,
+		CacheTypeK:        model.GGMLTypeQ8_0,
+		CacheTypeV:        model.GGMLTypeQ8_0,
+		NSeqMax:           2,
+		SystemPromptCache: true,
 	}
 
 	krn, err := kronk.New(cfg)
@@ -368,6 +354,10 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 
 func chat(krn *kronk.Kronk) error {
 	messages := model.DocumentArray()
+
+	messages = append(messages,
+		model.TextMessage(model.RoleSystem, "You are a helpful AI assistant. You are designed to help users answer questions, create content, and provide information in a helpful and accurate manner. Always follow the user's instructions carefully and respond with clear, concise, and well-structured answers."),
+	)
 
 	for {
 		var err error
@@ -667,10 +657,8 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 
 	krn, err := kronk.New(model.Config{
 		ModelFiles: mp.ModelFiles,
-		CacheTypeK: model.GGMLTypeF16,
-		CacheTypeV: model.GGMLTypeF16,
-		NBatch:     1024,
-		NUBatch:    256,
+		CacheTypeK: model.GGMLTypeQ8_0,
+		CacheTypeV: model.GGMLTypeQ8_0,
 		NSeqMax:    2,
 	})
 

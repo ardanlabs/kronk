@@ -19,15 +19,17 @@ import (
 
 // chatJob represents a validated chat request ready for batch processing.
 type chatJob struct {
-	id      string
-	ctx     context.Context
-	d       D
-	object  string
-	prompt  string
-	media   [][]byte
-	params  params
-	mtmdCtx mtmd.Context
-	ch      chan<- ChatResponse
+	id              string
+	ctx             context.Context
+	d               D
+	object          string
+	prompt          string
+	media           [][]byte
+	params          params
+	mtmdCtx         mtmd.Context
+	ch              chan<- ChatResponse
+	sysPromptNPast  llama.Pos
+	sysPromptCached bool
 }
 
 // slot represents a processing slot for parallel inference.
@@ -287,6 +289,14 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	ret, err := llama.Decode(e.model.lctx, e.batch)
 	if err != nil || ret != 0 {
 		e.model.log(ctx, "batch-engine", "status", "decode-error", "ret", ret, "err", err)
+
+		// Fail all active slots to prevent infinite retry loop.
+		decodeErr := fmt.Errorf("decode failed: ret=%d, err=%w", ret, err)
+		for _, s := range e.slots {
+			if s.active {
+				e.finishSlot(s, decodeErr)
+			}
+		}
 		return
 	}
 
@@ -336,9 +346,28 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 	// Create sampler for this request.
 	s.sampler = e.model.toSampler(job.params)
 
-	// Tokenize the prompt.
-	tokens := llama.Tokenize(e.model.vocab, job.prompt, true, true)
+	// If system prompt is cached, copy KV cache from seq 0 to this slot's sequence.
+	if job.sysPromptCached {
+		llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+
+		if err := e.model.copySystemPromptToSeq(s.seqID); err != nil {
+			e.sendSlotError(s, fmt.Errorf("start-slot: %w", err))
+			s.reset()
+			return
+		}
+
+		s.nPast = job.sysPromptNPast
+	}
+
+	// Tokenize the prompt (system message already removed if cached).
+	addBOS := !job.sysPromptCached
+	tokens := llama.Tokenize(e.model.vocab, job.prompt, addBOS, true)
 	s.nPrompt = len(tokens)
+
+	// Include system prompt tokens in total prompt count for metrics.
+	if job.sysPromptCached {
+		s.nPrompt += int(job.sysPromptNPast)
+	}
 
 	// Check context window.
 	if s.nPrompt > e.model.cfg.ContextWindow {
@@ -355,7 +384,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 	// Add first chunk of prompt tokens to batch.
 	e.addPrefillChunk(s)
 
-	e.model.log(job.ctx, "batch-engine", "status", "slot-started", "slot", s.id, "id", job.id, "prompt_tokens", s.nPrompt)
+	e.model.log(job.ctx, "batch-engine", "status", "slot-started", "slot", s.id, "id", job.id,
+		"prompt_tokens", s.nPrompt, "sys_cached", job.sysPromptCached)
 }
 
 // addPrefillChunk adds the next chunk of prefill tokens to the batch.
@@ -410,7 +440,7 @@ func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 	content := string(buf[:l])
 
 	// DEBUG: Show raw token output
-	//fmt.Printf("[DEBUG] token=%d content=%q\n", token, content)
+	// fmt.Printf("[DEBUG] token=%d content=%q\n", token, content)
 
 	if content == "" {
 		e.finishSlot(s, nil)
@@ -540,6 +570,11 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 
 	// Clear KV cache for this slot's sequence.
 	llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+
+	// Restore cached system prompt KV state if enabled.
+	if e.model.cfg.SystemPromptCache {
+		e.model.copySystemPromptToSeq(s.seqID)
+	}
 
 	// Handle error case.
 	if err != nil {

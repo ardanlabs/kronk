@@ -8,6 +8,7 @@ import (
 	"io"
 	"path"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -25,19 +26,22 @@ type TemplateRetriever interface {
 
 // Model represents a model and provides a low-level API for working with it.
 type Model struct {
-	cfg           Config
-	log           Logger
-	model         llama.Model
-	vocab         llama.Vocab
-	ctxParams     llama.ContextParams
-	lctx          llama.Context
-	mem           llama.Memory
-	batch         *batchEngine
-	template      Template
-	projFile      string
-	modelInfo     ModelInfo
-	activeStreams atomic.Int32
-	unloaded      atomic.Bool
+	cfg             Config
+	log             Logger
+	model           llama.Model
+	vocab           llama.Vocab
+	ctxParams       llama.ContextParams
+	lctx            llama.Context
+	mem             llama.Memory
+	batch           *batchEngine
+	template        Template
+	projFile        string
+	modelInfo       ModelInfo
+	activeStreams   atomic.Int32
+	unloaded        atomic.Bool
+	sysPromptMu     sync.RWMutex
+	sysPromptHash   string
+	sysPromptTokens int
 }
 
 func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) (*Model, error) {
@@ -110,7 +114,10 @@ func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) 
 
 	ctxParams := modelCtxParams(cfg, modelInfo)
 
-	l(ctx, "context-params", "NCtx", ctxParams.NCtx, "NBatch", ctxParams.NBatch, "NUBatch", ctxParams.NUbatch, "NSeqMax", ctxParams.NSeqMax, "TypeK", ctxParams.TypeK, "TypeV", ctxParams.TypeV, "NThreads", ctxParams.NThreads, "NThreadsBatch", ctxParams.NThreadsBatch)
+	l(ctx, "context-params", "NCtx", ctxParams.NCtx, "NBatch", ctxParams.NBatch,
+		"NUBatch", ctxParams.NUbatch, "NSeqMax", ctxParams.NSeqMax,
+		"TypeK", ctxParams.TypeK, "TypeV", ctxParams.TypeV, "NThreads", ctxParams.NThreads,
+		"NThreadsBatch", ctxParams.NThreadsBatch, "SystemPromptCache", cfg.SystemPromptCache)
 
 	lctx, err := llama.InitFromModel(mdl, ctxParams)
 	if err != nil {
@@ -275,6 +282,8 @@ func (m *Model) resetContext() {
 	if err == nil {
 		llama.MemoryClear(mem, true)
 	}
+
+	m.clearSystemPromptCache()
 }
 
 func (m *Model) sequentialChatRequest(ctx context.Context, id string, lctx llama.Context, mtmdCtx mtmd.Context, object string, prompt string, media [][]byte, params params, ch chan<- ChatResponse) {

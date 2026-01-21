@@ -108,9 +108,18 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 		}
 
 		// OpenAI does not expect the final chunk to have a message field.
-		// The delta should be empty {} per OpenAI spec.
-		if resp.Choice[0].FinishReason() == model.FinishReasonStop {
+		// The delta should be empty {} per OpenAI spec (except for tool calls).
+		if fr := resp.Choice[0].FinishReason(); fr == model.FinishReasonStop || fr == model.FinishReasonTool {
 			resp.Choice[0].Message = nil
+			if delta := resp.Choice[0].Delta; delta != nil {
+				if len(delta.ToolCalls) == 0 {
+					resp.Choice[0].Delta = &model.ResponseMessage{}
+				} else {
+					delta.Role = ""
+					delta.Content = ""
+					delta.Reasoning = ""
+				}
+			}
 		}
 
 		d, err := json.Marshal(resp)

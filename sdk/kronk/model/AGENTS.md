@@ -16,6 +16,7 @@ Low-level model inference using yzma (llama.cpp Go bindings).
 - `prompts.go` - Prompt formatting
 - `params.go` - Sampling parameters
 - `check.go` - Model validation
+- `sysprompt.go` - System prompt KV cache management
 
 ## ChatStreaming: Batch vs Sequential Routing
 
@@ -87,6 +88,8 @@ m.sequentialChatRequest(...)
 - `OpOffload`: Tensor ops on GPU (nil/true) or CPU (false)
 - `NGpuLayers`: Layers to offload (0 = all, -1 = none, N = specific count)
 - `SplitMode`: Multi-GPU split (`SplitModeNone=0`, `SplitModeLayer=1`, `SplitModeRow=2` for MoE)
+- `SystemPromptCache`: Enable caching first message KV state in sequence 0 (see below)
+- `SystemPromptCacheMinTokens`: Minimum tokens before caching first message (default: 100)
 
 ## Model-Specific Tuning Guidelines
 
@@ -108,6 +111,65 @@ m.sequentialChatRequest(...)
 - `MarshalJSON`: wraps `map[string]any` as a JSON-encoded string
 - `UnmarshalJSON`: tries string first, falls back to object for non-compliant clients
 
+## Response Structure
+
+**Choice and ResponseMessage** (`models.go`):
+
+- `Choice` has `Message *ResponseMessage` and `Delta *ResponseMessage` (same type)
+- `FinishReasonPtr *string` with `FinishReason()` accessor returning empty string if nil
+- Constants: `FinishReasonStop="stop"`, `FinishReasonTool="tool_calls"`, `FinishReasonError="error"`
+
+**ResponseMessage fields**:
+
+- `Role` - message role (e.g., "assistant")
+- `Content` - text content
+- `Reasoning` - reasoning content (JSON field: `reasoning_content`)
+- `ToolCalls []ResponseToolCall` - tool call array
+
+**Final chunk behavior** (`chatResponseFinal`):
+
+- Sets both `Message` and `Delta` to the same `ResponseMessage` with full content
+- `FinishReasonPtr` set to `FinishReasonStop` or `FinishReasonTool` (if tool calls present)
+
+**Delta chunk behavior** (`chatResponseDelta`):
+
+- Only `Delta` is set (not `Message`)
+- `FinishReasonPtr` is nil for intermediate chunks
+
 **Media processing** (`media.go`):
 
 - Handle `nil` content in `toMediaMessage` with `case nil: continue`
+
+## System Prompt Caching
+
+When `Config.SystemPromptCache` is enabled, the first message's KV cache is computed once and reused across requests with the same first message. This works for any role (system, user, or assistant), supporting both traditional system prompts and clients like Cline that use a large first user message as context.
+
+**How it works** (`sysprompt.go`, `batch.go`):
+
+1. On first request: Extract first message from D (any role), hash role+content, tokenize and decode to sequence 0
+2. Check token count against `SystemPromptCacheMinTokens` (default: 100) - skip caching if too short
+3. Store hash and token count in `Model.sysPromptHash` / `Model.sysPromptTokens`
+4. Remove first message from D before creating prompt (avoids double-encoding)
+5. On subsequent requests with same first message:
+   - Hash matches → copy KV cache from seq 0 to slot's seqID via `MemorySeqCp`
+   - Set `nPast` to cached token count (skip prefill for those tokens)
+   - Tokenize remaining prompt without BOS (cached message already has it)
+6. When slot finishes: clear slot's seq, then restore from seq 0 for next request
+
+**Sequence ID layout:**
+
+- Sequence 0: Reserved for cached first message KV state
+- Sequences 1-N: Used by batch engine slots
+
+**Cache invalidation:**
+
+- Hash mismatch: clears seq 0, re-evaluates new first message, updates hash/count
+- Different role with same content: different hash (role is included in hash)
+- `resetContext()`: clears all memory AND calls `clearSystemPromptCache()` (sequential path)
+
+**Limitations:**
+
+- Only works for batch path (text-only requests)
+- Sequential path calls `resetContext()` which clears the cache
+- Messages shorter than `SystemPromptCacheMinTokens` are not cached
+- Thread-safe via `sysPromptMu` mutex
