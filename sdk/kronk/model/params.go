@@ -77,6 +77,7 @@ const (
 	defXtcMinKeep      = 1
 	defXtcProbability  = 0.0
 	defXtcThreshold    = 0.1
+	defIncludeUsage    = true
 )
 
 const (
@@ -130,6 +131,7 @@ type params struct {
 	Thinking        string  `json:"enable_thinking"`
 	ReasoningEffort string  `json:"reasoning_effort"`
 	ReturnPrompt    bool    `json:"return_prompt"`
+	IncludeUsage    bool    `json:"include_usage"`
 }
 
 func (m *Model) parseParams(d D) (params, error) {
@@ -286,6 +288,19 @@ func (m *Model) parseParams(d D) (params, error) {
 		}
 	}
 
+	includeUsage := defIncludeUsage
+	if streamOpts, exists := d["stream_options"]; exists {
+		if optsMap, ok := streamOpts.(map[string]any); ok {
+			if val, exists := optsMap["include_usage"]; exists {
+				var err error
+				includeUsage, err = parseBool("stream_options.include_usage", val)
+				if err != nil {
+					return params{}, err
+				}
+			}
+		}
+	}
+
 	p := params{
 		Temperature:     temp,
 		TopK:            int32(topK),
@@ -304,6 +319,7 @@ func (m *Model) parseParams(d D) (params, error) {
 		Thinking:        strconv.FormatBool(enableThinking),
 		ReasoningEffort: reasoningEffort,
 		ReturnPrompt:    returnPrompt,
+		IncludeUsage:    includeUsage,
 	}
 
 	return m.adjustParams(p), nil

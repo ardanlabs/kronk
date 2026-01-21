@@ -288,10 +288,10 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	// Decode the batch.
 	ret, err := llama.Decode(e.model.lctx, e.batch)
 	if err != nil || ret != 0 {
-		e.model.log(ctx, "batch-engine", "status", "decode-error", "ret", ret, "err", err)
+		e.logDecodeError(ctx, ret, err)
 
 		// Fail all active slots to prevent infinite retry loop.
-		decodeErr := fmt.Errorf("decode failed: ret=%d, err=%w", ret, err)
+		decodeErr := decodeError(ret, err)
 		for _, s := range e.slots {
 			if s.active {
 				e.finishSlot(s, decodeErr)
@@ -492,10 +492,8 @@ func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 		return
 	}
 
-	// Calculate tokens per second.
-	elapsedSeconds := time.Since(s.startTime).Seconds()
+	// Calculate output tokens for logging.
 	outputTokens := s.reasonTokens + s.completionTokens
-	tokensPerSecond := float64(outputTokens) / elapsedSeconds
 
 	// Stream response if not tooling.
 	if s.toolFlag == 0 {
@@ -505,16 +503,8 @@ func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 			return
 		}
 
-		usage := Usage{
-			PromptTokens:     s.nPrompt,
-			ReasoningTokens:  s.reasonTokens,
-			CompletionTokens: s.completionTokens,
-			OutputTokens:     outputTokens,
-			TotalTokens:      s.nPrompt + outputTokens,
-			TokensPerSecond:  tokensPerSecond,
-		}
-
-		err := e.model.sendDeltaResponse(s.job.ctx, s.job.ch, s.job.id, s.job.object, 0, "", resp.content, s.reasonFlag, usage)
+		// Per OpenAI spec, usage is only sent in the final response, not deltas.
+		err := e.model.sendDeltaResponse(s.job.ctx, s.job.ch, s.job.id, s.job.object, 0, "", resp.content, s.reasonFlag, outputTokens)
 		if err != nil {
 			e.finishSlot(s, err)
 			return
@@ -703,4 +693,74 @@ func batchAdd(batch *llama.Batch, token llama.Token, pos llama.Pos, seqIDs []lla
 	}
 
 	batch.NTokens++
+}
+
+// logDecodeError logs detailed KV cache diagnostics when decode fails.
+func (e *batchEngine) logDecodeError(ctx context.Context, ret int32, err error) {
+	nCtx := llama.NCtx(e.model.lctx)
+
+	// Collect per-slot diagnostics.
+	var totalTokens llama.Pos
+	slotInfo := make([]string, 0, e.nSlots+1)
+
+	// Check system prompt cache (seq 0).
+	if sysMax, sysErr := llama.MemorySeqPosMax(e.model.mem, 0); sysErr == nil && sysMax >= 0 {
+		slotInfo = append(slotInfo, fmt.Sprintf("sys[0]=%d", sysMax+1))
+		totalTokens += sysMax + 1
+	}
+
+	// Check each slot's sequence.
+	for _, s := range e.slots {
+		if !s.active {
+			continue
+		}
+		posMax, posErr := llama.MemorySeqPosMax(e.model.mem, s.seqID)
+		if posErr == nil && posMax >= 0 {
+			tokens := posMax + 1
+			slotInfo = append(slotInfo, fmt.Sprintf("slot[%d,seq=%d]=%d", s.id, s.seqID, tokens))
+			totalTokens += tokens
+		}
+	}
+
+	e.model.log(ctx, "batch-engine",
+		"status", "decode-error",
+		"ret", ret,
+		"err", err,
+		"n_ctx", nCtx,
+		"kv_used", totalTokens,
+		"batch_tokens", e.batch.NTokens,
+		"active_slots", len(slotInfo),
+		"slot_usage", strings.Join(slotInfo, ","),
+	)
+}
+
+// decodeError returns a human-readable error message for llama_decode return codes.
+// Return codes from llama.cpp:
+//
+//	0  - success
+//	1  - could not find a KV slot for the batch (try reducing batch size or increase context)
+//	2  - aborted
+//	-1 - invalid input batch
+//	<-1 - fatal error
+func decodeError(ret int32, err error) error {
+	var msg string
+	switch ret {
+	case 1:
+		msg = "KV cache full: could not find a slot for the batch (reduce batch size or increase context window)"
+	case 2:
+		msg = "decode aborted"
+	case -1:
+		msg = "invalid input batch"
+	default:
+		if ret < -1 {
+			msg = "fatal decode error"
+		} else {
+			msg = "unknown decode error"
+		}
+	}
+
+	if err != nil {
+		return fmt.Errorf("%s: %w", msg, err)
+	}
+	return fmt.Errorf("%s (ret=%d)", msg, ret)
 }

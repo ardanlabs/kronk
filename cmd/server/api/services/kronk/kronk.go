@@ -111,7 +111,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		}
 		Cache struct {
 			ModelsInCache        int           `conf:"default:3"`
-			TTL                  time.Duration `conf:"default:5m"`
+			TTL                  time.Duration `conf:"default:20m"`
 			IgnoreIntegrityCheck bool          `conf:"default:true"`
 			ModelConfigFile      string
 		}
