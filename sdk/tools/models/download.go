@@ -187,7 +187,7 @@ func (m *Models) downloadModel(ctx context.Context, modelFileURL string, projFil
 	// projFileName:   /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/mmproj-Qwen2-Audio-7B.Q8_0.gguf
 	// orgShaFileName: /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/sha/Qwen2-Audio-7B.mmproj-Q8_0.gguf
 	// shaFileName:    /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/sha/mmproj-Qwen2-Audio-7B.Q8_0.gguf
-	shaFileName := filepath.Join(path.Dir(orgShaFileName), path.Base(projFileName))
+	shaFileName := filepath.Join(filepath.Dir(orgShaFileName), filepath.Base(projFileName))
 
 	if err := os.Rename(orgShaFileName, shaFileName); err != nil {
 		return Path{}, fmt.Errorf("download-model: unable to rename projector sha file: %w", err)
@@ -247,7 +247,7 @@ func (m *Models) pullShaFile(modelFileURL string, progress downloader.ProgressFu
 	// /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF
 	// /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/sha
 	shaDest := filepath.Join(modelFilePath, "sha")
-	shaFile := filepath.Join(shaDest, path.Base(modelFileName))
+	shaFile := filepath.Join(shaDest, filepath.Base(modelFileName))
 
 	if !hasNetwork() {
 		return shaFile, nil
@@ -315,10 +315,10 @@ func fileSize(filePath string) (int, error) {
 
 func createProjFileName(modelFileName string) string {
 	modelID := extractModelID(modelFileName)
-	profFileName := fmt.Sprintf("mmproj-%s%s", modelID, path.Ext(modelFileName))
+	profFileName := fmt.Sprintf("mmproj-%s%s", modelID, filepath.Ext(modelFileName))
 
-	dir, _ := path.Split(modelFileName)
-	name := path.Join(dir, profFileName)
+	dir := filepath.Dir(modelFileName)
+	name := filepath.Join(dir, profFileName)
 
 	// modelFileName: /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf
 	// modelID:       Qwen3-8B-Q8_0
@@ -332,7 +332,7 @@ func createProjFileName(modelFileName string) string {
 var shardPattern = regexp.MustCompile(`-\d+-of-\d+$`)
 
 func extractModelID(modelFileName string) string {
-	name := strings.TrimSuffix(path.Base(modelFileName), path.Ext(modelFileName))
+	name := strings.TrimSuffix(filepath.Base(modelFileName), filepath.Ext(modelFileName))
 	name = shardPattern.ReplaceAllString(name, "")
 
 	// modelFileName: /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf
