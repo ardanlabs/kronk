@@ -112,11 +112,65 @@ export default function DocsAPIChat() {
                     <td><code>max_tokens</code></td>
                     <td><code>int</code></td>
                     <td>No</td>
-                    <td>Maximum output tokens (default: 1024)</td>
+                    <td>Maximum output tokens (default: context window)</td>
+                  </tr>
+                  <tr>
+                    <td><code>repeat_penalty</code></td>
+                    <td><code>float32</code></td>
+                    <td>No</td>
+                    <td>Penalty for repeated tokens (default: 1.1)</td>
+                  </tr>
+                  <tr>
+                    <td><code>repeat_last_n</code></td>
+                    <td><code>int32</code></td>
+                    <td>No</td>
+                    <td>Recent tokens to consider for repetition penalty (default: 64)</td>
+                  </tr>
+                  <tr>
+                    <td><code>dry_multiplier</code></td>
+                    <td><code>float32</code></td>
+                    <td>No</td>
+                    <td>DRY sampler multiplier for n-gram repetition penalty (default: 0.0, disabled)</td>
+                  </tr>
+                  <tr>
+                    <td><code>dry_base</code></td>
+                    <td><code>float32</code></td>
+                    <td>No</td>
+                    <td>Base for exponential penalty growth in DRY (default: 1.75)</td>
+                  </tr>
+                  <tr>
+                    <td><code>dry_allowed_length</code></td>
+                    <td><code>int32</code></td>
+                    <td>No</td>
+                    <td>Minimum n-gram length before DRY applies (default: 2)</td>
+                  </tr>
+                  <tr>
+                    <td><code>dry_penalty_last_n</code></td>
+                    <td><code>int32</code></td>
+                    <td>No</td>
+                    <td>Recent tokens DRY considers, 0 = full context (default: 0)</td>
+                  </tr>
+                  <tr>
+                    <td><code>xtc_probability</code></td>
+                    <td><code>float32</code></td>
+                    <td>No</td>
+                    <td>XTC probability for extreme token culling (default: 0.0, disabled)</td>
+                  </tr>
+                  <tr>
+                    <td><code>xtc_threshold</code></td>
+                    <td><code>float32</code></td>
+                    <td>No</td>
+                    <td>Probability threshold for XTC culling (default: 0.1)</td>
+                  </tr>
+                  <tr>
+                    <td><code>xtc_min_keep</code></td>
+                    <td><code>uint32</code></td>
+                    <td>No</td>
+                    <td>Minimum tokens to keep after XTC culling (default: 1)</td>
                   </tr>
                   <tr>
                     <td><code>enable_thinking</code></td>
-                    <td><code>boolean</code></td>
+                    <td><code>string</code></td>
                     <td>No</td>
                     <td>Enable model thinking for non-GPT models (default: true)</td>
                   </tr>
@@ -124,7 +178,13 @@ export default function DocsAPIChat() {
                     <td><code>reasoning_effort</code></td>
                     <td><code>string</code></td>
                     <td>No</td>
-                    <td>Reasoning level for GPT models (default: medium)</td>
+                    <td>Reasoning level for GPT models: none, minimal, low, medium, high (default: medium)</td>
+                  </tr>
+                  <tr>
+                    <td><code>return_prompt</code></td>
+                    <td><code>bool</code></td>
+                    <td>No</td>
+                    <td>Include prompt in response (default: false)</td>
                   </tr>
                 </tbody>
               </table>
