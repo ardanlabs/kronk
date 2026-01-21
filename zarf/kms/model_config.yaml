@@ -51,7 +51,7 @@ embeddinggemma-300m-qat-Q8_0:
   cache-type-v: q8_0
   flash-attention: enabled
 Qwen3-Coder-30B-A3B-Instruct-Q8_0:
-  context-window: 262144 # Model supports 262144, but start conservative
+  context-window: 131072 # Model supports 262144, but w/ 128k
   nbatch: 1024
   nubatch: 256
   cache-type-k: q8_0

@@ -409,6 +409,9 @@ func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 	l := llama.TokenToPiece(e.model.vocab, token, buf, 0, true)
 	content := string(buf[:l])
 
+	// DEBUG: Show raw token output
+	//fmt.Printf("[DEBUG] token=%d content=%q\n", token, content)
+
 	if content == "" {
 		e.finishSlot(s, nil)
 		return

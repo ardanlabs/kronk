@@ -145,3 +145,4 @@ require (
 
 //replace github.com/hybridgroup/yzma => ../yzma
 //replace github.com/hybridgroup/yzma => /Users/bill/code/go/src/github.com/hybridgroup/yzma
+// replace github.com/nikolalohinski/gonja/v2 => /Users/bill/code/go/src/github.com/ardanlabs/gonja
