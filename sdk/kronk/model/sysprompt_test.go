@@ -167,13 +167,13 @@ func TestRemoveFirstMessage(t *testing.T) {
 			wantMsgCount: 0,
 		},
 		{
-			name: "single message removed",
+			name: "single message unchanged",
 			d: D{
 				"messages": []D{
 					{"role": "user", "content": "Hello"},
 				},
 			},
-			wantMsgCount: 0,
+			wantMsgCount: 1,
 		},
 	}
 
@@ -189,7 +189,7 @@ func TestRemoveFirstMessage(t *testing.T) {
 			}
 
 			originalMsgs := tt.d["messages"].([]D)
-			if len(originalMsgs) > 0 && len(msgs) > 0 {
+			if len(originalMsgs) > 1 && len(msgs) > 0 {
 				if msgs[0]["role"] == originalMsgs[0]["role"] && msgs[0]["content"] == originalMsgs[0]["content"] {
 					t.Error("first message should have been removed")
 				}

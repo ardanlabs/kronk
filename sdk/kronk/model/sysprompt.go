@@ -167,7 +167,8 @@ func hashFirstMessage(info firstMessageInfo) string {
 }
 
 // removeFirstMessage returns a clone of D with the first message removed
-// from the messages slice.
+// from the messages slice. If there is only one message, D is returned
+// unchanged to ensure at least one message remains.
 func removeFirstMessage(d D) D {
 	messages, ok := d["messages"].([]D)
 	if !ok || len(messages) <= 1 {
