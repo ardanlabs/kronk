@@ -25,10 +25,11 @@ Key principles:
 */
 
 const (
-	defContextWindow = 8 * 1024
-	defNBatch        = 2 * 1024
-	defNUBatch       = 512
-	defNUBatchVision = 2 * 1024
+	defContextWindow  = 8 * 1024
+	defNBatch         = 2 * 1024
+	defNUBatch        = 512
+	defNUBatchVision  = 2 * 1024
+	defMinCacheTokens = 100
 )
 
 // Logger provides a function for logging messages from different APIs.
@@ -131,34 +132,42 @@ type Logger func(ctx context.Context, msg string, args ...any)
 //
 // When not set, defaults to SplitModeRow for optimal MoE performance.
 //
-// SystemPromptCache enables caching of the system prompt's KV state in sequence 0.
-// When enabled, the system prompt is evaluated once and its KV cache is copied to
-// all client sequences on subsequent requests with the same system prompt. This
-// avoids redundant prefill computation for applications that use a consistent
-// system prompt across requests. The cache is automatically invalidated and
-// re-evaluated when the system prompt changes.
+// SystemPromptCache enables caching of the first message's KV state in sequence 0.
+// When enabled, the first message (regardless of role - system, user, or assistant)
+// is evaluated once and its KV cache is copied to all client sequences on subsequent
+// requests with the same first message. This avoids redundant prefill computation
+// for applications that use a consistent system prompt or large initial context
+// (like Cline's instructions). The cache is automatically invalidated and
+// re-evaluated when the first message changes. The hash includes the role to
+// differentiate between different role types with the same content.
+//
+// SystemPromptCacheMinTokens sets the minimum token count required before caching
+// the first message. Messages shorter than this threshold are not cached, as the
+// overhead of cache management may outweigh the prefill savings. When set to 0,
+// defaults to 100 tokens.
 type Config struct {
-	Log                  Logger
-	ModelFiles           []string
-	ProjFile             string
-	JinjaFile            string
-	Device               string
-	ContextWindow        int
-	NBatch               int
-	NUBatch              int
-	NThreads             int
-	NThreadsBatch        int
-	CacheTypeK           GGMLType
-	CacheTypeV           GGMLType
-	FlashAttention       FlashAttentionType
-	UseDirectIO          bool
-	IgnoreIntegrityCheck bool
-	NSeqMax              int
-	OffloadKQV           *bool
-	OpOffload            *bool
-	NGpuLayers           *int32
-	SplitMode            SplitMode
-	SystemPromptCache    bool
+	Log                        Logger
+	ModelFiles                 []string
+	ProjFile                   string
+	JinjaFile                  string
+	Device                     string
+	ContextWindow              int
+	NBatch                     int
+	NUBatch                    int
+	NThreads                   int
+	NThreadsBatch              int
+	CacheTypeK                 GGMLType
+	CacheTypeV                 GGMLType
+	FlashAttention             FlashAttentionType
+	UseDirectIO                bool
+	IgnoreIntegrityCheck       bool
+	NSeqMax                    int
+	OffloadKQV                 *bool
+	OpOffload                  *bool
+	NGpuLayers                 *int32
+	SplitMode                  SplitMode
+	SystemPromptCache          bool
+	SystemPromptCacheMinTokens int
 }
 
 func validateConfig(ctx context.Context, cfg Config, log Logger) error {
@@ -221,6 +230,11 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 	// This value must be 1 to properly configure the batch engine.
 	if cfg.NSeqMax <= 0 {
 		cfg.NSeqMax = 1
+	}
+
+	// Default minimum tokens for system prompt caching.
+	if cfg.SystemPromptCache && cfg.SystemPromptCacheMinTokens <= 0 {
+		cfg.SystemPromptCacheMinTokens = defMinCacheTokens
 	}
 
 	return cfg
