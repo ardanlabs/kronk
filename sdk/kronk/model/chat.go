@@ -91,8 +91,8 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		var sysPromptNPast llama.Pos
 		var sysPromptCached bool
 
-		if m.cfg.SystemPromptCache && object == ObjectChatText {
-			d, sysPromptNPast, sysPromptCached, err = m.ensureSystemPromptCached(ctx, d)
+		if (m.cfg.SystemPromptCache || m.cfg.FirstMessageCache) && object == ObjectChatText {
+			d, sysPromptNPast, sysPromptCached, err = m.ensureFirstMessageCached(ctx, d)
 			if err != nil {
 				m.sendChatError(ctx, ch, id, err)
 				return

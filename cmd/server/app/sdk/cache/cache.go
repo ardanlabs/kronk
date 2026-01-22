@@ -77,24 +77,25 @@ func validateConfig(cfg Config) (Config, error) {
 // =============================================================================
 
 type modelConfig struct {
-	Device                     string                   `yaml:"device"`
-	ContextWindow              int                      `yaml:"context-window"`
-	NBatch                     int                      `yaml:"nbatch"`
-	NUBatch                    int                      `yaml:"nubatch"`
-	NThreads                   int                      `yaml:"nthreads"`
-	NThreadsBatch              int                      `yaml:"nthreads-batch"`
-	CacheTypeK                 model.GGMLType           `yaml:"cache-type-k"`
-	CacheTypeV                 model.GGMLType           `yaml:"cache-type-v"`
-	UseDirectIO                bool                     `yaml:"use-direct-io"`
-	FlashAttention             model.FlashAttentionType `yaml:"flash-attention"`
-	IgnoreIntegrityCheck       bool                     `yaml:"ignore-integrity-check"`
-	NSeqMax                    int                      `yaml:"nseq-max"`
-	OffloadKQV                 *bool                    `yaml:"offload-kqv"`
-	OpOffload                  *bool                    `yaml:"op-offload"`
-	NGpuLayers                 *int32                   `yaml:"ngpu-layers"`
-	SplitMode                  model.SplitMode          `yaml:"split-mode"`
-	SystemPromptCache          bool                     `yaml:"system-prompt-cache"`
-	SystemPromptCacheMinTokens int                      `yaml:"system-prompt-cache-min-tokens"`
+	Device               string                   `yaml:"device"`
+	ContextWindow        int                      `yaml:"context-window"`
+	NBatch               int                      `yaml:"nbatch"`
+	NUBatch              int                      `yaml:"nubatch"`
+	NThreads             int                      `yaml:"nthreads"`
+	NThreadsBatch        int                      `yaml:"nthreads-batch"`
+	CacheTypeK           model.GGMLType           `yaml:"cache-type-k"`
+	CacheTypeV           model.GGMLType           `yaml:"cache-type-v"`
+	UseDirectIO          bool                     `yaml:"use-direct-io"`
+	FlashAttention       model.FlashAttentionType `yaml:"flash-attention"`
+	IgnoreIntegrityCheck bool                     `yaml:"ignore-integrity-check"`
+	NSeqMax              int                      `yaml:"nseq-max"`
+	OffloadKQV           *bool                    `yaml:"offload-kqv"`
+	OpOffload            *bool                    `yaml:"op-offload"`
+	NGpuLayers           *int32                   `yaml:"ngpu-layers"`
+	SplitMode            model.SplitMode          `yaml:"split-mode"`
+	SystemPromptCache    bool                     `yaml:"system-prompt-cache"`
+	FirstMessageCache    bool                     `yaml:"first-message-cache"`
+	CacheMinTokens       int                      `yaml:"cache-min-tokens"`
 }
 
 func (mc modelConfig) String() string {
@@ -112,11 +113,11 @@ func (mc modelConfig) String() string {
 		return fmt.Sprintf("%d", *p)
 	}
 
-	return fmt.Sprintf("{Device:%q ContextWindow:%d NBatch:%d NUBatch:%d NThreads:%d NThreadsBatch:%d CacheTypeK:%d CacheTypeV:%d UseDirectIO:%t FlashAttention:%d IgnoreIntegrityCheck:%t NSeqMax:%d OffloadKQV:%s OpOffload:%s NGpuLayers:%s SplitMode:%d SystemPromptCache:%t SystemPromptCacheMinTokens:%d}",
+	return fmt.Sprintf("{Device:%q ContextWindow:%d NBatch:%d NUBatch:%d NThreads:%d NThreadsBatch:%d CacheTypeK:%d CacheTypeV:%d UseDirectIO:%t FlashAttention:%d IgnoreIntegrityCheck:%t NSeqMax:%d OffloadKQV:%s OpOffload:%s NGpuLayers:%s SplitMode:%d SystemPromptCache:%t FirstMessageCache:%t CacheMinTokens:%d}",
 		mc.Device, mc.ContextWindow, mc.NBatch, mc.NUBatch, mc.NThreads, mc.NThreadsBatch,
 		mc.CacheTypeK, mc.CacheTypeV, mc.UseDirectIO, mc.FlashAttention, mc.IgnoreIntegrityCheck,
 		mc.NSeqMax, formatBoolPtr(mc.OffloadKQV), formatBoolPtr(mc.OpOffload),
-		formatInt32Ptr(mc.NGpuLayers), mc.SplitMode, mc.SystemPromptCache, mc.SystemPromptCacheMinTokens)
+		formatInt32Ptr(mc.NGpuLayers), mc.SplitMode, mc.SystemPromptCache, mc.FirstMessageCache, mc.CacheMinTokens)
 }
 
 // Cache manages a set of Kronk APIs for use. It maintains a cache of these
@@ -274,27 +275,28 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 	}
 
 	cfg := model.Config{
-		Log:                        c.log,
-		ModelFiles:                 fi.ModelFiles,
-		ProjFile:                   fi.ProjFile,
-		Device:                     mc.Device,
-		ContextWindow:              mc.ContextWindow,
-		NBatch:                     mc.NBatch,
-		NUBatch:                    mc.NUBatch,
-		NThreads:                   mc.NThreads,
-		NThreadsBatch:              mc.NThreadsBatch,
-		CacheTypeK:                 mc.CacheTypeK,
-		CacheTypeV:                 mc.CacheTypeV,
-		FlashAttention:             mc.FlashAttention,
-		UseDirectIO:                mc.UseDirectIO,
-		IgnoreIntegrityCheck:       mc.IgnoreIntegrityCheck,
-		NSeqMax:                    mc.NSeqMax,
-		OffloadKQV:                 mc.OffloadKQV,
-		OpOffload:                  mc.OpOffload,
-		NGpuLayers:                 mc.NGpuLayers,
-		SplitMode:                  mc.SplitMode,
-		SystemPromptCache:          mc.SystemPromptCache,
-		SystemPromptCacheMinTokens: mc.SystemPromptCacheMinTokens,
+		Log:                  c.log,
+		ModelFiles:           fi.ModelFiles,
+		ProjFile:             fi.ProjFile,
+		Device:               mc.Device,
+		ContextWindow:        mc.ContextWindow,
+		NBatch:               mc.NBatch,
+		NUBatch:              mc.NUBatch,
+		NThreads:             mc.NThreads,
+		NThreadsBatch:        mc.NThreadsBatch,
+		CacheTypeK:           mc.CacheTypeK,
+		CacheTypeV:           mc.CacheTypeV,
+		FlashAttention:       mc.FlashAttention,
+		UseDirectIO:          mc.UseDirectIO,
+		IgnoreIntegrityCheck: mc.IgnoreIntegrityCheck,
+		NSeqMax:              mc.NSeqMax,
+		OffloadKQV:           mc.OffloadKQV,
+		OpOffload:            mc.OpOffload,
+		NGpuLayers:           mc.NGpuLayers,
+		SplitMode:            mc.SplitMode,
+		SystemPromptCache:    mc.SystemPromptCache,
+		FirstMessageCache:    mc.FirstMessageCache,
+		CacheMinTokens:       mc.CacheMinTokens,
 	}
 
 	krn, err = kronk.New(cfg,
