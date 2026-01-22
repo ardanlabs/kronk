@@ -70,6 +70,15 @@ func (m *Model) applyJinjaTemplate(ctx context.Context, d map[string]any) (strin
 		return "", fmt.Errorf("apply-jinja-template: failed to parse template: %w", err)
 	}
 
+	// Ensure add_generation_prompt is set (default true if not specified).
+	// This tells the Jinja template to append the assistant role prefix at the
+	// end of the prompt, signaling the model to generate a response. When caching
+	// the first message, we set this to false so the cached tokens form a valid
+	// prefix that can be extended with additional messages in subsequent requests.
+	if _, ok := d["add_generation_prompt"]; !ok {
+		d["add_generation_prompt"] = true
+	}
+
 	data := exec.NewContext(d)
 
 	s, err := t.ExecuteToString(data)

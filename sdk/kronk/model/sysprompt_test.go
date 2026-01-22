@@ -138,6 +138,7 @@ func TestRemoveFirstMessage(t *testing.T) {
 		name         string
 		d            D
 		wantMsgCount int
+		wantUnchanged bool
 	}{
 		{
 			name: "removes system message",
@@ -160,20 +161,22 @@ func TestRemoveFirstMessage(t *testing.T) {
 			wantMsgCount: 1,
 		},
 		{
-			name: "empty messages gets placeholder",
+			name: "empty messages unchanged",
 			d: D{
 				"messages": []D{},
 			},
-			wantMsgCount: 1,
+			wantMsgCount:  0,
+			wantUnchanged: true,
 		},
 		{
-			name: "single message gets placeholder",
+			name: "single message unchanged",
 			d: D{
 				"messages": []D{
 					{"role": "user", "content": "Hello"},
 				},
 			},
-			wantMsgCount: 1,
+			wantMsgCount:  1,
+			wantUnchanged: true,
 		},
 	}
 
@@ -189,7 +192,11 @@ func TestRemoveFirstMessage(t *testing.T) {
 			}
 
 			originalMsgs := tt.d["messages"].([]D)
-			if len(originalMsgs) > 1 && len(msgs) > 0 {
+			if tt.wantUnchanged {
+				if len(msgs) != len(originalMsgs) {
+					t.Error("expected unchanged D for single/empty messages")
+				}
+			} else if len(originalMsgs) > 1 && len(msgs) > 0 {
 				if msgs[0]["role"] == originalMsgs[0]["role"] && msgs[0]["content"] == originalMsgs[0]["content"] {
 					t.Error("first message should have been removed")
 				}

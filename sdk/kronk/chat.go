@@ -128,7 +128,7 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 		}
 
 		// DEBUG: Show raw reponses
-		// fmt.Println("[DEBUG] string(d))
+		// fmt.Println("[DEBUG]: string(d))
 
 		fmt.Fprintf(w, "data: %s\n\n", d)
 		f.Flush()

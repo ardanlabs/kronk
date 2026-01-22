@@ -355,8 +355,22 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 func chat(krn *kronk.Kronk) error {
 	messages := model.DocumentArray()
 
+	var systemPrompt = \`
+		You are a helpful AI assistant. You are designed to help users answer
+		questions, create content, and provide information in a helpful and
+		accurate manner. Always follow the user's instructions carefully and
+		respond with clear, concise, and well-structured answers. You are a
+		helpful AI assistant. You are designed to help users answer questions,
+		create content, and provide information in a helpful and accurate manner.
+		Always follow the user's instructions carefully and respond with clear,
+		concise, and well-structured answers. You are a helpful AI assistant.
+		You are designed to help users answer questions, create content, and
+		provide information in a helpful and accurate manner. Always follow the
+		user's instructions carefully and respond with clear, concise, and
+		well-structured answers.\`
+
 	messages = append(messages,
-		model.TextMessage(model.RoleSystem, "You are a helpful AI assistant. You are designed to help users answer questions, create content, and provide information in a helpful and accurate manner. Always follow the user's instructions carefully and respond with clear, concise, and well-structured answers. You are a helpful AI assistant. You are designed to help users answer questions, create content, and provide information in a helpful and accurate manner. Always follow the user's instructions carefully and respond with clear, concise, and well-structured answers. You are a helpful AI assistant. You are designed to help users answer questions, create content, and provide information in a helpful and accurate manner. Always follow the user's instructions carefully and respond with clear, concise, and well-structured answers."),
+		model.TextMessage(model.RoleSystem, systemPrompt),
 	)
 
 	for {
