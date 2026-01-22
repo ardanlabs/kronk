@@ -378,8 +378,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 	// Check context window.
 	if s.nPrompt > e.model.cfg.ContextWindow {
 		err := fmt.Errorf("start-slot: input tokens [%d] exceed context window [%d]", s.nPrompt, e.model.cfg.ContextWindow)
-		e.sendSlotError(s, err)
-		s.reset()
+		e.finishSlot(s, err)
 		return
 	}
 
@@ -389,8 +388,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 
 	// Add first chunk of prompt tokens to batch.
 	if !e.addPrefillChunk(s) {
-		e.sendSlotError(s, job.ctx.Err())
-		s.reset()
+		e.finishSlot(s, job.ctx.Err())
 		return
 	}
 
