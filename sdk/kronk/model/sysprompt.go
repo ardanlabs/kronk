@@ -238,7 +238,6 @@ func (m *Model) decodeTokensToSeq0(ctx context.Context, tokens []llama.Token) er
 	}
 
 	m.log(ctx, "cache", "status", "decoding-ended", "tokens", nTokens)
-
 	return nil
 }
 

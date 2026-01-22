@@ -135,9 +135,9 @@ func TestHashFirstMessage(t *testing.T) {
 
 func TestRemoveFirstMessage(t *testing.T) {
 	tests := []struct {
-		name         string
-		d            D
-		wantMsgCount int
+		name          string
+		d             D
+		wantMsgCount  int
 		wantUnchanged bool
 	}{
 		{
@@ -161,7 +161,7 @@ func TestRemoveFirstMessage(t *testing.T) {
 			wantMsgCount: 1,
 		},
 		{
-			name: "empty messages unchanged",
+			name: "empty messages gets placeholder",
 			d: D{
 				"messages": []D{},
 			},
@@ -169,7 +169,7 @@ func TestRemoveFirstMessage(t *testing.T) {
 			wantUnchanged: true,
 		},
 		{
-			name: "single message unchanged",
+			name: "single message gets placeholder",
 			d: D{
 				"messages": []D{
 					{"role": "user", "content": "Hello"},
