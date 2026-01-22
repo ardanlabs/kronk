@@ -150,18 +150,64 @@ Two mutually exclusive cache modes are available:
 
 Both modes are mutually exclusive - only one can be enabled at a time.
 
-**How it works** (`sysprompt.go`, `batch.go`):
+**API Pattern** (`sysprompt.go`):
 
-1. On first request: Extract first message, check role matches cache mode, hash role+content, tokenize and decode to sequence 0
-2. Check token count against `CacheMinTokens` (default: 100) - skip caching if too short
-3. Store hash and token count in `Model.sysPromptHash` / `Model.sysPromptTokens`
-4. Remove first message from D before creating prompt (avoids double-encoding)
-5. On subsequent requests:
-   - Same first message → cache hit, copy KV cache from seq 0 to slot's seqID
-   - SystemPromptCache: No system message but cache exists → use cached system prompt
-   - Set `nPast` to cached token count (skip prefill for those tokens)
-   - Tokenize remaining prompt without BOS (cached message already has it)
-6. When slot finishes: clear slot's seq, then restore from seq 0 for next request
+`ensureFirstMessageCached()` returns a `cacheResult` struct:
+
+```go
+type cacheResult struct {
+    modifiedD D         // D with first message removed if cache was used
+    prompt    string    // Templated prompt (set when caching occurs)
+    media     [][]byte  // Media from templating (set when caching occurs)
+    nPast     llama.Pos // Starting position for new tokens
+    cached    bool      // True if cache is being used
+    err       error     // Any error that occurred
+}
+```
+
+**Integration with ChatStreaming** (`chat.go:105-126`):
+
+```go
+if (m.cfg.SystemPromptCache || m.cfg.FirstMessageCache) && object == ObjectChatText {
+    cache := m.ensureFirstMessageCached(ctx, d)
+    if cache.err != nil {
+        m.sendChatError(ctx, ch, id, cache.err)
+        return
+    }
+    d = cache.modifiedD
+    sysPromptNPast = cache.nPast
+    sysPromptCached = cache.cached
+    prompt = cache.prompt
+    media = cache.media
+}
+
+// Only call createPrompt if caching didn't already handle it.
+if prompt == "" {
+    prompt, media, err = m.createPrompt(ctx, d)
+    ...
+}
+```
+
+**How it works** (`sysprompt.go`):
+
+1. **Cache miss (first request)**:
+   - Extract first message, check role matches cache mode
+   - Hash role+content, tokenize with `add_generation_prompt=false`
+   - Check token count against `CacheMinTokens` (default: 100) - skip if too short
+   - Decode tokens to sequence 0 via `decodeTokensToSeq0()`
+   - Store hash/count in `Model.sysPromptHash` / `Model.sysPromptTokens`
+   - Template full prompt, extract suffix (generation prompt portion)
+   - Return `cacheResult` with `prompt` set to suffix for immediate use
+
+2. **Cache hit (subsequent requests)**:
+   - Same first message → return `cacheResult` with `modifiedD` (first message removed)
+   - `nPast` set to cached token count (skip prefill)
+   - `prompt` empty, so `chat.go` calls `createPrompt()` on remaining messages
+   - Batch engine copies KV cache from seq 0 to slot's seqID
+
+3. **SystemPromptCache special case**:
+   - No system message but cache exists → use cached system prompt
+   - Returns original D (not modified), `nPast` set to cached tokens
 
 **Sequence ID layout:**
 
@@ -170,13 +216,13 @@ Both modes are mutually exclusive - only one can be enabled at a time.
 
 **Cache invalidation:**
 
-- Hash mismatch: clears seq 0, re-evaluates new message, updates hash/count
+- Hash mismatch: clears seq 0 via `llama.MemorySeqRm()`, re-evaluates new message
 - Different role with same content: different hash (role is included in hash)
 - `resetContext()`: clears all memory AND calls `clearSystemPromptCache()` (sequential path)
 
 **Limitations:**
 
-- Only works for batch path (text-only requests)
+- Only works for text-only requests (`ObjectChatText`)
 - Sequential path calls `resetContext()` which clears the cache
 - Messages shorter than `CacheMinTokens` are not cached
-- Thread-safe via `sysPromptMu` mutex
+- Thread-safe via `sysPromptMu` mutex (read lock for hits, write lock for misses)

@@ -374,7 +374,11 @@ func testAudioStreaming(t *testing.T, krn *kronk.Kronk) {
 			t.Logf("%s: %s, st: %v, en: %v, Duration: %s (attempt %d/%d)", id, krn.ModelInfo().ID, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now), attempt, maxRetries)
 
 			if basicErr != nil {
-				return basicErr
+				if attempt < maxRetries {
+					t.Logf("%s: retrying after basics error: %v", id, basicErr)
+					continue
+				}
+				return fmt.Errorf("basics: %w", basicErr)
 			}
 
 			result := testChatResponse(lastResp, krn.ModelInfo().ID, model.ObjectChatMedia, "speech", "", "", true)

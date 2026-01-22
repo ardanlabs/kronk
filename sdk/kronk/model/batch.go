@@ -257,7 +257,11 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 			continue
 		}
 
-		e.addPrefillChunk(s)
+		// addPrefillChunk returns false if shutdown or context cancelled.
+		if !e.addPrefillChunk(s) {
+			e.finishSlot(s, s.job.ctx.Err())
+			continue
+		}
 	}
 
 	// Add tokens from active slots that have completed prefill.
@@ -384,17 +388,30 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 	s.nPrefilled = 0
 
 	// Add first chunk of prompt tokens to batch.
-	e.addPrefillChunk(s)
+	if !e.addPrefillChunk(s) {
+		e.sendSlotError(s, job.ctx.Err())
+		s.reset()
+		return
+	}
 
 	e.model.log(job.ctx, "batch-engine", "status", "slot-started", "slot", s.id, "id", job.id,
 		"prompt_tokens", s.nPrompt, "sys_cached", job.sysPromptCached)
 }
 
 // addPrefillChunk adds the next chunk of prefill tokens to the batch.
-// Returns true if prefill is complete after this chunk.
-func (e *batchEngine) addPrefillChunk(s *slot) {
+// Returns true if prefill completed, false if cancelled or still prefilling.
+func (e *batchEngine) addPrefillChunk(s *slot) bool {
 	if s.prefillTokens == nil || s.nPrefilled >= len(s.prefillTokens) {
-		return
+		return true
+	}
+
+	// Check for cancellation before processing chunk.
+	select {
+	case <-e.shutdownCh:
+		return false
+	case <-s.job.ctx.Done():
+		return false
+	default:
 	}
 
 	prefillStart := time.Now()
@@ -404,7 +421,7 @@ func (e *batchEngine) addPrefillChunk(s *slot) {
 	chunkSize := min(remaining, nBatch)
 
 	// Add chunk of tokens to batch.
-	for i := 0; i < chunkSize; i++ {
+	for i := range chunkSize {
 		tok := s.prefillTokens[s.nPrefilled+i]
 		isLast := s.nPrefilled+i == len(s.prefillTokens)-1
 		batchAdd(&e.batch, tok, s.nPast, []llama.SeqId{s.seqID}, isLast)
@@ -420,9 +437,11 @@ func (e *batchEngine) addPrefillChunk(s *slot) {
 		s.iBatch = e.batch.NTokens - 1
 		s.prefillTokens = nil
 		s.span.SetAttributes(attribute.String("prefill-nonmedia", prefillDuration.String()))
-	} else {
-		s.iBatch = -1
+		return true
 	}
+
+	s.iBatch = -1
+	return true
 }
 
 // processSlotToken handles a sampled token for a slot.
@@ -442,7 +461,7 @@ func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 	content := string(buf[:l])
 
 	// DEBUG: Show raw token output
-	// fmt.Printf("[DEBUG] token=%d content=%q\n", token, content)
+	// fmt.Printf("[DEBUG]: token=%d content=%q\n", token, content)
 
 	if content == "" {
 		e.finishSlot(s, nil)

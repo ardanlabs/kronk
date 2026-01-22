@@ -319,7 +319,7 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 	}
 
 	info = append(info, "status")
-	info = append(info, "kronk cache add")
+	info = append(info, "load new model")
 	info = append(info, "model-name")
 	info = append(info, modelID)
 	info = append(info, "contextWindow")

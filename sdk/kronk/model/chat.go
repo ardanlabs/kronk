@@ -88,21 +88,41 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 			}
 		}()
 
+		// fmt.Println("=======================================")
+		// messages, _ := d["messages"].([]D)
+		// for _, m := range messages {
+		// 	fmt.Println("[DEBUG]: Role:", m["role"])
+		// 	fmt.Println("[DEBUG]: Content:", m["content"])
+		// 	fmt.Println("---------------------------------------")
+		// }
+		// fmt.Println("=======================================")
+
 		var sysPromptNPast llama.Pos
 		var sysPromptCached bool
+		var prompt string
+		var media [][]byte
 
 		if (m.cfg.SystemPromptCache || m.cfg.FirstMessageCache) && object == ObjectChatText {
-			d, sysPromptNPast, sysPromptCached, err = m.ensureFirstMessageCached(ctx, d)
-			if err != nil {
-				m.sendChatError(ctx, ch, id, err)
+			cache := m.ensureFirstMessageCached(ctx, d)
+			if cache.err != nil {
+				m.sendChatError(ctx, ch, id, cache.err)
 				return
 			}
+
+			d = cache.modifiedD
+			sysPromptNPast = cache.nPast
+			sysPromptCached = cache.cached
+			prompt = cache.prompt
+			media = cache.media
 		}
 
-		prompt, media, err := m.createPrompt(ctx, d)
-		if err != nil {
-			m.sendChatError(ctx, ch, id, fmt.Errorf("create-streaming: unable to apply jinja template: %w", err))
-			return
+		// Only call createPrompt if caching didn't already handle it.
+		if prompt == "" {
+			prompt, media, err = m.createPrompt(ctx, d)
+			if err != nil {
+				m.sendChatError(ctx, ch, id, fmt.Errorf("create-streaming: unable to apply jinja template: %w", err))
+				return
+			}
 		}
 
 		// ---------------------------------------------------------------------
