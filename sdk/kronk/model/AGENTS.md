@@ -214,6 +214,49 @@ if prompt == "" {
 - Sequence 0: Reserved for cached message KV state
 - Sequences 1-N: Used by batch engine slots
 
+**NSeqMax and Caching Relationship:**
+
+The `+1` adjustment happens at the llama.cpp level (`config.go:314-315`):
+
+```go
+nSeqMax := max(cfg.NSeqMax, 1)
+ctxParams.NSeqMax = uint32(nSeqMax + 1)  // Reserve Seq0 for cache
+```
+
+With `nseq-max: 1`:
+
+- llama.cpp allocates 2 sequences (0 and 1)
+- Seq0 holds the cached KV state (read-only)
+- Seq1 is the single inference slot
+- `nSlots = 1` in batch engine
+
+With `nseq-max: 2`:
+
+- llama.cpp allocates 3 sequences (0, 1, and 2)
+- Seq0 holds the cached KV state
+- Seq1 and Seq2 are inference slots
+- `nSlots = 2` in batch engine (2 concurrent requests)
+
+**Minimum requirement:** `nseq-max: 1` is sufficient for caching. The +1 reservation is automatic. Use `nseq-max: 2` only if you need concurrent request handling.
+
+**Batch engine slot assignment** (`batch.go:122-128`):
+
+```go
+for i := range slots {
+    slots[i] = &slot{
+        id:    i,
+        seqID: llama.SeqId(i + 1),  // SeqID 0 reserved
+    }
+}
+```
+
+**Request flow with caching** (`batch.go:354-365`):
+
+1. Slot clears its sequence: `llama.MemorySeqRm(mem, s.seqID, -1, -1)`
+2. If cached, copies KV state: `copySystemPromptToSeq(s.seqID)` (Seq0 → slot's SeqID)
+3. Sets `nPast` to skip re-processing cached tokens
+4. Tokenizes remaining prompt (without cached prefix)
+
 **Cache invalidation:**
 
 - Hash mismatch: clears seq 0 via `llama.MemorySeqRm()`, re-evaluates new message
