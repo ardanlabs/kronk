@@ -13,7 +13,23 @@ type ctxKey int
 const (
 	tracerKey ctxKey = iota + 1
 	writerKey
+	traceIDKey
 )
+
+const defaultTraceID = "00000000000000000000000000000000"
+
+func setTraceID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, traceIDKey, id)
+}
+
+// GetTraceID returns the trace id from the context.
+func GetTraceID(ctx context.Context) string {
+	if v, ok := ctx.Value(traceIDKey).(string); ok {
+		return v
+	}
+
+	return defaultTraceID
+}
 
 func setTracer(ctx context.Context, tracer trace.Tracer) context.Context {
 	return context.WithValue(ctx, tracerKey, tracer)

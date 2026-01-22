@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"regexp"
 
+	"github.com/google/uuid"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
@@ -144,6 +145,17 @@ func (a *App) HandlerFunc(method string, group string, path string, handlerFunc 
 		ctx := setTracer(r.Context(), a.tracer)
 		ctx = setWriter(ctx, w)
 
+		spanName := fmt.Sprintf("%s %s", r.Method, r.URL.Path)
+		ctx, span := a.tracer.Start(ctx, spanName)
+		defer span.End()
+
+		traceID := trace.SpanFromContext(ctx).SpanContext().TraceID().String()
+		if traceID == defaultTraceID {
+			traceID = uuid.NewString()
+		}
+
+		ctx = setTraceID(ctx, traceID)
+
 		otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(w.Header()))
 
 		resp := handlerFunc(ctx, r)
@@ -178,6 +190,17 @@ func (a *App) RawHandlerFunc(method string, group string, path string, rawHandle
 	h := func(w http.ResponseWriter, r *http.Request) {
 		ctx := setTracer(r.Context(), a.tracer)
 		ctx = setWriter(ctx, w)
+
+		spanName := fmt.Sprintf("%s %s", r.Method, r.URL.Path)
+		ctx, span := a.tracer.Start(ctx, spanName)
+		defer span.End()
+
+		traceID := trace.SpanFromContext(ctx).SpanContext().TraceID().String()
+		if traceID == defaultTraceID {
+			traceID = uuid.NewString()
+		}
+
+		ctx = setTraceID(ctx, traceID)
 
 		otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(w.Header()))
 

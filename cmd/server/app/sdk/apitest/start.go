@@ -15,6 +15,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
+	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
@@ -32,7 +33,7 @@ func New(t *testing.T, testName string) *Test {
 	// -------------------------------------------------------------------------
 
 	var buf bytes.Buffer
-	log := logger.New(&buf, logger.LevelInfo, "TEST", func(context.Context) string { return otel.GetTraceID(ctx) })
+	log := logger.New(&buf, logger.LevelInfo, "TEST", web.GetTraceID)
 
 	// -------------------------------------------------------------------------
 
