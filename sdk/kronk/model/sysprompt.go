@@ -167,15 +167,23 @@ func hashFirstMessage(info firstMessageInfo) string {
 }
 
 // removeFirstMessage returns a clone of D with the first message removed
-// from the messages slice. If there is only one message, D is returned
-// unchanged to ensure at least one message remains.
+// from the messages slice. If there is only one message, it is replaced with
+// a placeholder message to ensure the model generates a response.
 func removeFirstMessage(d D) D {
 	messages, ok := d["messages"].([]D)
-	if !ok || len(messages) <= 1 {
+	if !ok {
 		return d
 	}
 
 	clone := d.Clone()
+
+	if len(messages) <= 1 {
+		clone["messages"] = []D{
+			{"role": "user", "content": "Please respond: I am ready to receive commands"},
+		}
+		return clone
+	}
+
 	clone["messages"] = messages[1:]
 
 	return clone

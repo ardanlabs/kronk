@@ -347,10 +347,11 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 	// Create sampler for this request.
 	s.sampler = e.model.toSampler(job.params)
 
+	// Always clear the slot's sequence before starting to remove any stale KV data.
+	llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+
 	// If system prompt is cached, copy KV cache from seq 0 to this slot's sequence.
 	if job.sysPromptCached {
-		llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
-
 		if err := e.model.copySystemPromptToSeq(s.seqID); err != nil {
 			e.sendSlotError(s, fmt.Errorf("start-slot: %w", err))
 			s.reset()
