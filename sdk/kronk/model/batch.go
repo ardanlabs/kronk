@@ -392,8 +392,22 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 		return
 	}
 
+	// Calculate current KV usage for diagnostics.
+	var kvUsed llama.Pos
+	if sysMax, err := llama.MemorySeqPosMax(e.model.mem, 0); err == nil && sysMax >= 0 {
+		kvUsed += sysMax + 1
+	}
+
+	for _, slot := range e.slots {
+		if slot.active && slot.id != s.id {
+			if posMax, err := llama.MemorySeqPosMax(e.model.mem, slot.seqID); err == nil && posMax >= 0 {
+				kvUsed += posMax + 1
+			}
+		}
+	}
+
 	e.model.log(job.ctx, "batch-engine", "status", "slot-started", "slot", s.id, "id", job.id,
-		"prompt_tokens", s.nPrompt, "sys_cached", job.sysPromptCached)
+		"prompt_tokens", s.nPrompt, "sys_cached", job.sysPromptCached, "kv_used_other", kvUsed)
 }
 
 // addPrefillChunk adds the next chunk of prefill tokens to the batch.
@@ -566,15 +580,26 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		return
 	}
 
+	ctx := s.job.ctx
+	jobID := s.job.id
+	slotID := s.id
+	seqID := s.seqID
+
 	defer func() {
 		close(s.job.ch)
 		s.span.End()
 		s.reset()
 		e.freeSlotResources(s)
 		e.model.activeStreams.Add(-1)
+
+		e.model.log(ctx, "batch-engine",
+			"status", "slot-finished",
+			"slot", slotID,
+			"seq", seqID,
+			"id", jobID,
+		)
 	}()
 
-	ctx := s.job.ctx
 	elapsed := time.Since(s.startTime)
 
 	// Clear KV cache for this slot's sequence.
