@@ -396,7 +396,7 @@ export default function DocsSDKKronk() {
             <div className="doc-section" id="const-version">
               <h4>Version</h4>
               <pre className="code-block">
-                <code>{`const Version = "1.14.2"`}</code>
+                <code>{`const Version = "1.14.3"`}</code>
               </pre>
               <p className="doc-description">Version contains the current version of the kronk package.</p>
             </div>
@@ -431,7 +431,10 @@ export default function DocsSDKKronk() {
 			fmt.Printf(" %v[%v]", args[i], args[i+1])
 		}
 	}
-	fmt.Println()
+
+	if len(msg) > 0 && msg[0] != '\\x1b' {
+		fmt.Println()
+	}
 }`}</code>
               </pre>
               <p className="doc-description">FmtLogger provides a basic logger that writes to stdout.</p>

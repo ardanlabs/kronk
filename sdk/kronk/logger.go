@@ -52,7 +52,10 @@ var FmtLogger = func(ctx context.Context, msg string, args ...any) {
 			fmt.Printf(" %v[%v]", args[i], args[i+1])
 		}
 	}
-	fmt.Println()
+
+	if len(msg) > 0 && msg[0] != '\x1b' {
+		fmt.Println()
+	}
 }
 
 // SetFmtLoggerTraceID allows you to set a trace id in the content that
