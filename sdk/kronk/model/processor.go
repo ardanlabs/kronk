@@ -32,6 +32,11 @@ type processor struct {
 	// For accumulating tool call content across tokens (batch engine use).
 	toolCallBuf strings.Builder
 	inToolCall  bool
+
+	// For GPT models: accumulate channel name tokens and handle <|constrain|>.
+	channelBuf        strings.Builder
+	awaitingConstrain bool
+	toolFuncName      string // Function name extracted from "to=NAME" in channel
 }
 
 func newProcessor(m *Model) *processor {
@@ -159,7 +164,7 @@ func (p *processor) gpt(lctx llama.Context, batch llama.Batch, sampler llama.Sam
 // Template format:
 //   - Reasoning: <|start|>assistant<|channel|>analysis<|message|>...content...<|end|>
 //   - Final: <|start|>assistant<|channel|>final<|message|>...content...<|return|>
-//   - Tool call: <|start|>assistant to=functions.name<|channel|>commentary json<|message|>...args...<|call|>
+//   - Tool call: <|start|>assistant to=functions.name<|channel|>commentary<|constrain|>json<|message|>...args...<|call|>
 func (p *processor) gptProcess(content string, token llama.Token) (response, llama.Token, error) {
 	if p.collecting {
 		if content == "<|return|>" || content == "<|call|>" {
@@ -177,16 +182,57 @@ func (p *processor) gptProcess(content string, token llama.Token) (response, lla
 		return response{status: p.status, content: content}, token, nil
 	}
 
-	if p.awaitingChannel {
-		p.awaitingChannel = false
-		switch content {
-		case "analysis":
-			p.status = statusReasoning
-		case "final":
-			p.status = statusCompletion
-		case "commentary":
-			p.status = statusTooling
+	// Skip tokens between <|constrain|> and <|message|> (e.g., "json").
+	if p.awaitingConstrain {
+		if content == "<|message|>" {
+			p.awaitingConstrain = false
+			p.collecting = true
+
+			// Emit the function name prefix for tool calls so parseGPTToolCall can parse it.
+			// Format: ".FUNC_NAME <|message|>" which parseGPTToolCall expects.
+			if p.status == statusTooling && p.toolFuncName != "" {
+				prefix := "." + p.toolFuncName + " <|message|>"
+				p.toolFuncName = ""
+				return response{status: p.status, content: prefix}, token, nil
+			}
 		}
+		return response{}, token, nil
+	}
+
+	// Accumulate channel name tokens until <|message|> or <|constrain|>.
+	if p.awaitingChannel {
+		if content == "<|message|>" || content == "<|constrain|>" {
+			p.awaitingChannel = false
+			channelName := strings.TrimSpace(p.channelBuf.String())
+			p.channelBuf.Reset()
+
+			// Determine status from channel name prefix.
+			switch {
+			case strings.HasPrefix(channelName, "analysis"):
+				p.status = statusReasoning
+
+			case strings.HasPrefix(channelName, "final"):
+				p.status = statusCompletion
+
+			case strings.HasPrefix(channelName, "commentary"):
+				p.status = statusTooling
+
+				// Extract function name from "commentary to=functions.FUNC_NAME".
+				if idx := strings.Index(channelName, " to="); idx != -1 {
+					funcName := strings.TrimSpace(channelName[idx+4:])
+					p.toolFuncName = strings.TrimPrefix(funcName, "functions.")
+				}
+			}
+
+			if content == "<|constrain|>" {
+				p.awaitingConstrain = true
+			} else {
+				p.collecting = true
+			}
+		} else {
+			p.channelBuf.WriteString(content)
+		}
+
 		return response{}, token, nil
 	}
 
@@ -195,10 +241,13 @@ func (p *processor) gptProcess(content string, token llama.Token) (response, lla
 		p.status = statusNone
 		p.collecting = false
 		p.awaitingChannel = false
+		p.awaitingConstrain = false
+		p.channelBuf.Reset()
 		return response{}, token, nil
 
 	case "<|channel|>":
 		p.awaitingChannel = true
+		p.channelBuf.Reset()
 		return response{}, token, nil
 
 	case "<|message|>":
@@ -218,25 +267,46 @@ func (p *processor) gptProcess(content string, token llama.Token) (response, lla
 // =============================================================================
 
 func parseGPTToolCall(content string) []ResponseToolCall {
-	// .get_weather <|constrain|>json<|message|>{"location":"NYC"}
-	// .get_weather <|constrain|>json<|message|>{"location":"NYC"}
+	// Format: .FUNC_NAME <|message|>JSON_ARGS
+	// The JSON may span multiple lines, so we can't split by newlines.
+	// Instead, find each ".NAME <|message|>" prefix and extract the JSON that follows.
 
 	var jsonCalls []string
+	remaining := content
 
-	for call := range strings.SplitSeq(content, "\n") {
-		if call == "" {
-			continue
+	for {
+		// Find the start of a tool call (leading dot).
+		dotIdx := strings.Index(remaining, ".")
+		if dotIdx == -1 {
+			break
 		}
 
-		// Extract tool name (remove leading dot)
-		parts := strings.SplitN(call, " ", 2)
+		remaining = remaining[dotIdx:]
+
+		// Find <|message|> marker.
+		msgIdx := strings.Index(remaining, "<|message|>")
+		if msgIdx == -1 {
+			break
+		}
+
+		// Extract function name (between dot and space before <|message|>).
+		prefix := remaining[:msgIdx]
+		parts := strings.SplitN(prefix, " ", 2)
 		name := strings.TrimPrefix(parts[0], ".")
 
-		// Extract arguments JSON after <|message|>
-		var args string
-		if idx := strings.Index(call, "<|message|>"); idx != -1 {
-			args = call[idx+11:]
+		// Move past <|message|> to get the JSON.
+		jsonStart := msgIdx + 11
+		remaining = remaining[jsonStart:]
+
+		// Find the end of the JSON object by matching braces.
+		jsonEnd := findJSONObjectEnd(remaining)
+		if jsonEnd == -1 {
+			// No valid JSON found, take the rest.
+			jsonEnd = len(remaining)
 		}
+
+		args := remaining[:jsonEnd]
+		remaining = remaining[jsonEnd:]
 
 		// Build JSON: {"name":"get_weather","arguments":{"location":"NYC"}}
 		jsonCall := `{"name":"` + name + `","arguments":` + args + `}`
@@ -244,6 +314,56 @@ func parseGPTToolCall(content string) []ResponseToolCall {
 	}
 
 	return parseToolCall(strings.Join(jsonCalls, "\n"))
+}
+
+// findJSONObjectEnd finds the end of a JSON object starting at the beginning of s.
+// Returns the index after the closing brace, or -1 if not found.
+func findJSONObjectEnd(s string) int {
+	if len(s) == 0 || s[0] != '{' {
+		// Try to find the start of JSON object.
+		idx := strings.Index(s, "{")
+		if idx == -1 {
+			return -1
+		}
+		s = s[idx:]
+	}
+
+	depth := 0
+	inString := false
+	escape := false
+
+	for i, c := range s {
+		if escape {
+			escape = false
+			continue
+		}
+
+		if c == '\\' && inString {
+			escape = true
+			continue
+		}
+
+		if c == '"' {
+			inString = !inString
+			continue
+		}
+
+		if inString {
+			continue
+		}
+
+		switch c {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return i + 1
+			}
+		}
+	}
+
+	return -1
 }
 
 func parseToolCall(content string) []ResponseToolCall {
@@ -327,7 +447,6 @@ func parseFunctionFormat(content string) []ResponseToolCall {
 				Name:      name,
 				Arguments: args,
 			},
-			Raw: content[funcStart : closeFunc+11],
 		})
 
 		content = content[closeFunc+11:]
@@ -343,18 +462,19 @@ func parseJSONFormat(content string) []ResponseToolCall {
 		toolCall := ResponseToolCall{
 			ID:   uuid.NewString(),
 			Type: "function",
-			Raw:  call,
 		}
 
 		switch {
 		case len(call) == 0:
 			toolCall.Status = 1
 			toolCall.Error = "response missing"
+			toolCall.Raw = call
 
 		default:
 			if err := json.Unmarshal([]byte(call), &toolCall.Function); err != nil {
 				toolCall.Status = 2
 				toolCall.Error = err.Error()
+				toolCall.Raw = call
 			}
 		}
 
@@ -421,7 +541,6 @@ func parseArgKeyValueFormat(content string) []ResponseToolCall {
 				Name:      name,
 				Arguments: args,
 			},
-			Raw: call,
 		})
 	}
 
@@ -504,17 +623,55 @@ func (p *processor) stepGPT(content string) (response, bool) {
 		return response{status: p.status, content: content}, false
 	}
 
+	// Skip tokens between <|constrain|> and <|message|> (e.g., "json").
+	if p.awaitingConstrain {
+		if content == "<|message|>" {
+			p.awaitingConstrain = false
+			p.collecting = true
+
+			// Emit the function name prefix for tool calls so parseGPTToolCall can parse it.
+			// Format: ".FUNC_NAME <|message|>" which parseGPTToolCall expects.
+			if p.status == statusTooling && p.toolFuncName != "" {
+				prefix := "." + p.toolFuncName + " <|message|>"
+				p.toolFuncName = ""
+				return response{status: p.status, content: prefix}, false
+			}
+		}
+		return response{}, false
+	}
+
+	// Accumulate channel name tokens until <|message|> or <|constrain|>.
 	if p.awaitingChannel {
-		p.awaitingChannel = false
-		switch content {
-		case "analysis":
-			p.status = statusReasoning
+		if content == "<|message|>" || content == "<|constrain|>" {
+			p.awaitingChannel = false
+			channelName := strings.TrimSpace(p.channelBuf.String())
+			p.channelBuf.Reset()
 
-		case "final":
-			p.status = statusCompletion
+			// Determine status from channel name prefix.
+			switch {
+			case strings.HasPrefix(channelName, "analysis"):
+				p.status = statusReasoning
 
-		case "commentary":
-			p.status = statusTooling
+			case strings.HasPrefix(channelName, "final"):
+				p.status = statusCompletion
+
+			case strings.HasPrefix(channelName, "commentary"):
+				p.status = statusTooling
+
+				// Extract function name from "commentary to=functions.FUNC_NAME".
+				if idx := strings.Index(channelName, " to="); idx != -1 {
+					funcName := strings.TrimSpace(channelName[idx+4:])
+					p.toolFuncName = strings.TrimPrefix(funcName, "functions.")
+				}
+			}
+
+			if content == "<|constrain|>" {
+				p.awaitingConstrain = true
+			} else {
+				p.collecting = true
+			}
+		} else {
+			p.channelBuf.WriteString(content)
 		}
 
 		return response{}, false
@@ -525,10 +682,13 @@ func (p *processor) stepGPT(content string) (response, bool) {
 		p.status = statusNone
 		p.collecting = false
 		p.awaitingChannel = false
+		p.awaitingConstrain = false
+		p.channelBuf.Reset()
 		return response{}, false
 
 	case "<|channel|>":
 		p.awaitingChannel = true
+		p.channelBuf.Reset()
 		return response{}, false
 
 	case "<|message|>":
@@ -552,4 +712,7 @@ func (p *processor) resetState() {
 	p.awaitingChannel = false
 	p.toolCallBuf.Reset()
 	p.inToolCall = false
+	p.channelBuf.Reset()
+	p.awaitingConstrain = false
+	p.toolFuncName = ""
 }

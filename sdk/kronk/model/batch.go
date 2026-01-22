@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -746,21 +747,21 @@ func decodeError(ret int32, err error) error {
 	var msg string
 	switch ret {
 	case 1:
-		msg = "KV cache full: could not find a slot for the batch (reduce batch size or increase context window)"
+		msg = "unable to process request: the context window is full. Please reduce the input size or increase the context window"
 	case 2:
-		msg = "decode aborted"
+		msg = "request was cancelled"
 	case -1:
-		msg = "invalid input batch"
+		msg = "unable to process request: the input could not be processed. Please try reducing the input size or context length"
 	default:
 		if ret < -1 {
-			msg = "fatal decode error"
+			msg = "an internal error occurred while processing your request"
 		} else {
-			msg = "unknown decode error"
+			msg = "an unexpected error occurred while processing your request"
 		}
 	}
 
 	if err != nil {
 		return fmt.Errorf("%s: %w", msg, err)
 	}
-	return fmt.Errorf("%s (ret=%d)", msg, ret)
+	return errors.New(msg)
 }
