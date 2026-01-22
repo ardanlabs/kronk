@@ -60,10 +60,18 @@ Qwen3-Coder-30B-A3B-Instruct-Q8_0: # These settings are for Cline
   cache-type-k: q8_0
   cache-type-v: q8_0
   flash-attention: enabled
-  nseq-max: 1
-  system-prompt-cache: true
+  nseq-max: 1 # These settings are for Cline
+  system-prompt-cache: true # These settings are for Cline
 GLM-4.7-Flash-Q8_0:
   context-window: 202752
+  nbatch: 2048
+  nubatch: 512
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  flash-attention: enabled
+  nseq-max: 2
+Devstral-Small-2-24B-Instruct-2512-UD-Q8_K_XL:
+  context-window: 131072
   nbatch: 2048
   nubatch: 512
   cache-type-k: q8_0

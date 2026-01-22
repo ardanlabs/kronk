@@ -385,6 +385,12 @@ func parseToolCall(content string) []ResponseToolCall {
 		return parseArgKeyValueFormat(content)
 	}
 
+	// [TOOL_CALLS]get_weather[ARGS]{"location": "NYC"}
+	// Mistral/Devstral format
+	if strings.Contains(content, "[TOOL_CALLS]") {
+		return parseMistralToolCallFormat(content)
+	}
+
 	return nil
 }
 
@@ -547,6 +553,53 @@ func parseArgKeyValueFormat(content string) []ResponseToolCall {
 	return toolCalls
 }
 
+func parseMistralToolCallFormat(content string) []ResponseToolCall {
+	var toolCalls []ResponseToolCall
+
+	remaining := content
+	for {
+		callStart := strings.Index(remaining, "[TOOL_CALLS]")
+		if callStart == -1 {
+			break
+		}
+
+		argsStart := strings.Index(remaining[callStart:], "[ARGS]")
+		if argsStart == -1 {
+			break
+		}
+
+		name := remaining[callStart+12 : callStart+argsStart]
+
+		argsContent := remaining[callStart+argsStart+6:]
+
+		endIdx := findJSONObjectEnd(argsContent)
+		var argsJSON string
+		if endIdx == -1 {
+			argsJSON = argsContent
+			remaining = ""
+		} else {
+			argsJSON = argsContent[:endIdx]
+			remaining = argsContent[endIdx:]
+		}
+
+		var args map[string]any
+		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+			args = make(map[string]any)
+		}
+
+		toolCalls = append(toolCalls, ResponseToolCall{
+			ID:   uuid.NewString(),
+			Type: "function",
+			Function: ResponseToolCallFunction{
+				Name:      name,
+				Arguments: args,
+			},
+		})
+	}
+
+	return toolCalls
+}
+
 // =============================================================================
 // Step methods for batch engine (no llama calls - pure state machine)
 // =============================================================================
@@ -575,8 +628,22 @@ func (p *processor) stepStandard(content string) (response, bool) {
 			// The caller will handle EOG detection separately.
 			return response{status: statusTooling, content: toolContent}, false
 
+		case "[TOOL_CALLS]":
+			// Another tool call starting - flush buffer and start new accumulation.
+			p.toolCallBuf.Reset()
+			p.toolCallBuf.WriteString("[TOOL_CALLS]")
+			return response{}, false
+
 		default:
-			// Accumulate tool call content.
+			// Check if we're accumulating Mistral format (no closing tag).
+			buf := p.toolCallBuf.String()
+			if strings.HasPrefix(buf, "[TOOL_CALLS]") {
+				// Mistral format: accumulate and stream to finalTooling.
+				p.toolCallBuf.WriteString(content)
+				return response{status: statusTooling, content: content}, false
+			}
+
+			// Standard format: accumulate in buffer only.
 			p.toolCallBuf.WriteString(content)
 			return response{}, false
 		}
@@ -597,6 +664,15 @@ func (p *processor) stepStandard(content string) (response, bool) {
 		p.inToolCall = true
 		p.toolCallBuf.Reset()
 		return response{}, false
+
+	case "[TOOL_CALLS]":
+		// Mistral/Devstral format: [TOOL_CALLS]name[ARGS]{...}
+		// Stream the marker to finalTooling for parsing at EOG.
+		p.status = statusTooling
+		p.inToolCall = true
+		p.toolCallBuf.Reset()
+		p.toolCallBuf.WriteString("[TOOL_CALLS]")
+		return response{status: statusTooling, content: "[TOOL_CALLS]"}, false
 
 	default:
 		return response{status: p.status, content: content}, false
