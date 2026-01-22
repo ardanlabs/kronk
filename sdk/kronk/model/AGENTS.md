@@ -88,8 +88,9 @@ m.sequentialChatRequest(...)
 - `OpOffload`: Tensor ops on GPU (nil/true) or CPU (false)
 - `NGpuLayers`: Layers to offload (0 = all, -1 = none, N = specific count)
 - `SplitMode`: Multi-GPU split (`SplitModeNone=0`, `SplitModeLayer=1`, `SplitModeRow=2` for MoE)
-- `SystemPromptCache`: Enable caching first message KV state in sequence 0 (see below)
-- `SystemPromptCacheMinTokens`: Minimum tokens before caching first message (default: 100)
+- `SystemPromptCache`: Cache system prompt (role="system") KV state in sequence 0 (see below)
+- `FirstMessageCache`: Cache first user message (role="user") KV state in sequence 0 (see below)
+- `CacheMinTokens`: Minimum tokens before caching (default: 100)
 
 ## Model-Specific Tuning Guidelines
 
@@ -140,30 +141,36 @@ m.sequentialChatRequest(...)
 
 - Handle `nil` content in `toMediaMessage` with `case nil: continue`
 
-## System Prompt Caching
+## Message Caching (System Prompt / First Message)
 
-When `Config.SystemPromptCache` is enabled, the first message's KV cache is computed once and reused across requests with the same first message. This works for any role (system, user, or assistant), supporting both traditional system prompts and clients like Cline that use a large first user message as context.
+Two mutually exclusive cache modes are available:
+
+- **`SystemPromptCache`**: Caches messages with `role="system"`. If a subsequent request has no system message but the cache exists, the cached system prompt is used. Ideal for Open Web UI and similar clients that send the system prompt once.
+- **`FirstMessageCache`**: Caches messages with `role="user"`. Ideal for clients like Cline that use a large first user message as context.
+
+Both modes are mutually exclusive - only one can be enabled at a time.
 
 **How it works** (`sysprompt.go`, `batch.go`):
 
-1. On first request: Extract first message from D (any role), hash role+content, tokenize and decode to sequence 0
-2. Check token count against `SystemPromptCacheMinTokens` (default: 100) - skip caching if too short
+1. On first request: Extract first message, check role matches cache mode, hash role+content, tokenize and decode to sequence 0
+2. Check token count against `CacheMinTokens` (default: 100) - skip caching if too short
 3. Store hash and token count in `Model.sysPromptHash` / `Model.sysPromptTokens`
 4. Remove first message from D before creating prompt (avoids double-encoding)
-5. On subsequent requests with same first message:
-   - Hash matches → copy KV cache from seq 0 to slot's seqID via `MemorySeqCp`
+5. On subsequent requests:
+   - Same first message → cache hit, copy KV cache from seq 0 to slot's seqID
+   - SystemPromptCache: No system message but cache exists → use cached system prompt
    - Set `nPast` to cached token count (skip prefill for those tokens)
    - Tokenize remaining prompt without BOS (cached message already has it)
 6. When slot finishes: clear slot's seq, then restore from seq 0 for next request
 
 **Sequence ID layout:**
 
-- Sequence 0: Reserved for cached first message KV state
+- Sequence 0: Reserved for cached message KV state
 - Sequences 1-N: Used by batch engine slots
 
 **Cache invalidation:**
 
-- Hash mismatch: clears seq 0, re-evaluates new first message, updates hash/count
+- Hash mismatch: clears seq 0, re-evaluates new message, updates hash/count
 - Different role with same content: different hash (role is included in hash)
 - `resetContext()`: clears all memory AND calls `clearSystemPromptCache()` (sequential path)
 
@@ -171,5 +178,5 @@ When `Config.SystemPromptCache` is enabled, the first message's KV cache is comp
 
 - Only works for batch path (text-only requests)
 - Sequential path calls `resetContext()` which clears the cache
-- Messages shorter than `SystemPromptCacheMinTokens` are not cached
+- Messages shorter than `CacheMinTokens` are not cached
 - Thread-safe via `sysPromptMu` mutex

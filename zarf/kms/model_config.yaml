@@ -85,4 +85,5 @@ cerebras_qwen3-coder-reap-25b-a3b-q8_0:
   cache-type-v: q8_0
   flash-attention: enabled
   nseq-max: 2
-  system-prompt-cache: true # This setting is for Cline
+  first-message-cache: true # This setting is for Cline
+  # system-prompt-cache: true # This setting is for OWUI

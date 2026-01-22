@@ -9,23 +9,48 @@ import (
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
-// ensureSystemPromptCached checks if the first message is cached and updates
-// the cache if necessary. The first message can be any role (system, user, or
-// assistant) - this supports both traditional system prompts and clients like
-// Cline that use a large first user message as context. Returns:
+// ensureFirstMessageCached checks if the first message (or system prompt) is
+// cached and updates the cache if necessary. The behavior depends on which
+// cache mode is enabled:
+//
+//   - SystemPromptCache: Only caches messages with role="system". Non-system
+//     first messages are ignored and don't affect the cache.
+//   - FirstMessageCache: Caches any first message regardless of role.
+//
+// Returns:
 //   - modifiedD: D with first message removed if cache was used
 //   - nPast: starting position for new tokens (cached token count if cached, 0 otherwise)
 //   - cached: true if the first message was already cached and can be reused
 //   - error: any error that occurred during cache update
 //
 // This function is thread-safe and handles concurrent requests appropriately.
-func (m *Model) ensureSystemPromptCached(ctx context.Context, d D) (modifiedD D, nPast llama.Pos, cached bool, err error) {
-	if !m.cfg.SystemPromptCache {
+func (m *Model) ensureFirstMessageCached(ctx context.Context, d D) (modifiedD D, nPast llama.Pos, cached bool, err error) {
+	if !m.cfg.SystemPromptCache && !m.cfg.FirstMessageCache {
 		return d, 0, false, nil
 	}
 
 	msgInfo, hasFirstMsg := extractFirstMessage(d)
 	if !hasFirstMsg {
+		return d, 0, false, nil
+	}
+
+	// SystemPromptCache mode: only cache system role messages.
+	// If first message is not system but we have a cached system prompt, use it.
+	if m.cfg.SystemPromptCache && msgInfo.role != RoleSystem {
+		m.sysPromptMu.RLock()
+		cachedTokens := m.sysPromptTokens
+		m.sysPromptMu.RUnlock()
+
+		if cachedTokens > 0 {
+			m.log(ctx, "cache", "status", "hit-no-system", "first-role", msgInfo.role, "tokens", cachedTokens)
+			return d, llama.Pos(cachedTokens), true, nil
+		}
+
+		return d, 0, false, nil
+	}
+
+	// FirstMessageCache mode: only cache user role messages.
+	if m.cfg.FirstMessageCache && msgInfo.role != RoleUser {
 		return d, 0, false, nil
 	}
 
@@ -37,7 +62,7 @@ func (m *Model) ensureSystemPromptCached(ctx context.Context, d D) (modifiedD D,
 	m.sysPromptMu.RUnlock()
 
 	if currentHash == newHash && currentTokens > 0 {
-		m.log(ctx, "sys-prompt-cache", "status", "hit", "role", msgInfo.role, "tokens", currentTokens)
+		m.log(ctx, "cache", "status", "hit", "role", msgInfo.role, "tokens", currentTokens)
 		modifiedD = removeFirstMessage(d)
 		return modifiedD, llama.Pos(currentTokens), true, nil
 	}
@@ -46,7 +71,7 @@ func (m *Model) ensureSystemPromptCached(ctx context.Context, d D) (modifiedD D,
 	defer m.sysPromptMu.Unlock()
 
 	if m.sysPromptHash == newHash && m.sysPromptTokens > 0 {
-		m.log(ctx, "sys-prompt-cache", "status", "hit-after-lock", "role", msgInfo.role, "tokens", m.sysPromptTokens)
+		m.log(ctx, "cache", "status", "hit-after-lock", "role", msgInfo.role, "tokens", m.sysPromptTokens)
 		modifiedD = removeFirstMessage(d)
 		return modifiedD, llama.Pos(m.sysPromptTokens), true, nil
 	}
@@ -55,15 +80,15 @@ func (m *Model) ensureSystemPromptCached(ctx context.Context, d D) (modifiedD D,
 	nTokens := len(tokens)
 
 	if nTokens == 0 {
-		return d, 0, false, fmt.Errorf("sys-prompt-cache: first message tokenized to zero tokens")
+		return d, 0, false, fmt.Errorf("cache: first message tokenized to zero tokens")
 	}
 
-	if nTokens < m.cfg.SystemPromptCacheMinTokens {
-		m.log(ctx, "sys-prompt-cache", "status", "skip-too-short", "role", msgInfo.role, "tokens", nTokens, "min", m.cfg.SystemPromptCacheMinTokens)
+	if nTokens < m.cfg.CacheMinTokens {
+		m.log(ctx, "cache", "status", "skip-too-short", "role", msgInfo.role, "tokens", nTokens, "min", m.cfg.CacheMinTokens)
 		return d, 0, false, nil
 	}
 
-	m.log(ctx, "sys-prompt-cache", "status", "miss", "role", msgInfo.role,
+	m.log(ctx, "cache", "status", "miss", "role", msgInfo.role,
 		"old-hash", m.sysPromptHash[:min(8, len(m.sysPromptHash))], "new-hash", newHash[:8])
 
 	llama.MemorySeqRm(m.mem, 0, -1, -1)
@@ -74,7 +99,7 @@ func (m *Model) ensureSystemPromptCached(ctx context.Context, d D) (modifiedD D,
 	case nTokens <= nBatch:
 		batch := llama.BatchGetOne(tokens)
 		if _, err := llama.Decode(m.lctx, batch); err != nil {
-			return d, 0, false, fmt.Errorf("sys-prompt-cache: failed to decode first message: %w", err)
+			return d, 0, false, fmt.Errorf("cache: failed to decode first message: %w", err)
 		}
 
 	default:
@@ -82,7 +107,7 @@ func (m *Model) ensureSystemPromptCached(ctx context.Context, d D) (modifiedD D,
 			end := min(i+nBatch, len(tokens))
 			chunk := tokens[i:end]
 			if _, err := llama.Decode(m.lctx, llama.BatchGetOne(chunk)); err != nil {
-				return d, 0, false, fmt.Errorf("sys-prompt-cache: failed to decode first message chunk: %w", err)
+				return d, 0, false, fmt.Errorf("cache: failed to decode first message chunk: %w", err)
 			}
 		}
 	}
@@ -90,7 +115,7 @@ func (m *Model) ensureSystemPromptCached(ctx context.Context, d D) (modifiedD D,
 	m.sysPromptHash = newHash
 	m.sysPromptTokens = nTokens
 
-	m.log(ctx, "sys-prompt-cache", "status", "cached", "role", msgInfo.role, "tokens", nTokens, "hash", newHash[:8])
+	m.log(ctx, "cache", "status", "cached", "role", msgInfo.role, "tokens", nTokens, "hash", newHash[:8])
 
 	return d, 0, false, nil
 }
@@ -99,7 +124,7 @@ func (m *Model) ensureSystemPromptCached(ctx context.Context, d D) (modifiedD D,
 // to the specified sequence ID. This should be called before processing a new
 // request that will use the cached system prompt.
 func (m *Model) copySystemPromptToSeq(seqID llama.SeqId) error {
-	if !m.cfg.SystemPromptCache {
+	if !m.cfg.SystemPromptCache && !m.cfg.FirstMessageCache {
 		return nil
 	}
 
@@ -112,7 +137,7 @@ func (m *Model) copySystemPromptToSeq(seqID llama.SeqId) error {
 	}
 
 	if err := llama.MemorySeqCp(m.mem, 0, seqID, -1, -1); err != nil {
-		return fmt.Errorf("copy-sys-prompt: failed to copy memory seq 0 to %d: %w", seqID, err)
+		return fmt.Errorf("copy-cache: failed to copy memory seq 0 to %d: %w", seqID, err)
 	}
 
 	return nil

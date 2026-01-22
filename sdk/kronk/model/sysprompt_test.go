@@ -160,14 +160,14 @@ func TestRemoveFirstMessage(t *testing.T) {
 			wantMsgCount: 1,
 		},
 		{
-			name: "empty messages unchanged",
+			name: "empty messages gets placeholder",
 			d: D{
 				"messages": []D{},
 			},
-			wantMsgCount: 0,
+			wantMsgCount: 1,
 		},
 		{
-			name: "single message unchanged",
+			name: "single message gets placeholder",
 			d: D{
 				"messages": []D{
 					{"role": "user", "content": "Hello"},

@@ -563,8 +563,8 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	// Clear KV cache for this slot's sequence.
 	llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
 
-	// Restore cached system prompt KV state if enabled.
-	if e.model.cfg.SystemPromptCache {
+	// Restore cached KV state if enabled.
+	if e.model.cfg.SystemPromptCache || e.model.cfg.FirstMessageCache {
 		e.model.copySystemPromptToSeq(s.seqID)
 	}
 
