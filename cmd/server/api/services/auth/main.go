@@ -17,6 +17,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/debug"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
+	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 )
 
@@ -31,7 +32,7 @@ func main() {
 		},
 	}
 
-	log = logger.NewWithEvents(os.Stdout, logger.LevelInfo, "AUTH", otel.GetTraceID, events)
+	log = logger.NewWithEvents(os.Stdout, logger.LevelInfo, "AUTH", web.GetTraceID, events)
 
 	// -------------------------------------------------------------------------
 

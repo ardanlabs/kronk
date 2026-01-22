@@ -57,7 +57,8 @@ func (m *Model) applyRequestJinjaTemplate(ctx context.Context, d D) (string, [][
 }
 
 func (m *Model) applyJinjaTemplate(ctx context.Context, d map[string]any) (string, error) {
-	m.log(ctx, "applyJinjaTemplate", "template", m.template.FileName)
+	messages, _ := d["messages"].([]D)
+	m.log(ctx, "applyJinjaTemplate", "template", m.template.FileName, "messages", len(messages))
 
 	if m.template.Script == "" {
 		return "", errors.New("apply-jinja-template: no template found")
