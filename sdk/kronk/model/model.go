@@ -169,7 +169,7 @@ func loadModelFromFiles(ctx context.Context, log Logger, modelFiles []string, pa
 
 	start := time.Now()
 	defer func() {
-		metrics.AddModelFileLoadTime(time.Since(start))
+		metrics.AddModelFileLoadTime(baseModelFile, time.Since(start))
 	}()
 
 	var err error
@@ -388,7 +388,7 @@ loop:
 			firstIteration = false
 
 			since := time.Since(ttftStart)
-			metrics.AddTimeToFirstToken(since)
+			metrics.AddTimeToFirstToken(m.modelInfo.ID, since)
 			span.SetAttributes(
 				attribute.String("ttft", since.String()),
 			)
@@ -398,7 +398,7 @@ loop:
 			firstIteration = false
 
 			since := time.Since(ttftStart)
-			metrics.AddTimeToFirstToken(since)
+			metrics.AddTimeToFirstToken(m.modelInfo.ID, since)
 			span.SetAttributes(
 				attribute.String("ttft", since.String()),
 			)
@@ -556,7 +556,7 @@ loop:
 		attribute.Float64("tokens_per_second", tokensPerSecond),
 	)
 
-	metrics.AddChatCompletionsUsage(inputTokens, reasonTokens, completionTokens, outputTokens, totalTokens, tokensPerSecond)
+	metrics.AddChatCompletionsUsage(m.modelInfo.ID, inputTokens, reasonTokens, completionTokens, outputTokens, totalTokens, tokensPerSecond)
 
 	// -------------------------------------------------------------------------
 
@@ -626,7 +626,7 @@ func (m *Model) processInputTokens(ctx context.Context, lctx llama.Context, mtmd
 		mtmd.HelperEvalChunks(mtmdCtx, lctx, output, 0, 0, int32(m.ctxParams.NBatch), true, &n)
 
 		since := time.Since(start)
-		metrics.AddPrefillMediaTime(since)
+		metrics.AddPrefillMediaTime(m.modelInfo.ID, since)
 		span.SetAttributes(
 			attribute.String("prefill-media", since.String()),
 		)
@@ -660,7 +660,7 @@ func (m *Model) processInputTokens(ctx context.Context, lctx llama.Context, mtmd
 		}
 
 		since := time.Since(start)
-		metrics.AddPrefillNonMediaTime(since)
+		metrics.AddPrefillNonMediaTime(m.modelInfo.ID, since)
 		span.SetAttributes(
 			attribute.String("prefill-nonmedia", since.String()),
 		)

@@ -221,7 +221,7 @@ func AddPanics() int64 {
 }
 
 // AddModelFileLoadTime captures the specified duration for loading a model file.
-func AddModelFileLoadTime(duration time.Duration) {
+func AddModelFileLoadTime(model string, duration time.Duration) {
 	secs := duration.Seconds()
 
 	mu.Lock()
@@ -241,7 +241,7 @@ func AddModelFileLoadTime(duration time.Duration) {
 }
 
 // AddProjFileLoadTime captures the specified duration for loading a proj file.
-func AddProjFileLoadTime(duration time.Duration) {
+func AddProjFileLoadTime(model string, duration time.Duration) {
 	secs := duration.Seconds()
 
 	mu.Lock()
@@ -261,7 +261,7 @@ func AddProjFileLoadTime(duration time.Duration) {
 }
 
 // AddPromptCreationTime captures the specified duration for creating a prompt.
-func AddPromptCreationTime(duration time.Duration) {
+func AddPromptCreationTime(model string, duration time.Duration) {
 	secs := duration.Seconds()
 
 	mu.Lock()
@@ -281,7 +281,7 @@ func AddPromptCreationTime(duration time.Duration) {
 }
 
 // AddPrefillNonMediaTime captures the specified duration for prefilling a non media call.
-func AddPrefillNonMediaTime(duration time.Duration) {
+func AddPrefillNonMediaTime(model string, duration time.Duration) {
 	secs := duration.Seconds()
 
 	mu.Lock()
@@ -301,7 +301,7 @@ func AddPrefillNonMediaTime(duration time.Duration) {
 }
 
 // AddPrefillMediaTime captures the specified duration for prefilling a media call.
-func AddPrefillMediaTime(duration time.Duration) {
+func AddPrefillMediaTime(model string, duration time.Duration) {
 	secs := duration.Seconds()
 
 	mu.Lock()
@@ -321,7 +321,7 @@ func AddPrefillMediaTime(duration time.Duration) {
 }
 
 // AddTimeToFirstToken captures the specified duration for ttft.
-func AddTimeToFirstToken(duration time.Duration) {
+func AddTimeToFirstToken(model string, duration time.Duration) {
 	secs := duration.Seconds()
 
 	mu.Lock()
@@ -341,7 +341,7 @@ func AddTimeToFirstToken(duration time.Duration) {
 }
 
 // AddChatCompletionsUsage captures the specified usage values for chat-completions.
-func AddChatCompletionsUsage(promptTokens, reasoningTokens, completionTokens, outputTokens, totalTokens int, tokensPerSecond float64) {
+func AddChatCompletionsUsage(model string, promptTokens, reasoningTokens, completionTokens, outputTokens, totalTokens int, tokensPerSecond float64) {
 	mu.Lock()
 	defer mu.Unlock()
 

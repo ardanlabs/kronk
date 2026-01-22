@@ -442,7 +442,7 @@ func (e *batchEngine) addPrefillChunk(s *slot) bool {
 	s.nPrefilled += chunkSize
 
 	prefillDuration := time.Since(prefillStart)
-	metrics.AddPrefillNonMediaTime(prefillDuration)
+	metrics.AddPrefillNonMediaTime(e.model.modelInfo.ID, prefillDuration)
 
 	// Check if prefill is complete.
 	if s.nPrefilled >= len(s.prefillTokens) {
@@ -665,7 +665,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	)
 
 	// Add metrics.
-	metrics.AddChatCompletionsUsage(s.nPrompt, s.reasonTokens, s.completionTokens, outputTokens, totalTokens, tokensPerSecond)
+	metrics.AddChatCompletionsUsage(e.model.modelInfo.ID, s.nPrompt, s.reasonTokens, s.completionTokens, outputTokens, totalTokens, tokensPerSecond)
 
 	// Send final response.
 	returnPrompt := ""
