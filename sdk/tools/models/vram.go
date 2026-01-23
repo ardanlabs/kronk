@@ -47,24 +47,16 @@ func CalculateVRAM(metadata model.Metadata, contextLength uint64, kvCacheType st
 	arch := metadata.Architecture
 
 	switch arch {
-	case model.ARCH_LLAMA:
+	case model.ARCH_LLAMA,
+		model.ARCH_MPT,
+		model.ARCH_GPTNEOX,
+		model.ARCH_GPTJ,
+		model.ARCH_GPT2,
+		model.ARCH_FALCON,
+		model.ARCH_MAMBA,
+		model.ARCH_RWKV,
+		model.ARCH_BLOOM:
 		return calculateLlamaVRAM(metadata, contextLength, alignment, kvCacheType)
-	case model.ARCH_MPT:
-		return calculateMPTVRAM(metadata, contextLength, alignment, kvCacheType)
-	case model.ARCH_GPTNEOX:
-		return calculateGPTNeoXVRAM(metadata, contextLength, alignment, kvCacheType)
-	case model.ARCH_GPTJ:
-		return calculateGPTJVRAM(metadata, contextLength, alignment, kvCacheType)
-	case model.ARCH_GPT2:
-		return calculateGPT2VRAM(metadata, contextLength, alignment, kvCacheType)
-	case model.ARCH_BLOOM:
-		return calculateBLOOMVRAM(metadata, contextLength, alignment, kvCacheType)
-	case model.ARCH_FALCON:
-		return calculateFALCONVRAM(metadata, contextLength, alignment, kvCacheType)
-	case model.ARCH_MAMBA:
-		return calculateMAMBAVRAM(metadata, contextLength, alignment)
-	case model.ARCH_RWKV:
-		return calculateRWKVVRAM(metadata, contextLength, alignment)
 	default:
 		archStr := string(arch)
 		for _, prefix := range llamaLikeModelArch {
@@ -107,30 +99,6 @@ func calculateLlamaVRAM(metadata model.Metadata, contextLength uint64, alignment
 	totalVRAM := modelWeightsVRAM + kvCacheBytes + overhead
 
 	return alignVRAM(totalVRAM, uint64(alignment))
-}
-
-func calculateMPTVRAM(metadata model.Metadata, contextLength uint64, alignment uint32, kvCacheType string) uint64 {
-	return calculateLlamaVRAM(metadata, contextLength, alignment, kvCacheType)
-}
-
-func calculateGPTNeoXVRAM(metadata model.Metadata, contextLength uint64, alignment uint32, kvCacheType string) uint64 {
-	return calculateLlamaVRAM(metadata, contextLength, alignment, kvCacheType)
-}
-
-func calculateGPTJVRAM(metadata model.Metadata, contextLength uint64, alignment uint32, kvCacheType string) uint64 {
-	return calculateLlamaVRAM(metadata, contextLength, alignment, kvCacheType)
-}
-
-func calculateGPT2VRAM(metadata model.Metadata, contextLength uint64, alignment uint32, kvCacheType string) uint64 {
-	return calculateLlamaVRAM(metadata, contextLength, alignment, kvCacheType)
-}
-
-func calculateBLOOMVRAM(metadata model.Metadata, contextLength uint64, alignment uint32, kvCacheType string) uint64 {
-	return calculateLlamaVRAM(metadata, contextLength, alignment, kvCacheType)
-}
-
-func calculateFALCONVRAM(metadata model.Metadata, contextLength uint64, alignment uint32, kvCacheType string) uint64 {
-	return calculateLlamaVRAM(metadata, contextLength, alignment, kvCacheType)
 }
 
 func calculateMAMBAVRAM(metadata model.Metadata, contextLength uint64, alignment uint32) uint64 {
