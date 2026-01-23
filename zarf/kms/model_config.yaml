@@ -31,25 +31,45 @@
 # - Q8_0: 8-bit, near-lossless compression, very high quality. (Best for local)
 # - K_XL: K-quant (smart) method, high efficiency, better accuracy than
 #         standard _0 at similar sizes.
-
+#
 # Also, the FP8/F16 or even FP4 are more for modern nvidia cards,are all the
 # precision of the floating point numbers. All operations are accelerated by
 # the GPU.
-
+#
 # Most of the modern GPUs have the hardware for FP16, and other formats, like FP8
 # (Q8) or FP4 are emulated.
-
+#
 # If you have hardware support for FP8, it will be roughly double the speed of FP16.
-
+#
 # There are also INT4/INT8 models, but that's already weird. They take the
 # floating point numbers and convert them to the int in the given precision.
-
+#
 # For us, on Apple M4 chips, there's still some performance to be gained.
 # See: https://github.com/ggml-org/llama.cpp/discussions/336
 # However, llama.cpp doesn't currently support the MLX framework.
 
 # ==============================================================================
-# CONFIGURATION NOTES:
+# SLOT MEMORY COST FORMULA
+#
+# KV memory per slot = n_ctx × (K + V bytes) × n_layers
+#
+# Example calculations:
+#
+# Model   Context   Memory per Slot
+# 7B      8K        ~537 MB
+# 70B     8K        ~1.3 GB
+#
+# Key finding: Memory is statically allocated upfront when the model loads,
+# based on n_ctx × n_seq_max. Reserving slots consumes memory whether or not
+# they're actually used.
+#
+# My advice: Reserving 2 dedicated slots (one for system prompt cache, one for
+# user message cache) would add +537MB (7B) to +1.3GB (70B) overhead. Since the
+# slots would rarely both be used simultaneously, you'd be "paying for memory
+# you don't benefit from."
+
+# ==============================================================================
+# CONFIGURATION NOTES
 #
 # If you want to try using a model with an Agent, use these settings:
 #   nseq-max: 1
