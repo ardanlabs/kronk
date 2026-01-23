@@ -91,28 +91,7 @@ func printWeb(mi toolapp.ModelInfoResponse) {
 	fmt.Printf("IsGPT:       %t\n", mi.IsGPT)
 	fmt.Println("Metadata:")
 
-	type metaItem struct {
-		k string
-		v string
-	}
-	orderedMeta := make([]metaItem, 0, len(mi.Metadata))
-	for k, v := range mi.Metadata {
-		orderedMeta = append(orderedMeta, metaItem{k: k, v: v})
-	}
-
-	slices.SortFunc(orderedMeta, func(a metaItem, b metaItem) int {
-		if a.k == b.k {
-			return 0
-		}
-		if a.k > b.k {
-			return 1
-		}
-		return -1
-	})
-
-	for _, m := range orderedMeta {
-		fmt.Printf("  %s: %s\n", m.k, m.v)
-	}
+	printMeta(mi.Metadata)
 }
 
 func printLocal(mi models.Info, details model.ModelInfo) {
@@ -130,12 +109,17 @@ func printLocal(mi models.Info, details model.ModelInfo) {
 	fmt.Printf("IsGPT:       %t\n", details.IsGPTModel)
 	fmt.Println("Metadata:")
 
+	printMeta(details.Metadata)
+}
+
+func printMeta(meta map[string]string) {
 	type metaItem struct {
 		k string
 		v string
 	}
-	orderedMeta := make([]metaItem, 0, len(details.Metadata))
-	for k, v := range details.Metadata {
+
+	orderedMeta := make([]metaItem, 0, len(meta))
+	for k, v := range meta {
 		orderedMeta = append(orderedMeta, metaItem{k: k, v: v})
 	}
 
