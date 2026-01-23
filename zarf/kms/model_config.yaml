@@ -68,11 +68,22 @@
 # ==============================================================================
 # TEXT INFERENCE MODELS
 
-# This is a good model has worked well Cline.
+# This is a good model and has worked well Cline.
 cerebras_qwen3-coder-reap-25b-a3b-q8_0:
   context-window: 170000
   nbatch: 2048
   nubatch: 256
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  flash-attention: enabled
+  nseq-max: 1
+  first-message-cache: true
+
+# This is a good model and has worked well Cline.
+gpt-oss-120b-F16:
+  context-window: 131072
+  nbatch: 2048
+  nubatch: 512
   cache-type-k: q8_0
   cache-type-v: q8_0
   flash-attention: enabled
@@ -119,18 +130,6 @@ gpt-oss-20b-Q8_0:
   cache-type-v: q8_0
   flash-attention: enabled
   nseq-max: 2
-
-# Can't get this model to behave with any of the Agents.
-# Configured for Agent use.
-gpt-oss-120b-F16:
-  context-window: 131072
-  nbatch: 2048
-  nubatch: 512
-  cache-type-k: q8_0
-  cache-type-v: q8_0
-  flash-attention: enabled
-  nseq-max: 1
-  first-message-cache: true
 
 # ==============================================================================
 # VISION MODELS
