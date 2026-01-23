@@ -132,20 +132,21 @@ type Logger func(ctx context.Context, msg string, args ...any)
 //
 // When not set, defaults to SplitModeRow for optimal MoE performance.
 //
-// SystemPromptCache enables caching of system prompt KV state in sequence 0.
-// When enabled, only messages with role="system" are cached. The system prompt
-// is evaluated once and its KV cache is copied to all client sequences on subsequent
-// requests with the same system prompt. This avoids redundant prefill computation
-// for applications that use a consistent system prompt. The cache is automatically
+// SystemPromptCache enables caching of system prompt KV state. When enabled,
+// the first message with role="system" is cached. The system prompt is evaluated
+// once and its KV cache is copied to all client sequences on subsequent requests
+// with the same system prompt. This avoids redundant prefill computation for
+// applications that use a consistent system prompt. The cache is automatically
 // invalidated and re-evaluated when the system prompt changes.
 //
 // FirstMessageCache enables caching of the first user message's KV state. This
 // supports clients like Cline that use a large first user message as context.
-// Only messages with role="user" are cached. The cache is invalidated when the
-// first user message changes.
+// The first message with role="user" is cached. The cache is invalidated when
+// the first user message changes.
 //
-// SystemPromptCache and FirstMessageCache are mutually exclusive - only one can
-// be enabled at a time.
+// Both SystemPromptCache and FirstMessageCache can be enabled simultaneously.
+// When both are enabled, they use separate sequences (seq 0 for SPC, seq 1 for FMC)
+// and the memory overhead is +2 context windows.
 //
 // CacheMinTokens sets the minimum token count required before caching. Messages
 // shorter than this threshold are not cached, as the overhead of cache management
@@ -181,10 +182,6 @@ func validateConfig(ctx context.Context, cfg Config, log Logger) error {
 		return fmt.Errorf("validate-config: model file is required")
 	}
 
-	if cfg.SystemPromptCache && cfg.FirstMessageCache {
-		return fmt.Errorf("validate-config: SystemPromptCache and FirstMessageCache are mutually exclusive")
-	}
-
 	if !cfg.IgnoreIntegrityCheck {
 		for _, modelFile := range cfg.ModelFiles {
 			log(ctx, "validate-config", "model-file", modelFile)
@@ -216,9 +213,10 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 	if cfg.NUBatch <= 0 {
 		// Vision models require n_ubatch >= n_tokens for the image encoder's
 		// non-causal attention. Use a larger default when ProjFile is set.
-		if cfg.ProjFile != "" {
+		switch cfg.ProjFile != "" {
+		case true:
 			cfg.NUBatch = defNUBatchVision
-		} else {
+		case false:
 			cfg.NUBatch = defNUBatch
 		}
 	}
@@ -309,10 +307,19 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 		ctxParams.FlashAttentionType = llama.FlashAttentionTypeEnabled
 	}
 
-	// +1 to allow seqIDs 1..NSeqMax (seqID 0 reserved).
-	// When NSeqMax is 0, we still need at least 2 for single-slot batch engine.
+	// Reserve sequences for caching based on enabled modes.
+	// Seq 0: SystemPromptCache (if enabled)
+	// Seq 1: FirstMessageCache (if both enabled, else seq 0)
+	// Remaining seqs: batch engine slots
 	nSeqMax := max(cfg.NSeqMax, 1)
-	ctxParams.NSeqMax = uint32(nSeqMax + 1)
+	cacheSeqs := 0
+	if cfg.SystemPromptCache {
+		cacheSeqs++
+	}
+	if cfg.FirstMessageCache {
+		cacheSeqs++
+	}
+	ctxParams.NSeqMax = uint32(nSeqMax + cacheSeqs)
 
 	// Offload KQV cache to CPU.
 	// llama.cpp has this as default set to true

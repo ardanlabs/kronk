@@ -846,9 +846,11 @@ func inputToMessages(input any) []model.D {
 
 	firstItem, ok := inputItems[0].(map[string]any)
 	if !ok {
-		if firstDoc, ok := inputItems[0].(model.D); ok {
+		firstDoc, ok := inputItems[0].(model.D)
+		switch ok {
+		case true:
 			firstItem = firstDoc
-		} else {
+		case false:
 			return nil
 		}
 	}
@@ -856,10 +858,11 @@ func inputToMessages(input any) []model.D {
 	if _, hasRole := firstItem["role"]; hasRole {
 		var messages []model.D
 		for _, item := range inputItems {
-			if itemMap, ok := item.(map[string]any); ok {
-				messages = append(messages, model.D(itemMap))
-			} else if itemDoc, ok := item.(model.D); ok {
-				messages = append(messages, itemDoc)
+			switch v := item.(type) {
+			case map[string]any:
+				messages = append(messages, model.D(v))
+			case model.D:
+				messages = append(messages, v)
 			}
 		}
 		return messages
@@ -868,11 +871,13 @@ func inputToMessages(input any) []model.D {
 	var content []model.D
 	for _, item := range inputItems {
 		var itemMap map[string]any
-		if m, ok := item.(map[string]any); ok {
-			itemMap = m
-		} else if d, ok := item.(model.D); ok {
-			itemMap = d
-		} else {
+
+		switch v := item.(type) {
+		case map[string]any:
+			itemMap = v
+		case model.D:
+			itemMap = v
+		default:
 			continue
 		}
 

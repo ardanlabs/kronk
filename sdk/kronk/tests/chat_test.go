@@ -34,9 +34,10 @@ func testChat(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
 		}
 
 		var result testResult
-		if tooling {
+		switch tooling {
+		case true:
 			result = testChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatTextFinal, "London", "get_weather", "location", false)
-		} else {
+		case false:
 			result = testChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatTextFinal, "Gorilla", "", "", false)
 		}
 
@@ -94,9 +95,10 @@ func testChatStreaming(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) 
 		}
 
 		var result testResult
-		if tooling {
+		switch tooling {
+		case true:
 			result = testChatResponse(lastResp, krn.ModelInfo().ID, model.ObjectChatText, "London", "get_weather", "location", true)
-		} else {
+		case false:
 			result = testChatResponse(lastResp, krn.ModelInfo().ID, model.ObjectChatText, "Gorilla", "", "", true)
 		}
 

@@ -230,10 +230,11 @@ func run() error {
 
 					// Build the prompt.
 					c.nPast = 0
-					if *sharedPrompt {
+					switch *sharedPrompt {
+					case true:
 						c.nPast = llama.Pos(nTokensSystem)
 						c.prompt = p
-					} else {
+					case false:
 						c.prompt = systemPrompt + p
 					}
 
@@ -406,9 +407,10 @@ func batchAdd(batch *llama.Batch, token llama.Token, pos llama.Pos, seqIDs []lla
 
 	// Set logits flag.
 	logitPtr := (*int8)(unsafe.Pointer(uintptr(unsafe.Pointer(batch.Logits)) + uintptr(i)*unsafe.Sizeof(int8(0))))
-	if logits {
+	switch logits {
+	case true:
 		*logitPtr = 1
-	} else {
+	case false:
 		*logitPtr = 0
 	}
 
@@ -418,9 +420,10 @@ func batchAdd(batch *llama.Batch, token llama.Token, pos llama.Pos, seqIDs []lla
 // setLogit sets the logit flag for a specific token index.
 func setLogit(batch *llama.Batch, idx int32, logits bool) {
 	logitPtr := (*int8)(unsafe.Pointer(uintptr(unsafe.Pointer(batch.Logits)) + uintptr(idx)*unsafe.Sizeof(int8(0))))
-	if logits {
+	switch logits {
+	case true:
 		*logitPtr = 1
-	} else {
+	case false:
 		*logitPtr = 0
 	}
 }

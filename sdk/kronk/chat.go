@@ -128,9 +128,10 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 			if fr := resp.Choice[0].FinishReason(); fr == model.FinishReasonStop || fr == model.FinishReasonTool {
 				resp.Choice[0].Message = nil
 				if delta := resp.Choice[0].Delta; delta != nil {
-					if len(delta.ToolCalls) == 0 {
+					switch len(delta.ToolCalls) == 0 {
+					case true:
 						resp.Choice[0].Delta = &model.ResponseMessage{}
-					} else {
+					case false:
 						delta.Role = ""
 						delta.Content = ""
 						delta.Reasoning = ""

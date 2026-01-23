@@ -39,9 +39,12 @@ type Model struct {
 	modelInfo       ModelInfo
 	activeStreams   atomic.Int32
 	unloaded        atomic.Bool
-	sysPromptMu     sync.RWMutex
+	cacheMu         sync.RWMutex
 	sysPromptHash   string
 	sysPromptTokens int
+	firstMsgHash    string
+	firstMsgTokens  int
+	firstMsgSeqID   llama.SeqId // 0 if only FMC enabled, 1 if both enabled
 }
 
 func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) (*Model, error) {
@@ -85,9 +88,10 @@ func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) 
 	// Set split mode for multi-GPU and tensor parallelism (expert-parallel for MoE).
 	// Default to SplitModeRow (tensor parallelism) when not explicitly configured,
 	// as it provides the best performance for MoE models and works well for dense models.
-	if cfg.SplitMode == SplitModeNone {
+	switch cfg.SplitMode == SplitModeNone {
+	case true:
 		mParams.SplitMode = SplitModeRow.ToYZMAType()
-	} else {
+	case false:
 		mParams.SplitMode = cfg.SplitMode.ToYZMAType()
 	}
 
@@ -132,17 +136,26 @@ func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) 
 		return nil, fmt.Errorf("get-memory: unable to get memory: %w", err)
 	}
 
+	// Determine FMC sequence ID based on whether SPC is also enabled.
+	// If both enabled: SPC uses seq 0, FMC uses seq 1.
+	// If only FMC: FMC uses seq 0.
+	var firstMsgSeqID llama.SeqId
+	if cfg.FirstMessageCache && cfg.SystemPromptCache {
+		firstMsgSeqID = 1
+	}
+
 	m := Model{
-		cfg:       cfg,
-		log:       l,
-		model:     mdl,
-		vocab:     llama.ModelGetVocab(mdl),
-		ctxParams: ctxParams,
-		lctx:      lctx,
-		mem:       mem,
-		template:  template,
-		projFile:  cfg.ProjFile,
-		modelInfo: modelInfo,
+		cfg:           cfg,
+		log:           l,
+		model:         mdl,
+		vocab:         llama.ModelGetVocab(mdl),
+		ctxParams:     ctxParams,
+		lctx:          lctx,
+		mem:           mem,
+		template:      template,
+		projFile:      cfg.ProjFile,
+		modelInfo:     modelInfo,
+		firstMsgSeqID: firstMsgSeqID,
 	}
 
 	// Initialize batch engine for text-only models (no ProjFile).

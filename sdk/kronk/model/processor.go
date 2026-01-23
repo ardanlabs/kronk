@@ -224,14 +224,17 @@ func (p *processor) gptProcess(content string, token llama.Token) (response, lla
 				}
 			}
 
-			if content == "<|constrain|>" {
+			switch content == "<|constrain|>" {
+			case true:
 				p.awaitingConstrain = true
-			} else {
+			case false:
 				p.collecting = true
 			}
-		} else {
-			p.channelBuf.WriteString(content)
+
+			return response{}, token, nil
 		}
+
+		p.channelBuf.WriteString(content)
 
 		return response{}, token, nil
 	}
@@ -574,10 +577,11 @@ func parseMistralToolCallFormat(content string) []ResponseToolCall {
 
 		endIdx := findJSONObjectEnd(argsContent)
 		var argsJSON string
-		if endIdx == -1 {
+		switch endIdx == -1 {
+		case true:
 			argsJSON = argsContent
 			remaining = ""
-		} else {
+		case false:
 			argsJSON = argsContent[:endIdx]
 			remaining = argsContent[endIdx:]
 		}
@@ -741,14 +745,17 @@ func (p *processor) stepGPT(content string) (response, bool) {
 				}
 			}
 
-			if content == "<|constrain|>" {
+			switch content == "<|constrain|>" {
+			case true:
 				p.awaitingConstrain = true
-			} else {
+			case false:
 				p.collecting = true
 			}
-		} else {
-			p.channelBuf.WriteString(content)
+
+			return response{}, false
 		}
+
+		p.channelBuf.WriteString(content)
 
 		return response{}, false
 	}

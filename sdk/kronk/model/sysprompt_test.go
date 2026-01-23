@@ -4,117 +4,124 @@ import (
 	"testing"
 )
 
-func TestExtractFirstMessage(t *testing.T) {
+func TestFindCacheableMessage(t *testing.T) {
 	tests := []struct {
 		name        string
-		d           D
-		wantRole    string
+		messages    []D
+		targetRole  string
+		wantIndex   int
 		wantContent string
 		wantOK      bool
 	}{
 		{
-			name: "with system message",
-			d: D{
-				"messages": []D{
-					{"role": "system", "content": "You are a helpful assistant."},
-					{"role": "user", "content": "Hello"},
-				},
+			name: "find system message at index 0",
+			messages: []D{
+				{"role": "system", "content": "You are a helpful assistant."},
+				{"role": "user", "content": "Hello"},
 			},
-			wantRole:    "system",
+			targetRole:  RoleSystem,
+			wantIndex:   0,
 			wantContent: "You are a helpful assistant.",
 			wantOK:      true,
 		},
 		{
-			name: "with user message first",
-			d: D{
-				"messages": []D{
-					{"role": "user", "content": "Hello, this is my first message."},
-					{"role": "assistant", "content": "Hi there!"},
-				},
+			name: "find user message at index 0",
+			messages: []D{
+				{"role": "user", "content": "Hello, this is my first message."},
+				{"role": "assistant", "content": "Hi there!"},
 			},
-			wantRole:    "user",
+			targetRole:  RoleUser,
+			wantIndex:   0,
 			wantContent: "Hello, this is my first message.",
 			wantOK:      true,
 		},
 		{
-			name: "with assistant message first",
-			d: D{
-				"messages": []D{
-					{"role": "assistant", "content": "Welcome!"},
-					{"role": "user", "content": "Thanks"},
-				},
+			name: "find user message at index 1 (after system)",
+			messages: []D{
+				{"role": "system", "content": "System prompt"},
+				{"role": "user", "content": "Hello user"},
+				{"role": "assistant", "content": "Hi there!"},
 			},
-			wantRole:    "assistant",
-			wantContent: "Welcome!",
+			targetRole:  RoleUser,
+			wantIndex:   1,
+			wantContent: "Hello user",
 			wantOK:      true,
 		},
 		{
-			name: "empty messages",
-			d: D{
-				"messages": []D{},
+			name: "no system message found",
+			messages: []D{
+				{"role": "user", "content": "Hello"},
+				{"role": "assistant", "content": "Hi"},
 			},
-			wantRole:    "",
+			targetRole:  RoleSystem,
+			wantIndex:   0,
 			wantContent: "",
 			wantOK:      false,
 		},
 		{
-			name:        "no messages key",
-			d:           D{},
-			wantRole:    "",
+			name:        "empty messages",
+			messages:    []D{},
+			targetRole:  RoleSystem,
+			wantIndex:   0,
 			wantContent: "",
 			wantOK:      false,
 		},
 		{
-			name: "first message with empty content",
-			d: D{
-				"messages": []D{
-					{"role": "system", "content": ""},
-					{"role": "user", "content": "Hello"},
-				},
+			name: "message with empty content skipped",
+			messages: []D{
+				{"role": "system", "content": ""},
+				{"role": "system", "content": "Valid system"},
+				{"role": "user", "content": "Hello"},
 			},
-			wantRole:    "",
-			wantContent: "",
-			wantOK:      false,
+			targetRole:  RoleSystem,
+			wantIndex:   1,
+			wantContent: "Valid system",
+			wantOK:      true,
 		},
 		{
-			name: "first message with empty role",
-			d: D{
-				"messages": []D{
-					{"role": "", "content": "Hello"},
-				},
+			name: "message with empty role skipped",
+			messages: []D{
+				{"role": "", "content": "Hello"},
+				{"role": "user", "content": "Valid user"},
 			},
-			wantRole:    "",
-			wantContent: "",
-			wantOK:      false,
+			targetRole:  RoleUser,
+			wantIndex:   1,
+			wantContent: "Valid user",
+			wantOK:      true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			info, ok := extractFirstMessage(tt.d)
-			if info.role != tt.wantRole {
-				t.Errorf("extractFirstMessage() role = %q, want %q", info.role, tt.wantRole)
-			}
-			if info.content != tt.wantContent {
-				t.Errorf("extractFirstMessage() content = %q, want %q", info.content, tt.wantContent)
-			}
+			info, ok := findCacheableMessage(tt.messages, tt.targetRole)
 			if ok != tt.wantOK {
-				t.Errorf("extractFirstMessage() ok = %v, want %v", ok, tt.wantOK)
+				t.Errorf("findCacheableMessage() ok = %v, want %v", ok, tt.wantOK)
+			}
+			if ok {
+				if info.index != tt.wantIndex {
+					t.Errorf("findCacheableMessage() index = %d, want %d", info.index, tt.wantIndex)
+				}
+				if info.content != tt.wantContent {
+					t.Errorf("findCacheableMessage() content = %q, want %q", info.content, tt.wantContent)
+				}
+				if info.role != tt.targetRole {
+					t.Errorf("findCacheableMessage() role = %q, want %q", info.role, tt.targetRole)
+				}
 			}
 		})
 	}
 }
 
-func TestHashFirstMessage(t *testing.T) {
-	info1 := firstMessageInfo{role: "system", content: "You are a helpful assistant."}
-	info2 := firstMessageInfo{role: "system", content: "You are a helpful assistant."}
-	info3 := firstMessageInfo{role: "system", content: "You are a different assistant."}
-	info4 := firstMessageInfo{role: "user", content: "You are a helpful assistant."}
+func TestHashMessage(t *testing.T) {
+	info1 := cacheableMessage{index: 0, role: "system", content: "You are a helpful assistant."}
+	info2 := cacheableMessage{index: 0, role: "system", content: "You are a helpful assistant."}
+	info3 := cacheableMessage{index: 0, role: "system", content: "You are a different assistant."}
+	info4 := cacheableMessage{index: 0, role: "user", content: "You are a helpful assistant."}
 
-	hash1 := hashFirstMessage(info1)
-	hash2 := hashFirstMessage(info2)
-	hash3 := hashFirstMessage(info3)
-	hash4 := hashFirstMessage(info4)
+	hash1 := hashMessage(info1)
+	hash2 := hashMessage(info2)
+	hash3 := hashMessage(info3)
+	hash4 := hashMessage(info4)
 
 	if hash1 != hash2 {
 		t.Error("same role+content should produce same hash")
@@ -131,74 +138,106 @@ func TestHashFirstMessage(t *testing.T) {
 	if len(hash1) != 64 {
 		t.Errorf("hash should be 64 hex chars (SHA-256), got %d", len(hash1))
 	}
+
+	// Index should not affect hash.
+	info5 := cacheableMessage{index: 5, role: "system", content: "You are a helpful assistant."}
+	hash5 := hashMessage(info5)
+	if hash1 != hash5 {
+		t.Error("different index should not affect hash")
+	}
 }
 
-func TestRemoveFirstMessage(t *testing.T) {
+func TestRemoveMessagesAtIndices(t *testing.T) {
 	tests := []struct {
 		name          string
 		d             D
+		indices       []int
 		wantMsgCount  int
+		wantFirstRole string
 		wantUnchanged bool
 	}{
 		{
-			name: "removes system message",
+			name: "removes first message (index 0)",
 			d: D{
 				"messages": []D{
 					{"role": "system", "content": "System prompt"},
 					{"role": "user", "content": "Hello"},
 				},
 			},
-			wantMsgCount: 1,
+			indices:       []int{0},
+			wantMsgCount:  1,
+			wantFirstRole: "user",
 		},
 		{
-			name: "removes user message",
+			name: "removes second message (index 1)",
 			d: D{
 				"messages": []D{
+					{"role": "system", "content": "System prompt"},
 					{"role": "user", "content": "Hello"},
 					{"role": "assistant", "content": "Hi"},
 				},
 			},
-			wantMsgCount: 1,
+			indices:       []int{1},
+			wantMsgCount:  2,
+			wantFirstRole: "system",
 		},
 		{
-			name: "empty messages gets placeholder",
+			name: "removes multiple messages",
 			d: D{
-				"messages": []D{},
+				"messages": []D{
+					{"role": "system", "content": "System prompt"},
+					{"role": "user", "content": "Hello"},
+					{"role": "assistant", "content": "Hi"},
+				},
 			},
-			wantMsgCount:  0,
-			wantUnchanged: true,
+			indices:       []int{0, 1},
+			wantMsgCount:  1,
+			wantFirstRole: "assistant",
 		},
 		{
-			name: "single message gets placeholder",
+			name: "empty indices returns unchanged",
 			d: D{
 				"messages": []D{
 					{"role": "user", "content": "Hello"},
 				},
 			},
+			indices:       []int{},
 			wantMsgCount:  1,
+			wantUnchanged: true,
+		},
+		{
+			name: "empty messages returns unchanged",
+			d: D{
+				"messages": []D{},
+			},
+			indices:       []int{0},
+			wantMsgCount:  0,
 			wantUnchanged: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := removeFirstMessage(tt.d)
+			result := removeMessagesAtIndices(tt.d, tt.indices)
 			msgs, ok := result["messages"].([]D)
 			if !ok {
 				t.Fatal("messages should be []D")
 			}
+
 			if len(msgs) != tt.wantMsgCount {
 				t.Errorf("got %d messages, want %d", len(msgs), tt.wantMsgCount)
 			}
 
-			originalMsgs := tt.d["messages"].([]D)
-			if tt.wantUnchanged {
+			switch {
+			case tt.wantUnchanged:
+				originalMsgs := tt.d["messages"].([]D)
 				if len(msgs) != len(originalMsgs) {
-					t.Error("expected unchanged D for single/empty messages")
+					t.Error("expected unchanged D")
 				}
-			} else if len(originalMsgs) > 1 && len(msgs) > 0 {
-				if msgs[0]["role"] == originalMsgs[0]["role"] && msgs[0]["content"] == originalMsgs[0]["content"] {
-					t.Error("first message should have been removed")
+
+			case len(msgs) > 0:
+				if msgs[0]["role"] != tt.wantFirstRole {
+					t.Errorf("first message role = %q, want %q", msgs[0]["role"], tt.wantFirstRole)
 				}
 			}
 		})

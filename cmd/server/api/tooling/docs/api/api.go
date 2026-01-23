@@ -122,10 +122,11 @@ func generateAPITSX(doc apiDoc) string {
 			epAnchor := toAnchor(group.Name + "-" + ep.Method + "-" + ep.Path)
 			b.WriteString(fmt.Sprintf("\n            <div className=\"doc-section\" id=\"%s\">\n", epAnchor))
 
-			if ep.Method != "" {
+			switch ep.Method != "" {
+			case true:
 				b.WriteString(fmt.Sprintf("              <h4><span className=\"method-%s\">%s</span> %s</h4>\n",
 					strings.ToLower(ep.Method), ep.Method, escapeJSX(ep.Path)))
-			} else {
+			case false:
 				b.WriteString(fmt.Sprintf("              <h4>%s</h4>\n", escapeJSX(ep.Path)))
 			}
 
@@ -235,9 +236,10 @@ func generateAPITSX(doc apiDoc) string {
 		for _, ep := range group.Endpoints {
 			epAnchor := toAnchor(group.Name + "-" + ep.Method + "-" + ep.Path)
 			var label string
-			if ep.Method != "" {
+			switch ep.Method != "" {
+			case true:
 				label = ep.Method + " " + escapeJSX(ep.Path)
-			} else {
+			case false:
 				label = escapeJSX(ep.Path)
 			}
 			b.WriteString(fmt.Sprintf("                <li><a href=\"#%s\">%s</a></li>\n", epAnchor, label))

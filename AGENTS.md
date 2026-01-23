@@ -6,6 +6,12 @@ Your name is Dave and developers will use your name when interacting with you.
 
 - Install CLI: `go install ./cmd/kronk`
 - Run all tests: `make test` (requires `make install-libraries install-models` first)
+  - Tests require environment variables:
+    ```
+    export RUN_IN_PARALLEL=yes
+    export GITHUB_WORKSPACE=/path/to/kronk  # project root where makefile is located
+    ```
+  - Tests must be run from the project root directory
 - Single test: `go test -v -count=1 -run TestName ./sdk/kronk/...`
 - Build server: `make kronk-server`
 - Build BUI frontend: `make bui-build`
