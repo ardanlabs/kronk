@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
@@ -89,8 +90,28 @@ func printWeb(mi toolapp.ModelInfoResponse) {
 	fmt.Printf("IsHybrid:    %t\n", mi.IsHybrid)
 	fmt.Printf("IsGPT:       %t\n", mi.IsGPT)
 	fmt.Println("Metadata:")
+
+	type metaItem struct {
+		k string
+		v string
+	}
+	orderedMeta := make([]metaItem, 0, len(mi.Metadata))
 	for k, v := range mi.Metadata {
-		fmt.Printf("  %s: %s\n", k, v)
+		orderedMeta = append(orderedMeta, metaItem{k: k, v: v})
+	}
+
+	slices.SortFunc(orderedMeta, func(a metaItem, b metaItem) int {
+		if a.k == b.k {
+			return 0
+		}
+		if a.k > b.k {
+			return 1
+		}
+		return -1
+	})
+
+	for _, m := range orderedMeta {
+		fmt.Printf("  %s: %s\n", m.k, m.v)
 	}
 }
 
@@ -108,7 +129,27 @@ func printLocal(mi models.Info, details model.ModelInfo) {
 	fmt.Printf("IsHybrid:    %t\n", details.IsHybrid)
 	fmt.Printf("IsGPT:       %t\n", details.IsGPTModel)
 	fmt.Println("Metadata:")
+
+	type metaItem struct {
+		k string
+		v string
+	}
+	orderedMeta := make([]metaItem, 0, len(details.Metadata))
 	for k, v := range details.Metadata {
-		fmt.Printf("  %s: %s\n", k, v)
+		orderedMeta = append(orderedMeta, metaItem{k: k, v: v})
+	}
+
+	slices.SortFunc(orderedMeta, func(a metaItem, b metaItem) int {
+		if a.k == b.k {
+			return 0
+		}
+		if a.k > b.k {
+			return 1
+		}
+		return -1
+	})
+
+	for _, m := range orderedMeta {
+		fmt.Printf("  %s: %s\n", m.k, m.v)
 	}
 }
