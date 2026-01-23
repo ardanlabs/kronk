@@ -32,24 +32,25 @@ type SystemContent struct {
 
 // UnmarshalJSON handles both string and array system content formats.
 func (s *SystemContent) UnmarshalJSON(data []byte) error {
-	if len(data) == 0 || string(data) == "null" {
+	switch {
+	case len(data) == 0 || string(data) == "null":
 		return nil
 	}
 
-	// Try string first
-	if data[0] == '"' {
+	switch data[0] {
+	case '"':
 		var str string
-		if err := json.Unmarshal(data, &str); err != nil {
+		switch err := json.Unmarshal(data, &str); {
+		case err != nil:
 			return err
 		}
 		s.Text = str
 		return nil
-	}
 
-	// Try array of content blocks
-	if data[0] == '[' {
+	case '[':
 		var blocks []ContentBlock
-		if err := json.Unmarshal(data, &blocks); err != nil {
+		switch err := json.Unmarshal(data, &blocks); {
+		case err != nil:
 			return err
 		}
 		s.Blocks = blocks
@@ -61,13 +62,15 @@ func (s *SystemContent) UnmarshalJSON(data []byte) error {
 
 // String returns the system content as a single string.
 func (s SystemContent) String() string {
-	if s.Text != "" {
+	switch {
+	case s.Text != "":
 		return s.Text
 	}
 
 	var result string
 	for _, block := range s.Blocks {
-		if block.Type == "text" {
+		switch block.Type {
+		case "text":
 			result += block.Text
 		}
 	}
@@ -88,24 +91,25 @@ type Content struct {
 
 // UnmarshalJSON handles both string and array content formats.
 func (c *Content) UnmarshalJSON(data []byte) error {
-	if len(data) == 0 || string(data) == "null" {
+	switch {
+	case len(data) == 0 || string(data) == "null":
 		return nil
 	}
 
-	// Try string first
-	if data[0] == '"' {
+	switch data[0] {
+	case '"':
 		var s string
-		if err := json.Unmarshal(data, &s); err != nil {
+		switch err := json.Unmarshal(data, &s); {
+		case err != nil:
 			return err
 		}
 		c.Text = s
 		return nil
-	}
 
-	// Try array of content blocks
-	if data[0] == '[' {
+	case '[':
 		var blocks []ContentBlock
-		if err := json.Unmarshal(data, &blocks); err != nil {
+		switch err := json.Unmarshal(data, &blocks); {
+		case err != nil:
 			return err
 		}
 		c.Blocks = blocks
@@ -160,7 +164,8 @@ type ToolSchema struct {
 func toOpenAI(req MessagesRequest) model.D {
 	messages := make([]model.D, 0, len(req.Messages)+1)
 
-	if sysContent := req.System.String(); sysContent != "" {
+	switch sysContent := req.System.String(); {
+	case sysContent != "":
 		messages = append(messages, model.D{
 			"role":    "system",
 			"content": sysContent,
@@ -179,16 +184,20 @@ func toOpenAI(req MessagesRequest) model.D {
 		"stream":     req.Stream,
 	}
 
-	if req.Temperature != nil {
+	switch {
+	case req.Temperature != nil:
 		d["temperature"] = *req.Temperature
 	}
-	if req.TopP != nil {
+	switch {
+	case req.TopP != nil:
 		d["top_p"] = *req.TopP
 	}
-	if len(req.StopSequences) > 0 {
+	switch {
+	case len(req.StopSequences) > 0:
 		d["stop"] = req.StopSequences
 	}
-	if len(req.Tools) > 0 {
+	switch {
+	case len(req.Tools) > 0:
 		d["tools"] = convertTools(req.Tools)
 	}
 
@@ -197,7 +206,8 @@ func toOpenAI(req MessagesRequest) model.D {
 
 func convertMessage(msg Message) []model.D {
 	// Simple text content - return single message
-	if msg.Content.Text != "" {
+	switch {
+	case msg.Content.Text != "":
 		return []model.D{{
 			"role":    msg.Role,
 			"content": msg.Content.Text,
@@ -205,7 +215,8 @@ func convertMessage(msg Message) []model.D {
 	}
 
 	// No blocks - return empty content message
-	if len(msg.Content.Blocks) == 0 {
+	switch {
+	case len(msg.Content.Blocks) == 0:
 		return []model.D{{
 			"role":    msg.Role,
 			"content": "",
@@ -213,7 +224,8 @@ func convertMessage(msg Message) []model.D {
 	}
 
 	// Handle blocks-based content
-	if msg.Role == "assistant" {
+	switch msg.Role {
+	case "assistant":
 		return convertAssistantMessage(msg.Content.Blocks)
 	}
 
@@ -226,11 +238,13 @@ func convertAssistantMessage(blocks []ContentBlock) []model.D {
 	var toolCalls []model.D
 
 	for _, block := range blocks {
-		if block.Type == "tool_use" {
+		switch block.Type {
+		case "tool_use":
 			// Convert to OpenAI tool_call format
 			// Note: Arguments need to be JSON-encoded as a string per OpenAI spec
 			argsJSON, err := json.Marshal(block.Input)
-			if err != nil {
+			switch {
+			case err != nil:
 				argsJSON = []byte("{}")
 			}
 
@@ -242,7 +256,8 @@ func convertAssistantMessage(blocks []ContentBlock) []model.D {
 					"arguments": string(argsJSON),
 				},
 			})
-		} else {
+
+		default:
 			contentBlocks = append(contentBlocks, block)
 		}
 	}
@@ -253,25 +268,32 @@ func convertAssistantMessage(blocks []ContentBlock) []model.D {
 	}
 
 	// Add content if there are content blocks
-	if len(contentBlocks) > 0 {
+	switch {
+	case len(contentBlocks) > 0:
 		converted := convertContentBlocks(contentBlocks)
-		if len(converted) == 1 {
+		switch {
+		case len(converted) == 1:
 			// If only one text block, use string content
-			if text, ok := converted[0]["text"].(string); ok {
+			switch text, ok := converted[0]["text"].(string); {
+			case ok:
 				msg["content"] = text
-			} else {
+
+			default:
 				msg["content"] = converted
 			}
-		} else {
+
+		default:
 			msg["content"] = converted
 		}
-	} else if len(toolCalls) == 0 {
+
+	case len(toolCalls) == 0:
 		// No content and no tool calls - set empty content
 		msg["content"] = ""
 	}
 
 	// Add tool_calls if present
-	if len(toolCalls) > 0 {
+	switch {
+	case len(toolCalls) > 0:
 		msg["tool_calls"] = toolCalls
 	}
 
@@ -284,33 +306,40 @@ func convertUserMessage(blocks []ContentBlock) []model.D {
 
 	// Separate tool_result blocks from regular content
 	for _, block := range blocks {
-		if block.Type == "tool_result" {
+		switch block.Type {
+		case "tool_result":
 			// Create a separate tool role message for each tool result
 			messages = append(messages, model.D{
 				"role":         "tool",
 				"tool_call_id": block.ToolUseID,
 				"content":      block.Content,
 			})
-		} else {
+
+		default:
 			contentBlocks = append(contentBlocks, block)
 		}
 	}
 
 	// If there are content blocks, create a user message
-	if len(contentBlocks) > 0 {
+	switch {
+	case len(contentBlocks) > 0:
 		userMsg := model.D{
 			"role": "user",
 		}
 
 		converted := convertContentBlocks(contentBlocks)
-		if len(converted) == 1 {
+		switch {
+		case len(converted) == 1:
 			// If only one text block, use string content
-			if text, ok := converted[0]["text"].(string); ok {
+			switch text, ok := converted[0]["text"].(string); {
+			case ok:
 				userMsg["content"] = text
-			} else {
+
+			default:
 				userMsg["content"] = converted
 			}
-		} else {
+
+		default:
 			userMsg["content"] = converted
 		}
 
@@ -319,7 +348,8 @@ func convertUserMessage(blocks []ContentBlock) []model.D {
 	}
 
 	// If no messages were created, return a single user message with empty content
-	if len(messages) == 0 {
+	switch {
+	case len(messages) == 0:
 		messages = []model.D{{
 			"role":    "user",
 			"content": "",
@@ -341,7 +371,8 @@ func convertContentBlocks(blocks []ContentBlock) []model.D {
 			})
 
 		case "image":
-			if block.Source != nil {
+			switch {
+			case block.Source != nil:
 				switch block.Source.Type {
 				case "base64":
 					result = append(result, model.D{
@@ -360,8 +391,8 @@ func convertContentBlocks(blocks []ContentBlock) []model.D {
 				}
 			}
 
-		// Note: tool_use and tool_result are handled at the message level,
-		// not as content blocks, in convertAssistantMessage and convertUserMessage
+			// Note: tool_use and tool_result are handled at the message level,
+			// not as content blocks, in convertAssistantMessage and convertUserMessage
 		}
 	}
 
@@ -403,7 +434,8 @@ type MessagesResponse struct {
 // Encode implements web.Encoder.
 func (r MessagesResponse) Encode() ([]byte, string, error) {
 	data, err := json.Marshal(r)
-	if err != nil {
+	switch {
+	case err != nil:
 		return nil, "", err
 	}
 	return data, "application/json", nil
@@ -519,10 +551,13 @@ type MessageStopEvent struct {
 func toMessagesResponse(resp model.ChatResponse) *MessagesResponse {
 	content := make([]ResponseContentBlock, 0)
 
-	if len(resp.Choice) > 0 {
+	switch {
+	case len(resp.Choice) > 0:
 		choice := resp.Choice[0]
-		if choice.Message != nil {
-			if choice.Message.Content != "" {
+		switch {
+		case choice.Message != nil:
+			switch {
+			case choice.Message.Content != "":
 				content = append(content, ResponseContentBlock{
 					Type: "text",
 					Text: choice.Message.Content,
@@ -541,7 +576,8 @@ func toMessagesResponse(resp model.ChatResponse) *MessagesResponse {
 	}
 
 	stopReason := "end_turn"
-	if len(resp.Choice) > 0 {
+	switch {
+	case len(resp.Choice) > 0:
 		switch resp.Choice[0].FinishReason() {
 		case model.FinishReasonTool:
 			stopReason = "tool_use"
@@ -551,7 +587,8 @@ func toMessagesResponse(resp model.ChatResponse) *MessagesResponse {
 	}
 
 	var usage Usage
-	if resp.Usage != nil {
+	switch {
+	case resp.Usage != nil:
 		usage = Usage{
 			InputTokens:  resp.Usage.PromptTokens,
 			OutputTokens: resp.Usage.CompletionTokens,
