@@ -77,6 +77,7 @@ cerebras_qwen3-coder-reap-25b-a3b-q8_0:
   cache-type-v: q8_0
   flash-attention: enabled
   nseq-max: 1
+  first-message-cache: true
 
 # This model has not been as good as cerebras_qwen3-coder-reap-25b-a3b-q8_0
 # Not configured for Agent use.
@@ -120,6 +121,7 @@ gpt-oss-20b-Q8_0:
   nseq-max: 2
 
 # Can't get this model to behave with any of the Agents.
+# Configured for Agent use.
 gpt-oss-120b-F16:
   context-window: 131072
   nbatch: 2048
@@ -127,7 +129,8 @@ gpt-oss-120b-F16:
   cache-type-k: q8_0
   cache-type-v: q8_0
   flash-attention: enabled
-  nseq-max: 2
+  nseq-max: 1
+  first-message-cache: true
 
 # ==============================================================================
 # VISION MODELS
