@@ -368,6 +368,16 @@ func findCacheableMessage(messages []D, targetRole string) (cacheableMessage, bo
 					}
 				}
 			}
+
+		case []D:
+			// Extract text from array of D content parts.
+			for _, part := range c {
+				if part["type"] == "text" {
+					if text, ok := part["text"].(string); ok {
+						content += text
+					}
+				}
+			}
 		}
 
 		if content == "" {

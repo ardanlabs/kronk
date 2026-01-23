@@ -432,7 +432,7 @@ export default function DocsSDKKronk() {
 		}
 	}
 
-	if len(msg) > 0 && msg[0] != '\\x1b' {
+	if len(msg) > 0 && msg[0] != '\\r' {
 		fmt.Println()
 	}
 }`}</code>

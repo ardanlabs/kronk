@@ -42,8 +42,6 @@ func (a *app) messages(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.Errorf(errs.InvalidArgument, "missing max_tokens field")
 	}
 
-	req.Model = "Qwen3-Coder-30B-A3B-Instruct-Q8_0"
-
 	krn, err := a.cache.AquireModel(ctx, req.Model)
 	if err != nil {
 		return errs.New(errs.InvalidArgument, err)
@@ -69,6 +67,12 @@ func (a *app) messages(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.New(errs.Internal, err)
 	}
 
+	// Set anthropic-request-id header for API compatibility
+	w := web.GetWriter(ctx)
+	if w != nil {
+		w.Header().Set("anthropic-request-id", resp.ID)
+	}
+
 	return toMessagesResponse(resp)
 }
 
@@ -88,8 +92,6 @@ func (a *app) handleStreaming(ctx context.Context, krn *kronk.Kronk, d model.D, 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	w.WriteHeader(http.StatusOK)
-	f.Flush()
 
 	state := streamState{
 		w:         w,
@@ -100,6 +102,13 @@ func (a *app) handleStreaming(ctx context.Context, krn *kronk.Kronk, d model.D, 
 	for resp := range ch {
 		if err := ctx.Err(); err != nil {
 			return fmt.Errorf("client disconnected")
+		}
+
+		// Set anthropic-request-id header from first response
+		if !state.started && resp.ID != "" {
+			w.Header().Set("anthropic-request-id", resp.ID)
+			w.WriteHeader(http.StatusOK)
+			f.Flush()
 		}
 
 		if err := state.processChunk(resp); err != nil {

@@ -168,7 +168,8 @@ func toOpenAI(req MessagesRequest) model.D {
 	}
 
 	for _, msg := range req.Messages {
-		messages = append(messages, convertMessage(msg))
+		converted := convertMessage(msg)
+		messages = append(messages, converted...)
 	}
 
 	d := model.D{
@@ -194,21 +195,138 @@ func toOpenAI(req MessagesRequest) model.D {
 	return d
 }
 
-func convertMessage(msg Message) model.D {
-	d := model.D{
-		"role": msg.Role,
-	}
-
+func convertMessage(msg Message) []model.D {
+	// Simple text content - return single message
 	if msg.Content.Text != "" {
-		d["content"] = msg.Content.Text
-		return d
+		return []model.D{{
+			"role":    msg.Role,
+			"content": msg.Content.Text,
+		}}
 	}
 
-	if len(msg.Content.Blocks) > 0 {
-		d["content"] = convertContentBlocks(msg.Content.Blocks)
+	// No blocks - return empty content message
+	if len(msg.Content.Blocks) == 0 {
+		return []model.D{{
+			"role":    msg.Role,
+			"content": "",
+		}}
 	}
 
-	return d
+	// Handle blocks-based content
+	if msg.Role == "assistant" {
+		return convertAssistantMessage(msg.Content.Blocks)
+	}
+
+	return convertUserMessage(msg.Content.Blocks)
+}
+
+func convertAssistantMessage(blocks []ContentBlock) []model.D {
+	// Separate tool_use blocks from content blocks
+	var contentBlocks []ContentBlock
+	var toolCalls []model.D
+
+	for _, block := range blocks {
+		if block.Type == "tool_use" {
+			// Convert to OpenAI tool_call format
+			// Note: Arguments need to be JSON-encoded as a string per OpenAI spec
+			argsJSON, err := json.Marshal(block.Input)
+			if err != nil {
+				argsJSON = []byte("{}")
+			}
+
+			toolCalls = append(toolCalls, model.D{
+				"id":   block.ID,
+				"type": "function",
+				"function": model.D{
+					"name":      block.Name,
+					"arguments": string(argsJSON),
+				},
+			})
+		} else {
+			contentBlocks = append(contentBlocks, block)
+		}
+	}
+
+	// Build the assistant message
+	msg := model.D{
+		"role": "assistant",
+	}
+
+	// Add content if there are content blocks
+	if len(contentBlocks) > 0 {
+		converted := convertContentBlocks(contentBlocks)
+		if len(converted) == 1 {
+			// If only one text block, use string content
+			if text, ok := converted[0]["text"].(string); ok {
+				msg["content"] = text
+			} else {
+				msg["content"] = converted
+			}
+		} else {
+			msg["content"] = converted
+		}
+	} else if len(toolCalls) == 0 {
+		// No content and no tool calls - set empty content
+		msg["content"] = ""
+	}
+
+	// Add tool_calls if present
+	if len(toolCalls) > 0 {
+		msg["tool_calls"] = toolCalls
+	}
+
+	return []model.D{msg}
+}
+
+func convertUserMessage(blocks []ContentBlock) []model.D {
+	var messages []model.D
+	var contentBlocks []ContentBlock
+
+	// Separate tool_result blocks from regular content
+	for _, block := range blocks {
+		if block.Type == "tool_result" {
+			// Create a separate tool role message for each tool result
+			messages = append(messages, model.D{
+				"role":         "tool",
+				"tool_call_id": block.ToolUseID,
+				"content":      block.Content,
+			})
+		} else {
+			contentBlocks = append(contentBlocks, block)
+		}
+	}
+
+	// If there are content blocks, create a user message
+	if len(contentBlocks) > 0 {
+		userMsg := model.D{
+			"role": "user",
+		}
+
+		converted := convertContentBlocks(contentBlocks)
+		if len(converted) == 1 {
+			// If only one text block, use string content
+			if text, ok := converted[0]["text"].(string); ok {
+				userMsg["content"] = text
+			} else {
+				userMsg["content"] = converted
+			}
+		} else {
+			userMsg["content"] = converted
+		}
+
+		// Insert user message before tool messages to maintain order
+		messages = append([]model.D{userMsg}, messages...)
+	}
+
+	// If no messages were created, return a single user message with empty content
+	if len(messages) == 0 {
+		messages = []model.D{{
+			"role":    "user",
+			"content": "",
+		}}
+	}
+
+	return messages
 }
 
 func convertContentBlocks(blocks []ContentBlock) []model.D {
@@ -242,21 +360,8 @@ func convertContentBlocks(blocks []ContentBlock) []model.D {
 				}
 			}
 
-		case "tool_use":
-			result = append(result, model.D{
-				"type": "function",
-				"function": model.D{
-					"name":      block.Name,
-					"arguments": block.Input,
-				},
-			})
-
-		case "tool_result":
-			result = append(result, model.D{
-				"type":         "tool_result",
-				"tool_call_id": block.ToolUseID,
-				"content":      block.Content,
-			})
+		// Note: tool_use and tool_result are handled at the message level,
+		// not as content blocks, in convertAssistantMessage and convertUserMessage
 		}
 	}
 

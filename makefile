@@ -2,6 +2,37 @@
 SHELL_PATH = /bin/ash
 SHELL = $(if $(wildcard $(SHELL_PATH)),/bin/ash,/bin/bash)
 
+# ==============================================================================
+# Model Selection Notes
+#
+# These suffixes define how a Large Language Model (LLM) is quantized—compressed
+# from its original size to fit into computer memory (RAM/VRAM). The primary
+# difference lies in the balance between model size, inference speed, and output
+# accuracy (intelligence). 
+#
+# - F16 (FP16): Unquantized, maximum quality, largest size.
+# - Q8_0: 8-bit, near-lossless compression, very high quality. (Best for local)
+# - K_XL: K-quant (smart) method, high efficiency, better accuracy than
+#         standard _0 at similar sizes. 
+
+# Also, the FP8/F16 or even FP4 are more for modern nvidia cards,are all the
+# precision of the floating point numbers. All operations are accelerated by
+# the GPU.
+
+# Most of the modern GPUs have the hardware for FP16, and other formats, like FP8
+# (Q8) or FP4 are emulated.
+
+# If you have hardware support for FP8, it will be roughly double the speed of FP16.
+
+# There are also INT4/INT8 models, but that's already weird. They take the
+# floating point numbers and convert them to the int in the given precision.
+
+# For us, on Apple M4 chips, there's still some performance to be gained.
+# See: https://github.com/ggml-org/llama.cpp/discussions/336
+# However, llama.cpp doesn't currently support the MLX framework.
+
+# ==============================================================================
+
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
 	OPEN_CMD := open

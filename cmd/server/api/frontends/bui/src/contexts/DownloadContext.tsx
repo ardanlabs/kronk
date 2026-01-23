@@ -29,7 +29,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   const [download, setDownload] = useState<DownloadState | null>(null);
   const abortRef = useRef<(() => void) | null>(null);
 
-  const ANSI_INLINE = '\x1b[1A\r\x1b[K';
+  const ANSI_INLINE = '\r\x1b[K';
 
   const addMessage = useCallback((text: string, type: DownloadMessage['type']) => {
     setDownload((prev) => {

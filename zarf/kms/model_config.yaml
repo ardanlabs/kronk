@@ -16,69 +16,7 @@
 #   system-prompt-cache: false           # Cache first message KV state for reuse across requests (any role)
 #   system-prompt-cache-min-tokens: 100  # Min tokens before caching first message (default: 100)
 
-gpt-oss-20b-Q8_0:
-  context-window: 98304
-  nbatch: 2048
-  nubatch: 512
-  cache-type-k: q8_0
-  cache-type-v: q8_0
-  flash-attention: enabled
-  nseq-max: 2
-Qwen3-8B-Q8_0:
-  context-window: 40960
-  nbatch: 2048
-  nubatch: 512
-  cache-type-k: q8_0
-  cache-type-v: q8_0
-  flash-attention: enabled
-  nseq-max: 2
-Qwen2.5-VL-3B-Instruct-Q8_0:
-  context-window: 8192
-  nbatch: 2048
-  nubatch: 2048
-  cache-type-k: q8_0
-  cache-type-v: q8_0
-  flash-attention: enabled
-Qwen2-Audio-7B.Q8_0:
-  context-window: 8192
-  nbatch: 2048
-  nubatch: 2048
-  cache-type-k: q8_0
-  cache-type-v: q8_0
-  flash-attention: enabled
-embeddinggemma-300m-qat-Q8_0:
-  context-window: 2048
-  nbatch: 2048
-  nubatch: 512
-  cache-type-k: q8_0
-  cache-type-v: q8_0
-  flash-attention: enabled
-Qwen3-Coder-30B-A3B-Instruct-Q8_0:
-  context-window: 131072
-  nbatch: 1024
-  nubatch: 256
-  cache-type-k: q8_0
-  cache-type-v: q8_0
-  flash-attention: enabled
-  nseq-max: 2
-  # system-prompt-cache: true # This setting is for OWUI
-  first-message-cache: true # This setting is for Cline
-GLM-4.7-Flash-Q8_0:
-  context-window: 202752
-  nbatch: 2048
-  nubatch: 512
-  cache-type-k: q8_0
-  cache-type-v: q8_0
-  flash-attention: enabled
-  nseq-max: 2
-Devstral-Small-2-24B-Instruct-2512-UD-Q8_K_XL:
-  context-window: 131072
-  nbatch: 2048
-  nubatch: 512
-  cache-type-k: q8_0
-  cache-type-v: q8_0
-  flash-attention: enabled
-  nseq-max: 2
+# ** This is a good model for Agents **
 cerebras_qwen3-coder-reap-25b-a3b-q8_0:
   context-window: 170000
   nbatch: 2048
@@ -87,5 +25,72 @@ cerebras_qwen3-coder-reap-25b-a3b-q8_0:
   cache-type-v: q8_0
   flash-attention: enabled
   nseq-max: 1
-  first-message-cache: true # This setting is for Cline
-  # system-prompt-cache: true # This setting is for OWUI
+  first-message-cache: true # This setting is for Cline and Claude
+
+# This model has not been as good as cerebras_qwen3-coder-reap-25b-a3b-q8_0
+Qwen3-Coder-30B-A3B-Instruct-Q8_0:
+  context-window: 131072
+  nbatch: 1024
+  nubatch: 256
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  flash-attention: enabled
+  nseq-max: 2
+  system-prompt-cache: true # This setting is for OWUI
+
+# Vision model that is working great
+Qwen2.5-VL-3B-Instruct-Q8_0:
+  context-window: 8192
+  nbatch: 2048
+  nubatch: 2048
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  flash-attention: enabled
+
+# Audio model that is working great
+Qwen2-Audio-7B.Q8_0:
+  context-window: 8192
+  nbatch: 2048
+  nubatch: 2048
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  flash-attention: enabled
+
+# Embedding model that is working great
+embeddinggemma-300m-qat-Q8_0:
+  context-window: 2048
+  nbatch: 2048
+  nubatch: 512
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  flash-attention: enabled
+
+# Model runs slow and haven't tested it too much
+GLM-4.7-Flash-Q8_0:
+  context-window: 202752
+  nbatch: 2048
+  nubatch: 512
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  flash-attention: enabled
+  nseq-max: 2
+
+# Can't get this model to behave with any of the Agents
+gpt-oss-20b-Q8_0:
+  context-window: 98304
+  nbatch: 2048
+  nubatch: 512
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  flash-attention: enabled
+  nseq-max: 2
+
+# Great model but small context-window :(
+Qwen3-8B-Q8_0:
+  context-window: 40960
+  nbatch: 2048
+  nubatch: 512
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  flash-attention: enabled
+  nseq-max: 2

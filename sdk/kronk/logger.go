@@ -53,7 +53,7 @@ var FmtLogger = func(ctx context.Context, msg string, args ...any) {
 		}
 	}
 
-	if len(msg) > 0 && msg[0] != '\x1b' {
+	if len(msg) > 0 && msg[0] != '\r' {
 		fmt.Println()
 	}
 }
