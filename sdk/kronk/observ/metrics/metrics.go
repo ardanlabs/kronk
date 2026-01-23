@@ -221,7 +221,7 @@ func AddPanics() int64 {
 }
 
 // AddModelFileLoadTime captures the specified duration for loading a model file.
-func AddModelFileLoadTime(model string, duration time.Duration) {
+func AddModelFileLoadTime(modelID string, duration time.Duration) {
 	secs := duration.Seconds()
 
 	mu.Lock()
@@ -241,7 +241,7 @@ func AddModelFileLoadTime(model string, duration time.Duration) {
 }
 
 // AddProjFileLoadTime captures the specified duration for loading a proj file.
-func AddProjFileLoadTime(model string, duration time.Duration) {
+func AddProjFileLoadTime(modelID string, duration time.Duration) {
 	secs := duration.Seconds()
 
 	mu.Lock()
@@ -261,7 +261,7 @@ func AddProjFileLoadTime(model string, duration time.Duration) {
 }
 
 // AddPromptCreationTime captures the specified duration for creating a prompt.
-func AddPromptCreationTime(model string, duration time.Duration) {
+func AddPromptCreationTime(modelID string, duration time.Duration) {
 	secs := duration.Seconds()
 
 	mu.Lock()
@@ -281,7 +281,7 @@ func AddPromptCreationTime(model string, duration time.Duration) {
 }
 
 // AddPrefillNonMediaTime captures the specified duration for prefilling a non media call.
-func AddPrefillNonMediaTime(model string, duration time.Duration) {
+func AddPrefillNonMediaTime(modelID string, duration time.Duration) {
 	secs := duration.Seconds()
 
 	mu.Lock()
@@ -301,7 +301,7 @@ func AddPrefillNonMediaTime(model string, duration time.Duration) {
 }
 
 // AddPrefillMediaTime captures the specified duration for prefilling a media call.
-func AddPrefillMediaTime(model string, duration time.Duration) {
+func AddPrefillMediaTime(modelID string, duration time.Duration) {
 	secs := duration.Seconds()
 
 	mu.Lock()
@@ -321,7 +321,7 @@ func AddPrefillMediaTime(model string, duration time.Duration) {
 }
 
 // AddTimeToFirstToken captures the specified duration for ttft.
-func AddTimeToFirstToken(model string, duration time.Duration) {
+func AddTimeToFirstToken(modelID string, duration time.Duration) {
 	secs := duration.Seconds()
 
 	mu.Lock()
@@ -341,7 +341,7 @@ func AddTimeToFirstToken(model string, duration time.Duration) {
 }
 
 // AddChatCompletionsUsage captures the specified usage values for chat-completions.
-func AddChatCompletionsUsage(model string, promptTokens, reasoningTokens, completionTokens, outputTokens, totalTokens int, tokensPerSecond float64) {
+func AddChatCompletionsUsage(modelID string, promptTokens, reasoningTokens, completionTokens, outputTokens, totalTokens int, tokensPerSecond float64) {
 	mu.Lock()
 	defer mu.Unlock()
 

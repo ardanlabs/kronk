@@ -70,7 +70,7 @@ export default function CatalogList() {
     setPullMessages([]);
     setActiveTab('pull');
 
-    const ANSI_INLINE = '\x1b[1A\r\x1b[K';
+    const ANSI_INLINE = '\r\x1b[K';
 
     const addMessage = (text: string, type: 'info' | 'error' | 'success') => {
       setPullMessages((prev) => [...prev, { text, type }]);

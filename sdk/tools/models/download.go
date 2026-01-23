@@ -68,7 +68,7 @@ func (m *Models) DownloadShards(ctx context.Context, log Logger, modelURLs []str
 		log(ctx, "download-shards: waiting to check model status...")
 
 		progress := func(src string, currentSize int64, totalSize int64, mibPerSec float64, complete bool) {
-			log(ctx, fmt.Sprintf("\x1b[1A\r\x1b[Kdownload-model: Downloading %s... %d MiB of %d MiB (%.2f MiB/s)", src, currentSize/(1024*1024), totalSize/(1024*1024), mibPerSec))
+			log(ctx, fmt.Sprintf("\r\x1b[Kdownload-model: Downloading %s... %d MiB of %d MiB (%.2f MiB/s)", src, currentSize/(1024*1024), totalSize/(1024*1024), mibPerSec))
 		}
 
 		mp, errOrg := m.downloadModel(ctx, modelURL, projURL, progress)

@@ -66,6 +66,7 @@ var outputDir = "cmd/server/api/frontends/bui/src/components"
 func Run() error {
 	docs := []apiDoc{
 		chatDoc(),
+		messagesDoc(),
 		responsesDoc(),
 		embeddingsDoc(),
 		rerankDoc(),
@@ -526,6 +527,366 @@ data: [DONE]`,
 					},
 				},
 			},
+		},
+	}
+}
+
+func messagesFields() []field {
+	fields := []field{
+		{Name: "model", Type: "string", Required: true, Description: "ID of the model to use"},
+		{Name: "messages", Type: "array", Required: true, Description: "Array of message objects with role (user/assistant) and content"},
+		{Name: "max_tokens", Type: "integer", Required: true, Description: "Maximum number of tokens to generate"},
+		{Name: "system", Type: "string|array", Required: false, Description: "System prompt as string or array of content blocks"},
+		{Name: "stream", Type: "boolean", Required: false, Description: "Enable streaming responses (default: false)"},
+		{Name: "tools", Type: "array", Required: false, Description: "List of tools the model can use"},
+		{Name: "temperature", Type: "number", Required: false, Description: "Sampling temperature (0-1)"},
+		{Name: "top_p", Type: "number", Required: false, Description: "Nucleus sampling parameter"},
+		{Name: "top_k", Type: "integer", Required: false, Description: "Top-k sampling parameter"},
+		{Name: "stop_sequences", Type: "array", Required: false, Description: "Sequences where the API will stop generating"},
+	}
+
+	return fields
+}
+
+func messagesExamples() []example {
+	return []example{
+		{
+			Description: "Basic message:",
+			Code: `curl -X POST http://localhost:8080/v1/messages \
+  -H "Authorization: Bearer $KRONK_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen3-8b-q8_0",
+    "max_tokens": 1024,
+    "messages": [
+      {"role": "user", "content": "Hello, how are you?"}
+    ]
+  }'`,
+		},
+		{
+			Description: "With system prompt:",
+			Code: `curl -X POST http://localhost:8080/v1/messages \
+  -H "Authorization: Bearer $KRONK_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen3-8b-q8_0",
+    "max_tokens": 1024,
+    "system": "You are a helpful assistant.",
+    "messages": [
+      {"role": "user", "content": "What is the capital of France?"}
+    ]
+  }'`,
+		},
+		{
+			Description: "Streaming response:",
+			Code: `curl -X POST http://localhost:8080/v1/messages \
+  -H "Authorization: Bearer $KRONK_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen3-8b-q8_0",
+    "max_tokens": 1024,
+    "stream": true,
+    "messages": [
+      {"role": "user", "content": "Write a haiku about coding"}
+    ]
+  }'`,
+		},
+		{
+			Description: "Multi-turn conversation:",
+			Code: `curl -X POST http://localhost:8080/v1/messages \
+  -H "Authorization: Bearer $KRONK_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen3-8b-q8_0",
+    "max_tokens": 1024,
+    "messages": [
+      {"role": "user", "content": "What is 2+2?"},
+      {"role": "assistant", "content": "2+2 equals 4."},
+      {"role": "user", "content": "What about 2+3?"}
+    ]
+  }'`,
+		},
+		{
+			Description: "Vision with image URL (requires vision model):",
+			Code: `curl -X POST http://localhost:8080/v1/messages \
+  -H "Authorization: Bearer $KRONK_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen2.5-vl-3b-instruct-q8_0",
+    "max_tokens": 1024,
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {"type": "text", "text": "What is in this image?"},
+          {"type": "image", "source": {"type": "url", "url": "https://example.com/image.jpg"}}
+        ]
+      }
+    ]
+  }'`,
+		},
+		{
+			Description: "Vision with base64 image (requires vision model):",
+			Code: `curl -X POST http://localhost:8080/v1/messages \
+  -H "Authorization: Bearer $KRONK_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen2.5-vl-3b-instruct-q8_0",
+    "max_tokens": 1024,
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {"type": "text", "text": "Describe this image"},
+          {
+            "type": "image",
+            "source": {
+              "type": "base64",
+              "media_type": "image/jpeg",
+              "data": "/9j/4AAQ..."
+            }
+          }
+        ]
+      }
+    ]
+  }'`,
+		},
+		{
+			Description: "Tool calling:",
+			Code: `curl -X POST http://localhost:8080/v1/messages \
+  -H "Authorization: Bearer $KRONK_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen3-8b-q8_0",
+    "max_tokens": 1024,
+    "messages": [
+      {"role": "user", "content": "What is the weather in Paris?"}
+    ],
+    "tools": [
+      {
+        "name": "get_weather",
+        "description": "Get the current weather for a location",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "location": {
+              "type": "string",
+              "description": "City name"
+            }
+          },
+          "required": ["location"]
+        }
+      }
+    ]
+  }'`,
+		},
+		{
+			Description: "Tool result (continue conversation after tool call):",
+			Code: `curl -X POST http://localhost:8080/v1/messages \
+  -H "Authorization: Bearer $KRONK_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen3-8b-q8_0",
+    "max_tokens": 1024,
+    "messages": [
+      {"role": "user", "content": "What is the weather in Paris?"},
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "call_xyz789",
+            "name": "get_weather",
+            "input": {"location": "Paris"}
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_use_id": "call_xyz789",
+            "content": "Sunny, 22°C"
+          }
+        ]
+      }
+    ],
+    "tools": [
+      {
+        "name": "get_weather",
+        "description": "Get the current weather for a location",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "location": {"type": "string"}
+          },
+          "required": ["location"]
+        }
+      }
+    ]
+  }'`,
+		},
+	}
+}
+
+func messagesFormatsGroup() endpointGroup {
+	return endpointGroup{
+		Name:        "Response Formats",
+		Description: "The Messages API returns different formats for streaming and non-streaming responses.",
+		Endpoints: []endpoint{
+			{
+				Method:      "",
+				Path:        "Non-Streaming Response",
+				Description: "For non-streaming requests (stream=false or omitted), returns a complete message object.",
+				Examples: []example{
+					{
+						Code: `{
+  "id": "msg_abc123",
+  "type": "message",
+  "role": "assistant",
+  "content": [
+    {
+      "type": "text",
+      "text": "Hello! I'm doing well, thank you for asking. How can I help you today?"
+    }
+  ],
+  "model": "qwen3-8b-q8_0",
+  "stop_reason": "end_turn",
+  "usage": {
+    "input_tokens": 12,
+    "output_tokens": 18
+  }
+}`,
+					},
+				},
+			},
+			{
+				Method:      "",
+				Path:        "Tool Use Response",
+				Description: "When the model calls a tool, the content includes tool_use blocks with the tool call details.",
+				Examples: []example{
+					{
+						Code: `{
+  "id": "msg_abc123",
+  "type": "message",
+  "role": "assistant",
+  "content": [
+    {
+      "type": "tool_use",
+      "id": "call_xyz789",
+      "name": "get_weather",
+      "input": {
+        "location": "Paris"
+      }
+    }
+  ],
+  "model": "qwen3-8b-q8_0",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 50,
+    "output_tokens": 25
+  }
+}`,
+					},
+				},
+			},
+			{
+				Method:      "",
+				Path:        "Streaming Events",
+				Description: "For streaming requests (stream=true), the API returns Server-Sent Events with different event types following Anthropic's streaming format.",
+				Examples: []example{
+					{
+						Code: `event: message_start
+data: {"type":"message_start","message":{"id":"msg_abc123","type":"message","role":"assistant","content":[],"model":"qwen3-8b-q8_0","stop_reason":null,"usage":{"input_tokens":12,"output_tokens":0}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"!"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":18}}
+
+event: message_stop
+data: {"type":"message_stop"}`,
+					},
+				},
+			},
+			{
+				Method:      "",
+				Path:        "Streaming Tool Calls",
+				Description: "When streaming tool calls, input_json_delta events provide incremental JSON for tool arguments.",
+				Examples: []example{
+					{
+						Code: `event: message_start
+data: {"type":"message_start","message":{...}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_xyz789","name":"get_weather","input":{}}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"location\":"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"\"Paris\"}"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":25}}
+
+event: message_stop
+data: {"type":"message_stop"}`,
+					},
+				},
+			},
+		},
+	}
+}
+
+func messagesDoc() apiDoc {
+	return apiDoc{
+		Name:        "Messages API",
+		Description: "Generate messages using language models. Compatible with the Anthropic Messages API.",
+		Filename:    "DocsAPIMessages.tsx",
+		Component:   "DocsAPIMessages",
+		Groups: []endpointGroup{
+			{
+				Name:        "Messages",
+				Description: "Create messages with language models using the Anthropic Messages API format.",
+				Endpoints: []endpoint{
+					{
+						Method:      "POST",
+						Path:        "/messages",
+						Description: "Create a message. Supports streaming responses with Server-Sent Events using Anthropic's event format.",
+						Auth:        "Required when auth is enabled. Token must have 'messages' endpoint access.",
+						Headers: []header{
+							{Name: "Authorization", Description: "Bearer token for authentication", Required: true},
+							{Name: "Content-Type", Description: "Must be application/json", Required: true},
+							{Name: "anthropic-version", Description: "API version (optional)", Required: false},
+						},
+						RequestBody: &requestBody{
+							ContentType: "application/json",
+							Fields:      messagesFields(),
+						},
+						Response: &response{
+							ContentType: "application/json or text/event-stream",
+							Description: "Returns a message object, or streams Server-Sent Events if stream=true. Response includes anthropic-request-id header.",
+						},
+						Examples: messagesExamples(),
+					},
+				},
+			},
+			messagesFormatsGroup(),
 		},
 	}
 }

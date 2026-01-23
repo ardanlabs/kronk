@@ -357,11 +357,19 @@ func (c *Cache) eviction(event otter.DeletionEvent[string, *kronk.Kronk]) {
 
 	c.log(ctx, "kronk cache eviction", "key", event.Key, "cause", event.Cause, "was-evicted", event.WasEvicted(), "active-streams", event.Value.ActiveStreams())
 
-	// If there are active streams and this was an automatic eviction (not explicit),
-	// re-insert the model to prevent eviction while requests are in flight.
+	// If there are active streams and this was an automatic eviction (not a replacement
+	// from our own Set call below), re-insert the model to prevent eviction.
+	// WasEvicted() returns false for CauseReplacement and CauseInvalidation.
 	if event.Value.ActiveStreams() > 0 && event.WasEvicted() {
 		c.log(ctx, "kronk cache eviction prevented", "key", event.Key, "active-streams", event.Value.ActiveStreams())
 		c.cache.Set(event.Key, event.Value)
+		return
+	}
+
+	// If this is a replacement event (from our Set above) and there are still active
+	// streams, just return without unloading - the model is still in the cache.
+	if event.Value.ActiveStreams() > 0 {
+		c.log(ctx, "kronk cache eviction skipped (replacement with active streams)", "key", event.Key, "active-streams", event.Value.ActiveStreams())
 		return
 	}
 

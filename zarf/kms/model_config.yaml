@@ -1,3 +1,6 @@
+# ==============================================================================
+# CONFIG OPTIONS
+#
 # example-model:
 #   context-window: 8192                 # Max tokens model can process (default: 8192)
 #   nbatch: 2048                         # Logical batch size (default: 2048)
@@ -16,68 +19,56 @@
 #   system-prompt-cache: false           # Cache first message KV state for reuse across requests (any role)
 #   system-prompt-cache-min-tokens: 100  # Min tokens before caching first message (default: 100)
 
-gpt-oss-20b-Q8_0:
-  context-window: 98304
-  nbatch: 2048
-  nubatch: 512
-  cache-type-k: q8_0
-  cache-type-v: q8_0
-  flash-attention: enabled
-  nseq-max: 2
-Qwen3-8B-Q8_0:
-  context-window: 40960
-  nbatch: 2048
-  nubatch: 512
-  cache-type-k: q8_0
-  cache-type-v: q8_0
-  flash-attention: enabled
-  nseq-max: 2
-Qwen2.5-VL-3B-Instruct-Q8_0:
-  context-window: 8192
-  nbatch: 2048
-  nubatch: 2048
-  cache-type-k: q8_0
-  cache-type-v: q8_0
-  flash-attention: enabled
-Qwen2-Audio-7B.Q8_0:
-  context-window: 8192
-  nbatch: 2048
-  nubatch: 2048
-  cache-type-k: q8_0
-  cache-type-v: q8_0
-  flash-attention: enabled
-embeddinggemma-300m-qat-Q8_0:
-  context-window: 2048
-  nbatch: 2048
-  nubatch: 512
-  cache-type-k: q8_0
-  cache-type-v: q8_0
-  flash-attention: enabled
-Qwen3-Coder-30B-A3B-Instruct-Q8_0:
-  context-window: 131072
-  nbatch: 1024
-  nubatch: 256
-  cache-type-k: q8_0
-  cache-type-v: q8_0
-  flash-attention: enabled
-  nseq-max: 2
-  system-prompt-cache: true # This setting is for OWUI
-GLM-4.7-Flash-Q8_0:
-  context-window: 202752
-  nbatch: 2048
-  nubatch: 512
-  cache-type-k: q8_0
-  cache-type-v: q8_0
-  flash-attention: enabled
-  nseq-max: 2
-Devstral-Small-2-24B-Instruct-2512-UD-Q8_K_XL:
-  context-window: 131072
-  nbatch: 2048
-  nubatch: 512
-  cache-type-k: q8_0
-  cache-type-v: q8_0
-  flash-attention: enabled
-  nseq-max: 2
+# ==============================================================================
+# MODEL SELECTION NOTES
+#
+# These suffixes define how a Large Language Model (LLM) is quantized—compressed
+# from its original size to fit into computer memory (RAM/VRAM). The primary
+# difference lies in the balance between model size, inference speed, and output
+# accuracy (intelligence).
+#
+# - F16 (FP16): Unquantized, maximum quality, largest size.
+# - Q8_0: 8-bit, near-lossless compression, very high quality. (Best for local)
+# - K_XL: K-quant (smart) method, high efficiency, better accuracy than
+#         standard _0 at similar sizes.
+
+# Also, the FP8/F16 or even FP4 are more for modern nvidia cards,are all the
+# precision of the floating point numbers. All operations are accelerated by
+# the GPU.
+
+# Most of the modern GPUs have the hardware for FP16, and other formats, like FP8
+# (Q8) or FP4 are emulated.
+
+# If you have hardware support for FP8, it will be roughly double the speed of FP16.
+
+# There are also INT4/INT8 models, but that's already weird. They take the
+# floating point numbers and convert them to the int in the given precision.
+
+# For us, on Apple M4 chips, there's still some performance to be gained.
+# See: https://github.com/ggml-org/llama.cpp/discussions/336
+# However, llama.cpp doesn't currently support the MLX framework.
+
+# ==============================================================================
+# CONFIGURATION NOTES:
+#
+# If you want to try using a model with an Agent, use these settings:
+#   nseq-max: 1
+#   first-message-cache: true
+#
+# If you want to use a Chat application like OpenWebUI use these settings:
+#   system-prompt-cache: true
+#
+# Cline is working great with cerebras_qwen3-coder-reap-25b-a3b-q8_0
+#
+# Claude Code needs a model that handles tool calling well with a decent
+# context window. The GPT models have not performed well. I have not
+# found a model yet that does for Claude Code.
+#
+
+# ==============================================================================
+# TEXT INFERENCE MODELS
+
+# This is a good model and has worked well Cline.
 cerebras_qwen3-coder-reap-25b-a3b-q8_0:
   context-window: 170000
   nbatch: 2048
@@ -86,5 +77,92 @@ cerebras_qwen3-coder-reap-25b-a3b-q8_0:
   cache-type-v: q8_0
   flash-attention: enabled
   nseq-max: 1
-  first-message-cache: true # This setting is for Cline
-  # system-prompt-cache: true # This setting is for OWUI
+  first-message-cache: true
+
+# This is a good model and has worked well Cline.
+gpt-oss-120b-F16:
+  context-window: 131072
+  nbatch: 2048
+  nubatch: 512
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  flash-attention: enabled
+  nseq-max: 1
+  first-message-cache: true
+
+# This model has not been as good as cerebras_qwen3-coder-reap-25b-a3b-q8_0
+# Not configured for Agent use.
+Qwen3-Coder-30B-A3B-Instruct-Q8_0:
+  context-window: 131072
+  nbatch: 1024
+  nubatch: 256
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  flash-attention: enabled
+  nseq-max: 2
+
+# Great model but small context-window :(
+Qwen3-8B-Q8_0:
+  context-window: 40960
+  nbatch: 2048
+  nubatch: 512
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  flash-attention: enabled
+  nseq-max: 2
+
+# Model runs slow and haven't tested it too much.
+GLM-4.7-Flash-Q8_0:
+  context-window: 202752
+  nbatch: 2048
+  nubatch: 512
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  flash-attention: enabled
+  nseq-max: 2
+
+# Can't get this model to behave with any of the Agents.
+gpt-oss-20b-Q8_0:
+  context-window: 98304
+  nbatch: 2048
+  nubatch: 512
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  flash-attention: enabled
+  nseq-max: 2
+
+# ==============================================================================
+# VISION MODELS
+
+# Vision model that is working great.
+Qwen2.5-VL-3B-Instruct-Q8_0:
+  context-window: 8192
+  nbatch: 2048
+  nubatch: 2048
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  flash-attention: enabled
+
+# ==============================================================================
+# AUDIO MODELS
+
+# Audio model that is working great.
+Qwen2-Audio-7B.Q8_0:
+  context-window: 8192
+  nbatch: 2048
+  nubatch: 2048
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  flash-attention: enabled
+
+# ==============================================================================
+# EMBEDDING MODELS
+
+# Embedding model that is working great.
+embeddinggemma-300m-qat-Q8_0:
+  context-window: 2048
+  nbatch: 2048
+  nubatch: 512
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  flash-attention: enabled

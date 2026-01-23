@@ -255,6 +255,10 @@ func (m *Model) decodeTokensToSeq(ctx context.Context, tokens []llama.Token, seq
 
 	m.log(ctx, "cache", "status", "decoding-started", "seq", seqID, "tokens", nTokens)
 
+	// Lock to prevent concurrent decode with batch engine.
+	m.decodeMu.Lock()
+	defer m.decodeMu.Unlock()
+
 	switch {
 	case nTokens <= nBatch:
 		batch := llama.BatchGetOne(tokens)
@@ -347,8 +351,36 @@ func findCacheableMessage(messages []D, targetRole string) (cacheableMessage, bo
 			continue
 		}
 
-		content, ok := msg["content"].(string)
-		if !ok || content == "" {
+		// Handle content as string or array (OpenAI multi-part format).
+		var content string
+		switch c := msg["content"].(type) {
+		case string:
+			content = c
+
+		case []any:
+			// Extract text from array of content parts.
+			for _, part := range c {
+				if partMap, ok := part.(map[string]any); ok {
+					if partMap["type"] == "text" {
+						if text, ok := partMap["text"].(string); ok {
+							content += text
+						}
+					}
+				}
+			}
+
+		case []D:
+			// Extract text from array of D content parts.
+			for _, part := range c {
+				if part["type"] == "text" {
+					if text, ok := part["text"].(string); ok {
+						content += text
+					}
+				}
+			}
+		}
+
+		if content == "" {
 			continue
 		}
 

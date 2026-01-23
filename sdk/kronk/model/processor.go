@@ -37,6 +37,12 @@ type processor struct {
 	channelBuf        strings.Builder
 	awaitingConstrain bool
 	toolFuncName      string // Function name extracted from "to=NAME" in channel
+
+	// For detecting split tags like "<function=" across multiple tokens.
+	// Some models (Qwen3-Coder variants) emit <function=...> directly without
+	// the <tool_call> wrapper, and the tag may be tokenized as "<", "function", "=".
+	pendingTagBuf strings.Builder
+	inPendingTag  bool
 }
 
 func newProcessor(m *Model) *processor {
@@ -102,6 +108,29 @@ func (p *processor) standardProcess(lctx llama.Context, content string, token ll
 		return response{status: p.status, content: w.String()}, token, nil
 
 	default:
+		// Check for start of <function= pattern (may be split across tokens).
+		// Some models (Qwen3-Coder variants) emit <function=...> directly without <tool_call>.
+		if content == "<" || strings.HasPrefix(content, "<f") || strings.HasPrefix(content, "<function") {
+			accumulated, newToken, found, err := p.accumulateFunctionTag(lctx, content, token, sampler, buf)
+			if err != nil {
+				return response{}, token, err
+			}
+
+			if found {
+				// Found <function= pattern, collect the full tool call.
+				toolContent, finalToken, err := p.collectFunctionCall(lctx, accumulated, newToken, sampler, buf)
+				if err != nil {
+					return response{}, token, err
+				}
+
+				p.status = statusTooling
+				return response{status: p.status, content: toolContent}, finalToken, nil
+			}
+
+			// Not a function tag, return accumulated content as normal output.
+			return response{status: p.status, content: accumulated}, newToken, nil
+		}
+
 		return response{status: p.status, content: content}, token, nil
 	}
 }
@@ -136,6 +165,108 @@ func (p *processor) standardToolCall(lctx llama.Context, token llama.Token, samp
 	batch = p.model.nextBatch(token)
 
 	return batch, content, nil
+}
+
+// accumulateFunctionTag tries to accumulate tokens to detect "<function=" pattern.
+// Returns (accumulated, token, found, error) where found is true if <function= was detected.
+func (p *processor) accumulateFunctionTag(lctx llama.Context, firstContent string, token llama.Token, sampler llama.Sampler, buf []byte) (string, llama.Token, bool, error) {
+	// Check if we already have a complete match.
+	if strings.HasPrefix(firstContent, "<function=") {
+		return firstContent, token, true, nil
+	}
+
+	// Check if it could be the start of <function=.
+	if !strings.HasPrefix("<function=", firstContent) {
+		return firstContent, token, false, nil
+	}
+
+	// Accumulate tokens until we can determine if it's <function= or not.
+	var w strings.Builder
+	w.WriteString(firstContent)
+
+	for {
+		batch := p.model.nextBatch(token)
+		content, newToken, err := p.model.batchResponse(lctx, batch, sampler, buf)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				// EOF before completing the tag, return what we have.
+				return w.String(), token, false, nil
+			}
+
+			return "", token, false, err
+		}
+
+		token = newToken
+		w.WriteString(content)
+		accumulated := w.String()
+
+		// Check if we've accumulated the full pattern.
+		if strings.HasPrefix(accumulated, "<function=") {
+			return accumulated, token, true, nil
+		}
+
+		// Check if it's definitely not going to be <function=.
+		if !strings.HasPrefix("<function=", accumulated) {
+			return accumulated, token, false, nil
+		}
+
+		// Still a prefix match, continue accumulating.
+	}
+}
+
+// collectFunctionCall collects function-format tool calls for models that emit
+// <function=...> directly without the <tool_call> wrapper (e.g., Qwen3-Coder variants).
+// It accumulates content until </function> is found and may collect multiple calls.
+func (p *processor) collectFunctionCall(lctx llama.Context, firstContent string, token llama.Token, sampler llama.Sampler, buf []byte) (string, llama.Token, error) {
+	var w strings.Builder
+	w.WriteString(firstContent)
+
+	for {
+		batch := p.model.nextBatch(token)
+		content, newToken, err := p.model.batchResponse(lctx, batch, sampler, buf)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+
+			return "", token, err
+		}
+
+		token = newToken
+		w.WriteString(content)
+
+		// Check if we've completed the function call(s).
+		accumulated := w.String()
+		if strings.HasSuffix(strings.TrimSpace(accumulated), "</function>") {
+			// Look ahead to see if there's another function call starting.
+			batch = p.model.nextBatch(token)
+			content, newToken, err = p.model.batchResponse(lctx, batch, sampler, buf)
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					break
+				}
+
+				return "", token, err
+			}
+
+			token = newToken
+
+			// If the next token starts another function call, continue collecting.
+			if content == "<" || strings.HasPrefix(content, "<f") || strings.HasPrefix(content, "<function") {
+				w.WriteString("\n")
+				w.WriteString(content)
+				continue
+			}
+
+			// Otherwise we're done with tool calls.
+			break
+		}
+	}
+
+	result := strings.Trim(w.String(), "\n")
+	result = fmt.Sprintf("%s\n", result)
+
+	return result, token, nil
 }
 
 // =============================================================================
@@ -467,24 +598,43 @@ func parseFunctionFormat(content string) []ResponseToolCall {
 func parseJSONFormat(content string) []ResponseToolCall {
 	var toolCalls []ResponseToolCall
 
-	for call := range strings.SplitSeq(content, "\n") {
+	remaining := content
+	for len(remaining) > 0 {
+		// Skip leading whitespace and newlines.
+		remaining = strings.TrimLeft(remaining, " \t\n\r")
+		if len(remaining) == 0 {
+			break
+		}
+
+		// Find the start of a JSON object.
+		if remaining[0] != '{' {
+			// Skip non-JSON content until we find '{' or run out.
+			idx := strings.Index(remaining, "{")
+			if idx == -1 {
+				break
+			}
+			remaining = remaining[idx:]
+		}
+
+		// Find the end of this JSON object.
+		jsonEnd := findJSONObjectEnd(remaining)
+		if jsonEnd == -1 {
+			// Malformed JSON - try to parse what's left.
+			jsonEnd = len(remaining)
+		}
+
+		call := remaining[:jsonEnd]
+		remaining = remaining[jsonEnd:]
+
 		toolCall := ResponseToolCall{
 			ID:   uuid.NewString(),
 			Type: "function",
 		}
 
-		switch {
-		case len(call) == 0:
-			toolCall.Status = 1
-			toolCall.Error = "response missing"
+		if err := json.Unmarshal([]byte(call), &toolCall.Function); err != nil {
+			toolCall.Status = 2
+			toolCall.Error = err.Error()
 			toolCall.Raw = call
-
-		default:
-			if err := json.Unmarshal([]byte(call), &toolCall.Function); err != nil {
-				toolCall.Status = 2
-				toolCall.Error = err.Error()
-				toolCall.Raw = call
-			}
 		}
 
 		toolCalls = append(toolCalls, toolCall)
@@ -612,6 +762,35 @@ func parseMistralToolCallFormat(content string) []ResponseToolCall {
 // This is used by the batch engine where decode/sample happens externally.
 // Returns (response, endOfGeneration).
 func (p *processor) stepStandard(content string) (response, bool) {
+	// Handle pending tag accumulation for detecting split tags like "<function=".
+	if p.inPendingTag {
+		p.pendingTagBuf.WriteString(content)
+		accumulated := p.pendingTagBuf.String()
+
+		// Check if we've accumulated enough to detect <function=.
+		if strings.HasPrefix(accumulated, "<function=") {
+			// Found the pattern. Enter tool call mode and start accumulating.
+			p.inPendingTag = false
+			p.pendingTagBuf.Reset()
+			p.status = statusTooling
+			p.inToolCall = true
+			p.toolCallBuf.Reset()
+			p.toolCallBuf.WriteString(accumulated)
+			return response{}, false
+		}
+
+		// Check if it's definitely not going to be <function=.
+		if !strings.HasPrefix("<function=", accumulated) {
+			// Flush accumulated content as normal output.
+			p.inPendingTag = false
+			p.pendingTagBuf.Reset()
+			return response{status: p.status, content: accumulated}, false
+		}
+
+		// Still a prefix match, continue accumulating.
+		return response{}, false
+	}
+
 	// Handle tool call accumulation mode.
 	if p.inToolCall {
 		switch content {
@@ -627,6 +806,7 @@ func (p *processor) stepStandard(content string) (response, bool) {
 			}
 
 			p.toolCallBuf.Reset()
+			p.inToolCall = false
 
 			// Stay in tool call mode in case there are more tool calls.
 			// The caller will handle EOG detection separately.
@@ -649,6 +829,21 @@ func (p *processor) stepStandard(content string) (response, bool) {
 
 			// Standard format: accumulate in buffer only.
 			p.toolCallBuf.WriteString(content)
+
+			// Check if we've completed a function call (models that skip </tool_call>).
+			accumulated := p.toolCallBuf.String()
+			if strings.HasSuffix(strings.TrimSpace(accumulated), "</function>") {
+				toolContent := strings.Trim(accumulated, "\n")
+				if toolContent != "" {
+					toolContent = fmt.Sprintf("%s\n", toolContent)
+				}
+
+				p.toolCallBuf.Reset()
+				p.inToolCall = false
+
+				return response{status: statusTooling, content: toolContent}, false
+			}
+
 			return response{}, false
 		}
 	}
@@ -679,6 +874,26 @@ func (p *processor) stepStandard(content string) (response, bool) {
 		return response{status: statusTooling, content: "[TOOL_CALLS]"}, false
 
 	default:
+		// Check for start of <function= pattern (may be split across tokens).
+		if content == "<" || strings.HasPrefix(content, "<f") || strings.HasPrefix(content, "<function") {
+			if strings.HasPrefix(content, "<function=") {
+				// Complete tag in one token, enter tool call mode directly.
+				p.status = statusTooling
+				p.inToolCall = true
+				p.toolCallBuf.Reset()
+				p.toolCallBuf.WriteString(content)
+				return response{}, false
+			}
+
+			// Could be start of <function=, start accumulating.
+			if strings.HasPrefix("<function=", content) {
+				p.inPendingTag = true
+				p.pendingTagBuf.Reset()
+				p.pendingTagBuf.WriteString(content)
+				return response{}, false
+			}
+		}
+
 		return response{status: p.status, content: content}, false
 	}
 }

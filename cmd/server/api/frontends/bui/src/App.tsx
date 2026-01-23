@@ -22,6 +22,7 @@ import DocsCLIRun from './components/DocsCLIRun';
 import DocsCLISecurity from './components/DocsCLISecurity';
 import DocsCLIServer from './components/DocsCLIServer';
 import DocsAPIChat from './components/DocsAPIChat';
+import DocsAPIMessages from './components/DocsAPIMessages';
 import DocsAPIResponses from './components/DocsAPIResponses';
 import DocsAPIEmbeddings from './components/DocsAPIEmbeddings';
 import DocsAPIRerank from './components/DocsAPIRerank';
@@ -54,6 +55,7 @@ export type Page =
   | 'docs-cli-security'
   | 'docs-cli-server'
   | 'docs-api-chat'
+  | 'docs-api-messages'
   | 'docs-api-responses'
   | 'docs-api-embeddings'
   | 'docs-api-rerank'
@@ -83,6 +85,7 @@ export const routeMap: Record<Page, string> = {
   'docs-cli-security': '/docs/cli/security',
   'docs-cli-server': '/docs/cli/server',
   'docs-api-chat': '/docs/api/chat',
+  'docs-api-messages': '/docs/api/messages',
   'docs-api-responses': '/docs/api/responses',
   'docs-api-embeddings': '/docs/api/embeddings',
   'docs-api-rerank': '/docs/api/rerank',
@@ -168,6 +171,7 @@ function App() {
                 <Route path="/docs/cli/security" element={<DocsCLISecurity />} />
                 <Route path="/docs/cli/server" element={<DocsCLIServer />} />
                 <Route path="/docs/api/chat" element={<DocsAPIChat />} />
+                <Route path="/docs/api/messages" element={<DocsAPIMessages />} />
                 <Route path="/docs/api/responses" element={<DocsAPIResponses />} />
                 <Route path="/docs/api/embeddings" element={<DocsAPIEmbeddings />} />
                 <Route path="/docs/api/rerank" element={<DocsAPIRerank />} />
