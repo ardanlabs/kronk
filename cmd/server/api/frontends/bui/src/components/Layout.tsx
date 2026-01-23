@@ -94,6 +94,7 @@ const menuStructure: MenuCategory[] = [
         label: 'Web API',
         items: [
           { page: 'docs-api-chat', label: 'Chat' },
+          { page: 'docs-api-messages', label: 'Messages' },
           { page: 'docs-api-responses', label: 'Responses' },
           { page: 'docs-api-embeddings', label: 'Embeddings' },
           { page: 'docs-api-rerank', label: 'Rerank' },

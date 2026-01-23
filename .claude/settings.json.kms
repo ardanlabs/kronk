@@ -1,10 +1,11 @@
 "env": {
     "ENABLE_TOOL_SEARCH": "true",
+    "ANTHROPIC_TELEMETRY_DISABLED": "true",
     "DISABLE_PROMPT_CACHING": "false",
     "ANTHROPIC_AUTH_TOKEN": "ollama",
     "ANTHROPIC_BASE_URL": "http://localhost:8080", 
-    "ANTHROPIC_MODEL": "gpt-oss-20b-Q8_0",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "gpt-oss-20b-Q8_0",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "gpt-oss-20b-Q8_0",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "gpt-oss-20b-Q8_00"
+    "ANTHROPIC_MODEL": "gpt-oss-120b-F16",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "gpt-oss-120b-F16",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "gpt-oss-120b-F16",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "gpt-oss-120b-F16"
 }

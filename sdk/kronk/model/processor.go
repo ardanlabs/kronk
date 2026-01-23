@@ -598,24 +598,43 @@ func parseFunctionFormat(content string) []ResponseToolCall {
 func parseJSONFormat(content string) []ResponseToolCall {
 	var toolCalls []ResponseToolCall
 
-	for call := range strings.SplitSeq(content, "\n") {
+	remaining := content
+	for len(remaining) > 0 {
+		// Skip leading whitespace and newlines.
+		remaining = strings.TrimLeft(remaining, " \t\n\r")
+		if len(remaining) == 0 {
+			break
+		}
+
+		// Find the start of a JSON object.
+		if remaining[0] != '{' {
+			// Skip non-JSON content until we find '{' or run out.
+			idx := strings.Index(remaining, "{")
+			if idx == -1 {
+				break
+			}
+			remaining = remaining[idx:]
+		}
+
+		// Find the end of this JSON object.
+		jsonEnd := findJSONObjectEnd(remaining)
+		if jsonEnd == -1 {
+			// Malformed JSON - try to parse what's left.
+			jsonEnd = len(remaining)
+		}
+
+		call := remaining[:jsonEnd]
+		remaining = remaining[jsonEnd:]
+
 		toolCall := ResponseToolCall{
 			ID:   uuid.NewString(),
 			Type: "function",
 		}
 
-		switch {
-		case len(call) == 0:
-			toolCall.Status = 1
-			toolCall.Error = "response missing"
+		if err := json.Unmarshal([]byte(call), &toolCall.Function); err != nil {
+			toolCall.Status = 2
+			toolCall.Error = err.Error()
 			toolCall.Raw = call
-
-		default:
-			if err := json.Unmarshal([]byte(call), &toolCall.Function); err != nil {
-				toolCall.Status = 2
-				toolCall.Error = err.Error()
-				toolCall.Raw = call
-			}
 		}
 
 		toolCalls = append(toolCalls, toolCall)
