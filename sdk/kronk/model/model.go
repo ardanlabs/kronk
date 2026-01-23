@@ -39,6 +39,7 @@ type Model struct {
 	modelInfo       ModelInfo
 	activeStreams   atomic.Int32
 	unloaded        atomic.Bool
+	decodeMu        sync.Mutex
 	cacheMu         sync.RWMutex
 	sysPromptHash   string
 	sysPromptTokens int
@@ -135,6 +136,10 @@ func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) 
 		llama.ModelFree(mdl)
 		return nil, fmt.Errorf("get-memory: unable to get memory: %w", err)
 	}
+
+	// Clear KV cache to ensure clean state on first request.
+	// Without this, uninitialized memory can cause SIGTRAP in llama.cpp decode.
+	llama.MemoryClear(mem, true)
 
 	// Determine FMC sequence ID based on whether SPC is also enabled.
 	// If both enabled: SPC uses seq 0, FMC uses seq 1.

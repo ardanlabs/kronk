@@ -75,6 +75,60 @@ func chatNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 	}
 }
 
+// chatStreamQwen3 returns streaming chat tests for Qwen3-8B-Q8_0 model.
+func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
+	return []apitest.Table{
+		{
+			Name:       "good-token",
+			URL:        "/v1/chat/completions",
+			Token:      tokens["chat-completions"],
+			Method:     http.MethodPost,
+			StatusCode: http.StatusOK,
+			Input: model.D{
+				"model": "Qwen3-8B-Q8_0",
+				"messages": model.DocumentArray(
+					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
+				),
+				"max_tokens":    2048,
+				"temperature":   0.7,
+				"top_p":         0.9,
+				"top_k":         40,
+				"stream":        true,
+				"return_prompt": true,
+			},
+			GotResp: &model.ChatResponse{},
+			ExpResp: &model.ChatResponse{
+				Choice: []model.Choice{
+					{
+						Message:         nil,
+						FinishReasonPtr: stringPointer("stop"),
+					},
+				},
+				Model:  "Qwen3-8B-Q8_0",
+				Object: "chat.completion.chunk",
+				Prompt: "<|im_start|>user\nEcho back the word: Gorilla<|im_end|>\n<|im_start|>assistant\n",
+			},
+			CmpFunc: func(got any, exp any) string {
+				diff := cmp.Diff(got, exp,
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage"),
+					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
+				)
+
+				if diff != "" {
+					return diff
+				}
+
+				return validateResponse(got, true).
+					hasValidUUID().
+					hasCreated().
+					hasValidChoice().
+					hasUsage(true).
+					result(t)
+			},
+		},
+	}
+}
+
 // chatImageQwen25VL returns chat tests for Qwen2.5-VL-3B-Instruct-Q8_0 model (vision).
 func chatImageQwen25VL(t *testing.T, tokens map[string]string) []apitest.Table {
 	image, err := readFile(imageFile)
@@ -188,60 +242,6 @@ func chatAudioQwen2Audio(t *testing.T, tokens map[string]string) []apitest.Table
 					hasUsage(false).
 					hasContent().
 					warnContainsInContent("speech").
-					result(t)
-			},
-		},
-	}
-}
-
-// chatStreamQwen3 returns streaming chat tests for Qwen3-8B-Q8_0 model.
-func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
-	return []apitest.Table{
-		{
-			Name:       "good-token",
-			URL:        "/v1/chat/completions",
-			Token:      tokens["chat-completions"],
-			Method:     http.MethodPost,
-			StatusCode: http.StatusOK,
-			Input: model.D{
-				"model": "Qwen3-8B-Q8_0",
-				"messages": model.DocumentArray(
-					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
-				),
-				"max_tokens":    2048,
-				"temperature":   0.7,
-				"top_p":         0.9,
-				"top_k":         40,
-				"stream":        true,
-				"return_prompt": true,
-			},
-			GotResp: &model.ChatResponse{},
-			ExpResp: &model.ChatResponse{
-				Choice: []model.Choice{
-					{
-						Message:         nil,
-						FinishReasonPtr: stringPointer("stop"),
-					},
-				},
-				Model:  "Qwen3-8B-Q8_0",
-				Object: "chat.completion.chunk",
-				Prompt: "<|im_start|>user\nEcho back the word: Gorilla<|im_end|>\n<|im_start|>assistant\n",
-			},
-			CmpFunc: func(got any, exp any) string {
-				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage"),
-					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
-				)
-
-				if diff != "" {
-					return diff
-				}
-
-				return validateResponse(got, true).
-					hasValidUUID().
-					hasCreated().
-					hasValidChoice().
-					hasUsage(true).
 					result(t)
 			},
 		},

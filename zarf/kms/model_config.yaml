@@ -61,7 +61,8 @@ Qwen3-Coder-30B-A3B-Instruct-Q8_0:
   cache-type-v: q8_0
   flash-attention: enabled
   nseq-max: 2
-  system-prompt-cache: true # This setting is for OWUI
+  # system-prompt-cache: true # This setting is for OWUI
+  first-message-cache: true # This setting is for Cline
 GLM-4.7-Flash-Q8_0:
   context-window: 202752
   nbatch: 2048

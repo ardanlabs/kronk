@@ -302,8 +302,11 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 		return
 	}
 
-	// Decode the batch.
+	// Lock to prevent concurrent decode with cache population.
+	e.model.decodeMu.Lock()
 	ret, err := llama.Decode(e.model.lctx, e.batch)
+	e.model.decodeMu.Unlock()
+
 	if err != nil || ret != 0 {
 		e.logDecodeError(ctx, ret, err)
 
@@ -442,7 +445,15 @@ func (e *batchEngine) addPrefillChunk(s *slot) bool {
 
 	nBatch := e.model.cfg.NBatch
 	remaining := len(s.prefillTokens) - s.nPrefilled
-	chunkSize := min(remaining, nBatch)
+
+	// Limit chunk size to available space in batch (total across all slots must not exceed NBatch).
+	availableInBatch := nBatch - int(e.batch.NTokens)
+	if availableInBatch <= 0 {
+		s.iBatch = -1
+		return true
+	}
+
+	chunkSize := min(remaining, nBatch, availableInBatch)
 
 	// Add chunk of tokens to batch.
 	for i := range chunkSize {
@@ -705,11 +716,22 @@ func (e *batchEngine) sendSlotError(s *slot, err error) {
 	close(s.job.ch)
 }
 
-// drainSlots finishes all active slots during shutdown.
+// drainSlots finishes all active slots and pending jobs during shutdown.
 func (e *batchEngine) drainSlots() {
 	for _, s := range e.slots {
 		if s.active {
-			e.finishSlot(s, fmt.Errorf("darin-slots: engine shutting down"))
+			e.finishSlot(s, fmt.Errorf("drain-slots: engine shutting down"))
+		}
+	}
+
+	// Drain pending jobs that were never assigned to a slot.
+	for {
+		select {
+		case job := <-e.requestQ:
+			close(job.ch)
+			e.model.activeStreams.Add(-1)
+		default:
+			return
 		}
 	}
 }

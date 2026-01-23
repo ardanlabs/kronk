@@ -38,12 +38,15 @@ func Test_API(t *testing.T) {
 	test.RunStreaming(t, chatStreamQwen3(t, tokens), "chat-stream-qwen3")
 	test.Run(t, respNonStreamQwen3(t, tokens), "resp-nonstream-qwen3")
 	test.RunStreaming(t, respStreamQwen3(t, tokens), "resp-stream-qwen3")
+	test.Run(t, msgsNonStreamQwen3(t, tokens), "msgs-nonstream-qwen3")
+	test.RunStreaming(t, msgsStreamQwen3(t, tokens), "msgs-stream-qwen3")
 
 	// -------------------------------------------------------------------------
 	// Model: Qwen2.5-VL-3B-Instruct-Q8_0 (vision)
 
 	test.Run(t, chatImageQwen25VL(t, tokens), "chat-image-qwen25vl")
 	test.Run(t, respImageQwen25VL(t, tokens), "resp-image-qwen25vl")
+	test.Run(t, msgsImageQwen25VL(t, tokens), "msgs-image-qwen25vl")
 
 	// -------------------------------------------------------------------------
 	// Model: Qwen2-Audio-7B.Q8_0 (audio)
@@ -66,6 +69,7 @@ func Test_API(t *testing.T) {
 
 	test.Run(t, chatEndpoint401(tokens), "chatEndpoint-401")
 	test.Run(t, respEndpoint401(tokens), "respEndpoint-401")
+	test.Run(t, msgsEndpoint401(tokens), "msgsEndpoint-401")
 	test.Run(t, embed401(tokens), "embedding-401")
 	test.Run(t, rerank401(tokens), "rerank-401")
 }
@@ -158,6 +162,22 @@ func createTokens(t *testing.T, sec *security.Security) map[string]string {
 	}
 
 	tokens["rerank"] = token
+
+	// -------------------------------------------------------------------------
+
+	endpoints = map[string]auth.RateLimit{
+		"messages": {
+			Limit:  0,
+			Window: auth.RateUnlimited,
+		},
+	}
+
+	token, err = sec.GenerateToken(false, endpoints, 60*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tokens["messages"] = token
 
 	return tokens
 }

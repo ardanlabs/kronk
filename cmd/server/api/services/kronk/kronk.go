@@ -426,7 +426,6 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	case sig := <-shutdown:
 		log.Info(ctx, "shutdown", "status", "shutdown started", "signal", sig)
-		defer log.Info(ctx, "shutdown", "status", "shutdown complete", "signal", sig)
 
 		ctx, cancel := context.WithTimeout(ctx, cfg.Web.ShutdownTimeout)
 		defer cancel()
@@ -435,6 +434,8 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			api.Close()
 			return fmt.Errorf("could not stop server gracefully: %w", err)
 		}
+
+		log.Info(ctx, "shutdown", "status", "shutdown complete", "signal", sig)
 	}
 
 	return nil
