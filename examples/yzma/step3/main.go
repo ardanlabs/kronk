@@ -591,9 +591,10 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request) {
 	// Submit to batch processor.
 	s.bp.Submit(infReq)
 
-	if req.Stream {
+	switch req.Stream {
+	case true:
 		s.handleStreamingResponse(w, infReq)
-	} else {
+	case false:
 		s.handleNonStreamingResponse(w, infReq, reqID)
 	}
 }
@@ -717,9 +718,10 @@ func batchAdd(batch *llama.Batch, token llama.Token, pos llama.Pos, seqIDs []lla
 	}
 
 	logitPtr := (*int8)(unsafe.Pointer(uintptr(unsafe.Pointer(batch.Logits)) + uintptr(i)*unsafe.Sizeof(int8(0))))
-	if logits {
+	switch logits {
+	case true:
 		*logitPtr = 1
-	} else {
+	case false:
 		*logitPtr = 0
 	}
 
@@ -728,9 +730,10 @@ func batchAdd(batch *llama.Batch, token llama.Token, pos llama.Pos, seqIDs []lla
 
 func setLogit(batch *llama.Batch, idx int32, logits bool) {
 	logitPtr := (*int8)(unsafe.Pointer(uintptr(unsafe.Pointer(batch.Logits)) + uintptr(idx)*unsafe.Sizeof(int8(0))))
-	if logits {
+	switch logits {
+	case true:
 		*logitPtr = 1
-	} else {
+	case false:
 		*logitPtr = 0
 	}
 }

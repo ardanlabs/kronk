@@ -229,7 +229,7 @@ func (m *Model) loadProjFile(ctx context.Context) (mtmd.Context, error) {
 
 	start := time.Now()
 	defer func() {
-		metrics.AddProjFileLoadTime(time.Since(start))
+		metrics.AddProjFileLoadTime(m.modelInfo.ID, time.Since(start))
 	}()
 
 	mtmdCtx, err := mtmd.InitFromFile(m.projFile, m.model, mtmd.ContextParamsDefault())
@@ -246,7 +246,7 @@ func (m *Model) createPrompt(ctx context.Context, d D) (string, [][]byte, error)
 
 	start := time.Now()
 	defer func() {
-		metrics.AddPromptCreationTime(time.Since(start))
+		metrics.AddPromptCreationTime(m.modelInfo.ID, time.Since(start))
 	}()
 
 	prompt, media, err := m.applyRequestJinjaTemplate(ctx, d)

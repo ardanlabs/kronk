@@ -414,9 +414,11 @@ func TestUsageDeltaNil(t *testing.T) {
 		}
 
 		// Final should have usage
-		if finalResp.Usage == nil {
+		switch {
+		case finalResp.Usage == nil:
 			t.Errorf("Expected final response to have Usage")
-		} else if finalResp.Usage.OutputTokens == 0 {
+
+		case finalResp.Usage.OutputTokens == 0:
 			t.Errorf("Expected final response to have OutputTokens > 0")
 		}
 	})

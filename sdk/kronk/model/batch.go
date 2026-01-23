@@ -71,7 +71,8 @@ type slot struct {
 }
 
 func (s *slot) reset() {
-	s.seqID = -1
+	// Note: seqID is NOT reset - it's assigned once during slot creation
+	// and remains stable for the lifetime of the slot.
 	s.job = nil
 	s.nPast = 0
 	s.nPrompt = 0
@@ -117,15 +118,26 @@ func newBatchEngine(m *Model, nSlots int) *batchEngine {
 	nCtx := llama.NCtx(m.lctx)
 	batch := llama.BatchInit(int32(nCtx), 0, int32(nSlots))
 
+	// Calculate sequence offset based on reserved cache sequences.
+	// Seq 0: SystemPromptCache (if enabled)
+	// Seq 1: FirstMessageCache (if both enabled)
+	// Slots start after reserved sequences.
+	cacheSeqs := 0
+	if m.cfg.SystemPromptCache {
+		cacheSeqs++
+	}
+	if m.cfg.FirstMessageCache {
+		cacheSeqs++
+	}
+
 	// Initialize slots.
 	slots := make([]*slot, nSlots)
 	for i := range slots {
 		slots[i] = &slot{
 			id:    i,
-			seqID: llama.SeqId(i + 1), // SeqID 0 reserved for system prompt if needed
+			seqID: llama.SeqId(i + cacheSeqs),
 			proc:  newProcessor(m),
 		}
-		slots[i].reset()
 	}
 
 	return &batchEngine{
@@ -340,7 +352,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 	s.active = true
 	s.job = job
 	s.startTime = time.Now()
-	s.seqID = llama.SeqId(s.id + 1)
+	// seqID is already set correctly during slot creation in newBatchEngine
 
 	// Start span for this chat request.
 	_, s.span = otel.AddSpan(job.ctx, "batch-chat-request",
@@ -442,7 +454,7 @@ func (e *batchEngine) addPrefillChunk(s *slot) bool {
 	s.nPrefilled += chunkSize
 
 	prefillDuration := time.Since(prefillStart)
-	metrics.AddPrefillNonMediaTime(prefillDuration)
+	metrics.AddPrefillNonMediaTime(e.model.modelInfo.ID, prefillDuration)
 
 	// Check if prefill is complete.
 	if s.nPrefilled >= len(s.prefillTokens) {
@@ -665,7 +677,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	)
 
 	// Add metrics.
-	metrics.AddChatCompletionsUsage(s.nPrompt, s.reasonTokens, s.completionTokens, outputTokens, totalTokens, tokensPerSecond)
+	metrics.AddChatCompletionsUsage(e.model.modelInfo.ID, s.nPrompt, s.reasonTokens, s.completionTokens, outputTokens, totalTokens, tokensPerSecond)
 
 	// Send final response.
 	returnPrompt := ""
@@ -730,9 +742,10 @@ func batchAdd(batch *llama.Batch, token llama.Token, pos llama.Pos, seqIDs []lla
 	}
 
 	logitPtr := (*int8)(unsafe.Pointer(uintptr(unsafe.Pointer(batch.Logits)) + uintptr(i)*unsafe.Sizeof(int8(0))))
-	if logits {
+	switch logits {
+	case true:
 		*logitPtr = 1
-	} else {
+	case false:
 		*logitPtr = 0
 	}
 
@@ -796,9 +809,10 @@ func decodeError(ret int32, err error) error {
 	case -1:
 		msg = "unable to process request: the input could not be processed. Please try reducing the input size or context length"
 	default:
-		if ret < -1 {
+		switch {
+		case ret < -1:
 			msg = "an internal error occurred while processing your request"
-		} else {
+		default:
 			msg = "an unexpected error occurred while processing your request"
 		}
 	}
