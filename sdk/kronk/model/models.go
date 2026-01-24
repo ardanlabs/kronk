@@ -170,6 +170,8 @@ var logSafeKeys = []string{
 	"truncate_direction",
 	"top_n",
 	"return_documents",
+	"logprobs",
+	"top_logprobs",
 }
 
 // LogSafe returns a copy of the document containing only fields that are
@@ -418,6 +420,7 @@ type Choice struct {
 	Index           int              `json:"index"`
 	Message         *ResponseMessage `json:"message,omitempty"`
 	Delta           *ResponseMessage `json:"delta,omitempty"`
+	Logprobs        *Logprobs        `json:"logprobs,omitempty"`
 	FinishReasonPtr *string          `json:"finish_reason"`
 }
 
@@ -440,6 +443,26 @@ type Usage struct {
 	TokensPerSecond  float64 `json:"tokens_per_second"`
 }
 
+// TopLogprob represents a single token with its log probability.
+type TopLogprob struct {
+	Token   string  `json:"token"`
+	Logprob float32 `json:"logprob"`
+	Bytes   []byte  `json:"bytes,omitempty"`
+}
+
+// ContentLogprob represents log probability information for a single token.
+type ContentLogprob struct {
+	Token       string       `json:"token"`
+	Logprob     float32      `json:"logprob"`
+	Bytes       []byte       `json:"bytes,omitempty"`
+	TopLogprobs []TopLogprob `json:"top_logprobs,omitempty"`
+}
+
+// Logprobs contains log probability information for the response.
+type Logprobs struct {
+	Content []ContentLogprob `json:"content,omitempty"`
+}
+
 // ChatResponse represents output for inference models.
 type ChatResponse struct {
 	ID      string   `json:"id"`
@@ -451,7 +474,12 @@ type ChatResponse struct {
 	Prompt  string   `json:"prompt,omitempty"`
 }
 
-func chatResponseDelta(id string, object string, model string, index int, content string, reasoning bool) ChatResponse {
+func chatResponseDelta(id string, object string, model string, index int, content string, reasoning bool, logprob *ContentLogprob) ChatResponse {
+	var logprobs *Logprobs
+	if logprob != nil {
+		logprobs = &Logprobs{Content: []ContentLogprob{*logprob}}
+	}
+
 	return ChatResponse{
 		ID:      id,
 		Object:  object,
@@ -465,6 +493,7 @@ func chatResponseDelta(id string, object string, model string, index int, conten
 					Content:   forContent(content, reasoning),
 					Reasoning: forReasoning(content, reasoning),
 				},
+				Logprobs:        logprobs,
 				FinishReasonPtr: nil,
 			},
 		},
@@ -487,10 +516,15 @@ func forReasoning(content string, reasoning bool) string {
 	return ""
 }
 
-func chatResponseFinal(id string, object string, model string, index int, prompt string, content string, reasoning string, respToolCalls []ResponseToolCall, u Usage) ChatResponse {
+func chatResponseFinal(id string, object string, model string, index int, prompt string, content string, reasoning string, respToolCalls []ResponseToolCall, logprobsData []ContentLogprob, u Usage) ChatResponse {
 	finishReason := FinishReasonStop
 	if len(respToolCalls) > 0 {
 		finishReason = FinishReasonTool
+	}
+
+	var logprobs *Logprobs
+	if len(logprobsData) > 0 {
+		logprobs = &Logprobs{Content: logprobsData}
 	}
 
 	return ChatResponse{
@@ -513,6 +547,7 @@ func chatResponseFinal(id string, object string, model string, index int, prompt
 					Reasoning: reasoning,
 					ToolCalls: respToolCalls,
 				},
+				Logprobs:        logprobs,
 				FinishReasonPtr: &finishReason,
 			},
 		},

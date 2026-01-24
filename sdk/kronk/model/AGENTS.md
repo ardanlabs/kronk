@@ -15,6 +15,7 @@ Low-level model inference using yzma (llama.cpp Go bindings).
 - `processor.go` - Template-specific token processors
 - `prompts.go` - Prompt formatting
 - `params.go` - Sampling parameters
+- `logprobs.go` - Token log probability extraction
 - `check.go` - Model validation
 - `sysprompt.go` - System prompt KV cache management
 
@@ -111,6 +112,37 @@ m.sequentialChatRequest(...)
 - Used in `ResponseToolCallFunction.Arguments` field
 - `MarshalJSON`: wraps `map[string]any` as a JSON-encoded string
 - `UnmarshalJSON`: tries string first, falls back to object for non-compliant clients
+
+## Logprobs Support
+
+Token log probabilities can be returned for chat completions via the `logprobs` and `top_logprobs` request parameters.
+
+**Request Parameters** (`params.go`):
+
+- `logprobs` (bool): When true, returns log probability for each generated token. Default: false.
+- `top_logprobs` (int): Number of most likely alternative tokens to return (0-5). Setting > 0 implicitly enables `logprobs`. Default: 0.
+
+**Response Structure** (`models.go`):
+
+- `Choice.Logprobs *Logprobs`: Contains token probability data when requested
+- `Logprobs.Content []ContentLogprob`: Array of per-token log probability data
+- `ContentLogprob`: Token string, log probability (≤0), byte representation, and optional top alternatives
+- `TopLogprob`: Alternative token with its log probability and bytes
+
+**Implementation** (`logprobs.go`):
+
+- `extractLogprobs()`: Retrieves logits via `llama.GetLogitsIth()`, converts to log probabilities
+- `logSoftmax()`: Numerically stable log-softmax using log-sum-exp trick
+- `getTopKLogprobs()`: Uses min-heap for efficient O(n log k) top-k extraction
+
+**Streaming vs Non-Streaming Behavior**:
+
+- **Non-streaming**: All logprobs accumulated and returned in final response `Choice.Logprobs`
+- **Streaming**: Per-token logprobs sent in each delta chunk; final chunk has `Logprobs: nil`
+
+**Critical Implementation Detail**:
+
+Logprobs must be extracted **before** `llama.SamplerAccept()` is called. After accept, the sampler may modify internal state that affects logit retrieval.
 
 ## Response Structure
 

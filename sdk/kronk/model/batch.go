@@ -68,6 +68,10 @@ type slot struct {
 
 	prefillTokens []llama.Token
 	nPrefilled    int
+
+	// Logprobs tracking
+	logprobsData   []ContentLogprob
+	currentLogprob *ContentLogprob // For streaming the current token's logprob
 }
 
 func (s *slot) reset() {
@@ -94,6 +98,8 @@ func (s *slot) reset() {
 	s.prefillDone = false
 	s.prefillTokens = nil
 	s.nPrefilled = 0
+	s.logprobsData = nil
+	s.currentLogprob = nil
 
 	if s.proc != nil {
 		s.proc.resetState()
@@ -483,6 +489,21 @@ func (e *batchEngine) addPrefillChunk(s *slot) bool {
 func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 	// Sample the next token.
 	token := llama.SamplerSample(s.sampler, e.model.lctx, s.iBatch)
+
+	// Extract logprobs BEFORE accepting - Accept modifies sampler state.
+	// Reset currentLogprob each token; it's used for streaming.
+	s.currentLogprob = nil
+	if s.job.params.Logprobs {
+		logprob, err := extractLogprobs(e.model.lctx, e.model.vocab, token, s.iBatch, s.job.params.TopLogprobs, buf)
+		switch {
+		case err != nil:
+			e.model.log(s.job.ctx, "batch-engine", "status", "logprobs-error", "slot", s.id, "error", err.Error())
+		case logprob != nil:
+			s.currentLogprob = logprob
+			s.logprobsData = append(s.logprobsData, *logprob)
+		}
+	}
+
 	llama.SamplerAccept(s.sampler, token)
 
 	// Check for end of generation.
@@ -565,7 +586,7 @@ func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 		}
 
 		// Per OpenAI spec, usage is only sent in the final response, not deltas.
-		err := e.model.sendDeltaResponse(s.job.ctx, s.job.ch, s.job.id, s.job.object, 0, "", resp.content, s.reasonFlag, outputTokens)
+		err := e.model.sendDeltaResponse(s.job.ctx, s.job.ch, s.job.id, s.job.object, 0, "", resp.content, s.reasonFlag, outputTokens, s.currentLogprob)
 		if err != nil {
 			e.finishSlot(s, err)
 			return
@@ -702,7 +723,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	}
 
 	e.model.sendFinalResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, returnPrompt,
-		&s.finalContent, &s.finalReasoning, s.respToolCalls, usage)
+		&s.finalContent, &s.finalReasoning, s.respToolCalls, s.logprobsData, s.job.params.Stream, usage)
 
 	e.model.log(ctx, "batch-engine", "status", "slot-finished", "slot", s.id, "id", s.job.id,
 		"prompt", s.nPrompt, "output", outputTokens, "time", elapsed.String())

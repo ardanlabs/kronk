@@ -216,6 +216,30 @@ export default function DocsAPIResponses() {
                     <td>No</td>
                     <td>Include prompt in response (default: false)</td>
                   </tr>
+                  <tr>
+                    <td><code>include_usage</code></td>
+                    <td><code>bool</code></td>
+                    <td>No</td>
+                    <td>Include token usage information in streaming responses (default: true)</td>
+                  </tr>
+                  <tr>
+                    <td><code>logprobs</code></td>
+                    <td><code>bool</code></td>
+                    <td>No</td>
+                    <td>Return log probabilities of output tokens (default: false)</td>
+                  </tr>
+                  <tr>
+                    <td><code>top_logprobs</code></td>
+                    <td><code>int</code></td>
+                    <td>No</td>
+                    <td>Number of most likely tokens to return at each position, 0-5 (default: 0)</td>
+                  </tr>
+                  <tr>
+                    <td><code>stream</code></td>
+                    <td><code>bool</code></td>
+                    <td>No</td>
+                    <td>Stream response as server-sent events (default: false)</td>
+                  </tr>
                 </tbody>
               </table>
               <h5>Response</h5>
