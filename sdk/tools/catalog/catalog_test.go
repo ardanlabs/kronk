@@ -132,8 +132,8 @@ func Test_RetrieveCatalogs(t *testing.T) {
 		t.Fatalf("retrieve catalogs: %v", err)
 	}
 
-	if len(catalogs) != 4 {
-		t.Errorf("expected 4 catalogs, got %d", len(catalogs))
+	if len(catalogs) != 5 {
+		t.Errorf("expected 5 catalogs, got %d", len(catalogs))
 	}
 
 	catalogNames := make(map[string]bool)

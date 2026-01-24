@@ -18,6 +18,8 @@ models:
       streaming: true
       reasoning: true
       tooling: true
+      embedding: false
+      rerank: false
     metadata:
       created: 2025-05-03T0:00:00Z
       collections: https://huggingface.co/collections/Qwen
@@ -41,6 +43,8 @@ models:
       streaming: true
       reasoning: true
       tooling: true
+      embedding: false
+      rerank: false
     metadata:
       created: 2025-08-08T0:00:00Z
       collections: https://huggingface.co/collections/unsloth
@@ -69,6 +73,8 @@ models:
       streaming: true
       reasoning: true
       tooling: true
+      embedding: false
+      rerank: false
     metadata:
       created: 2025-05-10T0:00:00Z
       collections: https://huggingface.co/collections/unsloth

@@ -31,25 +31,45 @@
 # - Q8_0: 8-bit, near-lossless compression, very high quality. (Best for local)
 # - K_XL: K-quant (smart) method, high efficiency, better accuracy than
 #         standard _0 at similar sizes.
-
+#
 # Also, the FP8/F16 or even FP4 are more for modern nvidia cards,are all the
 # precision of the floating point numbers. All operations are accelerated by
 # the GPU.
-
+#
 # Most of the modern GPUs have the hardware for FP16, and other formats, like FP8
 # (Q8) or FP4 are emulated.
-
+#
 # If you have hardware support for FP8, it will be roughly double the speed of FP16.
-
+#
 # There are also INT4/INT8 models, but that's already weird. They take the
 # floating point numbers and convert them to the int in the given precision.
-
+#
 # For us, on Apple M4 chips, there's still some performance to be gained.
 # See: https://github.com/ggml-org/llama.cpp/discussions/336
 # However, llama.cpp doesn't currently support the MLX framework.
 
 # ==============================================================================
-# CONFIGURATION NOTES:
+# SLOT MEMORY COST FORMULA
+#
+# KV memory per slot = n_ctx × (K + V bytes) × n_layers
+#
+# Example calculations:
+#
+# Model   Context   Memory per Slot
+# 7B      8K        ~537 MB
+# 70B     8K        ~1.3 GB
+#
+# Key finding: Memory is statically allocated upfront when the model loads,
+# based on n_ctx × n_seq_max. Reserving slots consumes memory whether or not
+# they're actually used.
+#
+# My advice: Reserving 2 dedicated slots (one for system prompt cache, one for
+# user message cache) would add +537MB (7B) to +1.3GB (70B) overhead. Since the
+# slots would rarely both be used simultaneously, you'd be "paying for memory
+# you don't benefit from."
+
+# ==============================================================================
+# CONFIGURATION NOTES
 #
 # If you want to try using a model with an Agent, use these settings:
 #   nseq-max: 1
@@ -63,24 +83,15 @@
 # Claude Code needs a model that handles tool calling well with a decent
 # context window. The GPT models have not performed well. I have not
 # found a model yet that does for Claude Code.
-#
 
 # ==============================================================================
 # TEXT INFERENCE MODELS
 
-# This is a good model and has worked well Cline.
-cerebras_qwen3-coder-reap-25b-a3b-q8_0:
-  context-window: 170000
-  nbatch: 2048
-  nubatch: 256
-  cache-type-k: q8_0
-  cache-type-v: q8_0
-  flash-attention: enabled
-  nseq-max: 1
-  first-message-cache: true
+# ------------------------------------------------------------------------------
+# Coding Agents and configured for Cline or Claude Code
 
-# This is a good model and has worked well Cline.
-gpt-oss-120b-F16:
+# This is a good model and has worked well Cline and is faster than the rest.
+GLM-4.7-Flash-UD-Q8_K_XL:
   context-window: 131072
   nbatch: 2048
   nubatch: 512
@@ -90,12 +101,54 @@ gpt-oss-120b-F16:
   nseq-max: 1
   first-message-cache: true
 
-# This model has not been as good as cerebras_qwen3-coder-reap-25b-a3b-q8_0
-# Not configured for Agent use.
+# This is a good model and has worked well Cline.
+Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL:
+  context-window: 131072
+  nbatch: 2048
+  nubatch: 512
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  flash-attention: enabled
+  nseq-max: 1
+  first-message-cache: true
+
+# This is a decent model and has worked ok with Cline.
+cerebras_qwen3-coder-reap-25b-a3b-q8_0:
+  context-window: 131072
+  nbatch: 2048
+  nubatch: 512
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  flash-attention: enabled
+  nseq-max: 1
+  first-message-cache: true
+
+# This is a decent model and has worked ok with Cline.
 Qwen3-Coder-30B-A3B-Instruct-Q8_0:
   context-window: 131072
-  nbatch: 1024
-  nubatch: 256
+  nbatch: 2048
+  nubatch: 512
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  nseq-max: 1
+  first-message-cache: true
+
+# ------------------------------------------------------------------------------
+# Good Reasoning models, tooling support, don't use with Agents.
+
+gpt-oss-120b-F16:
+  context-window: 131072
+  nbatch: 2048
+  nubatch: 512
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  flash-attention: enabled
+  nseq-max: 2
+
+gpt-oss-20b-Q8_0:
+  context-window: 98304
+  nbatch: 2048
+  nubatch: 512
   cache-type-k: q8_0
   cache-type-v: q8_0
   flash-attention: enabled
@@ -111,19 +164,12 @@ Qwen3-8B-Q8_0:
   flash-attention: enabled
   nseq-max: 2
 
+# ------------------------------------------------------------------------------
+# Non-Reasoning models, tooling support, don't use with Agents.
+
 # Model runs slow and haven't tested it too much.
 GLM-4.7-Flash-Q8_0:
-  context-window: 202752
-  nbatch: 2048
-  nubatch: 512
-  cache-type-k: q8_0
-  cache-type-v: q8_0
-  flash-attention: enabled
-  nseq-max: 2
-
-# Can't get this model to behave with any of the Agents.
-gpt-oss-20b-Q8_0:
-  context-window: 98304
+  context-window: 131072
   nbatch: 2048
   nubatch: 512
   cache-type-k: q8_0
@@ -150,7 +196,7 @@ Qwen2.5-VL-3B-Instruct-Q8_0:
 Qwen2-Audio-7B.Q8_0:
   context-window: 8192
   nbatch: 2048
-  nubatch: 2048
+  nubatch: 512
   cache-type-k: q8_0
   cache-type-v: q8_0
   flash-attention: enabled

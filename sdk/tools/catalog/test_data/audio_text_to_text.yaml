@@ -21,6 +21,8 @@ models:
       streaming: true
       reasoning: false
       tooling: false
+      embedding: false
+      rerank: false
     metadata:
       created: 2025-06-04T0:00:00Z
       collections: https://huggingface.co/collections/mradermacher

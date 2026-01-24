@@ -354,7 +354,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 	s.reset()
 	s.active = true
 	s.job = job
-	s.startTime = time.Now()
+	// Note: startTime is set when prefillDone=true (first output token) for accurate TPS
 	// seqID is already set correctly during slot creation in newBatchEngine
 
 	// Start span for this chat request.
@@ -504,7 +504,10 @@ func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 	}
 
 	s.sampled = token
-	s.prefillDone = true
+	if !s.prefillDone {
+		s.prefillDone = true
+		s.startTime = time.Now() // Start TPS clock after prefill, when first output token is generated
+	}
 	s.index++
 
 	// Process through the state machine.
@@ -543,7 +546,9 @@ func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 		s.completionFlag = 0
 
 	default:
-		// No content to process.
+		// No streamable content, but still count the token.
+		// This happens during tool call accumulation when tokens are buffered.
+		s.completionTokens++
 		s.iBatch = -1
 		return
 	}
