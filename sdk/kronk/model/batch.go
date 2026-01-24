@@ -546,7 +546,9 @@ func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 		s.completionFlag = 0
 
 	default:
-		// No content to process.
+		// No streamable content, but still count the token.
+		// This happens during tool call accumulation when tokens are buffered.
+		s.completionTokens++
 		s.iBatch = -1
 		return
 	}

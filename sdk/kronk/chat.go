@@ -102,7 +102,7 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 	// Every 2 minutes we will send a SSE keep alive for responses
 	// that are taking a long time to process. I won't reset this
 	// in the processing loop to eliminate overhead.
-	const keepAliveInterval = 2 * time.Minute
+	const keepAliveInterval = 15 * time.Second
 	ticker := time.NewTicker(keepAliveInterval)
 	defer ticker.Stop()
 
