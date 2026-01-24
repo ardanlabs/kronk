@@ -338,6 +338,68 @@ func (v responseValidator) warnContainsInReasoning(find string) responseValidato
 	return v
 }
 
+func (v responseValidator) hasNoLogprobs() responseValidator {
+	if len(v.resp.Choice) == 0 {
+		return v
+	}
+
+	if v.resp.Choice[0].Logprobs != nil {
+		v.errors = append(v.errors, "expected logprobs to be nil in final streaming chunk")
+	}
+
+	return v
+}
+
+func (v responseValidator) hasLogprobs(topLogprobs int) responseValidator {
+	if len(v.resp.Choice) == 0 {
+		v.errors = append(v.errors, "expected at least one choice for logprobs check")
+		return v
+	}
+
+	logprobs := v.resp.Choice[0].Logprobs
+	if logprobs == nil {
+		v.errors = append(v.errors, "expected logprobs to be non-nil")
+		return v
+	}
+
+	if len(logprobs.Content) == 0 {
+		v.errors = append(v.errors, "expected logprobs.content to have at least one entry")
+		return v
+	}
+
+	for i, lp := range logprobs.Content {
+		if lp.Token == "" {
+			v.errors = append(v.errors, fmt.Sprintf("expected logprobs.content[%d].token to be non-empty", i))
+		}
+
+		if lp.Logprob > 0 {
+			v.errors = append(v.errors, fmt.Sprintf("expected logprobs.content[%d].logprob to be <= 0, got %f", i, lp.Logprob))
+		}
+
+		if len(lp.Bytes) == 0 {
+			v.errors = append(v.errors, fmt.Sprintf("expected logprobs.content[%d].bytes to be non-empty", i))
+		}
+
+		if topLogprobs > 0 {
+			if len(lp.TopLogprobs) == 0 {
+				v.errors = append(v.errors, fmt.Sprintf("expected logprobs.content[%d].top_logprobs to have entries", i))
+			} else if len(lp.TopLogprobs) > topLogprobs {
+				v.errors = append(v.errors, fmt.Sprintf("expected logprobs.content[%d].top_logprobs to have at most %d entries, got %d", i, topLogprobs, len(lp.TopLogprobs)))
+			}
+		}
+	}
+
+	return v
+}
+
+func (v responseValidator) hasNoPrompt() responseValidator {
+	if v.resp.Prompt != "" {
+		v.errors = append(v.errors, "expected prompt to be empty when return_prompt is not set")
+	}
+
+	return v
+}
+
 func (v responseValidator) result(t *testing.T) string {
 	for _, w := range v.warnings {
 		t.Log(w)

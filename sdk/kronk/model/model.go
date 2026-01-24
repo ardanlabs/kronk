@@ -336,6 +336,9 @@ func (m *Model) sequentialChatRequest(ctx context.Context, id string, lctx llama
 		finalTooling   strings.Builder
 	)
 
+	// Logprobs data accumulator.
+	var logprobsData []ContentLogprob
+
 	// The buffer is used to process tokens.
 	const bufferSize = 32 * 1024
 	buf := make([]byte, bufferSize)
@@ -428,6 +431,21 @@ loop:
 			resp, token, err = processor.standard(lctx, batch, sampler, buf)
 		}
 
+		// Extract logprobs if requested (before error check, token is valid).
+		var currentLogprob *ContentLogprob
+		if params.Logprobs && token != 0 {
+			logprob, lpErr := extractLogprobs(lctx, m.vocab, token, -1, params.TopLogprobs, buf)
+
+			switch {
+			case lpErr != nil:
+				m.log(ctx, "chat-completion", "status", "logprobs-error", "id", id, "error", lpErr.Error())
+
+			case logprob != nil:
+				currentLogprob = logprob
+				logprobsData = append(logprobsData, *logprob)
+			}
+		}
+
 		// Did we get an error or are we at the end of the token stream.
 		if err != nil {
 			if errors.Is(err, io.EOF) {
@@ -493,7 +511,7 @@ loop:
 
 			// We have reasoning or completion content to return to the client.
 			// Per OpenAI spec, usage is only sent in the final response, not deltas.
-			err = m.sendDeltaResponse(ctx, ch, id, object, 0, prompt, resp.content, reasonFlag, outputTokens)
+			err = m.sendDeltaResponse(ctx, ch, id, object, 0, prompt, resp.content, reasonFlag, outputTokens, currentLogprob)
 
 			if err != nil {
 				return
@@ -585,7 +603,7 @@ loop:
 		returnPrompt = prompt
 	}
 
-	m.sendFinalResponse(ctx, ch, id, object, 0, returnPrompt, &finalContent, &finalReasoning, respToolCalls,
+	m.sendFinalResponse(ctx, ch, id, object, 0, returnPrompt, &finalContent, &finalReasoning, respToolCalls, logprobsData, params.Stream,
 		Usage{
 			PromptTokens:     inputTokens,
 			ReasoningTokens:  reasonTokens,
@@ -736,7 +754,7 @@ func (m *Model) isUnncessaryCRLF(reasonFlag int, completionFlag int, content str
 	return false
 }
 
-func (m *Model) sendDeltaResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, prompt string, content string, reasonFlag int, outputTokens int) error {
+func (m *Model) sendDeltaResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, prompt string, content string, reasonFlag int, outputTokens int, logprob *ContentLogprob) error {
 	if outputTokens%500 == 0 {
 		m.log(ctx, "chat-completion", "status", "delta", "id", id, "tokens", outputTokens, "object", object, "reasoning", reasonFlag, "content", len(content))
 	}
@@ -750,14 +768,21 @@ func (m *Model) sendDeltaResponse(ctx context.Context, ch chan<- ChatResponse, i
 
 		return ctx.Err()
 
-	case ch <- chatResponseDelta(id, object, m.modelInfo.ID, choiceIndex, content, reasonFlag > 0):
+	case ch <- chatResponseDelta(id, object, m.modelInfo.ID, choiceIndex, content, reasonFlag > 0, logprob):
 	}
 
 	return nil
 }
 
-func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, prompt string, finalContent *strings.Builder, finalReasoning *strings.Builder, respToolCalls []ResponseToolCall, usage Usage) {
+func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, prompt string, finalContent *strings.Builder, finalReasoning *strings.Builder, respToolCalls []ResponseToolCall, logprobsData []ContentLogprob, streaming bool, usage Usage) {
 	m.log(ctx, "chat-completion", "status", "final", "id", id, "tokens", usage.OutputTokens, "object", object, "tooling", len(respToolCalls) > 0, "reasoning", finalReasoning.Len(), "content", finalContent.Len())
+
+	// For streaming responses, logprobs were already sent per-delta chunk.
+	// Only include accumulated logprobs for non-streaming requests.
+	finalLogprobs := logprobsData
+	if streaming {
+		finalLogprobs = nil
+	}
 
 	select {
 	case <-ctx.Done():
@@ -770,6 +795,7 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 		finalContent.String(),
 		finalReasoning.String(),
 		respToolCalls,
+		finalLogprobs,
 		usage):
 	}
 

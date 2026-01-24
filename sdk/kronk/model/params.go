@@ -21,6 +21,13 @@ import (
 // most non-GPT models. It accepts 1, t, T, TRUE, true, True, 0, f, F, FALSE,
 // false, False. Default is "true".
 //
+// include_usage determines whether to include token usage information in
+// streaming responses. Default is true.
+//
+// logprobs determines whether to return log probabilities of output tokens.
+// When enabled, the response includes probability data for each generated token.
+// Default is false.
+//
 // min_p is a dynamic sampling threshold that helps balance the coherence
 // (quality) and diversity (creativity) of the generated text. Default is 0.0.
 //
@@ -39,6 +46,10 @@ import (
 // return_prompt determines whether to include the prompt in the final response.
 // When set to true, the prompt will be included. Default is false.
 //
+// stream determines whether to stream the response as server-sent events (SSE).
+// When true, tokens are sent incrementally as they are generated. When false,
+// the complete response is returned in a single JSON object. Default is false.
+//
 // temperature controls the randomness of the output. It rescales the probability
 // distribution of possible next tokens. Default is 0.8.
 //
@@ -46,6 +57,10 @@ import (
 // tokens. If a model predicts 10,000 possible next tokens, setting top_k to 50
 // means only the 50 tokens with the highest probabilities are considered for
 // selection (after temperature scaling). The rest are ignored. Default is 40.
+//
+// top_logprobs specifies how many of the most likely tokens to return at each
+// position, along with their log probabilities. Must be between 0 and 5.
+// Setting this to a value > 0 implicitly enables logprobs. Default is 0.
 //
 // top_p, also known as nucleus sampling, works differently than top_k by
 // selecting a dynamic pool of tokens whose cumulative probability exceeds a
@@ -66,6 +81,9 @@ const (
 	defDryMultiplier   = 0.0
 	defDryPenaltyLast  = 0
 	defEnableThinking  = ThinkingEnabled
+	defIncludeUsage    = true
+	defLogprobs        = false
+	defMaxTopLogprobs  = 5
 	defMinP            = 0.0
 	defReasoningEffort = ReasoningEffortMedium
 	defRepeatLastN     = 64
@@ -73,11 +91,11 @@ const (
 	defReturnPrompt    = false
 	defTemp            = 0.8
 	defTopK            = 40
+	defTopLogprobs     = 0
 	defTopP            = 0.9
 	defXtcMinKeep      = 1
 	defXtcProbability  = 0.0
 	defXtcThreshold    = 0.1
-	defIncludeUsage    = true
 )
 
 const (
@@ -132,6 +150,9 @@ type params struct {
 	ReasoningEffort string  `json:"reasoning_effort"`
 	ReturnPrompt    bool    `json:"return_prompt"`
 	IncludeUsage    bool    `json:"include_usage"`
+	Logprobs        bool    `json:"logprobs"`
+	TopLogprobs     int     `json:"top_logprobs"`
+	Stream          bool    `json:"stream"`
 }
 
 func (m *Model) parseParams(d D) (params, error) {
@@ -301,6 +322,47 @@ func (m *Model) parseParams(d D) (params, error) {
 		}
 	}
 
+	logprobs := defLogprobs
+	if val, exists := d["logprobs"]; exists {
+		var err error
+		logprobs, err = parseBool("logprobs", val)
+		if err != nil {
+			return params{}, err
+		}
+	}
+
+	topLogprobs := defTopLogprobs
+	if val, exists := d["top_logprobs"]; exists {
+		var err error
+		topLogprobs, err = parseInt("top_logprobs", val)
+		if err != nil {
+			return params{}, err
+		}
+
+		// Clamp to valid range (0-20 per OpenAI spec)
+		if topLogprobs < 0 {
+			topLogprobs = defTopLogprobs
+		}
+
+		if topLogprobs > defMaxTopLogprobs {
+			topLogprobs = defMaxTopLogprobs
+		}
+
+		// If top_logprobs is set, implicitly enable logprobs
+		if topLogprobs > 0 {
+			logprobs = true
+		}
+	}
+
+	var stream bool
+	if val, exists := d["stream"]; exists {
+		var err error
+		stream, err = parseBool("stream", val)
+		if err != nil {
+			return params{}, err
+		}
+	}
+
 	p := params{
 		Temperature:     temp,
 		TopK:            int32(topK),
@@ -320,6 +382,9 @@ func (m *Model) parseParams(d D) (params, error) {
 		ReasoningEffort: reasoningEffort,
 		ReturnPrompt:    returnPrompt,
 		IncludeUsage:    includeUsage,
+		Logprobs:        logprobs,
+		TopLogprobs:     topLogprobs,
+		Stream:          stream,
 	}
 
 	return m.adjustParams(p), nil

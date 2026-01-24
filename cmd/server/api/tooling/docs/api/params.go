@@ -102,6 +102,10 @@ func extractFieldDescription(fieldName string, docText string) string {
 		"Thinking":        "Enable model thinking/reasoning for non-GPT models",
 		"ReasoningEffort": "Reasoning level for GPT models: none, minimal, low, medium, high",
 		"ReturnPrompt":    "Include the prompt in the final response",
+		"IncludeUsage":    "Include token usage information in streaming responses",
+		"Logprobs":        "Return log probabilities of output tokens",
+		"TopLogprobs":     "Number of most likely tokens to return at each position (0-5)",
+		"Stream":          "Stream response as server-sent events (SSE)",
 	}
 
 	patterns := map[string]*regexp.Regexp{
@@ -174,5 +178,9 @@ func defaultParamFields() []field {
 		{Name: "enable_thinking", Type: "string", Required: false, Description: "Enable model thinking for non-GPT models (default: true)"},
 		{Name: "reasoning_effort", Type: "string", Required: false, Description: "Reasoning level for GPT models: none, minimal, low, medium, high (default: medium)"},
 		{Name: "return_prompt", Type: "bool", Required: false, Description: "Include prompt in response (default: false)"},
+		{Name: "include_usage", Type: "bool", Required: false, Description: "Include token usage information in streaming responses (default: true)"},
+		{Name: "logprobs", Type: "bool", Required: false, Description: "Return log probabilities of output tokens (default: false)"},
+		{Name: "top_logprobs", Type: "int", Required: false, Description: "Number of most likely tokens to return at each position, 0-5 (default: 0)"},
+		{Name: "stream", Type: "bool", Required: false, Description: "Stream response as server-sent events (default: false)"},
 	}
 }

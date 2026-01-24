@@ -67,6 +67,64 @@ func chatNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 					hasUsage(true).
 					hasContent().
 					hasReasoning().
+					hasNoLogprobs().
+					warnContainsInContent("gorilla").
+					warnContainsInReasoning("gorilla").
+					result(t)
+			},
+		},
+		{
+			Name:       "good-token-logprobs",
+			URL:        "/v1/chat/completions",
+			Token:      tokens["chat-completions"],
+			Method:     http.MethodPost,
+			StatusCode: http.StatusOK,
+			Input: model.D{
+				"model": "Qwen3-8B-Q8_0",
+				"messages": model.DocumentArray(
+					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
+				),
+				"max_tokens":    2048,
+				"temperature":   0.7,
+				"top_p":         0.9,
+				"top_k":         40,
+				"return_prompt": true,
+				"logprobs":      true,
+				"top_logprobs":  3,
+			},
+			GotResp: &model.ChatResponse{},
+			ExpResp: &model.ChatResponse{
+				Choice: []model.Choice{
+					{
+						Message: &model.ResponseMessage{
+							Role: "assistant",
+						},
+						FinishReasonPtr: stringPointer("stop"),
+					},
+				},
+				Model:  "Qwen3-8B-Q8_0",
+				Object: "chat.completion",
+				Prompt: "<|im_start|>user\nEcho back the word: Gorilla<|im_end|>\n<|im_start|>assistant\n",
+			},
+			CmpFunc: func(got any, exp any) string {
+				diff := cmp.Diff(got, exp,
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage"),
+					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta", "Logprobs"),
+					cmpopts.IgnoreFields(model.ResponseMessage{}, "Content", "Reasoning", "ToolCalls"),
+				)
+
+				if diff != "" {
+					return diff
+				}
+
+				return validateResponse(got, false).
+					hasValidUUID().
+					hasCreated().
+					hasValidChoice().
+					hasUsage(true).
+					hasContent().
+					hasReasoning().
+					hasLogprobs(3).
 					warnContainsInContent("gorilla").
 					warnContainsInReasoning("gorilla").
 					result(t)
@@ -123,6 +181,62 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 					hasCreated().
 					hasValidChoice().
 					hasUsage(true).
+					hasNoLogprobs().
+					result(t)
+			},
+		},
+		{
+			Name:       "good-token-logprobs",
+			URL:        "/v1/chat/completions",
+			Token:      tokens["chat-completions"],
+			Method:     http.MethodPost,
+			StatusCode: http.StatusOK,
+			Input: model.D{
+				"model": "Qwen3-8B-Q8_0",
+				"messages": model.DocumentArray(
+					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
+				),
+				"max_tokens":    2048,
+				"temperature":   0.7,
+				"top_p":         0.9,
+				"top_k":         40,
+				"stream":        true,
+				"return_prompt": true,
+				"logprobs":      true,
+				"top_logprobs":  3,
+			},
+			GotResp: &model.ChatResponse{},
+			ExpResp: &model.ChatResponse{
+				Choice: []model.Choice{
+					{
+						Message:         nil,
+						FinishReasonPtr: stringPointer("stop"),
+					},
+				},
+				Model:  "Qwen3-8B-Q8_0",
+				Object: "chat.completion.chunk",
+				Prompt: "<|im_start|>user\nEcho back the word: Gorilla<|im_end|>\n<|im_start|>assistant\n",
+			},
+			CmpFunc: func(got any, exp any) string {
+				diff := cmp.Diff(got, exp,
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage"),
+					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta", "Logprobs"),
+				)
+
+				if diff != "" {
+					return diff
+				}
+
+				// For streaming, logprobs are sent per-delta chunk, NOT in the final chunk.
+				// The test framework only validates the final chunk, so we verify the final
+				// chunk does NOT have accumulated logprobs (correct streaming behavior).
+				// Per-delta logprobs validation would require a different test approach.
+				return validateResponse(got, true).
+					hasValidUUID().
+					hasCreated().
+					hasValidChoice().
+					hasUsage(true).
+					hasNoLogprobs().
 					result(t)
 			},
 		},
@@ -181,6 +295,8 @@ func chatImageQwen25VL(t *testing.T, tokens map[string]string) []apitest.Table {
 					hasValidChoice().
 					hasUsage(false).
 					hasContent().
+					hasNoLogprobs().
+					hasNoPrompt().
 					warnContainsInContent("giraffes").
 					result(t)
 			},
@@ -241,6 +357,8 @@ func chatAudioQwen2Audio(t *testing.T, tokens map[string]string) []apitest.Table
 					hasValidChoice().
 					hasUsage(false).
 					hasContent().
+					hasNoLogprobs().
+					hasNoPrompt().
 					warnContainsInContent("speech").
 					result(t)
 			},
