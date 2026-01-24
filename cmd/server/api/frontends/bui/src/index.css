@@ -703,20 +703,140 @@ tr.selected:hover td {
     margin-bottom: 4px;
 }
 
+/* Code block container with header */
+.code-block-container {
+    margin: 16px 0;
+}
+
+.code-block-header {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    padding: 12px 16px !important;
+    background: var(--color-gray-200) !important;
+    border: 1px solid var(--color-gray-300) !important;
+    border-bottom: none !important;
+    border-radius: 6px 6px 0 0 !important;
+    gap: 12px !important;
+    min-height: 44px !important;
+}
+
+.code-block-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.code-block-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background: var(--color-white);
+    border: 1px solid var(--color-gray-300);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-gray-800);
+    transition: all 0.2s;
+}
+
+.code-block-toggle:hover {
+    background: var(--color-gray-100);
+    border-color: var(--color-gray-300);
+}
+
+.code-block-toggle svg {
+    transition: transform 0.2s;
+}
+
+.code-block-line-count {
+    font-size: 12px;
+}
+
+.code-copy-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: var(--color-white);
+    border: 1px solid var(--color-gray-300);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-gray-800);
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.code-copy-btn:hover {
+    background: var(--color-orange);
+    border-color: var(--color-orange);
+    color: var(--color-blue);
+}
+
+.copy-feedback {
+    opacity: 0;
+    transition: opacity 0.2s;
+    display: none;
+}
+
+.copy-feedback.show {
+    opacity: 1;
+    display: block;
+}
+
 /* Go code blocks with Prism styling */
 .code-go {
-    border-radius: 6px;
+    border-radius: 0 0 6px 6px !important;
+    padding: 16px !important;
+    overflow-x: auto !important;
+    font-family: "SF Mono", "Monaco", "Inconsolata", "Fira Code", monospace !important;
+    font-size: 13px !important;
+    line-height: 1.5 !important;
+    margin: 0 !important;
+    border: 1px solid var(--color-gray-300) !important;
+    border-top: none !important;
+    max-height: none !important;
+    transition: max-height 0.3s ease !important;
+    overflow-y: hidden !important;
+}
+
+.code-go.collapsed {
+    max-height: 120px !important;
+    overflow: hidden !important;
+}
+
+.code-go code {
+    white-space: pre;
+    font-family: inherit;
+}
+
+/* Regular code blocks */
+.code-block {
+    border-radius: 0 0 6px 6px;
     padding: 16px !important;
     overflow-x: auto;
     font-family: "SF Mono", "Monaco", "Inconsolata", "Fira Code", monospace;
     font-size: 13px;
     line-height: 1.5;
     margin: 0;
+    border: 1px solid var(--color-gray-300);
+    border-top: none;
+    background: var(--color-gray-100);
+    max-height: none;
+    transition: max-height 0.3s ease;
 }
 
-.code-go code {
+.code-block.collapsed {
+    max-height: 120px;
+    overflow: hidden;
+}
+
+.code-block code {
     white-space: pre;
-    font-family: inherit;
 }
 
 /* CLI docs flags table */
@@ -978,7 +1098,6 @@ tr.selected:hover td {
 }
 
 .chat-message-content {
-    white-space: pre-wrap;
     word-break: break-word;
     line-height: 1.6;
 }
@@ -995,9 +1114,9 @@ tr.selected:hover td {
     background: #1e1e1e;
     color: #d4d4d4;
     padding: 16px;
-    border-radius: 8px;
+    border-radius: 0 0 1pc 1pc;
     overflow-x: auto;
-    margin: 12px 0;
+    margin: 0;
     font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, monospace;
     font-size: 13px;
     line-height: 1.5;
@@ -1033,6 +1152,50 @@ tr.selected:hover td {
     color: #4ec9b0;
 }
 
+/* Chat code block wrapper for CodeBlock component */
+.chat-code-block-wrapper {
+    margin: 12px 0;
+}
+
+.chat-code-block-wrapper .code-block-container {
+    margin: 0;
+}
+
+.chat-code-block-wrapper .code-block-header {
+    background: #2d2d2d !important;
+    border-color: #1e1e1e !important;
+}
+
+.chat-code-block-wrapper .code-block-toggle {
+    background: #1e1e1e !important;
+    border-color: #444 !important;
+    color: #aaa !important;
+}
+
+.chat-code-block-wrapper .code-block-toggle:hover {
+    background: #2d2d2d !important;
+    border-color: #666 !important;
+}
+
+.chat-code-block-wrapper .code-copy-btn {
+    background: #1e1e1e !important;
+    border-color: #444 !important;
+    color: #aaa !important;
+}
+
+.chat-code-block-wrapper .code-copy-btn:hover {
+    background: var(--color-orange) !important;
+    border-color: var(--color-orange) !important;
+    color: var(--color-blue) !important;
+}
+
+.chat-code-block-wrapper .code-go,
+.chat-code-block-wrapper .code-block {
+    background: #1e1e1e !important;
+    border-color: #2d2d2d !important;
+}
+
+/* Keep old styles for backward compatibility if needed */
 .chat-code-header {
     display: flex;
     justify-content: space-between;
