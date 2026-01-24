@@ -83,23 +83,36 @@
 # Claude Code needs a model that handles tool calling well with a decent
 # context window. The GPT models have not performed well. I have not
 # found a model yet that does for Claude Code.
-#
 
 # ==============================================================================
 # TEXT INFERENCE MODELS
 
 # This is a good model and has worked well Cline.
-cerebras_qwen3-coder-reap-25b-a3b-q8_0:
-  context-window: 170000
+# This configuration is for Agent use.
+GLM-4.7-Flash-UD-Q8_K_XL:
+  context-window: 131072
   nbatch: 2048
-  nubatch: 256
+  nubatch: 512
   cache-type-k: q8_0
   cache-type-v: q8_0
   flash-attention: enabled
   nseq-max: 1
   first-message-cache: true
 
-# This is a good model and has worked well Cline.
+# This is a good model and has worked ok Cline.
+# This configuration is for Agent use.
+cerebras_qwen3-coder-reap-25b-a3b-q8_0:
+  context-window: 131072
+  nbatch: 2048
+  nubatch: 512
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  flash-attention: enabled
+  nseq-max: 1
+  first-message-cache: true
+
+# This is a good model and has worked ok Cline.
+# This configuration is for Agent use.
 gpt-oss-120b-F16:
   context-window: 131072
   nbatch: 2048
@@ -111,11 +124,10 @@ gpt-oss-120b-F16:
   first-message-cache: true
 
 # This model has not been as good as cerebras_qwen3-coder-reap-25b-a3b-q8_0
-# Not configured for Agent use.
 Qwen3-Coder-30B-A3B-Instruct-Q8_0:
   context-window: 131072
-  nbatch: 1024
-  nubatch: 256
+  nbatch: 2048
+  nubatch: 512
   cache-type-k: q8_0
   cache-type-v: q8_0
   flash-attention: enabled
@@ -133,7 +145,7 @@ Qwen3-8B-Q8_0:
 
 # Model runs slow and haven't tested it too much.
 GLM-4.7-Flash-Q8_0:
-  context-window: 202752
+  context-window: 131072
   nbatch: 2048
   nubatch: 512
   cache-type-k: q8_0
@@ -170,7 +182,7 @@ Qwen2.5-VL-3B-Instruct-Q8_0:
 Qwen2-Audio-7B.Q8_0:
   context-window: 8192
   nbatch: 2048
-  nubatch: 2048
+  nubatch: 512
   cache-type-k: q8_0
   cache-type-v: q8_0
   flash-attention: enabled
