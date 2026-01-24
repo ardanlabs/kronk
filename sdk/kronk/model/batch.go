@@ -567,9 +567,8 @@ func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 		s.completionFlag = 0
 
 	default:
-		// No streamable content, but still count the token.
-		// This happens during tool call accumulation when tokens are buffered.
-		s.completionTokens++
+		// No streamable content (statusNone) - skip without counting.
+		// This happens for control tokens like <|end|> which shouldn't be counted.
 		s.iBatch = -1
 		return
 	}
