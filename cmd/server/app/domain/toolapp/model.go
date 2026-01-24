@@ -313,6 +313,8 @@ func toCatalogModelResponse(model catalog.Model) CatalogModelResponse {
 			Streaming: model.Capabilities.Streaming,
 			Reasoning: model.Capabilities.Reasoning,
 			Tooling:   model.Capabilities.Tooling,
+			Embedding: model.Capabilities.Embedding,
+			Rerank:    model.Capabilities.Rerank,
 		},
 		Metadata: CatalogMetadata{
 			Created:     model.Metadata.Created,
