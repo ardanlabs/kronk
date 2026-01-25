@@ -16,8 +16,15 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
+	"github.com/nikolalohinski/gonja/v2/exec"
 	"go.opentelemetry.io/otel/attribute"
 )
+
+// compiledTemplate holds a pre-compiled Jinja template for reuse across requests.
+type compiledTemplate struct {
+	tmpl *exec.Template
+	err  error
+}
 
 // TemplateRetriever returns a configured template for a model.
 type TemplateRetriever interface {
@@ -35,6 +42,8 @@ type Model struct {
 	mem             llama.Memory
 	batch           *batchEngine
 	template        Template
+	compiledTmpl    *compiledTemplate
+	templateOnce    sync.Once
 	projFile        string
 	modelInfo       ModelInfo
 	activeStreams   atomic.Int32

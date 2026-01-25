@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -64,11 +65,15 @@ func (m *Model) applyJinjaTemplate(ctx context.Context, d map[string]any) (strin
 		return "", errors.New("apply-jinja-template: no template found")
 	}
 
-	gonja.DefaultLoader = &noFSLoader{}
+	// Compile template once and reuse across all requests.
+	m.templateOnce.Do(func() {
+		gonja.DefaultLoader = &noFSLoader{}
+		tmpl, err := newTemplateWithFixedItems(m.template.Script)
+		m.compiledTmpl = &compiledTemplate{tmpl: tmpl, err: err}
+	})
 
-	t, err := newTemplateWithFixedItems(m.template.Script)
-	if err != nil {
-		return "", fmt.Errorf("apply-jinja-template: failed to parse template: %w", err)
+	if m.compiledTmpl.err != nil {
+		return "", fmt.Errorf("apply-jinja-template: failed to parse template: %w", m.compiledTmpl.err)
 	}
 
 	// Ensure add_generation_prompt is set (default true if not specified).
@@ -82,7 +87,7 @@ func (m *Model) applyJinjaTemplate(ctx context.Context, d map[string]any) (strin
 
 	data := exec.NewContext(d)
 
-	s, err := t.ExecuteToString(data)
+	s, err := m.compiledTmpl.tmpl.ExecuteToString(data)
 	if err != nil {
 		return "", fmt.Errorf("apply-jinja-template: failed to execute template: %w", err)
 	}
@@ -111,7 +116,8 @@ func (nl *noFSLoader) Inherit(from string) (loaders.Loader, error) {
 // newTemplateWithFixedItems creates a gonja template with a fixed items() method
 // that properly returns key-value pairs (the built-in one only returns values).
 func newTemplateWithFixedItems(source string) (*exec.Template, error) {
-	rootID := fmt.Sprintf("root-%s", string(sha256.New().Sum([]byte(source))))
+	sum := sha256.Sum256([]byte(source))
+	rootID := "root-" + hex.EncodeToString(sum[:])
 
 	loader, err := loaders.NewFileSystemLoader("")
 	if err != nil {
