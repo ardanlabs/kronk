@@ -93,6 +93,24 @@ export default function Chat() {
   const [topP, setTopP] = useState(0.9);
   const [topK, setTopK] = useState(40);
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
+  
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [minP, setMinP] = useState(0);
+  const [repeatPenalty, setRepeatPenalty] = useState(1.0);
+  const [repeatLastN, setRepeatLastN] = useState(64);
+  const [dryMultiplier, setDryMultiplier] = useState(0);
+  const [dryBase, setDryBase] = useState(1.75);
+  const [dryAllowedLen, setDryAllowedLen] = useState(2);
+  const [dryPenaltyLast, setDryPenaltyLast] = useState(-1);
+  const [xtcProbability, setXtcProbability] = useState(0);
+  const [xtcThreshold, setXtcThreshold] = useState(0.1);
+  const [xtcMinKeep, setXtcMinKeep] = useState(1);
+  const [enableThinking, setEnableThinking] = useState('');
+  const [reasoningEffort, setReasoningEffort] = useState('');
+  const [returnPrompt, setReturnPrompt] = useState(false);
+  const [includeUsage, setIncludeUsage] = useState(false);
+  const [logprobs, setLogprobs] = useState(false);
+  const [topLogprobs, setTopLogprobs] = useState(0);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -208,6 +226,22 @@ export default function Chat() {
         temperature,
         top_p: topP,
         top_k: topK,
+        min_p: minP,
+        repeat_penalty: repeatPenalty,
+        repeat_last_n: repeatLastN,
+        dry_multiplier: dryMultiplier,
+        dry_base: dryBase,
+        dry_allowed_length: dryAllowedLen,
+        dry_penalty_last_n: dryPenaltyLast,
+        xtc_probability: xtcProbability,
+        xtc_threshold: xtcThreshold,
+        xtc_min_keep: xtcMinKeep,
+        enable_thinking: enableThinking || undefined,
+        reasoning_effort: reasoningEffort || undefined,
+        return_prompt: returnPrompt,
+        include_usage: includeUsage,
+        logprobs,
+        top_logprobs: topLogprobs,
       },
       (data) => {
         const choice = data.choices?.[0];
@@ -381,6 +415,186 @@ export default function Chat() {
               max={100}
             />
           </div>
+
+          <div className="chat-setting chat-setting-button">
+            <label>&nbsp;</label>
+            <button
+              type="button"
+              className="chat-advanced-toggle"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+            >
+              Advanced {showAdvanced ? '▲' : '▼'}
+            </button>
+          </div>
+
+          {showAdvanced && (
+            <div className="chat-advanced-settings">
+                <div className="chat-setting">
+                  <label>Min P</label>
+                  <input
+                    type="number"
+                    value={minP}
+                    onChange={(e) => setMinP(Number(e.target.value))}
+                    min={0}
+                    max={1}
+                    step={0.01}
+                  />
+                </div>
+                <div className="chat-setting">
+                  <label>Repeat Penalty</label>
+                  <input
+                    type="number"
+                    value={repeatPenalty}
+                    onChange={(e) => setRepeatPenalty(Number(e.target.value))}
+                    min={0}
+                    max={2}
+                    step={0.1}
+                  />
+                </div>
+                <div className="chat-setting">
+                  <label>Repeat Last N</label>
+                  <input
+                    type="number"
+                    value={repeatLastN}
+                    onChange={(e) => setRepeatLastN(Number(e.target.value))}
+                    min={-1}
+                    max={512}
+                  />
+                </div>
+                <div className="chat-setting">
+                  <label>DRY Multiplier</label>
+                  <input
+                    type="number"
+                    value={dryMultiplier}
+                    onChange={(e) => setDryMultiplier(Number(e.target.value))}
+                    min={0}
+                    step={0.1}
+                  />
+                </div>
+                <div className="chat-setting">
+                  <label>DRY Base</label>
+                  <input
+                    type="number"
+                    value={dryBase}
+                    onChange={(e) => setDryBase(Number(e.target.value))}
+                    min={1}
+                    step={0.05}
+                  />
+                </div>
+                <div className="chat-setting">
+                  <label>DRY Allowed Length</label>
+                  <input
+                    type="number"
+                    value={dryAllowedLen}
+                    onChange={(e) => setDryAllowedLen(Number(e.target.value))}
+                    min={0}
+                  />
+                </div>
+                <div className="chat-setting">
+                  <label>DRY Penalty Last N</label>
+                  <input
+                    type="number"
+                    value={dryPenaltyLast}
+                    onChange={(e) => setDryPenaltyLast(Number(e.target.value))}
+                    min={-1}
+                  />
+                </div>
+                <div className="chat-setting">
+                  <label>XTC Probability</label>
+                  <input
+                    type="number"
+                    value={xtcProbability}
+                    onChange={(e) => setXtcProbability(Number(e.target.value))}
+                    min={0}
+                    max={1}
+                    step={0.01}
+                  />
+                </div>
+                <div className="chat-setting">
+                  <label>XTC Threshold</label>
+                  <input
+                    type="number"
+                    value={xtcThreshold}
+                    onChange={(e) => setXtcThreshold(Number(e.target.value))}
+                    min={0}
+                    max={1}
+                    step={0.01}
+                  />
+                </div>
+                <div className="chat-setting">
+                  <label>XTC Min Keep</label>
+                  <input
+                    type="number"
+                    value={xtcMinKeep}
+                    onChange={(e) => setXtcMinKeep(Number(e.target.value))}
+                    min={1}
+                  />
+                </div>
+                <div className="chat-setting">
+                  <label>Enable Thinking</label>
+                  <select
+                    value={enableThinking}
+                    onChange={(e) => setEnableThinking(e.target.value)}
+                  >
+                    <option value="">Default</option>
+                    <option value="true">Enabled</option>
+                    <option value="false">Disabled</option>
+                  </select>
+                </div>
+                <div className="chat-setting">
+                  <label>Reasoning Effort</label>
+                  <select
+                    value={reasoningEffort}
+                    onChange={(e) => setReasoningEffort(e.target.value)}
+                  >
+                    <option value="">Default</option>
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                  </select>
+                </div>
+                <div className="chat-setting">
+                  <label>Top Logprobs</label>
+                  <input
+                    type="number"
+                    value={topLogprobs}
+                    onChange={(e) => setTopLogprobs(Number(e.target.value))}
+                    min={0}
+                    max={20}
+                  />
+                </div>
+                <div className="chat-setting chat-setting-checkbox">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={returnPrompt}
+                      onChange={(e) => setReturnPrompt(e.target.checked)}
+                    />
+                    Return Prompt
+                  </label>
+                </div>
+                <div className="chat-setting chat-setting-checkbox">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={includeUsage}
+                      onChange={(e) => setIncludeUsage(e.target.checked)}
+                    />
+                    Include Usage
+                  </label>
+                </div>
+                <div className="chat-setting chat-setting-checkbox">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={logprobs}
+                      onChange={(e) => setLogprobs(e.target.checked)}
+                    />
+                    Logprobs
+                  </label>
+                </div>
+            </div>
+          )}
         </div>
       )}
 
