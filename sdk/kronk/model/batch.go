@@ -114,6 +114,7 @@ type batchEngine struct {
 	slots      []*slot
 	batch      llama.Batch
 	requestQ   chan *chatJob
+	wakeCh     chan struct{}
 	shutdownCh chan struct{}
 	wg         sync.WaitGroup
 	stopped    atomic.Bool
@@ -155,6 +156,7 @@ func newBatchEngine(m *Model, nSlots int) *batchEngine {
 		slots:      slots,
 		batch:      batch,
 		requestQ:   make(chan *chatJob, nSlots*2),
+		wakeCh:     make(chan struct{}, 1),
 		shutdownCh: make(chan struct{}),
 	}
 }
@@ -195,6 +197,10 @@ func (e *batchEngine) freeBatch() {
 func (e *batchEngine) submit(job *chatJob) error {
 	select {
 	case e.requestQ <- job:
+		select {
+		case e.wakeCh <- struct{}{}:
+		default:
+		}
 		return nil
 
 	case <-e.shutdownCh:
@@ -229,13 +235,7 @@ func (e *batchEngine) processLoop(ctx context.Context) {
 			e.drainSlots()
 			return
 
-		case job := <-e.requestQ:
-			// Requeue job for fillSlots to handle in correct order
-			// (after batchClear but before decode).
-			// Wake up the goroutine instantly.
-			e.requestQ <- job
-
-			// This will immediately trigger the timer.
+		case <-e.wakeCh:
 			timer.Reset(0)
 
 		case <-timer.C:
