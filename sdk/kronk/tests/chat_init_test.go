@@ -91,13 +91,15 @@ func initChatTest(t *testing.T, mp models.Path, tooling bool) (*kronk.Kronk, mod
 // Test input data - initialized in TestMain
 
 var (
-	dChatNoTool     model.D
-	dChatTool       model.D
-	dChatToolGPT    model.D
-	dMedia          model.D
-	dAudio          model.D
-	dResponseNoTool model.D
-	dResponseTool   model.D
+	dChatNoTool      model.D
+	dChatTool        model.D
+	dChatToolGPT     model.D
+	dMedia           model.D
+	dAudio           model.D
+	dResponseNoTool  model.D
+	dResponseTool    model.D
+	dChatNoToolArray model.D
+	dMediaArray      model.D
 )
 
 func initChatTestInputs() error {
@@ -224,6 +226,18 @@ func initChatTestInputs() error {
 				},
 			},
 		},
+	}
+
+	dChatNoToolArray = model.D{
+		"messages": []model.D{
+			model.TextMessageArray("user", "Echo back the word: Gorilla"),
+		},
+		"max_tokens": 2048,
+	}
+
+	dMediaArray = model.D{
+		"messages":   model.ImageMessage("What is in this picture?", mediaBytes, "jpeg"),
+		"max_tokens": 2048,
 	}
 
 	return nil

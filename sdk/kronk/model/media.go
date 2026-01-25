@@ -194,17 +194,6 @@ func detectMediaType(s string) MediaType {
 	return MediaTypeNone
 }
 
-// convertToRawMediaMessage is needed because we want to use a raw media message
-// format for processing media since we need the raw bytes.
-func convertToRawMediaMessage(d D, msgs chatMessages) (D, error) {
-	d, err := toMediaMessage(d, msgs)
-	if err != nil {
-		return nil, fmt.Errorf("convert-to-raw-media-message: media message conversion: %w", err)
-	}
-
-	return d, nil
-}
-
 func toMediaMessage(d D, msgs chatMessages) (D, error) {
 	type mediaMessage struct {
 		text string
@@ -271,7 +260,7 @@ func toMediaMessage(d D, msgs chatMessages) (D, error) {
 
 	// -------------------------------------------------------------------------
 
-	// Here is take all the data we found (text, data) and convert everything
+	// Here we take all the data we found (text, data) and convert everything
 	// to the MediaMessage format is a generic format most model templates
 	// support.
 

@@ -195,6 +195,17 @@ func TextMessage(role string, content string) D {
 	}
 }
 
+// TextMessageArray creates a new text message using the OpenAI array format
+// where content is [{"type": "text", "text": "..."}].
+func TextMessageArray(role string, content string) D {
+	return D{
+		"role": role,
+		"content": []D{
+			{"type": "text", "text": content},
+		},
+	}
+}
+
 // RawMediaMessage creates a new media message and should not be used for
 // http based requests. On a http request, binary data is automatically
 // converted to base64 and the system won't recognize this as media.

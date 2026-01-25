@@ -26,6 +26,8 @@ func TestSuite(t *testing.T) {
 			t.Run("ThinkStreamingResponse", func(t *testing.T) { testResponseStreaming(t, krn, dResponseNoTool, false) })
 			t.Run("ToolResponse", func(t *testing.T) { testResponse(t, krn, dResponseTool, true) })
 			t.Run("ToolStreamingResponse", func(t *testing.T) { testResponseStreaming(t, krn, dResponseTool, true) })
+			t.Run("ArrayFormatChat", func(t *testing.T) { testChat(t, krn, dChatNoToolArray, false) })
+			t.Run("ArrayFormatStreamingChat", func(t *testing.T) { testChatStreaming(t, krn, dChatNoToolArray, false) })
 		})
 	})
 
@@ -39,6 +41,8 @@ func TestSuite(t *testing.T) {
 			t.Run("SimpleMediaStreaming", func(t *testing.T) { testMediaStreaming(t, krn) })
 			t.Run("SimpleMediaResponse", func(t *testing.T) { testMediaResponse(t, krn) })
 			t.Run("SimpleMediaResponseStreaming", func(t *testing.T) { testMediaResponseStreaming(t, krn) })
+			t.Run("ArrayFormatMedia", func(t *testing.T) { testMediaArray(t, krn) })
+			t.Run("ArrayFormatMediaStreaming", func(t *testing.T) { testMediaArrayStreaming(t, krn) })
 		})
 	})
 

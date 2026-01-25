@@ -14,6 +14,14 @@ import (
 )
 
 func testMedia(t *testing.T, krn *kronk.Kronk) {
+	testMediaWithInput(t, krn, dMedia)
+}
+
+func testMediaArray(t *testing.T, krn *kronk.Kronk) {
+	testMediaWithInput(t, krn, dMediaArray)
+}
+
+func testMediaWithInput(t *testing.T, krn *kronk.Kronk, d model.D) {
 	if runInParallel {
 		t.Parallel()
 	}
@@ -29,7 +37,7 @@ func testMedia(t *testing.T, krn *kronk.Kronk) {
 			t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, krn.ModelInfo().ID, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
 		}()
 
-		resp, err := krn.Chat(ctx, dMedia)
+		resp, err := krn.Chat(ctx, d)
 		if err != nil {
 			return fmt.Errorf("chat streaming: %w", err)
 		}
@@ -59,6 +67,14 @@ func testMedia(t *testing.T, krn *kronk.Kronk) {
 }
 
 func testMediaStreaming(t *testing.T, krn *kronk.Kronk) {
+	testMediaStreamingWithInput(t, krn, dMedia)
+}
+
+func testMediaArrayStreaming(t *testing.T, krn *kronk.Kronk) {
+	testMediaStreamingWithInput(t, krn, dMediaArray)
+}
+
+func testMediaStreamingWithInput(t *testing.T, krn *kronk.Kronk, d model.D) {
 	if runInParallel {
 		t.Parallel()
 	}
@@ -74,7 +90,7 @@ func testMediaStreaming(t *testing.T, krn *kronk.Kronk) {
 			t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, krn.ModelInfo().ID, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
 		}()
 
-		ch, err := krn.ChatStreaming(ctx, dMedia)
+		ch, err := krn.ChatStreaming(ctx, d)
 		if err != nil {
 			return fmt.Errorf("chat streaming: %w", err)
 		}

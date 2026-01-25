@@ -69,16 +69,31 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 			}
 		}()
 
+		//----------------------------------------------------------------------
+
 		params, err := m.validateDocument(d)
 		if err != nil {
 			m.sendChatError(ctx, ch, id, err)
 			return
 		}
 
-		d, object, mtmdCtx, err := m.prepareMediaContext(ctx, d)
-		if err != nil {
-			m.sendChatError(ctx, ch, id, err)
-			return
+		//----------------------------------------------------------------------
+
+		var mtmdCtx mtmd.Context
+		object := ObjectChatText
+
+		switch m.projFile {
+		case "":
+			d = m.prepareTextContext(d)
+
+		default:
+			object = ObjectChatMedia
+
+			d, mtmdCtx, err = m.prepareMediaContext(ctx, d)
+			if err != nil {
+				m.sendChatError(ctx, ch, id, err)
+				return
+			}
 		}
 
 		defer func() {
@@ -90,6 +105,8 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 				m.resetContext()
 			}
 		}()
+
+		//----------------------------------------------------------------------
 
 		// fmt.Println("=======================================")
 		// messages, _ := d["messages"].([]D)
@@ -169,54 +186,77 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 	return ch
 }
 
-func (m *Model) prepareMediaContext(ctx context.Context, d D) (D, string, mtmd.Context, error) {
+// prepareTextContext converts messages using the OpenAI array format
+// for content ([]D with type:"text") to simple string content. This is used
+// for text-only inference paths.
+func (*Model) prepareTextContext(d D) D {
+	messages, ok := d["messages"].([]D)
+	if !ok {
+		return d
+	}
+
+	for i, msg := range messages {
+		content, ok := msg["content"].([]D)
+		if !ok {
+			continue
+		}
+
+		for _, part := range content {
+			if part["type"] == "text" {
+				if text, ok := part["text"].(string); ok {
+					messages[i]["content"] = text
+					break
+				}
+			}
+		}
+	}
+
+	return d
+}
+
+func (m *Model) prepareMediaContext(ctx context.Context, d D) (D, mtmd.Context, error) {
 	mediaType, isOpenAIFormat, msgs, err := detectMediaContent(d)
 	if err != nil {
-		return nil, "", 0, fmt.Errorf("prepare-media-context: %w", err)
+		return nil, 0, fmt.Errorf("prepare-media-context: %w", err)
 	}
 
 	if mediaType != MediaTypeNone && m.projFile == "" {
-		return nil, "", 0, fmt.Errorf("prepare-media-context: media detected in request but model does not support media processing")
+		return nil, 0, fmt.Errorf("prepare-media-context: media detected in request but model does not support media processing")
 	}
 
 	var mtmdCtx mtmd.Context
-	object := ObjectChatText
 
-	if m.projFile != "" {
-		object = ObjectChatMedia
+	mtmdCtx, err = m.loadProjFile(ctx)
+	if err != nil {
+		return nil, 0, fmt.Errorf("prepare-media-context: unable to init projection: %w", err)
+	}
 
-		mtmdCtx, err = m.loadProjFile(ctx)
-		if err != nil {
-			return nil, "", 0, fmt.Errorf("prepare-media-context: unable to init projection: %w", err)
+	switch mediaType {
+	case MediaTypeVision:
+		if !mtmd.SupportVision(mtmdCtx) {
+			mtmd.Free(mtmdCtx)
+			return nil, 0, fmt.Errorf("prepare-media-context: image/video detected but model does not support vision")
 		}
 
-		switch mediaType {
-		case MediaTypeVision:
-			if !mtmd.SupportVision(mtmdCtx) {
-				mtmd.Free(mtmdCtx)
-				return nil, "", 0, fmt.Errorf("prepare-media-context: image/video detected but model does not support vision")
-			}
-
-		case MediaTypeAudio:
-			if !mtmd.SupportAudio(mtmdCtx) {
-				mtmd.Free(mtmdCtx)
-				return nil, "", 0, fmt.Errorf("prepare-media-context: audio detected but model does not support audio")
-			}
+	case MediaTypeAudio:
+		if !mtmd.SupportAudio(mtmdCtx) {
+			mtmd.Free(mtmdCtx)
+			return nil, 0, fmt.Errorf("prepare-media-context: audio detected but model does not support audio")
 		}
 	}
 
 	switch {
 	case isOpenAIFormat:
-		d, err = convertToRawMediaMessage(d.Clone(), msgs)
+		d, err = toMediaMessage(d.Clone(), msgs)
 		if err != nil {
-			return nil, "", 0, fmt.Errorf("prepare-media-context: unable to convert document to media message: %w", err)
+			return nil, 0, fmt.Errorf("prepare-media-context: unable to convert document to media message: %w", err)
 		}
 
 	case mediaType != MediaTypeNone:
 		d = convertPlainBase64ToBytes(d)
 	}
 
-	return d, object, mtmdCtx, nil
+	return d, mtmdCtx, nil
 }
 
 func (m *Model) loadProjFile(ctx context.Context) (mtmd.Context, error) {
