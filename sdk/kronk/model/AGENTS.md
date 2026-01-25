@@ -82,12 +82,19 @@ Sequences are isolated partitions in the shared KV cache memory. Each request's 
 When caching is enabled, sequence 0 (and optionally 1) are reserved for cached prompts, so slot seqIDs are offset:
 
 ```
-Without caching:     slot[0].seqID=0, slot[1].seqID=1, slot[2].seqID=2
-With FirstMsgCache:  slot[0].seqID=1, slot[1].seqID=2, slot[2].seqID=3  (seq 0 reserved)
-With both caches:    slot[0].seqID=2, slot[1].seqID=3, slot[2].seqID=4  (seq 0,1 reserved)
+NSeqMax2 = 2
+Without caching:        slot[0].seqID=0, slot[1].seqID=1
+With SystemPromptCache: slot[0].seqID=1, slot[1].seqID=2  SPC Cached in seqID=0
+With FirstMsgCache:     slot[0].seqID=1, slot[1].seqID=2  FMC Cached in seqID=0
+With both caches:       slot[0].seqID=2, slot[1].seqID=3  SPC SeqID=0, FMC seqID=1
 ```
 
+When a cache hit occurs, the KV states from sequence 0 are copied into the slot's sequence via copyCachesToSeq(seqID). The slot then continues from that point with nPast set to skip re-processing those tokens.
+
+Slots are for inference. Cache sequences are just pre-computed KV state storage.
+
 Per-request flow:
+
 1. Request assigned to available slot (e.g., slot 0 with seqID=1)
 2. Slot clears its sequence: `MemorySeqRm(mem, seqID, -1, -1)`
 3. If cache hit: copies reserved seq → slot's seq, sets `nPast` to skip re-processing
@@ -118,12 +125,15 @@ Per-request flow:
 - Template compiles once on first use via `applyRequestJinjaTemplate()`
 - Eliminates per-request template parsing overhead
 
-## Conditional Deep Copy (`chat.go`, `prompts.go`)
+## Input Mutation Handling (`chat.go`, `media.go`)
 
-Input mutation handling differs by model type to avoid unnecessary copying:
+No deep copying is used. Cloning happens only at specific mutation points:
 
-- **Media models** (`ProjFile != ""`): `prepareMediaContext()` clones input `D` before mutation, so `applyRequestJinjaTemplate()` can mutate directly
-- **Text-only models**: Input `D` passed directly to Jinja without copying; Gonja handles Go's named map types via reflection
+- **Text-only models**: Input `D` passed directly to Jinja without copying
+- **Media models (OpenAI format)**: `prepareMediaContext()` passes `d.Clone()` to `toMediaMessage()` before mutating content
+- **Media models (plain base64)**: `convertPlainBase64ToBytes()` clones `D` and messages before replacing content with `[]byte`
+
+The shallow `Clone()` method (maps.Copy) is sufficient since only top-level keys are mutated.
 
 ## Config Fields Reference
 
@@ -280,7 +290,7 @@ func findCacheableMessage(messages []D, targetRole string) (cacheableMessage, bo
 **Sequence ID layout (dynamic based on config):**
 
 | SPC | FMC | Reserved Seqs | Slot Start | Memory Overhead |
-|-----|-----|---------------|------------|-----------------|
+| --- | --- | ------------- | ---------- | --------------- |
 | off | off | 0             | seq 0      | none            |
 | on  | off | 1 (seq 0)     | seq 1      | +1 ctx window   |
 | off | on  | 1 (seq 0)     | seq 1      | +1 ctx window   |
