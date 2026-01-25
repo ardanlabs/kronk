@@ -1,0 +1,17 @@
+// You need to copy this to the root of the project for opencode to read this :(
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "kronk": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Kronk",
+      "options": {
+        "baseURL": "http://localhost:8080/v1"
+      },
+      "models": {
+        "GLM-4.7-Flash-UD-Q8_K_XL": {},
+        "Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL": {}
+      }
+    }
+  }
+}

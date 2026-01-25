@@ -65,6 +65,30 @@ m.sequentialChatRequest(...)
 - Polling intervals: 100µs (active), 5ms (idle)
 - `llama.MemorySeqRm(mem, s.seqID, -1, -1)` clears slot's KV cache segment on finish
 
+**Slots vs Sequences** (`batch.go`):
+
+Slots and sequences are 1:1, but they are different concepts:
+
+- `slot.id` = slot index (0, 1, 2...)—for logging/identification only
+- `slot.seqID` = llama.cpp sequence ID—determines which KV cache partition the slot uses
+
+Sequences are isolated partitions in the shared KV cache memory. Each request's key-value states are stored in its assigned sequence without interfering with other concurrent requests.
+
+When caching is enabled, sequence 0 (and optionally 1) are reserved for cached prompts, so slot seqIDs are offset:
+
+```
+Without caching:     slot[0].seqID=0, slot[1].seqID=1, slot[2].seqID=2
+With FirstMsgCache:  slot[0].seqID=1, slot[1].seqID=2, slot[2].seqID=3  (seq 0 reserved)
+With both caches:    slot[0].seqID=2, slot[1].seqID=3, slot[2].seqID=4  (seq 0,1 reserved)
+```
+
+Per-request flow:
+1. Request assigned to available slot (e.g., slot 0 with seqID=1)
+2. Slot clears its sequence: `MemorySeqRm(mem, seqID, -1, -1)`
+3. If cache hit: copies reserved seq → slot's seq, sets `nPast` to skip re-processing
+4. Tokenizes remaining prompt, prefills into slot's sequence
+5. Decodes tokens, slot becomes available for next request
+
 ## Context Pooling
 
 - `llama.Context` is created once in `NewModel` and reused across requests
