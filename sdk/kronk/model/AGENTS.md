@@ -61,9 +61,14 @@ m.sequentialChatRequest(...)
 
 - `batchEngine` manages `nSlots` parallel `slot` structs
 - Each `slot` tracks: `seqID`, prompt tokens, decode state, sampler, response channel
-- Signal-based wake: sleeps until `requestQ` has jobs or slots are active
+- Wake channel pattern: `wakeCh chan struct{}` (buffered size 1) for coalesced wake signals
+- `submit()` sends non-blocking wake after queuing; `processLoop` listens on `wakeCh`
 - Polling intervals: 100µs (active), 5ms (idle)
 - `llama.MemorySeqRm(mem, s.seqID, -1, -1)` clears slot's KV cache segment on finish
+
+**Slot Optimizations** (`batch.go`):
+
+- `slot.seqIDs []llama.SeqId`: Pre-allocated at slot creation as `[]llama.SeqId{seqID}`, reused in `batchAdd` calls to avoid per-token allocations during prefill
 
 **Slots vs Sequences** (`batch.go`):
 
@@ -105,6 +110,20 @@ Per-request flow:
 
 - Sampler chain freed via `defer llama.SamplerFree(sampler)` in `processChatRequest`
 - Media path: `mtmd.InputChunksInit()` must be freed with `mtmd.InputChunksFree(output)`
+
+## Jinja Template Caching (`prompts.go`)
+
+- `Model.compiledTmpl *compiledTemplate`: Cached compiled template
+- `Model.templateOnce sync.Once`: Ensures single compilation per model
+- Template compiles once on first use via `applyRequestJinjaTemplate()`
+- Eliminates per-request template parsing overhead
+
+## Conditional Deep Copy (`chat.go`, `prompts.go`)
+
+Input mutation handling differs by model type to avoid unnecessary copying:
+
+- **Media models** (`ProjFile != ""`): `prepareMediaContext()` clones input `D` before mutation, so `applyRequestJinjaTemplate()` can mutate directly
+- **Text-only models**: Input `D` passed directly to Jinja without copying; Gonja handles Go's named map types via reflection
 
 ## Config Fields Reference
 
@@ -241,12 +260,14 @@ func findCacheableMessage(messages []D, targetRole string) (cacheableMessage, bo
    - Find message by role using `findCacheableMessage()`
    - Hash role+content, tokenize with `add_generation_prompt=false`
    - Check token count against `CacheMinTokens` (default: 100) - skip if too short
+   - Store `contentLen` alongside hash for fast cache hit validation
    - Decode tokens to appropriate sequence via `decodeTokensToSeq(tokens, seqID)`
    - Store hash/count in respective cache state
    - Template full prompt, extract suffix (generation prompt portion)
    - Return `cacheResult` with `prompt` set to suffix for immediate use
 
 2. **Cache hit (subsequent requests)**:
+   - Length check before hash: compare `contentLen` first (fast path), then SHA-256 if lengths match
    - Same message → collect index for removal
    - Cumulative `nPast` from all cache hits (SPC + FMC)
    - `prompt` empty, so `chat.go` calls `createPrompt()` on remaining messages
