@@ -4,6 +4,7 @@
 
 node_modules
 .DS_Store
+/opencode.json
 
 # Binaries for programs and plugins
 *.exe

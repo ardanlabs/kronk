@@ -169,6 +169,19 @@ func newTemplateWithFixedItems(source string) (*exec.Template, error) {
 		}
 		return exec.AsValue(string(data))
 	})
+	customFilters.Register("fromjson", func(e *exec.Evaluator, in *exec.Value, params *exec.VarArgs) *exec.Value {
+		if in.IsError() {
+			return in
+		}
+		if !in.IsString() {
+			return in
+		}
+		var result any
+		if err := json.Unmarshal([]byte(in.String()), &result); err != nil {
+			return exec.AsValue(err)
+		}
+		return exec.AsValue(result)
+	})
 	customFilters.Register("items", func(e *exec.Evaluator, in *exec.Value, params *exec.VarArgs) *exec.Value {
 		if !in.IsDict() {
 			return exec.AsValue([][]any{})
