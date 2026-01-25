@@ -49,9 +49,11 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 	ch := make(chan ChatResponse, 1)
 
 	go func() {
-		m.activeStreams.Add(1)
+		active := m.activeStreams.Add(1)
 
 		id := fmt.Sprintf("chatcmpl-%s", uuid.New().String())
+
+		m.log(ctx, "chat-streaming", "status", "started", "id", id, "active_streams", active)
 
 		batching := false
 
@@ -62,7 +64,8 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 
 			if !batching {
 				close(ch)
-				m.activeStreams.Add(-1)
+				remaining := m.activeStreams.Add(-1)
+				m.log(ctx, "chat-streaming", "status", "finished", "id", id, "active_streams", remaining)
 			}
 		}()
 

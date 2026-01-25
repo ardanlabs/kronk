@@ -368,14 +368,19 @@ func (c *Cache) eviction(event otter.DeletionEvent[string, *kronk.Kronk]) {
 
 	// If this is a replacement event (from our Set above) and there are still active
 	// streams, just return without unloading - the model is still in the cache.
-	if event.Value.ActiveStreams() > 0 {
+	// For invalidation (shutdown), we still need to unload since the cache is being cleared.
+	if event.Value.ActiveStreams() > 0 && event.Cause != otter.CauseInvalidation {
 		c.log(ctx, "kronk cache eviction skipped (replacement with active streams)", "key", event.Key, "active-streams", event.Value.ActiveStreams())
 		return
 	}
 
+	c.log(ctx, "kronk cache eviction", "key", event.Key, "status", "unload-started", "active-streams", event.Value.ActiveStreams())
+
 	if err := event.Value.Unload(ctx); err != nil {
 		c.log(ctx, "kronk cache eviction", "key", event.Key, "ERROR", err)
 	}
+
+	c.log(ctx, "kronk cache eviction", "key", event.Key, "status", "unload-finished")
 
 	c.itemsInCache.Add(-1)
 }

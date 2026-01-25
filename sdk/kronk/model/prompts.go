@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,21 +24,21 @@ import (
 )
 
 func (m *Model) applyRequestJinjaTemplate(ctx context.Context, d D) (string, [][]byte, error) {
-	// We need to identify if there is media in the request. If there is
-	// we want to replace the actual media with a media marker `<__media__>`.
-	// We will move the media to it's own slice. The next call that will happen
-	// is `processBitmap` which will process the prompt and media.
+	switch m.projFile {
+	case "":
+		// Text-only: pass D directly to gonja (handles named map types via reflection).
+		prompt, err := m.applyJinjaTemplate(ctx, d)
+		if err != nil {
+			return "", nil, err
+		}
+		return prompt, nil, nil
 
-	// Deep copy and normalize d to ensure all nested maps are plain
-	// map[string]any types. This avoids reflection errors in gonja when
-	// templates call .items() on nested structures like tool_calls arguments.
-	normalized := deepNormalize(d)
-
-	var media [][]byte
-
-	if msgs, ok := normalized["messages"].([]any); ok {
-		for _, msg := range msgs {
-			if doc, ok := msg.(map[string]any); ok {
+	default:
+		// Media models: extract []byte content and replace with markers.
+		// The input d is already cloned by prepareMediaContext, so mutation is safe.
+		var media [][]byte
+		if msgs, ok := d["messages"].([]D); ok {
+			for _, doc := range msgs {
 				if content, exists := doc["content"]; exists {
 					if value, ok := content.([]byte); ok {
 						media = append(media, value)
@@ -46,14 +47,14 @@ func (m *Model) applyRequestJinjaTemplate(ctx context.Context, d D) (string, [][
 				}
 			}
 		}
-	}
 
-	prompt, err := m.applyJinjaTemplate(ctx, normalized)
-	if err != nil {
-		return "", nil, err
-	}
+		prompt, err := m.applyJinjaTemplate(ctx, d)
+		if err != nil {
+			return "", nil, err
+		}
 
-	return prompt, media, nil
+		return prompt, media, nil
+	}
 }
 
 func (m *Model) applyJinjaTemplate(ctx context.Context, d map[string]any) (string, error) {
@@ -64,11 +65,15 @@ func (m *Model) applyJinjaTemplate(ctx context.Context, d map[string]any) (strin
 		return "", errors.New("apply-jinja-template: no template found")
 	}
 
-	gonja.DefaultLoader = &noFSLoader{}
+	// Compile template once and reuse across all requests.
+	m.templateOnce.Do(func() {
+		gonja.DefaultLoader = &noFSLoader{}
+		tmpl, err := newTemplateWithFixedItems(m.template.Script)
+		m.compiledTmpl = &compiledTemplate{tmpl: tmpl, err: err}
+	})
 
-	t, err := newTemplateWithFixedItems(m.template.Script)
-	if err != nil {
-		return "", fmt.Errorf("apply-jinja-template: failed to parse template: %w", err)
+	if m.compiledTmpl.err != nil {
+		return "", fmt.Errorf("apply-jinja-template: failed to parse template: %w", m.compiledTmpl.err)
 	}
 
 	// Ensure add_generation_prompt is set (default true if not specified).
@@ -82,7 +87,7 @@ func (m *Model) applyJinjaTemplate(ctx context.Context, d map[string]any) (strin
 
 	data := exec.NewContext(d)
 
-	s, err := t.ExecuteToString(data)
+	s, err := m.compiledTmpl.tmpl.ExecuteToString(data)
 	if err != nil {
 		return "", fmt.Errorf("apply-jinja-template: failed to execute template: %w", err)
 	}
@@ -111,7 +116,8 @@ func (nl *noFSLoader) Inherit(from string) (loaders.Loader, error) {
 // newTemplateWithFixedItems creates a gonja template with a fixed items() method
 // that properly returns key-value pairs (the built-in one only returns values).
 func newTemplateWithFixedItems(source string) (*exec.Template, error) {
-	rootID := fmt.Sprintf("root-%s", string(sha256.New().Sum([]byte(source))))
+	sum := sha256.Sum256([]byte(source))
+	rootID := "root-" + hex.EncodeToString(sum[:])
 
 	loader, err := loaders.NewFileSystemLoader("")
 	if err != nil {
@@ -250,64 +256,4 @@ func readJinjaTemplate(fileName string) (string, error) {
 	}
 
 	return string(data), nil
-}
-
-// =============================================================================
-
-// deepNormalize recursively converts all nested structures to plain Go types
-// (map[string]any and []any) to avoid reflection errors in gonja templates.
-// Returns plain map[string]any, NOT the named type D.
-func deepNormalize(v any) map[string]any {
-	switch m := v.(type) {
-	case D:
-		result := make(map[string]any, len(m))
-		for k, val := range m {
-			result[k] = deepNormalizeValue(val)
-		}
-		return result
-	case map[string]any:
-		result := make(map[string]any, len(m))
-		for k, val := range m {
-			result[k] = deepNormalizeValue(val)
-		}
-		return result
-	}
-	return nil
-}
-
-func deepNormalizeValue(v any) any {
-	switch val := v.(type) {
-	case map[string]any:
-		result := make(map[string]any, len(val))
-		for k, v := range val {
-			result[k] = deepNormalizeValue(v)
-		}
-		return result
-	case D:
-		result := make(map[string]any, len(val))
-		for k, v := range val {
-			result[k] = deepNormalizeValue(v)
-		}
-		return result
-	case []any:
-		result := make([]any, len(val))
-		for i, v := range val {
-			result[i] = deepNormalizeValue(v)
-		}
-		return result
-	case []D:
-		result := make([]any, len(val))
-		for i, v := range val {
-			result[i] = deepNormalizeValue(v)
-		}
-		return result
-	case []map[string]any:
-		result := make([]any, len(val))
-		for i, v := range val {
-			result[i] = deepNormalizeValue(v)
-		}
-		return result
-	default:
-		return v
-	}
 }

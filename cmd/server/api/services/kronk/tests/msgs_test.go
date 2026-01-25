@@ -2,6 +2,7 @@ package chatapi_test
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/msgsapp"
@@ -313,8 +314,18 @@ func (v msgsResponseValidator) warnContainsInContent(substr string) msgsResponse
 			return v
 		}
 	}
-	v.errors = append(v.errors, "[WARN] content does not contain '"+substr+"'")
+	v.errors = append(v.errors, "[WARN] content does not contain '"+substr+"', got: "+v.extractContent())
 	return v
+}
+
+func (v msgsResponseValidator) extractContent() string {
+	var texts []string
+	for _, block := range v.resp.Content {
+		if block.Type == "text" && block.Text != "" {
+			texts = append(texts, block.Text)
+		}
+	}
+	return strings.Join(texts, " | ")
 }
 
 func (v msgsResponseValidator) result(t *testing.T) string {

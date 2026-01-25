@@ -35,8 +35,9 @@ type chatJob struct {
 
 // slot represents a processing slot for parallel inference.
 type slot struct {
-	id    int
-	seqID llama.SeqId
+	id     int
+	seqID  llama.SeqId
+	seqIDs []llama.SeqId // Pre-allocated for batchAdd calls
 
 	job     *chatJob
 	proc    *processor
@@ -113,6 +114,7 @@ type batchEngine struct {
 	slots      []*slot
 	batch      llama.Batch
 	requestQ   chan *chatJob
+	wakeCh     chan struct{}
 	shutdownCh chan struct{}
 	wg         sync.WaitGroup
 	stopped    atomic.Bool
@@ -139,10 +141,12 @@ func newBatchEngine(m *Model, nSlots int) *batchEngine {
 	// Initialize slots.
 	slots := make([]*slot, nSlots)
 	for i := range slots {
+		seqID := llama.SeqId(i + cacheSeqs)
 		slots[i] = &slot{
-			id:    i,
-			seqID: llama.SeqId(i + cacheSeqs),
-			proc:  newProcessor(m),
+			id:     i,
+			seqID:  seqID,
+			seqIDs: []llama.SeqId{seqID}, // Pre-allocate for batchAdd
+			proc:   newProcessor(m),
 		}
 	}
 
@@ -152,6 +156,7 @@ func newBatchEngine(m *Model, nSlots int) *batchEngine {
 		slots:      slots,
 		batch:      batch,
 		requestQ:   make(chan *chatJob, nSlots*2),
+		wakeCh:     make(chan struct{}, 1),
 		shutdownCh: make(chan struct{}),
 	}
 }
@@ -192,6 +197,10 @@ func (e *batchEngine) freeBatch() {
 func (e *batchEngine) submit(job *chatJob) error {
 	select {
 	case e.requestQ <- job:
+		select {
+		case e.wakeCh <- struct{}{}:
+		default:
+		}
 		return nil
 
 	case <-e.shutdownCh:
@@ -226,13 +235,7 @@ func (e *batchEngine) processLoop(ctx context.Context) {
 			e.drainSlots()
 			return
 
-		case job := <-e.requestQ:
-			// Requeue job for fillSlots to handle in correct order
-			// (after batchClear but before decode).
-			// Wake up the goroutine instantly.
-			e.requestQ <- job
-
-			// This will immediately trigger the timer.
+		case <-e.wakeCh:
 			timer.Reset(0)
 
 		case <-timer.C:
@@ -295,7 +298,7 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 		}
 
 		s.iBatch = e.batch.NTokens
-		batchAdd(&e.batch, s.sampled, s.nPast, []llama.SeqId{s.seqID}, true)
+		batchAdd(&e.batch, s.sampled, s.nPast, s.seqIDs, true)
 		s.nPast++
 		s.nDecoded++
 	}
@@ -465,7 +468,7 @@ func (e *batchEngine) addPrefillChunk(s *slot) bool {
 	for i := range chunkSize {
 		tok := s.prefillTokens[s.nPrefilled+i]
 		isLast := s.nPrefilled+i == len(s.prefillTokens)-1
-		batchAdd(&e.batch, tok, s.nPast, []llama.SeqId{s.seqID}, isLast)
+		batchAdd(&e.batch, tok, s.nPast, s.seqIDs, isLast)
 		s.nPast++
 	}
 	s.nPrefilled += chunkSize
@@ -573,25 +576,6 @@ func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 		return
 	}
 
-	// Calculate output tokens for logging.
-	outputTokens := s.reasonTokens + s.completionTokens
-
-	// Stream response if not tooling.
-	if s.toolFlag == 0 {
-		// Skip unnecessary CRLF at mode transitions.
-		if e.model.isUnncessaryCRLF(s.reasonFlag, s.completionFlag, resp.content) {
-			s.iBatch = -1
-			return
-		}
-
-		// Per OpenAI spec, usage is only sent in the final response, not deltas.
-		err := e.model.sendDeltaResponse(s.job.ctx, s.job.ch, s.job.id, s.job.object, 0, "", resp.content, s.reasonFlag, outputTokens, s.currentLogprob)
-		if err != nil {
-			e.finishSlot(s, err)
-			return
-		}
-	}
-
 	// Store content for final response.
 	switch {
 	case s.reasonFlag > 0:
@@ -611,6 +595,25 @@ func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 
 	default:
 		s.completionTokens++
+	}
+
+	// Calculate output tokens for logging (after incrementing counts).
+	outputTokens := s.reasonTokens + s.completionTokens
+
+	// Stream response if not tooling.
+	if s.toolFlag == 0 {
+		// Skip unnecessary CRLF at mode transitions.
+		if e.model.isUnncessaryCRLF(s.reasonFlag, s.completionFlag, resp.content) {
+			s.iBatch = -1
+			return
+		}
+
+		// Per OpenAI spec, usage is only sent in the final response, not deltas.
+		err := e.model.sendDeltaResponse(s.job.ctx, s.job.ch, s.job.id, s.job.object, 0, "", resp.content, s.reasonFlag, outputTokens, s.currentLogprob)
+		if err != nil {
+			e.finishSlot(s, err)
+			return
+		}
 	}
 
 	// Check max tokens.
@@ -638,13 +641,15 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		s.span.End()
 		s.reset()
 		e.freeSlotResources(s)
-		e.model.activeStreams.Add(-1)
+
+		remaining := e.model.activeStreams.Add(-1)
 
 		e.model.log(ctx, "batch-engine",
 			"status", "slot-finished",
 			"slot", slotID,
 			"seq", seqID,
 			"id", jobID,
+			"active_streams", remaining,
 		)
 	}()
 
@@ -743,6 +748,19 @@ func (e *batchEngine) sendSlotError(s *slot, err error) {
 
 // drainSlots finishes all active slots and pending jobs during shutdown.
 func (e *batchEngine) drainSlots() {
+	ctx := context.Background()
+
+	activeCount := 0
+	for _, s := range e.slots {
+		if s.active {
+			activeCount++
+		}
+	}
+
+	pendingCount := len(e.requestQ)
+
+	e.model.log(ctx, "batch-engine", "status", "drain-started", "active_slots", activeCount, "pending_jobs", pendingCount)
+
 	for _, s := range e.slots {
 		if s.active {
 			e.finishSlot(s, fmt.Errorf("drain-slots: engine shutting down"))
@@ -750,12 +768,15 @@ func (e *batchEngine) drainSlots() {
 	}
 
 	// Drain pending jobs that were never assigned to a slot.
+	drained := 0
 	for {
 		select {
 		case job := <-e.requestQ:
 			close(job.ch)
 			e.model.activeStreams.Add(-1)
+			drained++
 		default:
+			e.model.log(ctx, "batch-engine", "status", "drain-finished", "drained_pending", drained)
 			return
 		}
 	}

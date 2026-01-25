@@ -16,8 +16,15 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
+	"github.com/nikolalohinski/gonja/v2/exec"
 	"go.opentelemetry.io/otel/attribute"
 )
+
+// compiledTemplate holds a pre-compiled Jinja template for reuse across requests.
+type compiledTemplate struct {
+	tmpl *exec.Template
+	err  error
+}
 
 // TemplateRetriever returns a configured template for a model.
 type TemplateRetriever interface {
@@ -35,6 +42,8 @@ type Model struct {
 	mem             llama.Memory
 	batch           *batchEngine
 	template        Template
+	compiledTmpl    *compiledTemplate
+	templateOnce    sync.Once
 	projFile        string
 	modelInfo       ModelInfo
 	activeStreams   atomic.Int32
@@ -43,8 +52,10 @@ type Model struct {
 	cacheMu         sync.RWMutex
 	sysPromptHash   string
 	sysPromptTokens int
+	sysPromptLen    int
 	firstMsgHash    string
 	firstMsgTokens  int
+	firstMsgLen     int
 	firstMsgSeqID   llama.SeqId // 0 if only FMC enabled, 1 if both enabled
 }
 
@@ -262,6 +273,8 @@ func (m *Model) Unload(ctx context.Context) error {
 		m.batch.stop(ctx)
 	}
 
+	m.log(ctx, "unload", "status", "waiting-for-streams", "active", m.activeStreams.Load())
+
 	for m.activeStreams.Load() > 0 {
 		select {
 		case <-ctx.Done():
@@ -270,6 +283,8 @@ func (m *Model) Unload(ctx context.Context) error {
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
+
+	m.log(ctx, "unload", "status", "streams-drained")
 
 	// Free batch buffer before context (batch references context internals).
 	if hasBatch {
