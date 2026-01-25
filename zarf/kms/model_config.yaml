@@ -50,15 +50,13 @@
 # However, llama.cpp doesn't currently support the MLX framework.
 
 # ==============================================================================
-# SLOT MEMORY COST FORMULA
+# SLOT MEMORY AND TOTAL VRAM COST FORMULA
 #
 # KV memory per slot = n_ctx × (K + V bytes) × n_layers
 #
-# Example calculations:
-#
-# Model   Context   Memory per Slot
-# 7B      8K        ~537 MB
-# 70B     8K        ~1.3 GB
+# NOTE: These figures are for KV cache VRAM only (when offload-kqv: true).
+# Model weights require additional VRAM: ~7GB (7B Q8) or ~70GB (70B Q8).
+# Total VRAM = model weights + KV cache.
 #
 # Key finding: Memory is statically allocated upfront when the model loads,
 # based on n_ctx × n_seq_max. Reserving slots consumes memory whether or not
@@ -68,6 +66,27 @@
 # user message cache) would add +537MB (7B) to +1.3GB (70B) overhead. Since the
 # slots would rarely both be used simultaneously, you'd be "paying for memory
 # you don't benefit from."
+#
+# Example calculations:
+#
+# Model   ContextWindow   Memory per Slot  NSeqMax (Slots)
+# 7B      8K              ~537 MB VRAM     2
+# 70B     8K              ~1.3 GB VRAM     2
+#
+# No Caching:
+# Total sequences allocated: 2 (no cache)
+# 7B:  Slot Memory (2 × 537MB) ~1.07GB: Total VRAM: ~8.1GB
+# 70B: Slot Memory (2 × 1.3GB) ~2.6GB : Total VRAM: ~72.6GB
+#
+# First Memory Caching (FMC):
+# Total sequences allocated: 2 + 1 = 3 (cache)
+# 7B:  Slot Memory (3 × 537MB) ~1.6GB: Total VRAM: ~8.6GB
+# 70B: Slot Memory (3 × 1.3GB) ~3.9GB: Total VRAM: ~73.9GB
+#
+# Both SPC and FMC:
+# Total sequences allocated: 2 + 2 = 4 (cache)
+# 7B:  Slot Memory (4 × 537MB) ~2.15GB: Total VRAM: ~9.2GB
+# 70B: Slot Memory (4 × 1.3GB) ~5.2GB:  Total VRAM: ~75.2GB
 
 # ==============================================================================
 # CONFIGURATION NOTES

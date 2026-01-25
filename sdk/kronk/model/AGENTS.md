@@ -82,7 +82,7 @@ Sequences are isolated partitions in the shared KV cache memory. Each request's 
 When caching is enabled, sequence 0 (and optionally 1) are reserved for cached prompts, so slot seqIDs are offset:
 
 ```
-NSeqMax2 = 2
+NSeqMax = 2
 Without caching:        slot[0].seqID=0, slot[1].seqID=1
 With SystemPromptCache: slot[0].seqID=1, slot[1].seqID=2  SPC Cached in seqID=0
 With FirstMsgCache:     slot[0].seqID=1, slot[1].seqID=2  FMC Cached in seqID=0
