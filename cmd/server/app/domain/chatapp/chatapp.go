@@ -53,6 +53,7 @@ func (a *app) chatCompletions(ctx context.Context, r *http.Request) web.Encoder 
 	defer cancel()
 
 	d := model.MapToModelD(req)
+	d = a.cache.ApplyDefaults(modelID, d)
 
 	if _, err := krn.ChatStreamingHTTP(ctx, web.GetWriter(ctx), d); err != nil {
 		return errs.New(errs.Internal, err)

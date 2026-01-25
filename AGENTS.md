@@ -115,6 +115,17 @@ Detailed documentation for the core inference packages is maintained in their re
 
 **Input format conversion**: Both streaming and non-streaming Response APIs must call `convertInputToMessages(d)` to handle OpenAI Responses `input` field format
 
+**Default context parameters**: Chat and Response handlers call `cache.ApplyDefaults()` to merge per-model sampling defaults from `model_config.yaml` into requests
+
+## Sampling Parameter Defaults
+
+Default sampling parameters are defined in two places that **must stay in sync**:
+
+- **Source of truth**: `sdk/kronk/model/params.go` (Go constants `defTemp`, `defTopK`, etc.)
+- **Documentation**: `zarf/kms/model_config.yaml` (`default-context` section in example)
+
+When updating default values, update both files. The cache package (`cmd/server/app/sdk/cache/cache.go`) uses `default-context` from the YAML to apply per-model overrides via `ApplyDefaults()`
+
 ## Reference Threads
 
 See `THREADS.md` for important past conversations worth preserving.

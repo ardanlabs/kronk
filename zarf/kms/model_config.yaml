@@ -19,6 +19,28 @@
 #   system-prompt-cache: false           # Cache system prompt KV state for reuse across requests
 #   first-message-cache: false           # Cache first user message KV state (for clients like Cline)
 #   cache-min-tokens: 100                # Min tokens before caching (default: 100, applies to both cache types)
+#   default-context:                     # Default sampling parameters (request values take precedence)
+#     temperature: 0.8                   # Randomness of output (default: 0.8)
+#     top_k: 40                          # Limit to top K probable tokens (default: 40)
+#     top_p: 0.9                         # Nucleus sampling threshold (default: 0.9)
+#     min_p: 0.0                         # Dynamic sampling threshold (default: 0.0)
+#     max_tokens: 0                      # Max tokens to generate (0 = no limit)
+#     repeat_penalty: 1.1                # Penalty for repeated tokens (default: 1.1)
+#     repeat_last_n: 64                  # Tokens to consider for repeat penalty (default: 64)
+#     dry_multiplier: 0.0                # DRY sampler multiplier (0 = disabled)
+#     dry_base: 1.75                     # DRY exponential base (default: 1.75)
+#     dry_allowed_length: 2              # Min n-gram length for DRY (default: 2)
+#     dry_penalty_last_n: 0              # DRY context limit (0 = full context)
+#     xtc_probability: 0.0               # XTC culling probability (0 = disabled)
+#     xtc_threshold: 0.1                 # XTC probability threshold (default: 0.1)
+#     xtc_min_keep: 1                    # Min tokens to keep after XTC (default: 1)
+#     enable_thinking: "true"            # Enable thinking mode (default: "true")
+#     reasoning_effort: "medium"         # GPT reasoning: none, minimal, low, medium, high
+#     return_prompt: false               # Include prompt in response (default: false)
+#     include_usage: true                # Include token usage in streaming (default: true)
+#     logprobs: false                    # Return log probabilities (default: false)
+#     top_logprobs: 0                    # Number of top logprobs to return (0-5)
+#     stream: false                      # Stream response as SSE (default: false)
 
 # ==============================================================================
 # MODEL SELECTION NOTES

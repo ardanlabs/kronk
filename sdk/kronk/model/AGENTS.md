@@ -14,7 +14,7 @@ Low-level model inference using yzma (llama.cpp Go bindings).
 - `media.go` - Vision/audio media processing
 - `processor.go` - Template-specific token processors
 - `prompts.go` - Prompt formatting
-- `params.go` - Sampling parameters
+- `params.go` - Sampling parameters (defaults must stay in sync with `zarf/kms/model_config.yaml`)
 - `logprobs.go` - Token log probability extraction
 - `check.go` - Model validation
 - `sysprompt.go` - System prompt KV cache management
