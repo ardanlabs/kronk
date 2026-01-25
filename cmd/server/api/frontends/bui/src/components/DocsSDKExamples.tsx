@@ -1,25 +1,4 @@
-import { useEffect, useRef } from 'react';
-import Prism from 'prismjs';
-import 'prismjs/components/prism-go';
-import 'prismjs/themes/prism-tomorrow.css';
-
-function GoCode({ children }: { children: string }) {
-  const codeRef = useRef<HTMLElement>(null);
-
-  useEffect(() => {
-    if (codeRef.current) {
-      Prism.highlightElement(codeRef.current);
-    }
-  }, [children]);
-
-  return (
-    <pre className="code-go">
-      <code ref={codeRef} className="language-go">
-        {children}
-      </code>
-    </pre>
-  );
-}
+import CodeBlock from './CodeBlock';
 
 const questionExample = `// This example shows you a basic program of using Kronk to ask a model a question.
 //
@@ -1715,43 +1694,43 @@ export default function DocsSDKExamples() {
           <div className="card" id="example-question">
             <h3>Question</h3>
             <p className="doc-description">Ask a single question to a model</p>
-            <GoCode>{questionExample}</GoCode>
+            <CodeBlock code={questionExample} language="go" />
           </div>
 
           <div className="card" id="example-chat">
             <h3>Chat</h3>
             <p className="doc-description">Interactive chat with conversation history</p>
-            <GoCode>{chatExample}</GoCode>
+            <CodeBlock code={chatExample} language="go" />
           </div>
 
           <div className="card" id="example-response">
             <h3>Response</h3>
             <p className="doc-description">Interactive chat using the Response API with tool calling</p>
-            <GoCode>{responseExample}</GoCode>
+            <CodeBlock code={responseExample} language="go" />
           </div>
 
           <div className="card" id="example-embedding">
             <h3>Embedding</h3>
             <p className="doc-description">Generate embeddings for semantic search</p>
-            <GoCode>{embeddingExample}</GoCode>
+            <CodeBlock code={embeddingExample} language="go" />
           </div>
 
           <div className="card" id="example-rerank">
             <h3>Rerank</h3>
             <p className="doc-description">Rerank documents by relevance to a query</p>
-            <GoCode>{rerankExample}</GoCode>
+            <CodeBlock code={rerankExample} language="go" />
           </div>
 
           <div className="card" id="example-vision">
             <h3>Vision</h3>
             <p className="doc-description">Analyze images using vision models</p>
-            <GoCode>{visionExample}</GoCode>
+            <CodeBlock code={visionExample} language="go" />
           </div>
 
           <div className="card" id="example-audio">
             <h3>Audio</h3>
             <p className="doc-description">Process audio files using audio models</p>
-            <GoCode>{audioExample}</GoCode>
+            <CodeBlock code={audioExample} language="go" />
           </div>
         </div>
 

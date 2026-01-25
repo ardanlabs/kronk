@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { api } from '../services/api';
 import { useModelList } from '../contexts/ModelListContext';
+import CodeBlock from './CodeBlock';
 import type { ChatMessage, ChatUsage, ChatToolCall } from '../types';
 
 interface DisplayMessage {
@@ -9,39 +10,6 @@ interface DisplayMessage {
   reasoning?: string;
   usage?: ChatUsage;
   toolCalls?: ChatToolCall[];
-}
-
-function highlightCode(code: string, lang: string): string {
-  const keywords: Record<string, string[]> = {
-    go: ['func', 'return', 'if', 'else', 'for', 'range', 'switch', 'case', 'default', 'break', 'continue', 'package', 'import', 'var', 'const', 'type', 'struct', 'interface', 'map', 'chan', 'go', 'defer', 'select', 'nil', 'true', 'false', 'make', 'new', 'len', 'cap', 'append', 'copy', 'delete', 'error'],
-    javascript: ['function', 'return', 'if', 'else', 'for', 'while', 'switch', 'case', 'default', 'break', 'continue', 'var', 'let', 'const', 'class', 'extends', 'import', 'export', 'from', 'async', 'await', 'try', 'catch', 'throw', 'new', 'this', 'null', 'undefined', 'true', 'false', 'typeof', 'instanceof'],
-    typescript: ['function', 'return', 'if', 'else', 'for', 'while', 'switch', 'case', 'default', 'break', 'continue', 'var', 'let', 'const', 'class', 'extends', 'import', 'export', 'from', 'async', 'await', 'try', 'catch', 'throw', 'new', 'this', 'null', 'undefined', 'true', 'false', 'typeof', 'instanceof', 'interface', 'type', 'enum', 'implements', 'private', 'public', 'protected', 'readonly'],
-    python: ['def', 'return', 'if', 'elif', 'else', 'for', 'while', 'break', 'continue', 'class', 'import', 'from', 'as', 'try', 'except', 'raise', 'with', 'lambda', 'None', 'True', 'False', 'and', 'or', 'not', 'in', 'is', 'pass', 'yield', 'async', 'await'],
-    rust: ['fn', 'return', 'if', 'else', 'for', 'while', 'loop', 'match', 'break', 'continue', 'let', 'mut', 'const', 'struct', 'enum', 'impl', 'trait', 'use', 'mod', 'pub', 'self', 'Self', 'true', 'false', 'Some', 'None', 'Ok', 'Err', 'async', 'await', 'move', 'where'],
-    sql: ['SELECT', 'FROM', 'WHERE', 'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'DROP', 'ALTER', 'TABLE', 'INDEX', 'JOIN', 'LEFT', 'RIGHT', 'INNER', 'OUTER', 'ON', 'AND', 'OR', 'NOT', 'NULL', 'ORDER', 'BY', 'GROUP', 'HAVING', 'LIMIT', 'OFFSET', 'AS', 'DISTINCT', 'COUNT', 'SUM', 'AVG', 'MAX', 'MIN'],
-  };
-
-  const langKeywords = keywords[lang.toLowerCase()] || keywords['go'] || [];
-  
-  let escaped = code
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-
-  escaped = escaped.replace(/(\/\/.*$|#.*$)/gm, '<span class="code-comment">$1</span>');
-  escaped = escaped.replace(/(\/\*[\s\S]*?\*\/)/g, '<span class="code-comment">$1</span>');
-  escaped = escaped.replace(/("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)/g, '<span class="code-string">$1</span>');
-  escaped = escaped.replace(/\b(\d+\.?\d*)\b/g, '<span class="code-number">$1</span>');
-  
-  if (langKeywords.length > 0) {
-    const keywordPattern = new RegExp(`\\b(${langKeywords.join('|')})\\b`, 'g');
-    escaped = escaped.replace(keywordPattern, '<span class="code-keyword">$1</span>');
-  }
-
-  escaped = escaped.replace(/\b([A-Z][a-zA-Z0-9]*)\b/g, '<span class="code-type">$1</span>');
-  escaped = escaped.replace(/\b([a-z_][a-zA-Z0-9_]*)\s*\(/g, '<span class="code-function">$1</span>(');
-
-  return escaped;
 }
 
 function renderContent(content: string): JSX.Element[] {
@@ -59,14 +27,11 @@ function renderContent(content: string): JSX.Element[] {
 
     const lang = match[1] || 'text';
     const code = match[2].trim();
-    const highlighted = highlightCode(code, lang);
 
+    // Use CodeBlock component for code display with collapsible enabled
     parts.push(
-      <div key={key++}>
-        <div className="chat-code-header">
-          <span className="chat-code-lang">{lang}</span>
-        </div>
-        <pre><code dangerouslySetInnerHTML={{ __html: highlighted }} /></pre>
+      <div key={key++} className="chat-code-block-wrapper">
+        <CodeBlock code={code} language={lang || 'go'} collapsible={true} />
       </div>
     );
 

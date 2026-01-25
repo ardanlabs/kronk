@@ -71,28 +71,7 @@ func Run() error {
 func generateExamplesTSX(exs []example) string {
 	var b strings.Builder
 
-	b.WriteString(`import { useEffect, useRef } from 'react';
-import Prism from 'prismjs';
-import 'prismjs/components/prism-go';
-import 'prismjs/themes/prism-tomorrow.css';
-
-function GoCode({ children }: { children: string }) {
-  const codeRef = useRef<HTMLElement>(null);
-
-  useEffect(() => {
-    if (codeRef.current) {
-      Prism.highlightElement(codeRef.current);
-    }
-  }, [children]);
-
-  return (
-    <pre className="code-go">
-      <code ref={codeRef} className="language-go">
-        {children}
-      </code>
-    </pre>
-  );
-}
+	b.WriteString(`import CodeBlock from './CodeBlock';
 
 `)
 
@@ -119,7 +98,7 @@ function GoCode({ children }: { children: string }) {
 		b.WriteString(fmt.Sprintf("\n          <div className=\"card\" id=\"%s\">\n", anchor))
 		b.WriteString(fmt.Sprintf("            <h3>%s</h3>\n", ex.displayName))
 		b.WriteString(fmt.Sprintf("            <p className=\"doc-description\">%s</p>\n", ex.description))
-		b.WriteString(fmt.Sprintf("            <GoCode>{%s}</GoCode>\n", varName))
+		b.WriteString(fmt.Sprintf("            <CodeBlock code={%s} language=\"go\" />\n", varName))
 		b.WriteString("          </div>\n")
 	}
 
