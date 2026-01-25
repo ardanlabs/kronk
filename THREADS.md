@@ -15,7 +15,3 @@ Threads worth preserving for future reference.
 ## Streaming Architecture
 
 ## Batch Engine
-
-## Prompt Processing
-
-[GLM-4.7-Flash-Q8_0 work](https://ampcode.com/threads/T-019bdc33-4cff-74dc-b76a-aa4c7569f4e0) - Trying to get this model to work. (The only real fix is to either)

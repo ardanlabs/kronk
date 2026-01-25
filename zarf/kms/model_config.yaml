@@ -16,8 +16,9 @@
 #   op-offload: true                     # Offload tensor operations to GPU (false = keep on CPU)
 #   ngpu-layers: 0                       # GPU layers to offload (0 = all, -1 = none, N = specific count)
 #   split-mode: row                      # Multi-GPU split: none, layer, row (row recommended for MoE models)
-#   system-prompt-cache: false           # Cache first message KV state for reuse across requests (any role)
-#   system-prompt-cache-min-tokens: 100  # Min tokens before caching first message (default: 100)
+#   system-prompt-cache: false           # Cache system prompt KV state for reuse across requests
+#   first-message-cache: false           # Cache first user message KV state (for clients like Cline)
+#   cache-min-tokens: 100                # Min tokens before caching (default: 100, applies to both cache types)
 
 # ==============================================================================
 # MODEL SELECTION NOTES

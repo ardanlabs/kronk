@@ -80,6 +80,8 @@ The Kronk Model Server is an OpenAI-compatible model server for chat completions
 | **Model Selection** | Dynamically select models per request |
 | **Automatic Model Loading** | Models loaded on-demand from cache |
 | **Tool Calling** | Function/tool calling support with JSON arguments |
+| **Logprobs Support** | Token log probabilities with `logprobs` and `top_logprobs` (0-5) parameters |
+| **SSE Keep-Alive** | Ping events every 15 seconds during streaming to prevent connection timeouts |
 
 #### Responses (`/v1/responses`)
 
@@ -107,6 +109,17 @@ The Kronk Model Server is an OpenAI-compatible model server for chat completions
 | **Model Selection** | Dynamically select reranker models per request |
 | **Top-N Filtering** | Return only the top N most relevant results |
 | **Document Return** | Optionally include document text in results |
+
+#### Messages (`/v1/messages`)
+
+| Feature | Description |
+|---------|-------------|
+| **Anthropic Compatibility** | Compatible with Anthropic Messages API format |
+| **Streaming Support** | Server-Sent Events with Anthropic-style event types (`message_start`, `content_block_delta`, etc.) |
+| **Non-Streaming** | Standard request/response mode |
+| **Vision Support** | Image input support for multimodal models |
+| **Tool Calling** | Function/tool calling support |
+| **Model Selection** | Dynamically select models per request |
 
 ### Server Management Features
 
@@ -301,6 +314,7 @@ Available Commands:
 | **OpenWebUI** | Full compatibility with OpenWebUI for browser-based chat interface |
 | **Cline** | Compatible with Cline AI coding assistant |
 | **OpenAI SDK** | Compatible with OpenAI client libraries |
+| **Anthropic SDK** | Compatible with Anthropic client libraries via Messages API |
 | **GGUF Models** | Support for all GGUF format models from Hugging Face |
 | **yzma** | Direct integration with llama.cpp via the yzma module |
 

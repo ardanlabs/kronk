@@ -1,8 +1,16 @@
 import { useState, useEffect, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { api } from '../services/api';
 import { useModelList } from '../contexts/ModelListContext';
 import CodeBlock from './CodeBlock';
-import type { ChatMessage, ChatUsage, ChatToolCall } from '../types';
+import type { ChatMessage, ChatUsage, ChatToolCall, ChatContentPart } from '../types';
+
+interface AttachedFile {
+  type: 'image' | 'audio';
+  name: string;
+  dataUrl: string; // data:mime;base64,...
+}
 
 interface DisplayMessage {
   role: 'user' | 'assistant';
@@ -10,67 +18,70 @@ interface DisplayMessage {
   reasoning?: string;
   usage?: ChatUsage;
   toolCalls?: ChatToolCall[];
+  attachments?: AttachedFile[];
 }
 
-function renderContent(content: string): JSX.Element[] {
-  const parts: JSX.Element[] = [];
-  const codeBlockRegex = /```(\w*)\n?([\s\S]*?)```/g;
-  let lastIndex = 0;
-  let match;
-  let key = 0;
+// Pre-process content to handle in-progress code blocks during streaming
+function preprocessContent(content: string): string {
+  // Check if there's an unclosed code block at the end
+  const openFences = (content.match(/```/g) || []).length;
+  if (openFences % 2 !== 0) {
+    // Odd number of ```, meaning there's an unclosed block - close it for rendering
+    return content + '\n```';
+  }
+  return content;
+}
 
-  while ((match = codeBlockRegex.exec(content)) !== null) {
-    if (match.index > lastIndex) {
-      const text = content.slice(lastIndex, match.index);
-      parts.push(<span key={key++}>{renderInlineCode(text)}</span>);
+// Custom components for ReactMarkdown
+const markdownComponents = {
+  code({ node, className, children, ...props }: any) {
+    const match = /language-(\w+)/.exec(className || '');
+    const isInline = !match && !className;
+    
+    if (isInline) {
+      return <code className="inline-code" {...props}>{children}</code>;
     }
-
-    const lang = match[1] || 'text';
-    const code = match[2].trim();
-
-    // Use CodeBlock component for code display with collapsible enabled
-    parts.push(
-      <div key={key++} className="chat-code-block-wrapper">
-        <CodeBlock code={code} language={lang || 'go'} collapsible={true} />
+    
+    const language = match ? match[1] : 'text';
+    const codeString = String(children).replace(/\n$/, '');
+    
+    return (
+      <div className="chat-code-block-wrapper">
+        <CodeBlock code={codeString} language={language} collapsible={true} />
       </div>
     );
+  },
+  // Style other markdown elements
+  h1: ({ children }: any) => <h1 className="markdown-h1">{children}</h1>,
+  h2: ({ children }: any) => <h2 className="markdown-h2">{children}</h2>,
+  h3: ({ children }: any) => <h3 className="markdown-h3">{children}</h3>,
+  ul: ({ children }: any) => <ul className="markdown-list">{children}</ul>,
+  ol: ({ children }: any) => <ol className="markdown-list markdown-list-ordered">{children}</ol>,
+  li: ({ children }: any) => <li className="markdown-list-item">{children}</li>,
+  p: ({ children }: any) => <p className="markdown-paragraph">{children}</p>,
+  strong: ({ children }: any) => <strong className="markdown-bold">{children}</strong>,
+  em: ({ children }: any) => <em className="markdown-italic">{children}</em>,
+  blockquote: ({ children }: any) => <blockquote className="markdown-blockquote">{children}</blockquote>,
+  a: ({ href, children }: any) => <a href={href} className="markdown-link" target="_blank" rel="noopener noreferrer">{children}</a>,
+};
 
-    lastIndex = match.index + match[0].length;
-  }
-
-  if (lastIndex < content.length) {
-    const text = content.slice(lastIndex);
-    parts.push(<span key={key++}>{renderInlineCode(text)}</span>);
-  }
-
-  return parts;
-}
-
-function renderInlineCode(text: string): JSX.Element[] {
-  const parts: JSX.Element[] = [];
-  const inlineCodeRegex = /`([^`]+)`/g;
-  let lastIndex = 0;
-  let match;
-  let key = 0;
-
-  while ((match = inlineCodeRegex.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(<span key={key++}>{text.slice(lastIndex, match.index)}</span>);
-    }
-    parts.push(<code key={key++}>{match[1]}</code>);
-    lastIndex = match.index + match[0].length;
-  }
-
-  if (lastIndex < text.length) {
-    parts.push(<span key={key++}>{text.slice(lastIndex)}</span>);
-  }
-
-  return parts;
+function renderContent(content: string): JSX.Element {
+  const processedContent = preprocessContent(content);
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={markdownComponents}
+    >
+      {processedContent}
+    </ReactMarkdown>
+  );
 }
 
 export default function Chat() {
   const { models, loading: modelsLoading, loadModels } = useModelList();
-  const [selectedModel, setSelectedModel] = useState<string>('');
+  const [selectedModel, setSelectedModel] = useState<string>(() => {
+    return localStorage.getItem('kronk_chat_model') || '';
+  });
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
@@ -81,8 +92,11 @@ export default function Chat() {
   const [temperature, setTemperature] = useState(0.7);
   const [topP, setTopP] = useState(0.9);
   const [topK, setTopK] = useState(40);
+  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -90,28 +104,93 @@ export default function Chat() {
   }, [loadModels]);
 
   useEffect(() => {
-    if (models?.data && models.data.length > 0 && !selectedModel) {
-      setSelectedModel(models.data[0].id);
+    if (models?.data && models.data.length > 0) {
+      const chatModels = models.data.filter((m) => {
+        const id = m.id.toLowerCase();
+        return !id.includes('embed') && !id.includes('rerank');
+      });
+      // Check if current selection is valid, otherwise pick first available
+      const isCurrentValid = chatModels.some((m) => m.id === selectedModel);
+      if (!isCurrentValid && chatModels.length > 0) {
+        setSelectedModel(chatModels[0].id);
+      }
     }
   }, [models, selectedModel]);
+
+  // Save selected model to localStorage
+  useEffect(() => {
+    if (selectedModel) {
+      localStorage.setItem('kronk_chat_model', selectedModel);
+    }
+  }, [selectedModel]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Focus input when streaming ends
+  useEffect(() => {
+    if (!isStreaming && selectedModel) {
+      inputRef.current?.focus();
+    }
+  }, [isStreaming, selectedModel]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || !selectedModel || isStreaming) return;
+    if ((!input.trim() && attachedFiles.length === 0) || !selectedModel || isStreaming) return;
 
-    const userMessage: DisplayMessage = { role: 'user', content: input.trim() };
+    const userMessage: DisplayMessage = { 
+      role: 'user', 
+      content: input.trim(),
+      attachments: attachedFiles.length > 0 ? [...attachedFiles] : undefined,
+    };
     setMessages(prev => [...prev, userMessage]);
     setInput('');
+    setAttachedFiles([]);
     setError(null);
     setIsStreaming(true);
 
+    // Build content for the new message with attachments
+    const buildMessageContent = (text: string, files: AttachedFile[]): string | ChatContentPart[] => {
+      if (files.length === 0) {
+        return text;
+      }
+      
+      const parts: ChatContentPart[] = [];
+      
+      // Add text part if present
+      if (text) {
+        parts.push({ type: 'text', text });
+      }
+      
+      // Add file parts
+      for (const file of files) {
+        if (file.type === 'image') {
+          parts.push({
+            type: 'image_url',
+            image_url: { url: file.dataUrl },
+          });
+        } else if (file.type === 'audio') {
+          // Extract base64 data and format from data URL
+          const match = file.dataUrl.match(/^data:audio\/(\w+);base64,(.+)$/);
+          if (match) {
+            parts.push({
+              type: 'input_audio',
+              input_audio: { data: match[2], format: match[1] },
+            });
+          }
+        }
+      }
+      
+      return parts;
+    };
+
     const chatMessages: ChatMessage[] = [
-      ...messages.map(m => ({ role: m.role, content: m.content })),
-      { role: 'user' as const, content: input.trim() }
+      ...messages.map(m => ({ 
+        role: m.role, 
+        content: m.attachments ? buildMessageContent(m.content, m.attachments) : m.content 
+      })),
+      { role: 'user' as const, content: buildMessageContent(input.trim(), attachedFiles) }
     ];
 
     let currentContent = '';
@@ -178,6 +257,33 @@ export default function Chat() {
   const handleClear = () => {
     setMessages([]);
     setError(null);
+    setAttachedFiles([]);
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    Array.from(files).forEach(file => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        const fileType: 'image' | 'audio' = file.type.startsWith('image/') ? 'image' : 'audio';
+        setAttachedFiles(prev => [...prev, {
+          type: fileType,
+          name: file.name,
+          dataUrl,
+        }]);
+      };
+      reader.readAsDataURL(file);
+    });
+
+    // Reset input so same file can be selected again
+    e.target.value = '';
+  };
+
+  const removeAttachment = (index: number) => {
+    setAttachedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -202,7 +308,12 @@ export default function Chat() {
             {!modelsLoading && models?.data?.length === 0 && (
               <option>No models available</option>
             )}
-            {models?.data?.map((model) => (
+            {models?.data
+              ?.filter((model) => {
+                const id = model.id.toLowerCase();
+                return !id.includes('embed') && !id.includes('rerank');
+              })
+              .map((model) => (
               <option key={model.id} value={model.id}>
                 {model.id}
               </option>
@@ -287,6 +398,21 @@ export default function Chat() {
             <div className="chat-message-header">
               {msg.role === 'user' ? 'USER' : 'MODEL'}
             </div>
+            {msg.attachments && msg.attachments.length > 0 && (
+              <div className="chat-message-attachments">
+                {msg.attachments.map((att, i) => (
+                  <div key={i} className="chat-attachment-preview">
+                    {att.type === 'image' ? (
+                      <img src={att.dataUrl} alt={att.name} className="chat-attachment-image" />
+                    ) : (
+                      <div className="chat-attachment-audio">
+                        <span>🔊 {att.name}</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
             {msg.reasoning && (
               <div className="chat-message-reasoning">{msg.reasoning}</div>
             )}
@@ -317,29 +443,69 @@ export default function Chat() {
       </div>
 
       <form onSubmit={handleSubmit} className="chat-input-form">
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Type your message... (Enter to send, Shift+Enter for new line)"
-          disabled={isStreaming || !selectedModel}
-          className="chat-input"
-          rows={3}
-        />
-        <div className="chat-input-actions">
-          {isStreaming ? (
-            <button type="button" className="btn btn-danger" onClick={handleStop}>
-              Stop
-            </button>
-          ) : (
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={!input.trim() || !selectedModel}
-            >
-              Send
-            </button>
+        <div className="chat-input-row">
+          {attachedFiles.length > 0 && (
+            <div className="chat-attachments-bar">
+              {attachedFiles.map((file, idx) => (
+                <div key={idx} className="chat-attachment-chip">
+                  {file.type === 'image' ? (
+                    <img src={file.dataUrl} alt={file.name} className="chat-attachment-chip-image" />
+                  ) : (
+                    <span className="chat-attachment-chip-audio">🔊</span>
+                  )}
+                  <span className="chat-attachment-chip-name">{file.name}</span>
+                  <button
+                    type="button"
+                    className="chat-attachment-chip-remove"
+                    onClick={() => removeAttachment(idx)}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
           )}
+          <textarea
+            ref={inputRef}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Type your message... (Enter to send, Shift+Enter for new line)"
+            disabled={isStreaming || !selectedModel}
+            className="chat-input"
+            rows={3}
+          />
+          <div className="chat-input-buttons">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,audio/*"
+              multiple
+              onChange={handleFileSelect}
+              style={{ display: 'none' }}
+            />
+            <button
+              type="button"
+              className="btn btn-secondary chat-attach-btn"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isStreaming || !selectedModel}
+            >
+              📎
+            </button>
+            {isStreaming ? (
+              <button type="button" className="btn btn-danger" onClick={handleStop}>
+                Stop
+              </button>
+            ) : (
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={(!input.trim() && attachedFiles.length === 0) || !selectedModel}
+              >
+                Send
+              </button>
+            )}
+          </div>
         </div>
       </form>
     </div>

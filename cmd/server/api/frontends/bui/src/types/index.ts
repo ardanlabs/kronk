@@ -136,9 +136,31 @@ export interface ApiError {
   };
 }
 
+export interface ChatContentPartText {
+  type: 'text';
+  text: string;
+}
+
+export interface ChatContentPartImage {
+  type: 'image_url';
+  image_url: {
+    url: string;
+  };
+}
+
+export interface ChatContentPartAudio {
+  type: 'input_audio';
+  input_audio: {
+    data: string;
+    format: string;
+  };
+}
+
+export type ChatContentPart = ChatContentPartText | ChatContentPartImage | ChatContentPartAudio;
+
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
-  content: string;
+  content: string | ChatContentPart[];
 }
 
 export interface ChatRequest {
