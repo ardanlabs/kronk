@@ -10,6 +10,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
+	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/trace"
@@ -163,7 +164,24 @@ func (a *App) RemoveKey(ctx context.Context, req *RemoveKeyRequest) (*RemoveKeyR
 
 // =============================================================================
 
+const traceIDHeader = "x-trace-id"
+
+// extractTrace extracts trace ID from gRPC incoming metadata and sets it in context.
+func extractTrace(ctx context.Context) context.Context {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ctx
+	}
+
+	if vals := md.Get(traceIDHeader); len(vals) > 0 {
+		ctx = web.SetTraceID(ctx, vals[0])
+	}
+
+	return ctx
+}
+
 func (a *App) authInterceptor(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+	ctx = extractTrace(ctx)
 	ctx = otel.InjectTracing(ctx, a.tracer)
 
 	switch info.FullMethod {

@@ -31,7 +31,7 @@ func Test_OpenAIToMediaMessage(t *testing.T) {
 		t.Fatal("expected OpenAI format to be detected")
 	}
 
-	d, err = convertToRawMediaMessage(d, chMsgs)
+	d, err = toMediaMessage(d, chMsgs)
 	if err != nil {
 		t.Fatalf("converting openai to media message: %s", err)
 	}
