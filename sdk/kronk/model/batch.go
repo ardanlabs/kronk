@@ -35,8 +35,9 @@ type chatJob struct {
 
 // slot represents a processing slot for parallel inference.
 type slot struct {
-	id    int
-	seqID llama.SeqId
+	id     int
+	seqID  llama.SeqId
+	seqIDs []llama.SeqId // Pre-allocated for batchAdd calls
 
 	job     *chatJob
 	proc    *processor
@@ -139,10 +140,12 @@ func newBatchEngine(m *Model, nSlots int) *batchEngine {
 	// Initialize slots.
 	slots := make([]*slot, nSlots)
 	for i := range slots {
+		seqID := llama.SeqId(i + cacheSeqs)
 		slots[i] = &slot{
-			id:    i,
-			seqID: llama.SeqId(i + cacheSeqs),
-			proc:  newProcessor(m),
+			id:     i,
+			seqID:  seqID,
+			seqIDs: []llama.SeqId{seqID}, // Pre-allocate for batchAdd
+			proc:   newProcessor(m),
 		}
 	}
 
@@ -295,7 +298,7 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 		}
 
 		s.iBatch = e.batch.NTokens
-		batchAdd(&e.batch, s.sampled, s.nPast, []llama.SeqId{s.seqID}, true)
+		batchAdd(&e.batch, s.sampled, s.nPast, s.seqIDs, true)
 		s.nPast++
 		s.nDecoded++
 	}
@@ -465,7 +468,7 @@ func (e *batchEngine) addPrefillChunk(s *slot) bool {
 	for i := range chunkSize {
 		tok := s.prefillTokens[s.nPrefilled+i]
 		isLast := s.nPrefilled+i == len(s.prefillTokens)-1
-		batchAdd(&e.batch, tok, s.nPast, []llama.SeqId{s.seqID}, isLast)
+		batchAdd(&e.batch, tok, s.nPast, s.seqIDs, isLast)
 		s.nPast++
 	}
 	s.nPrefilled += chunkSize

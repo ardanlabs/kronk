@@ -24,21 +24,21 @@ import (
 )
 
 func (m *Model) applyRequestJinjaTemplate(ctx context.Context, d D) (string, [][]byte, error) {
-	// We need to identify if there is media in the request. If there is
-	// we want to replace the actual media with a media marker `<__media__>`.
-	// We will move the media to it's own slice. The next call that will happen
-	// is `processBitmap` which will process the prompt and media.
+	switch m.projFile {
+	case "":
+		// Text-only: pass D directly to gonja (handles named map types via reflection).
+		prompt, err := m.applyJinjaTemplate(ctx, d)
+		if err != nil {
+			return "", nil, err
+		}
+		return prompt, nil, nil
 
-	// Deep copy and normalize d to ensure all nested maps are plain
-	// map[string]any types. This avoids reflection errors in gonja when
-	// templates call .items() on nested structures like tool_calls arguments.
-	normalized := deepNormalize(d)
-
-	var media [][]byte
-
-	if msgs, ok := normalized["messages"].([]any); ok {
-		for _, msg := range msgs {
-			if doc, ok := msg.(map[string]any); ok {
+	default:
+		// Media models: extract []byte content and replace with markers.
+		// The input d is already cloned by prepareMediaContext, so mutation is safe.
+		var media [][]byte
+		if msgs, ok := d["messages"].([]D); ok {
+			for _, doc := range msgs {
 				if content, exists := doc["content"]; exists {
 					if value, ok := content.([]byte); ok {
 						media = append(media, value)
@@ -47,14 +47,14 @@ func (m *Model) applyRequestJinjaTemplate(ctx context.Context, d D) (string, [][
 				}
 			}
 		}
-	}
 
-	prompt, err := m.applyJinjaTemplate(ctx, normalized)
-	if err != nil {
-		return "", nil, err
-	}
+		prompt, err := m.applyJinjaTemplate(ctx, d)
+		if err != nil {
+			return "", nil, err
+		}
 
-	return prompt, media, nil
+		return prompt, media, nil
+	}
 }
 
 func (m *Model) applyJinjaTemplate(ctx context.Context, d map[string]any) (string, error) {
@@ -256,64 +256,4 @@ func readJinjaTemplate(fileName string) (string, error) {
 	}
 
 	return string(data), nil
-}
-
-// =============================================================================
-
-// deepNormalize recursively converts all nested structures to plain Go types
-// (map[string]any and []any) to avoid reflection errors in gonja templates.
-// Returns plain map[string]any, NOT the named type D.
-func deepNormalize(v any) map[string]any {
-	switch m := v.(type) {
-	case D:
-		result := make(map[string]any, len(m))
-		for k, val := range m {
-			result[k] = deepNormalizeValue(val)
-		}
-		return result
-	case map[string]any:
-		result := make(map[string]any, len(m))
-		for k, val := range m {
-			result[k] = deepNormalizeValue(val)
-		}
-		return result
-	}
-	return nil
-}
-
-func deepNormalizeValue(v any) any {
-	switch val := v.(type) {
-	case map[string]any:
-		result := make(map[string]any, len(val))
-		for k, v := range val {
-			result[k] = deepNormalizeValue(v)
-		}
-		return result
-	case D:
-		result := make(map[string]any, len(val))
-		for k, v := range val {
-			result[k] = deepNormalizeValue(v)
-		}
-		return result
-	case []any:
-		result := make([]any, len(val))
-		for i, v := range val {
-			result[i] = deepNormalizeValue(v)
-		}
-		return result
-	case []D:
-		result := make([]any, len(val))
-		for i, v := range val {
-			result[i] = deepNormalizeValue(v)
-		}
-		return result
-	case []map[string]any:
-		result := make([]any, len(val))
-		for i, v := range val {
-			result[i] = deepNormalizeValue(v)
-		}
-		return result
-	default:
-		return v
-	}
 }
