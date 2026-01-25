@@ -27,6 +27,7 @@ import DocsAPIResponses from './components/DocsAPIResponses';
 import DocsAPIEmbeddings from './components/DocsAPIEmbeddings';
 import DocsAPIRerank from './components/DocsAPIRerank';
 import DocsAPITools from './components/DocsAPITools';
+import DocsConfigModels from './components/DocsConfigModels';
 import { ModelListProvider } from './contexts/ModelListContext';
 import { TokenProvider } from './contexts/TokenContext';
 import { DownloadProvider } from './contexts/DownloadContext';
@@ -59,7 +60,8 @@ export type Page =
   | 'docs-api-responses'
   | 'docs-api-embeddings'
   | 'docs-api-rerank'
-  | 'docs-api-tools';
+  | 'docs-api-tools'
+  | 'docs-config-models';
 
 export const routeMap: Record<Page, string> = {
   'home': '/',
@@ -90,6 +92,7 @@ export const routeMap: Record<Page, string> = {
   'docs-api-embeddings': '/docs/api/embeddings',
   'docs-api-rerank': '/docs/api/rerank',
   'docs-api-tools': '/docs/api/tools',
+  'docs-config-models': '/docs/config/models',
 };
 
 export const pathToPage: Record<string, Page> = Object.fromEntries(
@@ -176,6 +179,7 @@ function App() {
                 <Route path="/docs/api/embeddings" element={<DocsAPIEmbeddings />} />
                 <Route path="/docs/api/rerank" element={<DocsAPIRerank />} />
                 <Route path="/docs/api/tools" element={<DocsAPITools />} />
+                <Route path="/docs/config/models" element={<DocsConfigModels />} />
               </Routes>
             </Layout>
           </DownloadProvider>

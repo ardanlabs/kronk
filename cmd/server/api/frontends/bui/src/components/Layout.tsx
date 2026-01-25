@@ -101,6 +101,13 @@ const menuStructure: MenuCategory[] = [
           { page: 'docs-api-tools', label: 'Tools' },
         ],
       },
+      {
+        id: 'docs-config-sub',
+        label: 'Config',
+        items: [
+          { page: 'docs-config-models', label: 'Models' },
+        ],
+      },
     ],
   },
   {

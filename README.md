@@ -7,7 +7,7 @@ hello@ardanlabs.com
 
 This project lets you use Go for hardware accelerated local inference with llama.cpp directly integrated into your applications via the [yzma](https://github.com/hybridgroup/yzma) module. Kronk provides a high-level API that feels similar to using an OpenAI compatible API.
 
-This project also provides a model server for chat completions, responses, embeddings, and reranking. The server is compatible with the OpebWebUI and Cline projects.
+This project also provides a model server for chat completions, responses, messages, embeddings, and reranking. The server is compatible with the OpebWebUI, Cline, and the Claude Code project.
 
 Here is the current [catalog](https://github.com/ardanlabs/kronk_catalogs) of models that have been verified to work with Kronk.
 
