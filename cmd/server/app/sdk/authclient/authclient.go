@@ -9,6 +9,7 @@ import (
 
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/authapp"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
+	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
@@ -69,6 +70,14 @@ func (cln *Client) Close() error {
 	return nil
 }
 
+const traceIDHeader = "x-trace-id"
+
+// injectTrace passes the web package's trace ID as gRPC metadata.
+func injectTrace(ctx context.Context) context.Context {
+	traceID := web.GetTraceID(ctx)
+	return metadata.AppendToOutgoingContext(ctx, traceIDHeader, traceID)
+}
+
 // Authenticate calls the auth service to authenticate the user.
 func (cln *Client) Authenticate(ctx context.Context, bearerToken string, admin bool, endpoint string) (AuthenticateReponse, error) {
 	arb := authapp.AuthenticateRequest_builder{
@@ -76,6 +85,7 @@ func (cln *Client) Authenticate(ctx context.Context, bearerToken string, admin b
 		Endpoint: proto.String(endpoint),
 	}
 
+	ctx = injectTrace(ctx)
 	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", bearerToken)
 
 	req, err := cln.grpc.Authenticate(ctx, arb.Build())
@@ -102,6 +112,7 @@ func (cln *Client) CreateToken(ctx context.Context, bearerToken string, admin bo
 		Duration:  proto.String(duration.String()),
 	}
 
+	ctx = injectTrace(ctx)
 	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", bearerToken)
 
 	req, err := cln.grpc.CreateToken(ctx, arb.Build())
@@ -114,6 +125,7 @@ func (cln *Client) CreateToken(ctx context.Context, bearerToken string, admin bo
 
 // ListKeys calls the auth service to list all keys.
 func (cln *Client) ListKeys(ctx context.Context, bearerToken string) (ListKeysResponse, error) {
+	ctx = injectTrace(ctx)
 	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", bearerToken)
 
 	req, err := cln.grpc.ListKeys(ctx, &authapp.ListKeysRequest{})
@@ -126,6 +138,7 @@ func (cln *Client) ListKeys(ctx context.Context, bearerToken string) (ListKeysRe
 
 // AddKey calls the auth service to add a new key.
 func (cln *Client) AddKey(ctx context.Context, bearerToken string) error {
+	ctx = injectTrace(ctx)
 	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", bearerToken)
 
 	_, err := cln.grpc.AddKey(ctx, &authapp.AddKeyRequest{})
@@ -138,6 +151,7 @@ func (cln *Client) RemoveKey(ctx context.Context, bearerToken string, keyID stri
 		KeyId: proto.String(keyID),
 	}
 
+	ctx = injectTrace(ctx)
 	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", bearerToken)
 
 	_, err := cln.grpc.RemoveKey(ctx, rkb.Build())

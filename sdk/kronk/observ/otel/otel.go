@@ -114,8 +114,13 @@ func InitTracing(log *logger.Logger, cfg Config) (trace.TracerProvider, func(ctx
 func InjectTracing(ctx context.Context, tracer trace.Tracer) context.Context {
 	ctx = setTracer(ctx, tracer)
 
+	// If trace ID already exists in context (e.g., propagated from caller), use it.
+	if existing := GetTraceID(ctx); existing != defaultTraceID {
+		return ctx
+	}
+
 	traceID := trace.SpanFromContext(ctx).SpanContext().TraceID().String()
-	if traceID == defaultTraceID { // Use defined constant
+	if traceID == defaultTraceID {
 		traceID = uuid.NewString()
 	}
 	ctx = SetTraceID(ctx, traceID)
