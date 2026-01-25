@@ -139,31 +139,73 @@ export default function DocsConfigModels() {
           </div>
 
           <div className="card" id="slot-memory">
-            <h3>Slot Memory Cost Formula</h3>
-            <p>KV memory per slot = n_ctx × (K + V bytes) × n_layers</p>
+            <h3>Slot Memory and Total VRAM Cost</h3>
+            <p>These figures are for KV cache VRAM only (when <code>offload-kqv: true</code>). Model weights require additional VRAM. Total VRAM = model weights + KV cache.</p>
+            <p>Memory is statically allocated upfront when the model loads, based on <code>n_ctx × n_seq_max</code>. Reserving slots consumes memory whether or not they're actually used.</p>
+
+            <h4>Formulas</h4>
+            <pre className="code-block">
+              <code>{`KV_per_token_per_layer = head_count_kv × (key_length + value_length) × bytes_per_element
+KV_per_slot            = n_ctx × n_layers × KV_per_token_per_layer`}</code>
+            </pre>
+
+            <h4>Full Example: Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL</h4>
             <table className="flags-table">
               <thead>
                 <tr>
-                  <th>Model</th>
-                  <th>Context</th>
-                  <th>Memory per Slot</th>
+                  <th>Metadata Field</th>
+                  <th>Value</th>
+                  <th>Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>Model Size</td><td>36.0 GB</td><td>Model weights in VRAM</td></tr>
+                <tr><td>Context Window</td><td>131072</td><td>128K tokens</td></tr>
+                <tr><td>cache-type-k/v</td><td>q8_0</td><td>1 byte per element</td></tr>
+                <tr><td>block_count</td><td>48</td><td>n_layers</td></tr>
+                <tr><td>attention.head_count_kv</td><td>4</td><td>KV heads</td></tr>
+                <tr><td>attention.key_length</td><td>128</td><td>K dimension per head</td></tr>
+                <tr><td>attention.value_length</td><td>128</td><td>V dimension per head</td></tr>
+              </tbody>
+            </table>
+
+            <h4>Calculation</h4>
+            <pre className="code-block">
+              <code>{`KV_per_token_per_layer = 4 × (128 + 128) × 1 = 1024 bytes
+KV_per_slot            = 131072 × 48 × 1024 = ~6.4 GB`}</code>
+            </pre>
+
+            <h4>VRAM Requirements by Caching Mode (NSeqMax=2)</h4>
+            <table className="flags-table">
+              <thead>
+                <tr>
+                  <th>Caching Mode</th>
+                  <th>Sequences</th>
+                  <th>KV Cache</th>
+                  <th>Total VRAM</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td>7B</td>
-                  <td>8K</td>
-                  <td>~537 MB</td>
+                  <td>No Caching</td>
+                  <td>2</td>
+                  <td>2 × 6.4 GB = ~12.8 GB</td>
+                  <td>~48.8 GB</td>
                 </tr>
                 <tr>
-                  <td>70B</td>
-                  <td>8K</td>
-                  <td>~1.3 GB</td>
+                  <td>FMC Only</td>
+                  <td>3 (2+1)</td>
+                  <td>3 × 6.4 GB = ~19.2 GB</td>
+                  <td>~55.2 GB</td>
+                </tr>
+                <tr>
+                  <td>SPC + FMC</td>
+                  <td>4 (2+2)</td>
+                  <td>4 × 6.4 GB = ~25.6 GB</td>
+                  <td>~61.6 GB</td>
                 </tr>
               </tbody>
             </table>
-            <p><strong>Key finding:</strong> Memory is statically allocated upfront when the model loads, based on n_ctx × n_seq_max. Reserving slots consumes memory whether or not they're actually used.</p>
-            <p><strong>Advice:</strong> Reserving 2 dedicated slots (one for system prompt cache, one for user message cache) would add +537MB (7B) to +1.3GB (70B) overhead. Since the slots would rarely both be used simultaneously, you'd be "paying for memory you don't benefit from."</p>
           </div>
 
           <div className="card" id="usage-notes">
