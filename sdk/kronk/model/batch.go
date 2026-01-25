@@ -576,25 +576,6 @@ func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 		return
 	}
 
-	// Calculate output tokens for logging.
-	outputTokens := s.reasonTokens + s.completionTokens
-
-	// Stream response if not tooling.
-	if s.toolFlag == 0 {
-		// Skip unnecessary CRLF at mode transitions.
-		if e.model.isUnncessaryCRLF(s.reasonFlag, s.completionFlag, resp.content) {
-			s.iBatch = -1
-			return
-		}
-
-		// Per OpenAI spec, usage is only sent in the final response, not deltas.
-		err := e.model.sendDeltaResponse(s.job.ctx, s.job.ch, s.job.id, s.job.object, 0, "", resp.content, s.reasonFlag, outputTokens, s.currentLogprob)
-		if err != nil {
-			e.finishSlot(s, err)
-			return
-		}
-	}
-
 	// Store content for final response.
 	switch {
 	case s.reasonFlag > 0:
@@ -614,6 +595,25 @@ func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 
 	default:
 		s.completionTokens++
+	}
+
+	// Calculate output tokens for logging (after incrementing counts).
+	outputTokens := s.reasonTokens + s.completionTokens
+
+	// Stream response if not tooling.
+	if s.toolFlag == 0 {
+		// Skip unnecessary CRLF at mode transitions.
+		if e.model.isUnncessaryCRLF(s.reasonFlag, s.completionFlag, resp.content) {
+			s.iBatch = -1
+			return
+		}
+
+		// Per OpenAI spec, usage is only sent in the final response, not deltas.
+		err := e.model.sendDeltaResponse(s.job.ctx, s.job.ch, s.job.id, s.job.object, 0, "", resp.content, s.reasonFlag, outputTokens, s.currentLogprob)
+		if err != nil {
+			e.finishSlot(s, err)
+			return
+		}
 	}
 
 	// Check max tokens.
@@ -641,13 +641,15 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		s.span.End()
 		s.reset()
 		e.freeSlotResources(s)
-		e.model.activeStreams.Add(-1)
+
+		remaining := e.model.activeStreams.Add(-1)
 
 		e.model.log(ctx, "batch-engine",
 			"status", "slot-finished",
 			"slot", slotID,
 			"seq", seqID,
 			"id", jobID,
+			"active_streams", remaining,
 		)
 	}()
 
@@ -746,6 +748,19 @@ func (e *batchEngine) sendSlotError(s *slot, err error) {
 
 // drainSlots finishes all active slots and pending jobs during shutdown.
 func (e *batchEngine) drainSlots() {
+	ctx := context.Background()
+
+	activeCount := 0
+	for _, s := range e.slots {
+		if s.active {
+			activeCount++
+		}
+	}
+
+	pendingCount := len(e.requestQ)
+
+	e.model.log(ctx, "batch-engine", "status", "drain-started", "active_slots", activeCount, "pending_jobs", pendingCount)
+
 	for _, s := range e.slots {
 		if s.active {
 			e.finishSlot(s, fmt.Errorf("drain-slots: engine shutting down"))
@@ -753,12 +768,15 @@ func (e *batchEngine) drainSlots() {
 	}
 
 	// Drain pending jobs that were never assigned to a slot.
+	drained := 0
 	for {
 		select {
 		case job := <-e.requestQ:
 			close(job.ch)
 			e.model.activeStreams.Add(-1)
+			drained++
 		default:
+			e.model.log(ctx, "batch-engine", "status", "drain-finished", "drained_pending", drained)
 			return
 		}
 	}

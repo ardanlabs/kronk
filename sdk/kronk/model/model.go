@@ -52,8 +52,10 @@ type Model struct {
 	cacheMu         sync.RWMutex
 	sysPromptHash   string
 	sysPromptTokens int
+	sysPromptLen    int
 	firstMsgHash    string
 	firstMsgTokens  int
+	firstMsgLen     int
 	firstMsgSeqID   llama.SeqId // 0 if only FMC enabled, 1 if both enabled
 }
 
@@ -271,6 +273,8 @@ func (m *Model) Unload(ctx context.Context) error {
 		m.batch.stop(ctx)
 	}
 
+	m.log(ctx, "unload", "status", "waiting-for-streams", "active", m.activeStreams.Load())
+
 	for m.activeStreams.Load() > 0 {
 		select {
 		case <-ctx.Done():
@@ -279,6 +283,8 @@ func (m *Model) Unload(ctx context.Context) error {
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
+
+	m.log(ctx, "unload", "status", "streams-drained")
 
 	// Free batch buffer before context (batch references context internals).
 	if hasBatch {

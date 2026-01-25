@@ -131,13 +131,13 @@ func (m *Model) ensureFirstMessageCached(ctx context.Context, d D) cacheResult {
 // handleSystemPromptCache handles caching for system prompt mode.
 // Uses sequence 0 for the cache.
 func (m *Model) handleSystemPromptCache(ctx context.Context, d D, msgInfo cacheableMessage) cacheResult {
-	return m.cacheMessage(ctx, d, msgInfo, 0, &m.sysPromptHash, &m.sysPromptTokens)
+	return m.cacheMessage(ctx, d, msgInfo, 0, &m.sysPromptHash, &m.sysPromptTokens, &m.sysPromptLen)
 }
 
 // handleFirstMessageCache handles caching for first user message mode.
 // Uses sequence 0 (if only FMC) or sequence 1 (if both SPC and FMC enabled).
 func (m *Model) handleFirstMessageCache(ctx context.Context, d D, msgInfo cacheableMessage) cacheResult {
-	return m.cacheMessage(ctx, d, msgInfo, m.firstMsgSeqID, &m.firstMsgHash, &m.firstMsgTokens)
+	return m.cacheMessage(ctx, d, msgInfo, m.firstMsgSeqID, &m.firstMsgHash, &m.firstMsgTokens, &m.firstMsgLen)
 }
 
 // cacheMessage is the common caching logic used by both SystemPromptCache
@@ -145,21 +145,26 @@ func (m *Model) handleFirstMessageCache(ctx context.Context, d D, msgInfo cachea
 //   - Checking for cache hits when cache is populated
 //   - Templating and caching the message when cache is empty
 //   - Returning the suffix prompt for immediate use after caching
-func (m *Model) cacheMessage(ctx context.Context, d D, msgInfo cacheableMessage, seqID llama.SeqId, hashPtr *string, tokensPtr *int) cacheResult {
+func (m *Model) cacheMessage(ctx context.Context, d D, msgInfo cacheableMessage, seqID llama.SeqId, hashPtr *string, tokensPtr *int, lenPtr *int) cacheResult {
 	messages, _ := d["messages"].([]D)
-	newHash := hashMessage(msgInfo)
+	contentLen := len(msgInfo.content)
 
 	// -------------------------------------------------------------------------
 	// Check for cache hit (fast path with read lock).
+	// Use length check first to avoid expensive SHA-256 hash on cache miss.
 
 	m.cacheMu.RLock()
 	currentHash := *hashPtr
 	currentTokens := *tokensPtr
+	currentLen := *lenPtr
 	m.cacheMu.RUnlock()
 
-	if currentHash == newHash && currentTokens > 0 {
-		m.log(ctx, "cache", "status", "hit", "role", msgInfo.role, "seq", seqID, "tokens", currentTokens, "messages", len(messages))
-		return cacheResult{nPast: llama.Pos(currentTokens), cached: true}
+	if currentLen == contentLen && currentTokens > 0 {
+		newHash := hashMessage(msgInfo)
+		if currentHash == newHash {
+			m.log(ctx, "cache", "status", "hit", "role", msgInfo.role, "seq", seqID, "tokens", currentTokens, "messages", len(messages))
+			return cacheResult{nPast: llama.Pos(currentTokens), cached: true}
+		}
 	}
 
 	// -------------------------------------------------------------------------
@@ -169,7 +174,9 @@ func (m *Model) cacheMessage(ctx context.Context, d D, msgInfo cacheableMessage,
 	defer m.cacheMu.Unlock()
 
 	// Double-check in case another goroutine cached while we waited.
-	if *hashPtr == newHash && *tokensPtr > 0 {
+	// Must compute hash here since we skipped it above on length mismatch.
+	newHash := hashMessage(msgInfo)
+	if *lenPtr == contentLen && *hashPtr == newHash && *tokensPtr > 0 {
 		m.log(ctx, "cache", "status", "hit-after-lock", "role", msgInfo.role, "seq", seqID, "tokens", *tokensPtr)
 		return cacheResult{nPast: llama.Pos(*tokensPtr), cached: true}
 	}
@@ -217,22 +224,57 @@ func (m *Model) cacheMessage(ctx context.Context, d D, msgInfo cacheableMessage,
 
 	*hashPtr = newHash
 	*tokensPtr = nTokens
+	*lenPtr = contentLen
 
 	m.log(ctx, "cache", "status", "cached", "role", msgInfo.role, "seq", seqID, "tokens", nTokens, "hash", newHash[:8])
 
-	// Get the full prompt to extract just the suffix (generation prompt).
-	// The cached prefix is already in the sequence, we only need to add the suffix.
-	fullPrompt, fullMedia, err := m.createPrompt(ctx, d)
-	if err != nil {
-		return cacheResult{modifiedD: d, err: fmt.Errorf("cache: failed to template full message: %w", err)}
+	// -------------------------------------------------------------------------
+	// System Prompt Caching
+
+	// SPC doesn't need suffix - remaining messages are templated later in chat.go.
+	// Only FMC needs the suffix for immediate use.
+	if msgInfo.role == RoleSystem {
+		return cacheResult{
+			modifiedD: d,
+			nPast:     llama.Pos(nTokens),
+			cached:    true,
+		}
 	}
 
-	// Extract only the suffix (the part after the cached prefix).
-	// This is typically just the assistant role marker for generation.
-	// If extraction fails, use a sensible default that works with most templates.
-	suffix := "<|im_start|>assistant\n"
-	if len(fullPrompt) > len(prefixPrompt) {
-		suffix = fullPrompt[len(prefixPrompt):]
+	// -------------------------------------------------------------------------
+	// First Message Caching
+
+	// Extract the suffix needed for generation (FMC only).
+	var suffix string
+	var fullMedia [][]byte
+
+	// Check if the cached message is the last message in the array.
+	// - SPC: System message always has user message(s) after, so this is false.
+	// - FMC: On first request with [system, user], this is true (cheap path).
+	//        Later requests hit cache earlier and don't reach this code.
+	switch msgInfo.index+1 == len(messages) {
+	case true:
+		// Cached message is the last message. Template empty messages to get
+		// only the generation prompt suffix (avoids re-templating all messages).
+		genD := D{"messages": []D{}, "add_generation_prompt": true}
+		suffix, _, err = m.createPrompt(ctx, genD)
+		if err != nil {
+			suffix = "<|im_start|>assistant\n"
+		}
+
+	case false:
+		// Additional messages exist after the cached message.
+		// Must template the full D to extract the complete suffix.
+		var fullPrompt string
+		fullPrompt, fullMedia, err = m.createPrompt(ctx, d)
+		if err != nil {
+			return cacheResult{modifiedD: d, err: fmt.Errorf("cache: failed to template full message: %w", err)}
+		}
+
+		suffix = "<|im_start|>assistant\n"
+		if len(fullPrompt) > len(prefixPrompt) {
+			suffix = fullPrompt[len(prefixPrompt):]
+		}
 	}
 
 	m.log(ctx, "cache", "suffix-len", len(suffix))
@@ -322,8 +364,10 @@ func (m *Model) clearCaches() {
 	m.cacheMu.Lock()
 	m.sysPromptHash = ""
 	m.sysPromptTokens = 0
+	m.sysPromptLen = 0
 	m.firstMsgHash = ""
 	m.firstMsgTokens = 0
+	m.firstMsgLen = 0
 	m.cacheMu.Unlock()
 }
 

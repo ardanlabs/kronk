@@ -92,7 +92,7 @@
 # Coding Agents and configured for Cline or Claude Code
 
 # This is a good model and has worked well Cline and is faster than the rest.
-GLM-4.7-Flash-UD-Q8_K_XL:
+Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL:
   context-window: 131072
   nbatch: 2048
   nubatch: 512
@@ -103,7 +103,7 @@ GLM-4.7-Flash-UD-Q8_K_XL:
   first-message-cache: true
 
 # This is a good model and has worked well Cline.
-Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL:
+GLM-4.7-Flash-UD-Q8_K_XL:
   context-window: 131072
   nbatch: 2048
   nubatch: 512

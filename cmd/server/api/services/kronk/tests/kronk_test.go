@@ -320,7 +320,7 @@ func (v responseValidator) warnContainsInContent(find string) responseValidator 
 	}
 
 	if !strings.Contains(strings.ToLower(v.getMsg().Content), find) {
-		v.warnings = append(v.warnings, fmt.Sprintf("WARNING: expected to find %q in content", find))
+		v.warnings = append(v.warnings, fmt.Sprintf("WARNING: expected to find %q in content, got: %s", find, v.getMsg().Content))
 	}
 
 	return v
@@ -332,7 +332,7 @@ func (v responseValidator) warnContainsInReasoning(find string) responseValidato
 	}
 
 	if !strings.Contains(strings.ToLower(v.getMsg().Reasoning), find) {
-		v.warnings = append(v.warnings, fmt.Sprintf("WARNING: expected to find %q in reasoning", find))
+		v.warnings = append(v.warnings, fmt.Sprintf("WARNING: expected to find %q in reasoning, got: %s", find, v.getMsg().Reasoning))
 	}
 
 	return v
@@ -492,7 +492,7 @@ func (v respResponseValidator) warnContainsInContent(find string) respResponseVa
 		}
 	}
 
-	v.warnings = append(v.warnings, "WARNING: expected to find \""+find+"\" in content")
+	v.warnings = append(v.warnings, "WARNING: expected to find \""+find+"\" in content, got: "+v.extractContent())
 	return v
 }
 
@@ -510,4 +510,18 @@ func (v respResponseValidator) result(t *testing.T) string {
 
 func containsIgnoreCase(s, substr string) bool {
 	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
+}
+
+func (v respResponseValidator) extractContent() string {
+	var texts []string
+	for _, item := range v.resp.Output {
+		if item.Type == "message" {
+			for _, content := range item.Content {
+				if content.Type == "output_text" && content.Text != "" {
+					texts = append(texts, content.Text)
+				}
+			}
+		}
+	}
+	return strings.Join(texts, " | ")
 }
