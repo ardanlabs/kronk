@@ -89,26 +89,26 @@ export default function Chat() {
   const [showSettings, setShowSettings] = useState(false);
   
   const [maxTokens, setMaxTokens] = useState(2048);
-  const [temperature, setTemperature] = useState(0.7);
+  const [temperature, setTemperature] = useState(0.8);
   const [topP, setTopP] = useState(0.9);
   const [topK, setTopK] = useState(40);
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
-  
+
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [minP, setMinP] = useState(0);
-  const [repeatPenalty, setRepeatPenalty] = useState(1.0);
+  const [repeatPenalty, setRepeatPenalty] = useState(1.1);
   const [repeatLastN, setRepeatLastN] = useState(64);
   const [dryMultiplier, setDryMultiplier] = useState(0);
   const [dryBase, setDryBase] = useState(1.75);
   const [dryAllowedLen, setDryAllowedLen] = useState(2);
-  const [dryPenaltyLast, setDryPenaltyLast] = useState(-1);
+  const [dryPenaltyLast, setDryPenaltyLast] = useState(0);
   const [xtcProbability, setXtcProbability] = useState(0);
   const [xtcThreshold, setXtcThreshold] = useState(0.1);
   const [xtcMinKeep, setXtcMinKeep] = useState(1);
   const [enableThinking, setEnableThinking] = useState('');
   const [reasoningEffort, setReasoningEffort] = useState('');
   const [returnPrompt, setReturnPrompt] = useState(false);
-  const [includeUsage, setIncludeUsage] = useState(false);
+  const [includeUsage, setIncludeUsage] = useState(true);
   const [logprobs, setLogprobs] = useState(false);
   const [topLogprobs, setTopLogprobs] = useState(0);
 
@@ -239,7 +239,9 @@ export default function Chat() {
         enable_thinking: enableThinking || undefined,
         reasoning_effort: reasoningEffort || undefined,
         return_prompt: returnPrompt,
-        include_usage: includeUsage,
+        stream_options: {
+          include_usage: includeUsage,
+        },
         logprobs,
         top_logprobs: topLogprobs,
       },

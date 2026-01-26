@@ -23,10 +23,9 @@ func TestSuite(t *testing.T) {
 			t.Run("ToolChat", func(t *testing.T) { testChat(t, krn, dChatTool, true) })
 			t.Run("ToolStreamingChat", func(t *testing.T) { testChatStreaming(t, krn, dChatTool, true) })
 
-			t.Run("ArrayFormatChat", func(t *testing.T) { testChat(t, krn, dChatNoToolArray, false) })
-			t.Run("ArrayFormatStreamingChat", func(t *testing.T) { testChatStreaming(t, krn, dChatNoToolArray, false) })
-
 			if os.Getenv("GITHUB_ACTIONS") != "true" {
+				t.Run("ArrayFormatChat", func(t *testing.T) { testChat(t, krn, dChatNoToolArray, false) })
+				t.Run("ArrayFormatStreamingChat", func(t *testing.T) { testChatStreaming(t, krn, dChatNoToolArray, false) })
 				t.Run("ThinkResponse", func(t *testing.T) { testResponse(t, krn, dResponseNoTool, false) })
 				t.Run("ThinkStreamingResponse", func(t *testing.T) { testResponseStreaming(t, krn, dResponseNoTool, false) })
 				t.Run("ToolResponse", func(t *testing.T) { testResponse(t, krn, dResponseTool, true) })
