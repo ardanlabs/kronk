@@ -15,6 +15,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
@@ -113,12 +114,72 @@ func (a *app) indexModels(ctx context.Context, r *http.Request) web.Encoder {
 }
 
 func (a *app) listModels(ctx context.Context, r *http.Request) web.Encoder {
-	models, err := a.models.RetrieveFiles()
+	modelFiles, err := a.models.RetrieveFiles()
 	if err != nil {
 		return errs.Errorf(errs.Internal, "unable to retrieve model list: %s", err)
 	}
 
-	return toListModelsInfo(models)
+	var extendedConfigs map[string]*ExtendedConfig
+
+	if r.URL.Query().Get("extended-config") == "true" {
+		extendedConfigs = make(map[string]*ExtendedConfig)
+
+		for _, mf := range modelFiles {
+			cfg, err := a.catalog.RetrieveModelConfig(mf.ID)
+			if err != nil {
+				continue
+			}
+
+			extendedConfigs[mf.ID] = &ExtendedConfig{
+				ContextWindow:     cfg.ContextWindow,
+				NBatch:            cfg.NBatch,
+				NUBatch:           cfg.NUBatch,
+				NThreads:          cfg.NThreads,
+				NThreadsBatch:     cfg.NThreadsBatch,
+				CacheTypeK:        cfg.CacheTypeK.String(),
+				CacheTypeV:        cfg.CacheTypeV.String(),
+				FlashAttention:    flashAttentionString(cfg.FlashAttention),
+				NSeqMax:           cfg.NSeqMax,
+				SystemPromptCache: cfg.SystemPromptCache,
+				FirstMessageCache: cfg.FirstMessageCache,
+				CacheMinTokens:    cfg.CacheMinTokens,
+				Sampling:          defaultSamplingConfig(),
+			}
+		}
+	}
+
+	return toListModelsInfo(modelFiles, extendedConfigs)
+}
+
+func flashAttentionString(fa model.FlashAttentionType) string {
+	switch fa {
+	case model.FlashAttentionEnabled:
+		return "enabled"
+	case model.FlashAttentionDisabled:
+		return "disabled"
+	case model.FlashAttentionAuto:
+		return "auto"
+	default:
+		return "enabled"
+	}
+}
+
+func defaultSamplingConfig() SamplingConfig {
+	return SamplingConfig{
+		Temperature:    0.8,
+		TopK:           40,
+		TopP:           0.9,
+		MinP:           0.0,
+		RepeatPenalty:  1.0,
+		RepeatLastN:    64,
+		DryMultiplier:  1.05,
+		DryBase:        1.75,
+		DryAllowedLen:  2,
+		DryPenaltyLast: 0,
+		XtcProbability: 0.0,
+		XtcThreshold:   0.1,
+		XtcMinKeep:     1,
+	}
 }
 
 func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {

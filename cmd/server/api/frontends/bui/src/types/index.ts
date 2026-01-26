@@ -1,3 +1,35 @@
+export interface SamplingConfig {
+  temperature?: number;
+  top_k?: number;
+  top_p?: number;
+  min_p?: number;
+  repeat_penalty?: number;
+  repeat_last_n?: number;
+  dry_multiplier?: number;
+  dry_base?: number;
+  dry_allowed_length?: number;
+  dry_penalty_last_n?: number;
+  xtc_probability?: number;
+  xtc_threshold?: number;
+  xtc_min_keep?: number;
+}
+
+export interface ExtendedConfig {
+  context_window?: number;
+  nbatch?: number;
+  nubatch?: number;
+  nthreads?: number;
+  nthreads_batch?: number;
+  cache_type_k?: string;
+  cache_type_v?: string;
+  flash_attention?: string;
+  nseq_max?: number;
+  system_prompt_cache?: boolean;
+  first_message_cache?: boolean;
+  cache_min_tokens?: number;
+  sampling?: SamplingConfig;
+}
+
 export interface ListModelDetail {
   id: string;
   object: string;
@@ -7,6 +39,7 @@ export interface ListModelDetail {
   size: number;
   modified: string;
   validated: boolean;
+  extended_config?: ExtendedConfig;
 }
 
 export interface ListModelInfoResponse {

@@ -53,16 +53,51 @@ func toAppVersion(status string, vt libs.VersionTag) string {
 
 // =============================================================================
 
+// SamplingConfig contains sampling-related configuration for a model.
+type SamplingConfig struct {
+	Temperature    float32 `json:"temperature,omitempty"`
+	TopK           int32   `json:"top_k,omitempty"`
+	TopP           float32 `json:"top_p,omitempty"`
+	MinP           float32 `json:"min_p,omitempty"`
+	RepeatPenalty  float32 `json:"repeat_penalty,omitempty"`
+	RepeatLastN    int32   `json:"repeat_last_n,omitempty"`
+	DryMultiplier  float32 `json:"dry_multiplier,omitempty"`
+	DryBase        float32 `json:"dry_base,omitempty"`
+	DryAllowedLen  int32   `json:"dry_allowed_length,omitempty"`
+	DryPenaltyLast int32   `json:"dry_penalty_last_n,omitempty"`
+	XtcProbability float32 `json:"xtc_probability,omitempty"`
+	XtcThreshold   float32 `json:"xtc_threshold,omitempty"`
+	XtcMinKeep     uint32  `json:"xtc_min_keep,omitempty"`
+}
+
+// ExtendedConfig contains extended model configuration when requested.
+type ExtendedConfig struct {
+	ContextWindow     int            `json:"context_window,omitempty"`
+	NBatch            int            `json:"nbatch,omitempty"`
+	NUBatch           int            `json:"nubatch,omitempty"`
+	NThreads          int            `json:"nthreads,omitempty"`
+	NThreadsBatch     int            `json:"nthreads_batch,omitempty"`
+	CacheTypeK        string         `json:"cache_type_k,omitempty"`
+	CacheTypeV        string         `json:"cache_type_v,omitempty"`
+	FlashAttention    string         `json:"flash_attention,omitempty"`
+	NSeqMax           int            `json:"nseq_max,omitempty"`
+	SystemPromptCache bool           `json:"system_prompt_cache,omitempty"`
+	FirstMessageCache bool           `json:"first_message_cache,omitempty"`
+	CacheMinTokens    int            `json:"cache_min_tokens,omitempty"`
+	Sampling          SamplingConfig `json:"sampling,omitempty"`
+}
+
 // ListModelDetail provides information about a model.
 type ListModelDetail struct {
-	ID          string    `json:"id"`
-	Object      string    `json:"object"`
-	Created     int64     `json:"created"`
-	OwnedBy     string    `json:"owned_by"`
-	ModelFamily string    `json:"model_family"`
-	Size        int64     `json:"size"`
-	Modified    time.Time `json:"modified"`
-	Validated   bool      `json:"validated"`
+	ID             string          `json:"id"`
+	Object         string          `json:"object"`
+	Created        int64           `json:"created"`
+	OwnedBy        string          `json:"owned_by"`
+	ModelFamily    string          `json:"model_family"`
+	Size           int64           `json:"size"`
+	Modified       time.Time       `json:"modified"`
+	Validated      bool            `json:"validated"`
+	ExtendedConfig *ExtendedConfig `json:"extended_config,omitempty"`
 }
 
 // ListModelInfoResponse contains the list of models loaded in the system.
@@ -77,13 +112,13 @@ func (app ListModelInfoResponse) Encode() ([]byte, string, error) {
 	return data, "application/json", err
 }
 
-func toListModelsInfo(models []models.File) ListModelInfoResponse {
+func toListModelsInfo(modelFiles []models.File, extendedConfigs map[string]*ExtendedConfig) ListModelInfoResponse {
 	list := ListModelInfoResponse{
 		Object: "list",
 	}
 
-	for _, model := range models {
-		list.Data = append(list.Data, ListModelDetail{
+	for _, model := range modelFiles {
+		detail := ListModelDetail{
 			ID:          model.ID,
 			Object:      "model",
 			Created:     model.Modified.UnixMilli(),
@@ -92,7 +127,15 @@ func toListModelsInfo(models []models.File) ListModelInfoResponse {
 			Size:        model.Size,
 			Modified:    model.Modified,
 			Validated:   model.Validated,
-		})
+		}
+
+		if extendedConfigs != nil {
+			if cfg, exists := extendedConfigs[model.ID]; exists {
+				detail.ExtendedConfig = cfg
+			}
+		}
+
+		list.Data = append(list.Data, detail)
 	}
 
 	return list

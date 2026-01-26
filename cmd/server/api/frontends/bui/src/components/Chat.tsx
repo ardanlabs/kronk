@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { api } from '../services/api';
 import { useModelList } from '../contexts/ModelListContext';
 import { useChatMessages } from '../contexts/ChatContext';
 import CodeBlock from './CodeBlock';
-import type { ChatMessage, ChatUsage, ChatToolCall, ChatContentPart, AttachedFile, DisplayMessage } from '../types';
+import type { ChatMessage, ChatUsage, ChatToolCall, ChatContentPart, AttachedFile, DisplayMessage, ListModelDetail } from '../types';
 
 // Pre-process content to handle in-progress code blocks during streaming
 function preprocessContent(content: string): string {
@@ -73,6 +73,7 @@ export default function Chat() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [extendedModels, setExtendedModels] = useState<ListModelDetail[]>([]);
   
   const loadSetting = <T,>(key: string, defaultValue: T): T => {
     const stored = localStorage.getItem(`kronk_chat_${key}`);
@@ -133,6 +134,45 @@ export default function Chat() {
   useEffect(() => {
     loadModels();
   }, [loadModels]);
+
+  // Load models with extended config for sampling defaults
+  useEffect(() => {
+    const loadExtendedModels = async () => {
+      try {
+        const result = await api.listModelsWithConfig();
+        setExtendedModels(result.data || []);
+      } catch {
+        // Silently fail - we'll use defaults
+      }
+    };
+    loadExtendedModels();
+  }, []);
+
+  // Apply model defaults when model selection changes
+  const applyModelDefaults = useCallback((modelId: string) => {
+    const model = extendedModels.find(m => m.id === modelId);
+    if (!model?.extended_config?.sampling) return;
+
+    const s = model.extended_config.sampling;
+    if (s.temperature !== undefined) setTemperature(s.temperature);
+    if (s.top_k !== undefined) setTopK(s.top_k);
+    if (s.top_p !== undefined) setTopP(s.top_p);
+    if (s.min_p !== undefined) setMinP(s.min_p);
+    if (s.repeat_penalty !== undefined) setRepeatPenalty(s.repeat_penalty);
+    if (s.repeat_last_n !== undefined) setRepeatLastN(s.repeat_last_n);
+    if (s.dry_multiplier !== undefined) setDryMultiplier(s.dry_multiplier);
+    if (s.dry_base !== undefined) setDryBase(s.dry_base);
+    if (s.dry_allowed_length !== undefined) setDryAllowedLen(s.dry_allowed_length);
+    if (s.dry_penalty_last_n !== undefined) setDryPenaltyLast(s.dry_penalty_last_n);
+    if (s.xtc_probability !== undefined) setXtcProbability(s.xtc_probability);
+    if (s.xtc_threshold !== undefined) setXtcThreshold(s.xtc_threshold);
+    if (s.xtc_min_keep !== undefined) setXtcMinKeep(s.xtc_min_keep);
+
+    // Also apply max_tokens from context_window if available
+    if (model.extended_config.context_window) {
+      setMaxTokens(Math.min(model.extended_config.context_window, maxTokens || 2048));
+    }
+  }, [extendedModels, maxTokens]);
 
   useEffect(() => {
     if (models?.data && models.data.length > 0) {
@@ -349,7 +389,11 @@ export default function Chat() {
           <h2>Run</h2>
           <select
             value={selectedModel}
-            onChange={(e) => setSelectedModel(e.target.value)}
+            onChange={(e) => {
+              const newModel = e.target.value;
+              setSelectedModel(newModel);
+              applyModelDefaults(newModel);
+            }}
             disabled={modelsLoading || isStreaming}
             className="chat-model-select"
           >
