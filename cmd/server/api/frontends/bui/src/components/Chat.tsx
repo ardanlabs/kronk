@@ -3,23 +3,9 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { api } from '../services/api';
 import { useModelList } from '../contexts/ModelListContext';
+import { useChatMessages } from '../contexts/ChatContext';
 import CodeBlock from './CodeBlock';
-import type { ChatMessage, ChatUsage, ChatToolCall, ChatContentPart } from '../types';
-
-interface AttachedFile {
-  type: 'image' | 'audio';
-  name: string;
-  dataUrl: string; // data:mime;base64,...
-}
-
-interface DisplayMessage {
-  role: 'user' | 'assistant';
-  content: string;
-  reasoning?: string;
-  usage?: ChatUsage;
-  toolCalls?: ChatToolCall[];
-  attachments?: AttachedFile[];
-}
+import type { ChatMessage, ChatUsage, ChatToolCall, ChatContentPart, AttachedFile, DisplayMessage } from '../types';
 
 // Pre-process content to handle in-progress code blocks during streaming
 function preprocessContent(content: string): string {
@@ -79,38 +65,65 @@ function renderContent(content: string): JSX.Element {
 
 export default function Chat() {
   const { models, loading: modelsLoading, loadModels } = useModelList();
+  const { messages, setMessages, clearMessages } = useChatMessages();
   const [selectedModel, setSelectedModel] = useState<string>(() => {
     return localStorage.getItem('kronk_chat_model') || '';
   });
-  const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   
-  const [maxTokens, setMaxTokens] = useState(2048);
-  const [temperature, setTemperature] = useState(0.8);
-  const [topP, setTopP] = useState(0.9);
-  const [topK, setTopK] = useState(40);
+  const loadSetting = <T,>(key: string, defaultValue: T): T => {
+    const stored = localStorage.getItem(`kronk_chat_${key}`);
+    if (stored === null) return defaultValue;
+    try {
+      return JSON.parse(stored) as T;
+    } catch {
+      return defaultValue;
+    }
+  };
+
+  const [maxTokens, setMaxTokens] = useState(() => loadSetting('maxTokens', 2048));
+  const [temperature, setTemperature] = useState(() => loadSetting('temperature', 0.8));
+  const [topP, setTopP] = useState(() => loadSetting('topP', 0.9));
+  const [topK, setTopK] = useState(() => loadSetting('topK', 40));
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
 
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [minP, setMinP] = useState(0);
-  const [repeatPenalty, setRepeatPenalty] = useState(1.0);
-  const [repeatLastN, setRepeatLastN] = useState(64);
-  const [dryMultiplier, setDryMultiplier] = useState(1.05);
-  const [dryBase, setDryBase] = useState(1.75);
-  const [dryAllowedLen, setDryAllowedLen] = useState(2);
-  const [dryPenaltyLast, setDryPenaltyLast] = useState(0);
-  const [xtcProbability, setXtcProbability] = useState(0);
-  const [xtcThreshold, setXtcThreshold] = useState(0.1);
-  const [xtcMinKeep, setXtcMinKeep] = useState(1);
-  const [enableThinking, setEnableThinking] = useState('');
-  const [reasoningEffort, setReasoningEffort] = useState('');
-  const [returnPrompt, setReturnPrompt] = useState(false);
-  const [includeUsage, setIncludeUsage] = useState(true);
-  const [logprobs, setLogprobs] = useState(false);
-  const [topLogprobs, setTopLogprobs] = useState(0);
+  const [minP, setMinP] = useState(() => loadSetting('minP', 0));
+  const [repeatPenalty, setRepeatPenalty] = useState(() => loadSetting('repeatPenalty', 1.1));
+  const [repeatLastN, setRepeatLastN] = useState(() => loadSetting('repeatLastN', 64));
+  const [dryMultiplier, setDryMultiplier] = useState(() => loadSetting('dryMultiplier', 0));
+  const [dryBase, setDryBase] = useState(() => loadSetting('dryBase', 1.75));
+  const [dryAllowedLen, setDryAllowedLen] = useState(() => loadSetting('dryAllowedLen', 2));
+  const [dryPenaltyLast, setDryPenaltyLast] = useState(() => loadSetting('dryPenaltyLast', 0));
+  const [xtcProbability, setXtcProbability] = useState(() => loadSetting('xtcProbability', 0));
+  const [xtcThreshold, setXtcThreshold] = useState(() => loadSetting('xtcThreshold', 0.1));
+  const [xtcMinKeep, setXtcMinKeep] = useState(() => loadSetting('xtcMinKeep', 1));
+  const [enableThinking, setEnableThinking] = useState(() => loadSetting('enableThinking', ''));
+  const [reasoningEffort, setReasoningEffort] = useState(() => loadSetting('reasoningEffort', ''));
+  const [returnPrompt, setReturnPrompt] = useState(() => loadSetting('returnPrompt', false));
+  const [includeUsage, setIncludeUsage] = useState(() => loadSetting('includeUsage', true));
+  const [logprobs, setLogprobs] = useState(() => loadSetting('logprobs', false));
+  const [topLogprobs, setTopLogprobs] = useState(() => loadSetting('topLogprobs', 0));
+
+  useEffect(() => {
+    const settings = {
+      maxTokens, temperature, topP, topK, minP, repeatPenalty, repeatLastN,
+      dryMultiplier, dryBase, dryAllowedLen, dryPenaltyLast,
+      xtcProbability, xtcThreshold, xtcMinKeep,
+      enableThinking, reasoningEffort, returnPrompt, includeUsage, logprobs, topLogprobs,
+    };
+    for (const [key, value] of Object.entries(settings)) {
+      localStorage.setItem(`kronk_chat_${key}`, JSON.stringify(value));
+    }
+  }, [
+    maxTokens, temperature, topP, topK, minP, repeatPenalty, repeatLastN,
+    dryMultiplier, dryBase, dryAllowedLen, dryPenaltyLast,
+    xtcProbability, xtcThreshold, xtcMinKeep,
+    enableThinking, reasoningEffort, returnPrompt, includeUsage, logprobs, topLogprobs,
+  ]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -291,7 +304,7 @@ export default function Chat() {
   };
 
   const handleClear = () => {
-    setMessages([]);
+    clearMessages();
     setError(null);
     setAttachedFiles([]);
   };

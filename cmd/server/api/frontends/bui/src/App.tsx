@@ -31,6 +31,7 @@ import DocsConfigModels from './components/DocsConfigModels';
 import { ModelListProvider } from './contexts/ModelListContext';
 import { TokenProvider } from './contexts/TokenContext';
 import { DownloadProvider } from './contexts/DownloadContext';
+import { ChatProvider } from './contexts/ChatContext';
 
 export type Page =
   | 'home'
@@ -149,7 +150,8 @@ function App() {
       <TokenProvider>
         <ModelListProvider>
           <DownloadProvider>
-            <Layout>
+            <ChatProvider>
+              <Layout>
               <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/chat" element={<Chat />} />
@@ -181,7 +183,8 @@ function App() {
                 <Route path="/docs/api/tools" element={<DocsAPITools />} />
                 <Route path="/docs/config/models" element={<DocsConfigModels />} />
               </Routes>
-            </Layout>
+              </Layout>
+            </ChatProvider>
           </DownloadProvider>
         </ModelListProvider>
       </TokenProvider>

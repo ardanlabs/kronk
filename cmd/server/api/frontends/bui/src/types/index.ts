@@ -232,3 +232,18 @@ export interface ChatStreamResponse {
   choices: ChatChoice[];
   usage?: ChatUsage;
 }
+
+export interface AttachedFile {
+  type: 'image' | 'audio';
+  name: string;
+  dataUrl: string;
+}
+
+export interface DisplayMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  reasoning?: string;
+  usage?: ChatUsage;
+  toolCalls?: ChatToolCall[];
+  attachments?: AttachedFile[];
+}
