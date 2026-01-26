@@ -184,7 +184,9 @@ export interface ChatRequest {
   enable_thinking?: string;
   reasoning_effort?: string;
   return_prompt?: boolean;
-  include_usage?: boolean;
+  stream_options?: {
+    include_usage?: boolean;
+  };
   logprobs?: boolean;
   top_logprobs?: number;
 }
