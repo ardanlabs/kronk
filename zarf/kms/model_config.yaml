@@ -259,7 +259,7 @@ Qwen2-Audio-7B.Q8_0:
 # Embedding model that is working great.
 embeddinggemma-300m-qat-Q8_0:
   context-window: 2048
-  nbatch: 2048
+  nbatch: 1024
   nubatch: 512
   cache-type-k: q8_0
   cache-type-v: q8_0

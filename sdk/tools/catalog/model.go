@@ -2,7 +2,32 @@ package catalog
 
 import (
 	"time"
+
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
+
+// ModelConfig represents default model config settings.
+type ModelConfig struct {
+	Device               string                   `yaml:"device"`
+	ContextWindow        int                      `yaml:"context-window"`
+	NBatch               int                      `yaml:"nbatch"`
+	NUBatch              int                      `yaml:"nubatch"`
+	NThreads             int                      `yaml:"nthreads"`
+	NThreadsBatch        int                      `yaml:"nthreads-batch"`
+	CacheTypeK           model.GGMLType           `yaml:"cache-type-k"`
+	CacheTypeV           model.GGMLType           `yaml:"cache-type-v"`
+	UseDirectIO          bool                     `yaml:"use-direct-io"`
+	FlashAttention       model.FlashAttentionType `yaml:"flash-attention"`
+	IgnoreIntegrityCheck bool                     `yaml:"ignore-integrity-check"`
+	NSeqMax              int                      `yaml:"nseq-max"`
+	OffloadKQV           *bool                    `yaml:"offload-kqv"`
+	OpOffload            *bool                    `yaml:"op-offload"`
+	NGpuLayers           *int32                   `yaml:"ngpu-layers"`
+	SplitMode            model.SplitMode          `yaml:"split-mode"`
+	SystemPromptCache    bool                     `yaml:"system-prompt-cache"`
+	FirstMessageCache    bool                     `yaml:"first-message-cache"`
+	CacheMinTokens       int                      `yaml:"cache-min-tokens"`
+}
 
 // Metadata represents extra information about the model.
 type Metadata struct {
@@ -59,6 +84,7 @@ type Model struct {
 	Files        Files        `yaml:"files"`
 	Capabilities Capabilities `yaml:"capabilities"`
 	Metadata     Metadata     `yaml:"metadata"`
+	ModelConfig  ModelConfig  `yaml:"config"`
 	Downloaded   bool
 	Validated    bool
 }

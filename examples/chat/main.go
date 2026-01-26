@@ -122,6 +122,13 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
+	// The catalog package has an API that can retrieve defaults for
+	// models in the catalog system and/or a model_config file.
+	// cfg, err := c.templates.Catalog().RetrieveModelConfig(modelID)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("unable to retrieve model config: %w", err)
+	// }
+
 	cfg := model.Config{
 		ModelFiles:        mp.ModelFiles,
 		CacheTypeK:        model.GGMLTypeQ8_0,

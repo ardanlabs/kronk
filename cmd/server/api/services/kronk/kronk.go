@@ -101,7 +101,8 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			// this even lower.
 		}
 		Catalog struct {
-			GithubRepo string `conf:"default:https://api.github.com/repos/ardanlabs/kronk_catalogs/contents/catalogs"`
+			GithubRepo      string `conf:"default:https://api.github.com/repos/ardanlabs/kronk_catalogs/contents/catalogs"`
+			ModelConfigFile string `conf:"default:zarf/kms/model_config.yaml"`
 		}
 		Templates struct {
 			GithubRepo string `conf:"default:https://api.github.com/repos/ardanlabs/kronk_catalogs/contents/templates"`
@@ -110,7 +111,6 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			ModelsInCache        int           `conf:"default:3"`
 			TTL                  time.Duration `conf:"default:20m"`
 			IgnoreIntegrityCheck bool          `conf:"default:true"`
-			ModelConfigFile      string
 		}
 		BasePath     string
 		LibPath      string
@@ -303,7 +303,8 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	ctlg, err := catalog.New(
 		catalog.WithBasePath(cfg.BasePath),
-		catalog.WithGithubRepo(cfg.Catalog.GithubRepo))
+		catalog.WithGithubRepo(cfg.Catalog.GithubRepo),
+		catalog.WithModelConfig(cfg.Catalog.ModelConfigFile))
 	if err != nil {
 		return fmt.Errorf("unable to create catalog system: %w", err)
 	}
@@ -345,7 +346,6 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		ModelsInCache:        cfg.Cache.ModelsInCache,
 		CacheTTL:             cfg.Cache.TTL,
 		IgnoreIntegrityCheck: cfg.Cache.IgnoreIntegrityCheck,
-		ModelConfigFile:      cfg.Cache.ModelConfigFile,
 	})
 
 	if err != nil {

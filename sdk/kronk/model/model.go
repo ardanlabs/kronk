@@ -130,6 +130,10 @@ func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) 
 
 	ctxParams := modelCtxParams(cfg, modelInfo)
 
+	l(ctx, "model-info", "values", modelInfo.String())
+
+	l(ctx, "model-config", "values", cfg.String())
+
 	l(ctx, "context-params", "NCtx", ctxParams.NCtx, "NBatch", ctxParams.NBatch,
 		"NUBatch", ctxParams.NUbatch, "NSeqMax", ctxParams.NSeqMax,
 		"TypeK", ctxParams.TypeK, "TypeV", ctxParams.TypeV, "NThreads", ctxParams.NThreads,
