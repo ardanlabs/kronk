@@ -70,9 +70,17 @@ func New(opts ...Option) (*Templates, error) {
 		o.githubRepo = defaultGithubPath
 	}
 
-	catalog, err := catalog.New(catalog.WithBasePath(o.basePath))
-	if err != nil {
-		return nil, fmt.Errorf("new: unable to create catalog: %w", err)
+	var ctlog *catalog.Catalog
+	if o.catalog != nil {
+		ctlog = o.catalog
+	}
+
+	if ctlog == nil {
+		var err error
+		ctlog, err = catalog.New(catalog.WithBasePath(o.basePath))
+		if err != nil {
+			return nil, fmt.Errorf("new: unable to create catalog: %w", err)
+		}
 	}
 
 	templatesPath := filepath.Join(o.basePath, localFolder)
@@ -84,7 +92,7 @@ func New(opts ...Option) (*Templates, error) {
 	t := Templates{
 		templatePath: templatesPath,
 		githubRepo:   o.githubRepo,
-		catalog:      catalog,
+		catalog:      ctlog,
 	}
 
 	return &t, nil

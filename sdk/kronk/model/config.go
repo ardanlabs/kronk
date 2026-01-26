@@ -30,6 +30,8 @@ const (
 	defNUBatch        = 512
 	defNUBatchVision  = 2 * 1024
 	defMinCacheTokens = 100
+	defThreadZero     = 0
+	defNSeqMax        = 1
 )
 
 // Logger provides a function for logging messages from different APIs.
@@ -177,6 +179,28 @@ type Config struct {
 	CacheMinTokens       int
 }
 
+func (cfg Config) String() string {
+	formatBoolPtr := func(p *bool) string {
+		if p == nil {
+			return "nil"
+		}
+		return fmt.Sprintf("%t", *p)
+	}
+
+	formatInt32Ptr := func(p *int32) string {
+		if p == nil {
+			return "nil"
+		}
+		return fmt.Sprintf("%d", *p)
+	}
+
+	return fmt.Sprintf("{JinjaFile:%q Device:%q ContextWindow:%d NBatch:%d NUBatch:%d NThreads:%d NThreadsBatch:%d CacheTypeK:%d CacheTypeV:%d UseDirectIO:%t FlashAttention:%d IgnoreIntegrityCheck:%t NSeqMax:%d OffloadKQV:%s OpOffload:%s NGpuLayers:%s SplitMode:%d SystemPromptCache:%t FirstMessageCache:%t CacheMinTokens:%d}",
+		cfg.JinjaFile, cfg.Device, cfg.ContextWindow, cfg.NBatch, cfg.NUBatch, cfg.NThreads, cfg.NThreadsBatch,
+		cfg.CacheTypeK, cfg.CacheTypeV, cfg.UseDirectIO, cfg.FlashAttention, cfg.IgnoreIntegrityCheck,
+		cfg.NSeqMax, formatBoolPtr(cfg.OffloadKQV), formatBoolPtr(cfg.OpOffload),
+		formatInt32Ptr(cfg.NGpuLayers), cfg.SplitMode, cfg.SystemPromptCache, cfg.FirstMessageCache, cfg.CacheMinTokens)
+}
+
 func validateConfig(ctx context.Context, cfg Config, log Logger) error {
 	if len(cfg.ModelFiles) == 0 {
 		return fmt.Errorf("validate-config: model file is required")
@@ -222,11 +246,11 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 	}
 
 	if cfg.NThreads < 0 {
-		cfg.NThreads = 0
+		cfg.NThreads = defThreadZero
 	}
 
 	if cfg.NThreadsBatch < 0 {
-		cfg.NThreadsBatch = 0
+		cfg.NThreadsBatch = defThreadZero
 	}
 
 	// NBatch is generally greater than or equal to NUBatch. The entire
@@ -237,7 +261,7 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 
 	// This value must be 1 to properly configure the batch engine.
 	if cfg.NSeqMax <= 0 {
-		cfg.NSeqMax = 1
+		cfg.NSeqMax = defNSeqMax
 	}
 
 	// Default minimum tokens for caching.

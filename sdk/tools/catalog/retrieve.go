@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"go.yaml.in/yaml/v2"
 )
 
@@ -136,6 +137,121 @@ func (c *Catalog) RetrieveCatalogs() ([]CatalogModels, error) {
 	}
 
 	return catalogs, nil
+}
+
+// RetrieveModelConfig reads the catalog and model config file is provided
+// and returns a model config for use.
+func (c *Catalog) RetrieveModelConfig(modelID string) (model.Config, error) {
+
+	// Get the file path for this model on disk. If this fails, the
+	// model hasn't been downloaded and nothing else to do.
+	fp, err := c.models.RetrievePath(modelID)
+	if err != nil {
+		return model.Config{}, fmt.Errorf("retrieve-model-config: unable to get model[%s] path: %w", modelID, err)
+	}
+
+	// Look in the catalog config first for the specified model.
+	var catalogFound bool
+	catalog, err := c.RetrieveModelDetails(modelID)
+	if err == nil {
+		catalogFound = true
+	}
+
+	// Look in the model config for the specified model.
+	modelConfig, modelCfgFound := c.modelConfig[modelID]
+
+	// Set the file paths.
+	cfg := model.Config{
+		ModelFiles: fp.ModelFiles,
+		ProjFile:   fp.ProjFile,
+	}
+
+	// Apply catalog settings first if found.
+	if catalogFound {
+		c := catalog.ModelConfig
+		cfg.Device = c.Device
+		cfg.ContextWindow = c.ContextWindow
+		cfg.NBatch = c.NBatch
+		cfg.NUBatch = c.NUBatch
+		cfg.NThreads = c.NThreads
+		cfg.NThreadsBatch = c.NThreadsBatch
+		cfg.CacheTypeK = c.CacheTypeK
+		cfg.CacheTypeV = c.CacheTypeV
+		cfg.FlashAttention = c.FlashAttention
+		cfg.UseDirectIO = c.UseDirectIO
+		cfg.IgnoreIntegrityCheck = c.IgnoreIntegrityCheck
+		cfg.NSeqMax = c.NSeqMax
+		cfg.OffloadKQV = c.OffloadKQV
+		cfg.OpOffload = c.OpOffload
+		cfg.NGpuLayers = c.NGpuLayers
+		cfg.SplitMode = c.SplitMode
+		cfg.SystemPromptCache = c.SystemPromptCache
+		cfg.FirstMessageCache = c.FirstMessageCache
+		cfg.CacheMinTokens = c.CacheMinTokens
+	}
+
+	// Apply model config settings if found (overrides catalog).
+	if modelCfgFound {
+		if modelConfig.Device != "" {
+			cfg.Device = modelConfig.Device
+		}
+		if modelConfig.ContextWindow != 0 {
+			cfg.ContextWindow = modelConfig.ContextWindow
+		}
+		if modelConfig.NBatch != 0 {
+			cfg.NBatch = modelConfig.NBatch
+		}
+		if modelConfig.NUBatch != 0 {
+			cfg.NUBatch = modelConfig.NUBatch
+		}
+		if modelConfig.NThreads != 0 {
+			cfg.NThreads = modelConfig.NThreads
+		}
+		if modelConfig.NThreadsBatch != 0 {
+			cfg.NThreadsBatch = modelConfig.NThreadsBatch
+		}
+		if modelConfig.CacheTypeK != 0 {
+			cfg.CacheTypeK = modelConfig.CacheTypeK
+		}
+		if modelConfig.CacheTypeV != 0 {
+			cfg.CacheTypeV = modelConfig.CacheTypeV
+		}
+		if modelConfig.FlashAttention != 0 {
+			cfg.FlashAttention = modelConfig.FlashAttention
+		}
+		if modelConfig.UseDirectIO {
+			cfg.UseDirectIO = modelConfig.UseDirectIO
+		}
+		if modelConfig.IgnoreIntegrityCheck {
+			cfg.IgnoreIntegrityCheck = modelConfig.IgnoreIntegrityCheck
+		}
+		if modelConfig.NSeqMax != 0 {
+			cfg.NSeqMax = modelConfig.NSeqMax
+		}
+		if modelConfig.OffloadKQV != nil {
+			cfg.OffloadKQV = modelConfig.OffloadKQV
+		}
+		if modelConfig.OpOffload != nil {
+			cfg.OpOffload = modelConfig.OpOffload
+		}
+		if modelConfig.NGpuLayers != nil {
+			cfg.NGpuLayers = modelConfig.NGpuLayers
+		}
+		if modelConfig.SplitMode != 0 {
+			cfg.SplitMode = modelConfig.SplitMode
+		}
+		if modelConfig.SystemPromptCache {
+			cfg.SystemPromptCache = modelConfig.SystemPromptCache
+		}
+		if modelConfig.FirstMessageCache {
+			cfg.FirstMessageCache = modelConfig.FirstMessageCache
+		}
+		if modelConfig.CacheMinTokens != 0 {
+			cfg.CacheMinTokens = modelConfig.CacheMinTokens
+		}
+	}
+
+	return cfg, nil
 }
 
 // =============================================================================

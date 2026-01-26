@@ -52,8 +52,44 @@ type ModelInfo struct {
 	IsEmbedModel  bool
 	IsRerankModel bool
 	Metadata      map[string]string
-	TemplateFile  string
 	Template      Template
+}
+
+func (mi ModelInfo) String() string {
+	var flags []string
+	if mi.HasProjection {
+		flags = append(flags, "projection")
+	}
+	if mi.HasEncoder {
+		flags = append(flags, "encoder")
+	}
+	if mi.HasDecoder {
+		flags = append(flags, "decoder")
+	}
+	if mi.IsRecurrent {
+		flags = append(flags, "recurrent")
+	}
+	if mi.IsHybrid {
+		flags = append(flags, "hybrid")
+	}
+	if mi.IsGPTModel {
+		flags = append(flags, "gpt")
+	}
+	if mi.IsEmbedModel {
+		flags = append(flags, "embed")
+	}
+	if mi.IsRerankModel {
+		flags = append(flags, "rerank")
+	}
+
+	flagStr := "none"
+	if len(flags) > 0 {
+		flagStr = strings.Join(flags, ", ")
+	}
+
+	sizeGB := float64(mi.Size) / (1024 * 1024 * 1024)
+
+	return fmt.Sprintf("ID[%s]: Desc[%s]: Size[%.2fGB]: Template[%s]: Flags[%s]", mi.ID, mi.Desc, sizeGB, mi.Template.FileName, flagStr)
 }
 
 func toModelInfo(cfg Config, model llama.Model) ModelInfo {

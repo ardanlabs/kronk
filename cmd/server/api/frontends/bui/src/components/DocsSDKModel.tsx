@@ -240,7 +240,6 @@ export default function DocsSDKModel() {
 	IsEmbedModel  bool
 	IsRerankModel bool
 	Metadata      map[string]string
-	TemplateFile  string
 	Template      Template
 }`}</code>
               </pre>
@@ -398,6 +397,13 @@ export default function DocsSDKModel() {
               <p className="doc-description">FinishReason return the finish reason as an empty string if it is nil.</p>
             </div>
 
+            <div className="doc-section" id="method-config-string">
+              <h4>Config.String</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) String() string</code>
+              </pre>
+            </div>
+
             <div className="doc-section" id="method-d-clone">
               <h4>D.Clone</h4>
               <pre className="code-block">
@@ -495,6 +501,13 @@ export default function DocsSDKModel() {
               <h4>Model.Unload</h4>
               <pre className="code-block">
                 <code>func (m *Model) Unload(ctx context.Context) error</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="method-modelinfo-string">
+              <h4>ModelInfo.String</h4>
+              <pre className="code-block">
+                <code>func (mi ModelInfo) String() string</code>
               </pre>
             </div>
 
@@ -669,6 +682,7 @@ export default function DocsSDKModel() {
               <a href="#methods" className="doc-index-header">Methods</a>
               <ul>
                 <li><a href="#method-choice-finishreason">Choice.FinishReason</a></li>
+                <li><a href="#method-config-string">Config.String</a></li>
                 <li><a href="#method-d-clone">D.Clone</a></li>
                 <li><a href="#method-d-logsafe">D.LogSafe</a></li>
                 <li><a href="#method-flashattentiontype-unmarshalyaml">FlashAttentionType.UnmarshalYAML</a></li>
@@ -682,6 +696,7 @@ export default function DocsSDKModel() {
                 <li><a href="#method-model-modelinfo">Model.ModelInfo</a></li>
                 <li><a href="#method-model-rerank">Model.Rerank</a></li>
                 <li><a href="#method-model-unload">Model.Unload</a></li>
+                <li><a href="#method-modelinfo-string">ModelInfo.String</a></li>
                 <li><a href="#method-splitmode-string">SplitMode.String</a></li>
                 <li><a href="#method-splitmode-toyzmatype">SplitMode.ToYZMAType</a></li>
                 <li><a href="#method-splitmode-unmarshalyaml">SplitMode.UnmarshalYAML</a></li>

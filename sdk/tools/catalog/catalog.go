@@ -9,6 +9,7 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
+	"go.yaml.in/yaml/v2"
 )
 
 const (
@@ -20,8 +21,9 @@ const (
 // =============================================================================
 
 type options struct {
-	basePath   string
-	githubRepo string
+	basePath        string
+	githubRepo      string
+	modelConfigFile string
 }
 
 // Option represents options for configuring catalog.
@@ -41,6 +43,13 @@ func WithGithubRepo(githubRepo string) Option {
 	}
 }
 
+// WithModelConfig sets a model config file for model settings.
+func WithModelConfig(modelConfigFile string) Option {
+	return func(o *options) {
+		o.modelConfigFile = modelConfigFile
+	}
+}
+
 // =============================================================================
 
 // Catalog manages the catalog system.
@@ -49,6 +58,7 @@ type Catalog struct {
 	githubRepo  string
 	models      *models.Models
 	biMutex     sync.Mutex
+	modelConfig map[string]ModelConfig
 }
 
 // New constructs the catalog system using defaults paths.
@@ -62,6 +72,16 @@ func New(opts ...Option) (*Catalog, error) {
 
 	if o.githubRepo == "" {
 		o.githubRepo = defaultGithubPath
+	}
+
+	var modelConfig map[string]ModelConfig
+	var err error
+
+	if o.modelConfigFile != "" {
+		modelConfig, err = loadModelConfig(o.modelConfigFile)
+		if err != nil {
+			return nil, fmt.Errorf("new: loading model config [%s]: %w", o.modelConfigFile, err)
+		}
 	}
 
 	catalogPath := filepath.Join(o.basePath, localFolder)
@@ -79,6 +99,7 @@ func New(opts ...Option) (*Catalog, error) {
 		catalogPath: catalogPath,
 		githubRepo:  o.githubRepo,
 		models:      models,
+		modelConfig: modelConfig,
 	}
 
 	return &c, nil
@@ -87,4 +108,20 @@ func New(opts ...Option) (*Catalog, error) {
 // CatalogPath returns the location of the catalog path.
 func (c *Catalog) CatalogPath() string {
 	return c.catalogPath
+}
+
+// =============================================================================
+
+func loadModelConfig(modelConfigFile string) (map[string]ModelConfig, error) {
+	data, err := os.ReadFile(modelConfigFile)
+	if err != nil {
+		return nil, fmt.Errorf("load-model-config: reading model config file: %w", err)
+	}
+
+	var configs map[string]ModelConfig
+	if err := yaml.Unmarshal(data, &configs); err != nil {
+		return nil, fmt.Errorf("load-model-config: unmarshaling model config: %w", err)
+	}
+
+	return configs, nil
 }

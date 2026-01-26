@@ -132,7 +132,9 @@ func New(t *testing.T, testName string) *Test {
 	// -------------------------------------------------------------------------
 	// Catalog System
 
-	ctlg, err := catalog.New()
+	ctlg, err := catalog.New(
+		catalog.WithModelConfig("../../../../../../zarf/kms/model_config.yaml"),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,11 +163,10 @@ func New(t *testing.T, testName string) *Test {
 	}
 
 	cache, err := cache.New(cache.Config{
-		Log:             log.Info,
-		Templates:       tmplts,
-		ModelsInCache:   1,
-		CacheTTL:        5 * time.Minute,
-		ModelConfigFile: "../../../../../../zarf/kms/model_config.yaml",
+		Log:           log.Info,
+		Templates:     tmplts,
+		ModelsInCache: 1,
+		CacheTTL:      5 * time.Minute,
 	})
 
 	if err != nil {
