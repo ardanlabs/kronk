@@ -142,6 +142,38 @@ export default function Chat() {
     }
   }, [selectedModel]);
 
+  // Load model defaults when model changes
+  useEffect(() => {
+    if (!selectedModel) return;
+
+    api.getModelDefaults(selectedModel)
+      .then((defaults) => {
+        if (defaults.temperature !== undefined) setTemperature(defaults.temperature);
+        if (defaults.top_k !== undefined) setTopK(defaults.top_k);
+        if (defaults.top_p !== undefined) setTopP(defaults.top_p);
+        if (defaults.min_p !== undefined) setMinP(defaults.min_p);
+        if (defaults.max_tokens !== undefined) setMaxTokens(defaults.max_tokens);
+        if (defaults.repeat_penalty !== undefined) setRepeatPenalty(defaults.repeat_penalty);
+        if (defaults.repeat_last_n !== undefined) setRepeatLastN(defaults.repeat_last_n);
+        if (defaults.dry_multiplier !== undefined) setDryMultiplier(defaults.dry_multiplier);
+        if (defaults.dry_base !== undefined) setDryBase(defaults.dry_base);
+        if (defaults.dry_allowed_length !== undefined) setDryAllowedLen(defaults.dry_allowed_length);
+        if (defaults.dry_penalty_last_n !== undefined) setDryPenaltyLast(defaults.dry_penalty_last_n);
+        if (defaults.xtc_probability !== undefined) setXtcProbability(defaults.xtc_probability);
+        if (defaults.xtc_threshold !== undefined) setXtcThreshold(defaults.xtc_threshold);
+        if (defaults.xtc_min_keep !== undefined) setXtcMinKeep(defaults.xtc_min_keep);
+        if (defaults.enable_thinking !== undefined) setEnableThinking(defaults.enable_thinking);
+        if (defaults.reasoning_effort !== undefined) setReasoningEffort(defaults.reasoning_effort);
+        if (defaults.return_prompt !== undefined) setReturnPrompt(defaults.return_prompt);
+        if (defaults.include_usage !== undefined) setIncludeUsage(defaults.include_usage);
+        if (defaults.logprobs !== undefined) setLogprobs(defaults.logprobs);
+        if (defaults.top_logprobs !== undefined) setTopLogprobs(defaults.top_logprobs);
+      })
+      .catch(() => {
+        // Ignore errors - defaults are optional
+      });
+  }, [selectedModel]);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);

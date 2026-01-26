@@ -53,7 +53,8 @@ func (a *app) responses(ctx context.Context, r *http.Request) web.Encoder {
 	defer cancel()
 
 	d := model.MapToModelD(req)
-	d = a.cache.ApplyDefaults(modelID, d)
+	d = a.cache.ApplyCatalogDefaults(modelID, d)
+	d = a.cache.ApplyDefaults(ctx, modelID, d)
 
 	if _, err := krn.ResponseStreamingHTTP(ctx, web.GetWriter(ctx), d); err != nil {
 		return errs.New(errs.Internal, err)

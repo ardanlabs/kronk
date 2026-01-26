@@ -327,6 +327,14 @@ func (a *app) showCatalogModel(ctx context.Context, r *http.Request) web.Encoder
 	return toCatalogModelResponse(model)
 }
 
+func (a *app) modelDefaults(ctx context.Context, r *http.Request) web.Encoder {
+	modelID := web.Param(r, "model")
+
+	defaults := a.cache.GetResolvedDefaults(ctx, modelID)
+
+	return toModelDefaultsResponse(defaults)
+}
+
 func (a *app) listKeys(ctx context.Context, r *http.Request) web.Encoder {
 	bearerToken := r.Header.Get("Authorization")
 

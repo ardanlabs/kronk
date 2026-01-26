@@ -232,3 +232,27 @@ export interface ChatStreamResponse {
   choices: ChatChoice[];
   usage?: ChatUsage;
 }
+
+export interface ModelDefaultsResponse {
+  temperature?: number;
+  top_k?: number;
+  top_p?: number;
+  min_p?: number;
+  max_tokens?: number;
+  repeat_penalty?: number;
+  repeat_last_n?: number;
+  dry_multiplier?: number;
+  dry_base?: number;
+  dry_allowed_length?: number;
+  dry_penalty_last_n?: number;
+  xtc_probability?: number;
+  xtc_threshold?: number;
+  xtc_min_keep?: number;
+  enable_thinking?: string;
+  reasoning_effort?: string;
+  return_prompt?: boolean;
+  include_usage?: boolean;
+  logprobs?: boolean;
+  top_logprobs?: number;
+  stream?: boolean;
+}

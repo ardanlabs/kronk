@@ -338,6 +338,65 @@ func toCatalogModelsResponse(list []catalog.Model) CatalogModelsResponse {
 
 // =============================================================================
 
+// ModelDefaultsResponse returns the resolved sampling defaults for a model.
+type ModelDefaultsResponse struct {
+	Temperature     *float32 `json:"temperature,omitempty"`
+	TopK            *int32   `json:"top_k,omitempty"`
+	TopP            *float32 `json:"top_p,omitempty"`
+	MinP            *float32 `json:"min_p,omitempty"`
+	MaxTokens       *int     `json:"max_tokens,omitempty"`
+	RepeatPenalty   *float32 `json:"repeat_penalty,omitempty"`
+	RepeatLastN     *int32   `json:"repeat_last_n,omitempty"`
+	DryMultiplier   *float32 `json:"dry_multiplier,omitempty"`
+	DryBase         *float32 `json:"dry_base,omitempty"`
+	DryAllowedLen   *int32   `json:"dry_allowed_length,omitempty"`
+	DryPenaltyLast  *int32   `json:"dry_penalty_last_n,omitempty"`
+	XtcProbability  *float32 `json:"xtc_probability,omitempty"`
+	XtcThreshold    *float32 `json:"xtc_threshold,omitempty"`
+	XtcMinKeep      *uint32  `json:"xtc_min_keep,omitempty"`
+	EnableThinking  *string  `json:"enable_thinking,omitempty"`
+	ReasoningEffort *string  `json:"reasoning_effort,omitempty"`
+	ReturnPrompt    *bool    `json:"return_prompt,omitempty"`
+	IncludeUsage    *bool    `json:"include_usage,omitempty"`
+	Logprobs        *bool    `json:"logprobs,omitempty"`
+	TopLogprobs     *int     `json:"top_logprobs,omitempty"`
+	Stream          *bool    `json:"stream,omitempty"`
+}
+
+// Encode implements the encoder interface.
+func (app ModelDefaultsResponse) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(app)
+	return data, "application/json", err
+}
+
+func toModelDefaultsResponse(rd cache.ResolvedDefaults) ModelDefaultsResponse {
+	return ModelDefaultsResponse{
+		Temperature:     rd.Temperature,
+		TopK:            rd.TopK,
+		TopP:            rd.TopP,
+		MinP:            rd.MinP,
+		MaxTokens:       rd.MaxTokens,
+		RepeatPenalty:   rd.RepeatPenalty,
+		RepeatLastN:     rd.RepeatLastN,
+		DryMultiplier:   rd.DryMultiplier,
+		DryBase:         rd.DryBase,
+		DryAllowedLen:   rd.DryAllowedLen,
+		DryPenaltyLast:  rd.DryPenaltyLast,
+		XtcProbability:  rd.XtcProbability,
+		XtcThreshold:    rd.XtcThreshold,
+		XtcMinKeep:      rd.XtcMinKeep,
+		EnableThinking:  rd.Thinking,
+		ReasoningEffort: rd.ReasoningEffort,
+		ReturnPrompt:    rd.ReturnPrompt,
+		IncludeUsage:    rd.IncludeUsage,
+		Logprobs:        rd.Logprobs,
+		TopLogprobs:     rd.TopLogprobs,
+		Stream:          rd.Stream,
+	}
+}
+
+// =============================================================================
+
 // KeyResponse represents a key in the system.
 type KeyResponse struct {
 	ID      string `json:"id"`

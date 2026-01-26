@@ -2,6 +2,7 @@ import type {
   ListModelInfoResponse,
   ModelDetailsResponse,
   ModelInfoResponse,
+  ModelDefaultsResponse,
   CatalogModelsResponse,
   CatalogModelResponse,
   KeysResponse,
@@ -61,6 +62,10 @@ class ApiService {
 
   async showModel(id: string): Promise<ModelInfoResponse> {
     return this.request<ModelInfoResponse>(`/models/${encodeURIComponent(id)}`);
+  }
+
+  async getModelDefaults(id: string): Promise<ModelDefaultsResponse> {
+    return this.request<ModelDefaultsResponse>(`/models/${encodeURIComponent(id)}/defaults`);
   }
 
   async getLibsVersion(): Promise<VersionResponse> {

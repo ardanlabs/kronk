@@ -14,6 +14,7 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/ardanlabs/kronk/sdk/tools/templates"
 	"github.com/maypok86/otter/v2"
@@ -154,6 +155,7 @@ type Cache struct {
 	itemsInCache         atomic.Int32
 	maxModelsInCache     int
 	models               *models.Models
+	catalog              *catalog.Catalog
 	ignoreIntegrityCheck bool
 	modelConfig          map[string]modelConfig
 }
@@ -170,6 +172,11 @@ func New(cfg Config) (*Cache, error) {
 		return nil, fmt.Errorf("new: creating models system: %w", err)
 	}
 
+	cat, err := catalog.New(catalog.WithBasePath(cfg.BasePath))
+	if err != nil {
+		return nil, fmt.Errorf("new: creating catalog system: %w", err)
+	}
+
 	var mc map[string]modelConfig
 	if cfg.ModelConfigFile != "" {
 		mc, err = loadModelConfig(cfg.ModelConfigFile)
@@ -183,6 +190,7 @@ func New(cfg Config) (*Cache, error) {
 		templates:            cfg.Templates,
 		maxModelsInCache:     cfg.ModelsInCache,
 		models:               models,
+		catalog:              cat,
 		ignoreIntegrityCheck: cfg.IgnoreIntegrityCheck,
 		modelConfig:          mc,
 	}
@@ -410,79 +418,291 @@ func (c *Cache) eviction(event otter.DeletionEvent[string, *kronk.Kronk]) {
 	c.itemsInCache.Add(-1)
 }
 
-func (c *Cache) ApplyDefaults(modelID string, d model.D) model.D {
+func (c *Cache) ApplyDefaults(ctx context.Context, modelID string, d model.D) model.D {
 	mc, found := c.modelConfig[strings.ToLower(modelID)]
 	if !found {
 		return d
 	}
 
+	catModel, _ := c.catalog.RetrieveModelDetails(modelID)
+	catDC := catModel.DefaultContext
+
 	dc := mc.DefaultContext
 
+	var overrides []any
+
 	if _, exists := d["temperature"]; !exists && dc.Temperature != nil {
+		if catDC.Temperature != nil && *catDC.Temperature != *dc.Temperature {
+			overrides = append(overrides, "temperature", fmt.Sprintf("catalog:%v->config:%v", *catDC.Temperature, *dc.Temperature))
+		}
 		d["temperature"] = *dc.Temperature
 	}
 	if _, exists := d["top_k"]; !exists && dc.TopK != nil {
+		if catDC.TopK != nil && *catDC.TopK != *dc.TopK {
+			overrides = append(overrides, "top_k", fmt.Sprintf("catalog:%v->config:%v", *catDC.TopK, *dc.TopK))
+		}
 		d["top_k"] = *dc.TopK
 	}
 	if _, exists := d["top_p"]; !exists && dc.TopP != nil {
+		if catDC.TopP != nil && *catDC.TopP != *dc.TopP {
+			overrides = append(overrides, "top_p", fmt.Sprintf("catalog:%v->config:%v", *catDC.TopP, *dc.TopP))
+		}
 		d["top_p"] = *dc.TopP
 	}
 	if _, exists := d["min_p"]; !exists && dc.MinP != nil {
+		if catDC.MinP != nil && *catDC.MinP != *dc.MinP {
+			overrides = append(overrides, "min_p", fmt.Sprintf("catalog:%v->config:%v", *catDC.MinP, *dc.MinP))
+		}
 		d["min_p"] = *dc.MinP
 	}
 	if _, exists := d["max_tokens"]; !exists && dc.MaxTokens != nil {
+		if catDC.MaxTokens != nil && *catDC.MaxTokens != *dc.MaxTokens {
+			overrides = append(overrides, "max_tokens", fmt.Sprintf("catalog:%v->config:%v", *catDC.MaxTokens, *dc.MaxTokens))
+		}
 		d["max_tokens"] = *dc.MaxTokens
 	}
 	if _, exists := d["repeat_penalty"]; !exists && dc.RepeatPenalty != nil {
+		if catDC.RepeatPenalty != nil && *catDC.RepeatPenalty != *dc.RepeatPenalty {
+			overrides = append(overrides, "repeat_penalty", fmt.Sprintf("catalog:%v->config:%v", *catDC.RepeatPenalty, *dc.RepeatPenalty))
+		}
 		d["repeat_penalty"] = *dc.RepeatPenalty
 	}
 	if _, exists := d["repeat_last_n"]; !exists && dc.RepeatLastN != nil {
+		if catDC.RepeatLastN != nil && *catDC.RepeatLastN != *dc.RepeatLastN {
+			overrides = append(overrides, "repeat_last_n", fmt.Sprintf("catalog:%v->config:%v", *catDC.RepeatLastN, *dc.RepeatLastN))
+		}
 		d["repeat_last_n"] = *dc.RepeatLastN
 	}
 	if _, exists := d["dry_multiplier"]; !exists && dc.DryMultiplier != nil {
+		if catDC.DryMultiplier != nil && *catDC.DryMultiplier != *dc.DryMultiplier {
+			overrides = append(overrides, "dry_multiplier", fmt.Sprintf("catalog:%v->config:%v", *catDC.DryMultiplier, *dc.DryMultiplier))
+		}
 		d["dry_multiplier"] = *dc.DryMultiplier
 	}
 	if _, exists := d["dry_base"]; !exists && dc.DryBase != nil {
+		if catDC.DryBase != nil && *catDC.DryBase != *dc.DryBase {
+			overrides = append(overrides, "dry_base", fmt.Sprintf("catalog:%v->config:%v", *catDC.DryBase, *dc.DryBase))
+		}
 		d["dry_base"] = *dc.DryBase
 	}
 	if _, exists := d["dry_allowed_length"]; !exists && dc.DryAllowedLen != nil {
+		if catDC.DryAllowedLen != nil && *catDC.DryAllowedLen != *dc.DryAllowedLen {
+			overrides = append(overrides, "dry_allowed_length", fmt.Sprintf("catalog:%v->config:%v", *catDC.DryAllowedLen, *dc.DryAllowedLen))
+		}
 		d["dry_allowed_length"] = *dc.DryAllowedLen
 	}
 	if _, exists := d["dry_penalty_last_n"]; !exists && dc.DryPenaltyLast != nil {
+		if catDC.DryPenaltyLast != nil && *catDC.DryPenaltyLast != *dc.DryPenaltyLast {
+			overrides = append(overrides, "dry_penalty_last_n", fmt.Sprintf("catalog:%v->config:%v", *catDC.DryPenaltyLast, *dc.DryPenaltyLast))
+		}
 		d["dry_penalty_last_n"] = *dc.DryPenaltyLast
 	}
 	if _, exists := d["xtc_probability"]; !exists && dc.XtcProbability != nil {
+		if catDC.XtcProbability != nil && *catDC.XtcProbability != *dc.XtcProbability {
+			overrides = append(overrides, "xtc_probability", fmt.Sprintf("catalog:%v->config:%v", *catDC.XtcProbability, *dc.XtcProbability))
+		}
 		d["xtc_probability"] = *dc.XtcProbability
 	}
 	if _, exists := d["xtc_threshold"]; !exists && dc.XtcThreshold != nil {
+		if catDC.XtcThreshold != nil && *catDC.XtcThreshold != *dc.XtcThreshold {
+			overrides = append(overrides, "xtc_threshold", fmt.Sprintf("catalog:%v->config:%v", *catDC.XtcThreshold, *dc.XtcThreshold))
+		}
 		d["xtc_threshold"] = *dc.XtcThreshold
 	}
 	if _, exists := d["xtc_min_keep"]; !exists && dc.XtcMinKeep != nil {
+		if catDC.XtcMinKeep != nil && *catDC.XtcMinKeep != *dc.XtcMinKeep {
+			overrides = append(overrides, "xtc_min_keep", fmt.Sprintf("catalog:%v->config:%v", *catDC.XtcMinKeep, *dc.XtcMinKeep))
+		}
 		d["xtc_min_keep"] = *dc.XtcMinKeep
 	}
 	if _, exists := d["enable_thinking"]; !exists && dc.Thinking != nil {
+		if catDC.Thinking != nil && *catDC.Thinking != *dc.Thinking {
+			overrides = append(overrides, "enable_thinking", fmt.Sprintf("catalog:%v->config:%v", *catDC.Thinking, *dc.Thinking))
+		}
 		d["enable_thinking"] = *dc.Thinking
 	}
 	if _, exists := d["reasoning_effort"]; !exists && dc.ReasoningEffort != nil {
+		if catDC.ReasoningEffort != nil && *catDC.ReasoningEffort != *dc.ReasoningEffort {
+			overrides = append(overrides, "reasoning_effort", fmt.Sprintf("catalog:%v->config:%v", *catDC.ReasoningEffort, *dc.ReasoningEffort))
+		}
 		d["reasoning_effort"] = *dc.ReasoningEffort
 	}
 	if _, exists := d["return_prompt"]; !exists && dc.ReturnPrompt != nil {
+		if catDC.ReturnPrompt != nil && *catDC.ReturnPrompt != *dc.ReturnPrompt {
+			overrides = append(overrides, "return_prompt", fmt.Sprintf("catalog:%v->config:%v", *catDC.ReturnPrompt, *dc.ReturnPrompt))
+		}
 		d["return_prompt"] = *dc.ReturnPrompt
 	}
 	if _, exists := d["include_usage"]; !exists && dc.IncludeUsage != nil {
+		if catDC.IncludeUsage != nil && *catDC.IncludeUsage != *dc.IncludeUsage {
+			overrides = append(overrides, "include_usage", fmt.Sprintf("catalog:%v->config:%v", *catDC.IncludeUsage, *dc.IncludeUsage))
+		}
 		d["include_usage"] = *dc.IncludeUsage
 	}
 	if _, exists := d["logprobs"]; !exists && dc.Logprobs != nil {
+		if catDC.Logprobs != nil && *catDC.Logprobs != *dc.Logprobs {
+			overrides = append(overrides, "logprobs", fmt.Sprintf("catalog:%v->config:%v", *catDC.Logprobs, *dc.Logprobs))
+		}
 		d["logprobs"] = *dc.Logprobs
 	}
 	if _, exists := d["top_logprobs"]; !exists && dc.TopLogprobs != nil {
+		if catDC.TopLogprobs != nil && *catDC.TopLogprobs != *dc.TopLogprobs {
+			overrides = append(overrides, "top_logprobs", fmt.Sprintf("catalog:%v->config:%v", *catDC.TopLogprobs, *dc.TopLogprobs))
+		}
 		d["top_logprobs"] = *dc.TopLogprobs
 	}
 	if _, exists := d["stream"]; !exists && dc.Stream != nil {
+		if catDC.Stream != nil && *catDC.Stream != *dc.Stream {
+			overrides = append(overrides, "stream", fmt.Sprintf("catalog:%v->config:%v", *catDC.Stream, *dc.Stream))
+		}
 		d["stream"] = *dc.Stream
 	}
 
+	if len(overrides) > 0 {
+		logArgs := []any{"model", modelID}
+		logArgs = append(logArgs, overrides...)
+		c.log(ctx, "model_config.yaml overrides catalog defaults", logArgs...)
+	}
+
 	return d
+}
+
+// ApplyCatalogDefaults applies default context values from the catalog for the given model.
+// These are lower priority than model_config.yaml defaults.
+func (c *Cache) ApplyCatalogDefaults(modelID string, d model.D) model.D {
+	catModel, err := c.catalog.RetrieveModelDetails(modelID)
+	if err != nil {
+		return d
+	}
+
+	return model.D(catModel.DefaultContext.ApplyDefaults(d))
+}
+
+// ResolvedDefaults represents the resolved sampling defaults for a model.
+type ResolvedDefaults struct {
+	Temperature     *float32 `json:"temperature,omitempty"`
+	TopK            *int32   `json:"top_k,omitempty"`
+	TopP            *float32 `json:"top_p,omitempty"`
+	MinP            *float32 `json:"min_p,omitempty"`
+	MaxTokens       *int     `json:"max_tokens,omitempty"`
+	RepeatPenalty   *float32 `json:"repeat_penalty,omitempty"`
+	RepeatLastN     *int32   `json:"repeat_last_n,omitempty"`
+	DryMultiplier   *float32 `json:"dry_multiplier,omitempty"`
+	DryBase         *float32 `json:"dry_base,omitempty"`
+	DryAllowedLen   *int32   `json:"dry_allowed_length,omitempty"`
+	DryPenaltyLast  *int32   `json:"dry_penalty_last_n,omitempty"`
+	XtcProbability  *float32 `json:"xtc_probability,omitempty"`
+	XtcThreshold    *float32 `json:"xtc_threshold,omitempty"`
+	XtcMinKeep      *uint32  `json:"xtc_min_keep,omitempty"`
+	Thinking        *string  `json:"enable_thinking,omitempty"`
+	ReasoningEffort *string  `json:"reasoning_effort,omitempty"`
+	ReturnPrompt    *bool    `json:"return_prompt,omitempty"`
+	IncludeUsage    *bool    `json:"include_usage,omitempty"`
+	Logprobs        *bool    `json:"logprobs,omitempty"`
+	TopLogprobs     *int     `json:"top_logprobs,omitempty"`
+	Stream          *bool    `json:"stream,omitempty"`
+}
+
+// GetResolvedDefaults returns the resolved sampling defaults for a model.
+// It merges catalog defaults with model_config.yaml overrides.
+func (c *Cache) GetResolvedDefaults(ctx context.Context, modelID string) ResolvedDefaults {
+	var rd ResolvedDefaults
+
+	catModel, err := c.catalog.RetrieveModelDetails(modelID)
+	if err == nil {
+		dc := catModel.DefaultContext
+		rd.Temperature = dc.Temperature
+		rd.TopK = dc.TopK
+		rd.TopP = dc.TopP
+		rd.MinP = dc.MinP
+		rd.MaxTokens = dc.MaxTokens
+		rd.RepeatPenalty = dc.RepeatPenalty
+		rd.RepeatLastN = dc.RepeatLastN
+		rd.DryMultiplier = dc.DryMultiplier
+		rd.DryBase = dc.DryBase
+		rd.DryAllowedLen = dc.DryAllowedLen
+		rd.DryPenaltyLast = dc.DryPenaltyLast
+		rd.XtcProbability = dc.XtcProbability
+		rd.XtcThreshold = dc.XtcThreshold
+		rd.XtcMinKeep = dc.XtcMinKeep
+		rd.Thinking = dc.Thinking
+		rd.ReasoningEffort = dc.ReasoningEffort
+		rd.ReturnPrompt = dc.ReturnPrompt
+		rd.IncludeUsage = dc.IncludeUsage
+		rd.Logprobs = dc.Logprobs
+		rd.TopLogprobs = dc.TopLogprobs
+		rd.Stream = dc.Stream
+	}
+
+	mc, found := c.modelConfig[strings.ToLower(modelID)]
+	if found {
+		dc := mc.DefaultContext
+		if dc.Temperature != nil {
+			rd.Temperature = dc.Temperature
+		}
+		if dc.TopK != nil {
+			rd.TopK = dc.TopK
+		}
+		if dc.TopP != nil {
+			rd.TopP = dc.TopP
+		}
+		if dc.MinP != nil {
+			rd.MinP = dc.MinP
+		}
+		if dc.MaxTokens != nil {
+			rd.MaxTokens = dc.MaxTokens
+		}
+		if dc.RepeatPenalty != nil {
+			rd.RepeatPenalty = dc.RepeatPenalty
+		}
+		if dc.RepeatLastN != nil {
+			rd.RepeatLastN = dc.RepeatLastN
+		}
+		if dc.DryMultiplier != nil {
+			rd.DryMultiplier = dc.DryMultiplier
+		}
+		if dc.DryBase != nil {
+			rd.DryBase = dc.DryBase
+		}
+		if dc.DryAllowedLen != nil {
+			rd.DryAllowedLen = dc.DryAllowedLen
+		}
+		if dc.DryPenaltyLast != nil {
+			rd.DryPenaltyLast = dc.DryPenaltyLast
+		}
+		if dc.XtcProbability != nil {
+			rd.XtcProbability = dc.XtcProbability
+		}
+		if dc.XtcThreshold != nil {
+			rd.XtcThreshold = dc.XtcThreshold
+		}
+		if dc.XtcMinKeep != nil {
+			rd.XtcMinKeep = dc.XtcMinKeep
+		}
+		if dc.Thinking != nil {
+			rd.Thinking = dc.Thinking
+		}
+		if dc.ReasoningEffort != nil {
+			rd.ReasoningEffort = dc.ReasoningEffort
+		}
+		if dc.ReturnPrompt != nil {
+			rd.ReturnPrompt = dc.ReturnPrompt
+		}
+		if dc.IncludeUsage != nil {
+			rd.IncludeUsage = dc.IncludeUsage
+		}
+		if dc.Logprobs != nil {
+			rd.Logprobs = dc.Logprobs
+		}
+		if dc.TopLogprobs != nil {
+			rd.TopLogprobs = dc.TopLogprobs
+		}
+		if dc.Stream != nil {
+			rd.Stream = dc.Stream
+		}
+	}
+
+	return rd
 }
 
 func loadModelConfig(modelConfigFile string) (map[string]modelConfig, error) {

@@ -115,16 +115,21 @@ Detailed documentation for the core inference packages is maintained in their re
 
 **Input format conversion**: Both streaming and non-streaming Response APIs must call `convertInputToMessages(d)` to handle OpenAI Responses `input` field format
 
-**Default context parameters**: Chat and Response handlers call `cache.ApplyDefaults()` to merge per-model sampling defaults from `model_config.yaml` into requests
+**Default context parameters**: Chat and Response handlers call `cache.ApplyCatalogDefaults()` then `cache.ApplyDefaults()` to merge sampling defaults. Priority order: request values > model_config.yaml > catalog defaults
 
 ## Sampling Parameter Defaults
 
-Default sampling parameters are defined in two places that **must stay in sync**:
+Default sampling parameters are defined in three places that **must stay in sync**:
 
 - **Source of truth**: `sdk/kronk/model/params.go` (Go constants `defTemp`, `defTopK`, etc.)
 - **Documentation**: `zarf/kms/model_config.yaml` (`default-context` section in example)
+- **Catalog defaults**: `sdk/tools/catalog/model.go` (`DefaultContext` struct)
 
-When updating default values, update both files. The cache package (`cmd/server/app/sdk/cache/cache.go`) uses `default-context` from the YAML to apply per-model overrides via `ApplyDefaults()`
+When updating default values or adding new parameters, update all three files. The `DefaultContext` struct in catalog must match the fields in `sdk/kronk/model/params.go` and `cmd/server/app/sdk/cache/cache.go` (`defaultContext` struct).
+
+The cache package applies defaults in this order:
+1. `ApplyCatalogDefaults()` - applies per-model defaults from catalog YAML files
+2. `ApplyDefaults()` - applies per-model overrides from `model_config.yaml` (overrides catalog values, logs overridden parameters)
 
 ## Reference Threads
 
