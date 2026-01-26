@@ -171,6 +171,22 @@ export interface ChatRequest {
   temperature?: number;
   top_p?: number;
   top_k?: number;
+  min_p?: number;
+  repeat_penalty?: number;
+  repeat_last_n?: number;
+  dry_multiplier?: number;
+  dry_base?: number;
+  dry_allowed_length?: number;
+  dry_penalty_last_n?: number;
+  xtc_probability?: number;
+  xtc_threshold?: number;
+  xtc_min_keep?: number;
+  enable_thinking?: string;
+  reasoning_effort?: string;
+  return_prompt?: boolean;
+  include_usage?: boolean;
+  logprobs?: boolean;
+  top_logprobs?: number;
 }
 
 export interface ChatToolCallFunction {

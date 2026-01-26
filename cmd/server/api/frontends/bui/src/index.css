@@ -1472,3 +1472,52 @@ tr.selected:hover td {
     border-radius: 8px;
     font-size: 13px;
 }
+
+/* Chat advanced settings */
+.chat-setting-button {
+    align-self: flex-end;
+}
+
+.chat-advanced-toggle {
+    background: none;
+    border: 1px solid var(--color-gray-300);
+    border-radius: 4px;
+    padding: 6px 12px;
+    font-size: 13px;
+    color: var(--color-gray-600);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.chat-advanced-toggle:hover {
+    background: var(--color-gray-100);
+    color: var(--color-gray-800);
+}
+
+.chat-advanced-settings {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    width: 100%;
+    padding-top: 12px;
+    margin-top: 4px;
+    border-top: 1px solid var(--color-gray-200);
+}
+
+.chat-setting-checkbox {
+    display: flex;
+    align-items: center;
+}
+
+.chat-setting-checkbox label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.chat-setting-checkbox input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+}

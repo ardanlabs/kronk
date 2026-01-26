@@ -38,3 +38,4 @@ go.work.sum
 
 .llama.cpp
 .yzma
+.ollama
