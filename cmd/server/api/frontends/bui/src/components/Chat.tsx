@@ -96,9 +96,9 @@ export default function Chat() {
 
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [minP, setMinP] = useState(0);
-  const [repeatPenalty, setRepeatPenalty] = useState(1.1);
+  const [repeatPenalty, setRepeatPenalty] = useState(1.0);
   const [repeatLastN, setRepeatLastN] = useState(64);
-  const [dryMultiplier, setDryMultiplier] = useState(0);
+  const [dryMultiplier, setDryMultiplier] = useState(1.05);
   const [dryBase, setDryBase] = useState(1.75);
   const [dryAllowedLen, setDryAllowedLen] = useState(2);
   const [dryPenaltyLast, setDryPenaltyLast] = useState(0);

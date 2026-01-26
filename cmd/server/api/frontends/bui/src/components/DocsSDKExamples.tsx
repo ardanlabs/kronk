@@ -304,8 +304,8 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 
 	cfg := model.Config{
 		ModelFiles:        mp.ModelFiles,
-		CacheTypeK:        model.GGMLTypeF16,
-		CacheTypeV:        model.GGMLTypeF16,
+		CacheTypeK:        model.GGMLTypeQ8_0,
+		CacheTypeV:        model.GGMLTypeQ8_0,
 		NSeqMax:           2,
 		SystemPromptCache: true,
 	}
@@ -366,13 +366,12 @@ func chat(krn *kronk.Kronk) error {
 			defer cancel()
 
 			d := model.D{
-				"messages":       messages,
-				"tools":          toolDocuments(),
-				"max_tokens":     2048,
-				"temperature":    0.7,
-				"top_p":          0.8,
-				"top_k":          20,
-				"repeat_penalty": 1.05,
+				"messages":    messages,
+				"tools":       toolDocuments(),
+				"max_tokens":  2048,
+				"temperature": 0.7,
+				"top_p":       0.8,
+				"top_k":       20,
 			}
 
 			ch, err := performChat(ctx, krn, d)

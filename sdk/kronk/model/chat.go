@@ -190,6 +190,8 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 // for content ([]D with type:"text") to simple string content. This is used
 // for text-only inference paths.
 func (*Model) prepareTextContext(d D) D {
+	d = d.Clone()
+
 	messages, ok := d["messages"].([]D)
 	if !ok {
 		return d

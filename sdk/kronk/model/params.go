@@ -12,7 +12,9 @@ import (
 // dry_base is the base for exponential penalty growth in DRY. Default is 1.75.
 //
 // dry_multiplier controls the DRY (Don't Repeat Yourself) sampler which penalizes
-// n-gram pattern repetition. Must be > 0 to activate. Default is 0.0 (disabled).
+// n-gram pattern repetition. 0.8 - Light repetition penalty,
+// 1.0–1.5 - Moderate (typical starting point), 2.0–3.0 - Aggressive.
+// Default is 1.05.
 //
 // dry_penalty_last_n limits how many recent tokens DRY considers. Default of 0
 // means full context.
@@ -41,7 +43,7 @@ import (
 // repeat_penalty applies a penalty to tokens that have already appeared in the
 // output, reducing repetitive text. A value of 1.0 means no penalty. Values
 // above 1.0 reduce repetition (e.g., 1.1 is a mild penalty, 1.5 is strong).
-// Default is 1.1.
+// Default is 1.0 which turns it off.
 //
 // return_prompt determines whether to include the prompt in the final response.
 // When set to true, the prompt will be included. Default is false.
@@ -78,8 +80,8 @@ import (
 const (
 	defDryAllowedLen   = 2
 	defDryBase         = 1.75
-	defDryMultiplier   = 0.0
-	defDryPenaltyLast  = 0
+	defDryMultiplier   = 1.05
+	defDryPenaltyLast  = 0.0
 	defEnableThinking  = ThinkingEnabled
 	defIncludeUsage    = true
 	defLogprobs        = false
@@ -87,7 +89,7 @@ const (
 	defMinP            = 0.0
 	defReasoningEffort = ReasoningEffortMedium
 	defRepeatLastN     = 64
-	defRepeatPenalty   = 1.1
+	defRepeatPenalty   = 1.0
 	defReturnPrompt    = false
 	defTemp            = 0.8
 	defTopK            = 40
@@ -461,13 +463,12 @@ func (m *Model) adjustParams(p params) params {
 func (m *Model) toSampler(p params) llama.Sampler {
 	sampler := llama.SamplerChainInit(llama.SamplerChainDefaultParams())
 
-	// TODO: DRY sampler disabled - yzma crashes when seqBreakers is nil.
-	// Waiting for yzma fix to properly handle empty sequence breakers.
-	// if p.DryMultiplier > 0 {
-	// 	llama.SamplerChainAdd(sampler, llama.SamplerInitDry(m.vocab, int32(m.cfg.ContextWindow), p.DryMultiplier, p.DryBase, p.DryAllowedLen, p.DryPenaltyLast, nil, 0))
-	// }
-
-	llama.SamplerChainAdd(sampler, llama.SamplerInitPenalties(p.RepeatLastN, p.RepeatPenalty, 0, 0))
+	if p.DryMultiplier > 0 {
+		llama.SamplerChainAdd(sampler, llama.SamplerInitDry(m.vocab, int32(m.cfg.ContextWindow), p.DryMultiplier, p.DryBase, p.DryAllowedLen, p.DryPenaltyLast, nil))
+	}
+	if p.RepeatPenalty != defRepeatPenalty {
+		llama.SamplerChainAdd(sampler, llama.SamplerInitPenalties(p.RepeatLastN, p.RepeatPenalty, 0, 0))
+	}
 	llama.SamplerChainAdd(sampler, llama.SamplerInitTopK(p.TopK))
 	llama.SamplerChainAdd(sampler, llama.SamplerInitTopP(p.TopP, 0))
 	llama.SamplerChainAdd(sampler, llama.SamplerInitMinP(p.MinP, 0))
