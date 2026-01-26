@@ -153,6 +153,26 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // CacheMinTokens sets the minimum token count required before caching. Messages
 // shorter than this threshold are not cached, as the overhead of cache management
 // may outweigh the prefill savings. When set to 0, defaults to 100 tokens.
+// SamplingParameters represents sampling/generation parameters for inference.
+type SamplingParameters struct {
+	Temperature     *float32
+	TopK            *int32
+	TopP            *float32
+	MinP            *float32
+	MaxTokens       *int
+	RepeatPenalty   *float32
+	RepeatLastN     *int32
+	DryMultiplier   *float32
+	DryBase         *float32
+	DryAllowedLen   *int32
+	DryPenaltyLast  *int32
+	XtcProbability  *float32
+	XtcThreshold    *float32
+	XtcMinKeep      *uint32
+	Thinking        *string
+	ReasoningEffort *string
+}
+
 type Config struct {
 	Log                  Logger
 	ModelFiles           []string
@@ -177,6 +197,7 @@ type Config struct {
 	SystemPromptCache    bool
 	FirstMessageCache    bool
 	CacheMinTokens       int
+	SamplingParameters   SamplingParameters
 }
 
 func (cfg Config) String() string {

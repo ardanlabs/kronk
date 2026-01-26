@@ -193,6 +193,24 @@ func (c *Catalog) RetrieveModelConfig(modelID string) (model.Config, error) {
 		cfg.SystemPromptCache = c.SystemPromptCache
 		cfg.FirstMessageCache = c.FirstMessageCache
 		cfg.CacheMinTokens = c.CacheMinTokens
+		cfg.SamplingParameters = model.SamplingParameters{
+			Temperature:     c.SamplingParameters.Temperature,
+			TopK:            c.SamplingParameters.TopK,
+			TopP:            c.SamplingParameters.TopP,
+			MinP:            c.SamplingParameters.MinP,
+			MaxTokens:       c.SamplingParameters.MaxTokens,
+			RepeatPenalty:   c.SamplingParameters.RepeatPenalty,
+			RepeatLastN:     c.SamplingParameters.RepeatLastN,
+			DryMultiplier:   c.SamplingParameters.DryMultiplier,
+			DryBase:         c.SamplingParameters.DryBase,
+			DryAllowedLen:   c.SamplingParameters.DryAllowedLen,
+			DryPenaltyLast:  c.SamplingParameters.DryPenaltyLast,
+			XtcProbability:  c.SamplingParameters.XtcProbability,
+			XtcThreshold:    c.SamplingParameters.XtcThreshold,
+			XtcMinKeep:      c.SamplingParameters.XtcMinKeep,
+			Thinking:        c.SamplingParameters.Thinking,
+			ReasoningEffort: c.SamplingParameters.ReasoningEffort,
+		}
 	}
 
 	// Apply model config settings if found (overrides catalog).
@@ -253,6 +271,54 @@ func (c *Catalog) RetrieveModelConfig(modelID string) (model.Config, error) {
 		}
 		if modelConfig.CacheMinTokens != 0 {
 			cfg.CacheMinTokens = modelConfig.CacheMinTokens
+		}
+		if modelConfig.SamplingParameters.Temperature != nil {
+			cfg.SamplingParameters.Temperature = modelConfig.SamplingParameters.Temperature
+		}
+		if modelConfig.SamplingParameters.TopK != nil {
+			cfg.SamplingParameters.TopK = modelConfig.SamplingParameters.TopK
+		}
+		if modelConfig.SamplingParameters.TopP != nil {
+			cfg.SamplingParameters.TopP = modelConfig.SamplingParameters.TopP
+		}
+		if modelConfig.SamplingParameters.MinP != nil {
+			cfg.SamplingParameters.MinP = modelConfig.SamplingParameters.MinP
+		}
+		if modelConfig.SamplingParameters.MaxTokens != nil {
+			cfg.SamplingParameters.MaxTokens = modelConfig.SamplingParameters.MaxTokens
+		}
+		if modelConfig.SamplingParameters.RepeatPenalty != nil {
+			cfg.SamplingParameters.RepeatPenalty = modelConfig.SamplingParameters.RepeatPenalty
+		}
+		if modelConfig.SamplingParameters.RepeatLastN != nil {
+			cfg.SamplingParameters.RepeatLastN = modelConfig.SamplingParameters.RepeatLastN
+		}
+		if modelConfig.SamplingParameters.DryMultiplier != nil {
+			cfg.SamplingParameters.DryMultiplier = modelConfig.SamplingParameters.DryMultiplier
+		}
+		if modelConfig.SamplingParameters.DryBase != nil {
+			cfg.SamplingParameters.DryBase = modelConfig.SamplingParameters.DryBase
+		}
+		if modelConfig.SamplingParameters.DryAllowedLen != nil {
+			cfg.SamplingParameters.DryAllowedLen = modelConfig.SamplingParameters.DryAllowedLen
+		}
+		if modelConfig.SamplingParameters.DryPenaltyLast != nil {
+			cfg.SamplingParameters.DryPenaltyLast = modelConfig.SamplingParameters.DryPenaltyLast
+		}
+		if modelConfig.SamplingParameters.XtcProbability != nil {
+			cfg.SamplingParameters.XtcProbability = modelConfig.SamplingParameters.XtcProbability
+		}
+		if modelConfig.SamplingParameters.XtcThreshold != nil {
+			cfg.SamplingParameters.XtcThreshold = modelConfig.SamplingParameters.XtcThreshold
+		}
+		if modelConfig.SamplingParameters.XtcMinKeep != nil {
+			cfg.SamplingParameters.XtcMinKeep = modelConfig.SamplingParameters.XtcMinKeep
+		}
+		if modelConfig.SamplingParameters.Thinking != nil {
+			cfg.SamplingParameters.Thinking = modelConfig.SamplingParameters.Thinking
+		}
+		if modelConfig.SamplingParameters.ReasoningEffort != nil {
+			cfg.SamplingParameters.ReasoningEffort = modelConfig.SamplingParameters.ReasoningEffort
 		}
 	}
 

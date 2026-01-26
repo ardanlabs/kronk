@@ -6,6 +6,26 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
+// SamplingParameters represents sampling/generation parameters for inference.
+type SamplingParameters struct {
+	Temperature     *float32 `yaml:"temperature"`
+	TopK            *int32   `yaml:"top-k"`
+	TopP            *float32 `yaml:"top-p"`
+	MinP            *float32 `yaml:"min-p"`
+	MaxTokens       *int     `yaml:"max-tokens"`
+	RepeatPenalty   *float32 `yaml:"repeat-penalty"`
+	RepeatLastN     *int32   `yaml:"repeat-last-n"`
+	DryMultiplier   *float32 `yaml:"dry-multiplier"`
+	DryBase         *float32 `yaml:"dry-base"`
+	DryAllowedLen   *int32   `yaml:"dry-allowed-length"`
+	DryPenaltyLast  *int32   `yaml:"dry-penalty-last-n"`
+	XtcProbability  *float32 `yaml:"xtc-probability"`
+	XtcThreshold    *float32 `yaml:"xtc-threshold"`
+	XtcMinKeep      *uint32  `yaml:"xtc-min-keep"`
+	Thinking        *string  `yaml:"enable-thinking"`
+	ReasoningEffort *string  `yaml:"reasoning-effort"`
+}
+
 // ModelConfig represents default model config settings.
 type ModelConfig struct {
 	Device               string                   `yaml:"device"`
@@ -27,6 +47,7 @@ type ModelConfig struct {
 	SystemPromptCache    bool                     `yaml:"system-prompt-cache"`
 	FirstMessageCache    bool                     `yaml:"first-message-cache"`
 	CacheMinTokens       int                      `yaml:"cache-min-tokens"`
+	SamplingParameters   SamplingParameters       `yaml:"sampling-parameters"`
 }
 
 // Metadata represents extra information about the model.
