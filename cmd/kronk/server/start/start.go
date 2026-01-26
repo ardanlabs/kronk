@@ -94,7 +94,7 @@ func buildEnvVars(cmd *cobra.Command) []string {
 	}
 
 	if v, _ := cmd.Flags().GetString("model-config-file"); v != "" {
-		envVars = append(envVars, "KRONK_MODEL_CONFIG_FILE="+v)
+		envVars = append(envVars, "KRONK_CATALOG_MODEL_CONFIG_FILE="+v)
 	}
 
 	if v, _ := cmd.Flags().GetInt("llama-log"); v != -1 {
