@@ -10,7 +10,7 @@
       },
       "models": {
         "GLM-4.7-Flash-UD-Q8_K_XL": {},
-        "Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL": {}
+        "Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/FMC": {}
       }
     }
   }

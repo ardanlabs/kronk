@@ -74,7 +74,7 @@ func New(opts ...Option) (*Catalog, error) {
 		o.githubRepo = defaultGithubPath
 	}
 
-	var modelConfig map[string]ModelConfig
+	modelConfig := map[string]ModelConfig{}
 	var err error
 
 	if o.modelConfigFile != "" {

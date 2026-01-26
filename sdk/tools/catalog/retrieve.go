@@ -143,9 +143,14 @@ func (c *Catalog) RetrieveCatalogs() ([]CatalogModels, error) {
 // and returns a model config for use.
 func (c *Catalog) RetrieveModelConfig(modelID string) (model.Config, error) {
 
+	// The modelID might have a / because it's a model in the config
+	// with different settings. Ex. model/FMC.
+	// We need to remove /FMC for the RetrievePath call.
+	fsModelID, _, _ := strings.Cut(modelID, "/")
+
 	// Get the file path for this model on disk. If this fails, the
 	// model hasn't been downloaded and nothing else to do.
-	fp, err := c.models.RetrievePath(modelID)
+	fp, err := c.models.RetrievePath(fsModelID)
 	if err != nil {
 		return model.Config{}, fmt.Errorf("retrieve-model-config: unable to get model[%s] path: %w", modelID, err)
 	}
