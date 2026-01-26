@@ -205,7 +205,7 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 
 	cfg.Log = c.log
 
-	c.log(ctx, "model config settings", "mc", cfg.String())
+	c.log(ctx, "model config settings", "model-id", modelID, "mc", cfg.String())
 
 	krn, err = kronk.New(cfg,
 		kronk.WithTemplateRetriever(c.templates),
@@ -215,6 +215,8 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 	if err != nil {
 		return nil, fmt.Errorf("acquire-model: unable to create inference model: %w", err)
 	}
+
+	modelID, _, _ = strings.Cut(modelID, "/")
 
 	c.cache.Set(modelID, krn)
 	c.itemsInCache.Add(1)
