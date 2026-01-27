@@ -1604,8 +1604,8 @@ func audio(krn *kronk.Kronk) error {
 	return nil
 }
 
-func performChat(ctx context.Context, krn *kronk.Kronk, question string, imageFile string) (<-chan model.ChatResponse, error) {
-	image, err := readImage(imageFile)
+func performChat(ctx context.Context, krn *kronk.Kronk, question string, audioFile string) (<-chan model.ChatResponse, error) {
+	audio, err := readImage(audioFile)
 	if err != nil {
 		return nil, fmt.Errorf("read image: %w", err)
 	}
@@ -1613,7 +1613,7 @@ func performChat(ctx context.Context, krn *kronk.Kronk, question string, imageFi
 	fmt.Printf("\\nQuestion: %s\\n", question)
 
 	d := model.D{
-		"messages":    model.RawMediaMessage(question, image),
+		"messages":    model.RawMediaMessage(question, audio),
 		"max_tokens":  2048,
 		"temperature": 0.7,
 		"top_p":       0.9,

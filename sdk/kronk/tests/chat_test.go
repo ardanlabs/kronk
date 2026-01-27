@@ -84,8 +84,10 @@ func testChatStreaming(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) 
 			return fmt.Errorf("chat streaming: %w", err)
 		}
 
+		var acc streamAccumulator
 		var lastResp model.ChatResponse
 		for resp := range ch {
+			acc.accumulate(resp)
 			lastResp = resp
 
 			if err := testChatBasics(resp, krn.ModelInfo().ID, model.ObjectChatText, true, true); err != nil {
@@ -97,9 +99,9 @@ func testChatStreaming(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) 
 		var result testResult
 		switch tooling {
 		case true:
-			result = testChatResponse(lastResp, krn.ModelInfo().ID, model.ObjectChatText, "London", "get_weather", "location", true)
+			result = testStreamingToolCall(&acc, lastResp, "London", "get_weather", "location")
 		case false:
-			result = testChatResponse(lastResp, krn.ModelInfo().ID, model.ObjectChatText, "Gorilla", "", "", true)
+			result = testStreamingContent(&acc, lastResp, "Gorilla")
 		}
 
 		for _, w := range result.Warnings {
@@ -107,6 +109,7 @@ func testChatStreaming(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) 
 		}
 
 		if result.Err != nil {
+			t.Logf("accumulated content: %q", acc.Content.String())
 			t.Logf("%#v", lastResp)
 			return result.Err
 		}

@@ -151,6 +151,41 @@ func getMsg(choice model.Choice, streaming bool) model.ResponseMessage {
 	return model.ResponseMessage{}
 }
 
+// streamAccumulator collects content from streaming delta chunks.
+type streamAccumulator struct {
+	Content   strings.Builder
+	Reasoning strings.Builder
+	ToolCalls []model.ResponseToolCall
+}
+
+// accumulate adds delta content from a streaming response chunk.
+func (sa *streamAccumulator) accumulate(resp model.ChatResponse) {
+	if len(resp.Choice) == 0 {
+		return
+	}
+
+	choice := resp.Choice[0]
+
+	// Only accumulate from Delta when FinishReason is not set (intermediate chunks).
+	if choice.FinishReason() == "" && choice.Delta != nil {
+		sa.Content.WriteString(choice.Delta.Content)
+		sa.Reasoning.WriteString(choice.Delta.Reasoning)
+		if len(choice.Delta.ToolCalls) > 0 {
+			sa.ToolCalls = append(sa.ToolCalls, choice.Delta.ToolCalls...)
+		}
+		return
+	}
+
+	// For final chunk, use Message which has accumulated content.
+	if choice.Message != nil {
+		sa.Content.WriteString(choice.Message.Content)
+		sa.Reasoning.WriteString(choice.Message.Reasoning)
+		if len(choice.Message.ToolCalls) > 0 {
+			sa.ToolCalls = append(sa.ToolCalls, choice.Message.ToolCalls...)
+		}
+	}
+}
+
 func testChatBasics(resp model.ChatResponse, modelName string, object string, reasoning bool, streaming bool) error {
 	if resp.ID == "" {
 		return fmt.Errorf("expected id")
@@ -277,6 +312,75 @@ func testChatResponse(resp model.ChatResponse, modelName string, object string, 
 			result.Err = fmt.Errorf("tooling: expected %q, got %q", find, location.(string))
 			return result
 		}
+	}
+
+	return result
+}
+
+// testStreamingContent validates accumulated streaming content.
+// Use this for streaming tests instead of testChatResponse when the final
+// chunk's Message.Content may not contain all accumulated content.
+func testStreamingContent(acc *streamAccumulator, lastResp model.ChatResponse, find string) testResult {
+	var result testResult
+
+	content := strings.ToLower(acc.Content.String())
+	reasoning := strings.ToLower(acc.Reasoning.String())
+	find = strings.ToLower(find)
+
+	// Check that we got some content or reasoning.
+	if len(content) == 0 && len(reasoning) == 0 {
+		result.Err = fmt.Errorf("streaming: expected some content or reasoning, got neither")
+		return result
+	}
+
+	// Check for expected content.
+	if !strings.Contains(content, find) && !strings.Contains(reasoning, find) {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("streaming: expected %q in content or reasoning, content=%q, reasoning=%q", find, content, reasoning))
+	}
+
+	return result
+}
+
+// testStreamingToolCall validates accumulated streaming tool call content.
+func testStreamingToolCall(acc *streamAccumulator, lastResp model.ChatResponse, find string, funct string, arg string) testResult {
+	var result testResult
+
+	find = strings.ToLower(find)
+	funct = strings.ToLower(funct)
+
+	// For tool calls, we need to check the accumulated tool calls or the final response.
+	var toolCalls []model.ResponseToolCall
+	if len(acc.ToolCalls) > 0 {
+		toolCalls = acc.ToolCalls
+	} else if len(lastResp.Choice) > 0 && lastResp.Choice[0].Message != nil {
+		toolCalls = lastResp.Choice[0].Message.ToolCalls
+	}
+
+	if len(toolCalls) == 0 {
+		result.Err = fmt.Errorf("streaming: expected tool calls, got none")
+		return result
+	}
+
+	funcName := strings.ToLower(toolCalls[0].Function.Name)
+	if !strings.Contains(funcName, funct) {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("streaming: expected function %q, got %q", funct, funcName))
+		return result
+	}
+
+	if len(toolCalls[0].Function.Arguments) == 0 {
+		result.Err = fmt.Errorf("streaming: expected arguments to be non-empty")
+		return result
+	}
+
+	location, exists := toolCalls[0].Function.Arguments[arg]
+	if !exists {
+		result.Err = fmt.Errorf("streaming: expected an argument named %s", arg)
+		return result
+	}
+
+	if !strings.Contains(strings.ToLower(location.(string)), find) {
+		result.Err = fmt.Errorf("streaming: expected %q in %s, got %q", find, arg, location.(string))
+		return result
 	}
 
 	return result

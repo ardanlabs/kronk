@@ -95,8 +95,10 @@ func testMediaStreamingWithInput(t *testing.T, krn *kronk.Kronk, d model.D) {
 			return fmt.Errorf("chat streaming: %w", err)
 		}
 
+		var acc streamAccumulator
 		var lastResp model.ChatResponse
 		for resp := range ch {
+			acc.accumulate(resp)
 			lastResp = resp
 
 			if err := testChatBasics(resp, krn.ModelInfo().ID, model.ObjectChatMedia, false, true); err != nil {
@@ -105,13 +107,14 @@ func testMediaStreamingWithInput(t *testing.T, krn *kronk.Kronk, d model.D) {
 			}
 		}
 
-		result := testChatResponse(lastResp, krn.ModelInfo().ID, model.ObjectChatMedia, "giraffes", "", "", true)
+		result := testStreamingContent(&acc, lastResp, "giraffes")
 
 		for _, w := range result.Warnings {
 			t.Logf("WARNING: %s", w)
 		}
 
 		if result.Err != nil {
+			t.Logf("accumulated content: %q", acc.Content.String())
 			t.Logf("%#v", lastResp)
 			return result.Err
 		}
@@ -372,9 +375,11 @@ func testAudioStreaming(t *testing.T, krn *kronk.Kronk) {
 				return fmt.Errorf("chat streaming: %w", err)
 			}
 
+			var acc streamAccumulator
 			var lastResp model.ChatResponse
 			var basicErr error
 			for resp := range ch {
+				acc.accumulate(resp)
 				lastResp = resp
 
 				if err := testChatBasics(resp, krn.ModelInfo().ID, model.ObjectChatMedia, false, true); err != nil {
@@ -397,7 +402,7 @@ func testAudioStreaming(t *testing.T, krn *kronk.Kronk) {
 				return fmt.Errorf("basics: %w", basicErr)
 			}
 
-			result := testChatResponse(lastResp, krn.ModelInfo().ID, model.ObjectChatMedia, "speech", "", "", true)
+			result := testStreamingContent(&acc, lastResp, "speech")
 
 			for _, w := range result.Warnings {
 				t.Logf("WARNING: %s", w)
@@ -408,6 +413,7 @@ func testAudioStreaming(t *testing.T, krn *kronk.Kronk) {
 					t.Logf("%s: retrying after empty content", id)
 					continue
 				}
+				t.Logf("accumulated content: %q", acc.Content.String())
 				t.Logf("%#v", lastResp)
 				return result.Err
 			}

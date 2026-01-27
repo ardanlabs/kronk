@@ -129,6 +129,10 @@ func New(t *testing.T, testName string) *Test {
 		t.Fatal(err)
 	}
 
+	if err := models.BuildIndex(log.Info); err != nil {
+		t.Fatal(err)
+	}
+
 	// -------------------------------------------------------------------------
 	// Catalog System
 
