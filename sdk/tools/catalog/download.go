@@ -71,10 +71,10 @@ func (c *Catalog) Download(ctx context.Context, opts ...DownloadOption) error {
 		}
 
 		log(ctx, "catalog-download", "status", "building index")
+	}
 
-		if err := c.buildIndex(); err != nil {
-			return fmt.Errorf("build-index: %w", err)
-		}
+	if err := c.buildIndex(); err != nil {
+		return fmt.Errorf("build-index: %w", err)
 	}
 
 	return nil

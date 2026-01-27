@@ -8,127 +8,133 @@ import (
 )
 
 const (
-	// dry_allowed_length is the minimum n-gram length before DRY applies.
+	// DefDryAllowedLen is the minimum n-gram length before DRY applies.
 	//
 	// Default is 2.
-	defDryAllowedLen = 2
+	DefDryAllowedLen = 2
 
-	// dry_base is the base for exponential penalty growth in DRY.
+	// DefDryBase is the base for exponential penalty growth in DRY.
 	//
 	// Default is 1.75.
-	defDryBase = 1.75
+	DefDryBase = 1.75
 
-	// dry_multiplier controls the DRY (Don't Repeat Yourself) sampler which penalizes
+	// DefDryMultiplier controls the DRY (Don't Repeat Yourself) sampler which penalizes
 	// n-gram pattern repetition. 0.8 - Light repetition penalty,
 	// 1.0–1.5 - Moderate (typical starting point), 2.0–3.0 - Aggressive.
 	//
 	// Default is 1.05.
-	defDryMultiplier = 1.05
+	DefDryMultiplier = 1.05
 
-	// dry_penalty_last_n limits how many recent tokens DRY considers.
+	// DefDryPenaltyLast limits how many recent tokens DRY considers.
 	//
 	// Default of 0 means full context.
-	defDryPenaltyLast = 0.0
+	DefDryPenaltyLast = 0.0
 
-	// enable_thinking determines if the model should think or not. It is used for
+	// DefEnableThinking determines if the model should think or not. It is used for
 	// most non-GPT models. It accepts 1, t, T, TRUE, true, True, 0, f, F, FALSE,
 	// false, False.
 	//
 	// Default is "true".
-	defEnableThinking = ThinkingEnabled
+	DefEnableThinking = ThinkingEnabled
 
-	// include_usage determines whether to include token usage information in
+	// DefIncludeUsage determines whether to include token usage information in
 	// streaming responses.
 	//
 	// Default is true.
-	defIncludeUsage = true
+	DefIncludeUsage = true
 
-	// logprobs determines whether to return log probabilities of output tokens.
+	// DefLogprobs determines whether to return log probabilities of output tokens.
 	// When enabled, the response includes probability data for each generated token.
 	//
 	// Default is false.
-	defLogprobs = false
+	DefLogprobs = false
 
-	// top_logprobs specifies how many of the most likely tokens to return at each
+	// DefTopLogprobs specifies how many of the most likely tokens to return at each
 	// position, along with their log probabilities. Must be between 0 and 5.
 	// Setting this to a value > 0 implicitly enables logprobs.
 	//
 	// Default is 0.
-	defTopLogprobs = 0
+	DefTopLogprobs = 0
 
-	// Defines the number of maximum logprobs to use.
+	// DefMaxTopLogprobs defines the number of maximum logprobs to use.
 	//
 	// Default is 5.
-	defMaxTopLogprobs = 5
+	DefMaxTopLogprobs = 5
 
-	// reasoning_effort is a string that specifies the level of reasoning effort to
+	// DefReasoningEffort is a string that specifies the level of reasoning effort to
 	// use for GPT models.
 	//
 	// Default is ReasoningEffortMedium.
-	defReasoningEffort = ReasoningEffortMedium
+	DefReasoningEffort = ReasoningEffortMedium
 
-	// repeat_last_n specifies how many recent tokens to consider when applying the
+	// DefRepeatLastN specifies how many recent tokens to consider when applying the
 	// repetition penalty. A larger value considers more context but may be slower.
 	//
 	// Default is 64.
-	defRepeatLastN = 64
+	DefRepeatLastN = 64
 
-	// repeat_penalty applies a penalty to tokens that have already appeared in the
+	// DefRepeatPenalty applies a penalty to tokens that have already appeared in the
 	// output, reducing repetitive text. A value of 1.0 means no penalty. Values
 	// above 1.0 reduce repetition (e.g., 1.1 is a mild penalty, 1.5 is strong).
 	//
 	// Default is 1.0 which turns it off.
-	defRepeatPenalty = 1.0
+	DefRepeatPenalty = 1.0
 
-	// return_prompt determines whether to include the prompt in the final response.
+	// DefReturnPrompt determines whether to include the prompt in the final response.
 	// When set to true, the prompt will be included.
 	//
 	// Default is false.
-	defReturnPrompt = false
+	DefReturnPrompt = false
 
-	// temperature controls the randomness of the output. It rescales the probability
+	// DefTemp controls the randomness of the output. It rescales the probability
 	// distribution of possible next tokens.
 	//
 	// Default is 0.8.
-	defTemp = 0.8
+	DefTemp = 0.8
 
-	// top_k limits the pool of possible next tokens to the K number of most probable
+	// DefTopK limits the pool of possible next tokens to the K number of most probable
 	// tokens. If a model predicts 10,000 possible next tokens, setting top_k to 50
 	// means only the 50 tokens with the highest probabilities are considered for
 	// selection (after temperature scaling). The rest are ignored.
 	//
 	// Default is 40.
-	defTopK = 40
+	DefTopK = 40
 
-	// min_p is a dynamic sampling threshold that helps balance the coherence
+	// DefMinP is a dynamic sampling threshold that helps balance the coherence
 	// (quality) and diversity (creativity) of the generated text.
 	//
 	// Default is 0.0.
-	defMinP = 0.0
+	DefMinP = 0.0
 
-	// top_p, also known as nucleus sampling, works differently than top_k by
+	// DefTopP, also known as nucleus sampling, works differently than top_k by
 	// selecting a dynamic pool of tokens whose cumulative probability exceeds a
 	// threshold P. Instead of a fixed number of tokens (K), it selects the minimum
 	// number of most probable tokens required to reach the cumulative probability P.
 	//
 	// Default is 0.9.
-	defTopP = 0.9
+	DefTopP = 0.9
 
-	// xtc_min_keep is the minimum tokens to keep after XTC culling.
+	// DefXtcMinKeep is the minimum tokens to keep after XTC culling.
 	//
 	// Default is 1.
-	defXtcMinKeep = 1
+	DefXtcMinKeep = 1
 
-	// xtc_probability controls XTC (eXtreme Token Culling) which randomly removes
+	// DefXtcProbability controls XTC (eXtreme Token Culling) which randomly removes
 	// tokens close to top probability. Must be > 0 to activate.
 	//
 	// Default is 0.0 (disabled).
-	defXtcProbability = 0.0
+	DefXtcProbability = 0.0
 
-	// xtc_threshold is the probability threshold for XTC culling.
+	// DefXtcThreshold is the probability threshold for XTC culling.
 	//
 	// Default is 0.1.
-	defXtcThreshold = 0.1
+	DefXtcThreshold = 0.1
+
+	// DefMaxTokens is the default maximum tokens for generation when not
+	// derived from the model's context window.
+	//
+	// Default is 4096.
+	DefMaxTokens = 4096
 )
 
 const (
@@ -252,7 +258,7 @@ func (m *Model) parseParams(d D) (params, error) {
 		}
 	}
 
-	returnPrompt := defReturnPrompt
+	returnPrompt := DefReturnPrompt
 	if returnPromptVal, exists := d["return_prompt"]; exists {
 		var err error
 		returnPrompt, err = parseBool("return_prompt", returnPromptVal)
@@ -342,7 +348,7 @@ func (m *Model) parseParams(d D) (params, error) {
 		}
 	}
 
-	includeUsage := defIncludeUsage
+	includeUsage := DefIncludeUsage
 	if streamOpts, exists := d["stream_options"]; exists {
 		if optsMap, ok := streamOpts.(map[string]any); ok {
 			if val, exists := optsMap["include_usage"]; exists {
@@ -355,7 +361,7 @@ func (m *Model) parseParams(d D) (params, error) {
 		}
 	}
 
-	logprobs := defLogprobs
+	logprobs := DefLogprobs
 	if val, exists := d["logprobs"]; exists {
 		var err error
 		logprobs, err = parseBool("logprobs", val)
@@ -364,7 +370,7 @@ func (m *Model) parseParams(d D) (params, error) {
 		}
 	}
 
-	topLogprobs := defTopLogprobs
+	topLogprobs := DefTopLogprobs
 	if val, exists := d["top_logprobs"]; exists {
 		var err error
 		topLogprobs, err = parseInt("top_logprobs", val)
@@ -374,11 +380,11 @@ func (m *Model) parseParams(d D) (params, error) {
 
 		// Clamp to valid range (0-20 per OpenAI spec)
 		if topLogprobs < 0 {
-			topLogprobs = defTopLogprobs
+			topLogprobs = DefTopLogprobs
 		}
 
-		if topLogprobs > defMaxTopLogprobs {
-			topLogprobs = defMaxTopLogprobs
+		if topLogprobs > DefMaxTopLogprobs {
+			topLogprobs = DefMaxTopLogprobs
 		}
 
 		// If top_logprobs is set, implicitly enable logprobs
@@ -425,19 +431,19 @@ func (m *Model) parseParams(d D) (params, error) {
 
 func (m *Model) adjustParams(p params) params {
 	if p.Temperature <= 0 {
-		p.Temperature = defTemp
+		p.Temperature = DefTemp
 	}
 
 	if p.TopK <= 0 {
-		p.TopK = defTopK
+		p.TopK = DefTopK
 	}
 
 	if p.TopP <= 0 {
-		p.TopP = defTopP
+		p.TopP = DefTopP
 	}
 
 	if p.MinP <= 0 {
-		p.MinP = defMinP
+		p.MinP = DefMinP
 	}
 
 	if p.MaxTokens <= 0 {
@@ -445,47 +451,47 @@ func (m *Model) adjustParams(p params) params {
 	}
 
 	if p.RepeatPenalty <= 0 {
-		p.RepeatPenalty = defRepeatPenalty
+		p.RepeatPenalty = DefRepeatPenalty
 	}
 
 	if p.RepeatLastN <= 0 {
-		p.RepeatLastN = defRepeatLastN
+		p.RepeatLastN = DefRepeatLastN
 	}
 
 	if p.DryMultiplier <= 0 {
-		p.DryMultiplier = defDryMultiplier
+		p.DryMultiplier = DefDryMultiplier
 	}
 
 	if p.DryBase <= 0 {
-		p.DryBase = defDryBase
+		p.DryBase = DefDryBase
 	}
 
 	if p.DryAllowedLen <= 0 {
-		p.DryAllowedLen = defDryAllowedLen
+		p.DryAllowedLen = DefDryAllowedLen
 	}
 
 	if p.DryPenaltyLast < 0 {
-		p.DryPenaltyLast = defDryPenaltyLast
+		p.DryPenaltyLast = DefDryPenaltyLast
 	}
 
 	if p.XtcProbability <= 0 {
-		p.XtcProbability = defXtcProbability
+		p.XtcProbability = DefXtcProbability
 	}
 
 	if p.XtcThreshold <= 0 {
-		p.XtcThreshold = defXtcThreshold
+		p.XtcThreshold = DefXtcThreshold
 	}
 
 	if p.XtcMinKeep <= 0 {
-		p.XtcMinKeep = defXtcMinKeep
+		p.XtcMinKeep = DefXtcMinKeep
 	}
 
 	if p.Thinking == "" {
-		p.Thinking = defEnableThinking
+		p.Thinking = DefEnableThinking
 	}
 
 	if p.ReasoningEffort == "" {
-		p.ReasoningEffort = defReasoningEffort
+		p.ReasoningEffort = DefReasoningEffort
 	}
 
 	return p
@@ -497,7 +503,7 @@ func (m *Model) toSampler(p params) llama.Sampler {
 	if p.DryMultiplier > 0 {
 		llama.SamplerChainAdd(sampler, llama.SamplerInitDry(m.vocab, int32(m.cfg.ContextWindow), p.DryMultiplier, p.DryBase, p.DryAllowedLen, p.DryPenaltyLast, nil))
 	}
-	if p.RepeatPenalty != defRepeatPenalty {
+	if p.RepeatPenalty != DefRepeatPenalty {
 		llama.SamplerChainAdd(sampler, llama.SamplerInitPenalties(p.RepeatLastN, p.RepeatPenalty, 0, 0))
 	}
 	llama.SamplerChainAdd(sampler, llama.SamplerInitTopK(p.TopK))

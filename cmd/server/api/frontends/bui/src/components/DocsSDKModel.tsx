@@ -590,6 +590,141 @@ export default function DocsSDKModel() {
               <p className="doc-description">FinishReasons represent the different reasons a response can be finished.</p>
             </div>
 
+            <div className="doc-section" id="const-defdryallowedlen">
+              <h4>DefDryAllowedLen</h4>
+              <pre className="code-block">
+                <code>{`const (
+	// DefDryAllowedLen is the minimum n-gram length before DRY applies.
+	//
+	// Default is 2.
+	DefDryAllowedLen = 2
+
+	// DefDryBase is the base for exponential penalty growth in DRY.
+	//
+	// Default is 1.75.
+	DefDryBase = 1.75
+
+	// DefDryMultiplier controls the DRY (Don't Repeat Yourself) sampler which penalizes
+	// n-gram pattern repetition. 0.8 - Light repetition penalty,
+	// 1.0–1.5 - Moderate (typical starting point), 2.0–3.0 - Aggressive.
+	//
+	// Default is 1.05.
+	DefDryMultiplier = 1.05
+
+	// DefDryPenaltyLast limits how many recent tokens DRY considers.
+	//
+	// Default of 0 means full context.
+	DefDryPenaltyLast = 0.0
+
+	// DefEnableThinking determines if the model should think or not. It is used for
+	// most non-GPT models. It accepts 1, t, T, TRUE, true, True, 0, f, F, FALSE,
+	// false, False.
+	//
+	// Default is "true".
+	DefEnableThinking = ThinkingEnabled
+
+	// DefIncludeUsage determines whether to include token usage information in
+	// streaming responses.
+	//
+	// Default is true.
+	DefIncludeUsage = true
+
+	// DefLogprobs determines whether to return log probabilities of output tokens.
+	// When enabled, the response includes probability data for each generated token.
+	//
+	// Default is false.
+	DefLogprobs = false
+
+	// DefTopLogprobs specifies how many of the most likely tokens to return at each
+	// position, along with their log probabilities. Must be between 0 and 5.
+	// Setting this to a value > 0 implicitly enables logprobs.
+	//
+	// Default is 0.
+	DefTopLogprobs = 0
+
+	// DefMaxTopLogprobs defines the number of maximum logprobs to use.
+	//
+	// Default is 5.
+	DefMaxTopLogprobs = 5
+
+	// DefReasoningEffort is a string that specifies the level of reasoning effort to
+	// use for GPT models.
+	//
+	// Default is ReasoningEffortMedium.
+	DefReasoningEffort = ReasoningEffortMedium
+
+	// DefRepeatLastN specifies how many recent tokens to consider when applying the
+	// repetition penalty. A larger value considers more context but may be slower.
+	//
+	// Default is 64.
+	DefRepeatLastN = 64
+
+	// DefRepeatPenalty applies a penalty to tokens that have already appeared in the
+	// output, reducing repetitive text. A value of 1.0 means no penalty. Values
+	// above 1.0 reduce repetition (e.g., 1.1 is a mild penalty, 1.5 is strong).
+	//
+	// Default is 1.0 which turns it off.
+	DefRepeatPenalty = 1.0
+
+	// DefReturnPrompt determines whether to include the prompt in the final response.
+	// When set to true, the prompt will be included.
+	//
+	// Default is false.
+	DefReturnPrompt = false
+
+	// DefTemp controls the randomness of the output. It rescales the probability
+	// distribution of possible next tokens.
+	//
+	// Default is 0.8.
+	DefTemp = 0.8
+
+	// DefTopK limits the pool of possible next tokens to the K number of most probable
+	// tokens. If a model predicts 10,000 possible next tokens, setting top_k to 50
+	// means only the 50 tokens with the highest probabilities are considered for
+	// selection (after temperature scaling). The rest are ignored.
+	//
+	// Default is 40.
+	DefTopK = 40
+
+	// DefMinP is a dynamic sampling threshold that helps balance the coherence
+	// (quality) and diversity (creativity) of the generated text.
+	//
+	// Default is 0.0.
+	DefMinP = 0.0
+
+	// DefTopP, also known as nucleus sampling, works differently than top_k by
+	// selecting a dynamic pool of tokens whose cumulative probability exceeds a
+	// threshold P. Instead of a fixed number of tokens (K), it selects the minimum
+	// number of most probable tokens required to reach the cumulative probability P.
+	//
+	// Default is 0.9.
+	DefTopP = 0.9
+
+	// DefXtcMinKeep is the minimum tokens to keep after XTC culling.
+	//
+	// Default is 1.
+	DefXtcMinKeep = 1
+
+	// DefXtcProbability controls XTC (eXtreme Token Culling) which randomly removes
+	// tokens close to top probability. Must be > 0 to activate.
+	//
+	// Default is 0.0 (disabled).
+	DefXtcProbability = 0.0
+
+	// DefXtcThreshold is the probability threshold for XTC culling.
+	//
+	// Default is 0.1.
+	DefXtcThreshold = 0.1
+
+	// DefMaxTokens is the default maximum tokens for generation when not
+	// derived from the model's context window.
+	//
+	// Default is 4096.
+	DefMaxTokens = 4096
+)`}</code>
+              </pre>
+            </div>
+
             <div className="doc-section" id="const-thinkingenabled">
               <h4>ThinkingEnabled</h4>
               <pre className="code-block">
@@ -710,6 +845,7 @@ export default function DocsSDKModel() {
                 <li><a href="#const-objectchatunknown">ObjectChatUnknown</a></li>
                 <li><a href="#const-roleuser">RoleUser</a></li>
                 <li><a href="#const-finishreasonstop">FinishReasonStop</a></li>
+                <li><a href="#const-defdryallowedlen">DefDryAllowedLen</a></li>
                 <li><a href="#const-thinkingenabled">ThinkingEnabled</a></li>
                 <li><a href="#const-reasoningeffortnone">ReasoningEffortNone</a></li>
               </ul>

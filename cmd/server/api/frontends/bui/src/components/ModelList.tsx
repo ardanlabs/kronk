@@ -140,21 +140,49 @@ export default function ModelList() {
                   </tr>
                 </thead>
                 <tbody>
-                  {models.data.map((model) => (
-                    <tr
-                      key={model.id}
-                      onClick={() => handleRowClick(model.id)}
-                      className={selectedModelId === model.id ? 'selected' : ''}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      <td style={{ textAlign: 'center', color: model.validated ? 'inherit' : '#e74c3c' }}>{model.validated ? '✓' : '✗'}</td>
-                      <td>{model.id}</td>
-                      <td>{model.owned_by}</td>
-                      <td>{model.model_family}</td>
-                      <td>{formatBytes(model.size)}</td>
-                      <td>{formatDate(model.modified)}</td>
-                    </tr>
-                  ))}
+                  {(() => {
+                    const mainModels = models.data.filter((m) => !m.id.includes('/'));
+                    const extensionModels = models.data.filter((m) => m.id.includes('/'));
+
+                    return mainModels.map((model) => {
+                      const extensions = extensionModels.filter((ext) => ext.id.startsWith(model.id + '/'));
+                      const isParentSelected = selectedModelId === model.id;
+                      const isExtensionSelected = selectedModelId?.startsWith(model.id + '/');
+                      const showExtensions = isParentSelected || isExtensionSelected;
+                      return (
+                        <>
+                          <tr
+                            key={model.id}
+                            onClick={() => handleRowClick(model.id)}
+                            className={selectedModelId === model.id ? 'selected' : ''}
+                            style={{ cursor: 'pointer' }}
+                          >
+                            <td style={{ textAlign: 'center', color: model.validated ? 'inherit' : '#e74c3c' }}>{model.validated ? '✓' : '✗'}</td>
+                            <td>{model.id}</td>
+                            <td>{model.owned_by}</td>
+                            <td>{model.model_family}</td>
+                            <td>{formatBytes(model.size)}</td>
+                            <td>{formatDate(model.modified)}</td>
+                          </tr>
+                          {showExtensions && extensions.map((ext) => (
+                            <tr
+                              key={ext.id}
+                              onClick={() => handleRowClick(ext.id)}
+                              className={selectedModelId === ext.id ? 'selected' : ''}
+                              style={{ cursor: 'pointer' }}
+                            >
+                              <td></td>
+                              <td style={{ paddingLeft: '24px' }}>↳ {ext.id}</td>
+                              <td></td>
+                              <td>Extension Model</td>
+                              <td></td>
+                              <td></td>
+                            </tr>
+                          ))}
+                        </>
+                      );
+                    });
+                  })()}
                 </tbody>
               </table>
             ) : (
@@ -228,7 +256,123 @@ export default function ModelList() {
         <div className="card">
           <h3 style={{ marginBottom: '16px' }}>{modelInfo.id}</h3>
 
-          <div className="model-meta">
+          {modelInfo.model_config && (
+            <div style={{ marginTop: '16px' }}>
+              <label style={{ fontWeight: 500, display: 'block', marginBottom: '8px' }}>
+                Model Configuration
+              </label>
+              <div className="model-meta">
+                <div className="model-meta-item">
+                  <label>Device</label>
+                  <span>{modelInfo.model_config.device || 'default'}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>Context Window</label>
+                  <span>{modelInfo.model_config['context-window']}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>Batch Size</label>
+                  <span>{modelInfo.model_config.nbatch}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>Micro Batch Size</label>
+                  <span>{modelInfo.model_config.nubatch}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>Threads</label>
+                  <span>{modelInfo.model_config.nthreads}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>Batch Threads</label>
+                  <span>{modelInfo.model_config['nthreads-batch']}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>Cache Type K</label>
+                  <span>{modelInfo.model_config['cache-type-k'] || 'default'}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>Cache Type V</label>
+                  <span>{modelInfo.model_config['cache-type-v'] || 'default'}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>Flash Attention</label>
+                  <span>{modelInfo.model_config['flash-attention'] || 'default'}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>Max Sequences</label>
+                  <span>{modelInfo.model_config['nseq-max']}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>GPU Layers</label>
+                  <span>{modelInfo.model_config['ngpu-layers'] ?? 'auto'}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>Split Mode</label>
+                  <span>{modelInfo.model_config['split-mode'] || 'default'}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>System Prompt Cache</label>
+                  <span className={`badge ${modelInfo.model_config['system-prompt-cache'] ? 'badge-yes' : 'badge-no'}`}>
+                    {modelInfo.model_config['system-prompt-cache'] ? 'Yes' : 'No'}
+                  </span>
+                </div>
+                <div className="model-meta-item">
+                  <label>First Message Cache</label>
+                  <span className={`badge ${modelInfo.model_config['first-message-cache'] ? 'badge-yes' : 'badge-no'}`}>
+                    {modelInfo.model_config['first-message-cache'] ? 'Yes' : 'No'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {modelInfo.model_config?.['sampling-parameters'] && (
+            <div style={{ marginTop: '16px' }}>
+              <label style={{ fontWeight: 500, display: 'block', marginBottom: '8px' }}>
+                Sampling Parameters
+              </label>
+              <div className="model-meta">
+                <div className="model-meta-item">
+                  <label>Temperature</label>
+                  <span>{modelInfo.model_config['sampling-parameters'].temperature.toFixed(2)}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>Top K</label>
+                  <span>{modelInfo.model_config['sampling-parameters'].top_k}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>Top P</label>
+                  <span>{modelInfo.model_config['sampling-parameters'].top_p.toFixed(2)}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>Min P</label>
+                  <span>{modelInfo.model_config['sampling-parameters'].min_p.toFixed(2)}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>Max Tokens</label>
+                  <span>{modelInfo.model_config['sampling-parameters'].max_tokens}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>Repeat Penalty</label>
+                  <span>{modelInfo.model_config['sampling-parameters'].repeat_penalty.toFixed(2)}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>Repeat Last N</label>
+                  <span>{modelInfo.model_config['sampling-parameters'].repeat_last_n}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>Enable Thinking</label>
+                  <span>{modelInfo.model_config['sampling-parameters'].enable_thinking || 'default'}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>Reasoning Effort</label>
+                  <span>{modelInfo.model_config['sampling-parameters'].reasoning_effort || 'default'}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="model-meta" style={{ marginTop: '16px' }}>
             <div className="model-meta-item">
               <label>Owner</label>
               <span>{modelInfo.owned_by}</span>

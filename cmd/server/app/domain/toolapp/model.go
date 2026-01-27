@@ -53,37 +53,16 @@ func toAppVersion(status string, vt libs.VersionTag) string {
 
 // =============================================================================
 
-// SamplingConfig represents sampling parameters for model inference.
-type SamplingConfig struct {
-	Temperature     float32 `json:"temperature"`
-	TopK            int32   `json:"top_k"`
-	TopP            float32 `json:"top_p"`
-	MinP            float32 `json:"min_p"`
-	MaxTokens       int     `json:"max_tokens"`
-	RepeatPenalty   float32 `json:"repeat_penalty"`
-	RepeatLastN     int32   `json:"repeat_last_n"`
-	DryMultiplier   float32 `json:"dry_multiplier"`
-	DryBase         float32 `json:"dry_base"`
-	DryAllowedLen   int32   `json:"dry_allowed_length"`
-	DryPenaltyLast  int32   `json:"dry_penalty_last_n"`
-	XtcProbability  float32 `json:"xtc_probability"`
-	XtcThreshold    float32 `json:"xtc_threshold"`
-	XtcMinKeep      uint32  `json:"xtc_min_keep"`
-	EnableThinking  string  `json:"enable_thinking"`
-	ReasoningEffort string  `json:"reasoning_effort"`
-}
-
 // ListModelDetail provides information about a model.
 type ListModelDetail struct {
-	ID          string          `json:"id"`
-	Object      string          `json:"object"`
-	Created     int64           `json:"created"`
-	OwnedBy     string          `json:"owned_by"`
-	ModelFamily string          `json:"model_family"`
-	Size        int64           `json:"size"`
-	Modified    time.Time       `json:"modified"`
-	Validated   bool            `json:"validated"`
-	Sampling    *SamplingConfig `json:"sampling,omitempty"`
+	ID          string    `json:"id"`
+	Object      string    `json:"object"`
+	Created     int64     `json:"created"`
+	OwnedBy     string    `json:"owned_by"`
+	ModelFamily string    `json:"model_family"`
+	Size        int64     `json:"size"`
+	Modified    time.Time `json:"modified"`
+	Validated   bool      `json:"validated"`
 }
 
 // ListModelInfoResponse contains the list of models loaded in the system.
@@ -98,7 +77,7 @@ func (app ListModelInfoResponse) Encode() ([]byte, string, error) {
 	return data, "application/json", err
 }
 
-func toListModelsInfo(modelFiles []models.File, samplingConfigs map[string]catalog.SamplingConfig, extendedConfig bool) ListModelInfoResponse {
+func toListModelsInfo(modelFiles []models.File, modelConfigs map[string]catalog.ModelConfig) ListModelInfoResponse {
 	list := ListModelInfoResponse{
 		Object: "list",
 	}
@@ -113,29 +92,6 @@ func toListModelsInfo(modelFiles []models.File, samplingConfigs map[string]catal
 			Size:        mf.Size,
 			Modified:    mf.Modified,
 			Validated:   mf.Validated,
-		}
-
-		if extendedConfig {
-			if sc, ok := samplingConfigs[mf.ID]; ok {
-				detail.Sampling = &SamplingConfig{
-					Temperature:     sc.Temperature,
-					TopK:            sc.TopK,
-					TopP:            sc.TopP,
-					MinP:            sc.MinP,
-					MaxTokens:       sc.MaxTokens,
-					RepeatPenalty:   sc.RepeatPenalty,
-					RepeatLastN:     sc.RepeatLastN,
-					DryMultiplier:   sc.DryMultiplier,
-					DryBase:         sc.DryBase,
-					DryAllowedLen:   sc.DryAllowedLen,
-					DryPenaltyLast:  sc.DryPenaltyLast,
-					XtcProbability:  sc.XtcProbability,
-					XtcThreshold:    sc.XtcThreshold,
-					XtcMinKeep:      sc.XtcMinKeep,
-					EnableThinking:  sc.EnableThinking,
-					ReasoningEffort: sc.ReasoningEffort,
-				}
-			}
 		}
 
 		list.Data = append(list.Data, detail)
@@ -204,6 +160,7 @@ type ModelInfoResponse struct {
 	IsHybrid      bool              `json:"is_hybrid"`
 	IsGPT         bool              `json:"is_gpt"`
 	Metadata      map[string]string `json:"metadata"`
+	ModelConfig   *ModelConfig      `json:"model_config,omitempty"`
 }
 
 // Encode implements the encoder interface.
@@ -212,12 +169,56 @@ func (app ModelInfoResponse) Encode() ([]byte, string, error) {
 	return data, "application/json", err
 }
 
-func toModelInfo(model models.Info, mi model.ModelInfo) ModelInfoResponse {
-	return ModelInfoResponse{
-		ID:            model.ID,
-		Object:        model.Object,
-		Created:       model.Created,
-		OwnedBy:       model.OwnedBy,
+func toModelInfo(info models.Info, mi model.ModelInfo, modelConfigs map[string]catalog.ModelConfig) ModelInfoResponse {
+	var modelConfig *ModelConfig
+	if mc, ok := modelConfigs[info.ID]; ok {
+		mc.Sampling = mc.Sampling.WithDefaults()
+		modelConfig = &ModelConfig{
+			Device:               mc.Device,
+			ContextWindow:        mc.ContextWindow,
+			NBatch:               mc.NBatch,
+			NUBatch:              mc.NUBatch,
+			NThreads:             mc.NThreads,
+			NThreadsBatch:        mc.NThreadsBatch,
+			CacheTypeK:           mc.CacheTypeK,
+			CacheTypeV:           mc.CacheTypeV,
+			UseDirectIO:          mc.UseDirectIO,
+			FlashAttention:       mc.FlashAttention,
+			IgnoreIntegrityCheck: mc.IgnoreIntegrityCheck,
+			NSeqMax:              mc.NSeqMax,
+			OffloadKQV:           mc.OffloadKQV,
+			OpOffload:            mc.OpOffload,
+			NGpuLayers:           mc.NGpuLayers,
+			SplitMode:            mc.SplitMode,
+			SystemPromptCache:    mc.SystemPromptCache,
+			FirstMessageCache:    mc.FirstMessageCache,
+			CacheMinTokens:       mc.CacheMinTokens,
+			Sampling: SamplingConfig{
+				Temperature:     mc.Sampling.Temperature,
+				TopK:            mc.Sampling.TopK,
+				TopP:            mc.Sampling.TopP,
+				MinP:            mc.Sampling.MinP,
+				MaxTokens:       mc.Sampling.MaxTokens,
+				RepeatPenalty:   mc.Sampling.RepeatPenalty,
+				RepeatLastN:     mc.Sampling.RepeatLastN,
+				DryMultiplier:   mc.Sampling.DryMultiplier,
+				DryBase:         mc.Sampling.DryBase,
+				DryAllowedLen:   mc.Sampling.DryAllowedLen,
+				DryPenaltyLast:  mc.Sampling.DryPenaltyLast,
+				XtcProbability:  mc.Sampling.XtcProbability,
+				XtcThreshold:    mc.Sampling.XtcThreshold,
+				XtcMinKeep:      mc.Sampling.XtcMinKeep,
+				EnableThinking:  mc.Sampling.EnableThinking,
+				ReasoningEffort: mc.Sampling.ReasoningEffort,
+			},
+		}
+	}
+
+	mir := ModelInfoResponse{
+		ID:            info.ID,
+		Object:        info.Object,
+		Created:       info.Created,
+		OwnedBy:       info.OwnedBy,
 		Desc:          mi.Desc,
 		Size:          mi.Size,
 		HasProjection: mi.HasProjection,
@@ -227,7 +228,10 @@ func toModelInfo(model models.Info, mi model.ModelInfo) ModelInfoResponse {
 		IsHybrid:      mi.IsHybrid,
 		IsGPT:         mi.IsGPTModel,
 		Metadata:      mi.Metadata,
+		ModelConfig:   modelConfig,
 	}
+
+	return mir
 }
 
 // =============================================================================
@@ -269,6 +273,50 @@ func toModelDetails(models []cache.ModelDetail) ModelDetailsResponse {
 }
 
 // =============================================================================
+
+// SamplingConfig represents sampling parameters for model inference.
+type SamplingConfig struct {
+	Temperature     float32 `json:"temperature"`
+	TopK            int32   `json:"top_k"`
+	TopP            float32 `json:"top_p"`
+	MinP            float32 `json:"min_p"`
+	MaxTokens       int     `json:"max_tokens"`
+	RepeatPenalty   float32 `json:"repeat_penalty"`
+	RepeatLastN     int32   `json:"repeat_last_n"`
+	DryMultiplier   float32 `json:"dry_multiplier"`
+	DryBase         float32 `json:"dry_base"`
+	DryAllowedLen   int32   `json:"dry_allowed_length"`
+	DryPenaltyLast  int32   `json:"dry_penalty_last_n"`
+	XtcProbability  float32 `json:"xtc_probability"`
+	XtcThreshold    float32 `json:"xtc_threshold"`
+	XtcMinKeep      uint32  `json:"xtc_min_keep"`
+	EnableThinking  string  `json:"enable_thinking"`
+	ReasoningEffort string  `json:"reasoning_effort"`
+}
+
+// ModelConfig represents the model configuration the model will use by default.
+type ModelConfig struct {
+	Device               string                   `json:"device"`
+	ContextWindow        int                      `json:"context-window"`
+	NBatch               int                      `json:"nbatch"`
+	NUBatch              int                      `json:"nubatch"`
+	NThreads             int                      `json:"nthreads"`
+	NThreadsBatch        int                      `json:"nthreads-batch"`
+	CacheTypeK           model.GGMLType           `json:"cache-type-k"`
+	CacheTypeV           model.GGMLType           `json:"cache-type-v"`
+	UseDirectIO          bool                     `json:"use-direct-io"`
+	FlashAttention       model.FlashAttentionType `json:"flash-attention"`
+	IgnoreIntegrityCheck bool                     `json:"ignore-integrity-check"`
+	NSeqMax              int                      `json:"nseq-max"`
+	OffloadKQV           *bool                    `json:"offload-kqv"`
+	OpOffload            *bool                    `json:"op-offload"`
+	NGpuLayers           *int32                   `json:"ngpu-layers"`
+	SplitMode            model.SplitMode          `json:"split-mode"`
+	SystemPromptCache    bool                     `json:"system-prompt-cache"`
+	FirstMessageCache    bool                     `json:"first-message-cache"`
+	CacheMinTokens       int                      `json:"cache-min-tokens"`
+	Sampling             SamplingConfig           `json:"sampling-parameters"`
+}
 
 // CatalogMetadata represents extra information about the model.
 type CatalogMetadata struct {
@@ -314,6 +362,7 @@ type CatalogModelResponse struct {
 	Files        CatalogFiles        `json:"files"`
 	Capabilities CatalogCapabilities `json:"capabilities"`
 	Metadata     CatalogMetadata     `json:"metadata"`
+	ModelConfig  *ModelConfig        `json:"model_config,omitempty"`
 	Downloaded   bool                `json:"downloaded"`
 	Validated    bool                `json:"validated"`
 }
@@ -333,13 +382,13 @@ func (app CatalogModelsResponse) Encode() ([]byte, string, error) {
 	return data, "application/json", err
 }
 
-func toCatalogModelResponse(model catalog.Model) CatalogModelResponse {
+func toCatalogModelResponse(model catalog.Model, mc *model.Config) CatalogModelResponse {
 	models := make([]CatalogFile, len(model.Files.Models))
 	for i, model := range model.Files.Models {
 		models[i] = CatalogFile(model)
 	}
 
-	return CatalogModelResponse{
+	resp := CatalogModelResponse{
 		ID:          model.ID,
 		Category:    model.Category,
 		OwnedBy:     model.OwnedBy,
@@ -370,13 +419,58 @@ func toCatalogModelResponse(model catalog.Model) CatalogModelResponse {
 		Downloaded: model.Downloaded,
 		Validated:  model.Validated,
 	}
+
+	if mc != nil {
+		sampling := model.ModelConfig.Sampling.WithDefaults()
+		resp.ModelConfig = &ModelConfig{
+			Device:               mc.Device,
+			ContextWindow:        mc.ContextWindow,
+			NBatch:               mc.NBatch,
+			NUBatch:              mc.NUBatch,
+			NThreads:             mc.NThreads,
+			NThreadsBatch:        mc.NThreadsBatch,
+			CacheTypeK:           mc.CacheTypeK,
+			CacheTypeV:           mc.CacheTypeV,
+			UseDirectIO:          mc.UseDirectIO,
+			FlashAttention:       mc.FlashAttention,
+			IgnoreIntegrityCheck: mc.IgnoreIntegrityCheck,
+			NSeqMax:              mc.NSeqMax,
+			OffloadKQV:           mc.OffloadKQV,
+			OpOffload:            mc.OpOffload,
+			NGpuLayers:           mc.NGpuLayers,
+			SplitMode:            mc.SplitMode,
+			SystemPromptCache:    mc.SystemPromptCache,
+			FirstMessageCache:    mc.FirstMessageCache,
+			CacheMinTokens:       mc.CacheMinTokens,
+			Sampling: SamplingConfig{
+				Temperature:     sampling.Temperature,
+				TopK:            sampling.TopK,
+				TopP:            sampling.TopP,
+				MinP:            sampling.MinP,
+				MaxTokens:       sampling.MaxTokens,
+				RepeatPenalty:   sampling.RepeatPenalty,
+				RepeatLastN:     sampling.RepeatLastN,
+				DryMultiplier:   sampling.DryMultiplier,
+				DryBase:         sampling.DryBase,
+				DryAllowedLen:   sampling.DryAllowedLen,
+				DryPenaltyLast:  sampling.DryPenaltyLast,
+				XtcProbability:  sampling.XtcProbability,
+				XtcThreshold:    sampling.XtcThreshold,
+				XtcMinKeep:      sampling.XtcMinKeep,
+				EnableThinking:  sampling.EnableThinking,
+				ReasoningEffort: sampling.ReasoningEffort,
+			},
+		}
+	}
+
+	return resp
 }
 
 func toCatalogModelsResponse(list []catalog.Model) CatalogModelsResponse {
 	catalogModels := make([]CatalogModelResponse, len(list))
 
 	for i, model := range list {
-		catalogModels[i] = toCatalogModelResponse(model)
+		catalogModels[i] = toCatalogModelResponse(model, nil)
 	}
 
 	return catalogModels

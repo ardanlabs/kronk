@@ -45,6 +45,29 @@ export interface ModelDetail {
 
 export type ModelDetailsResponse = ModelDetail[];
 
+export interface ModelConfig {
+  device: string;
+  'context-window': number;
+  nbatch: number;
+  nubatch: number;
+  nthreads: number;
+  'nthreads-batch': number;
+  'cache-type-k': string;
+  'cache-type-v': string;
+  'use-direct-io': boolean;
+  'flash-attention': string;
+  'ignore-integrity-check': boolean;
+  'nseq-max': number;
+  'offload-kqv': boolean | null;
+  'op-offload': boolean | null;
+  'ngpu-layers': number | null;
+  'split-mode': string;
+  'system-prompt-cache': boolean;
+  'first-message-cache': boolean;
+  'cache-min-tokens': number;
+  'sampling-parameters': SamplingConfig;
+}
+
 export interface ModelInfoResponse {
   id: string;
   object: string;
@@ -59,6 +82,7 @@ export interface ModelInfoResponse {
   is_hybrid: boolean;
   is_gpt: boolean;
   metadata: Record<string, string>;
+  model_config?: ModelConfig;
 }
 
 export interface CatalogMetadata {
@@ -99,6 +123,7 @@ export interface CatalogModelResponse {
   files: CatalogFiles;
   capabilities: CatalogCapabilities;
   metadata: CatalogMetadata;
+  model_config?: ModelConfig;
   downloaded: boolean;
   gated_model: boolean;
   validated: boolean;

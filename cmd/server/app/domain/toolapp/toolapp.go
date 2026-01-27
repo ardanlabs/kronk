@@ -130,8 +130,6 @@ func (a *app) listModels(ctx context.Context, r *http.Request) web.Encoder {
 	// from a base model.
 	modelConfig := a.catalog.ModelConfig()
 	for modelID := range modelConfig {
-		modelID = strings.ToLower(modelID)
-
 		if _, exists := existing[modelID]; exists {
 			continue
 		}
@@ -166,16 +164,7 @@ func (a *app) listModels(ctx context.Context, r *http.Request) web.Encoder {
 		return strings.Compare(a.ID, b.ID)
 	})
 
-	// Check if extended-config query parameter is set.
-	extendedConfig := r.URL.Query().Get("extended-config") == "true"
-
-	// Build sampling configs map from model config, applying defaults.
-	samplingConfigs := make(map[string]catalog.SamplingConfig)
-	for modelID, cfg := range modelConfig {
-		samplingConfigs[strings.ToLower(modelID)] = cfg.Sampling.WithDefaults()
-	}
-
-	return toListModelsInfo(modelFiles, samplingConfigs, extendedConfig)
+	return toListModelsInfo(modelFiles, modelConfig)
 }
 
 func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
@@ -270,17 +259,24 @@ func (a *app) missingModel(ctx context.Context, r *http.Request) web.Encoder {
 func (a *app) showModel(ctx context.Context, r *http.Request) web.Encoder {
 	modelID := web.Param(r, "model")
 
-	mi, err := a.models.RetrieveInfo(modelID)
+	fsModelID, _, _ := strings.Cut(modelID, "/")
+
+	info, err := a.models.RetrieveInfo(fsModelID)
 	if err != nil {
 		return errs.New(errs.Internal, err)
 	}
 
-	krn, err := a.cache.AquireModel(ctx, mi.ID)
+	info.ID = modelID
+
+	krn, err := a.cache.AquireModel(ctx, modelID)
 	if err != nil {
 		return errs.New(errs.Internal, err)
 	}
 
-	return toModelInfo(mi, krn.ModelInfo())
+	mi := krn.ModelInfo()
+	mi.ID = modelID
+
+	return toModelInfo(info, mi, a.catalog.ModelConfig())
 }
 
 func (a *app) modelPS(ctx context.Context, r *http.Request) web.Encoder {
@@ -376,12 +372,19 @@ func (a *app) pullCatalog(ctx context.Context, r *http.Request) web.Encoder {
 func (a *app) showCatalogModel(ctx context.Context, r *http.Request) web.Encoder {
 	modelID := web.Param(r, "model")
 
-	model, err := a.catalog.RetrieveModelDetails(modelID)
+	catModelID, _, _ := strings.Cut(modelID, "/")
+
+	model, err := a.catalog.RetrieveModelDetails(catModelID)
 	if err != nil {
 		return errs.New(errs.Internal, err)
 	}
 
-	return toCatalogModelResponse(model)
+	mc, err := a.catalog.RetrieveModelConfig(modelID)
+	if err != nil {
+		return errs.New(errs.Internal, err)
+	}
+
+	return toCatalogModelResponse(model, &mc)
 }
 
 func (a *app) listKeys(ctx context.Context, r *http.Request) web.Encoder {
