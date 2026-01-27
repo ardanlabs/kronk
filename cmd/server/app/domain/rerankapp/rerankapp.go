@@ -51,7 +51,7 @@ func (a *app) rerank(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.Errorf(errs.InvalidArgument, "model doesn't support reranking")
 	}
 
-	a.log.Info(ctx, "rerank", "request-input", req.LogSafe())
+	a.log.Info(ctx, "rerank", "REQUEST-INPUT", req.String())
 
 	ctx, cancel := context.WithTimeout(ctx, 180*time.Minute)
 	defer cancel()

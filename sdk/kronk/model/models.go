@@ -210,17 +210,26 @@ var logSafeKeys = []string{
 	"top_logprobs",
 }
 
-// LogSafe returns a copy of the document containing only fields that are
-// safe to log. This excludes sensitive fields like messages and input
-// which may contain private user data.
-func (d D) LogSafe() D {
-	safe := make(D, len(logSafeKeys))
-	for _, key := range logSafeKeys {
-		if v, ok := d[key]; ok {
-			safe[key] = v
+// String returns a string representation of the document containing only
+// fields that are safe to log. This excludes sensitive fields like messages
+// and input which may contain private user data.
+func (d D) String() string {
+	var b strings.Builder
+
+	for i, key := range logSafeKeys {
+		v, ok := d[key]
+		if !ok {
+			continue
 		}
+
+		if i > 0 {
+			b.WriteString(" ")
+		}
+
+		fmt.Fprintf(&b, "%s[%v]:", key, v)
 	}
-	return safe
+
+	return b.String()
 }
 
 // TextMessage create a new text message.

@@ -47,7 +47,7 @@ func (a *app) responses(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.New(errs.InvalidArgument, err)
 	}
 
-	a.log.Info(ctx, "response", "request-input", req.LogSafe())
+	a.log.Info(ctx, "response", "REQUEST-INPUT", req.String())
 
 	ctx, cancel := context.WithTimeout(ctx, 180*time.Minute)
 	defer cancel()

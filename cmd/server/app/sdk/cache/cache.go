@@ -205,7 +205,7 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 
 	cfg.Log = c.log
 
-	c.log(ctx, "model config settings", "model-id", modelID, "mc", cfg.String())
+	c.log(ctx, "CACHE: MODEL CONFIG", "model-id", modelID, "mc", cfg.String())
 
 	krn, err = kronk.New(cfg,
 		kronk.WithTemplateRetriever(c.templates),

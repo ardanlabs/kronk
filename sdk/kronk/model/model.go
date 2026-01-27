@@ -130,14 +130,16 @@ func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) 
 
 	ctxParams := modelCtxParams(cfg, modelInfo)
 
-	l(ctx, "model-info", "values", modelInfo.String())
+	l(ctx, "MODEL-INFO", "values", modelInfo.String())
 
-	l(ctx, "model-config", "values", cfg.String())
+	l(ctx, "MODEL-CONFIG", "values", cfg.String())
 
-	l(ctx, "context-params", "NCtx", ctxParams.NCtx, "NBatch", ctxParams.NBatch,
+	l(ctx, "LLAMA-CONTEXT-PARAMS", "NCtx", ctxParams.NCtx, "NBatch", ctxParams.NBatch,
 		"NUBatch", ctxParams.NUbatch, "NSeqMax", ctxParams.NSeqMax,
 		"TypeK", ctxParams.TypeK, "TypeV", ctxParams.TypeV, "NThreads", ctxParams.NThreads,
-		"NThreadsBatch", ctxParams.NThreadsBatch, "SystemPromptCache", cfg.SystemPromptCache)
+		"NThreadsBatch", ctxParams.NThreadsBatch, "Embeddings", ctxParams.Embeddings,
+		"PoolingType", ctxParams.PoolingType, "FlashAttentionType", ctxParams.FlashAttentionType,
+		"OffloadKQV", ctxParams.Offload_kqv, "OpOffload", ctxParams.OpOffload)
 
 	lctx, err := llama.InitFromModel(mdl, ctxParams)
 	if err != nil {
