@@ -45,6 +45,10 @@ class ApiService {
     return this.request<ListModelInfoResponse>('/models');
   }
 
+  async listModelsExtended(): Promise<ListModelInfoResponse> {
+    return this.request<ListModelInfoResponse>('/models?extended-config=true');
+  }
+
   async rebuildModelIndex(): Promise<void> {
     const response = await fetch(`${this.baseUrl}/models/index`, {
       method: 'POST',

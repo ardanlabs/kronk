@@ -126,7 +126,7 @@ func (m *Models) BuildIndex(log Logger) error {
 
 			validated := true
 			for modelID, files := range modelfiles {
-				isValidated := currentIndex[strings.ToLower(modelID)].Validated
+				isValidated := currentIndex[modelID].Validated
 
 				log(ctx, "checking model", "modelID", modelID, "isValidated", isValidated)
 
@@ -161,7 +161,6 @@ func (m *Models) BuildIndex(log Logger) error {
 
 				mp.Validated = validated
 
-				modelID = strings.ToLower(modelID)
 				index[modelID] = mp
 			}
 		}

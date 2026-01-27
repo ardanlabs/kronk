@@ -6,6 +6,97 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
+// SamplingConfig represents sampling parameters for model inference.
+type SamplingConfig struct {
+	Temperature     float32 `yaml:"temperature"`
+	TopK            int32   `yaml:"top_k"`
+	TopP            float32 `yaml:"top_p"`
+	MinP            float32 `yaml:"min_p"`
+	MaxTokens       int     `yaml:"max_tokens"`
+	RepeatPenalty   float32 `yaml:"repeat-penalty"`
+	RepeatLastN     int32   `yaml:"repeat-last-n"`
+	DryMultiplier   float32 `yaml:"dry-multiplier"`
+	DryBase         float32 `yaml:"dry-base"`
+	DryAllowedLen   int32   `yaml:"dry-allowed-length"`
+	DryPenaltyLast  int32   `yaml:"dry-penalty-last-n"`
+	XtcProbability  float32 `yaml:"xtc-probability"`
+	XtcThreshold    float32 `yaml:"xtc-threshold"`
+	XtcMinKeep      uint32  `yaml:"xtc-min-keep"`
+	EnableThinking  string  `yaml:"enable-thinking"`
+	ReasoningEffort string  `yaml:"reasoning-effort"`
+}
+
+// DefaultSamplingConfig returns a SamplingConfig with sensible default values.
+// These match the backend defaults in sdk/kronk/model/params.go.
+func DefaultSamplingConfig() SamplingConfig {
+	return SamplingConfig{
+		Temperature:     model.DefTemp,
+		TopK:            model.DefTopK,
+		TopP:            model.DefTopP,
+		MinP:            model.DefMinP,
+		MaxTokens:       model.DefMaxTokens,
+		RepeatPenalty:   model.DefRepeatPenalty,
+		RepeatLastN:     model.DefRepeatLastN,
+		DryMultiplier:   model.DefDryMultiplier,
+		DryBase:         model.DefDryBase,
+		DryAllowedLen:   model.DefDryAllowedLen,
+		DryPenaltyLast:  model.DefDryPenaltyLast,
+		XtcProbability:  model.DefXtcProbability,
+		XtcThreshold:    model.DefXtcThreshold,
+		XtcMinKeep:      model.DefXtcMinKeep,
+		EnableThinking:  model.DefEnableThinking,
+		ReasoningEffort: model.DefReasoningEffort,
+	}
+}
+
+// WithDefaults returns a new SamplingConfig with default values applied
+// for any zero-valued fields.
+func (s SamplingConfig) WithDefaults() SamplingConfig {
+	defaults := DefaultSamplingConfig()
+
+	if s.Temperature == 0 {
+		s.Temperature = defaults.Temperature
+	}
+	if s.TopK == 0 {
+		s.TopK = defaults.TopK
+	}
+	if s.TopP == 0 {
+		s.TopP = defaults.TopP
+	}
+	if s.MaxTokens == 0 {
+		s.MaxTokens = defaults.MaxTokens
+	}
+	if s.RepeatPenalty == 0 {
+		s.RepeatPenalty = defaults.RepeatPenalty
+	}
+	if s.RepeatLastN == 0 {
+		s.RepeatLastN = defaults.RepeatLastN
+	}
+	if s.DryMultiplier == 0 {
+		s.DryMultiplier = defaults.DryMultiplier
+	}
+	if s.DryBase == 0 {
+		s.DryBase = defaults.DryBase
+	}
+	if s.DryAllowedLen == 0 {
+		s.DryAllowedLen = defaults.DryAllowedLen
+	}
+	if s.XtcThreshold == 0 {
+		s.XtcThreshold = defaults.XtcThreshold
+	}
+	if s.XtcMinKeep == 0 {
+		s.XtcMinKeep = defaults.XtcMinKeep
+	}
+	if s.EnableThinking == "" {
+		s.EnableThinking = defaults.EnableThinking
+	}
+	if s.ReasoningEffort == "" {
+		s.ReasoningEffort = defaults.ReasoningEffort
+	}
+
+	return s
+}
+
 // ModelConfig represents default model config settings.
 type ModelConfig struct {
 	Device               string                   `yaml:"device"`
@@ -27,6 +118,7 @@ type ModelConfig struct {
 	SystemPromptCache    bool                     `yaml:"system-prompt-cache"`
 	FirstMessageCache    bool                     `yaml:"first-message-cache"`
 	CacheMinTokens       int                      `yaml:"cache-min-tokens"`
+	Sampling             SamplingConfig           `yaml:"sampling-parameters"`
 }
 
 // Metadata represents extra information about the model.

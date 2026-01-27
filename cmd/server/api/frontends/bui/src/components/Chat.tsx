@@ -1,24 +1,17 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { api } from '../services/api';
 import { useModelList } from '../contexts/ModelListContext';
+import { useChatMessages, type DisplayMessage } from '../contexts/ChatContext';
+import { useSampling, defaultSampling, isChangedFrom, formatBaselineValue, hasAnyChange, hasAdvancedChange, type SamplingParams } from '../contexts/SamplingContext';
 import CodeBlock from './CodeBlock';
-import type { ChatMessage, ChatUsage, ChatToolCall, ChatContentPart } from '../types';
+import type { ChatMessage, ChatUsage, ChatToolCall, ChatContentPart, SamplingConfig, ListModelDetail } from '../types';
 
 interface AttachedFile {
   type: 'image' | 'audio';
   name: string;
   dataUrl: string; // data:mime;base64,...
-}
-
-interface DisplayMessage {
-  role: 'user' | 'assistant';
-  content: string;
-  reasoning?: string;
-  usage?: ChatUsage;
-  toolCalls?: ChatToolCall[];
-  attachments?: AttachedFile[];
 }
 
 // Pre-process content to handle in-progress code blocks during streaming
@@ -79,46 +72,81 @@ function renderContent(content: string): JSX.Element {
 
 export default function Chat() {
   const { models, loading: modelsLoading, loadModels } = useModelList();
+  const { messages, setMessages, clearMessages } = useChatMessages();
+  const { sampling, setSampling } = useSampling();
   const [selectedModel, setSelectedModel] = useState<string>(() => {
     return localStorage.getItem('kronk_chat_model') || '';
   });
-  const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  
-  const [maxTokens, setMaxTokens] = useState(2048);
-  const [temperature, setTemperature] = useState(0.8);
-  const [topP, setTopP] = useState(0.9);
-  const [topK, setTopK] = useState(40);
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
-
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [minP, setMinP] = useState(0);
-  const [repeatPenalty, setRepeatPenalty] = useState(1.0);
-  const [repeatLastN, setRepeatLastN] = useState(64);
-  const [dryMultiplier, setDryMultiplier] = useState(1.05);
-  const [dryBase, setDryBase] = useState(1.75);
-  const [dryAllowedLen, setDryAllowedLen] = useState(2);
-  const [dryPenaltyLast, setDryPenaltyLast] = useState(0);
-  const [xtcProbability, setXtcProbability] = useState(0);
-  const [xtcThreshold, setXtcThreshold] = useState(0.1);
-  const [xtcMinKeep, setXtcMinKeep] = useState(1);
-  const [enableThinking, setEnableThinking] = useState('');
-  const [reasoningEffort, setReasoningEffort] = useState('');
-  const [returnPrompt, setReturnPrompt] = useState(false);
-  const [includeUsage, setIncludeUsage] = useState(true);
-  const [logprobs, setLogprobs] = useState(false);
-  const [topLogprobs, setTopLogprobs] = useState(0);
+
+  // Extended model configs with sampling parameters
+  const [extendedModels, setExtendedModels] = useState<ListModelDetail[]>([]);
+  
+  // Baseline sampling config from the selected model's /models endpoint
+  const [modelBaseline, setModelBaseline] = useState<SamplingParams | null>(null);
+  
+  // Track previous model to only apply config on actual model change
+  const prevModelRef = useRef<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<(() => void) | null>(null);
 
+  // Convert API sampling config to SamplingParams
+  const toSamplingParams = useCallback((modelSampling: SamplingConfig): SamplingParams => {
+    return {
+      temperature: modelSampling.temperature || defaultSampling.temperature,
+      topK: modelSampling.top_k || defaultSampling.topK,
+      topP: modelSampling.top_p || defaultSampling.topP,
+      minP: modelSampling.min_p || defaultSampling.minP,
+      maxTokens: modelSampling.max_tokens || defaultSampling.maxTokens,
+      repeatPenalty: modelSampling.repeat_penalty || defaultSampling.repeatPenalty,
+      repeatLastN: modelSampling.repeat_last_n || defaultSampling.repeatLastN,
+      dryMultiplier: modelSampling.dry_multiplier || defaultSampling.dryMultiplier,
+      dryBase: modelSampling.dry_base || defaultSampling.dryBase,
+      dryAllowedLen: modelSampling.dry_allowed_length || defaultSampling.dryAllowedLen,
+      dryPenaltyLast: modelSampling.dry_penalty_last_n ?? defaultSampling.dryPenaltyLast,
+      xtcProbability: modelSampling.xtc_probability ?? defaultSampling.xtcProbability,
+      xtcThreshold: modelSampling.xtc_threshold || defaultSampling.xtcThreshold,
+      xtcMinKeep: modelSampling.xtc_min_keep || defaultSampling.xtcMinKeep,
+      enableThinking: modelSampling.enable_thinking || defaultSampling.enableThinking,
+      reasoningEffort: modelSampling.reasoning_effort || defaultSampling.reasoningEffort,
+      returnPrompt: defaultSampling.returnPrompt,
+      includeUsage: defaultSampling.includeUsage,
+      logprobs: defaultSampling.logprobs,
+      topLogprobs: defaultSampling.topLogprobs,
+    };
+  }, []);
+
+  // Apply sampling config for a model and set baseline for comparison
+  const applySamplingConfig = useCallback((modelSampling: SamplingConfig | undefined) => {
+    if (modelSampling) {
+      const params = toSamplingParams(modelSampling);
+      setSampling(params);
+      setModelBaseline(params);
+    } else {
+      setModelBaseline(null);
+    }
+  }, [setSampling, toSamplingParams]);
+
   useEffect(() => {
     loadModels();
+    // Also fetch extended models for sampling configs
+    api.listModelsExtended()
+      .then((response) => {
+        if (response?.data) {
+          setExtendedModels(response.data);
+        }
+      })
+      .catch(() => {
+        // Ignore errors, fall back to defaults
+      });
   }, [loadModels]);
 
   useEffect(() => {
@@ -135,12 +163,28 @@ export default function Chat() {
     }
   }, [models, selectedModel]);
 
-  // Save selected model to localStorage
+  // Save selected model to localStorage and apply sampling config only on model change
   useEffect(() => {
     if (selectedModel) {
       localStorage.setItem('kronk_chat_model', selectedModel);
+      // Only apply model sampling config when the user actually changes models
+      if (prevModelRef.current !== null && prevModelRef.current !== selectedModel) {
+        const modelDetail = extendedModels.find((m) => m.id === selectedModel);
+        applySamplingConfig(modelDetail?.sampling);
+      }
+      prevModelRef.current = selectedModel;
     }
-  }, [selectedModel]);
+  }, [selectedModel, extendedModels, applySamplingConfig]);
+
+  // Set baseline for initial model load (without overwriting user's sampling values)
+  useEffect(() => {
+    if (selectedModel && extendedModels.length > 0 && modelBaseline === null) {
+      const modelDetail = extendedModels.find((m) => m.id === selectedModel);
+      if (modelDetail?.sampling) {
+        setModelBaseline(toSamplingParams(modelDetail.sampling));
+      }
+    }
+  }, [selectedModel, extendedModels, modelBaseline, toSamplingParams]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -222,28 +266,28 @@ export default function Chat() {
       {
         model: selectedModel,
         messages: chatMessages,
-        max_tokens: maxTokens,
-        temperature,
-        top_p: topP,
-        top_k: topK,
-        min_p: minP,
-        repeat_penalty: repeatPenalty,
-        repeat_last_n: repeatLastN,
-        dry_multiplier: dryMultiplier,
-        dry_base: dryBase,
-        dry_allowed_length: dryAllowedLen,
-        dry_penalty_last_n: dryPenaltyLast,
-        xtc_probability: xtcProbability,
-        xtc_threshold: xtcThreshold,
-        xtc_min_keep: xtcMinKeep,
-        enable_thinking: enableThinking || undefined,
-        reasoning_effort: reasoningEffort || undefined,
-        return_prompt: returnPrompt,
+        max_tokens: sampling.maxTokens,
+        temperature: sampling.temperature,
+        top_p: sampling.topP,
+        top_k: sampling.topK,
+        min_p: sampling.minP,
+        repeat_penalty: sampling.repeatPenalty,
+        repeat_last_n: sampling.repeatLastN,
+        dry_multiplier: sampling.dryMultiplier,
+        dry_base: sampling.dryBase,
+        dry_allowed_length: sampling.dryAllowedLen,
+        dry_penalty_last_n: sampling.dryPenaltyLast,
+        xtc_probability: sampling.xtcProbability,
+        xtc_threshold: sampling.xtcThreshold,
+        xtc_min_keep: sampling.xtcMinKeep,
+        enable_thinking: sampling.enableThinking || undefined,
+        reasoning_effort: sampling.reasoningEffort || undefined,
+        return_prompt: sampling.returnPrompt,
         stream_options: {
-          include_usage: includeUsage,
+          include_usage: sampling.includeUsage,
         },
-        logprobs,
-        top_logprobs: topLogprobs,
+        logprobs: sampling.logprobs,
+        top_logprobs: sampling.topLogprobs,
       },
       (data) => {
         const choice = data.choices?.[0];
@@ -291,7 +335,7 @@ export default function Chat() {
   };
 
   const handleClear = () => {
-    setMessages([]);
+    clearMessages();
     setError(null);
     setAttachedFiles([]);
   };
@@ -362,57 +406,80 @@ export default function Chat() {
             onClick={() => setShowSettings(!showSettings)}
           >
             Settings
+            {hasAnyChange(sampling, modelBaseline) && (
+              <span className="chat-setting-default">●</span>
+            )}
           </button>
           <button
             className="btn btn-secondary btn-sm"
             onClick={handleClear}
             disabled={isStreaming || messages.length === 0}
           >
-            Clear
+            Clear chat
           </button>
         </div>
       </div>
 
       {showSettings && (
         <div className="chat-settings">
-          <div className="chat-setting">
-            <label>Max Tokens</label>
+          <div className={`chat-setting ${isChangedFrom('maxTokens', sampling.maxTokens, modelBaseline) ? 'chat-setting-changed' : ''}`}>
+            <label>
+              Max Tokens
+              {isChangedFrom('maxTokens', sampling.maxTokens, modelBaseline) && (
+                <span className="chat-setting-default" title={`Default: ${formatBaselineValue('maxTokens', modelBaseline)}`}>●</span>
+              )}
+            </label>
             <input
               type="number"
-              value={maxTokens}
-              onChange={(e) => setMaxTokens(Number(e.target.value))}
+              value={sampling.maxTokens}
+              onChange={(e) => setSampling({ maxTokens: Number(e.target.value) })}
               min={1}
               max={32768}
             />
           </div>
-          <div className="chat-setting">
-            <label>Temperature</label>
+          <div className={`chat-setting ${isChangedFrom('temperature', sampling.temperature, modelBaseline) ? 'chat-setting-changed' : ''}`}>
+            <label>
+              Temperature
+              {isChangedFrom('temperature', sampling.temperature, modelBaseline) && (
+                <span className="chat-setting-default" title={`Default: ${formatBaselineValue('temperature', modelBaseline)}`}>●</span>
+              )}
+            </label>
             <input
               type="number"
-              value={temperature}
-              onChange={(e) => setTemperature(Number(e.target.value))}
+              value={sampling.temperature}
+              onChange={(e) => setSampling({ temperature: Number(e.target.value) })}
               min={0}
               max={2}
               step={0.1}
             />
           </div>
-          <div className="chat-setting">
-            <label>Top P</label>
+          <div className={`chat-setting ${isChangedFrom('topP', sampling.topP, modelBaseline) ? 'chat-setting-changed' : ''}`}>
+            <label>
+              Top P
+              {isChangedFrom('topP', sampling.topP, modelBaseline) && (
+                <span className="chat-setting-default" title={`Default: ${formatBaselineValue('topP', modelBaseline)}`}>●</span>
+              )}
+            </label>
             <input
               type="number"
-              value={topP}
-              onChange={(e) => setTopP(Number(e.target.value))}
+              value={sampling.topP}
+              onChange={(e) => setSampling({ topP: Number(e.target.value) })}
               min={0}
               max={1}
               step={0.05}
             />
           </div>
-          <div className="chat-setting">
-            <label>Top K</label>
+          <div className={`chat-setting ${isChangedFrom('topK', sampling.topK, modelBaseline) ? 'chat-setting-changed' : ''}`}>
+            <label>
+              Top K
+              {isChangedFrom('topK', sampling.topK, modelBaseline) && (
+                <span className="chat-setting-default" title={`Default: ${formatBaselineValue('topK', modelBaseline)}`}>●</span>
+              )}
+            </label>
             <input
               type="number"
-              value={topK}
-              onChange={(e) => setTopK(Number(e.target.value))}
+              value={sampling.topK}
+              onChange={(e) => setSampling({ topK: Number(e.target.value) })}
               min={1}
               max={100}
             />
@@ -426,128 +493,203 @@ export default function Chat() {
               onClick={() => setShowAdvanced(!showAdvanced)}
             >
               Advanced {showAdvanced ? '▲' : '▼'}
+              {hasAdvancedChange(sampling, modelBaseline) && (
+                <span className="chat-setting-default">●</span>
+              )}
             </button>
+          </div>
+          <div className="chat-setting chat-setting-button">
+            {hasAnyChange(sampling, modelBaseline) && modelBaseline && (
+              <button
+                type="button"
+                className="chat-reset-defaults"
+                onClick={() => setSampling(modelBaseline)}
+                title="Reset all sampling values to model defaults"
+              >
+                Reset to default
+              </button>
+            )}
           </div>
 
           {showAdvanced && (
             <div className="chat-advanced-settings">
-                <div className="chat-setting">
-                  <label>Min P</label>
+                <div className={`chat-setting ${isChangedFrom('minP', sampling.minP, modelBaseline) ? 'chat-setting-changed' : ''}`}>
+                  <label>
+                    Min P
+                    {isChangedFrom('minP', sampling.minP, modelBaseline) && (
+                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('minP', modelBaseline)}`}>●</span>
+                    )}
+                  </label>
                   <input
                     type="number"
-                    value={minP}
-                    onChange={(e) => setMinP(Number(e.target.value))}
+                    value={sampling.minP}
+                    onChange={(e) => setSampling({ minP: Number(e.target.value) })}
                     min={0}
                     max={1}
                     step={0.01}
                   />
                 </div>
-                <div className="chat-setting">
-                  <label>Repeat Penalty</label>
+                <div className={`chat-setting ${isChangedFrom('repeatPenalty', sampling.repeatPenalty, modelBaseline) ? 'chat-setting-changed' : ''}`}>
+                  <label>
+                    Repeat Penalty
+                    {isChangedFrom('repeatPenalty', sampling.repeatPenalty, modelBaseline) && (
+                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('repeatPenalty', modelBaseline)}`}>●</span>
+                    )}
+                  </label>
                   <input
                     type="number"
-                    value={repeatPenalty}
-                    onChange={(e) => setRepeatPenalty(Number(e.target.value))}
+                    value={sampling.repeatPenalty}
+                    onChange={(e) => setSampling({ repeatPenalty: Number(e.target.value) })}
                     min={0}
                     max={2}
                     step={0.1}
                   />
                 </div>
-                <div className="chat-setting">
-                  <label>Repeat Last N</label>
+                <div className={`chat-setting ${isChangedFrom('repeatLastN', sampling.repeatLastN, modelBaseline) ? 'chat-setting-changed' : ''}`}>
+                  <label>
+                    Repeat Last N
+                    {isChangedFrom('repeatLastN', sampling.repeatLastN, modelBaseline) && (
+                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('repeatLastN', modelBaseline)}`}>●</span>
+                    )}
+                  </label>
                   <input
                     type="number"
-                    value={repeatLastN}
-                    onChange={(e) => setRepeatLastN(Number(e.target.value))}
+                    value={sampling.repeatLastN}
+                    onChange={(e) => setSampling({ repeatLastN: Number(e.target.value) })}
                     min={-1}
                     max={512}
                   />
                 </div>
-                <div className="chat-setting">
-                  <label>DRY Multiplier</label>
+                <div className={`chat-setting ${isChangedFrom('dryMultiplier', sampling.dryMultiplier, modelBaseline) ? 'chat-setting-changed' : ''}`}>
+                  <label>
+                    DRY Multiplier
+                    {isChangedFrom('dryMultiplier', sampling.dryMultiplier, modelBaseline) && (
+                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('dryMultiplier', modelBaseline)}`}>●</span>
+                    )}
+                  </label>
                   <input
                     type="number"
-                    value={dryMultiplier}
-                    onChange={(e) => setDryMultiplier(Number(e.target.value))}
+                    value={sampling.dryMultiplier}
+                    onChange={(e) => setSampling({ dryMultiplier: Number(e.target.value) })}
                     min={0}
                     step={0.1}
                   />
                 </div>
-                <div className="chat-setting">
-                  <label>DRY Base</label>
+                <div className={`chat-setting ${isChangedFrom('dryBase', sampling.dryBase, modelBaseline) ? 'chat-setting-changed' : ''}`}>
+                  <label>
+                    DRY Base
+                    {isChangedFrom('dryBase', sampling.dryBase, modelBaseline) && (
+                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('dryBase', modelBaseline)}`}>●</span>
+                    )}
+                  </label>
                   <input
                     type="number"
-                    value={dryBase}
-                    onChange={(e) => setDryBase(Number(e.target.value))}
+                    value={sampling.dryBase}
+                    onChange={(e) => setSampling({ dryBase: Number(e.target.value) })}
                     min={1}
                     step={0.05}
                   />
                 </div>
-                <div className="chat-setting">
-                  <label>DRY Allowed Length</label>
+                <div className={`chat-setting ${isChangedFrom('dryAllowedLen', sampling.dryAllowedLen, modelBaseline) ? 'chat-setting-changed' : ''}`}>
+                  <label>
+                    DRY Allowed Length
+                    {isChangedFrom('dryAllowedLen', sampling.dryAllowedLen, modelBaseline) && (
+                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('dryAllowedLen', modelBaseline)}`}>●</span>
+                    )}
+                  </label>
                   <input
                     type="number"
-                    value={dryAllowedLen}
-                    onChange={(e) => setDryAllowedLen(Number(e.target.value))}
+                    value={sampling.dryAllowedLen}
+                    onChange={(e) => setSampling({ dryAllowedLen: Number(e.target.value) })}
                     min={0}
                   />
                 </div>
-                <div className="chat-setting">
-                  <label>DRY Penalty Last N</label>
+                <div className={`chat-setting ${isChangedFrom('dryPenaltyLast', sampling.dryPenaltyLast, modelBaseline) ? 'chat-setting-changed' : ''}`}>
+                  <label>
+                    DRY Penalty Last N
+                    {isChangedFrom('dryPenaltyLast', sampling.dryPenaltyLast, modelBaseline) && (
+                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('dryPenaltyLast', modelBaseline)}`}>●</span>
+                    )}
+                  </label>
                   <input
                     type="number"
-                    value={dryPenaltyLast}
-                    onChange={(e) => setDryPenaltyLast(Number(e.target.value))}
+                    value={sampling.dryPenaltyLast}
+                    onChange={(e) => setSampling({ dryPenaltyLast: Number(e.target.value) })}
                     min={-1}
                   />
                 </div>
-                <div className="chat-setting">
-                  <label>XTC Probability</label>
+                <div className={`chat-setting ${isChangedFrom('xtcProbability', sampling.xtcProbability, modelBaseline) ? 'chat-setting-changed' : ''}`}>
+                  <label>
+                    XTC Probability
+                    {isChangedFrom('xtcProbability', sampling.xtcProbability, modelBaseline) && (
+                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('xtcProbability', modelBaseline)}`}>●</span>
+                    )}
+                  </label>
                   <input
                     type="number"
-                    value={xtcProbability}
-                    onChange={(e) => setXtcProbability(Number(e.target.value))}
+                    value={sampling.xtcProbability}
+                    onChange={(e) => setSampling({ xtcProbability: Number(e.target.value) })}
                     min={0}
                     max={1}
                     step={0.01}
                   />
                 </div>
-                <div className="chat-setting">
-                  <label>XTC Threshold</label>
+                <div className={`chat-setting ${isChangedFrom('xtcThreshold', sampling.xtcThreshold, modelBaseline) ? 'chat-setting-changed' : ''}`}>
+                  <label>
+                    XTC Threshold
+                    {isChangedFrom('xtcThreshold', sampling.xtcThreshold, modelBaseline) && (
+                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('xtcThreshold', modelBaseline)}`}>●</span>
+                    )}
+                  </label>
                   <input
                     type="number"
-                    value={xtcThreshold}
-                    onChange={(e) => setXtcThreshold(Number(e.target.value))}
+                    value={sampling.xtcThreshold}
+                    onChange={(e) => setSampling({ xtcThreshold: Number(e.target.value) })}
                     min={0}
                     max={1}
                     step={0.01}
                   />
                 </div>
-                <div className="chat-setting">
-                  <label>XTC Min Keep</label>
+                <div className={`chat-setting ${isChangedFrom('xtcMinKeep', sampling.xtcMinKeep, modelBaseline) ? 'chat-setting-changed' : ''}`}>
+                  <label>
+                    XTC Min Keep
+                    {isChangedFrom('xtcMinKeep', sampling.xtcMinKeep, modelBaseline) && (
+                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('xtcMinKeep', modelBaseline)}`}>●</span>
+                    )}
+                  </label>
                   <input
                     type="number"
-                    value={xtcMinKeep}
-                    onChange={(e) => setXtcMinKeep(Number(e.target.value))}
+                    value={sampling.xtcMinKeep}
+                    onChange={(e) => setSampling({ xtcMinKeep: Number(e.target.value) })}
                     min={1}
                   />
                 </div>
-                <div className="chat-setting">
-                  <label>Enable Thinking</label>
+                <div className={`chat-setting ${isChangedFrom('enableThinking', sampling.enableThinking, modelBaseline) ? 'chat-setting-changed' : ''}`}>
+                  <label>
+                    Enable Thinking
+                    {isChangedFrom('enableThinking', sampling.enableThinking, modelBaseline) && (
+                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('enableThinking', modelBaseline)}`}>●</span>
+                    )}
+                  </label>
                   <select
-                    value={enableThinking}
-                    onChange={(e) => setEnableThinking(e.target.value)}
+                    value={sampling.enableThinking}
+                    onChange={(e) => setSampling({ enableThinking: e.target.value })}
                   >
                     <option value="">Default</option>
                     <option value="true">Enabled</option>
                     <option value="false">Disabled</option>
                   </select>
                 </div>
-                <div className="chat-setting">
-                  <label>Reasoning Effort</label>
+                <div className={`chat-setting ${isChangedFrom('reasoningEffort', sampling.reasoningEffort, modelBaseline) ? 'chat-setting-changed' : ''}`}>
+                  <label>
+                    Reasoning Effort
+                    {isChangedFrom('reasoningEffort', sampling.reasoningEffort, modelBaseline) && (
+                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('reasoningEffort', modelBaseline)}`}>●</span>
+                    )}
+                  </label>
                   <select
-                    value={reasoningEffort}
-                    onChange={(e) => setReasoningEffort(e.target.value)}
+                    value={sampling.reasoningEffort}
+                    onChange={(e) => setSampling({ reasoningEffort: e.target.value })}
                   >
                     <option value="">Default</option>
                     <option value="low">Low</option>
@@ -555,44 +697,58 @@ export default function Chat() {
                     <option value="high">High</option>
                   </select>
                 </div>
-                <div className="chat-setting">
-                  <label>Top Logprobs</label>
+                <div className={`chat-setting ${isChangedFrom('topLogprobs', sampling.topLogprobs, modelBaseline) ? 'chat-setting-changed' : ''}`}>
+                  <label>
+                    Top Logprobs
+                    {isChangedFrom('topLogprobs', sampling.topLogprobs, modelBaseline) && (
+                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('topLogprobs', modelBaseline)}`}>●</span>
+                    )}
+                  </label>
                   <input
                     type="number"
-                    value={topLogprobs}
-                    onChange={(e) => setTopLogprobs(Number(e.target.value))}
+                    value={sampling.topLogprobs}
+                    onChange={(e) => setSampling({ topLogprobs: Number(e.target.value) })}
                     min={0}
                     max={20}
                   />
                 </div>
-                <div className="chat-setting chat-setting-checkbox">
+                <div className={`chat-setting chat-setting-checkbox ${isChangedFrom('returnPrompt', sampling.returnPrompt, modelBaseline) ? 'chat-setting-changed' : ''}`}>
                   <label>
                     <input
                       type="checkbox"
-                      checked={returnPrompt}
-                      onChange={(e) => setReturnPrompt(e.target.checked)}
+                      checked={sampling.returnPrompt}
+                      onChange={(e) => setSampling({ returnPrompt: e.target.checked })}
                     />
                     Return Prompt
+                    {isChangedFrom('returnPrompt', sampling.returnPrompt, modelBaseline) && (
+                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('returnPrompt', modelBaseline)}`}>●</span>
+                    )}
                   </label>
                 </div>
-                <div className="chat-setting chat-setting-checkbox">
+                <div className={`chat-setting chat-setting-checkbox ${isChangedFrom('includeUsage', sampling.includeUsage, modelBaseline) ? 'chat-setting-changed' : ''}`}>
                   <label>
                     <input
                       type="checkbox"
-                      checked={includeUsage}
-                      onChange={(e) => setIncludeUsage(e.target.checked)}
+                      checked={sampling.includeUsage}
+                      onChange={(e) => setSampling({ includeUsage: e.target.checked })}
                     />
                     Include Usage
+                    {isChangedFrom('includeUsage', sampling.includeUsage, modelBaseline) && (
+                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('includeUsage', modelBaseline)}`}>●</span>
+                    )}
                   </label>
                 </div>
-                <div className="chat-setting chat-setting-checkbox">
+                <div className={`chat-setting chat-setting-checkbox ${isChangedFrom('logprobs', sampling.logprobs, modelBaseline) ? 'chat-setting-changed' : ''}`}>
                   <label>
                     <input
                       type="checkbox"
-                      checked={logprobs}
-                      onChange={(e) => setLogprobs(e.target.checked)}
+                      checked={sampling.logprobs}
+                      onChange={(e) => setSampling({ logprobs: e.target.checked })}
                     />
                     Logprobs
+                    {isChangedFrom('logprobs', sampling.logprobs, modelBaseline) && (
+                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('logprobs', modelBaseline)}`}>●</span>
+                    )}
                   </label>
                 </div>
             </div>

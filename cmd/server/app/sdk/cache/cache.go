@@ -164,7 +164,7 @@ func (c *Cache) ModelStatus() ([]ModelDetail, error) {
 ids:
 	for _, model := range entries {
 		for _, mi := range list {
-			modelKey := strings.ToLower(model.Key) // Everything on disk is lowercase.
+			modelKey := strings.ToLower(model.Key) // The index uses lowercase.
 			if mi.ID == modelKey {
 				ps = append(ps, ModelDetail{
 					ID:            model.Key,

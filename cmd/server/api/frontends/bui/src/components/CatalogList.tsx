@@ -440,6 +440,118 @@ export default function CatalogList() {
                   </div>
                 </div>
               </div>
+
+              {modelInfo.model_config && (
+                <div style={{ marginTop: '24px' }}>
+                  <h4 style={{ marginBottom: '12px' }}>Model Configuration</h4>
+                  <div className="model-meta">
+                    <div className="model-meta-item">
+                      <label>Device</label>
+                      <span>{modelInfo.model_config.device || 'default'}</span>
+                    </div>
+                    <div className="model-meta-item">
+                      <label>Context Window</label>
+                      <span>{modelInfo.model_config['context-window']}</span>
+                    </div>
+                    <div className="model-meta-item">
+                      <label>Batch Size</label>
+                      <span>{modelInfo.model_config.nbatch}</span>
+                    </div>
+                    <div className="model-meta-item">
+                      <label>Micro Batch Size</label>
+                      <span>{modelInfo.model_config.nubatch}</span>
+                    </div>
+                    <div className="model-meta-item">
+                      <label>Threads</label>
+                      <span>{modelInfo.model_config.nthreads}</span>
+                    </div>
+                    <div className="model-meta-item">
+                      <label>Batch Threads</label>
+                      <span>{modelInfo.model_config['nthreads-batch']}</span>
+                    </div>
+                    <div className="model-meta-item">
+                      <label>Cache Type K</label>
+                      <span>{modelInfo.model_config['cache-type-k'] || 'default'}</span>
+                    </div>
+                    <div className="model-meta-item">
+                      <label>Cache Type V</label>
+                      <span>{modelInfo.model_config['cache-type-v'] || 'default'}</span>
+                    </div>
+                    <div className="model-meta-item">
+                      <label>Flash Attention</label>
+                      <span>{modelInfo.model_config['flash-attention'] || 'default'}</span>
+                    </div>
+                    <div className="model-meta-item">
+                      <label>Max Sequences</label>
+                      <span>{modelInfo.model_config['nseq-max']}</span>
+                    </div>
+                    <div className="model-meta-item">
+                      <label>GPU Layers</label>
+                      <span>{modelInfo.model_config['ngpu-layers'] ?? 'auto'}</span>
+                    </div>
+                    <div className="model-meta-item">
+                      <label>Split Mode</label>
+                      <span>{modelInfo.model_config['split-mode'] || 'default'}</span>
+                    </div>
+                    <div className="model-meta-item">
+                      <label>System Prompt Cache</label>
+                      <span className={`badge ${modelInfo.model_config['system-prompt-cache'] ? 'badge-yes' : 'badge-no'}`}>
+                        {modelInfo.model_config['system-prompt-cache'] ? 'Yes' : 'No'}
+                      </span>
+                    </div>
+                    <div className="model-meta-item">
+                      <label>First Message Cache</label>
+                      <span className={`badge ${modelInfo.model_config['first-message-cache'] ? 'badge-yes' : 'badge-no'}`}>
+                        {modelInfo.model_config['first-message-cache'] ? 'Yes' : 'No'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {modelInfo.model_config?.['sampling-parameters'] && (
+                <div style={{ marginTop: '24px' }}>
+                  <h4 style={{ marginBottom: '12px' }}>Sampling Parameters</h4>
+                  <div className="model-meta">
+                    <div className="model-meta-item">
+                      <label>Temperature</label>
+                      <span>{modelInfo.model_config['sampling-parameters'].temperature.toFixed(2)}</span>
+                    </div>
+                    <div className="model-meta-item">
+                      <label>Top K</label>
+                      <span>{modelInfo.model_config['sampling-parameters'].top_k}</span>
+                    </div>
+                    <div className="model-meta-item">
+                      <label>Top P</label>
+                      <span>{modelInfo.model_config['sampling-parameters'].top_p.toFixed(2)}</span>
+                    </div>
+                    <div className="model-meta-item">
+                      <label>Min P</label>
+                      <span>{modelInfo.model_config['sampling-parameters'].min_p.toFixed(2)}</span>
+                    </div>
+                    <div className="model-meta-item">
+                      <label>Max Tokens</label>
+                      <span>{modelInfo.model_config['sampling-parameters'].max_tokens}</span>
+                    </div>
+                    <div className="model-meta-item">
+                      <label>Repeat Penalty</label>
+                      <span>{modelInfo.model_config['sampling-parameters'].repeat_penalty.toFixed(2)}</span>
+                    </div>
+                    <div className="model-meta-item">
+                      <label>Repeat Last N</label>
+                      <span>{modelInfo.model_config['sampling-parameters'].repeat_last_n}</span>
+                    </div>
+                    <div className="model-meta-item">
+                      <label>Enable Thinking</label>
+                      <span>{modelInfo.model_config['sampling-parameters'].enable_thinking || 'default'}</span>
+                    </div>
+                    <div className="model-meta-item">
+                      <label>Reasoning Effort</label>
+                      <span>{modelInfo.model_config['sampling-parameters'].reasoning_effort || 'default'}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </>
           )}
 

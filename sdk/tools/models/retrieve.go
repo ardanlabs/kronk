@@ -155,8 +155,6 @@ type Info struct {
 
 // RetrieveInfo provides details for the specified model.
 func (m *Models) RetrieveInfo(modelID string) (Info, error) {
-	modelID = strings.ToLower(modelID)
-
 	mf, err := m.retrieveFile(modelID)
 	if err != nil {
 		return Info{}, fmt.Errorf("retrieve-info: unable to get model file information: %w", err)
@@ -185,8 +183,6 @@ type Path struct {
 // RetrievePath locates the physical location on disk and returns the full path.
 func (m *Models) RetrievePath(modelID string) (Path, error) {
 	index := m.loadIndex()
-
-	modelID = strings.ToLower(modelID)
 
 	modelPath, exists := index[modelID]
 	if !exists {

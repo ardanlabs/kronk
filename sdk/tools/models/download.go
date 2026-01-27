@@ -139,7 +139,7 @@ func (m *Models) downloadModel(ctx context.Context, modelFileURL string, projFil
 		return Path{}, fmt.Errorf("download-model: unable to extract file name: %w", err)
 	}
 
-	mp, found := m.loadIndex()[strings.ToLower(extractModelID(modelFileName))]
+	mp, found := m.loadIndex()[extractModelID(modelFileName)]
 	if found && mp.Validated {
 		mp.Downloaded = false
 		return mp, nil

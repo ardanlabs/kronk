@@ -152,6 +152,11 @@ Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL:
   cache-type-v: q8_0
   flash-attention: enabled
   nseq-max: 2
+  sampling-parameters:
+    temperature: 0.7
+    top_p: 0.8
+    top_k: 20
+    repeat_penalty: 1.05
 
 Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/FMC:
   <<: *base_Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
@@ -172,11 +177,19 @@ GLM-4.7-Flash-UD-Q8_K_XL: &base_GLM_4_7_Flash_UD_Q8_K_XL
   cache-type-v: q8_0
   flash-attention: enabled
   nseq-max: 2
+  sampling-parameters:
+    temperature: 1.0
+    min_p: 0.01
+    top_p: 0.95
+    repeat_penalty: 1.0
 
 GLM-4.7-Flash-UD-Q8_K_XL/FMC:
   <<: *base_GLM_4_7_Flash_UD_Q8_K_XL
   nseq-max: 1
   first-message-cache: true
+  sampling-parameters:
+    temperature: 0.7
+    top_p: 1.0
 
 GLM-4.7-Flash-UD-Q8_K_XL/SPC:
   <<: *base_GLM_4_7_Flash_UD_Q8_K_XL
@@ -211,8 +224,8 @@ Qwen3-Coder-30B-A3B-Instruct-Q8_0: &base_Qwen3-Coder-30B-A3B-Instruct-Q8_0
   nubatch: 512
   cache-type-k: q8_0
   cache-type-v: q8_0
-  nseq-max: 1
-  first-message-cache: true
+  flash-attention: enabled
+  nseq-max: 2
 
 Qwen3-Coder-30B-A3B-Instruct-Q8_0/FMC:
   <<: *base_Qwen3-Coder-30B-A3B-Instruct-Q8_0
@@ -267,6 +280,11 @@ GLM-4.7-Flash-Q8_0:
   cache-type-v: q8_0
   flash-attention: enabled
   nseq-max: 2
+  sampling-parameters:
+    temperature: 1.0
+    min_p: 0.01
+    top_p: 0.95
+    repeat_penalty: 1.0
 
 # ==============================================================================
 # VISION MODELS

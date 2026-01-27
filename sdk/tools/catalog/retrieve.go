@@ -29,25 +29,23 @@ func (c *Catalog) CatalogModelList(filterCategory string) ([]Model, error) {
 	validatedModels := make(map[string]struct{})
 
 	for _, mf := range modelFiles {
-		pulledModels[strings.ToLower(mf.ID)] = struct{}{}
+		pulledModels[mf.ID] = struct{}{}
 		if mf.Validated {
-			validatedModels[strings.ToLower(mf.ID)] = struct{}{}
+			validatedModels[mf.ID] = struct{}{}
 		}
 	}
 
-	filterLower := strings.ToLower(filterCategory)
-
 	var list []Model
 	for _, cat := range catalogs {
-		if filterCategory != "" && !strings.Contains(strings.ToLower(cat.Name), filterLower) {
+		if filterCategory != "" && !strings.Contains(strings.ToLower(cat.Name), strings.ToLower(filterCategory)) {
 			continue
 		}
 
 		for _, model := range cat.Models {
-			_, downloaded := pulledModels[strings.ToLower(model.ID)]
+			_, downloaded := pulledModels[model.ID]
 			model.Downloaded = downloaded
 
-			_, validated := validatedModels[strings.ToLower(model.ID)]
+			_, validated := validatedModels[model.ID]
 			model.Validated = validated
 
 			list = append(list, model)
@@ -55,9 +53,11 @@ func (c *Catalog) CatalogModelList(filterCategory string) ([]Model, error) {
 	}
 
 	slices.SortFunc(list, func(a, b Model) int {
-		if c := cmp.Compare(strings.ToLower(a.Category), strings.ToLower(b.Category)); c != 0 {
+		if c := cmp.Compare(a.Category, b.Category); c != 0 {
 			return c
 		}
+
+		// Using ToLower to help with case-insensitve sorting.
 		return cmp.Compare(strings.ToLower(a.ID), strings.ToLower(b.ID))
 	})
 
@@ -72,8 +72,6 @@ func (c *Catalog) RetrieveModelDetails(modelID string) (Model, error) {
 		return Model{}, fmt.Errorf("retrieve-model-details: load-index: %w", err)
 	}
 
-	modelID = strings.ToLower(modelID)
-
 	catalogFile := index[modelID]
 	if catalogFile == "" {
 		return Model{}, fmt.Errorf("retrieve-model-details: model[%s] not found in index", modelID)
@@ -85,8 +83,7 @@ func (c *Catalog) RetrieveModelDetails(modelID string) (Model, error) {
 	}
 
 	for _, model := range catalog.Models {
-		id := strings.ToLower(model.ID)
-		if strings.EqualFold(id, modelID) {
+		if strings.EqualFold(model.ID, modelID) {
 			return model, nil
 		}
 	}
@@ -294,8 +291,7 @@ func (c *Catalog) buildIndex() error {
 		}
 
 		for _, model := range catModels.Models {
-			modelID := strings.ToLower(model.ID)
-			index[modelID] = entry.Name()
+			index[model.ID] = entry.Name()
 		}
 	}
 
