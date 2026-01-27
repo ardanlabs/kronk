@@ -119,6 +119,23 @@ func (a *app) listModels(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.Errorf(errs.Internal, "unable to retrieve model list: %s", err)
 	}
 
+	modelFileMap := make(map[string]models.File)
+	for _, mf := range modelFiles {
+		modelFileMap[mf.ID] = mf
+	}
+
+	configIDs := a.catalog.ModelConfigIDs()
+	for _, cfgID := range configIDs {
+		if strings.Contains(cfgID, "/") {
+			baseID, _, _ := strings.Cut(cfgID, "/")
+			if baseMF, exists := modelFileMap[baseID]; exists {
+				variantMF := baseMF
+				variantMF.ID = cfgID
+				modelFiles = append(modelFiles, variantMF)
+			}
+		}
+	}
+
 	var extendedConfigs map[string]*ExtendedConfig
 
 	if r.URL.Query().Get("extended-config") == "true" {
@@ -143,7 +160,7 @@ func (a *app) listModels(ctx context.Context, r *http.Request) web.Encoder {
 				SystemPromptCache: cfg.SystemPromptCache,
 				FirstMessageCache: cfg.FirstMessageCache,
 				CacheMinTokens:    cfg.CacheMinTokens,
-				Sampling:          defaultSamplingConfig(),
+				Sampling:          toSamplingConfig(cfg.SamplingParameters),
 			}
 		}
 	}
@@ -180,6 +197,52 @@ func defaultSamplingConfig() SamplingConfig {
 		XtcThreshold:   0.1,
 		XtcMinKeep:     1,
 	}
+}
+
+func toSamplingConfig(sp model.SamplingParameters) SamplingConfig {
+	cfg := defaultSamplingConfig()
+
+	if sp.Temperature != nil {
+		cfg.Temperature = *sp.Temperature
+	}
+	if sp.TopK != nil {
+		cfg.TopK = *sp.TopK
+	}
+	if sp.TopP != nil {
+		cfg.TopP = *sp.TopP
+	}
+	if sp.MinP != nil {
+		cfg.MinP = *sp.MinP
+	}
+	if sp.RepeatPenalty != nil {
+		cfg.RepeatPenalty = *sp.RepeatPenalty
+	}
+	if sp.RepeatLastN != nil {
+		cfg.RepeatLastN = *sp.RepeatLastN
+	}
+	if sp.DryMultiplier != nil {
+		cfg.DryMultiplier = *sp.DryMultiplier
+	}
+	if sp.DryBase != nil {
+		cfg.DryBase = *sp.DryBase
+	}
+	if sp.DryAllowedLen != nil {
+		cfg.DryAllowedLen = *sp.DryAllowedLen
+	}
+	if sp.DryPenaltyLast != nil {
+		cfg.DryPenaltyLast = *sp.DryPenaltyLast
+	}
+	if sp.XtcProbability != nil {
+		cfg.XtcProbability = *sp.XtcProbability
+	}
+	if sp.XtcThreshold != nil {
+		cfg.XtcThreshold = *sp.XtcThreshold
+	}
+	if sp.XtcMinKeep != nil {
+		cfg.XtcMinKeep = *sp.XtcMinKeep
+	}
+
+	return cfg
 }
 
 func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {

@@ -110,6 +110,16 @@ func (c *Catalog) CatalogPath() string {
 	return c.catalogPath
 }
 
+// ModelConfigIDs returns all model IDs configured in the model config file.
+// This includes base model IDs and suffixed variants (e.g., model/FMC, model/SPC).
+func (c *Catalog) ModelConfigIDs() []string {
+	ids := make([]string, 0, len(c.modelConfig))
+	for id := range c.modelConfig {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
 // =============================================================================
 
 func loadModelConfig(modelConfigFile string) (map[string]ModelConfig, error) {

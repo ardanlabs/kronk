@@ -174,6 +174,13 @@ export default function Chat() {
     }
   }, [extendedModels, maxTokens]);
 
+  // Apply defaults when extendedModels loads (handles initial page load race condition)
+  useEffect(() => {
+    if (selectedModel && extendedModels.length > 0) {
+      applyModelDefaults(selectedModel);
+    }
+  }, [extendedModels, selectedModel, applyModelDefaults]);
+
   useEffect(() => {
     if (models?.data && models.data.length > 0) {
       const chatModels = models.data.filter((m) => {
@@ -188,12 +195,13 @@ export default function Chat() {
     }
   }, [models, selectedModel]);
 
-  // Save selected model to localStorage
+  // Save selected model to localStorage and apply model defaults
   useEffect(() => {
     if (selectedModel) {
       localStorage.setItem('kronk_chat_model', selectedModel);
+      applyModelDefaults(selectedModel);
     }
-  }, [selectedModel]);
+  }, [selectedModel, applyModelDefaults]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -406,11 +414,19 @@ export default function Chat() {
                 const id = model.id.toLowerCase();
                 return !id.includes('embed') && !id.includes('rerank');
               })
-              .map((model) => (
-              <option key={model.id} value={model.id}>
-                {model.id}
-              </option>
-            ))}
+              .map((model) => {
+                let displayName = model.id;
+                if (displayName.endsWith('/SPC')) {
+                  displayName = displayName.slice(0, -4) + ' - with System Prompt Cache';
+                } else if (displayName.endsWith('/FMC')) {
+                  displayName = displayName.slice(0, -4) + ' - with First Message Cache';
+                }
+                return (
+                  <option key={model.id} value={model.id}>
+                    {displayName}
+                  </option>
+                );
+              })}
           </select>
         </div>
         <div className="chat-header-right">
