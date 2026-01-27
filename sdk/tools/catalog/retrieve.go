@@ -136,9 +136,9 @@ func (c *Catalog) RetrieveCatalogs() ([]CatalogModels, error) {
 	return catalogs, nil
 }
 
-// RetrieveModelConfig reads the catalog and model config file for the
-// specified model id and returns a model config for use.
-func (c *Catalog) RetrieveModelConfig(modelID string) (model.Config, error) {
+// RetrieveKronkModelConfig reads the catalog and model config file for the
+// specified model id and returns a model config for use with kronk.New().
+func (c *Catalog) RetrieveKronkModelConfig(modelID string) (model.Config, error) {
 
 	// The modelID might have a / because it's a model in the config
 	// with different settings. Ex. model/FMC.
@@ -254,6 +254,94 @@ func (c *Catalog) RetrieveModelConfig(modelID string) (model.Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// RetrieveModelConfig reads the catalog and model config file for the
+// specified model id and returns a ModelConfig with sampling values.
+func (c *Catalog) RetrieveModelConfig(modelID string) ModelConfig {
+
+	// Look in the catalog config first for the specified model.
+	var catalogFound bool
+	catalog, err := c.RetrieveModelDetails(modelID)
+	if err == nil {
+		catalogFound = true
+	}
+
+	// Look in the model config for the specified model.
+	modelConfig, modelCfgFound := c.modelConfig[modelID]
+
+	var cfg ModelConfig
+
+	// Apply catalog settings first if found.
+	if catalogFound {
+		cfg = catalog.ModelConfig
+	}
+
+	// Apply model config settings if found (overrides catalog).
+	if modelCfgFound {
+		if modelConfig.Device != "" {
+			cfg.Device = modelConfig.Device
+		}
+		if modelConfig.ContextWindow != 0 {
+			cfg.ContextWindow = modelConfig.ContextWindow
+		}
+		if modelConfig.NBatch != 0 {
+			cfg.NBatch = modelConfig.NBatch
+		}
+		if modelConfig.NUBatch != 0 {
+			cfg.NUBatch = modelConfig.NUBatch
+		}
+		if modelConfig.NThreads != 0 {
+			cfg.NThreads = modelConfig.NThreads
+		}
+		if modelConfig.NThreadsBatch != 0 {
+			cfg.NThreadsBatch = modelConfig.NThreadsBatch
+		}
+		if modelConfig.CacheTypeK != 0 {
+			cfg.CacheTypeK = modelConfig.CacheTypeK
+		}
+		if modelConfig.CacheTypeV != 0 {
+			cfg.CacheTypeV = modelConfig.CacheTypeV
+		}
+		if modelConfig.FlashAttention != 0 {
+			cfg.FlashAttention = modelConfig.FlashAttention
+		}
+		if modelConfig.UseDirectIO {
+			cfg.UseDirectIO = modelConfig.UseDirectIO
+		}
+		if modelConfig.IgnoreIntegrityCheck {
+			cfg.IgnoreIntegrityCheck = modelConfig.IgnoreIntegrityCheck
+		}
+		if modelConfig.NSeqMax != 0 {
+			cfg.NSeqMax = modelConfig.NSeqMax
+		}
+		if modelConfig.OffloadKQV != nil {
+			cfg.OffloadKQV = modelConfig.OffloadKQV
+		}
+		if modelConfig.OpOffload != nil {
+			cfg.OpOffload = modelConfig.OpOffload
+		}
+		if modelConfig.NGpuLayers != nil {
+			cfg.NGpuLayers = modelConfig.NGpuLayers
+		}
+		if modelConfig.SplitMode != 0 {
+			cfg.SplitMode = modelConfig.SplitMode
+		}
+		if modelConfig.SystemPromptCache {
+			cfg.SystemPromptCache = modelConfig.SystemPromptCache
+		}
+		if modelConfig.FirstMessageCache {
+			cfg.FirstMessageCache = modelConfig.FirstMessageCache
+		}
+		if modelConfig.CacheMinTokens != 0 {
+			cfg.CacheMinTokens = modelConfig.CacheMinTokens
+		}
+		cfg.Sampling = modelConfig.Sampling
+	}
+
+	cfg.Sampling = cfg.Sampling.withDefaults()
+
+	return cfg
 }
 
 // =============================================================================

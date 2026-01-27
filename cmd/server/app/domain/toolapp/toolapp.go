@@ -236,11 +236,13 @@ func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
 }
 
 func (a *app) removeModel(ctx context.Context, r *http.Request) web.Encoder {
-	modelName := web.Param(r, "model")
+	modelID := web.Param(r, "model")
 
-	a.log.Info(ctx, "tool-remove", "modelName", modelName)
+	modelID, _, _ = strings.Cut(modelID, "/")
 
-	mp, err := a.models.RetrievePath(modelName)
+	a.log.Info(ctx, "tool-remove", "modelName", modelID)
+
+	mp, err := a.models.RetrievePath(modelID)
 	if err != nil {
 		return errs.New(errs.InvalidArgument, err)
 	}
@@ -268,6 +270,8 @@ func (a *app) showModel(ctx context.Context, r *http.Request) web.Encoder {
 
 	info.ID = modelID
 
+	mc := a.catalog.RetrieveModelConfig(modelID)
+
 	krn, err := a.cache.AquireModel(ctx, modelID)
 	if err != nil {
 		return errs.New(errs.Internal, err)
@@ -276,7 +280,7 @@ func (a *app) showModel(ctx context.Context, r *http.Request) web.Encoder {
 	mi := krn.ModelInfo()
 	mi.ID = modelID
 
-	return toModelInfo(info, mi, a.catalog.ModelConfig())
+	return toModelInfo(info, mi, mc)
 }
 
 func (a *app) modelPS(ctx context.Context, r *http.Request) web.Encoder {
@@ -379,10 +383,7 @@ func (a *app) showCatalogModel(ctx context.Context, r *http.Request) web.Encoder
 		return errs.New(errs.Internal, err)
 	}
 
-	mc, err := a.catalog.RetrieveModelConfig(modelID)
-	if err != nil {
-		return errs.New(errs.Internal, err)
-	}
+	mc := a.catalog.RetrieveModelConfig(modelID)
 
 	return toCatalogModelResponse(model, &mc)
 }

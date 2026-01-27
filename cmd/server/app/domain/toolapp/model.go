@@ -169,49 +169,45 @@ func (app ModelInfoResponse) Encode() ([]byte, string, error) {
 	return data, "application/json", err
 }
 
-func toModelInfo(info models.Info, mi model.ModelInfo, modelConfigs map[string]catalog.ModelConfig) ModelInfoResponse {
-	var modelConfig *ModelConfig
-	if mc, ok := modelConfigs[info.ID]; ok {
-		mc.Sampling = mc.Sampling.WithDefaults()
-		modelConfig = &ModelConfig{
-			Device:               mc.Device,
-			ContextWindow:        mc.ContextWindow,
-			NBatch:               mc.NBatch,
-			NUBatch:              mc.NUBatch,
-			NThreads:             mc.NThreads,
-			NThreadsBatch:        mc.NThreadsBatch,
-			CacheTypeK:           mc.CacheTypeK,
-			CacheTypeV:           mc.CacheTypeV,
-			UseDirectIO:          mc.UseDirectIO,
-			FlashAttention:       mc.FlashAttention,
-			IgnoreIntegrityCheck: mc.IgnoreIntegrityCheck,
-			NSeqMax:              mc.NSeqMax,
-			OffloadKQV:           mc.OffloadKQV,
-			OpOffload:            mc.OpOffload,
-			NGpuLayers:           mc.NGpuLayers,
-			SplitMode:            mc.SplitMode,
-			SystemPromptCache:    mc.SystemPromptCache,
-			FirstMessageCache:    mc.FirstMessageCache,
-			CacheMinTokens:       mc.CacheMinTokens,
-			Sampling: SamplingConfig{
-				Temperature:     mc.Sampling.Temperature,
-				TopK:            mc.Sampling.TopK,
-				TopP:            mc.Sampling.TopP,
-				MinP:            mc.Sampling.MinP,
-				MaxTokens:       mc.Sampling.MaxTokens,
-				RepeatPenalty:   mc.Sampling.RepeatPenalty,
-				RepeatLastN:     mc.Sampling.RepeatLastN,
-				DryMultiplier:   mc.Sampling.DryMultiplier,
-				DryBase:         mc.Sampling.DryBase,
-				DryAllowedLen:   mc.Sampling.DryAllowedLen,
-				DryPenaltyLast:  mc.Sampling.DryPenaltyLast,
-				XtcProbability:  mc.Sampling.XtcProbability,
-				XtcThreshold:    mc.Sampling.XtcThreshold,
-				XtcMinKeep:      mc.Sampling.XtcMinKeep,
-				EnableThinking:  mc.Sampling.EnableThinking,
-				ReasoningEffort: mc.Sampling.ReasoningEffort,
-			},
-		}
+func toModelInfo(info models.Info, mi model.ModelInfo, mc catalog.ModelConfig) ModelInfoResponse {
+	modelConfig := &ModelConfig{
+		Device:               mc.Device,
+		ContextWindow:        mc.ContextWindow,
+		NBatch:               mc.NBatch,
+		NUBatch:              mc.NUBatch,
+		NThreads:             mc.NThreads,
+		NThreadsBatch:        mc.NThreadsBatch,
+		CacheTypeK:           mc.CacheTypeK,
+		CacheTypeV:           mc.CacheTypeV,
+		UseDirectIO:          mc.UseDirectIO,
+		FlashAttention:       mc.FlashAttention,
+		IgnoreIntegrityCheck: mc.IgnoreIntegrityCheck,
+		NSeqMax:              mc.NSeqMax,
+		OffloadKQV:           mc.OffloadKQV,
+		OpOffload:            mc.OpOffload,
+		NGpuLayers:           mc.NGpuLayers,
+		SplitMode:            mc.SplitMode,
+		SystemPromptCache:    mc.SystemPromptCache,
+		FirstMessageCache:    mc.FirstMessageCache,
+		CacheMinTokens:       mc.CacheMinTokens,
+		Sampling: SamplingConfig{
+			Temperature:     mc.Sampling.Temperature,
+			TopK:            mc.Sampling.TopK,
+			TopP:            mc.Sampling.TopP,
+			MinP:            mc.Sampling.MinP,
+			MaxTokens:       mc.Sampling.MaxTokens,
+			RepeatPenalty:   mc.Sampling.RepeatPenalty,
+			RepeatLastN:     mc.Sampling.RepeatLastN,
+			DryMultiplier:   mc.Sampling.DryMultiplier,
+			DryBase:         mc.Sampling.DryBase,
+			DryAllowedLen:   mc.Sampling.DryAllowedLen,
+			DryPenaltyLast:  mc.Sampling.DryPenaltyLast,
+			XtcProbability:  mc.Sampling.XtcProbability,
+			XtcThreshold:    mc.Sampling.XtcThreshold,
+			XtcMinKeep:      mc.Sampling.XtcMinKeep,
+			EnableThinking:  mc.Sampling.EnableThinking,
+			ReasoningEffort: mc.Sampling.ReasoningEffort,
+		},
 	}
 
 	mir := ModelInfoResponse{
@@ -382,7 +378,7 @@ func (app CatalogModelsResponse) Encode() ([]byte, string, error) {
 	return data, "application/json", err
 }
 
-func toCatalogModelResponse(model catalog.Model, mc *model.Config) CatalogModelResponse {
+func toCatalogModelResponse(model catalog.Model, mc *catalog.ModelConfig) CatalogModelResponse {
 	models := make([]CatalogFile, len(model.Files.Models))
 	for i, model := range model.Files.Models {
 		models[i] = CatalogFile(model)
@@ -421,7 +417,6 @@ func toCatalogModelResponse(model catalog.Model, mc *model.Config) CatalogModelR
 	}
 
 	if mc != nil {
-		sampling := model.ModelConfig.Sampling.WithDefaults()
 		resp.ModelConfig = &ModelConfig{
 			Device:               mc.Device,
 			ContextWindow:        mc.ContextWindow,
@@ -443,22 +438,22 @@ func toCatalogModelResponse(model catalog.Model, mc *model.Config) CatalogModelR
 			FirstMessageCache:    mc.FirstMessageCache,
 			CacheMinTokens:       mc.CacheMinTokens,
 			Sampling: SamplingConfig{
-				Temperature:     sampling.Temperature,
-				TopK:            sampling.TopK,
-				TopP:            sampling.TopP,
-				MinP:            sampling.MinP,
-				MaxTokens:       sampling.MaxTokens,
-				RepeatPenalty:   sampling.RepeatPenalty,
-				RepeatLastN:     sampling.RepeatLastN,
-				DryMultiplier:   sampling.DryMultiplier,
-				DryBase:         sampling.DryBase,
-				DryAllowedLen:   sampling.DryAllowedLen,
-				DryPenaltyLast:  sampling.DryPenaltyLast,
-				XtcProbability:  sampling.XtcProbability,
-				XtcThreshold:    sampling.XtcThreshold,
-				XtcMinKeep:      sampling.XtcMinKeep,
-				EnableThinking:  sampling.EnableThinking,
-				ReasoningEffort: sampling.ReasoningEffort,
+				Temperature:     mc.Sampling.Temperature,
+				TopK:            mc.Sampling.TopK,
+				TopP:            mc.Sampling.TopP,
+				MinP:            mc.Sampling.MinP,
+				MaxTokens:       mc.Sampling.MaxTokens,
+				RepeatPenalty:   mc.Sampling.RepeatPenalty,
+				RepeatLastN:     mc.Sampling.RepeatLastN,
+				DryMultiplier:   mc.Sampling.DryMultiplier,
+				DryBase:         mc.Sampling.DryBase,
+				DryAllowedLen:   mc.Sampling.DryAllowedLen,
+				DryPenaltyLast:  mc.Sampling.DryPenaltyLast,
+				XtcProbability:  mc.Sampling.XtcProbability,
+				XtcThreshold:    mc.Sampling.XtcThreshold,
+				XtcMinKeep:      mc.Sampling.XtcMinKeep,
+				EnableThinking:  mc.Sampling.EnableThinking,
+				ReasoningEffort: mc.Sampling.ReasoningEffort,
 			},
 		}
 	}

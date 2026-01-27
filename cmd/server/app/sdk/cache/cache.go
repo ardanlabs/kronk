@@ -194,7 +194,7 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 		return nil, ErrServerBusy
 	}
 
-	cfg, err := c.templates.Catalog().RetrieveModelConfig(modelID)
+	cfg, err := c.templates.Catalog().RetrieveKronkModelConfig(modelID)
 	if err != nil {
 		return nil, fmt.Errorf("acquire-model: unable to retrieve model config: %w", err)
 	}
