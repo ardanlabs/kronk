@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/authapp"
@@ -113,12 +114,59 @@ func (a *app) indexModels(ctx context.Context, r *http.Request) web.Encoder {
 }
 
 func (a *app) listModels(ctx context.Context, r *http.Request) web.Encoder {
-	models, err := a.models.RetrieveFiles()
+	modelFiles, err := a.models.RetrieveFiles()
 	if err != nil {
 		return errs.Errorf(errs.Internal, "unable to retrieve model list: %s", err)
 	}
 
-	return toListModelsInfo(models)
+	// Build a map of existing models for quick lookup.
+	existing := make(map[string]models.File)
+	for _, mf := range modelFiles {
+		existing[mf.ID] = mf
+	}
+
+	// Add extension models from the model config that aren't already present.
+	// Extension models use "/" in their ID (e.g., "model/FMC") and inherit
+	// from a base model.
+	modelConfig := a.catalog.ModelConfig()
+	for modelID := range modelConfig {
+		modelID = strings.ToLower(modelID)
+
+		if _, exists := existing[modelID]; exists {
+			continue
+		}
+
+		// Check if this is an extension model (contains "/").
+		idx := strings.Index(modelID, "/")
+		if idx == -1 {
+			continue
+		}
+
+		// Extract the base model ID and check if it exists.
+		baseModelID := modelID[:idx]
+		baseModel, exists := existing[baseModelID]
+		if !exists {
+			continue
+		}
+
+		// Create a new File entry for the extension model using the base model's info.
+		extModel := models.File{
+			ID:          modelID,
+			OwnedBy:     baseModel.OwnedBy,
+			ModelFamily: baseModel.ModelFamily,
+			Size:        baseModel.Size,
+			Modified:    baseModel.Modified,
+			Validated:   baseModel.Validated,
+		}
+
+		modelFiles = append(modelFiles, extModel)
+	}
+
+	slices.SortFunc(modelFiles, func(a, b models.File) int {
+		return strings.Compare(a.ID, b.ID)
+	})
+
+	return toListModelsInfo(modelFiles)
 }
 
 func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {

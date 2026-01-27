@@ -3,6 +3,7 @@ package catalog
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"sync"
@@ -108,6 +109,14 @@ func New(opts ...Option) (*Catalog, error) {
 // CatalogPath returns the location of the catalog path.
 func (c *Catalog) CatalogPath() string {
 	return c.catalogPath
+}
+
+// ModelConfig returns a copy of the model config.
+func (c *Catalog) ModelConfig() map[string]ModelConfig {
+	mc := make(map[string]ModelConfig)
+	maps.Copy(mc, c.modelConfig)
+
+	return mc
 }
 
 // =============================================================================
