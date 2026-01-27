@@ -48,9 +48,12 @@ func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error) {
 func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 	ch := make(chan ChatResponse, 1)
 
-	go func() {
-		active := m.activeStreams.Add(1)
+	// Increment active streams before launching the goroutine to prevent a race
+	// where Unload sees zero active streams and frees the model before the
+	// goroutine starts executing.
+	active := m.activeStreams.Add(1)
 
+	go func() {
 		id := fmt.Sprintf("chatcmpl-%s", uuid.New().String())
 
 		m.log(ctx, "chat-streaming", "status", "started", "id", id, "active_streams", active)
@@ -76,6 +79,10 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 			m.sendChatError(ctx, ch, id, err)
 			return
 		}
+
+		// Clone the document to avoid mutating the caller's data. Both text and
+		// media paths modify the document in place during processing.
+		d = d.Clone()
 
 		//----------------------------------------------------------------------
 
@@ -190,8 +197,6 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 // for content ([]D with type:"text") to simple string content. This is used
 // for text-only inference paths.
 func (*Model) prepareTextContext(d D) D {
-	d = d.Clone()
-
 	messages, ok := d["messages"].([]D)
 	if !ok {
 		return d
@@ -249,7 +254,7 @@ func (m *Model) prepareMediaContext(ctx context.Context, d D) (D, mtmd.Context, 
 
 	switch {
 	case isOpenAIFormat:
-		d, err = toMediaMessage(d.Clone(), msgs)
+		d, err = toMediaMessage(d, msgs)
 		if err != nil {
 			return nil, 0, fmt.Errorf("prepare-media-context: unable to convert document to media message: %w", err)
 		}

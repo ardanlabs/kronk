@@ -442,8 +442,8 @@ func hashMessage(info cacheableMessage) string {
 	return hex.EncodeToString(h[:])
 }
 
-// removeMessagesAtIndices returns a clone of D with messages at the specified indices removed.
-// Indices should be in ascending order for correct removal.
+// removeMessagesAtIndices returns D with messages at the specified indices removed.
+// Indices should be in ascending order for correct removal. Mutates d in place.
 func removeMessagesAtIndices(d D, indices []int) D {
 	messages, ok := d["messages"].([]D)
 	if !ok || len(messages) == 0 || len(indices) == 0 {
@@ -468,8 +468,7 @@ func removeMessagesAtIndices(d D, indices []int) D {
 		return d
 	}
 
-	clone := d.Clone()
-	clone["messages"] = newMessages
+	d["messages"] = newMessages
 
-	return clone
+	return d
 }
