@@ -104,12 +104,21 @@ var (
 
 func initChatTestInputs() error {
 	if _, err := os.Stat(imageFile); err != nil {
-		return fmt.Errorf("error accessing file %q: %w", imageFile, err)
+		return fmt.Errorf("error accessing image file %q: %w", imageFile, err)
+	}
+
+	if _, err := os.Stat(audioFile); err != nil {
+		return fmt.Errorf("error accessing audio file %q: %w", audioFile, err)
 	}
 
 	mediaBytes, err := os.ReadFile(imageFile)
 	if err != nil {
-		return fmt.Errorf("error reading file %q: %w", imageFile, err)
+		return fmt.Errorf("error reading image file %q: %w", imageFile, err)
+	}
+
+	audioBytes, err := os.ReadFile(audioFile)
+	if err != nil {
+		return fmt.Errorf("error reading audio file %q: %w", audioFile, err)
 	}
 
 	dChatNoTool = model.D{
@@ -181,16 +190,9 @@ func initChatTestInputs() error {
 		"max_tokens": 2048,
 	}
 
-	if _, err := os.Stat(audioFile); err == nil {
-		audioBytes, err := os.ReadFile(audioFile)
-		if err != nil {
-			return fmt.Errorf("error reading file %q: %w", audioFile, err)
-		}
-
-		dAudio = model.D{
-			"messages":   model.RawMediaMessage("Please describe what you hear in the following audio clip.", audioBytes),
-			"max_tokens": 2048,
-		}
+	dAudio = model.D{
+		"messages":   model.RawMediaMessage("Please describe what you hear in the following audio clip.", audioBytes),
+		"max_tokens": 2048,
 	}
 
 	dResponseNoTool = model.D{
