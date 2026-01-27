@@ -139,8 +139,8 @@ func (c *Catalog) RetrieveCatalogs() ([]CatalogModels, error) {
 	return catalogs, nil
 }
 
-// RetrieveModelConfig reads the catalog and model config file is provided
-// and returns a model config for use.
+// RetrieveModelConfig reads the catalog and model config file for the
+// specified model id and returns a model config for use.
 func (c *Catalog) RetrieveModelConfig(modelID string) (model.Config, error) {
 
 	// The modelID might have a / because it's a model in the config
