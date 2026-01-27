@@ -53,16 +53,37 @@ func toAppVersion(status string, vt libs.VersionTag) string {
 
 // =============================================================================
 
+// SamplingConfig represents sampling parameters for model inference.
+type SamplingConfig struct {
+	Temperature     float32 `json:"temperature"`
+	TopK            int32   `json:"top_k"`
+	TopP            float32 `json:"top_p"`
+	MinP            float32 `json:"min_p"`
+	MaxTokens       int     `json:"max_tokens"`
+	RepeatPenalty   float32 `json:"repeat_penalty"`
+	RepeatLastN     int32   `json:"repeat_last_n"`
+	DryMultiplier   float32 `json:"dry_multiplier"`
+	DryBase         float32 `json:"dry_base"`
+	DryAllowedLen   int32   `json:"dry_allowed_length"`
+	DryPenaltyLast  int32   `json:"dry_penalty_last_n"`
+	XtcProbability  float32 `json:"xtc_probability"`
+	XtcThreshold    float32 `json:"xtc_threshold"`
+	XtcMinKeep      uint32  `json:"xtc_min_keep"`
+	EnableThinking  string  `json:"enable_thinking"`
+	ReasoningEffort string  `json:"reasoning_effort"`
+}
+
 // ListModelDetail provides information about a model.
 type ListModelDetail struct {
-	ID          string    `json:"id"`
-	Object      string    `json:"object"`
-	Created     int64     `json:"created"`
-	OwnedBy     string    `json:"owned_by"`
-	ModelFamily string    `json:"model_family"`
-	Size        int64     `json:"size"`
-	Modified    time.Time `json:"modified"`
-	Validated   bool      `json:"validated"`
+	ID          string          `json:"id"`
+	Object      string          `json:"object"`
+	Created     int64           `json:"created"`
+	OwnedBy     string          `json:"owned_by"`
+	ModelFamily string          `json:"model_family"`
+	Size        int64           `json:"size"`
+	Modified    time.Time       `json:"modified"`
+	Validated   bool            `json:"validated"`
+	Sampling    *SamplingConfig `json:"sampling,omitempty"`
 }
 
 // ListModelInfoResponse contains the list of models loaded in the system.
@@ -77,22 +98,47 @@ func (app ListModelInfoResponse) Encode() ([]byte, string, error) {
 	return data, "application/json", err
 }
 
-func toListModelsInfo(models []models.File) ListModelInfoResponse {
+func toListModelsInfo(modelFiles []models.File, samplingConfigs map[string]catalog.SamplingConfig, extendedConfig bool) ListModelInfoResponse {
 	list := ListModelInfoResponse{
 		Object: "list",
 	}
 
-	for _, model := range models {
-		list.Data = append(list.Data, ListModelDetail{
-			ID:          model.ID,
+	for _, mf := range modelFiles {
+		detail := ListModelDetail{
+			ID:          mf.ID,
 			Object:      "model",
-			Created:     model.Modified.UnixMilli(),
-			OwnedBy:     model.OwnedBy,
-			ModelFamily: model.ModelFamily,
-			Size:        model.Size,
-			Modified:    model.Modified,
-			Validated:   model.Validated,
-		})
+			Created:     mf.Modified.UnixMilli(),
+			OwnedBy:     mf.OwnedBy,
+			ModelFamily: mf.ModelFamily,
+			Size:        mf.Size,
+			Modified:    mf.Modified,
+			Validated:   mf.Validated,
+		}
+
+		if extendedConfig {
+			if sc, ok := samplingConfigs[mf.ID]; ok {
+				detail.Sampling = &SamplingConfig{
+					Temperature:     sc.Temperature,
+					TopK:            sc.TopK,
+					TopP:            sc.TopP,
+					MinP:            sc.MinP,
+					MaxTokens:       sc.MaxTokens,
+					RepeatPenalty:   sc.RepeatPenalty,
+					RepeatLastN:     sc.RepeatLastN,
+					DryMultiplier:   sc.DryMultiplier,
+					DryBase:         sc.DryBase,
+					DryAllowedLen:   sc.DryAllowedLen,
+					DryPenaltyLast:  sc.DryPenaltyLast,
+					XtcProbability:  sc.XtcProbability,
+					XtcThreshold:    sc.XtcThreshold,
+					XtcMinKeep:      sc.XtcMinKeep,
+					EnableThinking:  sc.EnableThinking,
+					ReasoningEffort: sc.ReasoningEffort,
+				}
+			}
+		}
+
+		list.Data = append(list.Data, detail)
 	}
 
 	return list

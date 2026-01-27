@@ -166,7 +166,16 @@ func (a *app) listModels(ctx context.Context, r *http.Request) web.Encoder {
 		return strings.Compare(a.ID, b.ID)
 	})
 
-	return toListModelsInfo(modelFiles)
+	// Check if extended-config query parameter is set.
+	extendedConfig := r.URL.Query().Get("extended-config") == "true"
+
+	// Build sampling configs map from model config, applying defaults.
+	samplingConfigs := make(map[string]catalog.SamplingConfig)
+	for modelID, cfg := range modelConfig {
+		samplingConfigs[strings.ToLower(modelID)] = cfg.Sampling.WithDefaults()
+	}
+
+	return toListModelsInfo(modelFiles, samplingConfigs, extendedConfig)
 }
 
 func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {

@@ -1476,6 +1476,8 @@ tr.selected:hover td {
 /* Chat advanced settings */
 .chat-setting-button {
     align-self: flex-end;
+    display: flex;
+    gap: 8px;
 }
 
 .chat-advanced-toggle {
@@ -1490,6 +1492,22 @@ tr.selected:hover td {
 }
 
 .chat-advanced-toggle:hover {
+    background: var(--color-gray-100);
+    color: var(--color-gray-800);
+}
+
+.chat-reset-defaults {
+    background: none;
+    border: 1px solid var(--color-gray-300);
+    border-radius: 4px;
+    padding: 6px 12px;
+    font-size: 13px;
+    color: var(--color-gray-600);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.chat-reset-defaults:hover {
     background: var(--color-gray-100);
     color: var(--color-gray-800);
 }
@@ -1520,4 +1538,21 @@ tr.selected:hover td {
     width: 16px;
     height: 16px;
     cursor: pointer;
+}
+
+.chat-setting-changed label {
+    color: var(--color-orange);
+}
+
+.chat-setting-changed input,
+.chat-setting-changed select {
+    border-color: var(--color-orange);
+}
+
+.chat-setting-default {
+    margin-left: 4px;
+    color: var(--color-orange);
+    font-size: 8px;
+    vertical-align: middle;
+    cursor: help;
 }
