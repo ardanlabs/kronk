@@ -1,6 +1,7 @@
 package chatapi_test
 
 import (
+	"encoding/base64"
 	"net/http"
 	"strings"
 	"testing"
@@ -131,7 +132,7 @@ func msgsImageQwen25VL(t *testing.T, tokens map[string]string) []apitest.Table {
 									Source: &msgsapp.ImageSource{
 										Type:      "base64",
 										MediaType: "image/jpeg",
-										Data:      string(image),
+										Data:      base64.StdEncoding.EncodeToString(image),
 									},
 								},
 								{

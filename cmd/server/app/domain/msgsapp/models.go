@@ -89,6 +89,15 @@ type Content struct {
 	Blocks []ContentBlock // Array of content blocks
 }
 
+// MarshalJSON serializes Content as either a string or array of blocks.
+func (c Content) MarshalJSON() ([]byte, error) {
+	switch {
+	case len(c.Blocks) > 0:
+		return json.Marshal(c.Blocks)
+	}
+	return json.Marshal(c.Text)
+}
+
 // UnmarshalJSON handles both string and array content formats.
 func (c *Content) UnmarshalJSON(data []byte) error {
 	switch {
