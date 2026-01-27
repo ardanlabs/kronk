@@ -412,12 +412,12 @@ export default function DocsSDKModel() {
               <p className="doc-description">Clone creates a shallow copy of the document. This is useful when you need to modify the document without affecting the original.</p>
             </div>
 
-            <div className="doc-section" id="method-d-logsafe">
-              <h4>D.LogSafe</h4>
+            <div className="doc-section" id="method-d-string">
+              <h4>D.String</h4>
               <pre className="code-block">
-                <code>func (d D) LogSafe() D</code>
+                <code>func (d D) String() string</code>
               </pre>
-              <p className="doc-description">LogSafe returns a copy of the document containing only fields that are safe to log. This excludes sensitive fields like messages and input which may contain private user data.</p>
+              <p className="doc-description">String returns a string representation of the document containing only fields that are safe to log. This excludes sensitive fields like messages and input which may contain private user data.</p>
             </div>
 
             <div className="doc-section" id="method-flashattentiontype-unmarshalyaml">
@@ -819,7 +819,7 @@ export default function DocsSDKModel() {
                 <li><a href="#method-choice-finishreason">Choice.FinishReason</a></li>
                 <li><a href="#method-config-string">Config.String</a></li>
                 <li><a href="#method-d-clone">D.Clone</a></li>
-                <li><a href="#method-d-logsafe">D.LogSafe</a></li>
+                <li><a href="#method-d-string">D.String</a></li>
                 <li><a href="#method-flashattentiontype-unmarshalyaml">FlashAttentionType.UnmarshalYAML</a></li>
                 <li><a href="#method-ggmltype-string">GGMLType.String</a></li>
                 <li><a href="#method-ggmltype-toyzmatype">GGMLType.ToYZMAType</a></li>

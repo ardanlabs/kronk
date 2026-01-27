@@ -194,7 +194,7 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("%d", *p)
 	}
 
-	return fmt.Sprintf("{JinjaFile:%q Device:%q ContextWindow:%d NBatch:%d NUBatch:%d NThreads:%d NThreadsBatch:%d CacheTypeK:%d CacheTypeV:%d UseDirectIO:%t FlashAttention:%d IgnoreIntegrityCheck:%t NSeqMax:%d OffloadKQV:%s OpOffload:%s NGpuLayers:%s SplitMode:%d SystemPromptCache:%t FirstMessageCache:%t CacheMinTokens:%d}",
+	return fmt.Sprintf("JinjaFile[%s]: Device[%s]: ContextWindow[%d]: NBatch[%d]: NUBatch[%d]: NThreads[%d]: NThreadsBatch[%d]: CacheTypeK[%d]: CacheTypeV[%d]: UseDirectIO[%t]: FlashAttention[%d]: IgnoreIntegrityCheck[%t]: NSeqMax[%d]: OffloadKQV[%s]: OpOffload[%s]: NGpuLayers[%s]: SplitMode[%d]: SystemPromptCache[%t]: FirstMessageCache[%t]: CacheMinTokens[%d]",
 		cfg.JinjaFile, cfg.Device, cfg.ContextWindow, cfg.NBatch, cfg.NUBatch, cfg.NThreads, cfg.NThreadsBatch,
 		cfg.CacheTypeK, cfg.CacheTypeV, cfg.UseDirectIO, cfg.FlashAttention, cfg.IgnoreIntegrityCheck,
 		cfg.NSeqMax, formatBoolPtr(cfg.OffloadKQV), formatBoolPtr(cfg.OpOffload),

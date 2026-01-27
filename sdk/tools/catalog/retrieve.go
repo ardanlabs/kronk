@@ -137,20 +137,8 @@ func (c *Catalog) RetrieveCatalogs() ([]CatalogModels, error) {
 }
 
 // RetrieveModelConfig reads the catalog and model config file for the
-// specified model id and returns a model config for use.
-func (c *Catalog) RetrieveModelConfig(modelID string) (model.Config, error) {
-
-	// The modelID might have a / because it's a model in the config
-	// with different settings. Ex. model/FMC.
-	// We need to remove /FMC for the RetrievePath call.
-	fsModelID, _, _ := strings.Cut(modelID, "/")
-
-	// Get the file path for this model on disk. If this fails, the
-	// model hasn't been downloaded and nothing else to do.
-	fp, err := c.models.RetrievePath(fsModelID)
-	if err != nil {
-		return model.Config{}, fmt.Errorf("retrieve-model-config: unable to get model[%s] path: %w", modelID, err)
-	}
+// specified model id and returns a ModelConfig with sampling values.
+func (c *Catalog) RetrieveModelConfig(modelID string) ModelConfig {
 
 	// Look in the catalog config first for the specified model.
 	var catalogFound bool
@@ -162,34 +150,11 @@ func (c *Catalog) RetrieveModelConfig(modelID string) (model.Config, error) {
 	// Look in the model config for the specified model.
 	modelConfig, modelCfgFound := c.modelConfig[modelID]
 
-	// Set the file paths.
-	cfg := model.Config{
-		ModelFiles: fp.ModelFiles,
-		ProjFile:   fp.ProjFile,
-	}
+	var cfg ModelConfig
 
 	// Apply catalog settings first if found.
 	if catalogFound {
-		c := catalog.ModelConfig
-		cfg.Device = c.Device
-		cfg.ContextWindow = c.ContextWindow
-		cfg.NBatch = c.NBatch
-		cfg.NUBatch = c.NUBatch
-		cfg.NThreads = c.NThreads
-		cfg.NThreadsBatch = c.NThreadsBatch
-		cfg.CacheTypeK = c.CacheTypeK
-		cfg.CacheTypeV = c.CacheTypeV
-		cfg.FlashAttention = c.FlashAttention
-		cfg.UseDirectIO = c.UseDirectIO
-		cfg.IgnoreIntegrityCheck = c.IgnoreIntegrityCheck
-		cfg.NSeqMax = c.NSeqMax
-		cfg.OffloadKQV = c.OffloadKQV
-		cfg.OpOffload = c.OpOffload
-		cfg.NGpuLayers = c.NGpuLayers
-		cfg.SplitMode = c.SplitMode
-		cfg.SystemPromptCache = c.SystemPromptCache
-		cfg.FirstMessageCache = c.FirstMessageCache
-		cfg.CacheMinTokens = c.CacheMinTokens
+		cfg = catalog.ModelConfig
 	}
 
 	// Apply model config settings if found (overrides catalog).
@@ -251,7 +216,37 @@ func (c *Catalog) RetrieveModelConfig(modelID string) (model.Config, error) {
 		if modelConfig.CacheMinTokens != 0 {
 			cfg.CacheMinTokens = modelConfig.CacheMinTokens
 		}
+		cfg.Sampling = modelConfig.Sampling
 	}
+
+	cfg.Sampling = cfg.Sampling.withDefaults()
+
+	return cfg
+}
+
+// RetrieveKronkModelConfig reads the catalog and model config file for the
+// specified model id and returns a model config for use with kronk.New().
+func (c *Catalog) RetrieveKronkModelConfig(modelID string) (model.Config, error) {
+
+	// The modelID might have a / because it's a model in the config
+	// with different settings. Ex. model/FMC.
+	// We need to remove /FMC for the RetrievePath call.
+	fsModelID, _, _ := strings.Cut(modelID, "/")
+
+	// Get the file path for this model on disk. If this fails, the
+	// model hasn't been downloaded and nothing else to do.
+	fp, err := c.models.RetrievePath(fsModelID)
+	if err != nil {
+		return model.Config{}, fmt.Errorf("retrieve-model-config: unable to get model[%s] path: %w", modelID, err)
+	}
+
+	// Get the merged config from catalog and model_config.yaml.
+	mc := c.RetrieveModelConfig(modelID)
+
+	// Convert to model.Config and set file paths.
+	cfg := mc.toKronkConfig()
+	cfg.ModelFiles = fp.ModelFiles
+	cfg.ProjFile = fp.ProjFile
 
 	return cfg, nil
 }

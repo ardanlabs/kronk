@@ -106,14 +106,3 @@ if mi.IsEmbedModel || mi.IsRerankModel {
 
 - Inner goroutine (`ChatStreaming`): `defer m.resetContext()` runs on exit
 - Outer goroutine (concurrency wrapper): `defer krn.releaseModel()` runs after inner channel drains
-
-## GPT-OSS Processor (processor.go)
-
-**Token handling for gpt-oss template**:
-
-- `<|return|>` and `<|call|>` return `io.EOF` (end of generation)
-- `<|end|>` is a section terminator (continues to next section)
-- `<|channel|>commentary` triggers tool call mode (`statusTooling`)
-- State machine: `awaitingChannel` → `collectingName` → content collection
-
-**Repetition penalty**: Applied via `llama.SamplerInitPenalties` with defaults `RepeatPenalty=1.1`, `RepeatLastN=64`

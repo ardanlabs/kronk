@@ -13,23 +13,23 @@ type SamplingConfig struct {
 	TopP            float32 `yaml:"top_p"`
 	MinP            float32 `yaml:"min_p"`
 	MaxTokens       int     `yaml:"max_tokens"`
-	RepeatPenalty   float32 `yaml:"repeat-penalty"`
-	RepeatLastN     int32   `yaml:"repeat-last-n"`
-	DryMultiplier   float32 `yaml:"dry-multiplier"`
-	DryBase         float32 `yaml:"dry-base"`
-	DryAllowedLen   int32   `yaml:"dry-allowed-length"`
-	DryPenaltyLast  int32   `yaml:"dry-penalty-last-n"`
-	XtcProbability  float32 `yaml:"xtc-probability"`
-	XtcThreshold    float32 `yaml:"xtc-threshold"`
-	XtcMinKeep      uint32  `yaml:"xtc-min-keep"`
-	EnableThinking  string  `yaml:"enable-thinking"`
-	ReasoningEffort string  `yaml:"reasoning-effort"`
+	RepeatPenalty   float32 `yaml:"repeat_penalty"`
+	RepeatLastN     int32   `yaml:"repeat_last_n"`
+	DryMultiplier   float32 `yaml:"dry_multiplier"`
+	DryBase         float32 `yaml:"dry_base"`
+	DryAllowedLen   int32   `yaml:"dry_allowed_length"`
+	DryPenaltyLast  int32   `yaml:"dry_penalty_last_n"`
+	XtcProbability  float32 `yaml:"xtc_probability"`
+	XtcThreshold    float32 `yaml:"xtc_threshold"`
+	XtcMinKeep      uint32  `yaml:"xtc_min_keep"`
+	EnableThinking  string  `yaml:"enable_thinking"`
+	ReasoningEffort string  `yaml:"reasoning_effort"`
 }
 
-// DefaultSamplingConfig returns a SamplingConfig with sensible default values.
-// These match the backend defaults in sdk/kronk/model/params.go.
-func DefaultSamplingConfig() SamplingConfig {
-	return SamplingConfig{
+// withDefaults returns a new SamplingConfig with default values applied
+// for any zero-valued fields.
+func (s SamplingConfig) withDefaults() SamplingConfig {
+	defaults := SamplingConfig{
 		Temperature:     model.DefTemp,
 		TopK:            model.DefTopK,
 		TopP:            model.DefTopP,
@@ -47,12 +47,6 @@ func DefaultSamplingConfig() SamplingConfig {
 		EnableThinking:  model.DefEnableThinking,
 		ReasoningEffort: model.DefReasoningEffort,
 	}
-}
-
-// WithDefaults returns a new SamplingConfig with default values applied
-// for any zero-valued fields.
-func (s SamplingConfig) WithDefaults() SamplingConfig {
-	defaults := DefaultSamplingConfig()
 
 	if s.Temperature == 0 {
 		s.Temperature = defaults.Temperature
@@ -62,6 +56,9 @@ func (s SamplingConfig) WithDefaults() SamplingConfig {
 	}
 	if s.TopP == 0 {
 		s.TopP = defaults.TopP
+	}
+	if s.MinP == 0 {
+		s.MinP = defaults.MinP
 	}
 	if s.MaxTokens == 0 {
 		s.MaxTokens = defaults.MaxTokens
@@ -80,6 +77,12 @@ func (s SamplingConfig) WithDefaults() SamplingConfig {
 	}
 	if s.DryAllowedLen == 0 {
 		s.DryAllowedLen = defaults.DryAllowedLen
+	}
+	if s.DryPenaltyLast == 0 {
+		s.DryPenaltyLast = defaults.DryPenaltyLast
+	}
+	if s.XtcProbability == 0 {
+		s.XtcProbability = defaults.XtcProbability
 	}
 	if s.XtcThreshold == 0 {
 		s.XtcThreshold = defaults.XtcThreshold
@@ -119,6 +122,30 @@ type ModelConfig struct {
 	FirstMessageCache    bool                     `yaml:"first-message-cache"`
 	CacheMinTokens       int                      `yaml:"cache-min-tokens"`
 	Sampling             SamplingConfig           `yaml:"sampling-parameters"`
+}
+
+func (mc ModelConfig) toKronkConfig() model.Config {
+	return model.Config{
+		Device:               mc.Device,
+		ContextWindow:        mc.ContextWindow,
+		NBatch:               mc.NBatch,
+		NUBatch:              mc.NUBatch,
+		NThreads:             mc.NThreads,
+		NThreadsBatch:        mc.NThreadsBatch,
+		CacheTypeK:           mc.CacheTypeK,
+		CacheTypeV:           mc.CacheTypeV,
+		UseDirectIO:          mc.UseDirectIO,
+		FlashAttention:       mc.FlashAttention,
+		IgnoreIntegrityCheck: mc.IgnoreIntegrityCheck,
+		NSeqMax:              mc.NSeqMax,
+		OffloadKQV:           mc.OffloadKQV,
+		OpOffload:            mc.OpOffload,
+		NGpuLayers:           mc.NGpuLayers,
+		SplitMode:            mc.SplitMode,
+		SystemPromptCache:    mc.SystemPromptCache,
+		FirstMessageCache:    mc.FirstMessageCache,
+		CacheMinTokens:       mc.CacheMinTokens,
+	}
 }
 
 // Metadata represents extra information about the model.
