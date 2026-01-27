@@ -124,6 +124,30 @@ type ModelConfig struct {
 	Sampling             SamplingConfig           `yaml:"sampling-parameters"`
 }
 
+func (mc ModelConfig) toKronkConfig() model.Config {
+	return model.Config{
+		Device:               mc.Device,
+		ContextWindow:        mc.ContextWindow,
+		NBatch:               mc.NBatch,
+		NUBatch:              mc.NUBatch,
+		NThreads:             mc.NThreads,
+		NThreadsBatch:        mc.NThreadsBatch,
+		CacheTypeK:           mc.CacheTypeK,
+		CacheTypeV:           mc.CacheTypeV,
+		UseDirectIO:          mc.UseDirectIO,
+		FlashAttention:       mc.FlashAttention,
+		IgnoreIntegrityCheck: mc.IgnoreIntegrityCheck,
+		NSeqMax:              mc.NSeqMax,
+		OffloadKQV:           mc.OffloadKQV,
+		OpOffload:            mc.OpOffload,
+		NGpuLayers:           mc.NGpuLayers,
+		SplitMode:            mc.SplitMode,
+		SystemPromptCache:    mc.SystemPromptCache,
+		FirstMessageCache:    mc.FirstMessageCache,
+		CacheMinTokens:       mc.CacheMinTokens,
+	}
+}
+
 // Metadata represents extra information about the model.
 type Metadata struct {
 	Created     time.Time `yaml:"created"`
