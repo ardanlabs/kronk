@@ -171,7 +171,8 @@ func (e *batchEngine) start(ctx context.Context) {
 // stop signals shutdown and waits for completion.
 func (e *batchEngine) stop(ctx context.Context) {
 	if !e.stopped.CompareAndSwap(false, true) {
-		return // Already stopped
+		e.wg.Wait() // Still wait for processLoop to exit
+		return
 	}
 
 	close(e.shutdownCh)
