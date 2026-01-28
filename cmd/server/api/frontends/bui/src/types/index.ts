@@ -76,10 +76,6 @@ export interface ModelInfoResponse {
   desc: string;
   size: number;
   has_projection: boolean;
-  has_encoder: boolean;
-  has_decoder: boolean;
-  is_recurrent: boolean;
-  is_hybrid: boolean;
   is_gpt: boolean;
   metadata: Record<string, string>;
   model_config?: ModelConfig;
@@ -124,6 +120,7 @@ export interface CatalogModelResponse {
   capabilities: CatalogCapabilities;
   metadata: CatalogMetadata;
   model_config?: ModelConfig;
+  model_metadata?: Record<string, string>;
   downloaded: boolean;
   gated_model: boolean;
   validated: boolean;

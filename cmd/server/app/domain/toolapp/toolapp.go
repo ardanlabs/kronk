@@ -263,24 +263,20 @@ func (a *app) showModel(ctx context.Context, r *http.Request) web.Encoder {
 
 	fsModelID, _, _ := strings.Cut(modelID, "/")
 
-	info, err := a.models.RetrieveInfo(fsModelID)
+	fi, err := a.models.RetrieveInfo(fsModelID)
 	if err != nil {
 		return errs.New(errs.Internal, err)
 	}
+	fi.ID = modelID
 
-	info.ID = modelID
+	mi, err := a.models.RetrieveModelInfo(fsModelID)
+	if err != nil {
+		return errs.New(errs.Internal, err)
+	}
 
 	mc := a.catalog.RetrieveModelConfig(modelID)
 
-	krn, err := a.cache.AquireModel(ctx, modelID)
-	if err != nil {
-		return errs.New(errs.Internal, err)
-	}
-
-	mi := krn.ModelInfo()
-	mi.ID = modelID
-
-	return toModelInfo(info, mi, mc)
+	return toModelInfo(fi, mi, mc)
 }
 
 func (a *app) modelPS(ctx context.Context, r *http.Request) web.Encoder {
@@ -383,9 +379,15 @@ func (a *app) showCatalogModel(ctx context.Context, r *http.Request) web.Encoder
 		return errs.New(errs.Internal, err)
 	}
 
+	var mi *models.ModelInfo
+	miTmp, err := a.models.RetrieveModelInfo(catModelID)
+	if err == nil {
+		mi = &miTmp
+	}
+
 	mc := a.catalog.RetrieveModelConfig(modelID)
 
-	return toCatalogModelResponse(model, &mc)
+	return toCatalogModelResponse(model, &mc, mi)
 }
 
 func (a *app) listKeys(ctx context.Context, r *http.Request) web.Encoder {

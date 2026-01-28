@@ -203,11 +203,11 @@ kronk-model-remove-local:
 	go run cmd/kronk/main.go model remove --local "$(ID)"
 
 
-# make kronk-model-show ID="qwen3-8b-q8_0"
+# make kronk-model-show ID="Qwen3-8B-Q8_0"
 kronk-model-show:
 	go run cmd/kronk/main.go model show "$(ID)"
 
-# make kronk-model-show-local ID="qwen3-8b-q8_0"
+# make kronk-model-show-local ID="Qwen3-8B-Q8_0"
 kronk-model-show-local:
 	go run cmd/kronk/main.go model show --local "$(ID)"
 
@@ -224,16 +224,16 @@ kronk-catalog-list-local:
 	go run cmd/kronk/main.go catalog list --local
 
 
-# make kronk-catalog-show ID="qwen3-8b-q8_0"
+# make kronk-catalog-show ID="Qwen3-8B-Q8_0"
 kronk-catalog-show:
 	go run cmd/kronk/main.go catalog show "$(ID)"
 
-# make kronk-catalog-show-local ID="qwen3-8b-q8_0"
+# make kronk-catalog-show-local ID="Qwen3-8B-Q8_0"
 kronk-catalog-show-local:
 	go run cmd/kronk/main.go catalog show --local "$(ID)"
 
 
-# make kronk-catalog-pull ID="qwen3-8b-q8_0"
+# make kronk-catalog-pull ID="Qwen3-8B-Q8_0"
 kronk-catalog-pull:
 	go run cmd/kronk/main.go catalog pull "$(ID)"
 
@@ -286,10 +286,10 @@ curl-kronk-pull:
 	}'
 
 curl-kronk-remove:
-	curl -i -X DELETE http://localhost:8080/v1/models/qwen3-8b-q8_0
+	curl -i -X DELETE http://localhost:8080/v1/models/Qwen3-8B-Q8_0
 
 curl-kronk-show:
-	curl -i -X GET http://localhost:8080/v1/models/qwen3-8b-q8_0
+	curl -i -X GET http://localhost:8080/v1/models/Qwen3-8B-Q8_0
 
 curl-model-status:
 	curl -i -X GET http://localhost:8080/v1/models/status
@@ -448,7 +448,7 @@ curl-kronk-responses:
      -H "Content-Type: application/json" \
      -d '{ \
 	 	"stream": true, \
-	 	"model": "cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0", \
+	 	"model": "cerebras_qwen3-coder-reap-25b-a3b-q8_0", \
 		"input": "Hello model" \
     }'
 

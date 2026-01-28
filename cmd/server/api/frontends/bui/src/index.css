@@ -416,13 +416,18 @@ tr.selected:hover td {
     padding: 12px;
     background: var(--color-gray-100);
     border-radius: 6px;
+    overflow: hidden;
+    min-width: 0;
 }
 
 .model-meta-item label {
+    display: block;
     font-size: 11px;
     text-transform: uppercase;
     color: var(--color-gray-600);
     letter-spacing: 0.5px;
+    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 .model-meta-item span {
@@ -431,6 +436,31 @@ tr.selected:hover td {
     color: var(--color-gray-800);
     margin-top: 4px;
     word-break: break-all;
+    overflow-wrap: break-word;
+}
+
+.model-meta-wide {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.model-meta-wide .model-meta-item {
+    display: flex;
+    flex-direction: row;
+    align-items: baseline;
+    gap: 12px;
+}
+
+.model-meta-wide .model-meta-item label {
+    flex-shrink: 0;
+    min-width: 200px;
+    max-width: 300px;
+}
+
+.model-meta-wide .model-meta-item span {
+    flex: 1;
+    margin-top: 0;
 }
 
 .token-display {

@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/toolapp"
-	"github.com/ardanlabs/kronk/sdk/kronk"
-	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
@@ -46,29 +46,20 @@ func runWeb(args []string) error {
 func runLocal(models *models.Models, args []string) error {
 	modelID := args[0]
 
-	mi, err := models.RetrieveInfo(modelID)
+	fsModelID, _, _ := strings.Cut(modelID, "/")
+
+	fi, err := models.RetrieveInfo(fsModelID)
 	if err != nil {
-		return fmt.Errorf("unable to retrieve model info: %w", err)
+		return fmt.Errorf("unable to retrieve model file info: %w", err)
 	}
+	fi.ID = modelID
 
-	if err := kronk.Init(); err != nil {
-		return fmt.Errorf("unable to init kronk: %w", err)
-	}
-
-	mp, err := models.RetrievePath(modelID)
+	mi, err := models.RetrieveModelInfo(fsModelID)
 	if err != nil {
-		return fmt.Errorf("unable to retrieve model path: %w", err)
+		return errs.New(errs.Internal, err)
 	}
 
-	krn, err := kronk.New(model.Config{
-		ModelFiles: mp.ModelFiles,
-	})
-
-	if err != nil {
-		return err
-	}
-
-	printLocal(mi, krn.ModelInfo())
+	printLocal(fi, mi)
 
 	return nil
 }
@@ -83,10 +74,6 @@ func printWeb(mi toolapp.ModelInfoResponse) {
 	fmt.Printf("Desc:        %s\n", mi.Desc)
 	fmt.Printf("Size:        %.2f MiB\n", float64(mi.Size)/(1024*1024))
 	fmt.Printf("HasProj:     %t\n", mi.HasProjection)
-	fmt.Printf("HasEncoder:  %t\n", mi.HasEncoder)
-	fmt.Printf("HasDecoder:  %t\n", mi.HasDecoder)
-	fmt.Printf("IsRecurrent: %t\n", mi.IsRecurrent)
-	fmt.Printf("IsHybrid:    %t\n", mi.IsHybrid)
 	fmt.Printf("IsGPT:       %t\n", mi.IsGPT)
 	fmt.Println("Metadata:")
 	for k, v := range mi.Metadata {
@@ -94,21 +81,36 @@ func printWeb(mi toolapp.ModelInfoResponse) {
 	}
 }
 
-func printLocal(mi models.Info, details model.ModelInfo) {
-	fmt.Printf("ID:          %s\n", mi.ID)
-	fmt.Printf("Object:      %s\n", mi.Object)
-	fmt.Printf("Created:     %v\n", time.UnixMilli(mi.Created))
-	fmt.Printf("OwnedBy:     %s\n", mi.OwnedBy)
-	fmt.Printf("Desc:        %s\n", details.Desc)
-	fmt.Printf("Size:        %.2f MiB\n", float64(details.Size)/(1024*1024))
-	fmt.Printf("HasProj:     %t\n", details.HasProjection)
-	fmt.Printf("HasEncoder:  %t\n", details.HasEncoder)
-	fmt.Printf("HasDecoder:  %t\n", details.HasDecoder)
-	fmt.Printf("IsRecurrent: %t\n", details.IsRecurrent)
-	fmt.Printf("IsHybrid:    %t\n", details.IsHybrid)
-	fmt.Printf("IsGPT:       %t\n", details.IsGPTModel)
+func printLocal(fi models.FileInfo, mi models.ModelInfo) {
+	fmt.Printf("ID:          %s\n", fi.ID)
+	fmt.Printf("Object:      %s\n", fi.Object)
+	fmt.Printf("Created:     %v\n", time.UnixMilli(fi.Created))
+	fmt.Printf("OwnedBy:     %s\n", fi.OwnedBy)
+	fmt.Printf("Desc:        %s\n", mi.Desc)
+	fmt.Printf("Size:        %.2f MiB\n", float64(mi.Size)/(1024*1024))
+	fmt.Printf("HasProj:     %t\n", mi.HasProjection)
+	fmt.Printf("IsGPT:       %t\n", mi.IsGPTModel)
+	fmt.Printf("IsEmbed:     %t\n", mi.IsEmbedModel)
+	fmt.Printf("IsRerank:    %t\n", mi.IsRerankModel)
 	fmt.Println("Metadata:")
-	for k, v := range details.Metadata {
-		fmt.Printf("  %s: %s\n", k, v)
+	for k, v := range mi.Metadata {
+		fmt.Printf("  %s: %s\n", k, formatMetadataValue(v))
 	}
+}
+
+func formatMetadataValue(value string) string {
+	if len(value) < 2 || value[0] != '[' {
+		return value
+	}
+
+	inner := value[1 : len(value)-1]
+	elements := strings.Split(inner, " ")
+
+	if len(elements) <= 6 {
+		return value
+	}
+
+	first := elements[:3]
+
+	return fmt.Sprintf("[%s, ...]", strings.Join(first, ", "))
 }

@@ -44,10 +44,6 @@ type ModelInfo struct {
 	HasProjection bool
 	Desc          string
 	Size          uint64
-	HasEncoder    bool
-	HasDecoder    bool
-	IsRecurrent   bool
-	IsHybrid      bool
 	IsGPTModel    bool
 	IsEmbedModel  bool
 	IsRerankModel bool
@@ -59,18 +55,6 @@ func (mi ModelInfo) String() string {
 	var flags []string
 	if mi.HasProjection {
 		flags = append(flags, "projection")
-	}
-	if mi.HasEncoder {
-		flags = append(flags, "encoder")
-	}
-	if mi.HasDecoder {
-		flags = append(flags, "decoder")
-	}
-	if mi.IsRecurrent {
-		flags = append(flags, "recurrent")
-	}
-	if mi.IsHybrid {
-		flags = append(flags, "hybrid")
 	}
 	if mi.IsGPTModel {
 		flags = append(flags, "gpt")
@@ -95,10 +79,6 @@ func (mi ModelInfo) String() string {
 func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 	desc := llama.ModelDesc(model)
 	size := llama.ModelSize(model)
-	encoder := llama.ModelHasEncoder(model)
-	decoder := llama.ModelHasDecoder(model)
-	recurrent := llama.ModelIsRecurrent(model)
-	hybrid := llama.ModelIsHybrid(model)
 	count := llama.ModelMetaCount(model)
 	metadata := make(map[string]string)
 
@@ -154,10 +134,6 @@ func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 		HasProjection: cfg.ProjFile != "",
 		Desc:          desc,
 		Size:          size,
-		HasEncoder:    encoder,
-		HasDecoder:    decoder,
-		IsRecurrent:   recurrent,
-		IsHybrid:      hybrid,
 		IsGPTModel:    isGPTModel,
 		IsEmbedModel:  isEmbedModel,
 		IsRerankModel: isRerankModel,
