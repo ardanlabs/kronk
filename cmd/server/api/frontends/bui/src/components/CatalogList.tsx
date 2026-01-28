@@ -552,6 +552,39 @@ export default function CatalogList() {
                   </div>
                 </div>
               )}
+
+              {modelInfo.model_metadata && Object.keys(modelInfo.model_metadata).filter(k => k !== 'tokenizer.chat_template').length > 0 && (
+                <div style={{ marginTop: '24px' }}>
+                  <h4 style={{ marginBottom: '12px' }}>Model Metadata</h4>
+                  <div className="model-meta">
+                    {Object.entries(modelInfo.model_metadata)
+                      .filter(([key]) => key !== 'tokenizer.chat_template')
+                      .map(([key, value]) => (
+                      <div key={key} className="model-meta-item">
+                        <label>{key}</label>
+                        <span>{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {modelInfo.model_metadata?.['tokenizer.chat_template'] && (
+                <div style={{ marginTop: '24px' }}>
+                  <h4 style={{ marginBottom: '12px' }}>tokenizer.chat_template</h4>
+                  <pre style={{
+                    background: 'var(--color-gray-100)',
+                    padding: '12px',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    overflow: 'auto',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word'
+                  }}>
+                    {modelInfo.model_metadata['tokenizer.chat_template']}
+                  </pre>
+                </div>
+              )}
             </>
           )}
 

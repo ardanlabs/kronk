@@ -391,30 +391,7 @@ export default function ModelList() {
                 {modelInfo.has_projection ? 'Yes' : 'No'}
               </span>
             </div>
-            <div className="model-meta-item">
-              <label>Has Encoder</label>
-              <span className={`badge ${modelInfo.has_encoder ? 'badge-yes' : 'badge-no'}`}>
-                {modelInfo.has_encoder ? 'Yes' : 'No'}
-              </span>
-            </div>
-            <div className="model-meta-item">
-              <label>Has Decoder</label>
-              <span className={`badge ${modelInfo.has_decoder ? 'badge-yes' : 'badge-no'}`}>
-                {modelInfo.has_decoder ? 'Yes' : 'No'}
-              </span>
-            </div>
-            <div className="model-meta-item">
-              <label>Is Recurrent</label>
-              <span className={`badge ${modelInfo.is_recurrent ? 'badge-yes' : 'badge-no'}`}>
-                {modelInfo.is_recurrent ? 'Yes' : 'No'}
-              </span>
-            </div>
-            <div className="model-meta-item">
-              <label>Is Hybrid</label>
-              <span className={`badge ${modelInfo.is_hybrid ? 'badge-yes' : 'badge-no'}`}>
-                {modelInfo.is_hybrid ? 'Yes' : 'No'}
-              </span>
-            </div>
+
             <div className="model-meta-item">
               <label>Is GPT</label>
               <span className={`badge ${modelInfo.is_gpt ? 'badge-yes' : 'badge-no'}`}>
@@ -447,6 +424,25 @@ export default function ModelList() {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {modelInfo.metadata?.['tokenizer.chat_template'] && (
+            <div style={{ marginTop: '16px' }}>
+              <label style={{ fontWeight: 500, display: 'block', marginBottom: '8px' }}>
+                tokenizer.chat_template
+              </label>
+              <pre style={{
+                background: 'var(--color-gray-100)',
+                padding: '12px',
+                borderRadius: '6px',
+                fontSize: '12px',
+                overflow: 'auto',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word'
+              }}>
+                {modelInfo.metadata['tokenizer.chat_template']}
+              </pre>
             </div>
           )}
         </div>

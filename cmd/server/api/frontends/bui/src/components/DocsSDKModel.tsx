@@ -232,10 +232,6 @@ export default function DocsSDKModel() {
 	HasProjection bool
 	Desc          string
 	Size          uint64
-	HasEncoder    bool
-	HasDecoder    bool
-	IsRecurrent   bool
-	IsHybrid      bool
 	IsGPTModel    bool
 	IsEmbedModel  bool
 	IsRerankModel bool

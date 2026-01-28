@@ -145,26 +145,30 @@ func (m *Models) retrieveFile(modelID string) (File, error) {
 
 // =============================================================================
 
-// Info provides all the model details.
-type Info struct {
-	ID      string
-	Object  string
-	Created int64
-	OwnedBy string
+// FileInfo provides all the model details.
+type FileInfo struct {
+	ID          string
+	Object      string
+	ModelFamily string
+	Size        int64
+	Created     int64
+	OwnedBy     string
 }
 
 // RetrieveInfo provides details for the specified model.
-func (m *Models) RetrieveInfo(modelID string) (Info, error) {
+func (m *Models) RetrieveInfo(modelID string) (FileInfo, error) {
 	mf, err := m.retrieveFile(modelID)
 	if err != nil {
-		return Info{}, fmt.Errorf("retrieve-info: unable to get model file information: %w", err)
+		return FileInfo{}, fmt.Errorf("retrieve-info: unable to get model file information: %w", err)
 	}
 
-	mi := Info{
-		ID:      mf.ID,
-		Object:  "model",
-		Created: mf.Modified.UnixMilli(),
-		OwnedBy: mf.OwnedBy,
+	mi := FileInfo{
+		ID:          mf.ID,
+		Object:      "model",
+		ModelFamily: mf.ModelFamily,
+		Size:        mf.Size,
+		Created:     mf.Modified.UnixMilli(),
+		OwnedBy:     mf.OwnedBy,
 	}
 
 	return mi, nil

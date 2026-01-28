@@ -3,6 +3,7 @@ package toolapp
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
@@ -152,12 +153,8 @@ type ModelInfoResponse struct {
 	Created       int64             `json:"created"`
 	OwnedBy       string            `json:"owned_by"`
 	Desc          string            `json:"desc"`
-	Size          uint64            `json:"size"`
+	Size          int64             `json:"size"`
 	HasProjection bool              `json:"has_projection"`
-	HasEncoder    bool              `json:"has_encoder"`
-	HasDecoder    bool              `json:"has_decoder"`
-	IsRecurrent   bool              `json:"is_recurrent"`
-	IsHybrid      bool              `json:"is_hybrid"`
 	IsGPT         bool              `json:"is_gpt"`
 	Metadata      map[string]string `json:"metadata"`
 	ModelConfig   *ModelConfig      `json:"model_config,omitempty"`
@@ -169,7 +166,7 @@ func (app ModelInfoResponse) Encode() ([]byte, string, error) {
 	return data, "application/json", err
 }
 
-func toModelInfo(info models.Info, mi model.ModelInfo, mc catalog.ModelConfig) ModelInfoResponse {
+func toModelInfo(fi models.FileInfo, mi models.ModelInfo, mc catalog.ModelConfig) ModelInfoResponse {
 	modelConfig := &ModelConfig{
 		Device:               mc.Device,
 		ContextWindow:        mc.ContextWindow,
@@ -210,24 +207,42 @@ func toModelInfo(info models.Info, mi model.ModelInfo, mc catalog.ModelConfig) M
 		},
 	}
 
+	metadata := make(map[string]string, len(mi.Metadata))
+	for k, v := range mi.Metadata {
+		metadata[k] = formatMetadataValue(v)
+	}
+
 	mir := ModelInfoResponse{
-		ID:            info.ID,
-		Object:        info.Object,
-		Created:       info.Created,
-		OwnedBy:       info.OwnedBy,
+		ID:            fi.ID,
+		Object:        fi.Object,
+		Created:       fi.Created,
+		OwnedBy:       fi.OwnedBy,
 		Desc:          mi.Desc,
-		Size:          mi.Size,
+		Size:          fi.Size,
 		HasProjection: mi.HasProjection,
-		HasEncoder:    mi.HasEncoder,
-		HasDecoder:    mi.HasDecoder,
-		IsRecurrent:   mi.IsRecurrent,
-		IsHybrid:      mi.IsHybrid,
 		IsGPT:         mi.IsGPTModel,
-		Metadata:      mi.Metadata,
+		Metadata:      metadata,
 		ModelConfig:   modelConfig,
 	}
 
 	return mir
+}
+
+func formatMetadataValue(value string) string {
+	if len(value) < 2 || value[0] != '[' {
+		return value
+	}
+
+	inner := value[1 : len(value)-1]
+	elements := strings.Split(inner, " ")
+
+	if len(elements) <= 6 {
+		return value
+	}
+
+	first := elements[:3]
+
+	return fmt.Sprintf("[%s, ...]", strings.Join(first, ", "))
 }
 
 // =============================================================================
@@ -348,19 +363,20 @@ type CatalogFiles struct {
 
 // CatalogModelResponse represents information for a model.
 type CatalogModelResponse struct {
-	ID           string              `json:"id"`
-	Category     string              `json:"category"`
-	OwnedBy      string              `json:"owned_by"`
-	ModelFamily  string              `json:"model_family"`
-	WebPage      string              `json:"web_page"`
-	GatedModel   bool                `json:"gated_model"`
-	Template     string              `json:"template"`
-	Files        CatalogFiles        `json:"files"`
-	Capabilities CatalogCapabilities `json:"capabilities"`
-	Metadata     CatalogMetadata     `json:"metadata"`
-	ModelConfig  *ModelConfig        `json:"model_config,omitempty"`
-	Downloaded   bool                `json:"downloaded"`
-	Validated    bool                `json:"validated"`
+	ID            string              `json:"id"`
+	Category      string              `json:"category"`
+	OwnedBy       string              `json:"owned_by"`
+	ModelFamily   string              `json:"model_family"`
+	WebPage       string              `json:"web_page"`
+	GatedModel    bool                `json:"gated_model"`
+	Template      string              `json:"template"`
+	Files         CatalogFiles        `json:"files"`
+	Capabilities  CatalogCapabilities `json:"capabilities"`
+	Metadata      CatalogMetadata     `json:"metadata"`
+	ModelConfig   *ModelConfig        `json:"model_config,omitempty"`
+	ModelMetadata map[string]string   `json:"model_metadata,omitempty"`
+	Downloaded    bool                `json:"downloaded"`
+	Validated     bool                `json:"validated"`
 }
 
 // Encode implements the encoder interface.
@@ -378,10 +394,18 @@ func (app CatalogModelsResponse) Encode() ([]byte, string, error) {
 	return data, "application/json", err
 }
 
-func toCatalogModelResponse(model catalog.Model, mc *catalog.ModelConfig) CatalogModelResponse {
+func toCatalogModelResponse(model catalog.Model, mc *catalog.ModelConfig, mi *models.ModelInfo) CatalogModelResponse {
 	models := make([]CatalogFile, len(model.Files.Models))
 	for i, model := range model.Files.Models {
 		models[i] = CatalogFile(model)
+	}
+
+	var metadata map[string]string
+	if mi != nil {
+		metadata = make(map[string]string)
+		for k, v := range mi.Metadata {
+			metadata[k] = formatMetadataValue(v)
+		}
 	}
 
 	resp := CatalogModelResponse{
@@ -412,8 +436,9 @@ func toCatalogModelResponse(model catalog.Model, mc *catalog.ModelConfig) Catalo
 			Collections: model.Metadata.Collections,
 			Description: model.Metadata.Description,
 		},
-		Downloaded: model.Downloaded,
-		Validated:  model.Validated,
+		ModelMetadata: metadata,
+		Downloaded:    model.Downloaded,
+		Validated:     model.Validated,
 	}
 
 	if mc != nil {
@@ -465,7 +490,7 @@ func toCatalogModelsResponse(list []catalog.Model) CatalogModelsResponse {
 	catalogModels := make([]CatalogModelResponse, len(list))
 
 	for i, model := range list {
-		catalogModels[i] = toCatalogModelResponse(model, nil)
+		catalogModels[i] = toCatalogModelResponse(model, nil, nil)
 	}
 
 	return catalogModels

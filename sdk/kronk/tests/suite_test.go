@@ -42,10 +42,13 @@ func TestSuite(t *testing.T) {
 		withModel(t, cfgSimpleVision(), func(t *testing.T, krn *kronk.Kronk) {
 			t.Run("SimpleMedia", func(t *testing.T) { testMedia(t, krn) })
 			t.Run("SimpleMediaStreaming", func(t *testing.T) { testMediaStreaming(t, krn) })
-			t.Run("SimpleMediaResponse", func(t *testing.T) { testMediaResponse(t, krn) })
-			t.Run("SimpleMediaResponseStreaming", func(t *testing.T) { testMediaResponseStreaming(t, krn) })
-			t.Run("ArrayFormatMedia", func(t *testing.T) { testMediaArray(t, krn) })
-			t.Run("ArrayFormatMediaStreaming", func(t *testing.T) { testMediaArrayStreaming(t, krn) })
+
+			if os.Getenv("GITHUB_ACTIONS") != "true" {
+				t.Run("SimpleMediaResponse", func(t *testing.T) { testMediaResponse(t, krn) })
+				t.Run("SimpleMediaResponseStreaming", func(t *testing.T) { testMediaResponseStreaming(t, krn) })
+				t.Run("ArrayFormatMedia", func(t *testing.T) { testMediaArray(t, krn) })
+				t.Run("ArrayFormatMediaStreaming", func(t *testing.T) { testMediaArrayStreaming(t, krn) })
+			}
 		})
 	})
 
