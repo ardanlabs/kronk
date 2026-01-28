@@ -437,7 +437,7 @@ func findCacheableMessage(messages []D, targetRole string) (cacheableMessage, bo
 // hashMessage computes a SHA-256 hash of a message.
 // Includes the role in the hash to differentiate between same content with different roles.
 func hashMessage(info cacheableMessage) string {
-	data := info.role + ":" + info.content
+	data := fmt.Sprintf("%s:%s", info.role, info.content)
 	h := sha256.Sum256([]byte(data))
 	return hex.EncodeToString(h[:])
 }

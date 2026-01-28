@@ -114,7 +114,7 @@ func (a *app) indexModels(ctx context.Context, r *http.Request) web.Encoder {
 }
 
 func (a *app) listModels(ctx context.Context, r *http.Request) web.Encoder {
-	modelFiles, err := a.models.RetrieveFiles()
+	modelFiles, err := a.models.Files()
 	if err != nil {
 		return errs.Errorf(errs.Internal, "unable to retrieve model list: %s", err)
 	}
@@ -238,11 +238,9 @@ func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
 func (a *app) removeModel(ctx context.Context, r *http.Request) web.Encoder {
 	modelID := web.Param(r, "model")
 
-	modelID, _, _ = strings.Cut(modelID, "/")
-
 	a.log.Info(ctx, "tool-remove", "modelName", modelID)
 
-	mp, err := a.models.RetrievePath(modelID)
+	mp, err := a.models.FullPath(modelID)
 	if err != nil {
 		return errs.New(errs.InvalidArgument, err)
 	}
@@ -261,22 +259,24 @@ func (a *app) missingModel(ctx context.Context, r *http.Request) web.Encoder {
 func (a *app) showModel(ctx context.Context, r *http.Request) web.Encoder {
 	modelID := web.Param(r, "model")
 
-	fsModelID, _, _ := strings.Cut(modelID, "/")
-
-	fi, err := a.models.RetrieveInfo(fsModelID)
-	if err != nil {
-		return errs.New(errs.Internal, err)
-	}
-	fi.ID = modelID
-
-	mi, err := a.models.RetrieveModelInfo(fsModelID)
+	fi, err := a.models.FileInformation(modelID)
 	if err != nil {
 		return errs.New(errs.Internal, err)
 	}
 
-	mc := a.catalog.RetrieveModelConfig(modelID)
+	mi, err := a.models.ModelInformation(modelID)
+	if err != nil {
+		return errs.New(errs.Internal, err)
+	}
 
-	return toModelInfo(fi, mi, mc)
+	rmc := a.catalog.ResolvedModelConfig(modelID)
+
+	vram, err := a.catalog.CalculateVRAM(modelID, rmc)
+	if err != nil {
+		return errs.New(errs.Internal, err)
+	}
+
+	return toModelInfo(fi, mi, rmc, vram)
 }
 
 func (a *app) modelPS(ctx context.Context, r *http.Request) web.Encoder {
@@ -293,7 +293,7 @@ func (a *app) modelPS(ctx context.Context, r *http.Request) web.Encoder {
 func (a *app) listCatalog(ctx context.Context, r *http.Request) web.Encoder {
 	filterCategory := web.Param(r, "filter")
 
-	list, err := a.catalog.CatalogModelList(filterCategory)
+	list, err := a.catalog.ModelList(filterCategory)
 	if err != nil {
 		return errs.New(errs.Internal, err)
 	}
@@ -304,7 +304,7 @@ func (a *app) listCatalog(ctx context.Context, r *http.Request) web.Encoder {
 func (a *app) pullCatalog(ctx context.Context, r *http.Request) web.Encoder {
 	modelID := web.Param(r, "model")
 
-	model, err := a.catalog.RetrieveModelDetails(modelID)
+	model, err := a.catalog.Details(modelID)
 	if err != nil {
 		return errs.New(errs.Internal, err)
 	}
@@ -372,22 +372,26 @@ func (a *app) pullCatalog(ctx context.Context, r *http.Request) web.Encoder {
 func (a *app) showCatalogModel(ctx context.Context, r *http.Request) web.Encoder {
 	modelID := web.Param(r, "model")
 
-	catModelID, _, _ := strings.Cut(modelID, "/")
-
-	model, err := a.catalog.RetrieveModelDetails(catModelID)
+	catDetails, err := a.catalog.Details(modelID)
 	if err != nil {
 		return errs.New(errs.Internal, err)
 	}
 
 	var mi *models.ModelInfo
-	miTmp, err := a.models.RetrieveModelInfo(catModelID)
+	miTmp, err := a.models.ModelInformation(modelID)
 	if err == nil {
 		mi = &miTmp
 	}
 
-	mc := a.catalog.RetrieveModelConfig(modelID)
+	rmc := a.catalog.ResolvedModelConfig(modelID)
 
-	return toCatalogModelResponse(model, &mc, mi)
+	var vram *models.VRAM
+	vramTmp, err := a.catalog.CalculateVRAM(modelID, rmc)
+	if err == nil {
+		vram = &vramTmp
+	}
+
+	return toCatalogModelResponse(catDetails, &rmc, mi, vram)
 }
 
 func (a *app) listKeys(ctx context.Context, r *http.Request) web.Encoder {

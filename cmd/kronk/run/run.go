@@ -81,7 +81,7 @@ func installSystem(cfg Config) (models.Path, error) {
 		return models.Path{}, fmt.Errorf("unable to create models system: %w", err)
 	}
 
-	mp, err := mdls.RetrievePath(cfg.ModelName)
+	mp, err := mdls.FullPath(cfg.ModelName)
 	if err != nil {
 		return models.Path{}, fmt.Errorf("model %q not found - use 'kronk model pull' first: %w", cfg.ModelName, err)
 	}

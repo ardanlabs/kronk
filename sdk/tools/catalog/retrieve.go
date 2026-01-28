@@ -12,15 +12,15 @@ import (
 	"go.yaml.in/yaml/v2"
 )
 
-// CatalogModelList returns the collection of models in the catalog with
+// ModelList returns the collection of models in the catalog with
 // some filtering capabilities.
-func (c *Catalog) CatalogModelList(filterCategory string) ([]Model, error) {
-	catalogs, err := c.RetrieveCatalogs()
+func (c *Catalog) ModelList(filterCategory string) ([]ModelDetails, error) {
+	catalogs, err := c.All()
 	if err != nil {
 		return nil, fmt.Errorf("catalog-model-list: catalog list: %w", err)
 	}
 
-	modelFiles, err := c.models.RetrieveFiles()
+	modelFiles, err := c.models.Files()
 	if err != nil {
 		return nil, fmt.Errorf("catalog-model-list: retrieve-model-files: %w", err)
 	}
@@ -35,7 +35,7 @@ func (c *Catalog) CatalogModelList(filterCategory string) ([]Model, error) {
 		}
 	}
 
-	var list []Model
+	var list []ModelDetails
 	for _, cat := range catalogs {
 		if filterCategory != "" && !strings.Contains(strings.ToLower(cat.Name), strings.ToLower(filterCategory)) {
 			continue
@@ -52,7 +52,7 @@ func (c *Catalog) CatalogModelList(filterCategory string) ([]Model, error) {
 		}
 	}
 
-	slices.SortFunc(list, func(a, b Model) int {
+	slices.SortFunc(list, func(a, b ModelDetails) int {
 		if c := cmp.Compare(a.Category, b.Category); c != 0 {
 			return c
 		}
@@ -64,22 +64,24 @@ func (c *Catalog) CatalogModelList(filterCategory string) ([]Model, error) {
 	return list, nil
 }
 
-// RetrieveModelDetails returns the full model information for the
-// specified model.
-func (c *Catalog) RetrieveModelDetails(modelID string) (Model, error) {
+// Details returns the model information for the specified model
+// that is defined only in the catalog only.
+func (c *Catalog) Details(modelID string) (ModelDetails, error) {
+	modelID, _, _ = strings.Cut(modelID, "/")
+
 	index, err := c.loadIndex()
 	if err != nil {
-		return Model{}, fmt.Errorf("retrieve-model-details: load-index: %w", err)
+		return ModelDetails{}, fmt.Errorf("retrieve-model-details: load-index: %w", err)
 	}
 
 	catalogFile := index[modelID]
 	if catalogFile == "" {
-		return Model{}, fmt.Errorf("retrieve-model-details: model[%s] not found in index", modelID)
+		return ModelDetails{}, fmt.Errorf("retrieve-model-details: model[%s] not found in index", modelID)
 	}
 
-	catalog, err := c.RetrieveCatalog(catalogFile)
+	catalog, err := c.singleCatalog(catalogFile)
 	if err != nil {
-		return Model{}, fmt.Errorf("retrieve-model-details: retrieve-catalog: %w", err)
+		return ModelDetails{}, fmt.Errorf("retrieve-model-details: retrieving catalog: %w", err)
 	}
 
 	for _, model := range catalog.Models {
@@ -88,28 +90,11 @@ func (c *Catalog) RetrieveModelDetails(modelID string) (Model, error) {
 		}
 	}
 
-	return Model{}, fmt.Errorf("retrieve-model-details: model[%s] not found", modelID)
+	return ModelDetails{}, fmt.Errorf("retrieve-model-details: model[%s] not found", modelID)
 }
 
-// RetrieveCatalog returns an individual catalog by the base catalog file name.
-func (c *Catalog) RetrieveCatalog(catalogFile string) (CatalogModels, error) {
-	filePath := filepath.Join(c.catalogPath, catalogFile)
-
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return CatalogModels{}, fmt.Errorf("retrieve-catalog: read file catalog-file[%s]: %w", catalogFile, err)
-	}
-
-	var catalog CatalogModels
-	if err := yaml.Unmarshal(data, &catalog); err != nil {
-		return CatalogModels{}, fmt.Errorf("retrieve-catalog: unmarshal catalog-file[%s]: %w", catalogFile, err)
-	}
-
-	return catalog, nil
-}
-
-// RetrieveCatalogs reads the catalogs from a previous download.
-func (c *Catalog) RetrieveCatalogs() ([]CatalogModels, error) {
+// All reads all the catalogs from a previous download.
+func (c *Catalog) All() ([]CatalogModels, error) {
 	entries, err := os.ReadDir(c.catalogPath)
 	if err != nil {
 		return nil, fmt.Errorf("retrieve-catalogs: read catalog dir: %w", err)
@@ -125,7 +110,7 @@ func (c *Catalog) RetrieveCatalogs() ([]CatalogModels, error) {
 			continue
 		}
 
-		catalog, err := c.RetrieveCatalog(entry.Name())
+		catalog, err := c.singleCatalog(entry.Name())
 		if err != nil {
 			return nil, fmt.Errorf("retrieve-catalogs: retrieve-catalog name[%s]: %w", entry.Name(), err)
 		}
@@ -136,13 +121,13 @@ func (c *Catalog) RetrieveCatalogs() ([]CatalogModels, error) {
 	return catalogs, nil
 }
 
-// RetrieveModelConfig reads the catalog and model config file for the
+// ResolvedModelConfig reads the catalog and model config file for the
 // specified model id and returns a ModelConfig with sampling values.
-func (c *Catalog) RetrieveModelConfig(modelID string) ModelConfig {
+func (c *Catalog) ResolvedModelConfig(modelID string) ModelConfig {
 
 	// Look in the catalog config first for the specified model.
 	var catalogFound bool
-	catalog, err := c.RetrieveModelDetails(modelID)
+	catalog, err := c.Details(modelID)
 	if err == nil {
 		catalogFound = true
 	}
@@ -154,7 +139,7 @@ func (c *Catalog) RetrieveModelConfig(modelID string) ModelConfig {
 
 	// Apply catalog settings first if found.
 	if catalogFound {
-		cfg = catalog.ModelConfig
+		cfg = catalog.BaseModelConfig
 	}
 
 	// Apply model config settings if found (overrides catalog).
@@ -224,24 +209,19 @@ func (c *Catalog) RetrieveModelConfig(modelID string) ModelConfig {
 	return cfg
 }
 
-// RetrieveKronkModelConfig reads the catalog and model config file for the
-// specified model id and returns a model config for use with kronk.New().
-func (c *Catalog) RetrieveKronkModelConfig(modelID string) (model.Config, error) {
-
-	// The modelID might have a / because it's a model in the config
-	// with different settings. Ex. model/FMC.
-	// We need to remove /FMC for the RetrievePath call.
-	fsModelID, _, _ := strings.Cut(modelID, "/")
+// KronkResolvedModelConfig reads the catalog and model config file for
+// the specified model id and returns a model config for use with kronk.New().
+func (c *Catalog) KronkResolvedModelConfig(modelID string) (model.Config, error) {
 
 	// Get the file path for this model on disk. If this fails, the
 	// model hasn't been downloaded and nothing else to do.
-	fp, err := c.models.RetrievePath(fsModelID)
+	fp, err := c.models.FullPath(modelID)
 	if err != nil {
 		return model.Config{}, fmt.Errorf("retrieve-model-config: unable to get model[%s] path: %w", modelID, err)
 	}
 
 	// Get the merged config from catalog and model_config.yaml.
-	mc := c.RetrieveModelConfig(modelID)
+	mc := c.ResolvedModelConfig(modelID)
 
 	// Convert to model.Config and set file paths.
 	cfg := mc.toKronkConfig()
@@ -252,6 +232,22 @@ func (c *Catalog) RetrieveKronkModelConfig(modelID string) (model.Config, error)
 }
 
 // =============================================================================
+
+func (c *Catalog) singleCatalog(catalogFile string) (CatalogModels, error) {
+	filePath := filepath.Join(c.catalogPath, catalogFile)
+
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return CatalogModels{}, fmt.Errorf("retrieve-catalog: read file catalog-file[%s]: %w", catalogFile, err)
+	}
+
+	var catalog CatalogModels
+	if err := yaml.Unmarshal(data, &catalog); err != nil {
+		return CatalogModels{}, fmt.Errorf("retrieve-catalog: unmarshal catalog-file[%s]: %w", catalogFile, err)
+	}
+
+	return catalog, nil
+}
 
 func (c *Catalog) buildIndex() error {
 	c.biMutex.Lock()

@@ -52,7 +52,7 @@ func runWeb(args []string) error {
 func runLocal(catalog *catalog.Catalog, models *models.Models, args []string) error {
 	modelID := args[0]
 
-	model, err := catalog.RetrieveModelDetails(modelID)
+	model, err := catalog.Details(modelID)
 	if err != nil {
 		return fmt.Errorf("retrieve-model-details: %w", err)
 	}

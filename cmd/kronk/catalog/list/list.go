@@ -50,7 +50,7 @@ func runLocal(catalog *catalog.Catalog, args []string) error {
 		return err
 	}
 
-	list, err := catalog.CatalogModelList(filterCategory)
+	list, err := catalog.ModelList(filterCategory)
 	if err != nil {
 		return fmt.Errorf("catalog-list: %w", err)
 	}
@@ -87,7 +87,7 @@ func printWeb(list []toolapp.CatalogModelResponse) {
 	w.Flush()
 }
 
-func print(list []catalog.Model) {
+func print(list []catalog.ModelDetails) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(w, "CATALOG\tMODEL ID\tPULLED\tENDPOINT\tIMAGES\tAUDIO\tVIDEO\tSTREAMING\tREASONING\tTOOLING\tEMBEDDING\tRERANK\tVAL")
 

@@ -23,7 +23,7 @@ func (t *Templates) RetrieveTemplate(templateFileName string) (string, error) {
 
 // Retrieve implements the model.TemplateRetriever interface.
 func (t *Templates) Retrieve(modelID string) (model.Template, error) {
-	m, err := t.catalog.RetrieveModelDetails(modelID)
+	m, err := t.catalog.Details(modelID)
 	if err != nil {
 		return model.Template{}, fmt.Errorf("retrieve: unable to retrieve model details: %w", err)
 	}

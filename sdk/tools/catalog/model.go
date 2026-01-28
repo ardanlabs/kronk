@@ -191,25 +191,25 @@ func (f Files) ToModelURLS() []string {
 	return models
 }
 
-// Model represents information for a model.
-type Model struct {
-	ID           string       `yaml:"id"`
-	Category     string       `yaml:"category"`
-	OwnedBy      string       `yaml:"owned_by"`
-	ModelFamily  string       `yaml:"model_family"`
-	WebPage      string       `yaml:"web_page"`
-	GatedModel   bool         `yaml:"gated_model"`
-	Template     string       `yaml:"template"`
-	Files        Files        `yaml:"files"`
-	Capabilities Capabilities `yaml:"capabilities"`
-	Metadata     Metadata     `yaml:"metadata"`
-	ModelConfig  ModelConfig  `yaml:"config"`
-	Downloaded   bool
-	Validated    bool
+// ModelDetails represents information for a model.
+type ModelDetails struct {
+	ID              string       `yaml:"id"`
+	Category        string       `yaml:"category"`
+	OwnedBy         string       `yaml:"owned_by"`
+	ModelFamily     string       `yaml:"model_family"`
+	WebPage         string       `yaml:"web_page"`
+	GatedModel      bool         `yaml:"gated_model"`
+	Template        string       `yaml:"template"`
+	Files           Files        `yaml:"files"`
+	Capabilities    Capabilities `yaml:"capabilities"`
+	Metadata        Metadata     `yaml:"metadata"`
+	BaseModelConfig ModelConfig  `yaml:"config"`
+	Downloaded      bool
+	Validated       bool
 }
 
 // CatalogModels represents a set of models for a given catalog.
 type CatalogModels struct {
-	Name   string  `yaml:"catalog"`
-	Models []Model `yaml:"models"`
+	Name   string         `yaml:"catalog"`
+	Models []ModelDetails `yaml:"models"`
 }

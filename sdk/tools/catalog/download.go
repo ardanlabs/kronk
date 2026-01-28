@@ -82,7 +82,7 @@ func (c *Catalog) Download(ctx context.Context, opts ...DownloadOption) error {
 
 // DownloadModel downloads the specified model from the catalog system.
 func (c *Catalog) DownloadModel(ctx context.Context, log Logger, modelID string) (models.Path, error) {
-	model, err := c.RetrieveModelDetails(modelID)
+	model, err := c.Details(modelID)
 	if err != nil {
 		return models.Path{}, fmt.Errorf("retrieve-model-details: %w", err)
 	}

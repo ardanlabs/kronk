@@ -14,7 +14,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
 )
@@ -51,10 +50,10 @@ func run() error {
 	}
 
 	// -------------------------------------------------------------------------
-	// Initialize kronk (loads both llama and mtmd libraries).
+	// Initialize yzma (loads both llama and mtmd libraries).
 
-	if err := kronk.Init(); err != nil {
-		return fmt.Errorf("unable to init kronk: %w", err)
+	if err := initYzma(); err != nil {
+		return fmt.Errorf("unable to init yzma: %w", err)
 	}
 
 	// -------------------------------------------------------------------------
@@ -226,6 +225,29 @@ func run() error {
 	}
 
 	fmt.Printf("\n\nGenerated %d tokens\n", generatedTokens)
+
+	return nil
+}
+
+func initYzma() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("unable to get home dir: %w", err)
+	}
+
+	libPath := filepath.Join(home, ".kronk/libraries")
+
+	if err := llama.Load(libPath); err != nil {
+		return fmt.Errorf("unable to load library: %w", err)
+	}
+
+	if err := mtmd.Load(libPath); err != nil {
+		return fmt.Errorf("unable to load mtmd library: %w", err)
+	}
+
+	llama.Init()
+	llama.LogSet(llama.LogSilent())
+	mtmd.LogSet(llama.LogSilent())
 
 	return nil
 }

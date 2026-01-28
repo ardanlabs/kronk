@@ -155,7 +155,7 @@ func (c *Cache) ModelStatus() ([]ModelDetail, error) {
 	}
 
 	// Retrieve the models installed locally.
-	list, err := c.models.RetrieveFiles()
+	list, err := c.models.Files()
 	if err != nil {
 		return nil, err
 	}
@@ -205,7 +205,7 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 			return krn, nil
 		}
 
-		cfg, err := c.templates.Catalog().RetrieveKronkModelConfig(modelID)
+		cfg, err := c.templates.Catalog().KronkResolvedModelConfig(modelID)
 		if err != nil {
 			return nil, fmt.Errorf("acquire-model: unable to retrieve model config: %w", err)
 		}

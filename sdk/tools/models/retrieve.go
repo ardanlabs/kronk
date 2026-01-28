@@ -21,8 +21,8 @@ type File struct {
 	Validated   bool
 }
 
-// RetrieveFiles returns all the models in the given model directory.
-func (m *Models) RetrieveFiles() ([]File, error) {
+// Files returns all the models in the given model directory.
+func (m *Models) Files() ([]File, error) {
 	var list []File
 
 	index := m.loadIndex()
@@ -93,7 +93,7 @@ func (m *Models) retrieveFile(modelID string) (File, error) {
 		return File{}, fmt.Errorf("retrieve-file: missing model id")
 	}
 
-	mp, err := m.RetrievePath(modelID)
+	mp, err := m.FullPath(modelID)
 	if err != nil {
 		return File{}, fmt.Errorf("retrieve-file: unable to retrieve path: %w", err)
 	}
@@ -155,15 +155,17 @@ type FileInfo struct {
 	OwnedBy     string
 }
 
-// RetrieveInfo provides details for the specified model.
-func (m *Models) RetrieveInfo(modelID string) (FileInfo, error) {
+// FileInformation provides details for the specified model.
+func (m *Models) FileInformation(modelID string) (FileInfo, error) {
+	modelID, _, _ = strings.Cut(modelID, "/")
+
 	mf, err := m.retrieveFile(modelID)
 	if err != nil {
 		return FileInfo{}, fmt.Errorf("retrieve-info: unable to get model file information: %w", err)
 	}
 
 	mi := FileInfo{
-		ID:          mf.ID,
+		ID:          modelID,
 		Object:      "model",
 		ModelFamily: mf.ModelFamily,
 		Size:        mf.Size,
@@ -184,9 +186,11 @@ type Path struct {
 	Validated  bool     `yaml:"validated"`
 }
 
-// RetrievePath locates the physical location on disk and returns the full path.
-func (m *Models) RetrievePath(modelID string) (Path, error) {
+// FullPath locates the physical location on disk and returns the full path.
+func (m *Models) FullPath(modelID string) (Path, error) {
 	index := m.loadIndex()
+
+	modelID, _, _ = strings.Cut(modelID, "/")
 
 	modelPath, exists := index[modelID]
 	if !exists {
@@ -196,10 +200,12 @@ func (m *Models) RetrievePath(modelID string) (Path, error) {
 	return modelPath, nil
 }
 
-// MustRetrieveModel finds a model and panics if the model was not found. This
+// MustFullPath finds a model and panics if the model was not found. This
 // should only be used for testing.
-func (m *Models) MustRetrieveModel(modelID string) Path {
-	fi, err := m.RetrievePath(modelID)
+func (m *Models) MustFullPath(modelID string) Path {
+	modelID, _, _ = strings.Cut(modelID, "/")
+
+	fi, err := m.FullPath(modelID)
 	if err != nil {
 		panic(err.Error())
 	}

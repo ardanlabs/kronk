@@ -47,14 +47,14 @@ func TestMain(m *testing.M) {
 }
 
 func Test_Catalog(t *testing.T) {
-	catalogs, err := cat.RetrieveCatalogs()
+	catalogs, err := cat.All()
 	if err != nil {
 		t.Fatalf("retrieve catalog: %v", err)
 	}
 
 	expCat := catalog.CatalogModels{
 		Name: "Text-Generation",
-		Models: []catalog.Model{
+		Models: []catalog.ModelDetails{
 			{
 				ID:          "Llama-3.3-70B-Instruct-Q8_0",
 				Category:    "Text-Generation",
@@ -112,7 +112,7 @@ outer:
 
 	for i, model := range gotCat.Models {
 		if model.ID == expCat.Models[0].ID {
-			gotCat.Models = []catalog.Model{gotCat.Models[i]}
+			gotCat.Models = []catalog.ModelDetails{gotCat.Models[i]}
 			break
 		}
 	}
@@ -127,7 +127,7 @@ outer:
 }
 
 func Test_RetrieveCatalogs(t *testing.T) {
-	catalogs, err := cat.RetrieveCatalogs()
+	catalogs, err := cat.All()
 	if err != nil {
 		t.Fatalf("retrieve catalogs: %v", err)
 	}
@@ -149,36 +149,8 @@ func Test_RetrieveCatalogs(t *testing.T) {
 	}
 }
 
-func Test_RetrieveCatalog(t *testing.T) {
-	catalog, err := cat.RetrieveCatalog("text_generation.yaml")
-	if err != nil {
-		t.Fatalf("retrieve catalog: %v", err)
-	}
-
-	if catalog.Name != "Text-Generation" {
-		t.Errorf("expected catalog name %q, got %q", "Text-Generation", catalog.Name)
-	}
-
-	if len(catalog.Models) != 3 {
-		t.Errorf("expected 3 models, got %d", len(catalog.Models))
-	}
-
-	modelIDs := make(map[string]bool)
-	for _, model := range catalog.Models {
-		modelIDs[model.ID] = true
-	}
-
-	if !modelIDs["Qwen3-8B-Q8_0"] {
-		t.Error("expected model Qwen3-8B-Q8_0 not found")
-	}
-
-	if !modelIDs["gpt-oss-20b-Q8_0"] {
-		t.Error("expected model gpt-oss-20b-Q8_0 not found")
-	}
-}
-
 func Test_RetrieveModelDetails(t *testing.T) {
-	model, err := cat.RetrieveModelDetails("qwen3-8b-q8_0")
+	model, err := cat.Details("qwen3-8b-q8_0")
 	if err != nil {
 		t.Fatalf("retrieve model details: %v", err)
 	}

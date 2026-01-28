@@ -157,6 +157,7 @@ type ModelInfoResponse struct {
 	HasProjection bool              `json:"has_projection"`
 	IsGPT         bool              `json:"is_gpt"`
 	Metadata      map[string]string `json:"metadata"`
+	VRAM          *VRAM             `json:"vram,omitempty"`
 	ModelConfig   *ModelConfig      `json:"model_config,omitempty"`
 }
 
@@ -166,47 +167,7 @@ func (app ModelInfoResponse) Encode() ([]byte, string, error) {
 	return data, "application/json", err
 }
 
-func toModelInfo(fi models.FileInfo, mi models.ModelInfo, mc catalog.ModelConfig) ModelInfoResponse {
-	modelConfig := &ModelConfig{
-		Device:               mc.Device,
-		ContextWindow:        mc.ContextWindow,
-		NBatch:               mc.NBatch,
-		NUBatch:              mc.NUBatch,
-		NThreads:             mc.NThreads,
-		NThreadsBatch:        mc.NThreadsBatch,
-		CacheTypeK:           mc.CacheTypeK,
-		CacheTypeV:           mc.CacheTypeV,
-		UseDirectIO:          mc.UseDirectIO,
-		FlashAttention:       mc.FlashAttention,
-		IgnoreIntegrityCheck: mc.IgnoreIntegrityCheck,
-		NSeqMax:              mc.NSeqMax,
-		OffloadKQV:           mc.OffloadKQV,
-		OpOffload:            mc.OpOffload,
-		NGpuLayers:           mc.NGpuLayers,
-		SplitMode:            mc.SplitMode,
-		SystemPromptCache:    mc.SystemPromptCache,
-		FirstMessageCache:    mc.FirstMessageCache,
-		CacheMinTokens:       mc.CacheMinTokens,
-		Sampling: SamplingConfig{
-			Temperature:     mc.Sampling.Temperature,
-			TopK:            mc.Sampling.TopK,
-			TopP:            mc.Sampling.TopP,
-			MinP:            mc.Sampling.MinP,
-			MaxTokens:       mc.Sampling.MaxTokens,
-			RepeatPenalty:   mc.Sampling.RepeatPenalty,
-			RepeatLastN:     mc.Sampling.RepeatLastN,
-			DryMultiplier:   mc.Sampling.DryMultiplier,
-			DryBase:         mc.Sampling.DryBase,
-			DryAllowedLen:   mc.Sampling.DryAllowedLen,
-			DryPenaltyLast:  mc.Sampling.DryPenaltyLast,
-			XtcProbability:  mc.Sampling.XtcProbability,
-			XtcThreshold:    mc.Sampling.XtcThreshold,
-			XtcMinKeep:      mc.Sampling.XtcMinKeep,
-			EnableThinking:  mc.Sampling.EnableThinking,
-			ReasoningEffort: mc.Sampling.ReasoningEffort,
-		},
-	}
-
+func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfig, vram models.VRAM) ModelInfoResponse {
 	metadata := make(map[string]string, len(mi.Metadata))
 	for k, v := range mi.Metadata {
 		metadata[k] = formatMetadataValue(v)
@@ -222,7 +183,52 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, mc catalog.ModelConfig
 		HasProjection: mi.HasProjection,
 		IsGPT:         mi.IsGPTModel,
 		Metadata:      metadata,
-		ModelConfig:   modelConfig,
+		ModelConfig: &ModelConfig{
+			Device:               rmc.Device,
+			ContextWindow:        rmc.ContextWindow,
+			NBatch:               rmc.NBatch,
+			NUBatch:              rmc.NUBatch,
+			NThreads:             rmc.NThreads,
+			NThreadsBatch:        rmc.NThreadsBatch,
+			CacheTypeK:           rmc.CacheTypeK,
+			CacheTypeV:           rmc.CacheTypeV,
+			UseDirectIO:          rmc.UseDirectIO,
+			FlashAttention:       rmc.FlashAttention,
+			IgnoreIntegrityCheck: rmc.IgnoreIntegrityCheck,
+			NSeqMax:              rmc.NSeqMax,
+			OffloadKQV:           rmc.OffloadKQV,
+			OpOffload:            rmc.OpOffload,
+			NGpuLayers:           rmc.NGpuLayers,
+			SplitMode:            rmc.SplitMode,
+			SystemPromptCache:    rmc.SystemPromptCache,
+			FirstMessageCache:    rmc.FirstMessageCache,
+			CacheMinTokens:       rmc.CacheMinTokens,
+			Sampling: SamplingConfig{
+				Temperature:     rmc.Sampling.Temperature,
+				TopK:            rmc.Sampling.TopK,
+				TopP:            rmc.Sampling.TopP,
+				MinP:            rmc.Sampling.MinP,
+				MaxTokens:       rmc.Sampling.MaxTokens,
+				RepeatPenalty:   rmc.Sampling.RepeatPenalty,
+				RepeatLastN:     rmc.Sampling.RepeatLastN,
+				DryMultiplier:   rmc.Sampling.DryMultiplier,
+				DryBase:         rmc.Sampling.DryBase,
+				DryAllowedLen:   rmc.Sampling.DryAllowedLen,
+				DryPenaltyLast:  rmc.Sampling.DryPenaltyLast,
+				XtcProbability:  rmc.Sampling.XtcProbability,
+				XtcThreshold:    rmc.Sampling.XtcThreshold,
+				XtcMinKeep:      rmc.Sampling.XtcMinKeep,
+				EnableThinking:  rmc.Sampling.EnableThinking,
+				ReasoningEffort: rmc.Sampling.ReasoningEffort,
+			},
+		},
+		VRAM: &VRAM{
+			KVPerTokenPerLayer: vram.KVPerTokenPerLayer,
+			KVPerSlot:          vram.KVPerSlot,
+			TotalSlots:         vram.TotalSlots,
+			SlotMemory:         vram.SlotMemory,
+			TotalVRAM:          vram.TotalVRAM,
+		},
 	}
 
 	return mir
@@ -284,6 +290,15 @@ func toModelDetails(models []cache.ModelDetail) ModelDetailsResponse {
 }
 
 // =============================================================================
+
+// VRAM contains the calculated VRAM requirements.
+type VRAM struct {
+	KVPerTokenPerLayer int64 `json:"kv_per_token_per_layer"`
+	KVPerSlot          int64 `json:"kv_per_slot"`
+	TotalSlots         int64 `json:"total_slots"`
+	SlotMemory         int64 `json:"slot_memory"`
+	TotalVRAM          int64 `json:"total_vram"`
+}
 
 // SamplingConfig represents sampling parameters for model inference.
 type SamplingConfig struct {
@@ -375,6 +390,7 @@ type CatalogModelResponse struct {
 	Metadata      CatalogMetadata     `json:"metadata"`
 	ModelConfig   *ModelConfig        `json:"model_config,omitempty"`
 	ModelMetadata map[string]string   `json:"model_metadata,omitempty"`
+	VRAM          *VRAM               `json:"vram,omitempty"`
 	Downloaded    bool                `json:"downloaded"`
 	Validated     bool                `json:"validated"`
 }
@@ -394,9 +410,9 @@ func (app CatalogModelsResponse) Encode() ([]byte, string, error) {
 	return data, "application/json", err
 }
 
-func toCatalogModelResponse(model catalog.Model, mc *catalog.ModelConfig, mi *models.ModelInfo) CatalogModelResponse {
-	models := make([]CatalogFile, len(model.Files.Models))
-	for i, model := range model.Files.Models {
+func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelConfig, mi *models.ModelInfo, vram *models.VRAM) CatalogModelResponse {
+	models := make([]CatalogFile, len(catDetails.Files.Models))
+	for i, model := range catDetails.Files.Models {
 		models[i] = CatalogFile(model)
 	}
 
@@ -409,88 +425,98 @@ func toCatalogModelResponse(model catalog.Model, mc *catalog.ModelConfig, mi *mo
 	}
 
 	resp := CatalogModelResponse{
-		ID:          model.ID,
-		Category:    model.Category,
-		OwnedBy:     model.OwnedBy,
-		ModelFamily: model.ModelFamily,
-		WebPage:     model.WebPage,
-		GatedModel:  model.GatedModel,
-		Template:    model.Template,
+		ID:          catDetails.ID,
+		Category:    catDetails.Category,
+		OwnedBy:     catDetails.OwnedBy,
+		ModelFamily: catDetails.ModelFamily,
+		WebPage:     catDetails.WebPage,
+		GatedModel:  catDetails.GatedModel,
+		Template:    catDetails.Template,
 		Files: CatalogFiles{
 			Models: models,
-			Proj:   CatalogFile(model.Files.Proj),
+			Proj:   CatalogFile(catDetails.Files.Proj),
 		},
 		Capabilities: CatalogCapabilities{
-			Endpoint:  model.Capabilities.Endpoint,
-			Images:    model.Capabilities.Images,
-			Audio:     model.Capabilities.Audio,
-			Video:     model.Capabilities.Video,
-			Streaming: model.Capabilities.Streaming,
-			Reasoning: model.Capabilities.Reasoning,
-			Tooling:   model.Capabilities.Tooling,
-			Embedding: model.Capabilities.Embedding,
-			Rerank:    model.Capabilities.Rerank,
+			Endpoint:  catDetails.Capabilities.Endpoint,
+			Images:    catDetails.Capabilities.Images,
+			Audio:     catDetails.Capabilities.Audio,
+			Video:     catDetails.Capabilities.Video,
+			Streaming: catDetails.Capabilities.Streaming,
+			Reasoning: catDetails.Capabilities.Reasoning,
+			Tooling:   catDetails.Capabilities.Tooling,
+			Embedding: catDetails.Capabilities.Embedding,
+			Rerank:    catDetails.Capabilities.Rerank,
 		},
 		Metadata: CatalogMetadata{
-			Created:     model.Metadata.Created,
-			Collections: model.Metadata.Collections,
-			Description: model.Metadata.Description,
+			Created:     catDetails.Metadata.Created,
+			Collections: catDetails.Metadata.Collections,
+			Description: catDetails.Metadata.Description,
 		},
 		ModelMetadata: metadata,
-		Downloaded:    model.Downloaded,
-		Validated:     model.Validated,
+		Downloaded:    catDetails.Downloaded,
+		Validated:     catDetails.Validated,
 	}
 
-	if mc != nil {
+	if rmc != nil {
 		resp.ModelConfig = &ModelConfig{
-			Device:               mc.Device,
-			ContextWindow:        mc.ContextWindow,
-			NBatch:               mc.NBatch,
-			NUBatch:              mc.NUBatch,
-			NThreads:             mc.NThreads,
-			NThreadsBatch:        mc.NThreadsBatch,
-			CacheTypeK:           mc.CacheTypeK,
-			CacheTypeV:           mc.CacheTypeV,
-			UseDirectIO:          mc.UseDirectIO,
-			FlashAttention:       mc.FlashAttention,
-			IgnoreIntegrityCheck: mc.IgnoreIntegrityCheck,
-			NSeqMax:              mc.NSeqMax,
-			OffloadKQV:           mc.OffloadKQV,
-			OpOffload:            mc.OpOffload,
-			NGpuLayers:           mc.NGpuLayers,
-			SplitMode:            mc.SplitMode,
-			SystemPromptCache:    mc.SystemPromptCache,
-			FirstMessageCache:    mc.FirstMessageCache,
-			CacheMinTokens:       mc.CacheMinTokens,
+			Device:               rmc.Device,
+			ContextWindow:        rmc.ContextWindow,
+			NBatch:               rmc.NBatch,
+			NUBatch:              rmc.NUBatch,
+			NThreads:             rmc.NThreads,
+			NThreadsBatch:        rmc.NThreadsBatch,
+			CacheTypeK:           rmc.CacheTypeK,
+			CacheTypeV:           rmc.CacheTypeV,
+			UseDirectIO:          rmc.UseDirectIO,
+			FlashAttention:       rmc.FlashAttention,
+			IgnoreIntegrityCheck: rmc.IgnoreIntegrityCheck,
+			NSeqMax:              rmc.NSeqMax,
+			OffloadKQV:           rmc.OffloadKQV,
+			OpOffload:            rmc.OpOffload,
+			NGpuLayers:           rmc.NGpuLayers,
+			SplitMode:            rmc.SplitMode,
+			SystemPromptCache:    rmc.SystemPromptCache,
+			FirstMessageCache:    rmc.FirstMessageCache,
+			CacheMinTokens:       rmc.CacheMinTokens,
 			Sampling: SamplingConfig{
-				Temperature:     mc.Sampling.Temperature,
-				TopK:            mc.Sampling.TopK,
-				TopP:            mc.Sampling.TopP,
-				MinP:            mc.Sampling.MinP,
-				MaxTokens:       mc.Sampling.MaxTokens,
-				RepeatPenalty:   mc.Sampling.RepeatPenalty,
-				RepeatLastN:     mc.Sampling.RepeatLastN,
-				DryMultiplier:   mc.Sampling.DryMultiplier,
-				DryBase:         mc.Sampling.DryBase,
-				DryAllowedLen:   mc.Sampling.DryAllowedLen,
-				DryPenaltyLast:  mc.Sampling.DryPenaltyLast,
-				XtcProbability:  mc.Sampling.XtcProbability,
-				XtcThreshold:    mc.Sampling.XtcThreshold,
-				XtcMinKeep:      mc.Sampling.XtcMinKeep,
-				EnableThinking:  mc.Sampling.EnableThinking,
-				ReasoningEffort: mc.Sampling.ReasoningEffort,
+				Temperature:     rmc.Sampling.Temperature,
+				TopK:            rmc.Sampling.TopK,
+				TopP:            rmc.Sampling.TopP,
+				MinP:            rmc.Sampling.MinP,
+				MaxTokens:       rmc.Sampling.MaxTokens,
+				RepeatPenalty:   rmc.Sampling.RepeatPenalty,
+				RepeatLastN:     rmc.Sampling.RepeatLastN,
+				DryMultiplier:   rmc.Sampling.DryMultiplier,
+				DryBase:         rmc.Sampling.DryBase,
+				DryAllowedLen:   rmc.Sampling.DryAllowedLen,
+				DryPenaltyLast:  rmc.Sampling.DryPenaltyLast,
+				XtcProbability:  rmc.Sampling.XtcProbability,
+				XtcThreshold:    rmc.Sampling.XtcThreshold,
+				XtcMinKeep:      rmc.Sampling.XtcMinKeep,
+				EnableThinking:  rmc.Sampling.EnableThinking,
+				ReasoningEffort: rmc.Sampling.ReasoningEffort,
 			},
+		}
+	}
+
+	if vram != nil {
+		resp.VRAM = &VRAM{
+			KVPerTokenPerLayer: vram.KVPerTokenPerLayer,
+			KVPerSlot:          vram.KVPerSlot,
+			TotalSlots:         vram.TotalSlots,
+			SlotMemory:         vram.SlotMemory,
+			TotalVRAM:          vram.TotalVRAM,
 		}
 	}
 
 	return resp
 }
 
-func toCatalogModelsResponse(list []catalog.Model) CatalogModelsResponse {
+func toCatalogModelsResponse(list []catalog.ModelDetails) CatalogModelsResponse {
 	catalogModels := make([]CatalogModelResponse, len(list))
 
 	for i, model := range list {
-		catalogModels[i] = toCatalogModelResponse(model, nil, nil)
+		catalogModels[i] = toCatalogModelResponse(model, nil, nil, nil)
 	}
 
 	return catalogModels

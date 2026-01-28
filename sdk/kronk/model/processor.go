@@ -322,7 +322,7 @@ func (p *processor) gptProcess(content string, token llama.Token) (response, lla
 			// Emit the function name prefix for tool calls so parseGPTToolCall can parse it.
 			// Format: ".FUNC_NAME <|message|>" which parseGPTToolCall expects.
 			if p.status == statusTooling && p.toolFuncName != "" {
-				prefix := "." + p.toolFuncName + " <|message|>"
+				prefix := fmt.Sprintf(".%s <|message|>", p.toolFuncName)
 				p.toolFuncName = ""
 				return response{status: p.status, content: prefix}, token, nil
 			}
@@ -927,7 +927,7 @@ func (p *processor) stepGPT(content string) (response, bool) {
 			// Emit the function name prefix for tool calls so parseGPTToolCall can parse it.
 			// Format: ".FUNC_NAME <|message|>" which parseGPTToolCall expects.
 			if p.status == statusTooling && p.toolFuncName != "" {
-				prefix := "." + p.toolFuncName + " <|message|>"
+				prefix := fmt.Sprintf(".%s <|message|>", p.toolFuncName)
 				p.toolFuncName = ""
 				return response{status: p.status, content: prefix}, false
 			}

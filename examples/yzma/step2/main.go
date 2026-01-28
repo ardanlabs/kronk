@@ -20,7 +20,6 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -84,8 +83,8 @@ func run() error {
 		*modelPath = filepath.Join(home, ".kronk/models/Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf")
 	}
 
-	if err := kronk.Init(); err != nil {
-		return fmt.Errorf("unable to init kronk: %w", err)
+	if err := initYzma(); err != nil {
+		return fmt.Errorf("unable to init yzma: %w", err)
 	}
 
 	// -------------------------------------------------------------------------
@@ -226,7 +225,7 @@ func run() error {
 					c.input = defaultPrompts[rand.Intn(len(defaultPrompts))]
 					c.response.Reset()
 
-					p := "<|im_start|>user\n" + c.input + "<|im_end|>\n<|im_start|>assistant\n"
+					p := fmt.Sprintf("<|im_start|>user\n%s<|im_end|>\n<|im_start|>assistant\n", c.input)
 
 					// Build the prompt.
 					c.nPast = 0
@@ -426,4 +425,22 @@ func setLogit(batch *llama.Batch, idx int32, logits bool) {
 	case false:
 		*logitPtr = 0
 	}
+}
+
+func initYzma() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("unable to get home dir: %w", err)
+	}
+
+	libPath := filepath.Join(home, ".kronk/libraries")
+
+	if err := llama.Load(libPath); err != nil {
+		return fmt.Errorf("unable to load library: %w", err)
+	}
+
+	llama.Init()
+	llama.LogSet(llama.LogSilent())
+
+	return nil
 }
