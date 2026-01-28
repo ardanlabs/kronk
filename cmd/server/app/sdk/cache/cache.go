@@ -16,6 +16,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/ardanlabs/kronk/sdk/tools/templates"
 	"github.com/maypok86/otter/v2"
+	"golang.org/x/sync/singleflight"
 )
 
 // ErrServerBusy is returned when all model slots are occupied with active streams.
@@ -83,6 +84,7 @@ type Cache struct {
 	maxModelsInCache     int
 	models               *models.Models
 	ignoreIntegrityCheck bool
+	loadGroup            singleflight.Group
 }
 
 // New constructs the manager for use.
@@ -194,56 +196,70 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 		return nil, ErrServerBusy
 	}
 
-	cfg, err := c.templates.Catalog().RetrieveKronkModelConfig(modelID)
+	// Use singleflight to prevent concurrent loads of the same model.
+	// This ensures only one goroutine loads a model while others wait.
+	result, err, _ := c.loadGroup.Do(modelID, func() (any, error) {
+
+		// Double-check cache after acquiring the singleflight lock.
+		if krn, exists := c.cache.GetIfPresent(modelID); exists {
+			return krn, nil
+		}
+
+		cfg, err := c.templates.Catalog().RetrieveKronkModelConfig(modelID)
+		if err != nil {
+			return nil, fmt.Errorf("acquire-model: unable to retrieve model config: %w", err)
+		}
+
+		if c.ignoreIntegrityCheck {
+			cfg.IgnoreIntegrityCheck = true
+		}
+
+		cfg.Log = c.log
+
+		c.log(ctx, "CACHE: MODEL CONFIG", "model-id", modelID, "mc", cfg.String())
+
+		krn, err := kronk.New(cfg,
+			kronk.WithTemplateRetriever(c.templates),
+			kronk.WithContext(ctx),
+		)
+
+		if err != nil {
+			return nil, fmt.Errorf("acquire-model: unable to create inference model: %w", err)
+		}
+
+		c.cache.Set(modelID, krn)
+		c.itemsInCache.Add(1)
+
+		totalEntries := len(krn.SystemInfo())*2 + (5 * 2)
+		info := make([]any, 0, totalEntries)
+		for k, v := range krn.SystemInfo() {
+			info = append(info, k)
+			info = append(info, v)
+		}
+
+		info = append(info, "status")
+		info = append(info, "load new model")
+		info = append(info, "model-name")
+		info = append(info, modelID)
+		info = append(info, "contextWindow")
+		info = append(info, krn.ModelConfig().ContextWindow)
+		info = append(info, "isGPTModel")
+		info = append(info, krn.ModelInfo().IsGPTModel)
+		info = append(info, "isEmbedModel")
+		info = append(info, krn.ModelInfo().IsEmbedModel)
+		info = append(info, "isRerankModel")
+		info = append(info, krn.ModelInfo().IsRerankModel)
+
+		c.log(ctx, "acquire-model", info...)
+
+		return krn, nil
+	})
+
 	if err != nil {
-		return nil, fmt.Errorf("acquire-model: unable to retrieve model config: %w", err)
+		return nil, err
 	}
 
-	if c.ignoreIntegrityCheck {
-		cfg.IgnoreIntegrityCheck = true
-	}
-
-	cfg.Log = c.log
-
-	c.log(ctx, "CACHE: MODEL CONFIG", "model-id", modelID, "mc", cfg.String())
-
-	krn, err = kronk.New(cfg,
-		kronk.WithTemplateRetriever(c.templates),
-		kronk.WithContext(ctx),
-	)
-
-	if err != nil {
-		return nil, fmt.Errorf("acquire-model: unable to create inference model: %w", err)
-	}
-
-	modelID, _, _ = strings.Cut(modelID, "/")
-
-	c.cache.Set(modelID, krn)
-	c.itemsInCache.Add(1)
-
-	totalEntries := len(krn.SystemInfo())*2 + (5 * 2)
-	info := make([]any, 0, totalEntries)
-	for k, v := range krn.SystemInfo() {
-		info = append(info, k)
-		info = append(info, v)
-	}
-
-	info = append(info, "status")
-	info = append(info, "load new model")
-	info = append(info, "model-name")
-	info = append(info, modelID)
-	info = append(info, "contextWindow")
-	info = append(info, krn.ModelConfig().ContextWindow)
-	info = append(info, "isGPTModel")
-	info = append(info, krn.ModelInfo().IsGPTModel)
-	info = append(info, "isEmbedModel")
-	info = append(info, krn.ModelInfo().IsEmbedModel)
-	info = append(info, "isRerankModel")
-	info = append(info, krn.ModelInfo().IsRerankModel)
-
-	c.log(ctx, "acquire-model", info...)
-
-	return krn, nil
+	return result.(*kronk.Kronk), nil
 }
 
 // allSlotsActive returns true if all model slots are occupied and every
