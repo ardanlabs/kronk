@@ -15,7 +15,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -31,8 +30,8 @@ func main() {
 }
 
 func run() error {
-	if err := kronk.Init(); err != nil {
-		return fmt.Errorf("unable to init kronk: %w", err)
+	if err := initYzma(); err != nil {
+		return fmt.Errorf("unable to init yzma: %w", err)
 	}
 
 	// -------------------------------------------------------------------------
@@ -133,4 +132,22 @@ func run() error {
 		batch := llama.BatchGetOne([]llama.Token{token})
 		llama.Decode(lctx, batch)
 	}
+}
+
+func initYzma() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("unable to get home dir: %w", err)
+	}
+
+	libPath := filepath.Join(home, ".kronk/libraries")
+
+	if err := llama.Load(libPath); err != nil {
+		return fmt.Errorf("unable to load library: %w", err)
+	}
+
+	llama.Init()
+	llama.LogSet(llama.LogSilent())
+
+	return nil
 }

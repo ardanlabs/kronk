@@ -78,6 +78,7 @@ export interface ModelInfoResponse {
   has_projection: boolean;
   is_gpt: boolean;
   metadata: Record<string, string>;
+  vram?: VRAM;
   model_config?: ModelConfig;
 }
 
@@ -109,6 +110,14 @@ export interface CatalogFiles {
   proj: CatalogFile[];
 }
 
+export interface VRAM {
+  kv_per_token_per_layer: number;
+  kv_per_slot: number;
+  total_slots: number;
+  slot_memory: number;
+  total_vram: number;
+}
+
 export interface CatalogModelResponse {
   id: string;
   category: string;
@@ -119,6 +128,7 @@ export interface CatalogModelResponse {
   files: CatalogFiles;
   capabilities: CatalogCapabilities;
   metadata: CatalogMetadata;
+  vram?: VRAM;
   model_config?: ModelConfig;
   model_metadata?: Record<string, string>;
   downloaded: boolean;

@@ -41,7 +41,7 @@ func runWeb() error {
 }
 
 func runLocal(models *models.Models) error {
-	files, err := models.RetrieveFiles()
+	files, err := models.Files()
 	if err != nil {
 		return err
 	}

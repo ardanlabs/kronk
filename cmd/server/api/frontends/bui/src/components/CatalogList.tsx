@@ -5,6 +5,21 @@ import type { CatalogModelResponse, CatalogModelsResponse, PullResponse } from '
 
 type DetailTab = 'details' | 'pull';
 
+function formatBytes(bytes: number): string {
+  const KB = 1024;
+  const MB = KB * 1024;
+  const GB = MB * 1024;
+
+  if (bytes >= GB) {
+    return `${(bytes / GB).toFixed(2)} GB`;
+  } else if (bytes >= MB) {
+    return `${(bytes / MB).toFixed(2)} MB`;
+  } else if (bytes >= KB) {
+    return `${(bytes / KB).toFixed(2)} KB`;
+  }
+  return `${bytes} bytes`;
+}
+
 export default function CatalogList() {
   const { invalidate } = useModelList();
   const [data, setData] = useState<CatalogModelsResponse | null>(null);
@@ -440,6 +455,34 @@ export default function CatalogList() {
                   </div>
                 </div>
               </div>
+
+              {modelInfo.vram && (
+                <div style={{ marginTop: '24px' }}>
+                  <h4 style={{ marginBottom: '12px' }}>VRAM Requirements</h4>
+                  <div className="model-meta">
+                    <div className="model-meta-item">
+                      <label>KV Per Token/Layer</label>
+                      <span>{formatBytes(modelInfo.vram.kv_per_token_per_layer)}</span>
+                    </div>
+                    <div className="model-meta-item">
+                      <label>KV Per Slot</label>
+                      <span>{formatBytes(modelInfo.vram.kv_per_slot)}</span>
+                    </div>
+                    <div className="model-meta-item">
+                      <label>Total Slots</label>
+                      <span>{modelInfo.vram.total_slots}</span>
+                    </div>
+                    <div className="model-meta-item">
+                      <label>Slot Memory</label>
+                      <span>{formatBytes(modelInfo.vram.slot_memory)}</span>
+                    </div>
+                    <div className="model-meta-item">
+                      <label>Total VRAM</label>
+                      <span>{formatBytes(modelInfo.vram.total_vram)}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {modelInfo.model_config && (
                 <div style={{ marginTop: '24px' }}>

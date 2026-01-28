@@ -52,23 +52,23 @@ func TestMain(m *testing.M) {
 	}
 
 	fmt.Println("MustRetrieveModel Qwen3-8B-Q8_0...")
-	mpThinkToolChat = models.MustRetrieveModel("Qwen3-8B-Q8_0")
+	mpThinkToolChat = models.MustFullPath("Qwen3-8B-Q8_0")
 
 	fmt.Println("MustRetrieveModel Qwen2.5-VL-3B-Instruct-Q8_0...")
-	mpSimpleVision = models.MustRetrieveModel("Qwen2.5-VL-3B-Instruct-Q8_0")
+	mpSimpleVision = models.MustFullPath("Qwen2.5-VL-3B-Instruct-Q8_0")
 
 	fmt.Println("MustRetrieveModel embeddinggemma-300m-qat-Q8_0...")
-	mpEmbed = models.MustRetrieveModel("embeddinggemma-300m-qat-Q8_0")
+	mpEmbed = models.MustFullPath("embeddinggemma-300m-qat-Q8_0")
 
 	fmt.Println("MustRetrieveModel bge-reranker-v2-m3-Q8_0...")
-	mpRerank = models.MustRetrieveModel("bge-reranker-v2-m3-Q8_0")
+	mpRerank = models.MustFullPath("bge-reranker-v2-m3-Q8_0")
 
 	if os.Getenv("GITHUB_ACTIONS") != "true" {
 		fmt.Println("MustRetrieveModel gpt-oss-20b-Q8_0...")
-		mpGPTChat = models.MustRetrieveModel("gpt-oss-20b-Q8_0")
+		mpGPTChat = models.MustFullPath("gpt-oss-20b-Q8_0")
 
 		fmt.Println("MustRetrieveModel Qwen2-Audio-7B.Q8_0...")
-		mpAudio = models.MustRetrieveModel("Qwen2-Audio-7B.Q8_0")
+		mpAudio = models.MustFullPath("Qwen2-Audio-7B.Q8_0")
 	}
 
 	// -------------------------------------------------------------------------

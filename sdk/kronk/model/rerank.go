@@ -198,7 +198,7 @@ func (m *Model) Rerank(ctx context.Context, d D) (RerankResponse, error) {
 // formatRerankPair formats a query-document pair for reranker models.
 // Most BGE-style rerankers expect pairs without explicit prefixes.
 func formatRerankPair(query, document string) string {
-	return query + " " + document
+	return fmt.Sprintf("%s %s", query, document)
 }
 
 // sigmoid applies the sigmoid function to normalize a raw logit to [0, 1].

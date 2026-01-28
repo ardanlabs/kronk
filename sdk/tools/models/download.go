@@ -38,7 +38,7 @@ func (m *Models) DownloadShards(ctx context.Context, log Logger, modelURLs []str
 	modelID := extractModelID(modelFileName)
 
 	if !hasNetwork() {
-		mp, err := m.RetrievePath(modelID)
+		mp, err := m.FullPath(modelID)
 		if err != nil {
 			return Path{}, fmt.Errorf("download-shards: no network available: %w", err)
 		}
@@ -75,7 +75,7 @@ func (m *Models) DownloadShards(ctx context.Context, log Logger, modelURLs []str
 		if errOrg != nil {
 			log(ctx, "download-shards:", "ERROR", errOrg, "model-file-url", modelURL)
 
-			if mp, err := m.RetrievePath(modelID); err == nil && len(mp.ModelFiles) > 0 {
+			if mp, err := m.FullPath(modelID); err == nil && len(mp.ModelFiles) > 0 {
 				size, err := fileSize(mp.ModelFiles[0])
 				if err != nil {
 					return Path{}, fmt.Errorf("download-model: unable to check file size of model: %w", err)

@@ -409,6 +409,36 @@ export default function ModelList() {
             </div>
           )}
 
+          {modelInfo.vram && (
+            <div style={{ marginTop: '16px' }}>
+              <label style={{ fontWeight: 500, display: 'block', marginBottom: '8px' }}>
+                VRAM Requirements
+              </label>
+              <div className="model-meta">
+                <div className="model-meta-item">
+                  <label>KV Per Token/Layer</label>
+                  <span>{formatBytes(modelInfo.vram.kv_per_token_per_layer)}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>KV Per Slot</label>
+                  <span>{formatBytes(modelInfo.vram.kv_per_slot)}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>Total Slots</label>
+                  <span>{modelInfo.vram.total_slots}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>Slot Memory</label>
+                  <span>{formatBytes(modelInfo.vram.slot_memory)}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>Total VRAM</label>
+                  <span>{formatBytes(modelInfo.vram.total_vram)}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
           {modelInfo.metadata && Object.keys(modelInfo.metadata).filter(k => k !== 'tokenizer.chat_template').length > 0 && (
             <div style={{ marginTop: '16px' }}>
               <label style={{ fontWeight: 500, display: 'block', marginBottom: '8px' }}>

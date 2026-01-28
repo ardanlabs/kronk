@@ -48,22 +48,26 @@ func runWeb(args []string) error {
 func runLocal(mdls *models.Models, catalog *catalog.Catalog, args []string) error {
 	modelID := args[0]
 
-	catModelID, _, _ := strings.Cut(modelID, "/")
-
-	model, err := catalog.RetrieveModelDetails(catModelID)
+	catDetails, err := catalog.Details(modelID)
 	if err != nil {
 		return fmt.Errorf("retrieve-model-details: %w", err)
 	}
 
 	var mi *models.ModelInfo
-	miTmp, err := mdls.RetrieveModelInfo(catModelID)
+	miTmp, err := mdls.ModelInformation(modelID)
 	if err == nil {
 		mi = &miTmp
 	}
 
-	mc := catalog.RetrieveModelConfig(modelID)
+	rmc := catalog.ResolvedModelConfig(modelID)
 
-	printLocal(model, mc, mi)
+	var vram *models.VRAM
+	vramTmp, err := catalog.CalculateVRAM(modelID, rmc)
+	if err == nil {
+		vram = &vramTmp
+	}
+
+	printLocal(catDetails, rmc, mi, vram)
 
 	return nil
 }
@@ -71,6 +75,7 @@ func runLocal(mdls *models.Models, catalog *catalog.Catalog, args []string) erro
 // =============================================================================
 
 func printWeb(model toolapp.CatalogModelResponse) {
+	fmt.Println()
 	fmt.Println("Model Details")
 	fmt.Println("=============")
 	fmt.Printf("ID:           %s\n", model.ID)
@@ -80,6 +85,17 @@ func printWeb(model toolapp.CatalogModelResponse) {
 	fmt.Printf("Web Page:     %s\n", model.WebPage)
 	fmt.Printf("Gated Model:  %t\n", model.GatedModel)
 	fmt.Println()
+
+	if model.VRAM != nil {
+		fmt.Println("VRAM Requirements")
+		fmt.Println("-----------------")
+		fmt.Printf("KV Per Token/Layer: %s\n", formatBytes(model.VRAM.KVPerTokenPerLayer))
+		fmt.Printf("KV Per Slot:        %s\n", formatBytes(model.VRAM.KVPerSlot))
+		fmt.Printf("Total Slots:        %d\n", model.VRAM.TotalSlots)
+		fmt.Printf("Slot Memory:        %s\n", formatBytes(model.VRAM.SlotMemory))
+		fmt.Printf("Total VRAM:         %s\n", formatBytes(model.VRAM.TotalVRAM))
+		fmt.Println()
+	}
 
 	fmt.Println("Files")
 	fmt.Println("-----")
@@ -143,65 +159,76 @@ func printWeb(model toolapp.CatalogModelResponse) {
 	}
 }
 
-func printLocal(model catalog.Model, mc catalog.ModelConfig, mi *models.ModelInfo) {
+func printLocal(catDetails catalog.ModelDetails, rmc catalog.ModelConfig, mi *models.ModelInfo, vram *models.VRAM) {
+	fmt.Println()
 	fmt.Println("Model Details")
 	fmt.Println("=============")
-	fmt.Printf("ID:           %s\n", model.ID)
-	fmt.Printf("Category:     %s\n", model.Category)
-	fmt.Printf("Owned By:     %s\n", model.OwnedBy)
-	fmt.Printf("Model Family: %s\n", model.ModelFamily)
-	fmt.Printf("Web Page:     %s\n", model.WebPage)
+	fmt.Printf("ID:           %s\n", catDetails.ID)
+	fmt.Printf("Category:     %s\n", catDetails.Category)
+	fmt.Printf("Owned By:     %s\n", catDetails.OwnedBy)
+	fmt.Printf("Model Family: %s\n", catDetails.ModelFamily)
+	fmt.Printf("Web Page:     %s\n", catDetails.WebPage)
 	fmt.Println()
+
+	if vram != nil {
+		fmt.Println("VRAM Requirements")
+		fmt.Println("-----------------")
+		fmt.Printf("KV Per Token/Layer: %s\n", formatBytes(vram.KVPerTokenPerLayer))
+		fmt.Printf("KV Per Slot:        %s\n", formatBytes(vram.KVPerSlot))
+		fmt.Printf("Total Slots:        %d\n", vram.TotalSlots)
+		fmt.Printf("Slot Memory:        %s\n", formatBytes(vram.SlotMemory))
+		fmt.Printf("Total VRAM:         %s\n", formatBytes(vram.TotalVRAM))
+		fmt.Println()
+	}
 
 	fmt.Println("Files")
 	fmt.Println("-----")
-	if len(model.Files.Models) > 0 {
-		for _, model := range model.Files.Models {
+	if len(catDetails.Files.Models) > 0 {
+		for _, model := range catDetails.Files.Models {
 			fmt.Printf("Model:        %s (%s)\n", model.URL, model.Size)
 		}
 	}
 
-	if model.Files.Proj.URL != "" {
-		fmt.Printf("Proj:         %s (%s)\n", model.Files.Proj.URL, model.Files.Proj.Size)
+	if catDetails.Files.Proj.URL != "" {
+		fmt.Printf("Proj:         %s (%s)\n", catDetails.Files.Proj.URL, catDetails.Files.Proj.Size)
 	}
 
 	fmt.Println()
-
 	fmt.Println("Capabilities")
 	fmt.Println("------------")
-	fmt.Printf("Endpoint:     %s\n", model.Capabilities.Endpoint)
-	fmt.Printf("Images:       %t\n", model.Capabilities.Images)
-	fmt.Printf("Audio:        %t\n", model.Capabilities.Audio)
-	fmt.Printf("Video:        %t\n", model.Capabilities.Video)
-	fmt.Printf("Streaming:    %t\n", model.Capabilities.Streaming)
-	fmt.Printf("Reasoning:    %t\n", model.Capabilities.Reasoning)
-	fmt.Printf("Tooling:      %t\n", model.Capabilities.Tooling)
-	fmt.Printf("Embedding:    %t\n", model.Capabilities.Embedding)
-	fmt.Printf("Rerank:       %t\n", model.Capabilities.Rerank)
+	fmt.Printf("Endpoint:     %s\n", catDetails.Capabilities.Endpoint)
+	fmt.Printf("Images:       %t\n", catDetails.Capabilities.Images)
+	fmt.Printf("Audio:        %t\n", catDetails.Capabilities.Audio)
+	fmt.Printf("Video:        %t\n", catDetails.Capabilities.Video)
+	fmt.Printf("Streaming:    %t\n", catDetails.Capabilities.Streaming)
+	fmt.Printf("Reasoning:    %t\n", catDetails.Capabilities.Reasoning)
+	fmt.Printf("Tooling:      %t\n", catDetails.Capabilities.Tooling)
+	fmt.Printf("Embedding:    %t\n", catDetails.Capabilities.Embedding)
+	fmt.Printf("Rerank:       %t\n", catDetails.Capabilities.Rerank)
 	fmt.Println()
 
 	fmt.Println("Metadata")
 	fmt.Println("--------")
-	fmt.Printf("Created:      %s\n", model.Metadata.Created.Format("2006-01-02"))
-	fmt.Printf("Collections:  %s\n", model.Metadata.Collections)
-	fmt.Printf("Description:  %s\n", model.Metadata.Description)
+	fmt.Printf("Created:      %s\n", catDetails.Metadata.Created.Format("2006-01-02"))
+	fmt.Printf("Collections:  %s\n", catDetails.Metadata.Collections)
+	fmt.Printf("Description:  %s\n", catDetails.Metadata.Description)
 	fmt.Println()
 
 	fmt.Println("Model Config")
 	fmt.Println("------------")
-	fmt.Printf("Device:               %s\n", mc.Device)
-	fmt.Printf("Context Window:       %d\n", mc.ContextWindow)
-	fmt.Printf("NBatch:               %d\n", mc.NBatch)
-	fmt.Printf("NUBatch:              %d\n", mc.NUBatch)
-	fmt.Printf("NThreads:             %d\n", mc.NThreads)
-	fmt.Printf("NThreadsBatch:        %d\n", mc.NThreadsBatch)
-	fmt.Printf("CacheTypeK:           %s\n", mc.CacheTypeK)
-	fmt.Printf("CacheTypeV:           %s\n", mc.CacheTypeV)
-	fmt.Printf("FlashAttention:       %v\n", mc.FlashAttention)
-	fmt.Printf("NSeqMax:              %d\n", mc.NSeqMax)
-	fmt.Printf("SystemPromptCache:    %t\n", mc.SystemPromptCache)
-	fmt.Printf("FirstMessageCache:    %t\n", mc.FirstMessageCache)
-	fmt.Printf("CacheMinTokens:       %d\n", mc.CacheMinTokens)
+	fmt.Printf("Device:               %s\n", rmc.Device)
+	fmt.Printf("Context Window:       %d\n", rmc.ContextWindow)
+	fmt.Printf("NBatch:               %d\n", rmc.NBatch)
+	fmt.Printf("NUBatch:              %d\n", rmc.NUBatch)
+	fmt.Printf("NThreads:             %d\n", rmc.NThreads)
+	fmt.Printf("NThreadsBatch:        %d\n", rmc.NThreadsBatch)
+	fmt.Printf("CacheTypeK:           %s\n", rmc.CacheTypeK)
+	fmt.Printf("CacheTypeV:           %s\n", rmc.CacheTypeV)
+	fmt.Printf("FlashAttention:       %v\n", rmc.FlashAttention)
+	fmt.Printf("NSeqMax:              %d\n", rmc.NSeqMax)
+	fmt.Printf("SystemPromptCache:    %t\n", rmc.SystemPromptCache)
+	fmt.Printf("FirstMessageCache:    %t\n", rmc.FirstMessageCache)
+	fmt.Printf("CacheMinTokens:       %d\n", rmc.CacheMinTokens)
 	fmt.Println()
 
 	if mi != nil && mi.Metadata != nil {
@@ -229,4 +256,23 @@ func formatMetadataValue(value string) string {
 	first := elements[:3]
 
 	return fmt.Sprintf("[%s, ...]", strings.Join(first, ", "))
+}
+
+func formatBytes(b int64) string {
+	const (
+		kb int64 = 1024
+		mb       = kb * 1024
+		gb       = mb * 1024
+	)
+
+	switch {
+	case b >= gb:
+		return fmt.Sprintf("%.2f GB", float64(b)/float64(gb))
+	case b >= mb:
+		return fmt.Sprintf("%.2f MB", float64(b)/float64(mb))
+	case b >= kb:
+		return fmt.Sprintf("%.2f KB", float64(b)/float64(kb))
+	default:
+		return fmt.Sprintf("%d bytes", b)
+	}
 }

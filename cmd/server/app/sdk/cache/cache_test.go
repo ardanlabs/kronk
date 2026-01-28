@@ -373,7 +373,7 @@ func findAvailableModel(t *testing.T, notModelID string) string {
 		t.Fatalf("creating models system: %s", err)
 	}
 
-	modelFiles, err := models.RetrieveFiles()
+	modelFiles, err := models.Files()
 	if err != nil {
 		t.Skip("no models available for testing - skipping")
 	}

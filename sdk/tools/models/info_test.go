@@ -45,7 +45,7 @@ func TestModelMetadata(t *testing.T) {
 
 	modelID := "Qwen3-8B-Q8_0"
 
-	info, err := m.RetrieveModelInfo(modelID)
+	info, err := m.ModelInformation(modelID)
 	if err != nil {
 		t.Fatalf("ModelMetadata failed: %v", err)
 	}

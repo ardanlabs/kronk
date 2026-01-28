@@ -54,9 +54,11 @@ type ModelInfo struct {
 
 // =============================================================================
 
-// RetrieveModelInfo reads a GGUF model file and extracts its metadata.
-func (m *Models) RetrieveModelInfo(modelID string) (ModelInfo, error) {
-	path, err := m.RetrievePath(modelID)
+// ModelInformation reads a GGUF model file and extracts model information.
+func (m *Models) ModelInformation(modelID string) (ModelInfo, error) {
+	modelID, _, _ = strings.Cut(modelID, "/")
+
+	path, err := m.FullPath(modelID)
 	if err != nil {
 		return ModelInfo{}, fmt.Errorf("failed to retrieve path modelID[%s] file: %w", modelID, err)
 	}

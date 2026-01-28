@@ -27,7 +27,6 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -170,8 +169,8 @@ type BatchProcessor struct {
 
 // NewBatchProcessor creates a new batch processor.
 func NewBatchProcessor(modelPath string, nParallel, nPredict int) (*BatchProcessor, error) {
-	if err := kronk.Init(); err != nil {
-		return nil, fmt.Errorf("unable to init kronk: %w", err)
+	if err := initYzma(); err != nil {
+		return nil, fmt.Errorf("unable to init yzma: %w", err)
 	}
 
 	// Load model.
@@ -420,7 +419,7 @@ func (bp *BatchProcessor) startSlot(s *slot, req *InferenceRequest) {
 	s.maxTokens = int32(maxTokens)
 
 	// Build prompt in Qwen3 ChatML format.
-	prompt := "<|im_start|>user\n" + req.Prompt + "<|im_end|>\n<|im_start|>assistant\n"
+	prompt := fmt.Sprintf("<|im_start|>user\n%s<|im_end|>\n<|im_start|>assistant\n", req.Prompt)
 
 	llama.SamplerReset(s.sampler)
 
@@ -736,4 +735,22 @@ func setLogit(batch *llama.Batch, idx int32, logits bool) {
 	case false:
 		*logitPtr = 0
 	}
+}
+
+func initYzma() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("unable to get home dir: %w", err)
+	}
+
+	libPath := filepath.Join(home, ".kronk/libraries")
+
+	if err := llama.Load(libPath); err != nil {
+		return fmt.Errorf("unable to load library: %w", err)
+	}
+
+	llama.Init()
+	llama.LogSet(llama.LogSilent())
+
+	return nil
 }
