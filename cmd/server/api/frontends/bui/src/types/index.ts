@@ -110,7 +110,20 @@ export interface CatalogFiles {
   proj: CatalogFile;
 }
 
+export interface VRAMInput {
+  model_size_bytes: number;
+  context_window: number;
+  block_count: number;
+  head_count_kv: number;
+  key_length: number;
+  value_length: number;
+  bytes_per_element: number;
+  slots: number;
+  cache_sequences: number;
+}
+
 export interface VRAM {
+  input: VRAMInput;
   kv_per_token_per_layer: number;
   kv_per_slot: number;
   total_slots: number;
@@ -283,4 +296,21 @@ export interface ChatStreamResponse {
   model: string;
   choices: ChatChoice[];
   usage?: ChatUsage;
+}
+
+export interface VRAMRequest {
+  model_url: string;
+  context_window: number;
+  bytes_per_element: number;
+  slots: number;
+  cache_sequences: number;
+}
+
+export interface VRAMCalculatorResponse {
+  input: VRAMInput;
+  kv_per_token_per_layer: number;
+  kv_per_slot: number;
+  total_slots: number;
+  slot_memory: number;
+  total_vram: number;
 }

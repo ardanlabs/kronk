@@ -459,8 +459,12 @@ export default function CatalogList() {
                   <h4 style={{ marginBottom: '12px' }}>VRAM Requirements</h4>
                   <div className="model-meta">
                     <div className="model-meta-item">
-                      <label>KV Per Token/Layer</label>
-                      <span>{formatBytes(modelInfo.vram.kv_per_token_per_layer)}</span>
+                      <label>Total VRAM</label>
+                      <span>{formatBytes(modelInfo.vram.total_vram)}</span>
+                    </div>
+                    <div className="model-meta-item">
+                      <label>Slot Memory (KV Cache)</label>
+                      <span>{formatBytes(modelInfo.vram.slot_memory)}</span>
                     </div>
                     <div className="model-meta-item">
                       <label>KV Per Slot</label>
@@ -471,12 +475,31 @@ export default function CatalogList() {
                       <span>{modelInfo.vram.total_slots}</span>
                     </div>
                     <div className="model-meta-item">
-                      <label>Slot Memory</label>
-                      <span>{formatBytes(modelInfo.vram.slot_memory)}</span>
+                      <label>KV Per Token/Layer</label>
+                      <span>{formatBytes(modelInfo.vram.kv_per_token_per_layer)}</span>
+                    </div>
+                  </div>
+                  <div style={{ marginTop: '2rem' }} />
+                  <div className="model-meta">
+                    <div className="model-meta-item">
+                      <label>Model Size</label>
+                      <span>{formatBytes(modelInfo.vram.input.model_size_bytes)}</span>
                     </div>
                     <div className="model-meta-item">
-                      <label>Total VRAM</label>
-                      <span>{formatBytes(modelInfo.vram.total_vram)}</span>
+                      <label>Block Count (Layers)</label>
+                      <span>{modelInfo.vram.input.block_count}</span>
+                    </div>
+                    <div className="model-meta-item">
+                      <label>Head Count KV</label>
+                      <span>{modelInfo.vram.input.head_count_kv}</span>
+                    </div>
+                    <div className="model-meta-item">
+                      <label>Key Length</label>
+                      <span>{modelInfo.vram.input.key_length}</span>
+                    </div>
+                    <div className="model-meta-item">
+                      <label>Value Length</label>
+                      <span>{modelInfo.vram.input.value_length}</span>
                     </div>
                   </div>
                 </div>

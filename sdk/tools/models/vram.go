@@ -11,22 +11,64 @@ import (
 	"strconv"
 )
 
+// Context window size constants (in tokens).
+const (
+	ContextWindow1K   int64 = 1024
+	ContextWindow2K   int64 = 2048
+	ContextWindow4K   int64 = 4096
+	ContextWindow8K   int64 = 8192
+	ContextWindow16K  int64 = 16384
+	ContextWindow32K  int64 = 32768
+	ContextWindow64K  int64 = 65536
+	ContextWindow128K int64 = 131072
+	ContextWindow256K int64 = 262144
+)
+
+// Bytes per element constants for cache types.
+const (
+	BytesPerElementF32  int64 = 4 // 32-bit float
+	BytesPerElementF16  int64 = 2 // 16-bit float
+	BytesPerElementBF16 int64 = 2 // Brain float 16
+	BytesPerElementQ8_0 int64 = 1 // 8-bit quantization
+	BytesPerElementQ4_0 int64 = 1 // 4-bit quantization
+	BytesPerElementQ4_1 int64 = 1 // 4-bit quantization
+	BytesPerElementQ5_0 int64 = 1 // 5-bit quantization
+	BytesPerElementQ5_1 int64 = 1 // 5-bit quantization
+)
+
+// Slot count constants.
+const (
+	Slots1 int64 = 1
+	Slots2 int64 = 2
+	Slots3 int64 = 3
+	Slots4 int64 = 4
+	Slots5 int64 = 5
+)
+
+// Cache sequence constants.
+const (
+	CacheSequenceNone   int64 = 0 // No caching
+	CacheSequenceSingle int64 = 1 // FMC or SPC
+	CacheSequenceBoth   int64 = 2 // FMC + SPC
+)
+
 // VRAMConfig contains the user-provided parameters for VRAM calculation
 // that cannot be extracted from the model file.
 type VRAMConfig struct {
 	ContextWindow   int64 // n_ctx - context window size (e.g., 8192, 131072)
 	BytesPerElement int64 // Depends on cache type: q8_0=1, f16=2
 	Slots           int64 // n_seq_max - number of concurrent sequences
-	CacheSequences  int64 // Additional sequences for caching: 0=none, 1=FMC, 2=FMC+SPC
+	CacheSequences  int64 // Additional sequences for caching: 0=none, 1=FMC or SPC, 2=FMC+SPC
 }
 
 // VRAM contains the calculated VRAM requirements.
 type VRAM struct {
-	KVPerTokenPerLayer int64 // Bytes per token per layer
-	KVPerSlot          int64 // Bytes per slot
-	TotalSlots         int64 // Slots + CacheSequences
-	SlotMemory         int64 // Total KV cache memory in bytes
-	TotalVRAM          int64 // Model size + slot memory in bytes
+	Input              VRAMInput // Input parameters used for calculation
+	KVPerTokenPerLayer int64     // Bytes per token per layer
+	KVPerSlot          int64     // Bytes per slot
+	TotalSlots         int64     // Slots + CacheSequences
+	SlotMemory         int64     // Total KV cache memory in bytes
+	TotalVRAM          int64     // Model size + slot memory in bytes
 }
 
 // CalculateVRAM retrieves model metadata and computes the VRAM requirements.
@@ -118,6 +160,7 @@ func CalculateVRAM(input VRAMInput) VRAM {
 	totalVRAM := input.ModelSizeBytes + slotMemory
 
 	return VRAM{
+		Input:              input,
 		KVPerTokenPerLayer: kvPerTokenPerLayer,
 		KVPerSlot:          kvPerSlot,
 		TotalSlots:         totalSlots,
@@ -131,10 +174,10 @@ func CalculateVRAM(input VRAMInput) VRAM {
 // CalculateVRAMFromHuggingFace fetches GGUF metadata from HuggingFace using HTTP
 // Range requests and calculates VRAM requirements. Only the header is downloaded,
 // not the entire model file.
-func CalculateVRAMFromHuggingFace(ctx context.Context, url string, cfg VRAMConfig) (VRAM, error) {
-	url = NormalizeHuggingFaceURL(url)
+func CalculateVRAMFromHuggingFace(ctx context.Context, modelURL string, cfg VRAMConfig) (VRAM, error) {
+	modelURL = NormalizeHuggingFaceDownloadURL(modelURL)
 
-	metadata, fileSize, err := fetchGGUFMetadata(ctx, url)
+	metadata, fileSize, err := fetchGGUFMetadata(ctx, modelURL)
 	if err != nil {
 		return VRAM{}, fmt.Errorf("failed to fetch GGUF metadata: %w", err)
 	}
@@ -275,10 +318,11 @@ func fetchRange(ctx context.Context, client *http.Client, url string, start, end
 	}
 
 	var fileSize int64
-	if resp.ContentLength > 0 && resp.StatusCode == http.StatusOK {
+	if cr := resp.Header.Get("Content-Range"); cr != "" {
+		var start, end int64
+		fmt.Sscanf(cr, "bytes %d-%d/%d", &start, &end, &fileSize)
+	} else if resp.ContentLength > 0 && resp.StatusCode == http.StatusOK {
 		fileSize = resp.ContentLength
-	} else if cr := resp.Header.Get("Content-Range"); cr != "" {
-		fmt.Sscanf(cr, "bytes %*d-%*d/%d", &fileSize)
 	}
 
 	data, err := io.ReadAll(resp.Body)

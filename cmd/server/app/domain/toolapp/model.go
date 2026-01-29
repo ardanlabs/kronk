@@ -247,6 +247,17 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfi
 			},
 		},
 		VRAM: &VRAM{
+			Input: VRAMInput{
+				ModelSizeBytes:  vram.Input.ModelSizeBytes,
+				ContextWindow:   vram.Input.ContextWindow,
+				BlockCount:      vram.Input.BlockCount,
+				HeadCountKV:     vram.Input.HeadCountKV,
+				KeyLength:       vram.Input.KeyLength,
+				ValueLength:     vram.Input.ValueLength,
+				BytesPerElement: vram.Input.BytesPerElement,
+				Slots:           vram.Input.Slots,
+				CacheSequences:  vram.Input.CacheSequences,
+			},
 			KVPerTokenPerLayer: vram.KVPerTokenPerLayer,
 			KVPerSlot:          vram.KVPerSlot,
 			TotalSlots:         vram.TotalSlots,
@@ -315,13 +326,27 @@ func toModelDetails(models []cache.ModelDetail) ModelDetailsResponse {
 
 // =============================================================================
 
+// VRAMInput contains the input parameters used for VRAM calculation.
+type VRAMInput struct {
+	ModelSizeBytes  int64 `json:"model_size_bytes"`
+	ContextWindow   int64 `json:"context_window"`
+	BlockCount      int64 `json:"block_count"`
+	HeadCountKV     int64 `json:"head_count_kv"`
+	KeyLength       int64 `json:"key_length"`
+	ValueLength     int64 `json:"value_length"`
+	BytesPerElement int64 `json:"bytes_per_element"`
+	Slots           int64 `json:"slots"`
+	CacheSequences  int64 `json:"cache_sequences"`
+}
+
 // VRAM contains the calculated VRAM requirements.
 type VRAM struct {
-	KVPerTokenPerLayer int64 `json:"kv_per_token_per_layer"`
-	KVPerSlot          int64 `json:"kv_per_slot"`
-	TotalSlots         int64 `json:"total_slots"`
-	SlotMemory         int64 `json:"slot_memory"`
-	TotalVRAM          int64 `json:"total_vram"`
+	Input              VRAMInput `json:"input"`
+	KVPerTokenPerLayer int64     `json:"kv_per_token_per_layer"`
+	KVPerSlot          int64     `json:"kv_per_slot"`
+	TotalSlots         int64     `json:"total_slots"`
+	SlotMemory         int64     `json:"slot_memory"`
+	TotalVRAM          int64     `json:"total_vram"`
 }
 
 // SamplingConfig represents sampling parameters for model inference.
@@ -528,6 +553,17 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 
 	if vram != nil {
 		resp.VRAM = &VRAM{
+			Input: VRAMInput{
+				ModelSizeBytes:  vram.Input.ModelSizeBytes,
+				ContextWindow:   vram.Input.ContextWindow,
+				BlockCount:      vram.Input.BlockCount,
+				HeadCountKV:     vram.Input.HeadCountKV,
+				KeyLength:       vram.Input.KeyLength,
+				ValueLength:     vram.Input.ValueLength,
+				BytesPerElement: vram.Input.BytesPerElement,
+				Slots:           vram.Input.Slots,
+				CacheSequences:  vram.Input.CacheSequences,
+			},
 			KVPerTokenPerLayer: vram.KVPerTokenPerLayer,
 			KVPerSlot:          vram.KVPerSlot,
 			TotalSlots:         vram.TotalSlots,
@@ -606,6 +642,38 @@ type TokenResponse struct {
 
 // Encode implements the encoder interface.
 func (app TokenResponse) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(app)
+	return data, "application/json", err
+}
+
+// =============================================================================
+
+// VRAMRequest represents the input for VRAM calculation.
+type VRAMRequest struct {
+	ModelURL        string `json:"model_url"`
+	ContextWindow   int64  `json:"context_window"`
+	BytesPerElement int64  `json:"bytes_per_element"`
+	Slots           int64  `json:"slots"`
+	CacheSequences  int64  `json:"cache_sequences"`
+}
+
+// Decode implements the decoder interface.
+func (app *VRAMRequest) Decode(data []byte) error {
+	return json.Unmarshal(data, app)
+}
+
+// VRAMResponse represents the VRAM calculation results.
+type VRAMResponse struct {
+	Input              VRAMInput `json:"input"`
+	KVPerTokenPerLayer int64     `json:"kv_per_token_per_layer"`
+	KVPerSlot          int64     `json:"kv_per_slot"`
+	TotalSlots         int64     `json:"total_slots"`
+	SlotMemory         int64     `json:"slot_memory"`
+	TotalVRAM          int64     `json:"total_vram"`
+}
+
+// Encode implements the encoder interface.
+func (app VRAMResponse) Encode() ([]byte, string, error) {
 	data, err := json.Marshal(app)
 	return data, "application/json", err
 }

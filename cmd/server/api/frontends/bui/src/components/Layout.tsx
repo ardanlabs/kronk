@@ -113,7 +113,10 @@ const menuStructure: MenuCategory[] = [
   {
     id: 'apps',
     label: 'Apps',
-    items: [{ page: 'chat', label: 'Chat' }],
+    items: [
+      { page: 'chat', label: 'Chat' },
+      { page: 'vram-calculator', label: 'VRAM Calculator' },
+    ],
   },
 ];
 

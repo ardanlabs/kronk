@@ -43,6 +43,7 @@ func Routes(app *web.App, cfg Config) {
 	app.HandlerFunc(http.MethodGet, version, "/models/ps", api.modelPS, auth)
 	app.HandlerFunc(http.MethodPost, version, "/models/index", api.indexModels, authAdmin)
 	app.HandlerFunc(http.MethodPost, version, "/models/pull", api.pullModels, authAdmin)
+	app.HandlerFunc(http.MethodPost, version, "/models/vram", api.calculateVRAM, auth)
 	app.HandlerFunc(http.MethodDelete, version, "/models/{model}", api.removeModel, authAdmin)
 
 	app.HandlerFunc(http.MethodGet, version, "/catalog", api.listCatalog, auth)

@@ -1586,3 +1586,78 @@ tr.selected:hover td {
     vertical-align: middle;
     cursor: help;
 }
+
+/* VRAM Calculator */
+.form-card {
+    background: var(--color-white);
+    border-radius: 8px;
+    padding: 24px;
+    margin-bottom: 20px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.form-input,
+.form-select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--color-gray-300);
+    border-radius: 6px;
+    font-size: 14px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.form-input:focus,
+.form-select:focus {
+    outline: none;
+    border-color: var(--color-light-blue);
+    box-shadow: 0 0 0 3px rgba(134, 213, 228, 0.2);
+}
+
+.form-hint {
+    display: block;
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--color-gray-600);
+}
+
+.vram-results {
+    margin-top: 20px;
+}
+
+.vram-results h3 {
+    margin-bottom: 16px;
+    color: var(--color-blue);
+}
+
+.vram-results-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+}
+
+.vram-result-item {
+    background: var(--color-gray-100);
+    padding: 16px;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.vram-result-label {
+    font-size: 12px;
+    color: var(--color-gray-600);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.vram-result-value {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--color-gray-800);
+}
+
+.vram-result-total {
+    font-size: 24px;
+    color: var(--color-orange);
+}
