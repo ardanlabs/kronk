@@ -22,7 +22,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/templates"
 )
 
-const modelURL = "https://huggingface.co/gpustack/bge-reranker-v2-m3-GGUF/resolve/main/bge-reranker-v2-m3-Q8_0.gguf"
+const modelURL = "gpustack/bge-reranker-v2-m3-GGUF/bge-reranker-v2-m3-Q8_0.gguf"
 
 func main() {
 	if err := run(); err != nil {

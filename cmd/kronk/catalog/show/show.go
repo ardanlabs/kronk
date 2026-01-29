@@ -82,7 +82,7 @@ func printWeb(model toolapp.CatalogModelResponse) {
 	fmt.Printf("Category:     %s\n", model.Category)
 	fmt.Printf("Owned By:     %s\n", model.OwnedBy)
 	fmt.Printf("Model Family: %s\n", model.ModelFamily)
-	fmt.Printf("Web Page:     %s\n", model.WebPage)
+	fmt.Printf("Web Page:     %s\n", models.NormalizeHuggingFaceURL(model.WebPage))
 	fmt.Printf("Gated Model:  %t\n", model.GatedModel)
 	fmt.Println()
 
@@ -101,11 +101,11 @@ func printWeb(model toolapp.CatalogModelResponse) {
 	fmt.Println("-----")
 
 	for _, model := range model.Files.Models {
-		fmt.Printf("Model:        %s (%s)\n", model.URL, model.Size)
+		fmt.Printf("Model:        %s (%s)\n", models.NormalizeHuggingFaceDownloadURL(model.URL), model.Size)
 	}
 
 	if model.Files.Proj.URL != "" {
-		fmt.Printf("Proj:         %s (%s)\n", model.Files.Proj.URL, model.Files.Proj.Size)
+		fmt.Printf("Proj:         %s (%s)\n", models.NormalizeHuggingFaceDownloadURL(model.Files.Proj.URL), model.Files.Proj.Size)
 	}
 
 	fmt.Println()
@@ -167,7 +167,7 @@ func printLocal(catDetails catalog.ModelDetails, rmc catalog.ModelConfig, mi *mo
 	fmt.Printf("Category:     %s\n", catDetails.Category)
 	fmt.Printf("Owned By:     %s\n", catDetails.OwnedBy)
 	fmt.Printf("Model Family: %s\n", catDetails.ModelFamily)
-	fmt.Printf("Web Page:     %s\n", catDetails.WebPage)
+	fmt.Printf("Web Page:     %s\n", models.NormalizeHuggingFaceURL(catDetails.WebPage))
 	fmt.Println()
 
 	if vram != nil {
@@ -185,12 +185,12 @@ func printLocal(catDetails catalog.ModelDetails, rmc catalog.ModelConfig, mi *mo
 	fmt.Println("-----")
 	if len(catDetails.Files.Models) > 0 {
 		for _, model := range catDetails.Files.Models {
-			fmt.Printf("Model:        %s (%s)\n", model.URL, model.Size)
+			fmt.Printf("Model:        %s (%s)\n", models.NormalizeHuggingFaceDownloadURL(model.URL), model.Size)
 		}
 	}
 
 	if catDetails.Files.Proj.URL != "" {
-		fmt.Printf("Proj:         %s (%s)\n", catDetails.Files.Proj.URL, catDetails.Files.Proj.Size)
+		fmt.Printf("Proj:         %s (%s)\n", models.NormalizeHuggingFaceDownloadURL(catDetails.Files.Proj.URL), catDetails.Files.Proj.Size)
 	}
 
 	fmt.Println()

@@ -60,15 +60,15 @@ func Test_Catalog(t *testing.T) {
 				Category:    "Text-Generation",
 				OwnedBy:     "unsloth",
 				ModelFamily: "Llama-3.3-70B-Instruct-GGUF",
-				WebPage:     "https://huggingface.co/unsloth/Llama-3.3-70B-Instruct-GGUF",
+				WebPage:     "unsloth/Llama-3.3-70B-Instruct-GGUF",
 				Files: catalog.Files{
 					Models: []catalog.File{
 						{
-							URL:  "https://huggingface.co/unsloth/Llama-3.3-70B-Instruct-GGUF/resolve/main/Llama-3.3-70B-Instruct-Q8_0/Llama-3.3-70B-Instruct-Q8_0-00001-of-00002.gguf",
+							URL:  "unsloth/Llama-3.3-70B-Instruct-GGUF/Llama-3.3-70B-Instruct-Q8_0/Llama-3.3-70B-Instruct-Q8_0-00001-of-00002.gguf",
 							Size: "39.8 GiB",
 						},
 						{
-							URL:  "https://huggingface.co/unsloth/Llama-3.3-70B-Instruct-GGUF/resolve/main/Llama-3.3-70B-Instruct-Q8_0/Llama-3.3-70B-Instruct-Q8_0-00002-of-00002.gguf",
+							URL:  "unsloth/Llama-3.3-70B-Instruct-GGUF/Llama-3.3-70B-Instruct-Q8_0/Llama-3.3-70B-Instruct-Q8_0-00002-of-00002.gguf",
 							Size: "35.2 GiB",
 						},
 					},
@@ -88,7 +88,7 @@ func Test_Catalog(t *testing.T) {
 				},
 				Metadata: catalog.Metadata{
 					Created:     time.Date(2025, 5, 10, 0, 0, 0, 0, time.UTC),
-					Collections: "https://huggingface.co/collections/unsloth",
+					Collections: "collections/unsloth",
 					Description: "Llama 3.3 70B is Meta's advanced, multilingual, open-source large language model (LLM) with 70 billion parameters, excelling in complex reasoning, dialogue, and coding tasks, delivering flagship-level performance (like 405B models) with better efficiency, optimized for text-only applications, and featuring improved instruction-following, safety, and tool-use capabilities for enterprise and research use.",
 				},
 			},

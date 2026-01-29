@@ -420,10 +420,8 @@ export default function CatalogList() {
                 <div className="model-meta-item" style={{ marginBottom: '12px' }}>
                   <label>Projection URL</label>
                   <span>
-                    {modelInfo.files.proj.length > 0 ? (
-                      modelInfo.files.proj.map((file, idx) => (
-                        <div key={idx}>{file.url} {file.size && `(${file.size})`}</div>
-                      ))
+                    {modelInfo.files.proj.url ? (
+                      <div>{modelInfo.files.proj.url} {modelInfo.files.proj.size && `(${modelInfo.files.proj.size})`}</div>
                     ) : '-'}
                   </span>
                 </div>

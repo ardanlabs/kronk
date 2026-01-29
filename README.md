@@ -122,7 +122,7 @@ kronk server --help
 
 Kronk uses models in the GGUF format supported by llama.cpp. You can find many models in GGUF format on Hugging Face (over 147k at last count):
 
-https://huggingface.co/models?library=gguf&sort=trending
+models?library=gguf&sort=trending
 
 ## Support
 
@@ -250,14 +250,12 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-const (
-	modelURL       = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
-	modelInstances = 1
-)
+const modelURL = "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
 
 func main() {
 	if err := run(); err != nil {
@@ -267,21 +265,14 @@ func main() {
 }
 
 func run() error {
-	info, err := installSystem()
+	mp, err := installSystem()
 	if err != nil {
 		return fmt.Errorf("unable to installation system: %w", err)
 	}
 
-	if err := kronk.Init(); err != nil {
-		return fmt.Errorf("unable to init kronk: %w", err)
-	}
-
-	krn, err := kronk.New(modelInstances, model.Config{
-		ModelFile: info.ModelFile,
-	})
-
+	krn, err := newKronk(mp)
 	if err != nil {
-		return fmt.Errorf("unable to create inference model: %w", err)
+		return fmt.Errorf("unable to init kronk: %w", err)
 	}
 
 	defer func() {
@@ -291,8 +282,77 @@ func run() error {
 		}
 	}()
 
+	if err := question(krn); err != nil {
+		fmt.Println(err)
+	}
+
+	return nil
+}
+
+func installSystem() (models.Path, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+
+	libs, err := libs.New(
+		libs.WithVersion(defaults.LibVersion("")),
+	)
+	if err != nil {
+		return models.Path{}, err
+	}
+
+	if _, err := libs.Download(ctx, kronk.FmtLogger); err != nil {
+		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
+	}
+
 	// -------------------------------------------------------------------------
 
+	mdls, err := models.New()
+	if err != nil {
+		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
+	}
+
+	mp, err := mdls.Download(ctx, kronk.FmtLogger, modelURL, "")
+	if err != nil {
+		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
+	}
+
+	// -------------------------------------------------------------------------
+	// You could also download this model using the catalog system.
+	// templates.Catalog().DownloadModel("Qwen3-8B-Q8_0")
+
+	return mp, nil
+}
+
+func newKronk(mp models.Path) (*kronk.Kronk, error) {
+	if err := kronk.Init(); err != nil {
+		return nil, fmt.Errorf("unable to init kronk: %w", err)
+	}
+
+	krn, err := kronk.New(model.Config{
+		ModelFiles: mp.ModelFiles,
+		CacheTypeK: model.GGMLTypeQ8_0,
+		CacheTypeV: model.GGMLTypeQ8_0,
+		NSeqMax:    2,
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("unable to create inference model: %w", err)
+	}
+
+	fmt.Print("- system info:\n\t")
+	for k, v := range krn.SystemInfo() {
+		fmt.Printf("%s:%v, ", k, v)
+	}
+	fmt.Println()
+
+	fmt.Println("  - contextWindow:", krn.ModelConfig().ContextWindow)
+	fmt.Println("  - embeddings   :", krn.ModelInfo().IsEmbedModel)
+	fmt.Println("  - isGPT        :", krn.ModelInfo().IsGPTModel)
+
+	return krn, nil
+}
+
+func question(krn *kronk.Kronk) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
@@ -304,7 +364,7 @@ func run() error {
 
 	d := model.D{
 		"messages": model.DocumentArray(
-			model.TextMessage("user", question),
+			model.TextMessage(model.RoleUser, question),
 		),
 		"temperature": 0.7,
 		"top_p":       0.9,
@@ -322,7 +382,7 @@ func run() error {
 	var reasoning bool
 
 	for resp := range ch {
-		switch resp.Choice[0].FinishReason {
+		switch resp.Choice[0].FinishReason() {
 		case model.FinishReasonError:
 			return fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
 
@@ -348,34 +408,6 @@ func run() error {
 
 	return nil
 }
-
-func installSystem() (models.Path, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-	defer cancel()
-
-	libs, err := libs.New()
-	if err != nil {
-		return models.Path{}, err
-	}
-
-	if _, err := libs.Download(ctx, kronk.FmtLogger); err != nil {
-		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
-	}
-
-	// -------------------------------------------------------------------------
-
-	mdls, err := models.New()
-	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
-	}
-
-	mp, err := mdls.Download(ctx, kronk.FmtLogger, modelURL, "")
-	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
-	}
-
-	return mp, nil
-}
 ```
 
 This example can produce the following output:
@@ -387,7 +419,7 @@ CGO_ENABLED=0 go run examples/question/main.go
 download-libraries: status[check libraries version information] arch[arm64] os[darwin] processor[cpu]
 download-libraries: status[check llama.cpp installation] arch[arm64] os[darwin] processor[cpu] latest[b7406] current[b7406]
 download-libraries: status[already installed] latest[b7406] current[b7406]
-download-model: model-url[https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf] proj-url[] model-id[Qwen3-8B-Q8_0]:
+download-model: model-url[Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf] proj-url[] model-id[Qwen3-8B-Q8_0]:
 download-model: waiting to check model status...:
 download-model: status[already exists]:
 

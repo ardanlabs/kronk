@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"time"
 
@@ -61,16 +60,6 @@ func runLocal(models *models.Models, args []string) error {
 	var projURL string
 	if len(args) == 2 {
 		projURL = args[1]
-	}
-
-	if _, err := url.ParseRequestURI(modelURL); err != nil {
-		return fmt.Errorf("parse-request-uri: invalid URL: %s", modelURL)
-	}
-
-	if projURL != "" {
-		if _, err := url.ParseRequestURI(projURL); err != nil {
-			return fmt.Errorf("parse-request-uri: invalid project URL: %s", projURL)
-		}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)

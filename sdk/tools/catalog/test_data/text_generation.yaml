@@ -4,11 +4,11 @@ models:
     category: Text-Generation
     owned_by: Qwen
     model_family: Qwen3-8B-GGUF
-    web_page: https://huggingface.co/Qwen/Qwen3-8B-GGUF
+    web_page: Qwen/Qwen3-8B-GGUF
     template:
     files:
       models:
-        - url: https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf
+        - url: Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf
           size: 8.71 GiB
     capabilities:
       endpoint: chat_completion
@@ -22,18 +22,18 @@ models:
       rerank: false
     metadata:
       created: 2025-05-03T0:00:00Z
-      collections: https://huggingface.co/collections/Qwen
+      collections: collections/Qwen
       description: Qwen3 is the latest generation of large language models in Qwen series, offering a comprehensive suite of dense and mixture-of-experts (MoE) models.
 
   - id: gpt-oss-20b-Q8_0
     category: Text-Generation
     owned_by: unsloth
     model_family: gpt-oss-20b-GGUF
-    web_page: https://huggingface.co/unsloth/gpt-oss-20b-GGUF
+    web_page: unsloth/gpt-oss-20b-GGUF
     template: gpt-oss.jinja
     files:
       models:
-        - url: https://huggingface.co/unsloth/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-Q8_0.gguf
+        - url: unsloth/gpt-oss-20b-GGUF/gpt-oss-20b-Q8_0.gguf
           size: 12.1 GiB
     capabilities:
       endpoint: chat_completion
@@ -47,20 +47,20 @@ models:
       rerank: false
     metadata:
       created: 2025-08-08T0:00:00Z
-      collections: https://huggingface.co/collections/unsloth
+      collections: collections/unsloth
       description: OpenAI's GPT-OSS (OpenAI Open-Source Series) are open-weight large language models designed for powerful reasoning, agentic tasks, and on-premises deployment, released under a permissive Apache 2.0 license.
 
   - id: Llama-3.3-70B-Instruct-Q8_0
     category: Text-Generation
     owned_by: unsloth
     model_family: Llama-3.3-70B-Instruct-GGUF
-    web_page: https://huggingface.co/unsloth/Llama-3.3-70B-Instruct-GGUF
+    web_page: unsloth/Llama-3.3-70B-Instruct-GGUF
     template:
     files:
       models:
-        - url: https://huggingface.co/unsloth/Llama-3.3-70B-Instruct-GGUF/resolve/main/Llama-3.3-70B-Instruct-Q8_0/Llama-3.3-70B-Instruct-Q8_0-00001-of-00002.gguf
+        - url: unsloth/Llama-3.3-70B-Instruct-GGUF/Llama-3.3-70B-Instruct-Q8_0/Llama-3.3-70B-Instruct-Q8_0-00001-of-00002.gguf
           size: 39.8 GiB
-        - url: https://huggingface.co/unsloth/Llama-3.3-70B-Instruct-GGUF/resolve/main/Llama-3.3-70B-Instruct-Q8_0/Llama-3.3-70B-Instruct-Q8_0-00002-of-00002.gguf
+        - url: unsloth/Llama-3.3-70B-Instruct-GGUF/Llama-3.3-70B-Instruct-Q8_0/Llama-3.3-70B-Instruct-Q8_0-00002-of-00002.gguf
           size: 35.2 GiB
       proj:
         url: "proj: just for testing"
@@ -77,5 +77,5 @@ models:
       rerank: false
     metadata:
       created: 2025-05-10T0:00:00Z
-      collections: https://huggingface.co/collections/unsloth
+      collections: collections/unsloth
       description: Llama 3.3 70B is Meta's advanced, multilingual, open-source large language model (LLM) with 70 billion parameters, excelling in complex reasoning, dialogue, and coding tasks, delivering flagship-level performance (like 405B models) with better efficiency, optimized for text-only applications, and featuring improved instruction-following, safety, and tool-use capabilities for enterprise and research use.

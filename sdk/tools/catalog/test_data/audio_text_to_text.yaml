@@ -4,14 +4,14 @@ models:
     category: Audio-Text-to-Text
     owned_by: mradermacher
     model_family: Qwen2-Audio-7B-GGUF
-    web_page: https://huggingface.co/mradermacher/Qwen2-Audio-7B-GGUF
+    web_page: mradermacher/Qwen2-Audio-7B-GGUF
     template:
     files:
       models:
-        - url: https://huggingface.co/mradermacher/Qwen2-Audio-7B-GGUF/resolve/main/Qwen2-Audio-7B.Q8_0.gguf
+        - url: mradermacher/Qwen2-Audio-7B-GGUF/Qwen2-Audio-7B.Q8_0.gguf
           size: 8.25 GiB
       proj:
-        url: https://huggingface.co/mradermacher/Qwen2-Audio-7B-GGUF/resolve/main/Qwen2-Audio-7B.mmproj-Q8_0.gguf
+        url: mradermacher/Qwen2-Audio-7B-GGUF/Qwen2-Audio-7B.mmproj-Q8_0.gguf
         size: 695 MiB
     capabilities:
       endpoint: chat_completion
@@ -25,5 +25,5 @@ models:
       rerank: false
     metadata:
       created: 2025-06-04T0:00:00Z
-      collections: https://huggingface.co/collections/mradermacher
+      collections: collections/mradermacher
       description: Qwen2-Audio is the new series of Qwen large audio-language models. Qwen2-Audio is capable of accepting various audio signal inputs and performing audio analysis or direct textual responses with regard to speech instructions.

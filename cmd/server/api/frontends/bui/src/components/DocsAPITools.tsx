@@ -267,7 +267,7 @@ export default function DocsAPITools() {
                 <code>{`curl -X POST http://localhost:8080/v1/models/pull \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model_url": "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
+    "model_url": "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
   }'`}</code>
               </pre>
             </div>

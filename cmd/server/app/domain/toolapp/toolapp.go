@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"slices"
 	"strings"
@@ -171,16 +170,6 @@ func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
 	var req PullRequest
 	if err := web.Decode(r, &req); err != nil {
 		return errs.New(errs.InvalidArgument, err)
-	}
-
-	if _, err := url.ParseRequestURI(req.ModelURL); err != nil {
-		return errs.Errorf(errs.InvalidArgument, "invalid model URL: %s", req.ModelURL)
-	}
-
-	if req.ProjURL != "" {
-		if _, err := url.ParseRequestURI(req.ProjURL); err != nil {
-			return errs.Errorf(errs.InvalidArgument, "invalid project URL: %s", req.ProjURL)
-		}
 	}
 
 	a.log.Info(ctx, "pull-models", "model", req.ModelURL, "proj", req.ProjURL)

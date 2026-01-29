@@ -59,7 +59,11 @@ func (m *Models) DownloadShards(ctx context.Context, log Logger, modelURLs []str
 		ModelFiles: make([]string, len(modelURLs)),
 	}
 
+	projURL = NormalizeHuggingFaceDownloadURL(projURL)
+
 	for i, modelURL := range modelURLs {
+		modelURL = NormalizeHuggingFaceDownloadURL(modelURL)
+
 		if i > 0 {
 			projURL = ""
 		}
@@ -231,8 +235,8 @@ func (m *Models) downloadModel(ctx context.Context, modelFileURL string, projFil
 }
 
 func (m *Models) pullShaFile(modelFileURL string, progress downloader.ProgressFunc) (string, error) {
-	// modelFileURL: https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf
-	// rawFileURL:   https://huggingface.co/Qwen/Qwen3-8B-GGUF/raw/main/Qwen3-8B-Q8_0.gguf
+	// modelFileURL: Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf
+	// rawFileURL:   Qwen/Qwen3-8B-GGUF/raw/main/Qwen3-8B-Q8_0.gguf
 	rawFileURL := strings.Replace(modelFileURL, "resolve", "raw", 1)
 
 	modelFilePath, modelFileName, err := m.modelFilePathAndName(modelFileURL)
@@ -289,7 +293,7 @@ func (m *Models) modelFilePathAndName(modelFileURL string) (string, string, erro
 	modelFilePath := filepath.Join(m.modelsPath, parts[1], parts[2])
 	modelFileName := filepath.Join(modelFilePath, fileName)
 
-	// modelFileURL:  https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf
+	// modelFileURL:  Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf
 	// parts:         huggingface.co, Qwen, Qwen3-8B-GGUF, resolve, main, Qwen3-8B-Q8_0.gguf
 	// fileName:      Qwen3-8B-Q8_0.gguf
 	// modelFilePath: /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF
@@ -349,7 +353,7 @@ func extractFileName(modelFileURL string) (string, error) {
 
 	name := path.Base(u.Path)
 
-	// modelFileURL: https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf
+	// modelFileURL: Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf
 	// name:         Qwen3-8B-Q8_0.gguf
 
 	return name, nil
