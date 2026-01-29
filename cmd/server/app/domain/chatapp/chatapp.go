@@ -47,7 +47,7 @@ func (a *app) chatCompletions(ctx context.Context, r *http.Request) web.Encoder 
 		return errs.New(errs.InvalidArgument, err)
 	}
 
-	a.log.Info(ctx, "chat-completions", "REQUEST-INPUT", req.String())
+	a.log.Info(ctx, "chat-completions", "REQUEST-PARAMS", req.String())
 
 	ctx, cancel := context.WithTimeout(ctx, 180*time.Minute)
 	defer cancel()

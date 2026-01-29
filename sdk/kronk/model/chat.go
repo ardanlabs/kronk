@@ -80,6 +80,8 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 			return
 		}
 
+		m.log(ctx, "chat-streaming", "FINAL-PARAMS", params.String())
+
 		// Clone the document to avoid mutating the caller's data. Both text and
 		// media paths modify the document in place during processing.
 		d = d.Clone()

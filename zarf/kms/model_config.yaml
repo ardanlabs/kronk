@@ -156,7 +156,6 @@ Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL:
     temperature: 0.7
     top_p: 0.8
     top_k: 20
-    repeat_penalty: 1.05
 
 Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/FMC:
   <<: *base_Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
@@ -202,7 +201,6 @@ GLM-4.7-Flash-UD-Q8_K_XL: &base_GLM_4_7_Flash_UD_Q8_K_XL
     temperature: 1.0
     min_p: 0.01
     top_p: 0.95
-    repeat_penalty: 1.0
 
 GLM-4.7-Flash-UD-Q8_K_XL/FMC:
   <<: *base_GLM_4_7_Flash_UD_Q8_K_XL
@@ -286,7 +284,6 @@ GLM-4.7-Flash-Q8_0:
     temperature: 1.0
     min_p: 0.01
     top_p: 0.95
-    repeat_penalty: 1.0
 
 # ==============================================================================
 # VISION MODELS

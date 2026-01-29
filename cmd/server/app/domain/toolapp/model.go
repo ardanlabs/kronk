@@ -56,14 +56,15 @@ func toAppVersion(status string, vt libs.VersionTag) string {
 
 // ListModelDetail provides information about a model.
 type ListModelDetail struct {
-	ID          string    `json:"id"`
-	Object      string    `json:"object"`
-	Created     int64     `json:"created"`
-	OwnedBy     string    `json:"owned_by"`
-	ModelFamily string    `json:"model_family"`
-	Size        int64     `json:"size"`
-	Modified    time.Time `json:"modified"`
-	Validated   bool      `json:"validated"`
+	ID          string          `json:"id"`
+	Object      string          `json:"object"`
+	Created     int64           `json:"created"`
+	OwnedBy     string          `json:"owned_by"`
+	ModelFamily string          `json:"model_family"`
+	Size        int64           `json:"size"`
+	Modified    time.Time       `json:"modified"`
+	Validated   bool            `json:"validated"`
+	Sampling    *SamplingConfig `json:"sampling,omitempty"`
 }
 
 // ListModelInfoResponse contains the list of models loaded in the system.
@@ -78,7 +79,7 @@ func (app ListModelInfoResponse) Encode() ([]byte, string, error) {
 	return data, "application/json", err
 }
 
-func toListModelsInfo(modelFiles []models.File, modelConfigs map[string]catalog.ModelConfig) ListModelInfoResponse {
+func toListModelsInfo(modelFiles []models.File, modelConfigs map[string]catalog.ModelConfig, extendedConfig bool) ListModelInfoResponse {
 	list := ListModelInfoResponse{
 		Object: "list",
 	}
@@ -93,6 +94,29 @@ func toListModelsInfo(modelFiles []models.File, modelConfigs map[string]catalog.
 			Size:        mf.Size,
 			Modified:    mf.Modified,
 			Validated:   mf.Validated,
+		}
+
+		if extendedConfig {
+			if rmc, ok := modelConfigs[mf.ID]; ok {
+				detail.Sampling = &SamplingConfig{
+					Temperature:     rmc.Sampling.Temperature,
+					TopK:            rmc.Sampling.TopK,
+					TopP:            rmc.Sampling.TopP,
+					MinP:            rmc.Sampling.MinP,
+					MaxTokens:       rmc.Sampling.MaxTokens,
+					RepeatPenalty:   rmc.Sampling.RepeatPenalty,
+					RepeatLastN:     rmc.Sampling.RepeatLastN,
+					DryMultiplier:   rmc.Sampling.DryMultiplier,
+					DryBase:         rmc.Sampling.DryBase,
+					DryAllowedLen:   rmc.Sampling.DryAllowedLen,
+					DryPenaltyLast:  rmc.Sampling.DryPenaltyLast,
+					XtcProbability:  rmc.Sampling.XtcProbability,
+					XtcThreshold:    rmc.Sampling.XtcThreshold,
+					XtcMinKeep:      rmc.Sampling.XtcMinKeep,
+					EnableThinking:  rmc.Sampling.EnableThinking,
+					ReasoningEffort: rmc.Sampling.ReasoningEffort,
+				}
+			}
 		}
 
 		list.Data = append(list.Data, detail)
