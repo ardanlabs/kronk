@@ -242,6 +242,106 @@ export default function DocsSDKModel() {
               <p className="doc-description">ModelInfo represents the model's card information.</p>
             </div>
 
+            <div className="doc-section" id="type-params">
+              <h4>Params</h4>
+              <pre className="code-block">
+                <code>{`type Params struct {
+	// Temperature controls the randomness of the output. It rescales the
+	// probability distribution of possible next tokens. Default is 0.8.
+	Temperature float32 \`json:"temperature"\`
+
+	// TopK limits the pool of possible next tokens to the K number of most
+	// probable tokens. If a model predicts 10,000 possible next tokens, setting
+	// top_k to 50 means only the 50 tokens with the highest probabilities are
+	// considered for selection (after temperature scaling). Default is 40.
+	TopK int32 \`json:"top_k"\`
+
+	// TopP, also known as nucleus sampling, works differently than top_k by
+	// selecting a dynamic pool of tokens whose cumulative probability exceeds a
+	// threshold P. Instead of a fixed number of tokens (K), it selects the
+	// minimum number of most probable tokens required to reach the cumulative
+	// probability P. Default is 0.9.
+	TopP float32 \`json:"top_p"\`
+
+	// MinP is a dynamic sampling threshold that helps balance the coherence
+	// (quality) and diversity (creativity) of the generated text. Default is 0.0.
+	MinP float32 \`json:"min_p"\`
+
+	// MaxTokens is the maximum tokens for generation when not derived from the
+	// model's context window. Default is 4096.
+	MaxTokens int \`json:"max_tokens"\`
+
+	// RepeatPenalty applies a penalty to tokens that have already appeared in
+	// the output, reducing repetitive text. A value of 1.0 means no penalty.
+	// Values above 1.0 reduce repetition (e.g., 1.1 is a mild penalty, 1.5 is
+	// strong). Default is 1.0 which turns it off.
+	RepeatPenalty float32 \`json:"repeat_penalty"\`
+
+	// RepeatLastN specifies how many recent tokens to consider when applying
+	// the repetition penalty. A larger value considers more context but may be
+	// slower. Default is 64.
+	RepeatLastN int32 \`json:"repeat_last_n"\`
+
+	// DryMultiplier controls the DRY (Don't Repeat Yourself) sampler which
+	// penalizes n-gram pattern repetition. 0.8 - Light repetition penalty,
+	// 1.0–1.5 - Moderate (typical starting point), 2.0–3.0 - Aggressive.
+	// Default is 1.05.
+	DryMultiplier float32 \`json:"dry_multiplier"\`
+
+	// DryBase is the base for exponential penalty growth in DRY. Default is 1.75.
+	DryBase float32 \`json:"dry_base"\`
+
+	// DryAllowedLen is the minimum n-gram length before DRY applies. Default is 2.
+	DryAllowedLen int32 \`json:"dry_allowed_length"\`
+
+	// DryPenaltyLast limits how many recent tokens DRY considers. Default of 0
+	// means full context.
+	DryPenaltyLast int32 \`json:"dry_penalty_last_n"\`
+
+	// XtcProbability controls XTC (eXtreme Token Culling) which randomly removes
+	// tokens close to top probability. Must be > 0 to activate. Default is 0.0
+	// (disabled).
+	XtcProbability float32 \`json:"xtc_probability"\`
+
+	// XtcThreshold is the probability threshold for XTC culling. Default is 0.1.
+	XtcThreshold float32 \`json:"xtc_threshold"\`
+
+	// XtcMinKeep is the minimum tokens to keep after XTC culling. Default is 1.
+	XtcMinKeep uint32 \`json:"xtc_min_keep"\`
+
+	// Thinking determines if the model should think or not. It is used for most
+	// non-GPT models. It accepts 1, t, T, TRUE, true, True, 0, f, F, FALSE,
+	// false, False. Default is "true".
+	Thinking string \`json:"enable_thinking"\`
+
+	// ReasoningEffort is a string that specifies the level of reasoning effort
+	// to use for GPT models. Default is ReasoningEffortMedium.
+	ReasoningEffort string \`json:"reasoning_effort"\`
+
+	// ReturnPrompt determines whether to include the prompt in the final
+	// response. When set to true, the prompt will be included. Default is false.
+	ReturnPrompt bool \`json:"return_prompt"\`
+
+	// IncludeUsage determines whether to include token usage information in
+	// streaming responses. Default is true.
+	IncludeUsage bool \`json:"include_usage"\`
+
+	// Logprobs determines whether to return log probabilities of output tokens.
+	// When enabled, the response includes probability data for each generated
+	// token. Default is false.
+	Logprobs bool \`json:"logprobs"\`
+
+	// TopLogprobs specifies how many of the most likely tokens to return at
+	// each position, along with their log probabilities. Must be between 0 and
+	// 5. Setting this to a value > 0 implicitly enables logprobs. Default is 0.
+	TopLogprobs int \`json:"top_logprobs"\`
+
+	// Stream determines whether to stream the response.
+	Stream bool \`json:"stream"\`
+}`}</code>
+              </pre>
+            </div>
+
             <div className="doc-section" id="type-rerankresponse">
               <h4>RerankResponse</h4>
               <pre className="code-block">
@@ -447,6 +547,13 @@ export default function DocsSDKModel() {
               <p className="doc-description">UnmarshalYAML implements yaml.Unmarshaler to parse string values like "f16".</p>
             </div>
 
+            <div className="doc-section" id="method-model-addparams">
+              <h4>Model.AddParams</h4>
+              <pre className="code-block">
+                <code>func (m *Model) AddParams(params Params, d D) (Params, error)</code>
+              </pre>
+            </div>
+
             <div className="doc-section" id="method-model-chat">
               <h4>Model.Chat</h4>
               <pre className="code-block">
@@ -591,131 +698,89 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>{`const (
 	// DefDryAllowedLen is the minimum n-gram length before DRY applies.
-	//
-	// Default is 2.
 	DefDryAllowedLen = 2
 
 	// DefDryBase is the base for exponential penalty growth in DRY.
-	//
-	// Default is 1.75.
 	DefDryBase = 1.75
 
 	// DefDryMultiplier controls the DRY (Don't Repeat Yourself) sampler which penalizes
 	// n-gram pattern repetition. 0.8 - Light repetition penalty,
 	// 1.0–1.5 - Moderate (typical starting point), 2.0–3.0 - Aggressive.
-	//
-	// Default is 1.05.
 	DefDryMultiplier = 1.05
 
 	// DefDryPenaltyLast limits how many recent tokens DRY considers.
-	//
-	// Default of 0 means full context.
 	DefDryPenaltyLast = 0.0
 
 	// DefEnableThinking determines if the model should think or not. It is used for
 	// most non-GPT models. It accepts 1, t, T, TRUE, true, True, 0, f, F, FALSE,
 	// false, False.
-	//
-	// Default is "true".
 	DefEnableThinking = ThinkingEnabled
 
 	// DefIncludeUsage determines whether to include token usage information in
 	// streaming responses.
-	//
-	// Default is true.
 	DefIncludeUsage = true
 
 	// DefLogprobs determines whether to return log probabilities of output tokens.
 	// When enabled, the response includes probability data for each generated token.
-	//
-	// Default is false.
 	DefLogprobs = false
 
 	// DefTopLogprobs specifies how many of the most likely tokens to return at each
 	// position, along with their log probabilities. Must be between 0 and 5.
 	// Setting this to a value > 0 implicitly enables logprobs.
-	//
-	// Default is 0.
 	DefTopLogprobs = 0
 
 	// DefMaxTopLogprobs defines the number of maximum logprobs to use.
-	//
-	// Default is 5.
 	DefMaxTopLogprobs = 5
 
 	// DefReasoningEffort is a string that specifies the level of reasoning effort to
 	// use for GPT models.
-	//
-	// Default is ReasoningEffortMedium.
 	DefReasoningEffort = ReasoningEffortMedium
 
 	// DefRepeatLastN specifies how many recent tokens to consider when applying the
 	// repetition penalty. A larger value considers more context but may be slower.
-	//
-	// Default is 64.
 	DefRepeatLastN = 64
 
 	// DefRepeatPenalty applies a penalty to tokens that have already appeared in the
 	// output, reducing repetitive text. A value of 1.0 means no penalty. Values
 	// above 1.0 reduce repetition (e.g., 1.1 is a mild penalty, 1.5 is strong).
-	//
-	// Default is 1.0 which turns it off.
 	DefRepeatPenalty = 1.0
 
 	// DefReturnPrompt determines whether to include the prompt in the final response.
 	// When set to true, the prompt will be included.
-	//
-	// Default is false.
 	DefReturnPrompt = false
 
 	// DefTemp controls the randomness of the output. It rescales the probability
 	// distribution of possible next tokens.
-	//
-	// Default is 0.8.
 	DefTemp = 0.8
 
 	// DefTopK limits the pool of possible next tokens to the K number of most probable
 	// tokens. If a model predicts 10,000 possible next tokens, setting top_k to 50
 	// means only the 50 tokens with the highest probabilities are considered for
 	// selection (after temperature scaling). The rest are ignored.
-	//
-	// Default is 40.
 	DefTopK = 40
 
 	// DefMinP is a dynamic sampling threshold that helps balance the coherence
 	// (quality) and diversity (creativity) of the generated text.
-	//
-	// Default is 0.0.
 	DefMinP = 0.0
 
 	// DefTopP, also known as nucleus sampling, works differently than top_k by
 	// selecting a dynamic pool of tokens whose cumulative probability exceeds a
 	// threshold P. Instead of a fixed number of tokens (K), it selects the minimum
 	// number of most probable tokens required to reach the cumulative probability P.
-	//
-	// Default is 0.9.
 	DefTopP = 0.9
 
 	// DefXtcMinKeep is the minimum tokens to keep after XTC culling.
-	//
-	// Default is 1.
 	DefXtcMinKeep = 1
 
 	// DefXtcProbability controls XTC (eXtreme Token Culling) which randomly removes
 	// tokens close to top probability. Must be > 0 to activate.
-	//
-	// Default is 0.0 (disabled).
 	DefXtcProbability = 0.0
 
 	// DefXtcThreshold is the probability threshold for XTC culling.
-	//
-	// Default is 0.1.
 	DefXtcThreshold = 0.1
 
 	// DefMaxTokens is the default maximum tokens for generation when not
 	// derived from the model's context window.
-	//
-	// Default is 4096.
 	DefMaxTokens = 4096
 )`}</code>
               </pre>
@@ -795,6 +860,7 @@ export default function DocsSDKModel() {
                 <li><a href="#type-mediatype">MediaType</a></li>
                 <li><a href="#type-model">Model</a></li>
                 <li><a href="#type-modelinfo">ModelInfo</a></li>
+                <li><a href="#type-params">Params</a></li>
                 <li><a href="#type-rerankresponse">RerankResponse</a></li>
                 <li><a href="#type-rerankresult">RerankResult</a></li>
                 <li><a href="#type-rerankusage">RerankUsage</a></li>
@@ -820,6 +886,7 @@ export default function DocsSDKModel() {
                 <li><a href="#method-ggmltype-string">GGMLType.String</a></li>
                 <li><a href="#method-ggmltype-toyzmatype">GGMLType.ToYZMAType</a></li>
                 <li><a href="#method-ggmltype-unmarshalyaml">GGMLType.UnmarshalYAML</a></li>
+                <li><a href="#method-model-addparams">Model.AddParams</a></li>
                 <li><a href="#method-model-chat">Model.Chat</a></li>
                 <li><a href="#method-model-chatstreaming">Model.ChatStreaming</a></li>
                 <li><a href="#method-model-config">Model.Config</a></li>

@@ -325,7 +325,7 @@ func (m *Model) resetContext() {
 	m.clearSystemPromptCache()
 }
 
-func (m *Model) sequentialChatRequest(ctx context.Context, id string, lctx llama.Context, mtmdCtx mtmd.Context, object string, prompt string, media [][]byte, params params, ch chan<- ChatResponse) {
+func (m *Model) sequentialChatRequest(ctx context.Context, id string, lctx llama.Context, mtmdCtx mtmd.Context, object string, prompt string, media [][]byte, params Params, ch chan<- ChatResponse) {
 	m.log(ctx, "process-chat-request", "status", "started", "id", id, "object", object)
 	defer m.log(ctx, "process-chat-request", "status", "completed", "id", id, "object", object)
 
@@ -641,7 +641,7 @@ loop:
 // model's KV cache for autoregressive generation. Returns a sampler configured
 // with the request parameters, an initial batch for generation, token counts,
 // and any bitmaps that need to be freed by the caller.
-func (m *Model) processInputTokens(ctx context.Context, lctx llama.Context, mtmdCtx mtmd.Context, object string, prompt string, media [][]byte, params params) (llama.Sampler, llama.Batch, int, int, []mtmd.Bitmap) {
+func (m *Model) processInputTokens(ctx context.Context, lctx llama.Context, mtmdCtx mtmd.Context, object string, prompt string, media [][]byte, params Params) (llama.Sampler, llama.Batch, int, int, []mtmd.Bitmap) {
 	_, span := otel.AddSpan(ctx, "process-input-tokens")
 	defer span.End()
 
