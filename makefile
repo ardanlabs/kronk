@@ -37,17 +37,17 @@ install-libraries:
 # Use this to install models. Needed to run tests locally.
 install-models: install-kronk
 	@echo ========== INSTALL MODELS ==========
-	kronk model pull --local "https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/Qwen2.5-VL-3B-Instruct-Q8_0.gguf" "https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
+	kronk model pull --local "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/Qwen2.5-VL-3B-Instruct-Q8_0.gguf" "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
 	@echo
-	kronk model pull --local "https://huggingface.co/unsloth/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-Q8_0.gguf"
+	kronk model pull --local "unsloth/gpt-oss-20b-GGUF/gpt-oss-20b-Q8_0.gguf"
 	@echo
-	kronk model pull --local "https://huggingface.co/mradermacher/Qwen2-Audio-7B-GGUF/resolve/main/Qwen2-Audio-7B.Q8_0.gguf" "https://huggingface.co/mradermacher/Qwen2-Audio-7B-GGUF/resolve/main/Qwen2-Audio-7B.mmproj-Q8_0.gguf"
+	kronk model pull --local "mradermacher/Qwen2-Audio-7B-GGUF/Qwen2-Audio-7B.Q8_0.gguf" "mradermacher/Qwen2-Audio-7B-GGUF/Qwen2-Audio-7B.mmproj-Q8_0.gguf"
 	@echo
-	kronk model pull --local "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
+	kronk model pull --local "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
 	@echo
-	kronk model pull --local "https://huggingface.co/ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/resolve/main/embeddinggemma-300m-qat-Q8_0.gguf"
+	kronk model pull --local "ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/embeddinggemma-300m-qat-Q8_0.gguf"
 	@echo
-	kronk model pull --local "https://huggingface.co/gpustack/bge-reranker-v2-m3-GGUF/resolve/main/bge-reranker-v2-m3-Q8_0.gguf"
+	kronk model pull --local "gpustack/bge-reranker-v2-m3-GGUF/bge-reranker-v2-m3-Q8_0.gguf"
 	@echo
 
 # Use this to see what devices are available on your machine. You need to
@@ -181,11 +181,11 @@ kronk-model-list-local:
 	go run cmd/kronk/main.go model list --local
 
 
-# make kronk-model-pull URL="https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
+# make kronk-model-pull URL="Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
 kronk-model-pull:
 	go run cmd/kronk/main.go model pull "$(URL)"
 
-# make kronk-model-pull-local URL="https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
+# make kronk-model-pull-local URL="Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
 kronk-model-pull-local:
 	go run cmd/kronk/main.go model pull --local "$(URL)"
 
@@ -228,7 +228,7 @@ kronk-catalog-list-local:
 kronk-catalog-show:
 	go run cmd/kronk/main.go catalog show "$(ID)"
 
-# make kronk-catalog-show-local ID="Qwen3-8B-Q8_0"
+# make kronk-catalog-show-local ID="Qwen2.5-VL-3B-Instruct-Q8_0"
 kronk-catalog-show-local:
 	go run cmd/kronk/main.go catalog show --local "$(ID)"
 
@@ -282,7 +282,7 @@ curl-model-list:
 curl-kronk-pull:
 	curl -i -X POST http://localhost:8080/v1/models/pull \
 	-d '{ \
-		"model_url": "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf" \
+		"model_url": "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf" \
 	}'
 
 curl-kronk-remove:

@@ -411,9 +411,10 @@ func (app CatalogModelsResponse) Encode() ([]byte, string, error) {
 }
 
 func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelConfig, mi *models.ModelInfo, vram *models.VRAM) CatalogModelResponse {
-	models := make([]CatalogFile, len(catDetails.Files.Models))
+	mdls := make([]CatalogFile, len(catDetails.Files.Models))
 	for i, model := range catDetails.Files.Models {
-		models[i] = CatalogFile(model)
+		model.URL = models.NormalizeHuggingFaceDownloadURL(model.URL)
+		mdls[i] = CatalogFile(model)
 	}
 
 	var metadata map[string]string
@@ -424,16 +425,18 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 		}
 	}
 
+	catDetails.Files.Proj.URL = models.NormalizeHuggingFaceDownloadURL(catDetails.Files.Proj.URL)
+
 	resp := CatalogModelResponse{
 		ID:          catDetails.ID,
 		Category:    catDetails.Category,
 		OwnedBy:     catDetails.OwnedBy,
 		ModelFamily: catDetails.ModelFamily,
-		WebPage:     catDetails.WebPage,
+		WebPage:     models.NormalizeHuggingFaceURL(catDetails.WebPage),
 		GatedModel:  catDetails.GatedModel,
 		Template:    catDetails.Template,
 		Files: CatalogFiles{
-			Models: models,
+			Models: mdls,
 			Proj:   CatalogFile(catDetails.Files.Proj),
 		},
 		Capabilities: CatalogCapabilities{

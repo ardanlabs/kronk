@@ -107,7 +107,7 @@ export interface CatalogFile {
 
 export interface CatalogFiles {
   model: CatalogFile[];
-  proj: CatalogFile[];
+  proj: CatalogFile;
 }
 
 export interface VRAM {

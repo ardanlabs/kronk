@@ -4,11 +4,11 @@ models:
     category: Embedding
     owned_by: ggml-org
     model_family: embeddinggemma-300m-qat-q8_0-GGUF
-    web_page: https://huggingface.co/ggml-org/embeddinggemma-300m-qat-q8_0-GGUF
+    web_page: ggml-org/embeddinggemma-300m-qat-q8_0-GGUF
     template:
     files:
       models:
-        - url: https://huggingface.co/ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/resolve/main/embeddinggemma-300m-qat-Q8_0.gguf
+        - url: ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/embeddinggemma-300m-qat-Q8_0.gguf
           size: 329 MiB
     capabilities:
       endpoint: embeddings
@@ -22,5 +22,5 @@ models:
       rerank: false
     metadata:
       created: 2025-09-01T0:00:00Z
-      collections: https://huggingface.co/collections/ggml-org
+      collections: collections/ggml-org
       description: The embeddinggemma-300M-GGUF model is a quantized version of Google's EmbeddingGemma, a lightweight, open, and multilingual text embedding model designed for efficient performance on on-device hardware like laptops, phones, and desktops.

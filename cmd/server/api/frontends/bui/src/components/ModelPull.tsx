@@ -19,7 +19,7 @@ export default function ModelPull() {
       <div className="page-header">
         <h2>Pull Model</h2>
               <p>Download a model from a URL</p>
-              <p>Example: https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf</p>
+              <p>Example: Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf</p>
       </div>
 
       <div className="card">
@@ -31,7 +31,7 @@ export default function ModelPull() {
               id="modelUrl"
               value={modelUrl}
               onChange={(e) => setModelUrl(e.target.value)}
-              placeholder="https://huggingface.co/..."
+              placeholder="..."
               disabled={isDownloading}
             />
           </div>

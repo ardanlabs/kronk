@@ -244,10 +244,10 @@ kronk model ps`}</code>
               <h5>Example</h5>
               <pre className="code-block">
                 <code>{`# Pull a model from a URL
-kronk model pull https://huggingface.co/.../model.gguf
+kronk model pull .../model.gguf
 
 # Pull with local mode
-kronk model pull https://huggingface.co/.../model.gguf --local
+kronk model pull .../model.gguf --local
 
 # Pull a vision model with mmproj file
 kronk model pull <MODEL_URL> <MMPROJ_URL>`}</code>

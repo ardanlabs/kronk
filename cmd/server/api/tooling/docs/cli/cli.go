@@ -442,8 +442,8 @@ func modelCommand() command {
 					{Name: "KRONK_MODELS", Default: "$HOME/kronk/models", Description: "The path to the models directory (local mode)"},
 				},
 				Examples: []string{
-					"# Pull a model from a URL\nkronk model pull https://huggingface.co/.../model.gguf",
-					"# Pull with local mode\nkronk model pull https://huggingface.co/.../model.gguf --local",
+					"# Pull a model from a URL\nkronk model pull .../model.gguf",
+					"# Pull with local mode\nkronk model pull .../model.gguf --local",
 					"# Pull a vision model with mmproj file\nkronk model pull <MODEL_URL> <MMPROJ_URL>",
 				},
 			},

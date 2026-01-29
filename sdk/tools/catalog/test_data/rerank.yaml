@@ -4,11 +4,11 @@ models:
     category: Rerank
     owned_by: ggml-org
     model_family: bge-reranker-v2-m3-GGUF
-    web_page: https://huggingface.co/gpustack/bge-reranker-v2-m3-GGUF
+    web_page: gpustack/bge-reranker-v2-m3-GGUF
     template:
     files:
       models:
-        - url: https://huggingface.co/gpustack/bge-reranker-v2-m3-GGUF/resolve/main/bge-reranker-v2-m3-Q8_0.gguf
+        - url: gpustack/bge-reranker-v2-m3-GGUF/bge-reranker-v2-m3-Q8_0.gguf
           size: 636 MiB
     capabilities:
       endpoint: rerank
@@ -22,5 +22,5 @@ models:
       rerank: true
     metadata:
       created: 2024-09-09T0:00:00Z
-      collections: https://huggingface.co/collections/gpustack
+      collections: collections/gpustack
       description: The bge-reranker-v2-m3-GGUF is a quantized, lightweight cross-encoder model developed by the Beijing Academy of Artificial Intelligence (BAAI) for high-performance, multilingual re-ranking tasks. It is designed to take a query and a passage as input and directly output a similarity score (relevance) rather than generating embeddings, allowing for more accurate ranking in RAG (Retrieval-Augmented Generation) systems.

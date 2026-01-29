@@ -1,7 +1,13 @@
 package models
 
 import (
+	"bytes"
+	"context"
+	"encoding/binary"
 	"fmt"
+	"io"
+	"net/http"
+	"os"
 	"strconv"
 )
 
@@ -70,13 +76,6 @@ func (m *Models) CalculateVRAM(modelID string, cfg VRAMConfig) (VRAM, error) {
 	return CalculateVRAM(input), nil
 }
 
-func detectArchitecture(metadata map[string]string) string {
-	if arch, ok := metadata["general.architecture"]; ok {
-		return arch
-	}
-	return ""
-}
-
 // =============================================================================
 
 // VRAMInput contains all parameters needed to calculate VRAM requirements.
@@ -129,12 +128,322 @@ func CalculateVRAM(input VRAMInput) VRAM {
 
 // =============================================================================
 
+// CalculateVRAMFromHuggingFace fetches GGUF metadata from HuggingFace using HTTP
+// Range requests and calculates VRAM requirements. Only the header is downloaded,
+// not the entire model file.
+func CalculateVRAMFromHuggingFace(ctx context.Context, url string, cfg VRAMConfig) (VRAM, error) {
+	url = NormalizeHuggingFaceURL(url)
+
+	metadata, fileSize, err := fetchGGUFMetadata(ctx, url)
+	if err != nil {
+		return VRAM{}, fmt.Errorf("failed to fetch GGUF metadata: %w", err)
+	}
+
+	arch := detectArchitecture(metadata)
+	if arch == "" {
+		return VRAM{}, fmt.Errorf("unable to detect model architecture")
+	}
+
+	blockCount, err := parseMetadataInt64(metadata, arch+".block_count")
+	if err != nil {
+		return VRAM{}, fmt.Errorf("failed to parse block_count: %w", err)
+	}
+
+	headCountKV, err := parseMetadataInt64(metadata, arch+".attention.head_count_kv")
+	if err != nil {
+		return VRAM{}, fmt.Errorf("failed to parse head_count_kv: %w", err)
+	}
+
+	keyLength, err := parseMetadataInt64(metadata, arch+".attention.key_length")
+	if err != nil {
+		return VRAM{}, fmt.Errorf("failed to parse key_length: %w", err)
+	}
+
+	valueLength, err := parseMetadataInt64(metadata, arch+".attention.value_length")
+	if err != nil {
+		return VRAM{}, fmt.Errorf("failed to parse value_length: %w", err)
+	}
+
+	input := VRAMInput{
+		ModelSizeBytes:  fileSize,
+		ContextWindow:   cfg.ContextWindow,
+		BlockCount:      blockCount,
+		HeadCountKV:     headCountKV,
+		KeyLength:       keyLength,
+		ValueLength:     valueLength,
+		BytesPerElement: cfg.BytesPerElement,
+		Slots:           cfg.Slots,
+		CacheSequences:  cfg.CacheSequences,
+	}
+
+	return CalculateVRAM(input), nil
+}
+
+// =============================================================================
+
+func detectArchitecture(metadata map[string]string) string {
+	if arch, ok := metadata["general.architecture"]; ok {
+		return arch
+	}
+	return ""
+}
+
 func parseMetadataInt64(metadata map[string]string, key string) (int64, error) {
 	val, ok := metadata[key]
 	if !ok {
 		return 0, fmt.Errorf("metadata key %q not found", key)
 	}
 	return strconv.ParseInt(val, 10, 64)
+}
+
+// fetchGGUFMetadata fetches GGUF header and metadata using HTTP Range requests.
+func fetchGGUFMetadata(ctx context.Context, url string) (map[string]string, int64, error) {
+	client := &http.Client{}
+
+	initialBytes := 24
+	headerData, fileSize, err := fetchRange(ctx, client, url, 0, int64(initialBytes-1))
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to fetch initial header: %w", err)
+	}
+
+	reader := bytes.NewReader(headerData)
+
+	var header ggufHeader
+	if err := binary.Read(reader, binary.LittleEndian, &header.Magic); err != nil {
+		return nil, 0, fmt.Errorf("failed to read magic: %w", err)
+	}
+
+	if header.Magic != ggufMagic {
+		return nil, 0, fmt.Errorf("invalid GGUF magic number: got 0x%X", header.Magic)
+	}
+
+	if err := binary.Read(reader, binary.LittleEndian, &header.Version); err != nil {
+		return nil, 0, fmt.Errorf("failed to read version: %w", err)
+	}
+
+	if err := binary.Read(reader, binary.LittleEndian, &header.TensorCount); err != nil {
+		return nil, 0, fmt.Errorf("failed to read tensor count: %w", err)
+	}
+
+	if err := binary.Read(reader, binary.LittleEndian, &header.MetadataKvCount); err != nil {
+		return nil, 0, fmt.Errorf("failed to read metadata count: %w", err)
+	}
+
+	metadataSize := estimateMetadataSize(header.MetadataKvCount)
+	metadataData, _, err := fetchRange(ctx, client, url, int64(initialBytes), int64(initialBytes)+metadataSize-1)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to fetch metadata: %w", err)
+	}
+
+	allData := append(headerData, metadataData...)
+	fullReader := bytes.NewReader(allData)
+	fullReader.Seek(int64(initialBytes), io.SeekStart)
+
+	metadata := make(map[string]string)
+	for i := uint64(0); i < header.MetadataKvCount; i++ {
+		key, value, err := readMetadataKVFromReader(fullReader)
+		if err != nil {
+			break
+		}
+		metadata[key] = fmt.Sprintf("%v", value)
+	}
+
+	return metadata, fileSize, nil
+}
+
+// fetchRange fetches a byte range from a URL using HTTP Range requests.
+func fetchRange(ctx context.Context, client *http.Client, url string, start, end int64) ([]byte, int64, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", start, end))
+
+	if token := os.Getenv("KRONK_HF_TOKEN"); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusPartialContent && resp.StatusCode != http.StatusOK {
+		return nil, 0, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	var fileSize int64
+	if resp.ContentLength > 0 && resp.StatusCode == http.StatusOK {
+		fileSize = resp.ContentLength
+	} else if cr := resp.Header.Get("Content-Range"); cr != "" {
+		fmt.Sscanf(cr, "bytes %*d-%*d/%d", &fileSize)
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return data, fileSize, nil
+}
+
+// estimateMetadataSize estimates how many bytes to fetch for metadata.
+func estimateMetadataSize(kvCount uint64) int64 {
+	return int64(kvCount * 512)
+}
+
+// readMetadataKVFromReader reads a key-value pair from a bytes.Reader.
+func readMetadataKVFromReader(r *bytes.Reader) (string, any, error) {
+	var keyLen uint64
+	if err := binary.Read(r, binary.LittleEndian, &keyLen); err != nil {
+		return "", nil, err
+	}
+
+	if keyLen > 1*1024*1024 {
+		return "", nil, fmt.Errorf("key length too large: %d", keyLen)
+	}
+
+	keyBytes := make([]byte, keyLen)
+	if _, err := io.ReadFull(r, keyBytes); err != nil {
+		return "", nil, err
+	}
+	key := string(keyBytes)
+
+	var valueType uint32
+	if err := binary.Read(r, binary.LittleEndian, &valueType); err != nil {
+		return "", nil, err
+	}
+
+	value, err := readMetadataValueFromReader(r, valueType)
+	if err != nil {
+		return key, nil, err
+	}
+
+	return key, value, nil
+}
+
+// readMetadataValueFromReader reads a metadata value from a bytes.Reader.
+func readMetadataValueFromReader(r *bytes.Reader, valueType uint32) (interface{}, error) {
+	switch valueType {
+	case ggufMetadataValueTypeUInt8:
+		var val uint8
+		if err := binary.Read(r, binary.LittleEndian, &val); err != nil {
+			return nil, err
+		}
+		return val, nil
+
+	case ggufMetadataValueTypeInt8:
+		var val int8
+		if err := binary.Read(r, binary.LittleEndian, &val); err != nil {
+			return nil, err
+		}
+		return val, nil
+
+	case ggufMetadataValueTypeUInt16:
+		var val uint16
+		if err := binary.Read(r, binary.LittleEndian, &val); err != nil {
+			return nil, err
+		}
+		return val, nil
+
+	case ggufMetadataValueTypeInt16:
+		var val int16
+		if err := binary.Read(r, binary.LittleEndian, &val); err != nil {
+			return nil, err
+		}
+		return val, nil
+
+	case ggufMetadataValueTypeUInt32:
+		var val uint32
+		if err := binary.Read(r, binary.LittleEndian, &val); err != nil {
+			return nil, err
+		}
+		return val, nil
+
+	case ggufMetadataValueTypeInt32:
+		var val int32
+		if err := binary.Read(r, binary.LittleEndian, &val); err != nil {
+			return nil, err
+		}
+		return val, nil
+
+	case ggufMetadataValueTypeFloat32:
+		var val float32
+		if err := binary.Read(r, binary.LittleEndian, &val); err != nil {
+			return nil, err
+		}
+		return val, nil
+
+	case ggufMetadataValueTypeBool:
+		var val uint8
+		if err := binary.Read(r, binary.LittleEndian, &val); err != nil {
+			return nil, err
+		}
+		return val != 0, nil
+
+	case ggufMetadataValueTypeString:
+		var strLen uint64
+		if err := binary.Read(r, binary.LittleEndian, &strLen); err != nil {
+			return nil, err
+		}
+
+		if strLen > 1*1024*1024 {
+			return nil, fmt.Errorf("string length too large: %d", strLen)
+		}
+
+		strBytes := make([]byte, strLen)
+		if _, err := io.ReadFull(r, strBytes); err != nil {
+			return nil, err
+		}
+		return string(strBytes), nil
+
+	case ggufMetadataValueTypeArray:
+		var arrayType uint32
+		if err := binary.Read(r, binary.LittleEndian, &arrayType); err != nil {
+			return nil, err
+		}
+
+		var arrayLen uint64
+		if err := binary.Read(r, binary.LittleEndian, &arrayLen); err != nil {
+			return nil, err
+		}
+
+		result := make([]any, arrayLen)
+		for i := uint64(0); i < arrayLen; i++ {
+			val, err := readMetadataValueFromReader(r, arrayType)
+			if err != nil {
+				return nil, err
+			}
+			result[i] = val
+		}
+		return result, nil
+
+	case ggufMetadataValueTypeUInt64:
+		var val uint64
+		if err := binary.Read(r, binary.LittleEndian, &val); err != nil {
+			return nil, err
+		}
+		return val, nil
+
+	case ggufMetadataValueTypeInt64:
+		var val int64
+		if err := binary.Read(r, binary.LittleEndian, &val); err != nil {
+			return nil, err
+		}
+		return val, nil
+
+	case ggufMetadataValueTypeFloat64:
+		var val float64
+		if err := binary.Read(r, binary.LittleEndian, &val); err != nil {
+			return nil, err
+		}
+		return val, nil
+
+	default:
+		return nil, fmt.Errorf("unsupported metadata value type: %d", valueType)
+	}
 }
 
 // =============================================================================
