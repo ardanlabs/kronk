@@ -226,6 +226,44 @@ func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
 	return web.NewNoResponse()
 }
 
+func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
+	var req VRAMRequest
+	if err := web.Decode(r, &req); err != nil {
+		return errs.New(errs.InvalidArgument, err)
+	}
+
+	cfg := models.VRAMConfig{
+		ContextWindow:   req.ContextWindow,
+		BytesPerElement: req.BytesPerElement,
+		Slots:           req.Slots,
+		CacheSequences:  req.CacheSequences,
+	}
+
+	vram, err := models.CalculateVRAMFromHuggingFace(ctx, req.ModelURL, cfg)
+	if err != nil {
+		return errs.New(errs.Internal, err)
+	}
+
+	return VRAMResponse{
+		Input: VRAMInput{
+			ModelSizeBytes:  vram.Input.ModelSizeBytes,
+			ContextWindow:   vram.Input.ContextWindow,
+			BlockCount:      vram.Input.BlockCount,
+			HeadCountKV:     vram.Input.HeadCountKV,
+			KeyLength:       vram.Input.KeyLength,
+			ValueLength:     vram.Input.ValueLength,
+			BytesPerElement: vram.Input.BytesPerElement,
+			Slots:           vram.Input.Slots,
+			CacheSequences:  vram.Input.CacheSequences,
+		},
+		KVPerTokenPerLayer: vram.KVPerTokenPerLayer,
+		KVPerSlot:          vram.KVPerSlot,
+		TotalSlots:         vram.TotalSlots,
+		SlotMemory:         vram.SlotMemory,
+		TotalVRAM:          vram.TotalVRAM,
+	}
+}
+
 func (a *app) removeModel(ctx context.Context, r *http.Request) web.Encoder {
 	modelID := web.Param(r, "model")
 

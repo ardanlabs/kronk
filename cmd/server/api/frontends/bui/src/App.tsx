@@ -28,6 +28,7 @@ import DocsAPIEmbeddings from './components/DocsAPIEmbeddings';
 import DocsAPIRerank from './components/DocsAPIRerank';
 import DocsAPITools from './components/DocsAPITools';
 import DocsConfigModels from './components/DocsConfigModels';
+import VRAMCalculator from './components/VRAMCalculator';
 import { ModelListProvider } from './contexts/ModelListContext';
 import { TokenProvider } from './contexts/TokenContext';
 import { DownloadProvider } from './contexts/DownloadContext';
@@ -37,6 +38,7 @@ import { SamplingProvider } from './contexts/SamplingContext';
 export type Page =
   | 'home'
   | 'chat'
+  | 'vram-calculator'
   | 'model-list'
   | 'model-ps'
   | 'model-pull'
@@ -68,6 +70,7 @@ export type Page =
 export const routeMap: Record<Page, string> = {
   'home': '/',
   'chat': '/chat',
+  'vram-calculator': '/vram-calculator',
   'model-list': '/models',
   'model-ps': '/models/running',
   'model-pull': '/models/pull',
@@ -157,6 +160,7 @@ function App() {
               <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/chat" element={<Chat />} />
+                <Route path="/vram-calculator" element={<VRAMCalculator />} />
                 <Route path="/models" element={<ModelList />} />
                 <Route path="/models/running" element={<ModelPs />} />
                 <Route path="/models/pull" element={<ModelPull />} />
