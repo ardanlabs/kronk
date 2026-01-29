@@ -18,6 +18,14 @@ export default function DocsSDKModel() {
           <div className="card" id="functions">
             <h3>Functions</h3>
 
+            <div className="doc-section" id="func-addparams">
+              <h4>AddParams</h4>
+              <pre className="code-block">
+                <code>func AddParams(params Params, d D)</code>
+              </pre>
+              <p className="doc-description">AddParams adds the values from the Params struct into the provided D map. Only non-zero values are added.</p>
+            </div>
+
             <div className="doc-section" id="func-checkmodel">
               <h4>CheckModel</h4>
               <pre className="code-block">
@@ -547,13 +555,6 @@ export default function DocsSDKModel() {
               <p className="doc-description">UnmarshalYAML implements yaml.Unmarshaler to parse string values like "f16".</p>
             </div>
 
-            <div className="doc-section" id="method-model-addparams">
-              <h4>Model.AddParams</h4>
-              <pre className="code-block">
-                <code>func (m *Model) AddParams(params Params, d D) (Params, error)</code>
-              </pre>
-            </div>
-
             <div className="doc-section" id="method-model-chat">
               <h4>Model.Chat</h4>
               <pre className="code-block">
@@ -836,6 +837,7 @@ export default function DocsSDKModel() {
             <div className="doc-index-section">
               <a href="#functions" className="doc-index-header">Functions</a>
               <ul>
+                <li><a href="#func-addparams">AddParams</a></li>
                 <li><a href="#func-checkmodel">CheckModel</a></li>
                 <li><a href="#func-parseggmltype">ParseGGMLType</a></li>
                 <li><a href="#func-newmodel">NewModel</a></li>
@@ -886,7 +888,6 @@ export default function DocsSDKModel() {
                 <li><a href="#method-ggmltype-string">GGMLType.String</a></li>
                 <li><a href="#method-ggmltype-toyzmatype">GGMLType.ToYZMAType</a></li>
                 <li><a href="#method-ggmltype-unmarshalyaml">GGMLType.UnmarshalYAML</a></li>
-                <li><a href="#method-model-addparams">Model.AddParams</a></li>
                 <li><a href="#method-model-chat">Model.Chat</a></li>
                 <li><a href="#method-model-chatstreaming">Model.ChatStreaming</a></li>
                 <li><a href="#method-model-config">Model.Config</a></li>
