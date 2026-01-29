@@ -299,12 +299,95 @@ func (m *Model) createPrompt(ctx context.Context, d D) (string, [][]byte, error)
 		metrics.AddPromptCreationTime(m.modelInfo.ID, time.Since(start))
 	}()
 
+	// For GPT models, inject tool_call_name into tool response messages.
+	// The gpt-oss.jinja template requires tool_call_name to render the function
+	// name, but OpenAI's standard only provides tool_call_id. We extract the
+	// function name from the preceding assistant message's tool_calls array.
+	if m.modelInfo.IsGPTModel {
+		d = m.gptInjectToolCallNames(ctx, d)
+	}
+
 	prompt, media, err := m.applyRequestJinjaTemplate(ctx, d)
 	if err != nil {
 		return "", nil, err
 	}
 
 	return prompt, media, nil
+}
+
+// gptInjectToolCallNames adds tool_call_name to tool response messages for GPT
+// models. The gpt-oss.jinja template requires this field to render the function
+// name in the output, but OpenAI's standard tool response only includes
+// tool_call_id.
+//
+// This function builds a mapping from tool_call_id to function name by scanning
+// assistant messages with tool_calls, then injects tool_call_name into any
+// subsequent tool role messages.
+func (m *Model) gptInjectToolCallNames(ctx context.Context, d D) D {
+	messages, ok := d["messages"].([]D)
+	if !ok {
+		return d
+	}
+
+	// Build a map of tool_call_id -> function name from assistant messages.
+	toolCallIDToName := make(map[string]string)
+
+	for _, msg := range messages {
+		role, _ := msg["role"].(string)
+		if role != "assistant" {
+			continue
+		}
+
+		toolCalls, ok := msg["tool_calls"].([]D)
+		if !ok {
+			continue
+		}
+
+		m.log(ctx, "gpt-inject-tool-call-names", "status", "found tool calls")
+
+		for _, tcMap := range toolCalls {
+			id, _ := tcMap["id"].(string)
+			if id == "" {
+				continue
+			}
+
+			fn, ok := tcMap["function"].(D)
+			if !ok {
+				continue
+			}
+
+			name, _ := fn["name"].(string)
+			if name != "" {
+				toolCallIDToName[id] = name
+			}
+		}
+	}
+
+	m.log(ctx, "gpt-inject-tool-call-names", "total_calls", len(toolCallIDToName))
+
+	if len(toolCallIDToName) == 0 {
+		return d
+	}
+
+	// Inject tool_call_name into tool response messages.
+	for _, msg := range messages {
+		role, _ := msg["role"].(string)
+		if role != "tool" {
+			continue
+		}
+
+		toolCallID, _ := msg["tool_call_id"].(string)
+		if toolCallID == "" {
+			continue
+		}
+
+		if name, exists := toolCallIDToName[toolCallID]; exists {
+			m.log(ctx, "gpt-inject-tool-call-names", "status", "injecting name", "tool-call-id", toolCallID, "name", name)
+			msg["tool_call_name"] = name
+		}
+	}
+
+	return d
 }
 
 func (m *Model) validateDocument(d D) (params, error) {

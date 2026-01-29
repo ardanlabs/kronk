@@ -1,4 +1,3 @@
-// You need to copy this to the root of the project for opencode to read this :(
 {
   "$schema": "https://opencode.ai/config.json",
   "provider": {
@@ -9,7 +8,8 @@
         "baseURL": "http://localhost:8080/v1"
       },
       "models": {
-        "GLM-4.7-Flash-UD-Q8_K_XL": {},
+        "GLM-4.7-Flash-UD-Q8_K_XL/FMC": {},
+        "gpt-oss-120b-F16/FMC": {},
         "Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/FMC": {}
       }
     }
