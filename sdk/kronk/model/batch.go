@@ -26,7 +26,7 @@ type chatJob struct {
 	object          string
 	prompt          string
 	media           [][]byte
-	params          params
+	params          Params
 	mtmdCtx         mtmd.Context
 	ch              chan<- ChatResponse
 	sysPromptNPast  llama.Pos

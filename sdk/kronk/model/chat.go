@@ -390,19 +390,19 @@ func (m *Model) gptInjectToolCallNames(ctx context.Context, d D) D {
 	return d
 }
 
-func (m *Model) validateDocument(d D) (params, error) {
+func (m *Model) validateDocument(d D) (Params, error) {
 	messages, exists := d["messages"]
 	if !exists {
-		return params{}, errors.New("validate-document: no messages found in request")
+		return Params{}, errors.New("validate-document: no messages found in request")
 	}
 
 	if _, ok := messages.([]D); !ok {
-		return params{}, errors.New("validate-document: messages is not a slice of documents")
+		return Params{}, errors.New("validate-document: messages is not a slice of documents")
 	}
 
 	p, err := m.parseParams(d)
 	if err != nil {
-		return params{}, err
+		return Params{}, err
 	}
 
 	return p, nil
