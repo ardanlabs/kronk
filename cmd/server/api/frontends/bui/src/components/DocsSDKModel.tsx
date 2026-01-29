@@ -615,6 +615,14 @@ export default function DocsSDKModel() {
               </pre>
             </div>
 
+            <div className="doc-section" id="method-params-string">
+              <h4>Params.String</h4>
+              <pre className="code-block">
+                <code>func (p Params) String() string</code>
+              </pre>
+              <p className="doc-description">String returns a string representation of the Params containing only non-zero values in the format key[value]: key[value]: ...</p>
+            </div>
+
             <div className="doc-section" id="method-splitmode-string">
               <h4>SplitMode.String</h4>
               <pre className="code-block">
@@ -896,6 +904,7 @@ export default function DocsSDKModel() {
                 <li><a href="#method-model-rerank">Model.Rerank</a></li>
                 <li><a href="#method-model-unload">Model.Unload</a></li>
                 <li><a href="#method-modelinfo-string">ModelInfo.String</a></li>
+                <li><a href="#method-params-string">Params.String</a></li>
                 <li><a href="#method-splitmode-string">SplitMode.String</a></li>
                 <li><a href="#method-splitmode-toyzmatype">SplitMode.ToYZMAType</a></li>
                 <li><a href="#method-splitmode-unmarshalyaml">SplitMode.UnmarshalYAML</a></li>

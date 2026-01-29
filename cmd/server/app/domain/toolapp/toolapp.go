@@ -163,7 +163,9 @@ func (a *app) listModels(ctx context.Context, r *http.Request) web.Encoder {
 		return strings.Compare(a.ID, b.ID)
 	})
 
-	return toListModelsInfo(modelFiles, modelConfig)
+	extendedConfig := r.URL.Query().Get("extended-config") == "true"
+
+	return toListModelsInfo(modelFiles, modelConfig, extendedConfig)
 }
 
 func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {

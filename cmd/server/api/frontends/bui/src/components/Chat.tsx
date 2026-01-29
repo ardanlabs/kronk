@@ -86,7 +86,7 @@ export default function Chat() {
 
   // Extended model configs with sampling parameters
   const [extendedModels, setExtendedModels] = useState<ListModelDetail[]>([]);
-  
+
   // Baseline sampling config from the selected model's /models endpoint
   const [modelBaseline, setModelBaseline] = useState<SamplingParams | null>(null);
   
