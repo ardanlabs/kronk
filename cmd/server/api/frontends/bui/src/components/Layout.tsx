@@ -111,8 +111,8 @@ const menuStructure: MenuCategory[] = [
     ],
   },
   {
-    id: 'run',
-    label: 'Run',
+    id: 'apps',
+    label: 'Apps',
     items: [{ page: 'chat', label: 'Chat' }],
   },
 ];
