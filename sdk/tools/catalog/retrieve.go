@@ -53,11 +53,6 @@ func (c *Catalog) ModelList(filterCategory string) ([]ModelDetails, error) {
 	}
 
 	slices.SortFunc(list, func(a, b ModelDetails) int {
-		if c := cmp.Compare(a.Category, b.Category); c != 0 {
-			return c
-		}
-
-		// Using ToLower to help with case-insensitve sorting.
 		return cmp.Compare(strings.ToLower(a.ID), strings.ToLower(b.ID))
 	})
 
@@ -86,6 +81,17 @@ func (c *Catalog) Details(modelID string) (ModelDetails, error) {
 
 	for _, model := range catalog.Models {
 		if strings.EqualFold(model.ID, modelID) {
+			modelFiles, err := c.models.Files()
+			if err != nil {
+				return ModelDetails{}, fmt.Errorf("retrieve-model-details: retrieving mode files: %w", err)
+			}
+
+			for _, mf := range modelFiles {
+				if mf.ID == model.ID {
+					model.Validated = true
+				}
+			}
+
 			return model, nil
 		}
 	}
