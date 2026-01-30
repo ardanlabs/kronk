@@ -425,10 +425,6 @@ export default function CatalogList() {
                     ) : '-'}
                   </span>
                 </div>
-                <div className="model-meta-item">
-                  <label>Template File</label>
-                  <span>{modelInfo.template || '-'}</span>
-                </div>
               </div>
 
               {modelInfo.metadata.description && (
@@ -441,7 +437,7 @@ export default function CatalogList() {
               )}
 
               <div style={{ marginTop: '24px' }}>
-                <h4 style={{ marginBottom: '12px' }}>Metadata</h4>
+                <h4 style={{ marginBottom: '12px' }}>Catalog Metadata</h4>
                 <div className="model-meta">
                   <div className="model-meta-item">
                     <label>Created</label>
@@ -635,7 +631,7 @@ export default function CatalogList() {
 
               {modelInfo.model_metadata?.['tokenizer.chat_template'] && (
                 <div style={{ marginTop: '24px' }}>
-                  <h4 style={{ marginBottom: '12px' }}>tokenizer.chat_template</h4>
+                  <h4 style={{ marginBottom: '12px' }}>Template</h4>
                   <pre style={{
                     background: 'var(--color-gray-100)',
                     padding: '12px',

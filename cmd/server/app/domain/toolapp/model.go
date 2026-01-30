@@ -194,7 +194,7 @@ func (app ModelInfoResponse) Encode() ([]byte, string, error) {
 func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfig, vram models.VRAM) ModelInfoResponse {
 	metadata := make(map[string]string, len(mi.Metadata))
 	for k, v := range mi.Metadata {
-		metadata[k] = formatMetadataValue(v)
+		metadata[k] = formatMetadataValue(k, v)
 	}
 
 	mir := ModelInfoResponse{
@@ -269,7 +269,7 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfi
 	return mir
 }
 
-func formatMetadataValue(value string) string {
+func formatMetadataValue(key string, value string) string {
 	if len(value) < 2 || value[0] != '[' {
 		return value
 	}
@@ -278,6 +278,10 @@ func formatMetadataValue(value string) string {
 	elements := strings.Split(inner, " ")
 
 	if len(elements) <= 6 {
+		return value
+	}
+
+	if key == "tokenizer.chat_template" {
 		return value
 	}
 
@@ -459,18 +463,20 @@ func (app CatalogModelsResponse) Encode() ([]byte, string, error) {
 	return data, "application/json", err
 }
 
-func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelConfig, mi *models.ModelInfo, vram *models.VRAM) CatalogModelResponse {
+func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelConfig, metadata map[string]string, vram *models.VRAM) CatalogModelResponse {
 	mdls := make([]CatalogFile, len(catDetails.Files.Models))
 	for i, model := range catDetails.Files.Models {
 		model.URL = models.NormalizeHuggingFaceDownloadURL(model.URL)
 		mdls[i] = CatalogFile(model)
 	}
 
-	var metadata map[string]string
-	if mi != nil {
-		metadata = make(map[string]string)
-		for k, v := range mi.Metadata {
-			metadata[k] = formatMetadataValue(v)
+	formattedMetadata := make(map[string]string)
+	for k, v := range metadata {
+		formattedMetadata[k] = formatMetadataValue(k, v)
+		if k == "tokenizer.chat_template" {
+			if catDetails.Template != "" {
+				formattedMetadata[k] = catDetails.Template
+			}
 		}
 	}
 
@@ -504,7 +510,7 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 			Collections: catDetails.Metadata.Collections,
 			Description: catDetails.Metadata.Description,
 		},
-		ModelMetadata: metadata,
+		ModelMetadata: formattedMetadata,
 		Downloaded:    catDetails.Downloaded,
 		Validated:     catDetails.Validated,
 	}

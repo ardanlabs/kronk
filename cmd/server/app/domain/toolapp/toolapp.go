@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"slices"
 	"strings"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/authapp"
@@ -158,10 +157,6 @@ func (a *app) listModels(ctx context.Context, r *http.Request) web.Encoder {
 
 		modelFiles = append(modelFiles, extModel)
 	}
-
-	slices.SortFunc(modelFiles, func(a, b models.File) int {
-		return strings.Compare(a.ID, b.ID)
-	})
 
 	extendedConfig := r.URL.Query().Get("extended-config") == "true"
 
@@ -406,10 +401,25 @@ func (a *app) showCatalogModel(ctx context.Context, r *http.Request) web.Encoder
 		return errs.New(errs.Internal, err)
 	}
 
-	var mi *models.ModelInfo
-	miTmp, err := a.models.ModelInformation(modelID)
-	if err == nil {
-		mi = &miTmp
+	tmpl, err := a.templates.Retrieve(modelID)
+	if err == nil && tmpl.FileName != "" {
+		catDetails.Template = fmt.Sprintf("%s\n\n%s", tmpl.FileName, tmpl.Script)
+	}
+
+	metadata := make(map[string]string)
+
+	switch catDetails.Validated {
+	case true:
+		mi, err := a.models.ModelInformation(modelID)
+		if err == nil {
+			metadata = mi.Metadata
+		}
+
+	default:
+		md, _, err := models.FetchGGUFMetadata(ctx, catDetails.Files.Models[0].URL)
+		if err == nil {
+			metadata = md
+		}
 	}
 
 	rmc := a.catalog.ResolvedModelConfig(modelID)
@@ -420,7 +430,7 @@ func (a *app) showCatalogModel(ctx context.Context, r *http.Request) web.Encoder
 		vram = &vramTmp
 	}
 
-	return toCatalogModelResponse(catDetails, &rmc, mi, vram)
+	return toCatalogModelResponse(catDetails, &rmc, metadata, vram)
 }
 
 func (a *app) listKeys(ctx context.Context, r *http.Request) web.Encoder {

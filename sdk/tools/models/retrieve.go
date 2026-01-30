@@ -21,7 +21,7 @@ type File struct {
 	Validated   bool
 }
 
-// Files returns all the models in the given model directory.
+// Files returns all the models in the model directory.
 func (m *Models) Files() ([]File, error) {
 	var list []File
 
@@ -75,13 +75,7 @@ func (m *Models) Files() ([]File, error) {
 	}
 
 	slices.SortFunc(list, func(a, b File) int {
-		if a.ID < b.ID {
-			return -1
-		}
-		if a.ID > b.ID {
-			return 1
-		}
-		return 0
+		return strings.Compare(strings.ToLower(a.ID), strings.ToLower(b.ID))
 	})
 
 	return list, nil

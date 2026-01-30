@@ -75,32 +75,32 @@ type VRAM struct {
 func (m *Models) CalculateVRAM(modelID string, cfg VRAMConfig) (VRAM, error) {
 	info, err := m.ModelInformation(modelID)
 	if err != nil {
-		return VRAM{}, fmt.Errorf("failed to retrieve model info: %w", err)
+		return VRAM{}, fmt.Errorf("calculate-vram: failed to retrieve model info: %w", err)
 	}
 
 	arch := detectArchitecture(info.Metadata)
 	if arch == "" {
-		return VRAM{}, fmt.Errorf("unable to detect model architecture")
+		return VRAM{}, fmt.Errorf("calculate-vram: unable to detect model architecture")
 	}
 
 	blockCount, err := parseMetadataInt64(info.Metadata, arch+".block_count")
 	if err != nil {
-		return VRAM{}, fmt.Errorf("failed to parse block_count: %w", err)
+		return VRAM{}, fmt.Errorf("calculate-vram: failed to parse block_count: %w", err)
 	}
 
 	headCountKV, err := parseMetadataInt64(info.Metadata, arch+".attention.head_count_kv")
 	if err != nil {
-		return VRAM{}, fmt.Errorf("failed to parse head_count_kv: %w", err)
+		return VRAM{}, fmt.Errorf("calculate-vram: failed to parse head_count_kv: %w", err)
 	}
 
 	keyLength, err := parseMetadataInt64(info.Metadata, arch+".attention.key_length")
 	if err != nil {
-		return VRAM{}, fmt.Errorf("failed to parse key_length: %w", err)
+		return VRAM{}, fmt.Errorf("calculate-vram: failed to parse key_length: %w", err)
 	}
 
 	valueLength, err := parseMetadataInt64(info.Metadata, arch+".attention.value_length")
 	if err != nil {
-		return VRAM{}, fmt.Errorf("failed to parse value_length: %w", err)
+		return VRAM{}, fmt.Errorf("calculate-vram: failed to parse value_length: %w", err)
 	}
 
 	input := VRAMInput{
@@ -177,34 +177,34 @@ func CalculateVRAM(input VRAMInput) VRAM {
 func CalculateVRAMFromHuggingFace(ctx context.Context, modelURL string, cfg VRAMConfig) (VRAM, error) {
 	modelURL = NormalizeHuggingFaceDownloadURL(modelURL)
 
-	metadata, fileSize, err := fetchGGUFMetadata(ctx, modelURL)
+	metadata, fileSize, err := FetchGGUFMetadata(ctx, modelURL)
 	if err != nil {
-		return VRAM{}, fmt.Errorf("failed to fetch GGUF metadata: %w", err)
+		return VRAM{}, fmt.Errorf("calculate-vram-hg: failed to fetch GGUF metadata: %w", err)
 	}
 
 	arch := detectArchitecture(metadata)
 	if arch == "" {
-		return VRAM{}, fmt.Errorf("unable to detect model architecture")
+		return VRAM{}, fmt.Errorf("calculate-vram-hg: unable to detect model architecture")
 	}
 
 	blockCount, err := parseMetadataInt64(metadata, arch+".block_count")
 	if err != nil {
-		return VRAM{}, fmt.Errorf("failed to parse block_count: %w", err)
+		return VRAM{}, fmt.Errorf("calculate-vram-hg: failed to parse block_count: %w", err)
 	}
 
 	headCountKV, err := parseMetadataInt64(metadata, arch+".attention.head_count_kv")
 	if err != nil {
-		return VRAM{}, fmt.Errorf("failed to parse head_count_kv: %w", err)
+		return VRAM{}, fmt.Errorf("calculate-vram-hg: failed to parse head_count_kv: %w", err)
 	}
 
 	keyLength, err := parseMetadataInt64(metadata, arch+".attention.key_length")
 	if err != nil {
-		return VRAM{}, fmt.Errorf("failed to parse key_length: %w", err)
+		return VRAM{}, fmt.Errorf("calculate-vram-hg: failed to parse key_length: %w", err)
 	}
 
 	valueLength, err := parseMetadataInt64(metadata, arch+".attention.value_length")
 	if err != nil {
-		return VRAM{}, fmt.Errorf("failed to parse value_length: %w", err)
+		return VRAM{}, fmt.Errorf("calculate-vram-hg: failed to parse value_length: %w", err)
 	}
 
 	input := VRAMInput{
@@ -234,48 +234,48 @@ func detectArchitecture(metadata map[string]string) string {
 func parseMetadataInt64(metadata map[string]string, key string) (int64, error) {
 	val, ok := metadata[key]
 	if !ok {
-		return 0, fmt.Errorf("metadata key %q not found", key)
+		return 0, fmt.Errorf("parse-metadata-int64: metadata key %q not found", key)
 	}
 	return strconv.ParseInt(val, 10, 64)
 }
 
-// fetchGGUFMetadata fetches GGUF header and metadata using HTTP Range requests.
-func fetchGGUFMetadata(ctx context.Context, url string) (map[string]string, int64, error) {
-	client := &http.Client{}
+// FetchGGUFMetadata fetches GGUF header and metadata using HTTP Range requests.
+func FetchGGUFMetadata(ctx context.Context, url string) (map[string]string, int64, error) {
+	var client http.Client
 
 	initialBytes := 24
-	headerData, fileSize, err := fetchRange(ctx, client, url, 0, int64(initialBytes-1))
+	headerData, fileSize, err := fetchRange(ctx, &client, url, 0, int64(initialBytes-1))
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to fetch initial header: %w", err)
+		return nil, 0, fmt.Errorf("fetch-gguf-metadata: failed to fetch initial header: %w", err)
 	}
 
 	reader := bytes.NewReader(headerData)
 
 	var header ggufHeader
 	if err := binary.Read(reader, binary.LittleEndian, &header.Magic); err != nil {
-		return nil, 0, fmt.Errorf("failed to read magic: %w", err)
+		return nil, 0, fmt.Errorf("fetch-gguf-metadata: failed to read magic: %w", err)
 	}
 
 	if header.Magic != ggufMagic {
-		return nil, 0, fmt.Errorf("invalid GGUF magic number: got 0x%X", header.Magic)
+		return nil, 0, fmt.Errorf("fetch-gguf-metadata: invalid GGUF magic number: got 0x%X", header.Magic)
 	}
 
 	if err := binary.Read(reader, binary.LittleEndian, &header.Version); err != nil {
-		return nil, 0, fmt.Errorf("failed to read version: %w", err)
+		return nil, 0, fmt.Errorf("fetch-gguf-metadata: failed to read version: %w", err)
 	}
 
 	if err := binary.Read(reader, binary.LittleEndian, &header.TensorCount); err != nil {
-		return nil, 0, fmt.Errorf("failed to read tensor count: %w", err)
+		return nil, 0, fmt.Errorf("fetch-gguf-metadata: failed to read tensor count: %w", err)
 	}
 
 	if err := binary.Read(reader, binary.LittleEndian, &header.MetadataKvCount); err != nil {
-		return nil, 0, fmt.Errorf("failed to read metadata count: %w", err)
+		return nil, 0, fmt.Errorf("fetch-gguf-metadata: failed to read metadata count: %w", err)
 	}
 
 	metadataSize := estimateMetadataSize(header.MetadataKvCount)
-	metadataData, _, err := fetchRange(ctx, client, url, int64(initialBytes), int64(initialBytes)+metadataSize-1)
+	metadataData, _, err := fetchRange(ctx, &client, url, int64(initialBytes), int64(initialBytes)+metadataSize-1)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to fetch metadata: %w", err)
+		return nil, 0, fmt.Errorf("fetch-gguf-metadata: failed to fetch metadata: %w", err)
 	}
 
 	allData := append(headerData, metadataData...)
@@ -314,14 +314,18 @@ func fetchRange(ctx context.Context, client *http.Client, url string, start, end
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusPartialContent && resp.StatusCode != http.StatusOK {
-		return nil, 0, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return nil, 0, fmt.Errorf("fetch-range: unexpected status code: %d", resp.StatusCode)
 	}
 
+	cr := resp.Header.Get("Content-Range")
+
 	var fileSize int64
-	if cr := resp.Header.Get("Content-Range"); cr != "" {
+	switch {
+	case cr != "":
 		var start, end int64
 		fmt.Sscanf(cr, "bytes %d-%d/%d", &start, &end, &fileSize)
-	} else if resp.ContentLength > 0 && resp.StatusCode == http.StatusOK {
+
+	case resp.ContentLength > 0 && resp.StatusCode == http.StatusOK:
 		fileSize = resp.ContentLength
 	}
 
@@ -346,7 +350,7 @@ func readMetadataKVFromReader(r *bytes.Reader) (string, any, error) {
 	}
 
 	if keyLen > 1*1024*1024 {
-		return "", nil, fmt.Errorf("key length too large: %d", keyLen)
+		return "", nil, fmt.Errorf("read-metadata-kvf-from-reader: key length too large: %d", keyLen)
 	}
 
 	keyBytes := make([]byte, keyLen)
@@ -492,73 +496,73 @@ func readMetadataValueFromReader(r *bytes.Reader, valueType uint32) (interface{}
 
 // =============================================================================
 /*
-	SLOT MEMORY AND TOTAL VRAM COST FORMULA
+SLOT MEMORY AND TOTAL VRAM COST FORMULA
 
-	These figures are for KV cache VRAM only (when offload-kqv: true).
-	Model weights require additional VRAM: ~7GB (7B Q8) or ~70GB (70B Q8).
-	Total VRAM = model weights + KV cache.
+These figures are for KV cache VRAM only (when offload-kqv: true).
+Model weights require additional VRAM: ~7GB (7B Q8) or ~70GB (70B Q8).
+Total VRAM = model weights + KV cache.
 
-	Memory is statically allocated upfront when the model loads,
-	based on n_ctx × n_seq_max. Reserving slots consumes memory whether or not
-	they're actually used.
+Memory is statically allocated upfront when the model loads,
+based on n_ctx × n_seq_max. Reserving slots consumes memory whether or not
+they're actually used.
 
-	Example Calculations:
+Example Calculations:
 
-	This is how you calculate the amount of KV memory you need per slot.
+This is how you calculate the amount of KV memory you need per slot.
 
-	KV_Per_Token_Per_Layer = head_count_kv × (key_length + value_length) × bytes_per_element
-	KV_Per_Slot            = n_ctx × n_layers × KV_per_token_per_layer
+KV_Per_Token_Per_Layer = head_count_kv × (key_length + value_length) × bytes_per_element
+KV_Per_Slot            = n_ctx × n_layers × KV_per_token_per_layer
 
-	------------------------------------------------------------------------------
-	So Given these values, this is what you are looking at:
+------------------------------------------------------------------------------
+So Given these values, this is what you are looking at:
 
-	Model   Context_Window   KV_Per_Slot      NSeqMax (Slots)
-	7B      8K               ~537 MB VRAM     2
-	70B     8K               ~1.3 GB VRAM     2
+Model   Context_Window   KV_Per_Slot      NSeqMax (Slots)
+7B      8K               ~537 MB VRAM     2
+70B     8K               ~1.3 GB VRAM     2
 
-	No Caching:
-	Total sequences allocated: 2 (no cache)
-	7B:  Slot Memory (2 × 537MB) ~1.07GB: Total VRAM: ~8.1GB
-	70B: Slot Memory (2 × 1.3GB) ~2.6GB : Total VRAM: ~72.6GB
+No Caching:
+Total sequences allocated: 2 (no cache)
+7B:  Slot Memory (2 × 537MB) ~1.07GB: Total VRAM: ~8.1GB
+70B: Slot Memory (2 × 1.3GB) ~2.6GB : Total VRAM: ~72.6GB
 
-	First Memory Caching (FMC):
-	Total sequences allocated: 2 + 1 = 3 (cache)
-	7B:  Slot Memory (3 × 537MB) ~1.6GB: Total VRAM: ~8.6GB
-	70B: Slot Memory (3 × 1.3GB) ~3.9GB: Total VRAM: ~73.9GB
+First Memory Caching (FMC):
+Total sequences allocated: 2 + 1 = 3 (cache)
+7B:  Slot Memory (3 × 537MB) ~1.6GB: Total VRAM: ~8.6GB
+70B: Slot Memory (3 × 1.3GB) ~3.9GB: Total VRAM: ~73.9GB
 
-	Both SPC and FMC:
-	Total sequences allocated: 2 + 2 = 4 (cache)
-	7B:  Slot Memory (4 × 537MB) ~2.15GB: Total VRAM: ~9.2GB
-	70B: Slot Memory (4 × 1.3GB) ~5.2GB:  Total VRAM: ~75.2GB
+Both SPC and FMC:
+Total sequences allocated: 2 + 2 = 4 (cache)
+7B:  Slot Memory (4 × 537MB) ~2.15GB: Total VRAM: ~9.2GB
+70B: Slot Memory (4 × 1.3GB) ~5.2GB:  Total VRAM: ~75.2GB
 
-	------------------------------------------------------------------------------
-	Full Example With Real Model:
+------------------------------------------------------------------------------
+Full Example With Real Model:
 
-	Model                   : Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
-	Size                    : 36.0GB
-	Context Window          : 131072 (128k)
-	cache-type-k            : q8_0 (1 byte per element), f16 (2 bytes)
-	cache-type-v            : q8_0 (1 byte per element), f16 (2 bytes)
-	block_count             : 48  (n_layers)
-	attention.head_count_kv : 4   (KV heads)
-	attention.key_length    : 128	(K dimension per head)
-	attention.value_length  : 128	(V dimension per head)
+Model                   : Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
+Size                    : 36.0GB
+Context Window          : 131072 (128k)
+cache-type-k            : q8_0 (1 byte per element), f16 (2 bytes)
+cache-type-v            : q8_0 (1 byte per element), f16 (2 bytes)
+block_count             : 48  (n_layers)
+attention.head_count_kv : 4   (KV heads)
+attention.key_length    : 128	(K dimension per head)
+attention.value_length  : 128	(V dimension per head)
 
-	KV_per_token_per_layer = head_count_kv  ×  (key_length + value_length)  ×  bytes_per_element
-	1024 bytes             =             4  ×  ( 128       +         128 )  ×  1
+KV_per_token_per_layer = head_count_kv  ×  (key_length + value_length)  ×  bytes_per_element
+1024 bytes             =             4  ×  ( 128       +         128 )  ×  1
 
-	KV_Per_Slot            =  n_ctx  ×  n_layers  ×  KV_per_token_per_layer
-	~6.4 GB                =  131072 ×  48        ×  1024
+KV_Per_Slot            =  n_ctx  ×  n_layers  ×  KV_per_token_per_layer
+~6.4 GB                =  131072 ×  48        ×  1024
 
-	No Caching:
-	Total sequences allocated: 2 : (no cache)
-	Slot Memory (2 × 6.4GB) ~12.8GB: Total VRAM: ~48.8GB
+No Caching:
+Total sequences allocated: 2 : (no cache)
+Slot Memory (2 × 6.4GB) ~12.8GB: Total VRAM: ~48.8GB
 
-	First Memory Caching (FMC):
-	Total sequences allocated: 3 : (2 + 1) (1 cache sequence)
-	Slot Memory (3 × 6.4GB) ~19.2GB: Total VRAM: ~55.2GB
+First Memory Caching (FMC):
+Total sequences allocated: 3 : (2 + 1) (1 cache sequence)
+Slot Memory (3 × 6.4GB) ~19.2GB: Total VRAM: ~55.2GB
 
-	Both SPC and FMC:
-	Total sequences allocated: 4 : (2 + 2) (2 cache sequences)
-	Slot Memory (4 × 6.4GB) ~25.6GB: Total VRAM: ~61.6GB
+Both SPC and FMC:
+Total sequences allocated: 4 : (2 + 2) (2 cache sequences)
+Slot Memory (4 × 6.4GB) ~25.6GB: Total VRAM: ~61.6GB
 */
