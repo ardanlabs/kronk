@@ -146,7 +146,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		}
 
 		// [DEBUG]: Show requests message and tool details.
-		d.debug()
+		// d.debug()
 
 		// ---------------------------------------------------------------------
 
