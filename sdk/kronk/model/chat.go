@@ -117,15 +117,6 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 
 		//----------------------------------------------------------------------
 
-		// fmt.Println("=======================================")
-		// messages, _ := d["messages"].([]D)
-		// for _, m := range messages {
-		// 	fmt.Println("[DEBUG]: Role:", m["role"])
-		// 	fmt.Println("[DEBUG]: Content:", m["content"])
-		// 	fmt.Println("---------------------------------------")
-		// }
-		// fmt.Println("=======================================")
-
 		var sysPromptNPast llama.Pos
 		var sysPromptCached bool
 		var prompt string
@@ -153,6 +144,9 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 				return
 			}
 		}
+
+		// [DEBUG]: Show requests message and tool details.
+		// d.debug()
 
 		// ---------------------------------------------------------------------
 
@@ -345,8 +339,6 @@ func (m *Model) gptInjectToolCallNames(ctx context.Context, d D) D {
 			continue
 		}
 
-		m.log(ctx, "gpt-inject-tool-call-names", "status", "found tool calls")
-
 		for _, tcMap := range toolCalls {
 			id, _ := tcMap["id"].(string)
 			if id == "" {
@@ -364,8 +356,6 @@ func (m *Model) gptInjectToolCallNames(ctx context.Context, d D) D {
 			}
 		}
 	}
-
-	m.log(ctx, "gpt-inject-tool-call-names", "total_calls", len(toolCallIDToName))
 
 	if len(toolCallIDToName) == 0 {
 		return d

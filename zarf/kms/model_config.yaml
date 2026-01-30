@@ -57,14 +57,17 @@
 #   first-message-cache: true
 #
 # If you want to use a Chat application like OpenWebUI use these settings:
+#   nseq-max: 1
 #   system-prompt-cache: true
 #
 # Cline is working great with Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL and
 # cerebras_qwen3-coder-reap-25b-a3b-q8_0.
 #
 # Claude Code needs a model that handles tool calling well with a decent
-# context window. The GPT models have not performed well. I have not
-# found a model yet that does for Claude Code.
+# context window. I have not found a model yet that works well with Claude Code.
+#
+# Stay away from using the gpt-oss model of any size with agents. It will not
+# behave in several aspects, but specfically it will not listen.
 
 # ==============================================================================
 # TEXT INFERENCE MODELS
@@ -97,8 +100,9 @@ Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/SPC:
   nseq-max: 1
   system-prompt-cache: true
 
-# Don't use with Cline or Open Code.
-gpt-oss-120b-F16: &base_gpt-oss-120b-F16
+# Smaller version of the 30B model and works well.
+cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0:
+  &base_cerebras_qwen3-coder-reap-25b-a3b-q8_0
   context-window: 131072
   nbatch: 2048
   nubatch: 512
@@ -107,13 +111,13 @@ gpt-oss-120b-F16: &base_gpt-oss-120b-F16
   flash-attention: enabled
   nseq-max: 2
 
-gpt-oss-120b-F16/FMC:
-  <<: *base_gpt-oss-120b-F16
+cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0/FMC:
+  <<: *base_cerebras_qwen3-coder-reap-25b-a3b-q8_0
   nseq-max: 1
   first-message-cache: true
 
-gpt-oss-120b-F16/SPC:
-  <<: *base_gpt-oss-120b-F16
+cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0/SPC:
+  <<: *base_cerebras_qwen3-coder-reap-25b-a3b-q8_0
   nseq-max: 1
   system-prompt-cache: true
 
@@ -144,28 +148,6 @@ GLM-4.7-Flash-UD-Q8_K_XL/SPC:
   nseq-max: 1
   system-prompt-cache: true
 
-# I have not tested this model too much, but I expect it to
-# behave like the other Qwen3 models.
-cerebras_qwen3-coder-reap-25b-a3b-q8_0:
-  &base_cerebras_qwen3-coder-reap-25b-a3b-q8_0
-  context-window: 131072
-  nbatch: 2048
-  nubatch: 512
-  cache-type-k: q8_0
-  cache-type-v: q8_0
-  flash-attention: enabled
-  nseq-max: 2
-
-cerebras_qwen3-coder-reap-25b-a3b-q8_0/FMC:
-  <<: *base_cerebras_qwen3-coder-reap-25b-a3b-q8_0
-  nseq-max: 1
-  first-message-cache: true
-
-cerebras_qwen3-coder-reap-25b-a3b-q8_0/SPC:
-  <<: *base_cerebras_qwen3-coder-reap-25b-a3b-q8_0
-  nseq-max: 1
-  system-prompt-cache: true
-
 # ------------------------------------------------------------------------------
 # Good Reasoning models, tooling support, don't use with Agents.
 
@@ -186,6 +168,21 @@ gpt-oss-20b-Q8_0:
   cache-type-v: q8_0
   flash-attention: enabled
   nseq-max: 2
+
+# Don't use with Agents.
+gpt-oss-120b-F16: &base_gpt-oss-120b-F16
+  context-window: 131072
+  nbatch: 2048
+  nubatch: 512
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  flash-attention: enabled
+  nseq-max: 2
+
+gpt-oss-120b-F16/SPC:
+  <<: *base_gpt-oss-120b-F16
+  nseq-max: 1
+  system-prompt-cache: true
 
 # Great model but small context-window :(
 Qwen3-8B-Q8_0:

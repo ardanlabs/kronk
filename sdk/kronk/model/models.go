@@ -219,6 +219,33 @@ func (d D) String() string {
 	return b.String()
 }
 
+func (d D) debug() {
+	fmt.Println("=======================================")
+	messages, _ := d["messages"].([]D)
+	for i, m := range messages {
+		role, _ := m["role"].(string)
+		fmt.Printf("[DEBUG]: Message[%d] Role: %s\n", i, role)
+
+		switch role {
+		case "assistant":
+			toolCalls, _ := m["tool_calls"].([]D)
+			fmt.Printf("[DEBUG]: Message[%d] ToolCalls len=%d\n", i, len(toolCalls))
+			for j, tc := range toolCalls {
+				fmt.Printf("[DEBUG]:   tc[%d]: %#v\n", j, tc)
+			}
+
+		case "tool":
+			fmt.Printf("[DEBUG]: Message[%d] tool_call_id: %v\n", i, m["tool_call_id"])
+			fmt.Printf("[DEBUG]: Message[%d] tool_call_name: %v\n", i, m["tool_call_name"])
+			fmt.Printf("[DEBUG]: Message[%d] Content: %.100v\n", i, m["content"])
+
+		default:
+			fmt.Printf("[DEBUG]: Message[%d] Content: %.100v\n", i, m["content"])
+		}
+	}
+	fmt.Println("=======================================")
+}
+
 // TextMessage create a new text message.
 func TextMessage(role string, content string) D {
 	return D{
