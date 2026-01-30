@@ -295,7 +295,17 @@ func (m *Model) decodeTokensToSeq(ctx context.Context, tokens []llama.Token, seq
 	nBatch := int(m.ctxParams.NBatch)
 	nTokens := len(tokens)
 
-	m.log(ctx, "cache", "status", "decoding-started", "seq", seqID, "tokens", nTokens)
+	// Defensive check: log if NBatch seems invalid.
+	if nBatch <= 0 {
+		m.log(ctx, "decode-tokens-to-seq", "ERROR", "invalid-nbatch",
+			"nbatch", nBatch,
+			"ctxParams.NBatch", m.ctxParams.NBatch,
+			"cfg.NBatch", m.cfg.NBatch)
+
+		nBatch = m.cfg.NBatch // Fall back to config value
+	}
+
+	m.log(ctx, "cache", "status", "decoding-started", "seq", seqID, "tokens", nTokens, "nbatch", nBatch)
 
 	// Lock to prevent concurrent decode with batch engine.
 	m.decodeMu.Lock()
