@@ -116,7 +116,7 @@ type ModelConfig struct {
 	NSeqMax              int                      `yaml:"nseq-max"`
 	OffloadKQV           *bool                    `yaml:"offload-kqv"`
 	OpOffload            *bool                    `yaml:"op-offload"`
-	NGpuLayers           *int32                   `yaml:"ngpu-layers"`
+	NGpuLayers           *int                     `yaml:"ngpu-layers"`
 	SplitMode            model.SplitMode          `yaml:"split-mode"`
 	SystemPromptCache    bool                     `yaml:"system-prompt-cache"`
 	FirstMessageCache    bool                     `yaml:"first-message-cache"`

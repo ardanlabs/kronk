@@ -389,7 +389,7 @@ type ModelConfig struct {
 	NSeqMax              int                      `json:"nseq-max"`
 	OffloadKQV           *bool                    `json:"offload-kqv"`
 	OpOffload            *bool                    `json:"op-offload"`
-	NGpuLayers           *int32                   `json:"ngpu-layers"`
+	NGpuLayers           *int                     `json:"ngpu-layers"`
 	SplitMode            model.SplitMode          `json:"split-mode"`
 	SystemPromptCache    bool                     `json:"system-prompt-cache"`
 	FirstMessageCache    bool                     `json:"first-message-cache"`

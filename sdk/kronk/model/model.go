@@ -94,7 +94,7 @@ func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) 
 	case *cfg.NGpuLayers == -1:
 		mParams.NGpuLayers = 0
 	default:
-		mParams.NGpuLayers = *cfg.NGpuLayers
+		mParams.NGpuLayers = int32(*cfg.NGpuLayers)
 	}
 
 	// Set split mode for multi-GPU and tensor parallelism (expert-parallel for MoE).
