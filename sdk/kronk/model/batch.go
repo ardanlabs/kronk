@@ -560,9 +560,6 @@ func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 	l := llama.TokenToPiece(e.model.vocab, token, buf, 0, true)
 	content := string(buf[:l])
 
-	// DEBUG: Show raw token output
-	// fmt.Printf("[DEBUG]: token=%d content=%q\n", token, content)
-
 	if content == "" {
 		e.finishSlot(s, nil)
 		return
@@ -592,6 +589,9 @@ func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 		e.finishSlot(s, nil)
 		return
 	}
+
+	// [DEBUG]: Show model response.
+	// fmt.Println(resp.content)
 
 	// Update flags based on response status.
 	switch resp.status {
