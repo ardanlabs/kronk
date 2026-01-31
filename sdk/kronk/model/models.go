@@ -73,7 +73,7 @@ func (mi ModelInfo) String() string {
 
 	sizeGB := float64(mi.Size) / (1024 * 1024 * 1024)
 
-	return fmt.Sprintf("ID[%s]: Desc[%s]: Size[%.2fGB]: Template[%s]: Flags[%s]", mi.ID, mi.Desc, sizeGB, mi.Template.FileName, flagStr)
+	return fmt.Sprintf("\nID[%s]\nDesc[%s]\nSize[%.2fGB]\nTemplate[%s]\nFlags[%s]\n", mi.ID, mi.Desc, sizeGB, mi.Template.FileName, flagStr)
 }
 
 func toModelInfo(cfg Config, model llama.Model) ModelInfo {
@@ -219,31 +219,35 @@ func (d D) String() string {
 	return b.String()
 }
 
-func (d D) debug() {
-	fmt.Println("=======================================")
+func (d D) Messages() string {
+	var b strings.Builder
+	b.WriteString("\n")
+
 	messages, _ := d["messages"].([]D)
 	for i, m := range messages {
 		role, _ := m["role"].(string)
-		fmt.Printf("[DEBUG]: Message[%d] Role: %s\n", i, role)
+		fmt.Fprintf(&b, "Message[%d] Role: %s\n", i, role)
 
 		switch role {
 		case "assistant":
+			fmt.Fprintf(&b, "Message[%d] Content: %.100v\n", i, m["content"])
 			toolCalls, _ := m["tool_calls"].([]D)
-			fmt.Printf("[DEBUG]: Message[%d] ToolCalls len=%d\n", i, len(toolCalls))
+			fmt.Fprintf(&b, "Message[%d] ToolCalls len=%d\n", i, len(toolCalls))
 			for j, tc := range toolCalls {
-				fmt.Printf("[DEBUG]:   tc[%d]: %#v\n", j, tc)
+				fmt.Fprintf(&b, "  tc[%d]: %#v\n", j, tc)
 			}
 
 		case "tool":
-			fmt.Printf("[DEBUG]: Message[%d] tool_call_id: %v\n", i, m["tool_call_id"])
-			fmt.Printf("[DEBUG]: Message[%d] tool_call_name: %v\n", i, m["tool_call_name"])
-			fmt.Printf("[DEBUG]: Message[%d] Content: %.100v\n", i, m["content"])
+			fmt.Fprintf(&b, "Message[%d] tool_call_id: %v\n", i, m["tool_call_id"])
+			fmt.Fprintf(&b, "Message[%d] tool_call_name: %v\n", i, m["tool_call_name"])
+			fmt.Fprintf(&b, "Message[%d] Content: %.100v\n", i, m["content"])
 
 		default:
-			fmt.Printf("[DEBUG]: Message[%d] Content: %.100v\n", i, m["content"])
+			fmt.Fprintf(&b, "Message[%d] Content: %.100v\n", i, m["content"])
 		}
 	}
-	fmt.Println("=======================================")
+
+	return b.String()
 }
 
 // TextMessage create a new text message.

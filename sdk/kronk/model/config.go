@@ -194,8 +194,8 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("%d", *p)
 	}
 
-	return fmt.Sprintf("JinjaFile[%s]: Device[%s]: ContextWindow[%d]: NBatch[%d]: NUBatch[%d]: NThreads[%d]: NThreadsBatch[%d]: CacheTypeK[%d]: CacheTypeV[%d]: UseDirectIO[%t]: FlashAttention[%d]: IgnoreIntegrityCheck[%t]: NSeqMax[%d]: OffloadKQV[%s]: OpOffload[%s]: NGpuLayers[%s]: SplitMode[%d]: SystemPromptCache[%t]: FirstMessageCache[%t]: CacheMinTokens[%d]",
-		cfg.JinjaFile, cfg.Device, cfg.ContextWindow, cfg.NBatch, cfg.NUBatch, cfg.NThreads, cfg.NThreadsBatch,
+	return fmt.Sprintf("\nModelFiles[%v]\nProjFile[%s]\nJinjaFile[%s]\nDevice[%s]\nContextWindow[%d]\nNBatch[%d]\nNUBatch[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nCacheTypeK[%d]\nCacheTypeV[%d]\nUseDirectIO[%t]\nFlashAttention[%d]\nIgnoreIntegrityCheck[%t]\nNSeqMax[%d]\nOffloadKQV[%s]\nOpOffload[%s]\nNGpuLayers[%s]\nSplitMode[%d]\nSystemPromptCache[%t]\nFirstMessageCache[%t]\nCacheMinTokens[%d]\n",
+		cfg.ModelFiles, cfg.ProjFile, cfg.JinjaFile, cfg.Device, cfg.ContextWindow, cfg.NBatch, cfg.NUBatch, cfg.NThreads, cfg.NThreadsBatch,
 		cfg.CacheTypeK, cfg.CacheTypeV, cfg.UseDirectIO, cfg.FlashAttention, cfg.IgnoreIntegrityCheck,
 		cfg.NSeqMax, formatBoolPtr(cfg.OffloadKQV), formatBoolPtr(cfg.OpOffload),
 		formatInt32Ptr(cfg.NGpuLayers), cfg.SplitMode, cfg.SystemPromptCache, cfg.FirstMessageCache, cfg.CacheMinTokens)

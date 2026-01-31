@@ -516,6 +516,13 @@ export default function DocsSDKModel() {
               <p className="doc-description">Clone creates a shallow copy of the document. This is useful when you need to modify the document without affecting the original.</p>
             </div>
 
+            <div className="doc-section" id="method-d-messages">
+              <h4>D.Messages</h4>
+              <pre className="code-block">
+                <code>func (d D) Messages() string</code>
+              </pre>
+            </div>
+
             <div className="doc-section" id="method-d-string">
               <h4>D.String</h4>
               <pre className="code-block">
@@ -620,7 +627,7 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func (p Params) String() string</code>
               </pre>
-              <p className="doc-description">String returns a string representation of the Params containing only non-zero values in the format key[value]: key[value]: ...</p>
+              <p className="doc-description">String returns a string representation of the Params containing only non-zero values in the format key[value]\nkey[value]\n ...</p>
             </div>
 
             <div className="doc-section" id="method-splitmode-string">
@@ -891,6 +898,7 @@ export default function DocsSDKModel() {
                 <li><a href="#method-choice-finishreason">Choice.FinishReason</a></li>
                 <li><a href="#method-config-string">Config.String</a></li>
                 <li><a href="#method-d-clone">D.Clone</a></li>
+                <li><a href="#method-d-messages">D.Messages</a></li>
                 <li><a href="#method-d-string">D.String</a></li>
                 <li><a href="#method-flashattentiontype-unmarshalyaml">FlashAttentionType.UnmarshalYAML</a></li>
                 <li><a href="#method-ggmltype-string">GGMLType.String</a></li>

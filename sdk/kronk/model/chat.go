@@ -140,13 +140,12 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		if prompt == "" {
 			prompt, media, err = m.createPrompt(ctx, d)
 			if err != nil {
-				m.sendChatError(ctx, ch, id, fmt.Errorf("create-streaming: unable to apply jinja template: %w", err))
+				m.sendChatError(ctx, ch, id, fmt.Errorf("chat-streaming: unable to apply jinja template: %w", err))
 				return
 			}
 		}
 
-		// [DEBUG]: Show requests message and tool details.
-		// d.debug()
+		m.log(ctx, "chat-streaming", "messages", d.Messages())
 
 		// ---------------------------------------------------------------------
 
