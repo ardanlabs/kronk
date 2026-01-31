@@ -146,6 +146,19 @@ func printWeb(model toolapp.CatalogModelResponse) {
 		fmt.Printf("SystemPromptCache:    %t\n", model.ModelConfig.SystemPromptCache)
 		fmt.Printf("FirstMessageCache:    %t\n", model.ModelConfig.FirstMessageCache)
 		fmt.Printf("CacheMinTokens:       %d\n", model.ModelConfig.CacheMinTokens)
+		if model.ModelConfig.RopeScaling.String() != "none" {
+			fmt.Printf("RoPE Scaling:         %s\n", model.ModelConfig.RopeScaling)
+			fmt.Printf("YaRN Orig Ctx:        %v\n", formatIntPtr(model.ModelConfig.YarnOrigCtx))
+			if model.ModelConfig.RopeFreqBase != nil {
+				fmt.Printf("RoPE Freq Base:       %g\n", *model.ModelConfig.RopeFreqBase)
+			}
+			if model.ModelConfig.YarnExtFactor != nil {
+				fmt.Printf("YaRN Ext Factor:      %g\n", *model.ModelConfig.YarnExtFactor)
+			}
+			if model.ModelConfig.YarnAttnFactor != nil {
+				fmt.Printf("YaRN Attn Factor:     %g\n", *model.ModelConfig.YarnAttnFactor)
+			}
+		}
 		fmt.Println()
 	}
 
@@ -229,6 +242,19 @@ func printLocal(catDetails catalog.ModelDetails, rmc catalog.ModelConfig, mi *mo
 	fmt.Printf("SystemPromptCache:    %t\n", rmc.SystemPromptCache)
 	fmt.Printf("FirstMessageCache:    %t\n", rmc.FirstMessageCache)
 	fmt.Printf("CacheMinTokens:       %d\n", rmc.CacheMinTokens)
+	if rmc.RopeScaling.String() != "none" {
+		fmt.Printf("RoPE Scaling:         %s\n", rmc.RopeScaling)
+		fmt.Printf("YaRN Orig Ctx:        %v\n", formatIntPtr(rmc.YarnOrigCtx))
+		if rmc.RopeFreqBase != nil {
+			fmt.Printf("RoPE Freq Base:       %g\n", *rmc.RopeFreqBase)
+		}
+		if rmc.YarnExtFactor != nil {
+			fmt.Printf("YaRN Ext Factor:      %g\n", *rmc.YarnExtFactor)
+		}
+		if rmc.YarnAttnFactor != nil {
+			fmt.Printf("YaRN Attn Factor:     %g\n", *rmc.YarnAttnFactor)
+		}
+	}
 	fmt.Println()
 
 	if mi != nil && mi.Metadata != nil {
@@ -275,4 +301,11 @@ func formatBytes(b int64) string {
 	default:
 		return fmt.Sprintf("%d bytes", b)
 	}
+}
+
+func formatIntPtr(p *int) string {
+	if p == nil {
+		return "auto"
+	}
+	return fmt.Sprintf("%d", *p)
 }

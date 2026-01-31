@@ -565,6 +565,36 @@ export default function CatalogList() {
                         {modelInfo.model_config['first-message-cache'] ? 'Yes' : 'No'}
                       </span>
                     </div>
+                    {modelInfo.model_config['rope-scaling-type'] && modelInfo.model_config['rope-scaling-type'] !== 'none' && (
+                      <>
+                        <div className="model-meta-item">
+                          <label>RoPE Scaling</label>
+                          <span>{modelInfo.model_config['rope-scaling-type']}</span>
+                        </div>
+                        <div className="model-meta-item">
+                          <label>YaRN Original Context</label>
+                          <span>{modelInfo.model_config['yarn-orig-ctx'] ?? 'auto'}</span>
+                        </div>
+                        {modelInfo.model_config['rope-freq-base'] != null && (
+                          <div className="model-meta-item">
+                            <label>RoPE Freq Base</label>
+                            <span>{modelInfo.model_config['rope-freq-base']}</span>
+                          </div>
+                        )}
+                        {modelInfo.model_config['yarn-ext-factor'] != null && (
+                          <div className="model-meta-item">
+                            <label>YaRN Ext Factor</label>
+                            <span>{modelInfo.model_config['yarn-ext-factor']}</span>
+                          </div>
+                        )}
+                        {modelInfo.model_config['yarn-attn-factor'] != null && (
+                          <div className="model-meta-item">
+                            <label>YaRN Attn Factor</label>
+                            <span>{modelInfo.model_config['yarn-attn-factor']}</span>
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
                 </div>
               )}

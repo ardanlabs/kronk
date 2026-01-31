@@ -227,6 +227,14 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfi
 			SystemPromptCache:    rmc.SystemPromptCache,
 			FirstMessageCache:    rmc.FirstMessageCache,
 			CacheMinTokens:       rmc.CacheMinTokens,
+			RopeScaling:          rmc.RopeScaling,
+			RopeFreqBase:         rmc.RopeFreqBase,
+			RopeFreqScale:        rmc.RopeFreqScale,
+			YarnExtFactor:        rmc.YarnExtFactor,
+			YarnAttnFactor:       rmc.YarnAttnFactor,
+			YarnBetaFast:         rmc.YarnBetaFast,
+			YarnBetaSlow:         rmc.YarnBetaSlow,
+			YarnOrigCtx:          rmc.YarnOrigCtx,
 			Sampling: SamplingConfig{
 				Temperature:     rmc.Sampling.Temperature,
 				TopK:            rmc.Sampling.TopK,
@@ -395,6 +403,14 @@ type ModelConfig struct {
 	FirstMessageCache    bool                     `json:"first-message-cache"`
 	CacheMinTokens       int                      `json:"cache-min-tokens"`
 	Sampling             SamplingConfig           `json:"sampling-parameters"`
+	RopeScaling          model.RopeScalingType    `json:"rope-scaling-type"`
+	RopeFreqBase         *float32                 `json:"rope-freq-base"`
+	RopeFreqScale        *float32                 `json:"rope-freq-scale"`
+	YarnExtFactor        *float32                 `json:"yarn-ext-factor"`
+	YarnAttnFactor       *float32                 `json:"yarn-attn-factor"`
+	YarnBetaFast         *float32                 `json:"yarn-beta-fast"`
+	YarnBetaSlow         *float32                 `json:"yarn-beta-slow"`
+	YarnOrigCtx          *int                     `json:"yarn-orig-ctx"`
 }
 
 // CatalogMetadata represents extra information about the model.
@@ -536,6 +552,14 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 			SystemPromptCache:    rmc.SystemPromptCache,
 			FirstMessageCache:    rmc.FirstMessageCache,
 			CacheMinTokens:       rmc.CacheMinTokens,
+			RopeScaling:          rmc.RopeScaling,
+			RopeFreqBase:         rmc.RopeFreqBase,
+			RopeFreqScale:        rmc.RopeFreqScale,
+			YarnExtFactor:        rmc.YarnExtFactor,
+			YarnAttnFactor:       rmc.YarnAttnFactor,
+			YarnBetaFast:         rmc.YarnBetaFast,
+			YarnBetaSlow:         rmc.YarnBetaSlow,
+			YarnOrigCtx:          rmc.YarnOrigCtx,
 			Sampling: SamplingConfig{
 				Temperature:     rmc.Sampling.Temperature,
 				TopK:            rmc.Sampling.TopK,

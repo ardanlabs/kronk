@@ -134,11 +134,14 @@ func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) 
 
 	l(ctx, "MODEL-CONFIG", "values", cfg.String())
 
-	l(ctx, "LLAMA-CONTEXT-PARAMS", "values", fmt.Sprintf("\nNCtx[%d]\nNBatch[%d]\nNUBatch[%d]\nNSeqMax[%d]\nTypeK[%d]\nTypeV[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nEmbeddings[%d]\nPoolingType[%d]\nFlashAttentionType[%d]\nOffloadKQV[%d]\nOpOffload[%d]\n",
+	l(ctx, "LLAMA-CONTEXT-PARAMS", "values", fmt.Sprintf("\nNCtx[%d]\nNBatch[%d]\nNUBatch[%d]\nNSeqMax[%d]\nTypeK[%d]\nTypeV[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nEmbeddings[%d]\nPoolingType[%d]\nFlashAttentionType[%d]\nOffloadKQV[%d]\nOpOffload[%d]\nRopeScalingType[%d]\nRopeFreqBase[%g]\nRopeFreqScale[%g]\nYarnExtFactor[%g]\nYarnAttnFactor[%g]\nYarnBetaFast[%g]\nYarnBetaSlow[%g]\nYarnOrigCtx[%d]\n",
 		ctxParams.NCtx, ctxParams.NBatch, ctxParams.NUbatch, ctxParams.NSeqMax,
 		ctxParams.TypeK, ctxParams.TypeV, ctxParams.NThreads, ctxParams.NThreadsBatch,
 		ctxParams.Embeddings, ctxParams.PoolingType, ctxParams.FlashAttentionType,
-		ctxParams.Offload_kqv, ctxParams.OpOffload))
+		ctxParams.Offload_kqv, ctxParams.OpOffload,
+		ctxParams.RopeScalingType, ctxParams.RopeFreqBase, ctxParams.RopeFreqScale,
+		ctxParams.YarnExtFactor, ctxParams.YarnAttnFactor, ctxParams.YarnBetaFast,
+		ctxParams.YarnBetaSlow, ctxParams.YarnOrigCtx))
 
 	lctx, err := llama.InitFromModel(mdl, ctxParams)
 	if err != nil {

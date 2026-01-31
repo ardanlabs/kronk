@@ -66,6 +66,16 @@ export interface ModelConfig {
   'first-message-cache': boolean;
   'cache-min-tokens': number;
   'sampling-parameters': SamplingConfig;
+
+  // YaRN RoPE scaling for extended context windows.
+  'rope-scaling-type': string;
+  'rope-freq-base': number | null;
+  'rope-freq-scale': number | null;
+  'yarn-ext-factor': number | null;
+  'yarn-attn-factor': number | null;
+  'yarn-beta-fast': number | null;
+  'yarn-beta-slow': number | null;
+  'yarn-orig-ctx': number | null;
 }
 
 export interface ModelInfoResponse {

@@ -102,7 +102,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		}
 		Catalog struct {
 			GithubRepo      string `conf:"default:https://api.github.com/repos/ardanlabs/kronk_catalogs/contents/catalogs"`
-			ModelConfigFile string `conf:"default:zarf/kms/model_config.yaml"`
+			ModelConfigFile string
 		}
 		Templates struct {
 			GithubRepo string `conf:"default:https://api.github.com/repos/ardanlabs/kronk_catalogs/contents/templates"`
