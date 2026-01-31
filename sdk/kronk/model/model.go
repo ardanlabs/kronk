@@ -160,13 +160,8 @@ func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) 
 	// Without this, uninitialized memory can cause SIGTRAP in llama.cpp decode.
 	llama.MemoryClear(mem, true)
 
-	// Determine FMC sequence ID based on whether SPC is also enabled.
-	// If both enabled: SPC uses seq 0, FMC uses seq 1.
-	// If only FMC: FMC uses seq 0.
+	// FMC uses sequence 0 when enabled (SPC and FMC are mutually exclusive).
 	var firstMsgSeqID llama.SeqId
-	if cfg.FirstMessageCache && cfg.SystemPromptCache {
-		firstMsgSeqID = 1
-	}
 
 	m := Model{
 		cfg:           cfg,

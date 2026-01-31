@@ -46,10 +46,10 @@ const (
 )
 
 // Cache sequence constants.
+// Note: SPC and FMC are mutually exclusive; FMC caches system + user together.
 const (
-	CacheSequenceNone   int64 = 0 // No caching
-	CacheSequenceSingle int64 = 1 // FMC or SPC
-	CacheSequenceBoth   int64 = 2 // FMC + SPC
+	CacheSequenceOff int64 = 0 // No caching
+	CacheSequenceOn  int64 = 1 // FMC or SPC (mutually exclusive)
 )
 
 // VRAMConfig contains the user-provided parameters for VRAM calculation
@@ -58,7 +58,7 @@ type VRAMConfig struct {
 	ContextWindow   int64 // n_ctx - context window size (e.g., 8192, 131072)
 	BytesPerElement int64 // Depends on cache type: q8_0=1, f16=2
 	Slots           int64 // n_seq_max - number of concurrent sequences
-	CacheSequences  int64 // Additional sequences for caching: 0=none, 1=FMC or SPC, 2=FMC+SPC
+	CacheSequences  int64 // Additional sequences for caching: 0=none, 1=FMC or SPC
 }
 
 // VRAM contains the calculated VRAM requirements.
@@ -130,7 +130,7 @@ type VRAMInput struct {
 	ValueLength     int64 // V dimension per head (typically 128)
 	BytesPerElement int64 // Depends on cache type: q8_0=1, f16=2
 	Slots           int64 // n_seq_max - number of concurrent sequences
-	CacheSequences  int64 // Additional sequences for caching: 0=none, 1=FMC, 2=FMC+SPC
+	CacheSequences  int64 // Additional sequences for caching: 0=none, 1=FMC or SPC
 }
 
 // CalculateVRAM computes the VRAM requirements for running a model based on
@@ -147,7 +147,7 @@ func CalculateVRAM(input VRAMInput) VRAM {
 	// Example: 131072 × 48 × 1024 = ~6.4 GB
 	kvPerSlot := input.ContextWindow * input.BlockCount * kvPerTokenPerLayer
 
-	// Total sequences = user slots + cache sequences (FMC adds 1, FMC+SPC adds 2).
+	// Total sequences = user slots + cache sequences (FMC or SPC adds 1).
 	totalSlots := input.Slots + input.CacheSequences
 
 	// Total KV cache memory allocated at model load time.
@@ -525,15 +525,12 @@ Total sequences allocated: 2 (no cache)
 7B:  Slot Memory (2 × 537MB) ~1.07GB: Total VRAM: ~8.1GB
 70B: Slot Memory (2 × 1.3GB) ~2.6GB : Total VRAM: ~72.6GB
 
-First Memory Caching (FMC):
+First Memory Caching (FMC) or System Prompt Cache (SPC):
 Total sequences allocated: 2 + 1 = 3 (cache)
 7B:  Slot Memory (3 × 537MB) ~1.6GB: Total VRAM: ~8.6GB
 70B: Slot Memory (3 × 1.3GB) ~3.9GB: Total VRAM: ~73.9GB
 
-Both SPC and FMC:
-Total sequences allocated: 2 + 2 = 4 (cache)
-7B:  Slot Memory (4 × 537MB) ~2.15GB: Total VRAM: ~9.2GB
-70B: Slot Memory (4 × 1.3GB) ~5.2GB:  Total VRAM: ~75.2GB
+Note: SPC and FMC are mutually exclusive; FMC caches system + user together.
 
 ------------------------------------------------------------------------------
 Full Example With Real Model:
@@ -558,11 +555,9 @@ No Caching:
 Total sequences allocated: 2 : (no cache)
 Slot Memory (2 × 6.4GB) ~12.8GB: Total VRAM: ~48.8GB
 
-First Memory Caching (FMC):
+First Memory Caching (FMC) or System Prompt Cache (SPC):
 Total sequences allocated: 3 : (2 + 1) (1 cache sequence)
 Slot Memory (3 × 6.4GB) ~19.2GB: Total VRAM: ~55.2GB
 
-Both SPC and FMC:
-Total sequences allocated: 4 : (2 + 2) (2 cache sequences)
-Slot Memory (4 × 6.4GB) ~25.6GB: Total VRAM: ~61.6GB
+Note: SPC and FMC are mutually exclusive; FMC caches system + user together.
 */

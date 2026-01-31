@@ -26,7 +26,7 @@ type cacheResult struct {
 //   - SystemPromptCache: Caches the first message with role="system".
 //   - FirstMessageCache: Caches the first message with role="user".
 //
-// Both can be enabled simultaneously, using separate sequences for each cache.
+// SPC and FMC are mutually exclusive; FMC includes the system prompt in its cache.
 //
 // Returns a cacheResult containing:
 //   - modifiedD: D with cached messages removed
@@ -98,7 +98,12 @@ func (m *Model) ensureFirstMessageCached(ctx context.Context, d D) cacheResult {
 			if result.cached {
 				totalNPast += result.nPast
 				anyCached = true
-				indicesToRemove = append(indicesToRemove, userMsg.index)
+
+				// FMC caches all messages up to and including the user message
+				// (e.g., [system, user]). Remove all of them on cache hit.
+				for i := 0; i <= userMsg.index; i++ {
+					indicesToRemove = append(indicesToRemove, i)
+				}
 
 				// If FMC returned a prompt (first-time cache), use it directly.
 				if result.prompt != "" {
@@ -135,7 +140,8 @@ func (m *Model) handleSystemPromptCache(ctx context.Context, d D, msgInfo cachea
 }
 
 // handleFirstMessageCache handles caching for first user message mode.
-// Uses sequence 0 (if only FMC) or sequence 1 (if both SPC and FMC enabled).
+// Uses sequence 0. FMC caches all messages up to and including the first user
+// message (e.g., [system, user] together).
 func (m *Model) handleFirstMessageCache(ctx context.Context, d D, msgInfo cacheableMessage) cacheResult {
 	return m.cacheMessage(ctx, d, msgInfo, m.firstMsgSeqID, &m.firstMsgHash, &m.firstMsgTokens, &m.firstMsgLen)
 }
@@ -332,8 +338,8 @@ func (m *Model) decodeTokensToSeq(ctx context.Context, tokens []llama.Token, seq
 	return nil
 }
 
-// copyCachesToSeq copies cached KV states from cache sequences to the target
-// sequence. Handles both SPC (seq 0) and FMC (seq 0 or 1) based on config.
+// copyCachesToSeq copies cached KV state from the cache sequence (seq 0) to
+// the target sequence. SPC and FMC are mutually exclusive; both use seq 0.
 func (m *Model) copyCachesToSeq(seqID llama.SeqId) error {
 	if !m.cfg.SystemPromptCache && !m.cfg.FirstMessageCache {
 		return nil
@@ -351,19 +357,18 @@ func (m *Model) copyCachesToSeq(seqID llama.SeqId) error {
 		}
 	}
 
-	// Copy first message cache if enabled and populated.
+	// Copy first message cache (seq 0) if enabled and populated.
 	if m.cfg.FirstMessageCache && fmcTokens > 0 {
-		if err := llama.MemorySeqCp(m.mem, m.firstMsgSeqID, seqID, -1, -1); err != nil {
-			return fmt.Errorf("copy-cache: failed to copy FMC seq %d to %d: %w", m.firstMsgSeqID, seqID, err)
+		if err := llama.MemorySeqCp(m.mem, 0, seqID, -1, -1); err != nil {
+			return fmt.Errorf("copy-cache: failed to copy FMC seq 0 to %d: %w", seqID, err)
 		}
 	}
 
 	return nil
 }
 
-// copySystemPromptToSeq copies the cached system prompt KV cache from sequence 0
-// to the specified sequence ID. This is kept for backward compatibility.
-// For new code, use copyCachesToSeq which handles both caches.
+// copySystemPromptToSeq copies the cached KV cache from sequence 0 to the
+// specified sequence ID. This is an alias for copyCachesToSeq.
 func (m *Model) copySystemPromptToSeq(seqID llama.SeqId) error {
 	return m.copyCachesToSeq(seqID)
 }

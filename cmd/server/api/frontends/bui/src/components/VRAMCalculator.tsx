@@ -32,15 +32,12 @@ Total sequences allocated: 2 (no cache)
 7B:  Slot Memory (2 × 537MB) ~1.07GB: Total VRAM: ~8.1GB
 70B: Slot Memory (2 × 1.3GB) ~2.6GB : Total VRAM: ~72.6GB
 
-First Memory Caching (FMC):
+First Memory Caching (FMC) or System Prompt Cache (SPC):
 Total sequences allocated: 2 + 1 = 3 (cache)
 7B:  Slot Memory (3 × 537MB) ~1.6GB: Total VRAM: ~8.6GB
 70B: Slot Memory (3 × 1.3GB) ~3.9GB: Total VRAM: ~73.9GB
 
-Both SPC and FMC:
-Total sequences allocated: 2 + 2 = 4 (cache)
-7B:  Slot Memory (4 × 537MB) ~2.15GB: Total VRAM: ~9.2GB
-70B: Slot Memory (4 × 1.3GB) ~5.2GB:  Total VRAM: ~75.2GB
+Note: SPC and FMC are mutually exclusive; FMC caches system + user together.
 
 ------------------------------------------------------------------------------
 Full Example With Real Model:
@@ -65,13 +62,11 @@ No Caching:
 Total sequences allocated: 2 : (no cache)
 Slot Memory (2 × 6.4GB) ~12.8GB: Total VRAM: ~48.8GB
 
-First Memory Caching (FMC):
+First Memory Caching (FMC) or System Prompt Cache (SPC):
 Total sequences allocated: 3 : (2 + 1) (1 cache sequence)
 Slot Memory (3 × 6.4GB) ~19.2GB: Total VRAM: ~55.2GB
 
-Both SPC and FMC:
-Total sequences allocated: 4 : (2 + 2) (2 cache sequences)
-Slot Memory (4 × 6.4GB) ~25.6GB: Total VRAM: ~61.6GB`;
+Note: SPC and FMC are mutually exclusive; FMC caches system + user together.`;
 
 const CONTEXT_WINDOW_OPTIONS = [
   { value: 1024, label: '1K' },
@@ -94,9 +89,8 @@ const BYTES_PER_ELEMENT_OPTIONS = [
 const SLOT_OPTIONS = [1, 2, 3, 4, 5];
 
 const CACHE_SEQUENCE_OPTIONS = [
-  { value: 0, label: 'None (0)' },
-  { value: 1, label: 'FMC or SPC (1)' },
-  { value: 2, label: 'FMC + SPC (2)' },
+  { value: 0, label: 'Off' },
+  { value: 1, label: 'On (FMC or SPC)' },
 ];
 
 function formatBytes(bytes: number): string {
