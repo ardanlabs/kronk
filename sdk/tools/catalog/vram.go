@@ -1,9 +1,7 @@
 package catalog
 
 import (
-	"context"
 	"fmt"
-	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
@@ -23,22 +21,12 @@ func (c *Catalog) CalculateVRAM(modelID string, mc ModelConfig) (models.VRAM, er
 		CacheSequences:  cacheSequences,
 	}
 
-	details, err := c.Details(modelID)
+	vram, err := c.models.CalculateVRAM(modelID, cfg)
 	if err != nil {
 		return models.VRAM{}, fmt.Errorf("calculate-vram: unable to get model details: %w", err)
 	}
 
-	if details.Validated {
-		vram, err := c.models.CalculateVRAM(modelID, cfg)
-		if err == nil {
-			return vram, nil
-		}
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	return models.CalculateVRAMFromHuggingFace(ctx, details.Files.Models[0].URL, cfg)
+	return vram, nil
 }
 
 // =============================================================================
