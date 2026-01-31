@@ -121,6 +121,7 @@ type ModelConfig struct {
 	SystemPromptCache    bool                     `yaml:"system-prompt-cache"`
 	FirstMessageCache    bool                     `yaml:"first-message-cache"`
 	CacheMinTokens       int                      `yaml:"cache-min-tokens"`
+	InsecureLogging      bool                     `yaml:"insecure-logging"`
 	Sampling             SamplingConfig           `yaml:"sampling-parameters"`
 }
 
@@ -145,6 +146,7 @@ func (mc ModelConfig) toKronkConfig() model.Config {
 		SystemPromptCache:    mc.SystemPromptCache,
 		FirstMessageCache:    mc.FirstMessageCache,
 		CacheMinTokens:       mc.CacheMinTokens,
+		InsecureLogging:      mc.InsecureLogging,
 	}
 }
 

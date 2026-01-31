@@ -118,6 +118,8 @@ func installSystem() (models.Path, error) {
 }
 
 func newKronk(mp models.Path) (*kronk.Kronk, error) {
+	fmt.Println("loading model...")
+
 	if err := kronk.Init(); err != nil {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
@@ -138,7 +140,6 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	}
 
 	krn, err := kronk.New(cfg)
-
 	if err != nil {
 		return nil, fmt.Errorf("unable to create inference model: %w", err)
 	}

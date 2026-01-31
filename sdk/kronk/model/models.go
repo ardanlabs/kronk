@@ -243,7 +243,12 @@ func (d D) Messages() string {
 			fmt.Fprintf(&b, "Message[%d] Content: %.100v\n", i, m["content"])
 
 		default:
-			fmt.Fprintf(&b, "Message[%d] Content: %.100v\n", i, m["content"])
+			switch v := m["content"].(type) {
+			case []byte:
+				fmt.Fprintf(&b, "Message[%d] Content: BYTES (%d bytes)\n", i, len(v))
+			default:
+				fmt.Fprintf(&b, "Message[%d] Content: %.100v\n", i, v)
+			}
 		}
 	}
 

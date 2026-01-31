@@ -168,6 +168,10 @@ func buildEnvVars(cmd *cobra.Command) []string {
 	if v, _ := cmd.Flags().GetInt("llama-log"); v != -1 {
 		envVars = append(envVars, "KRONK_LLAMA_LOG="+strconv.Itoa(v))
 	}
+	if cmd.Flags().Changed("insecure-logging") {
+		v, _ := cmd.Flags().GetBool("insecure-logging")
+		envVars = append(envVars, "KRONK_INSECURE_LOGGING="+strconv.FormatBool(v))
+	}
 
 	return envVars
 }

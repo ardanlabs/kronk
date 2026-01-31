@@ -153,6 +153,10 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // CacheMinTokens sets the minimum token count required before caching. Messages
 // shorter than this threshold are not cached, as the overhead of cache management
 // may outweigh the prefill savings. When set to 0, defaults to 100 tokens.
+//
+// InsecureLogging enables logging of potentially sensitive data such as message
+// content. This should only be enabled for debugging purposes in non-production
+// environments.
 type Config struct {
 	Log                  Logger
 	ModelFiles           []string
@@ -177,6 +181,7 @@ type Config struct {
 	SystemPromptCache    bool
 	FirstMessageCache    bool
 	CacheMinTokens       int
+	InsecureLogging      bool
 }
 
 func (cfg Config) String() string {
@@ -194,11 +199,11 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("%d", *p)
 	}
 
-	return fmt.Sprintf("\nModelFiles[%v]\nProjFile[%s]\nJinjaFile[%s]\nDevice[%s]\nContextWindow[%d]\nNBatch[%d]\nNUBatch[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nCacheTypeK[%d]\nCacheTypeV[%d]\nUseDirectIO[%t]\nFlashAttention[%d]\nIgnoreIntegrityCheck[%t]\nNSeqMax[%d]\nOffloadKQV[%s]\nOpOffload[%s]\nNGpuLayers[%s]\nSplitMode[%d]\nSystemPromptCache[%t]\nFirstMessageCache[%t]\nCacheMinTokens[%d]\n",
+	return fmt.Sprintf("\nModelFiles[%v]\nProjFile[%s]\nJinjaFile[%s]\nDevice[%s]\nContextWindow[%d]\nNBatch[%d]\nNUBatch[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nCacheTypeK[%d]\nCacheTypeV[%d]\nUseDirectIO[%t]\nFlashAttention[%d]\nIgnoreIntegrityCheck[%t]\nNSeqMax[%d]\nOffloadKQV[%s]\nOpOffload[%s]\nNGpuLayers[%s]\nSplitMode[%d]\nSystemPromptCache[%t]\nFirstMessageCache[%t]\nCacheMinTokens[%d]\nInsecureLogging[%t]\n",
 		cfg.ModelFiles, cfg.ProjFile, cfg.JinjaFile, cfg.Device, cfg.ContextWindow, cfg.NBatch, cfg.NUBatch, cfg.NThreads, cfg.NThreadsBatch,
 		cfg.CacheTypeK, cfg.CacheTypeV, cfg.UseDirectIO, cfg.FlashAttention, cfg.IgnoreIntegrityCheck,
 		cfg.NSeqMax, formatBoolPtr(cfg.OffloadKQV), formatBoolPtr(cfg.OpOffload),
-		formatInt32Ptr(cfg.NGpuLayers), cfg.SplitMode, cfg.SystemPromptCache, cfg.FirstMessageCache, cfg.CacheMinTokens)
+		formatInt32Ptr(cfg.NGpuLayers), cfg.SplitMode, cfg.SystemPromptCache, cfg.FirstMessageCache, cfg.CacheMinTokens, cfg.InsecureLogging)
 }
 
 func validateConfig(ctx context.Context, cfg Config, log Logger) error {

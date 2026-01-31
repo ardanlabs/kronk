@@ -42,6 +42,9 @@ var ErrServerBusy = errors.New("server busy: all model slots have active request
 //
 // CacheTTL: Defines the time an existing model can live in the cache without
 // being used.
+//
+// InsecureLogging: When true, logs potentially sensitive data such as message
+// content and detailed model configuration.
 type Config struct {
 	Log                  model.Logger
 	BasePath             string
@@ -49,6 +52,7 @@ type Config struct {
 	ModelsInCache        int
 	CacheTTL             time.Duration
 	IgnoreIntegrityCheck bool
+	InsecureLogging      bool
 }
 
 func validateConfig(cfg Config) (Config, error) {
@@ -84,6 +88,7 @@ type Cache struct {
 	maxModelsInCache     int
 	models               *models.Models
 	ignoreIntegrityCheck bool
+	insecureLogging      bool
 	loadGroup            singleflight.Group
 }
 
@@ -105,6 +110,7 @@ func New(cfg Config) (*Cache, error) {
 		maxModelsInCache:     cfg.ModelsInCache,
 		models:               models,
 		ignoreIntegrityCheck: cfg.IgnoreIntegrityCheck,
+		insecureLogging:      cfg.InsecureLogging,
 	}
 
 	opt := otter.Options[string, *kronk.Kronk]{
@@ -212,6 +218,10 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 
 		if c.ignoreIntegrityCheck {
 			cfg.IgnoreIntegrityCheck = true
+		}
+
+		if c.insecureLogging {
+			cfg.InsecureLogging = true
 		}
 
 		cfg.Log = c.log
