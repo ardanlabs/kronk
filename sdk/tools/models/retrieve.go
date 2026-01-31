@@ -185,6 +185,7 @@ func (m *Models) FullPath(modelID string) (Path, error) {
 	index := m.loadIndex()
 
 	modelID, _, _ = strings.Cut(modelID, "/")
+	modelID = strings.ToLower(modelID)
 
 	modelPath, exists := index[modelID]
 	if !exists {
