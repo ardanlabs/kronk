@@ -225,7 +225,7 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfi
 			NGpuLayers:           rmc.NGpuLayers,
 			SplitMode:            rmc.SplitMode,
 			SystemPromptCache:    rmc.SystemPromptCache,
-			FirstMessageCache:    rmc.FirstMessageCache,
+			IncrementalCache:     rmc.IncrementalCache,
 			CacheMinTokens:       rmc.CacheMinTokens,
 			RopeScaling:          rmc.RopeScaling,
 			RopeFreqBase:         rmc.RopeFreqBase,
@@ -399,8 +399,8 @@ type ModelConfig struct {
 	OpOffload            *bool                    `json:"op-offload"`
 	NGpuLayers           *int                     `json:"ngpu-layers"`
 	SplitMode            model.SplitMode          `json:"split-mode"`
-	SystemPromptCache    bool                     `json:"system-prompt-cache"`
-	FirstMessageCache    bool                     `json:"first-message-cache"`
+	SystemPromptCache bool                     `json:"system-prompt-cache"`
+	IncrementalCache  bool                     `json:"incremental-cache"`
 	CacheMinTokens       int                      `json:"cache-min-tokens"`
 	Sampling             SamplingConfig           `json:"sampling-parameters"`
 	RopeScaling          model.RopeScalingType    `json:"rope-scaling-type"`
@@ -550,7 +550,7 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 			NGpuLayers:           rmc.NGpuLayers,
 			SplitMode:            rmc.SplitMode,
 			SystemPromptCache:    rmc.SystemPromptCache,
-			FirstMessageCache:    rmc.FirstMessageCache,
+			IncrementalCache:     rmc.IncrementalCache,
 			CacheMinTokens:       rmc.CacheMinTokens,
 			RopeScaling:          rmc.RopeScaling,
 			RopeFreqBase:         rmc.RopeFreqBase,

@@ -63,7 +63,7 @@ export interface ModelConfig {
   'ngpu-layers': number | null;
   'split-mode': string;
   'system-prompt-cache': boolean;
-  'first-message-cache': boolean;
+  'incremental-cache': boolean;
   'cache-min-tokens': number;
   'sampling-parameters': SamplingConfig;
 

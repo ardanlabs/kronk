@@ -20,14 +20,15 @@ type cacheResult struct {
 	err       error     // Any error that occurred
 }
 
-// ensureMessagesCached checks if system prompt and/or first user message are
-// cached and updates the caches if necessary. The behavior depends on which
-// cache modes are enabled:
+// ensureMessagesCached checks if the system prompt or incremental messages are
+// being cached and updates to the caches are necessary. The behavior depends
+// on which cache modes are enabled:
 //
-//   - SystemPromptCache: Caches the first message with role="system".
-//   - FirstMessageCache: Caches the first message with role="user".
+//   - SystemPromptCache (SPC): Caches the first message with role="system".
+//   - IncrementalCache (IMC): Caches all messages except the last one.
 //
-// SPC and FMC are mutually exclusive; FMC includes the system prompt in its cache.
+// SPC and IMC are mutually exclusive
+// IMC includes the system prompt in its cache.
 //
 // Returns a cacheResult containing:
 //   - modifiedD: D with cached messages removed
@@ -38,8 +39,8 @@ type cacheResult struct {
 //   - err: any error that occurred during cache update
 //
 // This function is thread-safe and handles concurrent requests appropriately.
-func (m *Model) ensureFirstMessageCached(ctx context.Context, d D) cacheResult {
-	if !m.cfg.SystemPromptCache && !m.cfg.FirstMessageCache {
+func (m *Model) ensureCache(ctx context.Context, d D) cacheResult {
+	if !m.cfg.SystemPromptCache && !m.cfg.IncrementalCache {
 		return cacheResult{modifiedD: d}
 	}
 
@@ -86,9 +87,10 @@ func (m *Model) ensureFirstMessageCached(ctx context.Context, d D) cacheResult {
 	}
 
 	// -------------------------------------------------------------------------
-	// FirstMessageCache (IMC): Incremental multi-turn caching for agentic workflows
+	// IncrementalCache (IMC): Incremental multi-turn caching for agentic
+	// workflows.
 
-	if m.cfg.FirstMessageCache {
+	if m.cfg.IncrementalCache {
 		result := m.handleIncrementalMessageCache(ctx, d, messages)
 		if result.err != nil {
 			return result
@@ -198,8 +200,8 @@ func (m *Model) handleIncrementalMessageCache(ctx context.Context, d D, messages
 	return m.buildIMCCache(ctx, d, messages, targetCacheEnd)
 }
 
-// cacheMessage is the common caching logic used by both SystemPromptCache
-// and FirstMessageCache modes. It handles:
+// cacheMessage is the common caching logic used by SystemPromptCache mode.
+// It handles:
 //   - Checking for cache hits when cache is populated
 //   - Templating and caching the message when cache is empty
 //   - Returning the suffix prompt for immediate use after caching
@@ -286,61 +288,9 @@ func (m *Model) cacheMessage(ctx context.Context, d D, msgInfo cacheableMessage,
 
 	m.log(ctx, "cache", "status", "cached", "role", msgInfo.role, "seq", seqID, "tokens", nTokens, "hash", newHash[:8])
 
-	// -------------------------------------------------------------------------
-	// System Prompt Caching
-
 	// SPC doesn't need suffix - remaining messages are templated later in chat.go.
-	// Only FMC needs the suffix for immediate use.
-	if msgInfo.role == RoleSystem {
-		return cacheResult{
-			modifiedD: d,
-			nPast:     llama.Pos(nTokens),
-			cached:    true,
-		}
-	}
-
-	// -------------------------------------------------------------------------
-	// First Message Caching
-
-	// Extract the suffix needed for generation (FMC only).
-	var suffix string
-	var fullMedia [][]byte
-
-	// Check if the cached message is the last message in the array.
-	// - SPC: System message always has user message(s) after, so this is false.
-	// - FMC: On first request with [system, user], this is true (cheap path).
-	//        Later requests hit cache earlier and don't reach this code.
-	switch msgInfo.index+1 == len(messages) {
-	case true:
-		// Cached message is the last message. Template empty messages to get
-		// only the generation prompt suffix (avoids re-templating all messages).
-		genD := D{"messages": []D{}, "add_generation_prompt": true}
-		suffix, _, err = m.createPrompt(ctx, genD)
-		if err != nil {
-			suffix = "<|im_start|>assistant\n"
-		}
-
-	case false:
-		// Additional messages exist after the cached message.
-		// Must template the full D to extract the complete suffix.
-		var fullPrompt string
-		fullPrompt, fullMedia, err = m.createPrompt(ctx, d)
-		if err != nil {
-			return cacheResult{modifiedD: d, err: fmt.Errorf("cache: failed to template full message: %w", err)}
-		}
-
-		suffix = "<|im_start|>assistant\n"
-		if len(fullPrompt) > len(prefixPrompt) {
-			suffix = fullPrompt[len(prefixPrompt):]
-		}
-	}
-
-	m.log(ctx, "cache", "suffix-len", len(suffix))
-
 	return cacheResult{
 		modifiedD: d,
-		prompt:    suffix,
-		media:     fullMedia,
 		nPast:     llama.Pos(nTokens),
 		cached:    true,
 	}
@@ -393,7 +343,7 @@ func (m *Model) decodeTokensToSeq(ctx context.Context, tokens []llama.Token, seq
 // copyCachesToSeq copies cached KV state from the cache sequence (seq 0) to
 // the target sequence. SPC and IMC are mutually exclusive; both use seq 0.
 func (m *Model) copyCachesToSeq(seqID llama.SeqId) error {
-	if !m.cfg.SystemPromptCache && !m.cfg.FirstMessageCache {
+	if !m.cfg.SystemPromptCache && !m.cfg.IncrementalCache {
 		return nil
 	}
 
@@ -410,7 +360,7 @@ func (m *Model) copyCachesToSeq(seqID llama.SeqId) error {
 	}
 
 	// Copy IMC cache (seq 0) if enabled and populated.
-	if m.cfg.FirstMessageCache && imcTokens > 0 {
+	if m.cfg.IncrementalCache && imcTokens > 0 {
 		if err := llama.MemorySeqCp(m.mem, 0, seqID, -1, -1); err != nil {
 			return fmt.Errorf("copy-cache: failed to copy IMC seq 0 to %d: %w", seqID, err)
 		}

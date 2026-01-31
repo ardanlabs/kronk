@@ -144,7 +144,7 @@ func printWeb(model toolapp.CatalogModelResponse) {
 		fmt.Printf("FlashAttention:       %v\n", model.ModelConfig.FlashAttention)
 		fmt.Printf("NSeqMax:              %d\n", model.ModelConfig.NSeqMax)
 		fmt.Printf("SystemPromptCache:    %t\n", model.ModelConfig.SystemPromptCache)
-		fmt.Printf("FirstMessageCache:    %t\n", model.ModelConfig.FirstMessageCache)
+		fmt.Printf("IncrementalCache:     %t\n", model.ModelConfig.IncrementalCache)
 		fmt.Printf("CacheMinTokens:       %d\n", model.ModelConfig.CacheMinTokens)
 		if model.ModelConfig.RopeScaling.String() != "none" {
 			fmt.Printf("RoPE Scaling:         %s\n", model.ModelConfig.RopeScaling)
@@ -240,7 +240,7 @@ func printLocal(catDetails catalog.ModelDetails, rmc catalog.ModelConfig, mi *mo
 	fmt.Printf("FlashAttention:       %v\n", rmc.FlashAttention)
 	fmt.Printf("NSeqMax:              %d\n", rmc.NSeqMax)
 	fmt.Printf("SystemPromptCache:    %t\n", rmc.SystemPromptCache)
-	fmt.Printf("FirstMessageCache:    %t\n", rmc.FirstMessageCache)
+	fmt.Printf("IncrementalCache:     %t\n", rmc.IncrementalCache)
 	fmt.Printf("CacheMinTokens:       %d\n", rmc.CacheMinTokens)
 	if rmc.RopeScaling.String() != "none" {
 		fmt.Printf("RoPE Scaling:         %s\n", rmc.RopeScaling)

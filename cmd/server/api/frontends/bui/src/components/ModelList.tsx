@@ -317,9 +317,9 @@ export default function ModelList() {
                   </span>
                 </div>
                 <div className="model-meta-item">
-                  <label>First Message Cache</label>
-                  <span className={`badge ${modelInfo.model_config['first-message-cache'] ? 'badge-yes' : 'badge-no'}`}>
-                    {modelInfo.model_config['first-message-cache'] ? 'Yes' : 'No'}
+                  <label>Incremental Cache</label>
+                  <span className={`badge ${modelInfo.model_config['incremental-cache'] ? 'badge-yes' : 'badge-no'}`}>
+                    {modelInfo.model_config['incremental-cache'] ? 'Yes' : 'No'}
                   </span>
                 </div>
                 {modelInfo.model_config['rope-scaling-type'] && modelInfo.model_config['rope-scaling-type'] !== 'none' && (

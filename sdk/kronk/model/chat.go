@@ -142,8 +142,8 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		var prompt string
 		var media [][]byte
 
-		if (m.cfg.SystemPromptCache || m.cfg.FirstMessageCache) && object == ObjectChatText {
-			cache := m.ensureFirstMessageCached(ctx, d)
+		if (m.cfg.SystemPromptCache || m.cfg.IncrementalCache) && object == ObjectChatText {
+			cache := m.ensureCache(ctx, d)
 			if cache.err != nil {
 				m.sendChatError(ctx, ch, id, cache.err)
 				return

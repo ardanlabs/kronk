@@ -757,12 +757,13 @@ func parseInt(fieldName string, val any) (int, error) {
 }
 
 func parseBool(fieldName string, val any) (bool, error) {
-	result := true
-
 	switch v := val.(type) {
+	case bool:
+		return v, nil
+
 	case string:
 		if v == "" {
-			break
+			return true, nil
 		}
 
 		b, err := strconv.ParseBool(v)
@@ -770,10 +771,10 @@ func parseBool(fieldName string, val any) (bool, error) {
 			return false, fmt.Errorf("parse-bool: field-name[%s] is not valid: %w", fieldName, err)
 		}
 
-		result = b
+		return b, nil
 	}
 
-	return result, nil
+	return true, nil
 }
 
 func parseReasoningString(fieldName string, val any) (string, error) {
