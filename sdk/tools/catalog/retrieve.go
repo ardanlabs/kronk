@@ -207,6 +207,9 @@ func (c *Catalog) ResolvedModelConfig(modelID string) ModelConfig {
 		if modelConfig.CacheMinTokens != 0 {
 			cfg.CacheMinTokens = modelConfig.CacheMinTokens
 		}
+		if modelConfig.InsecureLogging {
+			cfg.InsecureLogging = modelConfig.InsecureLogging
+		}
 		cfg.Sampling = modelConfig.Sampling
 	}
 

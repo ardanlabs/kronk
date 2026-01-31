@@ -149,6 +149,9 @@ kronk-docs:
 kronk-server: kronk-build
 	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
 
+kronk-server-race: kronk-build
+	go run -race cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
+
 kronk-server-detach: bui-build
 	go run cmd/kronk/main.go server start --detach
 
