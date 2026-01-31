@@ -146,6 +146,42 @@ The shallow `Clone()` method (maps.Copy) is sufficient since only top-level keys
 - `FirstMessageCache`: Cache first user message (role="user") KV state in sequence 0 (see below)
 - `CacheMinTokens`: Minimum tokens before caching (default: 100)
 
+## RoPE/YaRN Extended Context Configuration
+
+RoPE (Rotary Position Embedding) scaling enables context windows beyond a model's native training length. YaRN (Yet another RoPE extensioN) is the recommended method for extending context 2-4x.
+
+**Scaling Types** (`RopeScalingType`):
+
+- `RopeScalingNone` (0): Disabled, use native context length
+- `RopeScalingLinear` (1): Linear interpolation, simple but less effective for large extensions
+- `RopeScalingYaRN` (2): Frequency-dependent interpolation with attention scaling, recommended
+
+**Config Fields**:
+
+- `RopeScaling`: Scaling method (`RopeScalingNone`, `RopeScalingLinear`, `RopeScalingYaRN`)
+- `RopeFreqBase`: Base frequency override (nil = model default; common: 10000 for Llama, 1000000 for Qwen3)
+- `RopeFreqScale`: Frequency scaling factor (nil = auto-calculate from context extension ratio)
+- `YarnExtFactor`: Extrapolation mix factor (nil = auto-calculate; 0 = disable extrapolation)
+- `YarnAttnFactor`: Attention magnitude scaling (nil = default 1.0)
+- `YarnBetaFast`: Low correction dimension (nil = default 32.0)
+- `YarnBetaSlow`: High correction dimension (nil = default 1.0)
+- `YarnOrigCtx`: Original training context size (nil/0 = use model metadata)
+
+**Example: Qwen3 32k → 131k**:
+
+```go
+cfg := model.Config{
+    ContextWindow: 131072,
+    RopeScaling:   model.RopeScalingYaRN,
+    // Other YaRN params auto-calculated from context ratio
+}
+```
+
+**When to use YaRN vs Linear**:
+
+- YaRN: 2-4x context extension, maintains quality better at longer contexts
+- Linear: Simple extension, quality degrades more at high ratios
+
 ## Model-Specific Tuning Guidelines
 
 - Vision/Audio models: keep `NUBatch` high (≥2048) for image/audio token processing
