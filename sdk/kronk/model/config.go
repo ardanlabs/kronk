@@ -153,6 +153,35 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // CacheMinTokens sets the minimum token count required before caching. Messages
 // shorter than this threshold are not cached, as the overhead of cache management
 // may outweigh the prefill savings. When set to 0, defaults to 100 tokens.
+//
+// InsecureLogging enables logging of potentially sensitive data such as message
+// content. This should only be enabled for debugging purposes in non-production
+// environments.
+//
+// RopeScaling controls the RoPE scaling method for extended context support.
+// Set to RopeScalingYaRN to enable YaRN scaling for models like Qwen3 that
+// support extended context (e.g., 32k training → 131k with YaRN).
+//
+// RopeFreqBase overrides the RoPE base frequency. When nil, uses model default.
+// Common values: 10000 (Llama), 1000000 (Qwen3).
+//
+// RopeFreqScale overrides the RoPE frequency scaling factor. When nil, uses
+// model default or auto-calculates based on context extension ratio.
+//
+// YarnExtFactor sets the YaRN extrapolation mix factor. When nil, auto-calculated
+// from context scaling ratio. Set to 0 to disable extrapolation.
+//
+// YarnAttnFactor sets the YaRN attention magnitude scaling factor. When nil,
+// uses default of 1.0.
+//
+// YarnBetaFast sets the YaRN low correction dimension. When nil, uses default
+// of 32.0.
+//
+// YarnBetaSlow sets the YaRN high correction dimension. When nil, uses default
+// of 1.0.
+//
+// YarnOrigCtx sets the original training context size for YaRN scaling. When nil
+// or 0, uses the model's native training context length from metadata.
 type Config struct {
 	Log                  Logger
 	ModelFiles           []string
@@ -172,11 +201,20 @@ type Config struct {
 	NSeqMax              int
 	OffloadKQV           *bool
 	OpOffload            *bool
-	NGpuLayers           *int32
+	NGpuLayers           *int
 	SplitMode            SplitMode
 	SystemPromptCache    bool
 	FirstMessageCache    bool
 	CacheMinTokens       int
+	InsecureLogging      bool
+	RopeScaling          RopeScalingType
+	RopeFreqBase         *float32
+	RopeFreqScale        *float32
+	YarnExtFactor        *float32
+	YarnAttnFactor       *float32
+	YarnBetaFast         *float32
+	YarnBetaSlow         *float32
+	YarnOrigCtx          *int
 }
 
 func (cfg Config) String() string {
@@ -187,18 +225,28 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("%t", *p)
 	}
 
-	formatInt32Ptr := func(p *int32) string {
+	formatFloat32Ptr := func(p *float32) string {
+		if p == nil {
+			return "nil"
+		}
+		return fmt.Sprintf("%g", *p)
+	}
+
+	formatIntPtr := func(p *int) string {
 		if p == nil {
 			return "nil"
 		}
 		return fmt.Sprintf("%d", *p)
 	}
 
-	return fmt.Sprintf("JinjaFile[%s]: Device[%s]: ContextWindow[%d]: NBatch[%d]: NUBatch[%d]: NThreads[%d]: NThreadsBatch[%d]: CacheTypeK[%d]: CacheTypeV[%d]: UseDirectIO[%t]: FlashAttention[%d]: IgnoreIntegrityCheck[%t]: NSeqMax[%d]: OffloadKQV[%s]: OpOffload[%s]: NGpuLayers[%s]: SplitMode[%d]: SystemPromptCache[%t]: FirstMessageCache[%t]: CacheMinTokens[%d]",
-		cfg.JinjaFile, cfg.Device, cfg.ContextWindow, cfg.NBatch, cfg.NUBatch, cfg.NThreads, cfg.NThreadsBatch,
+	return fmt.Sprintf("\nModelFiles[%v]\nProjFile[%s]\nJinjaFile[%s]\nDevice[%s]\nContextWindow[%d]\nNBatch[%d]\nNUBatch[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nCacheTypeK[%d]\nCacheTypeV[%d]\nUseDirectIO[%t]\nFlashAttention[%d]\nIgnoreIntegrityCheck[%t]\nNSeqMax[%d]\nOffloadKQV[%s]\nOpOffload[%s]\nNGpuLayers[%s]\nSplitMode[%d]\nSystemPromptCache[%t]\nFirstMessageCache[%t]\nCacheMinTokens[%d]\nInsecureLogging[%t]\nRopeScaling[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nYarnExtFactor[%s]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnOrigCtx[%s]\n",
+		cfg.ModelFiles, cfg.ProjFile, cfg.JinjaFile, cfg.Device, cfg.ContextWindow, cfg.NBatch, cfg.NUBatch, cfg.NThreads, cfg.NThreadsBatch,
 		cfg.CacheTypeK, cfg.CacheTypeV, cfg.UseDirectIO, cfg.FlashAttention, cfg.IgnoreIntegrityCheck,
 		cfg.NSeqMax, formatBoolPtr(cfg.OffloadKQV), formatBoolPtr(cfg.OpOffload),
-		formatInt32Ptr(cfg.NGpuLayers), cfg.SplitMode, cfg.SystemPromptCache, cfg.FirstMessageCache, cfg.CacheMinTokens)
+		formatIntPtr(cfg.NGpuLayers), cfg.SplitMode, cfg.SystemPromptCache, cfg.FirstMessageCache, cfg.CacheMinTokens, cfg.InsecureLogging,
+		cfg.RopeScaling, formatFloat32Ptr(cfg.RopeFreqBase), formatFloat32Ptr(cfg.RopeFreqScale),
+		formatFloat32Ptr(cfg.YarnExtFactor), formatFloat32Ptr(cfg.YarnAttnFactor),
+		formatFloat32Ptr(cfg.YarnBetaFast), formatFloat32Ptr(cfg.YarnBetaSlow), formatIntPtr(cfg.YarnOrigCtx))
 }
 
 func validateConfig(ctx context.Context, cfg Config, log Logger) error {
@@ -358,6 +406,34 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 	ctxParams.OpOffload = 1
 	if cfg.OpOffload != nil && !*cfg.OpOffload {
 		ctxParams.OpOffload = 0
+	}
+
+	// YaRN RoPE scaling for extended context windows.
+	// Only set parameters when explicitly configured (non-nil).
+	// llama.cpp uses special values (0, -1) to mean "use model defaults".
+	if cfg.RopeScaling != RopeScalingNone {
+		ctxParams.RopeScalingType = cfg.RopeScaling.ToYZMAType()
+	}
+	if cfg.RopeFreqBase != nil {
+		ctxParams.RopeFreqBase = *cfg.RopeFreqBase
+	}
+	if cfg.RopeFreqScale != nil {
+		ctxParams.RopeFreqScale = *cfg.RopeFreqScale
+	}
+	if cfg.YarnExtFactor != nil {
+		ctxParams.YarnExtFactor = *cfg.YarnExtFactor
+	}
+	if cfg.YarnAttnFactor != nil {
+		ctxParams.YarnAttnFactor = *cfg.YarnAttnFactor
+	}
+	if cfg.YarnBetaFast != nil {
+		ctxParams.YarnBetaFast = *cfg.YarnBetaFast
+	}
+	if cfg.YarnBetaSlow != nil {
+		ctxParams.YarnBetaSlow = *cfg.YarnBetaSlow
+	}
+	if cfg.YarnOrigCtx != nil {
+		ctxParams.YarnOrigCtx = uint32(*cfg.YarnOrigCtx)
 	}
 
 	return ctxParams
@@ -605,5 +681,83 @@ func ParseSplitMode(s string) (SplitMode, error) {
 
 	default:
 		return SplitModeNone, fmt.Errorf("parse-split-mode: unknown split mode: %s (valid: none, layer, row, expert-parallel)", s)
+	}
+}
+
+// =============================================================================
+
+// RopeScalingType controls RoPE (Rotary Position Embedding) scaling method.
+// This enables extended context windows beyond the model's native training length.
+// For example, Qwen3 models trained on 32k can support 131k with YaRN scaling.
+type RopeScalingType int32
+
+const (
+	// RopeScalingNone disables RoPE scaling (use native context length).
+	RopeScalingNone RopeScalingType = 0
+
+	// RopeScalingLinear uses linear interpolation scaling.
+	// Simple but less effective for large extensions.
+	RopeScalingLinear RopeScalingType = 1
+
+	// RopeScalingYaRN uses YaRN (Yet another RoPE extensioN) scaling.
+	// Recommended for extending context 2-4x beyond training length.
+	// Applies frequency-dependent interpolation with attention scaling.
+	RopeScalingYaRN RopeScalingType = 2
+)
+
+// String returns the string representation of a RopeScalingType.
+func (r RopeScalingType) String() string {
+	switch r {
+	case RopeScalingNone:
+		return "none"
+
+	case RopeScalingLinear:
+		return "linear"
+
+	case RopeScalingYaRN:
+		return "yarn"
+
+	default:
+		return fmt.Sprintf("unknown(%d)", r)
+	}
+}
+
+// ToYZMAType converts to the yzma/llama.cpp RopeScalingType.
+func (r RopeScalingType) ToYZMAType() llama.RopeScalingType {
+	return llama.RopeScalingType(r)
+}
+
+// UnmarshalYAML implements yaml.Unmarshaler to parse string values.
+func (r *RopeScalingType) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var s string
+	if err := unmarshal(&s); err != nil {
+		return err
+	}
+
+	parsed, err := ParseRopeScalingType(s)
+	if err != nil {
+		return err
+	}
+
+	*r = parsed
+
+	return nil
+}
+
+// ParseRopeScalingType parses a string into a RopeScalingType.
+// Supported values: "none", "linear", "yarn".
+func ParseRopeScalingType(s string) (RopeScalingType, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "none", "0", "":
+		return RopeScalingNone, nil
+
+	case "linear", "1":
+		return RopeScalingLinear, nil
+
+	case "yarn", "2":
+		return RopeScalingYaRN, nil
+
+	default:
+		return RopeScalingNone, fmt.Errorf("parse-rope-scaling-type: unknown type: %s (valid: none, linear, yarn)", s)
 	}
 }

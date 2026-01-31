@@ -102,7 +102,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		}
 		Catalog struct {
 			GithubRepo      string `conf:"default:https://api.github.com/repos/ardanlabs/kronk_catalogs/contents/catalogs"`
-			ModelConfigFile string `conf:"default:zarf/kms/model_config.yaml"`
+			ModelConfigFile string
 		}
 		Templates struct {
 			GithubRepo string `conf:"default:https://api.github.com/repos/ardanlabs/kronk_catalogs/contents/templates"`
@@ -112,15 +112,16 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			TTL                  time.Duration `conf:"default:20m"`
 			IgnoreIntegrityCheck bool          `conf:"default:true"`
 		}
-		BasePath     string
-		LibPath      string
-		LibVersion   string
-		Arch         string
-		OS           string
-		Processor    string
-		HfToken      string `conf:"mask"`
-		AllowUpgrade bool   `conf:"default:true"`
-		LlamaLog     int    `conf:"default:1"`
+		BasePath        string
+		LibPath         string
+		LibVersion      string
+		Arch            string
+		OS              string
+		Processor       string
+		HfToken         string `conf:"mask"`
+		AllowUpgrade    bool   `conf:"default:true"`
+		LlamaLog        int    `conf:"default:1"`
+		InsecureLogging bool   `conf:"default:false"`
 	}{
 		Version: conf.Version{
 			Build: tag,
@@ -346,6 +347,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		ModelsInCache:        cfg.Cache.ModelsInCache,
 		CacheTTL:             cfg.Cache.TTL,
 		IgnoreIntegrityCheck: cfg.Cache.IgnoreIntegrityCheck,
+		InsecureLogging:      cfg.InsecureLogging,
 	})
 
 	if err != nil {

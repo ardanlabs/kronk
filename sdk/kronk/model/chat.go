@@ -46,7 +46,27 @@ func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error) {
 // include vision or audio content are processed sequentially due to media
 // pipeline constraints.
 func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
-	ch := make(chan ChatResponse, 1)
+	returnCh := make(chan ChatResponse, 1)
+	ch := returnCh
+
+	// When insecure logging is enabled, wrap the channel to capture and log
+	// the final response before forwarding to the caller.
+	if m.cfg.InsecureLogging {
+		ch = make(chan ChatResponse, 1)
+		go func() {
+			var logger StreamingResponseLogger
+
+			for resp := range ch {
+				logger.Capture(resp)
+				returnCh <- resp
+			}
+
+			m.log(ctx, "chat-streaming", "OUT-MESSAGES", logger.String())
+			close(returnCh)
+		}()
+	}
+
+	//----------------------------------------------------------------------
 
 	// Increment active streams before launching the goroutine to prevent a race
 	// where Unload sees zero active streams and frees the model before the
@@ -140,13 +160,14 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		if prompt == "" {
 			prompt, media, err = m.createPrompt(ctx, d)
 			if err != nil {
-				m.sendChatError(ctx, ch, id, fmt.Errorf("create-streaming: unable to apply jinja template: %w", err))
+				m.sendChatError(ctx, ch, id, fmt.Errorf("chat-streaming: unable to apply jinja template: %w", err))
 				return
 			}
 		}
 
-		// [DEBUG]: Show requests message and tool details.
-		// d.debug()
+		if m.cfg.InsecureLogging {
+			m.log(ctx, "chat-streaming", "IN-MESSAGAES", d.Messages())
+		}
 
 		// ---------------------------------------------------------------------
 
@@ -186,7 +207,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		m.sequentialChatRequest(ctx, id, m.lctx, mtmdCtx, object, prompt, media, params, ch)
 	}()
 
-	return ch
+	return returnCh
 }
 
 // prepareTextContext converts messages using the OpenAI array format

@@ -116,12 +116,21 @@ type ModelConfig struct {
 	NSeqMax              int                      `yaml:"nseq-max"`
 	OffloadKQV           *bool                    `yaml:"offload-kqv"`
 	OpOffload            *bool                    `yaml:"op-offload"`
-	NGpuLayers           *int32                   `yaml:"ngpu-layers"`
+	NGpuLayers           *int                     `yaml:"ngpu-layers"`
 	SplitMode            model.SplitMode          `yaml:"split-mode"`
 	SystemPromptCache    bool                     `yaml:"system-prompt-cache"`
 	FirstMessageCache    bool                     `yaml:"first-message-cache"`
 	CacheMinTokens       int                      `yaml:"cache-min-tokens"`
+	InsecureLogging      bool                     `yaml:"insecure-logging"`
 	Sampling             SamplingConfig           `yaml:"sampling-parameters"`
+	RopeScaling          model.RopeScalingType    `yaml:"rope-scaling-type"`
+	RopeFreqBase         *float32                 `yaml:"rope-freq-base"`
+	RopeFreqScale        *float32                 `yaml:"rope-freq-scale"`
+	YarnExtFactor        *float32                 `yaml:"yarn-ext-factor"`
+	YarnAttnFactor       *float32                 `yaml:"yarn-attn-factor"`
+	YarnBetaFast         *float32                 `yaml:"yarn-beta-fast"`
+	YarnBetaSlow         *float32                 `yaml:"yarn-beta-slow"`
+	YarnOrigCtx          *int                     `yaml:"yarn-orig-ctx"`
 }
 
 func (mc ModelConfig) toKronkConfig() model.Config {
@@ -145,6 +154,15 @@ func (mc ModelConfig) toKronkConfig() model.Config {
 		SystemPromptCache:    mc.SystemPromptCache,
 		FirstMessageCache:    mc.FirstMessageCache,
 		CacheMinTokens:       mc.CacheMinTokens,
+		InsecureLogging:      mc.InsecureLogging,
+		RopeScaling:          mc.RopeScaling,
+		RopeFreqBase:         mc.RopeFreqBase,
+		RopeFreqScale:        mc.RopeFreqScale,
+		YarnExtFactor:        mc.YarnExtFactor,
+		YarnAttnFactor:       mc.YarnAttnFactor,
+		YarnBetaFast:         mc.YarnBetaFast,
+		YarnBetaSlow:         mc.YarnBetaSlow,
+		YarnOrigCtx:          mc.YarnOrigCtx,
 	}
 }
 

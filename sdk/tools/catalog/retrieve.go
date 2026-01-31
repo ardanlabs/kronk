@@ -207,6 +207,34 @@ func (c *Catalog) ResolvedModelConfig(modelID string) ModelConfig {
 		if modelConfig.CacheMinTokens != 0 {
 			cfg.CacheMinTokens = modelConfig.CacheMinTokens
 		}
+		if modelConfig.InsecureLogging {
+			cfg.InsecureLogging = modelConfig.InsecureLogging
+		}
+		if modelConfig.RopeScaling != 0 {
+			cfg.RopeScaling = modelConfig.RopeScaling
+		}
+		if modelConfig.RopeFreqBase != nil {
+			cfg.RopeFreqBase = modelConfig.RopeFreqBase
+		}
+		if modelConfig.RopeFreqScale != nil {
+			cfg.RopeFreqScale = modelConfig.RopeFreqScale
+		}
+		if modelConfig.YarnExtFactor != nil {
+			cfg.YarnExtFactor = modelConfig.YarnExtFactor
+		}
+		if modelConfig.YarnAttnFactor != nil {
+			cfg.YarnAttnFactor = modelConfig.YarnAttnFactor
+		}
+		if modelConfig.YarnBetaFast != nil {
+			cfg.YarnBetaFast = modelConfig.YarnBetaFast
+		}
+		if modelConfig.YarnBetaSlow != nil {
+			cfg.YarnBetaSlow = modelConfig.YarnBetaSlow
+		}
+		if modelConfig.YarnOrigCtx != nil {
+			cfg.YarnOrigCtx = modelConfig.YarnOrigCtx
+		}
+
 		cfg.Sampling = modelConfig.Sampling
 	}
 

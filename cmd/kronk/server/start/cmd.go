@@ -52,6 +52,7 @@ func init() {
 	Cmd.Flags().Bool("ignore-integrity-check", false, "Ignore model integrity check")
 
 	// Runtime settings
+	Cmd.Flags().String("device", "", "Device to use for inference (e.g., cuda, metal)")
 	Cmd.Flags().String("base-path", "", "Base path for kronk data")
 	Cmd.Flags().String("lib-path", "", "Path to llama library")
 	Cmd.Flags().String("lib-version", "", "Version of llama library")
@@ -61,7 +62,7 @@ func init() {
 	Cmd.Flags().String("hf-token", "", "Hugging Face API token")
 	Cmd.Flags().Bool("allow-upgrade", true, "Allow automatic upgrades")
 	Cmd.Flags().Int("llama-log", -1, "Llama log level (0=off, 1=on)")
-	Cmd.Flags().String("device", "", "Device to use for inference (e.g., cuda, metal)")
+	Cmd.Flags().Bool("insecure-logging", false, "Enable logging of sensitive data (messages, model config)")
 
 	Cmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		err := kronk.Run(true)

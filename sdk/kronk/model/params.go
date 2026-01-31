@@ -225,72 +225,74 @@ type Params struct {
 }
 
 // String returns a string representation of the Params containing only
-// non-zero values in the format key[value]: key[value]: ...
+// non-zero values in the format key[value]\nkey[value]\n ...
 func (p Params) String() string {
 	var b strings.Builder
 
+	fmt.Fprintf(&b, "\nFINAL-PARAMS\n")
+
 	if p.Temperature != 0 {
-		fmt.Fprintf(&b, "temperature[%v]: ", p.Temperature)
+		fmt.Fprintf(&b, "temperature[%v]\n", p.Temperature)
 	}
 	if p.TopK != 0 {
-		fmt.Fprintf(&b, "top_k[%v]: ", p.TopK)
+		fmt.Fprintf(&b, "top_k[%v]\n", p.TopK)
 	}
 	if p.TopP != 0 {
-		fmt.Fprintf(&b, "top_p[%v]: ", p.TopP)
+		fmt.Fprintf(&b, "top_p[%v]\n", p.TopP)
 	}
 	if p.MinP != 0 {
-		fmt.Fprintf(&b, "min_p[%v]: ", p.MinP)
+		fmt.Fprintf(&b, "min_p[%v]\n", p.MinP)
 	}
 	if p.MaxTokens != 0 {
-		fmt.Fprintf(&b, "max_tokens[%v]: ", p.MaxTokens)
+		fmt.Fprintf(&b, "max_tokens[%v]\n", p.MaxTokens)
 	}
 	if p.RepeatPenalty != 0 {
-		fmt.Fprintf(&b, "repeat_penalty[%v]: ", p.RepeatPenalty)
+		fmt.Fprintf(&b, "repeat_penalty[%v]\n", p.RepeatPenalty)
 	}
 	if p.RepeatLastN != 0 {
-		fmt.Fprintf(&b, "repeat_last_n[%v]: ", p.RepeatLastN)
+		fmt.Fprintf(&b, "repeat_last_n[%v]\n", p.RepeatLastN)
 	}
 	if p.DryMultiplier != 0 {
-		fmt.Fprintf(&b, "dry_multiplier[%v]: ", p.DryMultiplier)
+		fmt.Fprintf(&b, "dry_multiplier[%v]\n", p.DryMultiplier)
 	}
 	if p.DryBase != 0 {
-		fmt.Fprintf(&b, "dry_base[%v]: ", p.DryBase)
+		fmt.Fprintf(&b, "dry_base[%v]\n", p.DryBase)
 	}
 	if p.DryAllowedLen != 0 {
-		fmt.Fprintf(&b, "dry_allowed_length[%v]: ", p.DryAllowedLen)
+		fmt.Fprintf(&b, "dry_allowed_length[%v]\n", p.DryAllowedLen)
 	}
 	if p.DryPenaltyLast != 0 {
-		fmt.Fprintf(&b, "dry_penalty_last_n[%v]: ", p.DryPenaltyLast)
+		fmt.Fprintf(&b, "dry_penalty_last_n[%v]\n", p.DryPenaltyLast)
 	}
 	if p.XtcProbability != 0 {
-		fmt.Fprintf(&b, "xtc_probability[%v]: ", p.XtcProbability)
+		fmt.Fprintf(&b, "xtc_probability[%v]\n", p.XtcProbability)
 	}
 	if p.XtcThreshold != 0 {
-		fmt.Fprintf(&b, "xtc_threshold[%v]: ", p.XtcThreshold)
+		fmt.Fprintf(&b, "xtc_threshold[%v]\n", p.XtcThreshold)
 	}
 	if p.XtcMinKeep != 0 {
-		fmt.Fprintf(&b, "xtc_min_keep[%v]: ", p.XtcMinKeep)
+		fmt.Fprintf(&b, "xtc_min_keep[%v]\n", p.XtcMinKeep)
 	}
 	if p.Thinking != "" {
-		fmt.Fprintf(&b, "enable_thinking[%v]: ", p.Thinking)
+		fmt.Fprintf(&b, "enable_thinking[%v]\n", p.Thinking)
 	}
 	if p.ReasoningEffort != "" {
-		fmt.Fprintf(&b, "reasoning_effort[%v]: ", p.ReasoningEffort)
+		fmt.Fprintf(&b, "reasoning_effort[%v]\n", p.ReasoningEffort)
 	}
 	if p.ReturnPrompt {
-		fmt.Fprintf(&b, "return_prompt[%v]: ", p.ReturnPrompt)
+		fmt.Fprintf(&b, "return_prompt[%v]\n", p.ReturnPrompt)
 	}
 	if p.IncludeUsage {
-		fmt.Fprintf(&b, "include_usage[%v]: ", p.IncludeUsage)
+		fmt.Fprintf(&b, "include_usage[%v]\n", p.IncludeUsage)
 	}
 	if p.Logprobs {
-		fmt.Fprintf(&b, "logprobs[%v]: ", p.Logprobs)
+		fmt.Fprintf(&b, "logprobs[%v]\n", p.Logprobs)
 	}
 	if p.TopLogprobs != 0 {
-		fmt.Fprintf(&b, "top_logprobs[%v]: ", p.TopLogprobs)
+		fmt.Fprintf(&b, "top_logprobs[%v]\n", p.TopLogprobs)
 	}
 	if p.Stream {
-		fmt.Fprintf(&b, "stream[%v]: ", p.Stream)
+		fmt.Fprintf(&b, "stream[%v]\n", p.Stream)
 	}
 
 	return strings.TrimSuffix(b.String(), " ")

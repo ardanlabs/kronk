@@ -106,11 +106,13 @@ func installSystem() (models.Path, error) {
 }
 
 func newKronk(mp models.Path) (*kronk.Kronk, error) {
+	fmt.Println("loading model...")
+
 	if err := kronk.Init(); err != nil {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
-	krn, err := kronk.New(model.Config{
+	cfg := model.Config{
 		ModelFiles:     mp.ModelFiles,
 		ContextWindow:  2048,
 		NBatch:         2048,
@@ -118,8 +120,9 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		CacheTypeK:     model.GGMLTypeQ8_0,
 		CacheTypeV:     model.GGMLTypeQ8_0,
 		FlashAttention: model.FlashAttentionEnabled,
-	})
+	}
 
+	krn, err := kronk.New(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create inference model: %w", err)
 	}

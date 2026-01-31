@@ -49,6 +49,14 @@ export default function DocsSDKModel() {
               </pre>
             </div>
 
+            <div className="doc-section" id="func-parseropescalingtype">
+              <h4>ParseRopeScalingType</h4>
+              <pre className="code-block">
+                <code>func ParseRopeScalingType(s string) (RopeScalingType, error)</code>
+              </pre>
+              <p className="doc-description">ParseRopeScalingType parses a string into a RopeScalingType. Supported values: "none", "linear", "yarn".</p>
+            </div>
+
             <div className="doc-section" id="func-parsesplitmode">
               <h4>ParseSplitMode</h4>
               <pre className="code-block">
@@ -113,14 +121,23 @@ export default function DocsSDKModel() {
 	NSeqMax              int
 	OffloadKQV           *bool
 	OpOffload            *bool
-	NGpuLayers           *int32
+	NGpuLayers           *int
 	SplitMode            SplitMode
 	SystemPromptCache    bool
 	FirstMessageCache    bool
 	CacheMinTokens       int
+	InsecureLogging      bool
+	RopeScaling          RopeScalingType
+	RopeFreqBase         *float32
+	RopeFreqScale        *float32
+	YarnExtFactor        *float32
+	YarnAttnFactor       *float32
+	YarnBetaFast         *float32
+	YarnBetaSlow         *float32
+	YarnOrigCtx          *int
 }`}</code>
               </pre>
-              <p className="doc-description">Config represents model level configuration. These values if configured incorrectly can cause the system to panic. The defaults are used when these values are set to 0. ModelInstances is the number of instances of the model to create. Unless you have more than 1 GPU, the recommended number of instances is 1. ModelFiles is the path to the model files. This is mandatory to provide. ProjFiles is the path to the projection files. This is mandatory for media based models like vision and audio. JinjaFile is the path to the jinja file. This is not required and can be used if you want to override the templated provided by the model metadata. Device is the device to use for the model. If not set, the default device will be used. To see what devices are available, run the following command which will be found where you installed llama.cpp. $ llama-bench --list-devices ContextWindow (often referred to as context length) is the maximum number of tokens that a large language model can process and consider at one time when generating a response. It defines the model's effective "memory" for a single conversation or text generation task. When set to 0, the default value is 4096. NBatch is the logical batch size or the maximum number of tokens that can be in a single forward pass through the model at any given time. It defines the maximum capacity of the processing batch. If you are processing a very long prompt or multiple prompts simultaneously, the total number of tokens processed in one go will not exceed NBatch. Increasing n_batch can improve performance (throughput) if your hardware can handle it, as it better utilizes parallel computation. However, a very high n_batch can lead to out-of-memory errors on systems with limited VRAM. When set to 0, the default value is 2048. NUBatch is the physical batch size or the maximum number of tokens processed together during the initial prompt processing phase (also called "prompt ingestion") to populate the KV cache. It specifically optimizes the initial loading of prompt tokens into the KV cache. If a prompt is longer than NUBatch, it will be broken down and processed in chunks of n_ubatch tokens sequentially. This parameter is crucial for tuning performance on specific hardware (especially GPUs) because different values might yield better prompt processing times depending on the memory architecture. When set to 0, the default value is 512. NThreads is the number of threads to use for generation. When set to 0, the default llama.cpp value is used. NThreadsBatch is the number of threads to use for batch processing. When set to 0, the default llama.cpp value is used. CacheTypeK is the data type for the K (key) cache. This controls the precision of the key vectors in the KV cache. Lower precision types (like Q8_0 or Q4_0) reduce memory usage but may slightly affect quality. When set to GGMLTypeAuto or left as zero value, the default llama.cpp value (F16) is used. CacheTypeV is the data type for the V (value) cache. This controls the precision of the value vectors in the KV cache. When set to GGMLTypeAuto or left as zero value, the default llama.cpp value (F16) is used. FlashAttention controls Flash Attention mode. Flash Attention reduces memory usage and speeds up attention computation, especially for large context windows. When left as zero value, FlashAttentionEnabled is used (default on). Set to FlashAttentionDisabled to disable, or FlashAttentionAuto to let llama.cpp decide. IgnoreIntegrityCheck is a boolean that determines if the system should ignore a model integrity check before trying to use it. NSeqMax controls concurrency behavior based on model type. For text inference models, it sets the maximum number of sequences processed in parallel within a single model instance (batched inference). For sequential models (embeddings, reranking, vision, audio), it creates that many model instances in a pool for concurrent request handling. When set to 0, a default of 1 is used. OffloadKQV controls whether the KV cache is offloaded to the GPU. When nil or true, the KV cache is stored on the GPU (default behavior). Set to false to keep the KV cache on the CPU, which reduces VRAM usage but may slow inference. OpOffload controls whether host tensor operations are offloaded to the device (GPU). When nil or true, operations are offloaded (default behavior). Set to false to keep operations on the CPU. NGpuLayers is the number of model layers to offload to the GPU. When set to 0, all layers are offloaded (default). Set to -1 to keep all layers on CPU. Any positive value specifies the exact number of layers to offload. SplitMode controls how the model is split across multiple GPUs: - SplitModeNone (0): single GPU - SplitModeLayer (1): split layers and KV across GPUs - SplitModeRow (2): split layers and KV across GPUs with tensor parallelism (recommended for MoE models like Qwen3-MoE, Mixtral, DeepSeek) When not set, defaults to SplitModeRow for optimal MoE performance. SystemPromptCache enables caching of system prompt KV state. When enabled, the first message with role="system" is cached. The system prompt is evaluated once and its KV cache is copied to all client sequences on subsequent requests with the same system prompt. This avoids redundant prefill computation for applications that use a consistent system prompt. The cache is automatically invalidated and re-evaluated when the system prompt changes. FirstMessageCache enables caching of the first user message's KV state. This supports clients like Cline that use a large first user message as context. The first message with role="user" is cached. The cache is invalidated when the first user message changes. Both SystemPromptCache and FirstMessageCache can be enabled simultaneously. When both are enabled, they use separate sequences (seq 0 for SPC, seq 1 for FMC) and the memory overhead is +2 context windows. CacheMinTokens sets the minimum token count required before caching. Messages shorter than this threshold are not cached, as the overhead of cache management may outweigh the prefill savings. When set to 0, defaults to 100 tokens.</p>
+              <p className="doc-description">Config represents model level configuration. These values if configured incorrectly can cause the system to panic. The defaults are used when these values are set to 0. ModelInstances is the number of instances of the model to create. Unless you have more than 1 GPU, the recommended number of instances is 1. ModelFiles is the path to the model files. This is mandatory to provide. ProjFiles is the path to the projection files. This is mandatory for media based models like vision and audio. JinjaFile is the path to the jinja file. This is not required and can be used if you want to override the templated provided by the model metadata. Device is the device to use for the model. If not set, the default device will be used. To see what devices are available, run the following command which will be found where you installed llama.cpp. $ llama-bench --list-devices ContextWindow (often referred to as context length) is the maximum number of tokens that a large language model can process and consider at one time when generating a response. It defines the model's effective "memory" for a single conversation or text generation task. When set to 0, the default value is 4096. NBatch is the logical batch size or the maximum number of tokens that can be in a single forward pass through the model at any given time. It defines the maximum capacity of the processing batch. If you are processing a very long prompt or multiple prompts simultaneously, the total number of tokens processed in one go will not exceed NBatch. Increasing n_batch can improve performance (throughput) if your hardware can handle it, as it better utilizes parallel computation. However, a very high n_batch can lead to out-of-memory errors on systems with limited VRAM. When set to 0, the default value is 2048. NUBatch is the physical batch size or the maximum number of tokens processed together during the initial prompt processing phase (also called "prompt ingestion") to populate the KV cache. It specifically optimizes the initial loading of prompt tokens into the KV cache. If a prompt is longer than NUBatch, it will be broken down and processed in chunks of n_ubatch tokens sequentially. This parameter is crucial for tuning performance on specific hardware (especially GPUs) because different values might yield better prompt processing times depending on the memory architecture. When set to 0, the default value is 512. NThreads is the number of threads to use for generation. When set to 0, the default llama.cpp value is used. NThreadsBatch is the number of threads to use for batch processing. When set to 0, the default llama.cpp value is used. CacheTypeK is the data type for the K (key) cache. This controls the precision of the key vectors in the KV cache. Lower precision types (like Q8_0 or Q4_0) reduce memory usage but may slightly affect quality. When set to GGMLTypeAuto or left as zero value, the default llama.cpp value (F16) is used. CacheTypeV is the data type for the V (value) cache. This controls the precision of the value vectors in the KV cache. When set to GGMLTypeAuto or left as zero value, the default llama.cpp value (F16) is used. FlashAttention controls Flash Attention mode. Flash Attention reduces memory usage and speeds up attention computation, especially for large context windows. When left as zero value, FlashAttentionEnabled is used (default on). Set to FlashAttentionDisabled to disable, or FlashAttentionAuto to let llama.cpp decide. IgnoreIntegrityCheck is a boolean that determines if the system should ignore a model integrity check before trying to use it. NSeqMax controls concurrency behavior based on model type. For text inference models, it sets the maximum number of sequences processed in parallel within a single model instance (batched inference). For sequential models (embeddings, reranking, vision, audio), it creates that many model instances in a pool for concurrent request handling. When set to 0, a default of 1 is used. OffloadKQV controls whether the KV cache is offloaded to the GPU. When nil or true, the KV cache is stored on the GPU (default behavior). Set to false to keep the KV cache on the CPU, which reduces VRAM usage but may slow inference. OpOffload controls whether host tensor operations are offloaded to the device (GPU). When nil or true, operations are offloaded (default behavior). Set to false to keep operations on the CPU. NGpuLayers is the number of model layers to offload to the GPU. When set to 0, all layers are offloaded (default). Set to -1 to keep all layers on CPU. Any positive value specifies the exact number of layers to offload. SplitMode controls how the model is split across multiple GPUs: - SplitModeNone (0): single GPU - SplitModeLayer (1): split layers and KV across GPUs - SplitModeRow (2): split layers and KV across GPUs with tensor parallelism (recommended for MoE models like Qwen3-MoE, Mixtral, DeepSeek) When not set, defaults to SplitModeRow for optimal MoE performance. SystemPromptCache enables caching of system prompt KV state. When enabled, the first message with role="system" is cached. The system prompt is evaluated once and its KV cache is copied to all client sequences on subsequent requests with the same system prompt. This avoids redundant prefill computation for applications that use a consistent system prompt. The cache is automatically invalidated and re-evaluated when the system prompt changes. FirstMessageCache enables caching of the first user message's KV state. This supports clients like Cline that use a large first user message as context. The first message with role="user" is cached. The cache is invalidated when the first user message changes. Both SystemPromptCache and FirstMessageCache can be enabled simultaneously. When both are enabled, they use separate sequences (seq 0 for SPC, seq 1 for FMC) and the memory overhead is +2 context windows. CacheMinTokens sets the minimum token count required before caching. Messages shorter than this threshold are not cached, as the overhead of cache management may outweigh the prefill savings. When set to 0, defaults to 100 tokens. InsecureLogging enables logging of potentially sensitive data such as message content. This should only be enabled for debugging purposes in non-production environments. RopeScaling controls the RoPE scaling method for extended context support. Set to RopeScalingYaRN to enable YaRN scaling for models like Qwen3 that support extended context (e.g., 32k training → 131k with YaRN). RopeFreqBase overrides the RoPE base frequency. When nil, uses model default. Common values: 10000 (Llama), 1000000 (Qwen3). RopeFreqScale overrides the RoPE frequency scaling factor. When nil, uses model default or auto-calculates based on context extension ratio. YarnExtFactor sets the YaRN extrapolation mix factor. When nil, auto-calculated from context scaling ratio. Set to 0 to disable extrapolation. YarnAttnFactor sets the YaRN attention magnitude scaling factor. When nil, uses default of 1.0. YarnBetaFast sets the YaRN low correction dimension. When nil, uses default of 32.0. YarnBetaSlow sets the YaRN high correction dimension. When nil, uses default of 1.0. YarnOrigCtx sets the original training context size for YaRN scaling. When nil or 0, uses the model's native training context length from metadata.</p>
             </div>
 
             <div className="doc-section" id="type-contentlogprob">
@@ -425,12 +442,30 @@ export default function DocsSDKModel() {
               </pre>
             </div>
 
+            <div className="doc-section" id="type-ropescalingtype">
+              <h4>RopeScalingType</h4>
+              <pre className="code-block">
+                <code>{`type RopeScalingType int32`}</code>
+              </pre>
+              <p className="doc-description">RopeScalingType controls RoPE (Rotary Position Embedding) scaling method. This enables extended context windows beyond the model's native training length. For example, Qwen3 models trained on 32k can support 131k with YaRN scaling.</p>
+            </div>
+
             <div className="doc-section" id="type-splitmode">
               <h4>SplitMode</h4>
               <pre className="code-block">
                 <code>{`type SplitMode int32`}</code>
               </pre>
               <p className="doc-description">SplitMode controls how the model is split across multiple GPUs. This is particularly important for Mixture of Experts (MoE) models.</p>
+            </div>
+
+            <div className="doc-section" id="type-streamingresponselogger">
+              <h4>StreamingResponseLogger</h4>
+              <pre className="code-block">
+                <code>{`type StreamingResponseLogger struct {
+	// Has unexported fields.
+}`}</code>
+              </pre>
+              <p className="doc-description">StreamingResponseLogger captures the final streaming response for logging. It must capture data before forwarding since the caller may mutate the response.</p>
             </div>
 
             <div className="doc-section" id="type-template">
@@ -514,6 +549,13 @@ export default function DocsSDKModel() {
                 <code>func (d D) Clone() D</code>
               </pre>
               <p className="doc-description">Clone creates a shallow copy of the document. This is useful when you need to modify the document without affecting the original.</p>
+            </div>
+
+            <div className="doc-section" id="method-d-messages">
+              <h4>D.Messages</h4>
+              <pre className="code-block">
+                <code>func (d D) Messages() string</code>
+              </pre>
             </div>
 
             <div className="doc-section" id="method-d-string">
@@ -620,7 +662,31 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func (p Params) String() string</code>
               </pre>
-              <p className="doc-description">String returns a string representation of the Params containing only non-zero values in the format key[value]: key[value]: ...</p>
+              <p className="doc-description">String returns a string representation of the Params containing only non-zero values in the format key[value]\nkey[value]\n ...</p>
+            </div>
+
+            <div className="doc-section" id="method-ropescalingtype-string">
+              <h4>RopeScalingType.String</h4>
+              <pre className="code-block">
+                <code>func (r RopeScalingType) String() string</code>
+              </pre>
+              <p className="doc-description">String returns the string representation of a RopeScalingType.</p>
+            </div>
+
+            <div className="doc-section" id="method-ropescalingtype-toyzmatype">
+              <h4>RopeScalingType.ToYZMAType</h4>
+              <pre className="code-block">
+                <code>func (r RopeScalingType) ToYZMAType() llama.RopeScalingType</code>
+              </pre>
+              <p className="doc-description">ToYZMAType converts to the yzma/llama.cpp RopeScalingType.</p>
+            </div>
+
+            <div className="doc-section" id="method-ropescalingtype-unmarshalyaml">
+              <h4>RopeScalingType.UnmarshalYAML</h4>
+              <pre className="code-block">
+                <code>func (r *RopeScalingType) UnmarshalYAML(unmarshal func(interface&#123;&#125;) error) error</code>
+              </pre>
+              <p className="doc-description">UnmarshalYAML implements yaml.Unmarshaler to parse string values.</p>
             </div>
 
             <div className="doc-section" id="method-splitmode-string">
@@ -645,6 +711,22 @@ export default function DocsSDKModel() {
                 <code>func (s *SplitMode) UnmarshalYAML(unmarshal func(interface&#123;&#125;) error) error</code>
               </pre>
               <p className="doc-description">UnmarshalYAML implements yaml.Unmarshaler to parse string values.</p>
+            </div>
+
+            <div className="doc-section" id="method-streamingresponselogger-capture">
+              <h4>StreamingResponseLogger.Capture</h4>
+              <pre className="code-block">
+                <code>func (l *StreamingResponseLogger) Capture(resp ChatResponse)</code>
+              </pre>
+              <p className="doc-description">Capture captures data from a streaming response. Call this for each response before forwarding it. It only captures from the final response (when FinishReason is set).</p>
+            </div>
+
+            <div className="doc-section" id="method-streamingresponselogger-string">
+              <h4>StreamingResponseLogger.String</h4>
+              <pre className="code-block">
+                <code>func (l *StreamingResponseLogger) String() string</code>
+              </pre>
+              <p className="doc-description">String returns a formatted string for logging.</p>
             </div>
 
             <div className="doc-section" id="method-toolcallarguments-marshaljson">
@@ -849,6 +931,7 @@ export default function DocsSDKModel() {
                 <li><a href="#func-checkmodel">CheckModel</a></li>
                 <li><a href="#func-parseggmltype">ParseGGMLType</a></li>
                 <li><a href="#func-newmodel">NewModel</a></li>
+                <li><a href="#func-parseropescalingtype">ParseRopeScalingType</a></li>
                 <li><a href="#func-parsesplitmode">ParseSplitMode</a></li>
               </ul>
             </div>
@@ -877,7 +960,9 @@ export default function DocsSDKModel() {
                 <li><a href="#type-responsemessage">ResponseMessage</a></li>
                 <li><a href="#type-responsetoolcall">ResponseToolCall</a></li>
                 <li><a href="#type-responsetoolcallfunction">ResponseToolCallFunction</a></li>
+                <li><a href="#type-ropescalingtype">RopeScalingType</a></li>
                 <li><a href="#type-splitmode">SplitMode</a></li>
+                <li><a href="#type-streamingresponselogger">StreamingResponseLogger</a></li>
                 <li><a href="#type-template">Template</a></li>
                 <li><a href="#type-templateretriever">TemplateRetriever</a></li>
                 <li><a href="#type-toolcallarguments">ToolCallArguments</a></li>
@@ -891,6 +976,7 @@ export default function DocsSDKModel() {
                 <li><a href="#method-choice-finishreason">Choice.FinishReason</a></li>
                 <li><a href="#method-config-string">Config.String</a></li>
                 <li><a href="#method-d-clone">D.Clone</a></li>
+                <li><a href="#method-d-messages">D.Messages</a></li>
                 <li><a href="#method-d-string">D.String</a></li>
                 <li><a href="#method-flashattentiontype-unmarshalyaml">FlashAttentionType.UnmarshalYAML</a></li>
                 <li><a href="#method-ggmltype-string">GGMLType.String</a></li>
@@ -905,9 +991,14 @@ export default function DocsSDKModel() {
                 <li><a href="#method-model-unload">Model.Unload</a></li>
                 <li><a href="#method-modelinfo-string">ModelInfo.String</a></li>
                 <li><a href="#method-params-string">Params.String</a></li>
+                <li><a href="#method-ropescalingtype-string">RopeScalingType.String</a></li>
+                <li><a href="#method-ropescalingtype-toyzmatype">RopeScalingType.ToYZMAType</a></li>
+                <li><a href="#method-ropescalingtype-unmarshalyaml">RopeScalingType.UnmarshalYAML</a></li>
                 <li><a href="#method-splitmode-string">SplitMode.String</a></li>
                 <li><a href="#method-splitmode-toyzmatype">SplitMode.ToYZMAType</a></li>
                 <li><a href="#method-splitmode-unmarshalyaml">SplitMode.UnmarshalYAML</a></li>
+                <li><a href="#method-streamingresponselogger-capture">StreamingResponseLogger.Capture</a></li>
+                <li><a href="#method-streamingresponselogger-string">StreamingResponseLogger.String</a></li>
                 <li><a href="#method-toolcallarguments-marshaljson">ToolCallArguments.MarshalJSON</a></li>
                 <li><a href="#method-toolcallarguments-unmarshaljson">ToolCallArguments.UnmarshalJSON</a></li>
               </ul>
