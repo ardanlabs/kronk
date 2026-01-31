@@ -53,10 +53,11 @@ type Model struct {
 	sysPromptHash   string
 	sysPromptTokens int
 	sysPromptLen    int
-	firstMsgHash    string
-	firstMsgTokens  int
-	firstMsgLen     int
-	firstMsgSeqID   llama.SeqId // 0 if only FMC enabled, 1 if both enabled
+	imcHash         string      // Hash of all cached messages (IMC mode)
+	imcTokens       int         // Total tokens in IMC cache
+	imcMsgCount     int         // Number of messages currently cached
+	imcPromptLen    int         // Length of templated prefix string (for extension)
+	imcSeqID        llama.SeqId // Sequence ID for IMC cache
 }
 
 func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) (*Model, error) {
@@ -160,21 +161,21 @@ func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) 
 	// Without this, uninitialized memory can cause SIGTRAP in llama.cpp decode.
 	llama.MemoryClear(mem, true)
 
-	// FMC uses sequence 0 when enabled (SPC and FMC are mutually exclusive).
-	var firstMsgSeqID llama.SeqId
+	// IMC uses sequence 0 when enabled (SPC and IMC are mutually exclusive).
+	var imcSeqID llama.SeqId
 
 	m := Model{
-		cfg:           cfg,
-		log:           l,
-		model:         mdl,
-		vocab:         llama.ModelGetVocab(mdl),
-		ctxParams:     ctxParams,
-		lctx:          lctx,
-		mem:           mem,
-		template:      template,
-		projFile:      cfg.ProjFile,
-		modelInfo:     modelInfo,
-		firstMsgSeqID: firstMsgSeqID,
+		cfg:       cfg,
+		log:       l,
+		model:     mdl,
+		vocab:     llama.ModelGetVocab(mdl),
+		ctxParams: ctxParams,
+		lctx:      lctx,
+		mem:       mem,
+		template:  template,
+		projFile:  cfg.ProjFile,
+		modelInfo: modelInfo,
+		imcSeqID:  imcSeqID,
 	}
 
 	// Initialize batch engine for text-only models (no ProjFile).

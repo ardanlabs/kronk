@@ -230,7 +230,7 @@ func (d D) Messages() string {
 
 		switch role {
 		case "assistant":
-			fmt.Fprintf(&b, "Message[%d] Content: %.100v\n", i, m["content"])
+			fmt.Fprintf(&b, "Message[%d] Content (100): %.100v\n", i, m["content"])
 			toolCalls, _ := m["tool_calls"].([]D)
 			fmt.Fprintf(&b, "Message[%d] ToolCalls len=%d\n", i, len(toolCalls))
 			for j, tc := range toolCalls {
@@ -240,14 +240,14 @@ func (d D) Messages() string {
 		case "tool":
 			fmt.Fprintf(&b, "Message[%d] tool_call_id: %v\n", i, m["tool_call_id"])
 			fmt.Fprintf(&b, "Message[%d] tool_call_name: %v\n", i, m["tool_call_name"])
-			fmt.Fprintf(&b, "Message[%d] Content: %.100v\n", i, m["content"])
+			fmt.Fprintf(&b, "Message[%d] Content (100): %.100v\n", i, m["content"])
 
 		default:
 			switch v := m["content"].(type) {
 			case []byte:
 				fmt.Fprintf(&b, "Message[%d] Content: BYTES (%d bytes)\n", i, len(v))
 			default:
-				fmt.Fprintf(&b, "Message[%d] Content: %.100v\n", i, v)
+				fmt.Fprintf(&b, "Message[%d] Content (100): %.100v\n", i, v)
 			}
 		}
 	}

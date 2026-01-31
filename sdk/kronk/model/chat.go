@@ -54,14 +54,14 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 	if m.cfg.InsecureLogging {
 		ch = make(chan ChatResponse, 1)
 		go func() {
-			var logger StreamingResponseLogger
+			var srl StreamingResponseLogger
 
 			for resp := range ch {
-				logger.Capture(resp)
+				srl.Capture(resp)
 				returnCh <- resp
 			}
 
-			m.log(ctx, "chat-streaming", "OUT-MESSAGES", logger.String())
+			m.log(ctx, "chat-streaming", "OUT-MESSAGES", srl.String())
 			close(returnCh)
 		}()
 	}

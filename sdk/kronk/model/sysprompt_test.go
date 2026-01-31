@@ -147,6 +147,54 @@ func TestHashMessage(t *testing.T) {
 	}
 }
 
+func TestHashMessages(t *testing.T) {
+	msgs1 := []D{
+		{"role": "system", "content": "You are a helpful assistant."},
+		{"role": "user", "content": "Hello"},
+	}
+	msgs2 := []D{
+		{"role": "system", "content": "You are a helpful assistant."},
+		{"role": "user", "content": "Hello"},
+	}
+	msgs3 := []D{
+		{"role": "system", "content": "You are a helpful assistant."},
+		{"role": "user", "content": "Hello"},
+		{"role": "assistant", "content": "Hi there!"},
+	}
+	msgs4 := []D{
+		{"role": "system", "content": "Different system"},
+		{"role": "user", "content": "Hello"},
+	}
+
+	hash1 := hashMessages(msgs1)
+	hash2 := hashMessages(msgs2)
+	hash3 := hashMessages(msgs3)
+	hash4 := hashMessages(msgs4)
+
+	if hash1 != hash2 {
+		t.Error("same messages should produce same hash")
+	}
+
+	if hash1 == hash3 {
+		t.Error("different message count should produce different hash")
+	}
+
+	if hash1 == hash4 {
+		t.Error("different content should produce different hash")
+	}
+
+	// Verify prefix matching: msgs1 is a prefix of msgs3, but hashes differ.
+	if hash1 == hashMessages(msgs3[:2]) {
+		// This SHOULD be equal - prefix should match.
+		t.Log("prefix hash matches as expected")
+	}
+
+	prefixHash := hashMessages(msgs3[:2])
+	if hash1 != prefixHash {
+		t.Error("prefix of messages should produce same hash as original prefix")
+	}
+}
+
 func TestRemoveMessagesAtIndices(t *testing.T) {
 	tests := []struct {
 		name          string
