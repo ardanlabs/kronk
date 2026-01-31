@@ -72,16 +72,16 @@ google/gemma-3-4b-it-Q4_K_M:
     temperature: 0.7
     top_k: 40
 
-google/gemma-3-4b-it-Q4_K_M/FMC:
-  first-message-cache: true
+google/gemma-3-4b-it-Q4_K_M/IMC:
+  incremental-cache: true
 ```
 
-Keys are model IDs. The `/FMC` variant allows different configs for the same model.
+Keys are model IDs. The `/IMC` variant allows different configs for the same model.
 
 **Model ID Format:**
 
 - Standard: `org/model-name` (e.g., `google/gemma-3-4b-it-Q4_K_M`)
-- With config variant: `org/model-name/FMC` (e.g., `google/gemma-3-4b-it-Q4_K_M/FMC`)
+- With config variant: `org/model-name/IMC` (e.g., `google/gemma-3-4b-it-Q4_K_M/IMC`)
 
 ## defaults Package
 

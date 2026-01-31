@@ -127,15 +127,11 @@ func newBatchEngine(m *Model, nSlots int) *batchEngine {
 	batch := llama.BatchInit(int32(nCtx), 0, int32(nSlots))
 
 	// Calculate sequence offset based on reserved cache sequences.
-	// Seq 0: SystemPromptCache (if enabled)
-	// Seq 1: FirstMessageCache (if both enabled)
+	// Seq 0: SystemPromptCache or IncrementalCache (mutually exclusive)
 	// Slots start after reserved sequences.
 	cacheSeqs := 0
-	if m.cfg.SystemPromptCache {
-		cacheSeqs++
-	}
-	if m.cfg.FirstMessageCache {
-		cacheSeqs++
+	if m.cfg.SystemPromptCache || m.cfg.IncrementalCache {
+		cacheSeqs = 1
 	}
 
 	// Initialize slots.
@@ -700,7 +696,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
 
 	// Restore cached KV state if enabled.
-	if e.model.cfg.SystemPromptCache || e.model.cfg.FirstMessageCache {
+	if e.model.cfg.SystemPromptCache || e.model.cfg.IncrementalCache {
 		e.model.copySystemPromptToSeq(s.seqID)
 	}
 

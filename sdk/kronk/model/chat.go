@@ -54,14 +54,14 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 	if m.cfg.InsecureLogging {
 		ch = make(chan ChatResponse, 1)
 		go func() {
-			var logger StreamingResponseLogger
+			var srl StreamingResponseLogger
 
 			for resp := range ch {
-				logger.Capture(resp)
+				srl.Capture(resp)
 				returnCh <- resp
 			}
 
-			m.log(ctx, "chat-streaming", "OUT-MESSAGES", logger.String())
+			m.log(ctx, "chat-streaming", "OUT-MESSAGES", srl.String())
 			close(returnCh)
 		}()
 	}
@@ -142,8 +142,8 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		var prompt string
 		var media [][]byte
 
-		if (m.cfg.SystemPromptCache || m.cfg.FirstMessageCache) && object == ObjectChatText {
-			cache := m.ensureFirstMessageCached(ctx, d)
+		if (m.cfg.SystemPromptCache || m.cfg.IncrementalCache) && object == ObjectChatText {
+			cache := m.ensureCache(ctx, d)
 			if cache.err != nil {
 				m.sendChatError(ctx, ch, id, cache.err)
 				return

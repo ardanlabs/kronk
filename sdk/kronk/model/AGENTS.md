@@ -85,10 +85,10 @@ When caching is enabled, sequence 0 is reserved for cached prompts, so slot seqI
 NSeqMax = 2
 Without caching:        slot[0].seqID=0, slot[1].seqID=1
 With SystemPromptCache: slot[0].seqID=1, slot[1].seqID=2  SPC cached in seqID=0
-With FirstMsgCache:     slot[0].seqID=1, slot[1].seqID=2  FMC cached in seqID=0
+With FirstMsgCache:     slot[0].seqID=1, slot[1].seqID=2  IMC cached in seqID=0
 ```
 
-Note: SPC and FMC are mutually exclusive. FMC caches all messages up to and including the first user message (e.g., [system, user] together).
+Note: SPC and IMC are mutually exclusive. IMC caches all messages except the last one, extending incrementally on each turn (for agentic workflows).
 
 When a cache hit occurs, the KV states from sequence 0 are copied into the slot's sequence via copyCachesToSeq(seqID). The slot then continues from that point with nPast set to skip re-processing those tokens.
 
@@ -144,7 +144,7 @@ The shallow `Clone()` method (maps.Copy) is sufficient since only top-level keys
 - `NGpuLayers`: Layers to offload (0 = all, -1 = none, N = specific count)
 - `SplitMode`: Multi-GPU split (`SplitModeNone=0`, `SplitModeLayer=1`, `SplitModeRow=2` for MoE)
 - `SystemPromptCache`: Cache system prompt (role="system") KV state in sequence 0 (see below)
-- `FirstMessageCache`: Cache first user message (role="user") KV state in sequence 0 (see below)
+- `IncrementalCache`: Incremental Message Cache (IMC) for agentic workflows - caches all messages except last, extends incrementally (see below)
 - `CacheMinTokens`: Minimum tokens before caching (default: 100)
 
 ## RoPE/YaRN Extended Context Configuration
@@ -263,18 +263,34 @@ Logprobs must be extracted **before** `llama.SamplerAccept()` is called. After a
 
 - Handle `nil` content in `toMediaMessage` with `case nil: continue`
 
-## Message Caching (System Prompt / First Message)
+## Message Caching (System Prompt / Incremental Message Cache)
 
 Two cache modes are available (mutually exclusive):
 
-- **`SystemPromptCache`**: Caches the first message with `role="system"`. If a subsequent request has no system message but the cache exists, the cached system prompt is used. Ideal for Open Web UI and similar clients that send the system prompt once.
-- **`FirstMessageCache`**: Caches all messages up to and including the first `role="user"` message (e.g., `[system, user]` together). Ideal for clients like Cline that use a large first user message as context.
+- **`SystemPromptCache` (SPC)**: Caches the first message with `role="system"`. If a subsequent request has no system message but the cache exists, the cached system prompt is used. Ideal for Open Web UI and similar clients that send the system prompt once.
+- **`IncrementalCache` (IMC)**: Incremental Message Cache for agentic workflows. Caches all messages except the last one, extending incrementally on each turn. Ideal for agents like Amp, Cline, or Aider where conversations grow monotonically.
 
-SPC and FMC are mutually exclusive; FMC includes the system prompt in its cache, so enabling both is redundant and will return a validation error.
+SPC and IMC are mutually exclusive; IMC includes the system prompt in its cache, so enabling both is redundant and will return a validation error.
+
+**IMC State** (`model.go`):
+
+```go
+imcHash      string      // Hash of all cached messages
+imcTokens    int         // Total tokens in IMC cache
+imcMsgCount  int         // Number of messages currently cached
+imcPromptLen int         // Length of templated prefix string (for extension)
+imcSeqID     llama.SeqId // Sequence ID for IMC cache (seq 0)
+```
+
+**IMC Algorithm** (`sysprompt.go`):
+
+1. **First request** (cache empty): Cache `messages[0:len-1]`, generate from last message
+2. **Subsequent requests** (prefix match): Extend cache with `messages[cachedCount:len-1]`
+3. **New thread** (prefix mismatch): Rebuild cache from scratch
 
 **API Pattern** (`sysprompt.go`):
 
-`ensureFirstMessageCached()` returns a `cacheResult` struct:
+`ensureCache()` returns a `cacheResult` struct:
 
 ```go
 type cacheResult struct {
@@ -287,52 +303,54 @@ type cacheResult struct {
 }
 ```
 
-**Message lookup** (`sysprompt.go`):
+**IMC Functions** (`sysprompt.go`):
 
-`findCacheableMessage(messages, role)` finds the first message with a target role:
+- `handleIncrementalMessageCache()`: Entry point, decides build vs extend vs hit
+- `buildIMCCache()`: Builds cache from scratch for new conversations
+- `extendIMCCache()`: Extends existing cache with new messages incrementally
+- `generateIMCSuffix()`: Extracts suffix from full template for immediate use
+- `hashMessages()`: Computes SHA-256 hash of message slice for cache validation
+- `decodeExtensionTokens()`: Decodes extension tokens without clearing sequence
 
-```go
-type cacheableMessage struct {
-    index   int
-    role    string
-    content string
-}
-
-func findCacheableMessage(messages []D, targetRole string) (cacheableMessage, bool)
-```
-
-**How it works** (`sysprompt.go`):
+**How IMC works**:
 
 1. **Cache miss (first request)**:
-   - Find message by role using `findCacheableMessage()`
-   - Hash role+content, tokenize with `add_generation_prompt=false`
-   - Check token count against `CacheMinTokens` (default: 100) - skip if too short
-   - Store `contentLen` alongside hash for fast cache hit validation
-   - Decode tokens to appropriate sequence via `decodeTokensToSeq(tokens, seqID)`
-   - Store hash/count in respective cache state
-   - Template full prompt, extract suffix (generation prompt portion)
-   - Return `cacheResult` with `prompt` set to suffix for immediate use
+   - Hash `messages[0:len-1]` with `hashMessages()`
+   - Template with `add_generation_prompt=false`
+   - Check token count against `CacheMinTokens` (default: 100)
+   - Decode tokens to seq 0 via `decodeTokensToSeq()`
+   - Store `imcHash`, `imcTokens`, `imcMsgCount`, `imcPromptLen`
+   - Generate suffix via `generateIMCSuffix()` for immediate use
 
-2. **Cache hit (subsequent requests)**:
-   - Length check before hash: compare `contentLen` first (fast path), then SHA-256 if lengths match
-   - Same message → collect indices for removal (FMC removes all messages 0..userIndex)
-   - `nPast` set to cached token count
-   - `prompt` empty, so `chat.go` calls `createPrompt()` on remaining messages
-   - Batch engine copies KV cache via `copyCachesToSeq(seqID)`
+2. **Cache hit with extension**:
+   - Verify `messages[0:imcMsgCount]` matches `imcHash`
+   - Template new prefix `messages[0:len-1]`
+   - Extract extension: `newPrefix[imcPromptLen:]`
+   - Decode extension tokens via `decodeExtensionTokens()` (no sequence clear)
+   - Update cache state with new totals
+   - Return suffix for generation
 
-3. **SystemPromptCache special case**:
-   - No system message but cache exists → use cached system prompt
-   - Returns original D (not modified), `nPast` set to cached tokens
+3. **Cache hit (no extension)**:
+   - Prefix matches and covers all cacheable messages
+   - Return `nPast = imcTokens`, no templating needed
+
+4. **Prefix mismatch (new thread)**:
+   - Detected when `hashMessages(messages[:imcMsgCount]) != imcHash`
+   - Clear seq 0 and rebuild cache via `buildIMCCache()`
+
+**SystemPromptCache special case**:
+- No system message but cache exists → use cached system prompt
+- Returns original D (not modified), `nPast` set to cached tokens
 
 **Sequence ID layout (dynamic based on config):**
 
-| SPC | FMC | Reserved Seqs | Slot Start | Memory Overhead |
+| SPC | IMC | Reserved Seqs | Slot Start | Memory Overhead |
 | --- | --- | ------------- | ---------- | --------------- |
 | off | off | 0             | seq 0      | none            |
 | on  | off | 1 (seq 0)     | seq 1      | +1 ctx window   |
 | off | on  | 1 (seq 0)     | seq 1      | +1 ctx window   |
 
-Note: SPC and FMC are mutually exclusive, so both cannot be enabled together.
+Note: SPC and IMC are mutually exclusive, so both cannot be enabled together.
 
 **NSeqMax and Caching Relationship:**
 
@@ -341,7 +359,7 @@ Dynamic sequence allocation in `config.go`:
 ```go
 nSeqMax := max(cfg.NSeqMax, 1)
 cacheSeqs := 0
-if cfg.SystemPromptCache || cfg.FirstMessageCache { cacheSeqs = 1 }
+if cfg.SystemPromptCache || cfg.IncrementalCache { cacheSeqs = 1 }
 ctxParams.NSeqMax = uint32(nSeqMax + cacheSeqs)
 ```
 
@@ -349,7 +367,7 @@ ctxParams.NSeqMax = uint32(nSeqMax + cacheSeqs)
 
 ```go
 cacheSeqs := 0
-if m.cfg.SystemPromptCache || m.cfg.FirstMessageCache { cacheSeqs = 1 }
+if m.cfg.SystemPromptCache || m.cfg.IncrementalCache { cacheSeqs = 1 }
 
 for i := range slots {
     slots[i] = &slot{
@@ -364,17 +382,31 @@ for i := range slots {
 1. Slot clears its sequence: `llama.MemorySeqRm(mem, s.seqID, -1, -1)`
 2. If cached, copies KV state: `copyCachesToSeq(s.seqID)` from seq 0
 3. Sets `nPast` to skip re-processing cached tokens
-4. Tokenizes remaining prompt (without cached messages)
+4. Tokenizes remaining prompt (only the suffix/last message)
 
 **Cache invalidation:**
 
-- Hash mismatch: clears respective sequence, re-evaluates new message
+- Prefix mismatch (IMC): clears seq 0, rebuilds cache from new conversation
+- Hash mismatch (SPC): clears seq 0, re-evaluates new system message
 - Different role with same content: different hash (role is included in hash)
 - `resetContext()`: clears all memory AND calls `clearCaches()` (sequential path)
+- `clearCaches()`: Resets all cache state (`imcHash`, `imcTokens`, `imcMsgCount`, `imcPromptLen`, SPC fields)
+
+**Critical Implementation Details:**
+
+1. **Extension tokenization must use `special=true`**: When tokenizing the extension string in `extendIMCCache()`, use `llama.Tokenize(vocab, extension, false, true)`. The `special=true` parameter ensures ChatML control tokens like `<|im_start|>` and `<|im_end|>` are recognized as special tokens. Using `special=false` causes these tokens to be tokenized as literal text, which leaks into model output as garbage.
+
+2. **Prefix mismatch detection via `strings.HasPrefix`**: Both `extendIMCCache()` and `generateIMCSuffix()` verify that the full templated prompt starts with the cached prefix using `strings.HasPrefix(fullPrompt, prefixPrompt)`. If this check fails, it indicates Jinja template nondeterminism (e.g., timestamps, random values) and triggers a cache rebuild. Without this check, the suffix extraction would produce incorrect results.
+
+3. **Extension string extraction**: The extension is `newPrefixPrompt[imcPromptLen:]` - the substring of the new prefix after the cached prefix length. This relies on template determinism: the same messages must always produce the same prefix.
+
+4. **`add_generation_prompt=false` for cached prefixes**: When templating messages for caching, always set `add_generation_prompt=false`. This creates a valid prefix that can be extended. The generation prompt (`<|im_start|>assistant\n`) is only added when templating the final suffix.
 
 **Limitations:**
 
 - Only works for text-only requests (`ObjectChatText`)
 - Sequential path calls `resetContext()` which clears all caches
 - Messages shorter than `CacheMinTokens` are not cached
+- Requires monotonically growing conversations (editing earlier messages triggers rebuild)
 - Thread-safe via `cacheMu` mutex (read lock for hits, write lock for misses)
+- Template must be deterministic (no timestamps, random values, etc.)

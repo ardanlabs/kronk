@@ -201,8 +201,8 @@ func (c *Catalog) ResolvedModelConfig(modelID string) ModelConfig {
 		if modelConfig.SystemPromptCache {
 			cfg.SystemPromptCache = modelConfig.SystemPromptCache
 		}
-		if modelConfig.FirstMessageCache {
-			cfg.FirstMessageCache = modelConfig.FirstMessageCache
+		if modelConfig.IncrementalCache {
+			cfg.IncrementalCache = modelConfig.IncrementalCache
 		}
 		if modelConfig.CacheMinTokens != 0 {
 			cfg.CacheMinTokens = modelConfig.CacheMinTokens

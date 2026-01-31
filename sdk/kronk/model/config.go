@@ -141,12 +141,14 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // applications that use a consistent system prompt. The cache is automatically
 // invalidated and re-evaluated when the system prompt changes.
 //
-// FirstMessageCache enables caching of the first user message's KV state along
-// with any preceding system prompt. All messages up to and including the
-// first role="user" message are cached together (e.g., [system, user]). The
-// cache is invalidated when the first user message changes.
+// IncrementalCache enables Incremental Message Caching (IMC) for agentic
+// workflows. It caches all messages except the last one (which triggers
+// generation) and extends the cache incrementally on each turn. This is ideal
+// for agents like Cline or OpenCode where conversations grow monotonically.
+// The cache is rebuilt from scratch when the message prefix changes (new thread).
+// This should only be used when 1 person is interacting with the model server.
 //
-// SystemPromptCache and FirstMessageCache are mutually exclusive. FirstMessageCache
+// SystemPromptCache and IncrementalCache are mutually exclusive. IncrementalCache
 // includes the system prompt in its cached prefix, so enabling both is redundant
 // and will return a validation error.
 //
@@ -204,7 +206,7 @@ type Config struct {
 	NGpuLayers           *int
 	SplitMode            SplitMode
 	SystemPromptCache    bool
-	FirstMessageCache    bool
+	IncrementalCache     bool
 	CacheMinTokens       int
 	InsecureLogging      bool
 	RopeScaling          RopeScalingType
@@ -239,11 +241,11 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("%d", *p)
 	}
 
-	return fmt.Sprintf("\nModelFiles[%v]\nProjFile[%s]\nJinjaFile[%s]\nDevice[%s]\nContextWindow[%d]\nNBatch[%d]\nNUBatch[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nCacheTypeK[%d]\nCacheTypeV[%d]\nUseDirectIO[%t]\nFlashAttention[%d]\nIgnoreIntegrityCheck[%t]\nNSeqMax[%d]\nOffloadKQV[%s]\nOpOffload[%s]\nNGpuLayers[%s]\nSplitMode[%d]\nSystemPromptCache[%t]\nFirstMessageCache[%t]\nCacheMinTokens[%d]\nInsecureLogging[%t]\nRopeScaling[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nYarnExtFactor[%s]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnOrigCtx[%s]\n",
+	return fmt.Sprintf("\nModelFiles[%v]\nProjFile[%s]\nJinjaFile[%s]\nDevice[%s]\nContextWindow[%d]\nNBatch[%d]\nNUBatch[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nCacheTypeK[%d]\nCacheTypeV[%d]\nUseDirectIO[%t]\nFlashAttention[%d]\nIgnoreIntegrityCheck[%t]\nNSeqMax[%d]\nOffloadKQV[%s]\nOpOffload[%s]\nNGpuLayers[%s]\nSplitMode[%d]\nSystemPromptCache[%t]\nIncrementalCache[%t]\nCacheMinTokens[%d]\nInsecureLogging[%t]\nRopeScaling[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nYarnExtFactor[%s]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnOrigCtx[%s]\n",
 		cfg.ModelFiles, cfg.ProjFile, cfg.JinjaFile, cfg.Device, cfg.ContextWindow, cfg.NBatch, cfg.NUBatch, cfg.NThreads, cfg.NThreadsBatch,
 		cfg.CacheTypeK, cfg.CacheTypeV, cfg.UseDirectIO, cfg.FlashAttention, cfg.IgnoreIntegrityCheck,
 		cfg.NSeqMax, formatBoolPtr(cfg.OffloadKQV), formatBoolPtr(cfg.OpOffload),
-		formatIntPtr(cfg.NGpuLayers), cfg.SplitMode, cfg.SystemPromptCache, cfg.FirstMessageCache, cfg.CacheMinTokens, cfg.InsecureLogging,
+		formatIntPtr(cfg.NGpuLayers), cfg.SplitMode, cfg.SystemPromptCache, cfg.IncrementalCache, cfg.CacheMinTokens, cfg.InsecureLogging,
 		cfg.RopeScaling, formatFloat32Ptr(cfg.RopeFreqBase), formatFloat32Ptr(cfg.RopeFreqScale),
 		formatFloat32Ptr(cfg.YarnExtFactor), formatFloat32Ptr(cfg.YarnAttnFactor),
 		formatFloat32Ptr(cfg.YarnBetaFast), formatFloat32Ptr(cfg.YarnBetaSlow), formatIntPtr(cfg.YarnOrigCtx))
@@ -254,8 +256,8 @@ func validateConfig(ctx context.Context, cfg Config, log Logger) error {
 		return fmt.Errorf("validate-config: model file is required")
 	}
 
-	if cfg.SystemPromptCache && cfg.FirstMessageCache {
-		return fmt.Errorf("validate-config: cannot enable both SystemPromptCache and FirstMessageCache; use FirstMessageCache alone (it includes the system prompt)")
+	if cfg.SystemPromptCache && cfg.IncrementalCache {
+		return fmt.Errorf("validate-config: cannot enable both SystemPromptCache and IncrementalCache; use IncrementalCache alone (it includes the system prompt)")
 	}
 
 	if !cfg.IgnoreIntegrityCheck {
@@ -317,7 +319,7 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 	}
 
 	// Default minimum tokens for caching.
-	if (cfg.SystemPromptCache || cfg.FirstMessageCache) && cfg.CacheMinTokens <= 0 {
+	if (cfg.SystemPromptCache || cfg.IncrementalCache) && cfg.CacheMinTokens <= 0 {
 		cfg.CacheMinTokens = defMinCacheTokens
 	}
 
@@ -384,16 +386,12 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 	}
 
 	// Reserve sequences for caching based on enabled modes.
-	// Seq 0: SystemPromptCache (if enabled)
-	// Seq 1: FirstMessageCache (if both enabled, else seq 0)
+	// Seq 0: SystemPromptCache or IncrementalCache (mutually exclusive)
 	// Remaining seqs: batch engine slots
 	nSeqMax := max(cfg.NSeqMax, 1)
 	cacheSeqs := 0
-	if cfg.SystemPromptCache {
-		cacheSeqs++
-	}
-	if cfg.FirstMessageCache {
-		cacheSeqs++
+	if cfg.SystemPromptCache || cfg.IncrementalCache {
+		cacheSeqs = 1
 	}
 	ctxParams.NSeqMax = uint32(nSeqMax + cacheSeqs)
 

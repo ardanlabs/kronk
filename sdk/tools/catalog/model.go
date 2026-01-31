@@ -118,8 +118,8 @@ type ModelConfig struct {
 	OpOffload            *bool                    `yaml:"op-offload"`
 	NGpuLayers           *int                     `yaml:"ngpu-layers"`
 	SplitMode            model.SplitMode          `yaml:"split-mode"`
-	SystemPromptCache    bool                     `yaml:"system-prompt-cache"`
-	FirstMessageCache    bool                     `yaml:"first-message-cache"`
+	SystemPromptCache bool                     `yaml:"system-prompt-cache"`
+	IncrementalCache  bool                     `yaml:"incremental-cache"`
 	CacheMinTokens       int                      `yaml:"cache-min-tokens"`
 	InsecureLogging      bool                     `yaml:"insecure-logging"`
 	Sampling             SamplingConfig           `yaml:"sampling-parameters"`
@@ -152,7 +152,7 @@ func (mc ModelConfig) toKronkConfig() model.Config {
 		NGpuLayers:           mc.NGpuLayers,
 		SplitMode:            mc.SplitMode,
 		SystemPromptCache:    mc.SystemPromptCache,
-		FirstMessageCache:    mc.FirstMessageCache,
+		IncrementalCache:     mc.IncrementalCache,
 		CacheMinTokens:       mc.CacheMinTokens,
 		InsecureLogging:      mc.InsecureLogging,
 		RopeScaling:          mc.RopeScaling,

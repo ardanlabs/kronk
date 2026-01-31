@@ -17,7 +17,7 @@
 #   ngpu-layers: 0                       # GPU layers to offload (0 = all, -1 = none, N = specific count)
 #   split-mode: row                      # Multi-GPU split: none, layer, row (row recommended for MoE models)
 #   system-prompt-cache: false           # Cache system prompt KV state for reuse across requests
-#   first-message-cache: false           # Cache first user message KV state (for clients like Cline)
+#   incremental-cache: false             # Incremental message caching for agentic workflows (Cline, OpenCode)
 #   cache-min-tokens: 100                # Min tokens before caching (default: 100, applies to both cache types)
 #   rope-scaling-type: yarn              # RoPE scaling: none, linear, yarn
 #   yarn-orig-ctx: 32768                 # Original training context size (nil = from model)
@@ -91,11 +91,12 @@
 #   nseq-max: 1
 #   system-prompt-cache: true
 #
-# If you are using an Agent that won't use a System Prompt, but sends their
-# large prompt as their first user message, using these settings. Client's will
-# do this if you Enable R1 messages format.
+# If you are using an agentic client (Cline, OpenCode) where conversations
+# grow monotonically (each turn appends messages, never modifies earlier ones),
+# use incremental-cache. It caches all messages except the last one and extends
+# incrementally on each turn, avoiding redundant prefill computation.
 #   nseq-max: 1
-#   first-message-cache: true
+#   incremental-cache: true
 #
 # Cline is working great with Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/SPC and
 # cerebras_qwen3-coder-reap-25b-a3b-q8_0/SPC.
@@ -110,7 +111,8 @@
 # how you can extend the models context window when you need it.
 #
 # NOTE: The R1 message format in Cline is a specialized prompt structure
-# required for DeepSeek R1 models, which converts system prompts into user messages.
+# required for DeepSeek R1 models, which converts system prompts into user
+# messages. Turn that off.
 
 # ==============================================================================
 # TEXT INFERENCE MODELS
@@ -139,10 +141,10 @@ Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/SPC:
   nseq-max: 1
   system-prompt-cache: true
 
-Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/FMC:
+Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMC:
   <<: *base_Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
   nseq-max: 1
-  first-message-cache: true
+  incremental-cache: true
 
 # Smaller version of the 30B model and works well.
 cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0:
@@ -165,10 +167,10 @@ cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0/SPC:
   nseq-max: 1
   system-prompt-cache: true
 
-cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0/FMC:
+cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0/IMC:
   <<: *base_cerebras_qwen3-coder-reap-25b-a3b-q8_0
   nseq-max: 1
-  first-message-cache: true
+  incremental-cache: true
 
 # This has worked with Cline and OpenCode but just slow.
 GLM-4.7-Flash-UD-Q8_K_XL: &base_GLM_4_7_Flash_UD_Q8_K_XL
@@ -190,10 +192,10 @@ GLM-4.7-Flash-UD-Q8_K_XL/SPC:
   nseq-max: 1
   system-prompt-cache: true
 
-GLM-4.7-Flash-UD-Q8_K_XL/FMC:
+GLM-4.7-Flash-UD-Q8_K_XL/IMC:
   <<: *base_GLM_4_7_Flash_UD_Q8_K_XL
   nseq-max: 1
-  first-message-cache: true
+  incremental-cache: true
 
 # ------------------------------------------------------------------------------
 # Good Reasoning models, tooling support, don't use with Agents.

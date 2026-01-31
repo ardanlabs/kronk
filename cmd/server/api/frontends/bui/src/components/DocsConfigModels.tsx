@@ -96,9 +96,9 @@ export default function DocsConfigModels() {
                   <td>Cache system prompt KV state for reuse across requests</td>
                 </tr>
                 <tr>
-                  <td><code>first-message-cache</code></td>
+                  <td><code>incremental-cache</code></td>
                   <td>false</td>
-                  <td>Cache first user message KV state (for clients like Cline)</td>
+                  <td>Incremental message caching for agentic workflows (Amp, Cline, Aider)</td>
                 </tr>
                 <tr>
                   <td><code>cache-min-tokens</code></td>
@@ -207,7 +207,7 @@ KV_per_slot            = 131072 × 48 × 1024 = ~6.4 GB`}</code>
             <p>If you want to use a model with an Agent, use these settings:</p>
             <pre className="code-block">
               <code>{`nseq-max: 1
-first-message-cache: true`}</code>
+incremental-cache: true`}</code>
             </pre>
             <p>If you want to use a Chat application like OpenWebUI, use these settings:</p>
             <pre className="code-block">
@@ -235,7 +235,7 @@ first-message-cache: true`}</code>
   cache-type-v: q8_0
   flash-attention: enabled
   nseq-max: 1
-  first-message-cache: true`}</code>
+  incremental-cache: true`}</code>
               </pre>
 
               <h5>Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL</h5>
@@ -249,7 +249,7 @@ first-message-cache: true`}</code>
   cache-type-v: q8_0
   flash-attention: enabled
   nseq-max: 1
-  first-message-cache: true`}</code>
+  incremental-cache: true`}</code>
               </pre>
 
               <h5>cerebras_qwen3-coder-reap-25b-a3b-q8_0</h5>
@@ -263,7 +263,7 @@ first-message-cache: true`}</code>
   cache-type-v: q8_0
   flash-attention: enabled
   nseq-max: 1
-  first-message-cache: true`}</code>
+  incremental-cache: true`}</code>
               </pre>
 
               <h5>Qwen3-Coder-30B-A3B-Instruct-Q8_0</h5>
@@ -276,7 +276,7 @@ first-message-cache: true`}</code>
   cache-type-k: q8_0
   cache-type-v: q8_0
   nseq-max: 1
-  first-message-cache: true`}</code>
+  incremental-cache: true`}</code>
               </pre>
             </div>
 
