@@ -10,9 +10,9 @@
         "timeout": 1200000
       },
       "models": {
-        "GLM-4.7-Flash-UD-Q8_K_XL/SPC": {},
-        "Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/SPC": {},
-        "cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0/SPC": {}
+        "GLM-4.7-Flash-UD-Q8_K_XL/FMC": {},
+        "Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/FMC": {},
+        "cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0/FMC": {}
       }
     }
   }

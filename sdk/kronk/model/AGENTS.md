@@ -79,15 +79,16 @@ Slots and sequences are 1:1, but they are different concepts:
 
 Sequences are isolated partitions in the shared KV cache memory. Each request's key-value states are stored in its assigned sequence without interfering with other concurrent requests.
 
-When caching is enabled, sequence 0 (and optionally 1) are reserved for cached prompts, so slot seqIDs are offset:
+When caching is enabled, sequence 0 is reserved for cached prompts, so slot seqIDs are offset:
 
 ```
 NSeqMax = 2
 Without caching:        slot[0].seqID=0, slot[1].seqID=1
-With SystemPromptCache: slot[0].seqID=1, slot[1].seqID=2  SPC Cached in seqID=0
-With FirstMsgCache:     slot[0].seqID=1, slot[1].seqID=2  FMC Cached in seqID=0
-With both caches:       slot[0].seqID=2, slot[1].seqID=3  SPC SeqID=0, FMC seqID=1
+With SystemPromptCache: slot[0].seqID=1, slot[1].seqID=2  SPC cached in seqID=0
+With FirstMsgCache:     slot[0].seqID=1, slot[1].seqID=2  FMC cached in seqID=0
 ```
+
+Note: SPC and FMC are mutually exclusive. FMC caches all messages up to and including the first user message (e.g., [system, user] together).
 
 When a cache hit occurs, the KV states from sequence 0 are copied into the slot's sequence via copyCachesToSeq(seqID). The slot then continues from that point with nPast set to skip re-processing those tokens.
 
@@ -264,12 +265,12 @@ Logprobs must be extracted **before** `llama.SamplerAccept()` is called. After a
 
 ## Message Caching (System Prompt / First Message)
 
-Two cache modes are available, and can be enabled simultaneously:
+Two cache modes are available (mutually exclusive):
 
 - **`SystemPromptCache`**: Caches the first message with `role="system"`. If a subsequent request has no system message but the cache exists, the cached system prompt is used. Ideal for Open Web UI and similar clients that send the system prompt once.
-- **`FirstMessageCache`**: Caches the first message with `role="user"`. Ideal for clients like Cline that use a large first user message as context.
+- **`FirstMessageCache`**: Caches all messages up to and including the first `role="user"` message (e.g., `[system, user]` together). Ideal for clients like Cline that use a large first user message as context.
 
-Both modes can be enabled together, using separate sequences for each cache.
+SPC and FMC are mutually exclusive; FMC includes the system prompt in its cache, so enabling both is redundant and will return a validation error.
 
 **API Pattern** (`sysprompt.go`):
 
@@ -314,10 +315,10 @@ func findCacheableMessage(messages []D, targetRole string) (cacheableMessage, bo
 
 2. **Cache hit (subsequent requests)**:
    - Length check before hash: compare `contentLen` first (fast path), then SHA-256 if lengths match
-   - Same message → collect index for removal
-   - Cumulative `nPast` from all cache hits (SPC + FMC)
+   - Same message → collect indices for removal (FMC removes all messages 0..userIndex)
+   - `nPast` set to cached token count
    - `prompt` empty, so `chat.go` calls `createPrompt()` on remaining messages
-   - Batch engine copies KV caches via `copyCachesToSeq(seqID)`
+   - Batch engine copies KV cache via `copyCachesToSeq(seqID)`
 
 3. **SystemPromptCache special case**:
    - No system message but cache exists → use cached system prompt
@@ -330,7 +331,8 @@ func findCacheableMessage(messages []D, targetRole string) (cacheableMessage, bo
 | off | off | 0             | seq 0      | none            |
 | on  | off | 1 (seq 0)     | seq 1      | +1 ctx window   |
 | off | on  | 1 (seq 0)     | seq 1      | +1 ctx window   |
-| on  | on  | 2 (seq 0, 1)  | seq 2      | +2 ctx windows  |
+
+Note: SPC and FMC are mutually exclusive, so both cannot be enabled together.
 
 **NSeqMax and Caching Relationship:**
 
@@ -339,8 +341,7 @@ Dynamic sequence allocation in `config.go`:
 ```go
 nSeqMax := max(cfg.NSeqMax, 1)
 cacheSeqs := 0
-if cfg.SystemPromptCache { cacheSeqs++ }
-if cfg.FirstMessageCache { cacheSeqs++ }
+if cfg.SystemPromptCache || cfg.FirstMessageCache { cacheSeqs = 1 }
 ctxParams.NSeqMax = uint32(nSeqMax + cacheSeqs)
 ```
 
@@ -348,8 +349,7 @@ ctxParams.NSeqMax = uint32(nSeqMax + cacheSeqs)
 
 ```go
 cacheSeqs := 0
-if m.cfg.SystemPromptCache { cacheSeqs++ }
-if m.cfg.FirstMessageCache { cacheSeqs++ }
+if m.cfg.SystemPromptCache || m.cfg.FirstMessageCache { cacheSeqs = 1 }
 
 for i := range slots {
     slots[i] = &slot{
@@ -362,8 +362,8 @@ for i := range slots {
 **Request flow with caching** (`batch.go`):
 
 1. Slot clears its sequence: `llama.MemorySeqRm(mem, s.seqID, -1, -1)`
-2. If cached, copies KV states: `copyCachesToSeq(s.seqID)` (copies both SPC and FMC if enabled)
-3. Sets cumulative `nPast` to skip re-processing cached tokens
+2. If cached, copies KV state: `copyCachesToSeq(s.seqID)` from seq 0
+3. Sets `nPast` to skip re-processing cached tokens
 4. Tokenizes remaining prompt (without cached messages)
 
 **Cache invalidation:**
