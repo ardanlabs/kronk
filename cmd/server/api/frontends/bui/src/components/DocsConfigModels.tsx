@@ -193,16 +193,10 @@ KV_per_slot            = 131072 × 48 × 1024 = ~6.4 GB`}</code>
                   <td>~48.8 GB</td>
                 </tr>
                 <tr>
-                  <td>FMC Only</td>
+                  <td>FMC or SPC</td>
                   <td>3 (2+1)</td>
                   <td>3 × 6.4 GB = ~19.2 GB</td>
                   <td>~55.2 GB</td>
-                </tr>
-                <tr>
-                  <td>SPC + FMC</td>
-                  <td>4 (2+2)</td>
-                  <td>4 × 6.4 GB = ~25.6 GB</td>
-                  <td>~61.6 GB</td>
                 </tr>
               </tbody>
             </table>

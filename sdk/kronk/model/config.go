@@ -141,14 +141,14 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // applications that use a consistent system prompt. The cache is automatically
 // invalidated and re-evaluated when the system prompt changes.
 //
-// FirstMessageCache enables caching of the first user message's KV state. This
-// supports clients like Cline that use a large first user message as context.
-// The first message with role="user" is cached. The cache is invalidated when
-// the first user message changes.
+// FirstMessageCache enables caching of the first user message's KV state along
+// with any preceding system prompt. All messages up to and including the
+// first role="user" message are cached together (e.g., [system, user]). The
+// cache is invalidated when the first user message changes.
 //
-// Both SystemPromptCache and FirstMessageCache can be enabled simultaneously.
-// When both are enabled, they use separate sequences (seq 0 for SPC, seq 1 for FMC)
-// and the memory overhead is +2 context windows.
+// SystemPromptCache and FirstMessageCache are mutually exclusive. FirstMessageCache
+// includes the system prompt in its cached prefix, so enabling both is redundant
+// and will return a validation error.
 //
 // CacheMinTokens sets the minimum token count required before caching. Messages
 // shorter than this threshold are not cached, as the overhead of cache management
@@ -252,6 +252,10 @@ func (cfg Config) String() string {
 func validateConfig(ctx context.Context, cfg Config, log Logger) error {
 	if len(cfg.ModelFiles) == 0 {
 		return fmt.Errorf("validate-config: model file is required")
+	}
+
+	if cfg.SystemPromptCache && cfg.FirstMessageCache {
+		return fmt.Errorf("validate-config: cannot enable both SystemPromptCache and FirstMessageCache; use FirstMessageCache alone (it includes the system prompt)")
 	}
 
 	if !cfg.IgnoreIntegrityCheck {
