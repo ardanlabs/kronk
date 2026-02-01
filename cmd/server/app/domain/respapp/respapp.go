@@ -54,6 +54,10 @@ func (a *app) responses(ctx context.Context, r *http.Request) web.Encoder {
 
 	d := model.MapToModelD(req)
 
+	if imcID := r.Header.Get("KRONK_IMC_ID"); imcID != "" {
+		d["imc_id"] = imcID
+	}
+
 	if _, err := krn.ResponseStreamingHTTP(ctx, web.GetWriter(ctx), d); err != nil {
 		return errs.New(errs.Internal, err)
 	}

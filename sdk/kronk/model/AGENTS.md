@@ -85,7 +85,7 @@ When caching is enabled, sequence 0 is reserved for cached prompts, so slot seqI
 NSeqMax = 2
 Without caching:        slot[0].seqID=0, slot[1].seqID=1
 With SystemPromptCache: slot[0].seqID=1, slot[1].seqID=2  SPC cached in seqID=0
-With FirstMsgCache:     slot[0].seqID=1, slot[1].seqID=2  IMC cached in seqID=0
+With IncrementalCache:  slot[0].seqID=1, slot[1].seqID=2  IMC cached in seqID=0
 ```
 
 Note: SPC and IMC are mutually exclusive. IMC caches all messages except the last one, extending incrementally on each turn (for agentic workflows).
@@ -339,6 +339,7 @@ type cacheResult struct {
    - Clear seq 0 and rebuild cache via `buildIMCCache()`
 
 **SystemPromptCache special case**:
+
 - No system message but cache exists → use cached system prompt
 - Returns original D (not modified), `nPast` set to cached tokens
 
