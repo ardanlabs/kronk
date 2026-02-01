@@ -275,7 +275,7 @@ SPC and IMC are mutually exclusive; IMC includes the system prompt in its cache,
 
 **Multi-User IMC:**
 
-IMC supports multiple users, each with their own dedicated cache sequence. Clients must pass the `KRONK_IMC_ID` header (or `imc_id` in the request D) to activate IMC. Each unique ID gets its own session up to `MaxIMCSessions`. If all slots are in use, requests gracefully bypass IMC.
+IMC supports multiple users, each with their own dedicated cache sequence. Clients should pass the `KRONK_IMC_ID` header (or `imc_id` in the request D) with a unique session/user ID. Each unique ID gets its own session up to `MaxIMCSessions`. If no IMC id is passed, the "default" id is used, which will cause problems on a multi-user system. If all slots are in use, requests gracefully bypass IMC.
 
 **IMC Session State** (`model.go`):
 
@@ -441,5 +441,5 @@ for i := range slots {
 - Requires monotonically growing conversations (editing earlier messages triggers rebuild)
 - Thread-safe via `cacheMu` mutex (read lock for hits, write lock for misses)
 - Template must be deterministic (no timestamps, random values, etc.)
-- IMC requires `imc_id` in request (via `KRONK_IMC_ID` header) - requests without it bypass IMC
+- IMC uses `imc_id` in request (via `KRONK_IMC_ID` header) - if not provided, the "default" id is used (problematic on multi-user systems)
 - If all `MaxIMCSessions` slots are in use, new sessions gracefully bypass IMC

@@ -220,7 +220,7 @@ incremental-cache: true`}</code>
 incremental-cache: true
 max-imc-sessions: 4`}</code>
             </pre>
-            <p>Each user must pass the <code>KRONK_IMC_ID</code> header with a unique session ID to activate their cache.</p>
+            <p>Each user should pass the <code>KRONK_IMC_ID</code> header with a unique session ID to activate their cache. If no header is passed, the "default" id is used, which will cause problems on a multi-user system.</p>
             <p>If you want to use a Chat application like OpenWebUI, use these settings:</p>
             <pre className="code-block">
               <code>{`system-prompt-cache: true`}</code>
