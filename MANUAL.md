@@ -1,5 +1,24 @@
 # Kronk Model Server User Manual
 
+## Table of Contents
+
+1. [Introduction](#chapter-1-introduction)
+2. [Installation & Quick Start](#chapter-2-installation--quick-start)
+3. [Model Configuration](#chapter-3-model-configuration)
+4. [Batch Processing](#chapter-4-batch-processing)
+5. [Message Caching](#chapter-5-message-caching)
+6. [YaRN Extended Context](#chapter-6-yarn-extended-context)
+7. [Model Server](#chapter-7-model-server)
+8. [API Endpoints](#chapter-8-api-endpoints)
+9. [Multi-Modal Models](#chapter-9-multi-modal-models)
+10. [Security & Authentication](#chapter-10-security--authentication)
+11. [Browser UI (BUI)](#chapter-11-browser-ui-bui)
+12. [Client Integration](#chapter-12-client-integration)
+13. [Observability](#chapter-13-observability)
+14. [Troubleshooting](#chapter-14-troubleshooting)
+
+---
+
 ## Chapter 1: Introduction
 
 ### 1.1 What is Kronk Model Server
