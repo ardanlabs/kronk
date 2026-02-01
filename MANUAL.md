@@ -157,6 +157,7 @@ Available Commands:
   catalog     Manage model catalog
   libs        Install or upgrade llama.cpp libraries
   model       Manage models
+  run         Run a model directly for quick testing
   security    Manage security keys and tokens
   server      Manage Kronk model server
   help        Help about any command
@@ -3549,7 +3550,8 @@ Use quantized KV cache:
 ```yaml
 models:
   Qwen3-8B-Q8_0:
-    kv_cache_type: q8_0 # Saves ~50% KV cache memory
+    cache-type-k: q8_0 # Saves ~50% KV cache memory
+    cache-type-v: q8_0
 ```
 
 **Error: "context window is full"**
@@ -3903,12 +3905,12 @@ This enables a pre-commit hook that automatically runs:
 
 | Directory                      | Purpose                                                        |
 | ------------------------------ | -------------------------------------------------------------- |
-| `cmd/kronk/`                   | CLI tool (subcommands: catalog, libs, model, security, server) |
+| `cmd/kronk/`                   | CLI tool (subcommands: catalog, libs, model, run, security, server) |
 | `cmd/server/`                  | OpenAI-compatible model server (gRPC + HTTP) with BUI frontend |
 | `cmd/server/api/tooling/docs/` | Documentation generator for BUI (SDK and CLI docs)             |
 | `sdk/kronk/`                   | Core API: model loading, chat, embeddings, cache, metrics      |
 | `sdk/kronk/model/`             | Core inference and caching engine                              |
-| `sdk/kronk/observ/`            | Observability packages.                                        |
+| `sdk/kronk/observ/`            | Observability packages (metrics/, otel/)                       |
 | `sdk/tools/`                   | Support for libs, models, catalogs, templates, and defaults    |
 
 **Core Technology:**
