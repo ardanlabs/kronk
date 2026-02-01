@@ -5,7 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 type example struct {
@@ -15,30 +19,29 @@ type example struct {
 	code        string
 }
 
-var exampleMeta = map[string]struct {
-	displayName string
-	description string
-}{
-	"audio":     {"Audio", "Process audio files using audio models"},
-	"chat":      {"Chat", "Interactive chat with conversation history"},
-	"embedding": {"Embedding", "Generate embeddings for semantic search"},
-	"question":  {"Question", "Ask a single question to a model"},
-	"rerank":    {"Rerank", "Rerank documents by relevance to a query"},
-	"response":  {"Response", "Interactive chat using the Response API with tool calling"},
-	"vision":    {"Vision", "Analyze images using vision models"},
+var skipDirs = map[string]bool{
+	"samples": true,
+	"yzma":    true,
 }
-
-var exampleOrder = []string{"question", "chat", "response", "embedding", "rerank", "vision", "audio"}
 
 func Run() error {
 	examplesDir := "examples"
 	outputDir := "cmd/server/api/frontends/bui/src/components"
 
+	entries, err := os.ReadDir(examplesDir)
+	if err != nil {
+		return fmt.Errorf("reading examples directory: %w", err)
+	}
+
 	var exs []example
 
-	for _, name := range exampleOrder {
-		meta, ok := exampleMeta[name]
-		if !ok {
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		name := entry.Name()
+		if skipDirs[name] {
 			continue
 		}
 
@@ -49,13 +52,20 @@ func Run() error {
 			continue
 		}
 
+		description := extractDescription(string(content))
+		displayName := cases.Title(language.English).String(name)
+
 		exs = append(exs, example{
 			name:        name,
-			displayName: meta.displayName,
-			description: meta.description,
+			displayName: displayName,
+			description: description,
 			code:        string(content),
 		})
 	}
+
+	slices.SortFunc(exs, func(a, b example) int {
+		return strings.Compare(a.name, b.name)
+	})
 
 	tsx := generateExamplesTSX(exs)
 
@@ -65,7 +75,25 @@ func Run() error {
 	}
 
 	fmt.Printf("Generated %s\n", outputPath)
+
+	if err := updateLayoutExamples(outputDir, exs); err != nil {
+		return fmt.Errorf("updating Layout.tsx: %w", err)
+	}
+
 	return nil
+}
+
+func extractDescription(code string) string {
+	lines := strings.Split(code, "\n")
+
+	if len(lines) == 0 || !strings.HasPrefix(lines[0], "//") {
+		return ""
+	}
+
+	desc := strings.TrimPrefix(lines[0], "//")
+	desc = strings.TrimSpace(desc)
+
+	return desc
 }
 
 func generateExamplesTSX(exs []example) string {
@@ -142,4 +170,46 @@ func toAnchor(s string) string {
 	s = strings.ReplaceAll(s, " ", "-")
 
 	return s
+}
+
+func updateLayoutExamples(outputDir string, exs []example) error {
+	layoutPath := filepath.Join(outputDir, "Layout.tsx")
+	content, err := os.ReadFile(layoutPath)
+	if err != nil {
+		return fmt.Errorf("reading Layout.tsx: %w", err)
+	}
+
+	layoutStr := string(content)
+
+	// Find the SDK section and replace the examples items.
+	const startMarker = "{ page: 'docs-sdk-examples', label: 'Examples' },"
+	const endMarker = "id: 'docs-cli-sub',"
+
+	startIdx := strings.Index(layoutStr, startMarker)
+	if startIdx == -1 {
+		return fmt.Errorf("could not find SDK examples marker in Layout.tsx")
+	}
+
+	endIdx := strings.Index(layoutStr[startIdx:], endMarker)
+	if endIdx == -1 {
+		return fmt.Errorf("could not find CLI section marker in Layout.tsx")
+	}
+
+	// Build the new examples items.
+	var items strings.Builder
+	items.WriteString(startMarker + "\n")
+	for _, ex := range exs {
+		anchor := toAnchor("example-" + ex.name)
+		items.WriteString(fmt.Sprintf("          { page: 'docs-sdk-examples', label: '%s', hash: '%s' },\n", ex.displayName, anchor))
+	}
+	items.WriteString("        ],\n      },\n      {\n        ")
+
+	// Replace the section.
+	newLayout := layoutStr[:startIdx] + items.String() + layoutStr[startIdx+endIdx:]
+
+	if err := os.WriteFile(layoutPath, []byte(newLayout), 0644); err != nil {
+		return fmt.Errorf("writing Layout.tsx: %w", err)
+	}
+
+	return nil
 }
