@@ -16,6 +16,7 @@
 12. [Client Integration](#chapter-12-client-integration)
 13. [Observability](#chapter-13-observability)
 14. [Troubleshooting](#chapter-14-troubleshooting)
+15. [Developer Guide](#chapter-15-developer-guide)
 
 ---
 
@@ -443,6 +444,18 @@ offload_kqv: true    # KV cache on GPU (default, faster)
 offload_kqv: false   # KV cache on CPU (saves VRAM, slower)
 ```
 
+**Tensor Operations Offload**
+
+Control where tensor computations run:
+
+```yaml
+op_offload: true     # Tensor ops on GPU (default)
+op_offload: false    # Tensor ops on CPU
+```
+
+Use `op_offload: false` when you need to run the model on CPU but want to
+keep some layers on GPU for memory.
+
 **Multi-GPU Split Mode**
 
 For systems with multiple GPUs:
@@ -454,6 +467,15 @@ split_mode: row      # Tensor parallelism (best for MoE models)
 ```
 
 Use `row` for Mixture of Experts models like Qwen3-MoE, Mixtral, or DeepSeek.
+
+**Configuration Reference**
+
+| Field | YAML Key | Values | Default | Description |
+|-------|----------|--------|---------|-------------|
+| NGpuLayers | `n_gpu_layers` | 0, -1, N | 0 | Layers on GPU (0=all, -1=none) |
+| OffloadKQV | `offload_kqv` | true/false | true | KV cache on GPU |
+| OpOffload | `op_offload` | true/false | true | Tensor ops on GPU |
+| SplitMode | `split_mode` | none/layer/row | none | Multi-GPU distribution |
 
 ### 3.4 KV Cache Quantization
 
@@ -578,6 +600,56 @@ Start the server with custom config:
 kronk server start --model-config-file=model-config.yaml
 ```
 
+### 3.9 Model-Specific Tuning
+
+Different model architectures have specific optimization requirements.
+
+**Vision and Audio Models**
+
+Keep `n_ubatch` high for efficient media token processing:
+
+```yaml
+models:
+  Qwen2.5-VL-3B-Instruct-Q8_0:
+    n_batch: 2048
+    n_ubatch: 2048    # High for image/audio token batches
+    n_seq_max: 2      # Creates 2 model instances in pool
+```
+
+Vision models process image tiles as large token batches. Low `n_ubatch`
+values cause multiple decode passes per image, significantly slowing
+inference.
+
+**Mixture of Experts (MoE) Models**
+
+Use row-based tensor parallelism for multi-GPU setups:
+
+```yaml
+models:
+  Qwen3-MoE-30B-A3B-Q8_0:
+    split_mode: row       # Best for MoE architecture
+    cache_type_k: q8_0    # Be cautious with aggressive quantization
+    cache_type_v: q8_0
+```
+
+MoE models can be sensitive to aggressive KV cache quantization. If you
+notice quality degradation, try `f16` cache types.
+
+**Embedding Models**
+
+Optimize batch size for your typical input lengths:
+
+```yaml
+models:
+  embeddinggemma-300m-qat-Q8_0:
+    n_batch: 8192         # Can equal context_window
+    n_ubatch: 512         # Align with typical sliding window
+    n_seq_max: 4          # 4 model instances for concurrency
+```
+
+Embedding models process complete inputs in a single pass, so larger
+`n_batch` values improve throughput.
+
 ---
 
 ## Chapter 4: Batch Processing
@@ -688,6 +760,29 @@ Each slot needs its own KV cache partition. With 4 slots and 8K context:
 KV cache per slot:  ~200 MB (for 8B model with F16)
 Total KV cache:     ~800 MB (4 slots × 200 MB)
 ```
+
+**Caching Memory Overhead**
+
+When message caching is enabled, additional sequences are reserved:
+
+| SPC | IMC | MaxIMCSessions | Reserved Seqs | Slot Start | Memory Overhead |
+|-----|-----|----------------|---------------|------------|-----------------|
+| off | off | -              | 0             | seq 0      | none            |
+| on  | off | -              | 1             | seq 1      | +1 context window |
+| off | on  | 1              | 1             | seq 1      | +1 context window |
+| off | on  | 4              | 4             | seq 4      | +4 context windows |
+
+Example with `max_imc_sessions=3` and `n_seq_max=2`:
+
+```
+seq 0: user-1 cache (IMC)
+seq 1: user-2 cache (IMC)
+seq 2: user-3 cache (IMC)
+seq 3: slot[0] inference
+seq 4: slot[1] inference
+```
+
+Each cache sequence requires one full context window of KV memory.
 
 ### 4.5 Batch vs Sequential Models
 
@@ -1830,7 +1925,205 @@ curl http://localhost:8080/v1/rerank \
 }
 ```
 
-### 8.6 Models List
+### 8.6 Tool Calling (Function Calling)
+
+Kronk supports OpenAI-compatible tool calling, allowing models to request
+function executions that you handle in your application.
+
+**Request with Tools:**
+
+```shell
+curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "Qwen3-8B-Q8_0",
+    "messages": [
+      {"role": "user", "content": "What is the weather in Paris?"}
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "get_weather",
+          "description": "Get current weather for a location",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "location": {
+                "type": "string",
+                "description": "City name"
+              }
+            },
+            "required": ["location"]
+          }
+        }
+      }
+    ],
+    "tool_choice": "auto"
+  }'
+```
+
+**Tool Choice Options:**
+
+- `"auto"` - Model decides whether to call tools (default)
+- `"none"` - Never call tools
+- `{"type": "function", "function": {"name": "get_weather"}}` - Force specific tool
+
+**Response with Tool Calls:**
+
+```json
+{
+  "id": "chatcmpl-xxx",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "id": "call_abc123",
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "arguments": "{\"location\": \"Paris\"}"
+            }
+          }
+        ]
+      },
+      "finish_reason": "tool_calls"
+    }
+  ]
+}
+```
+
+**Handling Tool Results:**
+
+After executing the tool, send the result back:
+
+```json
+{
+  "model": "Qwen3-8B-Q8_0",
+  "messages": [
+    {"role": "user", "content": "What is the weather in Paris?"},
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_abc123",
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "arguments": "{\"location\": \"Paris\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_abc123",
+      "content": "{\"temperature\": 18, \"condition\": \"sunny\"}"
+    }
+  ]
+}
+```
+
+**Streaming with Tool Calls:**
+
+Tool call arguments stream incrementally:
+
+```
+data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"loc"}}]}}]}
+
+data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ation\":"}}]}}]}
+
+data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":" \"Paris\"}"}}]}}]}
+```
+
+### 8.7 Logprobs (Token Probabilities)
+
+Request log probabilities for generated tokens to understand model confidence
+or implement custom sampling strategies.
+
+**Request Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `logprobs` | bool | false | Return log probability for each token |
+| `top_logprobs` | int | 0 | Number of top alternatives (0-5) |
+
+Setting `top_logprobs > 0` implicitly enables `logprobs`.
+
+**Request:**
+
+```shell
+curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "Qwen3-8B-Q8_0",
+    "messages": [
+      {"role": "user", "content": "What is 2+2?"}
+    ],
+    "logprobs": true,
+    "top_logprobs": 3,
+    "max_tokens": 10
+  }'
+```
+
+**Response with Logprobs:**
+
+```json
+{
+  "id": "chatcmpl-xxx",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "4"
+      },
+      "logprobs": {
+        "content": [
+          {
+            "token": "4",
+            "logprob": -0.0012,
+            "bytes": [52],
+            "top_logprobs": [
+              {"token": "4", "logprob": -0.0012, "bytes": [52]},
+              {"token": "The", "logprob": -6.82, "bytes": [84, 104, 101]},
+              {"token": "Four", "logprob": -7.15, "bytes": [70, 111, 117, 114]}
+            ]
+          }
+        ]
+      },
+      "finish_reason": "stop"
+    }
+  ]
+}
+```
+
+**Response Structure:**
+
+- `logprobs.content[]` - Array of per-token probability data
+- `token` - The generated token string
+- `logprob` - Log probability (always ≤ 0; closer to 0 = higher confidence)
+- `bytes` - UTF-8 byte representation of the token
+- `top_logprobs[]` - Alternative tokens with their probabilities
+
+**Streaming Behavior:**
+
+- **Streaming**: Logprobs sent in each delta chunk
+- **Non-streaming**: All logprobs in final response
+
+**Use Cases:**
+
+- Confidence scoring for model outputs
+- Detecting hallucinations (low probability sequences)
+- Custom rejection sampling
+- Token-level analysis for debugging
+
+### 8.8 Models List
 
 Get available models.
 
@@ -1862,7 +2155,7 @@ curl http://localhost:8080/v1/models
 }
 ```
 
-### 8.7 Using IMC with API Requests
+### 8.9 Using IMC with API Requests
 
 To use Incremental Message Cache, pass the session ID via header:
 
@@ -1886,7 +2179,7 @@ Or in the request body:
 }
 ```
 
-### 8.8 Authentication
+### 8.10 Authentication
 
 When authentication is enabled, include the token in requests:
 
@@ -1900,7 +2193,7 @@ curl http://localhost:8080/v1/chat/completions \
 See [Chapter 10: Security & Authentication](#chapter-10-security--authentication)
 for details on token management.
 
-### 8.9 Error Responses
+### 8.11 Error Responses
 
 Errors follow a standard format:
 
@@ -3530,3 +3823,454 @@ Include the following when reporting bugs:
 - Model name and configuration
 - Full error message and stack trace
 - Steps to reproduce
+
+---
+
+_Next: [Chapter 15: Developer Guide](#chapter-15-developer-guide)_
+
+## Chapter 15: Developer Guide
+
+This chapter covers development workflows, build commands, and code
+conventions for contributors to the Kronk project.
+
+### 15.1 Quick Reference
+
+Here is a quick chart of some of the more imporant make commands.
+
+| Task            | Command                                             |
+| --------------- | --------------------------------------------------- |
+| Install CLI     | `make install-kronk`.                               |
+| Run all tests   | `make test`                                         |
+| Single test     | `go test -v -count=1 -run TestName ./sdk/kronk/...` |
+| Run server      | `make kronk-server`                                 |
+| Build BUI       | `make bui-build`                                    |
+| Generate docs   | `make kronk-docs`                                   |
+| Tidy modules    | `make tidy`                                         |
+| Update deps     | `make deps-upgrade`                                 |
+| Lint            | `staticcheck ./...`                                 |
+| Developer setup | `make setup` (configures git hooks)                 |
+
+### 15.2 Build & Test Commands
+
+**Install CLI locally:**
+
+```shell
+go install ./cmd/kronk
+```
+
+**Run all tests:**
+
+```shell
+make test
+```
+
+Tests require prerequisites and environment variables:
+
+```shell
+# Install dependencies first
+make install-libraries install-models
+
+# Set required environment variables
+export RUN_IN_PARALLEL=yes
+export GITHUB_WORKSPACE=/path/to/kronk  # project root
+
+# Run from project root directory
+make test
+```
+
+**Run a single test:**
+
+```shell
+go test -v -count=1 -run TestName ./sdk/kronk/...
+```
+
+### 15.3 Developer Setup
+
+Configure git hooks for automatic pre-commit checks:
+
+```shell
+make setup
+```
+
+This enables a pre-commit hook that automatically runs:
+
+- `make kronk-docs` - Regenerates documentation
+- `make bui-build` - Rebuilds the BUI frontend
+
+### 15.4 Project Architecture
+
+**Directory Structure:**
+
+| Directory                      | Purpose                                                        |
+| ------------------------------ | -------------------------------------------------------------- |
+| `cmd/kronk/`                   | CLI tool (subcommands: catalog, libs, model, security, server) |
+| `cmd/server/`                  | OpenAI-compatible model server (gRPC + HTTP) with BUI frontend |
+| `cmd/server/api/tooling/docs/` | Documentation generator for BUI (SDK and CLI docs)             |
+| `sdk/kronk/`                   | Core API: model loading, chat, embeddings, cache, metrics      |
+| `sdk/kronk/model/`             | Core inference and caching engine                              |
+| `sdk/kronk/observ/`            | Observability packages.                                        |
+| `sdk/tools/`                   | Support for libs, models, catalogs, templates, and defaults    |
+
+**Core Technology:**
+
+Kronk uses [yzma](https://github.com/hybridgroup/yzma) (llama.cpp Go bindings)
+for local inference with GGUF models.
+
+### 15.5 BUI Frontend Development
+
+The Browser UI is a React application located at:
+
+```
+cmd/server/api/frontends/bui/src/
+```
+
+**Directory Structure:**
+
+| Directory/File | Purpose                                         |
+| -------------- | ----------------------------------------------- |
+| `components/`  | React components (pages and UI elements)        |
+| `contexts/`    | React context providers for shared state        |
+| `services/`    | API client (`api.ts`)                           |
+| `types/`       | TypeScript type definitions                     |
+| `App.tsx`      | Main app with routing configuration             |
+| `index.css`    | Global styles (CSS variables, component styles) |
+
+**Routing:**
+
+Uses `react-router-dom` with `BrowserRouter`. Routes are defined in
+`routeMap` in `App.tsx`.
+
+**Adding New Pages:**
+
+1. Create component in `components/` (e.g., `DocsSDKKronk.tsx`)
+2. Add page type to `Page` union in `App.tsx`
+3. Add route path to `routeMap` in `App.tsx`
+4. Add `<Route>` element in `App.tsx`
+5. Add `<Link>` entry to menu in `components/Layout.tsx`
+
+**Menu Structure (`Layout.tsx`):**
+
+Uses `MenuCategory[]` with properties:
+
+- `id` - Unique identifier
+- `label` - Display text
+- `items` - Array of leaf pages
+- `subcategories` - Nested menu categories
+
+**State Management:**
+
+| Context            | Purpose                                               |
+| ------------------ | ----------------------------------------------------- |
+| `TokenContext`     | Stores API token in localStorage (key: `kronk_token`) |
+| `ModelListContext` | Caches model list data with invalidation support      |
+
+Access via hooks: `useToken()`, `useModelList()`
+
+**API Service (`services/api.ts`):**
+
+- `ApiService` class with methods for all endpoints
+- Streaming support for pull operations (models, catalog, libs)
+- Auth-required endpoints accept token parameter
+
+**Styling Conventions:**
+
+- CSS variables defined in `:root` (colors: `--color-orange`, `--color-blue`, etc.)
+- Common classes: `.card`, `.btn`, `.btn-primary`, `.form-group`, `.alert`, `.table-container`
+- No CSS modules or styled-components; use global CSS classes
+
+**Documentation Generation:**
+
+| Type     | Generator Location                                            |
+| -------- | ------------------------------------------------------------- |
+| SDK docs | `cmd/server/api/tooling/docs/sdk/` (uses `go doc` output)     |
+| CLI docs | `cmd/server/api/tooling/docs/cli/` (from command definitions) |
+| Examples | Auto-generated from `examples/` directory                     |
+
+Generate all documentation:
+
+```shell
+go run ./cmd/server/api/tooling/docs -pkg=all
+```
+
+### 15.6 Code Style Guidelines
+
+**Package Comments:**
+
+```go
+// Package kronk provides the core inference API.
+```
+
+**Error Handling:**
+
+```go
+// Wrap errors with lowercase context prefix
+return fmt.Errorf("loading model: %w", err)
+
+// Declare package-level sentinel errors
+var ErrModelNotFound = errors.New("model not found")
+```
+
+**Struct Design:**
+
+- Use unexported fields with exported types
+- Use `Config` pattern for constructors
+
+```go
+type Config struct {
+    Host string
+    Port int
+}
+
+func New(cfg Config) *Server {
+    // ...
+}
+```
+
+**Testing:**
+
+Disable CGO in tests:
+
+```shell
+CGO_ENABLED=0 go test ./...
+```
+
+**Import Order (goimports):**
+
+1. Standard library
+2. External packages
+3. Internal packages
+
+**Control Flow:**
+
+- Avoid `else` and `else if` clauses
+- Prefer `switch` statements or early returns
+
+```go
+// Preferred: early return
+if err != nil {
+    return err
+}
+// continue with main logic
+
+// Preferred: switch over if-else chains
+switch state {
+case "active":
+    // ...
+
+case "pending":
+    // ...
+
+default:
+    // ...
+}
+```
+
+### 15.7 SDK Internals
+
+This section documents implementation details for developers working on
+the Kronk SDK packages.
+
+#### 15.7.1 Package Structure
+
+**sdk/kronk/** - Core API package:
+
+| File | Purpose |
+|------|---------|
+| `acquire.go` | Model pool acquire/release |
+| `chat.go` | Chat completion API |
+| `concurrency.go` | Generic streaming utilities |
+| `embedding.go` | Embedding API |
+| `init.go` | Initialization and configuration |
+| `kronk.go` | Main Kronk type, model pool management |
+| `rerank.go` | Reranking API |
+| `response.go` | OpenAI Responses API streaming |
+
+**sdk/kronk/model/** - Low-level inference:
+
+| File | Purpose |
+|------|---------|
+| `batch.go` | Batch engine for parallel text inference |
+| `caching.go` | System prompt and IMC cache management |
+| `chat.go` | Chat inference loop, batch vs sequential routing |
+| `config.go` | Model configuration (GPU, cache, batching) |
+| `embed.go` | Embedding inference |
+| `logprobs.go` | Token log probability extraction |
+| `media.go` | Vision/audio media processing |
+| `model.go` | Model type, context management, lifecycle |
+| `models.go` | OpenAI-compatible types (ChatMessage, ToolCall, etc.) |
+| `params.go` | Sampling parameters |
+| `processor.go` | Template-specific token processors |
+| `prompts.go` | Prompt formatting |
+| `rerank.go` | Reranking inference |
+
+#### 15.7.2 Streaming Architecture
+
+**Response Streaming Pattern** (`response.go`, `concurrency.go`):
+
+- Uses `streamingWith[T, U]` generic function for 1:N event transformation
+- `streamProcessor` has three phases: `Start()`, `Process(chunk)`, `Complete(lastChunk)`
+- `streamState` struct maintains response ID, sequence numbers, aggregated usage
+- SSE format: `event: <type>\ndata: <json>\n\n`
+
+**FinishReason Handling:**
+
+- `FinishReasonPtr *string` field with `FinishReason()` accessor
+- Constants: `FinishReasonStop="stop"`, `FinishReasonTool="tool_calls"`, `FinishReasonError="error"`
+- When `FinishReasonPtr != nil`, skip text/reasoning deltas (they duplicate previous content)
+- Always process tool calls even with FinishReason set (may only arrive in final chunk)
+
+#### 15.7.3 Model Pool Strategy
+
+`NSeqMax` behaves differently depending on model type:
+
+**Sequential Models** (embed, rerank, vision/audio):
+
+- `NSeqMax` controls the number of model instances in the pool
+- Each instance handles one request at a time (single-flight)
+- Pooled via `krn.pool` channel for concurrent request handling
+
+**Text Inference Models** (chat, completion):
+
+- `NSeqMax` controls batch parallelism within a single model instance
+- Only one `model.Model` instance is created
+- Semaphore capacity = `NSeqMax * queueDepth` (default queueDepth=2)
+
+**Detection Logic** (`kronk.go`):
+
+```go
+isSingleFlight := cfg.ProjFile != ""  // Vision/audio projector
+if mi.IsEmbedModel || mi.IsRerankModel {
+    isSingleFlight = true
+}
+```
+
+#### 15.7.4 Model Acquire/Release & Cleanup
+
+**Two-Stage Acquisition** (`acquire.go`):
+
+1. **Backpressure slot**: Acquire semaphore slot (limits total in-flight requests)
+2. **Model instance**: If pooled, acquire specific model from pool channel
+
+**Cleanup Flow:**
+
+1. `streaming()` acquires model, defers `releaseModel()` in wrapper goroutine
+2. `ChatStreaming` defers `m.resetContext()` before any processing
+3. When generation completes, `resetContext()` runs first:
+   - `llama.Synchronize(m.lctx)` - waits for GPU operations
+   - `llama.MemoryClear(mem, true)` - clears KV cache
+4. Channel closes, wrapper exits, `releaseModel()` runs
+5. Model returns to pool in clean state
+
+**Key invariant:** `resetContext()` always runs before model release due to defer ordering.
+
+#### 15.7.5 Batch Engine Internals
+
+**ChatStreaming Decision Logic** (`chat.go`):
+
+The `submitToBatchEngine()` function decides the processing path:
+
+```go
+// submitToBatchEngine returns false if batch not available.
+if m.batch == nil || object != ObjectChatText {
+    return false
+}
+// Submit job to batch engine...
+return true
+```
+
+If `submitToBatchEngine()` returns false, the sequential path is used:
+
+```go
+if m.submitToBatchEngine(...) {
+    batching = true
+    return
+}
+m.sequentialChatRequest(...)
+```
+
+**Batch Engine Architecture** (`batch.go`):
+
+- `batchEngine` manages `nSlots` parallel `slot` structs
+- Each slot tracks: `seqID`, prompt tokens, decode state, sampler, response channel, logprobs, prefill state
+- Signal-based wake pattern: `wakeCh chan struct{}` (buffered size 1) wakes immediately on new requests
+- Polling intervals: 100µs (active slots generating), 5ms (idle, no active slots)
+
+**Slots vs Sequences:**
+
+- `slot.id` = slot index (for logging)
+- `slot.seqID` = llama.cpp sequence ID (determines KV cache partition)
+- `slot.seqIDs` = pre-allocated slice for efficient `batchAdd` calls
+
+Sequences are isolated partitions in the shared KV cache memory. Slot seqIDs
+are offset when caching is enabled (SPC uses seq 0; IMC uses seqs 0 to
+MaxIMCSessions-1).
+
+#### 15.7.6 Context Pooling
+
+- `llama.Context` is created once in `NewModel` and reused across requests
+- Call `resetContext()` between requests to clear KV cache
+- Avoids Vulkan memory fragmentation from repeated context alloc/dealloc
+
+#### 15.7.7 IMC Implementation Details
+
+**Critical Implementation Details:**
+
+1. **Extension tokenization must use `special=true`**: Use `llama.Tokenize(vocab, extension, false, true)` to ensure ChatML tokens like `<|im_start|>` are recognized.
+
+2. **Prefix mismatch detection**: Use `strings.HasPrefix(fullPrompt, prefixPrompt)` to detect Jinja template nondeterminism.
+
+3. **`add_generation_prompt=false` for cached prefixes**: Creates valid prefix for extension. Generation prompt added only for final suffix.
+
+**IMC Algorithm:**
+
+1. First request (cache empty): Cache `messages[0:len-1]`, generate from last message
+2. Subsequent requests (prefix match): Extend cache with `messages[cachedCount:len-1]`
+3. New thread (prefix mismatch): Rebuild cache from scratch
+
+**IMC Session State:**
+
+```go
+type imcSession struct {
+    hash      string      // Hash of all cached messages
+    tokens    int         // Total tokens in cache
+    msgCount  int         // Number of messages cached
+    promptLen int         // Length of templated prefix
+    seqID     llama.SeqId // Assigned cache sequence ID
+    lastUsed  time.Time   // For future eviction
+}
+```
+
+#### 15.7.8 Tool Call Internals
+
+**chatMessage Unmarshaling** (`models.go`):
+
+- `Content` can be `nil` for assistant messages with tool_calls
+- Handle `len(app.Content) == 0 || string(app.Content) == "null"` as valid empty content
+
+**ToolCallArguments Type:**
+
+- Custom type that marshals to JSON string (OpenAI spec)
+- Unmarshals from either string or object for non-compliant clients
+
+#### 15.7.9 Logprobs Implementation
+
+**Implementation** (`logprobs.go`):
+
+- `extractLogprobs()`: Retrieves logits via `llama.GetLogitsIth()`
+- `logSoftmax()`: Numerically stable log-softmax using log-sum-exp trick
+- `getTopKLogprobs()`: Uses min-heap for efficient O(n log k) top-k extraction
+
+**Critical:** Logprobs must be extracted **before** `llama.SamplerAccept()` is called.
+
+### 15.8 API Handler Notes
+
+**Input Format Conversion** (`cmd/server/app/domain/`):
+
+Both streaming and non-streaming Response APIs must call
+`convertInputToMessages(d)` to handle the OpenAI Responses `input` field
+format.
+
+### 15.9 Reference Threads
+
+See `THREADS.md` for important past conversations and decisions worth
+preserving.

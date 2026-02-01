@@ -70,6 +70,12 @@ body {
     font-weight: 700;
 }
 
+.sidebar nav {
+    flex: 1;
+    overflow-y: auto;
+    padding-bottom: 20px;
+}
+
 .menu-category {
     margin-bottom: 8px;
 }
@@ -111,7 +117,7 @@ body {
 }
 
 .menu-items.expanded {
-    max-height: 500px;
+    max-height: 1000px;
 }
 
 .menu-item {
@@ -143,6 +149,14 @@ body {
 .submenu .menu-category-header {
     font-size: 14px;
     padding: 8px 20px 8px 36px;
+}
+
+.submenu .menu-item {
+    padding-left: 52px;
+}
+
+.submenu .submenu .menu-item {
+    padding-left: 68px;
 }
 
 .main-content {
@@ -677,9 +691,15 @@ tr.selected:hover td {
 }
 
 .doc-section {
+    margin-top: 24px;
     margin-bottom: 24px;
     padding-bottom: 16px;
     border-bottom: 1px solid var(--color-gray-200);
+}
+
+/* Add spacing above h4 within cards (e.g., "Authentication" sections) */
+.card h4 {
+    margin-top: 24px;
 }
 
 .doc-section:last-child {
@@ -740,19 +760,34 @@ tr.selected:hover td {
 /* Code block container with header */
 .code-block-container {
     margin: 16px 0;
+    position: relative;
 }
 
 .code-block-header {
     display: flex !important;
-    justify-content: space-between !important;
+    justify-content: flex-end !important;
     align-items: center !important;
-    padding: 12px 16px !important;
+    padding: 8px 8px !important;
+    background: transparent !important;
+    border: none !important;
+    border-radius: 0 !important;
+    gap: 12px !important;
+    min-height: auto !important;
+    position: absolute !important;
+    top: 0 !important;
+    right: 0 !important;
+    z-index: 10 !important;
+}
+
+.code-block-header:has(.code-block-toggle) {
+    position: relative !important;
     background: var(--color-gray-200) !important;
     border: 1px solid var(--color-gray-300) !important;
     border-bottom: none !important;
     border-radius: 6px 6px 0 0 !important;
-    gap: 12px !important;
+    padding: 12px 16px !important;
     min-height: 44px !important;
+    justify-content: space-between !important;
 }
 
 .code-block-info {
@@ -794,21 +829,30 @@ tr.selected:hover td {
     align-items: center;
     gap: 6px;
     padding: 6px 12px;
-    background: var(--color-white);
+    background: rgba(255, 255, 255, 0.95);
     border: 1px solid var(--color-gray-300);
     border-radius: 4px;
     cursor: pointer;
     font-size: 12px;
     font-weight: 500;
-    color: var(--color-gray-800);
+    color: var(--color-gray-700);
     transition: all 0.2s;
     white-space: nowrap;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.code-copy-btn svg {
+    fill: var(--color-gray-600);
 }
 
 .code-copy-btn:hover {
     background: var(--color-orange);
     border-color: var(--color-orange);
-    color: var(--color-blue);
+    color: var(--color-white);
+}
+
+.code-copy-btn:hover svg {
+    fill: var(--color-white);
 }
 
 .copy-feedback {
@@ -824,7 +868,7 @@ tr.selected:hover td {
 
 /* Go code blocks with Prism styling */
 .code-go {
-    border-radius: 0 0 6px 6px !important;
+    border-radius: 6px !important;
     padding: 16px !important;
     overflow-x: auto !important;
     font-family: "SF Mono", "Monaco", "Inconsolata", "Fira Code", monospace !important;
@@ -832,10 +876,21 @@ tr.selected:hover td {
     line-height: 1.5 !important;
     margin: 0 !important;
     border: 1px solid var(--color-gray-300) !important;
-    border-top: none !important;
     max-height: none !important;
     transition: max-height 0.3s ease !important;
     overflow-y: hidden !important;
+}
+
+/* Go code blocks inside container (with copy button header) */
+.code-block-container .code-go {
+    padding-top: 40px !important;
+}
+
+/* When header has toggle button, adjust code block */
+.code-block-header:has(.code-block-toggle) + .code-go {
+    border-radius: 0 0 6px 6px !important;
+    border-top: none !important;
+    padding-top: 16px !important;
 }
 
 .code-go.collapsed {
@@ -848,9 +903,9 @@ tr.selected:hover td {
     font-family: inherit;
 }
 
-/* Regular code blocks */
+/* Regular code blocks (standalone, without CodeBlock component) */
 .code-block {
-    border-radius: 0 0 6px 6px;
+    border-radius: 6px;
     padding: 16px !important;
     overflow-x: auto;
     font-family: "SF Mono", "Monaco", "Inconsolata", "Fira Code", monospace;
@@ -858,10 +913,21 @@ tr.selected:hover td {
     line-height: 1.5;
     margin: 0;
     border: 1px solid var(--color-gray-300);
-    border-top: none;
     background: var(--color-gray-100);
     max-height: none;
     transition: max-height 0.3s ease;
+}
+
+/* Code blocks inside container (with copy button header) */
+.code-block-container .code-block {
+    padding-top: 40px !important;
+}
+
+/* When header has toggle button, adjust code block */
+.code-block-header:has(.code-block-toggle) + .code-block {
+    border-radius: 0 0 6px 6px;
+    border-top: none;
+    padding-top: 16px !important;
 }
 
 .code-block.collapsed {
@@ -1769,4 +1835,98 @@ tr.selected:hover td {
     padding: 24px;
     overflow-y: auto;
     flex: 1;
+}
+
+/* Manual content styling */
+.manual-content h1 {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--color-blue);
+    margin: 32px 0 16px 0;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--color-gray-200);
+}
+
+.manual-content h1:first-child {
+    margin-top: 0;
+}
+
+.manual-content h2 {
+    font-size: 24px;
+    font-weight: 600;
+    color: var(--color-blue);
+    margin: 32px 0 16px 0;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--color-gray-200);
+}
+
+.manual-content h3 {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--color-gray-800);
+    margin: 24px 0 12px 0;
+}
+
+.manual-content h4 {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--color-gray-700);
+    margin: 20px 0 10px 0;
+}
+
+.manual-content h5 {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--color-gray-700);
+    margin: 16px 0 8px 0;
+}
+
+.manual-content p {
+    margin: 12px 0;
+    line-height: 1.7;
+}
+
+.manual-content ul,
+.manual-content ol {
+    margin: 12px 0;
+    padding-left: 24px;
+}
+
+.manual-content li {
+    margin: 6px 0;
+    line-height: 1.6;
+}
+
+.manual-content blockquote {
+    margin: 16px 0;
+    padding: 12px 20px;
+    border-left: 4px solid var(--color-orange);
+    background: var(--color-gray-100);
+    color: var(--color-gray-700);
+}
+
+.manual-content hr {
+    margin: 32px 0;
+    border: none;
+    border-top: 1px solid var(--color-gray-200);
+}
+
+.manual-content table {
+    margin: 16px 0;
+}
+
+.manual-content pre {
+    margin: 16px 0;
+}
+
+.manual-content pre.code-block {
+    background: var(--color-gray-800);
+    border: none;
+    border-radius: 6px;
+    padding: 16px;
+}
+
+.manual-content pre.code-block code {
+    color: #e8e8e8;
+    background: transparent;
 }

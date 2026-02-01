@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { useState, useEffect, type ReactNode } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { type Page, routeMap, pathToPage } from '../App';
 import { useDownload } from '../contexts/DownloadContext';
 
@@ -17,6 +17,7 @@ interface MenuCategory {
 interface MenuItem {
   page: Page;
   label: string;
+  hash?: string;
 }
 
 const menuStructure: MenuCategory[] = [
@@ -69,12 +70,40 @@ const menuStructure: MenuCategory[] = [
     label: 'Docs',
     subcategories: [
       {
+        id: 'docs-manual-sub',
+        label: 'Manual',
+        items: [
+          { page: 'docs-manual', label: 'Introduction', hash: 'chapter-1:-introduction' },
+          { page: 'docs-manual', label: 'Installation & Quick Start', hash: 'chapter-2:-installation-quick-start' },
+          { page: 'docs-manual', label: 'Model Configuration', hash: 'chapter-3:-model-configuration' },
+          { page: 'docs-manual', label: 'Batch Processing', hash: 'chapter-4:-batch-processing' },
+          { page: 'docs-manual', label: 'Message Caching', hash: 'chapter-5:-message-caching' },
+          { page: 'docs-manual', label: 'YaRN Extended Context', hash: 'chapter-6:-yarn-extended-context' },
+          { page: 'docs-manual', label: 'Model Server', hash: 'chapter-7:-model-server' },
+          { page: 'docs-manual', label: 'API Endpoints', hash: 'chapter-8:-api-endpoints' },
+          { page: 'docs-manual', label: 'Multi-Modal Models', hash: 'chapter-9:-multi-modal-models' },
+          { page: 'docs-manual', label: 'Security & Authentication', hash: 'chapter-10:-security-authentication' },
+          { page: 'docs-manual', label: 'Browser UI (BUI)', hash: 'chapter-11:-browser-ui-bui' },
+          { page: 'docs-manual', label: 'Client Integration', hash: 'chapter-12:-client-integration' },
+          { page: 'docs-manual', label: 'Observability', hash: 'chapter-13:-observability' },
+          { page: 'docs-manual', label: 'Troubleshooting', hash: 'chapter-14:-troubleshooting' },
+          { page: 'docs-manual', label: 'Developer Guide', hash: 'chapter-15:-developer-guide' },
+        ],
+      },
+      {
         id: 'docs-sdk',
         label: 'SDK',
         items: [
           { page: 'docs-sdk-kronk', label: 'Kronk' },
           { page: 'docs-sdk-model', label: 'Model' },
           { page: 'docs-sdk-examples', label: 'Examples' },
+          { page: 'docs-sdk-examples', label: 'Audio', hash: 'example-audio' },
+          { page: 'docs-sdk-examples', label: 'Chat', hash: 'example-chat' },
+          { page: 'docs-sdk-examples', label: 'Embedding', hash: 'example-embedding' },
+          { page: 'docs-sdk-examples', label: 'Question', hash: 'example-question' },
+          { page: 'docs-sdk-examples', label: 'Rerank', hash: 'example-rerank' },
+          { page: 'docs-sdk-examples', label: 'Response', hash: 'example-response' },
+          { page: 'docs-sdk-examples', label: 'Vision', hash: 'example-vision' },
         ],
       },
       {
@@ -101,13 +130,6 @@ const menuStructure: MenuCategory[] = [
           { page: 'docs-api-tools', label: 'Tools' },
         ],
       },
-      {
-        id: 'docs-config-sub',
-        label: 'Config',
-        items: [
-          { page: 'docs-config-models', label: 'Models' },
-        ],
-      },
     ],
   },
   {
@@ -122,9 +144,37 @@ const menuStructure: MenuCategory[] = [
 
 export default function Layout({ children }: LayoutProps) {
   const location = useLocation();
+  const navigate = useNavigate();
   const currentPage = pathToPage[location.pathname] || 'home';
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const { download, isDownloading } = useDownload();
+
+  // Auto-expand categories that contain the current page
+  useEffect(() => {
+    const findCategoryPath = (categories: MenuCategory[], targetPage: Page): string[] => {
+      for (const category of categories) {
+        if (category.items?.some((item) => item.page === targetPage)) {
+          return [category.id];
+        }
+        if (category.subcategories) {
+          const subPath = findCategoryPath(category.subcategories, targetPage);
+          if (subPath.length > 0) {
+            return [category.id, ...subPath];
+          }
+        }
+      }
+      return [];
+    };
+
+    const categoryPath = findCategoryPath(menuStructure, currentPage);
+    if (categoryPath.length > 0) {
+      setExpandedCategories((prev) => {
+        const next = new Set(prev);
+        categoryPath.forEach((id) => next.add(id));
+        return next;
+      });
+    }
+  }, [currentPage]);
 
   const toggleCategory = (id: string) => {
     setExpandedCategories((prev) => {
@@ -148,15 +198,46 @@ export default function Layout({ children }: LayoutProps) {
     return false;
   };
 
-  const renderMenuItem = (item: MenuItem) => (
-    <Link
-      key={item.page}
-      to={routeMap[item.page]}
-      className={`menu-item ${currentPage === item.page ? 'active' : ''}`}
-    >
-      {item.label}
-    </Link>
-  );
+  const renderMenuItem = (item: MenuItem) => {
+    const path = routeMap[item.page];
+    const isActive = currentPage === item.page && !item.hash;
+    
+    if (item.hash) {
+      const handleClick = (e: React.MouseEvent) => {
+        e.preventDefault();
+        // Use React Router navigation to preserve state
+        navigate(`${path}#${item.hash}`);
+        // Scroll to the element after navigation
+        setTimeout(() => {
+          const element = document.getElementById(item.hash!);
+          if (element) {
+            element.scrollIntoView({ behavior: 'smooth' });
+          }
+        }, 100);
+      };
+      
+      return (
+        <a
+          key={`${item.page}-${item.hash}`}
+          href={`${path}#${item.hash}`}
+          onClick={handleClick}
+          className="menu-item"
+        >
+          {item.label}
+        </a>
+      );
+    }
+    
+    return (
+      <Link
+        key={item.page}
+        to={path}
+        className={`menu-item ${isActive ? 'active' : ''}`}
+      >
+        {item.label}
+      </Link>
+    );
+  };
 
   const renderCategory = (category: MenuCategory, isSubmenu = false) => {
     const isExpanded = expandedCategories.has(category.id);
