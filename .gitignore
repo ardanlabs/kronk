@@ -7,7 +7,7 @@ node_modules
 /opencode.json
 
 # Docker compose data directories
-zarf/docker/openwebui/data/
+zarf/docker/openwebui/
 zarf/docker/promtail/positions/
 
 # Binaries for programs and plugins

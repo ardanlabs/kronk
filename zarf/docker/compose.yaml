@@ -19,7 +19,7 @@ services:
     ports:
       - "8081:8080"
     volumes:
-      - ./openwebui/data:/app/backend/data
+      - ./openwebui:/app/backend/data
 
   grafana:
     image: grafana/grafana:12.3.0
