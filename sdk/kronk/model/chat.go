@@ -10,7 +10,6 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/google/uuid"
-	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
 	"go.opentelemetry.io/otel/attribute"
 )
@@ -47,26 +46,7 @@ func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error) {
 // pipeline constraints.
 func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 	returnCh := make(chan ChatResponse, 1)
-	ch := returnCh
-
-	// When insecure logging is enabled, wrap the channel to capture and log
-	// the final response before forwarding to the caller.
-	if m.cfg.InsecureLogging {
-		ch = make(chan ChatResponse, 1)
-		go func() {
-			var srl StreamingResponseLogger
-
-			for resp := range ch {
-				srl.Capture(resp)
-				returnCh <- resp
-			}
-
-			m.log(ctx, "chat-streaming", "OUT-MESSAGES", srl.String())
-			close(returnCh)
-		}()
-	}
-
-	//----------------------------------------------------------------------
+	ch := m.wrapChannelForLogging(ctx, returnCh)
 
 	// Increment active streams before launching the goroutine to prevent a race
 	// where Unload sees zero active streams and frees the model before the
@@ -92,37 +72,16 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 			}
 		}()
 
-		//----------------------------------------------------------------------
-
-		params, err := m.validateDocument(d)
+		params, d, err := m.validateAndCloneDocument(ctx, d)
 		if err != nil {
 			m.sendChatError(ctx, ch, id, err)
 			return
 		}
 
-		m.log(ctx, "chat-streaming", "FINAL-PARAMS", params.String())
-
-		// Clone the document to avoid mutating the caller's data. Both text and
-		// media paths modify the document in place during processing.
-		d = d.Clone()
-
-		//----------------------------------------------------------------------
-
-		var mtmdCtx mtmd.Context
-		object := ObjectChatText
-
-		switch m.projFile {
-		case "":
-			d = m.prepareTextContext(d)
-
-		default:
-			object = ObjectChatMedia
-
-			d, mtmdCtx, err = m.prepareMediaContext(ctx, d)
-			if err != nil {
-				m.sendChatError(ctx, ch, id, err)
-				return
-			}
+		d, mtmdCtx, object, err := m.prepareContext(ctx, d)
+		if err != nil {
+			m.sendChatError(ctx, ch, id, err)
+			return
 		}
 
 		defer func() {
@@ -135,79 +94,151 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 			}
 		}()
 
-		//----------------------------------------------------------------------
-
-		var sysPromptNPast llama.Pos
-		var sysPromptCached bool
-		var prompt string
-		var media [][]byte
-
-		if (m.cfg.SystemPromptCache || m.cfg.IncrementalCache) && object == ObjectChatText {
-			cache := m.ensureCache(ctx, d)
-			if cache.err != nil {
-				m.sendChatError(ctx, ch, id, cache.err)
-				return
-			}
-
-			d = cache.modifiedD
-			sysPromptNPast = cache.nPast
-			sysPromptCached = cache.cached
-			prompt = cache.prompt
-			media = cache.media
+		prompt, media, cache, err := m.prepareCacheAndPrompt(ctx, d, object)
+		if err != nil {
+			m.sendChatError(ctx, ch, id, err)
+			return
 		}
 
-		// Only call createPrompt if caching didn't already handle it.
-		if prompt == "" {
-			prompt, media, err = m.createPrompt(ctx, d)
-			if err != nil {
-				m.sendChatError(ctx, ch, id, fmt.Errorf("chat-streaming: unable to apply jinja template: %w", err))
-				return
-			}
-		}
+		d = cache.modifiedD
 
 		if m.cfg.InsecureLogging {
 			m.log(ctx, "chat-streaming", "IN-MESSAGAES", d.Messages())
 		}
 
-		// ---------------------------------------------------------------------
-
-		// Use batch engine for text-only requests when available.
-		if m.batch != nil && object == ObjectChatText {
-			job := chatJob{
-				id:              id,
-				ctx:             ctx,
-				d:               d,
-				object:          object,
-				prompt:          prompt,
-				media:           media,
-				params:          params,
-				mtmdCtx:         mtmdCtx,
-				ch:              ch,
-				sysPromptNPast:  sysPromptNPast,
-				sysPromptCached: sysPromptCached,
-			}
-
-			// Engine manages activeStreams for submitted jobs.
-			if err := m.batch.submit(&job); err != nil {
-				m.sendChatError(ctx, ch, id, err)
-				return
-			}
-
+		if m.submitToBatchEngine(ctx, ch, id, d, object, prompt, media, params, mtmdCtx, cache) {
 			batching = true
-
-			// Channel closed and activeStreams decremented by
-			// engine when job completes.
 			return
 		}
-
-		// ---------------------------------------------------------------------
-
-		// Sequential path for media requests or when engine is not available.
 
 		m.sequentialChatRequest(ctx, id, m.lctx, mtmdCtx, object, prompt, media, params, ch)
 	}()
 
 	return returnCh
+}
+
+// wrapChannelForLogging wraps the response channel with logging when insecure
+// logging is enabled. Returns the channel to use for sending responses.
+func (m *Model) wrapChannelForLogging(ctx context.Context, returnCh chan ChatResponse) chan ChatResponse {
+	if !m.cfg.InsecureLogging {
+		return returnCh
+	}
+
+	ch := make(chan ChatResponse, 1)
+
+	go func() {
+		var srl StreamingResponseLogger
+
+		for resp := range ch {
+			srl.Capture(resp)
+			returnCh <- resp
+		}
+
+		m.log(ctx, "chat-streaming", "OUT-MESSAGES", srl.String())
+		close(returnCh)
+	}()
+
+	return ch
+}
+
+// validateAndCloneDocument validates the request document and returns a clone
+// to avoid mutating the caller's data.
+func (m *Model) validateAndCloneDocument(ctx context.Context, d D) (Params, D, error) {
+	params, err := m.validateDocument(d)
+	if err != nil {
+		return Params{}, nil, err
+	}
+
+	m.log(ctx, "chat-streaming", "FINAL-PARAMS", params.String())
+
+	return params, d.Clone(), nil
+}
+
+// prepareContext prepares the document for inference, handling both text-only
+// and media (vision/audio) paths. Returns the modified document, media context,
+// and object type.
+func (m *Model) prepareContext(ctx context.Context, d D) (D, mtmd.Context, string, error) {
+	if m.projFile == "" {
+		return m.prepareTextContext(d), 0, ObjectChatText, nil
+	}
+
+	d, mtmdCtx, err := m.prepareMediaContext(ctx, d)
+	if err != nil {
+		return nil, 0, ObjectChatUnknown, err
+	}
+
+	return d, mtmdCtx, ObjectChatMedia, nil
+}
+
+// prepareCacheAndPrompt handles cache processing and prompt creation. Returns
+// the prompt, media bytes, cache result, and any error.
+func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string) (string, [][]byte, cacheResult, error) {
+	var cache cacheResult
+
+	cachingEnabled := (m.cfg.SystemPromptCache || m.cfg.IncrementalCache) && object == ObjectChatText
+
+	switch {
+	case !cachingEnabled:
+		cache.modifiedD = d
+
+	default:
+		cache = m.processCache(ctx, d)
+		if cache.err != nil {
+			return "", nil, cache, cache.err
+		}
+
+		if cache.prompt != "" {
+			return cache.prompt, cache.media, cache, nil
+		}
+
+		d = cache.modifiedD
+	}
+
+	prompt, media, err := m.createPrompt(ctx, d)
+	if err != nil {
+		return "", nil, cache, fmt.Errorf("chat-streaming: unable to apply jinja template: %w", err)
+	}
+
+	return prompt, media, cache, nil
+}
+
+// submitToBatchEngine attempts to submit the request to the batch engine.
+// Returns true if the job was submitted (caller should set batching=true),
+// false if batch engine is not available or not applicable.
+func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, id string, d D, object string, prompt string, media [][]byte, params Params, mtmdCtx mtmd.Context, cache cacheResult) bool {
+	if m.batch == nil || object != ObjectChatText {
+		return false
+	}
+
+	sysPromptCached := false
+	if m.cfg.SystemPromptCache {
+		sysPromptCached = cache.cached
+	}
+
+	job := chatJob{
+		id:              id,
+		ctx:             ctx,
+		d:               d,
+		object:          object,
+		prompt:          prompt,
+		media:           media,
+		params:          params,
+		mtmdCtx:         mtmdCtx,
+		ch:              ch,
+		sysPromptNPast:  cache.nPast,
+		sysPromptCached: sysPromptCached,
+		imcID:           cache.imcID,
+		imcSeqID:        cache.imcSeqID,
+		imcNPast:        cache.nPast,
+		imcCached:       cache.imcID != "",
+	}
+
+	if err := m.batch.submit(&job); err != nil {
+		m.sendChatError(ctx, ch, id, err)
+		return false
+	}
+
+	return true
 }
 
 // prepareTextContext converts messages using the OpenAI array format

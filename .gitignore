@@ -6,6 +6,10 @@ node_modules
 .DS_Store
 /opencode.json
 
+# Docker compose data directories
+zarf/docker/openwebui/
+zarf/docker/promtail/positions/
+
 # Binaries for programs and plugins
 *.exe
 *.exe~

@@ -6,6 +6,7 @@ type Table struct {
 	SkipInGH   bool
 	URL        string
 	Token      string
+	Headers    map[string]string
 	Method     string
 	StatusCode int
 	Input      any

@@ -26,6 +26,17 @@ type compiledTemplate struct {
 	err  error
 }
 
+// imcSession holds the state for a single IMC (Incremental Message Cache) session.
+// Each unique imc_id gets its own session with an assigned cache sequence.
+type imcSession struct {
+	hash      string      // Hash of all cached messages
+	tokens    int         // Total tokens in cache
+	msgCount  int         // Number of messages cached
+	promptLen int         // Length of templated prefix (for extension)
+	seqID     llama.SeqId // Assigned cache sequence ID
+	lastUsed  time.Time   // Last access time (for eviction)
+}
+
 // TemplateRetriever returns a configured template for a model.
 type TemplateRetriever interface {
 	Retrieve(modelID string) (Template, error)
@@ -53,11 +64,9 @@ type Model struct {
 	sysPromptHash   string
 	sysPromptTokens int
 	sysPromptLen    int
-	imcHash         string      // Hash of all cached messages (IMC mode)
-	imcTokens       int         // Total tokens in IMC cache
-	imcMsgCount     int         // Number of messages currently cached
-	imcPromptLen    int         // Length of templated prefix string (for extension)
-	imcSeqID        llama.SeqId // Sequence ID for IMC cache
+	imcSessions     map[string]*imcSession // IMC sessions keyed by imc_id
+	imcNextSeq      llama.SeqId            // Next available cache sequence
+	imcMaxSeqs      int                    // Max IMC sessions from config
 }
 
 func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) (*Model, error) {
@@ -161,21 +170,29 @@ func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) 
 	// Without this, uninitialized memory can cause SIGTRAP in llama.cpp decode.
 	llama.MemoryClear(mem, true)
 
-	// IMC uses sequence 0 when enabled (SPC and IMC are mutually exclusive).
-	var imcSeqID llama.SeqId
+	// Initialize IMC session tracking when enabled.
+	// Sessions start at seq 0 and increment up to MaxIMCSessions.
+	var imcSessions map[string]*imcSession
+	var imcMaxSeqs int
+	if cfg.IncrementalCache {
+		imcMaxSeqs = max(cfg.MaxIMCSessions, 1)
+		imcSessions = make(map[string]*imcSession, imcMaxSeqs)
+	}
 
 	m := Model{
-		cfg:       cfg,
-		log:       l,
-		model:     mdl,
-		vocab:     llama.ModelGetVocab(mdl),
-		ctxParams: ctxParams,
-		lctx:      lctx,
-		mem:       mem,
-		template:  template,
-		projFile:  cfg.ProjFile,
-		modelInfo: modelInfo,
-		imcSeqID:  imcSeqID,
+		cfg:         cfg,
+		log:         l,
+		model:       mdl,
+		vocab:       llama.ModelGetVocab(mdl),
+		ctxParams:   ctxParams,
+		lctx:        lctx,
+		mem:         mem,
+		template:    template,
+		projFile:    cfg.ProjFile,
+		modelInfo:   modelInfo,
+		imcSessions: imcSessions,
+		imcNextSeq:  0,
+		imcMaxSeqs:  imcMaxSeqs,
 	}
 
 	// Initialize batch engine for text-only models (no ProjFile).

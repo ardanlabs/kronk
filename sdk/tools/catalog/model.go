@@ -120,6 +120,7 @@ type ModelConfig struct {
 	SplitMode            model.SplitMode          `yaml:"split-mode"`
 	SystemPromptCache bool                     `yaml:"system-prompt-cache"`
 	IncrementalCache  bool                     `yaml:"incremental-cache"`
+	MaxIMCSessions    int                      `yaml:"max-imc-sessions"`
 	CacheMinTokens       int                      `yaml:"cache-min-tokens"`
 	InsecureLogging      bool                     `yaml:"insecure-logging"`
 	Sampling             SamplingConfig           `yaml:"sampling-parameters"`
@@ -153,6 +154,7 @@ func (mc ModelConfig) toKronkConfig() model.Config {
 		SplitMode:            mc.SplitMode,
 		SystemPromptCache:    mc.SystemPromptCache,
 		IncrementalCache:     mc.IncrementalCache,
+		MaxIMCSessions:       mc.MaxIMCSessions,
 		CacheMinTokens:       mc.CacheMinTokens,
 		InsecureLogging:      mc.InsecureLogging,
 		RopeScaling:          mc.RopeScaling,

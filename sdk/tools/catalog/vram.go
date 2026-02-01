@@ -10,8 +10,11 @@ import (
 // CalculateVRAM retrieves model metadata and computes the VRAM requirements.
 func (c *Catalog) CalculateVRAM(modelID string, mc ModelConfig) (models.VRAM, error) {
 	var cacheSequences int64
-	if mc.SystemPromptCache || mc.IncrementalCache {
+	if mc.SystemPromptCache {
 		cacheSequences = 1
+	}
+	if mc.IncrementalCache {
+		cacheSequences = int64(max(mc.MaxIMCSessions, 1))
 	}
 
 	cfg := models.VRAMConfig{

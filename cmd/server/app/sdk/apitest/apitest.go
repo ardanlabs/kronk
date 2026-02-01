@@ -82,6 +82,9 @@ func (at *Test) Run(t *testing.T, table []Table, testName string, options ...Opt
 				}
 
 				r.Header.Set("Authorization", "Bearer "+tt.Token)
+				for k, v := range tt.Headers {
+					r.Header.Set(k, v)
+				}
 				at.mux.ServeHTTP(w, r)
 
 				if w.Code != tt.StatusCode {
@@ -157,6 +160,9 @@ func (at *Test) RunStreaming(t *testing.T, table []Table, testName string, optio
 				}
 
 				r.Header.Set("Authorization", "Bearer "+tt.Token)
+				for k, v := range tt.Headers {
+					r.Header.Set(k, v)
+				}
 				at.mux.ServeHTTP(w, r)
 
 				if w.Code != tt.StatusCode {

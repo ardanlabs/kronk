@@ -31,6 +31,10 @@ type chatJob struct {
 	ch              chan<- ChatResponse
 	sysPromptNPast  llama.Pos
 	sysPromptCached bool
+	imcID           string      // IMC session ID (from imc_id in request)
+	imcSeqID        llama.SeqId // IMC session's cache sequence
+	imcNPast        llama.Pos   // IMC cached token count
+	imcCached       bool        // True if IMC cache should be used
 }
 
 // slot represents a processing slot for parallel inference.
@@ -127,11 +131,13 @@ func newBatchEngine(m *Model, nSlots int) *batchEngine {
 	batch := llama.BatchInit(int32(nCtx), 0, int32(nSlots))
 
 	// Calculate sequence offset based on reserved cache sequences.
-	// Seq 0: SystemPromptCache or IncrementalCache (mutually exclusive)
+	// SPC uses seq 0 only. IMC uses seqs 0 to MaxIMCSessions-1.
 	// Slots start after reserved sequences.
 	cacheSeqs := 0
-	if m.cfg.SystemPromptCache || m.cfg.IncrementalCache {
+	if m.cfg.SystemPromptCache {
 		cacheSeqs = 1
+	} else if m.cfg.IncrementalCache {
+		cacheSeqs = m.imcMaxSeqs
 	}
 
 	// Initialize slots.
@@ -406,32 +412,45 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 	// Always clear the slot's sequence before starting to remove any stale KV data.
 	llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
 
-	// If system prompt is cached, copy KV cache from seq 0 to this slot's sequence.
-	if job.sysPromptCached {
+	// Copy cached KV state if available (SPC or IMC, mutually exclusive).
+	var cachedTokens llama.Pos
+	switch {
+	case job.sysPromptCached:
+		// SPC: copy from seq 0.
 		if err := e.model.copySystemPromptToSeq(s.seqID); err != nil {
 			e.sendSlotError(s, fmt.Errorf("start-slot: %w", err))
 			s.reset()
 			return
 		}
+		cachedTokens = job.sysPromptNPast
 
-		s.nPast = job.sysPromptNPast
+	case job.imcCached:
+		// IMC: copy from session's sequence.
+		e.model.log(job.ctx, "start-slot", "status", "imc-copy", "src_seq", job.imcSeqID, "dst_seq", s.seqID, "tokens", job.imcNPast)
+		if err := e.model.copyCachesToSeq(s.seqID, job.imcSeqID); err != nil {
+			e.sendSlotError(s, fmt.Errorf("start-slot: %w", err))
+			s.reset()
+			return
+		}
+		cachedTokens = job.imcNPast
 	}
+	s.nPast = cachedTokens
 
-	// Tokenize the prompt (system message already removed if cached).
-	addBOS := !job.sysPromptCached
+	// Tokenize the prompt (cached messages already removed).
+	addBOS := cachedTokens == 0
 	tokens := llama.Tokenize(e.model.vocab, job.prompt, addBOS, true)
 	s.nPrompt = len(tokens)
 
-	// Include system prompt tokens in total prompt count for metrics.
-	if job.sysPromptCached {
-		s.nPrompt += int(job.sysPromptNPast)
+	// Include cached tokens in total prompt count for metrics.
+	if cachedTokens > 0 {
+		s.nPrompt += int(cachedTokens)
 	}
 
 	// Log token counts for debugging batch overflow.
 	e.model.log(job.ctx, "start-slot", "status", "tokenized",
 		"slot", s.id,
 		"suffix_tokens", len(tokens),
-		"cached_tokens", job.sysPromptNPast,
+		"cached_tokens", cachedTokens,
 		"total_prompt", s.nPrompt,
 		"nbatch", e.model.cfg.NBatch,
 		"batch_current", e.batch.NTokens)
@@ -468,7 +487,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 	}
 
 	e.model.log(job.ctx, "batch-engine", "status", "slot-started", "slot", s.id, "seq", s.seqID, "id", job.id,
-		"prompt_tokens", s.nPrompt, "sys_cached", job.sysPromptCached, "kv_used_other", kvUsed)
+		"prompt_tokens", s.nPrompt, "sys_cached", job.sysPromptCached, "imc_cached", job.imcCached, "kv_used_other", kvUsed)
 }
 
 // addPrefillChunk adds the next chunk of prefill tokens to the batch.
@@ -695,8 +714,9 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	// Clear KV cache for this slot's sequence.
 	llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
 
-	// Restore cached KV state if enabled.
-	if e.model.cfg.SystemPromptCache || e.model.cfg.IncrementalCache {
+	// Restore SPC cache if enabled. IMC sessions persist across requests,
+	// so we don't pre-populate slots with IMC cache - it's done per-request in startSlot.
+	if e.model.cfg.SystemPromptCache {
 		e.model.copySystemPromptToSeq(s.seqID)
 	}
 

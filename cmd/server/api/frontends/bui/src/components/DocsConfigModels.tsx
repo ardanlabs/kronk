@@ -101,6 +101,11 @@ export default function DocsConfigModels() {
                   <td>Incremental message caching for agentic workflows (Amp, Cline, Aider)</td>
                 </tr>
                 <tr>
+                  <td><code>max-imc-sessions</code></td>
+                  <td>1</td>
+                  <td>Max concurrent IMC sessions (users). Each session gets a dedicated cache sequence.</td>
+                </tr>
+                <tr>
                   <td><code>cache-min-tokens</code></td>
                   <td>100</td>
                   <td>Min tokens before caching (applies to both cache types)</td>
@@ -204,11 +209,18 @@ KV_per_slot            = 131072 × 48 × 1024 = ~6.4 GB`}</code>
 
           <div className="card" id="usage-notes">
             <h3>Configuration Notes</h3>
-            <p>If you want to use a model with an Agent, use these settings:</p>
+            <p>If you want to use a model with a single Agent, use these settings:</p>
             <pre className="code-block">
               <code>{`nseq-max: 1
 incremental-cache: true`}</code>
             </pre>
+            <p>If you want to support multiple users with their own IMC caches, add <code>max-imc-sessions</code>:</p>
+            <pre className="code-block">
+              <code>{`nseq-max: 2
+incremental-cache: true
+max-imc-sessions: 4`}</code>
+            </pre>
+            <p>Each user must pass the <code>KRONK_IMC_ID</code> header with a unique session ID to activate their cache.</p>
             <p>If you want to use a Chat application like OpenWebUI, use these settings:</p>
             <pre className="code-block">
               <code>{`system-prompt-cache: true`}</code>
