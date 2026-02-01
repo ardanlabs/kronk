@@ -1,293 +1,571 @@
 package model
 
 import (
+	"context"
 	"testing"
+
+	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
-func TestFindCacheableMessage(t *testing.T) {
+func TestHashMessages(t *testing.T) {
 	tests := []struct {
-		name        string
-		messages    []D
-		targetRole  string
-		wantIndex   int
-		wantContent string
-		wantOK      bool
+		name     string
+		msgs1    []D
+		msgs2    []D
+		wantSame bool
 	}{
 		{
-			name: "find system message at index 0",
-			messages: []D{
-				{"role": "system", "content": "You are a helpful assistant."},
+			name: "identical messages same hash",
+			msgs1: []D{
+				{"role": "system", "content": "You are helpful"},
 				{"role": "user", "content": "Hello"},
 			},
-			targetRole:  RoleSystem,
-			wantIndex:   0,
-			wantContent: "You are a helpful assistant.",
-			wantOK:      true,
-		},
-		{
-			name: "find user message at index 0",
-			messages: []D{
-				{"role": "user", "content": "Hello, this is my first message."},
-				{"role": "assistant", "content": "Hi there!"},
+			msgs2: []D{
+				{"role": "system", "content": "You are helpful"},
+				{"role": "user", "content": "Hello"},
 			},
-			targetRole:  RoleUser,
-			wantIndex:   0,
-			wantContent: "Hello, this is my first message.",
-			wantOK:      true,
+			wantSame: true,
 		},
 		{
-			name: "find user message at index 1 (after system)",
-			messages: []D{
-				{"role": "system", "content": "System prompt"},
-				{"role": "user", "content": "Hello user"},
-				{"role": "assistant", "content": "Hi there!"},
+			name: "different content different hash",
+			msgs1: []D{
+				{"role": "user", "content": "Hello"},
 			},
-			targetRole:  RoleUser,
-			wantIndex:   1,
-			wantContent: "Hello user",
-			wantOK:      true,
+			msgs2: []D{
+				{"role": "user", "content": "Goodbye"},
+			},
+			wantSame: false,
 		},
 		{
-			name: "no system message found",
-			messages: []D{
+			name: "different role different hash",
+			msgs1: []D{
+				{"role": "user", "content": "Hello"},
+			},
+			msgs2: []D{
+				{"role": "assistant", "content": "Hello"},
+			},
+			wantSame: false,
+		},
+		{
+			name: "different order different hash",
+			msgs1: []D{
+				{"role": "user", "content": "A"},
+				{"role": "assistant", "content": "B"},
+			},
+			msgs2: []D{
+				{"role": "assistant", "content": "B"},
+				{"role": "user", "content": "A"},
+			},
+			wantSame: false,
+		},
+		{
+			name: "empty messages same hash",
+			msgs1: []D{},
+			msgs2: []D{},
+			wantSame: true,
+		},
+		{
+			name: "prefix subset different hash",
+			msgs1: []D{
+				{"role": "user", "content": "Hello"},
+			},
+			msgs2: []D{
 				{"role": "user", "content": "Hello"},
 				{"role": "assistant", "content": "Hi"},
 			},
-			targetRole:  RoleSystem,
-			wantIndex:   0,
-			wantContent: "",
-			wantOK:      false,
-		},
-		{
-			name:        "empty messages",
-			messages:    []D{},
-			targetRole:  RoleSystem,
-			wantIndex:   0,
-			wantContent: "",
-			wantOK:      false,
-		},
-		{
-			name: "message with empty content skipped",
-			messages: []D{
-				{"role": "system", "content": ""},
-				{"role": "system", "content": "Valid system"},
-				{"role": "user", "content": "Hello"},
-			},
-			targetRole:  RoleSystem,
-			wantIndex:   1,
-			wantContent: "Valid system",
-			wantOK:      true,
-		},
-		{
-			name: "message with empty role skipped",
-			messages: []D{
-				{"role": "", "content": "Hello"},
-				{"role": "user", "content": "Valid user"},
-			},
-			targetRole:  RoleUser,
-			wantIndex:   1,
-			wantContent: "Valid user",
-			wantOK:      true,
+			wantSame: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			info, ok := findCacheableMessage(tt.messages, tt.targetRole)
-			if ok != tt.wantOK {
-				t.Errorf("findCacheableMessage() ok = %v, want %v", ok, tt.wantOK)
+			hash1 := hashMessages(tt.msgs1)
+			hash2 := hashMessages(tt.msgs2)
+
+			if tt.wantSame && hash1 != hash2 {
+				t.Errorf("expected same hash, got %s != %s", hash1, hash2)
 			}
-			if ok {
-				if info.index != tt.wantIndex {
-					t.Errorf("findCacheableMessage() index = %d, want %d", info.index, tt.wantIndex)
+			if !tt.wantSame && hash1 == hash2 {
+				t.Errorf("expected different hash, got same: %s", hash1)
+			}
+		})
+	}
+}
+
+func TestExtractMessageContent(t *testing.T) {
+	tests := []struct {
+		name    string
+		msg     D
+		want    string
+	}{
+		{
+			name: "string content",
+			msg:  D{"role": "user", "content": "Hello world"},
+			want: "Hello world",
+		},
+		{
+			name: "nil content",
+			msg:  D{"role": "assistant", "content": nil},
+			want: "",
+		},
+		{
+			name: "missing content",
+			msg:  D{"role": "user"},
+			want: "",
+		},
+		{
+			name: "array content with text parts",
+			msg: D{
+				"role": "user",
+				"content": []any{
+					map[string]any{"type": "text", "text": "Hello "},
+					map[string]any{"type": "text", "text": "world"},
+				},
+			},
+			want: "Hello world",
+		},
+		{
+			name: "array content with mixed types",
+			msg: D{
+				"role": "user",
+				"content": []any{
+					map[string]any{"type": "image", "url": "http://..."},
+					map[string]any{"type": "text", "text": "caption"},
+				},
+			},
+			want: "caption",
+		},
+		{
+			name: "D slice content",
+			msg: D{
+				"role": "user",
+				"content": []D{
+					{"type": "text", "text": "Part 1"},
+					{"type": "text", "text": "Part 2"},
+				},
+			},
+			want: "Part 1Part 2",
+		},
+		{
+			name: "empty array content",
+			msg: D{
+				"role": "user",
+				"content": []any{},
+			},
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractMessageContent(tt.msg)
+			if got != tt.want {
+				t.Errorf("extractMessageContent() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRemoveMessagesAtIndices(t *testing.T) {
+	tests := []struct {
+		name       string
+		messages   []D
+		indices    []int
+		wantCount  int
+		wantFirst  string
+	}{
+		{
+			name: "remove first message",
+			messages: []D{
+				{"role": "system", "content": "sys"},
+				{"role": "user", "content": "user"},
+			},
+			indices:   []int{0},
+			wantCount: 1,
+			wantFirst: "user",
+		},
+		{
+			name: "remove last message",
+			messages: []D{
+				{"role": "system", "content": "sys"},
+				{"role": "user", "content": "user"},
+			},
+			indices:   []int{1},
+			wantCount: 1,
+			wantFirst: "sys",
+		},
+		{
+			name: "remove multiple messages",
+			messages: []D{
+				{"role": "system", "content": "sys"},
+				{"role": "user", "content": "user1"},
+				{"role": "assistant", "content": "asst"},
+				{"role": "user", "content": "user2"},
+			},
+			indices:   []int{0, 2},
+			wantCount: 2,
+			wantFirst: "user1",
+		},
+		{
+			name: "remove none",
+			messages: []D{
+				{"role": "user", "content": "keep"},
+			},
+			indices:   []int{},
+			wantCount: 1,
+			wantFirst: "keep",
+		},
+		{
+			name: "remove all",
+			messages: []D{
+				{"role": "user", "content": "remove"},
+			},
+			indices:   []int{0},
+			wantCount: 1, // Original returned when result would be empty
+			wantFirst: "remove",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := D{"messages": tt.messages}
+			result := removeMessagesAtIndices(d, tt.indices)
+
+			msgs, ok := result["messages"].([]D)
+			if !ok {
+				t.Fatal("result messages not []D")
+			}
+
+			if len(msgs) != tt.wantCount {
+				t.Errorf("got %d messages, want %d", len(msgs), tt.wantCount)
+			}
+
+			if len(msgs) > 0 {
+				content, _ := msgs[0]["content"].(string)
+				if content != tt.wantFirst {
+					t.Errorf("first message content = %q, want %q", content, tt.wantFirst)
 				}
-				if info.content != tt.wantContent {
-					t.Errorf("findCacheableMessage() content = %q, want %q", info.content, tt.wantContent)
-				}
-				if info.role != tt.targetRole {
-					t.Errorf("findCacheableMessage() role = %q, want %q", info.role, tt.targetRole)
-				}
+			}
+		})
+	}
+}
+
+func TestFindCacheableMessage(t *testing.T) {
+	tests := []struct {
+		name       string
+		messages   []D
+		targetRole string
+		wantFound  bool
+		wantIndex  int
+		wantContent string
+	}{
+		{
+			name: "find system message",
+			messages: []D{
+				{"role": "system", "content": "You are helpful"},
+				{"role": "user", "content": "Hello"},
+			},
+			targetRole:  RoleSystem,
+			wantFound:   true,
+			wantIndex:   0,
+			wantContent: "You are helpful",
+		},
+		{
+			name: "find user message",
+			messages: []D{
+				{"role": "system", "content": "System"},
+				{"role": "user", "content": "User message"},
+			},
+			targetRole:  RoleUser,
+			wantFound:   true,
+			wantIndex:   1,
+			wantContent: "User message",
+		},
+		{
+			name: "no system message",
+			messages: []D{
+				{"role": "user", "content": "Hello"},
+			},
+			targetRole: RoleSystem,
+			wantFound:  false,
+		},
+		{
+			name: "empty content skipped",
+			messages: []D{
+				{"role": "system", "content": ""},
+				{"role": "system", "content": "Valid system"},
+			},
+			targetRole:  RoleSystem,
+			wantFound:   true,
+			wantIndex:   1,
+			wantContent: "Valid system",
+		},
+		{
+			name: "finds first matching role",
+			messages: []D{
+				{"role": "user", "content": "First"},
+				{"role": "user", "content": "Second"},
+			},
+			targetRole:  RoleUser,
+			wantFound:   true,
+			wantIndex:   0,
+			wantContent: "First",
+		},
+		{
+			name: "array content extraction",
+			messages: []D{
+				{"role": "system", "content": []any{
+					map[string]any{"type": "text", "text": "Array content"},
+				}},
+			},
+			targetRole:  RoleSystem,
+			wantFound:   true,
+			wantIndex:   0,
+			wantContent: "Array content",
+		},
+		{
+			name:       "empty messages",
+			messages:   []D{},
+			targetRole: RoleSystem,
+			wantFound:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg, found := findCacheableMessage(tt.messages, tt.targetRole)
+
+			if found != tt.wantFound {
+				t.Errorf("found = %v, want %v", found, tt.wantFound)
+				return
+			}
+
+			if !found {
+				return
+			}
+
+			if msg.index != tt.wantIndex {
+				t.Errorf("index = %d, want %d", msg.index, tt.wantIndex)
+			}
+
+			if msg.content != tt.wantContent {
+				t.Errorf("content = %q, want %q", msg.content, tt.wantContent)
+			}
+
+			if msg.role != tt.targetRole {
+				t.Errorf("role = %q, want %q", msg.role, tt.targetRole)
 			}
 		})
 	}
 }
 
 func TestHashMessage(t *testing.T) {
-	info1 := cacheableMessage{index: 0, role: "system", content: "You are a helpful assistant."}
-	info2 := cacheableMessage{index: 0, role: "system", content: "You are a helpful assistant."}
-	info3 := cacheableMessage{index: 0, role: "system", content: "You are a different assistant."}
-	info4 := cacheableMessage{index: 0, role: "user", content: "You are a helpful assistant."}
+	msg1 := cacheableMessage{role: "system", content: "Hello"}
+	msg2 := cacheableMessage{role: "system", content: "Hello"}
+	msg3 := cacheableMessage{role: "user", content: "Hello"}
+	msg4 := cacheableMessage{role: "system", content: "World"}
 
-	hash1 := hashMessage(info1)
-	hash2 := hashMessage(info2)
-	hash3 := hashMessage(info3)
-	hash4 := hashMessage(info4)
+	hash1 := hashMessage(msg1)
+	hash2 := hashMessage(msg2)
+	hash3 := hashMessage(msg3)
+	hash4 := hashMessage(msg4)
 
+	// Same role and content should produce same hash.
 	if hash1 != hash2 {
-		t.Error("same role+content should produce same hash")
+		t.Errorf("identical messages should have same hash")
 	}
 
+	// Different role should produce different hash.
 	if hash1 == hash3 {
-		t.Error("different content should produce different hash")
+		t.Errorf("different role should produce different hash")
 	}
 
+	// Different content should produce different hash.
 	if hash1 == hash4 {
-		t.Error("same content with different role should produce different hash")
+		t.Errorf("different content should produce different hash")
 	}
 
+	// Hash should be hex string of expected length (64 chars for SHA-256).
 	if len(hash1) != 64 {
-		t.Errorf("hash should be 64 hex chars (SHA-256), got %d", len(hash1))
-	}
-
-	// Index should not affect hash.
-	info5 := cacheableMessage{index: 5, role: "system", content: "You are a helpful assistant."}
-	hash5 := hashMessage(info5)
-	if hash1 != hash5 {
-		t.Error("different index should not affect hash")
+		t.Errorf("hash length = %d, want 64", len(hash1))
 	}
 }
 
-func TestHashMessages(t *testing.T) {
-	msgs1 := []D{
-		{"role": "system", "content": "You are a helpful assistant."},
-		{"role": "user", "content": "Hello"},
-	}
-	msgs2 := []D{
-		{"role": "system", "content": "You are a helpful assistant."},
-		{"role": "user", "content": "Hello"},
-	}
-	msgs3 := []D{
-		{"role": "system", "content": "You are a helpful assistant."},
-		{"role": "user", "content": "Hello"},
-		{"role": "assistant", "content": "Hi there!"},
-	}
-	msgs4 := []D{
-		{"role": "system", "content": "Different system"},
-		{"role": "user", "content": "Hello"},
+// =============================================================================
+// Session Management Tests
+// =============================================================================
+
+func TestGetOrCreateIMCSession(t *testing.T) {
+	// Create minimal model with IMC enabled.
+	m := &Model{
+		cfg: Config{
+			IncrementalCache: true,
+		},
+		imcSessions: make(map[string]*imcSession),
+		imcNextSeq:  0,
+		imcMaxSeqs:  3,
+		log:         func(ctx context.Context, msg string, args ...any) {},
 	}
 
-	hash1 := hashMessages(msgs1)
-	hash2 := hashMessages(msgs2)
-	hash3 := hashMessages(msgs3)
-	hash4 := hashMessages(msgs4)
+	ctx := context.Background()
 
-	if hash1 != hash2 {
-		t.Error("same messages should produce same hash")
+	// Test 1: First session gets seq 0.
+	session1, isNew1 := m.getOrCreateIMCSession(ctx, "user-1")
+	if session1 == nil {
+		t.Fatal("session1 should not be nil")
+	}
+	if !isNew1 {
+		t.Error("session1 should be new")
+	}
+	if session1.seqID != 0 {
+		t.Errorf("session1.seqID = %d, want 0", session1.seqID)
 	}
 
-	if hash1 == hash3 {
-		t.Error("different message count should produce different hash")
+	// Test 2: Same user returns same session.
+	session1Again, isNew1Again := m.getOrCreateIMCSession(ctx, "user-1")
+	if session1Again != session1 {
+		t.Error("same user should return same session")
+	}
+	if isNew1Again {
+		t.Error("same user should not be new")
 	}
 
-	if hash1 == hash4 {
-		t.Error("different content should produce different hash")
+	// Test 3: Second user gets seq 1.
+	session2, isNew2 := m.getOrCreateIMCSession(ctx, "user-2")
+	if session2 == nil {
+		t.Fatal("session2 should not be nil")
+	}
+	if !isNew2 {
+		t.Error("session2 should be new")
+	}
+	if session2.seqID != 1 {
+		t.Errorf("session2.seqID = %d, want 1", session2.seqID)
 	}
 
-	// Verify prefix matching: msgs1 is a prefix of msgs3, but hashes differ.
-	if hash1 == hashMessages(msgs3[:2]) {
-		// This SHOULD be equal - prefix should match.
-		t.Log("prefix hash matches as expected")
+	// Test 4: Third user gets seq 2.
+	session3, _ := m.getOrCreateIMCSession(ctx, "user-3")
+	if session3.seqID != 2 {
+		t.Errorf("session3.seqID = %d, want 2", session3.seqID)
 	}
 
-	prefixHash := hashMessages(msgs3[:2])
-	if hash1 != prefixHash {
-		t.Error("prefix of messages should produce same hash as original prefix")
+	// Test 5: Fourth user should be rejected (max 3 sessions).
+	session4, _ := m.getOrCreateIMCSession(ctx, "user-4")
+	if session4 != nil {
+		t.Error("session4 should be nil (max sessions reached)")
+	}
+
+	// Verify total sessions.
+	if len(m.imcSessions) != 3 {
+		t.Errorf("imcSessions count = %d, want 3", len(m.imcSessions))
 	}
 }
 
-func TestRemoveMessagesAtIndices(t *testing.T) {
-	tests := []struct {
-		name          string
-		d             D
-		indices       []int
-		wantMsgCount  int
-		wantFirstRole string
-		wantUnchanged bool
-	}{
-		{
-			name: "removes first message (index 0)",
-			d: D{
-				"messages": []D{
-					{"role": "system", "content": "System prompt"},
-					{"role": "user", "content": "Hello"},
-				},
-			},
-			indices:       []int{0},
-			wantMsgCount:  1,
-			wantFirstRole: "user",
+func TestIMCSessionState(t *testing.T) {
+	m := &Model{
+		cfg: Config{
+			IncrementalCache: true,
 		},
-		{
-			name: "removes second message (index 1)",
-			d: D{
-				"messages": []D{
-					{"role": "system", "content": "System prompt"},
-					{"role": "user", "content": "Hello"},
-					{"role": "assistant", "content": "Hi"},
-				},
-			},
-			indices:       []int{1},
-			wantMsgCount:  2,
-			wantFirstRole: "system",
-		},
-		{
-			name: "removes multiple messages",
-			d: D{
-				"messages": []D{
-					{"role": "system", "content": "System prompt"},
-					{"role": "user", "content": "Hello"},
-					{"role": "assistant", "content": "Hi"},
-				},
-			},
-			indices:       []int{0, 1},
-			wantMsgCount:  1,
-			wantFirstRole: "assistant",
-		},
-		{
-			name: "empty indices returns unchanged",
-			d: D{
-				"messages": []D{
-					{"role": "user", "content": "Hello"},
-				},
-			},
-			indices:       []int{},
-			wantMsgCount:  1,
-			wantUnchanged: true,
-		},
-		{
-			name: "empty messages returns unchanged",
-			d: D{
-				"messages": []D{},
-			},
-			indices:       []int{0},
-			wantMsgCount:  0,
-			wantUnchanged: true,
-		},
+		imcSessions: make(map[string]*imcSession),
+		imcNextSeq:  0,
+		imcMaxSeqs:  2,
+		log:         func(ctx context.Context, msg string, args ...any) {},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := removeMessagesAtIndices(tt.d, tt.indices)
-			msgs, ok := result["messages"].([]D)
-			if !ok {
-				t.Fatal("messages should be []D")
-			}
+	ctx := context.Background()
 
-			if len(msgs) != tt.wantMsgCount {
-				t.Errorf("got %d messages, want %d", len(msgs), tt.wantMsgCount)
-			}
+	// Create session and update state.
+	session, _ := m.getOrCreateIMCSession(ctx, "test-user")
 
-			switch {
-			case tt.wantUnchanged:
-				originalMsgs := tt.d["messages"].([]D)
-				if len(msgs) != len(originalMsgs) {
-					t.Error("expected unchanged D")
-				}
+	// Simulate cache build.
+	session.hash = "abc123"
+	session.tokens = 1000
+	session.msgCount = 2
+	session.promptLen = 5000
 
-			case len(msgs) > 0:
-				if msgs[0]["role"] != tt.wantFirstRole {
-					t.Errorf("first message role = %q, want %q", msgs[0]["role"], tt.wantFirstRole)
-				}
-			}
-		})
+	// Retrieve session again and verify state persists.
+	sessionAgain, isNew := m.getOrCreateIMCSession(ctx, "test-user")
+	if isNew {
+		t.Error("should not be new")
+	}
+	if sessionAgain.hash != "abc123" {
+		t.Error("hash not persisted")
+	}
+	if sessionAgain.tokens != 1000 {
+		t.Error("tokens not persisted")
+	}
+	if sessionAgain.msgCount != 2 {
+		t.Error("msgCount not persisted")
+	}
+	if sessionAgain.promptLen != 5000 {
+		t.Error("promptLen not persisted")
+	}
+}
+
+func TestClearCaches(t *testing.T) {
+	m := &Model{
+		cfg: Config{
+			IncrementalCache: true,
+		},
+		imcSessions:     make(map[string]*imcSession),
+		imcNextSeq:      0,
+		imcMaxSeqs:      2,
+		sysPromptHash:   "sys-hash",
+		sysPromptTokens: 100,
+		sysPromptLen:    500,
+		log:             func(ctx context.Context, msg string, args ...any) {},
+	}
+
+	ctx := context.Background()
+
+	// Create some sessions.
+	m.getOrCreateIMCSession(ctx, "user-1")
+	m.getOrCreateIMCSession(ctx, "user-2")
+
+	if len(m.imcSessions) != 2 {
+		t.Fatalf("expected 2 sessions, got %d", len(m.imcSessions))
+	}
+
+	// Clear caches.
+	m.clearCaches()
+
+	// Verify SPC state cleared.
+	if m.sysPromptHash != "" {
+		t.Error("sysPromptHash not cleared")
+	}
+	if m.sysPromptTokens != 0 {
+		t.Error("sysPromptTokens not cleared")
+	}
+	if m.sysPromptLen != 0 {
+		t.Error("sysPromptLen not cleared")
+	}
+
+	// Verify IMC sessions cleared.
+	if len(m.imcSessions) != 0 {
+		t.Errorf("imcSessions not cleared, got %d", len(m.imcSessions))
+	}
+}
+
+func TestCacheResultFields(t *testing.T) {
+	// Test that cacheResult correctly propagates IMC fields.
+	result := cacheResult{
+		modifiedD: D{"test": "value"},
+		prompt:    "test prompt",
+		nPast:     1000,
+		cached:    true,
+		imcID:     "user-123",
+		imcSeqID:  llama.SeqId(2),
+	}
+
+	if result.imcID != "user-123" {
+		t.Errorf("imcID = %s, want user-123", result.imcID)
+	}
+	if result.imcSeqID != 2 {
+		t.Errorf("imcSeqID = %d, want 2", result.imcSeqID)
+	}
+	if result.nPast != 1000 {
+		t.Errorf("nPast = %d, want 1000", result.nPast)
+	}
+	if !result.cached {
+		t.Error("cached should be true")
 	}
 }

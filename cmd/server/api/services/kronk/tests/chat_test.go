@@ -243,6 +243,308 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 	}
 }
 
+// chatStreamIMCQwen3 returns streaming chat tests for IMC (Incremental Message Cache).
+// These tests verify multi-turn caching behavior with the KRONK_IMC_ID header.
+// Skipped in GitHub Actions as they require a model configured with IncrementalCache.
+func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
+	return []apitest.Table{
+		{
+			Name:     "imc-first-turn",
+			SkipInGH: true,
+			URL:      "/v1/chat/completions",
+			Token:    tokens["chat-completions"],
+			Headers: map[string]string{
+				"KRONK_IMC_ID": "test-session-1",
+			},
+			Method:     http.MethodPost,
+			StatusCode: http.StatusOK,
+			Input: model.D{
+				"model": "Qwen3-8B-Q8_0/IMC",
+				"messages": model.DocumentArray(
+					model.TextMessage(model.RoleSystem, "You are a helpful assistant."),
+					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
+				),
+				"max_tokens":  2048,
+				"temperature": 0.7,
+				"stream":      true,
+			},
+			GotResp: &model.ChatResponse{},
+			ExpResp: &model.ChatResponse{
+				Choice: []model.Choice{
+					{
+						Message:         nil,
+						FinishReasonPtr: stringPointer("stop"),
+					},
+				},
+				Model:  "Qwen3-8B-Q8_0/IMC",
+				Object: "chat.completion.chunk",
+			},
+			CmpFunc: func(got any, exp any) string {
+				diff := cmp.Diff(got, exp,
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "Prompt"),
+					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
+				)
+
+				if diff != "" {
+					return diff
+				}
+
+				return validateResponse(got, true).
+					hasValidUUID().
+					hasCreated().
+					hasValidChoice().
+					hasUsage(true).
+					result(t)
+			},
+		},
+		{
+			Name:     "imc-second-turn-cache-hit",
+			SkipInGH: true,
+			URL:      "/v1/chat/completions",
+			Token:    tokens["chat-completions"],
+			Headers: map[string]string{
+				"KRONK_IMC_ID": "test-session-1",
+			},
+			Method:     http.MethodPost,
+			StatusCode: http.StatusOK,
+			Input: model.D{
+				"model": "Qwen3-8B-Q8_0/IMC",
+				"messages": model.DocumentArray(
+					model.TextMessage(model.RoleSystem, "You are a helpful assistant."),
+					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
+					model.TextMessage(model.RoleAssistant, "Gorilla"),
+					model.TextMessage(model.RoleUser, "Now echo back the word: Elephant"),
+				),
+				"max_tokens":  2048,
+				"temperature": 0.7,
+				"stream":      true,
+			},
+			GotResp: &model.ChatResponse{},
+			ExpResp: &model.ChatResponse{
+				Choice: []model.Choice{
+					{
+						Message:         nil,
+						FinishReasonPtr: stringPointer("stop"),
+					},
+				},
+				Model:  "Qwen3-8B-Q8_0/IMC",
+				Object: "chat.completion.chunk",
+			},
+			CmpFunc: func(got any, exp any) string {
+				diff := cmp.Diff(got, exp,
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "Prompt"),
+					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
+				)
+
+				if diff != "" {
+					return diff
+				}
+
+				return validateResponse(got, true).
+					hasValidUUID().
+					hasCreated().
+					hasValidChoice().
+					hasUsage(true).
+					result(t)
+			},
+		},
+		{
+			Name:     "imc-different-session",
+			SkipInGH: true,
+			URL:      "/v1/chat/completions",
+			Token:    tokens["chat-completions"],
+			Headers: map[string]string{
+				"KRONK_IMC_ID": "test-session-2",
+			},
+			Method:     http.MethodPost,
+			StatusCode: http.StatusOK,
+			Input: model.D{
+				"model": "Qwen3-8B-Q8_0/IMC",
+				"messages": model.DocumentArray(
+					model.TextMessage(model.RoleSystem, "You are a helpful assistant."),
+					model.TextMessage(model.RoleUser, "Echo back the word: Tiger"),
+				),
+				"max_tokens":  2048,
+				"temperature": 0.7,
+				"stream":      true,
+			},
+			GotResp: &model.ChatResponse{},
+			ExpResp: &model.ChatResponse{
+				Choice: []model.Choice{
+					{
+						Message:         nil,
+						FinishReasonPtr: stringPointer("stop"),
+					},
+				},
+				Model:  "Qwen3-8B-Q8_0/IMC",
+				Object: "chat.completion.chunk",
+			},
+			CmpFunc: func(got any, exp any) string {
+				diff := cmp.Diff(got, exp,
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "Prompt"),
+					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
+				)
+
+				if diff != "" {
+					return diff
+				}
+
+				return validateResponse(got, true).
+					hasValidUUID().
+					hasCreated().
+					hasValidChoice().
+					hasUsage(true).
+					result(t)
+			},
+		},
+	}
+}
+
+// chatStreamSPCQwen3 returns streaming chat tests for SPC (System Prompt Cache).
+// These tests verify system prompt caching behavior.
+// Skipped in GitHub Actions as they require a model configured with SystemPromptCache.
+func chatStreamSPCQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
+	return []apitest.Table{
+		{
+			Name:       "spc-first-request",
+			SkipInGH:   true,
+			URL:        "/v1/chat/completions",
+			Token:      tokens["chat-completions"],
+			Method:     http.MethodPost,
+			StatusCode: http.StatusOK,
+			Input: model.D{
+				"model": "Qwen3-8B-Q8_0/SPC",
+				"messages": model.DocumentArray(
+					model.TextMessage(model.RoleSystem, "You are a helpful assistant that always responds in exactly one word."),
+					model.TextMessage(model.RoleUser, "What animal says meow?"),
+				),
+				"max_tokens":  2048,
+				"temperature": 0.7,
+				"stream":      true,
+			},
+			GotResp: &model.ChatResponse{},
+			ExpResp: &model.ChatResponse{
+				Choice: []model.Choice{
+					{
+						Message:         nil,
+						FinishReasonPtr: stringPointer("stop"),
+					},
+				},
+				Model:  "Qwen3-8B-Q8_0/SPC",
+				Object: "chat.completion.chunk",
+			},
+			CmpFunc: func(got any, exp any) string {
+				diff := cmp.Diff(got, exp,
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "Prompt"),
+					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
+				)
+
+				if diff != "" {
+					return diff
+				}
+
+				return validateResponse(got, true).
+					hasValidUUID().
+					hasCreated().
+					hasValidChoice().
+					hasUsage(true).
+					result(t)
+			},
+		},
+		{
+			Name:       "spc-cache-hit-same-system",
+			SkipInGH:   true,
+			URL:        "/v1/chat/completions",
+			Token:      tokens["chat-completions"],
+			Method:     http.MethodPost,
+			StatusCode: http.StatusOK,
+			Input: model.D{
+				"model": "Qwen3-8B-Q8_0/SPC",
+				"messages": model.DocumentArray(
+					model.TextMessage(model.RoleSystem, "You are a helpful assistant that always responds in exactly one word."),
+					model.TextMessage(model.RoleUser, "What animal says woof?"),
+				),
+				"max_tokens":  2048,
+				"temperature": 0.7,
+				"stream":      true,
+			},
+			GotResp: &model.ChatResponse{},
+			ExpResp: &model.ChatResponse{
+				Choice: []model.Choice{
+					{
+						Message:         nil,
+						FinishReasonPtr: stringPointer("stop"),
+					},
+				},
+				Model:  "Qwen3-8B-Q8_0/SPC",
+				Object: "chat.completion.chunk",
+			},
+			CmpFunc: func(got any, exp any) string {
+				diff := cmp.Diff(got, exp,
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "Prompt"),
+					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
+				)
+
+				if diff != "" {
+					return diff
+				}
+
+				return validateResponse(got, true).
+					hasValidUUID().
+					hasCreated().
+					hasValidChoice().
+					hasUsage(true).
+					result(t)
+			},
+		},
+		{
+			Name:       "spc-no-system-uses-cache",
+			SkipInGH:   true,
+			URL:        "/v1/chat/completions",
+			Token:      tokens["chat-completions"],
+			Method:     http.MethodPost,
+			StatusCode: http.StatusOK,
+			Input: model.D{
+				"model": "Qwen3-8B-Q8_0/SPC",
+				"messages": model.DocumentArray(
+					model.TextMessage(model.RoleUser, "What animal says moo?"),
+				),
+				"max_tokens":  2048,
+				"temperature": 0.7,
+				"stream":      true,
+			},
+			GotResp: &model.ChatResponse{},
+			ExpResp: &model.ChatResponse{
+				Choice: []model.Choice{
+					{
+						Message:         nil,
+						FinishReasonPtr: stringPointer("stop"),
+					},
+				},
+				Model:  "Qwen3-8B-Q8_0/SPC",
+				Object: "chat.completion.chunk",
+			},
+			CmpFunc: func(got any, exp any) string {
+				diff := cmp.Diff(got, exp,
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "Prompt"),
+					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
+				)
+
+				if diff != "" {
+					return diff
+				}
+
+				return validateResponse(got, true).
+					hasValidUUID().
+					hasCreated().
+					hasValidChoice().
+					hasUsage(true).
+					result(t)
+			},
+		},
+	}
+}
+
 // chatArrayFormatQwen3 returns chat tests using OpenAI array content format.
 func chatArrayFormatQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 	return []apitest.Table{

@@ -414,7 +414,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 
 	// Copy cached KV state if available (SPC or IMC, mutually exclusive).
 	var cachedTokens llama.Pos
-	if job.sysPromptCached {
+	switch {
+	case job.sysPromptCached:
 		// SPC: copy from seq 0.
 		if err := e.model.copySystemPromptToSeq(s.seqID); err != nil {
 			e.sendSlotError(s, fmt.Errorf("start-slot: %w", err))
@@ -422,8 +423,10 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 			return
 		}
 		cachedTokens = job.sysPromptNPast
-	} else if job.imcCached {
+
+	case job.imcCached:
 		// IMC: copy from session's sequence.
+		e.model.log(job.ctx, "start-slot", "status", "imc-copy", "src_seq", job.imcSeqID, "dst_seq", s.seqID, "tokens", job.imcNPast)
 		if err := e.model.copyCachesToSeq(s.seqID, job.imcSeqID); err != nil {
 			e.sendSlotError(s, fmt.Errorf("start-slot: %w", err))
 			s.reset()
@@ -484,7 +487,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 	}
 
 	e.model.log(job.ctx, "batch-engine", "status", "slot-started", "slot", s.id, "seq", s.seqID, "id", job.id,
-		"prompt_tokens", s.nPrompt, "sys_cached", job.sysPromptCached, "kv_used_other", kvUsed)
+		"prompt_tokens", s.nPrompt, "sys_cached", job.sysPromptCached, "imc_cached", job.imcCached, "kv_used_other", kvUsed)
 }
 
 // addPrefillChunk adds the next chunk of prefill tokens to the batch.

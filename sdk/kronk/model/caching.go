@@ -338,6 +338,8 @@ func (m *Model) cacheMessage(ctx context.Context, d D, msgInfo cacheableMessage,
 }
 
 // decodeTokensToSeq decodes tokens into the specified sequence for caching.
+// Uses explicit sequence ID assignment to ensure tokens go into the correct
+// cache sequence (important for multi-user IMC).
 func (m *Model) decodeTokensToSeq(ctx context.Context, tokens []llama.Token, seqID llama.SeqId) error {
 	llama.MemorySeqRm(m.mem, seqID, -1, -1)
 
@@ -360,20 +362,26 @@ func (m *Model) decodeTokensToSeq(ctx context.Context, tokens []llama.Token, seq
 	m.decodeMu.Lock()
 	defer m.decodeMu.Unlock()
 
-	switch {
-	case nTokens <= nBatch:
-		batch := llama.BatchGetOne(tokens)
-		if _, err := llama.Decode(m.lctx, batch); err != nil {
-			return fmt.Errorf("cache: failed to decode tokens: %w", err)
+	// Create batch with explicit sequence ID. llama.BatchGetOne uses seq 0 by
+	// default, which breaks multi-user IMC where each session has its own seq.
+	nCtx := llama.NCtx(m.lctx)
+	batch := llama.BatchInit(int32(nCtx), 0, 1)
+	defer llama.BatchFree(batch)
+
+	seqIDs := []llama.SeqId{seqID}
+
+	for i := 0; i < nTokens; i += nBatch {
+		batchClear(&batch)
+
+		end := min(i+nBatch, nTokens)
+		for j := i; j < end; j++ {
+			// Only compute logits for the last token of the last chunk.
+			logits := j == nTokens-1
+			batchAdd(&batch, tokens[j], llama.Pos(j), seqIDs, logits)
 		}
 
-	default:
-		for i := 0; i < len(tokens); i += nBatch {
-			end := min(i+nBatch, len(tokens))
-			chunk := tokens[i:end]
-			if _, err := llama.Decode(m.lctx, llama.BatchGetOne(chunk)); err != nil {
-				return fmt.Errorf("cache: failed to decode token chunk: %w", err)
-			}
+		if _, err := llama.Decode(m.lctx, batch); err != nil {
+			return fmt.Errorf("cache: failed to decode tokens at pos %d: %w", i, err)
 		}
 	}
 
@@ -598,8 +606,8 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, imcID str
 		return cacheResult{nPast: llama.Pos(currentTokens), cached: true}
 	}
 
-	// Decode extension tokens into cache sequence.
-	if err := m.decodeExtensionTokens(ctx, extensionTokens, session.seqID); err != nil {
+	// Decode extension tokens into cache sequence, starting after existing tokens.
+	if err := m.decodeExtensionTokens(ctx, extensionTokens, session.seqID, currentTokens); err != nil {
 		return cacheResult{modifiedD: d, err: err}
 	}
 
@@ -650,7 +658,8 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, imcID str
 
 // decodeExtensionTokens decodes additional tokens into an existing cache sequence.
 // Unlike decodeTokensToSeq, this does NOT clear the sequence first.
-func (m *Model) decodeExtensionTokens(ctx context.Context, tokens []llama.Token, seqID llama.SeqId) error {
+// startPos is the position offset for the new tokens (i.e., existing token count).
+func (m *Model) decodeExtensionTokens(ctx context.Context, tokens []llama.Token, seqID llama.SeqId, startPos int) error {
 	nBatch := int(m.ctxParams.NBatch)
 	nTokens := len(tokens)
 
@@ -663,20 +672,27 @@ func (m *Model) decodeExtensionTokens(ctx context.Context, tokens []llama.Token,
 	m.decodeMu.Lock()
 	defer m.decodeMu.Unlock()
 
-	switch {
-	case nTokens <= nBatch:
-		batch := llama.BatchGetOne(tokens)
-		if _, err := llama.Decode(m.lctx, batch); err != nil {
-			return fmt.Errorf("imc: failed to decode extension tokens: %w", err)
+	// Create batch with explicit sequence ID.
+	nCtx := llama.NCtx(m.lctx)
+	batch := llama.BatchInit(int32(nCtx), 0, 1)
+	defer llama.BatchFree(batch)
+
+	seqIDs := []llama.SeqId{seqID}
+
+	for i := 0; i < nTokens; i += nBatch {
+		batchClear(&batch)
+
+		end := min(i+nBatch, nTokens)
+		for j := i; j < end; j++ {
+			// Position is offset by existing tokens in cache.
+			pos := llama.Pos(startPos + j)
+			// Only compute logits for the last token of the last chunk.
+			logits := j == nTokens-1
+			batchAdd(&batch, tokens[j], pos, seqIDs, logits)
 		}
 
-	default:
-		for i := 0; i < len(tokens); i += nBatch {
-			end := min(i+nBatch, len(tokens))
-			chunk := tokens[i:end]
-			if _, err := llama.Decode(m.lctx, llama.BatchGetOne(chunk)); err != nil {
-				return fmt.Errorf("imc: failed to decode extension chunk: %w", err)
-			}
+		if _, err := llama.Decode(m.lctx, batch); err != nil {
+			return fmt.Errorf("imc: failed to decode extension tokens at pos %d: %w", i, err)
 		}
 	}
 

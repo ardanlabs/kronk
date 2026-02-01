@@ -263,6 +263,7 @@ func validateMsgsResponse(got any) msgsResponseValidator {
 	if !ok {
 		return msgsResponseValidator{errors: []string{"expected *msgsapp.MessagesResponse"}}
 	}
+
 	return msgsResponseValidator{resp: resp}
 }
 
@@ -270,9 +271,11 @@ func (v msgsResponseValidator) hasValidID() msgsResponseValidator {
 	if v.resp == nil {
 		return v
 	}
+
 	if v.resp.ID == "" {
 		v.errors = append(v.errors, "expected non-empty ID")
 	}
+
 	return v
 }
 
@@ -280,9 +283,11 @@ func (v msgsResponseValidator) hasType(expected string) msgsResponseValidator {
 	if v.resp == nil {
 		return v
 	}
+
 	if v.resp.Type != expected {
 		v.errors = append(v.errors, "expected type "+expected+", got "+v.resp.Type)
 	}
+
 	return v
 }
 
@@ -290,9 +295,11 @@ func (v msgsResponseValidator) hasRole(expected string) msgsResponseValidator {
 	if v.resp == nil {
 		return v
 	}
+
 	if v.resp.Role != expected {
 		v.errors = append(v.errors, "expected role "+expected+", got "+v.resp.Role)
 	}
+
 	return v
 }
 
@@ -300,9 +307,11 @@ func (v msgsResponseValidator) hasContent() msgsResponseValidator {
 	if v.resp == nil {
 		return v
 	}
+
 	if len(v.resp.Content) == 0 {
 		v.errors = append(v.errors, "expected non-empty content")
 	}
+
 	return v
 }
 
@@ -310,11 +319,13 @@ func (v msgsResponseValidator) warnContainsInContent(substr string) msgsResponse
 	if v.resp == nil {
 		return v
 	}
+
 	for _, block := range v.resp.Content {
 		if block.Type == "text" && containsIgnoreCase(block.Text, substr) {
 			return v
 		}
 	}
+
 	v.errors = append(v.errors, "[WARN] content does not contain '"+substr+"', got: "+v.extractContent())
 	return v
 }
@@ -326,16 +337,20 @@ func (v msgsResponseValidator) extractContent() string {
 			texts = append(texts, block.Text)
 		}
 	}
+
 	return strings.Join(texts, " | ")
 }
 
 func (v msgsResponseValidator) result(t *testing.T) string {
 	for _, err := range v.errors {
-		if len(err) > 6 && err[:6] == "[WARN]" {
+		switch {
+		case len(err) > 6 && err[:6] == "[WARN]":
 			t.Log(err)
-		} else {
+
+		default:
 			return err
 		}
 	}
+
 	return ""
 }
