@@ -18,6 +18,7 @@
 #   split-mode: row                      # Multi-GPU split: none, layer, row (row recommended for MoE models)
 #   system-prompt-cache: false           # Cache system prompt KV state for reuse across requests
 #   incremental-cache: false             # Incremental message caching for agentic workflows (Cline, OpenCode)
+#   max-imc-sessions: 1                  # Max concurrent IMC sessions/users (default: 1, each gets own cache)
 #   cache-min-tokens: 100                # Min tokens before caching (default: 100, applies to both cache types)
 #   rope-scaling-type: yarn              # RoPE scaling: none, linear, yarn
 #   yarn-orig-ctx: 32768                 # Original training context size (nil = from model)
@@ -95,8 +96,13 @@
 # grow monotonically (each turn appends messages, never modifies earlier ones),
 # use incremental-cache. It caches all messages except the last one and extends
 # incrementally on each turn, avoiding redundant prefill computation.
+#
+# The client must pass the KRONK_IMC_ID header with a unique session/user ID
+# to activate IMC. Each unique ID gets its own dedicated cache sequence (up to
+# max-imc-sessions). If no header is passed, IMC is bypassed for that request.
 #   nseq-max: 1
 #   incremental-cache: true
+#   max-imc-sessions: 5      # Support up to 5 concurrent users (default 1)
 #
 # Cline is working great with Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/SPC and
 # cerebras_qwen3-coder-reap-25b-a3b-q8_0/SPC.

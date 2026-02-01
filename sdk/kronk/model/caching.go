@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
@@ -18,9 +19,13 @@ type cacheResult struct {
 	nPast     llama.Pos // Starting position for new tokens (cumulative from both caches)
 	cached    bool      // True if any cache is being used
 	err       error     // Any error that occurred
+
+	// IMC-specific fields (set when IncrementalCache is used)
+	imcID    string      // IMC session ID
+	imcSeqID llama.SeqId // IMC session's cache sequence
 }
 
-// ensureMessagesCached checks if the system prompt or incremental messages are
+// processCache checks if the system prompt or incremental messages are
 // being cached and updates to the caches are necessary. The behavior depends
 // on which cache modes are enabled:
 //
@@ -39,7 +44,7 @@ type cacheResult struct {
 //   - err: any error that occurred during cache update
 //
 // This function is thread-safe and handles concurrent requests appropriately.
-func (m *Model) ensureCache(ctx context.Context, d D) cacheResult {
+func (m *Model) processCache(ctx context.Context, d D) cacheResult {
 	if !m.cfg.SystemPromptCache && !m.cfg.IncrementalCache {
 		return cacheResult{modifiedD: d}
 	}
@@ -88,10 +93,18 @@ func (m *Model) ensureCache(ctx context.Context, d D) cacheResult {
 
 	// -------------------------------------------------------------------------
 	// IncrementalCache (IMC): Incremental multi-turn caching for agentic
-	// workflows.
+	// workflows. Requires imc_id to identify the session.
 
 	if m.cfg.IncrementalCache {
-		result := m.handleIncrementalMessageCache(ctx, d, messages)
+		// IMC requires an imc_id to identify the session.
+		imcID, _ := d["imc_id"].(string)
+		if imcID == "" {
+			// No imc_id provided - bypass IMC for this request.
+			m.log(ctx, "cache", "status", "bypass-IMC", "reason", "IMC turned on but no imc_id was provided")
+			return cacheResult{modifiedD: d}
+		}
+
+		result, cachedMsgCount := m.handleIncrementalMessageCache(ctx, d, messages, imcID)
 		if result.err != nil {
 			return result
 		}
@@ -100,12 +113,8 @@ func (m *Model) ensureCache(ctx context.Context, d D) cacheResult {
 			totalNPast += result.nPast
 			anyCached = true
 
-			// IMC caches messages[0:imcMsgCount]. Remove all cached messages.
-			m.cacheMu.RLock()
-			cachedCount := m.imcMsgCount
-			m.cacheMu.RUnlock()
-
-			for i := 0; i < cachedCount; i++ {
+			// IMC caches messages[0:cachedMsgCount]. Remove all cached messages.
+			for i := 0; i < cachedMsgCount; i++ {
 				indicesToRemove = append(indicesToRemove, i)
 			}
 
@@ -117,7 +126,18 @@ func (m *Model) ensureCache(ctx context.Context, d D) cacheResult {
 					media:     result.media,
 					nPast:     totalNPast,
 					cached:    true,
+					imcID:    result.imcID,
+					imcSeqID: result.imcSeqID,
 				}
+			}
+
+			// IMC hit without prompt - propagate session info.
+			return cacheResult{
+				modifiedD: removeMessagesAtIndices(d, indicesToRemove),
+				nPast:     totalNPast,
+				cached:    true,
+				imcID:     result.imcID,
+				imcSeqID:  result.imcSeqID,
 			}
 		}
 	}
@@ -146,34 +166,49 @@ func (m *Model) handleSystemPromptCache(ctx context.Context, d D, msgInfo cachea
 // for agentic workflows. It caches all messages except the last one (which
 // triggers generation) and extends the cache incrementally on subsequent requests.
 //
+// Each unique imcID gets its own session with a dedicated cache sequence.
+// Returns the cache result and the number of cached messages (for removal).
+//
 // Algorithm:
-//  1. If cache is empty (imcMsgCount=0), cache messages[0:len-1]
-//  2. If cache exists, check if messages[0:imcMsgCount] match cached hash
-//  3. On prefix match: extend cache with messages[imcMsgCount:len-1]
-//  4. On prefix mismatch: rebuild cache from scratch
-func (m *Model) handleIncrementalMessageCache(ctx context.Context, d D, messages []D) cacheResult {
+//  1. Look up or create session for imcID
+//  2. If session cache is empty, cache messages[0:len-1]
+//  3. If session cache exists, check if messages[0:msgCount] match cached hash
+//  4. On prefix match: extend cache with messages[msgCount:len-1]
+//  5. On prefix mismatch: rebuild cache from scratch
+func (m *Model) handleIncrementalMessageCache(ctx context.Context, d D, messages []D, imcID string) (cacheResult, int) {
 	nMessages := len(messages)
 	if nMessages < 2 {
 		// Need at least 2 messages: one to cache, one to generate from.
-		return cacheResult{modifiedD: d}
+		return cacheResult{modifiedD: d}, 0
 	}
 
 	// Target: cache all messages except the last one (which triggers generation).
 	targetCacheEnd := nMessages - 1
 
 	// -------------------------------------------------------------------------
-	// Read current cache state (fast path with read lock).
+	// Look up or create session for this imcID.
+
+	session, isNew := m.getOrCreateIMCSession(ctx, imcID)
+	if session == nil {
+		// All session slots are in use - bypass IMC gracefully.
+		m.log(ctx, "imc", "status", "bypass-slots-full", "imc_id", imcID, "max", m.imcMaxSeqs)
+		return cacheResult{modifiedD: d}, 0
+	}
+
+	// -------------------------------------------------------------------------
+	// Read current session state (fast path with read lock).
 
 	m.cacheMu.RLock()
-	currentHash := m.imcHash
-	currentTokens := m.imcTokens
-	currentMsgCount := m.imcMsgCount
+	currentHash := session.hash
+	currentTokens := session.tokens
+	currentMsgCount := session.msgCount
+	seqID := session.seqID
 	m.cacheMu.RUnlock()
 
 	// -------------------------------------------------------------------------
 	// Check for cache hit on existing prefix.
 
-	if currentMsgCount > 0 && currentTokens > 0 {
+	if !isNew && currentMsgCount > 0 && currentTokens > 0 {
 		// Verify the cached prefix still matches.
 		if currentMsgCount <= nMessages {
 			prefixHash := hashMessages(messages[:currentMsgCount])
@@ -181,23 +216,29 @@ func (m *Model) handleIncrementalMessageCache(ctx context.Context, d D, messages
 				// Cache hit on prefix. Check if we need to extend.
 				if currentMsgCount < targetCacheEnd {
 					// Extend cache with new messages.
-					return m.extendIMCCache(ctx, d, messages, currentMsgCount, targetCacheEnd, currentTokens)
+					return m.extendIMCCache(ctx, d, messages, imcID, session, currentMsgCount, targetCacheEnd, currentTokens), currentMsgCount
 				}
 
 				// Prefix matches and covers all cacheable messages.
-				m.log(ctx, "imc", "status", "hit", "cached-msgs", currentMsgCount, "tokens", currentTokens)
-				return cacheResult{nPast: llama.Pos(currentTokens), cached: true}
+				m.log(ctx, "imc", "status", "hit", "imc_id", imcID, "seq", seqID, "cached-msgs", currentMsgCount, "tokens", currentTokens)
+				return cacheResult{
+					nPast:    llama.Pos(currentTokens),
+					cached:   true,
+					imcID:    imcID,
+					imcSeqID: seqID,
+				}, currentMsgCount
 			}
 		}
 
 		// Prefix mismatch - need to rebuild cache.
-		m.log(ctx, "imc", "status", "prefix-mismatch", "cached-msgs", currentMsgCount, "request-msgs", nMessages)
+		m.log(ctx, "imc", "status", "prefix-mismatch", "imc_id", imcID, "cached-msgs", currentMsgCount, "request-msgs", nMessages)
 	}
 
 	// -------------------------------------------------------------------------
 	// Cache miss - build cache from scratch.
 
-	return m.buildIMCCache(ctx, d, messages, targetCacheEnd)
+	result := m.buildIMCCache(ctx, d, messages, imcID, session, targetCacheEnd)
+	return result, targetCacheEnd
 }
 
 // cacheMessage is the common caching logic used by SystemPromptCache mode.
@@ -340,39 +381,36 @@ func (m *Model) decodeTokensToSeq(ctx context.Context, tokens []llama.Token, seq
 	return nil
 }
 
-// copyCachesToSeq copies cached KV state from the cache sequence (seq 0) to
-// the target sequence. SPC and IMC are mutually exclusive; both use seq 0.
-func (m *Model) copyCachesToSeq(seqID llama.SeqId) error {
+// copyCachesToSeq copies cached KV state from a cache sequence to the target
+// sequence. For SPC, uses seq 0. For IMC, the srcSeqID must be passed explicitly.
+func (m *Model) copyCachesToSeq(dstSeqID llama.SeqId, srcSeqID llama.SeqId) error {
 	if !m.cfg.SystemPromptCache && !m.cfg.IncrementalCache {
 		return nil
 	}
 
-	m.cacheMu.RLock()
-	sysTokens := m.sysPromptTokens
-	imcTokens := m.imcTokens
-	m.cacheMu.RUnlock()
-
-	// Copy system prompt cache (seq 0) if enabled and populated.
-	if m.cfg.SystemPromptCache && sysTokens > 0 {
-		if err := llama.MemorySeqCp(m.mem, 0, seqID, -1, -1); err != nil {
-			return fmt.Errorf("copy-cache: failed to copy SPC seq 0 to %d: %w", seqID, err)
-		}
-	}
-
-	// Copy IMC cache (seq 0) if enabled and populated.
-	if m.cfg.IncrementalCache && imcTokens > 0 {
-		if err := llama.MemorySeqCp(m.mem, 0, seqID, -1, -1); err != nil {
-			return fmt.Errorf("copy-cache: failed to copy IMC seq 0 to %d: %w", seqID, err)
-		}
+	if err := llama.MemorySeqCp(m.mem, srcSeqID, dstSeqID, -1, -1); err != nil {
+		return fmt.Errorf("copy-cache: failed to copy seq %d to %d: %w", srcSeqID, dstSeqID, err)
 	}
 
 	return nil
 }
 
-// copySystemPromptToSeq copies the cached KV cache from sequence 0 to the
-// specified sequence ID. This is an alias for copyCachesToSeq.
+// copySystemPromptToSeq copies the SPC cache (seq 0) to the target sequence.
+// For batch engine slot restoration after completion.
 func (m *Model) copySystemPromptToSeq(seqID llama.SeqId) error {
-	return m.copyCachesToSeq(seqID)
+	if !m.cfg.SystemPromptCache {
+		return nil
+	}
+
+	m.cacheMu.RLock()
+	sysTokens := m.sysPromptTokens
+	m.cacheMu.RUnlock()
+
+	if sysTokens > 0 {
+		return m.copyCachesToSeq(seqID, 0)
+	}
+
+	return nil
 }
 
 // clearCaches clears all cached prompt states.
@@ -382,10 +420,12 @@ func (m *Model) clearCaches() {
 	m.sysPromptHash = ""
 	m.sysPromptTokens = 0
 	m.sysPromptLen = 0
-	m.imcHash = ""
-	m.imcTokens = 0
-	m.imcMsgCount = 0
-	m.imcPromptLen = 0
+
+	// Clear all IMC sessions.
+	for id := range m.imcSessions {
+		delete(m.imcSessions, id)
+	}
+	m.imcNextSeq = 0
 	m.cacheMu.Unlock()
 }
 
@@ -399,23 +439,56 @@ func (m *Model) clearSystemPromptCache() {
 // IMC (Incremental Message Cache) Functions
 // =============================================================================
 
+// getOrCreateIMCSession looks up an existing session by imcID or creates a new one.
+// Returns nil if all session slots are in use (graceful bypass).
+// Returns the session and true if it was newly created.
+func (m *Model) getOrCreateIMCSession(ctx context.Context, imcID string) (*imcSession, bool) {
+	m.cacheMu.Lock()
+	defer m.cacheMu.Unlock()
+
+	// Check if session already exists.
+	if session, exists := m.imcSessions[imcID]; exists {
+		session.lastUsed = time.Now()
+		return session, false
+	}
+
+	// Check if we have room for a new session.
+	if int(m.imcNextSeq) >= m.imcMaxSeqs {
+		// All slots are in use. Could implement LRU eviction here in the future.
+		return nil, false
+	}
+
+	// Create new session with next available sequence.
+	session := &imcSession{
+		seqID:    m.imcNextSeq,
+		lastUsed: time.Now(),
+	}
+	m.imcSessions[imcID] = session
+	m.imcNextSeq++
+
+	m.log(ctx, "imc", "status", "session-created", "imc_id", imcID, "seq", session.seqID, "total-sessions", len(m.imcSessions))
+
+	return session, true
+}
+
+// =============================================================================
+
 // buildIMCCache builds the cache from scratch for messages[0:targetEnd].
-func (m *Model) buildIMCCache(ctx context.Context, d D, messages []D, targetEnd int) cacheResult {
+func (m *Model) buildIMCCache(ctx context.Context, d D, messages []D, imcID string, session *imcSession, targetEnd int) cacheResult {
 	m.cacheMu.Lock()
 	defer m.cacheMu.Unlock()
 
 	// Double-check in case another goroutine built the cache while we waited.
-	// Also verify we have enough messages to check against cached count.
-	if m.imcMsgCount > 0 && m.imcTokens > 0 && m.imcMsgCount <= len(messages) {
-		prefixHash := hashMessages(messages[:m.imcMsgCount])
-		if prefixHash == m.imcHash {
-			m.log(ctx, "imc", "status", "hit-after-lock", "cached-msgs", m.imcMsgCount, "tokens", m.imcTokens)
-			return cacheResult{nPast: llama.Pos(m.imcTokens), cached: true}
+	if session.msgCount > 0 && session.tokens > 0 && session.msgCount <= len(messages) {
+		prefixHash := hashMessages(messages[:session.msgCount])
+		if prefixHash == session.hash {
+			m.log(ctx, "imc", "status", "hit-after-lock", "imc_id", imcID, "cached-msgs", session.msgCount, "tokens", session.tokens)
+			return cacheResult{nPast: llama.Pos(session.tokens), cached: true}
 		}
 	}
 
 	// Clear existing cache sequence.
-	llama.MemorySeqRm(m.mem, m.imcSeqID, -1, -1)
+	llama.MemorySeqRm(m.mem, session.seqID, -1, -1)
 
 	// Template messages[0:targetEnd] WITHOUT add_generation_prompt.
 	prefixMessages := messages[:targetEnd]
@@ -442,23 +515,24 @@ func (m *Model) buildIMCCache(ctx context.Context, d D, messages []D, targetEnd 
 	}
 
 	if nTokens < m.cfg.CacheMinTokens {
-		m.log(ctx, "imc", "status", "skip-too-short", "msgs", targetEnd, "tokens", nTokens, "min", m.cfg.CacheMinTokens)
+		m.log(ctx, "imc", "status", "skip-too-short", "imc_id", imcID, "msgs", targetEnd, "tokens", nTokens, "min", m.cfg.CacheMinTokens)
 		return cacheResult{modifiedD: d}
 	}
 
 	// Decode tokens into cache sequence.
-	if err := m.decodeTokensToSeq(ctx, tokens, m.imcSeqID); err != nil {
+	if err := m.decodeTokensToSeq(ctx, tokens, session.seqID); err != nil {
 		return cacheResult{modifiedD: d, err: err}
 	}
 
-	// Update cache state.
+	// Update session state.
 	newHash := hashMessages(prefixMessages)
-	m.imcHash = newHash
-	m.imcTokens = nTokens
-	m.imcMsgCount = targetEnd
-	m.imcPromptLen = len(prefixPrompt)
+	session.hash = newHash
+	session.tokens = nTokens
+	session.msgCount = targetEnd
+	session.promptLen = len(prefixPrompt)
+	session.lastUsed = time.Now()
 
-	m.log(ctx, "imc", "status", "built", "msgs", targetEnd, "tokens", nTokens, "prompt-len", len(prefixPrompt), "hash", newHash[:8])
+	m.log(ctx, "imc", "status", "built", "imc_id", imcID, "seq", session.seqID, "msgs", targetEnd, "tokens", nTokens, "prompt-len", len(prefixPrompt), "hash", newHash[:8])
 
 	// Generate suffix for immediate use.
 	suffix, media, err := m.generateIMCSuffix(ctx, d, messages, prefixPrompt, targetEnd)
@@ -472,25 +546,27 @@ func (m *Model) buildIMCCache(ctx context.Context, d D, messages []D, targetEnd 
 		media:     media,
 		nPast:     llama.Pos(nTokens),
 		cached:    true,
+		imcID:     imcID,
+		imcSeqID:  session.seqID,
 	}
 }
 
 // extendIMCCache extends the existing cache with messages[currentEnd:targetEnd].
-func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, currentEnd, targetEnd, currentTokens int) cacheResult {
+func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, imcID string, session *imcSession, currentEnd, targetEnd, currentTokens int) cacheResult {
 	m.cacheMu.Lock()
 	defer m.cacheMu.Unlock()
 
-	// Double-check cache state hasn't changed.
-	if m.imcMsgCount != currentEnd || m.imcTokens != currentTokens {
+	// Double-check session state hasn't changed.
+	if session.msgCount != currentEnd || session.tokens != currentTokens {
 		// State changed, fall back to full rebuild.
 		m.cacheMu.Unlock()
-		result := m.buildIMCCache(ctx, d, messages, targetEnd)
+		result := m.buildIMCCache(ctx, d, messages, imcID, session, targetEnd)
 		m.cacheMu.Lock()
 		return result
 	}
 
-	// Get the stored prefix length from the cache.
-	oldPrefixLen := m.imcPromptLen
+	// Get the stored prefix length from the session.
+	oldPrefixLen := session.promptLen
 
 	// Template the new prefix (messages to cache) - needed to find extension boundary.
 	prefixD := D{
@@ -508,7 +584,7 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, currentEn
 
 	// Check for extension content.
 	if len(prefixPrompt) <= oldPrefixLen {
-		m.log(ctx, "imc", "status", "extend-no-content", "old-len", oldPrefixLen, "new-len", len(prefixPrompt))
+		m.log(ctx, "imc", "status", "extend-no-content", "imc_id", imcID, "old-len", oldPrefixLen, "new-len", len(prefixPrompt))
 		return cacheResult{nPast: llama.Pos(currentTokens), cached: true}
 	}
 
@@ -518,12 +594,12 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, currentEn
 	nExtTokens := len(extensionTokens)
 
 	if nExtTokens == 0 {
-		m.log(ctx, "imc", "status", "extend-zero-tokens")
+		m.log(ctx, "imc", "status", "extend-zero-tokens", "imc_id", imcID)
 		return cacheResult{nPast: llama.Pos(currentTokens), cached: true}
 	}
 
 	// Decode extension tokens into cache sequence.
-	if err := m.decodeExtensionTokens(ctx, extensionTokens, m.imcSeqID); err != nil {
+	if err := m.decodeExtensionTokens(ctx, extensionTokens, session.seqID); err != nil {
 		return cacheResult{modifiedD: d, err: err}
 	}
 
@@ -536,28 +612,29 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, currentEn
 	// Verify prefix is actually a prefix of full prompt. If not, template
 	// nondeterminism has occurred and we must rebuild the cache.
 	if !strings.HasPrefix(fullPrompt, prefixPrompt) {
-		m.log(ctx, "imc", "status", "prefix-mismatch-rebuild",
+		m.log(ctx, "imc", "status", "prefix-mismatch-rebuild", "imc_id", imcID,
 			"prefix-len", len(prefixPrompt), "full-len", len(fullPrompt))
 
 		// Rebuild cache from scratch to ensure consistency.
 		m.cacheMu.Unlock()
-		result := m.buildIMCCache(ctx, d, messages, targetEnd)
+		result := m.buildIMCCache(ctx, d, messages, imcID, session, targetEnd)
 		m.cacheMu.Lock()
 		return result
 	}
 
-	// Update cache state.
+	// Update session state.
 	newTokens := currentTokens + nExtTokens
 	newHash := hashMessages(messages[:targetEnd])
-	m.imcHash = newHash
-	m.imcTokens = newTokens
-	m.imcMsgCount = targetEnd
-	m.imcPromptLen = len(prefixPrompt)
+	session.hash = newHash
+	session.tokens = newTokens
+	session.msgCount = targetEnd
+	session.promptLen = len(prefixPrompt)
+	session.lastUsed = time.Now()
 
 	// Suffix is everything after the new prefix.
 	suffix := fullPrompt[len(prefixPrompt):]
 
-	m.log(ctx, "imc", "status", "extended", "old-msgs", currentEnd, "new-msgs", targetEnd,
+	m.log(ctx, "imc", "status", "extended", "imc_id", imcID, "seq", session.seqID, "old-msgs", currentEnd, "new-msgs", targetEnd,
 		"old-tokens", currentTokens, "new-tokens", newTokens, "ext-tokens", nExtTokens, "suffix-len", len(suffix))
 
 	return cacheResult{
@@ -566,6 +643,8 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, currentEn
 		media:     media,
 		nPast:     llama.Pos(newTokens),
 		cached:    true,
+		imcID:     imcID,
+		imcSeqID:  session.seqID,
 	}
 }
 

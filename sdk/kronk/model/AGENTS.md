@@ -17,7 +17,7 @@ Low-level model inference using yzma (llama.cpp Go bindings).
 - `params.go` - Sampling parameters
 - `logprobs.go` - Token log probability extraction
 - `check.go` - Model validation
-- `sysprompt.go` - System prompt KV cache management
+- `caching.go` - System prompt and IMC cache management
 
 ## ChatStreaming: Batch vs Sequential Routing
 
@@ -269,28 +269,41 @@ Two cache modes are available (mutually exclusive):
 
 - **`SystemPromptCache` (SPC)**: Caches the first message with `role="system"`. If a subsequent request has no system message but the cache exists, the cached system prompt is used. Ideal for Open Web UI and similar clients that send the system prompt once.
 - **`IncrementalCache` (IMC)**: Incremental Message Cache for agentic workflows. Caches all messages except the last one, extending incrementally on each turn. Ideal for agents like Amp, Cline, or Aider where conversations grow monotonically.
+- **`MaxIMCSessions`**: Maximum number of concurrent IMC sessions (users). Each session gets a dedicated cache sequence identified by `imc_id` in the request. Default: 1.
 
 SPC and IMC are mutually exclusive; IMC includes the system prompt in its cache, so enabling both is redundant and will return a validation error.
 
-**IMC State** (`model.go`):
+**Multi-User IMC:**
+
+IMC supports multiple users, each with their own dedicated cache sequence. Clients must pass the `KRONK_IMC_ID` header (or `imc_id` in the request D) to activate IMC. Each unique ID gets its own session up to `MaxIMCSessions`. If all slots are in use, requests gracefully bypass IMC.
+
+**IMC Session State** (`model.go`):
 
 ```go
-imcHash      string      // Hash of all cached messages
-imcTokens    int         // Total tokens in IMC cache
-imcMsgCount  int         // Number of messages currently cached
-imcPromptLen int         // Length of templated prefix string (for extension)
-imcSeqID     llama.SeqId // Sequence ID for IMC cache (seq 0)
+type imcSession struct {
+    hash      string      // Hash of all cached messages
+    tokens    int         // Total tokens in cache
+    msgCount  int         // Number of messages cached
+    promptLen int         // Length of templated prefix (for extension)
+    seqID     llama.SeqId // Assigned cache sequence ID
+    lastUsed  time.Time   // Last access time (for future eviction)
+}
+
+// Model fields for IMC
+imcSessions map[string]*imcSession // Sessions keyed by imc_id
+imcNextSeq  llama.SeqId            // Next available cache sequence
+imcMaxSeqs  int                    // Max sessions from config
 ```
 
-**IMC Algorithm** (`sysprompt.go`):
+**IMC Algorithm** (`caching.go`):
 
 1. **First request** (cache empty): Cache `messages[0:len-1]`, generate from last message
 2. **Subsequent requests** (prefix match): Extend cache with `messages[cachedCount:len-1]`
 3. **New thread** (prefix mismatch): Rebuild cache from scratch
 
-**API Pattern** (`sysprompt.go`):
+**API Pattern** (`caching.go`):
 
-`ensureCache()` returns a `cacheResult` struct:
+`processCache()` returns a `cacheResult` struct:
 
 ```go
 type cacheResult struct {
@@ -303,7 +316,7 @@ type cacheResult struct {
 }
 ```
 
-**IMC Functions** (`sysprompt.go`):
+**IMC Functions** (`caching.go`):
 
 - `handleIncrementalMessageCache()`: Entry point, decides build vs extend vs hit
 - `buildIMCCache()`: Builds cache from scratch for new conversations
@@ -345,13 +358,21 @@ type cacheResult struct {
 
 **Sequence ID layout (dynamic based on config):**
 
-| SPC | IMC | Reserved Seqs | Slot Start | Memory Overhead |
-| --- | --- | ------------- | ---------- | --------------- |
-| off | off | 0             | seq 0      | none            |
-| on  | off | 1 (seq 0)     | seq 1      | +1 ctx window   |
-| off | on  | 1 (seq 0)     | seq 1      | +1 ctx window   |
+| SPC | IMC | MaxIMCSessions | Reserved Seqs | Slot Start | Memory Overhead |
+| --- | --- | -------------- | ------------- | ---------- | --------------- |
+| off | off | -              | 0             | seq 0      | none            |
+| on  | off | -              | 1 (seq 0)     | seq 1      | +1 ctx window   |
+| off | on  | 1              | 1 (seq 0)     | seq 1      | +1 ctx window   |
+| off | on  | 4              | 4 (seq 0-3)   | seq 4      | +4 ctx windows  |
 
 Note: SPC and IMC are mutually exclusive, so both cannot be enabled together.
+
+Example with `MaxIMCSessions=3, NSeqMax=2`:
+- seq 0: imc_id="user-1" cache
+- seq 1: imc_id="user-2" cache
+- seq 2: imc_id="user-3" cache
+- seq 3: slot[0] inference
+- seq 4: slot[1] inference
 
 **NSeqMax and Caching Relationship:**
 
@@ -360,7 +381,11 @@ Dynamic sequence allocation in `config.go`:
 ```go
 nSeqMax := max(cfg.NSeqMax, 1)
 cacheSeqs := 0
-if cfg.SystemPromptCache || cfg.IncrementalCache { cacheSeqs = 1 }
+if cfg.SystemPromptCache {
+    cacheSeqs = 1
+} else if cfg.IncrementalCache {
+    cacheSeqs = max(cfg.MaxIMCSessions, 1)
+}
 ctxParams.NSeqMax = uint32(nSeqMax + cacheSeqs)
 ```
 
@@ -368,7 +393,11 @@ ctxParams.NSeqMax = uint32(nSeqMax + cacheSeqs)
 
 ```go
 cacheSeqs := 0
-if m.cfg.SystemPromptCache || m.cfg.IncrementalCache { cacheSeqs = 1 }
+if m.cfg.SystemPromptCache {
+    cacheSeqs = 1
+} else if m.cfg.IncrementalCache {
+    cacheSeqs = m.imcMaxSeqs
+}
 
 for i := range slots {
     slots[i] = &slot{
@@ -381,17 +410,18 @@ for i := range slots {
 **Request flow with caching** (`batch.go`):
 
 1. Slot clears its sequence: `llama.MemorySeqRm(mem, s.seqID, -1, -1)`
-2. If cached, copies KV state: `copyCachesToSeq(s.seqID)` from seq 0
-3. Sets `nPast` to skip re-processing cached tokens
-4. Tokenizes remaining prompt (only the suffix/last message)
+2. If SPC cached: copies KV state via `copySystemPromptToSeq(s.seqID)` from seq 0
+3. If IMC cached: copies KV state via `copyCachesToSeq(s.seqID, job.imcSeqID)` from session's seq
+4. Sets `nPast` to skip re-processing cached tokens
+5. Tokenizes remaining prompt (only the suffix/last message)
 
 **Cache invalidation:**
 
-- Prefix mismatch (IMC): clears seq 0, rebuilds cache from new conversation
+- Prefix mismatch (IMC): clears session's seq, rebuilds cache from new conversation
 - Hash mismatch (SPC): clears seq 0, re-evaluates new system message
 - Different role with same content: different hash (role is included in hash)
 - `resetContext()`: clears all memory AND calls `clearCaches()` (sequential path)
-- `clearCaches()`: Resets all cache state (`imcHash`, `imcTokens`, `imcMsgCount`, `imcPromptLen`, SPC fields)
+- `clearCaches()`: Resets SPC fields and clears all IMC sessions from `imcSessions` map
 
 **Critical Implementation Details:**
 
@@ -411,3 +441,5 @@ for i := range slots {
 - Requires monotonically growing conversations (editing earlier messages triggers rebuild)
 - Thread-safe via `cacheMu` mutex (read lock for hits, write lock for misses)
 - Template must be deterministic (no timestamps, random values, etc.)
+- IMC requires `imc_id` in request (via `KRONK_IMC_ID` header) - requests without it bypass IMC
+- If all `MaxIMCSessions` slots are in use, new sessions gracefully bypass IMC

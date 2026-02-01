@@ -204,6 +204,9 @@ func (c *Catalog) ResolvedModelConfig(modelID string) ModelConfig {
 		if modelConfig.IncrementalCache {
 			cfg.IncrementalCache = modelConfig.IncrementalCache
 		}
+		if modelConfig.MaxIMCSessions != 0 {
+			cfg.MaxIMCSessions = modelConfig.MaxIMCSessions
+		}
 		if modelConfig.CacheMinTokens != 0 {
 			cfg.CacheMinTokens = modelConfig.CacheMinTokens
 		}

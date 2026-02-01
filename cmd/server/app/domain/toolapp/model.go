@@ -226,6 +226,7 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfi
 			SplitMode:            rmc.SplitMode,
 			SystemPromptCache:    rmc.SystemPromptCache,
 			IncrementalCache:     rmc.IncrementalCache,
+			MaxIMCSessions:       rmc.MaxIMCSessions,
 			CacheMinTokens:       rmc.CacheMinTokens,
 			RopeScaling:          rmc.RopeScaling,
 			RopeFreqBase:         rmc.RopeFreqBase,
@@ -401,6 +402,7 @@ type ModelConfig struct {
 	SplitMode            model.SplitMode          `json:"split-mode"`
 	SystemPromptCache bool                     `json:"system-prompt-cache"`
 	IncrementalCache  bool                     `json:"incremental-cache"`
+	MaxIMCSessions    int                      `json:"max-imc-sessions"`
 	CacheMinTokens       int                      `json:"cache-min-tokens"`
 	Sampling             SamplingConfig           `json:"sampling-parameters"`
 	RopeScaling          model.RopeScalingType    `json:"rope-scaling-type"`
@@ -551,6 +553,7 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 			SplitMode:            rmc.SplitMode,
 			SystemPromptCache:    rmc.SystemPromptCache,
 			IncrementalCache:     rmc.IncrementalCache,
+			MaxIMCSessions:       rmc.MaxIMCSessions,
 			CacheMinTokens:       rmc.CacheMinTokens,
 			RopeScaling:          rmc.RopeScaling,
 			RopeFreqBase:         rmc.RopeFreqBase,

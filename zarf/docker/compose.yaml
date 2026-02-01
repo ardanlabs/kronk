@@ -18,6 +18,8 @@ services:
       - host.docker.internal:host-gateway
     ports:
       - "8081:8080"
+    volumes:
+      - ./openwebui/data:/app/backend/data
 
   grafana:
     image: grafana/grafana:12.3.0

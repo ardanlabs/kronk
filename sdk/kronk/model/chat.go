@@ -141,9 +141,10 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		var sysPromptCached bool
 		var prompt string
 		var media [][]byte
+		var cache cacheResult
 
 		if (m.cfg.SystemPromptCache || m.cfg.IncrementalCache) && object == ObjectChatText {
-			cache := m.ensureCache(ctx, d)
+			cache = m.processCache(ctx, d)
 			if cache.err != nil {
 				m.sendChatError(ctx, ch, id, cache.err)
 				return
@@ -185,6 +186,10 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 				ch:              ch,
 				sysPromptNPast:  sysPromptNPast,
 				sysPromptCached: sysPromptCached,
+				imcID:           cache.imcID,
+				imcSeqID:        cache.imcSeqID,
+				imcNPast:        cache.nPast,
+				imcCached:       cache.imcID != "",
 			}
 
 			// Engine manages activeStreams for submitted jobs.
