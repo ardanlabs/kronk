@@ -328,7 +328,7 @@ export default function ModelList() {
                     <span>{modelInfo.model_config['max-imc-sessions'] || 1}</span>
                   </div>
                 )}
-                {modelInfo.model_config['rope-scaling-type'] && modelInfo.model_config['rope-scaling-type'] !== 'none' && (
+                {!!modelInfo.model_config['rope-scaling-type'] && modelInfo.model_config['rope-scaling-type'] !== 'none' && (
                   <>
                     <div className="model-meta-item">
                       <label>RoPE Scaling</label>
@@ -358,6 +358,30 @@ export default function ModelList() {
                     )}
                   </>
                 )}
+                <div className="model-meta-item">
+                  <label>Owner</label>
+                  <span>{modelInfo.owned_by}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>Size</label>
+                  <span>{formatBytes(modelInfo.size)}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>Created</label>
+                  <span>{new Date(modelInfo.created).toLocaleString()}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>Has Projection</label>
+                  <span className={`badge ${modelInfo.has_projection ? 'badge-yes' : 'badge-no'}`}>
+                    {modelInfo.has_projection ? 'Yes' : 'No'}
+                  </span>
+                </div>
+                <div className="model-meta-item">
+                  <label>Is GPT</label>
+                  <span className={`badge ${modelInfo.is_gpt ? 'badge-yes' : 'badge-no'}`}>
+                    {modelInfo.is_gpt ? 'Yes' : 'No'}
+                  </span>
+                </div>
               </div>
             </div>
           )}
@@ -407,34 +431,6 @@ export default function ModelList() {
               </div>
             </div>
           )}
-
-          <div className="model-meta" style={{ marginTop: '16px' }}>
-            <div className="model-meta-item">
-              <label>Owner</label>
-              <span>{modelInfo.owned_by}</span>
-            </div>
-            <div className="model-meta-item">
-              <label>Size</label>
-              <span>{formatBytes(modelInfo.size)}</span>
-            </div>
-            <div className="model-meta-item">
-              <label>Created</label>
-              <span>{new Date(modelInfo.created).toLocaleString()}</span>
-            </div>
-            <div className="model-meta-item">
-              <label>Has Projection</label>
-              <span className={`badge ${modelInfo.has_projection ? 'badge-yes' : 'badge-no'}`}>
-                {modelInfo.has_projection ? 'Yes' : 'No'}
-              </span>
-            </div>
-
-            <div className="model-meta-item">
-              <label>Is GPT</label>
-              <span className={`badge ${modelInfo.is_gpt ? 'badge-yes' : 'badge-no'}`}>
-                {modelInfo.is_gpt ? 'Yes' : 'No'}
-              </span>
-            </div>
-          </div>
 
           {modelInfo.desc && (
             <div style={{ marginTop: '16px' }}>

@@ -571,7 +571,7 @@ export default function CatalogList() {
                         <span>{modelInfo.model_config['max-imc-sessions'] || 1}</span>
                       </div>
                     )}
-                    {modelInfo.model_config['rope-scaling-type'] && modelInfo.model_config['rope-scaling-type'] !== 'none' && (
+                    {!!modelInfo.model_config['rope-scaling-type'] && modelInfo.model_config['rope-scaling-type'] !== 'none' && (
                       <>
                         <div className="model-meta-item">
                           <label>RoPE Scaling</label>
