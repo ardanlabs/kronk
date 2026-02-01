@@ -27,6 +27,8 @@ $ go install github.com/ardanlabs/kronk/cmd/kronk@latest
 $ kronk server start
 ```
 
+Read the [Manual](./MANUAL.md) to learn more about running the Kronk Model Server.
+
 ## Project Status
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/ardanlabs/kronk.svg)](https://pkg.go.dev/github.com/ardanlabs/kronk)
@@ -62,10 +64,6 @@ Here is the existing [Issues/Features](https://github.com/ardanlabs/kronk/issues
 
 If you are interested in helping in any way, please send an email to [Bill Kennedy](mailto:bill@ardanlabs.com).
 
-## Features
-
-Here is the existing [FEATURES](FEATURES.md) list for the project. The features are not in any particular order.
-
 ## Architecture
 
 The architecture of Kronk is designed to be simple and scalable.
@@ -79,44 +77,6 @@ The Kronk SDK allows you to write applications that can diectly interact with lo
 ![api arch](./images/design/sdk.png?v1)
 
 Check out the [examples](#examples) section below.
-
-### Kronk Model Server (KMS)
-
-If you want an OpenAI compatible model server, the Kronk model server leverages the power of the Kronk API to give you a concurrent and scalable web api.
-
-Run `make kronk-server` to check it out.
-
-#### Parallel Inference Options
-
-Kronk supports concurrent request handling through the `NSeqMax` configuration value:
-
-- **Text models**: `NSeqMax` controls parallel sequence processing within a single model instance. Multiple chat requests are batched together and processed simultaneously, improving throughput for high-concurrency workloads.
-
-- **Sequential models** (embeddings, reranking, vision, audio): `NSeqMax` creates that many model instances in a pool. Each instance handles one request at a time, but multiple instances allow concurrent request handling.
-
-#### Sequential Inference Archtecture
-
-Sequential inference for multi-modal, embedding, and rerank models: multiple model instances (A and B) each handle requests through dedicated goroutines, sharing the underlying llama.cpp backend with one request processed at a time per instance.
-
-You have the option in this mode to load multiple instances of the same model for parallel processing.
-
-![sequential inference](./images/design/sequential-inference.png?v1)
-
-#### Parallel Inference Archtecture
-
-Parallel inference flow showing requests queued in a channel (NSeqMax × 2 capacity), batched in groups of 2, processed through concurrent goroutines, and executed via llama.cpp on the chat model.
-
-![parallel inference](./images/design/parallel-inference.png?v1)
-
-#### Model Caching
-
-You can configure the number of Models that stay loaded in memory (default: 3) through configuration how long they will stay in memory (default: 5m) when not being used. This allows you to manage the resouces on the hardware.
-
-For more details on the settings, run the following command after installing Kronk:
-
-```shell
-kronk server --help
-```
 
 ## Models
 
@@ -193,49 +153,6 @@ make example-yzma
 ```
 
 You can find more examples in the ArdanLabs AI training repo at [Example13](https://github.com/ardanlabs/ai-training/tree/main/cmd/examples/example13).
-
-## Kronk Model Server
-
-The model server is OpenAI compatible and you can use OpenWebUI to interact with it. To start the Kronk model server run:
-
-```shell
-kronk server start
-```
-
-You will need to load a model if this is the first time you're using the system. To download a starter model run the catalog list command to see the current catalog of models:
-
-```shell
-kronk catalog list --local
-
-CATALOG              MODEL ID                            PULLED   ENDPOINT
-Audio-Text-to-Text   Qwen2-Audio-7B.Q8_0                 yes      chat_completion
-Embedding            embeddinggemma-300m-qat-Q8_0        yes      embeddings
-Image-Text-to-Text   gemma-3-4b-it-q4_0                  yes      chat_completion
-Image-Text-to-Text   Qwen2.5-VL-3B-Instruct-Q8_0         yes      chat_completion
-Text-Generation      gpt-oss-20b-Q8_0                    yes      chat_completion
-Text-Generation      Llama-3.3-70B-Instruct-Q8_0         yes      chat_completion
-Text-Generation      Qwen3-8B-Q8_0                       yes      chat_completion
-Text-Generation      Qwen3-Coder-30B-A3B-Instruct-Q8_0   yes      chat_completion
-```
-
-Then download the `Qwen3-8B-Q8_0` model using the catalog pull command:
-
-```shell
-kronk catalog pull Qwen3-8B-Q8_0 --local
-```
-
-If you want to play with OpenWebUI, run the following commands:
-
-```shell
-make install-owu
-make owu-up
-```
-
-The open your browser to `localhost:8081` or open another terminal window and run:
-
-```shell
-make owu-browse
-```
 
 ## Sample API Program - Question Example
 
@@ -425,6 +342,7 @@ download-libraries: status[already installed] latest[b7406] current[b7406]
 download-model: model-url[Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf] proj-url[] model-id[Qwen3-8B-Q8_0]:
 download-model: waiting to check model status...:
 download-model: status[already exists]:
+loading model...
 
 QUESTION: Hello model
 
