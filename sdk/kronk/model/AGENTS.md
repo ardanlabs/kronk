@@ -443,3 +443,170 @@ for i := range slots {
 - Template must be deterministic (no timestamps, random values, etc.)
 - IMC uses `imc_id` in request (via `KRONK_IMC_ID` header) - if not provided, the "default" id is used (problematic on multi-user systems)
 - If all `MaxIMCSessions` slots are in use, new sessions gracefully bypass IMC
+
+## IMC Conceptual Overview
+
+**Cache Sequences vs Inference Slots:**
+
+Cache sequences and inference slots serve different purposes:
+
+- **Cache sequences**: Passive storage for pre-computed KV states. Not used for inference directly.
+- **Inference slots**: Active workers that process requests. Each slot has its own sequence for KV cache during inference.
+
+Each inference slot needs its own isolated sequence so concurrent requests don't interfere with each other's KV states. Cache sequences hold the reusable prefix KV states that get copied into slot sequences before inference.
+
+**Sequence Allocation Example:**
+
+With `MaxIMCSessions=2` and `NSeqMax=2`:
+
+```
+Total sequences: 4 (NSeqMax + cacheSeqs = 2 + 2)
+
+Cache sequences (storage only):
+  seq 0: user-1's cached KV state
+  seq 1: user-2's cached KV state
+
+Inference slots:
+  slot[0] → seqID=2
+  slot[1] → seqID=3
+```
+
+Any user's request can use any available slot. The slot copies from the appropriate cache sequence before inference.
+
+## IMC First Request Walkthrough
+
+Example: First request with 2 messages (system + user), `imc_id="user-1"`:
+
+**Input messages:**
+
+```
+messages[0]: role=system, content="system prompt stuff"
+messages[1]: role=user, content="maybe some question"
+```
+
+**Step 1: Determine what to cache**
+
+IMC caches `messages[0:len-1]` = `messages[0:1]` = system message only.
+
+```go
+targetCacheEnd := nMessages - 1  // 2 - 1 = 1
+```
+
+**Step 2: Template the cache prefix**
+
+Template `messages[0:1]` with `add_generation_prompt=false`:
+
+```
+<|im_start|>system
+system prompt stuff<|im_end|>
+```
+
+This is the **prefix** - no assistant turn opener at the end.
+
+**Step 3: Tokenize and decode to cache sequence**
+
+- Tokenize the prefix
+- Decode tokens to seq 0 (user-1's cache sequence)
+- Store in `imcSession`: hash, token count, message count, prompt length
+
+**Step 4: Generate the suffix**
+
+Template the **full** `D` with `add_generation_prompt=true`:
+
+```
+<|im_start|>system
+system prompt stuff<|im_end|>
+<|im_start|>user
+maybe some question<|im_end|>
+<|im_start|>assistant
+```
+
+Extract suffix = `fullPrompt[prefixLen:]`:
+
+```
+<|im_start|>user
+maybe some question<|im_end|>
+<|im_start|>assistant
+```
+
+**Step 5: Proceed to batch processing**
+
+Return `cacheResult` with:
+- `prompt`: the suffix (user message + generation prompt)
+- `nPast`: cached token count
+- `imcSeqID`: seq 0
+
+**Step 6: Slot assignment and inference**
+
+1. Assign available slot (e.g., slot[0] with seqID=2)
+2. Clear slot's sequence: `MemorySeqRm(mem, 2, -1, -1)`
+3. Copy cache → slot: `copyCachesToSeq(2, 0)` (seq 0 → seq 2)
+4. Tokenize suffix, decode starting at position `nPast`
+5. Generate response tokens
+
+The model has the system prompt's KV states already in place (copied from seq 0). It processes only the suffix tokens, then generates the response.
+
+## IMC Subsequent Request Walkthrough
+
+Example: Second request with 4 messages, same `imc_id="user-1"`:
+
+**Input messages:**
+
+```
+messages[0]: role=system, content="system prompt stuff"
+messages[1]: role=user, content="maybe some question"
+messages[2]: role=assistant, content="here is my answer"
+messages[3]: role=user, content="follow up question"
+```
+
+**Step 1: Verify cached prefix**
+
+Current cache state: 1 message cached (system only).
+
+Check if `messages[0:1]` hash matches cached hash → **yes, prefix matches**.
+
+**Step 2: Extend cache**
+
+Need to cache `messages[0:3]` (all except last). Currently have `messages[0:1]`.
+
+Template `messages[0:3]` with `add_generation_prompt=false`:
+
+```
+<|im_start|>system
+system prompt stuff<|im_end|>
+<|im_start|>user
+maybe some question<|im_end|>
+<|im_start|>assistant
+here is my answer<|im_end|>
+```
+
+Extract extension = `newPrefix[cachedPrefixLen:]`:
+
+```
+<|im_start|>user
+maybe some question<|im_end|>
+<|im_start|>assistant
+here is my answer<|im_end|>
+```
+
+**Step 3: Decode extension to cache sequence**
+
+- Tokenize extension with `special=true`
+- Decode to seq 0 starting at position `currentTokens` (appends, doesn't clear)
+- Update session: new hash, new token count, new message count
+
+**Step 4: Generate suffix**
+
+Template full `D` with `add_generation_prompt=true`, extract suffix:
+
+```
+<|im_start|>user
+follow up question<|im_end|>
+<|im_start|>assistant
+```
+
+**Step 5: Inference**
+
+Same as before: copy seq 0 → slot's seq, decode suffix from `nPast`, generate.
+
+The cache now contains KV states for messages 0-2. Next request will extend further.
