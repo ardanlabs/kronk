@@ -430,7 +430,7 @@ func chatStreamSPCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 						FinishReasonPtr: stringPointer("stop"),
 					},
 				},
-				Model:  "Qwen3-8B-Q8_0/SPC",
+				Model:  "Qwen3-8B-Q8_0",
 				Object: "chat.completion.chunk",
 			},
 			CmpFunc: func(got any, exp any) string {
@@ -476,7 +476,7 @@ func chatStreamSPCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 						FinishReasonPtr: stringPointer("stop"),
 					},
 				},
-				Model:  "Qwen3-8B-Q8_0/SPC",
+				Model:  "Qwen3-8B-Q8_0",
 				Object: "chat.completion.chunk",
 			},
 			CmpFunc: func(got any, exp any) string {
@@ -521,7 +521,7 @@ func chatStreamSPCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 						FinishReasonPtr: stringPointer("stop"),
 					},
 				},
-				Model:  "Qwen3-8B-Q8_0/SPC",
+				Model:  "Qwen3-8B-Q8_0",
 				Object: "chat.completion.chunk",
 			},
 			CmpFunc: func(got any, exp any) string {
