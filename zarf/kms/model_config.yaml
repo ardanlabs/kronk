@@ -99,7 +99,8 @@
 #
 # The client must pass the KRONK_IMC_ID header with a unique session/user ID
 # to activate IMC. Each unique ID gets its own dedicated cache sequence (up to
-# max-imc-sessions). If no header is passed, IMC is bypassed for that request.
+# max-imc-sessions). If no header is passed, the "default" id is used. On a
+# multi-user system that will cause problems.
 #   nseq-max: 1
 #   incremental-cache: true
 #   max-imc-sessions: 5      # Support up to 5 concurrent users (default 1)

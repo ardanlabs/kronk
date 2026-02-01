@@ -152,9 +152,10 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // Each session gets its own dedicated cache sequence, identified by the imc_id
 // parameter in requests. When set to 0, defaults to 1 session. If all sessions
 // are in use, new requests without an available slot bypass IMC gracefully.
-// The input request must have `imc_id` with a unique session/user ID to
+// The input request should have `imc_id` with a unique session/user ID to
 // activate IMC. Each unique ID gets its own dedicated cache sequence (up to
-// max-imc-sessions). If no IMD id passed, IMC is bypassed for that request.
+// max-imc-sessions). If no IMC id is passed, the "default" id is used. On a
+// multi-user system that will cause problems.
 //
 // SystemPromptCache and IncrementalCache are mutually exclusive. IncrementalCache
 // includes the system prompt in its cached prefix, so enabling both is redundant
