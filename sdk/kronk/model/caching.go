@@ -298,7 +298,7 @@ func (m *Model) cacheMessage(ctx context.Context, d D, msgInfo cacheableMessage,
 		return cacheResult{modifiedD: d, err: fmt.Errorf("cache: failed to template message: %w", err)}
 	}
 
-	tokens := llama.Tokenize(m.vocab, prefixPrompt, true, true)
+	tokens := llama.Tokenize(m.vocab, prefixPrompt, m.addBOSToken, true)
 	nTokens := len(tokens)
 
 	if nTokens == 0 {
@@ -513,7 +513,7 @@ func (m *Model) buildIMCCache(ctx context.Context, d D, messages []D, imcID stri
 		return cacheResult{modifiedD: d, err: fmt.Errorf("imc: failed to template messages: %w", err)}
 	}
 
-	tokens := llama.Tokenize(m.vocab, prefixPrompt, true, true)
+	tokens := llama.Tokenize(m.vocab, prefixPrompt, m.addBOSToken, true)
 	nTokens := len(tokens)
 
 	if nTokens == 0 {

@@ -98,7 +98,7 @@ func (m *Model) Embeddings(ctx context.Context, d D) (EmbedReponse, error) {
 	// Tokenize all inputs upfront.
 	allTokens := make([][]llama.Token, len(inputs))
 	for i, input := range inputs {
-		tokens := llama.Tokenize(m.vocab, input, true, true)
+		tokens := llama.Tokenize(m.vocab, input, m.addBOSToken, true)
 
 		if len(tokens) > maxTokens {
 			if !truncate {
