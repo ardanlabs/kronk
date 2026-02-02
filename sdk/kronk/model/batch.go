@@ -434,6 +434,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 		}
 		cachedTokens = job.imcNPast
 	}
+
 	s.nPast = cachedTokens
 
 	// Tokenize the prompt (cached messages already removed).

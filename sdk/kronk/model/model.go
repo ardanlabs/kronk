@@ -137,11 +137,18 @@ func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) 
 
 	modelInfo.Template = template
 
+	// Check if model metadata specifies to add BOS token.
+	// Default to true for backward compatibility with models that don't specify.
+	addBOSToken := true
+	if v, ok := modelInfo.Metadata["tokenizer.ggml.add_bos_token"]; ok && v == "false" {
+		addBOSToken = false
+	}
+
 	// -------------------------------------------------------------------------
 
 	ctxParams := modelCtxParams(cfg, modelInfo)
 
-	l(ctx, "MODEL-INFO", "values", modelInfo.String())
+	l(ctx, "MODEL-INFO", "values", modelInfo.String(), "addBOSToken", addBOSToken)
 
 	l(ctx, "MODEL-CONFIG", "values", cfg.String())
 
@@ -178,13 +185,6 @@ func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) 
 	if cfg.IncrementalCache {
 		imcMaxSeqs = max(cfg.MaxIMCSessions, 1)
 		imcSessions = make(map[string]*imcSession, imcMaxSeqs)
-	}
-
-	// Check if model metadata specifies to add BOS token.
-	// Default to true for backward compatibility with models that don't specify.
-	addBOSToken := true
-	if v, ok := modelInfo.Metadata["tokenizer.ggml.add_bos_token"]; ok && v == "false" {
-		addBOSToken = false
 	}
 
 	m := Model{
