@@ -196,6 +196,7 @@ Available Commands:
   catalog     Manage model catalog
   libs        Install or upgrade llama.cpp libraries
   model       Manage models
+  run         Run a model directly for quick testing
   security    Manage security keys and tokens
   server      Manage Kronk model server
   help        Help about any command`}</code></pre>
@@ -2724,7 +2725,8 @@ KRONK_PROCESSOR=cpu kronk libs --local`}</code></pre>
           <p>Use quantized KV cache:</p>
           <pre className="code-block"><code className="language-yaml">{`models:
   Qwen3-8B-Q8_0:
-    kv_cache_type: q8_0 # Saves ~50% KV cache memory`}</code></pre>
+    cache-type-k: q8_0 # Saves ~50% KV cache memory
+    cache-type-v: q8_0`}</code></pre>
           <p><strong>Error: "context window is full"</strong></p>
           <p>The request plus context exceeds the configured context window.</p>
           <p><strong>Solutions:</strong></p>
@@ -3016,7 +3018,7 @@ make test`}</code></pre>
             <tbody>
               <tr>
                 <td><code>cmd/kronk/</code></td>
-                <td>CLI tool (subcommands: catalog, libs, model, security, server)</td>
+                <td>CLI tool (subcommands: catalog, libs, model, run, security, server)</td>
               </tr>
               <tr>
                 <td><code>cmd/server/</code></td>
@@ -3036,7 +3038,7 @@ make test`}</code></pre>
               </tr>
               <tr>
                 <td><code>sdk/kronk/observ/</code></td>
-                <td>Observability packages.</td>
+                <td>Observability packages (metrics/, otel/)</td>
               </tr>
               <tr>
                 <td><code>sdk/tools/</code></td>

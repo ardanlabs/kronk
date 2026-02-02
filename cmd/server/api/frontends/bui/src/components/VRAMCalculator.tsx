@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../services/api';
 import { useToken } from '../contexts/TokenContext';
 import type { VRAMCalculatorResponse } from '../types';
@@ -32,7 +32,7 @@ Total sequences allocated: 2 (no cache)
 7B:  Slot Memory (2 × 537MB) ~1.07GB: Total VRAM: ~8.1GB
 70B: Slot Memory (2 × 1.3GB) ~2.6GB : Total VRAM: ~72.6GB
 
-First Memory Caching (FMC) or System Prompt Cache (SPC):
+Incremental Memory Caching (IMC) or System Prompt Cache (SPC):
 Total sequences allocated: 2 + 1 = 3 (cache)
 7B:  Slot Memory (3 × 537MB) ~1.6GB: Total VRAM: ~8.6GB
 70B: Slot Memory (3 × 1.3GB) ~3.9GB: Total VRAM: ~73.9GB
@@ -62,11 +62,11 @@ No Caching:
 Total sequences allocated: 2 : (no cache)
 Slot Memory (2 × 6.4GB) ~12.8GB: Total VRAM: ~48.8GB
 
-First Memory Caching (FMC) or System Prompt Cache (SPC):
+Incremental Memory Caching (IMC) or System Prompt Cache (SPC):
 Total sequences allocated: 3 : (2 + 1) (1 cache sequence)
 Slot Memory (3 × 6.4GB) ~19.2GB: Total VRAM: ~55.2GB
 
-Note: SPC and FMC are mutually exclusive; FMC caches system + user together.`;
+Note: SPC and IMC are mutually exclusive; FMC caches system + user together.`;
 
 const CONTEXT_WINDOW_OPTIONS = [
   { value: 1024, label: '1K' },
@@ -90,7 +90,7 @@ const SLOT_OPTIONS = [1, 2, 3, 4, 5];
 
 const CACHE_SEQUENCE_OPTIONS = [
   { value: 0, label: 'Off' },
-  { value: 1, label: 'On (FMC or SPC)' },
+  { value: 1, label: 'On (IMC or SPC)' },
 ];
 
 function formatBytes(bytes: number): string {
@@ -112,9 +112,9 @@ export default function VRAMCalculator() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<VRAMCalculatorResponse | null>(null);
   const [showLearnMore, setShowLearnMore] = useState(false);
+  const hasCalculated = useRef(false);
 
-  const handleCalculate = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const performCalculation = useCallback(async (clearResult = true) => {
     if (!modelUrl.trim()) {
       setError('Please enter a model URL');
       return;
@@ -122,7 +122,9 @@ export default function VRAMCalculator() {
 
     setLoading(true);
     setError(null);
-    setResult(null);
+    if (clearResult) {
+      setResult(null);
+    }
 
     try {
       const response = await api.calculateVRAM(
@@ -136,11 +138,23 @@ export default function VRAMCalculator() {
         token || undefined
       );
       setResult(response);
+      hasCalculated.current = true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to calculate VRAM');
     } finally {
       setLoading(false);
     }
+  }, [modelUrl, contextWindow, bytesPerElement, slots, cacheSequences, token]);
+
+  useEffect(() => {
+    if (hasCalculated.current && modelUrl.trim()) {
+      performCalculation(false);
+    }
+  }, [contextWindow, bytesPerElement, slots, cacheSequences]);
+
+  const handleCalculate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await performCalculation();
   };
 
   return (
@@ -183,7 +197,7 @@ export default function VRAMCalculator() {
 
       <form onSubmit={handleCalculate} className="form-card">
         <div className="form-group">
-          <label htmlFor="modelUrl">Model URL</label>
+          <label htmlFor="modelUrl">Model URL (download link or org/family/file)</label>
           <input
             id="modelUrl"
             type="text"

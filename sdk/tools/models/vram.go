@@ -147,7 +147,7 @@ func CalculateVRAM(input VRAMInput) VRAM {
 	// Example: 131072 × 48 × 1024 = ~6.4 GB
 	kvPerSlot := input.ContextWindow * input.BlockCount * kvPerTokenPerLayer
 
-	// Total sequences = user slots + cache sequences (FMC or SPC adds 1).
+	// Total sequences = user slots + cache sequences (IMC or SPC adds 1).
 	totalSlots := input.Slots + input.CacheSequences
 
 	// Total KV cache memory allocated at model load time.
@@ -525,7 +525,7 @@ Total sequences allocated: 2 (no cache)
 7B:  Slot Memory (2 × 537MB) ~1.07GB: Total VRAM: ~8.1GB
 70B: Slot Memory (2 × 1.3GB) ~2.6GB : Total VRAM: ~72.6GB
 
-First Memory Caching (FMC) or System Prompt Cache (SPC):
+Incremental Memory Caching (IMC) or System Prompt Cache (SPC):
 Total sequences allocated: 2 + 1 = 3 (cache)
 7B:  Slot Memory (3 × 537MB) ~1.6GB: Total VRAM: ~8.6GB
 70B: Slot Memory (3 × 1.3GB) ~3.9GB: Total VRAM: ~73.9GB
@@ -555,9 +555,9 @@ No Caching:
 Total sequences allocated: 2 : (no cache)
 Slot Memory (2 × 6.4GB) ~12.8GB: Total VRAM: ~48.8GB
 
-First Memory Caching (FMC) or System Prompt Cache (SPC):
+Incremental Memory Caching (IMC) or System Prompt Cache (SPC):
 Total sequences allocated: 3 : (2 + 1) (1 cache sequence)
 Slot Memory (3 × 6.4GB) ~19.2GB: Total VRAM: ~55.2GB
 
-Note: SPC and FMC are mutually exclusive; FMC caches system + user together.
+Note: SPC and IMC are mutually exclusive; IMC caches system + user together.
 */
