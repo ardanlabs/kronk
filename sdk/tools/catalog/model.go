@@ -118,9 +118,9 @@ type ModelConfig struct {
 	OpOffload            *bool                    `yaml:"op-offload"`
 	NGpuLayers           *int                     `yaml:"ngpu-layers"`
 	SplitMode            model.SplitMode          `yaml:"split-mode"`
-	SystemPromptCache bool                     `yaml:"system-prompt-cache"`
-	IncrementalCache  bool                     `yaml:"incremental-cache"`
-	MaxIMCSessions    int                      `yaml:"max-imc-sessions"`
+	SystemPromptCache    bool                     `yaml:"system-prompt-cache"`
+	IncrementalCache     bool                     `yaml:"incremental-cache"`
+	MaxIMCSessions       int                      `yaml:"max-imc-sessions"`
 	CacheMinTokens       int                      `yaml:"cache-min-tokens"`
 	InsecureLogging      bool                     `yaml:"insecure-logging"`
 	Sampling             SamplingConfig           `yaml:"sampling-parameters"`
