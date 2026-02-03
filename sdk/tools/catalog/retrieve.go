@@ -238,10 +238,8 @@ func (c *Catalog) ResolvedModelConfig(modelID string) ModelConfig {
 			cfg.YarnOrigCtx = modelConfig.YarnOrigCtx
 		}
 
-		cfg.Sampling = modelConfig.Sampling
+		cfg.Sampling = modelConfig.Sampling.withDefaults()
 	}
-
-	cfg.Sampling = cfg.Sampling.withDefaults()
 
 	return cfg
 }

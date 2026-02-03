@@ -434,10 +434,12 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 		}
 		cachedTokens = job.imcNPast
 	}
+
 	s.nPast = cachedTokens
 
 	// Tokenize the prompt (cached messages already removed).
-	addBOS := cachedTokens == 0
+	// Only add BOS if no cached tokens AND model metadata says to add BOS.
+	addBOS := cachedTokens == 0 && e.model.addBOSToken
 	tokens := llama.Tokenize(e.model.vocab, job.prompt, addBOS, true)
 	s.nPrompt = len(tokens)
 

@@ -121,7 +121,7 @@ func (m *Model) Rerank(ctx context.Context, d D) (RerankResponse, error) {
 		// Most reranker models expect this format or similar.
 		pairText := formatRerankPair(query, doc)
 
-		tokens := llama.Tokenize(m.vocab, pairText, true, true)
+		tokens := llama.Tokenize(m.vocab, pairText, m.addBOSToken, true)
 
 		if len(tokens) > maxTokens {
 			m.log(ctx, "rerank", "status", "truncating input", "index", i, "original_tokens", len(tokens), "max_tokens", maxTokens)

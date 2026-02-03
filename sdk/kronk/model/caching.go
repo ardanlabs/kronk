@@ -298,7 +298,7 @@ func (m *Model) cacheMessage(ctx context.Context, d D, msgInfo cacheableMessage,
 		return cacheResult{modifiedD: d, err: fmt.Errorf("cache: failed to template message: %w", err)}
 	}
 
-	tokens := llama.Tokenize(m.vocab, prefixPrompt, true, true)
+	tokens := llama.Tokenize(m.vocab, prefixPrompt, m.addBOSToken, true)
 	nTokens := len(tokens)
 
 	if nTokens == 0 {
@@ -513,7 +513,7 @@ func (m *Model) buildIMCCache(ctx context.Context, d D, messages []D, imcID stri
 		return cacheResult{modifiedD: d, err: fmt.Errorf("imc: failed to template messages: %w", err)}
 	}
 
-	tokens := llama.Tokenize(m.vocab, prefixPrompt, true, true)
+	tokens := llama.Tokenize(m.vocab, prefixPrompt, m.addBOSToken, true)
 	nTokens := len(tokens)
 
 	if nTokens == 0 {
@@ -605,7 +605,7 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, imcID str
 	}
 
 	// Decode extension tokens into cache sequence, starting after existing tokens.
-	if err := m.decodeExtensionTokens(ctx, extensionTokens, session.seqID, currentTokens); err != nil {
+	if err := m.decodeExtensionTokens(extensionTokens, session.seqID, currentTokens); err != nil {
 		return cacheResult{modifiedD: d, err: err}
 	}
 
@@ -640,8 +640,10 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, imcID str
 	// Suffix is everything after the new prefix.
 	suffix := fullPrompt[len(prefixPrompt):]
 
-	m.log(ctx, "imc", "status", "extended", "imc_id", imcID, "seq", session.seqID, "old-msgs", currentEnd, "new-msgs", targetEnd,
-		"old-tokens", currentTokens, "new-tokens", newTokens, "ext-tokens", nExtTokens, "suffix-len", len(suffix))
+	m.log(ctx, "imc", "status", "cache extended", "imc_id", imcID, "seq", session.seqID,
+		"cached-msgs", fmt.Sprintf("%d->%d", currentEnd, targetEnd),
+		"cached-tokens", fmt.Sprintf("%d->%d (+%d)", currentTokens, newTokens, nExtTokens),
+		"suffix-len", len(suffix))
 
 	return cacheResult{
 		modifiedD: d,
@@ -657,15 +659,13 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, imcID str
 // decodeExtensionTokens decodes additional tokens into an existing cache sequence.
 // Unlike decodeTokensToSeq, this does NOT clear the sequence first.
 // startPos is the position offset for the new tokens (i.e., existing token count).
-func (m *Model) decodeExtensionTokens(ctx context.Context, tokens []llama.Token, seqID llama.SeqId, startPos int) error {
+func (m *Model) decodeExtensionTokens(tokens []llama.Token, seqID llama.SeqId, startPos int) error {
 	nBatch := int(m.ctxParams.NBatch)
 	nTokens := len(tokens)
 
 	if nBatch <= 0 {
 		nBatch = m.cfg.NBatch
 	}
-
-	m.log(ctx, "imc", "status", "extending", "seq", seqID, "tokens", nTokens, "nbatch", nBatch)
 
 	m.decodeMu.Lock()
 	defer m.decodeMu.Unlock()

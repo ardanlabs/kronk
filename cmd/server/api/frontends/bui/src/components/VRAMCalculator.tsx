@@ -197,13 +197,17 @@ export default function VRAMCalculator() {
 
       <form onSubmit={handleCalculate} className="form-card">
         <div className="form-group">
-          <label htmlFor="modelUrl">Model URL (download link or org/family/file)</label>
+                  <label htmlFor="modelUrl">                    
+                    Ex. Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf<br />
+                    Ex. https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf<br/><br/>
+                    Model URL (download link or org/family/file)
+                  </label>
           <input
             id="modelUrl"
             type="text"
             value={modelUrl}
             onChange={(e) => setModelUrl(e.target.value)}
-            placeholder="https://huggingface.co/org/model/resolve/main/model.gguf"
+            placeholder="https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
             className="form-input"
           />
           <small className="form-hint">

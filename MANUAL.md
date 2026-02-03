@@ -889,6 +889,7 @@ reuses it across all requests with the same system prompt.
 
 **Best for:**
 
+- Models with inconsistent templates (GPT-OSS, GLM)
 - OpenWebUI and similar chat interfaces
 - Applications with a consistent system prompt
 - Single-user or shared system prompt scenarios
@@ -921,8 +922,15 @@ Incremental Message Cache is designed for agentic workflows where
 conversations grow monotonically. It caches all messages except the last
 one and extends the cache incrementally on each turn.
 
+**Requires:** Models with consistent templates where the same messages always
+produce identical templated output regardless of conversation length. Models
+like QWEN and Llama have consistent templates. Models like GPT-OSS and GLM
+inject tool calls in ways that change earlier message rendering, making them
+incompatible with IMC (use SPC instead).
+
 **Best for:**
 
+- Models with consistent templates (QWEN, Llama)
 - AI coding agents (Cline, OpenCode, Aider)
 - Long-running agent conversations
 - Any workflow where messages are appended, not edited
@@ -1014,16 +1022,20 @@ If all cache slots are in use, new sessions bypass IMC gracefully.
 
 ### 5.5 SPC vs IMC
 
-| Feature    | System Prompt Cache | Incremental Message Cache |
-| ---------- | ------------------- | ------------------------- |
-| Caches     | System prompt only  | All messages except last  |
-| Extends    | No                  | Yes, incrementally        |
-| Multi-user | Shared cache        | Per-user cache            |
-| Best for   | Chat UIs            | Agentic workflows         |
-| Memory     | 1 extra sequence    | N extra sequences         |
+| Feature      | System Prompt Cache       | Incremental Message Cache        |
+| ------------ | ------------------------- | -------------------------------- |
+| Caches       | System prompt only        | All messages except last         |
+| Extends      | No                        | Yes, incrementally               |
+| Multi-user   | Shared cache              | Per-user cache                   |
+| Best for     | Chat UIs, inconsistent templates | Agentic workflows, consistent templates |
+| Memory       | 1 extra sequence          | N extra sequences                |
+| Template req | Any                       | Consistent templates only        |
 
-**Important:** SPC and IMC are mutually exclusive. Enabling both returns a
-validation error because IMC already includes the system prompt in its cache.
+**Important:** SPC and IMC are mutually exclusive - choose one based on your
+model's template behavior:
+
+- **Consistent templates (QWEN, Llama):** Use IMC for maximum cache efficiency
+- **Inconsistent templates (GPT-OSS, GLM):** Use SPC only
 
 ### 5.6 Cache Invalidation
 

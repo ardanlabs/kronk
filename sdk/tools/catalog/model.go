@@ -100,6 +100,29 @@ func (s SamplingConfig) withDefaults() SamplingConfig {
 	return s
 }
 
+func (s SamplingConfig) toParams() model.Params {
+	s = s.withDefaults()
+
+	return model.Params{
+		Temperature:     s.Temperature,
+		TopK:            s.TopK,
+		TopP:            s.TopP,
+		MinP:            s.MinP,
+		MaxTokens:       s.MaxTokens,
+		RepeatPenalty:   s.RepeatPenalty,
+		RepeatLastN:     s.RepeatLastN,
+		DryMultiplier:   s.DryMultiplier,
+		DryBase:         s.DryBase,
+		DryAllowedLen:   s.DryAllowedLen,
+		DryPenaltyLast:  s.DryPenaltyLast,
+		XtcProbability:  s.XtcProbability,
+		XtcThreshold:    s.XtcThreshold,
+		XtcMinKeep:      s.XtcMinKeep,
+		Thinking:        s.EnableThinking,
+		ReasoningEffort: s.ReasoningEffort,
+	}
+}
+
 // ModelConfig represents default model config settings.
 type ModelConfig struct {
 	Device               string                   `yaml:"device"`
@@ -118,12 +141,11 @@ type ModelConfig struct {
 	OpOffload            *bool                    `yaml:"op-offload"`
 	NGpuLayers           *int                     `yaml:"ngpu-layers"`
 	SplitMode            model.SplitMode          `yaml:"split-mode"`
-	SystemPromptCache bool                     `yaml:"system-prompt-cache"`
-	IncrementalCache  bool                     `yaml:"incremental-cache"`
-	MaxIMCSessions    int                      `yaml:"max-imc-sessions"`
+	SystemPromptCache    bool                     `yaml:"system-prompt-cache"`
+	IncrementalCache     bool                     `yaml:"incremental-cache"`
+	MaxIMCSessions       int                      `yaml:"max-imc-sessions"`
 	CacheMinTokens       int                      `yaml:"cache-min-tokens"`
 	InsecureLogging      bool                     `yaml:"insecure-logging"`
-	Sampling             SamplingConfig           `yaml:"sampling-parameters"`
 	RopeScaling          model.RopeScalingType    `yaml:"rope-scaling-type"`
 	RopeFreqBase         *float32                 `yaml:"rope-freq-base"`
 	RopeFreqScale        *float32                 `yaml:"rope-freq-scale"`
@@ -132,6 +154,7 @@ type ModelConfig struct {
 	YarnBetaFast         *float32                 `yaml:"yarn-beta-fast"`
 	YarnBetaSlow         *float32                 `yaml:"yarn-beta-slow"`
 	YarnOrigCtx          *int                     `yaml:"yarn-orig-ctx"`
+	Sampling             SamplingConfig           `yaml:"sampling-parameters"`
 }
 
 func (mc ModelConfig) toKronkConfig() model.Config {
@@ -165,6 +188,7 @@ func (mc ModelConfig) toKronkConfig() model.Config {
 		YarnBetaFast:         mc.YarnBetaFast,
 		YarnBetaSlow:         mc.YarnBetaSlow,
 		YarnOrigCtx:          mc.YarnOrigCtx,
+		DefaultParams:        mc.Sampling.toParams(),
 	}
 }
 

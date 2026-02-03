@@ -41,11 +41,13 @@ Read the [Manual](./MANUAL.md) to learn more about running the Kronk Model Serve
 ## Owner Information
 
 ```
-Name:    Bill Kennedy
-Company: Ardan Labs
-Title:   Managing Partner
-Email:   bill@ardanlabs.com
-Twitter: goinggodotnet
+Name:     Bill Kennedy
+Company:  Ardan Labs
+Title:    Managing Partner
+Email:    bill@ardanlabs.com
+BlueSky:  https://bsky.app/profile/goinggo.net
+LinkedIn: www.linkedin.com/in/william-kennedy-5b318778/
+Twitter:  https://x.com/goinggodotnet
 ```
 
 ## Install Kronk

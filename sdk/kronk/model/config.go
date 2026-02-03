@@ -227,6 +227,7 @@ type Config struct {
 	YarnBetaFast         *float32
 	YarnBetaSlow         *float32
 	YarnOrigCtx          *int
+	DefaultParams        Params
 }
 
 func (cfg Config) String() string {

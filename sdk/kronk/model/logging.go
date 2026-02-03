@@ -43,17 +43,17 @@ func (l *StreamingResponseLogger) String() string {
 	fmt.Fprintf(&b, "Role: assistant\n")
 
 	if l.content != "" {
-		fmt.Fprintf(&b, "Content (400): %.400s\n", l.content)
+		fmt.Fprintf(&b, "Content (400 bytes): %.400s\n", l.content)
 	}
 
 	if l.reasoning != "" {
-		fmt.Fprintf(&b, "Reasoning (400): %.400s\n", l.reasoning)
+		fmt.Fprintf(&b, "Reasoning (400 bytes): %.400s\n", l.reasoning)
 	}
 
 	if len(l.toolCalls) > 0 {
 		fmt.Fprintf(&b, "ToolCalls len=%d\n", len(l.toolCalls))
 		for j, tc := range l.toolCalls {
-			fmt.Fprintf(&b, "  tc[%d]: id=%s fn=%s args=%s\n", j, tc.ID, tc.Function.Name, tc.Function.Arguments)
+			fmt.Fprintf(&b, "  tc[%d]: id=%s funcName=%s args=%s\n", j, tc.ID, tc.Function.Name, tc.Function.Arguments)
 		}
 	}
 

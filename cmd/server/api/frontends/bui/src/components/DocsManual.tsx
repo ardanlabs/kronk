@@ -776,6 +776,7 @@ With Caching:
           <p>reuses it across all requests with the same system prompt.</p>
           <p><strong>Best for:</strong></p>
           <ul>
+            <li>Models with inconsistent templates (GPT-OSS, GLM)</li>
             <li>OpenWebUI and similar chat interfaces</li>
             <li>Applications with a consistent system prompt</li>
             <li>Single-user or shared system prompt scenarios</li>
@@ -801,8 +802,14 @@ With Caching:
           <p>Incremental Message Cache is designed for agentic workflows where</p>
           <p>conversations grow monotonically. It caches all messages except the last</p>
           <p>one and extends the cache incrementally on each turn.</p>
+          <p><strong>Requires:</strong> Models with consistent templates where the same messages always</p>
+          <p>produce identical templated output regardless of conversation length. Models</p>
+          <p>like QWEN and Llama have consistent templates. Models like GPT-OSS and GLM</p>
+          <p>inject tool calls in ways that change earlier message rendering, making them</p>
+          <p>incompatible with IMC (use SPC instead).</p>
           <p><strong>Best for:</strong></p>
           <ul>
+            <li>Models with consistent templates (QWEN, Llama)</li>
             <li>AI coding agents (Cline, OpenCode, Aider)</li>
             <li>Long-running agent conversations</li>
             <li>Any workflow where messages are appended, not edited</li>
@@ -881,18 +888,27 @@ seq 4: slot[1] inference`}</code></pre>
               </tr>
               <tr>
                 <td>Best for</td>
-                <td>Chat UIs</td>
-                <td>Agentic workflows</td>
+                <td>Chat UIs, inconsistent templates</td>
+                <td>Agentic workflows, consistent templates</td>
               </tr>
               <tr>
                 <td>Memory</td>
                 <td>1 extra sequence</td>
                 <td>N extra sequences</td>
               </tr>
+              <tr>
+                <td>Template req</td>
+                <td>Any</td>
+                <td>Consistent templates only</td>
+              </tr>
             </tbody>
           </table>
-          <p><strong>Important:</strong> SPC and IMC are mutually exclusive. Enabling both returns a</p>
-          <p>validation error because IMC already includes the system prompt in its cache.</p>
+          <p><strong>Important:</strong> SPC and IMC are mutually exclusive - choose one based on your</p>
+          <p>model's template behavior:</p>
+          <ul>
+            <li><strong>Consistent templates (QWEN, Llama):</strong> Use IMC for maximum cache efficiency</li>
+            <li><strong>Inconsistent templates (GPT-OSS, GLM):</strong> Use SPC only</li>
+          </ul>
           <h3 id="56-cache-invalidation">5.6 Cache Invalidation</h3>
           <p><strong>SPC Invalidation:</strong></p>
           <ul>

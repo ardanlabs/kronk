@@ -67,6 +67,7 @@ type Model struct {
 	imcSessions     map[string]*imcSession // IMC sessions keyed by imc_id
 	imcNextSeq      llama.SeqId            // Next available cache sequence
 	imcMaxSeqs      int                    // Max IMC sessions from config
+	addBOSToken     bool                   // Whether to add BOS token (from model metadata)
 }
 
 func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) (*Model, error) {
@@ -136,11 +137,18 @@ func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) 
 
 	modelInfo.Template = template
 
+	// Check if model metadata specifies to add BOS token.
+	// Default to true for backward compatibility with models that don't specify.
+	addBOSToken := true
+	if v, ok := modelInfo.Metadata["tokenizer.ggml.add_bos_token"]; ok && v == "false" {
+		addBOSToken = false
+	}
+
 	// -------------------------------------------------------------------------
 
 	ctxParams := modelCtxParams(cfg, modelInfo)
 
-	l(ctx, "MODEL-INFO", "values", modelInfo.String())
+	l(ctx, "MODEL-INFO", "values", modelInfo.String(), "addBOSToken", addBOSToken)
 
 	l(ctx, "MODEL-CONFIG", "values", cfg.String())
 
@@ -193,6 +201,7 @@ func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) 
 		imcSessions: imcSessions,
 		imcNextSeq:  0,
 		imcMaxSeqs:  imcMaxSeqs,
+		addBOSToken: addBOSToken,
 	}
 
 	// Initialize batch engine for text-only models (no ProjFile).
@@ -600,7 +609,7 @@ loop:
 			// We will count the tokens for the final JSON document
 			// as completion tokens that would have been returned
 			// if we didn't provide a structured response.
-			tokens := llama.Tokenize(m.vocab, content, true, true)
+			tokens := llama.Tokenize(m.vocab, content, m.addBOSToken, true)
 			batch := llama.BatchGetOne(tokens)
 			completionTokens += int(batch.NTokens)
 			outputTokens = reasonTokens + completionTokens
@@ -664,7 +673,7 @@ func (m *Model) processInputTokens(ctx context.Context, lctx llama.Context, mtmd
 	sampler := m.toSampler(params)
 
 	// Tokenize the prompt to get the input token count.
-	tokens := llama.Tokenize(m.vocab, prompt, true, true)
+	tokens := llama.Tokenize(m.vocab, prompt, m.addBOSToken, true)
 	inputTokens := len(tokens)
 
 	var batch llama.Batch
