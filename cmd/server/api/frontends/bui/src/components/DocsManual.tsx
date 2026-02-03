@@ -508,8 +508,8 @@ models:
           <pre className="code-block"><code className="language-yaml">{`models:
   Qwen2.5-VL-3B-Instruct-Q8_0:
     n_batch: 2048
-    n_ubatch: 2048    # High for image/audio token batches
-    n_seq_max: 2      # Creates 2 model instances in pool`}</code></pre>
+    n_ubatch: 2048 # High for image/audio token batches
+    n_seq_max: 2 # Creates 2 model instances in pool`}</code></pre>
           <p>Vision models process image tiles as large token batches. Low <code>n_ubatch</code></p>
           <p>values cause multiple decode passes per image, significantly slowing</p>
           <p>inference.</p>
@@ -517,8 +517,8 @@ models:
           <p>Use row-based tensor parallelism for multi-GPU setups:</p>
           <pre className="code-block"><code className="language-yaml">{`models:
   Qwen3-MoE-30B-A3B-Q8_0:
-    split_mode: row       # Best for MoE architecture
-    cache_type_k: q8_0    # Be cautious with aggressive quantization
+    split_mode: row # Best for MoE architecture
+    cache_type_k: q8_0 # Be cautious with aggressive quantization
     cache_type_v: q8_0`}</code></pre>
           <p>MoE models can be sensitive to aggressive KV cache quantization. If you</p>
           <p>notice quality degradation, try <code>f16</code> cache types.</p>
@@ -526,9 +526,9 @@ models:
           <p>Optimize batch size for your typical input lengths:</p>
           <pre className="code-block"><code className="language-yaml">{`models:
   embeddinggemma-300m-qat-Q8_0:
-    n_batch: 8192         # Can equal context_window
-    n_ubatch: 512         # Align with typical sliding window
-    n_seq_max: 4          # 4 model instances for concurrency`}</code></pre>
+    n_batch: 8192 # Can equal context_window
+    n_ubatch: 512 # Align with typical sliding window
+    n_seq_max: 4 # 4 model instances for concurrency`}</code></pre>
           <p>Embedding models process complete inputs in a single pass, so larger</p>
           <p><code>n_batch</code> values improve throughput.</p>
           <hr />
@@ -618,7 +618,7 @@ Total KV cache:     ~800 MB (4 slots × 200 MB)`}</code></pre>
               <tr>
                 <th>SPC</th>
                 <th>IMC</th>
-                <th>MaxIMCSessions</th>
+                <th>MaxCacheSessions</th>
                 <th>Reserved Seqs</th>
                 <th>Slot Start</th>
                 <th>Memory Overhead</th>
@@ -636,10 +636,18 @@ Total KV cache:     ~800 MB (4 slots × 200 MB)`}</code></pre>
               <tr>
                 <td>on</td>
                 <td>off</td>
-                <td>-</td>
+                <td>1</td>
                 <td>1</td>
                 <td>seq 1</td>
                 <td>+1 context window</td>
+              </tr>
+              <tr>
+                <td>on</td>
+                <td>off</td>
+                <td>4</td>
+                <td>4</td>
+                <td>seq 4</td>
+                <td>+4 context windows</td>
               </tr>
               <tr>
                 <td>off</td>
@@ -659,7 +667,7 @@ Total KV cache:     ~800 MB (4 slots × 200 MB)`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <p>Example with <code>max_imc_sessions=3</code> and <code>n_seq_max=2</code>:</p>
+          <p>Example with <code>max-cache-sessions=3</code> and <code>n_seq_max=2</code>:</p>
           <pre className="code-block"><code>{`seq 0: user-1 cache (IMC)
 seq 1: user-2 cache (IMC)
 seq 2: user-3 cache (IMC)
@@ -818,7 +826,7 @@ With Caching:
           <pre className="code-block"><code className="language-yaml">{`models:
   Qwen3-8B-Q8_0:
     incremental_cache: true
-    max_imc_sessions: 4 # Support 4 concurrent users
+    max_cache_sessions: 4 # Support 4 concurrent users
     cache_min_tokens: 100 # Minimum tokens before caching`}</code></pre>
           <p><strong>How It Works:</strong></p>
           <p>First request (2 messages: system + user):</p>
@@ -833,28 +841,29 @@ Prefill:  [user2 + gen_prompt]`}</code></pre>
           <pre className="code-block"><code>{`Messages: [system, user, assistant, user2, assistant2, user3]
 Cache:    [system, user, assistant, user2, assistant2]  ← Extend
 Prefill:  [user3 + gen_prompt]`}</code></pre>
-          <h3 id="54-multi-user-imc">5.4 Multi-User IMC</h3>
-          <p>IMC supports multiple concurrent users, each with their own cache sequence.</p>
-          <p>Users are identified by the <code>imc_id</code> parameter in requests.</p>
+          <h3 id="54-multi-user-caching">5.4 Multi-User Caching</h3>
+          <p>Both SPC and IMC support multiple concurrent users, each with their own cache sequence.</p>
+          <p>Users are identified by the <code>cache_id</code> parameter in requests.</p>
           <p><strong>Configuration:</strong></p>
           <pre className="code-block"><code className="language-yaml">{`models:
   Qwen3-8B-Q8_0:
-    incremental_cache: true
-    max_imc_sessions: 4 # 4 concurrent user caches`}</code></pre>
-          <p><strong>Passing IMC ID:</strong></p>
+    # For SPC or IMC - both use cache_id for multi-user support
+    system_prompt_cache: true # OR incremental_cache: true
+    max_cache_sessions: 4 # 4 concurrent user caches`}</code></pre>
+          <p><strong>Passing Cache ID:</strong></p>
           <p>Via HTTP header:</p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/chat/completions \\
   -H "Content-Type: application/json" \\
-  -H "KRONK_IMC_ID: user-123" \\
+  -H "KRONK_CACHE_ID: user-123" \\
   -d '{"model": "Qwen3-8B-Q8_0", "messages": [...]}'`}</code></pre>
           <p>Or in the request body:</p>
           <pre className="code-block"><code className="language-json">{`{
   "model": "Qwen3-8B-Q8_0",
-  "imc_id": "user-123",
+  "cache_id": "user-123",
   "messages": [...]
 }`}</code></pre>
           <p><strong>Sequence Allocation:</strong></p>
-          <p>With <code>max_imc_sessions=3</code> and <code>n_seq_max=2</code>:</p>
+          <p>With <code>max_cache_sessions=3</code> and <code>n_seq_max=2</code>:</p>
           <pre className="code-block"><code>{`seq 0: user-1 cache
 seq 1: user-2 cache
 seq 2: user-3 cache
@@ -883,8 +892,8 @@ seq 4: slot[1] inference`}</code></pre>
               </tr>
               <tr>
                 <td>Multi-user</td>
-                <td>Shared cache</td>
-                <td>Per-user cache</td>
+                <td>Per-user cache (dedicated sequences)</td>
+                <td>Per-user cache (dedicated sequences)</td>
               </tr>
               <tr>
                 <td>Best for</td>
@@ -893,8 +902,8 @@ seq 4: slot[1] inference`}</code></pre>
               </tr>
               <tr>
                 <td>Memory</td>
-                <td>1 extra sequence</td>
-                <td>N extra sequences</td>
+                <td>N extra sequences (max_cache_sessions)</td>
+                <td>N extra sequences (max_cache_sessions)</td>
               </tr>
               <tr>
                 <td>Template req</td>
@@ -903,7 +912,7 @@ seq 4: slot[1] inference`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <p><strong>Important:</strong> SPC and IMC are mutually exclusive - choose one based on your</p>
+          <p><strong>Important:</strong> SPC and IMC are mutually exclusive. Choose based on your</p>
           <p>model's template behavior:</p>
           <ul>
             <li><strong>Consistent templates (QWEN, Llama):</strong> Use IMC for maximum cache efficiency</li>
@@ -912,21 +921,21 @@ seq 4: slot[1] inference`}</code></pre>
           <h3 id="56-cache-invalidation">5.6 Cache Invalidation</h3>
           <p><strong>SPC Invalidation:</strong></p>
           <ul>
-            <li>System prompt content changes → rebuild cache</li>
-            <li>Different message role → rebuild cache</li>
+            <li>System prompt content changes → cache rebuilt</li>
+            <li>System prompt hash mismatch → cache rebuilt</li>
           </ul>
           <p><strong>IMC Invalidation:</strong></p>
           <ul>
-            <li>Message prefix changes → rebuild cache from scratch</li>
-            <li>User starts new conversation → new cache</li>
-            <li>Edit earlier message → rebuild cache</li>
+            <li>Message prefix hash mismatch → cache rebuilt from scratch</li>
+            <li>User starts new conversation → new cache created</li>
+            <li>Earlier message edited → cache rebuilt</li>
+            <li><code>cache_id</code> not provided → falls back to "default" ID (problematic for multi-user)</li>
           </ul>
-          <p><strong>Manual Invalidation:</strong></p>
-          <p>The cache is cleared when:</p>
+          <p><strong>Automatic Invalidation:</strong></p>
+          <p>Caches are cleared when:</p>
           <ul>
             <li>Model is unloaded</li>
             <li>Server restarts</li>
-            <li>Sequential path processes a request (clears all caches)</li>
           </ul>
           <h3 id="57-configuration-reference">5.7 Configuration Reference</h3>
           <pre className="code-block"><code className="language-yaml">{`models:
@@ -936,15 +945,48 @@ seq 4: slot[1] inference`}</code></pre>
 
     # OR Incremental Message Cache (mutually exclusive)
     incremental_cache: true
-    max_imc_sessions: 4
+    max_cache_sessions: 4
 
     # Shared settings
     cache_min_tokens: 100 # Don't cache if < 100 tokens`}</code></pre>
           <p><strong>cache_min_tokens</strong></p>
-          <p>Minimum token count before caching activates. Short messages don't benefit</p>
-          <p>from caching because the overhead exceeds the prefill savings.</p>
+          <p>Minimum token count before caching activates. Short prompts don't benefit</p>
+          <p>from caching because copy overhead exceeds prefill savings.</p>
           <p>Default: 100 tokens</p>
-          <h3 id="58-performance-impact">5.8 Performance Impact</h3>
+          <h3 id="58-context-window-auto-scaling-imc-only">5.8 Context Window Auto-Scaling (IMC Only)</h3>
+          <p>When IMC is enabled, Kronk automatically scales the internal context window</p>
+          <p>to ensure each slot gets the full configured context size. This auto-scaling</p>
+          <p>does not apply to SPC since it only caches the system prompt (typically small).</p>
+          <p><strong>Why This Is Needed:</strong></p>
+          <p>IMC caches the full conversation history. The KV cache is shared across all</p>
+          <p>sequences, so without auto-scaling, IMC would reduce the effective context</p>
+          <p>per slot:</p>
+          <pre className="code-block"><code>{`Without auto-scaling (broken):
+  context-window: 128k
+  IMC with 1 session → 2 sequences → 64k effective per slot ❌
+
+With auto-scaling (Kronk's behavior):
+  context-window: 128k
+  IMC with 1 session → internal NCtx = 256k → 128k effective per slot ✓`}</code></pre>
+          <p><strong>Formula:</strong></p>
+          <pre className="code-block"><code>{`Internal NCtx = context-window × (nseq-max + max-cache-sessions)`}</code></pre>
+          <p><strong>Example:</strong></p>
+          <pre className="code-block"><code className="language-yaml">{`Qwen3-8B-Q8_0/IMC:
+  context-window: 32768 # User wants 32k per slot
+  nseq-max: 1
+  incremental-cache: true
+  max-cache-sessions: 2
+
+# Internal calculation:
+# total_seqs = 1 (nseq-max) + 2 (cache sessions) = 3
+# Internal NCtx = 32768 × 3 = 98304
+# Each slot gets full 32k context ✓`}</code></pre>
+          <p><strong>VRAM Impact:</strong></p>
+          <p>Auto-scaling increases KV cache memory proportionally. Plan VRAM accordingly:</p>
+          <pre className="code-block"><code>{`32k context, IMC with 2 sessions, F16 cache:
+  Internal NCtx = 32k × 3 = 96k
+  KV cache = ~2.4 GB (instead of 800 MB without caching)`}</code></pre>
+          <h3 id="59-performance-and-limitations">5.9 Performance and Limitations</h3>
           <p><strong>Prefill Time Savings:</strong></p>
           <p>For a 2000-token cached prefix:</p>
           <ul>
@@ -956,13 +998,13 @@ seq 4: slot[1] inference`}</code></pre>
           <pre className="code-block"><code>{`8K context, F16 cache:    ~200 MB per cache sequence
 8K context, Q8_0 cache:   ~100 MB per cache sequence
 32K context, F16 cache:   ~800 MB per cache sequence`}</code></pre>
-          <h3 id="59-limitations">5.9 Limitations</h3>
+          <p><strong>IMC Limitations:</strong></p>
           <ul>
-            <li>Only works for text-only requests (not vision/audio)</li>
-            <li>Requires deterministic Jinja templates (no timestamps, random values)</li>
-            <li>IMC requires monotonically growing conversations</li>
+            <li>Text-only requests (vision/audio models use sequential path)</li>
+            <li>Requires deterministic Jinja templates (no timestamps or random values)</li>
+            <li>Conversations must grow monotonically (append-only)</li>
             <li>Editing earlier messages triggers full cache rebuild</li>
-            <li>If <code>max_imc_sessions</code> slots are full, new users bypass IMC</li>
+            <li>When all <code>max_cache_sessions</code> slots are in use, new sessions bypass IMC</li>
           </ul>
           <hr />
           <h2 id="chapter-6:-yarn-extended-context">Chapter 6: YaRN Extended Context</h2>
@@ -1367,7 +1409,7 @@ models:
     cache_type_k: q8_0
     cache_type_v: q8_0
     incremental_cache: true
-    max_imc_sessions: 8`}</code></pre>
+    max_cache_sessions: 8`}</code></pre>
           <hr />
           <h2 id="chapter-8:-api-endpoints">Chapter 8: API Endpoints</h2>
           <p>Kronk provides an OpenAI-compatible REST API. This chapter documents the</p>
@@ -1647,7 +1689,7 @@ data: {"type":"response.completed",...}`}</code></pre>
           <pre className="code-block"><code className="language-json">{`{
   "model": "Qwen3-8B-Q8_0",
   "messages": [
-    {"role": "user", "content": "What is the weather in Paris?"},
+    { "role": "user", "content": "What is the weather in Paris?" },
     {
       "role": "assistant",
       "content": null,
@@ -1734,9 +1776,13 @@ data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":" \
             "logprob": -0.0012,
             "bytes": [52],
             "top_logprobs": [
-              {"token": "4", "logprob": -0.0012, "bytes": [52]},
-              {"token": "The", "logprob": -6.82, "bytes": [84, 104, 101]},
-              {"token": "Four", "logprob": -7.15, "bytes": [70, 111, 117, 114]}
+              { "token": "4", "logprob": -0.0012, "bytes": [52] },
+              { "token": "The", "logprob": -6.82, "bytes": [84, 104, 101] },
+              {
+                "token": "Four",
+                "logprob": -7.15,
+                "bytes": [70, 111, 117, 114]
+              }
             ]
           }
         ]
@@ -1786,11 +1832,11 @@ data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":" \
     }
   ]
 }`}</code></pre>
-          <h3 id="89-using-imc-with-api-requests">8.9 Using IMC with API Requests</h3>
-          <p>To use Incremental Message Cache, pass the session ID via header:</p>
+          <h3 id="89-using-cache-id-with-api-requests">8.9 Using Cache ID with API Requests</h3>
+          <p>To use multi-user caching (SPC or IMC), pass the session ID via header:</p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/chat/completions \\
   -H "Content-Type: application/json" \\
-  -H "KRONK_IMC_ID: user-123" \\
+  -H "KRONK_CACHE_ID: user-123" \\
   -d '{
     "model": "Qwen3-8B-Q8_0",
     "messages": [...]
@@ -1798,9 +1844,11 @@ data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":" \
           <p>Or in the request body:</p>
           <pre className="code-block"><code className="language-json">{`{
   "model": "Qwen3-8B-Q8_0",
-  "imc_id": "user-123",
+  "cache_id": "user-123",
   "messages": [...]
 }`}</code></pre>
+          <p>The <code>cache_id</code> is used by both System Prompt Cache (SPC) and Incremental Message Cache (IMC).</p>
+          <p>Each unique <code>cache_id</code> gets its own dedicated cache sequence, up to <code>max_cache_sessions</code>.</p>
           <h3 id="810-authentication">8.10 Authentication</h3>
           <p>When authentication is enabled, include the token in requests:</p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/chat/completions \\
@@ -2371,7 +2419,7 @@ Model: Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMC`}</code></pre>
     <<: *base_Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
     nseq-max: 1
     incremental-cache: true
-    max-imc-sessions: 1`}</code></pre>
+    max-cache-sessions: 1`}</code></pre>
           <p>IMC is especially beneficial for Cline's iterative coding workflow.</p>
           <p>_Note: Don't use R1 Message formats when using KMS._</p>
           <h3 id="124-python-openai-sdk">12.4 Python OpenAI SDK</h3>
@@ -2838,7 +2886,7 @@ kronk server start  # Run in foreground to see logs`}</code></pre>
           <pre className="code-block"><code className="language-yaml">{`models:
   Qwen3-8B-Q8_0:
     incremental_cache: true
-    max_imc_sessions: 4`}</code></pre>
+    max_cache_sessions: 4`}</code></pre>
           <p><strong>Problem: Slow token generation (tokens/second)</strong></p>
           <p><strong>Causes:</strong></p>
           <ul>
@@ -3424,8 +3472,8 @@ m.sequentialChatRequest(...)`}</code></pre>
             <li><code>slot.seqIDs</code> = pre-allocated slice for efficient <code>batchAdd</code> calls</li>
           </ul>
           <p>Sequences are isolated partitions in the shared KV cache memory. Slot seqIDs</p>
-          <p>are offset when caching is enabled (SPC uses seq 0; IMC uses seqs 0 to</p>
-          <p>MaxIMCSessions-1).</p>
+          <p>are offset when caching is enabled (both SPC and IMC use seqs 0 to</p>
+          <p>MaxCacheSessions-1).</p>
           <h4 id="1576-context-pooling">15.7.6 Context Pooling</h4>
           <ul>
             <li><code>llama.Context</code> is created once in <code>NewModel</code> and reused across requests</li>
@@ -3545,12 +3593,12 @@ m.sequentialChatRequest(...)`}</code></pre>
                 <li><a href="#51-overview" className={activeSection === '51-overview' ? 'active' : ''}>5.1 Overview</a></li>
                 <li><a href="#52-system-prompt-cache-spc" className={activeSection === '52-system-prompt-cache-spc' ? 'active' : ''}>5.2 System Prompt Cache (SPC)</a></li>
                 <li><a href="#53-incremental-message-cache-imc" className={activeSection === '53-incremental-message-cache-imc' ? 'active' : ''}>5.3 Incremental Message Cache (IMC)</a></li>
-                <li><a href="#54-multi-user-imc" className={activeSection === '54-multi-user-imc' ? 'active' : ''}>5.4 Multi-User IMC</a></li>
+                <li><a href="#54-multi-user-caching" className={activeSection === '54-multi-user-caching' ? 'active' : ''}>5.4 Multi-User Caching</a></li>
                 <li><a href="#55-spc-vs-imc" className={activeSection === '55-spc-vs-imc' ? 'active' : ''}>5.5 SPC vs IMC</a></li>
                 <li><a href="#56-cache-invalidation" className={activeSection === '56-cache-invalidation' ? 'active' : ''}>5.6 Cache Invalidation</a></li>
                 <li><a href="#57-configuration-reference" className={activeSection === '57-configuration-reference' ? 'active' : ''}>5.7 Configuration Reference</a></li>
-                <li><a href="#58-performance-impact" className={activeSection === '58-performance-impact' ? 'active' : ''}>5.8 Performance Impact</a></li>
-                <li><a href="#59-limitations" className={activeSection === '59-limitations' ? 'active' : ''}>5.9 Limitations</a></li>
+                <li><a href="#58-context-window-auto-scaling-imc-only" className={activeSection === '58-context-window-auto-scaling-imc-only' ? 'active' : ''}>5.8 Context Window Auto-Scaling (IMC Only)</a></li>
+                <li><a href="#59-performance-and-limitations" className={activeSection === '59-performance-and-limitations' ? 'active' : ''}>5.9 Performance and Limitations</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
@@ -3595,7 +3643,7 @@ m.sequentialChatRequest(...)`}</code></pre>
                 <li><a href="#86-tool-calling-function-calling" className={activeSection === '86-tool-calling-function-calling' ? 'active' : ''}>8.6 Tool Calling (Function Calling)</a></li>
                 <li><a href="#87-logprobs-token-probabilities" className={activeSection === '87-logprobs-token-probabilities' ? 'active' : ''}>8.7 Logprobs (Token Probabilities)</a></li>
                 <li><a href="#88-models-list" className={activeSection === '88-models-list' ? 'active' : ''}>8.8 Models List</a></li>
-                <li><a href="#89-using-imc-with-api-requests" className={activeSection === '89-using-imc-with-api-requests' ? 'active' : ''}>8.9 Using IMC with API Requests</a></li>
+                <li><a href="#89-using-cache-id-with-api-requests" className={activeSection === '89-using-cache-id-with-api-requests' ? 'active' : ''}>8.9 Using Cache ID with API Requests</a></li>
                 <li><a href="#810-authentication" className={activeSection === '810-authentication' ? 'active' : ''}>8.10 Authentication</a></li>
                 <li><a href="#811-error-responses" className={activeSection === '811-error-responses' ? 'active' : ''}>8.11 Error Responses</a></li>
               </ul>

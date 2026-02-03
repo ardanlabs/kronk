@@ -108,7 +108,7 @@ func printWeb(mi toolapp.ModelInfoResponse) {
 		fmt.Printf("Cache Type V:      %s\n", mi.ModelConfig.CacheTypeV)
 		fmt.Printf("System Prompt Cache: %t\n", mi.ModelConfig.SystemPromptCache)
 		fmt.Printf("Incremental Cache:   %t\n", mi.ModelConfig.IncrementalCache)
-		fmt.Printf("Max IMC Sessions:    %d\n", mi.ModelConfig.MaxIMCSessions)
+		fmt.Printf("Max Cache Sessions:  %d\n", mi.ModelConfig.MaxCacheSessions)
 		if mi.ModelConfig.RopeScaling.String() != "none" {
 			fmt.Printf("RoPE Scaling:      %s\n", mi.ModelConfig.RopeScaling)
 			fmt.Printf("YaRN Orig Ctx:     %v\n", formatIntPtr(mi.ModelConfig.YarnOrigCtx))
@@ -169,7 +169,7 @@ func printLocal(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfig
 	fmt.Printf("Cache Type V:      %s\n", rmc.CacheTypeV)
 	fmt.Printf("System Prompt Cache: %t\n", rmc.SystemPromptCache)
 	fmt.Printf("Incremental Cache:   %t\n", rmc.IncrementalCache)
-	fmt.Printf("Max IMC Sessions:    %d\n", rmc.MaxIMCSessions)
+	fmt.Printf("Max Cache Sessions:  %d\n", rmc.MaxCacheSessions)
 	if rmc.RopeScaling.String() != "none" {
 		fmt.Printf("RoPE Scaling:      %s\n", rmc.RopeScaling)
 		fmt.Printf("YaRN Orig Ctx:     %v\n", formatIntPtr(rmc.YarnOrigCtx))

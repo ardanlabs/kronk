@@ -471,12 +471,12 @@ Use `row` for Mixture of Experts models like Qwen3-MoE, Mixtral, or DeepSeek.
 
 **Configuration Reference**
 
-| Field | YAML Key | Values | Default | Description |
-|-------|----------|--------|---------|-------------|
-| NGpuLayers | `n_gpu_layers` | 0, -1, N | 0 | Layers on GPU (0=all, -1=none) |
-| OffloadKQV | `offload_kqv` | true/false | true | KV cache on GPU |
-| OpOffload | `op_offload` | true/false | true | Tensor ops on GPU |
-| SplitMode | `split_mode` | none/layer/row | none | Multi-GPU distribution |
+| Field      | YAML Key       | Values         | Default | Description                    |
+| ---------- | -------------- | -------------- | ------- | ------------------------------ |
+| NGpuLayers | `n_gpu_layers` | 0, -1, N       | 0       | Layers on GPU (0=all, -1=none) |
+| OffloadKQV | `offload_kqv`  | true/false     | true    | KV cache on GPU                |
+| OpOffload  | `op_offload`   | true/false     | true    | Tensor ops on GPU              |
+| SplitMode  | `split_mode`   | none/layer/row | none    | Multi-GPU distribution         |
 
 ### 3.4 KV Cache Quantization
 
@@ -613,8 +613,8 @@ Keep `n_ubatch` high for efficient media token processing:
 models:
   Qwen2.5-VL-3B-Instruct-Q8_0:
     n_batch: 2048
-    n_ubatch: 2048    # High for image/audio token batches
-    n_seq_max: 2      # Creates 2 model instances in pool
+    n_ubatch: 2048 # High for image/audio token batches
+    n_seq_max: 2 # Creates 2 model instances in pool
 ```
 
 Vision models process image tiles as large token batches. Low `n_ubatch`
@@ -628,8 +628,8 @@ Use row-based tensor parallelism for multi-GPU setups:
 ```yaml
 models:
   Qwen3-MoE-30B-A3B-Q8_0:
-    split_mode: row       # Best for MoE architecture
-    cache_type_k: q8_0    # Be cautious with aggressive quantization
+    split_mode: row # Best for MoE architecture
+    cache_type_k: q8_0 # Be cautious with aggressive quantization
     cache_type_v: q8_0
 ```
 
@@ -643,9 +643,9 @@ Optimize batch size for your typical input lengths:
 ```yaml
 models:
   embeddinggemma-300m-qat-Q8_0:
-    n_batch: 8192         # Can equal context_window
-    n_ubatch: 512         # Align with typical sliding window
-    n_seq_max: 4          # 4 model instances for concurrency
+    n_batch: 8192 # Can equal context_window
+    n_ubatch: 512 # Align with typical sliding window
+    n_seq_max: 4 # 4 model instances for concurrency
 ```
 
 Embedding models process complete inputs in a single pass, so larger
@@ -766,14 +766,15 @@ Total KV cache:     ~800 MB (4 slots × 200 MB)
 
 When message caching is enabled, additional sequences are reserved:
 
-| SPC | IMC | MaxIMCSessions | Reserved Seqs | Slot Start | Memory Overhead |
-|-----|-----|----------------|---------------|------------|-----------------|
-| off | off | -              | 0             | seq 0      | none            |
-| on  | off | -              | 1             | seq 1      | +1 context window |
-| off | on  | 1              | 1             | seq 1      | +1 context window |
-| off | on  | 4              | 4             | seq 4      | +4 context windows |
+| SPC | IMC | MaxCacheSessions | Reserved Seqs | Slot Start | Memory Overhead    |
+| --- | --- | ---------------- | ------------- | ---------- | ------------------ |
+| off | off | -                | 0             | seq 0      | none               |
+| on  | off | 1                | 1             | seq 1      | +1 context window  |
+| on  | off | 4                | 4             | seq 4      | +4 context windows |
+| off | on  | 1                | 1             | seq 1      | +1 context window  |
+| off | on  | 4                | 4             | seq 4      | +4 context windows |
 
-Example with `max_imc_sessions=3` and `n_seq_max=2`:
+Example with `max-cache-sessions=3` and `n_seq_max=2`:
 
 ```
 seq 0: user-1 cache (IMC)
@@ -941,7 +942,7 @@ incompatible with IMC (use SPC instead).
 models:
   Qwen3-8B-Q8_0:
     incremental_cache: true
-    max_imc_sessions: 4 # Support 4 concurrent users
+    max_cache_sessions: 4 # Support 4 concurrent users
     cache_min_tokens: 100 # Minimum tokens before caching
 ```
 
@@ -971,28 +972,29 @@ Cache:    [system, user, assistant, user2, assistant2]  ← Extend
 Prefill:  [user3 + gen_prompt]
 ```
 
-### 5.4 Multi-User IMC
+### 5.4 Multi-User Caching
 
-IMC supports multiple concurrent users, each with their own cache sequence.
-Users are identified by the `imc_id` parameter in requests.
+Both SPC and IMC support multiple concurrent users, each with their own cache sequence.
+Users are identified by the `cache_id` parameter in requests.
 
 **Configuration:**
 
 ```yaml
 models:
   Qwen3-8B-Q8_0:
-    incremental_cache: true
-    max_imc_sessions: 4 # 4 concurrent user caches
+    # For SPC or IMC - both use cache_id for multi-user support
+    system_prompt_cache: true # OR incremental_cache: true
+    max_cache_sessions: 4 # 4 concurrent user caches
 ```
 
-**Passing IMC ID:**
+**Passing Cache ID:**
 
 Via HTTP header:
 
 ```shell
 curl http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -H "KRONK_IMC_ID: user-123" \
+  -H "KRONK_CACHE_ID: user-123" \
   -d '{"model": "Qwen3-8B-Q8_0", "messages": [...]}'
 ```
 
@@ -1001,14 +1003,14 @@ Or in the request body:
 ```json
 {
   "model": "Qwen3-8B-Q8_0",
-  "imc_id": "user-123",
+  "cache_id": "user-123",
   "messages": [...]
 }
 ```
 
 **Sequence Allocation:**
 
-With `max_imc_sessions=3` and `n_seq_max=2`:
+With `max_cache_sessions=3` and `n_seq_max=2`:
 
 ```
 seq 0: user-1 cache
@@ -1022,16 +1024,16 @@ If all cache slots are in use, new sessions bypass IMC gracefully.
 
 ### 5.5 SPC vs IMC
 
-| Feature      | System Prompt Cache       | Incremental Message Cache        |
-| ------------ | ------------------------- | -------------------------------- |
-| Caches       | System prompt only        | All messages except last         |
-| Extends      | No                        | Yes, incrementally               |
-| Multi-user   | Shared cache              | Per-user cache                   |
-| Best for     | Chat UIs, inconsistent templates | Agentic workflows, consistent templates |
-| Memory       | 1 extra sequence          | N extra sequences                |
-| Template req | Any                       | Consistent templates only        |
+| Feature      | System Prompt Cache                  | Incremental Message Cache               |
+| ------------ | ------------------------------------ | --------------------------------------- |
+| Caches       | System prompt only                   | All messages except last                |
+| Extends      | No                                   | Yes, incrementally                      |
+| Multi-user   | Per-user cache (dedicated sequences) | Per-user cache (dedicated sequences)    |
+| Best for     | Chat UIs, inconsistent templates     | Agentic workflows, consistent templates |
+| Memory       | N extra sequences (max_cache_sessions) | N extra sequences (max_cache_sessions)    |
+| Template req | Any                                  | Consistent templates only               |
 
-**Important:** SPC and IMC are mutually exclusive - choose one based on your
+**Important:** SPC and IMC are mutually exclusive. Choose based on your
 model's template behavior:
 
 - **Consistent templates (QWEN, Llama):** Use IMC for maximum cache efficiency
@@ -1041,22 +1043,22 @@ model's template behavior:
 
 **SPC Invalidation:**
 
-- System prompt content changes → rebuild cache
-- Different message role → rebuild cache
+- System prompt content changes → cache rebuilt
+- System prompt hash mismatch → cache rebuilt
 
 **IMC Invalidation:**
 
-- Message prefix changes → rebuild cache from scratch
-- User starts new conversation → new cache
-- Edit earlier message → rebuild cache
+- Message prefix hash mismatch → cache rebuilt from scratch
+- User starts new conversation → new cache created
+- Earlier message edited → cache rebuilt
+- `cache_id` not provided → falls back to "default" ID (problematic for multi-user)
 
-**Manual Invalidation:**
+**Automatic Invalidation:**
 
-The cache is cleared when:
+Caches are cleared when:
 
 - Model is unloaded
 - Server restarts
-- Sequential path processes a request (clears all caches)
 
 ### 5.7 Configuration Reference
 
@@ -1068,7 +1070,7 @@ models:
 
     # OR Incremental Message Cache (mutually exclusive)
     incremental_cache: true
-    max_imc_sessions: 4
+    max_cache_sessions: 4
 
     # Shared settings
     cache_min_tokens: 100 # Don't cache if < 100 tokens
@@ -1076,12 +1078,65 @@ models:
 
 **cache_min_tokens**
 
-Minimum token count before caching activates. Short messages don't benefit
-from caching because the overhead exceeds the prefill savings.
+Minimum token count before caching activates. Short prompts don't benefit
+from caching because copy overhead exceeds prefill savings.
 
 Default: 100 tokens
 
-### 5.8 Performance Impact
+### 5.8 Context Window Auto-Scaling (IMC Only)
+
+When IMC is enabled, Kronk automatically scales the internal context window
+to ensure each slot gets the full configured context size. This auto-scaling
+does not apply to SPC since it only caches the system prompt (typically small).
+
+**Why This Is Needed:**
+
+IMC caches the full conversation history. The KV cache is shared across all
+sequences, so without auto-scaling, IMC would reduce the effective context
+per slot:
+
+```
+Without auto-scaling (broken):
+  context-window: 128k
+  IMC with 1 session → 2 sequences → 64k effective per slot ❌
+
+With auto-scaling (Kronk's behavior):
+  context-window: 128k
+  IMC with 1 session → internal NCtx = 256k → 128k effective per slot ✓
+```
+
+**Formula:**
+
+```
+Internal NCtx = context-window × (nseq-max + max-cache-sessions)
+```
+
+**Example:**
+
+```yaml
+Qwen3-8B-Q8_0/IMC:
+  context-window: 32768 # User wants 32k per slot
+  nseq-max: 1
+  incremental-cache: true
+  max-cache-sessions: 2
+
+# Internal calculation:
+# total_seqs = 1 (nseq-max) + 2 (cache sessions) = 3
+# Internal NCtx = 32768 × 3 = 98304
+# Each slot gets full 32k context ✓
+```
+
+**VRAM Impact:**
+
+Auto-scaling increases KV cache memory proportionally. Plan VRAM accordingly:
+
+```
+32k context, IMC with 2 sessions, F16 cache:
+  Internal NCtx = 32k × 3 = 96k
+  KV cache = ~2.4 GB (instead of 800 MB without caching)
+```
+
+### 5.9 Performance and Limitations
 
 **Prefill Time Savings:**
 
@@ -1100,13 +1155,13 @@ Each cache sequence requires one context window worth of KV cache memory:
 32K context, F16 cache:   ~800 MB per cache sequence
 ```
 
-### 5.9 Limitations
+**IMC Limitations:**
 
-- Only works for text-only requests (not vision/audio)
-- Requires deterministic Jinja templates (no timestamps, random values)
-- IMC requires monotonically growing conversations
+- Text-only requests (vision/audio models use sequential path)
+- Requires deterministic Jinja templates (no timestamps or random values)
+- Conversations must grow monotonically (append-only)
 - Editing earlier messages triggers full cache rebuild
-- If `max_imc_sessions` slots are full, new users bypass IMC
+- When all `max_cache_sessions` slots are in use, new sessions bypass IMC
 
 ---
 
@@ -1682,7 +1737,7 @@ models:
     cache_type_k: q8_0
     cache_type_v: q8_0
     incremental_cache: true
-    max_imc_sessions: 8
+    max_cache_sessions: 8
 ```
 
 ---
@@ -2018,7 +2073,7 @@ After executing the tool, send the result back:
 {
   "model": "Qwen3-8B-Q8_0",
   "messages": [
-    {"role": "user", "content": "What is the weather in Paris?"},
+    { "role": "user", "content": "What is the weather in Paris?" },
     {
       "role": "assistant",
       "content": null,
@@ -2061,10 +2116,10 @@ or implement custom sampling strategies.
 
 **Request Parameters:**
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `logprobs` | bool | false | Return log probability for each token |
-| `top_logprobs` | int | 0 | Number of top alternatives (0-5) |
+| Parameter      | Type | Default | Description                           |
+| -------------- | ---- | ------- | ------------------------------------- |
+| `logprobs`     | bool | false   | Return log probability for each token |
+| `top_logprobs` | int  | 0       | Number of top alternatives (0-5)      |
 
 Setting `top_logprobs > 0` implicitly enables `logprobs`.
 
@@ -2103,9 +2158,13 @@ curl http://localhost:8080/v1/chat/completions \
             "logprob": -0.0012,
             "bytes": [52],
             "top_logprobs": [
-              {"token": "4", "logprob": -0.0012, "bytes": [52]},
-              {"token": "The", "logprob": -6.82, "bytes": [84, 104, 101]},
-              {"token": "Four", "logprob": -7.15, "bytes": [70, 111, 117, 114]}
+              { "token": "4", "logprob": -0.0012, "bytes": [52] },
+              { "token": "The", "logprob": -6.82, "bytes": [84, 104, 101] },
+              {
+                "token": "Four",
+                "logprob": -7.15,
+                "bytes": [70, 111, 117, 114]
+              }
             ]
           }
         ]
@@ -2168,14 +2227,14 @@ curl http://localhost:8080/v1/models
 }
 ```
 
-### 8.9 Using IMC with API Requests
+### 8.9 Using Cache ID with API Requests
 
-To use Incremental Message Cache, pass the session ID via header:
+To use multi-user caching (SPC or IMC), pass the session ID via header:
 
 ```shell
 curl http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -H "KRONK_IMC_ID: user-123" \
+  -H "KRONK_CACHE_ID: user-123" \
   -d '{
     "model": "Qwen3-8B-Q8_0",
     "messages": [...]
@@ -2187,10 +2246,13 @@ Or in the request body:
 ```json
 {
   "model": "Qwen3-8B-Q8_0",
-  "imc_id": "user-123",
+  "cache_id": "user-123",
   "messages": [...]
 }
 ```
+
+The `cache_id` is used by both System Prompt Cache (SPC) and Incremental Message Cache (IMC).
+Each unique `cache_id` gets its own dedicated cache sequence, up to `max_cache_sessions`.
 
 ### 8.10 Authentication
 
@@ -2972,7 +3034,7 @@ models:
     <<: *base_Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
     nseq-max: 1
     incremental-cache: true
-    max-imc-sessions: 1
+    max-cache-sessions: 1
 ```
 
 IMC is especially beneficial for Cline's iterative coding workflow.
@@ -3725,7 +3787,7 @@ Or enable incremental message cache for agents:
 models:
   Qwen3-8B-Q8_0:
     incremental_cache: true
-    max_imc_sessions: 4
+    max_cache_sessions: 4
 ```
 
 **Problem: Slow token generation (tokens/second)**
@@ -3915,15 +3977,15 @@ This enables a pre-commit hook that automatically runs:
 
 **Directory Structure:**
 
-| Directory                      | Purpose                                                        |
-| ------------------------------ | -------------------------------------------------------------- |
+| Directory                      | Purpose                                                             |
+| ------------------------------ | ------------------------------------------------------------------- |
 | `cmd/kronk/`                   | CLI tool (subcommands: catalog, libs, model, run, security, server) |
-| `cmd/server/`                  | OpenAI-compatible model server (gRPC + HTTP) with BUI frontend |
-| `cmd/server/api/tooling/docs/` | Documentation generator for BUI (SDK and CLI docs)             |
-| `sdk/kronk/`                   | Core API: model loading, chat, embeddings, cache, metrics      |
-| `sdk/kronk/model/`             | Core inference and caching engine                              |
-| `sdk/kronk/observ/`            | Observability packages (metrics/, otel/)                       |
-| `sdk/tools/`                   | Support for libs, models, catalogs, templates, and defaults    |
+| `cmd/server/`                  | OpenAI-compatible model server (gRPC + HTTP) with BUI frontend      |
+| `cmd/server/api/tooling/docs/` | Documentation generator for BUI (SDK and CLI docs)                  |
+| `sdk/kronk/`                   | Core API: model loading, chat, embeddings, cache, metrics           |
+| `sdk/kronk/model/`             | Core inference and caching engine                                   |
+| `sdk/kronk/observ/`            | Observability packages (metrics/, otel/)                            |
+| `sdk/tools/`                   | Support for libs, models, catalogs, templates, and defaults         |
 
 **Core Technology:**
 
@@ -4088,34 +4150,34 @@ the Kronk SDK packages.
 
 **sdk/kronk/** - Core API package:
 
-| File | Purpose |
-|------|---------|
-| `acquire.go` | Model pool acquire/release |
-| `chat.go` | Chat completion API |
-| `concurrency.go` | Generic streaming utilities |
-| `embedding.go` | Embedding API |
-| `init.go` | Initialization and configuration |
-| `kronk.go` | Main Kronk type, model pool management |
-| `rerank.go` | Reranking API |
-| `response.go` | OpenAI Responses API streaming |
+| File             | Purpose                                |
+| ---------------- | -------------------------------------- |
+| `acquire.go`     | Model pool acquire/release             |
+| `chat.go`        | Chat completion API                    |
+| `concurrency.go` | Generic streaming utilities            |
+| `embedding.go`   | Embedding API                          |
+| `init.go`        | Initialization and configuration       |
+| `kronk.go`       | Main Kronk type, model pool management |
+| `rerank.go`      | Reranking API                          |
+| `response.go`    | OpenAI Responses API streaming         |
 
 **sdk/kronk/model/** - Low-level inference:
 
-| File | Purpose |
-|------|---------|
-| `batch.go` | Batch engine for parallel text inference |
-| `caching.go` | System prompt and IMC cache management |
-| `chat.go` | Chat inference loop, batch vs sequential routing |
-| `config.go` | Model configuration (GPU, cache, batching) |
-| `embed.go` | Embedding inference |
-| `logprobs.go` | Token log probability extraction |
-| `media.go` | Vision/audio media processing |
-| `model.go` | Model type, context management, lifecycle |
-| `models.go` | OpenAI-compatible types (ChatMessage, ToolCall, etc.) |
-| `params.go` | Sampling parameters |
-| `processor.go` | Template-specific token processors |
-| `prompts.go` | Prompt formatting |
-| `rerank.go` | Reranking inference |
+| File           | Purpose                                               |
+| -------------- | ----------------------------------------------------- |
+| `batch.go`     | Batch engine for parallel text inference              |
+| `caching.go`   | System prompt and IMC cache management                |
+| `chat.go`      | Chat inference loop, batch vs sequential routing      |
+| `config.go`    | Model configuration (GPU, cache, batching)            |
+| `embed.go`     | Embedding inference                                   |
+| `logprobs.go`  | Token log probability extraction                      |
+| `media.go`     | Vision/audio media processing                         |
+| `model.go`     | Model type, context management, lifecycle             |
+| `models.go`    | OpenAI-compatible types (ChatMessage, ToolCall, etc.) |
+| `params.go`    | Sampling parameters                                   |
+| `processor.go` | Template-specific token processors                    |
+| `prompts.go`   | Prompt formatting                                     |
+| `rerank.go`    | Reranking inference                                   |
 
 #### 15.7.2 Streaming Architecture
 
@@ -4216,8 +4278,8 @@ m.sequentialChatRequest(...)
 - `slot.seqIDs` = pre-allocated slice for efficient `batchAdd` calls
 
 Sequences are isolated partitions in the shared KV cache memory. Slot seqIDs
-are offset when caching is enabled (SPC uses seq 0; IMC uses seqs 0 to
-MaxIMCSessions-1).
+are offset when caching is enabled (both SPC and IMC use seqs 0 to
+MaxCacheSessions-1).
 
 #### 15.7.6 Context Pooling
 

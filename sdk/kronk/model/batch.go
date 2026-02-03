@@ -20,63 +20,54 @@ import (
 
 // chatJob represents a validated chat request ready for batch processing.
 type chatJob struct {
-	id              string
-	ctx             context.Context
-	d               D
-	object          string
-	prompt          string
-	media           [][]byte
-	params          Params
-	mtmdCtx         mtmd.Context
-	ch              chan<- ChatResponse
-	sysPromptNPast  llama.Pos
-	sysPromptCached bool
-	imcID           string      // IMC session ID (from imc_id in request)
-	imcSeqID        llama.SeqId // IMC session's cache sequence
-	imcNPast        llama.Pos   // IMC cached token count
-	imcCached       bool        // True if IMC cache should be used
+	id          string
+	ctx         context.Context
+	d           D
+	object      string
+	prompt      string
+	media       [][]byte
+	params      Params
+	mtmdCtx     mtmd.Context
+	ch          chan<- ChatResponse
+	spcCacheIdx llama.Pos   // Token position where SPC cache ends
+	spcCacheHit bool        // True if SPC cache was used
+	imcID       string      // Cache session ID (from cache_id in request)
+	imcSeqID    llama.SeqId // IMC session's cache sequence
+	imcCacheIdx llama.Pos   // Token position where IMC cache ends
+	imcCacheHit bool        // True if IMC cache was used
 }
 
 // slot represents a processing slot for parallel inference.
 type slot struct {
-	id     int
-	seqID  llama.SeqId
-	seqIDs []llama.SeqId // Pre-allocated for batchAdd calls
-
-	job     *chatJob
-	proc    *processor
-	sampler llama.Sampler
-
-	nPast    llama.Pos
-	nPrompt  int
-	nDecoded int
-
+	id               int
+	seqID            llama.SeqId
+	seqIDs           []llama.SeqId // Pre-allocated for batchAdd calls
+	job              *chatJob
+	proc             *processor
+	sampler          llama.Sampler
+	nPast            llama.Pos
+	nPrompt          int
+	nDecoded         int
 	reasonTokens     int
 	completionTokens int
-
-	reasonFlag     int
-	completionFlag int
-	toolFlag       int
-
-	index          int
-	finalContent   strings.Builder
-	finalReasoning strings.Builder
-	finalTooling   strings.Builder
-	respToolCalls  []ResponseToolCall
-
-	startTime   time.Time
-	span        trace.Span
-	iBatch      int32
-	sampled     llama.Token
-	active      bool
-	prefillDone bool
-
-	prefillTokens []llama.Token
-	nPrefilled    int
-
-	// Logprobs tracking
-	logprobsData   []ContentLogprob
-	currentLogprob *ContentLogprob // For streaming the current token's logprob
+	reasonFlag       int
+	completionFlag   int
+	toolFlag         int
+	index            int
+	finalContent     strings.Builder
+	finalReasoning   strings.Builder
+	finalTooling     strings.Builder
+	respToolCalls    []ResponseToolCall
+	startTime        time.Time
+	span             trace.Span
+	iBatch           int32
+	sampled          llama.Token
+	active           bool
+	prefillDone      bool
+	prefillTokens    []llama.Token
+	nPrefilled       int
+	logprobsData     []ContentLogprob
+	currentLogprob   *ContentLogprob // For streaming the current token's logprob
 }
 
 func (s *slot) reset() {
@@ -131,11 +122,11 @@ func newBatchEngine(m *Model, nSlots int) *batchEngine {
 	batch := llama.BatchInit(int32(nCtx), 0, int32(nSlots))
 
 	// Calculate sequence offset based on reserved cache sequences.
-	// SPC uses seq 0 only. IMC uses seqs 0 to MaxIMCSessions-1.
+	// Both SPC and IMC use seqs 0 to MaxCacheSessions-1.
 	// Slots start after reserved sequences.
 	cacheSeqs := 0
 	if m.cfg.SystemPromptCache {
-		cacheSeqs = 1
+		cacheSeqs = m.spcMaxSeqs
 	} else if m.cfg.IncrementalCache {
 		cacheSeqs = m.imcMaxSeqs
 	}
@@ -413,47 +404,48 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 	llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
 
 	// Copy cached KV state if available (SPC or IMC, mutually exclusive).
-	var cachedTokens llama.Pos
+	var cacheIdx llama.Pos
 	switch {
-	case job.sysPromptCached:
-		// SPC: copy from seq 0.
-		if err := e.model.copySystemPromptToSeq(s.seqID); err != nil {
-			e.sendSlotError(s, fmt.Errorf("start-slot: %w", err))
-			s.reset()
-			return
-		}
-		cachedTokens = job.sysPromptNPast
-
-	case job.imcCached:
-		// IMC: copy from session's sequence.
-		e.model.log(job.ctx, "start-slot", "status", "imc-copy", "src_seq", job.imcSeqID, "dst_seq", s.seqID, "tokens", job.imcNPast)
+	case job.spcCacheHit:
+		// SPC: copy from session's sequence (user-based like IMC).
+		e.model.log(job.ctx, "start-slot", "status", "spc-copy", "src_seq", job.imcSeqID, "dst_seq", s.seqID, "cached_tokens", job.spcCacheIdx)
 		if err := e.model.copyCachesToSeq(s.seqID, job.imcSeqID); err != nil {
 			e.sendSlotError(s, fmt.Errorf("start-slot: %w", err))
 			s.reset()
 			return
 		}
-		cachedTokens = job.imcNPast
+		cacheIdx = job.spcCacheIdx
+
+	case job.imcCacheHit:
+		// IMC: copy from session's sequence.
+		e.model.log(job.ctx, "start-slot", "status", "imc-copy", "src_seq", job.imcSeqID, "dst_seq", s.seqID, "cached_tokens", job.imcCacheIdx)
+		if err := e.model.copyCachesToSeq(s.seqID, job.imcSeqID); err != nil {
+			e.sendSlotError(s, fmt.Errorf("start-slot: %w", err))
+			s.reset()
+			return
+		}
+		cacheIdx = job.imcCacheIdx
 	}
 
-	s.nPast = cachedTokens
+	s.nPast = cacheIdx
 
 	// Tokenize the prompt (cached messages already removed).
 	// Only add BOS if no cached tokens AND model metadata says to add BOS.
-	addBOS := cachedTokens == 0 && e.model.addBOSToken
+	addBOS := cacheIdx == 0 && e.model.addBOSToken
 	tokens := llama.Tokenize(e.model.vocab, job.prompt, addBOS, true)
-	s.nPrompt = len(tokens)
 
-	// Include cached tokens in total prompt count for metrics.
-	if cachedTokens > 0 {
-		s.nPrompt += int(cachedTokens)
-	}
+	// suffixTokens is the number of new tokens to process (not cached).
+	// totalPrompt is the full context size including cached tokens.
+	suffixTokens := len(tokens)
+	totalPrompt := suffixTokens + int(cacheIdx)
+	s.nPrompt = totalPrompt
 
 	// Log token counts for debugging batch overflow.
 	e.model.log(job.ctx, "start-slot", "status", "tokenized",
 		"slot", s.id,
-		"suffix_tokens", len(tokens),
-		"cached_tokens", cachedTokens,
-		"total_prompt", s.nPrompt,
+		"suffix_tokens", suffixTokens,
+		"cached_tokens", cacheIdx,
+		"total_prompt", totalPrompt,
 		"nbatch", e.model.cfg.NBatch,
 		"batch_current", e.batch.NTokens)
 
@@ -489,7 +481,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 	}
 
 	e.model.log(job.ctx, "batch-engine", "status", "slot-started", "slot", s.id, "seq", s.seqID, "id", job.id,
-		"prompt_tokens", s.nPrompt, "sys_cached", job.sysPromptCached, "imc_cached", job.imcCached, "cached_tokens", kvUsed)
+		"total_prompt", s.nPrompt, "spc_cache_hit", job.spcCacheHit, "imc_cache_hit", job.imcCacheHit, "kv_used", kvUsed)
 }
 
 // addPrefillChunk adds the next chunk of prefill tokens to the batch.
@@ -714,13 +706,9 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	elapsed := time.Since(s.startTime)
 
 	// Clear KV cache for this slot's sequence.
+	// SPC and IMC sessions persist across requests, so we don't pre-populate
+	// slots with cache - it's done per-request in startSlot.
 	llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
-
-	// Restore SPC cache if enabled. IMC sessions persist across requests,
-	// so we don't pre-populate slots with IMC cache - it's done per-request in startSlot.
-	if e.model.cfg.SystemPromptCache {
-		e.model.copySystemPromptToSeq(s.seqID)
-	}
 
 	// Handle error case.
 	if err != nil {
@@ -789,7 +777,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		&s.finalContent, &s.finalReasoning, s.respToolCalls, s.logprobsData, s.job.params.Stream, usage)
 
 	e.model.log(ctx, "batch-engine", "status", "slot-finished", "slot", s.id, "id", s.job.id,
-		"prompt", s.nPrompt, "output", outputTokens, "time", elapsed.String())
+		"total_prompt", s.nPrompt, "output_tokens", outputTokens, "time", elapsed.String())
 }
 
 func (e *batchEngine) freeSlotResources(s *slot) {

@@ -322,10 +322,10 @@ export default function ModelList() {
                     {modelInfo.model_config['incremental-cache'] ? 'Yes' : 'No'}
                   </span>
                 </div>
-                {modelInfo.model_config['incremental-cache'] && (
+                {(modelInfo.model_config['system-prompt-cache'] || modelInfo.model_config['incremental-cache']) && (
                   <div className="model-meta-item">
-                    <label>Max IMC Sessions</label>
-                    <span>{modelInfo.model_config['max-imc-sessions'] || 1}</span>
+                    <label>Max Cache Sessions</label>
+                    <span>{modelInfo.model_config['max-cache-sessions'] || 1}</span>
                   </div>
                 )}
                 {!!modelInfo.model_config['rope-scaling-type'] && modelInfo.model_config['rope-scaling-type'] !== 'none' && (

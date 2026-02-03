@@ -32,7 +32,7 @@ const (
 	defMinCacheTokens = 100
 	defThreadZero     = 0
 	defNSeqMax        = 1
-	defMaxIMCSessions = 1
+	defMaxCacheSessions = 1
 )
 
 // Logger provides a function for logging messages from different APIs.
@@ -148,13 +148,13 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // for agents like Cline or OpenCode where conversations grow monotonically.
 // The cache is rebuilt from scratch when the message prefix changes (new thread).
 //
-// MaxIMCSessions sets the maximum number of concurrent IMC sessions (users).
-// Each session gets its own dedicated cache sequence, identified by the imc_id
+// MaxCacheSessions sets the maximum number of concurrent cache sessions (users).
+// Each session gets its own dedicated cache sequence, identified by the cache_id
 // parameter in requests. When set to 0, defaults to 1 session. If all sessions
-// are in use, new requests without an available slot bypass IMC gracefully.
-// The input request should have `imc_id` with a unique session/user ID to
-// activate IMC. Each unique ID gets its own dedicated cache sequence (up to
-// max-imc-sessions). If no IMC id is passed, the "default" id is used. On a
+// are in use, new requests without an available slot bypass caching gracefully.
+// The input request should have `cache_id` with a unique session/user ID to
+// activate caching. Each unique ID gets its own dedicated cache sequence (up to
+// max-cache-sessions). If no cache id is passed, the "default" id is used. On a
 // multi-user system that will cause problems.
 //
 // SystemPromptCache and IncrementalCache are mutually exclusive. IncrementalCache
@@ -216,7 +216,7 @@ type Config struct {
 	SplitMode            SplitMode
 	SystemPromptCache    bool
 	IncrementalCache     bool
-	MaxIMCSessions       int
+	MaxCacheSessions     int
 	CacheMinTokens       int
 	InsecureLogging      bool
 	RopeScaling          RopeScalingType
@@ -252,11 +252,11 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("%d", *p)
 	}
 
-	return fmt.Sprintf("\nModelFiles[%v]\nProjFile[%s]\nJinjaFile[%s]\nDevice[%s]\nContextWindow[%d]\nNBatch[%d]\nNUBatch[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nCacheTypeK[%d]\nCacheTypeV[%d]\nUseDirectIO[%t]\nFlashAttention[%d]\nIgnoreIntegrityCheck[%t]\nNSeqMax[%d]\nOffloadKQV[%s]\nOpOffload[%s]\nNGpuLayers[%s]\nSplitMode[%d]\nSystemPromptCache[%t]\nIncrementalCache[%t]\nMaxIMCSessions[%d]\nCacheMinTokens[%d]\nInsecureLogging[%t]\nRopeScaling[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nYarnExtFactor[%s]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnOrigCtx[%s]\n",
+	return fmt.Sprintf("\nModelFiles[%v]\nProjFile[%s]\nJinjaFile[%s]\nDevice[%s]\nContextWindow[%d]\nNBatch[%d]\nNUBatch[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nCacheTypeK[%d]\nCacheTypeV[%d]\nUseDirectIO[%t]\nFlashAttention[%d]\nIgnoreIntegrityCheck[%t]\nNSeqMax[%d]\nOffloadKQV[%s]\nOpOffload[%s]\nNGpuLayers[%s]\nSplitMode[%d]\nSystemPromptCache[%t]\nIncrementalCache[%t]\nMaxCacheSessions[%d]\nCacheMinTokens[%d]\nInsecureLogging[%t]\nRopeScaling[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nYarnExtFactor[%s]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnOrigCtx[%s]\n",
 		cfg.ModelFiles, cfg.ProjFile, cfg.JinjaFile, cfg.Device, cfg.ContextWindow, cfg.NBatch, cfg.NUBatch, cfg.NThreads, cfg.NThreadsBatch,
 		cfg.CacheTypeK, cfg.CacheTypeV, cfg.UseDirectIO, cfg.FlashAttention, cfg.IgnoreIntegrityCheck,
 		cfg.NSeqMax, formatBoolPtr(cfg.OffloadKQV), formatBoolPtr(cfg.OpOffload),
-		formatIntPtr(cfg.NGpuLayers), cfg.SplitMode, cfg.SystemPromptCache, cfg.IncrementalCache, cfg.MaxIMCSessions, cfg.CacheMinTokens, cfg.InsecureLogging,
+		formatIntPtr(cfg.NGpuLayers), cfg.SplitMode, cfg.SystemPromptCache, cfg.IncrementalCache, cfg.MaxCacheSessions, cfg.CacheMinTokens, cfg.InsecureLogging,
 		cfg.RopeScaling, formatFloat32Ptr(cfg.RopeFreqBase), formatFloat32Ptr(cfg.RopeFreqScale),
 		formatFloat32Ptr(cfg.YarnExtFactor), formatFloat32Ptr(cfg.YarnAttnFactor),
 		formatFloat32Ptr(cfg.YarnBetaFast), formatFloat32Ptr(cfg.YarnBetaSlow), formatIntPtr(cfg.YarnOrigCtx))
@@ -334,9 +334,9 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 		cfg.CacheMinTokens = defMinCacheTokens
 	}
 
-	// Default MaxIMCSessions when IMC is enabled.
-	if cfg.IncrementalCache && cfg.MaxIMCSessions <= 0 {
-		cfg.MaxIMCSessions = defMaxIMCSessions
+	// Default MaxCacheSessions when caching is enabled.
+	if (cfg.SystemPromptCache || cfg.IncrementalCache) && cfg.MaxCacheSessions <= 0 {
+		cfg.MaxCacheSessions = defMaxCacheSessions
 	}
 
 	return cfg
@@ -370,12 +370,35 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 		ctxParams.PoolingType = llama.PoolingTypeRank
 	}
 
+	// Reserve sequences for caching based on enabled modes.
+	// Both SPC and IMC use seqs 0 to MaxCacheSessions-1.
+	// Remaining seqs: batch engine slots.
+	nSeqMax := max(cfg.NSeqMax, 1)
+	var cacheSeqs int
+	switch {
+	case cfg.SystemPromptCache:
+		cacheSeqs = max(cfg.MaxCacheSessions, 1)
+	case cfg.IncrementalCache:
+		cacheSeqs = max(cfg.MaxCacheSessions, 1)
+	}
+	totalSeqs := nSeqMax + cacheSeqs
+
 	if cfg.ContextWindow > 0 {
 		ctxParams.NBatch = uint32(cfg.NBatch)
 		ctxParams.NUbatch = uint32(cfg.NUBatch)
-		ctxParams.NCtx = uint32(cfg.ContextWindow)
 		ctxParams.NThreads = int32(cfg.NThreads)
 		ctxParams.NThreadsBatch = int32(cfg.NThreadsBatch)
+
+		// For IMC, scale NCtx by total sequences so users get their configured
+		// context per slot. IMC caches the full conversation, so without scaling
+		// the effective context per slot would be reduced. SPC only caches the
+		// system prompt (typically small), so no scaling needed.
+		switch {
+		case cfg.IncrementalCache:
+			ctxParams.NCtx = uint32(cfg.ContextWindow * totalSeqs)
+		default:
+			ctxParams.NCtx = uint32(cfg.ContextWindow)
+		}
 	}
 
 	switch {
@@ -401,17 +424,7 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 		ctxParams.FlashAttentionType = llama.FlashAttentionTypeEnabled
 	}
 
-	// Reserve sequences for caching based on enabled modes.
-	// SPC uses seq 0 only. IMC uses seqs 0 to MaxIMCSessions-1.
-	// Remaining seqs: batch engine slots.
-	nSeqMax := max(cfg.NSeqMax, 1)
-	cacheSeqs := 0
-	if cfg.SystemPromptCache {
-		cacheSeqs = 1
-	} else if cfg.IncrementalCache {
-		cacheSeqs = max(cfg.MaxIMCSessions, 1)
-	}
-	ctxParams.NSeqMax = uint32(nSeqMax + cacheSeqs)
+	ctxParams.NSeqMax = uint32(totalSeqs)
 
 	// Offload KQV cache to CPU.
 	// llama.cpp has this as default set to true

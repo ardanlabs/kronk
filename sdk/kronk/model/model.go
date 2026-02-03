@@ -27,13 +27,23 @@ type compiledTemplate struct {
 }
 
 // imcSession holds the state for a single IMC (Incremental Message Cache) session.
-// Each unique imc_id gets its own session with an assigned cache sequence.
+// Each unique cache_id gets its own session with an assigned cache sequence.
 type imcSession struct {
 	cachedMsgsHash    string      // Hash of all cached messages
 	totalTokensCached int         // Total tokens in cache
 	lastMsgIdxCached  int         // The index of the last message cached
 	seqID             llama.SeqId // Assigned cache sequence ID
 	lastUsed          time.Time   // Last access time (for eviction)
+}
+
+// spcSession holds the state for a single SPC (System Prompt Cache) session.
+// Each unique cache_id gets its own session with an assigned cache sequence.
+type spcSession struct {
+	sysPromptHash   string      // Hash of the system prompt
+	sysPromptTokens int         // Number of tokens in system prompt cache
+	sysPromptLen    int         // Length of system prompt string
+	seqID           llama.SeqId // Assigned cache sequence ID
+	lastUsed        time.Time   // Last access time (for eviction)
 }
 
 // TemplateRetriever returns a configured template for a model.
@@ -58,14 +68,14 @@ type Model struct {
 	modelInfo       ModelInfo
 	activeStreams   atomic.Int32
 	unloaded        atomic.Bool
-	decodeMu        sync.Mutex
-	cacheMu         sync.RWMutex
-	sysPromptHash   string
-	sysPromptTokens int
-	sysPromptLen    int
-	imcSessions     map[string]*imcSession // IMC sessions keyed by imc_id
+	decodeMu    sync.Mutex
+	cacheMu     sync.RWMutex
+	imcSessions map[string]*imcSession // IMC sessions keyed by cache_id
 	imcNextSeq      llama.SeqId            // Next available cache sequence
 	imcMaxSeqs      int                    // Max IMC sessions from config
+	spcSessions     map[string]*spcSession // SPC sessions keyed by cache_id
+	spcNextSeq      llama.SeqId            // Next available cache sequence
+	spcMaxSeqs      int                    // Max SPC sessions from config
 	addBOSToken     bool                   // Whether to add BOS token (from model metadata)
 }
 
@@ -178,12 +188,21 @@ func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) 
 	llama.MemoryClear(mem, true)
 
 	// Initialize IMC session tracking when enabled.
-	// Sessions start at seq 0 and increment up to MaxIMCSessions.
+	// Sessions start at seq 0 and increment up to MaxCacheSessions.
 	var imcSessions map[string]*imcSession
 	var imcMaxSeqs int
 	if cfg.IncrementalCache {
-		imcMaxSeqs = max(cfg.MaxIMCSessions, 1)
+		imcMaxSeqs = max(cfg.MaxCacheSessions, 1)
 		imcSessions = make(map[string]*imcSession, imcMaxSeqs)
+	}
+
+	// Initialize SPC session tracking when enabled.
+	// Sessions start at seq 0 and increment up to MaxCacheSessions.
+	var spcSessions map[string]*spcSession
+	var spcMaxSeqs int
+	if cfg.SystemPromptCache {
+		spcMaxSeqs = max(cfg.MaxCacheSessions, 1)
+		spcSessions = make(map[string]*spcSession, spcMaxSeqs)
 	}
 
 	m := Model{
@@ -200,6 +219,9 @@ func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) 
 		imcSessions: imcSessions,
 		imcNextSeq:  0,
 		imcMaxSeqs:  imcMaxSeqs,
+		spcSessions: spcSessions,
+		spcNextSeq:  0,
+		spcMaxSeqs:  spcMaxSeqs,
 		addBOSToken: addBOSToken,
 	}
 

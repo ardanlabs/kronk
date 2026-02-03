@@ -18,8 +18,8 @@ type cacheResult struct {
 	cacheHit       bool        // True if we reused existing cache (no new decode needed)
 	cacheUpdated   bool        // True if we modified the cache (decoded new tokens)
 	err            error       // Any error that occurred
-	imcID          string      // IMC session ID
-	imcSeqID       llama.SeqId // IMC session's cache sequence
+	cacheID        string      // Cache session ID (used by both SPC and IMC)
+	cacheSeqID     llama.SeqId // Cache session's sequence ID
 }
 
 // processCache checks if the system prompt or incremental messages are
@@ -31,13 +31,6 @@ type cacheResult struct {
 //
 // SPC and IMC are mutually exclusive
 // IMC includes the system prompt in its cache.
-//
-// Returns a cacheResult containing:
-//   - modifiedD: D with cached messages removed
-//   - cacheIdx: token position where cached content ends; new tokens start here
-//   - cacheHit: true if we reused existing cache (no new decode needed)
-//   - cacheUpdated: true if we modified the cache (decoded new tokens)
-//   - err: any error that occurred during cache update
 //
 // This function is thread-safe and handles concurrent requests appropriately.
 func (m *Model) processCache(ctx context.Context, d D) cacheResult {
@@ -56,9 +49,27 @@ func (m *Model) processCache(ctx context.Context, d D) cacheResult {
 // the first message and either caches it (if it's a system message) or reuses
 // an existing cache (if the client omitted the system message on a follow-up
 // request). The system message is always removed from d after processing.
+//
+// Each unique cache_id gets its own session with a dedicated cache sequence,
+// allowing multiple users to have their own system prompt caches.
 func (m *Model) processSPC(ctx context.Context, d D) cacheResult {
 	messages, ok := d["messages"].([]D)
 	if !ok || len(messages) == 0 {
+		return cacheResult{modifiedD: d}
+	}
+
+	// Get cache_id for user-based caching (same key used by both SPC and IMC).
+	cacheID, _ := d["cache_id"].(string)
+	if cacheID == "" {
+		cacheID = "default"
+		m.log(ctx, "spc", "status", "using default cache id", "reason", "SPC turned on but no cache_id was provided")
+	}
+
+	// Look up or create session for this cacheID.
+	session, _ := m.getOrCreateSPCSession(ctx, cacheID)
+	if session == nil {
+		// All session slots are in use - bypass SPC gracefully.
+		m.log(ctx, "spc", "status", "bypass (slots full)", "cache_id", cacheID, "max-possible-ids", m.spcMaxSeqs)
 		return cacheResult{modifiedD: d}
 	}
 
@@ -87,7 +98,7 @@ func (m *Model) processSPC(ctx context.Context, d D) cacheResult {
 
 	switch role {
 	case RoleSystem:
-		result := m.performSPC(ctx, d, messages, sysMsg)
+		result := m.performSPC(ctx, d, messages, sysMsg, cacheID, session)
 		if result.err != nil {
 			return result
 		}
@@ -108,11 +119,12 @@ func (m *Model) processSPC(ctx context.Context, d D) cacheResult {
 		// client did not send the system message again on their next request.
 
 		m.cacheMu.RLock()
-		cachedTokens := m.sysPromptTokens
+		cachedTokens := session.sysPromptTokens
+		seqID := session.seqID
 		m.cacheMu.RUnlock()
 
 		if cachedTokens > 0 {
-			m.log(ctx, "cache", "status", "cache hit (system prompt excluded on this request)", "tokens", cachedTokens)
+			m.log(ctx, "spc", "status", "cache hit (system prompt excluded on this request)", "cache_id", cacheID, "seq", seqID, "tokens", cachedTokens)
 			totalCacheIdx = llama.Pos(cachedTokens)
 			cacheHit = true
 		}
@@ -123,18 +135,18 @@ func (m *Model) processSPC(ctx context.Context, d D) cacheResult {
 		cacheIdx:     totalCacheIdx,
 		cacheHit:     cacheHit,
 		cacheUpdated: cacheUpdated,
+		cacheID:      cacheID,
+		cacheSeqID:   session.seqID,
 	}
 }
 
 // performSPC performs the actual caching of a system prompt message.
 // It checks for cache hits, and on a miss, templates the system message, tokenizes
-// it, and decodes the tokens into sequence 0 for reuse on subsequent requests.
-func (m *Model) performSPC(ctx context.Context, d D, messages []D, msgInfo cacheableMessage) cacheResult {
-	// Default sequence id for caching.
-	const seqID llama.SeqId = 0
-
+// it, and decodes the tokens into the session's cache sequence for reuse on
+// subsequent requests.
+func (m *Model) performSPC(ctx context.Context, d D, messages []D, msgInfo cacheableMessage, cacheID string, session *spcSession) cacheResult {
 	if msgInfo.role != RoleSystem {
-		m.log(ctx, "cache", "status", "no system prompt message provided", "role", msgInfo.role)
+		m.log(ctx, "spc", "status", "no system prompt message provided", "role", msgInfo.role)
 		return cacheResult{modifiedD: d}
 	}
 
@@ -147,16 +159,22 @@ func (m *Model) performSPC(ctx context.Context, d D, messages []D, msgInfo cache
 	// It's possible a new system prompt is of the same length as the old one.
 
 	m.cacheMu.RLock()
-	currentHash := m.sysPromptHash
-	currentTokens := m.sysPromptTokens
-	currentLen := m.sysPromptLen
+	currentHash := session.sysPromptHash
+	currentTokens := session.sysPromptTokens
+	currentLen := session.sysPromptLen
+	seqID := session.seqID
 	m.cacheMu.RUnlock()
 
 	newHash := hashMessage(msgInfo)
 
 	if currentLen == contentLen && currentHash == newHash && currentTokens > 0 {
-		m.log(ctx, "cache", "status", "system prompt cache hit", "role", msgInfo.role, "seq", seqID, "tokens", currentTokens)
-		return cacheResult{cacheIdx: llama.Pos(currentTokens), cacheHit: true}
+		m.log(ctx, "spc", "status", "cache hit", "cache_id", cacheID, "seq", seqID, "tokens", currentTokens)
+		return cacheResult{
+			cacheIdx:   llama.Pos(currentTokens),
+			cacheHit:   true,
+			cacheID:    cacheID,
+			cacheSeqID: seqID,
+		}
 	}
 
 	// -------------------------------------------------------------------------
@@ -167,9 +185,14 @@ func (m *Model) performSPC(ctx context.Context, d D, messages []D, msgInfo cache
 
 	// Double-check in case another goroutine cached while we waited.
 	// Must compute hash here since we skipped it above on length mismatch.
-	if m.sysPromptLen == contentLen && m.sysPromptHash == newHash && m.sysPromptTokens > 0 {
-		m.log(ctx, "cache", "status", "system prompt cache hit (after lock)", "role", msgInfo.role, "seq", seqID, "tokens", m.sysPromptTokens)
-		return cacheResult{cacheIdx: llama.Pos(m.sysPromptTokens), cacheHit: true}
+	if session.sysPromptLen == contentLen && session.sysPromptHash == newHash && session.sysPromptTokens > 0 {
+		m.log(ctx, "spc", "status", "cache hit (after lock)", "cache_id", cacheID, "seq", seqID, "tokens", session.sysPromptTokens)
+		return cacheResult{
+			cacheIdx:   llama.Pos(session.sysPromptTokens),
+			cacheHit:   true,
+			cacheID:    cacheID,
+			cacheSeqID: seqID,
+		}
 	}
 
 	// We just need to cache the system message, so create a D with
@@ -181,18 +204,18 @@ func (m *Model) performSPC(ctx context.Context, d D, messages []D, msgInfo cache
 
 	systemMsgPrompt, _, err := m.createPrompt(ctx, msgsToCache)
 	if err != nil {
-		return cacheResult{modifiedD: d, err: fmt.Errorf("cache: failed to template system prompt: %w", err)}
+		return cacheResult{modifiedD: d, err: fmt.Errorf("spc: failed to template system prompt: %w", err)}
 	}
 
 	tokens := llama.Tokenize(m.vocab, systemMsgPrompt, m.addBOSToken, true)
 	nTokens := len(tokens)
 
 	if nTokens == 0 {
-		return cacheResult{modifiedD: d, err: fmt.Errorf("cache: system prompt tokenized to zero tokens")}
+		return cacheResult{modifiedD: d, err: fmt.Errorf("spc: system prompt tokenized to zero tokens")}
 	}
 
 	if nTokens < m.cfg.CacheMinTokens {
-		m.log(ctx, "cache", "status", "system prompt cache skip (too short)", "role", msgInfo.role, "seq", seqID, "tokens", nTokens, "min", m.cfg.CacheMinTokens)
+		m.log(ctx, "spc", "status", "cache skip (too short)", "cache_id", cacheID, "seq", seqID, "tokens", nTokens, "min", m.cfg.CacheMinTokens)
 		return cacheResult{modifiedD: d}
 	}
 
@@ -200,16 +223,19 @@ func (m *Model) performSPC(ctx context.Context, d D, messages []D, msgInfo cache
 		return cacheResult{modifiedD: d, err: err}
 	}
 
-	m.sysPromptHash = newHash
-	m.sysPromptTokens = nTokens
-	m.sysPromptLen = contentLen
+	session.sysPromptHash = newHash
+	session.sysPromptTokens = nTokens
+	session.sysPromptLen = contentLen
+	session.lastUsed = time.Now()
 
-	m.log(ctx, "cache", "status", "system prompt cached", "role", msgInfo.role, "seq", seqID, "tokens", nTokens, "hash", newHash[:8])
+	m.log(ctx, "spc", "status", "cached", "cache_id", cacheID, "seq", seqID, "tokens", nTokens, "hash", newHash[:8])
 
 	return cacheResult{
 		modifiedD:    d,
 		cacheIdx:     llama.Pos(nTokens),
 		cacheUpdated: true,
+		cacheID:      cacheID,
+		cacheSeqID:   seqID,
 	}
 }
 
@@ -217,14 +243,14 @@ func (m *Model) performSPC(ctx context.Context, d D, messages []D, msgInfo cache
 // workflows. It caches all messages except the last one (which triggers
 // generation) and extends the cache incrementally on subsequent requests.
 //
-// Each unique imcID gets its own session with a dedicated cache sequence.
+// Each unique cache_id gets its own session with a dedicated cache sequence.
 //
 // Algorithm:
-//  1. Look up or create session for imcID
+//  1. Look up or create session for cache_id
 //  2. If session cache is empty, cache messages[0:len-1]
-//  3. If session cache exists, check if messages[0:msgCount] match cached hash
-//  4. On prefix match: extend cache with messages[msgCount:len-1]
-//  5. On prefix mismatch: rebuild cache from scratch
+//  3. If session cache exists, check if cached messages match current request
+//  4. On match: extend cache with new messages
+//  5. On mismatch: rebuild cache from scratch
 func (m *Model) processIMC(ctx context.Context, d D) cacheResult {
 	messages, ok := d["messages"].([]D)
 	if !ok || len(messages) == 0 {
@@ -234,10 +260,10 @@ func (m *Model) processIMC(ctx context.Context, d D) cacheResult {
 	// They may forget to provide an id, so we will use the "default" id. If
 	// multiple people are on the system not providing an id, this won't end
 	// well. Hahaha
-	imcID, _ := d["imc_id"].(string)
-	if imcID == "" {
-		imcID = "default"
-		m.log(ctx, "cache", "status", "using default imc id", "reason", "IMC turned on but no imc_id was provided")
+	cacheID, _ := d["cache_id"].(string)
+	if cacheID == "" {
+		cacheID = "default"
+		m.log(ctx, "imc", "status", "using default cache id", "reason", "IMC turned on but no cache_id was provided")
 	}
 
 	// We need at least 2 messages to start: one to cache, one to generate from.
@@ -247,12 +273,12 @@ func (m *Model) processIMC(ctx context.Context, d D) cacheResult {
 	}
 
 	// -------------------------------------------------------------------------
-	// Look up or create session for this imcID.
+	// Look up or create session for this cacheID.
 
-	session, isNew := m.getOrCreateIMCSession(ctx, imcID)
+	session, isNew := m.getOrCreateIMCSession(ctx, cacheID)
 	if session == nil {
 		// All session slots are in use - bypass IMC gracefully.
-		m.log(ctx, "imc", "status", "bypass (slots full)", "imc_id", imcID, "max-possible-ids", m.imcMaxSeqs)
+		m.log(ctx, "imc", "status", "bypass (slots full)", "cache_id", cacheID, "max-possible-ids", m.imcMaxSeqs)
 		return cacheResult{modifiedD: d}
 	}
 
@@ -289,45 +315,45 @@ func (m *Model) processIMC(ctx context.Context, d D) cacheResult {
 				// to extend the cache. I would expect this to be the case
 				// everytime.
 				if currentLastMsgIdxCached < lastMsgIdxToCache {
-					return m.extendIMCCache(ctx, d, messages, imcID, session, currentLastMsgIdxCached, lastMsgIdxToCache, currentTotalTokensCached)
+					return m.extendIMCCache(ctx, d, messages, cacheID, session, currentLastMsgIdxCached, lastMsgIdxToCache, currentTotalTokensCached)
 				}
 
 				// If by some weird circumstance the client sends back the
 				// exact same messages as before, we have all that already
 				// in the cache. Just return it.
 
-				m.log(ctx, "imc", "status", "cache hit", "imc_id", imcID, "seq", seqID, "current-msg-idx-cached", currentLastMsgIdxCached, "current-total-tokens-cached", currentTotalTokensCached)
+				m.log(ctx, "imc", "status", "cache hit", "cache_id", cacheID, "seq", seqID, "current-msg-idx-cached", currentLastMsgIdxCached, "current-total-tokens-cached", currentTotalTokensCached)
 
 				return cacheResult{
 					modifiedD:      removeFirstNMessages(d, currentLastMsgIdxCached),
 					cacheIdx:       llama.Pos(currentTotalTokensCached),
 					cachedMsgCount: currentLastMsgIdxCached,
 					cacheHit:       true,
-					imcID:          imcID,
-					imcSeqID:       seqID,
+					cacheID:        cacheID,
+					cacheSeqID:     seqID,
 				}
 			}
 		}
 
 		// Prefix mismatch - need to rebuild cache.
-		m.log(ctx, "imc", "status", "prefix mismatch", "imc_id", imcID, "current-last-msg-idx-cached", currentLastMsgIdxCached, "total-msgs", totalMsgs)
+		m.log(ctx, "imc", "status", "prefix mismatch", "cache_id", cacheID, "current-last-msg-idx-cached", currentLastMsgIdxCached, "total-msgs", totalMsgs)
 	}
 
 	// -------------------------------------------------------------------------
 	// Cache miss - build cache from scratch.
 
-	return m.buildIMCCacheFromScratch(ctx, d, messages, imcID, session, lastMsgIdxToCache)
+	return m.buildIMCCacheFromScratch(ctx, d, messages, cacheID, session, lastMsgIdxToCache)
 }
 
-// getOrCreateIMCSession looks up an existing session by imcID or creates a new one.
+// getOrCreateIMCSession looks up an existing session by cacheID or creates a new one.
 // Returns nil if all session slots are in use (graceful bypass).
 // Returns the session and true if it was newly created.
-func (m *Model) getOrCreateIMCSession(ctx context.Context, imcID string) (*imcSession, bool) {
+func (m *Model) getOrCreateIMCSession(ctx context.Context, cacheID string) (*imcSession, bool) {
 	m.cacheMu.Lock()
 	defer m.cacheMu.Unlock()
 
 	// Check if session already exists.
-	if session, exists := m.imcSessions[imcID]; exists {
+	if session, exists := m.imcSessions[cacheID]; exists {
 		session.lastUsed = time.Now()
 		return session, false
 	}
@@ -344,26 +370,59 @@ func (m *Model) getOrCreateIMCSession(ctx context.Context, imcID string) (*imcSe
 		lastUsed: time.Now(),
 	}
 
-	m.imcSessions[imcID] = &session
+	m.imcSessions[cacheID] = &session
 	m.imcNextSeq++
 
-	m.log(ctx, "imc", "status", "session created", "imc_id", imcID, "seq", session.seqID, "total-sessions", len(m.imcSessions))
+	m.log(ctx, "imc", "status", "session created", "cache_id", cacheID, "seq", session.seqID, "total-sessions", len(m.imcSessions))
+
+	return &session, true
+}
+
+// getOrCreateSPCSession looks up an existing session by cacheID or creates a new one.
+// Returns nil if all session slots are in use (graceful bypass).
+// Returns the session and true if it was newly created.
+func (m *Model) getOrCreateSPCSession(ctx context.Context, cacheID string) (*spcSession, bool) {
+	m.cacheMu.Lock()
+	defer m.cacheMu.Unlock()
+
+	// Check if session already exists.
+	if session, exists := m.spcSessions[cacheID]; exists {
+		session.lastUsed = time.Now()
+		return session, false
+	}
+
+	// Check if we have room for a new session.
+	if int(m.spcNextSeq) >= m.spcMaxSeqs {
+		// All slots are in use. Could implement LRU eviction here in the future.
+		return nil, false
+	}
+
+	// Create new session with next available sequence.
+	session := spcSession{
+		seqID:    m.spcNextSeq,
+		lastUsed: time.Now(),
+	}
+
+	m.spcSessions[cacheID] = &session
+	m.spcNextSeq++
+
+	m.log(ctx, "spc", "status", "session created", "cache_id", cacheID, "seq", session.seqID, "total-sessions", len(m.spcSessions))
 
 	return &session, true
 }
 
 // extendIMCCache extends the existing cache with new messages from
 // messages[currentLastMsgIdxCached:lastMsgIdxToCache].
-func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, imcID string, session *imcSession, currentLastMsgIdxCached, lastMsgIdxToCache, currentTotalTokensCached int) cacheResult {
+func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, cacheID string, session *imcSession, currentLastMsgIdxCached, lastMsgIdxToCache, currentTotalTokensCached int) cacheResult {
 	m.cacheMu.Lock()
 	defer m.cacheMu.Unlock()
 
 	// Double-check session state hasn't changed. If it has, fall back to
 	// doing a full rebuild. This could happen if two people are using the
-	// imc id.
+	// cache id.
 	if session.lastMsgIdxCached != currentLastMsgIdxCached || session.totalTokensCached != currentTotalTokensCached {
 		m.cacheMu.Unlock()
-		result := m.buildIMCCacheFromScratch(ctx, d, messages, imcID, session, lastMsgIdxToCache)
+		result := m.buildIMCCacheFromScratch(ctx, d, messages, cacheID, session, lastMsgIdxToCache)
 		m.cacheMu.Lock()
 
 		return result
@@ -395,15 +454,15 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, imcID str
 
 	// If we don't have more tokens than what's cached, nothing to extend.
 	if totalTokens <= currentTotalTokensCached {
-		m.log(ctx, "imc", "status", "extend (no new tokens)", "imc_id", imcID, "cached", currentTotalTokensCached, "total", totalTokens)
+		m.log(ctx, "imc", "status", "extend (no new tokens)", "cache_id", cacheID, "cached", currentTotalTokensCached, "total", totalTokens)
 
 		return cacheResult{
 			modifiedD:      removeFirstNMessages(d, currentLastMsgIdxCached),
 			cacheIdx:       llama.Pos(currentTotalTokensCached),
 			cachedMsgCount: currentLastMsgIdxCached,
 			cacheHit:       true,
-			imcID:          imcID,
-			imcSeqID:       session.seqID,
+			cacheID:        cacheID,
+			cacheSeqID:     session.seqID,
 		}
 	}
 
@@ -411,7 +470,7 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, imcID str
 	extensionTokens := allTokens[currentTotalTokensCached:]
 	numOfExtTokens := len(extensionTokens)
 
-	m.log(ctx, "imc", "status", "extending cache", "imc_id", imcID, "new-tokens", numOfExtTokens)
+	m.log(ctx, "imc", "status", "extending cache", "cache_id", cacheID, "new-tokens", numOfExtTokens)
 
 	// Add the new tokens into the cache.
 	if err := m.extendTokensInCache(ctx, extensionTokens, session.seqID, currentTotalTokensCached); err != nil {
@@ -425,7 +484,7 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, imcID str
 	session.lastMsgIdxCached = lastMsgIdxToCache
 	session.lastUsed = time.Now()
 
-	m.log(ctx, "imc", "status", "cache extended", "imc_id", imcID, "seq", session.seqID,
+	m.log(ctx, "imc", "status", "cache extended", "cache_id", cacheID, "seq", session.seqID,
 		"idx", fmt.Sprintf("cur[%d] -> new[%d]", currentLastMsgIdxCached, lastMsgIdxToCache),
 		"tokens", fmt.Sprintf("cur[%d] -> new[%d] (+%d)", currentTotalTokensCached, totalTokens, numOfExtTokens))
 
@@ -434,13 +493,13 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, imcID str
 		cacheIdx:       llama.Pos(totalTokens),
 		cachedMsgCount: lastMsgIdxToCache,
 		cacheUpdated:   true,
-		imcID:          imcID,
-		imcSeqID:       session.seqID,
+		cacheID:        cacheID,
+		cacheSeqID:     session.seqID,
 	}
 }
 
 // buildIMCCacheFromScratch builds the cache from scratch for messages[0:lastMsgIdxToCache].
-func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D, imcID string, session *imcSession, lastMsgIdxToCache int) cacheResult {
+func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D, cacheID string, session *imcSession, lastMsgIdxToCache int) cacheResult {
 	m.cacheMu.Lock()
 	defer m.cacheMu.Unlock()
 
@@ -448,7 +507,7 @@ func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D,
 	if session.lastMsgIdxCached > 0 && session.totalTokensCached > 0 && session.lastMsgIdxCached <= len(messages) {
 		prefixHash := hashMessages(messages[:session.lastMsgIdxCached])
 		if prefixHash == session.cachedMsgsHash {
-			m.log(ctx, "imc", "status", "cache hit (after-lock)", "imc_id", imcID, "last-msg-idx-cached", session.lastMsgIdxCached, "total-tokens-cached", session.totalTokensCached)
+			m.log(ctx, "imc", "status", "cache hit (after-lock)", "cache_id", cacheID, "last-msg-idx-cached", session.lastMsgIdxCached, "total-tokens-cached", session.totalTokensCached)
 			return cacheResult{cacheIdx: llama.Pos(session.totalTokensCached), cacheHit: true}
 		}
 	}
@@ -483,7 +542,7 @@ func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D,
 	}
 
 	if nTokens < m.cfg.CacheMinTokens {
-		m.log(ctx, "imc", "status", "skip (too short)", "imc_id", imcID, "last-msg-index-to-cache", lastMsgIdxToCache, "tokens", nTokens, "cache-min-tokens", m.cfg.CacheMinTokens)
+		m.log(ctx, "imc", "status", "skip (too short)", "cache_id", cacheID, "last-msg-index-to-cache", lastMsgIdxToCache, "tokens", nTokens, "cache-min-tokens", m.cfg.CacheMinTokens)
 		return cacheResult{modifiedD: d}
 	}
 
@@ -499,15 +558,15 @@ func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D,
 	session.lastMsgIdxCached = lastMsgIdxToCache
 	session.lastUsed = time.Now()
 
-	m.log(ctx, "imc", "status", "cache built from scratch", "imc_id", imcID, "seq", session.seqID, "msgs", lastMsgIdxToCache, "tokens", nTokens, "hash", newHash[:8])
+	m.log(ctx, "imc", "status", "cache built from scratch", "cache_id", cacheID, "seq", session.seqID, "msgs", lastMsgIdxToCache, "tokens", nTokens, "hash", newHash[:8])
 
 	return cacheResult{
 		modifiedD:      removeFirstNMessages(d, lastMsgIdxToCache),
 		cacheIdx:       llama.Pos(nTokens),
 		cachedMsgCount: lastMsgIdxToCache,
 		cacheUpdated:   true,
-		imcID:          imcID,
-		imcSeqID:       session.seqID,
+		cacheID:        cacheID,
+		cacheSeqID:     session.seqID,
 	}
 }
 
@@ -610,26 +669,8 @@ func (m *Model) addTokensToCache(ctx context.Context, tokens []llama.Token, seqI
 	return nil
 }
 
-// copySystemPromptToSeq copies the SPC cache (seq 0) to the target sequence.
-// For batch engine slot restoration after completion.
-func (m *Model) copySystemPromptToSeq(seqID llama.SeqId) error {
-	if !m.cfg.SystemPromptCache {
-		return nil
-	}
-
-	m.cacheMu.RLock()
-	sysTokens := m.sysPromptTokens
-	m.cacheMu.RUnlock()
-
-	if sysTokens > 0 {
-		return m.copyCachesToSeq(seqID, 0)
-	}
-
-	return nil
-}
-
 // copyCachesToSeq copies cached KV state from a cache sequence to the target
-// sequence. For SPC, uses seq 0. For IMC, the srcSeqID must be passed explicitly.
+// sequence. Used by both SPC and IMC with their session-specific sequences.
 func (m *Model) copyCachesToSeq(dstSeqID llama.SeqId, srcSeqID llama.SeqId) error {
 	if !m.cfg.SystemPromptCache && !m.cfg.IncrementalCache {
 		return nil
@@ -646,9 +687,6 @@ func (m *Model) copyCachesToSeq(dstSeqID llama.SeqId, srcSeqID llama.SeqId) erro
 // This is useful when the model context is reset.
 func (m *Model) clearCaches() {
 	m.cacheMu.Lock()
-	m.sysPromptHash = ""
-	m.sysPromptTokens = 0
-	m.sysPromptLen = 0
 
 	// Clear all IMC sessions.
 	for id := range m.imcSessions {
@@ -656,6 +694,13 @@ func (m *Model) clearCaches() {
 	}
 
 	m.imcNextSeq = 0
+
+	// Clear all SPC sessions.
+	for id := range m.spcSessions {
+		delete(m.spcSessions, id)
+	}
+
+	m.spcNextSeq = 0
 	m.cacheMu.Unlock()
 }
 

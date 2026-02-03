@@ -88,9 +88,12 @@ const BYTES_PER_ELEMENT_OPTIONS = [
 
 const SLOT_OPTIONS = [1, 2, 3, 4, 5];
 
-const CACHE_SEQUENCE_OPTIONS = [
-  { value: 0, label: 'Off' },
-  { value: 1, label: 'On (IMC or SPC)' },
+const CACHE_SESSIONS_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8];
+
+const CACHE_TYPE_OPTIONS = [
+  { value: 'off', label: 'Off', isIMC: false },
+  { value: 'spc', label: 'SPC (System Prompt Cache)', isIMC: false },
+  { value: 'imc', label: 'IMC (Incremental Message Cache)', isIMC: true },
 ];
 
 function formatBytes(bytes: number): string {
@@ -107,12 +110,16 @@ export default function VRAMCalculator() {
   const [contextWindow, setContextWindow] = useState(8192);
   const [bytesPerElement, setBytesPerElement] = useState(1);
   const [slots, setSlots] = useState(2);
-  const [cacheSequences, setCacheSequences] = useState(0);
+  const [cacheType, setCacheType] = useState('off');
+  const [cacheSessions, setCacheSessions] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<VRAMCalculatorResponse | null>(null);
   const [showLearnMore, setShowLearnMore] = useState(false);
   const hasCalculated = useRef(false);
+
+  const selectedCacheOption = CACHE_TYPE_OPTIONS.find(opt => opt.value === cacheType) || CACHE_TYPE_OPTIONS[0];
+  const cacheSequences = cacheType === 'off' ? 0 : cacheSessions;
 
   const performCalculation = useCallback(async (clearResult = true) => {
     if (!modelUrl.trim()) {
@@ -134,6 +141,7 @@ export default function VRAMCalculator() {
           bytes_per_element: bytesPerElement,
           slots: slots,
           cache_sequences: cacheSequences,
+          incremental_cache: selectedCacheOption.isIMC,
         },
         token || undefined
       );
@@ -144,13 +152,13 @@ export default function VRAMCalculator() {
     } finally {
       setLoading(false);
     }
-  }, [modelUrl, contextWindow, bytesPerElement, slots, cacheSequences, token]);
+  }, [modelUrl, contextWindow, bytesPerElement, slots, cacheSequences, selectedCacheOption.isIMC, token]);
 
   useEffect(() => {
     if (hasCalculated.current && modelUrl.trim()) {
       performCalculation(false);
     }
-  }, [contextWindow, bytesPerElement, slots, cacheSequences]);
+  }, [contextWindow, bytesPerElement, slots, cacheType, cacheSessions]);
 
   const handleCalculate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -264,23 +272,44 @@ export default function VRAMCalculator() {
         </div>
 
         <div className="form-group">
-          <label htmlFor="cacheSequences">Cache Sequences</label>
+          <label htmlFor="cacheType">Cache Type</label>
           <select
-            id="cacheSequences"
-            value={cacheSequences}
-            onChange={(e) => setCacheSequences(Number(e.target.value))}
+            id="cacheType"
+            value={cacheType}
+            onChange={(e) => setCacheType(e.target.value)}
             className="form-select"
           >
-            {CACHE_SEQUENCE_OPTIONS.map((opt) => (
+            {CACHE_TYPE_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
               </option>
             ))}
           </select>
           <small className="form-hint">
-            FMC = First Message Cache, SPC = System Prompt Cache
+            IMC auto-scales context window to ensure full context per slot
           </small>
         </div>
+
+        {cacheType !== 'off' && (
+          <div className="form-group">
+            <label htmlFor="cacheSessions">Cache Sessions (Multi-User)</label>
+            <select
+              id="cacheSessions"
+              value={cacheSessions}
+              onChange={(e) => setCacheSessions(Number(e.target.value))}
+              className="form-select"
+            >
+              {CACHE_SESSIONS_OPTIONS.map((s) => (
+                <option key={s} value={s}>
+                  {s} {s === 1 ? 'session' : 'sessions'}
+                </option>
+              ))}
+            </select>
+            <small className="form-hint">
+              Number of concurrent user caches (max-cache-sessions). Each session uses a dedicated cache sequence.
+            </small>
+          </div>
+        )}
 
         <button type="submit" className="btn btn-primary" disabled={loading}>
           {loading ? 'Calculating...' : 'Calculate VRAM'}
@@ -314,6 +343,10 @@ export default function VRAMCalculator() {
             <div className="vram-result-item">
               <span className="vram-result-label">KV Per Token Per Layer</span>
               <span className="vram-result-value">{formatBytes(result.kv_per_token_per_layer)}</span>
+            </div>
+            <div className="vram-result-item">
+              <span className="vram-result-label">Context Window (Used)</span>
+              <span className="vram-result-value">{result.input.context_window.toLocaleString()} tokens</span>
             </div>
           </div>
 

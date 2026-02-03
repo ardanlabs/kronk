@@ -213,27 +213,27 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		return false
 	}
 
-	sysPromptCached := false
-	if m.cfg.SystemPromptCache && cache.cacheIdx > 0 {
-		sysPromptCached = true
-	}
+	spcCacheHit := m.cfg.SystemPromptCache && cache.cacheIdx > 0
+	imcCacheHit := m.cfg.IncrementalCache && cache.cacheID != ""
 
 	job := chatJob{
-		id:              id,
-		ctx:             ctx,
-		d:               d,
-		object:          object,
-		prompt:          prompt,
-		media:           media,
-		params:          params,
-		mtmdCtx:         mtmdCtx,
-		ch:              ch,
-		sysPromptNPast:  cache.cacheIdx,
-		sysPromptCached: sysPromptCached,
-		imcID:           cache.imcID,
-		imcSeqID:        cache.imcSeqID,
-		imcNPast:        cache.cacheIdx,
-		imcCached:       cache.imcID != "",
+		id:      id,
+		ctx:     ctx,
+		d:       d,
+		object:  object,
+		prompt:  prompt,
+		media:   media,
+		params:  params,
+		mtmdCtx: mtmdCtx,
+		ch:      ch,
+
+		spcCacheIdx: cache.cacheIdx,
+		spcCacheHit: spcCacheHit,
+
+		imcID:       cache.cacheID,
+		imcSeqID:    cache.cacheSeqID,
+		imcCacheIdx: cache.cacheIdx,
+		imcCacheHit: imcCacheHit,
 	}
 
 	if err := m.batch.submit(&job); err != nil {
