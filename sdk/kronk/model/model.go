@@ -29,12 +29,12 @@ type compiledTemplate struct {
 // imcSession holds the state for a single IMC (Incremental Message Cache) session.
 // Each unique imc_id gets its own session with an assigned cache sequence.
 type imcSession struct {
-	hash      string      // Hash of all cached messages
-	tokens    int         // Total tokens in cache
-	msgCount  int         // Number of messages cached
-	promptLen int         // Length of templated prefix (for extension)
-	seqID     llama.SeqId // Assigned cache sequence ID
-	lastUsed  time.Time   // Last access time (for eviction)
+	cachedMsgsHash    string      // Hash of all cached messages
+	totalTokensCached int         // Total tokens in cache
+	lastMsgIdxCached  int         // The index of the last message cached
+	amtOfDataCached   int         // The amount of data that is cached
+	seqID             llama.SeqId // Assigned cache sequence ID
+	lastUsed          time.Time   // Last access time (for eviction)
 }
 
 // TemplateRetriever returns a configured template for a model.
@@ -346,7 +346,7 @@ func (m *Model) resetContext() {
 		llama.MemoryClear(mem, true)
 	}
 
-	m.clearSystemPromptCache()
+	m.clearCaches()
 }
 
 func (m *Model) sequentialChatRequest(ctx context.Context, id string, lctx llama.Context, mtmdCtx mtmd.Context, object string, prompt string, media [][]byte, params Params, ch chan<- ChatResponse) {

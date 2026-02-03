@@ -59,9 +59,9 @@ func TestHashMessages(t *testing.T) {
 			wantSame: false,
 		},
 		{
-			name: "empty messages same hash",
-			msgs1: []D{},
-			msgs2: []D{},
+			name:     "empty messages same hash",
+			msgs1:    []D{},
+			msgs2:    []D{},
 			wantSame: true,
 		},
 		{
@@ -94,9 +94,9 @@ func TestHashMessages(t *testing.T) {
 
 func TestExtractMessageContent(t *testing.T) {
 	tests := []struct {
-		name    string
-		msg     D
-		want    string
+		name string
+		msg  D
+		want string
 	}{
 		{
 			name: "string content",
@@ -149,7 +149,7 @@ func TestExtractMessageContent(t *testing.T) {
 		{
 			name: "empty array content",
 			msg: D{
-				"role": "user",
+				"role":    "user",
 				"content": []any{},
 			},
 			want: "",
@@ -168,11 +168,11 @@ func TestExtractMessageContent(t *testing.T) {
 
 func TestRemoveMessagesAtIndices(t *testing.T) {
 	tests := []struct {
-		name       string
-		messages   []D
-		indices    []int
-		wantCount  int
-		wantFirst  string
+		name      string
+		messages  []D
+		indices   []int
+		wantCount int
+		wantFirst string
 	}{
 		{
 			name: "remove first message",
@@ -252,11 +252,11 @@ func TestRemoveMessagesAtIndices(t *testing.T) {
 
 func TestFindCacheableMessage(t *testing.T) {
 	tests := []struct {
-		name       string
-		messages   []D
-		targetRole string
-		wantFound  bool
-		wantIndex  int
+		name        string
+		messages    []D
+		targetRole  string
+		wantFound   bool
+		wantIndex   int
 		wantContent string
 	}{
 		{
@@ -477,26 +477,26 @@ func TestIMCSessionState(t *testing.T) {
 	session, _ := m.getOrCreateIMCSession(ctx, "test-user")
 
 	// Simulate cache build.
-	session.hash = "abc123"
-	session.tokens = 1000
-	session.msgCount = 2
-	session.promptLen = 5000
+	session.cachedMsgsHash = "abc123"
+	session.totalTokensCached = 1000
+	session.lastMsgIdxCached = 2
+	session.amtOfDataCached = 5000
 
 	// Retrieve session again and verify state persists.
 	sessionAgain, isNew := m.getOrCreateIMCSession(ctx, "test-user")
 	if isNew {
 		t.Error("should not be new")
 	}
-	if sessionAgain.hash != "abc123" {
+	if sessionAgain.cachedMsgsHash != "abc123" {
 		t.Error("hash not persisted")
 	}
-	if sessionAgain.tokens != 1000 {
+	if sessionAgain.totalTokensCached != 1000 {
 		t.Error("tokens not persisted")
 	}
-	if sessionAgain.msgCount != 2 {
+	if sessionAgain.lastMsgIdxCached != 2 {
 		t.Error("msgCount not persisted")
 	}
-	if sessionAgain.promptLen != 5000 {
+	if sessionAgain.amtOfDataCached != 5000 {
 		t.Error("promptLen not persisted")
 	}
 }
@@ -548,12 +548,12 @@ func TestClearCaches(t *testing.T) {
 func TestCacheResultFields(t *testing.T) {
 	// Test that cacheResult correctly propagates IMC fields.
 	result := cacheResult{
-		modifiedD: D{"test": "value"},
-		prompt:    "test prompt",
-		nPast:     1000,
-		cached:    true,
-		imcID:     "user-123",
-		imcSeqID:  llama.SeqId(2),
+		modifiedD:     D{"test": "value"},
+		newDataCached: "test prompt",
+		nPast:         1000,
+		cached:        true,
+		imcID:         "user-123",
+		imcSeqID:      llama.SeqId(2),
 	}
 
 	if result.imcID != "user-123" {

@@ -194,8 +194,8 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string) (
 			return "", nil, cache, cache.err
 		}
 
-		if cache.prompt != "" {
-			return cache.prompt, cache.media, cache, nil
+		if cache.newDataCached != "" {
+			return cache.newDataCached, cache.media, cache, nil
 		}
 
 		d = cache.modifiedD
