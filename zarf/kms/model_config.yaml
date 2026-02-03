@@ -132,7 +132,7 @@
 # ------------------------------------------------------------------------------
 # Coding Agents and configured for Cline or Claude Code
 
-# This has been the best with Cline and OpenCode.
+# This has been the best with Cline.
 Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL:
   &base_Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
   context-window: 131072
