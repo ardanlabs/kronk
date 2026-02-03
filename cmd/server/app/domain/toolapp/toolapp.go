@@ -227,10 +227,21 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.New(errs.InvalidArgument, err)
 	}
 
+	slots := max(req.Slots, 1)
+	totalSeqs := slots + req.CacheSequences
+
+	// For IMC, context window is auto-scaled by totalSeqs so each slot gets
+	// the full configured context. SPC only caches the system prompt (small),
+	// so no scaling needed.
+	contextWindow := req.ContextWindow
+	if req.IncrementalCache {
+		contextWindow *= totalSeqs
+	}
+
 	cfg := models.VRAMConfig{
-		ContextWindow:   req.ContextWindow,
+		ContextWindow:   contextWindow,
 		BytesPerElement: req.BytesPerElement,
-		Slots:           req.Slots,
+		Slots:           slots,
 		CacheSequences:  req.CacheSequences,
 	}
 

@@ -500,44 +500,47 @@ func TestIMCSessionState(t *testing.T) {
 func TestClearCaches(t *testing.T) {
 	m := &Model{
 		cfg: Config{
-			IncrementalCache: true,
+			IncrementalCache:   true,
+			SystemPromptCache:  true,
 		},
-		imcSessions:     make(map[string]*imcSession),
-		imcNextSeq:      0,
-		imcMaxSeqs:      2,
-		sysPromptHash:   "sys-hash",
-		sysPromptTokens: 100,
-		sysPromptLen:    500,
-		log:             func(ctx context.Context, msg string, args ...any) {},
+		imcSessions: make(map[string]*imcSession),
+		imcNextSeq:  0,
+		imcMaxSeqs:  2,
+		spcSessions: make(map[string]*spcSession),
+		spcNextSeq:  0,
+		spcMaxSeqs:  2,
+		log:         func(ctx context.Context, msg string, args ...any) {},
 	}
 
 	ctx := context.Background()
 
-	// Create some sessions.
+	// Create some IMC sessions.
 	m.getOrCreateIMCSession(ctx, "user-1")
 	m.getOrCreateIMCSession(ctx, "user-2")
 
+	// Create some SPC sessions.
+	m.getOrCreateSPCSession(ctx, "user-3")
+	m.getOrCreateSPCSession(ctx, "user-4")
+
 	if len(m.imcSessions) != 2 {
-		t.Fatalf("expected 2 sessions, got %d", len(m.imcSessions))
+		t.Fatalf("expected 2 IMC sessions, got %d", len(m.imcSessions))
+	}
+
+	if len(m.spcSessions) != 2 {
+		t.Fatalf("expected 2 SPC sessions, got %d", len(m.spcSessions))
 	}
 
 	// Clear caches.
 	m.clearCaches()
 
-	// Verify SPC state cleared.
-	if m.sysPromptHash != "" {
-		t.Error("sysPromptHash not cleared")
-	}
-	if m.sysPromptTokens != 0 {
-		t.Error("sysPromptTokens not cleared")
-	}
-	if m.sysPromptLen != 0 {
-		t.Error("sysPromptLen not cleared")
-	}
-
 	// Verify IMC sessions cleared.
 	if len(m.imcSessions) != 0 {
 		t.Errorf("imcSessions not cleared, got %d", len(m.imcSessions))
+	}
+
+	// Verify SPC sessions cleared.
+	if len(m.spcSessions) != 0 {
+		t.Errorf("spcSessions not cleared, got %d", len(m.spcSessions))
 	}
 }
 
@@ -548,15 +551,15 @@ func TestCacheResultFields(t *testing.T) {
 		cacheIdx:     1000,
 		cacheHit:     true,
 		cacheUpdated: false,
-		imcID:        "user-123",
-		imcSeqID:     llama.SeqId(2),
+		cacheID:      "user-123",
+		cacheSeqID:   llama.SeqId(2),
 	}
 
-	if result.imcID != "user-123" {
-		t.Errorf("imcID = %s, want user-123", result.imcID)
+	if result.cacheID != "user-123" {
+		t.Errorf("cacheID = %s, want user-123", result.cacheID)
 	}
-	if result.imcSeqID != 2 {
-		t.Errorf("imcSeqID = %d, want 2", result.imcSeqID)
+	if result.cacheSeqID != 2 {
+		t.Errorf("cacheSeqID = %d, want 2", result.cacheSeqID)
 	}
 	if result.cacheIdx != 1000 {
 		t.Errorf("cacheIdx = %d, want 1000", result.cacheIdx)

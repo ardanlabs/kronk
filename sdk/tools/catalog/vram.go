@@ -9,18 +9,30 @@ import (
 
 // CalculateVRAM retrieves model metadata and computes the VRAM requirements.
 func (c *Catalog) CalculateVRAM(modelID string, mc ModelConfig) (models.VRAM, error) {
+	nSeqMax := int64(max(mc.NSeqMax, 1))
+
 	var cacheSequences int64
-	if mc.SystemPromptCache {
-		cacheSequences = 1
+	switch {
+	case mc.SystemPromptCache:
+		cacheSequences = int64(max(mc.MaxCacheSessions, 1))
+	case mc.IncrementalCache:
+		cacheSequences = int64(max(mc.MaxCacheSessions, 1))
 	}
+
+	totalSeqs := nSeqMax + cacheSequences
+
+	// For IMC, context window is auto-scaled by totalSeqs so each slot gets
+	// the full configured context. SPC only caches the system prompt (small),
+	// so no scaling needed.
+	contextWindow := int64(mc.ContextWindow)
 	if mc.IncrementalCache {
-		cacheSequences = int64(max(mc.MaxIMCSessions, 1))
+		contextWindow *= totalSeqs
 	}
 
 	cfg := models.VRAMConfig{
-		ContextWindow:   int64(mc.ContextWindow),
+		ContextWindow:   contextWindow,
 		BytesPerElement: ggmlTypeToBytes(mc.CacheTypeK, mc.CacheTypeV),
-		Slots:           int64(mc.NSeqMax),
+		Slots:           nSeqMax,
 		CacheSequences:  cacheSequences,
 	}
 

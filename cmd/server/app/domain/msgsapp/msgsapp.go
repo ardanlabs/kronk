@@ -54,8 +54,8 @@ func (a *app) messages(ctx context.Context, r *http.Request) web.Encoder {
 
 	d := toOpenAI(req)
 
-	if imcID := r.Header.Get("KRONK_IMC_ID"); imcID != "" {
-		d["imc_id"] = imcID
+	if cacheID := r.Header.Get("KRONK_CACHE_ID"); cacheID != "" {
+		d["cache_id"] = cacheID
 	}
 
 	if req.Stream {

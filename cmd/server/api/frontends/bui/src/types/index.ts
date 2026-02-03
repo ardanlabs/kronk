@@ -64,7 +64,7 @@ export interface ModelConfig {
   'split-mode': string;
   'system-prompt-cache': boolean;
   'incremental-cache': boolean;
-  'max-imc-sessions': number;
+  'max-cache-sessions': number;
   'cache-min-tokens': number;
   'sampling-parameters': SamplingConfig;
 
@@ -315,6 +315,7 @@ export interface VRAMRequest {
   bytes_per_element: number;
   slots: number;
   cache_sequences: number;
+  incremental_cache: boolean;
 }
 
 export interface VRAMCalculatorResponse {
