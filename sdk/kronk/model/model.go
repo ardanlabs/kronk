@@ -32,7 +32,6 @@ type imcSession struct {
 	cachedMsgsHash    string      // Hash of all cached messages
 	totalTokensCached int         // Total tokens in cache
 	lastMsgIdxCached  int         // The index of the last message cached
-	amtOfDataCached   int         // The amount of data that is cached
 	seqID             llama.SeqId // Assigned cache sequence ID
 	lastUsed          time.Time   // Last access time (for eviction)
 }
@@ -849,7 +848,7 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 	percentage := (float64(contextTokens) / float64(contextWindow)) * 100
 	of := float32(contextWindow) / float32(1024)
 
-	m.log(ctx, "chat-completion", "prompt", usage.PromptTokens, "output", usage.OutputTokens,
+	m.log(ctx, "chat-completion (send final response)", "prompt", usage.PromptTokens, "output", usage.OutputTokens,
 		"context", contextTokens, "down", fmt.Sprintf("(%.0f%% of %.0fK) TPS: %.2f", percentage, of, usage.TokensPerSecond))
 }
 

@@ -194,10 +194,6 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string) (
 			return "", nil, cache, cache.err
 		}
 
-		if cache.newDataCached != "" {
-			return cache.newDataCached, cache.media, cache, nil
-		}
-
 		d = cache.modifiedD
 	}
 
@@ -218,8 +214,8 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 	}
 
 	sysPromptCached := false
-	if m.cfg.SystemPromptCache {
-		sysPromptCached = cache.cached
+	if m.cfg.SystemPromptCache && cache.cacheIdx > 0 {
+		sysPromptCached = true
 	}
 
 	job := chatJob{
@@ -232,11 +228,11 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		params:          params,
 		mtmdCtx:         mtmdCtx,
 		ch:              ch,
-		sysPromptNPast:  cache.nPast,
+		sysPromptNPast:  cache.cacheIdx,
 		sysPromptCached: sysPromptCached,
 		imcID:           cache.imcID,
 		imcSeqID:        cache.imcSeqID,
-		imcNPast:        cache.nPast,
+		imcNPast:        cache.cacheIdx,
 		imcCached:       cache.imcID != "",
 	}
 

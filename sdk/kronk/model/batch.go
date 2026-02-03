@@ -489,7 +489,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 	}
 
 	e.model.log(job.ctx, "batch-engine", "status", "slot-started", "slot", s.id, "seq", s.seqID, "id", job.id,
-		"prompt_tokens", s.nPrompt, "sys_cached", job.sysPromptCached, "imc_cached", job.imcCached, "kv_used_other", kvUsed)
+		"prompt_tokens", s.nPrompt, "sys_cached", job.sysPromptCached, "imc_cached", job.imcCached, "cached_tokens", kvUsed)
 }
 
 // addPrefillChunk adds the next chunk of prefill tokens to the batch.
