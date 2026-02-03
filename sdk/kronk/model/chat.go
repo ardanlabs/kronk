@@ -452,6 +452,8 @@ func (m *Model) validateDocument(d D) (Params, error) {
 }
 
 func (m *Model) sendChatError(ctx context.Context, ch chan<- ChatResponse, id string, err error) {
+	m.log(ctx, "send-chat-error", "ERROR", err.Error(), "id", id)
+
 	// I want to try and send this message before we check the context.
 	select {
 	case ch <- ChatResponseErr(id, ObjectChatUnknown, m.modelInfo.ID, 0, "", err, Usage{}):

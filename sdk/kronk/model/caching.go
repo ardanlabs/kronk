@@ -13,16 +13,14 @@ import (
 
 // cacheResult contains the results of cache processing.
 type cacheResult struct {
-	modifiedD D         // D with cached messages removed if cache was used
-	prompt    string    // Templated prompt (set when caching occurs)
-	media     [][]byte  // Media from templating (set when caching occurs)
-	nPast     llama.Pos // Starting position for new tokens (cumulative from both caches)
-	cached    bool      // True if any cache is being used
-	err       error     // Any error that occurred
-
-	// IMC-specific fields (set when IncrementalCache is used)
-	imcID    string      // IMC session ID
-	imcSeqID llama.SeqId // IMC session's cache sequence
+	modifiedD D           // D with cached messages removed if cache was used
+	prompt    string      // Templated prompt (set when caching occurs)
+	media     [][]byte    // Media from templating (set when caching occurs)
+	nPast     llama.Pos   // Starting position for new tokens (cumulative from both caches)
+	cached    bool        // True if any cache is being used
+	err       error       // Any error that occurred
+	imcID     string      // IMC session ID
+	imcSeqID  llama.SeqId // IMC session's cache sequence
 }
 
 // processCache checks if the system prompt or incremental messages are
@@ -49,102 +47,72 @@ func (m *Model) processCache(ctx context.Context, d D) cacheResult {
 		return cacheResult{modifiedD: d}
 	}
 
+	if m.cfg.SystemPromptCache {
+		return m.processSystemCache(ctx, d)
+	}
+
+	return m.processIncrementalCache(ctx, d)
+}
+
+// processSystemCache orchestrates the system prompt caching flow. It examines
+// the first message and either caches it (if it's a system message) or reuses
+// an existing cache (if the client omitted the system message on a follow-up
+// request). The system message is always removed from d after processing.
+func (m *Model) processSystemCache(ctx context.Context, d D) cacheResult {
 	messages, ok := d["messages"].([]D)
 	if !ok || len(messages) == 0 {
 		return cacheResult{modifiedD: d}
 	}
 
-	var totalNPast llama.Pos
-	var anyCached bool
-	var indicesToRemove []int
-
-	// -------------------------------------------------------------------------
-	// SystemPromptCache: cache first system message
-
-	if m.cfg.SystemPromptCache {
-		sysMsg, found := findCacheableMessage(messages, RoleSystem)
-
-		switch found {
-		case true:
-			result := m.handleSystemPromptCache(ctx, d, sysMsg)
-			if result.err != nil {
-				return result
-			}
-
-			if result.cached {
-				totalNPast += result.nPast
-				anyCached = true
-				indicesToRemove = append(indicesToRemove, sysMsg.index)
-			}
-
-		case false:
-			// No system message but cache exists - use it.
-			m.cacheMu.RLock()
-			cachedTokens := m.sysPromptTokens
-			m.cacheMu.RUnlock()
-
-			if cachedTokens > 0 {
-				m.log(ctx, "cache", "status", "hit (no system prompt)", "tokens", cachedTokens)
-				totalNPast += llama.Pos(cachedTokens)
-				anyCached = true
-			}
-		}
+	role, ok := messages[0]["role"].(string)
+	if !ok {
+		return cacheResult{modifiedD: d}
 	}
 
-	// -------------------------------------------------------------------------
-	// IncrementalCache (IMC): Incremental multi-turn caching for agentic
-	// workflows. Requires imc_id to identify the session.
+	content := extractMessageContent(messages[0])
+	if content == "" {
+		return cacheResult{modifiedD: d}
+	}
 
-	if m.cfg.IncrementalCache {
-		imcID, _ := d["imc_id"].(string)
-		if imcID == "" {
-			imcID = "default"
-			m.log(ctx, "cache", "status", "using default imc id", "reason", "IMC turned on but no imc_id was provided")
-		}
+	sysMsg := cacheableMessage{
+		index:   0,
+		role:    role,
+		content: content,
+	}
 
-		result, cachedMsgCount := m.handleIncrementalMessageCache(ctx, d, messages, imcID)
+	var totalNPast llama.Pos
+	var anyCached bool
+
+	switch role {
+	case RoleSystem:
+		result := m.performSystemPromptCache(ctx, d, sysMsg)
 		if result.err != nil {
 			return result
 		}
 
+		// Mark we cached the system prompt and where those system prompt tokens
+		// end in the cache.
 		if result.cached {
-			totalNPast += result.nPast
+			totalNPast = result.nPast
 			anyCached = true
-
-			// IMC caches messages[0:cachedMsgCount]. Remove all cached messages.
-			for i := 0; i < cachedMsgCount; i++ {
-				indicesToRemove = append(indicesToRemove, i)
-			}
-
-			// If IMC returned a prompt (first-time cache or extension), use it directly.
-			if result.prompt != "" {
-				return cacheResult{
-					modifiedD: d,
-					prompt:    result.prompt,
-					media:     result.media,
-					nPast:     totalNPast,
-					cached:    true,
-					imcID:     result.imcID,
-					imcSeqID:  result.imcSeqID,
-				}
-			}
-
-			// IMC hit without prompt - propagate session info.
-			return cacheResult{
-				modifiedD: removeMessagesAtIndices(d, indicesToRemove),
-				nPast:     totalNPast,
-				cached:    true,
-				imcID:     result.imcID,
-				imcSeqID:  result.imcSeqID,
-			}
 		}
-	}
 
-	// -------------------------------------------------------------------------
-	// Remove cached messages from D
+		// Remove the system prompt from the messages.
+		d = removeMessagesAtIndices(d, []int{0})
 
-	if len(indicesToRemove) > 0 {
-		d = removeMessagesAtIndices(d, indicesToRemove)
+	default:
+		// No system message in the input, but cache exists. This means the
+		// client did not send the system message again on their next request.
+
+		m.cacheMu.RLock()
+		cachedTokens := m.sysPromptTokens
+		m.cacheMu.RUnlock()
+
+		if cachedTokens > 0 {
+			m.log(ctx, "cache", "status", "cache hit (system prompt excluded on this request)", "tokens", cachedTokens)
+			totalNPast = llama.Pos(cachedTokens)
+			anyCached = true
+		}
 	}
 
 	return cacheResult{
@@ -154,13 +122,153 @@ func (m *Model) processCache(ctx context.Context, d D) cacheResult {
 	}
 }
 
-// handleSystemPromptCache handles caching for system prompt mode.
-// Uses sequence 0 for the cache.
-func (m *Model) handleSystemPromptCache(ctx context.Context, d D, msgInfo cacheableMessage) cacheResult {
-	return m.cacheMessage(ctx, d, msgInfo, 0, &m.sysPromptHash, &m.sysPromptTokens, &m.sysPromptLen)
+// performSystemPromptCache performs the actual caching of a system prompt message.
+// It checks for cache hits, and on a miss, templates the system message, tokenizes
+// it, and decodes the tokens into sequence 0 for reuse on subsequent requests.
+func (m *Model) performSystemPromptCache(ctx context.Context, d D, msgInfo cacheableMessage) cacheResult {
+	// Default sequence id for caching.
+	const seqID llama.SeqId = 0
+
+	if msgInfo.role != RoleSystem {
+		m.log(ctx, "cache", "status", "no system prompt message provided", "role", msgInfo.role)
+		return cacheResult{modifiedD: d}
+	}
+
+	contentLen := len(msgInfo.content)
+
+	// -------------------------------------------------------------------------
+	// Check for cache hit (fast path with read lock).
+	// We check the length of the system prompt string first to see if this is a
+	// new system prompt before checking with the more accurate hash compare.
+	// It's possible a new system prompt is of the same length as the old one.
+
+	m.cacheMu.RLock()
+	currentHash := m.sysPromptHash
+	currentTokens := m.sysPromptTokens
+	currentLen := m.sysPromptLen
+	m.cacheMu.RUnlock()
+
+	newHash := hashMessage(msgInfo)
+
+	if currentLen == contentLen && currentHash == newHash && currentTokens > 0 {
+		m.log(ctx, "cache", "status", "system prompt cache hit", "role", msgInfo.role, "seq", seqID, "tokens", currentTokens)
+		return cacheResult{nPast: llama.Pos(currentTokens), cached: true}
+	}
+
+	// -------------------------------------------------------------------------
+	// Cache miss - template and cache the message.
+
+	m.cacheMu.Lock()
+	defer m.cacheMu.Unlock()
+
+	// Double-check in case another goroutine cached while we waited.
+	// Must compute hash here since we skipped it above on length mismatch.
+	if m.sysPromptLen == contentLen && m.sysPromptHash == newHash && m.sysPromptTokens > 0 {
+		m.log(ctx, "cache", "status", "system prompt cache hit (after lock)", "role", msgInfo.role, "seq", seqID, "tokens", m.sysPromptTokens)
+		return cacheResult{nPast: llama.Pos(m.sysPromptTokens), cached: true}
+	}
+
+	// Template just the system message since that is what's going into the cache.
+	systemMsg := D{
+		"messages":              []D{d["messages"].([]D)[0]},
+		"add_generation_prompt": false,
+	}
+
+	prefixPrompt, _, err := m.createPrompt(ctx, systemMsg)
+	if err != nil {
+		return cacheResult{modifiedD: d, err: fmt.Errorf("cache: failed to template system prompt: %w", err)}
+	}
+
+	tokens := llama.Tokenize(m.vocab, prefixPrompt, m.addBOSToken, true)
+	nTokens := len(tokens)
+
+	if nTokens == 0 {
+		return cacheResult{modifiedD: d, err: fmt.Errorf("cache: system prompt tokenized to zero tokens")}
+	}
+
+	if nTokens < m.cfg.CacheMinTokens {
+		m.log(ctx, "cache", "status", "system prompt cache skip (too short)", "role", msgInfo.role, "seq", seqID, "tokens", nTokens, "min", m.cfg.CacheMinTokens)
+		return cacheResult{modifiedD: d}
+	}
+
+	if err := m.decodeTokensToSeq(ctx, tokens, seqID); err != nil {
+		return cacheResult{modifiedD: d, err: err}
+	}
+
+	m.sysPromptHash = newHash
+	m.sysPromptTokens = nTokens
+	m.sysPromptLen = contentLen
+
+	m.log(ctx, "cache", "status", "system prompt cached", "role", msgInfo.role, "seq", seqID, "tokens", nTokens, "hash", newHash[:8])
+
+	return cacheResult{
+		modifiedD: d,
+		nPast:     llama.Pos(nTokens),
+		cached:    true,
+	}
 }
 
-// handleIncrementalMessageCache implements incremental multi-turn caching (IMC)
+func (m *Model) processIncrementalCache(ctx context.Context, d D) cacheResult {
+	messages, ok := d["messages"].([]D)
+	if !ok || len(messages) == 0 {
+		return cacheResult{modifiedD: d}
+	}
+
+	imcID, _ := d["imc_id"].(string)
+	if imcID == "" {
+		imcID = "default"
+		m.log(ctx, "cache", "status", "using default imc id", "reason", "IMC turned on but no imc_id was provided")
+	}
+
+	result, cachedMsgCount := m.performIncrementalMessageCache(ctx, d, messages, imcID)
+	if result.err != nil {
+		return result
+	}
+
+	var totalNPast llama.Pos
+	var anyCached bool
+	var indicesToRemove []int
+
+	if result.cached {
+		totalNPast += result.nPast
+		anyCached = true
+
+		// IMC caches messages[0:cachedMsgCount]. Remove all cached messages.
+		for i := range cachedMsgCount {
+			indicesToRemove = append(indicesToRemove, i)
+		}
+
+		// If IMC returned a prompt (first-time cache or extension), use it directly.
+		if result.prompt != "" {
+			return cacheResult{
+				modifiedD: d,
+				prompt:    result.prompt,
+				media:     result.media,
+				nPast:     totalNPast,
+				cached:    true,
+				imcID:     result.imcID,
+				imcSeqID:  result.imcSeqID,
+			}
+		}
+
+		// IMC hit without prompt - propagate session info.
+		return cacheResult{
+			modifiedD: removeMessagesAtIndices(d, indicesToRemove),
+			nPast:     totalNPast,
+			cached:    true,
+			imcID:     result.imcID,
+			imcSeqID:  result.imcSeqID,
+		}
+	}
+
+	return cacheResult{
+		modifiedD: d,
+		nPast:     totalNPast,
+		cached:    anyCached,
+	}
+}
+
+// performIncrementalMessageCache implements incremental multi-turn caching (IMC)
 // for agentic workflows. It caches all messages except the last one (which
 // triggers generation) and extends the cache incrementally on subsequent requests.
 //
@@ -173,7 +281,7 @@ func (m *Model) handleSystemPromptCache(ctx context.Context, d D, msgInfo cachea
 //  3. If session cache exists, check if messages[0:msgCount] match cached hash
 //  4. On prefix match: extend cache with messages[msgCount:len-1]
 //  5. On prefix mismatch: rebuild cache from scratch
-func (m *Model) handleIncrementalMessageCache(ctx context.Context, d D, messages []D, imcID string) (cacheResult, int) {
+func (m *Model) performIncrementalMessageCache(ctx context.Context, d D, messages []D, imcID string) (cacheResult, int) {
 	nMessages := len(messages)
 	if nMessages < 2 {
 		// Need at least 2 messages: one to cache, one to generate from.
@@ -237,102 +345,6 @@ func (m *Model) handleIncrementalMessageCache(ctx context.Context, d D, messages
 
 	result := m.buildIMCCache(ctx, d, messages, imcID, session, targetCacheEnd)
 	return result, targetCacheEnd
-}
-
-// cacheMessage is the common caching logic used by SystemPromptCache mode.
-// It handles:
-//   - Checking for cache hits when cache is populated
-//   - Templating and caching the message when cache is empty
-//   - Returning the suffix prompt for immediate use after caching
-func (m *Model) cacheMessage(ctx context.Context, d D, msgInfo cacheableMessage, seqID llama.SeqId, hashPtr *string, tokensPtr *int, lenPtr *int) cacheResult {
-	messages, _ := d["messages"].([]D)
-	contentLen := len(msgInfo.content)
-
-	// -------------------------------------------------------------------------
-	// Check for cache hit (fast path with read lock).
-	// Use length check first to avoid expensive SHA-256 hash on cache miss.
-
-	m.cacheMu.RLock()
-	currentHash := *hashPtr
-	currentTokens := *tokensPtr
-	currentLen := *lenPtr
-	m.cacheMu.RUnlock()
-
-	if currentLen == contentLen && currentTokens > 0 {
-		newHash := hashMessage(msgInfo)
-		if currentHash == newHash {
-			m.log(ctx, "cache", "status", "cache hit", "role", msgInfo.role, "seq", seqID, "tokens", currentTokens, "messages", len(messages))
-			return cacheResult{nPast: llama.Pos(currentTokens), cached: true}
-		}
-	}
-
-	// -------------------------------------------------------------------------
-	// Cache miss - template and cache the message.
-
-	m.cacheMu.Lock()
-	defer m.cacheMu.Unlock()
-
-	// Double-check in case another goroutine cached while we waited.
-	// Must compute hash here since we skipped it above on length mismatch.
-	newHash := hashMessage(msgInfo)
-	if *lenPtr == contentLen && *hashPtr == newHash && *tokensPtr > 0 {
-		m.log(ctx, "cache", "status", "hit (after lock)", "role", msgInfo.role, "seq", seqID, "tokens", *tokensPtr)
-		return cacheResult{nPast: llama.Pos(*tokensPtr), cached: true}
-	}
-
-	// Template just the messages up to and including the cached message WITHOUT add_generation_prompt.
-	// This creates a prompt that is a valid prefix for subsequent requests.
-	prefixMessages := messages[:msgInfo.index+1]
-	prefixD := D{
-		"messages":              prefixMessages,
-		"add_generation_prompt": false,
-	}
-
-	// Copy tools if present (affects template output).
-	if tools, ok := d["tools"]; ok {
-		prefixD["tools"] = tools
-	}
-
-	prefixPrompt, _, err := m.createPrompt(ctx, prefixD)
-	if err != nil {
-		return cacheResult{modifiedD: d, err: fmt.Errorf("cache: failed to template message: %w", err)}
-	}
-
-	tokens := llama.Tokenize(m.vocab, prefixPrompt, m.addBOSToken, true)
-	nTokens := len(tokens)
-
-	if nTokens == 0 {
-		return cacheResult{modifiedD: d, err: fmt.Errorf("cache: message tokenized to zero tokens")}
-	}
-
-	if nTokens < m.cfg.CacheMinTokens {
-		m.log(ctx, "cache", "status", "skip (too short)", "role", msgInfo.role, "seq", seqID, "tokens", nTokens, "min", m.cfg.CacheMinTokens)
-		return cacheResult{modifiedD: d}
-	}
-
-	oldHash := *hashPtr
-	if len(oldHash) > 8 {
-		oldHash = oldHash[:8]
-	}
-	m.log(ctx, "cache", "status", "miss", "role", msgInfo.role, "seq", seqID,
-		"old-hash", oldHash, "new-hash", newHash[:8])
-
-	if err := m.decodeTokensToSeq(ctx, tokens, seqID); err != nil {
-		return cacheResult{modifiedD: d, err: err}
-	}
-
-	*hashPtr = newHash
-	*tokensPtr = nTokens
-	*lenPtr = contentLen
-
-	m.log(ctx, "cache", "status", "cached", "role", msgInfo.role, "seq", seqID, "tokens", nTokens, "hash", newHash[:8])
-
-	// SPC doesn't need suffix - remaining messages are templated later in chat.go.
-	return cacheResult{
-		modifiedD: d,
-		nPast:     llama.Pos(nTokens),
-		cached:    true,
-	}
 }
 
 // decodeTokensToSeq decodes tokens into the specified sequence for caching.
@@ -831,7 +843,8 @@ func extractMessageContent(msg D) string {
 }
 
 // removeMessagesAtIndices returns D with messages at the specified indices removed.
-// Indices should be in ascending order for correct removal. Mutates d in place.
+// If no messages remain after removal, adds a default user message prompting the
+// agent to greet the user. Mutates d in place.
 func removeMessagesAtIndices(d D, indices []int) D {
 	messages, ok := d["messages"].([]D)
 	if !ok || len(messages) == 0 || len(indices) == 0 {
@@ -852,8 +865,11 @@ func removeMessagesAtIndices(d D, indices []int) D {
 		}
 	}
 
+	// If no messages remain, add a prompt for the agent to greet the user.
 	if len(newMessages) == 0 {
-		return d
+		newMessages = []D{
+			{"role": RoleUser, "content": "Tell the user you are ready to help them."},
+		}
 	}
 
 	d["messages"] = newMessages
