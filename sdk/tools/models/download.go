@@ -46,18 +46,11 @@ func (m *Models) DownloadShards(ctx context.Context, log Logger, modelURLs []str
 		return mp, nil
 	}
 
-	var downloaded bool
-	defer func() {
-		if downloaded {
-			if err := m.BuildIndex(log); err != nil {
-				log(ctx, "download-shards: unable to create index", "ERROR", err)
-			}
-		}
-	}()
-
 	result := Path{
 		ModelFiles: make([]string, len(modelURLs)),
 	}
+
+	var downloaded bool
 
 	projURL = NormalizeHuggingFaceDownloadURL(projURL)
 
@@ -117,6 +110,19 @@ func (m *Models) DownloadShards(ctx context.Context, log Logger, modelURLs []str
 
 	result.Downloaded = true
 
+	// Rebuild index if files were downloaded or projector association changed.
+	var projChanged bool
+	if result.ProjFile != "" {
+		currentPath, _ := m.FullPath(modelID)
+		projChanged = currentPath.ProjFile != result.ProjFile
+	}
+
+	if downloaded || projChanged {
+		if err := m.BuildIndexWithPath(log, result); err != nil {
+			log(ctx, "download-shards: unable to create index", "ERROR", err)
+		}
+	}
+
 	return result, nil
 }
 
@@ -144,9 +150,23 @@ func (m *Models) downloadModel(ctx context.Context, modelFileURL string, projFil
 	}
 
 	mp, found := m.loadIndex()[extractModelID(modelFileName)]
+
+	// If model is validated and projector association matches
+	// (or no projector requested), so skip the download.
 	if found && mp.Validated {
-		mp.Downloaded = false
-		return mp, nil
+		var projMatch bool
+		switch {
+		case projFileURL == "":
+			projMatch = true
+		case mp.ProjFile != "":
+			requestedProj, _ := extractFileName(projFileURL)
+			projMatch = filepath.Base(mp.ProjFile) == requestedProj
+		}
+
+		if projMatch {
+			mp.Downloaded = false
+			return mp, nil
+		}
 	}
 
 	// -------------------------------------------------------------------------
@@ -174,26 +194,18 @@ func (m *Models) downloadModel(ctx context.Context, modelFileURL string, projFil
 
 	// -------------------------------------------------------------------------
 
-	// Download the Sha file for the proj model file and rename the sha to
-	// match what the proj file will be called.
-
-	projFileName := createProjFileName(modelFileName)
-
-	orgShaFileName, err := m.pullShaFile(projFileURL, progress)
-	if err != nil {
+	// Download the Sha file for the proj model file.
+	if _, err := m.pullShaFile(projFileURL, progress); err != nil {
 		return Path{}, fmt.Errorf("download-model: unable to download sha file: %w", err)
 	}
 
-	// projFileName:   /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/mmproj-Qwen2-Audio-7B.Q8_0.gguf
-	// orgShaFileName: /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/sha/Qwen2-Audio-7B.mmproj-Q8_0.gguf
-	// shaFileName:    /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/sha/mmproj-Qwen2-Audio-7B.Q8_0.gguf
-	shaFileName := filepath.Join(filepath.Dir(orgShaFileName), filepath.Base(projFileName))
-
-	if err := os.Rename(orgShaFileName, shaFileName); err != nil {
-		return Path{}, fmt.Errorf("download-model: unable to rename projector sha file: %w", err)
-	}
-
 	// -------------------------------------------------------------------------
+
+	// Extract where the proj file will be stored (original name preserved).
+	_, projFileName, err := m.modelFilePathAndName(projFileURL)
+	if err != nil {
+		return Path{}, fmt.Errorf("download-model: unable to extract proj file path: %w", err)
+	}
 
 	// Check if the proj file already exists on disk, and if so check the file
 	// against the sha file.
@@ -210,17 +222,12 @@ func (m *Models) downloadModel(ctx context.Context, modelFileURL string, projFil
 	}
 
 	// Download the proj file.
-	orjProjFile, downloadedPF, err := m.pullFile(ctx, projFileURL, progress)
+	projFileName, downloadedPF, err := m.pullFile(ctx, projFileURL, progress)
 	if err != nil {
 		return Path{}, err
 	}
 
-	// Rename the proj file to match our naming convention.
-	if err := os.Rename(orjProjFile, projFileName); err != nil {
-		return Path{}, fmt.Errorf("download-model: unable to rename projector file: %w", err)
-	}
-
-	// Check the model file matches what is in the sha file.
+	// Check the proj file matches what is in the sha file.
 	if err := model.CheckModel(projFileName, true); err != nil {
 		return Path{}, fmt.Errorf("download-model: unable to check model: %w", err)
 	}
@@ -311,22 +318,6 @@ func fileSize(filePath string) (int, error) {
 	}
 
 	return int(info.Size()), nil
-}
-
-func createProjFileName(modelFileName string) string {
-	modelID := extractModelID(modelFileName)
-	profFileName := fmt.Sprintf("mmproj-%s%s", modelID, filepath.Ext(modelFileName))
-
-	dir := filepath.Dir(modelFileName)
-	name := filepath.Join(dir, profFileName)
-
-	// modelFileName: /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf
-	// modelID:       Qwen3-8B-Q8_0
-	// profFileName:  mmproj-Qwen3-8B-Q8_0.gguf
-	// dir:           /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF
-	// name:          /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/mmproj-Qwen3-8B-Q8_0.gguf
-
-	return name
 }
 
 var shardPattern = regexp.MustCompile(`-\d+-of-\d+$`)

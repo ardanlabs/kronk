@@ -57,6 +57,13 @@ func (m *Models) Path() string {
 
 // BuildIndex builds the model index for fast model access.
 func (m *Models) BuildIndex(log Logger) error {
+	return m.BuildIndexWithPath(log, Path{})
+}
+
+// BuildIndexWithPath builds the model index for fast model access. If a
+// non-empty downloadedPath is provided, its model-projector association is
+// preserved in the index regardless of filename patterns.
+func (m *Models) BuildIndexWithPath(log Logger, downloadedPath Path) error {
 	currentIndex := m.loadIndex()
 
 	m.biMutex.Lock()
@@ -69,6 +76,13 @@ func (m *Models) BuildIndex(log Logger) error {
 	entries, err := os.ReadDir(m.modelsPath)
 	if err != nil {
 		return fmt.Errorf("list-models: reading models directory: %w", err)
+	}
+
+	// Build a map of known model-projector associations from the downloaded path.
+	knownProjFiles := make(map[string]string)
+	if len(downloadedPath.ModelFiles) > 0 && downloadedPath.ProjFile != "" {
+		modelID := extractModelID(downloadedPath.ModelFiles[0])
+		knownProjFiles[modelID] = downloadedPath.ProjFile
 	}
 
 	index := make(map[string]Path)
@@ -99,6 +113,7 @@ func (m *Models) BuildIndex(log Logger) error {
 
 			modelfiles := make(map[string][]string)
 			projFiles := make(map[string]string)
+			availableProjs := make(map[string]string) // modelID from projector name → projector path
 
 			for _, fileEntry := range fileEntries {
 				if fileEntry.IsDir() {
@@ -111,9 +126,19 @@ func (m *Models) BuildIndex(log Logger) error {
 					continue
 				}
 
+				// Collect projector files for fallback matching.
+				// Prefix format: mmproj-ModelName-Q8_0.gguf
 				if strings.HasPrefix(name, "mmproj") {
-					modelID := extractModelID(name[7:])
-					projFiles[modelID] = filepath.Join(m.modelsPath, org, modelFamily, fileEntry.Name())
+					projModelID := extractModelID(name[7:]) // strip "mmproj-" prefix
+					availableProjs[projModelID] = filepath.Join(m.modelsPath, org, modelFamily, name)
+					continue
+				}
+				// Infix format: ModelName.mmproj-Q8_0.gguf
+				if idx := strings.Index(name, ".mmproj"); idx > 0 {
+					baseName := name[:idx]                                 // "ModelName"
+					quantPart := strings.TrimPrefix(name[idx:], ".mmproj") // "-Q8_0.gguf"
+					projModelID := extractModelID(baseName + quantPart)    // "ModelName-Q8_0"
+					availableProjs[projModelID] = filepath.Join(m.modelsPath, org, modelFamily, name)
 					continue
 				}
 
@@ -123,6 +148,35 @@ func (m *Models) BuildIndex(log Logger) error {
 			}
 
 			ctx := context.Background()
+
+			// Apply projector associations with priority:
+			//
+			// 1. New download (knownProjFiles)
+			// 2. Previous index (if file still exists)
+			// 3. Fallback: filename pattern matching
+			for modelID := range modelfiles {
+				projFromDownload, hasDownload := knownProjFiles[modelID]
+				projFromIndex := currentIndex[modelID].ProjFile
+				projFromFilename, hasFilename := availableProjs[modelID]
+
+				switch {
+				case hasDownload:
+					projFiles[modelID] = projFromDownload
+					log(ctx, "proj association", "modelID", modelID, "source", "download", "projFile", filepath.Base(projFromDownload))
+
+				case projFromIndex != "":
+					if _, err := os.Stat(projFromIndex); err == nil {
+						projFiles[modelID] = projFromIndex
+						log(ctx, "proj association", "modelID", modelID, "source", "index", "projFile", filepath.Base(projFromIndex))
+					} else {
+						log(ctx, "proj association", "modelID", modelID, "source", "index", "ERROR", "projector file missing", "projFile", projFromIndex)
+					}
+
+				case hasFilename:
+					projFiles[modelID] = projFromFilename
+					log(ctx, "proj association", "modelID", modelID, "source", "filename", "projFile", filepath.Base(projFromFilename))
+				}
+			}
 
 			validated := true
 			for modelID, files := range modelfiles {
