@@ -7,55 +7,164 @@ import (
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
-func TestHashPrompt(t *testing.T) {
+func TestHashMessages(t *testing.T) {
 	tests := []struct {
 		name     string
-		prompt1  string
-		prompt2  string
+		msgs1    []D
+		msgs2    []D
 		wantSame bool
 	}{
 		{
-			name:     "identical prompts same hash",
-			prompt1:  "You are helpful\nHello",
-			prompt2:  "You are helpful\nHello",
+			name: "identical messages same hash",
+			msgs1: []D{
+				{"role": "system", "content": "You are helpful"},
+				{"role": "user", "content": "Hello"},
+			},
+			msgs2: []D{
+				{"role": "system", "content": "You are helpful"},
+				{"role": "user", "content": "Hello"},
+			},
 			wantSame: true,
 		},
 		{
-			name:     "different content different hash",
-			prompt1:  "Hello",
-			prompt2:  "Goodbye",
+			name: "different content different hash",
+			msgs1: []D{
+				{"role": "user", "content": "Hello"},
+			},
+			msgs2: []D{
+				{"role": "user", "content": "Goodbye"},
+			},
 			wantSame: false,
 		},
 		{
-			name:     "empty prompts same hash",
-			prompt1:  "",
-			prompt2:  "",
+			name: "different role different hash",
+			msgs1: []D{
+				{"role": "user", "content": "Hello"},
+			},
+			msgs2: []D{
+				{"role": "assistant", "content": "Hello"},
+			},
+			wantSame: false,
+		},
+		{
+			name: "different order different hash",
+			msgs1: []D{
+				{"role": "user", "content": "A"},
+				{"role": "assistant", "content": "B"},
+			},
+			msgs2: []D{
+				{"role": "assistant", "content": "B"},
+				{"role": "user", "content": "A"},
+			},
+			wantSame: false,
+		},
+		{
+			name: "empty messages same hash",
+			msgs1: []D{},
+			msgs2: []D{},
 			wantSame: true,
 		},
 		{
-			name:     "prefix different from full",
-			prompt1:  "Hello",
-			prompt2:  "Hello World",
+			name: "prefix subset different hash",
+			msgs1: []D{
+				{"role": "user", "content": "Hello"},
+			},
+			msgs2: []D{
+				{"role": "user", "content": "Hello"},
+				{"role": "assistant", "content": "Hi"},
+			},
 			wantSame: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			hash1 := hashPrompt(tt.prompt1)
-			hash2 := hashPrompt(tt.prompt2)
+			hash1 := hashMessages(tt.msgs1)
+			hash2 := hashMessages(tt.msgs2)
 
-			switch {
-			case tt.wantSame && hash1 != hash2:
+			if tt.wantSame && hash1 != hash2 {
 				t.Errorf("expected same hash, got %s != %s", hash1, hash2)
-			case !tt.wantSame && hash1 == hash2:
+			}
+			if !tt.wantSame && hash1 == hash2 {
 				t.Errorf("expected different hash, got same: %s", hash1)
 			}
 		})
 	}
 }
 
+func TestExtractMessageContent(t *testing.T) {
+	tests := []struct {
+		name    string
+		msg     D
+		want    string
+	}{
+		{
+			name: "string content",
+			msg:  D{"role": "user", "content": "Hello world"},
+			want: "Hello world",
+		},
+		{
+			name: "nil content",
+			msg:  D{"role": "assistant", "content": nil},
+			want: "",
+		},
+		{
+			name: "missing content",
+			msg:  D{"role": "user"},
+			want: "",
+		},
+		{
+			name: "array content with text parts",
+			msg: D{
+				"role": "user",
+				"content": []any{
+					map[string]any{"type": "text", "text": "Hello "},
+					map[string]any{"type": "text", "text": "world"},
+				},
+			},
+			want: "Hello world",
+		},
+		{
+			name: "array content with mixed types",
+			msg: D{
+				"role": "user",
+				"content": []any{
+					map[string]any{"type": "image", "url": "http://..."},
+					map[string]any{"type": "text", "text": "caption"},
+				},
+			},
+			want: "caption",
+		},
+		{
+			name: "D slice content",
+			msg: D{
+				"role": "user",
+				"content": []D{
+					{"type": "text", "text": "Part 1"},
+					{"type": "text", "text": "Part 2"},
+				},
+			},
+			want: "Part 1Part 2",
+		},
+		{
+			name: "empty array content",
+			msg: D{
+				"role": "user",
+				"content": []any{},
+			},
+			want: "",
+		},
+	}
 
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractMessageContent(tt.msg)
+			if got != tt.want {
+				t.Errorf("extractMessageContent() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
 
 func TestRemoveMessagesAtIndices(t *testing.T) {
 	tests := []struct {
@@ -367,21 +476,25 @@ func TestIMCSessionState(t *testing.T) {
 	// Create session and update state.
 	session, _ := m.getOrCreateIMCSession(ctx, "test-user")
 
-	// Simulate cache build with new struct fields.
-	session.promptHash = "abc123hash"
-	session.promptLen = 5000
+	// Simulate cache build.
+	session.hash = "abc123"
 	session.tokens = 1000
+	session.msgCount = 2
+	session.promptLen = 5000
 
 	// Retrieve session again and verify state persists.
 	sessionAgain, isNew := m.getOrCreateIMCSession(ctx, "test-user")
 	if isNew {
 		t.Error("should not be new")
 	}
-	if sessionAgain.promptHash != "abc123hash" {
-		t.Error("promptHash not persisted")
+	if sessionAgain.hash != "abc123" {
+		t.Error("hash not persisted")
 	}
 	if sessionAgain.tokens != 1000 {
 		t.Error("tokens not persisted")
+	}
+	if sessionAgain.msgCount != 2 {
+		t.Error("msgCount not persisted")
 	}
 	if sessionAgain.promptLen != 5000 {
 		t.Error("promptLen not persisted")
