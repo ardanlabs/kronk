@@ -175,6 +175,13 @@ func (m *Model) prepareContext(ctx context.Context, d D) (D, mtmd.Context, strin
 func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string) (string, [][]byte, cacheResult, error) {
 	var cache cacheResult
 
+	// For GPT models, inject tool_call_name into tool response messages before
+	// caching. This must happen before processCache so both the full prompt and
+	// prefix have consistent tool names when templated.
+	if m.modelInfo.IsGPTModel {
+		d = m.gptInjectToolCallNames(ctx, d)
+	}
+
 	cachingEnabled := (m.cfg.SystemPromptCache || m.cfg.IncrementalCache) && object == ObjectChatText
 
 	switch {
@@ -346,14 +353,6 @@ func (m *Model) createPrompt(ctx context.Context, d D) (string, [][]byte, error)
 	defer func() {
 		metrics.AddPromptCreationTime(m.modelInfo.ID, time.Since(start))
 	}()
-
-	// For GPT models, inject tool_call_name into tool response messages.
-	// The gpt-oss.jinja template requires tool_call_name to render the function
-	// name, but OpenAI's standard only provides tool_call_id. We extract the
-	// function name from the preceding assistant message's tool_calls array.
-	if m.modelInfo.IsGPTModel {
-		d = m.gptInjectToolCallNames(ctx, d)
-	}
 
 	prompt, media, err := m.applyRequestJinjaTemplate(ctx, d)
 	if err != nil {

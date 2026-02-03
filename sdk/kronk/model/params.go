@@ -229,10 +229,8 @@ type Params struct {
 func (p Params) String() string {
 	var b strings.Builder
 
-	fmt.Fprintf(&b, "\nFINAL-PARAMS\n")
-
 	if p.Temperature != 0 {
-		fmt.Fprintf(&b, "temperature[%v]\n", p.Temperature)
+		fmt.Fprintf(&b, "\ntemperature[%v]\n", p.Temperature)
 	}
 	if p.TopK != 0 {
 		fmt.Fprintf(&b, "top_k[%v]\n", p.TopK)
@@ -367,185 +365,167 @@ func AddParams(params Params, d D) {
 }
 
 func (m *Model) parseParams(d D) (Params, error) {
-	var temp float32
+	p := m.cfg.DefaultParams
+
 	if tempVal, exists := d["temperature"]; exists {
 		var err error
-		temp, err = parseFloat32("temperature", tempVal)
+		temp, err := parseFloat32("temperature", tempVal)
 		if err != nil {
 			return Params{}, err
 		}
+		p.Temperature = temp
 	}
 
-	var topK int
 	if topKVal, exists := d["top_k"]; exists {
-		var err error
-		topK, err = parseInt("top_k", topKVal)
+		topK, err := parseInt("top_k", topKVal)
 		if err != nil {
 			return Params{}, err
 		}
+		p.TopK = int32(topK)
 	}
 
-	var topP float32
 	if topPVal, exists := d["top_p"]; exists {
-		var err error
-		topP, err = parseFloat32("top_p", topPVal)
+		topP, err := parseFloat32("top_p", topPVal)
 		if err != nil {
 			return Params{}, err
 		}
+		p.TopP = topP
 	}
 
-	var minP float32
 	if minPVal, exists := d["min_p"]; exists {
-		var err error
-		minP, err = parseFloat32("min_p", minPVal)
+		minP, err := parseFloat32("min_p", minPVal)
 		if err != nil {
 			return Params{}, err
 		}
+		p.MinP = minP
 	}
 
-	var maxTokens int
 	if maxTokensVal, exists := d["max_tokens"]; exists {
-		var err error
-		maxTokens, err = parseInt("max_tokens", maxTokensVal)
+		maxTokens, err := parseInt("max_tokens", maxTokensVal)
 		if err != nil {
 			return Params{}, err
 		}
+		p.MaxTokens = maxTokens
 	}
 
-	enableThinking := true
 	if enableThinkingVal, exists := d["enable_thinking"]; exists {
-		var err error
-		enableThinking, err = parseBool("enable_thinking", enableThinkingVal)
+		enableThinking, err := parseBool("enable_thinking", enableThinkingVal)
 		if err != nil {
 			return Params{}, err
 		}
+		p.Thinking = strconv.FormatBool(enableThinking)
 	}
 
-	reasoningEffort := ReasoningEffortMedium
 	if reasoningEffortVal, exists := d["reasoning_effort"]; exists {
-		var err error
-		reasoningEffort, err = parseReasoningString("reasoning_effort", reasoningEffortVal)
+		reasoningEffort, err := parseReasoningString("reasoning_effort", reasoningEffortVal)
 		if err != nil {
 			return Params{}, err
 		}
+		p.ReasoningEffort = reasoningEffort
 	}
 
-	returnPrompt := DefReturnPrompt
 	if returnPromptVal, exists := d["return_prompt"]; exists {
-		var err error
-		returnPrompt, err = parseBool("return_prompt", returnPromptVal)
+		returnPrompt, err := parseBool("return_prompt", returnPromptVal)
 		if err != nil {
 			return Params{}, err
 		}
+		p.ReturnPrompt = returnPrompt
 	}
 
-	var repeatPenalty float32
 	if repeatPenaltyVal, exists := d["repeat_penalty"]; exists {
-		var err error
-		repeatPenalty, err = parseFloat32("repeat_penalty", repeatPenaltyVal)
+		repeatPenalty, err := parseFloat32("repeat_penalty", repeatPenaltyVal)
 		if err != nil {
 			return Params{}, err
 		}
+		p.RepeatPenalty = repeatPenalty
 	}
 
-	var repeatLastN int
 	if repeatLastNVal, exists := d["repeat_last_n"]; exists {
-		var err error
-		repeatLastN, err = parseInt("repeat_last_n", repeatLastNVal)
+		repeatLastN, err := parseInt("repeat_last_n", repeatLastNVal)
 		if err != nil {
 			return Params{}, err
 		}
+		p.RepeatLastN = int32(repeatLastN)
 	}
 
-	var dryMultiplier float32
 	if val, exists := d["dry_multiplier"]; exists {
-		var err error
-		dryMultiplier, err = parseFloat32("dry_multiplier", val)
+		dryMultiplier, err := parseFloat32("dry_multiplier", val)
 		if err != nil {
 			return Params{}, err
 		}
+		p.DryMultiplier = dryMultiplier
 	}
 
-	var dryBase float32
 	if val, exists := d["dry_base"]; exists {
-		var err error
-		dryBase, err = parseFloat32("dry_base", val)
+		dryBase, err := parseFloat32("dry_base", val)
 		if err != nil {
 			return Params{}, err
 		}
+		p.DryBase = dryBase
 	}
 
-	var dryAllowedLen int
 	if val, exists := d["dry_allowed_length"]; exists {
-		var err error
-		dryAllowedLen, err = parseInt("dry_allowed_length", val)
+		dryAllowedLen, err := parseInt("dry_allowed_length", val)
 		if err != nil {
 			return Params{}, err
 		}
+		p.DryAllowedLen = int32(dryAllowedLen)
 	}
 
-	var dryPenaltyLast int
 	if val, exists := d["dry_penalty_last_n"]; exists {
-		var err error
-		dryPenaltyLast, err = parseInt("dry_penalty_last_n", val)
+		dryPenaltyLast, err := parseInt("dry_penalty_last_n", val)
 		if err != nil {
 			return Params{}, err
 		}
+		p.DryPenaltyLast = int32(dryPenaltyLast)
 	}
 
-	var xtcProbability float32
 	if val, exists := d["xtc_probability"]; exists {
-		var err error
-		xtcProbability, err = parseFloat32("xtc_probability", val)
+		xtcProbability, err := parseFloat32("xtc_probability", val)
 		if err != nil {
 			return Params{}, err
 		}
+		p.XtcProbability = xtcProbability
 	}
 
-	var xtcThreshold float32
 	if val, exists := d["xtc_threshold"]; exists {
-		var err error
-		xtcThreshold, err = parseFloat32("xtc_threshold", val)
+		xtcThreshold, err := parseFloat32("xtc_threshold", val)
 		if err != nil {
 			return Params{}, err
 		}
+		p.XtcThreshold = xtcThreshold
 	}
 
-	var xtcMinKeep int
 	if val, exists := d["xtc_min_keep"]; exists {
-		var err error
-		xtcMinKeep, err = parseInt("xtc_min_keep", val)
+		xtcMinKeep, err := parseInt("xtc_min_keep", val)
 		if err != nil {
 			return Params{}, err
 		}
+		p.XtcMinKeep = uint32(xtcMinKeep)
 	}
 
-	includeUsage := DefIncludeUsage
 	if streamOpts, exists := d["stream_options"]; exists {
 		if optsMap, ok := streamOpts.(map[string]any); ok {
 			if val, exists := optsMap["include_usage"]; exists {
-				var err error
-				includeUsage, err = parseBool("stream_options.include_usage", val)
+				includeUsage, err := parseBool("stream_options.include_usage", val)
 				if err != nil {
 					return Params{}, err
 				}
+				p.IncludeUsage = includeUsage
 			}
 		}
 	}
 
-	logprobs := DefLogprobs
 	if val, exists := d["logprobs"]; exists {
-		var err error
-		logprobs, err = parseBool("logprobs", val)
+		logprobs, err := parseBool("logprobs", val)
 		if err != nil {
 			return Params{}, err
 		}
+		p.Logprobs = logprobs
 	}
 
-	topLogprobs := DefTopLogprobs
 	if val, exists := d["top_logprobs"]; exists {
-		var err error
-		topLogprobs, err = parseInt("top_logprobs", val)
+		topLogprobs, err := parseInt("top_logprobs", val)
 		if err != nil {
 			return Params{}, err
 		}
@@ -559,43 +539,20 @@ func (m *Model) parseParams(d D) (Params, error) {
 			topLogprobs = DefMaxTopLogprobs
 		}
 
+		p.TopLogprobs = topLogprobs
+
 		// If top_logprobs is set, implicitly enable logprobs
 		if topLogprobs > 0 {
-			logprobs = true
+			p.Logprobs = true
 		}
 	}
 
-	var stream bool
 	if val, exists := d["stream"]; exists {
-		var err error
-		stream, err = parseBool("stream", val)
+		stream, err := parseBool("stream", val)
 		if err != nil {
 			return Params{}, err
 		}
-	}
-
-	p := Params{
-		Temperature:     temp,
-		TopK:            int32(topK),
-		TopP:            topP,
-		MinP:            minP,
-		MaxTokens:       maxTokens,
-		RepeatPenalty:   repeatPenalty,
-		RepeatLastN:     int32(repeatLastN),
-		DryMultiplier:   dryMultiplier,
-		DryBase:         dryBase,
-		DryAllowedLen:   int32(dryAllowedLen),
-		DryPenaltyLast:  int32(dryPenaltyLast),
-		XtcProbability:  xtcProbability,
-		XtcThreshold:    xtcThreshold,
-		XtcMinKeep:      uint32(xtcMinKeep),
-		Thinking:        strconv.FormatBool(enableThinking),
-		ReasoningEffort: reasoningEffort,
-		ReturnPrompt:    returnPrompt,
-		IncludeUsage:    includeUsage,
-		Logprobs:        logprobs,
-		TopLogprobs:     topLogprobs,
-		Stream:          stream,
+		p.Stream = stream
 	}
 
 	return m.adjustParams(p), nil

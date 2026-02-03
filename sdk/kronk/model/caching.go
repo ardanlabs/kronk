@@ -169,19 +169,16 @@ func (m *Model) handleSystemPromptCache(ctx context.Context, d D, msgInfo cachea
 //
 // Algorithm:
 //  1. Look up or create session for imcID
-//  2. If session cache is empty, cache messages[0:len-1]
-//  3. If session cache exists, check if messages[0:msgCount] match cached hash
-//  4. On prefix match: extend cache with messages[msgCount:len-1]
-//  5. On prefix mismatch: rebuild cache from scratch
+//  2. Template the full prompt to get canonical bytes
+//  3. Compare cached prompt hash with prefix of new prompt
+//  4. On match: extend cache with new bytes
+//  5. On mismatch: fall back to cached tokens only (no extension)
 func (m *Model) handleIncrementalMessageCache(ctx context.Context, d D, messages []D, imcID string) (cacheResult, int) {
 	nMessages := len(messages)
 	if nMessages < 2 {
 		// Need at least 2 messages: one to cache, one to generate from.
 		return cacheResult{modifiedD: d}, 0
 	}
-
-	// Target: cache all messages except the last one (which triggers generation).
-	targetCacheEnd := nMessages - 1
 
 	// -------------------------------------------------------------------------
 	// Look up or create session for this imcID.
@@ -194,49 +191,74 @@ func (m *Model) handleIncrementalMessageCache(ctx context.Context, d D, messages
 	}
 
 	// -------------------------------------------------------------------------
-	// Read current session state (fast path with read lock).
+	// Template the full prompt - this is our source of truth.
+
+	fullPrompt, media, err := m.createPrompt(ctx, d)
+	if err != nil {
+		return cacheResult{modifiedD: d, err: fmt.Errorf("imc: failed to template prompt: %w", err)}, 0
+	}
+
+	// -------------------------------------------------------------------------
+	// Read current session state.
 
 	m.cacheMu.RLock()
-	currentHash := session.hash
-	currentTokens := session.tokens
-	currentMsgCount := session.msgCount
+	cachedPromptHash := session.promptHash
+	cachedPromptLen := session.promptLen
+	cachedTokens := session.tokens
+	cachedMsgCount := session.msgCount
 	seqID := session.seqID
 	m.cacheMu.RUnlock()
 
 	// -------------------------------------------------------------------------
-	// Check for cache hit on existing prefix.
+	// New session - build cache from scratch.
 
-	if !isNew && currentMsgCount > 0 && currentTokens > 0 {
-		// Verify the cached prefix still matches.
-		if currentMsgCount <= nMessages {
-			prefixHash := hashMessages(messages[:currentMsgCount])
-			if prefixHash == currentHash {
-				// Cache hit on prefix. Check if we need to extend.
-				if currentMsgCount < targetCacheEnd {
-					// Extend cache with new messages.
-					return m.extendIMCCache(ctx, d, messages, imcID, session, currentMsgCount, targetCacheEnd, currentTokens), currentMsgCount
-				}
-
-				// Prefix matches and covers all cacheable messages.
-				m.log(ctx, "imc", "status", "cache hit", "imc_id", imcID, "seq", seqID, "cached-msgs", currentMsgCount, "tokens", currentTokens)
-				return cacheResult{
-					nPast:    llama.Pos(currentTokens),
-					cached:   true,
-					imcID:    imcID,
-					imcSeqID: seqID,
-				}, currentMsgCount
-			}
-		}
-
-		// Prefix mismatch - need to rebuild cache.
-		m.log(ctx, "imc", "status", "prefix mismatch", "imc_id", imcID, "cached-msgs", currentMsgCount, "request-msgs", nMessages)
+	if isNew || cachedTokens == 0 {
+		return m.buildIMCCache(ctx, d, fullPrompt, media, imcID, session), nMessages - 1
 	}
 
 	// -------------------------------------------------------------------------
-	// Cache miss - build cache from scratch.
+	// Existing session - validate cached prefix against new prompt.
 
-	result := m.buildIMCCache(ctx, d, messages, imcID, session, targetCacheEnd)
-	return result, targetCacheEnd
+	// Check if message count dropped - this indicates a new conversation.
+	if nMessages <= cachedMsgCount {
+		m.log(ctx, "imc", "status", "rebuild (new conversation)", "imc_id", imcID,
+			"cached-msgs", cachedMsgCount, "new-msgs", nMessages)
+		return m.buildIMCCache(ctx, d, fullPrompt, media, imcID, session), nMessages - 1
+	}
+
+	// Check if the new prompt is long enough to contain the cached prefix.
+	if len(fullPrompt) < cachedPromptLen {
+		// New prompt is shorter - this is a new conversation, rebuild.
+		m.log(ctx, "imc", "status", "rebuild (shorter prompt)", "imc_id", imcID,
+			"cached-len", cachedPromptLen, "new-len", len(fullPrompt))
+		return m.buildIMCCache(ctx, d, fullPrompt, media, imcID, session), nMessages - 1
+	}
+
+	// Hash the prefix portion of the new prompt and compare.
+	prefixToCheck := fullPrompt[:cachedPromptLen]
+	prefixHash := hashPrompt(prefixToCheck)
+
+	switch prefixHash == cachedPromptHash {
+	case true:
+		// Cached prefix is still valid - extend with new content.
+		return m.extendIMCCache(ctx, d, fullPrompt, media, imcID, session), nMessages - 1
+
+	default:
+		// Template changed earlier content - fall back to cached tokens only.
+		// This happens with GPT/GLM models where tool call injection changes
+		// how earlier messages are rendered.
+		m.log(ctx, "imc", "status", "prefix mismatch (no extend)", "imc_id", imcID,
+			"seq", seqID, "cached-tokens", cachedTokens,
+			"cached-hash", cachedPromptHash[:8], "new-hash", prefixHash[:8])
+
+		// Return cached position but don't extend - caller will re-template.
+		return cacheResult{
+			nPast:    llama.Pos(cachedTokens),
+			cached:   true,
+			imcID:    imcID,
+			imcSeqID: seqID,
+		}, 0 // Return 0 cached messages so caller re-templates everything
+	}
 }
 
 // cacheMessage is the common caching logic used by SystemPromptCache mode.
@@ -479,104 +501,22 @@ func (m *Model) getOrCreateIMCSession(ctx context.Context, imcID string) (*imcSe
 
 // =============================================================================
 
-// buildIMCCache builds the cache from scratch for messages[0:targetEnd].
-func (m *Model) buildIMCCache(ctx context.Context, d D, messages []D, imcID string, session *imcSession, targetEnd int) cacheResult {
+// buildIMCCache builds the cache from scratch using the full templated prompt.
+// It caches all content except the last message (suffix for generation).
+func (m *Model) buildIMCCache(ctx context.Context, d D, fullPrompt string, media [][]byte, imcID string, session *imcSession) cacheResult {
 	m.cacheMu.Lock()
 	defer m.cacheMu.Unlock()
-
-	// Double-check in case another goroutine built the cache while we waited.
-	if session.msgCount > 0 && session.tokens > 0 && session.msgCount <= len(messages) {
-		prefixHash := hashMessages(messages[:session.msgCount])
-		if prefixHash == session.hash {
-			m.log(ctx, "imc", "status", "hit-after-lock", "imc_id", imcID, "cached-msgs", session.msgCount, "tokens", session.tokens)
-			return cacheResult{nPast: llama.Pos(session.tokens), cached: true}
-		}
-	}
 
 	// Clear existing cache sequence.
 	llama.MemorySeqRm(m.mem, session.seqID, -1, -1)
 
-	// Template messages[0:targetEnd] WITHOUT add_generation_prompt.
-	prefixMessages := messages[:targetEnd]
+	// Extract prefix (everything except the generation prompt suffix).
+	// We need to template without add_generation_prompt to get the prefix.
+	messages, _ := d["messages"].([]D)
+	msgCount := len(messages) - 1
+
 	prefixD := D{
-		"messages":              prefixMessages,
-		"add_generation_prompt": false,
-	}
-
-	// Copy tools if present (affects template output).
-	if tools, ok := d["tools"]; ok {
-		prefixD["tools"] = tools
-	}
-
-	prefixPrompt, _, err := m.createPrompt(ctx, prefixD)
-	if err != nil {
-		return cacheResult{modifiedD: d, err: fmt.Errorf("imc: failed to template messages: %w", err)}
-	}
-
-	tokens := llama.Tokenize(m.vocab, prefixPrompt, m.addBOSToken, true)
-	nTokens := len(tokens)
-
-	if nTokens == 0 {
-		return cacheResult{modifiedD: d, err: fmt.Errorf("imc: messages tokenized to zero tokens")}
-	}
-
-	if nTokens < m.cfg.CacheMinTokens {
-		m.log(ctx, "imc", "status", "skip (too short)", "imc_id", imcID, "msgs", targetEnd, "tokens", nTokens, "min", m.cfg.CacheMinTokens)
-		return cacheResult{modifiedD: d}
-	}
-
-	// Decode tokens into cache sequence.
-	if err := m.decodeTokensToSeq(ctx, tokens, session.seqID); err != nil {
-		return cacheResult{modifiedD: d, err: err}
-	}
-
-	// Update session state.
-	newHash := hashMessages(prefixMessages)
-	session.hash = newHash
-	session.tokens = nTokens
-	session.msgCount = targetEnd
-	session.promptLen = len(prefixPrompt)
-	session.lastUsed = time.Now()
-
-	m.log(ctx, "imc", "status", "built", "imc_id", imcID, "seq", session.seqID, "msgs", targetEnd, "tokens", nTokens, "prompt-len", len(prefixPrompt), "hash", newHash[:8])
-
-	// Generate suffix for immediate use.
-	suffix, media, err := m.generateIMCSuffix(ctx, d, prefixPrompt)
-	if err != nil {
-		return cacheResult{modifiedD: d, err: err}
-	}
-
-	return cacheResult{
-		modifiedD: d,
-		prompt:    suffix,
-		media:     media,
-		nPast:     llama.Pos(nTokens),
-		cached:    true,
-		imcID:     imcID,
-		imcSeqID:  session.seqID,
-	}
-}
-
-// extendIMCCache extends the existing cache with messages[currentEnd:targetEnd].
-func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, imcID string, session *imcSession, currentEnd, targetEnd, currentTokens int) cacheResult {
-	m.cacheMu.Lock()
-	defer m.cacheMu.Unlock()
-
-	// Double-check session state hasn't changed.
-	if session.msgCount != currentEnd || session.tokens != currentTokens {
-		// State changed, fall back to full rebuild.
-		m.cacheMu.Unlock()
-		result := m.buildIMCCache(ctx, d, messages, imcID, session, targetEnd)
-		m.cacheMu.Lock()
-		return result
-	}
-
-	// Get the stored prefix length from the session.
-	oldPrefixLen := session.promptLen
-
-	// Template the new prefix (messages to cache) - needed to find extension boundary.
-	prefixD := D{
-		"messages":              messages[:targetEnd],
+		"messages":              messages[:msgCount],
 		"add_generation_prompt": false,
 	}
 	if tools, ok := d["tools"]; ok {
@@ -588,69 +528,178 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, imcID str
 		return cacheResult{modifiedD: d, err: fmt.Errorf("imc: failed to template prefix: %w", err)}
 	}
 
-	// Check for extension content.
-	if len(prefixPrompt) <= oldPrefixLen {
-		m.log(ctx, "imc", "status", "extend (no content)", "imc_id", imcID, "old-len", oldPrefixLen, "new-len", len(prefixPrompt))
-		return cacheResult{nPast: llama.Pos(currentTokens), cached: true}
+	// Check if the prefix is actually a prefix of the full prompt.
+	// Some templates (e.g., gpt-oss.jinja) produce different output when
+	// messages are templated separately vs together. When this happens,
+	// we still cache the prefix and process the full prompt without caching.
+	prefixMatches := strings.HasPrefix(fullPrompt, prefixPrompt)
+	if !prefixMatches {
+		m.log(ctx, "imc", "status", "build (prefix mismatch)", "imc_id", imcID,
+			"prefix-len", len(prefixPrompt), "full-len", len(fullPrompt))
 	}
 
-	// Extract extension from the new prefix.
-	extensionPrompt := prefixPrompt[oldPrefixLen:]
-	extensionTokens := llama.Tokenize(m.vocab, extensionPrompt, false, true)
-	nExtTokens := len(extensionTokens)
+	tokens := llama.Tokenize(m.vocab, prefixPrompt, m.addBOSToken, true)
+	nTokens := len(tokens)
 
-	if nExtTokens == 0 {
-		m.log(ctx, "imc", "status", "extend (zero tokens)", "imc_id", imcID)
-		return cacheResult{nPast: llama.Pos(currentTokens), cached: true}
+	if nTokens == 0 {
+		return cacheResult{modifiedD: d, err: fmt.Errorf("imc: prefix tokenized to zero tokens")}
 	}
 
-	// Decode extension tokens into cache sequence, starting after existing tokens.
-	if err := m.decodeExtensionTokens(ctx, extensionTokens, session.seqID, currentTokens); err != nil {
+	if nTokens < m.cfg.CacheMinTokens {
+		m.log(ctx, "imc", "status", "skip (too short)", "imc_id", imcID, "tokens", nTokens, "min", m.cfg.CacheMinTokens)
+		return cacheResult{modifiedD: d}
+	}
+
+	// Decode tokens into cache sequence.
+	if err := m.decodeTokensToSeq(ctx, tokens, session.seqID); err != nil {
 		return cacheResult{modifiedD: d, err: err}
 	}
 
-	// Template full D once for the suffix (last message + generation prompt).
-	fullPrompt, media, err := m.createPrompt(ctx, d)
-	if err != nil {
-		return cacheResult{modifiedD: d, err: fmt.Errorf("imc: failed to template full message: %w", err)}
-	}
-
-	// Verify prefix is actually a prefix of full prompt. If not, template
-	// nondeterminism has occurred and we must rebuild the cache.
-	if !strings.HasPrefix(fullPrompt, prefixPrompt) {
-		m.log(ctx, "imc", "status", "prefix (mismatch rebuild)", "imc_id", imcID,
-			"prefix-len", len(prefixPrompt), "full-len", len(fullPrompt))
-
-		// Rebuild cache from scratch to ensure consistency.
-		m.cacheMu.Unlock()
-		result := m.buildIMCCache(ctx, d, messages, imcID, session, targetEnd)
-		m.cacheMu.Lock()
-		return result
-	}
-
-	// Update session state.
-	newTokens := currentTokens + nExtTokens
-	newHash := hashMessages(messages[:targetEnd])
-	session.hash = newHash
-	session.tokens = newTokens
-	session.msgCount = targetEnd
+	// Update session state with prompt hash for future validation.
+	promptHash := hashPrompt(prefixPrompt)
+	session.promptHash = promptHash
 	session.promptLen = len(prefixPrompt)
+	session.tokens = nTokens
+	session.msgCount = len(messages)
 	session.lastUsed = time.Now()
 
-	// Suffix is everything after the new prefix.
-	suffix := fullPrompt[len(prefixPrompt):]
+	// When prefix matches, return the suffix for generation with cached nPast.
+	// When prefix doesn't match (template incompatibility), we still cached the
+	// prefix for future requests, but must process the full prompt without caching.
+	if prefixMatches {
+		suffix := fullPrompt[len(prefixPrompt):]
 
-	m.log(ctx, "imc", "status", "extended", "imc_id", imcID, "seq", session.seqID, "old-msgs", currentEnd, "new-msgs", targetEnd,
-		"old-tokens", currentTokens, "new-tokens", newTokens, "ext-tokens", nExtTokens, "suffix-len", len(suffix))
+		m.log(ctx, "imc", "status", "built", "imc_id", imcID, "seq", session.seqID,
+			"tokens", nTokens, "prompt-len", len(prefixPrompt),
+			"suffix-len", len(suffix), "hash", promptHash[:8])
+
+		return cacheResult{
+			modifiedD: d,
+			prompt:    suffix,
+			media:     media,
+			nPast:     llama.Pos(nTokens),
+			cached:    true,
+			imcID:     imcID,
+			imcSeqID:  session.seqID,
+		}
+	}
+
+	// Prefix mismatch: cached for future, but process full prompt now.
+	// Return the full prompt we already templated to avoid re-templating.
+	m.log(ctx, "imc", "status", "built (no cache benefit)", "imc_id", imcID, "seq", session.seqID,
+		"tokens", nTokens, "prompt-len", len(prefixPrompt), "hash", promptHash[:8])
 
 	return cacheResult{
 		modifiedD: d,
-		prompt:    suffix,
+		prompt:    fullPrompt,
 		media:     media,
-		nPast:     llama.Pos(newTokens),
-		cached:    true,
-		imcID:     imcID,
-		imcSeqID:  session.seqID,
+	}
+}
+
+// extendIMCCache extends the existing cache with new content from the full prompt.
+// The caller has already validated that the cached prefix matches.
+func (m *Model) extendIMCCache(ctx context.Context, d D, fullPrompt string, media [][]byte, imcID string, session *imcSession) cacheResult {
+	m.cacheMu.Lock()
+	defer m.cacheMu.Unlock()
+
+	cachedPromptLen := session.promptLen
+	cachedTokens := session.tokens
+
+	// Extract the new prefix (all messages except last, without generation prompt).
+	messages, _ := d["messages"].([]D)
+	prefixD := D{
+		"messages":              messages[:len(messages)-1],
+		"add_generation_prompt": false,
+	}
+	if tools, ok := d["tools"]; ok {
+		prefixD["tools"] = tools
+	}
+
+	newPrefixPrompt, _, err := m.createPrompt(ctx, prefixD)
+	if err != nil {
+		return cacheResult{modifiedD: d, err: fmt.Errorf("imc: failed to template new prefix: %w", err)}
+	}
+
+	// Verify the new prefix starts with what we cached.
+	if !strings.HasPrefix(newPrefixPrompt, fullPrompt[:cachedPromptLen]) {
+		// This shouldn't happen since caller validated, but be defensive.
+		m.log(ctx, "imc", "status", "extend (prefix changed)", "imc_id", imcID)
+		return cacheResult{
+			nPast:    llama.Pos(cachedTokens),
+			cached:   true,
+			imcID:    imcID,
+			imcSeqID: session.seqID,
+		}
+	}
+
+	// Check if there's new content to cache.
+	switch {
+	case len(newPrefixPrompt) <= cachedPromptLen:
+		// No new content - just return cached state.
+		m.log(ctx, "imc", "status", "extend (no new content)", "imc_id", imcID,
+			"cached-len", cachedPromptLen, "new-len", len(newPrefixPrompt))
+
+		suffix := fullPrompt[cachedPromptLen:]
+		return cacheResult{
+			modifiedD: d,
+			prompt:    suffix,
+			media:     media,
+			nPast:     llama.Pos(cachedTokens),
+			cached:    true,
+			imcID:     imcID,
+			imcSeqID:  session.seqID,
+		}
+
+	default:
+		// New content to add to cache.
+		extensionPrompt := newPrefixPrompt[cachedPromptLen:]
+		extensionTokens := llama.Tokenize(m.vocab, extensionPrompt, false, true)
+		nExtTokens := len(extensionTokens)
+
+		if nExtTokens == 0 {
+			m.log(ctx, "imc", "status", "extend (zero tokens)", "imc_id", imcID)
+			suffix := fullPrompt[cachedPromptLen:]
+			return cacheResult{
+				modifiedD: d,
+				prompt:    suffix,
+				media:     media,
+				nPast:     llama.Pos(cachedTokens),
+				cached:    true,
+				imcID:     imcID,
+				imcSeqID:  session.seqID,
+			}
+		}
+
+		// Decode extension tokens into cache sequence.
+		if err := m.decodeExtensionTokens(ctx, extensionTokens, session.seqID, cachedTokens); err != nil {
+			return cacheResult{modifiedD: d, err: err}
+		}
+
+		// Update session state.
+		newTokens := cachedTokens + nExtTokens
+		newPromptHash := hashPrompt(newPrefixPrompt)
+		session.promptHash = newPromptHash
+		session.promptLen = len(newPrefixPrompt)
+		session.tokens = newTokens
+		session.msgCount = len(messages)
+		session.lastUsed = time.Now()
+
+		// Suffix is everything after the new prefix.
+		suffix := fullPrompt[len(newPrefixPrompt):]
+
+		m.log(ctx, "imc", "status", "extended", "imc_id", imcID, "seq", session.seqID,
+			"old-tokens", cachedTokens, "new-tokens", newTokens,
+			"ext-tokens", nExtTokens, "suffix-len", len(suffix), "hash", newPromptHash[:8])
+
+		return cacheResult{
+			modifiedD: d,
+			prompt:    suffix,
+			media:     media,
+			nPast:     llama.Pos(newTokens),
+			cached:    true,
+			imcID:     imcID,
+			imcSeqID:  session.seqID,
+		}
 	}
 }
 
@@ -695,27 +744,6 @@ func (m *Model) decodeExtensionTokens(ctx context.Context, tokens []llama.Token,
 	}
 
 	return nil
-}
-
-// generateIMCSuffix generates the suffix prompt for un-cached messages.
-// The suffix includes messages[cachedEnd:] plus the generation prompt.
-func (m *Model) generateIMCSuffix(ctx context.Context, d D, prefixPrompt string) (string, [][]byte, error) {
-	// Template the full D to get the complete prompt, then extract suffix.
-	fullPrompt, media, err := m.createPrompt(ctx, d)
-	if err != nil {
-		return "", nil, fmt.Errorf("imc: failed to template full message: %w", err)
-	}
-
-	// Verify prefix is actually a prefix of full prompt.
-	if !strings.HasPrefix(fullPrompt, prefixPrompt) {
-		return "", nil, fmt.Errorf("imc: prefix mismatch, prefix-len=%d full-len=%d", len(prefixPrompt), len(fullPrompt))
-	}
-
-	suffix := fullPrompt[len(prefixPrompt):]
-
-	m.log(ctx, "imc", "suffix-len", len(suffix), "prefix-len", len(prefixPrompt), "full-len", len(fullPrompt))
-
-	return suffix, media, nil
 }
 
 // =============================================================================
@@ -783,51 +811,11 @@ func hashMessage(info cacheableMessage) string {
 	return hex.EncodeToString(h[:])
 }
 
-// hashMessages computes a SHA-256 hash of a slice of messages.
-// Used by IMC to validate that the cached prefix matches the current request.
-func hashMessages(messages []D) string {
-	h := sha256.New()
-	for i, msg := range messages {
-		role, _ := msg["role"].(string)
-		content := extractMessageContent(msg)
-		h.Write([]byte(fmt.Sprintf("%d:%s:%s|", i, role, content)))
-	}
-	return hex.EncodeToString(h.Sum(nil))
-}
-
-// extractMessageContent extracts the text content from a message.
-// Handles both string content and array content (OpenAI multi-part format).
-func extractMessageContent(msg D) string {
-	switch c := msg["content"].(type) {
-	case string:
-		return c
-
-	case []any:
-		var content string
-		for _, part := range c {
-			if partMap, ok := part.(map[string]any); ok {
-				if partMap["type"] == "text" {
-					if text, ok := partMap["text"].(string); ok {
-						content += text
-					}
-				}
-			}
-		}
-		return content
-
-	case []D:
-		var content string
-		for _, part := range c {
-			if part["type"] == "text" {
-				if text, ok := part["text"].(string); ok {
-					content += text
-				}
-			}
-		}
-		return content
-	}
-
-	return ""
+// hashPrompt computes a SHA-256 hash of a prompt string.
+// Used by IMC to validate that the cached prefix matches the current prompt.
+func hashPrompt(prompt string) string {
+	h := sha256.Sum256([]byte(prompt))
+	return hex.EncodeToString(h[:])
 }
 
 // removeMessagesAtIndices returns D with messages at the specified indices removed.

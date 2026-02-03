@@ -29,12 +29,12 @@ type compiledTemplate struct {
 // imcSession holds the state for a single IMC (Incremental Message Cache) session.
 // Each unique imc_id gets its own session with an assigned cache sequence.
 type imcSession struct {
-	hash      string      // Hash of all cached messages
-	tokens    int         // Total tokens in cache
-	msgCount  int         // Number of messages cached
-	promptLen int         // Length of templated prefix (for extension)
-	seqID     llama.SeqId // Assigned cache sequence ID
-	lastUsed  time.Time   // Last access time (for eviction)
+	promptHash string      // Hash of the cached prompt bytes (for prefix validation)
+	promptLen  int         // Length of cached prompt (for slicing extension)
+	tokens     int         // Total tokens in cache
+	msgCount   int         // Number of messages cached (to detect new conversations)
+	seqID      llama.SeqId // Assigned cache sequence ID
+	lastUsed   time.Time   // Last access time (for eviction)
 }
 
 // TemplateRetriever returns a configured template for a model.
