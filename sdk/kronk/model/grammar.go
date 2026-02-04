@@ -130,8 +130,7 @@ func fromJSONSchema(schema any) (string, error) {
 // Grammar builder for JSON Schema conversion.
 
 type grammarBuilder struct {
-	rules   map[string]string
-	ruleIdx int
+	rules map[string]string
 }
 
 func (gb *grammarBuilder) schemaToRule(name string, schema map[string]any) (string, error) {
