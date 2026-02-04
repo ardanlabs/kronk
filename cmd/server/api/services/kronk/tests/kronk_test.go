@@ -1,6 +1,7 @@
 package chatapi_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -40,6 +41,8 @@ func Test_API(t *testing.T) {
 	test.RunStreaming(t, chatArrayFormatStreamQwen3(t, tokens), "chat-array-format-stream-qwen3")
 	test.RunStreaming(t, chatStreamIMCQwen3(t, tokens), "chat-stream-imc-qwen3")
 	test.RunStreaming(t, chatStreamSPCQwen3(t, tokens), "chat-stream-spc-qwen3")
+	test.Run(t, chatGrammarQwen3(t, tokens), "chat-grammar-qwen3")
+	test.RunStreaming(t, chatGrammarStreamQwen3(t, tokens), "chat-grammar-stream-qwen3")
 	test.Run(t, respNonStreamQwen3(t, tokens), "resp-nonstream-qwen3")
 	test.RunStreaming(t, respStreamQwen3(t, tokens), "resp-stream-qwen3")
 	test.Run(t, msgsNonStreamQwen3(t, tokens), "msgs-nonstream-qwen3")
@@ -399,6 +402,26 @@ func (v responseValidator) hasLogprobs(topLogprobs int) responseValidator {
 func (v responseValidator) hasNoPrompt() responseValidator {
 	if v.resp.Prompt != "" {
 		v.errors = append(v.errors, "expected prompt to be empty when return_prompt is not set")
+	}
+
+	return v
+}
+
+func (v responseValidator) hasValidJSON() responseValidator {
+	if len(v.resp.Choice) == 0 {
+		v.errors = append(v.errors, "expected at least one choice")
+		return v
+	}
+
+	content := strings.TrimSpace(v.getMsg().Content)
+	if content == "" {
+		v.errors = append(v.errors, "expected content to be non-empty for JSON validation")
+		return v
+	}
+
+	var js any
+	if err := json.Unmarshal([]byte(content), &js); err != nil {
+		v.errors = append(v.errors, fmt.Sprintf("expected valid JSON, got parse error: %v, content: %s", err, content))
 	}
 
 	return v

@@ -54,13 +54,14 @@ export default function DocsManual() {
             <li><a href="#chapter-6-yarn-extended-context">YaRN Extended Context</a></li>
             <li><a href="#chapter-7-model-server">Model Server</a></li>
             <li><a href="#chapter-8-api-endpoints">API Endpoints</a></li>
-            <li><a href="#chapter-9-multi-modal-models">Multi-Modal Models</a></li>
-            <li><a href="#chapter-10-security--authentication">Security & Authentication</a></li>
-            <li><a href="#chapter-11-browser-ui-bui">Browser UI (BUI)</a></li>
-            <li><a href="#chapter-12-client-integration">Client Integration</a></li>
-            <li><a href="#chapter-13-observability">Observability</a></li>
-            <li><a href="#chapter-14-troubleshooting">Troubleshooting</a></li>
-            <li><a href="#chapter-15-developer-guide">Developer Guide</a></li>
+            <li><a href="#chapter-9-request-parameters">Request Parameters</a></li>
+            <li><a href="#chapter-10-multi-modal-models">Multi-Modal Models</a></li>
+            <li><a href="#chapter-11-security--authentication">Security & Authentication</a></li>
+            <li><a href="#chapter-12-browser-ui-bui">Browser UI (BUI)</a></li>
+            <li><a href="#chapter-13-client-integration">Client Integration</a></li>
+            <li><a href="#chapter-14-observability">Observability</a></li>
+            <li><a href="#chapter-15-troubleshooting">Troubleshooting</a></li>
+            <li><a href="#chapter-16-developer-guide">Developer Guide</a></li>
           </ol>
           <hr />
           <h2 id="chapter-1:-introduction">Chapter 1: Introduction</h2>
@@ -1718,7 +1719,379 @@ data: {"type":"response.completed",...}`}</code></pre>
 data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ation\\":"}}]}}]}
 
 data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":" \\"Paris\\"}"}}]}}]}`}</code></pre>
-          <h3 id="87-logprobs-token-probabilities">8.7 Logprobs (Token Probabilities)</h3>
+          <h3 id="87-models-list">8.7 Models List</h3>
+          <p>Get available models.</p>
+          <p><strong>Endpoint:</strong> <code>GET /v1/models</code></p>
+          <p><strong>Request:</strong></p>
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/models`}</code></pre>
+          <p><strong>Response:</strong></p>
+          <pre className="code-block"><code className="language-json">{`{
+  "object": "list",
+  "data": [
+    {
+      "id": "Qwen3-8B-Q8_0",
+      "object": "model",
+      "owned_by": "kronk"
+    },
+    {
+      "id": "embeddinggemma-300m-qat-Q8_0",
+      "object": "model",
+      "owned_by": "kronk"
+    }
+  ]
+}`}</code></pre>
+          <h3 id="88-authentication">8.8 Authentication</h3>
+          <p>When authentication is enabled, include the token in requests:</p>
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/chat/completions \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer your-token-here" \\
+  -d '{...}'`}</code></pre>
+          <p>See <a href="#chapter-11-security--authentication">Chapter 11: Security & Authentication</a></p>
+          <p>for details on token management.</p>
+          <h3 id="89-error-responses">8.9 Error Responses</h3>
+          <p>Errors follow a standard format:</p>
+          <pre className="code-block"><code className="language-json">{`{
+  "error": {
+    "code": "invalid_argument",
+    "message": "missing model field"
+  }
+}`}</code></pre>
+          <p><strong>Common Error Codes:</strong></p>
+          <ul>
+            <li><code>invalid_argument</code> - Missing or invalid request parameters</li>
+            <li><code>not_found</code> - Model not found</li>
+            <li><code>internal</code> - Server error during processing</li>
+            <li><code>unauthenticated</code> - Missing or invalid authentication token</li>
+          </ul>
+          <hr />
+          <h2 id="chapter-9:-request-parameters">Chapter 9: Request Parameters</h2>
+          <p>This chapter documents the request parameters available for controlling model output through both the SDK and REST API.</p>
+          <h3 id="91-sampling-parameters">9.1 Sampling Parameters</h3>
+          <p>These parameters control the randomness and diversity of generated text.</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Parameter</th>
+                <th>JSON Key</th>
+                <th>Type</th>
+                <th>Default</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Temperature</td>
+                <td><code>temperature</code></td>
+                <td>float32</td>
+                <td>0.8</td>
+                <td>Controls randomness of output. Higher values produce more varied text, lower values more deterministic.</td>
+              </tr>
+              <tr>
+                <td>Top-K</td>
+                <td><code>top_k</code></td>
+                <td>int32</td>
+                <td>40</td>
+                <td>Limits token pool to K most probable tokens before sampling.</td>
+              </tr>
+              <tr>
+                <td>Top-P</td>
+                <td><code>top_p</code></td>
+                <td>float32</td>
+                <td>0.9</td>
+                <td>Nucleus sampling threshold. Only tokens with cumulative probability ≤ top_p are considered.</td>
+              </tr>
+              <tr>
+                <td>Min-P</td>
+                <td><code>min_p</code></td>
+                <td>float32</td>
+                <td>0.0</td>
+                <td>Dynamic sampling threshold. Tokens with probability &lt; min_p × max_probability are excluded.</td>
+              </tr>
+            </tbody>
+          </table>
+          <h3 id="92-repetition-control">9.2 Repetition Control</h3>
+          <p>These parameters help prevent repetitive output.</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Parameter</th>
+                <th>JSON Key</th>
+                <th>Type</th>
+                <th>Default</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Repeat Penalty</td>
+                <td><code>repeat_penalty</code></td>
+                <td>float32</td>
+                <td>1.0</td>
+                <td>Penalty multiplier for repeated tokens. Values &gt; 1.0 discourage repetition.</td>
+              </tr>
+              <tr>
+                <td>Repeat Last N</td>
+                <td><code>repeat_last_n</code></td>
+                <td>int32</td>
+                <td>64</td>
+                <td>Window size for repetition check. Only the last N tokens are considered.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><strong>DRY Parameters (Don't Repeat Yourself):</strong></p>
+          <p>DRY penalizes n-gram repetitions to prevent the model from repeating phrases.</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Parameter</th>
+                <th>JSON Key</th>
+                <th>Type</th>
+                <th>Default</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>DRY Multiplier</td>
+                <td><code>dry_multiplier</code></td>
+                <td>float32</td>
+                <td>1.05</td>
+                <td>N-gram repetition penalty strength. Higher values penalize repetition more.</td>
+              </tr>
+              <tr>
+                <td>DRY Base</td>
+                <td><code>dry_base</code></td>
+                <td>float32</td>
+                <td>1.75</td>
+                <td>Exponential penalty base for longer n-grams.</td>
+              </tr>
+              <tr>
+                <td>DRY Allowed Length</td>
+                <td><code>dry_allowed_length</code></td>
+                <td>int32</td>
+                <td>2</td>
+                <td>Minimum n-gram length to consider for penalties.</td>
+              </tr>
+              <tr>
+                <td>DRY Penalty Last N</td>
+                <td><code>dry_penalty_last_n</code></td>
+                <td>int32</td>
+                <td>0</td>
+                <td>Number of recent tokens to consider for DRY. 0 means all tokens.</td>
+              </tr>
+            </tbody>
+          </table>
+          <h3 id="93-advanced-sampling">9.3 Advanced Sampling</h3>
+          <p><strong>XTC (eXtreme Token Culling):</strong></p>
+          <p>XTC probabilistically removes high-probability tokens to increase diversity.</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Parameter</th>
+                <th>JSON Key</th>
+                <th>Type</th>
+                <th>Default</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>XTC Probability</td>
+                <td><code>xtc_probability</code></td>
+                <td>float32</td>
+                <td>0.0</td>
+                <td>Probability of activating XTC on each token. 0 disables XTC.</td>
+              </tr>
+              <tr>
+                <td>XTC Threshold</td>
+                <td><code>xtc_threshold</code></td>
+                <td>float32</td>
+                <td>0.1</td>
+                <td>Probability threshold for token culling.</td>
+              </tr>
+              <tr>
+                <td>XTC Min Keep</td>
+                <td><code>xtc_min_keep</code></td>
+                <td>uint32</td>
+                <td>1</td>
+                <td>Minimum number of tokens to keep after culling.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><strong>Adaptive-P:</strong></p>
+          <p>Adaptive-P dynamically adjusts the sampling threshold based on output probability.</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Parameter</th>
+                <th>JSON Key</th>
+                <th>Type</th>
+                <th>Default</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Adaptive-P Target</td>
+                <td><code>adaptive_p_target</code></td>
+                <td>float32</td>
+                <td>0.0</td>
+                <td>Target probability threshold. 0 disables adaptive sampling.</td>
+              </tr>
+              <tr>
+                <td>Adaptive-P Decay</td>
+                <td><code>adaptive_p_decay</code></td>
+                <td>float32</td>
+                <td>0.0</td>
+                <td>Speed of threshold adjustment toward target.</td>
+              </tr>
+            </tbody>
+          </table>
+          <h3 id="94-generation-control">9.4 Generation Control</h3>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Parameter</th>
+                <th>JSON Key</th>
+                <th>Type</th>
+                <th>Default</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Max Tokens</td>
+                <td><code>max_tokens</code></td>
+                <td>int</td>
+                <td>4096</td>
+                <td>Maximum tokens to generate.</td>
+              </tr>
+              <tr>
+                <td>Enable Thinking</td>
+                <td><code>enable_thinking</code></td>
+                <td>string</td>
+                <td>"true"</td>
+                <td>Enable model thinking/reasoning mode. Set to "false" for direct responses.</td>
+              </tr>
+              <tr>
+                <td>Reasoning Effort</td>
+                <td><code>reasoning_effort</code></td>
+                <td>string</td>
+                <td>"medium"</td>
+                <td>GPT reasoning level: none, minimal, low, medium, high.</td>
+              </tr>
+              <tr>
+                <td>Stream</td>
+                <td><code>stream</code></td>
+                <td>bool</td>
+                <td>false</td>
+                <td>Stream response chunks via SSE.</td>
+              </tr>
+              <tr>
+                <td>Include Usage</td>
+                <td><code>include_usage</code></td>
+                <td>bool</td>
+                <td>true</td>
+                <td>Include token usage statistics in streaming responses.</td>
+              </tr>
+            </tbody>
+          </table>
+          <h3 id="95-grammar-constrained-output">9.5 Grammar Constrained Output</h3>
+          <p>Grammars force the model to only produce tokens that match a specified pattern, guaranteeing structured output.</p>
+          <p><strong>Built-in Presets:</strong></p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Preset</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>GrammarJSON</code></td>
+                <td>Valid JSON objects or arrays</td>
+              </tr>
+              <tr>
+                <td><code>GrammarJSONObject</code></td>
+                <td>JSON objects only</td>
+              </tr>
+              <tr>
+                <td><code>GrammarJSONArray</code></td>
+                <td>JSON arrays only</td>
+              </tr>
+              <tr>
+                <td><code>GrammarBoolean</code></td>
+                <td>"true" or "false"</td>
+              </tr>
+              <tr>
+                <td><code>GrammarYesNo</code></td>
+                <td>"yes" or "no"</td>
+              </tr>
+              <tr>
+                <td><code>GrammarInteger</code></td>
+                <td>Integer values</td>
+              </tr>
+              <tr>
+                <td><code>GrammarNumber</code></td>
+                <td>Numeric values (int or float)</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><strong>Using Grammar Presets (SDK):</strong></p>
+          <pre className="code-block"><code className="language-go">{`d := model.D{
+    "messages": model.DocumentArray(
+        model.TextMessage(model.RoleUser, "List 3 languages in JSON"),
+    ),
+    "grammar": model.GrammarJSONObject,
+}`}</code></pre>
+          <p><strong>Using Grammar via API:</strong></p>
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/chat/completions \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "Qwen3-8B-Q8_0",
+    "messages": [{"role": "user", "content": "List 3 languages in JSON"}],
+    "grammar": "root ::= object\\nvalue ::= object | array | string | number | \\"true\\" | \\"false\\" | \\"null\\"\\nobject ::= \\"{\\" ws ( string \\":\\" ws value (\\",\\" ws string \\":\\" ws value)* )? ws \\"}\\"\\narray ::= \\"[\\" ws ( value (\\",\\" ws value)* )? ws \\"]\\"\\nstring ::= \\"\\\\\\"\\" ([^\\"\\\\\\\\] | \\"\\\\\\\\\\" [\\"\\\\\\\\bfnrt/] | \\"\\\\\\\\u\\" [0-9a-fA-F]{4})* \\"\\\\\\"\\"\\nnumber ::= \\"-\\"? (\\"0\\" | [1-9][0-9]*) (\\".\\" [0-9]+)? ([eE] [+-]? [0-9]+)?\\nws ::= [ \\\\t\\\\n\\\\r]*"
+  }'`}</code></pre>
+          <p><strong>JSON Schema Auto-Conversion:</strong></p>
+          <pre className="code-block"><code className="language-go">{`schema := model.D{
+    "type": "object",
+    "properties": model.D{
+        "name": model.D{"type": "string"},
+        "year": model.D{"type": "integer"},
+    },
+    "required": []string{"name", "year"},
+}
+
+d := model.D{
+    "messages": model.DocumentArray(...),
+    "json_schema": schema,
+    "enable_thinking": false,
+}`}</code></pre>
+          <p>Via API with <code>json_schema</code> field:</p>
+          <pre className="code-block"><code className="language-json">{`{
+  "model": "Qwen3-8B-Q8_0",
+  "messages": [...],
+  "json_schema": {
+    "type": "object",
+    "properties": {
+      "name": {"type": "string"},
+      "year": {"type": "integer"}
+    },
+    "required": ["name", "year"]
+  },
+  "enable_thinking": false
+}`}</code></pre>
+          <p><strong>Custom GBNF Grammars:</strong></p>
+          <pre className="code-block"><code className="language-go">{`sentimentGrammar := \`root ::= sentiment
+sentiment ::= "positive" | "negative" | "neutral"\`
+
+d := model.D{
+    "messages": model.DocumentArray(...),
+    "grammar": sentimentGrammar,
+    "enable_thinking": false,
+}`}</code></pre>
+          <p><strong>Important:</strong> When using grammar constraints, set <code>enable_thinking: false</code> because the grammar applies from the first output token.</p>
+          <h3 id="96-logprobs-token-probabilities">9.6 Logprobs (Token Probabilities)</h3>
           <p>Request log probabilities for generated tokens to understand model confidence</p>
           <p>or implement custom sampling strategies.</p>
           <p><strong>Request Parameters:</strong></p>
@@ -1811,28 +2184,8 @@ data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":" \
             <li>Custom rejection sampling</li>
             <li>Token-level analysis for debugging</li>
           </ul>
-          <h3 id="88-models-list">8.8 Models List</h3>
-          <p>Get available models.</p>
-          <p><strong>Endpoint:</strong> <code>GET /v1/models</code></p>
-          <p><strong>Request:</strong></p>
-          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/models`}</code></pre>
-          <p><strong>Response:</strong></p>
-          <pre className="code-block"><code className="language-json">{`{
-  "object": "list",
-  "data": [
-    {
-      "id": "Qwen3-8B-Q8_0",
-      "object": "model",
-      "owned_by": "kronk"
-    },
-    {
-      "id": "embeddinggemma-300m-qat-Q8_0",
-      "object": "model",
-      "owned_by": "kronk"
-    }
-  ]
-}`}</code></pre>
-          <h3 id="89-using-cache-id-with-api-requests">8.9 Using Cache ID with API Requests</h3>
+          <h3 id="97-cache-id">9.7 Cache ID</h3>
+          <p>The <code>cache_id</code> parameter enables multi-user caching for both System Prompt Cache (SPC) and Incremental Message Cache (IMC). Each unique <code>cache_id</code> gets its own dedicated cache sequence.</p>
           <p>To use multi-user caching (SPC or IMC), pass the session ID via header:</p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/chat/completions \\
   -H "Content-Type: application/json" \\
@@ -1847,36 +2200,194 @@ data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":" \
   "cache_id": "user-123",
   "messages": [...]
 }`}</code></pre>
-          <p>The <code>cache_id</code> is used by both System Prompt Cache (SPC) and Incremental Message Cache (IMC).</p>
           <p>Each unique <code>cache_id</code> gets its own dedicated cache sequence, up to <code>max_cache_sessions</code>.</p>
-          <h3 id="810-authentication">8.10 Authentication</h3>
-          <p>When authentication is enabled, include the token in requests:</p>
-          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/chat/completions \\
-  -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer your-token-here" \\
-  -d '{...}'`}</code></pre>
-          <p>See <a href="#chapter-10-security--authentication">Chapter 10: Security & Authentication</a></p>
-          <p>for details on token management.</p>
-          <h3 id="811-error-responses">8.11 Error Responses</h3>
-          <p>Errors follow a standard format:</p>
-          <pre className="code-block"><code className="language-json">{`{
-  "error": {
-    "code": "invalid_argument",
-    "message": "missing model field"
-  }
-}`}</code></pre>
-          <p><strong>Common Error Codes:</strong></p>
-          <ul>
-            <li><code>invalid_argument</code> - Missing or invalid request parameters</li>
-            <li><code>not_found</code> - Model not found</li>
-            <li><code>internal</code> - Server error during processing</li>
-            <li><code>unauthenticated</code> - Missing or invalid authentication token</li>
-          </ul>
+          <h3 id="98-parameter-reference">9.8 Parameter Reference</h3>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Parameter</th>
+                <th>JSON Key</th>
+                <th>Type</th>
+                <th>Default</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Temperature</td>
+                <td><code>temperature</code></td>
+                <td>float32</td>
+                <td>0.8</td>
+                <td>Controls randomness of output</td>
+              </tr>
+              <tr>
+                <td>Top-K</td>
+                <td><code>top_k</code></td>
+                <td>int32</td>
+                <td>40</td>
+                <td>Limits token pool to K most probable</td>
+              </tr>
+              <tr>
+                <td>Top-P</td>
+                <td><code>top_p</code></td>
+                <td>float32</td>
+                <td>0.9</td>
+                <td>Nucleus sampling threshold</td>
+              </tr>
+              <tr>
+                <td>Min-P</td>
+                <td><code>min_p</code></td>
+                <td>float32</td>
+                <td>0.0</td>
+                <td>Dynamic sampling threshold</td>
+              </tr>
+              <tr>
+                <td>Max Tokens</td>
+                <td><code>max_tokens</code></td>
+                <td>int</td>
+                <td>4096</td>
+                <td>Maximum tokens to generate</td>
+              </tr>
+              <tr>
+                <td>Repeat Penalty</td>
+                <td><code>repeat_penalty</code></td>
+                <td>float32</td>
+                <td>1.0</td>
+                <td>Penalty for repeated tokens</td>
+              </tr>
+              <tr>
+                <td>Repeat Last N</td>
+                <td><code>repeat_last_n</code></td>
+                <td>int32</td>
+                <td>64</td>
+                <td>Window for repetition check</td>
+              </tr>
+              <tr>
+                <td>DRY Multiplier</td>
+                <td><code>dry_multiplier</code></td>
+                <td>float32</td>
+                <td>1.05</td>
+                <td>N-gram repetition penalty</td>
+              </tr>
+              <tr>
+                <td>DRY Base</td>
+                <td><code>dry_base</code></td>
+                <td>float32</td>
+                <td>1.75</td>
+                <td>Exponential penalty base</td>
+              </tr>
+              <tr>
+                <td>DRY Allowed Length</td>
+                <td><code>dry_allowed_length</code></td>
+                <td>int32</td>
+                <td>2</td>
+                <td>Min n-gram length for DRY</td>
+              </tr>
+              <tr>
+                <td>DRY Penalty Last N</td>
+                <td><code>dry_penalty_last_n</code></td>
+                <td>int32</td>
+                <td>0</td>
+                <td>Recent tokens for DRY (0=all)</td>
+              </tr>
+              <tr>
+                <td>XTC Probability</td>
+                <td><code>xtc_probability</code></td>
+                <td>float32</td>
+                <td>0.0</td>
+                <td>XTC activation probability</td>
+              </tr>
+              <tr>
+                <td>XTC Threshold</td>
+                <td><code>xtc_threshold</code></td>
+                <td>float32</td>
+                <td>0.1</td>
+                <td>XTC probability threshold</td>
+              </tr>
+              <tr>
+                <td>XTC Min Keep</td>
+                <td><code>xtc_min_keep</code></td>
+                <td>uint32</td>
+                <td>1</td>
+                <td>Min tokens after XTC</td>
+              </tr>
+              <tr>
+                <td>Adaptive-P Target</td>
+                <td><code>adaptive_p_target</code></td>
+                <td>float32</td>
+                <td>0.0</td>
+                <td>Adaptive sampling target</td>
+              </tr>
+              <tr>
+                <td>Adaptive-P Decay</td>
+                <td><code>adaptive_p_decay</code></td>
+                <td>float32</td>
+                <td>0.0</td>
+                <td>Adaptive adjustment speed</td>
+              </tr>
+              <tr>
+                <td>Enable Thinking</td>
+                <td><code>enable_thinking</code></td>
+                <td>string</td>
+                <td>"true"</td>
+                <td>Enable model thinking</td>
+              </tr>
+              <tr>
+                <td>Reasoning Effort</td>
+                <td><code>reasoning_effort</code></td>
+                <td>string</td>
+                <td>"medium"</td>
+                <td>GPT reasoning level</td>
+              </tr>
+              <tr>
+                <td>Grammar</td>
+                <td><code>grammar</code></td>
+                <td>string</td>
+                <td>""</td>
+                <td>GBNF grammar constraint</td>
+              </tr>
+              <tr>
+                <td>Logprobs</td>
+                <td><code>logprobs</code></td>
+                <td>bool</td>
+                <td>false</td>
+                <td>Return token probabilities</td>
+              </tr>
+              <tr>
+                <td>Top Logprobs</td>
+                <td><code>top_logprobs</code></td>
+                <td>int</td>
+                <td>0</td>
+                <td>Number of top alternatives</td>
+              </tr>
+              <tr>
+                <td>Stream</td>
+                <td><code>stream</code></td>
+                <td>bool</td>
+                <td>false</td>
+                <td>Stream response</td>
+              </tr>
+              <tr>
+                <td>Include Usage</td>
+                <td><code>include_usage</code></td>
+                <td>bool</td>
+                <td>true</td>
+                <td>Include usage in streaming</td>
+              </tr>
+              <tr>
+                <td>Return Prompt</td>
+                <td><code>return_prompt</code></td>
+                <td>bool</td>
+                <td>false</td>
+                <td>Include prompt in response</td>
+              </tr>
+            </tbody>
+          </table>
           <hr />
-          <h2 id="chapter-9:-multi-modal-models">Chapter 9: Multi-Modal Models</h2>
+          <h2 id="chapter-10:-multi-modal-models">Chapter 10: Multi-Modal Models</h2>
           <p>Kronk supports vision and audio models that can process images, video frames,</p>
           <p>and audio alongside text. This chapter covers how to use these models.</p>
-          <h3 id="91-overview">9.1 Overview</h3>
+          <h3 id="101-overview">10.1 Overview</h3>
           <p>Multi-modal models combine a language model with a media projector that</p>
           <p>converts images or audio into tokens the model can understand.</p>
           <p><strong>Supported Media Types:</strong></p>
@@ -1893,7 +2404,7 @@ kronk catalog list --filter-category=Audio`}</code></pre>
             <li><code>gemma-3-4b-it-q4_0</code> - Vision model</li>
             <li><code>Qwen2-Audio-7B.Q8_0</code> - Audio model</li>
           </ul>
-          <h3 id="92-vision-models">9.2 Vision Models</h3>
+          <h3 id="102-vision-models">10.2 Vision Models</h3>
           <p>Vision models analyze images and answer questions about their content.</p>
           <p><strong>Download a Vision Model:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog pull Qwen2.5-VL-3B-Instruct-Q8_0`}</code></pre>
@@ -1936,7 +2447,7 @@ kronk catalog list --filter-category=Audio`}</code></pre>
             <li>Base64 data URL: <code>data:image/jpeg;base64,/9j/4AAQSkZJRg...</code></li>
             <li>Base64 data URL: <code>data:image/png;base64,iVBORw0KGgo...</code></li>
           </ul>
-          <h3 id="93-audio-models">9.3 Audio Models</h3>
+          <h3 id="103-audio-models">10.3 Audio Models</h3>
           <p>Audio models transcribe and understand spoken content.</p>
           <p><strong>Download an Audio Model:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog pull Qwen2-Audio-7B.Q8_0`}</code></pre>
@@ -1969,7 +2480,7 @@ kronk catalog list --filter-category=Audio`}</code></pre>
             <li><code>data</code> - Base64-encoded audio data</li>
             <li><code>format</code> - Audio format (currently <code>wav</code> supported)</li>
           </ul>
-          <h3 id="94-plain-base64-format">9.4 Plain Base64 Format</h3>
+          <h3 id="104-plain-base64-format">10.4 Plain Base64 Format</h3>
           <p>For simpler integrations, Kronk also accepts plain base64 as the message</p>
           <p>content (without the structured OpenAI format):</p>
           <pre className="code-block"><code className="language-json">{`{
@@ -1987,7 +2498,7 @@ kronk catalog list --filter-category=Audio`}</code></pre>
             <li>PNG: starts with <code>89 50 4E 47</code></li>
             <li>WAV: starts with <code>RIFF</code></li>
           </ul>
-          <h3 id="95-configuration-for-multi-modal-models">9.5 Configuration for Multi-Modal Models</h3>
+          <h3 id="105-configuration-for-multi-modal-models">10.5 Configuration for Multi-Modal Models</h3>
           <p>Vision and audio models have specific configuration requirements:</p>
           <pre className="code-block"><code className="language-yaml">{`models:
   Qwen2.5-VL-3B-Instruct-Q8_0:
@@ -2000,7 +2511,7 @@ kronk catalog list --filter-category=Audio`}</code></pre>
             <li><code>n_seq_max</code> creates model instances in a pool (not batch parallelism)</li>
             <li>Each request needs exclusive model context for media embedding</li>
           </ul>
-          <h3 id="96-memory-requirements">9.6 Memory Requirements</h3>
+          <h3 id="106-memory-requirements">10.6 Memory Requirements</h3>
           <p>Vision and audio models require additional memory for the projector:</p>
           <p><strong>Vision Model Example (Qwen2.5-VL-3B):</strong></p>
           <pre className="code-block"><code>{`Model weights:     ~3.5 GB
@@ -2014,14 +2525,14 @@ Projector:         ~0.8 GB
 KV cache (8K):     ~0.6 GB
 ─────────────────────────
 Total:             ~9.4 GB`}</code></pre>
-          <h3 id="97-limitations">9.7 Limitations</h3>
+          <h3 id="107-limitations">10.7 Limitations</h3>
           <ul>
             <li>Vision/audio models cannot use batch processing (sequential only)</li>
             <li>Each request gets exclusive model context</li>
             <li>Message caching (SPC/IMC) not supported for media requests</li>
             <li>Processing time varies with image resolution and audio duration</li>
           </ul>
-          <h3 id="98-example:-image-analysis">9.8 Example: Image Analysis</h3>
+          <h3 id="108-example:-image-analysis">10.8 Example: Image Analysis</h3>
           <p>Complete example analyzing an image:</p>
           <pre className="code-block"><code className="language-shell">{`# Encode image to base64
 IMAGE_B64=$(base64 -i photo.jpg)
@@ -2045,7 +2556,7 @@ curl http://localhost:8080/v1/chat/completions \\
     ],
     "max_tokens": 1024
   }'`}</code></pre>
-          <h3 id="99-example:-audio-transcription">9.9 Example: Audio Transcription</h3>
+          <h3 id="109-example:-audio-transcription">10.9 Example: Audio Transcription</h3>
           <p>Complete example transcribing audio:</p>
           <pre className="code-block"><code className="language-shell">{`# Encode audio to base64
 AUDIO_B64=$(base64 -i recording.wav)
@@ -2070,11 +2581,11 @@ curl http://localhost:8080/v1/chat/completions \\
     "max_tokens": 2048
   }'`}</code></pre>
           <hr />
-          <p>_Next: <a href="#chapter-10-security--authentication">Chapter 10: Security & Authentication</a>_</p>
-          <h2 id="chapter-10:-security-authentication">Chapter 10: Security &amp; Authentication</h2>
+          <p>_Next: <a href="#chapter-11-security--authentication">Chapter 11: Security & Authentication</a>_</p>
+          <h2 id="chapter-11:-security-authentication">Chapter 11: Security &amp; Authentication</h2>
           <p>Kronk provides JWT-based authentication and authorization with per-endpoint</p>
           <p>rate limiting. When enabled, all API requests require a valid token.</p>
-          <h3 id="101-enabling-authentication">10.1 Enabling Authentication</h3>
+          <h3 id="111-enabling-authentication">11.1 Enabling Authentication</h3>
           <p><strong>Start Server with Auth Enabled:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --auth-enabled`}</code></pre>
           <p>Or via environment variable:</p>
@@ -2089,7 +2600,7 @@ kronk server start`}</code></pre>
             <li>Generates an additional signing key for user tokens</li>
           </ol>
           <p>The admin token is stored at <code>~/.kronk/keys/master.jwt</code>.</p>
-          <h3 id="102-using-the-admin-token">10.2 Using the Admin Token</h3>
+          <h3 id="112-using-the-admin-token">11.2 Using the Admin Token</h3>
           <p>The admin token is required for all security management operations.</p>
           <p><strong>Set the Token:</strong></p>
           <pre className="code-block"><code className="language-shell">{`export KRONK_TOKEN=$(cat ~/.kronk/keys/master.jwt)`}</code></pre>
@@ -2099,7 +2610,7 @@ kronk server start`}</code></pre>
             <li>Add and remove signing keys</li>
             <li>Access all endpoints without rate limits</li>
           </ul>
-          <h3 id="103-key-management">10.3 Key Management</h3>
+          <h3 id="113-key-management">11.3 Key Management</h3>
           <p>Private keys sign JWT tokens. Multiple keys allow token rotation without</p>
           <p>invalidating all existing tokens.</p>
           <p><strong>List Keys:</strong></p>
@@ -2120,7 +2631,7 @@ a1b2c3d4-e5f6-7890-abcd-ef1234567890    2024-01-15T10:30:00Z`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`kronk security key list --local
 kronk security key create --local
 kronk security key delete --keyid <keyid> --local`}</code></pre>
-          <h3 id="104-creating-user-tokens">10.4 Creating User Tokens</h3>
+          <h3 id="114-creating-user-tokens">11.4 Creating User Tokens</h3>
           <p>Create tokens with specific endpoint access and optional rate limits.</p>
           <p><strong>Basic Syntax:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk security token create \\
@@ -2151,7 +2662,7 @@ kronk security key delete --keyid <keyid> --local`}</code></pre>
             <li><code>rerank</code> - Reranking API</li>
             <li><code>messages</code> - Anthropic Messages API</li>
           </ul>
-          <h3 id="105-token-examples">10.5 Token Examples</h3>
+          <h3 id="115-token-examples">11.5 Token Examples</h3>
           <p><strong>Unlimited Access to All Endpoints (24 hours):</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk security token create \\
   --duration 24h \\
@@ -2174,7 +2685,7 @@ kronk security key delete --keyid <keyid> --local`}</code></pre>
   Endpoints: map[chat-completions:{1000 day} embeddings:{0 unlimited}]
 TOKEN:
 eyJhbGciOiJSUzI1NiIsImtpZCI6ImExYjJjM2Q0Li4uIiwidHlwIjoiSldUIn0...`}</code></pre>
-          <h3 id="106-using-tokens-in-api-requests">10.6 Using Tokens in API Requests</h3>
+          <h3 id="116-using-tokens-in-api-requests">11.6 Using Tokens in API Requests</h3>
           <p>Pass the token in the <code>Authorization</code> header with the <code>Bearer</code> prefix.</p>
           <p><strong>curl Example:</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/chat/completions \\
@@ -2203,7 +2714,7 @@ response = client.chat.completions.create(
     model="Qwen3-8B-Q8_0",
     messages=[{"role": "user", "content": "Hello"}]
 )`}</code></pre>
-          <h3 id="107-authorization-flow">10.7 Authorization Flow</h3>
+          <h3 id="117-authorization-flow">11.7 Authorization Flow</h3>
           <p>When a request arrives:</p>
           <ol>
             <li><strong>Token Extraction</strong> - Bearer token parsed from Authorization header</li>
@@ -2219,7 +2730,7 @@ response = client.chat.completions.create(
             <li><code>403 Forbidden</code> - Token lacks access to the endpoint</li>
             <li><code>429 Too Many Requests</code> - Rate limit exceeded</li>
           </ul>
-          <h3 id="108-rate-limiting">10.8 Rate Limiting</h3>
+          <h3 id="118-rate-limiting">11.8 Rate Limiting</h3>
           <p>Rate limits are enforced per token (identified by the token's subject claim).</p>
           <p><strong>How Limits Work:</strong></p>
           <ul>
@@ -2232,7 +2743,7 @@ response = client.chat.completions.create(
           <p>Counters persist across server restarts.</p>
           <p><strong>Bypassing Rate Limits:</strong></p>
           <p>Admin tokens (like <code>master.jwt</code>) bypass all rate limiting.</p>
-          <h3 id="109-configuration-reference">10.9 Configuration Reference</h3>
+          <h3 id="119-configuration-reference">11.9 Configuration Reference</h3>
           <p><strong>Server Flags:</strong></p>
           <ul>
             <li><code>--auth-enabled</code> - Enable authentication (env: <code>KRONK_AUTH_ENABLED</code>)</li>
@@ -2245,7 +2756,7 @@ response = client.chat.completions.create(
             <li><code>KRONK_WEB_API_HOST</code> - Server address for CLI web mode</li>
           </ul>
           <p>  (default: <code>localhost:8080</code>)</p>
-          <h3 id="1010-security-best-practices">10.10 Security Best Practices</h3>
+          <h3 id="1110-security-best-practices">11.10 Security Best Practices</h3>
           <p><strong>Token Management:</strong></p>
           <ul>
             <li>Store admin tokens securely; treat <code>master.jwt</code> like a password</li>
@@ -2275,16 +2786,16 @@ response = client.chat.completions.create(
             <li>Monitor rate limit usage in logs</li>
           </ul>
           <hr />
-          <p>_Next: <a href="#chapter-11-browser-ui-bui">Chapter 11: Browser UI (BUI)</a>_</p>
-          <h2 id="chapter-11:-browser-ui-bui">Chapter 11: Browser UI (BUI)</h2>
+          <p>_Next: <a href="#chapter-12-browser-ui-bui">Chapter 12: Browser UI (BUI)</a>_</p>
+          <h2 id="chapter-12:-browser-ui-bui">Chapter 12: Browser UI (BUI)</h2>
           <p>Kronk includes a web-based interface for managing models, libraries,</p>
           <p>security, and server configuration without using the command line.</p>
-          <h3 id="111-accessing-the-bui">11.1 Accessing the BUI</h3>
+          <h3 id="121-accessing-the-bui">12.1 Accessing the BUI</h3>
           <p>The BUI is served from the same port as the API.</p>
           <p><strong>Open in Browser:</strong></p>
           <pre className="code-block"><code>{`http://localhost:8080`}</code></pre>
           <p>The BUI automatically loads when you navigate to the server root.</p>
-          <h3 id="112-downloading-libraries">11.2 Downloading Libraries</h3>
+          <h3 id="122-downloading-libraries">12.2 Downloading Libraries</h3>
           <p>Before running inference, you need the llama.cpp libraries.</p>
           <p><strong>Steps:</strong></p>
           <ol>
@@ -2301,7 +2812,7 @@ response = client.chat.completions.create(
             <li>Architecture (amd64, arm64)</li>
             <li>Operating system</li>
           </ul>
-          <h3 id="113-downloading-models">11.3 Downloading Models</h3>
+          <h3 id="123-downloading-models">12.3 Downloading Models</h3>
           <p><strong>Browse the Catalog:</strong></p>
           <ol>
             <li>Navigate to the <strong>Catalog</strong> page</li>
@@ -2325,7 +2836,7 @@ response = client.chat.completions.create(
           <p><strong>View Pulled Models:</strong></p>
           <p>Navigate to the <strong>Models</strong> page to see all downloaded models and their</p>
           <p>status.</p>
-          <h3 id="114-managing-keys-and-tokens">11.4 Managing Keys and Tokens</h3>
+          <h3 id="124-managing-keys-and-tokens">12.4 Managing Keys and Tokens</h3>
           <p>When authentication is enabled, use the BUI to manage security.</p>
           <p><strong>Keys Page:</strong></p>
           <ul>
@@ -2345,7 +2856,7 @@ response = client.chat.completions.create(
           </ul>
           <p><strong>Note:</strong> You must provide an admin token in the BUI settings to access</p>
           <p>security management features.</p>
-          <h3 id="115-other-screens">11.5 Other Screens</h3>
+          <h3 id="125-other-screens">12.5 Other Screens</h3>
           <p><strong>Dashboard:</strong></p>
           <p>Overview of server status, loaded models, and system information.</p>
           <p><strong>Documentation:</strong></p>
@@ -2362,10 +2873,10 @@ response = client.chat.completions.create(
             <li>Theme preferences</li>
           </ul>
           <hr />
-          <p>_Next: <a href="#chapter-12-client-integration">Chapter 12: Client Integration</a>_</p>
-          <h2 id="chapter-12:-client-integration">Chapter 12: Client Integration</h2>
+          <p>_Next: <a href="#chapter-13-client-integration">Chapter 13: Client Integration</a>_</p>
+          <h2 id="chapter-13:-client-integration">Chapter 13: Client Integration</h2>
           <p>Kronk's OpenAI-compatible API works with popular AI clients and tools.</p>
-          <h3 id="121-openwebui">12.1 OpenWebUI</h3>
+          <h3 id="131-openwebui">13.1 OpenWebUI</h3>
           <p>OpenWebUI is a self-hosted chat interface that works with Kronk.</p>
           <p><strong>Configure OpenWebUI:</strong></p>
           <ol>
@@ -2385,7 +2896,7 @@ response = client.chat.completions.create(
             <li>System prompts</li>
             <li>Conversation history</li>
           </ul>
-          <h3 id="122-cline">12.2 Cline</h3>
+          <h3 id="132-cline">13.2 Cline</h3>
           <p>Cline is a VS Code extension for AI-assisted coding.</p>
           <p><strong>Configure Cline for Kronk:</strong></p>
           <ol>
@@ -2422,7 +2933,7 @@ Model: Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMC`}</code></pre>
     max-cache-sessions: 1`}</code></pre>
           <p>IMC is especially beneficial for Cline's iterative coding workflow.</p>
           <p>_Note: Don't use R1 Message formats when using KMS._</p>
-          <h3 id="124-python-openai-sdk">12.4 Python OpenAI SDK</h3>
+          <h3 id="134-python-openai-sdk">13.4 Python OpenAI SDK</h3>
           <p>Use the official OpenAI Python library with Kronk.</p>
           <p><strong>Installation:</strong></p>
           <pre className="code-block"><code className="language-shell">{`pip install openai`}</code></pre>
@@ -2446,7 +2957,7 @@ response = client.chat.completions.create(
 for chunk in response:
     if chunk.choices[0].delta.content:
         print(chunk.choices[0].delta.content, end="")`}</code></pre>
-          <h3 id="125-curl-and-http-clients">12.5 curl and HTTP Clients</h3>
+          <h3 id="135-curl-and-http-clients">13.5 curl and HTTP Clients</h3>
           <p>Any HTTP client can call Kronk's REST API directly.</p>
           <p><strong>Basic Request:</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/chat/completions \\
@@ -2464,7 +2975,7 @@ for chunk in response:
 data: {"id":"...","choices":[{"delta":{"content":"!"}}],...}
 
 data: [DONE]`}</code></pre>
-          <h3 id="126-langchain">12.6 LangChain</h3>
+          <h3 id="136-langchain">13.6 LangChain</h3>
           <p>Use LangChain with Kronk via the OpenAI integration.</p>
           <p><strong>Installation:</strong></p>
           <pre className="code-block"><code className="language-shell">{`pip install langchain-openai`}</code></pre>
@@ -2481,11 +2992,11 @@ llm = ChatOpenAI(
 response = llm.invoke("Explain quantum computing briefly.")
 print(response.content)`}</code></pre>
           <hr />
-          <p>_Next: <a href="#chapter-13-observability">Chapter 13: Observability</a>_</p>
-          <h2 id="chapter-13:-observability">Chapter 13: Observability</h2>
+          <p>_Next: <a href="#chapter-14-observability">Chapter 14: Observability</a>_</p>
+          <h2 id="chapter-14:-observability">Chapter 14: Observability</h2>
           <p>Kronk provides comprehensive observability through distributed tracing,</p>
           <p>Prometheus metrics, pprof profiling, and real-time visualizations.</p>
-          <h3 id="131-debug-server">13.1 Debug Server</h3>
+          <h3 id="141-debug-server">14.1 Debug Server</h3>
           <p>Kronk runs a separate debug server for observability endpoints, isolated</p>
           <p>from the main API for security.</p>
           <p><strong>Default Ports:</strong></p>
@@ -2498,7 +3009,7 @@ print(response.content)`}</code></pre>
           <p>Or via environment variable:</p>
           <pre className="code-block"><code className="language-shell">{`export KRONK_DEBUG_HOST=localhost:9090
 kronk server start`}</code></pre>
-          <h3 id="132-debug-endpoints">13.2 Debug Endpoints</h3>
+          <h3 id="142-debug-endpoints">14.2 Debug Endpoints</h3>
           <p>The debug server exposes these endpoints:</p>
           <p><strong>Prometheus Metrics:</strong></p>
           <pre className="code-block"><code>{`http://localhost:8090/metrics`}</code></pre>
@@ -2513,7 +3024,7 @@ kronk server start`}</code></pre>
           <p><strong>Statsviz (Real-time Visualizations):</strong></p>
           <pre className="code-block"><code>{`http://localhost:8090/debug/statsviz`}</code></pre>
           <p>Provides live charts for memory, goroutines, GC, and more.</p>
-          <h3 id="133-health-check-endpoints">13.3 Health Check Endpoints</h3>
+          <h3 id="143-health-check-endpoints">14.3 Health Check Endpoints</h3>
           <p>Available on the main API port (no authentication required):</p>
           <p><strong>Liveness Check:</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/liveness`}</code></pre>
@@ -2527,7 +3038,7 @@ kronk server start`}</code></pre>
           <p><strong>Readiness Check:</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/readiness`}</code></pre>
           <p>Returns 200 OK when the server is ready to accept requests.</p>
-          <h3 id="134-prometheus-metrics">13.4 Prometheus Metrics</h3>
+          <h3 id="144-prometheus-metrics">14.4 Prometheus Metrics</h3>
           <p>Kronk exposes detailed inference metrics in Prometheus format.</p>
           <p><strong>Fetch Metrics:</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:8090/metrics`}</code></pre>
@@ -2560,7 +3071,7 @@ kronk server start`}</code></pre>
             <li><code>usage_total_tokens_avg</code>, <code>_min</code>, <code>_max</code></li>
             <li><code>usage_tokens_per_second_avg</code>, <code>_min</code>, <code>_max</code></li>
           </ul>
-          <h3 id="135-prometheus-integration">13.5 Prometheus Integration</h3>
+          <h3 id="145-prometheus-integration">14.5 Prometheus Integration</h3>
           <p><strong>Example Prometheus Configuration:</strong></p>
           <pre className="code-block"><code className="language-yaml">{`# prometheus.yml
 scrape_configs:
@@ -2577,7 +3088,7 @@ scrape_configs:
           <pre className="code-block"><code className="language-promql">{`rate(requests[5m])`}</code></pre>
           <p>Error rate:</p>
           <pre className="code-block"><code className="language-promql">{`rate(errors[5m]) / rate(requests[5m])`}</code></pre>
-          <h3 id="136-distributed-tracing-with-tempo">13.6 Distributed Tracing with Tempo</h3>
+          <h3 id="146-distributed-tracing-with-tempo">14.6 Distributed Tracing with Tempo</h3>
           <p>Kronk supports OpenTelemetry tracing with Grafana Tempo integration.</p>
           <p><strong>Enable Tracing:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start \\
@@ -2607,7 +3118,7 @@ kronk server start`}</code></pre>
             <li><code>/v1/liveness</code></li>
             <li><code>/v1/readiness</code></li>
           </ul>
-          <h3 id="137-tracing-architecture">13.7 Tracing Architecture</h3>
+          <h3 id="147-tracing-architecture">14.7 Tracing Architecture</h3>
           <p><strong>Request Flow with Tracing:</strong></p>
           <pre className="code-block"><code>{`Client Request
       │
@@ -2642,7 +3153,7 @@ kronk server start`}</code></pre>
             <li>Prefill and generation phases</li>
             <li>Token streaming</li>
           </ul>
-          <h3 id="138-tempo-setup-with-docker">13.8 Tempo Setup with Docker</h3>
+          <h3 id="148-tempo-setup-with-docker">14.8 Tempo Setup with Docker</h3>
           <p><strong>Run Tempo Locally:</strong></p>
           <pre className="code-block"><code className="language-shell">{`docker run -d --name tempo \\
   -p 3200:3200 \\
@@ -2660,7 +3171,7 @@ kronk server start`}</code></pre>
             <li>Set URL: <code>http://tempo:3200</code></li>
             <li>Save and explore traces</li>
           </ol>
-          <h3 id="139-pprof-profiling">13.9 pprof Profiling</h3>
+          <h3 id="149-pprof-profiling">14.9 pprof Profiling</h3>
           <p>Use Go's pprof tools for performance analysis.</p>
           <p><strong>Capture CPU Profile (30 seconds):</strong></p>
           <pre className="code-block"><code className="language-shell">{`go tool pprof http://localhost:8090/debug/pprof/profile?seconds=30`}</code></pre>
@@ -2672,7 +3183,7 @@ kronk server start`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`go tool pprof -http=:8081 \\
   http://localhost:8090/debug/pprof/profile?seconds=30`}</code></pre>
           <p>Opens interactive web UI with flame graph visualization.</p>
-          <h3 id="1310-statsviz-real-time-monitoring">13.10 Statsviz Real-Time Monitoring</h3>
+          <h3 id="1410-statsviz-real-time-monitoring">14.10 Statsviz Real-Time Monitoring</h3>
           <p>Statsviz provides live runtime visualizations in your browser.</p>
           <p><strong>Access Statsviz:</strong></p>
           <pre className="code-block"><code>{`http://localhost:8090/debug/statsviz`}</code></pre>
@@ -2686,7 +3197,7 @@ kronk server start`}</code></pre>
           </ul>
           <p>Useful for real-time monitoring during load testing or debugging</p>
           <p>memory issues.</p>
-          <h3 id="1311-logging">13.11 Logging</h3>
+          <h3 id="1411-logging">14.11 Logging</h3>
           <p>Kronk logs structured JSON to stdout by default.</p>
           <p><strong>Log Levels:</strong></p>
           <p>Logs include context like trace IDs, request details, and timing.</p>
@@ -2697,7 +3208,7 @@ kronk server start`}</code></pre>
           <p>Never enable in production.</p>
           <p><strong>Environment Variable:</strong></p>
           <pre className="code-block"><code className="language-shell">{`export KRONK_INSECURE_LOGGING=true`}</code></pre>
-          <h3 id="1312-configuration-reference">13.12 Configuration Reference</h3>
+          <h3 id="1412-configuration-reference">14.12 Configuration Reference</h3>
           <p><strong>Debug Server:</strong></p>
           <ul>
             <li><code>--debug-host</code> - Debug server address (env: <code>KRONK_DEBUG_HOST</code>,</li>
@@ -2726,10 +3237,10 @@ kronk server start`}</code></pre>
           </ul>
           <p>  (env: <code>KRONK_LLAMA_LOG</code>, default: <code>1</code>)</p>
           <hr />
-          <p>_Next: <a href="#chapter-14-troubleshooting">Chapter 14: Troubleshooting</a>_</p>
-          <h2 id="chapter-14:-troubleshooting">Chapter 14: Troubleshooting</h2>
+          <p>_Next: <a href="#chapter-15-troubleshooting">Chapter 15: Troubleshooting</a>_</p>
+          <h2 id="chapter-15:-troubleshooting">Chapter 15: Troubleshooting</h2>
           <p>This chapter covers common issues, their causes, and solutions.</p>
-          <h3 id="141-library-issues">14.1 Library Issues</h3>
+          <h3 id="151-library-issues">15.1 Library Issues</h3>
           <p><strong>Error: "unable to load library"</strong></p>
           <p>The llama.cpp libraries are missing or incompatible.</p>
           <p><strong>Solution:</strong></p>
@@ -2753,7 +3264,7 @@ KRONK_PROCESSOR=cuda kronk libs --local
 
 # For CPU only
 KRONK_PROCESSOR=cpu kronk libs --local`}</code></pre>
-          <h3 id="142-model-loading-failures">14.2 Model Loading Failures</h3>
+          <h3 id="152-model-loading-failures">15.2 Model Loading Failures</h3>
           <p><strong>Error: "unable to load model"</strong></p>
           <p>The model file is missing, corrupted, or incompatible.</p>
           <p><strong>Check model exists:</strong></p>
@@ -2768,7 +3279,7 @@ KRONK_PROCESSOR=cpu kronk libs --local`}</code></pre>
           <p><strong>Solution:</strong></p>
           <p>Ensure templates are downloaded:</p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog pull-templates --local`}</code></pre>
-          <h3 id="143-memory-errors">14.3 Memory Errors</h3>
+          <h3 id="153-memory-errors">15.3 Memory Errors</h3>
           <p><strong>Error: "unable to init context" or "unable to get memory"</strong></p>
           <p>Insufficient memory for the model configuration.</p>
           <p><strong>Causes:</strong></p>
@@ -2799,7 +3310,7 @@ KRONK_PROCESSOR=cpu kronk libs --local`}</code></pre>
             <li>Increase <code>context_window</code> in model config</li>
             <li>Enable YaRN for extended context (see Chapter 6)</li>
           </ul>
-          <h3 id="144-request-timeouts">14.4 Request Timeouts</h3>
+          <h3 id="154-request-timeouts">15.4 Request Timeouts</h3>
           <p><strong>Error: "context deadline exceeded"</strong></p>
           <p>The request took longer than the configured timeout.</p>
           <p><strong>Causes:</strong></p>
@@ -2816,7 +3327,7 @@ KRONK_PROCESSOR=cpu kronk libs --local`}</code></pre>
           <p>Or via environment variables:</p>
           <pre className="code-block"><code className="language-shell">{`export KRONK_READ_TIMEOUT=5m
 export KRONK_WRITE_TIMEOUT=30m`}</code></pre>
-          <h3 id="145-authentication-errors">14.5 Authentication Errors</h3>
+          <h3 id="155-authentication-errors">15.5 Authentication Errors</h3>
           <p><strong>Error: "unauthorized: no authorization header"</strong></p>
           <p>Authentication is enabled but no token was provided.</p>
           <p><strong>Solution:</strong></p>
@@ -2854,7 +3365,7 @@ kronk security token create \\
           <pre className="code-block"><code className="language-shell">{`kronk security token create \\
   --duration 720h \\
   --endpoints "chat-completions:10000/day"`}</code></pre>
-          <h3 id="146-streaming-issues">14.6 Streaming Issues</h3>
+          <h3 id="156-streaming-issues">15.6 Streaming Issues</h3>
           <p><strong>Problem: Streaming stops mid-response</strong></p>
           <p><strong>Causes:</strong></p>
           <ul>
@@ -2869,7 +3380,7 @@ kronk server start  # Run in foreground to see logs`}</code></pre>
           <p>Ensure your client handles Server-Sent Events format:</p>
           <pre className="code-block"><code>{`data: {"id":"...","choices":[...]}\\n\\n`}</code></pre>
           <p>Each event is prefixed with <code>data: </code> and ends with two newlines.</p>
-          <h3 id="147-performance-issues">14.7 Performance Issues</h3>
+          <h3 id="157-performance-issues">15.7 Performance Issues</h3>
           <p><strong>Problem: Slow time to first token (TTFT)</strong></p>
           <p><strong>Causes:</strong></p>
           <ul>
@@ -2905,7 +3416,7 @@ nvidia-smi`}</code></pre>
           <pre className="code-block"><code className="language-yaml">{`models:
   Qwen3-8B-Q8_0:
     gpu_layers: 99 # Offload all layers to GPU`}</code></pre>
-          <h3 id="148-viewing-logs">14.8 Viewing Logs</h3>
+          <h3 id="158-viewing-logs">15.8 Viewing Logs</h3>
           <p><strong>Run server in foreground:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start`}</code></pre>
           <p>All logs print to stdout with structured JSON format.</p>
@@ -2917,7 +3428,7 @@ nvidia-smi`}</code></pre>
           <p>Shows low-level inference engine messages.</p>
           <p><strong>Disable llama.cpp logging:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --llama-log 0`}</code></pre>
-          <h3 id="149-common-error-messages">14.9 Common Error Messages</h3>
+          <h3 id="159-common-error-messages">15.9 Common Error Messages</h3>
           <table className="flags-table">
             <thead>
               <tr>
@@ -2969,7 +3480,7 @@ nvidia-smi`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <h3 id="1410-getting-help">14.10 Getting Help</h3>
+          <h3 id="1510-getting-help">15.10 Getting Help</h3>
           <p><strong>Check server status:</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/liveness`}</code></pre>
           <p><strong>List loaded models:</strong></p>
@@ -2989,11 +3500,11 @@ nvidia-smi`}</code></pre>
             <li>Steps to reproduce</li>
           </ul>
           <hr />
-          <p>_Next: <a href="#chapter-15-developer-guide">Chapter 15: Developer Guide</a>_</p>
-          <h2 id="chapter-15:-developer-guide">Chapter 15: Developer Guide</h2>
+          <p>_Next: <a href="#chapter-16-developer-guide">Chapter 16: Developer Guide</a>_</p>
+          <h2 id="chapter-16:-developer-guide">Chapter 16: Developer Guide</h2>
           <p>This chapter covers development workflows, build commands, and code</p>
           <p>conventions for contributors to the Kronk project.</p>
-          <h3 id="151-quick-reference">15.1 Quick Reference</h3>
+          <h3 id="161-quick-reference">16.1 Quick Reference</h3>
           <p>Here is a quick chart of some of the more imporant make commands.</p>
           <table className="flags-table">
             <thead>
@@ -3045,7 +3556,7 @@ nvidia-smi`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <h3 id="152-build-test-commands">15.2 Build &amp; Test Commands</h3>
+          <h3 id="162-build-test-commands">16.2 Build &amp; Test Commands</h3>
           <p><strong>Install CLI locally:</strong></p>
           <pre className="code-block"><code className="language-shell">{`go install ./cmd/kronk`}</code></pre>
           <p><strong>Run all tests:</strong></p>
@@ -3062,7 +3573,7 @@ export GITHUB_WORKSPACE=/path/to/kronk  # project root
 make test`}</code></pre>
           <p><strong>Run a single test:</strong></p>
           <pre className="code-block"><code className="language-shell">{`go test -v -count=1 -run TestName ./sdk/kronk/...`}</code></pre>
-          <h3 id="153-developer-setup">15.3 Developer Setup</h3>
+          <h3 id="163-developer-setup">16.3 Developer Setup</h3>
           <p>Configure git hooks for automatic pre-commit checks:</p>
           <pre className="code-block"><code className="language-shell">{`make setup`}</code></pre>
           <p>This enables a pre-commit hook that automatically runs:</p>
@@ -3070,7 +3581,7 @@ make test`}</code></pre>
             <li><code>make kronk-docs</code> - Regenerates documentation</li>
             <li><code>make bui-build</code> - Rebuilds the BUI frontend</li>
           </ul>
-          <h3 id="154-project-architecture">15.4 Project Architecture</h3>
+          <h3 id="164-project-architecture">16.4 Project Architecture</h3>
           <p><strong>Directory Structure:</strong></p>
           <table className="flags-table">
             <thead>
@@ -3113,7 +3624,7 @@ make test`}</code></pre>
           <p><strong>Core Technology:</strong></p>
           <p>Kronk uses <a href="https://github.com/hybridgroup/yzma">yzma</a> (llama.cpp Go bindings)</p>
           <p>for local inference with GGUF models.</p>
-          <h3 id="155-bui-frontend-development">15.5 BUI Frontend Development</h3>
+          <h3 id="165-bui-frontend-development">16.5 BUI Frontend Development</h3>
           <p>The Browser UI is a React application located at:</p>
           <pre className="code-block"><code>{`cmd/server/api/frontends/bui/src/`}</code></pre>
           <p><strong>Directory Structure:</strong></p>
@@ -3227,7 +3738,7 @@ make test`}</code></pre>
           </table>
           <p>Generate all documentation:</p>
           <pre className="code-block"><code className="language-shell">{`go run ./cmd/server/api/tooling/docs -pkg=all`}</code></pre>
-          <h3 id="156-code-style-guidelines">15.6 Code Style Guidelines</h3>
+          <h3 id="166-code-style-guidelines">16.6 Code Style Guidelines</h3>
           <p><strong>Package Comments:</strong></p>
           <pre className="code-block"><code className="language-go">{`// Package kronk provides the core inference API.`}</code></pre>
           <p><strong>Error Handling:</strong></p>
@@ -3280,10 +3791,10 @@ case "pending":
 default:
     // ...
 }`}</code></pre>
-          <h3 id="157-sdk-internals">15.7 SDK Internals</h3>
+          <h3 id="167-sdk-internals">16.7 SDK Internals</h3>
           <p>This section documents implementation details for developers working on</p>
           <p>the Kronk SDK packages.</p>
-          <h4 id="1571-package-structure">15.7.1 Package Structure</h4>
+          <h4 id="1671-package-structure">16.7.1 Package Structure</h4>
           <p><strong>sdk/kronk/</strong> - Core API package:</p>
           <table className="flags-table">
             <thead>
@@ -3390,7 +3901,7 @@ default:
               </tr>
             </tbody>
           </table>
-          <h4 id="1572-streaming-architecture">15.7.2 Streaming Architecture</h4>
+          <h4 id="1672-streaming-architecture">16.7.2 Streaming Architecture</h4>
           <p><strong>Response Streaming Pattern</strong> (<code>response.go</code>, <code>concurrency.go</code>):</p>
           <ul>
             <li>Uses <code>streamingWith[T, U]</code> generic function for 1:N event transformation</li>
@@ -3405,7 +3916,7 @@ default:
             <li>When <code>FinishReasonPtr != nil</code>, skip text/reasoning deltas (they duplicate previous content)</li>
             <li>Always process tool calls even with FinishReason set (may only arrive in final chunk)</li>
           </ul>
-          <h4 id="1573-model-pool-strategy">15.7.3 Model Pool Strategy</h4>
+          <h4 id="1673-model-pool-strategy">16.7.3 Model Pool Strategy</h4>
           <p><code>NSeqMax</code> behaves differently depending on model type:</p>
           <p><strong>Sequential Models</strong> (embed, rerank, vision/audio):</p>
           <ul>
@@ -3424,7 +3935,7 @@ default:
 if mi.IsEmbedModel || mi.IsRerankModel {
     isSingleFlight = true
 }`}</code></pre>
-          <h4 id="1574-model-acquirerelease-cleanup">15.7.4 Model Acquire/Release &amp; Cleanup</h4>
+          <h4 id="1674-model-acquirerelease-cleanup">16.7.4 Model Acquire/Release &amp; Cleanup</h4>
           <p><strong>Two-Stage Acquisition</strong> (<code>acquire.go</code>):</p>
           <ol>
             <li><strong>Backpressure slot</strong>: Acquire semaphore slot (limits total in-flight requests)</li>
@@ -3443,7 +3954,7 @@ if mi.IsEmbedModel || mi.IsRerankModel {
             <li>Model returns to pool in clean state</li>
           </ol>
           <p><strong>Key invariant:</strong> <code>resetContext()</code> always runs before model release due to defer ordering.</p>
-          <h4 id="1575-batch-engine-internals">15.7.5 Batch Engine Internals</h4>
+          <h4 id="1675-batch-engine-internals">16.7.5 Batch Engine Internals</h4>
           <p><strong>ChatStreaming Decision Logic</strong> (<code>chat.go</code>):</p>
           <p>The <code>submitToBatchEngine()</code> function decides the processing path:</p>
           <pre className="code-block"><code className="language-go">{`// submitToBatchEngine returns false if batch not available.
@@ -3474,13 +3985,13 @@ m.sequentialChatRequest(...)`}</code></pre>
           <p>Sequences are isolated partitions in the shared KV cache memory. Slot seqIDs</p>
           <p>are offset when caching is enabled (both SPC and IMC use seqs 0 to</p>
           <p>MaxCacheSessions-1).</p>
-          <h4 id="1576-context-pooling">15.7.6 Context Pooling</h4>
+          <h4 id="1676-context-pooling">16.7.6 Context Pooling</h4>
           <ul>
             <li><code>llama.Context</code> is created once in <code>NewModel</code> and reused across requests</li>
             <li>Call <code>resetContext()</code> between requests to clear KV cache</li>
             <li>Avoids Vulkan memory fragmentation from repeated context alloc/dealloc</li>
           </ul>
-          <h4 id="1577-imc-implementation-details">15.7.7 IMC Implementation Details</h4>
+          <h4 id="1677-imc-implementation-details">16.7.7 IMC Implementation Details</h4>
           <p><strong>Critical Implementation Details:</strong></p>
           <ol>
             <li><strong>Extension tokenization must use &lt;code&gt;special=true&lt;/code&gt;</strong>: Use <code>llama.Tokenize(vocab, extension, false, true)</code> to ensure ChatML tokens like <code>&lt;|im_start|&gt;</code> are recognized.</li>
@@ -3506,7 +4017,7 @@ m.sequentialChatRequest(...)`}</code></pre>
     seqID     llama.SeqId // Assigned cache sequence ID
     lastUsed  time.Time   // For future eviction
 }`}</code></pre>
-          <h4 id="1578-tool-call-internals">15.7.8 Tool Call Internals</h4>
+          <h4 id="1678-tool-call-internals">16.7.8 Tool Call Internals</h4>
           <p><strong>chatMessage Unmarshaling</strong> (<code>models.go</code>):</p>
           <ul>
             <li><code>Content</code> can be <code>nil</code> for assistant messages with tool_calls</li>
@@ -3517,7 +4028,7 @@ m.sequentialChatRequest(...)`}</code></pre>
             <li>Custom type that marshals to JSON string (OpenAI spec)</li>
             <li>Unmarshals from either string or object for non-compliant clients</li>
           </ul>
-          <h4 id="1579-logprobs-implementation">15.7.9 Logprobs Implementation</h4>
+          <h4 id="1679-logprobs-implementation">16.7.9 Logprobs Implementation</h4>
           <p><strong>Implementation</strong> (<code>logprobs.go</code>):</p>
           <ul>
             <li><code>extractLogprobs()</code>: Retrieves logits via <code>llama.GetLogitsIth()</code></li>
@@ -3525,12 +4036,12 @@ m.sequentialChatRequest(...)`}</code></pre>
             <li><code>getTopKLogprobs()</code>: Uses min-heap for efficient O(n log k) top-k extraction</li>
           </ul>
           <p><strong>Critical:</strong> Logprobs must be extracted <strong>before</strong> <code>llama.SamplerAccept()</code> is called.</p>
-          <h3 id="158-api-handler-notes">15.8 API Handler Notes</h3>
+          <h3 id="168-api-handler-notes">16.8 API Handler Notes</h3>
           <p><strong>Input Format Conversion</strong> (<code>cmd/server/app/domain/</code>):</p>
           <p>Both streaming and non-streaming Response APIs must call</p>
           <p><code>convertInputToMessages(d)</code> to handle the OpenAI Responses <code>input</code> field</p>
           <p>format.</p>
-          <h3 id="159-reference-threads">15.9 Reference Threads</h3>
+          <h3 id="169-reference-threads">16.9 Reference Threads</h3>
           <p>See <code>THREADS.md</code> for important past conversations and decisions worth</p>
           <p>preserving.</p>
         </div>
@@ -3641,106 +4152,117 @@ m.sequentialChatRequest(...)`}</code></pre>
                 <li><a href="#84-embeddings" className={activeSection === '84-embeddings' ? 'active' : ''}>8.4 Embeddings</a></li>
                 <li><a href="#85-reranking" className={activeSection === '85-reranking' ? 'active' : ''}>8.5 Reranking</a></li>
                 <li><a href="#86-tool-calling-function-calling" className={activeSection === '86-tool-calling-function-calling' ? 'active' : ''}>8.6 Tool Calling (Function Calling)</a></li>
-                <li><a href="#87-logprobs-token-probabilities" className={activeSection === '87-logprobs-token-probabilities' ? 'active' : ''}>8.7 Logprobs (Token Probabilities)</a></li>
-                <li><a href="#88-models-list" className={activeSection === '88-models-list' ? 'active' : ''}>8.8 Models List</a></li>
-                <li><a href="#89-using-cache-id-with-api-requests" className={activeSection === '89-using-cache-id-with-api-requests' ? 'active' : ''}>8.9 Using Cache ID with API Requests</a></li>
-                <li><a href="#810-authentication" className={activeSection === '810-authentication' ? 'active' : ''}>8.10 Authentication</a></li>
-                <li><a href="#811-error-responses" className={activeSection === '811-error-responses' ? 'active' : ''}>8.11 Error Responses</a></li>
+                <li><a href="#87-models-list" className={activeSection === '87-models-list' ? 'active' : ''}>8.7 Models List</a></li>
+                <li><a href="#88-authentication" className={activeSection === '88-authentication' ? 'active' : ''}>8.8 Authentication</a></li>
+                <li><a href="#89-error-responses" className={activeSection === '89-error-responses' ? 'active' : ''}>8.9 Error Responses</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-9:-multi-modal-models" className={`doc-index-header ${activeSection === 'chapter-9:-multi-modal-models' ? 'active' : ''}`}>Chapter 9: Multi-Modal Models</a>
+              <a href="#chapter-9:-request-parameters" className={`doc-index-header ${activeSection === 'chapter-9:-request-parameters' ? 'active' : ''}`}>Chapter 9: Request Parameters</a>
               <ul>
-                <li><a href="#91-overview" className={activeSection === '91-overview' ? 'active' : ''}>9.1 Overview</a></li>
-                <li><a href="#92-vision-models" className={activeSection === '92-vision-models' ? 'active' : ''}>9.2 Vision Models</a></li>
-                <li><a href="#93-audio-models" className={activeSection === '93-audio-models' ? 'active' : ''}>9.3 Audio Models</a></li>
-                <li><a href="#94-plain-base64-format" className={activeSection === '94-plain-base64-format' ? 'active' : ''}>9.4 Plain Base64 Format</a></li>
-                <li><a href="#95-configuration-for-multi-modal-models" className={activeSection === '95-configuration-for-multi-modal-models' ? 'active' : ''}>9.5 Configuration for Multi-Modal Models</a></li>
-                <li><a href="#96-memory-requirements" className={activeSection === '96-memory-requirements' ? 'active' : ''}>9.6 Memory Requirements</a></li>
-                <li><a href="#97-limitations" className={activeSection === '97-limitations' ? 'active' : ''}>9.7 Limitations</a></li>
-                <li><a href="#98-example:-image-analysis" className={activeSection === '98-example:-image-analysis' ? 'active' : ''}>9.8 Example: Image Analysis</a></li>
-                <li><a href="#99-example:-audio-transcription" className={activeSection === '99-example:-audio-transcription' ? 'active' : ''}>9.9 Example: Audio Transcription</a></li>
+                <li><a href="#91-sampling-parameters" className={activeSection === '91-sampling-parameters' ? 'active' : ''}>9.1 Sampling Parameters</a></li>
+                <li><a href="#92-repetition-control" className={activeSection === '92-repetition-control' ? 'active' : ''}>9.2 Repetition Control</a></li>
+                <li><a href="#93-advanced-sampling" className={activeSection === '93-advanced-sampling' ? 'active' : ''}>9.3 Advanced Sampling</a></li>
+                <li><a href="#94-generation-control" className={activeSection === '94-generation-control' ? 'active' : ''}>9.4 Generation Control</a></li>
+                <li><a href="#95-grammar-constrained-output" className={activeSection === '95-grammar-constrained-output' ? 'active' : ''}>9.5 Grammar Constrained Output</a></li>
+                <li><a href="#96-logprobs-token-probabilities" className={activeSection === '96-logprobs-token-probabilities' ? 'active' : ''}>9.6 Logprobs (Token Probabilities)</a></li>
+                <li><a href="#97-cache-id" className={activeSection === '97-cache-id' ? 'active' : ''}>9.7 Cache ID</a></li>
+                <li><a href="#98-parameter-reference" className={activeSection === '98-parameter-reference' ? 'active' : ''}>9.8 Parameter Reference</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-10:-security-authentication" className={`doc-index-header ${activeSection === 'chapter-10:-security-authentication' ? 'active' : ''}`}>Chapter 10: Security &amp; Authentication</a>
+              <a href="#chapter-10:-multi-modal-models" className={`doc-index-header ${activeSection === 'chapter-10:-multi-modal-models' ? 'active' : ''}`}>Chapter 10: Multi-Modal Models</a>
               <ul>
-                <li><a href="#101-enabling-authentication" className={activeSection === '101-enabling-authentication' ? 'active' : ''}>10.1 Enabling Authentication</a></li>
-                <li><a href="#102-using-the-admin-token" className={activeSection === '102-using-the-admin-token' ? 'active' : ''}>10.2 Using the Admin Token</a></li>
-                <li><a href="#103-key-management" className={activeSection === '103-key-management' ? 'active' : ''}>10.3 Key Management</a></li>
-                <li><a href="#104-creating-user-tokens" className={activeSection === '104-creating-user-tokens' ? 'active' : ''}>10.4 Creating User Tokens</a></li>
-                <li><a href="#105-token-examples" className={activeSection === '105-token-examples' ? 'active' : ''}>10.5 Token Examples</a></li>
-                <li><a href="#106-using-tokens-in-api-requests" className={activeSection === '106-using-tokens-in-api-requests' ? 'active' : ''}>10.6 Using Tokens in API Requests</a></li>
-                <li><a href="#107-authorization-flow" className={activeSection === '107-authorization-flow' ? 'active' : ''}>10.7 Authorization Flow</a></li>
-                <li><a href="#108-rate-limiting" className={activeSection === '108-rate-limiting' ? 'active' : ''}>10.8 Rate Limiting</a></li>
-                <li><a href="#109-configuration-reference" className={activeSection === '109-configuration-reference' ? 'active' : ''}>10.9 Configuration Reference</a></li>
-                <li><a href="#1010-security-best-practices" className={activeSection === '1010-security-best-practices' ? 'active' : ''}>10.10 Security Best Practices</a></li>
+                <li><a href="#101-overview" className={activeSection === '101-overview' ? 'active' : ''}>10.1 Overview</a></li>
+                <li><a href="#102-vision-models" className={activeSection === '102-vision-models' ? 'active' : ''}>10.2 Vision Models</a></li>
+                <li><a href="#103-audio-models" className={activeSection === '103-audio-models' ? 'active' : ''}>10.3 Audio Models</a></li>
+                <li><a href="#104-plain-base64-format" className={activeSection === '104-plain-base64-format' ? 'active' : ''}>10.4 Plain Base64 Format</a></li>
+                <li><a href="#105-configuration-for-multi-modal-models" className={activeSection === '105-configuration-for-multi-modal-models' ? 'active' : ''}>10.5 Configuration for Multi-Modal Models</a></li>
+                <li><a href="#106-memory-requirements" className={activeSection === '106-memory-requirements' ? 'active' : ''}>10.6 Memory Requirements</a></li>
+                <li><a href="#107-limitations" className={activeSection === '107-limitations' ? 'active' : ''}>10.7 Limitations</a></li>
+                <li><a href="#108-example:-image-analysis" className={activeSection === '108-example:-image-analysis' ? 'active' : ''}>10.8 Example: Image Analysis</a></li>
+                <li><a href="#109-example:-audio-transcription" className={activeSection === '109-example:-audio-transcription' ? 'active' : ''}>10.9 Example: Audio Transcription</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-11:-browser-ui-bui" className={`doc-index-header ${activeSection === 'chapter-11:-browser-ui-bui' ? 'active' : ''}`}>Chapter 11: Browser UI (BUI)</a>
+              <a href="#chapter-11:-security-authentication" className={`doc-index-header ${activeSection === 'chapter-11:-security-authentication' ? 'active' : ''}`}>Chapter 11: Security &amp; Authentication</a>
               <ul>
-                <li><a href="#111-accessing-the-bui" className={activeSection === '111-accessing-the-bui' ? 'active' : ''}>11.1 Accessing the BUI</a></li>
-                <li><a href="#112-downloading-libraries" className={activeSection === '112-downloading-libraries' ? 'active' : ''}>11.2 Downloading Libraries</a></li>
-                <li><a href="#113-downloading-models" className={activeSection === '113-downloading-models' ? 'active' : ''}>11.3 Downloading Models</a></li>
-                <li><a href="#114-managing-keys-and-tokens" className={activeSection === '114-managing-keys-and-tokens' ? 'active' : ''}>11.4 Managing Keys and Tokens</a></li>
-                <li><a href="#115-other-screens" className={activeSection === '115-other-screens' ? 'active' : ''}>11.5 Other Screens</a></li>
+                <li><a href="#111-enabling-authentication" className={activeSection === '111-enabling-authentication' ? 'active' : ''}>11.1 Enabling Authentication</a></li>
+                <li><a href="#112-using-the-admin-token" className={activeSection === '112-using-the-admin-token' ? 'active' : ''}>11.2 Using the Admin Token</a></li>
+                <li><a href="#113-key-management" className={activeSection === '113-key-management' ? 'active' : ''}>11.3 Key Management</a></li>
+                <li><a href="#114-creating-user-tokens" className={activeSection === '114-creating-user-tokens' ? 'active' : ''}>11.4 Creating User Tokens</a></li>
+                <li><a href="#115-token-examples" className={activeSection === '115-token-examples' ? 'active' : ''}>11.5 Token Examples</a></li>
+                <li><a href="#116-using-tokens-in-api-requests" className={activeSection === '116-using-tokens-in-api-requests' ? 'active' : ''}>11.6 Using Tokens in API Requests</a></li>
+                <li><a href="#117-authorization-flow" className={activeSection === '117-authorization-flow' ? 'active' : ''}>11.7 Authorization Flow</a></li>
+                <li><a href="#118-rate-limiting" className={activeSection === '118-rate-limiting' ? 'active' : ''}>11.8 Rate Limiting</a></li>
+                <li><a href="#119-configuration-reference" className={activeSection === '119-configuration-reference' ? 'active' : ''}>11.9 Configuration Reference</a></li>
+                <li><a href="#1110-security-best-practices" className={activeSection === '1110-security-best-practices' ? 'active' : ''}>11.10 Security Best Practices</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-12:-client-integration" className={`doc-index-header ${activeSection === 'chapter-12:-client-integration' ? 'active' : ''}`}>Chapter 12: Client Integration</a>
+              <a href="#chapter-12:-browser-ui-bui" className={`doc-index-header ${activeSection === 'chapter-12:-browser-ui-bui' ? 'active' : ''}`}>Chapter 12: Browser UI (BUI)</a>
               <ul>
-                <li><a href="#121-openwebui" className={activeSection === '121-openwebui' ? 'active' : ''}>12.1 OpenWebUI</a></li>
-                <li><a href="#122-cline" className={activeSection === '122-cline' ? 'active' : ''}>12.2 Cline</a></li>
-                <li><a href="#124-python-openai-sdk" className={activeSection === '124-python-openai-sdk' ? 'active' : ''}>12.4 Python OpenAI SDK</a></li>
-                <li><a href="#125-curl-and-http-clients" className={activeSection === '125-curl-and-http-clients' ? 'active' : ''}>12.5 curl and HTTP Clients</a></li>
-                <li><a href="#126-langchain" className={activeSection === '126-langchain' ? 'active' : ''}>12.6 LangChain</a></li>
+                <li><a href="#121-accessing-the-bui" className={activeSection === '121-accessing-the-bui' ? 'active' : ''}>12.1 Accessing the BUI</a></li>
+                <li><a href="#122-downloading-libraries" className={activeSection === '122-downloading-libraries' ? 'active' : ''}>12.2 Downloading Libraries</a></li>
+                <li><a href="#123-downloading-models" className={activeSection === '123-downloading-models' ? 'active' : ''}>12.3 Downloading Models</a></li>
+                <li><a href="#124-managing-keys-and-tokens" className={activeSection === '124-managing-keys-and-tokens' ? 'active' : ''}>12.4 Managing Keys and Tokens</a></li>
+                <li><a href="#125-other-screens" className={activeSection === '125-other-screens' ? 'active' : ''}>12.5 Other Screens</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-13:-observability" className={`doc-index-header ${activeSection === 'chapter-13:-observability' ? 'active' : ''}`}>Chapter 13: Observability</a>
+              <a href="#chapter-13:-client-integration" className={`doc-index-header ${activeSection === 'chapter-13:-client-integration' ? 'active' : ''}`}>Chapter 13: Client Integration</a>
               <ul>
-                <li><a href="#131-debug-server" className={activeSection === '131-debug-server' ? 'active' : ''}>13.1 Debug Server</a></li>
-                <li><a href="#132-debug-endpoints" className={activeSection === '132-debug-endpoints' ? 'active' : ''}>13.2 Debug Endpoints</a></li>
-                <li><a href="#133-health-check-endpoints" className={activeSection === '133-health-check-endpoints' ? 'active' : ''}>13.3 Health Check Endpoints</a></li>
-                <li><a href="#134-prometheus-metrics" className={activeSection === '134-prometheus-metrics' ? 'active' : ''}>13.4 Prometheus Metrics</a></li>
-                <li><a href="#135-prometheus-integration" className={activeSection === '135-prometheus-integration' ? 'active' : ''}>13.5 Prometheus Integration</a></li>
-                <li><a href="#136-distributed-tracing-with-tempo" className={activeSection === '136-distributed-tracing-with-tempo' ? 'active' : ''}>13.6 Distributed Tracing with Tempo</a></li>
-                <li><a href="#137-tracing-architecture" className={activeSection === '137-tracing-architecture' ? 'active' : ''}>13.7 Tracing Architecture</a></li>
-                <li><a href="#138-tempo-setup-with-docker" className={activeSection === '138-tempo-setup-with-docker' ? 'active' : ''}>13.8 Tempo Setup with Docker</a></li>
-                <li><a href="#139-pprof-profiling" className={activeSection === '139-pprof-profiling' ? 'active' : ''}>13.9 pprof Profiling</a></li>
-                <li><a href="#1310-statsviz-real-time-monitoring" className={activeSection === '1310-statsviz-real-time-monitoring' ? 'active' : ''}>13.10 Statsviz Real-Time Monitoring</a></li>
-                <li><a href="#1311-logging" className={activeSection === '1311-logging' ? 'active' : ''}>13.11 Logging</a></li>
-                <li><a href="#1312-configuration-reference" className={activeSection === '1312-configuration-reference' ? 'active' : ''}>13.12 Configuration Reference</a></li>
+                <li><a href="#131-openwebui" className={activeSection === '131-openwebui' ? 'active' : ''}>13.1 OpenWebUI</a></li>
+                <li><a href="#132-cline" className={activeSection === '132-cline' ? 'active' : ''}>13.2 Cline</a></li>
+                <li><a href="#134-python-openai-sdk" className={activeSection === '134-python-openai-sdk' ? 'active' : ''}>13.4 Python OpenAI SDK</a></li>
+                <li><a href="#135-curl-and-http-clients" className={activeSection === '135-curl-and-http-clients' ? 'active' : ''}>13.5 curl and HTTP Clients</a></li>
+                <li><a href="#136-langchain" className={activeSection === '136-langchain' ? 'active' : ''}>13.6 LangChain</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-14:-troubleshooting" className={`doc-index-header ${activeSection === 'chapter-14:-troubleshooting' ? 'active' : ''}`}>Chapter 14: Troubleshooting</a>
+              <a href="#chapter-14:-observability" className={`doc-index-header ${activeSection === 'chapter-14:-observability' ? 'active' : ''}`}>Chapter 14: Observability</a>
               <ul>
-                <li><a href="#141-library-issues" className={activeSection === '141-library-issues' ? 'active' : ''}>14.1 Library Issues</a></li>
-                <li><a href="#142-model-loading-failures" className={activeSection === '142-model-loading-failures' ? 'active' : ''}>14.2 Model Loading Failures</a></li>
-                <li><a href="#143-memory-errors" className={activeSection === '143-memory-errors' ? 'active' : ''}>14.3 Memory Errors</a></li>
-                <li><a href="#144-request-timeouts" className={activeSection === '144-request-timeouts' ? 'active' : ''}>14.4 Request Timeouts</a></li>
-                <li><a href="#145-authentication-errors" className={activeSection === '145-authentication-errors' ? 'active' : ''}>14.5 Authentication Errors</a></li>
-                <li><a href="#146-streaming-issues" className={activeSection === '146-streaming-issues' ? 'active' : ''}>14.6 Streaming Issues</a></li>
-                <li><a href="#147-performance-issues" className={activeSection === '147-performance-issues' ? 'active' : ''}>14.7 Performance Issues</a></li>
-                <li><a href="#148-viewing-logs" className={activeSection === '148-viewing-logs' ? 'active' : ''}>14.8 Viewing Logs</a></li>
-                <li><a href="#149-common-error-messages" className={activeSection === '149-common-error-messages' ? 'active' : ''}>14.9 Common Error Messages</a></li>
-                <li><a href="#1410-getting-help" className={activeSection === '1410-getting-help' ? 'active' : ''}>14.10 Getting Help</a></li>
+                <li><a href="#141-debug-server" className={activeSection === '141-debug-server' ? 'active' : ''}>14.1 Debug Server</a></li>
+                <li><a href="#142-debug-endpoints" className={activeSection === '142-debug-endpoints' ? 'active' : ''}>14.2 Debug Endpoints</a></li>
+                <li><a href="#143-health-check-endpoints" className={activeSection === '143-health-check-endpoints' ? 'active' : ''}>14.3 Health Check Endpoints</a></li>
+                <li><a href="#144-prometheus-metrics" className={activeSection === '144-prometheus-metrics' ? 'active' : ''}>14.4 Prometheus Metrics</a></li>
+                <li><a href="#145-prometheus-integration" className={activeSection === '145-prometheus-integration' ? 'active' : ''}>14.5 Prometheus Integration</a></li>
+                <li><a href="#146-distributed-tracing-with-tempo" className={activeSection === '146-distributed-tracing-with-tempo' ? 'active' : ''}>14.6 Distributed Tracing with Tempo</a></li>
+                <li><a href="#147-tracing-architecture" className={activeSection === '147-tracing-architecture' ? 'active' : ''}>14.7 Tracing Architecture</a></li>
+                <li><a href="#148-tempo-setup-with-docker" className={activeSection === '148-tempo-setup-with-docker' ? 'active' : ''}>14.8 Tempo Setup with Docker</a></li>
+                <li><a href="#149-pprof-profiling" className={activeSection === '149-pprof-profiling' ? 'active' : ''}>14.9 pprof Profiling</a></li>
+                <li><a href="#1410-statsviz-real-time-monitoring" className={activeSection === '1410-statsviz-real-time-monitoring' ? 'active' : ''}>14.10 Statsviz Real-Time Monitoring</a></li>
+                <li><a href="#1411-logging" className={activeSection === '1411-logging' ? 'active' : ''}>14.11 Logging</a></li>
+                <li><a href="#1412-configuration-reference" className={activeSection === '1412-configuration-reference' ? 'active' : ''}>14.12 Configuration Reference</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-15:-developer-guide" className={`doc-index-header ${activeSection === 'chapter-15:-developer-guide' ? 'active' : ''}`}>Chapter 15: Developer Guide</a>
+              <a href="#chapter-15:-troubleshooting" className={`doc-index-header ${activeSection === 'chapter-15:-troubleshooting' ? 'active' : ''}`}>Chapter 15: Troubleshooting</a>
               <ul>
-                <li><a href="#151-quick-reference" className={activeSection === '151-quick-reference' ? 'active' : ''}>15.1 Quick Reference</a></li>
-                <li><a href="#152-build-test-commands" className={activeSection === '152-build-test-commands' ? 'active' : ''}>15.2 Build &amp; Test Commands</a></li>
-                <li><a href="#153-developer-setup" className={activeSection === '153-developer-setup' ? 'active' : ''}>15.3 Developer Setup</a></li>
-                <li><a href="#154-project-architecture" className={activeSection === '154-project-architecture' ? 'active' : ''}>15.4 Project Architecture</a></li>
-                <li><a href="#155-bui-frontend-development" className={activeSection === '155-bui-frontend-development' ? 'active' : ''}>15.5 BUI Frontend Development</a></li>
-                <li><a href="#156-code-style-guidelines" className={activeSection === '156-code-style-guidelines' ? 'active' : ''}>15.6 Code Style Guidelines</a></li>
-                <li><a href="#157-sdk-internals" className={activeSection === '157-sdk-internals' ? 'active' : ''}>15.7 SDK Internals</a></li>
-                <li><a href="#158-api-handler-notes" className={activeSection === '158-api-handler-notes' ? 'active' : ''}>15.8 API Handler Notes</a></li>
-                <li><a href="#159-reference-threads" className={activeSection === '159-reference-threads' ? 'active' : ''}>15.9 Reference Threads</a></li>
+                <li><a href="#151-library-issues" className={activeSection === '151-library-issues' ? 'active' : ''}>15.1 Library Issues</a></li>
+                <li><a href="#152-model-loading-failures" className={activeSection === '152-model-loading-failures' ? 'active' : ''}>15.2 Model Loading Failures</a></li>
+                <li><a href="#153-memory-errors" className={activeSection === '153-memory-errors' ? 'active' : ''}>15.3 Memory Errors</a></li>
+                <li><a href="#154-request-timeouts" className={activeSection === '154-request-timeouts' ? 'active' : ''}>15.4 Request Timeouts</a></li>
+                <li><a href="#155-authentication-errors" className={activeSection === '155-authentication-errors' ? 'active' : ''}>15.5 Authentication Errors</a></li>
+                <li><a href="#156-streaming-issues" className={activeSection === '156-streaming-issues' ? 'active' : ''}>15.6 Streaming Issues</a></li>
+                <li><a href="#157-performance-issues" className={activeSection === '157-performance-issues' ? 'active' : ''}>15.7 Performance Issues</a></li>
+                <li><a href="#158-viewing-logs" className={activeSection === '158-viewing-logs' ? 'active' : ''}>15.8 Viewing Logs</a></li>
+                <li><a href="#159-common-error-messages" className={activeSection === '159-common-error-messages' ? 'active' : ''}>15.9 Common Error Messages</a></li>
+                <li><a href="#1510-getting-help" className={activeSection === '1510-getting-help' ? 'active' : ''}>15.10 Getting Help</a></li>
+              </ul>
+            </div>
+            <div className="doc-index-section">
+              <a href="#chapter-16:-developer-guide" className={`doc-index-header ${activeSection === 'chapter-16:-developer-guide' ? 'active' : ''}`}>Chapter 16: Developer Guide</a>
+              <ul>
+                <li><a href="#161-quick-reference" className={activeSection === '161-quick-reference' ? 'active' : ''}>16.1 Quick Reference</a></li>
+                <li><a href="#162-build-test-commands" className={activeSection === '162-build-test-commands' ? 'active' : ''}>16.2 Build &amp; Test Commands</a></li>
+                <li><a href="#163-developer-setup" className={activeSection === '163-developer-setup' ? 'active' : ''}>16.3 Developer Setup</a></li>
+                <li><a href="#164-project-architecture" className={activeSection === '164-project-architecture' ? 'active' : ''}>16.4 Project Architecture</a></li>
+                <li><a href="#165-bui-frontend-development" className={activeSection === '165-bui-frontend-development' ? 'active' : ''}>16.5 BUI Frontend Development</a></li>
+                <li><a href="#166-code-style-guidelines" className={activeSection === '166-code-style-guidelines' ? 'active' : ''}>16.6 Code Style Guidelines</a></li>
+                <li><a href="#167-sdk-internals" className={activeSection === '167-sdk-internals' ? 'active' : ''}>16.7 SDK Internals</a></li>
+                <li><a href="#168-api-handler-notes" className={activeSection === '168-api-handler-notes' ? 'active' : ''}>16.8 API Handler Notes</a></li>
+                <li><a href="#169-reference-threads" className={activeSection === '169-reference-threads' ? 'active' : ''}>16.9 Reference Threads</a></li>
               </ul>
             </div>
           </div>

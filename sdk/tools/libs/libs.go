@@ -173,7 +173,7 @@ func (lib *Libs) Download(ctx context.Context, log Logger) (VersionTag, error) {
 			return VersionTag{}, fmt.Errorf("download: no network available: %w", err)
 		}
 
-		log(ctx, "download-libraries: no network available, using current version")
+		log(ctx, "download-libraries: no network available, using current version", "current", vt.Version)
 		return vt, nil
 	}
 

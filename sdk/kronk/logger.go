@@ -3,7 +3,6 @@ package kronk
 import (
 	"context"
 	"fmt"
-	"sync"
 )
 
 // Logger provides a function for logging messages from different APIs.
@@ -21,12 +20,6 @@ func (ll LogLevel) Int() int {
 const (
 	LogSilent LogLevel = iota + 1
 	LogNormal
-)
-
-var (
-	libraryLocation string
-	initOnce        sync.Once
-	initErr         error
 )
 
 // =============================================================================

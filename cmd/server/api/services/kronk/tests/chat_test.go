@@ -784,6 +784,117 @@ func chatAudioQwen2Audio(t *testing.T, tokens map[string]string) []apitest.Table
 	}
 }
 
+// chatGrammarQwen3 returns grammar-constrained chat tests for Qwen3-8B-Q8_0 model.
+func chatGrammarQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
+	return []apitest.Table{
+		{
+			Name:       "grammar-json",
+			SkipInGH:   true,
+			URL:        "/v1/chat/completions",
+			Token:      tokens["chat-completions"],
+			Method:     http.MethodPost,
+			StatusCode: http.StatusOK,
+			Input: model.D{
+				"model": "Qwen3-8B-Q8_0",
+				"messages": model.DocumentArray(
+					model.TextMessage(model.RoleUser, "List 3 programming languages with their year of creation. Respond in JSON format."),
+				),
+				"grammar":      model.GrammarJSONObject,
+				"temperature":  0.7,
+				"max_tokens":   512,
+				"enable_think": false,
+			},
+			GotResp: &model.ChatResponse{},
+			ExpResp: &model.ChatResponse{
+				Choice: []model.Choice{
+					{
+						Message: &model.ResponseMessage{
+							Role: "assistant",
+						},
+						FinishReasonPtr: stringPointer("stop"),
+					},
+				},
+				Model:  "Qwen3-8B-Q8_0",
+				Object: "chat.completion",
+			},
+			CmpFunc: func(got any, exp any) string {
+				diff := cmp.Diff(got, exp,
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage"),
+					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
+					cmpopts.IgnoreFields(model.ResponseMessage{}, "Content", "Reasoning", "ToolCalls"),
+				)
+
+				if diff != "" {
+					return diff
+				}
+
+				return validateResponse(got, false).
+					hasValidUUID().
+					hasCreated().
+					hasValidChoice().
+					hasUsage(false).
+					hasContent().
+					hasValidJSON().
+					result(t)
+			},
+		},
+	}
+}
+
+// chatGrammarStreamQwen3 returns streaming grammar-constrained chat tests for Qwen3-8B-Q8_0 model.
+func chatGrammarStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
+	return []apitest.Table{
+		{
+			Name:       "grammar-json-stream",
+			SkipInGH:   true,
+			URL:        "/v1/chat/completions",
+			Token:      tokens["chat-completions"],
+			Method:     http.MethodPost,
+			StatusCode: http.StatusOK,
+			Input: model.D{
+				"model": "Qwen3-8B-Q8_0",
+				"messages": model.DocumentArray(
+					model.TextMessage(model.RoleUser, "List 3 programming languages with their year of creation. Respond in JSON format."),
+				),
+				"grammar":      model.GrammarJSONObject,
+				"temperature":  0.7,
+				"max_tokens":   512,
+				"stream":       true,
+				"enable_think": false,
+			},
+			GotResp: &model.ChatResponse{},
+			ExpResp: &model.ChatResponse{
+				Choice: []model.Choice{
+					{
+						Message:         nil,
+						FinishReasonPtr: stringPointer("stop"),
+					},
+				},
+				Model:  "Qwen3-8B-Q8_0",
+				Object: "chat.completion.chunk",
+			},
+			CmpFunc: func(got any, exp any) string {
+				diff := cmp.Diff(got, exp,
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage"),
+					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
+				)
+
+				if diff != "" {
+					return diff
+				}
+
+				return validateResponse(got, true).
+					hasValidUUID().
+					hasCreated().
+					hasValidChoice().
+					hasUsage(false).
+					hasNoLogprobs().
+					result(t)
+			},
+		},
+	}
+}
+
 // =============================================================================
 
 func chatEndpoint401(tokens map[string]string) []apitest.Table {

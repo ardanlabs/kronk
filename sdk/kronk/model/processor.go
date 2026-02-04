@@ -43,6 +43,9 @@ type processor struct {
 	// the <tool_call> wrapper, and the tag may be tokenized as "<", "function", "=".
 	pendingTagBuf strings.Builder
 	inPendingTag  bool
+
+	// Grammar sampler for constrained decoding (sequential path only).
+	grammarSampler *grammarSampler
 }
 
 func newProcessor(m *Model) *processor {
@@ -55,7 +58,7 @@ func newProcessor(m *Model) *processor {
 // standardFirst samples the first token after prefill without re-decoding.
 // Use this for the first token after prefill when logits are already computed.
 func (p *processor) standardFirst(lctx llama.Context, sampler llama.Sampler, buf []byte) (response, llama.Token, error) {
-	content, token, err := p.model.sampleToken(lctx, sampler, buf)
+	content, token, err := p.model.sampleToken(lctx, sampler, p.grammarSampler, buf)
 	if err != nil {
 		return response{}, token, err
 	}
@@ -64,7 +67,7 @@ func (p *processor) standardFirst(lctx llama.Context, sampler llama.Sampler, buf
 }
 
 func (p *processor) standard(lctx llama.Context, batch llama.Batch, sampler llama.Sampler, buf []byte) (response, llama.Token, error) {
-	content, token, err := p.model.batchResponse(lctx, batch, sampler, buf)
+	content, token, err := p.model.batchResponse(lctx, batch, sampler, p.grammarSampler, buf)
 	if err != nil {
 		return response{}, token, err
 	}
@@ -95,7 +98,7 @@ func (p *processor) standardProcess(lctx llama.Context, content string, token ll
 
 			w.WriteString(content)
 
-			_, token, err = p.model.batchResponse(lctx, batch, sampler, buf)
+			_, token, err = p.model.batchResponse(lctx, batch, sampler, p.grammarSampler, buf)
 			if err != nil {
 				if errors.Is(err, io.EOF) {
 					break
@@ -143,7 +146,7 @@ func (p *processor) standardToolCall(lctx llama.Context, token llama.Token, samp
 
 	for {
 		batch = p.model.nextBatch(token)
-		content, token, err = p.model.batchResponse(lctx, batch, sampler, buf)
+		content, token, err = p.model.batchResponse(lctx, batch, sampler, p.grammarSampler, buf)
 		if err != nil {
 			return batch, "", err
 		}
@@ -186,7 +189,7 @@ func (p *processor) accumulateFunctionTag(lctx llama.Context, firstContent strin
 
 	for {
 		batch := p.model.nextBatch(token)
-		content, newToken, err := p.model.batchResponse(lctx, batch, sampler, buf)
+		content, newToken, err := p.model.batchResponse(lctx, batch, sampler, p.grammarSampler, buf)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				// EOF before completing the tag, return what we have.
@@ -223,7 +226,7 @@ func (p *processor) collectFunctionCall(lctx llama.Context, firstContent string,
 
 	for {
 		batch := p.model.nextBatch(token)
-		content, newToken, err := p.model.batchResponse(lctx, batch, sampler, buf)
+		content, newToken, err := p.model.batchResponse(lctx, batch, sampler, p.grammarSampler, buf)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				break
@@ -240,7 +243,7 @@ func (p *processor) collectFunctionCall(lctx llama.Context, firstContent string,
 		if strings.HasSuffix(strings.TrimSpace(accumulated), "</function>") {
 			// Look ahead to see if there's another function call starting.
 			batch = p.model.nextBatch(token)
-			content, newToken, err = p.model.batchResponse(lctx, batch, sampler, buf)
+			content, newToken, err = p.model.batchResponse(lctx, batch, sampler, p.grammarSampler, buf)
 			if err != nil {
 				if errors.Is(err, io.EOF) {
 					break
@@ -274,7 +277,7 @@ func (p *processor) collectFunctionCall(lctx llama.Context, firstContent string,
 // gptFirst samples the first token after prefill without re-decoding.
 // Use this for the first token after prefill when logits are already computed.
 func (p *processor) gptFirst(lctx llama.Context, sampler llama.Sampler, buf []byte) (response, llama.Token, error) {
-	content, token, err := p.model.sampleToken(lctx, sampler, buf)
+	content, token, err := p.model.sampleToken(lctx, sampler, p.grammarSampler, buf)
 	if err != nil {
 		return response{}, token, err
 	}
@@ -283,7 +286,7 @@ func (p *processor) gptFirst(lctx llama.Context, sampler llama.Sampler, buf []by
 }
 
 func (p *processor) gpt(lctx llama.Context, batch llama.Batch, sampler llama.Sampler, buf []byte) (response, llama.Token, error) {
-	content, token, err := p.model.batchResponse(lctx, batch, sampler, buf)
+	content, token, err := p.model.batchResponse(lctx, batch, sampler, p.grammarSampler, buf)
 	if err != nil {
 		return response{}, token, err
 	}

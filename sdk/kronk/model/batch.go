@@ -8,7 +8,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unsafe"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
@@ -45,6 +44,7 @@ type slot struct {
 	job              *chatJob
 	proc             *processor
 	sampler          llama.Sampler
+	grammarSampler   *grammarSampler // Separate grammar sampler (not in chain)
 	nPast            llama.Pos
 	nPrompt          int
 	nDecoded         int
@@ -96,6 +96,7 @@ func (s *slot) reset() {
 	s.nPrefilled = 0
 	s.logprobsData = nil
 	s.currentLogprob = nil
+	s.grammarSampler = nil // Freed in freeSlotResources
 
 	if s.proc != nil {
 		s.proc.resetState()
@@ -258,7 +259,7 @@ func (e *batchEngine) hasActiveSlots() bool {
 // processBatch handles one iteration of the batch processing loop.
 func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	// Clear the batch.
-	batchClear(&e.batch)
+	e.batch.Clear()
 
 	// Continue prefill for slots that are still prefilling.
 	for _, s := range e.slots {
@@ -292,7 +293,7 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 		}
 
 		s.iBatch = e.batch.NTokens
-		batchAdd(&e.batch, s.sampled, s.nPast, s.seqIDs, true)
+		e.batch.Add(s.sampled, s.nPast, s.seqIDs, true)
 		s.nPast++
 		s.nDecoded++
 	}
@@ -399,6 +400,11 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 
 	// Create sampler for this request.
 	s.sampler = e.model.toSampler(job.params)
+
+	// Create grammar sampler if grammar is specified (kept separate from chain).
+	if job.params.Grammar != "" {
+		s.grammarSampler = NewGrammarSampler(e.model.vocab, job.params.Grammar)
+	}
 
 	// Always clear the slot's sequence before starting to remove any stale KV data.
 	llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
@@ -518,7 +524,7 @@ func (e *batchEngine) addPrefillChunk(s *slot) bool {
 	for i := range chunkSize {
 		tok := s.prefillTokens[s.nPrefilled+i]
 		isLast := s.nPrefilled+i == len(s.prefillTokens)-1
-		batchAdd(&e.batch, tok, s.nPast, s.seqIDs, isLast)
+		e.batch.Add(tok, s.nPast, s.seqIDs, isLast)
 		s.nPast++
 	}
 	s.nPrefilled += chunkSize
@@ -540,8 +546,14 @@ func (e *batchEngine) addPrefillChunk(s *slot) bool {
 
 // processSlotToken handles a sampled token for a slot.
 func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
-	// Sample the next token.
-	token := llama.SamplerSample(s.sampler, e.model.lctx, s.iBatch)
+	// Sample the next token. If grammar is active, use grammar-aware sampling.
+	var token llama.Token
+	switch {
+	case s.grammarSampler != nil:
+		token = s.grammarSampler.SampleWithGrammar(e.model.lctx, s.sampler, s.iBatch)
+	default:
+		token = llama.SamplerSample(s.sampler, e.model.lctx, s.iBatch)
+	}
 
 	// Extract logprobs BEFORE accepting - Accept modifies sampler state.
 	// Reset currentLogprob each token; it's used for streaming.
@@ -555,6 +567,12 @@ func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 			s.currentLogprob = logprob
 			s.logprobsData = append(s.logprobsData, *logprob)
 		}
+	}
+
+	// Accept token on both samplers. Grammar sampler is accepted separately
+	// to avoid the crash that occurs when grammar is in the chain.
+	if s.grammarSampler != nil {
+		s.grammarSampler.Accept(token)
 	}
 
 	llama.SamplerAccept(s.sampler, token)
@@ -785,6 +803,11 @@ func (e *batchEngine) freeSlotResources(s *slot) {
 		llama.SamplerFree(s.sampler)
 		s.sampler = 0
 	}
+
+	if s.grammarSampler != nil {
+		s.grammarSampler.Free()
+		s.grammarSampler = nil
+	}
 }
 
 func (e *batchEngine) sendSlotError(s *slot, err error) {
@@ -827,44 +850,6 @@ func (e *batchEngine) drainSlots() {
 			return
 		}
 	}
-}
-
-// =============================================================================
-// Batch manipulation helpers
-
-func batchClear(batch *llama.Batch) {
-	batch.NTokens = 0
-}
-
-func batchAdd(batch *llama.Batch, token llama.Token, pos llama.Pos, seqIDs []llama.SeqId, logits bool) {
-	i := batch.NTokens
-
-	tokenPtr := (*llama.Token)(unsafe.Pointer(uintptr(unsafe.Pointer(batch.Token)) + uintptr(i)*unsafe.Sizeof(llama.Token(0))))
-	*tokenPtr = token
-
-	posPtr := (*llama.Pos)(unsafe.Pointer(uintptr(unsafe.Pointer(batch.Pos)) + uintptr(i)*unsafe.Sizeof(llama.Pos(0))))
-	*posPtr = pos
-
-	nSeqPtr := (*int32)(unsafe.Pointer(uintptr(unsafe.Pointer(batch.NSeqId)) + uintptr(i)*unsafe.Sizeof(int32(0))))
-	*nSeqPtr = int32(len(seqIDs))
-
-	seqIDPtrPtr := (**llama.SeqId)(unsafe.Pointer(uintptr(unsafe.Pointer(batch.SeqId)) + uintptr(i)*unsafe.Sizeof(uintptr(0))))
-	if *seqIDPtrPtr != nil && len(seqIDs) > 0 {
-		for j, sid := range seqIDs {
-			seqPtr := (*llama.SeqId)(unsafe.Pointer(uintptr(unsafe.Pointer(*seqIDPtrPtr)) + uintptr(j)*unsafe.Sizeof(llama.SeqId(0))))
-			*seqPtr = sid
-		}
-	}
-
-	logitPtr := (*int8)(unsafe.Pointer(uintptr(unsafe.Pointer(batch.Logits)) + uintptr(i)*unsafe.Sizeof(int8(0))))
-	switch logits {
-	case true:
-		*logitPtr = 1
-	case false:
-		*logitPtr = 0
-	}
-
-	batch.NTokens++
 }
 
 // logDecodeError logs detailed KV cache diagnostics when decode fails.

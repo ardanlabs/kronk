@@ -103,6 +103,21 @@ func TestSuite(t *testing.T) {
 			t.Run("AudioStreamingChat", func(t *testing.T) { testAudioStreaming(t, krn) })
 		})
 	})
+
+	t.Run("Grammar/Qwen3", func(t *testing.T) {
+		if os.Getenv("GITHUB_ACTIONS") == "true" {
+			t.Skip("Skipping Grammar tests in GitHub Actions (requires more resources)")
+		}
+
+		if runInParallel {
+			t.Parallel()
+		}
+
+		withModel(t, cfgThinkToolChat(), func(t *testing.T, krn *kronk.Kronk) {
+			t.Run("GrammarJSON", func(t *testing.T) { testGrammarJSON(t, krn) })
+			t.Run("GrammarJSONStreaming", func(t *testing.T) { testGrammarJSONStreaming(t, krn) })
+		})
+	})
 }
 
 // =============================================================================
@@ -133,11 +148,11 @@ func withModel(t *testing.T, cfg model.Config, fn func(t *testing.T, krn *kronk.
 func cfgThinkToolChat() model.Config {
 	return model.Config{
 		ModelFiles:    mpThinkToolChat.ModelFiles,
-		ContextWindow: 32768,
-		NBatch:        1024,
-		NUBatch:       256,
-		CacheTypeK:    model.GGMLTypeF16,
-		CacheTypeV:    model.GGMLTypeF16,
+		ContextWindow: 8192,
+		NBatch:        2048,
+		NUBatch:       512,
+		CacheTypeK:    model.GGMLTypeQ8_0,
+		CacheTypeV:    model.GGMLTypeQ8_0,
 		NSeqMax:       2,
 	}
 }

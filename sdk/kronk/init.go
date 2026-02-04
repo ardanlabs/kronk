@@ -6,11 +6,18 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
 	"github.com/nikolalohinski/gonja/v2"
+)
+
+var (
+	libraryLocation string
+	initOnce        sync.Once
+	initErr         error
 )
 
 type initOptions struct {

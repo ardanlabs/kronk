@@ -25,13 +25,13 @@ Key principles:
 */
 
 const (
-	defContextWindow  = 8 * 1024
-	defNBatch         = 2 * 1024
-	defNUBatch        = 512
-	defNUBatchVision  = 2 * 1024
-	defMinCacheTokens = 100
-	defThreadZero     = 0
-	defNSeqMax        = 1
+	defContextWindow    = 8 * 1024
+	defNBatch           = 2 * 1024
+	defNUBatch          = 512
+	defNUBatchVision    = 2 * 1024
+	defMinCacheTokens   = 100
+	defThreadZero       = 0
+	defNSeqMax          = 1
 	defMaxCacheSessions = 1
 )
 
@@ -44,27 +44,65 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // incorrectly can cause the system to panic. The defaults are used when these
 // values are set to 0.
 //
-// ModelInstances is the number of instances of the model to create. Unless
-// you have more than 1 GPU, the recommended number of instances is 1.
+// CacheMinTokens sets the minimum token count required before caching. Messages
+// shorter than this threshold are not cached, as the overhead of cache management
+// may outweigh the prefill savings. When set to 0, defaults to 100 tokens.
 //
-// ModelFiles is the path to the model files. This is mandatory to provide.
+// CacheTypeK is the data type for the K (key) cache. This controls the precision
+// of the key vectors in the KV cache. Lower precision types (like Q8_0 or Q4_0)
+// reduce memory usage but may slightly affect quality. When set to GGMLTypeAuto
+// or left as zero value, the default llama.cpp value (F16) is used.
 //
-// ProjFiles is the path to the projection files. This is mandatory for media
-// based models like vision and audio.
-//
-// JinjaFile is the path to the jinja file. This is not required and can be
-// used if you want to override the templated provided by the model metadata.
-//
-// Device is the device to use for the model. If not set, the default device
-// will be used. To see what devices are available, run the following command
-// which will be found where you installed llama.cpp.
-// $ llama-bench --list-devices
+// CacheTypeV is the data type for the V (value) cache. This controls the precision
+// of the value vectors in the KV cache. When set to GGMLTypeAuto or left as zero
+// value, the default llama.cpp value (F16) is used.
 //
 // ContextWindow (often referred to as context length) is the maximum number of
 // tokens that a large language model can process and consider at one time when
 // generating a response. It defines the model's effective "memory" for a single
 // conversation or text generation task.
 // When set to 0, the default value is 4096.
+//
+// DefaultParams contains the default sampling parameters for requests.
+//
+// Device is the device to use for the model. If not set, the default device
+// will be used. To see what devices are available, run the following command
+// which will be found where you installed llama.cpp.
+// $ llama-bench --list-devices
+//
+// FlashAttention controls Flash Attention mode. Flash Attention reduces memory
+// usage and speeds up attention computation, especially for large context windows.
+// When left as zero value, FlashAttentionEnabled is used (default on).
+// Set to FlashAttentionDisabled to disable, or FlashAttentionAuto to let llama.cpp decide.
+//
+// IgnoreIntegrityCheck is a boolean that determines if the system should ignore
+// a model integrity check before trying to use it.
+//
+// IncrementalCache enables Incremental Message Caching (IMC) for agentic
+// workflows. It caches all messages except the last one (which triggers
+// generation) and extends the cache incrementally on each turn. This is ideal
+// for agents like Cline or OpenCode where conversations grow monotonically.
+// The cache is rebuilt from scratch when the message prefix changes (new thread).
+//
+// InsecureLogging enables logging of potentially sensitive data such as message
+// content. This should only be enabled for debugging purposes in non-production
+// environments.
+//
+// JinjaFile is the path to the jinja file. This is not required and can be
+// used if you want to override the templated provided by the model metadata.
+//
+// Log is the logger to use for model operations.
+//
+// MaxCacheSessions sets the maximum number of concurrent cache sessions (users).
+// Each session gets its own dedicated cache sequence, identified by the cache_id
+// parameter in requests. When set to 0, defaults to 1 session. If all sessions
+// are in use, new requests without an available slot bypass caching gracefully.
+// The input request should have `cache_id` with a unique session/user ID to
+// activate caching. Each unique ID gets its own dedicated cache sequence (up to
+// max-cache-sessions). If no cache id is passed, the "default" id is used. On a
+// multi-user system that will cause problems.
+//
+// ModelFiles is the path to the model files. This is mandatory to provide.
 //
 // NBatch is the logical batch size or the maximum number of tokens that can be
 // in a single forward pass through the model at any given time.  It defines
@@ -76,6 +114,22 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // out-of-memory errors on systems with limited VRAM.
 // When set to 0, the default value is 2048.
 //
+// NGpuLayers is the number of model layers to offload to the GPU. When set to 0,
+// all layers are offloaded (default). Set to -1 to keep all layers on CPU. Any
+// positive value specifies the exact number of layers to offload.
+//
+// NSeqMax controls concurrency behavior based on model type. For text inference
+// models, it sets the maximum number of sequences processed in parallel within
+// a single model instance (batched inference). For sequential models (embeddings,
+// reranking, vision, audio), it creates that many model instances in a pool for
+// concurrent request handling. When set to 0, a default of 1 is used.
+//
+// NThreads is the number of threads to use for generation. When set to 0, the
+// default llama.cpp value is used.
+//
+// NThreadsBatch is the number of threads to use for batch processing. When set
+// to 0, the default llama.cpp value is used.
+//
 // NUBatch is the physical batch size or the maximum number of tokens processed
 // together during the initial prompt processing phase (also called "prompt
 // ingestion") to populate the KV cache. It specifically optimizes the initial
@@ -86,35 +140,6 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // processing times depending on the memory architecture.
 // When set to 0, the default value is 512.
 //
-// NThreads is the number of threads to use for generation. When set to 0, the
-// default llama.cpp value is used.
-//
-// NThreadsBatch is the number of threads to use for batch processing. When set
-// to 0, the default llama.cpp value is used.
-//
-// CacheTypeK is the data type for the K (key) cache. This controls the precision
-// of the key vectors in the KV cache. Lower precision types (like Q8_0 or Q4_0)
-// reduce memory usage but may slightly affect quality. When set to GGMLTypeAuto
-// or left as zero value, the default llama.cpp value (F16) is used.
-//
-// CacheTypeV is the data type for the V (value) cache. This controls the precision
-// of the value vectors in the KV cache. When set to GGMLTypeAuto or left as zero
-// value, the default llama.cpp value (F16) is used.
-//
-// FlashAttention controls Flash Attention mode. Flash Attention reduces memory
-// usage and speeds up attention computation, especially for large context windows.
-// When left as zero value, FlashAttentionEnabled is used (default on).
-// Set to FlashAttentionDisabled to disable, or FlashAttentionAuto to let llama.cpp decide.
-//
-// IgnoreIntegrityCheck is a boolean that determines if the system should ignore
-// a model integrity check before trying to use it.
-//
-// NSeqMax controls concurrency behavior based on model type. For text inference
-// models, it sets the maximum number of sequences processed in parallel within
-// a single model instance (batched inference). For sequential models (embeddings,
-// reranking, vision, audio), it creates that many model instances in a pool for
-// concurrent request handling. When set to 0, a default of 1 is used.
-//
 // OffloadKQV controls whether the KV cache is offloaded to the GPU. When nil or
 // true, the KV cache is stored on the GPU (default behavior). Set to false to
 // keep the KV cache on the CPU, which reduces VRAM usage but may slow inference.
@@ -123,9 +148,18 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // (GPU). When nil or true, operations are offloaded (default behavior). Set to
 // false to keep operations on the CPU.
 //
-// NGpuLayers is the number of model layers to offload to the GPU. When set to 0,
-// all layers are offloaded (default). Set to -1 to keep all layers on CPU. Any
-// positive value specifies the exact number of layers to offload.
+// ProjFile is the path to the projection files. This is mandatory for media
+// based models like vision and audio.
+//
+// RopeFreqBase overrides the RoPE base frequency. When nil, uses model default.
+// Common values: 10000 (Llama), 1000000 (Qwen3).
+//
+// RopeFreqScale overrides the RoPE frequency scaling factor. When nil, uses
+// model default or auto-calculates based on context extension ratio.
+//
+// RopeScaling controls the RoPE scaling method for extended context support.
+// Set to RopeScalingYaRN to enable YaRN scaling for models like Qwen3 that
+// support extended context (e.g., 32k training → 131k with YaRN).
 //
 // SplitMode controls how the model is split across multiple GPUs:
 //   - SplitModeNone (0): single GPU
@@ -142,45 +176,11 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // applications that use a consistent system prompt. The cache is automatically
 // invalidated and re-evaluated when the system prompt changes.
 //
-// IncrementalCache enables Incremental Message Caching (IMC) for agentic
-// workflows. It caches all messages except the last one (which triggers
-// generation) and extends the cache incrementally on each turn. This is ideal
-// for agents like Cline or OpenCode where conversations grow monotonically.
-// The cache is rebuilt from scratch when the message prefix changes (new thread).
-//
-// MaxCacheSessions sets the maximum number of concurrent cache sessions (users).
-// Each session gets its own dedicated cache sequence, identified by the cache_id
-// parameter in requests. When set to 0, defaults to 1 session. If all sessions
-// are in use, new requests without an available slot bypass caching gracefully.
-// The input request should have `cache_id` with a unique session/user ID to
-// activate caching. Each unique ID gets its own dedicated cache sequence (up to
-// max-cache-sessions). If no cache id is passed, the "default" id is used. On a
-// multi-user system that will cause problems.
-//
 // SystemPromptCache and IncrementalCache are mutually exclusive. IncrementalCache
 // includes the system prompt in its cached prefix, so enabling both is redundant
 // and will return a validation error.
 //
-// CacheMinTokens sets the minimum token count required before caching. Messages
-// shorter than this threshold are not cached, as the overhead of cache management
-// may outweigh the prefill savings. When set to 0, defaults to 100 tokens.
-//
-// InsecureLogging enables logging of potentially sensitive data such as message
-// content. This should only be enabled for debugging purposes in non-production
-// environments.
-//
-// RopeScaling controls the RoPE scaling method for extended context support.
-// Set to RopeScalingYaRN to enable YaRN scaling for models like Qwen3 that
-// support extended context (e.g., 32k training → 131k with YaRN).
-//
-// RopeFreqBase overrides the RoPE base frequency. When nil, uses model default.
-// Common values: 10000 (Llama), 1000000 (Qwen3).
-//
-// RopeFreqScale overrides the RoPE frequency scaling factor. When nil, uses
-// model default or auto-calculates based on context extension ratio.
-//
-// YarnExtFactor sets the YaRN extrapolation mix factor. When nil, auto-calculated
-// from context scaling ratio. Set to 0 to disable extrapolation.
+// UseDirectIO enables direct I/O for model loading.
 //
 // YarnAttnFactor sets the YaRN attention magnitude scaling factor. When nil,
 // uses default of 1.0.
@@ -191,43 +191,46 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // YarnBetaSlow sets the YaRN high correction dimension. When nil, uses default
 // of 1.0.
 //
+// YarnExtFactor sets the YaRN extrapolation mix factor. When nil, auto-calculated
+// from context scaling ratio. Set to 0 to disable extrapolation.
+//
 // YarnOrigCtx sets the original training context size for YaRN scaling. When nil
 // or 0, uses the model's native training context length from metadata.
 type Config struct {
-	Log                  Logger
-	ModelFiles           []string
-	ProjFile             string
-	JinjaFile            string
-	Device               string
-	ContextWindow        int
-	NBatch               int
-	NUBatch              int
-	NThreads             int
-	NThreadsBatch        int
+	CacheMinTokens       int
 	CacheTypeK           GGMLType
 	CacheTypeV           GGMLType
+	ContextWindow        int
+	DefaultParams        Params
+	Device               string
 	FlashAttention       FlashAttentionType
-	UseDirectIO          bool
 	IgnoreIntegrityCheck bool
+	IncrementalCache     bool
+	InsecureLogging      bool
+	JinjaFile            string
+	Log                  Logger
+	MaxCacheSessions     int
+	ModelFiles           []string
+	NBatch               int
+	NGpuLayers           *int
 	NSeqMax              int
+	NThreads             int
+	NThreadsBatch        int
+	NUBatch              int
 	OffloadKQV           *bool
 	OpOffload            *bool
-	NGpuLayers           *int
-	SplitMode            SplitMode
-	SystemPromptCache    bool
-	IncrementalCache     bool
-	MaxCacheSessions     int
-	CacheMinTokens       int
-	InsecureLogging      bool
-	RopeScaling          RopeScalingType
+	ProjFile             string
 	RopeFreqBase         *float32
 	RopeFreqScale        *float32
-	YarnExtFactor        *float32
+	RopeScaling          RopeScalingType
+	SplitMode            SplitMode
+	SystemPromptCache    bool
+	UseDirectIO          bool
 	YarnAttnFactor       *float32
 	YarnBetaFast         *float32
 	YarnBetaSlow         *float32
+	YarnExtFactor        *float32
 	YarnOrigCtx          *int
-	DefaultParams        Params
 }
 
 func (cfg Config) String() string {
