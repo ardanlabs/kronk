@@ -5,11 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"unsafe"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
-	"github.com/hybridgroup/yzma/pkg/loader"
-	"github.com/jupiterrider/ffi"
 )
 
 var commonRules = map[string]string{
@@ -345,25 +342,7 @@ func (gb *grammarBuilder) build() string {
 type grammarSampler struct {
 	sampler   llama.Sampler
 	nVocab    int
-	tokenData []tokenData // Pre-allocated buffer to avoid allocations during sampling.
-}
-
-// tokenData mirrors llama_token_data from llama.cpp.
-// Layout: int32_t id (4) + float logit (4) + float p (4) = 12 bytes
-type tokenData struct {
-	ID    int32   // llama_token is int32_t
-	Logit float32 // log-odds of the token
-	P     float32 // probability of the token
-}
-
-// tokenDataArray mirrors llama_token_data_array from llama.cpp.
-// Layout: pointer (8) + size_t (8) + int64_t (8) + bool (1) + padding (7) = 32 bytes
-type tokenDataArray struct {
-	Data     unsafe.Pointer // *tokenData
-	Size     uint64         // size_t
-	Selected int64          // -1 if no token has been selected
-	Sorted   uint8          // bool in C, use uint8 to match
-	_        [7]byte        // padding to match C struct alignment
+	tokenData []llama.TokenData // Pre-allocated buffer to avoid allocations during sampling.
 }
 
 // NewGrammarSampler creates a grammar sampler that will be managed separately
@@ -381,7 +360,7 @@ func NewGrammarSampler(vocab llama.Vocab, grammar string) *grammarSampler {
 	nVocab := int(llama.VocabNTokens(vocab))
 
 	// Pre-allocate token data buffer.
-	tokenData := make([]tokenData, nVocab)
+	tokenData := make([]llama.TokenData, nVocab)
 
 	return &grammarSampler{
 		sampler:   sampler,
@@ -413,25 +392,22 @@ func (gs *grammarSampler) SampleWithGrammar(ctx llama.Context, chainSampler llam
 
 	// Build token_data_array from logits.
 	for i := range gs.nVocab {
-		gs.tokenData[i] = tokenData{
-			ID:    int32(i),
+		gs.tokenData[i] = llama.TokenData{
+			Id:    llama.Token(i),
 			Logit: logits[i],
 			P:     0, // Will be computed by samplers
 		}
 	}
 
-	curP := tokenDataArray{
-		Data:     unsafe.Pointer(&gs.tokenData[0]),
+	curP := llama.TokenDataArray{
+		Data:     &gs.tokenData[0],
 		Size:     uint64(gs.nVocab),
 		Selected: -1,
 		Sorted:   0, // false
 	}
 
 	// Apply grammar constraints - this sets invalid tokens to -inf logits.
-	// For C functions taking pointers, we need to pass the address of the pointer value.
-	smpl := gs.sampler
-	curPPtr := unsafe.Pointer(&curP)
-	samplerApplyFunc.Call(nil, unsafe.Pointer(&smpl), unsafe.Pointer(&curPPtr))
+	llama.SamplerApply(gs.sampler, &curP)
 
 	// Copy modified logits back to context's logits array.
 	// This allows the normal SamplerSample to work with grammar-constrained logits.
@@ -469,33 +445,4 @@ func (gs *grammarSampler) Reset() {
 	}
 
 	llama.SamplerReset(gs.sampler)
-}
-
-// =============================================================================
-
-var (
-	grammarInitDone  bool
-	samplerApplyFunc ffi.Fun
-)
-
-// InitGrammarExtensions initializes the additional FFI bindings needed for
-// proper grammar handling. This must be called after llama.Init().
-func InitGrammarExtensions(libraryLocation string) error {
-	if grammarInitDone {
-		return nil
-	}
-
-	lib, err := loader.LoadLibrary(libraryLocation, "llama")
-	if err != nil {
-		return err
-	}
-
-	// LLAMA_API void llama_sampler_apply(struct llama_sampler * smpl, llama_token_data_array * cur_p);
-	if samplerApplyFunc, err = lib.Prep("llama_sampler_apply", &ffi.TypeVoid, &ffi.TypePointer, &ffi.TypePointer); err != nil {
-		return err
-	}
-
-	grammarInitDone = true
-
-	return nil
 }

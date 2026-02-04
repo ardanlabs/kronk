@@ -10,13 +10,14 @@
 6. [YaRN Extended Context](#chapter-6-yarn-extended-context)
 7. [Model Server](#chapter-7-model-server)
 8. [API Endpoints](#chapter-8-api-endpoints)
-9. [Multi-Modal Models](#chapter-9-multi-modal-models)
-10. [Security & Authentication](#chapter-10-security--authentication)
-11. [Browser UI (BUI)](#chapter-11-browser-ui-bui)
-12. [Client Integration](#chapter-12-client-integration)
-13. [Observability](#chapter-13-observability)
-14. [Troubleshooting](#chapter-14-troubleshooting)
-15. [Developer Guide](#chapter-15-developer-guide)
+9. [Request Parameters](#chapter-9-request-parameters)
+10. [Multi-Modal Models](#chapter-10-multi-modal-models)
+11. [Security & Authentication](#chapter-11-security--authentication)
+12. [Browser UI (BUI)](#chapter-12-browser-ui-bui)
+13. [Client Integration](#chapter-13-client-integration)
+14. [Observability](#chapter-14-observability)
+15. [Troubleshooting](#chapter-15-troubleshooting)
+16. [Developer Guide](#chapter-16-developer-guide)
 
 ---
 
@@ -2109,7 +2110,232 @@ data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"at
 data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":" \"Paris\"}"}}]}}]}
 ```
 
-### 8.7 Logprobs (Token Probabilities)
+### 8.7 Models List
+
+Get available models.
+
+**Endpoint:** `GET /v1/models`
+
+**Request:**
+
+```shell
+curl http://localhost:8080/v1/models
+```
+
+**Response:**
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "Qwen3-8B-Q8_0",
+      "object": "model",
+      "owned_by": "kronk"
+    },
+    {
+      "id": "embeddinggemma-300m-qat-Q8_0",
+      "object": "model",
+      "owned_by": "kronk"
+    }
+  ]
+}
+```
+
+### 8.8 Authentication
+
+When authentication is enabled, include the token in requests:
+
+```shell
+curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer your-token-here" \
+  -d '{...}'
+```
+
+See [Chapter 11: Security & Authentication](#chapter-11-security--authentication)
+for details on token management.
+
+### 8.9 Error Responses
+
+Errors follow a standard format:
+
+```json
+{
+  "error": {
+    "code": "invalid_argument",
+    "message": "missing model field"
+  }
+}
+```
+
+**Common Error Codes:**
+
+- `invalid_argument` - Missing or invalid request parameters
+- `not_found` - Model not found
+- `internal` - Server error during processing
+- `unauthenticated` - Missing or invalid authentication token
+
+---
+
+## Chapter 9: Request Parameters
+
+This chapter documents the request parameters available for controlling model output through both the SDK and REST API.
+
+### 9.1 Sampling Parameters
+
+These parameters control the randomness and diversity of generated text.
+
+| Parameter | JSON Key | Type | Default | Description |
+|-----------|----------|------|---------|-------------|
+| Temperature | `temperature` | float32 | 0.8 | Controls randomness of output. Higher values produce more varied text, lower values more deterministic. |
+| Top-K | `top_k` | int32 | 40 | Limits token pool to K most probable tokens before sampling. |
+| Top-P | `top_p` | float32 | 0.9 | Nucleus sampling threshold. Only tokens with cumulative probability ≤ top_p are considered. |
+| Min-P | `min_p` | float32 | 0.0 | Dynamic sampling threshold. Tokens with probability < min_p × max_probability are excluded. |
+
+### 9.2 Repetition Control
+
+These parameters help prevent repetitive output.
+
+| Parameter | JSON Key | Type | Default | Description |
+|-----------|----------|------|---------|-------------|
+| Repeat Penalty | `repeat_penalty` | float32 | 1.0 | Penalty multiplier for repeated tokens. Values > 1.0 discourage repetition. |
+| Repeat Last N | `repeat_last_n` | int32 | 64 | Window size for repetition check. Only the last N tokens are considered. |
+
+**DRY Parameters (Don't Repeat Yourself):**
+
+DRY penalizes n-gram repetitions to prevent the model from repeating phrases.
+
+| Parameter | JSON Key | Type | Default | Description |
+|-----------|----------|------|---------|-------------|
+| DRY Multiplier | `dry_multiplier` | float32 | 1.05 | N-gram repetition penalty strength. Higher values penalize repetition more. |
+| DRY Base | `dry_base` | float32 | 1.75 | Exponential penalty base for longer n-grams. |
+| DRY Allowed Length | `dry_allowed_length` | int32 | 2 | Minimum n-gram length to consider for penalties. |
+| DRY Penalty Last N | `dry_penalty_last_n` | int32 | 0 | Number of recent tokens to consider for DRY. 0 means all tokens. |
+
+### 9.3 Advanced Sampling
+
+**XTC (eXtreme Token Culling):**
+
+XTC probabilistically removes high-probability tokens to increase diversity.
+
+| Parameter | JSON Key | Type | Default | Description |
+|-----------|----------|------|---------|-------------|
+| XTC Probability | `xtc_probability` | float32 | 0.0 | Probability of activating XTC on each token. 0 disables XTC. |
+| XTC Threshold | `xtc_threshold` | float32 | 0.1 | Probability threshold for token culling. |
+| XTC Min Keep | `xtc_min_keep` | uint32 | 1 | Minimum number of tokens to keep after culling. |
+
+**Adaptive-P:**
+
+Adaptive-P dynamically adjusts the sampling threshold based on output probability.
+
+| Parameter | JSON Key | Type | Default | Description |
+|-----------|----------|------|---------|-------------|
+| Adaptive-P Target | `adaptive_p_target` | float32 | 0.0 | Target probability threshold. 0 disables adaptive sampling. |
+| Adaptive-P Decay | `adaptive_p_decay` | float32 | 0.0 | Speed of threshold adjustment toward target. |
+
+### 9.4 Generation Control
+
+| Parameter | JSON Key | Type | Default | Description |
+|-----------|----------|------|---------|-------------|
+| Max Tokens | `max_tokens` | int | 4096 | Maximum tokens to generate. |
+| Enable Thinking | `enable_thinking` | string | "true" | Enable model thinking/reasoning mode. Set to "false" for direct responses. |
+| Reasoning Effort | `reasoning_effort` | string | "medium" | GPT reasoning level: none, minimal, low, medium, high. |
+| Stream | `stream` | bool | false | Stream response chunks via SSE. |
+| Include Usage | `include_usage` | bool | true | Include token usage statistics in streaming responses. |
+
+### 9.5 Grammar Constrained Output
+
+Grammars force the model to only produce tokens that match a specified pattern, guaranteeing structured output.
+
+**Built-in Presets:**
+
+| Preset | Description |
+|--------|-------------|
+| `GrammarJSON` | Valid JSON objects or arrays |
+| `GrammarJSONObject` | JSON objects only |
+| `GrammarJSONArray` | JSON arrays only |
+| `GrammarBoolean` | "true" or "false" |
+| `GrammarYesNo` | "yes" or "no" |
+| `GrammarInteger` | Integer values |
+| `GrammarNumber` | Numeric values (int or float) |
+
+**Using Grammar Presets (SDK):**
+
+```go
+d := model.D{
+    "messages": model.DocumentArray(
+        model.TextMessage(model.RoleUser, "List 3 languages in JSON"),
+    ),
+    "grammar": model.GrammarJSONObject,
+}
+```
+
+**Using Grammar via API:**
+
+```shell
+curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "Qwen3-8B-Q8_0",
+    "messages": [{"role": "user", "content": "List 3 languages in JSON"}],
+    "grammar": "root ::= object\nvalue ::= object | array | string | number | \"true\" | \"false\" | \"null\"\nobject ::= \"{\" ws ( string \":\" ws value (\",\" ws string \":\" ws value)* )? ws \"}\"\narray ::= \"[\" ws ( value (\",\" ws value)* )? ws \"]\"\nstring ::= \"\\\"\" ([^\"\\\\] | \"\\\\\" [\"\\\\bfnrt/] | \"\\\\u\" [0-9a-fA-F]{4})* \"\\\"\"\nnumber ::= \"-\"? (\"0\" | [1-9][0-9]*) (\".\" [0-9]+)? ([eE] [+-]? [0-9]+)?\nws ::= [ \\t\\n\\r]*"
+  }'
+```
+
+**JSON Schema Auto-Conversion:**
+
+```go
+schema := model.D{
+    "type": "object",
+    "properties": model.D{
+        "name": model.D{"type": "string"},
+        "year": model.D{"type": "integer"},
+    },
+    "required": []string{"name", "year"},
+}
+
+d := model.D{
+    "messages": model.DocumentArray(...),
+    "json_schema": schema,
+    "enable_thinking": false,
+}
+```
+
+Via API with `json_schema` field:
+
+```json
+{
+  "model": "Qwen3-8B-Q8_0",
+  "messages": [...],
+  "json_schema": {
+    "type": "object",
+    "properties": {
+      "name": {"type": "string"},
+      "year": {"type": "integer"}
+    },
+    "required": ["name", "year"]
+  },
+  "enable_thinking": false
+}
+```
+
+**Custom GBNF Grammars:**
+
+```go
+sentimentGrammar := `root ::= sentiment
+sentiment ::= "positive" | "negative" | "neutral"`
+
+d := model.D{
+    "messages": model.DocumentArray(...),
+    "grammar": sentimentGrammar,
+    "enable_thinking": false,
+}
+```
+
+**Important:** When using grammar constraints, set `enable_thinking: false` because the grammar applies from the first output token.
+
+### 9.6 Logprobs (Token Probabilities)
 
 Request log probabilities for generated tokens to understand model confidence
 or implement custom sampling strategies.
@@ -2195,39 +2421,9 @@ curl http://localhost:8080/v1/chat/completions \
 - Custom rejection sampling
 - Token-level analysis for debugging
 
-### 8.8 Models List
+### 9.7 Cache ID
 
-Get available models.
-
-**Endpoint:** `GET /v1/models`
-
-**Request:**
-
-```shell
-curl http://localhost:8080/v1/models
-```
-
-**Response:**
-
-```json
-{
-  "object": "list",
-  "data": [
-    {
-      "id": "Qwen3-8B-Q8_0",
-      "object": "model",
-      "owned_by": "kronk"
-    },
-    {
-      "id": "embeddinggemma-300m-qat-Q8_0",
-      "object": "model",
-      "owned_by": "kronk"
-    }
-  ]
-}
-```
-
-### 8.9 Using Cache ID with API Requests
+The `cache_id` parameter enables multi-user caching for both System Prompt Cache (SPC) and Incremental Message Cache (IMC). Each unique `cache_id` gets its own dedicated cache sequence.
 
 To use multi-user caching (SPC or IMC), pass the session ID via header:
 
@@ -2251,51 +2447,45 @@ Or in the request body:
 }
 ```
 
-The `cache_id` is used by both System Prompt Cache (SPC) and Incremental Message Cache (IMC).
 Each unique `cache_id` gets its own dedicated cache sequence, up to `max_cache_sessions`.
 
-### 8.10 Authentication
+### 9.8 Parameter Reference
 
-When authentication is enabled, include the token in requests:
-
-```shell
-curl http://localhost:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer your-token-here" \
-  -d '{...}'
-```
-
-See [Chapter 10: Security & Authentication](#chapter-10-security--authentication)
-for details on token management.
-
-### 8.11 Error Responses
-
-Errors follow a standard format:
-
-```json
-{
-  "error": {
-    "code": "invalid_argument",
-    "message": "missing model field"
-  }
-}
-```
-
-**Common Error Codes:**
-
-- `invalid_argument` - Missing or invalid request parameters
-- `not_found` - Model not found
-- `internal` - Server error during processing
-- `unauthenticated` - Missing or invalid authentication token
+| Parameter | JSON Key | Type | Default | Description |
+|-----------|----------|------|---------|-------------|
+| Temperature | `temperature` | float32 | 0.8 | Controls randomness of output |
+| Top-K | `top_k` | int32 | 40 | Limits token pool to K most probable |
+| Top-P | `top_p` | float32 | 0.9 | Nucleus sampling threshold |
+| Min-P | `min_p` | float32 | 0.0 | Dynamic sampling threshold |
+| Max Tokens | `max_tokens` | int | 4096 | Maximum tokens to generate |
+| Repeat Penalty | `repeat_penalty` | float32 | 1.0 | Penalty for repeated tokens |
+| Repeat Last N | `repeat_last_n` | int32 | 64 | Window for repetition check |
+| DRY Multiplier | `dry_multiplier` | float32 | 1.05 | N-gram repetition penalty |
+| DRY Base | `dry_base` | float32 | 1.75 | Exponential penalty base |
+| DRY Allowed Length | `dry_allowed_length` | int32 | 2 | Min n-gram length for DRY |
+| DRY Penalty Last N | `dry_penalty_last_n` | int32 | 0 | Recent tokens for DRY (0=all) |
+| XTC Probability | `xtc_probability` | float32 | 0.0 | XTC activation probability |
+| XTC Threshold | `xtc_threshold` | float32 | 0.1 | XTC probability threshold |
+| XTC Min Keep | `xtc_min_keep` | uint32 | 1 | Min tokens after XTC |
+| Adaptive-P Target | `adaptive_p_target` | float32 | 0.0 | Adaptive sampling target |
+| Adaptive-P Decay | `adaptive_p_decay` | float32 | 0.0 | Adaptive adjustment speed |
+| Enable Thinking | `enable_thinking` | string | "true" | Enable model thinking |
+| Reasoning Effort | `reasoning_effort` | string | "medium" | GPT reasoning level |
+| Grammar | `grammar` | string | "" | GBNF grammar constraint |
+| Logprobs | `logprobs` | bool | false | Return token probabilities |
+| Top Logprobs | `top_logprobs` | int | 0 | Number of top alternatives |
+| Stream | `stream` | bool | false | Stream response |
+| Include Usage | `include_usage` | bool | true | Include usage in streaming |
+| Return Prompt | `return_prompt` | bool | false | Include prompt in response |
 
 ---
 
-## Chapter 9: Multi-Modal Models
+## Chapter 10: Multi-Modal Models
 
 Kronk supports vision and audio models that can process images, video frames,
 and audio alongside text. This chapter covers how to use these models.
 
-### 9.1 Overview
+### 10.1 Overview
 
 Multi-modal models combine a language model with a media projector that
 converts images or audio into tokens the model can understand.
@@ -2318,7 +2508,7 @@ Example models:
 - `gemma-3-4b-it-q4_0` - Vision model
 - `Qwen2-Audio-7B.Q8_0` - Audio model
 
-### 9.2 Vision Models
+### 10.2 Vision Models
 
 Vision models analyze images and answer questions about their content.
 
@@ -2376,7 +2566,7 @@ The `content` field is an array of content parts:
 - Base64 data URL: `data:image/jpeg;base64,/9j/4AAQSkZJRg...`
 - Base64 data URL: `data:image/png;base64,iVBORw0KGgo...`
 
-### 9.3 Audio Models
+### 10.3 Audio Models
 
 Audio models transcribe and understand spoken content.
 
@@ -2419,7 +2609,7 @@ curl http://localhost:8080/v1/chat/completions \
 - `data` - Base64-encoded audio data
 - `format` - Audio format (currently `wav` supported)
 
-### 9.4 Plain Base64 Format
+### 10.4 Plain Base64 Format
 
 For simpler integrations, Kronk also accepts plain base64 as the message
 content (without the structured OpenAI format):
@@ -2442,7 +2632,7 @@ Kronk auto-detects the media type from the binary header:
 - PNG: starts with `89 50 4E 47`
 - WAV: starts with `RIFF`
 
-### 9.5 Configuration for Multi-Modal Models
+### 10.5 Configuration for Multi-Modal Models
 
 Vision and audio models have specific configuration requirements:
 
@@ -2460,7 +2650,7 @@ models:
 - `n_seq_max` creates model instances in a pool (not batch parallelism)
 - Each request needs exclusive model context for media embedding
 
-### 9.6 Memory Requirements
+### 10.6 Memory Requirements
 
 Vision and audio models require additional memory for the projector:
 
@@ -2484,14 +2674,14 @@ KV cache (8K):     ~0.6 GB
 Total:             ~9.4 GB
 ```
 
-### 9.7 Limitations
+### 10.7 Limitations
 
 - Vision/audio models cannot use batch processing (sequential only)
 - Each request gets exclusive model context
 - Message caching (SPC/IMC) not supported for media requests
 - Processing time varies with image resolution and audio duration
 
-### 9.8 Example: Image Analysis
+### 10.8 Example: Image Analysis
 
 Complete example analyzing an image:
 
@@ -2520,7 +2710,7 @@ curl http://localhost:8080/v1/chat/completions \
   }'
 ```
 
-### 9.9 Example: Audio Transcription
+### 10.9 Example: Audio Transcription
 
 Complete example transcribing audio:
 
@@ -2551,14 +2741,14 @@ curl http://localhost:8080/v1/chat/completions \
 
 ---
 
-_Next: [Chapter 10: Security & Authentication](#chapter-10-security--authentication)_
+_Next: [Chapter 11: Security & Authentication](#chapter-11-security--authentication)_
 
-## Chapter 10: Security & Authentication
+## Chapter 11: Security & Authentication
 
 Kronk provides JWT-based authentication and authorization with per-endpoint
 rate limiting. When enabled, all API requests require a valid token.
 
-### 10.1 Enabling Authentication
+### 11.1 Enabling Authentication
 
 **Start Server with Auth Enabled:**
 
@@ -2584,7 +2774,7 @@ On first startup with authentication enabled, Kronk automatically:
 
 The admin token is stored at `~/.kronk/keys/master.jwt`.
 
-### 10.2 Using the Admin Token
+### 11.2 Using the Admin Token
 
 The admin token is required for all security management operations.
 
@@ -2600,7 +2790,7 @@ export KRONK_TOKEN=$(cat ~/.kronk/keys/master.jwt)
 - Add and remove signing keys
 - Access all endpoints without rate limits
 
-### 10.3 Key Management
+### 11.3 Key Management
 
 Private keys sign JWT tokens. Multiple keys allow token rotation without
 invalidating all existing tokens.
@@ -2646,7 +2836,7 @@ kronk security key create --local
 kronk security key delete --keyid <keyid> --local
 ```
 
-### 10.4 Creating User Tokens
+### 11.4 Creating User Tokens
 
 Create tokens with specific endpoint access and optional rate limits.
 
@@ -2683,7 +2873,7 @@ kronk security token create \
 - `rerank` - Reranking API
 - `messages` - Anthropic Messages API
 
-### 10.5 Token Examples
+### 11.5 Token Examples
 
 **Unlimited Access to All Endpoints (24 hours):**
 
@@ -2727,7 +2917,7 @@ TOKEN:
 eyJhbGciOiJSUzI1NiIsImtpZCI6ImExYjJjM2Q0Li4uIiwidHlwIjoiSldUIn0...
 ```
 
-### 10.6 Using Tokens in API Requests
+### 11.6 Using Tokens in API Requests
 
 Pass the token in the `Authorization` header with the `Bearer` prefix.
 
@@ -2770,7 +2960,7 @@ response = client.chat.completions.create(
 )
 ```
 
-### 10.7 Authorization Flow
+### 11.7 Authorization Flow
 
 When a request arrives:
 
@@ -2787,7 +2977,7 @@ When a request arrives:
 - `403 Forbidden` - Token lacks access to the endpoint
 - `429 Too Many Requests` - Rate limit exceeded
 
-### 10.8 Rate Limiting
+### 11.8 Rate Limiting
 
 Rate limits are enforced per token (identified by the token's subject claim).
 
@@ -2806,7 +2996,7 @@ Counters persist across server restarts.
 
 Admin tokens (like `master.jwt`) bypass all rate limiting.
 
-### 10.9 Configuration Reference
+### 11.9 Configuration Reference
 
 **Server Flags:**
 
@@ -2820,7 +3010,7 @@ Admin tokens (like `master.jwt`) bypass all rate limiting.
 - `KRONK_WEB_API_HOST` - Server address for CLI web mode
   (default: `localhost:8080`)
 
-### 10.10 Security Best Practices
+### 11.10 Security Best Practices
 
 **Token Management:**
 
@@ -2852,14 +3042,14 @@ Admin tokens (like `master.jwt`) bypass all rate limiting.
 
 ---
 
-_Next: [Chapter 11: Browser UI (BUI)](#chapter-11-browser-ui-bui)_
+_Next: [Chapter 12: Browser UI (BUI)](#chapter-12-browser-ui-bui)_
 
-## Chapter 11: Browser UI (BUI)
+## Chapter 12: Browser UI (BUI)
 
 Kronk includes a web-based interface for managing models, libraries,
 security, and server configuration without using the command line.
 
-### 11.1 Accessing the BUI
+### 12.1 Accessing the BUI
 
 The BUI is served from the same port as the API.
 
@@ -2871,7 +3061,7 @@ http://localhost:8080
 
 The BUI automatically loads when you navigate to the server root.
 
-### 11.2 Downloading Libraries
+### 12.2 Downloading Libraries
 
 Before running inference, you need the llama.cpp libraries.
 
@@ -2892,7 +3082,7 @@ If auto-detection is incorrect, you can specify:
 - Architecture (amd64, arm64)
 - Operating system
 
-### 11.3 Downloading Models
+### 12.3 Downloading Models
 
 **Browse the Catalog:**
 
@@ -2918,7 +3108,7 @@ The BUI shows real-time download progress including:
 Navigate to the **Models** page to see all downloaded models and their
 status.
 
-### 11.4 Managing Keys and Tokens
+### 12.4 Managing Keys and Tokens
 
 When authentication is enabled, use the BUI to manage security.
 
@@ -2939,7 +3129,7 @@ When authentication is enabled, use the BUI to manage security.
 **Note:** You must provide an admin token in the BUI settings to access
 security management features.
 
-### 11.5 Other Screens
+### 12.5 Other Screens
 
 **Dashboard:**
 
@@ -2962,13 +3152,13 @@ Configure BUI preferences:
 
 ---
 
-_Next: [Chapter 12: Client Integration](#chapter-12-client-integration)_
+_Next: [Chapter 13: Client Integration](#chapter-13-client-integration)_
 
-## Chapter 12: Client Integration
+## Chapter 13: Client Integration
 
 Kronk's OpenAI-compatible API works with popular AI clients and tools.
 
-### 12.1 OpenWebUI
+### 13.1 OpenWebUI
 
 OpenWebUI is a self-hosted chat interface that works with Kronk.
 
@@ -2992,7 +3182,7 @@ http://localhost:8080/v1
 - System prompts
 - Conversation history
 
-### 12.2 Cline
+### 13.2 Cline
 
 Cline is a VS Code extension for AI-assisted coding.
 
@@ -3041,7 +3231,7 @@ IMC is especially beneficial for Cline's iterative coding workflow.
 
 _Note: Don't use R1 Message formats when using KMS._
 
-### 12.4 Python OpenAI SDK
+### 13.4 Python OpenAI SDK
 
 Use the official OpenAI Python library with Kronk.
 
@@ -3075,7 +3265,7 @@ for chunk in response:
         print(chunk.choices[0].delta.content, end="")
 ```
 
-### 12.5 curl and HTTP Clients
+### 13.5 curl and HTTP Clients
 
 Any HTTP client can call Kronk's REST API directly.
 
@@ -3104,7 +3294,7 @@ data: {"id":"...","choices":[{"delta":{"content":"!"}}],...}
 data: [DONE]
 ```
 
-### 12.6 LangChain
+### 13.6 LangChain
 
 Use LangChain with Kronk via the OpenAI integration.
 
@@ -3132,14 +3322,14 @@ print(response.content)
 
 ---
 
-_Next: [Chapter 13: Observability](#chapter-13-observability)_
+_Next: [Chapter 14: Observability](#chapter-14-observability)_
 
-## Chapter 13: Observability
+## Chapter 14: Observability
 
 Kronk provides comprehensive observability through distributed tracing,
 Prometheus metrics, pprof profiling, and real-time visualizations.
 
-### 13.1 Debug Server
+### 14.1 Debug Server
 
 Kronk runs a separate debug server for observability endpoints, isolated
 from the main API for security.
@@ -3162,7 +3352,7 @@ export KRONK_DEBUG_HOST=localhost:9090
 kronk server start
 ```
 
-### 13.2 Debug Endpoints
+### 14.2 Debug Endpoints
 
 The debug server exposes these endpoints:
 
@@ -3188,7 +3378,7 @@ http://localhost:8090/debug/statsviz
 
 Provides live charts for memory, goroutines, GC, and more.
 
-### 13.3 Health Check Endpoints
+### 14.3 Health Check Endpoints
 
 Available on the main API port (no authentication required):
 
@@ -3217,7 +3407,7 @@ curl http://localhost:8080/v1/readiness
 
 Returns 200 OK when the server is ready to accept requests.
 
-### 13.4 Prometheus Metrics
+### 14.4 Prometheus Metrics
 
 Kronk exposes detailed inference metrics in Prometheus format.
 
@@ -3257,7 +3447,7 @@ Token usage:
 - `usage_total_tokens_avg`, `_min`, `_max`
 - `usage_tokens_per_second_avg`, `_min`, `_max`
 
-### 13.5 Prometheus Integration
+### 14.5 Prometheus Integration
 
 **Example Prometheus Configuration:**
 
@@ -3296,7 +3486,7 @@ Error rate:
 rate(errors[5m]) / rate(requests[5m])
 ```
 
-### 13.6 Distributed Tracing with Tempo
+### 14.6 Distributed Tracing with Tempo
 
 Kronk supports OpenTelemetry tracing with Grafana Tempo integration.
 
@@ -3337,7 +3527,7 @@ Health check endpoints are automatically excluded from tracing:
 - `/v1/liveness`
 - `/v1/readiness`
 
-### 13.7 Tracing Architecture
+### 14.7 Tracing Architecture
 
 **Request Flow with Tracing:**
 
@@ -3377,7 +3567,7 @@ Client Request
 - Prefill and generation phases
 - Token streaming
 
-### 13.8 Tempo Setup with Docker
+### 14.8 Tempo Setup with Docker
 
 **Run Tempo Locally:**
 
@@ -3404,7 +3594,7 @@ docker run -d --name grafana \
 3. Set URL: `http://tempo:3200`
 4. Save and explore traces
 
-### 13.9 pprof Profiling
+### 14.9 pprof Profiling
 
 Use Go's pprof tools for performance analysis.
 
@@ -3435,7 +3625,7 @@ go tool pprof -http=:8081 \
 
 Opens interactive web UI with flame graph visualization.
 
-### 13.10 Statsviz Real-Time Monitoring
+### 14.10 Statsviz Real-Time Monitoring
 
 Statsviz provides live runtime visualizations in your browser.
 
@@ -3456,7 +3646,7 @@ http://localhost:8090/debug/statsviz
 Useful for real-time monitoring during load testing or debugging
 memory issues.
 
-### 13.11 Logging
+### 14.11 Logging
 
 Kronk logs structured JSON to stdout by default.
 
@@ -3481,7 +3671,7 @@ Never enable in production.
 export KRONK_INSECURE_LOGGING=true
 ```
 
-### 13.12 Configuration Reference
+### 14.12 Configuration Reference
 
 **Debug Server:**
 
@@ -3506,13 +3696,13 @@ export KRONK_INSECURE_LOGGING=true
 
 ---
 
-_Next: [Chapter 14: Troubleshooting](#chapter-14-troubleshooting)_
+_Next: [Chapter 15: Troubleshooting](#chapter-15-troubleshooting)_
 
-## Chapter 14: Troubleshooting
+## Chapter 15: Troubleshooting
 
 This chapter covers common issues, their causes, and solutions.
 
-### 14.1 Library Issues
+### 15.1 Library Issues
 
 **Error: "unable to load library"**
 
@@ -3551,7 +3741,7 @@ KRONK_PROCESSOR=cuda kronk libs --local
 KRONK_PROCESSOR=cpu kronk libs --local
 ```
 
-### 14.2 Model Loading Failures
+### 15.2 Model Loading Failures
 
 **Error: "unable to load model"**
 
@@ -3589,7 +3779,7 @@ Ensure templates are downloaded:
 kronk catalog pull-templates --local
 ```
 
-### 14.3 Memory Errors
+### 15.3 Memory Errors
 
 **Error: "unable to init context" or "unable to get memory"**
 
@@ -3638,7 +3828,7 @@ The request plus context exceeds the configured context window.
 - Increase `context_window` in model config
 - Enable YaRN for extended context (see Chapter 6)
 
-### 14.4 Request Timeouts
+### 15.4 Request Timeouts
 
 **Error: "context deadline exceeded"**
 
@@ -3667,7 +3857,7 @@ export KRONK_READ_TIMEOUT=5m
 export KRONK_WRITE_TIMEOUT=30m
 ```
 
-### 14.5 Authentication Errors
+### 15.5 Authentication Errors
 
 **Error: "unauthorized: no authorization header"**
 
@@ -3734,7 +3924,7 @@ kronk security token create \
   --endpoints "chat-completions:10000/day"
 ```
 
-### 14.6 Streaming Issues
+### 15.6 Streaming Issues
 
 **Problem: Streaming stops mid-response**
 
@@ -3761,7 +3951,7 @@ data: {"id":"...","choices":[...]}\n\n
 
 Each event is prefixed with `data: ` and ends with two newlines.
 
-### 14.7 Performance Issues
+### 15.7 Performance Issues
 
 **Problem: Slow time to first token (TTFT)**
 
@@ -3818,7 +4008,7 @@ models:
     gpu_layers: 99 # Offload all layers to GPU
 ```
 
-### 14.8 Viewing Logs
+### 15.8 Viewing Logs
 
 **Run server in foreground:**
 
@@ -3850,7 +4040,7 @@ Shows low-level inference engine messages.
 kronk server start --llama-log 0
 ```
 
-### 14.9 Common Error Messages
+### 15.9 Common Error Messages
 
 | Error                  | Cause                  | Solution               |
 | ---------------------- | ---------------------- | ---------------------- |
@@ -3863,7 +4053,7 @@ kronk server start --llama-log 0
 | `context window full`  | Input too large        | Reduce input size      |
 | `NBatch overflow`      | Batch too large        | Reduce `n_batch`       |
 
-### 14.10 Getting Help
+### 15.10 Getting Help
 
 **Check server status:**
 
@@ -3902,14 +4092,14 @@ Include the following when reporting bugs:
 
 ---
 
-_Next: [Chapter 15: Developer Guide](#chapter-15-developer-guide)_
+_Next: [Chapter 16: Developer Guide](#chapter-16-developer-guide)_
 
-## Chapter 15: Developer Guide
+## Chapter 16: Developer Guide
 
 This chapter covers development workflows, build commands, and code
 conventions for contributors to the Kronk project.
 
-### 15.1 Quick Reference
+### 16.1 Quick Reference
 
 Here is a quick chart of some of the more imporant make commands.
 
@@ -3926,7 +4116,7 @@ Here is a quick chart of some of the more imporant make commands.
 | Lint            | `staticcheck ./...`                                 |
 | Developer setup | `make setup` (configures git hooks)                 |
 
-### 15.2 Build & Test Commands
+### 16.2 Build & Test Commands
 
 **Install CLI locally:**
 
@@ -3960,7 +4150,7 @@ make test
 go test -v -count=1 -run TestName ./sdk/kronk/...
 ```
 
-### 15.3 Developer Setup
+### 16.3 Developer Setup
 
 Configure git hooks for automatic pre-commit checks:
 
@@ -3973,7 +4163,7 @@ This enables a pre-commit hook that automatically runs:
 - `make kronk-docs` - Regenerates documentation
 - `make bui-build` - Rebuilds the BUI frontend
 
-### 15.4 Project Architecture
+### 16.4 Project Architecture
 
 **Directory Structure:**
 
@@ -3992,7 +4182,7 @@ This enables a pre-commit hook that automatically runs:
 Kronk uses [yzma](https://github.com/hybridgroup/yzma) (llama.cpp Go bindings)
 for local inference with GGUF models.
 
-### 15.5 BUI Frontend Development
+### 16.5 BUI Frontend Development
 
 The Browser UI is a React application located at:
 
@@ -4068,7 +4258,7 @@ Generate all documentation:
 go run ./cmd/server/api/tooling/docs -pkg=all
 ```
 
-### 15.6 Code Style Guidelines
+### 16.6 Code Style Guidelines
 
 **Package Comments:**
 
@@ -4141,12 +4331,12 @@ default:
 }
 ```
 
-### 15.7 SDK Internals
+### 16.7 SDK Internals
 
 This section documents implementation details for developers working on
 the Kronk SDK packages.
 
-#### 15.7.1 Package Structure
+#### 16.7.1 Package Structure
 
 **sdk/kronk/** - Core API package:
 
@@ -4179,7 +4369,7 @@ the Kronk SDK packages.
 | `prompts.go`   | Prompt formatting                                     |
 | `rerank.go`    | Reranking inference                                   |
 
-#### 15.7.2 Streaming Architecture
+#### 16.7.2 Streaming Architecture
 
 **Response Streaming Pattern** (`response.go`, `concurrency.go`):
 
@@ -4195,7 +4385,7 @@ the Kronk SDK packages.
 - When `FinishReasonPtr != nil`, skip text/reasoning deltas (they duplicate previous content)
 - Always process tool calls even with FinishReason set (may only arrive in final chunk)
 
-#### 15.7.3 Model Pool Strategy
+#### 16.7.3 Model Pool Strategy
 
 `NSeqMax` behaves differently depending on model type:
 
@@ -4220,7 +4410,7 @@ if mi.IsEmbedModel || mi.IsRerankModel {
 }
 ```
 
-#### 15.7.4 Model Acquire/Release & Cleanup
+#### 16.7.4 Model Acquire/Release & Cleanup
 
 **Two-Stage Acquisition** (`acquire.go`):
 
@@ -4239,7 +4429,7 @@ if mi.IsEmbedModel || mi.IsRerankModel {
 
 **Key invariant:** `resetContext()` always runs before model release due to defer ordering.
 
-#### 15.7.5 Batch Engine Internals
+#### 16.7.5 Batch Engine Internals
 
 **ChatStreaming Decision Logic** (`chat.go`):
 
@@ -4281,13 +4471,13 @@ Sequences are isolated partitions in the shared KV cache memory. Slot seqIDs
 are offset when caching is enabled (both SPC and IMC use seqs 0 to
 MaxCacheSessions-1).
 
-#### 15.7.6 Context Pooling
+#### 16.7.6 Context Pooling
 
 - `llama.Context` is created once in `NewModel` and reused across requests
 - Call `resetContext()` between requests to clear KV cache
 - Avoids Vulkan memory fragmentation from repeated context alloc/dealloc
 
-#### 15.7.7 IMC Implementation Details
+#### 16.7.7 IMC Implementation Details
 
 **Critical Implementation Details:**
 
@@ -4316,7 +4506,7 @@ type imcSession struct {
 }
 ```
 
-#### 15.7.8 Tool Call Internals
+#### 16.7.8 Tool Call Internals
 
 **chatMessage Unmarshaling** (`models.go`):
 
@@ -4328,7 +4518,7 @@ type imcSession struct {
 - Custom type that marshals to JSON string (OpenAI spec)
 - Unmarshals from either string or object for non-compliant clients
 
-#### 15.7.9 Logprobs Implementation
+#### 16.7.9 Logprobs Implementation
 
 **Implementation** (`logprobs.go`):
 
@@ -4338,7 +4528,7 @@ type imcSession struct {
 
 **Critical:** Logprobs must be extracted **before** `llama.SamplerAccept()` is called.
 
-### 15.8 API Handler Notes
+### 16.8 API Handler Notes
 
 **Input Format Conversion** (`cmd/server/app/domain/`):
 
@@ -4346,7 +4536,7 @@ Both streaming and non-streaming Response APIs must call
 `convertInputToMessages(d)` to handle the OpenAI Responses `input` field
 format.
 
-### 15.9 Reference Threads
+### 16.9 Reference Threads
 
 See `THREADS.md` for important past conversations and decisions worth
 preserving.

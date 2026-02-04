@@ -594,7 +594,7 @@ func (m *Model) extendTokensInCache(ctx context.Context, tokens []llama.Token, s
 	seqIDs := []llama.SeqId{seqID}
 
 	for i := 0; i < nTokens; i += nBatch {
-		batchClear(&batch)
+		batch.Clear()
 
 		end := min(i+nBatch, nTokens)
 
@@ -605,7 +605,7 @@ func (m *Model) extendTokensInCache(ctx context.Context, tokens []llama.Token, s
 			// Only compute logits for the last token of the last chunk.
 			logits := j == nTokens-1
 
-			batchAdd(&batch, tokens[j], pos, seqIDs, logits)
+			batch.Add(tokens[j], pos, seqIDs, logits)
 		}
 
 		if _, err := llama.Decode(m.lctx, batch); err != nil {
@@ -652,13 +652,13 @@ func (m *Model) addTokensToCache(ctx context.Context, tokens []llama.Token, seqI
 	seqIDs := []llama.SeqId{seqID}
 
 	for i := 0; i < nTokens; i += nBatch {
-		batchClear(&batch)
+		batch.Clear()
 
 		end := min(i+nBatch, nTokens)
 		for j := i; j < end; j++ {
 			// Only compute logits for the last token of the last chunk.
 			logits := j == nTokens-1
-			batchAdd(&batch, tokens[j], llama.Pos(j), seqIDs, logits)
+			batch.Add(tokens[j], llama.Pos(j), seqIDs, logits)
 		}
 
 		if _, err := llama.Decode(m.lctx, batch); err != nil {

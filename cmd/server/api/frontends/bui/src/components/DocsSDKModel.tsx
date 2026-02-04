@@ -34,14 +34,6 @@ export default function DocsSDKModel() {
               <p className="doc-description">CheckModel is check if the downloaded model is valid based on it's sha file. If no sha file exists, this check will return with no error.</p>
             </div>
 
-            <div className="doc-section" id="func-initgrammarextensions">
-              <h4>InitGrammarExtensions</h4>
-              <pre className="code-block">
-                <code>func InitGrammarExtensions(libraryLocation string) error</code>
-              </pre>
-              <p className="doc-description">InitGrammarExtensions initializes the additional FFI bindings needed for proper grammar handling. This must be called after llama.Init().</p>
-            </div>
-
             <div className="doc-section" id="func-newgrammarsampler">
               <h4>NewGrammarSampler</h4>
               <pre className="code-block">
@@ -119,43 +111,43 @@ export default function DocsSDKModel() {
               <h4>Config</h4>
               <pre className="code-block">
                 <code>{`type Config struct {
-	Log                  Logger
-	ModelFiles           []string
-	ProjFile             string
-	JinjaFile            string
-	Device               string
-	ContextWindow        int
-	NBatch               int
-	NUBatch              int
-	NThreads             int
-	NThreadsBatch        int
+	CacheMinTokens       int
 	CacheTypeK           GGMLType
 	CacheTypeV           GGMLType
+	ContextWindow        int
+	DefaultParams        Params
+	Device               string
 	FlashAttention       FlashAttentionType
-	UseDirectIO          bool
 	IgnoreIntegrityCheck bool
+	IncrementalCache     bool
+	InsecureLogging      bool
+	JinjaFile            string
+	Log                  Logger
+	MaxCacheSessions     int
+	ModelFiles           []string
+	NBatch               int
+	NGpuLayers           *int
 	NSeqMax              int
+	NThreads             int
+	NThreadsBatch        int
+	NUBatch              int
 	OffloadKQV           *bool
 	OpOffload            *bool
-	NGpuLayers           *int
-	SplitMode            SplitMode
-	SystemPromptCache    bool
-	IncrementalCache     bool
-	MaxCacheSessions     int
-	CacheMinTokens       int
-	InsecureLogging      bool
-	RopeScaling          RopeScalingType
+	ProjFile             string
 	RopeFreqBase         *float32
 	RopeFreqScale        *float32
-	YarnExtFactor        *float32
+	RopeScaling          RopeScalingType
+	SplitMode            SplitMode
+	SystemPromptCache    bool
+	UseDirectIO          bool
 	YarnAttnFactor       *float32
 	YarnBetaFast         *float32
 	YarnBetaSlow         *float32
+	YarnExtFactor        *float32
 	YarnOrigCtx          *int
-	DefaultParams        Params
 }`}</code>
               </pre>
-              <p className="doc-description">Config represents model level configuration. These values if configured incorrectly can cause the system to panic. The defaults are used when these values are set to 0. ModelInstances is the number of instances of the model to create. Unless you have more than 1 GPU, the recommended number of instances is 1. ModelFiles is the path to the model files. This is mandatory to provide. ProjFiles is the path to the projection files. This is mandatory for media based models like vision and audio. JinjaFile is the path to the jinja file. This is not required and can be used if you want to override the templated provided by the model metadata. Device is the device to use for the model. If not set, the default device will be used. To see what devices are available, run the following command which will be found where you installed llama.cpp. $ llama-bench --list-devices ContextWindow (often referred to as context length) is the maximum number of tokens that a large language model can process and consider at one time when generating a response. It defines the model's effective "memory" for a single conversation or text generation task. When set to 0, the default value is 4096. NBatch is the logical batch size or the maximum number of tokens that can be in a single forward pass through the model at any given time. It defines the maximum capacity of the processing batch. If you are processing a very long prompt or multiple prompts simultaneously, the total number of tokens processed in one go will not exceed NBatch. Increasing n_batch can improve performance (throughput) if your hardware can handle it, as it better utilizes parallel computation. However, a very high n_batch can lead to out-of-memory errors on systems with limited VRAM. When set to 0, the default value is 2048. NUBatch is the physical batch size or the maximum number of tokens processed together during the initial prompt processing phase (also called "prompt ingestion") to populate the KV cache. It specifically optimizes the initial loading of prompt tokens into the KV cache. If a prompt is longer than NUBatch, it will be broken down and processed in chunks of n_ubatch tokens sequentially. This parameter is crucial for tuning performance on specific hardware (especially GPUs) because different values might yield better prompt processing times depending on the memory architecture. When set to 0, the default value is 512. NThreads is the number of threads to use for generation. When set to 0, the default llama.cpp value is used. NThreadsBatch is the number of threads to use for batch processing. When set to 0, the default llama.cpp value is used. CacheTypeK is the data type for the K (key) cache. This controls the precision of the key vectors in the KV cache. Lower precision types (like Q8_0 or Q4_0) reduce memory usage but may slightly affect quality. When set to GGMLTypeAuto or left as zero value, the default llama.cpp value (F16) is used. CacheTypeV is the data type for the V (value) cache. This controls the precision of the value vectors in the KV cache. When set to GGMLTypeAuto or left as zero value, the default llama.cpp value (F16) is used. FlashAttention controls Flash Attention mode. Flash Attention reduces memory usage and speeds up attention computation, especially for large context windows. When left as zero value, FlashAttentionEnabled is used (default on). Set to FlashAttentionDisabled to disable, or FlashAttentionAuto to let llama.cpp decide. IgnoreIntegrityCheck is a boolean that determines if the system should ignore a model integrity check before trying to use it. NSeqMax controls concurrency behavior based on model type. For text inference models, it sets the maximum number of sequences processed in parallel within a single model instance (batched inference). For sequential models (embeddings, reranking, vision, audio), it creates that many model instances in a pool for concurrent request handling. When set to 0, a default of 1 is used. OffloadKQV controls whether the KV cache is offloaded to the GPU. When nil or true, the KV cache is stored on the GPU (default behavior). Set to false to keep the KV cache on the CPU, which reduces VRAM usage but may slow inference. OpOffload controls whether host tensor operations are offloaded to the device (GPU). When nil or true, operations are offloaded (default behavior). Set to false to keep operations on the CPU. NGpuLayers is the number of model layers to offload to the GPU. When set to 0, all layers are offloaded (default). Set to -1 to keep all layers on CPU. Any positive value specifies the exact number of layers to offload. SplitMode controls how the model is split across multiple GPUs: - SplitModeNone (0): single GPU - SplitModeLayer (1): split layers and KV across GPUs - SplitModeRow (2): split layers and KV across GPUs with tensor parallelism (recommended for MoE models like Qwen3-MoE, Mixtral, DeepSeek) When not set, defaults to SplitModeRow for optimal MoE performance. SystemPromptCache enables caching of system prompt KV state. When enabled, the first message with role="system" is cached. The system prompt is evaluated once and its KV cache is copied to all client sequences on subsequent requests with the same system prompt. This avoids redundant prefill computation for applications that use a consistent system prompt. The cache is automatically invalidated and re-evaluated when the system prompt changes. IncrementalCache enables Incremental Message Caching (IMC) for agentic workflows. It caches all messages except the last one (which triggers generation) and extends the cache incrementally on each turn. This is ideal for agents like Cline or OpenCode where conversations grow monotonically. The cache is rebuilt from scratch when the message prefix changes (new thread). MaxCacheSessions sets the maximum number of concurrent cache sessions (users). Each session gets its own dedicated cache sequence, identified by the cache_id parameter in requests. When set to 0, defaults to 1 session. If all sessions are in use, new requests without an available slot bypass caching gracefully. The input request should have `cache_id` with a unique session/user ID to activate caching. Each unique ID gets its own dedicated cache sequence (up to max-cache-sessions). If no cache id is passed, the "default" id is used. On a multi-user system that will cause problems. SystemPromptCache and IncrementalCache are mutually exclusive. IncrementalCache includes the system prompt in its cached prefix, so enabling both is redundant and will return a validation error. CacheMinTokens sets the minimum token count required before caching. Messages shorter than this threshold are not cached, as the overhead of cache management may outweigh the prefill savings. When set to 0, defaults to 100 tokens. InsecureLogging enables logging of potentially sensitive data such as message content. This should only be enabled for debugging purposes in non-production environments. RopeScaling controls the RoPE scaling method for extended context support. Set to RopeScalingYaRN to enable YaRN scaling for models like Qwen3 that support extended context (e.g., 32k training → 131k with YaRN). RopeFreqBase overrides the RoPE base frequency. When nil, uses model default. Common values: 10000 (Llama), 1000000 (Qwen3). RopeFreqScale overrides the RoPE frequency scaling factor. When nil, uses model default or auto-calculates based on context extension ratio. YarnExtFactor sets the YaRN extrapolation mix factor. When nil, auto-calculated from context scaling ratio. Set to 0 to disable extrapolation. YarnAttnFactor sets the YaRN attention magnitude scaling factor. When nil, uses default of 1.0. YarnBetaFast sets the YaRN low correction dimension. When nil, uses default of 32.0. YarnBetaSlow sets the YaRN high correction dimension. When nil, uses default of 1.0. YarnOrigCtx sets the original training context size for YaRN scaling. When nil or 0, uses the model's native training context length from metadata.</p>
+              <p className="doc-description">Config represents model level configuration. These values if configured incorrectly can cause the system to panic. The defaults are used when these values are set to 0. CacheMinTokens sets the minimum token count required before caching. Messages shorter than this threshold are not cached, as the overhead of cache management may outweigh the prefill savings. When set to 0, defaults to 100 tokens. CacheTypeK is the data type for the K (key) cache. This controls the precision of the key vectors in the KV cache. Lower precision types (like Q8_0 or Q4_0) reduce memory usage but may slightly affect quality. When set to GGMLTypeAuto or left as zero value, the default llama.cpp value (F16) is used. CacheTypeV is the data type for the V (value) cache. This controls the precision of the value vectors in the KV cache. When set to GGMLTypeAuto or left as zero value, the default llama.cpp value (F16) is used. ContextWindow (often referred to as context length) is the maximum number of tokens that a large language model can process and consider at one time when generating a response. It defines the model's effective "memory" for a single conversation or text generation task. When set to 0, the default value is 4096. DefaultParams contains the default sampling parameters for requests. Device is the device to use for the model. If not set, the default device will be used. To see what devices are available, run the following command which will be found where you installed llama.cpp. $ llama-bench --list-devices FlashAttention controls Flash Attention mode. Flash Attention reduces memory usage and speeds up attention computation, especially for large context windows. When left as zero value, FlashAttentionEnabled is used (default on). Set to FlashAttentionDisabled to disable, or FlashAttentionAuto to let llama.cpp decide. IgnoreIntegrityCheck is a boolean that determines if the system should ignore a model integrity check before trying to use it. IncrementalCache enables Incremental Message Caching (IMC) for agentic workflows. It caches all messages except the last one (which triggers generation) and extends the cache incrementally on each turn. This is ideal for agents like Cline or OpenCode where conversations grow monotonically. The cache is rebuilt from scratch when the message prefix changes (new thread). InsecureLogging enables logging of potentially sensitive data such as message content. This should only be enabled for debugging purposes in non-production environments. JinjaFile is the path to the jinja file. This is not required and can be used if you want to override the templated provided by the model metadata. Log is the logger to use for model operations. MaxCacheSessions sets the maximum number of concurrent cache sessions (users). Each session gets its own dedicated cache sequence, identified by the cache_id parameter in requests. When set to 0, defaults to 1 session. If all sessions are in use, new requests without an available slot bypass caching gracefully. The input request should have `cache_id` with a unique session/user ID to activate caching. Each unique ID gets its own dedicated cache sequence (up to max-cache-sessions). If no cache id is passed, the "default" id is used. On a multi-user system that will cause problems. ModelFiles is the path to the model files. This is mandatory to provide. NBatch is the logical batch size or the maximum number of tokens that can be in a single forward pass through the model at any given time. It defines the maximum capacity of the processing batch. If you are processing a very long prompt or multiple prompts simultaneously, the total number of tokens processed in one go will not exceed NBatch. Increasing n_batch can improve performance (throughput) if your hardware can handle it, as it better utilizes parallel computation. However, a very high n_batch can lead to out-of-memory errors on systems with limited VRAM. When set to 0, the default value is 2048. NGpuLayers is the number of model layers to offload to the GPU. When set to 0, all layers are offloaded (default). Set to -1 to keep all layers on CPU. Any positive value specifies the exact number of layers to offload. NSeqMax controls concurrency behavior based on model type. For text inference models, it sets the maximum number of sequences processed in parallel within a single model instance (batched inference). For sequential models (embeddings, reranking, vision, audio), it creates that many model instances in a pool for concurrent request handling. When set to 0, a default of 1 is used. NThreads is the number of threads to use for generation. When set to 0, the default llama.cpp value is used. NThreadsBatch is the number of threads to use for batch processing. When set to 0, the default llama.cpp value is used. NUBatch is the physical batch size or the maximum number of tokens processed together during the initial prompt processing phase (also called "prompt ingestion") to populate the KV cache. It specifically optimizes the initial loading of prompt tokens into the KV cache. If a prompt is longer than NUBatch, it will be broken down and processed in chunks of n_ubatch tokens sequentially. This parameter is crucial for tuning performance on specific hardware (especially GPUs) because different values might yield better prompt processing times depending on the memory architecture. When set to 0, the default value is 512. OffloadKQV controls whether the KV cache is offloaded to the GPU. When nil or true, the KV cache is stored on the GPU (default behavior). Set to false to keep the KV cache on the CPU, which reduces VRAM usage but may slow inference. OpOffload controls whether host tensor operations are offloaded to the device (GPU). When nil or true, operations are offloaded (default behavior). Set to false to keep operations on the CPU. ProjFile is the path to the projection files. This is mandatory for media based models like vision and audio. RopeFreqBase overrides the RoPE base frequency. When nil, uses model default. Common values: 10000 (Llama), 1000000 (Qwen3). RopeFreqScale overrides the RoPE frequency scaling factor. When nil, uses model default or auto-calculates based on context extension ratio. RopeScaling controls the RoPE scaling method for extended context support. Set to RopeScalingYaRN to enable YaRN scaling for models like Qwen3 that support extended context (e.g., 32k training → 131k with YaRN). SplitMode controls how the model is split across multiple GPUs: - SplitModeNone (0): single GPU - SplitModeLayer (1): split layers and KV across GPUs - SplitModeRow (2): split layers and KV across GPUs with tensor parallelism (recommended for MoE models like Qwen3-MoE, Mixtral, DeepSeek) When not set, defaults to SplitModeRow for optimal MoE performance. SystemPromptCache enables caching of system prompt KV state. When enabled, the first message with role="system" is cached. The system prompt is evaluated once and its KV cache is copied to all client sequences on subsequent requests with the same system prompt. This avoids redundant prefill computation for applications that use a consistent system prompt. The cache is automatically invalidated and re-evaluated when the system prompt changes. SystemPromptCache and IncrementalCache are mutually exclusive. IncrementalCache includes the system prompt in its cached prefix, so enabling both is redundant and will return a validation error. UseDirectIO enables direct I/O for model loading. YarnAttnFactor sets the YaRN attention magnitude scaling factor. When nil, uses default of 1.0. YarnBetaFast sets the YaRN low correction dimension. When nil, uses default of 32.0. YarnBetaSlow sets the YaRN high correction dimension. When nil, uses default of 1.0. YarnExtFactor sets the YaRN extrapolation mix factor. When nil, auto-calculated from context scaling ratio. Set to 0 to disable extrapolation. YarnOrigCtx sets the original training context size for YaRN scaling. When nil or 0, uses the model's native training context length from metadata.</p>
             </div>
 
             <div className="doc-section" id="type-contentlogprob">
@@ -289,44 +281,21 @@ export default function DocsSDKModel() {
               <h4>Params</h4>
               <pre className="code-block">
                 <code>{`type Params struct {
-	// Stream determines whether to stream the response.
-	Stream bool \`json:"stream"\`
+	// AdaptivePDecay controls how quickly the Adaptive-P sampler adjusts.
+	// Default is 0.0.
+	AdaptivePDecay float32 \`json:"adaptive_p_decay"\`
 
-	// Temperature controls the randomness of the output. It rescales the
-	// probability distribution of possible next tokens. Default is 0.8.
-	Temperature float32 \`json:"temperature"\`
+	// AdaptivePTarget is the target probability threshold for Adaptive-P
+	// sampling. When > 0, enables adaptive sampling that dynamically adjusts
+	// based on the probability distribution to prevent predictable patterns.
+	// Default is 0.0 (disabled).
+	AdaptivePTarget float32 \`json:"adaptive_p_target"\`
 
-	// TopK limits the pool of possible next tokens to the K number of most
-	// probable tokens. If a model predicts 10,000 possible next tokens, setting
-	// top_k to 50 means only the 50 tokens with the highest probabilities are
-	// considered for selection (after temperature scaling). Default is 40.
-	TopK int32 \`json:"top_k"\`
+	// DryAllowedLen is the minimum n-gram length before DRY applies. Default is 2.
+	DryAllowedLen int32 \`json:"dry_allowed_length"\`
 
-	// TopP, also known as nucleus sampling, works differently than top_k by
-	// selecting a dynamic pool of tokens whose cumulative probability exceeds a
-	// threshold P. Instead of a fixed number of tokens (K), it selects the
-	// minimum number of most probable tokens required to reach the cumulative
-	// probability P. Default is 0.9.
-	TopP float32 \`json:"top_p"\`
-
-	// MinP is a dynamic sampling threshold that helps balance the coherence
-	// (quality) and diversity (creativity) of the generated text. Default is 0.0.
-	MinP float32 \`json:"min_p"\`
-
-	// MaxTokens is the maximum tokens for generation when not derived from the
-	// model's context window. Default is 4096.
-	MaxTokens int \`json:"max_tokens"\`
-
-	// RepeatPenalty applies a penalty to tokens that have already appeared in
-	// the output, reducing repetitive text. A value of 1.0 means no penalty.
-	// Values above 1.0 reduce repetition (e.g., 1.1 is a mild penalty, 1.5 is
-	// strong). Default is 1.0 which turns it off.
-	RepeatPenalty float32 \`json:"repeat_penalty"\`
-
-	// RepeatLastN specifies how many recent tokens to consider when applying
-	// the repetition penalty. A larger value considers more context but may be
-	// slower. Default is 64.
-	RepeatLastN int32 \`json:"repeat_last_n"\`
+	// DryBase is the base for exponential penalty growth in DRY. Default is 1.75.
+	DryBase float32 \`json:"dry_base"\`
 
 	// DryMultiplier controls the DRY (Don't Repeat Yourself) sampler which
 	// penalizes n-gram pattern repetition. 0.8 - Light repetition penalty,
@@ -334,39 +303,14 @@ export default function DocsSDKModel() {
 	// Default is 1.05.
 	DryMultiplier float32 \`json:"dry_multiplier"\`
 
-	// DryBase is the base for exponential penalty growth in DRY. Default is 1.75.
-	DryBase float32 \`json:"dry_base"\`
-
-	// DryAllowedLen is the minimum n-gram length before DRY applies. Default is 2.
-	DryAllowedLen int32 \`json:"dry_allowed_length"\`
-
 	// DryPenaltyLast limits how many recent tokens DRY considers. Default of 0
 	// means full context.
 	DryPenaltyLast int32 \`json:"dry_penalty_last_n"\`
 
-	// XtcProbability controls XTC (eXtreme Token Culling) which randomly removes
-	// tokens close to top probability. Must be > 0 to activate. Default is 0.0
-	// (disabled).
-	XtcProbability float32 \`json:"xtc_probability"\`
-
-	// XtcThreshold is the probability threshold for XTC culling. Default is 0.1.
-	XtcThreshold float32 \`json:"xtc_threshold"\`
-
-	// XtcMinKeep is the minimum tokens to keep after XTC culling. Default is 1.
-	XtcMinKeep uint32 \`json:"xtc_min_keep"\`
-
-	// Thinking determines if the model should think or not. It is used for most
-	// non-GPT models. It accepts 1, t, T, TRUE, true, True, 0, f, F, FALSE,
-	// false, False. Default is "true".
-	Thinking string \`json:"enable_thinking"\`
-
-	// ReasoningEffort is a string that specifies the level of reasoning effort
-	// to use for GPT models. Default is ReasoningEffortMedium.
-	ReasoningEffort string \`json:"reasoning_effort"\`
-
-	// ReturnPrompt determines whether to include the prompt in the final
-	// response. When set to true, the prompt will be included. Default is false.
-	ReturnPrompt bool \`json:"return_prompt"\`
+	// Grammar constrains output to match a GBNF grammar specification.
+	// When set, the model output will be forced to conform to this grammar.
+	// Use preset grammars like GrammarJSON or generate from JSON Schema.
+	Grammar string \`json:"grammar"\`
 
 	// IncludeUsage determines whether to include token usage information in
 	// streaming responses. Default is true.
@@ -377,15 +321,73 @@ export default function DocsSDKModel() {
 	// token. Default is false.
 	Logprobs bool \`json:"logprobs"\`
 
+	// MaxTokens is the maximum tokens for generation when not derived from the
+	// model's context window. Default is 4096.
+	MaxTokens int \`json:"max_tokens"\`
+
+	// MinP is a dynamic sampling threshold that helps balance the coherence
+	// (quality) and diversity (creativity) of the generated text. Default is 0.0.
+	MinP float32 \`json:"min_p"\`
+
+	// ReasoningEffort is a string that specifies the level of reasoning effort
+	// to use for GPT models. Default is ReasoningEffortMedium.
+	ReasoningEffort string \`json:"reasoning_effort"\`
+
+	// RepeatLastN specifies how many recent tokens to consider when applying
+	// the repetition penalty. A larger value considers more context but may be
+	// slower. Default is 64.
+	RepeatLastN int32 \`json:"repeat_last_n"\`
+
+	// RepeatPenalty applies a penalty to tokens that have already appeared in
+	// the output, reducing repetitive text. A value of 1.0 means no penalty.
+	// Values above 1.0 reduce repetition (e.g., 1.1 is a mild penalty, 1.5 is
+	// strong). Default is 1.0 which turns it off.
+	RepeatPenalty float32 \`json:"repeat_penalty"\`
+
+	// ReturnPrompt determines whether to include the prompt in the final
+	// response. When set to true, the prompt will be included. Default is false.
+	ReturnPrompt bool \`json:"return_prompt"\`
+
+	// Stream determines whether to stream the response.
+	Stream bool \`json:"stream"\`
+
+	// Temperature controls the randomness of the output. It rescales the
+	// probability distribution of possible next tokens. Default is 0.8.
+	Temperature float32 \`json:"temperature"\`
+
+	// Thinking determines if the model should think or not. It is used for most
+	// non-GPT models. It accepts 1, t, T, TRUE, true, True, 0, f, F, FALSE,
+	// false, False. Default is "true".
+	Thinking string \`json:"enable_thinking"\`
+
+	// TopK limits the pool of possible next tokens to the K number of most
+	// probable tokens. If a model predicts 10,000 possible next tokens, setting
+	// top_k to 50 means only the 50 tokens with the highest probabilities are
+	// considered for selection (after temperature scaling). Default is 40.
+	TopK int32 \`json:"top_k"\`
+
 	// TopLogprobs specifies how many of the most likely tokens to return at
 	// each position, along with their log probabilities. Must be between 0 and
 	// 5. Setting this to a value > 0 implicitly enables logprobs. Default is 0.
 	TopLogprobs int \`json:"top_logprobs"\`
 
-	// Grammar constrains output to match a GBNF grammar specification.
-	// When set, the model output will be forced to conform to this grammar.
-	// Use preset grammars like GrammarJSON or generate from JSON Schema.
-	Grammar string \`json:"grammar"\`
+	// TopP, also known as nucleus sampling, works differently than top_k by
+	// selecting a dynamic pool of tokens whose cumulative probability exceeds a
+	// threshold P. Instead of a fixed number of tokens (K), it selects the
+	// minimum number of most probable tokens required to reach the cumulative
+	// probability P. Default is 0.9.
+	TopP float32 \`json:"top_p"\`
+
+	// XtcMinKeep is the minimum tokens to keep after XTC culling. Default is 1.
+	XtcMinKeep uint32 \`json:"xtc_min_keep"\`
+
+	// XtcProbability controls XTC (eXtreme Token Culling) which randomly removes
+	// tokens close to top probability. Must be > 0 to activate. Default is 0.0
+	// (disabled).
+	XtcProbability float32 \`json:"xtc_probability"\`
+
+	// XtcThreshold is the probability threshold for XTC culling. Default is 0.1.
+	XtcThreshold float32 \`json:"xtc_threshold"\`
 }`}</code>
               </pre>
             </div>
@@ -856,10 +858,18 @@ ws ::= [ \\t\\n\\r]*\`
               <p className="doc-description">FinishReasons represent the different reasons a response can be finished.</p>
             </div>
 
-            <div className="doc-section" id="const-defdryallowedlen">
-              <h4>DefDryAllowedLen</h4>
+            <div className="doc-section" id="const-defadaptivepdecay">
+              <h4>DefAdaptivePDecay</h4>
               <pre className="code-block">
                 <code>{`const (
+	// DefAdaptivePDecay controls how quickly the Adaptive-P sampler adjusts.
+	DefAdaptivePDecay = 0.0
+
+	// DefAdaptivePTarget is the target probability threshold for Adaptive-P
+	// sampling. When > 0, enables adaptive sampling that dynamically adjusts
+	// based on the probability distribution to prevent predictable patterns.
+	DefAdaptivePTarget = 0.0
+
 	// DefDryAllowedLen is the minimum n-gram length before DRY applies.
 	DefDryAllowedLen = 2
 
@@ -887,13 +897,16 @@ ws ::= [ \\t\\n\\r]*\`
 	// When enabled, the response includes probability data for each generated token.
 	DefLogprobs = false
 
-	// DefTopLogprobs specifies how many of the most likely tokens to return at each
-	// position, along with their log probabilities. Must be between 0 and 5.
-	// Setting this to a value > 0 implicitly enables logprobs.
-	DefTopLogprobs = 0
+	// DefMaxTokens is the default maximum tokens for generation when not
+	// derived from the model's context window.
+	DefMaxTokens = 4096
 
 	// DefMaxTopLogprobs defines the number of maximum logprobs to use.
 	DefMaxTopLogprobs = 5
+
+	// DefMinP is a dynamic sampling threshold that helps balance the coherence
+	// (quality) and diversity (creativity) of the generated text.
+	DefMinP = 0.0
 
 	// DefReasoningEffort is a string that specifies the level of reasoning effort to
 	// use for GPT models.
@@ -922,9 +935,10 @@ ws ::= [ \\t\\n\\r]*\`
 	// selection (after temperature scaling). The rest are ignored.
 	DefTopK = 40
 
-	// DefMinP is a dynamic sampling threshold that helps balance the coherence
-	// (quality) and diversity (creativity) of the generated text.
-	DefMinP = 0.0
+	// DefTopLogprobs specifies how many of the most likely tokens to return at each
+	// position, along with their log probabilities. Must be between 0 and 5.
+	// Setting this to a value > 0 implicitly enables logprobs.
+	DefTopLogprobs = 0
 
 	// DefTopP, also known as nucleus sampling, works differently than top_k by
 	// selecting a dynamic pool of tokens whose cumulative probability exceeds a
@@ -941,10 +955,6 @@ ws ::= [ \\t\\n\\r]*\`
 
 	// DefXtcThreshold is the probability threshold for XTC culling.
 	DefXtcThreshold = 0.1
-
-	// DefMaxTokens is the default maximum tokens for generation when not
-	// derived from the model's context window.
-	DefMaxTokens = 4096
 )`}</code>
               </pre>
             </div>
@@ -1001,7 +1011,6 @@ ws ::= [ \\t\\n\\r]*\`
               <ul>
                 <li><a href="#func-addparams">AddParams</a></li>
                 <li><a href="#func-checkmodel">CheckModel</a></li>
-                <li><a href="#func-initgrammarextensions">InitGrammarExtensions</a></li>
                 <li><a href="#func-newgrammarsampler">NewGrammarSampler</a></li>
                 <li><a href="#func-parseggmltype">ParseGGMLType</a></li>
                 <li><a href="#func-newmodel">NewModel</a></li>
@@ -1084,7 +1093,7 @@ ws ::= [ \\t\\n\\r]*\`
                 <li><a href="#const-objectchatunknown">ObjectChatUnknown</a></li>
                 <li><a href="#const-roleuser">RoleUser</a></li>
                 <li><a href="#const-finishreasonstop">FinishReasonStop</a></li>
-                <li><a href="#const-defdryallowedlen">DefDryAllowedLen</a></li>
+                <li><a href="#const-defadaptivepdecay">DefAdaptivePDecay</a></li>
                 <li><a href="#const-thinkingenabled">ThinkingEnabled</a></li>
                 <li><a href="#const-reasoningeffortnone">ReasoningEffortNone</a></li>
               </ul>

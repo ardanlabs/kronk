@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
@@ -78,12 +77,6 @@ func Init(opts ...InitOption) error {
 
 		libraryLocation = libPath
 		llama.Init()
-
-		// Initialize grammar FFI extensions for constrained decoding.
-		if err := model.InitGrammarExtensions(libraryLocation); err != nil {
-			initErr = fmt.Errorf("init: unable to initialize grammar extensions: %w", err)
-			return
-		}
 
 		// ---------------------------------------------------------------------
 
