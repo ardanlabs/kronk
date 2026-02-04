@@ -53,30 +53,30 @@ type TemplateRetriever interface {
 
 // Model represents a model and provides a low-level API for working with it.
 type Model struct {
-	cfg             Config
-	log             Logger
-	model           llama.Model
-	vocab           llama.Vocab
-	ctxParams       llama.ContextParams
-	lctx            llama.Context
-	mem             llama.Memory
-	batch           *batchEngine
-	template        Template
-	compiledTmpl    *compiledTemplate
-	templateOnce    sync.Once
-	projFile        string
-	modelInfo       ModelInfo
-	activeStreams   atomic.Int32
-	unloaded        atomic.Bool
-	decodeMu    sync.Mutex
-	cacheMu     sync.RWMutex
-	imcSessions map[string]*imcSession // IMC sessions keyed by cache_id
-	imcNextSeq      llama.SeqId            // Next available cache sequence
-	imcMaxSeqs      int                    // Max IMC sessions from config
-	spcSessions     map[string]*spcSession // SPC sessions keyed by cache_id
-	spcNextSeq      llama.SeqId            // Next available cache sequence
-	spcMaxSeqs      int                    // Max SPC sessions from config
-	addBOSToken     bool                   // Whether to add BOS token (from model metadata)
+	cfg           Config
+	log           Logger
+	model         llama.Model
+	vocab         llama.Vocab
+	ctxParams     llama.ContextParams
+	lctx          llama.Context
+	mem           llama.Memory
+	batch         *batchEngine
+	template      Template
+	compiledTmpl  *compiledTemplate
+	templateOnce  sync.Once
+	projFile      string
+	modelInfo     ModelInfo
+	activeStreams atomic.Int32
+	unloaded      atomic.Bool
+	decodeMu      sync.Mutex
+	cacheMu       sync.RWMutex
+	imcSessions   map[string]*imcSession // IMC sessions keyed by cache_id
+	imcNextSeq    llama.SeqId            // Next available cache sequence
+	imcMaxSeqs    int                    // Max IMC sessions from config
+	spcSessions   map[string]*spcSession // SPC sessions keyed by cache_id
+	spcNextSeq    llama.SeqId            // Next available cache sequence
+	spcMaxSeqs    int                    // Max SPC sessions from config
+	addBOSToken   bool                   // Whether to add BOS token (from model metadata)
 }
 
 func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) (*Model, error) {
@@ -692,7 +692,7 @@ loop:
 // model's KV cache for autoregressive generation. Returns a sampler configured
 // with the request parameters, an optional grammar sampler, an initial batch
 // for generation, token counts, and any bitmaps that need to be freed by the caller.
-func (m *Model) processInputTokens(ctx context.Context, lctx llama.Context, mtmdCtx mtmd.Context, object string, prompt string, media [][]byte, params Params) (llama.Sampler, *GrammarSampler, llama.Batch, int, int, []mtmd.Bitmap) {
+func (m *Model) processInputTokens(ctx context.Context, lctx llama.Context, mtmdCtx mtmd.Context, object string, prompt string, media [][]byte, params Params) (llama.Sampler, *grammarSampler, llama.Batch, int, int, []mtmd.Bitmap) {
 	_, span := otel.AddSpan(ctx, "process-input-tokens")
 	defer span.End()
 
@@ -700,7 +700,7 @@ func (m *Model) processInputTokens(ctx context.Context, lctx llama.Context, mtmd
 	sampler := m.toSampler(params)
 
 	// Create grammar sampler if grammar is specified (kept separate from chain).
-	var grammarSampler *GrammarSampler
+	var grammarSampler *grammarSampler
 	if params.Grammar != "" {
 		grammarSampler = NewGrammarSampler(m.vocab, params.Grammar)
 	}
@@ -794,14 +794,14 @@ func (m *Model) nextBatch(token llama.Token) llama.Batch {
 // batchResponse decodes the current batch into the model context, samples the
 // next token, and returns its string representation. Returns io.EOF when an
 // end-of-generation token is sampled.
-func (m *Model) batchResponse(lctx llama.Context, batch llama.Batch, sampler llama.Sampler, grammarSampler *GrammarSampler, buf []byte) (string, llama.Token, error) {
+func (m *Model) batchResponse(lctx llama.Context, batch llama.Batch, sampler llama.Sampler, grammarSampler *grammarSampler, buf []byte) (string, llama.Token, error) {
 	llama.Decode(lctx, batch)
 	return m.sampleToken(lctx, sampler, grammarSampler, buf)
 }
 
 // sampleToken samples the next token from the current logits without decoding.
 // Use this after prefill when logits are already computed.
-func (m *Model) sampleToken(lctx llama.Context, sampler llama.Sampler, grammarSampler *GrammarSampler, buf []byte) (string, llama.Token, error) {
+func (m *Model) sampleToken(lctx llama.Context, sampler llama.Sampler, grammarSampler *grammarSampler, buf []byte) (string, llama.Token, error) {
 	// Sample with grammar constraints if available.
 	var token llama.Token
 	if grammarSampler != nil {

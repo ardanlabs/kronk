@@ -45,7 +45,7 @@ type slot struct {
 	job              *chatJob
 	proc             *processor
 	sampler          llama.Sampler
-	grammarSampler   *GrammarSampler // Separate grammar sampler (not in chain)
+	grammarSampler   *grammarSampler // Separate grammar sampler (not in chain)
 	nPast            llama.Pos
 	nPrompt          int
 	nDecoded         int

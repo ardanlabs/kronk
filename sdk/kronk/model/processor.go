@@ -45,7 +45,7 @@ type processor struct {
 	inPendingTag  bool
 
 	// Grammar sampler for constrained decoding (sequential path only).
-	grammarSampler *GrammarSampler
+	grammarSampler *grammarSampler
 }
 
 func newProcessor(m *Model) *processor {
