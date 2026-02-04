@@ -6,11 +6,22 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/hybridgroup/yzma/pkg/llama"
+	"github.com/hybridgroup/yzma/pkg/loader"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
+	"github.com/jupiterrider/ffi"
 	"github.com/nikolalohinski/gonja/v2"
+)
+
+var (
+	grammarInitDone bool
+	libraryLocation string
+	initOnce        sync.Once
+	initErr         error
 )
 
 type initOptions struct {
@@ -71,6 +82,12 @@ func Init(opts ...InitOption) error {
 		libraryLocation = libPath
 		llama.Init()
 
+		// Initialize grammar FFI extensions for constrained decoding.
+		if err := initGrammarExtensions(); err != nil {
+			initErr = fmt.Errorf("init: unable to initialize grammar extensions: %w", err)
+			return
+		}
+
 		// ---------------------------------------------------------------------
 
 		if o.logLevel < 1 || o.logLevel > 2 {
@@ -90,4 +107,30 @@ func Init(opts ...InitOption) error {
 	})
 
 	return initErr
+}
+
+// initGrammarExtensions initializes the additional FFI bindings needed for
+// proper grammar handling. This must be called after llama.Init().
+func initGrammarExtensions() error {
+	if grammarInitDone {
+		return nil
+	}
+
+	lib, err := loader.LoadLibrary(libraryLocation, "llama")
+	if err != nil {
+		return err
+	}
+
+	// LLAMA_API void llama_sampler_apply(struct llama_sampler * smpl, llama_token_data_array * cur_p);
+	var samplerApplyFunc ffi.Fun
+	if samplerApplyFunc, err = lib.Prep("llama_sampler_apply", &ffi.TypeVoid, &ffi.TypePointer, &ffi.TypePointer); err != nil {
+		return err
+	}
+
+	// Export to model package for use in grammar-constrained sampling.
+	model.SamplerApplyFunc = samplerApplyFunc
+
+	grammarInitDone = true
+
+	return nil
 }

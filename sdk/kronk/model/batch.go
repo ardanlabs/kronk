@@ -45,6 +45,7 @@ type slot struct {
 	job              *chatJob
 	proc             *processor
 	sampler          llama.Sampler
+	grammarSampler   *GrammarSampler // Separate grammar sampler (not in chain)
 	nPast            llama.Pos
 	nPrompt          int
 	nDecoded         int
@@ -96,6 +97,7 @@ func (s *slot) reset() {
 	s.nPrefilled = 0
 	s.logprobsData = nil
 	s.currentLogprob = nil
+	s.grammarSampler = nil // Freed in freeSlotResources
 
 	if s.proc != nil {
 		s.proc.resetState()
@@ -400,6 +402,11 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 	// Create sampler for this request.
 	s.sampler = e.model.toSampler(job.params)
 
+	// Create grammar sampler if grammar is specified (kept separate from chain).
+	if job.params.Grammar != "" {
+		s.grammarSampler = NewGrammarSampler(e.model.vocab, job.params.Grammar)
+	}
+
 	// Always clear the slot's sequence before starting to remove any stale KV data.
 	llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
 
@@ -540,8 +547,14 @@ func (e *batchEngine) addPrefillChunk(s *slot) bool {
 
 // processSlotToken handles a sampled token for a slot.
 func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
-	// Sample the next token.
-	token := llama.SamplerSample(s.sampler, e.model.lctx, s.iBatch)
+	// Sample the next token. If grammar is active, use grammar-aware sampling.
+	var token llama.Token
+	switch {
+	case s.grammarSampler != nil:
+		token = s.grammarSampler.SampleWithGrammar(e.model.lctx, s.sampler, s.iBatch)
+	default:
+		token = llama.SamplerSample(s.sampler, e.model.lctx, s.iBatch)
+	}
 
 	// Extract logprobs BEFORE accepting - Accept modifies sampler state.
 	// Reset currentLogprob each token; it's used for streaming.
@@ -555,6 +568,12 @@ func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 			s.currentLogprob = logprob
 			s.logprobsData = append(s.logprobsData, *logprob)
 		}
+	}
+
+	// Accept token on both samplers. Grammar sampler is accepted separately
+	// to avoid the crash that occurs when grammar is in the chain.
+	if s.grammarSampler != nil {
+		s.grammarSampler.Accept(token)
 	}
 
 	llama.SamplerAccept(s.sampler, token)
@@ -784,6 +803,11 @@ func (e *batchEngine) freeSlotResources(s *slot) {
 	if s.sampler != 0 {
 		llama.SamplerFree(s.sampler)
 		s.sampler = 0
+	}
+
+	if s.grammarSampler != nil {
+		s.grammarSampler.Free()
+		s.grammarSampler = nil
 	}
 }
 

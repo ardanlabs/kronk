@@ -124,6 +124,12 @@ make example-chat
 make example-embedding
 ```
 
+[GRAMMAR](examples/grammar/main.go) - This example shows how to use GBNF grammars to constrain model output.
+
+```shell
+make example-grammar
+```
+
 [QUESTION](examples/question/main.go) - This example shows you how to ask a simple question with the chat-completion api.
 
 ```shell

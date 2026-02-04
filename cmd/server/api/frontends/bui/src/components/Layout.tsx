@@ -100,6 +100,7 @@ const menuStructure: MenuCategory[] = [
           { page: 'docs-sdk-examples', label: 'Audio', hash: 'example-audio' },
           { page: 'docs-sdk-examples', label: 'Chat', hash: 'example-chat' },
           { page: 'docs-sdk-examples', label: 'Embedding', hash: 'example-embedding' },
+          { page: 'docs-sdk-examples', label: 'Grammar', hash: 'example-grammar' },
           { page: 'docs-sdk-examples', label: 'Question', hash: 'example-question' },
           { page: 'docs-sdk-examples', label: 'Rerank', hash: 'example-rerank' },
           { page: 'docs-sdk-examples', label: 'Response', hash: 'example-response' },

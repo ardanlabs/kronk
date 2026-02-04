@@ -417,8 +417,13 @@ func (m *Model) sequentialChatRequest(ctx context.Context, id string, lctx llama
 	ttftStart := time.Now()
 
 	// Process the prompt and get the first batch for the response.
-	sampler, batch, inputTokens, outputTokens, bitmaps := m.processInputTokens(ctx, lctx, mtmdCtx, object, prompt, media, params)
+	sampler, grammarSampler, batch, inputTokens, outputTokens, bitmaps := m.processInputTokens(ctx, lctx, mtmdCtx, object, prompt, media, params)
 	defer llama.SamplerFree(sampler)
+	defer func() {
+		if grammarSampler != nil {
+			grammarSampler.Free()
+		}
+	}()
 	defer func() {
 		for _, b := range bitmaps {
 			mtmd.BitmapFree(b)
@@ -455,6 +460,7 @@ func (m *Model) sequentialChatRequest(ctx context.Context, id string, lctx llama
 
 	// Create a processor to process the tokens.
 	processor := newProcessor(m)
+	processor.grammarSampler = grammarSampler
 
 	// Track whether this is the first iteration. After prefill, the logits are
 	// already computed so we sample directly without re-decoding the prompt.
@@ -684,14 +690,20 @@ loop:
 // processInputTokens handles the prefill phase for both text and media requests.
 // It tokenizes the prompt, processes any media attachments, and prepares the
 // model's KV cache for autoregressive generation. Returns a sampler configured
-// with the request parameters, an initial batch for generation, token counts,
-// and any bitmaps that need to be freed by the caller.
-func (m *Model) processInputTokens(ctx context.Context, lctx llama.Context, mtmdCtx mtmd.Context, object string, prompt string, media [][]byte, params Params) (llama.Sampler, llama.Batch, int, int, []mtmd.Bitmap) {
+// with the request parameters, an optional grammar sampler, an initial batch
+// for generation, token counts, and any bitmaps that need to be freed by the caller.
+func (m *Model) processInputTokens(ctx context.Context, lctx llama.Context, mtmdCtx mtmd.Context, object string, prompt string, media [][]byte, params Params) (llama.Sampler, *GrammarSampler, llama.Batch, int, int, []mtmd.Bitmap) {
 	_, span := otel.AddSpan(ctx, "process-input-tokens")
 	defer span.End()
 
 	// Apply any parameters to this request like temperature or top_p.
 	sampler := m.toSampler(params)
+
+	// Create grammar sampler if grammar is specified (kept separate from chain).
+	var grammarSampler *GrammarSampler
+	if params.Grammar != "" {
+		grammarSampler = NewGrammarSampler(m.vocab, params.Grammar)
+	}
 
 	// Tokenize the prompt to get the input token count.
 	tokens := llama.Tokenize(m.vocab, prompt, m.addBOSToken, true)
@@ -768,7 +780,7 @@ func (m *Model) processInputTokens(ctx context.Context, lctx llama.Context, mtmd
 		)
 	}
 
-	return sampler, batch, inputTokens, outputTokens, bitmaps
+	return sampler, grammarSampler, batch, inputTokens, outputTokens, bitmaps
 }
 
 // nextBatch wraps a single sampled token into a batch for the next
@@ -782,15 +794,27 @@ func (m *Model) nextBatch(token llama.Token) llama.Batch {
 // batchResponse decodes the current batch into the model context, samples the
 // next token, and returns its string representation. Returns io.EOF when an
 // end-of-generation token is sampled.
-func (m *Model) batchResponse(lctx llama.Context, batch llama.Batch, sampler llama.Sampler, buf []byte) (string, llama.Token, error) {
+func (m *Model) batchResponse(lctx llama.Context, batch llama.Batch, sampler llama.Sampler, grammarSampler *GrammarSampler, buf []byte) (string, llama.Token, error) {
 	llama.Decode(lctx, batch)
-	return m.sampleToken(lctx, sampler, buf)
+	return m.sampleToken(lctx, sampler, grammarSampler, buf)
 }
 
 // sampleToken samples the next token from the current logits without decoding.
 // Use this after prefill when logits are already computed.
-func (m *Model) sampleToken(lctx llama.Context, sampler llama.Sampler, buf []byte) (string, llama.Token, error) {
-	token := llama.SamplerSample(sampler, lctx, -1)
+func (m *Model) sampleToken(lctx llama.Context, sampler llama.Sampler, grammarSampler *GrammarSampler, buf []byte) (string, llama.Token, error) {
+	// Sample with grammar constraints if available.
+	var token llama.Token
+	if grammarSampler != nil {
+		token = grammarSampler.SampleWithGrammar(lctx, sampler, -1)
+	} else {
+		token = llama.SamplerSample(sampler, lctx, -1)
+	}
+
+	// Accept token on both samplers.
+	if grammarSampler != nil {
+		grammarSampler.Accept(token)
+	}
+	llama.SamplerAccept(sampler, token)
 
 	if llama.VocabIsEOG(m.vocab, token) {
 		return "", 0, io.EOF

@@ -597,6 +597,9 @@ example-chat:
 example-embedding:
 	CGO_ENABLED=0 go run examples/embedding/main.go
 
+example-grammar:
+	CGO_ENABLED=0 go run examples/grammar/main.go
+
 example-rerank:
 	CGO_ENABLED=0 go run examples/rerank/main.go
 

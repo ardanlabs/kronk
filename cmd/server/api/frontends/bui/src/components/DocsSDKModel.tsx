@@ -216,6 +216,16 @@ export default function DocsSDKModel() {
               <p className="doc-description">GGMLType represents a ggml data type for the KV cache. These values correspond to the ggml_type enum in llama.cpp.</p>
             </div>
 
+            <div className="doc-section" id="type-grammarsampler">
+              <h4>GrammarSampler</h4>
+              <pre className="code-block">
+                <code>{`type GrammarSampler struct {
+	// Has unexported fields.
+}`}</code>
+              </pre>
+              <p className="doc-description">GrammarSampler holds a separate grammar sampler that is NOT part of the main sampler chain. This matches llama.cpp's approach where grammar is managed separately and applied during sampling but with special handling for accept.</p>
+            </div>
+
             <div className="doc-section" id="type-logger">
               <h4>Logger</h4>
               <pre className="code-block">
@@ -273,6 +283,9 @@ export default function DocsSDKModel() {
               <h4>Params</h4>
               <pre className="code-block">
                 <code>{`type Params struct {
+	// Stream determines whether to stream the response.
+	Stream bool \`json:"stream"\`
+
 	// Temperature controls the randomness of the output. It rescales the
 	// probability distribution of possible next tokens. Default is 0.8.
 	Temperature float32 \`json:"temperature"\`
@@ -363,8 +376,10 @@ export default function DocsSDKModel() {
 	// 5. Setting this to a value > 0 implicitly enables logprobs. Default is 0.
 	TopLogprobs int \`json:"top_logprobs"\`
 
-	// Stream determines whether to stream the response.
-	Stream bool \`json:"stream"\`
+	// Grammar constrains output to match a GBNF grammar specification.
+	// When set, the model output will be forced to conform to this grammar.
+	// Use preset grammars like GrammarJSON or generate from JSON Schema.
+	Grammar string \`json:"grammar"\`
 }`}</code>
               </pre>
             </div>
@@ -599,6 +614,38 @@ export default function DocsSDKModel() {
               <p className="doc-description">UnmarshalYAML implements yaml.Unmarshaler to parse string values like "f16".</p>
             </div>
 
+            <div className="doc-section" id="method-grammarsampler-accept">
+              <h4>GrammarSampler.Accept</h4>
+              <pre className="code-block">
+                <code>func (gs *GrammarSampler) Accept(token llama.Token)</code>
+              </pre>
+              <p className="doc-description">Accept advances the grammar state machine after a token is selected.</p>
+            </div>
+
+            <div className="doc-section" id="method-grammarsampler-free">
+              <h4>GrammarSampler.Free</h4>
+              <pre className="code-block">
+                <code>func (gs *GrammarSampler) Free()</code>
+              </pre>
+              <p className="doc-description">Free releases the grammar sampler resources.</p>
+            </div>
+
+            <div className="doc-section" id="method-grammarsampler-reset">
+              <h4>GrammarSampler.Reset</h4>
+              <pre className="code-block">
+                <code>func (gs *GrammarSampler) Reset()</code>
+              </pre>
+              <p className="doc-description">Reset resets the grammar sampler state.</p>
+            </div>
+
+            <div className="doc-section" id="method-grammarsampler-samplewithgrammar">
+              <h4>GrammarSampler.SampleWithGrammar</h4>
+              <pre className="code-block">
+                <code>func (gs *GrammarSampler) SampleWithGrammar(ctx llama.Context, chainSampler llama.Sampler, idx int32) llama.Token</code>
+              </pre>
+              <p className="doc-description">SampleWithGrammar samples a token using the main sampler chain with grammar constraints applied first. This is the key integration point that: 1. Gets logits from the context 2. Builds a token_data_array 3. Applies grammar constraints (sets invalid tokens to -inf logits) 4. Copies modified logits back to context 5. Uses normal SamplerSample which reads from context The caller must still call Accept() on both the grammar sampler and the main sampler after selecting the token.</p>
+            </div>
+
             <div className="doc-section" id="method-model-chat">
               <h4>Model.Chat</h4>
               <pre className="code-block">
@@ -748,6 +795,55 @@ export default function DocsSDKModel() {
 
           <div className="card" id="constants">
             <h3>Constants</h3>
+
+            <div className="doc-section" id="const-grammarjson">
+              <h4>GrammarJSON</h4>
+              <pre className="code-block">
+                <code>{`const (
+	// GrammarJSON constrains output to valid JSON objects or arrays.
+	// Based on https://github.com/ggml-org/llama.cpp/blob/master/grammars/json.gbnf
+	GrammarJSON = \`root ::= object | array
+value ::= object | array | string | number | "true" | "false" | "null"
+object ::= "{" ws ( string ":" ws value ("," ws string ":" ws value)* )? ws "}"
+array ::= "[" ws ( value ("," ws value)* )? ws "]"
+string ::= "\\"" ([^"\\\\] | "\\\\" ["\\\\bfnrt/] | "\\\\u" [0-9a-fA-F]{4})* "\\""
+number ::= "-"? ("0" | [1-9][0-9]*) ("." [0-9]+)? ([eE] [+-]? [0-9]+)?
+ws ::= [ \\t\\n\\r]*\`
+
+	// GrammarJSONObject constrains output to valid JSON objects only.
+	// Based on https://github.com/ggml-org/llama.cpp/blob/master/grammars/json.gbnf
+	GrammarJSONObject = \`root ::= object
+value ::= object | array | string | number | "true" | "false" | "null"
+object ::= "{" ws ( string ":" ws value ("," ws string ":" ws value)* )? ws "}"
+array ::= "[" ws ( value ("," ws value)* )? ws "]"
+string ::= "\\"" ([^"\\\\] | "\\\\" ["\\\\bfnrt/] | "\\\\u" [0-9a-fA-F]{4})* "\\""
+number ::= "-"? ("0" | [1-9][0-9]*) ("." [0-9]+)? ([eE] [+-]? [0-9]+)?
+ws ::= [ \\t\\n\\r]*\`
+
+	// GrammarJSONArray constrains output to valid JSON arrays only.
+	// Based on https://github.com/ggml-org/llama.cpp/blob/master/grammars/json.gbnf
+	GrammarJSONArray = \`root ::= array
+value ::= object | array | string | number | "true" | "false" | "null"
+object ::= "{" ws ( string ":" ws value ("," ws string ":" ws value)* )? ws "}"
+array ::= "[" ws ( value ("," ws value)* )? ws "]"
+string ::= "\\"" ([^"\\\\] | "\\\\" ["\\\\bfnrt/] | "\\\\u" [0-9a-fA-F]{4})* "\\""
+number ::= "-"? ("0" | [1-9][0-9]*) ("." [0-9]+)? ([eE] [+-]? [0-9]+)?
+ws ::= [ \\t\\n\\r]*\`
+
+	// GrammarBoolean constrains output to "true" or "false".
+	GrammarBoolean = \`root ::= "true" | "false"\`
+
+	// GrammarYesNo constrains output to "yes" or "no".
+	GrammarYesNo = \`root ::= "yes" | "no"\`
+
+	// GrammarInteger constrains output to integer values.
+	GrammarInteger = \`root ::= "-"? ( "0" | [1-9][0-9]* )\`
+
+	// GrammarNumber constrains output to numeric values (int or float).
+	GrammarNumber = \`root ::= "-"? ( "0" | [1-9][0-9]* ) ( "." [0-9]+ )? ( [eE] [+-]? [0-9]+ )?\`
+)`}</code>
+              </pre>
+            </div>
 
             <div className="doc-section" id="const-objectchatunknown">
               <h4>ObjectChatUnknown</h4>
@@ -922,6 +1018,18 @@ export default function DocsSDKModel() {
               </pre>
             </div>
           </div>
+
+          <div className="card" id="variables">
+            <h3>Variables</h3>
+
+            <div className="doc-section" id="var-samplerapplyfunc">
+              <h4>SamplerApplyFunc</h4>
+              <pre className="code-block">
+                <code>{`var SamplerApplyFunc ffi.Fun`}</code>
+              </pre>
+              <p className="doc-description">SamplerApplyFunc holds the FFI function for llama_sampler_apply. This is set by the kronk package during initialization.</p>
+            </div>
+          </div>
         </div>
 
         <nav className="doc-sidebar">
@@ -950,6 +1058,7 @@ export default function DocsSDKModel() {
                 <li><a href="#type-embedusage">EmbedUsage</a></li>
                 <li><a href="#type-flashattentiontype">FlashAttentionType</a></li>
                 <li><a href="#type-ggmltype">GGMLType</a></li>
+                <li><a href="#type-grammarsampler">GrammarSampler</a></li>
                 <li><a href="#type-logger">Logger</a></li>
                 <li><a href="#type-logprobs">Logprobs</a></li>
                 <li><a href="#type-mediatype">MediaType</a></li>
@@ -984,6 +1093,10 @@ export default function DocsSDKModel() {
                 <li><a href="#method-ggmltype-string">GGMLType.String</a></li>
                 <li><a href="#method-ggmltype-toyzmatype">GGMLType.ToYZMAType</a></li>
                 <li><a href="#method-ggmltype-unmarshalyaml">GGMLType.UnmarshalYAML</a></li>
+                <li><a href="#method-grammarsampler-accept">GrammarSampler.Accept</a></li>
+                <li><a href="#method-grammarsampler-free">GrammarSampler.Free</a></li>
+                <li><a href="#method-grammarsampler-reset">GrammarSampler.Reset</a></li>
+                <li><a href="#method-grammarsampler-samplewithgrammar">GrammarSampler.SampleWithGrammar</a></li>
                 <li><a href="#method-model-chat">Model.Chat</a></li>
                 <li><a href="#method-model-chatstreaming">Model.ChatStreaming</a></li>
                 <li><a href="#method-model-config">Model.Config</a></li>
@@ -1008,12 +1121,19 @@ export default function DocsSDKModel() {
             <div className="doc-index-section">
               <a href="#constants" className="doc-index-header">Constants</a>
               <ul>
+                <li><a href="#const-grammarjson">GrammarJSON</a></li>
                 <li><a href="#const-objectchatunknown">ObjectChatUnknown</a></li>
                 <li><a href="#const-roleuser">RoleUser</a></li>
                 <li><a href="#const-finishreasonstop">FinishReasonStop</a></li>
                 <li><a href="#const-defdryallowedlen">DefDryAllowedLen</a></li>
                 <li><a href="#const-thinkingenabled">ThinkingEnabled</a></li>
                 <li><a href="#const-reasoningeffortnone">ReasoningEffortNone</a></li>
+              </ul>
+            </div>
+            <div className="doc-index-section">
+              <a href="#variables" className="doc-index-header">Variables</a>
+              <ul>
+                <li><a href="#var-samplerapplyfunc">SamplerApplyFunc</a></li>
               </ul>
             </div>
           </div>

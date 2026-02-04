@@ -130,6 +130,9 @@ const (
 )
 
 type Params struct {
+	// Stream determines whether to stream the response.
+	Stream bool `json:"stream"`
+
 	// Temperature controls the randomness of the output. It rescales the
 	// probability distribution of possible next tokens. Default is 0.8.
 	Temperature float32 `json:"temperature"`
@@ -220,8 +223,10 @@ type Params struct {
 	// 5. Setting this to a value > 0 implicitly enables logprobs. Default is 0.
 	TopLogprobs int `json:"top_logprobs"`
 
-	// Stream determines whether to stream the response.
-	Stream bool `json:"stream"`
+	// Grammar constrains output to match a GBNF grammar specification.
+	// When set, the model output will be forced to conform to this grammar.
+	// Use preset grammars like GrammarJSON or generate from JSON Schema.
+	Grammar string `json:"grammar"`
 }
 
 // String returns a string representation of the Params containing only
@@ -292,6 +297,9 @@ func (p Params) String() string {
 	if p.Stream {
 		fmt.Fprintf(&b, "stream[%v]\n", p.Stream)
 	}
+	if p.Grammar != "" {
+		fmt.Fprintf(&b, "grammar[enabled]\n")
+	}
 
 	return strings.TrimSuffix(b.String(), " ")
 }
@@ -361,6 +369,9 @@ func AddParams(params Params, d D) {
 	}
 	if params.Stream {
 		d["stream"] = params.Stream
+	}
+	if params.Grammar != "" {
+		d["grammar"] = params.Grammar
 	}
 }
 
@@ -555,6 +566,20 @@ func (m *Model) parseParams(d D) (Params, error) {
 		p.Stream = stream
 	}
 
+	if val, exists := d["grammar"]; exists {
+		if grammar, ok := val.(string); ok {
+			p.Grammar = grammar
+		}
+	}
+
+	if val, exists := d["json_schema"]; exists {
+		grammar, err := fromJSONSchema(val)
+		if err != nil {
+			return Params{}, fmt.Errorf("to-params: %w", err)
+		}
+		p.Grammar = grammar
+	}
+
 	return m.adjustParams(p), nil
 }
 
@@ -632,16 +657,26 @@ func (m *Model) toSampler(p Params) llama.Sampler {
 	if p.DryMultiplier > 0 {
 		llama.SamplerChainAdd(sampler, llama.SamplerInitDry(m.vocab, int32(m.cfg.ContextWindow), p.DryMultiplier, p.DryBase, p.DryAllowedLen, p.DryPenaltyLast, nil))
 	}
+
 	if p.RepeatPenalty != DefRepeatPenalty {
 		llama.SamplerChainAdd(sampler, llama.SamplerInitPenalties(p.RepeatLastN, p.RepeatPenalty, 0, 0))
 	}
+
 	llama.SamplerChainAdd(sampler, llama.SamplerInitTopK(p.TopK))
 	llama.SamplerChainAdd(sampler, llama.SamplerInitTopP(p.TopP, 0))
 	llama.SamplerChainAdd(sampler, llama.SamplerInitMinP(p.MinP, 0))
+
 	if p.XtcProbability > 0 {
 		llama.SamplerChainAdd(sampler, llama.SamplerInitXTC(p.XtcProbability, p.XtcThreshold, p.XtcMinKeep, llama.DefaultSeed))
 	}
+
 	llama.SamplerChainAdd(sampler, llama.SamplerInitTempExt(p.Temperature, 0, 1.0))
+
+	// NOTE: Grammar is NOT added to the sampler chain. The grammar sampler's
+	// accept() function crashes in llama.cpp when llama_sampler_chain_accept
+	// iterates through all samplers. Grammar is handled separately in the
+	// batch engine via GrammarSampler.SampleWithGrammar().
+
 	llama.SamplerChainAdd(sampler, llama.SamplerInitDist(llama.DefaultSeed))
 
 	return sampler
