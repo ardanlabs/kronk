@@ -1,4 +1,4 @@
-# Kronk Model Server User Manual
+# Kronk User Manual
 
 ## Table of Contents
 
@@ -23,15 +23,30 @@
 
 ## Chapter 1: Introduction
 
-### 1.1 What is Kronk Model Server
+### 1.1 What is Kronk
 
-Kronk Model Server (KMS) is an OpenAI and Anthropic compatible model server for running local inference with open-source GGUF models. Built on top of llama.cpp via the [yzma](https://github.com/hybridgroup/yzma) Go bindings, Kronk provides hardware-accelerated inference for text generation, vision, audio, embeddings, and reranking.
+Kronk is a Go SDK and Model Server for running local inference with open-source
+GGUF models. Built on top of llama.cpp via the [yzma](https://github.com/hybridgroup/yzma)
+Go bindings (a non-CGO FFI layer), Kronk provides hardware-accelerated inference
+for text generation, vision, audio, embeddings, and reranking.
 
-The server exposes a REST API that is compatible with:
+**The SDK is the foundation.** The Kronk Model Server is built entirely on top
+of the SDK — we "dog food" our own library. Everything the model server can do
+is available as SDK functions that you can use directly in your own applications.
 
-- OpenAI client libraries
-- OpenWebUI
-- Agents that can be configured to work with local models
+**You don't need a model server.** The real power of Kronk is that you can embed
+model inference directly into your Go applications. Load models, run inference,
+manage caching, and handle concurrent requests — all without running a separate
+server process. The [examples](examples/) directory demonstrates building
+standalone applications with the SDK.
+
+**The Model Server is optional.** When you do need an API server (for web UIs,
+multi-client access, or OpenAI-compatible endpoints), the Kronk Model Server
+provides:
+
+- OpenAI and Anthropic compatible REST API
+- OpenWebUI integration
+- Agent and tool support for local models
 - Any OpenAI-compatible client
 
 ### 1.2 Key Features
@@ -77,35 +92,57 @@ Kronk supports full hardware acceleration across major platforms:
 
 ### 1.4 Architecture Overview
 
-```
-┌────────────────────────────────────────────────────────────────────┐
-│                         Kronk Model Server                         │
-├────────────────────────────────────────────────────────────────────┤
-│                     REST API (OpenAI Compatible)                   │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐  │
-│  │   Chat   │ │ Response │ │  Embed   │ │  Rerank  │ │   Msgs   │  │
-│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘  │
-├───────┼────────────┼────────────┼────────────┼────────────┼────────┤
-│       └────────────┴──────────┬─┴────────────┴────────────┘        │
-│                               ▼                                    │
-│      ┌─────────────────────────────────────────────────────┐       │
-│      │              Kronk SDK (Model Pool)                 │       │
-│      │  ┌─────────┐  ┌─────────┐  ┌─────────┐              │       │
-│      │  │ Model A │  │ Model B │  │ Model C │  (cached)    │       │
-│      │  └────┬────┘  └────┬────┘  └────┬────┘              │       │
-│      └───────┼────────────┼────────────┼───────────────────┘       │
-├──────────────┼────────────┼────────────┼───────────────────────────│
-│          .   └────────────┴─────┬──────┘                           │
-│                                 ▼                                  │
-│      ┌─────────────────────────────────────────────────────┐       │
-│      │         yzma (llama.cpp Go Bindings)                │       │
-│      └─────────────────────────────────────────────────────┘       │
-├────────────────────────────────────────────────────────────────────┤
-│        Hardware Acceleration: Metal │ CUDA │ Vulkan │ CPU          │
-└────────────────────────────────────────────────────────────────────┘
+Kronk is designed as a layered architecture where the SDK provides all core
+functionality and the Model Server is one application built on top of it.
+
+![Kronk SDK Architecture](images/design/sdk.png)
+
+**Layer Breakdown:**
+
+| Layer           | Component                            | Purpose                                    |
+| --------------- | ------------------------------------ | ------------------------------------------ |
+| **Application** | Kronk Model Server                   | REST API server (or your own app)          |
+| **SDK Tools**   | Models, Libs, Catalog, Template APIs | High-level interfaces for common tasks     |
+| **SDK Core**    | Kronk SDK API, Model SDK API         | Model loading, inference, pooling, caching |
+| **Bindings**    | yzma (non-CGO FFI via purego)        | Go bindings to llama.cpp without CGO       |
+| **Engine**      | llama.cpp                            | Hardware-accelerated inference             |
+| **Hardware**    | Metal, CUDA, Vulkan, CPU             | GPU/CPU acceleration                       |
+
+**The Key Insight:** Your application sits at the same level as the Kronk Model
+Server. You have access to the exact same SDK APIs. Whether you're building a
+CLI tool, a web service, an embedded system, or a desktop app — you get the
+full power of local model inference without any server overhead.
+
+**SDK vs Server Usage:**
+
+```go
+// Direct SDK usage - no server needed
+cfg := model.Config{
+    ModelFiles: modelPath.ModelFiles,
+    CacheTypeK: model.GGMLTypeQ8_0,
+    CacheTypeV: model.GGMLTypeQ8_0,
+}
+
+krn, _ := kronk.New(cfg)
+defer krn.Unload(ctx)
+
+ch, _ := krn.ChatStreaming(ctx, model.D{
+    "messages":   model.DocumentArray(model.TextMessage(model.RoleUser, "Hello")),
+    "max_tokens": 2048,
+})
+
+for resp := range ch {
+    fmt.Print(resp.Choice[0].Delta.Content)
+}
 ```
 
-**Request Flow**
+```shell
+# Or use the Model Server for OpenAI-compatible API
+kronk server start
+curl http://localhost:8080/v1/chat/completions -d '{"model":"Qwen3-8B-Q8_0","messages":[...]}'
+```
+
+**Request Flow (Server Mode)**
 
 1. Client sends request to REST API endpoint
 2. Server routes to appropriate handler (chat, embed, rerank)
