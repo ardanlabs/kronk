@@ -225,13 +225,11 @@ func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) 
 		addBOSToken: addBOSToken,
 	}
 
-	// Initialize batch engine for text-only models (no ProjFile).
-	// Batching is faster even for single-sequence inference.
-	if cfg.ProjFile == "" {
-		nSlots := max(cfg.NSeqMax, 1)
-		m.batch = newBatchEngine(&m, nSlots)
-		m.batch.start(ctx)
-	}
+	// Initialize batch engine for parallel inference.
+	// Supports both text-only and multi-modal (mtmd) models.
+	nSlots := max(cfg.NSeqMax, 1)
+	m.batch = newBatchEngine(&m, nSlots)
+	m.batch.start(ctx)
 
 	return &m, nil
 }

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
@@ -18,61 +19,122 @@ import (
 )
 
 // chatJob represents a validated chat request ready for batch processing.
+// Created by submitToBatchEngine after request validation and cache lookup.
 type chatJob struct {
-	id          string
-	ctx         context.Context
-	d           D
-	object      string
-	prompt      string
-	media       [][]byte
-	params      Params
-	mtmdCtx     mtmd.Context
-	ch          chan<- ChatResponse
-	spcCacheIdx llama.Pos   // Token position where SPC cache ends
-	spcCacheHit bool        // True if SPC cache was used
+
+	// -------------------------------------------------------------------------
+	// Request Identity
+
+	id  string              // Unique request ID for logging and responses
+	ctx context.Context     // Request context for cancellation and tracing
+	ch  chan<- ChatResponse // Channel for streaming responses back to caller
+
+	// -------------------------------------------------------------------------
+	// Request Content
+
+	d      D        // Original request document (messages, parameters)
+	object string   // Request type: ObjectChatText or ObjectChatMedia
+	prompt string   // Templated prompt string ready for tokenization
+	media  [][]byte // Raw media bytes (images/audio) for vision/audio models
+	params Params   // Sampling and generation parameters
+
+	// -------------------------------------------------------------------------
+	// MTMD Context
+
+	mtmdCtx mtmd.Context // Multi-modal context for vision/audio processing
+
+	// -------------------------------------------------------------------------
+	// System Prompt Cache (SPC)
+
+	spcCacheIdx llama.Pos // Token position where SPC cache ends
+	spcCacheHit bool      // True if system prompt was found in cache
+
+	// -------------------------------------------------------------------------
+	// Incremental Message Cache (IMC)
+
 	imcID       string      // Cache session ID (from cache_id in request)
-	imcSeqID    llama.SeqId // IMC session's cache sequence
+	imcSeqID    llama.SeqId // Sequence ID containing cached conversation state
 	imcCacheIdx llama.Pos   // Token position where IMC cache ends
-	imcCacheHit bool        // True if IMC cache was used
+	imcCacheHit bool        // True if conversation history was found in cache
 }
 
-// slot represents a processing slot for parallel inference.
+// slot represents a processing slot for parallel inference. Each slot can
+// process one chat request at a time, with multiple slots enabling concurrent
+// request handling within a single model context.
 type slot struct {
-	id               int
-	seqID            llama.SeqId
-	seqIDs           []llama.SeqId // Pre-allocated for batchAdd calls
-	job              *chatJob
-	proc             *processor
-	sampler          llama.Sampler
-	grammarSampler   *grammarSampler // Separate grammar sampler (not in chain)
-	nPast            llama.Pos
-	nPrompt          int
-	nDecoded         int
-	reasonTokens     int
-	completionTokens int
-	reasonFlag       int
-	completionFlag   int
-	toolFlag         int
-	index            int
-	finalContent     strings.Builder
-	finalReasoning   strings.Builder
-	finalTooling     strings.Builder
-	respToolCalls    []ResponseToolCall
-	startTime        time.Time
-	span             trace.Span
-	iBatch           int32
-	sampled          llama.Token
-	active           bool
-	prefillDone      bool
-	prefillTokens    []llama.Token
-	nPrefilled       int
-	logprobsData     []ContentLogprob
-	currentLogprob   *ContentLogprob // For streaming the current token's logprob
+
+	// -------------------------------------------------------------------------
+	// Identity & Lifecycle
+
+	id     int           // Slot index within the batch engine
+	seqID  llama.SeqId   // KV cache sequence ID for this slot
+	seqIDs []llama.SeqId // Pre-allocated slice for batch.Add calls
+	job    *chatJob      // Current request being processed
+	active bool          // True when slot is processing a request
+	span   trace.Span    // OpenTelemetry span for request tracing
+	proc   *processor    // Response processor for content streaming
+
+	// -------------------------------------------------------------------------
+	// Sampling
+
+	sampler        llama.Sampler   // Token sampler with temperature, top-p, etc.
+	grammarSampler *grammarSampler // Grammar-constrained sampler (separate from chain)
+	sampled        llama.Token     // Most recently sampled token
+	iBatch         int32           // Index of this slot's token within the batch
+
+	// -------------------------------------------------------------------------
+	// Position & Token Counts
+
+	nPast            llama.Pos // Current position in KV cache
+	nPrompt          int       // Total prompt tokens (cached + new)
+	nDecoded         int       // Number of output tokens generated
+	reasonTokens     int       // Tokens in reasoning/thinking section
+	completionTokens int       // Tokens in completion section
+
+	// -------------------------------------------------------------------------
+	// Text Prefill (text-only requests)
+
+	prefillTokens []llama.Token // Tokens awaiting prefill
+	nPrefilled    int           // Number of tokens already prefilled
+	prefillDone   bool          // True when prefill complete, generation started
+
+	// -------------------------------------------------------------------------
+	// MTMD Prefill (vision/audio requests)
+
+	inputChunks  mtmd.InputChunks // Tokenized chunks (text + media interleaved)
+	chunkIdx     int              // Index of chunk currently being processed
+	bitmaps      []mtmd.Bitmap    // Image bitmaps to free when done
+	useMRoPE     bool             // Model uses M-RoPE 4D positioning
+	useNonCausal bool             // Model uses non-causal attention for media
+
+	// -------------------------------------------------------------------------
+	// Response Accumulation
+
+	index          int             // Streaming chunk index
+	reasonFlag     int             // State: in reasoning section
+	completionFlag int             // State: in completion section
+	toolFlag       int             // State: in tool call section
+	finalContent   strings.Builder // Accumulated completion text
+	finalReasoning strings.Builder // Accumulated reasoning text
+	finalTooling   strings.Builder // Accumulated tool call JSON
+	respToolCalls  []ResponseToolCall
+
+	// -------------------------------------------------------------------------
+	// Logprobs
+
+	logprobsData   []ContentLogprob // Accumulated logprobs for all tokens
+	currentLogprob *ContentLogprob  // Current token's logprob (for streaming)
+
+	// -------------------------------------------------------------------------
+	// Metrics
+
+	startTime time.Time // Start time for TPS calculation (set after prefill)
 }
 
 func (s *slot) reset() {
 	// Note: seqID is NOT reset - it's assigned once during slot creation
 	// and remains stable for the lifetime of the slot.
+
 	s.job = nil
 	s.nPast = 0
 	s.nPrompt = 0
@@ -97,6 +159,13 @@ func (s *slot) reset() {
 	s.logprobsData = nil
 	s.currentLogprob = nil
 	s.grammarSampler = nil // Freed in freeSlotResources
+
+	// MTMD fields - resources freed in freeSlotResources.
+	s.inputChunks = 0
+	s.chunkIdx = 0
+	s.bitmaps = nil
+	s.useMRoPE = false
+	s.useNonCausal = false
 
 	if s.proc != nil {
 		s.proc.resetState()
@@ -125,10 +194,11 @@ func newBatchEngine(m *Model, nSlots int) *batchEngine {
 	// Calculate sequence offset based on reserved cache sequences.
 	// Both SPC and IMC use seqs 0 to MaxCacheSessions-1.
 	// Slots start after reserved sequences.
-	cacheSeqs := 0
-	if m.cfg.SystemPromptCache {
+	var cacheSeqs int
+	switch {
+	case m.cfg.SystemPromptCache:
 		cacheSeqs = m.spcMaxSeqs
-	} else if m.cfg.IncrementalCache {
+	case m.cfg.IncrementalCache:
 		cacheSeqs = m.imcMaxSeqs
 	}
 
@@ -261,7 +331,7 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	// Clear the batch.
 	e.batch.Clear()
 
-	// Continue prefill for slots that are still prefilling.
+	// Continue prefill for text-only slots.
 	for _, s := range e.slots {
 		if !s.active || s.prefillTokens == nil {
 			continue
@@ -276,6 +346,25 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 		// addPrefillChunk returns false if shutdown or context cancelled.
 		if !e.addPrefillChunk(s) {
 			e.finishSlot(s, s.job.ctx.Err())
+			continue
+		}
+	}
+
+	// Continue prefill for media slots (separate loop since they may need separate decode calls).
+	for _, s := range e.slots {
+		if !s.active || s.inputChunks == 0 {
+			continue
+		}
+
+		// Check if client cancelled.
+		if s.job.ctx.Err() != nil {
+			e.finishSlot(s, s.job.ctx.Err())
+			continue
+		}
+
+		// Process next chunk of media request.
+		// Note: addPrefillMediaChunk calls finishSlot on error, so we just continue.
+		if !e.addPrefillMediaChunk(s) {
 			continue
 		}
 	}
@@ -435,6 +524,39 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 
 	s.nPast = cacheIdx
 
+	// Branch based on request type: media vs text-only.
+	switch job.object {
+	case ObjectChatMedia:
+		if !e.startSlotMedia(s, job, cacheIdx) {
+			return
+		}
+
+	default:
+		if !e.startSlotText(s, job, cacheIdx) {
+			return
+		}
+	}
+
+	// Calculate current KV usage for diagnostics.
+	var kvUsed llama.Pos
+	if sysMax, err := llama.MemorySeqPosMax(e.model.mem, 0); err == nil && sysMax >= 0 {
+		kvUsed += sysMax + 1
+	}
+
+	for _, slot := range e.slots {
+		if slot.active && slot.id != s.id {
+			if posMax, err := llama.MemorySeqPosMax(e.model.mem, slot.seqID); err == nil && posMax >= 0 {
+				kvUsed += posMax + 1
+			}
+		}
+	}
+
+	e.model.log(job.ctx, "batch-engine", "status", "slot-started", "slot", s.id, "seq", s.seqID, "id", job.id,
+		"total_prompt", s.nPrompt, "spc_cache_hit", job.spcCacheHit, "imc_cache_hit", job.imcCacheHit, "kv_used", kvUsed)
+}
+
+// startSlotText initializes a text-only slot. Returns true on success.
+func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) bool {
 	// Tokenize the prompt (cached messages already removed).
 	// Only add BOS if no cached tokens AND model metadata says to add BOS.
 	addBOS := cacheIdx == 0 && e.model.addBOSToken
@@ -459,7 +581,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 	if s.nPrompt > e.model.cfg.ContextWindow {
 		err := fmt.Errorf("start-slot: input tokens [%d] exceed context window [%d]", s.nPrompt, e.model.cfg.ContextWindow)
 		e.finishSlot(s, err)
-		return
+		return false
 	}
 
 	// Store tokens for chunked prefill.
@@ -469,25 +591,71 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 	// Add first chunk of prompt tokens to batch.
 	if !e.addPrefillChunk(s) {
 		e.finishSlot(s, job.ctx.Err())
-		return
+		return false
 	}
 
-	// Calculate current KV usage for diagnostics.
-	var kvUsed llama.Pos
-	if sysMax, err := llama.MemorySeqPosMax(e.model.mem, 0); err == nil && sysMax >= 0 {
-		kvUsed += sysMax + 1
-	}
+	return true
+}
 
-	for _, slot := range e.slots {
-		if slot.active && slot.id != s.id {
-			if posMax, err := llama.MemorySeqPosMax(e.model.mem, slot.seqID); err == nil && posMax >= 0 {
-				kvUsed += posMax + 1
-			}
+// startSlotMedia initializes a media (vision/audio) slot. Returns true on success.
+func (e *batchEngine) startSlotMedia(s *slot, job *chatJob, cacheIdx llama.Pos) bool {
+	// Convert raw media bytes into bitmap structures for the vision encoder.
+	s.bitmaps = make([]mtmd.Bitmap, len(job.media))
+	for i, med := range job.media {
+		if len(med) == 0 {
+			continue
 		}
+		s.bitmaps[i] = mtmd.BitmapInitFromBuf(job.mtmdCtx, &med[0], uint64(len(med)))
 	}
 
-	e.model.log(job.ctx, "batch-engine", "status", "slot-started", "slot", s.id, "seq", s.seqID, "id", job.id,
-		"total_prompt", s.nPrompt, "spc_cache_hit", job.spcCacheHit, "imc_cache_hit", job.imcCacheHit, "kv_used", kvUsed)
+	// Create input chunks that interleave text tokens with image embeddings.
+	s.inputChunks = mtmd.InputChunksInit()
+
+	// Tokenize produces a sequence of chunks: text tokens and image patches.
+	input := mtmd.NewInputText(job.prompt, true, true)
+	if result := mtmd.Tokenize(job.mtmdCtx, s.inputChunks, input, s.bitmaps); result != 0 {
+		err := fmt.Errorf("start-slot-media: tokenization failed with code %d", result)
+		e.finishSlot(s, err)
+		return false
+	}
+
+	// Set model-specific flags for positioning and attention.
+	s.useMRoPE = mtmd.DecodeUseMRope(job.mtmdCtx)
+	s.useNonCausal = mtmd.DecodeUseNonCausal(job.mtmdCtx)
+
+	// Count total tokens across all chunks.
+	numChunks := mtmd.InputChunksSize(s.inputChunks)
+	var totalTokens uint64
+	for i := range numChunks {
+		chunk := mtmd.InputChunksGet(s.inputChunks, i)
+		totalTokens += mtmd.InputChunkGetNTokens(chunk)
+	}
+
+	s.nPrompt = int(totalTokens) + int(cacheIdx)
+	s.chunkIdx = 0
+
+	e.model.log(job.ctx, "start-slot-media", "status", "tokenized",
+		"slot", s.id,
+		"num_chunks", numChunks,
+		"total_tokens", totalTokens,
+		"cached_tokens", cacheIdx,
+		"use_mrope", s.useMRoPE,
+		"use_noncausal", s.useNonCausal)
+
+	// Check context window.
+	if s.nPrompt > e.model.cfg.ContextWindow {
+		err := fmt.Errorf("start-slot-media: input tokens [%d] exceed context window [%d]", s.nPrompt, e.model.cfg.ContextWindow)
+		e.finishSlot(s, err)
+		return false
+	}
+
+	// Process first chunk. Media prefill is handled chunk-by-chunk in processBatch.
+	if !e.addPrefillMediaChunk(s) {
+		e.finishSlot(s, job.ctx.Err())
+		return false
+	}
+
+	return true
 }
 
 // addPrefillChunk adds the next chunk of prefill tokens to the batch.
@@ -541,6 +709,193 @@ func (e *batchEngine) addPrefillChunk(s *slot) bool {
 	}
 
 	s.iBatch = -1
+	return true
+}
+
+// addPrefillMediaChunk processes the next chunk of a media request.
+// For text chunks, tokens are added to the shared batch.
+// For image chunks, embeddings are encoded and decoded separately.
+// Returns false if cancelled; true otherwise (even if still prefilling).
+func (e *batchEngine) addPrefillMediaChunk(s *slot) bool {
+	numChunks := int(mtmd.InputChunksSize(s.inputChunks))
+
+	// Check if all chunks have been processed.
+	if s.chunkIdx >= numChunks {
+		return true
+	}
+
+	// Check for cancellation.
+	select {
+	case <-e.shutdownCh:
+		return false
+	case <-s.job.ctx.Done():
+		return false
+	default:
+	}
+
+	prefillStart := time.Now()
+	chunk := mtmd.InputChunksGet(s.inputChunks, uint64(s.chunkIdx))
+	chunkType := mtmd.InputChunkGetType(chunk)
+	nTokens := mtmd.InputChunkGetNTokens(chunk)
+
+	switch chunkType {
+	case mtmd.InputChunkTypeText:
+		tokens := mtmd.InputChunkGetTokensText(chunk)
+		if len(tokens) == 0 {
+			s.chunkIdx++
+			return true
+		}
+
+		nBatch := e.model.cfg.NBatch
+
+		// Process text tokens in batches.
+		for start := 0; start < len(tokens); start += nBatch {
+			end := min(start+nBatch, len(tokens))
+			batchTokens := tokens[start:end]
+
+			switch s.useMRoPE {
+			case true:
+				if err := e.decodeTextMRoPE(s, batchTokens); err != nil {
+					e.finishSlot(s, fmt.Errorf("decode text chunk (M-RoPE) failed: %w", err))
+					return false
+				}
+
+			case false:
+				// Add tokens to shared batch for regular decode.
+				for i, tok := range batchTokens {
+					isLast := start+i == len(tokens)-1 && s.chunkIdx == numChunks-1
+					e.batch.Add(tok, s.nPast, s.seqIDs, isLast)
+					s.nPast++
+				}
+			}
+		}
+
+		s.chunkIdx++
+
+		// Check if this was the last chunk.
+		switch s.chunkIdx >= numChunks {
+		case true:
+			switch s.useMRoPE {
+			case true:
+				// M-RoPE text uses separate decode, so we must sample the first
+				// token immediately since nothing was added to the shared batch.
+				if !e.sampleFirstToken(s) {
+					return false
+				}
+			case false:
+				// Non-M-RoPE text was added to shared batch, sample after decode.
+				s.iBatch = e.batch.NTokens - 1
+			}
+			s.inputChunks = 0 // Will be freed in freeSlotResources
+			s.span.SetAttributes(attribute.String("prefill-media", time.Since(prefillStart).String()))
+		case false:
+			s.iBatch = -1
+		}
+
+	case mtmd.InputChunkTypeImage:
+		e.model.log(s.job.ctx, "prefill-media", "status", "encoding-image",
+			"slot", s.id, "chunk", s.chunkIdx, "tokens", nTokens)
+
+		// Step 1: Encode the image chunk (runs through vision encoder).
+		if err := mtmd.EncodeChunk(s.job.mtmdCtx, chunk); err != nil {
+			e.finishSlot(s, fmt.Errorf("encode image chunk failed: %w", err))
+			return false
+		}
+
+		// Step 2: Retrieve the computed embeddings.
+		nEmbd := llama.ModelNEmbdInp(e.model.model)
+		embedSize := nEmbd * int32(nTokens)
+		embd, err := mtmd.GetOutputEmbd(s.job.mtmdCtx, embedSize)
+		if err != nil {
+			e.finishSlot(s, fmt.Errorf("get image embeddings failed: %w", err))
+			return false
+		}
+
+		// Step 3: Decode embeddings into the LLM's KV cache.
+		// This uses a separate decode call since embeddings can't batch with tokens.
+		switch s.useMRoPE {
+		case true:
+			imageTokens := mtmd.InputChunkGetTokensImage(chunk)
+			nx := int32(mtmd.ImageTokensGetNX(imageTokens))
+			ny := int32(mtmd.ImageTokensGetNY(imageTokens))
+
+			e.model.log(s.job.ctx, "prefill-media", "status", "decoding-image-mrope",
+				"slot", s.id, "nx", nx, "ny", ny)
+
+			if err := e.decodeEmbeddingsMRoPE(s, embd, nEmbd, int32(nTokens), nx, ny); err != nil {
+				e.finishSlot(s, fmt.Errorf("decode image embeddings (M-RoPE) failed: %w", err))
+				return false
+			}
+
+		case false:
+			if err := e.decodeEmbeddingsNormal(s, embd, nEmbd, int32(nTokens)); err != nil {
+				e.finishSlot(s, fmt.Errorf("decode image embeddings failed: %w", err))
+				return false
+			}
+		}
+
+		s.chunkIdx++
+
+		// Check if this was the last chunk.
+		switch s.chunkIdx >= numChunks {
+		case true:
+			// Image chunks use separate decode, so we must sample the first
+			// token immediately since nothing was added to the shared batch.
+			if !e.sampleFirstToken(s) {
+				return false
+			}
+			s.inputChunks = 0
+			s.span.SetAttributes(attribute.String("prefill-media", time.Since(prefillStart).String()))
+		case false:
+			s.iBatch = -1
+		}
+
+		metrics.AddPrefillMediaTime(e.model.modelInfo.ID, time.Since(prefillStart))
+
+	case mtmd.InputChunkTypeAudio:
+		e.model.log(s.job.ctx, "prefill-media", "status", "encoding-audio",
+			"slot", s.id, "chunk", s.chunkIdx, "tokens", nTokens)
+
+		// Step 1: Encode the audio chunk (runs through audio encoder).
+		if err := mtmd.EncodeChunk(s.job.mtmdCtx, chunk); err != nil {
+			e.finishSlot(s, fmt.Errorf("encode audio chunk failed: %w", err))
+			return false
+		}
+
+		// Step 2: Retrieve the computed embeddings.
+		nEmbd := llama.ModelNEmbdInp(e.model.model)
+		embedSize := nEmbd * int32(nTokens)
+		embd, err := mtmd.GetOutputEmbd(s.job.mtmdCtx, embedSize)
+		if err != nil {
+			e.finishSlot(s, fmt.Errorf("get audio embeddings failed: %w", err))
+			return false
+		}
+
+		// Step 3: Decode embeddings into the LLM's KV cache.
+		// Audio uses standard linear positioning (not M-RoPE).
+		if err := e.decodeEmbeddingsNormal(s, embd, nEmbd, int32(nTokens)); err != nil {
+			e.finishSlot(s, fmt.Errorf("decode audio embeddings failed: %w", err))
+			return false
+		}
+
+		s.chunkIdx++
+
+		// Check if this was the last chunk.
+		switch s.chunkIdx >= numChunks {
+		case true:
+			// Audio uses separate decode, so sample first token immediately.
+			if !e.sampleFirstToken(s) {
+				return false
+			}
+			s.inputChunks = 0
+			s.span.SetAttributes(attribute.String("prefill-media", time.Since(prefillStart).String()))
+		case false:
+			s.iBatch = -1
+		}
+
+		metrics.AddPrefillMediaTime(e.model.modelInfo.ID, time.Since(prefillStart))
+	}
+
 	return true
 }
 
@@ -808,6 +1163,25 @@ func (e *batchEngine) freeSlotResources(s *slot) {
 		s.grammarSampler.Free()
 		s.grammarSampler = nil
 	}
+
+	// Free MTMD resources.
+	if s.inputChunks != 0 {
+		mtmd.InputChunksFree(s.inputChunks)
+		s.inputChunks = 0
+	}
+
+	for _, b := range s.bitmaps {
+		if b != 0 {
+			mtmd.BitmapFree(b)
+		}
+	}
+	s.bitmaps = nil
+
+	// Free mtmdCtx from the job if present.
+	if s.job != nil && s.job.mtmdCtx != 0 {
+		mtmd.Free(s.job.mtmdCtx)
+		s.job.mtmdCtx = 0
+	}
 }
 
 func (e *batchEngine) sendSlotError(s *slot, err error) {
@@ -921,4 +1295,239 @@ func decodeError(ret int32, err error) error {
 		return fmt.Errorf("%s: %w", msg, err)
 	}
 	return errors.New(msg)
+}
+
+// =============================================================================
+// MTMD BATCH DECODE HELPERS
+// =============================================================================
+
+// decodeTextMRoPE decodes text tokens for M-RoPE models.
+// M-RoPE uses 4D positions: [dim0, dim1, dim2, dim3] where each dimension has
+// n_tokens entries. For text: dim0=linear position, dims1-3=0.
+func (e *batchEngine) decodeTextMRoPE(s *slot, tokens []llama.Token) error {
+	n := int32(len(tokens))
+	if n == 0 {
+		return nil
+	}
+
+	batch := llama.BatchInit(n, 0, 1)
+
+	// Save original pos pointer so BatchFree doesn't free Go memory.
+	origPos := batch.Pos
+
+	// Copy tokens to batch.
+	tokenSlice := unsafeSlice[llama.Token](batch.Token, int(n))
+	copy(tokenSlice, tokens)
+
+	// Allocate 4D position array for M-RoPE.
+	posData := make([]llama.Pos, n*4)
+	pos0 := s.nPast
+	for i := range n {
+		posData[i] = pos0 + llama.Pos(i) // dim 0: linear position
+		posData[i+n] = 0                 // dim 1: 0 for text
+		posData[i+n*2] = 0               // dim 2: 0 for text
+		posData[i+n*3] = 0               // dim 3: 0 for text
+	}
+	batch.Pos = &posData[0]
+
+	nSeqIDSlice := unsafeSlice[int32](batch.NSeqId, int(n))
+	seqIDPtrs := unsafeSlice[*llama.SeqId](batch.SeqId, int(n))
+	logitsSlice := unsafeSlice[int8](batch.Logits, int(n))
+
+	for i := range n {
+		nSeqIDSlice[i] = 1
+		*seqIDPtrs[i] = s.seqID
+		logitsSlice[i] = 0
+	}
+
+	if n > 0 {
+		logitsSlice[n-1] = 1
+	}
+
+	batch.NTokens = n
+
+	e.model.decodeMu.Lock()
+	_, err := llama.Decode(e.model.lctx, batch)
+	e.model.decodeMu.Unlock()
+
+	// Restore and free.
+	batch.Pos = origPos
+	llama.BatchFree(batch)
+
+	if err != nil {
+		return err
+	}
+
+	s.nPast += llama.Pos(n)
+	return nil
+}
+
+// decodeEmbeddingsNormal decodes image embeddings with standard linear positioning.
+// Used for non-M-RoPE models where positions are simply sequential integers.
+func (e *batchEngine) decodeEmbeddingsNormal(s *slot, embd []float32, nEmbd, nTokens int32) error {
+	batch := llama.BatchInit(nTokens, nEmbd, 1)
+	defer llama.BatchFree(batch)
+
+	embdSlice := unsafeSlice[float32](batch.Embd, int(nTokens*nEmbd))
+	copy(embdSlice, embd)
+
+	posSlice := unsafeSlice[llama.Pos](batch.Pos, int(nTokens))
+	nSeqIDSlice := unsafeSlice[int32](batch.NSeqId, int(nTokens))
+	seqIDPtrs := unsafeSlice[*llama.SeqId](batch.SeqId, int(nTokens))
+	logitsSlice := unsafeSlice[int8](batch.Logits, int(nTokens))
+
+	for i := range nTokens {
+		posSlice[i] = s.nPast + llama.Pos(i)
+		nSeqIDSlice[i] = 1
+		*seqIDPtrs[i] = s.seqID
+		logitsSlice[i] = 0
+	}
+
+	if nTokens > 0 {
+		logitsSlice[nTokens-1] = 1
+	}
+
+	batch.NTokens = nTokens
+
+	if s.useNonCausal {
+		llama.SetCausalAttn(e.model.lctx, false)
+	}
+
+	e.model.decodeMu.Lock()
+	_, err := llama.Decode(e.model.lctx, batch)
+	e.model.decodeMu.Unlock()
+
+	if s.useNonCausal {
+		llama.SetCausalAttn(e.model.lctx, true)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	s.nPast += llama.Pos(nTokens)
+	return nil
+}
+
+// decodeEmbeddingsMRoPE decodes image embeddings with M-RoPE 2D positioning.
+// For M-RoPE, positions are laid out as 4 contiguous arrays:
+//
+//	[dim0: n_tokens] [dim1: n_tokens] [dim2: n_tokens] [dim3: n_tokens]
+//
+// For an image grid of nx columns × ny rows:
+//   - dim0 (temporal): pos_0 for all tokens
+//   - dim1 (row/y):    pos_0 + y
+//   - dim2 (col/x):    pos_0 + x
+//   - dim3 (unused):   0
+//
+// CRITICAL: Position advancement after the image must be max(nx, ny), not n_tokens,
+// to avoid position overlap with subsequent text tokens.
+func (e *batchEngine) decodeEmbeddingsMRoPE(s *slot, embd []float32, nEmbd, nTokens int32, nx, ny int32) error {
+	// For M-RoPE, we need 4x the position slots (4D positions).
+	nPosPerEmbd := int32(4)
+
+	batch := llama.BatchInit(nTokens, nEmbd, 1)
+
+	embdSlice := unsafeSlice[float32](batch.Embd, int(nTokens*nEmbd))
+	copy(embdSlice, embd)
+
+	// Save original pos pointer so BatchFree doesn't try to free Go memory.
+	origPos := batch.Pos
+
+	// Allocate our own position array for M-RoPE (4D).
+	posData := make([]llama.Pos, nTokens*nPosPerEmbd)
+
+	// Set up 2D M-RoPE positions for image grid.
+	pos0 := s.nPast
+	for y := range ny {
+		for x := range nx {
+			i := y*nx + x
+			if i >= nTokens {
+				break
+			}
+			// dim 0: constant pos_0 (temporal/base position)
+			posData[i] = pos0
+			// dim 1: y position (row)
+			posData[i+nTokens] = pos0 + llama.Pos(y)
+			// dim 2: x position (column)
+			posData[i+nTokens*2] = pos0 + llama.Pos(x)
+			// dim 3: unused (always 0)
+			posData[i+nTokens*3] = 0
+		}
+	}
+	batch.Pos = &posData[0]
+
+	nSeqIDSlice := unsafeSlice[int32](batch.NSeqId, int(nTokens))
+	seqIDPtrs := unsafeSlice[*llama.SeqId](batch.SeqId, int(nTokens))
+	logitsSlice := unsafeSlice[int8](batch.Logits, int(nTokens))
+
+	for i := range nTokens {
+		nSeqIDSlice[i] = 1
+		*seqIDPtrs[i] = s.seqID
+		logitsSlice[i] = 0
+	}
+
+	if nTokens > 0 {
+		logitsSlice[nTokens-1] = 1
+	}
+
+	batch.NTokens = nTokens
+
+	if s.useNonCausal {
+		llama.SetCausalAttn(e.model.lctx, false)
+	}
+
+	e.model.decodeMu.Lock()
+	_, err := llama.Decode(e.model.lctx, batch)
+	e.model.decodeMu.Unlock()
+
+	// Restore original pos pointer before freeing to avoid freeing Go memory.
+	batch.Pos = origPos
+	llama.BatchFree(batch)
+
+	if err != nil {
+		return err
+	}
+
+	if s.useNonCausal {
+		llama.SetCausalAttn(e.model.lctx, true)
+	}
+
+	// For M-RoPE, n_pos is max(nx, ny) to avoid position overlap.
+	nPos := max(ny, nx)
+	s.nPast += llama.Pos(nPos)
+
+	return nil
+}
+
+// sampleFirstToken samples the first output token after prefill completes.
+// This is called when the last chunk used a separate decode path (M-RoPE text
+// or image embeddings) and nothing was added to the shared batch.
+// Returns false if EOG is sampled (slot finished), true otherwise.
+func (e *batchEngine) sampleFirstToken(s *slot) bool {
+	// Sample from last logits position (-1).
+	token := llama.SamplerSample(s.sampler, e.model.lctx, -1)
+	llama.SamplerAccept(s.sampler, token)
+
+	// Check for end of generation.
+	if llama.VocabIsEOG(e.model.vocab, token) {
+		e.finishSlot(s, nil)
+		return false
+	}
+
+	s.sampled = token
+	s.prefillDone = true
+	s.startTime = time.Now()
+	s.iBatch = -1 // Will be set correctly in next processBatch iteration
+
+	return true
+}
+
+// unsafeSlice creates a Go slice from a C pointer. This is used to access
+// batch arrays allocated by llama.cpp.
+func unsafeSlice[T any](ptr *T, length int) []T {
+	if ptr == nil || length <= 0 {
+		return nil
+	}
+	return unsafe.Slice(ptr, length)
 }

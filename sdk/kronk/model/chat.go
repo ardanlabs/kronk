@@ -106,8 +106,8 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 			m.log(ctx, "chat-streaming", "IN-MESSAGAES", d.Messages())
 		}
 
-		switch {
-		case m.batch != nil && object == ObjectChatText:
+		switch object {
+		case ObjectChatText, ObjectChatMedia:
 			if m.submitToBatchEngine(ctx, ch, id, d, object, prompt, media, params, mtmdCtx, cache) {
 				batching = true
 				return
