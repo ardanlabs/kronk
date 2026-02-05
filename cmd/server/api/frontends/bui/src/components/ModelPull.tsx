@@ -4,11 +4,12 @@ import { useDownload } from '../contexts/DownloadContext';
 export default function ModelPull() {
   const { download, isDownloading, startDownload, cancelDownload, clearDownload } = useDownload();
   const [modelUrl, setModelUrl] = useState('');
+  const [projUrl, setProjUrl] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!modelUrl.trim() || isDownloading) return;
-    startDownload(modelUrl.trim());
+    startDownload(modelUrl.trim(), projUrl.trim() || undefined);
   };
 
   const isComplete = download?.status === 'complete';
@@ -19,7 +20,8 @@ export default function ModelPull() {
       <div className="page-header">
         <h2>Pull Model</h2>
               <p>Download a model from a URL</p>
-              <p>Example: Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf</p>
+              <p>Example: ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf</p>
+              <p>Example: https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf</p>
       </div>
 
       <div className="card">
@@ -31,7 +33,19 @@ export default function ModelPull() {
               id="modelUrl"
               value={modelUrl}
               onChange={(e) => setModelUrl(e.target.value)}
-              placeholder="..."
+              placeholder="org/repo/model.gguf"
+              disabled={isDownloading}
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="projUrl">Projection URL (optional, for vision/audio models)</label>
+            <input
+              type="text"
+              id="projUrl"
+              value={projUrl}
+              onChange={(e) => setProjUrl(e.target.value)}
+              placeholder="org/repo/mmproj-model.gguf"
               disabled={isDownloading}
             />
           </div>

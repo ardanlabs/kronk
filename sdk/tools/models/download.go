@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"os"
@@ -50,7 +51,7 @@ func (m *Models) DownloadShards(ctx context.Context, log Logger, modelURLs []str
 	defer func() {
 		if downloaded {
 			if err := m.BuildIndex(log); err != nil {
-				log(ctx, "download-shards: unable to create index", "ERROR", err)
+				log(ctx, "download-model: unable to create index", "ERROR", err)
 			}
 		}
 	}()
@@ -69,15 +70,15 @@ func (m *Models) DownloadShards(ctx context.Context, log Logger, modelURLs []str
 		}
 
 		log(ctx, fmt.Sprintf("download-model: model-url[%s] proj-url[%s] model-id[%s]", modelURL, projURL, modelID))
-		log(ctx, "download-shards: waiting to check model status...")
+		log(ctx, "download-model: waiting to check model status...")
 
 		progress := func(src string, currentSize int64, totalSize int64, mibPerSec float64, complete bool) {
 			log(ctx, fmt.Sprintf("\r\x1b[Kdownload-model: Downloading %s... %d MiB of %d MiB (%.2f MiB/s)", src, currentSize/(1024*1024), totalSize/(1024*1024), mibPerSec))
 		}
 
-		mp, errOrg := m.downloadModel(ctx, modelURL, projURL, progress)
+		mp, errOrg := m.downloadModel(ctx, log, modelURL, projURL, progress)
 		if errOrg != nil {
-			log(ctx, "download-shards:", "ERROR", errOrg, "model-file-url", modelURL)
+			log(ctx, "download-model:", "ERROR", errOrg, "model-file-url", modelURL)
 
 			if mp, err := m.FullPath(modelID); err == nil && len(mp.ModelFiles) > 0 {
 				size, err := fileSize(mp.ModelFiles[0])
@@ -92,7 +93,7 @@ func (m *Models) DownloadShards(ctx context.Context, log Logger, modelURLs []str
 					return Path{}, fmt.Errorf("download-model: unable to download file: %w", errOrg)
 				}
 
-				log(ctx, "download-shards: using installed version of model files")
+				log(ctx, "download-model: using installed version of model files")
 				return mp, nil
 			}
 
@@ -103,10 +104,10 @@ func (m *Models) DownloadShards(ctx context.Context, log Logger, modelURLs []str
 
 		switch mp.Downloaded {
 		case true:
-			log(ctx, "download-shards: status[downloaded]")
+			log(ctx, "download-model: download complete")
 
 		default:
-			log(ctx, "download-shards: status[already exists]")
+			log(ctx, "download-model: model already exists")
 		}
 
 		result.ModelFiles[i] = mp.ModelFiles[0]
@@ -122,7 +123,7 @@ func (m *Models) DownloadShards(ctx context.Context, log Logger, modelURLs []str
 
 // =============================================================================
 
-func (m *Models) downloadModel(ctx context.Context, modelFileURL string, projFileURL string, progress downloader.ProgressFunc) (Path, error) {
+func (m *Models) downloadModel(ctx context.Context, log Logger, modelFileURL string, projFileURL string, progress downloader.ProgressFunc) (Path, error) {
 	// Validate the URL is the correct HF download URL.
 	if !strings.Contains(modelFileURL, "/resolve/") {
 		return Path{}, fmt.Errorf("download-model: invalid model download url, missing /resolve/: %s", modelFileURL)
@@ -174,64 +175,92 @@ func (m *Models) downloadModel(ctx context.Context, modelFileURL string, projFil
 
 	// -------------------------------------------------------------------------
 
-	// Download the Sha file for the proj model file and rename the sha to
-	// match what the proj file will be called.
-
 	projFileName := createProjFileName(modelFileName)
+
+	// projFileName: /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/mmproj-Qwen3-8B-Q8_0.gguf
+	// shaFileName:  /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/sha/mmproj-Qwen3-8B-Q8_0.gguf
+	shaFileName := filepath.Join(filepath.Dir(projFileName), "sha", filepath.Base(projFileName))
+
+	// -------------------------------------------------------------------------
+	// Optimization 1: Check if the projection file from the URL already exists.
+
+	urlProjFileName, err := extractFileName(projFileURL)
+	if err != nil {
+		return Path{}, fmt.Errorf("download-model: unable to extract proj file name: %w", err)
+	}
+
+	urlProjFilePath := filepath.Join(filepath.Dir(projFileName), urlProjFileName)
+	urlShaFilePath := filepath.Join(filepath.Dir(projFileName), "sha", urlProjFileName)
+
+	if _, err := os.Stat(urlProjFilePath); err == nil {
+		log(ctx, "download-model: found existing proj file by URL name, copying", "src", urlProjFileName, "dst", filepath.Base(projFileName))
+
+		if err := copyFile(urlProjFilePath, projFileName); err != nil {
+			return Path{}, fmt.Errorf("download-model: unable to copy proj file: %w", err)
+		}
+
+		if _, err := os.Stat(urlShaFilePath); err == nil {
+			if err := copyFile(urlShaFilePath, shaFileName); err != nil {
+				return Path{}, fmt.Errorf("download-model: unable to copy proj sha file: %w", err)
+			}
+		}
+
+		if err := model.CheckModel(projFileName, true); err == nil {
+			log(ctx, "download-model: skipping proj download, using existing file")
+			return Path{ModelFiles: []string{modelFileName}, ProjFile: projFileName, Downloaded: downloadedMF}, nil
+		}
+	}
+
+	// -------------------------------------------------------------------------
+	// Optimization 2: Download sha file and check if any existing projection
+	// file matches by comparing sha values.
 
 	orgShaFileName, err := m.pullShaFile(projFileURL, progress)
 	if err != nil {
 		return Path{}, fmt.Errorf("download-model: unable to download sha file: %w", err)
 	}
 
-	// projFileName:   /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/mmproj-Qwen2-Audio-7B.Q8_0.gguf
-	// orgShaFileName: /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/sha/Qwen2-Audio-7B.mmproj-Q8_0.gguf
-	// shaFileName:    /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/sha/mmproj-Qwen2-Audio-7B.Q8_0.gguf
-	shaFileName := filepath.Join(filepath.Dir(orgShaFileName), filepath.Base(projFileName))
+	existingProj, existingSha, found := m.findMatchingProjBySha(orgShaFileName)
+	if found {
+		log(ctx, "download-model: found existing proj file by SHA match, copying", "src", filepath.Base(existingProj), "dst", filepath.Base(projFileName))
 
+		if err := copyFile(existingProj, projFileName); err != nil {
+			return Path{}, fmt.Errorf("download-model: unable to copy proj file: %w", err)
+		}
+		if err := copyFile(existingSha, shaFileName); err != nil {
+			return Path{}, fmt.Errorf("download-model: unable to copy proj sha file: %w", err)
+		}
+
+		os.Remove(orgShaFileName)
+
+		if err := model.CheckModel(projFileName, true); err == nil {
+			log(ctx, "download-model: skipping proj download, using existing file")
+			return Path{ModelFiles: []string{modelFileName}, ProjFile: projFileName, Downloaded: downloadedMF}, nil
+		}
+	}
+
+	// Rename the downloaded sha file to match our naming convention.
 	if err := os.Rename(orgShaFileName, shaFileName); err != nil {
 		return Path{}, fmt.Errorf("download-model: unable to rename projector sha file: %w", err)
 	}
 
 	// -------------------------------------------------------------------------
+	// No existing projection file found, download it.
 
-	// Check if the proj file already exists on disk, and if so check the file
-	// against the sha file.
-	if _, err := os.Stat(projFileName); err == nil {
-		if err := model.CheckModel(projFileName, true); err == nil {
-			inf := Path{
-				ModelFiles: []string{modelFileName},
-				ProjFile:   projFileName,
-				Downloaded: downloadedMF,
-			}
-
-			return inf, nil
-		}
-	}
-
-	// Download the proj file.
 	orjProjFile, downloadedPF, err := m.pullFile(ctx, projFileURL, progress)
 	if err != nil {
 		return Path{}, err
 	}
 
-	// Rename the proj file to match our naming convention.
 	if err := os.Rename(orjProjFile, projFileName); err != nil {
 		return Path{}, fmt.Errorf("download-model: unable to rename projector file: %w", err)
 	}
 
-	// Check the model file matches what is in the sha file.
 	if err := model.CheckModel(projFileName, true); err != nil {
 		return Path{}, fmt.Errorf("download-model: unable to check model: %w", err)
 	}
 
-	inf := Path{
-		ModelFiles: []string{modelFileName},
-		ProjFile:   projFileName,
-		Downloaded: downloadedMF && downloadedPF,
-	}
-
-	return inf, nil
+	return Path{ModelFiles: []string{modelFileName}, ProjFile: projFileName, Downloaded: downloadedMF && downloadedPF}, nil
 }
 
 func (m *Models) pullShaFile(modelFileURL string, progress downloader.ProgressFunc) (string, error) {
@@ -368,4 +397,69 @@ func hasNetwork() bool {
 	conn.Close()
 
 	return true
+}
+
+func copyFile(src, dst string) error {
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return err
+	}
+
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	dstFile, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer dstFile.Close()
+
+	_, err = io.Copy(dstFile, srcFile)
+	return err
+}
+
+func (m *Models) findMatchingProjBySha(newShaFile string) (projFile, shaFile string, found bool) {
+	newShaContent, err := os.ReadFile(newShaFile)
+	if err != nil {
+		return "", "", false
+	}
+
+	shaDir := filepath.Dir(newShaFile)
+
+	entries, err := os.ReadDir(shaDir)
+	if err != nil {
+		return "", "", false
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		name := entry.Name()
+		if !strings.HasPrefix(name, "mmproj") {
+			continue
+		}
+
+		existingShaPath := filepath.Join(shaDir, name)
+		if existingShaPath == newShaFile {
+			continue
+		}
+
+		existingShaContent, err := os.ReadFile(existingShaPath)
+		if err != nil {
+			continue
+		}
+
+		if string(existingShaContent) == string(newShaContent) {
+			existingProjFile := filepath.Join(filepath.Dir(shaDir), name)
+			if _, err := os.Stat(existingProjFile); err == nil {
+				return existingProjFile, existingShaPath, true
+			}
+		}
+	}
+
+	return "", "", false
 }

@@ -157,16 +157,22 @@ class ApiService {
 
   pullModel(
     modelUrl: string,
+    projUrl: string | undefined,
     onMessage: (data: PullResponse) => void,
     onError: (error: string) => void,
     onComplete: () => void
   ): () => void {
     const controller = new AbortController();
 
+    const body: { model_url: string; proj_url?: string } = { model_url: modelUrl };
+    if (projUrl) {
+      body.proj_url = projUrl;
+    }
+
     fetch(`${this.baseUrl}/models/pull`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model_url: modelUrl }),
+      body: JSON.stringify(body),
       signal: controller.signal,
     })
       .then(async (response) => {

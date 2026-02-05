@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
@@ -77,6 +78,10 @@ func Init(opts ...InitOption) error {
 
 		libraryLocation = libPath
 		llama.Init()
+
+		if err := model.InitYzmaWorkarounds(libPath); err != nil {
+			initErr = fmt.Errorf("unable to init yzma workarounds: %w", err)
+		}
 
 		// ---------------------------------------------------------------------
 

@@ -43,7 +43,7 @@ export default function DocsManual() {
 
       <div className="doc-layout">
         <div className="doc-content manual-content">
-          <h1 id="kronk-model-server-user-manual">Kronk Model Server User Manual</h1>
+          <h1 id="kronk-user-manual">Kronk User Manual</h1>
           <h2 id="table-of-contents">Table of Contents</h2>
           <ol>
             <li><a href="#chapter-1-introduction">Introduction</a></li>
@@ -65,13 +65,26 @@ export default function DocsManual() {
           </ol>
           <hr />
           <h2 id="chapter-1:-introduction">Chapter 1: Introduction</h2>
-          <h3 id="11-what-is-kronk-model-server">1.1 What is Kronk Model Server</h3>
-          <p>Kronk Model Server (KMS) is an OpenAI and Anthropic compatible model server for running local inference with open-source GGUF models. Built on top of llama.cpp via the <a href="https://github.com/hybridgroup/yzma">yzma</a> Go bindings, Kronk provides hardware-accelerated inference for text generation, vision, audio, embeddings, and reranking.</p>
-          <p>The server exposes a REST API that is compatible with:</p>
+          <h3 id="11-what-is-kronk">1.1 What is Kronk</h3>
+          <p>Kronk is a Go SDK and Model Server for running local inference with open-source</p>
+          <p>GGUF models. Built on top of llama.cpp via the <a href="https://github.com/hybridgroup/yzma">yzma</a></p>
+          <p>Go bindings (a non-CGO FFI layer), Kronk provides hardware-accelerated inference</p>
+          <p>for text generation, vision, audio, embeddings, and reranking.</p>
+          <p><strong>The SDK is the foundation.</strong> The Kronk Model Server is built entirely on top</p>
+          <p>of the SDK — we "dog food" our own library. Everything the model server can do</p>
+          <p>is available as SDK functions that you can use directly in your own applications.</p>
+          <p><strong>You don't need a model server.</strong> The real power of Kronk is that you can embed</p>
+          <p>model inference directly into your Go applications. Load models, run inference,</p>
+          <p>manage caching, and handle concurrent requests — all without running a separate</p>
+          <p>server process. The <a href="examples/">examples</a> directory demonstrates building</p>
+          <p>standalone applications with the SDK.</p>
+          <p><strong>The Model Server is optional.</strong> When you do need an API server (for web UIs,</p>
+          <p>multi-client access, or OpenAI-compatible endpoints), the Kronk Model Server</p>
+          <p>provides:</p>
           <ul>
-            <li>OpenAI client libraries</li>
-            <li>OpenWebUI</li>
-            <li>Agents that can be configured to work with local models</li>
+            <li>OpenAI and Anthropic compatible REST API</li>
+            <li>OpenWebUI integration</li>
+            <li>Agent and tool support for local models</li>
             <li>Any OpenAI-compatible client</li>
           </ul>
           <h3 id="12-key-features">1.2 Key Features</h3>
@@ -133,32 +146,78 @@ export default function DocsManual() {
             <li>GPU with Metal, CUDA, or Vulkan support recommended for optimal performance</li>
           </ul>
           <h3 id="14-architecture-overview">1.4 Architecture Overview</h3>
-          <pre className="code-block"><code>{`┌────────────────────────────────────────────────────────────────────┐
-│                         Kronk Model Server                         │
-├────────────────────────────────────────────────────────────────────┤
-│                     REST API (OpenAI Compatible)                   │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐  │
-│  │   Chat   │ │ Response │ │  Embed   │ │  Rerank  │ │   Msgs   │  │
-│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘  │
-├───────┼────────────┼────────────┼────────────┼────────────┼────────┤
-│       └────────────┴──────────┬─┴────────────┴────────────┘        │
-│                               ▼                                    │
-│      ┌─────────────────────────────────────────────────────┐       │
-│      │              Kronk SDK (Model Pool)                 │       │
-│      │  ┌─────────┐  ┌─────────┐  ┌─────────┐              │       │
-│      │  │ Model A │  │ Model B │  │ Model C │  (cached)    │       │
-│      │  └────┬────┘  └────┬────┘  └────┬────┘              │       │
-│      └───────┼────────────┼────────────┼───────────────────┘       │
-├──────────────┼────────────┼────────────┼───────────────────────────│
-│          .   └────────────┴─────┬──────┘                           │
-│                                 ▼                                  │
-│      ┌─────────────────────────────────────────────────────┐       │
-│      │         yzma (llama.cpp Go Bindings)                │       │
-│      └─────────────────────────────────────────────────────┘       │
-├────────────────────────────────────────────────────────────────────┤
-│        Hardware Acceleration: Metal │ CUDA │ Vulkan │ CPU          │
-└────────────────────────────────────────────────────────────────────┘`}</code></pre>
-          <p><strong>Request Flow</strong></p>
+          <p>Kronk is designed as a layered architecture where the SDK provides all core</p>
+          <p>functionality and the Model Server is one application built on top of it.</p>
+          <p>!<a href="images/design/sdk.png">Kronk SDK Architecture</a></p>
+          <p><strong>Layer Breakdown:</strong></p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Layer</th>
+                <th>Component</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Application</strong></td>
+                <td>Kronk Model Server</td>
+                <td>REST API server (or your own app)</td>
+              </tr>
+              <tr>
+                <td><strong>SDK Tools</strong></td>
+                <td>Models, Libs, Catalog, Template APIs</td>
+                <td>High-level interfaces for common tasks</td>
+              </tr>
+              <tr>
+                <td><strong>SDK Core</strong></td>
+                <td>Kronk SDK API, Model SDK API</td>
+                <td>Model loading, inference, pooling, caching</td>
+              </tr>
+              <tr>
+                <td><strong>Bindings</strong></td>
+                <td>yzma (non-CGO FFI via purego)</td>
+                <td>Go bindings to llama.cpp without CGO</td>
+              </tr>
+              <tr>
+                <td><strong>Engine</strong></td>
+                <td>llama.cpp</td>
+                <td>Hardware-accelerated inference</td>
+              </tr>
+              <tr>
+                <td><strong>Hardware</strong></td>
+                <td>Metal, CUDA, Vulkan, CPU</td>
+                <td>GPU/CPU acceleration</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><strong>The Key Insight:</strong> Your application sits at the same level as the Kronk Model</p>
+          <p>Server. You have access to the exact same SDK APIs. Whether you're building a</p>
+          <p>CLI tool, a web service, an embedded system, or a desktop app — you get the</p>
+          <p>full power of local model inference without any server overhead.</p>
+          <p><strong>SDK vs Server Usage:</strong></p>
+          <pre className="code-block"><code className="language-go">{`// Direct SDK usage - no server needed
+cfg := model.Config{
+    ModelFiles: modelPath.ModelFiles,
+    CacheTypeK: model.GGMLTypeQ8_0,
+    CacheTypeV: model.GGMLTypeQ8_0,
+}
+
+krn, _ := kronk.New(cfg)
+defer krn.Unload(ctx)
+
+ch, _ := krn.ChatStreaming(ctx, model.D{
+    "messages":   model.DocumentArray(model.TextMessage(model.RoleUser, "Hello")),
+    "max_tokens": 2048,
+})
+
+for resp := range ch {
+    fmt.Print(resp.Choice[0].Delta.Content)
+}`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`# Or use the Model Server for OpenAI-compatible API
+kronk server start
+curl http://localhost:8080/v1/chat/completions -d '{"model":"Qwen3-8B-Q8_0","messages":[...]}'`}</code></pre>
+          <p><strong>Request Flow (Server Mode)</strong></p>
           <ol>
             <li>Client sends request to REST API endpoint</li>
             <li>Server routes to appropriate handler (chat, embed, rerank)</li>
@@ -438,6 +497,46 @@ cache_type_v: q8_0 # Value cache precision`}</code></pre>
             <li>32K context: ~25% reduction</li>
             <li>Larger contexts benefit proportionally</li>
           </ul>
+          <p><strong>When to Use F16 Cache (No Quantization):</strong></p>
+          <p>Certain model architectures are sensitive to KV cache quantization and</p>
+          <p>perform significantly better with <code>f16</code> precision:</p>
+          <ul>
+            <li><strong>Mixture of Experts (MoE) models</strong> - Models like Qwen3-MoE, DeepSeek-MoE,</li>
+          </ul>
+          <p>  and Mixtral use sparse expert routing. The routing decisions depend on</p>
+          <p>  subtle attention patterns that degrade when the KV cache is quantized.</p>
+          <ul>
+            <li><strong>Long-context reasoning</strong> - Tasks requiring attention across many thousands</li>
+          </ul>
+          <p>  of tokens (legal documents, codebases, multi-turn conversations) accumulate</p>
+          <p>  small precision errors that compound over the sequence length.</p>
+          <ul>
+            <li><strong>Code generation</strong> - Precise variable tracking and syntax coherence benefit</li>
+          </ul>
+          <p>  from higher cache precision, especially in larger codebases.</p>
+          <ul>
+            <li><strong>Math and logic</strong> - Multi-step reasoning chains are sensitive to accumulated</li>
+          </ul>
+          <p>  quantization noise in earlier attention states.</p>
+          <p><strong>Example: MoE Model with F16 Cache</strong></p>
+          <pre className="code-block"><code className="language-yaml">{`models:
+  # MoE models benefit from f16 cache for routing accuracy
+  Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL:
+    context_window: 32768
+    cache_type_k: f16 # Preserve routing precision
+    cache_type_v: f16
+    split_mode: row # Best for MoE multi-GPU
+
+  # Dense models can often use q8_0 cache without issues
+  Qwen3-8B-Q8_0:
+    context_window: 32768
+    cache_type_k: q8_0
+    cache_type_v: q8_0`}</code></pre>
+          <p><strong>Recommendation:</strong> If you notice quality degradation (incoherent outputs,</p>
+          <p>reasoning failures, or code bugs) with quantized cache, try <code>f16</code> first</p>
+          <p>before adjusting other parameters. The VRAM cost is typically 25-50% more</p>
+          <p>for the cache, but the quality improvement for sensitive workloads is</p>
+          <p>substantial.</p>
           <h3 id="35-flash-attention">3.5 Flash Attention</h3>
           <p>Flash Attention optimizes memory usage and speeds up attention computation:</p>
           <pre className="code-block"><code className="language-yaml">{`flash_attention: enabled   # Default: enabled
@@ -532,6 +631,278 @@ models:
     n_seq_max: 4 # 4 model instances for concurrency`}</code></pre>
           <p>Embedding models process complete inputs in a single pass, so larger</p>
           <p><code>n_batch</code> values improve throughput.</p>
+          <h3 id="310-understanding-gguf-quantization">3.10 Understanding GGUF Quantization</h3>
+          <p>GGUF models come in various quantization formats that trade off between file</p>
+          <p>size, VRAM usage, and output quality. Understanding these formats helps you</p>
+          <p>choose the right model variant for your hardware and use case.</p>
+          <h4 id="what-is-quantization?">What is Quantization?</h4>
+          <p>Quantization reduces model precision from the original 16-bit or 32-bit</p>
+          <p>floating-point weights to lower bit representations. This dramatically</p>
+          <p>decreases:</p>
+          <ul>
+            <li><strong>File size</strong> - A 7B model goes from ~14GB (FP16) to ~3GB (Q4)</li>
+            <li><strong>VRAM usage</strong> - More aggressive quantization allows larger models on limited hardware</li>
+            <li><strong>Inference speed</strong> - Smaller models load faster and may run faster on memory-constrained systems</li>
+          </ul>
+          <p>The tradeoff is <strong>quality degradation</strong> - lower precision means less accurate</p>
+          <p>representations of the original weights, which can affect output coherence,</p>
+          <p>reasoning ability, and factual accuracy.</p>
+          <h4 id="what-are-k-quants?">What are K-Quants?</h4>
+          <p>K-quants (introduced by llama.cpp) use <strong>per-block scaling</strong> with importance</p>
+          <p>weighting. Instead of applying uniform quantization across all weights, K-quants:</p>
+          <ol>
+            <li>Divide weights into small blocks (typically 32 or 256 values)</li>
+            <li>Calculate optimal scale factors per block</li>
+            <li>Preserve more precision for important weights</li>
+          </ol>
+          <p>This produces better quality than naive quantization at the same bit rate.</p>
+          <p>K-quant variants include size suffixes:</p>
+          <ul>
+            <li><strong>S</strong> (Small) - Smallest file size, lowest quality within that bit level</li>
+            <li><strong>M</strong> (Medium) - Balanced size and quality</li>
+            <li><strong>L</strong> (Large) - Larger file, better quality</li>
+          </ul>
+          <h4 id="standard-quantization-formats">Standard Quantization Formats</h4>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Format</th>
+                <th>Bits/Weight</th>
+                <th>Quality</th>
+                <th>VRAM (7B Model)</th>
+                <th>Use Case</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Q4_0</strong></td>
+                <td>4.5</td>
+                <td>Low</td>
+                <td>~4 GB</td>
+                <td>Maximum compression, quality loss noticeable</td>
+              </tr>
+              <tr>
+                <td><strong>Q4_1</strong></td>
+                <td>5.0</td>
+                <td>Low-Med</td>
+                <td>~4.3 GB</td>
+                <td>Slightly better than Q4_0</td>
+              </tr>
+              <tr>
+                <td><strong>Q4_K_S</strong></td>
+                <td>4.5</td>
+                <td>Medium</td>
+                <td>~4 GB</td>
+                <td>K-quant, good balance for limited VRAM</td>
+              </tr>
+              <tr>
+                <td><strong>Q4_K_M</strong></td>
+                <td>4.8</td>
+                <td>Medium</td>
+                <td>~4.5 GB</td>
+                <td>K-quant, recommended 4-bit option</td>
+              </tr>
+              <tr>
+                <td><strong>Q5_K_S</strong></td>
+                <td>5.5</td>
+                <td>Medium-High</td>
+                <td>~5 GB</td>
+                <td>Good quality, moderate size</td>
+              </tr>
+              <tr>
+                <td><strong>Q5_K_M</strong></td>
+                <td>5.7</td>
+                <td>High</td>
+                <td>~5.3 GB</td>
+                <td>Recommended for most users</td>
+              </tr>
+              <tr>
+                <td><strong>Q6_K</strong></td>
+                <td>6.5</td>
+                <td>High</td>
+                <td>~6 GB</td>
+                <td>Near-original quality</td>
+              </tr>
+              <tr>
+                <td><strong>Q8_0</strong></td>
+                <td>8.5</td>
+                <td>Highest</td>
+                <td>~8 GB</td>
+                <td>Best quality, largest size</td>
+              </tr>
+            </tbody>
+          </table>
+          <h4 id="iq-importance-matrix-quantization">IQ (Importance Matrix) Quantization</h4>
+          <p>IQ formats use <strong>learned importance matrices</strong> to determine which weights</p>
+          <p>matter most. They achieve extreme compression with minimal quality loss by:</p>
+          <ol>
+            <li>Analyzing weight importance during quantization</li>
+            <li>Allocating more bits to critical weights</li>
+            <li>Aggressively compressing less important weights</li>
+          </ol>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Format</th>
+                <th>Bits/Weight</th>
+                <th>Quality</th>
+                <th>Use Case</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>IQ1_S</strong></td>
+                <td>~1.5</td>
+                <td>Very Low</td>
+                <td>Extreme compression, experimental</td>
+              </tr>
+              <tr>
+                <td><strong>IQ1_M</strong></td>
+                <td>~1.75</td>
+                <td>Low</td>
+                <td>Extreme compression, experimental</td>
+              </tr>
+              <tr>
+                <td><strong>IQ2_XXS</strong></td>
+                <td>~2.0</td>
+                <td>Low</td>
+                <td>Ultra-low VRAM situations</td>
+              </tr>
+              <tr>
+                <td><strong>IQ2_XS</strong></td>
+                <td>~2.3</td>
+                <td>Low-Med</td>
+                <td>Very constrained hardware</td>
+              </tr>
+              <tr>
+                <td><strong>IQ2_S</strong></td>
+                <td>~2.5</td>
+                <td>Medium</td>
+                <td>Constrained hardware</td>
+              </tr>
+              <tr>
+                <td><strong>IQ3_XXS</strong></td>
+                <td>~3.0</td>
+                <td>Medium</td>
+                <td>Good balance for low VRAM</td>
+              </tr>
+              <tr>
+                <td><strong>IQ3_XS</strong></td>
+                <td>~3.3</td>
+                <td>Medium-High</td>
+                <td>Better quality low-bit option</td>
+              </tr>
+              <tr>
+                <td><strong>IQ4_XS</strong></td>
+                <td>~4.0</td>
+                <td>High</td>
+                <td>Alternative to Q4_K variants</td>
+              </tr>
+            </tbody>
+          </table>
+          <h4 id="ud-ultra-dynamic-quantization">UD (Ultra-Dynamic) Quantization</h4>
+          <p>UD quantization applies <strong>different precision levels per layer</strong>. Neural</p>
+          <p>network layers have varying sensitivity to quantization:</p>
+          <ul>
+            <li>Early layers (embeddings, first attention blocks) - More sensitive</li>
+            <li>Middle layers - Moderately sensitive</li>
+            <li>Later layers - Often more tolerant of compression</li>
+          </ul>
+          <p>UD variants analyze each layer and assign optimal bit depths, achieving</p>
+          <p>better quality than uniform quantization at similar average bits per weight.</p>
+          <p>Common UD naming: <code>UD-Q5_K_XL</code> means Ultra-Dynamic with Q5 K-quant base, XL quality tier.</p>
+          <h4 id="choosing-the-right-quantization">Choosing the Right Quantization</h4>
+          <p><strong>By Available VRAM:</strong></p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>VRAM</th>
+                <th>7B Model</th>
+                <th>13B Model</th>
+                <th>30B Model</th>
+                <th>70B Model</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>6 GB</td>
+                <td>Q4_K_M</td>
+                <td>IQ3_XXS</td>
+                <td>-</td>
+                <td>-</td>
+              </tr>
+              <tr>
+                <td>8 GB</td>
+                <td>Q6_K</td>
+                <td>Q4_K_M</td>
+                <td>IQ2_XXS</td>
+                <td>-</td>
+              </tr>
+              <tr>
+                <td>12 GB</td>
+                <td>Q8_0</td>
+                <td>Q5_K_M</td>
+                <td>IQ3_XXS</td>
+                <td>-</td>
+              </tr>
+              <tr>
+                <td>16 GB</td>
+                <td>Q8_0</td>
+                <td>Q8_0</td>
+                <td>Q4_K_M</td>
+                <td>-</td>
+              </tr>
+              <tr>
+                <td>24 GB</td>
+                <td>Q8_0</td>
+                <td>Q8_0</td>
+                <td>Q6_K</td>
+                <td>IQ3_XXS</td>
+              </tr>
+              <tr>
+                <td>48 GB</td>
+                <td>Q8_0</td>
+                <td>Q8_0</td>
+                <td>Q8_0</td>
+                <td>Q4_K_M</td>
+              </tr>
+              <tr>
+                <td>64 GB+</td>
+                <td>Q8_0</td>
+                <td>Q8_0</td>
+                <td>Q8_0</td>
+                <td>Q6_K/Q8_0</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><strong>By Use Case:</strong></p>
+          <ul>
+            <li><strong>Production/Quality-Critical</strong>: Q8_0 or Q6_K - Minimal quality loss</li>
+            <li><strong>General Use</strong>: Q5_K_M - Best balance of quality and efficiency</li>
+            <li><strong>VRAM-Constrained</strong>: Q4_K_M - Good quality at low VRAM cost</li>
+            <li><strong>Experimental/Testing</strong>: IQ3_XXS or IQ2_XS - Run larger models on limited hardware</li>
+          </ul>
+          <p><strong>Quality Guidelines:</strong></p>
+          <ol>
+            <li><strong>Start with Q5_K_M</strong> - It's the sweet spot for most use cases</li>
+            <li><strong>Use Q8_0 for reasoning-heavy tasks</strong> - Math, code, complex logic benefit from higher precision</li>
+            <li><strong>Q4_K_M is the floor</strong> - Below this, quality degrades noticeably for most models</li>
+            <li><strong>IQ formats are specialized</strong> - Great for running models that wouldn't otherwise fit, but expect some quality loss</li>
+            <li><strong>Larger models at lower quant often beat smaller models at higher quant</strong> - A 70B Q4 may outperform a 7B Q8</li>
+          </ol>
+          <p><strong>Example Configuration:</strong></p>
+          <pre className="code-block"><code className="language-yaml">{`models:
+  # Quality-focused: Q8_0 for a model that fits in VRAM
+  Qwen3-8B-Q8_0:
+    context_window: 32768
+    cache_type_k: q8_0
+    cache_type_v: q8_0
+
+  # VRAM-constrained: Q4_K_M to fit larger model
+  Llama-3.3-70B-Instruct-Q4_K_M:
+    context_window: 8192
+    split_mode: row
+    n_gpu_layers: 0`}</code></pre>
           <hr />
           <h2 id="chapter-4:-batch-processing">Chapter 4: Batch Processing</h2>
           <p>Batch processing allows Kronk to handle multiple concurrent requests</p>
@@ -4054,7 +4425,7 @@ m.sequentialChatRequest(...)`}</code></pre>
             <div className="doc-index-section">
               <a href="#chapter-1:-introduction" className={`doc-index-header ${activeSection === 'chapter-1:-introduction' ? 'active' : ''}`}>Chapter 1: Introduction</a>
               <ul>
-                <li><a href="#11-what-is-kronk-model-server" className={activeSection === '11-what-is-kronk-model-server' ? 'active' : ''}>1.1 What is Kronk Model Server</a></li>
+                <li><a href="#11-what-is-kronk" className={activeSection === '11-what-is-kronk' ? 'active' : ''}>1.1 What is Kronk</a></li>
                 <li><a href="#12-key-features" className={activeSection === '12-key-features' ? 'active' : ''}>1.2 Key Features</a></li>
                 <li><a href="#13-supported-platforms-and-hardware" className={activeSection === '13-supported-platforms-and-hardware' ? 'active' : ''}>1.3 Supported Platforms and Hardware</a></li>
                 <li><a href="#14-architecture-overview" className={activeSection === '14-architecture-overview' ? 'active' : ''}>1.4 Architecture Overview</a></li>
@@ -4084,6 +4455,7 @@ m.sequentialChatRequest(...)`}</code></pre>
                 <li><a href="#37-vram-estimation" className={activeSection === '37-vram-estimation' ? 'active' : ''}>3.7 VRAM Estimation</a></li>
                 <li><a href="#38-model-config-file-example" className={activeSection === '38-model-config-file-example' ? 'active' : ''}>3.8 Model Config File Example</a></li>
                 <li><a href="#39-model-specific-tuning" className={activeSection === '39-model-specific-tuning' ? 'active' : ''}>3.9 Model-Specific Tuning</a></li>
+                <li><a href="#310-understanding-gguf-quantization" className={activeSection === '310-understanding-gguf-quantization' ? 'active' : ''}>3.10 Understanding GGUF Quantization</a></li>
               </ul>
             </div>
             <div className="doc-index-section">

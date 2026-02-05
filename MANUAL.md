@@ -1,4 +1,4 @@
-# Kronk Model Server User Manual
+# Kronk User Manual
 
 ## Table of Contents
 
@@ -23,15 +23,30 @@
 
 ## Chapter 1: Introduction
 
-### 1.1 What is Kronk Model Server
+### 1.1 What is Kronk
 
-Kronk Model Server (KMS) is an OpenAI and Anthropic compatible model server for running local inference with open-source GGUF models. Built on top of llama.cpp via the [yzma](https://github.com/hybridgroup/yzma) Go bindings, Kronk provides hardware-accelerated inference for text generation, vision, audio, embeddings, and reranking.
+Kronk is a Go SDK and Model Server for running local inference with open-source
+GGUF models. Built on top of llama.cpp via the [yzma](https://github.com/hybridgroup/yzma)
+Go bindings (a non-CGO FFI layer), Kronk provides hardware-accelerated inference
+for text generation, vision, audio, embeddings, and reranking.
 
-The server exposes a REST API that is compatible with:
+**The SDK is the foundation.** The Kronk Model Server is built entirely on top
+of the SDK — we "dog food" our own library. Everything the model server can do
+is available as SDK functions that you can use directly in your own applications.
 
-- OpenAI client libraries
-- OpenWebUI
-- Agents that can be configured to work with local models
+**You don't need a model server.** The real power of Kronk is that you can embed
+model inference directly into your Go applications. Load models, run inference,
+manage caching, and handle concurrent requests — all without running a separate
+server process. The [examples](examples/) directory demonstrates building
+standalone applications with the SDK.
+
+**The Model Server is optional.** When you do need an API server (for web UIs,
+multi-client access, or OpenAI-compatible endpoints), the Kronk Model Server
+provides:
+
+- OpenAI and Anthropic compatible REST API
+- OpenWebUI integration
+- Agent and tool support for local models
 - Any OpenAI-compatible client
 
 ### 1.2 Key Features
@@ -77,35 +92,57 @@ Kronk supports full hardware acceleration across major platforms:
 
 ### 1.4 Architecture Overview
 
-```
-┌────────────────────────────────────────────────────────────────────┐
-│                         Kronk Model Server                         │
-├────────────────────────────────────────────────────────────────────┤
-│                     REST API (OpenAI Compatible)                   │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐  │
-│  │   Chat   │ │ Response │ │  Embed   │ │  Rerank  │ │   Msgs   │  │
-│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘  │
-├───────┼────────────┼────────────┼────────────┼────────────┼────────┤
-│       └────────────┴──────────┬─┴────────────┴────────────┘        │
-│                               ▼                                    │
-│      ┌─────────────────────────────────────────────────────┐       │
-│      │              Kronk SDK (Model Pool)                 │       │
-│      │  ┌─────────┐  ┌─────────┐  ┌─────────┐              │       │
-│      │  │ Model A │  │ Model B │  │ Model C │  (cached)    │       │
-│      │  └────┬────┘  └────┬────┘  └────┬────┘              │       │
-│      └───────┼────────────┼────────────┼───────────────────┘       │
-├──────────────┼────────────┼────────────┼───────────────────────────│
-│          .   └────────────┴─────┬──────┘                           │
-│                                 ▼                                  │
-│      ┌─────────────────────────────────────────────────────┐       │
-│      │         yzma (llama.cpp Go Bindings)                │       │
-│      └─────────────────────────────────────────────────────┘       │
-├────────────────────────────────────────────────────────────────────┤
-│        Hardware Acceleration: Metal │ CUDA │ Vulkan │ CPU          │
-└────────────────────────────────────────────────────────────────────┘
+Kronk is designed as a layered architecture where the SDK provides all core
+functionality and the Model Server is one application built on top of it.
+
+![Kronk SDK Architecture](images/design/sdk.png)
+
+**Layer Breakdown:**
+
+| Layer           | Component                            | Purpose                                    |
+| --------------- | ------------------------------------ | ------------------------------------------ |
+| **Application** | Kronk Model Server                   | REST API server (or your own app)          |
+| **SDK Tools**   | Models, Libs, Catalog, Template APIs | High-level interfaces for common tasks     |
+| **SDK Core**    | Kronk SDK API, Model SDK API         | Model loading, inference, pooling, caching |
+| **Bindings**    | yzma (non-CGO FFI via purego)        | Go bindings to llama.cpp without CGO       |
+| **Engine**      | llama.cpp                            | Hardware-accelerated inference             |
+| **Hardware**    | Metal, CUDA, Vulkan, CPU             | GPU/CPU acceleration                       |
+
+**The Key Insight:** Your application sits at the same level as the Kronk Model
+Server. You have access to the exact same SDK APIs. Whether you're building a
+CLI tool, a web service, an embedded system, or a desktop app — you get the
+full power of local model inference without any server overhead.
+
+**SDK vs Server Usage:**
+
+```go
+// Direct SDK usage - no server needed
+cfg := model.Config{
+    ModelFiles: modelPath.ModelFiles,
+    CacheTypeK: model.GGMLTypeQ8_0,
+    CacheTypeV: model.GGMLTypeQ8_0,
+}
+
+krn, _ := kronk.New(cfg)
+defer krn.Unload(ctx)
+
+ch, _ := krn.ChatStreaming(ctx, model.D{
+    "messages":   model.DocumentArray(model.TextMessage(model.RoleUser, "Hello")),
+    "max_tokens": 2048,
+})
+
+for resp := range ch {
+    fmt.Print(resp.Choice[0].Delta.Content)
+}
 ```
 
-**Request Flow**
+```shell
+# Or use the Model Server for OpenAI-compatible API
+kronk server start
+curl http://localhost:8080/v1/chat/completions -d '{"model":"Qwen3-8B-Q8_0","messages":[...]}'
+```
+
+**Request Flow (Server Mode)**
 
 1. Client sends request to REST API endpoint
 2. Server routes to appropriate handler (chat, embed, rerank)
@@ -501,6 +538,48 @@ cache_type_v: q8_0 # Value cache precision
 - 32K context: ~25% reduction
 - Larger contexts benefit proportionally
 
+**When to Use F16 Cache (No Quantization):**
+
+Certain model architectures are sensitive to KV cache quantization and
+perform significantly better with `f16` precision:
+
+- **Mixture of Experts (MoE) models** - Models like Qwen3-MoE, DeepSeek-MoE,
+  and Mixtral use sparse expert routing. The routing decisions depend on
+  subtle attention patterns that degrade when the KV cache is quantized.
+- **Long-context reasoning** - Tasks requiring attention across many thousands
+  of tokens (legal documents, codebases, multi-turn conversations) accumulate
+  small precision errors that compound over the sequence length.
+
+- **Code generation** - Precise variable tracking and syntax coherence benefit
+  from higher cache precision, especially in larger codebases.
+
+- **Math and logic** - Multi-step reasoning chains are sensitive to accumulated
+  quantization noise in earlier attention states.
+
+**Example: MoE Model with F16 Cache**
+
+```yaml
+models:
+  # MoE models benefit from f16 cache for routing accuracy
+  Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL:
+    context_window: 32768
+    cache_type_k: f16 # Preserve routing precision
+    cache_type_v: f16
+    split_mode: row # Best for MoE multi-GPU
+
+  # Dense models can often use q8_0 cache without issues
+  Qwen3-8B-Q8_0:
+    context_window: 32768
+    cache_type_k: q8_0
+    cache_type_v: q8_0
+```
+
+**Recommendation:** If you notice quality degradation (incoherent outputs,
+reasoning failures, or code bugs) with quantized cache, try `f16` first
+before adjusting other parameters. The VRAM cost is typically 25-50% more
+for the cache, but the quality improvement for sensitive workloads is
+substantial.
+
 ### 3.5 Flash Attention
 
 Flash Attention optimizes memory usage and speeds up attention computation:
@@ -651,6 +730,135 @@ models:
 
 Embedding models process complete inputs in a single pass, so larger
 `n_batch` values improve throughput.
+
+### 3.10 Understanding GGUF Quantization
+
+GGUF models come in various quantization formats that trade off between file
+size, VRAM usage, and output quality. Understanding these formats helps you
+choose the right model variant for your hardware and use case.
+
+#### What is Quantization?
+
+Quantization reduces model precision from the original 16-bit or 32-bit
+floating-point weights to lower bit representations. This dramatically
+decreases:
+
+- **File size** - A 7B model goes from ~14GB (FP16) to ~3GB (Q4)
+- **VRAM usage** - More aggressive quantization allows larger models on limited hardware
+- **Inference speed** - Smaller models load faster and may run faster on memory-constrained systems
+
+The tradeoff is **quality degradation** - lower precision means less accurate
+representations of the original weights, which can affect output coherence,
+reasoning ability, and factual accuracy.
+
+#### What are K-Quants?
+
+K-quants (introduced by llama.cpp) use **per-block scaling** with importance
+weighting. Instead of applying uniform quantization across all weights, K-quants:
+
+1. Divide weights into small blocks (typically 32 or 256 values)
+2. Calculate optimal scale factors per block
+3. Preserve more precision for important weights
+
+This produces better quality than naive quantization at the same bit rate.
+K-quant variants include size suffixes:
+
+- **S** (Small) - Smallest file size, lowest quality within that bit level
+- **M** (Medium) - Balanced size and quality
+- **L** (Large) - Larger file, better quality
+
+#### Standard Quantization Formats
+
+| Format     | Bits/Weight | Quality     | VRAM (7B Model) | Use Case                                     |
+| ---------- | ----------- | ----------- | --------------- | -------------------------------------------- |
+| **Q4_0**   | 4.5         | Low         | ~4 GB           | Maximum compression, quality loss noticeable |
+| **Q4_1**   | 5.0         | Low-Med     | ~4.3 GB         | Slightly better than Q4_0                    |
+| **Q4_K_S** | 4.5         | Medium      | ~4 GB           | K-quant, good balance for limited VRAM       |
+| **Q4_K_M** | 4.8         | Medium      | ~4.5 GB         | K-quant, recommended 4-bit option            |
+| **Q5_K_S** | 5.5         | Medium-High | ~5 GB           | Good quality, moderate size                  |
+| **Q5_K_M** | 5.7         | High        | ~5.3 GB         | Recommended for most users                   |
+| **Q6_K**   | 6.5         | High        | ~6 GB           | Near-original quality                        |
+| **Q8_0**   | 8.5         | Highest     | ~8 GB           | Best quality, largest size                   |
+
+#### IQ (Importance Matrix) Quantization
+
+IQ formats use **learned importance matrices** to determine which weights
+matter most. They achieve extreme compression with minimal quality loss by:
+
+1. Analyzing weight importance during quantization
+2. Allocating more bits to critical weights
+3. Aggressively compressing less important weights
+
+| Format      | Bits/Weight | Quality     | Use Case                          |
+| ----------- | ----------- | ----------- | --------------------------------- |
+| **IQ1_S**   | ~1.5        | Very Low    | Extreme compression, experimental |
+| **IQ1_M**   | ~1.75       | Low         | Extreme compression, experimental |
+| **IQ2_XXS** | ~2.0        | Low         | Ultra-low VRAM situations         |
+| **IQ2_XS**  | ~2.3        | Low-Med     | Very constrained hardware         |
+| **IQ2_S**   | ~2.5        | Medium      | Constrained hardware              |
+| **IQ3_XXS** | ~3.0        | Medium      | Good balance for low VRAM         |
+| **IQ3_XS**  | ~3.3        | Medium-High | Better quality low-bit option     |
+| **IQ4_XS**  | ~4.0        | High        | Alternative to Q4_K variants      |
+
+#### UD (Ultra-Dynamic) Quantization
+
+UD quantization applies **different precision levels per layer**. Neural
+network layers have varying sensitivity to quantization:
+
+- Early layers (embeddings, first attention blocks) - More sensitive
+- Middle layers - Moderately sensitive
+- Later layers - Often more tolerant of compression
+
+UD variants analyze each layer and assign optimal bit depths, achieving
+better quality than uniform quantization at similar average bits per weight.
+
+Common UD naming: `UD-Q5_K_XL` means Ultra-Dynamic with Q5 K-quant base, XL quality tier.
+
+#### Choosing the Right Quantization
+
+**By Available VRAM:**
+
+| VRAM   | 7B Model | 13B Model | 30B Model | 70B Model |
+| ------ | -------- | --------- | --------- | --------- |
+| 6 GB   | Q4_K_M   | IQ3_XXS   | -         | -         |
+| 8 GB   | Q6_K     | Q4_K_M    | IQ2_XXS   | -         |
+| 12 GB  | Q8_0     | Q5_K_M    | IQ3_XXS   | -         |
+| 16 GB  | Q8_0     | Q8_0      | Q4_K_M    | -         |
+| 24 GB  | Q8_0     | Q8_0      | Q6_K      | IQ3_XXS   |
+| 48 GB  | Q8_0     | Q8_0      | Q8_0      | Q4_K_M    |
+| 64 GB+ | Q8_0     | Q8_0      | Q8_0      | Q6_K/Q8_0 |
+
+**By Use Case:**
+
+- **Production/Quality-Critical**: Q8_0 or Q6_K - Minimal quality loss
+- **General Use**: Q5_K_M - Best balance of quality and efficiency
+- **VRAM-Constrained**: Q4_K_M - Good quality at low VRAM cost
+- **Experimental/Testing**: IQ3_XXS or IQ2_XS - Run larger models on limited hardware
+
+**Quality Guidelines:**
+
+1. **Start with Q5_K_M** - It's the sweet spot for most use cases
+2. **Use Q8_0 for reasoning-heavy tasks** - Math, code, complex logic benefit from higher precision
+3. **Q4_K_M is the floor** - Below this, quality degrades noticeably for most models
+4. **IQ formats are specialized** - Great for running models that wouldn't otherwise fit, but expect some quality loss
+5. **Larger models at lower quant often beat smaller models at higher quant** - A 70B Q4 may outperform a 7B Q8
+
+**Example Configuration:**
+
+```yaml
+models:
+  # Quality-focused: Q8_0 for a model that fits in VRAM
+  Qwen3-8B-Q8_0:
+    context_window: 32768
+    cache_type_k: q8_0
+    cache_type_v: q8_0
+
+  # VRAM-constrained: Q4_K_M to fit larger model
+  Llama-3.3-70B-Instruct-Q4_K_M:
+    context_window: 8192
+    split_mode: row
+    n_gpu_layers: 0
+```
 
 ---
 
@@ -1025,14 +1233,14 @@ If all cache slots are in use, new sessions bypass IMC gracefully.
 
 ### 5.5 SPC vs IMC
 
-| Feature      | System Prompt Cache                  | Incremental Message Cache               |
-| ------------ | ------------------------------------ | --------------------------------------- |
-| Caches       | System prompt only                   | All messages except last                |
-| Extends      | No                                   | Yes, incrementally                      |
-| Multi-user   | Per-user cache (dedicated sequences) | Per-user cache (dedicated sequences)    |
-| Best for     | Chat UIs, inconsistent templates     | Agentic workflows, consistent templates |
-| Memory       | N extra sequences (max_cache_sessions) | N extra sequences (max_cache_sessions)    |
-| Template req | Any                                  | Consistent templates only               |
+| Feature      | System Prompt Cache                    | Incremental Message Cache               |
+| ------------ | -------------------------------------- | --------------------------------------- |
+| Caches       | System prompt only                     | All messages except last                |
+| Extends      | No                                     | Yes, incrementally                      |
+| Multi-user   | Per-user cache (dedicated sequences)   | Per-user cache (dedicated sequences)    |
+| Best for     | Chat UIs, inconsistent templates       | Agentic workflows, consistent templates |
+| Memory       | N extra sequences (max_cache_sessions) | N extra sequences (max_cache_sessions)  |
+| Template req | Any                                    | Consistent templates only               |
 
 **Important:** SPC and IMC are mutually exclusive. Choose based on your
 model's template behavior:
@@ -2186,32 +2394,32 @@ This chapter documents the request parameters available for controlling model ou
 
 These parameters control the randomness and diversity of generated text.
 
-| Parameter | JSON Key | Type | Default | Description |
-|-----------|----------|------|---------|-------------|
-| Temperature | `temperature` | float32 | 0.8 | Controls randomness of output. Higher values produce more varied text, lower values more deterministic. |
-| Top-K | `top_k` | int32 | 40 | Limits token pool to K most probable tokens before sampling. |
-| Top-P | `top_p` | float32 | 0.9 | Nucleus sampling threshold. Only tokens with cumulative probability ≤ top_p are considered. |
-| Min-P | `min_p` | float32 | 0.0 | Dynamic sampling threshold. Tokens with probability < min_p × max_probability are excluded. |
+| Parameter   | JSON Key      | Type    | Default | Description                                                                                             |
+| ----------- | ------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------- |
+| Temperature | `temperature` | float32 | 0.8     | Controls randomness of output. Higher values produce more varied text, lower values more deterministic. |
+| Top-K       | `top_k`       | int32   | 40      | Limits token pool to K most probable tokens before sampling.                                            |
+| Top-P       | `top_p`       | float32 | 0.9     | Nucleus sampling threshold. Only tokens with cumulative probability ≤ top_p are considered.             |
+| Min-P       | `min_p`       | float32 | 0.0     | Dynamic sampling threshold. Tokens with probability < min_p × max_probability are excluded.             |
 
 ### 9.2 Repetition Control
 
 These parameters help prevent repetitive output.
 
-| Parameter | JSON Key | Type | Default | Description |
-|-----------|----------|------|---------|-------------|
-| Repeat Penalty | `repeat_penalty` | float32 | 1.0 | Penalty multiplier for repeated tokens. Values > 1.0 discourage repetition. |
-| Repeat Last N | `repeat_last_n` | int32 | 64 | Window size for repetition check. Only the last N tokens are considered. |
+| Parameter      | JSON Key         | Type    | Default | Description                                                                 |
+| -------------- | ---------------- | ------- | ------- | --------------------------------------------------------------------------- |
+| Repeat Penalty | `repeat_penalty` | float32 | 1.0     | Penalty multiplier for repeated tokens. Values > 1.0 discourage repetition. |
+| Repeat Last N  | `repeat_last_n`  | int32   | 64      | Window size for repetition check. Only the last N tokens are considered.    |
 
 **DRY Parameters (Don't Repeat Yourself):**
 
 DRY penalizes n-gram repetitions to prevent the model from repeating phrases.
 
-| Parameter | JSON Key | Type | Default | Description |
-|-----------|----------|------|---------|-------------|
-| DRY Multiplier | `dry_multiplier` | float32 | 1.05 | N-gram repetition penalty strength. Higher values penalize repetition more. |
-| DRY Base | `dry_base` | float32 | 1.75 | Exponential penalty base for longer n-grams. |
-| DRY Allowed Length | `dry_allowed_length` | int32 | 2 | Minimum n-gram length to consider for penalties. |
-| DRY Penalty Last N | `dry_penalty_last_n` | int32 | 0 | Number of recent tokens to consider for DRY. 0 means all tokens. |
+| Parameter          | JSON Key             | Type    | Default | Description                                                                 |
+| ------------------ | -------------------- | ------- | ------- | --------------------------------------------------------------------------- |
+| DRY Multiplier     | `dry_multiplier`     | float32 | 1.05    | N-gram repetition penalty strength. Higher values penalize repetition more. |
+| DRY Base           | `dry_base`           | float32 | 1.75    | Exponential penalty base for longer n-grams.                                |
+| DRY Allowed Length | `dry_allowed_length` | int32   | 2       | Minimum n-gram length to consider for penalties.                            |
+| DRY Penalty Last N | `dry_penalty_last_n` | int32   | 0       | Number of recent tokens to consider for DRY. 0 means all tokens.            |
 
 ### 9.3 Advanced Sampling
 
@@ -2219,30 +2427,30 @@ DRY penalizes n-gram repetitions to prevent the model from repeating phrases.
 
 XTC probabilistically removes high-probability tokens to increase diversity.
 
-| Parameter | JSON Key | Type | Default | Description |
-|-----------|----------|------|---------|-------------|
-| XTC Probability | `xtc_probability` | float32 | 0.0 | Probability of activating XTC on each token. 0 disables XTC. |
-| XTC Threshold | `xtc_threshold` | float32 | 0.1 | Probability threshold for token culling. |
-| XTC Min Keep | `xtc_min_keep` | uint32 | 1 | Minimum number of tokens to keep after culling. |
+| Parameter       | JSON Key          | Type    | Default | Description                                                  |
+| --------------- | ----------------- | ------- | ------- | ------------------------------------------------------------ |
+| XTC Probability | `xtc_probability` | float32 | 0.0     | Probability of activating XTC on each token. 0 disables XTC. |
+| XTC Threshold   | `xtc_threshold`   | float32 | 0.1     | Probability threshold for token culling.                     |
+| XTC Min Keep    | `xtc_min_keep`    | uint32  | 1       | Minimum number of tokens to keep after culling.              |
 
 **Adaptive-P:**
 
 Adaptive-P dynamically adjusts the sampling threshold based on output probability.
 
-| Parameter | JSON Key | Type | Default | Description |
-|-----------|----------|------|---------|-------------|
-| Adaptive-P Target | `adaptive_p_target` | float32 | 0.0 | Target probability threshold. 0 disables adaptive sampling. |
-| Adaptive-P Decay | `adaptive_p_decay` | float32 | 0.0 | Speed of threshold adjustment toward target. |
+| Parameter         | JSON Key            | Type    | Default | Description                                                 |
+| ----------------- | ------------------- | ------- | ------- | ----------------------------------------------------------- |
+| Adaptive-P Target | `adaptive_p_target` | float32 | 0.0     | Target probability threshold. 0 disables adaptive sampling. |
+| Adaptive-P Decay  | `adaptive_p_decay`  | float32 | 0.0     | Speed of threshold adjustment toward target.                |
 
 ### 9.4 Generation Control
 
-| Parameter | JSON Key | Type | Default | Description |
-|-----------|----------|------|---------|-------------|
-| Max Tokens | `max_tokens` | int | 4096 | Maximum tokens to generate. |
-| Enable Thinking | `enable_thinking` | string | "true" | Enable model thinking/reasoning mode. Set to "false" for direct responses. |
-| Reasoning Effort | `reasoning_effort` | string | "medium" | GPT reasoning level: none, minimal, low, medium, high. |
-| Stream | `stream` | bool | false | Stream response chunks via SSE. |
-| Include Usage | `include_usage` | bool | true | Include token usage statistics in streaming responses. |
+| Parameter        | JSON Key           | Type   | Default  | Description                                                                |
+| ---------------- | ------------------ | ------ | -------- | -------------------------------------------------------------------------- |
+| Max Tokens       | `max_tokens`       | int    | 4096     | Maximum tokens to generate.                                                |
+| Enable Thinking  | `enable_thinking`  | string | "true"   | Enable model thinking/reasoning mode. Set to "false" for direct responses. |
+| Reasoning Effort | `reasoning_effort` | string | "medium" | GPT reasoning level: none, minimal, low, medium, high.                     |
+| Stream           | `stream`           | bool   | false    | Stream response chunks via SSE.                                            |
+| Include Usage    | `include_usage`    | bool   | true     | Include token usage statistics in streaming responses.                     |
 
 ### 9.5 Grammar Constrained Output
 
@@ -2250,15 +2458,15 @@ Grammars force the model to only produce tokens that match a specified pattern, 
 
 **Built-in Presets:**
 
-| Preset | Description |
-|--------|-------------|
-| `GrammarJSON` | Valid JSON objects or arrays |
-| `GrammarJSONObject` | JSON objects only |
-| `GrammarJSONArray` | JSON arrays only |
-| `GrammarBoolean` | "true" or "false" |
-| `GrammarYesNo` | "yes" or "no" |
-| `GrammarInteger` | Integer values |
-| `GrammarNumber` | Numeric values (int or float) |
+| Preset              | Description                   |
+| ------------------- | ----------------------------- |
+| `GrammarJSON`       | Valid JSON objects or arrays  |
+| `GrammarJSONObject` | JSON objects only             |
+| `GrammarJSONArray`  | JSON arrays only              |
+| `GrammarBoolean`    | "true" or "false"             |
+| `GrammarYesNo`      | "yes" or "no"                 |
+| `GrammarInteger`    | Integer values                |
+| `GrammarNumber`     | Numeric values (int or float) |
 
 **Using Grammar Presets (SDK):**
 
@@ -2451,32 +2659,32 @@ Each unique `cache_id` gets its own dedicated cache sequence, up to `max_cache_s
 
 ### 9.8 Parameter Reference
 
-| Parameter | JSON Key | Type | Default | Description |
-|-----------|----------|------|---------|-------------|
-| Temperature | `temperature` | float32 | 0.8 | Controls randomness of output |
-| Top-K | `top_k` | int32 | 40 | Limits token pool to K most probable |
-| Top-P | `top_p` | float32 | 0.9 | Nucleus sampling threshold |
-| Min-P | `min_p` | float32 | 0.0 | Dynamic sampling threshold |
-| Max Tokens | `max_tokens` | int | 4096 | Maximum tokens to generate |
-| Repeat Penalty | `repeat_penalty` | float32 | 1.0 | Penalty for repeated tokens |
-| Repeat Last N | `repeat_last_n` | int32 | 64 | Window for repetition check |
-| DRY Multiplier | `dry_multiplier` | float32 | 1.05 | N-gram repetition penalty |
-| DRY Base | `dry_base` | float32 | 1.75 | Exponential penalty base |
-| DRY Allowed Length | `dry_allowed_length` | int32 | 2 | Min n-gram length for DRY |
-| DRY Penalty Last N | `dry_penalty_last_n` | int32 | 0 | Recent tokens for DRY (0=all) |
-| XTC Probability | `xtc_probability` | float32 | 0.0 | XTC activation probability |
-| XTC Threshold | `xtc_threshold` | float32 | 0.1 | XTC probability threshold |
-| XTC Min Keep | `xtc_min_keep` | uint32 | 1 | Min tokens after XTC |
-| Adaptive-P Target | `adaptive_p_target` | float32 | 0.0 | Adaptive sampling target |
-| Adaptive-P Decay | `adaptive_p_decay` | float32 | 0.0 | Adaptive adjustment speed |
-| Enable Thinking | `enable_thinking` | string | "true" | Enable model thinking |
-| Reasoning Effort | `reasoning_effort` | string | "medium" | GPT reasoning level |
-| Grammar | `grammar` | string | "" | GBNF grammar constraint |
-| Logprobs | `logprobs` | bool | false | Return token probabilities |
-| Top Logprobs | `top_logprobs` | int | 0 | Number of top alternatives |
-| Stream | `stream` | bool | false | Stream response |
-| Include Usage | `include_usage` | bool | true | Include usage in streaming |
-| Return Prompt | `return_prompt` | bool | false | Include prompt in response |
+| Parameter          | JSON Key             | Type    | Default  | Description                          |
+| ------------------ | -------------------- | ------- | -------- | ------------------------------------ |
+| Temperature        | `temperature`        | float32 | 0.8      | Controls randomness of output        |
+| Top-K              | `top_k`              | int32   | 40       | Limits token pool to K most probable |
+| Top-P              | `top_p`              | float32 | 0.9      | Nucleus sampling threshold           |
+| Min-P              | `min_p`              | float32 | 0.0      | Dynamic sampling threshold           |
+| Max Tokens         | `max_tokens`         | int     | 4096     | Maximum tokens to generate           |
+| Repeat Penalty     | `repeat_penalty`     | float32 | 1.0      | Penalty for repeated tokens          |
+| Repeat Last N      | `repeat_last_n`      | int32   | 64       | Window for repetition check          |
+| DRY Multiplier     | `dry_multiplier`     | float32 | 1.05     | N-gram repetition penalty            |
+| DRY Base           | `dry_base`           | float32 | 1.75     | Exponential penalty base             |
+| DRY Allowed Length | `dry_allowed_length` | int32   | 2        | Min n-gram length for DRY            |
+| DRY Penalty Last N | `dry_penalty_last_n` | int32   | 0        | Recent tokens for DRY (0=all)        |
+| XTC Probability    | `xtc_probability`    | float32 | 0.0      | XTC activation probability           |
+| XTC Threshold      | `xtc_threshold`      | float32 | 0.1      | XTC probability threshold            |
+| XTC Min Keep       | `xtc_min_keep`       | uint32  | 1        | Min tokens after XTC                 |
+| Adaptive-P Target  | `adaptive_p_target`  | float32 | 0.0      | Adaptive sampling target             |
+| Adaptive-P Decay   | `adaptive_p_decay`   | float32 | 0.0      | Adaptive adjustment speed            |
+| Enable Thinking    | `enable_thinking`    | string  | "true"   | Enable model thinking                |
+| Reasoning Effort   | `reasoning_effort`   | string  | "medium" | GPT reasoning level                  |
+| Grammar            | `grammar`            | string  | ""       | GBNF grammar constraint              |
+| Logprobs           | `logprobs`           | bool    | false    | Return token probabilities           |
+| Top Logprobs       | `top_logprobs`       | int     | 0        | Number of top alternatives           |
+| Stream             | `stream`             | bool    | false    | Stream response                      |
+| Include Usage      | `include_usage`      | bool    | true     | Include usage in streaming           |
+| Return Prompt      | `return_prompt`      | bool    | false    | Include prompt in response           |
 
 ---
 
