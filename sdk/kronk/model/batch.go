@@ -87,7 +87,6 @@ type slot struct {
 
 	nPast            llama.Pos // Current position in KV cache
 	nPrompt          int       // Total prompt tokens (cached + new)
-	nDecoded         int       // Number of output tokens generated
 	reasonTokens     int       // Tokens in reasoning/thinking section
 	completionTokens int       // Tokens in completion section
 
@@ -111,7 +110,6 @@ type slot struct {
 	// -------------------------------------------------------------------------
 	// Response Accumulation
 
-	index          int             // Streaming chunk index
 	reasonFlag     int             // State: in reasoning section
 	completionFlag int             // State: in completion section
 	toolFlag       int             // State: in tool call section
@@ -139,13 +137,11 @@ func (s *slot) reset() {
 	s.job = nil
 	s.nPast = 0
 	s.nPrompt = 0
-	s.nDecoded = 0
 	s.reasonTokens = 0
 	s.completionTokens = 0
 	s.reasonFlag = 0
 	s.completionFlag = 0
 	s.toolFlag = 0
-	s.index = 0
 	s.finalContent.Reset()
 	s.finalReasoning.Reset()
 	s.finalTooling.Reset()
@@ -365,7 +361,7 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 
 		// addPrefillChunk returns false if shutdown or context cancelled.
 		if !e.addPrefillChunk(s) {
-			e.finishSlot(s, s.job.ctx.Err())
+			e.finishSlot(s, e.slotCancelError(s))
 			continue
 		}
 	}
@@ -384,7 +380,7 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 
 		// Process next chunk of media request.
 		// Note: addPrefillMediaChunk calls finishSlot on error, so we just continue.
-		if !e.addPrefillMediaChunk(s) {
+		if !e.addPrefillMediaChunk(s, buf) {
 			continue
 		}
 	}
@@ -404,7 +400,6 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 		s.iBatch = e.batch.NTokens
 		e.batch.Add(s.sampled, s.nPast, s.seqIDs, true)
 		s.nPast++
-		s.nDecoded++
 	}
 
 	// Fill empty slots from queue.
@@ -428,7 +423,7 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 			if s.active {
 				e.model.log(ctx, "process-batch", "slot-state",
 					"slot", s.id,
-					"prefill_remaining", len(s.prefillTokens)-s.nPrefilled,
+					"prefill_remaining", max(0, len(s.prefillTokens)-s.nPrefilled),
 					"prefill_done", s.prefillDone,
 					"n_past", s.nPast,
 					"i_batch", s.iBatch)
@@ -608,7 +603,7 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 
 	// Add first chunk of prompt tokens to batch.
 	if !e.addPrefillChunk(s) {
-		e.finishSlot(s, job.ctx.Err())
+		e.finishSlot(s, e.slotCancelError(s))
 		return false
 	}
 
@@ -670,8 +665,10 @@ func (e *batchEngine) startSlotMedia(s *slot, job *chatJob, cacheIdx llama.Pos) 
 	}
 
 	// Process first chunk. Media prefill is handled chunk-by-chunk in processBatch.
-	if !e.addPrefillMediaChunk(s) {
-		e.finishSlot(s, job.ctx.Err())
+	// Allocate buffer for potential first-token sampling (single-chunk edge case).
+	buf := make([]byte, 32*1024)
+	if !e.addPrefillMediaChunk(s, buf) {
+		e.finishSlot(s, e.slotCancelError(s))
 		return false
 	}
 
@@ -739,7 +736,7 @@ func (e *batchEngine) addPrefillChunk(s *slot) bool {
 // For text chunks, tokens are added to the shared batch.
 // For image chunks, embeddings are encoded and decoded separately.
 // Returns false if cancelled; true otherwise (even if still prefilling).
-func (e *batchEngine) addPrefillMediaChunk(s *slot) bool {
+func (e *batchEngine) addPrefillMediaChunk(s *slot, buf []byte) bool {
 	numChunks := int(mtmd.InputChunksSize(s.inputChunks))
 
 	// Check if all chunks have been processed.
@@ -829,7 +826,7 @@ func (e *batchEngine) addPrefillMediaChunk(s *slot) bool {
 			case true:
 				// M-RoPE text uses separate decode, so we must sample the first
 				// token immediately since nothing was added to the shared batch.
-				if !e.sampleFirstToken(s) {
+				if !e.sampleFirstToken(s, buf) {
 					return false
 				}
 			case false:
@@ -891,7 +888,7 @@ func (e *batchEngine) addPrefillMediaChunk(s *slot) bool {
 		case true:
 			// Image chunks use separate decode, so we must sample the first
 			// token immediately since nothing was added to the shared batch.
-			if !e.sampleFirstToken(s) {
+			if !e.sampleFirstToken(s, buf) {
 				return false
 			}
 			s.inputChunks = 0
@@ -934,7 +931,7 @@ func (e *batchEngine) addPrefillMediaChunk(s *slot) bool {
 		switch s.chunkIdx >= numChunks {
 		case true:
 			// Audio uses separate decode, so sample first token immediately.
-			if !e.sampleFirstToken(s) {
+			if !e.sampleFirstToken(s, buf) {
 				return false
 			}
 			s.inputChunks = 0
@@ -950,7 +947,7 @@ func (e *batchEngine) addPrefillMediaChunk(s *slot) bool {
 	return true
 }
 
-// processSlotToken handles a sampled token for a slot.
+// processSlotToken samples and processes a token for a slot.
 func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 	// Sample the next token. If grammar is active, use grammar-aware sampling.
 	var token llama.Token
@@ -962,11 +959,18 @@ func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 		token = llama.SamplerSample(s.sampler, e.model.lctx, s.iBatch)
 	}
 
+	e.handleSampledToken(s, token, s.iBatch, buf)
+}
+
+// handleSampledToken processes a sampled token through the full pipeline:
+// logprobs extraction, grammar/sampler acceptance, EOG check, state machine,
+// streaming, and token counting. Used by both processSlotToken and sampleFirstToken.
+func (e *batchEngine) handleSampledToken(s *slot, token llama.Token, iBatch int32, buf []byte) {
 	// Extract logprobs BEFORE accepting - Accept modifies sampler state.
 	// Reset currentLogprob each token; it's used for streaming.
 	s.currentLogprob = nil
 	if s.job.params.Logprobs {
-		logprob, err := extractLogprobs(e.model.lctx, e.model.vocab, token, s.iBatch, s.job.params.TopLogprobs, buf)
+		logprob, err := extractLogprobs(e.model.lctx, e.model.vocab, token, iBatch, s.job.params.TopLogprobs, buf)
 		switch {
 		case err != nil:
 			e.model.log(s.job.ctx, "batch-engine", "status", "logprobs-error", "slot", s.id, "error", err.Error())
@@ -995,17 +999,11 @@ func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 	l := llama.TokenToPiece(e.model.vocab, token, buf, 0, true)
 	content := string(buf[:l])
 
-	if content == "" {
-		e.finishSlot(s, nil)
-		return
-	}
-
 	s.sampled = token
 	if !s.prefillDone {
 		s.prefillDone = true
 		s.startTime = time.Now() // Start TPS clock after prefill, when first output token is generated
 	}
-	s.index++
 
 	// Process through the state machine.
 	isGPT := e.model.modelInfo.IsGPTModel
@@ -1089,8 +1087,8 @@ func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 		}
 	}
 
-	// Check max tokens.
-	if s.nDecoded >= s.job.params.MaxTokens {
+	// Check max tokens using actual output count (not nDecoded which lags).
+	if outputTokens >= s.job.params.MaxTokens {
 		e.finishSlot(s, nil)
 		return
 	}
@@ -1126,7 +1124,10 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		)
 	}()
 
-	elapsed := time.Since(s.startTime)
+	var elapsed time.Duration
+	if !s.startTime.IsZero() {
+		elapsed = time.Since(s.startTime)
+	}
 
 	// Clear KV cache for this slot's sequence.
 	// SPC and IMC sessions persist across requests, so we don't pre-populate
@@ -1166,7 +1167,11 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	// Calculate final metrics.
 	outputTokens := s.reasonTokens + s.completionTokens
 	totalTokens := s.nPrompt + outputTokens
-	tokensPerSecond := float64(outputTokens) / elapsed.Seconds()
+
+	var tokensPerSecond float64
+	if elapsed.Seconds() > 0 {
+		tokensPerSecond = float64(outputTokens) / elapsed.Seconds()
+	}
 
 	usage := Usage{
 		PromptTokens:     s.nPrompt,
@@ -1234,6 +1239,15 @@ func (e *batchEngine) freeSlotResources(s *slot) {
 	}
 }
 
+// slotCancelError returns an appropriate error for a cancelled slot.
+// Uses context error if available, otherwise returns a shutdown error.
+func (e *batchEngine) slotCancelError(s *slot) error {
+	if err := s.job.ctx.Err(); err != nil {
+		return err
+	}
+	return errors.New("engine shutting down")
+}
+
 // drainSlots finishes all active slots and pending jobs during shutdown.
 func (e *batchEngine) drainSlots() {
 	ctx := context.Background()
@@ -1260,9 +1274,14 @@ func (e *batchEngine) drainSlots() {
 	for {
 		select {
 		case job := <-e.requestQ:
+			if job.mtmdCtx != 0 {
+				mtmd.Free(job.mtmdCtx)
+			}
+
 			close(job.ch)
 			e.model.activeStreams.Add(-1)
 			drained++
+
 		default:
 			e.model.log(ctx, "batch-engine", "status", "drain-finished", "drained_pending", drained)
 			return
@@ -1360,7 +1379,7 @@ func (e *batchEngine) decodeTextMRoPE(s *slot, tokens []llama.Token) error {
 	origPos := batch.Pos
 
 	// Copy tokens to batch.
-	tokenSlice := unsafeSlice[llama.Token](batch.Token, int(n))
+	tokenSlice := unsafeSlice(batch.Token, int(n))
 	copy(tokenSlice, tokens)
 
 	// Allocate 4D position array for M-RoPE.
@@ -1374,9 +1393,9 @@ func (e *batchEngine) decodeTextMRoPE(s *slot, tokens []llama.Token) error {
 	}
 	batch.Pos = &posData[0]
 
-	nSeqIDSlice := unsafeSlice[int32](batch.NSeqId, int(n))
-	seqIDPtrs := unsafeSlice[*llama.SeqId](batch.SeqId, int(n))
-	logitsSlice := unsafeSlice[int8](batch.Logits, int(n))
+	nSeqIDSlice := unsafeSlice(batch.NSeqId, int(n))
+	seqIDPtrs := unsafeSlice(batch.SeqId, int(n))
+	logitsSlice := unsafeSlice(batch.Logits, int(n))
 
 	for i := range n {
 		nSeqIDSlice[i] = 1
@@ -1391,15 +1410,15 @@ func (e *batchEngine) decodeTextMRoPE(s *slot, tokens []llama.Token) error {
 	batch.NTokens = n
 
 	e.model.decodeMu.Lock()
-	_, err := llama.Decode(e.model.lctx, batch)
+	ret, err := llama.Decode(e.model.lctx, batch)
 	e.model.decodeMu.Unlock()
 
 	// Restore and free.
 	batch.Pos = origPos
 	llama.BatchFree(batch)
 
-	if err != nil {
-		return err
+	if err != nil || ret != 0 {
+		return decodeError(ret, err)
 	}
 
 	s.nPast += llama.Pos(n)
@@ -1412,13 +1431,13 @@ func (e *batchEngine) decodeEmbeddingsNormal(s *slot, embd []float32, nEmbd, nTo
 	batch := llama.BatchInit(nTokens, nEmbd, 1)
 	defer llama.BatchFree(batch)
 
-	embdSlice := unsafeSlice[float32](batch.Embd, int(nTokens*nEmbd))
+	embdSlice := unsafeSlice(batch.Embd, int(nTokens*nEmbd))
 	copy(embdSlice, embd)
 
-	posSlice := unsafeSlice[llama.Pos](batch.Pos, int(nTokens))
-	nSeqIDSlice := unsafeSlice[int32](batch.NSeqId, int(nTokens))
-	seqIDPtrs := unsafeSlice[*llama.SeqId](batch.SeqId, int(nTokens))
-	logitsSlice := unsafeSlice[int8](batch.Logits, int(nTokens))
+	posSlice := unsafeSlice(batch.Pos, int(nTokens))
+	nSeqIDSlice := unsafeSlice(batch.NSeqId, int(nTokens))
+	seqIDPtrs := unsafeSlice(batch.SeqId, int(nTokens))
+	logitsSlice := unsafeSlice(batch.Logits, int(nTokens))
 
 	for i := range nTokens {
 		posSlice[i] = s.nPast + llama.Pos(i)
@@ -1433,17 +1452,18 @@ func (e *batchEngine) decodeEmbeddingsNormal(s *slot, embd []float32, nEmbd, nTo
 
 	batch.NTokens = nTokens
 
+	e.model.decodeMu.Lock()
 	if s.useNonCausal {
 		llama.SetCausalAttn(e.model.lctx, false)
-		defer llama.SetCausalAttn(e.model.lctx, true)
 	}
-
-	e.model.decodeMu.Lock()
-	_, err := llama.Decode(e.model.lctx, batch)
+	ret, err := llama.Decode(e.model.lctx, batch)
+	if s.useNonCausal {
+		llama.SetCausalAttn(e.model.lctx, true)
+	}
 	e.model.decodeMu.Unlock()
 
-	if err != nil {
-		return err
+	if err != nil || ret != 0 {
+		return decodeError(ret, err)
 	}
 
 	s.nPast += llama.Pos(nTokens)
@@ -1469,7 +1489,7 @@ func (e *batchEngine) decodeEmbeddingsMRoPE(s *slot, embd []float32, nEmbd, nTok
 
 	batch := llama.BatchInit(nTokens, nEmbd, 1)
 
-	embdSlice := unsafeSlice[float32](batch.Embd, int(nTokens*nEmbd))
+	embdSlice := unsafeSlice(batch.Embd, int(nTokens*nEmbd))
 	copy(embdSlice, embd)
 
 	// Save original pos pointer so BatchFree doesn't try to free Go memory.
@@ -1498,9 +1518,9 @@ func (e *batchEngine) decodeEmbeddingsMRoPE(s *slot, embd []float32, nEmbd, nTok
 	}
 	batch.Pos = &posData[0]
 
-	nSeqIDSlice := unsafeSlice[int32](batch.NSeqId, int(nTokens))
-	seqIDPtrs := unsafeSlice[*llama.SeqId](batch.SeqId, int(nTokens))
-	logitsSlice := unsafeSlice[int8](batch.Logits, int(nTokens))
+	nSeqIDSlice := unsafeSlice(batch.NSeqId, int(nTokens))
+	seqIDPtrs := unsafeSlice(batch.SeqId, int(nTokens))
+	logitsSlice := unsafeSlice(batch.Logits, int(nTokens))
 
 	for i := range nTokens {
 		nSeqIDSlice[i] = 1
@@ -1514,21 +1534,24 @@ func (e *batchEngine) decodeEmbeddingsMRoPE(s *slot, embd []float32, nEmbd, nTok
 
 	batch.NTokens = nTokens
 
+	e.model.decodeMu.Lock()
 	if s.useNonCausal {
 		llama.SetCausalAttn(e.model.lctx, false)
-		defer llama.SetCausalAttn(e.model.lctx, true)
 	}
 
-	e.model.decodeMu.Lock()
-	_, err := llama.Decode(e.model.lctx, batch)
+	ret, err := llama.Decode(e.model.lctx, batch)
+	if s.useNonCausal {
+		llama.SetCausalAttn(e.model.lctx, true)
+	}
+
 	e.model.decodeMu.Unlock()
 
 	// Restore original pos pointer before freeing to avoid freeing Go memory.
 	batch.Pos = origPos
 	llama.BatchFree(batch)
 
-	if err != nil {
-		return err
+	if err != nil || ret != 0 {
+		return decodeError(ret, err)
 	}
 
 	// For M-RoPE, n_pos is max(nx, ny) to avoid position overlap.
@@ -1541,24 +1564,25 @@ func (e *batchEngine) decodeEmbeddingsMRoPE(s *slot, embd []float32, nEmbd, nTok
 // sampleFirstToken samples the first output token after prefill completes.
 // This is called when the last chunk used a separate decode path (M-RoPE text
 // or image embeddings) and nothing was added to the shared batch.
-// Returns false if EOG is sampled (slot finished), true otherwise.
-func (e *batchEngine) sampleFirstToken(s *slot) bool {
+// Returns false if slot finished (EOG or error), true otherwise.
+func (e *batchEngine) sampleFirstToken(s *slot, buf []byte) bool {
 	// Sample from last logits position (-1).
-	token := llama.SamplerSample(s.sampler, e.model.lctx, -1)
-	llama.SamplerAccept(s.sampler, token)
+	var token llama.Token
+	switch {
+	case s.grammarSampler != nil:
+		token = s.grammarSampler.SampleWithGrammar(e.model.lctx, s.sampler, -1)
 
-	// Check for end of generation.
-	if llama.VocabIsEOG(e.model.vocab, token) {
-		e.finishSlot(s, nil)
-		return false
+	default:
+		token = llama.SamplerSample(s.sampler, e.model.lctx, -1)
 	}
 
-	s.sampled = token
-	s.prefillDone = true
-	s.startTime = time.Now()
-	s.iBatch = -1 // Will be set correctly in next processBatch iteration
+	// Process through full pipeline (logprobs, accept, stream, count).
+	// This may call finishSlot on EOG/error/maxTokens.
+	wasActive := s.active
+	e.handleSampledToken(s, token, -1, buf)
 
-	return true
+	// Return false if slot was finished by handleSampledToken.
+	return s.active == wasActive && s.active
 }
 
 // unsafeSlice creates a Go slice from a C pointer. This is used to access
