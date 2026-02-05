@@ -895,6 +895,157 @@ func chatGrammarStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Ta
 	}
 }
 
+// chatToolCallQwen3 returns tool call tests for Qwen3-8B-Q8_0 model.
+func chatToolCallQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
+	tools := model.DocumentArray(
+		model.D{
+			"type": "function",
+			"function": model.D{
+				"name":        "get_weather",
+				"description": "Get the current weather for a location",
+				"parameters": model.D{
+					"type": "object",
+					"properties": model.D{
+						"location": model.D{
+							"type":        "string",
+							"description": "The location to get the weather for, e.g. San Francisco, CA",
+						},
+					},
+					"required": []any{"location"},
+				},
+			},
+		},
+	)
+
+	return []apitest.Table{
+		{
+			Name:       "tool-call",
+			URL:        "/v1/chat/completions",
+			Token:      tokens["chat-completions"],
+			Method:     http.MethodPost,
+			StatusCode: http.StatusOK,
+			Input: model.D{
+				"model": "Qwen3-8B-Q8_0",
+				"messages": model.DocumentArray(
+					model.TextMessage(model.RoleUser, "What is the weather in NYC?"),
+				),
+				"tools":        tools,
+				"max_tokens":   512,
+				"temperature":  0.7,
+				"enable_think": true,
+			},
+			GotResp: &model.ChatResponse{},
+			ExpResp: &model.ChatResponse{
+				Choice: []model.Choice{
+					{
+						Message: &model.ResponseMessage{
+							Role: "assistant",
+						},
+						FinishReasonPtr: stringPointer("tool"),
+					},
+				},
+				Model:  "Qwen3-8B-Q8_0",
+				Object: "chat.completion",
+			},
+			CmpFunc: func(got any, exp any) string {
+				diff := cmp.Diff(got, exp,
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage"),
+					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
+					cmpopts.IgnoreFields(model.ResponseMessage{}, "Content", "Reasoning", "ToolCalls"),
+				)
+
+				if diff != "" {
+					return diff
+				}
+
+				return validateResponse(got, false).
+					hasValidUUID().
+					hasCreated().
+					hasValidChoice().
+					hasUsage(true).
+					hasToolCalls("get_weather").
+					result(t)
+			},
+		},
+	}
+}
+
+// chatToolCallStreamQwen3 returns streaming tool call tests for Qwen3-8B-Q8_0 model.
+func chatToolCallStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
+	tools := model.DocumentArray(
+		model.D{
+			"type": "function",
+			"function": model.D{
+				"name":        "get_weather",
+				"description": "Get the current weather for a location",
+				"parameters": model.D{
+					"type": "object",
+					"properties": model.D{
+						"location": model.D{
+							"type":        "string",
+							"description": "The location to get the weather for, e.g. San Francisco, CA",
+						},
+					},
+					"required": []any{"location"},
+				},
+			},
+		},
+	)
+
+	return []apitest.Table{
+		{
+			Name:       "tool-call-stream",
+			URL:        "/v1/chat/completions",
+			Token:      tokens["chat-completions"],
+			Method:     http.MethodPost,
+			StatusCode: http.StatusOK,
+			Input: model.D{
+				"model": "Qwen3-8B-Q8_0",
+				"messages": model.DocumentArray(
+					model.TextMessage(model.RoleUser, "What is the weather in NYC?"),
+				),
+				"tools":        tools,
+				"stream":       true,
+				"max_tokens":   512,
+				"temperature":  0.7,
+				"enable_think": true,
+			},
+			GotResp: &model.ChatResponse{},
+			ExpResp: &model.ChatResponse{
+				Choice: []model.Choice{
+					{
+						Message: &model.ResponseMessage{
+							Role: "assistant",
+						},
+						FinishReasonPtr: stringPointer("tool"),
+					},
+				},
+				Model:  "Qwen3-8B-Q8_0",
+				Object: "chat.completion.chunk",
+			},
+			CmpFunc: func(got any, exp any) string {
+				diff := cmp.Diff(got, exp,
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage"),
+					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
+					cmpopts.IgnoreFields(model.ResponseMessage{}, "Content", "Reasoning", "ToolCalls"),
+				)
+
+				if diff != "" {
+					return diff
+				}
+
+				return validateResponse(got, true).
+					hasValidUUID().
+					hasCreated().
+					hasValidChoice().
+					hasUsage(true).
+					hasToolCalls("get_weather").
+					result(t)
+			},
+		},
+	}
+}
+
 // =============================================================================
 
 func chatEndpoint401(tokens map[string]string) []apitest.Table {
