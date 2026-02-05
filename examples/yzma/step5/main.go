@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"unsafe"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
 )
@@ -269,7 +270,7 @@ func run() error {
 // processChunksManually processes vision chunks individually, demonstrating
 // the low-level APIs needed for parallel inference across multiple clients.
 func processChunksManually(mtmdCtx mtmd.Context, lctx llama.Context, mdl llama.Model,
-	output mtmd.InputChunks, numChunks uint32, nEmbd int32,
+	output mtmd.InputChunks, numChunks uint64, nEmbd int32,
 	ctxParams llama.ContextParams) (llama.Pos, error) {
 
 	var nPast llama.Pos
@@ -282,12 +283,12 @@ func processChunksManually(mtmdCtx mtmd.Context, lctx llama.Context, mdl llama.M
 
 		switch chunkType {
 		case mtmd.InputChunkTypeText:
-			tokens := mtmd.InputChunkGetTokensText(chunk)
+			tokens := model.InputChunkGetTokensText(chunk)
 			if len(tokens) == 0 {
 				continue
 			}
 
-			fmt.Printf("  Processing text chunk %d: %d tokens\n", i, len(tokens))
+			fmt.Printf("  Processing text chunk %d: %d tokens\n", int(i), len(tokens))
 
 			batchSize := int(ctxParams.NBatch)
 			for start := 0; start < len(tokens); start += batchSize {
@@ -570,6 +571,10 @@ func initYzma() error {
 
 	if err := mtmd.Load(libPath); err != nil {
 		return fmt.Errorf("unable to load mtmd library: %w", err)
+	}
+
+	if err := model.InitYzmaWorkarounds(libPath); err != nil {
+		return fmt.Errorf("unable to init yzma workarounds: %w", err)
 	}
 
 	llama.Init()
