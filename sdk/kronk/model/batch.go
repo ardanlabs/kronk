@@ -1000,6 +1000,7 @@ func (e *batchEngine) handleSampledToken(s *slot, token llama.Token, iBatch int3
 	content := string(buf[:l])
 
 	s.sampled = token
+
 	if !s.prefillDone {
 		s.prefillDone = true
 		s.startTime = time.Now() // Start TPS clock after prefill, when first output token is generated

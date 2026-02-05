@@ -596,14 +596,25 @@ func forReasoning(content string, reasoning bool) string {
 }
 
 func chatResponseFinal(id string, object string, model string, index int, prompt string, content string, reasoning string, respToolCalls []ResponseToolCall, logprobsData []ContentLogprob, u Usage) ChatResponse {
-	finishReason := FinishReasonStop
-	if len(respToolCalls) > 0 {
-		finishReason = FinishReasonTool
-	}
-
 	var logprobs *Logprobs
 	if len(logprobsData) > 0 {
 		logprobs = &Logprobs{Content: logprobsData}
+	}
+
+	msg := &ResponseMessage{
+		Role:      RoleAssistant,
+		Content:   content,
+		Reasoning: reasoning,
+		ToolCalls: respToolCalls,
+	}
+
+	// Only set Delta when there are tool calls (for streaming clients that
+	// read from Delta).
+	var delta *ResponseMessage
+	finishReason := FinishReasonStop
+	if len(respToolCalls) > 0 {
+		finishReason = FinishReasonTool
+		delta = msg
 	}
 
 	return ChatResponse{
@@ -613,14 +624,9 @@ func chatResponseFinal(id string, object string, model string, index int, prompt
 		Model:   model,
 		Choice: []Choice{
 			{
-				Index: index,
-				Message: &ResponseMessage{
-					Role:      RoleAssistant,
-					Content:   content,
-					Reasoning: reasoning,
-					ToolCalls: respToolCalls,
-				},
-				Delta:           nil,
+				Index:           index,
+				Message:         msg,
+				Delta:           delta,
 				Logprobs:        logprobs,
 				FinishReasonPtr: &finishReason,
 			},
