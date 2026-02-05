@@ -42,14 +42,6 @@ export default function DocsSDKModel() {
               <p className="doc-description">InitYzmaWorkarounds loads the mtmd library and preps our fixed FFI functions. This is safe to call multiple times; it only initializes once.</p>
             </div>
 
-            <div className="doc-section" id="func-inputchunkgettokenstext">
-              <h4>InputChunkGetTokensText</h4>
-              <pre className="code-block">
-                <code>func InputChunkGetTokensText(chunk mtmd.InputChunk) []llama.Token</code>
-              </pre>
-              <p className="doc-description">InputChunkGetTokensText retrieves the text tokens from an input chunk. This is a fixed version of mtmd.InputChunkGetTokensText that correctly handles the size_t* output parameter by passing the address of a pointer.</p>
-            </div>
-
             <div className="doc-section" id="func-newgrammarsampler">
               <h4>NewGrammarSampler</h4>
               <pre className="code-block">
@@ -1028,7 +1020,6 @@ ws ::= [ \\t\\n\\r]*\`
                 <li><a href="#func-addparams">AddParams</a></li>
                 <li><a href="#func-checkmodel">CheckModel</a></li>
                 <li><a href="#func-inityzmaworkarounds">InitYzmaWorkarounds</a></li>
-                <li><a href="#func-inputchunkgettokenstext">InputChunkGetTokensText</a></li>
                 <li><a href="#func-newgrammarsampler">NewGrammarSampler</a></li>
                 <li><a href="#func-parseggmltype">ParseGGMLType</a></li>
                 <li><a href="#func-newmodel">NewModel</a></li>

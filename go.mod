@@ -10,8 +10,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-getter v1.8.4
-	github.com/hybridgroup/yzma v1.6.1-0.20260205112702-c1db16fb3fc0
-	github.com/jupiterrider/ffi v0.5.1
+	github.com/hybridgroup/yzma v1.6.1-0.20260205153920-48e920f14dc8
 	github.com/maypok86/otter/v2 v2.3.0
 	github.com/nikolalohinski/gonja/v2 v2.5.2
 	github.com/open-policy-agent/opa v1.13.1
@@ -91,6 +90,7 @@ require (
 	github.com/hashicorp/go-version v1.8.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
+	github.com/jupiterrider/ffi v0.5.1 // indirect
 	github.com/klauspost/compress v1.18.3 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.4 // indirect
 	github.com/lestrrat-go/dsig v1.0.0 // indirect

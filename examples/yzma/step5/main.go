@@ -165,7 +165,7 @@ func run() error {
 
 	fmt.Println("\nAnalyzing chunks...")
 
-	var textTokens, imageTokens uint32
+	var textTokens, imageTokens uint64
 
 	for i := range numChunks {
 		chunk := mtmd.InputChunksGet(output, i)
@@ -283,7 +283,7 @@ func processChunksManually(mtmdCtx mtmd.Context, lctx llama.Context, mdl llama.M
 
 		switch chunkType {
 		case mtmd.InputChunkTypeText:
-			tokens := model.InputChunkGetTokensText(chunk)
+			tokens := mtmd.InputChunkGetTokensText(chunk)
 			if len(tokens) == 0 {
 				continue
 			}
