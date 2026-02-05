@@ -997,14 +997,15 @@ loop:
 	for resp := range ch {
 		lr = resp
 
+		if len(resp.Choice) == 0 {
+			continue
+		}
+
 		switch resp.Choice[0].FinishReason() {
 		case model.FinishReasonError:
 			return messages, fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
 
 		case model.FinishReasonStop:
-			messages = append(messages,
-				model.TextMessage("assistant", resp.Choice[0].Delta.Content),
-			)
 			break loop
 
 		case model.FinishReasonTool:

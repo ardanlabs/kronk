@@ -10,7 +10,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-getter v1.8.4
-	github.com/hybridgroup/yzma v1.6.1-0.20260205153920-48e920f14dc8
+	github.com/hybridgroup/yzma v1.7.0
 	github.com/maypok86/otter/v2 v2.3.0
 	github.com/nikolalohinski/gonja/v2 v2.5.2
 	github.com/open-policy-agent/opa v1.13.1
