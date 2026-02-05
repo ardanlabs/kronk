@@ -103,6 +103,7 @@ type slot struct {
 
 	inputChunks  mtmd.InputChunks // Tokenized chunks (text + media interleaved)
 	chunkIdx     int              // Index of chunk currently being processed
+	chunkTokIdx  int              // Token index within current text chunk (for partial prefill)
 	bitmaps      []mtmd.Bitmap    // Image bitmaps to free when done
 	useMRoPE     bool             // Model uses M-RoPE 4D positioning
 	useNonCausal bool             // Model uses non-causal attention for media
@@ -158,11 +159,12 @@ func (s *slot) reset() {
 	s.nPrefilled = 0
 	s.logprobsData = nil
 	s.currentLogprob = nil
-	s.grammarSampler = nil // Freed in freeSlotResources
+	s.grammarSampler = nil
 
-	// MTMD fields - resources freed in freeSlotResources.
+	// MTMD fields.
 	s.inputChunks = 0
 	s.chunkIdx = 0
+	s.chunkTokIdx = 0
 	s.bitmaps = nil
 	s.useMRoPE = false
 	s.useNonCausal = false
@@ -301,17 +303,35 @@ func (e *batchEngine) processLoop(ctx context.Context) {
 			return
 
 		case <-e.wakeCh:
-			timer.Reset(0)
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+
+				default:
+				}
+			}
+
+			// Coalesce multiple wake signals to avoid redundant iterations.
+		drain:
+			for {
+				select {
+				case <-e.wakeCh:
+
+				default:
+					break drain
+				}
+			}
 
 		case <-timer.C:
-			switch e.hasActiveSlots() || len(e.requestQ) > 0 {
-			case true:
-				e.processBatch(ctx, buf)
-				timer.Reset(activeInterval)
+		}
 
-			case false:
-				timer.Reset(idleInterval)
-			}
+		switch e.hasActiveSlots() || len(e.requestQ) > 0 {
+		case true:
+			e.processBatch(ctx, buf)
+			timer.Reset(activeInterval)
+
+		case false:
+			timer.Reset(idleInterval)
 		}
 	}
 }
@@ -505,8 +525,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 		// SPC: copy from session's sequence (user-based like IMC).
 		e.model.log(job.ctx, "start-slot", "status", "spc-copy", "src_seq", job.imcSeqID, "dst_seq", s.seqID, "cached_tokens", job.spcCacheIdx)
 		if err := e.model.copyCachesToSeq(s.seqID, job.imcSeqID); err != nil {
-			e.sendSlotError(s, fmt.Errorf("start-slot: %w", err))
-			s.reset()
+			e.finishSlot(s, fmt.Errorf("start-slot: %w", err))
 			return
 		}
 		cacheIdx = job.spcCacheIdx
@@ -515,8 +534,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 		// IMC: copy from session's sequence.
 		e.model.log(job.ctx, "start-slot", "status", "imc-copy", "src_seq", job.imcSeqID, "dst_seq", s.seqID, "cached_tokens", job.imcCacheIdx)
 		if err := e.model.copyCachesToSeq(s.seqID, job.imcSeqID); err != nil {
-			e.sendSlotError(s, fmt.Errorf("start-slot: %w", err))
-			s.reset()
+			e.finishSlot(s, fmt.Errorf("start-slot: %w", err))
 			return
 		}
 		cacheIdx = job.imcCacheIdx
@@ -600,12 +618,14 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 // startSlotMedia initializes a media (vision/audio) slot. Returns true on success.
 func (e *batchEngine) startSlotMedia(s *slot, job *chatJob, cacheIdx llama.Pos) bool {
 	// Convert raw media bytes into bitmap structures for the vision encoder.
-	s.bitmaps = make([]mtmd.Bitmap, len(job.media))
-	for i, med := range job.media {
-		if len(med) == 0 {
-			continue
+	if len(job.media) > 0 {
+		s.bitmaps = make([]mtmd.Bitmap, len(job.media))
+		for i, med := range job.media {
+			if len(med) == 0 {
+				continue
+			}
+			s.bitmaps[i] = mtmd.BitmapInitFromBuf(job.mtmdCtx, &med[0], uint64(len(med)))
 		}
-		s.bitmaps[i] = mtmd.BitmapInitFromBuf(job.mtmdCtx, &med[0], uint64(len(med)))
 	}
 
 	// Create input chunks that interleave text tokens with image embeddings.
@@ -659,7 +679,7 @@ func (e *batchEngine) startSlotMedia(s *slot, job *chatJob, cacheIdx llama.Pos) 
 }
 
 // addPrefillChunk adds the next chunk of prefill tokens to the batch.
-// Returns true if prefill completed, false if cancelled or still prefilling.
+// Returns false only on shutdown or context cancellation; true otherwise.
 func (e *batchEngine) addPrefillChunk(s *slot) bool {
 	if s.prefillTokens == nil || s.nPrefilled >= len(s.prefillTokens) {
 		return true
@@ -669,8 +689,10 @@ func (e *batchEngine) addPrefillChunk(s *slot) bool {
 	select {
 	case <-e.shutdownCh:
 		return false
+
 	case <-s.job.ctx.Done():
 		return false
+
 	default:
 	}
 
@@ -679,14 +701,15 @@ func (e *batchEngine) addPrefillChunk(s *slot) bool {
 	nBatch := e.model.cfg.NBatch
 	remaining := len(s.prefillTokens) - s.nPrefilled
 
-	// Limit chunk size to available space in batch (total across all slots must not exceed NBatch).
+	// Limit chunk size to available space in batch (total across all slots
+	// must not exceed NBatch).
 	availableInBatch := nBatch - int(e.batch.NTokens)
 	if availableInBatch <= 0 {
 		s.iBatch = -1
 		return true
 	}
 
-	chunkSize := min(remaining, nBatch, availableInBatch)
+	chunkSize := min(remaining, availableInBatch)
 
 	// Add chunk of tokens to batch.
 	for i := range chunkSize {
@@ -728,8 +751,10 @@ func (e *batchEngine) addPrefillMediaChunk(s *slot) bool {
 	select {
 	case <-e.shutdownCh:
 		return false
+
 	case <-s.job.ctx.Done():
 		return false
+
 	default:
 	}
 
@@ -743,34 +768,59 @@ func (e *batchEngine) addPrefillMediaChunk(s *slot) bool {
 		tokens := mtmd.InputChunkGetTokensText(chunk)
 		if len(tokens) == 0 {
 			s.chunkIdx++
+			s.chunkTokIdx = 0
 			return true
 		}
 
 		nBatch := e.model.cfg.NBatch
 
-		// Process text tokens in batches.
-		for start := 0; start < len(tokens); start += nBatch {
-			end := min(start+nBatch, len(tokens))
-			batchTokens := tokens[start:end]
+		switch s.useMRoPE {
+		case true:
+			// M-RoPE: process all tokens via separate decode (doesn't use shared batch).
+			for start := s.chunkTokIdx; start < len(tokens); start += nBatch {
+				end := min(start+nBatch, len(tokens))
+				batchTokens := tokens[start:end]
 
-			switch s.useMRoPE {
-			case true:
 				if err := e.decodeTextMRoPE(s, batchTokens); err != nil {
 					e.finishSlot(s, fmt.Errorf("decode text chunk (M-RoPE) failed: %w", err))
 					return false
 				}
+			}
+			s.chunkTokIdx = 0
+			s.chunkIdx++
+
+		case false:
+			// Non-M-RoPE: add tokens to shared batch with capacity check.
+			remaining := len(tokens) - s.chunkTokIdx
+			availableInBatch := nBatch - int(e.batch.NTokens)
+
+			if availableInBatch <= 0 {
+				s.iBatch = -1
+				return true
+			}
+
+			chunkSize := min(remaining, availableInBatch)
+			isLastChunk := s.chunkIdx == numChunks-1
+
+			for i := range chunkSize {
+				tokIdx := s.chunkTokIdx + i
+				isLast := tokIdx == len(tokens)-1 && isLastChunk
+				e.batch.Add(tokens[tokIdx], s.nPast, s.seqIDs, isLast)
+				s.nPast++
+			}
+			s.chunkTokIdx += chunkSize
+
+			// Check if text chunk is complete.
+			switch s.chunkTokIdx >= len(tokens) {
+			case true:
+				s.chunkTokIdx = 0
+				s.chunkIdx++
 
 			case false:
-				// Add tokens to shared batch for regular decode.
-				for i, tok := range batchTokens {
-					isLast := start+i == len(tokens)-1 && s.chunkIdx == numChunks-1
-					e.batch.Add(tok, s.nPast, s.seqIDs, isLast)
-					s.nPast++
-				}
+				s.iBatch = -1
+				return true
 			}
 		}
-
-		s.chunkIdx++
 
 		// Check if this was the last chunk.
 		switch s.chunkIdx >= numChunks {
@@ -786,7 +836,7 @@ func (e *batchEngine) addPrefillMediaChunk(s *slot) bool {
 				// Non-M-RoPE text was added to shared batch, sample after decode.
 				s.iBatch = e.batch.NTokens - 1
 			}
-			s.inputChunks = 0 // Will be freed in freeSlotResources
+			s.inputChunks = 0
 			s.span.SetAttributes(attribute.String("prefill-media", time.Since(prefillStart).String()))
 		case false:
 			s.iBatch = -1
@@ -889,6 +939,7 @@ func (e *batchEngine) addPrefillMediaChunk(s *slot) bool {
 			}
 			s.inputChunks = 0
 			s.span.SetAttributes(attribute.String("prefill-media", time.Since(prefillStart).String()))
+
 		case false:
 			s.iBatch = -1
 		}
@@ -906,6 +957,7 @@ func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 	switch {
 	case s.grammarSampler != nil:
 		token = s.grammarSampler.SampleWithGrammar(e.model.lctx, s.sampler, s.iBatch)
+
 	default:
 		token = llama.SamplerSample(s.sampler, e.model.lctx, s.iBatch)
 	}
@@ -918,6 +970,7 @@ func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 		switch {
 		case err != nil:
 			e.model.log(s.job.ctx, "batch-engine", "status", "logprobs-error", "slot", s.id, "error", err.Error())
+
 		case logprob != nil:
 			s.currentLogprob = logprob
 			s.logprobsData = append(s.logprobsData, *logprob)
@@ -971,9 +1024,6 @@ func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 		e.finishSlot(s, nil)
 		return
 	}
-
-	// [DEBUG]: Show model response.
-	// fmt.Println(resp.content)
 
 	// Update flags based on response status.
 	switch resp.status {
@@ -1062,8 +1112,8 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	defer func() {
 		close(s.job.ch)
 		s.span.End()
-		s.reset()
 		e.freeSlotResources(s)
+		s.reset()
 
 		remaining := e.model.activeStreams.Add(-1)
 
@@ -1182,12 +1232,6 @@ func (e *batchEngine) freeSlotResources(s *slot) {
 		mtmd.Free(s.job.mtmdCtx)
 		s.job.mtmdCtx = 0
 	}
-}
-
-func (e *batchEngine) sendSlotError(s *slot, err error) {
-	usage := Usage{PromptTokens: s.nPrompt}
-	e.model.sendErrorResponse(s.job.ctx, s.job.ch, s.job.id, s.job.object, 0, "", err, usage)
-	close(s.job.ch)
 }
 
 // drainSlots finishes all active slots and pending jobs during shutdown.
@@ -1391,15 +1435,12 @@ func (e *batchEngine) decodeEmbeddingsNormal(s *slot, embd []float32, nEmbd, nTo
 
 	if s.useNonCausal {
 		llama.SetCausalAttn(e.model.lctx, false)
+		defer llama.SetCausalAttn(e.model.lctx, true)
 	}
 
 	e.model.decodeMu.Lock()
 	_, err := llama.Decode(e.model.lctx, batch)
 	e.model.decodeMu.Unlock()
-
-	if s.useNonCausal {
-		llama.SetCausalAttn(e.model.lctx, true)
-	}
 
 	if err != nil {
 		return err
@@ -1475,6 +1516,7 @@ func (e *batchEngine) decodeEmbeddingsMRoPE(s *slot, embd []float32, nEmbd, nTok
 
 	if s.useNonCausal {
 		llama.SetCausalAttn(e.model.lctx, false)
+		defer llama.SetCausalAttn(e.model.lctx, true)
 	}
 
 	e.model.decodeMu.Lock()
@@ -1487,10 +1529,6 @@ func (e *batchEngine) decodeEmbeddingsMRoPE(s *slot, embd []float32, nEmbd, nTok
 
 	if err != nil {
 		return err
-	}
-
-	if s.useNonCausal {
-		llama.SetCausalAttn(e.model.lctx, true)
 	}
 
 	// For M-RoPE, n_pos is max(nx, ny) to avoid position overlap.
