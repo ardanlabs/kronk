@@ -608,8 +608,8 @@ func chatResponseFinal(id string, object string, model string, index int, prompt
 		ToolCalls: respToolCalls,
 	}
 
-	// Only set Delta when there are tool calls (for streaming clients that
-	// read from Delta).
+	// Set Delta when there are tool calls (for streaming clients).
+	// For non-streaming, Chat() clears Delta before returning.
 	var delta *ResponseMessage
 	finishReason := FinishReasonStop
 	if len(respToolCalls) > 0 {

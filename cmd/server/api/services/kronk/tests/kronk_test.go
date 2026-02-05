@@ -443,18 +443,22 @@ func (v responseValidator) hasToolCalls(funcName string) responseValidator {
 		return v
 	}
 
-	// Check tool calls in Message.
-	if choice.Message == nil || len(choice.Message.ToolCalls) == 0 {
-		v.errors = append(v.errors, "expected tool calls in Message")
-	} else if !strings.Contains(strings.ToLower(choice.Message.ToolCalls[0].Function.Name), strings.ToLower(funcName)) {
-		v.errors = append(v.errors, fmt.Sprintf("expected tool call function name to contain '%s', got '%s'", funcName, choice.Message.ToolCalls[0].Function.Name))
-	}
+	// For non-streaming: check tool calls in Message.
+	// For streaming: check tool calls in Delta.
+	switch v.streaming {
+	case true:
+		if choice.Delta == nil || len(choice.Delta.ToolCalls) == 0 {
+			v.errors = append(v.errors, "expected tool calls in Delta for streaming")
+		} else if !strings.Contains(strings.ToLower(choice.Delta.ToolCalls[0].Function.Name), strings.ToLower(funcName)) {
+			v.errors = append(v.errors, fmt.Sprintf("expected Delta tool call function name to contain '%s', got '%s'", funcName, choice.Delta.ToolCalls[0].Function.Name))
+		}
 
-	// Check tool calls in Delta (for streaming compatibility).
-	if choice.Delta == nil || len(choice.Delta.ToolCalls) == 0 {
-		v.errors = append(v.errors, "expected tool calls in Delta for streaming compatibility")
-	} else if !strings.Contains(strings.ToLower(choice.Delta.ToolCalls[0].Function.Name), strings.ToLower(funcName)) {
-		v.errors = append(v.errors, fmt.Sprintf("expected Delta tool call function name to contain '%s', got '%s'", funcName, choice.Delta.ToolCalls[0].Function.Name))
+	default:
+		if choice.Message == nil || len(choice.Message.ToolCalls) == 0 {
+			v.errors = append(v.errors, "expected tool calls in Message")
+		} else if !strings.Contains(strings.ToLower(choice.Message.ToolCalls[0].Function.Name), strings.ToLower(funcName)) {
+			v.errors = append(v.errors, fmt.Sprintf("expected tool call function name to contain '%s', got '%s'", funcName, choice.Message.ToolCalls[0].Function.Name))
+		}
 	}
 
 	return v
