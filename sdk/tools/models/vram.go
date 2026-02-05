@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 )
 
 // Context window size constants (in tokens).
@@ -83,7 +84,14 @@ func (m *Models) CalculateVRAM(modelID string, cfg VRAMConfig) (VRAM, error) {
 		return VRAM{}, fmt.Errorf("calculate-vram: unable to detect model architecture")
 	}
 
-	blockCount, err := parseMetadataInt64(info.Metadata, arch+".block_count")
+	if isVisionEncoder(arch) {
+		return VRAM{
+			Input:     VRAMInput{ModelSizeBytes: int64(info.Size)},
+			TotalVRAM: int64(info.Size),
+		}, nil
+	}
+
+	blockCount, err := parseMetadataInt64WithFallback(info.Metadata, arch+".block_count", ".block_count")
 	if err != nil {
 		return VRAM{}, fmt.Errorf("calculate-vram: failed to parse block_count: %w", err)
 	}
@@ -187,7 +195,14 @@ func CalculateVRAMFromHuggingFace(ctx context.Context, modelURL string, cfg VRAM
 		return VRAM{}, fmt.Errorf("calculate-vram-hg: unable to detect model architecture")
 	}
 
-	blockCount, err := parseMetadataInt64(metadata, arch+".block_count")
+	if isVisionEncoder(arch) {
+		return VRAM{
+			Input:     VRAMInput{ModelSizeBytes: fileSize},
+			TotalVRAM: fileSize,
+		}, nil
+	}
+
+	blockCount, err := parseMetadataInt64WithFallback(metadata, arch+".block_count", ".block_count")
 	if err != nil {
 		return VRAM{}, fmt.Errorf("calculate-vram-hg: failed to parse block_count: %w", err)
 	}
@@ -231,12 +246,35 @@ func detectArchitecture(metadata map[string]string) string {
 	return ""
 }
 
+func isVisionEncoder(arch string) bool {
+	switch arch {
+	case "clip", "qwen2vl":
+		return true
+	}
+	return false
+}
+
 func parseMetadataInt64(metadata map[string]string, key string) (int64, error) {
 	val, ok := metadata[key]
 	if !ok {
 		return 0, fmt.Errorf("parse-metadata-int64: metadata key %q not found", key)
 	}
 	return strconv.ParseInt(val, 10, 64)
+}
+
+func parseMetadataInt64WithFallback(metadata map[string]string, key string, suffix string) (int64, error) {
+	val, ok := metadata[key]
+	if ok {
+		return strconv.ParseInt(val, 10, 64)
+	}
+
+	for k, v := range metadata {
+		if strings.HasSuffix(k, suffix) {
+			return strconv.ParseInt(v, 10, 64)
+		}
+	}
+
+	return 0, fmt.Errorf("parse-metadata-int64: metadata key %q not found", key)
 }
 
 // FetchGGUFMetadata fetches GGUF header and metadata using HTTP Range requests.

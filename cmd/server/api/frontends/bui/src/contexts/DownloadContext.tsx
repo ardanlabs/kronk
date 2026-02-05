@@ -17,7 +17,7 @@ interface DownloadState {
 interface DownloadContextType {
   download: DownloadState | null;
   isDownloading: boolean;
-  startDownload: (modelUrl: string) => void;
+  startDownload: (modelUrl: string, projUrl?: string) => void;
   cancelDownload: () => void;
   clearDownload: () => void;
 }
@@ -50,7 +50,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const startDownload = useCallback((modelUrl: string) => {
+  const startDownload = useCallback((modelUrl: string, projUrl?: string) => {
     if (abortRef.current) {
       return;
     }
@@ -63,6 +63,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
 
     abortRef.current = api.pullModel(
       modelUrl,
+      projUrl,
       (data: PullResponse) => {
         if (data.status) {
           if (data.status.startsWith(ANSI_INLINE)) {

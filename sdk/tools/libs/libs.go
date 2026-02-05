@@ -205,7 +205,7 @@ func (lib *Libs) Download(ctx context.Context, log Logger) (VersionTag, error) {
 		return tag, nil
 	}
 
-	log(ctx, "download-libraries waiting to start download...", "tag", tag.Latest)
+	log(ctx, "download-libraries: waiting to start download...", "tag", tag.Latest)
 
 	newTag, err := lib.DownloadVersion(ctx, log, tag.Latest)
 	if err != nil {
