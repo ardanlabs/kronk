@@ -437,9 +437,9 @@ func (v responseValidator) hasToolCalls(funcName string) responseValidator {
 
 	choice := v.resp.Choice[0]
 
-	// Check finish reason is "tool".
-	if choice.FinishReason() != "tool" {
-		v.errors = append(v.errors, fmt.Sprintf("expected finish_reason to be 'tool', got '%s'", choice.FinishReason()))
+	// Check finish reason is "tool_calls".
+	if choice.FinishReason() != "tool_calls" {
+		v.errors = append(v.errors, fmt.Sprintf("expected finish_reason to be 'tool_calls', got '%s'", choice.FinishReason()))
 		return v
 	}
 
