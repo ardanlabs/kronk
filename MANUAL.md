@@ -599,7 +599,7 @@ on model type:
 
 **Text Models (Chat/Completion)**
 
-For text models, `NSeqMax` controls batch parallelism within a single model:
+For text and media models, `NSeqMax` controls batch parallelism within a single model:
 
 ```yaml
 n_seq_max: 4 # Process up to 4 requests concurrently
@@ -608,9 +608,9 @@ n_seq_max: 4 # Process up to 4 requests concurrently
 Multiple requests share the model context and KV cache, with each request
 getting an isolated sequence partition.
 
-**Sequential Models (Embed/Rerank/Vision/Audio)**
+**Single-Flight Models (Embed/Rerank)**
 
-For sequential models, `NSeqMax` creates multiple model instances:
+For single-flight models, `NSeqMax` creates multiple model instances:
 
 ```yaml
 n_seq_max: 2 # Create 2 model instances in pool
@@ -995,24 +995,17 @@ seq 4: slot[1] inference
 
 Each cache sequence requires one full context window of KV memory.
 
-### 4.5 Batch vs Sequential Models
+### 4.5 Batch vs Single-Flight Models
 
-The batch engine is only used for **text-only** requests. Other model types
-use sequential processing with model pooling:
+The batch engine is used for **text inference** requests including multi-modal
+models with vision/audio content. Single-flight models use model pooling:
 
 | Model Type              | NSeqMax Behavior  | Concurrency Method           |
 | ----------------------- | ----------------- | ---------------------------- |
 | Text (chat, completion) | Batch parallelism | Shared model, multiple slots |
+| Vision/Audio            | Batch parallelism | Shared model, multiple slots |
 | Embedding               | Model pool        | Multiple model instances     |
 | Reranking               | Model pool        | Multiple model instances     |
-| Vision                  | Model pool        | Multiple model instances     |
-| Audio                   | Model pool        | Multiple model instances     |
-
-**Why Vision/Audio Can't Batch**
-
-Media models require exclusive model context for processing image/audio
-tokens through a separate projector pipeline. Each request needs its own
-context for media embedding.
 
 ### 4.6 Performance Tuning
 
@@ -1366,7 +1359,7 @@ Each cache sequence requires one context window worth of KV cache memory:
 
 **IMC Limitations:**
 
-- Text-only requests (vision/audio models use sequential path)
+- Text-only requests (IMC for vision/audio is not currently supported)
 - Requires deterministic Jinja templates (no timestamps or random values)
 - Conversations must grow monotonically (append-only)
 - Editing earlier messages triggers full cache rebuild
@@ -2884,9 +2877,7 @@ Total:             ~9.4 GB
 
 ### 10.7 Limitations
 
-- Vision/audio models cannot use batch processing (sequential only)
-- Each request gets exclusive model context
-- Message caching (SPC/IMC) not supported for media requests
+- Message caching (SPC/IMC) is not currently supported for vision/audio requests
 - Processing time varies with image resolution and audio duration
 
 ### 10.8 Example: Image Analysis
@@ -4565,7 +4556,7 @@ the Kronk SDK packages.
 | -------------- | ----------------------------------------------------- |
 | `batch.go`     | Batch engine for parallel text inference              |
 | `caching.go`   | System prompt and IMC cache management                |
-| `chat.go`      | Chat inference loop, batch vs sequential routing      |
+| `chat.go`      | Chat inference loop, batch routing                    |
 | `config.go`    | Model configuration (GPU, cache, batching)            |
 | `embed.go`     | Embedding inference                                   |
 | `logprobs.go`  | Token log probability extraction                      |
@@ -4597,7 +4588,7 @@ the Kronk SDK packages.
 
 `NSeqMax` behaves differently depending on model type:
 
-**Sequential Models** (embed, rerank, vision/audio):
+**Single-Flight Models** (embed, rerank):
 
 - `NSeqMax` controls the number of model instances in the pool
 - Each instance handles one request at a time (single-flight)
@@ -4652,14 +4643,11 @@ if m.batch == nil || object != ObjectChatText {
 return true
 ```
 
-If `submitToBatchEngine()` returns false, the sequential path is used:
+All chat requests (including vision/audio) are submitted to the batch engine:
 
 ```go
-if m.submitToBatchEngine(...) {
-    batching = true
-    return
-}
-m.sequentialChatRequest(...)
+m.submitToBatchEngine(...)
+batching = true
 ```
 
 **Batch Engine Architecture** (`batch.go`):

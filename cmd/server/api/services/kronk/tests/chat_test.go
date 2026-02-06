@@ -942,35 +942,35 @@ func chatToolCallQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 							Role: "assistant",
 						},
 						FinishReasonPtr: stringPointer("tool_calls"),
-						},
-						},
-						Model:  "Qwen3-8B-Q8_0",
-						Object: "chat.completion",
-						},
-						CmpFunc: func(got any, exp any) string {
-						diff := cmp.Diff(got, exp,
-						cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage"),
-						cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
-						cmpopts.IgnoreFields(model.ResponseMessage{}, "Content", "Reasoning", "ToolCalls"),
-						)
+					},
+				},
+				Model:  "Qwen3-8B-Q8_0",
+				Object: "chat.completion",
+			},
+			CmpFunc: func(got any, exp any) string {
+				diff := cmp.Diff(got, exp,
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage"),
+					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
+					cmpopts.IgnoreFields(model.ResponseMessage{}, "Content", "Reasoning", "ToolCalls"),
+				)
 
-						if diff != "" {
-						return diff
-						}
+				if diff != "" {
+					return diff
+				}
 
-						return validateResponse(got, false).
-						hasValidUUID().
-						hasCreated().
-						hasValidChoice().
-						hasUsage(true).
-						hasToolCalls("get_weather").
-						result(t)
-						},
-						},
-						}
-						}
+				return validateResponse(got, false).
+					hasValidUUID().
+					hasCreated().
+					hasValidChoice().
+					hasUsage(true).
+					hasToolCalls("get_weather").
+					result(t)
+			},
+		},
+	}
+}
 
-						// chatToolCallStreamQwen3 returns streaming tool call tests for Qwen3-8B-Q8_0 model.
+// chatToolCallStreamQwen3 returns streaming tool call tests for Qwen3-8B-Q8_0 model.
 func chatToolCallStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 	tools := model.DocumentArray(
 		model.D{
@@ -1014,7 +1014,7 @@ func chatToolCallStreamQwen3(t *testing.T, tokens map[string]string) []apitest.T
 			ExpResp: &model.ChatResponse{
 				Choice: []model.Choice{
 					{
-						Message: &model.ResponseMessage{
+						Delta: &model.ResponseMessage{
 							Role: "assistant",
 						},
 						FinishReasonPtr: stringPointer("tool_calls"),

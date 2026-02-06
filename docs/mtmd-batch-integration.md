@@ -8,7 +8,7 @@ This document covers the design and implementation of parallel processing for mu
 
 ## Background
 
-Previously, mtmd requests were forced through the sequential processing path (`sequentialChatRequest`) while text-only requests could use the batch engine for parallel inference. The batch engine now supports mtmd requests via `submitToBatchEngine`.
+All mtmd requests now use the batch engine for parallel inference via `submitToBatchEngine`. There is no longer a sequential processing path.
 
 ---
 
@@ -100,14 +100,14 @@ Changed condition from `object == ObjectChatText` to `object == ObjectChatText |
 
 ---
 
-## Key Differences: Sequential vs Batch for MTMD
+## Key Implementation Details for MTMD
 
-| Aspect | Current Batch Engine | step5 Manual Processing |
-|--------|---------------------|------------------------|
-| **Data Structure** | `[]llama.Token` | `mtmd.InputChunks` (text + image chunks) |
-| **Prefill** | Add tokens to batch | Iterate chunks: text via `Decode`, images via `EncodeChunk` + `GetOutputEmbd` + decode embeddings |
-| **Position Handling** | Linear `nPast++` | M-RoPE requires 4D positions for images |
-| **Attention** | Always causal | Non-causal for image embeddings on some models |
+| Aspect | Batch Engine Implementation |
+|--------|----------------------------|
+| **Data Structure** | `mtmd.InputChunks` (text + image chunks) |
+| **Prefill** | Iterate chunks: text via `Decode`, images via `EncodeChunk` + `GetOutputEmbd` + decode embeddings |
+| **Position Handling** | M-RoPE requires 4D positions for images |
+| **Attention** | Non-causal for image embeddings on some models |
 
 ---
 
@@ -150,5 +150,4 @@ For **image embeddings**, we face a different situation:
 ## Reference
 
 - Working example: `examples/yzma/step5/main.go`
-- Current batch engine: `sdk/kronk/model/batch.go`
-- Sequential path: `sdk/kronk/model/model.go` (`sequentialChatRequest`, `processInputTokens`)
+- Batch engine: `sdk/kronk/model/batch.go`

@@ -234,7 +234,7 @@ func Test_ConTest3(t *testing.T) {
 }
 
 // =============================================================================
-// Pool behavior tests for sequential models (embed/rerank) with NSeqMax > 1
+// Pool behavior tests for single-flight models (embed/rerank) with NSeqMax > 1
 
 // Test_PooledEmbeddings verifies that NSeqMax creates multiple model instances
 // for embedding models and that concurrent requests execute in parallel.
