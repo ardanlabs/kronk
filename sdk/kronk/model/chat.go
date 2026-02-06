@@ -15,10 +15,9 @@ import (
 )
 
 // Chat performs a chat request and returns the final response.
-// Text inference requests can run concurrently based on the NSeqMax config
-// value, which controls parallel sequence processing. However, requests that
-// include vision or audio content are processed sequentially due to media
-// pipeline constraints.
+// All requests (including vision/audio) use batch processing and can run
+// concurrently based on the NSeqMax config value, which controls parallel
+// sequence processing.
 func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error) {
 	ch := m.ChatStreaming(ctx, d)
 
@@ -40,10 +39,9 @@ func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error) {
 }
 
 // ChatStreaming performs a chat request and streams the response.
-// Text inference requests can run concurrently based on the NSeqMax config
-// value, which controls parallel sequence processing. However, requests that
-// include vision or audio content are processed sequentially due to media
-// pipeline constraints.
+// All requests (including vision/audio) use batch processing and can run
+// concurrently based on the NSeqMax config value, which controls parallel
+// sequence processing.
 func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 	returnCh := make(chan ChatResponse, 1)
 	ch := m.wrapChannelForLogging(ctx, returnCh)
@@ -110,8 +108,6 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 			batching = true
 			return
 		}
-
-		m.sequentialChatRequest(ctx, id, m.lctx, mtmdCtx, object, prompt, media, params, ch)
 	}()
 
 	return returnCh
@@ -209,10 +205,6 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string) (
 // Returns true if the job was submitted (caller should set batching=true),
 // false if batch engine is not available or not applicable.
 func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, id string, d D, object string, prompt string, media [][]byte, params Params, mtmdCtx mtmd.Context, cache cacheResult) bool {
-	if m.batch == nil || object != ObjectChatText {
-		return false
-	}
-
 	spcCacheHit := m.cfg.SystemPromptCache && cache.cacheIdx > 0
 	imcCacheHit := m.cfg.IncrementalCache && cache.cacheID != ""
 

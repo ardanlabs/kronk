@@ -547,12 +547,12 @@ flash_attention: auto      # Let llama.cpp decide`}</code></pre>
           <p><code>NSeqMax</code> controls concurrent request handling, but behaves differently based</p>
           <p>on model type:</p>
           <p><strong>Text Models (Chat/Completion)</strong></p>
-          <p>For text models, <code>NSeqMax</code> controls batch parallelism within a single model:</p>
+          <p>For text and media models, <code>NSeqMax</code> controls batch parallelism within a single model:</p>
           <pre className="code-block"><code className="language-yaml">{`n_seq_max: 4 # Process up to 4 requests concurrently`}</code></pre>
           <p>Multiple requests share the model context and KV cache, with each request</p>
           <p>getting an isolated sequence partition.</p>
-          <p><strong>Sequential Models (Embed/Rerank/Vision/Audio)</strong></p>
-          <p>For sequential models, <code>NSeqMax</code> creates multiple model instances:</p>
+          <p><strong>Single-Flight Models (Embed/Rerank)</strong></p>
+          <p>For single-flight models, <code>NSeqMax</code> creates multiple model instances:</p>
           <pre className="code-block"><code className="language-yaml">{`n_seq_max: 2 # Create 2 model instances in pool`}</code></pre>
           <p>Each instance handles one request at a time, but multiple instances allow</p>
           <p>concurrent processing.</p>
@@ -1046,9 +1046,9 @@ seq 2: user-3 cache (IMC)
 seq 3: slot[0] inference
 seq 4: slot[1] inference`}</code></pre>
           <p>Each cache sequence requires one full context window of KV memory.</p>
-          <h3 id="45-batch-vs-sequential-models">4.5 Batch vs Sequential Models</h3>
-          <p>The batch engine is only used for <strong>text-only</strong> requests. Other model types</p>
-          <p>use sequential processing with model pooling:</p>
+          <h3 id="45-batch-vs-single-flight-models">4.5 Batch vs Single-Flight Models</h3>
+          <p>The batch engine is used for <strong>text inference</strong> requests including multi-modal</p>
+          <p>models with vision/audio content. Single-flight models use model pooling:</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -1064,6 +1064,11 @@ seq 4: slot[1] inference`}</code></pre>
                 <td>Shared model, multiple slots</td>
               </tr>
               <tr>
+                <td>Vision/Audio</td>
+                <td>Batch parallelism</td>
+                <td>Shared model, multiple slots</td>
+              </tr>
+              <tr>
                 <td>Embedding</td>
                 <td>Model pool</td>
                 <td>Multiple model instances</td>
@@ -1073,22 +1078,8 @@ seq 4: slot[1] inference`}</code></pre>
                 <td>Model pool</td>
                 <td>Multiple model instances</td>
               </tr>
-              <tr>
-                <td>Vision</td>
-                <td>Model pool</td>
-                <td>Multiple model instances</td>
-              </tr>
-              <tr>
-                <td>Audio</td>
-                <td>Model pool</td>
-                <td>Multiple model instances</td>
-              </tr>
             </tbody>
           </table>
-          <p><strong>Why Vision/Audio Can't Batch</strong></p>
-          <p>Media models require exclusive model context for processing image/audio</p>
-          <p>tokens through a separate projector pipeline. Each request needs its own</p>
-          <p>context for media embedding.</p>
           <h3 id="46-performance-tuning">4.6 Performance Tuning</h3>
           <p><strong>Throughput vs Latency</strong></p>
           <ul>
@@ -1372,7 +1363,7 @@ With auto-scaling (Kronk's behavior):
 32K context, F16 cache:   ~800 MB per cache sequence`}</code></pre>
           <p><strong>IMC Limitations:</strong></p>
           <ul>
-            <li>Text-only requests (vision/audio models use sequential path)</li>
+            <li>Text-only requests (IMC for vision/audio is not currently supported)</li>
             <li>Requires deterministic Jinja templates (no timestamps or random values)</li>
             <li>Conversations must grow monotonically (append-only)</li>
             <li>Editing earlier messages triggers full cache rebuild</li>
@@ -2898,9 +2889,7 @@ KV cache (8K):     ~0.6 GB
 Total:             ~9.4 GB`}</code></pre>
           <h3 id="107-limitations">10.7 Limitations</h3>
           <ul>
-            <li>Vision/audio models cannot use batch processing (sequential only)</li>
-            <li>Each request gets exclusive model context</li>
-            <li>Message caching (SPC/IMC) not supported for media requests</li>
+            <li>Message caching (SPC/IMC) is not currently supported for vision/audio requests</li>
             <li>Processing time varies with image resolution and audio duration</li>
           </ul>
           <h3 id="108-example:-image-analysis">10.8 Example: Image Analysis</h3>
@@ -4228,7 +4217,7 @@ default:
               </tr>
               <tr>
                 <td><code>chat.go</code></td>
-                <td>Chat inference loop, batch vs sequential routing</td>
+                <td>Chat inference loop, batch routing</td>
               </tr>
               <tr>
                 <td><code>config.go</code></td>
@@ -4289,7 +4278,7 @@ default:
           </ul>
           <h4 id="1673-model-pool-strategy">16.7.3 Model Pool Strategy</h4>
           <p><code>NSeqMax</code> behaves differently depending on model type:</p>
-          <p><strong>Sequential Models</strong> (embed, rerank, vision/audio):</p>
+          <p><strong>Single-Flight Models</strong> (embed, rerank):</p>
           <ul>
             <li><code>NSeqMax</code> controls the number of model instances in the pool</li>
             <li>Each instance handles one request at a time (single-flight)</li>
@@ -4334,12 +4323,9 @@ if m.batch == nil || object != ObjectChatText {
 }
 // Submit job to batch engine...
 return true`}</code></pre>
-          <p>If <code>submitToBatchEngine()</code> returns false, the sequential path is used:</p>
-          <pre className="code-block"><code className="language-go">{`if m.submitToBatchEngine(...) {
-    batching = true
-    return
-}
-m.sequentialChatRequest(...)`}</code></pre>
+          <p>All chat requests (including vision/audio) are submitted to the batch engine:</p>
+          <pre className="code-block"><code className="language-go">{`m.submitToBatchEngine(...)
+batching = true`}</code></pre>
           <p><strong>Batch Engine Architecture</strong> (<code>batch.go</code>):</p>
           <ul>
             <li><code>batchEngine</code> manages <code>nSlots</code> parallel <code>slot</code> structs</li>
@@ -4465,7 +4451,7 @@ m.sequentialChatRequest(...)`}</code></pre>
                 <li><a href="#42-slots-and-sequences" className={activeSection === '42-slots-and-sequences' ? 'active' : ''}>4.2 Slots and Sequences</a></li>
                 <li><a href="#43-request-flow" className={activeSection === '43-request-flow' ? 'active' : ''}>4.3 Request Flow</a></li>
                 <li><a href="#44-configuring-batch-processing" className={activeSection === '44-configuring-batch-processing' ? 'active' : ''}>4.4 Configuring Batch Processing</a></li>
-                <li><a href="#45-batch-vs-sequential-models" className={activeSection === '45-batch-vs-sequential-models' ? 'active' : ''}>4.5 Batch vs Sequential Models</a></li>
+                <li><a href="#45-batch-vs-single-flight-models" className={activeSection === '45-batch-vs-single-flight-models' ? 'active' : ''}>4.5 Batch vs Single-Flight Models</a></li>
                 <li><a href="#46-performance-tuning" className={activeSection === '46-performance-tuning' ? 'active' : ''}>4.6 Performance Tuning</a></li>
                 <li><a href="#47-example-configuration" className={activeSection === '47-example-configuration' ? 'active' : ''}>4.7 Example Configuration</a></li>
               </ul>

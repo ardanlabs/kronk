@@ -43,6 +43,8 @@ func Test_API(t *testing.T) {
 	test.RunStreaming(t, chatStreamSPCQwen3(t, tokens), "chat-stream-spc-qwen3")
 	test.Run(t, chatGrammarQwen3(t, tokens), "chat-grammar-qwen3")
 	test.RunStreaming(t, chatGrammarStreamQwen3(t, tokens), "chat-grammar-stream-qwen3")
+	test.Run(t, chatToolCallQwen3(t, tokens), "chat-toolcall-qwen3")
+	test.RunStreaming(t, chatToolCallStreamQwen3(t, tokens), "chat-toolcall-stream-qwen3")
 	test.Run(t, respNonStreamQwen3(t, tokens), "resp-nonstream-qwen3")
 	test.RunStreaming(t, respStreamQwen3(t, tokens), "resp-stream-qwen3")
 	test.Run(t, msgsNonStreamQwen3(t, tokens), "msgs-nonstream-qwen3")
@@ -422,6 +424,41 @@ func (v responseValidator) hasValidJSON() responseValidator {
 	var js any
 	if err := json.Unmarshal([]byte(content), &js); err != nil {
 		v.errors = append(v.errors, fmt.Sprintf("expected valid JSON, got parse error: %v, content: %s", err, content))
+	}
+
+	return v
+}
+
+func (v responseValidator) hasToolCalls(funcName string) responseValidator {
+	if len(v.resp.Choice) == 0 {
+		v.errors = append(v.errors, "expected at least one choice")
+		return v
+	}
+
+	choice := v.resp.Choice[0]
+
+	// Check finish reason is "tool_calls".
+	if choice.FinishReason() != "tool_calls" {
+		v.errors = append(v.errors, fmt.Sprintf("expected finish_reason to be 'tool_calls', got '%s'", choice.FinishReason()))
+		return v
+	}
+
+	// For non-streaming: check tool calls in Message.
+	// For streaming: check tool calls in Delta.
+	switch v.streaming {
+	case true:
+		if choice.Delta == nil || len(choice.Delta.ToolCalls) == 0 {
+			v.errors = append(v.errors, "expected tool calls in Delta for streaming")
+		} else if !strings.Contains(strings.ToLower(choice.Delta.ToolCalls[0].Function.Name), strings.ToLower(funcName)) {
+			v.errors = append(v.errors, fmt.Sprintf("expected Delta tool call function name to contain '%s', got '%s'", funcName, choice.Delta.ToolCalls[0].Function.Name))
+		}
+
+	default:
+		if choice.Message == nil || len(choice.Message.ToolCalls) == 0 {
+			v.errors = append(v.errors, "expected tool calls in Message")
+		} else if !strings.Contains(strings.ToLower(choice.Message.ToolCalls[0].Function.Name), strings.ToLower(funcName)) {
+			v.errors = append(v.errors, fmt.Sprintf("expected tool call function name to contain '%s', got '%s'", funcName, choice.Message.ToolCalls[0].Function.Name))
+		}
 	}
 
 	return v

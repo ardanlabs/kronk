@@ -100,7 +100,7 @@ func New(cfg model.Config, opts ...Option) (*Kronk, error) {
 	}
 
 	// -------------------------------------------------------------------------
-	// Determine if this is a sequential model (embed/rerank/vision) that
+	// Determine if this is a single-flight model (embed/rerank) that
 	// benefits from instance pooling rather than batch parallelism.
 
 	// We need to check model info, so create the first instance.
@@ -117,8 +117,8 @@ func New(cfg model.Config, opts ...Option) (*Kronk, error) {
 	}
 
 	// -------------------------------------------------------------------------
-	// For sequential models with NSeqMax > 1, create a pool of model instances.
-	// For text models, NSeqMax controls batch parallelism within a single instance.
+	// For single-flight models with NSeqMax > 1, create a pool of model instances.
+	// For text/vision/audio models, NSeqMax controls batch parallelism within a single instance.
 
 	var (
 		models      = []*model.Model{firstModel}

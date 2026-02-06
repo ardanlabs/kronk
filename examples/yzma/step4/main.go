@@ -153,7 +153,7 @@ func run() error {
 	fmt.Printf("Tokenized into %d chunks\n", numChunks)
 
 	// Print chunk info.
-	var totalTokens uint32
+	var totalTokens uint64
 	for i := range numChunks {
 		chunk := mtmd.InputChunksGet(output, i)
 		chunkType := mtmd.InputChunkGetType(chunk)
