@@ -1846,6 +1846,11 @@ models:
                 <td>Rerank documents</td>
               </tr>
               <tr>
+                <td><code>/v1/tokenize</code></td>
+                <td>POST</td>
+                <td>Tokenize text input</td>
+              </tr>
+              <tr>
                 <td><code>/v1/models</code></td>
                 <td>GET</td>
                 <td>List available models</td>
@@ -2018,7 +2023,74 @@ data: {"type":"response.completed",...}`}</code></pre>
     "total_tokens": 45
   }
 }`}</code></pre>
-          <h3 id="86-tool-calling-function-calling">8.6 Tool Calling (Function Calling)</h3>
+          <h3 id="86-tokenize">8.6 Tokenize</h3>
+          <p>Get the token count for a text input. Works with any model type.</p>
+          <p><strong>Endpoint:</strong> <code>POST /v1/tokenize</code></p>
+          <p><strong>Parameters:</strong></p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Field</th>
+                <th>Type</th>
+                <th>Required</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>model</code></td>
+                <td><code>string</code></td>
+                <td>Yes</td>
+                <td>Model ID (e.g., <code>Qwen3-8B-Q8_0</code>). Works with any model type.</td>
+              </tr>
+              <tr>
+                <td><code>input</code></td>
+                <td><code>string</code></td>
+                <td>Yes</td>
+                <td>The text to tokenize.</td>
+              </tr>
+              <tr>
+                <td><code>apply_template</code></td>
+                <td><code>boolean</code></td>
+                <td>No</td>
+                <td>If true, wraps the input as a user message and applies the model's chat template before tokenizing. The count includes template overhead. Defaults to false.</td>
+              </tr>
+              <tr>
+                <td><code>add_generation_prompt</code></td>
+                <td><code>boolean</code></td>
+                <td>No</td>
+                <td>When <code>apply_template</code> is true, controls whether the assistant role prefix is appended to the prompt. Defaults to true.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><strong>Request (raw text):</strong></p>
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/tokenize \\
+  -H "Authorization: Bearer $KRONK_TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "Qwen3-8B-Q8_0",
+    "input": "The quick brown fox jumps over the lazy dog"
+  }'`}</code></pre>
+          <p><strong>Request (with template):</strong></p>
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/tokenize \\
+  -H "Authorization: Bearer $KRONK_TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "Qwen3-8B-Q8_0",
+    "input": "The quick brown fox jumps over the lazy dog",
+    "apply_template": true
+  }'`}</code></pre>
+          <p><strong>Response:</strong></p>
+          <pre className="code-block"><code className="language-json">{`{
+  "object": "tokenize",
+  "created": 1738857600,
+  "model": "Qwen3-8B-Q8_0",
+  "tokens": 11
+}`}</code></pre>
+          <p>When <code>apply_template</code> is true, the token count will be higher than raw text</p>
+          <p>because it includes template overhead (role markers, separators, and the</p>
+          <p>generation prompt).</p>
+          <h3 id="87-tool-calling-function-calling">8.7 Tool Calling (Function Calling)</h3>
           <p>Kronk supports OpenAI-compatible tool calling, allowing models to request</p>
           <p>function executions that you handle in your application.</p>
           <p><strong>Request with Tools:</strong></p>
@@ -2114,7 +2186,7 @@ data: {"type":"response.completed",...}`}</code></pre>
 data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ation\\":"}}]}}]}
 
 data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":" \\"Paris\\"}"}}]}}]}`}</code></pre>
-          <h3 id="87-models-list">8.7 Models List</h3>
+          <h3 id="88-models-list">8.8 Models List</h3>
           <p>Get available models.</p>
           <p><strong>Endpoint:</strong> <code>GET /v1/models</code></p>
           <p><strong>Request:</strong></p>
@@ -2135,7 +2207,7 @@ data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":" \
     }
   ]
 }`}</code></pre>
-          <h3 id="88-authentication">8.8 Authentication</h3>
+          <h3 id="89-authentication">8.9 Authentication</h3>
           <p>When authentication is enabled, include the token in requests:</p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/chat/completions \\
   -H "Content-Type: application/json" \\
@@ -2143,7 +2215,7 @@ data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":" \
   -d '{...}'`}</code></pre>
           <p>See <a href="#chapter-11-security--authentication">Chapter 11: Security & Authentication</a></p>
           <p>for details on token management.</p>
-          <h3 id="89-error-responses">8.9 Error Responses</h3>
+          <h3 id="810-error-responses">8.10 Error Responses</h3>
           <p>Errors follow a standard format:</p>
           <pre className="code-block"><code className="language-json">{`{
   "error": {
@@ -4544,10 +4616,11 @@ batching = true`}</code></pre>
                 <li><a href="#83-responses-api" className={activeSection === '83-responses-api' ? 'active' : ''}>8.3 Responses API</a></li>
                 <li><a href="#84-embeddings" className={activeSection === '84-embeddings' ? 'active' : ''}>8.4 Embeddings</a></li>
                 <li><a href="#85-reranking" className={activeSection === '85-reranking' ? 'active' : ''}>8.5 Reranking</a></li>
-                <li><a href="#86-tool-calling-function-calling" className={activeSection === '86-tool-calling-function-calling' ? 'active' : ''}>8.6 Tool Calling (Function Calling)</a></li>
-                <li><a href="#87-models-list" className={activeSection === '87-models-list' ? 'active' : ''}>8.7 Models List</a></li>
-                <li><a href="#88-authentication" className={activeSection === '88-authentication' ? 'active' : ''}>8.8 Authentication</a></li>
-                <li><a href="#89-error-responses" className={activeSection === '89-error-responses' ? 'active' : ''}>8.9 Error Responses</a></li>
+                <li><a href="#86-tokenize" className={activeSection === '86-tokenize' ? 'active' : ''}>8.6 Tokenize</a></li>
+                <li><a href="#87-tool-calling-function-calling" className={activeSection === '87-tool-calling-function-calling' ? 'active' : ''}>8.7 Tool Calling (Function Calling)</a></li>
+                <li><a href="#88-models-list" className={activeSection === '88-models-list' ? 'active' : ''}>8.8 Models List</a></li>
+                <li><a href="#89-authentication" className={activeSection === '89-authentication' ? 'active' : ''}>8.9 Authentication</a></li>
+                <li><a href="#810-error-responses" className={activeSection === '810-error-responses' ? 'active' : ''}>8.10 Error Responses</a></li>
               </ul>
             </div>
             <div className="doc-index-section">

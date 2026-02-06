@@ -532,6 +532,25 @@ curl-kronk-tool-response:
 		] \
 	}'
 
+curl-tokenize:
+	curl -i -X POST http://localhost:8080/v1/tokenize \
+	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
+     -H "Content-Type: application/json" \
+     -d '{ \
+	 	"model": "Qwen3-8B-Q8_0", \
+		"input": "The quick brown fox jumps over the lazy dog" \
+    }'
+
+curl-tokenize-template:
+	curl -i -X POST http://localhost:8080/v1/tokenize \
+	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
+     -H "Content-Type: application/json" \
+     -d '{ \
+	 	"model": "Qwen3-8B-Q8_0", \
+		"input": "The quick brown fox jumps over the lazy dog", \
+		"apply_template": true \
+    }'
+
 # ==============================================================================
 # Running OpenWebUI 
 

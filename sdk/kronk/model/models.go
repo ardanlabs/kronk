@@ -708,6 +708,16 @@ type RerankResponse struct {
 
 // =============================================================================
 
+// TokenizeResponse represents the output for a tokenize call.
+type TokenizeResponse struct {
+	Object  string `json:"object"`
+	Created int64  `json:"created"`
+	Model   string `json:"model"`
+	Tokens  int    `json:"tokens"`
+}
+
+// =============================================================================
+
 type chatMessageURLData struct {
 	// Only base64 encoded image is currently supported.
 	URL string `json:"url"`

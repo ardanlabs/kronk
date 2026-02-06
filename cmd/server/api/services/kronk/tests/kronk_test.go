@@ -49,6 +49,7 @@ func Test_API(t *testing.T) {
 	test.RunStreaming(t, respStreamQwen3(t, tokens), "resp-stream-qwen3")
 	test.Run(t, msgsNonStreamQwen3(t, tokens), "msgs-nonstream-qwen3")
 	test.RunStreaming(t, msgsStreamQwen3(t, tokens), "msgs-stream-qwen3")
+	test.Run(t, tokenize200(tokens), "tokenize-200")
 
 	// -------------------------------------------------------------------------
 	// Model: Qwen2.5-VL-3B-Instruct-Q8_0 (vision)
@@ -81,6 +82,7 @@ func Test_API(t *testing.T) {
 	test.Run(t, msgsEndpoint401(tokens), "msgsEndpoint-401")
 	test.Run(t, embed401(tokens), "embedding-401")
 	test.Run(t, rerank401(tokens), "rerank-401")
+	test.Run(t, tokenize401(tokens), "tokenize-401")
 }
 
 // =============================================================================
@@ -187,6 +189,22 @@ func createTokens(t *testing.T, sec *security.Security) map[string]string {
 	}
 
 	tokens["messages"] = token
+
+	// -------------------------------------------------------------------------
+
+	endpoints = map[string]auth.RateLimit{
+		"tokenize": {
+			Limit:  0,
+			Window: auth.RateUnlimited,
+		},
+	}
+
+	token, err = sec.GenerateToken(false, endpoints, 60*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tokens["tokenize"] = token
 
 	return tokens
 }

@@ -2003,6 +2003,7 @@ available endpoints and their usage.
 | `/v1/messages`         | POST   | Anthropic API format                       |
 | `/v1/embeddings`       | POST   | Generate embeddings                        |
 | `/v1/rerank`           | POST   | Rerank documents                           |
+| `/v1/tokenize`         | POST   | Tokenize text input                        |
 | `/v1/models`           | GET    | List available models                      |
 
 ### 8.2 Chat Completions
@@ -2240,7 +2241,62 @@ curl http://localhost:8080/v1/rerank \
 }
 ```
 
-### 8.6 Tool Calling (Function Calling)
+### 8.6 Tokenize
+
+Get the token count for a text input. Works with any model type.
+
+**Endpoint:** `POST /v1/tokenize`
+
+**Parameters:**
+
+| Field                    | Type      | Required | Description                                                                                                                                   |
+| ------------------------ | --------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `model`                  | `string`  | Yes      | Model ID (e.g., `Qwen3-8B-Q8_0`). Works with any model type.                                                                                |
+| `input`                  | `string`  | Yes      | The text to tokenize.                                                                                                                         |
+| `apply_template`         | `boolean` | No       | If true, wraps the input as a user message and applies the model's chat template before tokenizing. The count includes template overhead. Defaults to false. |
+| `add_generation_prompt`  | `boolean` | No       | When `apply_template` is true, controls whether the assistant role prefix is appended to the prompt. Defaults to true.                         |
+
+**Request (raw text):**
+
+```shell
+curl http://localhost:8080/v1/tokenize \
+  -H "Authorization: Bearer $KRONK_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "Qwen3-8B-Q8_0",
+    "input": "The quick brown fox jumps over the lazy dog"
+  }'
+```
+
+**Request (with template):**
+
+```shell
+curl http://localhost:8080/v1/tokenize \
+  -H "Authorization: Bearer $KRONK_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "Qwen3-8B-Q8_0",
+    "input": "The quick brown fox jumps over the lazy dog",
+    "apply_template": true
+  }'
+```
+
+**Response:**
+
+```json
+{
+  "object": "tokenize",
+  "created": 1738857600,
+  "model": "Qwen3-8B-Q8_0",
+  "tokens": 11
+}
+```
+
+When `apply_template` is true, the token count will be higher than raw text
+because it includes template overhead (role markers, separators, and the
+generation prompt).
+
+### 8.7 Tool Calling (Function Calling)
 
 Kronk supports OpenAI-compatible tool calling, allowing models to request
 function executions that you handle in your application.
@@ -2356,7 +2412,7 @@ data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"at
 data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":" \"Paris\"}"}}]}}]}
 ```
 
-### 8.7 Models List
+### 8.8 Models List
 
 Get available models.
 
@@ -2388,7 +2444,7 @@ curl http://localhost:8080/v1/models
 }
 ```
 
-### 8.8 Authentication
+### 8.9 Authentication
 
 When authentication is enabled, include the token in requests:
 
@@ -2402,7 +2458,7 @@ curl http://localhost:8080/v1/chat/completions \
 See [Chapter 11: Security & Authentication](#chapter-11-security--authentication)
 for details on token management.
 
-### 8.9 Error Responses
+### 8.10 Error Responses
 
 Errors follow a standard format:
 

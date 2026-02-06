@@ -26,6 +26,7 @@ import DocsAPIMessages from './components/DocsAPIMessages';
 import DocsAPIResponses from './components/DocsAPIResponses';
 import DocsAPIEmbeddings from './components/DocsAPIEmbeddings';
 import DocsAPIRerank from './components/DocsAPIRerank';
+import DocsAPITokenize from './components/DocsAPITokenize';
 import DocsAPITools from './components/DocsAPITools';
 import DocsManual from './components/DocsManual';
 import VRAMCalculator from './components/VRAMCalculator';
@@ -64,6 +65,7 @@ export type Page =
   | 'docs-api-responses'
   | 'docs-api-embeddings'
   | 'docs-api-rerank'
+  | 'docs-api-tokenize'
   | 'docs-api-tools'
   | 'docs-manual';
 
@@ -96,6 +98,7 @@ export const routeMap: Record<Page, string> = {
   'docs-api-responses': '/docs/api/responses',
   'docs-api-embeddings': '/docs/api/embeddings',
   'docs-api-rerank': '/docs/api/rerank',
+  'docs-api-tokenize': '/docs/api/tokenize',
   'docs-api-tools': '/docs/api/tools',
   'docs-manual': '/docs/manual',
 };
@@ -186,6 +189,7 @@ function App() {
                 <Route path="/docs/api/responses" element={<DocsAPIResponses />} />
                 <Route path="/docs/api/embeddings" element={<DocsAPIEmbeddings />} />
                 <Route path="/docs/api/rerank" element={<DocsAPIRerank />} />
+                <Route path="/docs/api/tokenize" element={<DocsAPITokenize />} />
                 <Route path="/docs/api/tools" element={<DocsAPITools />} />
                 <Route path="/docs/manual" element={<DocsManual />} />
               </Routes>

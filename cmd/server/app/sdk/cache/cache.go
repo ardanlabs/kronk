@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -172,8 +171,7 @@ func (c *Cache) ModelStatus() ([]ModelDetail, error) {
 ids:
 	for _, model := range entries {
 		for _, mi := range list {
-			modelKey := strings.ToLower(model.Key) // The index uses lowercase.
-			if mi.ID == modelKey {
+			if mi.ID == model.Key {
 				ps = append(ps, ModelDetail{
 					ID:            model.Key,
 					OwnedBy:       mi.OwnedBy,

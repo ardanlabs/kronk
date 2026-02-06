@@ -522,6 +522,19 @@ export default function DocsSDKModel() {
               <p className="doc-description">TemplateRetriever returns a configured template for a model.</p>
             </div>
 
+            <div className="doc-section" id="type-tokenizeresponse">
+              <h4>TokenizeResponse</h4>
+              <pre className="code-block">
+                <code>{`type TokenizeResponse struct {
+	Object  string \`json:"object"\`
+	Created int64  \`json:"created"\`
+	Model   string \`json:"model"\`
+	Tokens  int    \`json:"tokens"\`
+}`}</code>
+              </pre>
+              <p className="doc-description">TokenizeResponse represents the output for a tokenize call.</p>
+            </div>
+
             <div className="doc-section" id="type-toolcallarguments">
               <h4>ToolCallArguments</h4>
               <pre className="code-block">
@@ -674,6 +687,14 @@ export default function DocsSDKModel() {
                 <code>func (m *Model) Rerank(ctx context.Context, d D) (RerankResponse, error)</code>
               </pre>
               <p className="doc-description">Rerank performs reranking for a query against multiple documents. It scores each document's relevance to the query and returns results sorted by relevance score (highest first). Supported options in d: - query (string): the query to rank documents against (required) - documents ([]string): the documents to rank (required) - top_n (int): return only the top N results (optional, default: all) - return_documents (bool): include document text in results (default: false) When NSeqMax &gt; 1, multiple concurrent requests can be processed in parallel, each using one context from the internal pool.</p>
+            </div>
+
+            <div className="doc-section" id="method-model-tokenize">
+              <h4>Model.Tokenize</h4>
+              <pre className="code-block">
+                <code>func (m *Model) Tokenize(ctx context.Context, d D) (TokenizeResponse, error)</code>
+              </pre>
+              <p className="doc-description">Tokenize returns the token count for a text input. Supported options in d: - input (string): the text to tokenize (required) - apply_template (bool): if true, wrap input as a user message and apply the model's chat template before tokenizing (default: false) - add_generation_prompt (bool): when apply_template is true, controls whether the assistant role prefix is appended to the prompt (default: true) When apply_template is true, the returned count includes all template overhead (role markers, separators, generation prompt). This reflects the actual number of tokens that would be fed to the model.</p>
             </div>
 
             <div className="doc-section" id="method-model-unload">
@@ -1057,6 +1078,7 @@ ws ::= [ \\t\\n\\r]*\`
                 <li><a href="#type-streamingresponselogger">StreamingResponseLogger</a></li>
                 <li><a href="#type-template">Template</a></li>
                 <li><a href="#type-templateretriever">TemplateRetriever</a></li>
+                <li><a href="#type-tokenizeresponse">TokenizeResponse</a></li>
                 <li><a href="#type-toolcallarguments">ToolCallArguments</a></li>
                 <li><a href="#type-toplogprob">TopLogprob</a></li>
                 <li><a href="#type-usage">Usage</a></li>
@@ -1080,6 +1102,7 @@ ws ::= [ \\t\\n\\r]*\`
                 <li><a href="#method-model-embeddings">Model.Embeddings</a></li>
                 <li><a href="#method-model-modelinfo">Model.ModelInfo</a></li>
                 <li><a href="#method-model-rerank">Model.Rerank</a></li>
+                <li><a href="#method-model-tokenize">Model.Tokenize</a></li>
                 <li><a href="#method-model-unload">Model.Unload</a></li>
                 <li><a href="#method-modelinfo-string">ModelInfo.String</a></li>
                 <li><a href="#method-params-string">Params.String</a></li>
