@@ -705,7 +705,7 @@ func (m *Model) toSampler(p Params) llama.Sampler {
 		llama.SamplerChainAdd(sampler, llama.SamplerInitDry(m.vocab, int32(m.cfg.ContextWindow), p.DryMultiplier, p.DryBase, p.DryAllowedLen, p.DryPenaltyLast, nil))
 	}
 
-	if p.RepeatPenalty != DefRepeatPenalty {
+	if p.RepeatPenalty != 1.0 {
 		llama.SamplerChainAdd(sampler, llama.SamplerInitPenalties(p.RepeatLastN, p.RepeatPenalty, 0, 0))
 	}
 
