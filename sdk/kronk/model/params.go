@@ -252,8 +252,10 @@ type Params struct {
 func (p Params) String() string {
 	var b strings.Builder
 
+	fmt.Fprintln(&b)
+
 	if p.AdaptivePDecay != 0 {
-		fmt.Fprintf(&b, "\nadaptive_p_decay[%v]\n", p.AdaptivePDecay)
+		fmt.Fprintf(&b, "adaptive_p_decay[%v]\n", p.AdaptivePDecay)
 	}
 	if p.AdaptivePTarget != 0 {
 		fmt.Fprintf(&b, "adaptive_p_target[%v]\n", p.AdaptivePTarget)

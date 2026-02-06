@@ -74,6 +74,7 @@ type Model struct {
 	spcNextSeq    llama.SeqId            // Next available cache sequence
 	spcMaxSeqs    int                    // Max SPC sessions from config
 	addBOSToken   bool                   // Whether to add BOS token (from model metadata)
+	pool          *contextPool           // Context pool for parallel embed/rerank
 }
 
 func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) (*Model, error) {
@@ -158,49 +159,15 @@ func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) 
 
 	l(ctx, "MODEL-CONFIG", "values", cfg.String())
 
-	l(ctx, "LLAMA-CONTEXT-PARAMS", "values", fmt.Sprintf("\nNCtx[%d]\nNBatch[%d]\nNUBatch[%d]\nNSeqMax[%d]\nTypeK[%d]\nTypeV[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nEmbeddings[%d]\nPoolingType[%d]\nFlashAttentionType[%d]\nOffloadKQV[%d]\nOpOffload[%d]\nRopeScalingType[%d]\nRopeFreqBase[%g]\nRopeFreqScale[%g]\nYarnExtFactor[%g]\nYarnAttnFactor[%g]\nYarnBetaFast[%g]\nYarnBetaSlow[%g]\nYarnOrigCtx[%d]\n",
-		ctxParams.NCtx, ctxParams.NBatch, ctxParams.NUbatch, ctxParams.NSeqMax,
-		ctxParams.TypeK, ctxParams.TypeV, ctxParams.NThreads, ctxParams.NThreadsBatch,
-		ctxParams.Embeddings, ctxParams.PoolingType, ctxParams.FlashAttentionType,
-		ctxParams.Offload_kqv, ctxParams.OpOffload,
-		ctxParams.RopeScalingType, ctxParams.RopeFreqBase, ctxParams.RopeFreqScale,
-		ctxParams.YarnExtFactor, ctxParams.YarnAttnFactor, ctxParams.YarnBetaFast,
-		ctxParams.YarnBetaSlow, ctxParams.YarnOrigCtx))
+	l(ctx, "LLAMA-CONTEXT-PARAMS", "values", fmt.Sprintf("\nEmbeddings[%d]\nFlashAttentionType[%d]\nNBatch[%d]\nNCtx[%d]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nOffloadKQV[%d]\nOpOffload[%d]\nPoolingType[%d]\nRopeFreqBase[%g]\nRopeFreqScale[%g]\nRopeScalingType[%d]\nTypeK[%d]\nTypeV[%d]\nYarnAttnFactor[%g]\nYarnBetaFast[%g]\nYarnBetaSlow[%g]\nYarnExtFactor[%g]\nYarnOrigCtx[%d]\n",
+		ctxParams.Embeddings, ctxParams.FlashAttentionType, ctxParams.NBatch, ctxParams.NCtx,
+		ctxParams.NSeqMax, ctxParams.NThreads, ctxParams.NThreadsBatch, ctxParams.NUbatch,
+		ctxParams.Offload_kqv, ctxParams.OpOffload, ctxParams.PoolingType,
+		ctxParams.RopeFreqBase, ctxParams.RopeFreqScale, ctxParams.RopeScalingType,
+		ctxParams.TypeK, ctxParams.TypeV, ctxParams.YarnAttnFactor, ctxParams.YarnBetaFast,
+		ctxParams.YarnBetaSlow, ctxParams.YarnExtFactor, ctxParams.YarnOrigCtx))
 
-	lctx, err := llama.InitFromModel(mdl, ctxParams)
-	if err != nil {
-		llama.ModelFree(mdl)
-		return nil, fmt.Errorf("init-from-model: unable to init context: %w", err)
-	}
-
-	mem, err := llama.GetMemory(lctx)
-	if err != nil {
-		llama.Free(lctx)
-		llama.ModelFree(mdl)
-		return nil, fmt.Errorf("get-memory: unable to get memory: %w", err)
-	}
-
-	// Clear KV cache to ensure clean state on first request.
-	// Without this, uninitialized memory can cause SIGTRAP in llama.cpp decode.
-	llama.MemoryClear(mem, true)
-
-	// Initialize IMC session tracking when enabled.
-	// Sessions start at seq 0 and increment up to MaxCacheSessions.
-	var imcSessions map[string]*imcSession
-	var imcMaxSeqs int
-	if cfg.IncrementalCache {
-		imcMaxSeqs = max(cfg.MaxCacheSessions, 1)
-		imcSessions = make(map[string]*imcSession, imcMaxSeqs)
-	}
-
-	// Initialize SPC session tracking when enabled.
-	// Sessions start at seq 0 and increment up to MaxCacheSessions.
-	var spcSessions map[string]*spcSession
-	var spcMaxSeqs int
-	if cfg.SystemPromptCache {
-		spcMaxSeqs = max(cfg.MaxCacheSessions, 1)
-		spcSessions = make(map[string]*spcSession, spcMaxSeqs)
-	}
+	// -------------------------------------------------------------------------
 
 	m := Model{
 		cfg:         cfg,
@@ -208,25 +175,62 @@ func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) 
 		model:       mdl,
 		vocab:       llama.ModelGetVocab(mdl),
 		ctxParams:   ctxParams,
-		lctx:        lctx,
-		mem:         mem,
 		template:    template,
 		projFile:    cfg.ProjFile,
 		modelInfo:   modelInfo,
-		imcSessions: imcSessions,
-		imcNextSeq:  0,
-		imcMaxSeqs:  imcMaxSeqs,
-		spcSessions: spcSessions,
-		spcNextSeq:  0,
-		spcMaxSeqs:  spcMaxSeqs,
 		addBOSToken: addBOSToken,
 	}
 
-	// Initialize batch engine for parallel inference.
-	// Supports both text-only and multi-modal (mtmd) models.
+	// Initialize either context pool (for embed/rerank) or batch engine (for generation).
+	// Embed/rerank models use a pool of contexts for parallel processing.
+	// Generation models use the batch engine with a primary context.
 	nSlots := max(cfg.NSeqMax, 1)
-	m.batch = newBatchEngine(&m, nSlots)
-	m.batch.start(ctx)
+
+	switch {
+	case modelInfo.IsEmbedModel || modelInfo.IsRerankModel:
+		pool, err := newContextPool(ctx, mdl, ctxParams, l, nSlots)
+		if err != nil {
+			llama.ModelFree(mdl)
+			return nil, fmt.Errorf("new-context-pool: unable to create context pool: %w", err)
+		}
+		m.pool = pool
+
+	default:
+		// Generation models need a primary context for the batch engine.
+		lctx, err := llama.InitFromModel(mdl, ctxParams)
+		if err != nil {
+			llama.ModelFree(mdl)
+			return nil, fmt.Errorf("init-from-model: unable to init context: %w", err)
+		}
+
+		mem, err := llama.GetMemory(lctx)
+		if err != nil {
+			llama.Free(lctx)
+			llama.ModelFree(mdl)
+			return nil, fmt.Errorf("get-memory: unable to get memory: %w", err)
+		}
+
+		// Clear KV cache to ensure clean state on first request.
+		llama.MemoryClear(mem, true)
+
+		m.lctx = lctx
+		m.mem = mem
+
+		// Initialize IMC session tracking when enabled.
+		if cfg.IncrementalCache {
+			m.imcMaxSeqs = max(cfg.MaxCacheSessions, 1)
+			m.imcSessions = make(map[string]*imcSession, m.imcMaxSeqs)
+		}
+
+		// Initialize SPC session tracking when enabled.
+		if cfg.SystemPromptCache {
+			m.spcMaxSeqs = max(cfg.MaxCacheSessions, 1)
+			m.spcSessions = make(map[string]*spcSession, m.spcMaxSeqs)
+		}
+
+		m.batch = newBatchEngine(&m, nSlots)
+		m.batch.start(ctx)
+	}
 
 	return &m, nil
 }
@@ -337,9 +341,17 @@ func (m *Model) Unload(ctx context.Context) error {
 		m.batch.freeBatch()
 	}
 
-	// Synchronize ensures all GPU operations complete before freeing.
-	llama.Synchronize(m.lctx)
-	llama.Free(m.lctx)
+	// Close the context pool if running (embed/rerank models).
+	if m.pool != nil {
+		m.pool.close()
+	}
+
+	// Free primary context if it exists (generation models only).
+	if m.lctx != 0 {
+		llama.Synchronize(m.lctx)
+		llama.Free(m.lctx)
+	}
+
 	llama.ModelFree(m.model)
 	llama.BackendFree()
 

@@ -9,8 +9,7 @@ import (
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
-// Embeddings performs batch embedding for multiple inputs in a single
-// forward pass. This is more efficient than calling Embeddings multiple times.
+// Embeddings performs embedding for one or more inputs.
 //
 // Supported options in d:
 //   - input ([]string): the texts to embed (required)
@@ -18,10 +17,8 @@ import (
 //   - truncate_direction (string): "right" (default) or "left"
 //   - dimensions (int): reduce output to first N dimensions (for Matryoshka models)
 //
-// Each model instance processes calls sequentially (llama.cpp only supports
-// sequence 0 for embedding extraction). Use NSeqMax > 1 to create multiple
-// model instances for concurrent request handling. Batch multiple texts in the
-// input parameter for better performance within a single request.
+// When NSeqMax > 1, multiple concurrent requests can be processed in parallel,
+// each using one context from the internal pool.
 func (m *Model) Embeddings(ctx context.Context, d D) (EmbedReponse, error) {
 	if !m.modelInfo.IsEmbedModel {
 		return EmbedReponse{}, fmt.Errorf("embeddings: model doesn't support embedding")
@@ -56,34 +53,6 @@ func (m *Model) Embeddings(ctx context.Context, d D) (EmbedReponse, error) {
 
 	// -------------------------------------------------------------------------
 
-	lctx, err := llama.InitFromModel(m.model, m.ctxParams)
-	if err != nil {
-		return EmbedReponse{}, fmt.Errorf("embeddings: unable to init from model: %w", err)
-	}
-
-	defer func() {
-		llama.Synchronize(lctx)
-		llama.Free(lctx)
-	}()
-
-	mem, err := llama.GetMemory(lctx)
-	if err != nil {
-		return EmbedReponse{}, fmt.Errorf("embeddings: unable to get memory: %w", err)
-	}
-
-	select {
-	case <-ctx.Done():
-		return EmbedReponse{}, ctx.Err()
-
-	default:
-	}
-
-	maxTokens := int(llama.NUBatch(lctx))
-	ctxTokens := int(llama.NCtx(lctx))
-	if ctxTokens < maxTokens {
-		maxTokens = ctxTokens
-	}
-
 	truncate, _ := d["truncate"].(bool)
 	direction, _ := d["truncate_direction"].(string)
 	nativeDim := llama.ModelNEmbd(m.model)
@@ -95,83 +64,18 @@ func (m *Model) Embeddings(ctx context.Context, d D) (EmbedReponse, error) {
 
 	// -------------------------------------------------------------------------
 
-	// Tokenize all inputs upfront.
-	allTokens := make([][]llama.Token, len(inputs))
-	for i, input := range inputs {
-		tokens := llama.Tokenize(m.vocab, input, m.addBOSToken, true)
-
-		if len(tokens) > maxTokens {
-			if !truncate {
-				return EmbedReponse{}, fmt.Errorf("embeddings: input[%d] has %d tokens but max is %d (set truncate=true to auto-truncate)", i, len(tokens), maxTokens)
-			}
-
-			originalLen := len(tokens)
-
-			switch direction {
-			case "left":
-				tokens = tokens[len(tokens)-maxTokens:]
-
-			default:
-				tokens = tokens[:maxTokens]
-			}
-
-			m.log(ctx, "embeddings", "status", "truncated input", "index", i, "original_tokens", originalLen, "max_tokens", maxTokens, "direction", direction, "truncated_tokens", len(tokens))
-		}
-
-		allTokens[i] = tokens
+	// Acquire a single context from the pool. This allows NSeqMax concurrent
+	// requests to run in parallel, which is more important for server workloads
+	// than parallelizing within a single request.
+	pc, err := m.pool.acquire(ctx)
+	if err != nil {
+		return EmbedReponse{}, err
 	}
+	defer m.pool.release(pc)
 
-	// -------------------------------------------------------------------------
-
-	// Process each input sequentially within the same context.
-
-	embedData := make([]EmbedData, len(inputs))
-	totalPromptTokens := 0
-
-	for i, tokens := range allTokens {
-		select {
-		case <-ctx.Done():
-			return EmbedReponse{}, ctx.Err()
-
-		default:
-		}
-
-		totalPromptTokens += len(tokens)
-
-		batch := llama.BatchGetOne(tokens)
-
-		ret, err := llama.Decode(lctx, batch)
-		if err != nil {
-			return EmbedReponse{}, fmt.Errorf("embeddings: decode failed for input[%d]: %w", i, err)
-		}
-
-		if ret != 0 {
-			return EmbedReponse{}, fmt.Errorf("embeddings: decode returned non-zero for input[%d]: %d", i, ret)
-		}
-
-		rawVec, err := llama.GetEmbeddingsSeq(lctx, 0, nativeDim)
-		if err != nil {
-			return EmbedReponse{}, fmt.Errorf("embeddings: unable to get embeddings for input[%d]: %w", i, err)
-		}
-
-		// Copy the vector since llama memory is invalidated by MemoryClear.
-		vec := make([]float32, len(rawVec))
-		copy(vec, rawVec)
-
-		if requestedDim > 0 {
-			vec = vec[:int(requestedDim)]
-		}
-
-		vec = normalizeVector(vec)
-
-		embedData[i] = EmbedData{
-			Object:    "embedding",
-			Index:     i,
-			Embedding: vec,
-		}
-
-		// Clear KV cache before next input.
-		llama.MemoryClear(mem, true)
+	embedData, totalPromptTokens, err := m.processEmbeddings(ctx, pc, inputs, truncate, direction, nativeDim, int(requestedDim))
+	if err != nil {
+		return EmbedReponse{}, err
 	}
 
 	// -------------------------------------------------------------------------
@@ -188,6 +92,86 @@ func (m *Model) Embeddings(ctx context.Context, d D) (EmbedReponse, error) {
 	}
 
 	return er, nil
+}
+
+// processEmbeddings processes all inputs on a single context.
+func (m *Model) processEmbeddings(ctx context.Context, pc poolContext, inputs []string, truncate bool, direction string, nativeDim int32, requestedDim int) ([]EmbedData, int, error) {
+	maxTokens := int(llama.NUBatch(pc.lctx))
+	ctxTokens := int(llama.NCtx(pc.lctx))
+	if ctxTokens < maxTokens {
+		maxTokens = ctxTokens
+	}
+
+	embedData := make([]EmbedData, len(inputs))
+	totalTokens := 0
+
+	for i, input := range inputs {
+		select {
+		case <-ctx.Done():
+			return nil, 0, ctx.Err()
+
+		default:
+		}
+
+		tokens := llama.Tokenize(m.vocab, input, m.addBOSToken, true)
+
+		if len(tokens) > maxTokens {
+			if !truncate {
+				return nil, 0, fmt.Errorf("embeddings: input[%d] has %d tokens but max is %d (set truncate=true to auto-truncate)", i, len(tokens), maxTokens)
+			}
+
+			originalLen := len(tokens)
+
+			switch direction {
+			case "left":
+				tokens = tokens[len(tokens)-maxTokens:]
+
+			default:
+				tokens = tokens[:maxTokens]
+			}
+
+			m.log(ctx, "embeddings", "status", "truncated input", "index", i, "original_tokens", originalLen, "max_tokens", maxTokens, "direction", direction, "truncated_tokens", len(tokens))
+		}
+
+		totalTokens += len(tokens)
+
+		batch := llama.BatchGetOne(tokens)
+
+		ret, err := llama.Decode(pc.lctx, batch)
+		if err != nil {
+			return nil, 0, fmt.Errorf("embeddings: decode failed for input[%d]: %w", i, err)
+		}
+
+		if ret != 0 {
+			return nil, 0, fmt.Errorf("embeddings: decode returned non-zero for input[%d]: %d", i, ret)
+		}
+
+		rawVec, err := llama.GetEmbeddingsSeq(pc.lctx, 0, nativeDim)
+		if err != nil {
+			return nil, 0, fmt.Errorf("embeddings: unable to get embeddings for input[%d]: %w", i, err)
+		}
+
+		// Copy the vector since llama memory is invalidated by MemoryClear.
+		vec := make([]float32, len(rawVec))
+		copy(vec, rawVec)
+
+		if requestedDim > 0 {
+			vec = vec[:requestedDim]
+		}
+
+		vec = normalizeVector(vec)
+
+		embedData[i] = EmbedData{
+			Object:    "embedding",
+			Index:     i,
+			Embedding: vec,
+		}
+
+		// Clear KV cache before next input.
+		llama.MemoryClear(pc.mem, true)
+	}
+
+	return embedData, totalTokens, nil
 }
 
 // normalizeVector applies L2 normalization to the embedding vector.

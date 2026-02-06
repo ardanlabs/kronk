@@ -234,10 +234,10 @@ func Test_ConTest3(t *testing.T) {
 }
 
 // =============================================================================
-// Pool behavior tests for single-flight models (embed/rerank) with NSeqMax > 1
+// Context pool tests for embedding/rerank models with NSeqMax > 1
 
-// Test_PooledEmbeddings verifies that NSeqMax creates multiple model instances
-// for embedding models and that concurrent requests execute in parallel.
+// Test_PooledEmbeddings verifies that NSeqMax creates an internal context pool
+// for embedding models and that inputs are processed in parallel.
 func Test_PooledEmbeddings(t *testing.T) {
 	if os.Getenv("GITHUB_ACTIONS") == "true" {
 		t.Skip("Skipping pool test in GitHub Actions (requires more resources)")
