@@ -101,11 +101,6 @@ func (p *contextPool) release(pc poolContext) {
 	p.avail <- pc.idx
 }
 
-// size returns the number of contexts in the pool.
-func (p *contextPool) size() int {
-	return len(p.contexts)
-}
-
 // close frees all contexts in the pool.
 func (p *contextPool) close() {
 	p.mu.Lock()
