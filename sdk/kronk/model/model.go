@@ -158,14 +158,13 @@ func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) 
 
 	l(ctx, "MODEL-CONFIG", "values", cfg.String())
 
-	l(ctx, "LLAMA-CONTEXT-PARAMS", "values", fmt.Sprintf("\nNCtx[%d]\nNBatch[%d]\nNUBatch[%d]\nNSeqMax[%d]\nTypeK[%d]\nTypeV[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nEmbeddings[%d]\nPoolingType[%d]\nFlashAttentionType[%d]\nOffloadKQV[%d]\nOpOffload[%d]\nRopeScalingType[%d]\nRopeFreqBase[%g]\nRopeFreqScale[%g]\nYarnExtFactor[%g]\nYarnAttnFactor[%g]\nYarnBetaFast[%g]\nYarnBetaSlow[%g]\nYarnOrigCtx[%d]\n",
-		ctxParams.NCtx, ctxParams.NBatch, ctxParams.NUbatch, ctxParams.NSeqMax,
-		ctxParams.TypeK, ctxParams.TypeV, ctxParams.NThreads, ctxParams.NThreadsBatch,
-		ctxParams.Embeddings, ctxParams.PoolingType, ctxParams.FlashAttentionType,
-		ctxParams.Offload_kqv, ctxParams.OpOffload,
-		ctxParams.RopeScalingType, ctxParams.RopeFreqBase, ctxParams.RopeFreqScale,
-		ctxParams.YarnExtFactor, ctxParams.YarnAttnFactor, ctxParams.YarnBetaFast,
-		ctxParams.YarnBetaSlow, ctxParams.YarnOrigCtx))
+	l(ctx, "LLAMA-CONTEXT-PARAMS", "values", fmt.Sprintf("\nEmbeddings[%d]\nFlashAttentionType[%d]\nNBatch[%d]\nNCtx[%d]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nOffloadKQV[%d]\nOpOffload[%d]\nPoolingType[%d]\nRopeFreqBase[%g]\nRopeFreqScale[%g]\nRopeScalingType[%d]\nTypeK[%d]\nTypeV[%d]\nYarnAttnFactor[%g]\nYarnBetaFast[%g]\nYarnBetaSlow[%g]\nYarnExtFactor[%g]\nYarnOrigCtx[%d]\n",
+		ctxParams.Embeddings, ctxParams.FlashAttentionType, ctxParams.NBatch, ctxParams.NCtx,
+		ctxParams.NSeqMax, ctxParams.NThreads, ctxParams.NThreadsBatch, ctxParams.NUbatch,
+		ctxParams.Offload_kqv, ctxParams.OpOffload, ctxParams.PoolingType,
+		ctxParams.RopeFreqBase, ctxParams.RopeFreqScale, ctxParams.RopeScalingType,
+		ctxParams.TypeK, ctxParams.TypeV, ctxParams.YarnAttnFactor, ctxParams.YarnBetaFast,
+		ctxParams.YarnBetaSlow, ctxParams.YarnExtFactor, ctxParams.YarnOrigCtx))
 
 	lctx, err := llama.InitFromModel(mdl, ctxParams)
 	if err != nil {
