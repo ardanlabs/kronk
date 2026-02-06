@@ -373,6 +373,22 @@ export default function DocsSDKKronk() {
               <p className="doc-description">SystemInfo returns system information.</p>
             </div>
 
+            <div className="doc-section" id="method-kronk-tokenize">
+              <h4>Kronk.Tokenize</h4>
+              <pre className="code-block">
+                <code>func (krn *Kronk) Tokenize(ctx context.Context, d model.D) (model.TokenizeResponse, error)</code>
+              </pre>
+              <p className="doc-description">Tokenize returns the token count for a text input. Supported options in d: - input (string): the text to tokenize (required) - apply_template (bool): if true, wrap input as a user message and apply the model's chat template before tokenizing (default: false) - add_generation_prompt (bool): when apply_template is true, controls whether the assistant role prefix is appended to the prompt (default: true) When apply_template is true, the returned count includes all template overhead (role markers, separators, generation prompt). This reflects the actual number of tokens that would be fed to the model.</p>
+            </div>
+
+            <div className="doc-section" id="method-kronk-tokenizehttp">
+              <h4>Kronk.TokenizeHTTP</h4>
+              <pre className="code-block">
+                <code>func (krn *Kronk) TokenizeHTTP(ctx context.Context, log Logger, w http.ResponseWriter, d model.D) (model.TokenizeResponse, error)</code>
+              </pre>
+              <p className="doc-description">TokenizeHTTP provides http handler support for a tokenize call.</p>
+            </div>
+
             <div className="doc-section" id="method-kronk-unload">
               <h4>Kronk.Unload</h4>
               <pre className="code-block">
@@ -491,6 +507,8 @@ export default function DocsSDKKronk() {
                 <li><a href="#method-kronk-responsestreaming">Kronk.ResponseStreaming</a></li>
                 <li><a href="#method-kronk-responsestreaminghttp">Kronk.ResponseStreamingHTTP</a></li>
                 <li><a href="#method-kronk-systeminfo">Kronk.SystemInfo</a></li>
+                <li><a href="#method-kronk-tokenize">Kronk.Tokenize</a></li>
+                <li><a href="#method-kronk-tokenizehttp">Kronk.TokenizeHTTP</a></li>
                 <li><a href="#method-kronk-unload">Kronk.Unload</a></li>
                 <li><a href="#method-loglevel-int">LogLevel.Int</a></li>
               </ul>

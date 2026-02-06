@@ -302,7 +302,7 @@ func testAudio(t *testing.T, krn *kronk.Kronk) {
 	f := func() error {
 		id := uuid.New().String()
 
-		const maxRetries = 2
+		const maxRetries = 3
 		for attempt := 1; attempt <= maxRetries; attempt++ {
 			ctx, cancel := context.WithTimeout(context.Background(), testDuration)
 
@@ -316,6 +316,7 @@ func testAudio(t *testing.T, krn *kronk.Kronk) {
 			if err != nil {
 				if attempt < maxRetries {
 					t.Logf("%s: retrying after error: %v", id, err)
+					time.Sleep(250 * time.Millisecond)
 					continue
 				}
 				return fmt.Errorf("chat: %w", err)

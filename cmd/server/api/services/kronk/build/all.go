@@ -8,6 +8,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/msgsapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/rerankapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/respapp"
+	"github.com/ardanlabs/kronk/cmd/server/app/domain/tokenapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/toolapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mux"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
@@ -51,6 +52,12 @@ func (all) Add(app *web.App, cfg mux.Config) {
 	})
 
 	rerankapp.Routes(app, rerankapp.Config{
+		Log:        cfg.Log,
+		AuthClient: cfg.AuthClient,
+		Cache:      cfg.Cache,
+	})
+
+	tokenapp.Routes(app, tokenapp.Config{
 		Log:        cfg.Log,
 		AuthClient: cfg.AuthClient,
 		Cache:      cfg.Cache,
