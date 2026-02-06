@@ -20,10 +20,8 @@ import (
 //   - top_n (int): return only the top N results (optional, default: all)
 //   - return_documents (bool): include document text in results (default: false)
 //
-// Each model instance processes calls sequentially (llama.cpp only supports
-// sequence 0 for rerank extraction). Use NSeqMax > 1 to create multiple
-// model instances for concurrent request handling. Batch multiple texts in the
-// input parameter for better performance within a single request.
+// When NSeqMax > 1, multiple concurrent requests can be processed in parallel,
+// each using one context from the internal pool.
 func (m *Model) Rerank(ctx context.Context, d D) (RerankResponse, error) {
 	if !m.modelInfo.IsRerankModel {
 		return RerankResponse{}, fmt.Errorf("rerank: model doesn't support reranking")
@@ -71,100 +69,18 @@ func (m *Model) Rerank(ctx context.Context, d D) (RerankResponse, error) {
 
 	// -------------------------------------------------------------------------
 
-	lctx, err := llama.InitFromModel(m.model, m.ctxParams)
+	// Acquire a single context from the pool. This allows NSeqMax concurrent
+	// requests to run in parallel, which is more important for server workloads
+	// than parallelizing within a single request.
+	pc, err := m.pool.acquire(ctx)
 	if err != nil {
-		return RerankResponse{}, fmt.Errorf("rerank: unable to init from model: %w", err)
+		return RerankResponse{}, err
 	}
+	defer m.pool.release(pc)
 
-	defer func() {
-		llama.Synchronize(lctx)
-		llama.Free(lctx)
-	}()
-
-	mem, err := llama.GetMemory(lctx)
+	results, totalPromptTokens, err := m.processRerank(ctx, pc, query, documents, returnDocuments)
 	if err != nil {
-		return RerankResponse{}, fmt.Errorf("rerank: unable to get memory: %w", err)
-	}
-
-	select {
-	case <-ctx.Done():
-		return RerankResponse{}, ctx.Err()
-
-	default:
-	}
-
-	maxTokens := int(llama.NUBatch(lctx))
-	ctxTokens := int(llama.NCtx(lctx))
-	if ctxTokens < maxTokens {
-		maxTokens = ctxTokens
-	}
-
-	nClsOut := llama.ModelNClsOut(m.model)
-	if nClsOut == 0 {
-		nClsOut = 1
-	}
-
-	// -------------------------------------------------------------------------
-
-	results := make([]RerankResult, len(documents))
-	totalPromptTokens := 0
-
-	for i, doc := range documents {
-		select {
-		case <-ctx.Done():
-			return RerankResponse{}, ctx.Err()
-
-		default:
-		}
-
-		// Format the query-document pair for the reranker model.
-		// Most reranker models expect this format or similar.
-		pairText := formatRerankPair(query, doc)
-
-		tokens := llama.Tokenize(m.vocab, pairText, m.addBOSToken, true)
-
-		if len(tokens) > maxTokens {
-			m.log(ctx, "rerank", "status", "truncating input", "index", i, "original_tokens", len(tokens), "max_tokens", maxTokens)
-			tokens = tokens[:maxTokens]
-		}
-
-		totalPromptTokens += len(tokens)
-
-		batch := llama.BatchGetOne(tokens)
-
-		ret, err := llama.Decode(lctx, batch)
-		if err != nil {
-			return RerankResponse{}, fmt.Errorf("rerank: decode failed for document[%d]: %w", i, err)
-		}
-
-		if ret != 0 {
-			return RerankResponse{}, fmt.Errorf("rerank: decode returned non-zero for document[%d]: %d", i, ret)
-		}
-
-		// Get the rank output. For reranker models with PoolingTypeRank,
-		// GetEmbeddingsSeq returns float[n_cls_out] with the relevance score(s).
-		rawScore, err := llama.GetEmbeddingsSeq(lctx, 0, int32(nClsOut))
-		if err != nil {
-			return RerankResponse{}, fmt.Errorf("rerank: unable to get score for document[%d]: %w", i, err)
-		}
-
-		// Apply sigmoid to normalize score to [0, 1] range.
-		var score float32
-		if len(rawScore) > 0 {
-			score = sigmoid(rawScore[0])
-		}
-
-		results[i] = RerankResult{
-			Index:          i,
-			RelevanceScore: score,
-		}
-
-		if returnDocuments {
-			results[i].Document = doc
-		}
-
-		// Clear KV cache before next document.
-		llama.MemoryClear(mem, true)
+		return RerankResponse{}, err
 	}
 
 	// -------------------------------------------------------------------------
@@ -193,6 +109,81 @@ func (m *Model) Rerank(ctx context.Context, d D) (RerankResponse, error) {
 	}
 
 	return rr, nil
+}
+
+// processRerank processes all documents on a single context.
+func (m *Model) processRerank(ctx context.Context, pc poolContext, query string, documents []string, returnDocuments bool) ([]RerankResult, int, error) {
+	maxTokens := int(llama.NUBatch(pc.lctx))
+	ctxTokens := int(llama.NCtx(pc.lctx))
+	if ctxTokens < maxTokens {
+		maxTokens = ctxTokens
+	}
+
+	nClsOut := llama.ModelNClsOut(m.model)
+	if nClsOut == 0 {
+		nClsOut = 1
+	}
+
+	results := make([]RerankResult, len(documents))
+	totalTokens := 0
+
+	for i, doc := range documents {
+		select {
+		case <-ctx.Done():
+			return nil, 0, ctx.Err()
+
+		default:
+		}
+
+		// Format the query-document pair for the reranker model.
+		pairText := formatRerankPair(query, doc)
+
+		tokens := llama.Tokenize(m.vocab, pairText, m.addBOSToken, true)
+
+		if len(tokens) > maxTokens {
+			m.log(ctx, "rerank", "status", "truncating input", "index", i, "original_tokens", len(tokens), "max_tokens", maxTokens)
+			tokens = tokens[:maxTokens]
+		}
+
+		totalTokens += len(tokens)
+
+		batch := llama.BatchGetOne(tokens)
+
+		ret, err := llama.Decode(pc.lctx, batch)
+		if err != nil {
+			return nil, 0, fmt.Errorf("rerank: decode failed for document[%d]: %w", i, err)
+		}
+
+		if ret != 0 {
+			return nil, 0, fmt.Errorf("rerank: decode returned non-zero for document[%d]: %d", i, ret)
+		}
+
+		// Get the rank output.
+		rawScore, err := llama.GetEmbeddingsSeq(pc.lctx, 0, int32(nClsOut))
+		if err != nil {
+			return nil, 0, fmt.Errorf("rerank: unable to get score for document[%d]: %w", i, err)
+		}
+
+		// Apply sigmoid to normalize score to [0, 1] range.
+		var score float32
+		if len(rawScore) > 0 {
+			score = sigmoid(rawScore[0])
+		}
+
+		results[i] = RerankResult{
+			Index:          i,
+			RelevanceScore: score,
+		}
+
+		if returnDocuments {
+			results[i].Document = doc
+		}
+
+		// Clear KV cache before next document.
+		llama.MemoryClear(pc.mem, true)
+	}
+
+	return results, totalTokens, nil
 }
 
 // formatRerankPair formats a query-document pair for reranker models.

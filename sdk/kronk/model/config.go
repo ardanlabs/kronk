@@ -120,10 +120,9 @@ type Logger func(ctx context.Context, msg string, args ...any)
 //
 // NSeqMax controls concurrency behavior based on model type. For text inference
 // models (including vision/audio), it sets the maximum number of sequences
-// processed in parallel within a single model instance (batched inference). For
-// single-flight models (embeddings, reranking), it creates that many model
-// instances in a pool for concurrent request handling. When set to 0, a default
-// of 1 is used.
+// processed in parallel within the batch engine. For embedding and reranking
+// models, it sets the number of contexts in the internal pool for parallel
+// request processing. When set to 0, a default of 1 is used.
 //
 // NThreads is the number of threads to use for generation. When set to 0, the
 // default llama.cpp value is used.

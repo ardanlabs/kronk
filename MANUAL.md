@@ -608,16 +608,17 @@ n_seq_max: 4 # Process up to 4 requests concurrently
 Multiple requests share the model context and KV cache, with each request
 getting an isolated sequence partition.
 
-**Single-Flight Models (Embed/Rerank)**
+**Embedding and Reranking Models**
 
-For single-flight models, `NSeqMax` creates multiple model instances:
+For embedding and reranking models, `NSeqMax` creates an internal context pool:
 
 ```yaml
-n_seq_max: 2 # Create 2 model instances in pool
+n_seq_max: 4 # Create 4 contexts in internal pool
 ```
 
-Each instance handles one request at a time, but multiple instances allow
-concurrent processing.
+Multiple inputs within a single request are partitioned across pool contexts
+and processed in parallel. Model weights are shared, only KV cache memory is
+multiplied per context.
 
 ### 3.7 VRAM Estimation
 
@@ -694,7 +695,7 @@ models:
   Qwen2.5-VL-3B-Instruct-Q8_0:
     n_batch: 2048
     n_ubatch: 2048 # High for image/audio token batches
-    n_seq_max: 2 # Creates 2 model instances in pool
+    n_seq_max: 2 # Process up to 2 requests concurrently
 ```
 
 Vision models process image tiles as large token batches. Low `n_ubatch`
@@ -995,17 +996,61 @@ seq 4: slot[1] inference
 
 Each cache sequence requires one full context window of KV memory.
 
-### 4.5 Batch vs Single-Flight Models
+### 4.5 Concurrency by Model Type
 
-The batch engine is used for **text inference** requests including multi-modal
-models with vision/audio content. Single-flight models use model pooling:
+Different model types use different concurrency mechanisms:
 
-| Model Type              | NSeqMax Behavior  | Concurrency Method           |
-| ----------------------- | ----------------- | ---------------------------- |
-| Text (chat, completion) | Batch parallelism | Shared model, multiple slots |
-| Vision/Audio            | Batch parallelism | Shared model, multiple slots |
-| Embedding               | Model pool        | Multiple model instances     |
-| Reranking               | Model pool        | Multiple model instances     |
+| Model Type              | NSeqMax Behavior    | Concurrency Method               |
+| ----------------------- | ------------------- | -------------------------------- |
+| Text (chat, completion) | Batch parallelism   | Shared model, multiple slots     |
+| Vision/Audio            | Batch parallelism   | Shared model, multiple slots     |
+| Embedding               | Context pool        | Shared weights, multiple contexts|
+| Reranking               | Context pool        | Shared weights, multiple contexts|
+
+**Chat Request Flow (NSeqMax=4)**
+
+When multiple chat requests arrive simultaneously, the batch engine processes
+them in parallel within a single shared context:
+
+```
+Request 1 ──→ acquireModel() ──→ ChatStreaming() ──→ batch.Submit() ─┐
+Request 2 ──→ acquireModel() ──→ ChatStreaming() ──→ batch.Submit() ─┤
+Request 3 ──→ acquireModel() ──→ ChatStreaming() ──→ batch.Submit() ─┤
+Request 4 ──→ acquireModel() ──→ ChatStreaming() ──→ batch.Submit() ─┤
+                                                                      ↓
+                                                    ┌─────────────────────────┐
+                                                    │      Batch Engine       │
+                                                    │  ┌─────┬─────┬─────┬─────┐
+                                                    │  │Slot0│Slot1│Slot2│Slot3│
+                                                    │  │ R1  │ R2  │ R3  │ R4  │
+                                                    │  └─────┴─────┴─────┴─────┘
+                                                    │         ↓                │
+                                                    │   Single batched decode  │
+                                                    │   (all 4 in parallel)    │
+                                                    └─────────────────────────┘
+```
+
+All requests share the same LLM context. The batch engine combines tokens from
+all active slots into a single decode call, maximizing GPU efficiency.
+
+**Embedding/Rerank Request Flow (NSeqMax=4)**
+
+When multiple embedding or rerank requests arrive simultaneously, each acquires
+one context from the pool and processes independently:
+
+```
+Request 1 ──→ acquireModel() ──→ pool.acquire() ──→ Context 1 ──→ decode ──→ results
+Request 2 ──→ acquireModel() ──→ pool.acquire() ──→ Context 2 ──→ decode ──→ results
+Request 3 ──→ acquireModel() ──→ pool.acquire() ──→ Context 3 ──→ decode ──→ results
+Request 4 ──→ acquireModel() ──→ pool.acquire() ──→ Context 4 ──→ decode ──→ results
+                                       ↓
+                          All 4 run in parallel
+                          (separate decode calls)
+```
+
+Model weights are shared across all contexts - only the KV cache is duplicated.
+Each request gets exclusive use of one context, allowing NSeqMax concurrent
+requests to process simultaneously.
 
 ### 4.6 Performance Tuning
 
@@ -2841,15 +2886,15 @@ Vision and audio models have specific configuration requirements:
 models:
   Qwen2.5-VL-3B-Instruct-Q8_0:
     n_ubatch: 2048 # Higher for image token processing
-    n_seq_max: 2 # Creates 2 model instances (pooled)
+    n_seq_max: 2 # Process up to 2 requests concurrently
     context_window: 8192
 ```
 
 **Key Considerations:**
 
 - `n_ubatch` should be high (≥2048) for efficient image/audio token processing
-- `n_seq_max` creates model instances in a pool (not batch parallelism)
-- Each request needs exclusive model context for media embedding
+- `n_seq_max` controls batch parallelism (multiple slots in shared context)
+- Vision/audio models use the same batch engine as text models
 
 ### 10.6 Memory Requirements
 
@@ -4584,37 +4629,40 @@ the Kronk SDK packages.
 - When `FinishReasonPtr != nil`, skip text/reasoning deltas (they duplicate previous content)
 - Always process tool calls even with FinishReason set (may only arrive in final chunk)
 
-#### 16.7.3 Model Pool Strategy
+#### 16.7.3 Concurrency Strategy
 
 `NSeqMax` behaves differently depending on model type:
 
-**Single-Flight Models** (embed, rerank):
+**Embedding and Reranking Models**:
 
-- `NSeqMax` controls the number of model instances in the pool
-- Each instance handles one request at a time (single-flight)
-- Pooled via `krn.pool` channel for concurrent request handling
+- `NSeqMax` controls the internal context pool size
+- Model weights are shared, only KV cache memory is multiplied
+- Inputs within a request are partitioned across pool contexts for parallel processing
+- Semaphore capacity = `NSeqMax`
 
-**Text Inference Models** (chat, completion):
+**Text Inference Models** (chat, completion, vision, audio):
 
-- `NSeqMax` controls batch parallelism within a single model instance
-- Only one `model.Model` instance is created
+- `NSeqMax` controls batch parallelism within the batch engine
+- Only one `model.Model` instance is created with multiple slots
 - Semaphore capacity = `NSeqMax * queueDepth` (default queueDepth=2)
 
 **Detection Logic** (`kronk.go`):
 
 ```go
-isSingleFlight := cfg.ProjFile != ""  // Vision/audio projector
-if mi.IsEmbedModel || mi.IsRerankModel {
-    isSingleFlight = true
+switch {
+case mi.IsEmbedModel || mi.IsRerankModel:
+    semCapacity = max(cfg.NSeqMax, 1)
+default:
+    semCapacity = max(cfg.NSeqMax, 1) * o.queueDepth
 }
 ```
 
 #### 16.7.4 Model Acquire/Release & Cleanup
 
-**Two-Stage Acquisition** (`acquire.go`):
+**Acquisition** (`acquire.go`):
 
 1. **Backpressure slot**: Acquire semaphore slot (limits total in-flight requests)
-2. **Model instance**: If pooled, acquire specific model from pool channel
+2. **Return model**: Return the single model instance
 
 **Cleanup Flow:**
 
@@ -4624,7 +4672,6 @@ if mi.IsEmbedModel || mi.IsRerankModel {
    - `llama.Synchronize(m.lctx)` - waits for GPU operations
    - `llama.MemoryClear(mem, true)` - clears KV cache
 4. Channel closes, wrapper exits, `releaseModel()` runs
-5. Model returns to pool in clean state
 
 **Key invariant:** `resetContext()` always runs before model release due to defer ordering.
 

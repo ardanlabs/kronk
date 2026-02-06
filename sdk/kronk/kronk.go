@@ -60,8 +60,7 @@ func WithQueueDepth(multiplier int) Option {
 // Kronk provides a concurrently safe api for using llama.cpp to access models.
 type Kronk struct {
 	cfg           model.Config
-	models        []*model.Model
-	pool          chan *model.Model
+	model         *model.Model
 	sem           chan struct{}
 	activeStreams atomic.Int32
 	shutdown      sync.Mutex
@@ -100,53 +99,23 @@ func New(cfg model.Config, opts ...Option) (*Kronk, error) {
 	}
 
 	// -------------------------------------------------------------------------
-	// Determine if this is a single-flight model (embed/rerank) that
-	// benefits from instance pooling rather than batch parallelism.
 
-	// We need to check model info, so create the first instance.
-	firstModel, err := model.NewModel(ctx, o.tr, cfg)
+	mdl, err := model.NewModel(ctx, o.tr, cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	isSingleFlight := cfg.ProjFile != ""
-
-	mi := firstModel.ModelInfo()
-	if mi.IsEmbedModel || mi.IsRerankModel {
-		isSingleFlight = true
-	}
+	mi := mdl.ModelInfo()
 
 	// -------------------------------------------------------------------------
-	// For single-flight models with NSeqMax > 1, create a pool of model instances.
-	// For text/vision/audio models, NSeqMax controls batch parallelism within a single instance.
+	// Embed/rerank models use an internal context pool for parallelism.
+	// Text/vision/audio models use the batch engine with queue depth.
 
-	var (
-		models      = []*model.Model{firstModel}
-		pool        chan *model.Model
-		semCapacity int
-	)
+	var semCapacity int
 
 	switch {
-	case isSingleFlight:
-		numInstances := max(cfg.NSeqMax, 1)
-		semCapacity = numInstances
-
-		if numInstances > 1 {
-			pool = make(chan *model.Model, numInstances)
-			pool <- firstModel
-
-			for range numInstances - 1 {
-				m, err := model.NewModel(ctx, o.tr, cfg)
-				if err != nil {
-					for _, mdl := range models {
-						mdl.Unload(ctx)
-					}
-					return nil, err
-				}
-				models = append(models, m)
-				pool <- m
-			}
-		}
+	case mi.IsEmbedModel || mi.IsRerankModel:
+		semCapacity = max(cfg.NSeqMax, 1)
 
 	default:
 		semCapacity = max(cfg.NSeqMax, 1) * o.queueDepth
@@ -155,9 +124,8 @@ func New(cfg model.Config, opts ...Option) (*Kronk, error) {
 	// -------------------------------------------------------------------------
 
 	krn := Kronk{
-		cfg:       firstModel.Config(),
-		models:    models,
-		pool:      pool,
+		cfg:       mdl.Config(),
+		model:     mdl,
 		sem:       make(chan struct{}, semCapacity),
 		modelInfo: mi,
 	}
@@ -249,15 +217,8 @@ func (krn *Kronk) Unload(ctx context.Context) error {
 
 	// -------------------------------------------------------------------------
 
-	var errs []error
-	for _, m := range krn.models {
-		if err := m.Unload(ctx); err != nil {
-			errs = append(errs, fmt.Errorf("unload: failed to unload model, model-id[%s]: %w", m.ModelInfo().ID, err))
-		}
-	}
-
-	if len(errs) > 0 {
-		return errs[0]
+	if err := krn.model.Unload(ctx); err != nil {
+		return fmt.Errorf("unload: failed to unload model, model-id[%s]: %w", krn.model.ModelInfo().ID, err)
 	}
 
 	return nil

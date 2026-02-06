@@ -551,11 +551,12 @@ flash_attention: auto      # Let llama.cpp decide`}</code></pre>
           <pre className="code-block"><code className="language-yaml">{`n_seq_max: 4 # Process up to 4 requests concurrently`}</code></pre>
           <p>Multiple requests share the model context and KV cache, with each request</p>
           <p>getting an isolated sequence partition.</p>
-          <p><strong>Single-Flight Models (Embed/Rerank)</strong></p>
-          <p>For single-flight models, <code>NSeqMax</code> creates multiple model instances:</p>
-          <pre className="code-block"><code className="language-yaml">{`n_seq_max: 2 # Create 2 model instances in pool`}</code></pre>
-          <p>Each instance handles one request at a time, but multiple instances allow</p>
-          <p>concurrent processing.</p>
+          <p><strong>Embedding and Reranking Models</strong></p>
+          <p>For embedding and reranking models, <code>NSeqMax</code> creates an internal context pool:</p>
+          <pre className="code-block"><code className="language-yaml">{`n_seq_max: 4 # Create 4 contexts in internal pool`}</code></pre>
+          <p>Multiple inputs within a single request are partitioned across pool contexts</p>
+          <p>and processed in parallel. Model weights are shared, only KV cache memory is</p>
+          <p>multiplied per context.</p>
           <h3 id="37-vram-estimation">3.7 VRAM Estimation</h3>
           <p>Rough VRAM requirements for common configurations:</p>
           <p><strong>Model Size (Q8_0 quantization)</strong></p>
@@ -609,7 +610,7 @@ models:
   Qwen2.5-VL-3B-Instruct-Q8_0:
     n_batch: 2048
     n_ubatch: 2048 # High for image/audio token batches
-    n_seq_max: 2 # Creates 2 model instances in pool`}</code></pre>
+    n_seq_max: 2 # Process up to 2 requests concurrently`}</code></pre>
           <p>Vision models process image tiles as large token batches. Low <code>n_ubatch</code></p>
           <p>values cause multiple decode passes per image, significantly slowing</p>
           <p>inference.</p>
@@ -1046,9 +1047,8 @@ seq 2: user-3 cache (IMC)
 seq 3: slot[0] inference
 seq 4: slot[1] inference`}</code></pre>
           <p>Each cache sequence requires one full context window of KV memory.</p>
-          <h3 id="45-batch-vs-single-flight-models">4.5 Batch vs Single-Flight Models</h3>
-          <p>The batch engine is used for <strong>text inference</strong> requests including multi-modal</p>
-          <p>models with vision/audio content. Single-flight models use model pooling:</p>
+          <h3 id="45-concurrency-by-model-type">4.5 Concurrency by Model Type</h3>
+          <p>Different model types use different concurrency mechanisms:</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -1070,16 +1070,49 @@ seq 4: slot[1] inference`}</code></pre>
               </tr>
               <tr>
                 <td>Embedding</td>
-                <td>Model pool</td>
-                <td>Multiple model instances</td>
+                <td>Context pool</td>
+                <td>Shared weights, multiple contexts</td>
               </tr>
               <tr>
                 <td>Reranking</td>
-                <td>Model pool</td>
-                <td>Multiple model instances</td>
+                <td>Context pool</td>
+                <td>Shared weights, multiple contexts</td>
               </tr>
             </tbody>
           </table>
+          <p><strong>Chat Request Flow (NSeqMax=4)</strong></p>
+          <p>When multiple chat requests arrive simultaneously, the batch engine processes</p>
+          <p>them in parallel within a single shared context:</p>
+          <pre className="code-block"><code>{`Request 1 ──→ acquireModel() ──→ ChatStreaming() ──→ batch.Submit() ─┐
+Request 2 ──→ acquireModel() ──→ ChatStreaming() ──→ batch.Submit() ─┤
+Request 3 ──→ acquireModel() ──→ ChatStreaming() ──→ batch.Submit() ─┤
+Request 4 ──→ acquireModel() ──→ ChatStreaming() ──→ batch.Submit() ─┤
+                                                                      ↓
+                                                    ┌─────────────────────────┐
+                                                    │      Batch Engine       │
+                                                    │  ┌─────┬─────┬─────┬─────┐
+                                                    │  │Slot0│Slot1│Slot2│Slot3│
+                                                    │  │ R1  │ R2  │ R3  │ R4  │
+                                                    │  └─────┴─────┴─────┴─────┘
+                                                    │         ↓                │
+                                                    │   Single batched decode  │
+                                                    │   (all 4 in parallel)    │
+                                                    └─────────────────────────┘`}</code></pre>
+          <p>All requests share the same LLM context. The batch engine combines tokens from</p>
+          <p>all active slots into a single decode call, maximizing GPU efficiency.</p>
+          <p><strong>Embedding/Rerank Request Flow (NSeqMax=4)</strong></p>
+          <p>When multiple embedding or rerank requests arrive simultaneously, each acquires</p>
+          <p>one context from the pool and processes independently:</p>
+          <pre className="code-block"><code>{`Request 1 ──→ acquireModel() ──→ pool.acquire() ──→ Context 1 ──→ decode ──→ results
+Request 2 ──→ acquireModel() ──→ pool.acquire() ──→ Context 2 ──→ decode ──→ results
+Request 3 ──→ acquireModel() ──→ pool.acquire() ──→ Context 3 ──→ decode ──→ results
+Request 4 ──→ acquireModel() ──→ pool.acquire() ──→ Context 4 ──→ decode ──→ results
+                                       ↓
+                          All 4 run in parallel
+                          (separate decode calls)`}</code></pre>
+          <p>Model weights are shared across all contexts - only the KV cache is duplicated.</p>
+          <p>Each request gets exclusive use of one context, allowing NSeqMax concurrent</p>
+          <p>requests to process simultaneously.</p>
           <h3 id="46-performance-tuning">4.6 Performance Tuning</h3>
           <p><strong>Throughput vs Latency</strong></p>
           <ul>
@@ -2865,13 +2898,13 @@ kronk catalog list --filter-category=Audio`}</code></pre>
           <pre className="code-block"><code className="language-yaml">{`models:
   Qwen2.5-VL-3B-Instruct-Q8_0:
     n_ubatch: 2048 # Higher for image token processing
-    n_seq_max: 2 # Creates 2 model instances (pooled)
+    n_seq_max: 2 # Process up to 2 requests concurrently
     context_window: 8192`}</code></pre>
           <p><strong>Key Considerations:</strong></p>
           <ul>
             <li><code>n_ubatch</code> should be high (≥2048) for efficient image/audio token processing</li>
-            <li><code>n_seq_max</code> creates model instances in a pool (not batch parallelism)</li>
-            <li>Each request needs exclusive model context for media embedding</li>
+            <li><code>n_seq_max</code> controls batch parallelism (multiple slots in shared context)</li>
+            <li>Vision/audio models use the same batch engine as text models</li>
           </ul>
           <h3 id="106-memory-requirements">10.6 Memory Requirements</h3>
           <p>Vision and audio models require additional memory for the projector:</p>
@@ -4276,30 +4309,33 @@ default:
             <li>When <code>FinishReasonPtr != nil</code>, skip text/reasoning deltas (they duplicate previous content)</li>
             <li>Always process tool calls even with FinishReason set (may only arrive in final chunk)</li>
           </ul>
-          <h4 id="1673-model-pool-strategy">16.7.3 Model Pool Strategy</h4>
+          <h4 id="1673-concurrency-strategy">16.7.3 Concurrency Strategy</h4>
           <p><code>NSeqMax</code> behaves differently depending on model type:</p>
-          <p><strong>Single-Flight Models</strong> (embed, rerank):</p>
+          <p><strong>Embedding and Reranking Models</strong>:</p>
           <ul>
-            <li><code>NSeqMax</code> controls the number of model instances in the pool</li>
-            <li>Each instance handles one request at a time (single-flight)</li>
-            <li>Pooled via <code>krn.pool</code> channel for concurrent request handling</li>
+            <li><code>NSeqMax</code> controls the internal context pool size</li>
+            <li>Model weights are shared, only KV cache memory is multiplied</li>
+            <li>Inputs within a request are partitioned across pool contexts for parallel processing</li>
+            <li>Semaphore capacity = <code>NSeqMax</code></li>
           </ul>
-          <p><strong>Text Inference Models</strong> (chat, completion):</p>
+          <p><strong>Text Inference Models</strong> (chat, completion, vision, audio):</p>
           <ul>
-            <li><code>NSeqMax</code> controls batch parallelism within a single model instance</li>
-            <li>Only one <code>model.Model</code> instance is created</li>
+            <li><code>NSeqMax</code> controls batch parallelism within the batch engine</li>
+            <li>Only one <code>model.Model</code> instance is created with multiple slots</li>
             <li>Semaphore capacity = <code>NSeqMax * queueDepth</code> (default queueDepth=2)</li>
           </ul>
           <p><strong>Detection Logic</strong> (<code>kronk.go</code>):</p>
-          <pre className="code-block"><code className="language-go">{`isSingleFlight := cfg.ProjFile != ""  // Vision/audio projector
-if mi.IsEmbedModel || mi.IsRerankModel {
-    isSingleFlight = true
+          <pre className="code-block"><code className="language-go">{`switch {
+case mi.IsEmbedModel || mi.IsRerankModel:
+    semCapacity = max(cfg.NSeqMax, 1)
+default:
+    semCapacity = max(cfg.NSeqMax, 1) * o.queueDepth
 }`}</code></pre>
           <h4 id="1674-model-acquirerelease-cleanup">16.7.4 Model Acquire/Release &amp; Cleanup</h4>
-          <p><strong>Two-Stage Acquisition</strong> (<code>acquire.go</code>):</p>
+          <p><strong>Acquisition</strong> (<code>acquire.go</code>):</p>
           <ol>
             <li><strong>Backpressure slot</strong>: Acquire semaphore slot (limits total in-flight requests)</li>
-            <li><strong>Model instance</strong>: If pooled, acquire specific model from pool channel</li>
+            <li><strong>Return model</strong>: Return the single model instance</li>
           </ol>
           <p><strong>Cleanup Flow:</strong></p>
           <ol>
@@ -4311,7 +4347,6 @@ if mi.IsEmbedModel || mi.IsRerankModel {
           <p>   - <code>llama.MemoryClear(mem, true)</code> - clears KV cache</p>
           <ol>
             <li>Channel closes, wrapper exits, <code>releaseModel()</code> runs</li>
-            <li>Model returns to pool in clean state</li>
           </ol>
           <p><strong>Key invariant:</strong> <code>resetContext()</code> always runs before model release due to defer ordering.</p>
           <h4 id="1675-batch-engine-internals">16.7.5 Batch Engine Internals</h4>
@@ -4451,7 +4486,7 @@ batching = true`}</code></pre>
                 <li><a href="#42-slots-and-sequences" className={activeSection === '42-slots-and-sequences' ? 'active' : ''}>4.2 Slots and Sequences</a></li>
                 <li><a href="#43-request-flow" className={activeSection === '43-request-flow' ? 'active' : ''}>4.3 Request Flow</a></li>
                 <li><a href="#44-configuring-batch-processing" className={activeSection === '44-configuring-batch-processing' ? 'active' : ''}>4.4 Configuring Batch Processing</a></li>
-                <li><a href="#45-batch-vs-single-flight-models" className={activeSection === '45-batch-vs-single-flight-models' ? 'active' : ''}>4.5 Batch vs Single-Flight Models</a></li>
+                <li><a href="#45-concurrency-by-model-type" className={activeSection === '45-concurrency-by-model-type' ? 'active' : ''}>4.5 Concurrency by Model Type</a></li>
                 <li><a href="#46-performance-tuning" className={activeSection === '46-performance-tuning' ? 'active' : ''}>4.6 Performance Tuning</a></li>
                 <li><a href="#47-example-configuration" className={activeSection === '47-example-configuration' ? 'active' : ''}>4.7 Example Configuration</a></li>
               </ul>

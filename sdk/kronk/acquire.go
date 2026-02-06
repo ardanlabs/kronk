@@ -24,9 +24,7 @@ func (krn *Kronk) acquireModel(ctx context.Context) (*model.Model, error) {
 		return nil, err
 	}
 
-	// -------------------------------------------------------------------------
-	// Stage 1: Acquire backpressure slot
-
+	// Acquire backpressure slot.
 	select {
 	case <-ctx.Done():
 		krn.activeStreams.Add(-1)
@@ -35,29 +33,10 @@ func (krn *Kronk) acquireModel(ctx context.Context) (*model.Model, error) {
 	case krn.sem <- struct{}{}:
 	}
 
-	// -------------------------------------------------------------------------
-	// Stage 2: Acquire model instance (only for pooled models)
-
-	if krn.pool != nil {
-		select {
-		case <-ctx.Done():
-			<-krn.sem
-			krn.activeStreams.Add(-1)
-			return nil, ctx.Err()
-
-		case m := <-krn.pool:
-			return m, nil
-		}
-	}
-
-	return krn.models[0], nil
+	return krn.model, nil
 }
 
-func (krn *Kronk) releaseModel(m *model.Model) {
-	if krn.pool != nil {
-		krn.pool <- m
-	}
-
+func (krn *Kronk) releaseModel() {
 	<-krn.sem
 	krn.activeStreams.Add(-1)
 }
