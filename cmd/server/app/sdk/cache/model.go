@@ -8,6 +8,8 @@ type ModelDetail struct {
 	OwnedBy       string
 	ModelFamily   string
 	Size          int64
+	VRAMTotal     int64
+	SlotMemory    int64
 	ExpiresAt     time.Time
 	ActiveStreams int
 }

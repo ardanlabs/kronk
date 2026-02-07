@@ -146,6 +146,9 @@ type promMetrics struct {
 	tokensPerSecondAvg *prometheus.GaugeVec
 	tokensPerSecondMin *prometheus.GaugeVec
 	tokensPerSecondMax *prometheus.GaugeVec
+
+	vramTotal  *prometheus.GaugeVec
+	slotMemory *prometheus.GaugeVec
 }
 
 func init() {
@@ -210,6 +213,9 @@ func init() {
 		tokensPerSecondAvg: newGaugeVec("usage_tokens_per_second_avg", "Tokens per second average"),
 		tokensPerSecondMin: newGaugeVec("usage_tokens_per_second_min", "Tokens per second minimum"),
 		tokensPerSecondMax: newGaugeVec("usage_tokens_per_second_max", "Tokens per second maximum"),
+
+		vramTotal:  newGaugeVec("vram_total_bytes", "Total estimated VRAM usage in bytes (model weights + KV cache)"),
+		slotMemory: newGaugeVec("vram_slot_memory_bytes", "KV cache slot memory in bytes"),
 	}
 }
 
@@ -376,4 +382,22 @@ func AddChatCompletionsUsage(modelID string, promptTokens, reasoningTokens, comp
 	m.tokensPerSecondAvg.WithLabelValues(modelID).Set(tpsSnap.avg)
 	m.tokensPerSecondMin.WithLabelValues(modelID).Set(tpsSnap.min)
 	m.tokensPerSecondMax.WithLabelValues(modelID).Set(tpsSnap.max)
+}
+
+func SetVRAM(modelID string, vramTotal, slotMemory int64) {
+	if modelID == "" {
+		modelID = "unknown"
+	}
+
+	m.vramTotal.WithLabelValues(modelID).Set(float64(vramTotal))
+	m.slotMemory.WithLabelValues(modelID).Set(float64(slotMemory))
+}
+
+func ClearVRAM(modelID string) {
+	if modelID == "" {
+		modelID = "unknown"
+	}
+
+	m.vramTotal.DeleteLabelValues(modelID)
+	m.slotMemory.DeleteLabelValues(modelID)
 }

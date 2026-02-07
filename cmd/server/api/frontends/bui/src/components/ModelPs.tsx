@@ -57,7 +57,9 @@ export default function ModelPs() {
                     <th>ID</th>
                     <th>Owner</th>
                     <th>Family</th>
-                    <th>Size</th>
+                    <th style={{ textAlign: 'right' }}>Size</th>
+                    <th style={{ textAlign: 'right' }}>VRAM Total</th>
+                    <th style={{ textAlign: 'right' }}>Slot Memory</th>
                     <th>Expires At</th>
                     <th>Active Streams</th>
                   </tr>
@@ -68,12 +70,24 @@ export default function ModelPs() {
                       <td>{model.id}</td>
                       <td>{model.owned_by}</td>
                       <td>{model.model_family}</td>
-                      <td>{formatBytes(model.size)}</td>
+                      <td style={{ textAlign: 'right' }}>{formatBytes(model.size)}</td>
+                      <td style={{ textAlign: 'right' }}>{formatBytes(model.vram_total)}</td>
+                      <td style={{ textAlign: 'right' }}>{formatBytes(model.slot_memory)}</td>
                       <td>{formatDate(model.expires_at)}</td>
                       <td>{model.active_streams}</td>
                     </tr>
                   ))}
                 </tbody>
+                {data.length > 1 && (
+                  <tfoot>
+                    <tr>
+                      <td colSpan={4} style={{ textAlign: 'right', fontWeight: 'bold' }}>Total:</td>
+                      <td style={{ textAlign: 'right', fontWeight: 'bold' }}>{formatBytes(data.reduce((sum, m) => sum + m.vram_total, 0))}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 'bold' }}>{formatBytes(data.reduce((sum, m) => sum + m.slot_memory, 0))}</td>
+                      <td colSpan={2}></td>
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             ) : (
               <div className="empty-state">

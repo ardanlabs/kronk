@@ -12,6 +12,7 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/ardanlabs/kronk/sdk/tools/templates"
 	"github.com/maypok86/otter/v2"
@@ -177,6 +178,8 @@ ids:
 					OwnedBy:       mi.OwnedBy,
 					ModelFamily:   mi.ModelFamily,
 					Size:          mi.Size,
+					VRAMTotal:     model.Value.ModelInfo().VRAMTotal,
+					SlotMemory:    model.Value.ModelInfo().SlotMemory,
 					ExpiresAt:     model.ExpiresAt(),
 					ActiveStreams: model.Value.ActiveStreams(),
 				})
@@ -313,6 +316,8 @@ func (c *Cache) eviction(event otter.DeletionEvent[string, *kronk.Kronk]) {
 	}
 
 	c.log(ctx, "kronk cache eviction", "key", event.Key, "status", "unload-finished")
+
+	metrics.ClearVRAM(event.Key)
 
 	c.itemsInCache.Add(-1)
 }

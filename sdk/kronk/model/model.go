@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -136,12 +137,16 @@ func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) 
 
 	loadDuration := time.Since(loadStart)
 
-	// -------------------------------------------------------------------------
-
 	cfg = adjustConfig(cfg, mdl)
 	modelInfo := toModelInfo(cfg, mdl)
 
 	metrics.AddModelFileLoadTime(modelInfo.ID, loadDuration)
+
+	// -------------------------------------------------------------------------
+
+	modelInfo.VRAMTotal, modelInfo.SlotMemory = calculateVRAM(cfg, modelInfo)
+
+	metrics.SetVRAM(modelInfo.ID, modelInfo.VRAMTotal, modelInfo.SlotMemory)
 
 	template, err := retrieveTemplate(tmplRetriever, cfg, mdl, modelInfo)
 	if err != nil {
@@ -457,5 +462,83 @@ func (m *Model) sendErrorResponse(ctx context.Context, ch chan<- ChatResponse, i
 		usage):
 
 	default:
+	}
+}
+
+func calculateVRAM(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory int64) {
+	arch := mi.Metadata["general.architecture"]
+	if arch == "" {
+		return int64(mi.Size), 0
+	}
+
+	blockCount, err := strconv.ParseInt(mi.Metadata[arch+".block_count"], 10, 64)
+	if err != nil {
+		return int64(mi.Size), 0
+	}
+
+	headCountKV, err := strconv.ParseInt(mi.Metadata[arch+".attention.head_count_kv"], 10, 64)
+	if err != nil {
+		return int64(mi.Size), 0
+	}
+
+	keyLength, err := strconv.ParseInt(mi.Metadata[arch+".attention.key_length"], 10, 64)
+	if err != nil {
+		return int64(mi.Size), 0
+	}
+
+	valueLength, err := strconv.ParseInt(mi.Metadata[arch+".attention.value_length"], 10, 64)
+	if err != nil {
+		return int64(mi.Size), 0
+	}
+
+	bytesPerElement := ggmlTypeToBytes(cfg.CacheTypeK, cfg.CacheTypeV)
+
+	nSeqMax := int64(max(cfg.NSeqMax, 1))
+
+	var cacheSequences int64
+	switch {
+	case cfg.SystemPromptCache:
+		cacheSequences = int64(max(cfg.MaxCacheSessions, 1))
+	case cfg.IncrementalCache:
+		cacheSequences = int64(max(cfg.MaxCacheSessions, 1))
+	}
+
+	totalSlots := nSeqMax + cacheSequences
+
+	contextWindow := int64(cfg.ContextWindow)
+	if cfg.IncrementalCache {
+		contextWindow *= totalSlots
+	}
+
+	kvPerTokenPerLayer := headCountKV * (keyLength + valueLength) * bytesPerElement
+	kvPerSlot := contextWindow * blockCount * kvPerTokenPerLayer
+	slotMemory = totalSlots * kvPerSlot
+	vramTotal = int64(mi.Size) + slotMemory
+
+	return vramTotal, slotMemory
+}
+
+func ggmlTypeToBytes(typeK, typeV GGMLType) int64 {
+	bytesK := ggmlBytes(typeK)
+	bytesV := ggmlBytes(typeV)
+
+	if bytesK > bytesV {
+		return bytesK
+	}
+	return bytesV
+}
+
+func ggmlBytes(t GGMLType) int64 {
+	switch t {
+	case GGMLTypeF32:
+		return 4
+	case GGMLTypeF16, GGMLTypeBF16:
+		return 2
+	case GGMLTypeQ8_0:
+		return 1
+	case GGMLTypeQ4_0, GGMLTypeQ4_1, GGMLTypeQ5_0, GGMLTypeQ5_1:
+		return 1
+	default:
+		return 2
 	}
 }

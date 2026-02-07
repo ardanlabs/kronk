@@ -39,6 +39,8 @@ export interface ModelDetail {
   owned_by: string;
   model_family: string;
   size: number;
+  vram_total: number;
+  slot_memory: number;
   expires_at: string;
   active_streams: number;
 }
