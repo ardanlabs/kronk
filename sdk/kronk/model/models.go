@@ -44,6 +44,8 @@ type ModelInfo struct {
 	HasProjection bool
 	Desc          string
 	Size          uint64
+	VRAMTotal     int64
+	SlotMemory    int64
 	IsGPTModel    bool
 	IsEmbedModel  bool
 	IsRerankModel bool

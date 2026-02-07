@@ -307,6 +307,8 @@ type ModelDetail struct {
 	OwnedBy       string    `json:"owned_by"`
 	ModelFamily   string    `json:"model_family"`
 	Size          int64     `json:"size"`
+	VRAMTotal     int64     `json:"vram_total"`
+	SlotMemory    int64     `json:"slot_memory"`
 	ExpiresAt     time.Time `json:"expires_at"`
 	ActiveStreams int       `json:"active_streams"`
 }
@@ -329,6 +331,8 @@ func toModelDetails(models []cache.ModelDetail) ModelDetailsResponse {
 			OwnedBy:       model.OwnedBy,
 			ModelFamily:   model.ModelFamily,
 			Size:          model.Size,
+			VRAMTotal:     model.VRAMTotal,
+			SlotMemory:    model.SlotMemory,
 			ExpiresAt:     model.ExpiresAt,
 			ActiveStreams: model.ActiveStreams,
 		}
