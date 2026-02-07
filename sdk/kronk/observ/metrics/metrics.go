@@ -11,58 +11,91 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
+type agg struct {
+	sum   float64
+	count float64
+	min   float64
+	max   float64
+}
+
+func newAgg() agg {
+	return agg{min: math.MaxFloat64}
+}
+
+type aggSnapshot struct {
+	avg float64
+	min float64
+	max float64
+}
+
+func observe(a *agg, v float64) aggSnapshot {
+	a.sum += v
+	a.count++
+
+	if v < a.min {
+		a.min = v
+	}
+
+	if v > a.max {
+		a.max = v
+	}
+
+	return aggSnapshot{
+		avg: a.sum / a.count,
+		min: a.min,
+		max: a.max,
+	}
+}
+
+type modelState struct {
+	modelLoad        agg
+	modelLoadProj    agg
+	promptCreation   agg
+	prefill          agg
+	ttft             agg
+	promptTokens     agg
+	reasoningTokens  agg
+	completionTokens agg
+	outputTokens     agg
+	totalTokens      agg
+	tokensPerSecond  agg
+}
+
+func newModelState() *modelState {
+	return &modelState{
+		modelLoad:        newAgg(),
+		modelLoadProj:    newAgg(),
+		promptCreation:   newAgg(),
+		prefill:          newAgg(),
+		ttft:             newAgg(),
+		promptTokens:     newAgg(),
+		reasoningTokens:  newAgg(),
+		completionTokens: newAgg(),
+		outputTokens:     newAgg(),
+		totalTokens:      newAgg(),
+		tokensPerSecond:  newAgg(),
+	}
+}
+
 var (
-	m  promMetrics
-	mu sync.Mutex
-
-	modelLoadSum, modelLoadCount float64
-	modelLoadMinVal              float64 = math.MaxFloat64
-	modelLoadMaxVal              float64
-
-	modelLoadProjSum, modelLoadProjCount float64
-	modelLoadProjMinVal                  float64 = math.MaxFloat64
-	modelLoadProjMaxVal                  float64
-
-	promptCreationSum, promptCreationCount float64
-	promptCreationMinVal                   float64 = math.MaxFloat64
-	promptCreationMaxVal                   float64
-
-	prefillNonMediaSum, prefillNonMediaCount float64
-	prefillNonMediaMinVal                    float64 = math.MaxFloat64
-	prefillNonMediaMaxVal                    float64
-
-	prefillMediaSum, prefillMediaCount float64
-	prefillMediaMinVal                 float64 = math.MaxFloat64
-	prefillMediaMaxVal                 float64
-
-	ttftSum, ttftCount float64
-	ttftMinVal         float64 = math.MaxFloat64
-	ttftMaxVal         float64
-
-	promptTokensSum, promptTokensCount float64
-	promptTokensMinVal                 float64 = math.MaxFloat64
-	promptTokensMaxVal                 float64
-
-	reasoningTokensSum, reasoningTokensCount float64
-	reasoningTokensMinVal                    float64 = math.MaxFloat64
-	reasoningTokensMaxVal                    float64
-
-	completionTokensSum, completionTokensCount float64
-	completionTokensMinVal                     float64 = math.MaxFloat64
-	completionTokensMaxVal                     float64
-
-	outputTokensSum, outputTokensCount float64
-	outputTokensMinVal                 float64 = math.MaxFloat64
-	outputTokensMaxVal                 float64
-
-	totalTokensSum, totalTokensCount float64
-	totalTokensMinVal                float64 = math.MaxFloat64
-	totalTokensMaxVal                float64
-
-	tokensPerSecondSum, tokensPerSecondCount float64
-	tokensPerSecondMinVal                    float64 = math.MaxFloat64
-	tokensPerSecondMaxVal                    float64
+	m      promMetrics
+	mu     sync.Mutex
+	states = map[string]*modelState{}
 )
+
+func stateFor(modelID string) *modelState {
+	if modelID == "" {
+		modelID = "unknown"
+	}
+
+	s := states[modelID]
+	if s == nil {
+		s = newModelState()
+		states[modelID] = s
+	}
+
+	return s
+}
 
 type promMetrics struct {
 	goroutines prometheus.Gauge
@@ -70,53 +103,49 @@ type promMetrics struct {
 	errors     prometheus.Counter
 	panics     prometheus.Counter
 
-	modelLoadAvg prometheus.Gauge
-	modelLoadMin prometheus.Gauge
-	modelLoadMax prometheus.Gauge
+	modelLoadAvg *prometheus.GaugeVec
+	modelLoadMin *prometheus.GaugeVec
+	modelLoadMax *prometheus.GaugeVec
 
-	modelLoadProjAvg prometheus.Gauge
-	modelLoadProjMin prometheus.Gauge
-	modelLoadProjMax prometheus.Gauge
+	modelLoadProjAvg *prometheus.GaugeVec
+	modelLoadProjMin *prometheus.GaugeVec
+	modelLoadProjMax *prometheus.GaugeVec
 
-	promptCreationAvg prometheus.Gauge
-	promptCreationMin prometheus.Gauge
-	promptCreationMax prometheus.Gauge
+	promptCreationAvg *prometheus.GaugeVec
+	promptCreationMin *prometheus.GaugeVec
+	promptCreationMax *prometheus.GaugeVec
 
-	prefillNonMediaAvg prometheus.Gauge
-	prefillNonMediaMin prometheus.Gauge
-	prefillNonMediaMax prometheus.Gauge
+	prefillAvg *prometheus.GaugeVec
+	prefillMin *prometheus.GaugeVec
+	prefillMax *prometheus.GaugeVec
 
-	prefillMediaAvg prometheus.Gauge
-	prefillMediaMin prometheus.Gauge
-	prefillMediaMax prometheus.Gauge
+	ttftAvg *prometheus.GaugeVec
+	ttftMin *prometheus.GaugeVec
+	ttftMax *prometheus.GaugeVec
 
-	ttftAvg prometheus.Gauge
-	ttftMin prometheus.Gauge
-	ttftMax prometheus.Gauge
+	promptTokensAvg *prometheus.GaugeVec
+	promptTokensMin *prometheus.GaugeVec
+	promptTokensMax *prometheus.GaugeVec
 
-	promptTokensAvg prometheus.Gauge
-	promptTokensMin prometheus.Gauge
-	promptTokensMax prometheus.Gauge
+	reasoningTokensAvg *prometheus.GaugeVec
+	reasoningTokensMin *prometheus.GaugeVec
+	reasoningTokensMax *prometheus.GaugeVec
 
-	reasoningTokensAvg prometheus.Gauge
-	reasoningTokensMin prometheus.Gauge
-	reasoningTokensMax prometheus.Gauge
+	completionTokensAvg *prometheus.GaugeVec
+	completionTokensMin *prometheus.GaugeVec
+	completionTokensMax *prometheus.GaugeVec
 
-	completionTokensAvg prometheus.Gauge
-	completionTokensMin prometheus.Gauge
-	completionTokensMax prometheus.Gauge
+	outputTokensAvg *prometheus.GaugeVec
+	outputTokensMin *prometheus.GaugeVec
+	outputTokensMax *prometheus.GaugeVec
 
-	outputTokensAvg prometheus.Gauge
-	outputTokensMin prometheus.Gauge
-	outputTokensMax prometheus.Gauge
+	totalTokensAvg *prometheus.GaugeVec
+	totalTokensMin *prometheus.GaugeVec
+	totalTokensMax *prometheus.GaugeVec
 
-	totalTokensAvg prometheus.Gauge
-	totalTokensMin prometheus.Gauge
-	totalTokensMax prometheus.Gauge
-
-	tokensPerSecondAvg prometheus.Gauge
-	tokensPerSecondMin prometheus.Gauge
-	tokensPerSecondMax prometheus.Gauge
+	tokensPerSecondAvg *prometheus.GaugeVec
+	tokensPerSecondMin *prometheus.GaugeVec
+	tokensPerSecondMax *prometheus.GaugeVec
 }
 
 func init() {
@@ -138,65 +167,61 @@ func init() {
 			Help: "Total number of panics",
 		}),
 
-		modelLoadAvg: newGauge("model_load_avg", "Model load time average in seconds"),
-		modelLoadMin: newGauge("model_load_min", "Model load time minimum in seconds"),
-		modelLoadMax: newGauge("model_load_max", "Model load time maximum in seconds"),
+		modelLoadAvg: newGaugeVec("model_load_avg", "Model load time average in seconds"),
+		modelLoadMin: newGaugeVec("model_load_min", "Model load time minimum in seconds"),
+		modelLoadMax: newGaugeVec("model_load_max", "Model load time maximum in seconds"),
 
-		modelLoadProjAvg: newGauge("model_load_proj_avg", "Proj file load time average in seconds"),
-		modelLoadProjMin: newGauge("model_load_proj_min", "Proj file load time minimum in seconds"),
-		modelLoadProjMax: newGauge("model_load_proj_max", "Proj file load time maximum in seconds"),
+		modelLoadProjAvg: newGaugeVec("model_load_proj_avg", "Proj file load time average in seconds"),
+		modelLoadProjMin: newGaugeVec("model_load_proj_min", "Proj file load time minimum in seconds"),
+		modelLoadProjMax: newGaugeVec("model_load_proj_max", "Proj file load time maximum in seconds"),
 
-		promptCreationAvg: newGauge("model_prompt_creation_avg", "Prompt creation time average in seconds"),
-		promptCreationMin: newGauge("model_prompt_creation_min", "Prompt creation time minimum in seconds"),
-		promptCreationMax: newGauge("model_prompt_creation_max", "Prompt creation time maximum in seconds"),
+		promptCreationAvg: newGaugeVec("model_prompt_creation_avg", "Prompt creation time average in seconds"),
+		promptCreationMin: newGaugeVec("model_prompt_creation_min", "Prompt creation time minimum in seconds"),
+		promptCreationMax: newGaugeVec("model_prompt_creation_max", "Prompt creation time maximum in seconds"),
 
-		prefillNonMediaAvg: newGauge("model_prefill_nonmedia_avg", "Prefill non-media time average in seconds"),
-		prefillNonMediaMin: newGauge("model_prefill_nonmedia_min", "Prefill non-media time minimum in seconds"),
-		prefillNonMediaMax: newGauge("model_prefill_nonmedia_max", "Prefill non-media time maximum in seconds"),
+		prefillAvg: newGaugeVec("model_prefill_avg", "Prefill time average in seconds"),
+		prefillMin: newGaugeVec("model_prefill_min", "Prefill time minimum in seconds"),
+		prefillMax: newGaugeVec("model_prefill_max", "Prefill time maximum in seconds"),
 
-		prefillMediaAvg: newGauge("model_prefill_media_avg", "Prefill media time average in seconds"),
-		prefillMediaMin: newGauge("model_prefill_media_min", "Prefill media time minimum in seconds"),
-		prefillMediaMax: newGauge("model_prefill_media_max", "Prefill media time maximum in seconds"),
+		ttftAvg: newGaugeVec("model_ttft_avg", "Time to first token average in seconds"),
+		ttftMin: newGaugeVec("model_ttft_min", "Time to first token minimum in seconds"),
+		ttftMax: newGaugeVec("model_ttft_max", "Time to first token maximum in seconds"),
 
-		ttftAvg: newGauge("model_ttft_avg", "Time to first token average in seconds"),
-		ttftMin: newGauge("model_ttft_min", "Time to first token minimum in seconds"),
-		ttftMax: newGauge("model_ttft_max", "Time to first token maximum in seconds"),
+		promptTokensAvg: newGaugeVec("usage_prompt_tokens_avg", "Prompt tokens average"),
+		promptTokensMin: newGaugeVec("usage_prompt_tokens_min", "Prompt tokens minimum"),
+		promptTokensMax: newGaugeVec("usage_prompt_tokens_max", "Prompt tokens maximum"),
 
-		promptTokensAvg: newGauge("usage_prompt_tokens_avg", "Prompt tokens average"),
-		promptTokensMin: newGauge("usage_prompt_tokens_min", "Prompt tokens minimum"),
-		promptTokensMax: newGauge("usage_prompt_tokens_max", "Prompt tokens maximum"),
+		reasoningTokensAvg: newGaugeVec("usage_reasoning_tokens_avg", "Reasoning tokens average"),
+		reasoningTokensMin: newGaugeVec("usage_reasoning_tokens_min", "Reasoning tokens minimum"),
+		reasoningTokensMax: newGaugeVec("usage_reasoning_tokens_max", "Reasoning tokens maximum"),
 
-		reasoningTokensAvg: newGauge("usage_reasoning_tokens_avg", "Reasoning tokens average"),
-		reasoningTokensMin: newGauge("usage_reasoning_tokens_min", "Reasoning tokens minimum"),
-		reasoningTokensMax: newGauge("usage_reasoning_tokens_max", "Reasoning tokens maximum"),
+		completionTokensAvg: newGaugeVec("usage_completion_tokens_avg", "Completion tokens average"),
+		completionTokensMin: newGaugeVec("usage_completion_tokens_min", "Completion tokens minimum"),
+		completionTokensMax: newGaugeVec("usage_completion_tokens_max", "Completion tokens maximum"),
 
-		completionTokensAvg: newGauge("usage_completion_tokens_avg", "Completion tokens average"),
-		completionTokensMin: newGauge("usage_completion_tokens_min", "Completion tokens minimum"),
-		completionTokensMax: newGauge("usage_completion_tokens_max", "Completion tokens maximum"),
+		outputTokensAvg: newGaugeVec("usage_output_tokens_avg", "Output tokens average"),
+		outputTokensMin: newGaugeVec("usage_output_tokens_min", "Output tokens minimum"),
+		outputTokensMax: newGaugeVec("usage_output_tokens_max", "Output tokens maximum"),
 
-		outputTokensAvg: newGauge("usage_output_tokens_avg", "Output tokens average"),
-		outputTokensMin: newGauge("usage_output_tokens_min", "Output tokens minimum"),
-		outputTokensMax: newGauge("usage_output_tokens_max", "Output tokens maximum"),
+		totalTokensAvg: newGaugeVec("usage_total_tokens_avg", "Total tokens average"),
+		totalTokensMin: newGaugeVec("usage_total_tokens_min", "Total tokens minimum"),
+		totalTokensMax: newGaugeVec("usage_total_tokens_max", "Total tokens maximum"),
 
-		totalTokensAvg: newGauge("usage_total_tokens_avg", "Total tokens average"),
-		totalTokensMin: newGauge("usage_total_tokens_min", "Total tokens minimum"),
-		totalTokensMax: newGauge("usage_total_tokens_max", "Total tokens maximum"),
-
-		tokensPerSecondAvg: newGauge("usage_tokens_per_second_avg", "Tokens per second average"),
-		tokensPerSecondMin: newGauge("usage_tokens_per_second_min", "Tokens per second minimum"),
-		tokensPerSecondMax: newGauge("usage_tokens_per_second_max", "Tokens per second maximum"),
+		tokensPerSecondAvg: newGaugeVec("usage_tokens_per_second_avg", "Tokens per second average"),
+		tokensPerSecondMin: newGaugeVec("usage_tokens_per_second_min", "Tokens per second minimum"),
+		tokensPerSecondMax: newGaugeVec("usage_tokens_per_second_max", "Tokens per second maximum"),
 	}
 }
 
-func newGauge(name, help string) prometheus.Gauge {
-	return promauto.NewGauge(prometheus.GaugeOpts{
+func newGaugeVec(name, help string) *prometheus.GaugeVec {
+	return promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: name,
 		Help: help,
-	})
+	}, []string{"model_id"})
 }
 
-// AddGoroutines refreshes the goroutine metric.
-func AddGoroutines() int64 {
+// UpdateGoroutines refreshes the goroutine metric.
+func UpdateGoroutines() int64 {
 	g := int64(runtime.NumGoroutine())
 	m.goroutines.Set(float64(g))
 	return g
@@ -225,19 +250,17 @@ func AddModelFileLoadTime(modelID string, duration time.Duration) {
 	secs := duration.Seconds()
 
 	mu.Lock()
-	modelLoadSum += secs
-	modelLoadCount++
-	m.modelLoadAvg.Set(modelLoadSum / modelLoadCount)
-
-	if secs < modelLoadMinVal {
-		modelLoadMinVal = secs
-		m.modelLoadMin.Set(secs)
-	}
-	if secs > modelLoadMaxVal {
-		modelLoadMaxVal = secs
-		m.modelLoadMax.Set(secs)
-	}
+	s := stateFor(modelID)
+	snap := observe(&s.modelLoad, secs)
 	mu.Unlock()
+
+	if modelID == "" {
+		modelID = "unknown"
+	}
+
+	m.modelLoadAvg.WithLabelValues(modelID).Set(snap.avg)
+	m.modelLoadMin.WithLabelValues(modelID).Set(snap.min)
+	m.modelLoadMax.WithLabelValues(modelID).Set(snap.max)
 }
 
 // AddProjFileLoadTime captures the specified duration for loading a proj file.
@@ -245,19 +268,17 @@ func AddProjFileLoadTime(modelID string, duration time.Duration) {
 	secs := duration.Seconds()
 
 	mu.Lock()
-	modelLoadProjSum += secs
-	modelLoadProjCount++
-	m.modelLoadProjAvg.Set(modelLoadProjSum / modelLoadProjCount)
-
-	if secs < modelLoadProjMinVal {
-		modelLoadProjMinVal = secs
-		m.modelLoadProjMin.Set(secs)
-	}
-	if secs > modelLoadProjMaxVal {
-		modelLoadProjMaxVal = secs
-		m.modelLoadProjMax.Set(secs)
-	}
+	s := stateFor(modelID)
+	snap := observe(&s.modelLoadProj, secs)
 	mu.Unlock()
+
+	if modelID == "" {
+		modelID = "unknown"
+	}
+
+	m.modelLoadProjAvg.WithLabelValues(modelID).Set(snap.avg)
+	m.modelLoadProjMin.WithLabelValues(modelID).Set(snap.min)
+	m.modelLoadProjMax.WithLabelValues(modelID).Set(snap.max)
 }
 
 // AddPromptCreationTime captures the specified duration for creating a prompt.
@@ -265,59 +286,35 @@ func AddPromptCreationTime(modelID string, duration time.Duration) {
 	secs := duration.Seconds()
 
 	mu.Lock()
-	promptCreationSum += secs
-	promptCreationCount++
-	m.promptCreationAvg.Set(promptCreationSum / promptCreationCount)
-
-	if secs < promptCreationMinVal {
-		promptCreationMinVal = secs
-		m.promptCreationMin.Set(secs)
-	}
-	if secs > promptCreationMaxVal {
-		promptCreationMaxVal = secs
-		m.promptCreationMax.Set(secs)
-	}
+	s := stateFor(modelID)
+	snap := observe(&s.promptCreation, secs)
 	mu.Unlock()
+
+	if modelID == "" {
+		modelID = "unknown"
+	}
+
+	m.promptCreationAvg.WithLabelValues(modelID).Set(snap.avg)
+	m.promptCreationMin.WithLabelValues(modelID).Set(snap.min)
+	m.promptCreationMax.WithLabelValues(modelID).Set(snap.max)
 }
 
-// AddPrefillNonMediaTime captures the specified duration for prefilling a non media call.
-func AddPrefillNonMediaTime(modelID string, duration time.Duration) {
+// AddPrefillTime captures the specified duration for prefilling a request.
+func AddPrefillTime(modelID string, duration time.Duration) {
 	secs := duration.Seconds()
 
 	mu.Lock()
-	prefillNonMediaSum += secs
-	prefillNonMediaCount++
-	m.prefillNonMediaAvg.Set(prefillNonMediaSum / prefillNonMediaCount)
-
-	if secs < prefillNonMediaMinVal {
-		prefillNonMediaMinVal = secs
-		m.prefillNonMediaMin.Set(secs)
-	}
-	if secs > prefillNonMediaMaxVal {
-		prefillNonMediaMaxVal = secs
-		m.prefillNonMediaMax.Set(secs)
-	}
+	s := stateFor(modelID)
+	snap := observe(&s.prefill, secs)
 	mu.Unlock()
-}
 
-// AddPrefillMediaTime captures the specified duration for prefilling a media call.
-func AddPrefillMediaTime(modelID string, duration time.Duration) {
-	secs := duration.Seconds()
-
-	mu.Lock()
-	prefillMediaSum += secs
-	prefillMediaCount++
-	m.prefillMediaAvg.Set(prefillMediaSum / prefillMediaCount)
-
-	if secs < prefillMediaMinVal {
-		prefillMediaMinVal = secs
-		m.prefillMediaMin.Set(secs)
+	if modelID == "" {
+		modelID = "unknown"
 	}
-	if secs > prefillMediaMaxVal {
-		prefillMediaMaxVal = secs
-		m.prefillMediaMax.Set(secs)
-	}
-	mu.Unlock()
+
+	m.prefillAvg.WithLabelValues(modelID).Set(snap.avg)
+	m.prefillMin.WithLabelValues(modelID).Set(snap.min)
+	m.prefillMax.WithLabelValues(modelID).Set(snap.max)
 }
 
 // AddTimeToFirstToken captures the specified duration for ttft.
@@ -325,107 +322,58 @@ func AddTimeToFirstToken(modelID string, duration time.Duration) {
 	secs := duration.Seconds()
 
 	mu.Lock()
-	ttftSum += secs
-	ttftCount++
-	m.ttftAvg.Set(ttftSum / ttftCount)
-
-	if secs < ttftMinVal {
-		ttftMinVal = secs
-		m.ttftMin.Set(secs)
-	}
-	if secs > ttftMaxVal {
-		ttftMaxVal = secs
-		m.ttftMax.Set(secs)
-	}
+	s := stateFor(modelID)
+	snap := observe(&s.ttft, secs)
 	mu.Unlock()
+
+	if modelID == "" {
+		modelID = "unknown"
+	}
+
+	m.ttftAvg.WithLabelValues(modelID).Set(snap.avg)
+	m.ttftMin.WithLabelValues(modelID).Set(snap.min)
+	m.ttftMax.WithLabelValues(modelID).Set(snap.max)
 }
 
 // AddChatCompletionsUsage captures the specified usage values for chat-completions.
 func AddChatCompletionsUsage(modelID string, promptTokens, reasoningTokens, completionTokens, outputTokens, totalTokens int, tokensPerSecond float64) {
 	mu.Lock()
-	defer mu.Unlock()
+	s := stateFor(modelID)
 
-	// Prompt tokens
-	pt := float64(promptTokens)
-	promptTokensSum += pt
-	promptTokensCount++
-	m.promptTokensAvg.Set(promptTokensSum / promptTokensCount)
-	if pt < promptTokensMinVal {
-		promptTokensMinVal = pt
-		m.promptTokensMin.Set(pt)
-	}
-	if pt > promptTokensMaxVal {
-		promptTokensMaxVal = pt
-		m.promptTokensMax.Set(pt)
-	}
+	ptSnap := observe(&s.promptTokens, float64(promptTokens))
+	rtSnap := observe(&s.reasoningTokens, float64(reasoningTokens))
+	ctSnap := observe(&s.completionTokens, float64(completionTokens))
+	otSnap := observe(&s.outputTokens, float64(outputTokens))
+	ttSnap := observe(&s.totalTokens, float64(totalTokens))
+	tpsSnap := observe(&s.tokensPerSecond, tokensPerSecond)
 
-	// Reasoning tokens
-	rt := float64(reasoningTokens)
-	reasoningTokensSum += rt
-	reasoningTokensCount++
-	m.reasoningTokensAvg.Set(reasoningTokensSum / reasoningTokensCount)
-	if rt < reasoningTokensMinVal {
-		reasoningTokensMinVal = rt
-		m.reasoningTokensMin.Set(rt)
-	}
-	if rt > reasoningTokensMaxVal {
-		reasoningTokensMaxVal = rt
-		m.reasoningTokensMax.Set(rt)
+	mu.Unlock()
+
+	if modelID == "" {
+		modelID = "unknown"
 	}
 
-	// Completion tokens
-	ct := float64(completionTokens)
-	completionTokensSum += ct
-	completionTokensCount++
-	m.completionTokensAvg.Set(completionTokensSum / completionTokensCount)
-	if ct < completionTokensMinVal {
-		completionTokensMinVal = ct
-		m.completionTokensMin.Set(ct)
-	}
-	if ct > completionTokensMaxVal {
-		completionTokensMaxVal = ct
-		m.completionTokensMax.Set(ct)
-	}
+	m.promptTokensAvg.WithLabelValues(modelID).Set(ptSnap.avg)
+	m.promptTokensMin.WithLabelValues(modelID).Set(ptSnap.min)
+	m.promptTokensMax.WithLabelValues(modelID).Set(ptSnap.max)
 
-	// Output tokens
-	ot := float64(outputTokens)
-	outputTokensSum += ot
-	outputTokensCount++
-	m.outputTokensAvg.Set(outputTokensSum / outputTokensCount)
-	if ot < outputTokensMinVal {
-		outputTokensMinVal = ot
-		m.outputTokensMin.Set(ot)
-	}
-	if ot > outputTokensMaxVal {
-		outputTokensMaxVal = ot
-		m.outputTokensMax.Set(ot)
-	}
+	m.reasoningTokensAvg.WithLabelValues(modelID).Set(rtSnap.avg)
+	m.reasoningTokensMin.WithLabelValues(modelID).Set(rtSnap.min)
+	m.reasoningTokensMax.WithLabelValues(modelID).Set(rtSnap.max)
 
-	// Total tokens
-	tt := float64(totalTokens)
-	totalTokensSum += tt
-	totalTokensCount++
-	m.totalTokensAvg.Set(totalTokensSum / totalTokensCount)
-	if tt < totalTokensMinVal {
-		totalTokensMinVal = tt
-		m.totalTokensMin.Set(tt)
-	}
-	if tt > totalTokensMaxVal {
-		totalTokensMaxVal = tt
-		m.totalTokensMax.Set(tt)
-	}
+	m.completionTokensAvg.WithLabelValues(modelID).Set(ctSnap.avg)
+	m.completionTokensMin.WithLabelValues(modelID).Set(ctSnap.min)
+	m.completionTokensMax.WithLabelValues(modelID).Set(ctSnap.max)
 
-	// Tokens per second
-	tps := tokensPerSecond
-	tokensPerSecondSum += tps
-	tokensPerSecondCount++
-	m.tokensPerSecondAvg.Set(tokensPerSecondSum / tokensPerSecondCount)
-	if tps < tokensPerSecondMinVal {
-		tokensPerSecondMinVal = tps
-		m.tokensPerSecondMin.Set(tps)
-	}
-	if tps > tokensPerSecondMaxVal {
-		tokensPerSecondMaxVal = tps
-		m.tokensPerSecondMax.Set(tps)
-	}
+	m.outputTokensAvg.WithLabelValues(modelID).Set(otSnap.avg)
+	m.outputTokensMin.WithLabelValues(modelID).Set(otSnap.min)
+	m.outputTokensMax.WithLabelValues(modelID).Set(otSnap.max)
+
+	m.totalTokensAvg.WithLabelValues(modelID).Set(ttSnap.avg)
+	m.totalTokensMin.WithLabelValues(modelID).Set(ttSnap.min)
+	m.totalTokensMax.WithLabelValues(modelID).Set(ttSnap.max)
+
+	m.tokensPerSecondAvg.WithLabelValues(modelID).Set(tpsSnap.avg)
+	m.tokensPerSecondMin.WithLabelValues(modelID).Set(tpsSnap.min)
+	m.tokensPerSecondMax.WithLabelValues(modelID).Set(tpsSnap.max)
 }

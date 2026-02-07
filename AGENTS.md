@@ -39,7 +39,9 @@ You wil want to look at `Chapter 16: Developer Guide` for detailed information a
 | [16.6 Code Style Guidelines](MANUAL.md#166-code-style-guidelines)       | Package comments, error handling, struct design, imports, control flow     |
 | [16.7 SDK Internals](MANUAL.md#167-sdk-internals)                       | Package structure, streaming, model pool, batch engine, IMC implementation |
 | [16.8 API Handler Notes](MANUAL.md#168-api-handler-notes)               | Input format conversion for Response APIs                                  |
-| [16.9 Reference Threads](MANUAL.md#169-reference-threads)               | THREADS.md for past conversations                                          |
+| [16.9 Goroutine Budget](MANUAL.md#169-goroutine-budget)                 | Baseline goroutines, per-request goroutines, expected counts               |
+| [16.10 Request Tracing Spans](MANUAL.md#1610-request-tracing-spans)     | Span hierarchy, queue wait, prepare-request vs process-request              |
+| [16.11 Reference Threads](MANUAL.md#1611-reference-threads)             | THREADS.md for past conversations                                          |
 
 ## Reference Threads
 

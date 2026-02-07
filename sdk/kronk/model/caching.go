@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/hybridgroup/yzma/pkg/llama"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // cacheResult contains the results of cache processing.
@@ -207,8 +209,15 @@ func (m *Model) performSPC(ctx context.Context, d D, messages []D, msgInfo cache
 		return cacheResult{modifiedD: d, err: fmt.Errorf("spc: failed to template system prompt: %w", err)}
 	}
 
+	_, tokenSpan := otel.AddSpan(ctx, "cache-tokenize-spc",
+		attribute.String("cache-type", "spc"),
+	)
+
 	tokens := llama.Tokenize(m.vocab, systemMsgPrompt, m.addBOSToken, true)
 	nTokens := len(tokens)
+
+	tokenSpan.SetAttributes(attribute.Int("tokens", nTokens))
+	tokenSpan.End()
 
 	if nTokens == 0 {
 		return cacheResult{modifiedD: d, err: fmt.Errorf("spc: system prompt tokenized to zero tokens")}
@@ -449,8 +458,15 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, cacheID s
 		return cacheResult{modifiedD: d, err: fmt.Errorf("imc: failed to template prefix: %w", err)}
 	}
 
+	_, tokenSpan := otel.AddSpan(ctx, "cache-tokenize-imc-extend",
+		attribute.String("cache-type", "imc-extend"),
+	)
+
 	allTokens := llama.Tokenize(m.vocab, promptToCache, m.addBOSToken, true)
 	totalTokens := len(allTokens)
+
+	tokenSpan.SetAttributes(attribute.Int("tokens", totalTokens))
+	tokenSpan.End()
 
 	// If we don't have more tokens than what's cached, nothing to extend.
 	if totalTokens <= currentTotalTokensCached {
@@ -534,8 +550,15 @@ func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D,
 		return cacheResult{modifiedD: d, err: fmt.Errorf("imc: failed to template messages: %w", err)}
 	}
 
+	_, tokenSpan := otel.AddSpan(ctx, "cache-tokenize-imc-scratch",
+		attribute.String("cache-type", "imc-build"),
+	)
+
 	tokens := llama.Tokenize(m.vocab, dataToCache, m.addBOSToken, true)
 	nTokens := len(tokens)
+
+	tokenSpan.SetAttributes(attribute.Int("tokens", nTokens))
+	tokenSpan.End()
 
 	if nTokens == 0 {
 		return cacheResult{modifiedD: d, err: fmt.Errorf("imc: messages tokenized to zero tokens")}
@@ -574,6 +597,11 @@ func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D,
 // Unlike addTokensToCache, this does NOT clear the sequence first.
 // startPos is the position offset for the new tokens (i.e., existing token count).
 func (m *Model) extendTokensInCache(ctx context.Context, tokens []llama.Token, seqID llama.SeqId, startPos int) error {
+	ctx, decodeSpan := otel.AddSpan(ctx, "cache-decode",
+		attribute.Int("tokens", len(tokens)),
+	)
+	defer decodeSpan.End()
+
 	nBatch := int(m.ctxParams.NBatch)
 	nTokens := len(tokens)
 
@@ -622,6 +650,11 @@ func (m *Model) extendTokensInCache(ctx context.Context, tokens []llama.Token, s
 // Uses explicit sequence ID assignment to ensure tokens go into the correct
 // cache sequence (important for multi-user IMC).
 func (m *Model) addTokensToCache(ctx context.Context, tokens []llama.Token, seqID llama.SeqId) error {
+	ctx, decodeSpan := otel.AddSpan(ctx, "cache-decode",
+		attribute.Int("tokens", len(tokens)),
+	)
+	defer decodeSpan.End()
+
 	llama.MemorySeqRm(m.mem, seqID, -1, -1)
 
 	nBatch := int(m.ctxParams.NBatch)

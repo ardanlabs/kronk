@@ -3523,8 +3523,7 @@ kronk server start`}</code></pre>
           <p>Inference timing (in seconds):</p>
           <ul>
             <li><code>model_prompt_creation_avg</code>, <code>_min</code>, <code>_max</code></li>
-            <li><code>model_prefill_nonmedia_avg</code>, <code>_min</code>, <code>_max</code></li>
-            <li><code>model_prefill_media_avg</code>, <code>_min</code>, <code>_max</code></li>
+            <li><code>model_prefill_avg</code>, <code>_min</code>, <code>_max</code></li>
             <li><code>model_ttft_avg</code>, <code>_min</code>, <code>_max</code> (time to first token)</li>
           </ul>
           <p>Token usage:</p>
@@ -4505,7 +4504,144 @@ batching = true`}</code></pre>
           <p>Both streaming and non-streaming Response APIs must call</p>
           <p><code>convertInputToMessages(d)</code> to handle the OpenAI Responses <code>input</code> field</p>
           <p>format.</p>
-          <h3 id="169-reference-threads">16.9 Reference Threads</h3>
+          <h3 id="169-goroutine-budget">16.9 Goroutine Budget</h3>
+          <p>A running Kronk server typically shows ~25 baseline goroutines before any</p>
+          <p>requests arrive. When requests are active, expect roughly 3-5 additional</p>
+          <p>goroutines per in-flight request. For example, 3 concurrent requests for the</p>
+          <p>same model will show ~40 goroutines total. This is normal.</p>
+          <p><strong>Baseline goroutines (~25, always running):</strong></p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Source</th>
+                <th>Goroutines</th>
+                <th>Location</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Go runtime (GC, finalizer, netpoller, etc.)</td>
+                <td>~4-6</td>
+                <td>runtime internals</td>
+              </tr>
+              <tr>
+                <td>API <code>http.Server</code> (listener + idle conns)</td>
+                <td>~3</td>
+                <td><code>cmd/server/api/services/kronk/kronk.go</code></td>
+              </tr>
+              <tr>
+                <td>Debug <code>http.Server</code> (pprof, metrics, statsviz)</td>
+                <td>~3</td>
+                <td><code>cmd/server/api/services/kronk/kronk.go</code></td>
+              </tr>
+              <tr>
+                <td><code>statsviz.Register</code> (websocket handler)</td>
+                <td>~2</td>
+                <td><code>cmd/server/app/sdk/debug/debug.go</code></td>
+              </tr>
+              <tr>
+                <td>gRPC auth server (<code>gs.Serve</code>)</td>
+                <td>~2-3</td>
+                <td><code>cmd/server/app/domain/authapp/start.go</code></td>
+              </tr>
+              <tr>
+                <td>OTEL background collector probe</td>
+                <td>1</td>
+                <td><code>sdk/kronk/observ/otel/otel.go</code></td>
+              </tr>
+              <tr>
+                <td><code>otelhttp.NewHandler</code> internals</td>
+                <td>~1-2</td>
+                <td><code>cmd/server/foundation/web/web.go</code></td>
+              </tr>
+              <tr>
+                <td>Batch engine <code>processLoop</code></td>
+                <td>1</td>
+                <td><code>sdk/kronk/model/batch.go</code></td>
+              </tr>
+            </tbody>
+          </table>
+          <p><strong>Per-request goroutines (~3-5 each):</strong></p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Source</th>
+                <th>Location</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>http.Server</code> connection handler</td>
+                <td>Go stdlib</td>
+              </tr>
+              <tr>
+                <td><code>ChatStreaming</code> request goroutine</td>
+                <td><code>sdk/kronk/model/chat.go</code></td>
+              </tr>
+              <tr>
+                <td><code>streaming()</code> wrapper goroutine</td>
+                <td><code>sdk/kronk/concurrency.go</code></td>
+              </tr>
+              <tr>
+                <td><code>wrapChannelForLogging</code> (only if <code>InsecureLogging</code> is on)</td>
+                <td><code>sdk/kronk/model/chat.go</code></td>
+              </tr>
+            </tbody>
+          </table>
+          <p>The goroutine metric is a point-in-time snapshot from <code>runtime.NumGoroutine()</code></p>
+          <p>captured every 10th request by the metrics middleware. It includes everything</p>
+          <p>in the process, including Go runtime internals. After active requests complete,</p>
+          <p>the count drops back to the baseline.</p>
+          <h3 id="1610-request-tracing-spans">16.10 Request Tracing Spans</h3>
+          <p>Each chat completion request produces the following trace hierarchy:</p>
+          <pre className="code-block"><code>{`POST /v1/chat/completions
+├── prepare-request              Validation, caching, and prompt creation
+│   ├── process-cache            Cache lookup/update (SPC or IMC, when enabled)
+│   │   └── cache-tokenize-*     Tokenization for cache (spc, imc-extend, imc-scratch)
+│   └── create-prompt            Jinja template application
+│
+│        ← queue wait →          Job sits in requestQ channel until batch engine picks it up
+│
+└── process-request              Batch engine slot processing
+    ├── prefill                  Tokenization + KV cache fill (ends at first output token)
+    └── token-generation         Decode loop producing output tokens`}</code></pre>
+          <p><strong>Phase 1: prepare-request</strong> runs in the <code>ChatStreaming</code> goroutine. It</p>
+          <p>validates the document, processes caches (SPC/IMC), and creates the prompt</p>
+          <p>via the Jinja template. When caching is enabled, <code>process-cache</code> and its</p>
+          <p>child <code>cache-tokenize-*</code> spans appear here.</p>
+          <p><strong>Queue wait</strong> is the gap between <code>prepare-request</code> ending and</p>
+          <p><code>process-request</code> starting. The job has been submitted to the batch engine's</p>
+          <p><code>requestQ</code> channel and is waiting for the <code>processLoop</code> goroutine to wake up</p>
+          <p>and assign it to a slot. The exact duration is recorded as a <code>queue-wait</code></p>
+          <p>attribute on the <code>process-request</code> span.</p>
+          <p><strong>Phase 2: process-request</strong> runs in the batch engine's <code>processLoop</code></p>
+          <p>goroutine. The <code>prefill</code> span covers tokenization and KV cache filling. Time</p>
+          <p>to first token (TTFT) is measured from prefill start to the first output</p>
+          <p>token. The <code>token-generation</code> span covers the decode loop that produces</p>
+          <p>output tokens.</p>
+          <p>Additional spans that may appear at the top level:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Span</th>
+                <th>When</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>model-file-load-time</code></td>
+                <td>First request for a model</td>
+                <td>Loading the GGUF model file</td>
+              </tr>
+              <tr>
+                <td><code>proj-file-load-time</code></td>
+                <td>Vision/audio requests</td>
+                <td>Loading the multimodal projection file</td>
+              </tr>
+            </tbody>
+          </table>
+          <h3 id="1611-reference-threads">16.11 Reference Threads</h3>
           <p>See <code>THREADS.md</code> for important past conversations and decisions worth</p>
           <p>preserving.</p>
         </div>
@@ -4728,7 +4864,9 @@ batching = true`}</code></pre>
                 <li><a href="#166-code-style-guidelines" className={activeSection === '166-code-style-guidelines' ? 'active' : ''}>16.6 Code Style Guidelines</a></li>
                 <li><a href="#167-sdk-internals" className={activeSection === '167-sdk-internals' ? 'active' : ''}>16.7 SDK Internals</a></li>
                 <li><a href="#168-api-handler-notes" className={activeSection === '168-api-handler-notes' ? 'active' : ''}>16.8 API Handler Notes</a></li>
-                <li><a href="#169-reference-threads" className={activeSection === '169-reference-threads' ? 'active' : ''}>16.9 Reference Threads</a></li>
+                <li><a href="#169-goroutine-budget" className={activeSection === '169-goroutine-budget' ? 'active' : ''}>16.9 Goroutine Budget</a></li>
+                <li><a href="#1610-request-tracing-spans" className={activeSection === '1610-request-tracing-spans' ? 'active' : ''}>16.10 Request Tracing Spans</a></li>
+                <li><a href="#1611-reference-threads" className={activeSection === '1611-reference-threads' ? 'active' : ''}>16.11 Reference Threads</a></li>
               </ul>
             </div>
           </div>

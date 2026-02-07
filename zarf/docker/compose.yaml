@@ -68,7 +68,7 @@ services:
     restart: always
     pull_policy: never
     command:
-      - "--storage.tsdb.retention.time=1m"
+      - "--storage.tsdb.retention.time=1h"
       - "--config.file=/prom-conf/prometheus.yaml"
       - "--storage.tsdb.path=/prometheus/"
       - "--log.level=debug"

@@ -3734,8 +3734,7 @@ Model loading (in seconds):
 Inference timing (in seconds):
 
 - `model_prompt_creation_avg`, `_min`, `_max`
-- `model_prefill_nonmedia_avg`, `_min`, `_max`
-- `model_prefill_media_avg`, `_min`, `_max`
+- `model_prefill_avg`, `_min`, `_max`
 - `model_ttft_avg`, `_min`, `_max` (time to first token)
 
 Token usage:
@@ -4835,7 +4834,83 @@ Both streaming and non-streaming Response APIs must call
 `convertInputToMessages(d)` to handle the OpenAI Responses `input` field
 format.
 
-### 16.9 Reference Threads
+### 16.9 Goroutine Budget
+
+A running Kronk server typically shows ~25 baseline goroutines before any
+requests arrive. When requests are active, expect roughly 3-5 additional
+goroutines per in-flight request. For example, 3 concurrent requests for the
+same model will show ~40 goroutines total. This is normal.
+
+**Baseline goroutines (~25, always running):**
+
+| Source | Goroutines | Location |
+| --- | --- | --- |
+| Go runtime (GC, finalizer, netpoller, etc.) | ~4-6 | runtime internals |
+| API `http.Server` (listener + idle conns) | ~3 | `cmd/server/api/services/kronk/kronk.go` |
+| Debug `http.Server` (pprof, metrics, statsviz) | ~3 | `cmd/server/api/services/kronk/kronk.go` |
+| `statsviz.Register` (websocket handler) | ~2 | `cmd/server/app/sdk/debug/debug.go` |
+| gRPC auth server (`gs.Serve`) | ~2-3 | `cmd/server/app/domain/authapp/start.go` |
+| OTEL background collector probe | 1 | `sdk/kronk/observ/otel/otel.go` |
+| `otelhttp.NewHandler` internals | ~1-2 | `cmd/server/foundation/web/web.go` |
+| Batch engine `processLoop` | 1 | `sdk/kronk/model/batch.go` |
+
+**Per-request goroutines (~3-5 each):**
+
+| Source | Location |
+| --- | --- |
+| `http.Server` connection handler | Go stdlib |
+| `ChatStreaming` request goroutine | `sdk/kronk/model/chat.go` |
+| `streaming()` wrapper goroutine | `sdk/kronk/concurrency.go` |
+| `wrapChannelForLogging` (only if `InsecureLogging` is on) | `sdk/kronk/model/chat.go` |
+
+The goroutine metric is a point-in-time snapshot from `runtime.NumGoroutine()`
+captured every 10th request by the metrics middleware. It includes everything
+in the process, including Go runtime internals. After active requests complete,
+the count drops back to the baseline.
+
+### 16.10 Request Tracing Spans
+
+Each chat completion request produces the following trace hierarchy:
+
+```
+POST /v1/chat/completions
+├── prepare-request              Validation, caching, and prompt creation
+│   ├── process-cache            Cache lookup/update (SPC or IMC, when enabled)
+│   │   └── cache-tokenize-*     Tokenization for cache (spc, imc-extend, imc-scratch)
+│   └── create-prompt            Jinja template application
+│
+│        ← queue wait →          Job sits in requestQ channel until batch engine picks it up
+│
+└── process-request              Batch engine slot processing
+    ├── prefill                  Tokenization + KV cache fill (ends at first output token)
+    └── token-generation         Decode loop producing output tokens
+```
+
+**Phase 1: prepare-request** runs in the `ChatStreaming` goroutine. It
+validates the document, processes caches (SPC/IMC), and creates the prompt
+via the Jinja template. When caching is enabled, `process-cache` and its
+child `cache-tokenize-*` spans appear here.
+
+**Queue wait** is the gap between `prepare-request` ending and
+`process-request` starting. The job has been submitted to the batch engine's
+`requestQ` channel and is waiting for the `processLoop` goroutine to wake up
+and assign it to a slot. The exact duration is recorded as a `queue-wait`
+attribute on the `process-request` span.
+
+**Phase 2: process-request** runs in the batch engine's `processLoop`
+goroutine. The `prefill` span covers tokenization and KV cache filling. Time
+to first token (TTFT) is measured from prefill start to the first output
+token. The `token-generation` span covers the decode loop that produces
+output tokens.
+
+Additional spans that may appear at the top level:
+
+| Span | When | Description |
+| --- | --- | --- |
+| `model-file-load-time` | First request for a model | Loading the GGUF model file |
+| `proj-file-load-time` | Vision/audio requests | Loading the multimodal projection file |
+
+### 16.11 Reference Threads
 
 See `THREADS.md` for important past conversations and decisions worth
 preserving.

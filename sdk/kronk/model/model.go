@@ -127,15 +127,21 @@ func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) 
 
 	// -------------------------------------------------------------------------
 
+	loadStart := time.Now()
+
 	mdl, err := loadModelFromFiles(ctx, l, cfg.ModelFiles, mParams)
 	if err != nil {
 		return nil, fmt.Errorf("load-model-from-files: unable to load model: %w", err)
 	}
 
+	loadDuration := time.Since(loadStart)
+
 	// -------------------------------------------------------------------------
 
 	cfg = adjustConfig(cfg, mdl)
 	modelInfo := toModelInfo(cfg, mdl)
+
+	metrics.AddModelFileLoadTime(modelInfo.ID, loadDuration)
 
 	template, err := retrieveTemplate(tmplRetriever, cfg, mdl, modelInfo)
 	if err != nil {
@@ -241,15 +247,10 @@ func loadModelFromFiles(ctx context.Context, log Logger, modelFiles []string, pa
 	log(ctx, "loading model from file", "status", "started", "model", baseModelFile)
 	defer log(ctx, "loading model from file", "status", "completed", "model", baseModelFile)
 
-	_, span := otel.AddSpan(ctx, "proj-file-load-time",
+	_, span := otel.AddSpan(ctx, "model-file-load-time",
 		attribute.String("model-file", baseModelFile),
 	)
 	defer span.End()
-
-	start := time.Now()
-	defer func() {
-		metrics.AddModelFileLoadTime(baseModelFile, time.Since(start))
-	}()
 
 	var err error
 	var mdl llama.Model

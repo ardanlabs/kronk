@@ -70,14 +70,18 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 			}
 		}()
 
-		params, d, err := m.validateAndCloneDocument(ctx, d)
+		prepCtx, prepSpan := otel.AddSpan(ctx, "prepare-request")
+
+		params, d, err := m.validateAndCloneDocument(prepCtx, d)
 		if err != nil {
+			prepSpan.End()
 			m.sendChatError(ctx, ch, id, err)
 			return
 		}
 
-		d, mtmdCtx, object, err := m.prepareContext(ctx, d)
+		d, mtmdCtx, object, err := m.prepareContext(prepCtx, d)
 		if err != nil {
+			prepSpan.End()
 			m.sendChatError(ctx, ch, id, err)
 			return
 		}
@@ -92,8 +96,9 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 			}
 		}()
 
-		prompt, media, cache, err := m.prepareCacheAndPrompt(ctx, d, object)
+		prompt, media, cache, err := m.prepareCacheAndPrompt(prepCtx, d, object)
 		if err != nil {
+			prepSpan.End()
 			m.sendChatError(ctx, ch, id, err)
 			return
 		}
@@ -103,6 +108,8 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		if m.cfg.InsecureLogging {
 			m.log(ctx, "chat-streaming", "IN-MESSAGAES", d.Messages())
 		}
+
+		prepSpan.End()
 
 		if m.submitToBatchEngine(ctx, ch, id, d, object, prompt, media, params, mtmdCtx, cache) {
 			batching = true
@@ -185,7 +192,12 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string) (
 		cache.modifiedD = d
 
 	default:
+		ctx, cacheSpan := otel.AddSpan(ctx, "process-cache")
+
 		cache = m.processCache(ctx, d)
+
+		cacheSpan.End()
+
 		if cache.err != nil {
 			return "", nil, cache, cache.err
 		}
@@ -208,9 +220,12 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 	spcCacheHit := m.cfg.SystemPromptCache && cache.cacheIdx > 0
 	imcCacheHit := m.cfg.IncrementalCache && cache.cacheID != ""
 
+	_, queueSpan := otel.AddSpan(ctx, "queue-wait")
+
 	job := chatJob{
-		id:      id,
-		ctx:     ctx,
+		id:            id,
+		ctx:           ctx,
+		queueWaitSpan: queueSpan,
 		d:       d,
 		object:  object,
 		prompt:  prompt,
@@ -229,6 +244,7 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 	}
 
 	if err := m.batch.submit(&job); err != nil {
+		queueSpan.End()
 		m.sendChatError(ctx, ch, id, err)
 		return false
 	}

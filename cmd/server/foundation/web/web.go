@@ -35,7 +35,6 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // data/logic on this App struct.
 type App struct {
 	log     Logger
-	tracer  trace.Tracer
 	mux     *http.ServeMux
 	otmux   http.Handler
 	mw      []MidFunc
@@ -43,7 +42,7 @@ type App struct {
 }
 
 // NewApp creates an App value that handle a set of routes for the application.
-func NewApp(log Logger, tracer trace.Tracer, mw ...MidFunc) *App {
+func NewApp(log Logger, mw ...MidFunc) *App {
 	// Create an OpenTelemetry HTTP Handler which wraps our router. This will start
 	// the initial span and annotate it with information about the request/trusted.
 	//
@@ -55,7 +54,6 @@ func NewApp(log Logger, tracer trace.Tracer, mw ...MidFunc) *App {
 
 	return &App{
 		log:    log,
-		tracer: tracer,
 		mux:    mux,
 		otmux:  otelhttp.NewHandler(mux, "request"),
 		mw:     mw,
@@ -142,11 +140,11 @@ func (a *App) HandlerFunc(method string, group string, path string, handlerFunc 
 	handlerFunc = wrapMiddleware(a.mw, handlerFunc)
 
 	h := func(w http.ResponseWriter, r *http.Request) {
-		ctx := setTracer(r.Context(), a.tracer)
+		ctx := setTracer(r.Context(), otel.GetTracerProvider().Tracer(""))
 		ctx = setWriter(ctx, w)
 
 		spanName := fmt.Sprintf("%s %s", r.Method, r.URL.Path)
-		ctx, span := a.tracer.Start(ctx, spanName)
+		ctx, span := otel.GetTracerProvider().Tracer("").Start(ctx, spanName)
 		defer span.End()
 
 		traceID := trace.SpanFromContext(ctx).SpanContext().TraceID().String()
@@ -188,11 +186,11 @@ func (a *App) RawHandlerFunc(method string, group string, path string, rawHandle
 	handlerFunc = wrapMiddleware(a.mw, handlerFunc)
 
 	h := func(w http.ResponseWriter, r *http.Request) {
-		ctx := setTracer(r.Context(), a.tracer)
+		ctx := setTracer(r.Context(), otel.GetTracerProvider().Tracer(""))
 		ctx = setWriter(ctx, w)
 
 		spanName := fmt.Sprintf("%s %s", r.Method, r.URL.Path)
-		ctx, span := a.tracer.Start(ctx, spanName)
+		ctx, span := otel.GetTracerProvider().Tracer("").Start(ctx, spanName)
 		defer span.End()
 
 		traceID := trace.SpanFromContext(ctx).SpanContext().TraceID().String()
