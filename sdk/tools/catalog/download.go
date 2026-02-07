@@ -87,7 +87,7 @@ func (c *Catalog) DownloadModel(ctx context.Context, log Logger, modelID string)
 		return models.Path{}, fmt.Errorf("retrieve-model-details: %w", err)
 	}
 
-	return c.models.DownloadShards(ctx, models.Logger(log), model.Files.ToModelURLS(), model.Files.Proj.URL)
+	return c.models.DownloadSplits(ctx, models.Logger(log), model.Files.ToModelURLS(), model.Files.Proj.URL)
 }
 
 // =============================================================================

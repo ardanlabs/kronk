@@ -24,16 +24,16 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // the specified model. If you need to set your HuggingFace token, use the
 // environment variable KRONK_HF_TOKEN.
 func (m *Models) Download(ctx context.Context, log Logger, modelURL string, projURL string) (Path, error) {
-	return m.DownloadShards(ctx, log, []string{modelURL}, projURL)
+	return m.DownloadSplits(ctx, log, []string{modelURL}, projURL)
 }
 
-// DownloadShards performs a complete workflow for downloading and installing
+// DownloadSplits performs a complete workflow for downloading and installing
 // the specified model. If you need to set your HuggingFace token, use the
 // environment variable KRONK_HF_TOKEN.
-func (m *Models) DownloadShards(ctx context.Context, log Logger, modelURLs []string, projURL string) (Path, error) {
+func (m *Models) DownloadSplits(ctx context.Context, log Logger, modelURLs []string, projURL string) (Path, error) {
 	modelFileName, err := extractFileName(modelURLs[0])
 	if err != nil {
-		return Path{}, fmt.Errorf("download-shards: unable to extract file name: %w", err)
+		return Path{}, fmt.Errorf("download-splits: unable to extract file name: %w", err)
 	}
 
 	modelID := extractModelID(modelFileName)
@@ -41,7 +41,7 @@ func (m *Models) DownloadShards(ctx context.Context, log Logger, modelURLs []str
 	if !hasNetwork() {
 		mp, err := m.FullPath(modelID)
 		if err != nil {
-			return Path{}, fmt.Errorf("download-shards: no network available: %w", err)
+			return Path{}, fmt.Errorf("download-splits: no network available: %w", err)
 		}
 
 		return mp, nil
@@ -358,11 +358,11 @@ func createProjFileName(modelFileName string) string {
 	return name
 }
 
-var shardPattern = regexp.MustCompile(`-\d+-of-\d+$`)
+var splitPattern = regexp.MustCompile(`-\d+-of-\d+$`)
 
 func extractModelID(modelFileName string) string {
 	name := strings.TrimSuffix(filepath.Base(modelFileName), filepath.Ext(modelFileName))
-	name = shardPattern.ReplaceAllString(name, "")
+	name = splitPattern.ReplaceAllString(name, "")
 
 	// modelFileName: /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf
 	// name: Qwen3-8B-Q8_0

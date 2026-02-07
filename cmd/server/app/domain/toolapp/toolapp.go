@@ -384,7 +384,7 @@ func (a *app) pullCatalog(ctx context.Context, r *http.Request) web.Encoder {
 
 	modelURLs := model.Files.ToModelURLS()
 
-	mp, err := a.models.DownloadShards(ctx, logger, modelURLs, model.Files.Proj.URL)
+	mp, err := a.models.DownloadSplits(ctx, logger, modelURLs, model.Files.Proj.URL)
 	if err != nil {
 		ver := toAppPull(err.Error(), models.Path{})
 
