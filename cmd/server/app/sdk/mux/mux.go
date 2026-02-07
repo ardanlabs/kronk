@@ -15,7 +15,6 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/ardanlabs/kronk/sdk/tools/templates"
-	"go.opentelemetry.io/otel/trace"
 )
 
 // StaticSite represents a static site to run.
@@ -58,7 +57,6 @@ type Config struct {
 	Build      string
 	Log        *logger.Logger
 	AuthClient *authclient.Client
-	Tracer     trace.Tracer
 	Cache      *cache.Cache
 	Libs       *libs.Libs
 	Models     *models.Models
@@ -76,7 +74,7 @@ type RouteAdder interface {
 func WebAPI(cfg Config, routeAdder RouteAdder, options ...func(opts *Options)) http.Handler {
 	app := web.NewApp(
 		cfg.Log.Info,
-		cfg.Tracer,
+		mid.Tracer(),
 		mid.Logger(cfg.Log),
 		mid.Metrics(),
 		mid.Errors(cfg.Log),

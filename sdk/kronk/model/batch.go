@@ -25,9 +25,10 @@ type chatJob struct {
 	// -------------------------------------------------------------------------
 	// Request Identity
 
-	id  string              // Unique request ID for logging and responses
-	ctx context.Context     // Request context for cancellation and tracing
-	ch  chan<- ChatResponse // Channel for streaming responses back to caller
+	id            string              // Unique request ID for logging and responses
+	ctx           context.Context     // Request context for cancellation and tracing
+	ch            chan<- ChatResponse // Channel for streaming responses back to caller
+	queueWaitSpan trace.Span         // Span covering time spent waiting in the queue
 
 	// -------------------------------------------------------------------------
 	// Request Content
@@ -127,7 +128,10 @@ type slot struct {
 	// -------------------------------------------------------------------------
 	// Metrics
 
-	startTime time.Time // Start time for TPS calculation (set after prefill)
+	startTime       time.Time  // Start time for TPS calculation (set after prefill)
+	prefillStart    time.Time  // Start time for TTFT calculation
+	prefillSpan     trace.Span // Span covering the prefill phase
+	tokenGenSpan    trace.Span // Span covering the token generation phase
 }
 
 func (s *slot) reset() {
@@ -156,6 +160,9 @@ func (s *slot) reset() {
 	s.logprobsData = nil
 	s.currentLogprob = nil
 	s.grammarSampler = nil
+	s.prefillStart = time.Time{}
+	s.prefillSpan = nil
+	s.tokenGenSpan = nil
 
 	// MTMD fields.
 	s.inputChunks = 0
@@ -496,11 +503,25 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 	// Note: startTime is set when prefillDone=true (first output token) for accurate TPS
 	// seqID is already set correctly during slot creation in newBatchEngine
 
-	// Start span for this chat request.
-	_, s.span = otel.AddSpan(job.ctx, "batch-chat-request",
+	// End the queue-wait span now that the job has been picked up.
+	if job.queueWaitSpan != nil {
+		job.queueWaitSpan.End()
+	}
+
+	// Start span for this chat request. Store the span context so child
+	// spans (prefill, token-generation) are nested under process-request.
+	var processCtx context.Context
+	processCtx, s.span = otel.AddSpan(job.ctx, "process-request",
 		attribute.String("id", job.id),
 		attribute.Int("slot", s.id),
 	)
+	job.ctx = processCtx
+
+	// Start prefill span and record start time for TTFT.
+	_, s.prefillSpan = otel.AddSpan(processCtx, "prefill",
+		attribute.Int("slot", s.id),
+	)
+	s.prefillStart = time.Now()
 
 	// Create sampler for this request.
 	s.sampler = e.model.toSampler(job.params)
@@ -718,7 +739,7 @@ func (e *batchEngine) addPrefillChunk(s *slot) bool {
 	s.nPrefilled += chunkSize
 
 	prefillDuration := time.Since(prefillStart)
-	metrics.AddPrefillNonMediaTime(e.model.modelInfo.ID, prefillDuration)
+	metrics.AddPrefillTime(e.model.modelInfo.ID, prefillDuration)
 
 	// Check if prefill is complete.
 	if s.nPrefilled >= len(s.prefillTokens) {
@@ -897,7 +918,7 @@ func (e *batchEngine) addPrefillMediaChunk(s *slot, buf []byte) bool {
 			s.iBatch = -1
 		}
 
-		metrics.AddPrefillMediaTime(e.model.modelInfo.ID, time.Since(prefillStart))
+		metrics.AddPrefillTime(e.model.modelInfo.ID, time.Since(prefillStart))
 
 	case mtmd.InputChunkTypeAudio:
 		e.model.log(s.job.ctx, "prefill-media", "status", "encoding-audio",
@@ -941,7 +962,7 @@ func (e *batchEngine) addPrefillMediaChunk(s *slot, buf []byte) bool {
 			s.iBatch = -1
 		}
 
-		metrics.AddPrefillMediaTime(e.model.modelInfo.ID, time.Since(prefillStart))
+		metrics.AddPrefillTime(e.model.modelInfo.ID, time.Since(prefillStart))
 	}
 
 	return true
@@ -1004,6 +1025,21 @@ func (e *batchEngine) handleSampledToken(s *slot, token llama.Token, iBatch int3
 	if !s.prefillDone {
 		s.prefillDone = true
 		s.startTime = time.Now() // Start TPS clock after prefill, when first output token is generated
+
+		// Record TTFT and end the prefill span.
+		ttft := time.Since(s.prefillStart)
+		metrics.AddTimeToFirstToken(e.model.modelInfo.ID, ttft)
+
+		if s.prefillSpan != nil {
+			s.prefillSpan.SetAttributes(attribute.String("ttft", ttft.String()))
+			s.prefillSpan.End()
+			s.prefillSpan = nil
+		}
+
+		// Start token generation span.
+		_, s.tokenGenSpan = otel.AddSpan(s.job.ctx, "token-generation",
+			attribute.Int("slot", s.id),
+		)
 	}
 
 	// Process through the state machine.
@@ -1110,6 +1146,20 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 
 	defer func() {
 		close(s.job.ch)
+
+		if s.prefillSpan != nil {
+			s.prefillSpan.End()
+			s.prefillSpan = nil
+		}
+
+		if s.tokenGenSpan != nil {
+			s.tokenGenSpan.SetAttributes(
+				attribute.Int("output_tokens", s.reasonTokens+s.completionTokens),
+			)
+			s.tokenGenSpan.End()
+			s.tokenGenSpan = nil
+		}
+
 		s.span.End()
 		e.freeSlotResources(s)
 		s.reset()

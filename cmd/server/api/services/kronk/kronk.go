@@ -388,7 +388,6 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		Build:      tag,
 		Log:        log,
 		AuthClient: authClient,
-		Tracer:     tracer,
 		Cache:      cache,
 		Libs:       libs,
 		Models:     models,

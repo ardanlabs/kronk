@@ -13,7 +13,8 @@ const (
 	traceIDKey
 )
 
-func setTracer(ctx context.Context, tracer trace.Tracer) context.Context {
+// SetTracer sets the tracer in the context.
+func SetTracer(ctx context.Context, tracer trace.Tracer) context.Context {
 	return context.WithValue(ctx, tracerKey, tracer)
 }
 

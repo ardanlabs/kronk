@@ -204,7 +204,6 @@ func New(t *testing.T, testName string) *Test {
 		Build:      "test",
 		Log:        log,
 		AuthClient: authClient,
-		Tracer:     tracer,
 		Cache:      cache,
 		Libs:       libs,
 		Models:     models,

@@ -16,8 +16,8 @@ func Metrics() web.MidFunc {
 
 			n := metrics.AddRequests()
 
-			if n%1000 == 0 {
-				metrics.AddGoroutines()
+			if n%10 == 0 {
+				metrics.UpdateGoroutines()
 			}
 
 			if checkIsError(resp) != nil {
