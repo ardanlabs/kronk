@@ -745,7 +745,9 @@ func (e *batchEngine) addPrefillChunk(s *slot) bool {
 	if s.nPrefilled >= len(s.prefillTokens) {
 		s.iBatch = e.batch.NTokens - 1
 		s.prefillTokens = nil
-		s.span.SetAttributes(attribute.String("prefill-nonmedia", prefillDuration.String()))
+		if s.span.IsRecording() {
+			s.span.SetAttributes(attribute.String("prefill-nonmedia", prefillDuration.String()))
+		}
 		return true
 	}
 
@@ -855,7 +857,9 @@ func (e *batchEngine) addPrefillMediaChunk(s *slot, buf []byte) bool {
 				s.iBatch = e.batch.NTokens - 1
 			}
 			s.inputChunks = 0
-			s.span.SetAttributes(attribute.String("prefill-media", time.Since(prefillStart).String()))
+			if s.span.IsRecording() {
+				s.span.SetAttributes(attribute.String("prefill-media", time.Since(prefillStart).String()))
+			}
 		case false:
 			s.iBatch = -1
 		}
@@ -913,7 +917,9 @@ func (e *batchEngine) addPrefillMediaChunk(s *slot, buf []byte) bool {
 				return false
 			}
 			s.inputChunks = 0
-			s.span.SetAttributes(attribute.String("prefill-media", time.Since(prefillStart).String()))
+			if s.span.IsRecording() {
+				s.span.SetAttributes(attribute.String("prefill-media", time.Since(prefillStart).String()))
+			}
 		case false:
 			s.iBatch = -1
 		}
@@ -956,7 +962,9 @@ func (e *batchEngine) addPrefillMediaChunk(s *slot, buf []byte) bool {
 				return false
 			}
 			s.inputChunks = 0
-			s.span.SetAttributes(attribute.String("prefill-media", time.Since(prefillStart).String()))
+			if s.span.IsRecording() {
+				s.span.SetAttributes(attribute.String("prefill-media", time.Since(prefillStart).String()))
+			}
 
 		case false:
 			s.iBatch = -1
@@ -1031,7 +1039,9 @@ func (e *batchEngine) handleSampledToken(s *slot, token llama.Token, iBatch int3
 		metrics.AddTimeToFirstToken(e.model.modelInfo.ID, ttft)
 
 		if s.prefillSpan != nil {
-			s.prefillSpan.SetAttributes(attribute.String("ttft", ttft.String()))
+			if s.prefillSpan.IsRecording() {
+				s.prefillSpan.SetAttributes(attribute.String("ttft", ttft.String()))
+			}
 			s.prefillSpan.End()
 			s.prefillSpan = nil
 		}
@@ -1325,6 +1335,10 @@ func (e *batchEngine) drainSlots() {
 	for {
 		select {
 		case job := <-e.requestQ:
+			if job.queueWaitSpan != nil {
+				job.queueWaitSpan.End()
+			}
+
 			if job.mtmdCtx != 0 {
 				mtmd.Free(job.mtmdCtx)
 			}

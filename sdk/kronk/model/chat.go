@@ -244,6 +244,7 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 	}
 
 	if err := m.batch.submit(&job); err != nil {
+		queueSpan.End()
 		m.sendChatError(ctx, ch, id, err)
 		return false
 	}
