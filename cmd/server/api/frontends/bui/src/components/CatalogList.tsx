@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { api } from '../services/api';
-import { useModelList } from '../contexts/ModelListContext';
-import type { CatalogModelResponse, CatalogModelsResponse, PullResponse } from '../types';
+import { useDownload } from '../contexts/DownloadContext';
+import type { CatalogModelResponse, CatalogModelsResponse } from '../types';
 
 type DetailTab = 'details' | 'pull';
 
@@ -21,7 +21,7 @@ function formatBytes(bytes: number): string {
 }
 
 export default function CatalogList() {
-  const { invalidate } = useModelList();
+  const { download, startCatalogDownload, cancelDownload } = useDownload();
   const [data, setData] = useState<CatalogModelsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -31,13 +31,27 @@ export default function CatalogList() {
   const [infoError, setInfoError] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState<DetailTab>('details');
-  const [pulling, setPulling] = useState(false);
-  const [pullMessages, setPullMessages] = useState<Array<{ text: string; type: 'info' | 'error' | 'success' }>>([]);
-  const closeRef = useRef<(() => void) | null>(null);
+
+  const isCatalogDownload = download?.kind === 'catalog' && download.catalogId === selectedId;
+  const pulling = isCatalogDownload ? download.status === 'downloading' : false;
+  const pullMessages = isCatalogDownload ? download.messages : [];
+  const hasCatalogPullActivity = download?.kind === 'catalog' && (download.status === 'downloading' || download.messages.length > 0);
 
   useEffect(() => {
     loadCatalog();
   }, []);
+
+  useEffect(() => {
+    if (download?.kind === 'catalog' && download.catalogId) {
+      if (download.status === 'downloading') {
+        setSelectedId(download.catalogId);
+        setActiveTab('pull');
+      }
+      if (download.status === 'complete') {
+        loadCatalog();
+      }
+    }
+  }, [download?.status]);
 
   const loadCatalog = async () => {
     setLoading(true);
@@ -57,13 +71,11 @@ export default function CatalogList() {
       setSelectedId(null);
       setModelInfo(null);
       setActiveTab('details');
-      setPullMessages([]);
       return;
     }
 
     setSelectedId(id);
     setActiveTab('details');
-    setPullMessages([]);
     setInfoLoading(true);
     setInfoError(null);
     setModelInfo(null);
@@ -80,64 +92,12 @@ export default function CatalogList() {
 
   const handlePull = () => {
     if (!selectedId) return;
-
-    setPulling(true);
-    setPullMessages([]);
+    startCatalogDownload(selectedId);
     setActiveTab('pull');
-
-    const ANSI_INLINE = '\r\x1b[K';
-
-    const addMessage = (text: string, type: 'info' | 'error' | 'success') => {
-      setPullMessages((prev) => [...prev, { text, type }]);
-    };
-
-    const updateLastMessage = (text: string, type: 'info' | 'error' | 'success') => {
-      setPullMessages((prev) => {
-        if (prev.length === 0) {
-          return [{ text, type }];
-        }
-        const updated = [...prev];
-        updated[updated.length - 1] = { text, type };
-        return updated;
-      });
-    };
-
-    closeRef.current = api.pullCatalogModel(
-      selectedId,
-      (data: PullResponse) => {
-        if (data.status) {
-          if (data.status.startsWith(ANSI_INLINE)) {
-            const cleanText = data.status.slice(ANSI_INLINE.length);
-            updateLastMessage(cleanText, 'info');
-          } else {
-            addMessage(data.status, 'info');
-          }
-        }
-        if (data.model_file) {
-          addMessage(`Model file: ${data.model_file}`, 'info');
-        }
-
-      },
-      (errorMsg: string) => {
-        addMessage(errorMsg, 'error');
-        setPulling(false);
-      },
-      () => {
-        addMessage('Pull complete!', 'success');
-        setPulling(false);
-        invalidate();
-        loadCatalog();
-      }
-    );
   };
 
   const handleCancelPull = () => {
-    if (closeRef.current) {
-      closeRef.current();
-      closeRef.current = null;
-    }
-    setPulling(false);
-    setPullMessages((prev) => [...prev, { text: 'Cancelled', type: 'error' }]);
+    cancelDownload();
   };
 
   const isDownloaded = data?.find((m) => m.id === selectedId)?.downloaded ?? false;
@@ -249,7 +209,6 @@ export default function CatalogList() {
               loadCatalog();
               setSelectedId(null);
               setModelInfo(null);
-              setPullMessages([]);
               setActiveTab('details');
               setInfoError(null);
             }}
@@ -285,7 +244,7 @@ export default function CatalogList() {
         </div>
       )}
 
-      {selectedId && !infoLoading && (modelInfo || pullMessages.length > 0) && (
+      {selectedId && !infoLoading && (modelInfo || hasCatalogPullActivity) && (
         <div className="card">
           <div className="tabs">
             <button

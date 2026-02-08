@@ -221,7 +221,6 @@ func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) 
 			return nil, fmt.Errorf("get-memory: unable to get memory: %w", err)
 		}
 
-		// Clear KV cache to ensure clean state on first request.
 		llama.MemoryClear(mem, true)
 
 		m.lctx = lctx

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -171,8 +172,9 @@ func (c *Cache) ModelStatus() ([]ModelDetail, error) {
 	ps := make([]ModelDetail, 0, len(entries))
 ids:
 	for _, model := range entries {
+		cacheID, _, _ := strings.Cut(model.Key, "/")
 		for _, mi := range list {
-			if mi.ID == model.Key {
+			if mi.ID == cacheID {
 				ps = append(ps, ModelDetail{
 					ID:            model.Key,
 					OwnedBy:       mi.OwnedBy,

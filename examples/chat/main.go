@@ -30,7 +30,8 @@ import (
 // const modelURL = "unsloth/gpt-oss-120b-GGUF/gpt-oss-120b-F16.gguf"
 // const modelURL = "unsloth/GLM-4.7-Flash-GGUF/GLM-4.7-Flash-UD-Q8_K_XL.gguf"
 // const modelURL = "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF/Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL.gguf"
-const modelURL = "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
+// const modelURL = "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
+const modelURL = "https://huggingface.co/unsloth/Qwen3-Coder-Next-GGUF/resolve/main/Qwen3-Coder-Next-UD-Q4_K_XL.gguf"
 
 func main() {
 	if err := run(); err != nil {
@@ -111,8 +112,12 @@ func installSystem() (models.Path, error) {
 	}
 
 	// -------------------------------------------------------------------------
+
 	// You could also download this model using the catalog system.
-	// templates.Catalog().DownloadModel("Qwen3-8B-Q8_0")
+	// mp, err := templates.Catalog().DownloadModel(ctx, kronk.FmtLogger, "Qwen3-Coder-Next-UD-Q8_K_XL")
+	// if err != nil {
+	// 	return models.Path{}, fmt.Errorf("unable to download model: %w", err)
+	// }
 
 	return mp, nil
 }

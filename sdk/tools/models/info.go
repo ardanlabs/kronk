@@ -63,17 +63,20 @@ func (m *Models) ModelInformation(modelID string) (ModelInfo, error) {
 		return ModelInfo{}, fmt.Errorf("failed to retrieve path modelID[%s] file: %w", modelID, err)
 	}
 
+	var totalSize uint64
+	for _, mf := range path.ModelFiles {
+		info, err := os.Stat(mf)
+		if err != nil {
+			return ModelInfo{}, fmt.Errorf("failed to stat file: %w", err)
+		}
+		totalSize += uint64(info.Size())
+	}
+
 	file, err := os.Open(path.ModelFiles[0])
 	if err != nil {
 		return ModelInfo{}, fmt.Errorf("failed to open file: %w", err)
 	}
 	defer file.Close()
-
-	fileInfo, err := file.Stat()
-	if err != nil {
-		return ModelInfo{}, fmt.Errorf("failed to stat file: %w", err)
-	}
-	fileSize := uint64(fileInfo.Size())
 
 	var header ggufHeader
 	if err := binary.Read(file, binary.LittleEndian, &header.Magic); err != nil {
@@ -129,7 +132,7 @@ func (m *Models) ModelInformation(modelID string) (ModelInfo, error) {
 		ID:            modelID,
 		HasProjection: path.ProjFile != "",
 		Desc:          metadata["general.name"],
-		Size:          fileSize,
+		Size:          totalSize,
 		IsGPTModel:    isGPTModel,
 		IsEmbedModel:  isEmbedModel,
 		IsRerankModel: isRerankModel,

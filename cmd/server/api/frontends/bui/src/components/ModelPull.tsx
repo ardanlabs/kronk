@@ -2,16 +2,39 @@ import { useState } from 'react';
 import { useDownload } from '../contexts/DownloadContext';
 
 export default function ModelPull() {
-  const { download, isDownloading, startDownload, cancelDownload, clearDownload } = useDownload();
-  const [modelUrl, setModelUrl] = useState('');
+  const { download, isDownloading, startDownload, startBatchDownload, cancelDownload, clearDownload } = useDownload();
+  const [modelUrls, setModelUrls] = useState<string[]>(['']);
   const [projUrl, setProjUrl] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!modelUrl.trim() || isDownloading) return;
-    startDownload(modelUrl.trim(), projUrl.trim() || undefined);
+    const urls = modelUrls.map((u) => u.trim()).filter(Boolean);
+    if (urls.length === 0 || isDownloading) return;
+
+    if (urls.length === 1) {
+      startDownload(urls[0], projUrl.trim() || undefined);
+    } else {
+      startBatchDownload(urls, projUrl.trim() || undefined);
+    }
   };
 
+  const updateUrl = (index: number, value: string) => {
+    setModelUrls((prev) => {
+      const updated = [...prev];
+      updated[index] = value;
+      return updated;
+    });
+  };
+
+  const addUrlRow = () => {
+    setModelUrls((prev) => [...prev, '']);
+  };
+
+  const removeUrlRow = (index: number) => {
+    setModelUrls((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const hasValidUrl = modelUrls.some((u) => u.trim().length > 0);
   const isComplete = download?.status === 'complete';
   const hasError = download?.status === 'error';
 
@@ -19,23 +42,51 @@ export default function ModelPull() {
     <div>
       <div className="page-header">
         <h2>Pull Model</h2>
-              <p>Download a model from a URL</p>
-              <p>Example: ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf</p>
+              <p>Download a model from a URL. For split models, add multiple URLs and they will be pulled sequentially.</p>
               <p>Example: https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf</p>
       </div>
 
       <div className="card">
         <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label htmlFor="modelUrl">Model URL</label>
-            <input
-              type="text"
-              id="modelUrl"
-              value={modelUrl}
-              onChange={(e) => setModelUrl(e.target.value)}
-              placeholder="org/repo/model.gguf"
+          {modelUrls.map((url, index) => (
+            <div className="form-group" key={index}>
+              <label htmlFor={`modelUrl-${index}`}>
+                {modelUrls.length === 1 ? 'Model URL' : `Model URL ${index + 1}`}
+              </label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  type="text"
+                  id={`modelUrl-${index}`}
+                  value={url}
+                  onChange={(e) => updateUrl(index, e.target.value)}
+                  placeholder="https://huggingface.co/org/repo/resolve/main/model.gguf"
+                  disabled={isDownloading}
+                  style={{ flex: 1 }}
+                />
+                {modelUrls.length > 1 && (
+                  <button
+                    type="button"
+                    className="btn btn-danger"
+                    onClick={() => removeUrlRow(index)}
+                    disabled={isDownloading}
+                    style={{ padding: '8px 12px' }}
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+
+          <div style={{ marginBottom: '16px' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={addUrlRow}
               disabled={isDownloading}
-            />
+            >
+              + Add URL
+            </button>
           </div>
 
           <div className="form-group">
@@ -45,7 +96,7 @@ export default function ModelPull() {
               id="projUrl"
               value={projUrl}
               onChange={(e) => setProjUrl(e.target.value)}
-              placeholder="org/repo/mmproj-model.gguf"
+              placeholder="https://huggingface.co/org/repo/resolve/main/mmproj-model.gguf"
               disabled={isDownloading}
             />
           </div>
@@ -54,9 +105,9 @@ export default function ModelPull() {
             <button
               className="btn btn-primary"
               type="submit"
-              disabled={isDownloading || !modelUrl.trim()}
+              disabled={isDownloading || !hasValidUrl}
             >
-              {isDownloading ? 'Downloading...' : 'Pull Model'}
+              {isDownloading ? 'Downloading...' : modelUrls.filter((u) => u.trim()).length > 1 ? 'Pull Models' : 'Pull Model'}
             </button>
             {isDownloading && (
               <button className="btn btn-danger" type="button" onClick={cancelDownload}>

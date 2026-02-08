@@ -58,7 +58,6 @@ func newContextPool(ctx context.Context, model llama.Model, ctxParams llama.Cont
 			return nil, err
 		}
 
-		// Clear KV cache to ensure clean state.
 		llama.MemoryClear(mem, true)
 
 		p.contexts[i] = lctx
