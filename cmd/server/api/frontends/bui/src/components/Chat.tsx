@@ -83,6 +83,8 @@ export default function Chat() {
   const [showSettings, setShowSettings] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editContent, setEditContent] = useState('');
 
   // Extended model configs with sampling parameters
   const [extendedModels, setExtendedModels] = useState<ListModelDetail[]>([]);
@@ -94,9 +96,14 @@ export default function Chat() {
   const prevModelRef = useRef<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<(() => void) | null>(null);
+  const autoScrollRef = useRef(true);
+  const programmaticScrollRef = useRef(false);
+  const userInteractedRef = useRef(false);
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
 
   // Convert API sampling config to SamplingParams
   const toSamplingParams = useCallback((modelSampling: SamplingConfig): SamplingParams => {
@@ -186,8 +193,53 @@ export default function Chat() {
     }
   }, [selectedModel, extendedModels, modelBaseline, toSamplingParams]);
 
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    if (e.deltaY < 0) {
+      const el = messagesContainerRef.current;
+      if (!el) return;
+      const hasOverflow = el.scrollHeight > el.clientHeight;
+      if (hasOverflow) {
+        userInteractedRef.current = true;
+        autoScrollRef.current = false;
+        setShowScrollBtn(true);
+      }
+    }
+  }, []);
+
+  const handleMessagesScroll = useCallback(() => {
+    if (programmaticScrollRef.current || !userInteractedRef.current) return;
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    const threshold = 100;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+    if (atBottom) {
+      autoScrollRef.current = true;
+      setShowScrollBtn(false);
+    }
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    programmaticScrollRef.current = true;
+    el.scrollTop = el.scrollHeight;
+    autoScrollRef.current = true;
+    setShowScrollBtn(false);
+    requestAnimationFrame(() => {
+      programmaticScrollRef.current = false;
+    });
+  }, []);
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (autoScrollRef.current) {
+      const el = messagesContainerRef.current;
+      if (!el) return;
+      programmaticScrollRef.current = true;
+      el.scrollTop = el.scrollHeight;
+      requestAnimationFrame(() => {
+        programmaticScrollRef.current = false;
+      });
+    }
   }, [messages]);
 
   // Focus input when streaming ends
@@ -197,63 +249,40 @@ export default function Chat() {
     }
   }, [isStreaming, selectedModel]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if ((!input.trim() && attachedFiles.length === 0) || !selectedModel || isStreaming) return;
+  const buildMessageContent = useCallback((text: string, files: AttachedFile[]): string | ChatContentPart[] => {
+    if (files.length === 0) {
+      return text;
+    }
 
-    const userMessage: DisplayMessage = { 
-      role: 'user', 
-      content: input.trim(),
-      attachments: attachedFiles.length > 0 ? [...attachedFiles] : undefined,
-    };
-    setMessages(prev => [...prev, userMessage]);
-    setInput('');
-    setAttachedFiles([]);
-    setError(null);
-    setIsStreaming(true);
+    const parts: ChatContentPart[] = [];
 
-    // Build content for the new message with attachments
-    const buildMessageContent = (text: string, files: AttachedFile[]): string | ChatContentPart[] => {
-      if (files.length === 0) {
-        return text;
-      }
-      
-      const parts: ChatContentPart[] = [];
-      
-      // Add text part if present
-      if (text) {
-        parts.push({ type: 'text', text });
-      }
-      
-      // Add file parts
-      for (const file of files) {
-        if (file.type === 'image') {
+    if (text) {
+      parts.push({ type: 'text', text });
+    }
+
+    for (const file of files) {
+      if (file.type === 'image') {
+        parts.push({
+          type: 'image_url',
+          image_url: { url: file.dataUrl },
+        });
+      } else if (file.type === 'audio') {
+        const match = file.dataUrl.match(/^data:audio\/(\w+);base64,(.+)$/);
+        if (match) {
           parts.push({
-            type: 'image_url',
-            image_url: { url: file.dataUrl },
+            type: 'input_audio',
+            input_audio: { data: match[2], format: match[1] },
           });
-        } else if (file.type === 'audio') {
-          // Extract base64 data and format from data URL
-          const match = file.dataUrl.match(/^data:audio\/(\w+);base64,(.+)$/);
-          if (match) {
-            parts.push({
-              type: 'input_audio',
-              input_audio: { data: match[2], format: match[1] },
-            });
-          }
         }
       }
-      
-      return parts;
-    };
+    }
 
-    const chatMessages: ChatMessage[] = [
-      ...messages.map(m => ({ 
-        role: m.role, 
-        content: m.attachments ? buildMessageContent(m.content, m.attachments) : m.content 
-      })),
-      { role: 'user' as const, content: buildMessageContent(input.trim(), attachedFiles) }
-    ];
+    return parts;
+  }, []);
+
+  const streamResponse = useCallback((chatMessages: ChatMessage[]) => {
+    setError(null);
+    setIsStreaming(true);
 
     let currentContent = '';
     let currentReasoning = '';
@@ -324,6 +353,76 @@ export default function Chat() {
         setIsStreaming(false);
       }
     );
+  }, [selectedModel, sampling, setMessages]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if ((!input.trim() && attachedFiles.length === 0) || !selectedModel || isStreaming) return;
+
+    const userMessage: DisplayMessage = { 
+      role: 'user', 
+      content: input.trim(),
+      attachments: attachedFiles.length > 0 ? [...attachedFiles] : undefined,
+    };
+    setMessages(prev => [...prev, userMessage]);
+    setInput('');
+    setAttachedFiles([]);
+
+    const chatMessages: ChatMessage[] = [
+      ...messages.map(m => ({ 
+        role: m.role, 
+        content: m.attachments ? buildMessageContent(m.content, m.attachments) : m.content 
+      })),
+      { role: 'user' as const, content: buildMessageContent(input.trim(), attachedFiles) }
+    ];
+
+    streamResponse(chatMessages);
+  };
+
+  const handleEditStart = (index: number) => {
+    setEditingIndex(index);
+    setEditContent(messages[index].content);
+  };
+
+  const handleEditCancel = () => {
+    setEditingIndex(null);
+    setEditContent('');
+  };
+
+  const handleEditSave = (index: number) => {
+    setMessages(prev => prev.map((m, i) =>
+      i === index ? { ...m, content: editContent, originalContent: m.originalContent ?? m.content } : m
+    ));
+    setEditingIndex(null);
+    setEditContent('');
+  };
+
+  const handleEditUndo = (index: number) => {
+    setMessages(prev => prev.map((m, i) =>
+      i === index && m.originalContent != null ? { ...m, content: m.originalContent, originalContent: undefined } : m
+    ));
+  };
+
+  const handleEditSend = (index: number) => {
+    if (!selectedModel || isStreaming) return;
+
+    const updatedMessages = messages.slice(0, index + 1).map((m, i) => {
+      if (i === index) {
+        return { ...m, content: editContent };
+      }
+      return m;
+    });
+
+    setMessages(updatedMessages);
+    setEditingIndex(null);
+    setEditContent('');
+
+    const chatMessages: ChatMessage[] = updatedMessages.map(m => ({
+      role: m.role,
+      content: m.attachments ? buildMessageContent(m.content, m.attachments) : m.content,
+    }));
+
+    streamResponse(chatMessages);
   };
 
   const handleStop = () => {
@@ -758,7 +857,8 @@ export default function Chat() {
 
       {error && <div className="alert alert-error">{error}</div>}
 
-      <div className="chat-messages">
+      <div className="chat-messages-wrapper">
+      <div className="chat-messages" ref={messagesContainerRef} onScroll={handleMessagesScroll} onWheel={handleWheel}>
         {messages.length === 0 && (
           <div className="chat-empty">
             <p>Select a model and start chatting</p>
@@ -768,7 +868,27 @@ export default function Chat() {
         {messages.map((msg, idx) => (
           <div key={idx} className={`chat-message chat-message-${msg.role}`}>
             <div className="chat-message-header">
-              {msg.role === 'user' ? 'USER' : 'MODEL'}
+              <span>{msg.role === 'user' ? 'USER' : 'MODEL'}</span>
+              {!isStreaming && editingIndex === null && (
+                <span className="chat-header-actions">
+                  {msg.originalContent != null && (
+                    <button
+                      className="chat-edit-btn"
+                      onClick={() => handleEditUndo(idx)}
+                      title="Revert to original message"
+                    >
+                      Undo
+                    </button>
+                  )}
+                  <button
+                    className="chat-edit-btn"
+                    onClick={() => handleEditStart(idx)}
+                    title="Edit message"
+                  >
+                    Edit
+                  </button>
+                </span>
+              )}
             </div>
             {msg.attachments && msg.attachments.length > 0 && (
               <div className="chat-message-attachments">
@@ -789,7 +909,34 @@ export default function Chat() {
               <div className="chat-message-reasoning">{msg.reasoning}</div>
             )}
             <div className="chat-message-content">
-              {msg.content ? renderContent(msg.content) : (isStreaming && idx === messages.length - 1 ? '...' : '')}
+              {editingIndex === idx ? (
+                <div className="chat-edit-area">
+                  <textarea
+                    className="chat-edit-textarea"
+                    value={editContent}
+                    onChange={(e) => setEditContent(e.target.value)}
+                    rows={Math.max(4, editContent.split('\n').length)}
+                    autoFocus
+                  />
+                  <div className="chat-edit-actions">
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => msg.role === 'assistant' ? handleEditSave(idx) : handleEditSend(idx)}
+                      disabled={!editContent.trim()}
+                    >
+                      {msg.role === 'assistant' ? 'Save' : 'Send'}
+                    </button>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={handleEditCancel}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                msg.content ? renderContent(msg.content) : (isStreaming && idx === messages.length - 1 ? '...' : '')
+              )}
             </div>
             {msg.toolCalls && msg.toolCalls.length > 0 && (
               <div className="chat-message-tool-calls">
@@ -812,6 +959,12 @@ export default function Chat() {
           </div>
         ))}
         <div ref={messagesEndRef} />
+      </div>
+      {showScrollBtn && (
+        <button className="chat-scroll-bottom-btn" onClick={scrollToBottom} title="Scroll to bottom">
+          ↓
+        </button>
+      )}
       </div>
 
       <form onSubmit={handleSubmit} className="chat-input-form">

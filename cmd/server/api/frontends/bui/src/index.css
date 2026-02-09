@@ -1120,6 +1120,15 @@ tr.selected:hover td {
     font-size: 14px;
 }
 
+.chat-messages-wrapper {
+    flex: 1;
+    position: relative;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 16px;
+}
+
 .chat-messages {
     flex: 1;
     overflow-y: auto;
@@ -1127,7 +1136,31 @@ tr.selected:hover td {
     background: var(--color-white);
     border: 1px solid var(--color-gray-200);
     border-radius: 8px;
-    margin-bottom: 16px;
+}
+
+.chat-scroll-bottom-btn {
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1px solid var(--color-gray-200);
+    background: var(--color-white);
+    color: var(--color-gray-600);
+    font-size: 18px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    z-index: 10;
+    transition: background 0.15s, color 0.15s;
+}
+
+.chat-scroll-bottom-btn:hover {
+    background: var(--color-gray-100);
+    color: var(--color-gray-900);
 }
 
 .chat-empty {
@@ -1164,12 +1197,73 @@ tr.selected:hover td {
 }
 
 .chat-message-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     margin-bottom: 8px;
     opacity: 0.7;
+}
+
+.chat-header-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.chat-edit-btn {
+    background: none;
+    border: 1px solid currentColor;
+    color: inherit;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+}
+
+.chat-message:hover .chat-edit-btn {
+    opacity: 1;
+}
+
+.chat-edit-btn:hover {
+    opacity: 1;
+    background: rgba(128, 128, 128, 0.15);
+}
+
+.chat-edit-area {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.chat-edit-textarea {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid var(--color-gray-300);
+    border-radius: 6px;
+    font-size: 14px;
+    font-family: inherit;
+    resize: vertical;
+    line-height: 1.5;
+    color: var(--color-gray-800);
+    background: var(--color-white);
+}
+
+.chat-edit-textarea:focus {
+    outline: none;
+    border-color: var(--color-orange);
+}
+
+.chat-edit-actions {
+    display: flex;
+    gap: 8px;
 }
 
 .chat-message-reasoning {

@@ -16,6 +16,7 @@ export interface DisplayMessage {
   usage?: ChatUsage;
   toolCalls?: ChatToolCall[];
   attachments?: AttachedFile[];
+  originalContent?: string;
 }
 
 interface ChatContextType {
