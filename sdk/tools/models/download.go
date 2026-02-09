@@ -110,6 +110,16 @@ func (m *Models) DownloadSplits(ctx context.Context, log Logger, modelURLs []str
 			log(ctx, "download-model: model already exists")
 		}
 
+		if len(mp.ModelFiles) >= len(modelURLs) {
+			for j := i + 1; j < len(modelURLs); j++ {
+				log(ctx, fmt.Sprintf("download-model: model-url[%s] proj-url[] model-id[%s]", NormalizeHuggingFaceDownloadURL(modelURLs[j]), modelID))
+				log(ctx, "download-model: model already exists")
+			}
+			result.ModelFiles = mp.ModelFiles[:len(modelURLs)]
+			result.ProjFile = mp.ProjFile
+			break
+		}
+
 		result.ModelFiles[i] = mp.ModelFiles[0]
 		if i == 0 {
 			result.ProjFile = mp.ProjFile

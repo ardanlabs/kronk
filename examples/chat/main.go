@@ -111,8 +111,12 @@ func installSystem() (models.Path, error) {
 	}
 
 	// -------------------------------------------------------------------------
+
 	// You could also download this model using the catalog system.
-	// templates.Catalog().DownloadModel("Qwen3-8B-Q8_0")
+	// mp, err := templates.Catalog().DownloadModel(ctx, kronk.FmtLogger, "Qwen3-Coder-Next-UD-Q8_K_XL")
+	// if err != nil {
+	// 	return models.Path{}, fmt.Errorf("unable to download model: %w", err)
+	// }
 
 	return mp, nil
 }
@@ -132,11 +136,13 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	// }
 
 	cfg := model.Config{
-		ModelFiles:        mp.ModelFiles,
-		CacheTypeK:        model.GGMLTypeQ8_0,
-		CacheTypeV:        model.GGMLTypeQ8_0,
-		NSeqMax:           2,
-		SystemPromptCache: true,
+		ModelFiles:     mp.ModelFiles,
+		CacheTypeK:     model.GGMLTypeAuto,
+		CacheTypeV:     model.GGMLTypeAuto,
+		FlashAttention: model.FlashAttentionDisabled,
+		ContextWindow:  8196,
+		NBatch:         1024,
+		NUBatch:        512,
 	}
 
 	krn, err := kronk.New(cfg)

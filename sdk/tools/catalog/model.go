@@ -8,22 +8,22 @@ import (
 
 // SamplingConfig represents sampling parameters for model inference.
 type SamplingConfig struct {
-	Temperature     float32 `yaml:"temperature"`
-	TopK            int32   `yaml:"top_k"`
-	TopP            float32 `yaml:"top_p"`
-	MinP            float32 `yaml:"min_p"`
-	MaxTokens       int     `yaml:"max_tokens"`
-	RepeatPenalty   float32 `yaml:"repeat_penalty"`
-	RepeatLastN     int32   `yaml:"repeat_last_n"`
-	DryMultiplier   float32 `yaml:"dry_multiplier"`
-	DryBase         float32 `yaml:"dry_base"`
-	DryAllowedLen   int32   `yaml:"dry_allowed_length"`
-	DryPenaltyLast  int32   `yaml:"dry_penalty_last_n"`
-	XtcProbability  float32 `yaml:"xtc_probability"`
-	XtcThreshold    float32 `yaml:"xtc_threshold"`
-	XtcMinKeep      uint32  `yaml:"xtc_min_keep"`
-	EnableThinking  string  `yaml:"enable_thinking"`
-	ReasoningEffort string  `yaml:"reasoning_effort"`
+	Temperature     float32 `yaml:"temperature,omitempty"`
+	TopK            int32   `yaml:"top_k,omitempty"`
+	TopP            float32 `yaml:"top_p,omitempty"`
+	MinP            float32 `yaml:"min_p,omitempty"`
+	MaxTokens       int     `yaml:"max_tokens,omitempty"`
+	RepeatPenalty   float32 `yaml:"repeat_penalty,omitempty"`
+	RepeatLastN     int32   `yaml:"repeat_last_n,omitempty"`
+	DryMultiplier   float32 `yaml:"dry_multiplier,omitempty"`
+	DryBase         float32 `yaml:"dry_base,omitempty"`
+	DryAllowedLen   int32   `yaml:"dry_allowed_length,omitempty"`
+	DryPenaltyLast  int32   `yaml:"dry_penalty_last_n,omitempty"`
+	XtcProbability  float32 `yaml:"xtc_probability,omitempty"`
+	XtcThreshold    float32 `yaml:"xtc_threshold,omitempty"`
+	XtcMinKeep      uint32  `yaml:"xtc_min_keep,omitempty"`
+	EnableThinking  string  `yaml:"enable_thinking,omitempty"`
+	ReasoningEffort string  `yaml:"reasoning_effort,omitempty"`
 }
 
 // withDefaults returns a new SamplingConfig with default values applied
@@ -125,36 +125,36 @@ func (s SamplingConfig) toParams() model.Params {
 
 // ModelConfig represents default model config settings.
 type ModelConfig struct {
-	Device               string                   `yaml:"device"`
-	ContextWindow        int                      `yaml:"context-window"`
-	NBatch               int                      `yaml:"nbatch"`
-	NUBatch              int                      `yaml:"nubatch"`
-	NThreads             int                      `yaml:"nthreads"`
-	NThreadsBatch        int                      `yaml:"nthreads-batch"`
-	CacheTypeK           model.GGMLType           `yaml:"cache-type-k"`
-	CacheTypeV           model.GGMLType           `yaml:"cache-type-v"`
-	UseDirectIO          bool                     `yaml:"use-direct-io"`
-	FlashAttention       model.FlashAttentionType `yaml:"flash-attention"`
-	IgnoreIntegrityCheck bool                     `yaml:"ignore-integrity-check"`
-	NSeqMax              int                      `yaml:"nseq-max"`
-	OffloadKQV           *bool                    `yaml:"offload-kqv"`
-	OpOffload            *bool                    `yaml:"op-offload"`
-	NGpuLayers           *int                     `yaml:"ngpu-layers"`
-	SplitMode            model.SplitMode          `yaml:"split-mode"`
-	SystemPromptCache    bool                     `yaml:"system-prompt-cache"`
-	IncrementalCache     bool                     `yaml:"incremental-cache"`
-	MaxCacheSessions     int                      `yaml:"max-cache-sessions"`
-	CacheMinTokens       int                      `yaml:"cache-min-tokens"`
-	InsecureLogging      bool                     `yaml:"insecure-logging"`
-	RopeScaling          model.RopeScalingType    `yaml:"rope-scaling-type"`
-	RopeFreqBase         *float32                 `yaml:"rope-freq-base"`
-	RopeFreqScale        *float32                 `yaml:"rope-freq-scale"`
-	YarnExtFactor        *float32                 `yaml:"yarn-ext-factor"`
-	YarnAttnFactor       *float32                 `yaml:"yarn-attn-factor"`
-	YarnBetaFast         *float32                 `yaml:"yarn-beta-fast"`
-	YarnBetaSlow         *float32                 `yaml:"yarn-beta-slow"`
-	YarnOrigCtx          *int                     `yaml:"yarn-orig-ctx"`
-	Sampling             SamplingConfig           `yaml:"sampling-parameters"`
+	Device               string                   `yaml:"device,omitempty"`
+	ContextWindow        int                      `yaml:"context-window,omitempty"`
+	NBatch               int                      `yaml:"nbatch,omitempty"`
+	NUBatch              int                      `yaml:"nubatch,omitempty"`
+	NThreads             int                      `yaml:"nthreads,omitempty"`
+	NThreadsBatch        int                      `yaml:"nthreads-batch,omitempty"`
+	CacheTypeK           model.GGMLType           `yaml:"cache-type-k,omitempty"`
+	CacheTypeV           model.GGMLType           `yaml:"cache-type-v,omitempty"`
+	UseDirectIO          bool                     `yaml:"use-direct-io,omitempty"`
+	FlashAttention       model.FlashAttentionType `yaml:"flash-attention,omitempty"`
+	IgnoreIntegrityCheck bool                     `yaml:"ignore-integrity-check,omitempty"`
+	NSeqMax              int                      `yaml:"nseq-max,omitempty"`
+	OffloadKQV           *bool                    `yaml:"offload-kqv,omitempty"`
+	OpOffload            *bool                    `yaml:"op-offload,omitempty"`
+	NGpuLayers           *int                     `yaml:"ngpu-layers,omitempty"`
+	SplitMode            model.SplitMode          `yaml:"split-mode,omitempty"`
+	SystemPromptCache    bool                     `yaml:"system-prompt-cache,omitempty"`
+	IncrementalCache     bool                     `yaml:"incremental-cache,omitempty"`
+	MaxCacheSessions     int                      `yaml:"max-cache-sessions,omitempty"`
+	CacheMinTokens       int                      `yaml:"cache-min-tokens,omitempty"`
+	InsecureLogging      bool                     `yaml:"insecure-logging,omitempty"`
+	RopeScaling          model.RopeScalingType    `yaml:"rope-scaling-type,omitempty"`
+	RopeFreqBase         *float32                 `yaml:"rope-freq-base,omitempty"`
+	RopeFreqScale        *float32                 `yaml:"rope-freq-scale,omitempty"`
+	YarnExtFactor        *float32                 `yaml:"yarn-ext-factor,omitempty"`
+	YarnAttnFactor       *float32                 `yaml:"yarn-attn-factor,omitempty"`
+	YarnBetaFast         *float32                 `yaml:"yarn-beta-fast,omitempty"`
+	YarnBetaSlow         *float32                 `yaml:"yarn-beta-slow,omitempty"`
+	YarnOrigCtx          *int                     `yaml:"yarn-orig-ctx,omitempty"`
+	Sampling             SamplingConfig           `yaml:"sampling-parameters,omitempty"`
 }
 
 func (mc ModelConfig) toKronkConfig() model.Config {
@@ -194,34 +194,34 @@ func (mc ModelConfig) toKronkConfig() model.Config {
 
 // Metadata represents extra information about the model.
 type Metadata struct {
-	Created     time.Time `yaml:"created"`
-	Collections string    `yaml:"collections"`
-	Description string    `yaml:"description"`
+	Created     time.Time `yaml:"created,omitempty"`
+	Collections string    `yaml:"collections,omitempty"`
+	Description string    `yaml:"description,omitempty"`
 }
 
 // Capabilities represents the capabilities of a model.
 type Capabilities struct {
-	Endpoint  string `yaml:"endpoint"`
-	Images    bool   `yaml:"images"`
-	Audio     bool   `yaml:"audio"`
-	Video     bool   `yaml:"video"`
-	Streaming bool   `yaml:"streaming"`
-	Reasoning bool   `yaml:"reasoning"`
-	Tooling   bool   `yaml:"tooling"`
-	Embedding bool   `yaml:"embedding"`
-	Rerank    bool   `yaml:"rerank"`
+	Endpoint  string `yaml:"endpoint,omitempty"`
+	Images    bool   `yaml:"images,omitempty"`
+	Audio     bool   `yaml:"audio,omitempty"`
+	Video     bool   `yaml:"video,omitempty"`
+	Streaming bool   `yaml:"streaming,omitempty"`
+	Reasoning bool   `yaml:"reasoning,omitempty"`
+	Tooling   bool   `yaml:"tooling,omitempty"`
+	Embedding bool   `yaml:"embedding,omitempty"`
+	Rerank    bool   `yaml:"rerank,omitempty"`
 }
 
 // File represents the actual file url and size.
 type File struct {
-	URL  string `yaml:"url"`
-	Size string `yaml:"size"`
+	URL  string `yaml:"url,omitempty"`
+	Size string `yaml:"size,omitempty"`
 }
 
 // Files represents file information for a model.
 type Files struct {
 	Models []File `yaml:"models"`
-	Proj   File   `yaml:"proj"`
+	Proj   File   `yaml:"proj,omitempty"`
 }
 
 // ToModelURLS converts a slice of File to a string of the URLs.
@@ -239,17 +239,18 @@ func (f Files) ToModelURLS() []string {
 type ModelDetails struct {
 	ID              string       `yaml:"id"`
 	Category        string       `yaml:"category"`
-	OwnedBy         string       `yaml:"owned_by"`
-	ModelFamily     string       `yaml:"model_family"`
-	WebPage         string       `yaml:"web_page"`
-	GatedModel      bool         `yaml:"gated_model"`
-	Template        string       `yaml:"template"`
+	OwnedBy         string       `yaml:"owned_by,omitempty"`
+	ModelFamily     string       `yaml:"model_family,omitempty"`
+	WebPage         string       `yaml:"web_page,omitempty"`
+	GatedModel      bool         `yaml:"gated_model,omitempty"`
+	Template        string       `yaml:"template,omitempty"`
 	Files           Files        `yaml:"files"`
-	Capabilities    Capabilities `yaml:"capabilities"`
-	Metadata        Metadata     `yaml:"metadata"`
-	BaseModelConfig ModelConfig  `yaml:"config"`
+	Capabilities    Capabilities `yaml:"capabilities,omitempty"`
+	Metadata        Metadata     `yaml:"metadata,omitempty"`
+	BaseModelConfig ModelConfig  `yaml:"config,omitempty"`
 	Downloaded      bool
 	Validated       bool
+	CatalogFile     string
 }
 
 // CatalogModels represents a set of models for a given catalog.

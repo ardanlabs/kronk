@@ -103,6 +103,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		Catalog struct {
 			GithubRepo      string `conf:"default:https://api.github.com/repos/ardanlabs/kronk_catalogs/contents/catalogs"`
 			ModelConfigFile string
+			RepoPath        string
 		}
 		Templates struct {
 			GithubRepo string `conf:"default:https://api.github.com/repos/ardanlabs/kronk_catalogs/contents/templates"`
@@ -305,7 +306,8 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	ctlg, err := catalog.New(
 		catalog.WithBasePath(cfg.BasePath),
 		catalog.WithGithubRepo(cfg.Catalog.GithubRepo),
-		catalog.WithModelConfig(cfg.Catalog.ModelConfigFile))
+		catalog.WithModelConfig(cfg.Catalog.ModelConfigFile),
+		catalog.WithRepoPath(cfg.Catalog.RepoPath))
 	if err != nil {
 		return fmt.Errorf("unable to create catalog system: %w", err)
 	}

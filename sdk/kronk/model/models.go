@@ -40,17 +40,18 @@ const (
 
 // ModelInfo represents the model's card information.
 type ModelInfo struct {
-	ID            string
-	HasProjection bool
-	Desc          string
-	Size          uint64
-	VRAMTotal     int64
-	SlotMemory    int64
-	IsGPTModel    bool
-	IsEmbedModel  bool
-	IsRerankModel bool
-	Metadata      map[string]string
-	Template      Template
+	ID             string
+	HasProjection  bool
+	Desc           string
+	Size           uint64
+	VRAMTotal      int64
+	SlotMemory     int64
+	IsGPTModel     bool
+	IsEmbedModel   bool
+	IsRerankModel  bool
+	IsHybridModel  bool
+	Metadata       map[string]string
+	Template       Template
 }
 
 func (mi ModelInfo) String() string {
@@ -66,6 +67,9 @@ func (mi ModelInfo) String() string {
 	}
 	if mi.IsRerankModel {
 		flags = append(flags, "rerank")
+	}
+	if mi.IsHybridModel {
+		flags = append(flags, "hybrid")
 	}
 
 	flagStr := "none"
@@ -131,6 +135,8 @@ func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 		isRerankModel = true
 	}
 
+	isHybridModel := llama.ModelIsHybrid(model)
+
 	return ModelInfo{
 		ID:            modelID,
 		HasProjection: cfg.ProjFile != "",
@@ -139,6 +145,7 @@ func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 		IsGPTModel:    isGPTModel,
 		IsEmbedModel:  isEmbedModel,
 		IsRerankModel: isRerankModel,
+		IsHybridModel: isHybridModel,
 		Metadata:      metadata,
 	}
 }

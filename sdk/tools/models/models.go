@@ -124,7 +124,6 @@ func (m *Models) BuildIndex(log Logger) error {
 
 			ctx := context.Background()
 
-			validated := true
 			for modelID, files := range modelfiles {
 				isValidated := currentIndex[modelID].Validated
 
@@ -141,6 +140,7 @@ func (m *Models) BuildIndex(log Logger) error {
 					mp.ProjFile = projFile
 				}
 
+				validated := true
 				if !isValidated {
 					for _, file := range files {
 						log(ctx, "running check ", "model", path.Base(file))

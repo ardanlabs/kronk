@@ -280,6 +280,7 @@ export default function DocsSDKModel() {
 	IsGPTModel    bool
 	IsEmbedModel  bool
 	IsRerankModel bool
+	IsHybridModel bool
 	Metadata      map[string]string
 	Template      Template
 }`}</code>
@@ -614,12 +615,54 @@ export default function DocsSDKModel() {
               <p className="doc-description">String returns a string representation of the document containing only fields that are safe to log. This excludes sensitive fields like messages and input which may contain private user data.</p>
             </div>
 
+            <div className="doc-section" id="method-flashattentiontype-marshaljson">
+              <h4>FlashAttentionType.MarshalJSON</h4>
+              <pre className="code-block">
+                <code>func (t FlashAttentionType) MarshalJSON() ([]byte, error)</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="method-flashattentiontype-marshalyaml">
+              <h4>FlashAttentionType.MarshalYAML</h4>
+              <pre className="code-block">
+                <code>func (t FlashAttentionType) MarshalYAML() (interface&#123;&#125;, error)</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="method-flashattentiontype-string">
+              <h4>FlashAttentionType.String</h4>
+              <pre className="code-block">
+                <code>func (t FlashAttentionType) String() string</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="method-flashattentiontype-unmarshaljson">
+              <h4>FlashAttentionType.UnmarshalJSON</h4>
+              <pre className="code-block">
+                <code>func (t *FlashAttentionType) UnmarshalJSON(data []byte) error</code>
+              </pre>
+            </div>
+
             <div className="doc-section" id="method-flashattentiontype-unmarshalyaml">
               <h4>FlashAttentionType.UnmarshalYAML</h4>
               <pre className="code-block">
                 <code>func (t *FlashAttentionType) UnmarshalYAML(unmarshal func(interface&#123;&#125;) error) error</code>
               </pre>
               <p className="doc-description">UnmarshalYAML implements yaml.Unmarshaler to parse string values.</p>
+            </div>
+
+            <div className="doc-section" id="method-ggmltype-marshaljson">
+              <h4>GGMLType.MarshalJSON</h4>
+              <pre className="code-block">
+                <code>func (t GGMLType) MarshalJSON() ([]byte, error)</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="method-ggmltype-marshalyaml">
+              <h4>GGMLType.MarshalYAML</h4>
+              <pre className="code-block">
+                <code>func (t GGMLType) MarshalYAML() (interface&#123;&#125;, error)</code>
+              </pre>
             </div>
 
             <div className="doc-section" id="method-ggmltype-string">
@@ -634,6 +677,13 @@ export default function DocsSDKModel() {
               <h4>GGMLType.ToYZMAType</h4>
               <pre className="code-block">
                 <code>func (t GGMLType) ToYZMAType() llama.GGMLType</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="method-ggmltype-unmarshaljson">
+              <h4>GGMLType.UnmarshalJSON</h4>
+              <pre className="code-block">
+                <code>func (t *GGMLType) UnmarshalJSON(data []byte) error</code>
               </pre>
             </div>
 
@@ -721,6 +771,20 @@ export default function DocsSDKModel() {
               <p className="doc-description">String returns a string representation of the Params containing only non-zero values in the format key[value]\nkey[value]\n ...</p>
             </div>
 
+            <div className="doc-section" id="method-ropescalingtype-marshaljson">
+              <h4>RopeScalingType.MarshalJSON</h4>
+              <pre className="code-block">
+                <code>func (r RopeScalingType) MarshalJSON() ([]byte, error)</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="method-ropescalingtype-marshalyaml">
+              <h4>RopeScalingType.MarshalYAML</h4>
+              <pre className="code-block">
+                <code>func (r RopeScalingType) MarshalYAML() (interface&#123;&#125;, error)</code>
+              </pre>
+            </div>
+
             <div className="doc-section" id="method-ropescalingtype-string">
               <h4>RopeScalingType.String</h4>
               <pre className="code-block">
@@ -737,12 +801,33 @@ export default function DocsSDKModel() {
               <p className="doc-description">ToYZMAType converts to the yzma/llama.cpp RopeScalingType.</p>
             </div>
 
+            <div className="doc-section" id="method-ropescalingtype-unmarshaljson">
+              <h4>RopeScalingType.UnmarshalJSON</h4>
+              <pre className="code-block">
+                <code>func (r *RopeScalingType) UnmarshalJSON(data []byte) error</code>
+              </pre>
+            </div>
+
             <div className="doc-section" id="method-ropescalingtype-unmarshalyaml">
               <h4>RopeScalingType.UnmarshalYAML</h4>
               <pre className="code-block">
                 <code>func (r *RopeScalingType) UnmarshalYAML(unmarshal func(interface&#123;&#125;) error) error</code>
               </pre>
               <p className="doc-description">UnmarshalYAML implements yaml.Unmarshaler to parse string values.</p>
+            </div>
+
+            <div className="doc-section" id="method-splitmode-marshaljson">
+              <h4>SplitMode.MarshalJSON</h4>
+              <pre className="code-block">
+                <code>func (s SplitMode) MarshalJSON() ([]byte, error)</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="method-splitmode-marshalyaml">
+              <h4>SplitMode.MarshalYAML</h4>
+              <pre className="code-block">
+                <code>func (s SplitMode) MarshalYAML() (interface&#123;&#125;, error)</code>
+              </pre>
             </div>
 
             <div className="doc-section" id="method-splitmode-string">
@@ -759,6 +844,13 @@ export default function DocsSDKModel() {
                 <code>func (s SplitMode) ToYZMAType() llama.SplitMode</code>
               </pre>
               <p className="doc-description">ToYZMAType converts to the yzma/llama.cpp SplitMode type.</p>
+            </div>
+
+            <div className="doc-section" id="method-splitmode-unmarshaljson">
+              <h4>SplitMode.UnmarshalJSON</h4>
+              <pre className="code-block">
+                <code>func (s *SplitMode) UnmarshalJSON(data []byte) error</code>
+              </pre>
             </div>
 
             <div className="doc-section" id="method-splitmode-unmarshalyaml">
@@ -1094,9 +1186,16 @@ ws ::= [ \\t\\n\\r]*\`
                 <li><a href="#method-d-clone">D.Clone</a></li>
                 <li><a href="#method-d-messages">D.Messages</a></li>
                 <li><a href="#method-d-string">D.String</a></li>
+                <li><a href="#method-flashattentiontype-marshaljson">FlashAttentionType.MarshalJSON</a></li>
+                <li><a href="#method-flashattentiontype-marshalyaml">FlashAttentionType.MarshalYAML</a></li>
+                <li><a href="#method-flashattentiontype-string">FlashAttentionType.String</a></li>
+                <li><a href="#method-flashattentiontype-unmarshaljson">FlashAttentionType.UnmarshalJSON</a></li>
                 <li><a href="#method-flashattentiontype-unmarshalyaml">FlashAttentionType.UnmarshalYAML</a></li>
+                <li><a href="#method-ggmltype-marshaljson">GGMLType.MarshalJSON</a></li>
+                <li><a href="#method-ggmltype-marshalyaml">GGMLType.MarshalYAML</a></li>
                 <li><a href="#method-ggmltype-string">GGMLType.String</a></li>
                 <li><a href="#method-ggmltype-toyzmatype">GGMLType.ToYZMAType</a></li>
+                <li><a href="#method-ggmltype-unmarshaljson">GGMLType.UnmarshalJSON</a></li>
                 <li><a href="#method-ggmltype-unmarshalyaml">GGMLType.UnmarshalYAML</a></li>
                 <li><a href="#method-model-chat">Model.Chat</a></li>
                 <li><a href="#method-model-chatstreaming">Model.ChatStreaming</a></li>
@@ -1108,11 +1207,17 @@ ws ::= [ \\t\\n\\r]*\`
                 <li><a href="#method-model-unload">Model.Unload</a></li>
                 <li><a href="#method-modelinfo-string">ModelInfo.String</a></li>
                 <li><a href="#method-params-string">Params.String</a></li>
+                <li><a href="#method-ropescalingtype-marshaljson">RopeScalingType.MarshalJSON</a></li>
+                <li><a href="#method-ropescalingtype-marshalyaml">RopeScalingType.MarshalYAML</a></li>
                 <li><a href="#method-ropescalingtype-string">RopeScalingType.String</a></li>
                 <li><a href="#method-ropescalingtype-toyzmatype">RopeScalingType.ToYZMAType</a></li>
+                <li><a href="#method-ropescalingtype-unmarshaljson">RopeScalingType.UnmarshalJSON</a></li>
                 <li><a href="#method-ropescalingtype-unmarshalyaml">RopeScalingType.UnmarshalYAML</a></li>
+                <li><a href="#method-splitmode-marshaljson">SplitMode.MarshalJSON</a></li>
+                <li><a href="#method-splitmode-marshalyaml">SplitMode.MarshalYAML</a></li>
                 <li><a href="#method-splitmode-string">SplitMode.String</a></li>
                 <li><a href="#method-splitmode-toyzmatype">SplitMode.ToYZMAType</a></li>
+                <li><a href="#method-splitmode-unmarshaljson">SplitMode.UnmarshalJSON</a></li>
                 <li><a href="#method-splitmode-unmarshalyaml">SplitMode.UnmarshalYAML</a></li>
                 <li><a href="#method-streamingresponselogger-capture">StreamingResponseLogger.Capture</a></li>
                 <li><a href="#method-streamingresponselogger-string">StreamingResponseLogger.String</a></li>

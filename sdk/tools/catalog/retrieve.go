@@ -92,6 +92,8 @@ func (c *Catalog) Details(modelID string) (ModelDetails, error) {
 				}
 			}
 
+			model.CatalogFile = catalogFile
+
 			return model, nil
 		}
 	}
@@ -101,24 +103,17 @@ func (c *Catalog) Details(modelID string) (ModelDetails, error) {
 
 // All reads all the catalogs from a previous download.
 func (c *Catalog) All() ([]CatalogModels, error) {
-	entries, err := os.ReadDir(c.catalogPath)
+	files, err := c.catalogYAMLFiles()
 	if err != nil {
-		return nil, fmt.Errorf("retrieve-catalogs: read catalog dir: %w", err)
+		return nil, fmt.Errorf("retrieve-catalogs: %w", err)
 	}
 
 	var catalogs []CatalogModels
 
-	for _, entry := range entries {
-		if entry.IsDir() ||
-			entry.Name() == indexFile ||
-			entry.Name() == shaFile ||
-			entry.Name() == ".DS_Store" {
-			continue
-		}
-
-		catalog, err := c.singleCatalog(entry.Name())
+	for _, name := range files {
+		catalog, err := c.singleCatalog(name)
 		if err != nil {
-			return nil, fmt.Errorf("retrieve-catalogs: retrieve-catalog name[%s]: %w", entry.Name(), err)
+			return nil, fmt.Errorf("retrieve-catalogs: retrieve-catalog name[%s]: %w", name, err)
 		}
 
 		catalogs = append(catalogs, catalog)
@@ -268,6 +263,26 @@ func (c *Catalog) KronkResolvedModelConfig(modelID string) (model.Config, error)
 
 // =============================================================================
 
+func (c *Catalog) catalogYAMLFiles() ([]string, error) {
+	entries, err := os.ReadDir(c.catalogPath)
+	if err != nil {
+		return nil, fmt.Errorf("catalog-yaml-files: read dir: %w", err)
+	}
+
+	var files []string
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".yaml" {
+			continue
+		}
+		if entry.Name() == indexFile {
+			continue
+		}
+		files = append(files, entry.Name())
+	}
+
+	return files, nil
+}
+
 func (c *Catalog) singleCatalog(catalogFile string) (CatalogModels, error) {
 	filePath := filepath.Join(c.catalogPath, catalogFile)
 
@@ -288,36 +303,21 @@ func (c *Catalog) buildIndex() error {
 	c.biMutex.Lock()
 	defer c.biMutex.Unlock()
 
-	entries, err := os.ReadDir(c.catalogPath)
+	files, err := c.catalogYAMLFiles()
 	if err != nil {
-		return fmt.Errorf("build-index: read catalog dir: %w", err)
+		return fmt.Errorf("build-index: %w", err)
 	}
 
 	index := make(map[string]string)
 
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".yaml" {
-			continue
-		}
-
-		if entry.Name() == indexFile {
-			continue
-		}
-
-		filePath := filepath.Join(c.catalogPath, entry.Name())
-
-		data, err := os.ReadFile(filePath)
+	for _, name := range files {
+		cat, err := c.singleCatalog(name)
 		if err != nil {
-			return fmt.Errorf("build-index: read file name[%s]: %w", entry.Name(), err)
+			return fmt.Errorf("build-index: read catalog name[%s]: %w", name, err)
 		}
 
-		var catModels CatalogModels
-		if err := yaml.Unmarshal(data, &catModels); err != nil {
-			return fmt.Errorf("build-index: unmarshal name[%s]: %w", entry.Name(), err)
-		}
-
-		for _, model := range catModels.Models {
-			index[model.ID] = entry.Name()
+		for _, model := range cat.Models {
+			index[model.ID] = name
 		}
 	}
 

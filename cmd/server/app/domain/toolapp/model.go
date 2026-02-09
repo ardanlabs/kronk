@@ -464,10 +464,12 @@ type CatalogModelResponse struct {
 	Capabilities  CatalogCapabilities `json:"capabilities"`
 	Metadata      CatalogMetadata     `json:"metadata"`
 	ModelConfig   *ModelConfig        `json:"model_config,omitempty"`
+	BaseConfig    *ModelConfig        `json:"base_config,omitempty"`
 	ModelMetadata map[string]string   `json:"model_metadata,omitempty"`
 	VRAM          *VRAM               `json:"vram,omitempty"`
 	Downloaded    bool                `json:"downloaded"`
 	Validated     bool                `json:"validated"`
+	CatalogFile   string              `json:"catalog_file,omitempty"`
 }
 
 // Encode implements the encoder interface.
@@ -535,6 +537,7 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 		ModelMetadata: formattedMetadata,
 		Downloaded:    catDetails.Downloaded,
 		Validated:     catDetails.Validated,
+		CatalogFile:   catDetails.CatalogFile,
 	}
 
 	if rmc != nil {
@@ -586,6 +589,56 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 				ReasoningEffort: rmc.Sampling.ReasoningEffort,
 			},
 		}
+	}
+
+	bmc := catDetails.BaseModelConfig
+	resp.BaseConfig = &ModelConfig{
+		Device:               bmc.Device,
+		ContextWindow:        bmc.ContextWindow,
+		NBatch:               bmc.NBatch,
+		NUBatch:              bmc.NUBatch,
+		NThreads:             bmc.NThreads,
+		NThreadsBatch:        bmc.NThreadsBatch,
+		CacheTypeK:           bmc.CacheTypeK,
+		CacheTypeV:           bmc.CacheTypeV,
+		UseDirectIO:          bmc.UseDirectIO,
+		FlashAttention:       bmc.FlashAttention,
+		IgnoreIntegrityCheck: bmc.IgnoreIntegrityCheck,
+		NSeqMax:              bmc.NSeqMax,
+		OffloadKQV:           bmc.OffloadKQV,
+		OpOffload:            bmc.OpOffload,
+		NGpuLayers:           bmc.NGpuLayers,
+		SplitMode:            bmc.SplitMode,
+		SystemPromptCache:    bmc.SystemPromptCache,
+		IncrementalCache:     bmc.IncrementalCache,
+		MaxCacheSessions:     bmc.MaxCacheSessions,
+		CacheMinTokens:       bmc.CacheMinTokens,
+		RopeScaling:          bmc.RopeScaling,
+		RopeFreqBase:         bmc.RopeFreqBase,
+		RopeFreqScale:        bmc.RopeFreqScale,
+		YarnExtFactor:        bmc.YarnExtFactor,
+		YarnAttnFactor:       bmc.YarnAttnFactor,
+		YarnBetaFast:         bmc.YarnBetaFast,
+		YarnBetaSlow:         bmc.YarnBetaSlow,
+		YarnOrigCtx:          bmc.YarnOrigCtx,
+		Sampling: SamplingConfig{
+			Temperature:     bmc.Sampling.Temperature,
+			TopK:            bmc.Sampling.TopK,
+			TopP:            bmc.Sampling.TopP,
+			MinP:            bmc.Sampling.MinP,
+			MaxTokens:       bmc.Sampling.MaxTokens,
+			RepeatPenalty:   bmc.Sampling.RepeatPenalty,
+			RepeatLastN:     bmc.Sampling.RepeatLastN,
+			DryMultiplier:   bmc.Sampling.DryMultiplier,
+			DryBase:         bmc.Sampling.DryBase,
+			DryAllowedLen:   bmc.Sampling.DryAllowedLen,
+			DryPenaltyLast:  bmc.Sampling.DryPenaltyLast,
+			XtcProbability:  bmc.Sampling.XtcProbability,
+			XtcThreshold:    bmc.Sampling.XtcThreshold,
+			XtcMinKeep:      bmc.Sampling.XtcMinKeep,
+			EnableThinking:  bmc.Sampling.EnableThinking,
+			ReasoningEffort: bmc.Sampling.ReasoningEffort,
+		},
 	}
 
 	if vram != nil {
@@ -714,4 +767,236 @@ type VRAMResponse struct {
 func (app VRAMResponse) Encode() ([]byte, string, error) {
 	data, err := json.Marshal(app)
 	return data, "application/json", err
+}
+
+// =============================================================================
+
+// HFLookupRequest represents the input for a HuggingFace model lookup.
+type HFLookupRequest struct {
+	Input string `json:"input"`
+}
+
+// Decode implements the decoder interface.
+func (app *HFLookupRequest) Decode(data []byte) error {
+	return json.Unmarshal(data, app)
+}
+
+// HFRepoFile represents a GGUF file in a HuggingFace repository.
+type HFRepoFile struct {
+	Filename string `json:"filename"`
+	Size     int64  `json:"size"`
+	SizeStr  string `json:"size_str"`
+}
+
+// HFLookupResponse contains the results from a HuggingFace lookup.
+type HFLookupResponse struct {
+	Model     CatalogModelResponse `json:"model"`
+	RepoFiles []HFRepoFile         `json:"repo_files"`
+}
+
+// Encode implements the encoder interface.
+func (app HFLookupResponse) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(app)
+	return data, "application/json", err
+}
+
+func toHFLookupResponse(result catalog.HFLookupResult) HFLookupResponse {
+	resp := HFLookupResponse{
+		Model: toCatalogModelResponse(result.ModelDetails, nil, nil, nil),
+	}
+
+	for _, f := range result.RepoFiles {
+		resp.RepoFiles = append(resp.RepoFiles, HFRepoFile{
+			Filename: f.Filename,
+			Size:     f.Size,
+			SizeStr:  f.SizeStr,
+		})
+	}
+
+	return resp
+}
+
+// =============================================================================
+
+// SaveCatalogRequest represents the input for saving a catalog entry.
+type SaveCatalogRequest struct {
+	ID           string              `json:"id"`
+	Category     string              `json:"category"`
+	OwnedBy      string              `json:"owned_by"`
+	ModelFamily  string              `json:"model_family"`
+	WebPage      string              `json:"web_page"`
+	GatedModel   bool                `json:"gated_model"`
+	Template     string              `json:"template"`
+	Files        CatalogFiles        `json:"files"`
+	Capabilities CatalogCapabilities `json:"capabilities"`
+	Metadata     CatalogMetadata     `json:"metadata"`
+	Config       *ModelConfig        `json:"config,omitempty"`
+	CatalogFile  string              `json:"catalog_file"`
+}
+
+// Decode implements the decoder interface.
+func (app *SaveCatalogRequest) Decode(data []byte) error {
+	return json.Unmarshal(data, app)
+}
+
+func (app SaveCatalogRequest) toModelDetails() catalog.ModelDetails {
+	modelFiles := make([]catalog.File, len(app.Files.Models))
+	for i, f := range app.Files.Models {
+		modelFiles[i] = catalog.File{URL: f.URL, Size: f.Size}
+	}
+
+	md := catalog.ModelDetails{
+		ID:          app.ID,
+		Category:    app.Category,
+		OwnedBy:     app.OwnedBy,
+		ModelFamily: app.ModelFamily,
+		WebPage:     app.WebPage,
+		GatedModel:  app.GatedModel,
+		Template:    app.Template,
+		Files: catalog.Files{
+			Models: modelFiles,
+			Proj:   catalog.File{URL: app.Files.Proj.URL, Size: app.Files.Proj.Size},
+		},
+		Capabilities: catalog.Capabilities{
+			Endpoint:  app.Capabilities.Endpoint,
+			Images:    app.Capabilities.Images,
+			Audio:     app.Capabilities.Audio,
+			Video:     app.Capabilities.Video,
+			Streaming: app.Capabilities.Streaming,
+			Reasoning: app.Capabilities.Reasoning,
+			Tooling:   app.Capabilities.Tooling,
+			Embedding: app.Capabilities.Embedding,
+			Rerank:    app.Capabilities.Rerank,
+		},
+		Metadata: catalog.Metadata{
+			Created:     app.Metadata.Created,
+			Collections: app.Metadata.Collections,
+			Description: app.Metadata.Description,
+		},
+	}
+
+	if app.Config != nil {
+		md.BaseModelConfig = catalog.ModelConfig{
+			Device:               app.Config.Device,
+			ContextWindow:        app.Config.ContextWindow,
+			NBatch:               app.Config.NBatch,
+			NUBatch:              app.Config.NUBatch,
+			NThreads:             app.Config.NThreads,
+			NThreadsBatch:        app.Config.NThreadsBatch,
+			CacheTypeK:           app.Config.CacheTypeK,
+			CacheTypeV:           app.Config.CacheTypeV,
+			UseDirectIO:          app.Config.UseDirectIO,
+			FlashAttention:       app.Config.FlashAttention,
+			IgnoreIntegrityCheck: app.Config.IgnoreIntegrityCheck,
+			NSeqMax:              app.Config.NSeqMax,
+			OffloadKQV:           app.Config.OffloadKQV,
+			OpOffload:            app.Config.OpOffload,
+			NGpuLayers:           app.Config.NGpuLayers,
+			SplitMode:            app.Config.SplitMode,
+			SystemPromptCache:    app.Config.SystemPromptCache,
+			IncrementalCache:     app.Config.IncrementalCache,
+			MaxCacheSessions:     app.Config.MaxCacheSessions,
+			CacheMinTokens:       app.Config.CacheMinTokens,
+			InsecureLogging:      false,
+			RopeScaling:          app.Config.RopeScaling,
+			RopeFreqBase:         app.Config.RopeFreqBase,
+			RopeFreqScale:        app.Config.RopeFreqScale,
+			YarnExtFactor:        app.Config.YarnExtFactor,
+			YarnAttnFactor:       app.Config.YarnAttnFactor,
+			YarnBetaFast:         app.Config.YarnBetaFast,
+			YarnBetaSlow:         app.Config.YarnBetaSlow,
+			YarnOrigCtx:          app.Config.YarnOrigCtx,
+			Sampling: catalog.SamplingConfig{
+				Temperature:     app.Config.Sampling.Temperature,
+				TopK:            app.Config.Sampling.TopK,
+				TopP:            app.Config.Sampling.TopP,
+				MinP:            app.Config.Sampling.MinP,
+				MaxTokens:       app.Config.Sampling.MaxTokens,
+				RepeatPenalty:   app.Config.Sampling.RepeatPenalty,
+				RepeatLastN:     app.Config.Sampling.RepeatLastN,
+				DryMultiplier:   app.Config.Sampling.DryMultiplier,
+				DryBase:         app.Config.Sampling.DryBase,
+				DryAllowedLen:   app.Config.Sampling.DryAllowedLen,
+				DryPenaltyLast:  app.Config.Sampling.DryPenaltyLast,
+				XtcProbability:  app.Config.Sampling.XtcProbability,
+				XtcThreshold:    app.Config.Sampling.XtcThreshold,
+				XtcMinKeep:      app.Config.Sampling.XtcMinKeep,
+				EnableThinking:  app.Config.Sampling.EnableThinking,
+				ReasoningEffort: app.Config.Sampling.ReasoningEffort,
+			},
+		}
+	}
+
+	return md
+}
+
+// SaveCatalogResponse is returned after saving or deleting a catalog entry.
+type SaveCatalogResponse struct {
+	Status string `json:"status"`
+	ID     string `json:"id"`
+}
+
+// Encode implements the encoder interface.
+func (app SaveCatalogResponse) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(app)
+	return data, "application/json", err
+}
+
+// PublishCatalogRequest represents the input for publishing a catalog file
+// to the cloned repository.
+type PublishCatalogRequest struct {
+	CatalogFile string `json:"catalog_file"`
+}
+
+// Decode implements the decoder interface.
+func (app *PublishCatalogRequest) Decode(data []byte) error {
+	return json.Unmarshal(data, app)
+}
+
+// PublishCatalogResponse is returned after publishing a catalog file.
+type PublishCatalogResponse struct {
+	Status string `json:"status"`
+}
+
+// Encode implements the encoder interface.
+func (app PublishCatalogResponse) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(app)
+	return data, "application/json", err
+}
+
+// RepoPathResponse is returned for querying the repo path configuration.
+type RepoPathResponse struct {
+	RepoPath string `json:"repo_path"`
+}
+
+// Encode implements the encoder interface.
+func (app RepoPathResponse) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(app)
+	return data, "application/json", err
+}
+
+// CatalogFileInfoResponse represents a catalog file.
+type CatalogFileInfoResponse struct {
+	Name       string `json:"name"`
+	ModelCount int    `json:"model_count"`
+}
+
+// CatalogFilesListResponse is a list of catalog files.
+type CatalogFilesListResponse []CatalogFileInfoResponse
+
+// Encode implements the encoder interface.
+func (app CatalogFilesListResponse) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(app)
+	return data, "application/json", err
+}
+
+func toCatalogFilesResponse(files []catalog.CatalogFileInfo) CatalogFilesListResponse {
+	resp := make(CatalogFilesListResponse, len(files))
+	for i, f := range files {
+		resp[i] = CatalogFileInfoResponse{
+			Name:       f.Name,
+			ModelCount: f.ModelCount,
+		}
+	}
+	return resp
 }

@@ -4,6 +4,7 @@ import ModelList from './components/ModelList';
 import ModelPs from './components/ModelPs';
 import ModelPull from './components/ModelPull';
 import CatalogList from './components/CatalogList';
+import CatalogEditor from './components/CatalogEditor';
 import LibsPull from './components/LibsPull';
 import SecurityKeyList from './components/SecurityKeyList';
 import SecurityKeyCreate from './components/SecurityKeyCreate';
@@ -44,6 +45,7 @@ export type Page =
   | 'model-ps'
   | 'model-pull'
   | 'catalog-list'
+  | 'catalog-editor'
   | 'libs-pull'
   | 'security-key-list'
   | 'security-key-create'
@@ -77,6 +79,7 @@ export const routeMap: Record<Page, string> = {
   'model-ps': '/models/running',
   'model-pull': '/models/pull',
   'catalog-list': '/catalog',
+  'catalog-editor': '/catalog/editor',
   'libs-pull': '/libs/pull',
   'security-key-list': '/security/keys',
   'security-key-create': '/security/keys/create',
@@ -168,6 +171,7 @@ function App() {
                 <Route path="/models/running" element={<ModelPs />} />
                 <Route path="/models/pull" element={<ModelPull />} />
                 <Route path="/catalog" element={<CatalogList />} />
+                <Route path="/catalog/editor" element={<CatalogEditor />} />
                 <Route path="/libs/pull" element={<LibsPull />} />
                 <Route path="/security/keys" element={<SecurityKeyList />} />
                 <Route path="/security/keys/create" element={<SecurityKeyCreate />} />

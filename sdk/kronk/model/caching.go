@@ -528,9 +528,6 @@ func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D,
 		}
 	}
 
-	// Clear existing cache sequence.
-	llama.MemorySeqRm(m.mem, session.seqID, -1, -1)
-
 	// We need to cache all the message from the beginning to the target
 	// message which should represent the second to last message. We don't
 	// want the assistant tag produced.
@@ -615,8 +612,13 @@ func (m *Model) extendTokensInCache(ctx context.Context, tokens []llama.Token, s
 	defer m.decodeMu.Unlock()
 
 	// Create batch with explicit sequence ID.
-	nCtx := llama.NCtx(m.lctx)
-	batch := llama.BatchInit(int32(nCtx), 0, 1)
+	// Allocate batch sized to nBatch (not nCtx) to avoid huge allocations for
+	// large context windows that can cause C-side allocation failures.
+	batchSize := int32(min(nBatch, nTokens))
+	if batchSize <= 0 {
+		batchSize = 1
+	}
+	batch := llama.BatchInit(batchSize, 0, 1)
 	defer llama.BatchFree(batch)
 
 	seqIDs := []llama.SeqId{seqID}
@@ -655,8 +657,6 @@ func (m *Model) addTokensToCache(ctx context.Context, tokens []llama.Token, seqI
 	)
 	defer decodeSpan.End()
 
-	llama.MemorySeqRm(m.mem, seqID, -1, -1)
-
 	nBatch := int(m.ctxParams.NBatch)
 	nTokens := len(tokens)
 
@@ -673,13 +673,22 @@ func (m *Model) addTokensToCache(ctx context.Context, tokens []llama.Token, seqI
 	m.log(ctx, "cache", "status", "adding tokens to cache", "seq", seqID, "tokens", nTokens, "nbatch", nBatch)
 
 	// Lock to prevent concurrent decode with batch engine.
+	// MemorySeqRm must be inside the lock to avoid racing with the batch
+	// engine's decode loop on the same llama_context.
 	m.decodeMu.Lock()
 	defer m.decodeMu.Unlock()
 
+	llama.MemorySeqRm(m.mem, seqID, -1, -1)
+
 	// Create batch with explicit sequence ID. llama.BatchGetOne uses seq 0 by
 	// default, which breaks multi-user IMC where each session has its own seq.
-	nCtx := llama.NCtx(m.lctx)
-	batch := llama.BatchInit(int32(nCtx), 0, 1)
+	// Allocate batch sized to nBatch (not nCtx) to avoid huge allocations for
+	// large context windows that can cause C-side allocation failures.
+	batchSize := int32(min(nBatch, nTokens))
+	if batchSize <= 0 {
+		batchSize = 1
+	}
+	batch := llama.BatchInit(batchSize, 0, 1)
 	defer llama.BatchFree(batch)
 
 	seqIDs := []llama.SeqId{seqID}

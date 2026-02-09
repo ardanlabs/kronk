@@ -8,8 +8,14 @@ export interface DownloadMessage {
   type: 'info' | 'error' | 'success';
 }
 
+type DownloadKind = 'model' | 'catalog';
+
 interface DownloadState {
+  kind: DownloadKind;
   modelUrl: string;
+  modelUrls?: string[];
+  currentIndex?: number;
+  catalogId?: string;
   messages: DownloadMessage[];
   status: 'downloading' | 'complete' | 'error';
 }
@@ -18,6 +24,8 @@ interface DownloadContextType {
   download: DownloadState | null;
   isDownloading: boolean;
   startDownload: (modelUrl: string, projUrl?: string) => void;
+  startBatchDownload: (modelUrls: string[], projUrl?: string) => void;
+  startCatalogDownload: (catalogId: string) => void;
   cancelDownload: () => void;
   clearDownload: () => void;
 }
@@ -50,20 +58,105 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const pullOne = useCallback((modelUrl: string, projUrl: string | undefined, onComplete: () => void) => {
+    abortRef.current = api.pullModel(
+      modelUrl,
+      projUrl,
+      (data: PullResponse) => {
+        if (data.status) {
+          if (data.status.startsWith(ANSI_INLINE)) {
+            const cleanText = data.status.slice(ANSI_INLINE.length);
+            updateLastMessage(cleanText, 'info');
+          } else {
+            addMessage(data.status, 'info');
+          }
+        }
+        if (data.model_file) {
+          addMessage(`Model file: ${data.model_file}`, 'info');
+        }
+      },
+      (error: string) => {
+        addMessage(error, 'error');
+        setDownload((prev) => (prev ? { ...prev, status: 'error' } : prev));
+        abortRef.current = null;
+      },
+      onComplete
+    );
+  }, [addMessage, updateLastMessage]);
+
   const startDownload = useCallback((modelUrl: string, projUrl?: string) => {
     if (abortRef.current) {
       return;
     }
 
     setDownload({
+      kind: 'model',
       modelUrl,
       messages: [],
       status: 'downloading',
     });
 
-    abortRef.current = api.pullModel(
-      modelUrl,
-      projUrl,
+    pullOne(modelUrl, projUrl, () => {
+      addMessage('Pull complete!', 'success');
+      setDownload((prev) => (prev ? { ...prev, status: 'complete' } : prev));
+      abortRef.current = null;
+      invalidate();
+    });
+  }, [pullOne, addMessage, invalidate]);
+
+  const startBatchDownload = useCallback((modelUrls: string[], projUrl?: string) => {
+    if (abortRef.current || modelUrls.length === 0) {
+      return;
+    }
+
+    const total = modelUrls.length;
+
+    setDownload({
+      kind: 'model',
+      modelUrl: modelUrls[0],
+      modelUrls,
+      currentIndex: 0,
+      messages: [{ text: `Starting pull 1 of ${total}: ${modelUrls[0]}`, type: 'info' }],
+      status: 'downloading',
+    });
+
+    const pullNext = (index: number) => {
+      const proj = index === 0 ? projUrl : undefined;
+      pullOne(modelUrls[index], proj, () => {
+        addMessage(`Pull complete for: ${modelUrls[index]}`, 'success');
+        abortRef.current = null;
+
+        const nextIndex = index + 1;
+        if (nextIndex < total) {
+          addMessage(`Starting pull ${nextIndex + 1} of ${total}: ${modelUrls[nextIndex]}`, 'info');
+          setDownload((prev) => (prev ? { ...prev, modelUrl: modelUrls[nextIndex], currentIndex: nextIndex } : prev));
+          pullNext(nextIndex);
+        } else {
+          addMessage('All pulls complete!', 'success');
+          setDownload((prev) => (prev ? { ...prev, status: 'complete' } : prev));
+          invalidate();
+        }
+      });
+    };
+
+    pullNext(0);
+  }, [pullOne, addMessage, invalidate]);
+
+  const startCatalogDownload = useCallback((catalogId: string) => {
+    if (abortRef.current) {
+      return;
+    }
+
+    setDownload({
+      kind: 'catalog',
+      modelUrl: catalogId,
+      catalogId,
+      messages: [],
+      status: 'downloading',
+    });
+
+    abortRef.current = api.pullCatalogModel(
+      catalogId,
       (data: PullResponse) => {
         if (data.status) {
           if (data.status.startsWith(ANSI_INLINE)) {
@@ -118,7 +211,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
 
   return (
     <DownloadContext.Provider
-      value={{ download, isDownloading, startDownload, cancelDownload, clearDownload }}
+      value={{ download, isDownloading, startDownload, startBatchDownload, startCatalogDownload, cancelDownload, clearDownload }}
     >
       {children}
     </DownloadContext.Provider>

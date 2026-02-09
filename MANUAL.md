@@ -1707,29 +1707,86 @@ kronk server stop
 
 ### 7.3 Server Configuration
 
-Configuration can be set via command-line flags or environment variables.
+Configuration can be set via command-line flags or environment variables. Every
+flag has a corresponding environment variable using the `KRONK_` prefix with
+underscores replacing hyphens.
 
 **Web Settings**
 
+| Flag | Environment Variable | Default | Description |
+| ---- | -------------------- | ------- | ----------- |
+| `--api-host` | `KRONK_WEB_API_HOST` | `localhost:8080` | API host address |
+| `--debug-host` | `KRONK_WEB_DEBUG_HOST` | `localhost:8090` | Debug/pprof host address |
+| `--read-timeout` | `KRONK_WEB_READ_TIMEOUT` | `30s` | HTTP read timeout |
+| `--write-timeout` | `KRONK_WEB_WRITE_TIMEOUT` | `15m` | HTTP write timeout |
+| `--idle-timeout` | `KRONK_WEB_IDLE_TIMEOUT` | `1m` | HTTP idle timeout |
+| `--shutdown-timeout` | `KRONK_WEB_SHUTDOWN_TIMEOUT` | `1m` | Graceful shutdown timeout |
+| `--cors-allowed-origins` | `KRONK_WEB_CORS_ALLOWED_ORIGINS` | `*` | Comma-separated CORS origins |
+
+**Authentication Settings**
+
+| Flag | Environment Variable | Default | Description |
+| ---- | -------------------- | ------- | ----------- |
+| `--auth-host` | `KRONK_AUTH_HOST` | _(empty)_ | External auth service host. Leave empty to use local auth |
+| `--auth-enabled` | `KRONK_AUTH_LOCAL_ENABLED` | `false` | Enable local JWT authentication |
+| `--auth-issuer` | `KRONK_AUTH_LOCAL_ISSUER` | `kronk project` | Issuer name for local JWT tokens |
+
+**Tracing Settings (Tempo)**
+
+| Flag | Environment Variable | Default | Description |
+| ---- | -------------------- | ------- | ----------- |
+| `--tempo-host` | `KRONK_TEMPO_HOST` | `localhost:4317` | OpenTelemetry collector host |
+| `--tempo-service-name` | `KRONK_TEMPO_SERVICE_NAME` | `kronk` | Service name for traces |
+| `--tempo-probability` | `KRONK_TEMPO_PROBABILITY` | `0.25` | Trace sampling probability (0.0-1.0) |
+
+**Catalog Settings**
+
+| Flag | Environment Variable | Default | Description |
+| ---- | -------------------- | ------- | ----------- |
+| `--catalog-github-repo` | `KRONK_CATALOG_GITHUB_REPO` | GitHub API URL | GitHub repo URL for catalog files |
+| `--model-config-file` | `KRONK_CATALOG_MODEL_CONFIG_FILE` | _(empty)_ | Path to model-specific config YAML file |
+| `--catalog-repo-path` | `KRONK_CATALOG_REPO_PATH` | _(empty)_ | Path to cloned catalog repository for publishing edits |
+
+**Template Settings**
+
+| Flag | Environment Variable | Default | Description |
+| ---- | -------------------- | ------- | ----------- |
+| `--templates-github-repo` | `KRONK_TEMPLATES_GITHUB_REPO` | GitHub API URL | GitHub repo URL for template files |
+
+**Cache Settings**
+
+| Flag | Environment Variable | Default | Description |
+| ---- | -------------------- | ------- | ----------- |
+| `--models-in-cache` | `KRONK_CACHE_MODELS_IN_CACHE` | `3` | Maximum models kept loaded in memory |
+| `--cache-ttl` | `KRONK_CACHE_TTL` | `20m` | How long unused models stay loaded |
+| `--ignore-integrity-check` | `KRONK_CACHE_IGNORE_INTEGRITY_CHECK` | `true` | Skip SHA256 integrity check on model load |
+
+**Runtime Settings**
+
+| Flag | Environment Variable | Default | Description |
+| ---- | -------------------- | ------- | ----------- |
+| `--base-path` | `KRONK_BASE_PATH` | `~/.kronk` | Base directory for all Kronk data |
+| `--lib-path` | `KRONK_LIB_PATH` | _(empty)_ | Path to llama library directory |
+| `--lib-version` | `KRONK_LIB_VERSION` | _(empty)_ | Specific llama library version |
+| `--arch` | `KRONK_ARCH` | _(auto)_ | Architecture override (`amd64`, `arm64`) |
+| `--os` | `KRONK_OS` | _(auto)_ | OS override (`linux`, `darwin`, `windows`) |
+| `--processor` | `KRONK_PROCESSOR` | _(auto)_ | Processor type (`cpu`, `metal`, `cuda`, `vulkan`) |
+| `--hf-token` | `KRONK_HF_TOKEN` | _(empty)_ | Hugging Face API token for gated models |
+| `--allow-upgrade` | `KRONK_ALLOW_UPGRADE` | `true` | Allow automatic library upgrades |
+| `--llama-log` | `KRONK_LLAMA_LOG` | `1` | Llama log level (0=off, 1=on) |
+| `--insecure-logging` | `KRONK_INSECURE_LOGGING` | `false` | Log sensitive data (messages, model config) |
+
+**Example**
+
 ```shell
 kronk server start \
-  --api-host=localhost:8080 \
-  --debug-host=localhost:8090 \
-  --read-timeout=30s \
-  --write-timeout=15m \
-  --idle-timeout=1m \
-  --shutdown-timeout=1m \
-  --cors-allowed-origins=http://localhost:3000
+  --api-host=0.0.0.0:8080 \
+  --models-in-cache=5 \
+  --cache-ttl=30m \
+  --model-config-file=model-config.yaml \
+  --catalog-repo-path=~/code/kronk_catalogs \
+  --hf-token=hf_xxxxx
 ```
-
-**Environment Variables**
-
-| Variable                  | Description                                |
-| ------------------------- | ------------------------------------------ |
-| `KRONK_WEB_API_HOST`      | API host address (default: localhost:8080) |
-| `KRONK_WEB_DEBUG_HOST`    | Debug host address                         |
-| `KRONK_WEB_READ_TIMEOUT`  | HTTP read timeout                          |
-| `KRONK_WEB_WRITE_TIMEOUT` | HTTP write timeout                         |
 
 ### 7.4 Model Caching
 
