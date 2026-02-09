@@ -254,7 +254,7 @@ func (c *Catalog) KronkResolvedModelConfig(modelID string) (model.Config, error)
 	mc := c.ResolvedModelConfig(modelID)
 
 	// Convert to model.Config and set file paths.
-	cfg := mc.toKronkConfig()
+	cfg := mc.ToKronkConfig()
 	cfg.ModelFiles = fp.ModelFiles
 	cfg.ProjFile = fp.ProjFile
 

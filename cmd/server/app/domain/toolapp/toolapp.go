@@ -412,7 +412,7 @@ func (a *app) showCatalogModel(ctx context.Context, r *http.Request) web.Encoder
 		return errs.New(errs.Internal, err)
 	}
 
-	tmpl, err := a.templates.Retrieve(modelID)
+	tmpl, err := a.templates.RetrieveTemplate(modelID)
 	if err == nil && tmpl.FileName != "" {
 		catDetails.Template = tmpl.FileName
 	}

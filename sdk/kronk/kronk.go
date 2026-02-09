@@ -20,7 +20,7 @@ const Version = "1.18.1"
 // =============================================================================
 
 type options struct {
-	tr         model.TemplateRetriever
+	templater  model.Templater
 	ctx        context.Context
 	queueDepth int
 }
@@ -28,11 +28,11 @@ type options struct {
 // Option represents options for configuring Kronk.
 type Option func(*options)
 
-// WithTemplateRetriever sets a custom Github repo for templates.
+// WithTemplater sets a custom Github repo for templates.
 // If not set, the default repo will be used.
-func WithTemplateRetriever(templates model.TemplateRetriever) Option {
+func WithTemplater(templater model.Templater) Option {
 	return func(o *options) {
-		o.tr = templates
+		o.templater = templater
 	}
 }
 
@@ -84,13 +84,13 @@ func New(cfg model.Config, opts ...Option) (*Kronk, error) {
 		opt(&o)
 	}
 
-	if o.tr == nil {
-		templs, err := templates.New()
+	if o.templater == nil {
+		templater, err := templates.New()
 		if err != nil {
-			return nil, fmt.Errorf("new: unable to create template: %w", err)
+			return nil, fmt.Errorf("new: unable to create templater: %w", err)
 		}
 
-		o.tr = templs
+		o.templater = templater
 	}
 
 	ctx := context.Background()
@@ -100,7 +100,7 @@ func New(cfg model.Config, opts ...Option) (*Kronk, error) {
 
 	// -------------------------------------------------------------------------
 
-	mdl, err := model.NewModel(ctx, o.tr, cfg)
+	mdl, err := model.NewModel(ctx, o.templater, cfg)
 	if err != nil {
 		return nil, err
 	}

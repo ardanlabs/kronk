@@ -61,7 +61,7 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="func-newmodel">
               <h4>NewModel</h4>
               <pre className="code-block">
-                <code>func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) (*Model, error)</code>
+                <code>func NewModel(ctx context.Context, templater Templater, cfg Config) (*Model, error)</code>
               </pre>
             </div>
 
@@ -515,14 +515,15 @@ export default function DocsSDKModel() {
               <p className="doc-description">Template provides the template file name.</p>
             </div>
 
-            <div className="doc-section" id="type-templateretriever">
-              <h4>TemplateRetriever</h4>
+            <div className="doc-section" id="type-templater">
+              <h4>Templater</h4>
               <pre className="code-block">
-                <code>{`type TemplateRetriever interface {
-	Retrieve(modelID string) (Template, error)
+                <code>{`type Templater interface {
+	RetrieveTemplate(modelID string) (Template, error)
+	RetrieveConfig(modelID string) (Config, error)
 }`}</code>
               </pre>
-              <p className="doc-description">TemplateRetriever returns a configured template for a model.</p>
+              <p className="doc-description">Templater provides support to retrieve catalog config and template information.</p>
             </div>
 
             <div className="doc-section" id="type-tokenizeresponse">
@@ -1171,7 +1172,7 @@ ws ::= [ \\t\\n\\r]*\`
                 <li><a href="#type-splitmode">SplitMode</a></li>
                 <li><a href="#type-streamingresponselogger">StreamingResponseLogger</a></li>
                 <li><a href="#type-template">Template</a></li>
-                <li><a href="#type-templateretriever">TemplateRetriever</a></li>
+                <li><a href="#type-templater">Templater</a></li>
                 <li><a href="#type-tokenizeresponse">TokenizeResponse</a></li>
                 <li><a href="#type-toolcallarguments">ToolCallArguments</a></li>
                 <li><a href="#type-toplogprob">TopLogprob</a></li>

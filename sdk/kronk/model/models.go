@@ -40,18 +40,18 @@ const (
 
 // ModelInfo represents the model's card information.
 type ModelInfo struct {
-	ID             string
-	HasProjection  bool
-	Desc           string
-	Size           uint64
-	VRAMTotal      int64
-	SlotMemory     int64
-	IsGPTModel     bool
-	IsEmbedModel   bool
-	IsRerankModel  bool
-	IsHybridModel  bool
-	Metadata       map[string]string
-	Template       Template
+	ID            string
+	HasProjection bool
+	Desc          string
+	Size          uint64
+	VRAMTotal     int64
+	SlotMemory    int64
+	IsGPTModel    bool
+	IsEmbedModel  bool
+	IsRerankModel bool
+	IsHybridModel bool
+	Metadata      map[string]string
+	Template      Template
 }
 
 func (mi ModelInfo) String() string {
@@ -110,15 +110,7 @@ func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 		}()
 	}
 
-	var filename string
-	switch len(cfg.ModelFiles) {
-	case 1:
-		filename = filepath.Base(cfg.ModelFiles[0])
-	default:
-		filename = extractFolderName(cfg.ModelFiles[0])
-	}
-
-	modelID := strings.TrimSuffix(filename, path.Ext(filename))
+	modelID := modelIDFromFiles(cfg.ModelFiles)
 
 	var isGPTModel bool
 	if strings.Contains(modelID, "gpt") {
@@ -148,6 +140,19 @@ func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 		IsHybridModel: isHybridModel,
 		Metadata:      metadata,
 	}
+}
+
+func modelIDFromFiles(modelFiles []string) string {
+	var filename string
+	switch len(modelFiles) {
+	case 1:
+		filename = filepath.Base(modelFiles[0])
+
+	default:
+		filename = extractFolderName(modelFiles[0])
+	}
+
+	return strings.TrimSuffix(filename, path.Ext(filename))
 }
 
 func extractFolderName(rawURL string) string {

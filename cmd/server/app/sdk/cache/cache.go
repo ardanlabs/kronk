@@ -230,7 +230,7 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 		cfg.Log = c.log
 
 		krn, err := kronk.New(cfg,
-			kronk.WithTemplateRetriever(c.templates),
+			kronk.WithTemplater(c.templates),
 			kronk.WithContext(ctx),
 		)
 
