@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -80,7 +81,7 @@ func (c *Catalog) SaveModel(model ModelDetails, catalogFile string) error {
 		cat.Models = append(cat.Models, model)
 	}
 
-	out, err := yaml.Marshal(&cat)
+	out, err := marshalCatalog(&cat)
 	if err != nil {
 		return fmt.Errorf("save-model: marshal catalog: %w", err)
 	}
@@ -174,7 +175,7 @@ func (c *Catalog) DeleteModel(modelID string) error {
 
 	cat.Models = models
 
-	out, err := yaml.Marshal(&cat)
+	out, err := marshalCatalog(&cat)
 	if err != nil {
 		return fmt.Errorf("delete-model: marshal catalog: %w", err)
 	}
@@ -189,4 +190,17 @@ func (c *Catalog) DeleteModel(modelID string) error {
 	}
 
 	return nil
+}
+
+// marshalCatalog marshals a CatalogModels value to YAML and inserts a blank
+// line between each model entry for readability.
+func marshalCatalog(cat *CatalogModels) ([]byte, error) {
+	out, err := yaml.Marshal(cat)
+	if err != nil {
+		return nil, err
+	}
+
+	out = bytes.ReplaceAll(out, []byte("\n- id:"), []byte("\n\n- id:"))
+
+	return out, nil
 }
