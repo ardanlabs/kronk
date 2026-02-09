@@ -248,9 +248,9 @@ type ModelDetails struct {
 	Capabilities    Capabilities `yaml:"capabilities,omitempty"`
 	Metadata        Metadata     `yaml:"metadata,omitempty"`
 	BaseModelConfig ModelConfig  `yaml:"config,omitempty"`
-	Downloaded      bool
-	Validated       bool
-	CatalogFile     string
+	Downloaded  bool   `yaml:"-"`
+	Validated   bool   `yaml:"-"`
+	CatalogFile string `yaml:"-"`
 }
 
 // CatalogModels represents a set of models for a given catalog.

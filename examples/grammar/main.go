@@ -122,6 +122,20 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		return nil, fmt.Errorf("unable to create inference model: %w", err)
 	}
 
+	fmt.Print("- system info:\n\t")
+	for k, v := range krn.SystemInfo() {
+		fmt.Printf("%s:%v, ", k, v)
+	}
+	fmt.Println()
+
+	fmt.Println("- contextWindow:", krn.ModelConfig().ContextWindow)
+	fmt.Printf("- k/v          : %s/%s\n", krn.ModelConfig().CacheTypeK, krn.ModelConfig().CacheTypeV)
+	fmt.Println("- nBatch       :", krn.ModelConfig().NBatch)
+	fmt.Println("- nuBatch      :", krn.ModelConfig().NUBatch)
+	fmt.Println("- embeddings   :", krn.ModelInfo().IsEmbedModel)
+	fmt.Println("- isGPT        :", krn.ModelInfo().IsGPTModel)
+	fmt.Println("- template     :", krn.ModelInfo().Template.FileName)
+
 	return krn, nil
 }
 
