@@ -51,12 +51,12 @@ type Logger func(ctx context.Context, msg string, args ...any)
 //
 // CacheTypeK is the data type for the K (key) cache. This controls the precision
 // of the key vectors in the KV cache. Lower precision types (like Q8_0 or Q4_0)
-// reduce memory usage but may slightly affect quality. When set to GGMLTypeAuto
-// or left as zero value, the default llama.cpp value (F16) is used.
+// reduce memory usage but may slightly affect quality. When left as the zero
+// value (GGMLTypeAuto), the default llama.cpp value is used.
 //
 // CacheTypeV is the data type for the V (value) cache. This controls the precision
-// of the value vectors in the KV cache. When set to GGMLTypeAuto or left as zero
-// value, the default llama.cpp value (F16) is used.
+// of the value vectors in the KV cache. When left as the zero value (GGMLTypeAuto),
+// the default llama.cpp value is used.
 //
 // ContextWindow (often referred to as context length) is the maximum number of
 // tokens that a large language model can process and consider at one time when
@@ -501,14 +501,14 @@ func searchModelMeta(model llama.Model, find string) (string, bool) {
 type GGMLType int32
 
 const (
-	GGMLTypeAuto GGMLType = -1 // Use default from llama.cpp
-	GGMLTypeF32  GGMLType = 0  // 32-bit floating point
+	GGMLTypeAuto GGMLType = 0  // Use default from llama.cpp (zero value)
+	GGMLTypeF32  GGMLType = 50 // 32-bit floating point
 	GGMLTypeF16  GGMLType = 1  // 16-bit floating point
 	GGMLTypeQ4_0 GGMLType = 2  // 4-bit quantization (type 0)
 	GGMLTypeQ4_1 GGMLType = 3  // 4-bit quantization (type 1)
 	GGMLTypeQ5_0 GGMLType = 6  // 5-bit quantization (type 0)
 	GGMLTypeQ5_1 GGMLType = 7  // 5-bit quantization (type 1)
-	GGMLTypeQ8_0 GGMLType = 8  // 8-bit quantization (type 0) (default)
+	GGMLTypeQ8_0 GGMLType = 8  // 8-bit quantization (type 0)
 	GGMLTypeBF16 GGMLType = 30 // Brain floating point 16-bit
 )
 
@@ -548,7 +548,14 @@ func (t GGMLType) String() string {
 }
 
 func (t GGMLType) ToYZMAType() llama.GGMLType {
-	return llama.GGMLType(t)
+	switch t {
+	case GGMLTypeAuto:
+		return llama.GGMLType(-1)
+	case GGMLTypeF32:
+		return llama.GGMLType(0)
+	default:
+		return llama.GGMLType(t)
+	}
 }
 
 func (t GGMLType) MarshalYAML() (interface{}, error) {
