@@ -301,9 +301,10 @@ func TestUsageAccumulation(t *testing.T) {
 				finalResp.Usage.ReasoningTokens)
 		}
 
-		if finalResp.Usage.CompletionTokens > 0 && contentTokens == 0 {
-			t.Errorf("Model reported %d completion tokens but we counted 0 content deltas",
-				finalResp.Usage.CompletionTokens)
+		nonReasoningTokens := finalResp.Usage.CompletionTokens - finalResp.Usage.ReasoningTokens
+		if nonReasoningTokens > 0 && contentTokens == 0 {
+			t.Errorf("Model reported %d non-reasoning completion tokens but we counted 0 content deltas",
+				nonReasoningTokens)
 		}
 	})
 }
