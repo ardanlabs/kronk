@@ -1630,43 +1630,288 @@ kronk libs --local`}</code></pre>
           <h3 id="72-stopping-the-server">7.2 Stopping the Server</h3>
           <pre className="code-block"><code className="language-shell">{`kronk server stop`}</code></pre>
           <h3 id="73-server-configuration">7.3 Server Configuration</h3>
-          <p>Configuration can be set via command-line flags or environment variables.</p>
+          <p>Configuration can be set via command-line flags or environment variables. Every</p>
+          <p>flag has a corresponding environment variable using the <code>KRONK_</code> prefix with</p>
+          <p>underscores replacing hyphens.</p>
           <p><strong>Web Settings</strong></p>
-          <pre className="code-block"><code className="language-shell">{`kronk server start \\
-  --api-host=localhost:8080 \\
-  --debug-host=localhost:8090 \\
-  --read-timeout=30s \\
-  --write-timeout=15m \\
-  --idle-timeout=1m \\
-  --shutdown-timeout=1m \\
-  --cors-allowed-origins=http://localhost:3000`}</code></pre>
-          <p><strong>Environment Variables</strong></p>
           <table className="flags-table">
             <thead>
               <tr>
-                <th>Variable</th>
+                <th>Flag</th>
+                <th>Environment Variable</th>
+                <th>Default</th>
                 <th>Description</th>
               </tr>
             </thead>
             <tbody>
               <tr>
+                <td><code>--api-host</code></td>
                 <td><code>KRONK_WEB_API_HOST</code></td>
-                <td>API host address (default: localhost:8080)</td>
+                <td><code>localhost:8080</code></td>
+                <td>API host address</td>
               </tr>
               <tr>
+                <td><code>--debug-host</code></td>
                 <td><code>KRONK_WEB_DEBUG_HOST</code></td>
-                <td>Debug host address</td>
+                <td><code>localhost:8090</code></td>
+                <td>Debug/pprof host address</td>
               </tr>
               <tr>
+                <td><code>--read-timeout</code></td>
                 <td><code>KRONK_WEB_READ_TIMEOUT</code></td>
+                <td><code>30s</code></td>
                 <td>HTTP read timeout</td>
               </tr>
               <tr>
+                <td><code>--write-timeout</code></td>
                 <td><code>KRONK_WEB_WRITE_TIMEOUT</code></td>
+                <td><code>15m</code></td>
                 <td>HTTP write timeout</td>
+              </tr>
+              <tr>
+                <td><code>--idle-timeout</code></td>
+                <td><code>KRONK_WEB_IDLE_TIMEOUT</code></td>
+                <td><code>1m</code></td>
+                <td>HTTP idle timeout</td>
+              </tr>
+              <tr>
+                <td><code>--shutdown-timeout</code></td>
+                <td><code>KRONK_WEB_SHUTDOWN_TIMEOUT</code></td>
+                <td><code>1m</code></td>
+                <td>Graceful shutdown timeout</td>
+              </tr>
+              <tr>
+                <td><code>--cors-allowed-origins</code></td>
+                <td><code>KRONK_WEB_CORS_ALLOWED_ORIGINS</code></td>
+                <td><code>*</code></td>
+                <td>Comma-separated CORS origins</td>
               </tr>
             </tbody>
           </table>
+          <p><strong>Authentication Settings</strong></p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Flag</th>
+                <th>Environment Variable</th>
+                <th>Default</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>--auth-host</code></td>
+                <td><code>KRONK_AUTH_HOST</code></td>
+                <td>_(empty)_</td>
+                <td>External auth service host. Leave empty to use local auth</td>
+              </tr>
+              <tr>
+                <td><code>--auth-enabled</code></td>
+                <td><code>KRONK_AUTH_LOCAL_ENABLED</code></td>
+                <td><code>false</code></td>
+                <td>Enable local JWT authentication</td>
+              </tr>
+              <tr>
+                <td><code>--auth-issuer</code></td>
+                <td><code>KRONK_AUTH_LOCAL_ISSUER</code></td>
+                <td><code>kronk project</code></td>
+                <td>Issuer name for local JWT tokens</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><strong>Tracing Settings (Tempo)</strong></p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Flag</th>
+                <th>Environment Variable</th>
+                <th>Default</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>--tempo-host</code></td>
+                <td><code>KRONK_TEMPO_HOST</code></td>
+                <td><code>localhost:4317</code></td>
+                <td>OpenTelemetry collector host</td>
+              </tr>
+              <tr>
+                <td><code>--tempo-service-name</code></td>
+                <td><code>KRONK_TEMPO_SERVICE_NAME</code></td>
+                <td><code>kronk</code></td>
+                <td>Service name for traces</td>
+              </tr>
+              <tr>
+                <td><code>--tempo-probability</code></td>
+                <td><code>KRONK_TEMPO_PROBABILITY</code></td>
+                <td><code>0.25</code></td>
+                <td>Trace sampling probability (0.0-1.0)</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><strong>Catalog Settings</strong></p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Flag</th>
+                <th>Environment Variable</th>
+                <th>Default</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>--catalog-github-repo</code></td>
+                <td><code>KRONK_CATALOG_GITHUB_REPO</code></td>
+                <td>GitHub API URL</td>
+                <td>GitHub repo URL for catalog files</td>
+              </tr>
+              <tr>
+                <td><code>--model-config-file</code></td>
+                <td><code>KRONK_CATALOG_MODEL_CONFIG_FILE</code></td>
+                <td>_(empty)_</td>
+                <td>Path to model-specific config YAML file</td>
+              </tr>
+              <tr>
+                <td><code>--catalog-repo-path</code></td>
+                <td><code>KRONK_CATALOG_REPO_PATH</code></td>
+                <td>_(empty)_</td>
+                <td>Path to cloned catalog repository for publishing edits</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><strong>Template Settings</strong></p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Flag</th>
+                <th>Environment Variable</th>
+                <th>Default</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>--templates-github-repo</code></td>
+                <td><code>KRONK_TEMPLATES_GITHUB_REPO</code></td>
+                <td>GitHub API URL</td>
+                <td>GitHub repo URL for template files</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><strong>Cache Settings</strong></p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Flag</th>
+                <th>Environment Variable</th>
+                <th>Default</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>--models-in-cache</code></td>
+                <td><code>KRONK_CACHE_MODELS_IN_CACHE</code></td>
+                <td><code>3</code></td>
+                <td>Maximum models kept loaded in memory</td>
+              </tr>
+              <tr>
+                <td><code>--cache-ttl</code></td>
+                <td><code>KRONK_CACHE_TTL</code></td>
+                <td><code>20m</code></td>
+                <td>How long unused models stay loaded</td>
+              </tr>
+              <tr>
+                <td><code>--ignore-integrity-check</code></td>
+                <td><code>KRONK_CACHE_IGNORE_INTEGRITY_CHECK</code></td>
+                <td><code>true</code></td>
+                <td>Skip SHA256 integrity check on model load</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><strong>Runtime Settings</strong></p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Flag</th>
+                <th>Environment Variable</th>
+                <th>Default</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>--base-path</code></td>
+                <td><code>KRONK_BASE_PATH</code></td>
+                <td><code>~/.kronk</code></td>
+                <td>Base directory for all Kronk data</td>
+              </tr>
+              <tr>
+                <td><code>--lib-path</code></td>
+                <td><code>KRONK_LIB_PATH</code></td>
+                <td>_(empty)_</td>
+                <td>Path to llama library directory</td>
+              </tr>
+              <tr>
+                <td><code>--lib-version</code></td>
+                <td><code>KRONK_LIB_VERSION</code></td>
+                <td>_(empty)_</td>
+                <td>Specific llama library version</td>
+              </tr>
+              <tr>
+                <td><code>--arch</code></td>
+                <td><code>KRONK_ARCH</code></td>
+                <td>_(auto)_</td>
+                <td>Architecture override (<code>amd64</code>, <code>arm64</code>)</td>
+              </tr>
+              <tr>
+                <td><code>--os</code></td>
+                <td><code>KRONK_OS</code></td>
+                <td>_(auto)_</td>
+                <td>OS override (<code>linux</code>, <code>darwin</code>, <code>windows</code>)</td>
+              </tr>
+              <tr>
+                <td><code>--processor</code></td>
+                <td><code>KRONK_PROCESSOR</code></td>
+                <td>_(auto)_</td>
+                <td>Processor type (<code>cpu</code>, <code>metal</code>, <code>cuda</code>, <code>vulkan</code>)</td>
+              </tr>
+              <tr>
+                <td><code>--hf-token</code></td>
+                <td><code>KRONK_HF_TOKEN</code></td>
+                <td>_(empty)_</td>
+                <td>Hugging Face API token for gated models</td>
+              </tr>
+              <tr>
+                <td><code>--allow-upgrade</code></td>
+                <td><code>KRONK_ALLOW_UPGRADE</code></td>
+                <td><code>true</code></td>
+                <td>Allow automatic library upgrades</td>
+              </tr>
+              <tr>
+                <td><code>--llama-log</code></td>
+                <td><code>KRONK_LLAMA_LOG</code></td>
+                <td><code>1</code></td>
+                <td>Llama log level (0=off, 1=on)</td>
+              </tr>
+              <tr>
+                <td><code>--insecure-logging</code></td>
+                <td><code>KRONK_INSECURE_LOGGING</code></td>
+                <td><code>false</code></td>
+                <td>Log sensitive data (messages, model config)</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><strong>Example</strong></p>
+          <pre className="code-block"><code className="language-shell">{`kronk server start \\
+  --api-host=0.0.0.0:8080 \\
+  --models-in-cache=5 \\
+  --cache-ttl=30m \\
+  --model-config-file=model-config.yaml \\
+  --catalog-repo-path=~/code/kronk_catalogs \\
+  --hf-token=hf_xxxxx`}</code></pre>
           <h3 id="74-model-caching">7.4 Model Caching</h3>
           <p>The server maintains a pool of loaded models to avoid reload latency.</p>
           <p><strong>Configuration</strong></p>
