@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 	"unsafe"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
@@ -118,6 +119,7 @@ type slot struct {
 	finalReasoning strings.Builder // Accumulated reasoning text
 	finalTooling   strings.Builder // Accumulated tool call JSON
 	respToolCalls  []ResponseToolCall
+	utf8Buf        []byte // Buffered bytes from partial multi-byte UTF-8 codepoints
 
 	// -------------------------------------------------------------------------
 	// Logprobs
@@ -150,6 +152,7 @@ func (s *slot) reset() {
 	s.finalReasoning.Reset()
 	s.finalTooling.Reset()
 	s.respToolCalls = nil
+	s.utf8Buf = s.utf8Buf[:0]
 	s.span = nil
 	s.iBatch = -1
 	s.sampled = 0
@@ -1024,9 +1027,26 @@ func (e *batchEngine) handleSampledToken(s *slot, token llama.Token, iBatch int3
 		return
 	}
 
-	// Convert token to text.
+	// Convert token to text, buffering partial UTF-8 codepoints.
 	l := llama.TokenToPiece(e.model.vocab, token, buf, 0, true)
-	content := string(buf[:l])
+
+	s.utf8Buf = append(s.utf8Buf, buf[:l]...)
+
+	complete, remainder := extractCompleteUTF8(s.utf8Buf)
+
+	// Convert to string BEFORE mutating the buffer. The complete slice
+	// shares the same backing array as s.utf8Buf, so we must copy via
+	// string() first to avoid corruption.
+	var content string
+	if len(complete) > 0 {
+		content = string(complete)
+	}
+
+	if len(remainder) > 0 {
+		s.utf8Buf = append(s.utf8Buf[:0], remainder...)
+	} else {
+		s.utf8Buf = s.utf8Buf[:0]
+	}
 
 	s.sampled = token
 
@@ -1050,6 +1070,29 @@ func (e *batchEngine) handleSampledToken(s *slot, token llama.Token, iBatch int3
 		_, s.tokenGenSpan = otel.AddSpan(s.job.ctx, "token-generation",
 			attribute.Int("slot", s.id),
 		)
+	}
+
+	// Count every sampled token for usage and max_tokens enforcement,
+	// even when it produced no complete UTF-8 yet.
+	switch {
+	case s.reasonFlag > 0:
+		s.reasonTokens++
+	default:
+		s.completionTokens++
+	}
+
+	outputTokens := s.reasonTokens + s.completionTokens
+
+	if outputTokens >= s.job.params.MaxTokens {
+		e.finishSlot(s, nil)
+		return
+	}
+
+	// If no complete UTF-8 codepoints are ready, skip the processor and
+	// streaming but the token has already been counted above.
+	if len(content) == 0 {
+		s.iBatch = -1
+		return
 	}
 
 	// Process through the state machine.
@@ -1106,18 +1149,6 @@ func (e *batchEngine) handleSampledToken(s *slot, token llama.Token, iBatch int3
 		s.finalContent.WriteString(resp.content)
 	}
 
-	// Update token counts.
-	switch {
-	case s.reasonFlag > 0:
-		s.reasonTokens++
-
-	default:
-		s.completionTokens++
-	}
-
-	// Calculate output tokens for logging (after incrementing counts).
-	outputTokens := s.reasonTokens + s.completionTokens
-
 	// Stream response if not tooling.
 	if s.toolFlag == 0 {
 		// Skip unnecessary CRLF at mode transitions.
@@ -1132,12 +1163,6 @@ func (e *batchEngine) handleSampledToken(s *slot, token llama.Token, iBatch int3
 			e.finishSlot(s, err)
 			return
 		}
-	}
-
-	// Check max tokens using actual output count (not nDecoded which lags).
-	if outputTokens >= s.job.params.MaxTokens {
-		e.finishSlot(s, nil)
-		return
 	}
 
 	s.iBatch = -1
@@ -1208,6 +1233,25 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		e.model.sendErrorResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, "", err, usage)
 
 		return
+	}
+
+	// Flush any remaining buffered UTF-8 bytes into the final accumulators.
+	// Only emit complete codepoints; drop any trailing incomplete sequence
+	// to avoid injecting replacement characters into the final response.
+	if len(s.utf8Buf) > 0 {
+		complete, _ := extractCompleteUTF8(s.utf8Buf)
+		if len(complete) > 0 {
+			leftover := string(complete)
+			switch {
+			case s.reasonFlag > 0:
+				s.finalReasoning.WriteString(leftover)
+			case s.toolFlag > 0:
+				s.finalTooling.WriteString(leftover)
+			default:
+				s.finalContent.WriteString(leftover)
+			}
+		}
+		s.utf8Buf = s.utf8Buf[:0]
 	}
 
 	// Process tool calls if any. Token counts are already tracked
@@ -1298,6 +1342,55 @@ func (e *batchEngine) freeSlotResources(s *slot) {
 		mtmd.Free(s.job.mtmdCtx)
 		s.job.mtmdCtx = 0
 	}
+}
+
+// extractCompleteUTF8 separates a byte slice into complete UTF-8 codepoints
+// and any trailing bytes that form an incomplete (but valid prefix of a)
+// multi-byte sequence. This handles multi-byte characters (like emoji) that
+// get split across multiple BPE tokens.
+//
+// Bytes that can never form valid UTF-8 (lone continuation bytes, overlong
+// encodings, etc.) are passed through in complete rather than buffered
+// indefinitely.
+func extractCompleteUTF8(b []byte) (complete []byte, remainder []byte) {
+	if utf8.Valid(b) {
+		return b, nil
+	}
+
+	n := len(b)
+	i := n
+
+	for i > 0 {
+		i--
+		c := b[i]
+
+		if c < 0x80 {
+			break
+		}
+
+		if c&0xC0 != 0x80 {
+			var expected int
+			switch {
+			case c&0xE0 == 0xC0:
+				expected = 2
+			case c&0xF0 == 0xE0:
+				expected = 3
+			case c&0xF8 == 0xF0:
+				expected = 4
+			default:
+				break
+			}
+
+			have := n - i
+			if expected > 0 && have < expected {
+				return b[:i], b[i:]
+			}
+
+			break
+		}
+	}
+
+	return b, nil
 }
 
 // slotCancelError returns an appropriate error for a cancelled slot.
