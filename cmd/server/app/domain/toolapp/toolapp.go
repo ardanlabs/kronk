@@ -414,7 +414,7 @@ func (a *app) showCatalogModel(ctx context.Context, r *http.Request) web.Encoder
 
 	tmpl, err := a.templates.Retrieve(modelID)
 	if err == nil && tmpl.FileName != "" {
-		catDetails.Template = fmt.Sprintf("%s\n\n%s", tmpl.FileName, tmpl.Script)
+		catDetails.Template = tmpl.FileName
 	}
 
 	metadata := make(map[string]string)
@@ -442,6 +442,69 @@ func (a *app) showCatalogModel(ctx context.Context, r *http.Request) web.Encoder
 	}
 
 	return toCatalogModelResponse(catDetails, &rmc, metadata, vram)
+}
+
+func (a *app) lookupHuggingFace(ctx context.Context, r *http.Request) web.Encoder {
+	var req HFLookupRequest
+	if err := web.Decode(r, &req); err != nil {
+		return errs.New(errs.InvalidArgument, err)
+	}
+
+	result, err := catalog.LookupHuggingFace(ctx, req.Input)
+	if err != nil {
+		return errs.New(errs.Internal, err)
+	}
+
+	return toHFLookupResponse(result)
+}
+
+func (a *app) saveCatalogModel(ctx context.Context, r *http.Request) web.Encoder {
+	var req SaveCatalogRequest
+	if err := web.Decode(r, &req); err != nil {
+		return errs.New(errs.InvalidArgument, err)
+	}
+
+	if err := a.catalog.SaveModel(req.toModelDetails(), req.CatalogFile); err != nil {
+		return errs.New(errs.Internal, err)
+	}
+
+	return SaveCatalogResponse{Status: "saved", ID: req.ID}
+}
+
+func (a *app) deleteCatalogModel(ctx context.Context, r *http.Request) web.Encoder {
+	modelID := web.Param(r, "model")
+
+	if err := a.catalog.DeleteModel(modelID); err != nil {
+		return errs.New(errs.Internal, err)
+	}
+
+	return SaveCatalogResponse{Status: "deleted", ID: modelID}
+}
+
+func (a *app) publishCatalogModel(ctx context.Context, r *http.Request) web.Encoder {
+	var req PublishCatalogRequest
+	if err := web.Decode(r, &req); err != nil {
+		return errs.New(errs.InvalidArgument, err)
+	}
+
+	if err := a.catalog.PublishModel(req.CatalogFile); err != nil {
+		return errs.New(errs.Internal, err)
+	}
+
+	return PublishCatalogResponse{Status: "published"}
+}
+
+func (a *app) catalogRepoPath(ctx context.Context, r *http.Request) web.Encoder {
+	return RepoPathResponse{RepoPath: a.catalog.RepoPath()}
+}
+
+func (a *app) listCatalogFiles(ctx context.Context, r *http.Request) web.Encoder {
+	files, err := a.catalog.ListCatalogFiles()
+	if err != nil {
+		return errs.New(errs.Internal, err)
+	}
+
+	return toCatalogFilesResponse(files)
 }
 
 func (a *app) listKeys(ctx context.Context, r *http.Request) web.Encoder {

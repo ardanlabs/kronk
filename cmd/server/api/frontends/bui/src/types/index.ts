@@ -156,10 +156,12 @@ export interface CatalogModelResponse {
   metadata: CatalogMetadata;
   vram?: VRAM;
   model_config?: ModelConfig;
+  base_config?: ModelConfig;
   model_metadata?: Record<string, string>;
   downloaded: boolean;
   gated_model: boolean;
   validated: boolean;
+  catalog_file?: string;
 }
 
 export type CatalogModelsResponse = CatalogModelResponse[];
@@ -311,6 +313,46 @@ export interface ChatStreamResponse {
   usage?: ChatUsage;
 }
 
+export interface HFRepoFile {
+  filename: string;
+  size: number;
+  size_str: string;
+}
+
+export interface HFLookupResponse {
+  model: CatalogModelResponse;
+  repo_files: HFRepoFile[];
+}
+
+export interface SaveCatalogRequest {
+  id: string;
+  category: string;
+  owned_by: string;
+  model_family: string;
+  web_page: string;
+  gated_model: boolean;
+  template: string;
+  files: CatalogFiles;
+  capabilities: CatalogCapabilities;
+  metadata: {
+    created: string;
+    collections: string;
+    description: string;
+  };
+  config?: ModelConfig;
+  catalog_file: string;
+}
+
+export interface SaveCatalogResponse {
+  status: string;
+  id: string;
+}
+
+export interface CatalogFileInfo {
+  name: string;
+  model_count: number;
+}
+
 export interface VRAMRequest {
   model_url: string;
   context_window: number;
@@ -327,4 +369,54 @@ export interface VRAMCalculatorResponse {
   total_slots: number;
   slot_memory: number;
   total_vram: number;
+}
+
+export interface HFRepoFile {
+  filename: string;
+  size: number;
+  size_str: string;
+}
+
+export interface HFLookupResponse {
+  model: CatalogModelResponse;
+  repo_files: HFRepoFile[];
+}
+
+export interface SaveCatalogRequest {
+  id: string;
+  category: string;
+  owned_by: string;
+  model_family: string;
+  web_page: string;
+  gated_model: boolean;
+  template: string;
+  files: CatalogFiles;
+  capabilities: CatalogCapabilities;
+  metadata: CatalogMetadata;
+  config?: ModelConfig;
+  catalog_file: string;
+}
+
+export interface SaveCatalogResponse {
+  status: string;
+  id: string;
+}
+
+export interface CatalogFileInfo {
+  name: string;
+  model_count: number;
+}
+
+export type CatalogFilesListResponse = CatalogFileInfo[];
+
+export interface PublishCatalogRequest {
+  catalog_file: string;
+}
+
+export interface PublishCatalogResponse {
+  status: string;
+}
+
+export interface RepoPathResponse {
+  repo_path: string;
 }

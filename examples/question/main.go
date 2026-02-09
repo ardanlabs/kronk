@@ -100,7 +100,6 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		ModelFiles: mp.ModelFiles,
 		CacheTypeK: model.GGMLTypeQ8_0,
 		CacheTypeV: model.GGMLTypeQ8_0,
-		NSeqMax:    2,
 	}
 
 	krn, err := kronk.New(cfg)

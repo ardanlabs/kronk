@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -404,24 +405,20 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 		}
 	}
 
-	switch {
-	case cfg.CacheTypeK > -2 && cfg.CacheTypeK < 41:
+	if cfg.CacheTypeK != GGMLTypeAuto {
 		ctxParams.TypeK = cfg.CacheTypeK.ToYZMAType()
-	default:
-		ctxParams.TypeK = GGMLTypeQ8_0.ToYZMAType()
+	}
+
+	if cfg.CacheTypeV != GGMLTypeAuto {
+		ctxParams.TypeV = cfg.CacheTypeV.ToYZMAType()
 	}
 
 	switch {
-	case cfg.CacheTypeV > -2 && cfg.CacheTypeV < 41:
-		ctxParams.TypeV = cfg.CacheTypeV.ToYZMAType()
-	default:
-		ctxParams.TypeV = GGMLTypeQ8_0.ToYZMAType()
-	}
-
-	switch cfg.FlashAttention {
-	case FlashAttentionDisabled:
+	case mi.IsHybridModel:
 		ctxParams.FlashAttentionType = llama.FlashAttentionTypeDisabled
-	case FlashAttentionAuto:
+	case cfg.FlashAttention == FlashAttentionDisabled:
+		ctxParams.FlashAttentionType = llama.FlashAttentionTypeDisabled
+	case cfg.FlashAttention == FlashAttentionAuto:
 		ctxParams.FlashAttentionType = llama.FlashAttentionTypeAuto
 	default:
 		ctxParams.FlashAttentionType = llama.FlashAttentionTypeEnabled
@@ -554,6 +551,30 @@ func (t GGMLType) ToYZMAType() llama.GGMLType {
 	return llama.GGMLType(t)
 }
 
+func (t GGMLType) MarshalYAML() (interface{}, error) {
+	return t.String(), nil
+}
+
+func (t GGMLType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(t.String())
+}
+
+func (t *GGMLType) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+
+	parsed, err := ParseGGMLType(s)
+	if err != nil {
+		return err
+	}
+
+	*t = parsed
+
+	return nil
+}
+
 // UnmarshalYAML implements yaml.Unmarshaler to parse string values like "f16".
 func (t *GGMLType) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	var s string
@@ -620,6 +641,47 @@ const (
 	FlashAttentionAuto     FlashAttentionType = 2 // Let llama.cpp decide
 )
 
+func (t FlashAttentionType) String() string {
+	switch t {
+	case FlashAttentionEnabled:
+		return "enabled"
+	case FlashAttentionDisabled:
+		return "disabled"
+	case FlashAttentionAuto:
+		return "auto"
+	default:
+		return fmt.Sprintf("unknown(%d)", t)
+	}
+}
+
+func (t FlashAttentionType) MarshalYAML() (interface{}, error) {
+	return t.String(), nil
+}
+
+func (t FlashAttentionType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(t.String())
+}
+
+func (t *FlashAttentionType) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "enabled", "on", "true", "1":
+		*t = FlashAttentionEnabled
+	case "disabled", "off", "false", "0":
+		*t = FlashAttentionDisabled
+	case "auto", "":
+		*t = FlashAttentionAuto
+	default:
+		return fmt.Errorf("unknown flash attention type: %s", s)
+	}
+
+	return nil
+}
+
 // UnmarshalYAML implements yaml.Unmarshaler to parse string values.
 func (t *FlashAttentionType) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	var s string
@@ -683,6 +745,30 @@ func (s SplitMode) String() string {
 // ToYZMAType converts to the yzma/llama.cpp SplitMode type.
 func (s SplitMode) ToYZMAType() llama.SplitMode {
 	return llama.SplitMode(s)
+}
+
+func (s SplitMode) MarshalYAML() (interface{}, error) {
+	return s.String(), nil
+}
+
+func (s SplitMode) MarshalJSON() ([]byte, error) {
+	return json.Marshal(s.String())
+}
+
+func (s *SplitMode) UnmarshalJSON(data []byte) error {
+	var str string
+	if err := json.Unmarshal(data, &str); err != nil {
+		return err
+	}
+
+	parsed, err := ParseSplitMode(str)
+	if err != nil {
+		return err
+	}
+
+	*s = parsed
+
+	return nil
 }
 
 // UnmarshalYAML implements yaml.Unmarshaler to parse string values.
@@ -761,6 +847,30 @@ func (r RopeScalingType) String() string {
 // ToYZMAType converts to the yzma/llama.cpp RopeScalingType.
 func (r RopeScalingType) ToYZMAType() llama.RopeScalingType {
 	return llama.RopeScalingType(r)
+}
+
+func (r RopeScalingType) MarshalYAML() (interface{}, error) {
+	return r.String(), nil
+}
+
+func (r RopeScalingType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(r.String())
+}
+
+func (r *RopeScalingType) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+
+	parsed, err := ParseRopeScalingType(s)
+	if err != nil {
+		return err
+	}
+
+	*r = parsed
+
+	return nil
 }
 
 // UnmarshalYAML implements yaml.Unmarshaler to parse string values.

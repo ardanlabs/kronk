@@ -50,6 +50,12 @@ func Routes(app *web.App, cfg Config) {
 	app.HandlerFunc(http.MethodGet, version, "/catalog/filter/{filter}", api.listCatalog, auth)
 	app.HandlerFunc(http.MethodGet, version, "/catalog/{model}", api.showCatalogModel, auth)
 	app.HandlerFunc(http.MethodPost, version, "/catalog/pull/{model}", api.pullCatalog, auth)
+	app.HandlerFunc(http.MethodPost, version, "/catalog/lookup", api.lookupHuggingFace, auth)
+	app.HandlerFunc(http.MethodPost, version, "/catalog/save", api.saveCatalogModel, auth)
+	app.HandlerFunc(http.MethodDelete, version, "/catalog/{model}", api.deleteCatalogModel, auth)
+	app.HandlerFunc(http.MethodGet, version, "/catalog-files", api.listCatalogFiles, auth)
+	app.HandlerFunc(http.MethodPost, version, "/catalog/publish", api.publishCatalogModel, auth)
+	app.HandlerFunc(http.MethodGet, version, "/catalog-repo-path", api.catalogRepoPath, auth)
 
 	// Auth is handled by the auth service for these calls.
 	app.HandlerFunc(http.MethodPost, version, "/security/token/create", api.createToken)

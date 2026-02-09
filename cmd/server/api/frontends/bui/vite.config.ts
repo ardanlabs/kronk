@@ -6,7 +6,7 @@ export default defineConfig({
   build: {
     outDir: '../../services/kronk/static',
     emptyOutDir: true,
-    chunkSizeWarningLimit: 1024,
+    chunkSizeWarningLimit: 2048,
     rollupOptions: {
       output: {
         entryFileNames: 'assets/[name].js',

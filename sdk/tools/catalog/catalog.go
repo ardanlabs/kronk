@@ -25,6 +25,7 @@ type options struct {
 	basePath        string
 	githubRepo      string
 	modelConfigFile string
+	repoPath        string
 }
 
 // Option represents options for configuring catalog.
@@ -51,11 +52,19 @@ func WithModelConfig(modelConfigFile string) Option {
 	}
 }
 
+// WithRepoPath sets the path to the cloned catalog repository for publishing.
+func WithRepoPath(repoPath string) Option {
+	return func(o *options) {
+		o.repoPath = repoPath
+	}
+}
+
 // =============================================================================
 
 // Catalog manages the catalog system.
 type Catalog struct {
 	catalogPath string
+	repoPath    string
 	githubRepo  string
 	models      *models.Models
 	biMutex     sync.Mutex
@@ -98,6 +107,7 @@ func New(opts ...Option) (*Catalog, error) {
 
 	c := Catalog{
 		catalogPath: catalogPath,
+		repoPath:    o.repoPath,
 		githubRepo:  o.githubRepo,
 		models:      models,
 		modelConfig: modelConfig,

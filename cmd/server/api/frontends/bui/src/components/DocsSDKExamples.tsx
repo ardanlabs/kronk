@@ -119,13 +119,10 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	}
 
 	cfg := model.Config{
-		ModelFiles:    mp.ModelFiles,
-		ProjFile:      mp.ProjFile,
-		ContextWindow: 8192,
-		NBatch:        2048,
-		NUBatch:       2048,
-		CacheTypeK:    model.GGMLTypeQ8_0,
-		CacheTypeV:    model.GGMLTypeQ8_0,
+		ModelFiles: mp.ModelFiles,
+		ProjFile:   mp.ProjFile,
+		CacheTypeK: model.GGMLTypeQ8_0,
+		CacheTypeV: model.GGMLTypeQ8_0,
 	}
 
 	krn, err := kronk.New(cfg)
@@ -280,7 +277,7 @@ import (
 // const modelURL = "unsloth/GLM-4.7-Flash-GGUF/GLM-4.7-Flash-UD-Q8_K_XL.gguf"
 // const modelURL = "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF/Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL.gguf"
 // const modelURL = "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
-const modelURL = "https://huggingface.co/unsloth/Qwen3-Coder-Next-GGUF/resolve/main/Qwen3-Coder-Next-UD-Q4_K_XL.gguf"
+const modelURL = "https://huggingface.co/unsloth/Qwen3-Coder-Next-GGUF/resolve/main/Qwen3-Coder-Next-UD-Q3_K_XL.gguf"
 
 func main() {
 	if err := run(); err != nil {
@@ -386,11 +383,13 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	// }
 
 	cfg := model.Config{
-		ModelFiles:        mp.ModelFiles,
-		CacheTypeK:        model.GGMLTypeQ8_0,
-		CacheTypeV:        model.GGMLTypeQ8_0,
-		NSeqMax:           2,
-		SystemPromptCache: true,
+		ModelFiles:     mp.ModelFiles,
+		CacheTypeK:     model.GGMLTypeAuto,
+		CacheTypeV:     model.GGMLTypeAuto,
+		FlashAttention: model.FlashAttentionDisabled,
+		ContextWindow:  8196,
+		NBatch:         1024,
+		NUBatch:        512,
 	}
 
 	krn, err := kronk.New(cfg)
@@ -723,13 +722,9 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	}
 
 	cfg := model.Config{
-		ModelFiles:     mp.ModelFiles,
-		ContextWindow:  2048,
-		NBatch:         2048,
-		NUBatch:        512,
-		CacheTypeK:     model.GGMLTypeQ8_0,
-		CacheTypeV:     model.GGMLTypeQ8_0,
-		FlashAttention: model.FlashAttentionEnabled,
+		ModelFiles: mp.ModelFiles,
+		CacheTypeK: model.GGMLTypeQ8_0,
+		CacheTypeV: model.GGMLTypeQ8_0,
 	}
 
 	krn, err := kronk.New(cfg)
@@ -894,7 +889,6 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		ModelFiles: mp.ModelFiles,
 		CacheTypeK: model.GGMLTypeQ8_0,
 		CacheTypeV: model.GGMLTypeQ8_0,
-		NSeqMax:    2,
 	}
 
 	krn, err := kronk.New(cfg)
@@ -1171,7 +1165,6 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		ModelFiles: mp.ModelFiles,
 		CacheTypeK: model.GGMLTypeQ8_0,
 		CacheTypeV: model.GGMLTypeQ8_0,
-		NSeqMax:    2,
 	}
 
 	krn, err := kronk.New(cfg)
@@ -1361,12 +1354,9 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	}
 
 	cfg := model.Config{
-		ModelFiles:    mp.ModelFiles,
-		ContextWindow: 2048,
-		NBatch:        2048,
-		NUBatch:       512,
-		CacheTypeK:    model.GGMLTypeQ8_0,
-		CacheTypeV:    model.GGMLTypeQ8_0,
+		ModelFiles: mp.ModelFiles,
+		CacheTypeK: model.GGMLTypeQ8_0,
+		CacheTypeV: model.GGMLTypeQ8_0,
 	}
 
 	krn, err := kronk.New(cfg)
@@ -1556,7 +1546,6 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		ModelFiles: mp.ModelFiles,
 		CacheTypeK: model.GGMLTypeQ8_0,
 		CacheTypeV: model.GGMLTypeQ8_0,
-		NSeqMax:    2,
 	}
 
 	krn, err := kronk.New(cfg)
@@ -1875,13 +1864,10 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	}
 
 	cfg := model.Config{
-		ModelFiles:    mp.ModelFiles,
-		ProjFile:      mp.ProjFile,
-		ContextWindow: 8192,
-		NBatch:        2048,
-		NUBatch:       2048,
-		CacheTypeK:    model.GGMLTypeQ8_0,
-		CacheTypeV:    model.GGMLTypeQ8_0,
+		ModelFiles: mp.ModelFiles,
+		ProjFile:   mp.ProjFile,
+		CacheTypeK: model.GGMLTypeQ8_0,
+		CacheTypeV: model.GGMLTypeQ8_0,
 	}
 
 	krn, err := kronk.New(cfg)

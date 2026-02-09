@@ -14,6 +14,12 @@ import type {
   ChatStreamResponse,
   VRAMRequest,
   VRAMCalculatorResponse,
+  HFLookupResponse,
+  SaveCatalogRequest,
+  SaveCatalogResponse,
+  CatalogFileInfo,
+  PublishCatalogResponse,
+  RepoPathResponse,
 } from '../types';
 
 class ApiService {
@@ -463,6 +469,41 @@ class ApiService {
     return () => controller.abort();
   }
 
+  async lookupHuggingFace(input: string): Promise<HFLookupResponse> {
+    return this.request<HFLookupResponse>('/catalog/lookup', {
+      method: 'POST',
+      body: JSON.stringify({ input }),
+    });
+  }
+
+  async saveCatalogModel(data: SaveCatalogRequest): Promise<SaveCatalogResponse> {
+    return this.request<SaveCatalogResponse>('/catalog/save', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteCatalogModel(id: string): Promise<SaveCatalogResponse> {
+    return this.request<SaveCatalogResponse>(`/catalog/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async listCatalogFiles(): Promise<CatalogFileInfo[]> {
+    return this.request<CatalogFileInfo[]>('/catalog-files');
+  }
+
+  async publishCatalogModel(catalogFile: string): Promise<PublishCatalogResponse> {
+    return this.request<PublishCatalogResponse>('/catalog/publish', {
+      method: 'POST',
+      body: JSON.stringify({ catalog_file: catalogFile }),
+    });
+  }
+
+  async getCatalogRepoPath(): Promise<RepoPathResponse> {
+    return this.request<RepoPathResponse>('/catalog-repo-path');
+  }
+
   async calculateVRAM(request: VRAMRequest, token?: string): Promise<VRAMCalculatorResponse> {
     const headers: Record<string, string> = {};
     if (token) {
@@ -474,6 +515,7 @@ class ApiService {
       body: JSON.stringify(request),
     });
   }
+
 }
 
 export const api = new ApiService();

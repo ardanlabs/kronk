@@ -38,7 +38,10 @@ const menuStructure: MenuCategory[] = [
   {
     id: 'catalog',
     label: 'Catalog',
-    items: [{ page: 'catalog-list', label: 'List' }],
+    items: [
+      { page: 'catalog-list', label: 'List' },
+      { page: 'catalog-editor', label: 'Editor' },
+    ],
   },
   {
     id: 'libs',

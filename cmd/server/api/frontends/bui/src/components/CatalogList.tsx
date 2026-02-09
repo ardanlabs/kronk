@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { useDownload } from '../contexts/DownloadContext';
 import type { CatalogModelResponse, CatalogModelsResponse } from '../types';
@@ -21,6 +22,7 @@ function formatBytes(bytes: number): string {
 }
 
 export default function CatalogList() {
+  const navigate = useNavigate();
   const { download, startCatalogDownload, cancelDownload } = useDownload();
   const [data, setData] = useState<CatalogModelsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -217,13 +219,21 @@ export default function CatalogList() {
             Refresh
           </button>
           {selectedId && (
-            <button
-              className="btn btn-primary"
-              onClick={handlePull}
-              disabled={pulling || isDownloaded}
-            >
-              {pulling ? 'Pulling...' : isDownloaded ? 'Already Downloaded' : 'Pull Model'}
-            </button>
+            <>
+              <button
+                className="btn btn-primary"
+                onClick={handlePull}
+                disabled={pulling || isDownloaded}
+              >
+                {pulling ? 'Pulling...' : isDownloaded ? 'Already Downloaded' : 'Pull Model'}
+              </button>
+              <button
+                className="btn btn-secondary"
+                onClick={() => navigate(`/catalog/editor?id=${encodeURIComponent(selectedId)}`)}
+              >
+                Edit
+              </button>
+            </>
           )}
           {pulling && (
             <button
