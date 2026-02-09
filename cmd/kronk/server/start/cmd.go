@@ -41,6 +41,7 @@ func init() {
 	// Catalog settings
 	Cmd.Flags().String("catalog-github-repo", "", "GitHub repo URL for catalogs")
 	Cmd.Flags().String("model-config-file", "", "Special config file for model specific config")
+	Cmd.Flags().String("catalog-repo-path", "", "Path to cloned catalog repository for publishing")
 
 	// Templates settings
 	Cmd.Flags().String("templates-github-repo", "", "GitHub repo URL for templates")
