@@ -358,7 +358,6 @@ func (m *Model) Unload(ctx context.Context) error {
 	}
 
 	llama.ModelFree(m.model)
-	llama.BackendFree()
 
 	return nil
 }
