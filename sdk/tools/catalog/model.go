@@ -157,7 +157,8 @@ type ModelConfig struct {
 	Sampling             SamplingConfig           `yaml:"sampling-parameters,omitempty"`
 }
 
-func (mc ModelConfig) toKronkConfig() model.Config {
+// ToKronkConfig converts a catalog ModelConfig to a model.Config.
+func (mc ModelConfig) ToKronkConfig() model.Config {
 	return model.Config{
 		Device:               mc.Device,
 		ContextWindow:        mc.ContextWindow,

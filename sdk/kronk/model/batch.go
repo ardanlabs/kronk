@@ -1072,25 +1072,24 @@ func (e *batchEngine) handleSampledToken(s *slot, token llama.Token, iBatch int3
 		)
 	}
 
-	// Count every sampled token for usage and max_tokens enforcement,
-	// even when it produced no complete UTF-8 yet.
-	switch {
-	case s.reasonFlag > 0:
-		s.reasonTokens++
-	default:
-		s.completionTokens++
-	}
-
-	outputTokens := s.reasonTokens + s.completionTokens
-
-	if outputTokens >= s.job.params.MaxTokens {
-		e.finishSlot(s, nil)
-		return
-	}
-
-	// If no complete UTF-8 codepoints are ready, skip the processor and
-	// streaming but the token has already been counted above.
+	// If no complete UTF-8 codepoints are ready, count the token using the
+	// current flags (partial bytes can't trigger a state transition) and skip
+	// the processor and streaming.
 	if len(content) == 0 {
+		switch {
+		case s.reasonFlag > 0:
+			s.reasonTokens++
+		default:
+			s.completionTokens++
+		}
+
+		outputTokens := s.reasonTokens + s.completionTokens
+
+		if outputTokens >= s.job.params.MaxTokens {
+			e.finishSlot(s, nil)
+			return
+		}
+
 		s.iBatch = -1
 		return
 	}
@@ -1134,6 +1133,23 @@ func (e *batchEngine) handleSampledToken(s *slot, token llama.Token, iBatch int3
 		// No streamable content (statusNone) - skip without counting.
 		// This happens for control tokens like <|end|> which shouldn't be counted.
 		s.iBatch = -1
+		return
+	}
+
+	// Count the token after the state machine has updated the flags so
+	// that attribution (reasoning vs completion) reflects the actual
+	// section this token belongs to.
+	switch {
+	case s.reasonFlag > 0:
+		s.reasonTokens++
+	default:
+		s.completionTokens++
+	}
+
+	outputTokens := s.reasonTokens + s.completionTokens
+
+	if outputTokens >= s.job.params.MaxTokens {
+		e.finishSlot(s, nil)
 		return
 	}
 

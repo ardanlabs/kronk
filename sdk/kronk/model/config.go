@@ -346,6 +346,153 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 	return cfg
 }
 
+func applyCatalogConfig(user Config, cat Config) Config {
+	if user.Device == "" {
+		user.Device = cat.Device
+	}
+	if user.ContextWindow == 0 {
+		user.ContextWindow = cat.ContextWindow
+	}
+	if user.NBatch == 0 {
+		user.NBatch = cat.NBatch
+	}
+	if user.NUBatch == 0 {
+		user.NUBatch = cat.NUBatch
+	}
+	if user.NThreads == 0 {
+		user.NThreads = cat.NThreads
+	}
+	if user.NThreadsBatch == 0 {
+		user.NThreadsBatch = cat.NThreadsBatch
+	}
+	if user.CacheTypeK == GGMLTypeAuto {
+		user.CacheTypeK = cat.CacheTypeK
+	}
+	if user.CacheTypeV == GGMLTypeAuto {
+		user.CacheTypeV = cat.CacheTypeV
+	}
+	if user.FlashAttention == FlashAttentionEnabled && cat.FlashAttention != FlashAttentionEnabled {
+		user.FlashAttention = cat.FlashAttention
+	}
+	if !user.UseDirectIO {
+		user.UseDirectIO = cat.UseDirectIO
+	}
+	if !user.IgnoreIntegrityCheck {
+		user.IgnoreIntegrityCheck = cat.IgnoreIntegrityCheck
+	}
+	if user.NSeqMax == 0 {
+		user.NSeqMax = cat.NSeqMax
+	}
+	if user.OffloadKQV == nil {
+		user.OffloadKQV = cat.OffloadKQV
+	}
+	if user.OpOffload == nil {
+		user.OpOffload = cat.OpOffload
+	}
+	if user.NGpuLayers == nil {
+		user.NGpuLayers = cat.NGpuLayers
+	}
+	if user.SplitMode == SplitModeNone {
+		user.SplitMode = cat.SplitMode
+	}
+	if !user.SystemPromptCache {
+		user.SystemPromptCache = cat.SystemPromptCache
+	}
+	if !user.IncrementalCache {
+		user.IncrementalCache = cat.IncrementalCache
+	}
+	if user.MaxCacheSessions == 0 {
+		user.MaxCacheSessions = cat.MaxCacheSessions
+	}
+	if user.CacheMinTokens == 0 {
+		user.CacheMinTokens = cat.CacheMinTokens
+	}
+	if !user.InsecureLogging {
+		user.InsecureLogging = cat.InsecureLogging
+	}
+	if user.RopeScaling == RopeScalingNone {
+		user.RopeScaling = cat.RopeScaling
+	}
+	if user.RopeFreqBase == nil {
+		user.RopeFreqBase = cat.RopeFreqBase
+	}
+	if user.RopeFreqScale == nil {
+		user.RopeFreqScale = cat.RopeFreqScale
+	}
+	if user.YarnExtFactor == nil {
+		user.YarnExtFactor = cat.YarnExtFactor
+	}
+	if user.YarnAttnFactor == nil {
+		user.YarnAttnFactor = cat.YarnAttnFactor
+	}
+	if user.YarnBetaFast == nil {
+		user.YarnBetaFast = cat.YarnBetaFast
+	}
+	if user.YarnBetaSlow == nil {
+		user.YarnBetaSlow = cat.YarnBetaSlow
+	}
+	if user.YarnOrigCtx == nil {
+		user.YarnOrigCtx = cat.YarnOrigCtx
+	}
+
+	user.DefaultParams = applyCatalogParams(user.DefaultParams, cat.DefaultParams)
+
+	return user
+}
+
+func applyCatalogParams(user Params, cat Params) Params {
+	if user.Temperature == 0 {
+		user.Temperature = cat.Temperature
+	}
+	if user.TopK == 0 {
+		user.TopK = cat.TopK
+	}
+	if user.TopP == 0 {
+		user.TopP = cat.TopP
+	}
+	if user.MinP == 0 {
+		user.MinP = cat.MinP
+	}
+	if user.MaxTokens == 0 {
+		user.MaxTokens = cat.MaxTokens
+	}
+	if user.RepeatPenalty == 0 {
+		user.RepeatPenalty = cat.RepeatPenalty
+	}
+	if user.RepeatLastN == 0 {
+		user.RepeatLastN = cat.RepeatLastN
+	}
+	if user.DryMultiplier == 0 {
+		user.DryMultiplier = cat.DryMultiplier
+	}
+	if user.DryBase == 0 {
+		user.DryBase = cat.DryBase
+	}
+	if user.DryAllowedLen == 0 {
+		user.DryAllowedLen = cat.DryAllowedLen
+	}
+	if user.DryPenaltyLast == 0 {
+		user.DryPenaltyLast = cat.DryPenaltyLast
+	}
+	if user.XtcProbability == 0 {
+		user.XtcProbability = cat.XtcProbability
+	}
+	if user.XtcThreshold == 0 {
+		user.XtcThreshold = cat.XtcThreshold
+	}
+	if user.XtcMinKeep == 0 {
+		user.XtcMinKeep = cat.XtcMinKeep
+	}
+	if user.Thinking == "" {
+		user.Thinking = cat.Thinking
+	}
+	if user.ReasoningEffort == "" {
+		user.ReasoningEffort = cat.ReasoningEffort
+	}
+
+	return user
+}
+
 func adjustContextWindow(cfg Config, model llama.Model) Config {
 	modelCW := defContextWindow
 	v, found := searchModelMeta(model, "adjust-context-window: context_length")

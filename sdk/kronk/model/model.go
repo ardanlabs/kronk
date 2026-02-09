@@ -44,9 +44,11 @@ type spcSession struct {
 	lastUsed        time.Time   // Last access time (for eviction)
 }
 
-// TemplateRetriever returns a configured template for a model.
-type TemplateRetriever interface {
-	Retrieve(modelID string) (Template, error)
+// Templater provides support to retrieve catalog config and template
+// information.
+type Templater interface {
+	RetrieveTemplate(modelID string) (Template, error)
+	RetrieveConfig(modelID string) (Config, error)
 }
 
 // Model represents a model and provides a low-level API for working with it.
@@ -78,14 +80,29 @@ type Model struct {
 	pool          *contextPool           // Context pool for parallel embed/rerank
 }
 
-func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) (*Model, error) {
+func NewModel(ctx context.Context, templater Templater, cfg Config) (*Model, error) {
 	l := cfg.Log
 	if cfg.Log == nil {
 		l = func(ctx context.Context, msg string, args ...any) {}
 	}
 
-	if tmplRetriever == nil {
-		return nil, fmt.Errorf("templater required, use templater.New()")
+	if templater == nil {
+		return nil, fmt.Errorf("catalog required, use templates.New()")
+	}
+
+	if len(cfg.ModelFiles) == 0 {
+		return nil, fmt.Errorf("model required")
+	}
+
+	modelID := modelIDFromFiles(cfg.ModelFiles)
+
+	catCfg, err := templater.RetrieveConfig(modelID)
+	switch err {
+	case nil:
+		cfg = applyCatalogConfig(cfg, catCfg)
+
+	default:
+		l(ctx, "CATALOG-CONFIG", "status", "not found", "modelID", modelID, "err", err)
 	}
 
 	if err := validateConfig(ctx, cfg, l); err != nil {
@@ -148,7 +165,7 @@ func NewModel(ctx context.Context, tmplRetriever TemplateRetriever, cfg Config) 
 
 	metrics.SetVRAM(modelInfo.ID, modelInfo.VRAMTotal, modelInfo.SlotMemory)
 
-	template, err := retrieveTemplate(tmplRetriever, cfg, mdl, modelInfo)
+	template, err := retrieveTemplate(templater, cfg, mdl, modelInfo)
 	if err != nil {
 		return nil, fmt.Errorf("retrieve-template: failed to retrieve model template: %w", err)
 	}
@@ -276,7 +293,7 @@ func loadModelFromFiles(ctx context.Context, log Logger, modelFiles []string, pa
 	return mdl, nil
 }
 
-func retrieveTemplate(tmlpRetriever TemplateRetriever, cfg Config, mdl llama.Model, modelInfo ModelInfo) (Template, error) {
+func retrieveTemplate(tmlpRetriever Templater, cfg Config, mdl llama.Model, modelInfo ModelInfo) (Template, error) {
 	if cfg.JinjaFile != "" {
 		data, err := readJinjaTemplate(cfg.JinjaFile)
 		if err != nil {
@@ -294,7 +311,7 @@ func retrieveTemplate(tmlpRetriever TemplateRetriever, cfg Config, mdl llama.Mod
 	}
 
 	if tmlpRetriever != nil {
-		template, err := tmlpRetriever.Retrieve(modelInfo.ID)
+		template, err := tmlpRetriever.RetrieveTemplate(modelInfo.ID)
 		if err == nil {
 			return template, nil
 		}
