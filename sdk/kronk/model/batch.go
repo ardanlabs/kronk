@@ -540,18 +540,44 @@ func (e *batchEngine) fillSlotsIMC() {
 		}
 
 		// No dedicated slot found (new session or no cache_id).
-		// Assign to any available slot.
-		for _, s := range e.slots {
-			if !s.active {
-				e.startSlot(s, job)
-				return
-			}
-		}
+		// If all slots are bound to IMC sessions, no slot is available for
+		// this request. Reject with an error rather than assigning to a
+		// bound slot (which would destroy that user's cache) or re-queuing
+		// forever.
+		e.model.cacheMu.RLock()
+		boundSlots := len(e.model.imcSessions)
+		e.model.cacheMu.RUnlock()
 
-		// All slots busy — put job back.
-		select {
-		case e.requestQ <- job:
-		default:
+		switch boundSlots >= e.nSlots {
+		case true:
+			e.model.log(job.ctx, "batch-engine", "status", "imc-slots-full",
+				"bound", boundSlots, "total", e.nSlots, "cache_id", job.imcID)
+
+			e.model.sendErrorResponse(job.ctx, job.ch, job.id, job.object, 0, "",
+				fmt.Errorf("all %d inference slots are bound to IMC sessions, no capacity for additional requests", e.nSlots),
+				Usage{})
+
+			if job.queueWaitSpan != nil {
+				job.queueWaitSpan.End()
+			}
+
+			e.model.activeStreams.Add(-1)
+			return
+
+		case false:
+			// Assign to any available unbound slot.
+			for _, s := range e.slots {
+				if !s.active {
+					e.startSlot(s, job)
+					return
+				}
+			}
+
+			// All slots busy — put job back.
+			select {
+			case e.requestQ <- job:
+			default:
+			}
 		}
 
 	default:
@@ -628,10 +654,14 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 					"cached_tokens", cacheIdx, "new_cache_tokens", len(job.imcNewCacheTokens))
 			}
 
+			imcDecodeStart := time.Now()
+
 			if err := e.model.decodeTokensIntoCache(job.ctx, job.imcNewCacheTokens, s.seqID, int(cacheIdx)); err != nil {
 				e.finishSlot(s, fmt.Errorf("start-slot: imc extend: %w", err))
 				return
 			}
+
+			metrics.AddPrefillTime(e.model.modelInfo.ID, time.Since(imcDecodeStart))
 
 			cacheIdx = llama.Pos(job.imcNewTotalCached)
 
