@@ -558,17 +558,18 @@ Model   Context_Window   KV_Per_Slot      NSeqMax (Slots)
 7B      8K               ~537 MB VRAM     2
 70B     8K               ~1.3 GB VRAM     2
 
-No Caching:
-Total sequences allocated: 2 (no cache)
+No Caching or SPC:
+Total sequences allocated: 2 (SPC adds zero VRAM — tokens stored in RAM)
 7B:  Slot Memory (2 × 537MB) ~1.07GB: Total VRAM: ~8.1GB
 70B: Slot Memory (2 × 1.3GB) ~2.6GB : Total VRAM: ~72.6GB
 
-Incremental Memory Caching (IMC) or System Prompt Cache (SPC):
-Total sequences allocated: 2 + 1 = 3 (cache)
-7B:  Slot Memory (3 × 537MB) ~1.6GB: Total VRAM: ~8.6GB
-70B: Slot Memory (3 × 1.3GB) ~3.9GB: Total VRAM: ~73.9GB
+Incremental Memory Caching (IMC):
+Total sequences allocated: 2 (same as no caching, but NCtx auto-scaled)
+Internal NCtx = 8K × 2 = 16K (each slot gets full 8K context)
+7B:  Slot Memory (2 × 1.07GB) ~2.14GB: Total VRAM: ~9.1GB
+70B: Slot Memory (2 × 2.6GB)  ~5.2GB : Total VRAM: ~75.2GB
 
-Note: SPC and FMC are mutually exclusive; FMC caches system + user together.
+Note: SPC and IMC are mutually exclusive.
 
 ------------------------------------------------------------------------------
 Full Example With Real Model:
@@ -589,13 +590,14 @@ KV_per_token_per_layer = head_count_kv  ×  (key_length + value_length)  ×  byt
 KV_Per_Slot            =  n_ctx  ×  n_layers  ×  KV_per_token_per_layer
 ~6.4 GB                =  131072 ×  48        ×  1024
 
-No Caching:
-Total sequences allocated: 2 : (no cache)
+No Caching or SPC:
+Total sequences allocated: 2 (SPC adds zero VRAM — tokens stored in RAM)
 Slot Memory (2 × 6.4GB) ~12.8GB: Total VRAM: ~48.8GB
 
-Incremental Memory Caching (IMC) or System Prompt Cache (SPC):
-Total sequences allocated: 3 : (2 + 1) (1 cache sequence)
-Slot Memory (3 × 6.4GB) ~19.2GB: Total VRAM: ~55.2GB
+Incremental Memory Caching (IMC):
+Total sequences allocated: 2 (same as no caching, but NCtx auto-scaled)
+Internal NCtx = 128K × 2 = 256K (each slot gets full 128K context)
+Slot Memory (2 × 12.8GB) ~25.6GB: Total VRAM: ~61.6GB
 
-Note: SPC and IMC are mutually exclusive; IMC caches system + user together.
+Note: SPC and IMC are mutually exclusive.
 */

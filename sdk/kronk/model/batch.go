@@ -48,8 +48,10 @@ type chatJob struct {
 	// -------------------------------------------------------------------------
 	// System Prompt Cache (SPC)
 
-	spcCacheIdx llama.Pos // Token position where SPC cache ends
-	spcCacheHit bool      // True if system prompt was found in cache
+	spcCacheID  string        // Cache ID for atomic staging
+	spcHash     string        // Expected hash for cache validation
+	spcTokens   []llama.Token // Tokens to decode into shared seq 0 if needed
+	spcCacheHit bool          // True if SPC entry exists with tokens
 
 	// -------------------------------------------------------------------------
 	// Incremental Message Cache (IMC)
@@ -207,12 +209,14 @@ func newBatchEngine(m *Model, nSlots int) *batchEngine {
 	batch := llama.BatchInit(int32(nCtx), 0, int32(nSlots))
 
 	// Calculate sequence offset based on reserved cache sequences.
-	// SPC uses seq 0, slots start after.
+	// SPC decodes directly into slot sequences — no reserved sequences.
 	// IMC uses dedicated slot/seq binding — no separate cache sequences.
 	var cacheSeqs int
 	switch {
 	case m.cfg.SystemPromptCache:
-		cacheSeqs = m.spcMaxSeqs
+		// SPC stores tokens in RAM and decodes directly into slot sequences.
+		// No reserved cache sequences needed.
+		cacheSeqs = 0
 	case m.cfg.IncrementalCache:
 		// IMC uses dedicated slot/seq binding — no separate cache sequences.
 		cacheSeqs = 0
@@ -540,44 +544,45 @@ func (e *batchEngine) fillSlotsIMC() {
 		}
 
 		// No dedicated slot found (new session or no cache_id).
-		// If all slots are bound to IMC sessions, no slot is available for
-		// this request. Reject with an error rather than assigning to a
-		// bound slot (which would destroy that user's cache) or re-queuing
-		// forever.
-		e.model.cacheMu.RLock()
-		boundSlots := len(e.model.imcSessions)
-		e.model.cacheMu.RUnlock()
+		// If all slots are bound to IMC sessions and this job needs a
+		// new session, no slot is available. Reject with an error rather
+		// than assigning to a bound slot (which would destroy that
+		// user's cache) or re-queuing forever.
+		if job.imcID != "" {
+			e.model.cacheMu.RLock()
+			boundSlots := len(e.model.imcSessions)
+			e.model.cacheMu.RUnlock()
 
-		switch boundSlots >= e.nSlots {
-		case true:
-			e.model.log(job.ctx, "batch-engine", "status", "imc-slots-full",
-				"bound", boundSlots, "total", e.nSlots, "cache_id", job.imcID)
+			if boundSlots >= e.nSlots {
+				e.model.log(job.ctx, "batch-engine", "status", "imc-slots-full",
+					"bound", boundSlots, "total", e.nSlots, "cache_id", job.imcID)
 
-			e.model.sendErrorResponse(job.ctx, job.ch, job.id, job.object, 0, "",
-				fmt.Errorf("all %d inference slots are bound to IMC sessions, no capacity for additional requests", e.nSlots),
-				Usage{})
+				e.model.sendErrorResponse(job.ctx, job.ch, job.id, job.object, 0, "",
+					fmt.Errorf("all %d inference slots are bound to IMC sessions, no capacity for additional requests", e.nSlots),
+					Usage{})
 
-			if job.queueWaitSpan != nil {
-				job.queueWaitSpan.End()
-			}
-
-			e.model.activeStreams.Add(-1)
-			return
-
-		case false:
-			// Assign to any available unbound slot.
-			for _, s := range e.slots {
-				if !s.active {
-					e.startSlot(s, job)
-					return
+				if job.queueWaitSpan != nil {
+					job.queueWaitSpan.End()
 				}
-			}
 
-			// All slots busy — put job back.
-			select {
-			case e.requestQ <- job:
-			default:
+				close(job.ch)
+				e.model.activeStreams.Add(-1)
+				return
 			}
+		}
+
+		// Assign to any available slot.
+		for _, s := range e.slots {
+			if !s.active {
+				e.startSlot(s, job)
+				return
+			}
+		}
+
+		// All slots busy — put job back.
+		select {
+		case e.requestQ <- job:
+		default:
 		}
 
 	default:
@@ -692,13 +697,15 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 		llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
 
 		switch {
-		case job.spcCacheHit:
-			e.model.log(job.ctx, "start-slot", "status", "spc-copy", "src_seq", job.imcSeqID, "dst_seq", s.seqID, "cached_tokens", job.spcCacheIdx)
-			if err := e.model.copyCachesToSeq(s.seqID, job.imcSeqID); err != nil {
+		case job.spcCacheHit && len(job.spcTokens) > 0:
+			cachePos, err := e.model.decodeSPCToSlot(job.ctx, job.spcTokens, s.seqID)
+			if err != nil {
 				e.finishSlot(s, fmt.Errorf("start-slot: %w", err))
 				return
 			}
-			cacheIdx = job.spcCacheIdx
+			cacheIdx = cachePos
+
+			e.model.log(job.ctx, "start-slot", "status", "spc-decoded", "slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx)
 		}
 	}
 

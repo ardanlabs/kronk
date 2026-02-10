@@ -503,13 +503,15 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 	}
 
 	// Reserve sequences for caching based on enabled modes.
-	// SPC uses seq 0, slots start after.
+	// SPC stores tokens in RAM and decodes directly into slot sequences — no extra sequences.
 	// IMC uses dedicated slot/seq binding — no separate cache sequences.
 	nSeqMax := max(cfg.NSeqMax, 1)
 	var cacheSeqs int
 	switch {
 	case cfg.SystemPromptCache:
-		cacheSeqs = 1
+		// SPC stores tokens in RAM and decodes directly into slot sequences.
+		// No reserved cache sequences needed.
+		cacheSeqs = 0
 	case cfg.IncrementalCache:
 		// IMC uses dedicated slot/seq binding — no separate cache sequences.
 		cacheSeqs = 0

@@ -606,7 +606,18 @@ n_seq_max: 4 # Process up to 4 requests concurrently
 ```
 
 Multiple requests share the model context and KV cache, with each request
-getting an isolated sequence partition.
+getting an isolated sequence partition. The number of sequences always equals
+`NSeqMax` regardless of caching mode:
+
+| Mode        | Slots   | Sequences | Slot SeqIDs | Extra VRAM  |
+| ----------- | ------- | --------- | ----------- | ----------- |
+| No caching  | NSeqMax | NSeqMax   | 0..N-1      | none        |
+| SPC enabled | NSeqMax | NSeqMax   | 0..N-1      | none        |
+| IMC enabled | NSeqMax | NSeqMax   | 0..N-1      | NCtx scaled |
+
+SPC stores system prompt tokens in RAM and re-decodes them into each slot
+as needed, requiring no extra sequences. IMC binds each slot to a cache_id,
+caching the conversation directly in the slot's own sequence.
 
 **Embedding and Reranking Models**
 
@@ -917,8 +928,10 @@ channel.
 assigned a unique sequence ID, ensuring requests don't interfere with each
 other's attention state.
 
+The slot/sequence layout is the same for all modes:
+
 ```
-NSeqMax = 4 (without caching)
+NSeqMax = 4
 
 Slot 0  →  seqID = 0  →  KV cache partition 0
 Slot 1  →  seqID = 1  →  KV cache partition 1
@@ -926,23 +939,18 @@ Slot 2  →  seqID = 2  →  KV cache partition 2
 Slot 3  →  seqID = 3  →  KV cache partition 3
 ```
 
-When caching is enabled, sequence 0 is reserved for cached content:
-
-```
-NSeqMax = 2 (with System Prompt Cache)
-
-Cache   →  seqID = 0  →  Cached system prompt KV state
-Slot 0  →  seqID = 1  →  KV cache partition 1
-Slot 1  →  seqID = 2  →  KV cache partition 2
-```
+With SPC, saved system prompt tokens are decoded directly into the slot's
+sequence before the remaining prompt is prefilled. With IMC, each slot's
+sequence is bound to a cache_id and the conversation cache lives in that
+sequence. In both cases, no extra sequences are reserved.
 
 ### 4.3 Request Flow
 
 1. **Queue**: Request enters the queue (backpressure if full)
 2. **Assign**: Available slot picks up the request
 3. **Clear**: Slot clears its sequence partition
-4. **Cache Check**: If caching enabled, copy cached KV state to slot's sequence
-5. **Prefill**: Tokenize and process prompt tokens
+4. **SPC Decode**: If SPC enabled, decode saved system prompt tokens into slot's sequence
+5. **Prefill**: Tokenize and process remaining prompt tokens
 6. **Decode**: Generate tokens one at a time, streaming to client
 7. **Complete**: Clear sequence, slot becomes available
 
@@ -974,38 +982,44 @@ Total KV cache:     ~800 MB (4 slots × 200 MB)
 
 **Caching Memory Overhead**
 
-When message caching is enabled, additional sequences are reserved:
+Neither SPC nor IMC requires additional KV cache sequences:
 
-| SPC | IMC | MaxCacheSessions | Reserved Seqs | Slot Start | Memory Overhead    |
-| --- | --- | ---------------- | ------------- | ---------- | ------------------ |
-| off | off | -                | 0             | seq 0      | none               |
-| on  | off | 1                | 1             | seq 1      | +1 context window  |
-| on  | off | 4                | 4             | seq 4      | +4 context windows |
-| off | on  | 1                | 1             | seq 1      | +1 context window  |
-| off | on  | 4                | 4             | seq 4      | +4 context windows |
+| Mode | Reserved Seqs | Memory Overhead        |
+| ---- | ------------- | ---------------------- |
+| off  | 0             | none                   |
+| SPC  | 0             | none (tokens in RAM)   |
+| IMC  | 0             | NCtx scaled by NSeqMax |
 
-Example with `max-cache-sessions=3` and `n_seq_max=2`:
+SPC stores system prompt tokens in RAM and decodes them into each slot on
+demand. This adds negligible RAM usage but zero VRAM overhead.
+
+IMC caches full conversations in each slot's own sequence. To ensure each
+slot gets the full configured context window, Kronk auto-scales the internal
+context size:
 
 ```
-seq 0: user-1 cache (IMC)
-seq 1: user-2 cache (IMC)
-seq 2: user-3 cache (IMC)
-seq 3: slot[0] inference
-seq 4: slot[1] inference
+Internal NCtx = context_window × NSeqMax
 ```
 
-Each cache sequence requires one full context window of KV memory.
+Example with `n_seq_max=2` and `context_window=8192`:
+
+```
+Internal NCtx = 8192 × 2 = 16384
+KV cache per sequence: ~200 MB (8B model, F16)
+Total KV cache: 2 × 200 MB = 400 MB
+Each slot gets full 8192 context ✓
+```
 
 ### 4.5 Concurrency by Model Type
 
 Different model types use different concurrency mechanisms:
 
-| Model Type              | NSeqMax Behavior    | Concurrency Method               |
-| ----------------------- | ------------------- | -------------------------------- |
-| Text (chat, completion) | Batch parallelism   | Shared model, multiple slots     |
-| Vision/Audio            | Batch parallelism   | Shared model, multiple slots     |
-| Embedding               | Context pool        | Shared weights, multiple contexts|
-| Reranking               | Context pool        | Shared weights, multiple contexts|
+| Model Type              | NSeqMax Behavior  | Concurrency Method                |
+| ----------------------- | ----------------- | --------------------------------- |
+| Text (chat, completion) | Batch parallelism | Shared model, multiple slots      |
+| Vision/Audio            | Batch parallelism | Shared model, multiple slots      |
+| Embedding               | Context pool      | Shared weights, multiple contexts |
+| Reranking               | Context pool      | Shared weights, multiple contexts |
 
 **Chat Request Flow (NSeqMax=4)**
 
@@ -1017,17 +1031,17 @@ Request 1 ──→ acquireModel() ──→ ChatStreaming() ──→ batch.Sub
 Request 2 ──→ acquireModel() ──→ ChatStreaming() ──→ batch.Submit() ─┤
 Request 3 ──→ acquireModel() ──→ ChatStreaming() ──→ batch.Submit() ─┤
 Request 4 ──→ acquireModel() ──→ ChatStreaming() ──→ batch.Submit() ─┤
-                                                                      ↓
-                                                    ┌─────────────────────────┐
-                                                    │      Batch Engine       │
-                                                    │  ┌─────┬─────┬─────┬─────┐
-                                                    │  │Slot0│Slot1│Slot2│Slot3│
-                                                    │  │ R1  │ R2  │ R3  │ R4  │
-                                                    │  └─────┴─────┴─────┴─────┘
-                                                    │         ↓                │
-                                                    │   Single batched decode  │
-                                                    │   (all 4 in parallel)    │
-                                                    └─────────────────────────┘
+                                                                     ↓
+                                                   ┌─────────────────────────┐
+                                                   │      Batch Engine       │
+                                                   │ ┌─────┬─────┬─────┬─────┐
+                                                   │ │Slot0│Slot1│Slot2│Slot3│
+                                                   │ │ R1  │ R2  │ R3  │ R4  │
+                                                   │ └─────┴─────┴─────┴─────┘
+                                                   │            ↓            │
+                                                   │  Single batched decode  │
+                                                   │  (all 4 in parallel)    │
+                                                   └─────────────────────────┘
 ```
 
 All requests share the same LLM context. The batch engine combines tokens from
@@ -1132,15 +1146,17 @@ With Caching:
 
 ### 5.2 System Prompt Cache (SPC)
 
-System Prompt Cache stores the KV state of the first system message and
-reuses it across all requests with the same system prompt.
+System Prompt Cache saves the tokenized system prompt in RAM and re-decodes
+it into each slot's sequence at request time. This avoids re-tokenizing and
+re-templating the system prompt on every request, while adding zero VRAM
+overhead since no dedicated cache sequences are needed.
 
 **Best for:**
 
 - Models with inconsistent templates (GPT-OSS, GLM)
 - OpenWebUI and similar chat interfaces
 - Applications with a consistent system prompt
-- Single-user or shared system prompt scenarios
+- Multi-user scenarios with different system prompts
 
 **Enable SPC:**
 
@@ -1152,15 +1168,20 @@ models:
 
 **How It Works:**
 
-1. First request: System prompt is processed and cached in sequence 0
-2. Subsequent requests: Cached KV state is copied to the slot's sequence
-3. Only the new messages need prefill processing
+1. First request: System prompt is templated, tokenized, and saved to RAM
+2. The system prompt is decoded into the slot's own sequence
+3. Remaining messages are prefilled after the system prompt tokens
+4. Subsequent requests: Saved tokens are re-decoded into the slot (no
+   re-tokenization needed)
+
+Each unique `cache_id` gets its own saved token entry in RAM. There is no
+limit on the number of cache_ids — tokens are small and stored in RAM only.
 
 **Cache Invalidation:**
 
 The cache is automatically invalidated when:
 
-- The system prompt content changes
+- The system prompt content changes (detected by hash comparison)
 - The system prompt role changes
 - The server restarts
 
@@ -1189,9 +1210,12 @@ incompatible with IMC (use SPC instead).
 models:
   Qwen3-8B-Q8_0:
     incremental_cache: true
-    max_cache_sessions: 4 # Support 4 concurrent users
     cache_min_tokens: 100 # Minimum tokens before caching
 ```
+
+The maximum number of concurrent IMC sessions equals `NSeqMax`. Each session
+is bound to a dedicated slot, so `n_seq_max: 4` supports up to 4 concurrent
+users with their own conversation caches.
 
 **How It Works:**
 
@@ -1221,18 +1245,16 @@ Prefill:  [user3 + gen_prompt]
 
 ### 5.4 Multi-User Caching
 
-Both SPC and IMC support multiple concurrent users, each with their own cache sequence.
-Users are identified by the `cache_id` parameter in requests.
+Both SPC and IMC support multiple concurrent users, each identified by the
+`cache_id` parameter in requests.
 
-**Configuration:**
+**SPC Multi-User:** Unlimited cache_ids. Each cache_id stores its tokenized
+system prompt in RAM. Tokens are re-decoded into the slot's sequence on each
+request. No VRAM overhead per user.
 
-```yaml
-models:
-  Qwen3-8B-Q8_0:
-    # For SPC or IMC - both use cache_id for multi-user support
-    system_prompt_cache: true # OR incremental_cache: true
-    max_cache_sessions: 4 # 4 concurrent user caches
-```
+**IMC Multi-User:** Max concurrent users = `NSeqMax`. Each cache_id is bound
+to a dedicated slot/sequence. When all slots are bound to IMC sessions, new
+cache_ids are rejected with an error.
 
 **Passing Cache ID:**
 
@@ -1255,30 +1277,19 @@ Or in the request body:
 }
 ```
 
-**Sequence Allocation:**
-
-With `max_cache_sessions=3` and `n_seq_max=2`:
-
-```
-seq 0: user-1 cache
-seq 1: user-2 cache
-seq 2: user-3 cache
-seq 3: slot[0] inference
-seq 4: slot[1] inference
-```
-
-If all cache slots are in use, new sessions bypass IMC gracefully.
+If no `cache_id` is provided, requests default to the ID `"default"`.
+For multi-user deployments, always provide unique cache_ids.
 
 ### 5.5 SPC vs IMC
 
-| Feature      | System Prompt Cache                    | Incremental Message Cache               |
-| ------------ | -------------------------------------- | --------------------------------------- |
-| Caches       | System prompt only                     | All messages except last                |
-| Extends      | No                                     | Yes, incrementally                      |
-| Multi-user   | Per-user cache (dedicated sequences)   | Per-user cache (dedicated sequences)    |
-| Best for     | Chat UIs, inconsistent templates       | Agentic workflows, consistent templates |
-| Memory       | N extra sequences (max_cache_sessions) | N extra sequences (max_cache_sessions)  |
-| Template req | Any                                    | Consistent templates only               |
+| Feature      | System Prompt Cache              | Incremental Message Cache               |
+| ------------ | -------------------------------- | --------------------------------------- |
+| Caches       | System prompt only               | All messages except last                |
+| Extends      | No                               | Yes, incrementally                      |
+| Multi-user   | Unlimited (tokens in RAM)        | Max NSeqMax (bound to slots)            |
+| Best for     | Chat UIs, inconsistent templates | Agentic workflows, consistent templates |
+| Memory       | Zero VRAM overhead               | NCtx auto-scaled by NSeqMax             |
+| Template req | Any                              | Consistent templates only               |
 
 **Important:** SPC and IMC are mutually exclusive. Choose based on your
 model's template behavior:
@@ -1317,7 +1328,6 @@ models:
 
     # OR Incremental Message Cache (mutually exclusive)
     incremental_cache: true
-    max_cache_sessions: 4
 
     # Shared settings
     cache_min_tokens: 100 # Don't cache if < 100 tokens
@@ -1325,8 +1335,9 @@ models:
 
 **cache_min_tokens**
 
-Minimum token count before caching activates. Short prompts don't benefit
-from caching because copy overhead exceeds prefill savings.
+Minimum token count before SPC caching activates. Short system prompts don't
+benefit from caching because decode overhead exceeds savings. Does not apply
+to IMC.
 
 Default: 100 tokens
 
@@ -1334,42 +1345,43 @@ Default: 100 tokens
 
 When IMC is enabled, Kronk automatically scales the internal context window
 to ensure each slot gets the full configured context size. This auto-scaling
-does not apply to SPC since it only caches the system prompt (typically small).
+does not apply to SPC since SPC adds zero VRAM overhead.
 
 **Why This Is Needed:**
 
-IMC caches the full conversation history. The KV cache is shared across all
-sequences, so without auto-scaling, IMC would reduce the effective context
-per slot:
+IMC caches the full conversation history in each slot's own sequence. The KV
+cache is shared across all sequences, so without auto-scaling, each slot would
+only get a fraction of the configured context:
 
 ```
 Without auto-scaling (broken):
-  context-window: 128k
-  IMC with 1 session → 2 sequences → 64k effective per slot ❌
+  context_window: 128k
+  n_seq_max: 2
+  Effective per slot: 128k / 2 = 64k ❌
 
 With auto-scaling (Kronk's behavior):
-  context-window: 128k
-  IMC with 1 session → internal NCtx = 256k → 128k effective per slot ✓
+  context_window: 128k
+  n_seq_max: 2
+  Internal NCtx = 128k × 2 = 256k
+  Effective per slot: 128k ✓
 ```
 
 **Formula:**
 
 ```
-Internal NCtx = context-window × (nseq-max + max-cache-sessions)
+Internal NCtx = context_window × NSeqMax
 ```
 
 **Example:**
 
 ```yaml
 Qwen3-8B-Q8_0/IMC:
-  context-window: 32768 # User wants 32k per slot
-  nseq-max: 1
-  incremental-cache: true
-  max-cache-sessions: 2
+  context_window: 32768 # User wants 32k per slot
+  n_seq_max: 2
+  incremental_cache: true
 
 # Internal calculation:
-# total_seqs = 1 (nseq-max) + 2 (cache sessions) = 3
-# Internal NCtx = 32768 × 3 = 98304
+# Internal NCtx = 32768 × 2 = 65536
 # Each slot gets full 32k context ✓
 ```
 
@@ -1378,28 +1390,34 @@ Qwen3-8B-Q8_0/IMC:
 Auto-scaling increases KV cache memory proportionally. Plan VRAM accordingly:
 
 ```
-32k context, IMC with 2 sessions, F16 cache:
-  Internal NCtx = 32k × 3 = 96k
-  KV cache = ~2.4 GB (instead of 800 MB without caching)
+32k context, n_seq_max=2, IMC, F16 cache:
+  Internal NCtx = 32k × 2 = 64k
+  KV cache = ~1.6 GB (instead of 800 MB without IMC)
 ```
 
 ### 5.9 Performance and Limitations
 
-**Prefill Time Savings:**
+**SPC Performance:**
 
-For a 2000-token cached prefix:
+SPC re-decodes system prompt tokens into each slot. For typical system prompts
+(200-500 tokens), this takes ~10-50ms per request. The trade-off is zero VRAM
+overhead vs. a small per-request decode cost.
+
+**IMC Prefill Savings:**
+
+For a 2000-token cached conversation prefix:
 
 - Without cache: ~200ms prefill (varies by hardware)
-- With cache: ~5ms copy + ~20ms for new tokens
+- With IMC: ~5ms for new tokens only
 
-**Memory Overhead:**
+**IMC Memory Overhead:**
 
-Each cache sequence requires one context window worth of KV cache memory:
+Each slot gets the full context window via auto-scaling:
 
 ```
-8K context, F16 cache:    ~200 MB per cache sequence
-8K context, Q8_0 cache:   ~100 MB per cache sequence
-32K context, F16 cache:   ~800 MB per cache sequence
+8K context, n_seq_max=4, IMC:
+  Internal NCtx = 8K × 4 = 32K
+  Total KV cache: ~800 MB (8B model, F16)
 ```
 
 **IMC Limitations:**
@@ -1408,7 +1426,7 @@ Each cache sequence requires one context window worth of KV cache memory:
 - Requires deterministic Jinja templates (no timestamps or random values)
 - Conversations must grow monotonically (append-only)
 - Editing earlier messages triggers full cache rebuild
-- When all `max_cache_sessions` slots are in use, new sessions bypass IMC
+- Max concurrent sessions = NSeqMax; additional sessions are rejected
 
 ---
 
@@ -1713,68 +1731,68 @@ underscores replacing hyphens.
 
 **Web Settings**
 
-| Flag | Environment Variable | Default | Description |
-| ---- | -------------------- | ------- | ----------- |
-| `--api-host` | `KRONK_WEB_API_HOST` | `localhost:8080` | API host address |
-| `--debug-host` | `KRONK_WEB_DEBUG_HOST` | `localhost:8090` | Debug/pprof host address |
-| `--read-timeout` | `KRONK_WEB_READ_TIMEOUT` | `30s` | HTTP read timeout |
-| `--write-timeout` | `KRONK_WEB_WRITE_TIMEOUT` | `15m` | HTTP write timeout |
-| `--idle-timeout` | `KRONK_WEB_IDLE_TIMEOUT` | `1m` | HTTP idle timeout |
-| `--shutdown-timeout` | `KRONK_WEB_SHUTDOWN_TIMEOUT` | `1m` | Graceful shutdown timeout |
-| `--cors-allowed-origins` | `KRONK_WEB_CORS_ALLOWED_ORIGINS` | `*` | Comma-separated CORS origins |
+| Flag                     | Environment Variable             | Default          | Description                  |
+| ------------------------ | -------------------------------- | ---------------- | ---------------------------- |
+| `--api-host`             | `KRONK_WEB_API_HOST`             | `localhost:8080` | API host address             |
+| `--debug-host`           | `KRONK_WEB_DEBUG_HOST`           | `localhost:8090` | Debug/pprof host address     |
+| `--read-timeout`         | `KRONK_WEB_READ_TIMEOUT`         | `30s`            | HTTP read timeout            |
+| `--write-timeout`        | `KRONK_WEB_WRITE_TIMEOUT`        | `15m`            | HTTP write timeout           |
+| `--idle-timeout`         | `KRONK_WEB_IDLE_TIMEOUT`         | `1m`             | HTTP idle timeout            |
+| `--shutdown-timeout`     | `KRONK_WEB_SHUTDOWN_TIMEOUT`     | `1m`             | Graceful shutdown timeout    |
+| `--cors-allowed-origins` | `KRONK_WEB_CORS_ALLOWED_ORIGINS` | `*`              | Comma-separated CORS origins |
 
 **Authentication Settings**
 
-| Flag | Environment Variable | Default | Description |
-| ---- | -------------------- | ------- | ----------- |
-| `--auth-host` | `KRONK_AUTH_HOST` | _(empty)_ | External auth service host. Leave empty to use local auth |
-| `--auth-enabled` | `KRONK_AUTH_LOCAL_ENABLED` | `false` | Enable local JWT authentication |
-| `--auth-issuer` | `KRONK_AUTH_LOCAL_ISSUER` | `kronk project` | Issuer name for local JWT tokens |
+| Flag             | Environment Variable       | Default         | Description                                               |
+| ---------------- | -------------------------- | --------------- | --------------------------------------------------------- |
+| `--auth-host`    | `KRONK_AUTH_HOST`          | _(empty)_       | External auth service host. Leave empty to use local auth |
+| `--auth-enabled` | `KRONK_AUTH_LOCAL_ENABLED` | `false`         | Enable local JWT authentication                           |
+| `--auth-issuer`  | `KRONK_AUTH_LOCAL_ISSUER`  | `kronk project` | Issuer name for local JWT tokens                          |
 
 **Tracing Settings (Tempo)**
 
-| Flag | Environment Variable | Default | Description |
-| ---- | -------------------- | ------- | ----------- |
-| `--tempo-host` | `KRONK_TEMPO_HOST` | `localhost:4317` | OpenTelemetry collector host |
-| `--tempo-service-name` | `KRONK_TEMPO_SERVICE_NAME` | `kronk` | Service name for traces |
-| `--tempo-probability` | `KRONK_TEMPO_PROBABILITY` | `0.25` | Trace sampling probability (0.0-1.0) |
+| Flag                   | Environment Variable       | Default          | Description                          |
+| ---------------------- | -------------------------- | ---------------- | ------------------------------------ |
+| `--tempo-host`         | `KRONK_TEMPO_HOST`         | `localhost:4317` | OpenTelemetry collector host         |
+| `--tempo-service-name` | `KRONK_TEMPO_SERVICE_NAME` | `kronk`          | Service name for traces              |
+| `--tempo-probability`  | `KRONK_TEMPO_PROBABILITY`  | `0.25`           | Trace sampling probability (0.0-1.0) |
 
 **Catalog Settings**
 
-| Flag | Environment Variable | Default | Description |
-| ---- | -------------------- | ------- | ----------- |
-| `--catalog-github-repo` | `KRONK_CATALOG_GITHUB_REPO` | GitHub API URL | GitHub repo URL for catalog files |
-| `--model-config-file` | `KRONK_CATALOG_MODEL_CONFIG_FILE` | _(empty)_ | Path to model-specific config YAML file |
-| `--catalog-repo-path` | `KRONK_CATALOG_REPO_PATH` | _(empty)_ | Path to cloned catalog repository for publishing edits |
+| Flag                    | Environment Variable              | Default        | Description                                            |
+| ----------------------- | --------------------------------- | -------------- | ------------------------------------------------------ |
+| `--catalog-github-repo` | `KRONK_CATALOG_GITHUB_REPO`       | GitHub API URL | GitHub repo URL for catalog files                      |
+| `--model-config-file`   | `KRONK_CATALOG_MODEL_CONFIG_FILE` | _(empty)_      | Path to model-specific config YAML file                |
+| `--catalog-repo-path`   | `KRONK_CATALOG_REPO_PATH`         | _(empty)_      | Path to cloned catalog repository for publishing edits |
 
 **Template Settings**
 
-| Flag | Environment Variable | Default | Description |
-| ---- | -------------------- | ------- | ----------- |
+| Flag                      | Environment Variable          | Default        | Description                        |
+| ------------------------- | ----------------------------- | -------------- | ---------------------------------- |
 | `--templates-github-repo` | `KRONK_TEMPLATES_GITHUB_REPO` | GitHub API URL | GitHub repo URL for template files |
 
 **Cache Settings**
 
-| Flag | Environment Variable | Default | Description |
-| ---- | -------------------- | ------- | ----------- |
-| `--models-in-cache` | `KRONK_CACHE_MODELS_IN_CACHE` | `3` | Maximum models kept loaded in memory |
-| `--cache-ttl` | `KRONK_CACHE_TTL` | `20m` | How long unused models stay loaded |
-| `--ignore-integrity-check` | `KRONK_CACHE_IGNORE_INTEGRITY_CHECK` | `true` | Skip SHA256 integrity check on model load |
+| Flag                       | Environment Variable                 | Default | Description                               |
+| -------------------------- | ------------------------------------ | ------- | ----------------------------------------- |
+| `--models-in-cache`        | `KRONK_CACHE_MODELS_IN_CACHE`        | `3`     | Maximum models kept loaded in memory      |
+| `--cache-ttl`              | `KRONK_CACHE_TTL`                    | `20m`   | How long unused models stay loaded        |
+| `--ignore-integrity-check` | `KRONK_CACHE_IGNORE_INTEGRITY_CHECK` | `true`  | Skip SHA256 integrity check on model load |
 
 **Runtime Settings**
 
-| Flag | Environment Variable | Default | Description |
-| ---- | -------------------- | ------- | ----------- |
-| `--base-path` | `KRONK_BASE_PATH` | `~/.kronk` | Base directory for all Kronk data |
-| `--lib-path` | `KRONK_LIB_PATH` | _(empty)_ | Path to llama library directory |
-| `--lib-version` | `KRONK_LIB_VERSION` | _(empty)_ | Specific llama library version |
-| `--arch` | `KRONK_ARCH` | _(auto)_ | Architecture override (`amd64`, `arm64`) |
-| `--os` | `KRONK_OS` | _(auto)_ | OS override (`linux`, `darwin`, `windows`) |
-| `--processor` | `KRONK_PROCESSOR` | _(auto)_ | Processor type (`cpu`, `metal`, `cuda`, `vulkan`) |
-| `--hf-token` | `KRONK_HF_TOKEN` | _(empty)_ | Hugging Face API token for gated models |
-| `--allow-upgrade` | `KRONK_ALLOW_UPGRADE` | `true` | Allow automatic library upgrades |
-| `--llama-log` | `KRONK_LLAMA_LOG` | `1` | Llama log level (0=off, 1=on) |
-| `--insecure-logging` | `KRONK_INSECURE_LOGGING` | `false` | Log sensitive data (messages, model config) |
+| Flag                 | Environment Variable     | Default    | Description                                       |
+| -------------------- | ------------------------ | ---------- | ------------------------------------------------- |
+| `--base-path`        | `KRONK_BASE_PATH`        | `~/.kronk` | Base directory for all Kronk data                 |
+| `--lib-path`         | `KRONK_LIB_PATH`         | _(empty)_  | Path to llama library directory                   |
+| `--lib-version`      | `KRONK_LIB_VERSION`      | _(empty)_  | Specific llama library version                    |
+| `--arch`             | `KRONK_ARCH`             | _(auto)_   | Architecture override (`amd64`, `arm64`)          |
+| `--os`               | `KRONK_OS`               | _(auto)_   | OS override (`linux`, `darwin`, `windows`)        |
+| `--processor`        | `KRONK_PROCESSOR`        | _(auto)_   | Processor type (`cpu`, `metal`, `cuda`, `vulkan`) |
+| `--hf-token`         | `KRONK_HF_TOKEN`         | _(empty)_  | Hugging Face API token for gated models           |
+| `--allow-upgrade`    | `KRONK_ALLOW_UPGRADE`    | `true`     | Allow automatic library upgrades                  |
+| `--llama-log`        | `KRONK_LLAMA_LOG`        | `1`        | Llama log level (0=off, 1=on)                     |
+| `--insecure-logging` | `KRONK_INSECURE_LOGGING` | `false`    | Log sensitive data (messages, model config)       |
 
 **Example**
 
@@ -2041,7 +2059,6 @@ models:
     cache_type_k: q8_0
     cache_type_v: q8_0
     incremental_cache: true
-    max_cache_sessions: 8
 ```
 
 ---
@@ -2306,12 +2323,12 @@ Get the token count for a text input. Works with any model type.
 
 **Parameters:**
 
-| Field                    | Type      | Required | Description                                                                                                                                   |
-| ------------------------ | --------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `model`                  | `string`  | Yes      | Model ID (e.g., `Qwen3-8B-Q8_0`). Works with any model type.                                                                                |
-| `input`                  | `string`  | Yes      | The text to tokenize.                                                                                                                         |
-| `apply_template`         | `boolean` | No       | If true, wraps the input as a user message and applies the model's chat template before tokenizing. The count includes template overhead. Defaults to false. |
-| `add_generation_prompt`  | `boolean` | No       | When `apply_template` is true, controls whether the assistant role prefix is appended to the prompt. Defaults to true.                         |
+| Field                   | Type      | Required | Description                                                                                                                                                  |
+| ----------------------- | --------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `model`                 | `string`  | Yes      | Model ID (e.g., `Qwen3-8B-Q8_0`). Works with any model type.                                                                                                 |
+| `input`                 | `string`  | Yes      | The text to tokenize.                                                                                                                                        |
+| `apply_template`        | `boolean` | No       | If true, wraps the input as a user message and applies the model's chat template before tokenizing. The count includes template overhead. Defaults to false. |
+| `add_generation_prompt` | `boolean` | No       | When `apply_template` is true, controls whether the assistant role prefix is appended to the prompt. Defaults to true.                                       |
 
 **Request (raw text):**
 
@@ -2806,7 +2823,8 @@ Or in the request body:
 }
 ```
 
-Each unique `cache_id` gets its own dedicated cache sequence, up to `max_cache_sessions`.
+Each unique `cache_id` gets its own cache entry. For SPC, cache_ids are
+unlimited (tokens stored in RAM). For IMC, max concurrent cache_ids = NSeqMax.
 
 ### 9.8 Parameter Reference
 
@@ -3581,7 +3599,6 @@ models:
     <<: *base_Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
     nseq-max: 1
     incremental-cache: true
-    max-cache-sessions: 1
 ```
 
 IMC is especially beneficial for Cline's iterative coding workflow.
@@ -4333,7 +4350,6 @@ Or enable incremental message cache for agents:
 models:
   Qwen3-8B-Q8_0:
     incremental_cache: true
-    max_cache_sessions: 4
 ```
 
 **Problem: Slow token generation (tokens/second)**
@@ -4823,8 +4839,9 @@ batching = true
 - `slot.seqIDs` = pre-allocated slice for efficient `batchAdd` calls
 
 Sequences are isolated partitions in the shared KV cache memory. Slot seqIDs
-are offset when caching is enabled (both SPC and IMC use seqs 0 to
-MaxCacheSessions-1).
+always start at 0 — no sequences are reserved for caching. SPC decodes
+saved tokens directly into slot sequences. IMC binds each slot's sequence
+to a cache_id.
 
 #### 16.7.6 Context Pooling
 
@@ -4900,25 +4917,25 @@ same model will show ~40 goroutines total. This is normal.
 
 **Baseline goroutines (~25, always running):**
 
-| Source | Goroutines | Location |
-| --- | --- | --- |
-| Go runtime (GC, finalizer, netpoller, etc.) | ~4-6 | runtime internals |
-| API `http.Server` (listener + idle conns) | ~3 | `cmd/server/api/services/kronk/kronk.go` |
-| Debug `http.Server` (pprof, metrics, statsviz) | ~3 | `cmd/server/api/services/kronk/kronk.go` |
-| `statsviz.Register` (websocket handler) | ~2 | `cmd/server/app/sdk/debug/debug.go` |
-| gRPC auth server (`gs.Serve`) | ~2-3 | `cmd/server/app/domain/authapp/start.go` |
-| OTEL background collector probe | 1 | `sdk/kronk/observ/otel/otel.go` |
-| `otelhttp.NewHandler` internals | ~1-2 | `cmd/server/foundation/web/web.go` |
-| Batch engine `processLoop` | 1 | `sdk/kronk/model/batch.go` |
+| Source                                         | Goroutines | Location                                 |
+| ---------------------------------------------- | ---------- | ---------------------------------------- |
+| Go runtime (GC, finalizer, netpoller, etc.)    | ~4-6       | runtime internals                        |
+| API `http.Server` (listener + idle conns)      | ~3         | `cmd/server/api/services/kronk/kronk.go` |
+| Debug `http.Server` (pprof, metrics, statsviz) | ~3         | `cmd/server/api/services/kronk/kronk.go` |
+| `statsviz.Register` (websocket handler)        | ~2         | `cmd/server/app/sdk/debug/debug.go`      |
+| gRPC auth server (`gs.Serve`)                  | ~2-3       | `cmd/server/app/domain/authapp/start.go` |
+| OTEL background collector probe                | 1          | `sdk/kronk/observ/otel/otel.go`          |
+| `otelhttp.NewHandler` internals                | ~1-2       | `cmd/server/foundation/web/web.go`       |
+| Batch engine `processLoop`                     | 1          | `sdk/kronk/model/batch.go`               |
 
 **Per-request goroutines (~3-5 each):**
 
-| Source | Location |
-| --- | --- |
-| `http.Server` connection handler | Go stdlib |
-| `ChatStreaming` request goroutine | `sdk/kronk/model/chat.go` |
-| `streaming()` wrapper goroutine | `sdk/kronk/concurrency.go` |
-| `wrapChannelForLogging` (only if `InsecureLogging` is on) | `sdk/kronk/model/chat.go` |
+| Source                                                    | Location                   |
+| --------------------------------------------------------- | -------------------------- |
+| `http.Server` connection handler                          | Go stdlib                  |
+| `ChatStreaming` request goroutine                         | `sdk/kronk/model/chat.go`  |
+| `streaming()` wrapper goroutine                           | `sdk/kronk/concurrency.go` |
+| `wrapChannelForLogging` (only if `InsecureLogging` is on) | `sdk/kronk/model/chat.go`  |
 
 The goroutine metric is a point-in-time snapshot from `runtime.NumGoroutine()`
 captured every 10th request by the metrics middleware. It includes everything
@@ -4962,10 +4979,10 @@ output tokens.
 
 Additional spans that may appear at the top level:
 
-| Span | When | Description |
-| --- | --- | --- |
-| `model-file-load-time` | First request for a model | Loading the GGUF model file |
-| `proj-file-load-time` | Vision/audio requests | Loading the multimodal projection file |
+| Span                   | When                      | Description                            |
+| ---------------------- | ------------------------- | -------------------------------------- |
+| `model-file-load-time` | First request for a model | Loading the GGUF model file            |
+| `proj-file-load-time`  | Vision/audio requests     | Loading the multimodal projection file |
 
 ### 16.11 Reference Threads
 

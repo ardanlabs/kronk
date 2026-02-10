@@ -168,8 +168,11 @@ You can find more examples in the ArdanLabs AI training repo at [Example13](http
 package main
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -178,6 +181,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
+	"github.com/ardanlabs/kronk/sdk/tools/templates"
 )
 
 const modelURL = "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
@@ -192,7 +196,7 @@ func main() {
 func run() error {
 	mp, err := installSystem()
 	if err != nil {
-		return fmt.Errorf("unable to installation system: %w", err)
+		return fmt.Errorf("run: unable to installation system: %w", err)
 	}
 
 	krn, err := newKronk(mp)
@@ -203,19 +207,19 @@ func run() error {
 	defer func() {
 		fmt.Println("\nUnloading Kronk")
 		if err := krn.Unload(context.Background()); err != nil {
-			fmt.Printf("failed to unload model: %v", err)
+			fmt.Printf("run: failed to unload model: %v", err)
 		}
 	}()
 
-	if err := question(krn); err != nil {
-		fmt.Println(err)
+	if err := chat(krn); err != nil {
+		return err
 	}
 
 	return nil
 }
 
 func installSystem() (models.Path, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
 	defer cancel()
 
 	libs, err := libs.New(
@@ -227,6 +231,25 @@ func installSystem() (models.Path, error) {
 
 	if _, err := libs.Download(ctx, kronk.FmtLogger); err != nil {
 		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
+	}
+
+	// -------------------------------------------------------------------------
+	// This is not mandatory if you won't be using models from the catalog. That
+	// being said, if you are using a model that is part of the catalog with
+	// a corrected jinja file, having the catalog system up to date will allow
+	// the system to pull that jinja file.
+
+	templates, err := templates.New()
+	if err != nil {
+		return models.Path{}, fmt.Errorf("unable to create template system: %w", err)
+	}
+
+	if err := templates.Download(ctx); err != nil {
+		return models.Path{}, fmt.Errorf("unable to download templates: %w", err)
+	}
+
+	if err := templates.Catalog().Download(ctx); err != nil {
+		return models.Path{}, fmt.Errorf("unable to download catalog: %w", err)
 	}
 
 	// -------------------------------------------------------------------------
@@ -242,8 +265,12 @@ func installSystem() (models.Path, error) {
 	}
 
 	// -------------------------------------------------------------------------
+
 	// You could also download this model using the catalog system.
-	// templates.Catalog().DownloadModel("Qwen3-8B-Q8_0")
+	// mp, err := templates.Catalog().DownloadModel(ctx, kronk.FmtLogger, "Qwen3-Coder-Next-UD-Q8_K_XL")
+	// if err != nil {
+	// 	return models.Path{}, fmt.Errorf("unable to download model: %w", err)
+	// }
 
 	return mp, nil
 }
@@ -255,11 +282,15 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
+	// The catalog package has an API that can retrieve defaults for
+	// models in the catalog system and/or a model_config file.
+	// cfg, err := c.templates.Catalog().RetrieveModelConfig(modelID)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("unable to retrieve model config: %w", err)
+	// }
+
 	cfg := model.Config{
 		ModelFiles: mp.ModelFiles,
-		CacheTypeK: model.GGMLTypeQ8_0,
-		CacheTypeV: model.GGMLTypeQ8_0,
-		NSeqMax:    2,
 	}
 
 	krn, err := kronk.New(cfg)
@@ -273,68 +304,210 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	}
 	fmt.Println()
 
-	fmt.Println("  - contextWindow:", krn.ModelConfig().ContextWindow)
-	fmt.Println("  - embeddings   :", krn.ModelInfo().IsEmbedModel)
-	fmt.Println("  - isGPT        :", krn.ModelInfo().IsGPTModel)
+	fmt.Println("- contextWindow:", krn.ModelConfig().ContextWindow)
+	fmt.Printf("- k/v          : %s/%s\n", krn.ModelConfig().CacheTypeK, krn.ModelConfig().CacheTypeV)
+	fmt.Println("- nBatch       :", krn.ModelConfig().NBatch)
+	fmt.Println("- nuBatch      :", krn.ModelConfig().NUBatch)
+	fmt.Println("- embeddings   :", krn.ModelInfo().IsEmbedModel)
+	fmt.Println("- isGPT        :", krn.ModelInfo().IsGPTModel)
+	fmt.Println("- template     :", krn.ModelInfo().Template.FileName)
 
 	return krn, nil
 }
 
-func question(krn *kronk.Kronk) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
+func chat(krn *kronk.Kronk) error {
+	messages := model.DocumentArray()
 
-	question := "Hello model"
+	var systemPrompt = `
+		You are a helpful AI assistant. You are designed to help users answer
+		questions, create content, and provide information in a helpful and
+		accurate manner. Always follow the user's instructions carefully and
+		respond with clear, concise, and well-structured answers. You are a
+		helpful AI assistant. You are designed to help users answer questions,
+		create content, and provide information in a helpful and accurate manner.
+		Always follow the user's instructions carefully and respond with clear,
+		concise, and well-structured answers. You are a helpful AI assistant.
+		You are designed to help users answer questions, create content, and
+		provide information in a helpful and accurate manner. Always follow the
+		user's instructions carefully and respond with clear, concise, and
+		well-structured answers.`
 
-	fmt.Println()
-	fmt.Println("QUESTION:", question)
-	fmt.Println()
+	messages = append(messages,
+		model.TextMessage(model.RoleSystem, systemPrompt),
+	)
 
-	d := model.D{
-		"messages": model.DocumentArray(
-			model.TextMessage(model.RoleUser, question),
-		),
-		"temperature": 0.7,
-		"top_p":       0.9,
-		"top_k":       40,
-		"max_tokens":  2048,
+	for {
+		var err error
+		messages, err = userInput(messages)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return fmt.Errorf("run:user input: %w", err)
+		}
+
+		messages, err = func() ([]model.D, error) {
+			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+			defer cancel()
+
+			d := model.D{
+				"messages":    messages,
+				"tools":       toolDocuments(),
+				"max_tokens":  2048,
+				"temperature": 0.7,
+				"top_p":       0.8,
+				"top_k":       20,
+			}
+
+			ch, err := performChat(ctx, krn, d)
+			if err != nil {
+				return nil, fmt.Errorf("run: unable to perform chat: %w", err)
+			}
+
+			messages, err = modelResponse(krn, messages, ch)
+			if err != nil {
+				return nil, fmt.Errorf("run: model response: %w", err)
+			}
+
+			return messages, nil
+		}()
+
+		if err != nil {
+			return fmt.Errorf("run: unable to perform chat: %w", err)
+		}
+	}
+}
+
+func userInput(messages []model.D) ([]model.D, error) {
+	fmt.Print("\nUSER> ")
+
+	reader := bufio.NewReader(os.Stdin)
+
+	userInput, err := reader.ReadString('\n')
+	if err != nil {
+		return messages, fmt.Errorf("unable to read user input: %w", err)
 	}
 
+	if userInput == "quit\n" {
+		return nil, io.EOF
+	}
+
+	messages = append(messages,
+		model.TextMessage(model.RoleUser, userInput),
+	)
+
+	return messages, nil
+}
+
+func toolDocuments() []model.D {
+	return model.DocumentArray(
+		model.D{
+			"type": "function",
+			"function": model.D{
+				"name":        "get_weather",
+				"description": "Get the current weather for a location",
+				"parameters": model.D{
+					"type": "object",
+					"properties": model.D{
+						"location": model.D{
+							"type":        "string",
+							"description": "The location to get the weather for, e.g. San Francisco, CA",
+						},
+					},
+					"required": []any{"location"},
+				},
+			},
+		},
+	)
+}
+
+func performChat(ctx context.Context, krn *kronk.Kronk, d model.D) (<-chan model.ChatResponse, error) {
 	ch, err := krn.ChatStreaming(ctx, d)
 	if err != nil {
-		return fmt.Errorf("chat streaming: %w", err)
+		return nil, fmt.Errorf("chat streaming: %w", err)
 	}
 
-	// -------------------------------------------------------------------------
+	return ch, nil
+}
+
+func modelResponse(krn *kronk.Kronk, messages []model.D, ch <-chan model.ChatResponse) ([]model.D, error) {
+	fmt.Print("\nMODEL> ")
 
 	var reasoning bool
+	var lr model.ChatResponse
 
+loop:
 	for resp := range ch {
+		lr = resp
+
+		if len(resp.Choice) == 0 {
+			continue
+		}
+
 		switch resp.Choice[0].FinishReason() {
 		case model.FinishReasonError:
-			return fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
+			return messages, fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
 
 		case model.FinishReasonStop:
-			return nil
+			break loop
+
+		case model.FinishReasonTool:
+			fmt.Println()
+			if krn.ModelInfo().IsGPTModel {
+				fmt.Println()
+			}
+
+			fmt.Printf("\u001b[92mModel Asking For Tool Calls:\n\u001b[0m")
+
+			for _, tool := range resp.Choice[0].Delta.ToolCalls {
+				fmt.Printf("\u001b[92mToolID[%s]: %s(%s)\n\u001b[0m",
+					tool.ID,
+					tool.Function.Name,
+					tool.Function.Arguments,
+				)
+
+				messages = append(messages,
+					model.TextMessage("tool", fmt.Sprintf("Tool call %s: %s(%v)\n",
+						tool.ID,
+						tool.Function.Name,
+						tool.Function.Arguments),
+					),
+				)
+			}
+
+			break loop
 
 		default:
 			if resp.Choice[0].Delta.Reasoning != "" {
-				reasoning = true
 				fmt.Printf("\u001b[91m%s\u001b[0m", resp.Choice[0].Delta.Reasoning)
+				reasoning = true
 				continue
 			}
 
 			if reasoning {
 				reasoning = false
+
 				fmt.Println()
-				continue
+				if krn.ModelInfo().IsGPTModel {
+					fmt.Println()
+				}
 			}
 
 			fmt.Printf("%s", resp.Choice[0].Delta.Content)
 		}
 	}
 
-	return nil
+	// -------------------------------------------------------------------------
+
+	contextTokens := lr.Usage.PromptTokens + lr.Usage.CompletionTokens
+	contextWindow := krn.ModelConfig().ContextWindow
+	percentage := (float64(contextTokens) / float64(contextWindow)) * 100
+	of := float32(contextWindow) / float32(1024)
+
+	fmt.Printf("\n\n\u001b[90mInput: %d  Reasoning: %d  Completion: %d  Output: %d  Window: %d (%.0f%% of %.0fK) TPS: %.2f\u001b[0m\n",
+		lr.Usage.PromptTokens, lr.Usage.ReasoningTokens, lr.Usage.CompletionTokens, lr.Usage.OutputTokens, contextTokens, percentage, of, lr.Usage.TokensPerSecond)
+
+	return messages, nil
 }
 ```
 

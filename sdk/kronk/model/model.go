@@ -35,14 +35,13 @@ type imcSession struct {
 	lastUsed          time.Time   // Last access time (for eviction)
 }
 
-// spcSession holds the state for a single SPC (System Prompt Cache) session.
-// Each unique cache_id gets its own session with an assigned cache sequence.
-type spcSession struct {
-	sysPromptHash   string      // Hash of the system prompt
-	sysPromptTokens int         // Number of tokens in system prompt cache
-	sysPromptLen    int         // Length of system prompt string
-	seqID           llama.SeqId // Assigned cache sequence ID
-	lastUsed        time.Time   // Last access time (for eviction)
+// spcEntry holds saved system prompt tokens for a cache_id.
+// Tokens are stored in RAM and re-decoded into the shared cache sequence
+// on demand, avoiding the need for one KV cache sequence per user.
+type spcEntry struct {
+	hash   string        // Hash of the system prompt content
+	tokens []llama.Token // Tokenized system prompt (saved in RAM)
+	len    int           // Length of original system prompt string
 }
 
 // Templater provides support to retrieve catalog config and template
@@ -74,9 +73,7 @@ type Model struct {
 	imcSessions   map[string]*imcSession // IMC sessions keyed by cache_id
 	imcNextSeq    llama.SeqId            // Next available cache sequence
 	imcMaxSeqs    int                    // Max IMC sessions from config
-	spcSessions   map[string]*spcSession // SPC sessions keyed by cache_id
-	spcNextSeq    llama.SeqId            // Next available cache sequence
-	spcMaxSeqs    int                    // Max SPC sessions from config
+	spcEntries map[string]*spcEntry // SPC token entries keyed by cache_id
 	addBOSToken   bool                   // Whether to add BOS token (from model metadata)
 	pool          *contextPool           // Context pool for parallel embed/rerank
 }
@@ -250,10 +247,9 @@ func NewModel(ctx context.Context, templater Templater, cfg Config) (*Model, err
 			m.imcSessions = make(map[string]*imcSession, m.imcMaxSeqs)
 		}
 
-		// Initialize SPC session tracking when enabled.
+		// Initialize SPC token tracking when enabled.
 		if cfg.SystemPromptCache {
-			m.spcMaxSeqs = nSlots
-			m.spcSessions = make(map[string]*spcSession, m.spcMaxSeqs)
+			m.spcEntries = make(map[string]*spcEntry)
 		}
 
 		m.batch = newBatchEngine(&m, nSlots)
@@ -514,7 +510,8 @@ func calculateVRAM(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory int64)
 	var cacheSequences int64
 	switch {
 	case cfg.SystemPromptCache:
-		cacheSequences = nSeqMax
+		// SPC stores tokens in RAM and decodes directly into slot sequences.
+		cacheSequences = 0
 	case cfg.IncrementalCache:
 		// IMC uses dedicated slot/seq binding — no separate cache sequences.
 		cacheSequences = 0

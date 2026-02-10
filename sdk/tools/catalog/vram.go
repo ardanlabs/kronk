@@ -14,7 +14,8 @@ func (c *Catalog) CalculateVRAM(modelID string, mc ModelConfig) (models.VRAM, er
 	var cacheSequences int64
 	switch {
 	case mc.SystemPromptCache:
-		cacheSequences = nSeqMax
+		// SPC stores tokens in RAM and decodes directly into slot sequences.
+		cacheSequences = 0
 	case mc.IncrementalCache:
 		// IMC uses dedicated slot/seq binding — no separate cache sequences.
 		cacheSequences = 0

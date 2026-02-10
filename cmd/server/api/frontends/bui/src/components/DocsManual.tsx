@@ -550,7 +550,45 @@ flash_attention: auto      # Let llama.cpp decide`}</code></pre>
           <p>For text and media models, <code>NSeqMax</code> controls batch parallelism within a single model:</p>
           <pre className="code-block"><code className="language-yaml">{`n_seq_max: 4 # Process up to 4 requests concurrently`}</code></pre>
           <p>Multiple requests share the model context and KV cache, with each request</p>
-          <p>getting an isolated sequence partition.</p>
+          <p>getting an isolated sequence partition. The number of sequences always equals</p>
+          <p><code>NSeqMax</code> regardless of caching mode:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Mode</th>
+                <th>Slots</th>
+                <th>Sequences</th>
+                <th>Slot SeqIDs</th>
+                <th>Extra VRAM</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>No caching</td>
+                <td>NSeqMax</td>
+                <td>NSeqMax</td>
+                <td>0..N-1</td>
+                <td>none</td>
+              </tr>
+              <tr>
+                <td>SPC enabled</td>
+                <td>NSeqMax</td>
+                <td>NSeqMax</td>
+                <td>0..N-1</td>
+                <td>none</td>
+              </tr>
+              <tr>
+                <td>IMC enabled</td>
+                <td>NSeqMax</td>
+                <td>NSeqMax</td>
+                <td>0..N-1</td>
+                <td>NCtx scaled</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>SPC stores system prompt tokens in RAM and re-decodes them into each slot</p>
+          <p>as needed, requiring no extra sequences. IMC binds each slot to a cache_id,</p>
+          <p>caching the conversation directly in the slot's own sequence.</p>
           <p><strong>Embedding and Reranking Models</strong></p>
           <p>For embedding and reranking models, <code>NSeqMax</code> creates an internal context pool:</p>
           <pre className="code-block"><code className="language-yaml">{`n_seq_max: 4 # Create 4 contexts in internal pool`}</code></pre>
@@ -949,25 +987,24 @@ models:
           <p><strong>Sequences</strong> are isolated partitions in the shared KV cache. Each slot is</p>
           <p>assigned a unique sequence ID, ensuring requests don't interfere with each</p>
           <p>other's attention state.</p>
-          <pre className="code-block"><code>{`NSeqMax = 4 (without caching)
+          <p>The slot/sequence layout is the same for all modes:</p>
+          <pre className="code-block"><code>{`NSeqMax = 4
 
 Slot 0  →  seqID = 0  →  KV cache partition 0
 Slot 1  →  seqID = 1  →  KV cache partition 1
 Slot 2  →  seqID = 2  →  KV cache partition 2
 Slot 3  →  seqID = 3  →  KV cache partition 3`}</code></pre>
-          <p>When caching is enabled, sequence 0 is reserved for cached content:</p>
-          <pre className="code-block"><code>{`NSeqMax = 2 (with System Prompt Cache)
-
-Cache   →  seqID = 0  →  Cached system prompt KV state
-Slot 0  →  seqID = 1  →  KV cache partition 1
-Slot 1  →  seqID = 2  →  KV cache partition 2`}</code></pre>
+          <p>With SPC, saved system prompt tokens are decoded directly into the slot's</p>
+          <p>sequence before the remaining prompt is prefilled. With IMC, each slot's</p>
+          <p>sequence is bound to a cache_id and the conversation cache lives in that</p>
+          <p>sequence. In both cases, no extra sequences are reserved.</p>
           <h3 id="43-request-flow">4.3 Request Flow</h3>
           <ol>
             <li><strong>Queue</strong>: Request enters the queue (backpressure if full)</li>
             <li><strong>Assign</strong>: Available slot picks up the request</li>
             <li><strong>Clear</strong>: Slot clears its sequence partition</li>
-            <li><strong>Cache Check</strong>: If caching enabled, copy cached KV state to slot's sequence</li>
-            <li><strong>Prefill</strong>: Tokenize and process prompt tokens</li>
+            <li><strong>SPC Decode</strong>: If SPC enabled, decode saved system prompt tokens into slot's sequence</li>
+            <li><strong>Prefill</strong>: Tokenize and process remaining prompt tokens</li>
             <li><strong>Decode</strong>: Generate tokens one at a time, streaming to client</li>
             <li><strong>Complete</strong>: Clear sequence, slot becomes available</li>
           </ol>
@@ -985,68 +1022,44 @@ Slot 1  →  seqID = 2  →  KV cache partition 2`}</code></pre>
           <pre className="code-block"><code>{`KV cache per slot:  ~200 MB (for 8B model with F16)
 Total KV cache:     ~800 MB (4 slots × 200 MB)`}</code></pre>
           <p><strong>Caching Memory Overhead</strong></p>
-          <p>When message caching is enabled, additional sequences are reserved:</p>
+          <p>Neither SPC nor IMC requires additional KV cache sequences:</p>
           <table className="flags-table">
             <thead>
               <tr>
-                <th>SPC</th>
-                <th>IMC</th>
-                <th>MaxCacheSessions</th>
+                <th>Mode</th>
                 <th>Reserved Seqs</th>
-                <th>Slot Start</th>
                 <th>Memory Overhead</th>
               </tr>
             </thead>
             <tbody>
               <tr>
                 <td>off</td>
-                <td>off</td>
-                <td>-</td>
                 <td>0</td>
-                <td>seq 0</td>
                 <td>none</td>
               </tr>
               <tr>
-                <td>on</td>
-                <td>off</td>
-                <td>1</td>
-                <td>1</td>
-                <td>seq 1</td>
-                <td>+1 context window</td>
+                <td>SPC</td>
+                <td>0</td>
+                <td>none (tokens in RAM)</td>
               </tr>
               <tr>
-                <td>on</td>
-                <td>off</td>
-                <td>4</td>
-                <td>4</td>
-                <td>seq 4</td>
-                <td>+4 context windows</td>
-              </tr>
-              <tr>
-                <td>off</td>
-                <td>on</td>
-                <td>1</td>
-                <td>1</td>
-                <td>seq 1</td>
-                <td>+1 context window</td>
-              </tr>
-              <tr>
-                <td>off</td>
-                <td>on</td>
-                <td>4</td>
-                <td>4</td>
-                <td>seq 4</td>
-                <td>+4 context windows</td>
+                <td>IMC</td>
+                <td>0</td>
+                <td>NCtx scaled by NSeqMax</td>
               </tr>
             </tbody>
           </table>
-          <p>Example with <code>max-cache-sessions=3</code> and <code>n_seq_max=2</code>:</p>
-          <pre className="code-block"><code>{`seq 0: user-1 cache (IMC)
-seq 1: user-2 cache (IMC)
-seq 2: user-3 cache (IMC)
-seq 3: slot[0] inference
-seq 4: slot[1] inference`}</code></pre>
-          <p>Each cache sequence requires one full context window of KV memory.</p>
+          <p>SPC stores system prompt tokens in RAM and decodes them into each slot on</p>
+          <p>demand. This adds negligible RAM usage but zero VRAM overhead.</p>
+          <p>IMC caches full conversations in each slot's own sequence. To ensure each</p>
+          <p>slot gets the full configured context window, Kronk auto-scales the internal</p>
+          <p>context size:</p>
+          <pre className="code-block"><code>{`Internal NCtx = context_window × NSeqMax`}</code></pre>
+          <p>Example with <code>n_seq_max=2</code> and <code>context_window=8192</code>:</p>
+          <pre className="code-block"><code>{`Internal NCtx = 8192 × 2 = 16384
+KV cache per sequence: ~200 MB (8B model, F16)
+Total KV cache: 2 × 200 MB = 400 MB
+Each slot gets full 8192 context ✓`}</code></pre>
           <h3 id="45-concurrency-by-model-type">4.5 Concurrency by Model Type</h3>
           <p>Different model types use different concurrency mechanisms:</p>
           <table className="flags-table">
@@ -1087,17 +1100,17 @@ seq 4: slot[1] inference`}</code></pre>
 Request 2 ──→ acquireModel() ──→ ChatStreaming() ──→ batch.Submit() ─┤
 Request 3 ──→ acquireModel() ──→ ChatStreaming() ──→ batch.Submit() ─┤
 Request 4 ──→ acquireModel() ──→ ChatStreaming() ──→ batch.Submit() ─┤
-                                                                      ↓
-                                                    ┌─────────────────────────┐
-                                                    │      Batch Engine       │
-                                                    │  ┌─────┬─────┬─────┬─────┐
-                                                    │  │Slot0│Slot1│Slot2│Slot3│
-                                                    │  │ R1  │ R2  │ R3  │ R4  │
-                                                    │  └─────┴─────┴─────┴─────┘
-                                                    │         ↓                │
-                                                    │   Single batched decode  │
-                                                    │   (all 4 in parallel)    │
-                                                    └─────────────────────────┘`}</code></pre>
+                                                                     ↓
+                                                   ┌─────────────────────────┐
+                                                   │      Batch Engine       │
+                                                   │ ┌─────┬─────┬─────┬─────┐
+                                                   │ │Slot0│Slot1│Slot2│Slot3│
+                                                   │ │ R1  │ R2  │ R3  │ R4  │
+                                                   │ └─────┴─────┴─────┴─────┘
+                                                   │            ↓            │
+                                                   │  Single batched decode  │
+                                                   │  (all 4 in parallel)    │
+                                                   └─────────────────────────┘`}</code></pre>
           <p>All requests share the same LLM context. The batch engine combines tokens from</p>
           <p>all active slots into a single decode call, maximizing GPU efficiency.</p>
           <p><strong>Embedding/Rerank Request Flow (NSeqMax=4)</strong></p>
@@ -1176,14 +1189,16 @@ With Caching:
                                               ↓
                                          Generate`}</code></pre>
           <h3 id="52-system-prompt-cache-spc">5.2 System Prompt Cache (SPC)</h3>
-          <p>System Prompt Cache stores the KV state of the first system message and</p>
-          <p>reuses it across all requests with the same system prompt.</p>
+          <p>System Prompt Cache saves the tokenized system prompt in RAM and re-decodes</p>
+          <p>it into each slot's sequence at request time. This avoids re-tokenizing and</p>
+          <p>re-templating the system prompt on every request, while adding zero VRAM</p>
+          <p>overhead since no dedicated cache sequences are needed.</p>
           <p><strong>Best for:</strong></p>
           <ul>
             <li>Models with inconsistent templates (GPT-OSS, GLM)</li>
             <li>OpenWebUI and similar chat interfaces</li>
             <li>Applications with a consistent system prompt</li>
-            <li>Single-user or shared system prompt scenarios</li>
+            <li>Multi-user scenarios with different system prompts</li>
           </ul>
           <p><strong>Enable SPC:</strong></p>
           <pre className="code-block"><code className="language-yaml">{`models:
@@ -1191,14 +1206,18 @@ With Caching:
     system_prompt_cache: true`}</code></pre>
           <p><strong>How It Works:</strong></p>
           <ol>
-            <li>First request: System prompt is processed and cached in sequence 0</li>
-            <li>Subsequent requests: Cached KV state is copied to the slot's sequence</li>
-            <li>Only the new messages need prefill processing</li>
+            <li>First request: System prompt is templated, tokenized, and saved to RAM</li>
+            <li>The system prompt is decoded into the slot's own sequence</li>
+            <li>Remaining messages are prefilled after the system prompt tokens</li>
+            <li>Subsequent requests: Saved tokens are re-decoded into the slot (no</li>
           </ol>
+          <p>   re-tokenization needed)</p>
+          <p>Each unique <code>cache_id</code> gets its own saved token entry in RAM. There is no</p>
+          <p>limit on the number of cache_ids — tokens are small and stored in RAM only.</p>
           <p><strong>Cache Invalidation:</strong></p>
           <p>The cache is automatically invalidated when:</p>
           <ul>
-            <li>The system prompt content changes</li>
+            <li>The system prompt content changes (detected by hash comparison)</li>
             <li>The system prompt role changes</li>
             <li>The server restarts</li>
           </ul>
@@ -1222,8 +1241,10 @@ With Caching:
           <pre className="code-block"><code className="language-yaml">{`models:
   Qwen3-8B-Q8_0:
     incremental_cache: true
-    max_cache_sessions: 4 # Support 4 concurrent users
     cache_min_tokens: 100 # Minimum tokens before caching`}</code></pre>
+          <p>The maximum number of concurrent IMC sessions equals <code>NSeqMax</code>. Each session</p>
+          <p>is bound to a dedicated slot, so <code>n_seq_max: 4</code> supports up to 4 concurrent</p>
+          <p>users with their own conversation caches.</p>
           <p><strong>How It Works:</strong></p>
           <p>First request (2 messages: system + user):</p>
           <pre className="code-block"><code>{`Messages: [system, user]
@@ -1238,14 +1259,14 @@ Prefill:  [user2 + gen_prompt]`}</code></pre>
 Cache:    [system, user, assistant, user2, assistant2]  ← Extend
 Prefill:  [user3 + gen_prompt]`}</code></pre>
           <h3 id="54-multi-user-caching">5.4 Multi-User Caching</h3>
-          <p>Both SPC and IMC support multiple concurrent users, each with their own cache sequence.</p>
-          <p>Users are identified by the <code>cache_id</code> parameter in requests.</p>
-          <p><strong>Configuration:</strong></p>
-          <pre className="code-block"><code className="language-yaml">{`models:
-  Qwen3-8B-Q8_0:
-    # For SPC or IMC - both use cache_id for multi-user support
-    system_prompt_cache: true # OR incremental_cache: true
-    max_cache_sessions: 4 # 4 concurrent user caches`}</code></pre>
+          <p>Both SPC and IMC support multiple concurrent users, each identified by the</p>
+          <p><code>cache_id</code> parameter in requests.</p>
+          <p><strong>SPC Multi-User:</strong> Unlimited cache_ids. Each cache_id stores its tokenized</p>
+          <p>system prompt in RAM. Tokens are re-decoded into the slot's sequence on each</p>
+          <p>request. No VRAM overhead per user.</p>
+          <p><strong>IMC Multi-User:</strong> Max concurrent users = <code>NSeqMax</code>. Each cache_id is bound</p>
+          <p>to a dedicated slot/sequence. When all slots are bound to IMC sessions, new</p>
+          <p>cache_ids are rejected with an error.</p>
           <p><strong>Passing Cache ID:</strong></p>
           <p>Via HTTP header:</p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/chat/completions \\
@@ -1258,14 +1279,8 @@ Prefill:  [user3 + gen_prompt]`}</code></pre>
   "cache_id": "user-123",
   "messages": [...]
 }`}</code></pre>
-          <p><strong>Sequence Allocation:</strong></p>
-          <p>With <code>max_cache_sessions=3</code> and <code>n_seq_max=2</code>:</p>
-          <pre className="code-block"><code>{`seq 0: user-1 cache
-seq 1: user-2 cache
-seq 2: user-3 cache
-seq 3: slot[0] inference
-seq 4: slot[1] inference`}</code></pre>
-          <p>If all cache slots are in use, new sessions bypass IMC gracefully.</p>
+          <p>If no <code>cache_id</code> is provided, requests default to the ID <code>"default"</code>.</p>
+          <p>For multi-user deployments, always provide unique cache_ids.</p>
           <h3 id="55-spc-vs-imc">5.5 SPC vs IMC</h3>
           <table className="flags-table">
             <thead>
@@ -1288,8 +1303,8 @@ seq 4: slot[1] inference`}</code></pre>
               </tr>
               <tr>
                 <td>Multi-user</td>
-                <td>Per-user cache (dedicated sequences)</td>
-                <td>Per-user cache (dedicated sequences)</td>
+                <td>Unlimited (tokens in RAM)</td>
+                <td>Max NSeqMax (bound to slots)</td>
               </tr>
               <tr>
                 <td>Best for</td>
@@ -1298,8 +1313,8 @@ seq 4: slot[1] inference`}</code></pre>
               </tr>
               <tr>
                 <td>Memory</td>
-                <td>N extra sequences (max_cache_sessions)</td>
-                <td>N extra sequences (max_cache_sessions)</td>
+                <td>Zero VRAM overhead</td>
+                <td>NCtx auto-scaled by NSeqMax</td>
               </tr>
               <tr>
                 <td>Template req</td>
@@ -1341,66 +1356,71 @@ seq 4: slot[1] inference`}</code></pre>
 
     # OR Incremental Message Cache (mutually exclusive)
     incremental_cache: true
-    max_cache_sessions: 4
 
     # Shared settings
     cache_min_tokens: 100 # Don't cache if < 100 tokens`}</code></pre>
           <p><strong>cache_min_tokens</strong></p>
-          <p>Minimum token count before caching activates. Short prompts don't benefit</p>
-          <p>from caching because copy overhead exceeds prefill savings.</p>
+          <p>Minimum token count before SPC caching activates. Short system prompts don't</p>
+          <p>benefit from caching because decode overhead exceeds savings. Does not apply</p>
+          <p>to IMC.</p>
           <p>Default: 100 tokens</p>
           <h3 id="58-context-window-auto-scaling-imc-only">5.8 Context Window Auto-Scaling (IMC Only)</h3>
           <p>When IMC is enabled, Kronk automatically scales the internal context window</p>
           <p>to ensure each slot gets the full configured context size. This auto-scaling</p>
-          <p>does not apply to SPC since it only caches the system prompt (typically small).</p>
+          <p>does not apply to SPC since SPC adds zero VRAM overhead.</p>
           <p><strong>Why This Is Needed:</strong></p>
-          <p>IMC caches the full conversation history. The KV cache is shared across all</p>
-          <p>sequences, so without auto-scaling, IMC would reduce the effective context</p>
-          <p>per slot:</p>
+          <p>IMC caches the full conversation history in each slot's own sequence. The KV</p>
+          <p>cache is shared across all sequences, so without auto-scaling, each slot would</p>
+          <p>only get a fraction of the configured context:</p>
           <pre className="code-block"><code>{`Without auto-scaling (broken):
-  context-window: 128k
-  IMC with 1 session → 2 sequences → 64k effective per slot ❌
+  context_window: 128k
+  n_seq_max: 2
+  Effective per slot: 128k / 2 = 64k ❌
 
 With auto-scaling (Kronk's behavior):
-  context-window: 128k
-  IMC with 1 session → internal NCtx = 256k → 128k effective per slot ✓`}</code></pre>
+  context_window: 128k
+  n_seq_max: 2
+  Internal NCtx = 128k × 2 = 256k
+  Effective per slot: 128k ✓`}</code></pre>
           <p><strong>Formula:</strong></p>
-          <pre className="code-block"><code>{`Internal NCtx = context-window × (nseq-max + max-cache-sessions)`}</code></pre>
+          <pre className="code-block"><code>{`Internal NCtx = context_window × NSeqMax`}</code></pre>
           <p><strong>Example:</strong></p>
           <pre className="code-block"><code className="language-yaml">{`Qwen3-8B-Q8_0/IMC:
-  context-window: 32768 # User wants 32k per slot
-  nseq-max: 1
-  incremental-cache: true
-  max-cache-sessions: 2
+  context_window: 32768 # User wants 32k per slot
+  n_seq_max: 2
+  incremental_cache: true
 
 # Internal calculation:
-# total_seqs = 1 (nseq-max) + 2 (cache sessions) = 3
-# Internal NCtx = 32768 × 3 = 98304
+# Internal NCtx = 32768 × 2 = 65536
 # Each slot gets full 32k context ✓`}</code></pre>
           <p><strong>VRAM Impact:</strong></p>
           <p>Auto-scaling increases KV cache memory proportionally. Plan VRAM accordingly:</p>
-          <pre className="code-block"><code>{`32k context, IMC with 2 sessions, F16 cache:
-  Internal NCtx = 32k × 3 = 96k
-  KV cache = ~2.4 GB (instead of 800 MB without caching)`}</code></pre>
+          <pre className="code-block"><code>{`32k context, n_seq_max=2, IMC, F16 cache:
+  Internal NCtx = 32k × 2 = 64k
+  KV cache = ~1.6 GB (instead of 800 MB without IMC)`}</code></pre>
           <h3 id="59-performance-and-limitations">5.9 Performance and Limitations</h3>
-          <p><strong>Prefill Time Savings:</strong></p>
-          <p>For a 2000-token cached prefix:</p>
+          <p><strong>SPC Performance:</strong></p>
+          <p>SPC re-decodes system prompt tokens into each slot. For typical system prompts</p>
+          <p>(200-500 tokens), this takes ~10-50ms per request. The trade-off is zero VRAM</p>
+          <p>overhead vs. a small per-request decode cost.</p>
+          <p><strong>IMC Prefill Savings:</strong></p>
+          <p>For a 2000-token cached conversation prefix:</p>
           <ul>
             <li>Without cache: ~200ms prefill (varies by hardware)</li>
-            <li>With cache: ~5ms copy + ~20ms for new tokens</li>
+            <li>With IMC: ~5ms for new tokens only</li>
           </ul>
-          <p><strong>Memory Overhead:</strong></p>
-          <p>Each cache sequence requires one context window worth of KV cache memory:</p>
-          <pre className="code-block"><code>{`8K context, F16 cache:    ~200 MB per cache sequence
-8K context, Q8_0 cache:   ~100 MB per cache sequence
-32K context, F16 cache:   ~800 MB per cache sequence`}</code></pre>
+          <p><strong>IMC Memory Overhead:</strong></p>
+          <p>Each slot gets the full context window via auto-scaling:</p>
+          <pre className="code-block"><code>{`8K context, n_seq_max=4, IMC:
+  Internal NCtx = 8K × 4 = 32K
+  Total KV cache: ~800 MB (8B model, F16)`}</code></pre>
           <p><strong>IMC Limitations:</strong></p>
           <ul>
             <li>Text-only requests (IMC for vision/audio is not currently supported)</li>
             <li>Requires deterministic Jinja templates (no timestamps or random values)</li>
             <li>Conversations must grow monotonically (append-only)</li>
             <li>Editing earlier messages triggers full cache rebuild</li>
-            <li>When all <code>max_cache_sessions</code> slots are in use, new sessions bypass IMC</li>
+            <li>Max concurrent sessions = NSeqMax; additional sessions are rejected</li>
           </ul>
           <hr />
           <h2 id="chapter-6:-yarn-extended-context">Chapter 6: YaRN Extended Context</h2>
@@ -2049,8 +2069,7 @@ models:
     n_seq_max: 4
     cache_type_k: q8_0
     cache_type_v: q8_0
-    incremental_cache: true
-    max_cache_sessions: 8`}</code></pre>
+    incremental_cache: true`}</code></pre>
           <hr />
           <h2 id="chapter-8:-api-endpoints">Chapter 8: API Endpoints</h2>
           <p>Kronk provides an OpenAI-compatible REST API. This chapter documents the</p>
@@ -2912,7 +2931,8 @@ d := model.D{
   "cache_id": "user-123",
   "messages": [...]
 }`}</code></pre>
-          <p>Each unique <code>cache_id</code> gets its own dedicated cache sequence, up to <code>max_cache_sessions</code>.</p>
+          <p>Each unique <code>cache_id</code> gets its own cache entry. For SPC, cache_ids are</p>
+          <p>unlimited (tokens stored in RAM). For IMC, max concurrent cache_ids = NSeqMax.</p>
           <h3 id="98-parameter-reference">9.8 Parameter Reference</h3>
           <table className="flags-table">
             <thead>
@@ -3639,8 +3659,7 @@ Model: Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMC`}</code></pre>
     Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMC:
     <<: *base_Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
     nseq-max: 1
-    incremental-cache: true
-    max-cache-sessions: 1`}</code></pre>
+    incremental-cache: true`}</code></pre>
           <p>IMC is especially beneficial for Cline's iterative coding workflow.</p>
           <p>_Note: Don't use R1 Message formats when using KMS._</p>
           <h3 id="134-python-openai-sdk">13.4 Python OpenAI SDK</h3>
@@ -4105,8 +4124,7 @@ kronk server start  # Run in foreground to see logs`}</code></pre>
           <p>Or enable incremental message cache for agents:</p>
           <pre className="code-block"><code className="language-yaml">{`models:
   Qwen3-8B-Q8_0:
-    incremental_cache: true
-    max_cache_sessions: 4`}</code></pre>
+    incremental_cache: true`}</code></pre>
           <p><strong>Problem: Slow token generation (tokens/second)</strong></p>
           <p><strong>Causes:</strong></p>
           <ul>
@@ -4691,8 +4709,9 @@ batching = true`}</code></pre>
             <li><code>slot.seqIDs</code> = pre-allocated slice for efficient <code>batchAdd</code> calls</li>
           </ul>
           <p>Sequences are isolated partitions in the shared KV cache memory. Slot seqIDs</p>
-          <p>are offset when caching is enabled (both SPC and IMC use seqs 0 to</p>
-          <p>MaxCacheSessions-1).</p>
+          <p>always start at 0 — no sequences are reserved for caching. SPC decodes</p>
+          <p>saved tokens directly into slot sequences. IMC binds each slot's sequence</p>
+          <p>to a cache_id.</p>
           <h4 id="1676-context-pooling">16.7.6 Context Pooling</h4>
           <ul>
             <li><code>llama.Context</code> is created once in <code>NewModel</code> and reused across requests</li>

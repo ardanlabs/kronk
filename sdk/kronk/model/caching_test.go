@@ -500,15 +500,13 @@ func TestIMCSessionState(t *testing.T) {
 func TestClearCaches(t *testing.T) {
 	m := &Model{
 		cfg: Config{
-			IncrementalCache:   true,
-			SystemPromptCache:  true,
+			IncrementalCache:  true,
+			SystemPromptCache: true,
 		},
 		imcSessions: make(map[string]*imcSession),
 		imcNextSeq:  0,
 		imcMaxSeqs:  2,
-		spcSessions: make(map[string]*spcSession),
-		spcNextSeq:  0,
-		spcMaxSeqs:  2,
+		spcEntries:  make(map[string]*spcEntry),
 		log:         func(ctx context.Context, msg string, args ...any) {},
 	}
 
@@ -518,16 +516,16 @@ func TestClearCaches(t *testing.T) {
 	m.getOrCreateIMCSession(ctx, "user-1")
 	m.getOrCreateIMCSession(ctx, "user-2")
 
-	// Create some SPC sessions.
-	m.getOrCreateSPCSession(ctx, "user-3")
-	m.getOrCreateSPCSession(ctx, "user-4")
+	// Create some SPC entries.
+	m.getOrCreateSPCEntry("user-3")
+	m.getOrCreateSPCEntry("user-4")
 
 	if len(m.imcSessions) != 2 {
 		t.Fatalf("expected 2 IMC sessions, got %d", len(m.imcSessions))
 	}
 
-	if len(m.spcSessions) != 2 {
-		t.Fatalf("expected 2 SPC sessions, got %d", len(m.spcSessions))
+	if len(m.spcEntries) != 2 {
+		t.Fatalf("expected 2 SPC entries, got %d", len(m.spcEntries))
 	}
 
 	// Clear caches.
@@ -538,9 +536,9 @@ func TestClearCaches(t *testing.T) {
 		t.Errorf("imcSessions not cleared, got %d", len(m.imcSessions))
 	}
 
-	// Verify SPC sessions cleared.
-	if len(m.spcSessions) != 0 {
-		t.Errorf("spcSessions not cleared, got %d", len(m.spcSessions))
+	// Verify SPC entries cleared.
+	if len(m.spcEntries) != 0 {
+		t.Errorf("spcEntries not cleared, got %d", len(m.spcEntries))
 	}
 }
 
