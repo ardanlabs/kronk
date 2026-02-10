@@ -250,115 +250,6 @@ func TestRemoveMessagesAtIndices(t *testing.T) {
 	}
 }
 
-func TestFindCacheableMessage(t *testing.T) {
-	tests := []struct {
-		name        string
-		messages    []D
-		targetRole  string
-		wantFound   bool
-		wantIndex   int
-		wantContent string
-	}{
-		{
-			name: "find system message",
-			messages: []D{
-				{"role": "system", "content": "You are helpful"},
-				{"role": "user", "content": "Hello"},
-			},
-			targetRole:  RoleSystem,
-			wantFound:   true,
-			wantIndex:   0,
-			wantContent: "You are helpful",
-		},
-		{
-			name: "find user message",
-			messages: []D{
-				{"role": "system", "content": "System"},
-				{"role": "user", "content": "User message"},
-			},
-			targetRole:  RoleUser,
-			wantFound:   true,
-			wantIndex:   1,
-			wantContent: "User message",
-		},
-		{
-			name: "no system message",
-			messages: []D{
-				{"role": "user", "content": "Hello"},
-			},
-			targetRole: RoleSystem,
-			wantFound:  false,
-		},
-		{
-			name: "empty content skipped",
-			messages: []D{
-				{"role": "system", "content": ""},
-				{"role": "system", "content": "Valid system"},
-			},
-			targetRole:  RoleSystem,
-			wantFound:   true,
-			wantIndex:   1,
-			wantContent: "Valid system",
-		},
-		{
-			name: "finds first matching role",
-			messages: []D{
-				{"role": "user", "content": "First"},
-				{"role": "user", "content": "Second"},
-			},
-			targetRole:  RoleUser,
-			wantFound:   true,
-			wantIndex:   0,
-			wantContent: "First",
-		},
-		{
-			name: "array content extraction",
-			messages: []D{
-				{"role": "system", "content": []any{
-					map[string]any{"type": "text", "text": "Array content"},
-				}},
-			},
-			targetRole:  RoleSystem,
-			wantFound:   true,
-			wantIndex:   0,
-			wantContent: "Array content",
-		},
-		{
-			name:       "empty messages",
-			messages:   []D{},
-			targetRole: RoleSystem,
-			wantFound:  false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			msg, found := findCacheableMessage(tt.messages, tt.targetRole)
-
-			if found != tt.wantFound {
-				t.Errorf("found = %v, want %v", found, tt.wantFound)
-				return
-			}
-
-			if !found {
-				return
-			}
-
-			if msg.index != tt.wantIndex {
-				t.Errorf("index = %d, want %d", msg.index, tt.wantIndex)
-			}
-
-			if msg.content != tt.wantContent {
-				t.Errorf("content = %q, want %q", msg.content, tt.wantContent)
-			}
-
-			if msg.role != tt.targetRole {
-				t.Errorf("role = %q, want %q", msg.role, tt.targetRole)
-			}
-		})
-	}
-}
-
 func TestHashMessage(t *testing.T) {
 	msg1 := cacheableMessage{role: "system", content: "Hello"}
 	msg2 := cacheableMessage{role: "system", content: "Hello"}
@@ -545,12 +436,10 @@ func TestClearCaches(t *testing.T) {
 func TestCacheResultFields(t *testing.T) {
 	// Test that cacheResult correctly propagates IMC fields.
 	result := cacheResult{
-		modifiedD:    D{"test": "value"},
-		cacheIdx:     1000,
-		cacheHit:     true,
-		cacheUpdated: false,
-		cacheID:      "user-123",
-		cacheSeqID:   llama.SeqId(2),
+		modifiedD:  D{"test": "value"},
+		cacheIdx:   1000,
+		cacheID:    "user-123",
+		cacheSeqID: llama.SeqId(2),
 	}
 
 	if result.cacheID != "user-123" {
@@ -561,11 +450,5 @@ func TestCacheResultFields(t *testing.T) {
 	}
 	if result.cacheIdx != 1000 {
 		t.Errorf("cacheIdx = %d, want 1000", result.cacheIdx)
-	}
-	if !result.cacheHit {
-		t.Error("cacheHit should be true for a cache hit scenario")
-	}
-	if result.cacheUpdated {
-		t.Error("cacheUpdated should be false for a cache hit scenario")
 	}
 }

@@ -48,9 +48,9 @@ type chatJob struct {
 	// -------------------------------------------------------------------------
 	// System Prompt Cache (SPC)
 
-	spcCacheID  string        // Cache ID for atomic staging
+	spcCacheID  string        // Cache ID for cache lookup
 	spcHash     string        // Expected hash for cache validation
-	spcTokens   []llama.Token // Tokens to decode into shared seq 0 if needed
+	spcTokens   []llama.Token // Tokens to decode into the slot's sequence
 	spcCacheHit bool          // True if SPC entry exists with tokens
 
 	// -------------------------------------------------------------------------
@@ -208,24 +208,10 @@ func newBatchEngine(m *Model, nSlots int) *batchEngine {
 	nCtx := llama.NCtx(m.lctx)
 	batch := llama.BatchInit(int32(nCtx), 0, int32(nSlots))
 
-	// Calculate sequence offset based on reserved cache sequences.
-	// SPC decodes directly into slot sequences — no reserved sequences.
-	// IMC uses dedicated slot/seq binding — no separate cache sequences.
-	var cacheSeqs int
-	switch {
-	case m.cfg.SystemPromptCache:
-		// SPC stores tokens in RAM and decodes directly into slot sequences.
-		// No reserved cache sequences needed.
-		cacheSeqs = 0
-	case m.cfg.IncrementalCache:
-		// IMC uses dedicated slot/seq binding — no separate cache sequences.
-		cacheSeqs = 0
-	}
-
 	// Initialize slots.
 	slots := make([]*slot, nSlots)
 	for i := range slots {
-		seqID := llama.SeqId(i + cacheSeqs)
+		seqID := llama.SeqId(i)
 		slots[i] = &slot{
 			id:     i,
 			seqID:  seqID,
@@ -1633,13 +1619,7 @@ func (e *batchEngine) logDecodeError(ctx context.Context, ret int32, err error) 
 
 	// Collect per-slot diagnostics.
 	var totalTokens llama.Pos
-	slotInfo := make([]string, 0, e.nSlots+1)
-
-	// Check system prompt cache (seq 0).
-	if sysMax, sysErr := llama.MemorySeqPosMax(e.model.mem, 0); sysErr == nil && sysMax >= 0 {
-		slotInfo = append(slotInfo, fmt.Sprintf("sys[0]=%d", sysMax+1))
-		totalTokens += sysMax + 1
-	}
+	slotInfo := make([]string, 0, e.nSlots)
 
 	// Check each slot's sequence.
 	for _, s := range e.slots {

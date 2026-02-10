@@ -17,16 +17,14 @@ type cacheResult struct {
 	modifiedD      D           // D with cached messages removed if cache was used
 	cacheIdx       llama.Pos   // Token position where cached content ends; new tokens start here
 	cachedMsgCount int         // Number of messages cached (for IMC removal)
-	cacheHit       bool        // True if we reused existing cache (no new decode needed)
-	cacheUpdated   bool        // True if we modified the cache (decoded new tokens)
 	err            error       // Any error that occurred
 	cacheID        string      // Cache session ID (used by both SPC and IMC)
 	cacheSeqID     llama.SeqId // Cache session's sequence ID
 
-	// SPC shared-sequence fields — tokens to stage into seq 0 at startSlot.
-	spcCacheID string        // SPC cache_id for atomic staging
-	spcHash    string        // Expected hash of SPC content in seq 0
-	spcTokens  []llama.Token // Tokens to stage into seq 0 if needed
+	// SPC fields — tokens to decode directly into the slot's sequence at startSlot.
+	spcCacheID string        // SPC cache_id for cache lookup
+	spcHash    string        // Expected hash of SPC content for validation
+	spcTokens  []llama.Token // Tokens to decode into the slot's sequence
 
 	// IMC dedicated slot fields — tokens to decode into slot's sequence.
 	imcNewCacheTokens []llama.Token // New tokens to extend the cache (decoded at startSlot)
@@ -103,13 +101,11 @@ func (m *Model) processSPC(ctx context.Context, d D) cacheResult {
 			return result
 		}
 
-		d = removeMessagesAtIndices(d, []int{0})
-
 		if len(result.spcTokens) > 0 {
+			d = removeMessagesAtIndices(d, []int{0})
 			return cacheResult{
 				modifiedD:  d,
 				cacheIdx:   llama.Pos(len(result.spcTokens)),
-				cacheHit:   result.cacheHit,
 				spcCacheID: cacheID,
 				spcHash:    result.spcHash,
 				spcTokens:  result.spcTokens,
@@ -129,7 +125,6 @@ func (m *Model) processSPC(ctx context.Context, d D) cacheResult {
 			return cacheResult{
 				modifiedD:  d,
 				cacheIdx:   llama.Pos(len(savedTokens)),
-				cacheHit:   true,
 				spcCacheID: cacheID,
 				spcHash:    savedHash,
 				spcTokens:  savedTokens,
@@ -163,7 +158,6 @@ func (m *Model) performSPC(ctx context.Context, d D, messages []D, msgInfo cache
 	if currentLen == contentLen && currentHash == newHash && len(currentTokens) > 0 {
 		m.log(ctx, "spc", "status", "cache hit", "cache_id", cacheID, "tokens", len(currentTokens))
 		return cacheResult{
-			cacheHit:  true,
 			spcHash:   newHash,
 			spcTokens: currentTokens,
 		}
@@ -175,7 +169,6 @@ func (m *Model) performSPC(ctx context.Context, d D, messages []D, msgInfo cache
 	if entry.len == contentLen && entry.hash == newHash && len(entry.tokens) > 0 {
 		m.log(ctx, "spc", "status", "cache hit (after lock)", "cache_id", cacheID, "tokens", len(entry.tokens))
 		return cacheResult{
-			cacheHit:  true,
 			spcHash:   newHash,
 			spcTokens: entry.tokens,
 		}
@@ -312,7 +305,6 @@ func (m *Model) processIMC(ctx context.Context, d D) cacheResult {
 					modifiedD:      removeFirstNMessages(d, currentLastMsgIdxCached),
 					cacheIdx:       llama.Pos(currentTotalTokensCached),
 					cachedMsgCount: currentLastMsgIdxCached,
-					cacheHit:       true,
 					cacheID:        cacheID,
 					cacheSeqID:     seqID,
 				}
@@ -382,18 +374,15 @@ func (m *Model) getOrCreateSPCEntry(cacheID string) *spcEntry {
 // messages[currentLastMsgIdxCached:lastMsgIdxToCache].
 func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, cacheID string, session *imcSession, currentLastMsgIdxCached, lastMsgIdxToCache, currentTotalTokensCached int) cacheResult {
 	m.cacheMu.Lock()
-	defer m.cacheMu.Unlock()
 
 	// Double-check session state hasn't changed. If it has, fall back to
 	// doing a full rebuild. This could happen if two people are using the
 	// cache id.
 	if session.lastMsgIdxCached != currentLastMsgIdxCached || session.totalTokensCached != currentTotalTokensCached {
 		m.cacheMu.Unlock()
-		result := m.buildIMCCacheFromScratch(ctx, d, messages, cacheID, session, lastMsgIdxToCache)
-		m.cacheMu.Lock()
-
-		return result
+		return m.buildIMCCacheFromScratch(ctx, d, messages, cacheID, session, lastMsgIdxToCache)
 	}
+	defer m.cacheMu.Unlock()
 
 	msgs := messages[:lastMsgIdxToCache]
 
@@ -434,7 +423,6 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, cacheID s
 			modifiedD:      removeFirstNMessages(d, currentLastMsgIdxCached),
 			cacheIdx:       llama.Pos(currentTotalTokensCached),
 			cachedMsgCount: currentLastMsgIdxCached,
-			cacheHit:       true,
 			cacheID:        cacheID,
 			cacheSeqID:     session.seqID,
 		}
@@ -457,7 +445,6 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, cacheID s
 		modifiedD:         removeFirstNMessages(d, lastMsgIdxToCache),
 		cacheIdx:          llama.Pos(currentTotalTokensCached),
 		cachedMsgCount:    lastMsgIdxToCache,
-		cacheHit:          true,
 		cacheID:           cacheID,
 		cacheSeqID:        session.seqID,
 		imcNewCacheTokens: extensionTokens,
@@ -477,7 +464,7 @@ func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D,
 		prefixHash := hashMessages(messages[:session.lastMsgIdxCached])
 		if prefixHash == session.cachedMsgsHash {
 			m.log(ctx, "imc", "status", "cache hit (after-lock)", "cache_id", cacheID, "last-msg-idx-cached", session.lastMsgIdxCached, "total-tokens-cached", session.totalTokensCached)
-			return cacheResult{cacheIdx: llama.Pos(session.totalTokensCached), cacheHit: true}
+			return cacheResult{cacheIdx: llama.Pos(session.totalTokensCached)}
 		}
 	}
 
@@ -582,13 +569,8 @@ func (m *Model) decodeTokensIntoCache(ctx context.Context, tokens []llama.Token,
 		end := min(i+nBatch, nTokens)
 
 		for j := i; j < end; j++ {
-			// Position is offset by existing tokens in cache.
 			pos := llama.Pos(startPos + j)
-
-			// Only compute logits for the last token of the last chunk.
-			logits := j == nTokens-1
-
-			batch.Add(tokens[j], pos, seqIDs, logits)
+			batch.Add(tokens[j], pos, seqIDs, false)
 		}
 
 		if _, err := llama.Decode(m.lctx, batch); err != nil {
@@ -628,8 +610,7 @@ func (m *Model) decodeSPCToSlot(ctx context.Context, tokens []llama.Token, seqID
 
 		end := min(i+nBatch, nTokens)
 		for j := i; j < end; j++ {
-			logits := j == nTokens-1
-			batch.Add(tokens[j], llama.Pos(j), seqIDs, logits)
+			batch.Add(tokens[j], llama.Pos(j), seqIDs, false)
 		}
 
 		if _, err := llama.Decode(m.lctx, batch); err != nil {
@@ -666,54 +647,6 @@ type cacheableMessage struct {
 	index   int
 	role    string
 	content string
-}
-
-// findCacheableMessage finds the first message with the specified role.
-// Returns the message info and true if found.
-func findCacheableMessage(messages []D, targetRole string) (cacheableMessage, bool) {
-	for i, msg := range messages {
-		role, ok := msg["role"].(string)
-		if !ok || role != targetRole {
-			continue
-		}
-
-		// Handle content as string or array (OpenAI multi-part format).
-		var content string
-		switch c := msg["content"].(type) {
-		case string:
-			content = c
-
-		case []any:
-			// Extract text from array of content parts.
-			for _, part := range c {
-				if partMap, ok := part.(map[string]any); ok {
-					if partMap["type"] == "text" {
-						if text, ok := partMap["text"].(string); ok {
-							content += text
-						}
-					}
-				}
-			}
-
-		case []D:
-			// Extract text from array of D content parts.
-			for _, part := range c {
-				if part["type"] == "text" {
-					if text, ok := part["text"].(string); ok {
-						content += text
-					}
-				}
-			}
-		}
-
-		if content == "" {
-			continue
-		}
-
-		return cacheableMessage{index: i, role: role, content: content}, true
-	}
-
-	return cacheableMessage{}, false
 }
 
 // hashMessage computes a SHA-256 hash of a message.
