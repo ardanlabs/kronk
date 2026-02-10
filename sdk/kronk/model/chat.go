@@ -241,6 +241,12 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		imcSeqID:    cache.cacheSeqID,
 		imcCacheIdx: cache.cacheIdx,
 		imcCacheHit: imcCacheHit,
+
+		imcNewCacheTokens: cache.imcNewCacheTokens,
+		imcNewTotalCached: cache.imcNewTotalCached,
+		imcNewMsgIdx:      cache.imcNewMsgIdx,
+		imcNewMsgsHash:    cache.imcNewMsgsHash,
+		imcClearSeq:       cache.imcClearSeq,
 	}
 
 	if err := m.batch.submit(&job); err != nil {

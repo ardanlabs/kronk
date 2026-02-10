@@ -58,6 +58,13 @@ type chatJob struct {
 	imcSeqID    llama.SeqId // Sequence ID containing cached conversation state
 	imcCacheIdx llama.Pos   // Token position where IMC cache ends
 	imcCacheHit bool        // True if conversation history was found in cache
+
+	// IMC dedicated slot fields.
+	imcNewCacheTokens []llama.Token // New tokens to extend the cache in the slot's sequence
+	imcNewTotalCached int           // Total cached tokens after extension
+	imcNewMsgIdx      int           // New lastMsgIdxCached after extension
+	imcNewMsgsHash    string        // New cachedMsgsHash after extension
+	imcClearSeq       bool          // True if sequence must be cleared before decoding (rebuild)
 }
 
 // slot represents a processing slot for parallel inference. Each slot can
@@ -200,14 +207,15 @@ func newBatchEngine(m *Model, nSlots int) *batchEngine {
 	batch := llama.BatchInit(int32(nCtx), 0, int32(nSlots))
 
 	// Calculate sequence offset based on reserved cache sequences.
-	// Both SPC and IMC use seqs 0 to MaxCacheSessions-1.
-	// Slots start after reserved sequences.
+	// SPC uses seq 0, slots start after.
+	// IMC uses dedicated slot/seq binding — no separate cache sequences.
 	var cacheSeqs int
 	switch {
 	case m.cfg.SystemPromptCache:
 		cacheSeqs = m.spcMaxSeqs
 	case m.cfg.IncrementalCache:
-		cacheSeqs = m.imcMaxSeqs
+		// IMC uses dedicated slot/seq binding — no separate cache sequences.
+		cacheSeqs = 0
 	}
 
 	// Initialize slots.
@@ -481,6 +489,11 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 
 // fillSlots assigns pending requests to available slots.
 func (e *batchEngine) fillSlots() {
+	if e.model.cfg.IncrementalCache {
+		e.fillSlotsIMC()
+		return
+	}
+
 	for _, s := range e.slots {
 		if s.active {
 			continue
@@ -495,6 +508,53 @@ func (e *batchEngine) fillSlots() {
 		default:
 			return
 		}
+	}
+}
+
+// fillSlotsIMC routes IMC jobs to their dedicated slots. Each cache_id is
+// bound to a specific slot, so jobs must wait for their assigned slot.
+func (e *batchEngine) fillSlotsIMC() {
+	select {
+	case job := <-e.requestQ:
+		// Find the dedicated slot for this job's cache_id.
+		if job.imcID != "" {
+			e.model.cacheMu.RLock()
+			session, exists := e.model.imcSessions[job.imcID]
+			e.model.cacheMu.RUnlock()
+
+			if exists && session.slotID < len(e.slots) {
+				s := e.slots[session.slotID]
+				if !s.active {
+					e.startSlot(s, job)
+					return
+				}
+
+				// Dedicated slot is busy — put job back for retry.
+				select {
+				case e.requestQ <- job:
+				default:
+					e.finishSlot(s, fmt.Errorf("fillSlots: IMC queue full, dropping request"))
+				}
+				return
+			}
+		}
+
+		// No dedicated slot found (new session or no cache_id).
+		// Assign to any available slot.
+		for _, s := range e.slots {
+			if !s.active {
+				e.startSlot(s, job)
+				return
+			}
+		}
+
+		// All slots busy — put job back.
+		select {
+		case e.requestQ <- job:
+		default:
+		}
+
+	default:
 	}
 }
 
@@ -534,29 +594,82 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 		s.grammarSampler = NewGrammarSampler(e.model.vocab, job.params.Grammar)
 	}
 
-	// Always clear the slot's sequence before starting to remove any stale KV data.
-	llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
-
-	// Copy cached KV state if available (SPC or IMC, mutually exclusive).
+	// IMC dedicated slot mode: the slot's sequence IS the cache. No copy needed.
+	// Re-read session state under lock to handle stale job data from queuing.
 	var cacheIdx llama.Pos
-	switch {
-	case job.spcCacheHit:
-		// SPC: copy from session's sequence (user-based like IMC).
-		e.model.log(job.ctx, "start-slot", "status", "spc-copy", "src_seq", job.imcSeqID, "dst_seq", s.seqID, "cached_tokens", job.spcCacheIdx)
-		if err := e.model.copyCachesToSeq(s.seqID, job.imcSeqID); err != nil {
-			e.finishSlot(s, fmt.Errorf("start-slot: %w", err))
-			return
+	if e.model.cfg.IncrementalCache && job.imcID != "" {
+		e.model.cacheMu.RLock()
+		session, exists := e.model.imcSessions[job.imcID]
+		if exists {
+			cacheIdx = llama.Pos(session.totalTokensCached)
 		}
-		cacheIdx = job.spcCacheIdx
+		e.model.cacheMu.RUnlock()
 
-	case job.imcCacheHit:
-		// IMC: copy from session's sequence.
-		e.model.log(job.ctx, "start-slot", "status", "imc-copy", "src_seq", job.imcSeqID, "dst_seq", s.seqID, "cached_tokens", job.imcCacheIdx)
-		if err := e.model.copyCachesToSeq(s.seqID, job.imcSeqID); err != nil {
-			e.finishSlot(s, fmt.Errorf("start-slot: %w", err))
-			return
+		// Decode new cache extension tokens into the slot's sequence if any.
+		if len(job.imcNewCacheTokens) > 0 {
+			switch job.imcClearSeq {
+			case true:
+				// Rebuilding from scratch (prefix mismatch). Clear the old
+				// sequence first so we don't append on top of stale tokens.
+				e.model.log(job.ctx, "start-slot", "status", "imc-clear-seq", "slot", s.id, "seq", s.seqID,
+					"old_cached_tokens", cacheIdx)
+
+				e.model.decodeMu.Lock()
+				llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+				e.model.decodeMu.Unlock()
+
+				cacheIdx = 0
+
+				e.model.log(job.ctx, "start-slot", "status", "imc-build", "slot", s.id, "seq", s.seqID,
+					"tokens", len(job.imcNewCacheTokens))
+
+			case false:
+				e.model.log(job.ctx, "start-slot", "status", "imc-extend", "slot", s.id, "seq", s.seqID,
+					"cached_tokens", cacheIdx, "new_cache_tokens", len(job.imcNewCacheTokens))
+			}
+
+			if err := e.model.decodeTokensIntoCache(job.ctx, job.imcNewCacheTokens, s.seqID, int(cacheIdx)); err != nil {
+				e.finishSlot(s, fmt.Errorf("start-slot: imc extend: %w", err))
+				return
+			}
+
+			cacheIdx = llama.Pos(job.imcNewTotalCached)
+
+			// Update session state now that tokens are decoded.
+			e.model.cacheMu.Lock()
+			if session, exists := e.model.imcSessions[job.imcID]; exists {
+				session.cachedMsgsHash = job.imcNewMsgsHash
+				session.totalTokensCached = job.imcNewTotalCached
+				session.lastMsgIdxCached = job.imcNewMsgIdx
+				session.lastUsed = time.Now()
+			}
+			e.model.cacheMu.Unlock()
+
+			switch job.imcClearSeq {
+			case true:
+				e.model.log(job.ctx, "start-slot", "status", "imc-built", "slot", s.id, "seq", s.seqID,
+					"total_cached", job.imcNewTotalCached)
+			case false:
+				e.model.log(job.ctx, "start-slot", "status", "imc-extended", "slot", s.id, "seq", s.seqID,
+					"total_cached", job.imcNewTotalCached)
+			}
+		} else if cacheIdx > 0 {
+			e.model.log(job.ctx, "start-slot", "status", "imc-reuse", "slot", s.id, "seq", s.seqID,
+				"cached_tokens", cacheIdx)
 		}
-		cacheIdx = job.imcCacheIdx
+	} else {
+		// Non-IMC mode: clear the slot's sequence and copy from cache if available.
+		llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+
+		switch {
+		case job.spcCacheHit:
+			e.model.log(job.ctx, "start-slot", "status", "spc-copy", "src_seq", job.imcSeqID, "dst_seq", s.seqID, "cached_tokens", job.spcCacheIdx)
+			if err := e.model.copyCachesToSeq(s.seqID, job.imcSeqID); err != nil {
+				e.finishSlot(s, fmt.Errorf("start-slot: %w", err))
+				return
+			}
+			cacheIdx = job.spcCacheIdx
+		}
 	}
 
 	s.nPast = cacheIdx
@@ -1231,10 +1344,24 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		elapsed = time.Since(s.startTime)
 	}
 
-	// Clear KV cache for this slot's sequence.
-	// SPC and IMC sessions persist across requests, so we don't pre-populate
-	// slots with cache - it's done per-request in startSlot.
-	llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+	// IMC dedicated slot mode: trim generated tokens but keep cached prefix.
+	// Non-IMC mode: clear the entire sequence.
+	if e.model.cfg.IncrementalCache && s.job.imcID != "" {
+		e.model.cacheMu.RLock()
+		session, exists := e.model.imcSessions[s.job.imcID]
+		var trimPos llama.Pos
+		if exists {
+			trimPos = llama.Pos(session.totalTokensCached)
+		}
+		e.model.cacheMu.RUnlock()
+
+		if trimPos > 0 {
+			llama.MemorySeqRm(e.model.mem, s.seqID, trimPos, -1)
+			e.model.log(ctx, "finish-slot", "status", "imc-trim", "slot", slotID, "seq", seqID, "trim_pos", trimPos)
+		}
+	} else {
+		llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+	}
 
 	// Handle error case.
 	if err != nil {

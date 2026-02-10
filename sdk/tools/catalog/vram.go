@@ -14,9 +14,10 @@ func (c *Catalog) CalculateVRAM(modelID string, mc ModelConfig) (models.VRAM, er
 	var cacheSequences int64
 	switch {
 	case mc.SystemPromptCache:
-		cacheSequences = int64(max(mc.MaxCacheSessions, 1))
+		cacheSequences = nSeqMax
 	case mc.IncrementalCache:
-		cacheSequences = int64(max(mc.MaxCacheSessions, 1))
+		// IMC uses dedicated slot/seq binding — no separate cache sequences.
+		cacheSequences = 0
 	}
 
 	totalSeqs := nSeqMax + cacheSequences

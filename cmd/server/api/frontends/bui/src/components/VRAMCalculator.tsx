@@ -119,7 +119,7 @@ export default function VRAMCalculator() {
   const hasCalculated = useRef(false);
 
   const selectedCacheOption = CACHE_TYPE_OPTIONS.find(opt => opt.value === cacheType) || CACHE_TYPE_OPTIONS[0];
-  const cacheSequences = cacheType === 'off' ? 0 : cacheSessions;
+  const cacheSequences = cacheType === 'spc' ? cacheSessions : 0;
 
   const performCalculation = useCallback(async (clearResult = true) => {
     if (!modelUrl.trim()) {
@@ -290,7 +290,7 @@ export default function VRAMCalculator() {
           </small>
         </div>
 
-        {cacheType !== 'off' && (
+        {cacheType === 'spc' && (
           <div className="form-group">
             <label htmlFor="cacheSessions">Cache Sessions (Multi-User)</label>
             <select
@@ -306,7 +306,7 @@ export default function VRAMCalculator() {
               ))}
             </select>
             <small className="form-hint">
-              Number of concurrent user caches (max-cache-sessions). Each session uses a dedicated cache sequence.
+              Number of concurrent user caches for SPC. Each session uses a dedicated cache sequence.
             </small>
           </div>
         )}

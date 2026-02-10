@@ -66,7 +66,6 @@ export interface ModelConfig {
   'split-mode': string;
   'system-prompt-cache': boolean;
   'incremental-cache': boolean;
-  'max-cache-sessions': number;
   'cache-min-tokens': number;
   'sampling-parameters': SamplingConfig;
 

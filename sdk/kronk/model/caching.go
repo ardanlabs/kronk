@@ -22,6 +22,13 @@ type cacheResult struct {
 	err            error       // Any error that occurred
 	cacheID        string      // Cache session ID (used by both SPC and IMC)
 	cacheSeqID     llama.SeqId // Cache session's sequence ID
+
+	// IMC dedicated slot fields — tokens to decode into slot's sequence.
+	imcNewCacheTokens []llama.Token // New tokens to extend the cache (decoded at startSlot)
+	imcNewTotalCached int           // Total cached tokens after extension
+	imcNewMsgIdx      int           // New lastMsgIdxCached after extension
+	imcNewMsgsHash    string        // New cachedMsgsHash after extension
+	imcClearSeq       bool          // True if sequence must be cleared before decoding (rebuild from scratch)
 }
 
 // processCache checks if the system prompt or incremental messages are
@@ -373,9 +380,11 @@ func (m *Model) getOrCreateIMCSession(ctx context.Context, cacheID string) (*imc
 		return nil, false
 	}
 
-	// Create new session with next available sequence.
+	// Create new session bound to a dedicated slot/sequence.
+	slotID := int(m.imcNextSeq)
 	session := imcSession{
-		seqID:    m.imcNextSeq,
+		seqID:    llama.SeqId(slotID),
+		slotID:   slotID,
 		lastUsed: time.Now(),
 	}
 
@@ -486,31 +495,26 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, cacheID s
 	extensionTokens := allTokens[currentTotalTokensCached:]
 	numOfExtTokens := len(extensionTokens)
 
-	m.log(ctx, "imc", "status", "extending cache", "cache_id", cacheID, "new-tokens", numOfExtTokens)
+	m.log(ctx, "imc", "status", "extending cache (deferred)", "cache_id", cacheID, "new-tokens", numOfExtTokens)
 
-	// Add the new tokens into the cache.
-	if err := m.extendTokensInCache(ctx, extensionTokens, session.seqID, currentTotalTokensCached); err != nil {
-		return cacheResult{modifiedD: d, err: err}
-	}
-
-	// Update session state.
+	// Compute new session state to be applied after decode in startSlot.
 	newHash := hashMessages(msgs)
-	session.cachedMsgsHash = newHash
-	session.totalTokensCached = totalTokens
-	session.lastMsgIdxCached = lastMsgIdxToCache
-	session.lastUsed = time.Now()
 
-	m.log(ctx, "imc", "status", "cache extended", "cache_id", cacheID, "seq", session.seqID,
+	m.log(ctx, "imc", "status", "cache extend prepared", "cache_id", cacheID, "seq", session.seqID,
 		"idx", fmt.Sprintf("cur[%d] -> new[%d]", currentLastMsgIdxCached, lastMsgIdxToCache),
 		"tokens", fmt.Sprintf("cur[%d] -> new[%d] (+%d)", currentTotalTokensCached, totalTokens, numOfExtTokens))
 
 	return cacheResult{
-		modifiedD:      removeFirstNMessages(d, lastMsgIdxToCache),
-		cacheIdx:       llama.Pos(totalTokens),
-		cachedMsgCount: lastMsgIdxToCache,
-		cacheUpdated:   true,
-		cacheID:        cacheID,
-		cacheSeqID:     session.seqID,
+		modifiedD:         removeFirstNMessages(d, lastMsgIdxToCache),
+		cacheIdx:          llama.Pos(currentTotalTokensCached),
+		cachedMsgCount:    lastMsgIdxToCache,
+		cacheHit:          true,
+		cacheID:           cacheID,
+		cacheSeqID:        session.seqID,
+		imcNewCacheTokens: extensionTokens,
+		imcNewTotalCached: totalTokens,
+		imcNewMsgIdx:      lastMsgIdxToCache,
+		imcNewMsgsHash:    newHash,
 	}
 }
 
@@ -566,34 +570,34 @@ func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D,
 		return cacheResult{modifiedD: d}
 	}
 
-	// Decode tokens into cache sequence.
-	if err := m.addTokensToCache(ctx, tokens, session.seqID); err != nil {
-		return cacheResult{modifiedD: d, err: err}
-	}
+	// Reset session state immediately so startSlot doesn't read stale values.
+	session.totalTokensCached = 0
+	session.lastMsgIdxCached = 0
+	session.cachedMsgsHash = ""
 
-	// Update session state.
+	// Return tokens for deferred decode in startSlot.
 	newHash := hashMessages(msgsToCache)
-	session.cachedMsgsHash = newHash
-	session.totalTokensCached = nTokens
-	session.lastMsgIdxCached = lastMsgIdxToCache
-	session.lastUsed = time.Now()
 
-	m.log(ctx, "imc", "status", "cache built from scratch", "cache_id", cacheID, "seq", session.seqID, "msgs", lastMsgIdxToCache, "tokens", nTokens, "hash", newHash[:8])
+	m.log(ctx, "imc", "status", "cache build prepared", "cache_id", cacheID, "seq", session.seqID, "msgs", lastMsgIdxToCache, "tokens", nTokens, "hash", newHash[:8])
 
 	return cacheResult{
-		modifiedD:      removeFirstNMessages(d, lastMsgIdxToCache),
-		cacheIdx:       llama.Pos(nTokens),
-		cachedMsgCount: lastMsgIdxToCache,
-		cacheUpdated:   true,
-		cacheID:        cacheID,
-		cacheSeqID:     session.seqID,
+		modifiedD:         removeFirstNMessages(d, lastMsgIdxToCache),
+		cacheIdx:          0,
+		cachedMsgCount:    lastMsgIdxToCache,
+		cacheID:           cacheID,
+		cacheSeqID:        session.seqID,
+		imcNewCacheTokens: tokens,
+		imcNewTotalCached: nTokens,
+		imcNewMsgIdx:      lastMsgIdxToCache,
+		imcNewMsgsHash:    newHash,
+		imcClearSeq:       true,
 	}
 }
 
-// extendTokensInCache decodes additional tokens into an existing cache sequence.
-// Unlike addTokensToCache, this does NOT clear the sequence first.
-// startPos is the position offset for the new tokens (i.e., existing token count).
-func (m *Model) extendTokensInCache(ctx context.Context, tokens []llama.Token, seqID llama.SeqId, startPos int) error {
+// decodeTokensIntoCache decodes tokens into a cache sequence starting at startPos.
+// Unlike addTokensToCache, this does NOT clear the sequence first — the caller
+// is responsible for clearing if needed (e.g., rebuild from scratch).
+func (m *Model) decodeTokensIntoCache(ctx context.Context, tokens []llama.Token, seqID llama.SeqId, startPos int) error {
 	ctx, decodeSpan := otel.AddSpan(ctx, "cache-decode",
 		attribute.Int("tokens", len(tokens)),
 	)
@@ -606,7 +610,7 @@ func (m *Model) extendTokensInCache(ctx context.Context, tokens []llama.Token, s
 		nBatch = m.cfg.NBatch
 	}
 
-	m.log(ctx, "cache", "status", "extending tokens in cache", "seq", seqID, "tokens", nTokens, "nbatch", nBatch)
+	m.log(ctx, "cache", "status", "decoding tokens into cache", "seq", seqID, "tokens", nTokens, "start_pos", startPos, "nbatch", nBatch)
 
 	m.decodeMu.Lock()
 	defer m.decodeMu.Unlock()
@@ -643,7 +647,7 @@ func (m *Model) extendTokensInCache(ctx context.Context, tokens []llama.Token, s
 		}
 	}
 
-	m.log(ctx, "cache", "status", "finished (extending tokens in cache)", "seq", seqID, "tokens", nTokens, "nbatch", nBatch)
+	m.log(ctx, "cache", "status", "finished (decoding tokens into cache)", "seq", seqID, "tokens", nTokens, "nbatch", nBatch)
 
 	return nil
 }

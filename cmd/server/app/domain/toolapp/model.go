@@ -228,7 +228,6 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfi
 			SplitMode:            rmc.SplitMode,
 			SystemPromptCache:    rmc.SystemPromptCache,
 			IncrementalCache:     rmc.IncrementalCache,
-			MaxCacheSessions:     rmc.MaxCacheSessions,
 			CacheMinTokens:       rmc.CacheMinTokens,
 			RopeScaling:          rmc.RopeScaling,
 			RopeFreqBase:         rmc.RopeFreqBase,
@@ -408,7 +407,6 @@ type ModelConfig struct {
 	SplitMode            model.SplitMode          `json:"split-mode"`
 	SystemPromptCache    bool                     `json:"system-prompt-cache"`
 	IncrementalCache     bool                     `json:"incremental-cache"`
-	MaxCacheSessions     int                      `json:"max-cache-sessions"`
 	CacheMinTokens       int                      `json:"cache-min-tokens"`
 	Sampling             SamplingConfig           `json:"sampling-parameters"`
 	RopeScaling          model.RopeScalingType    `json:"rope-scaling-type"`
@@ -562,7 +560,6 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 			SplitMode:            rmc.SplitMode,
 			SystemPromptCache:    rmc.SystemPromptCache,
 			IncrementalCache:     rmc.IncrementalCache,
-			MaxCacheSessions:     rmc.MaxCacheSessions,
 			CacheMinTokens:       rmc.CacheMinTokens,
 			RopeScaling:          rmc.RopeScaling,
 			RopeFreqBase:         rmc.RopeFreqBase,
@@ -613,7 +610,6 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 		SplitMode:            bmc.SplitMode,
 		SystemPromptCache:    bmc.SystemPromptCache,
 		IncrementalCache:     bmc.IncrementalCache,
-		MaxCacheSessions:     bmc.MaxCacheSessions,
 		CacheMinTokens:       bmc.CacheMinTokens,
 		RopeScaling:          bmc.RopeScaling,
 		RopeFreqBase:         bmc.RopeFreqBase,
@@ -897,7 +893,6 @@ func (app SaveCatalogRequest) toModelDetails() catalog.ModelDetails {
 			SplitMode:            app.Config.SplitMode,
 			SystemPromptCache:    app.Config.SystemPromptCache,
 			IncrementalCache:     app.Config.IncrementalCache,
-			MaxCacheSessions:     app.Config.MaxCacheSessions,
 			CacheMinTokens:       app.Config.CacheMinTokens,
 			InsecureLogging:      false,
 			RopeScaling:          app.Config.RopeScaling,

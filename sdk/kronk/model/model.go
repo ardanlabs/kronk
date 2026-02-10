@@ -31,6 +31,7 @@ type imcSession struct {
 	totalTokensCached int         // Total tokens in cache
 	lastMsgIdxCached  int         // The index of the last message cached
 	seqID             llama.SeqId // Assigned cache sequence ID
+	slotID            int         // Dedicated slot ID bound to this session
 	lastUsed          time.Time   // Last access time (for eviction)
 }
 
@@ -245,13 +246,13 @@ func NewModel(ctx context.Context, templater Templater, cfg Config) (*Model, err
 
 		// Initialize IMC session tracking when enabled.
 		if cfg.IncrementalCache {
-			m.imcMaxSeqs = max(cfg.MaxCacheSessions, 1)
+			m.imcMaxSeqs = nSlots
 			m.imcSessions = make(map[string]*imcSession, m.imcMaxSeqs)
 		}
 
 		// Initialize SPC session tracking when enabled.
 		if cfg.SystemPromptCache {
-			m.spcMaxSeqs = max(cfg.MaxCacheSessions, 1)
+			m.spcMaxSeqs = nSlots
 			m.spcSessions = make(map[string]*spcSession, m.spcMaxSeqs)
 		}
 
@@ -513,9 +514,10 @@ func calculateVRAM(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory int64)
 	var cacheSequences int64
 	switch {
 	case cfg.SystemPromptCache:
-		cacheSequences = int64(max(cfg.MaxCacheSessions, 1))
+		cacheSequences = nSeqMax
 	case cfg.IncrementalCache:
-		cacheSequences = int64(max(cfg.MaxCacheSessions, 1))
+		// IMC uses dedicated slot/seq binding — no separate cache sequences.
+		cacheSequences = 0
 	}
 
 	totalSlots := nSeqMax + cacheSequences
