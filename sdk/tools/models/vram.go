@@ -46,20 +46,12 @@ const (
 	Slots5 int64 = 5
 )
 
-// Cache sequence constants.
-// Note: SPC and FMC are mutually exclusive; FMC caches system + user together.
-const (
-	CacheSequenceOff int64 = 0 // No caching
-	CacheSequenceOn  int64 = 1 // FMC or SPC (mutually exclusive)
-)
-
 // VRAMConfig contains the user-provided parameters for VRAM calculation
 // that cannot be extracted from the model file.
 type VRAMConfig struct {
 	ContextWindow   int64 // n_ctx - context window size (e.g., 8192, 131072)
 	BytesPerElement int64 // Depends on cache type: q8_0=1, f16=2
 	Slots           int64 // n_seq_max - number of concurrent sequences
-	CacheSequences  int64 // Additional sequences for caching: 0=none, 1=FMC or SPC
 }
 
 // VRAM contains the calculated VRAM requirements.
@@ -67,7 +59,6 @@ type VRAM struct {
 	Input              VRAMInput // Input parameters used for calculation
 	KVPerTokenPerLayer int64     // Bytes per token per layer
 	KVPerSlot          int64     // Bytes per slot
-	TotalSlots         int64     // Slots + CacheSequences
 	SlotMemory         int64     // Total KV cache memory in bytes
 	TotalVRAM          int64     // Model size + slot memory in bytes
 }
@@ -120,7 +111,6 @@ func (m *Models) CalculateVRAM(modelID string, cfg VRAMConfig) (VRAM, error) {
 		ValueLength:     valueLength,
 		BytesPerElement: cfg.BytesPerElement,
 		Slots:           cfg.Slots,
-		CacheSequences:  cfg.CacheSequences,
 	}
 
 	return CalculateVRAM(input), nil
@@ -138,7 +128,6 @@ type VRAMInput struct {
 	ValueLength     int64 // V dimension per head (typically 128)
 	BytesPerElement int64 // Depends on cache type: q8_0=1, f16=2
 	Slots           int64 // n_seq_max - number of concurrent sequences
-	CacheSequences  int64 // Additional sequences for caching: 0=none, 1=FMC or SPC
 }
 
 // CalculateVRAM computes the VRAM requirements for running a model based on
@@ -155,23 +144,19 @@ func CalculateVRAM(input VRAMInput) VRAM {
 	// Example: 131072 × 48 × 1024 = ~6.4 GB
 	kvPerSlot := input.ContextWindow * input.BlockCount * kvPerTokenPerLayer
 
-	// Total sequences = user slots + cache sequences (IMC or SPC adds 1).
-	totalSlots := input.Slots + input.CacheSequences
-
 	// Total KV cache memory allocated at model load time.
-	// Formula: total_slots × kv_per_slot
-	// Example: 4 × 6.4GB = ~25.6 GB
-	slotMemory := totalSlots * kvPerSlot
+	// Formula: slots × kv_per_slot
+	// Example: 2 × 6.4GB = ~12.8 GB
+	slotMemory := input.Slots * kvPerSlot
 
 	// Total VRAM = model weights + KV cache memory.
-	// Example: 36GB + 25.6GB = ~61.6 GB
+	// Example: 36GB + 12.8GB = ~48.8 GB
 	totalVRAM := input.ModelSizeBytes + slotMemory
 
 	return VRAM{
 		Input:              input,
 		KVPerTokenPerLayer: kvPerTokenPerLayer,
 		KVPerSlot:          kvPerSlot,
-		TotalSlots:         totalSlots,
 		SlotMemory:         slotMemory,
 		TotalVRAM:          totalVRAM,
 	}
@@ -231,7 +216,6 @@ func CalculateVRAMFromHuggingFace(ctx context.Context, modelURL string, cfg VRAM
 		ValueLength:     valueLength,
 		BytesPerElement: cfg.BytesPerElement,
 		Slots:           cfg.Slots,
-		CacheSequences:  cfg.CacheSequences,
 	}
 
 	return CalculateVRAM(input), nil
@@ -558,17 +542,12 @@ Model   Context_Window   KV_Per_Slot      NSeqMax (Slots)
 7B      8K               ~537 MB VRAM     2
 70B     8K               ~1.3 GB VRAM     2
 
-No Caching:
-Total sequences allocated: 2 (no cache)
+Total sequences allocated: 2
 7B:  Slot Memory (2 × 537MB) ~1.07GB: Total VRAM: ~8.1GB
 70B: Slot Memory (2 × 1.3GB) ~2.6GB : Total VRAM: ~72.6GB
 
-Incremental Memory Caching (IMC) or System Prompt Cache (SPC):
-Total sequences allocated: 2 + 1 = 3 (cache)
-7B:  Slot Memory (3 × 537MB) ~1.6GB: Total VRAM: ~8.6GB
-70B: Slot Memory (3 × 1.3GB) ~3.9GB: Total VRAM: ~73.9GB
-
-Note: SPC and FMC are mutually exclusive; FMC caches system + user together.
+Cache type (off, SPC, IMC) does not affect VRAM. All modes allocate
+the same slots and KV cache.
 
 ------------------------------------------------------------------------------
 Full Example With Real Model:
@@ -589,13 +568,9 @@ KV_per_token_per_layer = head_count_kv  ×  (key_length + value_length)  ×  byt
 KV_Per_Slot            =  n_ctx  ×  n_layers  ×  KV_per_token_per_layer
 ~6.4 GB                =  131072 ×  48        ×  1024
 
-No Caching:
-Total sequences allocated: 2 : (no cache)
+Total sequences allocated: 2
 Slot Memory (2 × 6.4GB) ~12.8GB: Total VRAM: ~48.8GB
 
-Incremental Memory Caching (IMC) or System Prompt Cache (SPC):
-Total sequences allocated: 3 : (2 + 1) (1 cache sequence)
-Slot Memory (3 × 6.4GB) ~19.2GB: Total VRAM: ~55.2GB
-
-Note: SPC and IMC are mutually exclusive; IMC caches system + user together.
+Cache type (off, SPC, IMC) does not affect VRAM. All modes allocate
+the same slots and KV cache.
 */

@@ -54,7 +54,6 @@ interface CatalogFormData {
     splitMode: string;
     systemPromptCache: boolean | null;
     incrementalCache: boolean | null;
-    maxCacheSessions: number | null;
     cacheMinTokens: number | null;
     ropeScaling: string;
     ropeFreqBase: number | null;
@@ -142,7 +141,6 @@ const defaultForm: CatalogFormData = {
     splitMode: '',
     systemPromptCache: null,
     incrementalCache: null,
-    maxCacheSessions: null,
     cacheMinTokens: null,
     ropeScaling: '',
     ropeFreqBase: null,
@@ -260,7 +258,6 @@ function populateFromResponse(resp: CatalogModelResponse): CatalogFormData {
       splitMode: mc?.['split-mode'] || '',
       systemPromptCache: mc?.['system-prompt-cache'] ?? null,
       incrementalCache: mc?.['incremental-cache'] ?? null,
-      maxCacheSessions: mc?.['max-cache-sessions'] ?? null,
       cacheMinTokens: mc?.['cache-min-tokens'] ?? null,
       ropeScaling: mc?.['rope-scaling-type'] || '',
       ropeFreqBase: mc?.['rope-freq-base'] ?? null,
@@ -473,7 +470,6 @@ export default function CatalogEditor() {
           'split-mode': form.config.splitMode,
           'system-prompt-cache': form.config.systemPromptCache ?? false,
           'incremental-cache': form.config.incrementalCache ?? false,
-          'max-cache-sessions': form.config.maxCacheSessions ?? 0,
           'cache-min-tokens': form.config.cacheMinTokens ?? 0,
           'rope-scaling-type': form.config.ropeScaling,
           'rope-freq-base': form.config.ropeFreqBase,
@@ -852,7 +848,6 @@ export default function CatalogEditor() {
               <NullableNumInput label="GPU Layers (ngpu-layers)" value={form.config.ngpuLayers} defaultValue={rc?.['ngpu-layers'] ?? undefined} onChange={(v) => setConfig({ ngpuLayers: v === null ? null : Math.round(v) })} />
               <TriStateSelect label="Ignore Integrity Check" value={form.config.ignoreIntegrityCheck} onChange={(v) => setConfig({ ignoreIntegrityCheck: v })} />
               <TriStateSelect label="Incremental Cache" value={form.config.incrementalCache} onChange={(v) => setConfig({ incrementalCache: v })} />
-              <NullableNumInput label="Max Cache Sessions" value={form.config.maxCacheSessions} defaultValue={rc?.['max-cache-sessions']} onChange={(v) => setConfig({ maxCacheSessions: v })} />
               <NullableNumInput label="Max Sequences (nseq-max)" value={form.config.nseqMax} defaultValue={rc?.['nseq-max']} onChange={(v) => setConfig({ nseqMax: v })} />
               <NullableNumInput label="Micro Batch Size (nubatch)" value={form.config.nubatch} defaultValue={rc?.nubatch} onChange={(v) => setConfig({ nubatch: v })} />
               <TriStateSelect label="Offload KQV" value={form.config.offloadKQV} onChange={(v) => setConfig({ offloadKQV: v })} />

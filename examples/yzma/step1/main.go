@@ -43,9 +43,10 @@ func run() error {
 		return fmt.Errorf("unable to get home dir: %w", err)
 	}
 
-	modelFile := filepath.Join(home, ".kronk/models/Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf")
+	modelFile := filepath.Join(home, ".kronk/models/unsloth/Qwen3-Coder-Next-GGUF/Qwen3-Coder-Next-UD-Q3_K_XL.gguf")
 
 	mparams := llama.ModelDefaultParams()
+	mparams.UseMmap = 1
 
 	fmt.Println("Loading Model From File...")
 

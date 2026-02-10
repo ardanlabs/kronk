@@ -217,7 +217,6 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string) (
 // Returns true if the job was submitted (caller should set batching=true),
 // false if batch engine is not available or not applicable.
 func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, id string, d D, object string, prompt string, media [][]byte, params Params, mtmdCtx mtmd.Context, cache cacheResult) bool {
-	spcCacheHit := m.cfg.SystemPromptCache && cache.cacheIdx > 0
 	imcCacheHit := m.cfg.IncrementalCache && cache.cacheID != ""
 
 	_, queueSpan := otel.AddSpan(ctx, "queue-wait")
@@ -234,13 +233,21 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		mtmdCtx: mtmdCtx,
 		ch:      ch,
 
-		spcCacheIdx: cache.cacheIdx,
-		spcCacheHit: spcCacheHit,
+		spcCacheID:  cache.spcCacheID,
+		spcHash:     cache.spcHash,
+		spcTokens:   cache.spcTokens,
+		spcCacheHit: m.cfg.SystemPromptCache && len(cache.spcTokens) > 0,
 
 		imcID:       cache.cacheID,
 		imcSeqID:    cache.cacheSeqID,
 		imcCacheIdx: cache.cacheIdx,
 		imcCacheHit: imcCacheHit,
+
+		imcNewCacheTokens: cache.imcNewCacheTokens,
+		imcNewTotalCached: cache.imcNewTotalCached,
+		imcNewMsgIdx:      cache.imcNewMsgIdx,
+		imcNewMsgsHash:    cache.imcNewMsgsHash,
+		imcClearSeq:       cache.imcClearSeq,
 	}
 
 	if err := m.batch.submit(&job); err != nil {

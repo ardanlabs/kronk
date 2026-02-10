@@ -18,7 +18,6 @@
 #   split-mode: row                      # Multi-GPU split: none, layer, row (row recommended for MoE models)
 #   system-prompt-cache: false           # Cache system prompt KV state for reuse across requests
 #   incremental-cache: false             # Incremental message caching for agentic workflows (Cline, OpenCode)
-#   max-cache-sessions: 1                  # Max concurrent IMC sessions/users (default: 1, each gets own cache)
 #   cache-min-tokens: 100                # Min tokens before caching (default: 100, applies to both cache types)
 #   rope-scaling-type: yarn              # RoPE scaling: none, linear, yarn
 #   yarn-orig-ctx: 32768                 # Original training context size (nil = from model)
@@ -87,48 +86,43 @@
 # ==============================================================================
 # CONFIGURATION NOTES
 #
-# SPC and IMC are mutually exclusive - choose one based on your model's template.
+# SPC and IMC are mutually exclusive - choose one based on your model's
+# template consistency.
 #
 # SYSTEM PROMPT CACHE (SPC)
 # -------------------------
-# Use SPC for models with inconsistent templates (GPT-OSS, GLM) or for simple
-# chat applications. SPC caches only the system prompt.
+# Use SPC for models with inconsistent templates (GPT-OSS, GLM) or for
+# simple chat applications. SPC caches only the system prompt.
 #
-# The client should pass the KRONK_CACHE_ID header with a unique session/user ID.
-# Each unique ID gets its own dedicated cache sequence (up to max-cache-sessions).
-# If no header is passed, the "default" id is used which causes problems on
-#   nseq-max: 1
+# The client should pass the KRONK_CACHE_ID header with a unique
+# session/user ID. If no header is passed, the "default" id is used
+# which causes problems on multi-user systems.
+#
 #   system-prompt-cache: true
 #
 # INCREMENTAL MESSAGE CACHE (IMC)
 # -------------------------------
-# Use IMC for models with consistent templates (QWEN, Llama) where the template
-# produces identical output for the same messages regardless of conversation
-# length. IMC caches all messages except the last one and extends incrementally.
+# Use IMC for models with consistent templates (QWEN, Llama) where the
+# template produces identical output for the same messages regardless of
+# conversation length. IMC caches all messages except the last one and
+# extends incrementally.
 #
-# The client should pass the KRONK_CACHE_ID header with a unique session/user ID.
-# Each unique ID gets its own dedicated cache sequence (up to max-cache-sessions).
-# If no header is passed, the "default" id is used which causes problems on
-# multi-user systems.
-#   nseq-max: 1
+# The client should pass the KRONK_CACHE_ID header with a unique
+# session/user ID. If no header is passed, the "default" id is used
+# which causes problems on multi-user systems.
+#
 #   incremental-cache: true
-#   max-cache-sessions: 5      # Support up to 5 concurrent users (default 1)
 #
-# CONTEXT WINDOW AUTO-SCALING (IMC ONLY)
+# KV CACHE PARTITIONING
 # ---------------------------------------
-# When IMC is enabled, Kronk automatically scales the internal context window
-# so each slot gets the full configured context-window size. IMC caches the
-# full conversation, so without scaling you'd get reduced effective context
-# per slot. This does not apply to SPC (system prompt is typically small).
+# llama.cpp internally partitions the KV cache across sequences. Each
+# slot gets context-window / nseq-max tokens of capacity. Cache type
+# (off, SPC, IMC) does not affect VRAM — all modes allocate the same
+# slots and KV cache. The difference is how cached state is managed:
 #
-# Formula: Internal NCtx = context-window × (nseq-max + max-cache-sessions)
-#
-# Example:
-#   context-window: 128k, nseq-max: 1, max-cache-sessions: 1
-#   → Internal NCtx = 128k × 2 = 256k
-#   → Each slot gets full 128k context
-#
-# This means IMC increases VRAM usage proportionally. Plan accordingly.
+#   No caching: Slots cleared after each request.
+#   SPC:        System prompt tokens cached in RAM, re-decoded per request.
+#   IMC:        Slots dedicated to a user, full conversation cached in KV.
 #
 # AGENT CLIENT NOTES
 # -------------------------------
@@ -175,7 +169,6 @@ Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMC:
   <<: *base_Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
   nseq-max: 1
   incremental-cache: true
-  max-cache-sessions: 1
 
 # Working amazingly well with Kilo Code.
 # You can't use IMC with this model because it doesn't have consistent
@@ -219,7 +212,6 @@ cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0/IMC:
   <<: *base_cerebras_qwen3-coder-reap-25b-a3b-q8_0
   nseq-max: 1
   incremental-cache: true
-  max-cache-sessions: 1
 
 # This model runs too slow on my M4/128GB.
 # You can't use IMC with this model because it doesn't have consistent
@@ -308,7 +300,6 @@ Qwen3-8B-Q8_0/IMC:
   <<: *base_Qwen3-8B-Q8_0
   nseq-max: 1
   incremental-cache: true
-  max-cache-sessions: 2
 
 # ------------------------------------------------------------------------------
 # Non-Reasoning models, tooling support, don't use with Agents.

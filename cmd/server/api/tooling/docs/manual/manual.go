@@ -180,8 +180,18 @@ func markdownToJSX(markdown string) string {
 	var ulItems []string
 	inOL := false
 	var olItems []string
+	var paraLines []string
+
+	flushParagraph := func() {
+		if len(paraLines) > 0 {
+			merged := strings.Join(paraLines, " ")
+			result = append(result, fmt.Sprintf("          <p>%s</p>", convertInlineMarkdown(merged)))
+			paraLines = nil
+		}
+	}
 
 	flushUL := func() {
+		flushParagraph()
 		if len(ulItems) > 0 {
 			result = append(result, "          <ul>")
 			for _, item := range ulItems {
@@ -194,6 +204,7 @@ func markdownToJSX(markdown string) string {
 	}
 
 	flushOL := func() {
+		flushParagraph()
 		if len(olItems) > 0 {
 			result = append(result, "          <ol>")
 			for _, item := range olItems {
@@ -209,6 +220,7 @@ func markdownToJSX(markdown string) string {
 		line := lines[i]
 
 		if strings.HasPrefix(line, "```") {
+			flushParagraph()
 			flushUL()
 			flushOL()
 			if !inCodeBlock {
@@ -234,6 +246,7 @@ func markdownToJSX(markdown string) string {
 		}
 
 		if strings.HasPrefix(line, "|") && strings.Contains(line, "|") {
+			flushParagraph()
 			flushUL()
 			flushOL()
 			if !inTable {
@@ -272,24 +285,34 @@ func markdownToJSX(markdown string) string {
 		}
 
 		if title, ok := strings.CutPrefix(line, "# "); ok {
+			flushParagraph()
 			result = append(result, fmt.Sprintf("          <h1 id=\"%s\">%s</h1>", toAnchor(title), escapeJSX(title)))
 		} else if title, ok := strings.CutPrefix(line, "## "); ok {
+			flushParagraph()
 			result = append(result, fmt.Sprintf("          <h2 id=\"%s\">%s</h2>", toAnchor(title), escapeJSX(title)))
 		} else if title, ok := strings.CutPrefix(line, "### "); ok {
+			flushParagraph()
 			result = append(result, fmt.Sprintf("          <h3 id=\"%s\">%s</h3>", toAnchor(title), escapeJSX(title)))
 		} else if title, ok := strings.CutPrefix(line, "#### "); ok {
+			flushParagraph()
 			result = append(result, fmt.Sprintf("          <h4 id=\"%s\">%s</h4>", toAnchor(title), escapeJSX(title)))
 		} else if title, ok := strings.CutPrefix(line, "##### "); ok {
+			flushParagraph()
 			result = append(result, fmt.Sprintf("          <h5>%s</h5>", escapeJSX(title)))
 		} else if quote, ok := strings.CutPrefix(line, "> "); ok {
+			flushParagraph()
 			result = append(result, fmt.Sprintf("          <blockquote>%s</blockquote>", convertInlineMarkdown(quote)))
 		} else if line == "---" {
+			flushParagraph()
 			result = append(result, "          <hr />")
 		} else if strings.TrimSpace(line) != "" {
-			result = append(result, fmt.Sprintf("          <p>%s</p>", convertInlineMarkdown(line)))
+			paraLines = append(paraLines, strings.TrimSpace(line))
+		} else {
+			flushParagraph()
 		}
 	}
 
+	flushParagraph()
 	flushUL()
 	flushOL()
 

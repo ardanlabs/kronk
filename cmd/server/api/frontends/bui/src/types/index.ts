@@ -66,7 +66,6 @@ export interface ModelConfig {
   'split-mode': string;
   'system-prompt-cache': boolean;
   'incremental-cache': boolean;
-  'max-cache-sessions': number;
   'cache-min-tokens': number;
   'sampling-parameters': SamplingConfig;
 
@@ -132,14 +131,12 @@ export interface VRAMInput {
   value_length: number;
   bytes_per_element: number;
   slots: number;
-  cache_sequences: number;
 }
 
 export interface VRAM {
   input: VRAMInput;
   kv_per_token_per_layer: number;
   kv_per_slot: number;
-  total_slots: number;
   slot_memory: number;
   total_vram: number;
 }
@@ -359,15 +356,12 @@ export interface VRAMRequest {
   context_window: number;
   bytes_per_element: number;
   slots: number;
-  cache_sequences: number;
-  incremental_cache: boolean;
 }
 
 export interface VRAMCalculatorResponse {
   input: VRAMInput;
   kv_per_token_per_layer: number;
   kv_per_slot: number;
-  total_slots: number;
   slot_memory: number;
   total_vram: number;
 }

@@ -322,12 +322,6 @@ export default function ModelList() {
                     {modelInfo.model_config['incremental-cache'] ? 'Yes' : 'No'}
                   </span>
                 </div>
-                {(modelInfo.model_config['system-prompt-cache'] || modelInfo.model_config['incremental-cache']) && (
-                  <div className="model-meta-item">
-                    <label>Max Cache Sessions</label>
-                    <span>{modelInfo.model_config['max-cache-sessions'] || 1}</span>
-                  </div>
-                )}
                 {!!modelInfo.model_config['rope-scaling-type'] && modelInfo.model_config['rope-scaling-type'] !== 'none' && (
                   <>
                     <div className="model-meta-item">
@@ -458,10 +452,6 @@ export default function ModelList() {
                 <div className="model-meta-item">
                   <label>KV Per Slot</label>
                   <span>{formatBytes(modelInfo.vram.kv_per_slot)}</span>
-                </div>
-                <div className="model-meta-item">
-                  <label>Total Slots</label>
-                  <span>{modelInfo.vram.total_slots}</span>
                 </div>
                 <div className="model-meta-item">
                   <label>KV Per Token/Layer</label>

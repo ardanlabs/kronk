@@ -27,17 +27,17 @@ Model   Context_Window   KV_Per_Slot      NSeqMax (Slots)
 7B      8K               ~537 MB VRAM     2
 70B     8K               ~1.3 GB VRAM     2
 
-No Caching:
-Total sequences allocated: 2 (no cache)
+No Caching or SPC:
+Total sequences allocated: 2
 7B:  Slot Memory (2 × 537MB) ~1.07GB: Total VRAM: ~8.1GB
 70B: Slot Memory (2 × 1.3GB) ~2.6GB : Total VRAM: ~72.6GB
 
-Incremental Memory Caching (IMC) or System Prompt Cache (SPC):
-Total sequences allocated: 2 + 1 = 3 (cache)
-7B:  Slot Memory (3 × 537MB) ~1.6GB: Total VRAM: ~8.6GB
-70B: Slot Memory (3 × 1.3GB) ~3.9GB: Total VRAM: ~73.9GB
+SPC stores system prompt tokens in RAM and re-decodes them into each slot.
+Zero extra VRAM overhead. Unlimited cache_ids (RAM only).
 
-Note: SPC and FMC are mutually exclusive; FMC caches system + user together.
+Note: Cache type (off, SPC, IMC) does not affect VRAM. All modes
+allocate the same slots and KV cache. The difference is how cached
+state is managed, not how much memory is used.
 
 ------------------------------------------------------------------------------
 Full Example With Real Model:
@@ -58,15 +58,14 @@ KV_per_token_per_layer = head_count_kv  ×  (key_length + value_length)  ×  byt
 KV_Per_Slot            =  n_ctx  ×  n_layers  ×  KV_per_token_per_layer
 ~6.4 GB                =  131072 ×  48        ×  1024
 
-No Caching:
-Total sequences allocated: 2 : (no cache)
+No Caching or SPC:
+Total sequences allocated: 2
 Slot Memory (2 × 6.4GB) ~12.8GB: Total VRAM: ~48.8GB
 
-Incremental Memory Caching (IMC) or System Prompt Cache (SPC):
-Total sequences allocated: 3 : (2 + 1) (1 cache sequence)
-Slot Memory (3 × 6.4GB) ~19.2GB: Total VRAM: ~55.2GB
+SPC stores system prompt tokens in RAM. Zero extra VRAM overhead.
 
-Note: SPC and IMC are mutually exclusive; FMC caches system + user together.`;
+Note: Cache type (off, SPC, IMC) does not affect VRAM. All modes
+allocate the same slots and KV cache.`;
 
 const CONTEXT_WINDOW_OPTIONS = [
   { value: 1024, label: '1K' },
@@ -88,14 +87,6 @@ const BYTES_PER_ELEMENT_OPTIONS = [
 
 const SLOT_OPTIONS = [1, 2, 3, 4, 5];
 
-const CACHE_SESSIONS_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8];
-
-const CACHE_TYPE_OPTIONS = [
-  { value: 'off', label: 'Off', isIMC: false },
-  { value: 'spc', label: 'SPC (System Prompt Cache)', isIMC: false },
-  { value: 'imc', label: 'IMC (Incremental Message Cache)', isIMC: true },
-];
-
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
   const k = 1024;
@@ -110,16 +101,11 @@ export default function VRAMCalculator() {
   const [contextWindow, setContextWindow] = useState(8192);
   const [bytesPerElement, setBytesPerElement] = useState(1);
   const [slots, setSlots] = useState(2);
-  const [cacheType, setCacheType] = useState('off');
-  const [cacheSessions, setCacheSessions] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<VRAMCalculatorResponse | null>(null);
   const [showLearnMore, setShowLearnMore] = useState(false);
   const hasCalculated = useRef(false);
-
-  const selectedCacheOption = CACHE_TYPE_OPTIONS.find(opt => opt.value === cacheType) || CACHE_TYPE_OPTIONS[0];
-  const cacheSequences = cacheType === 'off' ? 0 : cacheSessions;
 
   const performCalculation = useCallback(async (clearResult = true) => {
     if (!modelUrl.trim()) {
@@ -140,8 +126,6 @@ export default function VRAMCalculator() {
           context_window: contextWindow,
           bytes_per_element: bytesPerElement,
           slots: slots,
-          cache_sequences: cacheSequences,
-          incremental_cache: selectedCacheOption.isIMC,
         },
         token || undefined
       );
@@ -152,13 +136,13 @@ export default function VRAMCalculator() {
     } finally {
       setLoading(false);
     }
-  }, [modelUrl, contextWindow, bytesPerElement, slots, cacheSequences, selectedCacheOption.isIMC, token]);
+  }, [modelUrl, contextWindow, bytesPerElement, slots, token]);
 
   useEffect(() => {
     if (hasCalculated.current && modelUrl.trim()) {
       performCalculation(false);
     }
-  }, [contextWindow, bytesPerElement, slots, cacheType, cacheSessions]);
+  }, [contextWindow, bytesPerElement, slots]);
 
   const handleCalculate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -271,46 +255,6 @@ export default function VRAMCalculator() {
           </select>
         </div>
 
-        <div className="form-group">
-          <label htmlFor="cacheType">Cache Type</label>
-          <select
-            id="cacheType"
-            value={cacheType}
-            onChange={(e) => setCacheType(e.target.value)}
-            className="form-select"
-          >
-            {CACHE_TYPE_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-          <small className="form-hint">
-            IMC auto-scales context window to ensure full context per slot
-          </small>
-        </div>
-
-        {cacheType !== 'off' && (
-          <div className="form-group">
-            <label htmlFor="cacheSessions">Cache Sessions (Multi-User)</label>
-            <select
-              id="cacheSessions"
-              value={cacheSessions}
-              onChange={(e) => setCacheSessions(Number(e.target.value))}
-              className="form-select"
-            >
-              {CACHE_SESSIONS_OPTIONS.map((s) => (
-                <option key={s} value={s}>
-                  {s} {s === 1 ? 'session' : 'sessions'}
-                </option>
-              ))}
-            </select>
-            <small className="form-hint">
-              Number of concurrent user caches (max-cache-sessions). Each session uses a dedicated cache sequence.
-            </small>
-          </div>
-        )}
-
         <button type="submit" className="btn btn-primary" disabled={loading}>
           {loading ? 'Calculating...' : 'Calculate VRAM'}
         </button>
@@ -335,10 +279,6 @@ export default function VRAMCalculator() {
             <div className="vram-result-item">
               <span className="vram-result-label">KV Per Slot</span>
               <span className="vram-result-value">{formatBytes(result.kv_per_slot)}</span>
-            </div>
-            <div className="vram-result-item">
-              <span className="vram-result-label">Total Slots</span>
-              <span className="vram-result-value">{result.total_slots}</span>
             </div>
             <div className="vram-result-item">
               <span className="vram-result-label">KV Per Token Per Layer</span>

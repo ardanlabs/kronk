@@ -91,7 +91,6 @@ func printWeb(mi toolapp.ModelInfoResponse) {
 		fmt.Println("-----------------")
 		fmt.Printf("KV Per Token/Layer: %s\n", formatBytes(mi.VRAM.KVPerTokenPerLayer))
 		fmt.Printf("KV Per Slot:        %s\n", formatBytes(mi.VRAM.KVPerSlot))
-		fmt.Printf("Total Slots:        %d\n", mi.VRAM.TotalSlots)
 		fmt.Printf("Slot Memory:        %s\n", formatBytes(mi.VRAM.SlotMemory))
 		fmt.Printf("Total VRAM:         %s\n", formatBytes(mi.VRAM.TotalVRAM))
 		fmt.Println()
@@ -108,7 +107,6 @@ func printWeb(mi toolapp.ModelInfoResponse) {
 		fmt.Printf("Cache Type V:      %s\n", mi.ModelConfig.CacheTypeV)
 		fmt.Printf("System Prompt Cache: %t\n", mi.ModelConfig.SystemPromptCache)
 		fmt.Printf("Incremental Cache:   %t\n", mi.ModelConfig.IncrementalCache)
-		fmt.Printf("Max Cache Sessions:  %d\n", mi.ModelConfig.MaxCacheSessions)
 		if mi.ModelConfig.RopeScaling.String() != "none" {
 			fmt.Printf("RoPE Scaling:      %s\n", mi.ModelConfig.RopeScaling)
 			fmt.Printf("YaRN Orig Ctx:     %v\n", formatIntPtr(mi.ModelConfig.YarnOrigCtx))
@@ -153,7 +151,6 @@ func printLocal(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfig
 		fmt.Println("-----------------")
 		fmt.Printf("KV Per Token/Layer: %s\n", formatBytes(vram.KVPerTokenPerLayer))
 		fmt.Printf("KV Per Slot:        %s\n", formatBytes(vram.KVPerSlot))
-		fmt.Printf("Total Slots:        %d\n", vram.TotalSlots)
 		fmt.Printf("Slot Memory:        %s\n", formatBytes(vram.SlotMemory))
 		fmt.Printf("Total VRAM:         %s\n", formatBytes(vram.TotalVRAM))
 		fmt.Println()
@@ -169,7 +166,6 @@ func printLocal(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfig
 	fmt.Printf("Cache Type V:      %s\n", rmc.CacheTypeV)
 	fmt.Printf("System Prompt Cache: %t\n", rmc.SystemPromptCache)
 	fmt.Printf("Incremental Cache:   %t\n", rmc.IncrementalCache)
-	fmt.Printf("Max Cache Sessions:  %d\n", rmc.MaxCacheSessions)
 	if rmc.RopeScaling.String() != "none" {
 		fmt.Printf("RoPE Scaling:      %s\n", rmc.RopeScaling)
 		fmt.Printf("YaRN Orig Ctx:     %v\n", formatIntPtr(rmc.YarnOrigCtx))

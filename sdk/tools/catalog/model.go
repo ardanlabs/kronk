@@ -143,7 +143,6 @@ type ModelConfig struct {
 	SplitMode            model.SplitMode          `yaml:"split-mode,omitempty"`
 	SystemPromptCache    bool                     `yaml:"system-prompt-cache,omitempty"`
 	IncrementalCache     bool                     `yaml:"incremental-cache,omitempty"`
-	MaxCacheSessions     int                      `yaml:"max-cache-sessions,omitempty"`
 	CacheMinTokens       int                      `yaml:"cache-min-tokens,omitempty"`
 	InsecureLogging      bool                     `yaml:"insecure-logging,omitempty"`
 	RopeScaling          model.RopeScalingType    `yaml:"rope-scaling-type,omitempty"`
@@ -178,7 +177,6 @@ func (mc ModelConfig) ToKronkConfig() model.Config {
 		SplitMode:            mc.SplitMode,
 		SystemPromptCache:    mc.SystemPromptCache,
 		IncrementalCache:     mc.IncrementalCache,
-		MaxCacheSessions:     mc.MaxCacheSessions,
 		CacheMinTokens:       mc.CacheMinTokens,
 		InsecureLogging:      mc.InsecureLogging,
 		RopeScaling:          mc.RopeScaling,

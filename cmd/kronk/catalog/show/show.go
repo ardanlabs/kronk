@@ -91,7 +91,6 @@ func printWeb(model toolapp.CatalogModelResponse) {
 		fmt.Println("-----------------")
 		fmt.Printf("KV Per Token/Layer: %s\n", formatBytes(model.VRAM.KVPerTokenPerLayer))
 		fmt.Printf("KV Per Slot:        %s\n", formatBytes(model.VRAM.KVPerSlot))
-		fmt.Printf("Total Slots:        %d\n", model.VRAM.TotalSlots)
 		fmt.Printf("Slot Memory:        %s\n", formatBytes(model.VRAM.SlotMemory))
 		fmt.Printf("Total VRAM:         %s\n", formatBytes(model.VRAM.TotalVRAM))
 		fmt.Println()
@@ -145,7 +144,6 @@ func printWeb(model toolapp.CatalogModelResponse) {
 		fmt.Printf("NSeqMax:              %d\n", model.ModelConfig.NSeqMax)
 		fmt.Printf("SystemPromptCache:    %t\n", model.ModelConfig.SystemPromptCache)
 		fmt.Printf("IncrementalCache:     %t\n", model.ModelConfig.IncrementalCache)
-		fmt.Printf("MaxCacheSessions:     %d\n", model.ModelConfig.MaxCacheSessions)
 		fmt.Printf("CacheMinTokens:       %d\n", model.ModelConfig.CacheMinTokens)
 		if model.ModelConfig.RopeScaling.String() != "none" {
 			fmt.Printf("RoPE Scaling:         %s\n", model.ModelConfig.RopeScaling)
@@ -189,7 +187,6 @@ func printLocal(catDetails catalog.ModelDetails, rmc catalog.ModelConfig, mi *mo
 		fmt.Println("-----------------")
 		fmt.Printf("KV Per Token/Layer: %s\n", formatBytes(vram.KVPerTokenPerLayer))
 		fmt.Printf("KV Per Slot:        %s\n", formatBytes(vram.KVPerSlot))
-		fmt.Printf("Total Slots:        %d\n", vram.TotalSlots)
 		fmt.Printf("Slot Memory:        %s\n", formatBytes(vram.SlotMemory))
 		fmt.Printf("Total VRAM:         %s\n", formatBytes(vram.TotalVRAM))
 		fmt.Println()
@@ -242,7 +239,6 @@ func printLocal(catDetails catalog.ModelDetails, rmc catalog.ModelConfig, mi *mo
 	fmt.Printf("NSeqMax:              %d\n", rmc.NSeqMax)
 	fmt.Printf("SystemPromptCache:    %t\n", rmc.SystemPromptCache)
 	fmt.Printf("IncrementalCache:     %t\n", rmc.IncrementalCache)
-	fmt.Printf("MaxCacheSessions:     %d\n", rmc.MaxCacheSessions)
 	fmt.Printf("CacheMinTokens:       %d\n", rmc.CacheMinTokens)
 	if rmc.RopeScaling.String() != "none" {
 		fmt.Printf("RoPE Scaling:         %s\n", rmc.RopeScaling)
