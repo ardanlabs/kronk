@@ -16,12 +16,13 @@ import (
 
 // VersionResponse returns information about the installed libraries.
 type VersionResponse struct {
-	Status    string `json:"status"`
-	Arch      string `json:"arch,omitempty"`
-	OS        string `json:"os,omitempty"`
-	Processor string `json:"processor,omitempty"`
-	Latest    string `json:"latest,omitempty"`
-	Current   string `json:"current,omitempty"`
+	Status       string `json:"status"`
+	Arch         string `json:"arch,omitempty"`
+	OS           string `json:"os,omitempty"`
+	Processor    string `json:"processor,omitempty"`
+	Latest       string `json:"latest,omitempty"`
+	Current      string `json:"current,omitempty"`
+	AllowUpgrade bool   `json:"allow_upgrade"`
 }
 
 // Encode implements the encoder interface.
@@ -30,19 +31,20 @@ func (app VersionResponse) Encode() ([]byte, string, error) {
 	return data, "application/json", err
 }
 
-func toAppVersionTag(status string, vt libs.VersionTag) VersionResponse {
+func toAppVersionTag(status string, vt libs.VersionTag, allowUpgrade bool) VersionResponse {
 	return VersionResponse{
-		Status:    status,
-		Arch:      vt.Arch,
-		OS:        vt.OS,
-		Processor: vt.Processor,
-		Latest:    vt.Latest,
-		Current:   vt.Version,
+		Status:       status,
+		Arch:         vt.Arch,
+		OS:           vt.OS,
+		Processor:    vt.Processor,
+		Latest:       vt.Latest,
+		Current:      vt.Version,
+		AllowUpgrade: allowUpgrade,
 	}
 }
 
-func toAppVersion(status string, vt libs.VersionTag) string {
-	vi := toAppVersionTag(status, vt)
+func toAppVersion(status string, vt libs.VersionTag, allowUpgrade bool) string {
+	vi := toAppVersionTag(status, vt, allowUpgrade)
 
 	d, err := json.Marshal(vi)
 	if err != nil {
@@ -404,9 +406,9 @@ type ModelConfig struct {
 	OpOffload            *bool                    `json:"op-offload"`
 	NGpuLayers           *int                     `json:"ngpu-layers"`
 	SplitMode            model.SplitMode          `json:"split-mode"`
-	SystemPromptCache bool                     `json:"system-prompt-cache"`
-	IncrementalCache  bool                     `json:"incremental-cache"`
-	MaxCacheSessions  int                      `json:"max-cache-sessions"`
+	SystemPromptCache    bool                     `json:"system-prompt-cache"`
+	IncrementalCache     bool                     `json:"incremental-cache"`
+	MaxCacheSessions     int                      `json:"max-cache-sessions"`
 	CacheMinTokens       int                      `json:"cache-min-tokens"`
 	Sampling             SamplingConfig           `json:"sampling-parameters"`
 	RopeScaling          model.RopeScalingType    `json:"rope-scaling-type"`

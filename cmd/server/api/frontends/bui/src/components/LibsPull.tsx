@@ -7,6 +7,7 @@ export default function LibsPull() {
   const [messages, setMessages] = useState<Array<{ text: string; type: 'info' | 'error' | 'success' }>>([]);
   const [versionInfo, setVersionInfo] = useState<VersionResponse | null>(null);
   const [loadingVersion, setLoadingVersion] = useState(true);
+  const [overrideUpgrade, setOverrideUpgrade] = useState(false);
   const closeRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -26,6 +27,8 @@ export default function LibsPull() {
       setMessages((prev) => [...prev, { text, type }]);
     };
 
+    const useAllowUpgrade = overrideUpgrade ? true : undefined;
+
     closeRef.current = api.pullLibs(
       (data: VersionResponse) => {
         if (data.status) {
@@ -42,7 +45,8 @@ export default function LibsPull() {
       () => {
         addMessage('Libs update complete!', 'success');
         setPulling(false);
-      }
+      },
+      useAllowUpgrade
     );
   };
 
@@ -107,8 +111,23 @@ export default function LibsPull() {
           </p>
         )}
 
+        {versionInfo && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+            <input
+              type="checkbox"
+              checked={versionInfo.allow_upgrade || overrideUpgrade}
+              disabled={versionInfo.allow_upgrade || pulling}
+              onChange={(e) => setOverrideUpgrade(e.target.checked)}
+              id="allow-upgrade"
+            />
+            <label htmlFor="allow-upgrade" style={{ fontSize: '14px', cursor: versionInfo.allow_upgrade ? 'default' : 'pointer' }}>
+              Allow Upgrade
+            </label>
+          </div>
+        )}
+
         <div style={{ display: 'flex', gap: '12px' }}>
-          <button className="btn btn-primary" onClick={handlePull} disabled={pulling}>
+          <button className="btn btn-primary" onClick={handlePull} disabled={pulling || (versionInfo !== null && !versionInfo.allow_upgrade && !overrideUpgrade)}>
             {pulling ? 'Updating...' : 'Pull/Update Libs'}
           </button>
           {pulling && (

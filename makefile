@@ -267,7 +267,7 @@ kronk-security-token-create-local:
 
 # ------------------------------------------------------------------------------
 
-# make kronk-run ID="cerebras_qwen3-coder-reap-25b-a3b-q8_0"
+# make kronk-run ID="Qwen3-8B-Q8_0"
 kronk-run:
 	go run cmd/kronk/main.go run "$(ID)"
 
