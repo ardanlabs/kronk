@@ -49,7 +49,7 @@ func (a *app) listLibs(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.New(errs.Internal, err)
 	}
 
-	return toAppVersionTag("retrieve", versionTag)
+	return toAppVersionTag("retrieve", versionTag, a.libs.AllowUpgrade)
 }
 
 func (a *app) pullLibs(ctx context.Context, r *http.Request) web.Encoder {
@@ -76,16 +76,28 @@ func (a *app) pullLibs(ctx context.Context, r *http.Request) web.Encoder {
 		}
 
 		status := fmt.Sprintf("%s:%s\n", msg, sb.String())
-		ver := toAppVersion(status, libs.VersionTag{})
+		ver := toAppVersion(status, libs.VersionTag{}, a.libs.AllowUpgrade)
 
 		a.log.Info(ctx, "pull-libs", "info", ver[:len(ver)-1])
 		fmt.Fprint(w, ver)
 		f.Flush()
 	}
 
+	// I know this is a hack and a race condition. I expect this situation
+	// to only exist for a few people and in a single tenant mode.
+	if !a.libs.AllowUpgrade {
+		if r.URL.Query().Get("allow-upgrade") != "" {
+			a.log.Info(ctx, "pull-libs", "status", "allowing libs upgrade")
+			a.libs.AllowUpgrade = true
+			defer func() {
+				a.libs.AllowUpgrade = false
+			}()
+		}
+	}
+
 	vi, err := a.libs.Download(ctx, logger)
 	if err != nil {
-		ver := toAppVersion(err.Error(), libs.VersionTag{})
+		ver := toAppVersion(err.Error(), libs.VersionTag{}, a.libs.AllowUpgrade)
 
 		a.log.Info(ctx, "pull-libs", "info", ver[:len(ver)-1])
 		fmt.Fprint(w, ver)
@@ -94,7 +106,7 @@ func (a *app) pullLibs(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.Errorf(errs.Internal, "unable to install llama.cpp: %s", err)
 	}
 
-	ver := toAppVersion("downloaded", vi)
+	ver := toAppVersion("downloaded", vi, a.libs.AllowUpgrade)
 
 	a.log.Info(ctx, "pull-libs", "info", ver[:len(ver)-1])
 	fmt.Fprint(w, ver)

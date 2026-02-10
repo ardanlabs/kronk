@@ -312,11 +312,14 @@ class ApiService {
   pullLibs(
     onMessage: (data: VersionResponse) => void,
     onError: (error: string) => void,
-    onComplete: () => void
+    onComplete: () => void,
+    allowUpgrade?: boolean
   ): () => void {
     const controller = new AbortController();
 
-    fetch(`${this.baseUrl}/libs/pull`, {
+    const url = allowUpgrade ? `${this.baseUrl}/libs/pull?allow-upgrade=true` : `${this.baseUrl}/libs/pull`;
+
+    fetch(url, {
       method: 'POST',
       signal: controller.signal,
     })

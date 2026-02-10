@@ -94,10 +94,11 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
-	krn, err := kronk.New(model.Config{
+	cfg := model.Config{
 		ModelFiles: mp.ModelFiles,
-	})
+	}
 
+	krn, err := kronk.New(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create inference model: %w", err)
 	}
@@ -109,6 +110,9 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println()
 
 	fmt.Println("- contextWindow:", krn.ModelConfig().ContextWindow)
+	fmt.Printf("- k/v          : %s/%s\n", krn.ModelConfig().CacheTypeK, krn.ModelConfig().CacheTypeV)
+	fmt.Println("- nBatch       :", krn.ModelConfig().NBatch)
+	fmt.Println("- nuBatch      :", krn.ModelConfig().NUBatch)
 	fmt.Println("- embeddings   :", krn.ModelInfo().IsEmbedModel)
 	fmt.Println("- isGPT        :", krn.ModelInfo().IsGPTModel)
 	fmt.Println("- template     :", krn.ModelInfo().Template.FileName)
@@ -118,6 +122,24 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 
 func chat(krn *kronk.Kronk, cfg Config) error {
 	messages := model.DocumentArray()
+
+	var systemPrompt = `
+		You are a helpful AI assistant. You are designed to help users answer
+		questions, create content, and provide information in a helpful and
+		accurate manner. Always follow the user's instructions carefully and
+		respond with clear, concise, and well-structured answers. You are a
+		helpful AI assistant. You are designed to help users answer questions,
+		create content, and provide information in a helpful and accurate manner.
+		Always follow the user's instructions carefully and respond with clear,
+		concise, and well-structured answers. You are a helpful AI assistant.
+		You are designed to help users answer questions, create content, and
+		provide information in a helpful and accurate manner. Always follow the
+		user's instructions carefully and respond with clear, concise, and
+		well-structured answers.`
+
+	messages = append(messages,
+		model.TextMessage(model.RoleSystem, systemPrompt),
+	)
 
 	for {
 		var err error
@@ -205,9 +227,6 @@ loop:
 			return messages, fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
 
 		case model.FinishReasonStop:
-			messages = append(messages,
-				model.TextMessage("assistant", resp.Choice[0].Delta.Content),
-			)
 			break loop
 
 		case model.FinishReasonTool:

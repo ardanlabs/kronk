@@ -97,8 +97,8 @@ type Libs struct {
 	arch         download.Arch
 	os           download.OS
 	processor    download.Processor
-	allowUpgrade bool
 	version      string
+	AllowUpgrade bool
 }
 
 // New constructs a Libs with system defaults and applies any provided options.
@@ -137,8 +137,8 @@ func New(opts ...Option) (*Libs, error) {
 		arch:         options.Arch,
 		os:           options.OS,
 		processor:    options.Processor,
-		allowUpgrade: options.AllowUpgrade,
 		version:      options.Version,
+		AllowUpgrade: options.AllowUpgrade,
 	}
 
 	return &lib, nil
@@ -200,7 +200,7 @@ func (lib *Libs) Download(ctx context.Context, log Logger) (VersionTag, error) {
 		return tag, nil
 	}
 
-	if !lib.allowUpgrade {
+	if !lib.AllowUpgrade {
 		log(ctx, "download-libraries: bypassing upgrade", "latest", tag.Latest, "current", tag.Version)
 		return tag, nil
 	}

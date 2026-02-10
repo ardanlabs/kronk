@@ -191,6 +191,7 @@ export interface VersionResponse {
   processor?: string;
   latest?: string;
   current?: string;
+  allow_upgrade: boolean;
 }
 
 export type RateWindow = 'day' | 'month' | 'year' | 'unlimited';
