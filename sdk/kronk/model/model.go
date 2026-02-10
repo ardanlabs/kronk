@@ -111,12 +111,21 @@ func NewModel(ctx context.Context, templater Templater, cfg Config) (*Model, err
 
 	mParams := llama.ModelDefaultParams()
 
-	if cfg.Device != "" {
-		dev := llama.GGMLBackendDeviceByName(cfg.Device)
-		if dev == 0 {
-			return nil, fmt.Errorf("ggml-backend-device-by-name: unknown device: %s", cfg.Device)
+	deviceNames := cfg.Devices
+	if len(deviceNames) == 0 && cfg.Device != "" {
+		deviceNames = []string{cfg.Device}
+	}
+
+	if len(deviceNames) > 0 {
+		devs := make([]llama.GGMLBackendDevice, 0, len(deviceNames))
+		for _, name := range deviceNames {
+			dev := llama.GGMLBackendDeviceByName(name)
+			if dev == 0 {
+				return nil, fmt.Errorf("ggml-backend-device-by-name: unknown device: %s", name)
+			}
+			devs = append(devs, dev)
 		}
-		mParams.SetDevices([]llama.GGMLBackendDevice{dev})
+		mParams.SetDevices(devs)
 	}
 
 	// llama.cpp has a -1 default for loading all layers into the GPU
@@ -136,11 +145,13 @@ func NewModel(ctx context.Context, templater Templater, cfg Config) (*Model, err
 	// Set split mode for multi-GPU and tensor parallelism (expert-parallel for MoE).
 	// Default to SplitModeRow (tensor parallelism) when not explicitly configured,
 	// as it provides the best performance for MoE models and works well for dense models.
-	switch cfg.SplitMode == SplitModeNone {
-	case true:
-		mParams.SplitMode = SplitModeRow.ToYZMAType()
-	case false:
+	switch {
+	case cfg.SplitMode != SplitModeNone:
 		mParams.SplitMode = cfg.SplitMode.ToYZMAType()
+	case len(deviceNames) > 1:
+		mParams.SplitMode = SplitModeRow.ToYZMAType()
+	default:
+		mParams.SplitMode = SplitModeRow.ToYZMAType()
 	}
 
 	// -------------------------------------------------------------------------

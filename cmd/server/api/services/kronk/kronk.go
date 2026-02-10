@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
@@ -113,6 +114,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			TTL                  time.Duration `conf:"default:20m"`
 			IgnoreIntegrityCheck bool          `conf:"default:true"`
 		}
+		Device          string
 		BasePath        string
 		LibPath         string
 		LibVersion      string
@@ -342,6 +344,41 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		return fmt.Errorf("installation invalid: %w", err)
 	}
 
+	// -------------------------------------------------------------------------
+	// Hardware Detection
+
+	var detectedDevices []string
+
+	switch strings.ToLower(cfg.Device) {
+	case "auto", "all":
+		hw, hwErr := defaults.HardwareInfo(ctx, cfg.BasePath)
+		if hwErr != nil {
+			log.Info(ctx, "startup", "status", "hardware detection failed", "err", hwErr)
+		} else {
+			log.Info(ctx, "startup", "status", "hardware detected", "hardware", hw.String())
+			for _, gpu := range hw.GPUs {
+				detectedDevices = append(detectedDevices, gpu.ID)
+			}
+		}
+
+	case "":
+		hw, hwErr := defaults.HardwareInfo(ctx, cfg.BasePath)
+		if hwErr == nil {
+			log.Info(ctx, "startup", "status", "hardware detected", "hardware", hw.String())
+		}
+
+	default:
+		for _, d := range strings.Split(cfg.Device, ",") {
+			if d = strings.TrimSpace(d); d != "" {
+				detectedDevices = append(detectedDevices, d)
+			}
+		}
+	}
+
+	if len(detectedDevices) > 0 {
+		log.Info(ctx, "startup", "status", "device configuration", "devices", detectedDevices)
+	}
+
 	cache, err := cache.New(cache.Config{
 		Log:                  log.Info,
 		BasePath:             cfg.BasePath,
@@ -350,6 +387,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		CacheTTL:             cfg.Cache.TTL,
 		IgnoreIntegrityCheck: cfg.Cache.IgnoreIntegrityCheck,
 		InsecureLogging:      cfg.InsecureLogging,
+		Devices:              detectedDevices,
 	})
 
 	if err != nil {

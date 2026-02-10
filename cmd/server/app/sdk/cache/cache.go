@@ -44,6 +44,11 @@ var ErrServerBusy = errors.New("server busy: all model slots have active request
 // CacheTTL: Defines the time an existing model can live in the cache without
 // being used.
 //
+// Devices: When set, provides the default list of device names (e.g.,
+// "CUDA0", "CUDA1", "MTL0") to use for model inference. Applied only when
+// the per-model config does not specify devices. Populated from hardware
+// detection at server startup when --device=auto is used.
+//
 // InsecureLogging: When true, logs potentially sensitive data such as message
 // content and detailed model configuration.
 type Config struct {
@@ -54,6 +59,7 @@ type Config struct {
 	CacheTTL             time.Duration
 	IgnoreIntegrityCheck bool
 	InsecureLogging      bool
+	Devices              []string
 }
 
 func validateConfig(cfg Config) (Config, error) {
@@ -90,6 +96,7 @@ type Cache struct {
 	models               *models.Models
 	ignoreIntegrityCheck bool
 	insecureLogging      bool
+	devices              []string
 	loadGroup            singleflight.Group
 }
 
@@ -112,6 +119,7 @@ func New(cfg Config) (*Cache, error) {
 		models:               models,
 		ignoreIntegrityCheck: cfg.IgnoreIntegrityCheck,
 		insecureLogging:      cfg.InsecureLogging,
+		devices:              cfg.Devices,
 	}
 
 	opt := otter.Options[string, *kronk.Kronk]{
@@ -225,6 +233,10 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 
 		if c.insecureLogging {
 			cfg.InsecureLogging = true
+		}
+
+		if len(cfg.Devices) == 0 && cfg.Device == "" && len(c.devices) > 0 {
+			cfg.Devices = c.devices
 		}
 
 		cfg.Log = c.log

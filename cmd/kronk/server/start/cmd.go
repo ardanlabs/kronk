@@ -53,7 +53,7 @@ func init() {
 	Cmd.Flags().Bool("ignore-integrity-check", false, "Ignore model integrity check")
 
 	// Runtime settings
-	Cmd.Flags().String("device", "", "Device to use for inference (e.g., cuda, metal)")
+	Cmd.Flags().String("device", "", "Device(s) for inference: auto, all, single name (CUDA0), or comma-separated (CUDA0,CUDA1)")
 	Cmd.Flags().String("base-path", "", "Base path for kronk data")
 	Cmd.Flags().String("lib-path", "", "Path to llama library")
 	Cmd.Flags().String("lib-version", "", "Version of llama library")

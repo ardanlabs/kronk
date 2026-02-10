@@ -143,6 +143,9 @@ func buildEnvVars(cmd *cobra.Command) []string {
 	}
 
 	// Runtime settings
+	if v, _ := cmd.Flags().GetString("device"); v != "" {
+		envVars = append(envVars, "KRONK_DEVICE="+v)
+	}
 	if v, _ := cmd.Flags().GetString("base-path"); v != "" {
 		envVars = append(envVars, "KRONK_BASE_PATH="+v)
 	}

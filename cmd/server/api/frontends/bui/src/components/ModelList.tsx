@@ -264,7 +264,7 @@ export default function ModelList() {
               <div className="model-meta">
                 <div className="model-meta-item">
                   <label>Device</label>
-                  <span>{modelInfo.model_config.device || 'default'}</span>
+                  <span>{modelInfo.model_config.devices?.length ? modelInfo.model_config.devices.join(', ') : modelInfo.model_config.device || 'default'}</span>
                 </div>
                 <div className="model-meta-item">
                   <label>Context Window</label>
