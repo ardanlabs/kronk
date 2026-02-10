@@ -395,7 +395,7 @@ func readMetadataKVFromReader(r *bytes.Reader) (string, any, error) {
 }
 
 // readMetadataValueFromReader reads a metadata value from a bytes.Reader.
-func readMetadataValueFromReader(r *bytes.Reader, valueType uint32) (interface{}, error) {
+func readMetadataValueFromReader(r *bytes.Reader, valueType uint32) (any, error) {
 	switch valueType {
 	case ggufMetadataValueTypeUInt8:
 		var val uint8

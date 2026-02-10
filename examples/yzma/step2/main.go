@@ -312,9 +312,9 @@ func run() error {
 					shouldStop = true
 					// Trim the "User:" part.
 					resp := c.response.String()
-					if idx := strings.Index(resp, "User:"); idx != -1 {
+					if before, _, ok := strings.Cut(resp, "User:"); ok {
 						c.response.Reset()
-						c.response.WriteString(resp[:idx])
+						c.response.WriteString(before)
 					}
 				}
 			}

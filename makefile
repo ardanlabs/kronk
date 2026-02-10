@@ -102,6 +102,9 @@ lint:
 vuln-check:
 	govulncheck ./...
 
+diff:
+	go fix -diff ./...
+
 # Don't change the order of these tests. This order is solving a test
 # build issue with time it takes to build the test binary due to building
 # the binary with the libraries.
@@ -116,7 +119,7 @@ test-only: install-models
 	CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/model && \
 	CGO_ENABLED=0 go test -v -count=1 ./sdk/tools/...
 
-test: test-only lint vuln-check
+test: test-only lint vuln-check diff
 
 # ==============================================================================
 # Kronk BUI

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
@@ -679,28 +680,28 @@ func extractMessageContent(msg D) string {
 		return c
 
 	case []any:
-		var content string
+		var content strings.Builder
 		for _, part := range c {
 			if partMap, ok := part.(map[string]any); ok {
 				if partMap["type"] == "text" {
 					if text, ok := partMap["text"].(string); ok {
-						content += text
+						content.WriteString(text)
 					}
 				}
 			}
 		}
-		return content
+		return content.String()
 
 	case []D:
-		var content string
+		var content strings.Builder
 		for _, part := range c {
 			if part["type"] == "text" {
 				if text, ok := part["text"].(string); ok {
-					content += text
+					content.WriteString(text)
 				}
 			}
 		}
-		return content
+		return content.String()
 	}
 
 	return ""

@@ -625,7 +625,7 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="method-flashattentiontype-marshalyaml">
               <h4>FlashAttentionType.MarshalYAML</h4>
               <pre className="code-block">
-                <code>func (t FlashAttentionType) MarshalYAML() (interface&#123;&#125;, error)</code>
+                <code>func (t FlashAttentionType) MarshalYAML() (any, error)</code>
               </pre>
             </div>
 
@@ -646,7 +646,7 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="method-flashattentiontype-unmarshalyaml">
               <h4>FlashAttentionType.UnmarshalYAML</h4>
               <pre className="code-block">
-                <code>func (t *FlashAttentionType) UnmarshalYAML(unmarshal func(interface&#123;&#125;) error) error</code>
+                <code>func (t *FlashAttentionType) UnmarshalYAML(unmarshal func(any) error) error</code>
               </pre>
               <p className="doc-description">UnmarshalYAML implements yaml.Unmarshaler to parse string values.</p>
             </div>
@@ -661,7 +661,7 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="method-ggmltype-marshalyaml">
               <h4>GGMLType.MarshalYAML</h4>
               <pre className="code-block">
-                <code>func (t GGMLType) MarshalYAML() (interface&#123;&#125;, error)</code>
+                <code>func (t GGMLType) MarshalYAML() (any, error)</code>
               </pre>
             </div>
 
@@ -690,7 +690,7 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="method-ggmltype-unmarshalyaml">
               <h4>GGMLType.UnmarshalYAML</h4>
               <pre className="code-block">
-                <code>func (t *GGMLType) UnmarshalYAML(unmarshal func(interface&#123;&#125;) error) error</code>
+                <code>func (t *GGMLType) UnmarshalYAML(unmarshal func(any) error) error</code>
               </pre>
               <p className="doc-description">UnmarshalYAML implements yaml.Unmarshaler to parse string values like "f16".</p>
             </div>
@@ -781,7 +781,7 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="method-ropescalingtype-marshalyaml">
               <h4>RopeScalingType.MarshalYAML</h4>
               <pre className="code-block">
-                <code>func (r RopeScalingType) MarshalYAML() (interface&#123;&#125;, error)</code>
+                <code>func (r RopeScalingType) MarshalYAML() (any, error)</code>
               </pre>
             </div>
 
@@ -811,7 +811,7 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="method-ropescalingtype-unmarshalyaml">
               <h4>RopeScalingType.UnmarshalYAML</h4>
               <pre className="code-block">
-                <code>func (r *RopeScalingType) UnmarshalYAML(unmarshal func(interface&#123;&#125;) error) error</code>
+                <code>func (r *RopeScalingType) UnmarshalYAML(unmarshal func(any) error) error</code>
               </pre>
               <p className="doc-description">UnmarshalYAML implements yaml.Unmarshaler to parse string values.</p>
             </div>
@@ -826,7 +826,7 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="method-splitmode-marshalyaml">
               <h4>SplitMode.MarshalYAML</h4>
               <pre className="code-block">
-                <code>func (s SplitMode) MarshalYAML() (interface&#123;&#125;, error)</code>
+                <code>func (s SplitMode) MarshalYAML() (any, error)</code>
               </pre>
             </div>
 
@@ -856,7 +856,7 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="method-splitmode-unmarshalyaml">
               <h4>SplitMode.UnmarshalYAML</h4>
               <pre className="code-block">
-                <code>func (s *SplitMode) UnmarshalYAML(unmarshal func(interface&#123;&#125;) error) error</code>
+                <code>func (s *SplitMode) UnmarshalYAML(unmarshal func(any) error) error</code>
               </pre>
               <p className="doc-description">UnmarshalYAML implements yaml.Unmarshaler to parse string values.</p>
             </div>

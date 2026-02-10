@@ -174,7 +174,7 @@ func readMetadataKV(file *os.File) (string, any, error) {
 	return key, value, nil
 }
 
-func readMetadataValue(file *os.File, valueType uint32) (interface{}, error) {
+func readMetadataValue(file *os.File, valueType uint32) (any, error) {
 	switch valueType {
 	case ggufMetadataValueTypeUInt8:
 		var val uint8

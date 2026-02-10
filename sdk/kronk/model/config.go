@@ -26,13 +26,13 @@ Key principles:
 */
 
 const (
-	defContextWindow    = 8 * 1024
-	defNBatch           = 2 * 1024
-	defNUBatch          = 512
-	defNUBatchVision    = 2 * 1024
-	defMinCacheTokens   = 100
-	defThreadZero       = 0
-	defNSeqMax = 1
+	defContextWindow  = 8 * 1024
+	defNBatch         = 2 * 1024
+	defNUBatch        = 512
+	defNUBatchVision  = 2 * 1024
+	defMinCacheTokens = 100
+	defThreadZero     = 0
+	defNSeqMax        = 1
 )
 
 // Logger provides a function for logging messages from different APIs.
@@ -680,7 +680,7 @@ func (t GGMLType) ToYZMAType() llama.GGMLType {
 	}
 }
 
-func (t GGMLType) MarshalYAML() (interface{}, error) {
+func (t GGMLType) MarshalYAML() (any, error) {
 	return t.String(), nil
 }
 
@@ -705,7 +705,7 @@ func (t *GGMLType) UnmarshalJSON(data []byte) error {
 }
 
 // UnmarshalYAML implements yaml.Unmarshaler to parse string values like "f16".
-func (t *GGMLType) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (t *GGMLType) UnmarshalYAML(unmarshal func(any) error) error {
 	var s string
 	if err := unmarshal(&s); err != nil {
 		return err
@@ -783,7 +783,7 @@ func (t FlashAttentionType) String() string {
 	}
 }
 
-func (t FlashAttentionType) MarshalYAML() (interface{}, error) {
+func (t FlashAttentionType) MarshalYAML() (any, error) {
 	return t.String(), nil
 }
 
@@ -812,7 +812,7 @@ func (t *FlashAttentionType) UnmarshalJSON(data []byte) error {
 }
 
 // UnmarshalYAML implements yaml.Unmarshaler to parse string values.
-func (t *FlashAttentionType) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (t *FlashAttentionType) UnmarshalYAML(unmarshal func(any) error) error {
 	var s string
 	if err := unmarshal(&s); err != nil {
 		return err
@@ -876,7 +876,7 @@ func (s SplitMode) ToYZMAType() llama.SplitMode {
 	return llama.SplitMode(s)
 }
 
-func (s SplitMode) MarshalYAML() (interface{}, error) {
+func (s SplitMode) MarshalYAML() (any, error) {
 	return s.String(), nil
 }
 
@@ -901,7 +901,7 @@ func (s *SplitMode) UnmarshalJSON(data []byte) error {
 }
 
 // UnmarshalYAML implements yaml.Unmarshaler to parse string values.
-func (s *SplitMode) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (s *SplitMode) UnmarshalYAML(unmarshal func(any) error) error {
 	var str string
 	if err := unmarshal(&str); err != nil {
 		return err
@@ -978,7 +978,7 @@ func (r RopeScalingType) ToYZMAType() llama.RopeScalingType {
 	return llama.RopeScalingType(r)
 }
 
-func (r RopeScalingType) MarshalYAML() (interface{}, error) {
+func (r RopeScalingType) MarshalYAML() (any, error) {
 	return r.String(), nil
 }
 
@@ -1003,7 +1003,7 @@ func (r *RopeScalingType) UnmarshalJSON(data []byte) error {
 }
 
 // UnmarshalYAML implements yaml.Unmarshaler to parse string values.
-func (r *RopeScalingType) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (r *RopeScalingType) UnmarshalYAML(unmarshal func(any) error) error {
 	var s string
 	if err := unmarshal(&s); err != nil {
 		return err
