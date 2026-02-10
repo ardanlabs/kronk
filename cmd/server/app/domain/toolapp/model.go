@@ -209,6 +209,7 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfi
 		Metadata:      metadata,
 		ModelConfig: &ModelConfig{
 			Device:               rmc.Device,
+			Devices:              rmc.Devices,
 			ContextWindow:        rmc.ContextWindow,
 			NBatch:               rmc.NBatch,
 			NUBatch:              rmc.NUBatch,
@@ -389,6 +390,7 @@ type SamplingConfig struct {
 // ModelConfig represents the model configuration the model will use by default.
 type ModelConfig struct {
 	Device               string                   `json:"device"`
+	Devices              []string                 `json:"devices,omitempty"`
 	ContextWindow        int                      `json:"context-window"`
 	NBatch               int                      `json:"nbatch"`
 	NUBatch              int                      `json:"nubatch"`
@@ -404,9 +406,9 @@ type ModelConfig struct {
 	OpOffload            *bool                    `json:"op-offload"`
 	NGpuLayers           *int                     `json:"ngpu-layers"`
 	SplitMode            model.SplitMode          `json:"split-mode"`
-	SystemPromptCache bool                     `json:"system-prompt-cache"`
-	IncrementalCache  bool                     `json:"incremental-cache"`
-	MaxCacheSessions  int                      `json:"max-cache-sessions"`
+	SystemPromptCache    bool                     `json:"system-prompt-cache"`
+	IncrementalCache     bool                     `json:"incremental-cache"`
+	MaxCacheSessions     int                      `json:"max-cache-sessions"`
 	CacheMinTokens       int                      `json:"cache-min-tokens"`
 	Sampling             SamplingConfig           `json:"sampling-parameters"`
 	RopeScaling          model.RopeScalingType    `json:"rope-scaling-type"`
@@ -543,6 +545,7 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 	if rmc != nil {
 		resp.ModelConfig = &ModelConfig{
 			Device:               rmc.Device,
+			Devices:              rmc.Devices,
 			ContextWindow:        rmc.ContextWindow,
 			NBatch:               rmc.NBatch,
 			NUBatch:              rmc.NUBatch,
@@ -594,6 +597,7 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 	bmc := catDetails.BaseModelConfig
 	resp.BaseConfig = &ModelConfig{
 		Device:               bmc.Device,
+		Devices:              bmc.Devices,
 		ContextWindow:        bmc.ContextWindow,
 		NBatch:               bmc.NBatch,
 		NUBatch:              bmc.NUBatch,
@@ -878,6 +882,7 @@ func (app SaveCatalogRequest) toModelDetails() catalog.ModelDetails {
 	if app.Config != nil {
 		md.BaseModelConfig = catalog.ModelConfig{
 			Device:               app.Config.Device,
+			Devices:              app.Config.Devices,
 			ContextWindow:        app.Config.ContextWindow,
 			NBatch:               app.Config.NBatch,
 			NUBatch:              app.Config.NUBatch,

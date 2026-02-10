@@ -148,6 +148,9 @@ func (c *Catalog) ResolvedModelConfig(modelID string) ModelConfig {
 		if modelConfig.Device != "" {
 			cfg.Device = modelConfig.Device
 		}
+		if len(modelConfig.Devices) > 0 {
+			cfg.Devices = modelConfig.Devices
+		}
 		if modelConfig.ContextWindow != 0 {
 			cfg.ContextWindow = modelConfig.ContextWindow
 		}

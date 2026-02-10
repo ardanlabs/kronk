@@ -66,10 +66,17 @@ type Logger func(ctx context.Context, msg string, args ...any)
 //
 // DefaultParams contains the default sampling parameters for requests.
 //
-// Device is the device to use for the model. If not set, the default device
-// will be used. To see what devices are available, run the following command
-// which will be found where you installed llama.cpp.
+// Device is the device to use for the model (deprecated: use Devices instead).
+// If not set, the default device will be used. To see what devices are
+// available, run the following command which will be found where you installed
+// llama.cpp.
 // $ llama-bench --list-devices
+//
+// Devices is a list of device names to use for model inference. When multiple
+// devices are specified, the model is split across them using the configured
+// SplitMode (defaults to SplitModeRow for tensor parallelism). Device names
+// correspond to the IDs reported by llama-bench --list-devices (e.g., "CUDA0",
+// "CUDA1", "MTL0"). When set, this takes precedence over Device.
 //
 // FlashAttention controls Flash Attention mode. Flash Attention reduces memory
 // usage and speeds up attention computation, especially for large context windows.
@@ -204,6 +211,7 @@ type Config struct {
 	ContextWindow        int
 	DefaultParams        Params
 	Device               string
+	Devices              []string
 	FlashAttention       FlashAttentionType
 	IgnoreIntegrityCheck bool
 	IncrementalCache     bool
@@ -256,8 +264,8 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("%d", *p)
 	}
 
-	return fmt.Sprintf("\nCacheMinTokens[%d]\nCacheTypeK[%d]\nCacheTypeV[%d]\nContextWindow[%d]\nDevice[%s]\nFlashAttention[%d]\nIgnoreIntegrityCheck[%t]\nIncrementalCache[%t]\nInsecureLogging[%t]\nJinjaFile[%s]\nMaxCacheSessions[%d]\nModelFiles[%v]\nNBatch[%d]\nNGpuLayers[%s]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nOffloadKQV[%s]\nOpOffload[%s]\nProjFile[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSplitMode[%d]\nSystemPromptCache[%t]\nUseDirectIO[%t]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\n",
-		cfg.CacheMinTokens, cfg.CacheTypeK, cfg.CacheTypeV, cfg.ContextWindow, cfg.Device, cfg.FlashAttention, cfg.IgnoreIntegrityCheck,
+	return fmt.Sprintf("\nCacheMinTokens[%d]\nCacheTypeK[%d]\nCacheTypeV[%d]\nContextWindow[%d]\nDevice[%s]\nDevices[%v]\nFlashAttention[%d]\nIgnoreIntegrityCheck[%t]\nIncrementalCache[%t]\nInsecureLogging[%t]\nJinjaFile[%s]\nMaxCacheSessions[%d]\nModelFiles[%v]\nNBatch[%d]\nNGpuLayers[%s]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nOffloadKQV[%s]\nOpOffload[%s]\nProjFile[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSplitMode[%d]\nSystemPromptCache[%t]\nUseDirectIO[%t]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\n",
+		cfg.CacheMinTokens, cfg.CacheTypeK, cfg.CacheTypeV, cfg.ContextWindow, cfg.Device, cfg.Devices, cfg.FlashAttention, cfg.IgnoreIntegrityCheck,
 		cfg.IncrementalCache, cfg.InsecureLogging, cfg.JinjaFile, cfg.MaxCacheSessions, cfg.ModelFiles, cfg.NBatch,
 		formatIntPtr(cfg.NGpuLayers), cfg.NSeqMax, cfg.NThreads, cfg.NThreadsBatch, cfg.NUBatch,
 		formatBoolPtr(cfg.OffloadKQV), formatBoolPtr(cfg.OpOffload), cfg.ProjFile,
@@ -349,6 +357,9 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 func applyCatalogConfig(user Config, cat Config) Config {
 	if user.Device == "" {
 		user.Device = cat.Device
+	}
+	if len(user.Devices) == 0 {
+		user.Devices = cat.Devices
 	}
 	if user.ContextWindow == 0 {
 		user.ContextWindow = cat.ContextWindow

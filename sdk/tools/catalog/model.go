@@ -126,6 +126,7 @@ func (s SamplingConfig) toParams() model.Params {
 // ModelConfig represents default model config settings.
 type ModelConfig struct {
 	Device               string                   `yaml:"device,omitempty"`
+	Devices              []string                 `yaml:"devices,omitempty"`
 	ContextWindow        int                      `yaml:"context-window,omitempty"`
 	NBatch               int                      `yaml:"nbatch,omitempty"`
 	NUBatch              int                      `yaml:"nubatch,omitempty"`
@@ -161,6 +162,7 @@ type ModelConfig struct {
 func (mc ModelConfig) ToKronkConfig() model.Config {
 	return model.Config{
 		Device:               mc.Device,
+		Devices:              mc.Devices,
 		ContextWindow:        mc.ContextWindow,
 		NBatch:               mc.NBatch,
 		NUBatch:              mc.NUBatch,
@@ -249,9 +251,9 @@ type ModelDetails struct {
 	Capabilities    Capabilities `yaml:"capabilities,omitempty"`
 	Metadata        Metadata     `yaml:"metadata,omitempty"`
 	BaseModelConfig ModelConfig  `yaml:"config,omitempty"`
-	Downloaded  bool   `yaml:"-"`
-	Validated   bool   `yaml:"-"`
-	CatalogFile string `yaml:"-"`
+	Downloaded      bool         `yaml:"-"`
+	Validated       bool         `yaml:"-"`
+	CatalogFile     string       `yaml:"-"`
 }
 
 // CatalogModels represents a set of models for a given catalog.

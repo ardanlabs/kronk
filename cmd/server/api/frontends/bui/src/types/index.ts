@@ -49,6 +49,7 @@ export type ModelDetailsResponse = ModelDetail[];
 
 export interface ModelConfig {
   device: string;
+  devices?: string[];
   'context-window': number;
   nbatch: number;
   nubatch: number;

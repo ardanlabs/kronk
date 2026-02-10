@@ -50,7 +50,7 @@ export default function DocsCLIServer() {
                   </tr>
                   <tr>
                     <td><code>--device &lt;string&gt;</code></td>
-                    <td>Device to use for inference (e.g., cuda, metal)</td>
+                    <td>Device(s) for inference: auto, all, single name (CUDA0), or comma-separated (CUDA0,CUDA1)</td>
                   </tr>
                   <tr>
                     <td><code>--max-instances &lt;int&gt;</code></td>
