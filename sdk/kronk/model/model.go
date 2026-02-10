@@ -506,27 +506,11 @@ func calculateVRAM(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory int64)
 	bytesPerElement := ggmlTypeToBytes(cfg.CacheTypeK, cfg.CacheTypeV)
 
 	nSeqMax := int64(max(cfg.NSeqMax, 1))
-
-	var cacheSequences int64
-	switch {
-	case cfg.SystemPromptCache:
-		// SPC stores tokens in RAM and decodes directly into slot sequences.
-		cacheSequences = 0
-	case cfg.IncrementalCache:
-		// IMC uses dedicated slot/seq binding — no separate cache sequences.
-		cacheSequences = 0
-	}
-
-	totalSlots := nSeqMax + cacheSequences
-
 	contextWindow := int64(cfg.ContextWindow)
-	if cfg.IncrementalCache {
-		contextWindow *= totalSlots
-	}
 
 	kvPerTokenPerLayer := headCountKV * (keyLength + valueLength) * bytesPerElement
 	kvPerSlot := contextWindow * blockCount * kvPerTokenPerLayer
-	slotMemory = totalSlots * kvPerSlot
+	slotMemory = nSeqMax * kvPerSlot
 	vramTotal = int64(mi.Size) + slotMemory
 
 	return vramTotal, slotMemory

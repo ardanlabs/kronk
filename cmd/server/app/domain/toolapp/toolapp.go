@@ -240,21 +240,13 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 	}
 
 	slots := max(req.Slots, 1)
-	totalSeqs := slots + req.CacheSequences
 
-	// For IMC, context window is auto-scaled by totalSeqs so each slot gets
-	// the full configured context. SPC only caches the system prompt (small),
-	// so no scaling needed.
 	contextWindow := req.ContextWindow
-	if req.IncrementalCache {
-		contextWindow *= totalSeqs
-	}
 
 	cfg := models.VRAMConfig{
 		ContextWindow:   contextWindow,
 		BytesPerElement: req.BytesPerElement,
 		Slots:           slots,
-		CacheSequences:  req.CacheSequences,
 	}
 
 	vram, err := models.CalculateVRAMFromHuggingFace(ctx, req.ModelURL, cfg)
@@ -272,11 +264,9 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 			ValueLength:     vram.Input.ValueLength,
 			BytesPerElement: vram.Input.BytesPerElement,
 			Slots:           vram.Input.Slots,
-			CacheSequences:  vram.Input.CacheSequences,
 		},
 		KVPerTokenPerLayer: vram.KVPerTokenPerLayer,
 		KVPerSlot:          vram.KVPerSlot,
-		TotalSlots:         vram.TotalSlots,
 		SlotMemory:         vram.SlotMemory,
 		TotalVRAM:          vram.TotalVRAM,
 	}

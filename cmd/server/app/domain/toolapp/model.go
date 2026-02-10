@@ -266,11 +266,9 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfi
 				ValueLength:     vram.Input.ValueLength,
 				BytesPerElement: vram.Input.BytesPerElement,
 				Slots:           vram.Input.Slots,
-				CacheSequences:  vram.Input.CacheSequences,
 			},
 			KVPerTokenPerLayer: vram.KVPerTokenPerLayer,
 			KVPerSlot:          vram.KVPerSlot,
-			TotalSlots:         vram.TotalSlots,
 			SlotMemory:         vram.SlotMemory,
 			TotalVRAM:          vram.TotalVRAM,
 		},
@@ -354,7 +352,6 @@ type VRAMInput struct {
 	ValueLength     int64 `json:"value_length"`
 	BytesPerElement int64 `json:"bytes_per_element"`
 	Slots           int64 `json:"slots"`
-	CacheSequences  int64 `json:"cache_sequences"`
 }
 
 // VRAM contains the calculated VRAM requirements.
@@ -362,7 +359,6 @@ type VRAM struct {
 	Input              VRAMInput `json:"input"`
 	KVPerTokenPerLayer int64     `json:"kv_per_token_per_layer"`
 	KVPerSlot          int64     `json:"kv_per_slot"`
-	TotalSlots         int64     `json:"total_slots"`
 	SlotMemory         int64     `json:"slot_memory"`
 	TotalVRAM          int64     `json:"total_vram"`
 }
@@ -650,11 +646,9 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 				ValueLength:     vram.Input.ValueLength,
 				BytesPerElement: vram.Input.BytesPerElement,
 				Slots:           vram.Input.Slots,
-				CacheSequences:  vram.Input.CacheSequences,
 			},
 			KVPerTokenPerLayer: vram.KVPerTokenPerLayer,
 			KVPerSlot:          vram.KVPerSlot,
-			TotalSlots:         vram.TotalSlots,
 			SlotMemory:         vram.SlotMemory,
 			TotalVRAM:          vram.TotalVRAM,
 		}
@@ -738,12 +732,10 @@ func (app TokenResponse) Encode() ([]byte, string, error) {
 
 // VRAMRequest represents the input for VRAM calculation.
 type VRAMRequest struct {
-	ModelURL         string `json:"model_url"`
-	ContextWindow    int64  `json:"context_window"`
-	BytesPerElement  int64  `json:"bytes_per_element"`
-	Slots            int64  `json:"slots"`
-	CacheSequences   int64  `json:"cache_sequences"`
-	IncrementalCache bool   `json:"incremental_cache"`
+	ModelURL        string `json:"model_url"`
+	ContextWindow   int64  `json:"context_window"`
+	BytesPerElement int64  `json:"bytes_per_element"`
+	Slots           int64  `json:"slots"`
 }
 
 // Decode implements the decoder interface.
@@ -756,7 +748,6 @@ type VRAMResponse struct {
 	Input              VRAMInput `json:"input"`
 	KVPerTokenPerLayer int64     `json:"kv_per_token_per_layer"`
 	KVPerSlot          int64     `json:"kv_per_slot"`
-	TotalSlots         int64     `json:"total_slots"`
 	SlotMemory         int64     `json:"slot_memory"`
 	TotalVRAM          int64     `json:"total_vram"`
 }

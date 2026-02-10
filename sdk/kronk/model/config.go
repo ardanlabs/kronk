@@ -524,16 +524,7 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 		ctxParams.NThreads = int32(cfg.NThreads)
 		ctxParams.NThreadsBatch = int32(cfg.NThreadsBatch)
 
-		// For IMC, scale NCtx by total sequences so users get their configured
-		// context per slot. IMC caches the full conversation, so without scaling
-		// the effective context per slot would be reduced. SPC only caches the
-		// system prompt (typically small), so no scaling needed.
-		switch {
-		case cfg.IncrementalCache:
-			ctxParams.NCtx = uint32(cfg.ContextWindow * totalSeqs)
-		default:
-			ctxParams.NCtx = uint32(cfg.ContextWindow)
-		}
+		ctxParams.NCtx = uint32(cfg.ContextWindow)
 	}
 
 	if cfg.CacheTypeK != GGMLTypeAuto {

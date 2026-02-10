@@ -605,19 +605,16 @@ For text and media models, `NSeqMax` controls batch parallelism within a single 
 n_seq_max: 4 # Process up to 4 requests concurrently
 ```
 
-Multiple requests share the model context and KV cache, with each request
-getting an isolated sequence partition. The number of sequences always equals
-`NSeqMax` regardless of caching mode:
+Multiple requests share the model context and KV cache, with each
+request getting an isolated sequence partition. All modes allocate
+`NSeqMax` slots and sequences with the same VRAM footprint. The
+difference is how each mode manages cached state:
 
-| Mode        | Slots   | Sequences | Slot SeqIDs | Extra VRAM  |
-| ----------- | ------- | --------- | ----------- | ----------- |
-| No caching  | NSeqMax | NSeqMax   | 0..N-1      | none        |
-| SPC enabled | NSeqMax | NSeqMax   | 0..N-1      | none        |
-| IMC enabled | NSeqMax | NSeqMax   | 0..N-1      | NCtx scaled |
-
-SPC stores system prompt tokens in RAM and re-decodes them into each slot
-as needed, requiring no extra sequences. IMC binds each slot to a cache_id,
-caching the conversation directly in the slot's own sequence.
+| Mode        | Slot Lifetime            | Cache Strategy            |
+| ----------- | ------------------------ | ------------------------- |
+| No caching  | Cleared after request    | None                      |
+| SPC enabled | Cleared after request    | System prompt tokens held in RAM, re-decoded into slot on each request |
+| IMC enabled | Dedicated to a cache_id  | Full conversation cached in the slot's KV cache sequence              |
 
 **Embedding and Reranking Models**
 
@@ -982,33 +979,22 @@ Total KV cache:     ~800 MB (4 slots × 200 MB)
 
 **Caching Memory Overhead**
 
-Neither SPC nor IMC requires additional KV cache sequences:
+Neither SPC nor IMC requires additional KV cache sequences or extra
+VRAM. llama.cpp internally partitions the KV cache across sequences,
+so each slot gets `context_window / NSeqMax` tokens of capacity:
 
-| Mode | Reserved Seqs | Memory Overhead        |
-| ---- | ------------- | ---------------------- |
-| off  | 0             | none                   |
-| SPC  | 0             | none (tokens in RAM)   |
-| IMC  | 0             | NCtx scaled by NSeqMax |
+| Mode | Reserved Seqs | Memory Overhead      |
+| ---- | ------------- | -------------------- |
+| off  | 0             | none                 |
+| SPC  | 0             | none (tokens in RAM) |
+| IMC  | 0             | none                 |
 
-SPC stores system prompt tokens in RAM and decodes them into each slot on
-demand. This adds negligible RAM usage but zero VRAM overhead.
+SPC stores system prompt tokens in RAM and decodes them into each slot
+on demand. This adds negligible RAM usage but zero VRAM overhead.
 
-IMC caches full conversations in each slot's own sequence. To ensure each
-slot gets the full configured context window, Kronk auto-scales the internal
-context size:
-
-```
-Internal NCtx = context_window × NSeqMax
-```
-
-Example with `n_seq_max=2` and `context_window=8192`:
-
-```
-Internal NCtx = 8192 × 2 = 16384
-KV cache per sequence: ~200 MB (8B model, F16)
-Total KV cache: 2 × 200 MB = 400 MB
-Each slot gets full 8192 context ✓
-```
+IMC caches full conversations in each slot's own sequence. No context
+scaling is needed since llama.cpp partitions the KV cache per sequence
+automatically.
 
 ### 4.5 Concurrency by Model Type
 
@@ -1119,15 +1105,19 @@ different use cases.
 
 ### 5.1 Overview
 
-When processing a chat request, the model must compute attention for every
-token in the conversation. For long conversations or repeated system prompts,
-this becomes wasteful—the same tokens are reprocessed on every request.
+When processing a chat request, the model must compute attention for
+every token in the conversation. Without caching, the entire prompt is
+prefilled on every request — even tokens the model has already seen.
 
-Message caching stores the computed KV state and copies it to new requests,
-skipping the prefill phase for cached tokens.
+Kronk provides two caching modes that reduce redundant prefill work.
+SPC (System Prompt Cache) caches the system prompt tokens in RAM and
+re-decodes them into the slot, skipping tokenization and templating.
+IMC (Incremental Message Cache) dedicates each slot to a user and
+caches the full conversation in the slot's KV cache sequence, so only
+the new message needs to be prefilled.
 
 ```
-Without Caching:
+No Caching:
 ┌─────────────────────────────────────────────────────┐
 │ System Prompt │ Message 1 │ Message 2 │ New Message │
 │   (prefill)   │ (prefill) │ (prefill) │  (prefill)  │
@@ -1135,7 +1125,15 @@ Without Caching:
                                               ↓
                                          Generate
 
-With Caching:
+SPC (System Prompt Cache):
+┌─────────────────────────────────────────────────────┐
+│ System Prompt │ Message 1 │ Message 2 │ New Message │
+│   (cached)    │ (prefill) │ (prefill) │  (prefill)  │
+└─────────────────────────────────────────────────────┘
+                                              ↓
+                                         Generate
+
+IMC (Incremental Message Cache):
 ┌─────────────────────────────────────────────────────┐
 │ System Prompt │ Message 1 │ Message 2 │ New Message │
 │   (cached)    │ (cached)  │ (cached)  │  (prefill)  │
@@ -1288,7 +1286,7 @@ For multi-user deployments, always provide unique cache_ids.
 | Extends      | No                               | Yes, incrementally                      |
 | Multi-user   | Unlimited (tokens in RAM)        | Max NSeqMax (bound to slots)            |
 | Best for     | Chat UIs, inconsistent templates | Agentic workflows, consistent templates |
-| Memory       | Zero VRAM overhead               | NCtx auto-scaled by NSeqMax             |
+| Memory       | Zero VRAM overhead               | Zero VRAM overhead                      |
 | Template req | Any                              | Consistent templates only               |
 
 **Important:** SPC and IMC are mutually exclusive. Choose based on your
@@ -1341,59 +1339,21 @@ to IMC.
 
 Default: 100 tokens
 
-### 5.8 Context Window Auto-Scaling (IMC Only)
+### 5.8 KV Cache Partitioning
 
-When IMC is enabled, Kronk automatically scales the internal context window
-to ensure each slot gets the full configured context size. This auto-scaling
-does not apply to SPC since SPC adds zero VRAM overhead.
-
-**Why This Is Needed:**
-
-IMC caches the full conversation history in each slot's own sequence. The KV
-cache is shared across all sequences, so without auto-scaling, each slot would
-only get a fraction of the configured context:
+llama.cpp internally divides `n_ctx` by `n_seq_max`, so each slot
+gets `context_window / NSeqMax` tokens of KV cache capacity. No
+context scaling is needed — VRAM is the same for all caching modes.
 
 ```
-Without auto-scaling (broken):
-  context_window: 128k
-  n_seq_max: 2
-  Effective per slot: 128k / 2 = 64k ❌
-
-With auto-scaling (Kronk's behavior):
-  context_window: 128k
-  n_seq_max: 2
-  Internal NCtx = 128k × 2 = 256k
-  Effective per slot: 128k ✓
+context_window: 128k
+n_seq_max: 2
+Effective per slot: 128k / 2 = 64k
 ```
 
-**Formula:**
-
-```
-Internal NCtx = context_window × NSeqMax
-```
-
-**Example:**
-
-```yaml
-Qwen3-8B-Q8_0/IMC:
-  context_window: 32768 # User wants 32k per slot
-  n_seq_max: 2
-  incremental_cache: true
-
-# Internal calculation:
-# Internal NCtx = 32768 × 2 = 65536
-# Each slot gets full 32k context ✓
-```
-
-**VRAM Impact:**
-
-Auto-scaling increases KV cache memory proportionally. Plan VRAM accordingly:
-
-```
-32k context, n_seq_max=2, IMC, F16 cache:
-  Internal NCtx = 32k × 2 = 64k
-  KV cache = ~1.6 GB (instead of 800 MB without IMC)
-```
+This partitioning applies equally to no-cache, SPC, and IMC modes.
+Plan your `context_window` accordingly: if you need 64k tokens per
+slot with `n_seq_max=2`, set `context_window` to 128k.
 
 ### 5.9 Performance and Limitations
 
@@ -1412,12 +1372,13 @@ For a 2000-token cached conversation prefix:
 
 **IMC Memory Overhead:**
 
-Each slot gets the full context window via auto-scaling:
+IMC adds no extra VRAM. llama.cpp partitions the KV cache across
+sequences, so each slot gets `context_window / NSeqMax` tokens:
 
 ```
 8K context, n_seq_max=4, IMC:
-  Internal NCtx = 8K × 4 = 32K
-  Total KV cache: ~800 MB (8B model, F16)
+  KV cache per slot: ~200 MB (8B model, F16)
+  Total KV cache: 4 × 200 MB = ~800 MB
 ```
 
 **IMC Limitations:**

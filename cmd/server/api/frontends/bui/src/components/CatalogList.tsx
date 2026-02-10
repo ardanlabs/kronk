@@ -436,10 +436,6 @@ export default function CatalogList() {
                       <span>{formatBytes(modelInfo.vram.kv_per_slot)}</span>
                     </div>
                     <div className="model-meta-item">
-                      <label>Total Slots</label>
-                      <span>{modelInfo.vram.total_slots}</span>
-                    </div>
-                    <div className="model-meta-item">
                       <label>KV Per Token/Layer</label>
                       <span>{formatBytes(modelInfo.vram.kv_per_token_per_layer)}</span>
                     </div>

@@ -66,21 +66,10 @@ export default function DocsManual() {
           <hr />
           <h2 id="chapter-1:-introduction">Chapter 1: Introduction</h2>
           <h3 id="11-what-is-kronk">1.1 What is Kronk</h3>
-          <p>Kronk is a Go SDK and Model Server for running local inference with open-source</p>
-          <p>GGUF models. Built on top of llama.cpp via the <a href="https://github.com/hybridgroup/yzma">yzma</a></p>
-          <p>Go bindings (a non-CGO FFI layer), Kronk provides hardware-accelerated inference</p>
-          <p>for text generation, vision, audio, embeddings, and reranking.</p>
-          <p><strong>The SDK is the foundation.</strong> The Kronk Model Server is built entirely on top</p>
-          <p>of the SDK — we "dog food" our own library. Everything the model server can do</p>
-          <p>is available as SDK functions that you can use directly in your own applications.</p>
-          <p><strong>You don't need a model server.</strong> The real power of Kronk is that you can embed</p>
-          <p>model inference directly into your Go applications. Load models, run inference,</p>
-          <p>manage caching, and handle concurrent requests — all without running a separate</p>
-          <p>server process. The <a href="examples/">examples</a> directory demonstrates building</p>
-          <p>standalone applications with the SDK.</p>
-          <p><strong>The Model Server is optional.</strong> When you do need an API server (for web UIs,</p>
-          <p>multi-client access, or OpenAI-compatible endpoints), the Kronk Model Server</p>
-          <p>provides:</p>
+          <p>Kronk is a Go SDK and Model Server for running local inference with open-source GGUF models. Built on top of llama.cpp via the <a href="https://github.com/hybridgroup/yzma">yzma</a> Go bindings (a non-CGO FFI layer), Kronk provides hardware-accelerated inference for text generation, vision, audio, embeddings, and reranking.</p>
+          <p><strong>The SDK is the foundation.</strong> The Kronk Model Server is built entirely on top of the SDK — we "dog food" our own library. Everything the model server can do is available as SDK functions that you can use directly in your own applications.</p>
+          <p><strong>You don't need a model server.</strong> The real power of Kronk is that you can embed model inference directly into your Go applications. Load models, run inference, manage caching, and handle concurrent requests — all without running a separate server process. The <a href="examples/">examples</a> directory demonstrates building standalone applications with the SDK.</p>
+          <p><strong>The Model Server is optional.</strong> When you do need an API server (for web UIs, multi-client access, or OpenAI-compatible endpoints), the Kronk Model Server provides:</p>
           <ul>
             <li>OpenAI and Anthropic compatible REST API</li>
             <li>OpenWebUI integration</li>
@@ -146,8 +135,7 @@ export default function DocsManual() {
             <li>GPU with Metal, CUDA, or Vulkan support recommended for optimal performance</li>
           </ul>
           <h3 id="14-architecture-overview">1.4 Architecture Overview</h3>
-          <p>Kronk is designed as a layered architecture where the SDK provides all core</p>
-          <p>functionality and the Model Server is one application built on top of it.</p>
+          <p>Kronk is designed as a layered architecture where the SDK provides all core functionality and the Model Server is one application built on top of it.</p>
           <p>!<a href="images/design/sdk.png">Kronk SDK Architecture</a></p>
           <p><strong>Layer Breakdown:</strong></p>
           <table className="flags-table">
@@ -191,10 +179,7 @@ export default function DocsManual() {
               </tr>
             </tbody>
           </table>
-          <p><strong>The Key Insight:</strong> Your application sits at the same level as the Kronk Model</p>
-          <p>Server. You have access to the exact same SDK APIs. Whether you're building a</p>
-          <p>CLI tool, a web service, an embedded system, or a desktop app — you get the</p>
-          <p>full power of local model inference without any server overhead.</p>
+          <p><strong>The Key Insight:</strong> Your application sits at the same level as the Kronk Model Server. You have access to the exact same SDK APIs. Whether you're building a CLI tool, a web service, an embedded system, or a desktop app — you get the full power of local model inference without any server overhead.</p>
           <p><strong>SDK vs Server Usage:</strong></p>
           <pre className="code-block"><code className="language-go">{`// Direct SDK usage - no server needed
 cfg := model.Config{
@@ -341,13 +326,10 @@ curl http://localhost:8080/v1/chat/completions \\
   -d '{"model": "Qwen3-8B-Q8_0", "messages": [{"role": "user", "content": "Hello!"}]}'`}</code></pre>
           <hr />
           <h2 id="chapter-3:-model-configuration">Chapter 3: Model Configuration</h2>
-          <p>Model configuration controls how Kronk loads and runs inference. Configuration</p>
-          <p>can be set via model config files, catalog templates, or programmatically</p>
-          <p>through the SDK.</p>
+          <p>Model configuration controls how Kronk loads and runs inference. Configuration can be set via model config files, catalog templates, or programmatically through the SDK.</p>
           <h3 id="31-basic-configuration">3.1 Basic Configuration</h3>
           <p><strong>Context Window</strong></p>
-          <p>The context window defines the maximum number of tokens the model can process</p>
-          <p>in a single request. This includes both the input prompt and generated output.</p>
+          <p>The context window defines the maximum number of tokens the model can process in a single request. This includes both the input prompt and generated output.</p>
           <pre className="code-block"><code className="language-yaml">{`context_window: 8192 # Default: 8192 tokens`}</code></pre>
           <p>Larger context windows require more VRAM. A rough estimate:</p>
           <ul>
@@ -372,8 +354,7 @@ n_ubatch: 512 # Physical batch size (must be ≤ n_batch)`}</code></pre>
             <li>High VRAM (24GB+): <code>n_batch=4096+</code>, <code>n_ubatch=1024+</code></li>
           </ul>
           <h3 id="32-sampling-parameters">3.2 Sampling Parameters</h3>
-          <p>Sampling parameters control the randomness and quality of generated text.</p>
-          <p>These are set per-request in the API call.</p>
+          <p>Sampling parameters control the randomness and quality of generated text. These are set per-request in the API call.</p>
           <p><strong>Temperature</strong></p>
           <p>Controls randomness. Lower values produce more deterministic output.</p>
           <pre className="code-block"><code className="language-json">{`{
@@ -430,8 +411,7 @@ offload_kqv: false   # KV cache on CPU (saves VRAM, slower)`}</code></pre>
           <p>Control where tensor computations run:</p>
           <pre className="code-block"><code className="language-yaml">{`op_offload: true     # Tensor ops on GPU (default)
 op_offload: false    # Tensor ops on CPU`}</code></pre>
-          <p>Use <code>op_offload: false</code> when you need to run the model on CPU but want to</p>
-          <p>keep some layers on GPU for memory.</p>
+          <p>Use <code>op_offload: false</code> when you need to run the model on CPU but want to keep some layers on GPU for memory.</p>
           <p><strong>Multi-GPU Split Mode</strong></p>
           <p>For systems with multiple GPUs:</p>
           <pre className="code-block"><code className="language-yaml">{`split_mode: none     # Single GPU (default)
@@ -498,26 +478,23 @@ cache_type_v: q8_0 # Value cache precision`}</code></pre>
             <li>Larger contexts benefit proportionally</li>
           </ul>
           <p><strong>When to Use F16 Cache (No Quantization):</strong></p>
-          <p>Certain model architectures are sensitive to KV cache quantization and</p>
-          <p>perform significantly better with <code>f16</code> precision:</p>
+          <p>Certain model architectures are sensitive to KV cache quantization and perform significantly better with <code>f16</code> precision:</p>
           <ul>
             <li><strong>Mixture of Experts (MoE) models</strong> - Models like Qwen3-MoE, DeepSeek-MoE,</li>
           </ul>
-          <p>  and Mixtral use sparse expert routing. The routing decisions depend on</p>
-          <p>  subtle attention patterns that degrade when the KV cache is quantized.</p>
+          <p>and Mixtral use sparse expert routing. The routing decisions depend on subtle attention patterns that degrade when the KV cache is quantized.</p>
           <ul>
             <li><strong>Long-context reasoning</strong> - Tasks requiring attention across many thousands</li>
           </ul>
-          <p>  of tokens (legal documents, codebases, multi-turn conversations) accumulate</p>
-          <p>  small precision errors that compound over the sequence length.</p>
+          <p>of tokens (legal documents, codebases, multi-turn conversations) accumulate small precision errors that compound over the sequence length.</p>
           <ul>
             <li><strong>Code generation</strong> - Precise variable tracking and syntax coherence benefit</li>
           </ul>
-          <p>  from higher cache precision, especially in larger codebases.</p>
+          <p>from higher cache precision, especially in larger codebases.</p>
           <ul>
             <li><strong>Math and logic</strong> - Multi-step reasoning chains are sensitive to accumulated</li>
           </ul>
-          <p>  quantization noise in earlier attention states.</p>
+          <p>quantization noise in earlier attention states.</p>
           <p><strong>Example: MoE Model with F16 Cache</strong></p>
           <pre className="code-block"><code className="language-yaml">{`models:
   # MoE models benefit from f16 cache for routing accuracy
@@ -532,11 +509,7 @@ cache_type_v: q8_0 # Value cache precision`}</code></pre>
     context_window: 32768
     cache_type_k: q8_0
     cache_type_v: q8_0`}</code></pre>
-          <p><strong>Recommendation:</strong> If you notice quality degradation (incoherent outputs,</p>
-          <p>reasoning failures, or code bugs) with quantized cache, try <code>f16</code> first</p>
-          <p>before adjusting other parameters. The VRAM cost is typically 25-50% more</p>
-          <p>for the cache, but the quality improvement for sensitive workloads is</p>
-          <p>substantial.</p>
+          <p><strong>Recommendation:</strong> If you notice quality degradation (incoherent outputs, reasoning failures, or code bugs) with quantized cache, try <code>f16</code> first before adjusting other parameters. The VRAM cost is typically 25-50% more for the cache, but the quality improvement for sensitive workloads is substantial.</p>
           <h3 id="35-flash-attention">3.5 Flash Attention</h3>
           <p>Flash Attention optimizes memory usage and speeds up attention computation:</p>
           <pre className="code-block"><code className="language-yaml">{`flash_attention: enabled   # Default: enabled
@@ -544,57 +517,41 @@ flash_attention: disabled  # Disable if causing issues
 flash_attention: auto      # Let llama.cpp decide`}</code></pre>
           <p>Flash Attention is particularly beneficial for large context windows.</p>
           <h3 id="36-parallel-inference-nseqmax">3.6 Parallel Inference (NSeqMax)</h3>
-          <p><code>NSeqMax</code> controls concurrent request handling, but behaves differently based</p>
-          <p>on model type:</p>
+          <p><code>NSeqMax</code> controls concurrent request handling, but behaves differently based on model type:</p>
           <p><strong>Text Models (Chat/Completion)</strong></p>
           <p>For text and media models, <code>NSeqMax</code> controls batch parallelism within a single model:</p>
           <pre className="code-block"><code className="language-yaml">{`n_seq_max: 4 # Process up to 4 requests concurrently`}</code></pre>
-          <p>Multiple requests share the model context and KV cache, with each request</p>
-          <p>getting an isolated sequence partition. The number of sequences always equals</p>
-          <p><code>NSeqMax</code> regardless of caching mode:</p>
+          <p>Multiple requests share the model context and KV cache, with each request getting an isolated sequence partition. All modes allocate <code>NSeqMax</code> slots and sequences with the same VRAM footprint. The difference is how each mode manages cached state:</p>
           <table className="flags-table">
             <thead>
               <tr>
                 <th>Mode</th>
-                <th>Slots</th>
-                <th>Sequences</th>
-                <th>Slot SeqIDs</th>
-                <th>Extra VRAM</th>
+                <th>Slot Lifetime</th>
+                <th>Cache Strategy</th>
               </tr>
             </thead>
             <tbody>
               <tr>
                 <td>No caching</td>
-                <td>NSeqMax</td>
-                <td>NSeqMax</td>
-                <td>0..N-1</td>
-                <td>none</td>
+                <td>Cleared after request</td>
+                <td>None</td>
               </tr>
               <tr>
                 <td>SPC enabled</td>
-                <td>NSeqMax</td>
-                <td>NSeqMax</td>
-                <td>0..N-1</td>
-                <td>none</td>
+                <td>Cleared after request</td>
+                <td>System prompt tokens held in RAM, re-decoded into slot on each request</td>
               </tr>
               <tr>
                 <td>IMC enabled</td>
-                <td>NSeqMax</td>
-                <td>NSeqMax</td>
-                <td>0..N-1</td>
-                <td>NCtx scaled</td>
+                <td>Dedicated to a cache_id</td>
+                <td>Full conversation cached in the slot's KV cache sequence</td>
               </tr>
             </tbody>
           </table>
-          <p>SPC stores system prompt tokens in RAM and re-decodes them into each slot</p>
-          <p>as needed, requiring no extra sequences. IMC binds each slot to a cache_id,</p>
-          <p>caching the conversation directly in the slot's own sequence.</p>
           <p><strong>Embedding and Reranking Models</strong></p>
           <p>For embedding and reranking models, <code>NSeqMax</code> creates an internal context pool:</p>
           <pre className="code-block"><code className="language-yaml">{`n_seq_max: 4 # Create 4 contexts in internal pool`}</code></pre>
-          <p>Multiple inputs within a single request are partitioned across pool contexts</p>
-          <p>and processed in parallel. Model weights are shared, only KV cache memory is</p>
-          <p>multiplied per context.</p>
+          <p>Multiple inputs within a single request are partitioned across pool contexts and processed in parallel. Model weights are shared, only KV cache memory is multiplied per context.</p>
           <h3 id="37-vram-estimation">3.7 VRAM Estimation</h3>
           <p>Rough VRAM requirements for common configurations:</p>
           <p><strong>Model Size (Q8_0 quantization)</strong></p>
@@ -649,9 +606,7 @@ models:
     n_batch: 2048
     n_ubatch: 2048 # High for image/audio token batches
     n_seq_max: 2 # Process up to 2 requests concurrently`}</code></pre>
-          <p>Vision models process image tiles as large token batches. Low <code>n_ubatch</code></p>
-          <p>values cause multiple decode passes per image, significantly slowing</p>
-          <p>inference.</p>
+          <p>Vision models process image tiles as large token batches. Low <code>n_ubatch</code> values cause multiple decode passes per image, significantly slowing inference.</p>
           <p><strong>Mixture of Experts (MoE) Models</strong></p>
           <p>Use row-based tensor parallelism for multi-GPU setups:</p>
           <pre className="code-block"><code className="language-yaml">{`models:
@@ -659,8 +614,7 @@ models:
     split_mode: row # Best for MoE architecture
     cache_type_k: q8_0 # Be cautious with aggressive quantization
     cache_type_v: q8_0`}</code></pre>
-          <p>MoE models can be sensitive to aggressive KV cache quantization. If you</p>
-          <p>notice quality degradation, try <code>f16</code> cache types.</p>
+          <p>MoE models can be sensitive to aggressive KV cache quantization. If you notice quality degradation, try <code>f16</code> cache types.</p>
           <p><strong>Embedding Models</strong></p>
           <p>Optimize batch size for your typical input lengths:</p>
           <pre className="code-block"><code className="language-yaml">{`models:
@@ -668,34 +622,25 @@ models:
     n_batch: 8192 # Can equal context_window
     n_ubatch: 512 # Align with typical sliding window
     n_seq_max: 4 # 4 model instances for concurrency`}</code></pre>
-          <p>Embedding models process complete inputs in a single pass, so larger</p>
-          <p><code>n_batch</code> values improve throughput.</p>
+          <p>Embedding models process complete inputs in a single pass, so larger <code>n_batch</code> values improve throughput.</p>
           <h3 id="310-understanding-gguf-quantization">3.10 Understanding GGUF Quantization</h3>
-          <p>GGUF models come in various quantization formats that trade off between file</p>
-          <p>size, VRAM usage, and output quality. Understanding these formats helps you</p>
-          <p>choose the right model variant for your hardware and use case.</p>
+          <p>GGUF models come in various quantization formats that trade off between file size, VRAM usage, and output quality. Understanding these formats helps you choose the right model variant for your hardware and use case.</p>
           <h4 id="what-is-quantization?">What is Quantization?</h4>
-          <p>Quantization reduces model precision from the original 16-bit or 32-bit</p>
-          <p>floating-point weights to lower bit representations. This dramatically</p>
-          <p>decreases:</p>
+          <p>Quantization reduces model precision from the original 16-bit or 32-bit floating-point weights to lower bit representations. This dramatically decreases:</p>
           <ul>
             <li><strong>File size</strong> - A 7B model goes from ~14GB (FP16) to ~3GB (Q4)</li>
             <li><strong>VRAM usage</strong> - More aggressive quantization allows larger models on limited hardware</li>
             <li><strong>Inference speed</strong> - Smaller models load faster and may run faster on memory-constrained systems</li>
           </ul>
-          <p>The tradeoff is <strong>quality degradation</strong> - lower precision means less accurate</p>
-          <p>representations of the original weights, which can affect output coherence,</p>
-          <p>reasoning ability, and factual accuracy.</p>
+          <p>The tradeoff is <strong>quality degradation</strong> - lower precision means less accurate representations of the original weights, which can affect output coherence, reasoning ability, and factual accuracy.</p>
           <h4 id="what-are-k-quants?">What are K-Quants?</h4>
-          <p>K-quants (introduced by llama.cpp) use <strong>per-block scaling</strong> with importance</p>
-          <p>weighting. Instead of applying uniform quantization across all weights, K-quants:</p>
+          <p>K-quants (introduced by llama.cpp) use <strong>per-block scaling</strong> with importance weighting. Instead of applying uniform quantization across all weights, K-quants:</p>
           <ol>
             <li>Divide weights into small blocks (typically 32 or 256 values)</li>
             <li>Calculate optimal scale factors per block</li>
             <li>Preserve more precision for important weights</li>
           </ol>
-          <p>This produces better quality than naive quantization at the same bit rate.</p>
-          <p>K-quant variants include size suffixes:</p>
+          <p>This produces better quality than naive quantization at the same bit rate. K-quant variants include size suffixes:</p>
           <ul>
             <li><strong>S</strong> (Small) - Smallest file size, lowest quality within that bit level</li>
             <li><strong>M</strong> (Medium) - Balanced size and quality</li>
@@ -772,8 +717,7 @@ models:
             </tbody>
           </table>
           <h4 id="iq-importance-matrix-quantization">IQ (Importance Matrix) Quantization</h4>
-          <p>IQ formats use <strong>learned importance matrices</strong> to determine which weights</p>
-          <p>matter most. They achieve extreme compression with minimal quality loss by:</p>
+          <p>IQ formats use <strong>learned importance matrices</strong> to determine which weights matter most. They achieve extreme compression with minimal quality loss by:</p>
           <ol>
             <li>Analyzing weight importance during quantization</li>
             <li>Allocating more bits to critical weights</li>
@@ -840,15 +784,13 @@ models:
             </tbody>
           </table>
           <h4 id="ud-ultra-dynamic-quantization">UD (Ultra-Dynamic) Quantization</h4>
-          <p>UD quantization applies <strong>different precision levels per layer</strong>. Neural</p>
-          <p>network layers have varying sensitivity to quantization:</p>
+          <p>UD quantization applies <strong>different precision levels per layer</strong>. Neural network layers have varying sensitivity to quantization:</p>
           <ul>
             <li>Early layers (embeddings, first attention blocks) - More sensitive</li>
             <li>Middle layers - Moderately sensitive</li>
             <li>Later layers - Often more tolerant of compression</li>
           </ul>
-          <p>UD variants analyze each layer and assign optimal bit depths, achieving</p>
-          <p>better quality than uniform quantization at similar average bits per weight.</p>
+          <p>UD variants analyze each layer and assign optimal bit depths, achieving better quality than uniform quantization at similar average bits per weight.</p>
           <p>Common UD naming: <code>UD-Q5_K_XL</code> means Ultra-Dynamic with Q5 K-quant base, XL quality tier.</p>
           <h4 id="choosing-the-right-quantization">Choosing the Right Quantization</h4>
           <p><strong>By Available VRAM:</strong></p>
@@ -944,12 +886,9 @@ models:
     n_gpu_layers: 0`}</code></pre>
           <hr />
           <h2 id="chapter-4:-batch-processing">Chapter 4: Batch Processing</h2>
-          <p>Batch processing allows Kronk to handle multiple concurrent requests</p>
-          <p>efficiently by sharing model resources. This chapter explains the architecture</p>
-          <p>and how to optimize for your workload.</p>
+          <p>Batch processing allows Kronk to handle multiple concurrent requests efficiently by sharing model resources. This chapter explains the architecture and how to optimize for your workload.</p>
           <h3 id="41-architecture-overview">4.1 Architecture Overview</h3>
-          <p>When <code>NSeqMax &gt; 1</code> for text models, Kronk creates a batch engine that</p>
-          <p>processes multiple requests in parallel within a single model instance.</p>
+          <p>When <code>NSeqMax &gt; 1</code> for text models, Kronk creates a batch engine that processes multiple requests in parallel within a single model instance.</p>
           <pre className="code-block"><code>{`                    ┌───────────────────────────────────┐
    Request 1 ──────▶│                                   │
                     │          Request Queue            │
@@ -981,12 +920,8 @@ models:
                     │         (GPU/CPU Inference)       │
                     └───────────────────────────────────┘`}</code></pre>
           <h3 id="42-slots-and-sequences">4.2 Slots and Sequences</h3>
-          <p><strong>Slots</strong> are processing units that handle individual requests. Each slot</p>
-          <p>tracks its state: prompt tokens, decode position, sampler, and response</p>
-          <p>channel.</p>
-          <p><strong>Sequences</strong> are isolated partitions in the shared KV cache. Each slot is</p>
-          <p>assigned a unique sequence ID, ensuring requests don't interfere with each</p>
-          <p>other's attention state.</p>
+          <p><strong>Slots</strong> are processing units that handle individual requests. Each slot tracks its state: prompt tokens, decode position, sampler, and response channel.</p>
+          <p><strong>Sequences</strong> are isolated partitions in the shared KV cache. Each slot is assigned a unique sequence ID, ensuring requests don't interfere with each other's attention state.</p>
           <p>The slot/sequence layout is the same for all modes:</p>
           <pre className="code-block"><code>{`NSeqMax = 4
 
@@ -994,10 +929,7 @@ Slot 0  →  seqID = 0  →  KV cache partition 0
 Slot 1  →  seqID = 1  →  KV cache partition 1
 Slot 2  →  seqID = 2  →  KV cache partition 2
 Slot 3  →  seqID = 3  →  KV cache partition 3`}</code></pre>
-          <p>With SPC, saved system prompt tokens are decoded directly into the slot's</p>
-          <p>sequence before the remaining prompt is prefilled. With IMC, each slot's</p>
-          <p>sequence is bound to a cache_id and the conversation cache lives in that</p>
-          <p>sequence. In both cases, no extra sequences are reserved.</p>
+          <p>With SPC, saved system prompt tokens are decoded directly into the slot's sequence before the remaining prompt is prefilled. With IMC, each slot's sequence is bound to a cache_id and the conversation cache lives in that sequence. In both cases, no extra sequences are reserved.</p>
           <h3 id="43-request-flow">4.3 Request Flow</h3>
           <ol>
             <li><strong>Queue</strong>: Request enters the queue (backpressure if full)</li>
@@ -1015,14 +947,13 @@ Slot 3  →  seqID = 3  →  KV cache partition 3`}</code></pre>
   Qwen3-8B-Q8_0:
     n_seq_max: 4 # 4 concurrent requests`}</code></pre>
           <p><strong>Queue Depth</strong></p>
-          <p>The request queue holds <code>NSeqMax × 2</code> requests. With <code>NSeqMax=4</code>, up to 8</p>
-          <p>requests can queue while 4 are actively processing.</p>
+          <p>The request queue holds <code>NSeqMax × 2</code> requests. With <code>NSeqMax=4</code>, up to 8 requests can queue while 4 are actively processing.</p>
           <p><strong>Memory Considerations</strong></p>
           <p>Each slot needs its own KV cache partition. With 4 slots and 8K context:</p>
           <pre className="code-block"><code>{`KV cache per slot:  ~200 MB (for 8B model with F16)
 Total KV cache:     ~800 MB (4 slots × 200 MB)`}</code></pre>
           <p><strong>Caching Memory Overhead</strong></p>
-          <p>Neither SPC nor IMC requires additional KV cache sequences:</p>
+          <p>Neither SPC nor IMC requires additional KV cache sequences or extra VRAM. llama.cpp internally partitions the KV cache across sequences, so each slot gets <code>context_window / NSeqMax</code> tokens of capacity:</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -1045,21 +976,12 @@ Total KV cache:     ~800 MB (4 slots × 200 MB)`}</code></pre>
               <tr>
                 <td>IMC</td>
                 <td>0</td>
-                <td>NCtx scaled by NSeqMax</td>
+                <td>none</td>
               </tr>
             </tbody>
           </table>
-          <p>SPC stores system prompt tokens in RAM and decodes them into each slot on</p>
-          <p>demand. This adds negligible RAM usage but zero VRAM overhead.</p>
-          <p>IMC caches full conversations in each slot's own sequence. To ensure each</p>
-          <p>slot gets the full configured context window, Kronk auto-scales the internal</p>
-          <p>context size:</p>
-          <pre className="code-block"><code>{`Internal NCtx = context_window × NSeqMax`}</code></pre>
-          <p>Example with <code>n_seq_max=2</code> and <code>context_window=8192</code>:</p>
-          <pre className="code-block"><code>{`Internal NCtx = 8192 × 2 = 16384
-KV cache per sequence: ~200 MB (8B model, F16)
-Total KV cache: 2 × 200 MB = 400 MB
-Each slot gets full 8192 context ✓`}</code></pre>
+          <p>SPC stores system prompt tokens in RAM and decodes them into each slot on demand. This adds negligible RAM usage but zero VRAM overhead.</p>
+          <p>IMC caches full conversations in each slot's own sequence. No context scaling is needed since llama.cpp partitions the KV cache per sequence automatically.</p>
           <h3 id="45-concurrency-by-model-type">4.5 Concurrency by Model Type</h3>
           <p>Different model types use different concurrency mechanisms:</p>
           <table className="flags-table">
@@ -1094,8 +1016,7 @@ Each slot gets full 8192 context ✓`}</code></pre>
             </tbody>
           </table>
           <p><strong>Chat Request Flow (NSeqMax=4)</strong></p>
-          <p>When multiple chat requests arrive simultaneously, the batch engine processes</p>
-          <p>them in parallel within a single shared context:</p>
+          <p>When multiple chat requests arrive simultaneously, the batch engine processes them in parallel within a single shared context:</p>
           <pre className="code-block"><code>{`Request 1 ──→ acquireModel() ──→ ChatStreaming() ──→ batch.Submit() ─┐
 Request 2 ──→ acquireModel() ──→ ChatStreaming() ──→ batch.Submit() ─┤
 Request 3 ──→ acquireModel() ──→ ChatStreaming() ──→ batch.Submit() ─┤
@@ -1111,11 +1032,9 @@ Request 4 ──→ acquireModel() ──→ ChatStreaming() ──→ batch.Sub
                                                    │  Single batched decode  │
                                                    │  (all 4 in parallel)    │
                                                    └─────────────────────────┘`}</code></pre>
-          <p>All requests share the same LLM context. The batch engine combines tokens from</p>
-          <p>all active slots into a single decode call, maximizing GPU efficiency.</p>
+          <p>All requests share the same LLM context. The batch engine combines tokens from all active slots into a single decode call, maximizing GPU efficiency.</p>
           <p><strong>Embedding/Rerank Request Flow (NSeqMax=4)</strong></p>
-          <p>When multiple embedding or rerank requests arrive simultaneously, each acquires</p>
-          <p>one context from the pool and processes independently:</p>
+          <p>When multiple embedding or rerank requests arrive simultaneously, each acquires one context from the pool and processes independently:</p>
           <pre className="code-block"><code>{`Request 1 ──→ acquireModel() ──→ pool.acquire() ──→ Context 1 ──→ decode ──→ results
 Request 2 ──→ acquireModel() ──→ pool.acquire() ──→ Context 2 ──→ decode ──→ results
 Request 3 ──→ acquireModel() ──→ pool.acquire() ──→ Context 3 ──→ decode ──→ results
@@ -1123,9 +1042,7 @@ Request 4 ──→ acquireModel() ──→ pool.acquire() ──→ Context 4 
                                        ↓
                           All 4 run in parallel
                           (separate decode calls)`}</code></pre>
-          <p>Model weights are shared across all contexts - only the KV cache is duplicated.</p>
-          <p>Each request gets exclusive use of one context, allowing NSeqMax concurrent</p>
-          <p>requests to process simultaneously.</p>
+          <p>Model weights are shared across all contexts - only the KV cache is duplicated. Each request gets exclusive use of one context, allowing NSeqMax concurrent requests to process simultaneously.</p>
           <h3 id="46-performance-tuning">4.6 Performance Tuning</h3>
           <p><strong>Throughput vs Latency</strong></p>
           <ul>
@@ -1164,16 +1081,11 @@ Request 4 ──→ acquireModel() ──→ pool.acquire() ──→ Context 4 
           </ul>
           <hr />
           <h2 id="chapter-5:-message-caching">Chapter 5: Message Caching</h2>
-          <p>Message caching reduces redundant computation by storing and reusing KV cache</p>
-          <p>state from previous requests. Kronk provides two caching modes optimized for</p>
-          <p>different use cases.</p>
+          <p>Message caching reduces redundant computation by storing and reusing KV cache state from previous requests. Kronk provides two caching modes optimized for different use cases.</p>
           <h3 id="51-overview">5.1 Overview</h3>
-          <p>When processing a chat request, the model must compute attention for every</p>
-          <p>token in the conversation. For long conversations or repeated system prompts,</p>
-          <p>this becomes wasteful—the same tokens are reprocessed on every request.</p>
-          <p>Message caching stores the computed KV state and copies it to new requests,</p>
-          <p>skipping the prefill phase for cached tokens.</p>
-          <pre className="code-block"><code>{`Without Caching:
+          <p>When processing a chat request, the model must compute attention for every token in the conversation. Without caching, the entire prompt is prefilled on every request — even tokens the model has already seen.</p>
+          <p>Kronk provides two caching modes that reduce redundant prefill work. SPC (System Prompt Cache) caches the system prompt tokens in RAM and re-decodes them into the slot, skipping tokenization and templating. IMC (Incremental Message Cache) dedicates each slot to a user and caches the full conversation in the slot's KV cache sequence, so only the new message needs to be prefilled.</p>
+          <pre className="code-block"><code>{`No Caching:
 ┌─────────────────────────────────────────────────────┐
 │ System Prompt │ Message 1 │ Message 2 │ New Message │
 │   (prefill)   │ (prefill) │ (prefill) │  (prefill)  │
@@ -1181,7 +1093,15 @@ Request 4 ──→ acquireModel() ──→ pool.acquire() ──→ Context 4 
                                               ↓
                                          Generate
 
-With Caching:
+SPC (System Prompt Cache):
+┌─────────────────────────────────────────────────────┐
+│ System Prompt │ Message 1 │ Message 2 │ New Message │
+│   (cached)    │ (prefill) │ (prefill) │  (prefill)  │
+└─────────────────────────────────────────────────────┘
+                                              ↓
+                                         Generate
+
+IMC (Incremental Message Cache):
 ┌─────────────────────────────────────────────────────┐
 │ System Prompt │ Message 1 │ Message 2 │ New Message │
 │   (cached)    │ (cached)  │ (cached)  │  (prefill)  │
@@ -1189,10 +1109,7 @@ With Caching:
                                               ↓
                                          Generate`}</code></pre>
           <h3 id="52-system-prompt-cache-spc">5.2 System Prompt Cache (SPC)</h3>
-          <p>System Prompt Cache saves the tokenized system prompt in RAM and re-decodes</p>
-          <p>it into each slot's sequence at request time. This avoids re-tokenizing and</p>
-          <p>re-templating the system prompt on every request, while adding zero VRAM</p>
-          <p>overhead since no dedicated cache sequences are needed.</p>
+          <p>System Prompt Cache saves the tokenized system prompt in RAM and re-decodes it into each slot's sequence at request time. This avoids re-tokenizing and re-templating the system prompt on every request, while adding zero VRAM overhead since no dedicated cache sequences are needed.</p>
           <p><strong>Best for:</strong></p>
           <ul>
             <li>Models with inconsistent templates (GPT-OSS, GLM)</li>
@@ -1211,9 +1128,8 @@ With Caching:
             <li>Remaining messages are prefilled after the system prompt tokens</li>
             <li>Subsequent requests: Saved tokens are re-decoded into the slot (no</li>
           </ol>
-          <p>   re-tokenization needed)</p>
-          <p>Each unique <code>cache_id</code> gets its own saved token entry in RAM. There is no</p>
-          <p>limit on the number of cache_ids — tokens are small and stored in RAM only.</p>
+          <p>re-tokenization needed)</p>
+          <p>Each unique <code>cache_id</code> gets its own saved token entry in RAM. There is no limit on the number of cache_ids — tokens are small and stored in RAM only.</p>
           <p><strong>Cache Invalidation:</strong></p>
           <p>The cache is automatically invalidated when:</p>
           <ul>
@@ -1222,14 +1138,8 @@ With Caching:
             <li>The server restarts</li>
           </ul>
           <h3 id="53-incremental-message-cache-imc">5.3 Incremental Message Cache (IMC)</h3>
-          <p>Incremental Message Cache is designed for agentic workflows where</p>
-          <p>conversations grow monotonically. It caches all messages except the last</p>
-          <p>one and extends the cache incrementally on each turn.</p>
-          <p><strong>Requires:</strong> Models with consistent templates where the same messages always</p>
-          <p>produce identical templated output regardless of conversation length. Models</p>
-          <p>like QWEN and Llama have consistent templates. Models like GPT-OSS and GLM</p>
-          <p>inject tool calls in ways that change earlier message rendering, making them</p>
-          <p>incompatible with IMC (use SPC instead).</p>
+          <p>Incremental Message Cache is designed for agentic workflows where conversations grow monotonically. It caches all messages except the last one and extends the cache incrementally on each turn.</p>
+          <p><strong>Requires:</strong> Models with consistent templates where the same messages always produce identical templated output regardless of conversation length. Models like QWEN and Llama have consistent templates. Models like GPT-OSS and GLM inject tool calls in ways that change earlier message rendering, making them incompatible with IMC (use SPC instead).</p>
           <p><strong>Best for:</strong></p>
           <ul>
             <li>Models with consistent templates (QWEN, Llama)</li>
@@ -1242,9 +1152,7 @@ With Caching:
   Qwen3-8B-Q8_0:
     incremental_cache: true
     cache_min_tokens: 100 # Minimum tokens before caching`}</code></pre>
-          <p>The maximum number of concurrent IMC sessions equals <code>NSeqMax</code>. Each session</p>
-          <p>is bound to a dedicated slot, so <code>n_seq_max: 4</code> supports up to 4 concurrent</p>
-          <p>users with their own conversation caches.</p>
+          <p>The maximum number of concurrent IMC sessions equals <code>NSeqMax</code>. Each session is bound to a dedicated slot, so <code>n_seq_max: 4</code> supports up to 4 concurrent users with their own conversation caches.</p>
           <p><strong>How It Works:</strong></p>
           <p>First request (2 messages: system + user):</p>
           <pre className="code-block"><code>{`Messages: [system, user]
@@ -1259,14 +1167,9 @@ Prefill:  [user2 + gen_prompt]`}</code></pre>
 Cache:    [system, user, assistant, user2, assistant2]  ← Extend
 Prefill:  [user3 + gen_prompt]`}</code></pre>
           <h3 id="54-multi-user-caching">5.4 Multi-User Caching</h3>
-          <p>Both SPC and IMC support multiple concurrent users, each identified by the</p>
-          <p><code>cache_id</code> parameter in requests.</p>
-          <p><strong>SPC Multi-User:</strong> Unlimited cache_ids. Each cache_id stores its tokenized</p>
-          <p>system prompt in RAM. Tokens are re-decoded into the slot's sequence on each</p>
-          <p>request. No VRAM overhead per user.</p>
-          <p><strong>IMC Multi-User:</strong> Max concurrent users = <code>NSeqMax</code>. Each cache_id is bound</p>
-          <p>to a dedicated slot/sequence. When all slots are bound to IMC sessions, new</p>
-          <p>cache_ids are rejected with an error.</p>
+          <p>Both SPC and IMC support multiple concurrent users, each identified by the <code>cache_id</code> parameter in requests.</p>
+          <p><strong>SPC Multi-User:</strong> Unlimited cache_ids. Each cache_id stores its tokenized system prompt in RAM. Tokens are re-decoded into the slot's sequence on each request. No VRAM overhead per user.</p>
+          <p><strong>IMC Multi-User:</strong> Max concurrent users = <code>NSeqMax</code>. Each cache_id is bound to a dedicated slot/sequence. When all slots are bound to IMC sessions, new cache_ids are rejected with an error.</p>
           <p><strong>Passing Cache ID:</strong></p>
           <p>Via HTTP header:</p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/chat/completions \\
@@ -1279,8 +1182,7 @@ Prefill:  [user3 + gen_prompt]`}</code></pre>
   "cache_id": "user-123",
   "messages": [...]
 }`}</code></pre>
-          <p>If no <code>cache_id</code> is provided, requests default to the ID <code>"default"</code>.</p>
-          <p>For multi-user deployments, always provide unique cache_ids.</p>
+          <p>If no <code>cache_id</code> is provided, requests default to the ID <code>"default"</code>. For multi-user deployments, always provide unique cache_ids.</p>
           <h3 id="55-spc-vs-imc">5.5 SPC vs IMC</h3>
           <table className="flags-table">
             <thead>
@@ -1314,7 +1216,7 @@ Prefill:  [user3 + gen_prompt]`}</code></pre>
               <tr>
                 <td>Memory</td>
                 <td>Zero VRAM overhead</td>
-                <td>NCtx auto-scaled by NSeqMax</td>
+                <td>Zero VRAM overhead</td>
               </tr>
               <tr>
                 <td>Template req</td>
@@ -1323,8 +1225,7 @@ Prefill:  [user3 + gen_prompt]`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <p><strong>Important:</strong> SPC and IMC are mutually exclusive. Choose based on your</p>
-          <p>model's template behavior:</p>
+          <p><strong>Important:</strong> SPC and IMC are mutually exclusive. Choose based on your model's template behavior:</p>
           <ul>
             <li><strong>Consistent templates (QWEN, Llama):</strong> Use IMC for maximum cache efficiency</li>
             <li><strong>Inconsistent templates (GPT-OSS, GLM):</strong> Use SPC only</li>
@@ -1360,49 +1261,17 @@ Prefill:  [user3 + gen_prompt]`}</code></pre>
     # Shared settings
     cache_min_tokens: 100 # Don't cache if < 100 tokens`}</code></pre>
           <p><strong>cache_min_tokens</strong></p>
-          <p>Minimum token count before SPC caching activates. Short system prompts don't</p>
-          <p>benefit from caching because decode overhead exceeds savings. Does not apply</p>
-          <p>to IMC.</p>
+          <p>Minimum token count before SPC caching activates. Short system prompts don't benefit from caching because decode overhead exceeds savings. Does not apply to IMC.</p>
           <p>Default: 100 tokens</p>
-          <h3 id="58-context-window-auto-scaling-imc-only">5.8 Context Window Auto-Scaling (IMC Only)</h3>
-          <p>When IMC is enabled, Kronk automatically scales the internal context window</p>
-          <p>to ensure each slot gets the full configured context size. This auto-scaling</p>
-          <p>does not apply to SPC since SPC adds zero VRAM overhead.</p>
-          <p><strong>Why This Is Needed:</strong></p>
-          <p>IMC caches the full conversation history in each slot's own sequence. The KV</p>
-          <p>cache is shared across all sequences, so without auto-scaling, each slot would</p>
-          <p>only get a fraction of the configured context:</p>
-          <pre className="code-block"><code>{`Without auto-scaling (broken):
-  context_window: 128k
-  n_seq_max: 2
-  Effective per slot: 128k / 2 = 64k ❌
-
-With auto-scaling (Kronk's behavior):
-  context_window: 128k
-  n_seq_max: 2
-  Internal NCtx = 128k × 2 = 256k
-  Effective per slot: 128k ✓`}</code></pre>
-          <p><strong>Formula:</strong></p>
-          <pre className="code-block"><code>{`Internal NCtx = context_window × NSeqMax`}</code></pre>
-          <p><strong>Example:</strong></p>
-          <pre className="code-block"><code className="language-yaml">{`Qwen3-8B-Q8_0/IMC:
-  context_window: 32768 # User wants 32k per slot
-  n_seq_max: 2
-  incremental_cache: true
-
-# Internal calculation:
-# Internal NCtx = 32768 × 2 = 65536
-# Each slot gets full 32k context ✓`}</code></pre>
-          <p><strong>VRAM Impact:</strong></p>
-          <p>Auto-scaling increases KV cache memory proportionally. Plan VRAM accordingly:</p>
-          <pre className="code-block"><code>{`32k context, n_seq_max=2, IMC, F16 cache:
-  Internal NCtx = 32k × 2 = 64k
-  KV cache = ~1.6 GB (instead of 800 MB without IMC)`}</code></pre>
+          <h3 id="58-kv-cache-partitioning">5.8 KV Cache Partitioning</h3>
+          <p>llama.cpp internally divides <code>n_ctx</code> by <code>n_seq_max</code>, so each slot gets <code>context_window / NSeqMax</code> tokens of KV cache capacity. No context scaling is needed — VRAM is the same for all caching modes.</p>
+          <pre className="code-block"><code>{`context_window: 128k
+n_seq_max: 2
+Effective per slot: 128k / 2 = 64k`}</code></pre>
+          <p>This partitioning applies equally to no-cache, SPC, and IMC modes. Plan your <code>context_window</code> accordingly: if you need 64k tokens per slot with <code>n_seq_max=2</code>, set <code>context_window</code> to 128k.</p>
           <h3 id="59-performance-and-limitations">5.9 Performance and Limitations</h3>
           <p><strong>SPC Performance:</strong></p>
-          <p>SPC re-decodes system prompt tokens into each slot. For typical system prompts</p>
-          <p>(200-500 tokens), this takes ~10-50ms per request. The trade-off is zero VRAM</p>
-          <p>overhead vs. a small per-request decode cost.</p>
+          <p>SPC re-decodes system prompt tokens into each slot. For typical system prompts (200-500 tokens), this takes ~10-50ms per request. The trade-off is zero VRAM overhead vs. a small per-request decode cost.</p>
           <p><strong>IMC Prefill Savings:</strong></p>
           <p>For a 2000-token cached conversation prefix:</p>
           <ul>
@@ -1410,10 +1279,10 @@ With auto-scaling (Kronk's behavior):
             <li>With IMC: ~5ms for new tokens only</li>
           </ul>
           <p><strong>IMC Memory Overhead:</strong></p>
-          <p>Each slot gets the full context window via auto-scaling:</p>
+          <p>IMC adds no extra VRAM. llama.cpp partitions the KV cache across sequences, so each slot gets <code>context_window / NSeqMax</code> tokens:</p>
           <pre className="code-block"><code>{`8K context, n_seq_max=4, IMC:
-  Internal NCtx = 8K × 4 = 32K
-  Total KV cache: ~800 MB (8B model, F16)`}</code></pre>
+  KV cache per slot: ~200 MB (8B model, F16)
+  Total KV cache: 4 × 200 MB = ~800 MB`}</code></pre>
           <p><strong>IMC Limitations:</strong></p>
           <ul>
             <li>Text-only requests (IMC for vision/audio is not currently supported)</li>
@@ -1424,15 +1293,10 @@ With auto-scaling (Kronk's behavior):
           </ul>
           <hr />
           <h2 id="chapter-6:-yarn-extended-context">Chapter 6: YaRN Extended Context</h2>
-          <p>YaRN (Yet another RoPE extensioN) allows models to handle context windows</p>
-          <p>beyond their native training length. This is essential for long documents,</p>
-          <p>extended conversations, and complex agentic workflows.</p>
+          <p>YaRN (Yet another RoPE extensioN) allows models to handle context windows beyond their native training length. This is essential for long documents, extended conversations, and complex agentic workflows.</p>
           <h3 id="61-understanding-context-extension">6.1 Understanding Context Extension</h3>
-          <p>Language models are trained with a fixed context length (e.g., 8K, 32K tokens).</p>
-          <p>RoPE (Rotary Position Embedding) encodes position information, but naive</p>
-          <p>extension beyond training length causes quality degradation.</p>
-          <p>YaRN applies frequency-dependent interpolation with attention scaling to</p>
-          <p>maintain quality at extended lengths.</p>
+          <p>Language models are trained with a fixed context length (e.g., 8K, 32K tokens). RoPE (Rotary Position Embedding) encodes position information, but naive extension beyond training length causes quality degradation.</p>
+          <p>YaRN applies frequency-dependent interpolation with attention scaling to maintain quality at extended lengths.</p>
           <pre className="code-block"><code>{`Native Context:     32K tokens (training length)
 Extended Context:   131K tokens (4x extension with YaRN)`}</code></pre>
           <h3 id="62-when-to-use-yarn">6.2 When to Use YaRN</h3>
@@ -1454,8 +1318,7 @@ Extended Context:   131K tokens (4x extension with YaRN)`}</code></pre>
   Qwen3-8B-Q8_0:
     context_window: 131072 # Extended context (131K)
     rope_scaling: yarn # Enable YaRN`}</code></pre>
-          <p>That's often all you need—Kronk auto-calculates the other YaRN parameters</p>
-          <p>from the context extension ratio.</p>
+          <p>That's often all you need—Kronk auto-calculates the other YaRN parameters from the context extension ratio.</p>
           <p><strong>Full Configuration (Advanced):</strong></p>
           <pre className="code-block"><code className="language-yaml">{`models:
   Qwen3-8B-Q8_0:
@@ -1475,12 +1338,10 @@ Extended Context:   131K tokens (4x extension with YaRN)`}</code></pre>
           <p>Uses native context length. No scaling applied.</p>
           <p><strong>Linear</strong></p>
           <pre className="code-block"><code className="language-yaml">{`rope_scaling: linear`}</code></pre>
-          <p>Simple linear interpolation. Works but quality degrades faster than YaRN</p>
-          <p>at high extension ratios.</p>
+          <p>Simple linear interpolation. Works but quality degrades faster than YaRN at high extension ratios.</p>
           <p><strong>YaRN (Recommended)</strong></p>
           <pre className="code-block"><code className="language-yaml">{`rope_scaling: yarn`}</code></pre>
-          <p>Frequency-dependent interpolation with attention scaling. Maintains quality</p>
-          <p>better at 2-4x extensions.</p>
+          <p>Frequency-dependent interpolation with attention scaling. Maintains quality better at 2-4x extensions.</p>
           <h3 id="65-parameter-reference">6.5 Parameter Reference</h3>
           <table className="flags-table">
             <thead>
@@ -1539,8 +1400,7 @@ Extended Context:   131K tokens (4x extension with YaRN)`}</code></pre>
   Qwen3-8B-Q8_0:
     context_window: 131072
     rope_scaling: yarn`}</code></pre>
-          <p>Qwen3 models are specifically designed to support 131K context with YaRN.</p>
-          <p>The default parameters work well.</p>
+          <p>Qwen3 models are specifically designed to support 131K context with YaRN. The default parameters work well.</p>
           <p><strong>Llama 3 (8K → 32K)</strong></p>
           <pre className="code-block"><code className="language-yaml">{`models:
   Llama-3-8B-Q8_0:
@@ -1595,12 +1455,10 @@ cache_type_v: q8_0`}</code></pre>
     cache_type_k: q8_0
     cache_type_v: q8_0
     n_seq_max: 1 # Single request (memory intensive)`}</code></pre>
-          <p>This configuration can process documents up to ~50K tokens while leaving</p>
-          <p>room for generation.</p>
+          <p>This configuration can process documents up to ~50K tokens while leaving room for generation.</p>
           <hr />
           <h2 id="chapter-7:-model-server">Chapter 7: Model Server</h2>
-          <p>The Kronk Model Server provides an OpenAI-compatible REST API for inference.</p>
-          <p>This chapter covers server configuration, management, and the catalog system.</p>
+          <p>The Kronk Model Server provides an OpenAI-compatible REST API for inference. This chapter covers server configuration, management, and the catalog system.</p>
           <p><strong>CLI Modes: Web vs Local</strong></p>
           <p>Most CLI commands communicate with a running server by default:</p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog list              # Talks to server at localhost:8080
@@ -1622,9 +1480,7 @@ kronk libs --local`}</code></pre>
             <li>You're managing a remote server via <code>KRONK_WEB_API_HOST</code></li>
           </ul>
           <p><strong>Environment Variables</strong></p>
-          <p>Every command-line flag has a corresponding environment variable. The naming</p>
-          <p>convention is <code>KRONK_</code> followed by the flag name in uppercase with hyphens</p>
-          <p>replaced by underscores:</p>
+          <p>Every command-line flag has a corresponding environment variable. The naming convention is <code>KRONK_</code> followed by the flag name in uppercase with hyphens replaced by underscores:</p>
           <pre className="code-block"><code>{`--api-host        →  KRONK_WEB_API_HOST
 --models-in-cache →  KRONK_MODELS_IN_CACHE
 --cache-ttl       →  KRONK_CACHE_TTL
@@ -1650,9 +1506,7 @@ kronk libs --local`}</code></pre>
           <h3 id="72-stopping-the-server">7.2 Stopping the Server</h3>
           <pre className="code-block"><code className="language-shell">{`kronk server stop`}</code></pre>
           <h3 id="73-server-configuration">7.3 Server Configuration</h3>
-          <p>Configuration can be set via command-line flags or environment variables. Every</p>
-          <p>flag has a corresponding environment variable using the <code>KRONK_</code> prefix with</p>
-          <p>underscores replacing hyphens.</p>
+          <p>Configuration can be set via command-line flags or environment variables. Every flag has a corresponding environment variable using the <code>KRONK_</code> prefix with underscores replacing hyphens.</p>
           <p><strong>Web Settings</strong></p>
           <table className="flags-table">
             <thead>
@@ -1942,8 +1796,7 @@ kronk libs --local`}</code></pre>
             <li><code>models-in-cache</code> - Maximum models kept loaded (default: 3)</li>
             <li><code>cache-ttl</code> - How long unused models stay loaded (default: 5m)</li>
           </ul>
-          <p>When a new model is requested and the cache is full, the least recently</p>
-          <p>used model is unloaded.</p>
+          <p>When a new model is requested and the cache is full, the least recently used model is unloaded.</p>
           <h3 id="75-model-config-files">7.5 Model Config Files</h3>
           <p>Create a YAML file to configure model-specific settings:</p>
           <pre className="code-block"><code className="language-yaml">{`# model-config.yaml
@@ -1968,8 +1821,7 @@ models:
           <pre className="code-block"><code className="language-shell">{`export KRONK_CATALOG_MODEL_CONFIG_FILE=/path/to/model-config.yaml
 kronk server start`}</code></pre>
           <p><strong>Project Reference Configuration</strong></p>
-          <p>The Kronk repository includes a comprehensive reference configuration with</p>
-          <p>recommended settings for various models and use cases:</p>
+          <p>The Kronk repository includes a comprehensive reference configuration with recommended settings for various models and use cases:</p>
           <pre className="code-block"><code className="language-shell">{`export KRONK_CATALOG_MODEL_CONFIG_FILE=<clone_path>/zarf/kms/model_config.yaml
 kronk server start`}</code></pre>
           <p>This file includes:</p>
@@ -1980,11 +1832,9 @@ kronk server start`}</code></pre>
             <li>Vision and audio model settings</li>
             <li>Detailed comments explaining each configuration option</li>
           </ul>
-          <p>Review <code>zarf/kms/model_config.yaml</code> for examples of YAML anchors, cache</p>
-          <p>configurations, and model-specific tuning.</p>
+          <p>Review <code>zarf/kms/model_config.yaml</code> for examples of YAML anchors, cache configurations, and model-specific tuning.</p>
           <h3 id="76-catalog-system">7.6 Catalog System</h3>
-          <p>The catalog provides a curated list of verified models with preconfigured</p>
-          <p>settings.</p>
+          <p>The catalog provides a curated list of verified models with preconfigured settings.</p>
           <p><strong>List Available Models</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog list`}</code></pre>
           <p>Output:</p>
@@ -2008,8 +1858,7 @@ Text-Generation      Llama-3.3-70B-Instruct-Q8_0      no      chat_completion`}<
           <pre className="code-block"><code className="language-shell">{`kronk server start \\
   --catalog-github-repo=https://github.com/myorg/my-catalog`}</code></pre>
           <h3 id="78-templates">7.8 Templates</h3>
-          <p>Templates define chat formatting (Jinja templates) for different models.</p>
-          <p>Kronk downloads templates automatically from the offical templates repository.</p>
+          <p>Templates define chat formatting (Jinja templates) for different models. Kronk downloads templates automatically from the offical templates repository.</p>
           <p>https://github.com/ardanlabs/kronk_catalogs</p>
           <p>You don't need this unless you want to maintain your own repository.</p>
           <p><strong>Custom Templates Repository</strong></p>
@@ -2072,8 +1921,7 @@ models:
     incremental_cache: true`}</code></pre>
           <hr />
           <h2 id="chapter-8:-api-endpoints">Chapter 8: API Endpoints</h2>
-          <p>Kronk provides an OpenAI-compatible REST API. This chapter documents the</p>
-          <p>available endpoints and their usage.</p>
+          <p>Kronk provides an OpenAI-compatible REST API. This chapter documents the available endpoints and their usage.</p>
           <h3 id="81-endpoint-overview">8.1 Endpoint Overview</h3>
           <table className="flags-table">
             <thead>
@@ -2351,12 +2199,9 @@ data: {"type":"response.completed",...}`}</code></pre>
   "model": "Qwen3-8B-Q8_0",
   "tokens": 11
 }`}</code></pre>
-          <p>When <code>apply_template</code> is true, the token count will be higher than raw text</p>
-          <p>because it includes template overhead (role markers, separators, and the</p>
-          <p>generation prompt).</p>
+          <p>When <code>apply_template</code> is true, the token count will be higher than raw text because it includes template overhead (role markers, separators, and the generation prompt).</p>
           <h3 id="87-tool-calling-function-calling">8.7 Tool Calling (Function Calling)</h3>
-          <p>Kronk supports OpenAI-compatible tool calling, allowing models to request</p>
-          <p>function executions that you handle in your application.</p>
+          <p>Kronk supports OpenAI-compatible tool calling, allowing models to request function executions that you handle in your application.</p>
           <p><strong>Request with Tools:</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/chat/completions \\
   -H "Content-Type: application/json" \\
@@ -2477,8 +2322,7 @@ data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":" \
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer your-token-here" \\
   -d '{...}'`}</code></pre>
-          <p>See <a href="#chapter-11-security--authentication">Chapter 11: Security & Authentication</a></p>
-          <p>for details on token management.</p>
+          <p>See <a href="#chapter-11-security--authentication">Chapter 11: Security & Authentication</a> for details on token management.</p>
           <h3 id="810-error-responses">8.10 Error Responses</h3>
           <p>Errors follow a standard format:</p>
           <pre className="code-block"><code className="language-json">{`{
@@ -2823,8 +2667,7 @@ d := model.D{
 }`}</code></pre>
           <p><strong>Important:</strong> When using grammar constraints, set <code>enable_thinking: false</code> because the grammar applies from the first output token.</p>
           <h3 id="96-logprobs-token-probabilities">9.6 Logprobs (Token Probabilities)</h3>
-          <p>Request log probabilities for generated tokens to understand model confidence</p>
-          <p>or implement custom sampling strategies.</p>
+          <p>Request log probabilities for generated tokens to understand model confidence or implement custom sampling strategies.</p>
           <p><strong>Request Parameters:</strong></p>
           <table className="flags-table">
             <thead>
@@ -2931,8 +2774,7 @@ d := model.D{
   "cache_id": "user-123",
   "messages": [...]
 }`}</code></pre>
-          <p>Each unique <code>cache_id</code> gets its own cache entry. For SPC, cache_ids are</p>
-          <p>unlimited (tokens stored in RAM). For IMC, max concurrent cache_ids = NSeqMax.</p>
+          <p>Each unique <code>cache_id</code> gets its own cache entry. For SPC, cache_ids are unlimited (tokens stored in RAM). For IMC, max concurrent cache_ids = NSeqMax.</p>
           <h3 id="98-parameter-reference">9.8 Parameter Reference</h3>
           <table className="flags-table">
             <thead>
@@ -3117,11 +2959,9 @@ d := model.D{
           </table>
           <hr />
           <h2 id="chapter-10:-multi-modal-models">Chapter 10: Multi-Modal Models</h2>
-          <p>Kronk supports vision and audio models that can process images, video frames,</p>
-          <p>and audio alongside text. This chapter covers how to use these models.</p>
+          <p>Kronk supports vision and audio models that can process images, video frames, and audio alongside text. This chapter covers how to use these models.</p>
           <h3 id="101-overview">10.1 Overview</h3>
-          <p>Multi-modal models combine a language model with a media projector that</p>
-          <p>converts images or audio into tokens the model can understand.</p>
+          <p>Multi-modal models combine a language model with a media projector that converts images or audio into tokens the model can understand.</p>
           <p><strong>Supported Media Types:</strong></p>
           <ul>
             <li><strong>Vision</strong>: JPEG, PNG, GIF images</li>
@@ -3213,8 +3053,7 @@ kronk catalog list --filter-category=Audio`}</code></pre>
             <li><code>format</code> - Audio format (currently <code>wav</code> supported)</li>
           </ul>
           <h3 id="104-plain-base64-format">10.4 Plain Base64 Format</h3>
-          <p>For simpler integrations, Kronk also accepts plain base64 as the message</p>
-          <p>content (without the structured OpenAI format):</p>
+          <p>For simpler integrations, Kronk also accepts plain base64 as the message content (without the structured OpenAI format):</p>
           <pre className="code-block"><code className="language-json">{`{
   "model": "Qwen2.5-VL-3B-Instruct-Q8_0",
   "messages": [
@@ -3313,8 +3152,7 @@ curl http://localhost:8080/v1/chat/completions \\
           <hr />
           <p>_Next: <a href="#chapter-11-security--authentication">Chapter 11: Security & Authentication</a>_</p>
           <h2 id="chapter-11:-security-authentication">Chapter 11: Security &amp; Authentication</h2>
-          <p>Kronk provides JWT-based authentication and authorization with per-endpoint</p>
-          <p>rate limiting. When enabled, all API requests require a valid token.</p>
+          <p>Kronk provides JWT-based authentication and authorization with per-endpoint rate limiting. When enabled, all API requests require a valid token.</p>
           <h3 id="111-enabling-authentication">11.1 Enabling Authentication</h3>
           <p><strong>Start Server with Auth Enabled:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --auth-enabled`}</code></pre>
@@ -3341,8 +3179,7 @@ kronk server start`}</code></pre>
             <li>Access all endpoints without rate limits</li>
           </ul>
           <h3 id="113-key-management">11.3 Key Management</h3>
-          <p>Private keys sign JWT tokens. Multiple keys allow token rotation without</p>
-          <p>invalidating all existing tokens.</p>
+          <p>Private keys sign JWT tokens. Multiple keys allow token rotation without invalidating all existing tokens.</p>
           <p><strong>List Keys:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk security key list`}</code></pre>
           <p>Output:</p>
@@ -3354,8 +3191,7 @@ a1b2c3d4-e5f6-7890-abcd-ef1234567890    2024-01-15T10:30:00Z`}</code></pre>
           <p>This generates a new UUID-named key for signing tokens.</p>
           <p><strong>Delete a Key:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk security key delete --keyid a1b2c3d4-e5f6-7890-abcd-ef1234567890`}</code></pre>
-          <p><strong>Important:</strong> The master key cannot be deleted. Deleting a key invalidates</p>
-          <p>all tokens signed with that key.</p>
+          <p><strong>Important:</strong> The master key cannot be deleted. Deleting a key invalidates all tokens signed with that key.</p>
           <p><strong>Local Mode:</strong></p>
           <p>All key commands support <code>--local</code> to operate without a running server:</p>
           <pre className="code-block"><code className="language-shell">{`kronk security key list --local
@@ -3469,8 +3305,7 @@ response = client.chat.completions.create(
             <li>Counters reset at window boundaries (day/month/year)</li>
           </ul>
           <p><strong>Limit Storage:</strong></p>
-          <p>Rate limit counters are stored in a BadgerDB database at <code>~/.kronk/badger/</code>.</p>
-          <p>Counters persist across server restarts.</p>
+          <p>Rate limit counters are stored in a BadgerDB database at <code>~/.kronk/badger/</code>. Counters persist across server restarts.</p>
           <p><strong>Bypassing Rate Limits:</strong></p>
           <p>Admin tokens (like <code>master.jwt</code>) bypass all rate limiting.</p>
           <h3 id="119-configuration-reference">11.9 Configuration Reference</h3>
@@ -3485,7 +3320,7 @@ response = client.chat.completions.create(
             <li><code>KRONK_TOKEN</code> - Token for CLI commands and API requests</li>
             <li><code>KRONK_WEB_API_HOST</code> - Server address for CLI web mode</li>
           </ul>
-          <p>  (default: <code>localhost:8080</code>)</p>
+          <p>(default: <code>localhost:8080</code>)</p>
           <h3 id="1110-security-best-practices">11.10 Security Best Practices</h3>
           <p><strong>Token Management:</strong></p>
           <ul>
@@ -3518,8 +3353,7 @@ response = client.chat.completions.create(
           <hr />
           <p>_Next: <a href="#chapter-12-browser-ui-bui">Chapter 12: Browser UI (BUI)</a>_</p>
           <h2 id="chapter-12:-browser-ui-bui">Chapter 12: Browser UI (BUI)</h2>
-          <p>Kronk includes a web-based interface for managing models, libraries,</p>
-          <p>security, and server configuration without using the command line.</p>
+          <p>Kronk includes a web-based interface for managing models, libraries, security, and server configuration without using the command line.</p>
           <h3 id="121-accessing-the-bui">12.1 Accessing the BUI</h3>
           <p>The BUI is served from the same port as the API.</p>
           <p><strong>Open in Browser:</strong></p>
@@ -3533,8 +3367,7 @@ response = client.chat.completions.create(
             <li>Click <strong>Pull Libraries</strong></li>
             <li>Wait for the download to complete</li>
           </ol>
-          <p>The BUI auto-detects your platform (OS, architecture, GPU) and downloads</p>
-          <p>the appropriate binaries to <code>~/.kronk/libraries/</code>.</p>
+          <p>The BUI auto-detects your platform (OS, architecture, GPU) and downloads the appropriate binaries to <code>~/.kronk/libraries/</code>.</p>
           <p><strong>Override Detection:</strong></p>
           <p>If auto-detection is incorrect, you can specify:</p>
           <ul>
@@ -3548,11 +3381,7 @@ response = client.chat.completions.create(
             <li>Navigate to the <strong>Catalog</strong> page</li>
             <li>Browse available models by category:</li>
           </ol>
-          <p>   - Text-Generation</p>
-          <p>   - Image-Text-to-Text (Vision)</p>
-          <p>   - Audio-Text-to-Text</p>
-          <p>   - Embedding</p>
-          <p>   - Reranking</p>
+          <p>- Text-Generation - Image-Text-to-Text (Vision) - Audio-Text-to-Text - Embedding - Reranking</p>
           <ol>
             <li>Click <strong>Pull</strong> next to a model to download it</li>
           </ol>
@@ -3564,8 +3393,7 @@ response = client.chat.completions.create(
             <li>Estimated time remaining</li>
           </ul>
           <p><strong>View Pulled Models:</strong></p>
-          <p>Navigate to the <strong>Models</strong> page to see all downloaded models and their</p>
-          <p>status.</p>
+          <p>Navigate to the <strong>Models</strong> page to see all downloaded models and their status.</p>
           <h3 id="124-managing-keys-and-tokens">12.4 Managing Keys and Tokens</h3>
           <p>When authentication is enabled, use the BUI to manage security.</p>
           <p><strong>Keys Page:</strong></p>
@@ -3578,14 +3406,11 @@ response = client.chat.completions.create(
           <ul>
             <li>Generate new tokens with specific:</li>
           </ul>
-          <p>  - Duration (hours, days)</p>
-          <p>  - Endpoint access (chat-completions, embeddings, etc.)</p>
-          <p>  - Rate limits (requests per day/month/year)</p>
+          <p>- Duration (hours, days) - Endpoint access (chat-completions, embeddings, etc.) - Rate limits (requests per day/month/year)</p>
           <ul>
             <li>Copy generated tokens to clipboard</li>
           </ul>
-          <p><strong>Note:</strong> You must provide an admin token in the BUI settings to access</p>
-          <p>security management features.</p>
+          <p><strong>Note:</strong> You must provide an admin token in the BUI settings to access security management features.</p>
           <h3 id="125-other-screens">12.5 Other Screens</h3>
           <p><strong>Dashboard:</strong></p>
           <p>Overview of server status, loaded models, and system information.</p>
@@ -3723,11 +3548,9 @@ print(response.content)`}</code></pre>
           <hr />
           <p>_Next: <a href="#chapter-14-observability">Chapter 14: Observability</a>_</p>
           <h2 id="chapter-14:-observability">Chapter 14: Observability</h2>
-          <p>Kronk provides comprehensive observability through distributed tracing,</p>
-          <p>Prometheus metrics, pprof profiling, and real-time visualizations.</p>
+          <p>Kronk provides comprehensive observability through distributed tracing, Prometheus metrics, pprof profiling, and real-time visualizations.</p>
           <h3 id="141-debug-server">14.1 Debug Server</h3>
-          <p>Kronk runs a separate debug server for observability endpoints, isolated</p>
-          <p>from the main API for security.</p>
+          <p>Kronk runs a separate debug server for observability endpoints, isolated from the main API for security.</p>
           <p><strong>Default Ports:</strong></p>
           <ul>
             <li>Main API: <code>localhost:8080</code></li>
@@ -3923,8 +3746,7 @@ kronk server start`}</code></pre>
             <li>CPU scheduler latency</li>
             <li>Memory by size class</li>
           </ul>
-          <p>Useful for real-time monitoring during load testing or debugging</p>
-          <p>memory issues.</p>
+          <p>Useful for real-time monitoring during load testing or debugging memory issues.</p>
           <h3 id="1411-logging">14.11 Logging</h3>
           <p>Kronk logs structured JSON to stdout by default.</p>
           <p><strong>Log Levels:</strong></p>
@@ -3932,8 +3754,7 @@ kronk server start`}</code></pre>
           <p><strong>Insecure Logging:</strong></p>
           <p>For debugging, enable verbose logging that includes message content:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --insecure-logging`}</code></pre>
-          <p><strong>Warning:</strong> Insecure logging exposes user prompts and model responses.</p>
-          <p>Never enable in production.</p>
+          <p><strong>Warning:</strong> Insecure logging exposes user prompts and model responses. Never enable in production.</p>
           <p><strong>Environment Variable:</strong></p>
           <pre className="code-block"><code className="language-shell">{`export KRONK_INSECURE_LOGGING=true`}</code></pre>
           <h3 id="1412-configuration-reference">14.12 Configuration Reference</h3>
@@ -3941,29 +3762,29 @@ kronk server start`}</code></pre>
           <ul>
             <li><code>--debug-host</code> - Debug server address (env: <code>KRONK_DEBUG_HOST</code>,</li>
           </ul>
-          <p>  default: <code>localhost:8090</code>)</p>
+          <p>default: <code>localhost:8090</code>)</p>
           <p><strong>Tracing:</strong></p>
           <ul>
             <li><code>--tempo-host</code> - Tempo collector address (env: <code>KRONK_TEMPO_HOST</code>,</li>
           </ul>
-          <p>  default: <code>localhost:4317</code>)</p>
+          <p>default: <code>localhost:4317</code>)</p>
           <ul>
             <li><code>--tempo-service-name</code> - Service name (env: <code>KRONK_TEMPO_SERVICE_NAME</code>,</li>
           </ul>
-          <p>  default: <code>kronk</code>)</p>
+          <p>default: <code>kronk</code>)</p>
           <ul>
             <li><code>--tempo-probability</code> - Sampling rate 0.0-1.0</li>
           </ul>
-          <p>  (env: <code>KRONK_TEMPO_PROBABILITY</code>, default: <code>0.25</code>)</p>
+          <p>(env: <code>KRONK_TEMPO_PROBABILITY</code>, default: <code>0.25</code>)</p>
           <p><strong>Logging:</strong></p>
           <ul>
             <li><code>--insecure-logging</code> - Log message content</li>
           </ul>
-          <p>  (env: <code>KRONK_INSECURE_LOGGING</code>, default: <code>false</code>)</p>
+          <p>(env: <code>KRONK_INSECURE_LOGGING</code>, default: <code>false</code>)</p>
           <ul>
             <li><code>--llama-log</code> - llama.cpp log level, 0=off, 1=on</li>
           </ul>
-          <p>  (env: <code>KRONK_LLAMA_LOG</code>, default: <code>1</code>)</p>
+          <p>(env: <code>KRONK_LLAMA_LOG</code>, default: <code>1</code>)</p>
           <hr />
           <p>_Next: <a href="#chapter-15-troubleshooting">Chapter 15: Troubleshooting</a>_</p>
           <h2 id="chapter-15:-troubleshooting">Chapter 15: Troubleshooting</h2>
@@ -4088,8 +3909,7 @@ kronk security token create \\
           <p><strong>Error: "rate limit exceeded"</strong></p>
           <p>The token has exceeded its rate limit.</p>
           <p><strong>Solution:</strong></p>
-          <p>Wait for the rate limit window to reset, or create a new token with</p>
-          <p>higher limits:</p>
+          <p>Wait for the rate limit window to reset, or create a new token with higher limits:</p>
           <pre className="code-block"><code className="language-shell">{`kronk security token create \\
   --duration 720h \\
   --endpoints "chat-completions:10000/day"`}</code></pre>
@@ -4229,8 +4049,7 @@ nvidia-smi`}</code></pre>
           <hr />
           <p>_Next: <a href="#chapter-16-developer-guide">Chapter 16: Developer Guide</a>_</p>
           <h2 id="chapter-16:-developer-guide">Chapter 16: Developer Guide</h2>
-          <p>This chapter covers development workflows, build commands, and code</p>
-          <p>conventions for contributors to the Kronk project.</p>
+          <p>This chapter covers development workflows, build commands, and code conventions for contributors to the Kronk project.</p>
           <h3 id="161-quick-reference">16.1 Quick Reference</h3>
           <p>Here is a quick chart of some of the more imporant make commands.</p>
           <table className="flags-table">
@@ -4349,8 +4168,7 @@ make test`}</code></pre>
             </tbody>
           </table>
           <p><strong>Core Technology:</strong></p>
-          <p>Kronk uses <a href="https://github.com/hybridgroup/yzma">yzma</a> (llama.cpp Go bindings)</p>
-          <p>for local inference with GGUF models.</p>
+          <p>Kronk uses <a href="https://github.com/hybridgroup/yzma">yzma</a> (llama.cpp Go bindings) for local inference with GGUF models.</p>
           <h3 id="165-bui-frontend-development">16.5 BUI Frontend Development</h3>
           <p>The Browser UI is a React application located at:</p>
           <pre className="code-block"><code>{`cmd/server/api/frontends/bui/src/`}</code></pre>
@@ -4390,8 +4208,7 @@ make test`}</code></pre>
             </tbody>
           </table>
           <p><strong>Routing:</strong></p>
-          <p>Uses <code>react-router-dom</code> with <code>BrowserRouter</code>. Routes are defined in</p>
-          <p><code>routeMap</code> in <code>App.tsx</code>.</p>
+          <p>Uses <code>react-router-dom</code> with <code>BrowserRouter</code>. Routes are defined in <code>routeMap</code> in <code>App.tsx</code>.</p>
           <p><strong>Adding New Pages:</strong></p>
           <ol>
             <li>Create component in <code>components/</code> (e.g., <code>DocsSDKKronk.tsx</code>)</li>
@@ -4519,8 +4336,7 @@ default:
     // ...
 }`}</code></pre>
           <h3 id="167-sdk-internals">16.7 SDK Internals</h3>
-          <p>This section documents implementation details for developers working on</p>
-          <p>the Kronk SDK packages.</p>
+          <p>This section documents implementation details for developers working on the Kronk SDK packages.</p>
           <h4 id="1671-package-structure">16.7.1 Package Structure</h4>
           <p><strong>sdk/kronk/</strong> - Core API package:</p>
           <table className="flags-table">
@@ -4677,8 +4493,7 @@ default:
             <li><code>ChatStreaming</code> defers <code>m.resetContext()</code> before any processing</li>
             <li>When generation completes, <code>resetContext()</code> runs first:</li>
           </ol>
-          <p>   - <code>llama.Synchronize(m.lctx)</code> - waits for GPU operations</p>
-          <p>   - <code>llama.MemoryClear(mem, true)</code> - clears KV cache</p>
+          <p>- <code>llama.Synchronize(m.lctx)</code> - waits for GPU operations - <code>llama.MemoryClear(mem, true)</code> - clears KV cache</p>
           <ol>
             <li>Channel closes, wrapper exits, <code>releaseModel()</code> runs</li>
           </ol>
@@ -4708,10 +4523,7 @@ batching = true`}</code></pre>
             <li><code>slot.seqID</code> = llama.cpp sequence ID (determines KV cache partition)</li>
             <li><code>slot.seqIDs</code> = pre-allocated slice for efficient <code>batchAdd</code> calls</li>
           </ul>
-          <p>Sequences are isolated partitions in the shared KV cache memory. Slot seqIDs</p>
-          <p>always start at 0 — no sequences are reserved for caching. SPC decodes</p>
-          <p>saved tokens directly into slot sequences. IMC binds each slot's sequence</p>
-          <p>to a cache_id.</p>
+          <p>Sequences are isolated partitions in the shared KV cache memory. Slot seqIDs always start at 0 — no sequences are reserved for caching. SPC decodes saved tokens directly into slot sequences. IMC binds each slot's sequence to a cache_id.</p>
           <h4 id="1676-context-pooling">16.7.6 Context Pooling</h4>
           <ul>
             <li><code>llama.Context</code> is created once in <code>NewModel</code> and reused across requests</li>
@@ -4765,14 +4577,9 @@ batching = true`}</code></pre>
           <p><strong>Critical:</strong> Logprobs must be extracted <strong>before</strong> <code>llama.SamplerAccept()</code> is called.</p>
           <h3 id="168-api-handler-notes">16.8 API Handler Notes</h3>
           <p><strong>Input Format Conversion</strong> (<code>cmd/server/app/domain/</code>):</p>
-          <p>Both streaming and non-streaming Response APIs must call</p>
-          <p><code>convertInputToMessages(d)</code> to handle the OpenAI Responses <code>input</code> field</p>
-          <p>format.</p>
+          <p>Both streaming and non-streaming Response APIs must call <code>convertInputToMessages(d)</code> to handle the OpenAI Responses <code>input</code> field format.</p>
           <h3 id="169-goroutine-budget">16.9 Goroutine Budget</h3>
-          <p>A running Kronk server typically shows ~25 baseline goroutines before any</p>
-          <p>requests arrive. When requests are active, expect roughly 3-5 additional</p>
-          <p>goroutines per in-flight request. For example, 3 concurrent requests for the</p>
-          <p>same model will show ~40 goroutines total. This is normal.</p>
+          <p>A running Kronk server typically shows ~25 baseline goroutines before any requests arrive. When requests are active, expect roughly 3-5 additional goroutines per in-flight request. For example, 3 concurrent requests for the same model will show ~40 goroutines total. This is normal.</p>
           <p><strong>Baseline goroutines (~25, always running):</strong></p>
           <table className="flags-table">
             <thead>
@@ -4852,10 +4659,7 @@ batching = true`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <p>The goroutine metric is a point-in-time snapshot from <code>runtime.NumGoroutine()</code></p>
-          <p>captured every 10th request by the metrics middleware. It includes everything</p>
-          <p>in the process, including Go runtime internals. After active requests complete,</p>
-          <p>the count drops back to the baseline.</p>
+          <p>The goroutine metric is a point-in-time snapshot from <code>runtime.NumGoroutine()</code> captured every 10th request by the metrics middleware. It includes everything in the process, including Go runtime internals. After active requests complete, the count drops back to the baseline.</p>
           <h3 id="1610-request-tracing-spans">16.10 Request Tracing Spans</h3>
           <p>Each chat completion request produces the following trace hierarchy:</p>
           <pre className="code-block"><code>{`POST /v1/chat/completions
@@ -4869,20 +4673,9 @@ batching = true`}</code></pre>
 └── process-request              Batch engine slot processing
     ├── prefill                  Tokenization + KV cache fill (ends at first output token)
     └── token-generation         Decode loop producing output tokens`}</code></pre>
-          <p><strong>Phase 1: prepare-request</strong> runs in the <code>ChatStreaming</code> goroutine. It</p>
-          <p>validates the document, processes caches (SPC/IMC), and creates the prompt</p>
-          <p>via the Jinja template. When caching is enabled, <code>process-cache</code> and its</p>
-          <p>child <code>cache-tokenize-*</code> spans appear here.</p>
-          <p><strong>Queue wait</strong> is the gap between <code>prepare-request</code> ending and</p>
-          <p><code>process-request</code> starting. The job has been submitted to the batch engine's</p>
-          <p><code>requestQ</code> channel and is waiting for the <code>processLoop</code> goroutine to wake up</p>
-          <p>and assign it to a slot. The exact duration is recorded as a <code>queue-wait</code></p>
-          <p>attribute on the <code>process-request</code> span.</p>
-          <p><strong>Phase 2: process-request</strong> runs in the batch engine's <code>processLoop</code></p>
-          <p>goroutine. The <code>prefill</code> span covers tokenization and KV cache filling. Time</p>
-          <p>to first token (TTFT) is measured from prefill start to the first output</p>
-          <p>token. The <code>token-generation</code> span covers the decode loop that produces</p>
-          <p>output tokens.</p>
+          <p><strong>Phase 1: prepare-request</strong> runs in the <code>ChatStreaming</code> goroutine. It validates the document, processes caches (SPC/IMC), and creates the prompt via the Jinja template. When caching is enabled, <code>process-cache</code> and its child <code>cache-tokenize-*</code> spans appear here.</p>
+          <p><strong>Queue wait</strong> is the gap between <code>prepare-request</code> ending and <code>process-request</code> starting. The job has been submitted to the batch engine's <code>requestQ</code> channel and is waiting for the <code>processLoop</code> goroutine to wake up and assign it to a slot. The exact duration is recorded as a <code>queue-wait</code> attribute on the <code>process-request</code> span.</p>
+          <p><strong>Phase 2: process-request</strong> runs in the batch engine's <code>processLoop</code> goroutine. The <code>prefill</code> span covers tokenization and KV cache filling. Time to first token (TTFT) is measured from prefill start to the first output token. The <code>token-generation</code> span covers the decode loop that produces output tokens.</p>
           <p>Additional spans that may appear at the top level:</p>
           <table className="flags-table">
             <thead>
@@ -4906,8 +4699,7 @@ batching = true`}</code></pre>
             </tbody>
           </table>
           <h3 id="1611-reference-threads">16.11 Reference Threads</h3>
-          <p>See <code>THREADS.md</code> for important past conversations and decisions worth</p>
-          <p>preserving.</p>
+          <p>See <code>THREADS.md</code> for important past conversations and decisions worth preserving.</p>
         </div>
 
         <nav className="doc-sidebar">
@@ -4973,7 +4765,7 @@ batching = true`}</code></pre>
                 <li><a href="#55-spc-vs-imc" className={activeSection === '55-spc-vs-imc' ? 'active' : ''}>5.5 SPC vs IMC</a></li>
                 <li><a href="#56-cache-invalidation" className={activeSection === '56-cache-invalidation' ? 'active' : ''}>5.6 Cache Invalidation</a></li>
                 <li><a href="#57-configuration-reference" className={activeSection === '57-configuration-reference' ? 'active' : ''}>5.7 Configuration Reference</a></li>
-                <li><a href="#58-context-window-auto-scaling-imc-only" className={activeSection === '58-context-window-auto-scaling-imc-only' ? 'active' : ''}>5.8 Context Window Auto-Scaling (IMC Only)</a></li>
+                <li><a href="#58-kv-cache-partitioning" className={activeSection === '58-kv-cache-partitioning' ? 'active' : ''}>5.8 KV Cache Partitioning</a></li>
                 <li><a href="#59-performance-and-limitations" className={activeSection === '59-performance-and-limitations' ? 'active' : ''}>5.9 Performance and Limitations</a></li>
               </ul>
             </div>

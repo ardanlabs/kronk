@@ -35,12 +35,9 @@ Total sequences allocated: 2
 SPC stores system prompt tokens in RAM and re-decodes them into each slot.
 Zero extra VRAM overhead. Unlimited cache_ids (RAM only).
 
-IMC (Incremental Message Cache):
-Context auto-scaled: Internal NCtx = context_window × NSeqMax
-7B:  Internal NCtx = 8K × 2 = 16K, Slot Memory (2 × 537MB) ~1.07GB
-70B: Internal NCtx = 8K × 2 = 16K, Slot Memory (2 × 1.3GB) ~2.6GB
-
-Note: SPC and IMC are mutually exclusive.
+Note: Cache type (off, SPC, IMC) does not affect VRAM. All modes
+allocate the same slots and KV cache. The difference is how cached
+state is managed, not how much memory is used.
 
 ------------------------------------------------------------------------------
 Full Example With Real Model:
@@ -67,11 +64,8 @@ Slot Memory (2 × 6.4GB) ~12.8GB: Total VRAM: ~48.8GB
 
 SPC stores system prompt tokens in RAM. Zero extra VRAM overhead.
 
-IMC (Incremental Message Cache):
-Context auto-scaled: Internal NCtx = 131072 × 2 = 262144
-Slot Memory scales with internal NCtx.
-
-Note: SPC and IMC are mutually exclusive.`;
+Note: Cache type (off, SPC, IMC) does not affect VRAM. All modes
+allocate the same slots and KV cache.`;
 
 const CONTEXT_WINDOW_OPTIONS = [
   { value: 1024, label: '1K' },
@@ -93,12 +87,6 @@ const BYTES_PER_ELEMENT_OPTIONS = [
 
 const SLOT_OPTIONS = [1, 2, 3, 4, 5];
 
-const CACHE_TYPE_OPTIONS = [
-  { value: 'off', label: 'Off', isIMC: false },
-  { value: 'spc', label: 'SPC (System Prompt Cache)', isIMC: false },
-  { value: 'imc', label: 'IMC (Incremental Message Cache)', isIMC: true },
-];
-
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
   const k = 1024;
@@ -113,14 +101,11 @@ export default function VRAMCalculator() {
   const [contextWindow, setContextWindow] = useState(8192);
   const [bytesPerElement, setBytesPerElement] = useState(1);
   const [slots, setSlots] = useState(2);
-  const [cacheType, setCacheType] = useState('off');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<VRAMCalculatorResponse | null>(null);
   const [showLearnMore, setShowLearnMore] = useState(false);
   const hasCalculated = useRef(false);
-
-  const selectedCacheOption = CACHE_TYPE_OPTIONS.find(opt => opt.value === cacheType) || CACHE_TYPE_OPTIONS[0];
 
   const performCalculation = useCallback(async (clearResult = true) => {
     if (!modelUrl.trim()) {
@@ -141,8 +126,6 @@ export default function VRAMCalculator() {
           context_window: contextWindow,
           bytes_per_element: bytesPerElement,
           slots: slots,
-          cache_sequences: 0,
-          incremental_cache: selectedCacheOption.isIMC,
         },
         token || undefined
       );
@@ -153,13 +136,13 @@ export default function VRAMCalculator() {
     } finally {
       setLoading(false);
     }
-  }, [modelUrl, contextWindow, bytesPerElement, slots, selectedCacheOption.isIMC, token]);
+  }, [modelUrl, contextWindow, bytesPerElement, slots, token]);
 
   useEffect(() => {
     if (hasCalculated.current && modelUrl.trim()) {
       performCalculation(false);
     }
-  }, [contextWindow, bytesPerElement, slots, cacheType]);
+  }, [contextWindow, bytesPerElement, slots]);
 
   const handleCalculate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -272,25 +255,6 @@ export default function VRAMCalculator() {
           </select>
         </div>
 
-        <div className="form-group">
-          <label htmlFor="cacheType">Cache Type</label>
-          <select
-            id="cacheType"
-            value={cacheType}
-            onChange={(e) => setCacheType(e.target.value)}
-            className="form-select"
-          >
-            {CACHE_TYPE_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-          <small className="form-hint">
-            SPC: zero VRAM overhead (tokens in RAM). IMC: auto-scales context window per slot.
-          </small>
-        </div>
-
         <button type="submit" className="btn btn-primary" disabled={loading}>
           {loading ? 'Calculating...' : 'Calculate VRAM'}
         </button>
@@ -315,10 +279,6 @@ export default function VRAMCalculator() {
             <div className="vram-result-item">
               <span className="vram-result-label">KV Per Slot</span>
               <span className="vram-result-value">{formatBytes(result.kv_per_slot)}</span>
-            </div>
-            <div className="vram-result-item">
-              <span className="vram-result-label">Total Slots</span>
-              <span className="vram-result-value">{result.total_slots}</span>
             </div>
             <div className="vram-result-item">
               <span className="vram-result-label">KV Per Token Per Layer</span>
