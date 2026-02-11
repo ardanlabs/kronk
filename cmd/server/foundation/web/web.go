@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"net/http"
 	"regexp"
+	"strings"
 
 	"github.com/google/uuid"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -53,10 +54,10 @@ func NewApp(log Logger, mw ...MidFunc) *App {
 	mux := http.NewServeMux()
 
 	return &App{
-		log:    log,
-		mux:    mux,
-		otmux:  otelhttp.NewHandler(mux, "request"),
-		mw:     mw,
+		log:   log,
+		mux:   mux,
+		otmux: otelhttp.NewHandler(mux, "request"),
+		mw:    mw,
 	}
 }
 
@@ -259,11 +260,12 @@ func joinPrefixes(prefixes []string) string {
 	if len(prefixes) == 0 {
 		return ""
 	}
-	result := prefixes[0]
+	var result strings.Builder
+	result.WriteString(prefixes[0])
 	for _, p := range prefixes[1:] {
-		result += "|" + p
+		result.WriteString("|" + p)
 	}
-	return result
+	return result.String()
 }
 
 // FileServer starts a file server based on the specified file system and

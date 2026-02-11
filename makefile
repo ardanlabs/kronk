@@ -102,6 +102,9 @@ lint:
 vuln-check:
 	govulncheck ./...
 
+diff:
+	go fix -diff ./...
+
 # Don't change the order of these tests. This order is solving a test
 # build issue with time it takes to build the test binary due to building
 # the binary with the libraries.
@@ -116,7 +119,7 @@ test-only: install-models
 	CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/model && \
 	CGO_ENABLED=0 go test -v -count=1 ./sdk/tools/...
 
-test: test-only lint vuln-check
+test: test-only lint vuln-check diff
 
 # ==============================================================================
 # Kronk BUI
@@ -147,6 +150,7 @@ kronk-docs:
 	go run cmd/server/api/tooling/docs/*.go
 
 kronk-server: kronk-build
+	export KRONK_INSECURE_LOGGING=true && \
 	export KRONK_CATALOG_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
 	export KRONK_CATALOG_REPO_PATH=$$HOME/code/go/src/github.com/ardanlabs/kronk_catalogs && \
 	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go

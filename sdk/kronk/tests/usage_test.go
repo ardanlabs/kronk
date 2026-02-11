@@ -439,7 +439,7 @@ func TestUsageConsistencyAcrossRequests(t *testing.T) {
 		}
 
 		var promptTokens []int
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			ctx, cancel := context.WithTimeout(context.Background(), testDuration)
 
 			resp, err := krn.Chat(ctx, prompt)

@@ -17,30 +17,30 @@ import (
 
 // ResponseResponse represents the OpenAI Responses API response format.
 type ResponseResponse struct {
-	ID               string                 `json:"id"`
-	Object           string                 `json:"object"`
-	CreatedAt        int64                  `json:"created_at"`
-	Status           string                 `json:"status"`
-	CompletedAt      *int64                 `json:"completed_at"`
-	Error            *ResponseError         `json:"error"`
-	IncompleteDetail *IncompleteDetail      `json:"incomplete_details"`
-	Instructions     *string                `json:"instructions"`
-	MaxOutputTokens  *int                   `json:"max_output_tokens"`
-	Model            string                 `json:"model"`
-	Output           []ResponseOutputItem   `json:"output"`
-	ParallelToolCall bool                   `json:"parallel_tool_calls"`
-	PrevResponseID   *string                `json:"previous_response_id"`
-	Reasoning        ResponseReasoning      `json:"reasoning"`
-	Store            bool                   `json:"store"`
-	Temperature      float64                `json:"temperature"`
-	Text             ResponseTextFormat     `json:"text"`
-	ToolChoice       string                 `json:"tool_choice"`
-	Tools            []any                  `json:"tools"`
-	TopP             float64                `json:"top_p"`
-	Truncation       string                 `json:"truncation"`
-	Usage            ResponseUsage          `json:"usage"`
-	User             *string                `json:"user"`
-	Metadata         map[string]interface{} `json:"metadata"`
+	ID               string               `json:"id"`
+	Object           string               `json:"object"`
+	CreatedAt        int64                `json:"created_at"`
+	Status           string               `json:"status"`
+	CompletedAt      *int64               `json:"completed_at"`
+	Error            *ResponseError       `json:"error"`
+	IncompleteDetail *IncompleteDetail    `json:"incomplete_details"`
+	Instructions     *string              `json:"instructions"`
+	MaxOutputTokens  *int                 `json:"max_output_tokens"`
+	Model            string               `json:"model"`
+	Output           []ResponseOutputItem `json:"output"`
+	ParallelToolCall bool                 `json:"parallel_tool_calls"`
+	PrevResponseID   *string              `json:"previous_response_id"`
+	Reasoning        ResponseReasoning    `json:"reasoning"`
+	Store            bool                 `json:"store"`
+	Temperature      float64              `json:"temperature"`
+	Text             ResponseTextFormat   `json:"text"`
+	ToolChoice       string               `json:"tool_choice"`
+	Tools            []any                `json:"tools"`
+	TopP             float64              `json:"top_p"`
+	Truncation       string               `json:"truncation"`
+	Usage            ResponseUsage        `json:"usage"`
+	User             *string              `json:"user"`
+	Metadata         map[string]any       `json:"metadata"`
 }
 
 // ResponseError represents an error in the response.
@@ -387,7 +387,7 @@ func (ss *streamState) buildInProgressResponse() ResponseResponse {
 		TopP:             ss.params.TopP,
 		Truncation:       ss.params.Truncation,
 		Usage:            ResponseUsage{},
-		Metadata:         map[string]interface{}{},
+		Metadata:         map[string]any{},
 	}
 }
 
@@ -690,7 +690,7 @@ func toChatResponseToResponses(chatResp model.ChatResponse, d model.D) ResponseR
 			TotalTokens: chatResp.Usage.TotalTokens,
 		},
 		User:     nil,
-		Metadata: map[string]interface{}{},
+		Metadata: map[string]any{},
 	}
 }
 

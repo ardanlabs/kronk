@@ -59,7 +59,7 @@ export default function DocsManual() {
       const element = document.getElementById(id);
       if (element) {
         setTimeout(() => {
-          element.scrollIntoView({ behavior: 'smooth' });
+          element.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }, 100);
       }
     }
@@ -180,6 +180,7 @@ func markdownToJSX(markdown string) string {
 	var ulItems []string
 	inOL := false
 	var olItems []string
+	var olSubItems [][]string // Sub-items (nested UL) per OL item
 	var paraLines []string
 
 	flushParagraph := func() {
@@ -207,16 +208,27 @@ func markdownToJSX(markdown string) string {
 		flushParagraph()
 		if len(olItems) > 0 {
 			result = append(result, "          <ol>")
-			for _, item := range olItems {
-				result = append(result, fmt.Sprintf("            <li>%s</li>", item))
+			for j, item := range olItems {
+				if j < len(olSubItems) && len(olSubItems[j]) > 0 {
+					result = append(result, fmt.Sprintf("            <li>%s", item))
+					result = append(result, "              <ul>")
+					for _, sub := range olSubItems[j] {
+						result = append(result, fmt.Sprintf("                <li>%s</li>", sub))
+					}
+					result = append(result, "              </ul>")
+					result = append(result, "            </li>")
+				} else {
+					result = append(result, fmt.Sprintf("            <li>%s</li>", item))
+				}
 			}
 			result = append(result, "          </ol>")
 			olItems = nil
+			olSubItems = nil
 		}
 		inOL = false
 	}
 
-	for i := 0; i < len(lines); i++ {
+	for i := range lines {
 		line := lines[i]
 
 		if strings.HasPrefix(line, "```") {
@@ -259,6 +271,20 @@ func markdownToJSX(markdown string) string {
 			result = append(result, convertTable(tableLines))
 			inTable = false
 			tableLines = nil
+		}
+
+		if inOL {
+			trimmed := strings.TrimLeft(line, " \t")
+			if item, ok := strings.CutPrefix(trimmed, "- "); ok && line != trimmed {
+				if len(olSubItems) == 0 {
+					olSubItems = make([][]string, len(olItems))
+				}
+				for len(olSubItems) < len(olItems) {
+					olSubItems = append(olSubItems, nil)
+				}
+				olSubItems[len(olItems)-1] = append(olSubItems[len(olItems)-1], convertInlineMarkdown(item))
+				continue
+			}
 		}
 
 		if item, ok := strings.CutPrefix(line, "- "); ok {
@@ -364,6 +390,16 @@ func parseTableRow(line string) []string {
 }
 
 func convertInlineMarkdown(text string) string {
+	reImage := regexp.MustCompile(`!\[([^\]]*)\]\(([^)]+)\)`)
+	text = reImage.ReplaceAllStringFunc(text, func(match string) string {
+		parts := reImage.FindStringSubmatch(match)
+		if len(parts) == 3 {
+			alt := escapeJSXContent(parts[1])
+			return fmt.Sprintf(`<img src="%s" alt="%s" />`, parts[2], alt)
+		}
+		return match
+	})
+
 	reLink := regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)
 	text = reLink.ReplaceAllStringFunc(text, func(match string) string {
 		parts := reLink.FindStringSubmatch(match)
@@ -403,6 +439,23 @@ func convertInlineMarkdown(text string) string {
 				prefix = string(match[0])
 			}
 			if len(match) > 0 && match[len(match)-1] != '*' {
+				suffix = string(match[len(match)-1])
+			}
+			return fmt.Sprintf(`%s<em>%s</em>%s`, prefix, escapeJSXContent(parts[1]), suffix)
+		}
+		return match
+	})
+
+	reUnderscoreItalic := regexp.MustCompile(`(?:^|[^_\w])_([^_]+)_(?:[^_\w]|$)`)
+	text = reUnderscoreItalic.ReplaceAllStringFunc(text, func(match string) string {
+		parts := reUnderscoreItalic.FindStringSubmatch(match)
+		if len(parts) == 2 {
+			prefix := ""
+			suffix := ""
+			if len(match) > 0 && match[0] != '_' {
+				prefix = string(match[0])
+			}
+			if len(match) > 0 && match[len(match)-1] != '_' {
 				suffix = string(match[len(match)-1])
 			}
 			return fmt.Sprintf(`%s<em>%s</em>%s`, prefix, escapeJSXContent(parts[1]), suffix)

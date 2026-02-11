@@ -605,8 +605,8 @@ func (p *processor) stepGPT(content string) (response, bool) {
 				p.status = statusTooling
 
 				// Extract function name from "commentary to=functions.FUNC_NAME".
-				if idx := strings.Index(channelName, " to="); idx != -1 {
-					funcName := strings.TrimSpace(channelName[idx+4:])
+				if _, after, ok := strings.Cut(channelName, " to="); ok {
+					funcName := strings.TrimSpace(after)
 					p.toolFuncName = strings.TrimPrefix(funcName, "functions.")
 				}
 			}

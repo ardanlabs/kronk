@@ -1932,6 +1932,14 @@ tr.selected:hover td {
 }
 
 /* Manual content styling */
+.manual-content h1,
+.manual-content h2,
+.manual-content h3,
+.manual-content h4,
+.manual-content h5 {
+    scroll-margin-top: 24px;
+}
+
 .manual-content h1 {
     font-size: 28px;
     font-weight: 700;
@@ -2003,6 +2011,11 @@ tr.selected:hover td {
     margin: 32px 0;
     border: none;
     border-top: 1px solid var(--color-gray-200);
+}
+
+.manual-content img {
+    max-width: 100%;
+    height: auto;
 }
 
 .manual-content table {

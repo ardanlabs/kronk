@@ -145,13 +145,13 @@ func (a *app) listModels(ctx context.Context, r *http.Request) web.Encoder {
 		}
 
 		// Check if this is an extension model (contains "/").
-		idx := strings.Index(modelID, "/")
-		if idx == -1 {
+		before, _, ok := strings.Cut(modelID, "/")
+		if !ok {
 			continue
 		}
 
 		// Extract the base model ID and check if it exists.
-		baseModelID := modelID[:idx]
+		baseModelID := before
 		baseModel, exists := existing[baseModelID]
 		if !exists {
 			continue

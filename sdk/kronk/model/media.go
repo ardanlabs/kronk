@@ -83,8 +83,8 @@ func tryDecodeMedia(s string) []byte {
 	}
 
 	data := s
-	if idx := strings.Index(s, ";base64,"); idx != -1 && strings.HasPrefix(s, "data:") {
-		data = s[idx+8:]
+	if _, after, ok := strings.Cut(s, ";base64,"); ok && strings.HasPrefix(s, "data:") {
+		data = after
 	}
 
 	decoded, err := base64.StdEncoding.DecodeString(data)
@@ -141,8 +141,8 @@ func detectMediaType(s string) MediaType {
 	}
 
 	data := s
-	if idx := strings.Index(s, ";base64,"); idx != -1 && strings.HasPrefix(s, "data:") {
-		data = s[idx+8:]
+	if _, after, ok := strings.Cut(s, ";base64,"); ok && strings.HasPrefix(s, "data:") {
+		data = after
 	}
 
 	decoded, err := base64.StdEncoding.DecodeString(data)

@@ -395,7 +395,7 @@ func readMetadataKVFromReader(r *bytes.Reader) (string, any, error) {
 }
 
 // readMetadataValueFromReader reads a metadata value from a bytes.Reader.
-func readMetadataValueFromReader(r *bytes.Reader, valueType uint32) (interface{}, error) {
+func readMetadataValueFromReader(r *bytes.Reader, valueType uint32) (any, error) {
 	switch valueType {
 	case ggufMetadataValueTypeUInt8:
 		var val uint8
@@ -518,59 +518,71 @@ func readMetadataValueFromReader(r *bytes.Reader, valueType uint32) (interface{}
 
 // =============================================================================
 /*
-SLOT MEMORY AND TOTAL VRAM COST FORMULA
+VRAM CALCULATION FORMULA
 
-These figures are for KV cache VRAM only (when offload-kqv: true).
-Model weights require additional VRAM: ~7GB (7B Q8) or ~70GB (70B Q8).
-Total VRAM = model weights + KV cache.
+Total VRAM = Model Weights + KV Cache
 
-Memory is statically allocated upfront when the model loads,
-based on n_ctx × n_seq_max. Reserving slots consumes memory whether or not
-they're actually used.
+Model weights are determined by the GGUF file size (e.g., ~8GB for a
+7B Q8_0 model). The KV cache is the variable cost you control through
+configuration.
 
-Example Calculations:
+SLOTS AND SEQUENCES
 
-This is how you calculate the amount of KV memory you need per slot.
+A slot is a processing unit that handles one request at a time. Each slot
+is assigned a unique sequence ID that maps to an isolated partition in the
+shared KV cache. The mapping is always 1:1:
 
-KV_Per_Token_Per_Layer = head_count_kv × (key_length + value_length) × bytes_per_element
-KV_Per_Slot            = n_ctx × n_layers × KV_per_token_per_layer
+  NSeqMax = 4 (set via n_seq_max in model config)
 
-------------------------------------------------------------------------------
-So Given these values, this is what you are looking at:
+  Slot 0  →  Sequence 0  →  KV cache partition 0
+  Slot 1  →  Sequence 1  →  KV cache partition 1
+  Slot 2  →  Sequence 2  →  KV cache partition 2
+  Slot 3  →  Sequence 3  →  KV cache partition 3
 
-Model   Context_Window   KV_Per_Slot      NSeqMax (Slots)
-7B      8K               ~537 MB VRAM     2
-70B     8K               ~1.3 GB VRAM     2
+NSeqMax controls how many slots (and sequences) are created. More slots
+means more concurrent requests, but each slot reserves its own KV cache
+partition in VRAM whether or not it is actively used.
 
-Total sequences allocated: 2
-7B:  Slot Memory (2 × 537MB) ~1.07GB: Total VRAM: ~8.1GB
-70B: Slot Memory (2 × 1.3GB) ~2.6GB : Total VRAM: ~72.6GB
+WHAT AFFECTS KV CACHE MEMORY PER SEQUENCE
 
-Cache type (off, SPC, IMC) does not affect VRAM. All modes allocate
-the same slots and KV cache.
+Each sequence's KV cache partition size is determined by three factors:
 
-------------------------------------------------------------------------------
-Full Example With Real Model:
+  1. Context Window (n_ctx) — larger context linearly increases memory.
+  2. Number of Layers (block_count) — more layers means more memory per token.
+  3. KV Cache Precision (bytes_per_element) — f16=2 bytes, q8_0=1 byte.
+
+The head geometry (head_count_kv, key_length, value_length) is fixed by
+the model architecture and read from the GGUF header.
+
+  KV_Per_Token_Per_Layer = head_count_kv × (key_length + value_length) × bytes_per_element
+  KV_Per_Sequence        = n_ctx × n_layers × KV_Per_Token_Per_Layer
+
+WHAT AFFECTS TOTAL KV CACHE (SLOT MEMORY)
+
+  Slot_Memory = NSeqMax × KV_Per_Sequence
+  Total_VRAM  = Model_Weights + Slot_Memory
+
+Memory is statically allocated upfront when the model loads.
+
+CACHING MODE DOES NOT AFFECT VRAM
+
+All caching modes (off, SPC, IMC) allocate the same number of slots and
+sequences with the same VRAM footprint. The difference is how each mode
+manages cached state, not how much memory is used.
+
+EXAMPLE
 
 Model                   : Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
-Size                    : 36.0GB
-Context Window          : 131072 (128k)
-cache-type-k            : q8_0 (1 byte per element), f16 (2 bytes)
-cache-type-v            : q8_0 (1 byte per element), f16 (2 bytes)
-block_count             : 48  (n_layers)
-attention.head_count_kv : 4   (KV heads)
-attention.key_length    : 128	(K dimension per head)
-attention.value_length  : 128	(V dimension per head)
+Model Weights           : 36.0 GB
+Context Window (n_ctx)  : 131,072 (128K)
+cache-type-k / v        : q8_0 (1 byte per element)
+block_count (n_layers)  : 48
+attention.head_count_kv : 4
+attention.key_length    : 128
+attention.value_length  : 128
 
-KV_per_token_per_layer = head_count_kv  ×  (key_length + value_length)  ×  bytes_per_element
-1024 bytes             =             4  ×  ( 128       +         128 )  ×  1
-
-KV_Per_Slot            =  n_ctx  ×  n_layers  ×  KV_per_token_per_layer
-~6.4 GB                =  131072 ×  48        ×  1024
-
-Total sequences allocated: 2
-Slot Memory (2 × 6.4GB) ~12.8GB: Total VRAM: ~48.8GB
-
-Cache type (off, SPC, IMC) does not affect VRAM. All modes allocate
-the same slots and KV cache.
+KV_Per_Token_Per_Layer = 4 × (128 + 128) × 1       = 1,024 bytes
+KV_Per_Sequence        = 131,072 × 48 × 1,024      = ~6.4 GB
+Slot_Memory            = 2 × 6.4 GB                 = ~12.8 GB
+Total_VRAM             = 36.0 GB + 12.8 GB           = ~48.8 GB
 */

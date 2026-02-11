@@ -183,30 +183,30 @@ export default function DocsSDKKronk() {
               <h4>ResponseResponse</h4>
               <pre className="code-block">
                 <code>{`type ResponseResponse struct {
-	ID               string                 \`json:"id"\`
-	Object           string                 \`json:"object"\`
-	CreatedAt        int64                  \`json:"created_at"\`
-	Status           string                 \`json:"status"\`
-	CompletedAt      *int64                 \`json:"completed_at"\`
-	Error            *ResponseError         \`json:"error"\`
-	IncompleteDetail *IncompleteDetail      \`json:"incomplete_details"\`
-	Instructions     *string                \`json:"instructions"\`
-	MaxOutputTokens  *int                   \`json:"max_output_tokens"\`
-	Model            string                 \`json:"model"\`
-	Output           []ResponseOutputItem   \`json:"output"\`
-	ParallelToolCall bool                   \`json:"parallel_tool_calls"\`
-	PrevResponseID   *string                \`json:"previous_response_id"\`
-	Reasoning        ResponseReasoning      \`json:"reasoning"\`
-	Store            bool                   \`json:"store"\`
-	Temperature      float64                \`json:"temperature"\`
-	Text             ResponseTextFormat     \`json:"text"\`
-	ToolChoice       string                 \`json:"tool_choice"\`
-	Tools            []any                  \`json:"tools"\`
-	TopP             float64                \`json:"top_p"\`
-	Truncation       string                 \`json:"truncation"\`
-	Usage            ResponseUsage          \`json:"usage"\`
-	User             *string                \`json:"user"\`
-	Metadata         map[string]interface{} \`json:"metadata"\`
+	ID               string               \`json:"id"\`
+	Object           string               \`json:"object"\`
+	CreatedAt        int64                \`json:"created_at"\`
+	Status           string               \`json:"status"\`
+	CompletedAt      *int64               \`json:"completed_at"\`
+	Error            *ResponseError       \`json:"error"\`
+	IncompleteDetail *IncompleteDetail    \`json:"incomplete_details"\`
+	Instructions     *string              \`json:"instructions"\`
+	MaxOutputTokens  *int                 \`json:"max_output_tokens"\`
+	Model            string               \`json:"model"\`
+	Output           []ResponseOutputItem \`json:"output"\`
+	ParallelToolCall bool                 \`json:"parallel_tool_calls"\`
+	PrevResponseID   *string              \`json:"previous_response_id"\`
+	Reasoning        ResponseReasoning    \`json:"reasoning"\`
+	Store            bool                 \`json:"store"\`
+	Temperature      float64              \`json:"temperature"\`
+	Text             ResponseTextFormat   \`json:"text"\`
+	ToolChoice       string               \`json:"tool_choice"\`
+	Tools            []any                \`json:"tools"\`
+	TopP             float64              \`json:"top_p"\`
+	Truncation       string               \`json:"truncation"\`
+	Usage            ResponseUsage        \`json:"usage"\`
+	User             *string              \`json:"user"\`
+	Metadata         map[string]any       \`json:"metadata"\`
 }`}</code>
               </pre>
               <p className="doc-description">ResponseResponse represents the OpenAI Responses API response format.</p>

@@ -3,6 +3,7 @@ package msgsapp
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
@@ -15,7 +16,7 @@ type MessagesRequest struct {
 	Model         string        `json:"model"`
 	Messages      []Message     `json:"messages"`
 	MaxTokens     int           `json:"max_tokens"`
-	System        SystemContent `json:"system,omitempty"`
+	System        SystemContent `json:"system"`
 	Stream        bool          `json:"stream,omitempty"`
 	Tools         []Tool        `json:"tools,omitempty"`
 	Temperature   *float64      `json:"temperature,omitempty"`
@@ -67,14 +68,14 @@ func (s SystemContent) String() string {
 		return s.Text
 	}
 
-	var result string
+	var result strings.Builder
 	for _, block := range s.Blocks {
 		switch block.Type {
 		case "text":
-			result += block.Text
+			result.WriteString(block.Text)
 		}
 	}
-	return result
+	return result.String()
 }
 
 // Message represents a message in the conversation.
