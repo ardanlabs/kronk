@@ -11,7 +11,7 @@ export default function DocsManual() {
       const element = document.getElementById(id);
       if (element) {
         setTimeout(() => {
-          element.scrollIntoView({ behavior: 'smooth' });
+          element.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }, 100);
       }
     }
@@ -67,11 +67,11 @@ export default function DocsManual() {
           <h2 id="chapter-1:-introduction">Chapter 1: Introduction</h2>
           <h3 id="11-what-is-kronk">1.1 What is Kronk</h3>
           <p>Kronk is a Go SDK and Model Server for running local inference with open-source GGUF models. Built on top of llama.cpp via the <a href="https://github.com/hybridgroup/yzma">yzma</a> Go bindings (a non-CGO FFI layer), Kronk provides hardware-accelerated inference for text generation, vision, audio, embeddings, and reranking.</p>
-          <p><strong>The SDK is the foundation.</strong> The Kronk Model Server is built entirely on top of the SDK — we "dog food" our own library. Everything the model server can do is available as SDK functions that you can use directly in your own applications.</p>
-          <p><strong>You don't need a model server.</strong> The real power of Kronk is that you can embed model inference directly into your Go applications. Load models, run inference, manage caching, and handle concurrent requests — all without running a separate server process. The <a href="examples/">examples</a> directory demonstrates building standalone applications with the SDK.</p>
-          <p><strong>The Model Server is optional.</strong> When you do need an API server (for web UIs, multi-client access, or OpenAI-compatible endpoints), the Kronk Model Server provides:</p>
+          <p><strong>The SDK is the foundation.</strong> The Kronk Model Server is built entirely on top of the SDK — we "dog food" our own library. Everything the model server can do is available to you as a SDK developer to help you write your own applications.</p>
+          <p><strong>You don't need a model server.</strong> The real power of Kronk is that you can embed model inference directly into your Go applications. Load models, run inference, manage caching, and handle concurrent requests — all without running the models in a separate server process. The <a href="examples/">examples</a> directory demonstrates building standalone applications with the SDK.</p>
+          <p><strong>The Model Server is optional.</strong> When you do need an model server (for web UIs, multi-client access, or OpenAI-compatible endpoints), the Kronk Model Server provides:</p>
           <ul>
-            <li>OpenAI and Anthropic compatible REST API</li>
+            <li>OpenAI and Anthropic compatible REST APIs</li>
             <li>OpenWebUI integration</li>
             <li>Agent and tool support for local models</li>
             <li>Any OpenAI-compatible client</li>
@@ -79,34 +79,34 @@ export default function DocsManual() {
           <h3 id="12-key-features">1.2 Key Features</h3>
           <p><strong>Model Types</strong></p>
           <ul>
-            <li><strong>Text Generation</strong> - Chat completions and streaming responses with reasoning support</li>
-            <li><strong>Vision</strong> - Image understanding and analysis</li>
-            <li><strong>Audio</strong> - Speech-to-text and audio understanding</li>
-            <li><strong>Embeddings</strong> - Vector embeddings for semantic search and RAG</li>
-            <li><strong>Reranking</strong> - Document relevance scoring</li>
+            <li><strong>Text Generation</strong> - Chat completions and streaming responses with reasoning support.</li>
+            <li><strong>Vision</strong> - Image understanding and analysis.</li>
+            <li><strong>Audio</strong> - Speech-to-text and audio understanding.</li>
+            <li><strong>Embeddings</strong> - Vector embeddings for semantic search and RAG.</li>
+            <li><strong>Reranking</strong> - Document relevance scoring.</li>
           </ul>
           <p><strong>Performance</strong></p>
           <ul>
-            <li><strong>Batch Processing</strong> - Process multiple requests concurrently with shared KV cache</li>
-            <li><strong>Message Caching</strong> - System prompt and incremental message caching to reduce redundant computation</li>
-            <li><strong>YaRN Context Extension</strong> - Extend context windows 2-4x beyond native training length</li>
-            <li><strong>Model Pooling</strong> - Keep models loaded in memory with configurable TTL</li>
+            <li><strong>Batch Processing</strong> - Process multiple requests concurrently within a set of partitioned KV cache sequences.</li>
+            <li><strong>Message Caching</strong> - System prompt and incremental message caching to reduce redundant computation.</li>
+            <li><strong>YaRN Context Extension</strong> - Extend context windows 2-4x beyond native training length.</li>
+            <li><strong>Model Pooling</strong> - Keep a number of models loaded in memory with configurable TTL.</li>
           </ul>
           <p><strong>Operations</strong></p>
           <ul>
-            <li><strong>Catalog System</strong> - Curated collection of verified models with one-command downloads</li>
-            <li><strong>Browser UI (BUI)</strong> - Web interface for model management, downloads, and configuration</li>
-            <li><strong>Authentication</strong> - JWT-based security with key management and endpoint authorization</li>
-            <li><strong>Observability</strong> - Tempo tracing integration and debug endpoints</li>
+            <li><strong>Catalog System</strong> - Curated collection of verified models with one-command downloads.</li>
+            <li><strong>Browser UI (BUI)</strong> - Web interface for model management, downloads, and configuration.</li>
+            <li><strong>Authentication</strong> - JWT-based security with key management, endpoint authorization and rate limiting.</li>
+            <li><strong>Observability</strong> - Tracing and metrics integration with Grafana support.</li>
           </ul>
           <h3 id="13-supported-platforms-and-hardware">1.3 Supported Platforms and Hardware</h3>
           <p>Kronk supports full hardware acceleration across major platforms:</p>
           <table className="flags-table">
             <thead>
               <tr>
-                <th>OS</th>
-                <th>CPU</th>
-                <th>GPU</th>
+                <th><strong>OS</strong></th>
+                <th><strong>CPU</strong></th>
+                <th><strong>GPU</strong></th>
               </tr>
             </thead>
             <tbody>
@@ -136,7 +136,7 @@ export default function DocsManual() {
           </ul>
           <h3 id="14-architecture-overview">1.4 Architecture Overview</h3>
           <p>Kronk is designed as a layered architecture where the SDK provides all core functionality and the Model Server is one application built on top of it.</p>
-          <p>!<a href="images/design/sdk.png">Kronk SDK Architecture</a></p>
+          <p><img src="https://github.com/ardanlabs/kronk/blob/main/images/design/sdk.png?raw=true" alt="Kronk SDK Architecture" /></p>
           <p><strong>Layer Breakdown:</strong></p>
           <table className="flags-table">
             <thead>
@@ -155,7 +155,7 @@ export default function DocsManual() {
               <tr>
                 <td><strong>SDK Tools</strong></td>
                 <td>Models, Libs, Catalog, Template APIs</td>
-                <td>High-level interfaces for common tasks</td>
+                <td>High-level APIs for common tasks</td>
               </tr>
               <tr>
                 <td><strong>SDK Core</strong></td>
@@ -202,23 +202,12 @@ for resp := range ch {
           <pre className="code-block"><code className="language-shell">{`# Or use the Model Server for OpenAI-compatible API
 kronk server start
 curl http://localhost:8080/v1/chat/completions -d '{"model":"Qwen3-8B-Q8_0","messages":[...]}'`}</code></pre>
-          <p><strong>Request Flow (Server Mode)</strong></p>
-          <ol>
-            <li>Client sends request to REST API endpoint</li>
-            <li>Server routes to appropriate handler (chat, embed, rerank)</li>
-            <li>Model is acquired from pool (or loaded if not cached)</li>
-            <li>For text models with batch processing enabled, requests queue into batch slots</li>
-            <li>Message caching checks for reusable KV state from previous requests</li>
-            <li>Inference runs with hardware acceleration</li>
-            <li>Response streams back to client (for streaming requests)</li>
-            <li>Model returns to pool for reuse</li>
-          </ol>
           <hr />
           <h2 id="chapter-2:-installation-quick-start">Chapter 2: Installation &amp; Quick Start</h2>
           <h3 id="21-prerequisites">2.1 Prerequisites</h3>
           <p><strong>Required</strong></p>
           <ul>
-            <li>Go 1.25 or later</li>
+            <li>Go 1.26 or later</li>
             <li>Internet connection (for downloading libraries and models)</li>
           </ul>
           <p><strong>Recommended</strong></p>
@@ -246,7 +235,7 @@ Available Commands:
   server      Manage Kronk model server
   help        Help about any command`}</code></pre>
           <h3 id="23-installing-libraries">2.3 Installing Libraries</h3>
-          <p>Before running inference, you need the llama.cpp libraries for your platform. Kronk auto-detects your hardware and downloads the appropriate binaries.</p>
+          <p>Before running inference, you need the llama.cpp libraries for your machine. Kronk auto-detects your hardware and downloads the appropriate binaries.</p>
           <p><strong>Option A: Via the Server (Recommended)</strong></p>
           <p>Start the server and use the BUI to download libraries:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start`}</code></pre>
@@ -292,6 +281,7 @@ BUI: http://localhost:8080`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/models`}</code></pre>
           <p>You should see a list of available models.</p>
           <p><strong>Test Chat Completion</strong></p>
+          <p><em>Note: It might take a few seconds the first time you call this because the model needs to be loaded into memory first.</em></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -300,13 +290,7 @@ BUI: http://localhost:8080`}</code></pre>
     "max_tokens": 100
   }'`}</code></pre>
           <p><strong>Test via BUI</strong></p>
-          <p>Open http://localhost:8080 in your browser. The Browser UI provides:</p>
-          <ul>
-            <li>Model management and downloads</li>
-            <li>Library installation</li>
-            <li>Server configuration</li>
-            <li>Security key management</li>
-          </ul>
+          <p>Open http://localhost:8080 in your browser and navigate to the Apps/Chat app. Select the model you want to try and chat away.</p>
           <h3 id="27-quick-start-summary">2.7 Quick Start Summary</h3>
           <pre className="code-block"><code className="language-shell">{`# 1. Install Kronk
 go install github.com/ardanlabs/kronk/cmd/kronk@latest
@@ -317,107 +301,105 @@ kronk server start
 # 3. Open BUI and download a model
 open http://localhost:8080
 
-# 4. Or download via CLI
+# 4. Download via the BUI Catalog/List screen or use this CLI call
 kronk catalog pull Qwen3-8B-Q8_0 --local
 
-# 5. Test the API
+# 5. Test the API using this curl call or the BUI App/Chat screen
 curl http://localhost:8080/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{"model": "Qwen3-8B-Q8_0", "messages": [{"role": "user", "content": "Hello!"}]}'`}</code></pre>
           <hr />
           <h2 id="chapter-3:-model-configuration">Chapter 3: Model Configuration</h2>
-          <p>Model configuration controls how Kronk loads and runs inference. Configuration can be set via model config files, catalog templates, or programmatically through the SDK.</p>
+          <p>Model configuration controls how Kronk configures models to run inference. Configuration can be set via model config files, catalog templates, or programmatically through the SDK.</p>
           <h3 id="31-basic-configuration">3.1 Basic Configuration</h3>
+          <p>For most models you will want to touch these basic settings. There are many more which will be presented later. Each model has GGUF metadata that Kronk can read for defaults like setting the context window size when not provided. Kronk also has default settings for things like temperature and top_p when not provided.</p>
           <p><strong>Context Window</strong></p>
-          <p>The context window defines the maximum number of tokens the model can process in a single request. This includes both the input prompt and generated output.</p>
-          <pre className="code-block"><code className="language-yaml">{`context_window: 8192 # Default: 8192 tokens`}</code></pre>
+          <p>The context window defines the maximum number of tokens the model can process in a single request. This would be the sum of all input tokens being provided at any given time.</p>
+          <pre className="code-block"><code className="language-yaml">{`context_window: 8192 # 8192 tokens (Kronk default if not specifed by the model and you)`}</code></pre>
+          <p><em>Note: A common rule of thumb is that 1 token ≈ 0.75 words (or roughly 4 characters in English). So an 8K context window can handle approximately 6,000 words of combined input and output.</em></p>
           <p>Larger context windows require more VRAM. A rough estimate:</p>
           <ul>
             <li><code>8K context</code>: ~2GB additional VRAM</li>
             <li><code>32K context</code>: ~8GB additional VRAM</li>
             <li><code>128K context</code>: ~32GB additional VRAM (requires YaRN scaling)</li>
           </ul>
+          <p><em>Note: YaRN is a way to extend the natural size of context windows for small models. Kronk supports YaRN and talked about in Chapter 6.</em></p>
           <p><strong>Batch Size Configuration</strong></p>
-          <p>Two parameters control how tokens are processed:</p>
+          <p>When you send a prompt to a model, the model doesn't process all your input tokens at once. It breaks them into smaller chunks and processes each chunk through the GPU in a series of steps called forward passes. These two parameters control the size of those chunks:</p>
           <ul>
-            <li><code>n_batch</code> - Maximum tokens in a single forward pass (default: 2048)</li>
-            <li><code>n_ubatch</code> - Physical batch size for prompt processing (default: 512)</li>
+            <li><code>n_batch</code> - Maximum tokens in a single forward pass (kronk default: 2048)</li>
+            <li><code>n_ubatch</code> - Physical batch size for prompt processing (kronk default: 512)</li>
           </ul>
+          <p>Think of it like reading a book aloud. <code>n_batch</code> is how many words you're willing to look at on the page at once, and <code>n_ubatch</code> is how many words you actually read in one breath. You might glance at 2048 words, but you read them 512 at a time.</p>
+          <p>For example, if you send a 4096-token prompt with the default settings, the model will process it in chunks: it takes up to 2048 tokens per forward pass (<code>n_batch</code>), and within each pass, it physically processes 512 tokens at a time (<code>n_ubatch</code>). Larger values mean faster prompt processing but use more VRAM. The <code>n_ubatch</code> value must always be less than or equal to <code>n_batch</code>.</p>
           <pre className="code-block"><code className="language-yaml">{`n_batch: 2048 # Logical batch size
 n_ubatch: 512 # Physical batch size (must be ≤ n_batch)`}</code></pre>
           <p><strong>Recommended settings by workload:</strong></p>
-          <ul>
-            <li>Interactive chat (single user): <code>n_batch=512-1024</code>, <code>n_ubatch=512</code></li>
-            <li>Long prompts/RAG: <code>n_batch=2048-4096</code>, <code>n_ubatch=512-1024</code></li>
-            <li>Batch inference (multiple prompts): <code>n_batch=2048-4096</code>, <code>n_ubatch=512</code></li>
-            <li>Low VRAM (&lt;8GB): <code>n_batch=512</code>, <code>n_ubatch=256-512</code></li>
-            <li>High VRAM (24GB+): <code>n_batch=4096+</code>, <code>n_ubatch=1024+</code></li>
-          </ul>
-          <h3 id="32-sampling-parameters">3.2 Sampling Parameters</h3>
-          <p>Sampling parameters control the randomness and quality of generated text. These are set per-request in the API call.</p>
-          <p><strong>Temperature</strong></p>
-          <p>Controls randomness. Lower values produce more deterministic output.</p>
-          <pre className="code-block"><code className="language-json">{`{
-  "temperature": 0.8
-}`}</code></pre>
-          <ul>
-            <li><code>0.0-0.3</code> - Focused, deterministic (good for code, factual Q&A)</li>
-            <li><code>0.5-0.8</code> - Balanced (good for general chat)</li>
-            <li><code>0.9-1.2</code> - Creative (good for storytelling, brainstorming)</li>
-          </ul>
-          <p><strong>Top-K and Top-P</strong></p>
-          <p>Limit the token selection pool:</p>
-          <pre className="code-block"><code className="language-json">{`{
-  "top_k": 40,
-  "top_p": 0.9
-}`}</code></pre>
-          <ul>
-            <li><code>top_k</code> - Consider only the K most probable tokens (default: 40)</li>
-            <li><code>top_p</code> - Consider tokens until cumulative probability reaches P (default: 0.9)</li>
-          </ul>
-          <p><strong>Repetition Control</strong></p>
-          <p>Reduce repetitive output:</p>
-          <pre className="code-block"><code className="language-json">{`{
-  "repeat_penalty": 1.1,
-  "repeat_last_n": 64
-}`}</code></pre>
-          <ul>
-            <li><code>repeat_penalty</code> - Penalty for repeated tokens (1.0 = off, 1.1 = mild)</li>
-            <li><code>repeat_last_n</code> - How many recent tokens to check (default: 64)</li>
-          </ul>
-          <p><strong>DRY Sampler (Don't Repeat Yourself)</strong></p>
-          <p>Advanced n-gram repetition penalty:</p>
-          <pre className="code-block"><code className="language-json">{`{
-  "dry_multiplier": 1.05,
-  "dry_base": 1.75,
-  "dry_allowed_length": 2
-}`}</code></pre>
-          <p><strong>Max Tokens</strong></p>
-          <p>Limit the response length:</p>
-          <pre className="code-block"><code className="language-json">{`{
-  "max_tokens": 2048
-}`}</code></pre>
-          <h3 id="33-gpu-configuration">3.3 GPU Configuration</h3>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Workload</th>
+                <th>n_batch</th>
+                <th>n_ubatch</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Interactive chat (single user)</td>
+                <td>512-1024</td>
+                <td>512</td>
+              </tr>
+              <tr>
+                <td>Long prompts/RAG</td>
+                <td>2048-4096</td>
+                <td>512-1024</td>
+              </tr>
+              <tr>
+                <td>Batch inference (multiple prompts)</td>
+                <td>2048-4096</td>
+                <td>512</td>
+              </tr>
+              <tr>
+                <td>Low VRAM (&lt;8GB)</td>
+                <td>512</td>
+                <td>256-512</td>
+              </tr>
+              <tr>
+                <td>High VRAM (24GB+)</td>
+                <td>4096+</td>
+                <td>1024+</td>
+              </tr>
+            </tbody>
+          </table>
+          <h3 id="32-gpu-configuration">3.2 GPU Configuration</h3>
+          <p>A model is made up of layers, and each layer contains the weights (numbers) the model learned during training. When you run inference, the model processes your input through these layers one at a time. The key performance question is: where do those layers live — on the GPU or the CPU?</p>
+          <p>GPUs are dramatically faster at the math required for inference, but they have limited memory (VRAM). If your model doesn't fit entirely in VRAM, you can split the work: keep some layers on the GPU for speed and let the rest run on the CPU. This section covers how to control that split and other GPU-related settings.</p>
           <p><strong>Layer Offloading</strong></p>
+          <p>A typical model might have anywhere from 28 to 80+ layers depending on its size. For example, a 7B parameter model usually has around 32 layers, while a 70B model might have 80. Each layer you place on the GPU runs significantly faster, but consumes VRAM. If your GPU doesn't have enough VRAM to hold every layer, you can choose how many to offload — the rest will run on the CPU, which is slower but has access to your full system RAM.</p>
+          <p>The goal is to put as many layers on the GPU as your VRAM allows. If you run out of VRAM, lower this number until the model fits.</p>
           <p>Control how many model layers run on GPU:</p>
           <pre className="code-block"><code className="language-yaml">{`n_gpu_layers: 0      # 0 = all layers on GPU (default)
 n_gpu_layers: -1     # All layers on CPU
 n_gpu_layers: 20     # First 20 layers on GPU`}</code></pre>
           <p><strong>KV Cache Location</strong></p>
-          <p>The KV cache stores attention state and can consume significant VRAM:</p>
+          <p>As the model processes your conversation, it builds up a cache of intermediate calculations called the KV (Key-Value) cache. Think of it as the model's short-term memory — it stores what the model has already "read" so it doesn't have to reprocess the entire conversation for every new token it generates. The longer the conversation, the larger this cache grows.</p>
+          <p>By default the KV cache lives on the GPU for speed, but it can consume a significant amount of VRAM — especially with large context windows or multiple concurrent requests. If you're running low on VRAM, moving the KV cache to the CPU frees up GPU memory at the cost of slower inference.</p>
+          <p>Control where the KV cache is stored:</p>
           <pre className="code-block"><code className="language-yaml">{`offload_kqv: true    # KV cache on GPU (default, faster)
 offload_kqv: false   # KV cache on CPU (saves VRAM, slower)`}</code></pre>
           <p><strong>Tensor Operations Offload</strong></p>
-          <p>Control where tensor computations run:</p>
+          <p>Beyond the model layers and KV cache, there are additional math operations (called tensor operations) that happen during inference — things like matrix multiplications and attention score calculations. These operations are separate from the layer weights themselves and can independently be placed on the GPU or CPU. By default they run on the GPU, but if VRAM is tight you can move them to the CPU while still keeping your model layers on the GPU.</p>
+          <p>_Note: Use <code>op_offload: false</code> when you need to run the model on CPU but want to keep some layers on GPU for memory._</p>
+          <p>Control where these tensor computations run:</p>
           <pre className="code-block"><code className="language-yaml">{`op_offload: true     # Tensor ops on GPU (default)
 op_offload: false    # Tensor ops on CPU`}</code></pre>
-          <p>Use <code>op_offload: false</code> when you need to run the model on CPU but want to keep some layers on GPU for memory.</p>
           <p><strong>Multi-GPU Split Mode</strong></p>
-          <p>For systems with multiple GPUs:</p>
+          <p>If you have more than one GPU in your system, you can spread a model across them. This is useful when a model is too large to fit in a single GPU's VRAM. There are two strategies: <code>layer</code> mode assigns entire layers to different GPUs (simple and works well for most models), while <code>row</code> mode splits individual tensor operations across GPUs in parallel (better for Mixture of Experts models like Qwen3-MoE, Mixtral, or DeepSeek where different "experts" can run simultaneously on different GPUs).</p>
+          <p><em>Note: Use &lt;code&gt;row&lt;/code&gt; for Mixture of Experts models like Qwen3-MoE, Mixtral, or DeepSeek.</em></p>
+          <p>Control how the model is distributed across GPUs:</p>
           <pre className="code-block"><code className="language-yaml">{`split_mode: none     # Single GPU (default)
 split_mode: layer    # Split layers across GPUs
 split_mode: row      # Tensor parallelism (best for MoE models)`}</code></pre>
-          <p>Use <code>row</code> for Mixture of Experts models like Qwen3-MoE, Mixtral, or DeepSeek.</p>
           <p><strong>Configuration Reference</strong></p>
           <table className="flags-table">
             <thead>
@@ -460,8 +442,9 @@ split_mode: row      # Tensor parallelism (best for MoE models)`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <h3 id="34-kv-cache-quantization">3.4 KV Cache Quantization</h3>
-          <p>Reduce VRAM usage by quantizing the KV cache:</p>
+          <h3 id="33-kv-cache-quantization">3.3 KV Cache Quantization</h3>
+          <p>As discussed in the previous section, the KV cache is the model's short-term memory of your conversation. By default it stores values in half precision (f16), which gives the best accuracy but uses the most VRAM. Quantization reduces the precision of those stored values — using fewer bits to represent each number. It's a trade-off: you lose a small amount of accuracy in exchange for meaningful VRAM savings. For most use cases, <code>q8_0</code> (8-bit) gives nearly identical output quality while cutting KV cache memory by about 25%. More aggressive options like <code>q4_0</code> save even more but can start to affect generation quality.</p>
+          <p>Control the precision of the key and value caches independently:</p>
           <pre className="code-block"><code className="language-yaml">{`cache_type_k: q8_0 # Key cache precision
 cache_type_v: q8_0 # Value cache precision`}</code></pre>
           <p><strong>Available types:</strong></p>
@@ -510,18 +493,24 @@ cache_type_v: q8_0 # Value cache precision`}</code></pre>
     cache_type_k: q8_0
     cache_type_v: q8_0`}</code></pre>
           <p><strong>Recommendation:</strong> If you notice quality degradation (incoherent outputs, reasoning failures, or code bugs) with quantized cache, try <code>f16</code> first before adjusting other parameters. The VRAM cost is typically 25-50% more for the cache, but the quality improvement for sensitive workloads is substantial.</p>
-          <h3 id="35-flash-attention">3.5 Flash Attention</h3>
-          <p>Flash Attention optimizes memory usage and speeds up attention computation:</p>
+          <h3 id="34-flash-attention">3.4 Flash Attention</h3>
+          <p>Attention is the core mechanism that lets a model figure out which parts of your input are relevant to each other. For example, in the sentence "The cat sat on the mat because it was tired," attention is how the model connects "it" back to "the cat." The standard attention algorithm needs to hold a large matrix of scores in memory — one score for every pair of tokens in your input. As context windows grow, this matrix grows quadratically and can become both slow and memory-hungry.</p>
+          <p>Flash Attention is an optimized implementation that computes the same result but processes the matrix in small tiles that fit in the GPU's fast on-chip memory (SRAM) instead of slower VRAM. The result is lower memory usage and faster computation — especially noticeable with large context windows (32K+). It's enabled by default and should rarely need to be changed.</p>
+          <p>Control whether Flash Attention is used:</p>
           <pre className="code-block"><code className="language-yaml">{`flash_attention: enabled   # Default: enabled
 flash_attention: disabled  # Disable if causing issues
 flash_attention: auto      # Let llama.cpp decide`}</code></pre>
-          <p>Flash Attention is particularly beneficial for large context windows.</p>
-          <h3 id="36-parallel-inference-nseqmax">3.6 Parallel Inference (NSeqMax)</h3>
-          <p><code>NSeqMax</code> controls concurrent request handling, but behaves differently based on model type:</p>
-          <p><strong>Text Models (Chat/Completion)</strong></p>
-          <p>For text and media models, <code>NSeqMax</code> controls batch parallelism within a single model:</p>
+          <h3 id="35-parallel-inference-nseqmax">3.5 Parallel Inference (NSeqMax)</h3>
+          <p>When multiple users (or applications) send requests to the same model at the same time, the model needs a way to handle them concurrently. That's what <code>NSeqMax</code> controls — it determines how many requests the model can process in parallel.</p>
+          <p>Behind the scenes, Kronk creates a processing slot for each concurrent request. Each slot gets its own isolated partition in the KV cache (the model's short-term memory from earlier sections). All slots share the same model weights and GPU, but each one maintains its own conversation state independently. When a batch decode runs on the GPU, tokens from all active slots are combined into a single operation — so the GPU does one large matrix multiply instead of several small ones. This is what makes parallel inference efficient.</p>
+          <p>The trade-off is VRAM. Each slot reserves its full KV cache partition when the model loads, whether or not it's actively handling a request. Setting <code>n_seq_max: 4</code> means four KV cache partitions are allocated upfront. If each partition costs 3 GB, that's 12 GB of VRAM just for the cache — on top of the model weights. More slots means more concurrency but more VRAM.</p>
+          <p>Control how many requests can be processed in parallel:</p>
           <pre className="code-block"><code className="language-yaml">{`n_seq_max: 4 # Process up to 4 requests concurrently`}</code></pre>
-          <p>Multiple requests share the model context and KV cache, with each request getting an isolated sequence partition. All modes allocate <code>NSeqMax</code> slots and sequences with the same VRAM footprint. The difference is how each mode manages cached state:</p>
+          <p><strong>How Caching Strategy Affects Slot Behavior</strong></p>
+          <p>All three caching strategies allocate the same number of slots with the same VRAM cost. The difference is what happens to the cached data in each slot between requests:</p>
+          <p><strong>No Caching</strong> — The simplest mode. When a request finishes, the slot's KV cache is cleared. The next request that lands in that slot starts from scratch, processing the full prompt from the beginning. Every request pays the full cost of prompt processing regardless of how similar it is to a previous one.</p>
+          <p><strong>SPC (System Prompt Cache)</strong> — In many applications, every request starts with the same system prompt (the instructions that tell the model how to behave). SPC saves the tokenized system prompt in RAM. When a new request arrives, those tokens are decoded into the slot's KV cache before the rest of the prompt is processed. The slot is still cleared between requests, but re-encoding the system prompt is much faster than processing the full prompt from scratch every time.</p>
+          <p><strong>IMC (Incremental Message Cache)</strong> — Designed for multi-turn conversations. A slot becomes dedicated to a specific <code>cache_id</code> (typically one user's conversation). The entire conversation history stays in the slot's KV cache between requests. When the user sends a new message, only the new tokens need to be processed — the model doesn't re-read the entire conversation. This gives the best performance for chat applications, but each active conversation permanently occupies a slot.</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -532,82 +521,7 @@ flash_attention: auto      # Let llama.cpp decide`}</code></pre>
             </thead>
             <tbody>
               <tr>
-                <td>No caching</td>
-                <td>Cleared after request</td>
-                <td>None</td>
-              </tr>
-              <tr>
-                <td>SPC enabled</td>
-                <td>Cleared after request</td>
-                <td>System prompt tokens held in RAM, re-decoded into slot on each request</td>
-              </tr>
-              <tr>
-                <td>IMC enabled</td>
-                <td>Dedicated to a cache_id</td>
-                <td>Full conversation cached in the slot's KV cache sequence</td>
-              </tr>
-            </tbody>
-          </table>
-          <p><strong>Embedding and Reranking Models</strong></p>
-          <p>For embedding and reranking models, <code>NSeqMax</code> creates an internal context pool:</p>
-          <pre className="code-block"><code className="language-yaml">{`n_seq_max: 4 # Create 4 contexts in internal pool`}</code></pre>
-          <p>Multiple inputs within a single request are partitioned across pool contexts and processed in parallel. Model weights are shared, only KV cache memory is multiplied per context.</p>
-          <h3 id="37-vram-estimation">3.7 VRAM Estimation</h3>
-          <p><strong>Total VRAM = Model Weights + KV Cache</strong></p>
-          <p>Model weights are determined by the GGUF file size (e.g., ~8GB for a 7B Q8_0 model). The KV cache is the variable cost you control through configuration.</p>
-          <p><strong>Model Weights (Q8_0 quantization)</strong></p>
-          <ul>
-            <li>1-3B parameters: 2-4 GB</li>
-            <li>7-8B parameters: 8-10 GB</li>
-            <li>13B parameters: 14-16 GB</li>
-            <li>30B parameters: 32-36 GB</li>
-            <li>70B parameters: 72-80 GB</li>
-          </ul>
-          <h4 id="slots-and-sequences">Slots and Sequences</h4>
-          <p>A slot is a processing unit that handles one request at a time. Each slot is assigned a unique sequence ID that maps to an isolated partition in the shared KV cache. The mapping is always 1:1:</p>
-          <pre className="code-block"><code>{`NSeqMax = 4 (set via n_seq_max in model config)
-
-Slot 0  →  Sequence 0  →  KV cache partition 0
-Slot 1  →  Sequence 1  →  KV cache partition 1
-Slot 2  →  Sequence 2  →  KV cache partition 2
-Slot 3  →  Sequence 3  →  KV cache partition 3`}</code></pre>
-          <p><code>NSeqMax</code> controls how many slots (and sequences) are created. More slots means more concurrent requests, but each slot reserves its own KV cache partition in VRAM whether or not it is actively used.</p>
-          <h4 id="what-affects-kv-cache-memory-per-sequence">What Affects KV Cache Memory Per Sequence</h4>
-          <p>Each sequence's KV cache partition size is determined by three factors:</p>
-          <ol>
-            <li><strong>Context Window (&lt;code&gt;n_ctx&lt;/code&gt;)</strong> — The maximum number of tokens the sequence can</li>
-          </ol>
-          <p>hold. Larger context windows linearly increase memory. 32K context uses 4× the memory of 8K context.</p>
-          <ol>
-            <li><strong>Number of Layers (&lt;code&gt;block_count&lt;/code&gt;)</strong> — Every transformer layer stores its own</li>
-          </ol>
-          <p>key and value tensors per token. More layers means more memory per token. A 70B model with 80 layers uses ~2.5× more per-token memory than a 7B model with 32 layers.</p>
-          <ol>
-            <li><strong>KV Cache Precision (&lt;code&gt;bytes_per_element&lt;/code&gt;)</strong> — The data type used to store</li>
-          </ol>
-          <p>cached keys and values: - <code>f16</code> = 2 bytes per element (default, best quality) - <code>q8_0</code> = 1 byte per element (50% VRAM savings, good quality)</p>
-          <p>The head geometry (<code>head_count_kv</code>, <code>key_length</code>, <code>value_length</code>) is fixed by the model architecture and read from the GGUF header.</p>
-          <p>The formula:</p>
-          <pre className="code-block"><code>{`KV_Per_Token_Per_Layer = head_count_kv × (key_length + value_length) × bytes_per_element
-KV_Per_Sequence        = n_ctx × n_layers × KV_Per_Token_Per_Layer`}</code></pre>
-          <h4 id="what-affects-total-kv-cache-slot-memory">What Affects Total KV Cache (Slot Memory)</h4>
-          <p>Total KV cache (Slot Memory) is the per-sequence cost multiplied by the number of slots:</p>
-          <pre className="code-block"><code>{`Slot_Memory = NSeqMax × KV_Per_Sequence
-Total_VRAM  = Model_Weights + Slot_Memory`}</code></pre>
-          <p>Memory is statically allocated upfront when the model loads. All slots reserve their full KV cache partition regardless of whether they are actively processing a request.</p>
-          <h4 id="caching-mode-does-not-affect-vram">Caching Mode Does Not Affect VRAM</h4>
-          <p>All caching modes (off, SPC, IMC) allocate the same number of slots and sequences with the same VRAM footprint. The difference is how each mode manages cached state, not how much memory is used:</p>
-          <table className="flags-table">
-            <thead>
-              <tr>
-                <th>Mode</th>
-                <th>Slot Lifetime</th>
-                <th>Cache Strategy</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>off</td>
+                <td>Off</td>
                 <td>Cleared after request</td>
                 <td>None</td>
               </tr>
@@ -623,80 +537,9 @@ Total_VRAM  = Model_Weights + Slot_Memory`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <p>SPC stores system prompt tokens in RAM (negligible) and decodes them into each slot's sequence before the remaining prompt is prefilled. Zero extra VRAM overhead.</p>
-          <h4 id="example:-real-model-calculation">Example: Real Model Calculation</h4>
-          <pre className="code-block"><code>{`Model                   : Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
-Model Weights           : 36.0 GB
-Context Window (n_ctx)  : 131,072 (128K)
-cache-type-k / v        : q8_0 (1 byte per element)
-block_count (n_layers)  : 48
-attention.head_count_kv : 4
-attention.key_length    : 128
-attention.value_length  : 128
-
-Step 1 — Per-token-per-layer cost:
-
-  KV_Per_Token_Per_Layer = 4 × (128 + 128) × 1 = 1,024 bytes
-
-Step 2 — Per-sequence cost:
-
-  KV_Per_Sequence = 131,072 × 48 × 1,024 = ~6.4 GB
-
-Step 3 — Total KV cache (NSeqMax = 2):
-
-  Slot_Memory = 2 × 6.4 GB = ~12.8 GB
-
-Step 4 — Total VRAM:
-
-  Total_VRAM = 36.0 GB + 12.8 GB = ~48.8 GB`}</code></pre>
-          <h3 id="38-model-config-file-example">3.8 Model Config File Example</h3>
-          <p>Create a YAML config file for custom model settings:</p>
-          <pre className="code-block"><code className="language-yaml">{`# model-config.yaml
-models:
-  Qwen3-8B-Q8_0:
-    context_window: 32768
-    n_batch: 2048
-    n_ubatch: 512
-    n_seq_max: 2
-    cache_type_k: q8_0
-    cache_type_v: q8_0
-    flash_attention: enabled
-    system_prompt_cache: true
-
-  Llama-3.3-70B-Instruct-Q8_0:
-    context_window: 8192
-    n_gpu_layers: 0
-    split_mode: row
-    offload_kqv: true`}</code></pre>
-          <p>Start the server with custom config:</p>
-          <pre className="code-block"><code className="language-shell">{`kronk server start --model-config-file=model-config.yaml`}</code></pre>
-          <h3 id="39-model-specific-tuning">3.9 Model-Specific Tuning</h3>
-          <p>Different model architectures have specific optimization requirements.</p>
-          <p><strong>Vision and Audio Models</strong></p>
-          <p>Keep <code>n_ubatch</code> high for efficient media token processing:</p>
-          <pre className="code-block"><code className="language-yaml">{`models:
-  Qwen2.5-VL-3B-Instruct-Q8_0:
-    n_batch: 2048
-    n_ubatch: 2048 # High for image/audio token batches
-    n_seq_max: 2 # Process up to 2 requests concurrently`}</code></pre>
-          <p>Vision models process image tiles as large token batches. Low <code>n_ubatch</code> values cause multiple decode passes per image, significantly slowing inference.</p>
-          <p><strong>Mixture of Experts (MoE) Models</strong></p>
-          <p>Use row-based tensor parallelism for multi-GPU setups:</p>
-          <pre className="code-block"><code className="language-yaml">{`models:
-  Qwen3-MoE-30B-A3B-Q8_0:
-    split_mode: row # Best for MoE architecture
-    cache_type_k: q8_0 # Be cautious with aggressive quantization
-    cache_type_v: q8_0`}</code></pre>
-          <p>MoE models can be sensitive to aggressive KV cache quantization. If you notice quality degradation, try <code>f16</code> cache types.</p>
-          <p><strong>Embedding Models</strong></p>
-          <p>Optimize batch size for your typical input lengths:</p>
-          <pre className="code-block"><code className="language-yaml">{`models:
-  embeddinggemma-300m-qat-Q8_0:
-    n_batch: 8192 # Can equal context_window
-    n_ubatch: 512 # Align with typical sliding window
-    n_seq_max: 4 # 4 model instances for concurrency`}</code></pre>
-          <p>Embedding models process complete inputs in a single pass, so larger <code>n_batch</code> values improve throughput.</p>
-          <h3 id="310-understanding-gguf-quantization">3.10 Understanding GGUF Quantization</h3>
+          <p><strong>Embedding and Reranking Models</strong></p>
+          <p>Embedding and reranking models work differently. Instead of slots sharing a single context, <code>NSeqMax</code> creates a pool of independent contexts. When a request contains multiple inputs (for example, 100 sentences to embed), those inputs are spread across the pool contexts and processed in parallel. Model weights are shared, but each context has its own KV cache memory.</p>
+          <h3 id="36-understanding-gguf-quantization">3.6 Understanding GGUF Quantization</h3>
           <p>GGUF models come in various quantization formats that trade off between file size, VRAM usage, and output quality. Understanding these formats helps you choose the right model variant for your hardware and use case.</p>
           <h4 id="what-is-quantization?">What is Quantization?</h4>
           <p>Quantization reduces model precision from the original 16-bit or 32-bit floating-point weights to lower bit representations. This dramatically decreases:</p>
@@ -957,11 +800,201 @@ models:
     context_window: 8192
     split_mode: row
     n_gpu_layers: 0`}</code></pre>
+          <h3 id="37-vram-estimation">3.7 VRAM Estimation</h3>
+          <p>Before loading a model, you need to know whether it will fit in your GPU's memory. VRAM usage comes from two things: the model weights (fixed cost determined by the model you chose) and the KV cache (variable cost determined by your configuration choices from the previous sections — context window size, number of slots, and cache precision). If the total exceeds your available VRAM, the model either won't load or will partially fall back to the CPU, which significantly slows inference. This section walks through how to estimate the total.</p>
+          <p><strong>Total VRAM = Model Weights + KV Cache</strong></p>
+          <p>Model weights are determined by the GGUF file size (e.g., ~8GB for a 7B Q8_0 model). The KV cache is the variable cost you control through configuration.</p>
+          <p><strong>Model Weights (Q8_0 quantization)</strong></p>
+          <ul>
+            <li>1-3B parameters: 2-4 GB</li>
+            <li>7-8B parameters: 8-10 GB</li>
+            <li>13B parameters: 14-16 GB</li>
+            <li>30B parameters: 32-36 GB</li>
+            <li>70B parameters: 72-80 GB</li>
+          </ul>
+          <h4 id="slots-and-sequences">Slots and Sequences</h4>
+          <p>A slot is a processing unit that handles one request at a time. Each slot is assigned a unique sequence ID that maps to an isolated partition in the shared KV cache. The mapping is always 1:1:</p>
+          <pre className="code-block"><code>{`NSeqMax = 4 (set via n_seq_max in model config)
+
+Slot 0  →  Sequence 0  →  KV cache partition 0
+Slot 1  →  Sequence 1  →  KV cache partition 1
+Slot 2  →  Sequence 2  →  KV cache partition 2
+Slot 3  →  Sequence 3  →  KV cache partition 3`}</code></pre>
+          <p><code>NSeqMax</code> controls how many slots (and sequences) are created. More slots means more concurrent requests, but each slot reserves its own KV cache partition in VRAM whether or not it is actively used.</p>
+          <h4 id="what-affects-kv-cache-memory-per-sequence">What Affects KV Cache Memory Per Sequence</h4>
+          <p>Each sequence's KV cache partition size is determined by three factors:</p>
+          <ol>
+            <li><strong>Context Window (&lt;code&gt;n_ctx&lt;/code&gt;)</strong> — The maximum number of tokens the sequence can</li>
+          </ol>
+          <p>hold. Larger context windows linearly increase memory. 32K context uses 4× the memory of 8K context.</p>
+          <ol>
+            <li><strong>Number of Layers (&lt;code&gt;block_count&lt;/code&gt;)</strong> — Every transformer layer stores its own</li>
+          </ol>
+          <p>key and value tensors per token. More layers means more memory per token. A 70B model with 80 layers uses ~2.5× more per-token memory than a 7B model with 32 layers.</p>
+          <ol>
+            <li><strong>KV Cache Precision (&lt;code&gt;bytes_per_element&lt;/code&gt;)</strong> — The data type used to store</li>
+          </ol>
+          <p>cached keys and values: - <code>f16</code> = 2 bytes per element (default, best quality) - <code>q8_0</code> = 1 byte per element (50% VRAM savings, good quality)</p>
+          <p>The head geometry (<code>head_count_kv</code>, <code>key_length</code>, <code>value_length</code>) is fixed by the model architecture and read from the GGUF header.</p>
+          <p>The formula:</p>
+          <pre className="code-block"><code>{`KV_Per_Token_Per_Layer = head_count_kv × (key_length + value_length) × bytes_per_element
+KV_Per_Sequence        = n_ctx × n_layers × KV_Per_Token_Per_Layer`}</code></pre>
+          <h4 id="what-affects-total-kv-cache-slot-memory">What Affects Total KV Cache (Slot Memory)</h4>
+          <p>Total KV cache (Slot Memory) is the per-sequence cost multiplied by the number of slots:</p>
+          <pre className="code-block"><code>{`Slot_Memory = NSeqMax × KV_Per_Sequence
+Total_VRAM  = Model_Weights + Slot_Memory`}</code></pre>
+          <p>Memory is statically allocated upfront when the model loads. All slots reserve their full KV cache partition regardless of whether they are actively processing a request.</p>
+          <h4 id="caching-mode-does-not-affect-vram">Caching Mode Does Not Affect VRAM</h4>
+          <p>All caching modes (off, SPC, IMC) allocate the same number of slots and sequences with the same VRAM footprint. The difference is how each mode manages cached state, not how much memory is used:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Mode</th>
+                <th>Slot Lifetime</th>
+                <th>Cache Strategy</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>off</td>
+                <td>Cleared after request</td>
+                <td>None</td>
+              </tr>
+              <tr>
+                <td>SPC</td>
+                <td>Cleared after request</td>
+                <td>System prompt tokens held in RAM, decoded into slot's sequence on request</td>
+              </tr>
+              <tr>
+                <td>IMC</td>
+                <td>Dedicated to a cache_id</td>
+                <td>Full conversation cached in the slot's KV cache sequence</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>SPC stores system prompt tokens in RAM (negligible) and decodes them into each slot's sequence before the remaining prompt is prefilled. Zero extra VRAM overhead.</p>
+          <h4 id="example:-real-model-calculation">Example: Real Model Calculation</h4>
+          <pre className="code-block"><code>{`Model                   : Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
+Model Weights           : 36.0 GB
+Context Window (n_ctx)  : 131,072 (128K)
+cache-type-k / v        : q8_0 (1 byte per element)
+block_count (n_layers)  : 48
+attention.head_count_kv : 4
+attention.key_length    : 128
+attention.value_length  : 128
+
+Step 1 — Per-token-per-layer cost:
+
+  KV_Per_Token_Per_Layer = 4 × (128 + 128) × 1 = 1,024 bytes
+
+Step 2 — Per-sequence cost:
+
+  KV_Per_Sequence = 131,072 × 48 × 1,024 = ~6.4 GB
+
+Step 3 — Total KV cache (NSeqMax = 2):
+
+  Slot_Memory = 2 × 6.4 GB = ~12.8 GB
+
+Step 4 — Total VRAM:
+
+  Total_VRAM = 36.0 GB + 12.8 GB = ~48.8 GB`}</code></pre>
+          <h3 id="38-model-specific-tuning">3.8 Model-Specific Tuning</h3>
+          <p>The previous sections covered general configuration that applies to all models. However, different model architectures — vision, audio, Mixture of Experts (MoE), and embedding models — each have their own characteristics that benefit from specific tuning. A vision model processes images as large batches of tokens, which needs different batch settings than a text-only chat model. An MoE model routes tokens through specialized "expert" sub-networks, which affects how you split work across GPUs. This section provides recommended configurations for each model type so you can get the best performance out of the box.</p>
+          <p><strong>Vision and Audio Models</strong></p>
+          <p>Vision models process image tiles as large token batches. Low <code>n_ubatch</code> values cause multiple decode passes per image, significantly slowing inference.</p>
+          <p>Keep <code>n_ubatch</code> high for efficient media token processing:</p>
+          <pre className="code-block"><code className="language-yaml">{`models:
+  Qwen2.5-VL-3B-Instruct-Q8_0:
+    n_batch: 2048
+    n_ubatch: 2048 # High for image/audio token batches
+    n_seq_max: 2 # Process up to 2 requests concurrently`}</code></pre>
+          <p><strong>Mixture of Experts (MoE) Models</strong></p>
+          <p>MoE models can be sensitive to aggressive KV cache quantization. If you notice quality degradation, try <code>f16</code> cache types.</p>
+          <p>Use row-based tensor parallelism for multi-GPU setups:</p>
+          <pre className="code-block"><code className="language-yaml">{`models:
+  Qwen3-MoE-30B-A3B-Q8_0:
+    split_mode: row # Best for MoE architecture
+    cache_type_k: q8_0 # Be cautious with aggressive quantization
+    cache_type_v: q8_0`}</code></pre>
+          <p><strong>Embedding Models</strong></p>
+          <p>Embedding models process complete inputs in a single pass, so larger <code>n_batch</code> values improve throughput.</p>
+          <p>Optimize batch size for your typical input lengths:</p>
+          <pre className="code-block"><code className="language-yaml">{`models:
+  embeddinggemma-300m-qat-Q8_0:
+    n_batch: 8192 # Can equal context_window
+    n_ubatch: 512 # Align with typical sliding window
+    n_seq_max: 4 # 4 model instances for concurrency`}</code></pre>
+          <h3 id="39-sampling-parameters">3.9 Sampling Parameters</h3>
+          <p>Sampling parameters control the randomness and quality of generated text. These are set per-request in the API call.</p>
+          <p>For most models you will want to touch these basic sampling parameters. There are many more which will be presented later.</p>
+          <p><strong>Temperature</strong></p>
+          <p>Controls randomness. Lower values produce more deterministic output.</p>
+          <pre className="code-block"><code className="language-json">{`{
+  "temperature": 0.8
+}`}</code></pre>
+          <ul>
+            <li><code>0.0-0.3</code> - Focused, deterministic (good for code, factual Q&A)</li>
+            <li><code>0.5-0.8</code> - Balanced (good for general chat)</li>
+            <li><code>0.9-1.2</code> - Creative (good for storytelling, brainstorming)</li>
+          </ul>
+          <p><strong>Top-K and Top-P</strong></p>
+          <p>Limit the token selection pool:</p>
+          <pre className="code-block"><code className="language-json">{`{
+  "top_k": 40,
+  "top_p": 0.9
+}`}</code></pre>
+          <ul>
+            <li><code>top_k</code> - Consider only the K most probable tokens (default: 40)</li>
+            <li><code>top_p</code> - Consider tokens until cumulative probability reaches P (default: 0.9)</li>
+          </ul>
+          <p><strong>Repetition Control</strong></p>
+          <p>Reduce repetitive output:</p>
+          <pre className="code-block"><code className="language-json">{`{
+  "repeat_penalty": 1.1,
+  "repeat_last_n": 64
+}`}</code></pre>
+          <ul>
+            <li><code>repeat_penalty</code> - Penalty for repeated tokens (1.0 = off, 1.1 = mild)</li>
+            <li><code>repeat_last_n</code> - How many recent tokens to check (default: 64)</li>
+          </ul>
+          <p><strong>DRY Sampler (Don't Repeat Yourself)</strong></p>
+          <p>Advanced n-gram repetition penalty:</p>
+          <pre className="code-block"><code className="language-json">{`{
+  "dry_multiplier": 1.05,
+  "dry_base": 1.75,
+  "dry_allowed_length": 2
+}`}</code></pre>
+          <p><strong>Max Tokens</strong></p>
+          <p>Limit the response length:</p>
+          <pre className="code-block"><code className="language-json">{`{
+  "max_tokens": 2048
+}`}</code></pre>
+          <h3 id="310-model-config-file-example">3.10 Model Config File Example</h3>
+          <p>Create a YAML config file for custom model settings:</p>
+          <pre className="code-block"><code className="language-yaml">{`# model-config.yaml
+models:
+  Qwen3-8B-Q8_0:
+    context_window: 32768
+    n_batch: 2048
+    n_ubatch: 512
+    n_seq_max: 2
+    cache_type_k: q8_0
+    cache_type_v: q8_0
+    flash_attention: enabled
+    system_prompt_cache: true
+
+  Llama-3.3-70B-Instruct-Q8_0:
+    context_window: 8192
+    n_gpu_layers: 0
+    split_mode: row
+    offload_kqv: true`}</code></pre>
+          <p>Start the server with custom config:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk server start --model-config-file=model-config.yaml`}</code></pre>
           <hr />
           <h2 id="chapter-4:-batch-processing">Chapter 4: Batch Processing</h2>
           <p>Batch processing allows Kronk to handle multiple concurrent requests efficiently by sharing model resources. This chapter explains the architecture and how to optimize for your workload.</p>
           <h3 id="41-architecture-overview">4.1 Architecture Overview</h3>
-          <p>When <code>NSeqMax &gt; 1</code> for text models, Kronk creates a batch engine that processes multiple requests in parallel within a single model instance.</p>
+          <p>For text inference models (including vision/audio), Kronk always creates a batch engine with <code>NSeqMax</code> slots (defaulting to 1). <code>NSeqMax</code> controls how many sequences are processed in parallel within a single model instance.</p>
           <pre className="code-block"><code>{`                    ┌───────────────────────────────────┐
    Request 1 ──────▶│                                   │
                     │          Request Queue            │
@@ -990,73 +1023,56 @@ models:
                                       ▼
                     ┌───────────────────────────────────┐
                     │        llama.cpp Backend          │
-                    │         (GPU/CPU Inference)       │
+                    │       (GPU/CPU Inference)         │
                     └───────────────────────────────────┘`}</code></pre>
           <h3 id="42-slots-and-sequences">4.2 Slots and Sequences</h3>
-          <p><strong>Slots</strong> are processing units that handle individual requests. Each slot tracks its state: prompt tokens, decode position, sampler, and response channel.</p>
+          <p>The batch engine divides its capacity into slots and sequences. Together they provide the mechanism for processing multiple requests concurrently while keeping each request's data isolated inside the shared KV cache.</p>
+          <p><strong>Slots</strong> are processing units that handle individual requests. Each slot tracks its own state: prompt tokens, decode position, sampler, and response channel.</p>
           <p><strong>Sequences</strong> are isolated partitions in the shared KV cache. Each slot is assigned a unique sequence ID, ensuring requests don't interfere with each other's attention state.</p>
-          <p>The slot/sequence layout is the same for all modes:</p>
+          <p>The slot/sequence layout is the same for all caching strategies:</p>
           <pre className="code-block"><code>{`NSeqMax = 4
 
 Slot 0  →  seqID = 0  →  KV cache partition 0
 Slot 1  →  seqID = 1  →  KV cache partition 1
 Slot 2  →  seqID = 2  →  KV cache partition 2
 Slot 3  →  seqID = 3  →  KV cache partition 3`}</code></pre>
-          <p>With SPC, saved system prompt tokens are decoded directly into the slot's sequence before the remaining prompt is prefilled. With IMC, each slot's sequence is bound to a cache_id and the conversation cache lives in that sequence. In both cases, no extra sequences are reserved.</p>
+          <p>How a slot uses its sequence depends on the caching strategy. Without caching, the sequence is cleared between requests. With SPC or IMC, the sequence retains cached tokens to avoid redundant processing. See <a href="#35-parallel-inference-nseqmax">Section 3.5</a> for details on how each caching strategy affects slot behavior.</p>
           <h3 id="43-request-flow">4.3 Request Flow</h3>
+          <p>Each request moves through the batch engine in the following stages:</p>
           <ol>
             <li><strong>Queue</strong>: Request enters the queue (backpressure if full)</li>
             <li><strong>Assign</strong>: Available slot picks up the request</li>
-            <li><strong>Clear</strong>: Slot clears its sequence partition</li>
-            <li><strong>SPC Decode</strong>: If SPC enabled, decode saved system prompt tokens into slot's sequence</li>
+            <li><strong>Cache Setup</strong>: Prepare the slot's sequence based on caching strategy:
+              <ul>
+                <li>Clear the sequence (no caching)</li>
+                <li>Clear the sequence, then decode saved system prompt tokens (SPC)</li>
+                <li>Extend or rebuild the conversation cache in place (IMC)</li>
+              </ul>
+            </li>
             <li><strong>Prefill</strong>: Tokenize and process remaining prompt tokens</li>
             <li><strong>Decode</strong>: Generate tokens one at a time, streaming to client</li>
-            <li><strong>Complete</strong>: Clear sequence, slot becomes available</li>
+            <li><strong>Complete</strong>: Release the slot:
+              <ul>
+                <li>Clear the entire sequence (no caching/SPC)</li>
+                <li>Trim generated tokens, keep cached conversation prefix (IMC)</li>
+              </ul>
+            </li>
           </ol>
           <h3 id="44-configuring-batch-processing">4.4 Configuring Batch Processing</h3>
+          <p>Batch processing is controlled primarily through the model configuration. The key setting is <code>NSeqMax</code>, which determines how many slots the batch engine creates and therefore how many requests can be processed in parallel. Increasing <code>NSeqMax</code> improves concurrency but requires proportionally more KV cache memory, so it's important to balance throughput against available VRAM.</p>
           <p><strong>Enable Batch Processing</strong></p>
           <p>Set <code>NSeqMax &gt; 1</code> in your model config:</p>
           <pre className="code-block"><code className="language-yaml">{`models:
   Qwen3-8B-Q8_0:
     n_seq_max: 4 # 4 concurrent requests`}</code></pre>
           <p><strong>Queue Depth</strong></p>
-          <p>The request queue holds <code>NSeqMax × 2</code> requests. With <code>NSeqMax=4</code>, up to 8 requests can queue while 4 are actively processing.</p>
-          <p><strong>Memory Considerations</strong></p>
-          <p>Each slot needs its own KV cache partition. With 4 slots and 8K context:</p>
-          <pre className="code-block"><code>{`KV cache per slot:  ~200 MB (for 8B model with F16)
-Total KV cache:     ~800 MB (4 slots × 200 MB)`}</code></pre>
-          <p><strong>Caching Memory Overhead</strong></p>
-          <p>Neither SPC nor IMC requires additional KV cache sequences or extra VRAM. llama.cpp internally partitions the KV cache across sequences, so each slot gets <code>context_window / NSeqMax</code> tokens of capacity:</p>
-          <table className="flags-table">
-            <thead>
-              <tr>
-                <th>Mode</th>
-                <th>Reserved Seqs</th>
-                <th>Memory Overhead</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>off</td>
-                <td>0</td>
-                <td>none</td>
-              </tr>
-              <tr>
-                <td>SPC</td>
-                <td>0</td>
-                <td>none (tokens in RAM)</td>
-              </tr>
-              <tr>
-                <td>IMC</td>
-                <td>0</td>
-                <td>none</td>
-              </tr>
-            </tbody>
-          </table>
-          <p>SPC stores system prompt tokens in RAM and decodes them into each slot on demand. This adds negligible RAM usage but zero VRAM overhead.</p>
-          <p>IMC caches full conversations in each slot's own sequence. No context scaling is needed since llama.cpp partitions the KV cache per sequence automatically.</p>
+          <p>The request queue holds <code>NSeqMax × 2</code> requests by default. With <code>NSeqMax=4</code>, up to 8 requests can be in-flight: 4 actively processing in slots and 4 waiting in the queue. This multiplier is configurable via <code>WithQueueDepth</code> when using the SDK:</p>
+          <pre className="code-block"><code className="language-go">{`krn, err := kronk.New(ctx, cfg, kronk.WithQueueDepth(3))`}</code></pre>
+          <p>When all slots and queue positions are occupied, new requests block until a slot completes or the request's context is cancelled. If the engine is shutting down, queued requests receive an immediate error. This backpressure mechanism prevents the system from accepting more work than it can process within a reasonable time.</p>
+          <p><strong>Memory and Caching</strong></p>
+          <p>Each slot reserves its own KV cache partition, so increasing <code>NSeqMax</code> increases VRAM usage proportionally. Neither SPC nor IMC adds extra VRAM beyond what the slots themselves require. For details on how slot memory is allocated and how to estimate total VRAM, see <a href="#35-parallel-inference-nseqmax">Section 3.5</a> and <a href="#37-vram-estimation">Section 3.7</a>.</p>
           <h3 id="45-concurrency-by-model-type">4.5 Concurrency by Model Type</h3>
-          <p>Different model types use different concurrency mechanisms:</p>
+          <p>Not all model types achieve concurrency the same way. Text inference models (including vision and audio) use the batch engine described in the previous sections, where multiple slots share a single model context and their tokens are combined into one decode call. Embedding and reranking models take a different approach — they create a pool of independent contexts that each process requests separately. The table below summarizes the distinction, and the diagrams that follow show the request flow for each approach.</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -1089,25 +1105,25 @@ Total KV cache:     ~800 MB (4 slots × 200 MB)`}</code></pre>
             </tbody>
           </table>
           <p><strong>Chat Request Flow (NSeqMax=4)</strong></p>
-          <p>When multiple chat requests arrive simultaneously, the batch engine processes them in parallel within a single shared context:</p>
-          <pre className="code-block"><code>{`Request 1 ──→ acquireModel() ──→ ChatStreaming() ──→ batch.Submit() ─┐
-Request 2 ──→ acquireModel() ──→ ChatStreaming() ──→ batch.Submit() ─┤
-Request 3 ──→ acquireModel() ──→ ChatStreaming() ──→ batch.Submit() ─┤
-Request 4 ──→ acquireModel() ──→ ChatStreaming() ──→ batch.Submit() ─┤
-                                                                     ↓
-                                                   ┌─────────────────────────┐
-                                                   │      Batch Engine       │
-                                                   │ ┌─────┬─────┬─────┬─────┐
-                                                   │ │Slot0│Slot1│Slot2│Slot3│
-                                                   │ │ R1  │ R2  │ R3  │ R4  │
-                                                   │ └─────┴─────┴─────┴─────┘
-                                                   │            ↓            │
-                                                   │  Single batched decode  │
-                                                   │  (all 4 in parallel)    │
-                                                   └─────────────────────────┘`}</code></pre>
-          <p>All requests share the same LLM context. The batch engine combines tokens from all active slots into a single decode call, maximizing GPU efficiency.</p>
+          <p>When multiple users send chat requests at the same time, each request is assigned to its own slot inside the batch engine. Rather than processing each request in isolation, the engine combines tokens from all active slots into a single GPU operation. This is what makes batch processing efficient — one large decode call instead of several small ones. The following diagram shows this flow with four concurrent requests:</p>
+          <pre className="code-block"><code>{`Request 1 ──→ acquireModel(Qwen3-8B) ──→ ChatStreaming() ──→ batch.Submit()
+Request 2 ──→ acquireModel(Qwen3-8B) ──→ ChatStreaming() ──→ batch.Submit()
+Request 3 ──→ acquireModel(Qwen3-8B) ──→ ChatStreaming() ──→ batch.Submit()
+Request 4 ──→ acquireModel(Qwen3-8B) ──→ ChatStreaming() ──→ batch.Submit()
+                                                                   ↓
+                                               ┌───────────────────────────┐
+                                               │      Batch Engine         │
+                                               │ ┌─────┬─────┬─────┬─────┐ │
+                                               │ │Slot0│Slot1│Slot2│Slot3│ │
+                                               │ │ R1  │ R2  │ R3  │ R4  │ │
+                                               │ └─────┴─────┴─────┴─────┘ │
+                                               │             ↓             │
+                                               │   Single batched decode   │
+                                               │   (all 4 in parallel)     │
+                                               └───────────────────────────┘`}</code></pre>
+          <p>From the outside, each request behaves as if it has the model to itself — it receives its own stream of generated tokens. Internally, the batch engine is doing the work for all four requests in lockstep, which uses the GPU far more efficiently than handling them one at a time.</p>
           <p><strong>Embedding/Rerank Request Flow (NSeqMax=4)</strong></p>
-          <p>When multiple embedding or rerank requests arrive simultaneously, each acquires one context from the pool and processes independently:</p>
+          <p>Embedding and reranking models don't use the batch engine. Instead, Kronk creates a pool of independent contexts — one per <code>NSeqMax</code> slot. When a request arrives, it acquires a context from the pool, processes its inputs, and releases the context back. If all contexts are in use, the request blocks until one becomes available. The following diagram shows this flow:</p>
           <pre className="code-block"><code>{`Request 1 ──→ acquireModel() ──→ pool.acquire() ──→ Context 1 ──→ decode ──→ results
 Request 2 ──→ acquireModel() ──→ pool.acquire() ──→ Context 2 ──→ decode ──→ results
 Request 3 ──→ acquireModel() ──→ pool.acquire() ──→ Context 3 ──→ decode ──→ results
@@ -1115,8 +1131,9 @@ Request 4 ──→ acquireModel() ──→ pool.acquire() ──→ Context 4 
                                        ↓
                           All 4 run in parallel
                           (separate decode calls)`}</code></pre>
-          <p>Model weights are shared across all contexts - only the KV cache is duplicated. Each request gets exclusive use of one context, allowing NSeqMax concurrent requests to process simultaneously.</p>
+          <p>Unlike the batch engine, each request runs its own separate decode call — there is no combining of work across requests. The efficiency comes from sharing the model weights across all contexts, so only the KV cache memory is duplicated.</p>
           <h3 id="46-performance-tuning">4.6 Performance Tuning</h3>
+          <p>The right <code>NSeqMax</code> value depends on your workload. More slots increase throughput by serving more requests in parallel, but each additional slot shares the same GPU, so individual requests may take slightly longer to complete. The goal is to find the balance point where you have enough concurrency for your users without saturating the GPU or running out of VRAM.</p>
           <p><strong>Throughput vs Latency</strong></p>
           <ul>
             <li>Higher <code>NSeqMax</code>: Better throughput, potentially higher per-request latency</li>
@@ -1129,12 +1146,13 @@ Request 4 ──→ acquireModel() ──→ pool.acquire() ──→ Context 4 
             <li>High-throughput batch jobs: <code>n_seq_max: 8-16</code></li>
           </ul>
           <p><strong>Monitoring</strong></p>
-          <p>Watch for queue backpressure. If requests consistently queue, consider:</p>
+          <p>Use request tracing to watch for long <code>queue-wait</code> spans, which indicate requests are waiting for an available slot. If you see consistently long queue waits, consider:</p>
           <ol>
             <li>Increasing <code>NSeqMax</code> (if VRAM allows)</li>
             <li>Reducing <code>context_window</code> to fit more slots</li>
             <li>Using KV cache quantization (<code>cache_type_k/v: q8_0</code>)</li>
           </ol>
+          <p>See <a href="#chapter-14-observability">Chapter 14: Observability</a> for details on tracing and metrics.</p>
           <h3 id="47-example-configuration">4.7 Example Configuration</h3>
           <p>High-throughput server configuration:</p>
           <pre className="code-block"><code className="language-yaml">{`models:
@@ -1146,25 +1164,51 @@ Request 4 ──→ acquireModel() ──→ pool.acquire() ──→ Context 4 
     cache_type_k: q8_0
     cache_type_v: q8_0
     system_prompt_cache: true`}</code></pre>
-          <p>This configuration:</p>
-          <ul>
-            <li>Handles 8 concurrent requests</li>
-            <li>Uses quantized KV cache to reduce memory</li>
-            <li>Caches system prompt for faster prefill</li>
-          </ul>
+          <p>This configuration handles 8 concurrent requests, uses quantized KV cache to reduce memory, and caches the system prompt for faster prefill. Here is the VRAM estimate (see <a href="#37-vram-estimation">Section 3.7</a> for the full formula):</p>
+          <pre className="code-block"><code>{`Model                   : Qwen3-8B-Q8_0
+Model Weights           : ~9 GB
+Context Window (n_ctx)  : 8,192
+cache-type-k / v        : q8_0 (1 byte per element)
+block_count (n_layers)  : 36
+attention.head_count_kv : 8
+attention.key_length    : 128
+attention.value_length  : 128
+
+Step 1 — Per-token-per-layer cost:
+
+  KV_Per_Token_Per_Layer = 8 × (128 + 128) × 1 = 2,048 bytes
+
+Step 2 — Per-sequence cost:
+
+  KV_Per_Sequence = 8,192 × 36 × 2,048 = ~0.6 GB
+
+Step 3 — Total KV cache (NSeqMax = 8):
+
+  Slot_Memory = 8 × 0.6 GB = ~4.8 GB
+
+Step 4 — Total VRAM:
+
+  Total_VRAM = 9.0 GB + 4.8 GB = ~13.8 GB`}</code></pre>
           <hr />
           <h2 id="chapter-5:-message-caching">Chapter 5: Message Caching</h2>
-          <p>Message caching reduces redundant computation by storing and reusing KV cache state from previous requests. Kronk provides two caching modes optimized for different use cases.</p>
+          <p>Message caching reduces redundant computation by storing and reusing KV cache state from previous requests. Kronk provides two caching modes (SPC and IMC) optimized for different use cases.</p>
           <h3 id="51-overview">5.1 Overview</h3>
           <p>When processing a chat request, the model must compute attention for every token in the conversation. Without caching, the entire prompt is prefilled on every request — even tokens the model has already seen.</p>
-          <p>Kronk provides two caching modes that reduce redundant prefill work. SPC (System Prompt Cache) caches the system prompt tokens in RAM and re-decodes them into the slot, skipping tokenization and templating. IMC (Incremental Message Cache) dedicates each slot to a user and caches the full conversation in the slot's KV cache sequence, so only the new message needs to be prefilled.</p>
+          <p><em>Note: Prefill is the phase where the model processes all input tokens (system prompt, conversation history, and the new message) before it begins generating a response. This is the most computationally expensive part of a request, and its cost grows with the number of input tokens.</em></p>
+          <p>Kronk provides two caching modes that reduce redundant prefill work:</p>
+          <ul>
+            <li>SPC (System Prompt Cache) caches the system prompt tokens in RAM and re-decodes them into the slot, skipping tokenization and templating.</li>
+          </ul>
+          <ul>
+            <li>IMC (Incremental Message Cache) dedicates each slot to a user and caches the full conversation in the slot's KV cache sequence, so only the new message needs to be prefilled.</li>
+          </ul>
           <pre className="code-block"><code>{`No Caching:
 ┌─────────────────────────────────────────────────────┐
 │ System Prompt │ Message 1 │ Message 2 │ New Message │
 │   (prefill)   │ (prefill) │ (prefill) │  (prefill)  │
 └─────────────────────────────────────────────────────┘
                                               ↓
-                                         Generate
+                                           Generate
 
 SPC (System Prompt Cache):
 ┌─────────────────────────────────────────────────────┐
@@ -1172,7 +1216,7 @@ SPC (System Prompt Cache):
 │   (cached)    │ (prefill) │ (prefill) │  (prefill)  │
 └─────────────────────────────────────────────────────┘
                                               ↓
-                                         Generate
+                                           Generate
 
 IMC (Incremental Message Cache):
 ┌─────────────────────────────────────────────────────┐
@@ -1180,7 +1224,7 @@ IMC (Incremental Message Cache):
 │   (cached)    │ (cached)  │ (cached)  │  (prefill)  │
 └─────────────────────────────────────────────────────┘
                                               ↓
-                                         Generate`}</code></pre>
+                                           Generate`}</code></pre>
           <h3 id="52-system-prompt-cache-spc">5.2 System Prompt Cache (SPC)</h3>
           <p>System Prompt Cache saves the tokenized system prompt in RAM and re-decodes it into each slot's sequence at request time. This avoids re-tokenizing and re-templating the system prompt on every request, while adding zero VRAM overhead since no dedicated cache sequences are needed.</p>
           <p><strong>Best for:</strong></p>
@@ -1257,6 +1301,7 @@ Prefill:  [user3 + gen_prompt]`}</code></pre>
 }`}</code></pre>
           <p>If no <code>cache_id</code> is provided, requests default to the ID <code>"default"</code>. For multi-user deployments, always provide unique cache_ids.</p>
           <h3 id="55-spc-vs-imc">5.5 SPC vs IMC</h3>
+          <p>Both caching modes eliminate redundant work, but they target different parts of the prompt and suit different workloads. SPC is the simpler option — it caches just the system prompt and works with any model template. IMC is more aggressive — it caches the entire conversation history but requires the model's chat template to produce consistent output. The table below summarizes the trade-offs to help you choose.</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -1304,6 +1349,7 @@ Prefill:  [user3 + gen_prompt]`}</code></pre>
             <li><strong>Inconsistent templates (GPT-OSS, GLM):</strong> Use SPC only</li>
           </ul>
           <h3 id="56-cache-invalidation">5.6 Cache Invalidation</h3>
+          <p>Cached state doesn't last forever. Kronk uses hash comparisons to detect when cached tokens no longer match the incoming request, and automatically rebuilds the cache when a mismatch is found. Understanding what triggers invalidation helps you avoid unexpected prefill costs.</p>
           <p><strong>SPC Invalidation:</strong></p>
           <ul>
             <li>System prompt content changes → cache rebuilt</li>
@@ -1323,6 +1369,7 @@ Prefill:  [user3 + gen_prompt]`}</code></pre>
             <li>Server restarts</li>
           </ul>
           <h3 id="57-configuration-reference">5.7 Configuration Reference</h3>
+          <p>Both caching modes are enabled through the model configuration. Remember that SPC and IMC are mutually exclusive — enable one or the other, not both.</p>
           <pre className="code-block"><code className="language-yaml">{`models:
   Qwen3-8B-Q8_0:
     # System Prompt Cache
@@ -1336,13 +1383,8 @@ Prefill:  [user3 + gen_prompt]`}</code></pre>
           <p><strong>cache_min_tokens</strong></p>
           <p>Minimum token count before SPC caching activates. Short system prompts don't benefit from caching because decode overhead exceeds savings. Does not apply to IMC.</p>
           <p>Default: 100 tokens</p>
-          <h3 id="58-kv-cache-partitioning">5.8 KV Cache Partitioning</h3>
-          <p>llama.cpp internally divides <code>n_ctx</code> by <code>n_seq_max</code>, so each slot gets <code>context_window / NSeqMax</code> tokens of KV cache capacity. No context scaling is needed — VRAM is the same for all caching modes.</p>
-          <pre className="code-block"><code>{`context_window: 128k
-n_seq_max: 2
-Effective per slot: 128k / 2 = 64k`}</code></pre>
-          <p>This partitioning applies equally to no-cache, SPC, and IMC modes. Plan your <code>context_window</code> accordingly: if you need 64k tokens per slot with <code>n_seq_max=2</code>, set <code>context_window</code> to 128k.</p>
-          <h3 id="59-performance-and-limitations">5.9 Performance and Limitations</h3>
+          <h3 id="58-performance-and-limitations">5.8 Performance and Limitations</h3>
+          <p>Caching improves request latency by skipping redundant prefill work, but each mode has its own costs and constraints. SPC trades a small per-request decode cost for broad compatibility. IMC delivers larger savings but imposes restrictions on template behavior and session management.</p>
           <p><strong>SPC Performance:</strong></p>
           <p>SPC re-decodes system prompt tokens into each slot. For typical system prompts (200-500 tokens), this takes ~10-50ms per request. The trade-off is zero VRAM overhead vs. a small per-request decode cost.</p>
           <p><strong>IMC Prefill Savings:</strong></p>
@@ -1534,7 +1576,7 @@ cache_type_v: q8_0`}</code></pre>
           <p>The Kronk Model Server provides an OpenAI-compatible REST API for inference. This chapter covers server configuration, management, and the catalog system.</p>
           <p><strong>CLI Modes: Web vs Local</strong></p>
           <p>Most CLI commands communicate with a running server by default:</p>
-          <pre className="code-block"><code className="language-shell">{`kronk catalog list              # Talks to server at localhost:8080
+          <pre className="code-block"><code className="language-shell">{`kronk catalog list                # Talks to server at localhost:8080
 kronk catalog pull Qwen3-8B-Q8_0  # Downloads via server`}</code></pre>
           <p>Add <code>--local</code> to run commands directly without a server:</p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog list --local        # Direct file access
@@ -1649,7 +1691,7 @@ kronk libs --local`}</code></pre>
               <tr>
                 <td><code>--auth-host</code></td>
                 <td><code>KRONK_AUTH_HOST</code></td>
-                <td>_(empty)_</td>
+                <td><em>(empty)</em></td>
                 <td>External auth service host. Leave empty to use local auth</td>
               </tr>
               <tr>
@@ -1717,13 +1759,13 @@ kronk libs --local`}</code></pre>
               <tr>
                 <td><code>--model-config-file</code></td>
                 <td><code>KRONK_CATALOG_MODEL_CONFIG_FILE</code></td>
-                <td>_(empty)_</td>
+                <td><em>(empty)</em></td>
                 <td>Path to model-specific config YAML file</td>
               </tr>
               <tr>
                 <td><code>--catalog-repo-path</code></td>
                 <td><code>KRONK_CATALOG_REPO_PATH</code></td>
-                <td>_(empty)_</td>
+                <td><em>(empty)</em></td>
                 <td>Path to cloned catalog repository for publishing edits</td>
               </tr>
             </tbody>
@@ -1798,37 +1840,37 @@ kronk libs --local`}</code></pre>
               <tr>
                 <td><code>--lib-path</code></td>
                 <td><code>KRONK_LIB_PATH</code></td>
-                <td>_(empty)_</td>
+                <td><em>(empty)</em></td>
                 <td>Path to llama library directory</td>
               </tr>
               <tr>
                 <td><code>--lib-version</code></td>
                 <td><code>KRONK_LIB_VERSION</code></td>
-                <td>_(empty)_</td>
+                <td><em>(empty)</em></td>
                 <td>Specific llama library version</td>
               </tr>
               <tr>
                 <td><code>--arch</code></td>
                 <td><code>KRONK_ARCH</code></td>
-                <td>_(auto)_</td>
+                <td><em>(auto)</em></td>
                 <td>Architecture override (<code>amd64</code>, <code>arm64</code>)</td>
               </tr>
               <tr>
                 <td><code>--os</code></td>
                 <td><code>KRONK_OS</code></td>
-                <td>_(auto)_</td>
+                <td><em>(auto)</em></td>
                 <td>OS override (<code>linux</code>, <code>darwin</code>, <code>windows</code>)</td>
               </tr>
               <tr>
                 <td><code>--processor</code></td>
                 <td><code>KRONK_PROCESSOR</code></td>
-                <td>_(auto)_</td>
+                <td><em>(auto)</em></td>
                 <td>Processor type (<code>cpu</code>, <code>metal</code>, <code>cuda</code>, <code>vulkan</code>)</td>
               </tr>
               <tr>
                 <td><code>--hf-token</code></td>
                 <td><code>KRONK_HF_TOKEN</code></td>
-                <td>_(empty)_</td>
+                <td><em>(empty)</em></td>
                 <td>Hugging Face API token for gated models</td>
               </tr>
               <tr>
@@ -1924,7 +1966,7 @@ Text-Generation      Llama-3.3-70B-Instruct-Q8_0      no      chat_completion`}<
           <p><strong>Show Model Details</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog show Qwen3-8B-Q8_0`}</code></pre>
           <p><strong>Update Catalog</strong></p>
-          <p>_Note: We don't have a server version of this yet._</p>
+          <p><em>Note: We don't have a server version of this yet.</em></p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog update --local`}</code></pre>
           <h3 id="77-custom-catalog-repository">7.7 Custom Catalog Repository</h3>
           <p>Use a custom catalog repository:</p>
@@ -3223,7 +3265,7 @@ curl http://localhost:8080/v1/chat/completions \\
     "max_tokens": 2048
   }'`}</code></pre>
           <hr />
-          <p>_Next: <a href="#chapter-11-security--authentication">Chapter 11: Security & Authentication</a>_</p>
+          <p><em>Next: &lt;a href="#chapter-11-security--authentication"&gt;Chapter 11: Security & Authentication&lt;/a&gt;</em></p>
           <h2 id="chapter-11:-security-authentication">Chapter 11: Security &amp; Authentication</h2>
           <p>Kronk provides JWT-based authentication and authorization with per-endpoint rate limiting. When enabled, all API requests require a valid token.</p>
           <h3 id="111-enabling-authentication">11.1 Enabling Authentication</h3>
@@ -3424,7 +3466,7 @@ response = client.chat.completions.create(
             <li>Monitor rate limit usage in logs</li>
           </ul>
           <hr />
-          <p>_Next: <a href="#chapter-12-browser-ui-bui">Chapter 12: Browser UI (BUI)</a>_</p>
+          <p><em>Next: &lt;a href="#chapter-12-browser-ui-bui"&gt;Chapter 12: Browser UI (BUI)&lt;/a&gt;</em></p>
           <h2 id="chapter-12:-browser-ui-bui">Chapter 12: Browser UI (BUI)</h2>
           <p>Kronk includes a web-based interface for managing models, libraries, security, and server configuration without using the command line.</p>
           <h3 id="121-accessing-the-bui">12.1 Accessing the BUI</h3>
@@ -3452,10 +3494,15 @@ response = client.chat.completions.create(
           <p><strong>Browse the Catalog:</strong></p>
           <ol>
             <li>Navigate to the <strong>Catalog</strong> page</li>
-            <li>Browse available models by category:</li>
-          </ol>
-          <p>- Text-Generation - Image-Text-to-Text (Vision) - Audio-Text-to-Text - Embedding - Reranking</p>
-          <ol>
+            <li>Browse available models by category:
+              <ul>
+                <li>Text-Generation</li>
+                <li>Image-Text-to-Text (Vision)</li>
+                <li>Audio-Text-to-Text</li>
+                <li>Embedding</li>
+                <li>Reranking</li>
+              </ul>
+            </li>
             <li>Click <strong>Pull</strong> next to a model to download it</li>
           </ol>
           <p><strong>Monitor Progress:</strong></p>
@@ -3501,7 +3548,7 @@ response = client.chat.completions.create(
             <li>Theme preferences</li>
           </ul>
           <hr />
-          <p>_Next: <a href="#chapter-13-client-integration">Chapter 13: Client Integration</a>_</p>
+          <p><em>Next: &lt;a href="#chapter-13-client-integration"&gt;Chapter 13: Client Integration&lt;/a&gt;</em></p>
           <h2 id="chapter-13:-client-integration">Chapter 13: Client Integration</h2>
           <p>Kronk's OpenAI-compatible API works with popular AI clients and tools.</p>
           <h3 id="131-openwebui">13.1 OpenWebUI</h3>
@@ -3559,7 +3606,7 @@ Model: Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMC`}</code></pre>
     nseq-max: 1
     incremental-cache: true`}</code></pre>
           <p>IMC is especially beneficial for Cline's iterative coding workflow.</p>
-          <p>_Note: Don't use R1 Message formats when using KMS._</p>
+          <p><em>Note: Don't use R1 Message formats when using KMS.</em></p>
           <h3 id="134-python-openai-sdk">13.4 Python OpenAI SDK</h3>
           <p>Use the official OpenAI Python library with Kronk.</p>
           <p><strong>Installation:</strong></p>
@@ -3619,7 +3666,7 @@ llm = ChatOpenAI(
 response = llm.invoke("Explain quantum computing briefly.")
 print(response.content)`}</code></pre>
           <hr />
-          <p>_Next: <a href="#chapter-14-observability">Chapter 14: Observability</a>_</p>
+          <p><em>Next: &lt;a href="#chapter-14-observability"&gt;Chapter 14: Observability&lt;/a&gt;</em></p>
           <h2 id="chapter-14:-observability">Chapter 14: Observability</h2>
           <p>Kronk provides comprehensive observability through distributed tracing, Prometheus metrics, pprof profiling, and real-time visualizations.</p>
           <h3 id="141-debug-server">14.1 Debug Server</h3>
@@ -3859,7 +3906,7 @@ kronk server start`}</code></pre>
           </ul>
           <p>(env: <code>KRONK_LLAMA_LOG</code>, default: <code>1</code>)</p>
           <hr />
-          <p>_Next: <a href="#chapter-15-troubleshooting">Chapter 15: Troubleshooting</a>_</p>
+          <p><em>Next: &lt;a href="#chapter-15-troubleshooting"&gt;Chapter 15: Troubleshooting&lt;/a&gt;</em></p>
           <h2 id="chapter-15:-troubleshooting">Chapter 15: Troubleshooting</h2>
           <p>This chapter covers common issues, their causes, and solutions.</p>
           <h3 id="151-library-issues">15.1 Library Issues</h3>
@@ -4120,7 +4167,7 @@ nvidia-smi`}</code></pre>
             <li>Steps to reproduce</li>
           </ul>
           <hr />
-          <p>_Next: <a href="#chapter-16-developer-guide">Chapter 16: Developer Guide</a>_</p>
+          <p><em>Next: &lt;a href="#chapter-16-developer-guide"&gt;Chapter 16: Developer Guide&lt;/a&gt;</em></p>
           <h2 id="chapter-16:-developer-guide">Chapter 16: Developer Guide</h2>
           <p>This chapter covers development workflows, build commands, and code conventions for contributors to the Kronk project.</p>
           <h3 id="161-quick-reference">16.1 Quick Reference</h3>
@@ -4564,10 +4611,12 @@ default:
           <ol>
             <li><code>streaming()</code> acquires model, defers <code>releaseModel()</code> in wrapper goroutine</li>
             <li><code>ChatStreaming</code> defers <code>m.resetContext()</code> before any processing</li>
-            <li>When generation completes, <code>resetContext()</code> runs first:</li>
-          </ol>
-          <p>- <code>llama.Synchronize(m.lctx)</code> - waits for GPU operations - <code>llama.MemoryClear(mem, true)</code> - clears KV cache</p>
-          <ol>
+            <li>When generation completes, <code>resetContext()</code> runs first:
+              <ul>
+                <li><code>llama.Synchronize(m.lctx)</code> - waits for GPU operations</li>
+                <li><code>llama.MemoryClear(mem, true)</code> - clears KV cache</li>
+              </ul>
+            </li>
             <li>Channel closes, wrapper exits, <code>releaseModel()</code> runs</li>
           </ol>
           <p><strong>Key invariant:</strong> <code>resetContext()</code> always runs before model release due to defer ordering.</p>
@@ -4805,15 +4854,15 @@ batching = true`}</code></pre>
               <a href="#chapter-3:-model-configuration" className={`doc-index-header ${activeSection === 'chapter-3:-model-configuration' ? 'active' : ''}`}>Chapter 3: Model Configuration</a>
               <ul>
                 <li><a href="#31-basic-configuration" className={activeSection === '31-basic-configuration' ? 'active' : ''}>3.1 Basic Configuration</a></li>
-                <li><a href="#32-sampling-parameters" className={activeSection === '32-sampling-parameters' ? 'active' : ''}>3.2 Sampling Parameters</a></li>
-                <li><a href="#33-gpu-configuration" className={activeSection === '33-gpu-configuration' ? 'active' : ''}>3.3 GPU Configuration</a></li>
-                <li><a href="#34-kv-cache-quantization" className={activeSection === '34-kv-cache-quantization' ? 'active' : ''}>3.4 KV Cache Quantization</a></li>
-                <li><a href="#35-flash-attention" className={activeSection === '35-flash-attention' ? 'active' : ''}>3.5 Flash Attention</a></li>
-                <li><a href="#36-parallel-inference-nseqmax" className={activeSection === '36-parallel-inference-nseqmax' ? 'active' : ''}>3.6 Parallel Inference (NSeqMax)</a></li>
+                <li><a href="#32-gpu-configuration" className={activeSection === '32-gpu-configuration' ? 'active' : ''}>3.2 GPU Configuration</a></li>
+                <li><a href="#33-kv-cache-quantization" className={activeSection === '33-kv-cache-quantization' ? 'active' : ''}>3.3 KV Cache Quantization</a></li>
+                <li><a href="#34-flash-attention" className={activeSection === '34-flash-attention' ? 'active' : ''}>3.4 Flash Attention</a></li>
+                <li><a href="#35-parallel-inference-nseqmax" className={activeSection === '35-parallel-inference-nseqmax' ? 'active' : ''}>3.5 Parallel Inference (NSeqMax)</a></li>
+                <li><a href="#36-understanding-gguf-quantization" className={activeSection === '36-understanding-gguf-quantization' ? 'active' : ''}>3.6 Understanding GGUF Quantization</a></li>
                 <li><a href="#37-vram-estimation" className={activeSection === '37-vram-estimation' ? 'active' : ''}>3.7 VRAM Estimation</a></li>
-                <li><a href="#38-model-config-file-example" className={activeSection === '38-model-config-file-example' ? 'active' : ''}>3.8 Model Config File Example</a></li>
-                <li><a href="#39-model-specific-tuning" className={activeSection === '39-model-specific-tuning' ? 'active' : ''}>3.9 Model-Specific Tuning</a></li>
-                <li><a href="#310-understanding-gguf-quantization" className={activeSection === '310-understanding-gguf-quantization' ? 'active' : ''}>3.10 Understanding GGUF Quantization</a></li>
+                <li><a href="#38-model-specific-tuning" className={activeSection === '38-model-specific-tuning' ? 'active' : ''}>3.8 Model-Specific Tuning</a></li>
+                <li><a href="#39-sampling-parameters" className={activeSection === '39-sampling-parameters' ? 'active' : ''}>3.9 Sampling Parameters</a></li>
+                <li><a href="#310-model-config-file-example" className={activeSection === '310-model-config-file-example' ? 'active' : ''}>3.10 Model Config File Example</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
@@ -4838,8 +4887,7 @@ batching = true`}</code></pre>
                 <li><a href="#55-spc-vs-imc" className={activeSection === '55-spc-vs-imc' ? 'active' : ''}>5.5 SPC vs IMC</a></li>
                 <li><a href="#56-cache-invalidation" className={activeSection === '56-cache-invalidation' ? 'active' : ''}>5.6 Cache Invalidation</a></li>
                 <li><a href="#57-configuration-reference" className={activeSection === '57-configuration-reference' ? 'active' : ''}>5.7 Configuration Reference</a></li>
-                <li><a href="#58-kv-cache-partitioning" className={activeSection === '58-kv-cache-partitioning' ? 'active' : ''}>5.8 KV Cache Partitioning</a></li>
-                <li><a href="#59-performance-and-limitations" className={activeSection === '59-performance-and-limitations' ? 'active' : ''}>5.9 Performance and Limitations</a></li>
+                <li><a href="#58-performance-and-limitations" className={activeSection === '58-performance-and-limitations' ? 'active' : ''}>5.8 Performance and Limitations</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
