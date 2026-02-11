@@ -553,8 +553,9 @@ flash_attention: auto      # Let llama.cpp decide`}</code></pre>
           <pre className="code-block"><code className="language-yaml">{`n_seq_max: 4 # Create 4 contexts in internal pool`}</code></pre>
           <p>Multiple inputs within a single request are partitioned across pool contexts and processed in parallel. Model weights are shared, only KV cache memory is multiplied per context.</p>
           <h3 id="37-vram-estimation">3.7 VRAM Estimation</h3>
-          <p>Rough VRAM requirements for common configurations:</p>
-          <p><strong>Model Size (Q8_0 quantization)</strong></p>
+          <p><strong>Total VRAM = Model Weights + KV Cache</strong></p>
+          <p>Model weights are determined by the GGUF file size (e.g., ~8GB for a 7B Q8_0 model). The KV cache is the variable cost you control through configuration.</p>
+          <p><strong>Model Weights (Q8_0 quantization)</strong></p>
           <ul>
             <li>1-3B parameters: 2-4 GB</li>
             <li>7-8B parameters: 8-10 GB</li>
@@ -562,20 +563,92 @@ flash_attention: auto      # Let llama.cpp decide`}</code></pre>
             <li>30B parameters: 32-36 GB</li>
             <li>70B parameters: 72-80 GB</li>
           </ul>
-          <p><strong>Additional VRAM for Context</strong></p>
-          <p>Per 1K tokens of context (with F16 KV cache):</p>
-          <ul>
-            <li>7B model: ~50 MB</li>
-            <li>13B model: ~80 MB</li>
-            <li>70B model: ~200 MB</li>
-          </ul>
-          <p><strong>Example: Qwen3-8B with 32K context</strong></p>
-          <pre className="code-block"><code>{`Model weights (Q8_0):     ~8.5 GB
-KV cache (32K, F16):      ~1.6 GB
-Overhead:                 ~0.5 GB
-─────────────────────────────────
-Total:                    ~10.6 GB`}</code></pre>
-          <p>With Q8_0 KV cache quantization, the KV cache drops to ~0.8 GB.</p>
+          <h4 id="slots-and-sequences">Slots and Sequences</h4>
+          <p>A slot is a processing unit that handles one request at a time. Each slot is assigned a unique sequence ID that maps to an isolated partition in the shared KV cache. The mapping is always 1:1:</p>
+          <pre className="code-block"><code>{`NSeqMax = 4 (set via n_seq_max in model config)
+
+Slot 0  →  Sequence 0  →  KV cache partition 0
+Slot 1  →  Sequence 1  →  KV cache partition 1
+Slot 2  →  Sequence 2  →  KV cache partition 2
+Slot 3  →  Sequence 3  →  KV cache partition 3`}</code></pre>
+          <p><code>NSeqMax</code> controls how many slots (and sequences) are created. More slots means more concurrent requests, but each slot reserves its own KV cache partition in VRAM whether or not it is actively used.</p>
+          <h4 id="what-affects-kv-cache-memory-per-sequence">What Affects KV Cache Memory Per Sequence</h4>
+          <p>Each sequence's KV cache partition size is determined by three factors:</p>
+          <ol>
+            <li><strong>Context Window (&lt;code&gt;n_ctx&lt;/code&gt;)</strong> — The maximum number of tokens the sequence can</li>
+          </ol>
+          <p>hold. Larger context windows linearly increase memory. 32K context uses 4× the memory of 8K context.</p>
+          <ol>
+            <li><strong>Number of Layers (&lt;code&gt;block_count&lt;/code&gt;)</strong> — Every transformer layer stores its own</li>
+          </ol>
+          <p>key and value tensors per token. More layers means more memory per token. A 70B model with 80 layers uses ~2.5× more per-token memory than a 7B model with 32 layers.</p>
+          <ol>
+            <li><strong>KV Cache Precision (&lt;code&gt;bytes_per_element&lt;/code&gt;)</strong> — The data type used to store</li>
+          </ol>
+          <p>cached keys and values: - <code>f16</code> = 2 bytes per element (default, best quality) - <code>q8_0</code> = 1 byte per element (50% VRAM savings, good quality)</p>
+          <p>The head geometry (<code>head_count_kv</code>, <code>key_length</code>, <code>value_length</code>) is fixed by the model architecture and read from the GGUF header.</p>
+          <p>The formula:</p>
+          <pre className="code-block"><code>{`KV_Per_Token_Per_Layer = head_count_kv × (key_length + value_length) × bytes_per_element
+KV_Per_Sequence        = n_ctx × n_layers × KV_Per_Token_Per_Layer`}</code></pre>
+          <h4 id="what-affects-total-kv-cache-slot-memory">What Affects Total KV Cache (Slot Memory)</h4>
+          <p>Total KV cache (Slot Memory) is the per-sequence cost multiplied by the number of slots:</p>
+          <pre className="code-block"><code>{`Slot_Memory = NSeqMax × KV_Per_Sequence
+Total_VRAM  = Model_Weights + Slot_Memory`}</code></pre>
+          <p>Memory is statically allocated upfront when the model loads. All slots reserve their full KV cache partition regardless of whether they are actively processing a request.</p>
+          <h4 id="caching-mode-does-not-affect-vram">Caching Mode Does Not Affect VRAM</h4>
+          <p>All caching modes (off, SPC, IMC) allocate the same number of slots and sequences with the same VRAM footprint. The difference is how each mode manages cached state, not how much memory is used:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Mode</th>
+                <th>Slot Lifetime</th>
+                <th>Cache Strategy</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>off</td>
+                <td>Cleared after request</td>
+                <td>None</td>
+              </tr>
+              <tr>
+                <td>SPC</td>
+                <td>Cleared after request</td>
+                <td>System prompt tokens held in RAM, decoded into slot's sequence on request</td>
+              </tr>
+              <tr>
+                <td>IMC</td>
+                <td>Dedicated to a cache_id</td>
+                <td>Full conversation cached in the slot's KV cache sequence</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>SPC stores system prompt tokens in RAM (negligible) and decodes them into each slot's sequence before the remaining prompt is prefilled. Zero extra VRAM overhead.</p>
+          <h4 id="example:-real-model-calculation">Example: Real Model Calculation</h4>
+          <pre className="code-block"><code>{`Model                   : Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
+Model Weights           : 36.0 GB
+Context Window (n_ctx)  : 131,072 (128K)
+cache-type-k / v        : q8_0 (1 byte per element)
+block_count (n_layers)  : 48
+attention.head_count_kv : 4
+attention.key_length    : 128
+attention.value_length  : 128
+
+Step 1 — Per-token-per-layer cost:
+
+  KV_Per_Token_Per_Layer = 4 × (128 + 128) × 1 = 1,024 bytes
+
+Step 2 — Per-sequence cost:
+
+  KV_Per_Sequence = 131,072 × 48 × 1,024 = ~6.4 GB
+
+Step 3 — Total KV cache (NSeqMax = 2):
+
+  Slot_Memory = 2 × 6.4 GB = ~12.8 GB
+
+Step 4 — Total VRAM:
+
+  Total_VRAM = 36.0 GB + 12.8 GB = ~48.8 GB`}</code></pre>
           <h3 id="38-model-config-file-example">3.8 Model Config File Example</h3>
           <p>Create a YAML config file for custom model settings:</p>
           <pre className="code-block"><code className="language-yaml">{`# model-config.yaml

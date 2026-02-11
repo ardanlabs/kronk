@@ -630,9 +630,12 @@ multiplied per context.
 
 ### 3.7 VRAM Estimation
 
-Rough VRAM requirements for common configurations:
+**Total VRAM = Model Weights + KV Cache**
 
-**Model Size (Q8_0 quantization)**
+Model weights are determined by the GGUF file size (e.g., ~8GB for a 7B Q8_0
+model). The KV cache is the variable cost you control through configuration.
+
+**Model Weights (Q8_0 quantization)**
 
 - 1-3B parameters: 2-4 GB
 - 7-8B parameters: 8-10 GB
@@ -640,25 +643,111 @@ Rough VRAM requirements for common configurations:
 - 30B parameters: 32-36 GB
 - 70B parameters: 72-80 GB
 
-**Additional VRAM for Context**
+#### Slots and Sequences
 
-Per 1K tokens of context (with F16 KV cache):
-
-- 7B model: ~50 MB
-- 13B model: ~80 MB
-- 70B model: ~200 MB
-
-**Example: Qwen3-8B with 32K context**
+A slot is a processing unit that handles one request at a time. Each slot is
+assigned a unique sequence ID that maps to an isolated partition in the shared
+KV cache. The mapping is always 1:1:
 
 ```
-Model weights (Q8_0):     ~8.5 GB
-KV cache (32K, F16):      ~1.6 GB
-Overhead:                 ~0.5 GB
-─────────────────────────────────
-Total:                    ~10.6 GB
+NSeqMax = 4 (set via n_seq_max in model config)
+
+Slot 0  →  Sequence 0  →  KV cache partition 0
+Slot 1  →  Sequence 1  →  KV cache partition 1
+Slot 2  →  Sequence 2  →  KV cache partition 2
+Slot 3  →  Sequence 3  →  KV cache partition 3
 ```
 
-With Q8_0 KV cache quantization, the KV cache drops to ~0.8 GB.
+`NSeqMax` controls how many slots (and sequences) are created. More slots means
+more concurrent requests, but each slot reserves its own KV cache partition in
+VRAM whether or not it is actively used.
+
+#### What Affects KV Cache Memory Per Sequence
+
+Each sequence's KV cache partition size is determined by three factors:
+
+1. **Context Window (`n_ctx`)** — The maximum number of tokens the sequence can
+   hold. Larger context windows linearly increase memory. 32K context uses 4×
+   the memory of 8K context.
+
+2. **Number of Layers (`block_count`)** — Every transformer layer stores its own
+   key and value tensors per token. More layers means more memory per token. A
+   70B model with 80 layers uses ~2.5× more per-token memory than a 7B model
+   with 32 layers.
+
+3. **KV Cache Precision (`bytes_per_element`)** — The data type used to store
+   cached keys and values:
+   - `f16` = 2 bytes per element (default, best quality)
+   - `q8_0` = 1 byte per element (50% VRAM savings, good quality)
+
+   The head geometry (`head_count_kv`, `key_length`, `value_length`) is fixed by
+   the model architecture and read from the GGUF header.
+
+The formula:
+
+```
+KV_Per_Token_Per_Layer = head_count_kv × (key_length + value_length) × bytes_per_element
+KV_Per_Sequence        = n_ctx × n_layers × KV_Per_Token_Per_Layer
+```
+
+#### What Affects Total KV Cache (Slot Memory)
+
+Total KV cache (Slot Memory) is the per-sequence cost multiplied by the number
+of slots:
+
+```
+Slot_Memory = NSeqMax × KV_Per_Sequence
+Total_VRAM  = Model_Weights + Slot_Memory
+```
+
+Memory is statically allocated upfront when the model loads. All slots reserve
+their full KV cache partition regardless of whether they are actively processing
+a request.
+
+#### Caching Mode Does Not Affect VRAM
+
+All caching modes (off, SPC, IMC) allocate the same number of slots and
+sequences with the same VRAM footprint. The difference is how each mode manages
+cached state, not how much memory is used:
+
+| Mode | Slot Lifetime         | Cache Strategy                                                      |
+| ---- | --------------------- | ------------------------------------------------------------------- |
+| off  | Cleared after request | None                                                                |
+| SPC  | Cleared after request | System prompt tokens held in RAM, decoded into slot's sequence on request |
+| IMC  | Dedicated to a cache_id | Full conversation cached in the slot's KV cache sequence           |
+
+SPC stores system prompt tokens in RAM (negligible) and decodes them into each
+slot's sequence before the remaining prompt is prefilled. Zero extra VRAM
+overhead.
+
+#### Example: Real Model Calculation
+
+```
+Model                   : Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
+Model Weights           : 36.0 GB
+Context Window (n_ctx)  : 131,072 (128K)
+cache-type-k / v        : q8_0 (1 byte per element)
+block_count (n_layers)  : 48
+attention.head_count_kv : 4
+attention.key_length    : 128
+attention.value_length  : 128
+
+Step 1 — Per-token-per-layer cost:
+
+  KV_Per_Token_Per_Layer = 4 × (128 + 128) × 1 = 1,024 bytes
+
+Step 2 — Per-sequence cost:
+
+  KV_Per_Sequence = 131,072 × 48 × 1,024 = ~6.4 GB
+
+Step 3 — Total KV cache (NSeqMax = 2):
+
+  Slot_Memory = 2 × 6.4 GB = ~12.8 GB
+
+Step 4 — Total VRAM:
+
+  Total_VRAM = 36.0 GB + 12.8 GB = ~48.8 GB
+```
 
 ### 3.8 Model Config File Example
 
