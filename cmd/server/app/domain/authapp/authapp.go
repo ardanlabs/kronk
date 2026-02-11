@@ -18,7 +18,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 )
 
 // App represents the grpc handlers for the auth service.
@@ -54,7 +53,7 @@ func (a *App) Authenticate(ctx context.Context, req *AuthenticateRequest) (*Auth
 		a.log.Info(ctx, "***> auth", "status", "authentication disabled")
 
 		arb := AuthenticateResponse_builder{
-			Subject: proto.String(uuid.Nil.String()),
+			Subject: new(uuid.Nil.String()),
 		}
 
 		return arb.Build(), nil
@@ -79,7 +78,7 @@ func (a *App) Authenticate(ctx context.Context, req *AuthenticateRequest) (*Auth
 	}
 
 	arb := AuthenticateResponse_builder{
-		Subject: proto.String(claims.Subject),
+		Subject: &claims.Subject,
 	}
 
 	return arb.Build(), nil
@@ -107,7 +106,7 @@ func (a *App) CreateToken(ctx context.Context, req *CreateTokenRequest) (*Create
 	}
 
 	trb := CreateTokenResponse_builder{
-		Token: proto.String(token),
+		Token: &token,
 	}
 
 	return trb.Build(), nil
@@ -124,8 +123,8 @@ func (a *App) ListKeys(ctx context.Context, req *ListKeysRequest) (*ListKeysResp
 	protoKeys := make([]*Key, len(keys))
 	for i, key := range keys {
 		kb := Key_builder{
-			Id:      proto.String(key.ID),
-			Created: proto.String(key.Created.Format("2006-01-02T15:04:05Z07:00")),
+			Id:      &key.ID,
+			Created: new(key.Created.Format("2006-01-02T15:04:05Z07:00")),
 		}
 		protoKeys[i] = kb.Build()
 	}
@@ -203,8 +202,8 @@ func (a *App) requireAuth(ctx context.Context, admin bool, endpoint string, req 
 	}
 
 	arb := AuthenticateRequest_builder{
-		Admin:    proto.Bool(admin),
-		Endpoint: proto.String(endpoint),
+		Admin:    &admin,
+		Endpoint: &endpoint,
 	}
 
 	if _, err := a.Authenticate(ctx, arb.Build()); err != nil {

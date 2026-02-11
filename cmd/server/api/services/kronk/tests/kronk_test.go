@@ -87,10 +87,6 @@ func Test_API(t *testing.T) {
 
 // =============================================================================
 
-func stringPointer(v string) *string {
-	return &v
-}
-
 func createTokens(t *testing.T, sec *security.Security) map[string]string {
 	tokens := make(map[string]string)
 
