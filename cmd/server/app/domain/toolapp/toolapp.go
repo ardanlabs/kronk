@@ -18,7 +18,6 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/ardanlabs/kronk/sdk/tools/templates"
-	"google.golang.org/protobuf/proto"
 )
 
 type app struct {
@@ -532,8 +531,8 @@ func (a *app) createToken(ctx context.Context, r *http.Request) web.Encoder {
 	for name, rl := range req.Endpoints {
 		window := string(rl.Window)
 		endpoints[name] = authapp.RateLimit_builder{
-			Limit:  proto.Int32(int32(rl.Limit)),
-			Window: proto.String(window),
+			Limit:  new(int32(rl.Limit)),
+			Window: &window,
 		}.Build()
 	}
 

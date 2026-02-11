@@ -42,7 +42,7 @@ func chatNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 						Message: &model.ResponseMessage{
 							Role: "assistant",
 						},
-						FinishReasonPtr: stringPointer("stop"),
+						FinishReasonPtr: new("stop"),
 					},
 				},
 				Model:  "Qwen3-8B-Q8_0",
@@ -99,7 +99,7 @@ func chatNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 						Message: &model.ResponseMessage{
 							Role: "assistant",
 						},
-						FinishReasonPtr: stringPointer("stop"),
+						FinishReasonPtr: new("stop"),
 					},
 				},
 				Model:  "Qwen3-8B-Q8_0",
@@ -159,7 +159,7 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 				Choice: []model.Choice{
 					{
 						Message:         nil,
-						FinishReasonPtr: stringPointer("stop"),
+						FinishReasonPtr: new("stop"),
 					},
 				},
 				Model:  "Qwen3-8B-Q8_0",
@@ -210,7 +210,7 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 				Choice: []model.Choice{
 					{
 						Message:         nil,
-						FinishReasonPtr: stringPointer("stop"),
+						FinishReasonPtr: new("stop"),
 					},
 				},
 				Model:  "Qwen3-8B-Q8_0",
@@ -273,7 +273,7 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 				Choice: []model.Choice{
 					{
 						Message:         nil,
-						FinishReasonPtr: stringPointer("stop"),
+						FinishReasonPtr: new("stop"),
 					},
 				},
 				Model:  "Qwen3-8B-Q8_0",
@@ -324,7 +324,7 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 				Choice: []model.Choice{
 					{
 						Message:         nil,
-						FinishReasonPtr: stringPointer("stop"),
+						FinishReasonPtr: new("stop"),
 					},
 				},
 				Model:  "Qwen3-8B-Q8_0",
@@ -373,7 +373,7 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 				Choice: []model.Choice{
 					{
 						Message:         nil,
-						FinishReasonPtr: stringPointer("stop"),
+						FinishReasonPtr: new("stop"),
 					},
 				},
 				Model:  "Qwen3-8B-Q8_0",
@@ -427,7 +427,7 @@ func chatStreamSPCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 				Choice: []model.Choice{
 					{
 						Message:         nil,
-						FinishReasonPtr: stringPointer("stop"),
+						FinishReasonPtr: new("stop"),
 					},
 				},
 				Model:  "Qwen3-8B-Q8_0",
@@ -473,7 +473,7 @@ func chatStreamSPCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 				Choice: []model.Choice{
 					{
 						Message:         nil,
-						FinishReasonPtr: stringPointer("stop"),
+						FinishReasonPtr: new("stop"),
 					},
 				},
 				Model:  "Qwen3-8B-Q8_0",
@@ -518,7 +518,7 @@ func chatStreamSPCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 				Choice: []model.Choice{
 					{
 						Message:         nil,
-						FinishReasonPtr: stringPointer("stop"),
+						FinishReasonPtr: new("stop"),
 					},
 				},
 				Model:  "Qwen3-8B-Q8_0",
@@ -572,7 +572,7 @@ func chatArrayFormatQwen3(t *testing.T, tokens map[string]string) []apitest.Tabl
 						Message: &model.ResponseMessage{
 							Role: "assistant",
 						},
-						FinishReasonPtr: stringPointer("stop"),
+						FinishReasonPtr: new("stop"),
 					},
 				},
 				Model:  "Qwen3-8B-Q8_0",
@@ -632,7 +632,7 @@ func chatArrayFormatStreamQwen3(t *testing.T, tokens map[string]string) []apites
 				Choice: []model.Choice{
 					{
 						Message:         nil,
-						FinishReasonPtr: stringPointer("stop"),
+						FinishReasonPtr: new("stop"),
 					},
 				},
 				Model:  "Qwen3-8B-Q8_0",
@@ -690,7 +690,7 @@ func chatImageQwen25VL(t *testing.T, tokens map[string]string) []apitest.Table {
 						Message: &model.ResponseMessage{
 							Role: "assistant",
 						},
-						FinishReasonPtr: stringPointer("stop"),
+						FinishReasonPtr: new("stop"),
 					},
 				},
 				Model:  "Qwen2.5-VL-3B-Instruct-Q8_0",
@@ -752,7 +752,7 @@ func chatAudioQwen2Audio(t *testing.T, tokens map[string]string) []apitest.Table
 						Message: &model.ResponseMessage{
 							Role: "assistant",
 						},
-						FinishReasonPtr: stringPointer("stop"),
+						FinishReasonPtr: new("stop"),
 					},
 				},
 				Model:  "Qwen2-Audio-7B.Q8_0",
@@ -811,7 +811,7 @@ func chatGrammarQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 						Message: &model.ResponseMessage{
 							Role: "assistant",
 						},
-						FinishReasonPtr: stringPointer("stop"),
+						FinishReasonPtr: new("stop"),
 					},
 				},
 				Model:  "Qwen3-8B-Q8_0",
@@ -867,7 +867,7 @@ func chatGrammarStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Ta
 				Choice: []model.Choice{
 					{
 						Message:         nil,
-						FinishReasonPtr: stringPointer("stop"),
+						FinishReasonPtr: new("stop"),
 					},
 				},
 				Model:  "Qwen3-8B-Q8_0",
@@ -941,7 +941,7 @@ func chatToolCallQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 						Message: &model.ResponseMessage{
 							Role: "assistant",
 						},
-						FinishReasonPtr: stringPointer("tool_calls"),
+						FinishReasonPtr: new("tool_calls"),
 					},
 				},
 				Model:  "Qwen3-8B-Q8_0",
@@ -1017,7 +1017,7 @@ func chatToolCallStreamQwen3(t *testing.T, tokens map[string]string) []apitest.T
 						Delta: &model.ResponseMessage{
 							Role: "assistant",
 						},
-						FinishReasonPtr: stringPointer("tool_calls"),
+						FinishReasonPtr: new("tool_calls"),
 					},
 				},
 				Model:  "Qwen3-8B-Q8_0",

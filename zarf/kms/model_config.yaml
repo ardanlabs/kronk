@@ -152,7 +152,7 @@
 # This has been the best with Cline.
 Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL:
   &base_Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
-  context-window: 131072
+  context-window: 172032
   nbatch: 2048
   nubatch: 512
   cache-type-k: f16

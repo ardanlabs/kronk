@@ -13,7 +13,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/protobuf/proto"
 )
 
 // Client represents a client that can talk to the auth service.
@@ -81,8 +80,8 @@ func injectTrace(ctx context.Context) context.Context {
 // Authenticate calls the auth service to authenticate the user.
 func (cln *Client) Authenticate(ctx context.Context, bearerToken string, admin bool, endpoint string) (AuthenticateReponse, error) {
 	arb := authapp.AuthenticateRequest_builder{
-		Admin:    proto.Bool(admin),
-		Endpoint: proto.String(endpoint),
+		Admin:    &admin,
+		Endpoint: &endpoint,
 	}
 
 	ctx = injectTrace(ctx)
@@ -101,15 +100,15 @@ func (cln *Client) CreateToken(ctx context.Context, bearerToken string, admin bo
 	protoEndpoints := make(map[string]*authapp.RateLimit)
 	for name, rl := range endpoints {
 		protoEndpoints[name] = authapp.RateLimit_builder{
-			Limit:  proto.Int32(rl.GetLimit()),
-			Window: proto.String(rl.GetWindow()),
+			Limit:  new(rl.GetLimit()),
+			Window: new(rl.GetWindow()),
 		}.Build()
 	}
 
 	arb := authapp.CreateTokenRequest_builder{
-		Admin:     proto.Bool(admin),
+		Admin:     &admin,
 		Endpoints: protoEndpoints,
-		Duration:  proto.String(duration.String()),
+		Duration:  new(duration.String()),
 	}
 
 	ctx = injectTrace(ctx)
@@ -148,7 +147,7 @@ func (cln *Client) AddKey(ctx context.Context, bearerToken string) error {
 // RemoveKey calls the auth service to remove a key.
 func (cln *Client) RemoveKey(ctx context.Context, bearerToken string, keyID string) error {
 	rkb := authapp.RemoveKeyRequest_builder{
-		KeyId: proto.String(keyID),
+		KeyId: &keyID,
 	}
 
 	ctx = injectTrace(ctx)
