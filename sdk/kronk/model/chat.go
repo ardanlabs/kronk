@@ -14,6 +14,8 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
+const streamChBuffer = 32
+
 // Chat performs a chat request and returns the final response.
 // All requests (including vision/audio) use batch processing and can run
 // concurrently based on the NSeqMax config value, which controls parallel
@@ -43,7 +45,7 @@ func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error) {
 // concurrently based on the NSeqMax config value, which controls parallel
 // sequence processing.
 func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
-	returnCh := make(chan ChatResponse, 1)
+	returnCh := make(chan ChatResponse, streamChBuffer)
 	ch := m.wrapChannelForLogging(ctx, returnCh)
 
 	// Increment active streams before launching the goroutine to prevent a race
@@ -127,14 +129,21 @@ func (m *Model) wrapChannelForLogging(ctx context.Context, returnCh chan ChatRes
 		return returnCh
 	}
 
-	ch := make(chan ChatResponse, 1)
+	ch := make(chan ChatResponse, streamChBuffer)
 
 	go func() {
 		var srl StreamingResponseLogger
 
 		for resp := range ch {
 			srl.Capture(resp)
-			returnCh <- resp
+
+			select {
+			case returnCh <- resp:
+			case <-ctx.Done():
+				m.log(ctx, "chat-streaming", "OUT-MESSAGES", srl.String())
+				close(returnCh)
+				return
+			}
 		}
 
 		m.log(ctx, "chat-streaming", "OUT-MESSAGES", srl.String())
@@ -225,13 +234,13 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		id:            id,
 		ctx:           ctx,
 		queueWaitSpan: queueSpan,
-		d:       d,
-		object:  object,
-		prompt:  prompt,
-		media:   media,
-		params:  params,
-		mtmdCtx: mtmdCtx,
-		ch:      ch,
+		d:             d,
+		object:        object,
+		prompt:        prompt,
+		media:         media,
+		params:        params,
+		mtmdCtx:       mtmdCtx,
+		ch:            ch,
 
 		spcCacheID:  cache.spcCacheID,
 		spcHash:     cache.spcHash,

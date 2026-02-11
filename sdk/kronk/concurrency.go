@@ -8,6 +8,8 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
+const streamChBuffer = 32
+
 type nonStreamingFunc[T any] func(llama *model.Model) (T, error)
 
 func nonStreaming[T any](ctx context.Context, krn *Kronk, f nonStreamingFunc[T]) (T, error) {
@@ -33,7 +35,7 @@ func streaming[T any](ctx context.Context, krn *Kronk, f streamingFunc[T], ef er
 		return nil, err
 	}
 
-	ch := make(chan T, 1)
+	ch := make(chan T, streamChBuffer)
 
 	go func() {
 		defer func() {
@@ -104,7 +106,7 @@ func streamingWith[T, U any](ctx context.Context, krn *Kronk, f streamingFunc[T]
 		return nil, err
 	}
 
-	ch := make(chan U, 1)
+	ch := make(chan U, streamChBuffer)
 
 	go func() {
 		var cancelled bool
