@@ -327,8 +327,8 @@ export default function Chat() {
         if (choice?.delta?.content) {
           currentContent += choice.delta.content;
         }
-        if (choice?.delta?.reasoning) {
-          currentReasoning += choice.delta.reasoning;
+        if (choice?.delta?.reasoning_content) {
+          currentReasoning += choice.delta.reasoning_content;
         }
         if (choice?.delta?.tool_calls && choice.delta.tool_calls.length > 0) {
           currentToolCalls = [...currentToolCalls, ...choice.delta.tool_calls];
@@ -942,7 +942,14 @@ export default function Chat() {
               </div>
             )}
             {msg.reasoning && (
-              <div className="chat-message-reasoning">{msg.reasoning}</div>
+              <details className="chat-message-reasoning" open={isStreaming && idx === messages.length - 1}>
+                <summary className="chat-reasoning-summary">
+                  Reasoning ({msg.reasoning.length.toLocaleString()} chars)
+                </summary>
+                <div className="chat-reasoning-content">
+                  {renderContent(msg.reasoning)}
+                </div>
+              </details>
             )}
             <div className="chat-message-content">
               {editingIndex === idx ? (

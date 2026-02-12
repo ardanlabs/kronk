@@ -288,7 +288,7 @@ export interface ChatToolCall {
 export interface ChatDelta {
   role?: string;
   content?: string;
-  reasoning?: string;
+  reasoning_content?: string;
   tool_calls?: ChatToolCall[];
 }
 
