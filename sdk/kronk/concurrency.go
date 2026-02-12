@@ -66,16 +66,6 @@ func streaming[T any](ctx context.Context, krn *Kronk, f streamingFunc[T], ef er
 }
 
 func sendMessage[T any](ctx context.Context, ch chan T, msg T) error {
-	// I want to try and send this message before we check the context.
-	// Remember the user code might not be trying to receive on this
-	// channel anymore.
-	select {
-	case ch <- msg:
-		return nil
-	default:
-	}
-
-	// Now randonly wait for the channel to be ready or the context to be done.
 	select {
 	case <-ctx.Done():
 		return ctx.Err()

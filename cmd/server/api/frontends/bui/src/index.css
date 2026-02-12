@@ -1267,14 +1267,29 @@ tr.selected:hover td {
 }
 
 .chat-message-reasoning {
+    margin-bottom: 8px;
+    background: rgba(192, 57, 43, 0.08);
+    border-radius: 4px;
+    border-left: 3px solid rgba(192, 57, 43, 0.4);
+    font-size: 14px;
+}
+
+.chat-reasoning-summary {
+    padding: 8px 12px;
     color: #c0392b;
     font-style: italic;
-    margin-bottom: 8px;
-    padding: 8px;
-    background: rgba(192, 57, 43, 0.1);
-    border-radius: 4px;
-    font-size: 14px;
-    white-space: pre-wrap;
+    cursor: pointer;
+    user-select: none;
+}
+
+.chat-reasoning-summary:hover {
+    background: rgba(192, 57, 43, 0.05);
+}
+
+.chat-reasoning-content {
+    padding: 4px 12px 8px;
+    color: var(--color-text-secondary, #aaa);
+    overflow-x: auto;
 }
 
 .chat-message-tool-calls {

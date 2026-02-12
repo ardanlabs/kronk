@@ -3,6 +3,7 @@ package toolapp
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -101,28 +102,34 @@ func toListModelsInfo(modelFiles []models.File, modelConfigs map[string]catalog.
 		if extendedConfig {
 			if rmc, ok := modelConfigs[mf.ID]; ok {
 				detail.Sampling = &SamplingConfig{
-					Temperature:     rmc.Sampling.Temperature,
-					TopK:            rmc.Sampling.TopK,
-					TopP:            rmc.Sampling.TopP,
-					MinP:            rmc.Sampling.MinP,
-					MaxTokens:       rmc.Sampling.MaxTokens,
-					RepeatPenalty:   rmc.Sampling.RepeatPenalty,
-					RepeatLastN:     rmc.Sampling.RepeatLastN,
-					DryMultiplier:   rmc.Sampling.DryMultiplier,
-					DryBase:         rmc.Sampling.DryBase,
-					DryAllowedLen:   rmc.Sampling.DryAllowedLen,
-					DryPenaltyLast:  rmc.Sampling.DryPenaltyLast,
-					XtcProbability:  rmc.Sampling.XtcProbability,
-					XtcThreshold:    rmc.Sampling.XtcThreshold,
-					XtcMinKeep:      rmc.Sampling.XtcMinKeep,
-					EnableThinking:  rmc.Sampling.EnableThinking,
-					ReasoningEffort: rmc.Sampling.ReasoningEffort,
+					Temperature:      rmc.Sampling.Temperature,
+					TopK:             rmc.Sampling.TopK,
+					TopP:             rmc.Sampling.TopP,
+					MinP:             rmc.Sampling.MinP,
+					MaxTokens:        rmc.Sampling.MaxTokens,
+					RepeatPenalty:    rmc.Sampling.RepeatPenalty,
+					RepeatLastN:      rmc.Sampling.RepeatLastN,
+					DryMultiplier:    rmc.Sampling.DryMultiplier,
+					DryBase:          rmc.Sampling.DryBase,
+					DryAllowedLen:    rmc.Sampling.DryAllowedLen,
+					DryPenaltyLast:   rmc.Sampling.DryPenaltyLast,
+					XtcProbability:   rmc.Sampling.XtcProbability,
+					XtcThreshold:     rmc.Sampling.XtcThreshold,
+					XtcMinKeep:       rmc.Sampling.XtcMinKeep,
+					FrequencyPenalty: rmc.Sampling.FrequencyPenalty,
+					PresencePenalty:  rmc.Sampling.PresencePenalty,
+					EnableThinking:   rmc.Sampling.EnableThinking,
+					ReasoningEffort:  rmc.Sampling.ReasoningEffort,
 				}
 			}
 		}
 
 		list.Data = append(list.Data, detail)
 	}
+
+	slices.SortFunc(list.Data, func(a, b ListModelDetail) int {
+		return strings.Compare(strings.ToLower(a.ID), strings.ToLower(b.ID))
+	})
 
 	return list
 }
@@ -238,22 +245,24 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfi
 			YarnBetaSlow:         rmc.YarnBetaSlow,
 			YarnOrigCtx:          rmc.YarnOrigCtx,
 			Sampling: SamplingConfig{
-				Temperature:     rmc.Sampling.Temperature,
-				TopK:            rmc.Sampling.TopK,
-				TopP:            rmc.Sampling.TopP,
-				MinP:            rmc.Sampling.MinP,
-				MaxTokens:       rmc.Sampling.MaxTokens,
-				RepeatPenalty:   rmc.Sampling.RepeatPenalty,
-				RepeatLastN:     rmc.Sampling.RepeatLastN,
-				DryMultiplier:   rmc.Sampling.DryMultiplier,
-				DryBase:         rmc.Sampling.DryBase,
-				DryAllowedLen:   rmc.Sampling.DryAllowedLen,
-				DryPenaltyLast:  rmc.Sampling.DryPenaltyLast,
-				XtcProbability:  rmc.Sampling.XtcProbability,
-				XtcThreshold:    rmc.Sampling.XtcThreshold,
-				XtcMinKeep:      rmc.Sampling.XtcMinKeep,
-				EnableThinking:  rmc.Sampling.EnableThinking,
-				ReasoningEffort: rmc.Sampling.ReasoningEffort,
+				Temperature:      rmc.Sampling.Temperature,
+				TopK:             rmc.Sampling.TopK,
+				TopP:             rmc.Sampling.TopP,
+				MinP:             rmc.Sampling.MinP,
+				MaxTokens:        rmc.Sampling.MaxTokens,
+				RepeatPenalty:    rmc.Sampling.RepeatPenalty,
+				RepeatLastN:      rmc.Sampling.RepeatLastN,
+				DryMultiplier:    rmc.Sampling.DryMultiplier,
+				DryBase:          rmc.Sampling.DryBase,
+				DryAllowedLen:    rmc.Sampling.DryAllowedLen,
+				DryPenaltyLast:   rmc.Sampling.DryPenaltyLast,
+				XtcProbability:   rmc.Sampling.XtcProbability,
+				XtcThreshold:     rmc.Sampling.XtcThreshold,
+				XtcMinKeep:       rmc.Sampling.XtcMinKeep,
+				FrequencyPenalty: rmc.Sampling.FrequencyPenalty,
+				PresencePenalty:  rmc.Sampling.PresencePenalty,
+				EnableThinking:   rmc.Sampling.EnableThinking,
+				ReasoningEffort:  rmc.Sampling.ReasoningEffort,
 			},
 		},
 		VRAM: &VRAM{
@@ -365,22 +374,24 @@ type VRAM struct {
 
 // SamplingConfig represents sampling parameters for model inference.
 type SamplingConfig struct {
-	Temperature     float32 `json:"temperature"`
-	TopK            int32   `json:"top_k"`
-	TopP            float32 `json:"top_p"`
-	MinP            float32 `json:"min_p"`
-	MaxTokens       int     `json:"max_tokens"`
-	RepeatPenalty   float32 `json:"repeat_penalty"`
-	RepeatLastN     int32   `json:"repeat_last_n"`
-	DryMultiplier   float32 `json:"dry_multiplier"`
-	DryBase         float32 `json:"dry_base"`
-	DryAllowedLen   int32   `json:"dry_allowed_length"`
-	DryPenaltyLast  int32   `json:"dry_penalty_last_n"`
-	XtcProbability  float32 `json:"xtc_probability"`
-	XtcThreshold    float32 `json:"xtc_threshold"`
-	XtcMinKeep      uint32  `json:"xtc_min_keep"`
-	EnableThinking  string  `json:"enable_thinking"`
-	ReasoningEffort string  `json:"reasoning_effort"`
+	Temperature      float32 `json:"temperature"`
+	TopK             int32   `json:"top_k"`
+	TopP             float32 `json:"top_p"`
+	MinP             float32 `json:"min_p"`
+	MaxTokens        int     `json:"max_tokens"`
+	RepeatPenalty    float32 `json:"repeat_penalty"`
+	RepeatLastN      int32   `json:"repeat_last_n"`
+	DryMultiplier    float32 `json:"dry_multiplier"`
+	DryBase          float32 `json:"dry_base"`
+	DryAllowedLen    int32   `json:"dry_allowed_length"`
+	DryPenaltyLast   int32   `json:"dry_penalty_last_n"`
+	XtcProbability   float32 `json:"xtc_probability"`
+	XtcThreshold     float32 `json:"xtc_threshold"`
+	XtcMinKeep       uint32  `json:"xtc_min_keep"`
+	FrequencyPenalty float32 `json:"frequency_penalty"`
+	PresencePenalty  float32 `json:"presence_penalty"`
+	EnableThinking   string  `json:"enable_thinking"`
+	ReasoningEffort  string  `json:"reasoning_effort"`
 }
 
 // ModelConfig represents the model configuration the model will use by default.
@@ -566,22 +577,24 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 			YarnBetaSlow:         rmc.YarnBetaSlow,
 			YarnOrigCtx:          rmc.YarnOrigCtx,
 			Sampling: SamplingConfig{
-				Temperature:     rmc.Sampling.Temperature,
-				TopK:            rmc.Sampling.TopK,
-				TopP:            rmc.Sampling.TopP,
-				MinP:            rmc.Sampling.MinP,
-				MaxTokens:       rmc.Sampling.MaxTokens,
-				RepeatPenalty:   rmc.Sampling.RepeatPenalty,
-				RepeatLastN:     rmc.Sampling.RepeatLastN,
-				DryMultiplier:   rmc.Sampling.DryMultiplier,
-				DryBase:         rmc.Sampling.DryBase,
-				DryAllowedLen:   rmc.Sampling.DryAllowedLen,
-				DryPenaltyLast:  rmc.Sampling.DryPenaltyLast,
-				XtcProbability:  rmc.Sampling.XtcProbability,
-				XtcThreshold:    rmc.Sampling.XtcThreshold,
-				XtcMinKeep:      rmc.Sampling.XtcMinKeep,
-				EnableThinking:  rmc.Sampling.EnableThinking,
-				ReasoningEffort: rmc.Sampling.ReasoningEffort,
+				Temperature:      rmc.Sampling.Temperature,
+				TopK:             rmc.Sampling.TopK,
+				TopP:             rmc.Sampling.TopP,
+				MinP:             rmc.Sampling.MinP,
+				MaxTokens:        rmc.Sampling.MaxTokens,
+				RepeatPenalty:    rmc.Sampling.RepeatPenalty,
+				RepeatLastN:      rmc.Sampling.RepeatLastN,
+				DryMultiplier:    rmc.Sampling.DryMultiplier,
+				DryBase:          rmc.Sampling.DryBase,
+				DryAllowedLen:    rmc.Sampling.DryAllowedLen,
+				DryPenaltyLast:   rmc.Sampling.DryPenaltyLast,
+				XtcProbability:   rmc.Sampling.XtcProbability,
+				XtcThreshold:     rmc.Sampling.XtcThreshold,
+				XtcMinKeep:       rmc.Sampling.XtcMinKeep,
+				FrequencyPenalty: rmc.Sampling.FrequencyPenalty,
+				PresencePenalty:  rmc.Sampling.PresencePenalty,
+				EnableThinking:   rmc.Sampling.EnableThinking,
+				ReasoningEffort:  rmc.Sampling.ReasoningEffort,
 			},
 		}
 	}
@@ -616,22 +629,24 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 		YarnBetaSlow:         bmc.YarnBetaSlow,
 		YarnOrigCtx:          bmc.YarnOrigCtx,
 		Sampling: SamplingConfig{
-			Temperature:     bmc.Sampling.Temperature,
-			TopK:            bmc.Sampling.TopK,
-			TopP:            bmc.Sampling.TopP,
-			MinP:            bmc.Sampling.MinP,
-			MaxTokens:       bmc.Sampling.MaxTokens,
-			RepeatPenalty:   bmc.Sampling.RepeatPenalty,
-			RepeatLastN:     bmc.Sampling.RepeatLastN,
-			DryMultiplier:   bmc.Sampling.DryMultiplier,
-			DryBase:         bmc.Sampling.DryBase,
-			DryAllowedLen:   bmc.Sampling.DryAllowedLen,
-			DryPenaltyLast:  bmc.Sampling.DryPenaltyLast,
-			XtcProbability:  bmc.Sampling.XtcProbability,
-			XtcThreshold:    bmc.Sampling.XtcThreshold,
-			XtcMinKeep:      bmc.Sampling.XtcMinKeep,
-			EnableThinking:  bmc.Sampling.EnableThinking,
-			ReasoningEffort: bmc.Sampling.ReasoningEffort,
+			Temperature:      bmc.Sampling.Temperature,
+			TopK:             bmc.Sampling.TopK,
+			TopP:             bmc.Sampling.TopP,
+			MinP:             bmc.Sampling.MinP,
+			MaxTokens:        bmc.Sampling.MaxTokens,
+			RepeatPenalty:    bmc.Sampling.RepeatPenalty,
+			RepeatLastN:      bmc.Sampling.RepeatLastN,
+			DryMultiplier:    bmc.Sampling.DryMultiplier,
+			DryBase:          bmc.Sampling.DryBase,
+			DryAllowedLen:    bmc.Sampling.DryAllowedLen,
+			DryPenaltyLast:   bmc.Sampling.DryPenaltyLast,
+			XtcProbability:   bmc.Sampling.XtcProbability,
+			XtcThreshold:     bmc.Sampling.XtcThreshold,
+			XtcMinKeep:       bmc.Sampling.XtcMinKeep,
+			FrequencyPenalty: bmc.Sampling.FrequencyPenalty,
+			PresencePenalty:  bmc.Sampling.PresencePenalty,
+			EnableThinking:   bmc.Sampling.EnableThinking,
+			ReasoningEffort:  bmc.Sampling.ReasoningEffort,
 		},
 	}
 
@@ -895,22 +910,24 @@ func (app SaveCatalogRequest) toModelDetails() catalog.ModelDetails {
 			YarnBetaSlow:         app.Config.YarnBetaSlow,
 			YarnOrigCtx:          app.Config.YarnOrigCtx,
 			Sampling: catalog.SamplingConfig{
-				Temperature:     app.Config.Sampling.Temperature,
-				TopK:            app.Config.Sampling.TopK,
-				TopP:            app.Config.Sampling.TopP,
-				MinP:            app.Config.Sampling.MinP,
-				MaxTokens:       app.Config.Sampling.MaxTokens,
-				RepeatPenalty:   app.Config.Sampling.RepeatPenalty,
-				RepeatLastN:     app.Config.Sampling.RepeatLastN,
-				DryMultiplier:   app.Config.Sampling.DryMultiplier,
-				DryBase:         app.Config.Sampling.DryBase,
-				DryAllowedLen:   app.Config.Sampling.DryAllowedLen,
-				DryPenaltyLast:  app.Config.Sampling.DryPenaltyLast,
-				XtcProbability:  app.Config.Sampling.XtcProbability,
-				XtcThreshold:    app.Config.Sampling.XtcThreshold,
-				XtcMinKeep:      app.Config.Sampling.XtcMinKeep,
-				EnableThinking:  app.Config.Sampling.EnableThinking,
-				ReasoningEffort: app.Config.Sampling.ReasoningEffort,
+				Temperature:      app.Config.Sampling.Temperature,
+				TopK:             app.Config.Sampling.TopK,
+				TopP:             app.Config.Sampling.TopP,
+				MinP:             app.Config.Sampling.MinP,
+				MaxTokens:        app.Config.Sampling.MaxTokens,
+				RepeatPenalty:    app.Config.Sampling.RepeatPenalty,
+				RepeatLastN:      app.Config.Sampling.RepeatLastN,
+				DryMultiplier:    app.Config.Sampling.DryMultiplier,
+				DryBase:          app.Config.Sampling.DryBase,
+				DryAllowedLen:    app.Config.Sampling.DryAllowedLen,
+				DryPenaltyLast:   app.Config.Sampling.DryPenaltyLast,
+				XtcProbability:   app.Config.Sampling.XtcProbability,
+				XtcThreshold:     app.Config.Sampling.XtcThreshold,
+				XtcMinKeep:       app.Config.Sampling.XtcMinKeep,
+				FrequencyPenalty: app.Config.Sampling.FrequencyPenalty,
+				PresencePenalty:  app.Config.Sampling.PresencePenalty,
+				EnableThinking:   app.Config.Sampling.EnableThinking,
+				ReasoningEffort:  app.Config.Sampling.ReasoningEffort,
 			},
 		}
 	}

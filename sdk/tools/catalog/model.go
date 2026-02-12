@@ -8,22 +8,24 @@ import (
 
 // SamplingConfig represents sampling parameters for model inference.
 type SamplingConfig struct {
-	Temperature     float32 `yaml:"temperature,omitempty"`
-	TopK            int32   `yaml:"top_k,omitempty"`
-	TopP            float32 `yaml:"top_p,omitempty"`
-	MinP            float32 `yaml:"min_p,omitempty"`
-	MaxTokens       int     `yaml:"max_tokens,omitempty"`
-	RepeatPenalty   float32 `yaml:"repeat_penalty,omitempty"`
-	RepeatLastN     int32   `yaml:"repeat_last_n,omitempty"`
-	DryMultiplier   float32 `yaml:"dry_multiplier,omitempty"`
-	DryBase         float32 `yaml:"dry_base,omitempty"`
-	DryAllowedLen   int32   `yaml:"dry_allowed_length,omitempty"`
-	DryPenaltyLast  int32   `yaml:"dry_penalty_last_n,omitempty"`
-	XtcProbability  float32 `yaml:"xtc_probability,omitempty"`
-	XtcThreshold    float32 `yaml:"xtc_threshold,omitempty"`
-	XtcMinKeep      uint32  `yaml:"xtc_min_keep,omitempty"`
-	EnableThinking  string  `yaml:"enable_thinking,omitempty"`
-	ReasoningEffort string  `yaml:"reasoning_effort,omitempty"`
+	Temperature      float32 `yaml:"temperature,omitempty"`
+	TopK             int32   `yaml:"top_k,omitempty"`
+	TopP             float32 `yaml:"top_p,omitempty"`
+	MinP             float32 `yaml:"min_p,omitempty"`
+	MaxTokens        int     `yaml:"max_tokens,omitempty"`
+	RepeatPenalty    float32 `yaml:"repeat_penalty,omitempty"`
+	RepeatLastN      int32   `yaml:"repeat_last_n,omitempty"`
+	DryMultiplier    float32 `yaml:"dry_multiplier,omitempty"`
+	DryBase          float32 `yaml:"dry_base,omitempty"`
+	DryAllowedLen    int32   `yaml:"dry_allowed_length,omitempty"`
+	DryPenaltyLast   int32   `yaml:"dry_penalty_last_n,omitempty"`
+	XtcProbability   float32 `yaml:"xtc_probability,omitempty"`
+	XtcThreshold     float32 `yaml:"xtc_threshold,omitempty"`
+	XtcMinKeep       uint32  `yaml:"xtc_min_keep,omitempty"`
+	FrequencyPenalty float32 `yaml:"frequency_penalty,omitempty"`
+	PresencePenalty  float32 `yaml:"presence_penalty,omitempty"`
+	EnableThinking   string  `yaml:"enable_thinking,omitempty"`
+	ReasoningEffort  string  `yaml:"reasoning_effort,omitempty"`
 }
 
 // withDefaults returns a new SamplingConfig with default values applied
@@ -104,22 +106,24 @@ func (s SamplingConfig) toParams() model.Params {
 	s = s.withDefaults()
 
 	return model.Params{
-		Temperature:     s.Temperature,
-		TopK:            s.TopK,
-		TopP:            s.TopP,
-		MinP:            s.MinP,
-		MaxTokens:       s.MaxTokens,
-		RepeatPenalty:   s.RepeatPenalty,
-		RepeatLastN:     s.RepeatLastN,
-		DryMultiplier:   s.DryMultiplier,
-		DryBase:         s.DryBase,
-		DryAllowedLen:   s.DryAllowedLen,
-		DryPenaltyLast:  s.DryPenaltyLast,
-		XtcProbability:  s.XtcProbability,
-		XtcThreshold:    s.XtcThreshold,
-		XtcMinKeep:      s.XtcMinKeep,
-		Thinking:        s.EnableThinking,
-		ReasoningEffort: s.ReasoningEffort,
+		Temperature:      s.Temperature,
+		TopK:             s.TopK,
+		TopP:             s.TopP,
+		MinP:             s.MinP,
+		MaxTokens:        s.MaxTokens,
+		RepeatPenalty:    s.RepeatPenalty,
+		RepeatLastN:      s.RepeatLastN,
+		DryMultiplier:    s.DryMultiplier,
+		DryBase:          s.DryBase,
+		DryAllowedLen:    s.DryAllowedLen,
+		DryPenaltyLast:   s.DryPenaltyLast,
+		FrequencyPenalty: s.FrequencyPenalty,
+		PresencePenalty:  s.PresencePenalty,
+		XtcProbability:   s.XtcProbability,
+		XtcThreshold:     s.XtcThreshold,
+		XtcMinKeep:       s.XtcMinKeep,
+		Thinking:         s.EnableThinking,
+		ReasoningEffort:  s.ReasoningEffort,
 	}
 }
 
@@ -247,9 +251,9 @@ type ModelDetails struct {
 	Capabilities    Capabilities `yaml:"capabilities,omitempty"`
 	Metadata        Metadata     `yaml:"metadata,omitempty"`
 	BaseModelConfig ModelConfig  `yaml:"config,omitempty"`
-	Downloaded  bool   `yaml:"-"`
-	Validated   bool   `yaml:"-"`
-	CatalogFile string `yaml:"-"`
+	Downloaded      bool         `yaml:"-"`
+	Validated       bool         `yaml:"-"`
+	CatalogFile     string       `yaml:"-"`
 }
 
 // CatalogModels represents a set of models for a given catalog.

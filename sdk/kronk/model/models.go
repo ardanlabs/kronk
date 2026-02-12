@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
-	"net/url"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -142,27 +142,17 @@ func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 	}
 }
 
+var splitPattern = regexp.MustCompile(`-\d+-of-\d+$`)
+
 func modelIDFromFiles(modelFiles []string) string {
-	var filename string
 	switch len(modelFiles) {
 	case 1:
-		filename = filepath.Base(modelFiles[0])
+		return strings.TrimSuffix(filepath.Base(modelFiles[0]), path.Ext(modelFiles[0]))
 
 	default:
-		filename = extractFolderName(modelFiles[0])
+		name := strings.TrimSuffix(filepath.Base(modelFiles[0]), filepath.Ext(modelFiles[0]))
+		return splitPattern.ReplaceAllString(name, "")
 	}
-
-	return strings.TrimSuffix(filename, path.Ext(filename))
-}
-
-func extractFolderName(rawURL string) string {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return ""
-	}
-
-	dir := path.Dir(u.Path)
-	return path.Base(dir)
 }
 
 // =============================================================================

@@ -8,6 +8,7 @@ export interface SamplingParams {
   topP: number;
   topK: number;
   minP: number;
+  presencePenalty: number;
   repeatPenalty: number;
   repeatLastN: number;
   dryMultiplier: number;
@@ -17,6 +18,7 @@ export interface SamplingParams {
   xtcProbability: number;
   xtcThreshold: number;
   xtcMinKeep: number;
+  frequencyPenalty: number;
   enableThinking: string;
   reasoningEffort: string;
   returnPrompt: boolean;
@@ -31,6 +33,7 @@ export const defaultSampling: SamplingParams = {
   topP: 0.9,
   topK: 40,
   minP: 0,
+  presencePenalty: 0,
   repeatPenalty: 1.0,
   repeatLastN: 64,
   dryMultiplier: 1.05,
@@ -40,6 +43,7 @@ export const defaultSampling: SamplingParams = {
   xtcProbability: 0,
   xtcThreshold: 0.1,
   xtcMinKeep: 1,
+  frequencyPenalty: 0,
   enableThinking: '',
   reasoningEffort: '',
   returnPrompt: false,
@@ -134,7 +138,8 @@ const basicSamplingKeys: (keyof SamplingParams)[] = [
 
 // Advanced sampling parameter keys
 const advancedSamplingKeys: (keyof SamplingParams)[] = [
-  'minP', 'repeatPenalty', 'repeatLastN',
+  'minP', 'presencePenalty', 'repeatPenalty', 'repeatLastN',
+  'frequencyPenalty',
   'dryMultiplier', 'dryBase', 'dryAllowedLen', 'dryPenaltyLast',
   'xtcProbability', 'xtcThreshold', 'xtcMinKeep',
   'enableThinking', 'reasoningEffort'

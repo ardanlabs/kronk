@@ -317,6 +317,11 @@ export default function DocsSDKModel() {
 	// means full context.
 	DryPenaltyLast int32 \`json:"dry_penalty_last_n"\`
 
+	// FrequencyPenalty penalizes tokens proportionally to how often they have
+	// appeared in the output. Higher values more strongly discourage frequent
+	// repetition. Default is 0.0 (disabled).
+	FrequencyPenalty float32 \`json:"frequency_penalty"\`
+
 	// Grammar constrains output to match a GBNF grammar specification.
 	// When set, the model output will be forced to conform to this grammar.
 	// Use preset grammars like GrammarJSON or generate from JSON Schema.
@@ -338,6 +343,11 @@ export default function DocsSDKModel() {
 	// MinP is a dynamic sampling threshold that helps balance the coherence
 	// (quality) and diversity (creativity) of the generated text. Default is 0.0.
 	MinP float32 \`json:"min_p"\`
+
+	// PresencePenalty applies a flat penalty to any token that has already
+	// appeared in the output, regardless of frequency. Higher values encourage
+	// the model to introduce new topics. Default is 0.0 (disabled).
+	PresencePenalty float32 \`json:"presence_penalty"\`
 
 	// ReasoningEffort is a string that specifies the level of reasoning effort
 	// to use for GPT models. Default is ReasoningEffortMedium.
@@ -1012,6 +1022,11 @@ ws ::= [ \\t\\n\\r]*\`
 	// false, False.
 	DefEnableThinking = ThinkingEnabled
 
+	// DefFrequencyPenalty penalizes tokens proportionally to how often they have
+	// appeared in the output. Higher values more strongly discourage frequent
+	// repetition. Default is 0.0 (disabled).
+	DefFrequencyPenalty float32 = 0.0
+
 	// DefIncludeUsage determines whether to include token usage information in
 	// streaming responses.
 	DefIncludeUsage = true
@@ -1030,6 +1045,11 @@ ws ::= [ \\t\\n\\r]*\`
 	// DefMinP is a dynamic sampling threshold that helps balance the coherence
 	// (quality) and diversity (creativity) of the generated text.
 	DefMinP = 0.0
+
+	// DefPresencePenalty applies a flat penalty to any token that has already
+	// appeared in the output, regardless of frequency. Higher values encourage
+	// the model to introduce new topics. Default is 0.0 (disabled).
+	DefPresencePenalty float32 = 0.0
 
 	// DefReasoningEffort is a string that specifies the level of reasoning effort to
 	// use for GPT models.

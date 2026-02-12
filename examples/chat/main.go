@@ -31,6 +31,7 @@ import (
 // const modelURL = "unsloth/GLM-4.7-Flash-GGUF/GLM-4.7-Flash-UD-Q8_K_XL.gguf"
 // const modelURL = "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF/Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL.gguf"
 // const modelURL = "https://huggingface.co/unsloth/Ministral-3-14B-Instruct-2512-GGUF/resolve/main/Ministral-3-14B-Instruct-2512-Q4_0.gguf"
+// const modelURL = "https://huggingface.co/Edge-Quant/Nanbeige4.1-3B-Q8_0-GGUF/resolve/main/nanbeige4.1-3b-q8_0.gguf"
 const modelURL = "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
 
 func main() {
@@ -129,13 +130,6 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
-	// The catalog package has an API that can retrieve defaults for
-	// models in the catalog system and/or a model_config file.
-	// cfg, err := c.templates.Catalog().RetrieveModelConfig(modelID)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("unable to retrieve model config: %w", err)
-	// }
-
 	cfg := model.Config{
 		ModelFiles: mp.ModelFiles,
 	}
@@ -198,12 +192,9 @@ func chat(krn *kronk.Kronk) error {
 			defer cancel()
 
 			d := model.D{
-				"messages":    messages,
-				"tools":       toolDocuments(),
-				"max_tokens":  2048,
-				"temperature": 0.7,
-				"top_p":       0.8,
-				"top_k":       20,
+				"messages":   messages,
+				"tools":      toolDocuments(),
+				"max_tokens": 2048,
 			}
 
 			ch, err := performChat(ctx, krn, d)

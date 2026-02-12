@@ -112,6 +112,7 @@ export default function Chat() {
       topK: modelSampling.top_k || defaultSampling.topK,
       topP: modelSampling.top_p || defaultSampling.topP,
       minP: modelSampling.min_p || defaultSampling.minP,
+      presencePenalty: modelSampling.presence_penalty ?? defaultSampling.presencePenalty,
       maxTokens: modelSampling.max_tokens || defaultSampling.maxTokens,
       repeatPenalty: modelSampling.repeat_penalty || defaultSampling.repeatPenalty,
       repeatLastN: modelSampling.repeat_last_n || defaultSampling.repeatLastN,
@@ -122,6 +123,7 @@ export default function Chat() {
       xtcProbability: modelSampling.xtc_probability ?? defaultSampling.xtcProbability,
       xtcThreshold: modelSampling.xtc_threshold || defaultSampling.xtcThreshold,
       xtcMinKeep: modelSampling.xtc_min_keep || defaultSampling.xtcMinKeep,
+      frequencyPenalty: modelSampling.frequency_penalty ?? defaultSampling.frequencyPenalty,
       enableThinking: modelSampling.enable_thinking || defaultSampling.enableThinking,
       reasoningEffort: modelSampling.reasoning_effort || defaultSampling.reasoningEffort,
       returnPrompt: defaultSampling.returnPrompt,
@@ -300,6 +302,7 @@ export default function Chat() {
         top_p: sampling.topP,
         top_k: sampling.topK,
         min_p: sampling.minP,
+        presence_penalty: sampling.presencePenalty,
         repeat_penalty: sampling.repeatPenalty,
         repeat_last_n: sampling.repeatLastN,
         dry_multiplier: sampling.dryMultiplier,
@@ -309,6 +312,7 @@ export default function Chat() {
         xtc_probability: sampling.xtcProbability,
         xtc_threshold: sampling.xtcThreshold,
         xtc_min_keep: sampling.xtcMinKeep,
+        frequency_penalty: sampling.frequencyPenalty,
         enable_thinking: sampling.enableThinking || undefined,
         reasoning_effort: sampling.reasoningEffort || undefined,
         return_prompt: sampling.returnPrompt,
@@ -323,8 +327,8 @@ export default function Chat() {
         if (choice?.delta?.content) {
           currentContent += choice.delta.content;
         }
-        if (choice?.delta?.reasoning) {
-          currentReasoning += choice.delta.reasoning;
+        if (choice?.delta?.reasoning_content) {
+          currentReasoning += choice.delta.reasoning_content;
         }
         if (choice?.delta?.tool_calls && choice.delta.tool_calls.length > 0) {
           currentToolCalls = [...currentToolCalls, ...choice.delta.tool_calls];
@@ -659,6 +663,38 @@ export default function Chat() {
                     max={512}
                   />
                 </div>
+                <div className={`chat-setting ${isChangedFrom('frequencyPenalty', sampling.frequencyPenalty, modelBaseline) ? 'chat-setting-changed' : ''}`}>
+                  <label>
+                    Frequency Penalty
+                    {isChangedFrom('frequencyPenalty', sampling.frequencyPenalty, modelBaseline) && (
+                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('frequencyPenalty', modelBaseline)}`}>●</span>
+                    )}
+                  </label>
+                  <input
+                    type="number"
+                    value={sampling.frequencyPenalty}
+                    onChange={(e) => setSampling({ frequencyPenalty: Number(e.target.value) })}
+                    min={0}
+                    max={2}
+                    step={0.1}
+                  />
+                </div>
+                <div className={`chat-setting ${isChangedFrom('presencePenalty', sampling.presencePenalty, modelBaseline) ? 'chat-setting-changed' : ''}`}>
+                  <label>
+                    Presence Penalty
+                    {isChangedFrom('presencePenalty', sampling.presencePenalty, modelBaseline) && (
+                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('presencePenalty', modelBaseline)}`}>●</span>
+                    )}
+                  </label>
+                  <input
+                    type="number"
+                    value={sampling.presencePenalty}
+                    onChange={(e) => setSampling({ presencePenalty: Number(e.target.value) })}
+                    min={0}
+                    max={2}
+                    step={0.1}
+                  />
+                </div>
                 <div className={`chat-setting ${isChangedFrom('dryMultiplier', sampling.dryMultiplier, modelBaseline) ? 'chat-setting-changed' : ''}`}>
                   <label>
                     DRY Multiplier
@@ -906,7 +942,14 @@ export default function Chat() {
               </div>
             )}
             {msg.reasoning && (
-              <div className="chat-message-reasoning">{msg.reasoning}</div>
+              <details className="chat-message-reasoning" open={isStreaming && idx === messages.length - 1}>
+                <summary className="chat-reasoning-summary">
+                  Reasoning ({msg.reasoning.length.toLocaleString()} chars)
+                </summary>
+                <div className="chat-reasoning-content">
+                  {renderContent(msg.reasoning)}
+                </div>
+              </details>
             )}
             <div className="chat-message-content">
               {editingIndex === idx ? (

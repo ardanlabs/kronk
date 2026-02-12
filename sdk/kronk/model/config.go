@@ -443,6 +443,12 @@ func applyCatalogParams(user Params, cat Params) Params {
 	if user.RepeatLastN == 0 {
 		user.RepeatLastN = cat.RepeatLastN
 	}
+	if user.FrequencyPenalty == 0 {
+		user.FrequencyPenalty = cat.FrequencyPenalty
+	}
+	if user.PresencePenalty == 0 {
+		user.PresencePenalty = cat.PresencePenalty
+	}
 	if user.DryMultiplier == 0 {
 		user.DryMultiplier = cat.DryMultiplier
 	}
