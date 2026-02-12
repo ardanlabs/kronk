@@ -145,10 +145,9 @@ func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 var splitPattern = regexp.MustCompile(`-\d+-of-\d+$`)
 
 func modelIDFromFiles(modelFiles []string) string {
-	var filename string
 	switch len(modelFiles) {
 	case 1:
-		return strings.TrimSuffix(filepath.Base(modelFiles[0]), path.Ext(filename))
+		return strings.TrimSuffix(filepath.Base(modelFiles[0]), path.Ext(modelFiles[0]))
 
 	default:
 		name := strings.TrimSuffix(filepath.Base(modelFiles[0]), filepath.Ext(modelFiles[0]))
