@@ -697,7 +697,15 @@ export default function CatalogEditor() {
           </div>
           <div>
             <label style={labelStyle}>Template</label>
-            <input type="text" value={form.template} onChange={(e) => setForm({ ...form, template: e.target.value })} style={inputStyle} placeholder="e.g., qwen3.jinja" />
+            <select value={form.template} onChange={(e) => setForm({ ...form, template: e.target.value })} style={inputStyle}>
+              <option value="">model template</option>
+              <option value="gemma-3.jinja">gemma-3.jinja</option>
+              <option value="glm4-.jinja">glm4-.jinja</option>
+              <option value="gpt-oss.jinja">gpt-oss.jinja</option>
+              <option value="ministral.jinja">ministral.jinja</option>
+              <option value="nanbei.jinja">nanbei.jinja</option> 
+              <option value="qwen3-coder.jinja">qwen3-coder.jinja</option>
+            </select>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingTop: '24px' }}>
             <input
@@ -811,8 +819,7 @@ export default function CatalogEditor() {
           <>
             <div style={gridStyle}>
               <NullableNumInput label="Batch Size (nbatch)" value={form.config.nbatch} defaultValue={rc?.nbatch} onChange={(v) => setConfig({ nbatch: v })} />
-              <NullableNumInput label="Batch Threads (nthreads-batch)" value={form.config.nthreadsBatch} defaultValue={rc?.['nthreads-batch']} onChange={(v) => setConfig({ nthreadsBatch: v })} />
-              <NullableNumInput label="Cache Min Tokens" value={form.config.cacheMinTokens} defaultValue={rc?.['cache-min-tokens']} onChange={(v) => setConfig({ cacheMinTokens: v })} />
+              <NullableNumInput label="Micro Batch Size (nubatch)" value={form.config.nubatch} defaultValue={rc?.nubatch} onChange={(v) => setConfig({ nubatch: v })} />
               <div>
                 <label style={labelStyle}>Cache Type K</label>
                 <select value={form.config.cacheTypeK} onChange={(e) => setConfig({ cacheTypeK: e.target.value })} style={inputStyle}>
@@ -834,6 +841,11 @@ export default function CatalogEditor() {
                 </select>
               </div>
               <NullableNumInput label="Context Window" value={form.config.contextWindow} defaultValue={rc?.['context-window']} onChange={(v) => setConfig({ contextWindow: v })} />
+              <NullableNumInput label="Max Sequences (nseq-max)" value={form.config.nseqMax} defaultValue={rc?.['nseq-max']} onChange={(v) => setConfig({ nseqMax: v })} />
+              <TriStateSelect label="System Prompt Cache" value={form.config.systemPromptCache} onChange={(v) => setConfig({ systemPromptCache: v })} />
+              <TriStateSelect label="Incremental Cache" value={form.config.incrementalCache} onChange={(v) => setConfig({ incrementalCache: v })} />
+              <NullableNumInput label="Batch Threads (nthreads-batch)" value={form.config.nthreadsBatch} defaultValue={rc?.['nthreads-batch']} onChange={(v) => setConfig({ nthreadsBatch: v })} />
+              <NullableNumInput label="Cache Min Tokens" value={form.config.cacheMinTokens} defaultValue={rc?.['cache-min-tokens']} onChange={(v) => setConfig({ cacheMinTokens: v })} />
               <div>
                 <label style={labelStyle}>Device</label>
                 <select value={form.config.device} onChange={(e) => setConfig({ device: e.target.value })} style={inputStyle}>
@@ -855,9 +867,6 @@ export default function CatalogEditor() {
               </div>
               <NullableNumInput label="GPU Layers (ngpu-layers)" value={form.config.ngpuLayers} defaultValue={rc?.['ngpu-layers'] ?? undefined} onChange={(v) => setConfig({ ngpuLayers: v === null ? null : Math.round(v) })} />
               <TriStateSelect label="Ignore Integrity Check" value={form.config.ignoreIntegrityCheck} onChange={(v) => setConfig({ ignoreIntegrityCheck: v })} />
-              <TriStateSelect label="Incremental Cache" value={form.config.incrementalCache} onChange={(v) => setConfig({ incrementalCache: v })} />
-              <NullableNumInput label="Max Sequences (nseq-max)" value={form.config.nseqMax} defaultValue={rc?.['nseq-max']} onChange={(v) => setConfig({ nseqMax: v })} />
-              <NullableNumInput label="Micro Batch Size (nubatch)" value={form.config.nubatch} defaultValue={rc?.nubatch} onChange={(v) => setConfig({ nubatch: v })} />
               <TriStateSelect label="Offload KQV" value={form.config.offloadKQV} onChange={(v) => setConfig({ offloadKQV: v })} />
               <TriStateSelect label="Op Offload" value={form.config.opOffload} onChange={(v) => setConfig({ opOffload: v })} />
               <div>
@@ -869,7 +878,6 @@ export default function CatalogEditor() {
                   <option value="row">row</option>
                 </select>
               </div>
-              <TriStateSelect label="System Prompt Cache" value={form.config.systemPromptCache} onChange={(v) => setConfig({ systemPromptCache: v })} />
               <NullableNumInput label="Threads (nthreads)" value={form.config.nthreads} defaultValue={rc?.nthreads} onChange={(v) => setConfig({ nthreads: v })} />
             </div>
 

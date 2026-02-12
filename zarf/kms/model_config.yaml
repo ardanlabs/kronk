@@ -301,6 +301,31 @@ Qwen3-8B-Q8_0/IMC:
   nseq-max: 1
   incremental-cache: true
 
+# This has been the best with Cline.
+nanbeige4.1-3b-q8_0: &base_nanbeige4_1-3b-q8_0
+  context-window: 172032
+  nbatch: 2048
+  nubatch: 512
+  cache-type-k: f16
+  cache-type-v: f16
+  flash-attention: enabled
+  nseq-max: 2
+  insecure-logging: true
+  sampling-parameters:
+    temperature: 0.6
+    top_p: 0.95
+    top_k: 20
+
+nanbeige4.1-3b-q8_0/IMC:
+  <<: *base_nanbeige4_1-3b-q8_0
+  nseq-max: 1
+  incremental-cache: true
+
+nanbeige4.1-3b-q8_0/SPC:
+  <<: *base_nanbeige4_1-3b-q8_0
+  nseq-max: 1
+  isystem-prompt-cache: true
+
 # ------------------------------------------------------------------------------
 # Non-Reasoning models, tooling support, don't use with Agents.
 
