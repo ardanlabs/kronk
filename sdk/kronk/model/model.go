@@ -472,8 +472,6 @@ func (m *Model) sendErrorResponse(ctx context.Context, ch chan<- ChatResponse, i
 	case ch <- ChatResponseErr(id, object, m.modelInfo.ID, choiceIndex, prompt,
 		err,
 		usage):
-
-	default:
 	}
 }
 
