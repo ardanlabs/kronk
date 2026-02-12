@@ -1780,6 +1780,8 @@ import (
 )
 
 const (
+	//modelURL = "https://huggingface.co/unsloth/Qwen3-VL-30B-A3B-Instruct-GGUF/resolve/main/Qwen3-VL-30B-A3B-Instruct-UD-Q8_K_XL.gguf"
+	//projURL  = "https://huggingface.co/unsloth/Qwen3-VL-30B-A3B-Instruct-GGUF/resolve/main/mmproj-F16.gguf"
 	modelURL  = "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
 	projURL   = "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
 	imageFile = "examples/samples/giraffe.jpg"
@@ -1876,6 +1878,8 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	cfg := model.Config{
 		ModelFiles: mp.ModelFiles,
 		ProjFile:   mp.ProjFile,
+		CacheTypeK: model.GGMLTypeQ8_0,
+		CacheTypeV: model.GGMLTypeQ8_0,
 	}
 
 	krn, err := kronk.New(cfg)

@@ -36,6 +36,11 @@ const (
 	// false, False.
 	DefEnableThinking = ThinkingEnabled
 
+	// DefFrequencyPenalty penalizes tokens proportionally to how often they have
+	// appeared in the output. Higher values more strongly discourage frequent
+	// repetition. Default is 0.0 (disabled).
+	DefFrequencyPenalty float32 = 0.0
+
 	// DefIncludeUsage determines whether to include token usage information in
 	// streaming responses.
 	DefIncludeUsage = true
@@ -54,6 +59,11 @@ const (
 	// DefMinP is a dynamic sampling threshold that helps balance the coherence
 	// (quality) and diversity (creativity) of the generated text.
 	DefMinP = 0.0
+
+	// DefPresencePenalty applies a flat penalty to any token that has already
+	// appeared in the output, regardless of frequency. Higher values encourage
+	// the model to introduce new topics. Default is 0.0 (disabled).
+	DefPresencePenalty float32 = 0.0
 
 	// DefReasoningEffort is a string that specifies the level of reasoning effort to
 	// use for GPT models.
@@ -164,6 +174,11 @@ type Params struct {
 	// means full context.
 	DryPenaltyLast int32 `json:"dry_penalty_last_n"`
 
+	// FrequencyPenalty penalizes tokens proportionally to how often they have
+	// appeared in the output. Higher values more strongly discourage frequent
+	// repetition. Default is 0.0 (disabled).
+	FrequencyPenalty float32 `json:"frequency_penalty"`
+
 	// Grammar constrains output to match a GBNF grammar specification.
 	// When set, the model output will be forced to conform to this grammar.
 	// Use preset grammars like GrammarJSON or generate from JSON Schema.
@@ -185,6 +200,11 @@ type Params struct {
 	// MinP is a dynamic sampling threshold that helps balance the coherence
 	// (quality) and diversity (creativity) of the generated text. Default is 0.0.
 	MinP float32 `json:"min_p"`
+
+	// PresencePenalty applies a flat penalty to any token that has already
+	// appeared in the output, regardless of frequency. Higher values encourage
+	// the model to introduce new topics. Default is 0.0 (disabled).
+	PresencePenalty float32 `json:"presence_penalty"`
 
 	// ReasoningEffort is a string that specifies the level of reasoning effort
 	// to use for GPT models. Default is ReasoningEffortMedium.
@@ -272,6 +292,9 @@ func (p Params) String() string {
 	if p.DryPenaltyLast != 0 {
 		fmt.Fprintf(&b, "dry_penalty_last_n[%v]\n", p.DryPenaltyLast)
 	}
+	if p.FrequencyPenalty != 0 {
+		fmt.Fprintf(&b, "frequency_penalty[%v]\n", p.FrequencyPenalty)
+	}
 	if p.Grammar != "" {
 		fmt.Fprintf(&b, "grammar[enabled]\n")
 	}
@@ -286,6 +309,9 @@ func (p Params) String() string {
 	}
 	if p.MinP != 0 {
 		fmt.Fprintf(&b, "min_p[%v]\n", p.MinP)
+	}
+	if p.PresencePenalty != 0 {
+		fmt.Fprintf(&b, "presence_penalty[%v]\n", p.PresencePenalty)
 	}
 	if p.ReasoningEffort != "" {
 		fmt.Fprintf(&b, "reasoning_effort[%v]\n", p.ReasoningEffort)
@@ -351,6 +377,9 @@ func AddParams(params Params, d D) {
 	if params.DryPenaltyLast != 0 {
 		d["dry_penalty_last_n"] = params.DryPenaltyLast
 	}
+	if params.FrequencyPenalty != 0 {
+		d["frequency_penalty"] = params.FrequencyPenalty
+	}
 	if params.Grammar != "" {
 		d["grammar"] = params.Grammar
 	}
@@ -365,6 +394,9 @@ func AddParams(params Params, d D) {
 	}
 	if params.MinP != 0 {
 		d["min_p"] = params.MinP
+	}
+	if params.PresencePenalty != 0 {
+		d["presence_penalty"] = params.PresencePenalty
 	}
 	if params.ReasoningEffort != "" {
 		d["reasoning_effort"] = params.ReasoningEffort
@@ -458,6 +490,14 @@ func (m *Model) parseParams(d D) (Params, error) {
 		p.DryPenaltyLast = int32(dryPenaltyLast)
 	}
 
+	if val, exists := d["frequency_penalty"]; exists {
+		fp, err := parseFloat32("frequency_penalty", val)
+		if err != nil {
+			return Params{}, err
+		}
+		p.FrequencyPenalty = fp
+	}
+
 	if val, exists := d["enable_thinking"]; exists {
 		enableThinking, err := parseBool("enable_thinking", val)
 		if err != nil {
@@ -502,6 +542,14 @@ func (m *Model) parseParams(d D) (Params, error) {
 			return Params{}, err
 		}
 		p.MinP = minP
+	}
+
+	if val, exists := d["presence_penalty"]; exists {
+		pp, err := parseFloat32("presence_penalty", val)
+		if err != nil {
+			return Params{}, err
+		}
+		p.PresencePenalty = pp
 	}
 
 	if val, exists := d["reasoning_effort"]; exists {
@@ -705,8 +753,8 @@ func (m *Model) toSampler(p Params) llama.Sampler {
 		llama.SamplerChainAdd(sampler, llama.SamplerInitDry(m.vocab, int32(m.cfg.ContextWindow), p.DryMultiplier, p.DryBase, p.DryAllowedLen, p.DryPenaltyLast, nil))
 	}
 
-	if p.RepeatPenalty != 1.0 {
-		llama.SamplerChainAdd(sampler, llama.SamplerInitPenalties(p.RepeatLastN, p.RepeatPenalty, 0, 0))
+	if p.RepeatPenalty != 1.0 || p.FrequencyPenalty != 0 || p.PresencePenalty != 0 {
+		llama.SamplerChainAdd(sampler, llama.SamplerInitPenalties(p.RepeatLastN, p.RepeatPenalty, p.FrequencyPenalty, p.PresencePenalty))
 	}
 
 	llama.SamplerChainAdd(sampler, llama.SamplerInitTopK(p.TopK))

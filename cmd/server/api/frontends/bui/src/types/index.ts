@@ -3,6 +3,7 @@ export interface SamplingConfig {
   top_k: number;
   top_p: number;
   min_p: number;
+  presence_penalty: number;
   max_tokens: number;
   repeat_penalty: number;
   repeat_last_n: number;
@@ -13,6 +14,7 @@ export interface SamplingConfig {
   xtc_probability: number;
   xtc_threshold: number;
   xtc_min_keep: number;
+  frequency_penalty: number;
   enable_thinking: string;
   reasoning_effort: string;
 }
@@ -250,6 +252,7 @@ export interface ChatRequest {
   top_p?: number;
   top_k?: number;
   min_p?: number;
+  presence_penalty?: number;
   repeat_penalty?: number;
   repeat_last_n?: number;
   dry_multiplier?: number;
@@ -259,6 +262,7 @@ export interface ChatRequest {
   xtc_probability?: number;
   xtc_threshold?: number;
   xtc_min_keep?: number;
+  frequency_penalty?: number;
   enable_thinking?: string;
   reasoning_effort?: string;
   return_prompt?: boolean;

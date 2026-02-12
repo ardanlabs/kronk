@@ -69,6 +69,7 @@ interface CatalogFormData {
     topK: number | null;
     topP: number | null;
     minP: number | null;
+    presencePenalty: number | null;
     maxTokens: number | null;
     repeatPenalty: number | null;
     repeatLastN: number | null;
@@ -79,6 +80,7 @@ interface CatalogFormData {
     xtcProbability: number | null;
     xtcThreshold: number | null;
     xtcMinKeep: number | null;
+    frequencyPenalty: number | null;
     enableThinking: string;
     reasoningEffort: string;
   };
@@ -156,6 +158,7 @@ const defaultForm: CatalogFormData = {
     topK: null,
     topP: null,
     minP: null,
+    presencePenalty: null,
     maxTokens: null,
     repeatPenalty: null,
     repeatLastN: null,
@@ -166,6 +169,7 @@ const defaultForm: CatalogFormData = {
     xtcProbability: null,
     xtcThreshold: null,
     xtcMinKeep: null,
+    frequencyPenalty: null,
     enableThinking: '',
     reasoningEffort: '',
   },
@@ -273,6 +277,7 @@ function populateFromResponse(resp: CatalogModelResponse): CatalogFormData {
       topK: sp?.top_k ?? null,
       topP: sp?.top_p ?? null,
       minP: sp?.min_p ?? null,
+      presencePenalty: sp?.presence_penalty ?? null,
       maxTokens: sp?.max_tokens ?? null,
       repeatPenalty: sp?.repeat_penalty ?? null,
       repeatLastN: sp?.repeat_last_n ?? null,
@@ -283,6 +288,7 @@ function populateFromResponse(resp: CatalogModelResponse): CatalogFormData {
       xtcProbability: sp?.xtc_probability ?? null,
       xtcThreshold: sp?.xtc_threshold ?? null,
       xtcMinKeep: sp?.xtc_min_keep ?? null,
+      frequencyPenalty: sp?.frequency_penalty ?? null,
       enableThinking: sp?.enable_thinking || '',
       reasoningEffort: sp?.reasoning_effort || '',
     },
@@ -484,6 +490,7 @@ export default function CatalogEditor() {
             top_k: form.sampling.topK ?? 0,
             top_p: form.sampling.topP ?? 0,
             min_p: form.sampling.minP ?? 0,
+            presence_penalty: form.sampling.presencePenalty ?? 0,
             max_tokens: form.sampling.maxTokens ?? 0,
             repeat_penalty: form.sampling.repeatPenalty ?? 0,
             repeat_last_n: form.sampling.repeatLastN ?? 0,
@@ -494,6 +501,7 @@ export default function CatalogEditor() {
             xtc_probability: form.sampling.xtcProbability ?? 0,
             xtc_threshold: form.sampling.xtcThreshold ?? 0,
             xtc_min_keep: form.sampling.xtcMinKeep ?? 0,
+            frequency_penalty: form.sampling.frequencyPenalty ?? 0,
             enable_thinking: form.sampling.enableThinking,
             reasoning_effort: form.sampling.reasoningEffort,
           },
@@ -925,6 +933,8 @@ export default function CatalogEditor() {
             </div>
             <NullableNumInput label="Repeat Last N" value={form.sampling.repeatLastN} defaultValue={rsp?.repeat_last_n} onChange={(v) => setSampling({ repeatLastN: v })} />
             <NullableNumInput label="Repeat Penalty" value={form.sampling.repeatPenalty} step="0.01" defaultValue={rsp?.repeat_penalty} onChange={(v) => setSampling({ repeatPenalty: v })} />
+            <NullableNumInput label="Frequency Penalty" value={form.sampling.frequencyPenalty} step="0.01" defaultValue={rsp?.frequency_penalty} onChange={(v) => setSampling({ frequencyPenalty: v })} />
+            <NullableNumInput label="Presence Penalty" value={form.sampling.presencePenalty} step="0.01" defaultValue={rsp?.presence_penalty} onChange={(v) => setSampling({ presencePenalty: v })} />
             <NullableNumInput label="Temperature" value={form.sampling.temperature} step="0.01" defaultValue={rsp?.temperature} onChange={(v) => setSampling({ temperature: v })} />
             <NullableNumInput label="Top K" value={form.sampling.topK} defaultValue={rsp?.top_k} onChange={(v) => setSampling({ topK: v })} />
             <NullableNumInput label="Top P" value={form.sampling.topP} step="0.01" defaultValue={rsp?.top_p} onChange={(v) => setSampling({ topP: v })} />

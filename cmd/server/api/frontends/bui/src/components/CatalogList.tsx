@@ -597,6 +597,14 @@ export default function CatalogList() {
                       <span>{modelInfo.model_config['sampling-parameters'].repeat_last_n}</span>
                     </div>
                     <div className="model-meta-item">
+                      <label>Frequency Penalty</label>
+                      <span>{modelInfo.model_config['sampling-parameters'].frequency_penalty.toFixed(2)}</span>
+                    </div>
+                    <div className="model-meta-item">
+                      <label>Presence Penalty</label>
+                      <span>{modelInfo.model_config['sampling-parameters'].presence_penalty.toFixed(2)}</span>
+                    </div>
+                    <div className="model-meta-item">
                       <label>Enable Thinking</label>
                       <span>{modelInfo.model_config['sampling-parameters'].enable_thinking || 'default'}</span>
                     </div>

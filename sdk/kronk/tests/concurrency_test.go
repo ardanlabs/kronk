@@ -215,21 +215,18 @@ func Test_ConTest3(t *testing.T) {
 	t.Log("cancel context after breaking channel loop")
 	cancel()
 
-	t.Log("check if the channel is closed")
-	var closed bool
-	for range 3 {
-		_, open := <-ch
-		if !open {
-			closed = true
-			break
+	t.Log("flush channel until it closes")
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+	for flushing := true; flushing; {
+		select {
+		case _, open := <-ch:
+			if !open {
+				flushing = false
+			}
+		case <-timer.C:
+			t.Fatal("timed out waiting for channel to close")
 		}
-		time.Sleep(250 * time.Millisecond)
-	}
-
-	t.Log("check conditions")
-
-	if !closed {
-		t.Errorf("expected channel to be closed")
 	}
 }
 

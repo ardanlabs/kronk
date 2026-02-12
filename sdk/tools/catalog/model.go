@@ -22,8 +22,10 @@ type SamplingConfig struct {
 	XtcProbability  float32 `yaml:"xtc_probability,omitempty"`
 	XtcThreshold    float32 `yaml:"xtc_threshold,omitempty"`
 	XtcMinKeep      uint32  `yaml:"xtc_min_keep,omitempty"`
-	EnableThinking  string  `yaml:"enable_thinking,omitempty"`
-	ReasoningEffort string  `yaml:"reasoning_effort,omitempty"`
+	FrequencyPenalty float32 `yaml:"frequency_penalty,omitempty"`
+	PresencePenalty  float32 `yaml:"presence_penalty,omitempty"`
+	EnableThinking   string  `yaml:"enable_thinking,omitempty"`
+	ReasoningEffort  string  `yaml:"reasoning_effort,omitempty"`
 }
 
 // withDefaults returns a new SamplingConfig with default values applied
@@ -114,12 +116,14 @@ func (s SamplingConfig) toParams() model.Params {
 		DryMultiplier:   s.DryMultiplier,
 		DryBase:         s.DryBase,
 		DryAllowedLen:   s.DryAllowedLen,
-		DryPenaltyLast:  s.DryPenaltyLast,
-		XtcProbability:  s.XtcProbability,
-		XtcThreshold:    s.XtcThreshold,
-		XtcMinKeep:      s.XtcMinKeep,
-		Thinking:        s.EnableThinking,
-		ReasoningEffort: s.ReasoningEffort,
+		DryPenaltyLast:   s.DryPenaltyLast,
+		FrequencyPenalty: s.FrequencyPenalty,
+		PresencePenalty:  s.PresencePenalty,
+		XtcProbability:   s.XtcProbability,
+		XtcThreshold:     s.XtcThreshold,
+		XtcMinKeep:       s.XtcMinKeep,
+		Thinking:         s.EnableThinking,
+		ReasoningEffort:  s.ReasoningEffort,
 	}
 }
 
