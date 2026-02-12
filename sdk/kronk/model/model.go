@@ -73,7 +73,7 @@ type Model struct {
 	imcSessions   map[string]*imcSession // IMC sessions keyed by cache_id
 	imcNextSeq    llama.SeqId            // Next available cache sequence
 	imcMaxSeqs    int                    // Max IMC sessions from config
-	spcEntries map[string]*spcEntry // SPC token entries keyed by cache_id
+	spcEntries    map[string]*spcEntry   // SPC token entries keyed by cache_id
 	addBOSToken   bool                   // Whether to add BOS token (from model metadata)
 	pool          *contextPool           // Context pool for parallel embed/rerank
 }
@@ -95,6 +95,7 @@ func NewModel(ctx context.Context, templater Templater, cfg Config) (*Model, err
 	modelID := modelIDFromFiles(cfg.ModelFiles)
 
 	catCfg, err := templater.RetrieveConfig(modelID)
+
 	switch err {
 	case nil:
 		cfg = applyCatalogConfig(cfg, catCfg)
