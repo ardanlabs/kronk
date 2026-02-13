@@ -78,7 +78,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		conf.Version
 		Web struct {
 			ReadTimeout        time.Duration `conf:"default:30s"`
-			WriteTimeout       time.Duration `conf:"default:15m"`
+			WriteTimeout       time.Duration `conf:"default:30m"`
 			IdleTimeout        time.Duration `conf:"default:1m"`
 			ShutdownTimeout    time.Duration `conf:"default:1m"`
 			APIHost            string        `conf:"default:localhost:8080"`

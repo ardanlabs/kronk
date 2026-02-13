@@ -115,7 +115,7 @@ func installSystem() (models.Path, error) {
 	// -------------------------------------------------------------------------
 
 	// You could also download this model using the catalog system.
-	// mp, err := templates.Catalog().DownloadModel(ctx, kronk.FmtLogger, "Qwen3-Coder-Next-UD-Q8_K_XL")
+	// mp, err := templates.Catalog().DownloadModel(ctx, kronk.FmtLogger, "Qwen3-8B-Q8_0")
 	// if err != nil {
 	// 	return models.Path{}, fmt.Errorf("unable to download model: %w", err)
 	// }

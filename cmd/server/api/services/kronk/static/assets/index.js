@@ -597,7 +597,10 @@ func installSystem() (models.Path, error) {
 
 	// -------------------------------------------------------------------------
 	// You could also download this model using the catalog system.
-	// templates.Catalog().DownloadModel("Qwen2-Audio-7B.Q8_0")
+	// mp, err := templates.Catalog().DownloadModel(ctx, kronk.FmtLogger, "Qwen2-Audio-7B.Q8_0")
+	// if err != nil {
+	// 	return models.Path{}, fmt.Errorf("unable to download model: %w", err)
+	// }
 
 	return mp, nil
 }
@@ -852,7 +855,7 @@ func installSystem() (models.Path, error) {
 	// -------------------------------------------------------------------------
 
 	// You could also download this model using the catalog system.
-	// mp, err := templates.Catalog().DownloadModel(ctx, kronk.FmtLogger, "Qwen3-Coder-Next-UD-Q8_K_XL")
+	// mp, err := templates.Catalog().DownloadModel(ctx, kronk.FmtLogger, "Qwen3-8B-Q8_0")
 	// if err != nil {
 	// 	return models.Path{}, fmt.Errorf("unable to download model: %w", err)
 	// }
@@ -1186,7 +1189,10 @@ func installSystem() (models.Path, error) {
 
 	// -------------------------------------------------------------------------
 	// You could also download this model using the catalog system.
-	// templates.Catalog().DownloadModel("embeddinggemma-300m-qat-Q8_0")
+	// mp, err := templates.Catalog().DownloadModel(ctx, kronk.FmtLogger, "embeddinggemma-300m-qat-Q8_0")
+	// if err != nil {
+	// 	return models.Path{}, fmt.Errorf("unable to download model: %w", err)
+	// }
 
 	return mp, nil
 }
@@ -1271,8 +1277,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-//const modelURL = "unsloth/gpt-oss-120b-GGUF/gpt-oss-120b-F16.gguf"
-
+// const modelURL = "unsloth/gpt-oss-120b-GGUF/gpt-oss-120b-F16.gguf"
 const modelURL = "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
 
 func main() {
@@ -1636,7 +1641,10 @@ func installSystem() (models.Path, error) {
 
 	// -------------------------------------------------------------------------
 	// You could also download this model using the catalog system.
-	// templates.Catalog().DownloadModel("Qwen3-8B-Q8_0")
+	// mp, err := templates.Catalog().DownloadModel(ctx, kronk.FmtLogger, "Qwen3-8B-Q8_0")
+	// if err != nil {
+	// 	return models.Path{}, fmt.Errorf("unable to download model: %w", err)
+	// }
 
 	return mp, nil
 }
@@ -2016,7 +2024,10 @@ func installSystem() (models.Path, error) {
 
 	// -------------------------------------------------------------------------
 	// You could also download this model using the catalog system.
-	// templates.Catalog().DownloadModel("Qwen3-8B-Q8_0")
+	// mp, err := templates.Catalog().DownloadModel(ctx, kronk.FmtLogger, "Qwen3-8B-Q8_0")
+	// if err != nil {
+	// 	return models.Path{}, fmt.Errorf("unable to download model: %w", err)
+	// }
 
 	return mp, nil
 }
@@ -2338,7 +2349,10 @@ func installSystem() (models.Path, error) {
 
 	// -------------------------------------------------------------------------
 	// You could also download this model using the catalog system.
-	// templates.Catalog().DownloadModel("Qwen2.5-VL-3B-Instruct-Q8_0")
+	// mp, err := templates.Catalog().DownloadModel(ctx, kronk.FmtLogger, "Qwen2.5-VL-3B-Instruct-Q8_0")
+	// if err != nil {
+	// 	return models.Path{}, fmt.Errorf("unable to download model: %w", err)
+	// }
 
 	return mp, nil
 }
@@ -2353,8 +2367,6 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	cfg := model.Config{
 		ModelFiles: mp.ModelFiles,
 		ProjFile:   mp.ProjFile,
-		CacheTypeK: model.GGMLTypeQ8_0,
-		CacheTypeV: model.GGMLTypeQ8_0,
 	}
 
 	krn, err := kronk.New(cfg)
