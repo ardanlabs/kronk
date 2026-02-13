@@ -100,7 +100,10 @@ func installSystem() (models.Path, error) {
 
 	// -------------------------------------------------------------------------
 	// You could also download this model using the catalog system.
-	// templates.Catalog().DownloadModel("embeddinggemma-300m-qat-Q8_0")
+	// mp, err := templates.Catalog().DownloadModel(ctx, kronk.FmtLogger, "embeddinggemma-300m-qat-Q8_0")
+	// if err != nil {
+	// 	return models.Path{}, fmt.Errorf("unable to download model: %w", err)
+	// }
 
 	return mp, nil
 }

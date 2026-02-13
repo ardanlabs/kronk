@@ -20,8 +20,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-//const modelURL = "unsloth/gpt-oss-120b-GGUF/gpt-oss-120b-F16.gguf"
-
+// const modelURL = "unsloth/gpt-oss-120b-GGUF/gpt-oss-120b-F16.gguf"
 const modelURL = "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
 
 func main() {
