@@ -156,8 +156,17 @@ func (m *Models) downloadModel(ctx context.Context, log Logger, modelFileURL str
 
 	mp, found := m.loadIndex()[extractModelID(modelFileName)]
 	if found && mp.Validated {
-		mp.Downloaded = false
-		return mp, nil
+		hasFile := false
+		for _, mf := range mp.ModelFiles {
+			if filepath.Base(mf) == modelFileName {
+				hasFile = true
+				break
+			}
+		}
+		if hasFile {
+			mp.Downloaded = false
+			return mp, nil
+		}
 	}
 
 	// -------------------------------------------------------------------------
