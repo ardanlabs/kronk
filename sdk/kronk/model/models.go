@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"maps"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -160,11 +159,28 @@ func modelIDFromFiles(modelFiles []string) string {
 // D represents a generic docment of fields and values.
 type D map[string]any
 
-// Clone creates a shallow copy of the document. This is useful when you need
-// to modify the document without affecting the original.
+// Clone creates a copy of the document. Top-level keys are copied into a new
+// map. Values that are D or []D are cloned recursively so that nested message
+// maps can be mutated independently across concurrent requests. Other value
+// types (strings, numbers, etc.) are shared.
 func (d D) Clone() D {
 	clone := make(D, len(d))
-	maps.Copy(clone, d)
+	for k, v := range d {
+		switch val := v.(type) {
+		case D:
+			clone[k] = val.Clone()
+		case map[string]any:
+			clone[k] = D(val).Clone()
+		case []D:
+			s := make([]D, len(val))
+			for i, item := range val {
+				s[i] = item.Clone()
+			}
+			clone[k] = s
+		default:
+			clone[k] = v
+		}
+	}
 	return clone
 }
 

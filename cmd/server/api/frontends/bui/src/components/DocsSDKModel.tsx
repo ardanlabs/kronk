@@ -607,7 +607,7 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func (d D) Clone() D</code>
               </pre>
-              <p className="doc-description">Clone creates a shallow copy of the document. This is useful when you need to modify the document without affecting the original.</p>
+              <p className="doc-description">Clone creates a copy of the document. Top-level keys are copied into a new map. Values that are D or []D are cloned recursively so that nested message maps can be mutated independently across concurrent requests. Other value types (strings, numbers, etc.) are shared.</p>
             </div>
 
             <div className="doc-section" id="method-d-messages">
