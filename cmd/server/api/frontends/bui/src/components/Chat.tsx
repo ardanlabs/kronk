@@ -6,6 +6,8 @@ import { useModelList } from '../contexts/ModelListContext';
 import { useChatMessages, type DisplayMessage } from '../contexts/ChatContext';
 import { useSampling, defaultSampling, isChangedFrom, formatBaselineValue, hasAnyChange, hasAdvancedChange, type SamplingParams } from '../contexts/SamplingContext';
 import CodeBlock from './CodeBlock';
+import ChatHistoryPanel from './ChatHistoryPanel';
+import { useChatHistory, type HistoryMessage } from '../contexts/ChatHistoryContext';
 import type { ChatMessage, ChatUsage, ChatToolCall, ChatContentPart, SamplingConfig, ListModelDetail } from '../types';
 
 interface AttachedFile {
@@ -74,6 +76,7 @@ export default function Chat() {
   const { models, loading: modelsLoading, loadModels } = useModelList();
   const { messages, setMessages, clearMessages } = useChatMessages();
   const { sampling, setSampling } = useSampling();
+  const { saveChat } = useChatHistory();
   const [selectedModel, setSelectedModel] = useState<string>(() => {
     return localStorage.getItem('kronk_chat_model') || '';
   });
@@ -85,6 +88,7 @@ export default function Chat() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editContent, setEditContent] = useState('');
+  const [showHistory, setShowHistory] = useState(false);
 
   // Extended model configs with sampling parameters
   const [extendedModels, setExtendedModels] = useState<ListModelDetail[]>([]);
@@ -438,10 +442,24 @@ export default function Chat() {
   };
 
   const handleClear = () => {
+    if (messages.length > 0 && window.confirm('Save this chat to history before clearing?')) {
+      saveChat(selectedModel, messages);
+    }
     clearMessages();
     setError(null);
     setAttachedFiles([]);
   };
+
+  const handleLoadFromHistory = useCallback((historyMessages: HistoryMessage[]) => {
+    const displayMessages: DisplayMessage[] = historyMessages.map((m) => ({
+      role: m.role,
+      content: m.content,
+      reasoning: m.reasoning,
+    }));
+    setMessages(displayMessages);
+    setError(null);
+    setAttachedFiles([]);
+  }, [setMessages]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -477,13 +495,37 @@ export default function Chat() {
   };
 
   return (
-    <div className="chat-container">
+    <div className="chat-layout">
+      <ChatHistoryPanel
+        isOpen={showHistory}
+        onClose={() => setShowHistory(false)}
+        onLoadChat={handleLoadFromHistory}
+      />
+      <div className="chat-container">
       <div className="chat-header">
         <div className="chat-header-left">
           <h2>Apps</h2>
           <select
             value={selectedModel}
-            onChange={(e) => setSelectedModel(e.target.value)}
+            onChange={(e) => {
+              const newModel = e.target.value;
+              if (messages.length > 0) {
+                if (window.confirm('Switching models will clear the current chat. Continue?')) {
+                  if (window.confirm('Save this chat to history before switching?')) {
+                    saveChat(selectedModel, messages);
+                  }
+                  clearMessages();
+                  setError(null);
+                  setAttachedFiles([]);
+                  setSelectedModel(newModel);
+                } else {
+                  // Reset the select to the current model
+                  e.target.value = selectedModel;
+                }
+              } else {
+                setSelectedModel(newModel);
+              }
+            }}
             disabled={modelsLoading || isStreaming}
             className="chat-model-select"
           >
@@ -504,6 +546,12 @@ export default function Chat() {
           </select>
         </div>
         <div className="chat-header-right">
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => setShowHistory(!showHistory)}
+          >
+            History
+          </button>
           <button
             className="btn btn-secondary btn-sm"
             onClick={() => setShowSettings(!showSettings)}
@@ -1076,6 +1124,7 @@ export default function Chat() {
           </div>
         </div>
       </form>
+    </div>
     </div>
   );
 }

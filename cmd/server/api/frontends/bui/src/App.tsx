@@ -35,6 +35,7 @@ import { ModelListProvider } from './contexts/ModelListContext';
 import { TokenProvider } from './contexts/TokenContext';
 import { DownloadProvider } from './contexts/DownloadContext';
 import { ChatProvider } from './contexts/ChatContext';
+import { ChatHistoryProvider } from './contexts/ChatHistoryContext';
 import { SamplingProvider } from './contexts/SamplingContext';
 
 export type Page =
@@ -161,6 +162,7 @@ function App() {
         <ModelListProvider>
           <DownloadProvider>
             <ChatProvider>
+              <ChatHistoryProvider>
               <SamplingProvider>
                 <Layout>
               <Routes>
@@ -199,6 +201,7 @@ function App() {
               </Routes>
                 </Layout>
               </SamplingProvider>
+              </ChatHistoryProvider>
             </ChatProvider>
           </DownloadProvider>
         </ModelListProvider>
