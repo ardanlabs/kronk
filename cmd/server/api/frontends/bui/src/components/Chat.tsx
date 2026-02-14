@@ -134,6 +134,7 @@ export default function Chat() {
       includeUsage: defaultSampling.includeUsage,
       logprobs: defaultSampling.logprobs,
       topLogprobs: defaultSampling.topLogprobs,
+      systemPrompt: defaultSampling.systemPrompt,
     };
   }, []);
 
@@ -377,6 +378,7 @@ export default function Chat() {
     setAttachedFiles([]);
 
     const chatMessages: ChatMessage[] = [
+      ...(sampling.systemPrompt ? [{ role: 'system' as const, content: sampling.systemPrompt }] : []),
       ...messages.map(m => ({ 
         role: m.role, 
         content: m.attachments ? buildMessageContent(m.content, m.attachments) : m.content 
@@ -425,10 +427,13 @@ export default function Chat() {
     setEditingIndex(null);
     setEditContent('');
 
-    const chatMessages: ChatMessage[] = updatedMessages.map(m => ({
-      role: m.role,
-      content: m.attachments ? buildMessageContent(m.content, m.attachments) : m.content,
-    }));
+    const chatMessages: ChatMessage[] = [
+      ...(sampling.systemPrompt ? [{ role: 'system' as const, content: sampling.systemPrompt }] : []),
+      ...updatedMessages.map(m => ({
+        role: m.role,
+        content: m.attachments ? buildMessageContent(m.content, m.attachments) : m.content,
+      })),
+    ];
 
     streamResponse(chatMessages);
   };
@@ -572,6 +577,17 @@ export default function Chat() {
       </div>
 
       {showSettings && (
+        <>
+        <div className="chat-system-prompt">
+          <label>System Prompt</label>
+          <textarea
+            value={sampling.systemPrompt}
+            onChange={(e) => setSampling({ systemPrompt: e.target.value })}
+            placeholder="Enter a system prompt to set the model's behavior..."
+            className="chat-system-prompt-input"
+            rows={3}
+          />
+        </div>
         <div className="chat-settings">
           <div className={`chat-setting ${isChangedFrom('maxTokens', sampling.maxTokens, modelBaseline) ? 'chat-setting-changed' : ''}`}>
             <label>
@@ -937,6 +953,7 @@ export default function Chat() {
             </div>
           )}
         </div>
+        </>
       )}
 
       {error && <div className="alert alert-error">{error}</div>}

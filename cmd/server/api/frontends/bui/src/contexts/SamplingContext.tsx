@@ -25,6 +25,7 @@ export interface SamplingParams {
   includeUsage: boolean;
   logprobs: boolean;
   topLogprobs: number;
+  systemPrompt: string;
 }
 
 export const defaultSampling: SamplingParams = {
@@ -50,6 +51,7 @@ export const defaultSampling: SamplingParams = {
   includeUsage: true,
   logprobs: false,
   topLogprobs: 0,
+  systemPrompt: '',
 };
 
 interface SamplingContextType {
