@@ -5,7 +5,7 @@
 local
 node_modules
 .DS_Store
-/opencode.json
+.kilocode
 
 # Docker compose data directories
 zarf/docker/openwebui/

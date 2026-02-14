@@ -111,7 +111,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		}
 		BasePath        string
 		LibPath         string
-		LibVersion      string
+		LibVersion      string `conf:"default:b8047"`
 		Arch            string
 		OS              string
 		Processor       string
