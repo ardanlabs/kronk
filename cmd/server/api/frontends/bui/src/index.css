@@ -1089,6 +1089,42 @@ tr.selected:hover td {
     background: var(--color-white);
 }
 
+.chat-system-prompt {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px 16px;
+    background: var(--color-gray-100);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    flex-shrink: 0;
+}
+
+.chat-system-prompt label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-gray-600);
+}
+
+.chat-system-prompt-input {
+    width: 100%;
+    min-height: 72px;
+    max-height: 25vh;
+    padding: 8px 10px;
+    border: 1px solid var(--color-gray-300);
+    border-radius: 4px;
+    font-size: 14px;
+    font-family: inherit;
+    resize: vertical;
+    line-height: 1.5;
+    box-sizing: border-box;
+}
+
+.chat-system-prompt-input:focus {
+    outline: none;
+    border-color: var(--color-blue);
+}
+
 .chat-settings {
     display: flex;
     gap: 16px;
