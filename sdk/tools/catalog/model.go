@@ -103,6 +103,70 @@ func (s SamplingConfig) withDefaults() SamplingConfig {
 	return s
 }
 
+// mergeSampling merges the override sampling config on top of the base,
+// keeping base values for any zero-valued fields in the override.
+func mergeSampling(base SamplingConfig, override SamplingConfig) SamplingConfig {
+	if override.Temperature != 0 {
+		base.Temperature = override.Temperature
+	}
+	if override.TopK != 0 {
+		base.TopK = override.TopK
+	}
+	if override.TopP != 0 {
+		base.TopP = override.TopP
+	}
+	if override.MinP != 0 {
+		base.MinP = override.MinP
+	}
+	if override.MaxTokens != 0 {
+		base.MaxTokens = override.MaxTokens
+	}
+	if override.RepeatPenalty != 0 {
+		base.RepeatPenalty = override.RepeatPenalty
+	}
+	if override.RepeatLastN != 0 {
+		base.RepeatLastN = override.RepeatLastN
+	}
+	if override.DryMultiplier != 0 {
+		base.DryMultiplier = override.DryMultiplier
+	}
+	if override.DryBase != 0 {
+		base.DryBase = override.DryBase
+	}
+	if override.DryAllowedLen != 0 {
+		base.DryAllowedLen = override.DryAllowedLen
+	}
+	if override.DryPenaltyLast != 0 {
+		base.DryPenaltyLast = override.DryPenaltyLast
+	}
+	if override.XtcProbability != 0 {
+		base.XtcProbability = override.XtcProbability
+	}
+	if override.XtcThreshold != 0 {
+		base.XtcThreshold = override.XtcThreshold
+	}
+	if override.XtcMinKeep != 0 {
+		base.XtcMinKeep = override.XtcMinKeep
+	}
+	if override.FrequencyPenalty != 0 {
+		base.FrequencyPenalty = override.FrequencyPenalty
+	}
+	if override.PresencePenalty != 0 {
+		base.PresencePenalty = override.PresencePenalty
+	}
+	if override.EnableThinking != "" {
+		base.EnableThinking = override.EnableThinking
+	}
+	if override.ReasoningEffort != "" {
+		base.ReasoningEffort = override.ReasoningEffort
+	}
+	if override.Grammar != "" {
+		base.Grammar = override.Grammar
+	}
+
+	return base
+}
+
 func (s SamplingConfig) toParams() model.Params {
 	s = s.withDefaults()
 

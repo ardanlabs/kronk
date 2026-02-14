@@ -230,14 +230,10 @@ func (c *Catalog) ResolvedModelConfig(modelID string) ModelConfig {
 			cfg.YarnOrigCtx = modelConfig.YarnOrigCtx
 		}
 
-		// Preserve catalog grammar if model config doesn't specify one.
-		catalogGrammar := cfg.Sampling.Grammar
-
-		cfg.Sampling = modelConfig.Sampling.withDefaults()
-
-		if cfg.Sampling.Grammar == "" {
-			cfg.Sampling.Grammar = catalogGrammar
-		}
+		// Merge model config sampling over catalog sampling so that
+		// catalog values act as defaults for any fields the model
+		// config doesn't explicitly set.
+		cfg.Sampling = mergeSampling(cfg.Sampling, modelConfig.Sampling)
 	}
 
 	return cfg
