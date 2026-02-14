@@ -23,8 +23,8 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
+	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
-	"github.com/ardanlabs/kronk/sdk/tools/templates"
 )
 
 const modelURL = "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
@@ -82,16 +82,12 @@ func installSystem() (models.Path, error) {
 	// a corrected jinja file, having the catalog system up to date will allow
 	// the system to pull that jinja file.
 
-	templates, err := templates.New()
+	ctlg, err := catalog.New()
 	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to create template system: %w", err)
+		return models.Path{}, fmt.Errorf("unable to create catalog system: %w", err)
 	}
 
-	if err := templates.Download(ctx); err != nil {
-		return models.Path{}, fmt.Errorf("unable to download templates: %w", err)
-	}
-
-	if err := templates.Catalog().Download(ctx); err != nil {
+	if err := ctlg.Download(ctx); err != nil {
 		return models.Path{}, fmt.Errorf("unable to download catalog: %w", err)
 	}
 

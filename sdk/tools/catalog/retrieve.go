@@ -230,7 +230,14 @@ func (c *Catalog) ResolvedModelConfig(modelID string) ModelConfig {
 			cfg.YarnOrigCtx = modelConfig.YarnOrigCtx
 		}
 
+		// Preserve catalog grammar if model config doesn't specify one.
+		catalogGrammar := cfg.Sampling.Grammar
+
 		cfg.Sampling = modelConfig.Sampling.withDefaults()
+
+		if cfg.Sampling.Grammar == "" {
+			cfg.Sampling.Grammar = catalogGrammar
+		}
 	}
 
 	return cfg
@@ -249,6 +256,10 @@ func (c *Catalog) KronkResolvedModelConfig(modelID string) (model.Config, error)
 
 	// Get the merged config from catalog and model_config.yaml.
 	mc := c.ResolvedModelConfig(modelID)
+
+	if err := c.resolveGrammar(&mc.Sampling); err != nil {
+		return model.Config{}, fmt.Errorf("kronk-resolved-model-config: %w", err)
+	}
 
 	// Convert to model.Config and set file paths.
 	cfg := mc.ToKronkConfig()

@@ -21,12 +21,13 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
-	"github.com/ardanlabs/kronk/sdk/tools/templates"
 )
 
+// const modelURL = "https://huggingface.co/bartowski/cerebras_Qwen3-Coder-REAP-25B-A3B-GGUF/resolve/main/cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0.gguf"
 // const modelURL = "unsloth/gpt-oss-120b-GGUF/gpt-oss-120b-F16.gguf"
 // const modelURL = "unsloth/GLM-4.7-Flash-GGUF/GLM-4.7-Flash-UD-Q8_K_XL.gguf"
 // const modelURL = "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF/Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL.gguf"
@@ -87,16 +88,12 @@ func installSystem() (models.Path, error) {
 	// a corrected jinja file, having the catalog system up to date will allow
 	// the system to pull that jinja file.
 
-	templates, err := templates.New()
+	ctlg, err := catalog.New()
 	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to create template system: %w", err)
+		return models.Path{}, fmt.Errorf("unable to create catalog system: %w", err)
 	}
 
-	if err := templates.Download(ctx); err != nil {
-		return models.Path{}, fmt.Errorf("unable to download templates: %w", err)
-	}
-
-	if err := templates.Catalog().Download(ctx); err != nil {
+	if err := ctlg.Download(ctx); err != nil {
 		return models.Path{}, fmt.Errorf("unable to download catalog: %w", err)
 	}
 
@@ -115,7 +112,7 @@ func installSystem() (models.Path, error) {
 	// -------------------------------------------------------------------------
 
 	// You could also download this model using the catalog system.
-	// mp, err := templates.Catalog().DownloadModel(ctx, kronk.FmtLogger, "Qwen3-8B-Q8_0")
+	// mp, err := ctlg.DownloadModel(ctx, kronk.FmtLogger, "Qwen3-8B-Q8_0")
 	// if err != nil {
 	// 	return models.Path{}, fmt.Errorf("unable to download model: %w", err)
 	// }
@@ -152,6 +149,7 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("- embeddings   :", krn.ModelInfo().IsEmbedModel)
 	fmt.Println("- isGPT        :", krn.ModelInfo().IsGPTModel)
 	fmt.Println("- template     :", krn.ModelInfo().Template.FileName)
+	fmt.Println("- grammar      :", krn.ModelConfig().DefaultParams.Grammar != "")
 
 	return krn, nil
 }

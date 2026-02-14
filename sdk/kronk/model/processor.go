@@ -226,7 +226,25 @@ func parseFunctionFormat(content string) []ResponseToolCall {
 			}
 
 			paramValue := strings.TrimSpace(remaining[paramStart+paramNameEnd+1 : paramClose])
-			args[paramName] = paramValue
+
+			// Try to parse the value as JSON so that arrays and objects
+			// are stored as proper Go types ([]any, map[string]any) instead
+			// of raw strings. Fall back to the plain string for scalars.
+			switch {
+			case len(paramValue) == 0:
+				args[paramName] = paramValue
+
+			case paramValue[0] == '{', paramValue[0] == '[', paramValue[0] == '"':
+				args[paramName] = paramValue
+
+				var parsed any
+				if err := json.Unmarshal([]byte(paramValue), &parsed); err == nil {
+					args[paramName] = parsed
+				}
+
+			default:
+				args[paramName] = paramValue
+			}
 
 			remaining = remaining[paramClose+12:]
 		}

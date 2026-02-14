@@ -44,9 +44,9 @@ type spcEntry struct {
 	len    int           // Length of original system prompt string
 }
 
-// Templater provides support to retrieve catalog config and template
+// Cataloger provides support to retrieve catalog config and template
 // information.
-type Templater interface {
+type Cataloger interface {
 	RetrieveTemplate(modelID string) (Template, error)
 	RetrieveConfig(modelID string) (Config, error)
 }
@@ -78,23 +78,25 @@ type Model struct {
 	pool          *contextPool           // Context pool for parallel embed/rerank
 }
 
-func NewModel(ctx context.Context, templater Templater, cfg Config) (*Model, error) {
+func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, error) {
 	l := cfg.Log
 	if cfg.Log == nil {
 		l = func(ctx context.Context, msg string, args ...any) {}
 	}
 
-	if templater == nil {
-		return nil, fmt.Errorf("catalog required, use templates.New()")
+	if cataloger == nil {
+		return nil, fmt.Errorf("catalog required, use catalog.New()")
 	}
 
 	if len(cfg.ModelFiles) == 0 {
 		return nil, fmt.Errorf("model required")
 	}
 
+	// -------------------------------------------------------------------------
+
 	modelID := modelIDFromFiles(cfg.ModelFiles)
 
-	catCfg, err := templater.RetrieveConfig(modelID)
+	catCfg, err := cataloger.RetrieveConfig(modelID)
 
 	switch err {
 	case nil:
@@ -164,7 +166,7 @@ func NewModel(ctx context.Context, templater Templater, cfg Config) (*Model, err
 
 	metrics.SetVRAM(modelInfo.ID, modelInfo.VRAMTotal, modelInfo.SlotMemory)
 
-	template, err := retrieveTemplate(templater, cfg, mdl, modelInfo)
+	template, err := retrieveTemplate(cataloger, cfg, mdl, modelInfo)
 	if err != nil {
 		return nil, fmt.Errorf("retrieve-template: failed to retrieve model template: %w", err)
 	}
@@ -291,7 +293,7 @@ func loadModelFromFiles(ctx context.Context, log Logger, modelFiles []string, pa
 	return mdl, nil
 }
 
-func retrieveTemplate(tmlpRetriever Templater, cfg Config, mdl llama.Model, modelInfo ModelInfo) (Template, error) {
+func retrieveTemplate(cataloger Cataloger, cfg Config, mdl llama.Model, modelInfo ModelInfo) (Template, error) {
 	if cfg.JinjaFile != "" {
 		data, err := readJinjaTemplate(cfg.JinjaFile)
 		if err != nil {
@@ -308,8 +310,8 @@ func retrieveTemplate(tmlpRetriever Templater, cfg Config, mdl llama.Model, mode
 		}, nil
 	}
 
-	if tmlpRetriever != nil {
-		template, err := tmlpRetriever.RetrieveTemplate(modelInfo.ID)
+	if cataloger != nil {
+		template, err := cataloger.RetrieveTemplate(modelInfo.ID)
 		if err == nil {
 			return template, nil
 		}

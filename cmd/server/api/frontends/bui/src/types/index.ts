@@ -17,6 +17,7 @@ export interface SamplingConfig {
   frequency_penalty: number;
   enable_thinking: string;
   reasoning_effort: string;
+  grammar: string;
 }
 
 export interface ListModelDetail {

@@ -61,7 +61,7 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="func-newmodel">
               <h4>NewModel</h4>
               <pre className="code-block">
-                <code>func NewModel(ctx context.Context, templater Templater, cfg Config) (*Model, error)</code>
+                <code>func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, error)</code>
               </pre>
             </div>
 
@@ -84,6 +84,17 @@ export default function DocsSDKModel() {
 
           <div className="card" id="types">
             <h3>Types</h3>
+
+            <div className="doc-section" id="type-cataloger">
+              <h4>Cataloger</h4>
+              <pre className="code-block">
+                <code>{`type Cataloger interface {
+	RetrieveTemplate(modelID string) (Template, error)
+	RetrieveConfig(modelID string) (Config, error)
+}`}</code>
+              </pre>
+              <p className="doc-description">Cataloger provides support to retrieve catalog config and template information.</p>
+            </div>
 
             <div className="doc-section" id="type-chatresponse">
               <h4>ChatResponse</h4>
@@ -524,17 +535,6 @@ export default function DocsSDKModel() {
               <p className="doc-description">Template provides the template file name.</p>
             </div>
 
-            <div className="doc-section" id="type-templater">
-              <h4>Templater</h4>
-              <pre className="code-block">
-                <code>{`type Templater interface {
-	RetrieveTemplate(modelID string) (Template, error)
-	RetrieveConfig(modelID string) (Config, error)
-}`}</code>
-              </pre>
-              <p className="doc-description">Templater provides support to retrieve catalog config and template information.</p>
-            </div>
-
             <div className="doc-section" id="type-tokenizeresponse">
               <h4>TokenizeResponse</h4>
               <pre className="code-block">
@@ -905,55 +905,6 @@ export default function DocsSDKModel() {
           <div className="card" id="constants">
             <h3>Constants</h3>
 
-            <div className="doc-section" id="const-grammarjson">
-              <h4>GrammarJSON</h4>
-              <pre className="code-block">
-                <code>{`const (
-	// GrammarJSON constrains output to valid JSON objects or arrays.
-	// Based on https://github.com/ggml-org/llama.cpp/blob/master/grammars/json.gbnf
-	GrammarJSON = \`root ::= object | array
-value ::= object | array | string | number | "true" | "false" | "null"
-object ::= "{" ws ( string ":" ws value ("," ws string ":" ws value)* )? ws "}"
-array ::= "[" ws ( value ("," ws value)* )? ws "]"
-string ::= "\\"" ([^"\\\\] | "\\\\" ["\\\\bfnrt/] | "\\\\u" [0-9a-fA-F]{4})* "\\""
-number ::= "-"? ("0" | [1-9][0-9]*) ("." [0-9]+)? ([eE] [+-]? [0-9]+)?
-ws ::= [ \\t\\n\\r]*\`
-
-	// GrammarJSONObject constrains output to valid JSON objects only.
-	// Based on https://github.com/ggml-org/llama.cpp/blob/master/grammars/json.gbnf
-	GrammarJSONObject = \`root ::= object
-value ::= object | array | string | number | "true" | "false" | "null"
-object ::= "{" ws ( string ":" ws value ("," ws string ":" ws value)* )? ws "}"
-array ::= "[" ws ( value ("," ws value)* )? ws "]"
-string ::= "\\"" ([^"\\\\] | "\\\\" ["\\\\bfnrt/] | "\\\\u" [0-9a-fA-F]{4})* "\\""
-number ::= "-"? ("0" | [1-9][0-9]*) ("." [0-9]+)? ([eE] [+-]? [0-9]+)?
-ws ::= [ \\t\\n\\r]*\`
-
-	// GrammarJSONArray constrains output to valid JSON arrays only.
-	// Based on https://github.com/ggml-org/llama.cpp/blob/master/grammars/json.gbnf
-	GrammarJSONArray = \`root ::= array
-value ::= object | array | string | number | "true" | "false" | "null"
-object ::= "{" ws ( string ":" ws value ("," ws string ":" ws value)* )? ws "}"
-array ::= "[" ws ( value ("," ws value)* )? ws "]"
-string ::= "\\"" ([^"\\\\] | "\\\\" ["\\\\bfnrt/] | "\\\\u" [0-9a-fA-F]{4})* "\\""
-number ::= "-"? ("0" | [1-9][0-9]*) ("." [0-9]+)? ([eE] [+-]? [0-9]+)?
-ws ::= [ \\t\\n\\r]*\`
-
-	// GrammarBoolean constrains output to "true" or "false".
-	GrammarBoolean = \`root ::= "true" | "false"\`
-
-	// GrammarYesNo constrains output to "yes" or "no".
-	GrammarYesNo = \`root ::= "yes" | "no"\`
-
-	// GrammarInteger constrains output to integer values.
-	GrammarInteger = \`root ::= "-"? ( "0" | [1-9][0-9]* )\`
-
-	// GrammarNumber constrains output to numeric values (int or float).
-	GrammarNumber = \`root ::= "-"? ( "0" | [1-9][0-9]* ) ( "." [0-9]+ )? ( [eE] [+-]? [0-9]+ )?\`
-)`}</code>
-              </pre>
-            </div>
-
             <div className="doc-section" id="const-objectchatunknown">
               <h4>ObjectChatUnknown</h4>
               <pre className="code-block">
@@ -1165,6 +1116,7 @@ ws ::= [ \\t\\n\\r]*\`
             <div className="doc-index-section">
               <a href="#types" className="doc-index-header">Types</a>
               <ul>
+                <li><a href="#type-cataloger">Cataloger</a></li>
                 <li><a href="#type-chatresponse">ChatResponse</a></li>
                 <li><a href="#type-choice">Choice</a></li>
                 <li><a href="#type-config">Config</a></li>
@@ -1191,7 +1143,6 @@ ws ::= [ \\t\\n\\r]*\`
                 <li><a href="#type-splitmode">SplitMode</a></li>
                 <li><a href="#type-streamingresponselogger">StreamingResponseLogger</a></li>
                 <li><a href="#type-template">Template</a></li>
-                <li><a href="#type-templater">Templater</a></li>
                 <li><a href="#type-tokenizeresponse">TokenizeResponse</a></li>
                 <li><a href="#type-toolcallarguments">ToolCallArguments</a></li>
                 <li><a href="#type-toplogprob">TopLogprob</a></li>
@@ -1248,7 +1199,6 @@ ws ::= [ \\t\\n\\r]*\`
             <div className="doc-index-section">
               <a href="#constants" className="doc-index-header">Constants</a>
               <ul>
-                <li><a href="#const-grammarjson">GrammarJSON</a></li>
                 <li><a href="#const-objectchatunknown">ObjectChatUnknown</a></li>
                 <li><a href="#const-roleuser">RoleUser</a></li>
                 <li><a href="#const-finishreasonstop">FinishReasonStop</a></li>

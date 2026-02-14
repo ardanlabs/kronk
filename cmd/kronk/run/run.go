@@ -14,7 +14,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
-	"github.com/ardanlabs/kronk/sdk/tools/templates"
+	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 )
 
 type Config struct {
@@ -63,16 +63,12 @@ func installSystem(cfg Config) (models.Path, error) {
 		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
-	tmpls, err := templates.New(templates.WithBasePath(cfg.BasePath))
+	ctlg, err := catalog.New(catalog.WithBasePath(cfg.BasePath))
 	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to create template system: %w", err)
+		return models.Path{}, fmt.Errorf("unable to create catalog system: %w", err)
 	}
 
-	if err := tmpls.Download(ctx); err != nil {
-		return models.Path{}, fmt.Errorf("unable to download templates: %w", err)
-	}
-
-	if err := tmpls.Catalog().Download(ctx); err != nil {
+	if err := ctlg.Download(ctx); err != nil {
 		return models.Path{}, fmt.Errorf("unable to download catalog: %w", err)
 	}
 

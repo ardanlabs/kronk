@@ -122,11 +122,6 @@ func buildEnvVars(cmd *cobra.Command) []string {
 		envVars = append(envVars, "KRONK_CATALOG_REPO_PATH="+v)
 	}
 
-	// Templates settings
-	if v, _ := cmd.Flags().GetString("templates-github-repo"); v != "" {
-		envVars = append(envVars, "KRONK_TEMPLATES_GITHUB_REPO="+v)
-	}
-
 	// Cache settings
 	if v, _ := cmd.Flags().GetInt("model-instances"); v != 0 {
 		envVars = append(envVars, "KRONK_CACHE_MODEL_INSTANCES="+strconv.Itoa(v))

@@ -14,8 +14,8 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
+	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
-	"github.com/ardanlabs/kronk/sdk/tools/templates"
 	"github.com/maypok86/otter/v2"
 	"golang.org/x/sync/singleflight"
 )
@@ -49,7 +49,7 @@ var ErrServerBusy = errors.New("server busy: all model slots have active request
 type Config struct {
 	Log                  model.Logger
 	BasePath             string
-	Templates            *templates.Templates
+	Catalog              *catalog.Catalog
 	ModelsInCache        int
 	CacheTTL             time.Duration
 	IgnoreIntegrityCheck bool
@@ -57,13 +57,13 @@ type Config struct {
 }
 
 func validateConfig(cfg Config) (Config, error) {
-	if cfg.Templates == nil {
-		templates, err := templates.New()
+	if cfg.Catalog == nil {
+		ctlg, err := catalog.New()
 		if err != nil {
 			return Config{}, err
 		}
 
-		cfg.Templates = templates
+		cfg.Catalog = ctlg
 	}
 
 	if cfg.ModelsInCache <= 0 {
@@ -83,7 +83,7 @@ func validateConfig(cfg Config) (Config, error) {
 // APIs and will unload over time if not in use.
 type Cache struct {
 	log                  model.Logger
-	templates            *templates.Templates
+	catalog              *catalog.Catalog
 	cache                *otter.Cache[string, *kronk.Kronk]
 	itemsInCache         atomic.Int32
 	maxModelsInCache     int
@@ -107,7 +107,7 @@ func New(cfg Config) (*Cache, error) {
 
 	c := Cache{
 		log:                  cfg.Log,
-		templates:            cfg.Templates,
+		catalog:              cfg.Catalog,
 		maxModelsInCache:     cfg.ModelsInCache,
 		models:               models,
 		ignoreIntegrityCheck: cfg.IgnoreIntegrityCheck,
@@ -214,7 +214,7 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 			return krn, nil
 		}
 
-		cfg, err := c.templates.Catalog().KronkResolvedModelConfig(modelID)
+		cfg, err := c.catalog.KronkResolvedModelConfig(modelID)
 		if err != nil {
 			return nil, fmt.Errorf("acquire-model: unable to retrieve model config: %w", err)
 		}
@@ -230,7 +230,7 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 		cfg.Log = c.log
 
 		krn, err := kronk.New(cfg,
-			kronk.WithTemplater(c.templates),
+			kronk.WithCataloger(c.catalog),
 			kronk.WithContext(ctx),
 		)
 

@@ -77,6 +77,14 @@ func (c *Catalog) Download(ctx context.Context, opts ...DownloadOption) error {
 		return fmt.Errorf("build-index: %w", err)
 	}
 
+	if err := c.templates.download(ctx, log); err != nil {
+		return fmt.Errorf("download-templates: %w", err)
+	}
+
+	if err := c.grammars.download(ctx, log); err != nil {
+		return fmt.Errorf("download-grammars: %w", err)
+	}
+
 	return nil
 }
 

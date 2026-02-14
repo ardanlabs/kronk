@@ -14,7 +14,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
-	"github.com/ardanlabs/kronk/sdk/tools/templates"
+	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 )
 
 func init() {
@@ -83,20 +83,14 @@ func TestMain(m *testing.M) {
 
 	ctx := context.Background()
 
-	templates, err := templates.New()
+	ctlg, err := catalog.New()
 	if err != nil {
-		fmt.Printf("unable to create template system: %s", err)
+		fmt.Printf("unable to create catalog system: %s", err)
 		os.Exit(1)
 	}
 
-	fmt.Println("Downloading Templates...")
-	if err := templates.Download(ctx); err != nil {
-		fmt.Printf("unable to download templates: %s", err)
-		os.Exit(1)
-	}
-
-	fmt.Println("Downloading Catalog...")
-	if err := templates.Catalog().Download(ctx); err != nil {
+	fmt.Println("Downloading Catalog and Templates...")
+	if err := ctlg.Download(ctx); err != nil {
 		fmt.Printf("unable to download catalog: %s", err)
 		os.Exit(1)
 	}

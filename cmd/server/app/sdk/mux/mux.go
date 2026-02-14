@@ -14,7 +14,6 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
-	"github.com/ardanlabs/kronk/sdk/tools/templates"
 )
 
 // StaticSite represents a static site to run.
@@ -61,7 +60,6 @@ type Config struct {
 	Libs       *libs.Libs
 	Models     *models.Models
 	Catalog    *catalog.Catalog
-	Templates  *templates.Templates
 }
 
 // RouteAdder defines behavior that sets the routes to bind for an instance
