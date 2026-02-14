@@ -31,7 +31,6 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
-	"github.com/ardanlabs/kronk/sdk/tools/templates"
 	"google.golang.org/grpc/test/bufconn"
 )
 
@@ -104,9 +103,6 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			GithubRepo      string `conf:"default:https://api.github.com/repos/ardanlabs/kronk_catalogs/contents/catalogs"`
 			ModelConfigFile string
 			RepoPath        string
-		}
-		Templates struct {
-			GithubRepo string `conf:"default:https://api.github.com/repos/ardanlabs/kronk_catalogs/contents/templates"`
 		}
 		Cache struct {
 			ModelsInCache        int           `conf:"default:3"`
@@ -317,23 +313,6 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	}
 
 	// -------------------------------------------------------------------------
-	// Template System
-
-	log.Info(ctx, "startup", "status", "downloading templates")
-
-	tmplts, err := templates.New(
-		templates.WithBasePath(cfg.BasePath),
-		templates.WithGithubRepo(cfg.Templates.GithubRepo),
-		templates.WithCatalog(ctlg))
-	if err != nil {
-		return fmt.Errorf("unable to create template system: %w", err)
-	}
-
-	if err := tmplts.Download(ctx, templates.WithLogger(log.Info)); err != nil {
-		return fmt.Errorf("unable to download templates: %w", err)
-	}
-
-	// -------------------------------------------------------------------------
 	// Init Kronk
 
 	log.Info(ctx, "startup", "status", "initializing kronk")
@@ -345,7 +324,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	cache, err := cache.New(cache.Config{
 		Log:                  log.Info,
 		BasePath:             cfg.BasePath,
-		Templates:            tmplts,
+		Catalog:              ctlg,
 		ModelsInCache:        cfg.Cache.ModelsInCache,
 		CacheTTL:             cfg.Cache.TTL,
 		IgnoreIntegrityCheck: cfg.Cache.IgnoreIntegrityCheck,
@@ -394,7 +373,6 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		Libs:       libs,
 		Models:     models,
 		Catalog:    ctlg,
-		Templates:  tmplts,
 	}
 
 	webAPI := mux.WebAPI(cfgMux,

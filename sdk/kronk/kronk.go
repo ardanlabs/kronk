@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/ardanlabs/kronk/sdk/tools/templates"
+	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -20,7 +20,7 @@ const Version = "1.18.6"
 // =============================================================================
 
 type options struct {
-	templater  model.Templater
+	cataloger  model.Cataloger
 	ctx        context.Context
 	queueDepth int
 }
@@ -28,11 +28,11 @@ type options struct {
 // Option represents options for configuring Kronk.
 type Option func(*options)
 
-// WithTemplater sets a custom Github repo for templates.
-// If not set, the default repo will be used.
-func WithTemplater(templater model.Templater) Option {
+// WithCataloger sets a custom catalog for model config and template retrieval.
+// If not set, a default catalog will be created.
+func WithCataloger(cataloger model.Cataloger) Option {
 	return func(o *options) {
-		o.templater = templater
+		o.cataloger = cataloger
 	}
 }
 
@@ -84,13 +84,13 @@ func New(cfg model.Config, opts ...Option) (*Kronk, error) {
 		opt(&o)
 	}
 
-	if o.templater == nil {
-		templater, err := templates.New()
+	if o.cataloger == nil {
+		cataloger, err := catalog.New()
 		if err != nil {
-			return nil, fmt.Errorf("new: unable to create templater: %w", err)
+			return nil, fmt.Errorf("new: unable to create cataloger: %w", err)
 		}
 
-		o.templater = templater
+		o.cataloger = cataloger
 	}
 
 	ctx := context.Background()
@@ -100,7 +100,7 @@ func New(cfg model.Config, opts ...Option) (*Kronk, error) {
 
 	// -------------------------------------------------------------------------
 
-	mdl, err := model.NewModel(ctx, o.templater, cfg)
+	mdl, err := model.NewModel(ctx, o.cataloger, cfg)
 	if err != nil {
 		return nil, err
 	}

@@ -83,6 +83,7 @@ interface CatalogFormData {
     frequencyPenalty: number | null;
     enableThinking: string;
     reasoningEffort: string;
+    grammar: string;
   };
 }
 
@@ -172,6 +173,7 @@ const defaultForm: CatalogFormData = {
     frequencyPenalty: null,
     enableThinking: '',
     reasoningEffort: '',
+    grammar: '',
   },
 };
 
@@ -291,6 +293,7 @@ function populateFromResponse(resp: CatalogModelResponse): CatalogFormData {
       frequencyPenalty: sp?.frequency_penalty ?? null,
       enableThinking: sp?.enable_thinking || '',
       reasoningEffort: sp?.reasoning_effort || '',
+      grammar: sp?.grammar || '',
     },
   };
 }
@@ -504,6 +507,7 @@ export default function CatalogEditor() {
             frequency_penalty: form.sampling.frequencyPenalty ?? 0,
             enable_thinking: form.sampling.enableThinking,
             reasoning_effort: form.sampling.reasoningEffort,
+            grammar: form.sampling.grammar ?? '',
           },
         },
         catalog_file: catalogFile,
@@ -937,6 +941,13 @@ export default function CatalogEditor() {
                 <option value="low">low</option>
                 <option value="medium">medium</option>
                 <option value="high">high</option>
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Grammar</label>
+              <select value={form.sampling.grammar} onChange={(e) => setSampling({ grammar: e.target.value })} style={inputStyle}>
+                <option value="">empty</option>
+                <option value="hermestoolcalling.grm">hermestoolcalling.grm</option>
               </select>
             </div>
             <NullableNumInput label="Repeat Last N" value={form.sampling.repeatLastN} defaultValue={rsp?.repeat_last_n} onChange={(v) => setSampling({ repeatLastN: v })} />

@@ -13,6 +13,14 @@ import (
 	"github.com/google/uuid"
 )
 
+var grammarJSONObject = `root ::= object
+value ::= object | array | string | number | "true" | "false" | "null"
+object ::= "{" ws ( string ":" ws value ("," ws string ":" ws value)* )? ws "}"
+array ::= "[" ws ( value ("," ws value)* )? ws "]"
+string ::= "\"" ([^"\\] | "\\" ["\\bfnrt/] | "\\u" [0-9a-fA-F]{4})* "\""
+number ::= "-"? ("0" | [1-9][0-9]*) ("." [0-9]+)? ([eE] [+-]? [0-9]+)?
+ws ::= [ \t\n\r]*`
+
 var dGrammarJSON model.D
 
 func init() {
@@ -23,7 +31,7 @@ func init() {
 				"content": "List 3 programming languages with their year of creation. Respond in JSON format.",
 			},
 		},
-		"grammar":     model.GrammarJSONObject,
+		"grammar":     grammarJSONObject,
 		"temperature": 0.7,
 		"max_tokens":  512,
 	}

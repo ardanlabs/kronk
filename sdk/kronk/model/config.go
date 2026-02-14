@@ -416,12 +416,12 @@ func applyCatalogConfig(user Config, cat Config) Config {
 		user.YarnOrigCtx = cat.YarnOrigCtx
 	}
 
-	user.DefaultParams = applyCatalogParams(user.DefaultParams, cat.DefaultParams)
+	user.DefaultParams = applyCatalogSamplingParams(user.DefaultParams, cat.DefaultParams)
 
 	return user
 }
 
-func applyCatalogParams(user Params, cat Params) Params {
+func applyCatalogSamplingParams(user Params, cat Params) Params {
 	if user.Temperature == 0 {
 		user.Temperature = cat.Temperature
 	}
@@ -475,6 +475,9 @@ func applyCatalogParams(user Params, cat Params) Params {
 	}
 	if user.ReasoningEffort == "" {
 		user.ReasoningEffort = cat.ReasoningEffort
+	}
+	if user.Grammar == "" {
+		user.Grammar = cat.Grammar
 	}
 
 	return user

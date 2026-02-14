@@ -36,53 +36,6 @@ func isBuiltinRule(rule string) bool {
 }
 
 // =============================================================================
-// Grammar presets for common output formats.
-
-const (
-	// GrammarJSON constrains output to valid JSON objects or arrays.
-	// Based on https://github.com/ggml-org/llama.cpp/blob/master/grammars/json.gbnf
-	GrammarJSON = `root ::= object | array
-value ::= object | array | string | number | "true" | "false" | "null"
-object ::= "{" ws ( string ":" ws value ("," ws string ":" ws value)* )? ws "}"
-array ::= "[" ws ( value ("," ws value)* )? ws "]"
-string ::= "\"" ([^"\\] | "\\" ["\\bfnrt/] | "\\u" [0-9a-fA-F]{4})* "\""
-number ::= "-"? ("0" | [1-9][0-9]*) ("." [0-9]+)? ([eE] [+-]? [0-9]+)?
-ws ::= [ \t\n\r]*`
-
-	// GrammarJSONObject constrains output to valid JSON objects only.
-	// Based on https://github.com/ggml-org/llama.cpp/blob/master/grammars/json.gbnf
-	GrammarJSONObject = `root ::= object
-value ::= object | array | string | number | "true" | "false" | "null"
-object ::= "{" ws ( string ":" ws value ("," ws string ":" ws value)* )? ws "}"
-array ::= "[" ws ( value ("," ws value)* )? ws "]"
-string ::= "\"" ([^"\\] | "\\" ["\\bfnrt/] | "\\u" [0-9a-fA-F]{4})* "\""
-number ::= "-"? ("0" | [1-9][0-9]*) ("." [0-9]+)? ([eE] [+-]? [0-9]+)?
-ws ::= [ \t\n\r]*`
-
-	// GrammarJSONArray constrains output to valid JSON arrays only.
-	// Based on https://github.com/ggml-org/llama.cpp/blob/master/grammars/json.gbnf
-	GrammarJSONArray = `root ::= array
-value ::= object | array | string | number | "true" | "false" | "null"
-object ::= "{" ws ( string ":" ws value ("," ws string ":" ws value)* )? ws "}"
-array ::= "[" ws ( value ("," ws value)* )? ws "]"
-string ::= "\"" ([^"\\] | "\\" ["\\bfnrt/] | "\\u" [0-9a-fA-F]{4})* "\""
-number ::= "-"? ("0" | [1-9][0-9]*) ("." [0-9]+)? ([eE] [+-]? [0-9]+)?
-ws ::= [ \t\n\r]*`
-
-	// GrammarBoolean constrains output to "true" or "false".
-	GrammarBoolean = `root ::= "true" | "false"`
-
-	// GrammarYesNo constrains output to "yes" or "no".
-	GrammarYesNo = `root ::= "yes" | "no"`
-
-	// GrammarInteger constrains output to integer values.
-	GrammarInteger = `root ::= "-"? ( "0" | [1-9][0-9]* )`
-
-	// GrammarNumber constrains output to numeric values (int or float).
-	GrammarNumber = `root ::= "-"? ( "0" | [1-9][0-9]* ) ( "." [0-9]+ )? ( [eE] [+-]? [0-9]+ )?`
-)
-
-// =============================================================================
 // JSON Schema to GBNF conversion.
 
 // fromJSONSchema converts a JSON Schema (as map or D) to a GBNF grammar string.

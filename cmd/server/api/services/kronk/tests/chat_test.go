@@ -799,7 +799,7 @@ func chatGrammarQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 				"messages": model.DocumentArray(
 					model.TextMessage(model.RoleUser, "List 3 programming languages with their year of creation. Respond in JSON format."),
 				),
-				"grammar":      model.GrammarJSONObject,
+				"grammar":      grammarJSONObject,
 				"temperature":  0.7,
 				"max_tokens":   512,
 				"enable_think": false,
@@ -856,7 +856,7 @@ func chatGrammarStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Ta
 				"messages": model.DocumentArray(
 					model.TextMessage(model.RoleUser, "List 3 programming languages with their year of creation. Respond in JSON format."),
 				),
-				"grammar":      model.GrammarJSONObject,
+				"grammar":      grammarJSONObject,
 				"temperature":  0.7,
 				"max_tokens":   512,
 				"stream":       true,

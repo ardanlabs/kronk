@@ -36,7 +36,6 @@ func (all) Add(app *web.App, cfg mux.Config) {
 		Libs:       cfg.Libs,
 		Models:     cfg.Models,
 		Catalog:    cfg.Catalog,
-		Templates:  cfg.Templates,
 	})
 
 	chatapp.Routes(app, chatapp.Config{

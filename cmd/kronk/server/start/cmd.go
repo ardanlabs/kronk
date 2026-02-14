@@ -43,9 +43,6 @@ func init() {
 	Cmd.Flags().String("model-config-file", "", "Special config file for model specific config")
 	Cmd.Flags().String("catalog-repo-path", "", "Path to cloned catalog repository for publishing")
 
-	// Templates settings
-	Cmd.Flags().String("templates-github-repo", "", "GitHub repo URL for templates")
-
 	// Cache settings
 	Cmd.Flags().Int("model-instances", 0, "Maximum model instances")
 	Cmd.Flags().Int("models-in-cache", 0, "Maximum models in cache")

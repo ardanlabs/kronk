@@ -26,6 +26,7 @@ type SamplingConfig struct {
 	PresencePenalty  float32 `yaml:"presence_penalty,omitempty"`
 	EnableThinking   string  `yaml:"enable_thinking,omitempty"`
 	ReasoningEffort  string  `yaml:"reasoning_effort,omitempty"`
+	Grammar          string  `yaml:"grammar,omitempty"`
 }
 
 // withDefaults returns a new SamplingConfig with default values applied
@@ -124,6 +125,7 @@ func (s SamplingConfig) toParams() model.Params {
 		XtcMinKeep:       s.XtcMinKeep,
 		Thinking:         s.EnableThinking,
 		ReasoningEffort:  s.ReasoningEffort,
+		Grammar:          s.Grammar,
 	}
 }
 

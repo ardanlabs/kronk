@@ -530,6 +530,10 @@ export default function CatalogList() {
                         {modelInfo.model_config['incremental-cache'] ? 'Yes' : 'No'}
                       </span>
                     </div>
+                    <div className="model-meta-item">
+                      <label>Template</label>
+                      <span>{modelInfo.template || '-'}</span>
+                    </div>
                     {!!modelInfo.model_config['rope-scaling-type'] && modelInfo.model_config['rope-scaling-type'] !== 'none' && (
                       <>
                         <div className="model-meta-item">
@@ -612,6 +616,10 @@ export default function CatalogList() {
                       <label>Reasoning Effort</label>
                       <span>{modelInfo.model_config['sampling-parameters'].reasoning_effort || 'default'}</span>
                     </div>
+                    <div className="model-meta-item">
+                      <label>Grammar</label>
+                      <span>{modelInfo.model_config['sampling-parameters'].grammar || '-'}</span>
+                    </div>
                   </div>
                 </div>
               )}
@@ -632,22 +640,7 @@ export default function CatalogList() {
                 </div>
               )}
 
-              {modelInfo.model_metadata?.['tokenizer.chat_template'] && (
-                <div style={{ marginTop: '24px' }}>
-                  <h4 style={{ marginBottom: '12px' }}>Template</h4>
-                  <pre style={{
-                    background: 'var(--color-gray-100)',
-                    padding: '12px',
-                    borderRadius: '6px',
-                    fontSize: '12px',
-                    overflow: 'auto',
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-word'
-                  }}>
-                    {modelInfo.model_metadata['tokenizer.chat_template']}
-                  </pre>
-                </div>
-              )}
+
             </>
           )}
 

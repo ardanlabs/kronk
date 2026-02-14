@@ -134,27 +134,3 @@ func TestFromJSONSchema_MapStringAny(t *testing.T) {
 		t.Error("grammar should contain root rule")
 	}
 }
-
-func TestGrammarPresets(t *testing.T) {
-	tests := []struct {
-		name    string
-		grammar string
-		check   string
-	}{
-		{"GrammarJSON", GrammarJSON, "root ::= object | array"},
-		{"GrammarJSONObject", GrammarJSONObject, "root ::= object"},
-		{"GrammarJSONArray", GrammarJSONArray, "root ::= array"},
-		{"GrammarBoolean", GrammarBoolean, `"true" | "false"`},
-		{"GrammarYesNo", GrammarYesNo, `"yes" | "no"`},
-		{"GrammarInteger", GrammarInteger, `[1-9]`},
-		{"GrammarNumber", GrammarNumber, `[0-9]`},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if !strings.Contains(tt.grammar, tt.check) {
-				t.Errorf("preset %s should contain %q", tt.name, tt.check)
-			}
-		})
-	}
-}

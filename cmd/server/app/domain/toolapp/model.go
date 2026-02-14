@@ -392,6 +392,7 @@ type SamplingConfig struct {
 	PresencePenalty  float32 `json:"presence_penalty"`
 	EnableThinking   string  `json:"enable_thinking"`
 	ReasoningEffort  string  `json:"reasoning_effort"`
+	Grammar          string  `json:"grammar"`
 }
 
 // ModelConfig represents the model configuration the model will use by default.
@@ -595,6 +596,7 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 				PresencePenalty:  rmc.Sampling.PresencePenalty,
 				EnableThinking:   rmc.Sampling.EnableThinking,
 				ReasoningEffort:  rmc.Sampling.ReasoningEffort,
+				Grammar:          rmc.Sampling.Grammar,
 			},
 		}
 	}
@@ -647,6 +649,7 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 			PresencePenalty:  bmc.Sampling.PresencePenalty,
 			EnableThinking:   bmc.Sampling.EnableThinking,
 			ReasoningEffort:  bmc.Sampling.ReasoningEffort,
+			Grammar:          bmc.Sampling.Grammar,
 		},
 	}
 
@@ -928,6 +931,7 @@ func (app SaveCatalogRequest) toModelDetails() catalog.ModelDetails {
 				PresencePenalty:  app.Config.Sampling.PresencePenalty,
 				EnableThinking:   app.Config.Sampling.EnableThinking,
 				ReasoningEffort:  app.Config.Sampling.ReasoningEffort,
+				Grammar:          app.Config.Sampling.Grammar,
 			},
 		}
 	}

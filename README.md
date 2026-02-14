@@ -178,10 +178,10 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
-	"github.com/ardanlabs/kronk/sdk/tools/templates"
 )
 
 const modelURL = "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
@@ -239,16 +239,12 @@ func installSystem() (models.Path, error) {
 	// a corrected jinja file, having the catalog system up to date will allow
 	// the system to pull that jinja file.
 
-	templates, err := templates.New()
+	ctlg, err := catalog.New()
 	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to create template system: %w", err)
+		return models.Path{}, fmt.Errorf("unable to create catalog system: %w", err)
 	}
 
-	if err := templates.Download(ctx); err != nil {
-		return models.Path{}, fmt.Errorf("unable to download templates: %w", err)
-	}
-
-	if err := templates.Catalog().Download(ctx); err != nil {
+	if err := ctlg.Download(ctx); err != nil {
 		return models.Path{}, fmt.Errorf("unable to download catalog: %w", err)
 	}
 
@@ -267,7 +263,7 @@ func installSystem() (models.Path, error) {
 	// -------------------------------------------------------------------------
 
 	// You could also download this model using the catalog system.
-	// mp, err := templates.Catalog().DownloadModel(ctx, kronk.FmtLogger, "Qwen3-Coder-Next-UD-Q8_K_XL")
+	// mp, err := ctlg.DownloadModel(ctx, kronk.FmtLogger, "Qwen3-8B-Q8_0")
 	// if err != nil {
 	// 	return models.Path{}, fmt.Errorf("unable to download model: %w", err)
 	// }
@@ -281,13 +277,6 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	if err := kronk.Init(); err != nil {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
-
-	// The catalog package has an API that can retrieve defaults for
-	// models in the catalog system and/or a model_config file.
-	// cfg, err := c.templates.Catalog().RetrieveModelConfig(modelID)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("unable to retrieve model config: %w", err)
-	// }
 
 	cfg := model.Config{
 		ModelFiles: mp.ModelFiles,
@@ -311,6 +300,7 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("- embeddings   :", krn.ModelInfo().IsEmbedModel)
 	fmt.Println("- isGPT        :", krn.ModelInfo().IsGPTModel)
 	fmt.Println("- template     :", krn.ModelInfo().Template.FileName)
+	fmt.Println("- grammar      :", krn.ModelConfig().DefaultParams.Grammar != "")
 
 	return krn, nil
 }
@@ -351,12 +341,9 @@ func chat(krn *kronk.Kronk) error {
 			defer cancel()
 
 			d := model.D{
-				"messages":    messages,
-				"tools":       toolDocuments(),
-				"max_tokens":  2048,
-				"temperature": 0.7,
-				"top_p":       0.8,
-				"top_k":       20,
+				"messages":   messages,
+				"tools":      toolDocuments(),
+				"max_tokens": 2048,
 			}
 
 			ch, err := performChat(ctx, krn, d)

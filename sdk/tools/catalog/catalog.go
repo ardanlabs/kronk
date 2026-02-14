@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
@@ -67,6 +68,8 @@ type Catalog struct {
 	repoPath    string
 	githubRepo  string
 	models      *models.Models
+	templates   *templates
+	grammars    *grammars
 	biMutex     sync.Mutex
 	modelConfig map[string]ModelConfig
 }
@@ -105,11 +108,29 @@ func New(opts ...Option) (*Catalog, error) {
 		return nil, fmt.Errorf("new: creating models system: %w", err)
 	}
 
+	// Derive template and grammar GitHub URLs from the catalog repo URL by
+	// replacing the trailing folder name. For example:
+	//   .../contents/catalogs -> .../contents/templates
+	//   .../contents/catalogs -> .../contents/grammars
+	repoBase := strings.TrimSuffix(o.githubRepo, "/catalogs")
+
+	tmpls, err := newTemplates(o.basePath, repoBase+"/templates")
+	if err != nil {
+		return nil, fmt.Errorf("new: creating templates system: %w", err)
+	}
+
+	grms, err := newGrammars(o.basePath, repoBase+"/grammars")
+	if err != nil {
+		return nil, fmt.Errorf("new: creating grammars system: %w", err)
+	}
+
 	c := Catalog{
 		catalogPath: catalogPath,
 		repoPath:    o.repoPath,
 		githubRepo:  o.githubRepo,
 		models:      models,
+		templates:   tmpls,
+		grammars:    grms,
 		modelConfig: modelConfig,
 	}
 

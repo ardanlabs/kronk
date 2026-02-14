@@ -295,9 +295,7 @@ func (p Params) String() string {
 	if p.FrequencyPenalty != 0 {
 		fmt.Fprintf(&b, "frequency_penalty[%v]\n", p.FrequencyPenalty)
 	}
-	if p.Grammar != "" {
-		fmt.Fprintf(&b, "grammar[enabled]\n")
-	}
+	fmt.Fprintf(&b, "grammar[%v]\n", p.Grammar != "")
 	if p.IncludeUsage {
 		fmt.Fprintf(&b, "include_usage[%v]\n", p.IncludeUsage)
 	}

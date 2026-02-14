@@ -17,7 +17,6 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
-	"github.com/ardanlabs/kronk/sdk/tools/templates"
 )
 
 type app struct {
@@ -27,7 +26,6 @@ type app struct {
 	libs       *libs.Libs
 	models     *models.Models
 	catalog    *catalog.Catalog
-	templates  *templates.Templates
 }
 
 func newApp(cfg Config) *app {
@@ -38,7 +36,6 @@ func newApp(cfg Config) *app {
 		libs:       cfg.Libs,
 		models:     cfg.Models,
 		catalog:    cfg.Catalog,
-		templates:  cfg.Templates,
 	}
 }
 
@@ -413,7 +410,7 @@ func (a *app) showCatalogModel(ctx context.Context, r *http.Request) web.Encoder
 		return errs.New(errs.Internal, err)
 	}
 
-	tmpl, err := a.templates.RetrieveTemplate(modelID)
+	tmpl, err := a.catalog.RetrieveTemplate(modelID)
 	if err == nil && tmpl.FileName != "" {
 		catDetails.Template = tmpl.FileName
 	}

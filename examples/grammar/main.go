@@ -20,6 +20,14 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
+var grammarJSONObject = `root ::= object
+value ::= object | array | string | number | "true" | "false" | "null"
+object ::= "{" ws ( string ":" ws value ("," ws string ":" ws value)* )? ws "}"
+array ::= "[" ws ( value ("," ws value)* )? ws "]"
+string ::= "\"" ([^"\\] | "\\" ["\\bfnrt/] | "\\u" [0-9a-fA-F]{4})* "\""
+number ::= "-"? ("0" | [1-9][0-9]*) ("." [0-9]+)? ([eE] [+-]? [0-9]+)?
+ws ::= [ \t\n\r]*`
+
 // const modelURL = "unsloth/gpt-oss-120b-GGUF/gpt-oss-120b-F16.gguf"
 const modelURL = "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
 
@@ -150,7 +158,7 @@ func grammarPreset(krn *kronk.Kronk) error {
 		"messages": model.DocumentArray(
 			model.TextMessage(model.RoleUser, prompt),
 		),
-		"grammar":     model.GrammarJSONObject,
+		"grammar":     grammarJSONObject,
 		"temperature": 0.7,
 		"max_tokens":  512,
 	}

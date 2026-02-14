@@ -11,7 +11,6 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
-	"github.com/ardanlabs/kronk/sdk/tools/templates"
 )
 
 // Config contains all the mandatory systems required by handlers.
@@ -22,7 +21,6 @@ type Config struct {
 	Libs       *libs.Libs
 	Models     *models.Models
 	Catalog    *catalog.Catalog
-	Templates  *templates.Templates
 }
 
 // Routes adds specific routes for this group.

@@ -22,7 +22,6 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
-	"github.com/ardanlabs/kronk/sdk/tools/templates"
 	"google.golang.org/grpc/test/bufconn"
 )
 
@@ -148,18 +147,6 @@ func New(t *testing.T, testName string) *Test {
 	}
 
 	// -------------------------------------------------------------------------
-	// Template System
-
-	tmplts, err := templates.New(templates.WithCatalog(ctlg))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err := tmplts.Download(ctx, templates.WithLogger(log.Info)); err != nil {
-		t.Fatal(err)
-	}
-
-	// -------------------------------------------------------------------------
 	// Init Kronk
 
 	if err := kronk.Init(); err != nil {
@@ -168,7 +155,7 @@ func New(t *testing.T, testName string) *Test {
 
 	cache, err := cache.New(cache.Config{
 		Log:           log.Info,
-		Templates:     tmplts,
+		Catalog:       ctlg,
 		ModelsInCache: 1,
 		CacheTTL:      5 * time.Minute,
 	})
@@ -208,7 +195,6 @@ func New(t *testing.T, testName string) *Test {
 		Libs:       libs,
 		Models:     models,
 		Catalog:    ctlg,
-		Templates:  tmplts,
 	}
 
 	mux := mux.WebAPI(cfgMux,

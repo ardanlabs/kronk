@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ardanlabs/kronk/sdk/tools/templates"
+	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 )
 
 func runWeb() error {
@@ -14,23 +14,17 @@ func runWeb() error {
 	return nil
 }
 
-func runLocal(tmpl *templates.Templates) error {
+func runLocal(ctlg *catalog.Catalog) error {
 	fmt.Println("Starting Update")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	if err := tmpl.Catalog().Download(ctx); err != nil {
+	if err := ctlg.Download(ctx); err != nil {
 		return fmt.Errorf("download catalog: %w", err)
 	}
 
 	fmt.Println("Catalog Updated")
-
-	if err := tmpl.Download(ctx); err != nil {
-		return fmt.Errorf("download templates: %w", err)
-	}
-
-	fmt.Println("Templates Updated")
 
 	return nil
 }
