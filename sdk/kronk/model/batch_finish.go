@@ -130,8 +130,8 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	totalTokens := s.nPrompt + outputTokens
 
 	var tokensPerSecond float64
-	if elapsed.Seconds() > 0 {
-		tokensPerSecond = float64(outputTokens) / elapsed.Seconds()
+	if elapsed.Seconds() > 0 && outputTokens > 1 {
+		tokensPerSecond = float64(outputTokens-1) / elapsed.Seconds()
 	}
 
 	usage := Usage{

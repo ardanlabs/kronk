@@ -168,7 +168,19 @@ func (a *app) listModels(ctx context.Context, r *http.Request) web.Encoder {
 
 	extendedConfig := r.URL.Query().Get("extended-config") == "true"
 
-	return toListModelsInfo(modelFiles, modelConfig, extendedConfig)
+	// Build resolved configs so the BUI sees the same sampling values
+	// the engine will use (catalog defaults + model_config overrides + SDK defaults).
+	var resolvedConfigs map[string]catalog.ModelConfig
+	if extendedConfig {
+		resolvedConfigs = make(map[string]catalog.ModelConfig, len(modelFiles))
+		for _, mf := range modelFiles {
+			rmc := a.catalog.ResolvedModelConfig(mf.ID)
+			rmc.Sampling = rmc.Sampling.WithDefaults()
+			resolvedConfigs[mf.ID] = rmc
+		}
+	}
+
+	return toListModelsInfo(modelFiles, resolvedConfigs, extendedConfig)
 }
 
 func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
@@ -503,6 +515,35 @@ func (a *app) listCatalogFiles(ctx context.Context, r *http.Request) web.Encoder
 	}
 
 	return toCatalogFilesResponse(files)
+}
+
+func (a *app) listGrammars(ctx context.Context, r *http.Request) web.Encoder {
+	files, err := a.catalog.GrammarFiles()
+	if err != nil {
+		return errs.New(errs.Internal, err)
+	}
+
+	return toGrammarFilesResponse(files)
+}
+
+func (a *app) showGrammar(ctx context.Context, r *http.Request) web.Encoder {
+	name := web.Param(r, "name")
+
+	content, err := a.catalog.GrammarContent(name)
+	if err != nil {
+		return errs.New(errs.Internal, err)
+	}
+
+	return GrammarContentResponse{Content: content}
+}
+
+func (a *app) listTemplates(ctx context.Context, r *http.Request) web.Encoder {
+	files, err := a.catalog.TemplateFiles()
+	if err != nil {
+		return errs.New(errs.Internal, err)
+	}
+
+	return toTemplateFilesResponse(files)
 }
 
 func (a *app) listKeys(ctx context.Context, r *http.Request) web.Encoder {

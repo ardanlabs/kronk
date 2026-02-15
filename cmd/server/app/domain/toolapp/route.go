@@ -54,6 +54,9 @@ func Routes(app *web.App, cfg Config) {
 	app.HandlerFunc(http.MethodGet, version, "/catalog-files", api.listCatalogFiles, auth)
 	app.HandlerFunc(http.MethodPost, version, "/catalog/publish", api.publishCatalogModel, auth)
 	app.HandlerFunc(http.MethodGet, version, "/catalog-repo-path", api.catalogRepoPath, auth)
+	app.HandlerFunc(http.MethodGet, version, "/grammars", api.listGrammars, auth)
+	app.HandlerFunc(http.MethodGet, version, "/grammars/{name}", api.showGrammar, auth)
+	app.HandlerFunc(http.MethodGet, version, "/templates", api.listTemplates, auth)
 
 	// Auth is handled by the auth service for these calls.
 	app.HandlerFunc(http.MethodPost, version, "/security/token/create", api.createToken)

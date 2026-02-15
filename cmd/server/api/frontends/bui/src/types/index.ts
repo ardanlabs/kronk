@@ -272,6 +272,7 @@ export interface ChatRequest {
   };
   logprobs?: boolean;
   top_logprobs?: number;
+  grammar?: string;
 }
 
 export interface ChatToolCallFunction {

@@ -253,7 +253,7 @@ func (c *Catalog) KronkResolvedModelConfig(modelID string) (model.Config, error)
 	// Get the merged config from catalog and model_config.yaml.
 	mc := c.ResolvedModelConfig(modelID)
 
-	if err := c.resolveGrammar(&mc.Sampling); err != nil {
+	if err := c.ResolveGrammar(&mc.Sampling); err != nil {
 		return model.Config{}, fmt.Errorf("kronk-resolved-model-config: %w", err)
 	}
 

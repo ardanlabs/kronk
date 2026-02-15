@@ -351,10 +351,14 @@ export default function CatalogEditor() {
   const [showSampling, setShowSampling] = useState(false);
   const [repoPath, setRepoPath] = useState('');
   const [publishing, setPublishing] = useState(false);
+  const [templateFiles, setTemplateFiles] = useState<string[]>([]);
+  const [grammarFiles, setGrammarFiles] = useState<string[]>([]);
 
   useEffect(() => {
     api.listCatalogFiles().then(setCatalogFiles).catch(() => {});
     api.getCatalogRepoPath().then((r) => setRepoPath(r.repo_path)).catch(() => {});
+    api.listTemplates().then((r) => setTemplateFiles(r.files || [])).catch(() => {});
+    api.listGrammars().then((r) => setGrammarFiles(r.files || [])).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -702,13 +706,10 @@ export default function CatalogEditor() {
           <div>
             <label style={labelStyle}>Template</label>
             <select value={form.template} onChange={(e) => setForm({ ...form, template: e.target.value })} style={inputStyle}>
-              <option value="">model template</option>
-              <option value="gemma-3.jinja">gemma-3.jinja</option>
-              <option value="glm4-.jinja">glm4-.jinja</option>
-              <option value="gpt-oss.jinja">gpt-oss.jinja</option>
-              <option value="ministral.jinja">ministral.jinja</option>
-              <option value="nanbei.jinja">nanbei.jinja</option> 
-              <option value="qwen3-coder.jinja">qwen3-coder.jinja</option>
+              <option value="">not set</option>
+              {templateFiles.map((f) => (
+                <option key={f} value={f}>{f}</option>
+              ))}
             </select>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingTop: '24px' }}>
@@ -947,7 +948,9 @@ export default function CatalogEditor() {
               <label style={labelStyle}>Grammar</label>
               <select value={form.sampling.grammar} onChange={(e) => setSampling({ grammar: e.target.value })} style={inputStyle}>
                 <option value="">empty</option>
-                <option value="hermestoolcalling.grm">hermestoolcalling.grm</option>
+                {grammarFiles.map((f) => (
+                  <option key={f} value={f}>{f}</option>
+                ))}
               </select>
             </div>
             <NullableNumInput label="Repeat Last N" value={form.sampling.repeatLastN} defaultValue={rsp?.repeat_last_n} onChange={(v) => setSampling({ repeatLastN: v })} />

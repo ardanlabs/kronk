@@ -25,11 +25,12 @@ export interface SamplingParams {
   includeUsage: boolean;
   logprobs: boolean;
   topLogprobs: number;
+  grammar: string;
   systemPrompt: string;
 }
 
 export const defaultSampling: SamplingParams = {
-  maxTokens: 2048,
+  maxTokens: 4096,
   temperature: 0.8,
   topP: 0.9,
   topK: 40,
@@ -51,6 +52,7 @@ export const defaultSampling: SamplingParams = {
   includeUsage: true,
   logprobs: false,
   topLogprobs: 0,
+  grammar: '',
   systemPrompt: '',
 };
 

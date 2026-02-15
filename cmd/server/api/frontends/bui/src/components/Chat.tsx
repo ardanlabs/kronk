@@ -89,6 +89,9 @@ export default function Chat() {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editContent, setEditContent] = useState('');
   const [showHistory, setShowHistory] = useState(false);
+  const [grammarFiles, setGrammarFiles] = useState<string[]>([]);
+  const [grammarMode, setGrammarMode] = useState<'none' | 'preset' | 'custom'>('none');
+  const [selectedPreset, setSelectedPreset] = useState('');
 
   // Extended model configs with sampling parameters
   const [extendedModels, setExtendedModels] = useState<ListModelDetail[]>([]);
@@ -134,6 +137,7 @@ export default function Chat() {
       includeUsage: defaultSampling.includeUsage,
       logprobs: defaultSampling.logprobs,
       topLogprobs: defaultSampling.topLogprobs,
+      grammar: modelSampling.grammar || defaultSampling.grammar,
       systemPrompt: defaultSampling.systemPrompt,
     };
   }, []);
@@ -142,12 +146,50 @@ export default function Chat() {
   const applySamplingConfig = useCallback((modelSampling: SamplingConfig | undefined) => {
     if (modelSampling) {
       const params = toSamplingParams(modelSampling);
-      setSampling(params);
-      setModelBaseline(params);
+      const grammarVal = params.grammar;
+
+      if (grammarVal && grammarVal.endsWith('.grm')) {
+        setGrammarMode('preset');
+        setSelectedPreset(grammarVal);
+        api.getGrammarContent(grammarVal)
+          .then(res => {
+            setSampling({ ...params, grammar: res.content });
+            setModelBaseline({ ...params, grammar: res.content });
+          })
+          .catch(() => {
+            setSampling({ ...params, grammar: '' });
+            setModelBaseline({ ...params, grammar: '' });
+          });
+      } else if (grammarVal) {
+        setGrammarMode('custom');
+        setSelectedPreset('');
+        setSampling(params);
+        setModelBaseline(params);
+      } else {
+        setGrammarMode('none');
+        setSelectedPreset('');
+        setSampling(params);
+        setModelBaseline(params);
+      }
     } else {
+      setGrammarMode('none');
+      setSelectedPreset('');
       setModelBaseline(null);
     }
   }, [setSampling, toSamplingParams]);
+
+  useEffect(() => {
+    api.listGrammars()
+      .then(res => setGrammarFiles(res.files || []))
+      .catch(() => setGrammarFiles([]));
+  }, []);
+
+  const loadPresetContent = useCallback((name: string) => {
+    setSelectedPreset(name);
+    api.getGrammarContent(name)
+      .then(res => setSampling({ grammar: res.content }))
+      .catch(() => setSampling({ grammar: '' }));
+  }, [setSampling]);
 
   useEffect(() => {
     loadModels();
@@ -177,28 +219,18 @@ export default function Chat() {
     }
   }, [models, selectedModel]);
 
-  // Save selected model to localStorage and apply sampling config only on model change
+  // Save selected model to localStorage and apply sampling config on model change
+  // or initial load so the settings always reflect the resolved model config.
   useEffect(() => {
-    if (selectedModel) {
+    if (selectedModel && extendedModels.length > 0) {
       localStorage.setItem('kronk_chat_model', selectedModel);
-      // Only apply model sampling config when the user actually changes models
-      if (prevModelRef.current !== null && prevModelRef.current !== selectedModel) {
+      if (prevModelRef.current !== selectedModel) {
         const modelDetail = extendedModels.find((m) => m.id === selectedModel);
         applySamplingConfig(modelDetail?.sampling);
       }
       prevModelRef.current = selectedModel;
     }
   }, [selectedModel, extendedModels, applySamplingConfig]);
-
-  // Set baseline for initial model load (without overwriting user's sampling values)
-  useEffect(() => {
-    if (selectedModel && extendedModels.length > 0 && modelBaseline === null) {
-      const modelDetail = extendedModels.find((m) => m.id === selectedModel);
-      if (modelDetail?.sampling) {
-        setModelBaseline(toSamplingParams(modelDetail.sampling));
-      }
-    }
-  }, [selectedModel, extendedModels, modelBaseline, toSamplingParams]);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     if (e.deltaY < 0) {
@@ -326,6 +358,7 @@ export default function Chat() {
         },
         logprobs: sampling.logprobs,
         top_logprobs: sampling.topLogprobs,
+        grammar: sampling.grammar || undefined,
       },
       (data) => {
         const choice = data.choices?.[0];
@@ -515,18 +548,13 @@ export default function Chat() {
             onChange={(e) => {
               const newModel = e.target.value;
               if (messages.length > 0) {
-                if (window.confirm('Switching models will clear the current chat. Continue?')) {
-                  if (window.confirm('Save this chat to history before switching?')) {
-                    saveChat(selectedModel, messages);
-                  }
-                  clearMessages();
-                  setError(null);
-                  setAttachedFiles([]);
-                  setSelectedModel(newModel);
-                } else {
-                  // Reset the select to the current model
-                  e.target.value = selectedModel;
+                if (window.confirm('Save this chat to history before switching?')) {
+                  saveChat(selectedModel, messages);
                 }
+                clearMessages();
+                setError(null);
+                setAttachedFiles([]);
+                setSelectedModel(newModel);
               } else {
                 setSelectedModel(newModel);
               }
@@ -651,7 +679,6 @@ export default function Chat() {
               max={100}
             />
           </div>
-
           <div className="chat-setting chat-setting-button">
             <label>&nbsp;</label>
             <button
@@ -951,6 +978,56 @@ export default function Chat() {
                   </label>
                 </div>
             </div>
+          )}
+        </div>
+        <div className="chat-grammar">
+          <div className="chat-grammar-row">
+            <div className="chat-grammar-field">
+              <label>Grammar</label>
+              <select
+                value={grammarMode}
+                onChange={(e) => {
+                  const mode = e.target.value as 'none' | 'preset' | 'custom';
+                  setGrammarMode(mode);
+                  if (mode === 'none') {
+                    setSampling({ grammar: '' });
+                    setSelectedPreset('');
+                  } else if (mode === 'preset' && grammarFiles.length > 0) {
+                    loadPresetContent(grammarFiles[0]);
+                  } else if (mode === 'custom') {
+                    setSampling({ grammar: '' });
+                    setSelectedPreset('');
+                  }
+                }}
+              >
+                <option value="none">None</option>
+                <option value="preset">Preset</option>
+                <option value="custom">Custom</option>
+              </select>
+            </div>
+            {grammarMode === 'preset' && (
+              <div className="chat-grammar-field chat-grammar-preset">
+                <label>Preset</label>
+                <select
+                  value={selectedPreset}
+                  onChange={(e) => loadPresetContent(e.target.value)}
+                >
+                  {grammarFiles.map((f) => (
+                    <option key={f} value={f}>{f.replace('.grm', '')}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+          {(grammarMode === 'preset' || grammarMode === 'custom') && (
+            <textarea
+              value={sampling.grammar}
+              onChange={(e) => setSampling({ grammar: e.target.value })}
+              rows={4}
+              placeholder="Enter GBNF grammar..."
+              className="chat-system-prompt-input"
+              style={{ fontFamily: 'monospace', fontSize: '12px' }}
+            />
           )}
         </div>
         </>
