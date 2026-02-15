@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -53,7 +54,8 @@ func (l *StreamingResponseLogger) String() string {
 	if len(l.toolCalls) > 0 {
 		fmt.Fprintf(&b, "ToolCalls len=%d\n", len(l.toolCalls))
 		for j, tc := range l.toolCalls {
-			fmt.Fprintf(&b, "  tc[%d]: id=%s funcName=%s args=%s\n", j, tc.ID, tc.Function.Name, tc.Function.Arguments)
+			args, _ := json.Marshal(tc.Function.Arguments)
+			fmt.Fprintf(&b, "  tc[%d]: id=%s funcName=%s args=%s\n", j, tc.ID, tc.Function.Name, args)
 		}
 	}
 
