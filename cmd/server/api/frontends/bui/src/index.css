@@ -2434,6 +2434,36 @@ tr.selected:hover td {
     width: 100%;
 }
 
+.playground-pull-form {
+    margin-bottom: 16px;
+    padding: 12px;
+    background: var(--color-gray-100);
+    border: 1px solid var(--color-gray-200);
+    border-radius: 6px;
+}
+
+.playground-pull-form .form-group {
+    margin-bottom: 8px;
+}
+
+.playground-pull-toggle {
+    margin-bottom: 8px;
+    font-size: 12px;
+}
+
+.playground-pull-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.playground-pull-status {
+    margin-top: 12px;
+    max-height: 150px;
+    overflow-y: auto;
+    font-size: 12px;
+}
+
 .playground-error {
     margin-top: 8px;
     padding: 8px 12px;
@@ -2678,4 +2708,173 @@ tr.selected:hover td {
 .btn-small {
     padding: 4px 10px;
     font-size: 12px;
+}
+
+/* Automated Testing Panel */
+.playground-autotest {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.playground-autotest-section {
+    margin-bottom: 4px;
+}
+
+.playground-autotest-section h4 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-gray-700);
+    margin-bottom: 8px;
+}
+
+.playground-autotest-checkboxes {
+    display: flex;
+    gap: 16px;
+}
+
+.playground-autotest-checkboxes label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.playground-autotest-baseline {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.playground-autotest-baseline .form-group {
+    margin-bottom: 0;
+}
+
+.playground-autotest-baseline .form-group label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-gray-600);
+    margin-bottom: 2px;
+}
+
+.playground-autotest-baseline .form-group input {
+    width: 100%;
+    padding: 4px 6px;
+    border: 1px solid var(--color-gray-300);
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+.playground-autotest-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.playground-autotest-repair {
+    padding: 8px 12px;
+    background: #fff8e1;
+    border: 1px solid #ffe082;
+    border-radius: 4px;
+    font-size: 12px;
+    color: #6d4c00;
+}
+
+.playground-autotest-results {
+    margin-top: 4px;
+}
+
+.playground-autotest-results table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+.playground-autotest-results th {
+    text-align: left;
+    padding: 6px 8px;
+    background: var(--color-gray-100);
+    border-bottom: 2px solid var(--color-gray-300);
+    font-weight: 600;
+    color: var(--color-gray-700);
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.playground-autotest-results td {
+    padding: 5px 8px;
+    border-bottom: 1px solid var(--color-gray-200);
+    white-space: nowrap;
+}
+
+.playground-autotest-results tr:hover {
+    background: var(--color-gray-50);
+}
+
+.playground-autotest-results tr.autotest-best-row {
+    background: #e8f5e9;
+}
+
+.playground-autotest-results tr.autotest-best-row:hover {
+    background: #c8e6c9;
+}
+
+.playground-autotest-results tr.autotest-running-row {
+    background: #e3f2fd;
+}
+
+.playground-autotest-best {
+    margin-top: 12px;
+    padding: 12px 16px;
+    background: #e8f5e9;
+    border: 1px solid #a5d6a7;
+    border-radius: 6px;
+}
+
+.playground-autotest-best h4 {
+    font-size: 14px;
+    color: #2e7d32;
+    margin-bottom: 8px;
+}
+
+.playground-autotest-best-params {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    font-size: 13px;
+}
+
+.playground-autotest-best-params span {
+    color: var(--color-gray-700);
+}
+
+.playground-autotest-best-params strong {
+    color: var(--color-gray-900);
+}
+
+.playground-autotest-progress {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 12px;
+    color: var(--color-gray-600);
+}
+
+.playground-autotest-progress-bar {
+    flex: 1;
+    max-width: 200px;
+    height: 6px;
+    background: var(--color-gray-200);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.playground-autotest-progress-fill {
+    height: 100%;
+    background: var(--color-blue);
+    border-radius: 3px;
+    transition: width 0.3s ease;
 }

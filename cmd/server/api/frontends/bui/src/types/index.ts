@@ -494,3 +494,61 @@ export interface PlaygroundChatRequest {
   min_p?: number;
   max_tokens?: number;
 }
+
+// Automated Testing Types
+
+export type AutoTestScenarioID = 'chat' | 'tool_call';
+
+export type AutoTestTrialStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+
+export type AutoTestRunnerState = 'idle' | 'repairing_template' | 'running_trials' | 'completed' | 'cancelled' | 'error';
+
+export interface AutoTestPromptDef {
+  id: string;
+  messages: ChatMessage[];
+  tools?: any[];
+  max_tokens?: number;
+  expected?: { type: 'regex' | 'exact' | 'tool_call'; value?: string };
+}
+
+export interface AutoTestScenario {
+  id: AutoTestScenarioID;
+  name: string;
+  systemPrompt?: string;
+  prompts: AutoTestPromptDef[];
+}
+
+export interface SamplingCandidate {
+  temperature?: number;
+  top_p?: number;
+  top_k?: number;
+  min_p?: number;
+  max_tokens?: number;
+}
+
+export interface AutoTestPromptResult {
+  promptId: string;
+  assistantText: string;
+  toolCalls: ChatToolCall[];
+  usage?: ChatUsage;
+  score: number;
+  notes?: string[];
+}
+
+export interface AutoTestScenarioResult {
+  scenarioId: AutoTestScenarioID;
+  promptResults: AutoTestPromptResult[];
+  score: number;
+  avgTPS?: number;
+}
+
+export interface AutoTestTrialResult {
+  id: string;
+  status: AutoTestTrialStatus;
+  candidate: SamplingCandidate;
+  startedAt?: string;
+  finishedAt?: string;
+  scenarioResults: AutoTestScenarioResult[];
+  totalScore?: number;
+  avgTPS?: number;
+}

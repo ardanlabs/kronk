@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { useModelList } from '../contexts/ModelListContext';
+import { useDownload } from '../contexts/DownloadContext';
 import type {
   PlaygroundTemplateInfo,
   PlaygroundSessionResponse,
@@ -9,8 +10,11 @@ import type {
   ChatStreamResponse,
   ChatToolCall,
 } from '../types';
+import AutomatedTestingPanel from './AutomatedTestingPanel';
 
-type PlaygroundTab = 'chat' | 'tools' | 'inspector';
+type PlaygroundTab = 'chat' | 'tools' | 'inspector' | 'autotest';
+
+const NEW_MODEL_VALUE = '__new__';
 
 const defaultTools = JSON.stringify([
   {
@@ -53,6 +57,7 @@ interface PlaygroundMessage {
 export default function ModelPlayground() {
   const navigate = useNavigate();
   const { models, loadModels } = useModelList();
+  const { download, isDownloading, startDownload, cancelDownload, clearDownload } = useDownload();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Setup state
@@ -83,6 +88,15 @@ export default function ModelPlayground() {
   const [streaming, setStreaming] = useState(false);
   const [streamAbort, setStreamAbort] = useState<(() => void) | null>(null);
 
+  // HuggingFace pull state
+  const [showPullForm, setShowPullForm] = useState(false);
+  const [hfModelUrl, setHfModelUrl] = useState('');
+  const [hfProjUrl, setHfProjUrl] = useState('');
+  const [showProjUrl, setShowProjUrl] = useState(false);
+  const prePullModelIdsRef = useRef<Set<string>>(new Set());
+  const pendingAutoSelectRef = useRef(false);
+  const expectedFilenameRef = useRef('');
+
   // Tool test state
   const [toolDefs, setToolDefs] = useState(defaultTools);
   const [toolPrompt, setToolPrompt] = useState("What's the weather in Boston? Use the get_weather tool.");
@@ -112,6 +126,50 @@ export default function ModelPlayground() {
       // Templates may not be available yet
     }
   };
+
+  const handlePullModel = () => {
+    const url = hfModelUrl.trim();
+    if (!url || isDownloading || session) return;
+
+    prePullModelIdsRef.current = new Set(models?.data?.map((m) => m.id) || []);
+    expectedFilenameRef.current = url.split('/').pop() || '';
+    pendingAutoSelectRef.current = true;
+    startDownload(url, hfProjUrl.trim() || undefined);
+  };
+
+  useEffect(() => {
+    if (!pendingAutoSelectRef.current) return;
+
+    if (download?.status === 'error') {
+      pendingAutoSelectRef.current = false;
+      return;
+    }
+
+    if (download?.status !== 'complete') return;
+
+    const before = prePullModelIdsRef.current;
+    const all = models?.data ?? [];
+    const added = all.filter((m) => !before.has(m.id));
+    const filename = expectedFilenameRef.current;
+
+    const chosen =
+      added.find((m) => filename && m.id.includes(filename)) ??
+      added.find((m) => !m.id.includes('mmproj') && !m.id.includes('proj')) ??
+      added[0] ??
+      all.find((m) => filename && m.id.includes(filename));
+
+    pendingAutoSelectRef.current = false;
+
+    if (chosen) {
+      setSelectedModel(chosen.id);
+      setShowPullForm(false);
+      setHfModelUrl('');
+      setHfProjUrl('');
+      setShowProjUrl(false);
+    }
+
+    clearDownload();
+  }, [models, download?.status]);
 
   const handleCreateSession = async () => {
     if (!selectedModel) return;
@@ -382,8 +440,17 @@ export default function ModelPlayground() {
           <div className="form-group">
             <label>Model</label>
             <select
-              value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value)}
+              value={showPullForm ? NEW_MODEL_VALUE : selectedModel}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === NEW_MODEL_VALUE) {
+                  setSelectedModel('');
+                  setShowPullForm(true);
+                } else {
+                  setSelectedModel(val);
+                  setShowPullForm(false);
+                }
+              }}
               disabled={!!session}
             >
               <option value="">Select a model...</option>
@@ -392,8 +459,77 @@ export default function ModelPlayground() {
                   {m.id}
                 </option>
               ))}
+              <option value={NEW_MODEL_VALUE}>New…</option>
             </select>
           </div>
+
+          {showPullForm && !session && (
+            <div className="playground-pull-form">
+              <div className="form-group">
+                <label>HuggingFace Model URL</label>
+                <input
+                  type="text"
+                  value={hfModelUrl}
+                  onChange={(e) => setHfModelUrl(e.target.value)}
+                  placeholder="org/repo/model.gguf"
+                  disabled={isDownloading}
+                />
+              </div>
+
+              <button
+                type="button"
+                className="btn btn-secondary btn-small playground-pull-toggle"
+                onClick={() => setShowProjUrl((v) => !v)}
+                disabled={isDownloading}
+              >
+                {showProjUrl ? '− Hide projection URL' : '+ Projection URL (optional)'}
+              </button>
+
+              {showProjUrl && (
+                <div className="form-group">
+                  <label>Projection URL (vision/audio models)</label>
+                  <input
+                    type="text"
+                    value={hfProjUrl}
+                    onChange={(e) => setHfProjUrl(e.target.value)}
+                    placeholder="org/repo/mmproj.gguf"
+                    disabled={isDownloading}
+                  />
+                </div>
+              )}
+
+              <div className="playground-pull-actions">
+                <button
+                  className="btn btn-primary"
+                  type="button"
+                  onClick={handlePullModel}
+                  disabled={isDownloading || !hfModelUrl.trim()}
+                >
+                  {isDownloading ? 'Pulling…' : 'Pull'}
+                </button>
+                {isDownloading && (
+                  <button className="btn btn-danger" type="button" onClick={cancelDownload}>
+                    Cancel
+                  </button>
+                )}
+                {download && download.status !== 'downloading' && (
+                  <button className="btn" type="button" onClick={clearDownload}>
+                    Clear
+                  </button>
+                )}
+              </div>
+
+              {download && download.messages.length > 0 && (
+                <div className="status-box playground-pull-status">
+                  {download.messages.map((msg, idx) => (
+                    <div key={idx} className={`status-line ${msg.type}`}>
+                      {msg.text}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="form-group">
             <label>Template Mode</label>
@@ -581,6 +717,12 @@ export default function ModelPlayground() {
             >
               Prompt Inspector
             </button>
+            <button
+              className={`playground-tab ${activeTab === 'autotest' ? 'active' : ''}`}
+              onClick={() => setActiveTab('autotest')}
+            >
+              Automated Testing
+            </button>
           </div>
 
           <div className="playground-tab-content">
@@ -722,6 +864,10 @@ export default function ModelPlayground() {
                   </div>
                 )}
               </div>
+            )}
+
+            {activeTab === 'autotest' && (
+              <AutomatedTestingPanel session={session} />
             )}
           </div>
         </div>
