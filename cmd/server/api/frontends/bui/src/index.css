@@ -1093,10 +1093,10 @@ tr.selected:hover td {
     display: flex;
     flex-direction: column;
     gap: 4px;
-    padding: 12px 16px;
+    padding: 8px 16px;
     background: var(--color-gray-100);
     border-radius: 8px;
-    margin-bottom: 8px;
+    margin-bottom: 4px;
     flex-shrink: 0;
 }
 
@@ -1128,10 +1128,10 @@ tr.selected:hover td {
 .chat-settings {
     display: flex;
     gap: 16px;
-    padding: 12px 16px;
+    padding: 8px 16px;
     background: var(--color-gray-100);
     border-radius: 8px;
-    margin-bottom: 16px;
+    margin-bottom: 4px;
     flex-wrap: wrap;
     flex-shrink: 0;
 }
@@ -1154,6 +1154,53 @@ tr.selected:hover td {
     border: 1px solid var(--color-gray-300);
     border-radius: 4px;
     font-size: 14px;
+}
+
+.chat-setting select {
+    padding: 6px 8px;
+    border: 1px solid var(--color-gray-300);
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.chat-grammar {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 16px;
+    background: var(--color-gray-100);
+    border-radius: 8px;
+    margin-bottom: 4px;
+    flex-shrink: 0;
+}
+
+.chat-grammar label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-gray-600);
+}
+
+.chat-grammar-row {
+    display: flex;
+    gap: 16px;
+    align-items: flex-end;
+}
+
+.chat-grammar-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.chat-grammar-field select {
+    padding: 6px 8px;
+    border: 1px solid var(--color-gray-300);
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.chat-grammar-preset {
+    flex: 1;
 }
 
 .chat-messages-wrapper {

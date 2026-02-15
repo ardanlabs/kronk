@@ -519,6 +519,18 @@ class ApiService {
     });
   }
 
+  async listGrammars(): Promise<{ files: string[] }> {
+    return this.request<{ files: string[] }>('/grammars');
+  }
+
+  async getGrammarContent(name: string): Promise<{ content: string }> {
+    return this.request<{ content: string }>(`/grammars/${encodeURIComponent(name)}`);
+  }
+
+  async listTemplates(): Promise<{ files: string[] }> {
+    return this.request<{ files: string[] }>('/templates');
+  }
+
 }
 
 export const api = new ApiService();

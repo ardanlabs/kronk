@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
@@ -15,7 +16,7 @@ import (
 func (c *Catalog) RetrieveConfig(modelID string) (model.Config, error) {
 	mc := c.ResolvedModelConfig(modelID)
 
-	if err := c.resolveGrammar(&mc.Sampling); err != nil {
+	if err := c.ResolveGrammar(&mc.Sampling); err != nil {
 		return model.Config{}, fmt.Errorf("retrieve-config: %w", err)
 	}
 
@@ -44,6 +45,30 @@ func (c *Catalog) RetrieveTemplate(modelID string) (model.Template, error) {
 	}
 
 	return mt, nil
+}
+
+// TemplateFiles returns a sorted list of available template filenames.
+func (c *Catalog) TemplateFiles() ([]string, error) {
+	entries, err := os.ReadDir(c.templates.templatePath)
+	if err != nil {
+		return nil, fmt.Errorf("template-files: reading templates directory: %w", err)
+	}
+
+	var files []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		name := entry.Name()
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+
+		files = append(files, name)
+	}
+
+	return files, nil
 }
 
 // retrieveScript returns the contents of the template file.

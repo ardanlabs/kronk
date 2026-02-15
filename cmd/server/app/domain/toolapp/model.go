@@ -120,6 +120,7 @@ func toListModelsInfo(modelFiles []models.File, modelConfigs map[string]catalog.
 					PresencePenalty:  rmc.Sampling.PresencePenalty,
 					EnableThinking:   rmc.Sampling.EnableThinking,
 					ReasoningEffort:  rmc.Sampling.ReasoningEffort,
+					Grammar:          rmc.Sampling.Grammar,
 				}
 			}
 		}
@@ -1008,4 +1009,51 @@ func toCatalogFilesResponse(files []catalog.CatalogFileInfo) CatalogFilesListRes
 		}
 	}
 	return resp
+}
+
+// GrammarFilesResponse is a list of available grammar filenames.
+type GrammarFilesResponse struct {
+	Files []string `json:"files"`
+}
+
+// Encode implements the encoder interface.
+func (app GrammarFilesResponse) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(app)
+	return data, "application/json", err
+}
+
+// GrammarContentResponse returns the content of a grammar file.
+type GrammarContentResponse struct {
+	Content string `json:"content"`
+}
+
+// Encode implements the encoder interface.
+func (app GrammarContentResponse) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(app)
+	return data, "application/json", err
+}
+
+func toGrammarFilesResponse(files []string) GrammarFilesResponse {
+	if files == nil {
+		files = []string{}
+	}
+	return GrammarFilesResponse{Files: files}
+}
+
+// TemplateFilesResponse is a list of available template filenames.
+type TemplateFilesResponse struct {
+	Files []string `json:"files"`
+}
+
+// Encode implements the encoder interface.
+func (app TemplateFilesResponse) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(app)
+	return data, "application/json", err
+}
+
+func toTemplateFilesResponse(files []string) TemplateFilesResponse {
+	if files == nil {
+		files = []string{}
+	}
+	return TemplateFilesResponse{Files: files}
 }

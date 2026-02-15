@@ -29,9 +29,9 @@ type SamplingConfig struct {
 	Grammar          string  `yaml:"grammar,omitempty"`
 }
 
-// withDefaults returns a new SamplingConfig with default values applied
+// WithDefaults returns a new SamplingConfig with default values applied
 // for any zero-valued fields.
-func (s SamplingConfig) withDefaults() SamplingConfig {
+func (s SamplingConfig) WithDefaults() SamplingConfig {
 	defaults := SamplingConfig{
 		Temperature:     model.DefTemp,
 		TopK:            model.DefTopK,
@@ -168,7 +168,7 @@ func mergeSampling(base SamplingConfig, override SamplingConfig) SamplingConfig 
 }
 
 func (s SamplingConfig) toParams() model.Params {
-	s = s.withDefaults()
+	s = s.WithDefaults()
 
 	return model.Params{
 		Temperature:      s.Temperature,
