@@ -429,3 +429,68 @@ export interface PublishCatalogResponse {
 export interface RepoPathResponse {
   repo_path: string;
 }
+
+// =============================================================================
+// Playground Types
+
+export interface PlaygroundSessionRequest {
+  model_id: string;
+  template_mode: 'builtin' | 'custom';
+  template_name?: string;
+  template_script?: string;
+  config: PlaygroundModelConfig;
+}
+
+export interface PlaygroundModelConfig {
+  'context-window'?: number;
+  nbatch?: number;
+  nubatch?: number;
+  'nseq-max'?: number;
+  'flash-attention'?: string;
+  'cache-type-k'?: string;
+  'cache-type-v'?: string;
+  'ngpu-layers'?: number | null;
+  'system-prompt-cache'?: boolean;
+  'split-mode'?: string;
+  'rope-scaling-type'?: string;
+  'rope-freq-base'?: number | null;
+  'rope-freq-scale'?: number | null;
+  'yarn-ext-factor'?: number | null;
+  'yarn-attn-factor'?: number | null;
+  'yarn-beta-fast'?: number | null;
+  'yarn-beta-slow'?: number | null;
+  'yarn-orig-ctx'?: number | null;
+}
+
+export interface PlaygroundSessionResponse {
+  session_id: string;
+  status: string;
+  effective_config: Record<string, any>;
+}
+
+export interface PlaygroundTemplateInfo {
+  name: string;
+  size: number;
+}
+
+export interface PlaygroundTemplateListResponse {
+  templates: PlaygroundTemplateInfo[];
+}
+
+export interface PlaygroundTemplateResponse {
+  name: string;
+  script: string;
+}
+
+export interface PlaygroundChatRequest {
+  session_id: string;
+  messages: ChatMessage[];
+  tools?: any[];
+  stream?: boolean;
+  return_prompt?: boolean;
+  temperature?: number;
+  top_k?: number;
+  top_p?: number;
+  min_p?: number;
+  max_tokens?: number;
+}

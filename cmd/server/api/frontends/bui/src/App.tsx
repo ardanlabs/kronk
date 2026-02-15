@@ -31,6 +31,7 @@ import DocsAPITokenize from './components/DocsAPITokenize';
 import DocsAPITools from './components/DocsAPITools';
 import DocsManual from './components/DocsManual';
 import VRAMCalculator from './components/VRAMCalculator';
+import ModelPlayground from './components/ModelPlayground';
 import { ModelListProvider } from './contexts/ModelListContext';
 import { TokenProvider } from './contexts/TokenContext';
 import { DownloadProvider } from './contexts/DownloadContext';
@@ -42,6 +43,7 @@ export type Page =
   | 'home'
   | 'chat'
   | 'vram-calculator'
+  | 'playground'
   | 'model-list'
   | 'model-ps'
   | 'model-pull'
@@ -76,6 +78,7 @@ export const routeMap: Record<Page, string> = {
   'home': '/',
   'chat': '/chat',
   'vram-calculator': '/vram-calculator',
+  'playground': '/playground',
   'model-list': '/models',
   'model-ps': '/models/running',
   'model-pull': '/models/pull',
@@ -169,6 +172,7 @@ function App() {
                 <Route path="/" element={<HomePage />} />
                 <Route path="/chat" element={<Chat />} />
                 <Route path="/vram-calculator" element={<VRAMCalculator />} />
+                <Route path="/playground" element={<ModelPlayground />} />
                 <Route path="/models" element={<ModelList />} />
                 <Route path="/models/running" element={<ModelPs />} />
                 <Route path="/models/pull" element={<ModelPull />} />

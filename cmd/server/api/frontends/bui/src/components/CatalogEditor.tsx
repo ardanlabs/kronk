@@ -387,6 +387,41 @@ export default function CatalogEditor() {
       .finally(() => setEditLoading(false));
   }, [editId]);
 
+  useEffect(() => {
+    if (searchParams.get('source') === 'playground') {
+      const draftStr = sessionStorage.getItem('kronk_catalog_draft');
+      if (draftStr) {
+        try {
+          const draft = JSON.parse(draftStr);
+          setForm((prev) => ({
+            ...prev,
+            id: draft.id || prev.id,
+            template: draft.template || prev.template,
+            capabilities: {
+              ...prev.capabilities,
+              streaming: draft.capabilities?.streaming ?? prev.capabilities.streaming,
+              tooling: draft.capabilities?.tooling ?? prev.capabilities.tooling,
+            },
+            config: {
+              ...prev.config,
+              contextWindow: draft.config?.['context-window'] ?? prev.config.contextWindow,
+              nbatch: draft.config?.nbatch ?? prev.config.nbatch,
+              nubatch: draft.config?.nubatch ?? prev.config.nubatch,
+              nseqMax: draft.config?.['nseq-max'] ?? prev.config.nseqMax,
+              flashAttention: draft.config?.['flash-attention'] ?? prev.config.flashAttention,
+              cacheTypeK: draft.config?.['cache-type-k'] ?? prev.config.cacheTypeK,
+              cacheTypeV: draft.config?.['cache-type-v'] ?? prev.config.cacheTypeV,
+              systemPromptCache: draft.config?.['system-prompt-cache'] ?? prev.config.systemPromptCache,
+            },
+          }));
+          sessionStorage.removeItem('kronk_catalog_draft');
+        } catch {
+          // Ignore invalid draft
+        }
+      }
+    }
+  }, [searchParams]);
+
   const handleLookup = async () => {
     if (!hfInput.trim()) return;
     setHfLoading(true);

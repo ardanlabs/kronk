@@ -2328,3 +2328,354 @@ tr.selected:hover td {
     color: #e8e8e8;
     background: transparent;
 }
+
+/* =============================================================================
+   Playground
+   ============================================================================= */
+
+.playground-container {
+    padding: 20px;
+    max-width: 1600px;
+}
+
+.playground-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.playground-header h2 {
+    font-size: 24px;
+    color: var(--color-gray-800);
+}
+
+.playground-layout {
+    display: flex;
+    gap: 24px;
+    height: calc(100vh - 140px);
+}
+
+.playground-setup {
+    width: 320px;
+    flex-shrink: 0;
+    overflow-y: auto;
+    background: var(--color-white);
+    border-radius: 8px;
+    border: 1px solid var(--color-gray-200);
+    padding: 20px;
+}
+
+.playground-setup h3 {
+    font-size: 16px;
+    margin-bottom: 16px;
+    color: var(--color-gray-800);
+}
+
+.playground-setup h4 {
+    font-size: 14px;
+    margin: 16px 0 8px;
+    color: var(--color-gray-600);
+    border-top: 1px solid var(--color-gray-200);
+    padding-top: 12px;
+}
+
+.playground-setup .form-group {
+    margin-bottom: 12px;
+}
+
+.playground-setup .form-group label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-gray-600);
+    margin-bottom: 4px;
+}
+
+.playground-setup .form-group select,
+.playground-setup .form-group input[type="number"],
+.playground-setup .form-group input[type="text"] {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid var(--color-gray-300);
+    border-radius: 4px;
+    font-size: 13px;
+    background: var(--color-white);
+}
+
+.playground-setup .checkbox-group label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.playground-textarea {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid var(--color-gray-300);
+    border-radius: 4px;
+    font-size: 13px;
+    resize: vertical;
+    font-family: inherit;
+}
+
+.playground-textarea.monospace {
+    font-family: "SF Mono", "Menlo", "Monaco", "Courier New", monospace;
+    font-size: 12px;
+}
+
+.playground-session-controls {
+    margin-top: 16px;
+}
+
+.playground-session-controls .btn {
+    width: 100%;
+}
+
+.playground-error {
+    margin-top: 8px;
+    padding: 8px 12px;
+    background: #fff0f0;
+    border: 1px solid var(--color-error);
+    border-radius: 4px;
+    color: var(--color-error);
+    font-size: 13px;
+}
+
+.playground-session-info {
+    margin-top: 12px;
+    padding: 8px 12px;
+    background: var(--color-gray-100);
+    border-radius: 4px;
+    font-size: 12px;
+    color: var(--color-gray-600);
+    word-break: break-all;
+}
+
+.playground-test {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: var(--color-white);
+    border-radius: 8px;
+    border: 1px solid var(--color-gray-200);
+    overflow: hidden;
+}
+
+.playground-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--color-gray-200);
+    background: var(--color-gray-100);
+}
+
+.playground-tab {
+    padding: 10px 20px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-gray-600);
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s;
+}
+
+.playground-tab:hover {
+    color: var(--color-gray-800);
+}
+
+.playground-tab.active {
+    color: var(--color-blue);
+    border-bottom-color: var(--color-blue);
+    background: var(--color-white);
+}
+
+.playground-tab-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+}
+
+.playground-chat {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.playground-messages {
+    flex: 1;
+    overflow-y: auto;
+    margin: 12px 0;
+    min-height: 200px;
+    max-height: calc(100vh - 420px);
+    border: 1px solid var(--color-gray-200);
+    border-radius: 4px;
+    padding: 12px;
+}
+
+.playground-message {
+    margin-bottom: 12px;
+    padding: 8px 12px;
+    border-radius: 6px;
+}
+
+.playground-message-user {
+    background: var(--color-gray-100);
+}
+
+.playground-message-assistant {
+    background: #f0f5ff;
+}
+
+.playground-message-role {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--color-gray-600);
+    margin-bottom: 4px;
+}
+
+.playground-message-content {
+    font-size: 14px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.playground-input-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+}
+
+.playground-input-row .playground-textarea {
+    flex: 1;
+}
+
+.playground-input-row .btn {
+    flex-shrink: 0;
+    height: fit-content;
+}
+
+.playground-tools .form-group {
+    margin-bottom: 12px;
+}
+
+.playground-tools .form-group label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-gray-600);
+    margin-bottom: 4px;
+}
+
+.playground-tools input[type="text"] {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid var(--color-gray-300);
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.playground-tool-results {
+    margin-top: 16px;
+    padding: 12px;
+    background: var(--color-gray-100);
+    border-radius: 6px;
+}
+
+.playground-tool-results h4 {
+    margin-bottom: 8px;
+    font-size: 14px;
+}
+
+.playground-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    margin-right: 8px;
+}
+
+.playground-badge.success {
+    background: #d4edda;
+    color: #155724;
+}
+
+.playground-badge.fail {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.playground-tool-call {
+    margin-top: 8px;
+    padding: 8px;
+    background: var(--color-white);
+    border: 1px solid var(--color-gray-200);
+    border-radius: 4px;
+}
+
+.playground-tool-call pre {
+    margin: 4px 0;
+    font-size: 12px;
+    white-space: pre-wrap;
+}
+
+.playground-tool-call small {
+    color: var(--color-gray-600);
+}
+
+.playground-inspector .form-group {
+    margin-bottom: 12px;
+}
+
+.playground-inspector .form-group label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-gray-600);
+    margin-bottom: 4px;
+}
+
+.playground-inspector input[type="text"] {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid var(--color-gray-300);
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.playground-rendered-prompt {
+    margin-top: 16px;
+}
+
+.playground-prompt-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.playground-prompt-header h4 {
+    font-size: 14px;
+}
+
+.playground-prompt-text {
+    background: var(--color-gray-800);
+    color: #e8e8e8;
+    padding: 16px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-family: "SF Mono", "Menlo", "Monaco", "Courier New", monospace;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.btn-small {
+    padding: 4px 10px;
+    font-size: 12px;
+}

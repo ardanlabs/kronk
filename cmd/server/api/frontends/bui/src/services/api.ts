@@ -20,6 +20,12 @@ import type {
   CatalogFileInfo,
   PublishCatalogResponse,
   RepoPathResponse,
+  PlaygroundTemplateInfo,
+  PlaygroundTemplateListResponse,
+  PlaygroundTemplateResponse,
+  PlaygroundSessionRequest,
+  PlaygroundSessionResponse,
+  PlaygroundChatRequest,
 } from '../types';
 
 class ApiService {
@@ -544,6 +550,98 @@ class ApiService {
 
   async listTemplates(): Promise<{ files: string[] }> {
     return this.request<{ files: string[] }>('/templates');
+  }
+
+  async listPlaygroundTemplates(): Promise<PlaygroundTemplateInfo[]> {
+    const resp = await this.request<PlaygroundTemplateListResponse>('/playground/templates');
+    return resp.templates;
+  }
+
+  async getPlaygroundTemplate(name: string): Promise<PlaygroundTemplateResponse> {
+    return this.request<PlaygroundTemplateResponse>(`/playground/templates/${encodeURIComponent(name)}`);
+  }
+
+  async savePlaygroundTemplate(name: string, script: string): Promise<void> {
+    await this.request('/playground/templates/save', {
+      method: 'POST',
+      body: JSON.stringify({ name, script }),
+    });
+  }
+
+  async createPlaygroundSession(request: PlaygroundSessionRequest): Promise<PlaygroundSessionResponse> {
+    return this.request<PlaygroundSessionResponse>('/playground/sessions', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async deletePlaygroundSession(id: string): Promise<void> {
+    await this.request(`/playground/sessions/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  streamPlaygroundChat(
+    request: PlaygroundChatRequest,
+    onMessage: (data: ChatStreamResponse) => void,
+    onError: (error: string) => void,
+    onComplete: () => void
+  ): () => void {
+    const controller = new AbortController();
+
+    fetch(`${this.baseUrl}/playground/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...request, stream: true }),
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          const error = await response.json();
+          onError(error.error?.message || `HTTP ${response.status}`);
+          return;
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) {
+          onError('Streaming not supported');
+          return;
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (!line.trim() || line === 'data: [DONE]') continue;
+            if (line.startsWith('event:')) continue;
+            const jsonStr = line.startsWith('data: ') ? line.slice(6) : line;
+            if (!jsonStr.trim()) continue;
+            try {
+              const data = JSON.parse(jsonStr) as ChatStreamResponse;
+              onMessage(data);
+            } catch {
+              // Skip malformed JSON
+            }
+          }
+        }
+
+        onComplete();
+      })
+      .catch((err) => {
+        if (err.name !== 'AbortError') {
+          onError(err.message || 'Connection error');
+        }
+      });
+
+    return () => controller.abort();
   }
 
 }
