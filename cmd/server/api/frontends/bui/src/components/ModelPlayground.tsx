@@ -1,0 +1,731 @@
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { api } from '../services/api';
+import { useModelList } from '../contexts/ModelListContext';
+import type {
+  PlaygroundTemplateInfo,
+  PlaygroundSessionResponse,
+  ChatMessage,
+  ChatStreamResponse,
+  ChatToolCall,
+} from '../types';
+
+type PlaygroundTab = 'chat' | 'tools' | 'inspector';
+
+const defaultTools = JSON.stringify([
+  {
+    type: 'function',
+    function: {
+      name: 'get_weather',
+      description: 'Get current weather for a city',
+      parameters: {
+        type: 'object',
+        properties: {
+          location: { type: 'string', description: 'City name' },
+          unit: { type: 'string', enum: ['celsius', 'fahrenheit'] },
+        },
+        required: ['location'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'add',
+      description: 'Add two numbers',
+      parameters: {
+        type: 'object',
+        properties: {
+          a: { type: 'number' },
+          b: { type: 'number' },
+        },
+        required: ['a', 'b'],
+      },
+    },
+  },
+], null, 2);
+
+interface PlaygroundMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+}
+
+export default function ModelPlayground() {
+  const navigate = useNavigate();
+  const { models, loadModels } = useModelList();
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Setup state
+  const [selectedModel, setSelectedModel] = useState('');
+  const [templateMode, setTemplateMode] = useState<'builtin' | 'custom'>('builtin');
+  const [templates, setTemplates] = useState<PlaygroundTemplateInfo[]>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState('');
+  const [customScript, setCustomScript] = useState('');
+  const [contextWindow, setContextWindow] = useState(8192);
+  const [nBatch, setNBatch] = useState(2048);
+  const [nUBatch, setNUBatch] = useState(512);
+  const [nSeqMax, setNSeqMax] = useState(1);
+  const [flashAttention, setFlashAttention] = useState('auto');
+  const [cacheTypeK, setCacheTypeK] = useState('');
+  const [cacheTypeV, setCacheTypeV] = useState('');
+  const [systemPromptCache, setSystemPromptCache] = useState(false);
+
+  // Session state
+  const [session, setSession] = useState<PlaygroundSessionResponse | null>(null);
+  const [sessionLoading, setSessionLoading] = useState(false);
+  const [sessionError, setSessionError] = useState('');
+
+  // Chat state
+  const [activeTab, setActiveTab] = useState<PlaygroundTab>('chat');
+  const [systemPrompt, setSystemPrompt] = useState('You are a helpful assistant.');
+  const [chatMessages, setChatMessages] = useState<PlaygroundMessage[]>([]);
+  const [userInput, setUserInput] = useState('');
+  const [streaming, setStreaming] = useState(false);
+  const [streamAbort, setStreamAbort] = useState<(() => void) | null>(null);
+
+  // Tool test state
+  const [toolDefs, setToolDefs] = useState(defaultTools);
+  const [toolPrompt, setToolPrompt] = useState("What's the weather in Boston? Use the get_weather tool.");
+  const [toolResult, setToolResult] = useState<string>('');
+  const [toolCalls, setToolCalls] = useState<ChatToolCall[]>([]);
+  const [toolTestRunning, setToolTestRunning] = useState(false);
+
+  // Inspector state
+  const [inspectorPrompt, setInspectorPrompt] = useState('Hello, how are you?');
+  const [renderedPrompt, setRenderedPrompt] = useState('');
+  const [inspectorRunning, setInspectorRunning] = useState(false);
+
+  useEffect(() => {
+    loadModels();
+    loadTemplates();
+  }, []);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
+
+  const loadTemplates = async () => {
+    try {
+      const list = await api.listPlaygroundTemplates();
+      setTemplates(list);
+    } catch {
+      // Templates may not be available yet
+    }
+  };
+
+  const handleCreateSession = async () => {
+    if (!selectedModel) return;
+
+    setSessionLoading(true);
+    setSessionError('');
+
+    try {
+      const resp = await api.createPlaygroundSession({
+        model_id: selectedModel,
+        template_mode: templateMode,
+        template_name: templateMode === 'builtin' ? selectedTemplate : undefined,
+        template_script: templateMode === 'custom' ? customScript : undefined,
+        config: {
+          'context-window': contextWindow,
+          nbatch: nBatch,
+          nubatch: nUBatch,
+          'nseq-max': nSeqMax,
+          'flash-attention': flashAttention,
+          'cache-type-k': cacheTypeK || undefined,
+          'cache-type-v': cacheTypeV || undefined,
+          'system-prompt-cache': systemPromptCache,
+        },
+      });
+      setSession(resp);
+      setChatMessages([]);
+    } catch (err: any) {
+      setSessionError(err.message || 'Failed to create session');
+    } finally {
+      setSessionLoading(false);
+    }
+  };
+
+  const handleUnloadSession = async () => {
+    if (!session) return;
+
+    try {
+      await api.deletePlaygroundSession(session.session_id);
+      setSession(null);
+      setChatMessages([]);
+    } catch (err: any) {
+      setSessionError(err.message || 'Failed to unload session');
+    }
+  };
+
+  const handleSendMessage = useCallback(() => {
+    if (!session || !userInput.trim() || streaming) return;
+
+    const messages: ChatMessage[] = [];
+    if (systemPrompt.trim()) {
+      messages.push({ role: 'system', content: systemPrompt });
+    }
+    for (const msg of chatMessages) {
+      messages.push({ role: msg.role, content: msg.content });
+    }
+    messages.push({ role: 'user', content: userInput });
+
+    const newMessages: PlaygroundMessage[] = [
+      ...chatMessages,
+      { role: 'user', content: userInput },
+    ];
+    setChatMessages(newMessages);
+    setUserInput('');
+    setStreaming(true);
+
+    let assistantContent = '';
+
+    const abort = api.streamPlaygroundChat(
+      {
+        session_id: session.session_id,
+        messages,
+        stream: true,
+      },
+      (data: ChatStreamResponse) => {
+        const delta = data.choices?.[0]?.delta;
+        if (delta?.content) {
+          assistantContent += delta.content;
+          const updatedContent = assistantContent;
+          setChatMessages(() => [
+            ...newMessages,
+            { role: 'assistant', content: updatedContent },
+          ]);
+        }
+      },
+      (error: string) => {
+        setChatMessages(() => [
+          ...newMessages,
+          { role: 'assistant', content: `Error: ${error}` },
+        ]);
+        setStreaming(false);
+      },
+      () => {
+        setStreaming(false);
+      }
+    );
+
+    setStreamAbort(() => abort);
+  }, [session, userInput, streaming, systemPrompt, chatMessages]);
+
+  const handleStopStreaming = () => {
+    streamAbort?.();
+    setStreaming(false);
+  };
+
+  const handleToolTest = useCallback(() => {
+    if (!session || toolTestRunning) return;
+
+    setToolTestRunning(true);
+    setToolResult('');
+    setToolCalls([]);
+
+    let tools: any[];
+    try {
+      tools = JSON.parse(toolDefs);
+    } catch {
+      setToolResult('Invalid JSON in tool definitions');
+      setToolTestRunning(false);
+      return;
+    }
+
+    const messages: ChatMessage[] = [
+      { role: 'user', content: toolPrompt },
+    ];
+
+    let fullContent = '';
+    let collectedToolCalls: ChatToolCall[] = [];
+
+    api.streamPlaygroundChat(
+      {
+        session_id: session.session_id,
+        messages,
+        tools,
+        stream: true,
+      },
+      (data: ChatStreamResponse) => {
+        const choice = data.choices?.[0];
+        if (choice?.delta?.content) {
+          fullContent += choice.delta.content;
+        }
+        if (choice?.delta?.tool_calls) {
+          for (const tc of choice.delta.tool_calls) {
+            const existing = collectedToolCalls.find(c => c.index === tc.index);
+            if (existing) {
+              if (tc.function?.arguments) {
+                existing.function.arguments += tc.function.arguments;
+              }
+            } else {
+              collectedToolCalls.push({
+                id: tc.id || '',
+                index: tc.index,
+                type: tc.type || 'function',
+                function: {
+                  name: tc.function?.name || '',
+                  arguments: tc.function?.arguments || '',
+                },
+              });
+            }
+          }
+        }
+        if (choice?.finish_reason === 'tool_calls') {
+          setToolCalls([...collectedToolCalls]);
+        }
+      },
+      (error: string) => {
+        setToolResult(`Error: ${error}`);
+        setToolTestRunning(false);
+      },
+      () => {
+        setToolResult(fullContent);
+        if (collectedToolCalls.length > 0) {
+          setToolCalls([...collectedToolCalls]);
+        }
+        setToolTestRunning(false);
+      }
+    );
+  }, [session, toolTestRunning, toolDefs, toolPrompt]);
+
+  const handleInspector = useCallback(() => {
+    if (!session || inspectorRunning) return;
+
+    setInspectorRunning(true);
+    setRenderedPrompt('');
+
+    const messages: ChatMessage[] = [
+      { role: 'user', content: inspectorPrompt },
+    ];
+
+    if (systemPrompt.trim()) {
+      messages.unshift({ role: 'system', content: systemPrompt });
+    }
+
+    let prompt = '';
+
+    api.streamPlaygroundChat(
+      {
+        session_id: session.session_id,
+        messages,
+        stream: true,
+        return_prompt: true,
+        max_tokens: 1,
+      },
+      (data: any) => {
+        if (data.prompt) {
+          prompt = data.prompt;
+        }
+      },
+      (error: string) => {
+        setRenderedPrompt(`Error: ${error}`);
+        setInspectorRunning(false);
+      },
+      () => {
+        setRenderedPrompt(prompt || '(No prompt returned — prompt may appear in final response)');
+        setInspectorRunning(false);
+      }
+    );
+  }, [session, inspectorRunning, inspectorPrompt, systemPrompt]);
+
+  const handleExportToCatalog = () => {
+    if (!session) return;
+
+    const draft = {
+      id: selectedModel,
+      template: templateMode === 'builtin' ? selectedTemplate : '',
+      template_script: templateMode === 'custom' ? customScript : '',
+      config: {
+        'context-window': contextWindow,
+        nbatch: nBatch,
+        nubatch: nUBatch,
+        'nseq-max': nSeqMax,
+        'flash-attention': flashAttention,
+        'cache-type-k': cacheTypeK,
+        'cache-type-v': cacheTypeV,
+        'system-prompt-cache': systemPromptCache,
+      },
+      capabilities: {
+        streaming: true,
+        tooling: toolCalls.length > 0,
+      },
+    };
+
+    sessionStorage.setItem('kronk_catalog_draft', JSON.stringify(draft));
+    navigate('/catalog/editor?source=playground');
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
+
+  return (
+    <div className="playground-container">
+      <div className="playground-header">
+        <h2>Model Playground</h2>
+        {session && (
+          <button className="btn btn-secondary" onClick={handleExportToCatalog}>
+            Export to Catalog Editor
+          </button>
+        )}
+      </div>
+
+      <div className="playground-layout">
+        {/* Setup Panel */}
+        <div className="playground-setup">
+          <h3>Setup</h3>
+
+          <div className="form-group">
+            <label>Model</label>
+            <select
+              value={selectedModel}
+              onChange={(e) => setSelectedModel(e.target.value)}
+              disabled={!!session}
+            >
+              <option value="">Select a model...</option>
+              {models?.data?.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.id}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label>Template Mode</label>
+            <select
+              value={templateMode}
+              onChange={(e) => setTemplateMode(e.target.value as 'builtin' | 'custom')}
+              disabled={!!session}
+            >
+              <option value="builtin">Builtin</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+
+          {templateMode === 'builtin' ? (
+            <div className="form-group">
+              <label>Template</label>
+              <select
+                value={selectedTemplate}
+                onChange={(e) => setSelectedTemplate(e.target.value)}
+                disabled={!!session}
+              >
+                <option value="">Auto (from catalog)</option>
+                {templates.map((t) => (
+                  <option key={t.name} value={t.name}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div className="form-group">
+              <label>Template Script</label>
+              <textarea
+                value={customScript}
+                onChange={(e) => setCustomScript(e.target.value)}
+                disabled={!!session}
+                rows={8}
+                className="playground-textarea"
+                placeholder="Paste Jinja template..."
+              />
+            </div>
+          )}
+
+          <h4>Configuration</h4>
+
+          <div className="form-group">
+            <label>Context Window</label>
+            <input
+              type="number"
+              value={contextWindow}
+              onChange={(e) => setContextWindow(Number(e.target.value))}
+              disabled={!!session}
+            />
+          </div>
+
+          <div className="form-group">
+            <label>NBatch</label>
+            <input
+              type="number"
+              value={nBatch}
+              onChange={(e) => setNBatch(Number(e.target.value))}
+              disabled={!!session}
+            />
+          </div>
+
+          <div className="form-group">
+            <label>NUBatch</label>
+            <input
+              type="number"
+              value={nUBatch}
+              onChange={(e) => setNUBatch(Number(e.target.value))}
+              disabled={!!session}
+            />
+          </div>
+
+          <div className="form-group">
+            <label>NSeqMax</label>
+            <input
+              type="number"
+              value={nSeqMax}
+              onChange={(e) => setNSeqMax(Number(e.target.value))}
+              min={1}
+              disabled={!!session}
+            />
+          </div>
+
+          <div className="form-group">
+            <label>Flash Attention</label>
+            <select
+              value={flashAttention}
+              onChange={(e) => setFlashAttention(e.target.value)}
+              disabled={!!session}
+            >
+              <option value="auto">Auto</option>
+              <option value="enabled">Enabled</option>
+              <option value="disabled">Disabled</option>
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label>Cache Type K</label>
+            <select
+              value={cacheTypeK}
+              onChange={(e) => setCacheTypeK(e.target.value)}
+              disabled={!!session}
+            >
+              <option value="">Default (f16)</option>
+              <option value="f16">f16</option>
+              <option value="q8_0">q8_0</option>
+              <option value="q4_0">q4_0</option>
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label>Cache Type V</label>
+            <select
+              value={cacheTypeV}
+              onChange={(e) => setCacheTypeV(e.target.value)}
+              disabled={!!session}
+            >
+              <option value="">Default (f16)</option>
+              <option value="f16">f16</option>
+              <option value="q8_0">q8_0</option>
+              <option value="q4_0">q4_0</option>
+            </select>
+          </div>
+
+          <div className="form-group checkbox-group">
+            <label>
+              <input
+                type="checkbox"
+                checked={systemPromptCache}
+                onChange={(e) => setSystemPromptCache(e.target.checked)}
+                disabled={!!session}
+              />
+              System Prompt Cache
+            </label>
+          </div>
+
+          <div className="playground-session-controls">
+            {!session ? (
+              <button
+                className="btn btn-primary"
+                onClick={handleCreateSession}
+                disabled={!selectedModel || sessionLoading}
+              >
+                {sessionLoading ? 'Loading Model...' : 'Create Session'}
+              </button>
+            ) : (
+              <button className="btn btn-danger" onClick={handleUnloadSession}>
+                Unload Session
+              </button>
+            )}
+          </div>
+
+          {sessionError && <div className="playground-error">{sessionError}</div>}
+
+          {session && (
+            <div className="playground-session-info">
+              <strong>Session:</strong> {session.session_id}
+              <br />
+              <strong>Status:</strong> {session.status}
+            </div>
+          )}
+        </div>
+
+        {/* Test Panel */}
+        <div className="playground-test">
+          <div className="playground-tabs">
+            <button
+              className={`playground-tab ${activeTab === 'chat' ? 'active' : ''}`}
+              onClick={() => setActiveTab('chat')}
+            >
+              Basic Chat
+            </button>
+            <button
+              className={`playground-tab ${activeTab === 'tools' ? 'active' : ''}`}
+              onClick={() => setActiveTab('tools')}
+            >
+              Tool Calling Test
+            </button>
+            <button
+              className={`playground-tab ${activeTab === 'inspector' ? 'active' : ''}`}
+              onClick={() => setActiveTab('inspector')}
+            >
+              Prompt Inspector
+            </button>
+          </div>
+
+          <div className="playground-tab-content">
+            {activeTab === 'chat' && (
+              <div className="playground-chat">
+                <div className="form-group">
+                  <label>System Prompt</label>
+                  <textarea
+                    value={systemPrompt}
+                    onChange={(e) => setSystemPrompt(e.target.value)}
+                    rows={2}
+                    className="playground-textarea"
+                  />
+                </div>
+
+                <div className="playground-messages">
+                  {chatMessages.map((msg, i) => (
+                    <div key={i} className={`playground-message playground-message-${msg.role}`}>
+                      <div className="playground-message-role">{msg.role}</div>
+                      <div className="playground-message-content">{msg.content}</div>
+                    </div>
+                  ))}
+                  <div ref={messagesEndRef} />
+                </div>
+
+                <div className="playground-input-row">
+                  <textarea
+                    value={userInput}
+                    onChange={(e) => setUserInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder={session ? 'Type a message...' : 'Create a session first'}
+                    disabled={!session || streaming}
+                    rows={2}
+                    className="playground-textarea"
+                  />
+                  {streaming ? (
+                    <button className="btn btn-danger" onClick={handleStopStreaming}>
+                      Stop
+                    </button>
+                  ) : (
+                    <button
+                      className="btn btn-primary"
+                      onClick={handleSendMessage}
+                      disabled={!session || !userInput.trim()}
+                    >
+                      Send
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'tools' && (
+              <div className="playground-tools">
+                <div className="form-group">
+                  <label>Tool Definitions (JSON)</label>
+                  <textarea
+                    value={toolDefs}
+                    onChange={(e) => setToolDefs(e.target.value)}
+                    rows={12}
+                    className="playground-textarea monospace"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Test Prompt</label>
+                  <input
+                    type="text"
+                    value={toolPrompt}
+                    onChange={(e) => setToolPrompt(e.target.value)}
+                  />
+                </div>
+
+                <button
+                  className="btn btn-primary"
+                  onClick={handleToolTest}
+                  disabled={!session || toolTestRunning}
+                >
+                  {toolTestRunning ? 'Running...' : 'Run Test'}
+                </button>
+
+                {(toolCalls.length > 0 || toolResult) && (
+                  <div className="playground-tool-results">
+                    <h4>Results</h4>
+                    {toolCalls.length > 0 ? (
+                      <div className="playground-tool-pass">
+                        <span className="playground-badge success">PASS</span>
+                        Model emitted {toolCalls.length} tool call(s)
+                        {toolCalls.map((tc, i) => (
+                          <div key={i} className="playground-tool-call">
+                            <strong>{tc.function.name}</strong>
+                            <pre>{tc.function.arguments}</pre>
+                            {tc.id && <small>ID: {tc.id}</small>}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="playground-tool-fail">
+                        <span className="playground-badge fail">NO TOOL CALLS</span>
+                        <pre>{toolResult}</pre>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'inspector' && (
+              <div className="playground-inspector">
+                <div className="form-group">
+                  <label>Test Message</label>
+                  <input
+                    type="text"
+                    value={inspectorPrompt}
+                    onChange={(e) => setInspectorPrompt(e.target.value)}
+                  />
+                </div>
+
+                <button
+                  className="btn btn-primary"
+                  onClick={handleInspector}
+                  disabled={!session || inspectorRunning}
+                >
+                  {inspectorRunning ? 'Rendering...' : 'Render Prompt'}
+                </button>
+
+                {renderedPrompt && (
+                  <div className="playground-rendered-prompt">
+                    <div className="playground-prompt-header">
+                      <h4>Rendered Prompt</h4>
+                      <button
+                        className="btn btn-secondary btn-small"
+                        onClick={() => navigator.clipboard.writeText(renderedPrompt)}
+                      >
+                        Copy
+                      </button>
+                    </div>
+                    <pre className="playground-prompt-text">{renderedPrompt}</pre>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
