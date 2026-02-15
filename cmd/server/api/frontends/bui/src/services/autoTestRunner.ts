@@ -10,6 +10,9 @@ import type {
   AutoTestPromptResult,
   AutoTestTrialResult,
   SamplingCandidate,
+  ConfigSweepDefinition,
+  ConfigCandidate,
+  PlaygroundModelConfig,
 } from '../types'
 
 /** Standard tool definitions used for automated testing. */
@@ -216,6 +219,75 @@ export function generateTrialCandidates(
     { ...base, min_p: mHigh, top_p: pHigh },
   ]
   corners.forEach(add)
+
+  return candidates
+}
+
+/** Default config sweep grids for each parameter. */
+export const defaultConfigSweepDef: ConfigSweepDefinition = {
+  nbatch: { enabled: false, values: [512, 1024, 2048, 4096] },
+  nubatch: { enabled: false, values: [128, 256, 512, 1024, 2048] },
+  contextWindow: { enabled: false, values: [2048, 4096, 8192, 16384, 32768] },
+  nSeqMax: { enabled: false, values: [1, 2, 4, 8] },
+}
+
+/** Generates config candidates as a full cross-product of all enabled parameter values. */
+export function generateConfigCandidates(
+  baseConfig: PlaygroundModelConfig,
+  def: ConfigSweepDefinition,
+): ConfigCandidate[] {
+  const baseline: ConfigCandidate = {
+    'context-window': baseConfig['context-window'],
+    nbatch: baseConfig.nbatch,
+    nubatch: baseConfig.nubatch,
+    'nseq-max': baseConfig['nseq-max'],
+  }
+
+  const paramAxes: Array<{ configKey: keyof ConfigCandidate; values: number[] }> = []
+
+  if (def.nbatch.enabled && def.nbatch.values.length > 0) {
+    paramAxes.push({ configKey: 'nbatch', values: def.nbatch.values })
+  }
+  if (def.nubatch.enabled && def.nubatch.values.length > 0) {
+    paramAxes.push({ configKey: 'nubatch', values: def.nubatch.values })
+  }
+  if (def.contextWindow.enabled && def.contextWindow.values.length > 0) {
+    paramAxes.push({ configKey: 'context-window', values: def.contextWindow.values })
+  }
+  if (def.nSeqMax.enabled && def.nSeqMax.values.length > 0) {
+    paramAxes.push({ configKey: 'nseq-max', values: def.nSeqMax.values })
+  }
+
+  if (paramAxes.length === 0) {
+    return [{ ...baseline }]
+  }
+
+  // Build the full cross-product of all enabled parameter values.
+  let combos: ConfigCandidate[] = [{ ...baseline }]
+
+  for (const axis of paramAxes) {
+    const next: ConfigCandidate[] = []
+    for (const combo of combos) {
+      for (const v of axis.values) {
+        next.push({ ...combo, [axis.configKey]: v })
+      }
+    }
+    combos = next
+  }
+
+  // Dedup (in case values arrays contain duplicates).
+  const seen = new Set<string>()
+  const candidates: ConfigCandidate[] = []
+
+  const keyOf = (c: ConfigCandidate) =>
+    `cw=${c['context-window']}|nb=${c.nbatch}|nub=${c.nubatch}|ns=${c['nseq-max']}`
+
+  for (const c of combos) {
+    const k = keyOf(c)
+    if (seen.has(k)) continue
+    seen.add(k)
+    candidates.push(c)
+  }
 
   return candidates
 }

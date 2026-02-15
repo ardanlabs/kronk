@@ -867,7 +867,25 @@ export default function ModelPlayground() {
             )}
 
             {activeTab === 'autotest' && (
-              <AutomatedTestingPanel session={session} />
+              <AutomatedTestingPanel
+                session={session}
+                sessionSeed={{
+                  model_id: selectedModel,
+                  template_mode: templateMode,
+                  template_name: templateMode === 'builtin' ? selectedTemplate : undefined,
+                  template_script: templateMode === 'custom' ? customScript : undefined,
+                  base_config: {
+                    'context-window': contextWindow,
+                    nbatch: nBatch,
+                    nubatch: nUBatch,
+                    'nseq-max': nSeqMax,
+                    'flash-attention': flashAttention,
+                    'cache-type-k': cacheTypeK || undefined,
+                    'cache-type-v': cacheTypeV || undefined,
+                    'system-prompt-cache': systemPromptCache,
+                  },
+                }}
+              />
             )}
           </div>
         </div>

@@ -552,3 +552,34 @@ export interface AutoTestTrialResult {
   totalScore?: number;
   avgTPS?: number;
 }
+
+// Config Sweep Types
+
+export type AutoTestSweepMode = 'sampling' | 'config';
+
+export interface SweepParamValues {
+  enabled: boolean;
+  values: number[];
+}
+
+export interface ConfigSweepDefinition {
+  nbatch: SweepParamValues;
+  nubatch: SweepParamValues;
+  contextWindow: SweepParamValues;
+  nSeqMax: SweepParamValues;
+}
+
+export interface ConfigCandidate {
+  'context-window'?: number;
+  nbatch?: number;
+  nubatch?: number;
+  'nseq-max'?: number;
+}
+
+export interface AutoTestSessionSeed {
+  model_id: string;
+  template_mode: 'builtin' | 'custom';
+  template_name?: string;
+  template_script?: string;
+  base_config: PlaygroundModelConfig;
+}
