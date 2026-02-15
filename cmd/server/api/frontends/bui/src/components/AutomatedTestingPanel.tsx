@@ -41,6 +41,7 @@ export default function AutomatedTestingPanel({ session }: AutomatedTestingPanel
   const [enabledScenarios, setEnabledScenarios] = useState({ chat: true, tool_call: true });
   const [useCustomBaseline, setUseCustomBaseline] = useState(false);
   const [baseline, setBaseline] = useState<SamplingCandidate>({ ...defaultBaseline });
+  const [maxTrials, setMaxTrials] = useState(25);
   const [trials, setTrials] = useState<AutoTestTrialResult[]>([]);
   const [currentTrialIndex, setCurrentTrialIndex] = useState(0);
   const [totalTrials, setTotalTrials] = useState(0);
@@ -82,7 +83,7 @@ export default function AutomatedTestingPanel({ session }: AutomatedTestingPanel
       }
 
       const activeBaseline = useCustomBaseline ? baseline : defaultBaseline;
-      const candidates = generateTrialCandidates(activeBaseline);
+      const candidates = generateTrialCandidates(activeBaseline, maxTrials);
       setTotalTrials(candidates.length);
       setCurrentTrialIndex(0);
       setRunnerState('running_trials');
@@ -123,7 +124,7 @@ export default function AutomatedTestingPanel({ session }: AutomatedTestingPanel
       setErrorMessage(err.message || 'Automated testing failed');
       setRunnerState('error');
     }
-  }, [session, enabledScenarios, useCustomBaseline, baseline]);
+  }, [session, enabledScenarios, useCustomBaseline, baseline, maxTrials]);
 
   const handleStop = useCallback(() => {
     abortControllerRef.current?.abort();
@@ -190,7 +191,7 @@ export default function AutomatedTestingPanel({ session }: AutomatedTestingPanel
               <input
                 type="number"
                 value={baseline.temperature}
-                onChange={(e) => setBaseline((b) => ({ ...b, temperature: Number(e.target.value) }))}
+                onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, temperature: n })); }}
                 step={0.1}
                 disabled={isRunning}
               />
@@ -200,8 +201,8 @@ export default function AutomatedTestingPanel({ session }: AutomatedTestingPanel
               <input
                 type="number"
                 value={baseline.top_p}
-                onChange={(e) => setBaseline((b) => ({ ...b, top_p: Number(e.target.value) }))}
-                step={0.1}
+                onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, top_p: n })); }}
+                step={0.05}
                 disabled={isRunning}
               />
             </div>
@@ -210,7 +211,8 @@ export default function AutomatedTestingPanel({ session }: AutomatedTestingPanel
               <input
                 type="number"
                 value={baseline.top_k}
-                onChange={(e) => setBaseline((b) => ({ ...b, top_k: Number(e.target.value) }))}
+                onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, top_k: Math.floor(n) })); }}
+                step={1}
                 disabled={isRunning}
               />
             </div>
@@ -219,13 +221,31 @@ export default function AutomatedTestingPanel({ session }: AutomatedTestingPanel
               <input
                 type="number"
                 value={baseline.min_p}
-                onChange={(e) => setBaseline((b) => ({ ...b, min_p: Number(e.target.value) }))}
+                onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, min_p: n })); }}
                 step={0.01}
                 disabled={isRunning}
               />
             </div>
           </div>
         )}
+      </div>
+
+      {/* Trial Settings */}
+      <div className="playground-autotest-section">
+        <h4>Trial Settings</h4>
+        <div className="form-group">
+          <label>Max Trials</label>
+          <input
+            type="number"
+            value={maxTrials}
+            min={5}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              setMaxTrials(Number.isFinite(n) ? Math.max(5, n) : 25);
+            }}
+            disabled={isRunning}
+          />
+        </div>
       </div>
 
       {/* Action Buttons */}

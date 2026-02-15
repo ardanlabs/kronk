@@ -89,41 +89,133 @@ export const toolCallScenario: AutoTestScenario = {
   ],
 }
 
-/** Generates ~20-25 OAT (one-at-a-time) sampling candidates from a baseline. */
-export function generateTrialCandidates(baseline: SamplingCandidate): SamplingCandidate[] {
-  const candidates: SamplingCandidate[] = [{ ...baseline }]
+/** Generates trial candidates with expanded parameter grids, truncated to maxTrials. */
+export function generateTrialCandidates(
+  baseline: SamplingCandidate,
+  maxTrials: number = 25,
+): SamplingCandidate[] {
+  const safeMax = Number.isFinite(maxTrials) ? Math.max(1, Math.floor(maxTrials)) : 25
 
-  const temperatures = [0.2, 0.5, 0.8, 1.0]
-  for (const t of temperatures) {
-    if (t !== baseline.temperature) {
-      candidates.push({ ...baseline, temperature: t })
-    }
+  const base: SamplingCandidate = {
+    temperature: 0.8,
+    top_p: 0.9,
+    top_k: 40,
+    min_p: 0,
+    ...baseline,
   }
 
-  const topPs = [0.7, 0.85, 0.95]
-  for (const p of topPs) {
-    if (p !== baseline.top_p) {
-      candidates.push({ ...baseline, top_p: p })
-    }
+  // Normalize floats to 3 decimal places for stable comparison and dedup
+  const norm = (n: number | undefined) =>
+    n !== undefined && Number.isFinite(n) ? Math.round(n * 1000) / 1000 : n
+
+  const seen = new Set<string>()
+  const candidates: SamplingCandidate[] = []
+
+  const keyOf = (c: SamplingCandidate) =>
+    `t=${norm(c.temperature)}|p=${norm(c.top_p)}|k=${c.top_k}|m=${norm(c.min_p)}`
+
+  const add = (c: SamplingCandidate) => {
+    if (candidates.length >= safeMax) return
+    const k = keyOf(c)
+    if (seen.has(k)) return
+    seen.add(k)
+    candidates.push(c)
   }
 
-  const topKs = [0, 20, 40]
-  for (const k of topKs) {
-    if (k !== baseline.top_k) {
-      candidates.push({ ...baseline, top_k: k })
+  const approxEq = (a: number | undefined, b: number) =>
+    a !== undefined && Math.abs(a - b) < 0.001
+
+  // 1) Baseline always first
+  add({ ...base })
+  if (safeMax <= 1) return candidates
+
+  // Expanded grids
+  const temperatureGrid = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2]
+  const topPGrid = [0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 1.00]
+  const topKGrid = [0, 5, 10, 20, 30, 40, 60, 80, 120, 200]
+  const minPGrid = [0, 0.01, 0.02, 0.03, 0.05, 0.08, 0.10, 0.12, 0.15, 0.20]
+
+  // Sort each grid by distance from baseline value (closest first for early coverage)
+  const sortByDistance = (vals: number[], center: number) =>
+    [...vals].sort((a, b) => Math.abs(a - center) - Math.abs(b - center))
+
+  const baseTemp = base.temperature ?? 0.8
+  const baseTopP = base.top_p ?? 0.9
+  const baseTopK = base.top_k ?? 40
+  const baseMinP = base.min_p ?? 0
+
+  const temps = sortByDistance(
+    temperatureGrid.filter(t => !approxEq(base.temperature, t)),
+    baseTemp,
+  ).map(t => ({ ...base, temperature: t }))
+
+  const topPs = sortByDistance(
+    topPGrid.filter(p => !approxEq(base.top_p, p)),
+    baseTopP,
+  ).map(p => ({ ...base, top_p: p }))
+
+  const topKs = sortByDistance(
+    topKGrid.filter(k => k !== baseTopK),
+    baseTopK,
+  ).map(k => ({ ...base, top_k: k }))
+
+  const minPs = sortByDistance(
+    minPGrid.filter(m => !approxEq(base.min_p, m)),
+    baseMinP,
+  ).map(m => ({ ...base, min_p: m }))
+
+  // 2) Round-robin OAT interleave across parameters
+  const oatLists = [temps, topPs, topKs, minPs]
+  for (let i = 0; candidates.length < safeMax; i++) {
+    let addedAny = false
+    for (const list of oatLists) {
+      if (i < list.length) {
+        add(list[i])
+        addedAny = true
+        if (candidates.length >= safeMax) break
+      }
     }
+    if (!addedAny) break
   }
 
-  const minPs = [0.0, 0.05, 0.1]
-  for (const m of minPs) {
-    if (m !== baseline.min_p) {
-      candidates.push({ ...baseline, min_p: m })
-    }
-  }
+  // 3) Multi-parameter presets
+  const presets: SamplingCandidate[] = [
+    { ...base, temperature: 0.2, top_p: 0.70, top_k: 20, min_p: 0.00 },
+    { ...base, temperature: 0.6, top_p: 0.90, top_k: 40, min_p: 0.02 },
+    { ...base, temperature: 1.0, top_p: 0.95, top_k: 0, min_p: 0.00 },
+    { ...base, temperature: 0.4, top_p: 0.80, top_k: 30, min_p: 0.05 },
+    { ...base, temperature: 0.8, top_p: 0.85, top_k: 60, min_p: 0.03 },
+  ]
+  presets.forEach(add)
 
-  candidates.push({ ...baseline, temperature: 0.2, top_p: 0.7, top_k: 20 })
-  candidates.push({ ...baseline, temperature: 0.5, top_p: 0.85, top_k: 40 })
-  candidates.push({ ...baseline, temperature: 1.0, top_p: 0.95, top_k: 0 })
+  // 4) Pairwise corner combos for interaction discovery
+  const tLow = temperatureGrid[0]
+  const tHigh = temperatureGrid[temperatureGrid.length - 1]
+  const pLow = topPGrid[0]
+  const pHigh = topPGrid[topPGrid.length - 1]
+  const kLow = topKGrid[0]
+  const kHigh = topKGrid[topKGrid.length - 1]
+  const mHigh = minPGrid[minPGrid.length - 1]
+
+  const corners: SamplingCandidate[] = [
+    { ...base, temperature: tLow, top_p: pLow },
+    { ...base, temperature: tLow, top_p: pHigh },
+    { ...base, temperature: tHigh, top_p: pLow },
+    { ...base, temperature: tHigh, top_p: pHigh },
+    { ...base, temperature: tLow, top_k: kLow },
+    { ...base, temperature: tLow, top_k: kHigh },
+    { ...base, temperature: tHigh, top_k: kLow },
+    { ...base, temperature: tHigh, top_k: kHigh },
+    { ...base, top_p: pLow, top_k: kLow },
+    { ...base, top_p: pLow, top_k: kHigh },
+    { ...base, top_p: pHigh, top_k: kLow },
+    { ...base, top_p: pHigh, top_k: kHigh },
+    { ...base, min_p: mHigh, temperature: tLow },
+    { ...base, min_p: mHigh, temperature: tHigh },
+    { ...base, min_p: mHigh, top_p: pLow },
+    { ...base, min_p: mHigh, top_p: pHigh },
+  ]
+  corners.forEach(add)
 
   return candidates
 }
