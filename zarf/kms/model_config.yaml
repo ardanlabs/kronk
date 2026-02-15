@@ -154,6 +154,11 @@ Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMC:
   nseq-max: 1
   incremental-cache: true
 
+Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMCG:
+  nseq-max: 1
+  incremental-cache: true
+  grammar: hermestoolcalling.grm
+
 Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/SPC:
   nseq-max: 2
   system-prompt-cache: true
