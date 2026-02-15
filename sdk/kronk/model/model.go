@@ -184,6 +184,12 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 
 	ctxParams := modelCtxParams(cfg, modelInfo)
 
+	// Check if the current parameters will fit in available VRAM.
+	// Uses copies so the actual parameters are never modified.
+	fitsInVRAM, fitContextWin := checkParamsFit(cfg.ModelFiles[0], mParams, ctxParams)
+
+	l(ctx, "PARAMS-FIT", "fitsInVRAM", fitsInVRAM, "fitContextWin", fitContextWin)
+
 	l(ctx, "MODEL-INFO", "values", modelInfo.String(), "addBOSToken", addBOSToken)
 
 	l(ctx, "MODEL-CONFIG", "values", cfg.String())
@@ -260,6 +266,29 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 	}
 
 	return &m, nil
+}
+
+func checkParamsFit(modelFile string, mParams llama.ModelParams, ctxParams llama.ContextParams) (bool, uint32) {
+	mTest := mParams
+	cTest := ctxParams
+
+	nDevices := int(llama.MaxDevices())
+	tensorSplit := make([]float32, nDevices)
+	tensorBuftOverrides := make([]llama.TensorBuftOverride, llama.MaxTensorBuftOverrides())
+	margins := make([]uint64, nDevices)
+
+	status := llama.ModelParamsFit(
+		modelFile,
+		&mTest,
+		&cTest,
+		tensorSplit,
+		tensorBuftOverrides,
+		margins,
+		512,
+		llama.LogLevelWarn,
+	)
+
+	return status == llama.ModelParamsFitStatusSuccess, cTest.NCtx
 }
 
 func loadModelFromFiles(ctx context.Context, log Logger, modelFiles []string, params llama.ModelParams) (llama.Model, error) {
