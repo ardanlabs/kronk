@@ -44,6 +44,59 @@ function getScenarioScore(trial: AutoTestTrialResult, id: 'chat' | 'tool_call'):
   return s?.score;
 }
 
+function formatDuration(ms: number): string {
+  const totalSec = Math.max(0, Math.ceil(ms / 1000));
+  const hrs = Math.floor(totalSec / 3600);
+  const mins = Math.floor((totalSec % 3600) / 60);
+  const secs = totalSec % 60;
+  if (hrs > 0) return `${hrs}h ${mins}m ${secs}s`;
+  if (mins > 0) return `${mins}m ${secs}s`;
+  return `${secs}s`;
+}
+
+interface RunTimingProps {
+  trials: AutoTestTrialResult[];
+  totalCount: number;
+}
+
+function RunTiming({ trials, totalCount }: RunTimingProps) {
+  const [, setTick] = useState(0);
+
+  const completed = trials.filter((t) =>
+    t?.startedAt && t?.finishedAt,
+  ).length;
+  const isActive = completed < totalCount;
+
+  useEffect(() => {
+    if (!isActive) return;
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [isActive]);
+
+  const firstStartMs = trials.find((t) => t?.startedAt)?.startedAt
+    ? Date.parse(trials.find((t) => t?.startedAt)!.startedAt!)
+    : NaN;
+  const elapsedMs = Number.isFinite(firstStartMs) ? Date.now() - firstStartMs : 0;
+  const elapsed = elapsedMs > 0 ? formatDuration(elapsedMs) : null;
+
+  let estimate: string | null = null;
+  if (completed > 0 && completed < totalCount) {
+    const avgMs = elapsedMs / completed;
+    const remaining = Math.max(0, totalCount - completed);
+    const estimatedRemainingMs = avgMs * remaining;
+    estimate = formatDuration(estimatedRemainingMs);
+  }
+
+  if (!elapsed && !estimate) return null;
+
+  return (
+    <span style={{ marginLeft: 12, opacity: 0.7 }}>
+      {elapsed && <>Elapsed: {elapsed}</>}
+      {estimate && <>{elapsed && ' · '}~{estimate} remaining</>}
+    </span>
+  );
+}
+
 export default function AutomatedTestingPanel({ session, sessionSeed }: AutomatedTestingPanelProps) {
   const [runnerState, setRunnerState] = useState<AutoTestRunnerState>('idle');
   const [sweepMode, setSweepMode] = useState<AutoTestSweepMode>('sampling');
@@ -576,6 +629,10 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
       {runnerState === 'running_trials' && (
         <div className="playground-autotest-progress">
           Trial {currentTrialIndex} / {totalTrials}
+          <RunTiming
+            trials={sweepMode === 'config' ? configTrials : trials}
+            totalCount={totalTrials}
+          />
         </div>
       )}
 
