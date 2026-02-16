@@ -86,22 +86,36 @@
 # ==============================================================================
 # CONFIGURATION NOTES
 #
-# SPC and IMC are mutually exclusive - choose one based on your model's
-# template consistency.
+# SPC and IMC are mutually exclusive - choose one based on your use case
+# and model behavior.
 #
 # SYSTEM PROMPT CACHE (SPC)
 # -------------------------
-# Use SPC for models with inconsistent templates (GPT-OSS, GLM) or for
-# simple chat applications. SPC caches only the system prompt.
+# Caches only the system prompt's KV state in a RAM buffer. On each request
+# the cached state is restored instantly, skipping system prompt re-decoding.
+# The rest of the conversation (all user/assistant messages) is still
+# prefilled every time.
+#
+# Choose SPC when:
+#   - OpenWebUI and similar chat interfaces
+#   - Applications with a consistent system prompt
+#   - Multi-user scenarios with different system prompts
 #
 #   system-prompt-cache: true
 #
 # INCREMENTAL MESSAGE CACHE (IMC)
 # -------------------------------
-# Use IMC for models with consistent templates (QWEN, Llama) where the
-# template produces identical output for the same messages regardless of
-# conversation length. IMC caches all messages except the last one and
-# extends incrementally.
+# Caches the entire conversation (all messages except the last) in the slot's
+# KV cache and extends it incrementally each turn. Only the newest message
+# needs prefilling, making long multi-turn conversations dramatically faster.
+#
+# Choose IMC when:
+#   - Models with consistent templates (QWEN, Llama) — fastest hash-based path
+#   - Models with non-deterministic templates (GPT-OSS, GLM) — token prefix fallback
+#   - AI coding agents
+#   - Long-running agent conversations
+#   - Any workflow where messages are appended, not edited
+#   - Sub-agent architectures with multiple concurrent agents
 #
 #   incremental-cache: true
 #
@@ -127,8 +141,8 @@
 # required for DeepSeek R1 models, which converts system prompts into user
 # messages. Turn that off.
 #
-# Kilo Code is working get with gpt-oss-120b-F16. When the KV Cache type is f16,
-# the model is being accurate with tool calling. Agent clients that use
+# Kilo Code is working get with gpt-oss-120b-F16/IMC. When the KV Cache type is
+# f16, the model is being accurate with tool calling. Agent clients that use
 # traditional tool calling, use this model.
 #
 # MISCELLANEOUS NOTES
@@ -162,6 +176,10 @@ Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/SPC:
 gpt-oss-120b-F16/SPC:
   nseq-max: 1
   system-prompt-cache: true
+
+gpt-oss-120b-F16/IMC:
+  nseq-max: 1
+  incremental-cache: true
 
 # Smaller version of the 30B model and works ok with Cline.
 cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0/IMC:

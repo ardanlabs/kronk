@@ -27,8 +27,9 @@ type compiledTemplate struct {
 // imcSession holds the state for a single IMC (Incremental Message Cache) session.
 // Each slot gets its own session with an assigned cache sequence.
 type imcSession struct {
-	cachedMsgsHash    string      // Hash of all cached messages
-	totalTokensCached int         // Total tokens in cache
+	cachedMsgsHash    string        // Hash of all cached messages
+	cachedTokens      []llama.Token // Full token sequence in KV cache (immutable; replaced, never mutated)
+	totalTokensCached int           // Total tokens in cache
 	lastMsgIdxCached  int         // The index of the last message cached
 	seqID             llama.SeqId // Assigned cache sequence ID
 	slotID            int         // Dedicated slot ID bound to this session

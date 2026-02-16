@@ -1230,7 +1230,6 @@ IMC (Incremental Message Cache):
           <p>System Prompt Cache decodes the system prompt once into a temporary sequence, externalizes the KV state to a byte buffer in RAM, and frees the sequence. On each request, the KV state is restored into the slot's working sequence via StateSeqSetData. This avoids re-decoding the system prompt on every request. No dedicated cache sequence is permanently occupied, so SPC does not add any extra sequences to the VRAM allocation.</p>
           <p><strong>Best for:</strong></p>
           <ul>
-            <li>Models with inconsistent templates (GPT-OSS, GLM)</li>
             <li>OpenWebUI and similar chat interfaces</li>
             <li>Applications with a consistent system prompt</li>
             <li>Multi-user scenarios with different system prompts</li>
@@ -1260,10 +1259,11 @@ IMC (Incremental Message Cache):
           </ul>
           <h3 id="53-incremental-message-cache-imc">5.3 Incremental Message Cache (IMC)</h3>
           <p>Incremental Message Cache is designed for agentic workflows where conversations grow monotonically. It caches all messages except the last one and extends the cache incrementally on each turn.</p>
-          <p><strong>Requires:</strong> Models with consistent templates where the same messages always produce identical templated output regardless of conversation length. Models like QWEN and Llama have consistent templates. Models like GPT-OSS and GLM inject tool calls in ways that change earlier message rendering, making them incompatible with IMC (use SPC instead).</p>
+          <p><strong>Works best with:</strong> Models with consistent templates where the same messages always produce identical templated output regardless of conversation length. Models like QWEN and Llama have consistent templates and get the fastest path (hash-based matching). Models like GPT-OSS and GLM with non-deterministic templates are also supported — IMC automatically falls back to token-level partial prefix matching, salvaging as much of the KV cache as possible instead of rebuilding from scratch (see <a href="#token-level-partial-prefix-matching">Token-Level Partial Prefix Matching</a> below).</p>
           <p><strong>Best for:</strong></p>
           <ul>
-            <li>Models with consistent templates (QWEN, Llama)</li>
+            <li>Models with consistent templates (QWEN, Llama) — fastest hash-based path</li>
+            <li>Models with non-deterministic templates (GPT-OSS, GLM) — token prefix fallback</li>
             <li>AI coding agents</li>
             <li>Long-running agent conversations</li>
             <li>Any workflow where messages are appended, not edited</li>
@@ -1309,16 +1309,76 @@ Prefill:  [user3 + gen_prompt]`}</code></pre>
           </ol>
           <p>messages). If the request has new messages to cache, extend the slot's cache. If the messages are identical, it's a pure cache hit.</p>
           <ol>
-            <li><strong>No match</strong> — Pick an empty slot if one exists, otherwise evict the</li>
+            <li><strong>No hash match — token prefix fallback</strong> — Tokenize the incoming messages</li>
           </ol>
-          <p>least-recently-used (LRU) slot and rebuild from scratch.</p>
+          <p>and compare the resulting token sequence element-by-element against each non-empty slot's stored <code>cachedTokens</code>. Pick the slot with the longest common prefix that meets <code>cache_min_tokens</code>. Trim the KV cache from the divergence point (<code>MemorySeqRm(seq, trimPos, -1)</code>) and decode only the new tokens from there forward. This handles non-deterministic templates (e.g., GPT-OSS) that produce different token sequences for identical messages across requests — salvaging 70-80% of the cache instead of rebuilding from scratch.</p>
+          <ol>
+            <li><strong>No match at all</strong> — Pick an empty slot if one exists, otherwise evict</li>
+          </ol>
+          <p>the least-recently-used (LRU) slot and rebuild from scratch.</p>
           <p><strong>Concurrent Build Protection:</strong></p>
           <p>When two requests arrive simultaneously and both need to build a cache from scratch, a race condition could cause both to pick the same empty slot. IMC prevents this with a pending flag: when a slot begins a deferred cache build, it is marked pending. Concurrent scanners skip pending slots, so the second request picks a different slot. The pending flag is cleared after the cache decode completes (or on error).</p>
+          <p><strong>Token-Level Partial Prefix Matching:</strong></p>
+          <p>Some model templates are non-deterministic — they produce different token sequences for identical messages across requests. GPT-OSS, for example, injects tool call formatting that varies between template invocations. This causes message hash mismatches even though the semantic content is identical, which would normally force a full cache rebuild from scratch.</p>
+          <p>IMC handles this automatically. When no hash match is found during the slot scan, IMC falls back to comparing the actual cached token arrays against the incoming request's tokens. It tokenizes the incoming messages, then compares them element-by-element against each non-empty slot's stored token sequence to find the longest common prefix.</p>
+          <pre className="code-block"><code>{`Cached tokens:   [T1, T2, T3, T4, T5, T6, T7, T8]
+Incoming tokens: [T1, T2, T3, T4, T5, T9, T10, T11, T12]
+                                       ↑
+                              Divergence point (pos 5)
+
+Common prefix: 5 tokens (salvaged from KV cache)
+Trimmed:       3 tokens (T6-T8 removed via MemorySeqRm)
+New decode:    7 tokens (T5-T12, from divergence point forward)`}</code></pre>
+          <p>If the common prefix meets the <code>cache_min_tokens</code> threshold, IMC:</p>
+          <ol>
+            <li>Reserves the matching slot (marks it pending)</li>
+            <li>Trims the divergent suffix from the KV cache (<code>MemorySeqRm(seq, trimPos, -1)</code>)</li>
+            <li>Decodes only the new tokens from the divergence point forward</li>
+            <li>Updates the slot's hash and cached token sequence</li>
+          </ol>
+          <p>Once the partial rebuild completes, subsequent requests in the same conversation use normal hash-based extending. The token prefix path is only triggered at conversation boundaries — when the template non-determinism causes the initial mismatch.</p>
+          <p>Real-world testing with GPT-OSS showed 77-80% cache salvage rates when switching conversations. Instead of decoding ~8400 tokens from scratch, the system kept ~6800 cached and only decoded ~1600.</p>
+          <p><strong>Debugging Token Prefix Matching:</strong></p>
+          <p>Look for these log messages to observe the token prefix path:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Log Message</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>no slot matched, trying token prefix match</code></td>
+                <td>Hash match failed, entering token comparison</td>
+              </tr>
+              <tr>
+                <td><code>slot[N] common-prefix X/Y tokens (Z% salvageable)</code></td>
+                <td>Per-slot comparison result</td>
+              </tr>
+              <tr>
+                <td><code>token prefix match found</code></td>
+                <td>Usable prefix found, will trim and extend</td>
+              </tr>
+              <tr>
+                <td><code>imc-trim-prefix</code></td>
+                <td>KV cache trim in progress (shows cached_tokens, trim_pos)</td>
+              </tr>
+              <tr>
+                <td><code>imc-partial-rebuilt</code></td>
+                <td>Rebuild complete (shows total_cached, salvaged_prefix, salvaged_pct)</td>
+              </tr>
+              <tr>
+                <td><code>no usable token prefix match</code></td>
+                <td>All prefixes below <code>cache_min_tokens</code>, falling back to empty/LRU slot</td>
+              </tr>
+            </tbody>
+          </table>
           <h3 id="54-single-user-caching">5.4 Single-User Caching</h3>
           <p>IMC is designed for single-user use. All <code>NSeqMax</code> slots are available, with each slot independently tracking its own conversation branch via hash matching. This design is optimized for agentic workflows where multiple sub-agents send independent conversations (different system prompts, different message histories).</p>
           <p><strong>SPC:</strong> All requests share the same externalized KV state buffer. The cached KV state is restored into each slot via StateSeqSetData. If the system prompt changes, the cache is rebuilt automatically.</p>
           <h3 id="55-spc-vs-imc">5.5 SPC vs IMC</h3>
-          <p>Both caching modes eliminate redundant work, but they target different parts of the prompt and suit different workloads. SPC is the simpler option — it caches just the system prompt and works with any model template. IMC is more aggressive — it caches the entire conversation history but requires the model's chat template to produce consistent output. The table below summarizes the trade-offs to help you choose.</p>
+          <p>Both caching modes eliminate redundant work, but they target different parts of the prompt and suit different workloads. SPC is the simpler option — it caches just the system prompt and works with any model template. IMC is more aggressive — it caches the entire conversation history and works with all templates (deterministic templates use fast hash matching, non-deterministic templates fall back to token prefix matching). The table below summarizes the trade-offs to help you choose.</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -1350,8 +1410,8 @@ Prefill:  [user3 + gen_prompt]`}</code></pre>
               </tr>
               <tr>
                 <td>Best for</td>
-                <td>Chat UIs, inconsistent templates</td>
-                <td>Agentic workflows, consistent templates</td>
+                <td>Chat UIs</td>
+                <td>Agentic workflows</td>
               </tr>
               <tr>
                 <td>Memory</td>
@@ -1361,14 +1421,17 @@ Prefill:  [user3 + gen_prompt]`}</code></pre>
               <tr>
                 <td>Template req</td>
                 <td>Any</td>
-                <td>Consistent templates only</td>
+                <td>Any (hash match or token prefix fallback)</td>
               </tr>
             </tbody>
           </table>
-          <p><strong>Important:</strong> SPC and IMC are mutually exclusive. Choose based on your model's template behavior:</p>
+          <p><strong>Important:</strong> SPC and IMC are mutually exclusive. Choose based on your workload:</p>
           <ul>
-            <li><strong>Consistent templates (QWEN, Llama):</strong> Use IMC for maximum cache efficiency</li>
-            <li><strong>Inconsistent templates (GPT-OSS, GLM):</strong> Use SPC only</li>
+            <li><strong>Agentic workflows:</strong> Use IMC — works with all templates. Deterministic</li>
+          </ul>
+          <p>templates (QWEN, Llama) get the fastest hash-based path. Non-deterministic templates (GPT-OSS, GLM) use token prefix fallback with 70-80% cache salvage.</p>
+          <ul>
+            <li><strong>Chat UIs / multi-client:</strong> Use SPC — simpler model, no slot dedication</li>
           </ul>
           <h3 id="56-cache-invalidation">5.6 Cache Invalidation</h3>
           <p>Cached state doesn't last forever. Kronk uses hash comparisons to detect when cached tokens no longer match the incoming request, and automatically rebuilds the cache when a mismatch is found. Understanding what triggers invalidation helps you avoid unexpected prefill costs.</p>
@@ -1379,9 +1442,15 @@ Prefill:  [user3 + gen_prompt]`}</code></pre>
           </ul>
           <p><strong>IMC Invalidation:</strong></p>
           <ul>
-            <li>Message prefix hash mismatch → cache rebuilt from scratch</li>
-            <li>User starts new conversation → new cache created</li>
-            <li>Earlier message edited → cache rebuilt</li>
+            <li>Message prefix hash mismatch → token prefix fallback attempted first. If a</li>
+          </ul>
+          <p>common prefix ≥ <code>cache_min_tokens</code> is found, only the divergent suffix is trimmed and rebuilt. Otherwise, cache is rebuilt from scratch.</p>
+          <ul>
+            <li>User starts new conversation → token prefix fallback salvages shared prefix</li>
+          </ul>
+          <p>(e.g., system prompt tokens), then extends from there</p>
+          <ul>
+            <li>Earlier message edited → cache rebuilt (hash and token prefix both fail)</li>
           </ul>
           <p><strong>Automatic Invalidation:</strong></p>
           <p>Caches are cleared when:</p>
@@ -1402,7 +1471,7 @@ Prefill:  [user3 + gen_prompt]`}</code></pre>
     # Shared settings
     cache_min_tokens: 100 # Don't cache if < 100 tokens`}</code></pre>
           <p><strong>cache_min_tokens</strong></p>
-          <p>Minimum token count before SPC caching activates. Short system prompts don't benefit from caching because decode overhead exceeds savings. Does not apply to IMC.</p>
+          <p>Minimum token count threshold. For SPC, caching doesn't activate if the system prompt is shorter than this. For IMC, this is the minimum common prefix length required for token-level partial prefix matching — if no slot's cached tokens share at least this many tokens with the incoming request, the fallback is skipped and the cache is rebuilt from scratch.</p>
           <p>Default: 100 tokens</p>
           <h3 id="58-performance-and-limitations">5.8 Performance and Limitations</h3>
           <p>Caching improves request latency by skipping redundant prefill work, but each mode has its own costs and constraints. SPC trades a small per-request decode cost for broad compatibility. IMC delivers larger savings but imposes restrictions on template behavior and session management.</p>
@@ -1420,10 +1489,11 @@ Prefill:  [user3 + gen_prompt]`}</code></pre>
           <pre className="code-block"><code>{`8K context, n_seq_max=4, IMC:
   KV cache per slot: ~200 MB (8B model, F16)
   Total KV cache: 4 × 200 MB = ~800 MB`}</code></pre>
+          <p><strong>IMC Token Prefix Fallback Performance:</strong></p>
+          <p>When IMC falls back to token-level prefix matching (non-deterministic templates), there is a one-time cost to tokenize the incoming messages for comparison. This is typically fast (&lt; 5ms for most conversations). The savings from salvaging 70-80% of the cached tokens far outweigh this cost compared to a full rebuild.</p>
           <p><strong>IMC Limitations:</strong></p>
           <ul>
             <li>Text-only requests (IMC for vision/audio is not currently supported)</li>
-            <li>Requires deterministic Jinja templates (no timestamps or random values)</li>
             <li>Conversations must grow monotonically (append-only)</li>
             <li>Editing earlier messages triggers full cache rebuild</li>
             <li>Designed for single-user use</li>

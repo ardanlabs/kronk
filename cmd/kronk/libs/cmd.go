@@ -20,13 +20,20 @@ Environment Variables (--local mode):
       KRONK_ARCH       (default: runtime.GOARCH)          The architecture to install.
       KRONK_LIB_PATH   (default: $HOME/.kronk/libraries)  The path to the libraries directory,
       KRONK_OS         (default: runtime.GOOS)            The operating system to install.
-      KRONK_PROCESSOR  (default: cpu)                     Options: cpu, cuda, metal, vulkan`,
+      KRONK_PROCESSOR  (default: cpu)                     Options: cpu, cuda, metal, vulkan
+
+Flags:
+      --local        Run without the model server
+      --no-upgrade   Don't upgrade if libraries are already installed
+      --version      Download a specific llama.cpp version instead of latest`,
 	Args: cobra.NoArgs,
 	Run:  main,
 }
 
 func init() {
 	Cmd.Flags().Bool("local", false, "Run without the model server")
+	Cmd.Flags().Bool("no-upgrade", false, "Don't upgrade if libraries are already installed")
+	Cmd.Flags().String("version", "", "Download a specific llama.cpp version instead of latest")
 }
 
 func main(cmd *cobra.Command, args []string) {
@@ -38,14 +45,16 @@ func main(cmd *cobra.Command, args []string) {
 
 func run(cmd *cobra.Command) error {
 	local, _ := cmd.Flags().GetBool("local")
+	noUpgrade, _ := cmd.Flags().GetBool("no-upgrade")
+	version, _ := cmd.Flags().GetString("version")
 
 	var err error
 
 	switch local {
 	case true:
-		err = runLocal()
+		err = runLocal(noUpgrade, version)
 	default:
-		err = runWeb()
+		err = runWeb(noUpgrade, version)
 	}
 
 	if err != nil {

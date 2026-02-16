@@ -8,6 +8,7 @@ export default function LibsPull() {
   const [versionInfo, setVersionInfo] = useState<VersionResponse | null>(null);
   const [loadingVersion, setLoadingVersion] = useState(true);
   const [overrideUpgrade, setOverrideUpgrade] = useState(false);
+  const [version, setVersion] = useState('');
   const closeRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -46,7 +47,8 @@ export default function LibsPull() {
         addMessage('Libs update complete!', 'success');
         setPulling(false);
       },
-      useAllowUpgrade
+      useAllowUpgrade,
+      version || undefined
     );
   };
 
@@ -125,6 +127,21 @@ export default function LibsPull() {
             </label>
           </div>
         )}
+
+        <div style={{ marginBottom: '16px' }}>
+          <label htmlFor="version" style={{ fontSize: '14px', display: 'block', marginBottom: '4px' }}>
+            Version (leave empty for latest)
+          </label>
+          <input
+            type="text"
+            id="version"
+            value={version}
+            onChange={(e) => setVersion(e.target.value)}
+            disabled={pulling}
+            placeholder="e.g. b5540"
+            style={{ width: '200px', padding: '6px 8px', fontSize: '14px' }}
+          />
+        </div>
 
         <div style={{ display: 'flex', gap: '12px' }}>
           <button className="btn btn-primary" onClick={handlePull} disabled={pulling || (versionInfo !== null && !versionInfo.allow_upgrade && !overrideUpgrade)}>

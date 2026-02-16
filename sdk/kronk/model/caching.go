@@ -26,7 +26,10 @@ type cacheResult struct {
 	imcNewTotalCached int           // Total cached tokens after extension
 	imcNewMsgIdx      int           // New lastMsgIdxCached after extension
 	imcNewMsgsHash    string        // New cachedMsgsHash after extension
-	imcClearSeq       bool          // True if sequence must be cleared before decoding (rebuild from scratch)
+	imcClearSeq          bool          // True if sequence must be cleared before decoding (rebuild from scratch)
+	imcNewCachedTokens   []llama.Token // Full token sequence to store in session after decode
+	imcTrimPos           llama.Pos     // Position to trim KV cache from (for partial prefix rebuild)
+	imcPending           bool          // True if the target slot was pending (caller should retry another slot)
 }
 
 // processCache checks if the system prompt or incremental messages are
@@ -60,6 +63,7 @@ func (m *Model) clearCaches() {
 	// Clear all IMC slot state.
 	for _, slot := range m.imcSlots {
 		slot.cachedMsgsHash = ""
+		slot.cachedTokens = nil
 		slot.totalTokensCached = 0
 		slot.lastMsgIdxCached = 0
 		slot.lastUsed = time.Time{}

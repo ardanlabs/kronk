@@ -48,6 +48,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -1493,15 +1494,15 @@ func logTokenCounts(b *testing.B, ctx context.Context, krn *kronk.Kronk, d model
 
 	// Tokenize all message content concatenated for total count.
 	var totalChars int
-	var allContent string
+	var allContent strings.Builder
 	for _, msg := range messages {
 		if content, _ := msg["content"].(string); content != "" {
-			allContent += content
+			allContent.WriteString(content)
 			totalChars += len(content)
 		}
 	}
 
-	resp, err := krn.Tokenize(ctx, model.D{"input": allContent})
+	resp, err := krn.Tokenize(ctx, model.D{"input": allContent.String()})
 	if err != nil {
 		b.Logf("tokenize conversation: %v", err)
 	} else {

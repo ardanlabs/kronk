@@ -882,3 +882,160 @@ func TestProcessIMCPendingPreventsDoubleSlot(t *testing.T) {
 		t.Error("slot[2] should not be pending (slot[1] should be picked first)")
 	}
 }
+
+func TestTokenPrefixMatch(t *testing.T) {
+	tests := []struct {
+		name     string
+		cached   []llama.Token
+		incoming []llama.Token
+		want     int
+	}{
+		{
+			name:     "identical sequences",
+			cached:   []llama.Token{1, 2, 3, 4, 5},
+			incoming: []llama.Token{1, 2, 3, 4, 5},
+			want:     5,
+		},
+		{
+			name:     "empty cached",
+			cached:   []llama.Token{},
+			incoming: []llama.Token{1, 2, 3},
+			want:     0,
+		},
+		{
+			name:     "empty incoming",
+			cached:   []llama.Token{1, 2, 3},
+			incoming: []llama.Token{},
+			want:     0,
+		},
+		{
+			name:     "both empty",
+			cached:   []llama.Token{},
+			incoming: []llama.Token{},
+			want:     0,
+		},
+		{
+			name:     "diverge at start",
+			cached:   []llama.Token{1, 2, 3},
+			incoming: []llama.Token{9, 2, 3},
+			want:     0,
+		},
+		{
+			name:     "diverge in middle",
+			cached:   []llama.Token{1, 2, 3, 4, 5},
+			incoming: []llama.Token{1, 2, 9, 4, 5},
+			want:     2,
+		},
+		{
+			name:     "cached shorter than incoming",
+			cached:   []llama.Token{1, 2, 3},
+			incoming: []llama.Token{1, 2, 3, 4, 5},
+			want:     3,
+		},
+		{
+			name:     "incoming shorter than cached",
+			cached:   []llama.Token{1, 2, 3, 4, 5},
+			incoming: []llama.Token{1, 2, 3},
+			want:     3,
+		},
+		{
+			name:     "diverge at last element",
+			cached:   []llama.Token{1, 2, 3, 4, 5},
+			incoming: []llama.Token{1, 2, 3, 4, 9},
+			want:     4,
+		},
+		{
+			name:     "single element match",
+			cached:   []llama.Token{42},
+			incoming: []llama.Token{42},
+			want:     1,
+		},
+		{
+			name:     "single element mismatch",
+			cached:   []llama.Token{42},
+			incoming: []llama.Token{99},
+			want:     0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tokenPrefixMatch(tt.cached, tt.incoming)
+			if got != tt.want {
+				t.Errorf("tokenPrefixMatch() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestProcessIMCTokenPrefixFallback verifies the token prefix scan path in
+// processIMC. When no hash matches, the code attempts tokenization for
+// token-level prefix matching. Without a Jinja template, tokenization fails
+// (tmErr != nil) and the code falls through gracefully to the empty/LRU path.
+// The key assertion is that the candidate slot's state is NOT cleared — the
+// token prefix code path only modifies slots after successful tokenization.
+func TestProcessIMCTokenPrefixFallback(t *testing.T) {
+	m := &Model{
+		cfg: Config{
+			IncrementalCache: true,
+			CacheMinTokens:   3,
+		},
+		imcSlots: make([]*imcSession, 2),
+		log:      func(ctx context.Context, msg string, args ...any) {},
+	}
+
+	now := time.Now()
+
+	for i := range m.imcSlots {
+		m.imcSlots[i] = &imcSession{
+			seqID:  llama.SeqId(i),
+			slotID: i,
+		}
+	}
+
+	ctx := context.Background()
+
+	// Slot[0] has non-matching hashes but populated cachedTokens,
+	// making it a candidate for the token prefix comparison path.
+	m.imcSlots[0].cachedMsgsHash = "cccc" + strings.Repeat("0", 56)
+	m.imcSlots[0].totalTokensCached = 100
+	m.imcSlots[0].lastMsgIdxCached = 2
+	m.imcSlots[0].lastUsed = now
+	m.imcSlots[0].cachedTokens = []llama.Token{10, 20, 30, 40, 50}
+
+	// Slot[1] is empty (available for fallback).
+
+	// Request with content that won't hash-match slot[0].
+	messages := []D{
+		{"role": "system", "content": "Totally different system prompt"},
+		{"role": "user", "content": "Totally different user message"},
+		{"role": "assistant", "content": "Totally different response"},
+	}
+
+	d := D{
+		"messages": messages,
+	}
+
+	// processIMC will:
+	// 1. Hash-scan: no match (different content).
+	// 2. Token prefix scan: slot[0] is a candidate (non-empty, has cachedTokens).
+	// 3. Tokenization fails (no Jinja template) — tmErr != nil, falls through.
+	// 4. Falls to empty/LRU path: slot[1] is empty, picks it.
+	// 5. buildIMCCacheFromScratch on slot[1] also fails (no template).
+	_ = m.processIMC(ctx, d)
+
+	// Slot[0] should NOT have been cleared or marked pending — the token
+	// prefix code path never modifies slot state when tokenization fails.
+	if m.imcSlots[0].totalTokensCached != 100 {
+		t.Errorf("slot[0] totalTokensCached = %d, want 100 (should be untouched)", m.imcSlots[0].totalTokensCached)
+	}
+	if m.imcSlots[0].lastMsgIdxCached != 2 {
+		t.Errorf("slot[0] lastMsgIdxCached = %d, want 2 (should be untouched)", m.imcSlots[0].lastMsgIdxCached)
+	}
+	if m.imcSlots[0].cachedMsgsHash != "cccc"+strings.Repeat("0", 56) {
+		t.Errorf("slot[0] cachedMsgsHash was modified (should be untouched)")
+	}
+	if m.imcSlots[0].pending {
+		t.Error("slot[0] should not be pending (token prefix path should not modify it)")
+	}
+}

@@ -313,11 +313,20 @@ class ApiService {
     onMessage: (data: VersionResponse) => void,
     onError: (error: string) => void,
     onComplete: () => void,
-    allowUpgrade?: boolean
+    allowUpgrade?: boolean,
+    version?: string
   ): () => void {
     const controller = new AbortController();
 
-    const url = allowUpgrade ? `${this.baseUrl}/libs/pull?allow-upgrade=true` : `${this.baseUrl}/libs/pull`;
+    const params = new URLSearchParams();
+    if (allowUpgrade) {
+      params.set('allow-upgrade', 'true');
+    }
+    if (version) {
+      params.set('version', version);
+    }
+    const qs = params.toString();
+    const url = qs ? `${this.baseUrl}/libs/pull?${qs}` : `${this.baseUrl}/libs/pull`;
 
     fetch(url, {
       method: 'POST',

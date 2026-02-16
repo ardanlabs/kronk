@@ -164,6 +164,11 @@ func (lib *Libs) Processor() download.Processor {
 	return lib.processor
 }
 
+// SetVersion sets the version to download. An empty string means use latest.
+func (lib *Libs) SetVersion(version string) {
+	lib.version = version
+}
+
 // Download performs a complete workflow for downloading and installing
 // the latest version of llama.cpp.
 func (lib *Libs) Download(ctx context.Context, log Logger) (VersionTag, error) {
