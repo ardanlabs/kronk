@@ -53,11 +53,13 @@ type chatJob struct {
 	imcExpectedHash string      // Expected cachedMsgsHash for stale detection at startSlot
 
 	// IMC dedicated slot fields.
-	imcNewCacheTokens []llama.Token // New tokens to extend the cache in the slot's sequence
-	imcNewTotalCached int           // Total cached tokens after extension
-	imcNewMsgIdx      int           // New lastMsgIdxCached after extension
-	imcNewMsgsHash    string        // New cachedMsgsHash after extension
-	imcClearSeq       bool          // True if sequence must be cleared before decoding (rebuild)
+	imcNewCacheTokens  []llama.Token // New tokens to extend the cache in the slot's sequence
+	imcNewTotalCached  int           // Total cached tokens after extension
+	imcNewMsgIdx       int           // New lastMsgIdxCached after extension
+	imcNewMsgsHash     string        // New cachedMsgsHash after extension
+	imcClearSeq        bool          // True if sequence must be cleared before decoding (rebuild)
+	imcNewCachedTokens []llama.Token // Full token sequence to store in session after decode
+	imcTrimPos         llama.Pos     // Position to trim KV cache from (for partial prefix rebuild)
 }
 
 // slot represents a processing slot for parallel inference. Each slot can

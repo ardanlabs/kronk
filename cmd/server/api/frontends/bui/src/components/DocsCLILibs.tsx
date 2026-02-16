@@ -37,6 +37,14 @@ export default function DocsCLILibs() {
                     <td>Run without the model server</td>
                   </tr>
                   <tr>
+                    <td><code>--no-upgrade</code></td>
+                    <td>Don't upgrade if libraries are already installed</td>
+                  </tr>
+                  <tr>
+                    <td><code>--version &lt;string&gt;</code></td>
+                    <td>Download a specific llama.cpp version instead of latest (e.g. <code>b5540</code>). See <a href="https://github.com/ggml-org/llama.cpp/releases" target="_blank" rel="noopener noreferrer">available releases</a>.</td>
+                  </tr>
+                  <tr>
                     <td><code>--base-path &lt;string&gt;</code></td>
                     <td>Base path for kronk data (models, catalogs, templates)</td>
                   </tr>
@@ -96,6 +104,13 @@ kronk libs
 
 # Install libraries locally
 kronk libs --local
+
+# Install a specific version
+kronk libs --version b5540
+kronk libs --local --version b5540
+
+# Install without upgrading existing libraries
+kronk libs --local --no-upgrade
 
 # Install with Metal support on macOS
 KRONK_PROCESSOR=metal kronk libs --local`}</code>

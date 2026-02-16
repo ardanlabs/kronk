@@ -16,6 +16,7 @@ type imcSlotSnapshot struct {
 	slotID            int
 	seqID             llama.SeqId
 	cachedMsgsHash    string
+	cachedTokens      []llama.Token
 	totalTokensCached int
 	lastMsgIdxCached  int
 	lastUsed          time.Time
@@ -63,6 +64,7 @@ func (m *Model) processIMC(ctx context.Context, d D) cacheResult {
 			slotID:            slot.slotID,
 			seqID:             slot.seqID,
 			cachedMsgsHash:    slot.cachedMsgsHash,
+			cachedTokens:      slot.cachedTokens,
 			totalTokensCached: slot.totalTokensCached,
 			lastMsgIdxCached:  slot.lastMsgIdxCached,
 			lastUsed:          slot.lastUsed,
@@ -80,7 +82,7 @@ func (m *Model) processIMC(ctx context.Context, d D) cacheResult {
 	var bestCachedMsgsHash string
 	var bestTotalTokensCached int
 	var bestLastMsgIdxCached int
-	var emptySlot *imcSession
+	var emptySlots []*imcSession
 	var lruSlot *imcSession
 
 	for i, snap := range snapshots {
@@ -91,13 +93,11 @@ func (m *Model) processIMC(ctx context.Context, d D) cacheResult {
 			continue
 		}
 
-		// Track first empty slot for fallback.
+		// Track empty slots for fallback.
 		if snap.empty {
 			m.log(ctx, "imc", "scan", fmt.Sprintf("slot[%d] empty", snap.slotID))
 
-			if emptySlot == nil {
-				emptySlot = m.imcSlots[i]
-			}
+			emptySlots = append(emptySlots, m.imcSlots[i])
 			continue
 		}
 
@@ -161,27 +161,110 @@ func (m *Model) processIMC(ctx context.Context, d D) cacheResult {
 	}
 
 	// -------------------------------------------------------------------------
-	// No match — pick an empty slot or evict LRU.
+	// No hash match — try token-level partial prefix matching before falling
+	// back to empty slot or LRU eviction. Non-deterministic templates (e.g.,
+	// gpt-oss) may produce different token sequences for identical messages,
+	// but often share a long common prefix that we can salvage.
 
-	m.log(ctx, "imc", "status", "no slot matched", "total-msgs", totalMsgs)
+	m.log(ctx, "imc", "status", "no slot matched, trying token prefix match", "total-msgs", totalMsgs)
 
-	var targetSlot *imcSession
-
-	switch {
-	case emptySlot != nil:
-		targetSlot = emptySlot
-		m.log(ctx, "imc", "status", "using empty slot", "slot", targetSlot.slotID)
-
-	case lruSlot != nil:
-		targetSlot = lruSlot
-		m.log(ctx, "imc", "status", "evicting LRU slot", "slot", targetSlot.slotID,
-			"evicted-msgs", targetSlot.lastMsgIdxCached, "evicted-tokens", targetSlot.totalTokensCached)
-
-	default:
-		return cacheResult{modifiedD: d, err: fmt.Errorf("imc: no slots available")}
+	// Collect non-empty, non-pending slots as candidates for token comparison.
+	var tokenMatchCandidates []int
+	for i, snap := range snapshots {
+		if !snap.pending && !snap.empty && len(snap.cachedTokens) > 0 {
+			tokenMatchCandidates = append(tokenMatchCandidates, i)
+		}
 	}
 
-	return m.buildIMCCacheFromScratch(ctx, d, messages, targetSlot, lastMsgIdxToCache)
+	// If we have candidates, tokenize the current messages and compare.
+	if len(tokenMatchCandidates) > 0 {
+		msgs := messages[:lastMsgIdxToCache]
+
+		tokenMatchD := D{
+			"messages":              msgs,
+			"add_generation_prompt": false,
+		}
+
+		if tools, ok := d["tools"]; ok {
+			tokenMatchD["tools"] = tools
+		}
+
+		tokenMatchPrompt, _, tmErr := m.createPrompt(ctx, tokenMatchD)
+		if tmErr == nil {
+			_, tokenSpan := otel.AddSpan(ctx, "cache-tokenize-imc-prefix-match",
+				attribute.String("cache-type", "imc-prefix-match"),
+			)
+
+			incomingTokens := llama.Tokenize(m.vocab, tokenMatchPrompt, m.addBOSToken, true)
+
+			tokenSpan.SetAttributes(attribute.Int("tokens", len(incomingTokens)))
+			tokenSpan.End()
+
+			var bestPartialSlotIdx int
+			var bestPartialLen int
+
+			for _, idx := range tokenMatchCandidates {
+				snap := snapshots[idx]
+				commonLen := tokenPrefixMatch(snap.cachedTokens, incomingTokens)
+
+				pct := 0
+				if snap.totalTokensCached > 0 {
+					pct = commonLen * 100 / snap.totalTokensCached
+				}
+
+				m.log(ctx, "imc", "token-match", fmt.Sprintf("slot[%d] common-prefix %d/%d tokens (%d%% salvageable)",
+					snap.slotID, commonLen, snap.totalTokensCached, pct))
+
+				if commonLen > bestPartialLen {
+					bestPartialLen = commonLen
+					bestPartialSlotIdx = idx
+				}
+			}
+
+			if bestPartialLen >= m.cfg.CacheMinTokens {
+				partialSlot := m.imcSlots[bestPartialSlotIdx]
+				discarded := snapshots[bestPartialSlotIdx].totalTokensCached - bestPartialLen
+				saved := len(incomingTokens) - bestPartialLen
+
+				m.log(ctx, "imc", "status", "token prefix match found",
+					"slot", partialSlot.slotID,
+					"common-prefix", bestPartialLen,
+					"discarded-cached", discarded,
+					"new-tokens-to-decode", saved,
+					"total-incoming", len(incomingTokens))
+
+				return m.rebuildIMCFromPartialPrefix(ctx, d, messages, partialSlot, lastMsgIdxToCache, incomingTokens, bestPartialLen)
+			}
+
+			m.log(ctx, "imc", "status", "no usable token prefix match",
+				"best-prefix", bestPartialLen, "min-required", m.cfg.CacheMinTokens)
+		}
+	}
+
+	// -------------------------------------------------------------------------
+	// No hash match, no token prefix match — pick an empty slot or evict LRU.
+	// Try each empty slot in order; if a concurrent request already marked one
+	// pending, move to the next.
+
+	for _, slot := range emptySlots {
+		m.log(ctx, "imc", "status", "trying empty slot", "slot", slot.slotID)
+
+		result := m.buildIMCCacheFromScratch(ctx, d, messages, slot, lastMsgIdxToCache)
+		if !result.imcPending {
+			return result
+		}
+
+		m.log(ctx, "imc", "status", "empty slot pending, trying next", "slot", slot.slotID)
+	}
+
+	if lruSlot != nil {
+		m.log(ctx, "imc", "status", "evicting LRU slot", "slot", lruSlot.slotID,
+			"evicted-msgs", lruSlot.lastMsgIdxCached, "evicted-tokens", lruSlot.totalTokensCached)
+
+		return m.buildIMCCacheFromScratch(ctx, d, messages, lruSlot, lastMsgIdxToCache)
+	}
+
+	return cacheResult{modifiedD: d, err: fmt.Errorf("imc: no slots available")}
 }
 
 // extendIMCCache extends the existing cache with new messages from
@@ -277,16 +360,17 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, session *
 		"tokens", fmt.Sprintf("cur[%d] -> new[%d] (+%d)", currentTotalTokensCached, totalTokens, numOfExtTokens))
 
 	return cacheResult{
-		modifiedD:         removeFirstNMessages(d, lastMsgIdxToCache),
-		cacheIdx:          llama.Pos(currentTotalTokensCached),
-		cachedMsgCount:    lastMsgIdxToCache,
-		cacheSeqID:        seqID,
-		imcSlotID:         slotID,
-		imcExpectedHash:   newHash,
-		imcNewCacheTokens: extensionTokens,
-		imcNewTotalCached: totalTokens,
-		imcNewMsgIdx:      lastMsgIdxToCache,
-		imcNewMsgsHash:    newHash,
+		modifiedD:          removeFirstNMessages(d, lastMsgIdxToCache),
+		cacheIdx:           llama.Pos(currentTotalTokensCached),
+		cachedMsgCount:     lastMsgIdxToCache,
+		cacheSeqID:         seqID,
+		imcSlotID:          slotID,
+		imcExpectedHash:    newHash,
+		imcNewCacheTokens:  extensionTokens,
+		imcNewTotalCached:  totalTokens,
+		imcNewMsgIdx:       lastMsgIdxToCache,
+		imcNewMsgsHash:     newHash,
+		imcNewCachedTokens: allTokens,
 	}
 }
 
@@ -326,7 +410,7 @@ func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D,
 	if session.pending {
 		m.cacheMu.Unlock()
 
-		return cacheResult{modifiedD: d, err: fmt.Errorf("imc: slot %d pending, retry request", session.slotID)}
+		return cacheResult{modifiedD: d, imcPending: true, err: fmt.Errorf("imc: slot %d pending, retry request", session.slotID)}
 	}
 
 	// Reset session state and mark pending so concurrent scanners skip this
@@ -399,17 +483,68 @@ func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D,
 	m.log(ctx, "imc", "status", "cache build prepared", "slot", slotID, "seq", seqID, "msgs", lastMsgIdxToCache, "tokens", nTokens, "hash", newHash[:8])
 
 	return cacheResult{
-		modifiedD:         removeFirstNMessages(d, lastMsgIdxToCache),
-		cacheIdx:          0,
-		cachedMsgCount:    lastMsgIdxToCache,
-		cacheSeqID:        seqID,
-		imcSlotID:         slotID,
-		imcExpectedHash:   newHash,
-		imcNewCacheTokens: tokens,
-		imcNewTotalCached: nTokens,
-		imcNewMsgIdx:      lastMsgIdxToCache,
-		imcNewMsgsHash:    newHash,
-		imcClearSeq:       true,
+		modifiedD:          removeFirstNMessages(d, lastMsgIdxToCache),
+		cacheIdx:           0,
+		cachedMsgCount:     lastMsgIdxToCache,
+		cacheSeqID:         seqID,
+		imcSlotID:          slotID,
+		imcExpectedHash:    newHash,
+		imcNewCacheTokens:  tokens,
+		imcNewTotalCached:  nTokens,
+		imcNewMsgIdx:       lastMsgIdxToCache,
+		imcNewMsgsHash:     newHash,
+		imcClearSeq:        true,
+		imcNewCachedTokens: tokens,
+	}
+}
+
+// rebuildIMCFromPartialPrefix rebuilds a slot's cache using a token-level
+// partial prefix match. When a non-deterministic template produces different
+// tokens for the same messages, this function salvages the longest common
+// prefix in the KV cache, trims the divergent suffix, and decodes only the
+// new tokens from the divergence point forward.
+func (m *Model) rebuildIMCFromPartialPrefix(ctx context.Context, d D, messages []D, session *imcSession, lastMsgIdxToCache int, allTokens []llama.Token, commonPrefixLen int) cacheResult {
+
+	// Reserve the slot under lock.
+	m.cacheMu.Lock()
+
+	if session.pending {
+		m.cacheMu.Unlock()
+		return cacheResult{modifiedD: d, err: fmt.Errorf("imc: slot %d pending, retry request", session.slotID)}
+	}
+
+	session.pending = true
+	seqID := session.seqID
+	slotID := session.slotID
+
+	m.cacheMu.Unlock()
+
+	m.log(ctx, "imc", "status", "slot marked pending (partial prefix)", "slot", slotID, "seq", seqID)
+
+	// Extract only the tokens beyond the common prefix.
+	extensionTokens := allTokens[commonPrefixLen:]
+	totalTokens := len(allTokens)
+
+	msgsToCache := messages[:lastMsgIdxToCache]
+	newHash := hashMessages(msgsToCache)
+
+	m.log(ctx, "imc", "status", "partial prefix rebuild prepared", "slot", slotID, "seq", seqID,
+		"common-prefix", commonPrefixLen, "extension-tokens", len(extensionTokens),
+		"total-tokens", totalTokens, "hash", newHash[:8])
+
+	return cacheResult{
+		modifiedD:          removeFirstNMessages(d, lastMsgIdxToCache),
+		cacheIdx:           llama.Pos(commonPrefixLen),
+		cachedMsgCount:     lastMsgIdxToCache,
+		cacheSeqID:         seqID,
+		imcSlotID:          slotID,
+		imcExpectedHash:    newHash,
+		imcNewCacheTokens:  extensionTokens,
+		imcNewTotalCached:  totalTokens,
+		imcNewMsgIdx:       lastMsgIdxToCache,
+		imcNewMsgsHash:     newHash,
+		imcTrimPos:         llama.Pos(commonPrefixLen),
+		imcNewCachedTokens: allTokens,
 	}
 }
 
@@ -464,4 +599,17 @@ func (m *Model) decodeTokensIntoCache(ctx context.Context, tokens []llama.Token,
 	m.log(ctx, "cache", "status", "finished (decoding tokens into cache)", "seq", seqID, "tokens", nTokens, "nbatch", nBatch)
 
 	return nil
+}
+
+// tokenPrefixMatch returns the number of tokens that match between two slices,
+// starting from the beginning. Used to find the longest common prefix between
+// a slot's cached tokens and a new request's tokens.
+func tokenPrefixMatch(cached, incoming []llama.Token) int {
+	n := min(len(cached), len(incoming))
+	for i := range n {
+		if cached[i] != incoming[i] {
+			return i
+		}
+	}
+	return n
 }

@@ -79,9 +79,10 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 		case len(job.imcNewCacheTokens) > 0:
 			// Detect stale extension: if another request extended this slot
 			// between our scan and now, cacheIdx won't match the position
-			// these tokens were sliced from. For extends (not rebuilds),
-			// the expected start position is imcNewTotalCached - len(imcNewCacheTokens).
-			if !job.imcClearSeq {
+			// these tokens were sliced from. For extends (not rebuilds or
+			// partial prefix trims), the expected start position is
+			// imcNewTotalCached - len(imcNewCacheTokens).
+			if !job.imcClearSeq && job.imcTrimPos == 0 {
 				expectedStart := llama.Pos(job.imcNewTotalCached - len(job.imcNewCacheTokens))
 				if cacheIdx != expectedStart {
 					e.model.log(job.ctx, "start-slot", "status", "imc-extend-stale", "slot", s.id, "seq", s.seqID,
@@ -99,8 +100,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 				}
 			}
 
-			switch job.imcClearSeq {
-			case true:
+			switch {
+			case job.imcClearSeq:
 				// Rebuilding from scratch (prefix mismatch). Clear the old
 				// sequence first so we don't append on top of stale tokens.
 				e.model.log(job.ctx, "start-slot", "status", "imc-clear-seq", "slot", s.id, "seq", s.seqID,
@@ -115,7 +116,31 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 				e.model.log(job.ctx, "start-slot", "status", "imc-build", "slot", s.id, "seq", s.seqID,
 					"tokens", len(job.imcNewCacheTokens))
 
-			case false:
+			case job.imcTrimPos > 0:
+				// Partial prefix rebuild: trim divergent suffix from KV cache,
+				// keeping the common prefix, then decode new tokens from the
+				// trim point forward.
+				if job.imcTrimPos > cacheIdx {
+					e.model.cacheMu.Lock()
+					if s.id < len(e.model.imcSlots) {
+						e.model.imcSlots[s.id].pending = false
+					}
+					e.model.cacheMu.Unlock()
+
+					e.finishSlot(s, fmt.Errorf("start-slot: imc trim stale (trim_pos %d > cache_idx %d), retry request", job.imcTrimPos, cacheIdx))
+					return
+				}
+
+				e.model.log(job.ctx, "start-slot", "status", "imc-trim-prefix", "slot", s.id, "seq", s.seqID,
+					"cached_tokens", cacheIdx, "trim_pos", job.imcTrimPos, "new_cache_tokens", len(job.imcNewCacheTokens))
+
+				e.model.decodeMu.Lock()
+				llama.MemorySeqRm(e.model.mem, s.seqID, job.imcTrimPos, -1)
+				e.model.decodeMu.Unlock()
+
+				cacheIdx = job.imcTrimPos
+
+			default:
 				e.model.log(job.ctx, "start-slot", "status", "imc-extend", "slot", s.id, "seq", s.seqID,
 					"cached_tokens", cacheIdx, "new_cache_tokens", len(job.imcNewCacheTokens))
 			}
@@ -126,12 +151,16 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 				// Remove any partially decoded tokens so the KV sequence
 				// stays consistent with the session metadata.
 				e.model.decodeMu.Lock()
-				switch job.imcClearSeq {
-				case true:
+				switch {
+				case job.imcClearSeq:
 					// Rebuild: sequence was cleared before decode, clear again
 					// to remove any partial tokens.
 					llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
-				case false:
+				case job.imcTrimPos > 0:
+					// Partial prefix: remove from trim point onward to
+					// restore the pre-trim state.
+					llama.MemorySeqRm(e.model.mem, s.seqID, job.imcTrimPos, -1)
+				default:
 					// Extend: remove from the old cache boundary onward to
 					// restore the pre-extend state.
 					llama.MemorySeqRm(e.model.mem, s.seqID, cacheIdx, -1)
@@ -163,15 +192,23 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 				imcSlot.lastUsed = time.Now()
 				imcSlot.pending = false
 
+				if len(job.imcNewCachedTokens) > 0 {
+					imcSlot.cachedTokens = job.imcNewCachedTokens
+				}
+
 				e.model.log(job.ctx, "start-slot", "status", "imc-pending-cleared", "slot", s.id, "seq", s.seqID)
 			}
 			e.model.cacheMu.Unlock()
 
-			switch job.imcClearSeq {
-			case true:
+			switch {
+			case job.imcClearSeq:
 				e.model.log(job.ctx, "start-slot", "status", "imc-built", "slot", s.id, "seq", s.seqID,
 					"total_cached", job.imcNewTotalCached)
-			case false:
+			case job.imcTrimPos > 0:
+				pct := int(job.imcTrimPos) * 100 / job.imcNewTotalCached
+				e.model.log(job.ctx, "start-slot", "status", "imc-partial-rebuilt", "slot", s.id, "seq", s.seqID,
+					"total_cached", job.imcNewTotalCached, "salvaged_prefix", job.imcTrimPos, "salvaged_pct", pct)
+			default:
 				e.model.log(job.ctx, "start-slot", "status", "imc-extended", "slot", s.id, "seq", s.seqID,
 					"total_cached", job.imcNewTotalCached)
 			}

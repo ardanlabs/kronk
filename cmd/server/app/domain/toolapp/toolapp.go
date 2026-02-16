@@ -91,6 +91,14 @@ func (a *app) pullLibs(ctx context.Context, r *http.Request) web.Encoder {
 		}
 	}
 
+	if v := r.URL.Query().Get("version"); v != "" {
+		a.log.Info(ctx, "pull-libs", "status", "using specified version", "version", v)
+		a.libs.SetVersion(v)
+		defer func() {
+			a.libs.SetVersion("")
+		}()
+	}
+
 	vi, err := a.libs.Download(ctx, logger)
 	if err != nil {
 		ver := toAppVersion(err.Error(), libs.VersionTag{}, a.libs.AllowUpgrade)
