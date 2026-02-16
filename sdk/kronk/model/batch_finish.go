@@ -60,11 +60,11 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	// IMC dedicated slot mode: trim generated tokens but keep cached prefix.
 	// Non-IMC mode: clear the entire sequence.
 	if e.model.cfg.IncrementalCache && s.job.imcID != "" {
-		e.model.cacheMu.RLock()
-		session, exists := e.model.imcSessions[s.job.imcID]
 		var trimPos llama.Pos
-		if exists {
-			trimPos = llama.Pos(session.totalTokensCached)
+
+		e.model.cacheMu.RLock()
+		if slotID < len(e.model.imcSlots) {
+			trimPos = llama.Pos(e.model.imcSlots[slotID].totalTokensCached)
 		}
 		e.model.cacheMu.RUnlock()
 

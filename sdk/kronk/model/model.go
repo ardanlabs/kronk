@@ -33,6 +33,7 @@ type imcSession struct {
 	seqID             llama.SeqId // Assigned cache sequence ID
 	slotID            int         // Dedicated slot ID bound to this session
 	lastUsed          time.Time   // Last access time (for eviction)
+	pending           bool        // True while a build/rebuild is in-flight (deferred decode)
 }
 
 // spcEntry holds saved system prompt tokens for a cache_id.
@@ -70,9 +71,8 @@ type Model struct {
 	unloaded      atomic.Bool
 	decodeMu      sync.Mutex
 	cacheMu       sync.RWMutex
-	imcSessions   map[string]*imcSession // IMC sessions keyed by cache_id
-	imcNextSeq    llama.SeqId            // Next available cache sequence
-	imcMaxSeqs    int                    // Max IMC sessions from config
+	imcCacheID string         // The single active cache_id (empty = none)
+	imcSlots   []*imcSession  // Per-slot branch state, len = NSeqMax
 	spcEntries    map[string]*spcEntry   // SPC token entries keyed by cache_id
 	addBOSToken   bool                   // Whether to add BOS token (from model metadata)
 	pool          *contextPool           // Context pool for parallel embed/rerank
@@ -250,10 +250,15 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 		m.lctx = lctx
 		m.mem = mem
 
-		// Initialize IMC session tracking when enabled.
+		// Initialize IMC per-slot branch tracking when enabled.
 		if cfg.IncrementalCache {
-			m.imcMaxSeqs = nSlots
-			m.imcSessions = make(map[string]*imcSession, m.imcMaxSeqs)
+			m.imcSlots = make([]*imcSession, nSlots)
+			for i := range nSlots {
+				m.imcSlots[i] = &imcSession{
+					seqID:  llama.SeqId(i),
+					slotID: i,
+				}
+			}
 		}
 
 		// Initialize SPC token tracking when enabled.
@@ -268,7 +273,15 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 	return &m, nil
 }
 
+// paramsFitMu serializes calls to checkParamsFit because the underlying
+// llama.ModelParamsFit function modifies global logger state and is not
+// thread safe.
+var paramsFitMu sync.Mutex
+
 func checkParamsFit(modelFile string, mParams llama.ModelParams, ctxParams llama.ContextParams) (bool, uint32) {
+	paramsFitMu.Lock()
+	defer paramsFitMu.Unlock()
+
 	mTest := mParams
 	cTest := ctxParams
 

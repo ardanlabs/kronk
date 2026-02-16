@@ -1260,16 +1260,20 @@ IMC (Incremental Message Cache):
           <p><strong>Best for:</strong></p>
           <ul>
             <li>Models with consistent templates (QWEN, Llama)</li>
-            <li>AI coding agents (Cline, OpenCode, Aider)</li>
+            <li>AI coding agents</li>
             <li>Long-running agent conversations</li>
             <li>Any workflow where messages are appended, not edited</li>
+            <li>Sub-agent architectures where multiple agents share a cache_id</li>
           </ul>
           <p><strong>Enable IMC:</strong></p>
           <pre className="code-block"><code className="language-yaml">{`models:
   Qwen3-8B-Q8_0:
     incremental_cache: true
     cache_min_tokens: 100 # Minimum tokens before caching`}</code></pre>
-          <p>The maximum number of concurrent IMC sessions equals <code>NSeqMax</code>. Each session is bound to a dedicated slot, so <code>n_seq_max: 4</code> supports up to 4 concurrent users with their own conversation caches.</p>
+          <p><strong>Multi-Slot Architecture:</strong></p>
+          <p>Only one <code>cache_id</code> can be active at a time, but that cache_id gets access to all <code>NSeqMax</code> slots. Each slot independently tracks its own conversation branch — its own message hash, token count, and message index. This means sub-agents sharing a cache_id are routed to different slots via hash matching, allowing them to maintain independent caches and run concurrently.</p>
+          <p>With <code>n_seq_max: 3</code>, three sub-agents can each have their own cached conversation branch under the same cache_id. Without multi-slot IMC, every sub-agent request would cause a prefix mismatch and rebuild the cache from scratch because different sub-agents send different system prompts and conversation content.</p>
+          <p><strong>Important:</strong> Set <code>n_seq_max</code> to at least the number of concurrent sub-agents your agent framework spawns. If <code>n_seq_max</code> is smaller than the number of sub-agents, cache thrashing occurs — each new sub-agent evicts a slot, and when the evicted sub-agent returns, it evicts another. Every request triggers a full rebuild from scratch, eliminating the caching benefit entirely. The trade-off is VRAM — each additional slot reserves its full KV cache partition at model load time.</p>
           <p><strong>How It Works:</strong></p>
           <p>First request (2 messages: system + user):</p>
           <pre className="code-block"><code>{`Messages: [system, user]
@@ -1283,10 +1287,47 @@ Prefill:  [user2 + gen_prompt]`}</code></pre>
           <pre className="code-block"><code>{`Messages: [system, user, assistant, user2, assistant2, user3]
 Cache:    [system, user, assistant, user2, assistant2]  ← Extend
 Prefill:  [user3 + gen_prompt]`}</code></pre>
+          <p><strong>Slot Selection Algorithm:</strong></p>
+          <p>When a request arrives, IMC scans all slots to find the best match:</p>
+          <ol>
+            <li><strong>Validate cache_id</strong> — Only one cache_id can be active at a time. If a</li>
+          </ol>
+          <p>different cache_id arrives while slots contain cached data, the request is rejected. If all slots are empty, the system switches to the new cache_id.</p>
+          <ol>
+            <li><strong>Scan all slots</strong> — For each slot:
+              <ul>
+                <li>Skip slots with a build in-flight (pending flag set)</li>
+                <li>Skip empty slots (track the first empty slot as a fallback)</li>
+                <li>Skip slots with more cached messages than the request has total</li>
+                <li>Hash <code>messages[:slot.lastMsgIdxCached]</code> and compare to the slot's</li>
+              </ul>
+            </li>
+          </ol>
+          <p>stored hash</p>
+          <ol>
+            <li><strong>On match</strong> — Pick the slot with the best prefix coverage (most cached</li>
+          </ol>
+          <p>messages). If the request has new messages to cache, extend the slot's cache. If the messages are identical, it's a pure cache hit.</p>
+          <ol>
+            <li><strong>No match</strong> — Pick an empty slot if one exists, otherwise evict the</li>
+          </ol>
+          <p>least-recently-used (LRU) slot and rebuild from scratch.</p>
+          <p><strong>Concurrent Build Protection:</strong></p>
+          <p>When two requests arrive simultaneously and both need to build a cache from scratch, a race condition could cause both to pick the same empty slot. IMC prevents this with a pending flag: when a slot begins a deferred cache build, it is marked pending. Concurrent scanners skip pending slots, so the second request picks a different slot. The pending flag is cleared after the cache decode completes (or on error).</p>
           <h3 id="54-multi-user-caching">5.4 Multi-User Caching</h3>
           <p>Both SPC and IMC support multiple concurrent users, each identified by the <code>cache_id</code> parameter in requests.</p>
           <p><strong>SPC Multi-User:</strong> Unlimited cache_ids. Each cache_id stores its tokenized system prompt in RAM. Tokens are re-decoded into the slot's sequence on each request. No VRAM overhead per user.</p>
-          <p><strong>IMC Multi-User:</strong> Max concurrent users = <code>NSeqMax</code>. Each cache_id is bound to a dedicated slot/sequence. When all slots are bound to IMC sessions, new cache_ids are rejected with an error.</p>
+          <p><strong>IMC Multi-User:</strong> Only one cache_id can be active at a time. All <code>NSeqMax</code> slots are dedicated to that cache_id, with each slot independently tracking its own conversation branch. This design is optimized for agentic workflows where multiple sub-agents share a single cache_id but send independent conversations (different system prompts, different message histories).</p>
+          <p>When a different cache_id arrives:</p>
+          <ul>
+            <li>If any slot has cached data, the request is <strong>rejected</strong> — the existing</li>
+          </ul>
+          <p>cache_id owns all slots.</p>
+          <ul>
+            <li>If all slots are empty (e.g., after a model reload or context reset),</li>
+          </ul>
+          <p>the system <strong>switches</strong> to the new cache_id.</p>
+          <p>This means IMC serves one user (or one agent session) at a time, but that session gets full use of all available slots for concurrent sub-agent conversations.</p>
           <p><strong>Passing Cache ID:</strong></p>
           <p>Via HTTP header:</p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/chat/completions \\
@@ -1299,7 +1340,7 @@ Prefill:  [user3 + gen_prompt]`}</code></pre>
   "cache_id": "user-123",
   "messages": [...]
 }`}</code></pre>
-          <p>If no <code>cache_id</code> is provided, requests default to the ID <code>"default"</code>. For multi-user deployments, always provide unique cache_ids.</p>
+          <p>If no <code>cache_id</code> is provided, requests default to the ID <code>"default"</code>. For multi-user deployments with SPC, always provide unique cache_ids. For IMC, the cache_id identifies the active agent session — all sub-agents within that session should use the same cache_id.</p>
           <h3 id="55-spc-vs-imc">5.5 SPC vs IMC</h3>
           <p>Both caching modes eliminate redundant work, but they target different parts of the prompt and suit different workloads. SPC is the simpler option — it caches just the system prompt and works with any model template. IMC is more aggressive — it caches the entire conversation history but requires the model's chat template to produce consistent output. The table below summarizes the trade-offs to help you choose.</p>
           <table className="flags-table">
@@ -1324,7 +1365,12 @@ Prefill:  [user3 + gen_prompt]`}</code></pre>
               <tr>
                 <td>Multi-user</td>
                 <td>Unlimited (tokens in RAM)</td>
-                <td>Max NSeqMax (bound to slots)</td>
+                <td>One cache_id at a time (all slots shared)</td>
+              </tr>
+              <tr>
+                <td>Sub-agents</td>
+                <td>Each gets own SPC entry</td>
+                <td>Each gets own slot via hash matching</td>
               </tr>
               <tr>
                 <td>Best for</td>
@@ -1393,6 +1439,7 @@ Prefill:  [user3 + gen_prompt]`}</code></pre>
             <li>Without cache: ~200ms prefill (varies by hardware)</li>
             <li>With IMC: ~5ms for new tokens only</li>
           </ul>
+          <p>Cache extensions (adding new messages to an existing cached prefix) are especially fast because only the delta tokens are decoded. In production logs, sequential extensions typically take ~3ms each.</p>
           <p><strong>IMC Memory Overhead:</strong></p>
           <p>IMC adds no extra VRAM. llama.cpp partitions the KV cache across sequences, so each slot gets <code>context_window / NSeqMax</code> tokens:</p>
           <pre className="code-block"><code>{`8K context, n_seq_max=4, IMC:
@@ -1404,8 +1451,13 @@ Prefill:  [user3 + gen_prompt]`}</code></pre>
             <li>Requires deterministic Jinja templates (no timestamps or random values)</li>
             <li>Conversations must grow monotonically (append-only)</li>
             <li>Editing earlier messages triggers full cache rebuild</li>
-            <li>Max concurrent sessions = NSeqMax; additional sessions are rejected</li>
+            <li>Only one cache_id active at a time; requests with a different cache_id</li>
           </ul>
+          <p>are rejected while slots contain cached data</p>
+          <ul>
+            <li>Max concurrent conversation branches = NSeqMax; when all slots are</li>
+          </ul>
+          <p>occupied, the least-recently-used slot is evicted</p>
           <hr />
           <h2 id="chapter-6:-yarn-extended-context">Chapter 6: YaRN Extended Context</h2>
           <p>YaRN (Yet another RoPE extensioN) allows models to handle context windows beyond their native training length. This is essential for long documents, extended conversations, and complex agentic workflows.</p>

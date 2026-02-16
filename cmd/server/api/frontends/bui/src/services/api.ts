@@ -414,13 +414,19 @@ class ApiService {
     request: ChatRequest,
     onMessage: (data: ChatStreamResponse) => void,
     onError: (error: string) => void,
-    onComplete: () => void
+    onComplete: () => void,
+    cacheId?: string
   ): () => void {
     const controller = new AbortController();
 
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (cacheId) {
+      headers['KRONK_CACHE_ID'] = cacheId;
+    }
+
     fetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ ...request, stream: true }),
       signal: controller.signal,
     })

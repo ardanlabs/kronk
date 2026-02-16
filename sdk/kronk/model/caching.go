@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
@@ -60,12 +61,16 @@ func (m *Model) processCache(ctx context.Context, d D) cacheResult {
 func (m *Model) clearCaches() {
 	m.cacheMu.Lock()
 
-	// Clear all IMC sessions.
-	for id := range m.imcSessions {
-		delete(m.imcSessions, id)
+	// Clear all IMC slot state.
+	for _, slot := range m.imcSlots {
+		slot.cachedMsgsHash = ""
+		slot.totalTokensCached = 0
+		slot.lastMsgIdxCached = 0
+		slot.lastUsed = time.Time{}
+		slot.pending = false
 	}
 
-	m.imcNextSeq = 0
+	m.imcCacheID = ""
 
 	// Clear all SPC entries.
 	for id := range m.spcEntries {

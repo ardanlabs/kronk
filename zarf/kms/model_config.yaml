@@ -151,11 +151,11 @@
 
 # This has been the best with Cline.
 Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMC:
-  nseq-max: 1
+  nseq-max: 2
   incremental-cache: true
 
 Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMCG:
-  nseq-max: 1
+  nseq-max: 2
   incremental-cache: true
   grammar: hermestoolcalling.grm
 
@@ -172,7 +172,7 @@ gpt-oss-120b-F16/SPC:
 
 # Smaller version of the 30B model and works ok with Cline.
 cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0/IMC:
-  nseq-max: 1
+  nseq-max: 2
   incremental-cache: true
 
 # This model runs too slow on my M4/128GB.

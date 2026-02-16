@@ -1497,9 +1497,10 @@ incompatible with IMC (use SPC instead).
 **Best for:**
 
 - Models with consistent templates (QWEN, Llama)
-- AI coding agents (Cline, OpenCode, Aider)
+- AI coding agents
 - Long-running agent conversations
 - Any workflow where messages are appended, not edited
+- Sub-agent architectures where multiple agents share a cache_id
 
 **Enable IMC:**
 
@@ -1510,9 +1511,28 @@ models:
     cache_min_tokens: 100 # Minimum tokens before caching
 ```
 
-The maximum number of concurrent IMC sessions equals `NSeqMax`. Each session
-is bound to a dedicated slot, so `n_seq_max: 4` supports up to 4 concurrent
-users with their own conversation caches.
+**Multi-Slot Architecture:**
+
+Only one `cache_id` can be active at a time, but that cache_id gets access
+to all `NSeqMax` slots. Each slot independently tracks its own conversation
+branch — its own message hash, token count, and message index. This means
+sub-agents sharing a cache_id are routed to different slots via hash
+matching, allowing them to maintain
+independent caches and run concurrently.
+
+With `n_seq_max: 3`, three sub-agents can each have their own cached
+conversation branch under the same cache_id. Without multi-slot IMC,
+every sub-agent request would cause a prefix mismatch and rebuild the
+cache from scratch because different sub-agents send different system
+prompts and conversation content.
+
+**Important:** Set `n_seq_max` to at least the number of concurrent
+sub-agents your agent framework spawns. If `n_seq_max` is smaller than
+the number of sub-agents, cache thrashing occurs — each new sub-agent
+evicts a slot, and when the evicted sub-agent returns, it evicts another.
+Every request triggers a full rebuild from scratch, eliminating the
+caching benefit entirely. The trade-off is VRAM — each additional slot
+reserves its full KV cache partition at model load time.
 
 **How It Works:**
 
@@ -1540,6 +1560,38 @@ Cache:    [system, user, assistant, user2, assistant2]  ← Extend
 Prefill:  [user3 + gen_prompt]
 ```
 
+**Slot Selection Algorithm:**
+
+When a request arrives, IMC scans all slots to find the best match:
+
+1. **Validate cache_id** — Only one cache_id can be active at a time. If a
+   different cache_id arrives while slots contain cached data, the request
+   is rejected. If all slots are empty, the system switches to the new
+   cache_id.
+
+2. **Scan all slots** — For each slot:
+   - Skip slots with a build in-flight (pending flag set)
+   - Skip empty slots (track the first empty slot as a fallback)
+   - Skip slots with more cached messages than the request has total
+   - Hash `messages[:slot.lastMsgIdxCached]` and compare to the slot's
+     stored hash
+
+3. **On match** — Pick the slot with the best prefix coverage (most cached
+   messages). If the request has new messages to cache, extend the slot's
+   cache. If the messages are identical, it's a pure cache hit.
+
+4. **No match** — Pick an empty slot if one exists, otherwise evict the
+   least-recently-used (LRU) slot and rebuild from scratch.
+
+**Concurrent Build Protection:**
+
+When two requests arrive simultaneously and both need to build a cache from
+scratch, a race condition could cause both to pick the same empty slot. IMC
+prevents this with a pending flag: when a slot begins a deferred cache build,
+it is marked pending. Concurrent scanners skip pending slots, so the second
+request picks a different slot. The pending flag is cleared after the cache
+decode completes (or on error).
+
 ### 5.4 Multi-User Caching
 
 Both SPC and IMC support multiple concurrent users, each identified by the
@@ -1549,9 +1601,22 @@ Both SPC and IMC support multiple concurrent users, each identified by the
 system prompt in RAM. Tokens are re-decoded into the slot's sequence on each
 request. No VRAM overhead per user.
 
-**IMC Multi-User:** Max concurrent users = `NSeqMax`. Each cache_id is bound
-to a dedicated slot/sequence. When all slots are bound to IMC sessions, new
-cache_ids are rejected with an error.
+**IMC Multi-User:** Only one cache_id can be active at a time. All `NSeqMax`
+slots are dedicated to that cache_id, with each slot independently tracking
+its own conversation branch. This design is optimized for agentic workflows
+where multiple sub-agents share a single cache_id but send independent
+conversations (different system prompts, different message histories).
+
+When a different cache_id arrives:
+
+- If any slot has cached data, the request is **rejected** — the existing
+  cache_id owns all slots.
+- If all slots are empty (e.g., after a model reload or context reset),
+  the system **switches** to the new cache_id.
+
+This means IMC serves one user (or one agent session) at a time, but that
+session gets full use of all available slots for concurrent sub-agent
+conversations.
 
 **Passing Cache ID:**
 
@@ -1575,7 +1640,9 @@ Or in the request body:
 ```
 
 If no `cache_id` is provided, requests default to the ID `"default"`.
-For multi-user deployments, always provide unique cache_ids.
+For multi-user deployments with SPC, always provide unique cache_ids.
+For IMC, the cache_id identifies the active agent session — all sub-agents
+within that session should use the same cache_id.
 
 ### 5.5 SPC vs IMC
 
@@ -1586,14 +1653,15 @@ aggressive — it caches the entire conversation history but requires the
 model's chat template to produce consistent output. The table below summarizes
 the trade-offs to help you choose.
 
-| Feature      | System Prompt Cache              | Incremental Message Cache               |
-| ------------ | -------------------------------- | --------------------------------------- |
-| Caches       | System prompt only               | All messages except last                |
-| Extends      | No                               | Yes, incrementally                      |
-| Multi-user   | Unlimited (tokens in RAM)        | Max NSeqMax (bound to slots)            |
-| Best for     | Chat UIs, inconsistent templates | Agentic workflows, consistent templates |
-| Memory       | Zero VRAM overhead               | Zero VRAM overhead                      |
-| Template req | Any                              | Consistent templates only               |
+| Feature      | System Prompt Cache              | Incremental Message Cache                     |
+| ------------ | -------------------------------- | --------------------------------------------- |
+| Caches       | System prompt only               | All messages except last                      |
+| Extends      | No                               | Yes, incrementally                            |
+| Multi-user   | Unlimited (tokens in RAM)        | One cache_id at a time (all slots shared)     |
+| Sub-agents   | Each gets own SPC entry          | Each gets own slot via hash matching          |
+| Best for     | Chat UIs, inconsistent templates | Agentic workflows, consistent templates       |
+| Memory       | Zero VRAM overhead               | Zero VRAM overhead                            |
+| Template req | Any                              | Consistent templates only                     |
 
 **Important:** SPC and IMC are mutually exclusive. Choose based on your
 model's template behavior:
@@ -1673,6 +1741,10 @@ For a 2000-token cached conversation prefix:
 - Without cache: ~200ms prefill (varies by hardware)
 - With IMC: ~5ms for new tokens only
 
+Cache extensions (adding new messages to an existing cached prefix) are
+especially fast because only the delta tokens are decoded. In production
+logs, sequential extensions typically take ~3ms each.
+
 **IMC Memory Overhead:**
 
 IMC adds no extra VRAM. llama.cpp partitions the KV cache across
@@ -1690,7 +1762,10 @@ sequences, so each slot gets `context_window / NSeqMax` tokens:
 - Requires deterministic Jinja templates (no timestamps or random values)
 - Conversations must grow monotonically (append-only)
 - Editing earlier messages triggers full cache rebuild
-- Max concurrent sessions = NSeqMax; additional sessions are rejected
+- Only one cache_id active at a time; requests with a different cache_id
+  are rejected while slots contain cached data
+- Max concurrent conversation branches = NSeqMax; when all slots are
+  occupied, the least-recently-used slot is evicted
 
 ---
 

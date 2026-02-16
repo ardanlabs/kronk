@@ -54,9 +54,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 	switch {
 	case e.model.cfg.IncrementalCache && job.imcID != "":
 		e.model.cacheMu.RLock()
-		session, exists := e.model.imcSessions[job.imcID]
-		if exists {
-			cacheIdx = llama.Pos(session.totalTokensCached)
+		if s.id < len(e.model.imcSlots) {
+			cacheIdx = llama.Pos(e.model.imcSlots[s.id].totalTokensCached)
 		}
 		e.model.cacheMu.RUnlock()
 
@@ -87,6 +86,13 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 			imcDecodeStart := time.Now()
 
 			if err := e.model.decodeTokensIntoCache(job.ctx, job.imcNewCacheTokens, s.seqID, int(cacheIdx)); err != nil {
+				e.model.cacheMu.Lock()
+				if s.id < len(e.model.imcSlots) {
+					e.model.imcSlots[s.id].pending = false
+					e.model.log(job.ctx, "start-slot", "status", "imc-pending-cleared (error)", "slot", s.id, "seq", s.seqID)
+				}
+				e.model.cacheMu.Unlock()
+
 				e.finishSlot(s, fmt.Errorf("start-slot: imc extend: %w", err))
 				return
 			}
@@ -97,11 +103,15 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 
 			// Update session state now that tokens are decoded.
 			e.model.cacheMu.Lock()
-			if session, exists := e.model.imcSessions[job.imcID]; exists {
-				session.cachedMsgsHash = job.imcNewMsgsHash
-				session.totalTokensCached = job.imcNewTotalCached
-				session.lastMsgIdxCached = job.imcNewMsgIdx
-				session.lastUsed = time.Now()
+			if s.id < len(e.model.imcSlots) {
+				imcSlot := e.model.imcSlots[s.id]
+				imcSlot.cachedMsgsHash = job.imcNewMsgsHash
+				imcSlot.totalTokensCached = job.imcNewTotalCached
+				imcSlot.lastMsgIdxCached = job.imcNewMsgIdx
+				imcSlot.lastUsed = time.Now()
+				imcSlot.pending = false
+
+				e.model.log(job.ctx, "start-slot", "status", "imc-pending-cleared", "slot", s.id, "seq", s.seqID)
 			}
 			e.model.cacheMu.Unlock()
 

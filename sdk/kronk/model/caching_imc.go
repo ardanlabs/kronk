@@ -3,7 +3,6 @@ package model
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/hybridgroup/yzma/pkg/llama"
@@ -14,14 +13,16 @@ import (
 // workflows. It caches all messages except the last one (which triggers
 // generation) and extends the cache incrementally on subsequent requests.
 //
-// Each unique cache_id gets its own session with a dedicated cache sequence.
+// All NSeqMax slots are available for one active cache_id. Each slot
+// independently tracks its own conversation branch (hash, token count,
+// message index). Sub-agents sharing a cache_id get routed to different
+// slots via hash matching.
 //
 // Algorithm:
-//  1. Look up or create session for cache_id
-//  2. If session cache is empty, cache messages[0:len-1]
-//  3. If session cache exists, check if cached messages match current request
-//  4. On match: extend cache with new messages
-//  5. On mismatch: rebuild cache from scratch
+//  1. Validate cache_id matches the active cache_id (only one at a time)
+//  2. Scan all slots for a prefix hash match against the incoming messages
+//  3. On match: extend or reuse the matching slot's cache
+//  4. No match: pick an empty slot or evict the LRU slot, rebuild from scratch
 func (m *Model) processIMC(ctx context.Context, d D) cacheResult {
 	messages, ok := d["messages"].([]D)
 	if !ok || len(messages) == 0 {
@@ -44,110 +45,157 @@ func (m *Model) processIMC(ctx context.Context, d D) cacheResult {
 	}
 
 	// -------------------------------------------------------------------------
-	// Look up or create session for this cacheID.
+	// Validate cache_id. Only one cache_id can be active at a time.
 
-	session, isNew := m.getOrCreateIMCSession(ctx, cacheID)
-	if session == nil {
-		// All session slots are in use - bypass IMC gracefully.
-		m.log(ctx, "imc", "status", "bypass (slots full)", "cache_id", cacheID, "max-possible-ids", m.imcMaxSeqs)
-		return cacheResult{modifiedD: d}
+	if err := m.validateIMCCacheID(ctx, cacheID); err != nil {
+		return cacheResult{modifiedD: d, err: err}
 	}
-
-	// -------------------------------------------------------------------------
-	// Read current session state (fast path with read lock).
-
-	m.cacheMu.RLock()
-	currentCachedMsgsHash := session.cachedMsgsHash
-	currentTotalTokensCached := session.totalTokensCached
-	currentLastMsgIdxCached := session.lastMsgIdxCached
-	seqID := session.seqID
-	m.cacheMu.RUnlock()
-
-	// -------------------------------------------------------------------------
-	// Check for cache hit on existing prefix.
 
 	// We will cache all messages but the last one.
 	lastMsgIdxToCache := totalMsgs - 1
 
-	// If this is not a new session and we have data in the cache.
-	if !isNew && currentTotalTokensCached > 0 {
+	// -------------------------------------------------------------------------
+	// Scan all slots for a prefix hash match.
 
-		// Check if the current number of messages in the input has increased.
-		// This means we are still processing the same thread.
-		if totalMsgs > currentLastMsgIdxCached {
-			newMsgsHash := hashMessages(messages[:currentLastMsgIdxCached])
+	m.log(ctx, "imc", "status", "scanning slots", "cache_id", cacheID, "total-msgs", totalMsgs, "msgs-to-cache", lastMsgIdxToCache, "total-slots", len(m.imcSlots))
 
-			// Check if the current messages we have cached are the same with
-			// the new input request. If nothing has changed with those existing
-			// messages we can extend the cache with new messages
-			if newMsgsHash == currentCachedMsgsHash {
+	m.cacheMu.RLock()
 
-				// If there are more messages in this request, then we need
-				// to extend the cache. I would expect this to be the case
-				// everytime.
-				if currentLastMsgIdxCached < lastMsgIdxToCache {
-					return m.extendIMCCache(ctx, d, messages, cacheID, session, currentLastMsgIdxCached, lastMsgIdxToCache, currentTotalTokensCached)
-				}
+	var bestSlot *imcSession
+	var bestCachedMsgsHash string
+	var bestTotalTokensCached int
+	var bestLastMsgIdxCached int
+	var emptySlot *imcSession
+	var lruSlot *imcSession
 
-				// If by some weird circumstance the client sends back the
-				// exact same messages as before, we have all that already
-				// in the cache. Just return it.
+	for _, slot := range m.imcSlots {
 
-				m.log(ctx, "imc", "status", "cache hit", "cache_id", cacheID, "seq", seqID, "current-msg-idx-cached", currentLastMsgIdxCached, "current-total-tokens-cached", currentTotalTokensCached)
-
-				return cacheResult{
-					modifiedD:      removeFirstNMessages(d, currentLastMsgIdxCached),
-					cacheIdx:       llama.Pos(currentTotalTokensCached),
-					cachedMsgCount: currentLastMsgIdxCached,
-					cacheID:        cacheID,
-					cacheSeqID:     seqID,
-				}
-			}
+		// Skip slots with a build/rebuild in-flight.
+		if slot.pending {
+			m.log(ctx, "imc", "scan", fmt.Sprintf("slot[%d] pending (build in-flight)", slot.slotID))
+			continue
 		}
 
-		// Prefix mismatch - need to rebuild cache.
-		m.log(ctx, "imc", "status", "prefix mismatch", "cache_id", cacheID, "current-last-msg-idx-cached", currentLastMsgIdxCached, "total-msgs", totalMsgs)
+		// Track first empty slot for fallback.
+		if slot.totalTokensCached == 0 {
+			m.log(ctx, "imc", "scan", fmt.Sprintf("slot[%d] empty", slot.slotID))
+
+			if emptySlot == nil {
+				emptySlot = slot
+			}
+			continue
+		}
+
+		// Track LRU slot for eviction fallback.
+		if lruSlot == nil || slot.lastUsed.Before(lruSlot.lastUsed) {
+			lruSlot = slot
+		}
+
+		// Skip slots with more cached messages than this request has total.
+		if totalMsgs <= slot.lastMsgIdxCached {
+			m.log(ctx, "imc", "scan", fmt.Sprintf("slot[%d] skip (cached-msgs[%d] >= total-msgs[%d])", slot.slotID, slot.lastMsgIdxCached, totalMsgs))
+			continue
+		}
+
+		// Check if this slot's cached prefix matches the incoming messages.
+		prefixHash := hashMessages(messages[:slot.lastMsgIdxCached])
+		if prefixHash != slot.cachedMsgsHash {
+			m.log(ctx, "imc", "scan", fmt.Sprintf("slot[%d] mismatch (cached-msgs[%d] tokens[%d] hash[%s..] != [%s..])",
+				slot.slotID, slot.lastMsgIdxCached, slot.totalTokensCached, slot.cachedMsgsHash[:8], prefixHash[:8]))
+			continue
+		}
+
+		m.log(ctx, "imc", "scan", fmt.Sprintf("slot[%d] MATCH (cached-msgs[%d] tokens[%d] hash[%s..])",
+			slot.slotID, slot.lastMsgIdxCached, slot.totalTokensCached, slot.cachedMsgsHash[:8]))
+
+		// This slot matches. Pick the one with the most cached messages
+		// (best prefix coverage).
+		if bestSlot == nil || slot.lastMsgIdxCached > bestLastMsgIdxCached {
+			bestSlot = slot
+			bestCachedMsgsHash = slot.cachedMsgsHash
+			bestTotalTokensCached = slot.totalTokensCached
+			bestLastMsgIdxCached = slot.lastMsgIdxCached
+		}
+	}
+
+	m.cacheMu.RUnlock()
+
+	// -------------------------------------------------------------------------
+	// Handle matched slot: extend or pure hit.
+
+	if bestSlot != nil {
+		m.log(ctx, "imc", "status", "slot matched", "cache_id", cacheID, "slot", bestSlot.slotID, "seq", bestSlot.seqID,
+			"cached-msgs", bestLastMsgIdxCached, "cached-tokens", bestTotalTokensCached, "msgs-to-cache", lastMsgIdxToCache)
+
+		// If there are more messages to cache, extend.
+		if bestLastMsgIdxCached < lastMsgIdxToCache {
+			return m.extendIMCCache(ctx, d, messages, cacheID, bestSlot, bestLastMsgIdxCached, lastMsgIdxToCache, bestTotalTokensCached)
+		}
+
+		// Exact same messages as before — pure cache hit.
+		m.log(ctx, "imc", "status", "cache hit", "cache_id", cacheID, "slot", bestSlot.slotID, "seq", bestSlot.seqID,
+			"current-msg-idx-cached", bestLastMsgIdxCached, "current-total-tokens-cached", bestTotalTokensCached,
+			"hash", bestCachedMsgsHash[:8])
+
+		return cacheResult{
+			modifiedD:      removeFirstNMessages(d, bestLastMsgIdxCached),
+			cacheIdx:       llama.Pos(bestTotalTokensCached),
+			cachedMsgCount: bestLastMsgIdxCached,
+			cacheID:        cacheID,
+			cacheSeqID:     bestSlot.seqID,
+		}
 	}
 
 	// -------------------------------------------------------------------------
-	// Cache miss - build cache from scratch.
+	// No match — pick an empty slot or evict LRU.
 
-	return m.buildIMCCacheFromScratch(ctx, d, messages, cacheID, session, lastMsgIdxToCache)
+	m.log(ctx, "imc", "status", "no slot matched", "cache_id", cacheID, "total-msgs", totalMsgs)
+
+	var targetSlot *imcSession
+
+	switch {
+	case emptySlot != nil:
+		targetSlot = emptySlot
+		m.log(ctx, "imc", "status", "using empty slot", "cache_id", cacheID, "slot", targetSlot.slotID)
+
+	case lruSlot != nil:
+		targetSlot = lruSlot
+		m.log(ctx, "imc", "status", "evicting LRU slot", "cache_id", cacheID, "slot", targetSlot.slotID,
+			"evicted-msgs", targetSlot.lastMsgIdxCached, "evicted-tokens", targetSlot.totalTokensCached)
+
+	default:
+		return cacheResult{modifiedD: d, err: fmt.Errorf("imc: no slots available for cache_id %q", cacheID)}
+	}
+
+	return m.buildIMCCacheFromScratch(ctx, d, messages, cacheID, targetSlot, lastMsgIdxToCache)
 }
 
-// getOrCreateIMCSession looks up an existing session by cacheID or creates a new one.
-// Returns nil if all session slots are in use (graceful bypass).
-// Returns the session and true if it was newly created.
-func (m *Model) getOrCreateIMCSession(ctx context.Context, cacheID string) (*imcSession, bool) {
+// validateIMCCacheID ensures only one cache_id is active at a time. If a
+// different cache_id arrives while the current one has cached data, it returns
+// an error. If all slots are empty, it switches to the new cache_id.
+func (m *Model) validateIMCCacheID(ctx context.Context, cacheID string) error {
 	m.cacheMu.Lock()
 	defer m.cacheMu.Unlock()
 
-	// Check if session already exists.
-	if session, exists := m.imcSessions[cacheID]; exists {
-		session.lastUsed = time.Now()
-		return session, false
+	// Same cache_id or no active cache_id — allow.
+	if m.imcCacheID == "" || m.imcCacheID == cacheID {
+		m.imcCacheID = cacheID
+		return nil
 	}
 
-	// Check if we have room for a new session.
-	if int(m.imcNextSeq) >= m.imcMaxSeqs {
-		// All slots are in use. Could implement LRU eviction here in the future.
-		return nil, false
+	// Different cache_id — check if any slot has data.
+	for _, slot := range m.imcSlots {
+		if slot.totalTokensCached > 0 {
+			m.log(ctx, "imc", "status", "cache_id rejected", "active", m.imcCacheID, "requested", cacheID)
+			return fmt.Errorf("imc: all slots are bound to cache_id %q, cannot serve cache_id %q", m.imcCacheID, cacheID)
+		}
 	}
 
-	// Create new session bound to a dedicated slot/sequence.
-	slotID := int(m.imcNextSeq)
-	session := imcSession{
-		seqID:    llama.SeqId(slotID),
-		slotID:   slotID,
-		lastUsed: time.Now(),
-	}
+	// All slots empty — switch to new cache_id.
+	m.log(ctx, "imc", "status", "switching cache_id", "from", m.imcCacheID, "to", cacheID)
+	m.imcCacheID = cacheID
 
-	m.imcSessions[cacheID] = &session
-	m.imcNextSeq++
-
-	m.log(ctx, "imc", "status", "session created", "cache_id", cacheID, "seq", session.seqID, "total-sessions", len(m.imcSessions))
-
-	return &session, true
+	return nil
 }
 
 // extendIMCCache extends the existing cache with new messages from
@@ -212,12 +260,12 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, cacheID s
 	extensionTokens := allTokens[currentTotalTokensCached:]
 	numOfExtTokens := len(extensionTokens)
 
-	m.log(ctx, "imc", "status", "extending cache (deferred)", "cache_id", cacheID, "new-tokens", numOfExtTokens)
+	m.log(ctx, "imc", "status", "extending cache (deferred)", "cache_id", cacheID, "slot", session.slotID, "new-tokens", numOfExtTokens)
 
 	// Compute new session state to be applied after decode in startSlot.
 	newHash := hashMessages(msgs)
 
-	m.log(ctx, "imc", "status", "cache extend prepared", "cache_id", cacheID, "seq", session.seqID,
+	m.log(ctx, "imc", "status", "cache extend prepared", "cache_id", cacheID, "slot", session.slotID, "seq", session.seqID,
 		"idx", fmt.Sprintf("cur[%d] -> new[%d]", currentLastMsgIdxCached, lastMsgIdxToCache),
 		"tokens", fmt.Sprintf("cur[%d] -> new[%d] (+%d)", currentTotalTokensCached, totalTokens, numOfExtTokens))
 
@@ -286,15 +334,19 @@ func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D,
 		return cacheResult{modifiedD: d}
 	}
 
-	// Reset session state immediately so startSlot doesn't read stale values.
+	// Reset session state and mark pending so concurrent scanners skip this
+	// slot while the deferred decode is in-flight. Cleared in startSlot.
 	session.totalTokensCached = 0
 	session.lastMsgIdxCached = 0
 	session.cachedMsgsHash = ""
+	session.pending = true
+
+	m.log(ctx, "imc", "status", "slot marked pending", "cache_id", cacheID, "slot", session.slotID, "seq", session.seqID)
 
 	// Return tokens for deferred decode in startSlot.
 	newHash := hashMessages(msgsToCache)
 
-	m.log(ctx, "imc", "status", "cache build prepared", "cache_id", cacheID, "seq", session.seqID, "msgs", lastMsgIdxToCache, "tokens", nTokens, "hash", newHash[:8])
+	m.log(ctx, "imc", "status", "cache build prepared", "cache_id", cacheID, "slot", session.slotID, "seq", session.seqID, "msgs", lastMsgIdxToCache, "tokens", nTokens, "hash", newHash[:8])
 
 	return cacheResult{
 		modifiedD:         removeFirstNMessages(d, lastMsgIdxToCache),
