@@ -755,7 +755,6 @@ type VRAMRequest struct {
 	ContextWindow   int64  `json:"context_window"`
 	BytesPerElement int64  `json:"bytes_per_element"`
 	Slots           int64  `json:"slots"`
-	CacheType       string `json:"cache_type"`
 }
 
 // Decode implements the decoder interface.

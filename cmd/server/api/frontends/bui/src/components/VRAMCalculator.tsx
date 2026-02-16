@@ -74,36 +74,13 @@ reserve their full KV cache partition regardless of whether they are
 actively processing a request.
 
 ==============================================================================
-SPC ADDS ONE EXTRA SEQUENCE
-==============================================================================
-
-SPC (System Prompt Cache) uses a dedicated cache sequence to hold the
-decoded system prompt KV state. This sequence is in addition to the
-slot sequences, so the total sequence count is NSeqMax + 1 when SPC
-is enabled. The cached KV state is copied to slot sequences via
-MemorySeqCp on each request (an instant operation).
-
-  TotalSequences = NSeqMax          (no caching or IMC)
-  TotalSequences = NSeqMax + 1      (SPC enabled)
-
-IMC does not add extra sequences — each slot's sequence IS the cache.
-
-  Mode  Slot Lifetime            Cache Strategy
-  off   Cleared after request    None
-  SPC   Cleared after request    System prompt decoded once into a
-                                 dedicated cache sequence, copied to
-                                 slot sequences via MemorySeqCp
-  IMC   Dedicated to a cache_id  Full conversation cached in the
-                                 slot's KV cache sequence
-
-==============================================================================
 EXAMPLE: REAL MODEL CALCULATION
 ==============================================================================
 
 Model                   : Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
 Model Weights           : 36.0 GB
 Context Window (n_ctx)  : 131,072 (128K)
-cache-type-k / v        : q8_0 (1 byte per element)
+Bytes Per Element       : 1 (q8_0)
 block_count (n_layers)  : 48
 attention.head_count_kv : 4
 attention.key_length    : 128
@@ -145,12 +122,6 @@ const BYTES_PER_ELEMENT_OPTIONS = [
 
 const SLOT_OPTIONS = [1, 2, 3, 4, 5];
 
-const CACHE_TYPE_OPTIONS = [
-  { value: 'off', label: 'Off' },
-  { value: 'spc', label: 'SPC (System Prompt Cache)' },
-  { value: 'imc', label: 'IMC (Incremental Message Cache)' },
-];
-
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
   const k = 1024;
@@ -165,7 +136,6 @@ export default function VRAMCalculator() {
   const [contextWindow, setContextWindow] = useState(8192);
   const [bytesPerElement, setBytesPerElement] = useState(1);
   const [slots, setSlots] = useState(2);
-  const [cacheType, setCacheType] = useState('off');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<VRAMCalculatorResponse | null>(null);
@@ -191,7 +161,6 @@ export default function VRAMCalculator() {
           context_window: contextWindow,
           bytes_per_element: bytesPerElement,
           slots: slots,
-          cache_type: cacheType,
         },
         token || undefined
       );
@@ -202,13 +171,13 @@ export default function VRAMCalculator() {
     } finally {
       setLoading(false);
     }
-  }, [modelUrl, contextWindow, bytesPerElement, slots, cacheType, token]);
+  }, [modelUrl, contextWindow, bytesPerElement, slots, token]);
 
   useEffect(() => {
     if (hasCalculated.current && modelUrl.trim()) {
       performCalculation(false);
     }
-  }, [contextWindow, bytesPerElement, slots, cacheType]);
+  }, [contextWindow, bytesPerElement, slots]);
 
   const handleCalculate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -316,22 +285,6 @@ export default function VRAMCalculator() {
             {SLOT_OPTIONS.map((s) => (
               <option key={s} value={s}>
                 {s}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="form-group">
-          <label htmlFor="cacheType">Cache Type</label>
-          <select
-            id="cacheType"
-            value={cacheType}
-            onChange={(e) => setCacheType(e.target.value)}
-            className="form-select"
-          >
-            {CACHE_TYPE_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
               </option>
             ))}
           </select>

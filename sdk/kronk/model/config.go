@@ -162,10 +162,11 @@ type Logger func(ctx context.Context, msg string, args ...any)
 //
 // SystemPromptCache enables caching of system prompt KV state. When enabled,
 // the first message with role="system" is cached. The system prompt is evaluated
-// once and its KV cache is copied to all client sequences on subsequent requests
-// with the same system prompt. This avoids redundant prefill computation for
-// applications that use a consistent system prompt. The cache is automatically
-// invalidated and re-evaluated when the system prompt changes.
+// once and its KV state is externalized to a byte buffer in RAM. On subsequent
+// requests with the same system prompt, the KV state is restored into the
+// slot's sequence via StateSeqSetData, avoiding redundant prefill computation.
+// The cache is automatically invalidated and re-evaluated when the system
+// prompt changes. No dedicated KV cache sequence is permanently occupied.
 //
 // SystemPromptCache and IncrementalCache are mutually exclusive. IncrementalCache
 // includes the system prompt in its cached prefix, so enabling both is redundant
@@ -511,22 +512,11 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 		ctxParams.PoolingType = llama.PoolingTypeRank
 	}
 
-	// Reserve sequences for caching based on enabled modes.
-	// SPC uses a dedicated cache sequence for the system prompt KV state.
-	// IMC uses dedicated slot/seq binding — no separate cache sequences.
+	// SPC externalizes the KV state to a byte buffer after initial decode,
+	// so it does not need an extra sequence. IMC uses dedicated slot/seq
+	// binding — no separate cache sequences either.
 	nSeqMax := max(cfg.NSeqMax, 1)
-	var cacheSeqs int
-	switch {
-	case cfg.SystemPromptCache:
-		// SPC uses one dedicated cache sequence for the system prompt.
-		// The cache sequence holds the decoded system prompt KV state,
-		// which is copied to slot sequences via MemorySeqCp.
-		cacheSeqs = 1
-	case cfg.IncrementalCache:
-		// IMC uses dedicated slot/seq binding — no separate cache sequences.
-		cacheSeqs = 0
-	}
-	totalSeqs := nSeqMax + cacheSeqs
+	totalSeqs := nSeqMax
 
 	if cfg.ContextWindow > 0 {
 		ctxParams.NBatch = uint32(cfg.NBatch)

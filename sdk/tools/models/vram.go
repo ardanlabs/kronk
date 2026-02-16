@@ -564,18 +564,17 @@ WHAT AFFECTS TOTAL KV CACHE (SLOT MEMORY)
 
 Memory is statically allocated upfront when the model loads.
 
-SPC ADDS ONE EXTRA SEQUENCE
+CACHING MODES (SPC / IMC)
 
-SPC (System Prompt Cache) uses a dedicated cache sequence to hold the
-decoded system prompt KV state. This sequence is in addition to the
-slot sequences, so the total sequence count is NSeqMax + 1 when SPC
-is enabled. The cached KV state is copied to slot sequences via
-MemorySeqCp on each request (an instant operation).
+Neither SPC nor IMC adds extra sequences to the VRAM calculation.
 
-  TotalSequences = NSeqMax          (no caching or IMC)
-  TotalSequences = NSeqMax + 1      (SPC enabled)
+SPC (System Prompt Cache) externalizes the decoded system prompt KV
+state to a byte buffer in RAM. On each request, the KV state is
+restored into the slot's sequence via StateSeqSetData. No dedicated
+cache sequence is permanently occupied.
 
-IMC does not add extra sequences — each slot's sequence IS the cache.
+IMC (Incremental Message Cache) uses dedicated slot/seq binding —
+each slot's sequence IS the cache. No separate cache sequences.
 
 EXAMPLE
 

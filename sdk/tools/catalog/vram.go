@@ -11,11 +11,6 @@ import (
 func (c *Catalog) CalculateVRAM(modelID string, mc ModelConfig) (models.VRAM, error) {
 	nSeqMax := int64(max(mc.NSeqMax, 1))
 
-	// SPC uses a dedicated cache sequence, adding one extra sequence.
-	if mc.SystemPromptCache {
-		nSeqMax++
-	}
-
 	contextWindow := int64(mc.ContextWindow)
 
 	cfg := models.VRAMConfig{

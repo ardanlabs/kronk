@@ -37,14 +37,17 @@ type imcSession struct {
 }
 
 // spcSession holds the state for a single SPC (System Prompt Cache) session.
-// The system prompt is decoded once into a dedicated cache sequence and copied
-// to slot sequences on each request via MemorySeqCp.
+// The system prompt is decoded once into a temporary cache sequence, the KV
+// state is extracted into an external byte buffer, and the sequence is freed.
+// On each request, the KV state is restored into the slot's working sequence
+// via StateSeqSetData, avoiding a permanently dedicated cache sequence.
 type spcSession struct {
 	sysPromptHash   string      // Hash of the system prompt
 	sysPromptTokens int         // Number of tokens in system prompt cache
 	sysPromptLen    int         // Length of system prompt string
-	seqID           llama.SeqId // Assigned cache sequence ID
+	seqID           llama.SeqId // Sequence ID used for initial decode
 	lastUsed        time.Time   // Last access time
+	kvState         []byte      // Externalized KV cache state (post-decode tensors)
 }
 
 // Cataloger provides support to retrieve catalog config and template
@@ -263,10 +266,11 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 			}
 		}
 
-		// Initialize SPC with a dedicated cache sequence.
-		// The cache sequence is the first sequence after the slot sequences.
+		// Initialize SPC. The last slot's sequence is borrowed temporarily
+		// for the initial decode. The KV state is externalized to a byte
+		// buffer immediately after, so the sequence is freed for normal use.
 		if cfg.SystemPromptCache {
-			m.spcCacheSeqID = llama.SeqId(nSlots)
+			m.spcCacheSeqID = llama.SeqId(nSlots - 1)
 		}
 
 		m.batch = newBatchEngine(&m, nSlots)
@@ -553,11 +557,6 @@ func calculateVRAM(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory int64)
 
 	nSeqMax := int64(max(cfg.NSeqMax, 1))
 
-	// SPC uses a dedicated cache sequence, adding one extra sequence.
-	if cfg.SystemPromptCache {
-		nSeqMax++
-	}
-
 	contextWindow := int64(cfg.ContextWindow)
 
 	kvPerTokenPerLayer := headCountKV * (keyLength + valueLength) * bytesPerElement
@@ -568,12 +567,24 @@ func calculateVRAM(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory int64)
 	return vramTotal, slotMemory
 }
 
-// copyCachesToSeq copies cached KV state from a source sequence to the
-// destination sequence. Used by SPC to copy the cached system prompt
-// into a slot's working sequence.
-func (m *Model) copyCachesToSeq(dstSeqID llama.SeqId, srcSeqID llama.SeqId) error {
-	if err := llama.MemorySeqCp(m.mem, srcSeqID, dstSeqID, -1, -1); err != nil {
-		return fmt.Errorf("copy-cache: failed to copy seq %d to %d: %w", srcSeqID, dstSeqID, err)
+// restoreSPCToSeq restores the externalized SPC KV state into the destination
+// sequence via StateSeqSetData. This avoids needing a permanently dedicated
+// cache sequence by restoring from a byte buffer in RAM.
+func (m *Model) restoreSPCToSeq(dstSeqID llama.SeqId) error {
+	m.cacheMu.RLock()
+	session := m.spcSession
+	m.cacheMu.RUnlock()
+
+	if session == nil || len(session.kvState) == 0 {
+		return fmt.Errorf("restore-spc: no cached KV state available")
+	}
+
+	m.decodeMu.Lock()
+	nRead := llama.StateSeqSetData(m.lctx, session.kvState, dstSeqID)
+	m.decodeMu.Unlock()
+
+	if nRead == 0 {
+		return fmt.Errorf("restore-spc: StateSeqSetData failed for seq %d", dstSeqID)
 	}
 
 	return nil
