@@ -249,6 +249,11 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 
 	slots := max(req.Slots, 1)
 
+	// SPC uses a dedicated cache sequence, adding one extra sequence.
+	if req.CacheType == "spc" {
+		slots++
+	}
+
 	contextWindow := req.ContextWindow
 
 	cfg := models.VRAMConfig{

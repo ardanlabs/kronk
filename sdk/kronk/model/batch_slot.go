@@ -39,18 +39,18 @@ type chatJob struct {
 	// -------------------------------------------------------------------------
 	// System Prompt Cache (SPC)
 
-	spcCacheID  string        // Cache ID for cache lookup
-	spcHash     string        // Expected hash for cache validation
-	spcTokens   []llama.Token // Tokens to decode into the slot's sequence
-	spcCacheHit bool          // True if SPC entry exists with tokens
+	spcCacheSeqID llama.SeqId // Dedicated SPC cache sequence ID
+	spcCacheIdx   llama.Pos   // Token count in SPC cache
+	spcCacheHit   bool        // True if SPC cache sequence has cached tokens
 
 	// -------------------------------------------------------------------------
 	// Incremental Message Cache (IMC)
 
-	imcID       string      // Cache session ID (from cache_id in request)
-	imcSeqID    llama.SeqId // Sequence ID containing cached conversation state
-	imcCacheIdx llama.Pos   // Token position where IMC cache ends
-	imcCacheHit bool        // True if conversation history was found in cache
+	imcSlotID       int         // Target slot index for IMC routing
+	imcSeqID        llama.SeqId // Sequence ID containing cached conversation state
+	imcCacheIdx     llama.Pos   // Token position where IMC cache ends
+	imcCacheHit     bool        // True if conversation history was found in cache
+	imcExpectedHash string      // Expected cachedMsgsHash for stale detection at startSlot
 
 	// IMC dedicated slot fields.
 	imcNewCacheTokens []llama.Token // New tokens to extend the cache in the slot's sequence

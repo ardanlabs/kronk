@@ -59,12 +59,12 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 
 	// IMC dedicated slot mode: trim generated tokens but keep cached prefix.
 	// Non-IMC mode: clear the entire sequence.
-	if e.model.cfg.IncrementalCache && s.job.imcID != "" {
-		e.model.cacheMu.RLock()
-		session, exists := e.model.imcSessions[s.job.imcID]
+	if e.model.cfg.IncrementalCache && s.job.imcCacheHit {
 		var trimPos llama.Pos
-		if exists {
-			trimPos = llama.Pos(session.totalTokensCached)
+
+		e.model.cacheMu.RLock()
+		if slotID < len(e.model.imcSlots) {
+			trimPos = llama.Pos(e.model.imcSlots[slotID].totalTokensCached)
 		}
 		e.model.cacheMu.RUnlock()
 
@@ -167,6 +167,35 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 
 	e.model.log(ctx, "batch-engine", "status", "slot-finished", "slot", s.id, "id", s.job.id,
 		"total_prompt", s.nPrompt, "output_tokens", outputTokens, "time", elapsed.String())
+}
+
+// failJob fails a job that was dequeued but never assigned to a slot. It sends
+// an error response, ends the queue-wait span, closes the channel, clears any
+// pending IMC reservation, and decrements activeStreams.
+func (e *batchEngine) failJob(job *chatJob, err error) {
+	e.model.sendErrorResponse(job.ctx, job.ch, job.id, job.object, 0, "", err, Usage{})
+
+	if job.queueWaitSpan != nil {
+		job.queueWaitSpan.End()
+	}
+
+	// Clear IMC pending reservation if this job reserved a slot.
+	if job.imcCacheHit && len(job.imcNewCacheTokens) > 0 {
+		slotID := job.imcSlotID
+		e.model.cacheMu.Lock()
+		if slotID < len(e.model.imcSlots) {
+			e.model.imcSlots[slotID].pending = false
+		}
+		e.model.cacheMu.Unlock()
+	}
+
+	close(job.ch)
+
+	remaining := e.model.activeStreams.Add(-1)
+
+	e.model.log(job.ctx, "batch-engine", "status", "job-failed", "id", job.id,
+		"imc_slot", job.imcSlotID, "imc_seq", job.imcSeqID, "imc_cache_hit", job.imcCacheHit,
+		"err", err, "active_streams", remaining)
 }
 
 func (e *batchEngine) freeSlotResources(s *slot) {

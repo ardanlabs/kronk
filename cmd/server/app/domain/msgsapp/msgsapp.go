@@ -54,10 +54,6 @@ func (a *app) messages(ctx context.Context, r *http.Request) web.Encoder {
 
 	d := toOpenAI(req)
 
-	if cacheID := r.Header.Get("KRONK_CACHE_ID"); cacheID != "" {
-		d["cache_id"] = cacheID
-	}
-
 	if req.Stream {
 		if err := a.handleStreaming(ctx, krn, d, req.Model); err != nil {
 			return errs.New(errs.Internal, err)

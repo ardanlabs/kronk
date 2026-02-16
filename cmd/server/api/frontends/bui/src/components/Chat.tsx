@@ -139,6 +139,7 @@ export default function Chat() {
       topLogprobs: defaultSampling.topLogprobs,
       grammar: modelSampling.grammar || defaultSampling.grammar,
       systemPrompt: defaultSampling.systemPrompt,
+      cacheId: defaultSampling.cacheId,
     };
   }, []);
 
@@ -393,7 +394,8 @@ export default function Chat() {
       },
       () => {
         setIsStreaming(false);
-      }
+      },
+      sampling.cacheId || undefined
     );
   }, [selectedModel, sampling, setMessages]);
 
@@ -677,6 +679,15 @@ export default function Chat() {
               onChange={(e) => setSampling({ topK: Number(e.target.value) })}
               min={1}
               max={100}
+            />
+          </div>
+          <div className="chat-setting">
+            <label>Cache ID</label>
+            <input
+              type="text"
+              value={sampling.cacheId}
+              onChange={(e) => setSampling({ cacheId: e.target.value })}
+              placeholder="e.g. user-123"
             />
           </div>
           <div className="chat-setting chat-setting-button">

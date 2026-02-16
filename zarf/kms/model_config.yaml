@@ -94,10 +94,6 @@
 # Use SPC for models with inconsistent templates (GPT-OSS, GLM) or for
 # simple chat applications. SPC caches only the system prompt.
 #
-# The client should pass the KRONK_CACHE_ID header with a unique
-# session/user ID. If no header is passed, the "default" id is used
-# which causes problems on multi-user systems.
-#
 #   system-prompt-cache: true
 #
 # INCREMENTAL MESSAGE CACHE (IMC)
@@ -107,22 +103,19 @@
 # conversation length. IMC caches all messages except the last one and
 # extends incrementally.
 #
-# The client should pass the KRONK_CACHE_ID header with a unique
-# session/user ID. If no header is passed, the "default" id is used
-# which causes problems on multi-user systems.
-#
 #   incremental-cache: true
 #
 # KV CACHE PARTITIONING
 # ---------------------------------------
 # llama.cpp internally partitions the KV cache across sequences. Each
-# slot gets context-window / nseq-max tokens of capacity. Cache type
-# (off, SPC, IMC) does not affect VRAM — all modes allocate the same
-# slots and KV cache. The difference is how cached state is managed:
+# slot gets context-window / nseq-max tokens of capacity. The difference
+# between cache modes is how cached state is managed:
 #
 #   No caching: Slots cleared after each request.
-#   SPC:        System prompt tokens cached in RAM, re-decoded per request.
-#   IMC:        Slots dedicated to a user, full conversation cached in KV.
+#   SPC:        System prompt decoded once into a dedicated KV cache sequence,
+#               copied to slot via MemorySeqCp (instant). Adds +1 sequence
+#               to VRAM (NSeqMax + 1).
+#   IMC:        Full conversation cached in KV, slots persist across requests.
 #
 # AGENT CLIENT NOTES
 # -------------------------------
@@ -160,14 +153,14 @@ Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMCG:
   grammar: hermestoolcalling.grm
 
 Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/SPC:
-  nseq-max: 2
+  nseq-max: 1
   system-prompt-cache: true
 
 # Working amazingly well with Kilo Code.
 # You can't use IMC with this model because it doesn't have consistent
 # prompt creation
 gpt-oss-120b-F16/SPC:
-  nseq-max: 2
+  nseq-max: 1
   system-prompt-cache: true
 
 # Smaller version of the 30B model and works ok with Cline.
@@ -179,7 +172,7 @@ cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0/IMC:
 # You can't use IMC with this model because it doesn't have consistent
 # prompt creation
 GLM-4.7-Flash-UD-Q8_K_XL/SPC:
-  nseq-max: 2
+  nseq-max: 1
   system-prompt-cache: true
 
 # ------------------------------------------------------------------------------

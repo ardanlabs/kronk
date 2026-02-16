@@ -2,10 +2,9 @@
 # https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
 #
 
-local
-node_modules
 .DS_Store
-.kilocode
+node_modules
+.clinerules
 
 # Docker compose data directories
 zarf/docker/openwebui/

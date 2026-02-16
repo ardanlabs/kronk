@@ -226,7 +226,7 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string) (
 // Returns true if the job was submitted (caller should set batching=true),
 // false if batch engine is not available or not applicable.
 func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, id string, d D, object string, prompt string, media [][]byte, params Params, mtmdCtx mtmd.Context, cache cacheResult) bool {
-	imcCacheHit := m.cfg.IncrementalCache && cache.cacheID != ""
+	imcCacheHit := m.cfg.IncrementalCache && (cache.cacheIdx > 0 || len(cache.imcNewCacheTokens) > 0)
 
 	_, queueSpan := otel.AddSpan(ctx, "queue-wait")
 
@@ -242,15 +242,15 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		mtmdCtx:       mtmdCtx,
 		ch:            ch,
 
-		spcCacheID:  cache.spcCacheID,
-		spcHash:     cache.spcHash,
-		spcTokens:   cache.spcTokens,
-		spcCacheHit: m.cfg.SystemPromptCache && len(cache.spcTokens) > 0,
+		spcCacheSeqID: cache.cacheSeqID,
+		spcCacheIdx:   cache.cacheIdx,
+		spcCacheHit:   m.cfg.SystemPromptCache && cache.cacheIdx > 0,
 
-		imcID:       cache.cacheID,
-		imcSeqID:    cache.cacheSeqID,
-		imcCacheIdx: cache.cacheIdx,
-		imcCacheHit: imcCacheHit,
+		imcSlotID:       cache.imcSlotID,
+		imcSeqID:        cache.cacheSeqID,
+		imcCacheIdx:     cache.cacheIdx,
+		imcCacheHit:     imcCacheHit,
+		imcExpectedHash: cache.imcExpectedHash,
 
 		imcNewCacheTokens: cache.imcNewCacheTokens,
 		imcNewTotalCached: cache.imcNewTotalCached,
@@ -261,6 +261,19 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 
 	if err := m.batch.submit(&job); err != nil {
 		queueSpan.End()
+
+		// Clear IMC pending reservation if this job reserved a slot.
+		// pending is set during extendIMCCache/buildIMCCacheFromScratch
+		// and normally cleared in startSlot after decode.
+		if len(cache.imcNewCacheTokens) > 0 {
+			slotID := cache.imcSlotID
+			m.cacheMu.Lock()
+			if slotID < len(m.imcSlots) {
+				m.imcSlots[slotID].pending = false
+			}
+			m.cacheMu.Unlock()
+		}
+
 		m.sendChatError(ctx, ch, id, err)
 		return false
 	}

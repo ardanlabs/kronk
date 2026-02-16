@@ -166,6 +166,25 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	// Clear the batch.
 	e.batch.Clear()
 
+	// Add generation tokens first. Each slot that has completed prefill needs
+	// exactly 1 token in the batch. Adding these before prefill chunks ensures
+	// addPrefillChunk sees the correct available space and won't overflow.
+	for _, s := range e.slots {
+		if !s.active || !s.prefillDone {
+			continue
+		}
+
+		// Check if client cancelled.
+		if s.job.ctx.Err() != nil {
+			e.finishSlot(s, s.job.ctx.Err())
+			continue
+		}
+
+		s.iBatch = e.batch.NTokens
+		e.batch.Add(s.sampled, s.nPast, s.seqIDs, true)
+		s.nPast++
+	}
+
 	// Continue prefill for text-only slots.
 	for _, s := range e.slots {
 		if !s.active || s.prefillTokens == nil {
@@ -202,23 +221,6 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 		if !e.addPrefillMediaChunk(s, buf) {
 			continue
 		}
-	}
-
-	// Add tokens from active slots that have completed prefill.
-	for _, s := range e.slots {
-		if !s.active || !s.prefillDone {
-			continue
-		}
-
-		// Check if client cancelled.
-		if s.job.ctx.Err() != nil {
-			e.finishSlot(s, s.job.ctx.Err())
-			continue
-		}
-
-		s.iBatch = e.batch.NTokens
-		e.batch.Add(s.sampled, s.nPast, s.seqIDs, true)
-		s.nPast++
 	}
 
 	// Fill empty slots from queue.
