@@ -15,9 +15,10 @@ import (
 // an existing cache (if the client omitted the system message on a follow-up
 // request). The system message is always removed from d after processing.
 //
-// The system prompt is decoded once into a dedicated cache sequence. At
-// startSlot time, the cached KV state is copied into the slot's working
-// sequence via copyCachesToSeq (an instant MemorySeqCp operation).
+// The system prompt is decoded once into a temporary sequence, the KV state
+// is extracted into an external byte buffer, and the sequence is freed. At
+// startSlot time, the KV state is restored into the slot's working sequence
+// via restoreSPCToSeq (a StateSeqSetData operation).
 func (m *Model) processSPC(ctx context.Context, d D) cacheResult {
 	messages, ok := d["messages"].([]D)
 	if !ok || len(messages) == 0 {
@@ -150,9 +151,25 @@ func (m *Model) performSPC(ctx context.Context, d D, messages []D, msgInfo cache
 	// Clear any existing cache in the dedicated sequence.
 	llama.MemorySeqRm(m.mem, m.spcCacheSeqID, -1, -1)
 
-	// Decode tokens into the dedicated cache sequence.
+	// Decode tokens into the temporary cache sequence.
 	if err := m.decodeTokensIntoCache(ctx, tokens, m.spcCacheSeqID, 0); err != nil {
 		return cacheResult{modifiedD: d, err: err}
+	}
+
+	// Extract the KV state into an external buffer so the sequence can be freed.
+	m.decodeMu.Lock()
+
+	kvSize := llama.StateSeqGetSize(m.lctx, m.spcCacheSeqID)
+	kvState := make([]byte, kvSize)
+	nExtracted := llama.StateSeqGetData(m.lctx, kvState, m.spcCacheSeqID)
+
+	// Free the sequence — KV entries are now in the external buffer.
+	llama.MemorySeqRm(m.mem, m.spcCacheSeqID, -1, -1)
+
+	m.decodeMu.Unlock()
+
+	if nExtracted == 0 {
+		return cacheResult{modifiedD: d, err: fmt.Errorf("spc: failed to extract KV state from seq %d", m.spcCacheSeqID)}
 	}
 
 	m.spcSession = &spcSession{
@@ -161,9 +178,10 @@ func (m *Model) performSPC(ctx context.Context, d D, messages []D, msgInfo cache
 		sysPromptLen:    contentLen,
 		seqID:           m.spcCacheSeqID,
 		lastUsed:        time.Now(),
+		kvState:         kvState,
 	}
 
-	m.log(ctx, "spc", "tokens", nTokens, "hash", newHash[:8], "status", "tokens saved")
+	m.log(ctx, "spc", "tokens", nTokens, "hash", newHash[:8], "kv_bytes", nExtracted, "status", "tokens saved (externalized)")
 
 	return cacheResult{
 		modifiedD:  d,

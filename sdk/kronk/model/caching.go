@@ -66,11 +66,9 @@ func (m *Model) clearCaches() {
 		slot.pending = false
 	}
 
-	// Clear SPC session.
+	// Clear SPC session. The KV sequence is already freed after extraction,
+	// so only the in-memory session state needs clearing.
 	m.spcSession = nil
-	if m.cfg.SystemPromptCache {
-		llama.MemorySeqRm(m.mem, m.spcCacheSeqID, -1, -1)
-	}
 	m.cacheMu.Unlock()
 }
 

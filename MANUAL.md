@@ -653,12 +653,12 @@ previous one.
 
 **SPC (System Prompt Cache)** — In many applications, every request starts with
 the same system prompt (the instructions that tell the model how to behave).
-SPC decodes the system prompt once into a dedicated cache sequence. When a new
-request arrives, the cached KV state is instantly copied into the slot's
-working sequence via MemorySeqCp before the rest of the prompt is processed.
-The slot is still cleared between requests, but copying the cached KV state is
-an instant operation compared to re-decoding the system prompt every time. SPC
-adds one extra sequence to the total VRAM allocation (NSeqMax + 1).
+SPC decodes the system prompt once into a temporary sequence, then externalizes
+the KV state to a byte buffer in RAM and frees the sequence. When a new request
+arrives, the KV state is restored into the slot's working sequence via
+StateSeqSetData before the rest of the prompt is processed. The slot is still
+cleared between requests. No dedicated cache sequence is permanently occupied,
+so SPC does not add any extra sequences to the VRAM allocation.
 
 **IMC (Incremental Message Cache)** — Designed for multi-turn conversations. A
 slot becomes dedicated to a conversation. The entire conversation history stays
@@ -670,8 +670,8 @@ but each active conversation permanently occupies a slot.
 | Mode | Slot Lifetime           | Cache Strategy                                                                              |
 | ---- | ----------------------- | ------------------------------------------------------------------------------------------- |
 | Off  | Cleared after request   | None                                                                                        |
-| SPC  | Cleared after request   | System prompt decoded once into dedicated cache sequence, copied to slot via MemorySeqCp    |
-| IMC  | Persists across requests | Full conversation cached in the slot's KV cache sequence                                    |
+| SPC  | Cleared after request   | System prompt decoded once, KV state stored in RAM, restored per request via StateSeqSetData |
+| IMC  | Persists across requests | Full conversation cached in the slot's KV cache sequence                                     |
 
 **Embedding and Reranking Models**
 
@@ -895,26 +895,23 @@ Memory is statically allocated upfront when the model loads. All slots reserve
 their full KV cache partition regardless of whether they are actively processing
 a request.
 
-#### SPC Adds One Extra Sequence
+#### Caching Modes (SPC / IMC)
 
-SPC (System Prompt Cache) uses a dedicated cache sequence to hold the decoded
-system prompt KV state. This sequence is in addition to the slot sequences, so
-the total sequence count is NSeqMax + 1 when SPC is enabled. The cached KV
-state is copied to slot sequences via MemorySeqCp on each request (an instant
-operation).
+Neither SPC nor IMC adds extra sequences to the VRAM calculation.
 
-```
-TotalSequences = NSeqMax          (no caching or IMC)
-TotalSequences = NSeqMax + 1      (SPC enabled)
-```
+SPC (System Prompt Cache) externalizes the decoded system prompt KV state to a
+byte buffer in RAM. On each request, the KV state is restored into the slot's
+sequence via StateSeqSetData. No dedicated cache sequence is permanently
+occupied.
 
-IMC does not add extra sequences — each slot's sequence IS the cache.
+IMC (Incremental Message Cache) uses dedicated slot/seq binding — each slot's
+sequence IS the cache. No separate cache sequences.
 
-| Mode | Slot Lifetime           | Cache Strategy                                                                              |
-| ---- | ----------------------- | ------------------------------------------------------------------------------------------- |
-| off  | Cleared after request   | None                                                                                        |
-| SPC  | Cleared after request   | System prompt decoded once into dedicated cache sequence, copied to slot via MemorySeqCp    |
-| IMC  | Persists across requests | Full conversation cached in the slot's KV cache sequence                                    |
+| Mode | Slot Lifetime           | Cache Strategy                                                                               |
+| ---- | ----------------------- | -------------------------------------------------------------------------------------------- |
+| off  | Cleared after request   | None                                                                                         |
+| SPC  | Cleared after request   | System prompt decoded once, KV state stored in RAM, restored per request via StateSeqSetData  |
+| IMC  | Persists across requests | Full conversation cached in the slot's KV cache sequence                                     |
 
 #### Example: Real Model Calculation
 
@@ -922,7 +919,7 @@ IMC does not add extra sequences — each slot's sequence IS the cache.
 Model                   : Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
 Model Weights           : 36.0 GB
 Context Window (n_ctx)  : 131,072 (128K)
-cache-type-k / v        : q8_0 (1 byte per element)
+Bytes Per Element       : 1 (q8_0)
 block_count (n_layers)  : 48
 attention.head_count_kv : 4
 attention.key_length    : 128
@@ -1237,9 +1234,8 @@ within a reasonable time.
 **Memory and Caching**
 
 Each slot reserves its own KV cache partition, so increasing `NSeqMax`
-increases VRAM usage proportionally. SPC adds one extra sequence (NSeqMax + 1)
-for its dedicated cache. IMC does not add extra sequences. For details on how slot memory
-is allocated and how to estimate total VRAM, see
+increases VRAM usage proportionally. Neither SPC nor IMC adds extra sequences.
+For details on how slot memory is allocated and how to estimate total VRAM, see
 [Section 3.5](#35-parallel-inference-nseqmax) and
 [Section 3.7](#37-vram-estimation).
 
@@ -1371,7 +1367,7 @@ VRAM estimate (see [Section 3.7](#37-vram-estimation) for the full formula):
 Model                   : Qwen3-8B-Q8_0
 Model Weights           : ~9 GB
 Context Window (n_ctx)  : 8,192
-cache-type-k / v        : q8_0 (1 byte per element)
+Bytes Per Element       : 1 (q8_0)
 block_count (n_layers)  : 36
 attention.head_count_kv : 8
 attention.key_length    : 128
@@ -1416,7 +1412,7 @@ input tokens._
 
 Kronk provides two caching modes that reduce redundant prefill work:
 
-- SPC (System Prompt Cache) decodes the system prompt once into a dedicated cache sequence and copies the KV state into each slot via MemorySeqCp (an instant operation).
+- SPC (System Prompt Cache) decodes the system prompt once, externalizes the KV state to a byte buffer in RAM, and restores it into each slot via StateSeqSetData per request.
 
 - IMC (Incremental Message Cache) dedicates each slot to a user and caches the full conversation in the slot's KV cache sequence, so only the new message needs to be prefilled.
 
@@ -1448,11 +1444,12 @@ IMC (Incremental Message Cache):
 
 ### 5.2 System Prompt Cache (SPC)
 
-System Prompt Cache decodes the system prompt once into a dedicated cache
-sequence. On each request, the cached KV state is instantly copied into the
-slot's working sequence via MemorySeqCp. This avoids re-decoding the system
-prompt on every request. SPC adds one extra sequence to the VRAM allocation
-(NSeqMax + 1).
+System Prompt Cache decodes the system prompt once into a temporary sequence,
+externalizes the KV state to a byte buffer in RAM, and frees the sequence. On
+each request, the KV state is restored into the slot's working sequence via
+StateSeqSetData. This avoids re-decoding the system prompt on every request.
+No dedicated cache sequence is permanently occupied, so SPC does not add any
+extra sequences to the VRAM allocation.
 
 **Best for:**
 
@@ -1472,11 +1469,11 @@ models:
 **How It Works:**
 
 1. First request: System prompt is templated, tokenized, and decoded into a
-   dedicated cache sequence
-2. The cached KV state is copied into the slot's working sequence via
-   MemorySeqCp (instant)
-3. Remaining messages are prefilled after the cached system prompt tokens
-4. Subsequent requests: KV state is copied from the cache sequence (no
+   temporary sequence
+2. The KV state is extracted into a byte buffer in RAM and the sequence is freed
+3. The KV state is restored into the slot's working sequence via StateSeqSetData
+4. Remaining messages are prefilled after the cached system prompt tokens
+5. Subsequent requests: KV state is restored from the RAM buffer (no
    re-decoding needed)
 
 **Cache Invalidation:**
@@ -1597,8 +1594,8 @@ This design is optimized for agentic workflows where multiple sub-agents send
 independent conversations (different system prompts, different message
 histories).
 
-**SPC:** All requests share the same dedicated cache sequence. The cached KV
-state is copied into each slot via MemorySeqCp (instant). If the system prompt
+**SPC:** All requests share the same externalized KV state buffer. The cached
+KV state is restored into each slot via StateSeqSetData. If the system prompt
 changes, the cache is rebuilt automatically.
 
 ### 5.5 SPC vs IMC
@@ -1617,7 +1614,7 @@ the trade-offs to help you choose.
 | Multi-user   | Single shared cache sequence     | Single-user, all slots available              |
 | Sub-agents   | All share same SPC sequence      | Each gets own slot via hash matching          |
 | Best for     | Chat UIs, inconsistent templates | Agentic workflows, consistent templates       |
-| Memory       | +1 sequence (NSeqMax + 1)        | Zero extra VRAM overhead                      |
+| Memory       | Zero extra VRAM (KV state in RAM)| Zero extra VRAM overhead                      |
 | Template req | Any                              | Consistent templates only                     |
 
 **Important:** SPC and IMC are mutually exclusive. Choose based on your
@@ -1686,9 +1683,10 @@ restrictions on template behavior and session management.
 
 **SPC Performance:**
 
-SPC copies the cached KV state into each slot via MemorySeqCp. This is an
-instant memory copy operation with negligible latency, regardless of system
-prompt size. The trade-off is one extra sequence worth of VRAM.
+SPC restores the externalized KV state into each slot via StateSeqSetData.
+This is a memory copy from RAM into the KV cache, typically taking 10-30ms
+depending on system prompt size and memory bus load. No extra VRAM is consumed
+since the KV state lives in regular RAM.
 
 **IMC Prefill Savings:**
 

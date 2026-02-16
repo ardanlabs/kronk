@@ -362,7 +362,6 @@ export interface VRAMRequest {
   context_window: number;
   bytes_per_element: number;
   slots: number;
-  cache_type: string;
 }
 
 export interface VRAMCalculatorResponse {

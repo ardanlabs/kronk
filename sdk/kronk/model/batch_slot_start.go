@@ -202,14 +202,14 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 
 		switch {
 		case job.spcCacheHit:
-			e.model.log(job.ctx, "start-slot", "status", "spc-copy", "src_seq", job.spcCacheSeqID, "dst_seq", s.seqID, "cached_tokens", job.spcCacheIdx)
-			if err := e.model.copyCachesToSeq(s.seqID, job.spcCacheSeqID); err != nil {
+			e.model.log(job.ctx, "start-slot", "status", "spc-restore", "dst_seq", s.seqID, "cached_tokens", job.spcCacheIdx)
+			if err := e.model.restoreSPCToSeq(s.seqID); err != nil {
 				e.finishSlot(s, fmt.Errorf("start-slot: %w", err))
 				return
 			}
 			cacheIdx = job.spcCacheIdx
 
-			e.model.log(job.ctx, "start-slot", "status", "spc-copied", "slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx)
+			e.model.log(job.ctx, "start-slot", "status", "spc-restored", "slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx)
 		}
 	}
 

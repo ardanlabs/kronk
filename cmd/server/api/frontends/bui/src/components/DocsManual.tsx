@@ -509,7 +509,7 @@ flash_attention: auto      # Let llama.cpp decide`}</code></pre>
           <p><strong>How Caching Strategy Affects Slot Behavior</strong></p>
           <p>All three caching strategies allocate the same number of slots with the same VRAM cost. The difference is what happens to the cached data in each slot between requests:</p>
           <p><strong>No Caching</strong> — The simplest mode. When a request finishes, the slot's KV cache is cleared. The next request that lands in that slot starts from scratch, processing the full prompt from the beginning. Every request pays the full cost of prompt processing regardless of how similar it is to a previous one.</p>
-          <p><strong>SPC (System Prompt Cache)</strong> — In many applications, every request starts with the same system prompt (the instructions that tell the model how to behave). SPC decodes the system prompt once into a dedicated cache sequence. When a new request arrives, the cached KV state is instantly copied into the slot's working sequence via MemorySeqCp before the rest of the prompt is processed. The slot is still cleared between requests, but copying the cached KV state is an instant operation compared to re-decoding the system prompt every time. SPC adds one extra sequence to the total VRAM allocation (NSeqMax + 1).</p>
+          <p><strong>SPC (System Prompt Cache)</strong> — In many applications, every request starts with the same system prompt (the instructions that tell the model how to behave). SPC decodes the system prompt once into a temporary sequence, then externalizes the KV state to a byte buffer in RAM and frees the sequence. When a new request arrives, the KV state is restored into the slot's working sequence via StateSeqSetData before the rest of the prompt is processed. The slot is still cleared between requests. No dedicated cache sequence is permanently occupied, so SPC does not add any extra sequences to the VRAM allocation.</p>
           <p><strong>IMC (Incremental Message Cache)</strong> — Designed for multi-turn conversations. A slot becomes dedicated to a conversation. The entire conversation history stays in the slot's KV cache between requests. When the user sends a new message, only the new tokens need to be processed — the model doesn't re-read the entire conversation. This gives the best performance for chat applications, but each active conversation permanently occupies a slot.</p>
           <table className="flags-table">
             <thead>
@@ -528,7 +528,7 @@ flash_attention: auto      # Let llama.cpp decide`}</code></pre>
               <tr>
                 <td>SPC</td>
                 <td>Cleared after request</td>
-                <td>System prompt decoded once into dedicated cache sequence, copied to slot via MemorySeqCp</td>
+                <td>System prompt decoded once, KV state stored in RAM, restored per request via StateSeqSetData</td>
               </tr>
               <tr>
                 <td>IMC</td>
@@ -844,11 +844,10 @@ KV_Per_Sequence        = n_ctx × n_layers × KV_Per_Token_Per_Layer`}</code></p
           <pre className="code-block"><code>{`Slot_Memory = NSeqMax × KV_Per_Sequence
 Total_VRAM  = Model_Weights + Slot_Memory`}</code></pre>
           <p>Memory is statically allocated upfront when the model loads. All slots reserve their full KV cache partition regardless of whether they are actively processing a request.</p>
-          <h4 id="spc-adds-one-extra-sequence">SPC Adds One Extra Sequence</h4>
-          <p>SPC (System Prompt Cache) uses a dedicated cache sequence to hold the decoded system prompt KV state. This sequence is in addition to the slot sequences, so the total sequence count is NSeqMax + 1 when SPC is enabled. The cached KV state is copied to slot sequences via MemorySeqCp on each request (an instant operation).</p>
-          <pre className="code-block"><code>{`TotalSequences = NSeqMax          (no caching or IMC)
-TotalSequences = NSeqMax + 1      (SPC enabled)`}</code></pre>
-          <p>IMC does not add extra sequences — each slot's sequence IS the cache.</p>
+          <h4 id="caching-modes-spc-imc">Caching Modes (SPC / IMC)</h4>
+          <p>Neither SPC nor IMC adds extra sequences to the VRAM calculation.</p>
+          <p>SPC (System Prompt Cache) externalizes the decoded system prompt KV state to a byte buffer in RAM. On each request, the KV state is restored into the slot's sequence via StateSeqSetData. No dedicated cache sequence is permanently occupied.</p>
+          <p>IMC (Incremental Message Cache) uses dedicated slot/seq binding — each slot's sequence IS the cache. No separate cache sequences.</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -866,7 +865,7 @@ TotalSequences = NSeqMax + 1      (SPC enabled)`}</code></pre>
               <tr>
                 <td>SPC</td>
                 <td>Cleared after request</td>
-                <td>System prompt decoded once into dedicated cache sequence, copied to slot via MemorySeqCp</td>
+                <td>System prompt decoded once, KV state stored in RAM, restored per request via StateSeqSetData</td>
               </tr>
               <tr>
                 <td>IMC</td>
@@ -879,7 +878,7 @@ TotalSequences = NSeqMax + 1      (SPC enabled)`}</code></pre>
           <pre className="code-block"><code>{`Model                   : Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
 Model Weights           : 36.0 GB
 Context Window (n_ctx)  : 131,072 (128K)
-cache-type-k / v        : q8_0 (1 byte per element)
+Bytes Per Element       : 1 (q8_0)
 block_count (n_layers)  : 48
 attention.head_count_kv : 4
 attention.key_length    : 128
@@ -1072,7 +1071,7 @@ Slot 3  →  seqID = 3  →  KV cache partition 3`}</code></pre>
           <pre className="code-block"><code className="language-go">{`krn, err := kronk.New(ctx, cfg, kronk.WithQueueDepth(3))`}</code></pre>
           <p>When all slots and queue positions are occupied, new requests block until a slot completes or the request's context is cancelled. If the engine is shutting down, queued requests receive an immediate error. This backpressure mechanism prevents the system from accepting more work than it can process within a reasonable time.</p>
           <p><strong>Memory and Caching</strong></p>
-          <p>Each slot reserves its own KV cache partition, so increasing <code>NSeqMax</code> increases VRAM usage proportionally. SPC adds one extra sequence (NSeqMax + 1) for its dedicated cache. IMC does not add extra sequences. For details on how slot memory is allocated and how to estimate total VRAM, see <a href="#35-parallel-inference-nseqmax">Section 3.5</a> and <a href="#37-vram-estimation">Section 3.7</a>.</p>
+          <p>Each slot reserves its own KV cache partition, so increasing <code>NSeqMax</code> increases VRAM usage proportionally. Neither SPC nor IMC adds extra sequences. For details on how slot memory is allocated and how to estimate total VRAM, see <a href="#35-parallel-inference-nseqmax">Section 3.5</a> and <a href="#37-vram-estimation">Section 3.7</a>.</p>
           <h3 id="45-concurrency-by-model-type">4.5 Concurrency by Model Type</h3>
           <p>Not all model types achieve concurrency the same way. Text inference models (including vision and audio) use the batch engine described in the previous sections, where multiple slots share a single model context and their tokens are combined into one decode call. Embedding and reranking models take a different approach — they create a pool of independent contexts that each process requests separately. The table below summarizes the distinction, and the diagrams that follow show the request flow for each approach.</p>
           <table className="flags-table">
@@ -1170,7 +1169,7 @@ Request 4 ──→ acquireModel() ──→ pool.acquire() ──→ Context 4 
           <pre className="code-block"><code>{`Model                   : Qwen3-8B-Q8_0
 Model Weights           : ~9 GB
 Context Window (n_ctx)  : 8,192
-cache-type-k / v        : q8_0 (1 byte per element)
+Bytes Per Element       : 1 (q8_0)
 block_count (n_layers)  : 36
 attention.head_count_kv : 8
 attention.key_length    : 128
@@ -1199,7 +1198,7 @@ Step 4 — Total VRAM:
           <p><em>Note: Prefill is the phase where the model processes all input tokens (system prompt, conversation history, and the new message) before it begins generating a response. This is the most computationally expensive part of a request, and its cost grows with the number of input tokens.</em></p>
           <p>Kronk provides two caching modes that reduce redundant prefill work:</p>
           <ul>
-            <li>SPC (System Prompt Cache) decodes the system prompt once into a dedicated cache sequence and copies the KV state into each slot via MemorySeqCp (an instant operation).</li>
+            <li>SPC (System Prompt Cache) decodes the system prompt once, externalizes the KV state to a byte buffer in RAM, and restores it into each slot via StateSeqSetData per request.</li>
           </ul>
           <ul>
             <li>IMC (Incremental Message Cache) dedicates each slot to a user and caches the full conversation in the slot's KV cache sequence, so only the new message needs to be prefilled.</li>
@@ -1228,7 +1227,7 @@ IMC (Incremental Message Cache):
                                               ↓
                                            Generate`}</code></pre>
           <h3 id="52-system-prompt-cache-spc">5.2 System Prompt Cache (SPC)</h3>
-          <p>System Prompt Cache decodes the system prompt once into a dedicated cache sequence. On each request, the cached KV state is instantly copied into the slot's working sequence via MemorySeqCp. This avoids re-decoding the system prompt on every request. SPC adds one extra sequence to the VRAM allocation (NSeqMax + 1).</p>
+          <p>System Prompt Cache decodes the system prompt once into a temporary sequence, externalizes the KV state to a byte buffer in RAM, and frees the sequence. On each request, the KV state is restored into the slot's working sequence via StateSeqSetData. This avoids re-decoding the system prompt on every request. No dedicated cache sequence is permanently occupied, so SPC does not add any extra sequences to the VRAM allocation.</p>
           <p><strong>Best for:</strong></p>
           <ul>
             <li>Models with inconsistent templates (GPT-OSS, GLM)</li>
@@ -1244,14 +1243,12 @@ IMC (Incremental Message Cache):
           <ol>
             <li>First request: System prompt is templated, tokenized, and decoded into a</li>
           </ol>
-          <p>dedicated cache sequence</p>
+          <p>temporary sequence</p>
           <ol>
-            <li>The cached KV state is copied into the slot's working sequence via</li>
-          </ol>
-          <p>MemorySeqCp (instant)</p>
-          <ol>
+            <li>The KV state is extracted into a byte buffer in RAM and the sequence is freed</li>
+            <li>The KV state is restored into the slot's working sequence via StateSeqSetData</li>
             <li>Remaining messages are prefilled after the cached system prompt tokens</li>
-            <li>Subsequent requests: KV state is copied from the cache sequence (no</li>
+            <li>Subsequent requests: KV state is restored from the RAM buffer (no</li>
           </ol>
           <p>re-decoding needed)</p>
           <p><strong>Cache Invalidation:</strong></p>
@@ -1319,7 +1316,7 @@ Prefill:  [user3 + gen_prompt]`}</code></pre>
           <p>When two requests arrive simultaneously and both need to build a cache from scratch, a race condition could cause both to pick the same empty slot. IMC prevents this with a pending flag: when a slot begins a deferred cache build, it is marked pending. Concurrent scanners skip pending slots, so the second request picks a different slot. The pending flag is cleared after the cache decode completes (or on error).</p>
           <h3 id="54-single-user-caching">5.4 Single-User Caching</h3>
           <p>IMC is designed for single-user use. All <code>NSeqMax</code> slots are available, with each slot independently tracking its own conversation branch via hash matching. This design is optimized for agentic workflows where multiple sub-agents send independent conversations (different system prompts, different message histories).</p>
-          <p><strong>SPC:</strong> All requests share the same dedicated cache sequence. The cached KV state is copied into each slot via MemorySeqCp (instant). If the system prompt changes, the cache is rebuilt automatically.</p>
+          <p><strong>SPC:</strong> All requests share the same externalized KV state buffer. The cached KV state is restored into each slot via StateSeqSetData. If the system prompt changes, the cache is rebuilt automatically.</p>
           <h3 id="55-spc-vs-imc">5.5 SPC vs IMC</h3>
           <p>Both caching modes eliminate redundant work, but they target different parts of the prompt and suit different workloads. SPC is the simpler option — it caches just the system prompt and works with any model template. IMC is more aggressive — it caches the entire conversation history but requires the model's chat template to produce consistent output. The table below summarizes the trade-offs to help you choose.</p>
           <table className="flags-table">
@@ -1358,7 +1355,7 @@ Prefill:  [user3 + gen_prompt]`}</code></pre>
               </tr>
               <tr>
                 <td>Memory</td>
-                <td>+1 sequence (NSeqMax + 1)</td>
+                <td>Zero extra VRAM (KV state in RAM)</td>
                 <td>Zero extra VRAM overhead</td>
               </tr>
               <tr>
@@ -1410,7 +1407,7 @@ Prefill:  [user3 + gen_prompt]`}</code></pre>
           <h3 id="58-performance-and-limitations">5.8 Performance and Limitations</h3>
           <p>Caching improves request latency by skipping redundant prefill work, but each mode has its own costs and constraints. SPC trades a small per-request decode cost for broad compatibility. IMC delivers larger savings but imposes restrictions on template behavior and session management.</p>
           <p><strong>SPC Performance:</strong></p>
-          <p>SPC copies the cached KV state into each slot via MemorySeqCp. This is an instant memory copy operation with negligible latency, regardless of system prompt size. The trade-off is one extra sequence worth of VRAM.</p>
+          <p>SPC restores the externalized KV state into each slot via StateSeqSetData. This is a memory copy from RAM into the KV cache, typically taking 10-30ms depending on system prompt size and memory bus load. No extra VRAM is consumed since the KV state lives in regular RAM.</p>
           <p><strong>IMC Prefill Savings:</strong></p>
           <p>For a 2000-token cached conversation prefix:</p>
           <ul>
