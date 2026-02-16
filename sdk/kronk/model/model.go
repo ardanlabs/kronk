@@ -25,7 +25,7 @@ type compiledTemplate struct {
 }
 
 // imcSession holds the state for a single IMC (Incremental Message Cache) session.
-// Each unique cache_id gets its own session with an assigned cache sequence.
+// Each slot gets its own session with an assigned cache sequence.
 type imcSession struct {
 	cachedMsgsHash    string      // Hash of all cached messages
 	totalTokensCached int         // Total tokens in cache
@@ -36,13 +36,15 @@ type imcSession struct {
 	pending           bool        // True while a build/rebuild is in-flight (deferred decode)
 }
 
-// spcEntry holds saved system prompt tokens for a cache_id.
-// Tokens are stored in RAM and re-decoded into the shared cache sequence
-// on demand, avoiding the need for one KV cache sequence per user.
-type spcEntry struct {
-	hash   string        // Hash of the system prompt content
-	tokens []llama.Token // Tokenized system prompt (saved in RAM)
-	len    int           // Length of original system prompt string
+// spcSession holds the state for a single SPC (System Prompt Cache) session.
+// The system prompt is decoded once into a dedicated cache sequence and copied
+// to slot sequences on each request via MemorySeqCp.
+type spcSession struct {
+	sysPromptHash   string      // Hash of the system prompt
+	sysPromptTokens int         // Number of tokens in system prompt cache
+	sysPromptLen    int         // Length of system prompt string
+	seqID           llama.SeqId // Assigned cache sequence ID
+	lastUsed        time.Time   // Last access time
 }
 
 // Cataloger provides support to retrieve catalog config and template
@@ -71,9 +73,9 @@ type Model struct {
 	unloaded      atomic.Bool
 	decodeMu      sync.Mutex
 	cacheMu       sync.RWMutex
-	imcCacheID string         // The single active cache_id (empty = none)
-	imcSlots   []*imcSession  // Per-slot branch state, len = NSeqMax
-	spcEntries    map[string]*spcEntry   // SPC token entries keyed by cache_id
+	imcSlots []*imcSession // Per-slot branch state, len = NSeqMax
+	spcSession    *spcSession            // SPC session (single dedicated cache sequence)
+	spcCacheSeqID llama.SeqId            // Dedicated SPC cache sequence ID
 	addBOSToken   bool                   // Whether to add BOS token (from model metadata)
 	pool          *contextPool           // Context pool for parallel embed/rerank
 }
@@ -261,9 +263,10 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 			}
 		}
 
-		// Initialize SPC token tracking when enabled.
+		// Initialize SPC with a dedicated cache sequence.
+		// The cache sequence is the first sequence after the slot sequences.
 		if cfg.SystemPromptCache {
-			m.spcEntries = make(map[string]*spcEntry)
+			m.spcCacheSeqID = llama.SeqId(nSlots)
 		}
 
 		m.batch = newBatchEngine(&m, nSlots)
@@ -549,6 +552,12 @@ func calculateVRAM(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory int64)
 	bytesPerElement := ggmlTypeToBytes(cfg.CacheTypeK, cfg.CacheTypeV)
 
 	nSeqMax := int64(max(cfg.NSeqMax, 1))
+
+	// SPC uses a dedicated cache sequence, adding one extra sequence.
+	if cfg.SystemPromptCache {
+		nSeqMax++
+	}
+
 	contextWindow := int64(cfg.ContextWindow)
 
 	kvPerTokenPerLayer := headCountKV * (keyLength + valueLength) * bytesPerElement
@@ -557,6 +566,17 @@ func calculateVRAM(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory int64)
 	vramTotal = int64(mi.Size) + slotMemory
 
 	return vramTotal, slotMemory
+}
+
+// copyCachesToSeq copies cached KV state from a source sequence to the
+// destination sequence. Used by SPC to copy the cached system prompt
+// into a slot's working sequence.
+func (m *Model) copyCachesToSeq(dstSeqID llama.SeqId, srcSeqID llama.SeqId) error {
+	if err := llama.MemorySeqCp(m.mem, srcSeqID, dstSeqID, -1, -1); err != nil {
+		return fmt.Errorf("copy-cache: failed to copy seq %d to %d: %w", srcSeqID, dstSeqID, err)
+	}
+
+	return nil
 }
 
 func ggmlTypeToBytes(typeK, typeV GGMLType) int64 {

@@ -54,10 +54,6 @@ func (a *app) chatCompletions(ctx context.Context, r *http.Request) web.Encoder 
 
 	d := model.MapToModelD(req)
 
-	if cacheID := r.Header.Get("KRONK_CACHE_ID"); cacheID != "" {
-		d["cache_id"] = cacheID
-	}
-
 	if _, err := krn.ChatStreamingHTTP(ctx, web.GetWriter(ctx), d); err != nil {
 		return errs.New(errs.Internal, err)
 	}

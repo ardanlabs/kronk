@@ -1,6 +1,8 @@
 package model
 
-import "fmt"
+import (
+	"fmt"
+)
 
 // hasActiveSlots returns true if any slot is currently processing.
 func (e *batchEngine) hasActiveSlots() bool {
@@ -37,14 +39,14 @@ func (e *batchEngine) fillSlots() {
 }
 
 // fillSlotsIMC routes IMC jobs to their target slot. processIMC determines
-// which slot to use via hash matching; the target slot's seqID is carried
-// in the job's imcSeqID field (which equals the slot index).
+// which slot to use via hash matching; the target slot index is carried
+// in the job's imcSlotID field.
 func (e *batchEngine) fillSlotsIMC() {
 	select {
 	case job := <-e.requestQ:
 		// Route to the specific slot determined by processIMC.
-		targetSlotID := int(job.imcSeqID)
-		if job.imcID != "" && targetSlotID < len(e.slots) {
+		targetSlotID := job.imcSlotID
+		if job.imcCacheHit && targetSlotID < len(e.slots) {
 			s := e.slots[targetSlotID]
 			if !s.active {
 				e.startSlot(s, job)
@@ -55,12 +57,12 @@ func (e *batchEngine) fillSlotsIMC() {
 			select {
 			case e.requestQ <- job:
 			default:
-				e.finishSlot(s, fmt.Errorf("fillSlots: IMC queue full, dropping request"))
+				e.failJob(job, fmt.Errorf("fillSlots: IMC queue full, dropping request"))
 			}
 			return
 		}
 
-		// No IMC routing (no cache_id or invalid slot) — assign to any
+		// No IMC routing (no cache hit or invalid slot) — assign to any
 		// available slot.
 		for _, s := range e.slots {
 			if !s.active {
@@ -73,6 +75,7 @@ func (e *batchEngine) fillSlotsIMC() {
 		select {
 		case e.requestQ <- job:
 		default:
+			e.failJob(job, fmt.Errorf("fillSlots: all slots busy, dropping request"))
 		}
 
 	default:

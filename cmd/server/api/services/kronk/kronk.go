@@ -105,7 +105,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			RepoPath        string
 		}
 		Cache struct {
-			ModelsInCache        int           `conf:"default:3"`
+			ModelsInCache        int           `conf:"default:2"`
 			TTL                  time.Duration `conf:"default:20m"`
 			IgnoreIntegrityCheck bool          `conf:"default:true"`
 		}

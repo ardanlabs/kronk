@@ -653,25 +653,25 @@ previous one.
 
 **SPC (System Prompt Cache)** — In many applications, every request starts with
 the same system prompt (the instructions that tell the model how to behave).
-SPC saves the tokenized system prompt in RAM. When a new request arrives,
-those tokens are decoded into the slot's KV cache before the rest of the
-prompt is processed. The slot is still cleared between requests, but
-re-encoding the system prompt is much faster than processing the full prompt
-from scratch every time.
+SPC decodes the system prompt once into a dedicated cache sequence. When a new
+request arrives, the cached KV state is instantly copied into the slot's
+working sequence via MemorySeqCp before the rest of the prompt is processed.
+The slot is still cleared between requests, but copying the cached KV state is
+an instant operation compared to re-decoding the system prompt every time. SPC
+adds one extra sequence to the total VRAM allocation (NSeqMax + 1).
 
 **IMC (Incremental Message Cache)** — Designed for multi-turn conversations. A
-slot becomes dedicated to a specific `cache_id` (typically one user's
-conversation). The entire conversation history stays in the slot's KV cache
-between requests. When the user sends a new message, only the new tokens need
-to be processed — the model doesn't re-read the entire conversation. This
-gives the best performance for chat applications, but each active conversation
-permanently occupies a slot.
+slot becomes dedicated to a conversation. The entire conversation history stays
+in the slot's KV cache between requests. When the user sends a new message,
+only the new tokens need to be processed — the model doesn't re-read the
+entire conversation. This gives the best performance for chat applications,
+but each active conversation permanently occupies a slot.
 
-| Mode | Slot Lifetime           | Cache Strategy                                                            |
-| ---- | ----------------------- | ------------------------------------------------------------------------- |
-| Off  | Cleared after request   | None                                                                      |
-| SPC  | Cleared after request   | System prompt tokens held in RAM, decoded into slot's sequence on request |
-| IMC  | Dedicated to a cache_id | Full conversation cached in the slot's KV cache sequence                  |
+| Mode | Slot Lifetime           | Cache Strategy                                                                              |
+| ---- | ----------------------- | ------------------------------------------------------------------------------------------- |
+| Off  | Cleared after request   | None                                                                                        |
+| SPC  | Cleared after request   | System prompt decoded once into dedicated cache sequence, copied to slot via MemorySeqCp    |
+| IMC  | Persists across requests | Full conversation cached in the slot's KV cache sequence                                    |
 
 **Embedding and Reranking Models**
 
@@ -895,21 +895,26 @@ Memory is statically allocated upfront when the model loads. All slots reserve
 their full KV cache partition regardless of whether they are actively processing
 a request.
 
-#### Caching Mode Does Not Affect VRAM
+#### SPC Adds One Extra Sequence
 
-All caching modes (off, SPC, IMC) allocate the same number of slots and
-sequences with the same VRAM footprint. The difference is how each mode manages
-cached state, not how much memory is used:
+SPC (System Prompt Cache) uses a dedicated cache sequence to hold the decoded
+system prompt KV state. This sequence is in addition to the slot sequences, so
+the total sequence count is NSeqMax + 1 when SPC is enabled. The cached KV
+state is copied to slot sequences via MemorySeqCp on each request (an instant
+operation).
 
-| Mode | Slot Lifetime           | Cache Strategy                                                            |
-| ---- | ----------------------- | ------------------------------------------------------------------------- |
-| off  | Cleared after request   | None                                                                      |
-| SPC  | Cleared after request   | System prompt tokens held in RAM, decoded into slot's sequence on request |
-| IMC  | Dedicated to a cache_id | Full conversation cached in the slot's KV cache sequence                  |
+```
+TotalSequences = NSeqMax          (no caching or IMC)
+TotalSequences = NSeqMax + 1      (SPC enabled)
+```
 
-SPC stores system prompt tokens in RAM (negligible) and decodes them into each
-slot's sequence before the remaining prompt is prefilled. Zero extra VRAM
-overhead.
+IMC does not add extra sequences — each slot's sequence IS the cache.
+
+| Mode | Slot Lifetime           | Cache Strategy                                                                              |
+| ---- | ----------------------- | ------------------------------------------------------------------------------------------- |
+| off  | Cleared after request   | None                                                                                        |
+| SPC  | Cleared after request   | System prompt decoded once into dedicated cache sequence, copied to slot via MemorySeqCp    |
+| IMC  | Persists across requests | Full conversation cached in the slot's KV cache sequence                                    |
 
 #### Example: Real Model Calculation
 
@@ -1186,12 +1191,12 @@ Each request moves through the batch engine in the following stages:
 2. **Assign**: Available slot picks up the request
 3. **Cache Setup**: Prepare the slot's sequence based on caching strategy:
    - Clear the sequence (no caching)
-   - Clear the sequence, then decode saved system prompt tokens (SPC)
+   - Clear the sequence, then copy cached KV state from dedicated SPC sequence (SPC)
    - Extend or rebuild the conversation cache in place (IMC)
 4. **Prefill**: Tokenize and process remaining prompt tokens
 5. **Decode**: Generate tokens one at a time, streaming to client
 6. **Complete**: Release the slot:
-   - Clear the entire sequence (no caching/SPC)
+   - Clear the entire sequence (no caching or SPC)
    - Trim generated tokens, keep cached conversation prefix (IMC)
 
 ### 4.4 Configuring Batch Processing
@@ -1232,8 +1237,8 @@ within a reasonable time.
 **Memory and Caching**
 
 Each slot reserves its own KV cache partition, so increasing `NSeqMax`
-increases VRAM usage proportionally. Neither SPC nor IMC adds extra VRAM
-beyond what the slots themselves require. For details on how slot memory
+increases VRAM usage proportionally. SPC adds one extra sequence (NSeqMax + 1)
+for its dedicated cache. IMC does not add extra sequences. For details on how slot memory
 is allocated and how to estimate total VRAM, see
 [Section 3.5](#35-parallel-inference-nseqmax) and
 [Section 3.7](#37-vram-estimation).
@@ -1411,7 +1416,7 @@ input tokens._
 
 Kronk provides two caching modes that reduce redundant prefill work:
 
-- SPC (System Prompt Cache) caches the system prompt tokens in RAM and re-decodes them into the slot, skipping tokenization and templating.
+- SPC (System Prompt Cache) decodes the system prompt once into a dedicated cache sequence and copies the KV state into each slot via MemorySeqCp (an instant operation).
 
 - IMC (Incremental Message Cache) dedicates each slot to a user and caches the full conversation in the slot's KV cache sequence, so only the new message needs to be prefilled.
 
@@ -1443,10 +1448,11 @@ IMC (Incremental Message Cache):
 
 ### 5.2 System Prompt Cache (SPC)
 
-System Prompt Cache saves the tokenized system prompt in RAM and re-decodes
-it into each slot's sequence at request time. This avoids re-tokenizing and
-re-templating the system prompt on every request, while adding zero VRAM
-overhead since no dedicated cache sequences are needed.
+System Prompt Cache decodes the system prompt once into a dedicated cache
+sequence. On each request, the cached KV state is instantly copied into the
+slot's working sequence via MemorySeqCp. This avoids re-decoding the system
+prompt on every request. SPC adds one extra sequence to the VRAM allocation
+(NSeqMax + 1).
 
 **Best for:**
 
@@ -1465,14 +1471,13 @@ models:
 
 **How It Works:**
 
-1. First request: System prompt is templated, tokenized, and saved to RAM
-2. The system prompt is decoded into the slot's own sequence
-3. Remaining messages are prefilled after the system prompt tokens
-4. Subsequent requests: Saved tokens are re-decoded into the slot (no
-   re-tokenization needed)
-
-Each unique `cache_id` gets its own saved token entry in RAM. There is no
-limit on the number of cache_ids — tokens are small and stored in RAM only.
+1. First request: System prompt is templated, tokenized, and decoded into a
+   dedicated cache sequence
+2. The cached KV state is copied into the slot's working sequence via
+   MemorySeqCp (instant)
+3. Remaining messages are prefilled after the cached system prompt tokens
+4. Subsequent requests: KV state is copied from the cache sequence (no
+   re-decoding needed)
 
 **Cache Invalidation:**
 
@@ -1500,7 +1505,7 @@ incompatible with IMC (use SPC instead).
 - AI coding agents
 - Long-running agent conversations
 - Any workflow where messages are appended, not edited
-- Sub-agent architectures where multiple agents share a cache_id
+- Sub-agent architectures with multiple concurrent agents
 
 **Enable IMC:**
 
@@ -1513,18 +1518,15 @@ models:
 
 **Multi-Slot Architecture:**
 
-Only one `cache_id` can be active at a time, but that cache_id gets access
-to all `NSeqMax` slots. Each slot independently tracks its own conversation
-branch — its own message hash, token count, and message index. This means
-sub-agents sharing a cache_id are routed to different slots via hash
-matching, allowing them to maintain
-independent caches and run concurrently.
+All `NSeqMax` slots are available for IMC. Each slot independently tracks its
+own conversation branch — its own message hash, token count, and message
+index. Sub-agents are routed to different slots via hash matching, allowing
+them to maintain independent caches and run concurrently.
 
 With `n_seq_max: 3`, three sub-agents can each have their own cached
-conversation branch under the same cache_id. Without multi-slot IMC,
-every sub-agent request would cause a prefix mismatch and rebuild the
-cache from scratch because different sub-agents send different system
-prompts and conversation content.
+conversation branch. Without multi-slot IMC, every sub-agent request would
+cause a prefix mismatch and rebuild the cache from scratch because different
+sub-agents send different system prompts and conversation content.
 
 **Important:** Set `n_seq_max` to at least the number of concurrent
 sub-agents your agent framework spawns. If `n_seq_max` is smaller than
@@ -1564,23 +1566,18 @@ Prefill:  [user3 + gen_prompt]
 
 When a request arrives, IMC scans all slots to find the best match:
 
-1. **Validate cache_id** — Only one cache_id can be active at a time. If a
-   different cache_id arrives while slots contain cached data, the request
-   is rejected. If all slots are empty, the system switches to the new
-   cache_id.
-
-2. **Scan all slots** — For each slot:
+1. **Scan all slots** — For each slot:
    - Skip slots with a build in-flight (pending flag set)
    - Skip empty slots (track the first empty slot as a fallback)
    - Skip slots with more cached messages than the request has total
    - Hash `messages[:slot.lastMsgIdxCached]` and compare to the slot's
      stored hash
 
-3. **On match** — Pick the slot with the best prefix coverage (most cached
+2. **On match** — Pick the slot with the best prefix coverage (most cached
    messages). If the request has new messages to cache, extend the slot's
    cache. If the messages are identical, it's a pure cache hit.
 
-4. **No match** — Pick an empty slot if one exists, otherwise evict the
+3. **No match** — Pick an empty slot if one exists, otherwise evict the
    least-recently-used (LRU) slot and rebuild from scratch.
 
 **Concurrent Build Protection:**
@@ -1592,57 +1589,17 @@ it is marked pending. Concurrent scanners skip pending slots, so the second
 request picks a different slot. The pending flag is cleared after the cache
 decode completes (or on error).
 
-### 5.4 Multi-User Caching
+### 5.4 Single-User Caching
 
-Both SPC and IMC support multiple concurrent users, each identified by the
-`cache_id` parameter in requests.
+IMC is designed for single-user use. All `NSeqMax` slots are available, with
+each slot independently tracking its own conversation branch via hash matching.
+This design is optimized for agentic workflows where multiple sub-agents send
+independent conversations (different system prompts, different message
+histories).
 
-**SPC Multi-User:** Unlimited cache_ids. Each cache_id stores its tokenized
-system prompt in RAM. Tokens are re-decoded into the slot's sequence on each
-request. No VRAM overhead per user.
-
-**IMC Multi-User:** Only one cache_id can be active at a time. All `NSeqMax`
-slots are dedicated to that cache_id, with each slot independently tracking
-its own conversation branch. This design is optimized for agentic workflows
-where multiple sub-agents share a single cache_id but send independent
-conversations (different system prompts, different message histories).
-
-When a different cache_id arrives:
-
-- If any slot has cached data, the request is **rejected** — the existing
-  cache_id owns all slots.
-- If all slots are empty (e.g., after a model reload or context reset),
-  the system **switches** to the new cache_id.
-
-This means IMC serves one user (or one agent session) at a time, but that
-session gets full use of all available slots for concurrent sub-agent
-conversations.
-
-**Passing Cache ID:**
-
-Via HTTP header:
-
-```shell
-curl http://localhost:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "KRONK_CACHE_ID: user-123" \
-  -d '{"model": "Qwen3-8B-Q8_0", "messages": [...]}'
-```
-
-Or in the request body:
-
-```json
-{
-  "model": "Qwen3-8B-Q8_0",
-  "cache_id": "user-123",
-  "messages": [...]
-}
-```
-
-If no `cache_id` is provided, requests default to the ID `"default"`.
-For multi-user deployments with SPC, always provide unique cache_ids.
-For IMC, the cache_id identifies the active agent session — all sub-agents
-within that session should use the same cache_id.
+**SPC:** All requests share the same dedicated cache sequence. The cached KV
+state is copied into each slot via MemorySeqCp (instant). If the system prompt
+changes, the cache is rebuilt automatically.
 
 ### 5.5 SPC vs IMC
 
@@ -1657,10 +1614,10 @@ the trade-offs to help you choose.
 | ------------ | -------------------------------- | --------------------------------------------- |
 | Caches       | System prompt only               | All messages except last                      |
 | Extends      | No                               | Yes, incrementally                            |
-| Multi-user   | Unlimited (tokens in RAM)        | One cache_id at a time (all slots shared)     |
-| Sub-agents   | Each gets own SPC entry          | Each gets own slot via hash matching          |
+| Multi-user   | Single shared cache sequence     | Single-user, all slots available              |
+| Sub-agents   | All share same SPC sequence      | Each gets own slot via hash matching          |
 | Best for     | Chat UIs, inconsistent templates | Agentic workflows, consistent templates       |
-| Memory       | Zero VRAM overhead               | Zero VRAM overhead                            |
+| Memory       | +1 sequence (NSeqMax + 1)        | Zero extra VRAM overhead                      |
 | Template req | Any                              | Consistent templates only                     |
 
 **Important:** SPC and IMC are mutually exclusive. Choose based on your
@@ -1686,7 +1643,6 @@ invalidation helps you avoid unexpected prefill costs.
 - Message prefix hash mismatch → cache rebuilt from scratch
 - User starts new conversation → new cache created
 - Earlier message edited → cache rebuilt
-- `cache_id` not provided → falls back to "default" ID (problematic for multi-user)
 
 **Automatic Invalidation:**
 
@@ -1730,9 +1686,9 @@ restrictions on template behavior and session management.
 
 **SPC Performance:**
 
-SPC re-decodes system prompt tokens into each slot. For typical system prompts
-(200-500 tokens), this takes ~10-50ms per request. The trade-off is zero VRAM
-overhead vs. a small per-request decode cost.
+SPC copies the cached KV state into each slot via MemorySeqCp. This is an
+instant memory copy operation with negligible latency, regardless of system
+prompt size. The trade-off is one extra sequence worth of VRAM.
 
 **IMC Prefill Savings:**
 
@@ -1762,8 +1718,7 @@ sequences, so each slot gets `context_window / NSeqMax` tokens:
 - Requires deterministic Jinja templates (no timestamps or random values)
 - Conversations must grow monotonically (append-only)
 - Editing earlier messages triggers full cache rebuild
-- Only one cache_id active at a time; requests with a different cache_id
-  are rejected while slots contain cached data
+- Designed for single-user use
 - Max concurrent conversation branches = NSeqMax; when all slots are
   occupied, the least-recently-used slot is evicted
 
@@ -3136,36 +3091,7 @@ curl http://localhost:8080/v1/chat/completions \
 - Custom rejection sampling
 - Token-level analysis for debugging
 
-### 9.7 Cache ID
-
-The `cache_id` parameter enables multi-user caching for both System Prompt Cache (SPC) and Incremental Message Cache (IMC). Each unique `cache_id` gets its own dedicated cache sequence.
-
-To use multi-user caching (SPC or IMC), pass the session ID via header:
-
-```shell
-curl http://localhost:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "KRONK_CACHE_ID: user-123" \
-  -d '{
-    "model": "Qwen3-8B-Q8_0",
-    "messages": [...]
-  }'
-```
-
-Or in the request body:
-
-```json
-{
-  "model": "Qwen3-8B-Q8_0",
-  "cache_id": "user-123",
-  "messages": [...]
-}
-```
-
-Each unique `cache_id` gets its own cache entry. For SPC, cache_ids are
-unlimited (tokens stored in RAM). For IMC, max concurrent cache_ids = NSeqMax.
-
-### 9.8 Parameter Reference
+### 9.7 Parameter Reference
 
 | Parameter          | JSON Key             | Type    | Default  | Description                          |
 | ------------------ | -------------------- | ------- | -------- | ------------------------------------ |
@@ -5180,7 +5106,7 @@ batching = true
 Sequences are isolated partitions in the shared KV cache memory. Slot seqIDs
 always start at 0 — no sequences are reserved for caching. SPC decodes
 saved tokens directly into slot sequences. IMC binds each slot's sequence
-to a cache_id.
+to a conversation.
 
 #### 16.7.6 Context Pooling
 

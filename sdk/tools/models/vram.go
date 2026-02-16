@@ -559,16 +559,23 @@ the model architecture and read from the GGUF header.
 
 WHAT AFFECTS TOTAL KV CACHE (SLOT MEMORY)
 
-  Slot_Memory = NSeqMax × KV_Per_Sequence
+  Slot_Memory = TotalSequences × KV_Per_Sequence
   Total_VRAM  = Model_Weights + Slot_Memory
 
 Memory is statically allocated upfront when the model loads.
 
-CACHING MODE DOES NOT AFFECT VRAM
+SPC ADDS ONE EXTRA SEQUENCE
 
-All caching modes (off, SPC, IMC) allocate the same number of slots and
-sequences with the same VRAM footprint. The difference is how each mode
-manages cached state, not how much memory is used.
+SPC (System Prompt Cache) uses a dedicated cache sequence to hold the
+decoded system prompt KV state. This sequence is in addition to the
+slot sequences, so the total sequence count is NSeqMax + 1 when SPC
+is enabled. The cached KV state is copied to slot sequences via
+MemorySeqCp on each request (an instant operation).
+
+  TotalSequences = NSeqMax          (no caching or IMC)
+  TotalSequences = NSeqMax + 1      (SPC enabled)
+
+IMC does not add extra sequences — each slot's sequence IS the cache.
 
 EXAMPLE
 

@@ -244,7 +244,7 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 }
 
 // chatStreamIMCQwen3 returns streaming chat tests for IMC (Incremental Message Cache).
-// These tests verify multi-turn caching behavior with the KRONK_CACHE_ID header.
+// These tests verify multi-turn caching behavior.
 // Skipped in GitHub Actions as they require a model configured with IncrementalCache.
 func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 	return []apitest.Table{
@@ -253,9 +253,6 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			SkipInGH: true,
 			URL:      "/v1/chat/completions",
 			Token:    tokens["chat-completions"],
-			Headers: map[string]string{
-				"KRONK_CACHE_ID": "test-session-1",
-			},
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
@@ -302,9 +299,6 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			SkipInGH: true,
 			URL:      "/v1/chat/completions",
 			Token:    tokens["chat-completions"],
-			Headers: map[string]string{
-				"KRONK_CACHE_ID": "test-session-1",
-			},
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
@@ -353,9 +347,6 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			SkipInGH: true,
 			URL:      "/v1/chat/completions",
 			Token:    tokens["chat-completions"],
-			Headers: map[string]string{
-				"KRONK_CACHE_ID": "test-session-2",
-			},
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{

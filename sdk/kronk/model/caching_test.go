@@ -284,63 +284,7 @@ func TestHashMessage(t *testing.T) {
 	}
 }
 
-// =============================================================================
-// Session Management Tests
-// =============================================================================
 
-func TestValidateIMCCacheID(t *testing.T) {
-	// Create minimal model with IMC enabled and 3 slots.
-	m := &Model{
-		cfg: Config{
-			IncrementalCache: true,
-		},
-		imcSlots: make([]*imcSession, 3),
-		log:      func(ctx context.Context, msg string, args ...any) {},
-	}
-
-	for i := range m.imcSlots {
-		m.imcSlots[i] = &imcSession{
-			seqID:  llama.SeqId(i),
-			slotID: i,
-		}
-	}
-
-	ctx := context.Background()
-
-	// Test 1: First cache_id should be accepted.
-	if err := m.validateIMCCacheID(ctx, "user-1"); err != nil {
-		t.Fatalf("first cache_id should be accepted: %v", err)
-	}
-
-	if m.imcCacheID != "user-1" {
-		t.Errorf("imcCacheID = %q, want %q", m.imcCacheID, "user-1")
-	}
-
-	// Test 2: Same cache_id should be accepted.
-	if err := m.validateIMCCacheID(ctx, "user-1"); err != nil {
-		t.Fatalf("same cache_id should be accepted: %v", err)
-	}
-
-	// Test 3: Different cache_id with empty slots should switch.
-	if err := m.validateIMCCacheID(ctx, "user-2"); err != nil {
-		t.Fatalf("different cache_id with empty slots should switch: %v", err)
-	}
-
-	if m.imcCacheID != "user-2" {
-		t.Errorf("imcCacheID = %q, want %q", m.imcCacheID, "user-2")
-	}
-
-	// Test 4: Different cache_id with data in a slot should be rejected.
-	m.imcSlots[0].totalTokensCached = 500
-	if err := m.validateIMCCacheID(ctx, "user-3"); err == nil {
-		t.Error("different cache_id with cached data should be rejected")
-	}
-
-	// Test 5: Original cache_id should still be accepted.
-	if err := m.validateIMCCacheID(ctx, "user-2"); err != nil {
-		t.Fatalf("original cache_id should still be accepted: %v", err)
-	}
-}
 
 func TestIMCSlotState(t *testing.T) {
 	m := &Model{
@@ -395,9 +339,13 @@ func TestClearCaches(t *testing.T) {
 			SystemPromptCache: true,
 		},
 		imcSlots:   make([]*imcSession, 2),
-		imcCacheID: "test-user",
-		spcEntries: make(map[string]*spcEntry),
-		log:        func(ctx context.Context, msg string, args ...any) {},
+		spcSession: &spcSession{
+			sysPromptHash:   "testhash",
+			sysPromptTokens: 100,
+			sysPromptLen:    50,
+			seqID:           llama.SeqId(2),
+		},
+		log: func(ctx context.Context, msg string, args ...any) {},
 	}
 
 	for i := range m.imcSlots {
@@ -410,12 +358,8 @@ func TestClearCaches(t *testing.T) {
 		}
 	}
 
-	// Create some SPC entries.
-	m.getOrCreateSPCEntry("user-3")
-	m.getOrCreateSPCEntry("user-4")
-
-	if len(m.spcEntries) != 2 {
-		t.Fatalf("expected 2 SPC entries, got %d", len(m.spcEntries))
+	if m.spcSession == nil {
+		t.Fatal("expected spcSession to be set before clearing")
 	}
 
 	// Clear caches.
@@ -434,14 +378,9 @@ func TestClearCaches(t *testing.T) {
 		}
 	}
 
-	// Verify imcCacheID cleared.
-	if m.imcCacheID != "" {
-		t.Errorf("imcCacheID = %q, want empty", m.imcCacheID)
-	}
-
-	// Verify SPC entries cleared.
-	if len(m.spcEntries) != 0 {
-		t.Errorf("spcEntries not cleared, got %d", len(m.spcEntries))
+	// Verify SPC session cleared.
+	if m.spcSession != nil {
+		t.Errorf("spcSession not cleared, got %+v", m.spcSession)
 	}
 }
 
@@ -450,13 +389,9 @@ func TestCacheResultFields(t *testing.T) {
 	result := cacheResult{
 		modifiedD:  D{"test": "value"},
 		cacheIdx:   1000,
-		cacheID:    "user-123",
 		cacheSeqID: llama.SeqId(2),
 	}
 
-	if result.cacheID != "user-123" {
-		t.Errorf("cacheID = %s, want user-123", result.cacheID)
-	}
 	if result.cacheSeqID != 2 {
 		t.Errorf("cacheSeqID = %d, want 2", result.cacheSeqID)
 	}
@@ -508,7 +443,6 @@ func TestProcessIMCScanSkipsPendingSlots(t *testing.T) {
 
 	d := D{
 		"messages": messages,
-		"cache_id": "test-cache",
 	}
 
 	// processIMC will fail in buildIMCCacheFromScratch (no template), but
@@ -557,7 +491,6 @@ func TestProcessIMCScanAllPending(t *testing.T) {
 
 	d := D{
 		"messages": messages,
-		"cache_id": "test-cache",
 	}
 
 	result := m.processIMC(ctx, d)
@@ -586,8 +519,6 @@ func TestProcessIMCSlotMatchByHash(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	m.imcCacheID = "test-cache"
-
 	// Build the hash for messages[0:2] (the first 2 messages).
 	cachedMsgs := []D{
 		{"role": "system", "content": "You are helpful"},
@@ -609,7 +540,7 @@ func TestProcessIMCSlotMatchByHash(t *testing.T) {
 
 	d := D{
 		"messages": messages,
-		"cache_id": "test-cache",
+		
 	}
 
 	result := m.processIMC(ctx, d)
@@ -621,6 +552,9 @@ func TestProcessIMCSlotMatchByHash(t *testing.T) {
 	// Should match slot[1] (seqID=1).
 	if result.cacheSeqID != 1 {
 		t.Errorf("cacheSeqID = %d, want 1", result.cacheSeqID)
+	}
+	if result.imcSlotID != 1 {
+		t.Errorf("imcSlotID = %d, want 1", result.imcSlotID)
 	}
 
 	// Pure cache hit: lastMsgIdxCached (2) == lastMsgIdxToCache (2).
@@ -653,7 +587,7 @@ func TestProcessIMCBestPrefixCoverage(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	m.imcCacheID = "test-cache"
+	
 
 	messages := []D{
 		{"role": "system", "content": "You are helpful"},
@@ -677,7 +611,7 @@ func TestProcessIMCBestPrefixCoverage(t *testing.T) {
 
 	d := D{
 		"messages": messages,
-		"cache_id": "test-cache",
+		
 	}
 
 	result := m.processIMC(ctx, d)
@@ -689,6 +623,9 @@ func TestProcessIMCBestPrefixCoverage(t *testing.T) {
 	// Should pick slot[1] (seqID=1) because it has more cached messages.
 	if result.cacheSeqID != 1 {
 		t.Errorf("cacheSeqID = %d, want 1 (best prefix coverage)", result.cacheSeqID)
+	}
+	if result.imcSlotID != 1 {
+		t.Errorf("imcSlotID = %d, want 1 (best prefix coverage)", result.imcSlotID)
 	}
 
 	// Pure cache hit: lastMsgIdxCached (4) == lastMsgIdxToCache (4).
@@ -721,7 +658,7 @@ func TestProcessIMCLRUEviction(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	m.imcCacheID = "test-cache"
+	
 
 	// Both slots have data but with non-matching hashes.
 	m.imcSlots[0].cachedMsgsHash = "aaaa" + strings.Repeat("0", 56)
@@ -743,7 +680,7 @@ func TestProcessIMCLRUEviction(t *testing.T) {
 
 	d := D{
 		"messages": messages,
-		"cache_id": "test-cache",
+		
 	}
 
 	// buildIMCCacheFromScratch will fail (no template), but the scan should
@@ -764,7 +701,7 @@ func TestProcessIMCLRUEviction(t *testing.T) {
 }
 
 // TestProcessIMCParallelSubAgents simulates the real-world scenario:
-// Two sub-agent requests from the same cache_id with different content each
+// Two sub-agent requests with different content each
 // get routed to separate slots. Then a follow-up from sub-agent 1 matches
 // the correct slot via hash.
 //
@@ -809,7 +746,7 @@ func TestProcessIMCParallelSubAgents(t *testing.T) {
 
 	// Simulate: both sub-agents have completed their initial builds via
 	// startSlot. slot[0] has sub-agent 1's cache, slot[1] has sub-agent 2's.
-	m.imcCacheID = "shared-cache"
+	
 
 	m.imcSlots[0].cachedMsgsHash = hash1
 	m.imcSlots[0].totalTokensCached = 400
@@ -829,7 +766,7 @@ func TestProcessIMCParallelSubAgents(t *testing.T) {
 	}
 	d3 := D{
 		"messages": msgs3,
-		"cache_id": "shared-cache",
+		
 	}
 
 	result3 := m.processIMC(ctx, d3)
@@ -840,6 +777,9 @@ func TestProcessIMCParallelSubAgents(t *testing.T) {
 	// Should match slot[0] (sub-agent 1's cache) via hash.
 	if result3.cacheSeqID != 0 {
 		t.Errorf("follow-up: cacheSeqID = %d, want 0 (should match sub-agent 1's slot)", result3.cacheSeqID)
+	}
+	if result3.imcSlotID != 0 {
+		t.Errorf("follow-up: imcSlotID = %d, want 0 (should match sub-agent 1's slot)", result3.imcSlotID)
 	}
 
 	// Pure cache hit — no new tokens, no clear.
@@ -861,7 +801,7 @@ func TestProcessIMCParallelSubAgents(t *testing.T) {
 	}
 	d4 := D{
 		"messages": msgs4,
-		"cache_id": "shared-cache",
+		
 	}
 
 	result4 := m.processIMC(ctx, d4)
@@ -872,6 +812,9 @@ func TestProcessIMCParallelSubAgents(t *testing.T) {
 	// Should match slot[1] (sub-agent 2's cache) via hash.
 	if result4.cacheSeqID != 1 {
 		t.Errorf("sub-agent 2 follow-up: cacheSeqID = %d, want 1", result4.cacheSeqID)
+	}
+	if result4.imcSlotID != 1 {
+		t.Errorf("sub-agent 2 follow-up: imcSlotID = %d, want 1", result4.imcSlotID)
 	}
 
 	if len(result4.imcNewCacheTokens) != 0 {
@@ -904,7 +847,7 @@ func TestProcessIMCPendingPreventsDoubleSlot(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	m.imcCacheID = "shared-cache"
+	
 
 	// Simulate: slot[0] is mid-build (pending=true, state reset).
 	// This is exactly what buildIMCCacheFromScratch does at lines 339-342.
@@ -923,7 +866,7 @@ func TestProcessIMCPendingPreventsDoubleSlot(t *testing.T) {
 	}
 	d := D{
 		"messages": msgs,
-		"cache_id": "shared-cache",
+		
 	}
 
 	// This will fail at template, but we can verify slot selection.

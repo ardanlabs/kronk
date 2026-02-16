@@ -17,13 +17,9 @@ type cacheResult struct {
 	cacheIdx       llama.Pos   // Token position where cached content ends; new tokens start here
 	cachedMsgCount int         // Number of messages cached (for IMC removal)
 	err            error       // Any error that occurred
-	cacheID        string      // Cache session ID (used by both SPC and IMC)
-	cacheSeqID     llama.SeqId // Cache session's sequence ID
-
-	// SPC fields — tokens to decode directly into the slot's sequence at startSlot.
-	spcCacheID string        // SPC cache_id for cache lookup
-	spcHash    string        // Expected hash of SPC content for validation
-	spcTokens  []llama.Token // Tokens to decode into the slot's sequence
+	cacheSeqID      llama.SeqId // Cache session's sequence ID
+	imcSlotID       int         // IMC slot index for routing (distinct from seqID for clarity)
+	imcExpectedHash string      // Expected cachedMsgsHash at startSlot time (for stale detection)
 
 	// IMC dedicated slot fields — tokens to decode into slot's sequence.
 	imcNewCacheTokens []llama.Token // New tokens to extend the cache (decoded at startSlot)
@@ -70,11 +66,10 @@ func (m *Model) clearCaches() {
 		slot.pending = false
 	}
 
-	m.imcCacheID = ""
-
-	// Clear all SPC entries.
-	for id := range m.spcEntries {
-		delete(m.spcEntries, id)
+	// Clear SPC session.
+	m.spcSession = nil
+	if m.cfg.SystemPromptCache {
+		llama.MemorySeqRm(m.mem, m.spcCacheSeqID, -1, -1)
 	}
 	m.cacheMu.Unlock()
 }
@@ -146,13 +141,24 @@ func extractMessageContent(msg D) string {
 }
 
 // removeFirstNMessages removes the first n messages from d.
-// Convenience wrapper around removeMessagesAtIndices for IMC.
 func removeFirstNMessages(d D, n int) D {
-	indices := make([]int, n)
-	for i := range n {
-		indices[i] = i
+	messages, ok := d["messages"].([]D)
+	if !ok || len(messages) == 0 || n <= 0 {
+		return d
 	}
-	return removeMessagesAtIndices(d, indices)
+
+	if n >= len(messages) {
+		d["messages"] = []D{
+			{"role": RoleUser, "content": "Tell the user you are ready to help them."},
+		}
+		return d
+	}
+
+	newMessages := make([]D, len(messages)-n)
+	copy(newMessages, messages[n:])
+	d["messages"] = newMessages
+
+	return d
 }
 
 // removeMessagesAtIndices returns D with messages at the specified indices removed.

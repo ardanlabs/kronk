@@ -52,16 +52,53 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 	// Re-read session state under lock to handle stale job data from queuing.
 	var cacheIdx llama.Pos
 	switch {
-	case e.model.cfg.IncrementalCache && job.imcID != "":
+	case e.model.cfg.IncrementalCache && job.imcCacheHit:
+		var currentHash string
+
 		e.model.cacheMu.RLock()
 		if s.id < len(e.model.imcSlots) {
 			cacheIdx = llama.Pos(e.model.imcSlots[s.id].totalTokensCached)
+			currentHash = e.model.imcSlots[s.id].cachedMsgsHash
 		}
 		e.model.cacheMu.RUnlock()
+
+		// Verify the slot's cache hasn't been evicted or rebuilt by another
+		// goroutine between processIMC and now. This catches stale pure hits
+		// and stale extends alike.
+		if job.imcExpectedHash != "" && currentHash != job.imcExpectedHash && len(job.imcNewCacheTokens) == 0 {
+			e.model.log(job.ctx, "start-slot", "status", "imc-stale",
+				"slot", s.id, "seq", s.seqID, "imc_slot", job.imcSlotID,
+				"expected_hash", job.imcExpectedHash[:8], "current_hash", currentHash)
+
+			e.finishSlot(s, fmt.Errorf("start-slot: imc cache stale (slot %d hash changed), retry request", s.id))
+			return
+		}
 
 		// Decode new cache extension tokens into the slot's sequence if any.
 		switch {
 		case len(job.imcNewCacheTokens) > 0:
+			// Detect stale extension: if another request extended this slot
+			// between our scan and now, cacheIdx won't match the position
+			// these tokens were sliced from. For extends (not rebuilds),
+			// the expected start position is imcNewTotalCached - len(imcNewCacheTokens).
+			if !job.imcClearSeq {
+				expectedStart := llama.Pos(job.imcNewTotalCached - len(job.imcNewCacheTokens))
+				if cacheIdx != expectedStart {
+					e.model.log(job.ctx, "start-slot", "status", "imc-extend-stale", "slot", s.id, "seq", s.seqID,
+						"cache_idx", cacheIdx, "expected_start", expectedStart,
+						"new_total_cached", job.imcNewTotalCached)
+
+					e.model.cacheMu.Lock()
+					if s.id < len(e.model.imcSlots) {
+						e.model.imcSlots[s.id].pending = false
+					}
+					e.model.cacheMu.Unlock()
+
+					e.finishSlot(s, fmt.Errorf("start-slot: imc extend stale (cache moved from %d to %d), retry request", expectedStart, cacheIdx))
+					return
+				}
+			}
+
 			switch job.imcClearSeq {
 			case true:
 				// Rebuilding from scratch (prefix mismatch). Clear the old
@@ -86,6 +123,21 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 			imcDecodeStart := time.Now()
 
 			if err := e.model.decodeTokensIntoCache(job.ctx, job.imcNewCacheTokens, s.seqID, int(cacheIdx)); err != nil {
+				// Remove any partially decoded tokens so the KV sequence
+				// stays consistent with the session metadata.
+				e.model.decodeMu.Lock()
+				switch job.imcClearSeq {
+				case true:
+					// Rebuild: sequence was cleared before decode, clear again
+					// to remove any partial tokens.
+					llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+				case false:
+					// Extend: remove from the old cache boundary onward to
+					// restore the pre-extend state.
+					llama.MemorySeqRm(e.model.mem, s.seqID, cacheIdx, -1)
+				}
+				e.model.decodeMu.Unlock()
+
 				e.model.cacheMu.Lock()
 				if s.id < len(e.model.imcSlots) {
 					e.model.imcSlots[s.id].pending = false
@@ -133,16 +185,31 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 		// Non-IMC mode: clear the slot's sequence and copy from cache if available.
 		llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
 
+		// If IMC is enabled but this request wasn't cacheable (e.g., <2 messages),
+		// clear the slot's IMC session metadata so it stays consistent with the
+		// now-empty KV sequence.
+		if e.model.cfg.IncrementalCache && s.id < len(e.model.imcSlots) {
+			e.model.cacheMu.Lock()
+			slot := e.model.imcSlots[s.id]
+			slot.cachedMsgsHash = ""
+			slot.totalTokensCached = 0
+			slot.lastMsgIdxCached = 0
+			slot.pending = false
+			e.model.cacheMu.Unlock()
+
+			e.model.log(job.ctx, "start-slot", "status", "imc-metadata-cleared", "slot", s.id, "seq", s.seqID)
+		}
+
 		switch {
-		case job.spcCacheHit && len(job.spcTokens) > 0:
-			cachePos, err := e.model.decodeSPCToSlot(job.ctx, job.spcTokens, s.seqID)
-			if err != nil {
+		case job.spcCacheHit:
+			e.model.log(job.ctx, "start-slot", "status", "spc-copy", "src_seq", job.spcCacheSeqID, "dst_seq", s.seqID, "cached_tokens", job.spcCacheIdx)
+			if err := e.model.copyCachesToSeq(s.seqID, job.spcCacheSeqID); err != nil {
 				e.finishSlot(s, fmt.Errorf("start-slot: %w", err))
 				return
 			}
-			cacheIdx = cachePos
+			cacheIdx = job.spcCacheIdx
 
-			e.model.log(job.ctx, "start-slot", "status", "spc-decoded", "slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx)
+			e.model.log(job.ctx, "start-slot", "status", "spc-copied", "slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx)
 		}
 	}
 
@@ -176,7 +243,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 	}
 
 	e.model.log(job.ctx, "batch-engine", "status", "slot-started", "slot", s.id, "seq", s.seqID, "id", job.id,
-		"total_prompt", s.nPrompt, "spc_cache_hit", job.spcCacheHit, "imc_cache_hit", job.imcCacheHit, "kv_used", kvUsed)
+		"total_prompt", s.nPrompt, "spc_cache_hit", job.spcCacheHit,
+		"imc_cache_hit", job.imcCacheHit, "imc_slot", job.imcSlotID, "imc_seq", job.imcSeqID, "kv_used", kvUsed)
 }
 
 // startSlotText initializes a text-only slot. Returns true on success.

@@ -3,39 +3,42 @@ package model
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"go.opentelemetry.io/otel/attribute"
 )
 
+// imcSlotSnapshot holds a point-in-time copy of an imcSession's metadata.
+// Used by processIMC to release the read lock before hashing.
+type imcSlotSnapshot struct {
+	slotID            int
+	seqID             llama.SeqId
+	cachedMsgsHash    string
+	totalTokensCached int
+	lastMsgIdxCached  int
+	lastUsed          time.Time
+	pending           bool
+	empty             bool
+}
+
 // processIMC implements incremental multi-turn caching (IMC) for agentic
 // workflows. It caches all messages except the last one (which triggers
 // generation) and extends the cache incrementally on subsequent requests.
 //
-// All NSeqMax slots are available for one active cache_id. Each slot
-// independently tracks its own conversation branch (hash, token count,
-// message index). Sub-agents sharing a cache_id get routed to different
-// slots via hash matching.
+// All NSeqMax slots are available. Each slot independently tracks its own
+// conversation branch (hash, token count, message index). Sub-agents get
+// routed to different slots via hash matching.
 //
 // Algorithm:
-//  1. Validate cache_id matches the active cache_id (only one at a time)
-//  2. Scan all slots for a prefix hash match against the incoming messages
-//  3. On match: extend or reuse the matching slot's cache
-//  4. No match: pick an empty slot or evict the LRU slot, rebuild from scratch
+//  1. Scan all slots for a prefix hash match against the incoming messages
+//  2. On match: extend or reuse the matching slot's cache
+//  3. No match: pick an empty slot or evict the LRU slot, rebuild from scratch
 func (m *Model) processIMC(ctx context.Context, d D) cacheResult {
 	messages, ok := d["messages"].([]D)
 	if !ok || len(messages) == 0 {
 		return cacheResult{modifiedD: d}
-	}
-
-	// They may forget to provide an id, so we will use the "default" id. If
-	// multiple people are on the system not providing an id, this won't end
-	// well. Hahaha
-	cacheID, _ := d["cache_id"].(string)
-	if cacheID == "" {
-		cacheID = "default"
-		m.log(ctx, "imc", "status", "using default cache id", "reason", "IMC turned on but no cache_id was provided")
 	}
 
 	// We need at least 2 messages to start: one to cache, one to generate from.
@@ -44,22 +47,34 @@ func (m *Model) processIMC(ctx context.Context, d D) cacheResult {
 		return cacheResult{modifiedD: d}
 	}
 
-	// -------------------------------------------------------------------------
-	// Validate cache_id. Only one cache_id can be active at a time.
-
-	if err := m.validateIMCCacheID(ctx, cacheID); err != nil {
-		return cacheResult{modifiedD: d, err: err}
-	}
-
 	// We will cache all messages but the last one.
 	lastMsgIdxToCache := totalMsgs - 1
 
 	// -------------------------------------------------------------------------
-	// Scan all slots for a prefix hash match.
+	// Snapshot slot metadata under RLock, then release before hashing.
 
-	m.log(ctx, "imc", "status", "scanning slots", "cache_id", cacheID, "total-msgs", totalMsgs, "msgs-to-cache", lastMsgIdxToCache, "total-slots", len(m.imcSlots))
+	m.log(ctx, "imc", "status", "scanning slots", "total-msgs", totalMsgs, "msgs-to-cache", lastMsgIdxToCache, "total-slots", len(m.imcSlots))
 
 	m.cacheMu.RLock()
+
+	snapshots := make([]imcSlotSnapshot, len(m.imcSlots))
+	for i, slot := range m.imcSlots {
+		snapshots[i] = imcSlotSnapshot{
+			slotID:            slot.slotID,
+			seqID:             slot.seqID,
+			cachedMsgsHash:    slot.cachedMsgsHash,
+			totalTokensCached: slot.totalTokensCached,
+			lastMsgIdxCached:  slot.lastMsgIdxCached,
+			lastUsed:          slot.lastUsed,
+			pending:           slot.pending,
+			empty:             slot.totalTokensCached == 0,
+		}
+	}
+
+	m.cacheMu.RUnlock()
+
+	// -------------------------------------------------------------------------
+	// Scan snapshots and hash outside the lock.
 
 	var bestSlot *imcSession
 	var bestCachedMsgsHash string
@@ -68,154 +83,139 @@ func (m *Model) processIMC(ctx context.Context, d D) cacheResult {
 	var emptySlot *imcSession
 	var lruSlot *imcSession
 
-	for _, slot := range m.imcSlots {
+	for i, snap := range snapshots {
 
 		// Skip slots with a build/rebuild in-flight.
-		if slot.pending {
-			m.log(ctx, "imc", "scan", fmt.Sprintf("slot[%d] pending (build in-flight)", slot.slotID))
+		if snap.pending {
+			m.log(ctx, "imc", "scan", fmt.Sprintf("slot[%d] pending (build in-flight)", snap.slotID))
 			continue
 		}
 
 		// Track first empty slot for fallback.
-		if slot.totalTokensCached == 0 {
-			m.log(ctx, "imc", "scan", fmt.Sprintf("slot[%d] empty", slot.slotID))
+		if snap.empty {
+			m.log(ctx, "imc", "scan", fmt.Sprintf("slot[%d] empty", snap.slotID))
 
 			if emptySlot == nil {
-				emptySlot = slot
+				emptySlot = m.imcSlots[i]
 			}
 			continue
 		}
 
 		// Track LRU slot for eviction fallback.
-		if lruSlot == nil || slot.lastUsed.Before(lruSlot.lastUsed) {
-			lruSlot = slot
+		if lruSlot == nil || snap.lastUsed.Before(snapshots[lruSlot.slotID].lastUsed) {
+			lruSlot = m.imcSlots[i]
 		}
 
 		// Skip slots with more cached messages than this request has total.
-		if totalMsgs <= slot.lastMsgIdxCached {
-			m.log(ctx, "imc", "scan", fmt.Sprintf("slot[%d] skip (cached-msgs[%d] >= total-msgs[%d])", slot.slotID, slot.lastMsgIdxCached, totalMsgs))
+		if totalMsgs <= snap.lastMsgIdxCached {
+			m.log(ctx, "imc", "scan", fmt.Sprintf("slot[%d] skip (cached-msgs[%d] >= total-msgs[%d])", snap.slotID, snap.lastMsgIdxCached, totalMsgs))
 			continue
 		}
 
 		// Check if this slot's cached prefix matches the incoming messages.
-		prefixHash := hashMessages(messages[:slot.lastMsgIdxCached])
-		if prefixHash != slot.cachedMsgsHash {
+		prefixHash := hashMessages(messages[:snap.lastMsgIdxCached])
+		if prefixHash != snap.cachedMsgsHash {
 			m.log(ctx, "imc", "scan", fmt.Sprintf("slot[%d] mismatch (cached-msgs[%d] tokens[%d] hash[%s..] != [%s..])",
-				slot.slotID, slot.lastMsgIdxCached, slot.totalTokensCached, slot.cachedMsgsHash[:8], prefixHash[:8]))
+				snap.slotID, snap.lastMsgIdxCached, snap.totalTokensCached, snap.cachedMsgsHash[:8], prefixHash[:8]))
 			continue
 		}
 
 		m.log(ctx, "imc", "scan", fmt.Sprintf("slot[%d] MATCH (cached-msgs[%d] tokens[%d] hash[%s..])",
-			slot.slotID, slot.lastMsgIdxCached, slot.totalTokensCached, slot.cachedMsgsHash[:8]))
+			snap.slotID, snap.lastMsgIdxCached, snap.totalTokensCached, snap.cachedMsgsHash[:8]))
 
 		// This slot matches. Pick the one with the most cached messages
 		// (best prefix coverage).
-		if bestSlot == nil || slot.lastMsgIdxCached > bestLastMsgIdxCached {
-			bestSlot = slot
-			bestCachedMsgsHash = slot.cachedMsgsHash
-			bestTotalTokensCached = slot.totalTokensCached
-			bestLastMsgIdxCached = slot.lastMsgIdxCached
+		if bestSlot == nil || snap.lastMsgIdxCached > bestLastMsgIdxCached {
+			bestSlot = m.imcSlots[i]
+			bestCachedMsgsHash = snap.cachedMsgsHash
+			bestTotalTokensCached = snap.totalTokensCached
+			bestLastMsgIdxCached = snap.lastMsgIdxCached
 		}
 	}
-
-	m.cacheMu.RUnlock()
 
 	// -------------------------------------------------------------------------
 	// Handle matched slot: extend or pure hit.
 
 	if bestSlot != nil {
-		m.log(ctx, "imc", "status", "slot matched", "cache_id", cacheID, "slot", bestSlot.slotID, "seq", bestSlot.seqID,
+		m.log(ctx, "imc", "status", "slot matched", "slot", bestSlot.slotID, "seq", bestSlot.seqID,
 			"cached-msgs", bestLastMsgIdxCached, "cached-tokens", bestTotalTokensCached, "msgs-to-cache", lastMsgIdxToCache)
 
 		// If there are more messages to cache, extend.
 		if bestLastMsgIdxCached < lastMsgIdxToCache {
-			return m.extendIMCCache(ctx, d, messages, cacheID, bestSlot, bestLastMsgIdxCached, lastMsgIdxToCache, bestTotalTokensCached)
+			return m.extendIMCCache(ctx, d, messages, bestSlot, bestLastMsgIdxCached, lastMsgIdxToCache, bestTotalTokensCached)
 		}
 
 		// Exact same messages as before — pure cache hit.
-		m.log(ctx, "imc", "status", "cache hit", "cache_id", cacheID, "slot", bestSlot.slotID, "seq", bestSlot.seqID,
+		m.log(ctx, "imc", "status", "cache hit", "slot", bestSlot.slotID, "seq", bestSlot.seqID,
 			"current-msg-idx-cached", bestLastMsgIdxCached, "current-total-tokens-cached", bestTotalTokensCached,
 			"hash", bestCachedMsgsHash[:8])
 
 		return cacheResult{
-			modifiedD:      removeFirstNMessages(d, bestLastMsgIdxCached),
-			cacheIdx:       llama.Pos(bestTotalTokensCached),
-			cachedMsgCount: bestLastMsgIdxCached,
-			cacheID:        cacheID,
-			cacheSeqID:     bestSlot.seqID,
+			modifiedD:       removeFirstNMessages(d, bestLastMsgIdxCached),
+			cacheIdx:        llama.Pos(bestTotalTokensCached),
+			cachedMsgCount:  bestLastMsgIdxCached,
+			cacheSeqID:      bestSlot.seqID,
+			imcSlotID:       bestSlot.slotID,
+			imcExpectedHash: bestCachedMsgsHash,
 		}
 	}
 
 	// -------------------------------------------------------------------------
 	// No match — pick an empty slot or evict LRU.
 
-	m.log(ctx, "imc", "status", "no slot matched", "cache_id", cacheID, "total-msgs", totalMsgs)
+	m.log(ctx, "imc", "status", "no slot matched", "total-msgs", totalMsgs)
 
 	var targetSlot *imcSession
 
 	switch {
 	case emptySlot != nil:
 		targetSlot = emptySlot
-		m.log(ctx, "imc", "status", "using empty slot", "cache_id", cacheID, "slot", targetSlot.slotID)
+		m.log(ctx, "imc", "status", "using empty slot", "slot", targetSlot.slotID)
 
 	case lruSlot != nil:
 		targetSlot = lruSlot
-		m.log(ctx, "imc", "status", "evicting LRU slot", "cache_id", cacheID, "slot", targetSlot.slotID,
+		m.log(ctx, "imc", "status", "evicting LRU slot", "slot", targetSlot.slotID,
 			"evicted-msgs", targetSlot.lastMsgIdxCached, "evicted-tokens", targetSlot.totalTokensCached)
 
 	default:
-		return cacheResult{modifiedD: d, err: fmt.Errorf("imc: no slots available for cache_id %q", cacheID)}
+		return cacheResult{modifiedD: d, err: fmt.Errorf("imc: no slots available")}
 	}
 
-	return m.buildIMCCacheFromScratch(ctx, d, messages, cacheID, targetSlot, lastMsgIdxToCache)
-}
-
-// validateIMCCacheID ensures only one cache_id is active at a time. If a
-// different cache_id arrives while the current one has cached data, it returns
-// an error. If all slots are empty, it switches to the new cache_id.
-func (m *Model) validateIMCCacheID(ctx context.Context, cacheID string) error {
-	m.cacheMu.Lock()
-	defer m.cacheMu.Unlock()
-
-	// Same cache_id or no active cache_id — allow.
-	if m.imcCacheID == "" || m.imcCacheID == cacheID {
-		m.imcCacheID = cacheID
-		return nil
-	}
-
-	// Different cache_id — check if any slot has data.
-	for _, slot := range m.imcSlots {
-		if slot.totalTokensCached > 0 {
-			m.log(ctx, "imc", "status", "cache_id rejected", "active", m.imcCacheID, "requested", cacheID)
-			return fmt.Errorf("imc: all slots are bound to cache_id %q, cannot serve cache_id %q", m.imcCacheID, cacheID)
-		}
-	}
-
-	// All slots empty — switch to new cache_id.
-	m.log(ctx, "imc", "status", "switching cache_id", "from", m.imcCacheID, "to", cacheID)
-	m.imcCacheID = cacheID
-
-	return nil
+	return m.buildIMCCacheFromScratch(ctx, d, messages, targetSlot, lastMsgIdxToCache)
 }
 
 // extendIMCCache extends the existing cache with new messages from
 // messages[currentLastMsgIdxCached:lastMsgIdxToCache].
-func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, cacheID string, session *imcSession, currentLastMsgIdxCached, lastMsgIdxToCache, currentTotalTokensCached int) cacheResult {
+func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, session *imcSession, currentLastMsgIdxCached, lastMsgIdxToCache, currentTotalTokensCached int) cacheResult {
+
+	// Reserve the slot under lock. Validate state hasn't changed and mark
+	// pending so concurrent scanners skip this slot during the heavy work.
 	m.cacheMu.Lock()
 
-	// Double-check session state hasn't changed. If it has, fall back to
-	// doing a full rebuild. This could happen if two people are using the
-	// cache id.
 	if session.lastMsgIdxCached != currentLastMsgIdxCached || session.totalTokensCached != currentTotalTokensCached {
 		m.cacheMu.Unlock()
-		return m.buildIMCCacheFromScratch(ctx, d, messages, cacheID, session, lastMsgIdxToCache)
+		return m.buildIMCCacheFromScratch(ctx, d, messages, session, lastMsgIdxToCache)
 	}
-	defer m.cacheMu.Unlock()
+
+	if session.pending {
+		m.cacheMu.Unlock()
+		return m.buildIMCCacheFromScratch(ctx, d, messages, session, lastMsgIdxToCache)
+	}
+
+	session.pending = true
+	seqID := session.seqID
+	slotID := session.slotID
+	currentHash := session.cachedMsgsHash
+
+	m.cacheMu.Unlock()
+
+	m.log(ctx, "imc", "status", "slot marked pending (extend)", "slot", slotID, "seq", seqID)
+
+	// -------------------------------------------------------------------------
+	// Heavy work: template + tokenize outside the lock.
 
 	msgs := messages[:lastMsgIdxToCache]
 
-	// We need to template all the messages we want to cache. We don't want
-	// the assistant tag produced.
 	msgsToCache := D{
 		"messages":              msgs,
 		"add_generation_prompt": false,
@@ -226,10 +226,12 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, cacheID s
 		msgsToCache["tools"] = tools
 	}
 
-	// Create the prompt and tokenize it. We'll extract only the new tokens
-	// beyond what's already cached.
 	promptToCache, _, err := m.createPrompt(ctx, msgsToCache)
 	if err != nil {
+		m.cacheMu.Lock()
+		session.pending = false
+		m.cacheMu.Unlock()
+
 		return cacheResult{modifiedD: d, err: fmt.Errorf("imc: failed to template prefix: %w", err)}
 	}
 
@@ -245,14 +247,19 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, cacheID s
 
 	// If we don't have more tokens than what's cached, nothing to extend.
 	if totalTokens <= currentTotalTokensCached {
-		m.log(ctx, "imc", "status", "extend (no new tokens)", "cache_id", cacheID, "cached", currentTotalTokensCached, "total", totalTokens)
+		m.log(ctx, "imc", "status", "extend (no new tokens)", "cached", currentTotalTokensCached, "total", totalTokens)
+
+		m.cacheMu.Lock()
+		session.pending = false
+		m.cacheMu.Unlock()
 
 		return cacheResult{
-			modifiedD:      removeFirstNMessages(d, currentLastMsgIdxCached),
-			cacheIdx:       llama.Pos(currentTotalTokensCached),
-			cachedMsgCount: currentLastMsgIdxCached,
-			cacheID:        cacheID,
-			cacheSeqID:     session.seqID,
+			modifiedD:       removeFirstNMessages(d, currentLastMsgIdxCached),
+			cacheIdx:        llama.Pos(currentTotalTokensCached),
+			cachedMsgCount:  currentLastMsgIdxCached,
+			cacheSeqID:      seqID,
+			imcSlotID:       slotID,
+			imcExpectedHash: currentHash,
 		}
 	}
 
@@ -260,12 +267,12 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, cacheID s
 	extensionTokens := allTokens[currentTotalTokensCached:]
 	numOfExtTokens := len(extensionTokens)
 
-	m.log(ctx, "imc", "status", "extending cache (deferred)", "cache_id", cacheID, "slot", session.slotID, "new-tokens", numOfExtTokens)
+	m.log(ctx, "imc", "status", "extending cache (deferred)", "slot", slotID, "new-tokens", numOfExtTokens)
 
 	// Compute new session state to be applied after decode in startSlot.
 	newHash := hashMessages(msgs)
 
-	m.log(ctx, "imc", "status", "cache extend prepared", "cache_id", cacheID, "slot", session.slotID, "seq", session.seqID,
+	m.log(ctx, "imc", "status", "cache extend prepared", "slot", slotID, "seq", seqID,
 		"idx", fmt.Sprintf("cur[%d] -> new[%d]", currentLastMsgIdxCached, lastMsgIdxToCache),
 		"tokens", fmt.Sprintf("cur[%d] -> new[%d] (+%d)", currentTotalTokensCached, totalTokens, numOfExtTokens))
 
@@ -273,8 +280,9 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, cacheID s
 		modifiedD:         removeFirstNMessages(d, lastMsgIdxToCache),
 		cacheIdx:          llama.Pos(currentTotalTokensCached),
 		cachedMsgCount:    lastMsgIdxToCache,
-		cacheID:           cacheID,
-		cacheSeqID:        session.seqID,
+		cacheSeqID:        seqID,
+		imcSlotID:         slotID,
+		imcExpectedHash:   newHash,
 		imcNewCacheTokens: extensionTokens,
 		imcNewTotalCached: totalTokens,
 		imcNewMsgIdx:      lastMsgIdxToCache,
@@ -283,22 +291,60 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, cacheID s
 }
 
 // buildIMCCacheFromScratch builds the cache from scratch for messages[0:lastMsgIdxToCache].
-func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D, cacheID string, session *imcSession, lastMsgIdxToCache int) cacheResult {
+func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D, session *imcSession, lastMsgIdxToCache int) cacheResult {
+
+	// Reserve the slot under lock. Check for after-lock cache hit, mark
+	// pending, and reset session state before releasing the lock.
 	m.cacheMu.Lock()
-	defer m.cacheMu.Unlock()
 
 	// Double-check in case another goroutine built the cache while we waited.
 	if session.lastMsgIdxCached > 0 && session.totalTokensCached > 0 && session.lastMsgIdxCached <= len(messages) {
 		prefixHash := hashMessages(messages[:session.lastMsgIdxCached])
 		if prefixHash == session.cachedMsgsHash {
-			m.log(ctx, "imc", "status", "cache hit (after-lock)", "cache_id", cacheID, "last-msg-idx-cached", session.lastMsgIdxCached, "total-tokens-cached", session.totalTokensCached)
-			return cacheResult{cacheIdx: llama.Pos(session.totalTokensCached)}
+			m.log(ctx, "imc", "status", "cache hit (after-lock)", "slot", session.slotID, "seq", session.seqID,
+				"last-msg-idx-cached", session.lastMsgIdxCached, "total-tokens-cached", session.totalTokensCached)
+
+			lastMsgIdx := session.lastMsgIdxCached
+			totalTokens := session.totalTokensCached
+			seqID := session.seqID
+			sID := session.slotID
+			hash := session.cachedMsgsHash
+
+			m.cacheMu.Unlock()
+
+			return cacheResult{
+				modifiedD:       removeFirstNMessages(d, lastMsgIdx),
+				cacheIdx:        llama.Pos(totalTokens),
+				cachedMsgCount:  lastMsgIdx,
+				cacheSeqID:      seqID,
+				imcSlotID:       sID,
+				imcExpectedHash: hash,
+			}
 		}
 	}
 
-	// We need to cache all the message from the beginning to the target
-	// message which should represent the second to last message. We don't
-	// want the assistant tag produced.
+	if session.pending {
+		m.cacheMu.Unlock()
+
+		return cacheResult{modifiedD: d, err: fmt.Errorf("imc: slot %d pending, retry request", session.slotID)}
+	}
+
+	// Reset session state and mark pending so concurrent scanners skip this
+	// slot while we do the heavy work outside the lock.
+	session.totalTokensCached = 0
+	session.lastMsgIdxCached = 0
+	session.cachedMsgsHash = ""
+	session.pending = true
+	seqID := session.seqID
+	slotID := session.slotID
+
+	m.cacheMu.Unlock()
+
+	m.log(ctx, "imc", "status", "slot marked pending", "slot", slotID, "seq", seqID)
+
+	// -------------------------------------------------------------------------
+	// Heavy work: template + tokenize outside the lock.
+
 	msgsToCache := messages[:lastMsgIdxToCache]
 	prefixD := D{
 		"messages":              msgsToCache,
@@ -312,6 +358,10 @@ func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D,
 
 	dataToCache, _, err := m.createPrompt(ctx, prefixD)
 	if err != nil {
+		m.cacheMu.Lock()
+		session.pending = false
+		m.cacheMu.Unlock()
+
 		return cacheResult{modifiedD: d, err: fmt.Errorf("imc: failed to template messages: %w", err)}
 	}
 
@@ -326,34 +376,35 @@ func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D,
 	tokenSpan.End()
 
 	if nTokens == 0 {
+		m.cacheMu.Lock()
+		session.pending = false
+		m.cacheMu.Unlock()
+
 		return cacheResult{modifiedD: d, err: fmt.Errorf("imc: messages tokenized to zero tokens")}
 	}
 
 	if nTokens < m.cfg.CacheMinTokens {
-		m.log(ctx, "imc", "status", "skip (too short)", "cache_id", cacheID, "last-msg-index-to-cache", lastMsgIdxToCache, "tokens", nTokens, "cache-min-tokens", m.cfg.CacheMinTokens)
+		m.log(ctx, "imc", "status", "skip (too short)", "last-msg-index-to-cache", lastMsgIdxToCache, "tokens", nTokens, "cache-min-tokens", m.cfg.CacheMinTokens)
+
+		m.cacheMu.Lock()
+		session.pending = false
+		m.cacheMu.Unlock()
+
 		return cacheResult{modifiedD: d}
 	}
-
-	// Reset session state and mark pending so concurrent scanners skip this
-	// slot while the deferred decode is in-flight. Cleared in startSlot.
-	session.totalTokensCached = 0
-	session.lastMsgIdxCached = 0
-	session.cachedMsgsHash = ""
-	session.pending = true
-
-	m.log(ctx, "imc", "status", "slot marked pending", "cache_id", cacheID, "slot", session.slotID, "seq", session.seqID)
 
 	// Return tokens for deferred decode in startSlot.
 	newHash := hashMessages(msgsToCache)
 
-	m.log(ctx, "imc", "status", "cache build prepared", "cache_id", cacheID, "slot", session.slotID, "seq", session.seqID, "msgs", lastMsgIdxToCache, "tokens", nTokens, "hash", newHash[:8])
+	m.log(ctx, "imc", "status", "cache build prepared", "slot", slotID, "seq", seqID, "msgs", lastMsgIdxToCache, "tokens", nTokens, "hash", newHash[:8])
 
 	return cacheResult{
 		modifiedD:         removeFirstNMessages(d, lastMsgIdxToCache),
 		cacheIdx:          0,
 		cachedMsgCount:    lastMsgIdxToCache,
-		cacheID:           cacheID,
-		cacheSeqID:        session.seqID,
+		cacheSeqID:        seqID,
+		imcSlotID:         slotID,
+		imcExpectedHash:   newHash,
 		imcNewCacheTokens: tokens,
 		imcNewTotalCached: nTokens,
 		imcNewMsgIdx:      lastMsgIdxToCache,

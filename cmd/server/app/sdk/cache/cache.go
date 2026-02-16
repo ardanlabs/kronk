@@ -67,7 +67,7 @@ func validateConfig(cfg Config) (Config, error) {
 	}
 
 	if cfg.ModelsInCache <= 0 {
-		cfg.ModelsInCache = 3
+		cfg.ModelsInCache = 2
 	}
 
 	if cfg.CacheTTL <= 0 {
