@@ -24,7 +24,6 @@ No Caching          SPC                 IMC
 
 
 Feb 16th, 2026 : v1.19.2
-================================================================================
 Model       : Qwen3-8B-Q8_0
 ContextWin  : 32k
 Conversation: 23443 tokens (107771 chars, 38 messages)
