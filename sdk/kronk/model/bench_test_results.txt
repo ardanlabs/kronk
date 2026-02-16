@@ -6,6 +6,7 @@ Conversation: 23443 tokens (107771 chars, 38 messages)
 Sys Prompt  : 8241 tokens (39322 chars)
 Benchtime   : 3x
 Timeout     : 30m
+llamap.cpp  : b8070
 --------------------------------------------------------------------------------
 goos: darwin
 goarch: arm64
@@ -30,6 +31,7 @@ Conversation: 23443 tokens (107771 chars, 38 messages)
 Sys Prompt  : 8241 tokens (39322 chars)
 Benchtime   : 3x
 Timeout     : 30m
+llamap.cpp  : b8070
 --------------------------------------------------------------------------------
 goos: darwin
 goarch: arm64
