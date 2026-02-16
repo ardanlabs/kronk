@@ -16,8 +16,8 @@ BenchmarkSPC-16         3   62552435931 ns/op    990240 B/op    8944 allocs/op
 BenchmarkIMC-16         3    4099335542 ns/op    138805 B/op    3949 allocs/op
 --------------------------------------------------------------------------------
 No Caching          SPC                 IMC                 
-  128 output-tok      128 output-tok      128 output-tok
 23636 prompt-tok    23636 prompt-tok    23603 prompt-tok
+  128 output-tok      128 output-tok      128 output-tok
 28.77 tok/s         29.01 tok/s         32.41 tok/s
 80177 total-ms      63758 total-ms       4100 total-ms
 75824 ttft-ms       59442 ttft-ms         240 ttft-ms
