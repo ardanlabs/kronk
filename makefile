@@ -121,6 +121,15 @@ test-only: install-models
 
 test: test-only lint vuln-check diff
 
+benchmark-nc:
+	CGO_ENABLED=0 go test -bench=BenchmarkNonCaching -benchtime=3x -timeout=30m ./sdk/kronk/model/
+
+benchmark-spc:
+	CGO_ENABLED=0 go test -bench=BenchmarkSPC -benchtime=3x -timeout=30m ./sdk/kronk/model/
+
+benchmark-imc:
+	CGO_ENABLED=0 go test -bench=BenchmarkIMC -benchtime=3x -timeout=30m ./sdk/kronk/model/
+
 # ==============================================================================
 # Kronk BUI
 
