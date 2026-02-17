@@ -9,6 +9,7 @@ import type {
   ChatMessage,
   ChatStreamResponse,
   ChatToolCall,
+  ModelConfig,
 } from '../types';
 import AutomatedTestingPanel from './AutomatedTestingPanel';
 
@@ -75,6 +76,33 @@ export default function ModelPlayground() {
   const [cacheTypeV, setCacheTypeV] = useState('');
   const [systemPromptCache, setSystemPromptCache] = useState(false);
 
+  // Sampling parameters state
+  const [temperature, setTemperature] = useState(0.8);
+  const [topP, setTopP] = useState(0.9);
+  const [topK, setTopK] = useState(40);
+  const [minP, setMinP] = useState(0.0);
+  const [maxTokens, setMaxTokens] = useState(4096);
+  const [repeatPenalty, setRepeatPenalty] = useState(1.0);
+  const [repeatLastN, setRepeatLastN] = useState(64);
+  const [frequencyPenalty, setFrequencyPenalty] = useState(0.0);
+  const [presencePenalty, setPresencePenalty] = useState(0.0);
+  const [dryMultiplier, setDryMultiplier] = useState(1.05);
+  const [dryBase, setDryBase] = useState(1.75);
+  const [dryAllowedLength, setDryAllowedLength] = useState(2);
+  const [dryPenaltyLastN, setDryPenaltyLastN] = useState(0);
+  const [xtcProbability, setXtcProbability] = useState(0.0);
+  const [xtcThreshold, setXtcThreshold] = useState(0.1);
+  const [xtcMinKeep, setXtcMinKeep] = useState(1);
+  const [enableThinking, setEnableThinking] = useState('true');
+  const [reasoningEffort, setReasoningEffort] = useState('medium');
+
+  // TPS tracking
+  const [lastTPS, setLastTPS] = useState<number | null>(null);
+
+  // Catalog config state
+  const [catalogConfig, setCatalogConfig] = useState<ModelConfig | null>(null);
+  const [configLoading, setConfigLoading] = useState(false);
+
   // Session state
   const [session, setSession] = useState<PlaygroundSessionResponse | null>(null);
   const [sessionLoading, setSessionLoading] = useState(false);
@@ -113,6 +141,34 @@ export default function ModelPlayground() {
     loadModels();
     loadTemplates();
   }, []);
+
+  useEffect(() => {
+    if (!selectedModel || selectedModel === NEW_MODEL_VALUE) {
+      setCatalogConfig(null);
+      return;
+    }
+
+    setConfigLoading(true);
+    api.showModel(selectedModel)
+      .then((info) => {
+        const mc = info.model_config;
+        if (mc) {
+          setCatalogConfig(mc);
+          setContextWindow(mc['context-window'] || 8192);
+          setNBatch(mc.nbatch || 2048);
+          setNUBatch(mc.nubatch || 512);
+          setNSeqMax(mc['nseq-max'] || 1);
+          setFlashAttention(mc['flash-attention'] || 'enabled');
+          setCacheTypeK(mc['cache-type-k'] || '');
+          setCacheTypeV(mc['cache-type-v'] || '');
+          setSystemPromptCache(mc['system-prompt-cache'] || false);
+        }
+      })
+      .catch(() => {
+        // Model info may not be available; keep current defaults.
+      })
+      .finally(() => setConfigLoading(false));
+  }, [selectedModel]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -174,25 +230,49 @@ export default function ModelPlayground() {
   const handleCreateSession = async () => {
     if (!selectedModel) return;
 
+    if (nUBatch > nBatch) {
+      setSessionError(`nubatch (${nUBatch}) must not exceed nbatch (${nBatch})`);
+      return;
+    }
+
     setSessionLoading(true);
     setSessionError('');
 
     try {
+      // Build config with only user-changed values.
+      const config: Record<string, any> = {};
+
+      if (!catalogConfig || contextWindow !== (catalogConfig['context-window'] || 8192)) {
+        config['context-window'] = contextWindow;
+      }
+      if (!catalogConfig || nBatch !== (catalogConfig.nbatch || 2048)) {
+        config['nbatch'] = nBatch;
+      }
+      if (!catalogConfig || nUBatch !== (catalogConfig.nubatch || 512)) {
+        config['nubatch'] = nUBatch;
+      }
+      if (!catalogConfig || nSeqMax !== (catalogConfig['nseq-max'] || 1)) {
+        config['nseq-max'] = nSeqMax;
+      }
+      if (!catalogConfig || flashAttention !== (catalogConfig['flash-attention'] || 'enabled')) {
+        config['flash-attention'] = flashAttention;
+      }
+      if (!catalogConfig || cacheTypeK !== (catalogConfig['cache-type-k'] || '')) {
+        if (cacheTypeK) config['cache-type-k'] = cacheTypeK;
+      }
+      if (!catalogConfig || cacheTypeV !== (catalogConfig['cache-type-v'] || '')) {
+        if (cacheTypeV) config['cache-type-v'] = cacheTypeV;
+      }
+      if (!catalogConfig || systemPromptCache !== (catalogConfig['system-prompt-cache'] || false)) {
+        config['system-prompt-cache'] = systemPromptCache;
+      }
+
       const resp = await api.createPlaygroundSession({
         model_id: selectedModel,
         template_mode: templateMode,
         template_name: templateMode === 'builtin' ? selectedTemplate : undefined,
         template_script: templateMode === 'custom' ? customScript : undefined,
-        config: {
-          'context-window': contextWindow,
-          nbatch: nBatch,
-          nubatch: nUBatch,
-          'nseq-max': nSeqMax,
-          'flash-attention': flashAttention,
-          'cache-type-k': cacheTypeK || undefined,
-          'cache-type-v': cacheTypeV || undefined,
-          'system-prompt-cache': systemPromptCache,
-        },
+        config: config as any,
       });
       setSession(resp);
       setChatMessages([]);
@@ -242,6 +322,25 @@ export default function ModelPlayground() {
         session_id: session.session_id,
         messages,
         stream: true,
+        stream_options: { include_usage: true },
+        temperature,
+        top_p: topP,
+        top_k: topK,
+        min_p: minP,
+        max_tokens: maxTokens,
+        repeat_penalty: repeatPenalty,
+        repeat_last_n: repeatLastN,
+        frequency_penalty: frequencyPenalty,
+        presence_penalty: presencePenalty,
+        dry_multiplier: dryMultiplier,
+        dry_base: dryBase,
+        dry_allowed_length: dryAllowedLength,
+        dry_penalty_last_n: dryPenaltyLastN,
+        xtc_probability: xtcProbability,
+        xtc_threshold: xtcThreshold,
+        xtc_min_keep: xtcMinKeep,
+        enable_thinking: enableThinking,
+        reasoning_effort: reasoningEffort,
       },
       (data: ChatStreamResponse) => {
         const delta = data.choices?.[0]?.delta;
@@ -252,6 +351,9 @@ export default function ModelPlayground() {
             ...newMessages,
             { role: 'assistant', content: updatedContent },
           ]);
+        }
+        if (data.usage?.tokens_per_second) {
+          setLastTPS(data.usage.tokens_per_second);
         }
       },
       (error: string) => {
@@ -267,7 +369,7 @@ export default function ModelPlayground() {
     );
 
     setStreamAbort(() => abort);
-  }, [session, userInput, streaming, systemPrompt, chatMessages]);
+  }, [session, userInput, streaming, systemPrompt, chatMessages, temperature, topP, topK, minP, maxTokens, repeatPenalty, repeatLastN, frequencyPenalty, presencePenalty, dryMultiplier, dryBase, dryAllowedLength, dryPenaltyLastN, xtcProbability, xtcThreshold, xtcMinKeep, enableThinking, reasoningEffort]);
 
   const handleStopStreaming = () => {
     streamAbort?.();
@@ -574,99 +676,93 @@ export default function ModelPlayground() {
           )}
 
           <h4>Configuration</h4>
-
-          <div className="form-group">
-            <label>Context Window</label>
-            <input
-              type="number"
-              value={contextWindow}
-              onChange={(e) => setContextWindow(Number(e.target.value))}
-              disabled={!!session}
-            />
-          </div>
-
-          <div className="form-group">
-            <label>NBatch</label>
-            <input
-              type="number"
-              value={nBatch}
-              onChange={(e) => setNBatch(Number(e.target.value))}
-              disabled={!!session}
-            />
-          </div>
-
-          <div className="form-group">
-            <label>NUBatch</label>
-            <input
-              type="number"
-              value={nUBatch}
-              onChange={(e) => setNUBatch(Number(e.target.value))}
-              disabled={!!session}
-            />
-          </div>
-
-          <div className="form-group">
-            <label>NSeqMax</label>
-            <input
-              type="number"
-              value={nSeqMax}
-              onChange={(e) => setNSeqMax(Number(e.target.value))}
-              min={1}
-              disabled={!!session}
-            />
-          </div>
-
-          <div className="form-group">
-            <label>Flash Attention</label>
-            <select
-              value={flashAttention}
-              onChange={(e) => setFlashAttention(e.target.value)}
-              disabled={!!session}
-            >
-              <option value="auto">Auto</option>
-              <option value="enabled">Enabled</option>
-              <option value="disabled">Disabled</option>
-            </select>
-          </div>
-
-          <div className="form-group">
-            <label>Cache Type K</label>
-            <select
-              value={cacheTypeK}
-              onChange={(e) => setCacheTypeK(e.target.value)}
-              disabled={!!session}
-            >
-              <option value="">Default (f16)</option>
-              <option value="f16">f16</option>
-              <option value="q8_0">q8_0</option>
-              <option value="q4_0">q4_0</option>
-            </select>
-          </div>
-
-          <div className="form-group">
-            <label>Cache Type V</label>
-            <select
-              value={cacheTypeV}
-              onChange={(e) => setCacheTypeV(e.target.value)}
-              disabled={!!session}
-            >
-              <option value="">Default (f16)</option>
-              <option value="f16">f16</option>
-              <option value="q8_0">q8_0</option>
-              <option value="q4_0">q4_0</option>
-            </select>
-          </div>
-
-          <div className="form-group checkbox-group">
-            <label>
+          <div className="playground-config-grid-fluid">
+            <div className="form-group">
+              <label>Context Window</label>
               <input
-                type="checkbox"
-                checked={systemPromptCache}
-                onChange={(e) => setSystemPromptCache(e.target.checked)}
+                type="number"
+                value={contextWindow}
+                onChange={(e) => setContextWindow(Number(e.target.value))}
                 disabled={!!session}
               />
-              System Prompt Cache
-            </label>
+            </div>
+            <div className="form-group">
+              <label>NBatch</label>
+              <input
+                type="number"
+                value={nBatch}
+                onChange={(e) => setNBatch(Number(e.target.value))}
+                disabled={!!session}
+              />
+            </div>
+            <div className="form-group">
+              <label>NUBatch</label>
+              <input
+                type="number"
+                value={nUBatch}
+                onChange={(e) => setNUBatch(Number(e.target.value))}
+                disabled={!!session}
+              />
+            </div>
+            <div className="form-group">
+              <label>NSeqMax</label>
+              <input
+                type="number"
+                value={nSeqMax}
+                onChange={(e) => setNSeqMax(Number(e.target.value))}
+                min={1}
+                disabled={!!session}
+              />
+            </div>
+            <div className="form-group">
+              <label>Flash Attention</label>
+              <select
+                value={flashAttention}
+                onChange={(e) => setFlashAttention(e.target.value)}
+                disabled={!!session}
+              >
+                <option value="auto">Auto</option>
+                <option value="enabled">Enabled</option>
+                <option value="disabled">Disabled</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label>Cache Type K</label>
+              <select
+                value={cacheTypeK}
+                onChange={(e) => setCacheTypeK(e.target.value)}
+                disabled={!!session}
+              >
+                <option value="">Default (f16)</option>
+                <option value="f16">f16</option>
+                <option value="q8_0">q8_0</option>
+                <option value="q4_0">q4_0</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label>Cache Type V</label>
+              <select
+                value={cacheTypeV}
+                onChange={(e) => setCacheTypeV(e.target.value)}
+                disabled={!!session}
+              >
+                <option value="">Default (f16)</option>
+                <option value="f16">f16</option>
+                <option value="q8_0">q8_0</option>
+                <option value="q4_0">q4_0</option>
+              </select>
+            </div>
+            <div className="form-group checkbox-group">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={systemPromptCache}
+                  onChange={(e) => setSystemPromptCache(e.target.checked)}
+                  disabled={!!session}
+                />
+                System Prompt Cache
+              </label>
+            </div>
           </div>
 
           <div className="playground-session-controls">
@@ -674,9 +770,9 @@ export default function ModelPlayground() {
               <button
                 className="btn btn-primary"
                 onClick={handleCreateSession}
-                disabled={!selectedModel || sessionLoading}
+                disabled={!selectedModel || sessionLoading || configLoading}
               >
-                {sessionLoading ? 'Loading Model...' : 'Create Session'}
+                {sessionLoading ? 'Loading Model...' : configLoading ? 'Loading Config...' : 'Create Session'}
               </button>
             ) : (
               <button className="btn btn-danger" onClick={handleUnloadSession}>
@@ -692,6 +788,19 @@ export default function ModelPlayground() {
               <strong>Session:</strong> {session.session_id}
               <br />
               <strong>Status:</strong> {session.status}
+              {session.effective_config && (
+                <div className="playground-effective-config">
+                  <strong>Effective Config:</strong>
+                  <div className="playground-config-grid">
+                    {Object.entries(session.effective_config).map(([key, value]) => (
+                      <div key={key} className="playground-config-item">
+                        <span className="playground-config-key">{key}:</span>{' '}
+                        <span className="playground-config-value">{String(value)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -728,15 +837,120 @@ export default function ModelPlayground() {
           <div className="playground-tab-content">
             {activeTab === 'chat' && (
               <div className="playground-chat">
-                <div className="form-group">
-                  <label>System Prompt</label>
-                  <textarea
-                    value={systemPrompt}
-                    onChange={(e) => setSystemPrompt(e.target.value)}
-                    rows={2}
-                    className="playground-textarea"
-                  />
-                </div>
+                <details className="playground-sampling-params">
+                  <summary>Chat Parameters</summary>
+
+                  <h5 className="playground-param-group-title">System Prompt</h5>
+                  <div className="form-group">
+                    <textarea
+                        value={systemPrompt}
+                        onChange={(e) => setSystemPrompt(e.target.value)}
+                        rows={2}
+                        className="playground-textarea"
+                    />
+                  </div>
+
+                  <h5 className="playground-param-group-title">Generation</h5>
+                  <div className="playground-config-grid-fluid">
+                    <div className="form-group">
+                      <label>Temperature</label>
+                      <input type="number" value={temperature} onChange={(e) => setTemperature(Number(e.target.value))} step={0.1} min={0} />
+                    </div>
+                    <div className="form-group">
+                      <label>Top P</label>
+                      <input type="number" value={topP} onChange={(e) => setTopP(Number(e.target.value))} step={0.05} min={0} max={1} />
+                    </div>
+                    <div className="form-group">
+                      <label>Top K</label>
+                      <input type="number" value={topK} onChange={(e) => setTopK(Math.floor(Number(e.target.value)))} step={1} min={0} />
+                    </div>
+                    <div className="form-group">
+                      <label>Min P</label>
+                      <input type="number" value={minP} onChange={(e) => setMinP(Number(e.target.value))} step={0.01} min={0} max={1} />
+                    </div>
+                    <div className="form-group">
+                      <label>Max Tokens</label>
+                      <input type="number" value={maxTokens} onChange={(e) => setMaxTokens(Math.floor(Number(e.target.value)))} step={256} min={1} />
+                    </div>
+                  </div>
+
+                  <h5 className="playground-param-group-title">Repetition Control</h5>
+                  <div className="playground-config-grid-fluid">
+                    <div className="form-group">
+                      <label>Repeat Penalty</label>
+                      <input type="number" value={repeatPenalty} onChange={(e) => setRepeatPenalty(Number(e.target.value))} step={0.1} min={0} />
+                    </div>
+                    <div className="form-group">
+                      <label>Repeat Last N</label>
+                      <input type="number" value={repeatLastN} onChange={(e) => setRepeatLastN(Math.floor(Number(e.target.value)))} step={1} min={0} />
+                    </div>
+                    <div className="form-group">
+                      <label>Frequency Penalty</label>
+                      <input type="number" value={frequencyPenalty} onChange={(e) => setFrequencyPenalty(Number(e.target.value))} step={0.1} min={0} />
+                    </div>
+                    <div className="form-group">
+                      <label>Presence Penalty</label>
+                      <input type="number" value={presencePenalty} onChange={(e) => setPresencePenalty(Number(e.target.value))} step={0.1} min={0} />
+                    </div>
+                  </div>
+
+                  <h5 className="playground-param-group-title">DRY Sampler</h5>
+                  <div className="playground-config-grid-fluid">
+                    <div className="form-group">
+                      <label>DRY Multiplier</label>
+                      <input type="number" value={dryMultiplier} onChange={(e) => setDryMultiplier(Number(e.target.value))} step={0.05} min={0} />
+                    </div>
+                    <div className="form-group">
+                      <label>DRY Base</label>
+                      <input type="number" value={dryBase} onChange={(e) => setDryBase(Number(e.target.value))} step={0.05} min={0} />
+                    </div>
+                    <div className="form-group">
+                      <label>DRY Allowed Length</label>
+                      <input type="number" value={dryAllowedLength} onChange={(e) => setDryAllowedLength(Math.floor(Number(e.target.value)))} step={1} min={0} />
+                    </div>
+                    <div className="form-group">
+                      <label>DRY Penalty Last N</label>
+                      <input type="number" value={dryPenaltyLastN} onChange={(e) => setDryPenaltyLastN(Math.floor(Number(e.target.value)))} step={1} min={0} />
+                    </div>
+                  </div>
+
+                  <h5 className="playground-param-group-title">XTC Sampler</h5>
+                  <div className="playground-config-grid-fluid">
+                    <div className="form-group">
+                      <label>XTC Probability</label>
+                      <input type="number" value={xtcProbability} onChange={(e) => setXtcProbability(Number(e.target.value))} step={0.01} min={0} max={1} />
+                    </div>
+                    <div className="form-group">
+                      <label>XTC Threshold</label>
+                      <input type="number" value={xtcThreshold} onChange={(e) => setXtcThreshold(Number(e.target.value))} step={0.01} min={0} max={1} />
+                    </div>
+                    <div className="form-group">
+                      <label>XTC Min Keep</label>
+                      <input type="number" value={xtcMinKeep} onChange={(e) => setXtcMinKeep(Math.floor(Number(e.target.value)))} step={1} min={1} />
+                    </div>
+                  </div>
+
+                  <h5 className="playground-param-group-title">Reasoning</h5>
+                  <div className="playground-config-grid-fluid">
+                    <div className="form-group">
+                      <label>Enable Thinking</label>
+                      <select value={enableThinking} onChange={(e) => setEnableThinking(e.target.value)}>
+                        <option value="true">Enabled</option>
+                        <option value="false">Disabled</option>
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label>Reasoning Effort</label>
+                      <select value={reasoningEffort} onChange={(e) => setReasoningEffort(e.target.value)}>
+                        <option value="none">None</option>
+                        <option value="minimal">Minimal</option>
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                      </select>
+                    </div>
+                  </div>
+                </details>
 
                 <div className="playground-messages">
                   {chatMessages.map((msg, i) => (
@@ -770,6 +984,11 @@ export default function ModelPlayground() {
                     >
                       Send
                     </button>
+                  )}
+                  {lastTPS !== null && (
+                    <span style={{ fontSize: 12, opacity: 0.7, marginLeft: 8, whiteSpace: 'nowrap' }}>
+                      {lastTPS.toFixed(1)} TPS
+                    </span>
                   )}
                 </div>
               </div>

@@ -1504,9 +1504,14 @@ func runStreamingBench(ctx context.Context, krn *kronk.Kronk, d model.D) (benchR
 		}
 
 		// Check for error responses.
-		if len(resp.Choice) > 0 && resp.Choice[0].FinishReason() == "error" {
-			if resp.Choice[0].Message != nil {
+		if len(resp.Choice) > 0 && resp.Choice[0].FinishReason() == model.FinishReasonError {
+			switch {
+			case resp.Choice[0].Message != nil && resp.Choice[0].Message.Content != "":
 				respError = fmt.Errorf("model error: %s", resp.Choice[0].Message.Content)
+			case resp.Choice[0].Delta != nil && resp.Choice[0].Delta.Content != "":
+				respError = fmt.Errorf("model error: %s", resp.Choice[0].Delta.Content)
+			default:
+				respError = fmt.Errorf("model error: unknown error payload")
 			}
 		}
 

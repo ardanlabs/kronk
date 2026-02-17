@@ -38,6 +38,7 @@ import { DownloadProvider } from './contexts/DownloadContext';
 import { ChatProvider } from './contexts/ChatContext';
 import { ChatHistoryProvider } from './contexts/ChatHistoryContext';
 import { SamplingProvider } from './contexts/SamplingContext';
+import { AutoTestRunnerProvider } from './contexts/AutoTestRunnerContext';
 
 export type Page =
   | 'home'
@@ -164,6 +165,7 @@ function App() {
       <TokenProvider>
         <ModelListProvider>
           <DownloadProvider>
+            <AutoTestRunnerProvider>
             <ChatProvider>
               <ChatHistoryProvider>
               <SamplingProvider>
@@ -207,6 +209,7 @@ function App() {
               </SamplingProvider>
               </ChatHistoryProvider>
             </ChatProvider>
+            </AutoTestRunnerProvider>
           </DownloadProvider>
         </ModelListProvider>
       </TokenProvider>

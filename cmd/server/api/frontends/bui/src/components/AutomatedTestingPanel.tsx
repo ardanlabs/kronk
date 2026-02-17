@@ -1,25 +1,15 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import type {
   PlaygroundSessionResponse,
-  AutoTestRunnerState,
   AutoTestTrialResult,
   SamplingCandidate,
-  AutoTestScenario,
   AutoTestSweepMode,
   ConfigSweepDefinition,
-  ConfigCandidate,
   AutoTestSessionSeed,
 } from '../types';
-import {
-  chatScenario,
-  toolCallScenario,
-  generateTrialCandidates,
-  generateConfigCandidates,
-  defaultConfigSweepDef,
-  probeTemplate,
-  runTrial,
-} from '../services/autoTestRunner';
-import { api } from '../services/api';
+import { defaultConfigSweepDef } from '../services/autoTestRunner';
+import { useAutoTestRunner } from '../contexts/AutoTestRunnerContext';
+import type { ConfigTrialResult } from '../contexts/AutoTestRunnerContext';
 
 interface AutomatedTestingPanelProps {
   session: PlaygroundSessionResponse | null;
@@ -31,6 +21,20 @@ const defaultBaseline: SamplingCandidate = {
   top_p: 0.9,
   top_k: 40,
   min_p: 0,
+  repeat_penalty: 1.0,
+  repeat_last_n: 64,
+  frequency_penalty: 0.0,
+  presence_penalty: 0.0,
+  dry_multiplier: 1.05,
+  dry_base: 1.75,
+  dry_allowed_length: 2,
+  dry_penalty_last_n: 0,
+  xtc_probability: 0.0,
+  xtc_threshold: 0.1,
+  xtc_min_keep: 1,
+  enable_thinking: 'true',
+  reasoning_effort: 'medium',
+  max_tokens: 4096,
 };
 
 function scoreColor(score: number): string {
@@ -98,231 +102,61 @@ function RunTiming({ trials, totalCount }: RunTimingProps) {
 }
 
 export default function AutomatedTestingPanel({ session, sessionSeed }: AutomatedTestingPanelProps) {
-  const [runnerState, setRunnerState] = useState<AutoTestRunnerState>('idle');
+  const { run, isRunning, startSamplingRun, startConfigRun, stopRun, clearRun } = useAutoTestRunner();
+
   const [sweepMode, setSweepMode] = useState<AutoTestSweepMode>('sampling');
   const [enabledScenarios, setEnabledScenarios] = useState({ chat: true, tool_call: true });
   const [useCustomBaseline, setUseCustomBaseline] = useState(false);
   const [baseline, setBaseline] = useState<SamplingCandidate>({ ...defaultBaseline });
-  const [maxTrials, setMaxTrials] = useState(25);
-  const [trials, setTrials] = useState<AutoTestTrialResult[]>([]);
-  const [currentTrialIndex, setCurrentTrialIndex] = useState(0);
-  const [totalTrials, setTotalTrials] = useState(0);
-  const [bestTrial, setBestTrial] = useState<AutoTestTrialResult | null>(null);
-  const [templateRepairStatus, setTemplateRepairStatus] = useState('');
-  const [errorMessage, setErrorMessage] = useState('');
+  const [maxTrials] = useState(Infinity);
   const [configSweepDef, setConfigSweepDef] = useState<ConfigSweepDefinition>(structuredClone(defaultConfigSweepDef));
 
-  const [configTrials, setConfigTrials] = useState<Array<AutoTestTrialResult & { config?: ConfigCandidate }>>([]);
-  const [bestConfigTrial, setBestConfigTrial] = useState<(AutoTestTrialResult & { config?: ConfigCandidate }) | null>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const currentConfigSessionRef = useRef<string | null>(null);
+  const runnerState = run?.status ?? 'idle';
+  const errorMessage = run?.errorMessage ?? '';
+  const templateRepairStatus = run?.templateRepairStatus ?? '';
+  const currentTrialIndex = run?.currentTrialIndex ?? 0;
+  const totalTrials = run?.totalTrials ?? 0;
+  const trials = run?.kind === 'sampling' ? run.trials : [];
+  const configTrials: ConfigTrialResult[] = run?.kind === 'config' ? run.trials : [];
+  const bestTrial = run?.kind === 'sampling' && run.bestTrialId
+    ? run.trials.find(t => t.id === run.bestTrialId) ?? null
+    : null;
+  const bestConfigTrial = run?.kind === 'config' && run.bestTrialId
+    ? run.trials.find(t => t.id === run.bestTrialId) ?? null
+    : null;
 
-  useEffect(() => {
-    return () => {
-      abortControllerRef.current?.abort();
-      const sid = currentConfigSessionRef.current;
-      if (sid) api.deletePlaygroundSession(sid).catch(() => {});
-      currentConfigSessionRef.current = null;
-    };
-  }, []);
+  const displayMode: AutoTestSweepMode = run ? run.kind : sweepMode;
 
-  const isRunning = runnerState === 'repairing_template' || runnerState === 'running_trials';
   const hasEnabledScenario = enabledScenarios.chat || enabledScenarios.tool_call;
-  const hasEnabledConfigParam = configSweepDef.nbatch.enabled || configSweepDef.nubatch.enabled || configSweepDef.contextWindow.enabled || configSweepDef.nSeqMax.enabled;
+  const hasEnabledConfigParam = configSweepDef.nbatch.enabled || configSweepDef.nubatch.enabled || configSweepDef.contextWindow.enabled || configSweepDef.nSeqMax.enabled || configSweepDef.flashAttention.enabled || configSweepDef.cacheTypeK.enabled || configSweepDef.cacheTypeV.enabled || configSweepDef.systemPromptCache.enabled;
 
-  const handleRun = useCallback(async () => {
+  const handleRun = useCallback(() => {
     if (sweepMode === 'sampling') {
       if (!session) return;
-
-      setRunnerState('repairing_template');
-      setErrorMessage('');
-      setTemplateRepairStatus('');
-      setTrials([]);
-      setBestTrial(null);
-      setCurrentTrialIndex(0);
-
-      const controller = new AbortController();
-      abortControllerRef.current = controller;
-
-      try {
-        const scenarios: AutoTestScenario[] = [];
-        if (enabledScenarios.chat) scenarios.push(chatScenario);
-        if (enabledScenarios.tool_call) scenarios.push(toolCallScenario);
-
-        if (enabledScenarios.tool_call) {
-          setTemplateRepairStatus('Probing template for tool calling compatibility...');
-          const probeResult = await probeTemplate(session.session_id);
-          if (probeResult) {
-            setTemplateRepairStatus('Template OK ✓');
-          } else {
-            setTemplateRepairStatus('Template probe failed — running chat-only tests');
-            const idx = scenarios.indexOf(toolCallScenario);
-            if (idx !== -1) scenarios.splice(idx, 1);
-          }
-        }
-
-        const activeBaseline = useCustomBaseline ? baseline : defaultBaseline;
-        const candidates = generateTrialCandidates(activeBaseline, maxTrials);
-        setTotalTrials(candidates.length);
-        setCurrentTrialIndex(0);
-        setRunnerState('running_trials');
-
-        let currentBest: AutoTestTrialResult | null = null;
-
-        for (let i = 0; i < candidates.length; i++) {
-          if (controller.signal.aborted) break;
-
-          const candidate = candidates[i];
-
-          const onUpdate = (partial: AutoTestTrialResult) => {
-            setTrials((prev) => {
-              const updated = [...prev];
-              updated[i] = partial;
-              return updated;
-            });
-          };
-
-          const result = await runTrial(session.session_id, candidate, scenarios, onUpdate, controller.signal);
-
-          setTrials((prev) => {
-            const updated = [...prev];
-            updated[i] = result;
-            return updated;
-          });
-
-          if (!currentBest || (result.totalScore ?? 0) > (currentBest.totalScore ?? 0)) {
-            currentBest = result;
-            setBestTrial(result);
-          }
-
-          setCurrentTrialIndex(i + 1);
-        }
-
-        setRunnerState(controller.signal.aborted ? 'cancelled' : 'completed');
-      } catch (err: any) {
-        setErrorMessage(err.message || 'Automated testing failed');
-        setRunnerState('error');
-      }
+      startSamplingRun({
+        sessionId: session.session_id,
+        enabledScenarios,
+        useCustomBaseline,
+        baseline: useCustomBaseline ? baseline : defaultBaseline,
+        maxTrials,
+      });
     } else {
-      // Config sweep mode
       if (!sessionSeed?.model_id || session) return;
-
-      setRunnerState('running_trials');
-      setErrorMessage('');
-      setTemplateRepairStatus('');
-      setConfigTrials([]);
-      setBestConfigTrial(null);
-      setCurrentTrialIndex(0);
-
-      const controller = new AbortController();
-      abortControllerRef.current = controller;
-
-      try {
-        const configCandidates = generateConfigCandidates(sessionSeed.base_config, configSweepDef);
-        setTotalTrials(configCandidates.length);
-        setCurrentTrialIndex(0);
-        setRunnerState('running_trials');
-
-        const scenarios: AutoTestScenario[] = [];
-        if (enabledScenarios.chat) scenarios.push(chatScenario);
-        if (enabledScenarios.tool_call) scenarios.push(toolCallScenario);
-
-        let currentBest: (AutoTestTrialResult & { config?: ConfigCandidate }) | null = null;
-
-        for (let i = 0; i < configCandidates.length; i++) {
-          if (controller.signal.aborted) break;
-
-          const cfg = configCandidates[i];
-          let configSessionId: string | null = null;
-
-          try {
-            const resp = await api.createPlaygroundSession({
-              model_id: sessionSeed.model_id,
-              template_mode: sessionSeed.template_mode,
-              template_name: sessionSeed.template_name,
-              template_script: sessionSeed.template_script,
-              config: { ...sessionSeed.base_config, ...cfg },
-            });
-            configSessionId = resp.session_id;
-            currentConfigSessionRef.current = configSessionId;
-
-            const activeScenarios = [...scenarios];
-
-            if (enabledScenarios.tool_call) {
-              setTemplateRepairStatus('Probing template for tool calling compatibility...');
-              const probeResult = await probeTemplate(configSessionId);
-              if (probeResult) {
-                setTemplateRepairStatus('Template OK ✓');
-              } else {
-                setTemplateRepairStatus('Template probe failed — running chat-only tests');
-                const idx = activeScenarios.indexOf(toolCallScenario);
-                if (idx !== -1) activeScenarios.splice(idx, 1);
-              }
-            }
-
-            const activeBaseline = useCustomBaseline ? baseline : defaultBaseline;
-
-            const onUpdate = (partial: AutoTestTrialResult) => {
-              setConfigTrials((prev) => {
-                const updated = [...prev];
-                updated[i] = { ...partial, config: cfg };
-                return updated;
-              });
-            };
-
-            const result = await runTrial(configSessionId, activeBaseline, activeScenarios, onUpdate, controller.signal);
-
-            const configResult = { ...result, config: cfg };
-            setConfigTrials((prev) => {
-              const updated = [...prev];
-              updated[i] = configResult;
-              return updated;
-            });
-
-            if (!currentBest || (result.totalScore ?? 0) > (currentBest.totalScore ?? 0)) {
-              currentBest = configResult;
-              setBestConfigTrial(configResult);
-            }
-          } finally {
-            if (configSessionId) {
-              await api.deletePlaygroundSession(configSessionId).catch(() => {});
-              if (currentConfigSessionRef.current === configSessionId) {
-                currentConfigSessionRef.current = null;
-              }
-            }
-          }
-
-          setCurrentTrialIndex(i + 1);
-        }
-
-        setRunnerState(controller.signal.aborted ? 'cancelled' : 'completed');
-      } catch (err: any) {
-        setErrorMessage(err.message || 'Automated testing failed');
-        setRunnerState('error');
-      }
+      startConfigRun({
+        sessionSeed,
+        enabledScenarios,
+        configSweepDef,
+      });
     }
-  }, [session, sessionSeed, sweepMode, enabledScenarios, useCustomBaseline, baseline, maxTrials, configSweepDef]);
+  }, [sweepMode, session, sessionSeed, enabledScenarios, useCustomBaseline, baseline, maxTrials, configSweepDef, startSamplingRun, startConfigRun]);
 
   const handleStop = useCallback(() => {
-    abortControllerRef.current?.abort();
-    if (currentConfigSessionRef.current) {
-      api.deletePlaygroundSession(currentConfigSessionRef.current).catch(() => {});
-      currentConfigSessionRef.current = null;
-    }
-    setRunnerState('cancelled');
-  }, []);
+    stopRun();
+  }, [stopRun]);
 
   const handleClear = useCallback(() => {
-    setTrials([]);
-    setBestTrial(null);
-    setConfigTrials([]);
-    setBestConfigTrial(null);
-    setCurrentTrialIndex(0);
-    setTotalTrials(0);
-    setRunnerState('idle');
-    setErrorMessage('');
-    setTemplateRepairStatus('');
-  }, []);
+    clearRun();
+  }, [clearRun]);
 
   const canRun = sweepMode === 'sampling'
     ? !!(session && !isRunning && hasEnabledScenario)
@@ -333,8 +167,8 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
       {/* Sweep Mode */}
       <div className="playground-autotest-section">
         <h4>Sweep Mode</h4>
-        <div className="form-group checkbox-group">
-          <label>
+        <div className="playground-inline-options">
+          <label className="playground-inline-option">
             <input
               type="radio"
               name="sweepMode"
@@ -345,9 +179,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
             />
             Sampling Sweep
           </label>
-        </div>
-        <div className="form-group checkbox-group">
-          <label>
+          <label className="playground-inline-option">
             <input
               type="radio"
               name="sweepMode"
@@ -364,8 +196,8 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
       {/* Scenario Selection */}
       <div className="playground-autotest-section">
         <h4>Scenario Selection</h4>
-        <div className="form-group checkbox-group">
-          <label>
+        <div className="playground-inline-options">
+          <label className="playground-inline-option">
             <input
               type="checkbox"
               checked={enabledScenarios.chat}
@@ -374,9 +206,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
             />
             Chat Quality
           </label>
-        </div>
-        <div className="form-group checkbox-group">
-          <label>
+          <label className="playground-inline-option">
             <input
               type="checkbox"
               checked={enabledScenarios.tool_call}
@@ -395,101 +225,238 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
           <p style={{ fontSize: 12, color: '#6d4c00', marginBottom: 8 }}>
             ⚠ Each candidate reloads the model. This is slower than sampling sweeps.
           </p>
-          <div className="form-group checkbox-group">
-            <label>
-              <input
-                type="checkbox"
-                checked={configSweepDef.nbatch.enabled}
-                onChange={(e) => setConfigSweepDef((d) => ({ ...d, nbatch: { ...d.nbatch, enabled: e.target.checked } }))}
-                disabled={isRunning}
-              />
-              NBatch
-            </label>
-            {configSweepDef.nbatch.enabled && (
-              <input
-                type="text"
-                value={configSweepDef.nbatch.values.join(', ')}
-                onChange={(e) => {
-                  const values = e.target.value.split(',').map(s => Number(s.trim())).filter(n => Number.isFinite(n) && n > 0);
-                  setConfigSweepDef(d => ({ ...d, nbatch: { ...d.nbatch, values } }));
-                }}
-                placeholder="512, 1024, 2048, 4096"
-                disabled={isRunning}
-                style={{ marginLeft: 8, flex: 1 }}
-              />
-            )}
-          </div>
-          <div className="form-group checkbox-group">
-            <label>
-              <input
-                type="checkbox"
-                checked={configSweepDef.nubatch.enabled}
-                onChange={(e) => setConfigSweepDef((d) => ({ ...d, nubatch: { ...d.nubatch, enabled: e.target.checked } }))}
-                disabled={isRunning}
-              />
-              NUBatch
-            </label>
-            {configSweepDef.nubatch.enabled && (
-              <input
-                type="text"
-                value={configSweepDef.nubatch.values.join(', ')}
-                onChange={(e) => {
-                  const values = e.target.value.split(',').map(s => Number(s.trim())).filter(n => Number.isFinite(n) && n > 0);
-                  setConfigSweepDef(d => ({ ...d, nubatch: { ...d.nubatch, values } }));
-                }}
-                placeholder="128, 256, 512, 1024, 2048"
-                disabled={isRunning}
-                style={{ marginLeft: 8, flex: 1 }}
-              />
-            )}
-          </div>
-          <div className="form-group checkbox-group">
-            <label>
-              <input
-                type="checkbox"
-                checked={configSweepDef.contextWindow.enabled}
-                onChange={(e) => setConfigSweepDef((d) => ({ ...d, contextWindow: { ...d.contextWindow, enabled: e.target.checked } }))}
-                disabled={isRunning}
-              />
-              Context Window
-            </label>
-            {configSweepDef.contextWindow.enabled && (
-              <input
-                type="text"
-                value={configSweepDef.contextWindow.values.join(', ')}
-                onChange={(e) => {
-                  const values = e.target.value.split(',').map(s => Number(s.trim())).filter(n => Number.isFinite(n) && n > 0);
-                  setConfigSweepDef(d => ({ ...d, contextWindow: { ...d.contextWindow, values } }));
-                }}
-                placeholder="2048, 4096, 8192, 16384, 32768"
-                disabled={isRunning}
-                style={{ marginLeft: 8, flex: 1 }}
-              />
-            )}
-          </div>
-          <div className="form-group checkbox-group">
-            <label>
-              <input
-                type="checkbox"
-                checked={configSweepDef.nSeqMax.enabled}
-                onChange={(e) => setConfigSweepDef((d) => ({ ...d, nSeqMax: { ...d.nSeqMax, enabled: e.target.checked } }))}
-                disabled={isRunning}
-              />
-              NSeqMax
-            </label>
-            {configSweepDef.nSeqMax.enabled && (
-              <input
-                type="text"
-                value={configSweepDef.nSeqMax.values.join(', ')}
-                onChange={(e) => {
-                  const values = e.target.value.split(',').map(s => Number(s.trim())).filter(n => Number.isFinite(n) && n > 0);
-                  setConfigSweepDef(d => ({ ...d, nSeqMax: { ...d.nSeqMax, values } }));
-                }}
-                placeholder="1, 2, 4, 8"
-                disabled={isRunning}
-                style={{ marginLeft: 8, flex: 1 }}
-              />
-            )}
+          <div className="playground-sweep-params">
+            <div className="playground-sweep-param">
+              <label className="playground-sweep-param-toggle">
+                <input
+                  type="checkbox"
+                  checked={configSweepDef.nbatch.enabled}
+                  onChange={(e) => setConfigSweepDef((d) => ({ ...d, nbatch: { ...d.nbatch, enabled: e.target.checked } }))}
+                  disabled={isRunning}
+                />
+                NBatch
+              </label>
+              {configSweepDef.nbatch.enabled && (
+                <input
+                  type="text"
+                  className="playground-sweep-param-values"
+                  value={configSweepDef.nbatch.values.join(', ')}
+                  onChange={(e) => {
+                    const values = e.target.value.split(',').map(s => Number(s.trim())).filter(n => Number.isFinite(n) && n > 0);
+                    setConfigSweepDef(d => ({ ...d, nbatch: { ...d.nbatch, values } }));
+                  }}
+                  placeholder="512, 1024, 2048, 4096"
+                  disabled={isRunning}
+                />
+              )}
+            </div>
+
+            <div className="playground-sweep-param">
+              <label className="playground-sweep-param-toggle">
+                <input
+                  type="checkbox"
+                  checked={configSweepDef.nubatch.enabled}
+                  onChange={(e) => setConfigSweepDef((d) => ({ ...d, nubatch: { ...d.nubatch, enabled: e.target.checked } }))}
+                  disabled={isRunning}
+                />
+                NUBatch
+              </label>
+              {configSweepDef.nubatch.enabled && (
+                <input
+                  type="text"
+                  className="playground-sweep-param-values"
+                  value={configSweepDef.nubatch.values.join(', ')}
+                  onChange={(e) => {
+                    const values = e.target.value.split(',').map(s => Number(s.trim())).filter(n => Number.isFinite(n) && n > 0);
+                    setConfigSweepDef(d => ({ ...d, nubatch: { ...d.nubatch, values } }));
+                  }}
+                  placeholder="128, 256, 512, 1024, 2048"
+                  disabled={isRunning}
+                />
+              )}
+            </div>
+
+            <div className="playground-sweep-param">
+              <label className="playground-sweep-param-toggle">
+                <input
+                  type="checkbox"
+                  checked={configSweepDef.contextWindow.enabled}
+                  onChange={(e) => setConfigSweepDef((d) => ({ ...d, contextWindow: { ...d.contextWindow, enabled: e.target.checked } }))}
+                  disabled={isRunning}
+                />
+                Context Window
+              </label>
+              {configSweepDef.contextWindow.enabled && (
+                <input
+                  type="text"
+                  className="playground-sweep-param-values"
+                  value={configSweepDef.contextWindow.values.join(', ')}
+                  onChange={(e) => {
+                    const values = e.target.value.split(',').map(s => Number(s.trim())).filter(n => Number.isFinite(n) && n > 0);
+                    setConfigSweepDef(d => ({ ...d, contextWindow: { ...d.contextWindow, values } }));
+                  }}
+                  placeholder="2048, 4096, 8192, 16384, 32768"
+                  disabled={isRunning}
+                />
+              )}
+            </div>
+
+            <div className="playground-sweep-param">
+              <label className="playground-sweep-param-toggle">
+                <input
+                  type="checkbox"
+                  checked={configSweepDef.nSeqMax.enabled}
+                  onChange={(e) => setConfigSweepDef((d) => ({ ...d, nSeqMax: { ...d.nSeqMax, enabled: e.target.checked } }))}
+                  disabled={isRunning}
+                />
+                NSeqMax
+              </label>
+              {configSweepDef.nSeqMax.enabled && (
+                <input
+                  type="text"
+                  className="playground-sweep-param-values"
+                  value={configSweepDef.nSeqMax.values.join(', ')}
+                  onChange={(e) => {
+                    const values = e.target.value.split(',').map(s => Number(s.trim())).filter(n => Number.isFinite(n) && n > 0);
+                    setConfigSweepDef(d => ({ ...d, nSeqMax: { ...d.nSeqMax, values } }));
+                  }}
+                  placeholder="1, 2, 4, 8"
+                  disabled={isRunning}
+                />
+              )}
+            </div>
+
+            <div className="playground-sweep-param">
+              <label className="playground-sweep-param-toggle">
+                <input
+                  type="checkbox"
+                  checked={configSweepDef.flashAttention.enabled}
+                  onChange={(e) => setConfigSweepDef((d) => ({ ...d, flashAttention: { ...d.flashAttention, enabled: e.target.checked } }))}
+                  disabled={isRunning}
+                />
+                Flash Attention
+              </label>
+              {configSweepDef.flashAttention.enabled && (
+                <div className="playground-sweep-option-checks">
+                  {['auto', 'enabled', 'disabled'].map((val) => (
+                    <label key={val} className="playground-sweep-option-label">
+                      <input
+                        type="checkbox"
+                        checked={configSweepDef.flashAttention.values.includes(val)}
+                        onChange={(e) => {
+                          setConfigSweepDef(d => {
+                            const prev = d.flashAttention.values;
+                            const next = e.target.checked ? [...prev, val] : prev.filter(v => v !== val);
+                            return { ...d, flashAttention: { ...d.flashAttention, values: next } };
+                          });
+                        }}
+                        disabled={isRunning}
+                      />
+                      {val}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="playground-sweep-param">
+              <label className="playground-sweep-param-toggle">
+                <input
+                  type="checkbox"
+                  checked={configSweepDef.cacheTypeK.enabled}
+                  onChange={(e) => setConfigSweepDef((d) => ({ ...d, cacheTypeK: { ...d.cacheTypeK, enabled: e.target.checked } }))}
+                  disabled={isRunning}
+                />
+                Cache Type K
+              </label>
+              {configSweepDef.cacheTypeK.enabled && (
+                <div className="playground-sweep-option-checks">
+                  {['f16', 'q8_0', 'q4_0'].map((val) => (
+                    <label key={val} className="playground-sweep-option-label">
+                      <input
+                        type="checkbox"
+                        checked={configSweepDef.cacheTypeK.values.includes(val)}
+                        onChange={(e) => {
+                          setConfigSweepDef(d => {
+                            const prev = d.cacheTypeK.values;
+                            const next = e.target.checked ? [...prev, val] : prev.filter(v => v !== val);
+                            return { ...d, cacheTypeK: { ...d.cacheTypeK, values: next } };
+                          });
+                        }}
+                        disabled={isRunning}
+                      />
+                      {val}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="playground-sweep-param">
+              <label className="playground-sweep-param-toggle">
+                <input
+                  type="checkbox"
+                  checked={configSweepDef.cacheTypeV.enabled}
+                  onChange={(e) => setConfigSweepDef((d) => ({ ...d, cacheTypeV: { ...d.cacheTypeV, enabled: e.target.checked } }))}
+                  disabled={isRunning}
+                />
+                Cache Type V
+              </label>
+              {configSweepDef.cacheTypeV.enabled && (
+                <div className="playground-sweep-option-checks">
+                  {['f16', 'q8_0', 'q4_0'].map((val) => (
+                    <label key={val} className="playground-sweep-option-label">
+                      <input
+                        type="checkbox"
+                        checked={configSweepDef.cacheTypeV.values.includes(val)}
+                        onChange={(e) => {
+                          setConfigSweepDef(d => {
+                            const prev = d.cacheTypeV.values;
+                            const next = e.target.checked ? [...prev, val] : prev.filter(v => v !== val);
+                            return { ...d, cacheTypeV: { ...d.cacheTypeV, values: next } };
+                          });
+                        }}
+                        disabled={isRunning}
+                      />
+                      {val}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="playground-sweep-param">
+              <label className="playground-sweep-param-toggle">
+                <input
+                  type="checkbox"
+                  checked={configSweepDef.systemPromptCache.enabled}
+                  onChange={(e) => setConfigSweepDef((d) => ({ ...d, systemPromptCache: { ...d.systemPromptCache, enabled: e.target.checked } }))}
+                  disabled={isRunning}
+                />
+                System Prompt Cache
+              </label>
+              {configSweepDef.systemPromptCache.enabled && (
+                <div className="playground-sweep-option-checks">
+                  {[true, false].map((val) => (
+                    <label key={String(val)} className="playground-sweep-option-label">
+                      <input
+                        type="checkbox"
+                        checked={configSweepDef.systemPromptCache.values.includes(val)}
+                        onChange={(e) => {
+                          setConfigSweepDef(d => {
+                            const prev = d.systemPromptCache.values;
+                            const next = e.target.checked ? [...prev, val] : prev.filter(v => v !== val);
+                            return { ...d, systemPromptCache: { ...d.systemPromptCache, values: next } };
+                          });
+                        }}
+                        disabled={isRunning}
+                      />
+                      {String(val)}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
           {hasEnabledConfigParam && (
             <p style={{ fontSize: 12, color: 'var(--color-gray-600)', marginTop: 8 }}>
@@ -499,6 +466,10 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
                 if (configSweepDef.nubatch.enabled && configSweepDef.nubatch.values.length > 0) axes.push(configSweepDef.nubatch.values.length);
                 if (configSweepDef.contextWindow.enabled && configSweepDef.contextWindow.values.length > 0) axes.push(configSweepDef.contextWindow.values.length);
                 if (configSweepDef.nSeqMax.enabled && configSweepDef.nSeqMax.values.length > 0) axes.push(configSweepDef.nSeqMax.values.length);
+                if (configSweepDef.flashAttention.enabled && configSweepDef.flashAttention.values.length > 0) axes.push(configSweepDef.flashAttention.values.length);
+                if (configSweepDef.cacheTypeK.enabled && configSweepDef.cacheTypeK.values.length > 0) axes.push(configSweepDef.cacheTypeK.values.length);
+                if (configSweepDef.cacheTypeV.enabled && configSweepDef.cacheTypeV.values.length > 0) axes.push(configSweepDef.cacheTypeV.values.length);
+                if (configSweepDef.systemPromptCache.enabled && configSweepDef.systemPromptCache.values.length > 0) axes.push(configSweepDef.systemPromptCache.values.length);
                 return axes.length > 0 ? axes.reduce((a, b) => a * b, 1) : 1;
               })()}
             </p>
@@ -524,68 +495,128 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
 
           {useCustomBaseline && (
             <div className="playground-autotest-baseline-inputs">
-              <div className="form-group">
-                <label>Temperature</label>
-                <input
-                  type="number"
-                  value={baseline.temperature}
-                  onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, temperature: n })); }}
-                  step={0.1}
-                  disabled={isRunning}
-                />
+              <h5 className="playground-param-group-title">Generation</h5>
+              <div className="playground-config-grid-fluid">
+                <div className="form-group">
+                  <label>Temperature</label>
+                  <input
+                    type="number"
+                    value={baseline.temperature}
+                    onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, temperature: n })); }}
+                    step={0.1}
+                    disabled={isRunning}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Top P</label>
+                  <input
+                    type="number"
+                    value={baseline.top_p}
+                    onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, top_p: n })); }}
+                    step={0.05}
+                    disabled={isRunning}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Top K</label>
+                  <input
+                    type="number"
+                    value={baseline.top_k}
+                    onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, top_k: Math.floor(n) })); }}
+                    step={1}
+                    disabled={isRunning}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Min P</label>
+                  <input
+                    type="number"
+                    value={baseline.min_p}
+                    onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, min_p: n })); }}
+                    step={0.01}
+                    disabled={isRunning}
+                  />
+                </div>
               </div>
-              <div className="form-group">
-                <label>Top P</label>
-                <input
-                  type="number"
-                  value={baseline.top_p}
-                  onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, top_p: n })); }}
-                  step={0.05}
-                  disabled={isRunning}
-                />
+
+              <h5 className="playground-param-group-title">Repetition Control</h5>
+              <div className="playground-config-grid-fluid">
+                <div className="form-group">
+                  <label>Repeat Penalty</label>
+                  <input type="number" value={baseline.repeat_penalty ?? 1.0} onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, repeat_penalty: n })); }} step={0.05} disabled={isRunning} />
+                </div>
+                <div className="form-group">
+                  <label>Repeat Last N</label>
+                  <input type="number" value={baseline.repeat_last_n ?? 64} onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, repeat_last_n: Math.floor(n) })); }} step={1} disabled={isRunning} />
+                </div>
+                <div className="form-group">
+                  <label>Frequency Penalty</label>
+                  <input type="number" value={baseline.frequency_penalty ?? 0.0} onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, frequency_penalty: n })); }} step={0.1} disabled={isRunning} />
+                </div>
+                <div className="form-group">
+                  <label>Presence Penalty</label>
+                  <input type="number" value={baseline.presence_penalty ?? 0.0} onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, presence_penalty: n })); }} step={0.1} disabled={isRunning} />
+                </div>
               </div>
-              <div className="form-group">
-                <label>Top K</label>
-                <input
-                  type="number"
-                  value={baseline.top_k}
-                  onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, top_k: Math.floor(n) })); }}
-                  step={1}
-                  disabled={isRunning}
-                />
+
+              <h5 className="playground-param-group-title">DRY Sampler</h5>
+              <div className="playground-config-grid-fluid">
+                <div className="form-group">
+                  <label>DRY Multiplier</label>
+                  <input type="number" value={baseline.dry_multiplier ?? 1.05} onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, dry_multiplier: n })); }} step={0.05} disabled={isRunning} />
+                </div>
+                <div className="form-group">
+                  <label>DRY Base</label>
+                  <input type="number" value={baseline.dry_base ?? 1.75} onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, dry_base: n })); }} step={0.05} disabled={isRunning} />
+                </div>
+                <div className="form-group">
+                  <label>DRY Allowed Length</label>
+                  <input type="number" value={baseline.dry_allowed_length ?? 2} onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, dry_allowed_length: Math.floor(n) })); }} step={1} disabled={isRunning} />
+                </div>
+                <div className="form-group">
+                  <label>DRY Penalty Last N</label>
+                  <input type="number" value={baseline.dry_penalty_last_n ?? 0} onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, dry_penalty_last_n: Math.floor(n) })); }} step={1} disabled={isRunning} />
+                </div>
               </div>
-              <div className="form-group">
-                <label>Min P</label>
-                <input
-                  type="number"
-                  value={baseline.min_p}
-                  onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, min_p: n })); }}
-                  step={0.01}
-                  disabled={isRunning}
-                />
+
+              <h5 className="playground-param-group-title">XTC Sampler</h5>
+              <div className="playground-config-grid-fluid">
+                <div className="form-group">
+                  <label>XTC Probability</label>
+                  <input type="number" value={baseline.xtc_probability ?? 0.0} onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, xtc_probability: n })); }} step={0.01} disabled={isRunning} />
+                </div>
+                <div className="form-group">
+                  <label>XTC Threshold</label>
+                  <input type="number" value={baseline.xtc_threshold ?? 0.1} onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, xtc_threshold: n })); }} step={0.01} disabled={isRunning} />
+                </div>
+                <div className="form-group">
+                  <label>XTC Min Keep</label>
+                  <input type="number" value={baseline.xtc_min_keep ?? 1} onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, xtc_min_keep: Math.floor(n) })); }} step={1} disabled={isRunning} />
+                </div>
+              </div>
+
+              <h5 className="playground-param-group-title">Reasoning</h5>
+              <div className="playground-config-grid-fluid">
+                <div className="form-group">
+                  <label>Enable Thinking</label>
+                  <select value={baseline.enable_thinking ?? 'true'} onChange={(e) => setBaseline((b) => ({ ...b, enable_thinking: e.target.value }))} disabled={isRunning}>
+                    <option value="true">Enabled</option>
+                    <option value="false">Disabled</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Reasoning Effort</label>
+                  <select value={baseline.reasoning_effort ?? 'medium'} onChange={(e) => setBaseline((b) => ({ ...b, reasoning_effort: e.target.value }))} disabled={isRunning}>
+                    <option value="none">None</option>
+                    <option value="minimal">Minimal</option>
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                  </select>
+                </div>
               </div>
             </div>
           )}
-        </div>
-      )}
-
-      {/* Trial Settings (sampling mode only) */}
-      {sweepMode === 'sampling' && (
-        <div className="playground-autotest-section">
-          <h4>Trial Settings</h4>
-          <div className="form-group">
-            <label>Max Trials</label>
-            <input
-              type="number"
-              value={maxTrials}
-              min={5}
-              onChange={(e) => {
-                const n = Number(e.target.value);
-                setMaxTrials(Number.isFinite(n) ? Math.max(5, n) : 25);
-              }}
-              disabled={isRunning}
-            />
-          </div>
         </div>
       )}
 
@@ -603,7 +634,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
             Stop
           </button>
         )}
-        {(sweepMode === 'config' ? configTrials : trials).length > 0 && !isRunning && (
+        {(displayMode === 'config' ? configTrials : trials).length > 0 && !isRunning && (
           <button className="btn btn-secondary btn-small" onClick={handleClear}>
             Clear Results
           </button>
@@ -630,26 +661,31 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
         <div className="playground-autotest-progress">
           Trial {currentTrialIndex} / {totalTrials}
           <RunTiming
-            trials={sweepMode === 'config' ? configTrials : trials}
+            trials={displayMode === 'config' ? configTrials : trials}
             totalCount={totalTrials}
           />
         </div>
       )}
 
       {/* Results Table */}
-      {(sweepMode === 'config' ? configTrials : trials).length > 0 && (
+      {(displayMode === 'config' ? configTrials : trials).length > 0 && (
         <div className="playground-autotest-results">
           <h4>Results</h4>
           <table className="playground-autotest-table">
             <thead>
               <tr>
                 <th>#</th>
-                {sweepMode === 'config' ? (
+                {displayMode === 'config' ? (
                   <>
                     <th>Context Window</th>
                     <th>NBatch</th>
                     <th>NUBatch</th>
                     <th>NSeqMax</th>
+                    <th>Flash Attn</th>
+                    <th>Cache K</th>
+                    <th>Cache V</th>
+                    <th>SPC</th>
+                    <th>Status</th>
                   </>
                 ) : (
                   <>
@@ -666,7 +702,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
               </tr>
             </thead>
             <tbody>
-              {sweepMode === 'config'
+              {displayMode === 'config'
                 ? configTrials.map((trial, i) => {
                     const isBest = bestConfigTrial && trial === bestConfigTrial && runnerState === 'completed';
                     const isPending = trial.totalScore === undefined || trial.totalScore === null;
@@ -677,6 +713,13 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
                         <td>{trial.config?.nbatch ?? '—'}</td>
                         <td>{trial.config?.nubatch ?? '—'}</td>
                         <td>{trial.config?.['nseq-max'] ?? '—'}</td>
+                        <td>{trial.config?.['flash-attention'] ?? '—'}</td>
+                        <td>{trial.config?.['cache-type-k'] ?? '—'}</td>
+                        <td>{trial.config?.['cache-type-v'] ?? '—'}</td>
+                        <td>{trial.config?.['system-prompt-cache'] !== undefined ? String(trial.config['system-prompt-cache']) : '—'}</td>
+                        <td style={trial.error ? { color: '#c62828', fontSize: '0.85em' } : isPending ? { color: '#666' } : { color: '#2e7d32' }}>
+                          {trial.error ? `Error: ${trial.error}` : isPending ? '...' : 'OK'}
+                        </td>
                         <td style={!isPending ? { color: scoreColor(getScenarioScore(trial, 'chat') ?? 0) } : undefined}>
                           {isPending ? '...' : getScenarioScore(trial, 'chat') ?? '—'}
                         </td>
@@ -719,16 +762,20 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
       )}
 
       {/* Best Result Summary */}
-      {runnerState === 'completed' && (sweepMode === 'config' ? bestConfigTrial : bestTrial) && (
+      {runnerState === 'completed' && (displayMode === 'config' ? bestConfigTrial : bestTrial) && (
         <div className="playground-autotest-best">
           <h4>Best Configuration Found</h4>
           <div className="playground-autotest-best-details">
-            {sweepMode === 'config' && bestConfigTrial ? (
+            {displayMode === 'config' && bestConfigTrial ? (
               <>
                 <div><strong>Context Window:</strong> {bestConfigTrial.config?.['context-window'] ?? '—'}</div>
                 <div><strong>NBatch:</strong> {bestConfigTrial.config?.nbatch ?? '—'}</div>
                 <div><strong>NUBatch:</strong> {bestConfigTrial.config?.nubatch ?? '—'}</div>
                 <div><strong>NSeqMax:</strong> {bestConfigTrial.config?.['nseq-max'] ?? '—'}</div>
+                <div><strong>Flash Attention:</strong> {bestConfigTrial.config?.['flash-attention'] ?? '—'}</div>
+                <div><strong>Cache Type K:</strong> {bestConfigTrial.config?.['cache-type-k'] ?? '—'}</div>
+                <div><strong>Cache Type V:</strong> {bestConfigTrial.config?.['cache-type-v'] ?? '—'}</div>
+                <div><strong>System Prompt Cache:</strong> {bestConfigTrial.config?.['system-prompt-cache'] !== undefined ? String(bestConfigTrial.config['system-prompt-cache']) : '—'}</div>
               </>
             ) : bestTrial ? (
               <>
@@ -739,7 +786,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
               </>
             ) : null}
             {(() => {
-              const best = sweepMode === 'config' ? bestConfigTrial : bestTrial;
+              const best = displayMode === 'config' ? bestConfigTrial : bestTrial;
               if (!best) return null;
               return (
                 <>

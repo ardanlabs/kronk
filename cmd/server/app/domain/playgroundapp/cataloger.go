@@ -1,7 +1,6 @@
 package playgroundapp
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
@@ -46,8 +45,8 @@ func (pc *playgroundCataloger) RetrieveTemplate(modelID string) (model.Template,
 	}
 }
 
-// RetrieveConfig returns an error so that model.NewModel skips
-// applyCatalogConfig() and uses only the pre-built config passed to kronk.New.
+// RetrieveConfig delegates to the real catalog so that model.NewModel applies
+// catalog-configured settings (flash attention, KV cache types, batch sizes, etc.).
 func (pc *playgroundCataloger) RetrieveConfig(modelID string) (model.Config, error) {
-	return model.Config{}, errors.New("playground: config bypass")
+	return pc.catalog.RetrieveConfig(modelID)
 }

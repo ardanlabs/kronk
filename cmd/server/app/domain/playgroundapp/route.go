@@ -9,7 +9,6 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
-	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
 // Config contains all the mandatory systems required by handlers.
@@ -17,7 +16,6 @@ type Config struct {
 	Log        *logger.Logger
 	AuthClient *authclient.Client
 	Cache      *cache.Cache
-	Models     *models.Models
 	Catalog    *catalog.Catalog
 }
 

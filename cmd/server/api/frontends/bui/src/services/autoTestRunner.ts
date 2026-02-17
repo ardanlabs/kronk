@@ -97,13 +97,24 @@ export function generateTrialCandidates(
   baseline: SamplingCandidate,
   maxTrials: number = 25,
 ): SamplingCandidate[] {
-  const safeMax = Number.isFinite(maxTrials) ? Math.max(1, Math.floor(maxTrials)) : 25
+  const safeMax = maxTrials === Infinity
+    ? Infinity
+    : Number.isFinite(maxTrials) ? Math.max(1, Math.floor(maxTrials)) : 25
 
   const base: SamplingCandidate = {
     temperature: 0.8,
     top_p: 0.9,
     top_k: 40,
     min_p: 0,
+    repeat_penalty: 1.0,
+    repeat_last_n: 64,
+    frequency_penalty: 0.0,
+    presence_penalty: 0.0,
+    dry_multiplier: 1.05,
+    dry_base: 1.75,
+    dry_allowed_length: 2,
+    xtc_probability: 0.0,
+    xtc_threshold: 0.1,
     ...baseline,
   }
 
@@ -115,10 +126,10 @@ export function generateTrialCandidates(
   const candidates: SamplingCandidate[] = []
 
   const keyOf = (c: SamplingCandidate) =>
-    `t=${norm(c.temperature)}|p=${norm(c.top_p)}|k=${c.top_k}|m=${norm(c.min_p)}`
+    `t=${norm(c.temperature)}|p=${norm(c.top_p)}|k=${c.top_k}|m=${norm(c.min_p)}|rp=${norm(c.repeat_penalty)}|rn=${c.repeat_last_n}|fp=${norm(c.frequency_penalty)}|pp=${norm(c.presence_penalty)}|dm=${norm(c.dry_multiplier)}|db=${norm(c.dry_base)}|da=${c.dry_allowed_length}|xp=${norm(c.xtc_probability)}|xt=${norm(c.xtc_threshold)}`
 
   const add = (c: SamplingCandidate) => {
-    if (candidates.length >= safeMax) return
+    if (safeMax !== Infinity && candidates.length >= safeMax) return
     const k = keyOf(c)
     if (seen.has(k)) return
     seen.add(k)
@@ -167,9 +178,74 @@ export function generateTrialCandidates(
     baseMinP,
   ).map(m => ({ ...base, min_p: m }))
 
+  const repeatPenaltyGrid = [1.0, 1.05, 1.1, 1.15, 1.2, 1.3, 1.5]
+  const repeatLastNGrid = [0, 16, 32, 64, 128, 256]
+  const frequencyPenaltyGrid = [0.0, 0.1, 0.2, 0.3, 0.5, 0.8]
+  const presencePenaltyGrid = [0.0, 0.1, 0.2, 0.3, 0.5, 0.8]
+  const dryMultiplierGrid = [0.0, 0.5, 0.8, 1.0, 1.05, 1.5, 2.0]
+  const dryBaseGrid = [1.0, 1.5, 1.75, 2.0, 2.5]
+  const dryAllowedLengthGrid = [1, 2, 3, 4]
+  const xtcProbabilityGrid = [0.0, 0.1, 0.2, 0.3, 0.5]
+  const xtcThresholdGrid = [0.05, 0.1, 0.15, 0.2, 0.3]
+
+  const baseRepeatPenalty = base.repeat_penalty ?? 1.0
+  const baseRepeatLastN = base.repeat_last_n ?? 64
+  const baseFrequencyPenalty = base.frequency_penalty ?? 0.0
+  const basePresencePenalty = base.presence_penalty ?? 0.0
+  const baseDryMultiplier = base.dry_multiplier ?? 1.05
+  const baseDryBase = base.dry_base ?? 1.75
+  const baseDryAllowedLength = base.dry_allowed_length ?? 2
+  const baseXtcProbability = base.xtc_probability ?? 0.0
+  const baseXtcThreshold = base.xtc_threshold ?? 0.1
+
+  const repeatPenalties = sortByDistance(
+    repeatPenaltyGrid.filter(v => !approxEq(base.repeat_penalty, v)),
+    baseRepeatPenalty,
+  ).map(v => ({ ...base, repeat_penalty: v }))
+
+  const repeatLastNs = sortByDistance(
+    repeatLastNGrid.filter(v => v !== baseRepeatLastN),
+    baseRepeatLastN,
+  ).map(v => ({ ...base, repeat_last_n: v }))
+
+  const frequencyPenalties = sortByDistance(
+    frequencyPenaltyGrid.filter(v => !approxEq(base.frequency_penalty, v)),
+    baseFrequencyPenalty,
+  ).map(v => ({ ...base, frequency_penalty: v }))
+
+  const presencePenalties = sortByDistance(
+    presencePenaltyGrid.filter(v => !approxEq(base.presence_penalty, v)),
+    basePresencePenalty,
+  ).map(v => ({ ...base, presence_penalty: v }))
+
+  const dryMultipliers = sortByDistance(
+    dryMultiplierGrid.filter(v => !approxEq(base.dry_multiplier, v)),
+    baseDryMultiplier,
+  ).map(v => ({ ...base, dry_multiplier: v }))
+
+  const dryBases = sortByDistance(
+    dryBaseGrid.filter(v => !approxEq(base.dry_base, v)),
+    baseDryBase,
+  ).map(v => ({ ...base, dry_base: v }))
+
+  const dryAllowedLengths = sortByDistance(
+    dryAllowedLengthGrid.filter(v => v !== baseDryAllowedLength),
+    baseDryAllowedLength,
+  ).map(v => ({ ...base, dry_allowed_length: v }))
+
+  const xtcProbabilities = sortByDistance(
+    xtcProbabilityGrid.filter(v => !approxEq(base.xtc_probability, v)),
+    baseXtcProbability,
+  ).map(v => ({ ...base, xtc_probability: v }))
+
+  const xtcThresholds = sortByDistance(
+    xtcThresholdGrid.filter(v => !approxEq(base.xtc_threshold, v)),
+    baseXtcThreshold,
+  ).map(v => ({ ...base, xtc_threshold: v }))
+
   // 2) Round-robin OAT interleave across parameters
-  const oatLists = [temps, topPs, topKs, minPs]
-  for (let i = 0; candidates.length < safeMax; i++) {
+  const oatLists = [temps, topPs, topKs, minPs, repeatPenalties, repeatLastNs, frequencyPenalties, presencePenalties, dryMultipliers, dryBases, dryAllowedLengths, xtcProbabilities, xtcThresholds]
+  for (let i = 0; safeMax === Infinity || candidates.length < safeMax; i++) {
     let addedAny = false
     for (const list of oatLists) {
       if (i < list.length) {
@@ -229,6 +305,10 @@ export const defaultConfigSweepDef: ConfigSweepDefinition = {
   nubatch: { enabled: false, values: [128, 256, 512, 1024, 2048] },
   contextWindow: { enabled: false, values: [2048, 4096, 8192, 16384, 32768] },
   nSeqMax: { enabled: false, values: [1, 2, 4, 8] },
+  flashAttention: { enabled: false, values: ['auto', 'enabled', 'disabled'] },
+  cacheTypeK: { enabled: false, values: ['f16', 'q8_0', 'q4_0'] },
+  cacheTypeV: { enabled: false, values: ['f16', 'q8_0', 'q4_0'] },
+  systemPromptCache: { enabled: false, values: [true, false] },
 }
 
 /** Generates config candidates as a full cross-product of all enabled parameter values. */
@@ -258,14 +338,31 @@ export function generateConfigCandidates(
     paramAxes.push({ configKey: 'nseq-max', values: def.nSeqMax.values })
   }
 
-  if (paramAxes.length === 0) {
+  // String/boolean axes for mixed-type cross-product
+  type AnyAxis = { configKey: string; values: (number | string | boolean)[] };
+  const allAxes: AnyAxis[] = [...paramAxes];
+
+  if (def.flashAttention.enabled && def.flashAttention.values.length > 0) {
+    allAxes.push({ configKey: 'flash-attention', values: def.flashAttention.values });
+  }
+  if (def.cacheTypeK.enabled && def.cacheTypeK.values.length > 0) {
+    allAxes.push({ configKey: 'cache-type-k', values: def.cacheTypeK.values });
+  }
+  if (def.cacheTypeV.enabled && def.cacheTypeV.values.length > 0) {
+    allAxes.push({ configKey: 'cache-type-v', values: def.cacheTypeV.values });
+  }
+  if (def.systemPromptCache.enabled && def.systemPromptCache.values.length > 0) {
+    allAxes.push({ configKey: 'system-prompt-cache', values: def.systemPromptCache.values });
+  }
+
+  if (allAxes.length === 0) {
     return [{ ...baseline }]
   }
 
   // Build the full cross-product of all enabled parameter values.
   let combos: ConfigCandidate[] = [{ ...baseline }]
 
-  for (const axis of paramAxes) {
+  for (const axis of allAxes) {
     const next: ConfigCandidate[] = []
     for (const combo of combos) {
       for (const v of axis.values) {
@@ -280,11 +377,17 @@ export function generateConfigCandidates(
   const candidates: ConfigCandidate[] = []
 
   const keyOf = (c: ConfigCandidate) =>
-    `cw=${c['context-window']}|nb=${c.nbatch}|nub=${c.nubatch}|ns=${c['nseq-max']}`
+    `cw=${c['context-window']}|nb=${c.nbatch}|nub=${c.nubatch}|ns=${c['nseq-max']}|fa=${c['flash-attention']}|ck=${c['cache-type-k']}|cv=${c['cache-type-v']}|spc=${c['system-prompt-cache']}`
 
   for (const c of combos) {
     const k = keyOf(c)
     if (seen.has(k)) continue
+    // Skip invalid: effective nubatch must not exceed effective nbatch.
+    const effNBatch = c.nbatch ?? baseConfig.nbatch
+    const effNUBatch = c.nubatch ?? baseConfig.nubatch
+    if (effNBatch !== undefined && effNUBatch !== undefined &&
+        Number.isFinite(effNBatch) && Number.isFinite(effNUBatch) &&
+        effNUBatch > effNBatch) continue
     seen.add(k)
     candidates.push(c)
   }
@@ -397,13 +500,26 @@ export function runSinglePrompt(
   sessionId: string,
   prompt: AutoTestPromptDef,
   candidate: SamplingCandidate,
+  signal?: AbortSignal,
 ): Promise<AutoTestPromptResult> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      return reject(new DOMException('Aborted', 'AbortError'))
+    }
+
+    let settled = false
     let fullContent = ''
     const collectedToolCalls: ChatToolCall[] = []
     let usage: ChatUsage | undefined
 
-    api.streamPlaygroundChat(
+    const onAbort = () => {
+      if (settled) return
+      settled = true
+      abortStream()
+      reject(new DOMException('Aborted', 'AbortError'))
+    }
+
+    const abortStream = api.streamPlaygroundChat(
       {
         session_id: sessionId,
         messages: prompt.messages,
@@ -414,8 +530,24 @@ export function runSinglePrompt(
         top_k: candidate.top_k,
         min_p: candidate.min_p,
         max_tokens: candidate.max_tokens ?? prompt.max_tokens,
+        repeat_penalty: candidate.repeat_penalty,
+        repeat_last_n: candidate.repeat_last_n,
+        frequency_penalty: candidate.frequency_penalty,
+        presence_penalty: candidate.presence_penalty,
+        dry_multiplier: candidate.dry_multiplier,
+        dry_base: candidate.dry_base,
+        dry_allowed_length: candidate.dry_allowed_length,
+        dry_penalty_last_n: candidate.dry_penalty_last_n,
+        xtc_probability: candidate.xtc_probability,
+        xtc_threshold: candidate.xtc_threshold,
+        xtc_min_keep: candidate.xtc_min_keep,
+        adaptive_p_target: candidate.adaptive_p_target,
+        adaptive_p_decay: candidate.adaptive_p_decay,
+        enable_thinking: candidate.enable_thinking,
+        reasoning_effort: candidate.reasoning_effort,
+        grammar: candidate.grammar,
         stream_options: { include_usage: true },
-      } as any,
+      },
       (data: ChatStreamResponse) => {
         const choice = data.choices?.[0]
         if (choice?.delta?.content) {
@@ -446,9 +578,16 @@ export function runSinglePrompt(
         }
       },
       (error: string) => {
+        if (settled) return
+        settled = true
+        signal?.removeEventListener('abort', onAbort)
         reject(new Error(error))
       },
       () => {
+        if (settled) return
+        settled = true
+        signal?.removeEventListener('abort', onAbort)
+
         let scored: { score: number; notes: string[] }
 
         if (prompt.expected?.type === 'tool_call') {
@@ -467,11 +606,13 @@ export function runSinglePrompt(
         })
       },
     )
+
+    signal?.addEventListener('abort', onAbort, { once: true })
   })
 }
 
 /** Probes whether the current session/template supports tool calling. */
-export async function probeTemplate(sessionId: string): Promise<boolean> {
+export async function probeTemplate(sessionId: string, signal?: AbortSignal): Promise<boolean> {
   const prompt: AutoTestPromptDef = {
     id: 'probe-tool',
     messages: [{ role: 'user', content: "What's the weather in Boston?" }],
@@ -480,7 +621,7 @@ export async function probeTemplate(sessionId: string): Promise<boolean> {
   }
 
   try {
-    const result = await runSinglePrompt(sessionId, prompt, {})
+    const result = await runSinglePrompt(sessionId, prompt, {}, signal)
     return result.toolCalls.length > 0 && result.score > 0
   } catch {
     return false
@@ -526,13 +667,18 @@ export async function runTrial(
       }
 
       try {
-        const pr = await runSinglePrompt(sessionId, prompt, candidate)
+        const pr = await runSinglePrompt(sessionId, prompt, candidate, signal)
         promptResults.push(pr)
         if (pr.usage?.tokens_per_second) {
           totalTPS += pr.usage.tokens_per_second
           tpsCount++
         }
       } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          result.status = 'cancelled'
+          onUpdate({ ...result })
+          return result
+        }
         promptResults.push({
           promptId: prompt.id,
           assistantText: '',

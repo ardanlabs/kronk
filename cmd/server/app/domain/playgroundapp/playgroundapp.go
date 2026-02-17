@@ -17,13 +17,11 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
-	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
 type app struct {
 	log      *logger.Logger
 	cache    *cache.Cache
-	models   *models.Models
 	catalog  *catalog.Catalog
 	mu       sync.Mutex
 	sessions map[string]string // session_id -> cache_key
@@ -33,7 +31,6 @@ func newApp(cfg Config) *app {
 	return &app{
 		log:      cfg.Log,
 		cache:    cfg.Cache,
-		models:   cfg.Models,
 		catalog:  cfg.Catalog,
 		sessions: make(map[string]string),
 	}
@@ -100,9 +97,9 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.Errorf(errs.InvalidArgument, "missing model_id")
 	}
 
-	fp, err := a.models.FullPath(req.ModelID)
+	baseCfg, err := a.catalog.KronkResolvedModelConfig(req.ModelID)
 	if err != nil {
-		return errs.Errorf(errs.InvalidArgument, "model not found: %s", req.ModelID)
+		return errs.New(errs.Internal, fmt.Errorf("resolving model config: %w", err))
 	}
 
 	sessionID, err := generateSessionID()
@@ -110,9 +107,11 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.New(errs.Internal, fmt.Errorf("generating session id: %w", err))
 	}
 
-	cfg := req.Config.ToModelConfig()
-	cfg.ModelFiles = fp.ModelFiles
-	cfg.ProjFile = fp.ProjFile
+	cfg := req.Config.ApplyTo(baseCfg)
+
+	if cfg.NUBatch > cfg.NBatch {
+		return errs.Errorf(errs.InvalidArgument, "nubatch (%d) must not exceed nbatch (%d)", cfg.NUBatch, cfg.NBatch)
+	}
 
 	cat := &playgroundCataloger{
 		modelID:        req.ModelID,
@@ -139,6 +138,8 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 		"nubatch":             krn.ModelConfig().NUBatch,
 		"nseq_max":            krn.ModelConfig().NSeqMax,
 		"flash_attention":     krn.ModelConfig().FlashAttention.String(),
+		"cache_type_k":        krn.ModelConfig().CacheTypeK.String(),
+		"cache_type_v":        krn.ModelConfig().CacheTypeV.String(),
 		"system_prompt_cache": krn.ModelConfig().SystemPromptCache,
 	}
 

@@ -2898,3 +2898,215 @@ tr.selected:hover td {
     color: #6d4c00;
     margin-bottom: 8px;
 }
+
+/* Fluid grid for playground config/sampling fields — 1 to 4 columns */
+.playground-config-grid-fluid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+@media (min-width: 520px) {
+    .playground-config-grid-fluid {
+        grid-template-columns: repeat(1, 1fr);
+    }
+}
+
+@media (min-width: 820px) {
+    .playground-config-grid-fluid {
+        grid-template-columns: repeat(1, 1fr);
+    }
+}
+
+@media (min-width: 1100px) {
+    .playground-config-grid-fluid {
+        grid-template-columns: repeat(1, 1fr);
+    }
+}
+
+.playground-config-grid-fluid .form-group {
+    margin-bottom: 0;
+}
+
+.playground-config-grid-fluid .form-group label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-gray-600);
+    margin-bottom: 2px;
+}
+
+.playground-config-grid-fluid .form-group input:not([type="checkbox"]):not([type="radio"]),
+.playground-config-grid-fluid .form-group select {
+    width: 100%;
+    padding: 4px 6px;
+    border: 1px solid var(--color-gray-300);
+    border-radius: 4px;
+    font-size: 12px;
+    background: var(--color-white);
+}
+
+.playground-config-grid-fluid .checkbox-group label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.playground-param-group-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-gray-500);
+    margin: 12px 0 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.playground-param-group-title:first-child,
+.playground-sampling-params .playground-param-group-title:first-of-type {
+    margin-top: 8px;
+}
+
+.playground-sampling-params {
+    margin: 12px 0;
+}
+
+.playground-sampling-params summary {
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-gray-700);
+    padding: 8px 0;
+    user-select: none;
+}
+
+.playground-autotest-baseline-inputs {
+    margin-top: 8px;
+}
+
+.playground-autotest-container {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.playground-autotest-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--color-gray-600);
+    padding: 8px 0;
+}
+
+.playground-autotest-spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--color-gray-300);
+    border-top-color: var(--color-blue);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+.playground-autotest-best-details {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 8px;
+    font-size: 13px;
+    margin-top: 8px;
+}
+
+.playground-effective-config {
+    margin-top: 8px;
+}
+
+.playground-config-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.playground-config-item {
+    font-size: 11px;
+}
+
+.playground-config-key {
+    color: var(--color-gray-500);
+}
+
+.playground-config-value {
+    font-weight: 600;
+}
+
+/* Sweep parameter rows (config sweep in autotest) */
+.playground-sweep-params {
+    display: grid;
+    grid-template-columns: repeat(4,1fr);
+    flex-direction: column;
+    gap: 8px;
+}
+
+.playground-sweep-param {
+    padding: 8px 10px;
+    background: var(--color-gray-50);
+    border: 1px solid var(--color-gray-200);
+    border-radius: 6px;
+}
+
+.playground-sweep-param-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    color: var(--color-gray-700);
+}
+
+.playground-sweep-param-values {
+    display: block;
+    width: 100%;
+    margin-top: 6px;
+    padding: 4px 8px;
+    border: 1px solid var(--color-gray-300);
+    border-radius: 4px;
+    font-size: 12px;
+    background: var(--color-white);
+}
+
+.playground-sweep-option-checks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 6px;
+    padding-left: 22px;
+}
+
+.playground-sweep-option-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    color: var(--color-gray-600);
+}
+
+/* Inline options row for radio/checkbox groups */
+.playground-inline-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.playground-inline-option {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    color: var(--color-gray-700);
+}

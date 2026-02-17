@@ -45,68 +45,110 @@ func (s *SessionRequest) Validate() error {
 	return s.Config.Validate()
 }
 
-// SessionConfig represents model configuration overrides.
+// SessionConfig represents model configuration overrides. Pointer fields allow
+// distinguishing "not set by user" (nil) from an explicit value, so that only
+// user-provided overrides are merged on top of the catalog-resolved base config.
 type SessionConfig struct {
-	ContextWindow     int                      `json:"context-window"`
-	NBatch            int                      `json:"nbatch"`
-	NUBatch           int                      `json:"nubatch"`
-	NSeqMax           int                      `json:"nseq-max"`
-	FlashAttention    model.FlashAttentionType `json:"flash-attention"`
-	CacheTypeK        model.GGMLType           `json:"cache-type-k"`
-	CacheTypeV        model.GGMLType           `json:"cache-type-v"`
-	NGpuLayers        *int                     `json:"ngpu-layers"`
-	SystemPromptCache bool                     `json:"system-prompt-cache"`
-	RopeScaling       model.RopeScalingType    `json:"rope-scaling-type"`
-	RopeFreqBase      *float32                 `json:"rope-freq-base"`
-	RopeFreqScale     *float32                 `json:"rope-freq-scale"`
-	YarnExtFactor     *float32                 `json:"yarn-ext-factor"`
-	YarnAttnFactor    *float32                 `json:"yarn-attn-factor"`
-	YarnBetaFast      *float32                 `json:"yarn-beta-fast"`
-	YarnBetaSlow      *float32                 `json:"yarn-beta-slow"`
-	YarnOrigCtx       *int                     `json:"yarn-orig-ctx"`
-	SplitMode         model.SplitMode          `json:"split-mode"`
+	ContextWindow     *int                      `json:"context-window"`
+	NBatch            *int                      `json:"nbatch"`
+	NUBatch           *int                      `json:"nubatch"`
+	NSeqMax           *int                      `json:"nseq-max"`
+	FlashAttention    *model.FlashAttentionType `json:"flash-attention"`
+	CacheTypeK        *model.GGMLType           `json:"cache-type-k"`
+	CacheTypeV        *model.GGMLType           `json:"cache-type-v"`
+	NGpuLayers        *int                      `json:"ngpu-layers"`
+	SystemPromptCache *bool                     `json:"system-prompt-cache"`
+	RopeScaling       *model.RopeScalingType    `json:"rope-scaling-type"`
+	RopeFreqBase      *float32                  `json:"rope-freq-base"`
+	RopeFreqScale     *float32                  `json:"rope-freq-scale"`
+	YarnExtFactor     *float32                  `json:"yarn-ext-factor"`
+	YarnAttnFactor    *float32                  `json:"yarn-attn-factor"`
+	YarnBetaFast      *float32                  `json:"yarn-beta-fast"`
+	YarnBetaSlow      *float32                  `json:"yarn-beta-slow"`
+	YarnOrigCtx       *int                      `json:"yarn-orig-ctx"`
+	SplitMode         *model.SplitMode          `json:"split-mode"`
 }
 
-// ToModelConfig converts the session config to a model.Config.
-func (sc SessionConfig) ToModelConfig() model.Config {
-	return model.Config{
-		ContextWindow:     sc.ContextWindow,
-		NBatch:            sc.NBatch,
-		NUBatch:           sc.NUBatch,
-		NSeqMax:           sc.NSeqMax,
-		FlashAttention:    sc.FlashAttention,
-		CacheTypeK:        sc.CacheTypeK,
-		CacheTypeV:        sc.CacheTypeV,
-		NGpuLayers:        sc.NGpuLayers,
-		SystemPromptCache: sc.SystemPromptCache,
-		RopeScaling:       sc.RopeScaling,
-		RopeFreqBase:      sc.RopeFreqBase,
-		RopeFreqScale:     sc.RopeFreqScale,
-		YarnExtFactor:     sc.YarnExtFactor,
-		YarnAttnFactor:    sc.YarnAttnFactor,
-		YarnBetaFast:      sc.YarnBetaFast,
-		YarnBetaSlow:      sc.YarnBetaSlow,
-		YarnOrigCtx:       sc.YarnOrigCtx,
-		SplitMode:         sc.SplitMode,
+// ApplyTo merges user overrides onto a base model config. Only fields
+// explicitly provided by the user (non-nil pointers) are applied.
+func (sc SessionConfig) ApplyTo(cfg model.Config) model.Config {
+	if sc.ContextWindow != nil {
+		cfg.ContextWindow = *sc.ContextWindow
 	}
+	if sc.NBatch != nil {
+		cfg.NBatch = *sc.NBatch
+	}
+	if sc.NUBatch != nil {
+		cfg.NUBatch = *sc.NUBatch
+	}
+	if sc.NSeqMax != nil {
+		cfg.NSeqMax = *sc.NSeqMax
+	}
+	if sc.FlashAttention != nil {
+		cfg.FlashAttention = *sc.FlashAttention
+	}
+	if sc.CacheTypeK != nil {
+		cfg.CacheTypeK = *sc.CacheTypeK
+	}
+	if sc.CacheTypeV != nil {
+		cfg.CacheTypeV = *sc.CacheTypeV
+	}
+	if sc.NGpuLayers != nil {
+		cfg.NGpuLayers = sc.NGpuLayers
+	}
+	if sc.SystemPromptCache != nil {
+		cfg.SystemPromptCache = *sc.SystemPromptCache
+	}
+	if sc.RopeScaling != nil {
+		cfg.RopeScaling = *sc.RopeScaling
+	}
+	if sc.RopeFreqBase != nil {
+		cfg.RopeFreqBase = sc.RopeFreqBase
+	}
+	if sc.RopeFreqScale != nil {
+		cfg.RopeFreqScale = sc.RopeFreqScale
+	}
+	if sc.YarnExtFactor != nil {
+		cfg.YarnExtFactor = sc.YarnExtFactor
+	}
+	if sc.YarnAttnFactor != nil {
+		cfg.YarnAttnFactor = sc.YarnAttnFactor
+	}
+	if sc.YarnBetaFast != nil {
+		cfg.YarnBetaFast = sc.YarnBetaFast
+	}
+	if sc.YarnBetaSlow != nil {
+		cfg.YarnBetaSlow = sc.YarnBetaSlow
+	}
+	if sc.YarnOrigCtx != nil {
+		cfg.YarnOrigCtx = sc.YarnOrigCtx
+	}
+	if sc.SplitMode != nil {
+		cfg.SplitMode = *sc.SplitMode
+	}
+	return cfg
 }
 
 // Validate checks the configuration bounds.
 func (sc SessionConfig) Validate() error {
-	if sc.ContextWindow < 0 || sc.ContextWindow > 131072 {
-		return fmt.Errorf("context-window must be between 0 and 131072, got %d", sc.ContextWindow)
+	if sc.ContextWindow != nil && (*sc.ContextWindow < 0 || *sc.ContextWindow > 131072) {
+		return fmt.Errorf("context-window must be between 0 and 131072, got %d", *sc.ContextWindow)
 	}
 
-	if sc.NBatch < 0 || sc.NBatch > 16384 {
-		return fmt.Errorf("nbatch must be between 0 and 16384, got %d", sc.NBatch)
+	if sc.NBatch != nil && (*sc.NBatch < 0 || *sc.NBatch > 16384) {
+		return fmt.Errorf("nbatch must be between 0 and 16384, got %d", *sc.NBatch)
 	}
 
-	if sc.NUBatch < 0 || sc.NUBatch > 16384 {
-		return fmt.Errorf("nubatch must be between 0 and 16384, got %d", sc.NUBatch)
+	if sc.NUBatch != nil && (*sc.NUBatch < 0 || *sc.NUBatch > 16384) {
+		return fmt.Errorf("nubatch must be between 0 and 16384, got %d", *sc.NUBatch)
 	}
 
-	if sc.NSeqMax < 0 || sc.NSeqMax > 64 {
-		return fmt.Errorf("nseq-max must be between 0 and 64, got %d", sc.NSeqMax)
+	if sc.NSeqMax != nil && (*sc.NSeqMax < 0 || *sc.NSeqMax > 64) {
+		return fmt.Errorf("nseq-max must be between 0 and 64, got %d", *sc.NSeqMax)
+	}
+
+	if sc.NBatch != nil && sc.NUBatch != nil && *sc.NUBatch > *sc.NBatch {
+		return fmt.Errorf("nubatch (%d) must not exceed nbatch (%d)", *sc.NUBatch, *sc.NBatch)
 	}
 
 	return nil

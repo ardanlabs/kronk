@@ -493,6 +493,25 @@ export interface PlaygroundChatRequest {
   top_p?: number;
   min_p?: number;
   max_tokens?: number;
+  presence_penalty?: number;
+  repeat_penalty?: number;
+  repeat_last_n?: number;
+  dry_multiplier?: number;
+  dry_base?: number;
+  dry_allowed_length?: number;
+  dry_penalty_last_n?: number;
+  xtc_probability?: number;
+  xtc_threshold?: number;
+  xtc_min_keep?: number;
+  frequency_penalty?: number;
+  enable_thinking?: string;
+  reasoning_effort?: string;
+  grammar?: string;
+  stream_options?: { include_usage?: boolean };
+  logprobs?: boolean;
+  top_logprobs?: number;
+  adaptive_p_target?: number;
+  adaptive_p_decay?: number;
 }
 
 // Automated Testing Types
@@ -524,6 +543,22 @@ export interface SamplingCandidate {
   top_k?: number;
   min_p?: number;
   max_tokens?: number;
+  repeat_penalty?: number;
+  repeat_last_n?: number;
+  frequency_penalty?: number;
+  presence_penalty?: number;
+  dry_multiplier?: number;
+  dry_base?: number;
+  dry_allowed_length?: number;
+  dry_penalty_last_n?: number;
+  xtc_probability?: number;
+  xtc_threshold?: number;
+  xtc_min_keep?: number;
+  adaptive_p_target?: number;
+  adaptive_p_decay?: number;
+  enable_thinking?: string;
+  reasoning_effort?: string;
+  grammar?: string;
 }
 
 export interface AutoTestPromptResult {
@@ -562,11 +597,25 @@ export interface SweepParamValues {
   values: number[];
 }
 
+export interface SweepStringValues {
+  enabled: boolean;
+  values: string[];
+}
+
+export interface SweepBoolValues {
+  enabled: boolean;
+  values: boolean[];
+}
+
 export interface ConfigSweepDefinition {
   nbatch: SweepParamValues;
   nubatch: SweepParamValues;
   contextWindow: SweepParamValues;
   nSeqMax: SweepParamValues;
+  flashAttention: SweepStringValues;
+  cacheTypeK: SweepStringValues;
+  cacheTypeV: SweepStringValues;
+  systemPromptCache: SweepBoolValues;
 }
 
 export interface ConfigCandidate {
@@ -574,6 +623,10 @@ export interface ConfigCandidate {
   nbatch?: number;
   nubatch?: number;
   'nseq-max'?: number;
+  'flash-attention'?: string;
+  'cache-type-k'?: string;
+  'cache-type-v'?: string;
+  'system-prompt-cache'?: boolean;
 }
 
 export interface AutoTestSessionSeed {
