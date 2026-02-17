@@ -60,8 +60,9 @@ export default function DocsManual() {
             <li><a href="#chapter-12-browser-ui-bui">Browser UI (BUI)</a></li>
             <li><a href="#chapter-13-client-integration">Client Integration</a></li>
             <li><a href="#chapter-14-observability">Observability</a></li>
-            <li><a href="#chapter-15-troubleshooting">Troubleshooting</a></li>
-            <li><a href="#chapter-16-developer-guide">Developer Guide</a></li>
+            <li><a href="#chapter-15-mcp-service">MCP Service</a></li>
+            <li><a href="#chapter-16-troubleshooting">Troubleshooting</a></li>
+            <li><a href="#chapter-17-developer-guide">Developer Guide</a></li>
           </ol>
           <hr />
           <h2 id="chapter-1:-introduction">Chapter 1: Introduction</h2>
@@ -3983,10 +3984,152 @@ kronk server start`}</code></pre>
           </ul>
           <p>(env: <code>KRONK_LLAMA_LOG</code>, default: <code>1</code>)</p>
           <hr />
-          <p><em>Next: &lt;a href="#chapter-15-troubleshooting"&gt;Chapter 15: Troubleshooting&lt;/a&gt;</em></p>
-          <h2 id="chapter-15:-troubleshooting">Chapter 15: Troubleshooting</h2>
+          <p><em>Next: &lt;a href="#chapter-15-mcp-service"&gt;Chapter 15: MCP Service&lt;/a&gt;</em></p>
+          <h2 id="chapter-15:-mcp-service">Chapter 15: MCP Service</h2>
+          <p>Kronk includes a built-in <a href="https://modelcontextprotocol.io/">Model Context Protocol (MCP)</a> service that exposes tools to MCP-compatible clients. The initial tool provided is <code>web_search</code>, powered by the <a href="https://brave.com/search/api/">Brave Search API</a>.</p>
+          <p>MCP is an open standard that lets AI agents call external tools over a simple JSON-RPC protocol. By running the MCP service, any MCP-compatible client (Cline, Kilo Code, Cursor, etc.) can discover and invoke tools served by Kronk.</p>
+          <h3 id="151-architecture">15.1 Architecture</h3>
+          <p>The MCP service can run in two modes:</p>
+          <p><strong>Embedded (default)</strong> — When the Kronk model server starts and no external MCP host is configured (<code>--mcp-host</code> is empty), it automatically starts an embedded MCP server on <code>localhost:9000</code>. No extra process is needed.</p>
+          <p><strong>Standalone</strong> — Run the MCP service as its own process for independent scaling or when you don't need the full model server:</p>
+          <pre className="code-block"><code className="language-shell">{`make mcp-server`}</code></pre>
+          <p>Or directly:</p>
+          <pre className="code-block"><code className="language-shell">{`go run cmd/server/api/services/mcp/main.go`}</code></pre>
+          <p>Both modes serve the same MCP protocol on the same default port (<code>9000</code>).</p>
+          <h3 id="152-prerequisites">15.2 Prerequisites</h3>
+          <p>The <code>web_search</code> tool requires a Brave Search API key. Get a free key at <a href="https://brave.com/search/api/">https://brave.com/search/api/</a>.</p>
+          <h3 id="153-configuration">15.3 Configuration</h3>
+          <p><strong>Environment Variables:</strong></p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Variable</th>
+                <th>Description</th>
+                <th>Default</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>MCP_MCP_HOST</code></td>
+                <td>MCP listen address (standalone mode)</td>
+                <td><code>localhost:9000</code></td>
+              </tr>
+              <tr>
+                <td><code>MCP_MCP_BRAVEAPIKEY</code></td>
+                <td>Brave Search API key (standalone mode)</td>
+                <td>—</td>
+              </tr>
+              <tr>
+                <td><code>KRONK_MCP_HOST</code></td>
+                <td>External MCP host (empty = embedded mode)</td>
+                <td>—</td>
+              </tr>
+              <tr>
+                <td><code>KRONK_MCP_BRAVEAPIKEY</code></td>
+                <td>Brave Search API key (embedded mode)</td>
+                <td>—</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><strong>Embedded mode</strong> — Pass the Brave API key when starting the Kronk server:</p>
+          <pre className="code-block"><code className="language-shell">{`export KRONK_MCP_BRAVEAPIKEY=<your-brave-api-key>
+kronk server start`}</code></pre>
+          <p>The embedded MCP server will start automatically on <code>localhost:9000</code>.</p>
+          <p><strong>Standalone mode</strong> — Start the MCP service as a separate process:</p>
+          <pre className="code-block"><code className="language-shell">{`export MCP_MCP_BRAVEAPIKEY=<your-brave-api-key>
+make mcp-server`}</code></pre>
+          <h3 id="154-available-tools">15.4 Available Tools</h3>
+          <h4 id="web_search">web_search</h4>
+          <p>Performs a web search and returns a list of relevant web pages with titles, URLs, and descriptions.</p>
+          <p><strong>Parameters:</strong></p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Parameter</th>
+                <th>Type</th>
+                <th>Required</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>query</code></td>
+                <td>string</td>
+                <td>Yes</td>
+                <td>Search query</td>
+              </tr>
+              <tr>
+                <td><code>count</code></td>
+                <td>int</td>
+                <td>No</td>
+                <td>Number of results to return (default 10, max 20)</td>
+              </tr>
+              <tr>
+                <td><code>country</code></td>
+                <td>string</td>
+                <td>No</td>
+                <td>Country code for search context (e.g. <code>US</code>, <code>GB</code>, <code>DE</code>)</td>
+              </tr>
+              <tr>
+                <td><code>freshness</code></td>
+                <td>string</td>
+                <td>No</td>
+                <td>Filter by freshness: <code>pd</code> (past day), <code>pw</code> (past week), <code>pm</code> (past month), <code>py</code> (past year)</td>
+              </tr>
+              <tr>
+                <td><code>safesearch</code></td>
+                <td>string</td>
+                <td>No</td>
+                <td>Safe search filter: <code>off</code>, <code>moderate</code>, <code>strict</code> (default <code>moderate</code>)</td>
+              </tr>
+            </tbody>
+          </table>
+          <h3 id="155-client-configuration">15.5 Client Configuration</h3>
+          <p>The MCP service uses the Streamable HTTP transport. Configure your MCP-compatible client to connect to <code>http://localhost:9000</code>.</p>
+          <h4 id="cline">Cline</h4>
+          <p>Add the following to your Cline MCP settings:</p>
+          <pre className="code-block"><code className="language-json">{`{
+  "mcpServers": {
+    "Kronk": {
+      "autoApprove": [
+        "web_search"
+      ],
+      "disabled": false,
+      "timeout": 60,
+      "type": "streamableHttp",
+      "url": "http://localhost:9000"
+    }
+  }
+}`}</code></pre>
+          <h4 id="kilo-code">Kilo Code</h4>
+          <p>Add the following to your Kilo Code MCP settings:</p>
+          <pre className="code-block"><code className="language-json">{`{
+  "mcpServers": {
+    "Kronk": {
+      "type": "streamable-http",
+      "url": "http://localhost:9000",
+      "disabled": true,
+      "alwaysAllow": [
+        "web_search"
+      ],
+      "timeout": 60
+    }
+  }
+}`}</code></pre>
+          <h3 id="156-testing-with-curl">15.6 Testing with curl</h3>
+          <p>You can test the MCP service manually using curl. See the makefile targets for convenience commands.</p>
+          <p><strong>Initialize a session:</strong></p>
+          <pre className="code-block"><code className="language-shell">{`make curl-mcp-init`}</code></pre>
+          <p>This returns the <code>Mcp-Session-Id</code> header needed for subsequent requests.</p>
+          <p><strong>List available tools:</strong></p>
+          <pre className="code-block"><code className="language-shell">{`make curl-mcp-tools-list SESSIONID=<session-id>`}</code></pre>
+          <p><strong>Call web_search:</strong></p>
+          <pre className="code-block"><code className="language-shell">{`make curl-mcp-web-search SESSIONID=<session-id>`}</code></pre>
+          <hr />
+          <p><em>Next: &lt;a href="#chapter-16-troubleshooting"&gt;Chapter 16: Troubleshooting&lt;/a&gt;</em></p>
+          <h2 id="chapter-16:-troubleshooting">Chapter 16: Troubleshooting</h2>
           <p>This chapter covers common issues, their causes, and solutions.</p>
-          <h3 id="151-library-issues">15.1 Library Issues</h3>
+          <h3 id="161-library-issues">16.1 Library Issues</h3>
           <p><strong>Error: "unable to load library"</strong></p>
           <p>The llama.cpp libraries are missing or incompatible.</p>
           <p><strong>Solution:</strong></p>
@@ -4010,7 +4153,7 @@ KRONK_PROCESSOR=cuda kronk libs --local
 
 # For CPU only
 KRONK_PROCESSOR=cpu kronk libs --local`}</code></pre>
-          <h3 id="152-model-loading-failures">15.2 Model Loading Failures</h3>
+          <h3 id="162-model-loading-failures">16.2 Model Loading Failures</h3>
           <p><strong>Error: "unable to load model"</strong></p>
           <p>The model file is missing, corrupted, or incompatible.</p>
           <p><strong>Check model exists:</strong></p>
@@ -4025,7 +4168,7 @@ KRONK_PROCESSOR=cpu kronk libs --local`}</code></pre>
           <p><strong>Solution:</strong></p>
           <p>Ensure templates are downloaded:</p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog pull-templates --local`}</code></pre>
-          <h3 id="153-memory-errors">15.3 Memory Errors</h3>
+          <h3 id="163-memory-errors">16.3 Memory Errors</h3>
           <p><strong>Error: "unable to init context" or "unable to get memory"</strong></p>
           <p>Insufficient memory for the model configuration.</p>
           <p><strong>Causes:</strong></p>
@@ -4056,7 +4199,7 @@ KRONK_PROCESSOR=cpu kronk libs --local`}</code></pre>
             <li>Increase <code>context_window</code> in model config</li>
             <li>Enable YaRN for extended context (see Chapter 6)</li>
           </ul>
-          <h3 id="154-request-timeouts">15.4 Request Timeouts</h3>
+          <h3 id="164-request-timeouts">16.4 Request Timeouts</h3>
           <p><strong>Error: "context deadline exceeded"</strong></p>
           <p>The request took longer than the configured timeout.</p>
           <p><strong>Causes:</strong></p>
@@ -4073,7 +4216,7 @@ KRONK_PROCESSOR=cpu kronk libs --local`}</code></pre>
           <p>Or via environment variables:</p>
           <pre className="code-block"><code className="language-shell">{`export KRONK_READ_TIMEOUT=5m
 export KRONK_WRITE_TIMEOUT=30m`}</code></pre>
-          <h3 id="155-authentication-errors">15.5 Authentication Errors</h3>
+          <h3 id="165-authentication-errors">16.5 Authentication Errors</h3>
           <p><strong>Error: "unauthorized: no authorization header"</strong></p>
           <p>Authentication is enabled but no token was provided.</p>
           <p><strong>Solution:</strong></p>
@@ -4110,7 +4253,7 @@ kronk security token create \\
           <pre className="code-block"><code className="language-shell">{`kronk security token create \\
   --duration 720h \\
   --endpoints "chat-completions:10000/day"`}</code></pre>
-          <h3 id="156-streaming-issues">15.6 Streaming Issues</h3>
+          <h3 id="166-streaming-issues">16.6 Streaming Issues</h3>
           <p><strong>Problem: Streaming stops mid-response</strong></p>
           <p><strong>Causes:</strong></p>
           <ul>
@@ -4125,7 +4268,7 @@ kronk server start  # Run in foreground to see logs`}</code></pre>
           <p>Ensure your client handles Server-Sent Events format:</p>
           <pre className="code-block"><code>{`data: {"id":"...","choices":[...]}\\n\\n`}</code></pre>
           <p>Each event is prefixed with <code>data: </code> and ends with two newlines.</p>
-          <h3 id="157-performance-issues">15.7 Performance Issues</h3>
+          <h3 id="167-performance-issues">16.7 Performance Issues</h3>
           <p><strong>Problem: Slow time to first token (TTFT)</strong></p>
           <p><strong>Causes:</strong></p>
           <ul>
@@ -4160,7 +4303,7 @@ nvidia-smi`}</code></pre>
           <pre className="code-block"><code className="language-yaml">{`models:
   Qwen3-8B-Q8_0:
     gpu_layers: 99 # Offload all layers to GPU`}</code></pre>
-          <h3 id="158-viewing-logs">15.8 Viewing Logs</h3>
+          <h3 id="168-viewing-logs">16.8 Viewing Logs</h3>
           <p><strong>Run server in foreground:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start`}</code></pre>
           <p>All logs print to stdout with structured JSON format.</p>
@@ -4172,7 +4315,7 @@ nvidia-smi`}</code></pre>
           <p>Shows low-level inference engine messages.</p>
           <p><strong>Disable llama.cpp logging:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --llama-log 0`}</code></pre>
-          <h3 id="159-common-error-messages">15.9 Common Error Messages</h3>
+          <h3 id="169-common-error-messages">16.9 Common Error Messages</h3>
           <table className="flags-table">
             <thead>
               <tr>
@@ -4224,7 +4367,7 @@ nvidia-smi`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <h3 id="1510-getting-help">15.10 Getting Help</h3>
+          <h3 id="1610-getting-help">16.10 Getting Help</h3>
           <p><strong>Check server status:</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/liveness`}</code></pre>
           <p><strong>List loaded models:</strong></p>
@@ -4244,10 +4387,10 @@ nvidia-smi`}</code></pre>
             <li>Steps to reproduce</li>
           </ul>
           <hr />
-          <p><em>Next: &lt;a href="#chapter-16-developer-guide"&gt;Chapter 16: Developer Guide&lt;/a&gt;</em></p>
-          <h2 id="chapter-16:-developer-guide">Chapter 16: Developer Guide</h2>
+          <p><em>Next: &lt;a href="#chapter-17-developer-guide"&gt;Chapter 17: Developer Guide&lt;/a&gt;</em></p>
+          <h2 id="chapter-17:-developer-guide">Chapter 17: Developer Guide</h2>
           <p>This chapter covers development workflows, build commands, and code conventions for contributors to the Kronk project.</p>
-          <h3 id="161-quick-reference">16.1 Quick Reference</h3>
+          <h3 id="171-quick-reference">17.1 Quick Reference</h3>
           <p>Here is a quick chart of some of the more imporant make commands.</p>
           <table className="flags-table">
             <thead>
@@ -4299,7 +4442,7 @@ nvidia-smi`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <h3 id="162-build-test-commands">16.2 Build &amp; Test Commands</h3>
+          <h3 id="172-build-test-commands">17.2 Build &amp; Test Commands</h3>
           <p><strong>Install CLI locally:</strong></p>
           <pre className="code-block"><code className="language-shell">{`go install ./cmd/kronk`}</code></pre>
           <p><strong>Run all tests:</strong></p>
@@ -4316,7 +4459,7 @@ export GITHUB_WORKSPACE=/path/to/kronk  # project root
 make test`}</code></pre>
           <p><strong>Run a single test:</strong></p>
           <pre className="code-block"><code className="language-shell">{`go test -v -count=1 -run TestName ./sdk/kronk/...`}</code></pre>
-          <h3 id="163-developer-setup">16.3 Developer Setup</h3>
+          <h3 id="173-developer-setup">17.3 Developer Setup</h3>
           <p>Configure git hooks for automatic pre-commit checks:</p>
           <pre className="code-block"><code className="language-shell">{`make setup`}</code></pre>
           <p>This enables a pre-commit hook that automatically runs:</p>
@@ -4324,7 +4467,7 @@ make test`}</code></pre>
             <li><code>make kronk-docs</code> - Regenerates documentation</li>
             <li><code>make bui-build</code> - Rebuilds the BUI frontend</li>
           </ul>
-          <h3 id="164-project-architecture">16.4 Project Architecture</h3>
+          <h3 id="174-project-architecture">17.4 Project Architecture</h3>
           <p><strong>Directory Structure:</strong></p>
           <table className="flags-table">
             <thead>
@@ -4366,7 +4509,7 @@ make test`}</code></pre>
           </table>
           <p><strong>Core Technology:</strong></p>
           <p>Kronk uses <a href="https://github.com/hybridgroup/yzma">yzma</a> (llama.cpp Go bindings) for local inference with GGUF models.</p>
-          <h3 id="165-bui-frontend-development">16.5 BUI Frontend Development</h3>
+          <h3 id="175-bui-frontend-development">17.5 BUI Frontend Development</h3>
           <p>The Browser UI is a React application located at:</p>
           <pre className="code-block"><code>{`cmd/server/api/frontends/bui/src/`}</code></pre>
           <p><strong>Directory Structure:</strong></p>
@@ -4479,7 +4622,7 @@ make test`}</code></pre>
           </table>
           <p>Generate all documentation:</p>
           <pre className="code-block"><code className="language-shell">{`go run ./cmd/server/api/tooling/docs -pkg=all`}</code></pre>
-          <h3 id="166-code-style-guidelines">16.6 Code Style Guidelines</h3>
+          <h3 id="176-code-style-guidelines">17.6 Code Style Guidelines</h3>
           <p><strong>Package Comments:</strong></p>
           <pre className="code-block"><code className="language-go">{`// Package kronk provides the core inference API.`}</code></pre>
           <p><strong>Error Handling:</strong></p>
@@ -4532,9 +4675,9 @@ case "pending":
 default:
     // ...
 }`}</code></pre>
-          <h3 id="167-sdk-internals">16.7 SDK Internals</h3>
+          <h3 id="177-sdk-internals">17.7 SDK Internals</h3>
           <p>This section documents implementation details for developers working on the Kronk SDK packages.</p>
-          <h4 id="1671-package-structure">16.7.1 Package Structure</h4>
+          <h4 id="1771-package-structure">17.7.1 Package Structure</h4>
           <p><strong>sdk/kronk/</strong> - Core API package:</p>
           <table className="flags-table">
             <thead>
@@ -4641,7 +4784,7 @@ default:
               </tr>
             </tbody>
           </table>
-          <h4 id="1672-streaming-architecture">16.7.2 Streaming Architecture</h4>
+          <h4 id="1772-streaming-architecture">17.7.2 Streaming Architecture</h4>
           <p><strong>Response Streaming Pattern</strong> (<code>response.go</code>, <code>concurrency.go</code>):</p>
           <ul>
             <li>Uses <code>streamingWith[T, U]</code> generic function for 1:N event transformation</li>
@@ -4656,7 +4799,7 @@ default:
             <li>When <code>FinishReasonPtr != nil</code>, skip text/reasoning deltas (they duplicate previous content)</li>
             <li>Always process tool calls even with FinishReason set (may only arrive in final chunk)</li>
           </ul>
-          <h4 id="1673-concurrency-strategy">16.7.3 Concurrency Strategy</h4>
+          <h4 id="1773-concurrency-strategy">17.7.3 Concurrency Strategy</h4>
           <p><code>NSeqMax</code> behaves differently depending on model type:</p>
           <p><strong>Embedding and Reranking Models</strong>:</p>
           <ul>
@@ -4774,10 +4917,10 @@ batching = true`}</code></pre>
             <li><code>getTopKLogprobs()</code>: Uses min-heap for efficient O(n log k) top-k extraction</li>
           </ul>
           <p><strong>Critical:</strong> Logprobs must be extracted <strong>before</strong> <code>llama.SamplerAccept()</code> is called.</p>
-          <h3 id="168-api-handler-notes">16.8 API Handler Notes</h3>
+          <h3 id="178-api-handler-notes">17.8 API Handler Notes</h3>
           <p><strong>Input Format Conversion</strong> (<code>cmd/server/app/domain/</code>):</p>
           <p>Both streaming and non-streaming Response APIs must call <code>convertInputToMessages(d)</code> to handle the OpenAI Responses <code>input</code> field format.</p>
-          <h3 id="169-goroutine-budget">16.9 Goroutine Budget</h3>
+          <h3 id="179-goroutine-budget">17.9 Goroutine Budget</h3>
           <p>A running Kronk server typically shows ~25 baseline goroutines before any requests arrive. When requests are active, expect roughly 3-5 additional goroutines per in-flight request. For example, 3 concurrent requests for the same model will show ~40 goroutines total. This is normal.</p>
           <p><strong>Baseline goroutines (~25, always running):</strong></p>
           <table className="flags-table">
@@ -4859,7 +5002,7 @@ batching = true`}</code></pre>
             </tbody>
           </table>
           <p>The goroutine metric is a point-in-time snapshot from <code>runtime.NumGoroutine()</code> captured every 10th request by the metrics middleware. It includes everything in the process, including Go runtime internals. After active requests complete, the count drops back to the baseline.</p>
-          <h3 id="1610-request-tracing-spans">16.10 Request Tracing Spans</h3>
+          <h3 id="1710-request-tracing-spans">17.10 Request Tracing Spans</h3>
           <p>Each chat completion request produces the following trace hierarchy:</p>
           <pre className="code-block"><code>{`POST /v1/chat/completions
 ├── prepare-request              Validation, caching, and prompt creation
@@ -4897,7 +5040,7 @@ batching = true`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <h3 id="1611-reference-threads">16.11 Reference Threads</h3>
+          <h3 id="1711-reference-threads">17.11 Reference Threads</h3>
           <p>See <code>THREADS.md</code> for important past conversations and decisions worth preserving.</p>
         </div>
 
@@ -5092,34 +5235,45 @@ batching = true`}</code></pre>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-15:-troubleshooting" className={`doc-index-header ${activeSection === 'chapter-15:-troubleshooting' ? 'active' : ''}`}>Chapter 15: Troubleshooting</a>
+              <a href="#chapter-15:-mcp-service" className={`doc-index-header ${activeSection === 'chapter-15:-mcp-service' ? 'active' : ''}`}>Chapter 15: MCP Service</a>
               <ul>
-                <li><a href="#151-library-issues" className={activeSection === '151-library-issues' ? 'active' : ''}>15.1 Library Issues</a></li>
-                <li><a href="#152-model-loading-failures" className={activeSection === '152-model-loading-failures' ? 'active' : ''}>15.2 Model Loading Failures</a></li>
-                <li><a href="#153-memory-errors" className={activeSection === '153-memory-errors' ? 'active' : ''}>15.3 Memory Errors</a></li>
-                <li><a href="#154-request-timeouts" className={activeSection === '154-request-timeouts' ? 'active' : ''}>15.4 Request Timeouts</a></li>
-                <li><a href="#155-authentication-errors" className={activeSection === '155-authentication-errors' ? 'active' : ''}>15.5 Authentication Errors</a></li>
-                <li><a href="#156-streaming-issues" className={activeSection === '156-streaming-issues' ? 'active' : ''}>15.6 Streaming Issues</a></li>
-                <li><a href="#157-performance-issues" className={activeSection === '157-performance-issues' ? 'active' : ''}>15.7 Performance Issues</a></li>
-                <li><a href="#158-viewing-logs" className={activeSection === '158-viewing-logs' ? 'active' : ''}>15.8 Viewing Logs</a></li>
-                <li><a href="#159-common-error-messages" className={activeSection === '159-common-error-messages' ? 'active' : ''}>15.9 Common Error Messages</a></li>
-                <li><a href="#1510-getting-help" className={activeSection === '1510-getting-help' ? 'active' : ''}>15.10 Getting Help</a></li>
+                <li><a href="#151-architecture" className={activeSection === '151-architecture' ? 'active' : ''}>15.1 Architecture</a></li>
+                <li><a href="#152-prerequisites" className={activeSection === '152-prerequisites' ? 'active' : ''}>15.2 Prerequisites</a></li>
+                <li><a href="#153-configuration" className={activeSection === '153-configuration' ? 'active' : ''}>15.3 Configuration</a></li>
+                <li><a href="#154-available-tools" className={activeSection === '154-available-tools' ? 'active' : ''}>15.4 Available Tools</a></li>
+                <li><a href="#155-client-configuration" className={activeSection === '155-client-configuration' ? 'active' : ''}>15.5 Client Configuration</a></li>
+                <li><a href="#156-testing-with-curl" className={activeSection === '156-testing-with-curl' ? 'active' : ''}>15.6 Testing with curl</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-16:-developer-guide" className={`doc-index-header ${activeSection === 'chapter-16:-developer-guide' ? 'active' : ''}`}>Chapter 16: Developer Guide</a>
+              <a href="#chapter-16:-troubleshooting" className={`doc-index-header ${activeSection === 'chapter-16:-troubleshooting' ? 'active' : ''}`}>Chapter 16: Troubleshooting</a>
               <ul>
-                <li><a href="#161-quick-reference" className={activeSection === '161-quick-reference' ? 'active' : ''}>16.1 Quick Reference</a></li>
-                <li><a href="#162-build-test-commands" className={activeSection === '162-build-test-commands' ? 'active' : ''}>16.2 Build &amp; Test Commands</a></li>
-                <li><a href="#163-developer-setup" className={activeSection === '163-developer-setup' ? 'active' : ''}>16.3 Developer Setup</a></li>
-                <li><a href="#164-project-architecture" className={activeSection === '164-project-architecture' ? 'active' : ''}>16.4 Project Architecture</a></li>
-                <li><a href="#165-bui-frontend-development" className={activeSection === '165-bui-frontend-development' ? 'active' : ''}>16.5 BUI Frontend Development</a></li>
-                <li><a href="#166-code-style-guidelines" className={activeSection === '166-code-style-guidelines' ? 'active' : ''}>16.6 Code Style Guidelines</a></li>
-                <li><a href="#167-sdk-internals" className={activeSection === '167-sdk-internals' ? 'active' : ''}>16.7 SDK Internals</a></li>
-                <li><a href="#168-api-handler-notes" className={activeSection === '168-api-handler-notes' ? 'active' : ''}>16.8 API Handler Notes</a></li>
-                <li><a href="#169-goroutine-budget" className={activeSection === '169-goroutine-budget' ? 'active' : ''}>16.9 Goroutine Budget</a></li>
-                <li><a href="#1610-request-tracing-spans" className={activeSection === '1610-request-tracing-spans' ? 'active' : ''}>16.10 Request Tracing Spans</a></li>
-                <li><a href="#1611-reference-threads" className={activeSection === '1611-reference-threads' ? 'active' : ''}>16.11 Reference Threads</a></li>
+                <li><a href="#161-library-issues" className={activeSection === '161-library-issues' ? 'active' : ''}>16.1 Library Issues</a></li>
+                <li><a href="#162-model-loading-failures" className={activeSection === '162-model-loading-failures' ? 'active' : ''}>16.2 Model Loading Failures</a></li>
+                <li><a href="#163-memory-errors" className={activeSection === '163-memory-errors' ? 'active' : ''}>16.3 Memory Errors</a></li>
+                <li><a href="#164-request-timeouts" className={activeSection === '164-request-timeouts' ? 'active' : ''}>16.4 Request Timeouts</a></li>
+                <li><a href="#165-authentication-errors" className={activeSection === '165-authentication-errors' ? 'active' : ''}>16.5 Authentication Errors</a></li>
+                <li><a href="#166-streaming-issues" className={activeSection === '166-streaming-issues' ? 'active' : ''}>16.6 Streaming Issues</a></li>
+                <li><a href="#167-performance-issues" className={activeSection === '167-performance-issues' ? 'active' : ''}>16.7 Performance Issues</a></li>
+                <li><a href="#168-viewing-logs" className={activeSection === '168-viewing-logs' ? 'active' : ''}>16.8 Viewing Logs</a></li>
+                <li><a href="#169-common-error-messages" className={activeSection === '169-common-error-messages' ? 'active' : ''}>16.9 Common Error Messages</a></li>
+                <li><a href="#1610-getting-help" className={activeSection === '1610-getting-help' ? 'active' : ''}>16.10 Getting Help</a></li>
+              </ul>
+            </div>
+            <div className="doc-index-section">
+              <a href="#chapter-17:-developer-guide" className={`doc-index-header ${activeSection === 'chapter-17:-developer-guide' ? 'active' : ''}`}>Chapter 17: Developer Guide</a>
+              <ul>
+                <li><a href="#171-quick-reference" className={activeSection === '171-quick-reference' ? 'active' : ''}>17.1 Quick Reference</a></li>
+                <li><a href="#172-build-test-commands" className={activeSection === '172-build-test-commands' ? 'active' : ''}>17.2 Build &amp; Test Commands</a></li>
+                <li><a href="#173-developer-setup" className={activeSection === '173-developer-setup' ? 'active' : ''}>17.3 Developer Setup</a></li>
+                <li><a href="#174-project-architecture" className={activeSection === '174-project-architecture' ? 'active' : ''}>17.4 Project Architecture</a></li>
+                <li><a href="#175-bui-frontend-development" className={activeSection === '175-bui-frontend-development' ? 'active' : ''}>17.5 BUI Frontend Development</a></li>
+                <li><a href="#176-code-style-guidelines" className={activeSection === '176-code-style-guidelines' ? 'active' : ''}>17.6 Code Style Guidelines</a></li>
+                <li><a href="#177-sdk-internals" className={activeSection === '177-sdk-internals' ? 'active' : ''}>17.7 SDK Internals</a></li>
+                <li><a href="#178-api-handler-notes" className={activeSection === '178-api-handler-notes' ? 'active' : ''}>17.8 API Handler Notes</a></li>
+                <li><a href="#179-goroutine-budget" className={activeSection === '179-goroutine-budget' ? 'active' : ''}>17.9 Goroutine Budget</a></li>
+                <li><a href="#1710-request-tracing-spans" className={activeSection === '1710-request-tracing-spans' ? 'active' : ''}>17.10 Request Tracing Spans</a></li>
+                <li><a href="#1711-reference-threads" className={activeSection === '1711-reference-threads' ? 'active' : ''}>17.11 Reference Threads</a></li>
               </ul>
             </div>
           </div>

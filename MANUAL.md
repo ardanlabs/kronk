@@ -16,8 +16,9 @@
 12. [Browser UI (BUI)](#chapter-12-browser-ui-bui)
 13. [Client Integration](#chapter-13-client-integration)
 14. [Observability](#chapter-14-observability)
-15. [Troubleshooting](#chapter-15-troubleshooting)
-16. [Developer Guide](#chapter-16-developer-guide)
+15. [MCP Service](#chapter-15-mcp-service)
+16. [Troubleshooting](#chapter-16-troubleshooting)
+17. [Developer Guide](#chapter-17-developer-guide)
 
 ---
 
@@ -4414,13 +4415,170 @@ export KRONK_INSECURE_LOGGING=true
 
 ---
 
-_Next: [Chapter 15: Troubleshooting](#chapter-15-troubleshooting)_
+_Next: [Chapter 15: MCP Service](#chapter-15-mcp-service)_
 
-## Chapter 15: Troubleshooting
+## Chapter 15: MCP Service
+
+Kronk includes a built-in [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)
+service that exposes tools to MCP-compatible clients. The initial tool
+provided is `web_search`, powered by the [Brave Search API](https://brave.com/search/api/).
+
+MCP is an open standard that lets AI agents call external tools over a
+simple JSON-RPC protocol. By running the MCP service, any MCP-compatible
+client (Cline, Kilo Code, Cursor, etc.) can discover and invoke tools
+served by Kronk.
+
+### 15.1 Architecture
+
+The MCP service can run in two modes:
+
+**Embedded (default)** — When the Kronk model server starts and no external
+MCP host is configured (`--mcp-host` is empty), it automatically starts an
+embedded MCP server on `localhost:9000`. No extra process is needed.
+
+**Standalone** — Run the MCP service as its own process for independent
+scaling or when you don't need the full model server:
+
+```shell
+make mcp-server
+```
+
+Or directly:
+
+```shell
+go run cmd/server/api/services/mcp/main.go
+```
+
+Both modes serve the same MCP protocol on the same default port (`9000`).
+
+### 15.2 Prerequisites
+
+The `web_search` tool requires a Brave Search API key. Get a free key at
+[https://brave.com/search/api/](https://brave.com/search/api/).
+
+### 15.3 Configuration
+
+**Environment Variables:**
+
+| Variable          | Description                                 | Default          |
+| ----------------- | ------------------------------------------- | ---------------- |
+| `MCP_MCP_HOST`    | MCP listen address (standalone mode)        | `localhost:9000` |
+| `MCP_MCP_BRAVEAPIKEY` | Brave Search API key (standalone mode)  | —                |
+| `KRONK_MCP_HOST`  | External MCP host (empty = embedded mode)   | —                |
+| `KRONK_MCP_BRAVEAPIKEY` | Brave Search API key (embedded mode)  | —                |
+
+**Embedded mode** — Pass the Brave API key when starting the Kronk server:
+
+```shell
+export KRONK_MCP_BRAVEAPIKEY=<your-brave-api-key>
+kronk server start
+```
+
+The embedded MCP server will start automatically on `localhost:9000`.
+
+**Standalone mode** — Start the MCP service as a separate process:
+
+```shell
+export MCP_MCP_BRAVEAPIKEY=<your-brave-api-key>
+make mcp-server
+```
+
+### 15.4 Available Tools
+
+#### web_search
+
+Performs a web search and returns a list of relevant web pages with titles,
+URLs, and descriptions.
+
+**Parameters:**
+
+| Parameter    | Type   | Required | Description                                                   |
+| ------------ | ------ | -------- | ------------------------------------------------------------- |
+| `query`      | string | Yes      | Search query                                                  |
+| `count`      | int    | No       | Number of results to return (default 10, max 20)              |
+| `country`    | string | No       | Country code for search context (e.g. `US`, `GB`, `DE`)       |
+| `freshness`  | string | No       | Filter by freshness: `pd` (past day), `pw` (past week), `pm` (past month), `py` (past year) |
+| `safesearch` | string | No       | Safe search filter: `off`, `moderate`, `strict` (default `moderate`) |
+
+### 15.5 Client Configuration
+
+The MCP service uses the Streamable HTTP transport. Configure your
+MCP-compatible client to connect to `http://localhost:9000`.
+
+#### Cline
+
+Add the following to your Cline MCP settings:
+
+```json
+{
+  "mcpServers": {
+    "Kronk": {
+      "autoApprove": [
+        "web_search"
+      ],
+      "disabled": false,
+      "timeout": 60,
+      "type": "streamableHttp",
+      "url": "http://localhost:9000"
+    }
+  }
+}
+```
+
+#### Kilo Code
+
+Add the following to your Kilo Code MCP settings:
+
+```json
+{
+  "mcpServers": {
+    "Kronk": {
+      "type": "streamable-http",
+      "url": "http://localhost:9000",
+      "disabled": true,
+      "alwaysAllow": [
+        "web_search"
+      ],
+      "timeout": 60
+    }
+  }
+}
+```
+
+### 15.6 Testing with curl
+
+You can test the MCP service manually using curl. See the makefile targets
+for convenience commands.
+
+**Initialize a session:**
+
+```shell
+make curl-mcp-init
+```
+
+This returns the `Mcp-Session-Id` header needed for subsequent requests.
+
+**List available tools:**
+
+```shell
+make curl-mcp-tools-list SESSIONID=<session-id>
+```
+
+**Call web_search:**
+
+```shell
+make curl-mcp-web-search SESSIONID=<session-id>
+```
+
+---
+
+_Next: [Chapter 16: Troubleshooting](#chapter-16-troubleshooting)_
+
+## Chapter 16: Troubleshooting
 
 This chapter covers common issues, their causes, and solutions.
 
-### 15.1 Library Issues
+### 16.1 Library Issues
 
 **Error: "unable to load library"**
 
@@ -4459,7 +4617,7 @@ KRONK_PROCESSOR=cuda kronk libs --local
 KRONK_PROCESSOR=cpu kronk libs --local
 ```
 
-### 15.2 Model Loading Failures
+### 16.2 Model Loading Failures
 
 **Error: "unable to load model"**
 
@@ -4497,7 +4655,7 @@ Ensure templates are downloaded:
 kronk catalog pull-templates --local
 ```
 
-### 15.3 Memory Errors
+### 16.3 Memory Errors
 
 **Error: "unable to init context" or "unable to get memory"**
 
@@ -4546,7 +4704,7 @@ The request plus context exceeds the configured context window.
 - Increase `context_window` in model config
 - Enable YaRN for extended context (see Chapter 6)
 
-### 15.4 Request Timeouts
+### 16.4 Request Timeouts
 
 **Error: "context deadline exceeded"**
 
@@ -4575,7 +4733,7 @@ export KRONK_READ_TIMEOUT=5m
 export KRONK_WRITE_TIMEOUT=30m
 ```
 
-### 15.5 Authentication Errors
+### 16.5 Authentication Errors
 
 **Error: "unauthorized: no authorization header"**
 
@@ -4642,7 +4800,7 @@ kronk security token create \
   --endpoints "chat-completions:10000/day"
 ```
 
-### 15.6 Streaming Issues
+### 16.6 Streaming Issues
 
 **Problem: Streaming stops mid-response**
 
@@ -4669,7 +4827,7 @@ data: {"id":"...","choices":[...]}\n\n
 
 Each event is prefixed with `data: ` and ends with two newlines.
 
-### 15.7 Performance Issues
+### 16.7 Performance Issues
 
 **Problem: Slow time to first token (TTFT)**
 
@@ -4725,7 +4883,7 @@ models:
     gpu_layers: 99 # Offload all layers to GPU
 ```
 
-### 15.8 Viewing Logs
+### 16.8 Viewing Logs
 
 **Run server in foreground:**
 
@@ -4757,7 +4915,7 @@ Shows low-level inference engine messages.
 kronk server start --llama-log 0
 ```
 
-### 15.9 Common Error Messages
+### 16.9 Common Error Messages
 
 | Error                  | Cause                  | Solution               |
 | ---------------------- | ---------------------- | ---------------------- |
@@ -4770,7 +4928,7 @@ kronk server start --llama-log 0
 | `context window full`  | Input too large        | Reduce input size      |
 | `NBatch overflow`      | Batch too large        | Reduce `n_batch`       |
 
-### 15.10 Getting Help
+### 16.10 Getting Help
 
 **Check server status:**
 
@@ -4809,14 +4967,14 @@ Include the following when reporting bugs:
 
 ---
 
-_Next: [Chapter 16: Developer Guide](#chapter-16-developer-guide)_
+_Next: [Chapter 17: Developer Guide](#chapter-17-developer-guide)_
 
-## Chapter 16: Developer Guide
+## Chapter 17: Developer Guide
 
 This chapter covers development workflows, build commands, and code
 conventions for contributors to the Kronk project.
 
-### 16.1 Quick Reference
+### 17.1 Quick Reference
 
 Here is a quick chart of some of the more imporant make commands.
 
@@ -4833,7 +4991,7 @@ Here is a quick chart of some of the more imporant make commands.
 | Lint            | `staticcheck ./...`                                 |
 | Developer setup | `make setup` (configures git hooks)                 |
 
-### 16.2 Build & Test Commands
+### 17.2 Build & Test Commands
 
 **Install CLI locally:**
 
@@ -4867,7 +5025,7 @@ make test
 go test -v -count=1 -run TestName ./sdk/kronk/...
 ```
 
-### 16.3 Developer Setup
+### 17.3 Developer Setup
 
 Configure git hooks for automatic pre-commit checks:
 
@@ -4880,7 +5038,7 @@ This enables a pre-commit hook that automatically runs:
 - `make kronk-docs` - Regenerates documentation
 - `make bui-build` - Rebuilds the BUI frontend
 
-### 16.4 Project Architecture
+### 17.4 Project Architecture
 
 **Directory Structure:**
 
@@ -4899,7 +5057,7 @@ This enables a pre-commit hook that automatically runs:
 Kronk uses [yzma](https://github.com/hybridgroup/yzma) (llama.cpp Go bindings)
 for local inference with GGUF models.
 
-### 16.5 BUI Frontend Development
+### 17.5 BUI Frontend Development
 
 The Browser UI is a React application located at:
 
@@ -4975,7 +5133,7 @@ Generate all documentation:
 go run ./cmd/server/api/tooling/docs -pkg=all
 ```
 
-### 16.6 Code Style Guidelines
+### 17.6 Code Style Guidelines
 
 **Package Comments:**
 
@@ -5048,12 +5206,12 @@ default:
 }
 ```
 
-### 16.7 SDK Internals
+### 17.7 SDK Internals
 
 This section documents implementation details for developers working on
 the Kronk SDK packages.
 
-#### 16.7.1 Package Structure
+#### 17.7.1 Package Structure
 
 **sdk/kronk/** - Core API package:
 
@@ -5086,7 +5244,7 @@ the Kronk SDK packages.
 | `prompts.go`   | Prompt formatting                                     |
 | `rerank.go`    | Reranking inference                                   |
 
-#### 16.7.2 Streaming Architecture
+#### 17.7.2 Streaming Architecture
 
 **Response Streaming Pattern** (`response.go`, `concurrency.go`):
 
@@ -5102,7 +5260,7 @@ the Kronk SDK packages.
 - When `FinishReasonPtr != nil`, skip text/reasoning deltas (they duplicate previous content)
 - Always process tool calls even with FinishReason set (may only arrive in final chunk)
 
-#### 16.7.3 Concurrency Strategy
+#### 17.7.3 Concurrency Strategy
 
 `NSeqMax` behaves differently depending on model type:
 
@@ -5245,7 +5403,7 @@ type imcSession struct {
 
 **Critical:** Logprobs must be extracted **before** `llama.SamplerAccept()` is called.
 
-### 16.8 API Handler Notes
+### 17.8 API Handler Notes
 
 **Input Format Conversion** (`cmd/server/app/domain/`):
 
@@ -5253,7 +5411,7 @@ Both streaming and non-streaming Response APIs must call
 `convertInputToMessages(d)` to handle the OpenAI Responses `input` field
 format.
 
-### 16.9 Goroutine Budget
+### 17.9 Goroutine Budget
 
 A running Kronk server typically shows ~25 baseline goroutines before any
 requests arrive. When requests are active, expect roughly 3-5 additional
@@ -5287,7 +5445,7 @@ captured every 10th request by the metrics middleware. It includes everything
 in the process, including Go runtime internals. After active requests complete,
 the count drops back to the baseline.
 
-### 16.10 Request Tracing Spans
+### 17.10 Request Tracing Spans
 
 Each chat completion request produces the following trace hierarchy:
 
@@ -5329,7 +5487,7 @@ Additional spans that may appear at the top level:
 | `model-file-load-time` | First request for a model | Loading the GGUF model file            |
 | `proj-file-load-time`  | Vision/audio requests     | Loading the multimodal projection file |
 
-### 16.11 Reference Threads
+### 17.11 Reference Threads
 
 See `THREADS.md` for important past conversations and decisions worth
 preserving.
