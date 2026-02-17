@@ -128,7 +128,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
   const displayMode: AutoTestSweepMode = run ? run.kind : sweepMode;
 
   const hasEnabledScenario = enabledScenarios.chat || enabledScenarios.tool_call;
-  const hasEnabledConfigParam = configSweepDef.nbatch.enabled || configSweepDef.nubatch.enabled || configSweepDef.contextWindow.enabled || configSweepDef.nSeqMax.enabled || configSweepDef.flashAttention.enabled || configSweepDef.cacheTypeK.enabled || configSweepDef.cacheTypeV.enabled || configSweepDef.systemPromptCache.enabled;
+  const hasEnabledConfigParam = configSweepDef.nbatch.enabled || configSweepDef.nubatch.enabled || configSweepDef.contextWindow.enabled || configSweepDef.nSeqMax.enabled || configSweepDef.flashAttention.enabled || configSweepDef.cacheType.enabled || configSweepDef.systemPromptCache.enabled;
 
   const handleRun = useCallback(() => {
     if (sweepMode === 'sampling') {
@@ -363,57 +363,24 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
               <label className="playground-sweep-param-toggle">
                 <input
                   type="checkbox"
-                  checked={configSweepDef.cacheTypeK.enabled}
-                  onChange={(e) => setConfigSweepDef((d) => ({ ...d, cacheTypeK: { ...d.cacheTypeK, enabled: e.target.checked } }))}
+                  checked={configSweepDef.cacheType.enabled}
+                  onChange={(e) => setConfigSweepDef((d) => ({ ...d, cacheType: { ...d.cacheType, enabled: e.target.checked } }))}
                   disabled={isRunning}
                 />
-                Cache Type K
+                Cache Type
               </label>
-              {configSweepDef.cacheTypeK.enabled && (
+              {configSweepDef.cacheType.enabled && (
                 <div className="playground-sweep-option-checks">
                   {['f16', 'q8_0', 'q4_0'].map((val) => (
                     <label key={val} className="playground-sweep-option-label">
                       <input
                         type="checkbox"
-                        checked={configSweepDef.cacheTypeK.values.includes(val)}
+                        checked={configSweepDef.cacheType.values.includes(val)}
                         onChange={(e) => {
                           setConfigSweepDef(d => {
-                            const prev = d.cacheTypeK.values;
+                            const prev = d.cacheType.values;
                             const next = e.target.checked ? [...prev, val] : prev.filter(v => v !== val);
-                            return { ...d, cacheTypeK: { ...d.cacheTypeK, values: next } };
-                          });
-                        }}
-                        disabled={isRunning}
-                      />
-                      {val}
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="playground-sweep-param">
-              <label className="playground-sweep-param-toggle">
-                <input
-                  type="checkbox"
-                  checked={configSweepDef.cacheTypeV.enabled}
-                  onChange={(e) => setConfigSweepDef((d) => ({ ...d, cacheTypeV: { ...d.cacheTypeV, enabled: e.target.checked } }))}
-                  disabled={isRunning}
-                />
-                Cache Type V
-              </label>
-              {configSweepDef.cacheTypeV.enabled && (
-                <div className="playground-sweep-option-checks">
-                  {['f16', 'q8_0', 'q4_0'].map((val) => (
-                    <label key={val} className="playground-sweep-option-label">
-                      <input
-                        type="checkbox"
-                        checked={configSweepDef.cacheTypeV.values.includes(val)}
-                        onChange={(e) => {
-                          setConfigSweepDef(d => {
-                            const prev = d.cacheTypeV.values;
-                            const next = e.target.checked ? [...prev, val] : prev.filter(v => v !== val);
-                            return { ...d, cacheTypeV: { ...d.cacheTypeV, values: next } };
+                            return { ...d, cacheType: { ...d.cacheType, values: next } };
                           });
                         }}
                         disabled={isRunning}
@@ -467,8 +434,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
                 if (configSweepDef.contextWindow.enabled && configSweepDef.contextWindow.values.length > 0) axes.push(configSweepDef.contextWindow.values.length);
                 if (configSweepDef.nSeqMax.enabled && configSweepDef.nSeqMax.values.length > 0) axes.push(configSweepDef.nSeqMax.values.length);
                 if (configSweepDef.flashAttention.enabled && configSweepDef.flashAttention.values.length > 0) axes.push(configSweepDef.flashAttention.values.length);
-                if (configSweepDef.cacheTypeK.enabled && configSweepDef.cacheTypeK.values.length > 0) axes.push(configSweepDef.cacheTypeK.values.length);
-                if (configSweepDef.cacheTypeV.enabled && configSweepDef.cacheTypeV.values.length > 0) axes.push(configSweepDef.cacheTypeV.values.length);
+                if (configSweepDef.cacheType.enabled && configSweepDef.cacheType.values.length > 0) axes.push(configSweepDef.cacheType.values.length);
                 if (configSweepDef.systemPromptCache.enabled && configSweepDef.systemPromptCache.values.length > 0) axes.push(configSweepDef.systemPromptCache.values.length);
                 return axes.length > 0 ? axes.reduce((a, b) => a * b, 1) : 1;
               })()}
@@ -682,8 +648,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
                     <th>NUBatch</th>
                     <th>NSeqMax</th>
                     <th>Flash Attn</th>
-                    <th>Cache K</th>
-                    <th>Cache V</th>
+                    <th>KV Cache</th>
                     <th>SPC</th>
                     <th>Status</th>
                   </>
@@ -714,8 +679,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
                         <td>{trial.config?.nubatch ?? '—'}</td>
                         <td>{trial.config?.['nseq-max'] ?? '—'}</td>
                         <td>{trial.config?.['flash-attention'] ?? '—'}</td>
-                        <td>{trial.config?.['cache-type-k'] ?? '—'}</td>
-                        <td>{trial.config?.['cache-type-v'] ?? '—'}</td>
+                        <td>{trial.config?.['cache-type'] ?? '—'}</td>
                         <td>{trial.config?.['system-prompt-cache'] !== undefined ? String(trial.config['system-prompt-cache']) : '—'}</td>
                         <td style={trial.error ? { color: '#c62828', fontSize: '0.85em' } : isPending ? { color: '#666' } : { color: '#2e7d32' }}>
                           {trial.error ? `Error: ${trial.error}` : isPending ? '...' : 'OK'}
@@ -773,8 +737,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
                 <div><strong>NUBatch:</strong> {bestConfigTrial.config?.nubatch ?? '—'}</div>
                 <div><strong>NSeqMax:</strong> {bestConfigTrial.config?.['nseq-max'] ?? '—'}</div>
                 <div><strong>Flash Attention:</strong> {bestConfigTrial.config?.['flash-attention'] ?? '—'}</div>
-                <div><strong>Cache Type K:</strong> {bestConfigTrial.config?.['cache-type-k'] ?? '—'}</div>
-                <div><strong>Cache Type V:</strong> {bestConfigTrial.config?.['cache-type-v'] ?? '—'}</div>
+                <div><strong>KV Cache Type:</strong> {bestConfigTrial.config?.['cache-type'] ?? '—'}</div>
                 <div><strong>System Prompt Cache:</strong> {bestConfigTrial.config?.['system-prompt-cache'] !== undefined ? String(bestConfigTrial.config['system-prompt-cache']) : '—'}</div>
               </>
             ) : bestTrial ? (

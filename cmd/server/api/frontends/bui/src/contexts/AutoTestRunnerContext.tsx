@@ -246,7 +246,12 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
         for (let i = 0; i < configCandidates.length; i++) {
           if (controller.signal.aborted) break;
 
-          const cfg = configCandidates[i];
+          const candidate = configCandidates[i];
+          const { 'cache-type': cacheType, ...cfgRest } = candidate;
+          const apiCfg = {
+            ...cfgRest,
+            ...(cacheType !== undefined && { 'cache-type-k': cacheType, 'cache-type-v': cacheType }),
+          };
           let configSessionId: string | null = null;
 
           try {
@@ -255,7 +260,7 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
               template_mode: sessionSeed.template_mode,
               template_name: sessionSeed.template_name,
               template_script: sessionSeed.template_script,
-              config: { ...sessionSeed.base_config, ...cfg },
+              config: { ...sessionSeed.base_config, ...apiCfg },
             });
             configSessionId = resp.session_id;
             currentConfigSessionRef.current = configSessionId;
@@ -278,14 +283,14 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
               setRun(prev => {
                 if (!prev || prev.kind !== 'config') return prev;
                 const trials = [...prev.trials];
-                trials[i] = { ...partial, config: cfg };
+                trials[i] = { ...partial, config: candidate };
                 return { ...prev, trials };
               });
             };
 
             const result = await runTrial(configSessionId, activeBaseline, activeScenarios, onUpdate, controller.signal);
 
-            const configResult: ConfigTrialResult = { ...result, config: cfg };
+            const configResult: ConfigTrialResult = { ...result, config: candidate };
             const resultScore = result.totalScore ?? 0;
             const resultTPS = result.avgTPS ?? -Infinity;
             const isBetter = resultScore > bestScore || (resultScore === bestScore && resultTPS > bestTPS);
@@ -317,7 +322,7 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
               scenarioResults: [],
               totalScore: 0,
               avgTPS: undefined,
-              config: cfg,
+              config: candidate,
               error: errorMessage,
             };
 

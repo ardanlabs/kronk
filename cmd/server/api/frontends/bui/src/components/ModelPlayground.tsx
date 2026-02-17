@@ -72,8 +72,7 @@ export default function ModelPlayground() {
   const [nUBatch, setNUBatch] = useState(512);
   const [nSeqMax, setNSeqMax] = useState(1);
   const [flashAttention, setFlashAttention] = useState('auto');
-  const [cacheTypeK, setCacheTypeK] = useState('');
-  const [cacheTypeV, setCacheTypeV] = useState('');
+  const [cacheType, setCacheType] = useState('');
   const [systemPromptCache, setSystemPromptCache] = useState(false);
 
   // Sampling parameters state
@@ -159,8 +158,7 @@ export default function ModelPlayground() {
           setNUBatch(mc.nubatch || 512);
           setNSeqMax(mc['nseq-max'] || 1);
           setFlashAttention(mc['flash-attention'] || 'enabled');
-          setCacheTypeK(mc['cache-type-k'] || '');
-          setCacheTypeV(mc['cache-type-v'] || '');
+          setCacheType(mc['cache-type-k'] || mc['cache-type-v'] || '');
           setSystemPromptCache(mc['system-prompt-cache'] || false);
         }
       })
@@ -257,11 +255,11 @@ export default function ModelPlayground() {
       if (!catalogConfig || flashAttention !== (catalogConfig['flash-attention'] || 'enabled')) {
         config['flash-attention'] = flashAttention;
       }
-      if (!catalogConfig || cacheTypeK !== (catalogConfig['cache-type-k'] || '')) {
-        if (cacheTypeK) config['cache-type-k'] = cacheTypeK;
-      }
-      if (!catalogConfig || cacheTypeV !== (catalogConfig['cache-type-v'] || '')) {
-        if (cacheTypeV) config['cache-type-v'] = cacheTypeV;
+      if (!catalogConfig || cacheType !== (catalogConfig['cache-type-k'] || '')) {
+        if (cacheType) {
+          config['cache-type-k'] = cacheType;
+          config['cache-type-v'] = cacheType;
+        }
       }
       if (!catalogConfig || systemPromptCache !== (catalogConfig['system-prompt-cache'] || false)) {
         config['system-prompt-cache'] = systemPromptCache;
@@ -502,8 +500,8 @@ export default function ModelPlayground() {
         nubatch: nUBatch,
         'nseq-max': nSeqMax,
         'flash-attention': flashAttention,
-        'cache-type-k': cacheTypeK,
-        'cache-type-v': cacheTypeV,
+        'cache-type-k': cacheType,
+        'cache-type-v': cacheType,
         'system-prompt-cache': systemPromptCache,
       },
       capabilities: {
@@ -727,23 +725,10 @@ export default function ModelPlayground() {
               </select>
             </div>
             <div className="form-group">
-              <label>Cache Type K</label>
+              <label>KV Cache Type</label>
               <select
-                value={cacheTypeK}
-                onChange={(e) => setCacheTypeK(e.target.value)}
-                disabled={!!session}
-              >
-                <option value="">Default (f16)</option>
-                <option value="f16">f16</option>
-                <option value="q8_0">q8_0</option>
-                <option value="q4_0">q4_0</option>
-              </select>
-            </div>
-            <div className="form-group">
-              <label>Cache Type V</label>
-              <select
-                value={cacheTypeV}
-                onChange={(e) => setCacheTypeV(e.target.value)}
+                value={cacheType}
+                onChange={(e) => setCacheType(e.target.value)}
                 disabled={!!session}
               >
                 <option value="">Default (f16)</option>
@@ -1099,8 +1084,8 @@ export default function ModelPlayground() {
                     nubatch: nUBatch,
                     'nseq-max': nSeqMax,
                     'flash-attention': flashAttention,
-                    'cache-type-k': cacheTypeK || undefined,
-                    'cache-type-v': cacheTypeV || undefined,
+                    'cache-type-k': cacheType || undefined,
+                    'cache-type-v': cacheType || undefined,
                     'system-prompt-cache': systemPromptCache,
                   },
                 }}

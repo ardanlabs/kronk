@@ -306,8 +306,7 @@ export const defaultConfigSweepDef: ConfigSweepDefinition = {
   contextWindow: { enabled: false, values: [2048, 4096, 8192, 16384, 32768] },
   nSeqMax: { enabled: false, values: [1, 2, 4, 8] },
   flashAttention: { enabled: false, values: ['auto', 'enabled', 'disabled'] },
-  cacheTypeK: { enabled: false, values: ['f16', 'q8_0', 'q4_0'] },
-  cacheTypeV: { enabled: false, values: ['f16', 'q8_0', 'q4_0'] },
+  cacheType: { enabled: false, values: ['f16', 'q8_0', 'q4_0'] },
   systemPromptCache: { enabled: false, values: [true, false] },
 }
 
@@ -345,11 +344,8 @@ export function generateConfigCandidates(
   if (def.flashAttention.enabled && def.flashAttention.values.length > 0) {
     allAxes.push({ configKey: 'flash-attention', values: def.flashAttention.values });
   }
-  if (def.cacheTypeK.enabled && def.cacheTypeK.values.length > 0) {
-    allAxes.push({ configKey: 'cache-type-k', values: def.cacheTypeK.values });
-  }
-  if (def.cacheTypeV.enabled && def.cacheTypeV.values.length > 0) {
-    allAxes.push({ configKey: 'cache-type-v', values: def.cacheTypeV.values });
+  if (def.cacheType.enabled && def.cacheType.values.length > 0) {
+    allAxes.push({ configKey: 'cache-type', values: def.cacheType.values });
   }
   if (def.systemPromptCache.enabled && def.systemPromptCache.values.length > 0) {
     allAxes.push({ configKey: 'system-prompt-cache', values: def.systemPromptCache.values });
@@ -377,7 +373,7 @@ export function generateConfigCandidates(
   const candidates: ConfigCandidate[] = []
 
   const keyOf = (c: ConfigCandidate) =>
-    `cw=${c['context-window']}|nb=${c.nbatch}|nub=${c.nubatch}|ns=${c['nseq-max']}|fa=${c['flash-attention']}|ck=${c['cache-type-k']}|cv=${c['cache-type-v']}|spc=${c['system-prompt-cache']}`
+    `cw=${c['context-window']}|nb=${c.nbatch}|nub=${c.nubatch}|ns=${c['nseq-max']}|fa=${c['flash-attention']}|ct=${c['cache-type']}|spc=${c['system-prompt-cache']}`
 
   for (const c of combos) {
     const k = keyOf(c)

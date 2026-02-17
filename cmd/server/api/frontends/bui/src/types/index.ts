@@ -613,8 +613,7 @@ export interface ConfigSweepDefinition {
   contextWindow: SweepParamValues;
   nSeqMax: SweepParamValues;
   flashAttention: SweepStringValues;
-  cacheTypeK: SweepStringValues;
-  cacheTypeV: SweepStringValues;
+  cacheType: SweepStringValues;
   systemPromptCache: SweepBoolValues;
 }
 
@@ -624,8 +623,7 @@ export interface ConfigCandidate {
   nubatch?: number;
   'nseq-max'?: number;
   'flash-attention'?: string;
-  'cache-type-k'?: string;
-  'cache-type-v'?: string;
+  'cache-type'?: string;
   'system-prompt-cache'?: boolean;
 }
 
