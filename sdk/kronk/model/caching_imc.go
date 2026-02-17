@@ -169,9 +169,13 @@ func (m *Model) processIMC(ctx context.Context, d D) cacheResult {
 	m.log(ctx, "imc", "status", "no slot matched, trying token prefix match", "total-msgs", totalMsgs)
 
 	// Collect non-empty, non-pending slots as candidates for token comparison.
+	// Only consider slots where the message count is compatible — the request
+	// must have at least as many messages as the slot cached. When the request
+	// has fewer messages (e.g., 2 vs 11), it's a new conversation and sharing
+	// system prompt tokens from an unrelated conversation is not useful.
 	var tokenMatchCandidates []int
 	for i, snap := range snapshots {
-		if !snap.pending && !snap.empty && len(snap.cachedTokens) > 0 {
+		if !snap.pending && !snap.empty && len(snap.cachedTokens) > 0 && totalMsgs > snap.lastMsgIdxCached {
 			tokenMatchCandidates = append(tokenMatchCandidates, i)
 		}
 	}

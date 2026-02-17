@@ -18,6 +18,7 @@ import (
 	"github.com/ardanlabs/conf/v3"
 	"github.com/ardanlabs/kronk/cmd/server/api/services/kronk/build"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/authapp"
+	"github.com/ardanlabs/kronk/cmd/server/app/domain/mcpapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/cache"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/debug"
@@ -90,6 +91,10 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 				Issuer  string `conf:"default:kronk project"`
 				Enabled bool   `conf:"default:false"`
 			}
+		}
+		MCP struct {
+			Host        string // Leave empty to run the local MCP service.
+			BraveAPIKey string `conf:"mask"`
 		}
 		Tempo struct {
 			Host        string  `conf:"default:localhost:4317"`
@@ -345,6 +350,30 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			log.Error(ctx, "kronk manager", "ERROR", err)
 		}
 	}()
+
+	// -------------------------------------------------------------------------
+	// Start the MCP server
+
+	// If no host is provided for the MCP service, we will start it ourselves
+	// with a local listener.
+	if cfg.MCP.Host == "" {
+		log.Info(ctx, "startup", "status", "starting local mcp server")
+
+		mcpLis, err := net.Listen("tcp", "localhost:9000")
+		if err != nil {
+			return fmt.Errorf("failed to listen for mcp: %w", err)
+		}
+
+		mcpApp := mcpapp.Start(ctx, mcpapp.Config{
+			Log:         log,
+			Listener:    mcpLis,
+			BraveAPIKey: cfg.MCP.BraveAPIKey,
+		})
+
+		defer mcpApp.Shutdown(ctx)
+
+		log.Info(ctx, "startup", "status", "local mcp server started", "host", mcpLis.Addr().String())
+	}
 
 	// -------------------------------------------------------------------------
 	// Start Debug Service

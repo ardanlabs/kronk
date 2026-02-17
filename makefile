@@ -573,6 +573,73 @@ curl-tokenize-template:
     }'
 
 # ==============================================================================
+# MCP Service
+
+# Start the standalone MCP server.
+mcp-server:
+	go run cmd/server/api/services/mcp/main.go
+
+# Initialize the MCP session. The response includes the Mcp-Session-Id header
+# needed for subsequent requests.
+# Usage: make curl-mcp-init
+curl-mcp-init:
+	curl -i -X POST "http://localhost:9000/mcp" \
+	-H "Content-Type: application/json" \
+	-H "Accept: application/json" \
+	-d '{ \
+		"jsonrpc": "2.0", \
+		"id": 1, \
+		"method": "initialize", \
+		"params": { \
+			"protocolVersion": "2025-03-26", \
+			"capabilities": {}, \
+			"clientInfo": {"name": "curl-client", "version": "1.0.0"} \
+		} \
+	}'
+
+# Send the initialized notification.
+# make curl-mcp-initialized SESSIONID=<Mcp-Session-Id-from-init>
+curl-mcp-initialized:
+	curl -X POST "http://localhost:9000/mcp" \
+	-H "Content-Type: application/json" \
+	-H "Mcp-Session-Id: $(SESSIONID)" \
+	-d '{ \
+		"jsonrpc": "2.0", \
+		"method": "notifications/initialized" \
+	}'
+
+# List available tools.
+# make curl-mcp-tools-list SESSIONID=<Mcp-Session-Id-from-init>
+curl-mcp-tools-list:
+	curl -i -X POST "http://localhost:9000/mcp" \
+	-H "Content-Type: application/json" \
+	-H "Accept: application/json" \
+	-H "Mcp-Session-Id: $(SESSIONID)" \
+	-d '{ \
+		"jsonrpc": "2.0", \
+		"id": 2, \
+		"method": "tools/list", \
+		"params": {} \
+	}'
+
+# Call the web_search tool.
+# make curl-mcp-web-search SESSIONID=<Mcp-Session-Id-from-init>
+curl-mcp-web-search:
+	curl -i -X POST "http://localhost:9000/mcp" \
+	-H "Content-Type: application/json" \
+	-H "Accept: application/json" \
+	-H "Mcp-Session-Id: $(SESSIONID)" \
+	-d '{ \
+		"jsonrpc": "2.0", \
+		"id": 3, \
+		"method": "tools/call", \
+		"params": { \
+			"name": "web_search", \
+			"arguments": {"query": "what is the Model Context Protocol", "count": 5} \
+		} \
+	}'
+
+# ==============================================================================
 # Running OpenWebUI 
 
 owu-up:
