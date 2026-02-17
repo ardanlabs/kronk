@@ -12,6 +12,7 @@ require (
 	github.com/hashicorp/go-getter v1.8.4
 	github.com/hybridgroup/yzma v1.9.0
 	github.com/maypok86/otter/v2 v2.3.0
+	github.com/modelcontextprotocol/go-sdk v1.3.0
 	github.com/nikolalohinski/gonja/v2 v2.6.0
 	github.com/open-policy-agent/opa v1.13.1
 	github.com/prometheus/client_golang v1.23.2
@@ -80,6 +81,7 @@ require (
 	github.com/gobwas/glob v0.2.3 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/google/flatbuffers v25.12.19+incompatible // indirect
+	github.com/google/jsonschema-go v0.4.2 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.12 // indirect
 	github.com/googleapis/gax-go/v2 v2.17.0 // indirect
@@ -122,6 +124,7 @@ require (
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
 	github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 // indirect
 	github.com/yashtewari/glob-intersection v0.2.0 // indirect
+	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/detectors/gcp v1.40.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.65.0 // indirect

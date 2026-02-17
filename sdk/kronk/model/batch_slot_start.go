@@ -64,11 +64,18 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 
 		// Verify the slot's cache hasn't been evicted or rebuilt by another
 		// goroutine between processIMC and now. This catches stale pure hits
-		// and stale extends alike.
-		if job.imcExpectedHash != "" && currentHash != job.imcExpectedHash && len(job.imcNewCacheTokens) == 0 {
+		// only. Partial prefix rebuilds (imcTrimPos > 0) naturally have a
+		// different hash because they're replacing the slot's content.
+		if job.imcExpectedHash != "" && currentHash != job.imcExpectedHash && len(job.imcNewCacheTokens) == 0 && job.imcTrimPos == 0 {
 			e.model.log(job.ctx, "start-slot", "status", "imc-stale",
 				"slot", s.id, "seq", s.seqID, "imc_slot", job.imcSlotID,
 				"expected_hash", job.imcExpectedHash[:8], "current_hash", currentHash)
+
+			e.model.cacheMu.Lock()
+			if s.id < len(e.model.imcSlots) {
+				e.model.imcSlots[s.id].pending = false
+			}
+			e.model.cacheMu.Unlock()
 
 			e.finishSlot(s, fmt.Errorf("start-slot: imc cache stale (slot %d hash changed), retry request", s.id))
 			return
@@ -212,6 +219,50 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 				e.model.log(job.ctx, "start-slot", "status", "imc-extended", "slot", s.id, "seq", s.seqID,
 					"total_cached", job.imcNewTotalCached)
 			}
+
+		case job.imcTrimPos > 0:
+			// Trim-only partial prefix rebuild: the common prefix equals all
+			// incoming tokens so there are no new tokens to decode. Just trim
+			// the divergent suffix from the KV cache and update metadata.
+			if job.imcTrimPos > cacheIdx {
+				e.model.cacheMu.Lock()
+				if s.id < len(e.model.imcSlots) {
+					e.model.imcSlots[s.id].pending = false
+				}
+				e.model.cacheMu.Unlock()
+
+				e.finishSlot(s, fmt.Errorf("start-slot: imc trim stale (trim_pos %d > cache_idx %d), retry request", job.imcTrimPos, cacheIdx))
+				return
+			}
+
+			e.model.log(job.ctx, "start-slot", "status", "imc-trim-only", "slot", s.id, "seq", s.seqID,
+				"cached_tokens", cacheIdx, "trim_pos", job.imcTrimPos)
+
+			e.model.decodeMu.Lock()
+			llama.MemorySeqRm(e.model.mem, s.seqID, job.imcTrimPos, -1)
+			e.model.decodeMu.Unlock()
+
+			cacheIdx = llama.Pos(job.imcNewTotalCached)
+
+			e.model.cacheMu.Lock()
+			if s.id < len(e.model.imcSlots) {
+				imcSlot := e.model.imcSlots[s.id]
+				imcSlot.cachedMsgsHash = job.imcNewMsgsHash
+				imcSlot.totalTokensCached = job.imcNewTotalCached
+				imcSlot.lastMsgIdxCached = job.imcNewMsgIdx
+				imcSlot.lastUsed = time.Now()
+				imcSlot.pending = false
+
+				if len(job.imcNewCachedTokens) > 0 {
+					imcSlot.cachedTokens = job.imcNewCachedTokens
+				}
+
+				e.model.log(job.ctx, "start-slot", "status", "imc-pending-cleared", "slot", s.id, "seq", s.seqID)
+			}
+			e.model.cacheMu.Unlock()
+
+			e.model.log(job.ctx, "start-slot", "status", "imc-trimmed", "slot", s.id, "seq", s.seqID,
+				"total_cached", job.imcNewTotalCached)
 
 		case cacheIdx > 0:
 			e.model.log(job.ctx, "start-slot", "status", "imc-reuse", "slot", s.id, "seq", s.seqID,

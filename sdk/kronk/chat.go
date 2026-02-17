@@ -110,17 +110,14 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 
 	for {
 		select {
+		case <-ctx.Done():
+			return lr, errors.New("chat-streaming-http: context canceled, do not send response")
+
 		case resp, ok := <-ch:
 			if !ok {
 				w.Write([]byte("data: [DONE]\n\n"))
 				f.Flush()
 				return lr, nil
-			}
-
-			if err := ctx.Err(); err != nil {
-				if errors.Is(err, context.Canceled) {
-					return resp, errors.New("chat-streaming-http: client disconnected, do not send response")
-				}
 			}
 
 			// OpenAI does not expect the final chunk to have a message field.
