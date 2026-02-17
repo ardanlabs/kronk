@@ -4,7 +4,7 @@ Your name is Dave and developers will use your name when interacting with you.
 
 For comprehensive documentation, see [MANUAL.md](MANUAL.md).
 
-You wil want to look at `Chapter 16: Developer Guide` for detailed information about the project structure, code, and workflows.
+You wil want to look at `Chapter 17: Developer Guide` for detailed information about the project structure, code, and workflows.
 
 ## MANUAL.md Index
 
@@ -24,24 +24,25 @@ You wil want to look at `Chapter 16: Developer Guide` for detailed information a
 | [Chapter 12: Browser UI (BUI)](MANUAL.md#chapter-12-browser-ui-bui)                    | Web interface, downloading libraries/models, key/token management                              |
 | [Chapter 13: Client Integration](MANUAL.md#chapter-13-client-integration)              | OpenWebUI, Cline, Python SDK, curl, LangChain                                                  |
 | [Chapter 14: Observability](MANUAL.md#chapter-14-observability)                        | Debug server, Prometheus metrics, pprof profiling, tracing                                     |
-| [Chapter 15: Troubleshooting](MANUAL.md#chapter-15-troubleshooting)                    | Common issues, error messages, debugging tips                                                  |
-| [Chapter 16: Developer Guide](MANUAL.md#chapter-16-developer-guide)                    | Build commands, project architecture, BUI development, code style, SDK internals               |
+| [Chapter 15: MCP Service](MANUAL.md#chapter-15-mcp-service)                            | Brave Search, MCP configuration, Cline/Kilo client setup, curl testing                        |
+| [Chapter 16: Troubleshooting](MANUAL.md#chapter-16-troubleshooting)                    | Common issues, error messages, debugging tips                                                  |
+| [Chapter 17: Developer Guide](MANUAL.md#chapter-17-developer-guide)                    | Build commands, project architecture, BUI development, code style, SDK internals               |
 
-### Chapter 16 Sub-sections
+### Chapter 17 Sub-sections
 
 | Section                                                                 | Topics                                                                     |
 | ----------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| [16.1 Build & Test Commands](MANUAL.md#161-build--test-commands)        | Install CLI, run tests, build server, build BUI, generate docs             |
-| [16.2 Developer Setup](MANUAL.md#162-developer-setup)                   | Git hooks, pre-commit configuration                                        |
-| [16.3 Project Architecture](MANUAL.md#163-project-architecture)         | Directory structure, cmd/, sdk/ packages                                   |
-| [16.4 BUI Frontend Development](MANUAL.md#164-bui-frontend-development) | React structure, routing, adding pages, state management, styling          |
-| [16.5 Documentation Generation](MANUAL.md#165-documentation-generation) | SDK docs, CLI docs, examples generation                                    |
-| [16.6 Code Style Guidelines](MANUAL.md#166-code-style-guidelines)       | Package comments, error handling, struct design, imports, control flow     |
-| [16.7 SDK Internals](MANUAL.md#167-sdk-internals)                       | Package structure, streaming, model pool, batch engine, IMC implementation |
-| [16.8 API Handler Notes](MANUAL.md#168-api-handler-notes)               | Input format conversion for Response APIs                                  |
-| [16.9 Goroutine Budget](MANUAL.md#169-goroutine-budget)                 | Baseline goroutines, per-request goroutines, expected counts               |
-| [16.10 Request Tracing Spans](MANUAL.md#1610-request-tracing-spans)     | Span hierarchy, queue wait, prepare-request vs process-request              |
-| [16.11 Reference Threads](MANUAL.md#1611-reference-threads)             | THREADS.md for past conversations                                          |
+| [17.1 Build & Test Commands](MANUAL.md#171-build--test-commands)        | Install CLI, run tests, build server, build BUI, generate docs             |
+| [17.2 Developer Setup](MANUAL.md#172-developer-setup)                   | Git hooks, pre-commit configuration                                        |
+| [17.3 Project Architecture](MANUAL.md#173-project-architecture)         | Directory structure, cmd/, sdk/ packages                                   |
+| [17.4 BUI Frontend Development](MANUAL.md#174-bui-frontend-development) | React structure, routing, adding pages, state management, styling          |
+| [17.5 Documentation Generation](MANUAL.md#175-documentation-generation) | SDK docs, CLI docs, examples generation                                    |
+| [17.6 Code Style Guidelines](MANUAL.md#176-code-style-guidelines)       | Package comments, error handling, struct design, imports, control flow     |
+| [17.7 SDK Internals](MANUAL.md#177-sdk-internals)                       | Package structure, streaming, model pool, batch engine, IMC implementation |
+| [17.8 API Handler Notes](MANUAL.md#178-api-handler-notes)               | Input format conversion for Response APIs                                  |
+| [17.9 Goroutine Budget](MANUAL.md#179-goroutine-budget)                 | Baseline goroutines, per-request goroutines, expected counts               |
+| [17.10 Request Tracing Spans](MANUAL.md#1710-request-tracing-spans)     | Span hierarchy, queue wait, prepare-request vs process-request              |
+| [17.11 Reference Threads](MANUAL.md#1711-reference-threads)             | THREADS.md for past conversations                                          |
 
 ## Reference Threads
 
