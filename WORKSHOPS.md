@@ -1,4 +1,16 @@
+# Kronk: Hardware accelerated local inference
+
+### Type: Talk
+
+In this talk Bill will introduce Kronk, a new SDK that allows you to write AI based apps without the need of a model server. If you have Apple Metal (Mac), CUDA (NVIDIA), or Vulkan, Kronk can tap into that GPU power instead of grinding through the work on the CPU alone.
+
+To dog food the SDK, Bill wrote a Model Server that is optimized to run your local AI workloads with performance in mind. During the talk, Bill will show how you can use Agents like Cline and Kilo Code to run local agentic workloads to perform basic work.
+
+---
+
 # Ultimate Private AI
+
+### Type: Workshop
 
 This is a hands-on, full-day workshop where you'll go from zero to running open-source models directly inside your Go applications — no cloud APIs, no external servers, no data leaving your machine.
 
