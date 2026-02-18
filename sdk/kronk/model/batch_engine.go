@@ -195,7 +195,8 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 
 		// Speculative decoding: generate draft tokens and add them all
 		// to the shared batch for verification in a single forward pass.
-		if e.model.draft != nil && !s.draftPrefillNeeded {
+		// Only for text slots that completed draft prefill (draftNPast > 0).
+		if e.model.draft != nil && !s.draftPrefillNeeded && s.draftNPast > 0 {
 			draftTokens := e.generateDraftTokens(s)
 			if len(draftTokens) > 0 {
 				s.specBasePast = s.nPast

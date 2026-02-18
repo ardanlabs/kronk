@@ -16,6 +16,7 @@ func (e *batchEngine) prefillDraft(ctx context.Context, s *slot) error {
 	tokens := s.draftPromptTokens
 
 	if len(tokens) == 0 {
+		s.draftPrefillNeeded = false
 		return nil
 	}
 
