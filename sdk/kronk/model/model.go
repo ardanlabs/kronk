@@ -328,6 +328,14 @@ func loadDraftModel(ctx context.Context, log Logger, cfg Config, targetModel lla
 		mParams.NGpuLayers = int32(*dCfg.NGpuLayers)
 	}
 
+	if dCfg.Device != "" {
+		dev := llama.GGMLBackendDeviceByName(dCfg.Device)
+		if dev == 0 {
+			return nil, fmt.Errorf("ggml-backend-device-by-name: unknown device: %s", dCfg.Device)
+		}
+		mParams.SetDevices([]llama.GGMLBackendDevice{dev})
+	}
+
 	dModel, err := loadModelFromFiles(ctx, log, dCfg.ModelFiles, mParams)
 	if err != nil {
 		return nil, fmt.Errorf("unable to load draft model: %w", err)

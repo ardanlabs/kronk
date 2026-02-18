@@ -203,6 +203,7 @@ type DraftModelConfig struct {
 	ModelFiles []string // Path to the draft model GGUF file(s)
 	NDraft     int      // Number of tokens to draft per step (default 5)
 	NGpuLayers *int     // GPU layers for draft model (nil = all layers on GPU)
+	Device     string   // Device for draft model (e.g., "GPU1") to pin to a specific GPU
 }
 
 type Config struct {

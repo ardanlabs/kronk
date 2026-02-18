@@ -196,6 +196,7 @@ export default function DocsSDKModel() {
 	ModelFiles []string // Path to the draft model GGUF file(s)
 	NDraft     int      // Number of tokens to draft per step (default 5)
 	NGpuLayers *int     // GPU layers for draft model (nil = all layers on GPU)
+	Device     string   // Device for draft model (e.g., "GPU1") to pin to a specific GPU
 }`}</code>
               </pre>
               <p className="doc-description">DraftModelConfig configures a draft model for speculative decoding. A smaller, faster model generates candidate tokens that the target model verifies in a single forward pass. This can improve generation throughput when the draft model's predictions frequently match the target's. Requirements: - Draft and target models must share the same vocabulary (same tokenizer) - NSeqMax must be 1 (single-slot mode) - Draft model should be significantly smaller than the target (e.g., 0.6B draft for 8B target)</p>
