@@ -1001,7 +1001,113 @@ models:
     n_seq_max: 4 # 4 model instances for concurrency
 ```
 
-### 3.9 Sampling Parameters
+### 3.9 Speculative Decoding
+
+Speculative decoding uses a small, fast "draft" model to predict candidate
+tokens, then verifies them against the full "target" model in a single forward
+pass. When the draft model's predictions match the target's, multiple tokens
+are accepted per decode step — improving throughput without changing output
+quality. The output distribution is mathematically guaranteed to match the
+target model exactly, regardless of draft quality (Leviathan et al., 2023).
+
+**How It Works**
+
+1. The draft model auto-regressively generates N candidate tokens (default 5)
+2. All candidates plus the last accepted token are added to the target model's
+   batch and decoded in one forward pass
+3. Each candidate is verified using speculative sampling: accepted with
+   probability `min(1, p_target / q_draft)`, where `p_target` is the target's
+   probability and `q_draft` is the draft's probability for that token
+4. On rejection, a corrective token is sampled from `max(0, p_target - q_draft)`
+   normalized, and remaining candidates are discarded
+5. If all candidates are accepted, a bonus token is sampled from the target
+
+The speedup depends on the draft model's acceptance rate. Higher acceptance
+means more tokens per forward pass. Acceptance rates depend on:
+
+- **Draft model quality** — A larger, more capable draft produces better
+  predictions. A Q4 quantization of the same architecture tends to outperform
+  a much smaller model.
+- **Temperature** — Lower temperatures (more deterministic) yield higher
+  acceptance rates. At temperature 0.8, expect ~30% of steps to accept zero
+  draft tokens.
+- **Task type** — Predictable text (boilerplate, common patterns) accepts
+  more often than creative or reasoning-heavy output.
+
+**Requirements**
+
+- Draft and target models must share the **same vocabulary** (same tokenizer)
+- `n_seq_max` must be `1` (single-slot mode only)
+- The draft model must be downloaded and available locally
+- Only text generation is supported (not vision/audio)
+
+**Configuration**
+
+Speculative decoding is configured via the `draft-model` block in catalog
+YAML or `model_config.yaml`:
+
+```yaml
+# In a catalog YAML file
+config:
+  context-window: 32768
+  nbatch: 2048
+  nubatch: 512
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  nseq-max: 1
+  incremental-cache: true
+  draft-model:
+    model-id: Qwen3-0.6B-Q8_0     # Draft model ID (must be downloaded)
+    ndraft: 5                       # Candidates per step (default: 5)
+    ngpu-layers: 0                  # GPU layers (0=all, -1=none)
+    device: ""                      # Pin to specific GPU (e.g., "GPU1")
+```
+
+```yaml
+# In model_config.yaml
+Qwen3-8B-Q8_0:
+  incremental-cache: true
+  nseq-max: 1
+  draft-model:
+    model-id: Qwen3-0.6B-Q8_0
+    ndraft: 5
+```
+
+| Field        | YAML Key       | Default | Description                              |
+| ------------ | -------------- | ------- | ---------------------------------------- |
+| ModelID      | `model-id`     | (none)  | Draft model ID (must be downloaded)      |
+| NDraft       | `ndraft`       | 5       | Number of candidate tokens per step      |
+| NGpuLayers   | `ngpu-layers`  | 0 (all) | GPU layers for draft model               |
+| Device       | `device`       | ""      | Pin draft model to a specific GPU        |
+
+**Draft Model Selection**
+
+Choose a draft model that shares the same tokenizer family as the target.
+A quantized version of the same architecture at lower precision works well:
+
+| Target Model                              | Recommended Draft                          |
+| ----------------------------------------- | ------------------------------------------ |
+| Qwen3-8B-Q8_0                             | Qwen3-0.6B-Q8_0                           |
+| Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL  | Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL   |
+
+The second example uses the same MoE architecture at lower quantization,
+which shares more of the target's weight structure and produces higher
+acceptance rates than a smaller dense model.
+
+**Performance Characteristics**
+
+Speculative decoding helps most when the target model is large relative to the
+draft. For dense models where the target is already fast (e.g., 8B at 33+ TPS),
+the overhead of running a draft model may not provide a net speedup. MoE models
+with large parameter counts but sparse activation (e.g., 30B-A3B) are better
+candidates, but only when using a high-quality draft.
+
+The `ndraft` parameter controls how many candidates to generate. Higher values
+increase the potential speedup but also increase wasted work when predictions
+are rejected. The default of 5 is a good starting point; tune based on your
+observed acceptance rates.
+
+### 3.10 Sampling Parameters
 
 Sampling parameters control the randomness and quality of generated text.
 These are set per-request in the API call.
@@ -1073,7 +1179,7 @@ Limit the response length:
 }
 ```
 
-### 3.10 Model Config File Example
+### 3.11 Model Config File Example
 
 Create a YAML config file for custom model settings:
 

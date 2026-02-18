@@ -12,7 +12,7 @@ You wil want to look at `Chapter 17: Developer Guide` for detailed information a
 | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | [Chapter 1: Introduction](MANUAL.md#chapter-1-introduction)                            | What is Kronk (SDK + Server), key features, supported platforms, architecture overview         |
 | [Chapter 2: Installation & Quick Start](MANUAL.md#chapter-2-installation--quick-start) | Prerequisites, CLI install, libraries, downloading models, starting server                     |
-| [Chapter 3: Model Configuration](MANUAL.md#chapter-3-model-configuration)              | GPU config, KV cache, flash attention, NSeqMax, VRAM estimation, GGUF quantization guide       |
+| [Chapter 3: Model Configuration](MANUAL.md#chapter-3-model-configuration)              | GPU config, KV cache, flash attention, NSeqMax, VRAM estimation, GGUF quantization, speculative decoding |
 | [Chapter 4: Batch Processing](MANUAL.md#chapter-4-batch-processing)                    | Slots, sequences, request flow, memory overhead, concurrency by model type                     |
 | [Chapter 5: Message Caching](MANUAL.md#chapter-5-message-caching)                      | System Prompt Cache (SPC), Incremental Message Cache (IMC), multi-user IMC, cache invalidation |
 | [Chapter 6: YaRN Extended Context](MANUAL.md#chapter-6-yarn-extended-context)          | RoPE scaling, YaRN configuration, context extension                                            |

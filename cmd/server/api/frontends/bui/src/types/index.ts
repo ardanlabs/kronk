@@ -81,6 +81,14 @@ export interface ModelConfig {
   'yarn-beta-fast': number | null;
   'yarn-beta-slow': number | null;
   'yarn-orig-ctx': number | null;
+
+  // Speculative decoding (draft model).
+  'draft-model'?: {
+    'model-id': string;
+    ndraft: number;
+    'ngpu-layers': number | null;
+    device?: string;
+  };
 }
 
 export interface ModelInfoResponse {
