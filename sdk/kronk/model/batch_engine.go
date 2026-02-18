@@ -166,6 +166,19 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	// Clear the batch.
 	e.batch.Clear()
 
+	// Prefill draft model for slots that just completed target prefill.
+	if e.model.draft != nil {
+		for _, s := range e.slots {
+			if !s.active || !s.prefillDone || !s.draftPrefillNeeded {
+				continue
+			}
+
+			if err := e.prefillDraft(ctx, s); err != nil {
+				e.finishSlot(s, err)
+			}
+		}
+	}
+
 	// Add generation tokens first. Each slot that has completed prefill needs
 	// exactly 1 token in the batch. Adding these before prefill chunks ensures
 	// addPrefillChunk sees the correct available space and won't overflow.
@@ -178,6 +191,27 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 		if s.job.ctx.Err() != nil {
 			e.finishSlot(s, s.job.ctx.Err())
 			continue
+		}
+
+		// Speculative decoding: generate draft tokens and add them all
+		// to the shared batch for verification in a single forward pass.
+		if e.model.draft != nil && !s.draftPrefillNeeded {
+			draftTokens := e.generateDraftTokens(s)
+			if len(draftTokens) > 0 {
+				s.specBasePast = s.nPast
+				s.specBaseBatch = e.batch.NTokens
+				s.specDraftTokens = draftTokens
+
+				// Add s.sampled + all draft tokens with logits=true.
+				e.batch.Add(s.sampled, s.nPast, s.seqIDs, true)
+				for i, tok := range draftTokens {
+					e.batch.Add(tok, s.nPast+llama.Pos(1+i), s.seqIDs, true)
+				}
+
+				// Don't advance nPast here — verification handles it.
+				s.iBatch = -1
+				continue
+			}
 		}
 
 		s.iBatch = e.batch.NTokens
@@ -280,9 +314,19 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 		return
 	}
 
-	// Sample tokens for each active slot.
+	// Verify speculative tokens or sample normally for each active slot.
 	for _, s := range e.slots {
-		if s.iBatch < 0 || !s.active {
+		if !s.active {
+			continue
+		}
+
+		// Speculative path: verify draft tokens against target predictions.
+		if s.specDraftTokens != nil {
+			e.verifySpeculativeTokens(s, buf)
+			continue
+		}
+
+		if s.iBatch < 0 {
 			continue
 		}
 

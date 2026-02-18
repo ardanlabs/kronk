@@ -364,6 +364,25 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 		return false
 	}
 
+	// Store full prompt tokens for draft model prefill if speculative decoding
+	// is enabled. The draft model needs all tokens (cached + new suffix) to
+	// build its KV cache after the target's prefill completes.
+	if e.model.draft != nil {
+		if job.imcCacheHit && s.id < len(e.model.imcSlots) {
+			e.model.cacheMu.RLock()
+			cached := e.model.imcSlots[s.id].cachedTokens
+			e.model.cacheMu.RUnlock()
+
+			s.draftPromptTokens = make([]llama.Token, len(cached)+len(tokens))
+			copy(s.draftPromptTokens, cached)
+			copy(s.draftPromptTokens[len(cached):], tokens)
+		} else {
+			s.draftPromptTokens = make([]llama.Token, len(tokens))
+			copy(s.draftPromptTokens, tokens)
+		}
+		s.draftPrefillNeeded = true
+	}
+
 	// Store tokens for chunked prefill.
 	s.prefillTokens = tokens
 	s.nPrefilled = 0

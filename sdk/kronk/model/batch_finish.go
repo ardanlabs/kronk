@@ -57,6 +57,11 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		elapsed = time.Since(s.startTime)
 	}
 
+	// Clear draft model KV for this slot's sequence.
+	if e.model.draft != nil {
+		llama.MemorySeqRm(e.model.draft.mem, s.seqID, -1, -1)
+	}
+
 	// IMC dedicated slot mode: trim generated tokens but keep cached prefix.
 	// Non-IMC mode: clear the entire sequence.
 	if e.model.cfg.IncrementalCache && s.job.imcCacheHit {

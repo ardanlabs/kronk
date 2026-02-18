@@ -33,6 +33,7 @@ const (
 	defMinCacheTokens = 100
 	defThreadZero     = 0
 	defNSeqMax        = 1
+	defNDraft         = 5
 )
 
 // Logger provides a function for logging messages from different APIs.
@@ -188,6 +189,22 @@ type Logger func(ctx context.Context, msg string, args ...any)
 //
 // YarnOrigCtx sets the original training context size for YaRN scaling. When nil
 // or 0, uses the model's native training context length from metadata.
+
+// DraftModelConfig configures a draft model for speculative decoding. A smaller,
+// faster model generates candidate tokens that the target model verifies in a
+// single forward pass. This can improve generation throughput when the draft
+// model's predictions frequently match the target's.
+//
+// Requirements:
+//   - Draft and target models must share the same vocabulary (same tokenizer)
+//   - NSeqMax must be 1 (single-slot mode)
+//   - Draft model should be significantly smaller than the target (e.g., 0.6B draft for 8B target)
+type DraftModelConfig struct {
+	ModelFiles []string // Path to the draft model GGUF file(s)
+	NDraft     int      // Number of tokens to draft per step (default 5)
+	NGpuLayers *int     // GPU layers for draft model (nil = all layers on GPU)
+}
+
 type Config struct {
 	CacheMinTokens       int
 	CacheTypeK           GGMLType
@@ -222,6 +239,7 @@ type Config struct {
 	YarnBetaSlow         *float32
 	YarnExtFactor        *float32
 	YarnOrigCtx          *int
+	DraftModel           *DraftModelConfig
 }
 
 func (cfg Config) String() string {
@@ -246,14 +264,14 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("%d", *p)
 	}
 
-	return fmt.Sprintf("\nCacheMinTokens[%d]\nCacheTypeK[%d]\nCacheTypeV[%d]\nContextWindow[%d]\nDevice[%s]\nFlashAttention[%d]\nIgnoreIntegrityCheck[%t]\nIncrementalCache[%t]\nInsecureLogging[%t]\nJinjaFile[%s]\nModelFiles[%v]\nNBatch[%d]\nNGpuLayers[%s]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nOffloadKQV[%s]\nOpOffload[%s]\nProjFile[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSplitMode[%d]\nSystemPromptCache[%t]\nUseDirectIO[%t]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\n",
+	return fmt.Sprintf("\nCacheMinTokens[%d]\nCacheTypeK[%d]\nCacheTypeV[%d]\nContextWindow[%d]\nDevice[%s]\nFlashAttention[%d]\nIgnoreIntegrityCheck[%t]\nIncrementalCache[%t]\nInsecureLogging[%t]\nJinjaFile[%s]\nModelFiles[%v]\nNBatch[%d]\nNGpuLayers[%s]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nOffloadKQV[%s]\nOpOffload[%s]\nProjFile[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSplitMode[%d]\nSystemPromptCache[%t]\nUseDirectIO[%t]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
 		cfg.CacheMinTokens, cfg.CacheTypeK, cfg.CacheTypeV, cfg.ContextWindow, cfg.Device, cfg.FlashAttention, cfg.IgnoreIntegrityCheck,
 		cfg.IncrementalCache, cfg.InsecureLogging, cfg.JinjaFile, cfg.ModelFiles, cfg.NBatch,
 		formatIntPtr(cfg.NGpuLayers), cfg.NSeqMax, cfg.NThreads, cfg.NThreadsBatch, cfg.NUBatch,
 		formatBoolPtr(cfg.OffloadKQV), formatBoolPtr(cfg.OpOffload), cfg.ProjFile,
 		formatFloat32Ptr(cfg.RopeFreqBase), formatFloat32Ptr(cfg.RopeFreqScale), cfg.RopeScaling, cfg.SplitMode,
 		cfg.SystemPromptCache, cfg.UseDirectIO, formatFloat32Ptr(cfg.YarnAttnFactor),
-		formatFloat32Ptr(cfg.YarnBetaFast), formatFloat32Ptr(cfg.YarnBetaSlow), formatFloat32Ptr(cfg.YarnExtFactor), formatIntPtr(cfg.YarnOrigCtx))
+		formatFloat32Ptr(cfg.YarnBetaFast), formatFloat32Ptr(cfg.YarnBetaSlow), formatFloat32Ptr(cfg.YarnExtFactor), formatIntPtr(cfg.YarnOrigCtx), cfg.DraftModel)
 }
 
 func validateConfig(ctx context.Context, cfg Config, log Logger) error {
@@ -263,6 +281,23 @@ func validateConfig(ctx context.Context, cfg Config, log Logger) error {
 
 	if cfg.SystemPromptCache && cfg.IncrementalCache {
 		return fmt.Errorf("validate-config: cannot enable both SystemPromptCache and IncrementalCache; use IncrementalCache alone (it includes the system prompt)")
+	}
+
+	if cfg.DraftModel != nil {
+		if len(cfg.DraftModel.ModelFiles) == 0 {
+			return fmt.Errorf("validate-config: draft model requires model files")
+		}
+		if cfg.NSeqMax > 1 {
+			return fmt.Errorf("validate-config: speculative decoding requires NSeqMax=1, got %d", cfg.NSeqMax)
+		}
+		if !cfg.IgnoreIntegrityCheck {
+			for _, modelFile := range cfg.DraftModel.ModelFiles {
+				log(ctx, "validate-config", "draft-model-file", modelFile)
+				if err := CheckModel(modelFile, true); err != nil {
+					return fmt.Errorf("validate-config: draft model: %w", err)
+				}
+			}
+		}
 	}
 
 	if !cfg.IgnoreIntegrityCheck {
@@ -326,6 +361,10 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 	// Default minimum tokens for caching.
 	if (cfg.SystemPromptCache || cfg.IncrementalCache) && cfg.CacheMinTokens <= 0 {
 		cfg.CacheMinTokens = defMinCacheTokens
+	}
+
+	if cfg.DraftModel != nil && cfg.DraftModel.NDraft <= 0 {
+		cfg.DraftModel.NDraft = defNDraft
 	}
 
 	return cfg
@@ -415,6 +454,9 @@ func applyCatalogConfig(user Config, cat Config) Config {
 	}
 	if user.YarnOrigCtx == nil {
 		user.YarnOrigCtx = cat.YarnOrigCtx
+	}
+	if user.DraftModel == nil {
+		user.DraftModel = cat.DraftModel
 	}
 
 	user.DefaultParams = applyCatalogSamplingParams(user.DefaultParams, cat.DefaultParams)

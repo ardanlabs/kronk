@@ -62,6 +62,7 @@ import (
 // Test setup - model path resolved once
 
 var benchModelPath models.Path
+var benchDraftModelPath models.Path
 
 func TestMain(m *testing.M) {
 	mdls, err := models.New()
@@ -71,6 +72,11 @@ func TestMain(m *testing.M) {
 	}
 
 	benchModelPath = mdls.MustFullPath("Qwen3-8B-Q8_0")
+
+	// Draft model is optional — only needed for BenchmarkIMCSpeculative.
+	if dp, err := mdls.FullPath("Qwen3-0.6B-Q8_0"); err == nil {
+		benchDraftModelPath = dp
+	}
 
 	ctlg, err := catalog.New()
 	if err != nil {
@@ -1586,5 +1592,35 @@ func BenchmarkSPC(b *testing.B) {
 
 func BenchmarkIMC(b *testing.B) {
 	krn := withBenchModel(b, cfgIMC())
+	benchChat(b, krn, benchDoc())
+}
+
+// =============================================================================
+// Benchmarks: IMC + Speculative Decoding
+
+func cfgIMCSpeculative() model.Config {
+	draftPath := benchDraftModelPath.ModelFiles
+
+	return model.Config{
+		ModelFiles:       benchModelPath.ModelFiles,
+		ContextWindow:    benchContextWindow,
+		NBatch:           2048,
+		NUBatch:          512,
+		CacheTypeK:       model.GGMLTypeQ8_0,
+		CacheTypeV:       model.GGMLTypeQ8_0,
+		NSeqMax:          1,
+		IncrementalCache: true,
+		DraftModel: &model.DraftModelConfig{
+			ModelFiles: draftPath,
+			NDraft:     5,
+		},
+	}
+}
+
+func BenchmarkIMCSpeculative(b *testing.B) {
+	if len(benchDraftModelPath.ModelFiles) == 0 {
+		b.Skip("draft model Qwen3-0.6B-Q8_0 not downloaded")
+	}
+	krn := withBenchModel(b, cfgIMCSpeculative())
 	benchChat(b, krn, benchDoc())
 }
