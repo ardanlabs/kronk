@@ -99,6 +99,37 @@ func logSoftmax(logits []float32) []float32 {
 	return result
 }
 
+// softmax converts raw logits to a probability distribution.
+// softmax(x_i) = exp(x_i - max) / sum(exp(x_j - max))
+// Uses the max-subtraction trick for numerical stability.
+func softmax(logits []float32) []float32 {
+	if len(logits) == 0 {
+		return nil
+	}
+
+	maxLogit := logits[0]
+	for _, l := range logits[1:] {
+		if l > maxLogit {
+			maxLogit = l
+		}
+	}
+
+	probs := make([]float32, len(logits))
+	var sum float64
+	for i, l := range logits {
+		p := math.Exp(float64(l - maxLogit))
+		probs[i] = float32(p)
+		sum += p
+	}
+
+	invSum := float32(1.0 / sum)
+	for i := range probs {
+		probs[i] *= invSum
+	}
+
+	return probs
+}
+
 // getTopKLogprobs returns the top-k tokens by log probability.
 // Uses a min-heap to efficiently find top-k without sorting the entire vocab.
 func getTopKLogprobs(vocab llama.Vocab, logprobs []float32, k int, buf []byte) []TopLogprob {

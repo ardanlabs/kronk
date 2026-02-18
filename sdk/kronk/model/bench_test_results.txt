@@ -4,6 +4,8 @@ Model       : Qwen3-8B-Q8_0
 ContextWin  : 32k
 Conversation: 23443 tokens (107771 chars, 38 messages)
 Sys Prompt  : 8241 tokens (39322 chars)
+prompt-tok  : 23636 tokens
+output-tok  : 128 tokens
 Benchtime   : 3x
 Timeout     : 30m
 llamap.cpp  : b8070
@@ -16,12 +18,10 @@ BenchmarkNonCaching-16  3   91258955014 ns/op   1167061 B/op    9070 allocs/op
 BenchmarkSPC-16         3   62552435931 ns/op    990240 B/op    8944 allocs/op
 BenchmarkIMC-16         3    4099335542 ns/op    138805 B/op    3949 allocs/op
 --------------------------------------------------------------------------------
-No Caching          SPC                 IMC                 
-23636 prompt-tok    23636 prompt-tok    23603 prompt-tok
-  128 output-tok      128 output-tok      128 output-tok
-28.77 tok/s         29.01 tok/s         32.41 tok/s
-80177 total-ms      63758 total-ms       4100 total-ms
-75824 ttft-ms       59442 ttft-ms         240 ttft-ms
+No Caching          SPC                IMC                 
+28.77 tok/s         29.01 tok/s        32.41 tok/s
+75824 ttft-ms       59442 ttft-ms        240 ttft-ms
+80177 total-ms      63758 total-ms      4100 total-ms
 
 
 Feb 16th, 2026 : v1.19.2
@@ -29,6 +29,8 @@ Model       : Qwen3-8B-Q8_0
 ContextWin  : 32k
 Conversation: 23443 tokens (107771 chars, 38 messages)
 Sys Prompt  : 8241 tokens (39322 chars)
+prompt-tok  : 23636 tokens
+output-tok  : 128 tokens
 Benchtime   : 3x
 Timeout     : 30m
 llamap.cpp  : b8070
@@ -41,9 +43,7 @@ BenchmarkNonCaching-16  3   98596664806 ns/op   1169250 B/op    9079 allocs/op
 BenchmarkSPC-16         3   71905155792 ns/op    978493 B/op    8948 allocs/op
 BenchmarkIMC-16         3    4256359542 ns/op    152352 B/op    3944 allocs/op
 --------------------------------------------------------------------------------
-No Caching          SPC                 IMC                 
-23636 prompt-tok    23636 prompt-tok    23603 prompt-tok
-  128 output-tok      128 output-tok      128 output-tok
-28.73 tok/s         29.08 tok/s         31.70 tok/s
-85048 total-ms      67335 total-ms       4220 total-ms
-80689 ttft-ms       63030 ttft-ms         276 ttft-ms
+No Caching          SPC                IMC                 
+28.73 tok/s         29.08 tok/s        31.70 tok/s
+80689 ttft-ms       63030 ttft-ms        276 ttft-ms
+85048 total-ms      67335 total-ms      4220 total-ms

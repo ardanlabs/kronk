@@ -57,9 +57,19 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		elapsed = time.Since(s.startTime)
 	}
 
-	// Clear draft model KV for this slot's sequence.
+	// Trim generated tokens from draft KV, keeping the cached prompt prefix
+	// for incremental reuse on the next request.
 	if e.model.draft != nil {
-		llama.MemorySeqRm(e.model.draft.mem, s.seqID, -1, -1)
+		trimPos := llama.Pos(len(e.model.draft.cachedTokens))
+		if trimPos > 0 {
+			llama.MemorySeqRm(e.model.draft.mem, s.seqID, trimPos, -1)
+			e.model.log(ctx, "speculative", "status", "draft-kv-trimmed",
+				"slot", slotID, "seq", seqID, "trim_pos", trimPos)
+		} else {
+			llama.MemorySeqRm(e.model.draft.mem, s.seqID, -1, -1)
+			e.model.log(ctx, "speculative", "status", "draft-kv-cleared",
+				"slot", slotID, "seq", seqID)
+		}
 	}
 
 	// IMC dedicated slot mode: trim generated tokens but keep cached prefix.

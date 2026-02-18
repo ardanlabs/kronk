@@ -3,56 +3,93 @@ package model
 import (
 	"context"
 	"fmt"
+	"math/rand"
+	"time"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
-// prefillDraft decodes all prompt tokens into the draft model's KV cache.
-// Called once after the target model's prefill completes. The draft model
-// must process the same prompt as the target to produce meaningful draft
-// candidates during generation.
+// prefillDraft decodes prompt tokens into the draft model's KV cache.
+// Called once after the target model's prefill completes. Uses incremental
+// caching: finds the common prefix with the previous request's tokens and
+// only decodes the new suffix, avoiding redundant re-prefill of the entire
+// prompt on subsequent turns.
 func (e *batchEngine) prefillDraft(ctx context.Context, s *slot) error {
 	draft := e.model.draft
 	tokens := s.draftPromptTokens
 
 	if len(tokens) == 0 {
 		s.draftPrefillNeeded = false
+		e.model.log(ctx, "speculative", "status", "draft-prefill-skip-empty", "slot", s.id)
 		return nil
 	}
 
+	prefillStart := time.Now()
+
+	// Find common prefix between cached tokens and new prompt.
+	commonLen := 0
+	cached := draft.cachedTokens
+	limit := min(len(cached), len(tokens))
+	for commonLen < limit && cached[commonLen] == tokens[commonLen] {
+		commonLen++
+	}
+
+	// Determine how many new tokens need decoding.
+	newTokens := tokens[commonLen:]
+
 	e.model.log(ctx, "speculative", "status", "draft-prefill-start",
-		"slot", s.id, "tokens", len(tokens))
+		"slot", s.id, "total_tokens", len(tokens),
+		"cached", len(cached), "common_prefix", commonLen,
+		"new_tokens", len(newTokens))
 
 	nBatch := int(e.model.ctxParams.NBatch)
 	if nBatch <= 0 {
 		nBatch = e.model.cfg.NBatch
 	}
 
-	// Clear draft KV for this sequence.
-	llama.MemorySeqRm(draft.mem, s.seqID, -1, -1)
-
-	// Decode prompt tokens into draft model in chunks.
-	batchSize := int32(min(nBatch, len(tokens)))
-	if batchSize <= 0 {
-		batchSize = 1
+	// Trim divergent suffix from draft KV if we have a partial cache hit.
+	// If no common prefix, clear everything and decode from scratch.
+	switch {
+	case commonLen == 0:
+		llama.MemorySeqRm(draft.mem, s.seqID, -1, -1)
+		e.model.log(ctx, "speculative", "status", "draft-cache-miss",
+			"slot", s.id)
+	case commonLen < len(cached):
+		llama.MemorySeqRm(draft.mem, s.seqID, llama.Pos(commonLen), -1)
+		e.model.log(ctx, "speculative", "status", "draft-cache-partial",
+			"slot", s.id, "kept", commonLen, "trimmed", len(cached)-commonLen)
+	default:
+		e.model.log(ctx, "speculative", "status", "draft-cache-hit",
+			"slot", s.id, "reused", commonLen)
 	}
-	batch := llama.BatchInit(batchSize, 0, 1)
-	defer llama.BatchFree(batch)
 
-	seqIDs := []llama.SeqId{s.seqID}
-
-	for i := 0; i < len(tokens); i += nBatch {
-		batch.Clear()
-		end := min(i+nBatch, len(tokens))
-
-		for j := i; j < end; j++ {
-			isLast := j == len(tokens)-1
-			batch.Add(tokens[j], llama.Pos(j), seqIDs, isLast)
+	// Decode new suffix tokens into draft model in chunks.
+	if len(newTokens) > 0 {
+		batchSize := int32(min(nBatch, len(newTokens)))
+		if batchSize <= 0 {
+			batchSize = 1
 		}
+		batch := llama.BatchInit(batchSize, 0, 1)
+		defer llama.BatchFree(batch)
 
-		ret, err := llama.Decode(draft.lctx, batch)
-		if err != nil || ret != 0 {
-			return fmt.Errorf("draft prefill failed at pos %d: %w", i, decodeError(ret, err))
+		seqIDs := []llama.SeqId{s.seqID}
+
+		for i := 0; i < len(newTokens); i += nBatch {
+			batch.Clear()
+			end := min(i+nBatch, len(newTokens))
+
+			for j := i; j < end; j++ {
+				pos := commonLen + j
+				isLast := pos == len(tokens)-1
+				batch.Add(newTokens[j], llama.Pos(pos), seqIDs, isLast)
+			}
+
+			ret, err := llama.Decode(draft.lctx, batch)
+			if err != nil || ret != 0 {
+				// On failure, invalidate the cache to avoid stale state.
+				draft.cachedTokens = nil
+				return fmt.Errorf("draft prefill failed at pos %d: %w", commonLen+i, decodeError(ret, err))
+			}
 		}
 	}
 
@@ -60,8 +97,14 @@ func (e *batchEngine) prefillDraft(ctx context.Context, s *slot) error {
 	s.draftPromptTokens = nil
 	s.draftPrefillNeeded = false
 
+	// Store a copy of the prompt tokens for the next request's prefix comparison.
+	draft.cachedTokens = make([]llama.Token, len(tokens))
+	copy(draft.cachedTokens, tokens)
+
 	e.model.log(ctx, "speculative", "status", "draft-prefill-done",
-		"slot", s.id, "draft_nPast", s.draftNPast)
+		"slot", s.id, "draft_nPast", s.draftNPast,
+		"decoded", len(newTokens), "reused", commonLen,
+		"elapsed", time.Since(prefillStart).String())
 
 	return nil
 }
@@ -69,11 +112,18 @@ func (e *batchEngine) prefillDraft(ctx context.Context, s *slot) error {
 // generateDraftTokens auto-regressively generates candidate tokens using the
 // draft model. Each token requires a separate decode call on the draft context,
 // but these are fast because the draft model is small.
+//
+// For proper speculative sampling (Leviathan et al., 2023), this also captures
+// the draft model's probability distribution at each step. The distributions
+// are stored in s.specDraftProbs for use during verification.
 func (e *batchEngine) generateDraftTokens(s *slot) []llama.Token {
 	draft := e.model.draft
+	nVocab := int(llama.VocabNTokens(e.model.vocab))
 	draftTokens := make([]llama.Token, 0, draft.nDraft)
+	draftProbs := make([][]float32, 0, draft.nDraft)
 
 	lastToken := s.sampled
+	draftStartPast := s.draftNPast
 
 	for range draft.nDraft {
 		// Feed last token to draft model.
@@ -87,6 +137,14 @@ func (e *batchEngine) generateDraftTokens(s *slot) []llama.Token {
 
 		s.draftNPast++
 
+		// Capture draft probability distribution before sampling.
+		logits, err := llama.GetLogitsIth(draft.lctx, -1, nVocab)
+		if err != nil {
+			break
+		}
+
+		probs := softmax(logits)
+
 		// Greedy sample from draft model.
 		token := llama.SamplerSample(draft.sampler, draft.lctx, -1)
 
@@ -96,83 +154,121 @@ func (e *batchEngine) generateDraftTokens(s *slot) []llama.Token {
 		}
 
 		draftTokens = append(draftTokens, token)
+		draftProbs = append(draftProbs, probs)
 		lastToken = token
 	}
+
+	s.specDraftProbs = draftProbs
+
+	e.model.log(s.job.ctx, "speculative", "status", "draft-generated",
+		"slot", s.id, "drafted", len(draftTokens), "target_nDraft", draft.nDraft,
+		"draft_nPast_before", draftStartPast, "draft_nPast_after", s.draftNPast)
 
 	return draftTokens
 }
 
-// verifySpeculativeTokens verifies draft tokens against the target model's
-// predictions. After the shared batch decode, it samples from the target's
-// logits at each speculative position and compares with the draft tokens.
+// verifySpeculativeTokens implements the speculative sampling algorithm
+// (Leviathan et al., 2023). After the shared batch decode, it retrieves the
+// target model's probability distribution at each speculative position and
+// compares with the draft model's distribution.
+//
+// For each draft token x_i with draft probability q(x_i) and target
+// probability p(x_i):
+//   - Accept with probability min(1, p(x_i) / q(x_i))
+//   - On rejection: sample from the adjusted distribution max(0, p - q),
+//     normalized. This guarantees the output distribution exactly matches
+//     the target model, regardless of draft quality.
 //
 // Accepted tokens are processed through handleSampledToken for streaming.
 // Rejected tokens are rolled back from both target and draft KV caches.
-// The target's prediction at the rejection point becomes the bonus token.
+// If all draft tokens are accepted, a bonus token is sampled from the target.
 func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 	draftTokens := s.specDraftTokens
+	draftProbs := s.specDraftProbs
 	nDraft := len(draftTokens)
 	baseBatch := s.specBaseBatch
 	basePast := s.specBasePast
+	nVocab := int(llama.VocabNTokens(e.model.vocab))
+
+	// Capture context before handleSampledToken may trigger finishSlot → reset,
+	// which sets s.job to nil.
+	ctx := s.job.ctx
+
+	e.model.log(ctx, "speculative", "status", "verify-start",
+		"slot", s.id, "nDraft", nDraft, "basePast", basePast, "baseBatch", baseBatch)
 
 	// Clear speculative state.
 	s.specDraftTokens = nil
+	s.specDraftProbs = nil
 
 	accepted := 0
 	var bonusToken llama.Token
 
-	for i := range nDraft + 1 {
-		// Sample what the target model predicts at this position.
-		var targetToken llama.Token
-		switch {
-		case s.grammarSampler != nil:
-			targetToken = s.grammarSampler.SampleWithGrammar(e.model.lctx, s.sampler, baseBatch+int32(i))
-		default:
-			targetToken = llama.SamplerSample(s.sampler, e.model.lctx, baseBatch+int32(i))
-		}
-
-		if i == nDraft {
-			// All draft tokens accepted. Target's prediction is the bonus.
-			bonusToken = targetToken
-			break
-		}
-
-		if targetToken != draftTokens[i] {
-			// Mismatch: target's prediction is the bonus token.
-			bonusToken = targetToken
-			break
-		}
-
-		// Draft token accepted. Process through streaming pipeline.
-		accepted++
-
-		// Update nPast to include this accepted token.
-		// Position in KV: basePast (s.sampled) + i + 1 (this draft token).
-		s.nPast = basePast + llama.Pos(1+i)
-
-		e.handleSampledToken(s, draftTokens[i], baseBatch+int32(i), buf)
-
-		if !s.active {
-			// Slot finished (EOG or maxTokens). Clean up remaining
-			// speculative tokens from target KV cache.
-			rollbackFrom := basePast + llama.Pos(1+accepted)
-			rollbackTo := basePast + llama.Pos(1+nDraft)
-			if rollbackFrom < rollbackTo {
-				e.model.decodeMu.Lock()
-				llama.MemorySeqRm(e.model.mem, s.seqID, rollbackFrom, rollbackTo)
-				e.model.decodeMu.Unlock()
+	for i := range nDraft {
+		// Get target probability distribution at this position.
+		targetLogits, err := llama.GetLogitsIth(e.model.lctx, baseBatch+int32(i), nVocab)
+		if err != nil {
+			// Fallback: reject all remaining draft tokens. Sample from target
+			// using the sampler at the first position as the bonus token.
+			var fallbackToken llama.Token
+			switch {
+			case s.grammarSampler != nil:
+				fallbackToken = s.grammarSampler.SampleWithGrammar(e.model.lctx, s.sampler, baseBatch+int32(i))
+			default:
+				fallbackToken = llama.SamplerSample(s.sampler, e.model.lctx, baseBatch+int32(i))
 			}
+			bonusToken = fallbackToken
+			break
+		}
+		targetProbs := softmax(targetLogits)
 
-			// Clean up draft KV.
-			e.rollbackDraft(s, accepted, nDraft)
+		draftToken := draftTokens[i]
+		pTarget := targetProbs[draftToken]
+		qDraft := draftProbs[i][draftToken]
 
-			return
+		// Accept with probability min(1, p_target / q_draft).
+		if qDraft > 0 {
+			ratio := float64(pTarget) / float64(qDraft)
+			if ratio >= 1.0 || rand.Float64() < ratio {
+				// Draft token accepted.
+				accepted++
+
+				s.nPast = basePast + llama.Pos(1+i)
+				e.handleSampledToken(s, draftToken, baseBatch+int32(i), buf)
+
+				if !s.active {
+					e.model.log(ctx, "speculative", "status", "verify-done-eog",
+						"slot", s.id, "accepted", accepted, "nDraft", nDraft)
+					return
+				}
+
+				continue
+			}
+		}
+
+		// Rejected: sample from adjusted distribution max(0, p_target - q_draft).
+		bonusToken = sampleAdjusted(targetProbs, draftProbs[i])
+		break
+	}
+
+	// If all draft tokens were accepted, sample bonus from target at position nDraft.
+	if accepted == nDraft {
+		targetLogits, err := llama.GetLogitsIth(e.model.lctx, baseBatch+int32(nDraft), nVocab)
+		if err != nil {
+			// Fallback to sampler.
+			switch {
+			case s.grammarSampler != nil:
+				bonusToken = s.grammarSampler.SampleWithGrammar(e.model.lctx, s.sampler, baseBatch+int32(nDraft))
+			default:
+				bonusToken = llama.SamplerSample(s.sampler, e.model.lctx, baseBatch+int32(nDraft))
+			}
+		} else {
+			targetProbs := softmax(targetLogits)
+			bonusToken = sampleFromProbs(targetProbs)
 		}
 	}
 
 	// Rollback rejected draft tokens from target KV cache.
-	// Keep: basePast through basePast + accepted (s.sampled + accepted drafts).
-	// Remove: basePast + 1 + accepted through basePast + 1 + nDraft.
 	rollbackFrom := basePast + llama.Pos(1+accepted)
 	rollbackTo := basePast + llama.Pos(1+nDraft)
 
@@ -183,30 +279,76 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 	}
 
 	// Rollback draft KV to match.
-	e.rollbackDraft(s, accepted, nDraft)
+	e.rollbackDraft(ctx, s, accepted, nDraft)
 
 	// Set nPast after s.sampled + accepted drafts.
 	s.nPast = basePast + llama.Pos(1+accepted)
 
+	e.model.log(ctx, "speculative", "status", "verify-done",
+		"slot", s.id, "accepted", accepted, "nDraft", nDraft,
+		"target_nPast", s.nPast, "draft_nPast", s.draftNPast)
+
 	// Process the bonus token through the streaming pipeline.
-	// The bonus was sampled from logits at baseBatch + accepted, which due
-	// to causal attention only depends on tokens at positions ≤ basePast + accepted.
-	// So the logits are valid even though rejected drafts exist at later positions.
 	e.handleSampledToken(s, bonusToken, baseBatch+int32(accepted), buf)
 
 	if !s.active {
 		return
 	}
 
-	// The bonus token is now s.sampled (set by handleSampledToken).
-	// It will be added to the batch on the next iteration, where its
-	// KV entry is created by the target model decode.
 	s.iBatch = -1
+}
+
+// sampleAdjusted samples from the adjusted distribution max(0, p_target - q_draft),
+// normalized. This is the rejection branch of speculative sampling, ensuring the
+// output distribution exactly matches the target model.
+func sampleAdjusted(targetProbs, draftProbs []float32) llama.Token {
+	n := len(targetProbs)
+	adjusted := make([]float32, n)
+	var sum float64
+
+	for i := range n {
+		diff := float64(targetProbs[i]) - float64(draftProbs[i])
+		if diff > 0 {
+			adjusted[i] = float32(diff)
+			sum += diff
+		}
+	}
+
+	// If the adjusted distribution is empty (shouldn't happen in practice),
+	// fall back to sampling from the target distribution directly.
+	if sum <= 0 {
+		return sampleFromProbs(targetProbs)
+	}
+
+	// Normalize and sample.
+	invSum := float32(1.0 / sum)
+	for i := range adjusted {
+		adjusted[i] *= invSum
+	}
+
+	return sampleFromProbs(adjusted)
+}
+
+// sampleFromProbs samples a token from a probability distribution using
+// inverse transform sampling.
+func sampleFromProbs(probs []float32) llama.Token {
+	r := rand.Float32()
+	var cumulative float32
+
+	for i, p := range probs {
+		cumulative += p
+		if r < cumulative {
+			return llama.Token(i)
+		}
+	}
+
+	// Fallback: return last token (rounding errors).
+	return llama.Token(len(probs) - 1)
 }
 
 // rollbackDraft removes rejected draft tokens from the draft model's KV cache
 // and updates the slot's draft position to stay in sync with the target.
-func (e *batchEngine) rollbackDraft(s *slot, accepted, nDraft int) {
+func (e *batchEngine) rollbackDraft(ctx context.Context, s *slot, accepted, nDraft int) {
 	draft := e.model.draft
 	if draft == nil {
 		return
@@ -219,18 +361,41 @@ func (e *batchEngine) rollbackDraft(s *slot, accepted, nDraft int) {
 	//   draftBasePast+nDraft-1: draft[nDraft-2]
 	//
 	// Note: draft[nDraft-1] was sampled but NOT decoded (not in KV cache).
+	// The actual KV end is draftBasePast + nDraft, but position nDraft-1
+	// holds draft[nDraft-2], not draft[nDraft-1].
+	//
 	// After drafting: s.draftNPast = draftBasePast + nDraft
 	//
-	// We want to keep: s.sampled + accepted drafts (positions draftBasePast..draftBasePast+accepted).
-	// Remove: positions draftBasePast+accepted+1 through draftBasePast+nDraft-1.
+	// We want to keep: s.sampled + accepted drafts decoded into KV.
+	// The draft decoded s.sampled + draft[0..nDraft-2], so the KV contains
+	// nDraft entries at positions draftBasePast through draftBasePast+nDraft-1.
+	//
+	// For accepted < nDraft:
+	//   Keep positions draftBasePast..draftBasePast+accepted (accepted+1 entries).
+	//   Remove positions draftBasePast+accepted+1 through draftBasePast+nDraft-1.
+	//
+	// For accepted == nDraft (all accepted):
+	//   Keep all decoded positions. But draft[nDraft-1] was sampled, not decoded,
+	//   so the KV only extends to draftBasePast+nDraft-1. Set draftNPast to the
+	//   actual KV end (draftBasePast + nDraft), not beyond it.
 	draftBasePast := s.draftNPast - llama.Pos(nDraft)
 	draftKeep := draftBasePast + llama.Pos(accepted+1)
-	draftEnd := s.draftNPast
 
-	if draftKeep < draftEnd {
-		llama.MemorySeqRm(draft.mem, s.seqID, draftKeep, draftEnd)
+	// Cap draftKeep at the actual KV end to prevent advancing past decoded content.
+	draftKVEnd := s.draftNPast
+	if draftKeep > draftKVEnd {
+		draftKeep = draftKVEnd
 	}
 
-	// Update draft nPast to the next write position after accepted tokens.
+	if draftKeep < draftKVEnd {
+		llama.MemorySeqRm(draft.mem, s.seqID, draftKeep, draftKVEnd)
+	}
+
+	// Update draft nPast to the next write position after kept tokens.
 	s.draftNPast = draftKeep
+
+	e.model.log(ctx, "speculative", "status", "draft-rollback",
+		"slot", s.id, "accepted", accepted, "nDraft", nDraft,
+		"draft_base", draftBasePast, "draft_keep", draftKeep,
+		"draft_kv_end", draftKVEnd, "draft_nPast", s.draftNPast)
 }

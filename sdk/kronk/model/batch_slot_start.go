@@ -376,9 +376,17 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 			s.draftPromptTokens = make([]llama.Token, len(cached)+len(tokens))
 			copy(s.draftPromptTokens, cached)
 			copy(s.draftPromptTokens[len(cached):], tokens)
+
+			e.model.log(job.ctx, "speculative", "status", "draft-prompt-assembled",
+				"slot", s.id, "imc_cached", len(cached), "new_suffix", len(tokens),
+				"total_draft_tokens", len(s.draftPromptTokens))
 		} else {
 			s.draftPromptTokens = make([]llama.Token, len(tokens))
 			copy(s.draftPromptTokens, tokens)
+
+			e.model.log(job.ctx, "speculative", "status", "draft-prompt-assembled",
+				"slot", s.id, "imc_cached", 0, "new_suffix", len(tokens),
+				"total_draft_tokens", len(s.draftPromptTokens))
 		}
 		s.draftPrefillNeeded = true
 	}

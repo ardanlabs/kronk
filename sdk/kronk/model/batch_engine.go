@@ -209,6 +209,10 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 					e.batch.Add(tok, s.nPast+llama.Pos(1+i), s.seqIDs, true)
 				}
 
+				e.model.log(s.job.ctx, "speculative", "status", "batch-add",
+					"slot", s.id, "sampled_plus_drafts", 1+len(draftTokens),
+					"batch_offset", s.specBaseBatch, "target_nPast", s.nPast)
+
 				// Don't advance nPast here — verification handles it.
 				s.iBatch = -1
 				continue

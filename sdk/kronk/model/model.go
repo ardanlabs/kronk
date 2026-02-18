@@ -55,13 +55,14 @@ type spcSession struct {
 // The draft model is a smaller, faster model that generates candidate tokens
 // for the target model to verify in a single forward pass.
 type draftModel struct {
-	model   llama.Model
-	vocab   llama.Vocab
-	lctx    llama.Context
-	mem     llama.Memory
-	sampler llama.Sampler
-	batch   llama.Batch
-	nDraft  int
+	model        llama.Model
+	vocab        llama.Vocab
+	lctx         llama.Context
+	mem          llama.Memory
+	sampler      llama.Sampler
+	batch        llama.Batch
+	nDraft       int
+	cachedTokens []llama.Token // Prompt tokens currently in draft KV cache (for incremental prefill)
 }
 
 // Cataloger provides support to retrieve catalog config and template
@@ -302,7 +303,9 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 				return nil, fmt.Errorf("load-draft-model: %w", err)
 			}
 			m.draft = draft
-			l(ctx, "draft-model", "status", "loaded", "ndraft", draft.nDraft)
+			l(ctx, "draft-model", "status", "loaded",
+				"nDraft", draft.nDraft, "device", cfg.DraftModel.Device,
+				"nCtx", llama.NCtx(draft.lctx))
 		}
 	}
 
@@ -336,6 +339,12 @@ func loadDraftModel(ctx context.Context, log Logger, cfg Config, targetModel lla
 		mParams.SetDevices([]llama.GGMLBackendDevice{dev})
 	}
 
+	log(ctx, "draft-model", "status", "loading",
+		"files", fmt.Sprintf("%v", dCfg.ModelFiles),
+		"device", dCfg.Device,
+		"nDraft", dCfg.NDraft,
+		"gpu_layers", mParams.NGpuLayers)
+
 	dModel, err := loadModelFromFiles(ctx, log, dCfg.ModelFiles, mParams)
 	if err != nil {
 		return nil, fmt.Errorf("unable to load draft model: %w", err)
@@ -344,10 +353,16 @@ func loadDraftModel(ctx context.Context, log Logger, cfg Config, targetModel lla
 	// Validate vocabulary compatibility.
 	dVocab := llama.ModelGetVocab(dModel)
 	targetVocab := llama.ModelGetVocab(targetModel)
-	if llama.VocabNTokens(dVocab) != llama.VocabNTokens(targetVocab) {
+	targetVocabSize := llama.VocabNTokens(targetVocab)
+	draftVocabSize := llama.VocabNTokens(dVocab)
+
+	log(ctx, "draft-model", "status", "vocab-check",
+		"target_vocab", targetVocabSize, "draft_vocab", draftVocabSize)
+
+	if draftVocabSize != targetVocabSize {
 		llama.ModelFree(dModel)
 		return nil, fmt.Errorf("vocabulary mismatch: target has %d tokens, draft has %d tokens",
-			llama.VocabNTokens(targetVocab), llama.VocabNTokens(dVocab))
+			targetVocabSize, draftVocabSize)
 	}
 
 	// Create draft context with same context window as target.
