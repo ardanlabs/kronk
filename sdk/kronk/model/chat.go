@@ -274,6 +274,7 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 				m.imcSlots[slotID].pending = false
 			}
 			m.cacheMu.Unlock()
+			m.notifyIMCSlotAvailable()
 		}
 
 		m.sendChatError(ctx, ch, id, err)

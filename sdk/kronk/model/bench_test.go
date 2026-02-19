@@ -47,6 +47,7 @@ package model_test
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"testing"
@@ -55,6 +56,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
+	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
@@ -62,8 +64,29 @@ import (
 // Test setup - model path resolved once
 
 var benchModelPath models.Path
+var benchDraftModelPath models.Path
+var benchMoEModelPath models.Path
+var benchMoEDraftModelPath models.Path
+var benchLog model.Logger
+var benchLogFile *os.File
 
 func TestMain(m *testing.M) {
+	// When BENCH_LOG is set, write model logs to that file.
+	// Usage: BENCH_LOG=bench.log go test -bench=BenchmarkIMCSpeculative ...
+	if logPath := os.Getenv("BENCH_LOG"); logPath != "" {
+		f, err := os.Create(logPath)
+		if err != nil {
+			fmt.Printf("bench: unable to create log file %s: %v\n", logPath, err)
+			os.Exit(1)
+		}
+		benchLogFile = f
+		logger := slog.New(slog.NewTextHandler(f, nil))
+		benchLog = func(ctx context.Context, msg string, args ...any) {
+			logger.Info(msg, args...)
+		}
+		fmt.Printf("bench: logging to %s\n", logPath)
+	}
+
 	mdls, err := models.New()
 	if err != nil {
 		fmt.Printf("bench: unable to create models system: %v\n", err)
@@ -71,6 +94,19 @@ func TestMain(m *testing.M) {
 	}
 
 	benchModelPath = mdls.MustFullPath("Qwen3-8B-Q8_0")
+
+	// Draft model is optional — only needed for BenchmarkIMCSpeculative.
+	if dp, err := mdls.FullPath("Qwen3-0.6B-Q8_0"); err == nil {
+		benchDraftModelPath = dp
+	}
+
+	// MoE target + Q4 draft — only needed for BenchmarkMoE* benchmarks.
+	if dp, err := mdls.FullPath("Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL"); err == nil {
+		benchMoEModelPath = dp
+	}
+	if dp, err := mdls.FullPath("Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL"); err == nil {
+		benchMoEDraftModelPath = dp
+	}
 
 	ctlg, err := catalog.New()
 	if err != nil {
@@ -88,7 +124,19 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	os.Exit(m.Run())
+	if l, err := libs.New(); err == nil {
+		if vt, err := l.InstalledVersion(); err == nil {
+			fmt.Printf("bench: llama.cpp %s (%s/%s/%s)\n", vt.Version, vt.OS, vt.Arch, vt.Processor)
+		}
+	}
+
+	code := m.Run()
+
+	if benchLogFile != nil {
+		benchLogFile.Close()
+	}
+
+	os.Exit(code)
 }
 
 // =============================================================================
@@ -101,6 +149,7 @@ const benchContextWindow = 32768
 
 func cfgNonCaching() model.Config {
 	return model.Config{
+		Log:           benchLog,
 		ModelFiles:    benchModelPath.ModelFiles,
 		ContextWindow: benchContextWindow,
 		NBatch:        2048,
@@ -113,6 +162,7 @@ func cfgNonCaching() model.Config {
 
 func cfgSPC() model.Config {
 	return model.Config{
+		Log:               benchLog,
 		ModelFiles:        benchModelPath.ModelFiles,
 		ContextWindow:     benchContextWindow,
 		NBatch:            2048,
@@ -126,6 +176,7 @@ func cfgSPC() model.Config {
 
 func cfgIMC() model.Config {
 	return model.Config{
+		Log:              benchLog,
 		ModelFiles:       benchModelPath.ModelFiles,
 		ContextWindow:    benchContextWindow,
 		NBatch:           2048,
@@ -1588,3 +1639,93 @@ func BenchmarkIMC(b *testing.B) {
 	krn := withBenchModel(b, cfgIMC())
 	benchChat(b, krn, benchDoc())
 }
+
+// =============================================================================
+// Benchmarks: IMC + Speculative Decoding
+
+func cfgIMCSpeculative() model.Config {
+	draftPath := benchDraftModelPath.ModelFiles
+
+	return model.Config{
+		Log:              benchLog,
+		ModelFiles:       benchModelPath.ModelFiles,
+		ContextWindow:    benchContextWindow,
+		NBatch:           2048,
+		NUBatch:          512,
+		CacheTypeK:       model.GGMLTypeQ8_0,
+		CacheTypeV:       model.GGMLTypeQ8_0,
+		NSeqMax:          1,
+		IncrementalCache: true,
+		DraftModel: &model.DraftModelConfig{
+			ModelFiles: draftPath,
+			NDraft:     5,
+		},
+	}
+}
+
+func BenchmarkIMCSpeculative(b *testing.B) {
+	if len(benchDraftModelPath.ModelFiles) == 0 {
+		b.Skip("draft model Qwen3-0.6B-Q8_0 not downloaded")
+	}
+	krn := withBenchModel(b, cfgIMCSpeculative())
+	benchChat(b, krn, benchDoc())
+}
+
+// =============================================================================
+// Benchmarks: MoE (Qwen3-Coder-30B-A3B)
+//
+// Uses the MoE model as target with IMC caching. The speculative variant uses
+// the same model at Q4 quantization as the draft — same architecture and
+// knowledge, lower precision, faster per-token due to reduced memory bandwidth.
+
+func cfgMoEIMC() model.Config {
+	return model.Config{
+		Log:              benchLog,
+		ModelFiles:       benchMoEModelPath.ModelFiles,
+		ContextWindow:    benchContextWindow,
+		NBatch:           2048,
+		NUBatch:          512,
+		CacheTypeK:       model.GGMLTypeQ8_0,
+		CacheTypeV:       model.GGMLTypeQ8_0,
+		NSeqMax:          1,
+		IncrementalCache: true,
+	}
+}
+
+func BenchmarkMoEIMC(b *testing.B) {
+	if len(benchMoEModelPath.ModelFiles) == 0 {
+		b.Skip("model Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL not downloaded")
+	}
+	krn := withBenchModel(b, cfgMoEIMC())
+	benchChat(b, krn, benchDoc())
+}
+
+func cfgMoEIMCSpeculative() model.Config {
+	return model.Config{
+		Log:              benchLog,
+		ModelFiles:       benchMoEModelPath.ModelFiles,
+		ContextWindow:    benchContextWindow,
+		NBatch:           2048,
+		NUBatch:          512,
+		CacheTypeK:       model.GGMLTypeQ8_0,
+		CacheTypeV:       model.GGMLTypeQ8_0,
+		NSeqMax:          1,
+		IncrementalCache: true,
+		DraftModel: &model.DraftModelConfig{
+			ModelFiles: benchMoEDraftModelPath.ModelFiles,
+			NDraft:     5,
+		},
+	}
+}
+
+func BenchmarkMoEIMCSpeculative(b *testing.B) {
+	if len(benchMoEModelPath.ModelFiles) == 0 {
+		b.Skip("model Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL not downloaded")
+	}
+	if len(benchMoEDraftModelPath.ModelFiles) == 0 {
+		b.Skip("draft model Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL not downloaded")
+	}
+	krn := withBenchModel(b, cfgMoEIMCSpeculative())
+	benchChat(b, krn, benchDoc())
+}
+

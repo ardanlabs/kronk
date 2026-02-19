@@ -230,6 +230,25 @@ func (c *Catalog) ResolvedModelConfig(modelID string) ModelConfig {
 			cfg.YarnOrigCtx = modelConfig.YarnOrigCtx
 		}
 
+		if modelConfig.DraftModel != nil {
+			if cfg.DraftModel == nil {
+				cfg.DraftModel = modelConfig.DraftModel
+			} else {
+				if modelConfig.DraftModel.ModelID != "" {
+					cfg.DraftModel.ModelID = modelConfig.DraftModel.ModelID
+				}
+				if modelConfig.DraftModel.NDraft != 0 {
+					cfg.DraftModel.NDraft = modelConfig.DraftModel.NDraft
+				}
+				if modelConfig.DraftModel.NGpuLayers != nil {
+					cfg.DraftModel.NGpuLayers = modelConfig.DraftModel.NGpuLayers
+				}
+				if modelConfig.DraftModel.Device != "" {
+					cfg.DraftModel.Device = modelConfig.DraftModel.Device
+				}
+			}
+		}
+
 		// Merge model config sampling over catalog sampling so that
 		// catalog values act as defaults for any fields the model
 		// config doesn't explicitly set.
@@ -261,6 +280,18 @@ func (c *Catalog) KronkResolvedModelConfig(modelID string) (model.Config, error)
 	cfg := mc.ToKronkConfig()
 	cfg.ModelFiles = fp.ModelFiles
 	cfg.ProjFile = fp.ProjFile
+
+	// Resolve draft model file paths if configured.
+	if mc.DraftModel != nil && mc.DraftModel.ModelID != "" {
+		draftPath, err := c.models.FullPath(mc.DraftModel.ModelID)
+		if err != nil {
+			return model.Config{}, fmt.Errorf("kronk-resolved-model-config: unable to get draft model[%s] path: %w", mc.DraftModel.ModelID, err)
+		}
+		if cfg.DraftModel == nil {
+			cfg.DraftModel = &model.DraftModelConfig{}
+		}
+		cfg.DraftModel.ModelFiles = draftPath.ModelFiles
+	}
 
 	return cfg, nil
 }

@@ -36,8 +36,16 @@ func Start(ctx context.Context, cfg Config) *App {
 		return server
 	}, nil)
 
+	logged := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cfg.Log.Info(r.Context(), "mcp request", "method", r.Method, "path", r.URL.Path, "remoteaddr", r.RemoteAddr, "accept", r.Header.Get("Accept"), "session", r.Header.Get("Mcp-Session-Id"))
+		handler.ServeHTTP(w, r)
+	})
+
+	mux := http.NewServeMux()
+	mux.Handle("/mcp", logged)
+
 	api.httpServer = &http.Server{
-		Handler: handler,
+		Handler: mux,
 	}
 
 	go func() {

@@ -178,7 +178,7 @@ gpt-oss-120b-F16/SPC:
   system-prompt-cache: true
 
 gpt-oss-120b-F16/IMC:
-  nseq-max: 1
+  nseq-max: 2
   incremental-cache: true
 
 # Smaller version of the 30B model and works ok with Cline.

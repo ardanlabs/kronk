@@ -122,13 +122,22 @@ test-only: install-models
 test: test-only lint vuln-check diff
 
 benchmark-nc:
-	CGO_ENABLED=0 go test -bench=BenchmarkNonCaching -benchtime=3x -timeout=30m ./sdk/kronk/model/
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkNonCaching -benchtime=3x -timeout=30m ./sdk/kronk/model/
 
 benchmark-spc:
-	CGO_ENABLED=0 go test -bench=BenchmarkSPC -benchtime=3x -timeout=30m ./sdk/kronk/model/
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkSPC -benchtime=3x -timeout=30m ./sdk/kronk/model/
 
 benchmark-imc:
-	CGO_ENABLED=0 go test -bench=BenchmarkIMC -benchtime=3x -timeout=30m ./sdk/kronk/model/
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkIMC$$ -benchtime=3x -timeout=30m ./sdk/kronk/model/
+
+benchmark-spec:
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkIMCSpeculative -benchtime=3x -timeout=30m ./sdk/kronk/model/
+
+benchmark-moe-imc:
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkMoEIMC$$ -benchtime=3x -timeout=30m ./sdk/kronk/model/
+
+benchmark-moe-spec:
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkMoEIMCSpeculative -benchtime=3x -timeout=30m ./sdk/kronk/model/
 
 # ==============================================================================
 # Kronk BUI
@@ -585,7 +594,7 @@ mcp-server:
 curl-mcp-init:
 	curl -i -X POST "http://localhost:9000/mcp" \
 	-H "Content-Type: application/json" \
-	-H "Accept: application/json" \
+	-H "Accept: application/json, text/event-stream" \
 	-d '{ \
 		"jsonrpc": "2.0", \
 		"id": 1, \
@@ -602,6 +611,7 @@ curl-mcp-init:
 curl-mcp-initialized:
 	curl -X POST "http://localhost:9000/mcp" \
 	-H "Content-Type: application/json" \
+	-H "Accept: application/json, text/event-stream" \
 	-H "Mcp-Session-Id: $(SESSIONID)" \
 	-d '{ \
 		"jsonrpc": "2.0", \
@@ -613,7 +623,7 @@ curl-mcp-initialized:
 curl-mcp-tools-list:
 	curl -i -X POST "http://localhost:9000/mcp" \
 	-H "Content-Type: application/json" \
-	-H "Accept: application/json" \
+	-H "Accept: application/json, text/event-stream" \
 	-H "Mcp-Session-Id: $(SESSIONID)" \
 	-d '{ \
 		"jsonrpc": "2.0", \
@@ -627,7 +637,7 @@ curl-mcp-tools-list:
 curl-mcp-web-search:
 	curl -i -X POST "http://localhost:9000/mcp" \
 	-H "Content-Type: application/json" \
-	-H "Accept: application/json" \
+	-H "Accept: application/json, text/event-stream" \
 	-H "Mcp-Session-Id: $(SESSIONID)" \
 	-d '{ \
 		"jsonrpc": "2.0", \

@@ -99,6 +99,42 @@ func logSoftmax(logits []float32) []float32 {
 	return result
 }
 
+// softmaxTempInto computes temperature-scaled softmax: softmax(logits / T).
+// For temperature=0 callers should use argmax instead. The dst slice must be
+// at least len(logits) in length.
+func softmaxTempInto(logits, dst []float32, temperature float32) {
+	if temperature > 0 && temperature != 1.0 {
+		invT := 1.0 / temperature
+		for i := range logits {
+			logits[i] *= invT
+		}
+	}
+	softmaxInto(logits, dst)
+}
+
+// softmaxInto computes softmax of logits and writes the result into dst.
+// The dst slice must be at least len(logits) in length.
+func softmaxInto(logits, dst []float32) {
+	maxLogit := logits[0]
+	for _, l := range logits[1:] {
+		if l > maxLogit {
+			maxLogit = l
+		}
+	}
+
+	var sum float64
+	for i, l := range logits {
+		p := math.Exp(float64(l - maxLogit))
+		dst[i] = float32(p)
+		sum += p
+	}
+
+	invSum := float32(1.0 / sum)
+	for i := range logits {
+		dst[i] *= invSum
+	}
+}
+
 // getTopKLogprobs returns the top-k tokens by log probability.
 // Uses a min-heap to efficiently find top-k without sorting the entire vocab.
 func getTopKLogprobs(vocab llama.Vocab, logprobs []float32, k int, buf []byte) []TopLogprob {

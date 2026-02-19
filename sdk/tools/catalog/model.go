@@ -214,6 +214,7 @@ type ModelConfig struct {
 	SystemPromptCache    bool                     `yaml:"system-prompt-cache,omitempty"`
 	IncrementalCache     bool                     `yaml:"incremental-cache,omitempty"`
 	CacheMinTokens       int                      `yaml:"cache-min-tokens,omitempty"`
+	CacheSlotTimeout     int                      `yaml:"cache-slot-timeout,omitempty"`
 	InsecureLogging      bool                     `yaml:"insecure-logging,omitempty"`
 	RopeScaling          model.RopeScalingType    `yaml:"rope-scaling-type,omitempty"`
 	RopeFreqBase         *float32                 `yaml:"rope-freq-base,omitempty"`
@@ -223,12 +224,21 @@ type ModelConfig struct {
 	YarnBetaFast         *float32                 `yaml:"yarn-beta-fast,omitempty"`
 	YarnBetaSlow         *float32                 `yaml:"yarn-beta-slow,omitempty"`
 	YarnOrigCtx          *int                     `yaml:"yarn-orig-ctx,omitempty"`
+	DraftModel           *DraftModelConfig        `yaml:"draft-model,omitempty"`
 	Sampling             SamplingConfig           `yaml:"sampling-parameters,omitempty"`
+}
+
+// DraftModelConfig configures a draft model for speculative decoding.
+type DraftModelConfig struct {
+	ModelID    string `yaml:"model-id,omitempty"`
+	NDraft     int    `yaml:"ndraft,omitempty"`
+	NGpuLayers *int   `yaml:"ngpu-layers,omitempty"`
+	Device     string `yaml:"device,omitempty"`
 }
 
 // ToKronkConfig converts a catalog ModelConfig to a model.Config.
 func (mc ModelConfig) ToKronkConfig() model.Config {
-	return model.Config{
+	cfg := model.Config{
 		Device:               mc.Device,
 		ContextWindow:        mc.ContextWindow,
 		NBatch:               mc.NBatch,
@@ -248,6 +258,7 @@ func (mc ModelConfig) ToKronkConfig() model.Config {
 		SystemPromptCache:    mc.SystemPromptCache,
 		IncrementalCache:     mc.IncrementalCache,
 		CacheMinTokens:       mc.CacheMinTokens,
+		CacheSlotTimeout:     mc.CacheSlotTimeout,
 		InsecureLogging:      mc.InsecureLogging,
 		RopeScaling:          mc.RopeScaling,
 		RopeFreqBase:         mc.RopeFreqBase,
@@ -259,6 +270,16 @@ func (mc ModelConfig) ToKronkConfig() model.Config {
 		YarnOrigCtx:          mc.YarnOrigCtx,
 		DefaultParams:        mc.Sampling.toParams(),
 	}
+
+	if mc.DraftModel != nil {
+		cfg.DraftModel = &model.DraftModelConfig{
+			NDraft:     mc.DraftModel.NDraft,
+			NGpuLayers: mc.DraftModel.NGpuLayers,
+			Device:     mc.DraftModel.Device,
+		}
+	}
+
+	return cfg
 }
 
 // Metadata represents extra information about the model.

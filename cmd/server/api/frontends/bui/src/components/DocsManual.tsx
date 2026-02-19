@@ -926,7 +926,129 @@ Step 4 — Total VRAM:
     n_batch: 8192 # Can equal context_window
     n_ubatch: 512 # Align with typical sliding window
     n_seq_max: 4 # 4 model instances for concurrency`}</code></pre>
-          <h3 id="39-sampling-parameters">3.9 Sampling Parameters</h3>
+          <h3 id="39-speculative-decoding">3.9 Speculative Decoding</h3>
+          <p>Speculative decoding uses a small, fast "draft" model to predict candidate tokens, then verifies them against the full "target" model in a single forward pass. When the draft model's predictions match the target's, multiple tokens are accepted per decode step — improving throughput without changing output quality. The output distribution is mathematically guaranteed to match the target model exactly, regardless of draft quality (Leviathan et al., 2023).</p>
+          <p><strong>How It Works</strong></p>
+          <ol>
+            <li>The draft model auto-regressively generates N candidate tokens (default 5)</li>
+            <li>All candidates plus the last accepted token are added to the target model's</li>
+          </ol>
+          <p>batch and decoded in one forward pass</p>
+          <ol>
+            <li>Each candidate is verified using speculative sampling: accepted with</li>
+          </ol>
+          <p>probability <code>min(1, p_target / q_draft)</code>, where <code>p_target</code> is the target's probability and <code>q_draft</code> is the draft's probability for that token</p>
+          <ol>
+            <li>On rejection, a corrective token is sampled from <code>max(0, p_target - q_draft)</code></li>
+          </ol>
+          <p>normalized, and remaining candidates are discarded</p>
+          <ol>
+            <li>If all candidates are accepted, a bonus token is sampled from the target</li>
+          </ol>
+          <p>The speedup depends on the draft model's acceptance rate. Higher acceptance means more tokens per forward pass. Acceptance rates depend on:</p>
+          <ul>
+            <li><strong>Draft model quality</strong> — A larger, more capable draft produces better</li>
+          </ul>
+          <p>predictions. A Q4 quantization of the same architecture tends to outperform a much smaller model.</p>
+          <ul>
+            <li><strong>Temperature</strong> — Lower temperatures (more deterministic) yield higher</li>
+          </ul>
+          <p>acceptance rates. At temperature 0.8, expect ~30% of steps to accept zero draft tokens.</p>
+          <ul>
+            <li><strong>Task type</strong> — Predictable text (boilerplate, common patterns) accepts</li>
+          </ul>
+          <p>more often than creative or reasoning-heavy output.</p>
+          <p><strong>Requirements</strong></p>
+          <ul>
+            <li>Draft and target models must share the <strong>same vocabulary</strong> (same tokenizer)</li>
+            <li><code>n_seq_max</code> must be <code>1</code> (single-slot mode only)</li>
+            <li>The draft model must be downloaded and available locally</li>
+            <li>Only text generation is supported (not vision/audio)</li>
+          </ul>
+          <p><strong>Configuration</strong></p>
+          <p>Speculative decoding is configured via the <code>draft-model</code> block in catalog YAML or <code>model_config.yaml</code>:</p>
+          <pre className="code-block"><code className="language-yaml">{`# In a catalog YAML file
+config:
+  context-window: 32768
+  nbatch: 2048
+  nubatch: 512
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  nseq-max: 1
+  incremental-cache: true
+  draft-model:
+    model-id: Qwen3-0.6B-Q8_0     # Draft model ID (must be downloaded)
+    ndraft: 5                       # Candidates per step (default: 5)
+    ngpu-layers: 0                  # GPU layers (0=all, -1=none)
+    device: ""                      # Pin to specific GPU (e.g., "GPU1")`}</code></pre>
+          <pre className="code-block"><code className="language-yaml">{`# In model_config.yaml
+Qwen3-8B-Q8_0:
+  incremental-cache: true
+  nseq-max: 1
+  draft-model:
+    model-id: Qwen3-0.6B-Q8_0
+    ndraft: 5`}</code></pre>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Field</th>
+                <th>YAML Key</th>
+                <th>Default</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>ModelID</td>
+                <td><code>model-id</code></td>
+                <td>(none)</td>
+                <td>Draft model ID (must be downloaded)</td>
+              </tr>
+              <tr>
+                <td>NDraft</td>
+                <td><code>ndraft</code></td>
+                <td>5</td>
+                <td>Number of candidate tokens per step</td>
+              </tr>
+              <tr>
+                <td>NGpuLayers</td>
+                <td><code>ngpu-layers</code></td>
+                <td>0 (all)</td>
+                <td>GPU layers for draft model</td>
+              </tr>
+              <tr>
+                <td>Device</td>
+                <td><code>device</code></td>
+                <td>""</td>
+                <td>Pin draft model to a specific GPU</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><strong>Draft Model Selection</strong></p>
+          <p>Choose a draft model that shares the same tokenizer family as the target. A quantized version of the same architecture at lower precision works well:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Target Model</th>
+                <th>Recommended Draft</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Qwen3-8B-Q8_0</td>
+                <td>Qwen3-0.6B-Q8_0</td>
+              </tr>
+              <tr>
+                <td>Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL</td>
+                <td>Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>The second example uses the same MoE architecture at lower quantization, which shares more of the target's weight structure and produces higher acceptance rates than a smaller dense model.</p>
+          <p><strong>Performance Characteristics</strong></p>
+          <p>Speculative decoding helps most when the target model is large relative to the draft. For dense models where the target is already fast (e.g., 8B at 33+ TPS), the overhead of running a draft model may not provide a net speedup. MoE models with large parameter counts but sparse activation (e.g., 30B-A3B) are better candidates, but only when using a high-quality draft.</p>
+          <p>The <code>ndraft</code> parameter controls how many candidates to generate. Higher values increase the potential speedup but also increase wasted work when predictions are rejected. The default of 5 is a good starting point; tune based on your observed acceptance rates.</p>
+          <h3 id="310-sampling-parameters">3.10 Sampling Parameters</h3>
           <p>Sampling parameters control the randomness and quality of generated text. These are set per-request in the API call.</p>
           <p>For most models you will want to touch these basic sampling parameters. There are many more which will be presented later.</p>
           <p><strong>Temperature</strong></p>
@@ -971,7 +1093,7 @@ Step 4 — Total VRAM:
           <pre className="code-block"><code className="language-json">{`{
   "max_tokens": 2048
 }`}</code></pre>
-          <h3 id="310-model-config-file-example">3.10 Model Config File Example</h3>
+          <h3 id="311-model-config-file-example">3.11 Model Config File Example</h3>
           <p>Create a YAML config file for custom model settings:</p>
           <pre className="code-block"><code className="language-yaml">{`# model-config.yaml
 models:
@@ -4085,7 +4207,7 @@ make mcp-server`}</code></pre>
             </tbody>
           </table>
           <h3 id="155-client-configuration">15.5 Client Configuration</h3>
-          <p>The MCP service uses the Streamable HTTP transport. Configure your MCP-compatible client to connect to <code>http://localhost:9000</code>.</p>
+          <p>The MCP service uses the Streamable HTTP transport. Configure your MCP-compatible client to connect to <code>http://localhost:9000/mcp</code>.</p>
           <h4 id="cline">Cline</h4>
           <p>Add the following to your Cline MCP settings:</p>
           <pre className="code-block"><code className="language-json">{`{
@@ -4097,7 +4219,7 @@ make mcp-server`}</code></pre>
       "disabled": false,
       "timeout": 60,
       "type": "streamableHttp",
-      "url": "http://localhost:9000"
+      "url": "http://localhost:9000/mcp"
     }
   }
 }`}</code></pre>
@@ -4107,7 +4229,7 @@ make mcp-server`}</code></pre>
   "mcpServers": {
     "Kronk": {
       "type": "streamable-http",
-      "url": "http://localhost:9000",
+      "url": "http://localhost:9000/mcp",
       "disabled": true,
       "alwaysAllow": [
         "web_search"
@@ -5081,8 +5203,9 @@ batching = true`}</code></pre>
                 <li><a href="#36-understanding-gguf-quantization" className={activeSection === '36-understanding-gguf-quantization' ? 'active' : ''}>3.6 Understanding GGUF Quantization</a></li>
                 <li><a href="#37-vram-estimation" className={activeSection === '37-vram-estimation' ? 'active' : ''}>3.7 VRAM Estimation</a></li>
                 <li><a href="#38-model-specific-tuning" className={activeSection === '38-model-specific-tuning' ? 'active' : ''}>3.8 Model-Specific Tuning</a></li>
-                <li><a href="#39-sampling-parameters" className={activeSection === '39-sampling-parameters' ? 'active' : ''}>3.9 Sampling Parameters</a></li>
-                <li><a href="#310-model-config-file-example" className={activeSection === '310-model-config-file-example' ? 'active' : ''}>3.10 Model Config File Example</a></li>
+                <li><a href="#39-speculative-decoding" className={activeSection === '39-speculative-decoding' ? 'active' : ''}>3.9 Speculative Decoding</a></li>
+                <li><a href="#310-sampling-parameters" className={activeSection === '310-sampling-parameters' ? 'active' : ''}>3.10 Sampling Parameters</a></li>
+                <li><a href="#311-model-config-file-example" className={activeSection === '311-model-config-file-example' ? 'active' : ''}>3.11 Model Config File Example</a></li>
               </ul>
             </div>
             <div className="doc-index-section">

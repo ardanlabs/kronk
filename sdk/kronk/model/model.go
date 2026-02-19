@@ -51,6 +51,26 @@ type spcSession struct {
 	kvState         []byte      // Externalized KV cache state (post-decode tensors)
 }
 
+// draftModel holds resources for the draft model used in speculative decoding.
+// The draft model is a smaller, faster model that generates candidate tokens
+// for the target model to verify in a single forward pass.
+type draftModel struct {
+	model        llama.Model
+	vocab        llama.Vocab
+	lctx         llama.Context
+	mem          llama.Memory
+	sampler      llama.Sampler
+	batch        llama.Batch
+	nDraft       int
+	cachedTokens []llama.Token // Prompt tokens currently in draft KV cache (for incremental prefill)
+
+	// Pre-allocated buffers for speculative sampling to avoid per-round
+	// allocations of vocab-sized slices (~600KB each for 152k vocab).
+	draftProbs  [][]float32 // nDraft reusable buffers for draft probability distributions
+	targetProbs []float32   // Reusable buffer for target probability distribution
+	adjusted    []float32   // Reusable buffer for sampleAdjusted computation
+}
+
 // Cataloger provides support to retrieve catalog config and template
 // information.
 type Cataloger interface {
@@ -77,11 +97,13 @@ type Model struct {
 	unloaded      atomic.Bool
 	decodeMu      sync.Mutex
 	cacheMu       sync.RWMutex
+	cacheCond     *sync.Cond   // Broadcast when any IMC slot's pending flag is cleared
 	imcSlots []*imcSession // Per-slot branch state, len = NSeqMax
 	spcSession    *spcSession            // SPC session (single dedicated cache sequence)
 	spcCacheSeqID llama.SeqId            // Dedicated SPC cache sequence ID
 	addBOSToken   bool                   // Whether to add BOS token (from model metadata)
 	pool          *contextPool           // Context pool for parallel embed/rerank
+	draft         *draftModel                // Draft model for speculative decoding
 }
 
 func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, error) {
@@ -258,6 +280,7 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 
 		// Initialize IMC per-slot branch tracking when enabled.
 		if cfg.IncrementalCache {
+			m.cacheCond = sync.NewCond(&m.cacheMu)
 			m.imcSlots = make([]*imcSession, nSlots)
 			for i := range nSlots {
 				m.imcSlots[i] = &imcSession{
@@ -276,9 +299,131 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 
 		m.batch = newBatchEngine(&m, nSlots)
 		m.batch.start(ctx)
+
+		// Initialize draft model for speculative decoding if configured.
+		if cfg.DraftModel != nil {
+			draft, err := loadDraftModel(ctx, l, cfg, mdl, ctxParams)
+			if err != nil {
+				m.batch.stop(ctx)
+				m.batch.freeBatch()
+				llama.Free(lctx)
+				llama.ModelFree(mdl)
+				return nil, fmt.Errorf("load-draft-model: %w", err)
+			}
+			m.draft = draft
+			l(ctx, "draft-model", "status", "loaded",
+				"nDraft", draft.nDraft, "device", cfg.DraftModel.Device,
+				"nCtx", llama.NCtx(draft.lctx))
+		}
 	}
 
 	return &m, nil
+}
+
+// loadDraftModel loads the draft model for speculative decoding. It creates
+// a separate model, context, and greedy sampler. The draft model uses the
+// same context window as the target to support long prompts.
+func loadDraftModel(ctx context.Context, log Logger, cfg Config, targetModel llama.Model, targetCtxParams llama.ContextParams) (*draftModel, error) {
+	dCfg := cfg.DraftModel
+
+	// Load draft model.
+	mParams := llama.ModelDefaultParams()
+	switch {
+	case dCfg.NGpuLayers == nil:
+		mParams.NGpuLayers = -1
+	case *dCfg.NGpuLayers == 0:
+		mParams.NGpuLayers = -1
+	case *dCfg.NGpuLayers == -1:
+		mParams.NGpuLayers = 0
+	default:
+		mParams.NGpuLayers = int32(*dCfg.NGpuLayers)
+	}
+
+	if dCfg.Device != "" {
+		dev := llama.GGMLBackendDeviceByName(dCfg.Device)
+		if dev == 0 {
+			return nil, fmt.Errorf("ggml-backend-device-by-name: unknown device: %s", dCfg.Device)
+		}
+		mParams.SetDevices([]llama.GGMLBackendDevice{dev})
+	}
+
+	log(ctx, "draft-model", "status", "loading",
+		"files", fmt.Sprintf("%v", dCfg.ModelFiles),
+		"device", dCfg.Device,
+		"nDraft", dCfg.NDraft,
+		"gpu_layers", mParams.NGpuLayers)
+
+	dModel, err := loadModelFromFiles(ctx, log, dCfg.ModelFiles, mParams)
+	if err != nil {
+		return nil, fmt.Errorf("unable to load draft model: %w", err)
+	}
+
+	// Validate vocabulary compatibility.
+	dVocab := llama.ModelGetVocab(dModel)
+	targetVocab := llama.ModelGetVocab(targetModel)
+	targetVocabSize := llama.VocabNTokens(targetVocab)
+	draftVocabSize := llama.VocabNTokens(dVocab)
+
+	log(ctx, "draft-model", "status", "vocab-check",
+		"target_vocab", targetVocabSize, "draft_vocab", draftVocabSize)
+
+	if draftVocabSize != targetVocabSize {
+		llama.ModelFree(dModel)
+		return nil, fmt.Errorf("vocabulary mismatch: target has %d tokens, draft has %d tokens",
+			targetVocabSize, draftVocabSize)
+	}
+
+	// Create draft context with same context window as target.
+	dCtxParams := llama.ContextDefaultParams()
+	dCtxParams.NCtx = targetCtxParams.NCtx
+	dCtxParams.NBatch = targetCtxParams.NBatch
+	dCtxParams.NUbatch = targetCtxParams.NUbatch
+	dCtxParams.NSeqMax = 1
+	dCtxParams.FlashAttentionType = targetCtxParams.FlashAttentionType
+	dCtxParams.NThreads = targetCtxParams.NThreads
+	dCtxParams.NThreadsBatch = targetCtxParams.NThreadsBatch
+
+	dLctx, err := llama.InitFromModel(dModel, dCtxParams)
+	if err != nil {
+		llama.ModelFree(dModel)
+		return nil, fmt.Errorf("unable to init draft context: %w", err)
+	}
+
+	dMem, err := llama.GetMemory(dLctx)
+	if err != nil {
+		llama.Free(dLctx)
+		llama.ModelFree(dModel)
+		return nil, fmt.Errorf("unable to get draft memory: %w", err)
+	}
+
+	llama.MemoryClear(dMem, true)
+
+	// Create greedy sampler for draft model (temperature=0 for speed).
+	sampler := llama.SamplerChainInit(llama.SamplerChainDefaultParams())
+	llama.SamplerChainAdd(sampler, llama.SamplerInitGreedy())
+
+	// Create reusable batch for drafting (1 token at a time).
+	batch := llama.BatchInit(1, 0, 1)
+
+	// Pre-allocate reusable buffers for speculative sampling.
+	nVocab := int(llama.VocabNTokens(dVocab))
+	draftProbs := make([][]float32, dCfg.NDraft)
+	for i := range draftProbs {
+		draftProbs[i] = make([]float32, nVocab)
+	}
+
+	return &draftModel{
+		model:       dModel,
+		vocab:       dVocab,
+		lctx:        dLctx,
+		mem:         dMem,
+		sampler:     sampler,
+		batch:       batch,
+		nDraft:      dCfg.NDraft,
+		draftProbs:  draftProbs,
+		targetProbs: make([]float32, nVocab),
+		adjusted:    make([]float32, nVocab),
+	}, nil
 }
 
 // paramsFitMu serializes calls to checkParamsFit because the underlying
@@ -407,6 +552,16 @@ func (m *Model) Unload(ctx context.Context) error {
 	}
 
 	m.log(ctx, "unload", "status", "streams-drained")
+
+	// Free draft model resources if loaded.
+	if m.draft != nil {
+		llama.SamplerFree(m.draft.sampler)
+		llama.BatchFree(m.draft.batch)
+		llama.Free(m.draft.lctx)
+		llama.ModelFree(m.draft.model)
+		m.draft = nil
+		m.log(ctx, "unload", "status", "draft-model-freed")
+	}
 
 	// Free batch buffer before context (batch references context internals).
 	if hasBatch {

@@ -74,6 +74,7 @@ func (m *Model) clearCaches() {
 	// so only the in-memory session state needs clearing.
 	m.spcSession = nil
 	m.cacheMu.Unlock()
+	m.notifyIMCSlotAvailable()
 }
 
 // =============================================================================

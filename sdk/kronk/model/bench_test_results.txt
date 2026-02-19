@@ -1,49 +1,70 @@
-Feb 16th, 2026 : v1.19.1
+🟢 Better   🔴 Worse   ⚪ Neutral
+
 ================================================================================
-Model       : Qwen3-8B-Q8_0
-ContextWin  : 32k
-Conversation: 23443 tokens (107771 chars, 38 messages)
-Sys Prompt  : 8241 tokens (39322 chars)
-Benchtime   : 3x
-Timeout     : 30m
-llamap.cpp  : b8070
+Feb 16th, 2026 : v1.19.1
+Model          : Qwen3-8B-Q8_0
+llamap.cpp     : b8070
 --------------------------------------------------------------------------------
 goos: darwin
 goarch: arm64
 pkg: github.com/ardanlabs/kronk/sdk/kronk/model
 cpu: Apple M4 Max
-BenchmarkNonCaching-16  3   91258955014 ns/op   1167061 B/op    9070 allocs/op
-BenchmarkSPC-16         3   62552435931 ns/op    990240 B/op    8944 allocs/op
-BenchmarkIMC-16         3    4099335542 ns/op    138805 B/op    3949 allocs/op
+BenchmarkNonCaching-16 3  91258955014 ns/op ⚪  1167061 B/op ⚪  9070 allocs/op ⚪
+BenchmarkSPC-16        3  62552435931 ns/op ⚪   990240 B/op ⚪  8944 allocs/op ⚪
+BenchmarkIMC-16        3   4099335542 ns/op ⚪   138805 B/op ⚪  3949 allocs/op ⚪
 --------------------------------------------------------------------------------
-No Caching          SPC                 IMC                 
-23636 prompt-tok    23636 prompt-tok    23603 prompt-tok
-  128 output-tok      128 output-tok      128 output-tok
-28.77 tok/s         29.01 tok/s         32.41 tok/s
-80177 total-ms      63758 total-ms       4100 total-ms
-75824 ttft-ms       59442 ttft-ms         240 ttft-ms
+No Caching          SPC                IMC                 
+28.77 tok/s    ⚪   29.01 tok/s    ⚪   32.41 tok/s    ⚪
+75824 ttft-ms  ⚪   59442 ttft-ms  ⚪     240 ttft-ms  ⚪
+80177 total-ms ⚪   63758 total-ms ⚪    4100 total-ms ⚪
 
 
+================================================================================
 Feb 16th, 2026 : v1.19.2
-Model       : Qwen3-8B-Q8_0
-ContextWin  : 32k
-Conversation: 23443 tokens (107771 chars, 38 messages)
-Sys Prompt  : 8241 tokens (39322 chars)
-Benchtime   : 3x
-Timeout     : 30m
-llamap.cpp  : b8070
+Model          : Qwen3-8B-Q8_0
+llamap.cpp     : b8070
 --------------------------------------------------------------------------------
 goos: darwin
 goarch: arm64
 pkg: github.com/ardanlabs/kronk/sdk/kronk/model
 cpu: Apple M4 Max
-BenchmarkNonCaching-16  3   98596664806 ns/op   1169250 B/op    9079 allocs/op
-BenchmarkSPC-16         3   71905155792 ns/op    978493 B/op    8948 allocs/op
-BenchmarkIMC-16         3    4256359542 ns/op    152352 B/op    3944 allocs/op
+BenchmarkNonCaching-16 3  98596664806 ns/op 🔴  1169250 B/op 🔴  9079 allocs/op ⚪
+BenchmarkSPC-16        3  71905155792 ns/op 🔴   978493 B/op 🟢  8948 allocs/op ⚪
+BenchmarkIMC-16        3   4256359542 ns/op 🔴   152352 B/op 🔴  3944 allocs/op ⚪
 --------------------------------------------------------------------------------
-No Caching          SPC                 IMC                 
-23636 prompt-tok    23636 prompt-tok    23603 prompt-tok
-  128 output-tok      128 output-tok      128 output-tok
-28.73 tok/s         29.08 tok/s         31.70 tok/s
-85048 total-ms      67335 total-ms       4220 total-ms
-80689 ttft-ms       63030 ttft-ms         276 ttft-ms
+No Caching          SPC                IMC                 
+28.73 tok/s    🟢   29.08 tok/s    🔴   31.70 tok/s    🔴
+80689 ttft-ms  🔴   63030 ttft-ms  🔴     276 ttft-ms  🔴
+85048 total-ms 🔴   67335 total-ms 🔴    4220 total-ms 🔴
+
+
+================================================================================
+Feb 18th, 2026 : Pre-v1.19.3
+Model          : Qwen3-8B-Q8_0
+llamap.cpp     : b8083
+--------------------------------------------------------------------------------
+goos: darwin
+goarch: arm64
+pkg: github.com/ardanlabs/kronk/sdk/kronk/model
+cpu: Apple M4 Max
+BenchmarkNonCaching-16  3  67904898444 ns/op 🟢  165418 B/op 🟢  9061 allocs/op 🟢
+BenchmarkSPC-16         3  53454949167 ns/op 🟢  990346 B/op 🔴  8942 allocs/op 🟢
+BenchmarkIMC-16         3   3982913444 ns/op 🟢  150906 B/op 🟢  3931 allocs/op 🟢
+BenchmarkIMCSpec-16     3   7056100056 ns/op ⚪  480581 B/op ⚪  8889 allocs/op ⚪
+BenchmarkMoEIMC-16      3   2987735014 ns/op ⚪  133888 B/op ⚪  3270 allocs/op ⚪
+BenchmarkIMCMoeSpec-16  3   5181029847 ns/op ⚪  392856 B/op ⚪  5503 allocs/op ⚪
+--------------------------------------------------------------------------------
+No Caching          SPC
+34.44 tok/s    🟢   34.41 tok/s    🟢
+67545 ttft-ms  🟢   52385 ttft-ms  🟢
+63914 total-ms 🟢   48750 total-ms 🟢
+
+IMC                 IMC SPEC
+33.81 tok/s    🟢   19.49 tok/s    ⚪
+  248 ttft-ms  🟢     333 ttft-ms  ⚪
+ 3945 total-ms 🟢    6699 total-ms ⚪
+
+MoE IMC             MoE IMC SPEC
+37.23 tok/s    ⚪   19.82 tok/s    ⚪
+  268 ttft-ms  ⚪     265 ttft-ms  ⚪
+ 2793 total-ms ⚪    5412 total-ms ⚪

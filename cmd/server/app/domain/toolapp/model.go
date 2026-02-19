@@ -237,6 +237,7 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfi
 			SystemPromptCache:    rmc.SystemPromptCache,
 			IncrementalCache:     rmc.IncrementalCache,
 			CacheMinTokens:       rmc.CacheMinTokens,
+			CacheSlotTimeout:     rmc.CacheSlotTimeout,
 			RopeScaling:          rmc.RopeScaling,
 			RopeFreqBase:         rmc.RopeFreqBase,
 			RopeFreqScale:        rmc.RopeFreqScale,
@@ -417,6 +418,7 @@ type ModelConfig struct {
 	SystemPromptCache    bool                     `json:"system-prompt-cache"`
 	IncrementalCache     bool                     `json:"incremental-cache"`
 	CacheMinTokens       int                      `json:"cache-min-tokens"`
+	CacheSlotTimeout     int                      `json:"cache-slot-timeout"`
 	Sampling             SamplingConfig           `json:"sampling-parameters"`
 	RopeScaling          model.RopeScalingType    `json:"rope-scaling-type"`
 	RopeFreqBase         *float32                 `json:"rope-freq-base"`
@@ -570,6 +572,7 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 			SystemPromptCache:    rmc.SystemPromptCache,
 			IncrementalCache:     rmc.IncrementalCache,
 			CacheMinTokens:       rmc.CacheMinTokens,
+			CacheSlotTimeout:     rmc.CacheSlotTimeout,
 			RopeScaling:          rmc.RopeScaling,
 			RopeFreqBase:         rmc.RopeFreqBase,
 			RopeFreqScale:        rmc.RopeFreqScale,
@@ -623,6 +626,7 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 		SystemPromptCache:    bmc.SystemPromptCache,
 		IncrementalCache:     bmc.IncrementalCache,
 		CacheMinTokens:       bmc.CacheMinTokens,
+		CacheSlotTimeout:     bmc.CacheSlotTimeout,
 		RopeScaling:          bmc.RopeScaling,
 		RopeFreqBase:         bmc.RopeFreqBase,
 		RopeFreqScale:        bmc.RopeFreqScale,
@@ -904,6 +908,7 @@ func (app SaveCatalogRequest) toModelDetails() catalog.ModelDetails {
 			SystemPromptCache:    app.Config.SystemPromptCache,
 			IncrementalCache:     app.Config.IncrementalCache,
 			CacheMinTokens:       app.Config.CacheMinTokens,
+			CacheSlotTimeout:     app.Config.CacheSlotTimeout,
 			InsecureLogging:      false,
 			RopeScaling:          app.Config.RopeScaling,
 			RopeFreqBase:         app.Config.RopeFreqBase,

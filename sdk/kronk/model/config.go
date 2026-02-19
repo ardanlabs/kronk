@@ -26,13 +26,15 @@ Key principles:
 */
 
 const (
-	defContextWindow  = 8 * 1024
-	defNBatch         = 2 * 1024
-	defNUBatch        = 512
-	defNUBatchVision  = 2 * 1024
-	defMinCacheTokens = 100
-	defThreadZero     = 0
-	defNSeqMax        = 1
+	defContextWindow      = 8 * 1024
+	defNBatch             = 2 * 1024
+	defNUBatch            = 512
+	defNUBatchVision      = 2 * 1024
+	defMinCacheTokens     = 100
+	defThreadZero         = 0
+	defNSeqMax            = 1
+	defNDraft             = 5
+	defCacheSlotTimeout   = 30
 )
 
 // Logger provides a function for logging messages from different APIs.
@@ -47,6 +49,12 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // CacheMinTokens sets the minimum token count required before caching. Messages
 // shorter than this threshold are not cached, as the overhead of cache management
 // may outweigh the prefill savings. When set to 0, defaults to 100 tokens.
+//
+// CacheSlotTimeout sets the maximum number of seconds to wait for a pending IMC
+// slot to become available before returning an error. When multiple concurrent
+// requests compete for slots (e.g., NSeqMax=1 with parallel requests), a request
+// may need to wait for an in-flight cache build to complete. When set to 0,
+// defaults to 30 seconds.
 //
 // CacheTypeK is the data type for the K (key) cache. This controls the precision
 // of the key vectors in the KV cache. Lower precision types (like Q8_0 or Q4_0)
@@ -188,8 +196,26 @@ type Logger func(ctx context.Context, msg string, args ...any)
 //
 // YarnOrigCtx sets the original training context size for YaRN scaling. When nil
 // or 0, uses the model's native training context length from metadata.
+
+// DraftModelConfig configures a draft model for speculative decoding. A smaller,
+// faster model generates candidate tokens that the target model verifies in a
+// single forward pass. This can improve generation throughput when the draft
+// model's predictions frequently match the target's.
+//
+// Requirements:
+//   - Draft and target models must share the same vocabulary (same tokenizer)
+//   - NSeqMax must be 1 (single-slot mode)
+//   - Draft model should be significantly smaller than the target (e.g., 0.6B draft for 8B target)
+type DraftModelConfig struct {
+	ModelFiles []string // Path to the draft model GGUF file(s)
+	NDraft     int      // Number of tokens to draft per step (default 5)
+	NGpuLayers *int     // GPU layers for draft model (nil = all layers on GPU)
+	Device     string   // Device for draft model (e.g., "GPU1") to pin to a specific GPU
+}
+
 type Config struct {
 	CacheMinTokens       int
+	CacheSlotTimeout     int
 	CacheTypeK           GGMLType
 	CacheTypeV           GGMLType
 	ContextWindow        int
@@ -222,6 +248,7 @@ type Config struct {
 	YarnBetaSlow         *float32
 	YarnExtFactor        *float32
 	YarnOrigCtx          *int
+	DraftModel           *DraftModelConfig
 }
 
 func (cfg Config) String() string {
@@ -246,14 +273,14 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("%d", *p)
 	}
 
-	return fmt.Sprintf("\nCacheMinTokens[%d]\nCacheTypeK[%d]\nCacheTypeV[%d]\nContextWindow[%d]\nDevice[%s]\nFlashAttention[%d]\nIgnoreIntegrityCheck[%t]\nIncrementalCache[%t]\nInsecureLogging[%t]\nJinjaFile[%s]\nModelFiles[%v]\nNBatch[%d]\nNGpuLayers[%s]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nOffloadKQV[%s]\nOpOffload[%s]\nProjFile[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSplitMode[%d]\nSystemPromptCache[%t]\nUseDirectIO[%t]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\n",
-		cfg.CacheMinTokens, cfg.CacheTypeK, cfg.CacheTypeV, cfg.ContextWindow, cfg.Device, cfg.FlashAttention, cfg.IgnoreIntegrityCheck,
+	return fmt.Sprintf("\nCacheMinTokens[%d]\nCacheSlotTimeout[%d]\nCacheTypeK[%d]\nCacheTypeV[%d]\nContextWindow[%d]\nDevice[%s]\nFlashAttention[%d]\nIgnoreIntegrityCheck[%t]\nIncrementalCache[%t]\nInsecureLogging[%t]\nJinjaFile[%s]\nModelFiles[%v]\nNBatch[%d]\nNGpuLayers[%s]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nOffloadKQV[%s]\nOpOffload[%s]\nProjFile[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSplitMode[%d]\nSystemPromptCache[%t]\nUseDirectIO[%t]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
+		cfg.CacheMinTokens, cfg.CacheSlotTimeout, cfg.CacheTypeK, cfg.CacheTypeV, cfg.ContextWindow, cfg.Device, cfg.FlashAttention, cfg.IgnoreIntegrityCheck,
 		cfg.IncrementalCache, cfg.InsecureLogging, cfg.JinjaFile, cfg.ModelFiles, cfg.NBatch,
 		formatIntPtr(cfg.NGpuLayers), cfg.NSeqMax, cfg.NThreads, cfg.NThreadsBatch, cfg.NUBatch,
 		formatBoolPtr(cfg.OffloadKQV), formatBoolPtr(cfg.OpOffload), cfg.ProjFile,
 		formatFloat32Ptr(cfg.RopeFreqBase), formatFloat32Ptr(cfg.RopeFreqScale), cfg.RopeScaling, cfg.SplitMode,
 		cfg.SystemPromptCache, cfg.UseDirectIO, formatFloat32Ptr(cfg.YarnAttnFactor),
-		formatFloat32Ptr(cfg.YarnBetaFast), formatFloat32Ptr(cfg.YarnBetaSlow), formatFloat32Ptr(cfg.YarnExtFactor), formatIntPtr(cfg.YarnOrigCtx))
+		formatFloat32Ptr(cfg.YarnBetaFast), formatFloat32Ptr(cfg.YarnBetaSlow), formatFloat32Ptr(cfg.YarnExtFactor), formatIntPtr(cfg.YarnOrigCtx), cfg.DraftModel)
 }
 
 func validateConfig(ctx context.Context, cfg Config, log Logger) error {
@@ -263,6 +290,23 @@ func validateConfig(ctx context.Context, cfg Config, log Logger) error {
 
 	if cfg.SystemPromptCache && cfg.IncrementalCache {
 		return fmt.Errorf("validate-config: cannot enable both SystemPromptCache and IncrementalCache; use IncrementalCache alone (it includes the system prompt)")
+	}
+
+	if cfg.DraftModel != nil {
+		if len(cfg.DraftModel.ModelFiles) == 0 {
+			return fmt.Errorf("validate-config: draft model requires model files")
+		}
+		if cfg.NSeqMax > 1 {
+			return fmt.Errorf("validate-config: speculative decoding requires NSeqMax=1, got %d", cfg.NSeqMax)
+		}
+		if !cfg.IgnoreIntegrityCheck {
+			for _, modelFile := range cfg.DraftModel.ModelFiles {
+				log(ctx, "validate-config", "draft-model-file", modelFile)
+				if err := CheckModel(modelFile, true); err != nil {
+					return fmt.Errorf("validate-config: draft model: %w", err)
+				}
+			}
+		}
 	}
 
 	if !cfg.IgnoreIntegrityCheck {
@@ -328,6 +372,15 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 		cfg.CacheMinTokens = defMinCacheTokens
 	}
 
+	// Default slot wait timeout for IMC.
+	if cfg.IncrementalCache && cfg.CacheSlotTimeout <= 0 {
+		cfg.CacheSlotTimeout = defCacheSlotTimeout
+	}
+
+	if cfg.DraftModel != nil && cfg.DraftModel.NDraft <= 0 {
+		cfg.DraftModel.NDraft = defNDraft
+	}
+
 	return cfg
 }
 
@@ -389,6 +442,9 @@ func applyCatalogConfig(user Config, cat Config) Config {
 	if user.CacheMinTokens == 0 {
 		user.CacheMinTokens = cat.CacheMinTokens
 	}
+	if user.CacheSlotTimeout == 0 {
+		user.CacheSlotTimeout = cat.CacheSlotTimeout
+	}
 	if !user.InsecureLogging {
 		user.InsecureLogging = cat.InsecureLogging
 	}
@@ -415,6 +471,9 @@ func applyCatalogConfig(user Config, cat Config) Config {
 	}
 	if user.YarnOrigCtx == nil {
 		user.YarnOrigCtx = cat.YarnOrigCtx
+	}
+	if user.DraftModel == nil {
+		user.DraftModel = cat.DraftModel
 	}
 
 	user.DefaultParams = applyCatalogSamplingParams(user.DefaultParams, cat.DefaultParams)

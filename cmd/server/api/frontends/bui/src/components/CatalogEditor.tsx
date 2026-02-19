@@ -63,6 +63,10 @@ interface CatalogFormData {
     yarnBetaFast: number | null;
     yarnBetaSlow: number | null;
     yarnOrigCtx: number | null;
+    draftModelId: string;
+    draftNDraft: number | null;
+    draftNGpuLayers: number | null;
+    draftDevice: string;
   };
   sampling: {
     temperature: number | null;
@@ -153,6 +157,10 @@ const defaultForm: CatalogFormData = {
     yarnBetaFast: null,
     yarnBetaSlow: null,
     yarnOrigCtx: null,
+    draftModelId: '',
+    draftNDraft: null,
+    draftNGpuLayers: null,
+    draftDevice: '',
   },
   sampling: {
     temperature: null,
@@ -273,6 +281,10 @@ function populateFromResponse(resp: CatalogModelResponse): CatalogFormData {
       yarnBetaFast: mc?.['yarn-beta-fast'] ?? null,
       yarnBetaSlow: mc?.['yarn-beta-slow'] ?? null,
       yarnOrigCtx: mc?.['yarn-orig-ctx'] ?? null,
+      draftModelId: mc?.['draft-model']?.['model-id'] || '',
+      draftNDraft: mc?.['draft-model']?.ndraft ?? null,
+      draftNGpuLayers: mc?.['draft-model']?.['ngpu-layers'] ?? null,
+      draftDevice: mc?.['draft-model']?.device || '',
     },
     sampling: {
       temperature: sp?.temperature ?? null,
@@ -492,6 +504,14 @@ export default function CatalogEditor() {
           'yarn-beta-fast': form.config.yarnBetaFast,
           'yarn-beta-slow': form.config.yarnBetaSlow,
           'yarn-orig-ctx': form.config.yarnOrigCtx,
+          ...(form.config.draftModelId ? {
+            'draft-model': {
+              'model-id': form.config.draftModelId,
+              ndraft: form.config.draftNDraft ?? 0,
+              'ngpu-layers': form.config.draftNGpuLayers,
+              device: form.config.draftDevice || undefined,
+            },
+          } : {}),
           'sampling-parameters': {
             temperature: form.sampling.temperature ?? 0,
             top_k: form.sampling.topK ?? 0,
@@ -905,6 +925,35 @@ export default function CatalogEditor() {
                 <NullableNumInput label="YaRN Beta Slow" value={form.config.yarnBetaSlow} step="0.01" defaultValue={rc?.['yarn-beta-slow'] ?? undefined} onChange={(v) => setConfig({ yarnBetaSlow: v })} />
                 <NullableNumInput label="YaRN Ext Factor" value={form.config.yarnExtFactor} step="0.01" defaultValue={rc?.['yarn-ext-factor'] ?? undefined} onChange={(v) => setConfig({ yarnExtFactor: v })} />
                 <NullableNumInput label="YaRN Original Context" value={form.config.yarnOrigCtx} defaultValue={rc?.['yarn-orig-ctx'] ?? undefined} onChange={(v) => setConfig({ yarnOrigCtx: v === null ? null : Math.round(v) })} />
+              </div>
+            </div>
+
+            {/* Speculative Decoding (Draft Model) */}
+            <div style={{ marginTop: '20px' }}>
+              <h4 style={{ marginBottom: '12px', fontSize: '14px', fontWeight: 600, color: 'var(--color-gray-700)' }}>Speculative Decoding</h4>
+              <div style={gridStyle}>
+                <div>
+                  <label style={labelStyle}>Draft Model ID</label>
+                  <input
+                    type="text"
+                    value={form.config.draftModelId}
+                    onChange={(e) => setConfig({ draftModelId: e.target.value })}
+                    style={inputStyle}
+                    placeholder="e.g., Qwen3-0.6B-Q8_0"
+                  />
+                </div>
+                <NullableNumInput label="Draft Tokens (ndraft)" value={form.config.draftNDraft} onChange={(v) => setConfig({ draftNDraft: v === null ? null : Math.round(v) })} />
+                <NullableNumInput label="Draft GPU Layers" value={form.config.draftNGpuLayers} onChange={(v) => setConfig({ draftNGpuLayers: v === null ? null : Math.round(v) })} />
+                <div>
+                  <label style={labelStyle}>Draft Device</label>
+                  <input
+                    type="text"
+                    value={form.config.draftDevice}
+                    onChange={(e) => setConfig({ draftDevice: e.target.value })}
+                    style={inputStyle}
+                    placeholder="e.g., GPU1"
+                  />
+                </div>
               </div>
             </div>
           </>

@@ -76,6 +76,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 				e.model.imcSlots[s.id].pending = false
 			}
 			e.model.cacheMu.Unlock()
+			e.model.notifyIMCSlotAvailable()
 
 			e.finishSlot(s, fmt.Errorf("start-slot: imc cache stale (slot %d hash changed), retry request", s.id))
 			return
@@ -101,6 +102,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 						e.model.imcSlots[s.id].pending = false
 					}
 					e.model.cacheMu.Unlock()
+					e.model.notifyIMCSlotAvailable()
 
 					e.finishSlot(s, fmt.Errorf("start-slot: imc extend stale (cache moved from %d to %d), retry request", expectedStart, cacheIdx))
 					return
@@ -133,6 +135,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 						e.model.imcSlots[s.id].pending = false
 					}
 					e.model.cacheMu.Unlock()
+					e.model.notifyIMCSlotAvailable()
 
 					e.finishSlot(s, fmt.Errorf("start-slot: imc trim stale (trim_pos %d > cache_idx %d), retry request", job.imcTrimPos, cacheIdx))
 					return
@@ -180,6 +183,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 					e.model.log(job.ctx, "start-slot", "status", "imc-pending-cleared (error)", "slot", s.id, "seq", s.seqID)
 				}
 				e.model.cacheMu.Unlock()
+				e.model.notifyIMCSlotAvailable()
 
 				e.finishSlot(s, fmt.Errorf("start-slot: imc extend: %w", err))
 				return
@@ -206,6 +210,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 				e.model.log(job.ctx, "start-slot", "status", "imc-pending-cleared", "slot", s.id, "seq", s.seqID)
 			}
 			e.model.cacheMu.Unlock()
+			e.model.notifyIMCSlotAvailable()
 
 			switch {
 			case job.imcClearSeq:
@@ -230,6 +235,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 					e.model.imcSlots[s.id].pending = false
 				}
 				e.model.cacheMu.Unlock()
+				e.model.notifyIMCSlotAvailable()
 
 				e.finishSlot(s, fmt.Errorf("start-slot: imc trim stale (trim_pos %d > cache_idx %d), retry request", job.imcTrimPos, cacheIdx))
 				return
@@ -260,6 +266,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 				e.model.log(job.ctx, "start-slot", "status", "imc-pending-cleared", "slot", s.id, "seq", s.seqID)
 			}
 			e.model.cacheMu.Unlock()
+			e.model.notifyIMCSlotAvailable()
 
 			e.model.log(job.ctx, "start-slot", "status", "imc-trimmed", "slot", s.id, "seq", s.seqID,
 				"total_cached", job.imcNewTotalCached)
@@ -284,6 +291,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 			slot.lastMsgIdxCached = 0
 			slot.pending = false
 			e.model.cacheMu.Unlock()
+			e.model.notifyIMCSlotAvailable()
 
 			e.model.log(job.ctx, "start-slot", "status", "imc-metadata-cleared", "slot", s.id, "seq", s.seqID)
 		}
@@ -362,6 +370,33 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 		err := fmt.Errorf("start-slot: input tokens [%d] exceed context window [%d]", s.nPrompt, e.model.cfg.ContextWindow)
 		e.finishSlot(s, err)
 		return false
+	}
+
+	// Store full prompt tokens for draft model prefill if speculative decoding
+	// is enabled. The draft model needs all tokens (cached + new suffix) to
+	// build its KV cache after the target's prefill completes.
+	if e.model.draft != nil {
+		if job.imcCacheHit && s.id < len(e.model.imcSlots) {
+			e.model.cacheMu.RLock()
+			cached := e.model.imcSlots[s.id].cachedTokens
+			e.model.cacheMu.RUnlock()
+
+			s.draftPromptTokens = make([]llama.Token, len(cached)+len(tokens))
+			copy(s.draftPromptTokens, cached)
+			copy(s.draftPromptTokens[len(cached):], tokens)
+
+			e.model.log(job.ctx, "speculative", "status", "draft-prompt-assembled",
+				"slot", s.id, "imc_cached", len(cached), "new_suffix", len(tokens),
+				"total_draft_tokens", len(s.draftPromptTokens))
+		} else {
+			s.draftPromptTokens = make([]llama.Token, len(tokens))
+			copy(s.draftPromptTokens, tokens)
+
+			e.model.log(job.ctx, "speculative", "status", "draft-prompt-assembled",
+				"slot", s.id, "imc_cached", 0, "new_suffix", len(tokens),
+				"total_draft_tokens", len(s.draftPromptTokens))
+		}
+		s.draftPrefillNeeded = true
 	}
 
 	// Store tokens for chunked prefill.

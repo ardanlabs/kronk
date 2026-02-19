@@ -1,0 +1,45 @@
+{
+  "globalClineRulesToggles": {
+    "/Users/bill/.cline/data/rules.md": true
+  },
+  "globalWorkflowToggles": {},
+  "autoApprovalSettings": {
+    "version": 38,
+    "enabled": true,
+    "favorites": [],
+    "maxRequests": 20,
+    "actions": {
+      "readFiles": true,
+      "readFilesExternally": false,
+      "editFiles": false,
+      "editFilesExternally": false,
+      "executeSafeCommands": true,
+      "executeAllCommands": false,
+      "useBrowser": false,
+      "useMcp": true
+    },
+    "enableNotifications": false
+  },
+  "workspaceRoots": [
+    {
+      "path": "/Users/bill/code/go/src/github.com/ardanlabs/kronk",
+      "name": "kronk",
+      "vcs": "git",
+      "commitHash": "5d884b85a6855606b0792ad4fe97ea03c0f7d3b4"
+    }
+  ],
+  "primaryRootIndex": 0,
+  "actModeThinkingBudgetTokens": 1024,
+  "planModeThinkingBudgetTokens": 1024,
+  "actModeOpenAiModelId": "Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMC",
+  "planModeOpenAiModelId": "Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMC",
+  "actModeApiModelId": "Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMC",
+  "openAiBaseUrl": "http://localhost:8080/v1",
+  "nativeToolCallEnabled": false,
+  "isNewUser": false,
+  "welcomeViewCompleted": true,
+  "remoteRulesToggles": {},
+  "remoteWorkflowToggles": {},
+  "actModeApiProvider": "openai",
+  "planModeApiProvider": "openai"
+}
