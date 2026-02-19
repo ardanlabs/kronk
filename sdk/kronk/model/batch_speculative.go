@@ -120,10 +120,10 @@ func (e *batchEngine) generateDraftTokens(s *slot) []llama.Token {
 	draft := e.model.draft
 	nVocab := int(llama.VocabNTokens(e.model.vocab))
 	draftTokens := make([]llama.Token, 0, draft.nDraft)
-	draftProbs := make([][]float32, 0, draft.nDraft)
 
 	lastToken := s.sampled
 	draftStartPast := s.draftNPast
+	drafted := 0
 
 	for range draft.nDraft {
 		// Feed last token to draft model.
@@ -137,13 +137,13 @@ func (e *batchEngine) generateDraftTokens(s *slot) []llama.Token {
 
 		s.draftNPast++
 
-		// Capture draft probability distribution before sampling.
+		// Capture draft probability distribution into pre-allocated buffer.
 		logits, err := llama.GetLogitsIth(draft.lctx, -1, nVocab)
 		if err != nil {
 			break
 		}
 
-		probs := softmax(logits)
+		softmaxInto(logits, draft.draftProbs[drafted])
 
 		// Greedy sample from draft model.
 		token := llama.SamplerSample(draft.sampler, draft.lctx, -1)
@@ -154,11 +154,11 @@ func (e *batchEngine) generateDraftTokens(s *slot) []llama.Token {
 		}
 
 		draftTokens = append(draftTokens, token)
-		draftProbs = append(draftProbs, probs)
+		drafted++
 		lastToken = token
 	}
 
-	s.specDraftProbs = draftProbs
+	s.specDraftProbs = draft.draftProbs[:drafted]
 
 	e.model.log(s.job.ctx, "speculative", "status", "draft-generated",
 		"slot", s.id, "drafted", len(draftTokens), "target_nDraft", draft.nDraft,
@@ -220,10 +220,11 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 			bonusToken = fallbackToken
 			break
 		}
-		targetProbs := softmax(targetLogits)
+		draft := e.model.draft
+		softmaxInto(targetLogits, draft.targetProbs)
 
 		draftToken := draftTokens[i]
-		pTarget := targetProbs[draftToken]
+		pTarget := draft.targetProbs[draftToken]
 		qDraft := draftProbs[i][draftToken]
 
 		// Accept with probability min(1, p_target / q_draft).
@@ -247,12 +248,13 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 		}
 
 		// Rejected: sample from adjusted distribution max(0, p_target - q_draft).
-		bonusToken = sampleAdjusted(targetProbs, draftProbs[i])
+		bonusToken = sampleAdjustedInto(draft.targetProbs, draftProbs[i], draft.adjusted)
 		break
 	}
 
 	// If all draft tokens were accepted, sample bonus from target at position nDraft.
 	if accepted == nDraft {
+		draft := e.model.draft
 		targetLogits, err := llama.GetLogitsIth(e.model.lctx, baseBatch+int32(nDraft), nVocab)
 		if err != nil {
 			// Fallback to sampler.
@@ -263,8 +265,8 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 				bonusToken = llama.SamplerSample(s.sampler, e.model.lctx, baseBatch+int32(nDraft))
 			}
 		} else {
-			targetProbs := softmax(targetLogits)
-			bonusToken = sampleFromProbs(targetProbs)
+			softmaxInto(targetLogits, draft.targetProbs)
+			bonusToken = sampleFromProbs(draft.targetProbs)
 		}
 	}
 
@@ -298,19 +300,20 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 	s.iBatch = -1
 }
 
-// sampleAdjusted samples from the adjusted distribution max(0, p_target - q_draft),
-// normalized. This is the rejection branch of speculative sampling, ensuring the
-// output distribution exactly matches the target model.
-func sampleAdjusted(targetProbs, draftProbs []float32) llama.Token {
-	n := len(targetProbs)
-	adjusted := make([]float32, n)
+// sampleAdjustedInto samples from the adjusted distribution max(0, p_target - q_draft),
+// normalized, writing into the pre-allocated adjusted buffer. This is the rejection
+// branch of speculative sampling, ensuring the output distribution exactly matches
+// the target model.
+func sampleAdjustedInto(targetProbs, draftProbs, adjusted []float32) llama.Token {
 	var sum float64
 
-	for i := range n {
+	for i := range targetProbs {
 		diff := float64(targetProbs[i]) - float64(draftProbs[i])
 		if diff > 0 {
 			adjusted[i] = float32(diff)
 			sum += diff
+		} else {
+			adjusted[i] = 0
 		}
 	}
 

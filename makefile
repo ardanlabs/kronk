@@ -128,7 +128,7 @@ benchmark-spc:
 	CGO_ENABLED=0 go test -run=none -bench=BenchmarkSPC -benchtime=3x -timeout=30m ./sdk/kronk/model/
 
 benchmark-imc:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkIMC$ -benchtime=3x -timeout=30m ./sdk/kronk/model/
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkIMC$$ -benchtime=3x -timeout=30m ./sdk/kronk/model/
 
 benchmark-spec:
 	CGO_ENABLED=0 go test -run=none -bench=BenchmarkIMCSpeculative -benchtime=3x -timeout=30m ./sdk/kronk/model/

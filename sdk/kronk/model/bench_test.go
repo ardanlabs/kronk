@@ -1728,3 +1728,4 @@ func BenchmarkMoEIMCSpeculative(b *testing.B) {
 	krn := withBenchModel(b, cfgMoEIMCSpeculative())
 	benchChat(b, krn, benchDoc())
 }
+

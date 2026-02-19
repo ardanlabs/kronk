@@ -63,6 +63,12 @@ type draftModel struct {
 	batch        llama.Batch
 	nDraft       int
 	cachedTokens []llama.Token // Prompt tokens currently in draft KV cache (for incremental prefill)
+
+	// Pre-allocated buffers for speculative sampling to avoid per-round
+	// allocations of vocab-sized slices (~600KB each for 152k vocab).
+	draftProbs  [][]float32 // nDraft reusable buffers for draft probability distributions
+	targetProbs []float32   // Reusable buffer for target probability distribution
+	adjusted    []float32   // Reusable buffer for sampleAdjusted computation
 }
 
 // Cataloger provides support to retrieve catalog config and template
@@ -397,14 +403,24 @@ func loadDraftModel(ctx context.Context, log Logger, cfg Config, targetModel lla
 	// Create reusable batch for drafting (1 token at a time).
 	batch := llama.BatchInit(1, 0, 1)
 
+	// Pre-allocate reusable buffers for speculative sampling.
+	nVocab := int(llama.VocabNTokens(dVocab))
+	draftProbs := make([][]float32, dCfg.NDraft)
+	for i := range draftProbs {
+		draftProbs[i] = make([]float32, nVocab)
+	}
+
 	return &draftModel{
-		model:   dModel,
-		vocab:   dVocab,
-		lctx:    dLctx,
-		mem:     dMem,
-		sampler: sampler,
-		batch:   batch,
-		nDraft:  dCfg.NDraft,
+		model:       dModel,
+		vocab:       dVocab,
+		lctx:        dLctx,
+		mem:         dMem,
+		sampler:     sampler,
+		batch:       batch,
+		nDraft:      dCfg.NDraft,
+		draftProbs:  draftProbs,
+		targetProbs: make([]float32, nVocab),
+		adjusted:    make([]float32, nVocab),
 	}, nil
 }
 

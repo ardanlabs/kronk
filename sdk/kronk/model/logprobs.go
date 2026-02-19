@@ -107,6 +107,15 @@ func softmax(logits []float32) []float32 {
 		return nil
 	}
 
+	probs := make([]float32, len(logits))
+	softmaxInto(logits, probs)
+
+	return probs
+}
+
+// softmaxInto computes softmax of logits and writes the result into dst.
+// The dst slice must be at least len(logits) in length.
+func softmaxInto(logits, dst []float32) {
 	maxLogit := logits[0]
 	for _, l := range logits[1:] {
 		if l > maxLogit {
@@ -114,20 +123,17 @@ func softmax(logits []float32) []float32 {
 		}
 	}
 
-	probs := make([]float32, len(logits))
 	var sum float64
 	for i, l := range logits {
 		p := math.Exp(float64(l - maxLogit))
-		probs[i] = float32(p)
+		dst[i] = float32(p)
 		sum += p
 	}
 
 	invSum := float32(1.0 / sum)
-	for i := range probs {
-		probs[i] *= invSum
+	for i := range logits {
+		dst[i] *= invSum
 	}
-
-	return probs
 }
 
 // getTopKLogprobs returns the top-k tokens by log probability.
