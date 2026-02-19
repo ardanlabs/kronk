@@ -1,8 +1,6 @@
 /*
 Benchmarks for the three inference caching modes: Non-Caching, SPC, and IMC.
 
-Model: Qwen3-8B-Q8_0
-
 Modes Tested:
   - NonCaching: Baseline with no caching. Full prefill on every request.
   - SPC (System Prompt Cache): Caches the system prompt KV state. The system
@@ -145,17 +143,15 @@ func TestMain(m *testing.M) {
 // Context window: 32768
 // Target prompt fill: ~30k tokens (~105k chars), leaving room for 128 output.
 
-const benchContextWindow = 32768
-
 func cfgNonCaching() model.Config {
 	return model.Config{
 		Log:           benchLog,
 		ModelFiles:    benchModelPath.ModelFiles,
-		ContextWindow: benchContextWindow,
+		ContextWindow: 32768,
 		NBatch:        2048,
-		NUBatch:       512,
-		CacheTypeK:    model.GGMLTypeQ8_0,
-		CacheTypeV:    model.GGMLTypeQ8_0,
+		NUBatch:       2048,
+		CacheTypeK:    model.GGMLTypeF16,
+		CacheTypeV:    model.GGMLTypeF16,
 		NSeqMax:       1,
 	}
 }
@@ -164,11 +160,11 @@ func cfgSPC() model.Config {
 	return model.Config{
 		Log:               benchLog,
 		ModelFiles:        benchModelPath.ModelFiles,
-		ContextWindow:     benchContextWindow,
+		ContextWindow:     32768,
 		NBatch:            2048,
-		NUBatch:           512,
-		CacheTypeK:        model.GGMLTypeQ8_0,
-		CacheTypeV:        model.GGMLTypeQ8_0,
+		NUBatch:           2048,
+		CacheTypeK:        model.GGMLTypeF16,
+		CacheTypeV:        model.GGMLTypeF16,
 		NSeqMax:           1,
 		SystemPromptCache: true,
 	}
@@ -178,11 +174,11 @@ func cfgIMC() model.Config {
 	return model.Config{
 		Log:              benchLog,
 		ModelFiles:       benchModelPath.ModelFiles,
-		ContextWindow:    benchContextWindow,
+		ContextWindow:    32768,
 		NBatch:           2048,
-		NUBatch:          512,
-		CacheTypeK:       model.GGMLTypeQ8_0,
-		CacheTypeV:       model.GGMLTypeQ8_0,
+		NUBatch:          2048,
+		CacheTypeK:       model.GGMLTypeF16,
+		CacheTypeV:       model.GGMLTypeF16,
 		NSeqMax:          1,
 		IncrementalCache: true,
 	}
@@ -1649,11 +1645,11 @@ func cfgIMCSpeculative() model.Config {
 	return model.Config{
 		Log:              benchLog,
 		ModelFiles:       benchModelPath.ModelFiles,
-		ContextWindow:    benchContextWindow,
+		ContextWindow:    32768,
 		NBatch:           2048,
-		NUBatch:          512,
-		CacheTypeK:       model.GGMLTypeQ8_0,
-		CacheTypeV:       model.GGMLTypeQ8_0,
+		NUBatch:          2048,
+		CacheTypeK:       model.GGMLTypeF16,
+		CacheTypeV:       model.GGMLTypeF16,
 		NSeqMax:          1,
 		IncrementalCache: true,
 		DraftModel: &model.DraftModelConfig{
@@ -1682,11 +1678,11 @@ func cfgMoEIMC() model.Config {
 	return model.Config{
 		Log:              benchLog,
 		ModelFiles:       benchMoEModelPath.ModelFiles,
-		ContextWindow:    benchContextWindow,
+		ContextWindow:    32768,
 		NBatch:           2048,
-		NUBatch:          512,
-		CacheTypeK:       model.GGMLTypeQ8_0,
-		CacheTypeV:       model.GGMLTypeQ8_0,
+		NUBatch:          2048,
+		CacheTypeK:       model.GGMLTypeF16,
+		CacheTypeV:       model.GGMLTypeF16,
 		NSeqMax:          1,
 		IncrementalCache: true,
 	}
@@ -1704,11 +1700,11 @@ func cfgMoEIMCSpeculative() model.Config {
 	return model.Config{
 		Log:              benchLog,
 		ModelFiles:       benchMoEModelPath.ModelFiles,
-		ContextWindow:    benchContextWindow,
+		ContextWindow:    32768,
 		NBatch:           2048,
-		NUBatch:          512,
-		CacheTypeK:       model.GGMLTypeQ8_0,
-		CacheTypeV:       model.GGMLTypeQ8_0,
+		NUBatch:          2048,
+		CacheTypeK:       model.GGMLTypeF16,
+		CacheTypeV:       model.GGMLTypeF16,
 		NSeqMax:          1,
 		IncrementalCache: true,
 		DraftModel: &model.DraftModelConfig{
@@ -1728,4 +1724,3 @@ func BenchmarkMoEIMCSpeculative(b *testing.B) {
 	krn := withBenchModel(b, cfgMoEIMCSpeculative())
 	benchChat(b, krn, benchDoc())
 }
-

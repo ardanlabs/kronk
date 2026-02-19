@@ -3,6 +3,11 @@
 ================================================================================
 Feb 16th, 2026 : v1.19.1
 Model          : Qwen3-8B-Q8_0
+ContextWindow  : 32768
+NBatch         : 2048,
+NUBatch        : 512,
+CacheTypeK     : model.GGMLTypeQ8_0,
+CacheTypeV     : model.GGMLTypeQ8_0,
 llamap.cpp     : b8070
 --------------------------------------------------------------------------------
 goos: darwin
@@ -22,6 +27,10 @@ No Caching          SPC                IMC
 ================================================================================
 Feb 16th, 2026 : v1.19.2
 Model          : Qwen3-8B-Q8_0
+NBatch         : 2048,
+NUBatch        : 512,
+CacheTypeK     : model.GGMLTypeQ8_0,
+CacheTypeV     : model.GGMLTypeQ8_0,
 llamap.cpp     : b8070
 --------------------------------------------------------------------------------
 goos: darwin
@@ -39,32 +48,38 @@ No Caching          SPC                IMC
 
 
 ================================================================================
-Feb 18th, 2026 : Pre-v1.19.3
+Feb 19th, 2026 : v1.19.3
 Model          : Qwen3-8B-Q8_0
-llamap.cpp     : b8083
+Moe Model      : Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
+ContextWindow  : 32768
+NBatch         : 2048,
+NUBatch        : 2048,
+CacheTypeK     : model.GGMLTypeF16,
+CacheTypeV     : model.GGMLTypeF16,
+llamap.cpp     : b8102
 --------------------------------------------------------------------------------
 goos: darwin
 goarch: arm64
 pkg: github.com/ardanlabs/kronk/sdk/kronk/model
 cpu: Apple M4 Max
-BenchmarkNonCaching-16  3  67904898444 ns/op 🟢  165418 B/op 🟢  9061 allocs/op 🟢
-BenchmarkSPC-16         3  53454949167 ns/op 🟢  990346 B/op 🔴  8942 allocs/op 🟢
-BenchmarkIMC-16         3   3982913444 ns/op 🟢  150906 B/op 🟢  3931 allocs/op 🟢
-BenchmarkIMCSpec-16     3   7056100056 ns/op ⚪  480581 B/op ⚪  8889 allocs/op ⚪
-BenchmarkMoEIMC-16      3   2987735014 ns/op ⚪  133888 B/op ⚪  3270 allocs/op ⚪
-BenchmarkIMCMoeSpec-16  3   5181029847 ns/op ⚪  392856 B/op ⚪  5503 allocs/op ⚪
+BenchmarkNonCaching-16  3  63328812056 ns/op 🟢 1166517 B/op 🟢  9071 allocs/op 🟢
+BenchmarkSPC-16         3  40163715389 ns/op 🟢  977120 B/op 🟢  8954 allocs/op 🟢
+BenchmarkIMC-16         3   3468613917 ns/op 🟢  152656 B/op 🟢  3951 allocs/op 🟢
+BenchmarkMoEIMC-16      3   2480299680 ns/op ⚪  144376 B/op ⚪  3561 allocs/op ⚪
+BenchmarkIMCSpec-16     3   7252678361 ns/op ⚪  479704 B/op ⚪  9017 allocs/op ⚪
+BenchmarkIMCMoeSpec-16  3   6148359722 ns/op ⚪  400437 B/op ⚪  6461 allocs/op ⚪
 --------------------------------------------------------------------------------
 No Caching          SPC
-34.44 tok/s    🟢   34.41 tok/s    🟢
-67545 ttft-ms  🟢   52385 ttft-ms  🟢
-63914 total-ms 🟢   48750 total-ms 🟢
+28.57 tok/s    🟢   36.96 tok/s    🟢
+67403 ttft-ms  🟢   36553 ttft-ms  🟢
+71779 total-ms 🟢   39937 total-ms 🟢
 
-IMC                 IMC SPEC
-33.81 tok/s    🟢   19.49 tok/s    ⚪
-  248 ttft-ms  🟢     333 ttft-ms  ⚪
- 3945 total-ms 🟢    6699 total-ms ⚪
+IMC                 MoE IMC
+38.27 tok/s    🟢   49.20 tok/s    ⚪
+  183 ttft-ms  🟢     172 ttft-ms  ⚪
+ 3449 total-ms 🟢    2753 total-ms ⚪
 
-MoE IMC             MoE IMC SPEC
-37.23 tok/s    ⚪   19.82 tok/s    ⚪
-  268 ttft-ms  ⚪     265 ttft-ms  ⚪
- 2793 total-ms ⚪    5412 total-ms ⚪
+IMC SPEC            MoE IMC SPEC
+17.81 tok/s    ⚪   18.27 tok/s    ⚪
+  284 ttft-ms  ⚪     207 ttft-ms  ⚪
+ 7262 total-ms ⚪    5241 total-ms ⚪
