@@ -4207,7 +4207,7 @@ make mcp-server`}</code></pre>
             </tbody>
           </table>
           <h3 id="155-client-configuration">15.5 Client Configuration</h3>
-          <p>The MCP service uses the Streamable HTTP transport. Configure your MCP-compatible client to connect to <code>http://localhost:9000</code>.</p>
+          <p>The MCP service uses the Streamable HTTP transport. Configure your MCP-compatible client to connect to <code>http://localhost:9000/mcp</code>.</p>
           <h4 id="cline">Cline</h4>
           <p>Add the following to your Cline MCP settings:</p>
           <pre className="code-block"><code className="language-json">{`{
@@ -4219,7 +4219,7 @@ make mcp-server`}</code></pre>
       "disabled": false,
       "timeout": 60,
       "type": "streamableHttp",
-      "url": "http://localhost:9000"
+      "url": "http://localhost:9000/mcp"
     }
   }
 }`}</code></pre>
@@ -4229,7 +4229,7 @@ make mcp-server`}</code></pre>
   "mcpServers": {
     "Kronk": {
       "type": "streamable-http",
-      "url": "http://localhost:9000",
+      "url": "http://localhost:9000/mcp",
       "disabled": true,
       "alwaysAllow": [
         "web_search"

@@ -131,6 +131,7 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>{`type Config struct {
 	CacheMinTokens       int
+	CacheSlotTimeout     int
 	CacheTypeK           GGMLType
 	CacheTypeV           GGMLType
 	ContextWindow        int

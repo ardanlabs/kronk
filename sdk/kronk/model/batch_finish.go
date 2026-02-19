@@ -202,6 +202,7 @@ func (e *batchEngine) failJob(job *chatJob, err error) {
 			e.model.imcSlots[slotID].pending = false
 		}
 		e.model.cacheMu.Unlock()
+		e.model.notifyIMCSlotAvailable()
 	}
 
 	close(job.ch)

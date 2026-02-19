@@ -99,20 +99,6 @@ func logSoftmax(logits []float32) []float32 {
 	return result
 }
 
-// softmax converts raw logits to a probability distribution.
-// softmax(x_i) = exp(x_i - max) / sum(exp(x_j - max))
-// Uses the max-subtraction trick for numerical stability.
-func softmax(logits []float32) []float32 {
-	if len(logits) == 0 {
-		return nil
-	}
-
-	probs := make([]float32, len(logits))
-	softmaxInto(logits, probs)
-
-	return probs
-}
-
 // softmaxTempInto computes temperature-scaled softmax: softmax(logits / T).
 // For temperature=0 callers should use argmax instead. The dst slice must be
 // at least len(logits) in length.

@@ -268,7 +268,18 @@ func (m *Model) processIMC(ctx context.Context, d D) cacheResult {
 		return m.buildIMCCacheFromScratch(ctx, d, messages, lruSlot, lastMsgIdxToCache)
 	}
 
-	return cacheResult{modifiedD: d, err: fmt.Errorf("imc: no slots available")}
+	// All slots are pending. Wait for one to become available, then retry
+	// the entire scan. Use the cacheCond condvar which is broadcast whenever
+	// any slot's pending flag is cleared.
+	m.log(ctx, "imc", "status", "all slots pending, waiting for slot")
+
+	if err := m.waitForIMCSlot(ctx); err != nil {
+		return cacheResult{modifiedD: d, err: err}
+	}
+
+	m.log(ctx, "imc", "status", "slot became available, retrying scan")
+
+	return m.processIMC(ctx, d)
 }
 
 // extendIMCCache extends the existing cache with new messages from
@@ -318,6 +329,7 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, session *
 		m.cacheMu.Lock()
 		session.pending = false
 		m.cacheMu.Unlock()
+		m.notifyIMCSlotAvailable()
 
 		return cacheResult{modifiedD: d, err: fmt.Errorf("imc: failed to template prefix: %w", err)}
 	}
@@ -339,6 +351,7 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, session *
 		m.cacheMu.Lock()
 		session.pending = false
 		m.cacheMu.Unlock()
+		m.notifyIMCSlotAvailable()
 
 		return cacheResult{
 			modifiedD:       removeFirstNMessages(d, currentLastMsgIdxCached),
@@ -449,6 +462,7 @@ func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D,
 		m.cacheMu.Lock()
 		session.pending = false
 		m.cacheMu.Unlock()
+		m.notifyIMCSlotAvailable()
 
 		return cacheResult{modifiedD: d, err: fmt.Errorf("imc: failed to template messages: %w", err)}
 	}
@@ -467,6 +481,7 @@ func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D,
 		m.cacheMu.Lock()
 		session.pending = false
 		m.cacheMu.Unlock()
+		m.notifyIMCSlotAvailable()
 
 		return cacheResult{modifiedD: d, err: fmt.Errorf("imc: messages tokenized to zero tokens")}
 	}
@@ -477,6 +492,7 @@ func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D,
 		m.cacheMu.Lock()
 		session.pending = false
 		m.cacheMu.Unlock()
+		m.notifyIMCSlotAvailable()
 
 		return cacheResult{modifiedD: d}
 	}
@@ -603,6 +619,63 @@ func (m *Model) decodeTokensIntoCache(ctx context.Context, tokens []llama.Token,
 	m.log(ctx, "cache", "status", "finished (decoding tokens into cache)", "seq", seqID, "tokens", nTokens, "nbatch", nBatch)
 
 	return nil
+}
+
+// waitForIMCSlot blocks until at least one IMC slot is no longer pending,
+// the context is canceled, or the wait timeout expires. It uses the cacheCond
+// condvar which is broadcast whenever any slot's pending flag is cleared.
+// The timeout is controlled by Config.CacheSlotTimeout (in seconds).
+func (m *Model) waitForIMCSlot(ctx context.Context) error {
+
+	// Spawn a goroutine that waits on the cond var and signals a channel.
+	// This lets us select on both the cond signal and context cancellation.
+	ready := make(chan struct{}, 1)
+
+	go func() {
+		m.cacheMu.Lock()
+		defer m.cacheMu.Unlock()
+
+		for {
+			for _, slot := range m.imcSlots {
+				if !slot.pending {
+					select {
+					case ready <- struct{}{}:
+					default:
+					}
+					return
+				}
+			}
+
+			// Check context so we don't loop forever after cancellation.
+			if ctx.Err() != nil {
+				return
+			}
+
+			m.cacheCond.Wait()
+		}
+	}()
+
+	timer := time.NewTimer(time.Duration(m.cfg.CacheSlotTimeout) * time.Second)
+	defer timer.Stop()
+
+	select {
+	case <-ready:
+		return nil
+	case <-ctx.Done():
+		m.cacheCond.Broadcast()
+		return fmt.Errorf("imc: context canceled while waiting for slot: %w", ctx.Err())
+	case <-timer.C:
+		m.cacheCond.Broadcast()
+		return fmt.Errorf("server busy processing other requests, try again shortly")
+	}
+}
+
+// notifyIMCSlotAvailable broadcasts to any goroutines waiting for a slot to
+// become available. Must be called after clearing a slot's pending flag.
+func (m *Model) notifyIMCSlotAvailable() {
+	if m.cacheCond != nil {
+		m.cacheCond.Broadcast()
+	}
 }
 
 // tokenPrefixMatch returns the number of tokens that match between two slices,

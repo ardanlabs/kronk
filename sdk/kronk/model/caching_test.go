@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -463,7 +464,7 @@ func TestProcessIMCScanSkipsPendingSlots(t *testing.T) {
 }
 
 // TestProcessIMCScanAllPending verifies that when all slots are pending,
-// processIMC returns an error (no slots available).
+// processIMC waits and returns an error when the context is canceled.
 func TestProcessIMCScanAllPending(t *testing.T) {
 	m := &Model{
 		cfg: Config{
@@ -473,6 +474,8 @@ func TestProcessIMCScanAllPending(t *testing.T) {
 		log:      func(ctx context.Context, msg string, args ...any) {},
 	}
 
+	m.cacheCond = sync.NewCond(&m.cacheMu)
+
 	for i := range m.imcSlots {
 		m.imcSlots[i] = &imcSession{
 			seqID:   llama.SeqId(i),
@@ -481,7 +484,9 @@ func TestProcessIMCScanAllPending(t *testing.T) {
 		}
 	}
 
-	ctx := context.Background()
+	// Use a short timeout so the wait doesn't block the test.
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
 
 	messages := []D{
 		{"role": "system", "content": "You are helpful"},
@@ -496,7 +501,7 @@ func TestProcessIMCScanAllPending(t *testing.T) {
 	result := m.processIMC(ctx, d)
 
 	if result.err == nil {
-		t.Error("expected error when all slots are pending")
+		t.Error("expected error when all slots are pending and context is canceled")
 	}
 }
 

@@ -76,6 +76,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 				e.model.imcSlots[s.id].pending = false
 			}
 			e.model.cacheMu.Unlock()
+			e.model.notifyIMCSlotAvailable()
 
 			e.finishSlot(s, fmt.Errorf("start-slot: imc cache stale (slot %d hash changed), retry request", s.id))
 			return
@@ -101,6 +102,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 						e.model.imcSlots[s.id].pending = false
 					}
 					e.model.cacheMu.Unlock()
+					e.model.notifyIMCSlotAvailable()
 
 					e.finishSlot(s, fmt.Errorf("start-slot: imc extend stale (cache moved from %d to %d), retry request", expectedStart, cacheIdx))
 					return
@@ -133,6 +135,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 						e.model.imcSlots[s.id].pending = false
 					}
 					e.model.cacheMu.Unlock()
+					e.model.notifyIMCSlotAvailable()
 
 					e.finishSlot(s, fmt.Errorf("start-slot: imc trim stale (trim_pos %d > cache_idx %d), retry request", job.imcTrimPos, cacheIdx))
 					return
@@ -180,6 +183,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 					e.model.log(job.ctx, "start-slot", "status", "imc-pending-cleared (error)", "slot", s.id, "seq", s.seqID)
 				}
 				e.model.cacheMu.Unlock()
+				e.model.notifyIMCSlotAvailable()
 
 				e.finishSlot(s, fmt.Errorf("start-slot: imc extend: %w", err))
 				return
@@ -206,6 +210,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 				e.model.log(job.ctx, "start-slot", "status", "imc-pending-cleared", "slot", s.id, "seq", s.seqID)
 			}
 			e.model.cacheMu.Unlock()
+			e.model.notifyIMCSlotAvailable()
 
 			switch {
 			case job.imcClearSeq:
@@ -230,6 +235,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 					e.model.imcSlots[s.id].pending = false
 				}
 				e.model.cacheMu.Unlock()
+				e.model.notifyIMCSlotAvailable()
 
 				e.finishSlot(s, fmt.Errorf("start-slot: imc trim stale (trim_pos %d > cache_idx %d), retry request", job.imcTrimPos, cacheIdx))
 				return
@@ -260,6 +266,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 				e.model.log(job.ctx, "start-slot", "status", "imc-pending-cleared", "slot", s.id, "seq", s.seqID)
 			}
 			e.model.cacheMu.Unlock()
+			e.model.notifyIMCSlotAvailable()
 
 			e.model.log(job.ctx, "start-slot", "status", "imc-trimmed", "slot", s.id, "seq", s.seqID,
 				"total_cached", job.imcNewTotalCached)
@@ -284,6 +291,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 			slot.lastMsgIdxCached = 0
 			slot.pending = false
 			e.model.cacheMu.Unlock()
+			e.model.notifyIMCSlotAvailable()
 
 			e.model.log(job.ctx, "start-slot", "status", "imc-metadata-cleared", "slot", s.id, "seq", s.seqID)
 		}

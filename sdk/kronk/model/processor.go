@@ -306,6 +306,10 @@ func parseJSONFormat(content string) []ResponseToolCall {
 			toolCall.Raw = call
 		}
 
+		// GPT models prefix function names with a dot (e.g. ".Kronk_web_search").
+		// Strip it so clients can match the name to their registered tools.
+		toolCall.Function.Name = strings.TrimPrefix(toolCall.Function.Name, ".")
+
 		toolCalls = append(toolCalls, toolCall)
 	}
 
@@ -581,6 +585,24 @@ func (p *processor) stepGPT(content string) (response, bool) {
 		if content == "<|end|>" {
 			p.collecting = false
 			p.status = statusNone
+			return response{}, false
+		}
+
+		// Handle non-deterministic models that emit <|start|> or <|channel|>
+		// without first closing the current block with <|end|>.
+		if content == "<|start|>" {
+			p.collecting = false
+			p.status = statusNone
+			p.awaitingChannel = false
+			p.awaitingConstrain = false
+			p.channelBuf.Reset()
+			return response{}, false
+		}
+
+		if content == "<|channel|>" {
+			p.collecting = false
+			p.awaitingChannel = true
+			p.channelBuf.Reset()
 			return response{}, false
 		}
 

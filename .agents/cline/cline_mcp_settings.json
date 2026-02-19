@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "Kronk": {
+      "autoApprove": [
+        "web_search"
+      ],
+      "disabled": false,
+      "timeout": 60,
+      "type": "streamableHttp",
+      "url": "http://localhost:9000/mcp"
+    }
+  }
+}

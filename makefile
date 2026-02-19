@@ -594,7 +594,7 @@ mcp-server:
 curl-mcp-init:
 	curl -i -X POST "http://localhost:9000/mcp" \
 	-H "Content-Type: application/json" \
-	-H "Accept: application/json" \
+	-H "Accept: application/json, text/event-stream" \
 	-d '{ \
 		"jsonrpc": "2.0", \
 		"id": 1, \
@@ -611,6 +611,7 @@ curl-mcp-init:
 curl-mcp-initialized:
 	curl -X POST "http://localhost:9000/mcp" \
 	-H "Content-Type: application/json" \
+	-H "Accept: application/json, text/event-stream" \
 	-H "Mcp-Session-Id: $(SESSIONID)" \
 	-d '{ \
 		"jsonrpc": "2.0", \
@@ -622,7 +623,7 @@ curl-mcp-initialized:
 curl-mcp-tools-list:
 	curl -i -X POST "http://localhost:9000/mcp" \
 	-H "Content-Type: application/json" \
-	-H "Accept: application/json" \
+	-H "Accept: application/json, text/event-stream" \
 	-H "Mcp-Session-Id: $(SESSIONID)" \
 	-d '{ \
 		"jsonrpc": "2.0", \
@@ -636,7 +637,7 @@ curl-mcp-tools-list:
 curl-mcp-web-search:
 	curl -i -X POST "http://localhost:9000/mcp" \
 	-H "Content-Type: application/json" \
-	-H "Accept: application/json" \
+	-H "Accept: application/json, text/event-stream" \
 	-H "Mcp-Session-Id: $(SESSIONID)" \
 	-d '{ \
 		"jsonrpc": "2.0", \

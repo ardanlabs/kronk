@@ -26,14 +26,15 @@ Key principles:
 */
 
 const (
-	defContextWindow  = 8 * 1024
-	defNBatch         = 2 * 1024
-	defNUBatch        = 512
-	defNUBatchVision  = 2 * 1024
-	defMinCacheTokens = 100
-	defThreadZero     = 0
-	defNSeqMax        = 1
-	defNDraft         = 5
+	defContextWindow      = 8 * 1024
+	defNBatch             = 2 * 1024
+	defNUBatch            = 512
+	defNUBatchVision      = 2 * 1024
+	defMinCacheTokens     = 100
+	defThreadZero         = 0
+	defNSeqMax            = 1
+	defNDraft             = 5
+	defCacheSlotTimeout   = 30
 )
 
 // Logger provides a function for logging messages from different APIs.
@@ -48,6 +49,12 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // CacheMinTokens sets the minimum token count required before caching. Messages
 // shorter than this threshold are not cached, as the overhead of cache management
 // may outweigh the prefill savings. When set to 0, defaults to 100 tokens.
+//
+// CacheSlotTimeout sets the maximum number of seconds to wait for a pending IMC
+// slot to become available before returning an error. When multiple concurrent
+// requests compete for slots (e.g., NSeqMax=1 with parallel requests), a request
+// may need to wait for an in-flight cache build to complete. When set to 0,
+// defaults to 30 seconds.
 //
 // CacheTypeK is the data type for the K (key) cache. This controls the precision
 // of the key vectors in the KV cache. Lower precision types (like Q8_0 or Q4_0)
@@ -208,6 +215,7 @@ type DraftModelConfig struct {
 
 type Config struct {
 	CacheMinTokens       int
+	CacheSlotTimeout     int
 	CacheTypeK           GGMLType
 	CacheTypeV           GGMLType
 	ContextWindow        int
@@ -265,8 +273,8 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("%d", *p)
 	}
 
-	return fmt.Sprintf("\nCacheMinTokens[%d]\nCacheTypeK[%d]\nCacheTypeV[%d]\nContextWindow[%d]\nDevice[%s]\nFlashAttention[%d]\nIgnoreIntegrityCheck[%t]\nIncrementalCache[%t]\nInsecureLogging[%t]\nJinjaFile[%s]\nModelFiles[%v]\nNBatch[%d]\nNGpuLayers[%s]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nOffloadKQV[%s]\nOpOffload[%s]\nProjFile[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSplitMode[%d]\nSystemPromptCache[%t]\nUseDirectIO[%t]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
-		cfg.CacheMinTokens, cfg.CacheTypeK, cfg.CacheTypeV, cfg.ContextWindow, cfg.Device, cfg.FlashAttention, cfg.IgnoreIntegrityCheck,
+	return fmt.Sprintf("\nCacheMinTokens[%d]\nCacheSlotTimeout[%d]\nCacheTypeK[%d]\nCacheTypeV[%d]\nContextWindow[%d]\nDevice[%s]\nFlashAttention[%d]\nIgnoreIntegrityCheck[%t]\nIncrementalCache[%t]\nInsecureLogging[%t]\nJinjaFile[%s]\nModelFiles[%v]\nNBatch[%d]\nNGpuLayers[%s]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nOffloadKQV[%s]\nOpOffload[%s]\nProjFile[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSplitMode[%d]\nSystemPromptCache[%t]\nUseDirectIO[%t]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
+		cfg.CacheMinTokens, cfg.CacheSlotTimeout, cfg.CacheTypeK, cfg.CacheTypeV, cfg.ContextWindow, cfg.Device, cfg.FlashAttention, cfg.IgnoreIntegrityCheck,
 		cfg.IncrementalCache, cfg.InsecureLogging, cfg.JinjaFile, cfg.ModelFiles, cfg.NBatch,
 		formatIntPtr(cfg.NGpuLayers), cfg.NSeqMax, cfg.NThreads, cfg.NThreadsBatch, cfg.NUBatch,
 		formatBoolPtr(cfg.OffloadKQV), formatBoolPtr(cfg.OpOffload), cfg.ProjFile,
@@ -364,6 +372,11 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 		cfg.CacheMinTokens = defMinCacheTokens
 	}
 
+	// Default slot wait timeout for IMC.
+	if cfg.IncrementalCache && cfg.CacheSlotTimeout <= 0 {
+		cfg.CacheSlotTimeout = defCacheSlotTimeout
+	}
+
 	if cfg.DraftModel != nil && cfg.DraftModel.NDraft <= 0 {
 		cfg.DraftModel.NDraft = defNDraft
 	}
@@ -428,6 +441,9 @@ func applyCatalogConfig(user Config, cat Config) Config {
 	}
 	if user.CacheMinTokens == 0 {
 		user.CacheMinTokens = cat.CacheMinTokens
+	}
+	if user.CacheSlotTimeout == 0 {
+		user.CacheSlotTimeout = cat.CacheSlotTimeout
 	}
 	if !user.InsecureLogging {
 		user.InsecureLogging = cat.InsecureLogging

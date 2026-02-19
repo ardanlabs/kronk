@@ -97,6 +97,7 @@ type Model struct {
 	unloaded      atomic.Bool
 	decodeMu      sync.Mutex
 	cacheMu       sync.RWMutex
+	cacheCond     *sync.Cond   // Broadcast when any IMC slot's pending flag is cleared
 	imcSlots []*imcSession // Per-slot branch state, len = NSeqMax
 	spcSession    *spcSession            // SPC session (single dedicated cache sequence)
 	spcCacheSeqID llama.SeqId            // Dedicated SPC cache sequence ID
@@ -279,6 +280,7 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 
 		// Initialize IMC per-slot branch tracking when enabled.
 		if cfg.IncrementalCache {
+			m.cacheCond = sync.NewCond(&m.cacheMu)
 			m.imcSlots = make([]*imcSession, nSlots)
 			for i := range nSlots {
 				m.imcSlots[i] = &imcSession{

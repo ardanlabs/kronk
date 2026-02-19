@@ -214,6 +214,7 @@ type ModelConfig struct {
 	SystemPromptCache    bool                     `yaml:"system-prompt-cache,omitempty"`
 	IncrementalCache     bool                     `yaml:"incremental-cache,omitempty"`
 	CacheMinTokens       int                      `yaml:"cache-min-tokens,omitempty"`
+	CacheSlotTimeout     int                      `yaml:"cache-slot-timeout,omitempty"`
 	InsecureLogging      bool                     `yaml:"insecure-logging,omitempty"`
 	RopeScaling          model.RopeScalingType    `yaml:"rope-scaling-type,omitempty"`
 	RopeFreqBase         *float32                 `yaml:"rope-freq-base,omitempty"`
@@ -257,6 +258,7 @@ func (mc ModelConfig) ToKronkConfig() model.Config {
 		SystemPromptCache:    mc.SystemPromptCache,
 		IncrementalCache:     mc.IncrementalCache,
 		CacheMinTokens:       mc.CacheMinTokens,
+		CacheSlotTimeout:     mc.CacheSlotTimeout,
 		InsecureLogging:      mc.InsecureLogging,
 		RopeScaling:          mc.RopeScaling,
 		RopeFreqBase:         mc.RopeFreqBase,

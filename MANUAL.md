@@ -4609,7 +4609,7 @@ URLs, and descriptions.
 ### 15.5 Client Configuration
 
 The MCP service uses the Streamable HTTP transport. Configure your
-MCP-compatible client to connect to `http://localhost:9000`.
+MCP-compatible client to connect to `http://localhost:9000/mcp`.
 
 #### Cline
 
@@ -4625,7 +4625,7 @@ Add the following to your Cline MCP settings:
       "disabled": false,
       "timeout": 60,
       "type": "streamableHttp",
-      "url": "http://localhost:9000"
+      "url": "http://localhost:9000/mcp"
     }
   }
 }
@@ -4640,7 +4640,7 @@ Add the following to your Kilo Code MCP settings:
   "mcpServers": {
     "Kronk": {
       "type": "streamable-http",
-      "url": "http://localhost:9000",
+      "url": "http://localhost:9000/mcp",
       "disabled": true,
       "alwaysAllow": [
         "web_search"
