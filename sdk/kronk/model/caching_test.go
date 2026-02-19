@@ -450,7 +450,7 @@ func TestProcessIMCScanSkipsPendingSlots(t *testing.T) {
 	// we can verify the scan logic picked the right slot by checking which
 	// slot it attempted to build on. The scan happens before the template
 	// error, so we verify slot[0] was skipped.
-	_ = m.processIMC(ctx, d)
+	_ = m.processIMC(ctx, d, time.Now())
 
 	// Slot[0] should still be pending (untouched — it was skipped).
 	if !m.imcSlots[0].pending {
@@ -498,7 +498,7 @@ func TestProcessIMCScanAllPending(t *testing.T) {
 		"messages": messages,
 	}
 
-	result := m.processIMC(ctx, d)
+	result := m.processIMC(ctx, d, time.Now())
 
 	if result.err == nil {
 		t.Error("expected error when all slots are pending and context is canceled")
@@ -548,7 +548,7 @@ func TestProcessIMCSlotMatchByHash(t *testing.T) {
 		
 	}
 
-	result := m.processIMC(ctx, d)
+	result := m.processIMC(ctx, d, time.Now())
 
 	if result.err != nil {
 		t.Fatalf("processIMC returned error: %v", result.err)
@@ -619,7 +619,7 @@ func TestProcessIMCBestPrefixCoverage(t *testing.T) {
 		
 	}
 
-	result := m.processIMC(ctx, d)
+	result := m.processIMC(ctx, d, time.Now())
 
 	if result.err != nil {
 		t.Fatalf("processIMC returned error: %v", result.err)
@@ -690,7 +690,7 @@ func TestProcessIMCLRUEviction(t *testing.T) {
 
 	// buildIMCCacheFromScratch will fail (no template), but the scan should
 	// have selected slot[0] (LRU). Verify slot[1] was NOT touched.
-	result := m.processIMC(ctx, d)
+	result := m.processIMC(ctx, d, time.Now())
 
 	if result.err == nil {
 		t.Fatal("expected template error from buildIMCCacheFromScratch")
@@ -774,7 +774,7 @@ func TestProcessIMCParallelSubAgents(t *testing.T) {
 		
 	}
 
-	result3 := m.processIMC(ctx, d3)
+	result3 := m.processIMC(ctx, d3, time.Now())
 	if result3.err != nil {
 		t.Fatalf("follow-up error: %v", result3.err)
 	}
@@ -809,7 +809,7 @@ func TestProcessIMCParallelSubAgents(t *testing.T) {
 		
 	}
 
-	result4 := m.processIMC(ctx, d4)
+	result4 := m.processIMC(ctx, d4, time.Now())
 	if result4.err != nil {
 		t.Fatalf("sub-agent 2 follow-up error: %v", result4.err)
 	}
@@ -875,7 +875,7 @@ func TestProcessIMCPendingPreventsDoubleSlot(t *testing.T) {
 	}
 
 	// This will fail at template, but we can verify slot selection.
-	_ = m.processIMC(ctx, d)
+	_ = m.processIMC(ctx, d, time.Now())
 
 	// Slot[0] should still be pending (untouched by the second request).
 	if !m.imcSlots[0].pending {
@@ -1027,7 +1027,7 @@ func TestProcessIMCTokenPrefixFallback(t *testing.T) {
 	// 3. Tokenization fails (no Jinja template) — tmErr != nil, falls through.
 	// 4. Falls to empty/LRU path: slot[1] is empty, picks it.
 	// 5. buildIMCCacheFromScratch on slot[1] also fails (no template).
-	_ = m.processIMC(ctx, d)
+	_ = m.processIMC(ctx, d, time.Now())
 
 	// Slot[0] should NOT have been cleared or marked pending — the token
 	// prefix code path never modifies slot state when tokenization fails.

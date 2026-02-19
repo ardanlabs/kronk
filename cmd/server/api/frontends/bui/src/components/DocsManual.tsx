@@ -977,10 +977,10 @@ config:
   nseq-max: 1
   incremental-cache: true
   draft-model:
-    model-id: Qwen3-0.6B-Q8_0     # Draft model ID (must be downloaded)
-    ndraft: 5                       # Candidates per step (default: 5)
-    ngpu-layers: 0                  # GPU layers (0=all, -1=none)
-    device: ""                      # Pin to specific GPU (e.g., "GPU1")`}</code></pre>
+    model-id: Qwen3-0.6B-Q8_0 # Draft model ID (must be downloaded)
+    ndraft: 5 # Candidates per step (default: 5)
+    ngpu-layers: 0 # GPU layers (0=all, -1=none)
+    device: "" # Pin to specific GPU (e.g., "GPU1")`}</code></pre>
           <pre className="code-block"><code className="language-yaml">{`# In model_config.yaml
 Qwen3-8B-Q8_0:
   incremental-cache: true
@@ -1313,6 +1313,105 @@ Step 3 — Total KV cache (NSeqMax = 8):
 Step 4 — Total VRAM:
 
   Total_VRAM = 9.0 GB + 4.8 GB = ~13.8 GB`}</code></pre>
+          <h3 id="48-imc-slot-scheduling">4.8 IMC Slot Scheduling</h3>
+          <p>When IMC is enabled, the batch engine uses a specialized scheduling algorithm (<code>fillSlotsIMC</code>) that handles the constraint of routing requests to specific slots. This section explains how IMC scheduling differs from normal slot assignment and the mechanisms that prevent requests from stalling.</p>
+          <p><strong>Normal Scheduling (No Caching / SPC)</strong></p>
+          <p>Without IMC, <code>fillSlots</code> assigns the next queued request to any available slot. If all slots are busy, the request stays in the queue until a slot finishes. This is simple and works well because requests have no slot affinity.</p>
+          <p><strong>IMC Scheduling</strong></p>
+          <p>IMC routes each request to a specific target slot based on cache matching (see <a href="#53-incremental-message-cache-imc">Section 5.3</a>). This creates a problem: a request's target slot may be busy generating for another request, even though other slots are free. <code>fillSlotsIMC</code> handles this with two mechanisms: <strong>deferred jobs</strong> and <strong>slot preemption</strong>.</p>
+          <p><strong>Deferred Jobs</strong></p>
+          <p>When <code>fillSlotsIMC</code> dequeues a request but its target slot is busy, the request is stored in a <code>deferredJob</code> field instead of being put back on the queue. On the next iteration of the batch processing loop, <code>fillSlotsIMC</code> checks the deferred job first — if the target slot has finished, the job is assigned immediately. This avoids a critical stall: putting a job back on the queue could cause the processing loop to go idle (no active slots, empty queue) and never wake up until a new external request arrives.</p>
+          <pre className="code-block"><code>{`Request dequeued → target slot busy → defer (not requeue)
+                                          │
+Next iteration → target slot free? ──Yes──→ startSlot
+                                     │
+                                     No → keep deferred, check again next iteration`}</code></pre>
+          <p><strong>Slot Preemption</strong></p>
+          <p>If a deferred job waits longer than <code>CacheSlotTimeout</code> seconds (default: 30) for its target slot to finish, <code>fillSlotsIMC</code> triggers preemption. This is a safety mechanism for pathologically long generations — under normal operation, the target slot finishes before the timeout and the deferred job picks it up naturally.</p>
+          <p>Preemption uses a two-phase approach for safety:</p>
+          <ol>
+            <li><strong>Schedule</strong> — <code>fillSlotsIMC</code> sets <code>pendingPreempt</code> to the victim slot</li>
+          </ol>
+          <p>and defers the waiting job. No slot state is modified yet.</p>
+          <ol>
+            <li><strong>Execute</strong> — At the top of the next <code>processBatch</code> iteration, after</li>
+          </ol>
+          <p><code>batch.Clear()</code> but before any tokens are added, the victim slot is finished with a preemption error. This ordering is critical — the victim slot must have no tokens in the current batch, otherwise cleaning up its KV state could corrupt a subsequent decode.</p>
+          <p>The preempted request receives an error response and the client can retry. The waiting job is then assigned to the freed slot.</p>
+          <p>For IMC cache-hit requests, the specific target slot is preempted. For requests with no cache hit (assigned to any slot), the longest-running slot is preempted.</p>
+          <p><strong>Timeout Measurement</strong></p>
+          <p>The preemption timeout is measured from the moment the job enters the batch engine queue — not from when the HTTP request arrived. Time spent in earlier phases (such as <code>waitForIMCSlot</code> during cache builds) does not count against the preemption timeout. This prevents false preemptions when a request waits for a long cache build before entering the queue.</p>
+          <p><strong>CacheSlotTimeout</strong></p>
+          <p>The <code>cache_slot_timeout</code> setting (default: 30 seconds) controls two distinct timeout scenarios in the IMC scheduling path:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Scenario</th>
+                <th>Where</th>
+                <th>What Happens at Timeout</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Wait for slot available</td>
+                <td><code>waitForIMCSlot</code></td>
+                <td>Error returned: "server busy"</td>
+              </tr>
+              <tr>
+                <td>Deferred job waiting</td>
+                <td><code>fillSlotsIMC</code></td>
+                <td>Target slot preempted, deferred job assigned</td>
+              </tr>
+            </tbody>
+          </table>
+          <pre className="code-block"><code>{`                          CacheSlotTimeout (30s)
+                          ┌──────────────────────────────────────┐
+                          │                                      │
+    ┌─────────────────────┼──────────────────┐   ┌───────────────┼──────────────┐
+    │  waitForIMCSlot     │                  │   │ fillSlotsIMC  │              │
+    │                     │                  │   │               │              │
+    │  All slots have     │                  │   │  Target slot  │              │
+    │  cache builds       ▼                  │   │  is busy      ▼              │
+    │  in-flight     ──► Error               │   │  generating ──► Preempt      │
+    │                     "server busy"      │   │                victim slot   │
+    └────────────────────────────────────────┘   └──────────────────────────────┘`}</code></pre>
+          <p>The first scenario fires before the job enters the batch engine — it blocks during <code>processIMC</code> when all IMC slots have pending cache builds in-flight. The second scenario fires inside the batch engine — the job is already queued but its target slot is actively generating tokens for another request.</p>
+          <p><strong>Important:</strong> The preemption timeout is measured from when the job enters the batch engine queue (<code>time.Now()</code> at submit), not from when the HTTP request arrived. This means time spent waiting in <code>waitForIMCSlot</code> for cache builds does not count against the preemption budget.</p>
+          <p><strong>Debugging IMC Scheduling</strong></p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Log Message</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>all slots pending, waiting for slot</code></td>
+                <td>Entering <code>waitForIMCSlot</code> (timeout 1)</td>
+              </tr>
+              <tr>
+                <td><code>slot became available, retrying</code></td>
+                <td><code>waitForIMCSlot</code> succeeded, retrying scan</td>
+              </tr>
+              <tr>
+                <td><code>server busy</code></td>
+                <td><code>waitForIMCSlot</code> timed out (timeout 1)</td>
+              </tr>
+              <tr>
+                <td><code>preempting-slot</code></td>
+                <td>Preemption scheduled (timeout 2, shows wait time)</td>
+              </tr>
+              <tr>
+                <td><code>preempted by queued request</code></td>
+                <td>Victim slot finished with preemption error</td>
+              </tr>
+              <tr>
+                <td><code>slot-finished</code> (after preemption)</td>
+                <td>Victim cleaned up, slot available for deferred job</td>
+              </tr>
+            </tbody>
+          </table>
           <hr />
           <h2 id="chapter-5:-message-caching">Chapter 5: Message Caching</h2>
           <p>Message caching reduces redundant computation by storing and reusing KV cache state from previous requests. Kronk provides two caching modes (SPC and IMC) optimized for different use cases.</p>
@@ -4213,9 +4312,7 @@ make mcp-server`}</code></pre>
           <pre className="code-block"><code className="language-json">{`{
   "mcpServers": {
     "Kronk": {
-      "autoApprove": [
-        "web_search"
-      ],
+      "autoApprove": ["web_search"],
       "disabled": false,
       "timeout": 60,
       "type": "streamableHttp",
@@ -4231,9 +4328,7 @@ make mcp-server`}</code></pre>
       "type": "streamable-http",
       "url": "http://localhost:9000/mcp",
       "disabled": true,
-      "alwaysAllow": [
-        "web_search"
-      ],
+      "alwaysAllow": ["web_search"],
       "timeout": 60
     }
   }
@@ -5218,6 +5313,7 @@ batching = true`}</code></pre>
                 <li><a href="#45-concurrency-by-model-type" className={activeSection === '45-concurrency-by-model-type' ? 'active' : ''}>4.5 Concurrency by Model Type</a></li>
                 <li><a href="#46-performance-tuning" className={activeSection === '46-performance-tuning' ? 'active' : ''}>4.6 Performance Tuning</a></li>
                 <li><a href="#47-example-configuration" className={activeSection === '47-example-configuration' ? 'active' : ''}>4.7 Example Configuration</a></li>
+                <li><a href="#48-imc-slot-scheduling" className={activeSection === '48-imc-slot-scheduling' ? 'active' : ''}>4.8 IMC Slot Scheduling</a></li>
               </ul>
             </div>
             <div className="doc-index-section">

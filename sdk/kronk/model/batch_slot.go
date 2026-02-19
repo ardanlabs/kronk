@@ -21,6 +21,7 @@ type chatJob struct {
 	ctx           context.Context     // Request context for cancellation and tracing
 	ch            chan<- ChatResponse // Channel for streaming responses back to caller
 	queueWaitSpan trace.Span          // Span covering time spent waiting in the queue
+	queuedAt      time.Time           // Time when the job was submitted to the queue
 
 	// -------------------------------------------------------------------------
 	// Request Content

@@ -98,7 +98,9 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 			}
 		}()
 
-		prompt, media, cache, err := m.prepareCacheAndPrompt(prepCtx, d, object)
+		requestStart := time.Now()
+
+		prompt, media, cache, err := m.prepareCacheAndPrompt(prepCtx, d, object, requestStart)
 		if err != nil {
 			prepSpan.End()
 			m.sendChatError(ctx, ch, id, err)
@@ -113,7 +115,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 
 		prepSpan.End()
 
-		if m.submitToBatchEngine(ctx, ch, id, d, object, prompt, media, params, mtmdCtx, cache) {
+		if m.submitToBatchEngine(ctx, ch, id, d, object, prompt, media, params, mtmdCtx, cache, requestStart) {
 			batching = true
 			return
 		}
@@ -184,7 +186,7 @@ func (m *Model) prepareContext(ctx context.Context, d D) (D, mtmd.Context, strin
 
 // prepareCacheAndPrompt handles cache processing and prompt creation. Returns
 // the prompt, media bytes, cache result, and any error.
-func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string) (string, [][]byte, cacheResult, error) {
+func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, requestStart time.Time) (string, [][]byte, cacheResult, error) {
 	var cache cacheResult
 
 	// For GPT models, inject tool_call_name into tool response messages before
@@ -203,7 +205,7 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string) (
 	default:
 		ctx, cacheSpan := otel.AddSpan(ctx, "process-cache")
 
-		cache = m.processCache(ctx, d)
+		cache = m.processCache(ctx, d, requestStart)
 
 		cacheSpan.End()
 
@@ -225,7 +227,7 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string) (
 // submitToBatchEngine attempts to submit the request to the batch engine.
 // Returns true if the job was submitted (caller should set batching=true),
 // false if batch engine is not available or not applicable.
-func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, id string, d D, object string, prompt string, media [][]byte, params Params, mtmdCtx mtmd.Context, cache cacheResult) bool {
+func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, id string, d D, object string, prompt string, media [][]byte, params Params, mtmdCtx mtmd.Context, cache cacheResult, requestStart time.Time) bool {
 	imcCacheHit := m.cfg.IncrementalCache && (cache.cacheIdx > 0 || len(cache.imcNewCacheTokens) > 0)
 
 	_, queueSpan := otel.AddSpan(ctx, "queue-wait")
@@ -234,6 +236,7 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		id:            id,
 		ctx:           ctx,
 		queueWaitSpan: queueSpan,
+		queuedAt:      time.Now(),
 		d:             d,
 		object:        object,
 		prompt:        prompt,

@@ -50,11 +50,19 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // shorter than this threshold are not cached, as the overhead of cache management
 // may outweigh the prefill savings. When set to 0, defaults to 100 tokens.
 //
-// CacheSlotTimeout sets the maximum number of seconds to wait for a pending IMC
-// slot to become available before returning an error. When multiple concurrent
-// requests compete for slots (e.g., NSeqMax=1 with parallel requests), a request
-// may need to wait for an in-flight cache build to complete. When set to 0,
-// defaults to 30 seconds.
+// CacheSlotTimeout sets the maximum number of seconds used for two IMC timeout
+// scenarios:
+//
+//  1. Wait for slot availability: When all IMC slots have cache builds
+//     in-flight (pending), incoming requests wait up to this duration for a
+//     slot to become available before returning a "server busy" error.
+//
+//  2. Slot preemption: When a request's target slot is busy generating,
+//     the request is deferred. If the deferred job waits longer than this
+//     duration (measured from batch queue entry, not HTTP arrival), the
+//     busy slot is preempted so the waiting request can proceed.
+//
+// When set to 0, defaults to 30 seconds.
 //
 // CacheTypeK is the data type for the K (key) cache. This controls the precision
 // of the key vectors in the KV cache. Lower precision types (like Q8_0 or Q4_0)
