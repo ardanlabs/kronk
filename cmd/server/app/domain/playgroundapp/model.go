@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
@@ -42,6 +43,12 @@ func (s *SessionRequest) Validate() error {
 		return errors.New("template_script is required when template_mode is custom")
 	}
 
+	if s.TemplateName != "" {
+		if err := validateTemplateName(s.TemplateName); err != nil {
+			return err
+		}
+	}
+
 	return s.Config.Validate()
 }
 
@@ -49,24 +56,24 @@ func (s *SessionRequest) Validate() error {
 // distinguishing "not set by user" (nil) from an explicit value, so that only
 // user-provided overrides are merged on top of the catalog-resolved base config.
 type SessionConfig struct {
-	ContextWindow     *int                      `json:"context-window"`
+	ContextWindow     *int                      `json:"context_window"`
 	NBatch            *int                      `json:"nbatch"`
 	NUBatch           *int                      `json:"nubatch"`
-	NSeqMax           *int                      `json:"nseq-max"`
-	FlashAttention    *model.FlashAttentionType `json:"flash-attention"`
-	CacheTypeK        *model.GGMLType           `json:"cache-type-k"`
-	CacheTypeV        *model.GGMLType           `json:"cache-type-v"`
-	NGpuLayers        *int                      `json:"ngpu-layers"`
-	SystemPromptCache *bool                     `json:"system-prompt-cache"`
-	RopeScaling       *model.RopeScalingType    `json:"rope-scaling-type"`
-	RopeFreqBase      *float32                  `json:"rope-freq-base"`
-	RopeFreqScale     *float32                  `json:"rope-freq-scale"`
-	YarnExtFactor     *float32                  `json:"yarn-ext-factor"`
-	YarnAttnFactor    *float32                  `json:"yarn-attn-factor"`
-	YarnBetaFast      *float32                  `json:"yarn-beta-fast"`
-	YarnBetaSlow      *float32                  `json:"yarn-beta-slow"`
-	YarnOrigCtx       *int                      `json:"yarn-orig-ctx"`
-	SplitMode         *model.SplitMode          `json:"split-mode"`
+	NSeqMax           *int                      `json:"nseq_max"`
+	FlashAttention    *model.FlashAttentionType `json:"flash_attention"`
+	CacheTypeK        *model.GGMLType           `json:"cache_type_k"`
+	CacheTypeV        *model.GGMLType           `json:"cache_type_v"`
+	NGpuLayers        *int                      `json:"ngpu_layers"`
+	SystemPromptCache *bool                     `json:"system_prompt_cache"`
+	RopeScaling       *model.RopeScalingType    `json:"rope_scaling_type"`
+	RopeFreqBase      *float32                  `json:"rope_freq_base"`
+	RopeFreqScale     *float32                  `json:"rope_freq_scale"`
+	YarnExtFactor     *float32                  `json:"yarn_ext_factor"`
+	YarnAttnFactor    *float32                  `json:"yarn_attn_factor"`
+	YarnBetaFast      *float32                  `json:"yarn_beta_fast"`
+	YarnBetaSlow      *float32                  `json:"yarn_beta_slow"`
+	YarnOrigCtx       *int                      `json:"yarn_orig_ctx"`
+	SplitMode         *model.SplitMode          `json:"split_mode"`
 }
 
 // ApplyTo merges user overrides onto a base model config. Only fields
@@ -129,6 +136,38 @@ func (sc SessionConfig) ApplyTo(cfg model.Config) model.Config {
 	return cfg
 }
 
+// HasOverrides reports whether any configuration field was explicitly
+// provided by the user.
+func (sc SessionConfig) HasOverrides() bool {
+	return sc.ContextWindow != nil ||
+		sc.NBatch != nil ||
+		sc.NUBatch != nil ||
+		sc.NSeqMax != nil ||
+		sc.FlashAttention != nil ||
+		sc.CacheTypeK != nil ||
+		sc.CacheTypeV != nil ||
+		sc.NGpuLayers != nil ||
+		sc.SystemPromptCache != nil ||
+		sc.RopeScaling != nil ||
+		sc.RopeFreqBase != nil ||
+		sc.RopeFreqScale != nil ||
+		sc.YarnExtFactor != nil ||
+		sc.YarnAttnFactor != nil ||
+		sc.YarnBetaFast != nil ||
+		sc.YarnBetaSlow != nil ||
+		sc.YarnOrigCtx != nil ||
+		sc.SplitMode != nil
+}
+
+// HasOverrides reports whether the request contains any config or template
+// overrides that require a separate model instance from the Chat path.
+func (s SessionRequest) HasOverrides() bool {
+	return s.Config.HasOverrides() ||
+		s.TemplateMode == "custom" ||
+		s.TemplateName != "" ||
+		s.TemplateScript != ""
+}
+
 // Validate checks the configuration bounds.
 func (sc SessionConfig) Validate() error {
 	if sc.ContextWindow != nil && (*sc.ContextWindow < 0 || *sc.ContextWindow > 131072) {
@@ -145,10 +184,6 @@ func (sc SessionConfig) Validate() error {
 
 	if sc.NSeqMax != nil && (*sc.NSeqMax < 0 || *sc.NSeqMax > 64) {
 		return fmt.Errorf("nseq-max must be between 0 and 64, got %d", *sc.NSeqMax)
-	}
-
-	if sc.NBatch != nil && sc.NUBatch != nil && *sc.NUBatch > *sc.NBatch {
-		return fmt.Errorf("nubatch (%d) must not exceed nbatch (%d)", *sc.NUBatch, *sc.NBatch)
 	}
 
 	return nil
@@ -226,6 +261,33 @@ type TemplateSaveRequest struct {
 // Decode implements the decoder interface.
 func (t *TemplateSaveRequest) Decode(data []byte) error {
 	return json.Unmarshal(data, t)
+}
+
+// Validate checks the request.
+func (t *TemplateSaveRequest) Validate() error {
+	if err := validateTemplateName(t.Name); err != nil {
+		return err
+	}
+	if len(t.Script) > 64*1024 {
+		return fmt.Errorf("template script too large (max 64KB)")
+	}
+	return nil
+}
+
+func validateTemplateName(name string) error {
+	if name == "" {
+		return fmt.Errorf("missing template name")
+	}
+	if len(name) > 255 {
+		return fmt.Errorf("template name too long")
+	}
+	if strings.Contains(name, "..") || strings.Contains(name, "/") || strings.Contains(name, "\\") {
+		return fmt.Errorf("invalid template name: %s", name)
+	}
+	if name[0] == '.' {
+		return fmt.Errorf("template name must not start with a dot")
+	}
+	return nil
 }
 
 // TemplateSaveResponse is the response from saving a template.

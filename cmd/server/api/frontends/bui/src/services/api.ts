@@ -31,6 +31,20 @@ import type {
 class ApiService {
   private baseUrl = '/v1';
 
+  private async parseErrorMessage(response: Response): Promise<string> {
+    let message = `HTTP ${response.status}`;
+    try {
+      const raw = await response.text();
+      try {
+        const body = JSON.parse(raw);
+        message = body?.error?.message ?? message;
+      } catch {
+        if (raw) message = `${message}: ${raw.slice(0, 200)}`;
+      }
+    } catch { /* empty */ }
+    return message;
+  }
+
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
@@ -44,8 +58,7 @@ class ApiService {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.message || `HTTP ${response.status}`);
+      throw new Error(await this.parseErrorMessage(response));
     }
 
     if (response.status === 204) {
@@ -68,8 +81,7 @@ class ApiService {
       method: 'POST',
     });
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.message || `HTTP ${response.status}`);
+      throw new Error(await this.parseErrorMessage(response));
     }
   }
 
@@ -93,8 +105,7 @@ class ApiService {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.message || `HTTP ${response.status}`);
+      throw new Error(await this.parseErrorMessage(response));
     }
 
     return response.json();
@@ -447,8 +458,7 @@ class ApiService {
     })
       .then(async (response) => {
         if (!response.ok) {
-          const error = await response.json();
-          onError(error.error?.message || `HTTP ${response.status}`);
+          onError(await this.parseErrorMessage(response));
           return;
         }
 
@@ -597,8 +607,7 @@ class ApiService {
     })
       .then(async (response) => {
         if (!response.ok) {
-          const error = await response.json();
-          onError(error.error?.message || `HTTP ${response.status}`);
+          onError(await this.parseErrorMessage(response));
           return;
         }
 

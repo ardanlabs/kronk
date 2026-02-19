@@ -15,8 +15,8 @@ export interface SamplingConfig {
   xtc_threshold: number;
   xtc_min_keep: number;
   frequency_penalty: number;
-  enable_thinking: string;
-  reasoning_effort: string;
+  enable_thinking: 'true' | 'false';
+  reasoning_effort: 'none' | 'minimal' | 'low' | 'medium' | 'high';
   grammar: string;
 }
 
@@ -430,6 +430,15 @@ export interface RepoPathResponse {
   repo_path: string;
 }
 
+export interface ChatToolDefinition {
+  type: 'function';
+  function: {
+    name: string;
+    description?: string;
+    parameters?: Record<string, unknown>;
+  };
+}
+
 // =============================================================================
 // Playground Types
 
@@ -465,7 +474,7 @@ export interface PlaygroundModelConfig {
 export interface PlaygroundSessionResponse {
   session_id: string;
   status: string;
-  effective_config: Record<string, any>;
+  effective_config: Record<string, unknown>;
 }
 
 export interface PlaygroundTemplateInfo {
@@ -485,7 +494,7 @@ export interface PlaygroundTemplateResponse {
 export interface PlaygroundChatRequest {
   session_id: string;
   messages: ChatMessage[];
-  tools?: any[];
+  tools?: ChatToolDefinition[];
   stream?: boolean;
   return_prompt?: boolean;
   temperature?: number;
@@ -504,8 +513,8 @@ export interface PlaygroundChatRequest {
   xtc_threshold?: number;
   xtc_min_keep?: number;
   frequency_penalty?: number;
-  enable_thinking?: string;
-  reasoning_effort?: string;
+  enable_thinking?: 'true' | 'false';
+  reasoning_effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high';
   grammar?: string;
   stream_options?: { include_usage?: boolean };
   logprobs?: boolean;
@@ -525,7 +534,7 @@ export type AutoTestRunnerState = 'idle' | 'repairing_template' | 'running_trial
 export interface AutoTestPromptDef {
   id: string;
   messages: ChatMessage[];
-  tools?: any[];
+  tools?: ChatToolDefinition[];
   max_tokens?: number;
   expected?: { type: 'regex' | 'exact' | 'tool_call'; value?: string };
 }
@@ -556,8 +565,8 @@ export interface SamplingCandidate {
   xtc_min_keep?: number;
   adaptive_p_target?: number;
   adaptive_p_decay?: number;
-  enable_thinking?: string;
-  reasoning_effort?: string;
+  enable_thinking?: 'true' | 'false';
+  reasoning_effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high';
   grammar?: string;
 }
 

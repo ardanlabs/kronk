@@ -14,7 +14,7 @@ type playgroundCataloger struct {
 	templateMode   string
 	templateName   string
 	templateScript string
-	catalog        model.Cataloger
+	catalog        *catalog.Catalog
 }
 
 // RetrieveTemplate returns the template based on the configured mode.
@@ -31,7 +31,7 @@ func (pc *playgroundCataloger) RetrieveTemplate(modelID string) (model.Template,
 
 	default:
 		if pc.templateName != "" {
-			script, err := pc.catalog.(*catalog.Catalog).ReadTemplate(pc.templateName)
+			script, err := pc.catalog.ReadTemplate(pc.templateName)
 			if err != nil {
 				return model.Template{}, fmt.Errorf("loading template %s: %w", pc.templateName, err)
 			}

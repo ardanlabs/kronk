@@ -2,6 +2,7 @@ import { api } from './api'
 import type {
   ChatStreamResponse,
   ChatToolCall,
+  ChatToolDefinition,
   ChatUsage,
   AutoTestPromptDef,
   AutoTestScenario,
@@ -16,7 +17,7 @@ import type {
 } from '../types'
 
 /** Standard tool definitions used for automated testing. */
-export const autoTestTools = [
+export const autoTestTools: ChatToolDefinition[] = [
   {
     type: 'function',
     function: {
@@ -301,13 +302,13 @@ export function generateTrialCandidates(
 
 /** Default config sweep grids for each parameter. */
 export const defaultConfigSweepDef: ConfigSweepDefinition = {
-  nbatch: { enabled: false, values: [512, 1024, 2048, 4096] },
-  nubatch: { enabled: false, values: [128, 256, 512, 1024, 2048] },
-  contextWindow: { enabled: false, values: [2048, 4096, 8192, 16384, 32768] },
-  nSeqMax: { enabled: false, values: [1, 2, 4, 8] },
-  flashAttention: { enabled: false, values: ['auto', 'enabled', 'disabled'] },
-  cacheType: { enabled: false, values: ['f16', 'q8_0', 'q4_0'] },
-  systemPromptCache: { enabled: false, values: [true, false] },
+  nbatch: { enabled: true, values: [512, 1024, 2048, 4096] },
+  nubatch: { enabled: true, values: [128, 256, 512, 1024, 2048] },
+  contextWindow: { enabled: true, values: [2048, 4096, 8192, 16384, 32768] },
+  nSeqMax: { enabled: true, values: [1, 2, 4, 8] },
+  flashAttention: { enabled: true, values: ['auto', 'enabled', 'disabled'] },
+  cacheType: { enabled: true, values: ['f16', 'q8_0', 'q4_0'] },
+  systemPromptCache: { enabled: true, values: [true, false] },
 }
 
 /** Generates config candidates as a full cross-product of all enabled parameter values. */
@@ -446,7 +447,7 @@ export function scoreChat(
 /** Scores tool call output against declared tools. */
 export function scoreToolCall(
   toolCalls: ChatToolCall[],
-  tools: any[],
+  tools: ChatToolDefinition[],
 ): { score: number; notes: string[] } {
   const notes: string[] = []
 
@@ -458,8 +459,8 @@ export function scoreToolCall(
 
   const declaredNames = new Set(
     tools
-      .filter((t: any) => t.type === 'function' && t.function?.name)
-      .map((t: any) => t.function.name),
+      .filter((t) => t.type === 'function' && t.function?.name)
+      .map((t) => t.function.name),
   )
 
   for (const tc of toolCalls) {
@@ -471,10 +472,11 @@ export function scoreToolCall(
     try {
       const args = JSON.parse(tc.function.arguments)
       const toolDef = tools.find(
-        (t: any) => t.type === 'function' && t.function?.name === tc.function.name,
+        (t) => t.type === 'function' && t.function?.name === tc.function.name,
       )
-      if (toolDef?.function?.parameters?.required) {
-        const required: string[] = toolDef.function.parameters.required
+      const params = toolDef?.function?.parameters as Record<string, unknown> | undefined
+      if (params?.required && Array.isArray(params.required)) {
+        const required: string[] = params.required
         for (const field of required) {
           if (!(field in args)) {
             score -= 20

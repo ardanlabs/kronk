@@ -77,8 +77,9 @@ function RunTiming({ trials, totalCount }: RunTimingProps) {
     return () => clearInterval(id);
   }, [isActive]);
 
-  const firstStartMs = trials.find((t) => t?.startedAt)?.startedAt
-    ? Date.parse(trials.find((t) => t?.startedAt)!.startedAt!)
+  const firstStartedTrial = trials.find((t) => t?.startedAt);
+  const firstStartMs = firstStartedTrial?.startedAt
+    ? Date.parse(firstStartedTrial.startedAt)
     : NaN;
   const elapsedMs = Number.isFinite(firstStartMs) ? Date.now() - firstStartMs : 0;
   const elapsed = elapsedMs > 0 ? formatDuration(elapsedMs) : null;
@@ -108,8 +109,32 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
   const [enabledScenarios, setEnabledScenarios] = useState({ chat: true, tool_call: true });
   const [useCustomBaseline, setUseCustomBaseline] = useState(false);
   const [baseline, setBaseline] = useState<SamplingCandidate>({ ...defaultBaseline });
-  const [maxTrials] = useState(Infinity);
+  const maxTrials = Infinity;
   const [configSweepDef, setConfigSweepDef] = useState<ConfigSweepDefinition>(structuredClone(defaultConfigSweepDef));
+
+  // Raw text state for numeric sweep inputs so users can type freely (e.g. ", 1234").
+  // We only parse into numbers on blur.
+  const [rawNBatch, setRawNBatch] = useState(defaultConfigSweepDef.nbatch.values.join(', '));
+  const [rawNUBatch, setRawNUBatch] = useState(defaultConfigSweepDef.nubatch.values.join(', '));
+  const [rawContextWindow, setRawContextWindow] = useState(defaultConfigSweepDef.contextWindow.values.join(', '));
+  const [rawNSeqMax, setRawNSeqMax] = useState(defaultConfigSweepDef.nSeqMax.values.join(', '));
+
+  const commitNumericSweep = useCallback((
+    raw: string,
+    field: 'nbatch' | 'nubatch' | 'contextWindow' | 'nSeqMax',
+    setRaw: (v: string) => void,
+  ) => {
+    const values = raw.split(',').map(s => Math.floor(Number(s.trim()))).filter(n => Number.isFinite(n) && n > 0);
+    if (values.length === 0) {
+      setConfigSweepDef(d => {
+        setRaw(d[field].values.join(', '));
+        return d;
+      });
+      return;
+    }
+    setConfigSweepDef(d => ({ ...d, [field]: { ...d[field], enabled: true, values } }));
+    setRaw(values.join(', '));
+  }, []);
 
   const runnerState = run?.status ?? 'idle';
   const errorMessage = run?.errorMessage ?? '';
@@ -128,7 +153,6 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
   const displayMode: AutoTestSweepMode = run ? run.kind : sweepMode;
 
   const hasEnabledScenario = enabledScenarios.chat || enabledScenarios.tool_call;
-  const hasEnabledConfigParam = configSweepDef.nbatch.enabled || configSweepDef.nubatch.enabled || configSweepDef.contextWindow.enabled || configSweepDef.nSeqMax.enabled || configSweepDef.flashAttention.enabled || configSweepDef.cacheType.enabled || configSweepDef.systemPromptCache.enabled;
 
   const handleRun = useCallback(() => {
     if (sweepMode === 'sampling') {
@@ -160,7 +184,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
 
   const canRun = sweepMode === 'sampling'
     ? !!(session && !isRunning && hasEnabledScenario)
-    : !!(sessionSeed?.model_id && !session && !isRunning && hasEnabledScenario && hasEnabledConfigParam);
+    : !!(sessionSeed?.model_id && !session && !isRunning && hasEnabledScenario);
 
   return (
     <div className="playground-autotest-container">
@@ -227,219 +251,143 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
           </p>
           <div className="playground-sweep-params">
             <div className="playground-sweep-param">
-              <label className="playground-sweep-param-toggle">
-                <input
-                  type="checkbox"
-                  checked={configSweepDef.nbatch.enabled}
-                  onChange={(e) => setConfigSweepDef((d) => ({ ...d, nbatch: { ...d.nbatch, enabled: e.target.checked } }))}
-                  disabled={isRunning}
-                />
-                NBatch
-              </label>
-              {configSweepDef.nbatch.enabled && (
-                <input
-                  type="text"
-                  className="playground-sweep-param-values"
-                  value={configSweepDef.nbatch.values.join(', ')}
-                  onChange={(e) => {
-                    const values = e.target.value.split(',').map(s => Number(s.trim())).filter(n => Number.isFinite(n) && n > 0);
-                    setConfigSweepDef(d => ({ ...d, nbatch: { ...d.nbatch, values } }));
-                  }}
-                  placeholder="512, 1024, 2048, 4096"
-                  disabled={isRunning}
-                />
-              )}
+              <label className="playground-sweep-param-toggle">NBatch</label>
+              <input
+                type="text"
+                className="playground-sweep-param-values"
+                value={rawNBatch}
+                onChange={(e) => setRawNBatch(e.target.value)}
+                onBlur={() => commitNumericSweep(rawNBatch, 'nbatch', setRawNBatch)}
+                onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                placeholder="512, 1024, 2048, 4096"
+                disabled={isRunning}
+              />
             </div>
 
             <div className="playground-sweep-param">
-              <label className="playground-sweep-param-toggle">
-                <input
-                  type="checkbox"
-                  checked={configSweepDef.nubatch.enabled}
-                  onChange={(e) => setConfigSweepDef((d) => ({ ...d, nubatch: { ...d.nubatch, enabled: e.target.checked } }))}
-                  disabled={isRunning}
-                />
-                NUBatch
-              </label>
-              {configSweepDef.nubatch.enabled && (
-                <input
-                  type="text"
-                  className="playground-sweep-param-values"
-                  value={configSweepDef.nubatch.values.join(', ')}
-                  onChange={(e) => {
-                    const values = e.target.value.split(',').map(s => Number(s.trim())).filter(n => Number.isFinite(n) && n > 0);
-                    setConfigSweepDef(d => ({ ...d, nubatch: { ...d.nubatch, values } }));
-                  }}
-                  placeholder="128, 256, 512, 1024, 2048"
-                  disabled={isRunning}
-                />
-              )}
+              <label className="playground-sweep-param-toggle">NUBatch</label>
+              <input
+                type="text"
+                className="playground-sweep-param-values"
+                value={rawNUBatch}
+                onChange={(e) => setRawNUBatch(e.target.value)}
+                onBlur={() => commitNumericSweep(rawNUBatch, 'nubatch', setRawNUBatch)}
+                onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                placeholder="128, 256, 512, 1024, 2048"
+                disabled={isRunning}
+              />
             </div>
 
             <div className="playground-sweep-param">
-              <label className="playground-sweep-param-toggle">
-                <input
-                  type="checkbox"
-                  checked={configSweepDef.contextWindow.enabled}
-                  onChange={(e) => setConfigSweepDef((d) => ({ ...d, contextWindow: { ...d.contextWindow, enabled: e.target.checked } }))}
-                  disabled={isRunning}
-                />
-                Context Window
-              </label>
-              {configSweepDef.contextWindow.enabled && (
-                <input
-                  type="text"
-                  className="playground-sweep-param-values"
-                  value={configSweepDef.contextWindow.values.join(', ')}
-                  onChange={(e) => {
-                    const values = e.target.value.split(',').map(s => Number(s.trim())).filter(n => Number.isFinite(n) && n > 0);
-                    setConfigSweepDef(d => ({ ...d, contextWindow: { ...d.contextWindow, values } }));
-                  }}
-                  placeholder="2048, 4096, 8192, 16384, 32768"
-                  disabled={isRunning}
-                />
-              )}
+              <label className="playground-sweep-param-toggle">Context Window</label>
+              <input
+                type="text"
+                className="playground-sweep-param-values"
+                value={rawContextWindow}
+                onChange={(e) => setRawContextWindow(e.target.value)}
+                onBlur={() => commitNumericSweep(rawContextWindow, 'contextWindow', setRawContextWindow)}
+                onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                placeholder="2048, 4096, 8192, 16384, 32768"
+                disabled={isRunning}
+              />
             </div>
 
             <div className="playground-sweep-param">
-              <label className="playground-sweep-param-toggle">
-                <input
-                  type="checkbox"
-                  checked={configSweepDef.nSeqMax.enabled}
-                  onChange={(e) => setConfigSweepDef((d) => ({ ...d, nSeqMax: { ...d.nSeqMax, enabled: e.target.checked } }))}
-                  disabled={isRunning}
-                />
-                NSeqMax
-              </label>
-              {configSweepDef.nSeqMax.enabled && (
-                <input
-                  type="text"
-                  className="playground-sweep-param-values"
-                  value={configSweepDef.nSeqMax.values.join(', ')}
-                  onChange={(e) => {
-                    const values = e.target.value.split(',').map(s => Number(s.trim())).filter(n => Number.isFinite(n) && n > 0);
-                    setConfigSweepDef(d => ({ ...d, nSeqMax: { ...d.nSeqMax, values } }));
-                  }}
-                  placeholder="1, 2, 4, 8"
-                  disabled={isRunning}
-                />
-              )}
+              <label className="playground-sweep-param-toggle">NSeqMax</label>
+              <input
+                type="text"
+                className="playground-sweep-param-values"
+                value={rawNSeqMax}
+                onChange={(e) => setRawNSeqMax(e.target.value)}
+                onBlur={() => commitNumericSweep(rawNSeqMax, 'nSeqMax', setRawNSeqMax)}
+                onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                placeholder="1, 2, 4, 8"
+                disabled={isRunning}
+              />
             </div>
 
             <div className="playground-sweep-param">
-              <label className="playground-sweep-param-toggle">
-                <input
-                  type="checkbox"
-                  checked={configSweepDef.flashAttention.enabled}
-                  onChange={(e) => setConfigSweepDef((d) => ({ ...d, flashAttention: { ...d.flashAttention, enabled: e.target.checked } }))}
-                  disabled={isRunning}
-                />
-                Flash Attention
-              </label>
-              {configSweepDef.flashAttention.enabled && (
-                <div className="playground-sweep-option-checks">
-                  {['auto', 'enabled', 'disabled'].map((val) => (
-                    <label key={val} className="playground-sweep-option-label">
-                      <input
-                        type="checkbox"
-                        checked={configSweepDef.flashAttention.values.includes(val)}
-                        onChange={(e) => {
-                          setConfigSweepDef(d => {
-                            const prev = d.flashAttention.values;
-                            const next = e.target.checked ? [...prev, val] : prev.filter(v => v !== val);
-                            return { ...d, flashAttention: { ...d.flashAttention, values: next } };
-                          });
-                        }}
-                        disabled={isRunning}
-                      />
-                      {val}
-                    </label>
-                  ))}
-                </div>
-              )}
+              <label className="playground-sweep-param-toggle">Flash Attention</label>
+              <div className="playground-sweep-option-checks">
+                {['auto', 'enabled', 'disabled'].map((val) => (
+                  <label key={val} className="playground-sweep-option-label">
+                    <input
+                      type="checkbox"
+                      checked={configSweepDef.flashAttention.values.includes(val)}
+                      onChange={(e) => {
+                        setConfigSweepDef(d => {
+                          const prev = d.flashAttention.values;
+                          const next = e.target.checked ? [...prev, val] : prev.filter(v => v !== val);
+                          return { ...d, flashAttention: { ...d.flashAttention, values: next } };
+                        });
+                      }}
+                      disabled={isRunning}
+                    />
+                    {val}
+                  </label>
+                ))}
+              </div>
             </div>
 
             <div className="playground-sweep-param">
-              <label className="playground-sweep-param-toggle">
-                <input
-                  type="checkbox"
-                  checked={configSweepDef.cacheType.enabled}
-                  onChange={(e) => setConfigSweepDef((d) => ({ ...d, cacheType: { ...d.cacheType, enabled: e.target.checked } }))}
-                  disabled={isRunning}
-                />
-                Cache Type
-              </label>
-              {configSweepDef.cacheType.enabled && (
-                <div className="playground-sweep-option-checks">
-                  {['f16', 'q8_0', 'q4_0'].map((val) => (
-                    <label key={val} className="playground-sweep-option-label">
-                      <input
-                        type="checkbox"
-                        checked={configSweepDef.cacheType.values.includes(val)}
-                        onChange={(e) => {
-                          setConfigSweepDef(d => {
-                            const prev = d.cacheType.values;
-                            const next = e.target.checked ? [...prev, val] : prev.filter(v => v !== val);
-                            return { ...d, cacheType: { ...d.cacheType, values: next } };
-                          });
-                        }}
-                        disabled={isRunning}
-                      />
-                      {val}
-                    </label>
-                  ))}
-                </div>
-              )}
+              <label className="playground-sweep-param-toggle">Cache Type</label>
+              <div className="playground-sweep-option-checks">
+                {['f16', 'q8_0', 'q4_0'].map((val) => (
+                  <label key={val} className="playground-sweep-option-label">
+                    <input
+                      type="checkbox"
+                      checked={configSweepDef.cacheType.values.includes(val)}
+                      onChange={(e) => {
+                        setConfigSweepDef(d => {
+                          const prev = d.cacheType.values;
+                          const next = e.target.checked ? [...prev, val] : prev.filter(v => v !== val);
+                          return { ...d, cacheType: { ...d.cacheType, values: next } };
+                        });
+                      }}
+                      disabled={isRunning}
+                    />
+                    {val}
+                  </label>
+                ))}
+              </div>
             </div>
 
             <div className="playground-sweep-param">
-              <label className="playground-sweep-param-toggle">
-                <input
-                  type="checkbox"
-                  checked={configSweepDef.systemPromptCache.enabled}
-                  onChange={(e) => setConfigSweepDef((d) => ({ ...d, systemPromptCache: { ...d.systemPromptCache, enabled: e.target.checked } }))}
-                  disabled={isRunning}
-                />
-                System Prompt Cache
-              </label>
-              {configSweepDef.systemPromptCache.enabled && (
-                <div className="playground-sweep-option-checks">
-                  {[true, false].map((val) => (
-                    <label key={String(val)} className="playground-sweep-option-label">
-                      <input
-                        type="checkbox"
-                        checked={configSweepDef.systemPromptCache.values.includes(val)}
-                        onChange={(e) => {
-                          setConfigSweepDef(d => {
-                            const prev = d.systemPromptCache.values;
-                            const next = e.target.checked ? [...prev, val] : prev.filter(v => v !== val);
-                            return { ...d, systemPromptCache: { ...d.systemPromptCache, values: next } };
-                          });
-                        }}
-                        disabled={isRunning}
-                      />
-                      {String(val)}
-                    </label>
-                  ))}
-                </div>
-              )}
+              <label className="playground-sweep-param-toggle">System Prompt Cache</label>
+              <div className="playground-sweep-option-checks">
+                {[true, false].map((val) => (
+                  <label key={String(val)} className="playground-sweep-option-label">
+                    <input
+                      type="checkbox"
+                      checked={configSweepDef.systemPromptCache.values.includes(val)}
+                      onChange={(e) => {
+                        setConfigSweepDef(d => {
+                          const prev = d.systemPromptCache.values;
+                          const next = e.target.checked ? [...prev, val] : prev.filter(v => v !== val);
+                          return { ...d, systemPromptCache: { ...d.systemPromptCache, values: next } };
+                        });
+                      }}
+                      disabled={isRunning}
+                    />
+                    {String(val)}
+                  </label>
+                ))}
+              </div>
             </div>
           </div>
-          {hasEnabledConfigParam && (
-            <p style={{ fontSize: 12, color: 'var(--color-gray-600)', marginTop: 8 }}>
-              Estimated trials: {(() => {
-                const axes: number[] = [];
-                if (configSweepDef.nbatch.enabled && configSweepDef.nbatch.values.length > 0) axes.push(configSweepDef.nbatch.values.length);
-                if (configSweepDef.nubatch.enabled && configSweepDef.nubatch.values.length > 0) axes.push(configSweepDef.nubatch.values.length);
-                if (configSweepDef.contextWindow.enabled && configSweepDef.contextWindow.values.length > 0) axes.push(configSweepDef.contextWindow.values.length);
-                if (configSweepDef.nSeqMax.enabled && configSweepDef.nSeqMax.values.length > 0) axes.push(configSweepDef.nSeqMax.values.length);
-                if (configSweepDef.flashAttention.enabled && configSweepDef.flashAttention.values.length > 0) axes.push(configSweepDef.flashAttention.values.length);
-                if (configSweepDef.cacheType.enabled && configSweepDef.cacheType.values.length > 0) axes.push(configSweepDef.cacheType.values.length);
-                if (configSweepDef.systemPromptCache.enabled && configSweepDef.systemPromptCache.values.length > 0) axes.push(configSweepDef.systemPromptCache.values.length);
-                return axes.length > 0 ? axes.reduce((a, b) => a * b, 1) : 1;
-              })()}
-            </p>
-          )}
+          <p style={{ fontSize: 12, color: 'var(--color-gray-600)', marginTop: 8 }}>
+            Estimated trials: {(() => {
+              const axes: number[] = [];
+              if (configSweepDef.nbatch.values.length > 0) axes.push(configSweepDef.nbatch.values.length);
+              if (configSweepDef.nubatch.values.length > 0) axes.push(configSweepDef.nubatch.values.length);
+              if (configSweepDef.contextWindow.values.length > 0) axes.push(configSweepDef.contextWindow.values.length);
+              if (configSweepDef.nSeqMax.values.length > 0) axes.push(configSweepDef.nSeqMax.values.length);
+              if (configSweepDef.flashAttention.values.length > 0) axes.push(configSweepDef.flashAttention.values.length);
+              if (configSweepDef.cacheType.values.length > 0) axes.push(configSweepDef.cacheType.values.length);
+              if (configSweepDef.systemPromptCache.values.length > 0) axes.push(configSweepDef.systemPromptCache.values.length);
+              return axes.length > 0 ? axes.reduce((a, b) => a * b, 1) : 1;
+            })()}
+          </p>
         </div>
       )}
 
@@ -565,14 +513,14 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
               <div className="playground-config-grid-fluid">
                 <div className="form-group">
                   <label>Enable Thinking</label>
-                  <select value={baseline.enable_thinking ?? 'true'} onChange={(e) => setBaseline((b) => ({ ...b, enable_thinking: e.target.value }))} disabled={isRunning}>
+                  <select value={baseline.enable_thinking ?? 'true'} onChange={(e) => setBaseline((b) => ({ ...b, enable_thinking: e.target.value as 'true' | 'false' }))} disabled={isRunning}>
                     <option value="true">Enabled</option>
                     <option value="false">Disabled</option>
                   </select>
                 </div>
                 <div className="form-group">
                   <label>Reasoning Effort</label>
-                  <select value={baseline.reasoning_effort ?? 'medium'} onChange={(e) => setBaseline((b) => ({ ...b, reasoning_effort: e.target.value }))} disabled={isRunning}>
+                  <select value={baseline.reasoning_effort ?? 'medium'} onChange={(e) => setBaseline((b) => ({ ...b, reasoning_effort: e.target.value as SamplingCandidate['reasoning_effort'] }))} disabled={isRunning}>
                     <option value="none">None</option>
                     <option value="minimal">Minimal</option>
                     <option value="low">Low</option>

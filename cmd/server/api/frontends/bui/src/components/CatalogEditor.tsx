@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../services/api';
-import type { CatalogModelResponse, ModelConfig } from '../types';
+import type { CatalogModelResponse, ModelConfig, SamplingConfig } from '../types';
 
 interface FileEntry {
   url: string;
@@ -564,8 +564,8 @@ export default function CatalogEditor() {
             xtc_threshold: form.sampling.xtcThreshold ?? 0,
             xtc_min_keep: form.sampling.xtcMinKeep ?? 0,
             frequency_penalty: form.sampling.frequencyPenalty ?? 0,
-            enable_thinking: form.sampling.enableThinking,
-            reasoning_effort: form.sampling.reasoningEffort,
+            enable_thinking: (form.sampling.enableThinking || 'true') as SamplingConfig['enable_thinking'],
+            reasoning_effort: (form.sampling.reasoningEffort || 'medium') as SamplingConfig['reasoning_effort'],
             grammar: form.sampling.grammar ?? '',
           },
         },
