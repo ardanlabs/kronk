@@ -33,6 +33,7 @@ export default function ModelPlayground() {
     session, setSession,
     chatMessages, setChatMessages,
     selectedModel, setSelectedModel,
+    playgroundMode, setPlaygroundMode,
     activeTab, setActiveTab,
     systemPrompt, setSystemPrompt,
     lastTPS, setLastTPS,
@@ -605,149 +606,195 @@ export default function ModelPlayground() {
       </div>
 
       <div className="playground-layout">
-        {/* Setup Panel */}
-        <div className="playground-setup">
-          <h3>Setup</h3>
-
-          <div className="form-group">
-            <label htmlFor="pg-model">Model</label>
-            <select
-              id="pg-model"
-              value={showPullForm ? NEW_MODEL_VALUE : selectedModel}
-              onChange={(e) => {
-                const val = e.target.value;
-                if (val === NEW_MODEL_VALUE) {
-                  setSelectedModel('');
-                  setShowPullForm(true);
-                } else {
-                  setSelectedModel(val);
-                  setShowPullForm(false);
-                }
-              }}
-              disabled={!!session}
-            >
-              <option value="">Select a model...</option>
-              {models?.data?.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.id}
-                </option>
-              ))}
-              <option value={NEW_MODEL_VALUE}>New…</option>
-            </select>
-          </div>
-
-          {showPullForm && !session && (
-            <div className="playground-pull-form">
-              <div className="form-group">
-                <label>HuggingFace Model URL</label>
-                <input
-                  type="text"
-                  value={hfModelUrl}
-                  onChange={(e) => setHfModelUrl(e.target.value)}
-                  placeholder="org/repo/model.gguf"
-                  disabled={isDownloading}
-                />
-              </div>
-
-              <button
-                type="button"
-                className="btn btn-secondary btn-small playground-pull-toggle"
-                onClick={() => setShowProjUrl((v) => !v)}
-                disabled={isDownloading}
+        {/* Left Sidebar: Model Config + Mode Selector */}
+        <div className="playground-mode-selector">
+          <div className="playground-model-config">
+            <div className="form-group">
+              <label htmlFor="pg-model">Model</label>
+              <select
+                id="pg-model"
+                value={showPullForm ? NEW_MODEL_VALUE : selectedModel}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === NEW_MODEL_VALUE) {
+                    setSelectedModel('');
+                    setShowPullForm(true);
+                  } else {
+                    setSelectedModel(val);
+                    setShowPullForm(false);
+                  }
+                }}
+                disabled={!!session}
               >
-                {showProjUrl ? '− Hide projection URL' : '+ Projection URL (optional)'}
-              </button>
+                <option value="">Select a model...</option>
+                {models?.data?.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.id}
+                  </option>
+                ))}
+                <option value={NEW_MODEL_VALUE}>New…</option>
+              </select>
+            </div>
 
-              {showProjUrl && (
+            {showPullForm && !session && (
+              <div className="playground-pull-form">
                 <div className="form-group">
-                  <label>Projection URL (vision/audio models)</label>
+                  <label>HuggingFace Model URL</label>
                   <input
                     type="text"
-                    value={hfProjUrl}
-                    onChange={(e) => setHfProjUrl(e.target.value)}
-                    placeholder="org/repo/mmproj.gguf"
+                    value={hfModelUrl}
+                    onChange={(e) => setHfModelUrl(e.target.value)}
+                    placeholder="org/repo/model.gguf"
                     disabled={isDownloading}
                   />
                 </div>
-              )}
 
-              <div className="playground-pull-actions">
                 <button
-                  className="btn btn-primary"
                   type="button"
-                  onClick={handlePullModel}
-                  disabled={isDownloading || !hfModelUrl.trim()}
+                  className="btn btn-secondary btn-small playground-pull-toggle"
+                  onClick={() => setShowProjUrl((v) => !v)}
+                  disabled={isDownloading}
                 >
-                  {isDownloading ? 'Pulling…' : 'Pull'}
+                  {showProjUrl ? '− Hide projection URL' : '+ Projection URL (optional)'}
                 </button>
-                {isDownloading && (
-                  <button className="btn btn-danger" type="button" onClick={cancelDownload}>
-                    Cancel
-                  </button>
+
+                {showProjUrl && (
+                  <div className="form-group">
+                    <label>Projection URL (vision/audio models)</label>
+                    <input
+                      type="text"
+                      value={hfProjUrl}
+                      onChange={(e) => setHfProjUrl(e.target.value)}
+                      placeholder="org/repo/mmproj.gguf"
+                      disabled={isDownloading}
+                    />
+                  </div>
                 )}
-                {download && download.status !== 'downloading' && (
-                  <button className="btn" type="button" onClick={clearDownload}>
-                    Clear
+
+                <div className="playground-pull-actions">
+                  <button
+                    className="btn btn-primary"
+                    type="button"
+                    onClick={handlePullModel}
+                    disabled={isDownloading || !hfModelUrl.trim()}
+                  >
+                    {isDownloading ? 'Pulling…' : 'Pull'}
                   </button>
+                  {isDownloading && (
+                    <button className="btn btn-danger" type="button" onClick={cancelDownload}>
+                      Cancel
+                    </button>
+                  )}
+                  {download && download.status !== 'downloading' && (
+                    <button className="btn" type="button" onClick={clearDownload}>
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                {download && download.messages.length > 0 && (
+                  <div className="status-box playground-pull-status">
+                    {download.messages.map((msg, idx) => (
+                      <div key={idx} className={`status-line ${msg.type}`}>
+                        {msg.text}
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
+            )}
 
-              {download && download.messages.length > 0 && (
-                <div className="status-box playground-pull-status">
-                  {download.messages.map((msg, idx) => (
-                    <div key={idx} className={`status-line ${msg.type}`}>
-                      {msg.text}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          <div className="form-group">
-            <label htmlFor="pg-template-mode">Template Mode</label>
-            <select
-              id="pg-template-mode"
-              value={templateMode}
-              onChange={(e) => setTemplateMode(e.target.value as 'builtin' | 'custom')}
-              disabled={!!session}
-            >
-              <option value="builtin">Builtin</option>
-              <option value="custom">Custom</option>
-            </select>
-          </div>
-
-          {templateMode === 'builtin' ? (
             <div className="form-group">
-              <label htmlFor="pg-template">Template</label>
+              <label htmlFor="pg-template-mode">Template Mode</label>
               <select
-                id="pg-template"
-                value={selectedTemplate}
-                onChange={(e) => setSelectedTemplate(e.target.value)}
+                id="pg-template-mode"
+                value={templateMode}
+                onChange={(e) => setTemplateMode(e.target.value as 'builtin' | 'custom')}
                 disabled={!!session}
               >
-                <option value="">Auto (from catalog)</option>
-                {templates.map((t) => (
-                  <option key={t.name} value={t.name}>
-                    {t.name}
-                  </option>
-                ))}
+                <option value="builtin">Builtin</option>
+                <option value="custom">Custom</option>
               </select>
             </div>
-          ) : (
-            <div className="form-group">
-              <label htmlFor="pg-template-script">Template Script</label>
-              <textarea
-                id="pg-template-script"
-                value={customScript}
-                onChange={(e) => setCustomScript(e.target.value)}
-                disabled={!!session}
-                rows={8}
-                className="playground-textarea"
-                placeholder="Paste Jinja template..."
+
+            {templateMode === 'builtin' ? (
+              <div className="form-group">
+                <label htmlFor="pg-template">Template</label>
+                <select
+                  id="pg-template"
+                  value={selectedTemplate}
+                  onChange={(e) => setSelectedTemplate(e.target.value)}
+                  disabled={!!session}
+                >
+                  <option value="">Auto (from catalog)</option>
+                  {templates.map((t) => (
+                    <option key={t.name} value={t.name}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div className="form-group">
+                <label htmlFor="pg-template-script">Template Script</label>
+                <textarea
+                  id="pg-template-script"
+                  value={customScript}
+                  onChange={(e) => setCustomScript(e.target.value)}
+                  disabled={!!session}
+                  rows={8}
+                  className="playground-textarea"
+                  placeholder="Paste Jinja template..."
+                />
+              </div>
+            )}
+          </div>
+
+          <button
+            className={`playground-mode-btn ${playgroundMode === 'automated' ? 'active' : ''}`}
+            onClick={() => setPlaygroundMode('automated')}
+          >
+            Automated Mode
+          </button>
+          <button
+            className={`playground-mode-btn ${playgroundMode === 'manual' ? 'active' : ''}`}
+            onClick={() => setPlaygroundMode('manual')}
+          >
+            Manual Mode
+          </button>
+        </div>
+
+        {playgroundMode === 'automated' && (
+          <div className="playground-test" style={{ flex: 1 }}>
+            <div className="playground-tab-content">
+              <AutomatedTestingPanel
+                session={session}
+                sessionSeed={{
+                  model_id: selectedModel,
+                  template_mode: templateMode,
+                  template_name: templateMode === 'builtin' ? selectedTemplate : undefined,
+                  template_script: templateMode === 'custom' ? customScript : undefined,
+                  base_config: {
+                    'context-window': contextWindow,
+                    nbatch: nBatch,
+                    nubatch: nUBatch,
+                    'nseq-max': nSeqMax,
+                    'flash-attention': flashAttention,
+                    'cache-type-k': cacheType || undefined,
+                    'cache-type-v': cacheType || undefined,
+                    'system-prompt-cache': systemPromptCache,
+                  },
+                }}
               />
             </div>
-          )}
+          </div>
+        )}
+
+        {playgroundMode === 'manual' && (
+        <>
+        {/* Setup Panel */}
+        <div className="playground-setup">
+          <h3>Setup</h3>
 
           <h4>Configuration</h4>
           <div className="playground-config-grid-fluid">
@@ -904,16 +951,6 @@ export default function ModelPlayground() {
               onClick={() => setActiveTab('inspector')}
             >
               Prompt Inspector
-            </button>
-            <button
-              role="tab"
-              id="tab-autotest"
-              aria-selected={activeTab === 'autotest'}
-              aria-controls="tabpanel-autotest"
-              className={`playground-tab ${activeTab === 'autotest' ? 'active' : ''}`}
-              onClick={() => setActiveTab('autotest')}
-            >
-              Automated Testing
             </button>
           </div>
 
@@ -1168,31 +1205,10 @@ export default function ModelPlayground() {
               </div>
             )}
 
-            {activeTab === 'autotest' && (
-              <div role="tabpanel" id="tabpanel-autotest" aria-labelledby="tab-autotest">
-              <AutomatedTestingPanel
-                session={session}
-                sessionSeed={{
-                  model_id: selectedModel,
-                  template_mode: templateMode,
-                  template_name: templateMode === 'builtin' ? selectedTemplate : undefined,
-                  template_script: templateMode === 'custom' ? customScript : undefined,
-                  base_config: {
-                    'context-window': contextWindow,
-                    nbatch: nBatch,
-                    nubatch: nUBatch,
-                    'nseq-max': nSeqMax,
-                    'flash-attention': flashAttention,
-                    'cache-type-k': cacheType || undefined,
-                    'cache-type-v': cacheType || undefined,
-                    'system-prompt-cache': systemPromptCache,
-                  },
-                }}
-              />
-              </div>
-            )}
           </div>
         </div>
+        </>
+        )}
       </div>
     </div>
   );

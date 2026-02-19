@@ -7,6 +7,7 @@ import type {
   ConfigSweepDefinition,
   ConfigCandidate,
   AutoTestSessionSeed,
+  BestConfigWeights,
 } from '../types';
 import {
   chatScenario,
@@ -15,6 +16,7 @@ import {
   generateConfigCandidates,
   probeTemplate,
   runTrial,
+  computeCompositeScore,
 } from '../services/autoTestRunner';
 import { api } from '../services/api';
 
@@ -69,16 +71,21 @@ interface AutoTestRunnerContextType {
     useCustomBaseline: boolean;
     baseline: SamplingCandidate;
     maxTrials: number;
+    weights: BestConfigWeights;
+    repeats: number;
   }): void;
 
   startConfigRun(args: {
     sessionSeed: AutoTestSessionSeed;
     enabledScenarios: EnabledScenarios;
     configSweepDef: ConfigSweepDefinition;
+    weights: BestConfigWeights;
+    repeats: number;
   }): void;
 
   stopRun(): void;
   clearRun(): void;
+  reevaluateBestTrial(weights: BestConfigWeights): void;
 }
 
 const AutoTestRunnerContext = createContext<AutoTestRunnerContextType | null>(null);
@@ -99,12 +106,14 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const startSamplingRun = useCallback(({ sessionId, enabledScenarios, useCustomBaseline, baseline, maxTrials }: {
+  const startSamplingRun = useCallback(({ sessionId, enabledScenarios, useCustomBaseline, baseline, maxTrials, weights, repeats }: {
     sessionId: string;
     enabledScenarios: EnabledScenarios;
     useCustomBaseline: boolean;
     baseline: SamplingCandidate;
     maxTrials: number;
+    weights: BestConfigWeights;
+    repeats: number;
   }) => {
     if (abortControllerRef.current) return;
 
@@ -147,7 +156,7 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
         const candidates = generateTrialCandidates(baseline, maxTrials);
         setRun(prev => prev ? { ...prev, status: 'running_trials', totalTrials: candidates.length, currentTrialIndex: 0 } : prev);
 
-        let bestScore = -1;
+        let bestComposite = -Infinity;
         let bestTPS = -Infinity;
         let bestId: string | undefined;
 
@@ -164,14 +173,15 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
             });
           };
 
-          const result = await runTrial(sessionId, candidate, scenarios, onUpdate, controller.signal);
+          const result = await runTrial(sessionId, candidate, scenarios, onUpdate, controller.signal, weights, repeats);
 
-          const resultScore = result.totalScore ?? 0;
+          const composite = computeCompositeScore(result, weights);
           const resultTPS = result.avgTPS ?? -Infinity;
-          const isBetter = resultScore > bestScore || (resultScore === bestScore && resultTPS > bestTPS);
+          const isBetter = composite > bestComposite + 1e-6
+            || (Math.abs(composite - bestComposite) <= 1e-6 && resultTPS > bestTPS);
           const newBestId = isBetter ? result.id : bestId;
           if (isBetter) {
-            bestScore = resultScore;
+            bestComposite = composite;
             bestTPS = resultTPS;
             bestId = result.id;
           }
@@ -198,10 +208,12 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
     })();
   }, []);
 
-  const startConfigRun = useCallback(({ sessionSeed, enabledScenarios, configSweepDef }: {
+  const startConfigRun = useCallback(({ sessionSeed, enabledScenarios, configSweepDef, weights, repeats }: {
     sessionSeed: AutoTestSessionSeed;
     enabledScenarios: EnabledScenarios;
     configSweepDef: ConfigSweepDefinition;
+    weights: BestConfigWeights;
+    repeats: number;
   }) => {
     if (abortControllerRef.current) return;
 
@@ -237,7 +249,7 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
         if (enabledScenarios.chat) scenarios.push(chatScenario);
         if (enabledScenarios.tool_call) scenarios.push(toolCallScenario);
 
-        let bestScore = -1;
+        let bestComposite = -Infinity;
         let bestTPS = -Infinity;
         let bestId: string | undefined;
 
@@ -267,18 +279,6 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
 
             const activeScenarios = [...scenarios];
 
-            if (enabledScenarios.tool_call) {
-              setRun(prev => prev ? { ...prev, templateRepairStatus: 'Probing template for tool calling compatibility...' } : prev);
-              const probeResult = await probeTemplate(configSessionId, controller.signal);
-              if (probeResult) {
-                setRun(prev => prev ? { ...prev, templateRepairStatus: 'Template OK ✓' } : prev);
-              } else {
-                setRun(prev => prev ? { ...prev, templateRepairStatus: 'Template probe failed — running chat-only tests' } : prev);
-                const idx = activeScenarios.indexOf(toolCallScenario);
-                if (idx !== -1) activeScenarios.splice(idx, 1);
-              }
-            }
-
             const onUpdate = (partial: AutoTestTrialResult) => {
               setRun(prev => {
                 if (!prev || prev.kind !== 'config') return prev;
@@ -288,15 +288,16 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
               });
             };
 
-            const result = await runTrial(configSessionId, activeBaseline, activeScenarios, onUpdate, controller.signal);
+            const result = await runTrial(configSessionId, activeBaseline, activeScenarios, onUpdate, controller.signal, weights, repeats);
 
             const configResult: ConfigTrialResult = { ...result, config: candidate };
-            const resultScore = result.totalScore ?? 0;
+            const composite = computeCompositeScore(result, weights);
             const resultTPS = result.avgTPS ?? -Infinity;
-            const isBetter = resultScore > bestScore || (resultScore === bestScore && resultTPS > bestTPS);
+            const isBetter = composite > bestComposite + 1e-6
+              || (Math.abs(composite - bestComposite) <= 1e-6 && resultTPS > bestTPS);
             const newBestId = isBetter ? result.id : bestId;
             if (isBetter) {
-              bestScore = resultScore;
+              bestComposite = composite;
               bestTPS = resultTPS;
               bestId = result.id;
             }
@@ -371,8 +372,32 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
     setRun(null);
   }, []);
 
+  const reevaluateBestTrial = useCallback((weights: BestConfigWeights) => {
+    setRun(prev => {
+      if (!prev || prev.status !== 'completed') return prev;
+      let bestComposite = -Infinity;
+      let bestTPS = -Infinity;
+      let bestId: string | undefined;
+      for (const trial of prev.trials) {
+        if (!trial) continue;
+        if (trial.totalScore === undefined || trial.totalScore === null) continue;
+        if (prev.kind === 'config' && (trial as ConfigTrialResult).error) continue;
+        const composite = computeCompositeScore(trial, weights);
+        const tps = trial.avgTPS ?? -Infinity;
+        const isBetter = composite > bestComposite + 1e-6
+          || (Math.abs(composite - bestComposite) <= 1e-6 && tps > bestTPS);
+        if (isBetter) {
+          bestComposite = composite;
+          bestTPS = tps;
+          bestId = trial.id;
+        }
+      }
+      return { ...prev, bestTrialId: bestId };
+    });
+  }, []);
+
   return (
-    <AutoTestRunnerContext.Provider value={{ run, isRunning, startSamplingRun, startConfigRun, stopRun, clearRun }}>
+    <AutoTestRunnerContext.Provider value={{ run, isRunning, startSamplingRun, startConfigRun, stopRun, clearRun, reevaluateBestTrial }}>
       {children}
     </AutoTestRunnerContext.Provider>
   );

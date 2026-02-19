@@ -14,6 +14,7 @@ import type {
   ConfigSweepDefinition,
   ConfigCandidate,
   PlaygroundModelConfig,
+  BestConfigWeights,
 } from '../types'
 
 /** Standard tool definitions used for automated testing. */
@@ -626,15 +627,55 @@ export async function probeTemplate(sessionId: string, signal?: AbortSignal): Pr
   }
 }
 
-/** Runs a full trial for one sampling candidate across all scenarios. */
+export const defaultBestConfigWeights: BestConfigWeights = {
+  chatScore: 0.4,
+  toolScore: 0.6,
+  totalScore: 0,
+  avgTPS: 0,
+  avgTTFT: 0,
+}
+
+/**
+ * Compute a composite score for a trial using the provided weights.
+ * Only metrics that are actually present on the trial contribute; missing
+ * metrics (e.g. disabled scenario, undefined TPS/TTFT) are skipped so they
+ * don't drag the score down.
+ * For avgTTFT lower is better so we invert it: score = max(0, 100 - ttft_ms/10).
+ */
+export function computeCompositeScore(trial: AutoTestTrialResult, weights: BestConfigWeights): number {
+  const chat = trial.scenarioResults.find(r => r.scenarioId === 'chat')?.score
+  const tool = trial.scenarioResults.find(r => r.scenarioId === 'tool_call')?.score
+  const total = trial.totalScore
+  const avgTPS = trial.avgTPS
+  const avgTTFT = trial.avgTTFT
+
+  const parts: Array<{ w: number; v: number }> = []
+
+  if (chat !== undefined) parts.push({ w: weights.chatScore, v: chat })
+  if (tool !== undefined) parts.push({ w: weights.toolScore, v: tool })
+  if (total !== undefined) parts.push({ w: weights.totalScore, v: total })
+  if (avgTPS !== undefined) parts.push({ w: weights.avgTPS, v: Math.min(100, Math.max(0, avgTPS)) })
+  if (avgTTFT !== undefined) parts.push({ w: weights.avgTTFT, v: Math.max(0, 100 - avgTTFT / 10) })
+
+  const denom = parts.reduce((s, p) => s + p.w, 0)
+  if (denom <= 0) return total ?? chat ?? tool ?? 0
+
+  return parts.reduce((s, p) => s + p.w * p.v, 0) / denom
+}
+
+/** Runs a full trial for one sampling candidate across all scenarios.
+ *  Each prompt is repeated `repeats` times (default 3) and results are averaged. */
 export async function runTrial(
   sessionId: string,
   candidate: SamplingCandidate,
   scenarios: AutoTestScenario[],
   onUpdate: (result: AutoTestTrialResult) => void,
   signal: AbortSignal,
+  weights?: BestConfigWeights,
+  repeats: number = 3,
 ): Promise<AutoTestTrialResult> {
   const trialId = `trial-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const safeRepeats = Math.max(1, Math.floor(repeats))
 
   const result: AutoTestTrialResult = {
     id: trialId,
@@ -654,43 +695,112 @@ export async function runTrial(
     }
 
     const promptResults: AutoTestPromptResult[] = []
-    let totalTPS = 0
-    let tpsCount = 0
+    let totalGenTokens = 0
+    let totalGenSeconds = 0
+    let totalTTFT = 0
+    let ttftCount = 0
 
-    for (const prompt of scenario.prompts) {
+    for (let pi = 0; pi < scenario.prompts.length; pi++) {
+      const prompt = scenario.prompts[pi]
       if (signal.aborted) {
         result.status = 'cancelled'
         onUpdate({ ...result })
         return result
       }
 
-      try {
-        const pr = await runSinglePrompt(sessionId, prompt, candidate, signal)
-        promptResults.push(pr)
-        if (pr.usage?.tokens_per_second) {
-          totalTPS += pr.usage.tokens_per_second
-          tpsCount++
+      // Skip the first prompt (warmup) for TPS/TTFT metrics.
+      const isWarmup = pi === 0
+
+      // Run each prompt `safeRepeats` times and average the results.
+      const repeatScores: number[] = []
+      const repeatNotes: string[] = []
+      let bestAssistantText = ''
+      let bestToolCalls: ChatToolCall[] = []
+      let repeatGenTokens = 0
+      let repeatGenSeconds = 0
+      let repeatTTFT = 0
+      let repeatTTFTCount = 0
+      let lastUsage: ChatUsage | undefined
+      let hadAbort = false
+      let hadError = false
+      let errorMessage = ''
+
+      for (let r = 0; r < safeRepeats; r++) {
+        if (signal.aborted) {
+          hadAbort = true
+          break
         }
-      } catch (err) {
-        if (err instanceof DOMException && err.name === 'AbortError') {
-          result.status = 'cancelled'
-          onUpdate({ ...result })
-          return result
+
+        try {
+          const pr = await runSinglePrompt(sessionId, prompt, candidate, signal)
+          repeatScores.push(pr.score)
+          if (pr.notes) repeatNotes.push(...pr.notes)
+          if (r === 0) {
+            bestAssistantText = pr.assistantText
+            bestToolCalls = pr.toolCalls
+          }
+          lastUsage = pr.usage
+
+          if (!isWarmup) {
+            const tps = pr.usage?.tokens_per_second
+            const out = pr.usage?.output_tokens
+            if (tps && tps > 0 && out !== undefined) {
+              const gen = Math.max(0, out - 1)
+              if (gen > 0) {
+                repeatGenTokens += gen
+                repeatGenSeconds += gen / tps
+              }
+            }
+            if (pr.usage?.time_to_first_token_ms && pr.usage.time_to_first_token_ms > 0) {
+              repeatTTFT += pr.usage.time_to_first_token_ms
+              repeatTTFTCount++
+            }
+          }
+        } catch (err) {
+          if (err instanceof DOMException && err.name === 'AbortError') {
+            hadAbort = true
+            break
+          }
+          repeatScores.push(0)
+          errorMessage = `Error: ${err instanceof Error ? err.message : String(err)}`
+          hadError = true
         }
-        promptResults.push({
-          promptId: prompt.id,
-          assistantText: '',
-          toolCalls: [],
-          score: 0,
-          notes: [`Error: ${err instanceof Error ? err.message : String(err)}`],
-        })
+      }
+
+      if (hadAbort) {
+        result.status = 'cancelled'
+        onUpdate({ ...result })
+        return result
+      }
+
+      const avgScore = repeatScores.length > 0
+        ? repeatScores.reduce((s, v) => s + v, 0) / repeatScores.length
+        : 0
+
+      const dedupNotes = repeatNotes.length > 0 ? [...new Set(repeatNotes)] : undefined
+
+      promptResults.push({
+        promptId: prompt.id,
+        assistantText: bestAssistantText,
+        toolCalls: bestToolCalls,
+        usage: lastUsage,
+        score: avgScore,
+        notes: hadError && !dedupNotes ? [errorMessage] : dedupNotes,
+      })
+
+      if (!isWarmup) {
+        totalGenTokens += repeatGenTokens
+        totalGenSeconds += repeatGenSeconds
+        totalTTFT += repeatTTFT
+        ttftCount += repeatTTFTCount
       }
 
       const scenarioResult: AutoTestScenarioResult = {
         scenarioId: scenario.id,
         promptResults: [...promptResults],
         score: promptResults.reduce((sum, r) => sum + r.score, 0) / promptResults.length,
-        avgTPS: tpsCount > 0 ? totalTPS / tpsCount : undefined,
+        avgTPS: totalGenSeconds > 0 ? totalGenTokens / totalGenSeconds : undefined,
+        avgTTFT: ttftCount > 0 ? totalTTFT / ttftCount : undefined,
       }
 
       const existingIdx = result.scenarioResults.findIndex(s => s.scenarioId === scenario.id)
@@ -704,30 +814,31 @@ export async function runTrial(
     }
   }
 
-  const scoreByScenario = new Map<AutoTestScenarioID, number>()
-  let totalTrialTPS = 0
-  let trialTPSCount = 0
+  const metricsByScenario = new Map<AutoTestScenarioID, { score: number; avgTPS?: number; avgTTFT?: number }>()
 
   for (const sr of result.scenarioResults) {
-    scoreByScenario.set(sr.scenarioId, sr.score)
-    if (sr.avgTPS) {
-      totalTrialTPS += sr.avgTPS
-      trialTPSCount++
-    }
+    metricsByScenario.set(sr.scenarioId, { score: sr.score, avgTPS: sr.avgTPS, avgTTFT: sr.avgTTFT })
   }
 
-  const toolScore = scoreByScenario.get('tool_call')
-  const chatScore = scoreByScenario.get('chat')
+  const toolMetrics = metricsByScenario.get('tool_call')
+  const chatMetrics = metricsByScenario.get('chat')
 
-  if (toolScore !== undefined && chatScore !== undefined) {
-    result.totalScore = 0.6 * toolScore + 0.4 * chatScore
-  } else if (toolScore !== undefined) {
-    result.totalScore = toolScore
-  } else if (chatScore !== undefined) {
-    result.totalScore = chatScore
+  const w = weights ?? defaultBestConfigWeights
+  if (toolMetrics && chatMetrics) {
+    const chatW = w.chatScore
+    const toolW = w.toolScore
+    const denom = chatW + toolW
+    result.totalScore = denom > 0 ? (toolW * toolMetrics.score + chatW * chatMetrics.score) / denom : (toolMetrics.score + chatMetrics.score) / 2
+  } else if (toolMetrics) {
+    result.totalScore = toolMetrics.score
+  } else if (chatMetrics) {
+    result.totalScore = chatMetrics.score
   }
 
-  result.avgTPS = trialTPSCount > 0 ? totalTrialTPS / trialTPSCount : undefined
+  // Use chat scenario metrics for TPS/TTFT; fall back to tool_call if chat is not enabled.
+  const tpsSource = chatMetrics ?? toolMetrics
+  result.avgTPS = tpsSource?.avgTPS
+  result.avgTTFT = tpsSource?.avgTTFT
   result.finishedAt = new Date().toISOString()
   result.status = 'completed'
 

@@ -314,6 +314,7 @@ export interface ChatUsage {
   reasoning_tokens: number;
   output_tokens: number;
   tokens_per_second: number;
+  time_to_first_token_ms?: number;
 }
 
 export interface ChatStreamResponse {
@@ -584,6 +585,7 @@ export interface AutoTestScenarioResult {
   promptResults: AutoTestPromptResult[];
   score: number;
   avgTPS?: number;
+  avgTTFT?: number;
 }
 
 export interface AutoTestTrialResult {
@@ -595,6 +597,7 @@ export interface AutoTestTrialResult {
   scenarioResults: AutoTestScenarioResult[];
   totalScore?: number;
   avgTPS?: number;
+  avgTTFT?: number;
 }
 
 // Config Sweep Types
@@ -624,6 +627,14 @@ export interface ConfigSweepDefinition {
   flashAttention: SweepStringValues;
   cacheType: SweepStringValues;
   systemPromptCache: SweepBoolValues;
+}
+
+export interface BestConfigWeights {
+  chatScore: number;
+  toolScore: number;
+  totalScore: number;
+  avgTPS: number;
+  avgTTFT: number;
 }
 
 export interface ConfigCandidate {

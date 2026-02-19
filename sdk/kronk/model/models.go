@@ -539,7 +539,8 @@ type Usage struct {
 	CompletionTokens int     `json:"completion_tokens"`
 	OutputTokens     int     `json:"output_tokens"`
 	TotalTokens      int     `json:"total_tokens"`
-	TokensPerSecond  float64 `json:"tokens_per_second"`
+	TokensPerSecond    float64 `json:"tokens_per_second"`
+	TimeToFirstTokenMS float64 `json:"time_to_first_token_ms"`
 }
 
 // TopLogprob represents a single token with its log probability.

@@ -19,9 +19,13 @@ interface PlaygroundState {
   selectedModel: string;
   setSelectedModel: React.Dispatch<React.SetStateAction<string>>;
 
-  // Active tab
-  activeTab: 'chat' | 'tools' | 'inspector' | 'autotest';
-  setActiveTab: React.Dispatch<React.SetStateAction<'chat' | 'tools' | 'inspector' | 'autotest'>>;
+  // Playground mode (top-level section)
+  playgroundMode: 'automated' | 'manual';
+  setPlaygroundMode: React.Dispatch<React.SetStateAction<'automated' | 'manual'>>;
+
+  // Active tab (within manual mode)
+  activeTab: 'chat' | 'tools' | 'inspector';
+  setActiveTab: React.Dispatch<React.SetStateAction<'chat' | 'tools' | 'inspector'>>;
 
   // System prompt
   systemPrompt: string;
@@ -65,7 +69,8 @@ export function PlaygroundProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<PlaygroundSessionResponse | null>(null);
   const [chatMessages, setChatMessages] = useState<PlaygroundMessage[]>([]);
   const [selectedModel, setSelectedModel] = useState('');
-  const [activeTab, setActiveTab] = useState<'chat' | 'tools' | 'inspector' | 'autotest'>('chat');
+  const [playgroundMode, setPlaygroundMode] = useState<'automated' | 'manual'>('automated');
+  const [activeTab, setActiveTab] = useState<'chat' | 'tools' | 'inspector'>('chat');
   const [systemPrompt, setSystemPrompt] = useState('You are a helpful assistant.');
   const [lastTPS, setLastTPS] = useState<number | null>(null);
   const [templateMode, setTemplateMode] = useState<'builtin' | 'custom'>('builtin');
@@ -84,6 +89,7 @@ export function PlaygroundProvider({ children }: { children: ReactNode }) {
     session, setSession,
     chatMessages, setChatMessages,
     selectedModel, setSelectedModel,
+    playgroundMode, setPlaygroundMode,
     activeTab, setActiveTab,
     systemPrompt, setSystemPrompt,
     lastTPS, setLastTPS,
@@ -99,7 +105,7 @@ export function PlaygroundProvider({ children }: { children: ReactNode }) {
     systemPromptCache, setSystemPromptCache,
     hydratedModelId, setHydratedModelId,
   }), [
-    session, chatMessages, selectedModel, activeTab, systemPrompt, lastTPS,
+    session, chatMessages, selectedModel, playgroundMode, activeTab, systemPrompt, lastTPS,
     templateMode, selectedTemplate, customScript, contextWindow, nBatch, nUBatch,
     nSeqMax, flashAttention, cacheType, systemPromptCache, hydratedModelId,
   ]);
