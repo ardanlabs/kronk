@@ -69,7 +69,7 @@ goarch: arm64
 pkg: github.com/ardanlabs/kronk/sdk/kronk/model
 cpu: Apple M4 Max
 BenchmarkNonCaching-16  3  67904898444 ns/op 🟢  165418 B/op 🟢  9061 allocs/op 🟢
-BenchmarkSPC-16         3  53454949167 ns/op 🟢  990346 B/op 🟢  8942 allocs/op 🟢
+BenchmarkSPC-16         3  53454949167 ns/op 🟢  990346 B/op 🔴  8942 allocs/op 🟢
 BenchmarkIMC-16         3   3982913444 ns/op 🟢  150906 B/op 🟢  3931 allocs/op 🟢
 BenchmarkIMCSpec-16     3   7114688653 ns/op ⚪  479778 B/op ⚪  9559 allocs/op ⚪
 --------------------------------------------------------------------------------
