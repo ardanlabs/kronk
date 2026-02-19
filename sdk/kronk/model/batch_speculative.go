@@ -120,6 +120,7 @@ func (e *batchEngine) generateDraftTokens(s *slot) []llama.Token {
 	draft := e.model.draft
 	nVocab := int(llama.VocabNTokens(e.model.vocab))
 	draftTokens := make([]llama.Token, 0, draft.nDraft)
+	temperature := s.job.params.Temperature
 
 	lastToken := s.sampled
 	draftStartPast := s.draftNPast
@@ -138,12 +139,13 @@ func (e *batchEngine) generateDraftTokens(s *slot) []llama.Token {
 		s.draftNPast++
 
 		// Capture draft probability distribution into pre-allocated buffer.
+		// Apply temperature scaling so q(x) matches the actual sampling distribution.
 		logits, err := llama.GetLogitsIth(draft.lctx, -1, nVocab)
 		if err != nil {
 			break
 		}
 
-		softmaxInto(logits, draft.draftProbs[drafted])
+		softmaxTempInto(logits, draft.draftProbs[drafted], temperature)
 
 		// Greedy sample from draft model.
 		token := llama.SamplerSample(draft.sampler, draft.lctx, -1)
@@ -189,13 +191,16 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 	baseBatch := s.specBaseBatch
 	basePast := s.specBasePast
 	nVocab := int(llama.VocabNTokens(e.model.vocab))
+	temperature := s.job.params.Temperature
+	greedy := temperature == 0
 
 	// Capture context before handleSampledToken may trigger finishSlot → reset,
 	// which sets s.job to nil.
 	ctx := s.job.ctx
 
 	e.model.log(ctx, "speculative", "status", "verify-start",
-		"slot", s.id, "nDraft", nDraft, "basePast", basePast, "baseBatch", baseBatch)
+		"slot", s.id, "nDraft", nDraft, "basePast", basePast, "baseBatch", baseBatch,
+		"temperature", temperature)
 
 	// Clear speculative state.
 	s.specDraftTokens = nil
@@ -205,7 +210,7 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 	var bonusToken llama.Token
 
 	for i := range nDraft {
-		// Get target probability distribution at this position.
+		// Get target logits at this position.
 		targetLogits, err := llama.GetLogitsIth(e.model.lctx, baseBatch+int32(i), nVocab)
 		if err != nil {
 			// Fallback: reject all remaining draft tokens. Sample from target
@@ -220,10 +225,37 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 			bonusToken = fallbackToken
 			break
 		}
-		draft := e.model.draft
-		softmaxInto(targetLogits, draft.targetProbs)
 
 		draftToken := draftTokens[i]
+
+		// Greedy verification: accept if draft token matches target's argmax.
+		// No softmax needed — just find the highest logit.
+		if greedy {
+			targetArgmax := argmax(targetLogits)
+			if draftToken == targetArgmax {
+				accepted++
+
+				s.nPast = basePast + llama.Pos(1+i)
+				e.handleSampledToken(s, draftToken, baseBatch+int32(i), buf)
+
+				if !s.active {
+					e.model.log(ctx, "speculative", "status", "verify-done-eog",
+						"slot", s.id, "accepted", accepted, "nDraft", nDraft)
+					return
+				}
+
+				continue
+			}
+
+			// Rejected: for greedy, the bonus token is the target's argmax.
+			bonusToken = targetArgmax
+			break
+		}
+
+		// Probabilistic verification with temperature-scaled distributions.
+		draft := e.model.draft
+		softmaxTempInto(targetLogits, draft.targetProbs, temperature)
+
 		pTarget := draft.targetProbs[draftToken]
 		qDraft := draftProbs[i][draftToken]
 
@@ -254,7 +286,6 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 
 	// If all draft tokens were accepted, sample bonus from target at position nDraft.
 	if accepted == nDraft {
-		draft := e.model.draft
 		targetLogits, err := llama.GetLogitsIth(e.model.lctx, baseBatch+int32(nDraft), nVocab)
 		if err != nil {
 			// Fallback to sampler.
@@ -264,8 +295,11 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 			default:
 				bonusToken = llama.SamplerSample(s.sampler, e.model.lctx, baseBatch+int32(nDraft))
 			}
+		} else if greedy {
+			bonusToken = argmax(targetLogits)
 		} else {
-			softmaxInto(targetLogits, draft.targetProbs)
+			draft := e.model.draft
+			softmaxTempInto(targetLogits, draft.targetProbs, temperature)
 			bonusToken = sampleFromProbs(draft.targetProbs)
 		}
 	}
@@ -298,6 +332,19 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 	}
 
 	s.iBatch = -1
+}
+
+// argmax returns the token with the highest logit value.
+func argmax(logits []float32) llama.Token {
+	maxIdx := 0
+	maxVal := logits[0]
+	for i := 1; i < len(logits); i++ {
+		if logits[i] > maxVal {
+			maxVal = logits[i]
+			maxIdx = i
+		}
+	}
+	return llama.Token(maxIdx)
 }
 
 // sampleAdjustedInto samples from the adjusted distribution max(0, p_target - q_draft),

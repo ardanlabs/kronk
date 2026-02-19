@@ -3,13 +3,6 @@
 ================================================================================
 Feb 16th, 2026 : v1.19.1
 Model          : Qwen3-8B-Q8_0
-ContextWin     : 32k
-Conversation   : 23443 tokens (107771 chars, 38 messages)
-Sys Prompt     : 8241 tokens (39322 chars)
-prompt-tok     : 23636 tokens
-output-tok     : 128 tokens
-Benchtime      : 3x
-Timeout        : 30m
 llamap.cpp     : b8070
 --------------------------------------------------------------------------------
 goos: darwin
@@ -29,13 +22,6 @@ No Caching          SPC                IMC
 ================================================================================
 Feb 16th, 2026 : v1.19.2
 Model          : Qwen3-8B-Q8_0
-ContextWin     : 32k
-Conversation   : 23443 tokens (107771 chars, 38 messages)
-Sys Prompt     : 8241 tokens (39322 chars)
-prompt-tok     : 23636 tokens
-output-tok     : 128 tokens
-Benchtime      : 3x
-Timeout        : 30m
 llamap.cpp     : b8070
 --------------------------------------------------------------------------------
 goos: darwin
@@ -55,13 +41,6 @@ No Caching          SPC                IMC
 ================================================================================
 Feb 18th, 2026 : Pre-v1.19.3
 Model          : Qwen3-8B-Q8_0
-ContextWin     : 32k
-Conversation   : 23443 tokens (107771 chars, 38 messages)
-Sys Prompt     : 8241 tokens (39322 chars)
-prompt-tok     : 23636 tokens
-output-tok     : 128 tokens
-Benchtime      : 3x
-Timeout        : 30m
 llamap.cpp     : b8083
 --------------------------------------------------------------------------------
 goos: darwin
@@ -71,9 +50,21 @@ cpu: Apple M4 Max
 BenchmarkNonCaching-16  3  67904898444 ns/op 🟢  165418 B/op 🟢  9061 allocs/op 🟢
 BenchmarkSPC-16         3  53454949167 ns/op 🟢  990346 B/op 🔴  8942 allocs/op 🟢
 BenchmarkIMC-16         3   3982913444 ns/op 🟢  150906 B/op 🟢  3931 allocs/op 🟢
-BenchmarkIMCSpec-16     3   7114688653 ns/op ⚪  479778 B/op ⚪  9559 allocs/op ⚪
+BenchmarkIMCSpec-16     3   7056100056 ns/op ⚪  480581 B/op ⚪  8889 allocs/op ⚪
+BenchmarkMoEIMC-16      3   2987735014 ns/op ⚪  133888 B/op ⚪  3270 allocs/op ⚪
+BenchmarkIMCMoeSpec-16  3   5181029847 ns/op ⚪  392856 B/op ⚪  5503 allocs/op ⚪
 --------------------------------------------------------------------------------
-No Caching          SPC                IMC                 SPEC
-34.44 tok/s    🟢   34.41 tok/s    🟢   33.81 tok/s    🟢   18.50 tok/s    ⚪ 
-67545 ttft-ms  🟢   52385 ttft-ms  🟢     248 ttft-ms  🟢     329 ttft-ms  ⚪
-63914 total-ms 🟢   48750 total-ms 🟢    3945 total-ms 🟢    7047 total-ms ⚪
+No Caching          SPC
+34.44 tok/s    🟢   34.41 tok/s    🟢
+67545 ttft-ms  🟢   52385 ttft-ms  🟢
+63914 total-ms 🟢   48750 total-ms 🟢
+
+IMC                 IMC SPEC
+33.81 tok/s    🟢   19.49 tok/s    ⚪
+  248 ttft-ms  🟢     333 ttft-ms  ⚪
+ 3945 total-ms 🟢    6699 total-ms ⚪
+
+MoE IMC             MoE IMC SPEC
+37.23 tok/s    ⚪   19.82 tok/s    ⚪
+  268 ttft-ms  ⚪     265 ttft-ms  ⚪
+ 2793 total-ms ⚪    5412 total-ms ⚪

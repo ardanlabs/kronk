@@ -113,6 +113,19 @@ func softmax(logits []float32) []float32 {
 	return probs
 }
 
+// softmaxTempInto computes temperature-scaled softmax: softmax(logits / T).
+// For temperature=0 callers should use argmax instead. The dst slice must be
+// at least len(logits) in length.
+func softmaxTempInto(logits, dst []float32, temperature float32) {
+	if temperature > 0 && temperature != 1.0 {
+		invT := 1.0 / temperature
+		for i := range logits {
+			logits[i] *= invT
+		}
+	}
+	softmaxInto(logits, dst)
+}
+
 // softmaxInto computes softmax of logits and writes the result into dst.
 // The dst slice must be at least len(logits) in length.
 func softmaxInto(logits, dst []float32) {
