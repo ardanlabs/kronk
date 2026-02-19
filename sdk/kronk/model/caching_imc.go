@@ -36,7 +36,7 @@ type imcSlotSnapshot struct {
 //  1. Scan all slots for a prefix hash match against the incoming messages
 //  2. On match: extend or reuse the matching slot's cache
 //  3. No match: pick an empty slot or evict the LRU slot, rebuild from scratch
-func (m *Model) processIMC(ctx context.Context, d D) cacheResult {
+func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cacheResult {
 	messages, ok := d["messages"].([]D)
 	if !ok || len(messages) == 0 {
 		return cacheResult{modifiedD: d}
@@ -273,13 +273,13 @@ func (m *Model) processIMC(ctx context.Context, d D) cacheResult {
 	// any slot's pending flag is cleared.
 	m.log(ctx, "imc", "status", "all slots pending, waiting for slot")
 
-	if err := m.waitForIMCSlot(ctx); err != nil {
+	if err := m.waitForIMCSlot(ctx, requestStart); err != nil {
 		return cacheResult{modifiedD: d, err: err}
 	}
 
 	m.log(ctx, "imc", "status", "slot became available, retrying scan")
 
-	return m.processIMC(ctx, d)
+	return m.processIMC(ctx, d, requestStart)
 }
 
 // extendIMCCache extends the existing cache with new messages from
@@ -624,8 +624,15 @@ func (m *Model) decodeTokensIntoCache(ctx context.Context, tokens []llama.Token,
 // waitForIMCSlot blocks until at least one IMC slot is no longer pending,
 // the context is canceled, or the wait timeout expires. It uses the cacheCond
 // condvar which is broadcast whenever any slot's pending flag is cleared.
-// The timeout is controlled by Config.CacheSlotTimeout (in seconds).
-func (m *Model) waitForIMCSlot(ctx context.Context) error {
+// The timeout is the remaining time from the shared CacheSlotTimeout budget
+// that started at requestStart.
+func (m *Model) waitForIMCSlot(ctx context.Context, requestStart time.Time) error {
+	timeout := time.Duration(m.cfg.CacheSlotTimeout) * time.Second
+	remaining := timeout - time.Since(requestStart)
+
+	if remaining <= 0 {
+		return fmt.Errorf("server busy processing other requests, try again shortly")
+	}
 
 	// Spawn a goroutine that waits on the cond var and signals a channel.
 	// This lets us select on both the cond signal and context cancellation.
@@ -655,7 +662,7 @@ func (m *Model) waitForIMCSlot(ctx context.Context) error {
 		}
 	}()
 
-	timer := time.NewTimer(time.Duration(m.cfg.CacheSlotTimeout) * time.Second)
+	timer := time.NewTimer(remaining)
 	defer timer.Stop()
 
 	select {

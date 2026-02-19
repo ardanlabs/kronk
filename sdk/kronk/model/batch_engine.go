@@ -21,6 +21,15 @@ type batchEngine struct {
 	shutdownCh chan struct{}
 	wg         sync.WaitGroup
 	stopped    atomic.Bool
+
+	// deferredJob holds a job that was dequeued but couldn't be assigned to a
+	// slot yet (e.g., IMC target slot busy). Checked before reading requestQ.
+	deferredJob *chatJob
+
+	// pendingPreempt is the slot to preempt at the start of the next
+	// processBatch iteration, before any tokens are added to the batch.
+	pendingPreempt    *slot
+	pendingPreemptErr error
 }
 
 // newBatchEngine creates a new batch engine for parallel inference.
@@ -150,7 +159,7 @@ func (e *batchEngine) processLoop(ctx context.Context) {
 		case <-timer.C:
 		}
 
-		switch e.hasActiveSlots() || len(e.requestQ) > 0 {
+		switch e.hasActiveSlots() || len(e.requestQ) > 0 || e.deferredJob != nil || e.pendingPreempt != nil {
 		case true:
 			e.processBatch(ctx, buf)
 			timer.Reset(activeInterval)
@@ -165,6 +174,22 @@ func (e *batchEngine) processLoop(ctx context.Context) {
 func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	// Clear the batch.
 	e.batch.Clear()
+
+	// Execute any pending preemption before building the new batch. This
+	// ensures the victim slot has no tokens in the current batch, so
+	// finishSlot's KV cleanup won't be corrupted by a subsequent decode.
+	// If the deferred job that triggered the preemption has been cancelled,
+	// skip the preemption to avoid killing a live request for nothing.
+	if e.pendingPreempt != nil {
+		if e.deferredJob != nil && e.deferredJob.ctx.Err() != nil {
+			e.failJob(e.deferredJob, e.deferredJob.ctx.Err())
+			e.deferredJob = nil
+		} else {
+			e.finishSlot(e.pendingPreempt, e.pendingPreemptErr)
+		}
+		e.pendingPreempt = nil
+		e.pendingPreemptErr = nil
+	}
 
 	// Prefill draft model for slots that just completed target prefill.
 	if e.model.draft != nil {

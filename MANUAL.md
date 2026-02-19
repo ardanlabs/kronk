@@ -668,10 +668,10 @@ only the new tokens need to be processed — the model doesn't re-read the
 entire conversation. This gives the best performance for chat applications,
 but each active conversation permanently occupies a slot.
 
-| Mode | Slot Lifetime           | Cache Strategy                                                                              |
-| ---- | ----------------------- | ------------------------------------------------------------------------------------------- |
-| Off  | Cleared after request   | None                                                                                        |
-| SPC  | Cleared after request   | System prompt decoded once, KV state stored in RAM, restored per request via StateSeqSetData |
+| Mode | Slot Lifetime            | Cache Strategy                                                                               |
+| ---- | ------------------------ | -------------------------------------------------------------------------------------------- |
+| Off  | Cleared after request    | None                                                                                         |
+| SPC  | Cleared after request    | System prompt decoded once, KV state stored in RAM, restored per request via StateSeqSetData |
 | IMC  | Persists across requests | Full conversation cached in the slot's KV cache sequence                                     |
 
 **Embedding and Reranking Models**
@@ -908,10 +908,10 @@ occupied.
 IMC (Incremental Message Cache) uses dedicated slot/seq binding — each slot's
 sequence IS the cache. No separate cache sequences.
 
-| Mode | Slot Lifetime           | Cache Strategy                                                                               |
-| ---- | ----------------------- | -------------------------------------------------------------------------------------------- |
-| off  | Cleared after request   | None                                                                                         |
-| SPC  | Cleared after request   | System prompt decoded once, KV state stored in RAM, restored per request via StateSeqSetData  |
+| Mode | Slot Lifetime            | Cache Strategy                                                                               |
+| ---- | ------------------------ | -------------------------------------------------------------------------------------------- |
+| off  | Cleared after request    | None                                                                                         |
+| SPC  | Cleared after request    | System prompt decoded once, KV state stored in RAM, restored per request via StateSeqSetData |
 | IMC  | Persists across requests | Full conversation cached in the slot's KV cache sequence                                     |
 
 #### Example: Real Model Calculation
@@ -1057,10 +1057,10 @@ config:
   nseq-max: 1
   incremental-cache: true
   draft-model:
-    model-id: Qwen3-0.6B-Q8_0     # Draft model ID (must be downloaded)
-    ndraft: 5                       # Candidates per step (default: 5)
-    ngpu-layers: 0                  # GPU layers (0=all, -1=none)
-    device: ""                      # Pin to specific GPU (e.g., "GPU1")
+    model-id: Qwen3-0.6B-Q8_0 # Draft model ID (must be downloaded)
+    ndraft: 5 # Candidates per step (default: 5)
+    ngpu-layers: 0 # GPU layers (0=all, -1=none)
+    device: "" # Pin to specific GPU (e.g., "GPU1")
 ```
 
 ```yaml
@@ -1073,22 +1073,22 @@ Qwen3-8B-Q8_0:
     ndraft: 5
 ```
 
-| Field        | YAML Key       | Default | Description                              |
-| ------------ | -------------- | ------- | ---------------------------------------- |
-| ModelID      | `model-id`     | (none)  | Draft model ID (must be downloaded)      |
-| NDraft       | `ndraft`       | 5       | Number of candidate tokens per step      |
-| NGpuLayers   | `ngpu-layers`  | 0 (all) | GPU layers for draft model               |
-| Device       | `device`       | ""      | Pin draft model to a specific GPU        |
+| Field      | YAML Key      | Default | Description                         |
+| ---------- | ------------- | ------- | ----------------------------------- |
+| ModelID    | `model-id`    | (none)  | Draft model ID (must be downloaded) |
+| NDraft     | `ndraft`      | 5       | Number of candidate tokens per step |
+| NGpuLayers | `ngpu-layers` | 0 (all) | GPU layers for draft model          |
+| Device     | `device`      | ""      | Pin draft model to a specific GPU   |
 
 **Draft Model Selection**
 
 Choose a draft model that shares the same tokenizer family as the target.
 A quantized version of the same architecture at lower precision works well:
 
-| Target Model                              | Recommended Draft                          |
-| ----------------------------------------- | ------------------------------------------ |
-| Qwen3-8B-Q8_0                             | Qwen3-0.6B-Q8_0                           |
-| Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL  | Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL   |
+| Target Model                            | Recommended Draft                       |
+| --------------------------------------- | --------------------------------------- |
+| Qwen3-8B-Q8_0                           | Qwen3-0.6B-Q8_0                         |
+| Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL | Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL |
 
 The second example uses the same MoE architecture at lower quantization,
 which shares more of the target's weight structure and produces higher
@@ -1497,6 +1497,125 @@ Step 4 — Total VRAM:
   Total_VRAM = 9.0 GB + 4.8 GB = ~13.8 GB
 ```
 
+### 4.8 IMC Slot Scheduling
+
+When IMC is enabled, the batch engine uses a specialized scheduling algorithm
+(`fillSlotsIMC`) that handles the constraint of routing requests to specific
+slots. This section explains how IMC scheduling differs from normal slot
+assignment and the mechanisms that prevent requests from stalling.
+
+**Normal Scheduling (No Caching / SPC)**
+
+Without IMC, `fillSlots` assigns the next queued request to any available
+slot. If all slots are busy, the request stays in the queue until a slot
+finishes. This is simple and works well because requests have no slot
+affinity.
+
+**IMC Scheduling**
+
+IMC routes each request to a specific target slot based on cache matching
+(see [Section 5.3](#53-incremental-message-cache-imc)). This creates a
+problem: a request's target slot may be busy generating for another request,
+even though other slots are free. `fillSlotsIMC` handles this with two
+mechanisms: **deferred jobs** and **slot preemption**.
+
+**Deferred Jobs**
+
+When `fillSlotsIMC` dequeues a request but its target slot is busy, the
+request is stored in a `deferredJob` field instead of being put back on the
+queue. On the next iteration of the batch processing loop, `fillSlotsIMC`
+checks the deferred job first — if the target slot has finished, the job is
+assigned immediately. This avoids a critical stall: putting a job back on
+the queue could cause the processing loop to go idle (no active slots, empty
+queue) and never wake up until a new external request arrives.
+
+```
+Request dequeued → target slot busy → defer (not requeue)
+                                          │
+Next iteration → target slot free? ──Yes──→ startSlot
+                                     │
+                                     No → keep deferred, check again next iteration
+```
+
+**Slot Preemption**
+
+If a deferred job waits longer than `CacheSlotTimeout` seconds (default: 30)
+for its target slot to finish, `fillSlotsIMC` triggers preemption. This is a
+safety mechanism for pathologically long generations — under normal operation,
+the target slot finishes before the timeout and the deferred job picks it up
+naturally.
+
+Preemption uses a two-phase approach for safety:
+
+1. **Schedule** — `fillSlotsIMC` sets `pendingPreempt` to the victim slot
+   and defers the waiting job. No slot state is modified yet.
+
+2. **Execute** — At the top of the next `processBatch` iteration, after
+   `batch.Clear()` but before any tokens are added, the victim slot is
+   finished with a preemption error. This ordering is critical — the victim
+   slot must have no tokens in the current batch, otherwise cleaning up its
+   KV state could corrupt a subsequent decode.
+
+The preempted request receives an error response and the client can retry.
+The waiting job is then assigned to the freed slot.
+
+For IMC cache-hit requests, the specific target slot is preempted. For
+requests with no cache hit (assigned to any slot), the longest-running
+slot is preempted.
+
+**Timeout Measurement**
+
+The preemption timeout is measured from the moment the job enters the batch
+engine queue — not from when the HTTP request arrived. Time spent in earlier
+phases (such as `waitForIMCSlot` during cache builds) does not count against
+the preemption timeout. This prevents false preemptions when a request waits
+for a long cache build before entering the queue.
+
+**CacheSlotTimeout**
+
+The `cache_slot_timeout` setting (default: 30 seconds) controls two distinct
+timeout scenarios in the IMC scheduling path:
+
+| Scenario                | Where            | What Happens at Timeout                      |
+| ----------------------- | ---------------- | -------------------------------------------- |
+| Wait for slot available | `waitForIMCSlot` | Error returned: "server busy"                |
+| Deferred job waiting    | `fillSlotsIMC`   | Target slot preempted, deferred job assigned |
+
+```
+                          CacheSlotTimeout (30s)
+                          ┌──────────────────────────────────────┐
+                          │                                      │
+    ┌─────────────────────┼──────────────────┐   ┌───────────────┼──────────────┐
+    │  waitForIMCSlot     │                  │   │ fillSlotsIMC  │              │
+    │                     │                  │   │               │              │
+    │  All slots have     │                  │   │  Target slot  │              │
+    │  cache builds       ▼                  │   │  is busy      ▼              │
+    │  in-flight     ──► Error               │   │  generating ──► Preempt      │
+    │                     "server busy"      │   │                victim slot   │
+    └────────────────────────────────────────┘   └──────────────────────────────┘
+```
+
+The first scenario fires before the job enters the batch engine — it blocks
+during `processIMC` when all IMC slots have pending cache builds in-flight.
+The second scenario fires inside the batch engine — the job is already
+queued but its target slot is actively generating tokens for another request.
+
+**Important:** The preemption timeout is measured from when the job enters
+the batch engine queue (`time.Now()` at submit), not from when the HTTP
+request arrived. This means time spent waiting in `waitForIMCSlot` for
+cache builds does not count against the preemption budget.
+
+**Debugging IMC Scheduling**
+
+| Log Message                           | Meaning                                            |
+| ------------------------------------- | -------------------------------------------------- |
+| `all slots pending, waiting for slot` | Entering `waitForIMCSlot` (timeout 1)              |
+| `slot became available, retrying`     | `waitForIMCSlot` succeeded, retrying scan          |
+| `server busy`                         | `waitForIMCSlot` timed out (timeout 1)             |
+| `preempting-slot`                     | Preemption scheduled (timeout 2, shows wait time)  |
+| `preempted by queued request`         | Victim slot finished with preemption error         |
+| `slot-finished` (after preemption)    | Victim cleaned up, slot available for deferred job |
+
 ---
 
 ## Chapter 5: Message Caching
@@ -1751,14 +1870,14 @@ the system kept ~6800 cached and only decoded ~1600.
 
 Look for these log messages to observe the token prefix path:
 
-| Log Message                                   | Meaning                                                                 |
-| --------------------------------------------- | ----------------------------------------------------------------------- |
-| `no slot matched, trying token prefix match`  | Hash match failed, entering token comparison                            |
-| `slot[N] common-prefix X/Y tokens (Z% salvageable)` | Per-slot comparison result                                        |
-| `token prefix match found`                    | Usable prefix found, will trim and extend                               |
-| `imc-trim-prefix`                             | KV cache trim in progress (shows cached_tokens, trim_pos)               |
-| `imc-partial-rebuilt`                          | Rebuild complete (shows total_cached, salvaged_prefix, salvaged_pct)    |
-| `no usable token prefix match`                | All prefixes below `cache_min_tokens`, falling back to empty/LRU slot   |
+| Log Message                                         | Meaning                                                               |
+| --------------------------------------------------- | --------------------------------------------------------------------- |
+| `no slot matched, trying token prefix match`        | Hash match failed, entering token comparison                          |
+| `slot[N] common-prefix X/Y tokens (Z% salvageable)` | Per-slot comparison result                                            |
+| `token prefix match found`                          | Usable prefix found, will trim and extend                             |
+| `imc-trim-prefix`                                   | KV cache trim in progress (shows cached_tokens, trim_pos)             |
+| `imc-partial-rebuilt`                               | Rebuild complete (shows total_cached, salvaged_prefix, salvaged_pct)  |
+| `no usable token prefix match`                      | All prefixes below `cache_min_tokens`, falling back to empty/LRU slot |
 
 ### 5.4 Single-User Caching
 
@@ -1782,15 +1901,15 @@ templates (deterministic templates use fast hash matching, non-deterministic
 templates fall back to token prefix matching). The table below summarizes the
 trade-offs to help you choose.
 
-| Feature      | System Prompt Cache              | Incremental Message Cache                     |
-| ------------ | -------------------------------- | --------------------------------------------- |
-| Caches       | System prompt only               | All messages except last                      |
-| Extends      | No                               | Yes, incrementally                            |
-| Multi-user   | Single shared cache sequence     | Single-user, all slots available              |
-| Sub-agents   | All share same SPC sequence      | Each gets own slot via hash matching          |
-| Best for     | Chat UIs                         | Agentic workflows                             |
-| Memory       | Zero extra VRAM (KV state in RAM)| Zero extra VRAM overhead                      |
-| Template req | Any                              | Any (hash match or token prefix fallback)     |
+| Feature      | System Prompt Cache               | Incremental Message Cache                 |
+| ------------ | --------------------------------- | ----------------------------------------- |
+| Caches       | System prompt only                | All messages except last                  |
+| Extends      | No                                | Yes, incrementally                        |
+| Multi-user   | Single shared cache sequence      | Single-user, all slots available          |
+| Sub-agents   | All share same SPC sequence       | Each gets own slot via hash matching      |
+| Best for     | Chat UIs                          | Agentic workflows                         |
+| Memory       | Zero extra VRAM (KV state in RAM) | Zero extra VRAM overhead                  |
+| Template req | Any                               | Any (hash match or token prefix fallback) |
 
 **Important:** SPC and IMC are mutually exclusive. Choose based on your
 workload:
@@ -4566,12 +4685,12 @@ The `web_search` tool requires a Brave Search API key. Get a free key at
 
 **Environment Variables:**
 
-| Variable          | Description                                 | Default          |
-| ----------------- | ------------------------------------------- | ---------------- |
-| `MCP_MCP_HOST`    | MCP listen address (standalone mode)        | `localhost:9000` |
-| `MCP_MCP_BRAVEAPIKEY` | Brave Search API key (standalone mode)  | —                |
-| `KRONK_MCP_HOST`  | External MCP host (empty = embedded mode)   | —                |
-| `KRONK_MCP_BRAVEAPIKEY` | Brave Search API key (embedded mode)  | —                |
+| Variable                | Description                               | Default          |
+| ----------------------- | ----------------------------------------- | ---------------- |
+| `MCP_MCP_HOST`          | MCP listen address (standalone mode)      | `localhost:9000` |
+| `MCP_MCP_BRAVEAPIKEY`   | Brave Search API key (standalone mode)    | —                |
+| `KRONK_MCP_HOST`        | External MCP host (empty = embedded mode) | —                |
+| `KRONK_MCP_BRAVEAPIKEY` | Brave Search API key (embedded mode)      | —                |
 
 **Embedded mode** — Pass the Brave API key when starting the Kronk server:
 
@@ -4598,13 +4717,13 @@ URLs, and descriptions.
 
 **Parameters:**
 
-| Parameter    | Type   | Required | Description                                                   |
-| ------------ | ------ | -------- | ------------------------------------------------------------- |
-| `query`      | string | Yes      | Search query                                                  |
-| `count`      | int    | No       | Number of results to return (default 10, max 20)              |
-| `country`    | string | No       | Country code for search context (e.g. `US`, `GB`, `DE`)       |
+| Parameter    | Type   | Required | Description                                                                                 |
+| ------------ | ------ | -------- | ------------------------------------------------------------------------------------------- |
+| `query`      | string | Yes      | Search query                                                                                |
+| `count`      | int    | No       | Number of results to return (default 10, max 20)                                            |
+| `country`    | string | No       | Country code for search context (e.g. `US`, `GB`, `DE`)                                     |
 | `freshness`  | string | No       | Filter by freshness: `pd` (past day), `pw` (past week), `pm` (past month), `py` (past year) |
-| `safesearch` | string | No       | Safe search filter: `off`, `moderate`, `strict` (default `moderate`) |
+| `safesearch` | string | No       | Safe search filter: `off`, `moderate`, `strict` (default `moderate`)                        |
 
 ### 15.5 Client Configuration
 
@@ -4619,9 +4738,7 @@ Add the following to your Cline MCP settings:
 {
   "mcpServers": {
     "Kronk": {
-      "autoApprove": [
-        "web_search"
-      ],
+      "autoApprove": ["web_search"],
       "disabled": false,
       "timeout": 60,
       "type": "streamableHttp",
@@ -4642,9 +4759,7 @@ Add the following to your Kilo Code MCP settings:
       "type": "streamable-http",
       "url": "http://localhost:9000/mcp",
       "disabled": true,
-      "alwaysAllow": [
-        "web_search"
-      ],
+      "alwaysAllow": ["web_search"],
       "timeout": 60
     }
   }

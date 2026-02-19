@@ -43,7 +43,7 @@ type cacheResult struct {
 // IMC includes the system prompt in its cache.
 //
 // This function is thread-safe and handles concurrent requests appropriately.
-func (m *Model) processCache(ctx context.Context, d D) cacheResult {
+func (m *Model) processCache(ctx context.Context, d D, requestStart time.Time) cacheResult {
 	if !m.cfg.SystemPromptCache && !m.cfg.IncrementalCache {
 		return cacheResult{modifiedD: d}
 	}
@@ -52,7 +52,7 @@ func (m *Model) processCache(ctx context.Context, d D) cacheResult {
 		return m.processSPC(ctx, d)
 	}
 
-	return m.processIMC(ctx, d)
+	return m.processIMC(ctx, d, requestStart)
 }
 
 // clearCaches clears all cached prompt states.
