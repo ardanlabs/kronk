@@ -130,11 +130,11 @@ benchmark-spc:
 benchmark-imc:
 	CGO_ENABLED=0 go test -run=none -bench=BenchmarkIMC$$ -benchtime=3x -timeout=30m ./sdk/kronk/model/
 
-benchmark-spec:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkIMCSpeculative -benchtime=3x -timeout=30m ./sdk/kronk/model/
-
 benchmark-moe-imc:
 	CGO_ENABLED=0 go test -run=none -bench=BenchmarkMoEIMC$$ -benchtime=3x -timeout=30m ./sdk/kronk/model/
+
+benchmark-spec:
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkIMCSpeculative -benchtime=3x -timeout=30m ./sdk/kronk/model/
 
 benchmark-moe-spec:
 	CGO_ENABLED=0 go test -run=none -bench=BenchmarkMoEIMCSpeculative -benchtime=3x -timeout=30m ./sdk/kronk/model/
