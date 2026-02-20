@@ -98,12 +98,7 @@ function formatDuration(ms: number): string {
   return `${secs}s`;
 }
 
-interface RunTimingProps {
-  trials: AutoTestTrialResult[];
-  totalCount: number;
-}
-
-function RunTiming({ trials, totalCount }: RunTimingProps) {
+function useRunTiming(trials: AutoTestTrialResult[], totalCount: number) {
   const [, setTick] = useState(0);
 
   const completed = trials.filter((t) =>
@@ -132,13 +127,45 @@ function RunTiming({ trials, totalCount }: RunTimingProps) {
     estimate = formatDuration(estimatedRemainingMs);
   }
 
-  if (!elapsed && !estimate) return null;
+  return { elapsed, estimate };
+}
+
+interface TrialProgressBarProps {
+  currentTrialIndex: number;
+  totalTrials: number;
+  trials: AutoTestTrialResult[];
+}
+
+function TrialProgressBar({ currentTrialIndex, totalTrials, trials }: TrialProgressBarProps) {
+  const { elapsed, estimate } = useRunTiming(trials, totalTrials);
+  const pct = Math.min(100, totalTrials > 0 ? (currentTrialIndex / totalTrials) * 100 : 0);
+
+  const currentTrial = trials[currentTrialIndex];
+  let promptStatus: string | null = null;
+  if (currentTrial && currentTrial.status === 'running') {
+    const completedPrompts = currentTrial.scenarioResults.reduce((sum, sr) => sum + sr.promptResults.length, 0);
+    promptStatus = completedPrompts > 0 ? `Prompt ${completedPrompts} completed` : 'Starting…';
+  }
+
+  const label = `${elapsed ?? '0s'}${estimate ? ` · ~${estimate} left` : ''}`;
+  const showInside = pct >= 50;
 
   return (
-    <span style={{ marginLeft: 12, opacity: 0.7 }}>
-      {elapsed && <>Elapsed: {elapsed}</>}
-      {estimate && <>{elapsed && ' · '}~{estimate} remaining</>}
-    </span>
+    <div className="playground-autotest-progress">
+      <div className="playground-autotest-progress-text">
+        <span>Trial {currentTrialIndex} / {totalTrials}</span>
+        {promptStatus && <span className="playground-autotest-prompt-progress"> · {promptStatus}</span>}
+      </div>
+      <div className="playground-autotest-progress-bar">
+        <div
+          className="playground-autotest-progress-fill"
+          style={{ width: `${pct}%` }}
+        >
+          {showInside && <span className="playground-autotest-progress-label">{label}</span>}
+        </div>
+        {!showInside && <span className="playground-autotest-progress-label-outside">{label}</span>}
+      </div>
+    </div>
   );
 }
 
@@ -381,6 +408,16 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
   const sortedConfigTrials = useMemo(() => sortRows(configTrials, sort, getConfigValue), [configTrials, sort, getConfigValue]);
 
   const hasEnabledScenario = enabledScenarios.chat || enabledScenarios.tool_call;
+
+  // Auto-expand results when first trial data arrives
+  const activeTrials = displayMode === 'config' ? configTrials : trials;
+  const prevTrialCountRef = useRef(0);
+  useEffect(() => {
+    if (activeTrials.length > 0 && prevTrialCountRef.current === 0 && !resultsExpanded) {
+      setResultsExpanded(true);
+    }
+    prevTrialCountRef.current = activeTrials.length;
+  }, [activeTrials.length, resultsExpanded]);
 
   const handleRun = useCallback(() => {
     if (sweepMode === 'sampling') {
@@ -837,13 +874,11 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
 
       {/* Progress */}
       {runnerState === 'running_trials' && (
-        <div className="playground-autotest-progress">
-          Trial {currentTrialIndex} / {totalTrials}
-          <RunTiming
-            trials={displayMode === 'config' ? configTrials : trials}
-            totalCount={totalTrials}
-          />
-        </div>
+        <TrialProgressBar
+          currentTrialIndex={currentTrialIndex}
+          totalTrials={totalTrials}
+          trials={displayMode === 'config' ? configTrials : trials}
+        />
       )}
 
       {/* Best Configuration Found (shown after run completes, before results) */}
@@ -981,15 +1016,19 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
                 ? sortedConfigTrials.map((trial, i) => {
                     const isBest = bestConfigTrial && trial === bestConfigTrial && runnerState === 'completed';
                     const isPending = trial.totalScore === undefined || trial.totalScore === null;
+                    const isInProgress = isPending && trial.status === 'running';
+                    const partialChat = isInProgress ? getScenarioScore(trial, 'chat') : undefined;
+                    const partialTool = isInProgress ? getScenarioScore(trial, 'tool_call') : undefined;
+                    const partialTPS = isInProgress ? trial.scenarioResults.find(r => r.avgTPS !== undefined)?.avgTPS : undefined;
                     const isExpanded = expandedTrials.has(trial.id);
                     return (
                       <React.Fragment key={trial.id}>
                         <tr
-                          className={`autotest-trial-row${isBest ? ' autotest-best-row' : ''}`}
+                          className={`autotest-trial-row${isBest ? ' autotest-best-row' : ''}${isInProgress ? ' autotest-running-row' : ''}`}
                           style={{ cursor: 'pointer' }}
                           onClick={() => toggleTrialExpanded(trial.id)}
                         >
-                          <td>{isExpanded ? '▾' : '▸'} {i + 1}</td>
+                          <td>{isExpanded ? '▾' : '▸'} {isInProgress && <span className="playground-autotest-spinner-inline" />}{i + 1}</td>
                           <td>{trial.config?.['context_window'] ?? '—'}</td>
                           <td>{trial.config?.nbatch ?? '—'}</td>
                           <td>{trial.config?.nubatch ?? '—'}</td>
@@ -997,23 +1036,23 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
                           <td>{trial.config?.['flash_attention'] ?? '—'}</td>
                           <td>{trial.config?.['cache_type'] ?? '—'}</td>
                           <td>{trial.config?.['cache_mode'] ? (trial.config['cache_mode'] === 'none' ? 'None' : trial.config['cache_mode'].toUpperCase()) : '—'}</td>
-                          <td style={trial.error ? { color: '#c62828', fontSize: '0.85em' } : isPending ? { color: '#666' } : { color: '#2e7d32' }}>
-                            {trial.error ? `Error: ${trial.error}` : isPending ? '...' : 'OK'}
+                          <td style={trial.error ? { color: '#c62828', fontSize: '0.85em' } : isInProgress ? { color: '#1565c0' } : isPending ? { color: '#666' } : { color: '#2e7d32' }}>
+                            {trial.error ? `Error: ${trial.error}` : isInProgress ? 'Running…' : isPending ? '…' : 'OK'}
                           </td>
-                          <td style={!isPending ? { color: scoreColor(getScenarioScore(trial, 'chat') ?? 0) } : undefined}>
-                            {isPending ? '...' : getScenarioScore(trial, 'chat') ?? '—'}
+                          <td style={partialChat !== undefined ? { color: scoreColor(partialChat), opacity: 0.7 } : !isPending ? { color: scoreColor(getScenarioScore(trial, 'chat') ?? 0) } : undefined}>
+                            {isPending ? (partialChat !== undefined ? `~${partialChat}` : '…') : getScenarioScore(trial, 'chat') ?? '—'}
                           </td>
-                          <td style={!isPending ? { color: scoreColor(getScenarioScore(trial, 'tool_call') ?? 0) } : undefined}>
-                            {isPending ? '...' : getScenarioScore(trial, 'tool_call') ?? '—'}
+                          <td style={partialTool !== undefined ? { color: scoreColor(partialTool), opacity: 0.7 } : !isPending ? { color: scoreColor(getScenarioScore(trial, 'tool_call') ?? 0) } : undefined}>
+                            {isPending ? (partialTool !== undefined ? `~${partialTool}` : '…') : getScenarioScore(trial, 'tool_call') ?? '—'}
                           </td>
                           <td style={!isPending ? { color: scoreColor(trial.totalScore ?? 0) } : undefined}>
-                            {isPending ? '...' : trial.totalScore}
+                            {isPending ? '…' : trial.totalScore}
                           </td>
-                          <td>{isPending ? '...' : trial.avgTPS?.toFixed(1)}</td>
-                          <td>{isPending ? '...' : trial.avgTTFT !== undefined ? `${trial.avgTTFT.toFixed(0)}ms` : '—'}</td>
-                          <td>{isPending ? '...' : trial.avgTPSByFill?.['20%']?.toFixed(1) ?? '—'}</td>
-                          <td>{isPending ? '...' : trial.avgTPSByFill?.['50%']?.toFixed(1) ?? '—'}</td>
-                          <td>{isPending ? '...' : trial.avgTPSByFill?.['80%']?.toFixed(1) ?? '—'}</td>
+                          <td>{isPending ? (partialTPS !== undefined ? `~${partialTPS.toFixed(1)}` : '…') : trial.avgTPS?.toFixed(1)}</td>
+                          <td>{isPending ? '…' : trial.avgTTFT !== undefined ? `${trial.avgTTFT.toFixed(0)}ms` : '—'}</td>
+                          <td>{isPending ? '…' : trial.avgTPSByFill?.['20%']?.toFixed(1) ?? '—'}</td>
+                          <td>{isPending ? '…' : trial.avgTPSByFill?.['50%']?.toFixed(1) ?? '—'}</td>
+                          <td>{isPending ? '…' : trial.avgTPSByFill?.['80%']?.toFixed(1) ?? '—'}</td>
                         </tr>
                         {isExpanded && (
                           <tr className="autotest-detail-row">
@@ -1028,33 +1067,37 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
                 : sortedTrials.map((trial, i) => {
                     const isBest = bestTrial && trial === bestTrial && runnerState === 'completed';
                     const isPending = trial.totalScore === undefined || trial.totalScore === null;
+                    const isInProgress = isPending && trial.status === 'running';
+                    const partialChat = isInProgress ? getScenarioScore(trial, 'chat') : undefined;
+                    const partialTool = isInProgress ? getScenarioScore(trial, 'tool_call') : undefined;
+                    const partialTPS = isInProgress ? trial.scenarioResults.find(r => r.avgTPS !== undefined)?.avgTPS : undefined;
                     const isExpanded = expandedTrials.has(trial.id);
                     return (
                       <React.Fragment key={trial.id}>
                         <tr
-                          className={`autotest-trial-row${isBest ? ' autotest-best-row' : ''}`}
+                          className={`autotest-trial-row${isBest ? ' autotest-best-row' : ''}${isInProgress ? ' autotest-running-row' : ''}`}
                           style={{ cursor: 'pointer' }}
                           onClick={() => toggleTrialExpanded(trial.id)}
                         >
-                          <td>{isExpanded ? '▾' : '▸'} {i + 1}</td>
+                          <td>{isExpanded ? '▾' : '▸'} {isInProgress && <span className="playground-autotest-spinner-inline" />}{i + 1}</td>
                           <td>{trial.candidate.temperature}</td>
                           <td>{trial.candidate.top_p}</td>
                           <td>{trial.candidate.top_k}</td>
                           <td>{trial.candidate.min_p}</td>
-                          <td style={!isPending ? { color: scoreColor(getScenarioScore(trial, 'chat') ?? 0) } : undefined}>
-                            {isPending ? '...' : getScenarioScore(trial, 'chat') ?? '—'}
+                          <td style={partialChat !== undefined ? { color: scoreColor(partialChat), opacity: 0.7 } : !isPending ? { color: scoreColor(getScenarioScore(trial, 'chat') ?? 0) } : undefined}>
+                            {isPending ? (partialChat !== undefined ? `~${partialChat}` : '…') : getScenarioScore(trial, 'chat') ?? '—'}
                           </td>
-                          <td style={!isPending ? { color: scoreColor(getScenarioScore(trial, 'tool_call') ?? 0) } : undefined}>
-                            {isPending ? '...' : getScenarioScore(trial, 'tool_call') ?? '—'}
+                          <td style={partialTool !== undefined ? { color: scoreColor(partialTool), opacity: 0.7 } : !isPending ? { color: scoreColor(getScenarioScore(trial, 'tool_call') ?? 0) } : undefined}>
+                            {isPending ? (partialTool !== undefined ? `~${partialTool}` : '…') : getScenarioScore(trial, 'tool_call') ?? '—'}
                           </td>
                           <td style={!isPending ? { color: scoreColor(trial.totalScore ?? 0) } : undefined}>
-                            {isPending ? '...' : trial.totalScore}
+                            {isPending ? '…' : trial.totalScore}
                           </td>
-                          <td>{isPending ? '...' : trial.avgTPS?.toFixed(1)}</td>
-                          <td>{isPending ? '...' : trial.avgTTFT !== undefined ? `${trial.avgTTFT.toFixed(0)}ms` : '—'}</td>
-                          <td>{isPending ? '...' : trial.avgTPSByFill?.['20%']?.toFixed(1) ?? '—'}</td>
-                          <td>{isPending ? '...' : trial.avgTPSByFill?.['50%']?.toFixed(1) ?? '—'}</td>
-                          <td>{isPending ? '...' : trial.avgTPSByFill?.['80%']?.toFixed(1) ?? '—'}</td>
+                          <td>{isPending ? (partialTPS !== undefined ? `~${partialTPS.toFixed(1)}` : '…') : trial.avgTPS?.toFixed(1)}</td>
+                          <td>{isPending ? '…' : trial.avgTTFT !== undefined ? `${trial.avgTTFT.toFixed(0)}ms` : '—'}</td>
+                          <td>{isPending ? '…' : trial.avgTPSByFill?.['20%']?.toFixed(1) ?? '—'}</td>
+                          <td>{isPending ? '…' : trial.avgTPSByFill?.['50%']?.toFixed(1) ?? '—'}</td>
+                          <td>{isPending ? '…' : trial.avgTPSByFill?.['80%']?.toFixed(1) ?? '—'}</td>
                         </tr>
                         {isExpanded && (
                           <tr className="autotest-detail-row">
