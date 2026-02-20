@@ -304,10 +304,17 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	log.Info(ctx, "startup", "status", "downloading catalog")
 
+	modelConfigFile, err := defaults.ModelConfigFile(cfg.Catalog.ModelConfigFile, cfg.BasePath)
+	if err != nil {
+		return fmt.Errorf("resolving model config file: %w", err)
+	}
+
+	log.Info(ctx, "startup", "status", "model config", "path", modelConfigFile)
+
 	ctlg, err := catalog.New(
 		catalog.WithBasePath(cfg.BasePath),
 		catalog.WithGithubRepo(cfg.Catalog.GithubRepo),
-		catalog.WithModelConfig(cfg.Catalog.ModelConfigFile),
+		catalog.WithModelConfig(modelConfigFile),
 		catalog.WithRepoPath(cfg.Catalog.RepoPath))
 	if err != nil {
 		return fmt.Errorf("unable to create catalog system: %w", err)

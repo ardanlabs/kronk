@@ -1,0 +1,215 @@
+# ==============================================================================
+# CONFIG OPTIONS
+#
+# example-model:
+#   context-window: 8192                 # Max tokens model can process (default: 8192)
+#   nbatch: 2048                         # Logical batch size (default: 2048)
+#   nubatch: 512                         # Physical batch size for prompt ingestion (default: 512)
+#   nthreads: 0                          # Threads for generation (0 = llama.cpp default)
+#   nthreads-batch: 0                    # Threads for batch processing (0 = llama.cpp default)
+#   cache-type-k: q8_0                   # KV cache key type: f32, f16, q8_0, q4_0, bf16, auto
+#   cache-type-v: q8_0                   # KV cache value type: f32, f16, q8_0, q4_0, bf16, auto
+#   flash-attention: enabled             # Flash Attention: enabled, disabled, auto
+#   device: ""                           # Device to use (run llama-bench --list-devices)
+#   nseq-max: 0                          # Max parallel sequences for batched inference (0 = default)
+#   offload-kqv: true                    # Offload KV cache to GPU (false = keep on CPU)
+#   op-offload: true                     # Offload tensor operations to GPU (false = keep on CPU)
+#   ngpu-layers: 0                       # GPU layers to offload (0 = all, -1 = none, N = specific count)
+#   split-mode: row                      # Multi-GPU split: none, layer, row (row recommended for MoE models)
+#   system-prompt-cache: false           # Cache system prompt KV state for reuse across requests
+#   incremental-cache: false             # Incremental message caching for agentic workflows (Cline, OpenCode)
+#   cache-min-tokens: 100                # Min tokens before caching (default: 100, applies to both cache types)
+#   rope-scaling-type: yarn              # RoPE scaling: none, linear, yarn
+#   yarn-orig-ctx: 32768                 # Original training context size (nil = from model)
+#   rope-freq-base: 1000000              # RoPE base frequency (nil = from model, e.g., 10000 Llama, 1000000 Qwen)
+#   rope-freq-scale: 0.25                # RoPE frequency scale (nil = auto-calculated)
+#   yarn-ext-factor: 1.0                 # YaRN extrapolation mix factor (nil = auto, 0 = disable)
+#   yarn-attn-factor: 1.0                # YaRN attention magnitude scaling (nil = default 1.0)
+#   yarn-beta-fast: 32.0                 # YaRN low correction dimension (nil = default 32.0)
+#   yarn-beta-slow: 1.0                  # YaRN high correction dimension (nil = default 1.0)
+
+# ==============================================================================
+# MODEL SELECTION NOTES
+#
+# These suffixes define how a Large Language Model (LLM) is quantized—compressed
+# from its original size to fit into computer memory (RAM/VRAM). The primary
+# difference lies in the balance between model size, inference speed, and output
+# accuracy (intelligence).
+#
+# - F16 (FP16): Unquantized, maximum quality, largest size.
+# - Q8_0: 8-bit, near-lossless compression, very high quality. (Best for local)
+# - K_XL: K-quant (smart) method, high efficiency, better accuracy than
+#         standard _0 at similar sizes.
+#
+# Also, the FP8/F16 or even FP4 are more for modern nvidia cards,are all the
+# precision of the floating point numbers. All operations are accelerated by
+# the GPU.
+#
+# Most of the modern GPUs have the hardware for FP16, and other formats, like FP8
+# (Q8) or FP4 are emulated.
+#
+# If you have hardware support for FP8, it will be roughly double the speed of FP16.
+#
+# There are also INT4/INT8 models, but that's already weird. They take the
+# floating point numbers and convert them to the int in the given precision.
+#
+# For us, on Apple M4 chips, there's still some performance to be gained.
+# See: https://github.com/ggml-org/llama.cpp/discussions/336
+# However, llama.cpp doesn't currently support the MLX framework.
+
+# ==============================================================================
+# ROPE AND YARN NOTES
+#
+# YaRN (Yet another RoPE extensioN) enables extended context windows beyond a
+# model's native training length. For example, Qwen3 models trained on 32k can
+# support 131k context with YaRN scaling.
+#
+# Minimal configuration for YaRN (llama.cpp auto-calculates the rest):
+#   rope-scaling-type: yarn
+#   yarn-orig-ctx: 32768       # Original training context size
+#   context-window: 131072     # Desired extended context
+#
+# Auto-calculated defaults when using YaRN:
+#   rope-freq-base    - Read from model metadata (Qwen3 = 1000000, Llama = 10000)
+#   rope-freq-scale   - Auto-calculated from context ratio
+#   yarn-ext-factor   - Auto-calculated (nil triggers this)
+#   yarn-attn-factor  - 1.0
+#   yarn-beta-fast    - 32.0
+#   yarn-beta-slow    - 1.0
+#
+# The advanced parameters exist for models with non-standard RoPE configurations
+# (e.g., DeepSeek-V2). For typical YaRN usage, the minimal config is sufficient.
+#
+# Note: Extended context increases KV cache memory proportionally. A 4x context
+# extension (32k → 131k) requires 4x the KV cache VRAM per slot.
+
+# ==============================================================================
+# CONFIGURATION NOTES
+#
+# SPC and IMC are mutually exclusive - choose one based on your use case
+# and model behavior.
+#
+# SYSTEM PROMPT CACHE (SPC)
+# -------------------------
+# Caches only the system prompt's KV state in a RAM buffer. On each request
+# the cached state is restored instantly, skipping system prompt re-decoding.
+# The rest of the conversation (all user/assistant messages) is still
+# prefilled every time.
+#
+# Choose SPC when:
+#   - OpenWebUI and similar chat interfaces
+#   - Applications with a consistent system prompt
+#   - Multi-user scenarios with different system prompts
+#
+#   system-prompt-cache: true
+#
+# INCREMENTAL MESSAGE CACHE (IMC)
+# -------------------------------
+# Caches the entire conversation (all messages except the last) in the slot's
+# KV cache and extends it incrementally each turn. Only the newest message
+# needs prefilling, making long multi-turn conversations dramatically faster.
+#
+# Choose IMC when:
+#   - Models with consistent templates (QWEN, Llama) — fastest hash-based path
+#   - Models with non-deterministic templates (GPT-OSS, GLM) — token prefix fallback
+#   - AI coding agents
+#   - Long-running agent conversations
+#   - Any workflow where messages are appended, not edited
+#   - Sub-agent architectures with multiple concurrent agents
+#
+#   incremental-cache: true
+#
+# KV CACHE PARTITIONING
+# ---------------------------------------
+# llama.cpp internally partitions the KV cache across sequences. Each
+# slot gets context-window / nseq-max tokens of capacity. The difference
+# between cache modes is how cached state is managed:
+#
+#   No caching: Slots cleared after each request.
+#   SPC:        System prompt decoded once into a dedicated KV cache sequence,
+#               copied to slot via MemorySeqCp (instant). Adds +1 sequence
+#               to VRAM (NSeqMax + 1).
+#   IMC:        Full conversation cached in KV, slots persist across requests.
+#
+# AGENT CLIENT NOTES
+# -------------------------------
+# Cline is working great with Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMC. The
+# settings use a KV Cache type of f16. You need to use f16 to get the accuracy
+# from the model we need.
+#
+# NOTE: The R1 message format in Cline is a specialized prompt structure
+# required for DeepSeek R1 models, which converts system prompts into user
+# messages. Turn that off.
+#
+# Kilo Code is working get with gpt-oss-120b-F16/IMC. When the KV Cache type is
+# f16, the model is being accurate with tool calling. Agent clients that use
+# traditional tool calling, use this model.
+#
+# MISCELLANEOUS NOTES
+# -------------------------------
+# You will notice with the Qwen3-8B-Q8_0 model a YARN configuration. This is
+# how you can extend the models context window when you need it.
+
+# ==============================================================================
+# TEXT INFERENCE MODELS
+
+# ------------------------------------------------------------------------------
+# Coding Agent Models
+
+# This has been the best with Cline.
+Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMC:
+  nseq-max: 1
+  incremental-cache: true
+
+Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMCG:
+  nseq-max: 1
+  incremental-cache: true
+  grammar: hermestoolcalling.grm
+
+Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/SPC:
+  nseq-max: 1
+  system-prompt-cache: true
+
+# Working amazingly well with Kilo Code.
+# You can't use IMC with this model because it doesn't have consistent
+# prompt creation
+gpt-oss-120b-F16/SPC:
+  nseq-max: 1
+  system-prompt-cache: true
+
+gpt-oss-120b-F16/IMC:
+  nseq-max: 2
+  incremental-cache: true
+
+# Smaller version of the 30B model and works ok with Cline.
+cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0/IMC:
+  nseq-max: 1
+  incremental-cache: true
+
+# This model runs too slow on my M4/128GB.
+# You can't use IMC with this model because it doesn't have consistent
+# prompt creation
+GLM-4.7-Flash-UD-Q8_K_XL/SPC:
+  nseq-max: 1
+  system-prompt-cache: true
+
+# ------------------------------------------------------------------------------
+# Good Reasoning models, tooling support, don't use with Agents.
+
+# Extended context with YaRN scaling (32k training → 131k).
+Qwen3-8B-Q8_0/YARN:
+  context-window: 131072
+  rope-scaling-type: yarn
+  yarn-orig-ctx: 32768
+
+# System Prompt Cache variant for testing.
+# DO NOT REMOVE
+Qwen3-8B-Q8_0/SPC:
+  nseq-max: 1
+  system-prompt-cache: true
+
+# Incremental Message Cache variant for testing.
+# DO NOT REMOVE
+Qwen3-8B-Q8_0/IMC:
+  nseq-max: 1
+  incremental-cache: true
