@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import type {
   PlaygroundSessionResponse,
   AutoTestTrialResult,
@@ -8,7 +8,8 @@ import type {
   AutoTestSessionSeed,
   BestConfigWeights,
 } from '../types';
-import { defaultConfigSweepDef, defaultBestConfigWeights } from '../services/autoTestRunner';
+import { defaultConfigSweepDef, defaultBestConfigWeights, chatScenario, toolCallScenario, generateConfigCandidates } from '../services/autoTestRunner';
+import type { AutoTestScenario } from '../types';
 import { useAutoTestRunner } from '../contexts/AutoTestRunnerContext';
 import type { ConfigTrialResult } from '../contexts/AutoTestRunnerContext';
 
@@ -103,6 +104,122 @@ function RunTiming({ trials, totalCount }: RunTimingProps) {
   );
 }
 
+interface TrialDetailsProps {
+  trial: AutoTestTrialResult;
+  scenarioLookup: Record<string, AutoTestScenario>;
+}
+
+function TrialDetails({ trial, scenarioLookup }: TrialDetailsProps) {
+  if (trial.scenarioResults.length === 0) {
+    return <div className="autotest-detail-empty">No scenario results yet.</div>;
+  }
+
+  return (
+    <div className="autotest-detail-content">
+      {trial.scenarioResults.map((sr) => {
+        const scenario = scenarioLookup[sr.scenarioId];
+        return (
+          <div key={sr.scenarioId} className="autotest-detail-scenario">
+            <div className="autotest-detail-scenario-header">
+              <span className="autotest-detail-scenario-name">{scenario?.name ?? sr.scenarioId}</span>
+              <span className="autotest-detail-scenario-score" style={{ color: scoreColor(sr.score) }}>
+                Score: {sr.score.toFixed(1)}
+              </span>
+              {sr.avgTPS !== undefined && <span>TPS: {sr.avgTPS.toFixed(1)}</span>}
+              {sr.avgTTFT !== undefined && <span>TTFT: {sr.avgTTFT.toFixed(0)}ms</span>}
+              {sr.avgTPSByFill && Object.keys(sr.avgTPSByFill).length > 0 && (
+                <span style={{ marginLeft: 8, opacity: 0.85 }}>
+                  Context Fill TPS:
+                  {sr.avgTPSByFill['20%'] !== undefined && ` @20%: ${sr.avgTPSByFill['20%'].toFixed(1)}`}
+                  {sr.avgTPSByFill['50%'] !== undefined && ` @50%: ${sr.avgTPSByFill['50%'].toFixed(1)}`}
+                  {sr.avgTPSByFill['80%'] !== undefined && ` @80%: ${sr.avgTPSByFill['80%'].toFixed(1)}`}
+                </span>
+              )}
+            </div>
+            <div className="autotest-detail-prompts">
+              {sr.promptResults.map((pr) => {
+                const isCtxFill = pr.promptId.startsWith('ctxfill-');
+                const promptDef = scenario?.prompts.find(p => p.id === pr.promptId);
+                const lastUserMsg = promptDef?.messages
+                  .filter(m => m.role === 'user')
+                  .pop();
+                const inputText = isCtxFill
+                  ? `Context fill test (${pr.promptId.replace('ctxfill-', '')}% fill) — ${pr.usage?.prompt_tokens ?? '?'} prompt tokens`
+                  : typeof lastUserMsg?.content === 'string'
+                    ? lastUserMsg.content
+                    : lastUserMsg?.content?.map(p => ('text' in p ? p.text : '')).join('') ?? '';
+                const expectedLabel = isCtxFill
+                  ? 'Performance metric only'
+                  : promptDef?.expected
+                    ? promptDef.expected.type === 'tool_call'
+                      ? 'Tool call'
+                      : promptDef.expected.type === 'exact'
+                        ? `Exact: "${promptDef.expected.value}"`
+                        : `Regex: ${promptDef.expected.value}`
+                    : '—';
+
+                return (
+                  <div key={pr.promptId} className="autotest-detail-prompt">
+                    <div className="autotest-detail-prompt-header">
+                      <span className="autotest-detail-prompt-id">{isCtxFill ? `Context Fill @${pr.promptId.replace('ctxfill-', '')}%` : pr.promptId}</span>
+                      <span className="autotest-detail-prompt-score" style={{ color: scoreColor(pr.score) }}>
+                        {pr.score.toFixed(1)}
+                      </span>
+                    </div>
+                    <div className="autotest-detail-prompt-grid">
+                      <div className="autotest-detail-field">
+                        <div className="autotest-detail-label">Input</div>
+                        <div className="autotest-detail-value">{inputText || '—'}</div>
+                      </div>
+                      <div className="autotest-detail-field">
+                        <div className="autotest-detail-label">Expected</div>
+                        <div className="autotest-detail-value">{expectedLabel}</div>
+                      </div>
+                      <div className="autotest-detail-field">
+                        <div className="autotest-detail-label">Output</div>
+                        <div className="autotest-detail-value">
+                          {pr.toolCalls.length > 0
+                            ? pr.toolCalls.map((tc, ti) => (
+                                <div key={ti} className="autotest-detail-toolcall">
+                                  <code>{tc.function.name}({tc.function.arguments})</code>
+                                </div>
+                              ))
+                            : pr.assistantText || '(empty)'}
+                        </div>
+                      </div>
+                      {pr.usage && (
+                        <div className="autotest-detail-field">
+                          <div className="autotest-detail-label">Usage</div>
+                          <div className="autotest-detail-value autotest-detail-usage">
+                            <span>In: {pr.usage.prompt_tokens}</span>
+                            <span>Out: {pr.usage.output_tokens}</span>
+                            <span>TPS: {pr.usage.tokens_per_second.toFixed(1)}</span>
+                            {pr.usage.time_to_first_token_ms !== undefined && (
+                              <span>TTFT: {pr.usage.time_to_first_token_ms.toFixed(0)}ms</span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      {pr.notes && pr.notes.length > 0 && (
+                        <div className="autotest-detail-field">
+                          <div className="autotest-detail-label">Notes</div>
+                          <div className="autotest-detail-value autotest-detail-notes">
+                            {pr.notes.map((n, ni) => <div key={ni}>{n}</div>)}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function AutomatedTestingPanel({ session, sessionSeed }: AutomatedTestingPanelProps) {
   const { run, isRunning, startSamplingRun, startConfigRun, stopRun, clearRun, reevaluateBestTrial } = useAutoTestRunner();
 
@@ -116,7 +233,22 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
   const [weightsChanged, setWeightsChanged] = useState(false);
   const appliedWeightsRef = useRef<BestConfigWeights>({ ...defaultBestConfigWeights });
   const [resultsExpanded, setResultsExpanded] = useState(false);
+  const [expandedTrials, setExpandedTrials] = useState<Set<number>>(new Set());
   const [repeats, setRepeats] = useState(3);
+
+  const scenarioLookup: Record<string, AutoTestScenario> = {
+    chat: chatScenario,
+    tool_call: toolCallScenario,
+  };
+
+  const toggleTrialExpanded = useCallback((index: number) => {
+    setExpandedTrials(prev => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  }, []);
 
   // Raw text state for numeric sweep inputs so users can type freely (e.g. ", 1234").
   // We only parse into numbers on blur.
@@ -145,6 +277,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
   const runnerState = run?.status ?? 'idle';
   const errorMessage = run?.errorMessage ?? '';
   const templateRepairStatus = run?.templateRepairStatus ?? '';
+  const calibrationStatus = run?.calibrationStatus ?? '';
   const currentTrialIndex = run?.currentTrialIndex ?? 0;
   const totalTrials = run?.totalTrials ?? 0;
   const trials = run?.kind === 'sampling' ? run.trials : [];
@@ -171,6 +304,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
         maxTrials,
         weights,
         repeats,
+        effectiveConfig: session.effective_config,
       });
     } else {
       if (!sessionSeed?.model_id || session) return;
@@ -398,40 +532,30 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
             </div>
 
             <div className="playground-sweep-param">
-              <label className="playground-sweep-param-toggle">System Prompt Cache</label>
+              <label className="playground-sweep-param-toggle">Cache Mode</label>
               <div className="playground-sweep-option-checks">
-                {[true, false].map((val) => (
-                  <label key={String(val)} className="playground-sweep-option-label">
+                {['none', 'spc', 'imc'].map((val) => (
+                  <label key={val} className="playground-sweep-option-label">
                     <input
                       type="checkbox"
-                      checked={configSweepDef.systemPromptCache.values.includes(val)}
+                      checked={configSweepDef.cacheMode.values.includes(val)}
                       onChange={(e) => {
                         setConfigSweepDef(d => {
-                          const prev = d.systemPromptCache.values;
+                          const prev = d.cacheMode.values;
                           const next = e.target.checked ? [...prev, val] : prev.filter(v => v !== val);
-                          return { ...d, systemPromptCache: { ...d.systemPromptCache, values: next } };
+                          return { ...d, cacheMode: { ...d.cacheMode, values: next } };
                         });
                       }}
                       disabled={isRunning}
                     />
-                    {String(val)}
+                    {val === 'none' ? 'None' : val.toUpperCase()}
                   </label>
                 ))}
               </div>
             </div>
           </div>
           <p style={{ fontSize: 12, color: 'var(--color-gray-600)', marginTop: 8 }}>
-            Estimated trials: {(() => {
-              const axes: number[] = [];
-              if (configSweepDef.nbatch.values.length > 0) axes.push(configSweepDef.nbatch.values.length);
-              if (configSweepDef.nubatch.values.length > 0) axes.push(configSweepDef.nubatch.values.length);
-              if (configSweepDef.contextWindow.values.length > 0) axes.push(configSweepDef.contextWindow.values.length);
-              if (configSweepDef.nSeqMax.values.length > 0) axes.push(configSweepDef.nSeqMax.values.length);
-              if (configSweepDef.flashAttention.values.length > 0) axes.push(configSweepDef.flashAttention.values.length);
-              if (configSweepDef.cacheType.values.length > 0) axes.push(configSweepDef.cacheType.values.length);
-              if (configSweepDef.systemPromptCache.values.length > 0) axes.push(configSweepDef.systemPromptCache.values.length);
-              return axes.length > 0 ? axes.reduce((a, b) => a * b, 1) : 1;
-            })()}
+            Trials: {sessionSeed ? generateConfigCandidates(sessionSeed.base_config, configSweepDef).length : 1}
           </p>
         </div>
       )}
@@ -612,6 +736,13 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
         </div>
       )}
 
+      {/* Calibration Status */}
+      {calibrationStatus && isRunning && (
+        <div className="playground-autotest-status">
+          <span className="playground-autotest-spinner" /> {calibrationStatus}
+        </div>
+      )}
+
       {/* Error Display */}
       {errorMessage && <div className="playground-error">{errorMessage}</div>}
 
@@ -633,13 +764,13 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
           <div className="playground-autotest-best-details">
             {displayMode === 'config' && bestConfigTrial ? (
               <>
-                <div><strong>Context Window:</strong> {bestConfigTrial.config?.['context-window'] ?? '—'}</div>
+                <div><strong>Context Window:</strong> {bestConfigTrial.config?.['context_window'] ?? '—'}</div>
                 <div><strong>NBatch:</strong> {bestConfigTrial.config?.nbatch ?? '—'}</div>
                 <div><strong>NUBatch:</strong> {bestConfigTrial.config?.nubatch ?? '—'}</div>
-                <div><strong>NSeqMax:</strong> {bestConfigTrial.config?.['nseq-max'] ?? '—'}</div>
-                <div><strong>Flash Attention:</strong> {bestConfigTrial.config?.['flash-attention'] ?? '—'}</div>
-                <div><strong>KV Cache Type:</strong> {bestConfigTrial.config?.['cache-type'] ?? '—'}</div>
-                <div><strong>System Prompt Cache:</strong> {bestConfigTrial.config?.['system-prompt-cache'] !== undefined ? String(bestConfigTrial.config['system-prompt-cache']) : '—'}</div>
+                <div><strong>NSeqMax:</strong> {bestConfigTrial.config?.['nseq_max'] ?? '—'}</div>
+                <div><strong>Flash Attention:</strong> {bestConfigTrial.config?.['flash_attention'] ?? '—'}</div>
+                <div><strong>KV Cache Type:</strong> {bestConfigTrial.config?.['cache_type'] ?? '—'}</div>
+                <div><strong>Cache Mode:</strong> {bestConfigTrial.config?.['cache_mode'] ? (bestConfigTrial.config['cache_mode'] === 'none' ? 'None' : bestConfigTrial.config['cache_mode'].toUpperCase()) : '—'}</div>
               </>
             ) : bestTrial ? (
               <>
@@ -659,6 +790,13 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
                   <div><strong>Total Score:</strong> {best.totalScore}</div>
                   <div><strong>Avg TPS:</strong> {best.avgTPS?.toFixed(1)}</div>
                   <div><strong>Avg TTFT:</strong> {best.avgTTFT !== undefined ? `${best.avgTTFT.toFixed(0)}ms` : '—'}</div>
+                  {best.avgTPSByFill && (
+                    <>
+                      <div><strong>TPS @20%:</strong> {best.avgTPSByFill['20%']?.toFixed(1) ?? '—'}</div>
+                      <div><strong>TPS @50%:</strong> {best.avgTPSByFill['50%']?.toFixed(1) ?? '—'}</div>
+                      <div><strong>TPS @80%:</strong> {best.avgTPSByFill['80%']?.toFixed(1) ?? '—'}</div>
+                    </>
+                  )}
                 </>
               );
             })()}
@@ -728,7 +866,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
                     <th>NSeqMax</th>
                     <th>Flash Attn</th>
                     <th>KV Cache</th>
-                    <th>SPC</th>
+                    <th>Cache</th>
                     <th>Status</th>
                   </>
                 ) : (
@@ -744,6 +882,9 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
                 <th>Total Score</th>
                 <th>Avg TPS</th>
                 <th>Avg TTFT</th>
+                <th>TPS @20%</th>
+                <th>TPS @50%</th>
+                <th>TPS @80%</th>
               </tr>
             </thead>
             <tbody>
@@ -751,55 +892,89 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
                 ? configTrials.map((trial, i) => {
                     const isBest = bestConfigTrial && trial === bestConfigTrial && runnerState === 'completed';
                     const isPending = trial.totalScore === undefined || trial.totalScore === null;
+                    const isExpanded = expandedTrials.has(i);
                     return (
-                      <tr key={i} style={isBest ? { backgroundColor: '#e8f5e9' } : undefined}>
-                        <td>{i + 1}</td>
-                        <td>{trial.config?.['context-window'] ?? '—'}</td>
-                        <td>{trial.config?.nbatch ?? '—'}</td>
-                        <td>{trial.config?.nubatch ?? '—'}</td>
-                        <td>{trial.config?.['nseq-max'] ?? '—'}</td>
-                        <td>{trial.config?.['flash-attention'] ?? '—'}</td>
-                        <td>{trial.config?.['cache-type'] ?? '—'}</td>
-                        <td>{trial.config?.['system-prompt-cache'] !== undefined ? String(trial.config['system-prompt-cache']) : '—'}</td>
-                        <td style={trial.error ? { color: '#c62828', fontSize: '0.85em' } : isPending ? { color: '#666' } : { color: '#2e7d32' }}>
-                          {trial.error ? `Error: ${trial.error}` : isPending ? '...' : 'OK'}
-                        </td>
-                        <td style={!isPending ? { color: scoreColor(getScenarioScore(trial, 'chat') ?? 0) } : undefined}>
-                          {isPending ? '...' : getScenarioScore(trial, 'chat') ?? '—'}
-                        </td>
-                        <td style={!isPending ? { color: scoreColor(getScenarioScore(trial, 'tool_call') ?? 0) } : undefined}>
-                          {isPending ? '...' : getScenarioScore(trial, 'tool_call') ?? '—'}
-                        </td>
-                        <td style={!isPending ? { color: scoreColor(trial.totalScore ?? 0) } : undefined}>
-                          {isPending ? '...' : trial.totalScore}
-                        </td>
-                        <td>{isPending ? '...' : trial.avgTPS?.toFixed(1)}</td>
-                        <td>{isPending ? '...' : trial.avgTTFT !== undefined ? `${trial.avgTTFT.toFixed(0)}ms` : '—'}</td>
-                      </tr>
+                      <React.Fragment key={i}>
+                        <tr
+                          className={`autotest-trial-row${isBest ? ' autotest-best-row' : ''}`}
+                          style={{ cursor: 'pointer' }}
+                          onClick={() => toggleTrialExpanded(i)}
+                        >
+                          <td>{isExpanded ? '▾' : '▸'} {i + 1}</td>
+                          <td>{trial.config?.['context_window'] ?? '—'}</td>
+                          <td>{trial.config?.nbatch ?? '—'}</td>
+                          <td>{trial.config?.nubatch ?? '—'}</td>
+                          <td>{trial.config?.['nseq_max'] ?? '—'}</td>
+                          <td>{trial.config?.['flash_attention'] ?? '—'}</td>
+                          <td>{trial.config?.['cache_type'] ?? '—'}</td>
+                          <td>{trial.config?.['cache_mode'] ? (trial.config['cache_mode'] === 'none' ? 'None' : trial.config['cache_mode'].toUpperCase()) : '—'}</td>
+                          <td style={trial.error ? { color: '#c62828', fontSize: '0.85em' } : isPending ? { color: '#666' } : { color: '#2e7d32' }}>
+                            {trial.error ? `Error: ${trial.error}` : isPending ? '...' : 'OK'}
+                          </td>
+                          <td style={!isPending ? { color: scoreColor(getScenarioScore(trial, 'chat') ?? 0) } : undefined}>
+                            {isPending ? '...' : getScenarioScore(trial, 'chat') ?? '—'}
+                          </td>
+                          <td style={!isPending ? { color: scoreColor(getScenarioScore(trial, 'tool_call') ?? 0) } : undefined}>
+                            {isPending ? '...' : getScenarioScore(trial, 'tool_call') ?? '—'}
+                          </td>
+                          <td style={!isPending ? { color: scoreColor(trial.totalScore ?? 0) } : undefined}>
+                            {isPending ? '...' : trial.totalScore}
+                          </td>
+                          <td>{isPending ? '...' : trial.avgTPS?.toFixed(1)}</td>
+                          <td>{isPending ? '...' : trial.avgTTFT !== undefined ? `${trial.avgTTFT.toFixed(0)}ms` : '—'}</td>
+                          <td>{isPending ? '...' : trial.avgTPSByFill?.['20%']?.toFixed(1) ?? '—'}</td>
+                          <td>{isPending ? '...' : trial.avgTPSByFill?.['50%']?.toFixed(1) ?? '—'}</td>
+                          <td>{isPending ? '...' : trial.avgTPSByFill?.['80%']?.toFixed(1) ?? '—'}</td>
+                        </tr>
+                        {isExpanded && (
+                          <tr className="autotest-detail-row">
+                            <td colSpan={17}>
+                              <TrialDetails trial={trial} scenarioLookup={scenarioLookup} />
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     );
                   })
                 : trials.map((trial, i) => {
                     const isBest = bestTrial && trial === bestTrial && runnerState === 'completed';
                     const isPending = trial.totalScore === undefined || trial.totalScore === null;
+                    const isExpanded = expandedTrials.has(i);
                     return (
-                      <tr key={i} style={isBest ? { backgroundColor: '#e8f5e9' } : undefined}>
-                        <td>{i + 1}</td>
-                        <td>{trial.candidate.temperature}</td>
-                        <td>{trial.candidate.top_p}</td>
-                        <td>{trial.candidate.top_k}</td>
-                        <td>{trial.candidate.min_p}</td>
-                        <td style={!isPending ? { color: scoreColor(getScenarioScore(trial, 'chat') ?? 0) } : undefined}>
-                          {isPending ? '...' : getScenarioScore(trial, 'chat') ?? '—'}
-                        </td>
-                        <td style={!isPending ? { color: scoreColor(getScenarioScore(trial, 'tool_call') ?? 0) } : undefined}>
-                          {isPending ? '...' : getScenarioScore(trial, 'tool_call') ?? '—'}
-                        </td>
-                        <td style={!isPending ? { color: scoreColor(trial.totalScore ?? 0) } : undefined}>
-                          {isPending ? '...' : trial.totalScore}
-                        </td>
-                        <td>{isPending ? '...' : trial.avgTPS?.toFixed(1)}</td>
-                        <td>{isPending ? '...' : trial.avgTTFT !== undefined ? `${trial.avgTTFT.toFixed(0)}ms` : '—'}</td>
-                      </tr>
+                      <React.Fragment key={i}>
+                        <tr
+                          className={`autotest-trial-row${isBest ? ' autotest-best-row' : ''}`}
+                          style={{ cursor: 'pointer' }}
+                          onClick={() => toggleTrialExpanded(i)}
+                        >
+                          <td>{isExpanded ? '▾' : '▸'} {i + 1}</td>
+                          <td>{trial.candidate.temperature}</td>
+                          <td>{trial.candidate.top_p}</td>
+                          <td>{trial.candidate.top_k}</td>
+                          <td>{trial.candidate.min_p}</td>
+                          <td style={!isPending ? { color: scoreColor(getScenarioScore(trial, 'chat') ?? 0) } : undefined}>
+                            {isPending ? '...' : getScenarioScore(trial, 'chat') ?? '—'}
+                          </td>
+                          <td style={!isPending ? { color: scoreColor(getScenarioScore(trial, 'tool_call') ?? 0) } : undefined}>
+                            {isPending ? '...' : getScenarioScore(trial, 'tool_call') ?? '—'}
+                          </td>
+                          <td style={!isPending ? { color: scoreColor(trial.totalScore ?? 0) } : undefined}>
+                            {isPending ? '...' : trial.totalScore}
+                          </td>
+                          <td>{isPending ? '...' : trial.avgTPS?.toFixed(1)}</td>
+                          <td>{isPending ? '...' : trial.avgTTFT !== undefined ? `${trial.avgTTFT.toFixed(0)}ms` : '—'}</td>
+                          <td>{isPending ? '...' : trial.avgTPSByFill?.['20%']?.toFixed(1) ?? '—'}</td>
+                          <td>{isPending ? '...' : trial.avgTPSByFill?.['50%']?.toFixed(1) ?? '—'}</td>
+                          <td>{isPending ? '...' : trial.avgTPSByFill?.['80%']?.toFixed(1) ?? '—'}</td>
+                        </tr>
+                        {isExpanded && (
+                          <tr className="autotest-detail-row">
+                            <td colSpan={13}>
+                              <TrialDetails trial={trial} scenarioLookup={scenarioLookup} />
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     );
                   })}
             </tbody>

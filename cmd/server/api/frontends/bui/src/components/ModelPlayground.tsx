@@ -46,7 +46,7 @@ export default function ModelPlayground() {
     nSeqMax, setNSeqMax,
     flashAttention, setFlashAttention,
     cacheType, setCacheType,
-    systemPromptCache, setSystemPromptCache,
+    cacheMode, setCacheMode,
     hydratedModelId, setHydratedModelId,
   } = usePlayground();
 
@@ -143,7 +143,7 @@ export default function ModelPlayground() {
           setNSeqMax(mc['nseq-max'] || 1);
           setFlashAttention(mc['flash-attention'] || 'enabled');
           setCacheType(mc['cache-type-k'] || mc['cache-type-v'] || '');
-          setSystemPromptCache(mc['system-prompt-cache'] || false);
+          setCacheMode(mc['incremental-cache'] ? 'imc' : mc['system-prompt-cache'] ? 'spc' : 'none');
         }
         setHydratedModelId(selectedModel);
       })
@@ -228,7 +228,7 @@ export default function ModelPlayground() {
       const config: Record<string, any> = {};
 
       if (!catalogConfig || contextWindow !== (catalogConfig['context-window'] || 8192)) {
-        config['context-window'] = contextWindow;
+        config['context_window'] = contextWindow;
       }
       if (!catalogConfig || nBatch !== (catalogConfig.nbatch || 2048)) {
         config['nbatch'] = nBatch;
@@ -237,19 +237,21 @@ export default function ModelPlayground() {
         config['nubatch'] = nUBatch;
       }
       if (!catalogConfig || nSeqMax !== (catalogConfig['nseq-max'] || 1)) {
-        config['nseq-max'] = nSeqMax;
+        config['nseq_max'] = nSeqMax;
       }
       if (!catalogConfig || flashAttention !== (catalogConfig['flash-attention'] || 'enabled')) {
-        config['flash-attention'] = flashAttention;
+        config['flash_attention'] = flashAttention;
       }
       if (!catalogConfig || cacheType !== (catalogConfig['cache-type-k'] || '')) {
         if (cacheType) {
-          config['cache-type-k'] = cacheType;
-          config['cache-type-v'] = cacheType;
+          config['cache_type_k'] = cacheType;
+          config['cache_type_v'] = cacheType;
         }
       }
-      if (!catalogConfig || systemPromptCache !== (catalogConfig['system-prompt-cache'] || false)) {
-        config['system-prompt-cache'] = systemPromptCache;
+      const catalogCacheMode = catalogConfig?.['incremental-cache'] ? 'imc' : catalogConfig?.['system-prompt-cache'] ? 'spc' : 'none';
+      if (!catalogConfig || cacheMode !== catalogCacheMode) {
+        config['system_prompt_cache'] = cacheMode === 'spc';
+        config['incremental_cache'] = cacheMode === 'imc';
       }
 
       const resp = await api.createPlaygroundSession({
@@ -569,7 +571,8 @@ export default function ModelPlayground() {
         'flash-attention': flashAttention,
         'cache-type-k': cacheType,
         'cache-type-v': cacheType,
-        'system-prompt-cache': systemPromptCache,
+        'system-prompt-cache': cacheMode === 'spc',
+        'incremental-cache': cacheMode === 'imc',
       },
       capabilities: {
         streaming: true,
@@ -775,14 +778,15 @@ export default function ModelPlayground() {
                   template_name: templateMode === 'builtin' ? selectedTemplate : undefined,
                   template_script: templateMode === 'custom' ? customScript : undefined,
                   base_config: {
-                    'context-window': contextWindow,
+                    context_window: contextWindow,
                     nbatch: nBatch,
                     nubatch: nUBatch,
-                    'nseq-max': nSeqMax,
-                    'flash-attention': flashAttention,
-                    'cache-type-k': cacheType || undefined,
-                    'cache-type-v': cacheType || undefined,
-                    'system-prompt-cache': systemPromptCache,
+                    nseq_max: nSeqMax,
+                    flash_attention: flashAttention,
+                    cache_type_k: cacheType || undefined,
+                    cache_type_v: cacheType || undefined,
+                    system_prompt_cache: cacheMode === 'spc',
+                    incremental_cache: cacheMode === 'imc',
                   },
                 }}
               />
@@ -866,16 +870,17 @@ export default function ModelPlayground() {
                 <option value="q4_0">q4_0</option>
               </select>
             </div>
-            <div className="form-group checkbox-group">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={systemPromptCache}
-                  onChange={(e) => setSystemPromptCache(e.target.checked)}
-                  disabled={!!session}
-                />
-                System Prompt Cache
-              </label>
+            <div className="form-group">
+              <label>Cache Mode</label>
+              <select
+                value={cacheMode}
+                onChange={(e) => setCacheMode(e.target.value)}
+                disabled={!!session}
+              >
+                <option value="none">None</option>
+                <option value="spc">SPC (System Prompt)</option>
+                <option value="imc">IMC (Incremental)</option>
+              </select>
             </div>
           </div>
 

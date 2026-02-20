@@ -15,6 +15,7 @@ import type {
   ConfigCandidate,
   PlaygroundModelConfig,
   BestConfigWeights,
+  ContextFillRatio,
 } from '../types'
 
 /** Standard tool definitions used for automated testing. */
@@ -49,7 +50,136 @@ export const autoTestTools: ChatToolDefinition[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'search_products',
+      description: 'Search for products by name or category',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Search query' },
+          category: { type: 'string', description: 'Product category' },
+          max_results: { type: 'number', description: 'Maximum number of results to return' },
+        },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'send_email',
+      description: 'Send an email to a recipient',
+      parameters: {
+        type: 'object',
+        properties: {
+          to: { type: 'string', description: 'Recipient email address' },
+          subject: { type: 'string', description: 'Email subject line' },
+          body: { type: 'string', description: 'Email body content' },
+        },
+        required: ['to', 'subject', 'body'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_stock_price',
+      description: 'Get the current stock price for a ticker symbol',
+      parameters: {
+        type: 'object',
+        properties: {
+          symbol: { type: 'string', description: 'Stock ticker symbol (e.g. AAPL)' },
+        },
+        required: ['symbol'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'convert_currency',
+      description: 'Convert an amount from one currency to another',
+      parameters: {
+        type: 'object',
+        properties: {
+          amount: { type: 'number', description: 'Amount to convert' },
+          from: { type: 'string', description: 'Source currency code (e.g. USD)' },
+          to: { type: 'string', description: 'Target currency code (e.g. EUR)' },
+        },
+        required: ['amount', 'from', 'to'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_calendar_event',
+      description: 'Create a calendar event',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: 'Event title' },
+          date: { type: 'string', description: 'Event date in YYYY-MM-DD format' },
+          time: { type: 'string', description: 'Event time in HH:MM format' },
+          duration_minutes: { type: 'number', description: 'Duration in minutes' },
+        },
+        required: ['title', 'date', 'time'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'translate_text',
+      description: 'Translate text from one language to another',
+      parameters: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', description: 'Text to translate' },
+          source_language: { type: 'string', description: 'Source language code (e.g. en)' },
+          target_language: { type: 'string', description: 'Target language code (e.g. fr)' },
+        },
+        required: ['text', 'target_language'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_directions',
+      description: 'Get driving directions between two locations',
+      parameters: {
+        type: 'object',
+        properties: {
+          origin: { type: 'string', description: 'Starting location' },
+          destination: { type: 'string', description: 'Destination location' },
+          mode: { type: 'string', enum: ['driving', 'walking', 'transit'], description: 'Travel mode' },
+        },
+        required: ['origin', 'destination'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'set_reminder',
+      description: 'Set a reminder for a specific time',
+      parameters: {
+        type: 'object',
+        properties: {
+          message: { type: 'string', description: 'Reminder message' },
+          datetime: { type: 'string', description: 'When to trigger the reminder (ISO 8601)' },
+        },
+        required: ['message', 'datetime'],
+      },
+    },
+  },
 ]
+
+/** System prompt used across all cache-aware scenarios. */
+const cacheSystemPrompt = 'You are a helpful assistant. You answer concisely and accurately. When asked for numbers, respond with only the number. When asked for lists, use numbered format.';
 
 /** Chat scenario — tests basic text generation quality. */
 export const chatScenario: AutoTestScenario = {
@@ -58,20 +188,346 @@ export const chatScenario: AutoTestScenario = {
   prompts: [
     {
       id: 'math-multiply',
-      messages: [{ role: 'user', content: 'What is 17 * 19? Answer with only the number.' }],
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'What is 17 * 19? Answer with only the number.' },
+      ],
       expected: { type: 'exact', value: '323' },
     },
     {
       id: 'list-benefits',
-      messages: [{ role: 'user', content: 'List exactly 3 benefits of exercise. Use a numbered list.' }],
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'List exactly 3 benefits of exercise. Use a numbered list.' },
+      ],
       expected: { type: 'regex', value: '^\\s*1[.)]\\s+.+\\n\\s*2[.)]\\s+.+\\n\\s*3[.)]\\s+.+' },
     },
     {
       id: 'translate-french',
-      messages: [{ role: 'user', content: "Translate 'Good morning' to French. Answer with only the translation." }],
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "Translate 'Good morning' to French. Answer with only the translation." },
+      ],
       expected: { type: 'regex', value: 'bonjour' },
     },
+    // Multi-turn prompts: each extends the previous conversation to exercise
+    // IMC incremental caching. The system prompt is shared with the single-turn
+    // prompts above so SPC benefits from the same cached KV state.
+    {
+      id: 'multi-turn-2',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'What is the capital of France?' },
+        { role: 'assistant', content: 'Paris' },
+        { role: 'user', content: 'What is the population of that city? Answer with only the approximate number.' },
+      ],
+      expected: { type: 'regex', value: '\\d' },
+    },
+    {
+      id: 'multi-turn-4',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'What is the capital of France?' },
+        { role: 'assistant', content: 'Paris' },
+        { role: 'user', content: 'What is the population of that city? Answer with only the approximate number.' },
+        { role: 'assistant', content: 'Approximately 2.1 million in the city proper.' },
+        { role: 'user', content: 'Name exactly 3 famous landmarks there. Use a numbered list.' },
+      ],
+      expected: { type: 'regex', value: '1[.)]' },
+    },
+    {
+      id: 'multi-turn-6',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'What is the capital of France?' },
+        { role: 'assistant', content: 'Paris' },
+        { role: 'user', content: 'What is the population of that city? Answer with only the approximate number.' },
+        { role: 'assistant', content: 'Approximately 2.1 million in the city proper.' },
+        { role: 'user', content: 'Name exactly 3 famous landmarks there. Use a numbered list.' },
+        { role: 'assistant', content: '1. Eiffel Tower\n2. Louvre Museum\n3. Notre-Dame Cathedral' },
+        { role: 'user', content: 'When was the first one built? Answer with only the year.' },
+      ],
+      expected: { type: 'regex', value: '18(87|89)' },
+    },
+    {
+      id: 'math-addition',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'What is 456 + 789? Answer with only the number.' },
+      ],
+      expected: { type: 'exact', value: '1245' },
+    },
+    {
+      id: 'math-division',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'What is 144 / 12? Answer with only the number.' },
+      ],
+      expected: { type: 'exact', value: '12' },
+    },
+    {
+      id: 'translate-spanish',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "Translate 'Thank you very much' to Spanish. Answer with only the translation." },
+      ],
+      expected: { type: 'regex', value: '[Mm]uchas\\s+[Gg]racias' },
+    },
+    {
+      id: 'country-capital',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'What is the capital of Japan? Answer with only the city name.' },
+      ],
+      expected: { type: 'exact', value: 'Tokyo' },
+    },
+    {
+      id: 'list-planets',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'List the 4 inner planets of our solar system. Use a numbered list.' },
+      ],
+      expected: { type: 'regex', value: '1[.)].*[Mm]ercury' },
+    },
+    {
+      id: 'acronym',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'What does the acronym HTTP stand for? Answer with only the full form.' },
+      ],
+      expected: { type: 'regex', value: '[Hh]yper[Tt]ext\\s+[Tt]ransfer\\s+[Pp]rotocol' },
+    },
+    {
+      id: 'multi-turn-8',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'What is the capital of France?' },
+        { role: 'assistant', content: 'Paris' },
+        { role: 'user', content: 'What is the population of that city? Answer with only the approximate number.' },
+        { role: 'assistant', content: 'Approximately 2.1 million in the city proper.' },
+        { role: 'user', content: 'Name exactly 3 famous landmarks there. Use a numbered list.' },
+        { role: 'assistant', content: '1. Eiffel Tower\n2. Louvre Museum\n3. Notre-Dame Cathedral' },
+        { role: 'user', content: 'When was the first one built? Answer with only the year.' },
+        { role: 'assistant', content: '1889' },
+        { role: 'user', content: 'How tall is it in meters? Answer with only the number.' },
+      ],
+      expected: { type: 'regex', value: '3(00|30)' },
+    },
+    {
+      id: 'multi-turn-10',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'What is the capital of France?' },
+        { role: 'assistant', content: 'Paris' },
+        { role: 'user', content: 'What is the population of that city? Answer with only the approximate number.' },
+        { role: 'assistant', content: 'Approximately 2.1 million in the city proper.' },
+        { role: 'user', content: 'Name exactly 3 famous landmarks there. Use a numbered list.' },
+        { role: 'assistant', content: '1. Eiffel Tower\n2. Louvre Museum\n3. Notre-Dame Cathedral' },
+        { role: 'user', content: 'When was the first one built? Answer with only the year.' },
+        { role: 'assistant', content: '1889' },
+        { role: 'user', content: 'How tall is it in meters? Answer with only the number.' },
+        { role: 'assistant', content: '330' },
+        { role: 'user', content: 'Who designed it? Answer with only the name.' },
+      ],
+      expected: { type: 'regex', value: '[Ee]iffel' },
+    },
+    {
+      id: 'math-square-root',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'What is the square root of 256? Answer with only the number.' },
+      ],
+      expected: { type: 'exact', value: '16' },
+    },
   ],
+}
+
+/**
+ * Background text blocks used to fill the context window with meaningful content.
+ * Each block is approximately 200-300 words of real-ish technical content that
+ * an LLM can reason about when asked follow-up questions.
+ */
+const contextFillBlocks = [
+  `The distributed caching layer uses a consistent hashing ring with 256 virtual nodes per physical server. When a node joins or leaves the cluster, only K/N keys need to be redistributed, where K is the total number of keys and N is the number of nodes. The system maintains a replication factor of 3, meaning each key-value pair is stored on three consecutive nodes in the ring. Write operations require acknowledgment from at least two replicas before returning success to the client. Read operations can be configured for either strong consistency (read from all replicas and return the latest version) or eventual consistency (read from the nearest replica). The cache eviction policy uses a combination of LRU and TTL-based expiration. Each entry has a maximum TTL of 24 hours, but frequently accessed entries are kept in a hot tier with faster access times. The system processes approximately 50,000 requests per second per node with a p99 latency of 2.3 milliseconds.`,
+
+  `The machine learning pipeline ingests training data from three sources: user interaction logs, content metadata databases, and external knowledge graphs. The preprocessing stage normalizes text using Unicode NFKC normalization, removes HTML entities, and applies language-specific tokenization. For English text, the system uses a SentencePiece BPE tokenizer with a vocabulary of 32,000 tokens. The model architecture is a transformer with 24 layers, 16 attention heads, and a hidden dimension of 1024. Training uses AdamW optimizer with a learning rate of 3e-4, weight decay of 0.01, and a cosine learning rate schedule with 1000 warmup steps. The batch size is 256 sequences of 512 tokens each. Training runs on 8 A100 GPUs using data parallelism with gradient accumulation over 4 steps. A full training run takes approximately 72 hours and produces a model checkpoint of 1.2 GB.`,
+
+  `The API gateway handles authentication using JWT tokens with RS256 signing. Each token contains claims for user ID, organization ID, role, and a list of permitted scopes. Tokens expire after 1 hour and can be refreshed using a separate refresh token that expires after 30 days. Rate limiting is implemented at three levels: per-IP (1000 requests/minute), per-user (5000 requests/minute), and per-organization (50000 requests/minute). The gateway routes requests to backend services using a weighted round-robin algorithm with health checking. If a backend service fails three consecutive health checks (sent every 10 seconds), it is removed from the rotation until it passes two consecutive checks. The gateway logs all requests with a unique trace ID that propagates through all downstream services. Request and response bodies are logged only for non-production environments. The system handles approximately 10 million API calls per day across 150 different endpoint paths.`,
+
+  `The database schema uses a multi-tenant architecture with row-level security. Each tenant's data is isolated using a tenant_id column present on every table. The primary tables are: users (12 columns, ~2M rows per tenant), documents (18 columns, ~500K rows per tenant), and events (8 columns, ~50M rows per tenant). Indexes are maintained on all foreign keys and commonly queried columns. The events table uses a time-series partitioning scheme with monthly partitions, and partitions older than 12 months are automatically moved to cold storage. The database runs on PostgreSQL 16 with connection pooling via PgBouncer configured for 200 server connections and 2000 client connections. Queries are optimized using materialized views for common aggregation patterns, which are refreshed every 15 minutes. The backup strategy uses continuous WAL archiving to S3 with a recovery point objective of 5 minutes and full base backups taken daily.`,
+
+  `The monitoring system collects metrics from all services using a pull-based model with 15-second scrape intervals. Metrics are stored in a time-series database with 90-day retention at full resolution and 2-year retention at 5-minute aggregation. The system tracks four golden signals for each service: latency (histogram with buckets at 10ms, 50ms, 100ms, 250ms, 500ms, 1s, 5s), traffic (requests per second by endpoint and status code), errors (error rate as a percentage of total requests), and saturation (CPU, memory, disk I/O, and network utilization). Alerts are configured using multi-window multi-burn-rate SLO-based rules. For example, the API gateway has an SLO of 99.9% availability measured over a 30-day window, with fast-burn alerts (14.4x burn rate over 1 hour) triggering pages and slow-burn alerts (3x burn rate over 6 hours) creating tickets. Dashboard visualizations use Grafana with templated dashboards that automatically discover new services and endpoints.`,
+
+  `The CI/CD pipeline consists of five stages: lint, test, build, deploy-staging, and deploy-production. The lint stage runs ESLint, Prettier, and type checking in parallel, completing in approximately 45 seconds. The test stage runs unit tests (Jest with ~4000 test cases, ~3 minutes), integration tests (against Docker Compose services, ~8 minutes), and end-to-end tests (Playwright against a staging-like environment, ~12 minutes). The build stage creates Docker images using multi-stage builds, produces SBOM manifests, and runs Trivy vulnerability scanning. Images are pushed to a private ECR registry with immutable tags based on the Git commit SHA. Deployment uses a progressive delivery model: staging receives every commit to the main branch automatically, while production deployments require manual approval and use a canary strategy that routes 5% of traffic to the new version for 30 minutes before proceeding to full rollout. Rollbacks are automated if the error rate exceeds 1% during the canary phase.`,
+
+  `The search infrastructure uses an inverted index with BM25 scoring enhanced by a learned re-ranking model. Documents are processed through a pipeline that extracts text, splits into passages of approximately 200 tokens, generates embedding vectors using a bi-encoder model, and builds the inverted index. The index supports prefix matching, fuzzy matching with edit distance up to 2, and phrase queries using positional information. At query time, an initial retrieval phase uses the inverted index to find the top 1000 candidate passages by BM25 score. A re-ranking phase then applies a cross-encoder model to score each candidate against the query, producing the final top 20 results. The entire query pipeline completes in under 200 milliseconds for 95% of queries. The index is updated incrementally using a write-ahead log that batches updates every 5 seconds. The system handles approximately 500 queries per second with a corpus of 100 million passages across 10 shards.`,
+
+  `The event streaming platform processes messages using a partitioned log architecture. Events are published to topics, each divided into 12 partitions for parallel processing. Producers use a hash-based partitioning strategy on the event key to ensure ordering within a partition. Consumers form groups where each partition is assigned to exactly one consumer in the group. The system guarantees at-least-once delivery with exactly-once processing semantics achieved through idempotent consumers and transactional outbox patterns. Message retention is configured per topic: user events are retained for 30 days, system events for 7 days, and audit events for 365 days. The platform handles approximately 2 million events per second with an average end-to-end latency of 15 milliseconds. Schema evolution is managed using a schema registry that enforces backward compatibility. Each message includes a schema ID in its header, and consumers automatically deserialize using the correct schema version.`,
+
+  `The content delivery network caches static and dynamic content across 45 points of presence worldwide. Static assets (images, CSS, JavaScript, fonts) are cached with a TTL of 30 days and use content-based hashing in filenames for cache busting. Dynamic content (API responses, personalized pages) uses surrogate keys for targeted cache invalidation. When a product is updated, the system publishes an invalidation event containing the product's surrogate keys, and all edge nodes purge matching entries within 500 milliseconds. The CDN uses HTTP/2 push for critical assets and supports QUIC/HTTP3 for improved performance on mobile networks. TLS termination occurs at the edge using ECDSA certificates with OCSP stapling. The system serves approximately 500 TB of data per month with a cache hit ratio of 94% for static content and 72% for dynamic content. Origin shield nodes reduce origin load by consolidating cache misses from multiple edge nodes in the same region.`,
+
+  `The identity and access management system supports multiple authentication methods: password-based, SSO via SAML 2.0 and OIDC, passwordless via WebAuthn/FIDO2, and API keys for service-to-service communication. Password policies enforce minimum 12 characters with complexity requirements and check against a database of 600 million compromised passwords. Multi-factor authentication supports TOTP, SMS (as fallback only), and hardware security keys. The authorization model uses a hybrid RBAC/ABAC approach. Base permissions are defined through roles (admin, editor, viewer, custom), while fine-grained access rules use attribute-based policies that evaluate request context (time of day, IP geolocation, device trust score) and resource attributes (classification level, owner, creation date). Policy decisions are cached for 5 minutes and re-evaluated on any privilege change. The system processes approximately 100,000 authentication requests and 2 million authorization decisions per minute. Session management uses encrypted, httpOnly, SameSite=Strict cookies with a 15-minute idle timeout and 12-hour absolute timeout.`,
+];
+
+/** Final user prompts for context-fill tests. These ask the LLM to reason about
+ *  the background content in a meaningful way without requiring a predetermined answer. */
+const contextFillQuestions = [
+  'Based on the background information provided, identify the three most critical architectural decisions and explain how they impact system reliability and performance. Structure your response with clear headings.',
+  'Analyze the background material and describe what would happen if the system needed to scale to 10x its current traffic. What components would become bottlenecks first? Provide a prioritized list.',
+  'From the technical details shared above, create a concise executive summary highlighting the key metrics, design patterns, and trade-offs. Focus on what a new team member would need to understand first.',
+];
+
+/**
+ * Builds a context-fill prompt whose conversation history targets a specific
+ * fraction of the context window. The fill is achieved by including multiple
+ * "background note" user/assistant message pairs.
+ *
+ * @param ratio - Target fill ratio (0.2, 0.5, or 0.8)
+ * @param label - Human-readable label ('20%', '50%', '80%')
+ * @param targetTokens - Approximate number of prompt tokens to aim for
+ * @param charMultiplier - Characters-per-token estimate (adjusted by calibration)
+ */
+export function buildContextFillPrompt(
+  ratio: number,
+  label: ContextFillRatio,
+  targetTokens: number,
+  charMultiplier: number = 3.5,
+): AutoTestPromptDef {
+  const targetChars = Math.floor(targetTokens * charMultiplier);
+
+  // Reserve chars for system prompt + final question + overhead
+  const systemText = `${cacheSystemPrompt} Use the background notes provided in the conversation to inform your answer.`;
+  const questionIdx = ratio <= 0.25 ? 0 : ratio <= 0.55 ? 1 : 2;
+  const finalQuestion = contextFillQuestions[questionIdx];
+  const overhead = systemText.length + finalQuestion.length + 500; // 500 for role tags, formatting
+  const fillChars = Math.max(200, targetChars - overhead);
+
+  // Build background message pairs from the block pool
+  const messages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [
+    { role: 'system', content: systemText },
+  ];
+
+  let charsAdded = 0;
+  let blockIdx = 0;
+  const totalBlocks = contextFillBlocks.length;
+
+  while (charsAdded < fillChars) {
+    const block = contextFillBlocks[blockIdx % totalBlocks];
+    const remaining = fillChars - charsAdded;
+
+    // If the full block fits, add it whole; otherwise trim
+    const text = remaining >= block.length
+      ? block
+      : block.slice(0, remaining);
+
+    messages.push(
+      { role: 'user', content: `Background notes section ${blockIdx + 1}:\n${text}` },
+      { role: 'assistant', content: 'Acknowledged. I have processed these background notes. Please continue or ask your question.' },
+    );
+
+    charsAdded += text.length;
+    blockIdx++;
+
+    // Safety: cap based on target size to avoid infinite loops
+    if (blockIdx > Math.ceil(fillChars / 200) + totalBlocks) break;
+  }
+
+  // Final user question
+  messages.push({ role: 'user', content: finalQuestion });
+
+  return {
+    id: `ctxfill-${label.replace('%', '')}`,
+    messages,
+    max_tokens: 512,
+    expected: undefined,
+    contextFill: { ratio, label },
+    includeInScore: false,
+  };
+}
+
+/**
+ * Calibrates context-fill prompts by sending a cheap request (max_tokens=1) and
+ * adjusting the character multiplier based on actual token counts from the server.
+ * Returns calibrated prompts for each fill ratio.
+ */
+export async function calibrateContextFillPrompts(
+  sessionId: string,
+  contextWindow: number,
+  signal?: AbortSignal,
+): Promise<AutoTestPromptDef[]> {
+  const ratios: Array<{ ratio: number; label: ContextFillRatio }> = [
+    { ratio: 0.20, label: '20%' },
+    { ratio: 0.50, label: '50%' },
+    { ratio: 0.80, label: '80%' },
+  ];
+
+  const calibrated: AutoTestPromptDef[] = [];
+  const safetyMargin = 256;
+
+  for (const { ratio, label } of ratios) {
+    const targetTokens = Math.floor(contextWindow * ratio) - safetyMargin;
+    if (targetTokens < 100) {
+      // Context window too small for this ratio
+      continue;
+    }
+
+    let charMultiplier = 3.5; // Initial estimate: ~3.5 chars per token
+    let bestPrompt = buildContextFillPrompt(ratio, label, targetTokens, charMultiplier);
+
+    // Up to 3 calibration iterations
+    for (let iter = 0; iter < 3; iter++) {
+      if (signal?.aborted) break;
+
+      try {
+        const result = await runSinglePrompt(
+          sessionId,
+          { ...bestPrompt, max_tokens: 1 },
+          {},
+          signal,
+        );
+
+        const actualPromptTokens = result.usage?.prompt_tokens;
+        if (!actualPromptTokens || actualPromptTokens <= 0) break;
+
+        const actualFill = actualPromptTokens / contextWindow;
+        const tolerance = 0.03; // ±3%
+
+        if (Math.abs(actualFill - ratio) <= tolerance) {
+          break; // Close enough
+        }
+
+        // Adjust multiplier proportionally
+        charMultiplier = charMultiplier * (targetTokens / actualPromptTokens);
+        bestPrompt = buildContextFillPrompt(ratio, label, targetTokens, charMultiplier);
+      } catch {
+        break; // Use best effort
+      }
+    }
+
+    // Restore the real max_tokens
+    bestPrompt.max_tokens = 512;
+    calibrated.push(bestPrompt);
+  }
+
+  return calibrated;
+}
+
+/**
+ * Extracts the context window size from effective config or base config.
+ */
+export function extractContextWindow(
+  effectiveConfig?: Record<string, unknown>,
+  baseConfig?: PlaygroundModelConfig,
+): number | undefined {
+  if (effectiveConfig) {
+    const cw = effectiveConfig['context_window'] ?? effectiveConfig['context-window'];
+    if (typeof cw === 'number' && cw > 0) return cw;
+  }
+  if (baseConfig) {
+    const cw = baseConfig['context_window'];
+    if (typeof cw === 'number' && cw > 0) return cw;
+  }
+  return undefined;
 }
 
 /** Tool call scenario — tests tool/function calling capability. */
@@ -81,13 +537,257 @@ export const toolCallScenario: AutoTestScenario = {
   prompts: [
     {
       id: 'weather-tool',
-      messages: [{ role: 'user', content: "What's the weather in Boston?" }],
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "What's the weather in Boston?" },
+      ],
       tools: autoTestTools,
       expected: { type: 'tool_call' },
     },
     {
       id: 'add-tool',
-      messages: [{ role: 'user', content: 'What is 15 + 28?' }],
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'What is 15 + 28?' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    // Multi-turn tool calling: prior conversation cached by IMC, only the
+    // last user message triggers a new tool call.
+    {
+      id: 'multi-turn-tool',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "What's the weather in Boston?" },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc1', index: 0, type: 'function', function: { name: 'get_weather', arguments: '{"location":"Boston"}' } }] },
+        { role: 'user', content: "Now check the weather in London too." },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'weather-tokyo',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "What's the weather like in Tokyo right now?" },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'weather-celsius',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "Tell me the weather in Paris in celsius." },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'add-large',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Calculate 1234 + 5678 for me.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'add-decimals',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'What is 3.14 + 2.72?' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'search-laptop',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Search for laptops under $1000.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'search-headphones',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Find me wireless headphones in the electronics category.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'send-email',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Send an email to alice@example.com with subject "Meeting Tomorrow" and body "Let\'s meet at 3pm."' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'stock-price-aapl',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "What's Apple's current stock price?" },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'stock-price-tsla',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Check the stock price of Tesla.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'convert-usd-eur',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Convert 100 USD to EUR.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'convert-gbp-jpy',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'How much is 500 British pounds in Japanese yen?' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'calendar-meeting',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Schedule a team meeting for 2025-03-15 at 10:00 for 60 minutes.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'calendar-lunch',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Create a lunch event on 2025-04-01 at 12:30.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'translate-hello-spanish',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "Translate 'Hello, how are you?' to Spanish." },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'translate-goodbye-german',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "Translate 'Goodbye and thank you' to German." },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'directions-sf-la',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Get me driving directions from San Francisco to Los Angeles.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'directions-walking',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'How do I walk from Central Park to Times Square?' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'reminder-dentist',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Remind me about my dentist appointment at 2025-03-20T09:00:00.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'reminder-groceries',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Set a reminder to buy groceries tomorrow at 5pm.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    // Multi-turn tool calling with different tools
+    {
+      id: 'multi-turn-tool-add',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'What is 10 + 20?' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc2', index: 0, type: 'function', function: { name: 'add', arguments: '{"a":10,"b":20}' } }] },
+        { role: 'user', content: 'Now add 30 + 40.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'multi-turn-tool-weather-3',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "What's the weather in Boston?" },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc3', index: 0, type: 'function', function: { name: 'get_weather', arguments: '{"location":"Boston"}' } }] },
+        { role: 'user', content: "Now check the weather in London too." },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc4', index: 0, type: 'function', function: { name: 'get_weather', arguments: '{"location":"London"}' } }] },
+        { role: 'user', content: "And what about Sydney?" },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'multi-turn-tool-stock-follow',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "What's Apple's stock price?" },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc5', index: 0, type: 'function', function: { name: 'get_stock_price', arguments: '{"symbol":"AAPL"}' } }] },
+        { role: 'user', content: 'Now check Google too.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'search-books',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Search for science fiction books, show me the top 5 results.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'directions-transit',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'How do I get from Brooklyn to Manhattan by transit?' },
+      ],
       tools: autoTestTools,
       expected: { type: 'tool_call' },
     },
@@ -309,7 +1009,7 @@ export const defaultConfigSweepDef: ConfigSweepDefinition = {
   nSeqMax: { enabled: true, values: [1, 2, 4, 8] },
   flashAttention: { enabled: true, values: ['auto', 'enabled', 'disabled'] },
   cacheType: { enabled: true, values: ['f16', 'q8_0', 'q4_0'] },
-  systemPromptCache: { enabled: true, values: [true, false] },
+  cacheMode: { enabled: true, values: ['none', 'spc', 'imc'] },
 }
 
 /** Generates config candidates as a full cross-product of all enabled parameter values. */
@@ -318,10 +1018,10 @@ export function generateConfigCandidates(
   def: ConfigSweepDefinition,
 ): ConfigCandidate[] {
   const baseline: ConfigCandidate = {
-    'context-window': baseConfig['context-window'],
+    'context_window': baseConfig['context_window'],
     nbatch: baseConfig.nbatch,
     nubatch: baseConfig.nubatch,
-    'nseq-max': baseConfig['nseq-max'],
+    'nseq_max': baseConfig['nseq_max'],
   }
 
   const paramAxes: Array<{ configKey: keyof ConfigCandidate; values: number[] }> = []
@@ -333,10 +1033,10 @@ export function generateConfigCandidates(
     paramAxes.push({ configKey: 'nubatch', values: def.nubatch.values })
   }
   if (def.contextWindow.enabled && def.contextWindow.values.length > 0) {
-    paramAxes.push({ configKey: 'context-window', values: def.contextWindow.values })
+    paramAxes.push({ configKey: 'context_window', values: def.contextWindow.values })
   }
   if (def.nSeqMax.enabled && def.nSeqMax.values.length > 0) {
-    paramAxes.push({ configKey: 'nseq-max', values: def.nSeqMax.values })
+    paramAxes.push({ configKey: 'nseq_max', values: def.nSeqMax.values })
   }
 
   // String/boolean axes for mixed-type cross-product
@@ -344,13 +1044,13 @@ export function generateConfigCandidates(
   const allAxes: AnyAxis[] = [...paramAxes];
 
   if (def.flashAttention.enabled && def.flashAttention.values.length > 0) {
-    allAxes.push({ configKey: 'flash-attention', values: def.flashAttention.values });
+    allAxes.push({ configKey: 'flash_attention', values: def.flashAttention.values });
   }
   if (def.cacheType.enabled && def.cacheType.values.length > 0) {
-    allAxes.push({ configKey: 'cache-type', values: def.cacheType.values });
+    allAxes.push({ configKey: 'cache_type', values: def.cacheType.values });
   }
-  if (def.systemPromptCache.enabled && def.systemPromptCache.values.length > 0) {
-    allAxes.push({ configKey: 'system-prompt-cache', values: def.systemPromptCache.values });
+  if (def.cacheMode.enabled && def.cacheMode.values.length > 0) {
+    allAxes.push({ configKey: 'cache_mode', values: def.cacheMode.values });
   }
 
   if (allAxes.length === 0) {
@@ -375,7 +1075,7 @@ export function generateConfigCandidates(
   const candidates: ConfigCandidate[] = []
 
   const keyOf = (c: ConfigCandidate) =>
-    `cw=${c['context-window']}|nb=${c.nbatch}|nub=${c.nubatch}|ns=${c['nseq-max']}|fa=${c['flash-attention']}|ct=${c['cache-type']}|spc=${c['system-prompt-cache']}`
+    `cw=${c['context_window']}|nb=${c.nbatch}|nub=${c.nubatch}|ns=${c['nseq_max']}|fa=${c['flash_attention']}|ct=${c['cache_type']}|cm=${c['cache_mode']}`
 
   for (const c of combos) {
     const k = keyOf(c)
@@ -614,7 +1314,10 @@ export function runSinglePrompt(
 export async function probeTemplate(sessionId: string, signal?: AbortSignal): Promise<boolean> {
   const prompt: AutoTestPromptDef = {
     id: 'probe-tool',
-    messages: [{ role: 'user', content: "What's the weather in Boston?" }],
+    messages: [
+      { role: 'system', content: cacheSystemPrompt },
+      { role: 'user', content: "What's the weather in Boston?" },
+    ],
     tools: autoTestTools,
     expected: { type: 'tool_call' },
   }
@@ -660,11 +1363,424 @@ export function computeCompositeScore(trial: AutoTestTrialResult, weights: BestC
   const denom = parts.reduce((s, p) => s + p.w, 0)
   if (denom <= 0) return total ?? chat ?? tool ?? 0
 
-  return parts.reduce((s, p) => s + p.w * p.v, 0) / denom
+  return Math.round(parts.reduce((s, p) => s + p.w * p.v, 0) / denom * 100) / 100
+}
+
+/** Options for controlling concurrent prompt execution within a trial. */
+export interface RunTrialOptions {
+  concurrency?: number;
+}
+
+const maxConcurrencyCap = 6
+
+/** Runs up to `limit` async tasks concurrently, preserving result order. */
+async function mapLimit<T, R>(
+  items: readonly T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<R>,
+  signal: AbortSignal,
+): Promise<R[]> {
+  const results = new Array<R>(items.length)
+  let next = 0
+
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (!signal.aborted) {
+      const i = next++
+      if (i >= items.length) break
+      results[i] = await worker(items[i], i)
+    }
+  })
+
+  await Promise.all(runners)
+  return results
+}
+
+/** Builds a scenario result snapshot from accumulated prompt results and metrics. */
+function buildScenarioResult(
+  scenarioId: AutoTestScenarioID,
+  prompts: AutoTestPromptDef[],
+  promptResults: AutoTestPromptResult[],
+  totalGenTokens: number,
+  totalGenSeconds: number,
+  totalTTFT: number,
+  ttftCount: number,
+  fillGenTokens: Partial<Record<ContextFillRatio, number>>,
+  fillGenSeconds: Partial<Record<ContextFillRatio, number>>,
+  fillTTFT: Partial<Record<ContextFillRatio, number>>,
+  fillTTFTCount: Partial<Record<ContextFillRatio, number>>,
+  actualFills: Partial<Record<ContextFillRatio, number>>,
+): AutoTestScenarioResult {
+  const excludeIds = new Set(prompts.filter(p => p.includeInScore === false).map(p => p.id))
+  const scorablePrompts = promptResults.filter(r => !excludeIds.has(r.promptId))
+  const scenarioScore = scorablePrompts.length > 0
+    ? Math.round(scorablePrompts.reduce((sum, r) => sum + r.score, 0) / scorablePrompts.length * 100) / 100
+    : 0
+
+  const avgTPSByFill: Record<string, number> = {}
+  const avgTTFTByFill: Record<string, number> = {}
+  const promptTokensByFill: Record<string, number> = {}
+  for (const label of ['20%', '50%', '80%'] as ContextFillRatio[]) {
+    const gt = fillGenTokens[label]
+    const gs = fillGenSeconds[label]
+    if (gt && gs && gs > 0) {
+      avgTPSByFill[label] = gt / gs
+    }
+    const ft = fillTTFT[label]
+    const fc = fillTTFTCount[label]
+    if (ft && fc && fc > 0) {
+      avgTTFTByFill[label] = ft / fc
+    }
+    if (actualFills[label]) {
+      promptTokensByFill[label] = actualFills[label]!
+    }
+  }
+
+  return {
+    scenarioId,
+    promptResults: [...promptResults],
+    score: scenarioScore,
+    avgTPS: totalGenSeconds > 0 ? totalGenTokens / totalGenSeconds : undefined,
+    avgTTFT: ttftCount > 0 ? totalTTFT / ttftCount : undefined,
+    ...(Object.keys(avgTPSByFill).length > 0 && { avgTPSByFill: avgTPSByFill as Record<ContextFillRatio, number> }),
+    ...(Object.keys(avgTTFTByFill).length > 0 && { avgTTFTByFill: avgTTFTByFill as Record<ContextFillRatio, number> }),
+    ...(Object.keys(promptTokensByFill).length > 0 && { promptTokensByFill: promptTokensByFill as Record<ContextFillRatio, number> }),
+  }
+}
+
+/** Updates (or appends) a scenario result on the trial and fires onUpdate. */
+function upsertScenarioResult(
+  result: AutoTestTrialResult,
+  scenarioResult: AutoTestScenarioResult,
+  onUpdate: (result: AutoTestTrialResult) => void,
+) {
+  const existingIdx = result.scenarioResults.findIndex(s => s.scenarioId === scenarioResult.scenarioId)
+  if (existingIdx >= 0) {
+    result.scenarioResults[existingIdx] = scenarioResult
+  } else {
+    result.scenarioResults.push(scenarioResult)
+  }
+  onUpdate({ ...result, scenarioResults: [...result.scenarioResults] })
+}
+
+/** Accumulates TPS/TTFT metrics from a prompt result.
+ *  When includeInOverall is true, the metrics contribute to headline TPS/TTFT.
+ *  Context-fill metrics are always tracked in their per-fill buckets. */
+function accumulateMetrics(
+  pr: AutoTestPromptResult,
+  prompt: AutoTestPromptDef,
+  acc: {
+    genTokens: number; genSeconds: number; ttft: number; ttftCount: number;
+    fillGenTokens: Partial<Record<ContextFillRatio, number>>;
+    fillGenSeconds: Partial<Record<ContextFillRatio, number>>;
+    fillTTFT: Partial<Record<ContextFillRatio, number>>;
+    fillTTFTCount: Partial<Record<ContextFillRatio, number>>;
+    actualFills: Partial<Record<ContextFillRatio, number>>;
+  },
+  includeInOverall: boolean,
+) {
+  const tps = pr.usage?.tokens_per_second
+  const out = pr.usage?.output_tokens
+
+  if (includeInOverall && tps && tps > 0 && out !== undefined) {
+    const gen = Math.max(0, out - 1)
+    if (gen > 0) {
+      acc.genTokens += gen
+      acc.genSeconds += gen / tps
+    }
+  }
+  if (includeInOverall && pr.usage?.time_to_first_token_ms && pr.usage.time_to_first_token_ms > 0) {
+    acc.ttft += pr.usage.time_to_first_token_ms
+    acc.ttftCount++
+  }
+
+  if (prompt.contextFill) {
+    const fillLabel = prompt.contextFill.label
+    if (tps && tps > 0 && out !== undefined) {
+      const gen = Math.max(0, out - 1)
+      if (gen > 0) {
+        acc.fillGenTokens[fillLabel] = (acc.fillGenTokens[fillLabel] ?? 0) + gen
+        acc.fillGenSeconds[fillLabel] = (acc.fillGenSeconds[fillLabel] ?? 0) + gen / tps
+      }
+    }
+    if (pr.usage?.time_to_first_token_ms && pr.usage.time_to_first_token_ms > 0) {
+      acc.fillTTFT[fillLabel] = (acc.fillTTFT[fillLabel] ?? 0) + pr.usage.time_to_first_token_ms
+      acc.fillTTFTCount[fillLabel] = (acc.fillTTFTCount[fillLabel] ?? 0) + 1
+    }
+    if (pr.usage?.prompt_tokens) {
+      acc.actualFills[fillLabel] = pr.usage.prompt_tokens
+    }
+  }
+}
+
+/** Runs a scenario's prompts sequentially (original behavior for concurrency=1). */
+async function runScenarioSequential(
+  sessionId: string,
+  candidate: SamplingCandidate,
+  scenario: AutoTestScenario,
+  safeRepeats: number,
+  result: AutoTestTrialResult,
+  onUpdate: (result: AutoTestTrialResult) => void,
+  signal: AbortSignal,
+) {
+  const promptResults: AutoTestPromptResult[] = []
+  let totalGenTokens = 0
+  let totalGenSeconds = 0
+  let totalTTFT = 0
+  let ttftCount = 0
+
+  const fillGenTokens: Partial<Record<ContextFillRatio, number>> = {}
+  const fillGenSeconds: Partial<Record<ContextFillRatio, number>> = {}
+  const fillTTFT: Partial<Record<ContextFillRatio, number>> = {}
+  const fillTTFTCount: Partial<Record<ContextFillRatio, number>> = {}
+  const actualFills: Partial<Record<ContextFillRatio, number>> = {}
+
+  for (let pi = 0; pi < scenario.prompts.length; pi++) {
+    const prompt = scenario.prompts[pi]
+    if (signal.aborted) {
+      result.status = 'cancelled'
+      onUpdate({ ...result })
+      return
+    }
+
+    const isWarmup = pi === 0
+
+    const repeatScores: number[] = []
+    const repeatNotes: string[] = []
+    let bestAssistantText = ''
+    let bestToolCalls: ChatToolCall[] = []
+    let repeatGenTokens = 0
+    let repeatGenSeconds = 0
+    let repeatTTFT = 0
+    let repeatTTFTCount = 0
+    let lastUsage: ChatUsage | undefined
+    let hadAbort = false
+    let hadError = false
+    let errorMessage = ''
+
+    for (let r = 0; r < safeRepeats; r++) {
+      if (signal.aborted) {
+        hadAbort = true
+        break
+      }
+
+      try {
+        const pr = await runSinglePrompt(sessionId, prompt, candidate, signal)
+        repeatScores.push(pr.score)
+        if (pr.notes) repeatNotes.push(...pr.notes)
+        if (r === 0) {
+          bestAssistantText = pr.assistantText
+          bestToolCalls = pr.toolCalls
+        }
+        lastUsage = pr.usage
+
+        if (!isWarmup) {
+          const tps = pr.usage?.tokens_per_second
+          const out = pr.usage?.output_tokens
+          if (tps && tps > 0 && out !== undefined) {
+            const gen = Math.max(0, out - 1)
+            if (gen > 0) {
+              repeatGenTokens += gen
+              repeatGenSeconds += gen / tps
+            }
+          }
+          if (pr.usage?.time_to_first_token_ms && pr.usage.time_to_first_token_ms > 0) {
+            repeatTTFT += pr.usage.time_to_first_token_ms
+            repeatTTFTCount++
+          }
+        }
+
+        if (prompt.contextFill) {
+          const fillLabel = prompt.contextFill.label
+          const tps = pr.usage?.tokens_per_second
+          const out = pr.usage?.output_tokens
+          if (tps && tps > 0 && out !== undefined) {
+            const gen = Math.max(0, out - 1)
+            if (gen > 0) {
+              fillGenTokens[fillLabel] = (fillGenTokens[fillLabel] ?? 0) + gen
+              fillGenSeconds[fillLabel] = (fillGenSeconds[fillLabel] ?? 0) + gen / tps
+            }
+          }
+          if (pr.usage?.time_to_first_token_ms && pr.usage.time_to_first_token_ms > 0) {
+            fillTTFT[fillLabel] = (fillTTFT[fillLabel] ?? 0) + pr.usage.time_to_first_token_ms
+            fillTTFTCount[fillLabel] = (fillTTFTCount[fillLabel] ?? 0) + 1
+          }
+          if (pr.usage?.prompt_tokens) {
+            actualFills[fillLabel] = pr.usage.prompt_tokens
+          }
+        }
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          hadAbort = true
+          break
+        }
+        repeatScores.push(0)
+        errorMessage = `Error: ${err instanceof Error ? err.message : String(err)}`
+        hadError = true
+      }
+    }
+
+    if (hadAbort) {
+      result.status = 'cancelled'
+      onUpdate({ ...result })
+      return
+    }
+
+    const avgScore = repeatScores.length > 0
+      ? Math.round(repeatScores.reduce((s, v) => s + v, 0) / repeatScores.length * 100) / 100
+      : 0
+
+    const dedupNotes = repeatNotes.length > 0 ? [...new Set(repeatNotes)] : undefined
+
+    promptResults.push({
+      promptId: prompt.id,
+      assistantText: bestAssistantText,
+      toolCalls: bestToolCalls,
+      usage: lastUsage,
+      score: avgScore,
+      notes: hadError && !dedupNotes ? [errorMessage] : dedupNotes,
+    })
+
+    const isFill = !!prompt.contextFill
+    if (!isWarmup && !isFill) {
+      totalGenTokens += repeatGenTokens
+      totalGenSeconds += repeatGenSeconds
+      totalTTFT += repeatTTFT
+      ttftCount += repeatTTFTCount
+    }
+
+    const scenarioResult = buildScenarioResult(
+      scenario.id, scenario.prompts, promptResults,
+      totalGenTokens, totalGenSeconds, totalTTFT, ttftCount,
+      fillGenTokens, fillGenSeconds, fillTTFT, fillTTFTCount, actualFills,
+    )
+    upsertScenarioResult(result, scenarioResult, onUpdate)
+  }
+}
+
+/** Runs a scenario's prompts concurrently to exercise multi-slot (NSeqMax > 1) configs.
+ *  Uses wall-clock elapsed time to compute effective batch TPS, which reflects
+ *  the true concurrent throughput advantage of higher NSeqMax values. */
+async function runScenarioConcurrent(
+  sessionId: string,
+  candidate: SamplingCandidate,
+  scenario: AutoTestScenario,
+  safeRepeats: number,
+  concurrency: number,
+  result: AutoTestTrialResult,
+  onUpdate: (result: AutoTestTrialResult) => void,
+  signal: AbortSignal,
+) {
+  const promptResults: AutoTestPromptResult[] = new Array(scenario.prompts.length)
+  const acc = {
+    genTokens: 0, genSeconds: 0, ttft: 0, ttftCount: 0,
+    fillGenTokens: {} as Partial<Record<ContextFillRatio, number>>,
+    fillGenSeconds: {} as Partial<Record<ContextFillRatio, number>>,
+    fillTTFT: {} as Partial<Record<ContextFillRatio, number>>,
+    fillTTFTCount: {} as Partial<Record<ContextFillRatio, number>>,
+    actualFills: {} as Partial<Record<ContextFillRatio, number>>,
+  }
+
+  const batchStartMs = performance.now()
+
+  await mapLimit(
+    scenario.prompts,
+    concurrency,
+    async (prompt, pi) => {
+      if (signal.aborted) return
+
+      const repeatScores: number[] = []
+      const repeatNotes: string[] = []
+      let bestAssistantText = ''
+      let bestToolCalls: ChatToolCall[] = []
+      let lastUsage: ChatUsage | undefined
+      let hadError = false
+      let errorMessage = ''
+
+      for (let r = 0; r < safeRepeats; r++) {
+        if (signal.aborted) break
+
+        try {
+          const pr = await runSinglePrompt(sessionId, prompt, candidate, signal)
+          repeatScores.push(pr.score)
+          if (pr.notes) repeatNotes.push(...pr.notes)
+          if (r === 0) {
+            bestAssistantText = pr.assistantText
+            bestToolCalls = pr.toolCalls
+          }
+          lastUsage = pr.usage
+
+          const includeInOverall = pi !== 0 && !prompt.contextFill
+          accumulateMetrics(pr, prompt, acc, includeInOverall)
+        } catch (err) {
+          if (err instanceof DOMException && err.name === 'AbortError') break
+          repeatScores.push(0)
+          errorMessage = `Error: ${err instanceof Error ? err.message : String(err)}`
+          hadError = true
+        }
+      }
+
+      const avgScore = repeatScores.length > 0
+        ? repeatScores.reduce((s, v) => s + v, 0) / repeatScores.length
+        : 0
+
+      const dedupNotes = repeatNotes.length > 0 ? [...new Set(repeatNotes)] : undefined
+
+      promptResults[pi] = {
+        promptId: prompt.id,
+        assistantText: bestAssistantText,
+        toolCalls: bestToolCalls,
+        usage: lastUsage,
+        score: avgScore,
+        notes: hadError && !dedupNotes ? [errorMessage] : dedupNotes,
+      }
+
+      // Update UI as each prompt completes
+      const completedResults = promptResults.filter(Boolean)
+      const partialScenario = buildScenarioResult(
+        scenario.id, scenario.prompts, completedResults,
+        acc.genTokens, acc.genSeconds, acc.ttft, acc.ttftCount,
+        acc.fillGenTokens, acc.fillGenSeconds, acc.fillTTFT, acc.fillTTFTCount, acc.actualFills,
+      )
+      upsertScenarioResult(result, partialScenario, onUpdate)
+    },
+    signal,
+  )
+
+  if (signal.aborted) {
+    result.status = 'cancelled'
+    onUpdate({ ...result })
+    return
+  }
+
+  // Compute effective batch TPS using wall-clock time for the concurrent batch.
+  // This reflects the real throughput advantage of higher NSeqMax values.
+  // acc.genTokens tracks total generated tokens across all repeats (excluding
+  // context-fill and warmup prompts) for an apples-to-apples comparison with
+  // the sequential path.
+  const batchElapsedSeconds = (performance.now() - batchStartMs) / 1000
+  const effectiveTPS = batchElapsedSeconds > 0 && acc.genTokens > 0
+    ? acc.genTokens / batchElapsedSeconds
+    : undefined
+
+  const finalResults = promptResults.filter(Boolean)
+  const finalScenario = buildScenarioResult(
+    scenario.id, scenario.prompts, finalResults,
+    acc.genTokens, acc.genSeconds, acc.ttft, acc.ttftCount,
+    acc.fillGenTokens, acc.fillGenSeconds, acc.fillTTFT, acc.fillTTFTCount, acc.actualFills,
+  )
+
+  // Override avgTPS with effective batch TPS for concurrent runs
+  if (effectiveTPS !== undefined) {
+    finalScenario.avgTPS = effectiveTPS
+  }
+
+  upsertScenarioResult(result, finalScenario, onUpdate)
 }
 
 /** Runs a full trial for one sampling candidate across all scenarios.
- *  Each prompt is repeated `repeats` times (default 3) and results are averaged. */
+ *  Each prompt is repeated `repeats` times (default 3) and results are averaged.
+ *  When options.concurrency > 1, prompts within each scenario are executed
+ *  concurrently (up to the given limit) to exercise multi-slot (NSeqMax) configs. */
 export async function runTrial(
   sessionId: string,
   candidate: SamplingCandidate,
@@ -673,9 +1789,11 @@ export async function runTrial(
   signal: AbortSignal,
   weights?: BestConfigWeights,
   repeats: number = 3,
+  options?: RunTrialOptions,
 ): Promise<AutoTestTrialResult> {
   const trialId = `trial-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   const safeRepeats = Math.max(1, Math.floor(repeats))
+  const concurrency = Math.min(Math.max(1, options?.concurrency ?? 1), maxConcurrencyCap)
 
   const result: AutoTestTrialResult = {
     id: trialId,
@@ -694,124 +1812,27 @@ export async function runTrial(
       return result
     }
 
-    const promptResults: AutoTestPromptResult[] = []
-    let totalGenTokens = 0
-    let totalGenSeconds = 0
-    let totalTTFT = 0
-    let ttftCount = 0
-
-    for (let pi = 0; pi < scenario.prompts.length; pi++) {
-      const prompt = scenario.prompts[pi]
-      if (signal.aborted) {
-        result.status = 'cancelled'
-        onUpdate({ ...result })
-        return result
-      }
-
-      // Skip the first prompt (warmup) for TPS/TTFT metrics.
-      const isWarmup = pi === 0
-
-      // Run each prompt `safeRepeats` times and average the results.
-      const repeatScores: number[] = []
-      const repeatNotes: string[] = []
-      let bestAssistantText = ''
-      let bestToolCalls: ChatToolCall[] = []
-      let repeatGenTokens = 0
-      let repeatGenSeconds = 0
-      let repeatTTFT = 0
-      let repeatTTFTCount = 0
-      let lastUsage: ChatUsage | undefined
-      let hadAbort = false
-      let hadError = false
-      let errorMessage = ''
-
-      for (let r = 0; r < safeRepeats; r++) {
-        if (signal.aborted) {
-          hadAbort = true
-          break
-        }
-
-        try {
-          const pr = await runSinglePrompt(sessionId, prompt, candidate, signal)
-          repeatScores.push(pr.score)
-          if (pr.notes) repeatNotes.push(...pr.notes)
-          if (r === 0) {
-            bestAssistantText = pr.assistantText
-            bestToolCalls = pr.toolCalls
-          }
-          lastUsage = pr.usage
-
-          if (!isWarmup) {
-            const tps = pr.usage?.tokens_per_second
-            const out = pr.usage?.output_tokens
-            if (tps && tps > 0 && out !== undefined) {
-              const gen = Math.max(0, out - 1)
-              if (gen > 0) {
-                repeatGenTokens += gen
-                repeatGenSeconds += gen / tps
-              }
-            }
-            if (pr.usage?.time_to_first_token_ms && pr.usage.time_to_first_token_ms > 0) {
-              repeatTTFT += pr.usage.time_to_first_token_ms
-              repeatTTFTCount++
-            }
-          }
-        } catch (err) {
-          if (err instanceof DOMException && err.name === 'AbortError') {
-            hadAbort = true
-            break
-          }
-          repeatScores.push(0)
-          errorMessage = `Error: ${err instanceof Error ? err.message : String(err)}`
-          hadError = true
+    // When running concurrently, execute a single warm-up request first so
+    // that SPC/IMC caches are primed before the measured batch.
+    if (concurrency > 1 && scenario.prompts.length > 0) {
+      try {
+        await runSinglePrompt(sessionId, scenario.prompts[0], { ...candidate, max_tokens: 1 }, signal)
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          result.status = 'cancelled'
+          onUpdate({ ...result })
+          return result
         }
       }
-
-      if (hadAbort) {
-        result.status = 'cancelled'
-        onUpdate({ ...result })
-        return result
-      }
-
-      const avgScore = repeatScores.length > 0
-        ? repeatScores.reduce((s, v) => s + v, 0) / repeatScores.length
-        : 0
-
-      const dedupNotes = repeatNotes.length > 0 ? [...new Set(repeatNotes)] : undefined
-
-      promptResults.push({
-        promptId: prompt.id,
-        assistantText: bestAssistantText,
-        toolCalls: bestToolCalls,
-        usage: lastUsage,
-        score: avgScore,
-        notes: hadError && !dedupNotes ? [errorMessage] : dedupNotes,
-      })
-
-      if (!isWarmup) {
-        totalGenTokens += repeatGenTokens
-        totalGenSeconds += repeatGenSeconds
-        totalTTFT += repeatTTFT
-        ttftCount += repeatTTFTCount
-      }
-
-      const scenarioResult: AutoTestScenarioResult = {
-        scenarioId: scenario.id,
-        promptResults: [...promptResults],
-        score: promptResults.reduce((sum, r) => sum + r.score, 0) / promptResults.length,
-        avgTPS: totalGenSeconds > 0 ? totalGenTokens / totalGenSeconds : undefined,
-        avgTTFT: ttftCount > 0 ? totalTTFT / ttftCount : undefined,
-      }
-
-      const existingIdx = result.scenarioResults.findIndex(s => s.scenarioId === scenario.id)
-      if (existingIdx >= 0) {
-        result.scenarioResults[existingIdx] = scenarioResult
-      } else {
-        result.scenarioResults.push(scenarioResult)
-      }
-
-      onUpdate({ ...result, scenarioResults: [...result.scenarioResults] })
     }
+
+    if (concurrency > 1) {
+      await runScenarioConcurrent(sessionId, candidate, scenario, safeRepeats, concurrency, result, onUpdate, signal)
+    } else {
+      await runScenarioSequential(sessionId, candidate, scenario, safeRepeats, result, onUpdate, signal)
+    }
+
+    if (result.status === 'cancelled') return result
   }
 
   const metricsByScenario = new Map<AutoTestScenarioID, { score: number; avgTPS?: number; avgTTFT?: number }>()
@@ -828,7 +1849,8 @@ export async function runTrial(
     const chatW = w.chatScore
     const toolW = w.toolScore
     const denom = chatW + toolW
-    result.totalScore = denom > 0 ? (toolW * toolMetrics.score + chatW * chatMetrics.score) / denom : (toolMetrics.score + chatMetrics.score) / 2
+    const raw = denom > 0 ? (toolW * toolMetrics.score + chatW * chatMetrics.score) / denom : (toolMetrics.score + chatMetrics.score) / 2
+    result.totalScore = Math.round(raw * 100) / 100
   } else if (toolMetrics) {
     result.totalScore = toolMetrics.score
   } else if (chatMetrics) {
@@ -839,6 +1861,13 @@ export async function runTrial(
   const tpsSource = chatMetrics ?? toolMetrics
   result.avgTPS = tpsSource?.avgTPS
   result.avgTTFT = tpsSource?.avgTTFT
+
+  // Propagate per-fill TPS from chat scenario
+  const chatResult = result.scenarioResults.find(r => r.scenarioId === 'chat')
+  if (chatResult?.avgTPSByFill && Object.keys(chatResult.avgTPSByFill).length > 0) {
+    result.avgTPSByFill = chatResult.avgTPSByFill
+  }
+
   result.finishedAt = new Date().toISOString()
   result.status = 'completed'
 

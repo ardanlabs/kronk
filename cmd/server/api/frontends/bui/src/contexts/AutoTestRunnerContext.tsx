@@ -17,6 +17,8 @@ import {
   probeTemplate,
   runTrial,
   computeCompositeScore,
+  calibrateContextFillPrompts,
+  extractContextWindow,
 } from '../services/autoTestRunner';
 import { api } from '../services/api';
 
@@ -31,6 +33,7 @@ interface AutoTestRunBase {
   status: AutoTestRunnerState;
   errorMessage?: string;
   templateRepairStatus?: string;
+  calibrationStatus?: string;
   enabledScenarios: EnabledScenarios;
   currentTrialIndex: number;
   totalTrials: number;
@@ -73,6 +76,7 @@ interface AutoTestRunnerContextType {
     maxTrials: number;
     weights: BestConfigWeights;
     repeats: number;
+    effectiveConfig?: Record<string, unknown>;
   }): void;
 
   startConfigRun(args: {
@@ -106,7 +110,7 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const startSamplingRun = useCallback(({ sessionId, enabledScenarios, useCustomBaseline, baseline, maxTrials, weights, repeats }: {
+  const startSamplingRun = useCallback(({ sessionId, enabledScenarios, useCustomBaseline, baseline, maxTrials, weights, repeats, effectiveConfig }: {
     sessionId: string;
     enabledScenarios: EnabledScenarios;
     useCustomBaseline: boolean;
@@ -114,6 +118,7 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
     maxTrials: number;
     weights: BestConfigWeights;
     repeats: number;
+    effectiveConfig?: Record<string, unknown>;
   }) => {
     if (abortControllerRef.current) return;
 
@@ -150,6 +155,31 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
             setRun(prev => prev ? { ...prev, templateRepairStatus: 'Template probe failed — running chat-only tests' } : prev);
             const idx = scenarios.indexOf(toolCallScenario);
             if (idx !== -1) scenarios.splice(idx, 1);
+          }
+        }
+
+        // Calibrate context-fill prompts if chat scenario is enabled
+        if (enabledScenarios.chat) {
+          const contextWindow = extractContextWindow(effectiveConfig);
+          if (contextWindow && contextWindow > 0) {
+            setRun(prev => prev ? { ...prev, calibrationStatus: 'Calibrating context fill prompts...' } : prev);
+            try {
+              const ctxFillPrompts = await calibrateContextFillPrompts(sessionId, contextWindow, controller.signal);
+              if (ctxFillPrompts.length > 0) {
+                const chatIdx = scenarios.findIndex(s => s.id === 'chat');
+                if (chatIdx >= 0) {
+                  scenarios[chatIdx] = {
+                    ...scenarios[chatIdx],
+                    prompts: [...scenarios[chatIdx].prompts, ...ctxFillPrompts],
+                  };
+                }
+                setRun(prev => prev ? { ...prev, calibrationStatus: `Calibrated ${ctxFillPrompts.length} context fill levels ✓` } : prev);
+              } else {
+                setRun(prev => prev ? { ...prev, calibrationStatus: 'Context window too small for fill tests' } : prev);
+              }
+            } catch {
+              setRun(prev => prev ? { ...prev, calibrationStatus: 'Context fill calibration failed — skipping fill tests' } : prev);
+            }
           }
         }
 
@@ -259,10 +289,14 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
           if (controller.signal.aborted) break;
 
           const candidate = configCandidates[i];
-          const { 'cache-type': cacheType, ...cfgRest } = candidate;
+          const { 'cache_type': cacheType, 'cache_mode': cacheMode, ...cfgRest } = candidate;
           const apiCfg = {
             ...cfgRest,
-            ...(cacheType !== undefined && { 'cache-type-k': cacheType, 'cache-type-v': cacheType }),
+            ...(cacheType !== undefined && { 'cache_type_k': cacheType, 'cache_type_v': cacheType }),
+            ...(cacheMode !== undefined && {
+              'system_prompt_cache': cacheMode === 'spc',
+              'incremental_cache': cacheMode === 'imc',
+            }),
           };
           let configSessionId: string | null = null;
 
@@ -279,6 +313,35 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
 
             const activeScenarios = [...scenarios];
 
+            if (enabledScenarios.tool_call) {
+              const probeResult = await probeTemplate(configSessionId, controller.signal);
+              if (!probeResult) {
+                const idx = activeScenarios.indexOf(toolCallScenario);
+                if (idx !== -1) activeScenarios.splice(idx, 1);
+              }
+            }
+
+            // Calibrate context-fill prompts for this config's context window
+            if (enabledScenarios.chat) {
+              const cfgContextWindow = extractContextWindow(resp.effective_config, sessionSeed.base_config);
+              if (cfgContextWindow && cfgContextWindow > 0) {
+                try {
+                  const ctxFillPrompts = await calibrateContextFillPrompts(configSessionId, cfgContextWindow, controller.signal);
+                  if (ctxFillPrompts.length > 0) {
+                    const chatIdx = activeScenarios.findIndex(s => s.id === 'chat');
+                    if (chatIdx >= 0) {
+                      activeScenarios[chatIdx] = {
+                        ...activeScenarios[chatIdx],
+                        prompts: [...activeScenarios[chatIdx].prompts, ...ctxFillPrompts],
+                      };
+                    }
+                  }
+                } catch {
+                  // Calibration failed; skip fill tests for this config
+                }
+              }
+            }
+
             const onUpdate = (partial: AutoTestTrialResult) => {
               setRun(prev => {
                 if (!prev || prev.kind !== 'config') return prev;
@@ -288,7 +351,10 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
               });
             };
 
-            const result = await runTrial(configSessionId, activeBaseline, activeScenarios, onUpdate, controller.signal, weights, repeats);
+            const effectiveNSeqMax = (candidate['nseq_max'] as number | undefined) ?? sessionSeed.base_config['nseq_max'] ?? 1;
+            const result = await runTrial(configSessionId, activeBaseline, activeScenarios, onUpdate, controller.signal, weights, repeats,
+              effectiveNSeqMax > 1 ? { concurrency: effectiveNSeqMax } : undefined,
+            );
 
             const configResult: ConfigTrialResult = { ...result, config: candidate };
             const composite = computeCompositeScore(result, weights);

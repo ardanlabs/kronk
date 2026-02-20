@@ -3,11 +3,14 @@
     --color-blue: #262944;
     --color-light-blue: #86d5e4;
     --color-white: #ffffff;
+    --color-gray-50: #fafafa;
     --color-gray-100: #f7f7f8;
     --color-gray-200: #e5e5e7;
     --color-gray-300: #d1d1d6;
     --color-gray-600: #6e6e73;
+    --color-gray-700: #48484a;
     --color-gray-800: #3a3a3c;
+    --color-gray-900: #1c1c1e;
     --color-error: #ff4444;
     --color-success: #44bb44;
 }
@@ -251,8 +254,8 @@ tr.selected:hover td {
     border-radius: 6px;
     font-size: 14px;
     transition:
-        border-color 0.2s,
-        box-shadow 0.2s;
+            border-color 0.2s,
+            box-shadow 0.2s;
 }
 
 .form-group input:focus,
@@ -532,8 +535,8 @@ tr.selected:hover td {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
     border: 1px solid var(--color-gray-200);
     transition:
-        transform 0.2s,
-        box-shadow 0.2s;
+            transform 0.2s,
+            box-shadow 0.2s;
 }
 
 .feature-card:hover {
@@ -1014,12 +1017,6 @@ tr.selected:hover td {
     animation: spin 1s linear infinite;
 }
 
-@keyframes spin {
-    to {
-        transform: rotate(360deg);
-    }
-}
-
 .download-indicator-icon {
     font-size: 14px;
     font-weight: bold;
@@ -1408,7 +1405,7 @@ tr.selected:hover td {
     background: #1e1e1e;
     color: #d4d4d4;
     padding: 16px;
-    border-radius: 0 0 1pc 1pc;
+    border-radius: 0 0 8px 8px;
     overflow-x: auto;
     margin: 0;
     font-family: "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas, monospace;
@@ -2061,8 +2058,8 @@ tr.selected:hover td {
     border-radius: 6px;
     font-size: 14px;
     transition:
-        border-color 0.2s,
-        box-shadow 0.2s;
+            border-color 0.2s,
+            box-shadow 0.2s;
 }
 
 .form-input:focus,
@@ -2207,8 +2204,8 @@ tr.selected:hover td {
     justify-content: center;
     border-radius: 4px;
     transition:
-        background-color 0.2s,
-        color 0.2s;
+            background-color 0.2s,
+            color 0.2s;
 }
 
 .modal-close:hover {
@@ -2335,7 +2332,7 @@ tr.selected:hover td {
 
 .playground-container {
     padding: 20px;
-    max-width: 1600px;
+    max-width: 3600px;
 }
 
 .playground-header {
@@ -2951,6 +2948,142 @@ tr.selected:hover td {
     transition: width 0.3s ease;
 }
 
+/* Trial row expand/collapse */
+.autotest-trial-row:hover {
+    background: var(--color-gray-100);
+}
+
+.autotest-detail-row {
+    background: var(--color-gray-50);
+}
+
+.autotest-detail-row:hover {
+    background: var(--color-gray-50);
+}
+
+.autotest-detail-row > td {
+    padding: 0 !important;
+    border-bottom: 2px solid var(--color-gray-300);
+}
+
+.autotest-detail-content {
+    padding: 12px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.autotest-detail-empty {
+    padding: 12px;
+    color: var(--color-gray-600);
+    font-size: 12px;
+    font-style: italic;
+}
+
+.autotest-detail-scenario {
+    border: 1px solid var(--color-gray-200);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.autotest-detail-scenario-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 8px 12px;
+    background: var(--color-gray-100);
+    border-bottom: 1px solid var(--color-gray-200);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-gray-700);
+}
+
+.autotest-detail-scenario-name {
+    font-size: 13px;
+    color: var(--color-gray-900);
+}
+
+.autotest-detail-prompts {
+    display: flex;
+    flex-direction: column;
+}
+
+.autotest-detail-prompt {
+    border-bottom: 1px solid var(--color-gray-200);
+    padding: 10px 12px;
+}
+
+.autotest-detail-prompt:last-child {
+    border-bottom: none;
+}
+
+.autotest-detail-prompt-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.autotest-detail-prompt-id {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-gray-600);
+    font-family: monospace;
+}
+
+.autotest-detail-prompt-score {
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.autotest-detail-prompt-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 16px;
+}
+
+.autotest-detail-field {
+    min-width: 0;
+}
+
+.autotest-detail-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--color-gray-600);
+    margin-bottom: 2px;
+}
+
+.autotest-detail-value {
+    font-size: 12px;
+    color: var(--color-gray-900);
+    word-break: break-word;
+    white-space: pre-wrap;
+    line-height: 1.4;
+}
+
+.autotest-detail-toolcall code {
+    font-size: 11px;
+    background: var(--color-gray-100);
+    padding: 2px 4px;
+    border-radius: 3px;
+    word-break: break-all;
+}
+
+.autotest-detail-usage {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    font-size: 11px;
+    color: var(--color-gray-700);
+}
+
+.autotest-detail-notes {
+    font-size: 11px;
+    color: #b45309;
+}
+
 .playground-autotest-config-param {
     display: flex;
     align-items: center;
@@ -3117,8 +3250,7 @@ tr.selected:hover td {
 /* Sweep parameter rows (config sweep in autotest) */
 .playground-sweep-params {
     display: grid;
-    grid-template-columns: repeat(4,1fr);
-    flex-direction: column;
+    grid-template-columns: repeat(4, 1fr);
     gap: 8px;
 }
 

@@ -250,6 +250,7 @@ export type ChatContentPart = ChatContentPartText | ChatContentPartImage | ChatC
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string | ChatContentPart[];
+  tool_calls?: ChatToolCall[];
 }
 
 export interface ChatRequest {
@@ -452,24 +453,25 @@ export interface PlaygroundSessionRequest {
 }
 
 export interface PlaygroundModelConfig {
-  'context-window'?: number;
+  'context_window'?: number;
   nbatch?: number;
   nubatch?: number;
-  'nseq-max'?: number;
-  'flash-attention'?: string;
-  'cache-type-k'?: string;
-  'cache-type-v'?: string;
-  'ngpu-layers'?: number | null;
-  'system-prompt-cache'?: boolean;
-  'split-mode'?: string;
-  'rope-scaling-type'?: string;
-  'rope-freq-base'?: number | null;
-  'rope-freq-scale'?: number | null;
-  'yarn-ext-factor'?: number | null;
-  'yarn-attn-factor'?: number | null;
-  'yarn-beta-fast'?: number | null;
-  'yarn-beta-slow'?: number | null;
-  'yarn-orig-ctx'?: number | null;
+  'nseq_max'?: number;
+  'flash_attention'?: string;
+  'cache_type_k'?: string;
+  'cache_type_v'?: string;
+  'ngpu_layers'?: number | null;
+  'system_prompt_cache'?: boolean;
+  'incremental_cache'?: boolean;
+  'split_mode'?: string;
+  'rope_scaling_type'?: string;
+  'rope_freq_base'?: number | null;
+  'rope_freq_scale'?: number | null;
+  'yarn_ext_factor'?: number | null;
+  'yarn_attn_factor'?: number | null;
+  'yarn_beta_fast'?: number | null;
+  'yarn_beta_slow'?: number | null;
+  'yarn_orig_ctx'?: number | null;
 }
 
 export interface PlaygroundSessionResponse {
@@ -532,12 +534,16 @@ export type AutoTestTrialStatus = 'queued' | 'running' | 'completed' | 'failed' 
 
 export type AutoTestRunnerState = 'idle' | 'repairing_template' | 'running_trials' | 'completed' | 'cancelled' | 'error';
 
+export type ContextFillRatio = '20%' | '50%' | '80%';
+
 export interface AutoTestPromptDef {
   id: string;
   messages: ChatMessage[];
   tools?: ChatToolDefinition[];
   max_tokens?: number;
   expected?: { type: 'regex' | 'exact' | 'tool_call'; value?: string };
+  contextFill?: { ratio: number; label: ContextFillRatio };
+  includeInScore?: boolean;
 }
 
 export interface AutoTestScenario {
@@ -586,6 +592,9 @@ export interface AutoTestScenarioResult {
   score: number;
   avgTPS?: number;
   avgTTFT?: number;
+  avgTPSByFill?: Record<ContextFillRatio, number>;
+  avgTTFTByFill?: Record<ContextFillRatio, number>;
+  promptTokensByFill?: Record<ContextFillRatio, number>;
 }
 
 export interface AutoTestTrialResult {
@@ -598,6 +607,7 @@ export interface AutoTestTrialResult {
   totalScore?: number;
   avgTPS?: number;
   avgTTFT?: number;
+  avgTPSByFill?: Record<ContextFillRatio, number>;
 }
 
 // Config Sweep Types
@@ -614,11 +624,6 @@ export interface SweepStringValues {
   values: string[];
 }
 
-export interface SweepBoolValues {
-  enabled: boolean;
-  values: boolean[];
-}
-
 export interface ConfigSweepDefinition {
   nbatch: SweepParamValues;
   nubatch: SweepParamValues;
@@ -626,7 +631,7 @@ export interface ConfigSweepDefinition {
   nSeqMax: SweepParamValues;
   flashAttention: SweepStringValues;
   cacheType: SweepStringValues;
-  systemPromptCache: SweepBoolValues;
+  cacheMode: SweepStringValues;
 }
 
 export interface BestConfigWeights {
@@ -638,13 +643,13 @@ export interface BestConfigWeights {
 }
 
 export interface ConfigCandidate {
-  'context-window'?: number;
+  'context_window'?: number;
   nbatch?: number;
   nubatch?: number;
-  'nseq-max'?: number;
-  'flash-attention'?: string;
-  'cache-type'?: string;
-  'system-prompt-cache'?: boolean;
+  'nseq_max'?: number;
+  'flash_attention'?: string;
+  'cache_type'?: string;
+  'cache_mode'?: string;
 }
 
 export interface AutoTestSessionSeed {
