@@ -28,11 +28,10 @@ Environment Variables:
 }
 
 func init() {
-	Cmd.Flags().Int("instances", 1, "Number of model instances to load")
-	Cmd.Flags().Int("max-tokens", 2048, "Maximum tokens for response")
-	Cmd.Flags().Float64("temperature", 0.7, "Temperature for sampling")
-	Cmd.Flags().Float64("top-p", 0.9, "Top-p for sampling")
-	Cmd.Flags().Int("top-k", 40, "Top-k for sampling")
+	Cmd.Flags().Int("max-tokens", 0, "Maximum tokens for response")
+	Cmd.Flags().Float64("temperature", 0.0, "Temperature for sampling")
+	Cmd.Flags().Float64("top-p", 0.0, "Top-p for sampling")
+	Cmd.Flags().Int("top-k", 0, "Top-k for sampling")
 }
 
 func main(cmd *cobra.Command, args []string) {
@@ -45,7 +44,6 @@ func main(cmd *cobra.Command, args []string) {
 func run(cmd *cobra.Command, args []string) error {
 	modelName := args[0]
 
-	instances, _ := cmd.Flags().GetInt("instances")
 	maxTokens, _ := cmd.Flags().GetInt("max-tokens")
 	temperature, _ := cmd.Flags().GetFloat64("temperature")
 	topP, _ := cmd.Flags().GetFloat64("top-p")
@@ -53,7 +51,6 @@ func run(cmd *cobra.Command, args []string) error {
 
 	cfg := Config{
 		ModelName:   modelName,
-		Instances:   instances,
 		MaxTokens:   maxTokens,
 		Temperature: temperature,
 		TopP:        topP,

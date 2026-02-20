@@ -19,7 +19,6 @@ import (
 
 type Config struct {
 	ModelName   string
-	Instances   int
 	MaxTokens   int
 	Temperature float64
 	TopP        float64
