@@ -13,23 +13,23 @@ import (
 
 // cacheResult contains the results of cache processing.
 type cacheResult struct {
-	modifiedD      D           // D with cached messages removed if cache was used
-	cacheIdx       llama.Pos   // Token position where cached content ends; new tokens start here
-	cachedMsgCount int         // Number of messages cached (for IMC removal)
-	err            error       // Any error that occurred
+	modifiedD       D           // D with cached messages removed if cache was used
+	cacheIdx        llama.Pos   // Token position where cached content ends; new tokens start here
+	cachedMsgCount  int         // Number of messages cached (for IMC removal)
+	err             error       // Any error that occurred
 	cacheSeqID      llama.SeqId // Cache session's sequence ID
 	imcSlotID       int         // IMC slot index for routing (distinct from seqID for clarity)
 	imcExpectedHash string      // Expected cachedMsgsHash at startSlot time (for stale detection)
 
 	// IMC dedicated slot fields — tokens to decode into slot's sequence.
-	imcNewCacheTokens []llama.Token // New tokens to extend the cache (decoded at startSlot)
-	imcNewTotalCached int           // Total cached tokens after extension
-	imcNewMsgIdx      int           // New lastMsgIdxCached after extension
-	imcNewMsgsHash    string        // New cachedMsgsHash after extension
-	imcClearSeq          bool          // True if sequence must be cleared before decoding (rebuild from scratch)
-	imcNewCachedTokens   []llama.Token // Full token sequence to store in session after decode
-	imcTrimPos           llama.Pos     // Position to trim KV cache from (for partial prefix rebuild)
-	imcPending           bool          // True if the target slot was pending (caller should retry another slot)
+	imcNewCacheTokens  []llama.Token // New tokens to extend the cache (decoded at startSlot)
+	imcNewTotalCached  int           // Total cached tokens after extension
+	imcNewMsgIdx       int           // New lastMsgIdxCached after extension
+	imcNewMsgsHash     string        // New cachedMsgsHash after extension
+	imcClearSeq        bool          // True if sequence must be cleared before decoding (rebuild from scratch)
+	imcNewCachedTokens []llama.Token // Full token sequence to store in session after decode
+	imcTrimPos         llama.Pos     // Position to trim KV cache from (for partial prefix rebuild)
+	imcPending         bool          // True if the target slot was pending (caller should retry another slot)
 }
 
 // processCache checks if the system prompt or incremental messages are

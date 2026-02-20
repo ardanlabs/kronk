@@ -835,5 +835,3 @@ type Template struct {
 	FileName string
 	Script   string
 }
-
-

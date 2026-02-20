@@ -26,15 +26,15 @@ Key principles:
 */
 
 const (
-	defContextWindow      = 8 * 1024
-	defNBatch             = 2 * 1024
-	defNUBatch            = 512
-	defNUBatchVision      = 2 * 1024
-	defMinCacheTokens     = 100
-	defThreadZero         = 0
-	defNSeqMax            = 1
-	defNDraft             = 5
-	defCacheSlotTimeout   = 30
+	defContextWindow    = 8 * 1024
+	defNBatch           = 2 * 1024
+	defNUBatch          = 512
+	defNUBatchVision    = 2 * 1024
+	defMinCacheTokens   = 100
+	defThreadZero       = 0
+	defNSeqMax          = 1
+	defNDraft           = 5
+	defCacheSlotTimeout = 30
 )
 
 // Logger provides a function for logging messages from different APIs.
