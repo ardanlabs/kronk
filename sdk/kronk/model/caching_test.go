@@ -285,8 +285,6 @@ func TestHashMessage(t *testing.T) {
 	}
 }
 
-
-
 func TestIMCSlotState(t *testing.T) {
 	m := &Model{
 		cfg: Config{
@@ -339,7 +337,7 @@ func TestClearCaches(t *testing.T) {
 			IncrementalCache:  true,
 			SystemPromptCache: true,
 		},
-		imcSlots:   make([]*imcSession, 2),
+		imcSlots: make([]*imcSession, 2),
 		spcSession: &spcSession{
 			sysPromptHash:   "testhash",
 			sysPromptTokens: 100,
@@ -545,7 +543,6 @@ func TestProcessIMCSlotMatchByHash(t *testing.T) {
 
 	d := D{
 		"messages": messages,
-		
 	}
 
 	result := m.processIMC(ctx, d, time.Now())
@@ -592,7 +589,6 @@ func TestProcessIMCBestPrefixCoverage(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	
 
 	messages := []D{
 		{"role": "system", "content": "You are helpful"},
@@ -616,7 +612,6 @@ func TestProcessIMCBestPrefixCoverage(t *testing.T) {
 
 	d := D{
 		"messages": messages,
-		
 	}
 
 	result := m.processIMC(ctx, d, time.Now())
@@ -663,7 +658,6 @@ func TestProcessIMCLRUEviction(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	
 
 	// Both slots have data but with non-matching hashes.
 	m.imcSlots[0].cachedMsgsHash = "aaaa" + strings.Repeat("0", 56)
@@ -685,7 +679,6 @@ func TestProcessIMCLRUEviction(t *testing.T) {
 
 	d := D{
 		"messages": messages,
-		
 	}
 
 	// buildIMCCacheFromScratch will fail (no template), but the scan should
@@ -751,7 +744,6 @@ func TestProcessIMCParallelSubAgents(t *testing.T) {
 
 	// Simulate: both sub-agents have completed their initial builds via
 	// startSlot. slot[0] has sub-agent 1's cache, slot[1] has sub-agent 2's.
-	
 
 	m.imcSlots[0].cachedMsgsHash = hash1
 	m.imcSlots[0].totalTokensCached = 400
@@ -771,7 +763,6 @@ func TestProcessIMCParallelSubAgents(t *testing.T) {
 	}
 	d3 := D{
 		"messages": msgs3,
-		
 	}
 
 	result3 := m.processIMC(ctx, d3, time.Now())
@@ -806,7 +797,6 @@ func TestProcessIMCParallelSubAgents(t *testing.T) {
 	}
 	d4 := D{
 		"messages": msgs4,
-		
 	}
 
 	result4 := m.processIMC(ctx, d4, time.Now())
@@ -852,7 +842,6 @@ func TestProcessIMCPendingPreventsDoubleSlot(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	
 
 	// Simulate: slot[0] is mid-build (pending=true, state reset).
 	// This is exactly what buildIMCCacheFromScratch does at lines 339-342.
@@ -871,7 +860,6 @@ func TestProcessIMCPendingPreventsDoubleSlot(t *testing.T) {
 	}
 	d := D{
 		"messages": msgs,
-		
 	}
 
 	// This will fail at template, but we can verify slot selection.

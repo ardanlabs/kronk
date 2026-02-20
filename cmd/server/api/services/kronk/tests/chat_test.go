@@ -249,10 +249,10 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 	return []apitest.Table{
 		{
-			Name:     "imc-first-turn",
-			SkipInGH: true,
-			URL:      "/v1/chat/completions",
-			Token:    tokens["chat-completions"],
+			Name:       "imc-first-turn",
+			SkipInGH:   true,
+			URL:        "/v1/chat/completions",
+			Token:      tokens["chat-completions"],
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
@@ -295,10 +295,10 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			},
 		},
 		{
-			Name:     "imc-second-turn-cache-hit",
-			SkipInGH: true,
-			URL:      "/v1/chat/completions",
-			Token:    tokens["chat-completions"],
+			Name:       "imc-second-turn-cache-hit",
+			SkipInGH:   true,
+			URL:        "/v1/chat/completions",
+			Token:      tokens["chat-completions"],
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
@@ -343,10 +343,10 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			},
 		},
 		{
-			Name:     "imc-different-session",
-			SkipInGH: true,
-			URL:      "/v1/chat/completions",
-			Token:    tokens["chat-completions"],
+			Name:       "imc-different-session",
+			SkipInGH:   true,
+			URL:        "/v1/chat/completions",
+			Token:      tokens["chat-completions"],
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{

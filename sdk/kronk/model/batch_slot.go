@@ -133,13 +133,13 @@ type slot struct {
 	// -------------------------------------------------------------------------
 	// Speculative Decoding
 
-	draftNPast          llama.Pos       // Draft model's KV cache position
-	draftPrefillNeeded  bool            // True when draft model needs prefill after target prefill
-	draftPromptTokens   []llama.Token   // Full prompt tokens for draft model prefill
-	specDraftTokens     []llama.Token   // Draft tokens for current speculative step
-	specDraftProbs      [][]float32     // Draft probability distributions per drafted token
-	specBasePast        llama.Pos       // Target nPast before speculative tokens were added
-	specBaseBatch       int32           // Batch index where speculative tokens start
+	draftNPast         llama.Pos     // Draft model's KV cache position
+	draftPrefillNeeded bool          // True when draft model needs prefill after target prefill
+	draftPromptTokens  []llama.Token // Full prompt tokens for draft model prefill
+	specDraftTokens    []llama.Token // Draft tokens for current speculative step
+	specDraftProbs     [][]float32   // Draft probability distributions per drafted token
+	specBasePast       llama.Pos     // Target nPast before speculative tokens were added
+	specBaseBatch      int32         // Batch index where speculative tokens start
 
 	// -------------------------------------------------------------------------
 	// Metrics

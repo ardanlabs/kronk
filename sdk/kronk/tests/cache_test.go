@@ -18,13 +18,13 @@ func Test_CacheSPC(t *testing.T) {
 	}
 
 	cfg := model.Config{
-		ModelFiles:       mpThinkToolChat.ModelFiles,
-		ContextWindow:    8192,
-		NBatch:           2048,
-		NUBatch:          512,
-		CacheTypeK:       model.GGMLTypeQ8_0,
-		CacheTypeV:       model.GGMLTypeQ8_0,
-		NSeqMax:          1,
+		ModelFiles:        mpThinkToolChat.ModelFiles,
+		ContextWindow:     8192,
+		NBatch:            2048,
+		NUBatch:           512,
+		CacheTypeK:        model.GGMLTypeQ8_0,
+		CacheTypeV:        model.GGMLTypeQ8_0,
+		NSeqMax:           1,
 		SystemPromptCache: true,
 	}
 
