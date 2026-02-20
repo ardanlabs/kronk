@@ -172,6 +172,20 @@ func (lib *Libs) SetVersion(version string) {
 // Download performs a complete workflow for downloading and installing
 // the latest version of llama.cpp.
 func (lib *Libs) Download(ctx context.Context, log Logger) (VersionTag, error) {
+	if !lib.AllowUpgrade && hasLibraryFiles(lib.path) {
+		tag, err := lib.InstalledVersion()
+		if err != nil {
+			tag = VersionTag{
+				Version:   "Unknown",
+				Arch:      "Unknown",
+				OS:        "Unknown",
+				Processor: "Unknown",
+			}
+		}
+		log(ctx, "download-libraries: upgrade not allowed and libraries exist, treating as read-only", "current", tag.Version)
+		return tag, nil
+	}
+
 	if !hasNetwork() {
 		vt, err := lib.InstalledVersion()
 		if err != nil {
@@ -356,6 +370,22 @@ func (lib *Libs) createVersionFile(version string) error {
 
 func isTagMatch(tag VersionTag, libs *Libs) bool {
 	return tag.Latest == tag.Version && tag.Arch == libs.arch.String() && tag.OS == libs.os.String() && tag.Processor == libs.processor.String()
+}
+
+func hasLibraryFiles(path string) bool {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return false
+	}
+
+	for _, entry := range entries {
+		if entry.Name() == versionFile || entry.Name() == "temp" {
+			continue
+		}
+		return true
+	}
+
+	return false
 }
 
 func hasNetwork() bool {
