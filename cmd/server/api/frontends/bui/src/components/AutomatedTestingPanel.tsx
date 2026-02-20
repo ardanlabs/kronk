@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import type {
   PlaygroundSessionResponse,
   AutoTestTrialResult,
@@ -12,6 +12,44 @@ import { defaultConfigSweepDef, defaultBestConfigWeights, chatScenario, toolCall
 import type { AutoTestScenario } from '../types';
 import { useAutoTestRunner } from '../contexts/AutoTestRunnerContext';
 import type { ConfigTrialResult } from '../contexts/AutoTestRunnerContext';
+
+type SortDirection = 'asc' | 'desc' | null;
+
+interface SortState {
+  column: string | null;
+  direction: SortDirection;
+}
+
+function nextSortDirection(current: SortDirection): SortDirection {
+  if (current === null) return 'asc';
+  if (current === 'asc') return 'desc';
+  return null;
+}
+
+function sortIndicator(column: string, sort: SortState): string {
+  if (sort.column !== column || sort.direction === null) return '';
+  return sort.direction === 'asc' ? ' ▲' : ' ▼';
+}
+
+function sortRows<T extends AutoTestTrialResult>(
+  rows: T[],
+  sort: SortState,
+  getValue: (row: T, col: string) => number | string | undefined,
+): T[] {
+  if (!sort.column || !sort.direction) return rows;
+  const dir = sort.direction === 'asc' ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const va = getValue(a, sort.column!);
+    const vb = getValue(b, sort.column!);
+    const na = va == null ? undefined : va;
+    const nb = vb == null ? undefined : vb;
+    if (na === undefined && nb === undefined) return 0;
+    if (na === undefined) return 1;
+    if (nb === undefined) return -1;
+    if (typeof na === 'number' && typeof nb === 'number') return (na - nb) * dir;
+    return String(na).localeCompare(String(nb)) * dir;
+  });
+}
 
 interface AutomatedTestingPanelProps {
   session: PlaygroundSessionResponse | null;
@@ -233,19 +271,67 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
   const [weightsChanged, setWeightsChanged] = useState(false);
   const appliedWeightsRef = useRef<BestConfigWeights>({ ...defaultBestConfigWeights });
   const [resultsExpanded, setResultsExpanded] = useState(false);
-  const [expandedTrials, setExpandedTrials] = useState<Set<number>>(new Set());
+  const [expandedTrials, setExpandedTrials] = useState<Set<string>>(new Set());
   const [repeats, setRepeats] = useState(3);
+  const [sort, setSort] = useState<SortState>({ column: null, direction: null });
 
   const scenarioLookup: Record<string, AutoTestScenario> = {
     chat: chatScenario,
     tool_call: toolCallScenario,
   };
 
-  const toggleTrialExpanded = useCallback((index: number) => {
+  const handleSort = useCallback((column: string) => {
+    setSort(prev => ({
+      column: prev.column === column && nextSortDirection(prev.direction) === null ? null : column,
+      direction: prev.column === column ? nextSortDirection(prev.direction) : 'asc',
+    }));
+  }, []);
+
+  const getSamplingValue = useCallback((row: AutoTestTrialResult, col: string): number | string | undefined => {
+    switch (col) {
+      case 'temperature': return row.candidate.temperature;
+      case 'top_p': return row.candidate.top_p;
+      case 'top_k': return row.candidate.top_k;
+      case 'min_p': return row.candidate.min_p;
+      case 'chat_score': return getScenarioScore(row, 'chat');
+      case 'tool_score': return getScenarioScore(row, 'tool_call');
+      case 'total_score': return row.totalScore;
+      case 'avg_tps': return row.avgTPS;
+      case 'avg_ttft': return row.avgTTFT;
+      case 'tps_20': return row.avgTPSByFill?.['20%'];
+      case 'tps_50': return row.avgTPSByFill?.['50%'];
+      case 'tps_80': return row.avgTPSByFill?.['80%'];
+      default: return undefined;
+    }
+  }, []);
+
+  const getConfigValue = useCallback((row: ConfigTrialResult, col: string): number | string | undefined => {
+    switch (col) {
+      case 'context_window': return row.config?.['context_window'];
+      case 'nbatch': return row.config?.nbatch;
+      case 'nubatch': return row.config?.nubatch;
+      case 'nseq_max': return row.config?.['nseq_max'];
+      case 'flash_attention': return row.config?.['flash_attention'];
+      case 'cache_type': return row.config?.['cache_type'];
+      case 'cache_mode': return row.config?.['cache_mode'];
+      case 'status': return row.error ? `Error: ${row.error}` : (row.totalScore !== undefined && row.totalScore !== null) ? 'OK' : '...';
+      case 'chat_score': return getScenarioScore(row, 'chat');
+      case 'tool_score': return getScenarioScore(row, 'tool_call');
+      case 'total_score': return row.totalScore;
+      case 'avg_tps': return row.avgTPS;
+      case 'avg_ttft': return row.avgTTFT;
+      case 'tps_20': return row.avgTPSByFill?.['20%'];
+      case 'tps_50': return row.avgTPSByFill?.['50%'];
+      case 'tps_80': return row.avgTPSByFill?.['80%'];
+      default: return undefined;
+    }
+  }, []);
+
+  const toggleTrialExpanded = useCallback((id: string) => {
     setExpandedTrials(prev => {
       const next = new Set(prev);
-      if (next.has(index)) next.delete(index);
-      else next.add(index);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   }, []);
@@ -290,6 +376,9 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
     : null;
 
   const displayMode: AutoTestSweepMode = run ? run.kind : sweepMode;
+
+  const sortedTrials = useMemo(() => sortRows(trials, sort, getSamplingValue), [trials, sort, getSamplingValue]);
+  const sortedConfigTrials = useMemo(() => sortRows(configTrials, sort, getConfigValue), [configTrials, sort, getConfigValue]);
 
   const hasEnabledScenario = enabledScenarios.chat || enabledScenarios.tool_call;
 
@@ -860,45 +949,45 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
                 <th>#</th>
                 {displayMode === 'config' ? (
                   <>
-                    <th>Context Window</th>
-                    <th>NBatch</th>
-                    <th>NUBatch</th>
-                    <th>NSeqMax</th>
-                    <th>Flash Attn</th>
-                    <th>KV Cache</th>
-                    <th>Cache</th>
-                    <th>Status</th>
+                    <th className="sortable-th" onClick={() => handleSort('context_window')}>Context Window{sortIndicator('context_window', sort)}</th>
+                    <th className="sortable-th" onClick={() => handleSort('nbatch')}>NBatch{sortIndicator('nbatch', sort)}</th>
+                    <th className="sortable-th" onClick={() => handleSort('nubatch')}>NUBatch{sortIndicator('nubatch', sort)}</th>
+                    <th className="sortable-th" onClick={() => handleSort('nseq_max')}>NSeqMax{sortIndicator('nseq_max', sort)}</th>
+                    <th className="sortable-th" onClick={() => handleSort('flash_attention')}>Flash Attn{sortIndicator('flash_attention', sort)}</th>
+                    <th className="sortable-th" onClick={() => handleSort('cache_type')}>KV Cache{sortIndicator('cache_type', sort)}</th>
+                    <th className="sortable-th" onClick={() => handleSort('cache_mode')}>Cache{sortIndicator('cache_mode', sort)}</th>
+                    <th className="sortable-th" onClick={() => handleSort('status')}>Status{sortIndicator('status', sort)}</th>
                   </>
                 ) : (
                   <>
-                    <th>Temperature</th>
-                    <th>Top P</th>
-                    <th>Top K</th>
-                    <th>Min P</th>
+                    <th className="sortable-th" onClick={() => handleSort('temperature')}>Temperature{sortIndicator('temperature', sort)}</th>
+                    <th className="sortable-th" onClick={() => handleSort('top_p')}>Top P{sortIndicator('top_p', sort)}</th>
+                    <th className="sortable-th" onClick={() => handleSort('top_k')}>Top K{sortIndicator('top_k', sort)}</th>
+                    <th className="sortable-th" onClick={() => handleSort('min_p')}>Min P{sortIndicator('min_p', sort)}</th>
                   </>
                 )}
-                <th>Chat Score</th>
-                <th>Tool Score</th>
-                <th>Total Score</th>
-                <th>Avg TPS</th>
-                <th>Avg TTFT</th>
-                <th>TPS @20%</th>
-                <th>TPS @50%</th>
-                <th>TPS @80%</th>
+                <th className="sortable-th" onClick={() => handleSort('chat_score')}>Chat Score{sortIndicator('chat_score', sort)}</th>
+                <th className="sortable-th" onClick={() => handleSort('tool_score')}>Tool Score{sortIndicator('tool_score', sort)}</th>
+                <th className="sortable-th" onClick={() => handleSort('total_score')}>Total Score{sortIndicator('total_score', sort)}</th>
+                <th className="sortable-th" onClick={() => handleSort('avg_tps')}>Avg TPS{sortIndicator('avg_tps', sort)}</th>
+                <th className="sortable-th" onClick={() => handleSort('avg_ttft')}>Avg TTFT{sortIndicator('avg_ttft', sort)}</th>
+                <th className="sortable-th" onClick={() => handleSort('tps_20')}>TPS @20%{sortIndicator('tps_20', sort)}</th>
+                <th className="sortable-th" onClick={() => handleSort('tps_50')}>TPS @50%{sortIndicator('tps_50', sort)}</th>
+                <th className="sortable-th" onClick={() => handleSort('tps_80')}>TPS @80%{sortIndicator('tps_80', sort)}</th>
               </tr>
             </thead>
             <tbody>
               {displayMode === 'config'
-                ? configTrials.map((trial, i) => {
+                ? sortedConfigTrials.map((trial, i) => {
                     const isBest = bestConfigTrial && trial === bestConfigTrial && runnerState === 'completed';
                     const isPending = trial.totalScore === undefined || trial.totalScore === null;
-                    const isExpanded = expandedTrials.has(i);
+                    const isExpanded = expandedTrials.has(trial.id);
                     return (
-                      <React.Fragment key={i}>
+                      <React.Fragment key={trial.id}>
                         <tr
                           className={`autotest-trial-row${isBest ? ' autotest-best-row' : ''}`}
                           style={{ cursor: 'pointer' }}
-                          onClick={() => toggleTrialExpanded(i)}
+                          onClick={() => toggleTrialExpanded(trial.id)}
                         >
                           <td>{isExpanded ? '▾' : '▸'} {i + 1}</td>
                           <td>{trial.config?.['context_window'] ?? '—'}</td>
@@ -936,16 +1025,16 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
                       </React.Fragment>
                     );
                   })
-                : trials.map((trial, i) => {
+                : sortedTrials.map((trial, i) => {
                     const isBest = bestTrial && trial === bestTrial && runnerState === 'completed';
                     const isPending = trial.totalScore === undefined || trial.totalScore === null;
-                    const isExpanded = expandedTrials.has(i);
+                    const isExpanded = expandedTrials.has(trial.id);
                     return (
-                      <React.Fragment key={i}>
+                      <React.Fragment key={trial.id}>
                         <tr
                           className={`autotest-trial-row${isBest ? ' autotest-best-row' : ''}`}
                           style={{ cursor: 'pointer' }}
-                          onClick={() => toggleTrialExpanded(i)}
+                          onClick={() => toggleTrialExpanded(trial.id)}
                         >
                           <td>{isExpanded ? '▾' : '▸'} {i + 1}</td>
                           <td>{trial.candidate.temperature}</td>

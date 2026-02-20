@@ -2869,6 +2869,15 @@ tr.selected:hover td {
     white-space: nowrap;
 }
 
+.playground-autotest-results th.sortable-th {
+    cursor: pointer;
+    user-select: none;
+}
+
+.playground-autotest-results th.sortable-th:hover {
+    background: var(--color-gray-200);
+}
+
 .playground-autotest-results td {
     padding: 5px 8px;
     border-bottom: 1px solid var(--color-gray-200);

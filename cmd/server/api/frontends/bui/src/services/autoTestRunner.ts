@@ -794,6 +794,348 @@ export const toolCallScenario: AutoTestScenario = {
   ],
 }
 
+/**
+ * Config sweep chat scenario — focuses on instruction following, simple math,
+ * and format compliance rather than factual knowledge. Every prompt here should
+ * be trivially correct for any model/quantization so the score reflects
+ * hardware config quality (throughput, latency) not model capability.
+ */
+export const configChatScenario: AutoTestScenario = {
+  id: 'chat',
+  name: 'Chat Quality',
+  prompts: [
+    {
+      id: 'repeat-word',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Repeat the following word exactly: elephant' },
+      ],
+      expected: { type: 'regex', value: '[Ee]lephant' },
+    },
+    {
+      id: 'repeat-phrase',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Repeat this phrase exactly: the quick brown fox' },
+      ],
+      expected: { type: 'regex', value: '[Tt]he quick brown fox' },
+    },
+    {
+      id: 'list-3-colors',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'List exactly 3 colors. Use a numbered list.' },
+      ],
+      expected: { type: 'regex', value: '1[.)]\\s+.+\\n\\s*2[.)]\\s+.+\\n\\s*3[.)]' },
+    },
+    {
+      id: 'list-3-animals',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'List exactly 3 animals. Use a numbered list.' },
+      ],
+      expected: { type: 'regex', value: '1[.)]\\s+.+\\n\\s*2[.)]\\s+.+\\n\\s*3[.)]' },
+    },
+    {
+      id: 'uppercase',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Write the word "hello" in all uppercase letters. Answer with only the word.' },
+      ],
+      expected: { type: 'regex', value: 'HELLO' },
+    },
+    {
+      id: 'lowercase',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Write the word "WORLD" in all lowercase letters. Answer with only the word.' },
+      ],
+      expected: { type: 'regex', value: 'world' },
+    },
+    {
+      id: 'yes-no',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Is the sky blue? Answer with only yes or no.' },
+      ],
+      expected: { type: 'regex', value: '[Yy]es' },
+    },
+    {
+      id: 'count-items',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'How many items are in this list: red, blue, green? Answer with only the number.' },
+      ],
+      expected: { type: 'regex', value: '3' },
+    },
+    {
+      id: 'first-letter',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'What is the first letter of the word "banana"? Answer with only the letter.' },
+      ],
+      expected: { type: 'regex', value: '[Bb]' },
+    },
+    {
+      id: 'in-context-fact',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Remember this fact: The zorgblatt capital is Plindovia. What is the capital of zorgblatt? Answer with only the name.' },
+      ],
+      expected: { type: 'regex', value: '[Pp]lindovia' },
+    },
+    // Code generation prompts — produce longer structured output that
+    // exercises throughput measurement and context window filling.
+    {
+      id: 'codegen-python-fn',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Write a Python function called `fizzbuzz` that takes an integer n and returns a list of strings from 1 to n where multiples of 3 are "Fizz", multiples of 5 are "Buzz", and multiples of both are "FizzBuzz".' },
+      ],
+      max_tokens: 512,
+      expected: { type: 'regex', value: 'def\\s+fizzbuzz' },
+      includeInScore: false,
+    },
+    {
+      id: 'codegen-js-class',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Write a JavaScript class called `Stack` with push, pop, peek, and isEmpty methods. Include JSDoc comments for each method.' },
+      ],
+      max_tokens: 512,
+      expected: { type: 'regex', value: 'class\\s+Stack' },
+      includeInScore: false,
+    },
+    {
+      id: 'codegen-go-struct',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Write a Go struct called `Config` with fields for Host (string), Port (int), and Timeout (time.Duration). Include a NewConfig constructor function and a String() method that formats it as "host:port".' },
+      ],
+      max_tokens: 512,
+      expected: { type: 'regex', value: 'type\\s+Config\\s+struct' },
+      includeInScore: false,
+    },
+    {
+      id: 'codegen-python-sort',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Write a Python implementation of merge sort. Include a main function that sorts the list [38, 27, 43, 3, 9, 82, 10] and prints the result.' },
+      ],
+      max_tokens: 512,
+      expected: { type: 'regex', value: 'def\\s+merge' },
+      includeInScore: false,
+    },
+    {
+      id: 'codegen-rust-enum',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Write a Rust enum called `Shape` with variants Circle(f64), Rectangle(f64, f64), and Triangle(f64, f64, f64). Implement a method `area()` that returns the area for each variant.' },
+      ],
+      max_tokens: 512,
+      expected: { type: 'regex', value: 'enum\\s+Shape' },
+      includeInScore: false,
+    },
+    // Multi-turn prompts that exercise IMC caching using pure instruction
+    // following — no math or factual knowledge required.
+    {
+      id: 'multi-turn-2',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Name a fruit. Answer with only one word.' },
+        { role: 'assistant', content: 'Apple' },
+        { role: 'user', content: 'Now name a vegetable. Answer with only one word.' },
+      ],
+      expected: { type: 'regex', value: '\\w+' },
+    },
+    {
+      id: 'multi-turn-4',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Name a fruit. Answer with only one word.' },
+        { role: 'assistant', content: 'Apple' },
+        { role: 'user', content: 'Now name a vegetable. Answer with only one word.' },
+        { role: 'assistant', content: 'Carrot' },
+        { role: 'user', content: 'Now name a color. Answer with only one word.' },
+      ],
+      expected: { type: 'regex', value: '\\w+' },
+    },
+    {
+      id: 'multi-turn-6',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Name a fruit. Answer with only one word.' },
+        { role: 'assistant', content: 'Apple' },
+        { role: 'user', content: 'Now name a vegetable. Answer with only one word.' },
+        { role: 'assistant', content: 'Carrot' },
+        { role: 'user', content: 'Now name a color. Answer with only one word.' },
+        { role: 'assistant', content: 'Blue' },
+        { role: 'user', content: 'List the three things you named. Use a numbered list.' },
+      ],
+      expected: { type: 'regex', value: '1[.)]' },
+    },
+    {
+      id: 'multi-turn-8',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Name a fruit. Answer with only one word.' },
+        { role: 'assistant', content: 'Apple' },
+        { role: 'user', content: 'Now name a vegetable. Answer with only one word.' },
+        { role: 'assistant', content: 'Carrot' },
+        { role: 'user', content: 'Now name a color. Answer with only one word.' },
+        { role: 'assistant', content: 'Blue' },
+        { role: 'user', content: 'List the three things you named. Use a numbered list.' },
+        { role: 'assistant', content: '1. Apple\n2. Carrot\n3. Blue' },
+        { role: 'user', content: 'Which of those is a fruit? Answer with only the word.' },
+      ],
+      expected: { type: 'regex', value: '[Aa]pple' },
+    },
+    {
+      id: 'multi-turn-10',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Name a fruit. Answer with only one word.' },
+        { role: 'assistant', content: 'Apple' },
+        { role: 'user', content: 'Now name a vegetable. Answer with only one word.' },
+        { role: 'assistant', content: 'Carrot' },
+        { role: 'user', content: 'Now name a color. Answer with only one word.' },
+        { role: 'assistant', content: 'Blue' },
+        { role: 'user', content: 'List the three things you named. Use a numbered list.' },
+        { role: 'assistant', content: '1. Apple\n2. Carrot\n3. Blue' },
+        { role: 'user', content: 'Which of those is a fruit? Answer with only the word.' },
+        { role: 'assistant', content: 'Apple' },
+        { role: 'user', content: 'Write that word in all uppercase. Answer with only the word.' },
+      ],
+      expected: { type: 'regex', value: 'APPLE' },
+    },
+  ],
+}
+
+/**
+ * Config sweep tool call scenario — uses a subset of tool call prompts
+ * that any model should handle. The multi-turn prompts use the same
+ * scripted pattern but avoid factual follow-ups.
+ */
+export const configToolCallScenario: AutoTestScenario = {
+  id: 'tool_call',
+  name: 'Tool Calling',
+  prompts: [
+    {
+      id: 'weather-tool',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "What's the weather in Boston?" },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'add-tool',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'What is 15 + 28?' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'weather-tokyo',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "What's the weather like in Tokyo right now?" },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'add-large',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Calculate 1234 + 5678 for me.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'search-laptop',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Search for laptops under $1000.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'send-email',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Send an email to alice@example.com with subject "Meeting Tomorrow" and body "Let\'s meet at 3pm."' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'stock-price-aapl',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "What's Apple's current stock price?" },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'convert-usd-eur',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Convert 100 USD to EUR.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'calendar-meeting',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Schedule a team meeting for 2025-03-15 at 10:00 for 60 minutes.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'reminder-dentist',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Remind me about my dentist appointment at 2025-03-20T09:00:00.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    // Multi-turn tool calls with scripted prior turns
+    {
+      id: 'multi-turn-tool',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "What's the weather in Boston?" },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc1', index: 0, type: 'function', function: { name: 'get_weather', arguments: '{"location":"Boston"}' } }] },
+        { role: 'user', content: "Now check the weather in London too." },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'multi-turn-tool-add',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'What is 10 + 20?' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc2', index: 0, type: 'function', function: { name: 'add', arguments: '{"a":10,"b":20}' } }] },
+        { role: 'user', content: 'Now add 30 + 40.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+  ],
+}
+
 /** Generates trial candidates with expanded parameter grids, truncated to maxTrials. */
 export function generateTrialCandidates(
   baseline: SamplingCandidate,

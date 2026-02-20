@@ -12,6 +12,8 @@ import type {
 import {
   chatScenario,
   toolCallScenario,
+  configChatScenario,
+  configToolCallScenario,
   generateTrialCandidates,
   generateConfigCandidates,
   probeTemplate,
@@ -276,14 +278,22 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
         setRun(prev => prev ? { ...prev, totalTrials: configCandidates.length } : prev);
 
         const scenarios: AutoTestScenario[] = [];
-        if (enabledScenarios.chat) scenarios.push(chatScenario);
-        if (enabledScenarios.tool_call) scenarios.push(toolCallScenario);
+        if (enabledScenarios.chat) scenarios.push(configChatScenario);
+        if (enabledScenarios.tool_call) scenarios.push(configToolCallScenario);
 
         let bestComposite = -Infinity;
         let bestTPS = -Infinity;
         let bestId: string | undefined;
 
-        const activeBaseline: SamplingCandidate = {};
+        const activeBaseline: SamplingCandidate = {
+          temperature: 0,
+          top_p: 1,
+          top_k: 1,
+          min_p: 0,
+          repeat_penalty: 1,
+          frequency_penalty: 0,
+          presence_penalty: 0,
+        };
 
         for (let i = 0; i < configCandidates.length; i++) {
           if (controller.signal.aborted) break;
@@ -316,7 +326,7 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
             if (enabledScenarios.tool_call) {
               const probeResult = await probeTemplate(configSessionId, controller.signal);
               if (!probeResult) {
-                const idx = activeScenarios.indexOf(toolCallScenario);
+                const idx = activeScenarios.indexOf(configToolCallScenario);
                 if (idx !== -1) activeScenarios.splice(idx, 1);
               }
             }
