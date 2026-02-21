@@ -141,88 +141,154 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 					return
 				}
 
-				e.model.log(job.ctx, "start-slot", "status", "imc-trim-prefix", "slot", s.id, "seq", s.seqID,
-					"cached_tokens", cacheIdx, "trim_pos", job.imcTrimPos, "new_cache_tokens", len(job.imcNewCacheTokens))
+				// Hybrid models: partial MemorySeqRm corrupts recurrent state.
+				// Use full clear and decode the full cached token sequence
+				// from scratch (imcNewCachedTokens, not imcNewCacheTokens).
+				if e.model.modelInfo.IsHybridModel {
+					e.model.log(job.ctx, "start-slot", "status", "imc-hybrid-rebuild", "slot", s.id, "seq", s.seqID,
+						"cached_tokens", cacheIdx, "trim_pos", job.imcTrimPos,
+						"redecode_tokens", len(job.imcNewCachedTokens))
 
-				e.model.decodeMu.Lock()
-				llama.MemorySeqRm(e.model.mem, s.seqID, job.imcTrimPos, -1)
-				e.model.decodeMu.Unlock()
+					e.model.decodeMu.Lock()
+					llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+					e.model.decodeMu.Unlock()
 
-				cacheIdx = job.imcTrimPos
+					// Decode the full cached token sequence from position 0.
+					if len(job.imcNewCachedTokens) > 0 {
+						imcDecodeStart := time.Now()
+
+						if err := e.model.decodeTokensIntoCache(job.ctx, job.imcNewCachedTokens, s.seqID, 0); err != nil {
+							e.model.decodeMu.Lock()
+							llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+							e.model.decodeMu.Unlock()
+
+							e.model.cacheMu.Lock()
+							if s.id < len(e.model.imcSlots) {
+								e.model.imcSlots[s.id].pending = false
+							}
+							e.model.cacheMu.Unlock()
+							e.model.notifyIMCSlotAvailable()
+
+							e.finishSlot(s, fmt.Errorf("start-slot: imc hybrid rebuild: %w", err))
+							return
+						}
+
+						metrics.AddPrefillTime(e.model.modelInfo.ID, time.Since(imcDecodeStart))
+					}
+
+					cacheIdx = llama.Pos(job.imcNewTotalCached)
+
+					// Update session state and skip the shared decode path below.
+					e.model.cacheMu.Lock()
+					if s.id < len(e.model.imcSlots) {
+						imcSlot := e.model.imcSlots[s.id]
+						imcSlot.cachedMsgsHash = job.imcNewMsgsHash
+						imcSlot.totalTokensCached = job.imcNewTotalCached
+						imcSlot.lastMsgIdxCached = job.imcNewMsgIdx
+						imcSlot.lastUsed = time.Now()
+						imcSlot.pending = false
+
+						if len(job.imcNewCachedTokens) > 0 {
+							imcSlot.cachedTokens = job.imcNewCachedTokens
+						}
+
+						e.model.log(job.ctx, "start-slot", "status", "imc-pending-cleared", "slot", s.id, "seq", s.seqID)
+					}
+					e.model.cacheMu.Unlock()
+					e.model.notifyIMCSlotAvailable()
+
+					pct := int(job.imcTrimPos) * 100 / job.imcNewTotalCached
+					e.model.log(job.ctx, "start-slot", "status", "imc-hybrid-rebuilt", "slot", s.id, "seq", s.seqID,
+						"total_cached", job.imcNewTotalCached, "salvaged_pct", pct)
+
+				} else {
+					e.model.log(job.ctx, "start-slot", "status", "imc-trim-prefix", "slot", s.id, "seq", s.seqID,
+						"cached_tokens", cacheIdx, "trim_pos", job.imcTrimPos, "new_cache_tokens", len(job.imcNewCacheTokens))
+
+					e.model.decodeMu.Lock()
+					llama.MemorySeqRm(e.model.mem, s.seqID, job.imcTrimPos, -1)
+					e.model.decodeMu.Unlock()
+
+					cacheIdx = job.imcTrimPos
+				}
 
 			default:
 				e.model.log(job.ctx, "start-slot", "status", "imc-extend", "slot", s.id, "seq", s.seqID,
 					"cached_tokens", cacheIdx, "new_cache_tokens", len(job.imcNewCacheTokens))
 			}
 
-			imcDecodeStart := time.Now()
+			// Hybrid trim already decoded the full token sequence and updated
+			// metadata above, so skip the shared decode path.
+			if !(e.model.modelInfo.IsHybridModel && job.imcTrimPos > 0) {
+				imcDecodeStart := time.Now()
 
-			if err := e.model.decodeTokensIntoCache(job.ctx, job.imcNewCacheTokens, s.seqID, int(cacheIdx)); err != nil {
-				// Remove any partially decoded tokens so the KV sequence
-				// stays consistent with the session metadata.
-				e.model.decodeMu.Lock()
-				switch {
-				case job.imcClearSeq:
-					// Rebuild: sequence was cleared before decode, clear again
-					// to remove any partial tokens.
-					llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
-				case job.imcTrimPos > 0:
-					// Partial prefix: remove from trim point onward to
-					// restore the pre-trim state.
-					llama.MemorySeqRm(e.model.mem, s.seqID, job.imcTrimPos, -1)
-				default:
-					// Extend: remove from the old cache boundary onward to
-					// restore the pre-extend state.
-					llama.MemorySeqRm(e.model.mem, s.seqID, cacheIdx, -1)
+				if err := e.model.decodeTokensIntoCache(job.ctx, job.imcNewCacheTokens, s.seqID, int(cacheIdx)); err != nil {
+					// Remove any partially decoded tokens so the KV sequence
+					// stays consistent with the session metadata.
+					e.model.decodeMu.Lock()
+					switch {
+					case job.imcClearSeq:
+						// Rebuild: sequence was cleared before decode, clear again
+						// to remove any partial tokens.
+						llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+					case job.imcTrimPos > 0:
+						// Partial prefix: remove from trim point onward to
+						// restore the pre-trim state.
+						llama.MemorySeqRm(e.model.mem, s.seqID, job.imcTrimPos, -1)
+					default:
+						// Extend: remove from the old cache boundary onward to
+						// restore the pre-extend state.
+						llama.MemorySeqRm(e.model.mem, s.seqID, cacheIdx, -1)
+					}
+					e.model.decodeMu.Unlock()
+
+					e.model.cacheMu.Lock()
+					if s.id < len(e.model.imcSlots) {
+						e.model.imcSlots[s.id].pending = false
+						e.model.log(job.ctx, "start-slot", "status", "imc-pending-cleared (error)", "slot", s.id, "seq", s.seqID)
+					}
+					e.model.cacheMu.Unlock()
+					e.model.notifyIMCSlotAvailable()
+
+					e.finishSlot(s, fmt.Errorf("start-slot: imc extend: %w", err))
+					return
 				}
-				e.model.decodeMu.Unlock()
 
+				metrics.AddPrefillTime(e.model.modelInfo.ID, time.Since(imcDecodeStart))
+
+				cacheIdx = llama.Pos(job.imcNewTotalCached)
+
+				// Update session state now that tokens are decoded.
 				e.model.cacheMu.Lock()
 				if s.id < len(e.model.imcSlots) {
-					e.model.imcSlots[s.id].pending = false
-					e.model.log(job.ctx, "start-slot", "status", "imc-pending-cleared (error)", "slot", s.id, "seq", s.seqID)
+					imcSlot := e.model.imcSlots[s.id]
+					imcSlot.cachedMsgsHash = job.imcNewMsgsHash
+					imcSlot.totalTokensCached = job.imcNewTotalCached
+					imcSlot.lastMsgIdxCached = job.imcNewMsgIdx
+					imcSlot.lastUsed = time.Now()
+					imcSlot.pending = false
+
+					if len(job.imcNewCachedTokens) > 0 {
+						imcSlot.cachedTokens = job.imcNewCachedTokens
+					}
+
+					e.model.log(job.ctx, "start-slot", "status", "imc-pending-cleared", "slot", s.id, "seq", s.seqID)
 				}
 				e.model.cacheMu.Unlock()
 				e.model.notifyIMCSlotAvailable()
 
-				e.finishSlot(s, fmt.Errorf("start-slot: imc extend: %w", err))
-				return
-			}
-
-			metrics.AddPrefillTime(e.model.modelInfo.ID, time.Since(imcDecodeStart))
-
-			cacheIdx = llama.Pos(job.imcNewTotalCached)
-
-			// Update session state now that tokens are decoded.
-			e.model.cacheMu.Lock()
-			if s.id < len(e.model.imcSlots) {
-				imcSlot := e.model.imcSlots[s.id]
-				imcSlot.cachedMsgsHash = job.imcNewMsgsHash
-				imcSlot.totalTokensCached = job.imcNewTotalCached
-				imcSlot.lastMsgIdxCached = job.imcNewMsgIdx
-				imcSlot.lastUsed = time.Now()
-				imcSlot.pending = false
-
-				if len(job.imcNewCachedTokens) > 0 {
-					imcSlot.cachedTokens = job.imcNewCachedTokens
+				switch {
+				case job.imcClearSeq:
+					e.model.log(job.ctx, "start-slot", "status", "imc-built", "slot", s.id, "seq", s.seqID,
+						"total_cached", job.imcNewTotalCached)
+				case job.imcTrimPos > 0:
+					pct := int(job.imcTrimPos) * 100 / job.imcNewTotalCached
+					e.model.log(job.ctx, "start-slot", "status", "imc-partial-rebuilt", "slot", s.id, "seq", s.seqID,
+						"total_cached", job.imcNewTotalCached, "salvaged_prefix", job.imcTrimPos, "salvaged_pct", pct)
+				default:
+					e.model.log(job.ctx, "start-slot", "status", "imc-extended", "slot", s.id, "seq", s.seqID,
+						"total_cached", job.imcNewTotalCached)
 				}
-
-				e.model.log(job.ctx, "start-slot", "status", "imc-pending-cleared", "slot", s.id, "seq", s.seqID)
-			}
-			e.model.cacheMu.Unlock()
-			e.model.notifyIMCSlotAvailable()
-
-			switch {
-			case job.imcClearSeq:
-				e.model.log(job.ctx, "start-slot", "status", "imc-built", "slot", s.id, "seq", s.seqID,
-					"total_cached", job.imcNewTotalCached)
-			case job.imcTrimPos > 0:
-				pct := int(job.imcTrimPos) * 100 / job.imcNewTotalCached
-				e.model.log(job.ctx, "start-slot", "status", "imc-partial-rebuilt", "slot", s.id, "seq", s.seqID,
-					"total_cached", job.imcNewTotalCached, "salvaged_prefix", job.imcTrimPos, "salvaged_pct", pct)
-			default:
-				e.model.log(job.ctx, "start-slot", "status", "imc-extended", "slot", s.id, "seq", s.seqID,
-					"total_cached", job.imcNewTotalCached)
 			}
 
 		case job.imcTrimPos > 0:
@@ -241,12 +307,46 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 				return
 			}
 
-			e.model.log(job.ctx, "start-slot", "status", "imc-trim-only", "slot", s.id, "seq", s.seqID,
-				"cached_tokens", cacheIdx, "trim_pos", job.imcTrimPos)
+			// Hybrid models: partial MemorySeqRm corrupts recurrent state.
+			// Clear and re-decode all cached tokens from scratch.
+			if e.model.modelInfo.IsHybridModel {
+				e.model.log(job.ctx, "start-slot", "status", "imc-hybrid-trim-rebuild", "slot", s.id, "seq", s.seqID,
+					"cached_tokens", cacheIdx, "trim_pos", job.imcTrimPos,
+					"redecode_tokens", len(job.imcNewCachedTokens))
 
-			e.model.decodeMu.Lock()
-			llama.MemorySeqRm(e.model.mem, s.seqID, job.imcTrimPos, -1)
-			e.model.decodeMu.Unlock()
+				e.model.decodeMu.Lock()
+				llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+				e.model.decodeMu.Unlock()
+
+				if len(job.imcNewCachedTokens) > 0 {
+					imcDecodeStart := time.Now()
+
+					if err := e.model.decodeTokensIntoCache(job.ctx, job.imcNewCachedTokens, s.seqID, 0); err != nil {
+						e.model.decodeMu.Lock()
+						llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+						e.model.decodeMu.Unlock()
+
+						e.model.cacheMu.Lock()
+						if s.id < len(e.model.imcSlots) {
+							e.model.imcSlots[s.id].pending = false
+						}
+						e.model.cacheMu.Unlock()
+						e.model.notifyIMCSlotAvailable()
+
+						e.finishSlot(s, fmt.Errorf("start-slot: imc hybrid trim rebuild: %w", err))
+						return
+					}
+
+					metrics.AddPrefillTime(e.model.modelInfo.ID, time.Since(imcDecodeStart))
+				}
+			} else {
+				e.model.log(job.ctx, "start-slot", "status", "imc-trim-only", "slot", s.id, "seq", s.seqID,
+					"cached_tokens", cacheIdx, "trim_pos", job.imcTrimPos)
+
+				e.model.decodeMu.Lock()
+				llama.MemorySeqRm(e.model.mem, s.seqID, job.imcTrimPos, -1)
+				e.model.decodeMu.Unlock()
+			}
 
 			cacheIdx = llama.Pos(job.imcNewTotalCached)
 
@@ -310,6 +410,29 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 	}
 
 	s.nPast = cacheIdx
+
+	// Hybrid models: snapshot the full sequence state (KV + recurrent) after
+	// IMC cache is populated and before suffix tokens are decoded. This
+	// snapshot is restored in finishSlot instead of using partial MemorySeqRm
+	// which corrupts recurrent state (DeltaNet/SSM layers).
+	if e.model.modelInfo.IsHybridModel && e.model.cfg.IncrementalCache && job.imcCacheHit && cacheIdx > 0 {
+		e.model.decodeMu.Lock()
+		kvSize := llama.StateSeqGetSize(e.model.lctx, s.seqID)
+		state := make([]byte, kvSize)
+		nExtracted := llama.StateSeqGetData(e.model.lctx, state, s.seqID)
+		e.model.decodeMu.Unlock()
+
+		if nExtracted > 0 {
+			s.imcSavedState = state[:nExtracted]
+			e.model.log(job.ctx, "start-slot", "status", "imc-hybrid-snapshot",
+				"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx,
+				"snapshot_bytes", nExtracted, "kv_alloc", kvSize)
+		} else {
+			e.model.log(job.ctx, "start-slot", "status", "imc-hybrid-snapshot-failed",
+				"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx,
+				"kv_alloc", kvSize)
+		}
+	}
 
 	// Branch based on request type: media vs text-only.
 	switch job.object {

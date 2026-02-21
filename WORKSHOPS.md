@@ -1,10 +1,48 @@
 # Kronk: Hardware accelerated local inference
 
-### Type: Talk
+### Description
 
-In this talk Bill will introduce Kronk, a new SDK that allows you to write AI based apps without the need of a model server. If you have Apple Metal (Mac), CUDA (NVIDIA), or Vulkan, Kronk can tap into that GPU power instead of grinding through the work on the CPU alone.
+Running AI models locally means no API costs, no data leaving your machine, and no vendor lock-in — but integrating local inference into Go applications has traditionally been painful. In this talk, Bill will introduce Kronk, a Go SDK that lets you embed local model inference directly into your applications with full GPU acceleration — no CGO required. Whether it's chat, vision, audio, embeddings, or tool calling, Kronk gives you the same power as a model server without needing one. To prove it, Bill built a Model Server entirely on top of the SDK, complete with caching, batch processing, and agent support. You'll see live demos from writing your first chat app to driving a coding agent with a local model.
 
-To dog food the SDK, Bill wrote a Model Server that is optimized to run your local AI workloads with performance in mind. During the talk, Bill will show how you can use Agents like Cline and Kilo Code to run local agentic workloads to perform basic work.
+### Talk Outline
+
+- Why Local Inference? (Privacy, latency, cost, no vendor lock-in, offline)
+  - What is Kronk? (Go SDK + optional Model Server)
+  - Architecture: SDK-first design, non-CGO via yzma
+  - Show the layered architecture diagram
+- Hello World — Question example (simplest SDK usage)
+  - Walk through the code, show it running
+- Configuration Matters
+  - GPU layer offloading (n_gpu_layers) — CPU vs GPU performance
+  - KV cache quantization (cache_type_k/v) — VRAM savings
+  - Context window and batch sizes (n_batch, n_ubatch) — tradeoffs
+  - Sampling parameters: temperature, top_p, top_k, repetition penalty
+  - Show side-by-side output differences
+- Tool Calling with a Local Model
+  - Use the chat example's get_weather function
+  - Show a local model deciding to call tools
+- Vision App
+  - What projectors are and why vision models need them
+  - Memory overhead: model + projector + KV cache
+- Kronk Model Server (KMS)
+  - Catalog system — kronk catalog pull, verified models
+  - Show the BUI and all the tools/apps
+  - Chat App with a coding model
+    - SPC (System Prompt Caching) — show performance improvement
+    - IMC (Incremental Message Caching) — show performance improvement
+  - Batch processing — concurrent requests with n_seq_max slots
+  - Quick flash of observability: Prometheus metrics / Statsviz
+- AI Agent Integration
+  - Cline driving real coding work through KMS
+  - MCP service with Brave Search — local model doing web searches
+  - Mention compatibility: Claude Code, OpenWebUI, any OpenAI client
+- Production Concerns (brief)
+  - JWT authentication
+  - Embeddings + Reranking for the full RAG pipeline
+- Conclusion
+  - Limitations
+  - Future work
+  - How to get involved
 
 ---
 

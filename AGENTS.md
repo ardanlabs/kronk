@@ -6,6 +6,13 @@ For comprehensive documentation, see [MANUAL.md](MANUAL.md).
 
 You wil want to look at `Chapter 17: Developer Guide` for detailed information about the project structure, code, and workflows.
 
+## Basic Rules
+
+- After modifying any `.go` file, always run `gofmt -s -w` on the changed files
+- You need these env vars to run test
+  - export RUN_IN_PARALLEL=yes
+  - export GITHUB_WORKSPACE=<Root Location Of Kronk Project>
+
 ## MCP Services
 
 Kronk has an MCP service and these are settings:

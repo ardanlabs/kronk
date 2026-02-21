@@ -84,8 +84,56 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		e.model.cacheMu.RUnlock()
 
 		if trimPos > 0 {
-			llama.MemorySeqRm(e.model.mem, s.seqID, trimPos, -1)
-			e.model.log(ctx, "finish-slot", "status", "imc-trim", "slot", slotID, "seq", seqID, "trim_pos", trimPos)
+			// Hybrid models: partial MemorySeqRm corrupts recurrent state
+			// (DeltaNet/SSM). Use full clear + snapshot restore instead.
+			if e.model.modelInfo.IsHybridModel {
+				if len(s.imcSavedState) > 0 {
+					e.model.decodeMu.Lock()
+					llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+					nRead := llama.StateSeqSetData(e.model.lctx, s.imcSavedState, s.seqID)
+					e.model.decodeMu.Unlock()
+
+					if nRead == 0 {
+						e.model.log(ctx, "finish-slot", "status", "imc-hybrid-restore-failed",
+							"slot", slotID, "seq", seqID, "trim_pos", trimPos,
+							"snapshot_bytes", len(s.imcSavedState))
+
+						// Guardrail: clear IMC metadata so the slot isn't
+						// reused with a corrupt sequence.
+						e.model.cacheMu.Lock()
+						if slotID < len(e.model.imcSlots) {
+							imcSlot := e.model.imcSlots[slotID]
+							imcSlot.cachedMsgsHash = ""
+							imcSlot.totalTokensCached = 0
+							imcSlot.lastMsgIdxCached = 0
+						}
+						e.model.cacheMu.Unlock()
+					} else {
+						e.model.log(ctx, "finish-slot", "status", "imc-hybrid-restore",
+							"slot", slotID, "seq", seqID, "trim_pos", trimPos,
+							"snapshot_bytes", len(s.imcSavedState), "restored_bytes", nRead)
+					}
+				} else {
+					// No snapshot available: full clear + invalidate metadata
+					// to prevent reuse with corrupted recurrent state.
+					e.model.log(ctx, "finish-slot", "status", "imc-hybrid-no-snapshot",
+						"slot", slotID, "seq", seqID, "trim_pos", trimPos)
+
+					llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+
+					e.model.cacheMu.Lock()
+					if slotID < len(e.model.imcSlots) {
+						imcSlot := e.model.imcSlots[slotID]
+						imcSlot.cachedMsgsHash = ""
+						imcSlot.totalTokensCached = 0
+						imcSlot.lastMsgIdxCached = 0
+					}
+					e.model.cacheMu.Unlock()
+				}
+			} else {
+				llama.MemorySeqRm(e.model.mem, s.seqID, trimPos, -1)
+				e.model.log(ctx, "finish-slot", "status", "imc-trim", "slot", slotID, "seq", seqID, "trim_pos", trimPos)
+			}
 		}
 	} else {
 		llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
