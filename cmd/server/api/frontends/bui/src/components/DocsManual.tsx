@@ -46,23 +46,219 @@ export default function DocsManual() {
           <h1 id="kronk-user-manual">Kronk User Manual</h1>
           <h2 id="table-of-contents">Table of Contents</h2>
           <ol>
-            <li><a href="#chapter-1-introduction">Introduction</a></li>
-            <li><a href="#chapter-2-installation--quick-start">Installation & Quick Start</a></li>
-            <li><a href="#chapter-3-model-configuration">Model Configuration</a></li>
-            <li><a href="#chapter-4-batch-processing">Batch Processing</a></li>
-            <li><a href="#chapter-5-message-caching">Message Caching</a></li>
-            <li><a href="#chapter-6-yarn-extended-context">YaRN Extended Context</a></li>
-            <li><a href="#chapter-7-model-server">Model Server</a></li>
-            <li><a href="#chapter-8-api-endpoints">API Endpoints</a></li>
-            <li><a href="#chapter-9-request-parameters">Request Parameters</a></li>
-            <li><a href="#chapter-10-multi-modal-models">Multi-Modal Models</a></li>
-            <li><a href="#chapter-11-security--authentication">Security & Authentication</a></li>
-            <li><a href="#chapter-12-browser-ui-bui">Browser UI (BUI)</a></li>
-            <li><a href="#chapter-13-client-integration">Client Integration</a></li>
-            <li><a href="#chapter-14-observability">Observability</a></li>
-            <li><a href="#chapter-15-mcp-service">MCP Service</a></li>
-            <li><a href="#chapter-16-troubleshooting">Troubleshooting</a></li>
-            <li><a href="#chapter-17-developer-guide">Developer Guide</a></li>
+            <li><a href="#chapter-1-introduction">Introduction</a>
+              <ul>
+                <li><a href="#11-what-is-kronk">1.1 What is Kronk</a></li>
+                <li><a href="#12-key-features">1.2 Key Features</a></li>
+                <li><a href="#13-supported-platforms-and-hardware">1.3 Supported Platforms and Hardware</a></li>
+                <li><a href="#14-architecture-overview">1.4 Architecture Overview</a></li>
+              </ul>
+            </li>
+            <li><a href="#chapter-2-installation--quick-start">Installation & Quick Start</a>
+              <ul>
+                <li><a href="#21-prerequisites">2.1 Prerequisites</a></li>
+                <li><a href="#22-installing-the-cli">2.2 Installing the CLI</a></li>
+                <li><a href="#23-installing-libraries">2.3 Installing Libraries</a></li>
+                <li><a href="#24-downloading-your-first-model">2.4 Downloading Your First Model</a></li>
+                <li><a href="#25-starting-the-server">2.5 Starting the Server</a></li>
+                <li><a href="#26-verifying-the-installation">2.6 Verifying the Installation</a></li>
+                <li><a href="#27-quick-start-summary">2.7 Quick Start Summary</a></li>
+              </ul>
+            </li>
+            <li><a href="#chapter-3-model-configuration">Model Configuration</a>
+              <ul>
+                <li><a href="#31-basic-configuration">3.1 Basic Configuration</a></li>
+                <li><a href="#32-gpu-configuration">3.2 GPU Configuration</a></li>
+                <li><a href="#33-kv-cache-quantization">3.3 KV Cache Quantization</a></li>
+                <li><a href="#34-flash-attention">3.4 Flash Attention</a></li>
+                <li><a href="#35-parallel-inference-nseqmax">3.5 Parallel Inference (NSeqMax)</a></li>
+                <li><a href="#36-understanding-gguf-quantization">3.6 Understanding GGUF Quantization</a></li>
+                <li><a href="#37-vram-estimation">3.7 VRAM Estimation</a></li>
+                <li><a href="#38-model-specific-tuning">3.8 Model-Specific Tuning</a></li>
+                <li><a href="#39-speculative-decoding">3.9 Speculative Decoding</a></li>
+                <li><a href="#310-sampling-parameters">3.10 Sampling Parameters</a></li>
+                <li><a href="#311-model-config-file-example">3.11 Model Config File Example</a></li>
+              </ul>
+            </li>
+            <li><a href="#chapter-4-batch-processing">Batch Processing</a>
+              <ul>
+                <li><a href="#41-architecture-overview">4.1 Architecture Overview</a></li>
+                <li><a href="#42-slots-and-sequences">4.2 Slots and Sequences</a></li>
+                <li><a href="#43-request-flow">4.3 Request Flow</a></li>
+                <li><a href="#44-configuring-batch-processing">4.4 Configuring Batch Processing</a></li>
+                <li><a href="#45-concurrency-by-model-type">4.5 Concurrency by Model Type</a></li>
+                <li><a href="#46-performance-tuning">4.6 Performance Tuning</a></li>
+                <li><a href="#47-example-configuration">4.7 Example Configuration</a></li>
+                <li><a href="#48-imc-slot-scheduling">4.8 IMC Slot Scheduling</a></li>
+              </ul>
+            </li>
+            <li><a href="#chapter-5-message-caching">Message Caching</a>
+              <ul>
+                <li><a href="#51-overview">5.1 Overview</a></li>
+                <li><a href="#52-system-prompt-cache-spc">5.2 System Prompt Cache (SPC)</a></li>
+                <li><a href="#53-incremental-message-cache-imc">5.3 Incremental Message Cache (IMC)</a></li>
+                <li><a href="#54-single-user-caching">5.4 Single-User Caching</a></li>
+                <li><a href="#55-spc-vs-imc">5.5 SPC vs IMC</a></li>
+                <li><a href="#56-cache-invalidation">5.6 Cache Invalidation</a></li>
+                <li><a href="#57-configuration-reference">5.7 Configuration Reference</a></li>
+                <li><a href="#58-performance-and-limitations">5.8 Performance and Limitations</a></li>
+                <li><a href="#59-hybrid-model-imc-snapshotrestore">5.9 Hybrid Model IMC (Snapshot/Restore)</a></li>
+              </ul>
+            </li>
+            <li><a href="#chapter-6-yarn-extended-context">YaRN Extended Context</a>
+              <ul>
+                <li><a href="#61-understanding-context-extension">6.1 Understanding Context Extension</a></li>
+                <li><a href="#62-when-to-use-yarn">6.2 When to Use YaRN</a></li>
+                <li><a href="#63-configuration">6.3 Configuration</a></li>
+                <li><a href="#64-scaling-types">6.4 Scaling Types</a></li>
+                <li><a href="#65-parameter-reference">6.5 Parameter Reference</a></li>
+                <li><a href="#66-model-specific-examples">6.6 Model-Specific Examples</a></li>
+                <li><a href="#67-memory-impact">6.7 Memory Impact</a></li>
+                <li><a href="#68-quality-considerations">6.8 Quality Considerations</a></li>
+                <li><a href="#69-example-long-document-processing">6.9 Example: Long Document Processing</a></li>
+              </ul>
+            </li>
+            <li><a href="#chapter-7-model-server">Model Server</a>
+              <ul>
+                <li><a href="#71-starting-the-server">7.1 Starting the Server</a></li>
+                <li><a href="#72-stopping-the-server">7.2 Stopping the Server</a></li>
+                <li><a href="#73-server-configuration">7.3 Server Configuration</a></li>
+                <li><a href="#74-model-caching">7.4 Model Caching</a></li>
+                <li><a href="#75-model-config-files">7.5 Model Config Files</a></li>
+                <li><a href="#76-catalog-system">7.6 Catalog System</a></li>
+                <li><a href="#77-custom-catalog-repository">7.7 Custom Catalog Repository</a></li>
+                <li><a href="#78-templates">7.8 Templates</a></li>
+                <li><a href="#79-runtime-settings">7.9 Runtime Settings</a></li>
+                <li><a href="#710-logging">7.10 Logging</a></li>
+                <li><a href="#711-data-paths">7.11 Data Paths</a></li>
+                <li><a href="#712-complete-example">7.12 Complete Example</a></li>
+              </ul>
+            </li>
+            <li><a href="#chapter-8-api-endpoints">API Endpoints</a>
+              <ul>
+                <li><a href="#81-endpoint-overview">8.1 Endpoint Overview</a></li>
+                <li><a href="#82-chat-completions">8.2 Chat Completions</a></li>
+                <li><a href="#83-responses-api">8.3 Responses API</a></li>
+                <li><a href="#84-embeddings">8.4 Embeddings</a></li>
+                <li><a href="#85-reranking">8.5 Reranking</a></li>
+                <li><a href="#86-tokenize">8.6 Tokenize</a></li>
+                <li><a href="#87-tool-calling-function-calling">8.7 Tool Calling (Function Calling)</a></li>
+                <li><a href="#88-models-list">8.8 Models List</a></li>
+                <li><a href="#89-authentication">8.9 Authentication</a></li>
+                <li><a href="#810-error-responses">8.10 Error Responses</a></li>
+              </ul>
+            </li>
+            <li><a href="#chapter-9-request-parameters">Request Parameters</a>
+              <ul>
+                <li><a href="#91-sampling-parameters">9.1 Sampling Parameters</a></li>
+                <li><a href="#92-repetition-control">9.2 Repetition Control</a></li>
+                <li><a href="#93-advanced-sampling">9.3 Advanced Sampling</a></li>
+                <li><a href="#94-generation-control">9.4 Generation Control</a></li>
+                <li><a href="#95-grammar-constrained-output">9.5 Grammar Constrained Output</a></li>
+                <li><a href="#96-logprobs-token-probabilities">9.6 Logprobs (Token Probabilities)</a></li>
+                <li><a href="#97-parameter-reference">9.7 Parameter Reference</a></li>
+              </ul>
+            </li>
+            <li><a href="#chapter-10-multi-modal-models">Multi-Modal Models</a>
+              <ul>
+                <li><a href="#101-overview">10.1 Overview</a></li>
+                <li><a href="#102-vision-models">10.2 Vision Models</a></li>
+                <li><a href="#103-audio-models">10.3 Audio Models</a></li>
+                <li><a href="#104-plain-base64-format">10.4 Plain Base64 Format</a></li>
+                <li><a href="#105-configuration-for-multi-modal-models">10.5 Configuration for Multi-Modal Models</a></li>
+                <li><a href="#106-memory-requirements">10.6 Memory Requirements</a></li>
+                <li><a href="#107-limitations">10.7 Limitations</a></li>
+                <li><a href="#108-example-image-analysis">10.8 Example: Image Analysis</a></li>
+                <li><a href="#109-example-audio-transcription">10.9 Example: Audio Transcription</a></li>
+              </ul>
+            </li>
+            <li><a href="#chapter-11-security--authentication">Security & Authentication</a>
+              <ul>
+                <li><a href="#111-enabling-authentication">11.1 Enabling Authentication</a></li>
+                <li><a href="#112-using-the-admin-token">11.2 Using the Admin Token</a></li>
+                <li><a href="#113-key-management">11.3 Key Management</a></li>
+                <li><a href="#114-creating-user-tokens">11.4 Creating User Tokens</a></li>
+                <li><a href="#115-token-examples">11.5 Token Examples</a></li>
+                <li><a href="#116-using-tokens-in-api-requests">11.6 Using Tokens in API Requests</a></li>
+                <li><a href="#117-authorization-flow">11.7 Authorization Flow</a></li>
+                <li><a href="#118-rate-limiting">11.8 Rate Limiting</a></li>
+                <li><a href="#119-configuration-reference">11.9 Configuration Reference</a></li>
+                <li><a href="#1110-security-best-practices">11.10 Security Best Practices</a></li>
+              </ul>
+            </li>
+            <li><a href="#chapter-12-browser-ui-bui">Browser UI (BUI)</a>
+              <ul>
+                <li><a href="#121-accessing-the-bui">12.1 Accessing the BUI</a></li>
+                <li><a href="#122-downloading-libraries">12.2 Downloading Libraries</a></li>
+                <li><a href="#123-downloading-models">12.3 Downloading Models</a></li>
+                <li><a href="#124-managing-keys-and-tokens">12.4 Managing Keys and Tokens</a></li>
+                <li><a href="#125-other-screens">12.5 Other Screens</a></li>
+              </ul>
+            </li>
+            <li><a href="#chapter-13-client-integration">Client Integration</a>
+              <ul>
+                <li><a href="#131-openwebui">13.1 OpenWebUI</a></li>
+                <li><a href="#132-cline">13.2 Cline</a></li>
+                <li><a href="#134-python-openai-sdk">13.4 Python OpenAI SDK</a></li>
+                <li><a href="#135-curl-and-http-clients">13.5 curl and HTTP Clients</a></li>
+                <li><a href="#136-langchain">13.6 LangChain</a></li>
+              </ul>
+            </li>
+            <li><a href="#chapter-14-observability">Observability</a>
+              <ul>
+                <li><a href="#141-debug-server">14.1 Debug Server</a></li>
+                <li><a href="#142-debug-endpoints">14.2 Debug Endpoints</a></li>
+                <li><a href="#143-health-check-endpoints">14.3 Health Check Endpoints</a></li>
+                <li><a href="#144-prometheus-metrics">14.4 Prometheus Metrics</a></li>
+                <li><a href="#145-prometheus-integration">14.5 Prometheus Integration</a></li>
+                <li><a href="#146-distributed-tracing-with-tempo">14.6 Distributed Tracing with Tempo</a></li>
+                <li><a href="#147-tracing-architecture">14.7 Tracing Architecture</a></li>
+                <li><a href="#148-tempo-setup-with-docker">14.8 Tempo Setup with Docker</a></li>
+                <li><a href="#149-pprof-profiling">14.9 pprof Profiling</a></li>
+                <li><a href="#1410-statsviz-real-time-monitoring">14.10 Statsviz Real-Time Monitoring</a></li>
+                <li><a href="#1411-logging">14.11 Logging</a></li>
+                <li><a href="#1412-configuration-reference">14.12 Configuration Reference</a></li>
+              </ul>
+            </li>
+            <li><a href="#chapter-15-mcp-service">MCP Service</a>
+              <ul>
+                <li><a href="#151-architecture">15.1 Architecture</a></li>
+                <li><a href="#152-prerequisites">15.2 Prerequisites</a></li>
+                <li><a href="#153-configuration">15.3 Configuration</a></li>
+                <li><a href="#154-available-tools">15.4 Available Tools</a></li>
+                <li><a href="#155-client-configuration">15.5 Client Configuration</a></li>
+                <li><a href="#156-testing-with-curl">15.6 Testing with curl</a></li>
+              </ul>
+            </li>
+            <li><a href="#chapter-16-troubleshooting">Troubleshooting</a>
+              <ul>
+                <li><a href="#161-library-issues">16.1 Library Issues</a></li>
+                <li><a href="#162-model-loading-failures">16.2 Model Loading Failures</a></li>
+                <li><a href="#163-memory-errors">16.3 Memory Errors</a></li>
+                <li><a href="#164-request-timeouts">16.4 Request Timeouts</a></li>
+                <li><a href="#165-authentication-errors">16.5 Authentication Errors</a></li>
+                <li><a href="#166-streaming-issues">16.6 Streaming Issues</a></li>
+                <li><a href="#167-performance-issues">16.7 Performance Issues</a></li>
+                <li><a href="#168-viewing-logs">16.8 Viewing Logs</a></li>
+                <li><a href="#169-common-error-messages">16.9 Common Error Messages</a></li>
+                <li><a href="#1610-getting-help">16.10 Getting Help</a></li>
+              </ul>
+            </li>
+            <li><a href="#chapter-17-developer-guide">Developer Guide</a>
+              <ul>
+                <li><a href="#171-quick-reference">17.1 Quick Reference</a></li>
+                <li><a href="#172-build--test-commands">17.2 Build & Test Commands</a></li>
+                <li><a href="#173-developer-setup">17.3 Developer Setup</a></li>
+                <li><a href="#174-project-architecture">17.4 Project Architecture</a></li>
+                <li><a href="#175-bui-frontend-development">17.5 BUI Frontend Development</a></li>
+                <li><a href="#176-code-style-guidelines">17.6 Code Style Guidelines</a></li>
+                <li><a href="#177-sdk-internals">17.7 SDK Internals</a></li>
+                <li><a href="#178-api-handler-notes">17.8 API Handler Notes</a></li>
+                <li><a href="#179-goroutine-budget">17.9 Goroutine Budget</a></li>
+                <li><a href="#1710-request-tracing-spans">17.10 Request Tracing Spans</a></li>
+                <li><a href="#1711-reference-threads">17.11 Reference Threads</a></li>
+              </ul>
+            </li>
           </ol>
           <hr />
           <h2 id="chapter-1:-introduction">Chapter 1: Introduction</h2>
