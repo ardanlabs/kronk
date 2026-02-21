@@ -72,7 +72,9 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		}
 	}
 
-	// IMC dedicated slot mode: trim generated tokens but keep cached prefix.
+	// IMC cache cleanup after generation completes.
+	// Deterministic / MoE: trim generated tokens via partial range delete.
+	// Hybrid: full clear + snapshot restore (partial delete corrupts recurrent state).
 	// Non-IMC mode: clear the entire sequence.
 	if e.model.cfg.IncrementalCache && s.job.imcCacheHit {
 		var trimPos llama.Pos
@@ -84,7 +86,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		e.model.cacheMu.RUnlock()
 
 		if trimPos > 0 {
-			// Hybrid models: partial MemorySeqRm corrupts recurrent state
+			// IMC Hybrid: partial MemorySeqRm corrupts recurrent state
 			// (DeltaNet/SSM). Use full clear + snapshot restore instead.
 			if e.model.modelInfo.IsHybridModel {
 				if len(s.imcSavedState) > 0 {
@@ -131,6 +133,9 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 					e.model.cacheMu.Unlock()
 				}
 			} else {
+				// IMC Deterministic / MoE / Non-Deterministic: partial range
+				// delete removes only the generated tokens, keeping the cached
+				// conversation prefix intact for the next request.
 				llama.MemorySeqRm(e.model.mem, s.seqID, trimPos, -1)
 				e.model.log(ctx, "finish-slot", "status", "imc-trim", "slot", slotID, "seq", seqID, "trim_pos", trimPos)
 			}

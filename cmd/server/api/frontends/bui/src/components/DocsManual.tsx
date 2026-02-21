@@ -46,23 +46,222 @@ export default function DocsManual() {
           <h1 id="kronk-user-manual">Kronk User Manual</h1>
           <h2 id="table-of-contents">Table of Contents</h2>
           <ol>
-            <li><a href="#chapter-1-introduction">Introduction</a></li>
-            <li><a href="#chapter-2-installation--quick-start">Installation & Quick Start</a></li>
-            <li><a href="#chapter-3-model-configuration">Model Configuration</a></li>
-            <li><a href="#chapter-4-batch-processing">Batch Processing</a></li>
-            <li><a href="#chapter-5-message-caching">Message Caching</a></li>
-            <li><a href="#chapter-6-yarn-extended-context">YaRN Extended Context</a></li>
-            <li><a href="#chapter-7-model-server">Model Server</a></li>
-            <li><a href="#chapter-8-api-endpoints">API Endpoints</a></li>
-            <li><a href="#chapter-9-request-parameters">Request Parameters</a></li>
-            <li><a href="#chapter-10-multi-modal-models">Multi-Modal Models</a></li>
-            <li><a href="#chapter-11-security--authentication">Security & Authentication</a></li>
-            <li><a href="#chapter-12-browser-ui-bui">Browser UI (BUI)</a></li>
-            <li><a href="#chapter-13-client-integration">Client Integration</a></li>
-            <li><a href="#chapter-14-observability">Observability</a></li>
-            <li><a href="#chapter-15-mcp-service">MCP Service</a></li>
-            <li><a href="#chapter-16-troubleshooting">Troubleshooting</a></li>
-            <li><a href="#chapter-17-developer-guide">Developer Guide</a></li>
+            <li><a href="#chapter-1-introduction">Introduction</a>
+              <ul>
+                <li><a href="#11-what-is-kronk">1.1 What is Kronk</a></li>
+                <li><a href="#12-key-features">1.2 Key Features</a></li>
+                <li><a href="#13-supported-platforms-and-hardware">1.3 Supported Platforms and Hardware</a></li>
+                <li><a href="#14-architecture-overview">1.4 Architecture Overview</a></li>
+              </ul>
+            </li>
+            <li><a href="#chapter-2-installation--quick-start">Installation & Quick Start</a>
+              <ul>
+                <li><a href="#21-prerequisites">2.1 Prerequisites</a></li>
+                <li><a href="#22-installing-the-cli">2.2 Installing the CLI</a></li>
+                <li><a href="#23-installing-libraries">2.3 Installing Libraries</a></li>
+                <li><a href="#24-downloading-your-first-model">2.4 Downloading Your First Model</a></li>
+                <li><a href="#25-starting-the-server">2.5 Starting the Server</a></li>
+                <li><a href="#26-verifying-the-installation">2.6 Verifying the Installation</a></li>
+                <li><a href="#27-quick-start-summary">2.7 Quick Start Summary</a></li>
+              </ul>
+            </li>
+            <li><a href="#chapter-3-model-configuration">Model Configuration</a>
+              <ul>
+                <li><a href="#31-basic-configuration">3.1 Basic Configuration</a></li>
+                <li><a href="#32-gpu-configuration">3.2 GPU Configuration</a></li>
+                <li><a href="#33-kv-cache-quantization">3.3 KV Cache Quantization</a></li>
+                <li><a href="#34-flash-attention">3.4 Flash Attention</a></li>
+                <li><a href="#35-parallel-inference-nseqmax">3.5 Parallel Inference (NSeqMax)</a></li>
+                <li><a href="#36-understanding-gguf-quantization">3.6 Understanding GGUF Quantization</a></li>
+                <li><a href="#37-vram-estimation">3.7 VRAM Estimation</a></li>
+                <li><a href="#38-model-specific-tuning">3.8 Model-Specific Tuning</a></li>
+                <li><a href="#39-speculative-decoding">3.9 Speculative Decoding</a></li>
+                <li><a href="#310-sampling-parameters">3.10 Sampling Parameters</a></li>
+                <li><a href="#311-model-config-file-example">3.11 Model Config File Example</a></li>
+              </ul>
+            </li>
+            <li><a href="#chapter-4-batch-processing">Batch Processing</a>
+              <ul>
+                <li><a href="#41-architecture-overview">4.1 Architecture Overview</a></li>
+                <li><a href="#42-slots-and-sequences">4.2 Slots and Sequences</a></li>
+                <li><a href="#43-request-flow">4.3 Request Flow</a></li>
+                <li><a href="#44-configuring-batch-processing">4.4 Configuring Batch Processing</a></li>
+                <li><a href="#45-concurrency-by-model-type">4.5 Concurrency by Model Type</a></li>
+                <li><a href="#46-performance-tuning">4.6 Performance Tuning</a></li>
+                <li><a href="#47-example-configuration">4.7 Example Configuration</a></li>
+                <li><a href="#48-imc-slot-scheduling">4.8 IMC Slot Scheduling</a></li>
+              </ul>
+            </li>
+            <li><a href="#chapter-5-message-caching">Message Caching</a>
+              <ul>
+                <li><a href="#51-overview">5.1 Overview</a></li>
+                <li><a href="#52-system-prompt-cache-spc">5.2 System Prompt Cache (SPC)</a></li>
+                <li><a href="#53-incremental-message-cache-imc">5.3 Incremental Message Cache (IMC)</a></li>
+                <li><a href="#imc-deterministic">IMC Deterministic</a></li>
+                <li><a href="#imc-non-deterministic">IMC Non-Deterministic</a></li>
+                <li><a href="#imc-moe">IMC MoE</a></li>
+                <li><a href="#imc-hybrid">IMC Hybrid</a></li>
+                <li><a href="#54-single-user-caching">5.4 Single-User Caching</a></li>
+                <li><a href="#55-spc-vs-imc">5.5 SPC vs IMC</a></li>
+                <li><a href="#56-cache-invalidation">5.6 Cache Invalidation</a></li>
+                <li><a href="#57-configuration-reference">5.7 Configuration Reference</a></li>
+                <li><a href="#58-performance-and-limitations">5.8 Performance and Limitations</a></li>
+              </ul>
+            </li>
+            <li><a href="#chapter-6-yarn-extended-context">YaRN Extended Context</a>
+              <ul>
+                <li><a href="#61-understanding-context-extension">6.1 Understanding Context Extension</a></li>
+                <li><a href="#62-when-to-use-yarn">6.2 When to Use YaRN</a></li>
+                <li><a href="#63-configuration">6.3 Configuration</a></li>
+                <li><a href="#64-scaling-types">6.4 Scaling Types</a></li>
+                <li><a href="#65-parameter-reference">6.5 Parameter Reference</a></li>
+                <li><a href="#66-model-specific-examples">6.6 Model-Specific Examples</a></li>
+                <li><a href="#67-memory-impact">6.7 Memory Impact</a></li>
+                <li><a href="#68-quality-considerations">6.8 Quality Considerations</a></li>
+                <li><a href="#69-example-long-document-processing">6.9 Example: Long Document Processing</a></li>
+              </ul>
+            </li>
+            <li><a href="#chapter-7-model-server">Model Server</a>
+              <ul>
+                <li><a href="#71-starting-the-server">7.1 Starting the Server</a></li>
+                <li><a href="#72-stopping-the-server">7.2 Stopping the Server</a></li>
+                <li><a href="#73-server-configuration">7.3 Server Configuration</a></li>
+                <li><a href="#74-model-caching">7.4 Model Caching</a></li>
+                <li><a href="#75-model-config-files">7.5 Model Config Files</a></li>
+                <li><a href="#76-catalog-system">7.6 Catalog System</a></li>
+                <li><a href="#77-custom-catalog-repository">7.7 Custom Catalog Repository</a></li>
+                <li><a href="#78-templates">7.8 Templates</a></li>
+                <li><a href="#79-runtime-settings">7.9 Runtime Settings</a></li>
+                <li><a href="#710-logging">7.10 Logging</a></li>
+                <li><a href="#711-data-paths">7.11 Data Paths</a></li>
+                <li><a href="#712-complete-example">7.12 Complete Example</a></li>
+              </ul>
+            </li>
+            <li><a href="#chapter-8-api-endpoints">API Endpoints</a>
+              <ul>
+                <li><a href="#81-endpoint-overview">8.1 Endpoint Overview</a></li>
+                <li><a href="#82-chat-completions">8.2 Chat Completions</a></li>
+                <li><a href="#83-responses-api">8.3 Responses API</a></li>
+                <li><a href="#84-embeddings">8.4 Embeddings</a></li>
+                <li><a href="#85-reranking">8.5 Reranking</a></li>
+                <li><a href="#86-tokenize">8.6 Tokenize</a></li>
+                <li><a href="#87-tool-calling-function-calling">8.7 Tool Calling (Function Calling)</a></li>
+                <li><a href="#88-models-list">8.8 Models List</a></li>
+                <li><a href="#89-authentication">8.9 Authentication</a></li>
+                <li><a href="#810-error-responses">8.10 Error Responses</a></li>
+              </ul>
+            </li>
+            <li><a href="#chapter-9-request-parameters">Request Parameters</a>
+              <ul>
+                <li><a href="#91-sampling-parameters">9.1 Sampling Parameters</a></li>
+                <li><a href="#92-repetition-control">9.2 Repetition Control</a></li>
+                <li><a href="#93-advanced-sampling">9.3 Advanced Sampling</a></li>
+                <li><a href="#94-generation-control">9.4 Generation Control</a></li>
+                <li><a href="#95-grammar-constrained-output">9.5 Grammar Constrained Output</a></li>
+                <li><a href="#96-logprobs-token-probabilities">9.6 Logprobs (Token Probabilities)</a></li>
+                <li><a href="#97-parameter-reference">9.7 Parameter Reference</a></li>
+              </ul>
+            </li>
+            <li><a href="#chapter-10-multi-modal-models">Multi-Modal Models</a>
+              <ul>
+                <li><a href="#101-overview">10.1 Overview</a></li>
+                <li><a href="#102-vision-models">10.2 Vision Models</a></li>
+                <li><a href="#103-audio-models">10.3 Audio Models</a></li>
+                <li><a href="#104-plain-base64-format">10.4 Plain Base64 Format</a></li>
+                <li><a href="#105-configuration-for-multi-modal-models">10.5 Configuration for Multi-Modal Models</a></li>
+                <li><a href="#106-memory-requirements">10.6 Memory Requirements</a></li>
+                <li><a href="#107-limitations">10.7 Limitations</a></li>
+                <li><a href="#108-example-image-analysis">10.8 Example: Image Analysis</a></li>
+                <li><a href="#109-example-audio-transcription">10.9 Example: Audio Transcription</a></li>
+              </ul>
+            </li>
+            <li><a href="#chapter-11-security--authentication">Security & Authentication</a>
+              <ul>
+                <li><a href="#111-enabling-authentication">11.1 Enabling Authentication</a></li>
+                <li><a href="#112-using-the-admin-token">11.2 Using the Admin Token</a></li>
+                <li><a href="#113-key-management">11.3 Key Management</a></li>
+                <li><a href="#114-creating-user-tokens">11.4 Creating User Tokens</a></li>
+                <li><a href="#115-token-examples">11.5 Token Examples</a></li>
+                <li><a href="#116-using-tokens-in-api-requests">11.6 Using Tokens in API Requests</a></li>
+                <li><a href="#117-authorization-flow">11.7 Authorization Flow</a></li>
+                <li><a href="#118-rate-limiting">11.8 Rate Limiting</a></li>
+                <li><a href="#119-configuration-reference">11.9 Configuration Reference</a></li>
+                <li><a href="#1110-security-best-practices">11.10 Security Best Practices</a></li>
+              </ul>
+            </li>
+            <li><a href="#chapter-12-browser-ui-bui">Browser UI (BUI)</a>
+              <ul>
+                <li><a href="#121-accessing-the-bui">12.1 Accessing the BUI</a></li>
+                <li><a href="#122-downloading-libraries">12.2 Downloading Libraries</a></li>
+                <li><a href="#123-downloading-models">12.3 Downloading Models</a></li>
+                <li><a href="#124-managing-keys-and-tokens">12.4 Managing Keys and Tokens</a></li>
+                <li><a href="#125-other-screens">12.5 Other Screens</a></li>
+              </ul>
+            </li>
+            <li><a href="#chapter-13-client-integration">Client Integration</a>
+              <ul>
+                <li><a href="#131-openwebui">13.1 OpenWebUI</a></li>
+                <li><a href="#132-cline">13.2 Cline</a></li>
+                <li><a href="#134-python-openai-sdk">13.4 Python OpenAI SDK</a></li>
+                <li><a href="#135-curl-and-http-clients">13.5 curl and HTTP Clients</a></li>
+                <li><a href="#136-langchain">13.6 LangChain</a></li>
+              </ul>
+            </li>
+            <li><a href="#chapter-14-observability">Observability</a>
+              <ul>
+                <li><a href="#141-debug-server">14.1 Debug Server</a></li>
+                <li><a href="#142-debug-endpoints">14.2 Debug Endpoints</a></li>
+                <li><a href="#143-health-check-endpoints">14.3 Health Check Endpoints</a></li>
+                <li><a href="#144-prometheus-metrics">14.4 Prometheus Metrics</a></li>
+                <li><a href="#145-prometheus-integration">14.5 Prometheus Integration</a></li>
+                <li><a href="#146-distributed-tracing-with-tempo">14.6 Distributed Tracing with Tempo</a></li>
+                <li><a href="#147-tracing-architecture">14.7 Tracing Architecture</a></li>
+                <li><a href="#148-tempo-setup-with-docker">14.8 Tempo Setup with Docker</a></li>
+                <li><a href="#149-pprof-profiling">14.9 pprof Profiling</a></li>
+                <li><a href="#1410-statsviz-real-time-monitoring">14.10 Statsviz Real-Time Monitoring</a></li>
+                <li><a href="#1411-logging">14.11 Logging</a></li>
+                <li><a href="#1412-configuration-reference">14.12 Configuration Reference</a></li>
+              </ul>
+            </li>
+            <li><a href="#chapter-15-mcp-service">MCP Service</a>
+              <ul>
+                <li><a href="#151-architecture">15.1 Architecture</a></li>
+                <li><a href="#152-prerequisites">15.2 Prerequisites</a></li>
+                <li><a href="#153-configuration">15.3 Configuration</a></li>
+                <li><a href="#154-available-tools">15.4 Available Tools</a></li>
+                <li><a href="#155-client-configuration">15.5 Client Configuration</a></li>
+                <li><a href="#156-testing-with-curl">15.6 Testing with curl</a></li>
+              </ul>
+            </li>
+            <li><a href="#chapter-16-troubleshooting">Troubleshooting</a>
+              <ul>
+                <li><a href="#161-library-issues">16.1 Library Issues</a></li>
+                <li><a href="#162-model-loading-failures">16.2 Model Loading Failures</a></li>
+                <li><a href="#163-memory-errors">16.3 Memory Errors</a></li>
+                <li><a href="#164-request-timeouts">16.4 Request Timeouts</a></li>
+                <li><a href="#165-authentication-errors">16.5 Authentication Errors</a></li>
+                <li><a href="#166-streaming-issues">16.6 Streaming Issues</a></li>
+                <li><a href="#167-performance-issues">16.7 Performance Issues</a></li>
+                <li><a href="#168-viewing-logs">16.8 Viewing Logs</a></li>
+                <li><a href="#169-common-error-messages">16.9 Common Error Messages</a></li>
+                <li><a href="#1610-getting-help">16.10 Getting Help</a></li>
+              </ul>
+            </li>
+            <li><a href="#chapter-17-developer-guide">Developer Guide</a>
+              <ul>
+                <li><a href="#171-quick-reference">17.1 Quick Reference</a></li>
+                <li><a href="#172-build--test-commands">17.2 Build & Test Commands</a></li>
+                <li><a href="#173-developer-setup">17.3 Developer Setup</a></li>
+                <li><a href="#174-project-architecture">17.4 Project Architecture</a></li>
+                <li><a href="#175-bui-frontend-development">17.5 BUI Frontend Development</a></li>
+                <li><a href="#176-code-style-guidelines">17.6 Code Style Guidelines</a></li>
+                <li><a href="#177-sdk-internals">17.7 SDK Internals</a></li>
+                <li><a href="#178-api-handler-notes">17.8 API Handler Notes</a></li>
+                <li><a href="#179-goroutine-budget">17.9 Goroutine Budget</a></li>
+                <li><a href="#1710-request-tracing-spans">17.10 Request Tracing Spans</a></li>
+                <li><a href="#1711-reference-threads">17.11 Reference Threads</a></li>
+              </ul>
+            </li>
           </ol>
           <hr />
           <h2 id="chapter-1:-introduction">Chapter 1: Introduction</h2>
@@ -911,6 +1110,10 @@ Step 4 — Total VRAM:
     n_ubatch: 2048 # High for image/audio token batches
     n_seq_max: 2 # Process up to 2 requests concurrently`}</code></pre>
           <p><strong>Mixture of Experts (MoE) Models</strong></p>
+          <p>MoE models like <code>Qwen3-Coder-30B-A3B</code> have many total parameters but only activate a small subset per token — the "A3B" means 30B total, 3B active. This saves compute on GPU clusters but has important implications for Apple Silicon and other memory-bandwidth-bound systems.</p>
+          <p>On Apple Silicon (unified memory), inference speed is determined by how many <strong>bytes must be read from memory per generated token</strong>, not compute. MoE models create <strong>scattered memory access patterns</strong> — the routing layer must select which experts to activate, and those expert weights are spread across memory. This scattered access underutilizes memory bandwidth compared to the sequential access pattern of dense models.</p>
+          <p>A dense model at Q4 quantization may outperform a smaller-active MoE model at Q8 quantization on Apple Silicon, even though the MoE activates fewer parameters. The dense model reads weights sequentially (ideal for bandwidth saturation) at 0.5 bytes per parameter, while the MoE reads scattered expert weights at 1 byte per parameter. The total bytes moved per token can be comparable — but the dense model's sequential pattern is more efficient.</p>
+          <p>MoE also tends to produce lower quality per-token than a dense model with the same number of active parameters, because only a fraction of the model's knowledge is engaged per token. A dense model at Q4 with all parameters active has far more model capacity per token than an MoE with 3B active, even at Q8 precision.</p>
           <p>MoE models can be sensitive to aggressive KV cache quantization. If you notice quality degradation, try <code>f16</code> cache types.</p>
           <p>Use row-based tensor parallelism for multi-GPU setups:</p>
           <pre className="code-block"><code className="language-yaml">{`models:
@@ -918,6 +1121,27 @@ Step 4 — Total VRAM:
     split_mode: row # Best for MoE architecture
     cache_type_k: q8_0 # Be cautious with aggressive quantization
     cache_type_v: q8_0`}</code></pre>
+          <p><strong>Hybrid Models (Attention + Recurrent)</strong></p>
+          <p>Hybrid models like Qwen3-Coder-Next mix traditional Attention layers with recurrent layers (DeltaNet or SSM/Mamba). Unlike MoE models, hybrid models are dense — every parameter participates in every token. Kronk detects hybrid models automatically at load time.</p>
+          <p>Hybrid models have specific constraints:</p>
+          <ul>
+            <li><strong>KV cache must be f16</strong> — quantized cache types (<code>q8_0</code>) are incompatible</li>
+          </ul>
+          <p>with the recurrent layers. This doubles KV cache memory compared to models that support <code>q8_0</code>.</p>
+          <ul>
+            <li><strong>Flash attention is disabled</strong> — Kronk automatically disables flash</li>
+          </ul>
+          <p>attention for hybrid models.</p>
+          <ul>
+            <li><strong>IMC uses snapshot/restore</strong> — see <a href="#imc-hybrid">IMC Hybrid</a> for details</li>
+          </ul>
+          <p>on how caching works with recurrent state.</p>
+          <p>When choosing between a hybrid model and an MoE model for Apple Silicon, consider: the hybrid model's sequential memory access pattern and dense activation give it both better quality per token and better bandwidth utilization. The trade-off is total model size — hybrid models use all parameters, so you need enough unified memory to hold them plus the larger f16 KV cache.</p>
+          <pre className="code-block"><code className="language-yaml">{`models:
+  Qwen3-Coder-Next-UD-Q4_K_XL:
+    cache_type_k: f16   # Required for hybrid models
+    cache_type_v: f16   # Required for hybrid models
+    incremental_cache: true`}</code></pre>
           <p><strong>Embedding Models</strong></p>
           <p>Embedding models process complete inputs in a single pass, so larger <code>n_batch</code> values improve throughput.</p>
           <p>Optimize batch size for your typical input lengths:</p>
@@ -1481,11 +1705,67 @@ IMC (Incremental Message Cache):
           </ul>
           <h3 id="53-incremental-message-cache-imc">5.3 Incremental Message Cache (IMC)</h3>
           <p>Incremental Message Cache is designed for agentic workflows where conversations grow monotonically. It caches all messages except the last one and extends the cache incrementally on each turn.</p>
-          <p><strong>Works best with:</strong> Models with consistent templates where the same messages always produce identical templated output regardless of conversation length. Models like QWEN and Llama have consistent templates and get the fastest path (hash-based matching). Models like GPT-OSS and GLM with non-deterministic templates are also supported — IMC automatically falls back to token-level partial prefix matching, salvaging as much of the KV cache as possible instead of rebuilding from scratch (see <a href="#token-level-partial-prefix-matching">Token-Level Partial Prefix Matching</a> below).</p>
+          <p>IMC has four operating modes, automatically selected based on the model's architecture and template behavior. You don't choose a mode — Kronk detects the model type at load time and uses the right mode automatically.</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Mode</th>
+                <th>Model Type</th>
+                <th>Matching Strategy</th>
+                <th>Cache Cleanup</th>
+                <th>Example Models</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>IMC Deterministic</td>
+                <td>Dense, consistent template</td>
+                <td>Hash-based</td>
+                <td>Partial range delete</td>
+                <td>QWEN, Llama</td>
+              </tr>
+              <tr>
+                <td>IMC Non-Deterministic</td>
+                <td>Dense, variable template</td>
+                <td>Token prefix fallback</td>
+                <td>Partial range delete</td>
+                <td>GPT-OSS, GLM</td>
+              </tr>
+              <tr>
+                <td>IMC MoE</td>
+                <td>Mixture of Experts</td>
+                <td>Hash-based</td>
+                <td>Partial range delete</td>
+                <td>Qwen3-Coder-30B-A3B, Mixtral</td>
+              </tr>
+              <tr>
+                <td>IMC Hybrid</td>
+                <td>Attention + Recurrent layers</td>
+                <td>Hash-based</td>
+                <td>Snapshot/Restore</td>
+                <td>Qwen3-Coder-Next</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><strong>Why four modes?</strong> All four modes share the same core algorithm — cache all messages except the last, extend incrementally, route sub-agents to slots via hash matching. The differences exist because model architectures impose different constraints on how the KV cache can be managed:</p>
+          <ul>
+            <li><strong>Deterministic</strong> is the fastest path — hash matching finds the right slot</li>
+          </ul>
+          <p>instantly and partial range deletes trim generated tokens between requests.</p>
+          <ul>
+            <li><strong>Non-Deterministic</strong> exists because some model templates produce different</li>
+          </ul>
+          <p>token sequences for the same messages. Hash matching fails, so IMC falls back to token-level comparison to salvage as much of the cache as possible.</p>
+          <ul>
+            <li><strong>MoE</strong> uses the same algorithm as Deterministic, but MoE models have</li>
+          </ul>
+          <p>distinct performance characteristics (scattered memory access, expert routing overhead) that affect configuration and throughput expectations.</p>
+          <ul>
+            <li><strong>Hybrid</strong> exists because models with recurrent layers cannot use partial</li>
+          </ul>
+          <p>range deletes — a partial delete corrupts the hidden recurrent state. These models use snapshot/restore to preserve the full sequence state between requests.</p>
           <p><strong>Best for:</strong></p>
           <ul>
-            <li>Models with consistent templates (QWEN, Llama) — fastest hash-based path</li>
-            <li>Models with non-deterministic templates (GPT-OSS, GLM) — token prefix fallback</li>
             <li>AI coding agents</li>
             <li>Long-running agent conversations</li>
             <li>Any workflow where messages are appended, not edited</li>
@@ -1514,7 +1794,7 @@ Prefill:  [user2 + gen_prompt]`}</code></pre>
 Cache:    [system, user, assistant, user2, assistant2]  ← Extend
 Prefill:  [user3 + gen_prompt]`}</code></pre>
           <p><strong>Slot Selection Algorithm:</strong></p>
-          <p>When a request arrives, IMC scans all slots to find the best match:</p>
+          <p>When a request arrives, IMC scans all slots to find the best match. Steps 1-2 apply to all modes. Step 3 is the Non-Deterministic fallback path. Step 4 is the universal last resort.</p>
           <ol>
             <li><strong>Scan all slots</strong> — For each slot:
               <ul>
@@ -1531,18 +1811,35 @@ Prefill:  [user3 + gen_prompt]`}</code></pre>
           </ol>
           <p>messages). If the request has new messages to cache, extend the slot's cache. If the messages are identical, it's a pure cache hit.</p>
           <ol>
-            <li><strong>No hash match — token prefix fallback</strong> — Tokenize the incoming messages</li>
+            <li><strong>No hash match — token prefix fallback (Non-Deterministic mode)</strong> —</li>
           </ol>
-          <p>and compare the resulting token sequence element-by-element against each non-empty slot's stored <code>cachedTokens</code>. Pick the slot with the longest common prefix that meets <code>cache_min_tokens</code>. Trim the KV cache from the divergence point (<code>MemorySeqRm(seq, trimPos, -1)</code>) and decode only the new tokens from there forward. This handles non-deterministic templates (e.g., GPT-OSS) that produce different token sequences for identical messages across requests — salvaging 70-80% of the cache instead of rebuilding from scratch.</p>
+          <p>Tokenize the incoming messages and compare the resulting token sequence element-by-element against each non-empty slot's stored <code>cachedTokens</code>. Pick the slot with the longest common prefix that meets <code>cache_min_tokens</code>. Trim the KV cache from the divergence point and decode only the new tokens from there forward. See <a href="#imc-non-deterministic">IMC Non-Deterministic</a> for details.</p>
           <ol>
             <li><strong>No match at all</strong> — Pick an empty slot if one exists, otherwise evict</li>
           </ol>
           <p>the least-recently-used (LRU) slot and rebuild from scratch.</p>
           <p><strong>Concurrent Build Protection:</strong></p>
           <p>When two requests arrive simultaneously and both need to build a cache from scratch, a race condition could cause both to pick the same empty slot. IMC prevents this with a pending flag: when a slot begins a deferred cache build, it is marked pending. Concurrent scanners skip pending slots, so the second request picks a different slot. The pending flag is cleared after the cache decode completes (or on error).</p>
-          <p><strong>Token-Level Partial Prefix Matching:</strong></p>
-          <p>Some model templates are non-deterministic — they produce different token sequences for identical messages across requests. GPT-OSS, for example, injects tool call formatting that varies between template invocations. This causes message hash mismatches even though the semantic content is identical, which would normally force a full cache rebuild from scratch.</p>
-          <p>IMC handles this automatically. When no hash match is found during the slot scan, IMC falls back to comparing the actual cached token arrays against the incoming request's tokens. It tokenizes the incoming messages, then compares them element-by-element against each non-empty slot's stored token sequence to find the longest common prefix.</p>
+          <h4 id="imc-deterministic">IMC Deterministic</h4>
+          <p>The default and fastest IMC mode. Used automatically for dense models with consistent templates — models where the same messages always produce identical token sequences regardless of conversation length.</p>
+          <p><strong>Why this mode exists:</strong> Most models (QWEN, Llama, and similar dense architectures) have deterministic templates. When the template is consistent, a simple hash of the message prefix is enough to identify a matching slot. This avoids tokenization overhead entirely.</p>
+          <p><strong>When it's used:</strong> Automatically when the model is dense (not MoE, not hybrid) and the template produces consistent token sequences. No configuration needed — this is the default path when <code>incremental_cache: true</code>.</p>
+          <p><strong>How it works:</strong></p>
+          <ol>
+            <li>Hash the incoming message prefix</li>
+            <li>Compare against each slot's stored hash</li>
+            <li>On match: extend the cache with new messages, or return a pure cache hit</li>
+            <li>Between requests: trim generated tokens via partial range delete</li>
+          </ol>
+          <p>(<code>MemorySeqRm(seq, trimPos, -1)</code>)</p>
+          <p>The partial range delete removes only the tokens generated during the previous response, leaving the cached conversation prefix intact for the next request.</p>
+          <p><strong>Models:</strong> QWEN, Llama, and most standard dense transformer architectures.</p>
+          <h4 id="imc-non-deterministic">IMC Non-Deterministic</h4>
+          <p>A fallback mode that activates automatically when hash matching fails due to template non-determinism. Some model templates produce different token sequences for identical messages across requests — even though the semantic content is the same.</p>
+          <p><strong>Why this mode exists:</strong> GPT-OSS, for example, injects tool call formatting that varies between template invocations. This causes message hash mismatches even though the conversation hasn't changed, which would normally force a full cache rebuild from scratch. The Non-Deterministic mode salvages 70-80% of the cached tokens instead.</p>
+          <p><strong>When it's used:</strong> Automatically when no hash match is found during the slot scan. IMC falls back to comparing the actual cached token arrays against the incoming request's tokens. Only candidates with compatible message counts are considered — the request must have at least as many messages as the slot cached.</p>
+          <p><strong>How it works — Token-Level Partial Prefix Matching:</strong></p>
+          <p>When no hash match is found, IMC tokenizes the incoming messages and compares them element-by-element against each non-empty slot's stored token sequence to find the longest common prefix.</p>
           <pre className="code-block"><code>{`Cached tokens:   [T1, T2, T3, T4, T5, T6, T7, T8]
 Incoming tokens: [T1, T2, T3, T4, T5, T9, T10, T11, T12]
                                        ↑
@@ -1560,8 +1857,8 @@ New decode:    7 tokens (T5-T12, from divergence point forward)`}</code></pre>
           </ol>
           <p>Once the partial rebuild completes, subsequent requests in the same conversation use normal hash-based extending. The token prefix path is only triggered at conversation boundaries — when the template non-determinism causes the initial mismatch.</p>
           <p>Real-world testing with GPT-OSS showed 77-80% cache salvage rates when switching conversations. Instead of decoding ~8400 tokens from scratch, the system kept ~6800 cached and only decoded ~1600.</p>
-          <p><strong>Debugging Token Prefix Matching:</strong></p>
-          <p>Look for these log messages to observe the token prefix path:</p>
+          <p><strong>Models:</strong> GPT-OSS, GLM, and any model whose template produces variable token sequences for identical messages.</p>
+          <p><strong>Debugging Non-Deterministic IMC:</strong></p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -1593,6 +1890,108 @@ New decode:    7 tokens (T5-T12, from divergence point forward)`}</code></pre>
               <tr>
                 <td><code>no usable token prefix match</code></td>
                 <td>All prefixes below <code>cache_min_tokens</code>, falling back to empty/LRU slot</td>
+              </tr>
+            </tbody>
+          </table>
+          <h4 id="imc-moe">IMC MoE</h4>
+          <p>IMC for Mixture of Experts models. Uses the same hash-based algorithm as IMC Deterministic — the caching logic is identical. The distinction is that MoE models have different performance characteristics that affect configuration choices and throughput expectations.</p>
+          <p><strong>Why this mode exists:</strong> MoE models route tokens through specialized "expert" sub-networks. On Apple Silicon (unified memory), inference speed is determined by memory bandwidth, not compute. MoE models create scattered memory access patterns — the routing layer selects experts whose weights are spread across memory. This scattered access underutilizes memory bandwidth compared to the sequential access pattern of dense models. These performance characteristics affect how you configure IMC-related settings like cache types and split mode.</p>
+          <p><strong>When it's used:</strong> Automatically when the model uses a Mixture of Experts architecture (e.g., models with "A3B" in their name indicating 30B total parameters, 3B active per token).</p>
+          <p><strong>How it works:</strong> Identical to IMC Deterministic — hash-based prefix matching, incremental cache extension, partial range deletes for cache cleanup between requests. The core IMC algorithm doesn't change for MoE.</p>
+          <p>What changes is the performance profile and configuration:</p>
+          <ul>
+            <li>Lower tokens/sec than a comparably-sized dense model at the same</li>
+          </ul>
+          <p>quantization on Apple Silicon due to scattered memory access</p>
+          <ul>
+            <li>MoE can be sensitive to aggressive KV cache quantization — use <code>f16</code> cache</li>
+          </ul>
+          <p>types if quality degrades with <code>q8_0</code></p>
+          <ul>
+            <li>Use <code>split_mode: row</code> for multi-GPU setups to enable expert-parallel</li>
+          </ul>
+          <p>execution</p>
+          <p><strong>Configuration:</strong></p>
+          <pre className="code-block"><code className="language-yaml">{`models:
+  Qwen3-Coder-30B-A3B-Q8_0:
+    incremental_cache: true
+    split_mode: row       # Best for MoE architecture
+    cache_type_k: f16     # Safer for MoE routing accuracy
+    cache_type_v: f16`}</code></pre>
+          <p><strong>Models:</strong> Qwen3-Coder-30B-A3B, Mixtral, DeepSeek-MoE.</p>
+          <h4 id="imc-hybrid">IMC Hybrid</h4>
+          <p>IMC for models that mix traditional Attention layers with recurrent layers (DeltaNet or SSM/Mamba). Kronk calls these <strong>hybrid models</strong>. Examples include Qwen3-Coder-Next (<code>qwen3next</code> architecture), where every 4th block is full attention and the rest are DeltaNet. Kronk detects hybrid models automatically at load time via <code>llama.ModelIsHybrid</code> — no user configuration is required.</p>
+          <p><strong>Why this mode exists:</strong></p>
+          <p>Standard Attention layers store positional KV (Key-Value) pairs. Recurrent layers store a <strong>hidden recurrent state</strong> instead. The standard IMC algorithm trims generated tokens after each request using a partial range delete (<code>MemorySeqRm(seq, trimPos, -1)</code>). This works for attention-only models because removing KV entries at specific positions leaves earlier positions intact. But for hybrid models, a partial range delete <strong>corrupts the recurrent hidden state</strong> — the DeltaNet/SSM state cannot be "rewound" to an earlier position. The result: the first request in a conversation succeeds, but every follow-up request fails with a decode error because the hidden state is left in an inconsistent position.</p>
+          <p><strong>When it's used:</strong> Automatically when <code>llama.ModelIsHybrid</code> returns true at model load time. No configuration needed beyond <code>incremental_cache: true</code>.</p>
+          <p><strong>How it works — Snapshot/Restore:</strong></p>
+          <p>Instead of trimming the cache in-place, Kronk uses a snapshot/restore approach for hybrid models. The semantics are identical to standard IMC — the slot selection algorithm, hash matching, token prefix fallback, and multi-slot architecture all work the same way. The difference is how the KV + recurrent state is managed between requests.</p>
+          <p><strong>Snapshot (after cache build, before suffix decode):</strong></p>
+          <p>After the IMC cache is built or extended but before the current request's suffix tokens are decoded, the server captures the full sequence state (KV cache + recurrent hidden state) into a byte buffer in RAM using <code>StateSeqGetData</code>. This snapshot represents the clean state at the boundary of the cached message prefix.</p>
+          <pre className="code-block"><code>{`Request arrives → IMC extends cache → Snapshot state → Decode suffix → Generate`}</code></pre>
+          <p><strong>Restore (after request completes):</strong></p>
+          <p>When the request finishes, instead of trimming generated tokens with a partial range delete, the server performs a full sequence clear (<code>MemorySeqRm(seq, -1, -1)</code>) and restores the snapshot using <code>StateSeqSetData</code>. This returns the cache to the exact state it was in after the prefix was cached, with the recurrent hidden state perfectly preserved.</p>
+          <pre className="code-block"><code>{`Standard IMC:  Trim generated tokens (partial delete)
+Hybrid IMC:    Full clear → Restore snapshot (memory copy)`}</code></pre>
+          <p><strong>Partial prefix rebuilds:</strong></p>
+          <p>When a request matches a partial token prefix (the token prefix fallback path), standard IMC trims from the divergence point. Hybrid models cannot do partial trims, so the server performs a full sequence clear and re-decodes the entire cached token sequence from position 0. This is more expensive than a partial trim but guarantees the recurrent state is built correctly.</p>
+          <pre className="code-block"><code>{`Standard IMC:  Trim from divergence point, decode new tokens only
+Hybrid IMC:    Full clear, re-decode all cached tokens from position 0`}</code></pre>
+          <p><strong>Performance:</strong></p>
+          <p>The snapshot/restore approach is fast. Capturing and restoring state is a memory copy operation, comparable in cost to SPC's <code>StateSeqSetData</code> restore (typically 10-30ms depending on conversation size). The key advantage over SPC is that the snapshot includes the entire conversation's cached state, so only the most recent message needs to be decoded — not the full history. For long agentic conversations this is significantly faster.</p>
+          <p><strong>Constraints:</strong></p>
+          <ul>
+            <li>Hybrid models require the KV cache to use <code>f16</code> — quantized cache types</li>
+          </ul>
+          <p>(e.g., <code>q8_0</code>) are incompatible with the recurrent layers</p>
+          <ul>
+            <li>Flash attention is automatically disabled for hybrid models</li>
+          </ul>
+          <p><strong>Configuration:</strong></p>
+          <pre className="code-block"><code className="language-yaml">{`models:
+  Qwen3-Coder-Next-UD-Q4_K_XL:
+    incremental_cache: true
+    cache_type_k: f16   # Required for hybrid models
+    cache_type_v: f16   # Required for hybrid models`}</code></pre>
+          <p><strong>Guardrails:</strong></p>
+          <p>If a snapshot restore fails, Kronk clears the slot's IMC metadata (<code>cachedMsgsHash</code>, <code>totalTokensCached</code>, <code>lastMsgIdxCached</code>) so the slot is not reused with a corrupted sequence. The next request to that slot triggers a full cache rebuild from scratch.</p>
+          <p><strong>Models:</strong> Qwen3-Coder-Next and any model where <code>llama.ModelIsHybrid</code> returns true.</p>
+          <p><strong>Debugging Hybrid IMC:</strong></p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Log Message</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>imc-hybrid-snapshot</code></td>
+                <td>State captured after cache build (shows snapshot_bytes)</td>
+              </tr>
+              <tr>
+                <td><code>imc-hybrid-snapshot-failed</code></td>
+                <td>StateSeqGetData returned 0 bytes</td>
+              </tr>
+              <tr>
+                <td><code>imc-hybrid-restore</code></td>
+                <td>Snapshot restored after request (shows restored_bytes)</td>
+              </tr>
+              <tr>
+                <td><code>imc-hybrid-restore-failed</code></td>
+                <td>StateSeqSetData failed, slot metadata cleared</td>
+              </tr>
+              <tr>
+                <td><code>imc-hybrid-no-snapshot</code></td>
+                <td>No snapshot available, full clear + metadata invalidation</td>
+              </tr>
+              <tr>
+                <td><code>imc-hybrid-rebuild</code></td>
+                <td>Partial prefix: full clear + re-decode from position 0</td>
+              </tr>
+              <tr>
+                <td><code>imc-hybrid-trim-rebuild</code></td>
+                <td>Trim-only prefix: full clear + re-decode truncated sequence</td>
               </tr>
             </tbody>
           </table>

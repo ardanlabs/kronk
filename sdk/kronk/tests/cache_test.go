@@ -106,7 +106,7 @@ func Test_CacheSPC(t *testing.T) {
 	})
 }
 
-func Test_CacheIMC(t *testing.T) {
+func Test_CacheIMCDeterministic(t *testing.T) {
 	if os.Getenv("GITHUB_ACTIONS") == "true" {
 		t.Skip("Skipping cache test in GitHub Actions (requires more resources)")
 	}
@@ -259,7 +259,7 @@ func Test_CacheIMC(t *testing.T) {
 	})
 }
 
-func Test_CacheIMCMultiSlot(t *testing.T) {
+func Test_CacheIMCDeterministicMultiSlot(t *testing.T) {
 	if os.Getenv("GITHUB_ACTIONS") == "true" {
 		t.Skip("Skipping cache test in GitHub Actions (requires more resources)")
 	}
@@ -372,7 +372,7 @@ func Test_CacheIMCMultiSlot(t *testing.T) {
 	})
 }
 
-func Test_CacheIMCNonDeterministicTemplate(t *testing.T) {
+func Test_CacheIMCNonDeterministic(t *testing.T) {
 	if os.Getenv("GITHUB_ACTIONS") == "true" {
 		t.Skip("Skipping cache test in GitHub Actions (requires more resources)")
 	}
@@ -472,6 +472,320 @@ func Test_CacheIMCNonDeterministicTemplate(t *testing.T) {
 			prompt2 = resp2.Usage.PromptTokens
 		}
 		t.Logf("turn 2: prompt_tokens=%d content=%q", prompt2, content2)
+	})
+}
+
+func Test_CacheIMCMoE(t *testing.T) {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("Skipping cache test in GitHub Actions (requires more resources)")
+	}
+
+	if len(mpMoEChat.ModelFiles) == 0 {
+		t.Skip("model Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL not downloaded")
+	}
+
+	cfg := model.Config{
+		ModelFiles:       mpMoEChat.ModelFiles,
+		ContextWindow:    8192,
+		NBatch:           2048,
+		NUBatch:          512,
+		CacheTypeK:       model.GGMLTypeQ8_0,
+		CacheTypeV:       model.GGMLTypeQ8_0,
+		NSeqMax:          1,
+		IncrementalCache: true,
+	}
+
+	withModel(t, cfg, func(t *testing.T, krn *kronk.Kronk) {
+		ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+		defer cancel()
+
+		systemPrompt := "You are a helpful assistant. Follow instructions precisely."
+
+		// Turn 1: system + user
+		d1 := model.D{
+			"messages": []model.D{
+				{
+					"role":    "system",
+					"content": systemPrompt,
+				},
+				{
+					"role":    "user",
+					"content": "Echo back the word: North",
+				},
+			},
+			"max_tokens": 256,
+		}
+
+		ch1, err := krn.ChatStreaming(ctx, d1)
+		if err != nil {
+			t.Fatalf("turn 1: chat streaming: %v", err)
+		}
+
+		resp1, content1, err := drainChat(ctx, ch1)
+		if err != nil {
+			t.Fatalf("turn 1: %v", err)
+		}
+
+		if content1 == "" {
+			t.Fatal("turn 1: expected non-empty content")
+		}
+
+		prompt1 := 0
+		if resp1.Usage != nil {
+			prompt1 = resp1.Usage.PromptTokens
+		}
+		t.Logf("turn 1: prompt_tokens=%d content=%q", prompt1, content1)
+
+		// Turn 2: system + user + assistant(turn 1) + user2
+		d2 := model.D{
+			"messages": []model.D{
+				{
+					"role":    "system",
+					"content": systemPrompt,
+				},
+				{
+					"role":    "user",
+					"content": "Echo back the word: North",
+				},
+				{
+					"role":    "assistant",
+					"content": content1,
+				},
+				{
+					"role":    "user",
+					"content": "Echo back the word: South",
+				},
+			},
+			"max_tokens": 256,
+		}
+
+		ch2, err := krn.ChatStreaming(ctx, d2)
+		if err != nil {
+			t.Fatalf("turn 2: chat streaming: %v", err)
+		}
+
+		resp2, content2, err := drainChat(ctx, ch2)
+		if err != nil {
+			t.Fatalf("turn 2: %v", err)
+		}
+
+		if content2 == "" {
+			t.Fatal("turn 2: expected non-empty content")
+		}
+
+		prompt2 := 0
+		if resp2.Usage != nil {
+			prompt2 = resp2.Usage.PromptTokens
+		}
+		t.Logf("turn 2: prompt_tokens=%d content=%q", prompt2, content2)
+
+		// Turn 3: system + user + assistant(turn 1) + user2 + assistant(turn 2) + user3
+		d3 := model.D{
+			"messages": []model.D{
+				{
+					"role":    "system",
+					"content": systemPrompt,
+				},
+				{
+					"role":    "user",
+					"content": "Echo back the word: North",
+				},
+				{
+					"role":    "assistant",
+					"content": content1,
+				},
+				{
+					"role":    "user",
+					"content": "Echo back the word: South",
+				},
+				{
+					"role":    "assistant",
+					"content": content2,
+				},
+				{
+					"role":    "user",
+					"content": "Echo back the word: East",
+				},
+			},
+			"max_tokens": 256,
+		}
+
+		ch3, err := krn.ChatStreaming(ctx, d3)
+		if err != nil {
+			t.Fatalf("turn 3: chat streaming: %v", err)
+		}
+
+		resp3, content3, err := drainChat(ctx, ch3)
+		if err != nil {
+			t.Fatalf("turn 3: %v", err)
+		}
+
+		if content3 == "" {
+			t.Fatal("turn 3: expected non-empty content")
+		}
+
+		prompt3 := 0
+		if resp3.Usage != nil {
+			prompt3 = resp3.Usage.PromptTokens
+		}
+		t.Logf("turn 3: prompt_tokens=%d content=%q", prompt3, content3)
+	})
+}
+
+func Test_CacheIMCHybrid(t *testing.T) {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("Skipping cache test in GitHub Actions (requires more resources)")
+	}
+
+	if len(mpHybridChat.ModelFiles) == 0 {
+		t.Skip("model Qwen3-Coder-Next-UD-Q4_K_XL not downloaded")
+	}
+
+	cfg := model.Config{
+		ModelFiles:       mpHybridChat.ModelFiles,
+		ContextWindow:    8192,
+		NBatch:           2048,
+		NUBatch:          512,
+		CacheTypeK:       model.GGMLTypeF16,
+		CacheTypeV:       model.GGMLTypeF16,
+		NSeqMax:          1,
+		IncrementalCache: true,
+	}
+
+	withModel(t, cfg, func(t *testing.T, krn *kronk.Kronk) {
+		ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+		defer cancel()
+
+		systemPrompt := "You are a helpful assistant. Follow instructions precisely."
+
+		// Turn 1: system + user
+		d1 := model.D{
+			"messages": []model.D{
+				{
+					"role":    "system",
+					"content": systemPrompt,
+				},
+				{
+					"role":    "user",
+					"content": "Echo back the word: Red",
+				},
+			},
+			"max_tokens": 256,
+		}
+
+		ch1, err := krn.ChatStreaming(ctx, d1)
+		if err != nil {
+			t.Fatalf("turn 1: chat streaming: %v", err)
+		}
+
+		resp1, content1, err := drainChat(ctx, ch1)
+		if err != nil {
+			t.Fatalf("turn 1: %v", err)
+		}
+
+		if content1 == "" {
+			t.Fatal("turn 1: expected non-empty content")
+		}
+
+		prompt1 := 0
+		if resp1.Usage != nil {
+			prompt1 = resp1.Usage.PromptTokens
+		}
+		t.Logf("turn 1: prompt_tokens=%d content=%q", prompt1, content1)
+
+		// Turn 2: system + user + assistant(turn 1) + user2
+		d2 := model.D{
+			"messages": []model.D{
+				{
+					"role":    "system",
+					"content": systemPrompt,
+				},
+				{
+					"role":    "user",
+					"content": "Echo back the word: Red",
+				},
+				{
+					"role":    "assistant",
+					"content": content1,
+				},
+				{
+					"role":    "user",
+					"content": "Echo back the word: Blue",
+				},
+			},
+			"max_tokens": 256,
+		}
+
+		ch2, err := krn.ChatStreaming(ctx, d2)
+		if err != nil {
+			t.Fatalf("turn 2: chat streaming: %v", err)
+		}
+
+		resp2, content2, err := drainChat(ctx, ch2)
+		if err != nil {
+			t.Fatalf("turn 2: %v", err)
+		}
+
+		if content2 == "" {
+			t.Fatal("turn 2: expected non-empty content")
+		}
+
+		prompt2 := 0
+		if resp2.Usage != nil {
+			prompt2 = resp2.Usage.PromptTokens
+		}
+		t.Logf("turn 2: prompt_tokens=%d content=%q", prompt2, content2)
+
+		// Turn 3: system + user + assistant(turn 1) + user2 + assistant(turn 2) + user3
+		d3 := model.D{
+			"messages": []model.D{
+				{
+					"role":    "system",
+					"content": systemPrompt,
+				},
+				{
+					"role":    "user",
+					"content": "Echo back the word: Red",
+				},
+				{
+					"role":    "assistant",
+					"content": content1,
+				},
+				{
+					"role":    "user",
+					"content": "Echo back the word: Blue",
+				},
+				{
+					"role":    "assistant",
+					"content": content2,
+				},
+				{
+					"role":    "user",
+					"content": "Echo back the word: Green",
+				},
+			},
+			"max_tokens": 256,
+		}
+
+		ch3, err := krn.ChatStreaming(ctx, d3)
+		if err != nil {
+			t.Fatalf("turn 3: chat streaming: %v", err)
+		}
+
+		resp3, content3, err := drainChat(ctx, ch3)
+		if err != nil {
+			t.Fatalf("turn 3: %v", err)
+		}
+
+		if content3 == "" {
+			t.Fatal("turn 3: expected non-empty content")
+		}
+
+		prompt3 := 0
+		if resp3.Usage != nil {
+			prompt3 = resp3.Usage.PromptTokens
+		}
+		t.Logf("turn 3: prompt_tokens=%d content=%q", prompt3, content3)
 	})
 }
 

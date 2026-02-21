@@ -142,9 +142,9 @@ type slot struct {
 	specBaseBatch      int32         // Batch index where speculative tokens start
 
 	// -------------------------------------------------------------------------
-	// Hybrid Model IMC State
+	// IMC Hybrid State
 
-	imcSavedState []byte // Snapshot of KV+recurrent state for hybrid model IMC restore
+	imcSavedState []byte // Snapshot of KV+recurrent state for IMC Hybrid restore
 
 	// -------------------------------------------------------------------------
 	// Metrics
@@ -188,7 +188,7 @@ func (s *slot) reset() {
 	s.specDraftProbs = nil
 	s.specBasePast = 0
 	s.specBaseBatch = 0
-	s.imcSavedState = nil
+	s.imcSavedState = s.imcSavedState[:0]
 	s.grammarSampler = nil
 	s.prefillStart = time.Time{}
 	s.prefillSpan = nil

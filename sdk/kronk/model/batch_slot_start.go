@@ -126,9 +126,9 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 					"tokens", len(job.imcNewCacheTokens))
 
 			case job.imcTrimPos > 0:
-				// Partial prefix rebuild: trim divergent suffix from KV cache,
-				// keeping the common prefix, then decode new tokens from the
-				// trim point forward.
+				// Non-Deterministic mode: partial prefix rebuild. Trim the
+				// divergent suffix from KV cache, keeping the common prefix,
+				// then decode new tokens from the trim point forward.
 				if job.imcTrimPos > cacheIdx {
 					e.model.cacheMu.Lock()
 					if s.id < len(e.model.imcSlots) {
@@ -141,9 +141,9 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 					return
 				}
 
-				// Hybrid models: partial MemorySeqRm corrupts recurrent state.
-				// Use full clear and decode the full cached token sequence
-				// from scratch (imcNewCachedTokens, not imcNewCacheTokens).
+				// IMC Hybrid: partial MemorySeqRm corrupts recurrent state.
+				// Use full clear and re-decode the full cached token sequence
+				// from position 0 (imcNewCachedTokens, not imcNewCacheTokens).
 				if e.model.modelInfo.IsHybridModel {
 					e.model.log(job.ctx, "start-slot", "status", "imc-hybrid-rebuild", "slot", s.id, "seq", s.seqID,
 						"cached_tokens", cacheIdx, "trim_pos", job.imcTrimPos,
@@ -307,8 +307,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 				return
 			}
 
-			// Hybrid models: partial MemorySeqRm corrupts recurrent state.
-			// Clear and re-decode all cached tokens from scratch.
+			// IMC Hybrid: partial MemorySeqRm corrupts recurrent state.
+			// Clear and re-decode all cached tokens from position 0.
 			if e.model.modelInfo.IsHybridModel {
 				e.model.log(job.ctx, "start-slot", "status", "imc-hybrid-trim-rebuild", "slot", s.id, "seq", s.seqID,
 					"cached_tokens", cacheIdx, "trim_pos", job.imcTrimPos,
@@ -411,19 +411,23 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 
 	s.nPast = cacheIdx
 
-	// Hybrid models: snapshot the full sequence state (KV + recurrent) after
-	// IMC cache is populated and before suffix tokens are decoded. This
-	// snapshot is restored in finishSlot instead of using partial MemorySeqRm
-	// which corrupts recurrent state (DeltaNet/SSM layers).
+	// IMC Hybrid: snapshot the full sequence state (KV + recurrent) after
+	// cache is populated and before suffix tokens are decoded. This snapshot
+	// is restored in finishSlot instead of using partial MemorySeqRm which
+	// corrupts recurrent state (DeltaNet/SSM layers).
 	if e.model.modelInfo.IsHybridModel && e.model.cfg.IncrementalCache && job.imcCacheHit && cacheIdx > 0 {
 		e.model.decodeMu.Lock()
 		kvSize := llama.StateSeqGetSize(e.model.lctx, s.seqID)
-		state := make([]byte, kvSize)
-		nExtracted := llama.StateSeqGetData(e.model.lctx, state, s.seqID)
+		if cap(s.imcSavedState) >= int(kvSize) {
+			s.imcSavedState = s.imcSavedState[:kvSize]
+		} else {
+			s.imcSavedState = make([]byte, kvSize)
+		}
+		nExtracted := llama.StateSeqGetData(e.model.lctx, s.imcSavedState, s.seqID)
 		e.model.decodeMu.Unlock()
 
 		if nExtracted > 0 {
-			s.imcSavedState = state[:nExtracted]
+			s.imcSavedState = s.imcSavedState[:nExtracted]
 			e.model.log(job.ctx, "start-slot", "status", "imc-hybrid-snapshot",
 				"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx,
 				"snapshot_bytes", nExtracted, "kv_alloc", kvSize)
