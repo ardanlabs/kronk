@@ -35,17 +35,20 @@ func (a *App) Shutdown(ctx context.Context) {
 		return
 	}
 
+	shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
 	shutdownComplete := make(chan struct{})
 
 	go func() {
-		a.httpServer.Shutdown(ctx)
+		a.httpServer.Shutdown(shutdownCtx)
 		close(shutdownComplete)
 	}()
 
 	select {
 	case <-shutdownComplete:
 		a.log.Info(ctx, "shutdown", "status", "mcp server stopped gracefully")
-	case <-ctx.Done():
+	case <-shutdownCtx.Done():
 		a.log.Info(ctx, "shutdown", "status", "mcp server forcing close")
 		a.httpServer.Close()
 	}

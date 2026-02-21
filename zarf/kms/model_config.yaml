@@ -140,84 +140,70 @@
 # TEXT INFERENCE MODELS
 
 # ------------------------------------------------------------------------------
-# Agent: This is working well with Cline and Kilo.
 
 Qwen3-Coder-Next-UD-Q4_K_XL/IMC-Cline:
   nseq-max: 1
   incremental-cache: true
 
-Qwen3-Coder-Next-UD-Q4_K_XL/SPC-Cline:
-  nseq-max: 1
-  system-prompt-cache: true
-
 Qwen3-Coder-Next-UD-Q4_K_XL/IMC-Kilo:
   nseq-max: 2
   incremental-cache: true
 
-Qwen3-Coder-Next-UD-Q4_K_XL/SPC-Kilo:
-  nseq-max: 2
+Qwen3-Coder-Next-UD-Q4_K_XL/SPC:
+  nseq-max: 1
   system-prompt-cache: true
 
 # ------------------------------------------------------------------------------
-# Agent: This is working well with Cline and Kilo.
 
-Qwen3-Coder-Next-UD-Q3_K_XL/IMC-Cline:
+Qwen3-Coder-Next-UD-Q2_K_XL/IMC-Cline:
   nseq-max: 1
   incremental-cache: true
 
-Qwen3-Coder-Next-UD-Q3_K_XL/SPC-Cline:
-  nseq-max: 1
-  system-prompt-cache: true
-
-Qwen3-Coder-Next-UD-Q3_K_XL/IMC-Kilo:
+Qwen3-Coder-Next-UD-Q2_K_XL/IMC-Kilo:
   nseq-max: 2
   incremental-cache: true
 
-Qwen3-Coder-Next-UD-Q3_K_XL/SPC-Kilo:
-  nseq-max: 2
+Qwen3-Coder-Next-UD-Q2_K_XL/SPC:
+  nseq-max: 1
   system-prompt-cache: true
 
 # ------------------------------------------------------------------------------
-# Agent: This is working ok with Cline.
 
-Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMC:
+Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMC-Cline:
   nseq-max: 1
   incremental-cache: true
 
-Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMCG:
-  nseq-max: 1
+Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMC-Kilo:
+  nseq-max: 2
   incremental-cache: true
-  grammar: hermestoolcalling.grm
+  sampling-parameters:
+    grammar: hermestoolcalling.grm
 
 Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/SPC:
   nseq-max: 1
   system-prompt-cache: true
 
 # ------------------------------------------------------------------------------
-# This is working ok with Kilo.
 
-gpt-oss-120b-F16/SPC:
-  nseq-max: 2
-  system-prompt-cache: true
-
-gpt-oss-120b-F16/IMC:
+gpt-oss-120b-F16/IMC-Kilo:
   nseq-max: 2
   incremental-cache: true
 
+gpt-oss-120b-F16/SPC:
+  nseq-max: 1
+  system-prompt-cache: true
+
 # ------------------------------------------------------------------------------
 
-# Agent: Smaller version of the 30B model and works ok with Cline.
 cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0/IMC:
   nseq-max: 1
   incremental-cache: true
 
-# This model runs too slow on my M4/128GB.
 GLM-4.7-Flash-UD-Q8_K_XL/SPC:
   nseq-max: 1
   system-prompt-cache: true
 
 # ------------------------------------------------------------------------------
-# Good Reasoning models, tooling support, don't use with Agents.
 
 # Extended context with YaRN scaling (32k training → 131k).
 Qwen3-8B-Q8_0/YARN:
