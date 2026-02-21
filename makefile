@@ -112,23 +112,37 @@ test-only: install-models
 
 test: test-only lint vuln-check diff
 
+# ==============================================================================
+# Benchmarks
+
 benchmark-nc:
 	CGO_ENABLED=0 go test -run=none -bench=BenchmarkNonCaching -benchtime=3x -timeout=30m ./sdk/kronk/model/
 
 benchmark-spc:
 	CGO_ENABLED=0 go test -run=none -bench=BenchmarkSPC -benchtime=3x -timeout=30m ./sdk/kronk/model/
 
-benchmark-imc:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkIMC$$ -benchtime=3x -timeout=30m ./sdk/kronk/model/
 
-benchmark-moe-imc:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkMoEIMC$$ -benchtime=3x -timeout=30m ./sdk/kronk/model/
+benchmark-imc-deterministic:
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkIMCDeterministic$$ -benchtime=3x -timeout=30m ./sdk/kronk/model/
 
-benchmark-spec:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkIMCSpeculative -benchtime=3x -timeout=30m ./sdk/kronk/model/
+benchmark-imc-nondeterministic:
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkIMCNonDeterministic -benchtime=3x -timeout=30m ./sdk/kronk/model/
 
-benchmark-moe-spec:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkMoEIMCSpeculative -benchtime=3x -timeout=30m ./sdk/kronk/model/
+benchmark-imc-moe:
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkIMCMoE$$ -benchtime=3x -timeout=30m ./sdk/kronk/model/
+
+benchmark-imc-hybrid:
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkIMCHybrid -benchtime=3x -timeout=30m ./sdk/kronk/model/
+
+
+benchmark-imc-deterministic-spec:
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkIMCDeterministicSpeculative -benchtime=3x -timeout=30m ./sdk/kronk/model/
+
+benchmark-imc-moe-spec:
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkIMCMoESpeculative -benchtime=3x -timeout=30m ./sdk/kronk/model/
+
+benchmark-hybrid-spc:
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkHybridSPC -benchtime=3x -timeout=30m ./sdk/kronk/model/
 
 # ==============================================================================
 # Kronk BUI

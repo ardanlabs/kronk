@@ -10,6 +10,36 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
+// =============================================================================
+// Incremental Message Cache (IMC) — Core Algorithm
+//
+// IMC has four operating modes, automatically selected based on model
+// architecture and template behavior:
+//
+//   - IMC Deterministic:     Hash-based prefix matching for dense models with
+//     consistent templates (QWEN, Llama). Fastest path.
+//   - IMC Non-Deterministic: Token-level prefix fallback for models with
+//     variable templates (GPT-OSS, GLM). Activated when hash matching fails.
+//   - IMC MoE:               Same algorithm as Deterministic. MoE models
+//     (Qwen3-Coder-30B-A3B, Mixtral) use identical code paths — the
+//     distinction is performance characteristics, not logic.
+//   - IMC Hybrid:            Snapshot/restore for models with recurrent layers
+//     (Qwen3-Coder-Next). Cache cleanup uses full clear + StateSeqSetData
+//     instead of partial MemorySeqRm. Hybrid-specific logic lives in
+//     batch_slot_start.go (snapshot capture, rebuild) and
+//     batch_finish.go (snapshot restore after generation).
+//
+// All four modes share the functions in this file: processIMC (slot scan +
+// hash matching), extendIMCCache, buildIMCCacheFromScratch, and
+// rebuildIMCFromPartialPrefix. The mode-specific divergence points are:
+//
+//   - Non-Deterministic: processIMC falls back to token prefix matching when
+//     no hash match is found, calling rebuildIMCFromPartialPrefix.
+//   - Hybrid: batch_slot_start.go checks IsHybridModel to use full clear +
+//     re-decode instead of partial MemorySeqRm; batch_finish.go restores
+//     the snapshot instead of trimming generated tokens.
+// =============================================================================
+
 // imcSlotSnapshot holds a point-in-time copy of an imcSession's metadata.
 // Used by processIMC to release the read lock before hashing.
 type imcSlotSnapshot struct {
@@ -28,14 +58,17 @@ type imcSlotSnapshot struct {
 // workflows. It caches all messages except the last one (which triggers
 // generation) and extends the cache incrementally on subsequent requests.
 //
-// All NSeqMax slots are available. Each slot independently tracks its own
+// This function implements the shared slot selection algorithm used by all
+// four IMC modes (Deterministic, Non-Deterministic, MoE, Hybrid). All
+// NSeqMax slots are available. Each slot independently tracks its own
 // conversation branch (hash, token count, message index). Sub-agents get
 // routed to different slots via hash matching.
 //
 // Algorithm:
-//  1. Scan all slots for a prefix hash match against the incoming messages
+//  1. Scan all slots for a prefix hash match (Deterministic / MoE / Hybrid)
 //  2. On match: extend or reuse the matching slot's cache
-//  3. No match: pick an empty slot or evict the LRU slot, rebuild from scratch
+//  3. No hash match: try token prefix fallback (Non-Deterministic mode)
+//  4. No match at all: pick an empty slot or evict the LRU slot, rebuild
 func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cacheResult {
 	messages, ok := d["messages"].([]D)
 	if !ok || len(messages) == 0 {
@@ -76,7 +109,7 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 	m.cacheMu.RUnlock()
 
 	// -------------------------------------------------------------------------
-	// Scan snapshots and hash outside the lock.
+	// Step 1: Hash-based slot scan (Deterministic / MoE / Hybrid path).
 
 	var bestSlot *imcSession
 	var bestCachedMsgsHash string
@@ -134,7 +167,7 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 	}
 
 	// -------------------------------------------------------------------------
-	// Handle matched slot: extend or pure hit.
+	// Step 2: Handle matched slot — extend or pure hit.
 
 	if bestSlot != nil {
 		m.log(ctx, "imc", "status", "slot matched", "slot", bestSlot.slotID, "seq", bestSlot.seqID,
@@ -161,10 +194,12 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 	}
 
 	// -------------------------------------------------------------------------
+	// Step 3: Token prefix fallback (Non-Deterministic mode).
+	//
 	// No hash match — try token-level partial prefix matching before falling
 	// back to empty slot or LRU eviction. Non-deterministic templates (e.g.,
-	// gpt-oss) may produce different token sequences for identical messages,
-	// but often share a long common prefix that we can salvage.
+	// GPT-OSS, GLM) may produce different token sequences for identical
+	// messages, but often share a long common prefix that we can salvage.
 
 	m.log(ctx, "imc", "status", "no slot matched, trying token prefix match", "total-msgs", totalMsgs)
 
@@ -246,9 +281,10 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 	}
 
 	// -------------------------------------------------------------------------
-	// No hash match, no token prefix match — pick an empty slot or evict LRU.
-	// Try each empty slot in order; if a concurrent request already marked one
-	// pending, move to the next.
+	// Step 4: No match — pick an empty slot or evict LRU.
+	//
+	// No hash match, no token prefix match — try each empty slot in order.
+	// If a concurrent request already marked one pending, move to the next.
 
 	for _, slot := range emptySlots {
 		m.log(ctx, "imc", "status", "trying empty slot", "slot", slot.slotID)
@@ -519,10 +555,14 @@ func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D,
 }
 
 // rebuildIMCFromPartialPrefix rebuilds a slot's cache using a token-level
-// partial prefix match. When a non-deterministic template produces different
-// tokens for the same messages, this function salvages the longest common
-// prefix in the KV cache, trims the divergent suffix, and decodes only the
-// new tokens from the divergence point forward.
+// partial prefix match. This is the Non-Deterministic mode path — when a
+// model template produces different tokens for the same messages (e.g.,
+// GPT-OSS, GLM), this function salvages the longest common prefix in the
+// KV cache, trims the divergent suffix, and decodes only the new tokens
+// from the divergence point forward.
+//
+// For Hybrid models, batch_slot_start.go converts the partial trim into a
+// full clear + re-decode since partial MemorySeqRm corrupts recurrent state.
 func (m *Model) rebuildIMCFromPartialPrefix(ctx context.Context, d D, messages []D, session *imcSession, lastMsgIdxToCache int, allTokens []llama.Token, commonPrefixLen int) cacheResult {
 
 	// Reserve the slot under lock.

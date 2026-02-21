@@ -97,12 +97,15 @@ export default function DocsManual() {
                 <li><a href="#51-overview">5.1 Overview</a></li>
                 <li><a href="#52-system-prompt-cache-spc">5.2 System Prompt Cache (SPC)</a></li>
                 <li><a href="#53-incremental-message-cache-imc">5.3 Incremental Message Cache (IMC)</a></li>
+                <li><a href="#imc-deterministic">IMC Deterministic</a></li>
+                <li><a href="#imc-non-deterministic">IMC Non-Deterministic</a></li>
+                <li><a href="#imc-moe">IMC MoE</a></li>
+                <li><a href="#imc-hybrid">IMC Hybrid</a></li>
                 <li><a href="#54-single-user-caching">5.4 Single-User Caching</a></li>
                 <li><a href="#55-spc-vs-imc">5.5 SPC vs IMC</a></li>
                 <li><a href="#56-cache-invalidation">5.6 Cache Invalidation</a></li>
                 <li><a href="#57-configuration-reference">5.7 Configuration Reference</a></li>
                 <li><a href="#58-performance-and-limitations">5.8 Performance and Limitations</a></li>
-                <li><a href="#59-hybrid-model-imc-snapshotrestore">5.9 Hybrid Model IMC (Snapshot/Restore)</a></li>
               </ul>
             </li>
             <li><a href="#chapter-6-yarn-extended-context">YaRN Extended Context</a>
@@ -1130,9 +1133,9 @@ Step 4 — Total VRAM:
           </ul>
           <p>attention for hybrid models.</p>
           <ul>
-            <li><strong>IMC uses snapshot/restore</strong> — see <a href="#59-hybrid-model-imc-snapshotrestore">Section 5.9</a></li>
+            <li><strong>IMC uses snapshot/restore</strong> — see <a href="#imc-hybrid">IMC Hybrid</a> for details</li>
           </ul>
-          <p>for details on how caching works with recurrent state.</p>
+          <p>on how caching works with recurrent state.</p>
           <p>When choosing between a hybrid model and an MoE model for Apple Silicon, consider: the hybrid model's sequential memory access pattern and dense activation give it both better quality per token and better bandwidth utilization. The trade-off is total model size — hybrid models use all parameters, so you need enough unified memory to hold them plus the larger f16 KV cache.</p>
           <pre className="code-block"><code className="language-yaml">{`models:
   Qwen3-Coder-Next-UD-Q4_K_XL:
@@ -1702,11 +1705,67 @@ IMC (Incremental Message Cache):
           </ul>
           <h3 id="53-incremental-message-cache-imc">5.3 Incremental Message Cache (IMC)</h3>
           <p>Incremental Message Cache is designed for agentic workflows where conversations grow monotonically. It caches all messages except the last one and extends the cache incrementally on each turn.</p>
-          <p><strong>Works best with:</strong> Models with consistent templates where the same messages always produce identical templated output regardless of conversation length. Models like QWEN and Llama have consistent templates and get the fastest path (hash-based matching). Models like GPT-OSS and GLM with non-deterministic templates are also supported — IMC automatically falls back to token-level partial prefix matching, salvaging as much of the KV cache as possible instead of rebuilding from scratch (see <a href="#token-level-partial-prefix-matching">Token-Level Partial Prefix Matching</a> below).</p>
+          <p>IMC has four operating modes, automatically selected based on the model's architecture and template behavior. You don't choose a mode — Kronk detects the model type at load time and uses the right mode automatically.</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Mode</th>
+                <th>Model Type</th>
+                <th>Matching Strategy</th>
+                <th>Cache Cleanup</th>
+                <th>Example Models</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>IMC Deterministic</td>
+                <td>Dense, consistent template</td>
+                <td>Hash-based</td>
+                <td>Partial range delete</td>
+                <td>QWEN, Llama</td>
+              </tr>
+              <tr>
+                <td>IMC Non-Deterministic</td>
+                <td>Dense, variable template</td>
+                <td>Token prefix fallback</td>
+                <td>Partial range delete</td>
+                <td>GPT-OSS, GLM</td>
+              </tr>
+              <tr>
+                <td>IMC MoE</td>
+                <td>Mixture of Experts</td>
+                <td>Hash-based</td>
+                <td>Partial range delete</td>
+                <td>Qwen3-Coder-30B-A3B, Mixtral</td>
+              </tr>
+              <tr>
+                <td>IMC Hybrid</td>
+                <td>Attention + Recurrent layers</td>
+                <td>Hash-based</td>
+                <td>Snapshot/Restore</td>
+                <td>Qwen3-Coder-Next</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><strong>Why four modes?</strong> All four modes share the same core algorithm — cache all messages except the last, extend incrementally, route sub-agents to slots via hash matching. The differences exist because model architectures impose different constraints on how the KV cache can be managed:</p>
+          <ul>
+            <li><strong>Deterministic</strong> is the fastest path — hash matching finds the right slot</li>
+          </ul>
+          <p>instantly and partial range deletes trim generated tokens between requests.</p>
+          <ul>
+            <li><strong>Non-Deterministic</strong> exists because some model templates produce different</li>
+          </ul>
+          <p>token sequences for the same messages. Hash matching fails, so IMC falls back to token-level comparison to salvage as much of the cache as possible.</p>
+          <ul>
+            <li><strong>MoE</strong> uses the same algorithm as Deterministic, but MoE models have</li>
+          </ul>
+          <p>distinct performance characteristics (scattered memory access, expert routing overhead) that affect configuration and throughput expectations.</p>
+          <ul>
+            <li><strong>Hybrid</strong> exists because models with recurrent layers cannot use partial</li>
+          </ul>
+          <p>range deletes — a partial delete corrupts the hidden recurrent state. These models use snapshot/restore to preserve the full sequence state between requests.</p>
           <p><strong>Best for:</strong></p>
           <ul>
-            <li>Models with consistent templates (QWEN, Llama) — fastest hash-based path</li>
-            <li>Models with non-deterministic templates (GPT-OSS, GLM) — token prefix fallback</li>
             <li>AI coding agents</li>
             <li>Long-running agent conversations</li>
             <li>Any workflow where messages are appended, not edited</li>
@@ -1735,7 +1794,7 @@ Prefill:  [user2 + gen_prompt]`}</code></pre>
 Cache:    [system, user, assistant, user2, assistant2]  ← Extend
 Prefill:  [user3 + gen_prompt]`}</code></pre>
           <p><strong>Slot Selection Algorithm:</strong></p>
-          <p>When a request arrives, IMC scans all slots to find the best match:</p>
+          <p>When a request arrives, IMC scans all slots to find the best match. Steps 1-2 apply to all modes. Step 3 is the Non-Deterministic fallback path. Step 4 is the universal last resort.</p>
           <ol>
             <li><strong>Scan all slots</strong> — For each slot:
               <ul>
@@ -1752,18 +1811,35 @@ Prefill:  [user3 + gen_prompt]`}</code></pre>
           </ol>
           <p>messages). If the request has new messages to cache, extend the slot's cache. If the messages are identical, it's a pure cache hit.</p>
           <ol>
-            <li><strong>No hash match — token prefix fallback</strong> — Tokenize the incoming messages</li>
+            <li><strong>No hash match — token prefix fallback (Non-Deterministic mode)</strong> —</li>
           </ol>
-          <p>and compare the resulting token sequence element-by-element against each non-empty slot's stored <code>cachedTokens</code>. Pick the slot with the longest common prefix that meets <code>cache_min_tokens</code>. Trim the KV cache from the divergence point (<code>MemorySeqRm(seq, trimPos, -1)</code>) and decode only the new tokens from there forward. This handles non-deterministic templates (e.g., GPT-OSS) that produce different token sequences for identical messages across requests — salvaging 70-80% of the cache instead of rebuilding from scratch.</p>
+          <p>Tokenize the incoming messages and compare the resulting token sequence element-by-element against each non-empty slot's stored <code>cachedTokens</code>. Pick the slot with the longest common prefix that meets <code>cache_min_tokens</code>. Trim the KV cache from the divergence point and decode only the new tokens from there forward. See <a href="#imc-non-deterministic">IMC Non-Deterministic</a> for details.</p>
           <ol>
             <li><strong>No match at all</strong> — Pick an empty slot if one exists, otherwise evict</li>
           </ol>
           <p>the least-recently-used (LRU) slot and rebuild from scratch.</p>
           <p><strong>Concurrent Build Protection:</strong></p>
           <p>When two requests arrive simultaneously and both need to build a cache from scratch, a race condition could cause both to pick the same empty slot. IMC prevents this with a pending flag: when a slot begins a deferred cache build, it is marked pending. Concurrent scanners skip pending slots, so the second request picks a different slot. The pending flag is cleared after the cache decode completes (or on error).</p>
-          <p><strong>Token-Level Partial Prefix Matching:</strong></p>
-          <p>Some model templates are non-deterministic — they produce different token sequences for identical messages across requests. GPT-OSS, for example, injects tool call formatting that varies between template invocations. This causes message hash mismatches even though the semantic content is identical, which would normally force a full cache rebuild from scratch.</p>
-          <p>IMC handles this automatically. When no hash match is found during the slot scan, IMC falls back to comparing the actual cached token arrays against the incoming request's tokens. It tokenizes the incoming messages, then compares them element-by-element against each non-empty slot's stored token sequence to find the longest common prefix.</p>
+          <h4 id="imc-deterministic">IMC Deterministic</h4>
+          <p>The default and fastest IMC mode. Used automatically for dense models with consistent templates — models where the same messages always produce identical token sequences regardless of conversation length.</p>
+          <p><strong>Why this mode exists:</strong> Most models (QWEN, Llama, and similar dense architectures) have deterministic templates. When the template is consistent, a simple hash of the message prefix is enough to identify a matching slot. This avoids tokenization overhead entirely.</p>
+          <p><strong>When it's used:</strong> Automatically when the model is dense (not MoE, not hybrid) and the template produces consistent token sequences. No configuration needed — this is the default path when <code>incremental_cache: true</code>.</p>
+          <p><strong>How it works:</strong></p>
+          <ol>
+            <li>Hash the incoming message prefix</li>
+            <li>Compare against each slot's stored hash</li>
+            <li>On match: extend the cache with new messages, or return a pure cache hit</li>
+            <li>Between requests: trim generated tokens via partial range delete</li>
+          </ol>
+          <p>(<code>MemorySeqRm(seq, trimPos, -1)</code>)</p>
+          <p>The partial range delete removes only the tokens generated during the previous response, leaving the cached conversation prefix intact for the next request.</p>
+          <p><strong>Models:</strong> QWEN, Llama, and most standard dense transformer architectures.</p>
+          <h4 id="imc-non-deterministic">IMC Non-Deterministic</h4>
+          <p>A fallback mode that activates automatically when hash matching fails due to template non-determinism. Some model templates produce different token sequences for identical messages across requests — even though the semantic content is the same.</p>
+          <p><strong>Why this mode exists:</strong> GPT-OSS, for example, injects tool call formatting that varies between template invocations. This causes message hash mismatches even though the conversation hasn't changed, which would normally force a full cache rebuild from scratch. The Non-Deterministic mode salvages 70-80% of the cached tokens instead.</p>
+          <p><strong>When it's used:</strong> Automatically when no hash match is found during the slot scan. IMC falls back to comparing the actual cached token arrays against the incoming request's tokens. Only candidates with compatible message counts are considered — the request must have at least as many messages as the slot cached.</p>
+          <p><strong>How it works — Token-Level Partial Prefix Matching:</strong></p>
+          <p>When no hash match is found, IMC tokenizes the incoming messages and compares them element-by-element against each non-empty slot's stored token sequence to find the longest common prefix.</p>
           <pre className="code-block"><code>{`Cached tokens:   [T1, T2, T3, T4, T5, T6, T7, T8]
 Incoming tokens: [T1, T2, T3, T4, T5, T9, T10, T11, T12]
                                        ↑
@@ -1781,8 +1857,8 @@ New decode:    7 tokens (T5-T12, from divergence point forward)`}</code></pre>
           </ol>
           <p>Once the partial rebuild completes, subsequent requests in the same conversation use normal hash-based extending. The token prefix path is only triggered at conversation boundaries — when the template non-determinism causes the initial mismatch.</p>
           <p>Real-world testing with GPT-OSS showed 77-80% cache salvage rates when switching conversations. Instead of decoding ~8400 tokens from scratch, the system kept ~6800 cached and only decoded ~1600.</p>
-          <p><strong>Debugging Token Prefix Matching:</strong></p>
-          <p>Look for these log messages to observe the token prefix path:</p>
+          <p><strong>Models:</strong> GPT-OSS, GLM, and any model whose template produces variable token sequences for identical messages.</p>
+          <p><strong>Debugging Non-Deterministic IMC:</strong></p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -1814,6 +1890,108 @@ New decode:    7 tokens (T5-T12, from divergence point forward)`}</code></pre>
               <tr>
                 <td><code>no usable token prefix match</code></td>
                 <td>All prefixes below <code>cache_min_tokens</code>, falling back to empty/LRU slot</td>
+              </tr>
+            </tbody>
+          </table>
+          <h4 id="imc-moe">IMC MoE</h4>
+          <p>IMC for Mixture of Experts models. Uses the same hash-based algorithm as IMC Deterministic — the caching logic is identical. The distinction is that MoE models have different performance characteristics that affect configuration choices and throughput expectations.</p>
+          <p><strong>Why this mode exists:</strong> MoE models route tokens through specialized "expert" sub-networks. On Apple Silicon (unified memory), inference speed is determined by memory bandwidth, not compute. MoE models create scattered memory access patterns — the routing layer selects experts whose weights are spread across memory. This scattered access underutilizes memory bandwidth compared to the sequential access pattern of dense models. These performance characteristics affect how you configure IMC-related settings like cache types and split mode.</p>
+          <p><strong>When it's used:</strong> Automatically when the model uses a Mixture of Experts architecture (e.g., models with "A3B" in their name indicating 30B total parameters, 3B active per token).</p>
+          <p><strong>How it works:</strong> Identical to IMC Deterministic — hash-based prefix matching, incremental cache extension, partial range deletes for cache cleanup between requests. The core IMC algorithm doesn't change for MoE.</p>
+          <p>What changes is the performance profile and configuration:</p>
+          <ul>
+            <li>Lower tokens/sec than a comparably-sized dense model at the same</li>
+          </ul>
+          <p>quantization on Apple Silicon due to scattered memory access</p>
+          <ul>
+            <li>MoE can be sensitive to aggressive KV cache quantization — use <code>f16</code> cache</li>
+          </ul>
+          <p>types if quality degrades with <code>q8_0</code></p>
+          <ul>
+            <li>Use <code>split_mode: row</code> for multi-GPU setups to enable expert-parallel</li>
+          </ul>
+          <p>execution</p>
+          <p><strong>Configuration:</strong></p>
+          <pre className="code-block"><code className="language-yaml">{`models:
+  Qwen3-Coder-30B-A3B-Q8_0:
+    incremental_cache: true
+    split_mode: row       # Best for MoE architecture
+    cache_type_k: f16     # Safer for MoE routing accuracy
+    cache_type_v: f16`}</code></pre>
+          <p><strong>Models:</strong> Qwen3-Coder-30B-A3B, Mixtral, DeepSeek-MoE.</p>
+          <h4 id="imc-hybrid">IMC Hybrid</h4>
+          <p>IMC for models that mix traditional Attention layers with recurrent layers (DeltaNet or SSM/Mamba). Kronk calls these <strong>hybrid models</strong>. Examples include Qwen3-Coder-Next (<code>qwen3next</code> architecture), where every 4th block is full attention and the rest are DeltaNet. Kronk detects hybrid models automatically at load time via <code>llama.ModelIsHybrid</code> — no user configuration is required.</p>
+          <p><strong>Why this mode exists:</strong></p>
+          <p>Standard Attention layers store positional KV (Key-Value) pairs. Recurrent layers store a <strong>hidden recurrent state</strong> instead. The standard IMC algorithm trims generated tokens after each request using a partial range delete (<code>MemorySeqRm(seq, trimPos, -1)</code>). This works for attention-only models because removing KV entries at specific positions leaves earlier positions intact. But for hybrid models, a partial range delete <strong>corrupts the recurrent hidden state</strong> — the DeltaNet/SSM state cannot be "rewound" to an earlier position. The result: the first request in a conversation succeeds, but every follow-up request fails with a decode error because the hidden state is left in an inconsistent position.</p>
+          <p><strong>When it's used:</strong> Automatically when <code>llama.ModelIsHybrid</code> returns true at model load time. No configuration needed beyond <code>incremental_cache: true</code>.</p>
+          <p><strong>How it works — Snapshot/Restore:</strong></p>
+          <p>Instead of trimming the cache in-place, Kronk uses a snapshot/restore approach for hybrid models. The semantics are identical to standard IMC — the slot selection algorithm, hash matching, token prefix fallback, and multi-slot architecture all work the same way. The difference is how the KV + recurrent state is managed between requests.</p>
+          <p><strong>Snapshot (after cache build, before suffix decode):</strong></p>
+          <p>After the IMC cache is built or extended but before the current request's suffix tokens are decoded, the server captures the full sequence state (KV cache + recurrent hidden state) into a byte buffer in RAM using <code>StateSeqGetData</code>. This snapshot represents the clean state at the boundary of the cached message prefix.</p>
+          <pre className="code-block"><code>{`Request arrives → IMC extends cache → Snapshot state → Decode suffix → Generate`}</code></pre>
+          <p><strong>Restore (after request completes):</strong></p>
+          <p>When the request finishes, instead of trimming generated tokens with a partial range delete, the server performs a full sequence clear (<code>MemorySeqRm(seq, -1, -1)</code>) and restores the snapshot using <code>StateSeqSetData</code>. This returns the cache to the exact state it was in after the prefix was cached, with the recurrent hidden state perfectly preserved.</p>
+          <pre className="code-block"><code>{`Standard IMC:  Trim generated tokens (partial delete)
+Hybrid IMC:    Full clear → Restore snapshot (memory copy)`}</code></pre>
+          <p><strong>Partial prefix rebuilds:</strong></p>
+          <p>When a request matches a partial token prefix (the token prefix fallback path), standard IMC trims from the divergence point. Hybrid models cannot do partial trims, so the server performs a full sequence clear and re-decodes the entire cached token sequence from position 0. This is more expensive than a partial trim but guarantees the recurrent state is built correctly.</p>
+          <pre className="code-block"><code>{`Standard IMC:  Trim from divergence point, decode new tokens only
+Hybrid IMC:    Full clear, re-decode all cached tokens from position 0`}</code></pre>
+          <p><strong>Performance:</strong></p>
+          <p>The snapshot/restore approach is fast. Capturing and restoring state is a memory copy operation, comparable in cost to SPC's <code>StateSeqSetData</code> restore (typically 10-30ms depending on conversation size). The key advantage over SPC is that the snapshot includes the entire conversation's cached state, so only the most recent message needs to be decoded — not the full history. For long agentic conversations this is significantly faster.</p>
+          <p><strong>Constraints:</strong></p>
+          <ul>
+            <li>Hybrid models require the KV cache to use <code>f16</code> — quantized cache types</li>
+          </ul>
+          <p>(e.g., <code>q8_0</code>) are incompatible with the recurrent layers</p>
+          <ul>
+            <li>Flash attention is automatically disabled for hybrid models</li>
+          </ul>
+          <p><strong>Configuration:</strong></p>
+          <pre className="code-block"><code className="language-yaml">{`models:
+  Qwen3-Coder-Next-UD-Q4_K_XL:
+    incremental_cache: true
+    cache_type_k: f16   # Required for hybrid models
+    cache_type_v: f16   # Required for hybrid models`}</code></pre>
+          <p><strong>Guardrails:</strong></p>
+          <p>If a snapshot restore fails, Kronk clears the slot's IMC metadata (<code>cachedMsgsHash</code>, <code>totalTokensCached</code>, <code>lastMsgIdxCached</code>) so the slot is not reused with a corrupted sequence. The next request to that slot triggers a full cache rebuild from scratch.</p>
+          <p><strong>Models:</strong> Qwen3-Coder-Next and any model where <code>llama.ModelIsHybrid</code> returns true.</p>
+          <p><strong>Debugging Hybrid IMC:</strong></p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Log Message</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>imc-hybrid-snapshot</code></td>
+                <td>State captured after cache build (shows snapshot_bytes)</td>
+              </tr>
+              <tr>
+                <td><code>imc-hybrid-snapshot-failed</code></td>
+                <td>StateSeqGetData returned 0 bytes</td>
+              </tr>
+              <tr>
+                <td><code>imc-hybrid-restore</code></td>
+                <td>Snapshot restored after request (shows restored_bytes)</td>
+              </tr>
+              <tr>
+                <td><code>imc-hybrid-restore-failed</code></td>
+                <td>StateSeqSetData failed, slot metadata cleared</td>
+              </tr>
+              <tr>
+                <td><code>imc-hybrid-no-snapshot</code></td>
+                <td>No snapshot available, full clear + metadata invalidation</td>
+              </tr>
+              <tr>
+                <td><code>imc-hybrid-rebuild</code></td>
+                <td>Partial prefix: full clear + re-decode from position 0</td>
+              </tr>
+              <tr>
+                <td><code>imc-hybrid-trim-rebuild</code></td>
+                <td>Trim-only prefix: full clear + re-decode truncated sequence</td>
               </tr>
             </tbody>
           </table>
@@ -1943,74 +2121,6 @@ New decode:    7 tokens (T5-T12, from divergence point forward)`}</code></pre>
             <li>Max concurrent conversation branches = NSeqMax; when all slots are</li>
           </ul>
           <p>occupied, the least-recently-used slot is evicted</p>
-          <h3 id="59-hybrid-model-imc-snapshotrestore">5.9 Hybrid Model IMC (Snapshot/Restore)</h3>
-          <p>Some newer model architectures mix traditional Attention layers with recurrent layers such as DeltaNet or SSM (Selective State Space Models / Mamba). Kronk calls these <strong>hybrid models</strong>. Examples include Qwen3-Coder-Next (<code>qwen3next</code> architecture), where every 4th block is full attention and the rest are DeltaNet. Kronk detects hybrid models automatically at load time via <code>llama.ModelIsHybrid</code> — no user configuration is required.</p>
-          <p><strong>Why hybrid models need special handling:</strong></p>
-          <p>Standard Attention layers store positional KV (Key-Value) pairs. Recurrent layers store a <strong>hidden recurrent state</strong> instead. The standard IMC algorithm trims generated tokens after each request using a partial range delete (<code>MemorySeqRm(seq, trimPos, -1)</code>). This works for attention-only models because removing KV entries at specific positions leaves earlier positions intact. But for hybrid models, a partial range delete <strong>corrupts the recurrent hidden state</strong> — the DeltaNet/SSM state cannot be "rewound" to an earlier position. The result: the first request in a conversation succeeds, but every follow-up request fails with a decode error because the hidden state is left in an inconsistent position.</p>
-          <p><strong>The solution — snapshot/restore:</strong></p>
-          <p>Instead of trimming the cache in-place, Kronk uses a snapshot/restore approach for hybrid models. The semantics are identical to standard IMC — the slot selection algorithm, hash matching, token prefix fallback, and multi-slot architecture all work the same way. The difference is how the KV + recurrent state is managed between requests.</p>
-          <p><strong>Snapshot (after cache build, before suffix decode):</strong></p>
-          <p>After the IMC cache is built or extended but before the current request's suffix tokens are decoded, the server captures the full sequence state (KV cache + recurrent hidden state) into a byte buffer in RAM using <code>StateSeqGetData</code>. This snapshot represents the clean state at the boundary of the cached message prefix.</p>
-          <pre className="code-block"><code>{`Request arrives → IMC extends cache → Snapshot state → Decode suffix → Generate`}</code></pre>
-          <p><strong>Restore (after request completes):</strong></p>
-          <p>When the request finishes, instead of trimming generated tokens with a partial range delete, the server performs a full sequence clear (<code>MemorySeqRm(seq, -1, -1)</code>) and restores the snapshot using <code>StateSeqSetData</code>. This returns the cache to the exact state it was in after the prefix was cached, with the recurrent hidden state perfectly preserved.</p>
-          <pre className="code-block"><code>{`Standard IMC:  Trim generated tokens (partial delete)
-Hybrid IMC:    Full clear → Restore snapshot (memory copy)`}</code></pre>
-          <p><strong>Partial prefix rebuilds:</strong></p>
-          <p>When a request matches a partial token prefix (the token prefix fallback path), standard IMC trims from the divergence point. Hybrid models cannot do partial trims, so the server performs a full sequence clear and re-decodes the entire cached token sequence from position 0. This is more expensive than a partial trim but guarantees the recurrent state is built correctly.</p>
-          <pre className="code-block"><code>{`Standard IMC:  Trim from divergence point, decode new tokens only
-Hybrid IMC:    Full clear, re-decode all cached tokens from position 0`}</code></pre>
-          <p><strong>Performance:</strong></p>
-          <p>The snapshot/restore approach is fast. Capturing and restoring state is a memory copy operation, comparable in cost to SPC's <code>StateSeqSetData</code> restore (typically 10-30ms depending on conversation size). The key advantage over SPC is that the snapshot includes the entire conversation's cached state, so only the most recent message needs to be decoded — not the full history. For long agentic conversations this is significantly faster.</p>
-          <p><strong>Constraints:</strong></p>
-          <ul>
-            <li>Hybrid models require the KV cache to use <code>f16</code> — quantized cache types</li>
-          </ul>
-          <p>(e.g., <code>q8_0</code>) are incompatible with the recurrent layers</p>
-          <ul>
-            <li>Flash attention is automatically disabled for hybrid models</li>
-          </ul>
-          <p><strong>Guardrails:</strong></p>
-          <p>If a snapshot restore fails, Kronk clears the slot's IMC metadata (<code>cachedMsgsHash</code>, <code>totalTokensCached</code>, <code>lastMsgIdxCached</code>) so the slot is not reused with a corrupted sequence. The next request to that slot triggers a full cache rebuild from scratch.</p>
-          <p><strong>Debugging Hybrid IMC:</strong></p>
-          <table className="flags-table">
-            <thead>
-              <tr>
-                <th>Log Message</th>
-                <th>Meaning</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><code>imc-hybrid-snapshot</code></td>
-                <td>State captured after cache build (shows snapshot_bytes)</td>
-              </tr>
-              <tr>
-                <td><code>imc-hybrid-snapshot-failed</code></td>
-                <td>StateSeqGetData returned 0 bytes</td>
-              </tr>
-              <tr>
-                <td><code>imc-hybrid-restore</code></td>
-                <td>Snapshot restored after request (shows restored_bytes)</td>
-              </tr>
-              <tr>
-                <td><code>imc-hybrid-restore-failed</code></td>
-                <td>StateSeqSetData failed, slot metadata cleared</td>
-              </tr>
-              <tr>
-                <td><code>imc-hybrid-no-snapshot</code></td>
-                <td>No snapshot available, full clear + metadata invalidation</td>
-              </tr>
-              <tr>
-                <td><code>imc-hybrid-rebuild</code></td>
-                <td>Partial prefix: full clear + re-decode from position 0</td>
-              </tr>
-              <tr>
-                <td><code>imc-hybrid-trim-rebuild</code></td>
-                <td>Trim-only prefix: full clear + re-decode truncated sequence</td>
-              </tr>
-            </tbody>
-          </table>
           <hr />
           <h2 id="chapter-6:-yarn-extended-context">Chapter 6: YaRN Extended Context</h2>
           <p>YaRN (Yet another RoPE extensioN) allows models to handle context windows beyond their native training length. This is essential for long documents, extended conversations, and complex agentic workflows.</p>
@@ -5616,7 +5726,6 @@ batching = true`}</code></pre>
                 <li><a href="#56-cache-invalidation" className={activeSection === '56-cache-invalidation' ? 'active' : ''}>5.6 Cache Invalidation</a></li>
                 <li><a href="#57-configuration-reference" className={activeSection === '57-configuration-reference' ? 'active' : ''}>5.7 Configuration Reference</a></li>
                 <li><a href="#58-performance-and-limitations" className={activeSection === '58-performance-and-limitations' ? 'active' : ''}>5.8 Performance and Limitations</a></li>
-                <li><a href="#59-hybrid-model-imc-snapshotrestore" className={activeSection === '59-hybrid-model-imc-snapshotrestore' ? 'active' : ''}>5.9 Hybrid Model IMC (Snapshot/Restore)</a></li>
               </ul>
             </div>
             <div className="doc-index-section">

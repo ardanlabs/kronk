@@ -142,9 +142,9 @@ type slot struct {
 	specBaseBatch      int32         // Batch index where speculative tokens start
 
 	// -------------------------------------------------------------------------
-	// Hybrid Model IMC State
+	// IMC Hybrid State
 
-	imcSavedState []byte // Snapshot of KV+recurrent state for hybrid model IMC restore
+	imcSavedState []byte // Snapshot of KV+recurrent state for IMC Hybrid restore
 
 	// -------------------------------------------------------------------------
 	// Metrics

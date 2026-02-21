@@ -65,6 +65,8 @@ var benchModelPath models.Path
 var benchDraftModelPath models.Path
 var benchMoEModelPath models.Path
 var benchMoEDraftModelPath models.Path
+var benchHybridModelPath models.Path
+var benchNonDetModelPath models.Path
 var benchLog model.Logger
 var benchLogFile *os.File
 
@@ -93,17 +95,27 @@ func TestMain(m *testing.M) {
 
 	benchModelPath = mdls.MustFullPath("Qwen3-8B-Q8_0")
 
-	// Draft model is optional — only needed for BenchmarkIMCSpeculative.
+	// Draft model is optional — only needed for BenchmarkIMCDeterministicSpeculative.
 	if dp, err := mdls.FullPath("Qwen3-0.6B-Q8_0"); err == nil {
 		benchDraftModelPath = dp
 	}
 
-	// MoE target + Q4 draft — only needed for BenchmarkMoE* benchmarks.
+	// MoE target + Q4 draft — only needed for BenchmarkIMCMoE* benchmarks.
 	if dp, err := mdls.FullPath("Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL"); err == nil {
 		benchMoEModelPath = dp
 	}
 	if dp, err := mdls.FullPath("Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL"); err == nil {
 		benchMoEDraftModelPath = dp
+	}
+
+	// Hybrid target — only needed for BenchmarkHybrid* benchmarks.
+	if dp, err := mdls.FullPath("Qwen3-Coder-Next-UD-Q4_K_XL"); err == nil {
+		benchHybridModelPath = dp
+	}
+
+	// NonDeterministic target — only needed for BenchmarkIMCNonDeterministic.
+	if dp, err := mdls.FullPath("gpt-oss-20b-Q8_0"); err == nil {
+		benchNonDetModelPath = dp
 	}
 
 	ctlg, err := catalog.New()
@@ -1629,15 +1641,15 @@ func BenchmarkSPC(b *testing.B) {
 }
 
 // =============================================================================
-// Benchmarks: Incremental Message Cache (IMC)
+// Benchmarks: IMC Deterministic (hash-based, consistent templates)
 
-func BenchmarkIMC(b *testing.B) {
+func BenchmarkIMCDeterministic(b *testing.B) {
 	krn := withBenchModel(b, cfgIMC())
 	benchChat(b, krn, benchDoc())
 }
 
 // =============================================================================
-// Benchmarks: IMC + Speculative Decoding
+// Benchmarks: IMC Deterministic + Speculative Decoding
 
 func cfgIMCSpeculative() model.Config {
 	draftPath := benchDraftModelPath.ModelFiles
@@ -1659,7 +1671,7 @@ func cfgIMCSpeculative() model.Config {
 	}
 }
 
-func BenchmarkIMCSpeculative(b *testing.B) {
+func BenchmarkIMCDeterministicSpeculative(b *testing.B) {
 	if len(benchDraftModelPath.ModelFiles) == 0 {
 		b.Skip("draft model Qwen3-0.6B-Q8_0 not downloaded")
 	}
@@ -1668,13 +1680,41 @@ func BenchmarkIMCSpeculative(b *testing.B) {
 }
 
 // =============================================================================
-// Benchmarks: MoE (Qwen3-Coder-30B-A3B)
+// Benchmarks: IMC NonDeterministic (token prefix fallback, non-deterministic templates)
+//
+// Uses a model with a non-deterministic template (GPT-OSS) where identical
+// messages may tokenize differently. IMC falls back to token prefix matching.
+
+func cfgIMCNonDeterministic() model.Config {
+	return model.Config{
+		Log:              benchLog,
+		ModelFiles:       benchNonDetModelPath.ModelFiles,
+		ContextWindow:    32768,
+		NBatch:           2048,
+		NUBatch:          2048,
+		CacheTypeK:       model.GGMLTypeF16,
+		CacheTypeV:       model.GGMLTypeF16,
+		NSeqMax:          1,
+		IncrementalCache: true,
+	}
+}
+
+func BenchmarkIMCNonDeterministic(b *testing.B) {
+	if len(benchNonDetModelPath.ModelFiles) == 0 {
+		b.Skip("model gpt-oss-20b-Q8_0 not downloaded")
+	}
+	krn := withBenchModel(b, cfgIMCNonDeterministic())
+	benchChat(b, krn, benchDoc())
+}
+
+// =============================================================================
+// Benchmarks: IMC MoE (Qwen3-Coder-30B-A3B)
 //
 // Uses the MoE model as target with IMC caching. The speculative variant uses
 // the same model at Q4 quantization as the draft — same architecture and
 // knowledge, lower precision, faster per-token due to reduced memory bandwidth.
 
-func cfgMoEIMC() model.Config {
+func cfgIMCMoE() model.Config {
 	return model.Config{
 		Log:              benchLog,
 		ModelFiles:       benchMoEModelPath.ModelFiles,
@@ -1688,15 +1728,15 @@ func cfgMoEIMC() model.Config {
 	}
 }
 
-func BenchmarkMoEIMC(b *testing.B) {
+func BenchmarkIMCMoE(b *testing.B) {
 	if len(benchMoEModelPath.ModelFiles) == 0 {
 		b.Skip("model Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL not downloaded")
 	}
-	krn := withBenchModel(b, cfgMoEIMC())
+	krn := withBenchModel(b, cfgIMCMoE())
 	benchChat(b, krn, benchDoc())
 }
 
-func cfgMoEIMCSpeculative() model.Config {
+func cfgIMCMoESpeculative() model.Config {
 	return model.Config{
 		Log:              benchLog,
 		ModelFiles:       benchMoEModelPath.ModelFiles,
@@ -1714,13 +1754,64 @@ func cfgMoEIMCSpeculative() model.Config {
 	}
 }
 
-func BenchmarkMoEIMCSpeculative(b *testing.B) {
+func BenchmarkIMCMoESpeculative(b *testing.B) {
 	if len(benchMoEModelPath.ModelFiles) == 0 {
 		b.Skip("model Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL not downloaded")
 	}
 	if len(benchMoEDraftModelPath.ModelFiles) == 0 {
 		b.Skip("draft model Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL not downloaded")
 	}
-	krn := withBenchModel(b, cfgMoEIMCSpeculative())
+	krn := withBenchModel(b, cfgIMCMoESpeculative())
+	benchChat(b, krn, benchDoc())
+}
+
+// =============================================================================
+// Benchmarks: IMC Hybrid (Qwen3-Coder-Next)
+//
+// Uses the hybrid model (Attention + Recurrent layers) with SPC and IMC
+// hybrid (snapshot/restore) caching. IMC uses NSeqMax=1 for single-agent
+// (Cline-style) workflows.
+
+func cfgHybridSPC() model.Config {
+	return model.Config{
+		Log:               benchLog,
+		ModelFiles:        benchHybridModelPath.ModelFiles,
+		ContextWindow:     32768,
+		NBatch:            2048,
+		NUBatch:           2048,
+		CacheTypeK:        model.GGMLTypeF16,
+		CacheTypeV:        model.GGMLTypeF16,
+		NSeqMax:           1,
+		SystemPromptCache: true,
+	}
+}
+
+func BenchmarkHybridSPC(b *testing.B) {
+	if len(benchHybridModelPath.ModelFiles) == 0 {
+		b.Skip("model Qwen3-Coder-Next-UD-Q4_K_XL not downloaded")
+	}
+	krn := withBenchModel(b, cfgHybridSPC())
+	benchChat(b, krn, benchDoc())
+}
+
+func cfgIMCHybrid() model.Config {
+	return model.Config{
+		Log:              benchLog,
+		ModelFiles:       benchHybridModelPath.ModelFiles,
+		ContextWindow:    32768,
+		NBatch:           2048,
+		NUBatch:          2048,
+		CacheTypeK:       model.GGMLTypeF16,
+		CacheTypeV:       model.GGMLTypeF16,
+		NSeqMax:          1,
+		IncrementalCache: true,
+	}
+}
+
+func BenchmarkIMCHybrid(b *testing.B) {
+	if len(benchHybridModelPath.ModelFiles) == 0 {
+		b.Skip("model Qwen3-Coder-Next-UD-Q4_K_XL not downloaded")
+	}
+	krn := withBenchModel(b, cfgIMCHybrid())
 	benchChat(b, krn, benchDoc())
 }

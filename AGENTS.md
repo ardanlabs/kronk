@@ -111,13 +111,16 @@ Kronk has an MCP service and these are settings:
 | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
 | [5.1 Overview](MANUAL.md#51-overview)                                                         | SPC vs IMC overview, when to use each                         |
 | [5.2 System Prompt Cache (SPC)](MANUAL.md#52-system-prompt-cache-spc)                         | SPC mechanism, externalized KV state                          |
-| [5.3 Incremental Message Cache (IMC)](MANUAL.md#53-incremental-message-cache-imc)             | IMC algorithm, slot selection, token prefix fallback          |
+| [5.3 Incremental Message Cache (IMC)](MANUAL.md#53-incremental-message-cache-imc)             | 4 IMC modes, slot selection, shared algorithm                 |
+| — [IMC Deterministic](MANUAL.md#imc-deterministic)                                            | Hash-based matching, dense models, partial range delete       |
+| — [IMC Non-Deterministic](MANUAL.md#imc-non-deterministic)                                    | Token prefix fallback, variable templates, GPT-OSS/GLM       |
+| — [IMC MoE](MANUAL.md#imc-moe)                                                                | MoE performance characteristics, split_mode, cache types      |
+| — [IMC Hybrid](MANUAL.md#imc-hybrid)                                                          | Snapshot/restore, recurrent state, hybrid constraints         |
 | [5.4 Single-User Caching](MANUAL.md#54-single-user-caching)                                   | Single-user design, slot dedication                           |
 | [5.5 SPC vs IMC](MANUAL.md#55-spc-vs-imc)                                                     | Feature comparison, workload selection                        |
 | [5.6 Cache Invalidation](MANUAL.md#56-cache-invalidation)                                     | Hash mismatch, rebuild triggers                               |
 | [5.7 Configuration Reference](MANUAL.md#57-configuration-reference)                           | YAML settings, cache_min_tokens                               |
 | [5.8 Performance and Limitations](MANUAL.md#58-performance-and-limitations)                   | Prefill savings, memory overhead, constraints                 |
-| [5.9 Hybrid Model IMC (Snapshot/Restore)](MANUAL.md#59-hybrid-model-imc-snapshotrestore)       | Recurrent state, snapshot/restore, hybrid constraints         |
 
 ### Chapter 6 Sub-sections
 
