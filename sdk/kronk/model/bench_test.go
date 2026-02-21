@@ -95,7 +95,7 @@ func TestMain(m *testing.M) {
 
 	benchModelPath = mdls.MustFullPath("Qwen3-8B-Q8_0")
 
-	// Draft model is optional — only needed for BenchmarkIMCDeterministicSpeculative.
+	// Draft model is optional — only needed for BenchmarkSPECIMCDeterministic.
 	if dp, err := mdls.FullPath("Qwen3-0.6B-Q8_0"); err == nil {
 		benchDraftModelPath = dp
 	}
@@ -1651,7 +1651,7 @@ func BenchmarkIMCDeterministic(b *testing.B) {
 // =============================================================================
 // Benchmarks: IMC Deterministic + Speculative Decoding
 
-func cfgIMCSpeculative() model.Config {
+func cfgSPECIMCDeterministic() model.Config {
 	draftPath := benchDraftModelPath.ModelFiles
 
 	return model.Config{
@@ -1671,11 +1671,11 @@ func cfgIMCSpeculative() model.Config {
 	}
 }
 
-func BenchmarkIMCDeterministicSpeculative(b *testing.B) {
+func BenchmarkSPECIMCDeterministic(b *testing.B) {
 	if len(benchDraftModelPath.ModelFiles) == 0 {
 		b.Skip("draft model Qwen3-0.6B-Q8_0 not downloaded")
 	}
-	krn := withBenchModel(b, cfgIMCSpeculative())
+	krn := withBenchModel(b, cfgSPECIMCDeterministic())
 	benchChat(b, krn, benchDoc())
 }
 
@@ -1736,7 +1736,7 @@ func BenchmarkIMCMoE(b *testing.B) {
 	benchChat(b, krn, benchDoc())
 }
 
-func cfgIMCMoESpeculative() model.Config {
+func cfgSPECIMCMoE() model.Config {
 	return model.Config{
 		Log:              benchLog,
 		ModelFiles:       benchMoEModelPath.ModelFiles,
@@ -1754,45 +1754,23 @@ func cfgIMCMoESpeculative() model.Config {
 	}
 }
 
-func BenchmarkIMCMoESpeculative(b *testing.B) {
+func BenchmarkSPECIMCMoE(b *testing.B) {
 	if len(benchMoEModelPath.ModelFiles) == 0 {
 		b.Skip("model Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL not downloaded")
 	}
 	if len(benchMoEDraftModelPath.ModelFiles) == 0 {
 		b.Skip("draft model Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL not downloaded")
 	}
-	krn := withBenchModel(b, cfgIMCMoESpeculative())
+	krn := withBenchModel(b, cfgSPECIMCMoE())
 	benchChat(b, krn, benchDoc())
 }
 
 // =============================================================================
 // Benchmarks: IMC Hybrid (Qwen3-Coder-Next)
 //
-// Uses the hybrid model (Attention + Recurrent layers) with SPC and IMC
+// Uses the hybrid model (Attention + Recurrent layers) with IMC
 // hybrid (snapshot/restore) caching. IMC uses NSeqMax=1 for single-agent
 // (Cline-style) workflows.
-
-func cfgHybridSPC() model.Config {
-	return model.Config{
-		Log:               benchLog,
-		ModelFiles:        benchHybridModelPath.ModelFiles,
-		ContextWindow:     32768,
-		NBatch:            2048,
-		NUBatch:           2048,
-		CacheTypeK:        model.GGMLTypeF16,
-		CacheTypeV:        model.GGMLTypeF16,
-		NSeqMax:           1,
-		SystemPromptCache: true,
-	}
-}
-
-func BenchmarkHybridSPC(b *testing.B) {
-	if len(benchHybridModelPath.ModelFiles) == 0 {
-		b.Skip("model Qwen3-Coder-Next-UD-Q4_K_XL not downloaded")
-	}
-	krn := withBenchModel(b, cfgHybridSPC())
-	benchChat(b, krn, benchDoc())
-}
 
 func cfgIMCHybrid() model.Config {
 	return model.Config{

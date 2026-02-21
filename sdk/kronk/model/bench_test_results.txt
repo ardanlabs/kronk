@@ -1,139 +1,61 @@
 🟢 Better   🔴 Worse   ⚪ Neutral
 
 
-Mode                    Benchmark                             Model
+Mode                    Benchmark                      Model
 --------------------------------------------------------------------------------
-Non Caching             BenchmarkNonCaching                   Qwen3-8B (dense)
-SPC                     BenchmarkSPC                          Qwen3-8B (dense)
+Non Caching             BenchmarkNonCaching            Qwen3-8B-Q8_0
 
-IMC Deterministic       BenchmarkIMCDeterministic             Qwen3-8B (dense)
-IMC Non-Deterministic   BenchmarkIMCNonDeterministic          GPT-OSS / GLM
-IMC MoE                 BenchmarkIMCMoE                       Qwen3-Coder-30B-A3B
-IMC Hybrid              BenchmarkIMCHybrid                    Qwen3-Coder-Next-UD-Q4_K_XL
+SPC                     BenchmarkSPC                   Qwen3-8B-Q8_0
 
-IMC Deterministic Spec  BenchmarkIMCDeterministicSpeculative  Qwen3-8B (dense)
-IMC MoE Spec            BenchmarkIMCMoESpeculative            Qwen3-Coder-30B-A3B
-IMC Hybrid Spec         BenchmarkHybridSPC                    Qwen3-Coder-Next-UD-Q4_K_XL
+IMC Deterministic       BenchmarkIMCDeterministic      Qwen3-8B-Q8_0
+IMC Non-Deterministic   BenchmarkIMCNonDeterministic   GPT-OSS / GLM
+IMC MoE                 BenchmarkIMCMoE                Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
+IMC Hybrid              BenchmarkIMCHybrid             Qwen3-Coder-Next-UD-Q4_K_XL
 
+SPEC IMC Deterministic  BenchmarkSPECIMCDeterministic  Qwen3-8B-Q8_0, Qwen3-0.6B-Q8_0
+SPEC IMC MoE            BenchmarkSPECIMCMoE            Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL, Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL
 
 ================================================================================
 Feb 21st, 2026 : v1.19.4
-Model          : Qwen3-8B-Q8_0
-Moe Model      : Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
+Model          : Qwen3-8B-Q8_0, Draft Qwen3-0.6B-Q8_0
+Moe Model      : Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL, Draft: Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL
+Hybrid Model   : Qwen3-Coder-Next-UD-Q4_K_XL
 ContextWindow  : 32768
 NBatch         : 2048,
 NUBatch        : 2048,
 CacheTypeK     : model.GGMLTypeF16,
 CacheTypeV     : model.GGMLTypeF16,
-llamap.cpp     : b8102
+llamap.cpp     : b8121
 --------------------------------------------------------------------------------
 goos: darwin
 goarch: arm64
 pkg: github.com/ardanlabs/kronk/sdk/kronk/model
 cpu: Apple M4 Max
-BenchmarkNonCaching-16   3  63328812056 ns/op 🟢 1166517 B/op 🟢  9071 allocs/op 🟢
-BenchmarkSPC-16          3  40163715389 ns/op 🟢  977120 B/op 🟢  8954 allocs/op 🟢
-BenchmarkD-IMC-16        3   3468613917 ns/op 🟢  152656 B/op 🟢  3951 allocs/op 🟢
-BenchmarkND-IMC-16       3   2480299680 ns/op ⚪  144376 B/op ⚪  3561 allocs/op ⚪
-BenchmarkD-IMCSpec-16    3   7252678361 ns/op ⚪  479704 B/op ⚪  9017 allocs/op ⚪
-BenchmarkND-IMCSpec-16   3   6148359722 ns/op ⚪  400437 B/op ⚪  6461 allocs/op ⚪
+
+NonCaching-16              1537464556 ns/op ⚪ 1163656 B/op ⚪  9055 allocs/op ⚪
+
+SPC-16                     9379392320 ns/op ⚪  976741 B/op ⚪  8943 allocs/op ⚪
+
+IMC-Deterministic-16       3492279236 ns/op ⚪  151818 B/op ⚪  3938 allocs/op ⚪
+IMC-NonDeterministic-16    1619060542 ns/op ⚪  144410 B/op ⚪  4072 allocs/op ⚪
+IMC-MoE                    2448039958 ns/op ⚪  151568 B/op ⚪  3394 allocs/op ⚪
+IMC-Hybrid                 3994944597 ns/op ⚪  163146 B/op ⚪  3903 allocs/op ⚪
+
+SPEC-IMC-Deterministic-16  5759106472 ns/op ⚪  485818 B/op ⚪  8607 allocs/op ⚪
+SPEC-IMC-MoE-16            4882891583 ns/op ⚪  396138 B/op ⚪  6293 allocs/op ⚪
+
 --------------------------------------------------------------------------------
 No Caching          SPC
-28.57 tok/s    🟢   36.96 tok/s    🟢
-67403 ttft-ms  🟢   36553 ttft-ms  🟢
-71779 total-ms 🟢   39937 total-ms 🟢
+38.20 tok/s    ⚪   38.05 tok/s    ⚪
+46907 ttft-ms  ⚪   35728 ttft-ms  ⚪
+50179 total-ms ⚪   39013 total-ms ⚪
 
-D-IMC               ND-IMC
-38.27 tok/s    🟢   49.20 tok/s    ⚪
-  183 ttft-ms  🟢     172 ttft-ms  ⚪
- 3449 total-ms 🟢    2753 total-ms ⚪
+IMC-Determ          IMC-Non-Determ     IMC-MoE             IMC-Hybrid
+37.16 tok/s    ⚪   85.51 tok/s    ⚪   46.89 tok/s    ⚪   32.90 tok/s    ⚪
+  161 ttft-ms  ⚪     186 ttft-ms  ⚪     174 ttft-ms  ⚪     132 ttft-ms  ⚪
+ 3525 total-ms ⚪    1639 total-ms ⚪    2286 total-ms ⚪    4006 total-ms ⚪
 
-D-IMC SPEC          ND-IMC SPEC
-17.81 tok/s    ⚪   18.27 tok/s    ⚪
-  284 ttft-ms  ⚪     207 ttft-ms  ⚪
- 7262 total-ms ⚪    5241 total-ms ⚪
-
-
-================================================================================
-Feb 19th, 2026 : v1.19.3
-Model          : Qwen3-8B-Q8_0
-Moe Model      : Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
-ContextWindow  : 32768
-NBatch         : 2048,
-NUBatch        : 2048,
-CacheTypeK     : model.GGMLTypeF16,
-CacheTypeV     : model.GGMLTypeF16,
-llamap.cpp     : b8102
---------------------------------------------------------------------------------
-goos: darwin
-goarch: arm64
-pkg: github.com/ardanlabs/kronk/sdk/kronk/model
-cpu: Apple M4 Max
-BenchmarkNonCaching-16   3  63328812056 ns/op 🟢 1166517 B/op 🟢  9071 allocs/op 🟢
-BenchmarkSPC-16          3  40163715389 ns/op 🟢  977120 B/op 🟢  8954 allocs/op 🟢
-BenchmarkD-IMC-16        3   3468613917 ns/op 🟢  152656 B/op 🟢  3951 allocs/op 🟢
-BenchmarkND-IMC-16       3   2480299680 ns/op ⚪  144376 B/op ⚪  3561 allocs/op ⚪
-BenchmarkD-IMCSpec-16    3   7252678361 ns/op ⚪  479704 B/op ⚪  9017 allocs/op ⚪
-BenchmarkND-IMCSpec-16   3   6148359722 ns/op ⚪  400437 B/op ⚪  6461 allocs/op ⚪
---------------------------------------------------------------------------------
-No Caching          SPC
-28.57 tok/s    🟢   36.96 tok/s    🟢
-67403 ttft-ms  🟢   36553 ttft-ms  🟢
-71779 total-ms 🟢   39937 total-ms 🟢
-
-D-IMC               ND-IMC
-38.27 tok/s    🟢   49.20 tok/s    ⚪
-  183 ttft-ms  🟢     172 ttft-ms  ⚪
- 3449 total-ms 🟢    2753 total-ms ⚪
-
-D-IMC SPEC          ND-IMC SPEC
-17.81 tok/s    ⚪   18.27 tok/s    ⚪
-  284 ttft-ms  ⚪     207 ttft-ms  ⚪
- 7262 total-ms ⚪    5241 total-ms ⚪
-
-
-================================================================================
-Feb 16th, 2026 : v1.19.2
-Model          : Qwen3-8B-Q8_0
-NBatch         : 2048,
-NUBatch        : 512,
-CacheTypeK     : model.GGMLTypeQ8_0,
-CacheTypeV     : model.GGMLTypeQ8_0,
-llamap.cpp     : b8070
---------------------------------------------------------------------------------
-goos: darwin
-goarch: arm64
-pkg: github.com/ardanlabs/kronk/sdk/kronk/model
-cpu: Apple M4 Max
-BenchmarkNonCaching-16 3  98596664806 ns/op 🔴  1169250 B/op 🔴  9079 allocs/op ⚪
-BenchmarkSPC-16        3  71905155792 ns/op 🔴   978493 B/op 🟢  8948 allocs/op ⚪
-BenchmarkIMC-16        3   4256359542 ns/op 🔴   152352 B/op 🔴  3944 allocs/op ⚪
---------------------------------------------------------------------------------
-No Caching          SPC                IMC                 
-28.73 tok/s    🟢   29.08 tok/s    🔴   31.70 tok/s    🔴
-80689 ttft-ms  🔴   63030 ttft-ms  🔴     276 ttft-ms  🔴
-85048 total-ms 🔴   67335 total-ms 🔴    4220 total-ms 🔴
-
-
-================================================================================
-Feb 16th, 2026 : v1.19.1
-Model          : Qwen3-8B-Q8_0
-ContextWindow  : 32768
-NBatch         : 2048,
-NUBatch        : 512,
-CacheTypeK     : model.GGMLTypeQ8_0,
-CacheTypeV     : model.GGMLTypeQ8_0,
-llamap.cpp     : b8070
---------------------------------------------------------------------------------
-goos: darwin
-goarch: arm64
-pkg: github.com/ardanlabs/kronk/sdk/kronk/model
-cpu: Apple M4 Max
-BenchmarkNonCaching-16 3  91258955014 ns/op ⚪  1167061 B/op ⚪  9070 allocs/op ⚪
-BenchmarkSPC-16        3  62552435931 ns/op ⚪   990240 B/op ⚪  8944 allocs/op ⚪
-BenchmarkIMC-16        3   4099335542 ns/op ⚪   138805 B/op ⚪  3949 allocs/op ⚪
---------------------------------------------------------------------------------
-No Caching          SPC                IMC                 
-28.77 tok/s    ⚪   29.01 tok/s    ⚪   32.41 tok/s    ⚪
-75824 ttft-ms  ⚪   59442 ttft-ms  ⚪     240 ttft-ms  ⚪
-80177 total-ms ⚪   63758 total-ms ⚪    4100 total-ms ⚪
+SPEC-IMC-Determ                        SPEC-IMC-MoE
+26.11 tok/s    ⚪                       24.83 tok/s    ⚪
+  240 ttft-ms  ⚪                         170 ttft-ms  ⚪
+ 4973 total-ms ⚪                        5285 total-ms ⚪

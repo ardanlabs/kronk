@@ -418,12 +418,16 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 	if e.model.modelInfo.IsHybridModel && e.model.cfg.IncrementalCache && job.imcCacheHit && cacheIdx > 0 {
 		e.model.decodeMu.Lock()
 		kvSize := llama.StateSeqGetSize(e.model.lctx, s.seqID)
-		state := make([]byte, kvSize)
-		nExtracted := llama.StateSeqGetData(e.model.lctx, state, s.seqID)
+		if cap(s.imcSavedState) >= int(kvSize) {
+			s.imcSavedState = s.imcSavedState[:kvSize]
+		} else {
+			s.imcSavedState = make([]byte, kvSize)
+		}
+		nExtracted := llama.StateSeqGetData(e.model.lctx, s.imcSavedState, s.seqID)
 		e.model.decodeMu.Unlock()
 
 		if nExtracted > 0 {
-			s.imcSavedState = state[:nExtracted]
+			s.imcSavedState = s.imcSavedState[:nExtracted]
 			e.model.log(job.ctx, "start-slot", "status", "imc-hybrid-snapshot",
 				"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx,
 				"snapshot_bytes", nExtracted, "kv_alloc", kvSize)

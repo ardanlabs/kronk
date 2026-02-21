@@ -188,7 +188,7 @@ func (s *slot) reset() {
 	s.specDraftProbs = nil
 	s.specBasePast = 0
 	s.specBaseBatch = 0
-	s.imcSavedState = nil
+	s.imcSavedState = s.imcSavedState[:0]
 	s.grammarSampler = nil
 	s.prefillStart = time.Time{}
 	s.prefillSpan = nil
