@@ -739,6 +739,7 @@ import (
 // const modelURL = "https://huggingface.co/unsloth/Ministral-3-14B-Instruct-2512-GGUF/resolve/main/Ministral-3-14B-Instruct-2512-Q4_0.gguf"
 // const modelURL = "https://huggingface.co/Edge-Quant/Nanbeige4.1-3B-Q8_0-GGUF/resolve/main/nanbeige4.1-3b-q8_0.gguf"
 // const modelURL = "https://huggingface.co/unsloth/rnj-1-instruct-GGUF/resolve/main/rnj-1-instruct-Q6_K.gguf"
+// const modelURL = "https://huggingface.co/unsloth/Qwen3-Coder-Next-GGUF/resolve/main/Qwen3-Coder-Next-UD-Q4_K_XL.gguf"
 const modelURL = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
 
 func main() {
