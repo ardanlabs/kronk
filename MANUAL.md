@@ -973,6 +973,31 @@ models:
 
 **Mixture of Experts (MoE) Models**
 
+MoE models like `Qwen3-Coder-30B-A3B` have many total parameters but only
+activate a small subset per token — the "A3B" means 30B total, 3B active.
+This saves compute on GPU clusters but has important implications for
+Apple Silicon and other memory-bandwidth-bound systems.
+
+On Apple Silicon (unified memory), inference speed is determined by how many
+**bytes must be read from memory per generated token**, not compute. MoE
+models create **scattered memory access patterns** — the routing layer must
+select which experts to activate, and those expert weights are spread across
+memory. This scattered access underutilizes memory bandwidth compared to the
+sequential access pattern of dense models.
+
+A dense model at Q4 quantization may outperform a smaller-active MoE model
+at Q8 quantization on Apple Silicon, even though the MoE activates fewer
+parameters. The dense model reads weights sequentially (ideal for bandwidth
+saturation) at 0.5 bytes per parameter, while the MoE reads scattered expert
+weights at 1 byte per parameter. The total bytes moved per token can be
+comparable — but the dense model's sequential pattern is more efficient.
+
+MoE also tends to produce lower quality per-token than a dense model with the
+same number of active parameters, because only a fraction of the model's
+knowledge is engaged per token. A dense model at Q4 with all parameters
+active has far more model capacity per token than an MoE with 3B active,
+even at Q8 precision.
+
 MoE models can be sensitive to aggressive KV cache quantization. If you
 notice quality degradation, try `f16` cache types.
 
@@ -984,6 +1009,38 @@ models:
     split_mode: row # Best for MoE architecture
     cache_type_k: q8_0 # Be cautious with aggressive quantization
     cache_type_v: q8_0
+```
+
+**Hybrid Models (Attention + Recurrent)**
+
+Hybrid models like Qwen3-Coder-Next mix traditional Attention layers with
+recurrent layers (DeltaNet or SSM/Mamba). Unlike MoE models, hybrid models
+are dense — every parameter participates in every token. Kronk detects hybrid
+models automatically at load time.
+
+Hybrid models have specific constraints:
+
+- **KV cache must be f16** — quantized cache types (`q8_0`) are incompatible
+  with the recurrent layers. This doubles KV cache memory compared to models
+  that support `q8_0`.
+- **Flash attention is disabled** — Kronk automatically disables flash
+  attention for hybrid models.
+- **IMC uses snapshot/restore** — see [Section 5.9](#59-hybrid-model-imc-snapshotrestore)
+  for details on how caching works with recurrent state.
+
+When choosing between a hybrid model and an MoE model for Apple Silicon,
+consider: the hybrid model's sequential memory access pattern and dense
+activation give it both better quality per token and better bandwidth
+utilization. The trade-off is total model size — hybrid models use all
+parameters, so you need enough unified memory to hold them plus the larger
+f16 KV cache.
+
+```yaml
+models:
+  Qwen3-Coder-Next-UD-Q4_K_XL:
+    cache_type_k: f16   # Required for hybrid models
+    cache_type_v: f16   # Required for hybrid models
+    incremental_cache: true
 ```
 
 **Embedding Models**
@@ -2027,6 +2084,108 @@ compared to a full rebuild.
 - Designed for single-user use
 - Max concurrent conversation branches = NSeqMax; when all slots are
   occupied, the least-recently-used slot is evicted
+
+### 5.9 Hybrid Model IMC (Snapshot/Restore)
+
+Some newer model architectures mix traditional Attention layers with recurrent
+layers such as DeltaNet or SSM (Selective State Space Models / Mamba). Kronk
+calls these **hybrid models**. Examples include Qwen3-Coder-Next (`qwen3next`
+architecture), where every 4th block is full attention and the rest are
+DeltaNet. Kronk detects hybrid models automatically at load time via
+`llama.ModelIsHybrid` — no user configuration is required.
+
+**Why hybrid models need special handling:**
+
+Standard Attention layers store positional KV (Key-Value) pairs. Recurrent
+layers store a **hidden recurrent state** instead. The standard IMC algorithm
+trims generated tokens after each request using a partial range delete
+(`MemorySeqRm(seq, trimPos, -1)`). This works for attention-only models
+because removing KV entries at specific positions leaves earlier positions
+intact. But for hybrid models, a partial range delete **corrupts the recurrent
+hidden state** — the DeltaNet/SSM state cannot be "rewound" to an earlier
+position. The result: the first request in a conversation succeeds, but every
+follow-up request fails with a decode error because the hidden state is left
+in an inconsistent position.
+
+**The solution — snapshot/restore:**
+
+Instead of trimming the cache in-place, Kronk uses a snapshot/restore approach
+for hybrid models. The semantics are identical to standard IMC — the slot
+selection algorithm, hash matching, token prefix fallback, and multi-slot
+architecture all work the same way. The difference is how the KV + recurrent
+state is managed between requests.
+
+**Snapshot (after cache build, before suffix decode):**
+
+After the IMC cache is built or extended but before the current request's
+suffix tokens are decoded, the server captures the full sequence state
+(KV cache + recurrent hidden state) into a byte buffer in RAM using
+`StateSeqGetData`. This snapshot represents the clean state at the boundary
+of the cached message prefix.
+
+```
+Request arrives → IMC extends cache → Snapshot state → Decode suffix → Generate
+```
+
+**Restore (after request completes):**
+
+When the request finishes, instead of trimming generated tokens with a partial
+range delete, the server performs a full sequence clear (`MemorySeqRm(seq,
+-1, -1)`) and restores the snapshot using `StateSeqSetData`. This returns the
+cache to the exact state it was in after the prefix was cached, with the
+recurrent hidden state perfectly preserved.
+
+```
+Standard IMC:  Trim generated tokens (partial delete)
+Hybrid IMC:    Full clear → Restore snapshot (memory copy)
+```
+
+**Partial prefix rebuilds:**
+
+When a request matches a partial token prefix (the token prefix fallback
+path), standard IMC trims from the divergence point. Hybrid models cannot do
+partial trims, so the server performs a full sequence clear and re-decodes the
+entire cached token sequence from position 0. This is more expensive than a
+partial trim but guarantees the recurrent state is built correctly.
+
+```
+Standard IMC:  Trim from divergence point, decode new tokens only
+Hybrid IMC:    Full clear, re-decode all cached tokens from position 0
+```
+
+**Performance:**
+
+The snapshot/restore approach is fast. Capturing and restoring state is a
+memory copy operation, comparable in cost to SPC's `StateSeqSetData` restore
+(typically 10-30ms depending on conversation size). The key advantage over SPC
+is that the snapshot includes the entire conversation's cached state, so only
+the most recent message needs to be decoded — not the full history. For long
+agentic conversations this is significantly faster.
+
+**Constraints:**
+
+- Hybrid models require the KV cache to use `f16` — quantized cache types
+  (e.g., `q8_0`) are incompatible with the recurrent layers
+- Flash attention is automatically disabled for hybrid models
+
+**Guardrails:**
+
+If a snapshot restore fails, Kronk clears the slot's IMC metadata
+(`cachedMsgsHash`, `totalTokensCached`, `lastMsgIdxCached`) so the slot is
+not reused with a corrupted sequence. The next request to that slot triggers
+a full cache rebuild from scratch.
+
+**Debugging Hybrid IMC:**
+
+| Log Message                    | Meaning                                                         |
+| ------------------------------ | --------------------------------------------------------------- |
+| `imc-hybrid-snapshot`          | State captured after cache build (shows snapshot_bytes)          |
+| `imc-hybrid-snapshot-failed`   | StateSeqGetData returned 0 bytes                                |
+| `imc-hybrid-restore`           | Snapshot restored after request (shows restored_bytes)           |
+| `imc-hybrid-restore-failed`    | StateSeqSetData failed, slot metadata cleared                   |
+| `imc-hybrid-no-snapshot`       | No snapshot available, full clear + metadata invalidation        |
+| `imc-hybrid-rebuild`           | Partial prefix: full clear + re-decode from position 0          |
+| `imc-hybrid-trim-rebuild`      | Trim-only prefix: full clear + re-decode truncated sequence     |
 
 ---
 

@@ -911,6 +911,10 @@ Step 4 — Total VRAM:
     n_ubatch: 2048 # High for image/audio token batches
     n_seq_max: 2 # Process up to 2 requests concurrently`}</code></pre>
           <p><strong>Mixture of Experts (MoE) Models</strong></p>
+          <p>MoE models like <code>Qwen3-Coder-30B-A3B</code> have many total parameters but only activate a small subset per token — the "A3B" means 30B total, 3B active. This saves compute on GPU clusters but has important implications for Apple Silicon and other memory-bandwidth-bound systems.</p>
+          <p>On Apple Silicon (unified memory), inference speed is determined by how many <strong>bytes must be read from memory per generated token</strong>, not compute. MoE models create <strong>scattered memory access patterns</strong> — the routing layer must select which experts to activate, and those expert weights are spread across memory. This scattered access underutilizes memory bandwidth compared to the sequential access pattern of dense models.</p>
+          <p>A dense model at Q4 quantization may outperform a smaller-active MoE model at Q8 quantization on Apple Silicon, even though the MoE activates fewer parameters. The dense model reads weights sequentially (ideal for bandwidth saturation) at 0.5 bytes per parameter, while the MoE reads scattered expert weights at 1 byte per parameter. The total bytes moved per token can be comparable — but the dense model's sequential pattern is more efficient.</p>
+          <p>MoE also tends to produce lower quality per-token than a dense model with the same number of active parameters, because only a fraction of the model's knowledge is engaged per token. A dense model at Q4 with all parameters active has far more model capacity per token than an MoE with 3B active, even at Q8 precision.</p>
           <p>MoE models can be sensitive to aggressive KV cache quantization. If you notice quality degradation, try <code>f16</code> cache types.</p>
           <p>Use row-based tensor parallelism for multi-GPU setups:</p>
           <pre className="code-block"><code className="language-yaml">{`models:
@@ -918,6 +922,27 @@ Step 4 — Total VRAM:
     split_mode: row # Best for MoE architecture
     cache_type_k: q8_0 # Be cautious with aggressive quantization
     cache_type_v: q8_0`}</code></pre>
+          <p><strong>Hybrid Models (Attention + Recurrent)</strong></p>
+          <p>Hybrid models like Qwen3-Coder-Next mix traditional Attention layers with recurrent layers (DeltaNet or SSM/Mamba). Unlike MoE models, hybrid models are dense — every parameter participates in every token. Kronk detects hybrid models automatically at load time.</p>
+          <p>Hybrid models have specific constraints:</p>
+          <ul>
+            <li><strong>KV cache must be f16</strong> — quantized cache types (<code>q8_0</code>) are incompatible</li>
+          </ul>
+          <p>with the recurrent layers. This doubles KV cache memory compared to models that support <code>q8_0</code>.</p>
+          <ul>
+            <li><strong>Flash attention is disabled</strong> — Kronk automatically disables flash</li>
+          </ul>
+          <p>attention for hybrid models.</p>
+          <ul>
+            <li><strong>IMC uses snapshot/restore</strong> — see <a href="#59-hybrid-model-imc-snapshotrestore">Section 5.9</a></li>
+          </ul>
+          <p>for details on how caching works with recurrent state.</p>
+          <p>When choosing between a hybrid model and an MoE model for Apple Silicon, consider: the hybrid model's sequential memory access pattern and dense activation give it both better quality per token and better bandwidth utilization. The trade-off is total model size — hybrid models use all parameters, so you need enough unified memory to hold them plus the larger f16 KV cache.</p>
+          <pre className="code-block"><code className="language-yaml">{`models:
+  Qwen3-Coder-Next-UD-Q4_K_XL:
+    cache_type_k: f16   # Required for hybrid models
+    cache_type_v: f16   # Required for hybrid models
+    incremental_cache: true`}</code></pre>
           <p><strong>Embedding Models</strong></p>
           <p>Embedding models process complete inputs in a single pass, so larger <code>n_batch</code> values improve throughput.</p>
           <p>Optimize batch size for your typical input lengths:</p>
@@ -1722,6 +1747,74 @@ New decode:    7 tokens (T5-T12, from divergence point forward)`}</code></pre>
             <li>Max concurrent conversation branches = NSeqMax; when all slots are</li>
           </ul>
           <p>occupied, the least-recently-used slot is evicted</p>
+          <h3 id="59-hybrid-model-imc-snapshotrestore">5.9 Hybrid Model IMC (Snapshot/Restore)</h3>
+          <p>Some newer model architectures mix traditional Attention layers with recurrent layers such as DeltaNet or SSM (Selective State Space Models / Mamba). Kronk calls these <strong>hybrid models</strong>. Examples include Qwen3-Coder-Next (<code>qwen3next</code> architecture), where every 4th block is full attention and the rest are DeltaNet. Kronk detects hybrid models automatically at load time via <code>llama.ModelIsHybrid</code> — no user configuration is required.</p>
+          <p><strong>Why hybrid models need special handling:</strong></p>
+          <p>Standard Attention layers store positional KV (Key-Value) pairs. Recurrent layers store a <strong>hidden recurrent state</strong> instead. The standard IMC algorithm trims generated tokens after each request using a partial range delete (<code>MemorySeqRm(seq, trimPos, -1)</code>). This works for attention-only models because removing KV entries at specific positions leaves earlier positions intact. But for hybrid models, a partial range delete <strong>corrupts the recurrent hidden state</strong> — the DeltaNet/SSM state cannot be "rewound" to an earlier position. The result: the first request in a conversation succeeds, but every follow-up request fails with a decode error because the hidden state is left in an inconsistent position.</p>
+          <p><strong>The solution — snapshot/restore:</strong></p>
+          <p>Instead of trimming the cache in-place, Kronk uses a snapshot/restore approach for hybrid models. The semantics are identical to standard IMC — the slot selection algorithm, hash matching, token prefix fallback, and multi-slot architecture all work the same way. The difference is how the KV + recurrent state is managed between requests.</p>
+          <p><strong>Snapshot (after cache build, before suffix decode):</strong></p>
+          <p>After the IMC cache is built or extended but before the current request's suffix tokens are decoded, the server captures the full sequence state (KV cache + recurrent hidden state) into a byte buffer in RAM using <code>StateSeqGetData</code>. This snapshot represents the clean state at the boundary of the cached message prefix.</p>
+          <pre className="code-block"><code>{`Request arrives → IMC extends cache → Snapshot state → Decode suffix → Generate`}</code></pre>
+          <p><strong>Restore (after request completes):</strong></p>
+          <p>When the request finishes, instead of trimming generated tokens with a partial range delete, the server performs a full sequence clear (<code>MemorySeqRm(seq, -1, -1)</code>) and restores the snapshot using <code>StateSeqSetData</code>. This returns the cache to the exact state it was in after the prefix was cached, with the recurrent hidden state perfectly preserved.</p>
+          <pre className="code-block"><code>{`Standard IMC:  Trim generated tokens (partial delete)
+Hybrid IMC:    Full clear → Restore snapshot (memory copy)`}</code></pre>
+          <p><strong>Partial prefix rebuilds:</strong></p>
+          <p>When a request matches a partial token prefix (the token prefix fallback path), standard IMC trims from the divergence point. Hybrid models cannot do partial trims, so the server performs a full sequence clear and re-decodes the entire cached token sequence from position 0. This is more expensive than a partial trim but guarantees the recurrent state is built correctly.</p>
+          <pre className="code-block"><code>{`Standard IMC:  Trim from divergence point, decode new tokens only
+Hybrid IMC:    Full clear, re-decode all cached tokens from position 0`}</code></pre>
+          <p><strong>Performance:</strong></p>
+          <p>The snapshot/restore approach is fast. Capturing and restoring state is a memory copy operation, comparable in cost to SPC's <code>StateSeqSetData</code> restore (typically 10-30ms depending on conversation size). The key advantage over SPC is that the snapshot includes the entire conversation's cached state, so only the most recent message needs to be decoded — not the full history. For long agentic conversations this is significantly faster.</p>
+          <p><strong>Constraints:</strong></p>
+          <ul>
+            <li>Hybrid models require the KV cache to use <code>f16</code> — quantized cache types</li>
+          </ul>
+          <p>(e.g., <code>q8_0</code>) are incompatible with the recurrent layers</p>
+          <ul>
+            <li>Flash attention is automatically disabled for hybrid models</li>
+          </ul>
+          <p><strong>Guardrails:</strong></p>
+          <p>If a snapshot restore fails, Kronk clears the slot's IMC metadata (<code>cachedMsgsHash</code>, <code>totalTokensCached</code>, <code>lastMsgIdxCached</code>) so the slot is not reused with a corrupted sequence. The next request to that slot triggers a full cache rebuild from scratch.</p>
+          <p><strong>Debugging Hybrid IMC:</strong></p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Log Message</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>imc-hybrid-snapshot</code></td>
+                <td>State captured after cache build (shows snapshot_bytes)</td>
+              </tr>
+              <tr>
+                <td><code>imc-hybrid-snapshot-failed</code></td>
+                <td>StateSeqGetData returned 0 bytes</td>
+              </tr>
+              <tr>
+                <td><code>imc-hybrid-restore</code></td>
+                <td>Snapshot restored after request (shows restored_bytes)</td>
+              </tr>
+              <tr>
+                <td><code>imc-hybrid-restore-failed</code></td>
+                <td>StateSeqSetData failed, slot metadata cleared</td>
+              </tr>
+              <tr>
+                <td><code>imc-hybrid-no-snapshot</code></td>
+                <td>No snapshot available, full clear + metadata invalidation</td>
+              </tr>
+              <tr>
+                <td><code>imc-hybrid-rebuild</code></td>
+                <td>Partial prefix: full clear + re-decode from position 0</td>
+              </tr>
+              <tr>
+                <td><code>imc-hybrid-trim-rebuild</code></td>
+                <td>Trim-only prefix: full clear + re-decode truncated sequence</td>
+              </tr>
+            </tbody>
+          </table>
           <hr />
           <h2 id="chapter-6:-yarn-extended-context">Chapter 6: YaRN Extended Context</h2>
           <p>YaRN (Yet another RoPE extensioN) allows models to handle context windows beyond their native training length. This is essential for long documents, extended conversations, and complex agentic workflows.</p>
@@ -5327,6 +5420,7 @@ batching = true`}</code></pre>
                 <li><a href="#56-cache-invalidation" className={activeSection === '56-cache-invalidation' ? 'active' : ''}>5.6 Cache Invalidation</a></li>
                 <li><a href="#57-configuration-reference" className={activeSection === '57-configuration-reference' ? 'active' : ''}>5.7 Configuration Reference</a></li>
                 <li><a href="#58-performance-and-limitations" className={activeSection === '58-performance-and-limitations' ? 'active' : ''}>5.8 Performance and Limitations</a></li>
+                <li><a href="#59-hybrid-model-imc-snapshotrestore" className={activeSection === '59-hybrid-model-imc-snapshotrestore' ? 'active' : ''}>5.9 Hybrid Model IMC (Snapshot/Restore)</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
