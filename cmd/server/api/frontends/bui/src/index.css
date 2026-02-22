@@ -3053,6 +3053,59 @@ tr.selected:hover td {
     font-style: italic;
 }
 
+.autotest-detail-active {
+    border: 1px solid #1565c0;
+    border-radius: 6px;
+    padding: 10px 12px;
+    background: rgba(21, 101, 192, 0.06);
+}
+
+.autotest-detail-active-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #1565c0;
+    margin-bottom: 6px;
+}
+
+.autotest-detail-active-prompt {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    font-size: 12px;
+    color: var(--color-gray-700);
+    padding: 4px 0;
+}
+
+.autotest-detail-active-scenario {
+    font-weight: 600;
+    color: var(--color-gray-800);
+}
+
+.autotest-detail-active-id {
+    font-family: monospace;
+    color: #1565c0;
+}
+
+.autotest-detail-active-repeat {
+    color: var(--color-gray-500);
+    font-size: 11px;
+}
+
+.autotest-detail-active-preview {
+    flex-basis: 100%;
+    font-size: 11px;
+    color: var(--color-gray-500);
+    font-style: italic;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 600px;
+}
+
 .autotest-detail-scenario {
     border: 1px solid var(--color-gray-200);
     border-radius: 6px;

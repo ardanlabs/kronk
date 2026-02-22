@@ -39,6 +39,7 @@ interface AutoTestRunBase {
   enabledScenarios: EnabledScenarios;
   currentTrialIndex: number;
   totalTrials: number;
+  runStartedAt?: string;
 }
 
 export interface SamplingRun extends AutoTestRunBase {
@@ -188,7 +189,13 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
         }
 
         const candidates = generateTrialCandidates(sweepDef, maxTrials);
-        setRun(prev => prev ? { ...prev, status: 'running_trials', totalTrials: candidates.length, currentTrialIndex: 0 } : prev);
+        const queuedTrials: AutoTestTrialResult[] = candidates.map((c, idx) => ({
+          id: `${runId}-trial-${idx}`,
+          status: 'queued' as const,
+          candidate: c,
+          scenarioResults: [],
+        }));
+        setRun(prev => prev ? { ...prev, status: 'running_trials', runStartedAt: new Date().toISOString(), totalTrials: candidates.length, currentTrialIndex: 0, trials: queuedTrials } : prev);
 
         let bestComposite = -Infinity;
         let bestTPS = -Infinity;
@@ -198,11 +205,21 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
           if (controller.signal.aborted) break;
 
           const candidate = candidates[i];
+
+          // Eagerly mark trial as running before calling runTrial
+          const trialStartedAt = new Date().toISOString();
+          setRun(prev => {
+            if (!prev || prev.kind !== 'sampling') return prev;
+            const trials = [...prev.trials];
+            trials[i] = { ...trials[i], status: 'running', startedAt: trialStartedAt };
+            return { ...prev, trials };
+          });
+
           const onUpdate = (partial: AutoTestTrialResult) => {
             setRun(prev => {
               if (!prev || prev.kind !== 'sampling') return prev;
               const trials = [...prev.trials];
-              trials[i] = partial;
+              trials[i] = { ...trials[i], ...partial };
               return { ...prev, trials };
             });
           };
@@ -299,8 +316,6 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        setRun(prev => prev ? { ...prev, totalTrials: configCandidates.length } : prev);
-
         const scenarios: AutoTestScenario[] = [];
         if (enabledScenarios.chat) scenarios.push(configChatScenario);
         if (enabledScenarios.tool_call) scenarios.push(configToolCallScenario);
@@ -319,10 +334,29 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
           presence_penalty: 0,
         };
 
+        const queuedConfigTrials: ConfigTrialResult[] = configCandidates.map((c, idx) => ({
+          id: `${runId}-trial-${idx}`,
+          status: 'queued' as const,
+          candidate: activeBaseline,
+          scenarioResults: [],
+          config: c,
+        }));
+        setRun(prev => prev ? { ...prev, status: 'running_trials', runStartedAt: new Date().toISOString(), totalTrials: configCandidates.length, currentTrialIndex: 0, trials: queuedConfigTrials } : prev);
+
         for (let i = 0; i < configCandidates.length; i++) {
           if (controller.signal.aborted) break;
 
           const candidate = configCandidates[i];
+
+          // Eagerly mark trial as running
+          const trialStartedAt = new Date().toISOString();
+          setRun(prev => {
+            if (!prev || prev.kind !== 'config') return prev;
+            const trials = [...prev.trials];
+            trials[i] = { ...trials[i], status: 'running', startedAt: trialStartedAt };
+            return { ...prev, trials };
+          });
+
           const { 'cache_type': cacheType, 'cache_mode': cacheMode, ...cfgRest } = candidate;
           const apiCfg = {
             ...cfgRest,
@@ -384,7 +418,7 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
               setRun(prev => {
                 if (!prev || prev.kind !== 'config') return prev;
                 const trials = [...prev.trials];
-                trials[i] = { ...partial, config: candidate };
+                trials[i] = { ...trials[i], ...partial, config: candidate };
                 return { ...prev, trials };
               });
             };

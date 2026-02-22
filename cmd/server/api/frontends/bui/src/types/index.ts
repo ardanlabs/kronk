@@ -597,6 +597,16 @@ export interface AutoTestScenarioResult {
   promptTokensByFill?: Record<ContextFillRatio, number>;
 }
 
+export interface AutoTestActivePrompt {
+  scenarioId: AutoTestScenarioID;
+  promptId: string;
+  promptIndex: number;
+  repeatIndex?: number;
+  repeats?: number;
+  preview?: string;
+  startedAt?: string;
+}
+
 export interface AutoTestTrialResult {
   id: string;
   status: AutoTestTrialStatus;
@@ -608,6 +618,7 @@ export interface AutoTestTrialResult {
   avgTPS?: number;
   avgTTFT?: number;
   avgTPSByFill?: Record<ContextFillRatio, number>;
+  activePrompts?: AutoTestActivePrompt[];
 }
 
 // Config Sweep Types
