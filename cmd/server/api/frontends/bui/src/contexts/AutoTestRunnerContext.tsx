@@ -3,6 +3,7 @@ import type {
   AutoTestRunnerState,
   AutoTestTrialResult,
   SamplingCandidate,
+  SamplingSweepDefinition,
   AutoTestScenario,
   ConfigSweepDefinition,
   ConfigCandidate,
@@ -44,8 +45,7 @@ interface AutoTestRunBase {
 export interface SamplingRun extends AutoTestRunBase {
   kind: 'sampling';
   sessionId: string;
-  useCustomBaseline: boolean;
-  baseline: SamplingCandidate;
+  sweepDef: SamplingSweepDefinition;
   maxTrials: number;
   trials: AutoTestTrialResult[];
   bestTrialId?: string;
@@ -73,8 +73,7 @@ interface AutoTestRunnerContextType {
   startSamplingRun(args: {
     sessionId: string;
     enabledScenarios: EnabledScenarios;
-    useCustomBaseline: boolean;
-    baseline: SamplingCandidate;
+    sweepDef: SamplingSweepDefinition;
     maxTrials: number;
     weights: BestConfigWeights;
     repeats: number;
@@ -112,11 +111,10 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const startSamplingRun = useCallback(({ sessionId, enabledScenarios, useCustomBaseline, baseline, maxTrials, weights, repeats, effectiveConfig }: {
+  const startSamplingRun = useCallback(({ sessionId, enabledScenarios, sweepDef, maxTrials, weights, repeats, effectiveConfig }: {
     sessionId: string;
     enabledScenarios: EnabledScenarios;
-    useCustomBaseline: boolean;
-    baseline: SamplingCandidate;
+    sweepDef: SamplingSweepDefinition;
     maxTrials: number;
     weights: BestConfigWeights;
     repeats: number;
@@ -136,8 +134,7 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
       currentTrialIndex: 0,
       totalTrials: 0,
       sessionId,
-      useCustomBaseline,
-      baseline,
+      sweepDef,
       maxTrials,
       trials: [],
     });
@@ -185,7 +182,7 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
           }
         }
 
-        const candidates = generateTrialCandidates(baseline, maxTrials);
+        const candidates = generateTrialCandidates(sweepDef, maxTrials);
         setRun(prev => prev ? { ...prev, status: 'running_trials', totalTrials: candidates.length, currentTrialIndex: 0 } : prev);
 
         let bestComposite = -Infinity;

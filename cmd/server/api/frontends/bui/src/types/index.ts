@@ -634,6 +634,27 @@ export interface ConfigSweepDefinition {
   cacheMode: SweepStringValues;
 }
 
+export interface SamplingSweepDefinition {
+  temperature: number[];
+  top_p: number[];
+  top_k: number[];
+  min_p: number[];
+  repeat_penalty: number[];
+  repeat_last_n: number[];
+  frequency_penalty: number[];
+  presence_penalty: number[];
+  dry_multiplier: number[];
+  dry_base: number[];
+  dry_allowed_length: number[];
+  dry_penalty_last_n: number[];
+  xtc_probability: number[];
+  xtc_threshold: number[];
+  xtc_min_keep: number[];
+  max_tokens: number[];
+  enable_thinking: string[];
+  reasoning_effort: string[];
+}
+
 export interface BestConfigWeights {
   chatScore: number;
   toolScore: number;

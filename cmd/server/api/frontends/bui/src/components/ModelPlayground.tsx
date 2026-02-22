@@ -772,6 +772,7 @@ export default function ModelPlayground() {
             <div className="playground-tab-content">
               <AutomatedTestingPanel
                 session={session}
+                catalogSampling={catalogConfig?.['sampling-parameters'] ?? null}
                 sessionSeed={{
                   model_id: selectedModel,
                   template_mode: templateMode,

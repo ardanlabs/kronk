@@ -11,6 +11,7 @@ import type {
   AutoTestPromptResult,
   AutoTestTrialResult,
   SamplingCandidate,
+  SamplingSweepDefinition,
   ConfigSweepDefinition,
   ConfigCandidate,
   PlaygroundModelConfig,
@@ -1138,28 +1139,33 @@ export const configToolCallScenario: AutoTestScenario = {
 
 /** Generates trial candidates with expanded parameter grids, truncated to maxTrials. */
 export function generateTrialCandidates(
-  baseline: SamplingCandidate,
-  maxTrials: number = 25,
+  sweepDef: SamplingSweepDefinition,
+  maxTrials: number = Infinity,
 ): SamplingCandidate[] {
   const safeMax = maxTrials === Infinity
     ? Infinity
     : Number.isFinite(maxTrials) ? Math.max(1, Math.floor(maxTrials)) : 25
 
+  // Baseline uses first value of each param's range
   const base: SamplingCandidate = {
-    temperature: 0.8,
-    top_p: 0.9,
-    top_k: 40,
-    min_p: 0,
-    repeat_penalty: 1.0,
-    repeat_last_n: 64,
-    frequency_penalty: 0.0,
-    presence_penalty: 0.0,
-    dry_multiplier: 1.05,
-    dry_base: 1.75,
-    dry_allowed_length: 2,
-    xtc_probability: 0.0,
-    xtc_threshold: 0.1,
-    ...baseline,
+    temperature: sweepDef.temperature[0] ?? 0.8,
+    top_p: sweepDef.top_p[0] ?? 0.9,
+    top_k: sweepDef.top_k[0] ?? 40,
+    min_p: sweepDef.min_p[0] ?? 0,
+    repeat_penalty: sweepDef.repeat_penalty[0] ?? 1.0,
+    repeat_last_n: sweepDef.repeat_last_n[0] ?? 64,
+    frequency_penalty: sweepDef.frequency_penalty[0] ?? 0.0,
+    presence_penalty: sweepDef.presence_penalty[0] ?? 0.0,
+    dry_multiplier: sweepDef.dry_multiplier[0] ?? 1.05,
+    dry_base: sweepDef.dry_base[0] ?? 1.75,
+    dry_allowed_length: sweepDef.dry_allowed_length[0] ?? 2,
+    dry_penalty_last_n: sweepDef.dry_penalty_last_n[0] ?? 0,
+    xtc_probability: sweepDef.xtc_probability[0] ?? 0.0,
+    xtc_threshold: sweepDef.xtc_threshold[0] ?? 0.1,
+    xtc_min_keep: sweepDef.xtc_min_keep[0] ?? 1,
+    max_tokens: sweepDef.max_tokens[0] ?? 4096,
+    enable_thinking: (sweepDef.enable_thinking[0] ?? 'true') as 'true' | 'false',
+    reasoning_effort: (sweepDef.reasoning_effort[0] ?? 'medium') as SamplingCandidate['reasoning_effort'],
   }
 
   // Normalize floats to 3 decimal places for stable comparison and dedup
@@ -1170,7 +1176,7 @@ export function generateTrialCandidates(
   const candidates: SamplingCandidate[] = []
 
   const keyOf = (c: SamplingCandidate) =>
-    `t=${norm(c.temperature)}|p=${norm(c.top_p)}|k=${c.top_k}|m=${norm(c.min_p)}|rp=${norm(c.repeat_penalty)}|rn=${c.repeat_last_n}|fp=${norm(c.frequency_penalty)}|pp=${norm(c.presence_penalty)}|dm=${norm(c.dry_multiplier)}|db=${norm(c.dry_base)}|da=${c.dry_allowed_length}|xp=${norm(c.xtc_probability)}|xt=${norm(c.xtc_threshold)}`
+    `t=${norm(c.temperature)}|p=${norm(c.top_p)}|k=${c.top_k}|m=${norm(c.min_p)}|rp=${norm(c.repeat_penalty)}|rn=${c.repeat_last_n}|fp=${norm(c.frequency_penalty)}|pp=${norm(c.presence_penalty)}|dm=${norm(c.dry_multiplier)}|db=${norm(c.dry_base)}|da=${c.dry_allowed_length}|dp=${c.dry_penalty_last_n}|xp=${norm(c.xtc_probability)}|xt=${norm(c.xtc_threshold)}|xk=${c.xtc_min_keep}|mt=${c.max_tokens}|et=${c.enable_thinking}|re=${c.reasoning_effort}`
 
   const add = (c: SamplingCandidate) => {
     if (safeMax !== Infinity && candidates.length >= safeMax) return
@@ -1187,108 +1193,61 @@ export function generateTrialCandidates(
   add({ ...base })
   if (safeMax <= 1) return candidates
 
-  // Expanded grids
-  const temperatureGrid = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2]
-  const topPGrid = [0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 1.00]
-  const topKGrid = [0, 5, 10, 20, 30, 40, 60, 80, 120, 200]
-  const minPGrid = [0, 0.01, 0.02, 0.03, 0.05, 0.08, 0.10, 0.12, 0.15, 0.20]
-
   // Sort each grid by distance from baseline value (closest first for early coverage)
   const sortByDistance = (vals: number[], center: number) =>
     [...vals].sort((a, b) => Math.abs(a - center) - Math.abs(b - center))
 
-  const baseTemp = base.temperature ?? 0.8
-  const baseTopP = base.top_p ?? 0.9
-  const baseTopK = base.top_k ?? 40
-  const baseMinP = base.min_p ?? 0
+  // Build OAT lists from sweep definition ranges
+  type NumericKey = 'temperature' | 'top_p' | 'top_k' | 'min_p' | 'repeat_penalty' | 'repeat_last_n' |
+    'frequency_penalty' | 'presence_penalty' | 'dry_multiplier' | 'dry_base' | 'dry_allowed_length' |
+    'dry_penalty_last_n' | 'xtc_probability' | 'xtc_threshold' | 'xtc_min_keep' | 'max_tokens'
 
-  const temps = sortByDistance(
-    temperatureGrid.filter(t => !approxEq(base.temperature, t)),
-    baseTemp,
-  ).map(t => ({ ...base, temperature: t }))
+  const numericAxes: Array<{ key: NumericKey; values: number[] }> = [
+    { key: 'temperature', values: sweepDef.temperature },
+    { key: 'top_p', values: sweepDef.top_p },
+    { key: 'top_k', values: sweepDef.top_k },
+    { key: 'min_p', values: sweepDef.min_p },
+    { key: 'repeat_penalty', values: sweepDef.repeat_penalty },
+    { key: 'repeat_last_n', values: sweepDef.repeat_last_n },
+    { key: 'frequency_penalty', values: sweepDef.frequency_penalty },
+    { key: 'presence_penalty', values: sweepDef.presence_penalty },
+    { key: 'dry_multiplier', values: sweepDef.dry_multiplier },
+    { key: 'dry_base', values: sweepDef.dry_base },
+    { key: 'dry_allowed_length', values: sweepDef.dry_allowed_length },
+    { key: 'dry_penalty_last_n', values: sweepDef.dry_penalty_last_n },
+    { key: 'xtc_probability', values: sweepDef.xtc_probability },
+    { key: 'xtc_threshold', values: sweepDef.xtc_threshold },
+    { key: 'xtc_min_keep', values: sweepDef.xtc_min_keep },
+    { key: 'max_tokens', values: sweepDef.max_tokens },
+  ]
 
-  const topPs = sortByDistance(
-    topPGrid.filter(p => !approxEq(base.top_p, p)),
-    baseTopP,
-  ).map(p => ({ ...base, top_p: p }))
+  const oatLists: SamplingCandidate[][] = numericAxes
+    .filter(axis => axis.values.length > 1)
+    .map(axis => {
+      const baseVal = (base[axis.key] as number) ?? 0
+      return sortByDistance(
+        axis.values.filter(v => !approxEq(baseVal, v)),
+        baseVal,
+      ).map(v => ({ ...base, [axis.key]: v }))
+    })
 
-  const topKs = sortByDistance(
-    topKGrid.filter(k => k !== baseTopK),
-    baseTopK,
-  ).map(k => ({ ...base, top_k: k }))
-
-  const minPs = sortByDistance(
-    minPGrid.filter(m => !approxEq(base.min_p, m)),
-    baseMinP,
-  ).map(m => ({ ...base, min_p: m }))
-
-  const repeatPenaltyGrid = [1.0, 1.05, 1.1, 1.15, 1.2, 1.3, 1.5]
-  const repeatLastNGrid = [0, 16, 32, 64, 128, 256]
-  const frequencyPenaltyGrid = [0.0, 0.1, 0.2, 0.3, 0.5, 0.8]
-  const presencePenaltyGrid = [0.0, 0.1, 0.2, 0.3, 0.5, 0.8]
-  const dryMultiplierGrid = [0.0, 0.5, 0.8, 1.0, 1.05, 1.5, 2.0]
-  const dryBaseGrid = [1.0, 1.5, 1.75, 2.0, 2.5]
-  const dryAllowedLengthGrid = [1, 2, 3, 4]
-  const xtcProbabilityGrid = [0.0, 0.1, 0.2, 0.3, 0.5]
-  const xtcThresholdGrid = [0.05, 0.1, 0.15, 0.2, 0.3]
-
-  const baseRepeatPenalty = base.repeat_penalty ?? 1.0
-  const baseRepeatLastN = base.repeat_last_n ?? 64
-  const baseFrequencyPenalty = base.frequency_penalty ?? 0.0
-  const basePresencePenalty = base.presence_penalty ?? 0.0
-  const baseDryMultiplier = base.dry_multiplier ?? 1.05
-  const baseDryBase = base.dry_base ?? 1.75
-  const baseDryAllowedLength = base.dry_allowed_length ?? 2
-  const baseXtcProbability = base.xtc_probability ?? 0.0
-  const baseXtcThreshold = base.xtc_threshold ?? 0.1
-
-  const repeatPenalties = sortByDistance(
-    repeatPenaltyGrid.filter(v => !approxEq(base.repeat_penalty, v)),
-    baseRepeatPenalty,
-  ).map(v => ({ ...base, repeat_penalty: v }))
-
-  const repeatLastNs = sortByDistance(
-    repeatLastNGrid.filter(v => v !== baseRepeatLastN),
-    baseRepeatLastN,
-  ).map(v => ({ ...base, repeat_last_n: v }))
-
-  const frequencyPenalties = sortByDistance(
-    frequencyPenaltyGrid.filter(v => !approxEq(base.frequency_penalty, v)),
-    baseFrequencyPenalty,
-  ).map(v => ({ ...base, frequency_penalty: v }))
-
-  const presencePenalties = sortByDistance(
-    presencePenaltyGrid.filter(v => !approxEq(base.presence_penalty, v)),
-    basePresencePenalty,
-  ).map(v => ({ ...base, presence_penalty: v }))
-
-  const dryMultipliers = sortByDistance(
-    dryMultiplierGrid.filter(v => !approxEq(base.dry_multiplier, v)),
-    baseDryMultiplier,
-  ).map(v => ({ ...base, dry_multiplier: v }))
-
-  const dryBases = sortByDistance(
-    dryBaseGrid.filter(v => !approxEq(base.dry_base, v)),
-    baseDryBase,
-  ).map(v => ({ ...base, dry_base: v }))
-
-  const dryAllowedLengths = sortByDistance(
-    dryAllowedLengthGrid.filter(v => v !== baseDryAllowedLength),
-    baseDryAllowedLength,
-  ).map(v => ({ ...base, dry_allowed_length: v }))
-
-  const xtcProbabilities = sortByDistance(
-    xtcProbabilityGrid.filter(v => !approxEq(base.xtc_probability, v)),
-    baseXtcProbability,
-  ).map(v => ({ ...base, xtc_probability: v }))
-
-  const xtcThresholds = sortByDistance(
-    xtcThresholdGrid.filter(v => !approxEq(base.xtc_threshold, v)),
-    baseXtcThreshold,
-  ).map(v => ({ ...base, xtc_threshold: v }))
+  // String param axes (enable_thinking, reasoning_effort)
+  if (sweepDef.enable_thinking.length > 1) {
+    oatLists.push(
+      sweepDef.enable_thinking
+        .filter(v => v !== base.enable_thinking)
+        .map(v => ({ ...base, enable_thinking: v as 'true' | 'false' })),
+    )
+  }
+  if (sweepDef.reasoning_effort.length > 1) {
+    oatLists.push(
+      sweepDef.reasoning_effort
+        .filter(v => v !== base.reasoning_effort)
+        .map(v => ({ ...base, reasoning_effort: v as SamplingCandidate['reasoning_effort'] })),
+    )
+  }
 
   // 2) Round-robin OAT interleave across parameters
-  const oatLists = [temps, topPs, topKs, minPs, repeatPenalties, repeatLastNs, frequencyPenalties, presencePenalties, dryMultipliers, dryBases, dryAllowedLengths, xtcProbabilities, xtcThresholds]
   for (let i = 0; safeMax === Infinity || candidates.length < safeMax; i++) {
     let addedAny = false
     for (const list of oatLists) {
@@ -1301,46 +1260,65 @@ export function generateTrialCandidates(
     if (!addedAny) break
   }
 
-  // 3) Multi-parameter presets
-  const presets: SamplingCandidate[] = [
-    { ...base, temperature: 0.2, top_p: 0.70, top_k: 20, min_p: 0.00 },
-    { ...base, temperature: 0.6, top_p: 0.90, top_k: 40, min_p: 0.02 },
-    { ...base, temperature: 1.0, top_p: 0.95, top_k: 0, min_p: 0.00 },
-    { ...base, temperature: 0.4, top_p: 0.80, top_k: 30, min_p: 0.05 },
-    { ...base, temperature: 0.8, top_p: 0.85, top_k: 60, min_p: 0.03 },
-  ]
-  presets.forEach(add)
+  // 3) Pairwise corner combos for the 4 primary params
+  const tVals = sweepDef.temperature.length > 0 ? sweepDef.temperature : [base.temperature ?? 0.8]
+  const pVals = sweepDef.top_p.length > 0 ? sweepDef.top_p : [base.top_p ?? 0.9]
+  const kVals = sweepDef.top_k.length > 0 ? sweepDef.top_k : [base.top_k ?? 40]
+  const mVals = sweepDef.min_p.length > 0 ? sweepDef.min_p : [base.min_p ?? 0]
 
-  // 4) Pairwise corner combos for interaction discovery
-  const tLow = temperatureGrid[0]
-  const tHigh = temperatureGrid[temperatureGrid.length - 1]
-  const pLow = topPGrid[0]
-  const pHigh = topPGrid[topPGrid.length - 1]
-  const kLow = topKGrid[0]
-  const kHigh = topKGrid[topKGrid.length - 1]
-  const mHigh = minPGrid[minPGrid.length - 1]
+  if (tVals.length > 1 || pVals.length > 1 || kVals.length > 1 || mVals.length > 1) {
+    const tLow = Math.min(...tVals)
+    const tHigh = Math.max(...tVals)
+    const pLow = Math.min(...pVals)
+    const pHigh = Math.max(...pVals)
+    const kLow = Math.min(...kVals)
+    const kHigh = Math.max(...kVals)
+    const mHigh = Math.max(...mVals)
 
-  const corners: SamplingCandidate[] = [
-    { ...base, temperature: tLow, top_p: pLow },
-    { ...base, temperature: tLow, top_p: pHigh },
-    { ...base, temperature: tHigh, top_p: pLow },
-    { ...base, temperature: tHigh, top_p: pHigh },
-    { ...base, temperature: tLow, top_k: kLow },
-    { ...base, temperature: tLow, top_k: kHigh },
-    { ...base, temperature: tHigh, top_k: kLow },
-    { ...base, temperature: tHigh, top_k: kHigh },
-    { ...base, top_p: pLow, top_k: kLow },
-    { ...base, top_p: pLow, top_k: kHigh },
-    { ...base, top_p: pHigh, top_k: kLow },
-    { ...base, top_p: pHigh, top_k: kHigh },
-    { ...base, min_p: mHigh, temperature: tLow },
-    { ...base, min_p: mHigh, temperature: tHigh },
-    { ...base, min_p: mHigh, top_p: pLow },
-    { ...base, min_p: mHigh, top_p: pHigh },
-  ]
-  corners.forEach(add)
+    const corners: SamplingCandidate[] = [
+      { ...base, temperature: tLow, top_p: pLow },
+      { ...base, temperature: tLow, top_p: pHigh },
+      { ...base, temperature: tHigh, top_p: pLow },
+      { ...base, temperature: tHigh, top_p: pHigh },
+      { ...base, temperature: tLow, top_k: kLow },
+      { ...base, temperature: tLow, top_k: kHigh },
+      { ...base, temperature: tHigh, top_k: kLow },
+      { ...base, temperature: tHigh, top_k: kHigh },
+      { ...base, top_p: pLow, top_k: kLow },
+      { ...base, top_p: pLow, top_k: kHigh },
+      { ...base, top_p: pHigh, top_k: kLow },
+      { ...base, top_p: pHigh, top_k: kHigh },
+      { ...base, min_p: mHigh, temperature: tLow },
+      { ...base, min_p: mHigh, temperature: tHigh },
+      { ...base, min_p: mHigh, top_p: pLow },
+      { ...base, min_p: mHigh, top_p: pHigh },
+    ]
+    corners.forEach(add)
+  }
 
   return candidates
+}
+
+/** Default sampling sweep ranges for each parameter. */
+export const defaultSamplingSweepDef: SamplingSweepDefinition = {
+  temperature: [0.8],
+  top_p: [0.9],
+  top_k: [40],
+  min_p: [0],
+  repeat_penalty: [1.0],
+  repeat_last_n: [64],
+  frequency_penalty: [0.0],
+  presence_penalty: [0.0],
+  dry_multiplier: [1.05],
+  dry_base: [1.75],
+  dry_allowed_length: [2],
+  dry_penalty_last_n: [0],
+  xtc_probability: [0.0],
+  xtc_threshold: [0.1],
+  xtc_min_keep: [1],
+  max_tokens: [4096],
+  enable_thinking: ['true'],
+  reasoning_effort: ['medium'],
 }
 
 /** Default config sweep grids for each parameter. */

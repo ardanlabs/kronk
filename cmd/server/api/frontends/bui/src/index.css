@@ -3317,6 +3317,20 @@ tr.selected:hover td {
     gap: 8px;
 }
 
+.playground-sweep-group-title {
+    grid-column: 1 / -1;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-gray-500);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 4px;
+}
+
+.playground-sweep-group-title:first-child {
+    margin-top: 0;
+}
+
 .playground-sweep-param {
     padding: 8px 10px;
     background: var(--color-gray-50);
@@ -3334,11 +3348,101 @@ tr.selected:hover td {
     color: var(--color-gray-700);
 }
 
+.sweep-catalog-hint {
+    font-weight: 400;
+    font-size: 11px;
+    color: var(--color-gray-500);
+    cursor: help;
+    border-bottom: 1px dotted var(--color-gray-400);
+}
+
+.param-tooltip-wrapper {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    margin-left: 2px;
+}
+
+.param-tooltip-icon {
+    font-size: 13px;
+    color: var(--color-gray-400);
+    cursor: help;
+    line-height: 1;
+    transition: color 0.15s;
+}
+
+.param-tooltip-wrapper:hover .param-tooltip-icon {
+    color: var(--color-primary, #2563eb);
+}
+
+.param-tooltip-text {
+    display: none;
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 8px);
+    transform: translateX(-50%);
+    width: 300px;
+    padding: 10px 12px;
+    background: var(--color-gray-900, #1a1a1a);
+    color: var(--color-gray-100, #f0f0f0);
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.5;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    z-index: 1000;
+    pointer-events: none;
+    white-space: normal;
+}
+
+.param-tooltip-text::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: var(--color-gray-900, #1a1a1a);
+}
+
+.param-tooltip-wrapper:hover .param-tooltip-text {
+    display: block;
+}
+
 .playground-sweep-param-values {
     display: block;
     width: 100%;
     margin-top: 6px;
     padding: 4px 8px;
+    border: 1px solid var(--color-gray-300);
+    border-radius: 4px;
+    font-size: 12px;
+    background: var(--color-white);
+}
+
+.playground-sweep-param-range {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 6px;
+    margin-top: 6px;
+}
+
+.playground-sweep-param-range-field {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.playground-sweep-param-range-label {
+    font-size: 10px;
+    color: var(--color-gray-500);
+    line-height: 1;
+}
+
+.playground-sweep-param-range input[type="number"] {
+    width: 100%;
+    padding: 4px 6px;
     border: 1px solid var(--color-gray-300);
     border-radius: 4px;
     font-size: 12px;

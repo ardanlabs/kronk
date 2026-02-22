@@ -2,13 +2,14 @@ import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import type {
   PlaygroundSessionResponse,
   AutoTestTrialResult,
-  SamplingCandidate,
+  SamplingSweepDefinition,
   AutoTestSweepMode,
   ConfigSweepDefinition,
   AutoTestSessionSeed,
   BestConfigWeights,
+  SamplingConfig,
 } from '../types';
-import { defaultConfigSweepDef, defaultBestConfigWeights, chatScenario, toolCallScenario, generateConfigCandidates } from '../services/autoTestRunner';
+import { defaultSamplingSweepDef, defaultConfigSweepDef, defaultBestConfigWeights, chatScenario, toolCallScenario, generateConfigCandidates, generateTrialCandidates } from '../services/autoTestRunner';
 import type { AutoTestScenario } from '../types';
 import { useAutoTestRunner } from '../contexts/AutoTestRunnerContext';
 import type { ConfigTrialResult } from '../contexts/AutoTestRunnerContext';
@@ -54,28 +55,151 @@ function sortRows<T extends AutoTestTrialResult>(
 interface AutomatedTestingPanelProps {
   session: PlaygroundSessionResponse | null;
   sessionSeed: AutoTestSessionSeed | null;
+  catalogSampling?: SamplingConfig | null;
 }
 
-const defaultBaseline: SamplingCandidate = {
-  temperature: 0.8,
-  top_p: 0.9,
-  top_k: 40,
-  min_p: 0,
-  repeat_penalty: 1.0,
-  repeat_last_n: 64,
-  frequency_penalty: 0.0,
-  presence_penalty: 0.0,
-  dry_multiplier: 1.05,
-  dry_base: 1.75,
-  dry_allowed_length: 2,
-  dry_penalty_last_n: 0,
-  xtc_probability: 0.0,
-  xtc_threshold: 0.1,
-  xtc_min_keep: 1,
-  enable_thinking: 'true',
-  reasoning_effort: 'medium',
-  max_tokens: 4096,
+type SamplingNumericKey = 'temperature' | 'top_p' | 'top_k' | 'min_p' | 'repeat_penalty' | 'repeat_last_n' |
+  'frequency_penalty' | 'presence_penalty' | 'dry_multiplier' | 'dry_base' | 'dry_allowed_length' |
+  'dry_penalty_last_n' | 'xtc_probability' | 'xtc_threshold' | 'xtc_min_keep' | 'max_tokens';
+
+interface SweepParamRange {
+  validMin: number;
+  validMax: number;
+  defaultStep: number;
+}
+
+interface SweepInputTriple {
+  min: string;
+  max: string;
+  step: string;
+}
+
+const PARAM_TOOLTIPS: Record<string, string> = {
+  // Sampling – Generation
+  temperature: 'Scales the probability distribution to control randomness. Lower values (e.g. 0.2) make output more focused and deterministic; higher values (e.g. 1.5) increase variety and creativity. Values ≤ 0 fall back to the model default.',
+  top_p: 'Nucleus sampling — keeps the smallest set of top tokens whose cumulative probability is ≥ this value. Lower values (e.g. 0.5) focus on the most likely tokens; 1.0 effectively disables top-p filtering. Works alongside temperature.',
+  top_k: 'Limits sampling to the top K most probable tokens at each step. Lower values (e.g. 10) make output more predictable; higher values allow more variety. Values ≤ 0 fall back to the model default (use a very large K to effectively disable).',
+  min_p: 'Filters out tokens whose probability is below this fraction of the top token\'s probability. For example, 0.05 removes tokens less than 5% as likely as the best choice. Higher = stricter filtering. 0 disables.',
+
+  // Sampling – Repetition Control
+  repeat_penalty: 'Penalizes tokens that appeared in the recent context window (controlled by Repeat Last N). Values above 1.0 discourage repetition; 1.0 means no penalty. Typical range is 1.0–1.3. Too high can make text incoherent.',
+  repeat_last_n: 'How many recent tokens to check when applying the repeat penalty. Larger values look further back for repetitions. To disable repetition penalties, set Repeat Penalty to 1.0 instead.',
+  frequency_penalty: 'Reduces the likelihood of a token proportional to how many times it has appeared. Positive values discourage overused tokens; negative values encourage them. Common range: -2.0 to 2.0. 0 disables.',
+  presence_penalty: 'Applies a flat penalty to any token that has appeared at all, regardless of how often. Positive values encourage the model to use new tokens; negative values favor staying on existing ones. 0 disables.',
+
+  // Sampling – DRY Sampler
+  dry_multiplier: 'Strength of the DRY (Don\'t Repeat Yourself) anti-repetition penalty. Higher values more aggressively penalize repeated n-gram patterns. Values ≤ 0 fall back to the model default.',
+  dry_base: 'Base for exponential DRY penalty growth. Higher values make the penalty increase faster for longer repeated sequences. Typical values are 1.5–2.0.',
+  dry_allowed_length: 'Minimum n-gram length before DRY penalties apply — repeated sequences up to this token length are allowed without penalty. Useful for common short phrases. Higher values are more lenient.',
+  dry_penalty_last_n: 'How many recent tokens DRY examines when looking for repeated patterns. Larger values detect repetitions from further back. 0 means use the full context.',
+
+  // Sampling – XTC Sampler
+  xtc_probability: 'Chance of enabling XTC (eXtreme Token Culling) for a generation step. When active, XTC removes very high-probability ("obvious") tokens to increase variety. 0 disables XTC entirely, 1 always applies it.',
+  xtc_threshold: 'Probability cutoff for XTC culling. When XTC is active, tokens with probability ≥ this threshold are candidates for removal (with safeguards to keep output coherent). Lower thresholds make XTC more aggressive.',
+  xtc_min_keep: 'Minimum number of token candidates to keep after XTC culling, preventing over-aggressive filtering. Ensures at least this many choices remain available.',
+
+  // Sampling – Generation limit
+  max_tokens: 'Maximum number of tokens (roughly words or word-pieces) to generate. Output may stop earlier on end-of-sequence or when the context window is full. Higher values allow longer answers but take more time.',
+
+  // Sampling – Reasoning
+  enable_thinking: 'Toggles "thinking" mode in the prompt template (model-dependent). Some models produce an explicit chain-of-thought section; others may ignore it. Can improve accuracy on complex tasks but increases token usage and latency.',
+  reasoning_effort: 'Requested reasoning level (model/provider dependent). Higher effort may produce more thorough reasoning but uses more tokens and time. Models that don\'t support this setting will ignore it.',
+
+  // Config sweep
+  nbatch: 'Batch size capacity — maximum tokens processed per forward pass. Larger values speed up prompt evaluation and multi-request batching but increase VRAM usage. Typically keep ≤ context window size.',
+  nubatch: 'Micro-batch size for prompt processing. Controls VRAM usage per batch operation. Must be ≤ NBatch. Smaller values reduce peak VRAM usage at the cost of slightly slower processing.',
+  contextWindow: 'Maximum number of tokens (input + output combined) the model can handle at once. Larger windows support longer conversations but increase VRAM usage proportionally via the KV cache.',
+  nSeqMax: 'Maximum number of concurrent request slots. Each slot handles one user request simultaneously. More slots = better concurrency, but each slot reserves memory for its KV cache.',
+  flashAttention: 'Optimized attention algorithm that reduces VRAM usage and can improve speed. "Enabled" forces it on, "Disabled" forces it off, "Auto" lets the server decide based on model compatibility.',
+  cacheType: 'KV cache precision. f16 = full precision (best quality), q8_0 = 8-bit quantized (less VRAM, minimal quality loss), q4_0 = 4-bit quantized (most VRAM savings, slight quality trade-off especially at long context).',
+  cacheMode: 'Caching strategy. None = clears KV state after each request. SPC (System Prompt Cache) = reuses cached system-prompt state to speed up new conversations. IMC (Incremental Message Cache) = keeps the conversation\'s KV state in a dedicated slot for fast multi-turn follow-ups.',
 };
+
+function ParamTooltip({ text }: { text: string }) {
+  return (
+    <span className="param-tooltip-wrapper">
+      <span className="param-tooltip-icon">ⓘ</span>
+      <span className="param-tooltip-text">{text}</span>
+    </span>
+  );
+}
+
+const SWEEP_PARAM_RANGES: Record<SamplingNumericKey, SweepParamRange> = {
+  temperature: { validMin: 0, validMax: 2, defaultStep: 0.1 },
+  top_p: { validMin: 0, validMax: 1, defaultStep: 0.1 },
+  top_k: { validMin: 0, validMax: 200, defaultStep: 10 },
+  min_p: { validMin: 0, validMax: 1, defaultStep: 0.05 },
+  repeat_penalty: { validMin: 0, validMax: 3, defaultStep: 0.1 },
+  repeat_last_n: { validMin: 0, validMax: 2048, defaultStep: 64 },
+  frequency_penalty: { validMin: -2, validMax: 2, defaultStep: 0.1 },
+  presence_penalty: { validMin: -2, validMax: 2, defaultStep: 0.1 },
+  dry_multiplier: { validMin: 0, validMax: 5, defaultStep: 0.1 },
+  dry_base: { validMin: 1, validMax: 3, defaultStep: 0.25 },
+  dry_allowed_length: { validMin: 0, validMax: 100, defaultStep: 1 },
+  dry_penalty_last_n: { validMin: 0, validMax: 2048, defaultStep: 64 },
+  xtc_probability: { validMin: 0, validMax: 1, defaultStep: 0.1 },
+  xtc_threshold: { validMin: 0, validMax: 1, defaultStep: 0.1 },
+  xtc_min_keep: { validMin: 1, validMax: 100, defaultStep: 1 },
+  max_tokens: { validMin: 1, validMax: 131072, defaultStep: 512 },
+};
+
+function clampNum(n: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, n));
+}
+
+function normalizeTriple(key: SamplingNumericKey, raw: SweepInputTriple): { min: number; max: number; step: number } {
+  const r = SWEEP_PARAM_RANGES[key];
+  const minP = Number(raw.min);
+  const maxP = Number(raw.max);
+  const stepP = Number(raw.step);
+  let min = Number.isFinite(minP) ? clampNum(minP, r.validMin, r.validMax) : r.validMin;
+  let max = Number.isFinite(maxP) ? clampNum(maxP, r.validMin, r.validMax) : min;
+  if (min > max) max = min;
+  const step = Number.isFinite(stepP) && stepP > 0 ? Math.max(stepP, 1e-6) : r.defaultStep;
+  return { min, max, step };
+}
+
+function expandSweep(min: number, max: number, step: number): number[] {
+  if (step <= 0 || min === max) return [min];
+  const values: number[] = [];
+  const eps = step * 0.001;
+  for (let v = min; v <= max + eps; ) {
+    const rounded = Math.round(v * 1e6) / 1e6;
+    if (rounded <= max + 1e-9) values.push(rounded);
+    if (values.length >= 200) break;
+    const next = v + step;
+    if (next === v) break;
+    v = next;
+  }
+  return values.length > 0 ? values : [min];
+}
+
+function deriveTripleFromValues(key: SamplingNumericKey, values: number[]): SweepInputTriple {
+  const r = SWEEP_PARAM_RANGES[key];
+  if (!values || values.length === 0) {
+    return { min: String(r.validMin), max: String(r.validMin), step: String(r.defaultStep) };
+  }
+  if (values.length === 1) {
+    return { min: String(values[0]), max: String(values[0]), step: String(r.defaultStep) };
+  }
+  const min = values[0];
+  const max = values[values.length - 1];
+  const inferredStep = values[1] - values[0];
+  let uniform = inferredStep > 0;
+  for (let i = 2; i < values.length && uniform; i++) {
+    if (Math.abs((values[i] - values[i - 1]) - inferredStep) > 1e-6) uniform = false;
+  }
+  const step = uniform && inferredStep > 0 ? Math.round(inferredStep * 1e6) / 1e6 : r.defaultStep;
+  return { min: String(min), max: String(max), step: String(step) };
+}
+
+function deriveSweepInputs(def: SamplingSweepDefinition): Record<SamplingNumericKey, SweepInputTriple> {
+  const out = {} as Record<SamplingNumericKey, SweepInputTriple>;
+  for (const key of Object.keys(SWEEP_PARAM_RANGES) as SamplingNumericKey[]) {
+    out[key] = deriveTripleFromValues(key, def[key] as number[]);
+  }
+  return out;
+}
 
 function scoreColor(score: number): string {
   if (score >= 80) return '#2e7d32';
@@ -285,13 +409,17 @@ function TrialDetails({ trial, scenarioLookup }: TrialDetailsProps) {
   );
 }
 
-export default function AutomatedTestingPanel({ session, sessionSeed }: AutomatedTestingPanelProps) {
+export default function AutomatedTestingPanel({ session, sessionSeed, catalogSampling }: AutomatedTestingPanelProps) {
   const { run, isRunning, startSamplingRun, startConfigRun, stopRun, clearRun, reevaluateBestTrial } = useAutoTestRunner();
 
   const [sweepMode, setSweepMode] = useState<AutoTestSweepMode>('sampling');
   const [enabledScenarios, setEnabledScenarios] = useState({ chat: true, tool_call: true });
-  const [useCustomBaseline, setUseCustomBaseline] = useState(false);
-  const [baseline, setBaseline] = useState<SamplingCandidate>({ ...defaultBaseline });
+  const [sweepDef, setSweepDef] = useState<SamplingSweepDefinition>(structuredClone(defaultSamplingSweepDef));
+  const [sweepInputs, setSweepInputs] = useState(() => deriveSweepInputs(defaultSamplingSweepDef));
+  const sweepInputsRef = useRef(sweepInputs);
+  useEffect(() => { sweepInputsRef.current = sweepInputs; }, [sweepInputs]);
+  const [sweepDirty, setSweepDirty] = useState(false);
+  const [lastCatalogRef, setLastCatalogRef] = useState<SamplingConfig | null>(null);
   const maxTrials = Infinity;
   const [configSweepDef, setConfigSweepDef] = useState<ConfigSweepDefinition>(structuredClone(defaultConfigSweepDef));
   const [weights, setWeights] = useState<BestConfigWeights>({ ...defaultBestConfigWeights });
@@ -387,6 +515,45 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
     setRaw(values.join(', '));
   }, []);
 
+  const commitTriple = useCallback((key: SamplingNumericKey) => {
+    const { min, max, step } = normalizeTriple(key, sweepInputsRef.current[key]);
+    const values = expandSweep(min, max, step);
+    setSweepInputs(prev => ({ ...prev, [key]: { min: String(min), max: String(max), step: String(step) } }));
+    setSweepDef(d => ({ ...d, [key]: values }));
+    setSweepDirty(true);
+  }, []);
+
+  // Initialize sweep def from catalog sampling defaults.
+  // Re-initializes when catalog changes (model switch) unless user has edited values.
+  useEffect(() => {
+    if (!catalogSampling || catalogSampling === lastCatalogRef) return;
+    setLastCatalogRef(catalogSampling);
+    if (sweepDirty) return;
+    const cs = catalogSampling;
+    const updated: SamplingSweepDefinition = {
+      temperature: [cs.temperature ?? 0.8],
+      top_p: [cs.top_p ?? 0.9],
+      top_k: [cs.top_k ?? 40],
+      min_p: [cs.min_p ?? 0],
+      repeat_penalty: [cs.repeat_penalty ?? 1.0],
+      repeat_last_n: [cs.repeat_last_n ?? 64],
+      frequency_penalty: [cs.frequency_penalty ?? 0.0],
+      presence_penalty: [cs.presence_penalty ?? 0.0],
+      dry_multiplier: [cs.dry_multiplier ?? 1.05],
+      dry_base: [cs.dry_base ?? 1.75],
+      dry_allowed_length: [cs.dry_allowed_length ?? 2],
+      dry_penalty_last_n: [cs.dry_penalty_last_n ?? 0],
+      xtc_probability: [cs.xtc_probability ?? 0.0],
+      xtc_threshold: [cs.xtc_threshold ?? 0.1],
+      xtc_min_keep: [cs.xtc_min_keep ?? 1],
+      max_tokens: [cs.max_tokens ?? 4096],
+      enable_thinking: [cs.enable_thinking || 'true'],
+      reasoning_effort: [cs.reasoning_effort || 'medium'],
+    };
+    setSweepDef(updated);
+    setSweepInputs(deriveSweepInputs(updated));
+  }, [catalogSampling, lastCatalogRef, sweepDirty]);
+
   const runnerState = run?.status ?? 'idle';
   const errorMessage = run?.errorMessage ?? '';
   const templateRepairStatus = run?.templateRepairStatus ?? '';
@@ -409,6 +576,8 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
 
   const hasEnabledScenario = enabledScenarios.chat || enabledScenarios.tool_call;
 
+  const samplingTrialCount = useMemo(() => generateTrialCandidates(sweepDef, maxTrials).length, [sweepDef, maxTrials]);
+
   // Auto-expand results when first trial data arrives
   const activeTrials = displayMode === 'config' ? configTrials : trials;
   const prevTrialCountRef = useRef(0);
@@ -425,8 +594,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
       startSamplingRun({
         sessionId: session.session_id,
         enabledScenarios,
-        useCustomBaseline,
-        baseline: useCustomBaseline ? baseline : defaultBaseline,
+        sweepDef,
         maxTrials,
         weights,
         repeats,
@@ -444,7 +612,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
     }
     appliedWeightsRef.current = { ...weights };
     setWeightsChanged(false);
-  }, [sweepMode, session, sessionSeed, enabledScenarios, useCustomBaseline, baseline, maxTrials, configSweepDef, weights, repeats, startSamplingRun, startConfigRun]);
+  }, [sweepMode, session, sessionSeed, enabledScenarios, sweepDef, maxTrials, configSweepDef, weights, repeats, startSamplingRun, startConfigRun]);
 
   const handleWeightChange = useCallback((key: keyof BestConfigWeights, value: number) => {
     setWeights(w => {
@@ -476,75 +644,75 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
 
   return (
     <div className="playground-autotest-container">
-      {/* Sweep Mode */}
-      <div className="playground-autotest-section">
-        <h4>Sweep Mode</h4>
-        <div className="playground-inline-options">
-          <label className="playground-inline-option">
-            <input
-              type="radio"
-              name="sweepMode"
-              value="sampling"
-              checked={sweepMode === 'sampling'}
-              onChange={() => setSweepMode('sampling')}
-              disabled={isRunning}
-            />
-            Sampling Sweep
-          </label>
-          <label className="playground-inline-option">
-            <input
-              type="radio"
-              name="sweepMode"
-              value="config"
-              checked={sweepMode === 'config'}
-              onChange={() => setSweepMode('config')}
-              disabled={isRunning}
-            />
-            Config Sweep
-          </label>
-        </div>
-      </div>
+      {/* Sweep Mode + Repeats */}
+      <div className="playground-autotest-section" style={{ display: 'flex', gap: 32, alignItems: 'flex-start' }}>
+        <div>
+          <h4>Sweep Mode</h4>
+          <div className="playground-inline-options">
+            <label className="playground-inline-option">
+              <input
+                type="radio"
+                name="sweepMode"
+                value="sampling"
+                checked={sweepMode === 'sampling'}
+                onChange={() => setSweepMode('sampling')}
+                disabled={isRunning}
+              />
+              Sampling Sweep
+            </label>
+            <label className="playground-inline-option">
+              <input
+                type="radio"
+                name="sweepMode"
+                value="config"
+                checked={sweepMode === 'config'}
+                onChange={() => setSweepMode('config')}
+                disabled={isRunning}
+              />
+              Config Sweep
+            </label>
+          </div>
 
-      {/* Scenario Selection */}
-      <div className="playground-autotest-section">
-        <h4>Scenario Selection</h4>
-        <div className="playground-inline-options">
-          <label className="playground-inline-option">
-            <input
-              type="checkbox"
-              checked={enabledScenarios.chat}
-              onChange={(e) => setEnabledScenarios((s) => ({ ...s, chat: e.target.checked }))}
-              disabled={isRunning}
-            />
-            Chat Quality
-          </label>
-          <label className="playground-inline-option">
-            <input
-              type="checkbox"
-              checked={enabledScenarios.tool_call}
-              onChange={(e) => setEnabledScenarios((s) => ({ ...s, tool_call: e.target.checked }))}
-              disabled={isRunning}
-            />
-            Tool Calling
-          </label>
+          {/* Scenario Selection */}
+          <div className="playground-autotest-section">
+            <h4>Scenario Selection</h4>
+            <div className="playground-inline-options">
+              <label className="playground-inline-option">
+                <input
+                    type="checkbox"
+                    checked={enabledScenarios.chat}
+                    onChange={(e) => setEnabledScenarios((s) => ({ ...s, chat: e.target.checked }))}
+                    disabled={isRunning}
+                />
+                Chat Quality
+              </label>
+              <label className="playground-inline-option">
+                <input
+                    type="checkbox"
+                    checked={enabledScenarios.tool_call}
+                    onChange={(e) => setEnabledScenarios((s) => ({ ...s, tool_call: e.target.checked }))}
+                    disabled={isRunning}
+                />
+                Tool Calling
+              </label>
+            </div>
+          </div>
         </div>
-      </div>
-
-      {/* Repeats Per Test Case */}
-      <div className="playground-autotest-section">
-        <h4>Repeats Per Test Case</h4>
-        <p style={{ fontSize: 12, color: 'var(--color-gray-600)', marginBottom: 8 }}>
-          Each prompt is run this many times and scores are averaged for more stable results.
-        </p>
-        <input
-          type="number"
-          value={repeats}
-          onChange={(e) => { const n = Math.floor(Number(e.target.value)); if (Number.isFinite(n) && n >= 1) setRepeats(n); }}
-          min={1}
-          max={20}
-          style={{ width: 60 }}
-          disabled={isRunning}
-        />
+        <div>
+          <h4>Repeats Per Test Case</h4>
+          <p style={{ fontSize: 12, color: 'var(--color-gray-600)', marginBottom: 8 }}>
+            Each prompt is run this many times and scores are averaged for more stable results.
+          </p>
+          <input
+            type="number"
+            value={repeats}
+            onChange={(e) => { const n = Math.floor(Number(e.target.value)); if (Number.isFinite(n) && n >= 1) setRepeats(n); }}
+            min={1}
+            max={20}
+            style={{ width: 60 }}
+            disabled={isRunning}
+          />
+        </div>
       </div>
 
       {/* Config Parameters (config mode only) */}
@@ -556,7 +724,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
           </p>
           <div className="playground-sweep-params">
             <div className="playground-sweep-param">
-              <label className="playground-sweep-param-toggle">NBatch</label>
+              <label className="playground-sweep-param-toggle">NBatch{PARAM_TOOLTIPS.nbatch && <ParamTooltip text={PARAM_TOOLTIPS.nbatch} />}</label>
               <input
                 type="text"
                 className="playground-sweep-param-values"
@@ -570,7 +738,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
             </div>
 
             <div className="playground-sweep-param">
-              <label className="playground-sweep-param-toggle">NUBatch</label>
+              <label className="playground-sweep-param-toggle">NUBatch{PARAM_TOOLTIPS.nubatch && <ParamTooltip text={PARAM_TOOLTIPS.nubatch} />}</label>
               <input
                 type="text"
                 className="playground-sweep-param-values"
@@ -584,7 +752,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
             </div>
 
             <div className="playground-sweep-param">
-              <label className="playground-sweep-param-toggle">Context Window</label>
+              <label className="playground-sweep-param-toggle">Context Window{PARAM_TOOLTIPS.contextWindow && <ParamTooltip text={PARAM_TOOLTIPS.contextWindow} />}</label>
               <input
                 type="text"
                 className="playground-sweep-param-values"
@@ -598,7 +766,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
             </div>
 
             <div className="playground-sweep-param">
-              <label className="playground-sweep-param-toggle">NSeqMax</label>
+              <label className="playground-sweep-param-toggle">NSeqMax{PARAM_TOOLTIPS.nSeqMax && <ParamTooltip text={PARAM_TOOLTIPS.nSeqMax} />}</label>
               <input
                 type="text"
                 className="playground-sweep-param-values"
@@ -612,7 +780,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
             </div>
 
             <div className="playground-sweep-param">
-              <label className="playground-sweep-param-toggle">Flash Attention</label>
+              <label className="playground-sweep-param-toggle">Flash Attention{PARAM_TOOLTIPS.flashAttention && <ParamTooltip text={PARAM_TOOLTIPS.flashAttention} />}</label>
               <div className="playground-sweep-option-checks">
                 {['auto', 'enabled', 'disabled'].map((val) => (
                   <label key={val} className="playground-sweep-option-label">
@@ -635,7 +803,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
             </div>
 
             <div className="playground-sweep-param">
-              <label className="playground-sweep-param-toggle">Cache Type</label>
+              <label className="playground-sweep-param-toggle">Cache Type{PARAM_TOOLTIPS.cacheType && <ParamTooltip text={PARAM_TOOLTIPS.cacheType} />}</label>
               <div className="playground-sweep-option-checks">
                 {['f16', 'q8_0', 'q4_0'].map((val) => (
                   <label key={val} className="playground-sweep-option-label">
@@ -658,7 +826,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
             </div>
 
             <div className="playground-sweep-param">
-              <label className="playground-sweep-param-toggle">Cache Mode</label>
+              <label className="playground-sweep-param-toggle">Cache Mode{PARAM_TOOLTIPS.cacheMode && <ParamTooltip text={PARAM_TOOLTIPS.cacheMode} />}</label>
               <div className="playground-sweep-option-checks">
                 {['none', 'spc', 'imc'].map((val) => (
                   <label key={val} className="playground-sweep-option-label">
@@ -686,146 +854,244 @@ export default function AutomatedTestingPanel({ session, sessionSeed }: Automate
         </div>
       )}
 
-      {/* Baseline Parameters (sampling mode only) */}
+      {/* Sampling Sweep Parameters (sampling mode only) */}
       {sweepMode === 'sampling' && (
         <div className="playground-autotest-section">
-          <h4>Baseline Parameters</h4>
-          <div className="form-group checkbox-group">
-            <label>
-              <input
-                type="checkbox"
-                checked={useCustomBaseline}
-                onChange={(e) => setUseCustomBaseline(e.target.checked)}
-                disabled={isRunning}
-              />
-              Override baseline parameters
-            </label>
-          </div>
+          <h4>Sampling Sweep Parameters</h4>
+          <p style={{ fontSize: 12, color: 'var(--color-gray-600)', marginBottom: 8 }}>
+            Set min, max, and step values to define the sweep range. Set min = max for no sweep.
+          </p>
+          <div className="playground-sweep-params">
+            <div className="playground-sweep-group-title">Generation</div>
+            {([
+              ['temperature', 'Temperature'],
+              ['top_p', 'Top P'],
+              ['top_k', 'Top K'],
+              ['min_p', 'Min P'],
+            ] as [SamplingNumericKey & keyof SamplingConfig, string][]).map(([key, label]) => {
+              const r = SWEEP_PARAM_RANGES[key];
+              const triple = sweepInputs[key];
+              return (
+                <div className="playground-sweep-param" key={key}>
+                  <label className="playground-sweep-param-toggle">
+                    {label}
+                    {PARAM_TOOLTIPS[key] && <ParamTooltip text={PARAM_TOOLTIPS[key]} />}
+                    {catalogSampling && catalogSampling[key] !== undefined && (
+                      <span className="sweep-catalog-hint" title="Default catalog value">(default: {catalogSampling[key]})</span>
+                    )}
+                  </label>
+                  <div className="playground-sweep-param-range">
+                    <div className="playground-sweep-param-range-field">
+                      <span className="playground-sweep-param-range-label">Min ({r.validMin})</span>
+                      <input type="number" value={triple.min} min={r.validMin} max={r.validMax} step={r.defaultStep}
+                        onChange={(e) => setSweepInputs(prev => ({ ...prev, [key]: { ...prev[key], min: e.target.value } }))}
+                        onBlur={() => commitTriple(key)} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} disabled={isRunning} />
+                    </div>
+                    <div className="playground-sweep-param-range-field">
+                      <span className="playground-sweep-param-range-label">Max ({r.validMax})</span>
+                      <input type="number" value={triple.max} min={r.validMin} max={r.validMax} step={r.defaultStep}
+                        onChange={(e) => setSweepInputs(prev => ({ ...prev, [key]: { ...prev[key], max: e.target.value } }))}
+                        onBlur={() => commitTriple(key)} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} disabled={isRunning} />
+                    </div>
+                    <div className="playground-sweep-param-range-field">
+                      <span className="playground-sweep-param-range-label">Step ({r.defaultStep})</span>
+                      <input type="number" value={triple.step} min={0} step={r.defaultStep}
+                        onChange={(e) => setSweepInputs(prev => ({ ...prev, [key]: { ...prev[key], step: e.target.value } }))}
+                        onBlur={() => commitTriple(key)} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} disabled={isRunning} />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
 
-          {useCustomBaseline && (
-            <div className="playground-autotest-baseline-inputs">
-              <h5 className="playground-param-group-title">Generation</h5>
-              <div className="playground-config-grid-fluid">
-                <div className="form-group">
-                  <label>Temperature</label>
-                  <input
-                    type="number"
-                    value={baseline.temperature}
-                    onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, temperature: n })); }}
-                    step={0.1}
-                    disabled={isRunning}
-                  />
+            <div className="playground-sweep-group-title">Repetition Control</div>
+            {([
+              ['repeat_penalty', 'Repeat Penalty'],
+              ['repeat_last_n', 'Repeat Last N'],
+              ['frequency_penalty', 'Frequency Penalty'],
+              ['presence_penalty', 'Presence Penalty'],
+            ] as [SamplingNumericKey & keyof SamplingConfig, string][]).map(([key, label]) => {
+              const r = SWEEP_PARAM_RANGES[key];
+              const triple = sweepInputs[key];
+              return (
+                <div className="playground-sweep-param" key={key}>
+                  <label className="playground-sweep-param-toggle">
+                    {label}
+                    {PARAM_TOOLTIPS[key] && <ParamTooltip text={PARAM_TOOLTIPS[key]} />}
+                    {catalogSampling && catalogSampling[key] !== undefined && (
+                      <span className="sweep-catalog-hint" title="Default catalog value">(default: {catalogSampling[key]})</span>
+                    )}
+                  </label>
+                  <div className="playground-sweep-param-range">
+                    <div className="playground-sweep-param-range-field">
+                      <span className="playground-sweep-param-range-label">Min ({r.validMin})</span>
+                      <input type="number" value={triple.min} min={r.validMin} max={r.validMax} step={r.defaultStep}
+                        onChange={(e) => setSweepInputs(prev => ({ ...prev, [key]: { ...prev[key], min: e.target.value } }))}
+                        onBlur={() => commitTriple(key)} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} disabled={isRunning} />
+                    </div>
+                    <div className="playground-sweep-param-range-field">
+                      <span className="playground-sweep-param-range-label">Max ({r.validMax})</span>
+                      <input type="number" value={triple.max} min={r.validMin} max={r.validMax} step={r.defaultStep}
+                        onChange={(e) => setSweepInputs(prev => ({ ...prev, [key]: { ...prev[key], max: e.target.value } }))}
+                        onBlur={() => commitTriple(key)} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} disabled={isRunning} />
+                    </div>
+                    <div className="playground-sweep-param-range-field">
+                      <span className="playground-sweep-param-range-label">Step ({r.defaultStep})</span>
+                      <input type="number" value={triple.step} min={0} step={r.defaultStep}
+                        onChange={(e) => setSweepInputs(prev => ({ ...prev, [key]: { ...prev[key], step: e.target.value } }))}
+                        onBlur={() => commitTriple(key)} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} disabled={isRunning} />
+                    </div>
+                  </div>
                 </div>
-                <div className="form-group">
-                  <label>Top P</label>
-                  <input
-                    type="number"
-                    value={baseline.top_p}
-                    onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, top_p: n })); }}
-                    step={0.05}
-                    disabled={isRunning}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Top K</label>
-                  <input
-                    type="number"
-                    value={baseline.top_k}
-                    onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, top_k: Math.floor(n) })); }}
-                    step={1}
-                    disabled={isRunning}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Min P</label>
-                  <input
-                    type="number"
-                    value={baseline.min_p}
-                    onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, min_p: n })); }}
-                    step={0.01}
-                    disabled={isRunning}
-                  />
-                </div>
-              </div>
+              );
+            })}
 
-              <h5 className="playground-param-group-title">Repetition Control</h5>
-              <div className="playground-config-grid-fluid">
-                <div className="form-group">
-                  <label>Repeat Penalty</label>
-                  <input type="number" value={baseline.repeat_penalty ?? 1.0} onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, repeat_penalty: n })); }} step={0.05} disabled={isRunning} />
+            <div className="playground-sweep-group-title">DRY Sampler</div>
+            {([
+              ['dry_multiplier', 'DRY Multiplier'],
+              ['dry_base', 'DRY Base'],
+              ['dry_allowed_length', 'DRY Allowed Length'],
+              ['dry_penalty_last_n', 'DRY Penalty Last N'],
+            ] as [SamplingNumericKey & keyof SamplingConfig, string][]).map(([key, label]) => {
+              const r = SWEEP_PARAM_RANGES[key];
+              const triple = sweepInputs[key];
+              return (
+                <div className="playground-sweep-param" key={key}>
+                  <label className="playground-sweep-param-toggle">
+                    {label}
+                    {PARAM_TOOLTIPS[key] && <ParamTooltip text={PARAM_TOOLTIPS[key]} />}
+                    {catalogSampling && catalogSampling[key] !== undefined && (
+                      <span className="sweep-catalog-hint" title="Default catalog value">(default: {catalogSampling[key]})</span>
+                    )}
+                  </label>
+                  <div className="playground-sweep-param-range">
+                    <div className="playground-sweep-param-range-field">
+                      <span className="playground-sweep-param-range-label">Min ({r.validMin})</span>
+                      <input type="number" value={triple.min} min={r.validMin} max={r.validMax} step={r.defaultStep}
+                        onChange={(e) => setSweepInputs(prev => ({ ...prev, [key]: { ...prev[key], min: e.target.value } }))}
+                        onBlur={() => commitTriple(key)} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} disabled={isRunning} />
+                    </div>
+                    <div className="playground-sweep-param-range-field">
+                      <span className="playground-sweep-param-range-label">Max ({r.validMax})</span>
+                      <input type="number" value={triple.max} min={r.validMin} max={r.validMax} step={r.defaultStep}
+                        onChange={(e) => setSweepInputs(prev => ({ ...prev, [key]: { ...prev[key], max: e.target.value } }))}
+                        onBlur={() => commitTriple(key)} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} disabled={isRunning} />
+                    </div>
+                    <div className="playground-sweep-param-range-field">
+                      <span className="playground-sweep-param-range-label">Step ({r.defaultStep})</span>
+                      <input type="number" value={triple.step} min={0} step={r.defaultStep}
+                        onChange={(e) => setSweepInputs(prev => ({ ...prev, [key]: { ...prev[key], step: e.target.value } }))}
+                        onBlur={() => commitTriple(key)} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} disabled={isRunning} />
+                    </div>
+                  </div>
                 </div>
-                <div className="form-group">
-                  <label>Repeat Last N</label>
-                  <input type="number" value={baseline.repeat_last_n ?? 64} onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, repeat_last_n: Math.floor(n) })); }} step={1} disabled={isRunning} />
-                </div>
-                <div className="form-group">
-                  <label>Frequency Penalty</label>
-                  <input type="number" value={baseline.frequency_penalty ?? 0.0} onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, frequency_penalty: n })); }} step={0.1} disabled={isRunning} />
-                </div>
-                <div className="form-group">
-                  <label>Presence Penalty</label>
-                  <input type="number" value={baseline.presence_penalty ?? 0.0} onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, presence_penalty: n })); }} step={0.1} disabled={isRunning} />
-                </div>
-              </div>
+              );
+            })}
 
-              <h5 className="playground-param-group-title">DRY Sampler</h5>
-              <div className="playground-config-grid-fluid">
-                <div className="form-group">
-                  <label>DRY Multiplier</label>
-                  <input type="number" value={baseline.dry_multiplier ?? 1.05} onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, dry_multiplier: n })); }} step={0.05} disabled={isRunning} />
+            <div className="playground-sweep-group-title">XTC Sampler</div>
+            {([
+              ['xtc_probability', 'XTC Probability'],
+              ['xtc_threshold', 'XTC Threshold'],
+              ['xtc_min_keep', 'XTC Min Keep'],
+            ] as [SamplingNumericKey & keyof SamplingConfig, string][]).map(([key, label]) => {
+              const r = SWEEP_PARAM_RANGES[key];
+              const triple = sweepInputs[key];
+              return (
+                <div className="playground-sweep-param" key={key}>
+                  <label className="playground-sweep-param-toggle">
+                    {label}
+                    {PARAM_TOOLTIPS[key] && <ParamTooltip text={PARAM_TOOLTIPS[key]} />}
+                    {catalogSampling && catalogSampling[key] !== undefined && (
+                      <span className="sweep-catalog-hint" title="Default catalog value">(default: {catalogSampling[key]})</span>
+                    )}
+                  </label>
+                  <div className="playground-sweep-param-range">
+                    <div className="playground-sweep-param-range-field">
+                      <span className="playground-sweep-param-range-label">Min ({r.validMin})</span>
+                      <input type="number" value={triple.min} min={r.validMin} max={r.validMax} step={r.defaultStep}
+                        onChange={(e) => setSweepInputs(prev => ({ ...prev, [key]: { ...prev[key], min: e.target.value } }))}
+                        onBlur={() => commitTriple(key)} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} disabled={isRunning} />
+                    </div>
+                    <div className="playground-sweep-param-range-field">
+                      <span className="playground-sweep-param-range-label">Max ({r.validMax})</span>
+                      <input type="number" value={triple.max} min={r.validMin} max={r.validMax} step={r.defaultStep}
+                        onChange={(e) => setSweepInputs(prev => ({ ...prev, [key]: { ...prev[key], max: e.target.value } }))}
+                        onBlur={() => commitTriple(key)} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} disabled={isRunning} />
+                    </div>
+                    <div className="playground-sweep-param-range-field">
+                      <span className="playground-sweep-param-range-label">Step ({r.defaultStep})</span>
+                      <input type="number" value={triple.step} min={0} step={r.defaultStep}
+                        onChange={(e) => setSweepInputs(prev => ({ ...prev, [key]: { ...prev[key], step: e.target.value } }))}
+                        onBlur={() => commitTriple(key)} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} disabled={isRunning} />
+                    </div>
+                  </div>
                 </div>
-                <div className="form-group">
-                  <label>DRY Base</label>
-                  <input type="number" value={baseline.dry_base ?? 1.75} onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, dry_base: n })); }} step={0.05} disabled={isRunning} />
-                </div>
-                <div className="form-group">
-                  <label>DRY Allowed Length</label>
-                  <input type="number" value={baseline.dry_allowed_length ?? 2} onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, dry_allowed_length: Math.floor(n) })); }} step={1} disabled={isRunning} />
-                </div>
-                <div className="form-group">
-                  <label>DRY Penalty Last N</label>
-                  <input type="number" value={baseline.dry_penalty_last_n ?? 0} onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, dry_penalty_last_n: Math.floor(n) })); }} step={1} disabled={isRunning} />
-                </div>
-              </div>
+              );
+            })}
 
-              <h5 className="playground-param-group-title">XTC Sampler</h5>
-              <div className="playground-config-grid-fluid">
-                <div className="form-group">
-                  <label>XTC Probability</label>
-                  <input type="number" value={baseline.xtc_probability ?? 0.0} onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, xtc_probability: n })); }} step={0.01} disabled={isRunning} />
-                </div>
-                <div className="form-group">
-                  <label>XTC Threshold</label>
-                  <input type="number" value={baseline.xtc_threshold ?? 0.1} onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, xtc_threshold: n })); }} step={0.01} disabled={isRunning} />
-                </div>
-                <div className="form-group">
-                  <label>XTC Min Keep</label>
-                  <input type="number" value={baseline.xtc_min_keep ?? 1} onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setBaseline((b) => ({ ...b, xtc_min_keep: Math.floor(n) })); }} step={1} disabled={isRunning} />
-                </div>
-              </div>
-
-              <h5 className="playground-param-group-title">Reasoning</h5>
-              <div className="playground-config-grid-fluid">
-                <div className="form-group">
-                  <label>Enable Thinking</label>
-                  <select value={baseline.enable_thinking ?? 'true'} onChange={(e) => setBaseline((b) => ({ ...b, enable_thinking: e.target.value as 'true' | 'false' }))} disabled={isRunning}>
-                    <option value="true">Enabled</option>
-                    <option value="false">Disabled</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>Reasoning Effort</label>
-                  <select value={baseline.reasoning_effort ?? 'medium'} onChange={(e) => setBaseline((b) => ({ ...b, reasoning_effort: e.target.value as SamplingCandidate['reasoning_effort'] }))} disabled={isRunning}>
-                    <option value="none">None</option>
-                    <option value="minimal">Minimal</option>
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                  </select>
-                </div>
+            <div className="playground-sweep-group-title">Reasoning</div>
+            <div className="playground-sweep-param">
+              <label className="playground-sweep-param-toggle">
+                Enable Thinking
+                {PARAM_TOOLTIPS.enable_thinking && <ParamTooltip text={PARAM_TOOLTIPS.enable_thinking} />}
+                {catalogSampling?.enable_thinking && (
+                  <span className="sweep-catalog-hint" title="Default catalog value">— {catalogSampling.enable_thinking === 'true' ? 'Enabled' : 'Disabled'}</span>
+                )}
+              </label>
+              <div className="playground-sweep-option-checks">
+                {(['true', 'false'] as const).map((val) => (
+                  <label key={val} className="playground-sweep-option-label">
+                    <input
+                      type="checkbox"
+                      checked={sweepDef.enable_thinking.includes(val)}
+                      onChange={(e) => {
+                        setSweepDef(d => {
+                          const prev = d.enable_thinking;
+                          const next = e.target.checked ? [...prev, val] : prev.filter(v => v !== val);
+                          return { ...d, enable_thinking: next.length > 0 ? next : prev };
+                        });
+                        setSweepDirty(true);
+                      }}
+                      disabled={isRunning}
+                    />
+                    {val === 'true' ? 'Enabled' : 'Disabled'}
+                  </label>
+                ))}
               </div>
             </div>
-          )}
+            <div className="playground-sweep-param">
+              <label className="playground-sweep-param-toggle">
+                Reasoning Effort
+                {PARAM_TOOLTIPS.reasoning_effort && <ParamTooltip text={PARAM_TOOLTIPS.reasoning_effort} />}
+                {catalogSampling?.reasoning_effort && (
+                  <span className="sweep-catalog-hint" title="Default catalog value">— {catalogSampling.reasoning_effort}</span>
+                )}
+              </label>
+              <div className="playground-sweep-option-checks">
+                {(['none', 'minimal', 'low', 'medium', 'high'] as const).map((val) => (
+                  <label key={val} className="playground-sweep-option-label">
+                    <input
+                      type="checkbox"
+                      checked={sweepDef.reasoning_effort.includes(val)}
+                      onChange={(e) => {
+                        setSweepDef(d => {
+                          const prev = d.reasoning_effort;
+                          const next = e.target.checked ? [...prev, val] : prev.filter(v => v !== val);
+                          return { ...d, reasoning_effort: next.length > 0 ? next : prev };
+                        });
+                        setSweepDirty(true);
+                      }}
+                      disabled={isRunning}
+                    />
+                    {val.charAt(0).toUpperCase() + val.slice(1)}
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+          <p style={{ fontSize: 12, color: 'var(--color-gray-600)', marginTop: 8 }}>
+            Trials: {samplingTrialCount}
+          </p>
         </div>
       )}
 
