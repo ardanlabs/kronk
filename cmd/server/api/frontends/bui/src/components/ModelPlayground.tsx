@@ -26,6 +26,7 @@ export default function ModelPlayground() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const contentBufferRef = useRef('');
   const throttleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sendIdRef = useRef(0);
   const messageKeyCounterRef = useRef(0);
   const messageKeysRef = useRef<number[]>([]);
 
@@ -250,10 +251,8 @@ export default function ModelPlayground() {
         config['flash_attention'] = flashAttention;
       }
       if (!catalogConfig || cacheType !== (catalogConfig['cache-type-k'] || '')) {
-        if (cacheType) {
-          config['cache_type_k'] = cacheType;
-          config['cache_type_v'] = cacheType;
-        }
+        config['cache_type_k'] = cacheType || 'f16';
+        config['cache_type_v'] = cacheType || 'f16';
       }
       const catalogCacheMode = catalogConfig?.['incremental-cache'] ? 'imc' : catalogConfig?.['system-prompt-cache'] ? 'spc' : 'none';
       if (!catalogConfig || cacheMode !== catalogCacheMode) {
@@ -335,6 +334,7 @@ export default function ModelPlayground() {
     const input = userInput.trim();
     const prevMessages = chatMessages;
     const sessionId = session.session_id;
+    const mySendId = ++sendIdRef.current;
 
     setUserInput('');
     setStreaming(true);
@@ -360,8 +360,8 @@ export default function ModelPlayground() {
       await new Promise(r => setTimeout(r, 1000));
     }
 
-    // Guard: if session changed during warmup, bail out.
-    if (!sessionRef.current || sessionRef.current.session_id !== sessionId) {
+    // Guard: if session changed or stop was pressed during warmup, bail out.
+    if (!sessionRef.current || sessionRef.current.session_id !== sessionId || sendIdRef.current !== mySendId) {
       setStreaming(false);
       return;
     }
@@ -474,6 +474,7 @@ export default function ModelPlayground() {
   }, [session, userInput, streaming, systemPrompt, chatMessages, cacheMode, temperature, topP, topK, minP, maxTokens, repeatPenalty, repeatLastN, frequencyPenalty, presencePenalty, dryMultiplier, dryBase, dryAllowedLength, dryPenaltyLastN, xtcProbability, xtcThreshold, xtcMinKeep, enableThinking, reasoningEffort, runWarmup]);
 
   const handleStopStreaming = () => {
+    sendIdRef.current++;
     streamAbortRef.current?.();
     streamAbortRef.current = null;
     warmupAbortRef.current?.();
@@ -535,7 +536,7 @@ export default function ModelPlayground() {
             const existing = collectedToolCalls.find(c => c.index === tc.index);
             if (existing) {
               if (tc.id && !existing.id) existing.id = tc.id;
-              if (tc.type && existing.type === 'function') existing.type = tc.type;
+              if (tc.type) existing.type = tc.type;
               if (tc.function?.name && !existing.function.name) existing.function.name = tc.function.name;
               if (tc.function?.arguments) {
                 existing.function.arguments += tc.function.arguments;

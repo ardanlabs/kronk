@@ -118,6 +118,7 @@
     - [12.3 Downloading Models](#123-downloading-models)
     - [12.4 Managing Keys and Tokens](#124-managing-keys-and-tokens)
     - [12.5 Other Screens](#125-other-screens)
+    - [12.6 Model Playground](#126-model-playground)
 13. [Client Integration](#chapter-13-client-integration)
     - [13.1 OpenWebUI](#131-openwebui)
     - [13.2 Cline](#132-cline)

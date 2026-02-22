@@ -2599,9 +2599,10 @@ export function runSinglePrompt(
           for (const tc of choice.delta.tool_calls) {
             const existing = collectedToolCalls.find(c => c.index === tc.index)
             if (existing) {
-              if (tc.function?.arguments) {
-                existing.function.arguments += tc.function.arguments
-              }
+              if (tc.id && !existing.id) existing.id = tc.id
+              if (tc.type && !existing.type) existing.type = tc.type
+              if (tc.function?.name && !existing.function.name) existing.function.name = tc.function.name
+              if (tc.function?.arguments) existing.function.arguments += tc.function.arguments
             } else {
               collectedToolCalls.push({
                 id: tc.id || '',

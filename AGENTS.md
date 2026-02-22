@@ -218,6 +218,7 @@ Kronk has an MCP service and these are settings:
 | [12.3 Downloading Models](MANUAL.md#123-downloading-models)                       | BUI model download                        |
 | [12.4 Managing Keys and Tokens](MANUAL.md#124-managing-keys-and-tokens)           | BUI key/token management                  |
 | [12.5 Other Screens](MANUAL.md#125-other-screens)                                 | Additional BUI pages                      |
+| [12.6 Model Playground](MANUAL.md#126-model-playground)                           | Automated testing, sampling/config sweeps, manual chat, tool calling, prompt inspector |
 
 ### Chapter 13 Sub-sections
 

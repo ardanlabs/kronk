@@ -228,7 +228,7 @@ interface TrialProgressBarProps {
 
 function TrialProgressBar({ currentTrialIndex, totalTrials, trials, running }: TrialProgressBarProps) {
   const { elapsed, estimate, estimatedCompletion } = useRunTiming(trials, totalTrials, running);
-  const pct = Math.min(100, totalTrials > 0 ? (currentTrialIndex / totalTrials) * 100 : 0);
+  const pct = Math.min(100, totalTrials > 0 ? ((currentTrialIndex + (running && currentTrialIndex < totalTrials ? 0.5 : 0)) / totalTrials) * 100 : 0);
 
   const currentTrial = trials[currentTrialIndex];
   let promptStatus: string | null = null;
@@ -243,7 +243,7 @@ function TrialProgressBar({ currentTrialIndex, totalTrials, trials, running }: T
   return (
     <div className="playground-autotest-progress">
       <div className="playground-autotest-progress-text">
-        <span>Trial {currentTrialIndex} / {totalTrials}</span>
+        <span>Trial {Math.min(currentTrialIndex + (running ? 1 : 0), totalTrials)} / {totalTrials}</span>
         {promptStatus && <span className="playground-autotest-prompt-progress"> · {promptStatus}</span>}
       </div>
       <div className="playground-autotest-progress-bar">

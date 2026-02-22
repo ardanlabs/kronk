@@ -155,6 +155,12 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
           }
         }
 
+        if (scenarios.length === 0) {
+          setRun(prev => prev ? { ...prev, status: 'error', errorMessage: 'No runnable scenarios — template probe failed and chat is disabled' } : prev);
+          abortControllerRef.current = null;
+          return;
+        }
+
         // Calibrate context-fill prompts if chat scenario is enabled
         if (enabledScenarios.chat) {
           const contextWindow = extractContextWindow(effectiveConfig);
@@ -326,6 +332,10 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
               }
             }
 
+            if (activeScenarios.length === 0) {
+              throw new Error('No runnable scenarios for this config — template probe failed and chat is disabled');
+            }
+
             // Calibrate context-fill prompts for this config's context window
             if (enabledScenarios.chat) {
               const cfgContextWindow = extractContextWindow(resp.effective_config, sessionSeed.base_config);
@@ -430,6 +440,7 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
 
   const stopRun = useCallback(() => {
     abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
     const sid = currentConfigSessionRef.current;
     if (sid) {
       api.deletePlaygroundSession(sid).catch(() => {});

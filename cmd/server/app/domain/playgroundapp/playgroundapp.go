@@ -261,7 +261,7 @@ func (a *app) chatCompletions(ctx context.Context, r *http.Request) web.Encoder 
 		return errs.Errorf(errs.NotFound, "session expired: %s", sessionID)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, 180*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 
 	d := model.MapToModelD(raw)
@@ -311,6 +311,29 @@ func (a *app) cleanupLoop() {
 					a.cache.Invalidate(p.cacheKey)
 					a.mu.Lock()
 					delete(a.sessions, p.id)
+					a.mu.Unlock()
+				}
+			}
+
+			// Prune sessions whose cache entry has been evicted.
+			// Collect candidates under lock, then check cache without holding it.
+			type candidate struct {
+				id       string
+				cacheKey string
+			}
+			var stale []candidate
+			a.mu.Lock()
+			for id, entry := range a.sessions {
+				if !entry.pendingDelete {
+					stale = append(stale, candidate{id: id, cacheKey: entry.cacheKey})
+				}
+			}
+			a.mu.Unlock()
+
+			for _, c := range stale {
+				if _, found := a.cache.GetExisting(c.cacheKey); !found {
+					a.mu.Lock()
+					delete(a.sessions, c.id)
 					a.mu.Unlock()
 				}
 			}

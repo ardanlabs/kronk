@@ -175,20 +175,20 @@ func (s SessionRequest) HasOverrides() bool {
 
 // Validate checks the configuration bounds.
 func (sc SessionConfig) Validate() error {
-	if sc.ContextWindow != nil && (*sc.ContextWindow < 0 || *sc.ContextWindow > 131072) {
-		return fmt.Errorf("context-window must be between 0 and 131072, got %d", *sc.ContextWindow)
+	if sc.ContextWindow != nil && (*sc.ContextWindow < 1 || *sc.ContextWindow > 131072) {
+		return fmt.Errorf("context-window must be between 1 and 131072, got %d", *sc.ContextWindow)
 	}
 
-	if sc.NBatch != nil && (*sc.NBatch < 0 || *sc.NBatch > 16384) {
-		return fmt.Errorf("nbatch must be between 0 and 16384, got %d", *sc.NBatch)
+	if sc.NBatch != nil && (*sc.NBatch < 1 || *sc.NBatch > 16384) {
+		return fmt.Errorf("nbatch must be between 1 and 16384, got %d", *sc.NBatch)
 	}
 
-	if sc.NUBatch != nil && (*sc.NUBatch < 0 || *sc.NUBatch > 16384) {
-		return fmt.Errorf("nubatch must be between 0 and 16384, got %d", *sc.NUBatch)
+	if sc.NUBatch != nil && (*sc.NUBatch < 1 || *sc.NUBatch > 16384) {
+		return fmt.Errorf("nubatch must be between 1 and 16384, got %d", *sc.NUBatch)
 	}
 
-	if sc.NSeqMax != nil && (*sc.NSeqMax < 0 || *sc.NSeqMax > 64) {
-		return fmt.Errorf("nseq-max must be between 0 and 64, got %d", *sc.NSeqMax)
+	if sc.NSeqMax != nil && (*sc.NSeqMax < 1 || *sc.NSeqMax > 64) {
+		return fmt.Errorf("nseq-max must be between 1 and 64, got %d", *sc.NSeqMax)
 	}
 
 	return nil
