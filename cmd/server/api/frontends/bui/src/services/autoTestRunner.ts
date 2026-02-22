@@ -10,6 +10,7 @@ import type {
   AutoTestScenarioResult,
   AutoTestPromptResult,
   AutoTestTrialResult,
+  AutoTestActivePrompt,
   SamplingCandidate,
   SamplingSweepDefinition,
   ConfigSweepDefinition,
@@ -2865,6 +2866,22 @@ function accumulateMetrics(
   }
 }
 
+/** Extracts a short preview string from a prompt definition. */
+function promptPreview(prompt: AutoTestPromptDef): string | undefined {
+  const lastUser = [...prompt.messages].reverse().find(m => m.role === 'user')
+  if (!lastUser) return undefined
+  const c = lastUser.content
+  if (typeof c === 'string') return c.slice(0, 160)
+  if (Array.isArray(c)) {
+    const text = (c as Array<{ type?: string; text?: string }>)
+      .filter(p => p?.type === 'text')
+      .map(p => p.text ?? '')
+      .join(' ')
+    return text ? text.slice(0, 160) : undefined
+  }
+  return undefined
+}
+
 /** Runs a scenario's prompts sequentially (original behavior for concurrency=1). */
 async function runScenarioSequential(
   sessionId: string,
@@ -2890,10 +2907,22 @@ async function runScenarioSequential(
   for (let pi = 0; pi < scenario.prompts.length; pi++) {
     const prompt = scenario.prompts[pi]
     if (signal.aborted) {
+      result.activePrompts = undefined
       result.status = 'cancelled'
       onUpdate({ ...result })
       return
     }
+
+    result.activePrompts = [{
+      scenarioId: scenario.id,
+      promptId: prompt.id,
+      promptIndex: pi,
+      repeats: safeRepeats,
+      repeatIndex: 1,
+      preview: promptPreview(prompt),
+      startedAt: new Date().toISOString(),
+    }]
+    onUpdate({ ...result })
 
     const isWarmup = pi === 0
 
@@ -2914,6 +2943,11 @@ async function runScenarioSequential(
       if (signal.aborted) {
         hadAbort = true
         break
+      }
+
+      if (safeRepeats > 1 && r > 0) {
+        result.activePrompts = [{ ...result.activePrompts![0], repeatIndex: r + 1 }]
+        onUpdate({ ...result })
       }
 
       try {
@@ -2973,6 +3007,7 @@ async function runScenarioSequential(
     }
 
     if (hadAbort) {
+      result.activePrompts = undefined
       result.status = 'cancelled'
       onUpdate({ ...result })
       return
@@ -3008,6 +3043,9 @@ async function runScenarioSequential(
     )
     upsertScenarioResult(result, scenarioResult, onUpdate)
   }
+
+  result.activePrompts = undefined
+  onUpdate({ ...result })
 }
 
 /** Runs a scenario's prompts concurrently to exercise multi-slot (NSeqMax > 1) configs.
@@ -3035,11 +3073,28 @@ async function runScenarioConcurrent(
 
   const batchStartMs = performance.now()
 
+  const inflight = new Map<number, AutoTestActivePrompt>()
+  const emitInflight = () => {
+    result.activePrompts = [...inflight.values()]
+    onUpdate({ ...result })
+  }
+
   await mapLimit(
     scenario.prompts,
     concurrency,
     async (prompt, pi) => {
       if (signal.aborted) return
+
+      inflight.set(pi, {
+        scenarioId: scenario.id,
+        promptId: prompt.id,
+        promptIndex: pi,
+        repeats: safeRepeats,
+        repeatIndex: 1,
+        preview: promptPreview(prompt),
+        startedAt: new Date().toISOString(),
+      })
+      emitInflight()
 
       const repeatScores: number[] = []
       const repeatNotes: string[] = []
@@ -3051,6 +3106,14 @@ async function runScenarioConcurrent(
 
       for (let r = 0; r < safeRepeats; r++) {
         if (signal.aborted) break
+
+        if (safeRepeats > 1 && r > 0) {
+          const cur = inflight.get(pi)
+          if (cur) {
+            inflight.set(pi, { ...cur, repeatIndex: r + 1 })
+            emitInflight()
+          }
+        }
 
         try {
           const pr = await runSinglePrompt(sessionId, prompt, candidate, signal)
@@ -3087,6 +3150,8 @@ async function runScenarioConcurrent(
         notes: hadError && !dedupNotes ? [errorMessage] : dedupNotes,
       }
 
+      inflight.delete(pi)
+
       // Update UI as each prompt completes
       const completedResults = promptResults.filter(Boolean)
       const partialScenario = buildScenarioResult(
@@ -3094,10 +3159,13 @@ async function runScenarioConcurrent(
         acc.genTokens, acc.genSeconds, acc.ttft, acc.ttftCount,
         acc.fillGenTokens, acc.fillGenSeconds, acc.fillTTFT, acc.fillTTFTCount, acc.actualFills,
       )
+      result.activePrompts = [...inflight.values()]
       upsertScenarioResult(result, partialScenario, onUpdate)
     },
     signal,
   )
+
+  result.activePrompts = undefined
 
   if (signal.aborted) {
     result.status = 'cancelled'

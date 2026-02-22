@@ -183,12 +183,10 @@ function formatCompletionTime(date: Date): string {
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ', ' + time;
 }
 
-function useRunTiming(trials: AutoTestTrialResult[], totalCount: number, running: boolean) {
+function useRunTiming(runStartedAt: string | undefined, trials: AutoTestTrialResult[], totalCount: number, running: boolean) {
   const [, setTick] = useState(0);
 
-  const completed = trials.filter((t) =>
-    t?.startedAt && t?.finishedAt,
-  ).length;
+  const completed = trials.filter((t) => t?.finishedAt).length;
   const isActive = running && completed < totalCount;
 
   useEffect(() => {
@@ -197,22 +195,29 @@ function useRunTiming(trials: AutoTestTrialResult[], totalCount: number, running
     return () => clearInterval(id);
   }, [isActive]);
 
-  const startTimes = trials
+  const runStartMs = runStartedAt ? Date.parse(runStartedAt) : NaN;
+  const trialStartTimes = trials
     .map((t) => t?.startedAt ? Date.parse(t.startedAt) : NaN)
     .filter(Number.isFinite) as number[];
-  const firstStartMs = startTimes.length ? Math.min(...startTimes) : NaN;
-  const elapsedMs = Number.isFinite(firstStartMs) ? Math.max(0, Date.now() - firstStartMs) : 0;
-  const elapsed = elapsedMs > 0 ? formatDuration(elapsedMs) : null;
+  const startMs = Number.isFinite(runStartMs) ? runStartMs : (trialStartTimes.length ? Math.min(...trialStartTimes) : NaN);
+  const elapsedMs = Number.isFinite(startMs) ? Math.max(0, Date.now() - startMs) : 0;
+  const elapsed = Number.isFinite(startMs) ? formatDuration(elapsedMs) : null;
 
   let estimate: string | null = null;
   let estimatedCompletion: string | null = null;
   if (completed > 0 && completed < totalCount) {
-    const avgMs = elapsedMs / completed;
-    const remaining = Math.max(0, totalCount - completed);
-    const estimatedRemainingMs = avgMs * remaining;
-    estimate = formatDuration(estimatedRemainingMs);
-    if (completed >= 3) {
-      estimatedCompletion = formatCompletionTime(new Date(Date.now() + estimatedRemainingMs));
+    const durations = trials
+      .filter(t => t?.startedAt && t?.finishedAt)
+      .map(t => Date.parse(t.finishedAt!) - Date.parse(t.startedAt!))
+      .filter(ms => Number.isFinite(ms) && ms > 0);
+    if (durations.length > 0) {
+      const avgMs = durations.reduce((a, b) => a + b, 0) / durations.length;
+      const remaining = Math.max(0, totalCount - completed);
+      const estimatedRemainingMs = avgMs * remaining;
+      estimate = formatDuration(estimatedRemainingMs);
+      if (completed >= 3) {
+        estimatedCompletion = formatCompletionTime(new Date(Date.now() + estimatedRemainingMs));
+      }
     }
   }
 
@@ -220,22 +225,27 @@ function useRunTiming(trials: AutoTestTrialResult[], totalCount: number, running
 }
 
 interface TrialProgressBarProps {
-  currentTrialIndex: number;
   totalTrials: number;
   trials: AutoTestTrialResult[];
   running: boolean;
+  runStartedAt?: string;
 }
 
-function TrialProgressBar({ currentTrialIndex, totalTrials, trials, running }: TrialProgressBarProps) {
-  const { elapsed, estimate, estimatedCompletion } = useRunTiming(trials, totalTrials, running);
-  const pct = Math.min(100, totalTrials > 0 ? ((currentTrialIndex + (running && currentTrialIndex < totalTrials ? 0.5 : 0)) / totalTrials) * 100 : 0);
+function TrialProgressBar({ totalTrials, trials, running, runStartedAt }: TrialProgressBarProps) {
+  const { elapsed, estimate, estimatedCompletion } = useRunTiming(runStartedAt, trials, totalTrials, running);
 
-  const currentTrial = trials[currentTrialIndex];
+  const completedCount = trials.filter(t => t?.finishedAt).length;
+  const hasActive = running && completedCount < totalTrials;
+  const pct = Math.min(100, totalTrials > 0 ? ((completedCount + (hasActive ? 0.5 : 0)) / totalTrials) * 100 : 0);
+
+  const runningTrial = trials.find(t => t?.status === 'running');
   let promptStatus: string | null = null;
-  if (currentTrial && currentTrial.status === 'running') {
-    const completedPrompts = currentTrial.scenarioResults.reduce((sum, sr) => sum + sr.promptResults.length, 0);
+  if (runningTrial) {
+    const completedPrompts = runningTrial.scenarioResults.reduce((sum, sr) => sum + sr.promptResults.length, 0);
     promptStatus = completedPrompts > 0 ? `Prompt ${completedPrompts} completed` : 'Starting…';
   }
+
+  const displayIndex = Math.min(completedCount + (hasActive ? 1 : 0), totalTrials);
 
   const label = `${elapsed ?? '0s'}${estimate ? ` · ~${estimate} left` : ''}${estimatedCompletion ? ` · ETA ${estimatedCompletion}` : ''}`;
   const showInside = pct >= 50;
@@ -243,7 +253,7 @@ function TrialProgressBar({ currentTrialIndex, totalTrials, trials, running }: T
   return (
     <div className="playground-autotest-progress">
       <div className="playground-autotest-progress-text">
-        <span>Trial {Math.min(currentTrialIndex + (running ? 1 : 0), totalTrials)} / {totalTrials}</span>
+        <span>Trial {displayIndex} / {totalTrials}</span>
         {promptStatus && <span className="playground-autotest-prompt-progress"> · {promptStatus}</span>}
       </div>
       <div className="playground-autotest-progress-bar">
@@ -273,12 +283,31 @@ interface TrialDetailsProps {
 }
 
 function TrialDetails({ trial, scenarioLookup }: TrialDetailsProps) {
-  if (trial.scenarioResults.length === 0) {
+  const hasActive = trial.status === 'running' && trial.activePrompts && trial.activePrompts.length > 0;
+
+  if (trial.scenarioResults.length === 0 && !hasActive) {
     return <div className="autotest-detail-empty">No scenario results yet.</div>;
   }
 
   return (
     <div className="autotest-detail-content">
+      {hasActive && (
+        <div className="autotest-detail-active">
+          <div className="autotest-detail-active-header">
+            <span className="playground-autotest-spinner-inline" /> Currently Running
+          </div>
+          {trial.activePrompts!.map((ap) => (
+            <div key={`${ap.scenarioId}-${ap.promptIndex}`} className="autotest-detail-active-prompt">
+              <span className="autotest-detail-active-scenario">{scenarioLookup[ap.scenarioId]?.name ?? ap.scenarioId}</span>
+              <span className="autotest-detail-active-id">{ap.promptId}</span>
+              {ap.repeats && ap.repeats > 1 && ap.repeatIndex && (
+                <span className="autotest-detail-active-repeat">Repeat {ap.repeatIndex}/{ap.repeats}</span>
+              )}
+              {ap.preview && <div className="autotest-detail-active-preview">{ap.preview}</div>}
+            </div>
+          ))}
+        </div>
+      )}
       {trial.scenarioResults.map((sr) => {
         const scenario = scenarioLookup[sr.scenarioId];
         return (
@@ -388,7 +417,7 @@ function TrialDetails({ trial, scenarioLookup }: TrialDetailsProps) {
 export default function AutomatedTestingPanel({ session, sessionSeed, catalogSampling }: AutomatedTestingPanelProps) {
   const { run, isRunning, startSamplingRun, startConfigRun, stopRun, clearRun, reevaluateBestTrial } = useAutoTestRunner();
 
-  const [sweepMode, setSweepMode] = useState<AutoTestSweepMode>('sampling');
+  const [sweepMode, setSweepMode] = useState<AutoTestSweepMode>(() => run?.kind ?? 'sampling');
   const [enabledScenarios, setEnabledScenarios] = useState({ chat: true, tool_call: true });
   const [sweepDef, setSweepDef] = useState<SamplingSweepDefinition>(structuredClone(defaultSamplingSweepDef));
   const [sweepInputs, setSweepInputs] = useState(() => deriveSweepInputs(defaultSamplingSweepDef));
@@ -405,6 +434,13 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
   const [expandedTrials, setExpandedTrials] = useState<Set<string>>(new Set());
   const [repeats, setRepeats] = useState(3);
   const [sort, setSort] = useState<SortState>({ column: null, direction: null });
+
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!isRunning) return;
+    const id = setInterval(() => setTick(t => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [isRunning]);
 
   const scenarioLookup: Record<string, AutoTestScenario> = {
     chat: configChatScenario,
@@ -433,6 +469,11 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
       case 'tps_20': return row.avgTPSByFill?.['20%'];
       case 'tps_50': return row.avgTPSByFill?.['50%'];
       case 'tps_80': return row.avgTPSByFill?.['80%'];
+      case 'duration': {
+        if (!row.startedAt) return undefined;
+        const endMs = row.finishedAt ? Date.parse(row.finishedAt) : Date.now();
+        return endMs - Date.parse(row.startedAt);
+      }
       default: return undefined;
     }
   }, []);
@@ -455,6 +496,11 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
       case 'tps_20': return row.avgTPSByFill?.['20%'];
       case 'tps_50': return row.avgTPSByFill?.['50%'];
       case 'tps_80': return row.avgTPSByFill?.['80%'];
+      case 'duration': {
+        if (!row.startedAt) return undefined;
+        const endMs = row.finishedAt ? Date.parse(row.finishedAt) : Date.now();
+        return endMs - Date.parse(row.startedAt);
+      }
       default: return undefined;
     }
   }, []);
@@ -535,7 +581,6 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
   const errorMessage = run?.errorMessage ?? '';
   const templateRepairStatus = run?.templateRepairStatus ?? '';
   const calibrationStatus = run?.calibrationStatus ?? '';
-  const currentTrialIndex = run?.currentTrialIndex ?? 0;
   const totalTrials = run?.totalTrials ?? 0;
   const trials = run?.kind === 'sampling' ? run.trials : [];
   const configTrials: ConfigTrialResult[] = run?.kind === 'config' ? run.trials : [];
@@ -547,6 +592,13 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
     : null;
 
   const displayMode: AutoTestSweepMode = run ? run.kind : sweepMode;
+
+  // Keep local sweepMode in sync with the active run so that radio buttons
+  // and parameter sections reflect the correct mode after navigation.
+  const runKind = run?.kind;
+  useEffect(() => {
+    if (runKind) setSweepMode(runKind);
+  }, [runKind]);
 
   const sortedTrials = useMemo(() => sortRows(trials, sort, getSamplingValue), [trials, sort, getSamplingValue]);
   const sortedConfigTrials = useMemo(() => sortRows(configTrials, sort, getConfigValue), [configTrials, sort, getConfigValue]);
@@ -1118,10 +1170,10 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
       {/* Progress */}
       {runnerState === 'running_trials' && (
         <TrialProgressBar
-          currentTrialIndex={currentTrialIndex}
           totalTrials={totalTrials}
           trials={displayMode === 'config' ? configTrials : trials}
           running={isRunning}
+          runStartedAt={run?.runStartedAt}
         />
       )}
 
@@ -1236,6 +1288,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
                     <th className="sortable-th" onClick={() => handleSort('cache_type')}>KV Cache{sortIndicator('cache_type', sort)}</th>
                     <th className="sortable-th" onClick={() => handleSort('cache_mode')}>Cache{sortIndicator('cache_mode', sort)}</th>
                     <th className="sortable-th" onClick={() => handleSort('status')}>Status{sortIndicator('status', sort)}</th>
+                    <th className="sortable-th" onClick={() => handleSort('duration')}>Duration{sortIndicator('duration', sort)}</th>
                   </>
                 ) : (
                   <>
@@ -1244,6 +1297,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
                     <th className="sortable-th" onClick={() => handleSort('top_k')}>Top K{sortIndicator('top_k', sort)}</th>
                     <th className="sortable-th" onClick={() => handleSort('min_p')}>Min P{sortIndicator('min_p', sort)}</th>
                     <th className="sortable-th" onClick={() => handleSort('status')}>Status{sortIndicator('status', sort)}</th>
+                    <th className="sortable-th" onClick={() => handleSort('duration')}>Duration{sortIndicator('duration', sort)}</th>
                   </>
                 )}
                 <th className="sortable-th" onClick={() => handleSort('chat_score')}>Chat Score{sortIndicator('chat_score', sort)}</th>
@@ -1281,8 +1335,16 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
                           <td>{trial.config?.['flash_attention'] ?? '—'}</td>
                           <td>{trial.config?.['cache_type'] ?? '—'}</td>
                           <td>{trial.config?.['cache_mode'] ? (trial.config['cache_mode'] === 'none' ? 'None' : trial.config['cache_mode'].toUpperCase()) : '—'}</td>
-                          <td style={trial.error ? { color: '#c62828', fontSize: '0.85em' } : isInProgress ? { color: '#1565c0' } : isPending ? { color: '#666' } : { color: '#2e7d32' }}>
-                            {trial.error ? `Error: ${trial.error}` : isInProgress ? 'Running…' : isPending ? '…' : 'OK'}
+                          <td style={trial.error ? { color: '#c62828', fontSize: '0.85em' } : isInProgress ? { color: '#1565c0' } : trial.status === 'queued' ? { color: '#999' } : isPending ? { color: '#666' } : { color: '#2e7d32' }}>
+                            {trial.error ? `Error: ${trial.error}` : isInProgress ? 'Running…' : trial.status === 'queued' ? 'Queued' : isPending ? '…' : 'OK'}
+                          </td>
+                          <td>
+                            {(() => {
+                              const startMs = trial.startedAt ? Date.parse(trial.startedAt) : NaN;
+                              if (!Number.isFinite(startMs)) return '—';
+                              const endMs = trial.finishedAt ? Date.parse(trial.finishedAt) : Date.now();
+                              return formatDuration(endMs - startMs);
+                            })()}
                           </td>
                           <td style={partialChat !== undefined ? { color: scoreColor(partialChat), opacity: 0.7 } : !isPending ? { color: scoreColor(getScenarioScore(trial, 'chat') ?? 0) } : undefined}>
                             {isPending ? (partialChat !== undefined ? `~${partialChat}` : '…') : getScenarioScore(trial, 'chat') ?? '—'}
@@ -1301,7 +1363,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
                         </tr>
                         {isExpanded && (
                           <tr className="autotest-detail-row">
-                            <td colSpan={17}>
+                            <td colSpan={18}>
                               <TrialDetails trial={trial} scenarioLookup={scenarioLookup} />
                             </td>
                           </tr>
@@ -1329,8 +1391,16 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
                           <td>{trial.candidate.top_p}</td>
                           <td>{trial.candidate.top_k}</td>
                           <td>{trial.candidate.min_p}</td>
-                          <td style={trial.status === 'failed' ? { color: '#c62828', fontSize: '0.85em' } : isInProgress ? { color: '#1565c0' } : isPending ? { color: '#666' } : { color: '#2e7d32' }}>
-                            {trial.status === 'failed' ? 'Failed' : isInProgress ? 'Running…' : isPending ? '…' : 'OK'}
+                          <td style={trial.status === 'failed' ? { color: '#c62828', fontSize: '0.85em' } : isInProgress ? { color: '#1565c0' } : trial.status === 'queued' ? { color: '#999' } : isPending ? { color: '#666' } : { color: '#2e7d32' }}>
+                            {trial.status === 'failed' ? 'Failed' : isInProgress ? 'Running…' : trial.status === 'queued' ? 'Queued' : isPending ? '…' : 'OK'}
+                          </td>
+                          <td>
+                            {(() => {
+                              const startMs = trial.startedAt ? Date.parse(trial.startedAt) : NaN;
+                              if (!Number.isFinite(startMs)) return '—';
+                              const endMs = trial.finishedAt ? Date.parse(trial.finishedAt) : Date.now();
+                              return formatDuration(endMs - startMs);
+                            })()}
                           </td>
                           <td style={partialChat !== undefined ? { color: scoreColor(partialChat), opacity: 0.7 } : !isPending ? { color: scoreColor(getScenarioScore(trial, 'chat') ?? 0) } : undefined}>
                             {isPending ? (partialChat !== undefined ? `~${partialChat}` : '…') : getScenarioScore(trial, 'chat') ?? '—'}
@@ -1349,7 +1419,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
                         </tr>
                         {isExpanded && (
                           <tr className="autotest-detail-row">
-                            <td colSpan={14}>
+                            <td colSpan={15}>
                               <TrialDetails trial={trial} scenarioLookup={scenarioLookup} />
                             </td>
                           </tr>
