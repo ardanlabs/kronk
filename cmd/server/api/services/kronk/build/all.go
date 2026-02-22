@@ -6,6 +6,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/checkapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/embedapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/msgsapp"
+	"github.com/ardanlabs/kronk/cmd/server/app/domain/playgroundapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/rerankapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/respapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/tokenapp"
@@ -72,5 +73,12 @@ func (all) Add(app *web.App, cfg mux.Config) {
 		Log:        cfg.Log,
 		AuthClient: cfg.AuthClient,
 		Cache:      cfg.Cache,
+	})
+
+	playgroundapp.Routes(app, playgroundapp.Config{
+		Log:        cfg.Log,
+		AuthClient: cfg.AuthClient,
+		Cache:      cfg.Cache,
+		Catalog:    cfg.Catalog,
 	})
 }

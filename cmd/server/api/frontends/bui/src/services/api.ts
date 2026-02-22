@@ -20,10 +20,30 @@ import type {
   CatalogFileInfo,
   PublishCatalogResponse,
   RepoPathResponse,
+  PlaygroundTemplateInfo,
+  PlaygroundTemplateListResponse,
+  PlaygroundTemplateResponse,
+  PlaygroundSessionRequest,
+  PlaygroundSessionResponse,
+  PlaygroundChatRequest,
 } from '../types';
 
 class ApiService {
   private baseUrl = '/v1';
+
+  private async parseErrorMessage(response: Response): Promise<string> {
+    let message = `HTTP ${response.status}`;
+    try {
+      const raw = await response.text();
+      try {
+        const body = JSON.parse(raw);
+        message = body?.error?.message ?? message;
+      } catch {
+        if (raw) message = `${message}: ${raw.slice(0, 200)}`;
+      }
+    } catch { /* empty */ }
+    return message;
+  }
 
   private async request<T>(
     endpoint: string,
@@ -38,8 +58,7 @@ class ApiService {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.message || `HTTP ${response.status}`);
+      throw new Error(await this.parseErrorMessage(response));
     }
 
     if (response.status === 204) {
@@ -62,13 +81,19 @@ class ApiService {
       method: 'POST',
     });
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.message || `HTTP ${response.status}`);
+      throw new Error(await this.parseErrorMessage(response));
     }
   }
 
   async listRunningModels(): Promise<ModelDetailsResponse> {
     return this.request<ModelDetailsResponse>('/models/ps');
+  }
+
+  async unloadModel(id: string): Promise<void> {
+    await this.request('/models/unload', {
+      method: 'POST',
+      body: JSON.stringify({ id }),
+    });
   }
 
   async showModel(id: string): Promise<ModelInfoResponse> {
@@ -87,8 +112,7 @@ class ApiService {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.message || `HTTP ${response.status}`);
+      throw new Error(await this.parseErrorMessage(response));
     }
 
     return response.json();
@@ -441,8 +465,7 @@ class ApiService {
     })
       .then(async (response) => {
         if (!response.ok) {
-          const error = await response.json();
-          onError(error.error?.message || `HTTP ${response.status}`);
+          onError(await this.parseErrorMessage(response));
           return;
         }
 
@@ -544,6 +567,97 @@ class ApiService {
 
   async listTemplates(): Promise<{ files: string[] }> {
     return this.request<{ files: string[] }>('/templates');
+  }
+
+  async listPlaygroundTemplates(): Promise<PlaygroundTemplateInfo[]> {
+    const resp = await this.request<PlaygroundTemplateListResponse>('/playground/templates');
+    return resp.templates;
+  }
+
+  async getPlaygroundTemplate(name: string): Promise<PlaygroundTemplateResponse> {
+    return this.request<PlaygroundTemplateResponse>(`/playground/templates/${encodeURIComponent(name)}`);
+  }
+
+  async savePlaygroundTemplate(name: string, script: string): Promise<void> {
+    await this.request('/playground/templates/save', {
+      method: 'POST',
+      body: JSON.stringify({ name, script }),
+    });
+  }
+
+  async createPlaygroundSession(request: PlaygroundSessionRequest): Promise<PlaygroundSessionResponse> {
+    return this.request<PlaygroundSessionResponse>('/playground/sessions', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async deletePlaygroundSession(id: string): Promise<void> {
+    await this.request(`/playground/sessions/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  streamPlaygroundChat(
+    request: PlaygroundChatRequest,
+    onMessage: (data: ChatStreamResponse) => void,
+    onError: (error: string) => void,
+    onComplete: () => void
+  ): () => void {
+    const controller = new AbortController();
+
+    fetch(`${this.baseUrl}/playground/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...request, stream: true }),
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          onError(await this.parseErrorMessage(response));
+          return;
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) {
+          onError('Streaming not supported');
+          return;
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (!line.trim() || line === 'data: [DONE]') continue;
+            if (line.startsWith('event:')) continue;
+            const jsonStr = line.startsWith('data: ') ? line.slice(6) : line;
+            if (!jsonStr.trim()) continue;
+            try {
+              const data = JSON.parse(jsonStr) as ChatStreamResponse;
+              onMessage(data);
+            } catch {
+              // Skip malformed JSON
+            }
+          }
+        }
+
+        onComplete();
+      })
+      .catch((err) => {
+        if (err.name !== 'AbortError') {
+          onError(err.message || 'Connection error');
+        }
+      });
+
+    return () => controller.abort();
   }
 
 }

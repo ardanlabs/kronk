@@ -18,6 +18,7 @@ export default function ModelPs() {
   const [data, setData] = useState<ModelDetailsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [unloading, setUnloading] = useState<string | null>(null);
 
   useEffect(() => {
     loadRunningModels();
@@ -33,6 +34,20 @@ export default function ModelPs() {
       setError(err instanceof Error ? err.message : 'Failed to load running models');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleUnload = async (modelId: string) => {
+    if (!confirm(`Unload model "${modelId}"?`)) return;
+    setUnloading(modelId);
+    setError(null);
+    try {
+      await api.unloadModel(modelId);
+      await loadRunningModels();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to unload model');
+    } finally {
+      setUnloading(null);
     }
   };
 
@@ -62,6 +77,7 @@ export default function ModelPs() {
                     <th style={{ textAlign: 'right' }}>Slot Memory</th>
                     <th>Expires At</th>
                     <th>Active Streams</th>
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -75,6 +91,16 @@ export default function ModelPs() {
                       <td style={{ textAlign: 'right' }}>{formatBytes(model.slot_memory)}</td>
                       <td>{formatDate(model.expires_at)}</td>
                       <td>{model.active_streams}</td>
+                      <td>
+                        <button
+                          className="btn btn-danger btn-sm"
+                          onClick={() => handleUnload(model.id)}
+                          disabled={unloading === model.id || model.active_streams > 0}
+                          title={model.active_streams > 0 ? 'Cannot unload while streams are active' : 'Unload model from cache'}
+                        >
+                          {unloading === model.id ? 'Unloading…' : 'Unload'}
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -84,7 +110,7 @@ export default function ModelPs() {
                       <td colSpan={4} style={{ textAlign: 'right', fontWeight: 'bold' }}>Total:</td>
                       <td style={{ textAlign: 'right', fontWeight: 'bold' }}>{formatBytes(data.reduce((sum, m) => sum + m.vram_total, 0))}</td>
                       <td style={{ textAlign: 'right', fontWeight: 'bold' }}>{formatBytes(data.reduce((sum, m) => sum + m.slot_memory, 0))}</td>
-                      <td colSpan={2}></td>
+                      <td colSpan={3}></td>
                     </tr>
                   </tfoot>
                 )}

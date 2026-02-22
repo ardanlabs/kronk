@@ -7,6 +7,7 @@ import { useChatMessages, type DisplayMessage } from '../contexts/ChatContext';
 import { useSampling, defaultSampling, isChangedFrom, formatBaselineValue, hasAnyChange, hasAdvancedChange, type SamplingParams } from '../contexts/SamplingContext';
 import CodeBlock from './CodeBlock';
 import ChatHistoryPanel from './ChatHistoryPanel';
+import { PARAM_TOOLTIPS, ParamTooltip } from './ParamTooltips';
 import { useChatHistory, type HistoryMessage } from '../contexts/ChatHistoryContext';
 import type { ChatMessage, ChatUsage, ChatToolCall, ChatContentPart, SamplingConfig, ListModelDetail } from '../types';
 
@@ -115,29 +116,29 @@ export default function Chat() {
   // Convert API sampling config to SamplingParams
   const toSamplingParams = useCallback((modelSampling: SamplingConfig): SamplingParams => {
     return {
-      temperature: modelSampling.temperature || defaultSampling.temperature,
-      topK: modelSampling.top_k || defaultSampling.topK,
-      topP: modelSampling.top_p || defaultSampling.topP,
-      minP: modelSampling.min_p || defaultSampling.minP,
+      temperature: modelSampling.temperature ?? defaultSampling.temperature,
+      topK: modelSampling.top_k ?? defaultSampling.topK,
+      topP: modelSampling.top_p ?? defaultSampling.topP,
+      minP: modelSampling.min_p ?? defaultSampling.minP,
       presencePenalty: modelSampling.presence_penalty ?? defaultSampling.presencePenalty,
-      maxTokens: modelSampling.max_tokens || defaultSampling.maxTokens,
-      repeatPenalty: modelSampling.repeat_penalty || defaultSampling.repeatPenalty,
-      repeatLastN: modelSampling.repeat_last_n || defaultSampling.repeatLastN,
-      dryMultiplier: modelSampling.dry_multiplier || defaultSampling.dryMultiplier,
-      dryBase: modelSampling.dry_base || defaultSampling.dryBase,
-      dryAllowedLen: modelSampling.dry_allowed_length || defaultSampling.dryAllowedLen,
+      maxTokens: modelSampling.max_tokens ?? defaultSampling.maxTokens,
+      repeatPenalty: modelSampling.repeat_penalty ?? defaultSampling.repeatPenalty,
+      repeatLastN: modelSampling.repeat_last_n ?? defaultSampling.repeatLastN,
+      dryMultiplier: modelSampling.dry_multiplier ?? defaultSampling.dryMultiplier,
+      dryBase: modelSampling.dry_base ?? defaultSampling.dryBase,
+      dryAllowedLen: modelSampling.dry_allowed_length ?? defaultSampling.dryAllowedLen,
       dryPenaltyLast: modelSampling.dry_penalty_last_n ?? defaultSampling.dryPenaltyLast,
       xtcProbability: modelSampling.xtc_probability ?? defaultSampling.xtcProbability,
-      xtcThreshold: modelSampling.xtc_threshold || defaultSampling.xtcThreshold,
-      xtcMinKeep: modelSampling.xtc_min_keep || defaultSampling.xtcMinKeep,
+      xtcThreshold: modelSampling.xtc_threshold ?? defaultSampling.xtcThreshold,
+      xtcMinKeep: modelSampling.xtc_min_keep ?? defaultSampling.xtcMinKeep,
       frequencyPenalty: modelSampling.frequency_penalty ?? defaultSampling.frequencyPenalty,
-      enableThinking: modelSampling.enable_thinking || defaultSampling.enableThinking,
-      reasoningEffort: modelSampling.reasoning_effort || defaultSampling.reasoningEffort,
+      enableThinking: modelSampling.enable_thinking ?? defaultSampling.enableThinking,
+      reasoningEffort: modelSampling.reasoning_effort ?? defaultSampling.reasoningEffort,
       returnPrompt: defaultSampling.returnPrompt,
       includeUsage: defaultSampling.includeUsage,
       logprobs: defaultSampling.logprobs,
       topLogprobs: defaultSampling.topLogprobs,
-      grammar: modelSampling.grammar || defaultSampling.grammar,
+      grammar: modelSampling.grammar ?? defaultSampling.grammar,
       systemPrompt: defaultSampling.systemPrompt,
       cacheId: defaultSampling.cacheId,
     };
@@ -370,7 +371,25 @@ export default function Chat() {
           currentReasoning += choice.delta.reasoning_content;
         }
         if (choice?.delta?.tool_calls && choice.delta.tool_calls.length > 0) {
-          currentToolCalls = [...currentToolCalls, ...choice.delta.tool_calls];
+          for (const tc of choice.delta.tool_calls) {
+            const idx = tc.index ?? (currentToolCalls.length > 0 ? currentToolCalls[currentToolCalls.length - 1].index : 0);
+            const existing = currentToolCalls.find(c => c.index === idx);
+            if (existing) {
+              if (tc.id && !existing.id) existing.id = tc.id;
+              if (tc.function?.name && !existing.function.name) existing.function.name = tc.function.name;
+              if (tc.function?.arguments) existing.function.arguments += tc.function.arguments;
+            } else {
+              currentToolCalls.push({
+                id: tc.id || '',
+                index: idx,
+                type: tc.type || 'function',
+                function: {
+                  name: tc.function?.name || '',
+                  arguments: tc.function?.arguments || '',
+                },
+              });
+            }
+          }
         }
         if (data.usage) {
           lastUsage = data.usage;
@@ -621,7 +640,7 @@ export default function Chat() {
         <div className="chat-settings">
           <div className={`chat-setting ${isChangedFrom('maxTokens', sampling.maxTokens, modelBaseline) ? 'chat-setting-changed' : ''}`}>
             <label>
-              Max Tokens
+              Max Tokens{PARAM_TOOLTIPS.max_tokens && <ParamTooltip text={PARAM_TOOLTIPS.max_tokens} />}
               {isChangedFrom('maxTokens', sampling.maxTokens, modelBaseline) && (
                 <span className="chat-setting-default" title={`Default: ${formatBaselineValue('maxTokens', modelBaseline)}`}>●</span>
               )}
@@ -636,7 +655,7 @@ export default function Chat() {
           </div>
           <div className={`chat-setting ${isChangedFrom('temperature', sampling.temperature, modelBaseline) ? 'chat-setting-changed' : ''}`}>
             <label>
-              Temperature
+              Temperature{PARAM_TOOLTIPS.temperature && <ParamTooltip text={PARAM_TOOLTIPS.temperature} />}
               {isChangedFrom('temperature', sampling.temperature, modelBaseline) && (
                 <span className="chat-setting-default" title={`Default: ${formatBaselineValue('temperature', modelBaseline)}`}>●</span>
               )}
@@ -652,7 +671,7 @@ export default function Chat() {
           </div>
           <div className={`chat-setting ${isChangedFrom('topP', sampling.topP, modelBaseline) ? 'chat-setting-changed' : ''}`}>
             <label>
-              Top P
+              Top P{PARAM_TOOLTIPS.top_p && <ParamTooltip text={PARAM_TOOLTIPS.top_p} />}
               {isChangedFrom('topP', sampling.topP, modelBaseline) && (
                 <span className="chat-setting-default" title={`Default: ${formatBaselineValue('topP', modelBaseline)}`}>●</span>
               )}
@@ -668,7 +687,7 @@ export default function Chat() {
           </div>
           <div className={`chat-setting ${isChangedFrom('topK', sampling.topK, modelBaseline) ? 'chat-setting-changed' : ''}`}>
             <label>
-              Top K
+              Top K{PARAM_TOOLTIPS.top_k && <ParamTooltip text={PARAM_TOOLTIPS.top_k} />}
               {isChangedFrom('topK', sampling.topK, modelBaseline) && (
                 <span className="chat-setting-default" title={`Default: ${formatBaselineValue('topK', modelBaseline)}`}>●</span>
               )}
@@ -690,8 +709,43 @@ export default function Chat() {
               placeholder="e.g. user-123"
             />
           </div>
+          <div className="chat-setting chat-setting-grammar">
+            <label>Grammar</label>
+            <select
+              value={grammarMode}
+              onChange={(e) => {
+                const mode = e.target.value as 'none' | 'preset' | 'custom';
+                setGrammarMode(mode);
+                if (mode === 'none') {
+                  setSampling({ grammar: '' });
+                  setSelectedPreset('');
+                } else if (mode === 'preset' && grammarFiles.length > 0) {
+                  loadPresetContent(grammarFiles[0]);
+                } else if (mode === 'custom') {
+                  setSampling({ grammar: '' });
+                  setSelectedPreset('');
+                }
+              }}
+            >
+              <option value="none">None</option>
+              <option value="preset">Preset</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+          {grammarMode === 'preset' && (
+            <div className="chat-setting chat-setting-grammar-preset">
+              <label>Preset</label>
+              <select
+                value={selectedPreset}
+                onChange={(e) => loadPresetContent(e.target.value)}
+              >
+                {grammarFiles.map((f) => (
+                  <option key={f} value={f}>{f.replace('.grm', '')}</option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="chat-setting chat-setting-button">
-            <label>&nbsp;</label>
             <button
               type="button"
               className="chat-advanced-toggle"
@@ -715,12 +769,25 @@ export default function Chat() {
               </button>
             )}
           </div>
-
-          {showAdvanced && (
+        </div>
+        {(grammarMode === 'preset' || grammarMode === 'custom') && (
+          <div className="chat-grammar-editor">
+            <textarea
+              value={sampling.grammar}
+              onChange={(e) => setSampling({ grammar: e.target.value })}
+              rows={4}
+              placeholder="Enter GBNF grammar..."
+              className="chat-system-prompt-input"
+              style={{ fontFamily: 'monospace', fontSize: '12px' }}
+            />
+          </div>
+        )}
+        {showAdvanced && (
+          <div className="chat-settings">
             <div className="chat-advanced-settings">
                 <div className={`chat-setting ${isChangedFrom('minP', sampling.minP, modelBaseline) ? 'chat-setting-changed' : ''}`}>
                   <label>
-                    Min P
+                    Min P{PARAM_TOOLTIPS.min_p && <ParamTooltip text={PARAM_TOOLTIPS.min_p} />}
                     {isChangedFrom('minP', sampling.minP, modelBaseline) && (
                       <span className="chat-setting-default" title={`Default: ${formatBaselineValue('minP', modelBaseline)}`}>●</span>
                     )}
@@ -736,7 +803,7 @@ export default function Chat() {
                 </div>
                 <div className={`chat-setting ${isChangedFrom('repeatPenalty', sampling.repeatPenalty, modelBaseline) ? 'chat-setting-changed' : ''}`}>
                   <label>
-                    Repeat Penalty
+                    Repeat Penalty{PARAM_TOOLTIPS.repeat_penalty && <ParamTooltip text={PARAM_TOOLTIPS.repeat_penalty} />}
                     {isChangedFrom('repeatPenalty', sampling.repeatPenalty, modelBaseline) && (
                       <span className="chat-setting-default" title={`Default: ${formatBaselineValue('repeatPenalty', modelBaseline)}`}>●</span>
                     )}
@@ -752,7 +819,7 @@ export default function Chat() {
                 </div>
                 <div className={`chat-setting ${isChangedFrom('repeatLastN', sampling.repeatLastN, modelBaseline) ? 'chat-setting-changed' : ''}`}>
                   <label>
-                    Repeat Last N
+                    Repeat Last N{PARAM_TOOLTIPS.repeat_last_n && <ParamTooltip text={PARAM_TOOLTIPS.repeat_last_n} />}
                     {isChangedFrom('repeatLastN', sampling.repeatLastN, modelBaseline) && (
                       <span className="chat-setting-default" title={`Default: ${formatBaselineValue('repeatLastN', modelBaseline)}`}>●</span>
                     )}
@@ -767,7 +834,7 @@ export default function Chat() {
                 </div>
                 <div className={`chat-setting ${isChangedFrom('frequencyPenalty', sampling.frequencyPenalty, modelBaseline) ? 'chat-setting-changed' : ''}`}>
                   <label>
-                    Frequency Penalty
+                    Frequency Penalty{PARAM_TOOLTIPS.frequency_penalty && <ParamTooltip text={PARAM_TOOLTIPS.frequency_penalty} />}
                     {isChangedFrom('frequencyPenalty', sampling.frequencyPenalty, modelBaseline) && (
                       <span className="chat-setting-default" title={`Default: ${formatBaselineValue('frequencyPenalty', modelBaseline)}`}>●</span>
                     )}
@@ -783,7 +850,7 @@ export default function Chat() {
                 </div>
                 <div className={`chat-setting ${isChangedFrom('presencePenalty', sampling.presencePenalty, modelBaseline) ? 'chat-setting-changed' : ''}`}>
                   <label>
-                    Presence Penalty
+                    Presence Penalty{PARAM_TOOLTIPS.presence_penalty && <ParamTooltip text={PARAM_TOOLTIPS.presence_penalty} />}
                     {isChangedFrom('presencePenalty', sampling.presencePenalty, modelBaseline) && (
                       <span className="chat-setting-default" title={`Default: ${formatBaselineValue('presencePenalty', modelBaseline)}`}>●</span>
                     )}
@@ -799,7 +866,7 @@ export default function Chat() {
                 </div>
                 <div className={`chat-setting ${isChangedFrom('dryMultiplier', sampling.dryMultiplier, modelBaseline) ? 'chat-setting-changed' : ''}`}>
                   <label>
-                    DRY Multiplier
+                    DRY Multiplier{PARAM_TOOLTIPS.dry_multiplier && <ParamTooltip text={PARAM_TOOLTIPS.dry_multiplier} />}
                     {isChangedFrom('dryMultiplier', sampling.dryMultiplier, modelBaseline) && (
                       <span className="chat-setting-default" title={`Default: ${formatBaselineValue('dryMultiplier', modelBaseline)}`}>●</span>
                     )}
@@ -814,7 +881,7 @@ export default function Chat() {
                 </div>
                 <div className={`chat-setting ${isChangedFrom('dryBase', sampling.dryBase, modelBaseline) ? 'chat-setting-changed' : ''}`}>
                   <label>
-                    DRY Base
+                    DRY Base{PARAM_TOOLTIPS.dry_base && <ParamTooltip text={PARAM_TOOLTIPS.dry_base} />}
                     {isChangedFrom('dryBase', sampling.dryBase, modelBaseline) && (
                       <span className="chat-setting-default" title={`Default: ${formatBaselineValue('dryBase', modelBaseline)}`}>●</span>
                     )}
@@ -829,7 +896,7 @@ export default function Chat() {
                 </div>
                 <div className={`chat-setting ${isChangedFrom('dryAllowedLen', sampling.dryAllowedLen, modelBaseline) ? 'chat-setting-changed' : ''}`}>
                   <label>
-                    DRY Allowed Length
+                    DRY Allowed Length{PARAM_TOOLTIPS.dry_allowed_length && <ParamTooltip text={PARAM_TOOLTIPS.dry_allowed_length} />}
                     {isChangedFrom('dryAllowedLen', sampling.dryAllowedLen, modelBaseline) && (
                       <span className="chat-setting-default" title={`Default: ${formatBaselineValue('dryAllowedLen', modelBaseline)}`}>●</span>
                     )}
@@ -843,7 +910,7 @@ export default function Chat() {
                 </div>
                 <div className={`chat-setting ${isChangedFrom('dryPenaltyLast', sampling.dryPenaltyLast, modelBaseline) ? 'chat-setting-changed' : ''}`}>
                   <label>
-                    DRY Penalty Last N
+                    DRY Penalty Last N{PARAM_TOOLTIPS.dry_penalty_last_n && <ParamTooltip text={PARAM_TOOLTIPS.dry_penalty_last_n} />}
                     {isChangedFrom('dryPenaltyLast', sampling.dryPenaltyLast, modelBaseline) && (
                       <span className="chat-setting-default" title={`Default: ${formatBaselineValue('dryPenaltyLast', modelBaseline)}`}>●</span>
                     )}
@@ -857,7 +924,7 @@ export default function Chat() {
                 </div>
                 <div className={`chat-setting ${isChangedFrom('xtcProbability', sampling.xtcProbability, modelBaseline) ? 'chat-setting-changed' : ''}`}>
                   <label>
-                    XTC Probability
+                    XTC Probability{PARAM_TOOLTIPS.xtc_probability && <ParamTooltip text={PARAM_TOOLTIPS.xtc_probability} />}
                     {isChangedFrom('xtcProbability', sampling.xtcProbability, modelBaseline) && (
                       <span className="chat-setting-default" title={`Default: ${formatBaselineValue('xtcProbability', modelBaseline)}`}>●</span>
                     )}
@@ -873,7 +940,7 @@ export default function Chat() {
                 </div>
                 <div className={`chat-setting ${isChangedFrom('xtcThreshold', sampling.xtcThreshold, modelBaseline) ? 'chat-setting-changed' : ''}`}>
                   <label>
-                    XTC Threshold
+                    XTC Threshold{PARAM_TOOLTIPS.xtc_threshold && <ParamTooltip text={PARAM_TOOLTIPS.xtc_threshold} />}
                     {isChangedFrom('xtcThreshold', sampling.xtcThreshold, modelBaseline) && (
                       <span className="chat-setting-default" title={`Default: ${formatBaselineValue('xtcThreshold', modelBaseline)}`}>●</span>
                     )}
@@ -889,7 +956,7 @@ export default function Chat() {
                 </div>
                 <div className={`chat-setting ${isChangedFrom('xtcMinKeep', sampling.xtcMinKeep, modelBaseline) ? 'chat-setting-changed' : ''}`}>
                   <label>
-                    XTC Min Keep
+                    XTC Min Keep{PARAM_TOOLTIPS.xtc_min_keep && <ParamTooltip text={PARAM_TOOLTIPS.xtc_min_keep} />}
                     {isChangedFrom('xtcMinKeep', sampling.xtcMinKeep, modelBaseline) && (
                       <span className="chat-setting-default" title={`Default: ${formatBaselineValue('xtcMinKeep', modelBaseline)}`}>●</span>
                     )}
@@ -903,7 +970,7 @@ export default function Chat() {
                 </div>
                 <div className={`chat-setting ${isChangedFrom('enableThinking', sampling.enableThinking, modelBaseline) ? 'chat-setting-changed' : ''}`}>
                   <label>
-                    Enable Thinking
+                    Enable Thinking{PARAM_TOOLTIPS.enable_thinking && <ParamTooltip text={PARAM_TOOLTIPS.enable_thinking} />}
                     {isChangedFrom('enableThinking', sampling.enableThinking, modelBaseline) && (
                       <span className="chat-setting-default" title={`Default: ${formatBaselineValue('enableThinking', modelBaseline)}`}>●</span>
                     )}
@@ -919,7 +986,7 @@ export default function Chat() {
                 </div>
                 <div className={`chat-setting ${isChangedFrom('reasoningEffort', sampling.reasoningEffort, modelBaseline) ? 'chat-setting-changed' : ''}`}>
                   <label>
-                    Reasoning Effort
+                    Reasoning Effort{PARAM_TOOLTIPS.reasoning_effort && <ParamTooltip text={PARAM_TOOLTIPS.reasoning_effort} />}
                     {isChangedFrom('reasoningEffort', sampling.reasoningEffort, modelBaseline) && (
                       <span className="chat-setting-default" title={`Default: ${formatBaselineValue('reasoningEffort', modelBaseline)}`}>●</span>
                     )}
@@ -989,58 +1056,8 @@ export default function Chat() {
                   </label>
                 </div>
             </div>
-          )}
-        </div>
-        <div className="chat-grammar">
-          <div className="chat-grammar-row">
-            <div className="chat-grammar-field">
-              <label>Grammar</label>
-              <select
-                value={grammarMode}
-                onChange={(e) => {
-                  const mode = e.target.value as 'none' | 'preset' | 'custom';
-                  setGrammarMode(mode);
-                  if (mode === 'none') {
-                    setSampling({ grammar: '' });
-                    setSelectedPreset('');
-                  } else if (mode === 'preset' && grammarFiles.length > 0) {
-                    loadPresetContent(grammarFiles[0]);
-                  } else if (mode === 'custom') {
-                    setSampling({ grammar: '' });
-                    setSelectedPreset('');
-                  }
-                }}
-              >
-                <option value="none">None</option>
-                <option value="preset">Preset</option>
-                <option value="custom">Custom</option>
-              </select>
-            </div>
-            {grammarMode === 'preset' && (
-              <div className="chat-grammar-field chat-grammar-preset">
-                <label>Preset</label>
-                <select
-                  value={selectedPreset}
-                  onChange={(e) => loadPresetContent(e.target.value)}
-                >
-                  {grammarFiles.map((f) => (
-                    <option key={f} value={f}>{f.replace('.grm', '')}</option>
-                  ))}
-                </select>
-              </div>
-            )}
           </div>
-          {(grammarMode === 'preset' || grammarMode === 'custom') && (
-            <textarea
-              value={sampling.grammar}
-              onChange={(e) => setSampling({ grammar: e.target.value })}
-              rows={4}
-              placeholder="Enter GBNF grammar..."
-              className="chat-system-prompt-input"
-              style={{ fontFamily: 'monospace', fontSize: '12px' }}
-            />
-          )}
-        </div>
+        )}
         </>
       )}
 

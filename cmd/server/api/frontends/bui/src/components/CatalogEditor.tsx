@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../services/api';
-import type { CatalogModelResponse, ModelConfig } from '../types';
+import type { CatalogModelResponse, ModelConfig, SamplingConfig } from '../types';
 
 interface FileEntry {
   url: string;
@@ -387,6 +387,41 @@ export default function CatalogEditor() {
       .finally(() => setEditLoading(false));
   }, [editId]);
 
+  useEffect(() => {
+    if (searchParams.get('source') === 'playground') {
+      const draftStr = sessionStorage.getItem('kronk_catalog_draft');
+      if (draftStr) {
+        try {
+          const draft = JSON.parse(draftStr);
+          setForm((prev) => ({
+            ...prev,
+            id: draft.id || prev.id,
+            template: draft.template || prev.template,
+            capabilities: {
+              ...prev.capabilities,
+              streaming: draft.capabilities?.streaming ?? prev.capabilities.streaming,
+              tooling: draft.capabilities?.tooling ?? prev.capabilities.tooling,
+            },
+            config: {
+              ...prev.config,
+              contextWindow: draft.config?.['context-window'] ?? prev.config.contextWindow,
+              nbatch: draft.config?.nbatch ?? prev.config.nbatch,
+              nubatch: draft.config?.nubatch ?? prev.config.nubatch,
+              nseqMax: draft.config?.['nseq-max'] ?? prev.config.nseqMax,
+              flashAttention: draft.config?.['flash-attention'] ?? prev.config.flashAttention,
+              cacheTypeK: draft.config?.['cache-type-k'] ?? prev.config.cacheTypeK,
+              cacheTypeV: draft.config?.['cache-type-v'] ?? prev.config.cacheTypeV,
+              systemPromptCache: draft.config?.['system-prompt-cache'] ?? prev.config.systemPromptCache,
+            },
+          }));
+          sessionStorage.removeItem('kronk_catalog_draft');
+        } catch {
+          // Ignore invalid draft
+        }
+      }
+    }
+  }, [searchParams]);
+
   const handleLookup = async () => {
     if (!hfInput.trim()) return;
     setHfLoading(true);
@@ -529,8 +564,8 @@ export default function CatalogEditor() {
             xtc_threshold: form.sampling.xtcThreshold ?? 0,
             xtc_min_keep: form.sampling.xtcMinKeep ?? 0,
             frequency_penalty: form.sampling.frequencyPenalty ?? 0,
-            enable_thinking: form.sampling.enableThinking,
-            reasoning_effort: form.sampling.reasoningEffort,
+            enable_thinking: (form.sampling.enableThinking || 'true') as SamplingConfig['enable_thinking'],
+            reasoning_effort: (form.sampling.reasoningEffort || 'medium') as SamplingConfig['reasoning_effort'],
             grammar: form.sampling.grammar ?? '',
           },
         },

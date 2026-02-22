@@ -15,8 +15,8 @@ export interface SamplingConfig {
   xtc_threshold: number;
   xtc_min_keep: number;
   frequency_penalty: number;
-  enable_thinking: string;
-  reasoning_effort: string;
+  enable_thinking: 'true' | 'false';
+  reasoning_effort: 'none' | 'minimal' | 'low' | 'medium' | 'high';
   grammar: string;
 }
 
@@ -250,6 +250,7 @@ export type ChatContentPart = ChatContentPartText | ChatContentPartImage | ChatC
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string | ChatContentPart[];
+  tool_calls?: ChatToolCall[];
 }
 
 export interface ChatRequest {
@@ -314,6 +315,7 @@ export interface ChatUsage {
   reasoning_tokens: number;
   output_tokens: number;
   tokens_per_second: number;
+  time_to_first_token_ms?: number;
 }
 
 export interface ChatStreamResponse {
@@ -428,4 +430,258 @@ export interface PublishCatalogResponse {
 
 export interface RepoPathResponse {
   repo_path: string;
+}
+
+export interface ChatToolDefinition {
+  type: 'function';
+  function: {
+    name: string;
+    description?: string;
+    parameters?: Record<string, unknown>;
+  };
+}
+
+// =============================================================================
+// Playground Types
+
+export interface PlaygroundSessionRequest {
+  model_id: string;
+  template_mode: 'builtin' | 'custom';
+  template_name?: string;
+  template_script?: string;
+  config: PlaygroundModelConfig;
+}
+
+export interface PlaygroundModelConfig {
+  'context_window'?: number;
+  nbatch?: number;
+  nubatch?: number;
+  'nseq_max'?: number;
+  'flash_attention'?: string;
+  'cache_type_k'?: string;
+  'cache_type_v'?: string;
+  'ngpu_layers'?: number | null;
+  'system_prompt_cache'?: boolean;
+  'incremental_cache'?: boolean;
+  'split_mode'?: string;
+  'rope_scaling_type'?: string;
+  'rope_freq_base'?: number | null;
+  'rope_freq_scale'?: number | null;
+  'yarn_ext_factor'?: number | null;
+  'yarn_attn_factor'?: number | null;
+  'yarn_beta_fast'?: number | null;
+  'yarn_beta_slow'?: number | null;
+  'yarn_orig_ctx'?: number | null;
+}
+
+export interface PlaygroundSessionResponse {
+  session_id: string;
+  status: string;
+  effective_config: Record<string, unknown>;
+}
+
+export interface PlaygroundTemplateInfo {
+  name: string;
+  size: number;
+}
+
+export interface PlaygroundTemplateListResponse {
+  templates: PlaygroundTemplateInfo[];
+}
+
+export interface PlaygroundTemplateResponse {
+  name: string;
+  script: string;
+}
+
+export interface PlaygroundChatRequest {
+  session_id: string;
+  messages: ChatMessage[];
+  tools?: ChatToolDefinition[];
+  stream?: boolean;
+  return_prompt?: boolean;
+  temperature?: number;
+  top_k?: number;
+  top_p?: number;
+  min_p?: number;
+  max_tokens?: number;
+  presence_penalty?: number;
+  repeat_penalty?: number;
+  repeat_last_n?: number;
+  dry_multiplier?: number;
+  dry_base?: number;
+  dry_allowed_length?: number;
+  dry_penalty_last_n?: number;
+  xtc_probability?: number;
+  xtc_threshold?: number;
+  xtc_min_keep?: number;
+  frequency_penalty?: number;
+  enable_thinking?: 'true' | 'false';
+  reasoning_effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high';
+  grammar?: string;
+  stream_options?: { include_usage?: boolean };
+  logprobs?: boolean;
+  top_logprobs?: number;
+  adaptive_p_target?: number;
+  adaptive_p_decay?: number;
+}
+
+// Automated Testing Types
+
+export type AutoTestScenarioID = 'chat' | 'tool_call';
+
+export type AutoTestTrialStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+
+export type AutoTestRunnerState = 'idle' | 'repairing_template' | 'running_trials' | 'completed' | 'cancelled' | 'error';
+
+export type ContextFillRatio = '20%' | '50%' | '80%';
+
+export interface AutoTestPromptDef {
+  id: string;
+  messages: ChatMessage[];
+  tools?: ChatToolDefinition[];
+  max_tokens?: number;
+  expected?: { type: 'regex' | 'exact' | 'tool_call' | 'no_tool_call'; value?: string };
+  contextFill?: { ratio: number; label: ContextFillRatio };
+  includeInScore?: boolean;
+}
+
+export interface AutoTestScenario {
+  id: AutoTestScenarioID;
+  name: string;
+  systemPrompt?: string;
+  prompts: AutoTestPromptDef[];
+}
+
+export interface SamplingCandidate {
+  temperature?: number;
+  top_p?: number;
+  top_k?: number;
+  min_p?: number;
+  max_tokens?: number;
+  repeat_penalty?: number;
+  repeat_last_n?: number;
+  frequency_penalty?: number;
+  presence_penalty?: number;
+  dry_multiplier?: number;
+  dry_base?: number;
+  dry_allowed_length?: number;
+  dry_penalty_last_n?: number;
+  xtc_probability?: number;
+  xtc_threshold?: number;
+  xtc_min_keep?: number;
+  adaptive_p_target?: number;
+  adaptive_p_decay?: number;
+  enable_thinking?: 'true' | 'false';
+  reasoning_effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high';
+  grammar?: string;
+}
+
+export interface AutoTestPromptResult {
+  promptId: string;
+  assistantText: string;
+  toolCalls: ChatToolCall[];
+  usage?: ChatUsage;
+  score: number;
+  notes?: string[];
+}
+
+export interface AutoTestScenarioResult {
+  scenarioId: AutoTestScenarioID;
+  promptResults: AutoTestPromptResult[];
+  score: number;
+  avgTPS?: number;
+  avgTTFT?: number;
+  avgTPSByFill?: Record<ContextFillRatio, number>;
+  avgTTFTByFill?: Record<ContextFillRatio, number>;
+  promptTokensByFill?: Record<ContextFillRatio, number>;
+}
+
+export interface AutoTestTrialResult {
+  id: string;
+  status: AutoTestTrialStatus;
+  candidate: SamplingCandidate;
+  startedAt?: string;
+  finishedAt?: string;
+  scenarioResults: AutoTestScenarioResult[];
+  totalScore?: number;
+  avgTPS?: number;
+  avgTTFT?: number;
+  avgTPSByFill?: Record<ContextFillRatio, number>;
+}
+
+// Config Sweep Types
+
+export type AutoTestSweepMode = 'sampling' | 'config';
+
+export interface SweepParamValues {
+  enabled: boolean;
+  values: number[];
+}
+
+export interface SweepStringValues {
+  enabled: boolean;
+  values: string[];
+}
+
+export interface ConfigSweepDefinition {
+  nbatch: SweepParamValues;
+  nubatch: SweepParamValues;
+  contextWindow: SweepParamValues;
+  nSeqMax: SweepParamValues;
+  flashAttention: SweepStringValues;
+  cacheType: SweepStringValues;
+  cacheMode: SweepStringValues;
+}
+
+export interface SamplingSweepDefinition {
+  temperature: number[];
+  top_p: number[];
+  top_k: number[];
+  min_p: number[];
+  repeat_penalty: number[];
+  repeat_last_n: number[];
+  frequency_penalty: number[];
+  presence_penalty: number[];
+  dry_multiplier: number[];
+  dry_base: number[];
+  dry_allowed_length: number[];
+  dry_penalty_last_n: number[];
+  xtc_probability: number[];
+  xtc_threshold: number[];
+  xtc_min_keep: number[];
+  max_tokens: number[];
+  enable_thinking: string[];
+  reasoning_effort: string[];
+}
+
+export interface BestConfigWeights {
+  chatScore: number;
+  toolScore: number;
+  totalScore: number;
+  avgTPS: number;
+  avgTTFT: number;
+}
+
+export interface ConfigCandidate {
+  'context_window'?: number;
+  nbatch?: number;
+  nubatch?: number;
+  'nseq_max'?: number;
+  'flash_attention'?: string;
+  'cache_type'?: string;
+  'cache_mode'?: string;
+}
+
+export interface ModelCaps {
+  isHybrid?: boolean;
+  isGPT?: boolean;
+}
+
+export interface AutoTestSessionSeed {
+  model_id: string;
+  template_mode: 'builtin' | 'custom';
+  template_name?: string;
+  template_script?: string;
+  base_config: PlaygroundModelConfig;
 }

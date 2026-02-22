@@ -43,3 +43,7 @@ go.work.sum
 .llama.cpp
 .yzma
 .ollama
+
+# Nix
+result
+result-*

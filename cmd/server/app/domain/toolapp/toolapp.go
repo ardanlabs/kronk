@@ -342,6 +342,28 @@ func (a *app) modelPS(ctx context.Context, r *http.Request) web.Encoder {
 	return toModelDetails(models)
 }
 
+func (a *app) unloadModel(ctx context.Context, r *http.Request) web.Encoder {
+	var req UnloadRequest
+	if err := web.Decode(r, &req); err != nil {
+		return errs.New(errs.InvalidArgument, err)
+	}
+
+	a.log.Info(ctx, "tool-unload", "modelID", req.ID)
+
+	krn, exists := a.cache.GetExisting(req.ID)
+	if !exists {
+		return errs.Errorf(errs.NotFound, "model %q is not loaded", req.ID)
+	}
+
+	if n := krn.ActiveStreams(); n > 0 {
+		return errs.Errorf(errs.FailedPrecondition, "model has %d active stream(s); cannot unload", n)
+	}
+
+	a.cache.Invalidate(req.ID)
+
+	return UnloadResponse{Status: "unloaded", ID: req.ID}
+}
+
 func (a *app) listCatalog(ctx context.Context, r *http.Request) web.Encoder {
 	filterCategory := web.Param(r, "filter")
 

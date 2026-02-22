@@ -48,7 +48,7 @@ Kronk has an MCP service and these are settings:
 | [Chapter 9: Request Parameters](MANUAL.md#chapter-9-request-parameters)                | Sampling, repetition control, generation control, grammar, logprobs, cache ID                            |
 | [Chapter 10: Multi-Modal Models](MANUAL.md#chapter-10-multi-modal-models)              | Vision models, audio models, media input formats                                                         |
 | [Chapter 11: Security & Authentication](MANUAL.md#chapter-11-security--authentication) | JWT auth, key management, token creation, rate limiting                                                  |
-| [Chapter 12: Browser UI (BUI)](MANUAL.md#chapter-12-browser-ui-bui)                    | Web interface, downloading libraries/models, key/token management                                        |
+| [Chapter 12: Browser UI (BUI)](MANUAL.md#chapter-12-browser-ui-bui)                    | Web interface, downloading libraries/models, key/token management, model playground                      |
 | [Chapter 13: Client Integration](MANUAL.md#chapter-13-client-integration)              | OpenWebUI, Cline, Python SDK, curl, LangChain                                                            |
 | [Chapter 14: Observability](MANUAL.md#chapter-14-observability)                        | Debug server, Prometheus metrics, pprof profiling, tracing                                               |
 | [Chapter 15: MCP Service](MANUAL.md#chapter-15-mcp-service)                            | Brave Search, MCP configuration, Cline/Kilo client setup, curl testing                                   |
@@ -218,6 +218,7 @@ Kronk has an MCP service and these are settings:
 | [12.3 Downloading Models](MANUAL.md#123-downloading-models)                       | BUI model download                        |
 | [12.4 Managing Keys and Tokens](MANUAL.md#124-managing-keys-and-tokens)           | BUI key/token management                  |
 | [12.5 Other Screens](MANUAL.md#125-other-screens)                                 | Additional BUI pages                      |
+| [12.6 Model Playground](MANUAL.md#126-model-playground)                           | Automated testing, sampling/config sweeps, manual chat, tool calling, prompt inspector |
 
 ### Chapter 13 Sub-sections
 

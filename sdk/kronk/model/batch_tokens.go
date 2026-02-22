@@ -85,7 +85,11 @@ func (e *batchEngine) handleSampledToken(s *slot, token llama.Token, iBatch int3
 		s.startTime = time.Now() // Start TPS clock after prefill, when first output token is generated
 
 		// Record TTFT and end the prefill span.
-		ttft := time.Since(s.prefillStart)
+		var ttft time.Duration
+		if !s.prefillStart.IsZero() {
+			ttft = time.Since(s.prefillStart)
+		}
+		s.ttft = ttft
 		metrics.AddTimeToFirstToken(e.model.modelInfo.ID, ttft)
 
 		if s.prefillSpan != nil {

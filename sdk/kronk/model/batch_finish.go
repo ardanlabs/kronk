@@ -146,12 +146,21 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 
 	// Handle error case.
 	if err != nil {
+		outputTokens := s.reasonTokens + s.completionTokens
+
+		var tokensPerSecond float64
+		if elapsed.Seconds() > 0 && outputTokens > 1 {
+			tokensPerSecond = float64(outputTokens-1) / elapsed.Seconds()
+		}
+
 		usage := Usage{
-			PromptTokens:     s.nPrompt,
-			ReasoningTokens:  s.reasonTokens,
-			CompletionTokens: s.completionTokens,
-			OutputTokens:     s.reasonTokens + s.completionTokens,
-			TotalTokens:      s.nPrompt + s.reasonTokens + s.completionTokens,
+			PromptTokens:       s.nPrompt,
+			ReasoningTokens:    s.reasonTokens,
+			CompletionTokens:   s.completionTokens,
+			OutputTokens:       outputTokens,
+			TotalTokens:        s.nPrompt + outputTokens,
+			TokensPerSecond:    tokensPerSecond,
+			TimeToFirstTokenMS: float64(s.ttft.Microseconds()) / 1000.0,
 		}
 
 		e.model.sendErrorResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, "", err, usage)
@@ -203,12 +212,13 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	}
 
 	usage := Usage{
-		PromptTokens:     s.nPrompt,
-		ReasoningTokens:  s.reasonTokens,
-		CompletionTokens: s.completionTokens,
-		OutputTokens:     outputTokens,
-		TotalTokens:      totalTokens,
-		TokensPerSecond:  tokensPerSecond,
+		PromptTokens:       s.nPrompt,
+		ReasoningTokens:    s.reasonTokens,
+		CompletionTokens:   s.completionTokens,
+		OutputTokens:       outputTokens,
+		TotalTokens:        totalTokens,
+		TokensPerSecond:    tokensPerSecond,
+		TimeToFirstTokenMS: float64(s.ttft.Microseconds()) / 1000.0,
 	}
 
 	// Add span attributes and end span.

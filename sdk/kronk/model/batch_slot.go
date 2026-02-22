@@ -153,6 +153,7 @@ type slot struct {
 	prefillStart time.Time  // Start time for TTFT calculation
 	prefillSpan  trace.Span // Span covering the prefill phase
 	tokenGenSpan trace.Span // Span covering the token generation phase
+	ttft         time.Duration // Time to first token (prefill duration)
 }
 
 func (s *slot) reset() {
@@ -193,6 +194,7 @@ func (s *slot) reset() {
 	s.prefillStart = time.Time{}
 	s.prefillSpan = nil
 	s.tokenGenSpan = nil
+	s.ttft = 0
 
 	// MTMD fields.
 	s.inputChunks = 0

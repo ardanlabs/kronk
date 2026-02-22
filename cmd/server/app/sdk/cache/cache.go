@@ -273,6 +273,73 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 	return result.(*kronk.Kronk), nil
 }
 
+// AquireCustom will provide a kronk API for a model using a pre-built config.
+// This bypasses the normal catalog resolution path. The key should use format
+// <modelID>/playground/<session_id> so that ModelStatus() can still match
+// playground sessions to locally installed models.
+func (c *Cache) AquireCustom(ctx context.Context, key string, cfg model.Config, cat model.Cataloger) (*kronk.Kronk, error) {
+	krn, exists := c.cache.GetIfPresent(key)
+	if exists {
+		return krn, nil
+	}
+
+	if c.allSlotsActive() {
+		return nil, ErrServerBusy
+	}
+
+	result, err, _ := c.loadGroup.Do(key, func() (any, error) {
+		if krn, exists := c.cache.GetIfPresent(key); exists {
+			return krn, nil
+		}
+
+		if c.ignoreIntegrityCheck {
+			cfg.IgnoreIntegrityCheck = true
+		}
+
+		if c.insecureLogging {
+			cfg.InsecureLogging = true
+		}
+
+		cfg.Log = c.log
+
+		krn, err := kronk.New(cfg,
+			kronk.WithCataloger(cat),
+			kronk.WithContext(ctx),
+		)
+
+		if err != nil {
+			return nil, fmt.Errorf("acquire-custom: unable to create inference model: %w", err)
+		}
+
+		c.cache.Set(key, krn)
+		c.itemsInCache.Add(1)
+
+		c.log(ctx, "acquire-custom", "status", "load new model", "key", key, "contextWindow", krn.ModelConfig().ContextWindow)
+
+		return krn, nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return result.(*kronk.Kronk), nil
+}
+
+// GetExisting returns a cached model if it exists, without creating one.
+func (c *Cache) GetExisting(key string) (*kronk.Kronk, bool) {
+	krn, exists := c.cache.GetIfPresent(key)
+	if !exists {
+		return nil, false
+	}
+	return krn, true
+}
+
+// Invalidate removes a single entry from the cache, triggering unload.
+func (c *Cache) Invalidate(key string) {
+	c.cache.Invalidate(key)
+}
+
 // allSlotsActive returns true if all model slots are occupied and every
 // cached model has at least one active stream.
 func (c *Cache) allSlotsActive() bool {
