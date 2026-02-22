@@ -586,12 +586,13 @@ export default function DocsSDKModel() {
               <h4>Usage</h4>
               <pre className="code-block">
                 <code>{`type Usage struct {
-	PromptTokens     int     \`json:"prompt_tokens"\`
-	ReasoningTokens  int     \`json:"reasoning_tokens"\`
-	CompletionTokens int     \`json:"completion_tokens"\`
-	OutputTokens     int     \`json:"output_tokens"\`
-	TotalTokens      int     \`json:"total_tokens"\`
-	TokensPerSecond  float64 \`json:"tokens_per_second"\`
+	PromptTokens       int     \`json:"prompt_tokens"\`
+	ReasoningTokens    int     \`json:"reasoning_tokens"\`
+	CompletionTokens   int     \`json:"completion_tokens"\`
+	OutputTokens       int     \`json:"output_tokens"\`
+	TotalTokens        int     \`json:"total_tokens"\`
+	TokensPerSecond    float64 \`json:"tokens_per_second"\`
+	TimeToFirstTokenMS float64 \`json:"time_to_first_token_ms"\`
 }`}</code>
               </pre>
               <p className="doc-description">Usage provides details usage information for the request.</p>

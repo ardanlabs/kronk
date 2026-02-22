@@ -196,6 +196,7 @@ export default function DocsManual() {
                 <li><a href="#123-downloading-models">12.3 Downloading Models</a></li>
                 <li><a href="#124-managing-keys-and-tokens">12.4 Managing Keys and Tokens</a></li>
                 <li><a href="#125-other-screens">12.5 Other Screens</a></li>
+                <li><a href="#126-model-playground">12.6 Model Playground</a></li>
               </ul>
             </li>
             <li><a href="#chapter-13-client-integration">Client Integration</a>
@@ -4245,6 +4246,134 @@ response = client.chat.completions.create(
             <li>API token for authenticated requests</li>
             <li>Theme preferences</li>
           </ul>
+          <h3 id="126-model-playground">12.6 Model Playground</h3>
+          <p>The Model Playground is an interactive testing environment for evaluating models directly in the BUI. It supports two operating modes — <strong>Automated</strong> and <strong>Manual</strong> — accessible from the sidebar.</p>
+          <p><strong>Steps:</strong></p>
+          <ol>
+            <li>Navigate to the <strong>Playground</strong> page from the menu (or go to <code>/playground</code>)</li>
+            <li>Select a model from the dropdown, or choose <strong>New…</strong> to pull a GGUF file</li>
+          </ol>
+          <p>by HuggingFace URL (with optional projection URL for vision/audio models)</p>
+          <ol>
+            <li>Choose a <strong>Template Mode</strong>:
+              <ul>
+                <li><strong>Builtin</strong> — select a chat template from the catalog (or leave as Auto)</li>
+                <li><strong>Custom</strong> — paste a Jinja template script</li>
+              </ul>
+            </li>
+            <li>Configure model parameters: Context Window, NBatch, NUBatch, NSeqMax,</li>
+          </ol>
+          <p>Flash Attention (auto/enabled/disabled), KV Cache Type (f16/q8_0/q4_0), and Cache Mode (None/SPC/IMC)</p>
+          <ol>
+            <li>Select <strong>Automated Mode</strong> or <strong>Manual Mode</strong></li>
+          </ol>
+          <h4 id="1261-automated-mode">12.6.1 Automated Mode</h4>
+          <p>Automated mode runs structured test suites against a model and scores the results. It is designed for benchmarking model quality and finding optimal configurations without manual interaction.</p>
+          <p><strong>Sweep Modes:</strong></p>
+          <ul>
+            <li><strong>Sampling Sweep</strong> — Varies sampling parameters (temperature, top_p, top_k,</li>
+          </ul>
+          <p>min_p, and others including repetition, DRY/XTC controls, and reasoning settings) using user-defined value ranges while holding the model configuration fixed. Each parameter accepts comma-separated values; the first value is the baseline and additional values define the sweep range. When catalog defaults are available for the selected model, they are displayed next to the parameter name as a hint. Requires a loaded session.</p>
+          <ul>
+            <li><strong>Config Sweep</strong> — Varies model configuration parameters (context window,</li>
+          </ul>
+          <p>nbatch, nubatch, nseq_max, flash attention, cache type, cache mode) as a full cross-product of user-selected values. Each candidate reloads the model with a new session, making it slower than sampling sweeps. Does <strong>not</strong> require a pre-loaded session.</p>
+          <p><strong>⚠</strong> Unload the current session before running config sweeps.</p>
+          <p><strong>Scenarios:</strong></p>
+          <p>Two test scenarios can be enabled independently:</p>
+          <ul>
+            <li><strong>Chat Quality</strong> — Tests text generation with math problems, translations,</li>
+          </ul>
+          <p>list formatting, and multi-turn conversations. Responses are scored using exact match (with partial credit for contained answers) and regex validation. Config sweeps additionally include code generation and instruction-following prompts for throughput measurement.</p>
+          <ul>
+            <li><strong>Tool Calling</strong> — Tests function calling with 10 built-in tool definitions</li>
+          </ul>
+          <p>(<code>get_weather</code>, <code>add</code>, <code>search_products</code>, <code>send_email</code>, <code>get_stock_price</code>, <code>convert_currency</code>, <code>create_calendar_event</code>, <code>translate_text</code>, <code>get_directions</code>, <code>set_reminder</code>). Validates that the model emits tool calls with valid JSON arguments and required fields. Includes multi-turn tool calling scenarios.</p>
+          <p>If tool calling is enabled, automated mode probes the template for tool calling compatibility before running. If the probe fails, it falls back to chat-only tests automatically.</p>
+          <p><strong>Context Fill Testing:</strong></p>
+          <p>When chat scenarios are enabled, automated mode calibrates context fill prompts at 20%, 50%, and 80% of the context window. These prompts fill the conversation with background text to measure TPS degradation as the KV cache fills. The first prompt in each scenario is used as a warmup; TPS and TTFT averages exclude warmup results.</p>
+          <p><strong>Repeats:</strong></p>
+          <p>Each prompt can be run multiple times (configurable 1–20, default 3) with scores averaged for more stable results.</p>
+          <p><strong>Running Tests:</strong></p>
+          <ol>
+            <li>Select <strong>Sampling Sweep</strong> or <strong>Config Sweep</strong></li>
+            <li>Configure the sweep value ranges (sampling) or sweep value sets (config).</li>
+          </ol>
+          <p>For sampling sweeps, enter comma-separated values for each parameter — the first value is the baseline and additional values form the sweep grid. Catalog defaults (shown as hints next to parameter names) are used as initial values when a model is selected</p>
+          <ol>
+            <li>Enable/disable <strong>Chat Quality</strong> and <strong>Tool Calling</strong> scenarios</li>
+            <li>Set the number of <strong>Repeats Per Test Case</strong></li>
+            <li>Click <strong>Run Automated Testing</strong></li>
+            <li>Use <strong>Stop</strong> to cancel a run in progress, or <strong>Clear Results</strong> after</li>
+          </ol>
+          <p>completion</p>
+          <p><strong>Results:</strong></p>
+          <ul>
+            <li>A progress bar shows trial progress with elapsed time and estimated</li>
+          </ul>
+          <p>remaining time</p>
+          <ul>
+            <li>A sortable results table displays per-trial scores, TPS, TTFT, and context</li>
+          </ul>
+          <p>fill TPS at 20%/50%/80%</p>
+          <ul>
+            <li>Each row is expandable to show per-scenario, per-prompt details including</li>
+          </ul>
+          <p>input, expected output, actual output, usage statistics, and scoring notes</p>
+          <ul>
+            <li>The <strong>Best Configuration Found</strong> section highlights the winning trial</li>
+          </ul>
+          <p><strong>Best Configuration Criteria:</strong></p>
+          <p>After a run completes, adjust the weights used to rank configurations (Chat Score, Tool Score, Total Score, Avg TPS, Avg TTFT) and click <strong>Reevaluate</strong> to re-rank results without re-running the tests.</p>
+          <p><strong>Note:</strong> When NSeqMax &gt; 1 in config sweeps, prompts run concurrently to measure real parallel throughput.</p>
+          <h4 id="1262-manual-mode">12.6.2 Manual Mode</h4>
+          <p>Manual mode provides hands-on interaction with a loaded model through three tabs. A session must be created before using any tab.</p>
+          <p><strong>Steps:</strong></p>
+          <ol>
+            <li>Configure the model parameters</li>
+            <li>Click <strong>Create Session</strong> to load the model</li>
+            <li>The effective configuration is displayed after creation</li>
+            <li>Use the tabs below for testing</li>
+            <li>Click <strong>Unload Session</strong> to release the model when finished</li>
+          </ol>
+          <p><strong>Basic Chat Tab:</strong></p>
+          <p>Interactive streaming chat with full control over generation parameters:</p>
+          <ul>
+            <li><strong>System Prompt</strong> — Editable system message</li>
+            <li><strong>Generation</strong> — Temperature, Top P, Top K, Min P, Max Tokens</li>
+            <li><strong>Repetition Control</strong> — Repeat Penalty, Repeat Last N, Frequency Penalty,</li>
+          </ul>
+          <p>Presence Penalty</p>
+          <ul>
+            <li><strong>DRY Sampler</strong> — DRY Multiplier, DRY Base, DRY Allowed Length, DRY Penalty</li>
+          </ul>
+          <p>Last N</p>
+          <ul>
+            <li><strong>XTC Sampler</strong> — XTC Probability, XTC Threshold, XTC Min Keep</li>
+            <li><strong>Reasoning</strong> — Enable Thinking (on/off), Reasoning Effort</li>
+          </ul>
+          <p>(none/minimal/low/medium/high)</p>
+          <p>Messages stream in real-time with tokens-per-second displayed after each response. A warmup request runs before each message to ensure accurate TPS measurement.</p>
+          <p><strong>Tool Calling Test Tab:</strong></p>
+          <p>Test whether a model correctly emits tool calls:</p>
+          <ol>
+            <li>Edit the <strong>Tool Definitions</strong> JSON (pre-populated with 10 sample tools)</li>
+            <li>Enter a <strong>Test Prompt</strong></li>
+            <li>Click <strong>Run Test</strong></li>
+            <li>Results show <strong>PASS</strong> with the emitted tool calls (function names and</li>
+          </ol>
+          <p>arguments) or <strong>NO TOOL CALLS</strong> with the model's text output</p>
+          <p><strong>Prompt Inspector Tab:</strong></p>
+          <p>Examine how the chat template renders messages into the prompt sent to the model:</p>
+          <ol>
+            <li>Enter a <strong>Test Message</strong></li>
+            <li>Click <strong>Render Prompt</strong></li>
+            <li>The fully rendered prompt text (system prompt + test message) is displayed</li>
+          </ol>
+          <p>with a <strong>Copy</strong> button</p>
+          <p>This is useful for debugging chat template formatting or verifying that system prompts are rendered correctly for a given template.</p>
+          <p><strong>Export to Catalog:</strong></p>
+          <p>Click <strong>Export to Catalog Editor</strong> (in the header) to pre-fill a catalog entry with the playground's current model, template, and configuration settings.</p>
           <hr />
           <p><em>Next: &lt;a href="#chapter-13-client-integration"&gt;Chapter 13: Client Integration&lt;/a&gt;</em></p>
           <h2 id="chapter-13:-client-integration">Chapter 13: Client Integration</h2>
@@ -5823,6 +5952,7 @@ batching = true`}</code></pre>
                 <li><a href="#123-downloading-models" className={activeSection === '123-downloading-models' ? 'active' : ''}>12.3 Downloading Models</a></li>
                 <li><a href="#124-managing-keys-and-tokens" className={activeSection === '124-managing-keys-and-tokens' ? 'active' : ''}>12.4 Managing Keys and Tokens</a></li>
                 <li><a href="#125-other-screens" className={activeSection === '125-other-screens' ? 'active' : ''}>12.5 Other Screens</a></li>
+                <li><a href="#126-model-playground" className={activeSection === '126-model-playground' ? 'active' : ''}>12.6 Model Playground</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
