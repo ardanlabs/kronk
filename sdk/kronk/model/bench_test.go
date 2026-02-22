@@ -914,7 +914,7 @@ func conversationTurns() []conversationTurn {
 				"\n" +
 				`Before changing any code, tune the GC behavior:` +
 				"\n" +
-				`- Set GOMEMLIMIT=7GiB (just under your 8GB pod limit) to give the GC a concrete target` +
+				`- Set GOMEMLIMIT=7GB (just under your 8GB pod limit) to give the GC a concrete target` +
 				"\n" +
 				`- Set GOGC=200 or higher to reduce GC frequency — with GOMEMLIMIT as a backstop, the ` +
 				`GC will still trigger when memory pressure is real` +

@@ -141,6 +141,48 @@
 
 # ------------------------------------------------------------------------------
 
+Qwen3-Coder-Next-UD-Q8_K_XL/IMC-Cline:
+  nseq-max: 1
+  incremental-cache: true
+
+Qwen3-Coder-Next-UD-Q8_K_XL/IMC-Kilo:
+  nseq-max: 2
+  incremental-cache: true
+
+Qwen3-Coder-Next-UD-Q8_K_XL/SPC:
+  nseq-max: 1
+  system-prompt-cache: true
+
+# ------------------------------------------------------------------------------
+
+Qwen3-Coder-Next-UD-Q6_K_XL/IMC-Cline:
+  nseq-max: 1
+  incremental-cache: true
+
+Qwen3-Coder-Next-UD-Q6_K_XL/IMC-Kilo:
+  nseq-max: 2
+  incremental-cache: true
+
+Qwen3-Coder-Next-UD-Q6_K_XL/SPC:
+  nseq-max: 1
+  system-prompt-cache: true
+
+# ------------------------------------------------------------------------------
+
+Qwen3-Coder-Next-UD-Q5_K_XL/IMC-Cline:
+  nseq-max: 1
+  incremental-cache: true
+
+Qwen3-Coder-Next-UD-Q5_K_XL/IMC-Kilo:
+  nseq-max: 2
+  incremental-cache: true
+
+Qwen3-Coder-Next-UD-Q5_K_XL/SPC:
+  nseq-max: 1
+  system-prompt-cache: true
+
+# ------------------------------------------------------------------------------
+
 Qwen3-Coder-Next-UD-Q4_K_XL/IMC-Cline:
   nseq-max: 1
   incremental-cache: true

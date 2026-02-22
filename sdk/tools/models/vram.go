@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -167,7 +169,15 @@ func CalculateVRAM(input VRAMInput) VRAM {
 // CalculateVRAMFromHuggingFace fetches GGUF metadata from HuggingFace using HTTP
 // Range requests and calculates VRAM requirements. Only the header is downloaded,
 // not the entire model file.
+//
+// The modelURL can be either:
+//   - A single file URL: https://huggingface.co/org/repo/resolve/main/model.gguf
+//   - A folder URL for split models: https://huggingface.co/org/repo/tree/main/UD-Q5_K_XL
 func CalculateVRAMFromHuggingFace(ctx context.Context, modelURL string, cfg VRAMConfig) (VRAM, error) {
+	if isHuggingFaceFolderURL(modelURL) {
+		return calculateVRAMFromHuggingFaceFolder(ctx, modelURL, cfg)
+	}
+
 	modelURL = NormalizeHuggingFaceDownloadURL(modelURL)
 
 	metadata, fileSize, err := FetchGGUFMetadata(ctx, modelURL)
@@ -175,6 +185,29 @@ func CalculateVRAMFromHuggingFace(ctx context.Context, modelURL string, cfg VRAM
 		return VRAM{}, fmt.Errorf("calculate-vram-hg: failed to fetch GGUF metadata: %w", err)
 	}
 
+	return buildVRAMFromMetadata(metadata, fileSize, cfg)
+}
+
+// calculateVRAMFromHuggingFaceFolder handles VRAM calculation for split models
+// hosted in a HuggingFace folder. It lists all GGUF files in the folder, sums
+// their sizes, and reads metadata from the first split file.
+func calculateVRAMFromHuggingFaceFolder(ctx context.Context, folderURL string, cfg VRAMConfig) (VRAM, error) {
+	fileURLs, totalSize, err := fetchHuggingFaceFolderFiles(ctx, folderURL)
+	if err != nil {
+		return VRAM{}, fmt.Errorf("calculate-vram-hg: %w", err)
+	}
+
+	metadata, _, err := FetchGGUFMetadata(ctx, fileURLs[0])
+	if err != nil {
+		return VRAM{}, fmt.Errorf("calculate-vram-hg: failed to fetch GGUF metadata from split: %w", err)
+	}
+
+	return buildVRAMFromMetadata(metadata, totalSize, cfg)
+}
+
+// buildVRAMFromMetadata extracts model parameters from GGUF metadata and
+// computes the VRAM requirements.
+func buildVRAMFromMetadata(metadata map[string]string, modelSizeBytes int64, cfg VRAMConfig) (VRAM, error) {
 	arch := detectArchitecture(metadata)
 	if arch == "" {
 		return VRAM{}, fmt.Errorf("calculate-vram-hg: unable to detect model architecture")
@@ -182,8 +215,8 @@ func CalculateVRAMFromHuggingFace(ctx context.Context, modelURL string, cfg VRAM
 
 	if isVisionEncoder(arch) {
 		return VRAM{
-			Input:     VRAMInput{ModelSizeBytes: fileSize},
-			TotalVRAM: fileSize,
+			Input:     VRAMInput{ModelSizeBytes: modelSizeBytes},
+			TotalVRAM: modelSizeBytes,
 		}, nil
 	}
 
@@ -208,7 +241,7 @@ func CalculateVRAMFromHuggingFace(ctx context.Context, modelURL string, cfg VRAM
 	}
 
 	input := VRAMInput{
-		ModelSizeBytes:  fileSize,
+		ModelSizeBytes:  modelSizeBytes,
 		ContextWindow:   cfg.ContextWindow,
 		BlockCount:      blockCount,
 		HeadCountKV:     headCountKV,
@@ -219,6 +252,130 @@ func CalculateVRAMFromHuggingFace(ctx context.Context, modelURL string, cfg VRAM
 	}
 
 	return CalculateVRAM(input), nil
+}
+
+// isHuggingFaceFolderURL returns true if the URL points to a HuggingFace
+// folder containing split model files rather than a single GGUF file.
+func isHuggingFaceFolderURL(modelURL string) bool {
+	if strings.Contains(modelURL, "/tree/") {
+		return true
+	}
+
+	lower := strings.ToLower(modelURL)
+	if !strings.HasSuffix(lower, ".gguf") && !strings.Contains(modelURL, "/resolve/") {
+		return true
+	}
+
+	return false
+}
+
+// hfTreeEntry represents a file entry returned by the HuggingFace tree API.
+type hfTreeEntry struct {
+	Type string `json:"type"`
+	Path string `json:"path"`
+	Size int64  `json:"size"`
+	LFS  *struct {
+		Size int64 `json:"size"`
+	} `json:"lfs"`
+}
+
+// fetchHuggingFaceFolderFiles lists GGUF files in a HuggingFace folder and
+// returns their download URLs (sorted) and total size.
+func fetchHuggingFaceFolderFiles(ctx context.Context, folderURL string) ([]string, int64, error) {
+	owner, repo, folderPath, err := parseHuggingFaceFolderURL(folderURL)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	apiURL := fmt.Sprintf("https://huggingface.co/api/models/%s/%s/tree/main/%s", owner, repo, folderPath)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return nil, 0, fmt.Errorf("fetch-hf-folder-files: creating request: %w", err)
+	}
+
+	if token := os.Getenv("KRONK_HF_TOKEN"); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, 0, fmt.Errorf("fetch-hf-folder-files: fetching: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, 0, fmt.Errorf("fetch-hf-folder-files: unexpected status %d for %s", resp.StatusCode, apiURL)
+	}
+
+	var entries []hfTreeEntry
+	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+		return nil, 0, fmt.Errorf("fetch-hf-folder-files: decoding: %w", err)
+	}
+
+	var fileURLs []string
+	var totalSize int64
+
+	for _, entry := range entries {
+		if entry.Type != "file" {
+			continue
+		}
+		if !strings.HasSuffix(strings.ToLower(entry.Path), ".gguf") {
+			continue
+		}
+
+		size := entry.Size
+		if entry.LFS != nil {
+			size = entry.LFS.Size
+		}
+
+		downloadURL := fmt.Sprintf("https://huggingface.co/%s/%s/resolve/main/%s", owner, repo, entry.Path)
+		fileURLs = append(fileURLs, downloadURL)
+		totalSize += size
+	}
+
+	if len(fileURLs) == 0 {
+		return nil, 0, fmt.Errorf("fetch-hf-folder-files: no GGUF files found in folder %s/%s/%s", owner, repo, folderPath)
+	}
+
+	slices.Sort(fileURLs)
+
+	return fileURLs, totalSize, nil
+}
+
+// parseHuggingFaceFolderURL extracts owner, repo, and folder path from a
+// HuggingFace folder URL.
+//
+// Supported formats:
+//
+//	https://huggingface.co/owner/repo/tree/main/subfolder
+//	owner/repo/tree/main/subfolder
+//	owner/repo/subfolder (no /tree/main/ prefix)
+func parseHuggingFaceFolderURL(folderURL string) (owner, repo, folderPath string, err error) {
+	raw := folderURL
+	raw = strings.TrimPrefix(raw, "https://huggingface.co/")
+	raw = strings.TrimPrefix(raw, "http://huggingface.co/")
+
+	parts := strings.SplitN(raw, "/", 3)
+	if len(parts) < 3 {
+		return "", "", "", fmt.Errorf("parse-hf-folder-url: invalid folder URL: %s", folderURL)
+	}
+
+	owner = parts[0]
+	repo = parts[1]
+	rest := parts[2]
+
+	// Strip tree/main/ prefix if present.
+	rest = strings.TrimPrefix(rest, "tree/main/")
+
+	// Strip blob/main/ prefix if present.
+	rest = strings.TrimPrefix(rest, "blob/main/")
+
+	if rest == "" {
+		return "", "", "", fmt.Errorf("parse-hf-folder-url: missing folder path in URL: %s", folderURL)
+	}
+
+	return owner, repo, rest, nil
 }
 
 // =============================================================================

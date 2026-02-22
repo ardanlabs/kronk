@@ -106,7 +106,7 @@ Download(ctx, src, dest, progressFunc, sizeInterval) (downloaded bool, err error
 ```
 
 - Supports HuggingFace auth via `KRONK_HF_TOKEN` env var
-- Progress callbacks at configurable intervals (`SizeIntervalMIB10` = 10 MiB)
+- Progress callbacks at configurable intervals (`SizeIntervalMIB10` = 10 MB)
 - Network availability check before download
 
 **ProgressReader:**
@@ -181,10 +181,10 @@ Templates package embeds a `Catalog` instance for model lookups. Access via `tem
 
 ## Environment Variables
 
-| Variable | Description |
-|----------|-------------|
-| `KRONK_ARCH` | Override CPU architecture detection |
-| `KRONK_OS` | Override OS detection |
-| `KRONK_PROCESSOR` | Set processor type (cpu/cuda/metal/vulkan) |
-| `KRONK_LIB_VERSION` | Pin llama.cpp library version |
-| `KRONK_HF_TOKEN` | HuggingFace authentication token for gated models |
+| Variable            | Description                                       |
+| ------------------- | ------------------------------------------------- |
+| `KRONK_ARCH`        | Override CPU architecture detection               |
+| `KRONK_OS`          | Override OS detection                             |
+| `KRONK_PROCESSOR`   | Set processor type (cpu/cuda/metal/vulkan)        |
+| `KRONK_LIB_VERSION` | Pin llama.cpp library version                     |
+| `KRONK_HF_TOKEN`    | HuggingFace authentication token for gated models |

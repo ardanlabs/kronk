@@ -127,8 +127,6 @@ func (m *Models) BuildIndex(log Logger) error {
 			for modelID, files := range modelfiles {
 				isValidated := currentIndex[modelID].Validated
 
-				log(ctx, "checking model", "modelID", modelID, "isValidated", isValidated)
-
 				slices.Sort(files)
 
 				mp := Path{

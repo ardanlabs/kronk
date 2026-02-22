@@ -9,7 +9,7 @@ models:
     files:
       models:
         - url: gpustack/bge-reranker-v2-m3-GGUF/bge-reranker-v2-m3-Q8_0.gguf
-          size: 636 MiB
+          size: 636 MB
     capabilities:
       endpoint: rerank
       images: false

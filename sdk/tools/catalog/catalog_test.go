@@ -65,16 +65,16 @@ func Test_Catalog(t *testing.T) {
 					Models: []catalog.File{
 						{
 							URL:  "unsloth/Llama-3.3-70B-Instruct-GGUF/Llama-3.3-70B-Instruct-Q8_0/Llama-3.3-70B-Instruct-Q8_0-00001-of-00002.gguf",
-							Size: "39.8 GiB",
+							Size: "39.8 GB",
 						},
 						{
 							URL:  "unsloth/Llama-3.3-70B-Instruct-GGUF/Llama-3.3-70B-Instruct-Q8_0/Llama-3.3-70B-Instruct-Q8_0-00002-of-00002.gguf",
-							Size: "35.2 GiB",
+							Size: "35.2 GB",
 						},
 					},
 					Proj: catalog.File{
 						URL:  "proj: just for testing",
-						Size: "0.0 GiB",
+						Size: "0.0 GB",
 					},
 				},
 				Capabilities: catalog.Capabilities{

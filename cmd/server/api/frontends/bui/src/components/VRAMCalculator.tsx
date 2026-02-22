@@ -110,6 +110,7 @@ const CONTEXT_WINDOW_OPTIONS = [
   { value: 16384, label: '16K' },
   { value: 32768, label: '32K' },
   { value: 65536, label: '64K' },
+  { value: 98304, label: '96K' },
   { value: 131072, label: '128K' },
   { value: 262144, label: '256K' },
 ];
@@ -225,9 +226,9 @@ export default function VRAMCalculator() {
       <form onSubmit={handleCalculate} className="form-card">
         <div className="form-group">
                   <label htmlFor="modelUrl">                    
-                    Ex. Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf<br />
-                    Ex. https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf<br/><br/>
-                    Model URL (download link or org/family/file)
+                    Ex. https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf<br/>
+                    Ex. https://huggingface.co/unsloth/Qwen3-Coder-Next-GGUF/tree/main/UD-Q5_K_XL (split models)<br/><br/>
+                    Model URL (download link, org/family/file, or folder for split models)
                   </label>
           <input
             id="modelUrl"
@@ -238,7 +239,7 @@ export default function VRAMCalculator() {
             className="form-input"
           />
           <small className="form-hint">
-            Enter a HuggingFace URL to a GGUF model file
+            Enter a HuggingFace URL to a GGUF model file, or a folder URL for split models
           </small>
         </div>
 

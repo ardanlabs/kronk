@@ -281,7 +281,7 @@ func (lib *Libs) DownloadVersion(ctx context.Context, log Logger, version string
 	tempPath := filepath.Join(lib.path, "temp")
 
 	progress := func(src string, currentSize int64, totalSize int64, mibPerSec float64, complete bool) {
-		log(ctx, fmt.Sprintf("\r\x1b[Kdownload-libraries: Downloading %s... %d MiB of %d MiB (%.2f MiB/s)", src, currentSize/(1024*1024), totalSize/(1024*1024), mibPerSec))
+		log(ctx, fmt.Sprintf("\r\x1b[Kdownload-libraries: Downloading %s... %d MB of %d MB (%.2f MB/s)", src, currentSize/(1024*1024), totalSize/(1024*1024), mibPerSec))
 	}
 
 	pr := downloader.NewProgressReader(progress, downloader.SizeIntervalMIB10)

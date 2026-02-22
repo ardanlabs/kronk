@@ -20,7 +20,7 @@ import (
 // ErrKeyNotFound is returned when a key identified by a kid is not found.
 var ErrKeyNotFound = errors.New("key not found")
 
-const maxPEMFileSize = 1024 * 1024 // 1 MiB
+const maxPEMFileSize = 1024 * 1024 // 1 MB
 
 // Key represents Key information.
 type Key struct {
