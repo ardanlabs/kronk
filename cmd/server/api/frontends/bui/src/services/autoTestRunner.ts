@@ -14,6 +14,7 @@ import type {
   SamplingSweepDefinition,
   ConfigSweepDefinition,
   ConfigCandidate,
+  ModelCaps,
   PlaygroundModelConfig,
   BestConfigWeights,
   ContextFillRatio,
@@ -2325,6 +2326,7 @@ export const defaultConfigSweepDef: ConfigSweepDefinition = {
 export function generateConfigCandidates(
   baseConfig: PlaygroundModelConfig,
   def: ConfigSweepDefinition,
+  modelCaps?: ModelCaps,
 ): ConfigCandidate[] {
   const baseline: ConfigCandidate = {
     'context_window': baseConfig['context_window'],
@@ -2395,6 +2397,11 @@ export function generateConfigCandidates(
     if (effNBatch !== undefined && effNUBatch !== undefined &&
         Number.isFinite(effNBatch) && Number.isFinite(effNUBatch) &&
         effNUBatch > effNBatch) continue
+    // Skip invalid combos for hybrid models.
+    if (modelCaps?.isHybrid) {
+      if (c['flash_attention'] === 'enabled') continue
+      if (c['cache_type'] !== undefined && c['cache_type'] !== 'f16') continue
+    }
     seen.add(k)
     candidates.push(c)
   }

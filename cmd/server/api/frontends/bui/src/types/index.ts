@@ -673,6 +673,11 @@ export interface ConfigCandidate {
   'cache_mode'?: string;
 }
 
+export interface ModelCaps {
+  isHybrid?: boolean;
+  isGPT?: boolean;
+}
+
 export interface AutoTestSessionSeed {
   model_id: string;
   template_mode: 'builtin' | 'custom';

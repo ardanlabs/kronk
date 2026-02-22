@@ -7,6 +7,7 @@ import type {
   AutoTestScenario,
   ConfigSweepDefinition,
   ConfigCandidate,
+  ModelCaps,
   AutoTestSessionSeed,
   BestConfigWeights,
 } from '../types';
@@ -268,10 +269,32 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
 
     (async () => {
       try {
-        const configCandidates = generateConfigCandidates(sessionSeed.base_config, configSweepDef);
+        // Probe baseline session to detect model capabilities.
+        let modelCaps: ModelCaps = {};
+        let probeSessionId: string | null = null;
+        try {
+          const probeResp = await api.createPlaygroundSession({
+            model_id: sessionSeed.model_id,
+            template_mode: sessionSeed.template_mode,
+            template_name: sessionSeed.template_name,
+            template_script: sessionSeed.template_script,
+            config: {},
+          });
+          probeSessionId = probeResp.session_id;
+          modelCaps = {
+            isHybrid: probeResp.effective_config?.['is_hybrid_model'] === true,
+            isGPT: probeResp.effective_config?.['is_gpt_model'] === true,
+          };
+        } catch {
+          // Probe failed; proceed without model caps filtering.
+        } finally {
+          if (probeSessionId) await api.deletePlaygroundSession(probeSessionId).catch(() => {});
+        }
+
+        const configCandidates = generateConfigCandidates(sessionSeed.base_config, configSweepDef, modelCaps);
 
         if (configCandidates.length === 0) {
-          setRun(prev => prev ? { ...prev, errorMessage: 'No valid config candidates generated (check that nubatch does not exceed nbatch)', status: 'error' } : prev);
+          setRun(prev => prev ? { ...prev, errorMessage: 'No valid config candidates generated (check sweep values; hybrid models require f16 cache type and disable flash attention)', status: 'error' } : prev);
           abortControllerRef.current = null;
           return;
         }

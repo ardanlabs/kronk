@@ -177,6 +177,10 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 		"cache_type_k":        krn.ModelConfig().CacheTypeK.String(),
 		"cache_type_v":        krn.ModelConfig().CacheTypeV.String(),
 		"system_prompt_cache": krn.ModelConfig().SystemPromptCache,
+		"incremental_cache":   krn.ModelConfig().IncrementalCache,
+		"split_mode":          krn.ModelConfig().SplitMode.String(),
+		"is_hybrid_model":     krn.ModelInfo().IsHybridModel,
+		"is_gpt_model":        krn.ModelInfo().IsGPTModel,
 	}
 
 	return SessionResponse{
