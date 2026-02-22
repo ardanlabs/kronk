@@ -541,7 +541,7 @@ export interface AutoTestPromptDef {
   messages: ChatMessage[];
   tools?: ChatToolDefinition[];
   max_tokens?: number;
-  expected?: { type: 'regex' | 'exact' | 'tool_call'; value?: string };
+  expected?: { type: 'regex' | 'exact' | 'tool_call' | 'no_tool_call'; value?: string };
   contextFill?: { ratio: number; label: ContextFillRatio };
   includeInScore?: boolean;
 }

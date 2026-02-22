@@ -89,6 +89,13 @@ class ApiService {
     return this.request<ModelDetailsResponse>('/models/ps');
   }
 
+  async unloadModel(id: string): Promise<void> {
+    await this.request('/models/unload', {
+      method: 'POST',
+      body: JSON.stringify({ id }),
+    });
+  }
+
   async showModel(id: string): Promise<ModelInfoResponse> {
     return this.request<ModelInfoResponse>(`/models/${encodeURIComponent(id)}`);
   }

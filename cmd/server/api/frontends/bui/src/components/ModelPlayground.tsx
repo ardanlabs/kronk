@@ -13,6 +13,7 @@ import type {
 } from '../types';
 import AutomatedTestingPanel from './AutomatedTestingPanel';
 import { autoTestTools } from '../services/autoTestRunner';
+import { PARAM_TOOLTIPS, ParamTooltip } from './ParamTooltips';
 
 const NEW_MODEL_VALUE = '__new__';
 
@@ -85,6 +86,10 @@ export default function ModelPlayground() {
   const [userInput, setUserInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const streamAbortRef = useRef<(() => void) | null>(null);
+  const warmupAbortRef = useRef<(() => void) | null>(null);
+  const toolTestAbortRef = useRef<(() => void) | null>(null);
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
 
   // HuggingFace pull state
   const [showPullForm, setShowPullForm] = useState(false);
@@ -162,6 +167,8 @@ export default function ModelPlayground() {
   useEffect(() => {
     return () => {
       streamAbortRef.current?.();
+      warmupAbortRef.current?.();
+      toolTestAbortRef.current?.();
       if (throttleTimerRef.current) {
         clearTimeout(throttleTimerRef.current);
       }
@@ -273,6 +280,20 @@ export default function ModelPlayground() {
   const handleUnloadSession = async () => {
     if (!session) return;
 
+    // Abort any active streams first
+    streamAbortRef.current?.();
+    streamAbortRef.current = null;
+    warmupAbortRef.current?.();
+    warmupAbortRef.current = null;
+    toolTestAbortRef.current?.();
+    toolTestAbortRef.current = null;
+    setToolTestRunning(false);
+    if (throttleTimerRef.current) {
+      clearTimeout(throttleTimerRef.current);
+      throttleTimerRef.current = null;
+    }
+    setStreaming(false);
+
     try {
       await api.deletePlaygroundSession(session.session_id);
       setSession(null);
@@ -289,7 +310,7 @@ export default function ModelPlayground() {
         { role: 'user', content: 'hello, model!' },
       ];
 
-      api.streamPlaygroundChat(
+      const abort = api.streamPlaygroundChat(
         {
           session_id: sessionId,
           messages: warmupMessages,
@@ -301,14 +322,19 @@ export default function ModelPlayground() {
           min_p: minP,
         },
         () => {}, // consume tokens silently
-        (error: string) => reject(new Error(error)),
-        () => resolve(),
+        (error: string) => { warmupAbortRef.current = null; reject(new Error(error)); },
+        () => { warmupAbortRef.current = null; resolve(); },
       );
+      warmupAbortRef.current = abort;
     });
   }, [temperature, topP, topK, minP]);
 
   const handleSendMessage = useCallback(async () => {
     if (!session || !userInput.trim() || streaming) return;
+
+    const input = userInput.trim();
+    const prevMessages = chatMessages;
+    const sessionId = session.session_id;
 
     setUserInput('');
     setStreaming(true);
@@ -317,29 +343,39 @@ export default function ModelPlayground() {
     // Show the user message and a "warming up" placeholder.
     setChatMessages(prev => [
       ...prev,
-      { role: 'user', content: userInput },
-      { role: 'assistant', content: '⏳ Warming up model...' },
+      { role: 'user', content: input },
+      { role: 'assistant', content: cacheMode === 'imc' ? '' : '⏳ Warming up model...' },
     ]);
 
-    // Warmup: send a throwaway message so the model is hot.
-    try {
-      await runWarmup(session.session_id);
-    } catch {
-      // Warmup failure is non-fatal; continue with the real request.
+    // Warmup: send a throwaway message so the model is hot (skip for IMC to avoid cache corruption).
+    if (cacheMode !== 'imc') {
+      warmupAbortRef.current?.();
+      warmupAbortRef.current = null;
+      try {
+        await runWarmup(sessionId);
+      } catch {
+        // Warmup failure is non-fatal; continue with the real request.
+      }
+
+      await new Promise(r => setTimeout(r, 1000));
     }
 
-    await new Promise(r => setTimeout(r, 1000));
+    // Guard: if session changed during warmup, bail out.
+    if (!sessionRef.current || sessionRef.current.session_id !== sessionId) {
+      setStreaming(false);
+      return;
+    }
 
     // Build the real message list (excluding the warmup placeholder).
     const messages: ChatMessage[] = [];
     if (systemPrompt.trim()) {
       messages.push({ role: 'system', content: systemPrompt });
     }
-    // Use chatMessages from before we appended the user+placeholder.
-    for (const msg of chatMessages) {
+    // Use captured snapshot from before we appended the user+placeholder.
+    for (const msg of prevMessages) {
       messages.push({ role: msg.role, content: msg.content });
     }
-    messages.push({ role: 'user', content: userInput });
+    messages.push({ role: 'user', content: input });
 
     // Replace the warmup placeholder with an empty assistant message.
     setChatMessages(prev => {
@@ -358,7 +394,7 @@ export default function ModelPlayground() {
 
     const abort = api.streamPlaygroundChat(
       {
-        session_id: session.session_id,
+        session_id: sessionId,
         messages,
         stream: true,
         stream_options: { include_usage: true },
@@ -435,11 +471,27 @@ export default function ModelPlayground() {
     );
 
     streamAbortRef.current = abort;
-  }, [session, userInput, streaming, systemPrompt, chatMessages, temperature, topP, topK, minP, maxTokens, repeatPenalty, repeatLastN, frequencyPenalty, presencePenalty, dryMultiplier, dryBase, dryAllowedLength, dryPenaltyLastN, xtcProbability, xtcThreshold, xtcMinKeep, enableThinking, reasoningEffort, runWarmup]);
+  }, [session, userInput, streaming, systemPrompt, chatMessages, cacheMode, temperature, topP, topK, minP, maxTokens, repeatPenalty, repeatLastN, frequencyPenalty, presencePenalty, dryMultiplier, dryBase, dryAllowedLength, dryPenaltyLastN, xtcProbability, xtcThreshold, xtcMinKeep, enableThinking, reasoningEffort, runWarmup]);
 
   const handleStopStreaming = () => {
     streamAbortRef.current?.();
     streamAbortRef.current = null;
+    warmupAbortRef.current?.();
+    warmupAbortRef.current = null;
+    if (throttleTimerRef.current) {
+      clearTimeout(throttleTimerRef.current);
+      throttleTimerRef.current = null;
+    }
+    const finalContent = contentBufferRef.current;
+    if (finalContent) {
+      setChatMessages(prev => {
+        const updated = [...prev];
+        if (updated.length > 0) {
+          updated[updated.length - 1] = { role: 'assistant', content: finalContent };
+        }
+        return updated;
+      });
+    }
     setStreaming(false);
   };
 
@@ -466,7 +518,7 @@ export default function ModelPlayground() {
     let fullContent = '';
     let collectedToolCalls: ChatToolCall[] = [];
 
-    api.streamPlaygroundChat(
+    const abort = api.streamPlaygroundChat(
       {
         session_id: session.session_id,
         messages,
@@ -482,6 +534,9 @@ export default function ModelPlayground() {
           for (const tc of choice.delta.tool_calls) {
             const existing = collectedToolCalls.find(c => c.index === tc.index);
             if (existing) {
+              if (tc.id && !existing.id) existing.id = tc.id;
+              if (tc.type && existing.type === 'function') existing.type = tc.type;
+              if (tc.function?.name && !existing.function.name) existing.function.name = tc.function.name;
               if (tc.function?.arguments) {
                 existing.function.arguments += tc.function.arguments;
               }
@@ -503,10 +558,12 @@ export default function ModelPlayground() {
         }
       },
       (error: string) => {
+        toolTestAbortRef.current = null;
         setToolResult(`Error: ${error}`);
         setToolTestRunning(false);
       },
       () => {
+        toolTestAbortRef.current = null;
         setToolResult(fullContent);
         if (collectedToolCalls.length > 0) {
           setToolCalls([...collectedToolCalls]);
@@ -514,6 +571,7 @@ export default function ModelPlayground() {
         setToolTestRunning(false);
       }
     );
+    toolTestAbortRef.current = abort;
   }, [session, toolTestRunning, toolDefs, toolPrompt]);
 
   const handleInspector = useCallback(() => {
@@ -804,7 +862,7 @@ export default function ModelPlayground() {
           <h4>Configuration</h4>
           <div className="playground-config-grid-fluid">
             <div className="form-group">
-              <label htmlFor="pg-context-window">Context Window</label>
+              <label htmlFor="pg-context-window">Context Window{PARAM_TOOLTIPS.contextWindow && <ParamTooltip text={PARAM_TOOLTIPS.contextWindow} />}</label>
               <input
                 id="pg-context-window"
                 type="number"
@@ -814,7 +872,7 @@ export default function ModelPlayground() {
               />
             </div>
             <div className="form-group">
-              <label htmlFor="pg-nbatch">NBatch</label>
+              <label htmlFor="pg-nbatch">NBatch{PARAM_TOOLTIPS.nbatch && <ParamTooltip text={PARAM_TOOLTIPS.nbatch} />}</label>
               <input
                 id="pg-nbatch"
                 type="number"
@@ -824,7 +882,7 @@ export default function ModelPlayground() {
               />
             </div>
             <div className="form-group">
-              <label htmlFor="pg-nubatch">NUBatch</label>
+              <label htmlFor="pg-nubatch">NUBatch{PARAM_TOOLTIPS.nubatch && <ParamTooltip text={PARAM_TOOLTIPS.nubatch} />}</label>
               <input
                 id="pg-nubatch"
                 type="number"
@@ -834,7 +892,7 @@ export default function ModelPlayground() {
               />
             </div>
             <div className="form-group">
-              <label htmlFor="pg-nseqmax">NSeqMax</label>
+              <label htmlFor="pg-nseqmax">NSeqMax{PARAM_TOOLTIPS.nSeqMax && <ParamTooltip text={PARAM_TOOLTIPS.nSeqMax} />}</label>
               <input
                 id="pg-nseqmax"
                 type="number"
@@ -845,7 +903,7 @@ export default function ModelPlayground() {
               />
             </div>
             <div className="form-group">
-              <label htmlFor="pg-flash-attn">Flash Attention</label>
+              <label htmlFor="pg-flash-attn">Flash Attention{PARAM_TOOLTIPS.flashAttention && <ParamTooltip text={PARAM_TOOLTIPS.flashAttention} />}</label>
               <select
                 id="pg-flash-attn"
                 value={flashAttention}
@@ -858,7 +916,7 @@ export default function ModelPlayground() {
               </select>
             </div>
             <div className="form-group">
-              <label htmlFor="pg-cache-type">KV Cache Type</label>
+              <label htmlFor="pg-cache-type">KV Cache Type{PARAM_TOOLTIPS.cacheType && <ParamTooltip text={PARAM_TOOLTIPS.cacheType} />}</label>
               <select
                 id="pg-cache-type"
                 value={cacheType}
@@ -872,7 +930,7 @@ export default function ModelPlayground() {
               </select>
             </div>
             <div className="form-group">
-              <label>Cache Mode</label>
+              <label>Cache Mode{PARAM_TOOLTIPS.cacheMode && <ParamTooltip text={PARAM_TOOLTIPS.cacheMode} />}</label>
               <select
                 value={cacheMode}
                 onChange={(e) => setCacheMode(e.target.value)}
@@ -979,23 +1037,23 @@ export default function ModelPlayground() {
                   <h5 className="playground-param-group-title">Generation</h5>
                   <div className="playground-config-grid-fluid">
                     <div className="form-group">
-                      <label htmlFor="pg-temperature">Temperature</label>
+                      <label htmlFor="pg-temperature">Temperature{PARAM_TOOLTIPS.temperature && <ParamTooltip text={PARAM_TOOLTIPS.temperature} />}</label>
                       <input id="pg-temperature" type="number" value={temperature} onChange={(e) => setTemperature(Number(e.target.value))} step={0.1} min={0} />
                     </div>
                     <div className="form-group">
-                      <label htmlFor="pg-top-p">Top P</label>
+                      <label htmlFor="pg-top-p">Top P{PARAM_TOOLTIPS.top_p && <ParamTooltip text={PARAM_TOOLTIPS.top_p} />}</label>
                       <input id="pg-top-p" type="number" value={topP} onChange={(e) => setTopP(Number(e.target.value))} step={0.05} min={0} max={1} />
                     </div>
                     <div className="form-group">
-                      <label htmlFor="pg-top-k">Top K</label>
+                      <label htmlFor="pg-top-k">Top K{PARAM_TOOLTIPS.top_k && <ParamTooltip text={PARAM_TOOLTIPS.top_k} />}</label>
                       <input id="pg-top-k" type="number" value={topK} onChange={(e) => setTopK(Math.floor(Number(e.target.value)))} step={1} min={0} />
                     </div>
                     <div className="form-group">
-                      <label htmlFor="pg-min-p">Min P</label>
+                      <label htmlFor="pg-min-p">Min P{PARAM_TOOLTIPS.min_p && <ParamTooltip text={PARAM_TOOLTIPS.min_p} />}</label>
                       <input id="pg-min-p" type="number" value={minP} onChange={(e) => setMinP(Number(e.target.value))} step={0.01} min={0} max={1} />
                     </div>
                     <div className="form-group">
-                      <label htmlFor="pg-max-tokens">Max Tokens</label>
+                      <label htmlFor="pg-max-tokens">Max Tokens{PARAM_TOOLTIPS.max_tokens && <ParamTooltip text={PARAM_TOOLTIPS.max_tokens} />}</label>
                       <input id="pg-max-tokens" type="number" value={maxTokens} onChange={(e) => setMaxTokens(Math.floor(Number(e.target.value)))} step={256} min={1} />
                     </div>
                   </div>
@@ -1003,19 +1061,19 @@ export default function ModelPlayground() {
                   <h5 className="playground-param-group-title">Repetition Control</h5>
                   <div className="playground-config-grid-fluid">
                     <div className="form-group">
-                      <label>Repeat Penalty</label>
+                      <label>Repeat Penalty{PARAM_TOOLTIPS.repeat_penalty && <ParamTooltip text={PARAM_TOOLTIPS.repeat_penalty} />}</label>
                       <input type="number" value={repeatPenalty} onChange={(e) => setRepeatPenalty(Number(e.target.value))} step={0.1} min={0} />
                     </div>
                     <div className="form-group">
-                      <label>Repeat Last N</label>
+                      <label>Repeat Last N{PARAM_TOOLTIPS.repeat_last_n && <ParamTooltip text={PARAM_TOOLTIPS.repeat_last_n} />}</label>
                       <input type="number" value={repeatLastN} onChange={(e) => setRepeatLastN(Math.floor(Number(e.target.value)))} step={1} min={0} />
                     </div>
                     <div className="form-group">
-                      <label>Frequency Penalty</label>
+                      <label>Frequency Penalty{PARAM_TOOLTIPS.frequency_penalty && <ParamTooltip text={PARAM_TOOLTIPS.frequency_penalty} />}</label>
                       <input type="number" value={frequencyPenalty} onChange={(e) => setFrequencyPenalty(Number(e.target.value))} step={0.1} min={0} />
                     </div>
                     <div className="form-group">
-                      <label>Presence Penalty</label>
+                      <label>Presence Penalty{PARAM_TOOLTIPS.presence_penalty && <ParamTooltip text={PARAM_TOOLTIPS.presence_penalty} />}</label>
                       <input type="number" value={presencePenalty} onChange={(e) => setPresencePenalty(Number(e.target.value))} step={0.1} min={0} />
                     </div>
                   </div>
@@ -1023,19 +1081,19 @@ export default function ModelPlayground() {
                   <h5 className="playground-param-group-title">DRY Sampler</h5>
                   <div className="playground-config-grid-fluid">
                     <div className="form-group">
-                      <label>DRY Multiplier</label>
+                      <label>DRY Multiplier{PARAM_TOOLTIPS.dry_multiplier && <ParamTooltip text={PARAM_TOOLTIPS.dry_multiplier} />}</label>
                       <input type="number" value={dryMultiplier} onChange={(e) => setDryMultiplier(Number(e.target.value))} step={0.05} min={0} />
                     </div>
                     <div className="form-group">
-                      <label>DRY Base</label>
+                      <label>DRY Base{PARAM_TOOLTIPS.dry_base && <ParamTooltip text={PARAM_TOOLTIPS.dry_base} />}</label>
                       <input type="number" value={dryBase} onChange={(e) => setDryBase(Number(e.target.value))} step={0.05} min={0} />
                     </div>
                     <div className="form-group">
-                      <label>DRY Allowed Length</label>
+                      <label>DRY Allowed Length{PARAM_TOOLTIPS.dry_allowed_length && <ParamTooltip text={PARAM_TOOLTIPS.dry_allowed_length} />}</label>
                       <input type="number" value={dryAllowedLength} onChange={(e) => setDryAllowedLength(Math.floor(Number(e.target.value)))} step={1} min={0} />
                     </div>
                     <div className="form-group">
-                      <label>DRY Penalty Last N</label>
+                      <label>DRY Penalty Last N{PARAM_TOOLTIPS.dry_penalty_last_n && <ParamTooltip text={PARAM_TOOLTIPS.dry_penalty_last_n} />}</label>
                       <input type="number" value={dryPenaltyLastN} onChange={(e) => setDryPenaltyLastN(Math.floor(Number(e.target.value)))} step={1} min={0} />
                     </div>
                   </div>
@@ -1043,15 +1101,15 @@ export default function ModelPlayground() {
                   <h5 className="playground-param-group-title">XTC Sampler</h5>
                   <div className="playground-config-grid-fluid">
                     <div className="form-group">
-                      <label>XTC Probability</label>
+                      <label>XTC Probability{PARAM_TOOLTIPS.xtc_probability && <ParamTooltip text={PARAM_TOOLTIPS.xtc_probability} />}</label>
                       <input type="number" value={xtcProbability} onChange={(e) => setXtcProbability(Number(e.target.value))} step={0.01} min={0} max={1} />
                     </div>
                     <div className="form-group">
-                      <label>XTC Threshold</label>
+                      <label>XTC Threshold{PARAM_TOOLTIPS.xtc_threshold && <ParamTooltip text={PARAM_TOOLTIPS.xtc_threshold} />}</label>
                       <input type="number" value={xtcThreshold} onChange={(e) => setXtcThreshold(Number(e.target.value))} step={0.01} min={0} max={1} />
                     </div>
                     <div className="form-group">
-                      <label>XTC Min Keep</label>
+                      <label>XTC Min Keep{PARAM_TOOLTIPS.xtc_min_keep && <ParamTooltip text={PARAM_TOOLTIPS.xtc_min_keep} />}</label>
                       <input type="number" value={xtcMinKeep} onChange={(e) => setXtcMinKeep(Math.floor(Number(e.target.value)))} step={1} min={1} />
                     </div>
                   </div>
@@ -1059,14 +1117,14 @@ export default function ModelPlayground() {
                   <h5 className="playground-param-group-title">Reasoning</h5>
                   <div className="playground-config-grid-fluid">
                     <div className="form-group">
-                      <label htmlFor="pg-enable-thinking">Enable Thinking</label>
+                      <label htmlFor="pg-enable-thinking">Enable Thinking{PARAM_TOOLTIPS.enable_thinking && <ParamTooltip text={PARAM_TOOLTIPS.enable_thinking} />}</label>
                       <select id="pg-enable-thinking" value={enableThinking} onChange={(e) => setEnableThinking(e.target.value as 'true' | 'false')}>
                         <option value="true">Enabled</option>
                         <option value="false">Disabled</option>
                       </select>
                     </div>
                     <div className="form-group">
-                      <label htmlFor="pg-reasoning-effort">Reasoning Effort</label>
+                      <label htmlFor="pg-reasoning-effort">Reasoning Effort{PARAM_TOOLTIPS.reasoning_effort && <ParamTooltip text={PARAM_TOOLTIPS.reasoning_effort} />}</label>
                       <select id="pg-reasoning-effort" value={reasoningEffort} onChange={(e) => setReasoningEffort(e.target.value as typeof reasoningEffort)}>
                         <option value="none">None</option>
                         <option value="minimal">Minimal</option>

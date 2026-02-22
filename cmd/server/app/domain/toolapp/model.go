@@ -1062,3 +1062,33 @@ func toTemplateFilesResponse(files []string) TemplateFilesResponse {
 	}
 	return TemplateFilesResponse{Files: files}
 }
+
+// UnloadResponse represents the output for a model unload operation.
+type UnloadResponse struct {
+	Status string `json:"status"`
+	ID     string `json:"id"`
+}
+
+// Encode implements the encoder interface.
+func (app UnloadResponse) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(app)
+	return data, "application/json", err
+}
+
+// UnloadRequest represents the input for unloading a model from the cache.
+type UnloadRequest struct {
+	ID string `json:"id"`
+}
+
+// Decode implements the decoder interface.
+func (app *UnloadRequest) Decode(data []byte) error {
+	return json.Unmarshal(data, app)
+}
+
+// Validate checks the request is valid.
+func (app *UnloadRequest) Validate() error {
+	if app.ID == "" {
+		return fmt.Errorf("id is required")
+	}
+	return nil
+}

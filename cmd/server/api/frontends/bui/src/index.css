@@ -1202,6 +1202,16 @@ tr.selected:hover td {
     flex: 1;
 }
 
+.chat-setting-grammar select,
+.chat-setting-grammar-preset select {
+    min-width: 100px;
+}
+
+.chat-grammar-editor {
+    padding: 0 16px 4px;
+    flex-shrink: 0;
+}
+
 .chat-messages-wrapper {
     flex: 1;
     position: relative;
@@ -3357,7 +3367,6 @@ tr.selected:hover td {
 }
 
 .param-tooltip-wrapper {
-    position: relative;
     display: inline-flex;
     align-items: center;
     margin-left: 2px;
@@ -3377,10 +3386,7 @@ tr.selected:hover td {
 
 .param-tooltip-text {
     display: none;
-    position: absolute;
-    left: 50%;
-    bottom: calc(100% + 8px);
-    transform: translateX(-50%);
+    position: fixed;
     width: 300px;
     padding: 10px 12px;
     background: var(--color-gray-900, #1a1a1a);
@@ -3399,8 +3405,7 @@ tr.selected:hover td {
     content: '';
     position: absolute;
     top: 100%;
-    left: 50%;
-    transform: translateX(-50%);
+    left: var(--arrow-left, 12px);
     border: 5px solid transparent;
     border-top-color: var(--color-gray-900, #1a1a1a);
 }

@@ -11,8 +11,6 @@ import type {
   BestConfigWeights,
 } from '../types';
 import {
-  chatScenario,
-  toolCallScenario,
   configChatScenario,
   configToolCallScenario,
   generateTrialCandidates,
@@ -142,8 +140,8 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
     (async () => {
       try {
         const scenarios: AutoTestScenario[] = [];
-        if (enabledScenarios.chat) scenarios.push(chatScenario);
-        if (enabledScenarios.tool_call) scenarios.push(toolCallScenario);
+        if (enabledScenarios.chat) scenarios.push(configChatScenario);
+        if (enabledScenarios.tool_call) scenarios.push(configToolCallScenario);
 
         if (enabledScenarios.tool_call) {
           setRun(prev => prev ? { ...prev, templateRepairStatus: 'Probing template for tool calling compatibility...' } : prev);
@@ -152,7 +150,7 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
             setRun(prev => prev ? { ...prev, templateRepairStatus: 'Template OK ✓' } : prev);
           } else {
             setRun(prev => prev ? { ...prev, templateRepairStatus: 'Template probe failed — running chat-only tests' } : prev);
-            const idx = scenarios.indexOf(toolCallScenario);
+            const idx = scenarios.findIndex(s => s.id === 'tool_call');
             if (idx !== -1) scenarios.splice(idx, 1);
           }
         }

@@ -792,6 +792,829 @@ export const toolCallScenario: AutoTestScenario = {
       tools: autoTestTools,
       expected: { type: 'tool_call' },
     },
+    // --- New single-turn prompts exercising optional params & broader tool coverage ---
+    {
+      id: 'tc2-weather-fahrenheit-nyc',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "What's the weather in New York in fahrenheit?" },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc2-weather-berlin-celsius',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Get the weather in Berlin in celsius.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc2-add-negative',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'What is -15 + 42?' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc2-add-small',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Add 7 + 13.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc2-search-kitchen-max3',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Search for "coffee mug" in category kitchen and return at most 3 results.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc2-search-usbc-max1',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Search for USB-C cable and limit to 1 result.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc2-send-email-brief',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Email bob@example.com with subject "Status" and body "All tests passed."' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc2-stock-msft',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Get the stock price for MSFT.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc2-convert-eur-usd',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Convert 49.99 EUR to USD.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc2-calendar-duration-30',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Create a calendar event titled "1:1" on 2025-05-20 at 09:30 for 30 minutes.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc2-translate-en-fr',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Translate "Where is the train station?" from English to French.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc2-directions-transit-mode',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Get transit directions from "Union Square, San Francisco" to "SFO Airport".' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    // --- New moderate multi-turn prompts (2-3 tool calls; cross-tool sequences) ---
+    {
+      id: 'tc2-mt-weather-unit-followup',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "What's the weather in Boston?" },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc2w1', index: 0, type: 'function', function: { name: 'get_weather', arguments: '{"location":"Boston"}' } }] },
+        { role: 'user', content: 'Same city, but in fahrenheit.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc2-mt-search-then-email',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Search for running shoes.' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc2se1', index: 0, type: 'function', function: { name: 'search_products', arguments: '{"query":"running shoes"}' } }] },
+        { role: 'user', content: 'Email those results to alice@example.com with subject "Shoe Options" and body "Here are the running shoes I found."' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc2-mt-stock-then-reminder',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "What's Apple's stock price?" },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc2sr1', index: 0, type: 'function', function: { name: 'get_stock_price', arguments: '{"symbol":"AAPL"}' } }] },
+        { role: 'user', content: 'Set a reminder at 2025-06-01T09:00:00 to check again.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc2-mt-currency-then-calendar',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Convert 100 USD to EUR.' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc2cc1', index: 0, type: 'function', function: { name: 'convert_currency', arguments: '{"amount":100,"from":"USD","to":"EUR"}' } }] },
+        { role: 'user', content: 'Schedule a budget review for 2025-07-10 at 14:00 for 45 minutes.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc2-mt-directions-then-weather',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Get me driving directions from Seattle to Portland.' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc2dw1', index: 0, type: 'function', function: { name: 'get_directions', arguments: '{"origin":"Seattle","destination":"Portland"}' } }] },
+        { role: 'user', content: "What's the weather in Portland in celsius?" },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc2-mt-translate-then-email',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Translate "Meeting postponed to next week" to Spanish.' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc2te1', index: 0, type: 'function', function: { name: 'translate_text', arguments: '{"text":"Meeting postponed to next week","target_language":"es"}' } }] },
+        { role: 'user', content: 'Send that translation to carlos@example.com with subject "Update" and body "Reunión pospuesta para la próxima semana."' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc2-mt-reminder-reschedule',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Set a reminder for "Submit report" at 2025-04-10T17:00:00.' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc2rr1', index: 0, type: 'function', function: { name: 'set_reminder', arguments: '{"message":"Submit report","datetime":"2025-04-10T17:00:00"}' } }] },
+        { role: 'user', content: 'Actually set it for 2025-04-11T10:00:00 instead.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc2-mt-add-then-convert',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'What is 19.99 + 5.00?' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc2ac1', index: 0, type: 'function', function: { name: 'add', arguments: '{"a":19.99,"b":5.00}' } }] },
+        { role: 'assistant', content: 'The total is 24.99 USD.' },
+        { role: 'user', content: 'Convert 24.99 USD to GBP.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc2-mt-calendar-then-directions',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Create a calendar event titled "Dinner at Luigi\'s" on 2025-08-15 at 19:00.' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc2cd1', index: 0, type: 'function', function: { name: 'create_calendar_event', arguments: '{"title":"Dinner at Luigi\'s","date":"2025-08-15","time":"19:00"}' } }] },
+        { role: 'user', content: 'Get me walking directions from home to Luigi\'s Restaurant.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    // --- Deep chain multi-turn prompts (4+ tool-call turns; multi-tool sequences) ---
+    {
+      id: 'tc2-mt-trip-planner',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "What's the weather in Rome in celsius?" },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc2tp1', index: 0, type: 'function', function: { name: 'get_weather', arguments: '{"location":"Rome","unit":"celsius"}' } }] },
+        { role: 'user', content: 'Search for travel umbrella in category travel, max 3 results.' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc2tp2', index: 0, type: 'function', function: { name: 'search_products', arguments: '{"query":"travel umbrella","category":"travel","max_results":3}' } }] },
+        { role: 'user', content: 'Convert 200 USD to EUR.' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc2tp3', index: 0, type: 'function', function: { name: 'convert_currency', arguments: '{"amount":200,"from":"USD","to":"EUR"}' } }] },
+        { role: 'user', content: 'Create a calendar event titled "Flight to Rome" on 2025-09-01 at 08:00 for 30 minutes.' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc2tp4', index: 0, type: 'function', function: { name: 'create_calendar_event', arguments: '{"title":"Flight to Rome","date":"2025-09-01","time":"08:00","duration_minutes":30}' } }] },
+        { role: 'user', content: 'Email me the trip checklist at traveler@example.com with subject "Rome Trip Checklist" and body "Umbrella, euros, and flight booked."' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc2-mt-meeting-runner',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Create a calendar event titled "Client Meeting" on 2025-06-15 at 14:00 for 60 minutes.' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc2mr1', index: 0, type: 'function', function: { name: 'create_calendar_event', arguments: '{"title":"Client Meeting","date":"2025-06-15","time":"14:00","duration_minutes":60}' } }] },
+        { role: 'user', content: 'Get driving directions from "123 Main St" to "456 Oak Ave".' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc2mr2', index: 0, type: 'function', function: { name: 'get_directions', arguments: '{"origin":"123 Main St","destination":"456 Oak Ave","mode":"driving"}' } }] },
+        { role: 'user', content: "What's the weather at 456 Oak Ave in fahrenheit?" },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc2mr3', index: 0, type: 'function', function: { name: 'get_weather', arguments: '{"location":"456 Oak Ave","unit":"fahrenheit"}' } }] },
+        { role: 'user', content: 'Translate "Running 10 minutes late" to Spanish.' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc2mr4', index: 0, type: 'function', function: { name: 'translate_text', arguments: '{"text":"Running 10 minutes late","target_language":"es"}' } }] },
+        { role: 'user', content: 'Send an email to client@example.com with subject "On My Way" and body "Llego 10 minutos tarde."' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc2-mt-shopping-budget',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Search for headphones in electronics, max 5 results.' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc2sb1', index: 0, type: 'function', function: { name: 'search_products', arguments: '{"query":"headphones","category":"electronics","max_results":5}' } }] },
+        { role: 'user', content: 'Add 79.99 + 12.50.' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc2sb2', index: 0, type: 'function', function: { name: 'add', arguments: '{"a":79.99,"b":12.50}' } }] },
+        { role: 'user', content: 'Convert 92.49 USD to GBP.' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc2sb3', index: 0, type: 'function', function: { name: 'convert_currency', arguments: '{"amount":92.49,"from":"USD","to":"GBP"}' } }] },
+        { role: 'user', content: 'Set a reminder at 2025-07-01T12:00:00 to check for price drops.' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc2sb4', index: 0, type: 'function', function: { name: 'set_reminder', arguments: '{"message":"Check for price drops","datetime":"2025-07-01T12:00:00"}' } }] },
+        { role: 'user', content: 'Email the budget summary to finance@example.com with subject "Headphone Budget" and body "Total: 92.49 USD / ~73 GBP."' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc2-mt-multicity-itinerary',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "What's the weather in Seattle?" },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc2mi1', index: 0, type: 'function', function: { name: 'get_weather', arguments: '{"location":"Seattle"}' } }] },
+        { role: 'user', content: "What's the weather in Vancouver in celsius?" },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc2mi2', index: 0, type: 'function', function: { name: 'get_weather', arguments: '{"location":"Vancouver","unit":"celsius"}' } }] },
+        { role: 'user', content: 'Get transit directions from Seattle to Vancouver.' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc2mi3', index: 0, type: 'function', function: { name: 'get_directions', arguments: '{"origin":"Seattle","destination":"Vancouver","mode":"transit"}' } }] },
+        { role: 'user', content: 'Convert 100 USD to CAD.' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc2mi4', index: 0, type: 'function', function: { name: 'convert_currency', arguments: '{"amount":100,"from":"USD","to":"CAD"}' } }] },
+        { role: 'user', content: 'Create a calendar event titled "Cross-border day trip" on 2025-08-20 at 07:00 for 480 minutes.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc2-mt-language-lunch-flow',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Translate "I would like a table for two, please" to Italian.' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc2ll1', index: 0, type: 'function', function: { name: 'translate_text', arguments: '{"text":"I would like a table for two, please","target_language":"it"}' } }] },
+        { role: 'user', content: 'Send that phrase to host@example.com with subject "Reservation Request" and body "Vorrei un tavolo per due, per favore."' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc2ll2', index: 0, type: 'function', function: { name: 'send_email', arguments: '{"to":"host@example.com","subject":"Reservation Request","body":"Vorrei un tavolo per due, per favore."}' } }] },
+        { role: 'user', content: 'Create a calendar event titled "Lunch at Trattoria" on 2025-09-05 at 12:30.' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc2ll3', index: 0, type: 'function', function: { name: 'create_calendar_event', arguments: '{"title":"Lunch at Trattoria","date":"2025-09-05","time":"12:30"}' } }] },
+        { role: 'user', content: 'Get walking directions from "Hotel Bella Vista" to "Trattoria Roma".' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc2ll4', index: 0, type: 'function', function: { name: 'get_directions', arguments: '{"origin":"Hotel Bella Vista","destination":"Trattoria Roma","mode":"walking"}' } }] },
+        { role: 'user', content: 'Set a reminder at 2025-09-05T12:00:00 to leave for lunch.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    // --- Parallel / multiple tool calls in a single response ---
+    {
+      id: 'tc3-parallel-weather-2cities',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "What's the weather in Boston and London?" },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc3-parallel-stocks-2',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Check the current stock prices for AAPL and TSLA.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc3-parallel-weather-stock',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "What's the weather in Paris and what's the current price of AAPL?" },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc3-parallel-search-convert',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Search for "wireless headphones" and also convert 199.99 USD to EUR.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc3-parallel-calendar-reminder',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Create a calendar event titled "Dentist" on 2026-03-10 at 09:00 for 30 minutes, and set a reminder for 2026-03-10T08:30:00 saying "Leave for dentist".' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc3-parallel-convert-2',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Convert 100 USD to EUR and 500 GBP to JPY.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc3-parallel-directions-weather',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Get driving directions from San Francisco to San Jose, and tell me the weather in San Jose.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    // --- Unicode / special character / edge cases in arguments ---
+    {
+      id: 'tc3-weather-unicode',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "What's the weather in São Paulo?" },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc3-weather-unicode-umlaut',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "What's the weather in Zürich?" },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc3-stock-dot-symbol',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Get the stock price for BRK.B.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc3-email-plus-address',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Send an email to alice+test@example.com with subject "Test" and body "Hello from the test suite."' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc3-translate-quotes',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Translate the phrase \'He said "hello" and left\' to French.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc3-calendar-leapday',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Create a calendar event titled "Leap Day Party" on 2028-02-29 at 20:00.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc3-reminder-timezone',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Set a reminder "Standup" for 2026-02-23T09:30:00-05:00.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc3-convert-large-amount',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Convert 1000000 USD to JPY.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc3-directions-unicode',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Get walking directions from "Café de Flore" to "Musée d\'Orsay".' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    // --- Self-correction prompts (user changes mind mid-prompt) ---
+    {
+      id: 'tc3-correction-location',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "What's the weather in London—actually make that Dublin." },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc3-correction-currency',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Convert 100 USD to EUR—sorry, convert 100 USD to GBP instead.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc3-correction-destination',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Get driving directions from Boston to New York—wait, to Philadelphia.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    // --- Fill multi-turn final-tool coverage gaps ---
+    {
+      id: 'tc3-mt-final-search',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "What's the weather in Tokyo?" },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc3fs1', index: 0, type: 'function', function: { name: 'get_weather', arguments: '{"location":"Tokyo"}' } }] },
+        { role: 'user', content: 'Search for "Japanese tea set" in category kitchen, max 3 results.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc3-mt-final-translate',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Get walking directions from "Piazza Navona" to "Colosseum".' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc3ft1', index: 0, type: 'function', function: { name: 'get_directions', arguments: '{"origin":"Piazza Navona","destination":"Colosseum","mode":"walking"}' } }] },
+        { role: 'user', content: 'Translate "How far is the Colosseum?" from English to Italian.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    // --- Indirect phrasing that still requires tool calls ---
+    {
+      id: 'tc3-stock-by-company',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "What is Microsoft's stock price?" },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc3-reminder-indirect',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'At 2026-04-01T12:00:00 remind me to "renew subscription".' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    // --- Multi-turn with scripted prior tools not yet used as priors ---
+    {
+      id: 'tc3-mt-prior-convert-then-weather',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Convert 10 USD to EUR.' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc3pcw1', index: 0, type: 'function', function: { name: 'convert_currency', arguments: '{"amount":10,"from":"USD","to":"EUR"}' } }] },
+        { role: 'user', content: "Now what's the weather in Berlin?" },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc3-mt-prior-email-then-translate',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Send an email to bob@example.com with subject "Hi" and body "Test message."' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc3pet1', index: 0, type: 'function', function: { name: 'send_email', arguments: '{"to":"bob@example.com","subject":"Hi","body":"Test message."}' } }] },
+        { role: 'user', content: 'Now translate "Good night" to French.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc3-mt-prior-calendar-then-stock',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Create a calendar event titled "Review" on 2026-01-15 at 11:00.' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc3pcs1', index: 0, type: 'function', function: { name: 'create_calendar_event', arguments: '{"title":"Review","date":"2026-01-15","time":"11:00"}' } }] },
+        { role: 'user', content: "What's the stock price for NVDA?" },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc3-mt-prior-reminder-then-search',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Set a reminder "Buy gift" for 2026-05-01T10:00:00.' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc3prs1', index: 0, type: 'function', function: { name: 'set_reminder', arguments: '{"message":"Buy gift","datetime":"2026-05-01T10:00:00"}' } }] },
+        { role: 'user', content: 'Search for "birthday gift ideas" with max 5 results.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc3-mt-prior-translate-then-add',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Translate "Invoice total" to German.' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc3pta1', index: 0, type: 'function', function: { name: 'translate_text', arguments: '{"text":"Invoice total","target_language":"de"}' } }] },
+        { role: 'user', content: 'Now add 450.00 + 67.50.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'tc3-mt-prior-directions-then-reminder',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Get transit directions from "Grand Central" to "JFK Airport".' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'tc3pdr1', index: 0, type: 'function', function: { name: 'get_directions', arguments: '{"origin":"Grand Central","destination":"JFK Airport","mode":"transit"}' } }] },
+        { role: 'user', content: 'Set a reminder at 2026-06-15T06:00:00 to leave for the airport.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    // ===================================================================
+    // Negative tests — tools are available but the model should NOT call any
+    // ===================================================================
+    {
+      id: 'neg-simple-arithmetic',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "What's 2 + 2? Answer with only the number." },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'no_tool_call', value: '4' },
+    },
+    {
+      id: 'neg-general-knowledge',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'What is the capital of Japan? Answer with only the city name.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'no_tool_call', value: '[Tt]okyo' },
+    },
+    {
+      id: 'neg-creative-writing',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Write a haiku about snow.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'no_tool_call' },
+    },
+    {
+      id: 'neg-explain-tool',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'What does the convert_currency tool do? Explain in one sentence.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'no_tool_call' },
+    },
+    {
+      id: 'neg-forbid-tools',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Do not call any tools. Just tell me what 15 + 28 is.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'no_tool_call', value: '43' },
+    },
+    {
+      id: 'neg-no-matching-tool',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Summarize the plot of Romeo and Juliet in 2 sentences.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'no_tool_call' },
+    },
+    {
+      id: 'neg-greeting',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Hello! How are you today?' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'no_tool_call' },
+    },
+    {
+      id: 'neg-opinion',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'What are the pros and cons of remote work? Be brief.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'no_tool_call' },
+    },
+    {
+      id: 'neg-define-word',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Define the word "ephemeral" in one sentence.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'no_tool_call' },
+    },
+    {
+      id: 'neg-count-letters',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'How many letters are in the word "banana"? Answer with only the number.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'no_tool_call', value: '6' },
+    },
+    // ===================================================================
+    // Clarification tests — required tool inputs are missing, model should
+    // ask for details rather than calling a tool with guessed/empty args
+    // ===================================================================
+    {
+      id: 'clar-weather-no-city',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "What's the weather right now?" },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'no_tool_call' },
+    },
+    {
+      id: 'clar-stock-no-symbol',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "What's the current stock price?" },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'no_tool_call' },
+    },
+    {
+      id: 'clar-convert-no-source',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Convert 100 to EUR.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'no_tool_call' },
+    },
+    {
+      id: 'clar-translate-no-target',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Translate "Good morning".' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'no_tool_call' },
+    },
+    {
+      id: 'clar-email-no-content',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Send an email to alice@example.com.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'no_tool_call' },
+    },
+    {
+      id: 'clar-calendar-no-datetime',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Create a calendar event titled "Team sync".' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'no_tool_call' },
+    },
+    {
+      id: 'clar-directions-no-origin',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'How do I get to the airport?' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'no_tool_call' },
+    },
+    {
+      id: 'clar-reminder-no-time',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Remind me to pay rent.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'no_tool_call' },
+    },
+    {
+      id: 'clar-add-one-number',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Add 42.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'no_tool_call' },
+    },
+    {
+      id: 'clar-search-empty',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Search for products.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'no_tool_call' },
+    },
+    // ===================================================================
+    // Ambiguity tests — multiple tools could apply, model should clarify
+    // ===================================================================
+    {
+      id: 'ambig-apple-stock-or-product',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "What's the price of Apple?" },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'no_tool_call' },
+    },
+    {
+      id: 'ambig-tesla-stock-or-search',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Find Tesla for me.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'no_tool_call' },
+    },
+    {
+      id: 'ambig-translate-and-send-no-recipient',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Translate "Hello" to French and email it.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'no_tool_call' },
+    },
+    {
+      id: 'ambig-book-meeting-vague',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Book a meeting with Alice.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'no_tool_call' },
+    },
+    {
+      id: 'ambig-check-price-vague',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Check the price for me.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'no_tool_call' },
+    },
+    {
+      id: 'ambig-send-message-no-channel',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Send a message to Bob saying "See you later".' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'no_tool_call' },
+    },
   ],
 }
 
@@ -1134,6 +1957,172 @@ export const configToolCallScenario: AutoTestScenario = {
       tools: autoTestTools,
       expected: { type: 'tool_call' },
     },
+    // --- New single-turn prompts (simple/universal) ---
+    {
+      id: 'ctc2-weather-la',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "What's the weather in Los Angeles?" },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'ctc2-weather-miami-fahrenheit',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "What's the weather in Miami in fahrenheit?" },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'ctc2-add-zero',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'What is 0 + 0?' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'ctc2-add-negative',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Compute -3 + 11.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'ctc2-search-coffee',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Search for coffee.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'ctc2-search-pen-max2',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Search for pen and limit to 2 results.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'ctc2-stock-msft',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Get stock price for MSFT.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'ctc2-convert-1-usd-eur',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Convert 1 USD to EUR.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'ctc2-translate-hello-fr',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Translate "hello" to French.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    // --- New multi-turn prompts (scripted, still easy) ---
+    {
+      id: 'ctc2-mt-weather-two-cities',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "What's the weather in Boston?" },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'ctc2w1', index: 0, type: 'function', function: { name: 'get_weather', arguments: '{"location":"Boston"}' } }] },
+        { role: 'user', content: 'Now check the weather in Chicago.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'ctc2-mt-add-followup',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'What is 1 + 2?' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'ctc2a1', index: 0, type: 'function', function: { name: 'add', arguments: '{"a":1,"b":2}' } }] },
+        { role: 'user', content: 'Now add 3 + 4.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'ctc2-mt-translate-email-reminder',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Translate "hello" to Spanish.' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'ctc2ter1', index: 0, type: 'function', function: { name: 'translate_text', arguments: '{"text":"hello","target_language":"es"}' } }] },
+        { role: 'user', content: 'Send that to test@example.com with subject "Greeting" and body "hola".' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'ctc2ter2', index: 0, type: 'function', function: { name: 'send_email', arguments: '{"to":"test@example.com","subject":"Greeting","body":"hola"}' } }] },
+        { role: 'user', content: 'Set a reminder at 2025-01-01T00:00:00 to follow up.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    // --- Parallel tool calls (simple/deterministic) ---
+    {
+      id: 'ctc3-parallel-weather-2',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "What's the weather in Boston and Tokyo?" },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'ctc3-parallel-add-stock',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "Add 5 + 10, and get the stock price for AAPL." },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    // --- Edge cases (simple/universal) ---
+    {
+      id: 'ctc3-weather-unicode',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "What's the weather in São Paulo?" },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    {
+      id: 'ctc3-convert-large',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Convert 1000000 USD to JPY.' },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
+    // --- Self-correction (simple) ---
+    {
+      id: 'ctc3-correction-city',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: "What's the weather in London—actually make that Dublin." },
+      ],
+      tools: autoTestTools,
+      expected: { type: 'tool_call' },
+    },
   ],
 }
 
@@ -1450,9 +2439,10 @@ export function scoreChat(
       }
       break
     }
-    case 'tool_call': {
+    case 'tool_call':
+    case 'no_tool_call': {
       score = 0
-      notes.push('tool_call expected type not applicable for chat scoring')
+      notes.push(`${expected.type} expected type not applicable for chat scoring`)
       break
     }
   }
@@ -1512,6 +2502,39 @@ export function scoreToolCall(
   }
 
   return { score: Math.max(0, Math.min(100, score)), notes }
+}
+
+/** Scores a prompt where no tool call should have been emitted.
+ *  If an optional regex `value` is provided, the assistant text must also match. */
+export function scoreNoToolCall(
+  toolCalls: ChatToolCall[],
+  text: string,
+  expected: AutoTestPromptDef['expected'],
+): { score: number; notes: string[] } {
+  const notes: string[] = []
+
+  if (toolCalls && toolCalls.length > 0) {
+    const names = toolCalls.map(tc => tc.function?.name).filter(Boolean).join(', ')
+    notes.push(`Unexpected tool call(s): ${names}`)
+    return { score: 0, notes }
+  }
+
+  let score = 100
+
+  if (text.trim().length === 0) {
+    score -= 20
+    notes.push('No text response produced')
+  }
+
+  if (expected?.value) {
+    const re = new RegExp(expected.value, 'im')
+    if (!re.test(text)) {
+      score -= 30
+      notes.push(`Expected text matching /${expected.value}/ but got "${text.trim().slice(0, 100)}"`)
+    }
+  }
+
+  return { score: Math.max(0, score), notes }
 }
 
 /** Runs a single prompt against the playground session and scores the result. */
@@ -1611,6 +2634,8 @@ export function runSinglePrompt(
 
         if (prompt.expected?.type === 'tool_call') {
           scored = scoreToolCall(collectedToolCalls, prompt.tools ?? [])
+        } else if (prompt.expected?.type === 'no_tool_call') {
+          scored = scoreNoToolCall(collectedToolCalls, fullContent, prompt.expected)
         } else {
           scored = scoreChat(fullContent, prompt.expected)
         }
