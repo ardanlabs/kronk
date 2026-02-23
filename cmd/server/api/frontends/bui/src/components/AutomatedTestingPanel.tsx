@@ -567,30 +567,36 @@ function TrialDetails({ trial, scenarioLookup, hideScores }: TrialDetailsProps) 
 export default function AutomatedTestingPanel({ session, sessionSeed, catalogSampling }: AutomatedTestingPanelProps) {
   const { run, isRunning, startSamplingRun, startConfigRun, stopRun, clearRun, reevaluateBestTrial } = useAutoTestRunner();
 
+  // Compute initial values from the run (if any) so that remounting
+  // after navigation restores the sweep parameters instead of resetting.
+  const initSweepDef = run?.kind === 'sampling' ? run.sweepDef : defaultSamplingSweepDef;
+  const initConfigSweepDef = run?.kind === 'config' ? run.configSweepDef : defaultConfigSweepDef;
+  const initWeights = run?.weights ?? (run?.kind === 'config' ? defaultConfigBestWeights : defaultBestConfigWeights);
+
   const [sweepMode, setSweepMode] = useState<AutoTestSweepMode>(() => run?.kind ?? 'sampling');
-  const [enabledScenarios, setEnabledScenarios] = useState({ chat: true, tool_call: true });
-  const [sweepDef, setSweepDef] = useState<SamplingSweepDefinition>(structuredClone(defaultSamplingSweepDef));
-  const [sweepInputs, setSweepInputs] = useState(() => deriveSweepInputs(defaultSamplingSweepDef));
+  const [enabledScenarios, setEnabledScenarios] = useState(() => run?.enabledScenarios ?? { chat: true, tool_call: true });
+  const [sweepDef, setSweepDef] = useState<SamplingSweepDefinition>(() => structuredClone(initSweepDef));
+  const [sweepInputs, setSweepInputs] = useState(() => deriveSweepInputs(initSweepDef));
   const sweepInputsRef = useRef(sweepInputs);
   useEffect(() => { sweepInputsRef.current = sweepInputs; }, [sweepInputs]);
-  const [sweepDirty, setSweepDirty] = useState(false);
+  const [sweepDirty, setSweepDirty] = useState(!!run);
   const [lastCatalogRef, setLastCatalogRef] = useState<SamplingConfig | null>(null);
   const maxTrials = Infinity;
-  const [configSweepDef, setConfigSweepDef] = useState<ConfigSweepDefinition>(structuredClone(defaultConfigSweepDef));
-  const [weights, setWeights] = useState<BestConfigWeights>({ ...defaultBestConfigWeights });
+  const [configSweepDef, setConfigSweepDef] = useState<ConfigSweepDefinition>(() => structuredClone(initConfigSweepDef));
+  const [weights, setWeights] = useState<BestConfigWeights>(() => ({ ...initWeights }));
   const [weightsChanged, setWeightsChanged] = useState(false);
-  const appliedWeightsRef = useRef<BestConfigWeights>({ ...defaultBestConfigWeights });
+  const appliedWeightsRef = useRef<BestConfigWeights>({ ...initWeights });
   useEffect(() => {
-    if (!isRunning) {
+    if (!isRunning && !run) {
       const next = sweepMode === 'config' ? defaultConfigBestWeights : defaultBestConfigWeights;
       setWeights(next);
       appliedWeightsRef.current = { ...next };
       setWeightsChanged(false);
     }
-  }, [sweepMode]);
+  }, [sweepMode, isRunning, run]);
   const [resultsExpanded, setResultsExpanded] = useState(false);
   const [expandedTrials, setExpandedTrials] = useState<Set<string>>(new Set());
-  const [repeats, setRepeats] = useState(1);
+  const [repeats, setRepeats] = useState(() => run?.repeats ?? 1);
   const [sort, setSort] = useState<SortState>({ column: null, direction: null });
 
   const [, setTick] = useState(0);
@@ -685,10 +691,45 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
 
   // Raw text state for numeric sweep inputs so users can type freely (e.g. ", 1234").
   // We only parse into numbers on blur.
-  const [rawNBatch, setRawNBatch] = useState(defaultConfigSweepDef.nbatch.values.join(', '));
-  const [rawNUBatch, setRawNUBatch] = useState(defaultConfigSweepDef.nubatch.values.join(', '));
-  const [rawContextWindow, setRawContextWindow] = useState(defaultConfigSweepDef.contextWindow.values.join(', '));
-  const [rawNSeqMax, setRawNSeqMax] = useState(defaultConfigSweepDef.nSeqMax.values.join(', '));
+  const [rawNBatch, setRawNBatch] = useState(() => initConfigSweepDef.nbatch.values.join(', '));
+  const [rawNUBatch, setRawNUBatch] = useState(() => initConfigSweepDef.nubatch.values.join(', '));
+  const [rawContextWindow, setRawContextWindow] = useState(() => initConfigSweepDef.contextWindow.values.join(', '));
+  const [rawNSeqMax, setRawNSeqMax] = useState(() => initConfigSweepDef.nSeqMax.values.join(', '));
+
+  // Hydrate local state when a new run appears (e.g. after navigation).
+  // Keyed on runId so it fires once per run, not on every trial update.
+  const hydratedRunIdRef = useRef<string | undefined>(run?.runId);
+  useEffect(() => {
+    if (!run || run.runId === hydratedRunIdRef.current) return;
+    hydratedRunIdRef.current = run.runId;
+    setSweepMode(run.kind);
+    setEnabledScenarios(run.enabledScenarios);
+    setRepeats(run.repeats);
+    setWeights({ ...run.weights });
+    appliedWeightsRef.current = { ...run.weights };
+    setWeightsChanged(false);
+    if (run.kind === 'sampling') {
+      setSweepDef(structuredClone(run.sweepDef));
+      setSweepInputs(deriveSweepInputs(run.sweepDef));
+      setSweepDirty(true);
+    } else {
+      setConfigSweepDef(structuredClone(run.configSweepDef));
+      setRawNBatch(run.configSweepDef.nbatch.values.join(', '));
+      setRawNUBatch(run.configSweepDef.nubatch.values.join(', '));
+      setRawContextWindow(run.configSweepDef.contextWindow.values.join(', '));
+      setRawNSeqMax(run.configSweepDef.nSeqMax.values.join(', '));
+    }
+  }, [run?.runId]);
+
+  // When a run is cleared, allow catalog defaults to apply again.
+  const prevRunRef = useRef<typeof run>(run);
+  useEffect(() => {
+    if (prevRunRef.current && !run) {
+      setSweepDirty(false);
+      hydratedRunIdRef.current = undefined;
+    }
+    prevRunRef.current = run;
+  }, [run]);
 
   const commitNumericSweep = useCallback((
     raw: string,
@@ -717,7 +758,9 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
 
   // Initialize sweep def from catalog sampling defaults.
   // Re-initializes when catalog changes (model switch) unless user has edited values.
+  // Skip when a run exists — the UI should reflect the run's actual parameters.
   useEffect(() => {
+    if (run) return;
     if (!catalogSampling || catalogSampling === lastCatalogRef) return;
     setLastCatalogRef(catalogSampling);
     if (sweepDirty) return;
@@ -744,7 +787,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
     };
     setSweepDef(updated);
     setSweepInputs(deriveSweepInputs(updated));
-  }, [catalogSampling, lastCatalogRef, sweepDirty]);
+  }, [catalogSampling, lastCatalogRef, sweepDirty, run]);
 
   const runnerState = run?.status ?? 'idle';
   const errorMessage = run?.errorMessage ?? '';
