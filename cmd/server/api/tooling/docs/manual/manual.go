@@ -140,17 +140,18 @@ func parseChapters(markdown string) []chapter {
 	reH3 := regexp.MustCompile(`^### (.+)`)
 
 	for _, line := range lines {
-		if matches := reH2.FindStringSubmatch(line); len(matches) > 1 {
+		switch {
+		case reH2.MatchString(line):
 			if currentChapter != nil {
 				chapters = append(chapters, *currentChapter)
 			}
-			title := matches[1]
+			title := reH2.FindStringSubmatch(line)[1]
 			currentChapter = &chapter{
 				id:    toAnchor(title),
 				title: title,
 			}
-		} else if matches := reH3.FindStringSubmatch(line); len(matches) > 1 && currentChapter != nil {
-			title := matches[1]
+		case reH3.MatchString(line) && currentChapter != nil:
+			title := reH3.FindStringSubmatch(line)[1]
 			currentChapter.sections = append(currentChapter.sections, section{
 				id:    toAnchor(title),
 				title: title,
@@ -209,7 +210,8 @@ func markdownToJSX(markdown string) string {
 		if len(olItems) > 0 {
 			result = append(result, "          <ol>")
 			for j, item := range olItems {
-				if j < len(olSubItems) && len(olSubItems[j]) > 0 {
+				switch {
+				case j < len(olSubItems) && len(olSubItems[j]) > 0:
 					result = append(result, fmt.Sprintf("            <li>%s", item))
 					result = append(result, "              <ul>")
 					for _, sub := range olSubItems[j] {
@@ -217,7 +219,7 @@ func markdownToJSX(markdown string) string {
 					}
 					result = append(result, "              </ul>")
 					result = append(result, "            </li>")
-				} else {
+				default:
 					result = append(result, fmt.Sprintf("            <li>%s</li>", item))
 				}
 			}
@@ -235,17 +237,22 @@ func markdownToJSX(markdown string) string {
 			flushParagraph()
 			flushUL()
 			flushOL()
-			if !inCodeBlock {
+
+			switch {
+			case !inCodeBlock:
 				inCodeBlock = true
 				codeBlockLang = strings.TrimPrefix(line, "```")
 				codeLines = nil
-			} else {
+			default:
 				code := escapeForTemplateLiteral(strings.Join(codeLines, "\n"))
-				if codeBlockLang != "" {
+
+				switch {
+				case codeBlockLang != "":
 					result = append(result, fmt.Sprintf("          <pre className=\"code-block\"><code className=\"language-%s\">{`%s`}</code></pre>", codeBlockLang, code))
-				} else {
+				default:
 					result = append(result, fmt.Sprintf("          <pre className=\"code-block\"><code>{`%s`}</code></pre>", code))
 				}
+
 				inCodeBlock = false
 				codeBlockLang = ""
 			}
@@ -257,7 +264,8 @@ func markdownToJSX(markdown string) string {
 			continue
 		}
 
-		if strings.HasPrefix(line, "|") && strings.Contains(line, "|") {
+		switch {
+		case strings.HasPrefix(line, "|") && strings.Contains(line, "|"):
 			flushParagraph()
 			flushUL()
 			flushOL()
@@ -267,7 +275,7 @@ func markdownToJSX(markdown string) string {
 			}
 			tableLines = append(tableLines, line)
 			continue
-		} else if inTable {
+		case inTable:
 			result = append(result, convertTable(tableLines))
 			inTable = false
 			tableLines = nil
@@ -287,53 +295,66 @@ func markdownToJSX(markdown string) string {
 			}
 		}
 
-		if item, ok := strings.CutPrefix(line, "- "); ok {
+		switch {
+		case strings.HasPrefix(line, "- "):
 			flushOL()
 			inUL = true
-			ulItems = append(ulItems, convertInlineMarkdown(item))
+			ulItems = append(ulItems, convertInlineMarkdown(strings.TrimPrefix(line, "- ")))
 			continue
-		} else if item, ok := strings.CutPrefix(line, "* "); ok {
+		case strings.HasPrefix(line, "* "):
 			flushOL()
 			inUL = true
-			ulItems = append(ulItems, convertInlineMarkdown(item))
+			ulItems = append(ulItems, convertInlineMarkdown(strings.TrimPrefix(line, "* ")))
 			continue
-		} else if inUL {
-			flushUL()
+		default:
+			if inUL {
+				flushUL()
+			}
 		}
 
-		if matches := reOrderedList.FindStringSubmatch(line); len(matches) > 1 {
+		switch matches := reOrderedList.FindStringSubmatch(line); {
+		case len(matches) > 1:
 			flushUL()
 			inOL = true
 			olItems = append(olItems, convertInlineMarkdown(matches[1]))
 			continue
-		} else if inOL {
-			flushOL()
+		default:
+			if inOL {
+				flushOL()
+			}
 		}
 
-		if title, ok := strings.CutPrefix(line, "# "); ok {
+		switch {
+		case strings.HasPrefix(line, "# "):
 			flushParagraph()
+			title := strings.TrimPrefix(line, "# ")
 			result = append(result, fmt.Sprintf("          <h1 id=\"%s\">%s</h1>", toAnchor(title), escapeJSX(title)))
-		} else if title, ok := strings.CutPrefix(line, "## "); ok {
+		case strings.HasPrefix(line, "## "):
 			flushParagraph()
+			title := strings.TrimPrefix(line, "## ")
 			result = append(result, fmt.Sprintf("          <h2 id=\"%s\">%s</h2>", toAnchor(title), escapeJSX(title)))
-		} else if title, ok := strings.CutPrefix(line, "### "); ok {
+		case strings.HasPrefix(line, "### "):
 			flushParagraph()
+			title := strings.TrimPrefix(line, "### ")
 			result = append(result, fmt.Sprintf("          <h3 id=\"%s\">%s</h3>", toAnchor(title), escapeJSX(title)))
-		} else if title, ok := strings.CutPrefix(line, "#### "); ok {
+		case strings.HasPrefix(line, "#### "):
 			flushParagraph()
+			title := strings.TrimPrefix(line, "#### ")
 			result = append(result, fmt.Sprintf("          <h4 id=\"%s\">%s</h4>", toAnchor(title), escapeJSX(title)))
-		} else if title, ok := strings.CutPrefix(line, "##### "); ok {
+		case strings.HasPrefix(line, "##### "):
 			flushParagraph()
+			title := strings.TrimPrefix(line, "##### ")
 			result = append(result, fmt.Sprintf("          <h5>%s</h5>", escapeJSX(title)))
-		} else if quote, ok := strings.CutPrefix(line, "> "); ok {
+		case strings.HasPrefix(line, "> "):
 			flushParagraph()
+			quote := strings.TrimPrefix(line, "> ")
 			result = append(result, fmt.Sprintf("          <blockquote>%s</blockquote>", convertInlineMarkdown(quote)))
-		} else if line == "---" {
+		case line == "---":
 			flushParagraph()
 			result = append(result, "          <hr />")
-		} else if strings.TrimSpace(line) != "" {
+		case strings.TrimSpace(line) != "":
 			paraLines = append(paraLines, strings.TrimSpace(line))
-		} else {
+		default:
 			flushParagraph()
 		}
 	}
@@ -491,25 +512,23 @@ func escapeRemainingJSX(text string) string {
 
 	for i := 0; i < len(text); i++ {
 		c := text[i]
-		if c == '<' {
-			if i+1 < len(text) && (text[i+1] == '/' || (text[i+1] >= 'a' && text[i+1] <= 'z') || (text[i+1] >= 'A' && text[i+1] <= 'Z')) {
-				inTag = true
-				result.WriteByte(c)
-			} else {
-				result.WriteString("&lt;")
-			}
-		} else if c == '>' {
-			if inTag {
-				inTag = false
-				result.WriteByte(c)
-			} else {
-				result.WriteString("&gt;")
-			}
-		} else if c == '{' && !inTag {
+
+		switch {
+		case c == '<' && i+1 < len(text) && (text[i+1] == '/' || (text[i+1] >= 'a' && text[i+1] <= 'z') || (text[i+1] >= 'A' && text[i+1] <= 'Z')):
+			inTag = true
+			result.WriteByte(c)
+		case c == '<':
+			result.WriteString("&lt;")
+		case c == '>' && inTag:
+			inTag = false
+			result.WriteByte(c)
+		case c == '>':
+			result.WriteString("&gt;")
+		case c == '{' && !inTag:
 			result.WriteString("&#123;")
-		} else if c == '}' && !inTag {
+		case c == '}' && !inTag:
 			result.WriteString("&#125;")
-		} else {
+		default:
 			result.WriteByte(c)
 		}
 	}

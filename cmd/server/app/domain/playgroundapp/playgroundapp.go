@@ -135,10 +135,11 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 		krn      *kronk.Kronk
 	)
 
-	if req.HasOverrides() {
+	switch {
+	case req.HasOverrides():
 		cacheKey = fmt.Sprintf("%s/playground/%s", req.ModelID, sessionID)
 		krn, err = a.cache.AquireCustom(ctx, cacheKey, cfg, cat)
-	} else {
+	default:
 		cacheKey = req.ModelID
 		krn, err = a.cache.AquireModel(ctx, req.ModelID)
 	}
@@ -179,7 +180,7 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 		"system_prompt_cache": krn.ModelConfig().SystemPromptCache,
 		"incremental_cache":   krn.ModelConfig().IncrementalCache,
 		"split_mode":          krn.ModelConfig().SplitMode.String(),
-		"is_hybrid_model":     krn.ModelInfo().IsHybridModel,
+		"model_type":          krn.ModelInfo().Type.String(),
 		"is_gpt_model":        krn.ModelInfo().IsGPTModel,
 	}
 

@@ -312,7 +312,7 @@ func TestIMCSlotState(t *testing.T) {
 	// Simulate cache build on slot 0.
 	m.imcSlots[0].cachedMsgsHash = "abc123"
 	m.imcSlots[0].totalTokensCached = 1000
-	m.imcSlots[0].lastMsgIdxCached = 2
+	m.imcSlots[0].cachedMsgCount = 2
 
 	// Verify state persists.
 	if m.imcSlots[0].cachedMsgsHash != "abc123" {
@@ -321,7 +321,7 @@ func TestIMCSlotState(t *testing.T) {
 	if m.imcSlots[0].totalTokensCached != 1000 {
 		t.Error("tokens not persisted")
 	}
-	if m.imcSlots[0].lastMsgIdxCached != 2 {
+	if m.imcSlots[0].cachedMsgCount != 2 {
 		t.Error("msgCount not persisted")
 	}
 
@@ -353,7 +353,7 @@ func TestClearCaches(t *testing.T) {
 			slotID:            i,
 			cachedMsgsHash:    "hash",
 			totalTokensCached: 500,
-			lastMsgIdxCached:  3,
+			cachedMsgCount:    3,
 		}
 	}
 
@@ -369,8 +369,8 @@ func TestClearCaches(t *testing.T) {
 		if slot.totalTokensCached != 0 {
 			t.Errorf("slot %d totalTokensCached = %d, want 0", i, slot.totalTokensCached)
 		}
-		if slot.lastMsgIdxCached != 0 {
-			t.Errorf("slot %d lastMsgIdxCached = %d, want 0", i, slot.lastMsgIdxCached)
+		if slot.cachedMsgCount != 0 {
+			t.Errorf("slot %d cachedMsgCount = %d, want 0", i, slot.cachedMsgCount)
 		}
 		if slot.cachedMsgsHash != "" {
 			t.Errorf("slot %d cachedMsgsHash = %q, want empty", i, slot.cachedMsgsHash)
@@ -532,7 +532,7 @@ func TestProcessIMCSlotMatchByHash(t *testing.T) {
 	// Simulate: slot[1] has cached the first 2 messages.
 	m.imcSlots[1].cachedMsgsHash = cachedHash
 	m.imcSlots[1].totalTokensCached = 500
-	m.imcSlots[1].lastMsgIdxCached = 2
+	m.imcSlots[1].cachedMsgCount = 2
 
 	// Request with same 2 messages + 1 new message (total=3, cache 2, generate from last).
 	messages := []D{
@@ -559,7 +559,7 @@ func TestProcessIMCSlotMatchByHash(t *testing.T) {
 		t.Errorf("imcSlotID = %d, want 1", result.imcSlotID)
 	}
 
-	// Pure cache hit: lastMsgIdxCached (2) == lastMsgIdxToCache (2).
+	// Pure cache hit: cachedMsgCount (2) == lastMsgIdxToCache (2).
 	if result.cacheIdx != 500 {
 		t.Errorf("cacheIdx = %d, want 500", result.cacheIdx)
 	}
@@ -602,13 +602,13 @@ func TestProcessIMCBestPrefixCoverage(t *testing.T) {
 	hash2 := hashMessages(messages[:2])
 	m.imcSlots[0].cachedMsgsHash = hash2
 	m.imcSlots[0].totalTokensCached = 300
-	m.imcSlots[0].lastMsgIdxCached = 2
+	m.imcSlots[0].cachedMsgCount = 2
 
 	// Slot[1] cached first 4 messages (better coverage).
 	hash4 := hashMessages(messages[:4])
 	m.imcSlots[1].cachedMsgsHash = hash4
 	m.imcSlots[1].totalTokensCached = 800
-	m.imcSlots[1].lastMsgIdxCached = 4
+	m.imcSlots[1].cachedMsgCount = 4
 
 	d := D{
 		"messages": messages,
@@ -628,7 +628,7 @@ func TestProcessIMCBestPrefixCoverage(t *testing.T) {
 		t.Errorf("imcSlotID = %d, want 1 (best prefix coverage)", result.imcSlotID)
 	}
 
-	// Pure cache hit: lastMsgIdxCached (4) == lastMsgIdxToCache (4).
+	// Pure cache hit: cachedMsgCount (4) == lastMsgIdxToCache (4).
 	if result.cacheIdx != 800 {
 		t.Errorf("cacheIdx = %d, want 800", result.cacheIdx)
 	}
@@ -662,12 +662,12 @@ func TestProcessIMCLRUEviction(t *testing.T) {
 	// Both slots have data but with non-matching hashes.
 	m.imcSlots[0].cachedMsgsHash = "aaaa" + strings.Repeat("0", 56)
 	m.imcSlots[0].totalTokensCached = 500
-	m.imcSlots[0].lastMsgIdxCached = 2
+	m.imcSlots[0].cachedMsgCount = 2
 	m.imcSlots[0].lastUsed = now.Add(-10 * time.Second) // Older (LRU candidate).
 
 	m.imcSlots[1].cachedMsgsHash = "bbbb" + strings.Repeat("0", 56)
 	m.imcSlots[1].totalTokensCached = 300
-	m.imcSlots[1].lastMsgIdxCached = 1
+	m.imcSlots[1].cachedMsgCount = 1
 	m.imcSlots[1].lastUsed = now // More recent.
 
 	// Request with completely different content (no hash match).
@@ -693,8 +693,8 @@ func TestProcessIMCLRUEviction(t *testing.T) {
 	if m.imcSlots[1].totalTokensCached != 300 {
 		t.Errorf("slot[1] totalTokensCached = %d, want 300 (should be untouched)", m.imcSlots[1].totalTokensCached)
 	}
-	if m.imcSlots[1].lastMsgIdxCached != 1 {
-		t.Errorf("slot[1] lastMsgIdxCached = %d, want 1 (should be untouched)", m.imcSlots[1].lastMsgIdxCached)
+	if m.imcSlots[1].cachedMsgCount != 1 {
+		t.Errorf("slot[1] cachedMsgCount = %d, want 1 (should be untouched)", m.imcSlots[1].cachedMsgCount)
 	}
 }
 
@@ -726,7 +726,7 @@ func TestProcessIMCParallelSubAgents(t *testing.T) {
 
 	// Each sub-agent has 3 messages: system + user + assistant.
 	// With 3 total messages, lastMsgIdxToCache = 2 (cache first 2, generate from last).
-	// We set lastMsgIdxCached = 2 so follow-ups with the same 3 messages are pure hits.
+	// We set cachedMsgCount = 2 so follow-ups with the same 3 messages are pure hits.
 
 	// Sub-agent 1 cached messages.
 	agent1Cached := []D{
@@ -747,12 +747,12 @@ func TestProcessIMCParallelSubAgents(t *testing.T) {
 
 	m.imcSlots[0].cachedMsgsHash = hash1
 	m.imcSlots[0].totalTokensCached = 400
-	m.imcSlots[0].lastMsgIdxCached = 2
+	m.imcSlots[0].cachedMsgCount = 2
 	m.imcSlots[0].lastUsed = time.Now()
 
 	m.imcSlots[1].cachedMsgsHash = hash2
 	m.imcSlots[1].totalTokensCached = 350
-	m.imcSlots[1].lastMsgIdxCached = 2
+	m.imcSlots[1].cachedMsgCount = 2
 	m.imcSlots[1].lastUsed = time.Now()
 
 	// Follow-up from sub-agent 1: same prefix (pure cache hit).
@@ -846,7 +846,7 @@ func TestProcessIMCPendingPreventsDoubleSlot(t *testing.T) {
 	// Simulate: slot[0] is mid-build (pending=true, state reset).
 	// This is exactly what buildIMCCacheFromScratch does at lines 339-342.
 	m.imcSlots[0].totalTokensCached = 0
-	m.imcSlots[0].lastMsgIdxCached = 0
+	m.imcSlots[0].cachedMsgCount = 0
 	m.imcSlots[0].cachedMsgsHash = ""
 	m.imcSlots[0].pending = true
 
@@ -992,7 +992,7 @@ func TestProcessIMCTokenPrefixFallback(t *testing.T) {
 	// making it a candidate for the token prefix comparison path.
 	m.imcSlots[0].cachedMsgsHash = "cccc" + strings.Repeat("0", 56)
 	m.imcSlots[0].totalTokensCached = 100
-	m.imcSlots[0].lastMsgIdxCached = 2
+	m.imcSlots[0].cachedMsgCount = 2
 	m.imcSlots[0].lastUsed = now
 	m.imcSlots[0].cachedTokens = []llama.Token{10, 20, 30, 40, 50}
 
@@ -1022,8 +1022,8 @@ func TestProcessIMCTokenPrefixFallback(t *testing.T) {
 	if m.imcSlots[0].totalTokensCached != 100 {
 		t.Errorf("slot[0] totalTokensCached = %d, want 100 (should be untouched)", m.imcSlots[0].totalTokensCached)
 	}
-	if m.imcSlots[0].lastMsgIdxCached != 2 {
-		t.Errorf("slot[0] lastMsgIdxCached = %d, want 2 (should be untouched)", m.imcSlots[0].lastMsgIdxCached)
+	if m.imcSlots[0].cachedMsgCount != 2 {
+		t.Errorf("slot[0] cachedMsgCount = %d, want 2 (should be untouched)", m.imcSlots[0].cachedMsgCount)
 	}
 	if m.imcSlots[0].cachedMsgsHash != "cccc"+strings.Repeat("0", 56) {
 		t.Errorf("slot[0] cachedMsgsHash was modified (should be untouched)")

@@ -181,10 +181,11 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	// If the deferred job that triggered the preemption has been cancelled,
 	// skip the preemption to avoid killing a live request for nothing.
 	if e.pendingPreempt != nil {
-		if e.deferredJob != nil && e.deferredJob.ctx.Err() != nil {
+		switch {
+		case e.deferredJob != nil && e.deferredJob.ctx.Err() != nil:
 			e.failJob(e.deferredJob, e.deferredJob.ctx.Err())
 			e.deferredJob = nil
-		} else {
+		default:
 			e.finishSlot(e.pendingPreempt, e.pendingPreemptErr)
 		}
 		e.pendingPreempt = nil

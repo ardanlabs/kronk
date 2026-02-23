@@ -22,14 +22,14 @@ type cacheResult struct {
 	imcExpectedHash string      // Expected cachedMsgsHash at startSlot time (for stale detection)
 
 	// IMC dedicated slot fields — tokens to decode into slot's sequence.
-	imcNewCacheTokens  []llama.Token // New tokens to extend the cache (decoded at startSlot)
-	imcNewTotalCached  int           // Total cached tokens after extension
-	imcNewMsgIdx       int           // New lastMsgIdxCached after extension
-	imcNewMsgsHash     string        // New cachedMsgsHash after extension
-	imcClearSeq        bool          // True if sequence must be cleared before decoding (rebuild from scratch)
-	imcNewCachedTokens []llama.Token // Full token sequence to store in session after decode
-	imcTrimPos         llama.Pos     // Position to trim KV cache from (for partial prefix rebuild)
-	imcPending         bool          // True if the target slot was pending (caller should retry another slot)
+	imcNewCacheTokens    []llama.Token // New tokens to extend the cache (decoded at startSlot)
+	imcNewTotalCached    int           // Total cached tokens after extension
+	imcNewCachedMsgCount int           // New cachedMsgCount after extension
+	imcNewMsgsHash       string        // New cachedMsgsHash after extension
+	imcClearSeq          bool          // True if sequence must be cleared before decoding (rebuild from scratch)
+	imcNewCachedTokens   []llama.Token // Full token sequence to store in session after decode
+	imcTrimPos           llama.Pos     // Position to trim KV cache from (for partial prefix rebuild)
+	imcPending           bool          // True if the target slot was pending (caller should retry another slot)
 }
 
 // processCache checks if the system prompt or incremental messages are
@@ -65,7 +65,7 @@ func (m *Model) clearCaches() {
 		slot.cachedMsgsHash = ""
 		slot.cachedTokens = nil
 		slot.totalTokensCached = 0
-		slot.lastMsgIdxCached = 0
+		slot.cachedMsgCount = 0
 		slot.lastUsed = time.Time{}
 		slot.pending = false
 	}
@@ -118,29 +118,42 @@ func extractMessageContent(msg D) string {
 	case []any:
 		var content strings.Builder
 		for _, part := range c {
-			if partMap, ok := part.(map[string]any); ok {
-				if partMap["type"] == "text" {
-					if text, ok := partMap["text"].(string); ok {
-						content.WriteString(text)
-					}
-				}
-			}
+			content.WriteString(textFromPart(part))
 		}
 		return content.String()
 
 	case []D:
 		var content strings.Builder
 		for _, part := range c {
-			if part["type"] == "text" {
-				if text, ok := part["text"].(string); ok {
-					content.WriteString(text)
-				}
-			}
+			content.WriteString(textFromPart(part))
 		}
 		return content.String()
 	}
 
 	return ""
+}
+
+// textFromPart extracts the text value from a multi-part content element.
+// The part must be a map with type "text" and a string text field.
+func textFromPart(part any) string {
+	var m map[string]any
+
+	switch v := part.(type) {
+	case map[string]any:
+		m = v
+	case D:
+		m = v
+	default:
+		return ""
+	}
+
+	if m["type"] != "text" {
+		return ""
+	}
+
+	text, _ := m["text"].(string)
+
+	return text
 }
 
 // removeFirstNMessages removes the first n messages from d.

@@ -298,6 +298,7 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("- nBatch       :", krn.ModelConfig().NBatch)
 	fmt.Println("- nuBatch      :", krn.ModelConfig().NUBatch)
 	fmt.Println("- embeddings   :", krn.ModelInfo().IsEmbedModel)
+	fmt.Println("- modelType    :", krn.ModelInfo().Type)
 	fmt.Println("- isGPT        :", krn.ModelInfo().IsGPTModel)
 	fmt.Println("- template     :", krn.ModelInfo().Template.FileName)
 	fmt.Println("- grammar      :", krn.ModelConfig().DefaultParams.Grammar != "")
@@ -501,21 +502,32 @@ loop:
 This example can produce the following output:
 
 ```shell
-make example-question
-
-CGO_ENABLED=0 go run examples/question/main.go
-download-libraries: status[check libraries version information] arch[arm64] os[darwin] processor[cpu]
-download-libraries: status[check llama.cpp installation] arch[arm64] os[darwin] processor[cpu] latest[b7406] current[b7406]
-download-libraries: status[already installed] latest[b7406] current[b7406]
-download-model: model-url[Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf] proj-url[] model-id[Qwen3-8B-Q8_0]:
+$ make example-chat
+CGO_ENABLED=0 go run examples/chat/main.go
+download-libraries: check libraries version information: arch[arm64] os[darwin] processor[cpu]
+download-libraries: check llama.cpp installation: arch[arm64] os[darwin] processor[cpu] latest[b8132] current[b8132]
+download-libraries: already installed: latest[b8132] current[b8132]
+download-model: model-url[https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf] proj-url[] model-id[Qwen3-8B-Q8_0]:
 download-model: waiting to check model status...:
-download-model: status[already exists]:
+download-model: model already exists:
 loading model...
+- system info:
+	MTL:EMBED_LIBRARY, CPU:NEON, ARM_FMA:on, FP16_VA:on, DOTPROD:on, LLAMAFILE:on, ACCELERATE:on, REPACK:on,
+- contextWindow: 40960
+- k/v          : q8_0/q8_0
+- nBatch       : 2048
+- nuBatch      : 512
+- embeddings   : false
+- modelType    : dense
+- isGPT        : false
+- template     : tokenizer.chat_template
+- grammar      : false
 
-QUESTION: Hello model
+USER> hello model
 
-Okay, the user said "Hello model." I need to respond appropriately. First, I should acknowledge their greeting. Since they mentioned "model," maybe they're referring to me as a language model. I should clarify that I'm Qwen, a large language model developed by Alibaba Cloud. I should keep the response friendly and open-ended, inviting them to ask questions or share topics they're interested in. Let me make sure the tone is welcoming and helpful. Also, check for any possible misunderstandings. They might be testing if I recognize the term "model," so confirming my identity as Qwen is important. Alright, time to put it all together in a natural, conversational way.
+MODEL> Okay, the user said "hello model". I need to respond appropriately. Since there's no specific question or request here, just a greeting, I should acknowledge their greeting and offer help. Let me check if there's any function I need to call. The tools provided are for getting weather, but the user didn't ask for that. So no function call is needed here. Just a friendly response to greet them back and ask how I can assist. Keep it simple and welcoming.
 
-! I'm Qwen, a large language model developed by Alibaba Cloud. How can I assist you today? 😊 Whether you have questions, need help with something, or just want to chat, feel free to let me know!
-Unloading Kronk
+Hello! How can I assist you today? If you have any questions or need help with something, feel free to ask! 😊
+
+Input: 331  Reasoning: 98  Completion: 28  Output: 126  Window: 359 (1% of 40K) TPS: 50.63
 ```

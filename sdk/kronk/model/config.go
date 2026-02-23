@@ -603,7 +603,7 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 	}
 
 	switch {
-	case mi.IsHybridModel:
+	case mi.Type == ModelTypeHybrid:
 		ctxParams.FlashAttentionType = llama.FlashAttentionTypeDisabled
 	case cfg.FlashAttention == FlashAttentionDisabled:
 		ctxParams.FlashAttentionType = llama.FlashAttentionTypeDisabled

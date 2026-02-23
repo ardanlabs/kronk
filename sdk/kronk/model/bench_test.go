@@ -759,13 +759,12 @@ type CircuitBreaker struct {
 func (cb *CircuitBreaker) Execute(fn func() error) error {
     cb.mu.Lock()
     
-    if cb.state == "open" {
-        if time.Since(cb.lastFailure) > cb.resetAfter {
-            cb.state = "half-open"
-        } else {
-            cb.mu.Unlock()
-            return ErrCircuitOpen
-        }
+    switch {
+    case cb.state == "open" && time.Since(cb.lastFailure) > cb.resetAfter:
+        cb.state = "half-open"
+    case cb.state == "open":
+        cb.mu.Unlock()
+        return ErrCircuitOpen
     }
     cb.mu.Unlock()
     
@@ -1571,9 +1570,10 @@ func logTokenCounts(b *testing.B, ctx context.Context, krn *kronk.Kronk, d model
 	if content, _ := messages[0]["content"].(string); content != "" {
 		if role, _ := messages[0]["role"].(string); role == "system" {
 			resp, err := krn.Tokenize(ctx, model.D{"input": content})
-			if err != nil {
+			switch {
+			case err != nil:
 				b.Logf("tokenize system prompt: %v", err)
-			} else {
+			default:
 				b.Logf("System prompt: %d tokens (%d chars)", resp.Tokens, len(content))
 			}
 		}
@@ -1590,9 +1590,10 @@ func logTokenCounts(b *testing.B, ctx context.Context, krn *kronk.Kronk, d model
 	}
 
 	resp, err := krn.Tokenize(ctx, model.D{"input": allContent.String()})
-	if err != nil {
+	switch {
+	case err != nil:
 		b.Logf("tokenize conversation: %v", err)
-	} else {
+	default:
 		b.Logf("Total conversation: %d tokens (%d chars, %d messages)", resp.Tokens, totalChars, len(messages))
 	}
 }

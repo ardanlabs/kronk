@@ -66,17 +66,13 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 		// goroutine between processIMC and now. This catches stale pure hits
 		// only. Partial prefix rebuilds (imcTrimPos > 0) naturally have a
 		// different hash because they're replacing the slot's content.
+		//
+		// Pure hits never set pending=true, so we must NOT clear pending here.
+		// Another goroutine may own the reservation on this slot.
 		if job.imcExpectedHash != "" && currentHash != job.imcExpectedHash && len(job.imcNewCacheTokens) == 0 && job.imcTrimPos == 0 {
 			e.model.log(job.ctx, "start-slot", "status", "imc-stale",
 				"slot", s.id, "seq", s.seqID, "imc_slot", job.imcSlotID,
 				"expected_hash", job.imcExpectedHash[:8], "current_hash", currentHash)
-
-			e.model.cacheMu.Lock()
-			if s.id < len(e.model.imcSlots) {
-				e.model.imcSlots[s.id].pending = false
-			}
-			e.model.cacheMu.Unlock()
-			e.model.notifyIMCSlotAvailable()
 
 			e.finishSlot(s, fmt.Errorf("start-slot: imc cache stale (slot %d hash changed), retry request", s.id))
 			return
@@ -97,12 +93,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 						"cache_idx", cacheIdx, "expected_start", expectedStart,
 						"new_total_cached", job.imcNewTotalCached)
 
-					e.model.cacheMu.Lock()
-					if s.id < len(e.model.imcSlots) {
-						e.model.imcSlots[s.id].pending = false
-					}
-					e.model.cacheMu.Unlock()
-					e.model.notifyIMCSlotAvailable()
+					e.model.imcClearPending(s.id)
 
 					e.finishSlot(s, fmt.Errorf("start-slot: imc extend stale (cache moved from %d to %d), retry request", expectedStart, cacheIdx))
 					return
@@ -130,21 +121,17 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 				// divergent suffix from KV cache, keeping the common prefix,
 				// then decode new tokens from the trim point forward.
 				if job.imcTrimPos > cacheIdx {
-					e.model.cacheMu.Lock()
-					if s.id < len(e.model.imcSlots) {
-						e.model.imcSlots[s.id].pending = false
-					}
-					e.model.cacheMu.Unlock()
-					e.model.notifyIMCSlotAvailable()
+					e.model.imcClearPending(s.id)
 
 					e.finishSlot(s, fmt.Errorf("start-slot: imc trim stale (trim_pos %d > cache_idx %d), retry request", job.imcTrimPos, cacheIdx))
 					return
 				}
 
-				// IMC Hybrid: partial MemorySeqRm corrupts recurrent state.
-				// Use full clear and re-decode the full cached token sequence
-				// from position 0 (imcNewCachedTokens, not imcNewCacheTokens).
-				if e.model.modelInfo.IsHybridModel {
+				switch e.model.modelInfo.Type {
+				case ModelTypeHybrid:
+					// Partial MemorySeqRm corrupts recurrent state. Use full
+					// clear and re-decode the full cached token sequence from
+					// position 0 (imcNewCachedTokens, not imcNewCacheTokens).
 					e.model.log(job.ctx, "start-slot", "status", "imc-hybrid-rebuild", "slot", s.id, "seq", s.seqID,
 						"cached_tokens", cacheIdx, "trim_pos", job.imcTrimPos,
 						"redecode_tokens", len(job.imcNewCachedTokens))
@@ -162,12 +149,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 							llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
 							e.model.decodeMu.Unlock()
 
-							e.model.cacheMu.Lock()
-							if s.id < len(e.model.imcSlots) {
-								e.model.imcSlots[s.id].pending = false
-							}
-							e.model.cacheMu.Unlock()
-							e.model.notifyIMCSlotAvailable()
+							e.model.imcClearPending(s.id)
 
 							e.finishSlot(s, fmt.Errorf("start-slot: imc hybrid rebuild: %w", err))
 							return
@@ -179,29 +161,13 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 					cacheIdx = llama.Pos(job.imcNewTotalCached)
 
 					// Update session state and skip the shared decode path below.
-					e.model.cacheMu.Lock()
-					if s.id < len(e.model.imcSlots) {
-						imcSlot := e.model.imcSlots[s.id]
-						imcSlot.cachedMsgsHash = job.imcNewMsgsHash
-						imcSlot.totalTokensCached = job.imcNewTotalCached
-						imcSlot.lastMsgIdxCached = job.imcNewMsgIdx
-						imcSlot.lastUsed = time.Now()
-						imcSlot.pending = false
-
-						if len(job.imcNewCachedTokens) > 0 {
-							imcSlot.cachedTokens = job.imcNewCachedTokens
-						}
-
-						e.model.log(job.ctx, "start-slot", "status", "imc-pending-cleared", "slot", s.id, "seq", s.seqID)
-					}
-					e.model.cacheMu.Unlock()
-					e.model.notifyIMCSlotAvailable()
+					e.model.imcCommitSession(s.id, job.imcNewMsgsHash, job.imcNewTotalCached, job.imcNewCachedMsgCount, job.imcNewCachedTokens)
 
 					pct := int(job.imcTrimPos) * 100 / job.imcNewTotalCached
 					e.model.log(job.ctx, "start-slot", "status", "imc-hybrid-rebuilt", "slot", s.id, "seq", s.seqID,
 						"total_cached", job.imcNewTotalCached, "salvaged_pct", pct)
 
-				} else {
+				case ModelTypeDense, ModelTypeMoE:
 					e.model.log(job.ctx, "start-slot", "status", "imc-trim-prefix", "slot", s.id, "seq", s.seqID,
 						"cached_tokens", cacheIdx, "trim_pos", job.imcTrimPos, "new_cache_tokens", len(job.imcNewCacheTokens))
 
@@ -219,7 +185,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 
 			// Hybrid trim already decoded the full token sequence and updated
 			// metadata above, so skip the shared decode path.
-			if !(e.model.modelInfo.IsHybridModel && job.imcTrimPos > 0) {
+			if !(e.model.modelInfo.Type == ModelTypeHybrid && job.imcTrimPos > 0) {
 				imcDecodeStart := time.Now()
 
 				if err := e.model.decodeTokensIntoCache(job.ctx, job.imcNewCacheTokens, s.seqID, int(cacheIdx)); err != nil {
@@ -242,13 +208,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 					}
 					e.model.decodeMu.Unlock()
 
-					e.model.cacheMu.Lock()
-					if s.id < len(e.model.imcSlots) {
-						e.model.imcSlots[s.id].pending = false
-						e.model.log(job.ctx, "start-slot", "status", "imc-pending-cleared (error)", "slot", s.id, "seq", s.seqID)
-					}
-					e.model.cacheMu.Unlock()
-					e.model.notifyIMCSlotAvailable()
+					e.model.imcClearPending(s.id)
 
 					e.finishSlot(s, fmt.Errorf("start-slot: imc extend: %w", err))
 					return
@@ -259,23 +219,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 				cacheIdx = llama.Pos(job.imcNewTotalCached)
 
 				// Update session state now that tokens are decoded.
-				e.model.cacheMu.Lock()
-				if s.id < len(e.model.imcSlots) {
-					imcSlot := e.model.imcSlots[s.id]
-					imcSlot.cachedMsgsHash = job.imcNewMsgsHash
-					imcSlot.totalTokensCached = job.imcNewTotalCached
-					imcSlot.lastMsgIdxCached = job.imcNewMsgIdx
-					imcSlot.lastUsed = time.Now()
-					imcSlot.pending = false
-
-					if len(job.imcNewCachedTokens) > 0 {
-						imcSlot.cachedTokens = job.imcNewCachedTokens
-					}
-
-					e.model.log(job.ctx, "start-slot", "status", "imc-pending-cleared", "slot", s.id, "seq", s.seqID)
-				}
-				e.model.cacheMu.Unlock()
-				e.model.notifyIMCSlotAvailable()
+				e.model.imcCommitSession(s.id, job.imcNewMsgsHash, job.imcNewTotalCached, job.imcNewCachedMsgCount, job.imcNewCachedTokens)
 
 				switch {
 				case job.imcClearSeq:
@@ -296,20 +240,16 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 			// incoming tokens so there are no new tokens to decode. Just trim
 			// the divergent suffix from the KV cache and update metadata.
 			if job.imcTrimPos > cacheIdx {
-				e.model.cacheMu.Lock()
-				if s.id < len(e.model.imcSlots) {
-					e.model.imcSlots[s.id].pending = false
-				}
-				e.model.cacheMu.Unlock()
-				e.model.notifyIMCSlotAvailable()
+				e.model.imcClearPending(s.id)
 
 				e.finishSlot(s, fmt.Errorf("start-slot: imc trim stale (trim_pos %d > cache_idx %d), retry request", job.imcTrimPos, cacheIdx))
 				return
 			}
 
-			// IMC Hybrid: partial MemorySeqRm corrupts recurrent state.
-			// Clear and re-decode all cached tokens from position 0.
-			if e.model.modelInfo.IsHybridModel {
+			switch e.model.modelInfo.Type {
+			case ModelTypeHybrid:
+				// Partial MemorySeqRm corrupts recurrent state. Clear and
+				// re-decode all cached tokens from position 0.
 				e.model.log(job.ctx, "start-slot", "status", "imc-hybrid-trim-rebuild", "slot", s.id, "seq", s.seqID,
 					"cached_tokens", cacheIdx, "trim_pos", job.imcTrimPos,
 					"redecode_tokens", len(job.imcNewCachedTokens))
@@ -326,12 +266,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 						llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
 						e.model.decodeMu.Unlock()
 
-						e.model.cacheMu.Lock()
-						if s.id < len(e.model.imcSlots) {
-							e.model.imcSlots[s.id].pending = false
-						}
-						e.model.cacheMu.Unlock()
-						e.model.notifyIMCSlotAvailable()
+						e.model.imcClearPending(s.id)
 
 						e.finishSlot(s, fmt.Errorf("start-slot: imc hybrid trim rebuild: %w", err))
 						return
@@ -339,7 +274,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 
 					metrics.AddPrefillTime(e.model.modelInfo.ID, time.Since(imcDecodeStart))
 				}
-			} else {
+
+			case ModelTypeDense, ModelTypeMoE:
 				e.model.log(job.ctx, "start-slot", "status", "imc-trim-only", "slot", s.id, "seq", s.seqID,
 					"cached_tokens", cacheIdx, "trim_pos", job.imcTrimPos)
 
@@ -350,23 +286,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 
 			cacheIdx = llama.Pos(job.imcNewTotalCached)
 
-			e.model.cacheMu.Lock()
-			if s.id < len(e.model.imcSlots) {
-				imcSlot := e.model.imcSlots[s.id]
-				imcSlot.cachedMsgsHash = job.imcNewMsgsHash
-				imcSlot.totalTokensCached = job.imcNewTotalCached
-				imcSlot.lastMsgIdxCached = job.imcNewMsgIdx
-				imcSlot.lastUsed = time.Now()
-				imcSlot.pending = false
-
-				if len(job.imcNewCachedTokens) > 0 {
-					imcSlot.cachedTokens = job.imcNewCachedTokens
-				}
-
-				e.model.log(job.ctx, "start-slot", "status", "imc-pending-cleared", "slot", s.id, "seq", s.seqID)
-			}
-			e.model.cacheMu.Unlock()
-			e.model.notifyIMCSlotAvailable()
+			e.model.imcCommitSession(s.id, job.imcNewMsgsHash, job.imcNewTotalCached, job.imcNewCachedMsgCount, job.imcNewCachedTokens)
 
 			e.model.log(job.ctx, "start-slot", "status", "imc-trimmed", "slot", s.id, "seq", s.seqID,
 				"total_cached", job.imcNewTotalCached)
@@ -388,7 +308,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 			slot := e.model.imcSlots[s.id]
 			slot.cachedMsgsHash = ""
 			slot.totalTokensCached = 0
-			slot.lastMsgIdxCached = 0
+			slot.cachedMsgCount = 0
 			slot.pending = false
 			e.model.cacheMu.Unlock()
 			e.model.notifyIMCSlotAvailable()
@@ -415,23 +335,25 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 	// cache is populated and before suffix tokens are decoded. This snapshot
 	// is restored in finishSlot instead of using partial MemorySeqRm which
 	// corrupts recurrent state (DeltaNet/SSM layers).
-	if e.model.modelInfo.IsHybridModel && e.model.cfg.IncrementalCache && job.imcCacheHit && cacheIdx > 0 {
+	if e.model.modelInfo.Type == ModelTypeHybrid && e.model.cfg.IncrementalCache && job.imcCacheHit && cacheIdx > 0 {
 		e.model.decodeMu.Lock()
 		kvSize := llama.StateSeqGetSize(e.model.lctx, s.seqID)
-		if cap(s.imcSavedState) >= int(kvSize) {
+		switch {
+		case cap(s.imcSavedState) >= int(kvSize):
 			s.imcSavedState = s.imcSavedState[:kvSize]
-		} else {
+		default:
 			s.imcSavedState = make([]byte, kvSize)
 		}
 		nExtracted := llama.StateSeqGetData(e.model.lctx, s.imcSavedState, s.seqID)
 		e.model.decodeMu.Unlock()
 
-		if nExtracted > 0 {
+		switch {
+		case nExtracted > 0:
 			s.imcSavedState = s.imcSavedState[:nExtracted]
 			e.model.log(job.ctx, "start-slot", "status", "imc-hybrid-snapshot",
 				"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx,
 				"snapshot_bytes", nExtracted, "kv_alloc", kvSize)
-		} else {
+		default:
 			e.model.log(job.ctx, "start-slot", "status", "imc-hybrid-snapshot-failed",
 				"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx,
 				"kv_alloc", kvSize)
@@ -503,7 +425,8 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 	// is enabled. The draft model needs all tokens (cached + new suffix) to
 	// build its KV cache after the target's prefill completes.
 	if e.model.draft != nil {
-		if job.imcCacheHit && s.id < len(e.model.imcSlots) {
+		switch {
+		case job.imcCacheHit && s.id < len(e.model.imcSlots):
 			e.model.cacheMu.RLock()
 			cached := e.model.imcSlots[s.id].cachedTokens
 			e.model.cacheMu.RUnlock()
@@ -515,7 +438,8 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 			e.model.log(job.ctx, "speculative", "status", "draft-prompt-assembled",
 				"slot", s.id, "imc_cached", len(cached), "new_suffix", len(tokens),
 				"total_draft_tokens", len(s.draftPromptTokens))
-		} else {
+
+		default:
 			s.draftPromptTokens = make([]llama.Token, len(tokens))
 			copy(s.draftPromptTokens, tokens)
 

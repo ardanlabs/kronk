@@ -301,15 +301,23 @@ export default function DocsSDKModel() {
 	Size          uint64
 	VRAMTotal     int64
 	SlotMemory    int64
+	Type          ModelType
 	IsGPTModel    bool
 	IsEmbedModel  bool
 	IsRerankModel bool
-	IsHybridModel bool
 	Metadata      map[string]string
 	Template      Template
 }`}</code>
               </pre>
               <p className="doc-description">ModelInfo represents the model's card information.</p>
+            </div>
+
+            <div className="doc-section" id="type-modeltype">
+              <h4>ModelType</h4>
+              <pre className="code-block">
+                <code>{`type ModelType uint8`}</code>
+              </pre>
+              <p className="doc-description">ModelType represents the model architecture for batch engine state management.</p>
             </div>
 
             <div className="doc-section" id="type-params">
@@ -637,7 +645,7 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func (d D) ShallowClone() D</code>
               </pre>
-              <p className="doc-description">ShallowClone creates a copy of the top-level map only. Nested values (including message maps and slices) are shared with the original. Use this when downstream code treats nested values as read-only or performs its own copy-on-write when mutation is needed.</p>
+              <p className="doc-description">ShallowClone creates a copy of the top-level map and the messages slice. Individual message maps are shared with the original. Use this when downstream code treats message maps as read-only or performs its own copy-on-write when mutation is needed.</p>
             </div>
 
             <div className="doc-section" id="method-d-string">
@@ -794,6 +802,14 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func (mi ModelInfo) String() string</code>
               </pre>
+            </div>
+
+            <div className="doc-section" id="method-modeltype-string">
+              <h4>ModelType.String</h4>
+              <pre className="code-block">
+                <code>func (mt ModelType) String() string</code>
+              </pre>
+              <p className="doc-description">String returns a human-readable name for the model type.</p>
             </div>
 
             <div className="doc-section" id="method-params-string">
@@ -1156,6 +1172,7 @@ export default function DocsSDKModel() {
                 <li><a href="#type-mediatype">MediaType</a></li>
                 <li><a href="#type-model">Model</a></li>
                 <li><a href="#type-modelinfo">ModelInfo</a></li>
+                <li><a href="#type-modeltype">ModelType</a></li>
                 <li><a href="#type-params">Params</a></li>
                 <li><a href="#type-rerankresponse">RerankResponse</a></li>
                 <li><a href="#type-rerankresult">RerankResult</a></li>
@@ -1202,6 +1219,7 @@ export default function DocsSDKModel() {
                 <li><a href="#method-model-tokenize">Model.Tokenize</a></li>
                 <li><a href="#method-model-unload">Model.Unload</a></li>
                 <li><a href="#method-modelinfo-string">ModelInfo.String</a></li>
+                <li><a href="#method-modeltype-string">ModelType.String</a></li>
                 <li><a href="#method-params-string">Params.String</a></li>
                 <li><a href="#method-ropescalingtype-marshaljson">RopeScalingType.MarshalJSON</a></li>
                 <li><a href="#method-ropescalingtype-marshalyaml">RopeScalingType.MarshalYAML</a></li>

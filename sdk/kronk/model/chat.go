@@ -28,6 +28,16 @@ func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error) {
 		lastMsg = msg
 	}
 
+	// If the response is an error, extract the error message from Delta
+	// (where ChatResponseErr stores it) and return it as a Go error.
+	if len(lastMsg.Choice) > 0 && lastMsg.Choice[0].FinishReason() == FinishReasonError {
+		errMsg := "unknown error"
+		if lastMsg.Choice[0].Delta != nil && lastMsg.Choice[0].Delta.Content != "" {
+			errMsg = lastMsg.Choice[0].Delta.Content
+		}
+		return lastMsg, errors.New(errMsg)
+	}
+
 	if lastMsg.Object == ObjectChatText {
 		lastMsg.Object = ObjectChatTextFinal
 	}
@@ -167,7 +177,7 @@ func (m *Model) validateAndCloneDocument(ctx context.Context, d D) (Params, D, e
 
 	m.log(ctx, "chat-streaming", "FINAL-PARAMS", params.String())
 
-	return params, d.ShallowClone(), nil
+	return params, d.Clone(), nil
 }
 
 // prepareContext prepares the document for inference, handling both text-only
@@ -257,13 +267,13 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		imcCacheHit:     imcCacheHit,
 		imcExpectedHash: cache.imcExpectedHash,
 
-		imcNewCacheTokens:  cache.imcNewCacheTokens,
-		imcNewTotalCached:  cache.imcNewTotalCached,
-		imcNewMsgIdx:       cache.imcNewMsgIdx,
-		imcNewMsgsHash:     cache.imcNewMsgsHash,
-		imcClearSeq:        cache.imcClearSeq,
-		imcNewCachedTokens: cache.imcNewCachedTokens,
-		imcTrimPos:         cache.imcTrimPos,
+		imcNewCacheTokens:    cache.imcNewCacheTokens,
+		imcNewTotalCached:    cache.imcNewTotalCached,
+		imcNewCachedMsgCount: cache.imcNewCachedMsgCount,
+		imcNewMsgsHash:       cache.imcNewMsgsHash,
+		imcClearSeq:          cache.imcClearSeq,
+		imcNewCachedTokens:   cache.imcNewCachedTokens,
+		imcTrimPos:           cache.imcTrimPos,
 	}
 
 	if err := m.batch.submit(&job); err != nil {
@@ -273,13 +283,7 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		// pending is set during extendIMCCache/buildIMCCacheFromScratch
 		// and normally cleared in startSlot after decode.
 		if len(cache.imcNewCacheTokens) > 0 {
-			slotID := cache.imcSlotID
-			m.cacheMu.Lock()
-			if slotID < len(m.imcSlots) {
-				m.imcSlots[slotID].pending = false
-			}
-			m.cacheMu.Unlock()
-			m.notifyIMCSlotAvailable()
+			m.imcClearPending(cache.imcSlotID)
 		}
 
 		m.sendChatError(ctx, ch, id, err)

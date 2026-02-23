@@ -30,7 +30,7 @@ type imcSession struct {
 	cachedMsgsHash    string        // Hash of all cached messages
 	cachedTokens      []llama.Token // Full token sequence in KV cache (immutable; replaced, never mutated)
 	totalTokensCached int           // Total tokens in cache
-	lastMsgIdxCached  int           // The index of the last message cached
+	cachedMsgCount    int           // Number of messages cached
 	seqID             llama.SeqId   // Assigned cache sequence ID
 	slotID            int           // Dedicated slot ID bound to this session
 	lastUsed          time.Time     // Last access time (for eviction)

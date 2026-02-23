@@ -72,9 +72,10 @@ func (e *batchEngine) handleSampledToken(s *slot, token llama.Token, iBatch int3
 		content = string(complete)
 	}
 
-	if len(remainder) > 0 {
+	switch {
+	case len(remainder) > 0:
 		s.utf8Buf = append(s.utf8Buf[:0], remainder...)
-	} else {
+	default:
 		s.utf8Buf = s.utf8Buf[:0]
 	}
 

@@ -228,9 +228,10 @@ func (c *Catalog) ResolvedModelConfig(modelID string) ModelConfig {
 		}
 
 		if modelConfig.DraftModel != nil {
-			if cfg.DraftModel == nil {
+			switch {
+			case cfg.DraftModel == nil:
 				cfg.DraftModel = modelConfig.DraftModel
-			} else {
+			default:
 				if modelConfig.DraftModel.ModelID != "" {
 					cfg.DraftModel.ModelID = modelConfig.DraftModel.ModelID
 				}

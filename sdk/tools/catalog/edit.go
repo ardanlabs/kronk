@@ -60,11 +60,12 @@ func (c *Catalog) SaveModel(model ModelDetails, catalogFile string) error {
 	var cat CatalogModels
 
 	data, err := os.ReadFile(filePath)
-	if err == nil {
+	switch {
+	case err == nil:
 		if err := yaml.Unmarshal(data, &cat); err != nil {
 			return fmt.Errorf("save-model: unmarshal existing catalog %s: %w", catalogFile, err)
 		}
-	} else {
+	default:
 		cat.Name = model.Category
 	}
 
