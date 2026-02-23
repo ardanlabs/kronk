@@ -72,8 +72,8 @@ func TestMain(m *testing.M) {
 		fmt.Println("MustRetrieveModel Qwen2-Audio-7B.Q8_0...")
 		mpAudio = models.MustFullPath("Qwen2-Audio-7B.Q8_0")
 
-		if dp, err := models.FullPath("Qwen3-Coder-Next-UD-Q4_K_XL"); err == nil {
-			fmt.Println("RetrieveModel Qwen3-Coder-Next-UD-Q4_K_XL...")
+		if dp, err := models.FullPath("Qwen3-Coder-Next-UD-Q6_K_XL"); err == nil {
+			fmt.Println("RetrieveModel Qwen3-Coder-Next-UD-Q6_K_XL...")
 			mpHybridChat = dp
 		}
 

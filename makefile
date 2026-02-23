@@ -114,32 +114,41 @@ test: test-only lint vuln-check diff
 
 # ==============================================================================
 # Benchmarks
+#
+# Model Type | Cache Mode | IMC Strategy      | Speculative | Target
+# -----------|------------|-------------------|-------------|-------
+# Dense      | NonCaching | —                 | No          | benchmark-dense-nc
+# Dense      | SPC        | —                 | No          | benchmark-dense-spc
+# Dense      | IMC        | Deterministic     | No          | benchmark-dense-imc-det
+# Dense      | IMC        | Deterministic     | Yes         | benchmark-dense-imc-det-spec
+# Dense      | IMC        | Non-Deterministic | No          | benchmark-dense-imc-nondet
+# MoE        | IMC        | Deterministic     | No          | benchmark-moe-imc-det
+# MoE        | IMC        | Deterministic     | Yes         | benchmark-moe-imc-det-spec
+# Hybrid     | IMC        | Deterministic     | No          | benchmark-hybrid-imc-det
 
-benchmark-nc:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkNonCaching -benchtime=3x -timeout=30m ./sdk/kronk/model/
+benchmark-dense-nc:
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_NonCaching -benchtime=3x -timeout=30m ./sdk/kronk/model/
 
+benchmark-dense-spc:
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_SPC -benchtime=3x -timeout=30m ./sdk/kronk/model/
 
-benchmark-spc:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkSPC -benchtime=3x -timeout=30m ./sdk/kronk/model/
+benchmark-dense-imc-det:
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_IMCDeterministic$$ -benchtime=3x -timeout=30m ./sdk/kronk/model/
 
-benchmark-imc-deterministic:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkIMCDeterministic$$ -benchtime=3x -timeout=30m ./sdk/kronk/model/
+benchmark-dense-imc-nondet:
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_IMCNonDeterministic -benchtime=3x -timeout=30m ./sdk/kronk/model/
 
-benchmark-imc-nondeterministic:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkIMCNonDeterministic -benchtime=3x -timeout=30m ./sdk/kronk/model/
+benchmark-dense-imc-det-spec:
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_IMCDeterministic_Speculative -benchtime=3x -timeout=30m ./sdk/kronk/model/
 
-benchmark-imc-moe:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkIMCMoE$$ -benchtime=3x -timeout=30m ./sdk/kronk/model/
+benchmark-moe-imc-det:
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkMoE_IMCDeterministic$$ -benchtime=3x -timeout=30m ./sdk/kronk/model/
 
-benchmark-imc-hybrid:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkIMCHybrid -benchtime=3x -timeout=30m ./sdk/kronk/model/
+benchmark-moe-imc-det-spec:
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkMoE_IMCDeterministic_Speculative -benchtime=3x -timeout=30m ./sdk/kronk/model/
 
-
-benchmark-spec-imc-deterministic:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkSPECIMCDeterministic -benchtime=3x -timeout=30m ./sdk/kronk/model/
-
-benchmark-spec-imc-moe:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkSPECIMCMoE -benchtime=3x -timeout=30m ./sdk/kronk/model/
+benchmark-hybrid-imc-det:
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkHybrid_IMCDeterministic -benchtime=3x -timeout=30m ./sdk/kronk/model/
 
 
 # ==============================================================================

@@ -72,10 +72,10 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		}
 	}
 
-	// IMC cache cleanup after generation completes.
-	// Deterministic / MoE: trim generated tokens via partial range delete.
+	// IMC state management after generation completes.
+	// Dense/MoE: trim generated tokens via partial range delete.
 	// Hybrid: full clear + snapshot restore (partial delete corrupts recurrent state).
-	// Non-IMC mode: clear the entire sequence.
+	// Non-IMC: clear the entire sequence.
 	if e.model.cfg.IncrementalCache && s.job.imcCacheHit {
 		var trimPos llama.Pos
 
@@ -133,9 +133,9 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 					e.model.cacheMu.Unlock()
 				}
 			} else {
-				// IMC Deterministic / MoE / Non-Deterministic: partial range
-				// delete removes only the generated tokens, keeping the cached
-				// conversation prefix intact for the next request.
+				// Dense/MoE: partial range delete removes only the generated
+				// tokens, keeping the cached conversation prefix intact for
+				// the next request.
 				llama.MemorySeqRm(e.model.mem, s.seqID, trimPos, -1)
 				e.model.log(ctx, "finish-slot", "status", "imc-trim", "slot", slotID, "seq", seqID, "trim_pos", trimPos)
 			}

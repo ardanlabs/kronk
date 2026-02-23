@@ -638,7 +638,7 @@ func Test_CacheIMCHybrid(t *testing.T) {
 	}
 
 	if len(mpHybridChat.ModelFiles) == 0 {
-		t.Skip("model Qwen3-Coder-Next-UD-Q4_K_XL not downloaded")
+		t.Skip("model Qwen3-Coder-Next-UD-Q6_K_XL not downloaded")
 	}
 
 	cfg := model.Config{

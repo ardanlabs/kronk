@@ -632,6 +632,14 @@ export default function DocsSDKModel() {
               </pre>
             </div>
 
+            <div className="doc-section" id="method-d-shallowclone">
+              <h4>D.ShallowClone</h4>
+              <pre className="code-block">
+                <code>func (d D) ShallowClone() D</code>
+              </pre>
+              <p className="doc-description">ShallowClone creates a copy of the top-level map only. Nested values (including message maps and slices) are shared with the original. Use this when downstream code treats nested values as read-only or performs its own copy-on-write when mutation is needed.</p>
+            </div>
+
             <div className="doc-section" id="method-d-string">
               <h4>D.String</h4>
               <pre className="code-block">
@@ -1172,6 +1180,7 @@ export default function DocsSDKModel() {
                 <li><a href="#method-config-string">Config.String</a></li>
                 <li><a href="#method-d-clone">D.Clone</a></li>
                 <li><a href="#method-d-messages">D.Messages</a></li>
+                <li><a href="#method-d-shallowclone">D.ShallowClone</a></li>
                 <li><a href="#method-d-string">D.String</a></li>
                 <li><a href="#method-flashattentiontype-marshaljson">FlashAttentionType.MarshalJSON</a></li>
                 <li><a href="#method-flashattentiontype-marshalyaml">FlashAttentionType.MarshalYAML</a></li>

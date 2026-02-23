@@ -1,7 +1,16 @@
 /*
-Benchmarks for the three inference caching modes: Non-Caching, SPC, and IMC.
+Benchmarks for inference caching across model types and IMC strategies.
 
-Modes Tested:
+Model Types (architecture — affects batch slot lifecycle and state management):
+  - Dense:  Standard transformer. State cleanup via partial range delete.
+  - MoE:    Mixture of Experts. Same cleanup as Dense, different perf profile.
+  - Hybrid: Attention + Recurrent layers (DeltaNet/SSM). Snapshot/Restore.
+
+IMC Strategies (template — affects slot matching):
+  - Deterministic:     Hash-based matching. Consistent templates.
+  - Non-Deterministic: Token prefix fallback. Variable templates.
+
+Cache Modes Tested:
   - NonCaching: Baseline with no caching. Full prefill on every request.
   - SPC (System Prompt Cache): Caches the system prompt KV state. The system
     prompt is decoded once and its KV state is externalized to a byte buffer
@@ -10,6 +19,19 @@ Modes Tested:
   - IMC (Incremental Message Cache): Caches all messages except the last.
     The cache extends incrementally on each turn. Ideal for agentic workflows
     where conversations grow monotonically.
+
+Benchmark Matrix:
+
+	Model Type | Cache Mode          | IMC Strategy      | Speculative | Benchmark Name
+	-----------|---------------------|-------------------|-------------|--------------------------------------
+	Dense      | NonCaching          | —                 | No          | BenchmarkDense_NonCaching
+	Dense      | SPC                 | —                 | No          | BenchmarkDense_SPC
+	Dense      | IMC                 | Deterministic     | No          | BenchmarkDense_IMCDeterministic
+	Dense      | IMC                 | Deterministic     | Yes         | BenchmarkDense_IMCDeterministic_Speculative
+	Dense      | IMC                 | Non-Deterministic | No          | BenchmarkDense_IMCNonDeterministic
+	MoE        | IMC                 | Deterministic     | No          | BenchmarkMoE_IMCDeterministic
+	MoE        | IMC                 | Deterministic     | Yes         | BenchmarkMoE_IMCDeterministic_Speculative
+	Hybrid     | IMC                 | Deterministic     | No          | BenchmarkHybrid_IMCDeterministic
 
 Conversation Structure (~30k of 32k tokens):
   - System prompt (~10k tokens): Large system prompt simulating a real-world
@@ -38,7 +60,7 @@ Metrics Reported Per Iteration:
 Running:
 
 	go test -bench=. -benchtime=3x -timeout=60m ./sdk/kronk/model/
-	go test -bench=BenchmarkSPC -benchtime=5x -timeout=60m ./sdk/kronk/model/
+	go test -bench=BenchmarkDense_SPC -benchtime=5x -timeout=60m ./sdk/kronk/model/
 */
 package model_test
 
@@ -72,7 +94,7 @@ var benchLogFile *os.File
 
 func TestMain(m *testing.M) {
 	// When BENCH_LOG is set, write model logs to that file.
-	// Usage: BENCH_LOG=bench.log go test -bench=BenchmarkIMCSpeculative ...
+	// Usage: BENCH_LOG=bench.log go test -bench=BenchmarkDense_IMCDeterministic_Speculative ...
 	if logPath := os.Getenv("BENCH_LOG"); logPath != "" {
 		f, err := os.Create(logPath)
 		if err != nil {
@@ -95,12 +117,12 @@ func TestMain(m *testing.M) {
 
 	benchModelPath = mdls.MustFullPath("Qwen3-8B-Q8_0")
 
-	// Draft model is optional — only needed for BenchmarkSPECIMCDeterministic.
+	// Draft model is optional — only needed for BenchmarkDense_IMCDeterministic_Speculative.
 	if dp, err := mdls.FullPath("Qwen3-0.6B-Q8_0"); err == nil {
 		benchDraftModelPath = dp
 	}
 
-	// MoE target + Q4 draft — only needed for BenchmarkIMCMoE* benchmarks.
+	// MoE target + Q4 draft — only needed for BenchmarkMoE_* benchmarks.
 	if dp, err := mdls.FullPath("Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL"); err == nil {
 		benchMoEModelPath = dp
 	}
@@ -108,12 +130,12 @@ func TestMain(m *testing.M) {
 		benchMoEDraftModelPath = dp
 	}
 
-	// Hybrid target — only needed for BenchmarkHybrid* benchmarks.
-	if dp, err := mdls.FullPath("Qwen3-Coder-Next-UD-Q4_K_XL"); err == nil {
+	// Hybrid target — only needed for BenchmarkHybrid_* benchmarks.
+	if dp, err := mdls.FullPath("Qwen3-Coder-Next-UD-Q6_K_XL"); err == nil {
 		benchHybridModelPath = dp
 	}
 
-	// NonDeterministic target — only needed for BenchmarkIMCNonDeterministic.
+	// NonDeterministic target — only needed for BenchmarkDense_IMCNonDeterministic.
 	if dp, err := mdls.FullPath("gpt-oss-20b-Q8_0"); err == nil {
 		benchNonDetModelPath = dp
 	}
@@ -150,12 +172,13 @@ func TestMain(m *testing.M) {
 }
 
 // =============================================================================
-// Config builders for the three modes
+// Config builders
 //
+// Naming: cfg<ModelType><CacheMode>()
 // Context window: 32768
 // Target prompt fill: ~30k tokens (~105k chars), leaving room for 128 output.
 
-func cfgNonCaching() model.Config {
+func cfgDenseNonCaching() model.Config {
 	return model.Config{
 		Log:           benchLog,
 		ModelFiles:    benchModelPath.ModelFiles,
@@ -168,7 +191,7 @@ func cfgNonCaching() model.Config {
 	}
 }
 
-func cfgSPC() model.Config {
+func cfgDenseSPC() model.Config {
 	return model.Config{
 		Log:               benchLog,
 		ModelFiles:        benchModelPath.ModelFiles,
@@ -182,7 +205,7 @@ func cfgSPC() model.Config {
 	}
 }
 
-func cfgIMC() model.Config {
+func cfgDenseIMCDeterministic() model.Config {
 	return model.Config{
 		Log:              benchLog,
 		ModelFiles:       benchModelPath.ModelFiles,
@@ -1621,42 +1644,33 @@ func benchChat(b *testing.B, krn *kronk.Kronk, d model.D) {
 			b.Fatalf("benchmark iteration failed: %v", err)
 		}
 
-		b.ReportMetric(float64(result.ttft.Milliseconds()), "ttft-ms")
 		b.ReportMetric(result.tps, "tok/s")
+		b.ReportMetric(float64(result.ttft.Milliseconds()), "ttft-ms")
 		b.ReportMetric(float64(result.totalTime.Milliseconds()), "total-ms")
-		b.ReportMetric(float64(result.promptTokens), "prompt-tok")
-		b.ReportMetric(float64(result.outputTokens), "output-tok")
 	}
 }
 
 // =============================================================================
-// Benchmarks: Non-Caching
+// Dense Model Benchmarks (Qwen3-8B-Q8_0)
+//
+// Standard transformer architecture. State cleanup via partial range delete.
 
-func BenchmarkNonCaching(b *testing.B) {
-	krn := withBenchModel(b, cfgNonCaching())
+func BenchmarkDense_NonCaching(b *testing.B) {
+	krn := withBenchModel(b, cfgDenseNonCaching())
 	benchChat(b, krn, benchDoc())
 }
 
-// =============================================================================
-// Benchmarks: System Prompt Cache (SPC)
-
-func BenchmarkSPC(b *testing.B) {
-	krn := withBenchModel(b, cfgSPC())
+func BenchmarkDense_SPC(b *testing.B) {
+	krn := withBenchModel(b, cfgDenseSPC())
 	benchChat(b, krn, benchDoc())
 }
 
-// =============================================================================
-// Benchmarks: IMC Deterministic (hash-based, consistent templates)
-
-func BenchmarkIMCDeterministic(b *testing.B) {
-	krn := withBenchModel(b, cfgIMC())
+func BenchmarkDense_IMCDeterministic(b *testing.B) {
+	krn := withBenchModel(b, cfgDenseIMCDeterministic())
 	benchChat(b, krn, benchDoc())
 }
 
-// =============================================================================
-// Benchmarks: IMC Deterministic + Speculative Decoding
-
-func cfgSPECIMCDeterministic() model.Config {
+func cfgDenseIMCDeterministicSpeculative() model.Config {
 	draftPath := benchDraftModelPath.ModelFiles
 
 	return model.Config{
@@ -1676,21 +1690,19 @@ func cfgSPECIMCDeterministic() model.Config {
 	}
 }
 
-func BenchmarkSPECIMCDeterministic(b *testing.B) {
+func BenchmarkDense_IMCDeterministic_Speculative(b *testing.B) {
 	if len(benchDraftModelPath.ModelFiles) == 0 {
 		b.Skip("draft model Qwen3-0.6B-Q8_0 not downloaded")
 	}
-	krn := withBenchModel(b, cfgSPECIMCDeterministic())
+	krn := withBenchModel(b, cfgDenseIMCDeterministicSpeculative())
 	benchChat(b, krn, benchDoc())
 }
 
-// =============================================================================
-// Benchmarks: IMC NonDeterministic (token prefix fallback, non-deterministic templates)
-//
-// Uses a model with a non-deterministic template (GPT-OSS) where identical
-// messages may tokenize differently. IMC falls back to token prefix matching.
+// Dense model with non-deterministic template (GPT-OSS). Same architecture as
+// Dense, but the template produces variable token sequences for identical
+// messages. IMC falls back to token prefix matching.
 
-func cfgIMCNonDeterministic() model.Config {
+func cfgDenseIMCNonDeterministic() model.Config {
 	return model.Config{
 		Log:              benchLog,
 		ModelFiles:       benchNonDetModelPath.ModelFiles,
@@ -1704,22 +1716,22 @@ func cfgIMCNonDeterministic() model.Config {
 	}
 }
 
-func BenchmarkIMCNonDeterministic(b *testing.B) {
+func BenchmarkDense_IMCNonDeterministic(b *testing.B) {
 	if len(benchNonDetModelPath.ModelFiles) == 0 {
 		b.Skip("model gpt-oss-20b-Q8_0 not downloaded")
 	}
-	krn := withBenchModel(b, cfgIMCNonDeterministic())
+	krn := withBenchModel(b, cfgDenseIMCNonDeterministic())
 	benchChat(b, krn, benchDoc())
 }
 
 // =============================================================================
-// Benchmarks: IMC MoE (Qwen3-Coder-30B-A3B)
+// MoE Model Benchmarks (Qwen3-Coder-30B-A3B)
 //
-// Uses the MoE model as target with IMC caching. The speculative variant uses
-// the same model at Q4 quantization as the draft — same architecture and
-// knowledge, lower precision, faster per-token due to reduced memory bandwidth.
+// Mixture of Experts architecture. Same IMC algorithm as Dense, different
+// performance profile (scattered memory access, expert routing). The
+// speculative variant uses the same model at Q4 quantization as the draft.
 
-func cfgIMCMoE() model.Config {
+func cfgMoEIMCDeterministic() model.Config {
 	return model.Config{
 		Log:              benchLog,
 		ModelFiles:       benchMoEModelPath.ModelFiles,
@@ -1733,15 +1745,15 @@ func cfgIMCMoE() model.Config {
 	}
 }
 
-func BenchmarkIMCMoE(b *testing.B) {
+func BenchmarkMoE_IMCDeterministic(b *testing.B) {
 	if len(benchMoEModelPath.ModelFiles) == 0 {
 		b.Skip("model Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL not downloaded")
 	}
-	krn := withBenchModel(b, cfgIMCMoE())
+	krn := withBenchModel(b, cfgMoEIMCDeterministic())
 	benchChat(b, krn, benchDoc())
 }
 
-func cfgSPECIMCMoE() model.Config {
+func cfgMoEIMCDeterministicSpeculative() model.Config {
 	return model.Config{
 		Log:              benchLog,
 		ModelFiles:       benchMoEModelPath.ModelFiles,
@@ -1759,25 +1771,25 @@ func cfgSPECIMCMoE() model.Config {
 	}
 }
 
-func BenchmarkSPECIMCMoE(b *testing.B) {
+func BenchmarkMoE_IMCDeterministic_Speculative(b *testing.B) {
 	if len(benchMoEModelPath.ModelFiles) == 0 {
 		b.Skip("model Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL not downloaded")
 	}
 	if len(benchMoEDraftModelPath.ModelFiles) == 0 {
 		b.Skip("draft model Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL not downloaded")
 	}
-	krn := withBenchModel(b, cfgSPECIMCMoE())
+	krn := withBenchModel(b, cfgMoEIMCDeterministicSpeculative())
 	benchChat(b, krn, benchDoc())
 }
 
 // =============================================================================
-// Benchmarks: IMC Hybrid (Qwen3-Coder-Next)
+// Hybrid Model Benchmarks (Qwen3-Coder-Next)
 //
-// Uses the hybrid model (Attention + Recurrent layers) with IMC
-// hybrid (snapshot/restore) caching. IMC uses NSeqMax=1 for single-agent
+// Attention + Recurrent layers (DeltaNet). State cleanup via snapshot/restore
+// instead of partial range delete. IMC uses NSeqMax=1 for single-agent
 // (Cline-style) workflows.
 
-func cfgIMCHybrid() model.Config {
+func cfgHybridIMCDeterministic() model.Config {
 	return model.Config{
 		Log:              benchLog,
 		ModelFiles:       benchHybridModelPath.ModelFiles,
@@ -1791,10 +1803,10 @@ func cfgIMCHybrid() model.Config {
 	}
 }
 
-func BenchmarkIMCHybrid(b *testing.B) {
+func BenchmarkHybrid_IMCDeterministic(b *testing.B) {
 	if len(benchHybridModelPath.ModelFiles) == 0 {
-		b.Skip("model Qwen3-Coder-Next-UD-Q4_K_XL not downloaded")
+		b.Skip("model Qwen3-Coder-Next-UD-Q6_K_XL not downloaded")
 	}
-	krn := withBenchModel(b, cfgIMCHybrid())
+	krn := withBenchModel(b, cfgHybridIMCDeterministic())
 	benchChat(b, krn, benchDoc())
 }
