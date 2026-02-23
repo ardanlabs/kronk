@@ -287,7 +287,8 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 	// If all draft tokens were accepted, sample bonus from target at position nDraft.
 	if accepted == nDraft {
 		targetLogits, err := llama.GetLogitsIth(e.model.lctx, baseBatch+int32(nDraft), nVocab)
-		if err != nil {
+		switch {
+		case err != nil:
 			// Fallback to sampler.
 			switch {
 			case s.grammarSampler != nil:
@@ -295,9 +296,11 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 			default:
 				bonusToken = llama.SamplerSample(s.sampler, e.model.lctx, baseBatch+int32(nDraft))
 			}
-		} else if greedy {
+
+		case greedy:
 			bonusToken = argmax(targetLogits)
-		} else {
+
+		default:
 			draft := e.model.draft
 			softmaxTempInto(targetLogits, draft.targetProbs, temperature)
 			bonusToken = sampleFromProbs(draft.targetProbs)
@@ -356,10 +359,11 @@ func sampleAdjustedInto(targetProbs, draftProbs, adjusted []float32) llama.Token
 
 	for i := range targetProbs {
 		diff := float64(targetProbs[i]) - float64(draftProbs[i])
-		if diff > 0 {
+		switch {
+		case diff > 0:
 			adjusted[i] = float32(diff)
 			sum += diff
-		} else {
+		default:
 			adjusted[i] = 0
 		}
 	}

@@ -8,6 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -38,6 +39,41 @@ const (
 
 // =============================================================================
 
+// ModelType represents the model architecture for batch engine state management.
+type ModelType uint8
+
+const (
+	// ModelTypeDense is a standard transformer model. State cleanup uses
+	// partial range delete (MemorySeqRm).
+	ModelTypeDense ModelType = iota
+
+	// ModelTypeMoE is a Mixture of Experts model. Same state cleanup as Dense
+	// (partial range delete), different performance profile due to scattered
+	// memory access from expert routing.
+	ModelTypeMoE
+
+	// ModelTypeHybrid is a model with Attention + Recurrent layers
+	// (DeltaNet/SSM). State cleanup requires snapshot/restore because partial
+	// range delete corrupts recurrent state.
+	ModelTypeHybrid
+)
+
+// String returns a human-readable name for the model type.
+func (mt ModelType) String() string {
+	switch mt {
+	case ModelTypeDense:
+		return "dense"
+	case ModelTypeMoE:
+		return "moe"
+	case ModelTypeHybrid:
+		return "hybrid"
+	default:
+		return "unknown"
+	}
+}
+
+// =============================================================================
+
 // ModelInfo represents the model's card information.
 type ModelInfo struct {
 	ID            string
@@ -46,10 +82,10 @@ type ModelInfo struct {
 	Size          uint64
 	VRAMTotal     int64
 	SlotMemory    int64
+	Type          ModelType
 	IsGPTModel    bool
 	IsEmbedModel  bool
 	IsRerankModel bool
-	IsHybridModel bool
 	Metadata      map[string]string
 	Template      Template
 }
@@ -68,9 +104,6 @@ func (mi ModelInfo) String() string {
 	if mi.IsRerankModel {
 		flags = append(flags, "rerank")
 	}
-	if mi.IsHybridModel {
-		flags = append(flags, "hybrid")
-	}
 
 	flagStr := "none"
 	if len(flags) > 0 {
@@ -79,7 +112,7 @@ func (mi ModelInfo) String() string {
 
 	sizeGB := float64(mi.Size) / (1024 * 1024 * 1024)
 
-	return fmt.Sprintf("\nID[%s]\nDesc[%s]\nSize[%.2fGB]\nTemplate[%s]\nFlags[%s]\n", mi.ID, mi.Desc, sizeGB, mi.Template.FileName, flagStr)
+	return fmt.Sprintf("\nID[%s]\nDesc[%s]\nSize[%.2fGB]\nTemplate[%s]\nType[%s]\nFlags[%s]\n", mi.ID, mi.Desc, sizeGB, mi.Template.FileName, mi.Type, flagStr)
 }
 
 func toModelInfo(cfg Config, model llama.Model) ModelInfo {
@@ -127,17 +160,17 @@ func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 		isRerankModel = true
 	}
 
-	isHybridModel := llama.ModelIsHybrid(model)
+	modelType := detectModelType(model, metadata)
 
 	return ModelInfo{
 		ID:            modelID,
 		HasProjection: cfg.ProjFile != "",
 		Desc:          desc,
 		Size:          size,
+		Type:          modelType,
 		IsGPTModel:    isGPTModel,
 		IsEmbedModel:  isEmbedModel,
 		IsRerankModel: isRerankModel,
-		IsHybridModel: isHybridModel,
 		Metadata:      metadata,
 	}
 }
@@ -153,6 +186,41 @@ func modelIDFromFiles(modelFiles []string) string {
 		name := strings.TrimSuffix(filepath.Base(modelFiles[0]), filepath.Ext(modelFiles[0]))
 		return splitPattern.ReplaceAllString(name, "")
 	}
+}
+
+// detectModelType determines the model architecture from llama.cpp detection
+// and GGUF metadata. Hybrid is detected via llama.ModelIsHybrid (recurrent
+// layers). MoE is detected via GGUF expert_count metadata (value > 0).
+// Everything else is Dense.
+func detectModelType(model llama.Model, metadata map[string]string) ModelType {
+	switch {
+	case llama.ModelIsHybrid(model):
+		return ModelTypeHybrid
+
+	case hasExperts(metadata):
+		return ModelTypeMoE
+
+	default:
+		return ModelTypeDense
+	}
+}
+
+// hasExperts checks GGUF metadata for an expert_count key with a value > 0.
+// GGUF keys are typically prefixed with the architecture name (e.g.,
+// "qwen2moe.expert_count", "llama.expert_count").
+func hasExperts(metadata map[string]string) bool {
+	for key, val := range metadata {
+		if !strings.HasSuffix(key, ".expert_count") {
+			continue
+		}
+
+		n, err := strconv.Atoi(val)
+		if err == nil && n > 0 {
+			return true
+		}
+	}
+
+	return false
 }
 
 // =============================================================================
@@ -185,13 +253,20 @@ func (d D) Clone() D {
 	return clone
 }
 
-// ShallowClone creates a copy of the top-level map only. Nested values
-// (including message maps and slices) are shared with the original. Use this
-// when downstream code treats nested values as read-only or performs its own
+// ShallowClone creates a copy of the top-level map and the messages slice.
+// Individual message maps are shared with the original. Use this when
+// downstream code treats message maps as read-only or performs its own
 // copy-on-write when mutation is needed.
 func (d D) ShallowClone() D {
 	clone := make(D, len(d))
 	maps.Copy(clone, d)
+
+	if msgs, ok := clone["messages"].([]D); ok {
+		newMsgs := make([]D, len(msgs))
+		copy(newMsgs, msgs)
+		clone["messages"] = newMsgs
+	}
+
 	return clone
 }
 

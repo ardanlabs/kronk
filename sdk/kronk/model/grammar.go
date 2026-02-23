@@ -234,9 +234,10 @@ func (gb *grammarBuilder) enumToRule(values []any) (string, error) {
 			options = append(options, fmt.Sprintf(`"\"" "%s" "\""`, val))
 
 		case float64:
-			if val == float64(int(val)) {
+			switch {
+			case val == float64(int(val)):
 				options = append(options, fmt.Sprintf(`"%d"`, int(val)))
-			} else {
+			default:
 				options = append(options, fmt.Sprintf(`"%v"`, val))
 			}
 

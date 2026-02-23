@@ -29,8 +29,8 @@ Benchmark Configuration:
 
 Benchmarks:
 
-Feb 22nd, 2026 : v1.19.5
-llamap.cpp     : b8131
+Feb 23rd, 2026 : v1.19.6
+llamap.cpp     : b8132
 --------------------------------------------------------------------------------
 goos: darwin
 goarch: arm64
@@ -66,3 +66,37 @@ Hybrid IMC-Det
 
 ================================================================================
 
+Feb 22nd, 2026 : v1.19.5
+llamap.cpp     : b8131
+--------------------------------------------------------------------------------
+goos: darwin
+goarch: arm64
+pkg: github.com/ardanlabs/kronk/sdk/kronk/model
+cpu: Apple M4 Max
+
+Dense_NonCaching-16                   : 62303576347 ns/op ⚪  1153056 B/op ⚪  8984 allocs/op ⚪
+Dense_SPC-16                          : 38671077500 ns/op ⚪   976456 B/op ⚪  8857 allocs/op ⚪
+Dense_IMCDeterministic-16             :  3429996181 ns/op ⚪   126146 B/op ⚪  3869 allocs/op ⚪
+Dense_IMCNonDeterministic-16 (GPT)    :  1632504195 ns/op ⚪   141002 B/op ⚪  4019 allocs/op ⚪
+Dense_IMCDeterministic_Speculative-16 :  6279658986 ns/op ⚪   446050 B/op ⚪  8676 allocs/op ⚪
+
+MoE_IMCDeterministic                  :  2658917833 ns/op ⚪   129250 B/op ⚪  3558 allocs/op ⚪
+MoE_IMCDeterministic_Speculative-16   :  4847674222 ns/op ⚪   392200 B/op ⚪  5991 allocs/op ⚪
+
+Hybrid_IMCDeterministic               :  4273119917 ns/op ⚪   138541 B/op ⚪  3842 allocs/op ⚪
+
+--------------------------------------------------------------------------------
+Dense NonCaching    Dense SPC          Dense IMC-Det       Dense IMC-NonDet (GPT)   Dense IMC-Det+Spec                
+31.31 tok/s    ⚪   37.19 tok/s    ⚪   38.15 tok/s    ⚪   86.10 tok/s    ⚪        19.35 tok/s    ⚪                
+61785 ttft-ms  ⚪   37010 ttft-ms  ⚪     166 ttft-ms  ⚪     190 ttft-ms  ⚪          248 ttft-ms  ⚪                 
+65785 total-ms ⚪   40371 total-ms ⚪    3442 total-ms ⚪    1630 total-ms ⚪         6669 total-ms ⚪                 
+
+MoE IMC-Det         MoE IMC-Det+Spec
+47.38 tok/s    ⚪    23.77 tok/s    ⚪
+  170 ttft-ms  ⚪      171 ttft-ms  ⚪
+ 2851 total-ms ⚪     4293 total-ms ⚪
+
+Hybrid IMC-Det
+30.78 tok/s    ⚪
+  141 ttft-ms  ⚪
+ 4280 total-ms ⚪

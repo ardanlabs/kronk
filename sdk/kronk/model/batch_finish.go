@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"strings"
 	"time"
 
@@ -61,11 +62,12 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	// for incremental reuse on the next request.
 	if e.model.draft != nil {
 		trimPos := llama.Pos(len(e.model.draft.cachedTokens))
-		if trimPos > 0 {
+		switch {
+		case trimPos > 0:
 			llama.MemorySeqRm(e.model.draft.mem, s.seqID, trimPos, -1)
 			e.model.log(ctx, "speculative", "status", "draft-kv-trimmed",
 				"slot", slotID, "seq", seqID, "trim_pos", trimPos)
-		} else {
+		default:
 			llama.MemorySeqRm(e.model.draft.mem, s.seqID, -1, -1)
 			e.model.log(ctx, "speculative", "status", "draft-kv-cleared",
 				"slot", slotID, "seq", seqID)
@@ -76,7 +78,8 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	// Dense/MoE: trim generated tokens via partial range delete.
 	// Hybrid: full clear + snapshot restore (partial delete corrupts recurrent state).
 	// Non-IMC: clear the entire sequence.
-	if e.model.cfg.IncrementalCache && s.job.imcCacheHit {
+	switch {
+	case e.model.cfg.IncrementalCache && s.job.imcCacheHit:
 		var trimPos llama.Pos
 
 		e.model.cacheMu.RLock()
@@ -86,61 +89,22 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		e.model.cacheMu.RUnlock()
 
 		if trimPos > 0 {
-			// IMC Hybrid: partial MemorySeqRm corrupts recurrent state
-			// (DeltaNet/SSM). Use full clear + snapshot restore instead.
-			if e.model.modelInfo.IsHybridModel {
-				if len(s.imcSavedState) > 0 {
-					e.model.decodeMu.Lock()
-					llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
-					nRead := llama.StateSeqSetData(e.model.lctx, s.imcSavedState, s.seqID)
-					e.model.decodeMu.Unlock()
+			switch e.model.modelInfo.Type {
+			case ModelTypeHybrid:
+				// Partial MemorySeqRm corrupts recurrent state (DeltaNet/SSM).
+				// Use full clear + snapshot restore instead.
+				e.finishSlotHybrid(ctx, s, slotID, seqID, trimPos)
 
-					if nRead == 0 {
-						e.model.log(ctx, "finish-slot", "status", "imc-hybrid-restore-failed",
-							"slot", slotID, "seq", seqID, "trim_pos", trimPos,
-							"snapshot_bytes", len(s.imcSavedState))
-
-						// Guardrail: clear IMC metadata so the slot isn't
-						// reused with a corrupt sequence.
-						e.model.cacheMu.Lock()
-						if slotID < len(e.model.imcSlots) {
-							imcSlot := e.model.imcSlots[slotID]
-							imcSlot.cachedMsgsHash = ""
-							imcSlot.totalTokensCached = 0
-							imcSlot.lastMsgIdxCached = 0
-						}
-						e.model.cacheMu.Unlock()
-					} else {
-						e.model.log(ctx, "finish-slot", "status", "imc-hybrid-restore",
-							"slot", slotID, "seq", seqID, "trim_pos", trimPos,
-							"snapshot_bytes", len(s.imcSavedState), "restored_bytes", nRead)
-					}
-				} else {
-					// No snapshot available: full clear + invalidate metadata
-					// to prevent reuse with corrupted recurrent state.
-					e.model.log(ctx, "finish-slot", "status", "imc-hybrid-no-snapshot",
-						"slot", slotID, "seq", seqID, "trim_pos", trimPos)
-
-					llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
-
-					e.model.cacheMu.Lock()
-					if slotID < len(e.model.imcSlots) {
-						imcSlot := e.model.imcSlots[slotID]
-						imcSlot.cachedMsgsHash = ""
-						imcSlot.totalTokensCached = 0
-						imcSlot.lastMsgIdxCached = 0
-					}
-					e.model.cacheMu.Unlock()
-				}
-			} else {
-				// Dense/MoE: partial range delete removes only the generated
-				// tokens, keeping the cached conversation prefix intact for
-				// the next request.
+			case ModelTypeDense, ModelTypeMoE:
+				// Partial range delete removes only the generated tokens,
+				// keeping the cached conversation prefix intact for the
+				// next request.
 				llama.MemorySeqRm(e.model.mem, s.seqID, trimPos, -1)
 				e.model.log(ctx, "finish-slot", "status", "imc-trim", "slot", slotID, "seq", seqID, "trim_pos", trimPos)
 			}
 		}
-	} else {
+
+	default:
 		llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
 	}
 
@@ -247,6 +211,58 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		"total_prompt", s.nPrompt, "output_tokens", outputTokens, "time", elapsed.String())
 }
 
+// finishSlotHybrid handles IMC state restore for Hybrid models. Full clear +
+// snapshot restore replaces partial MemorySeqRm which corrupts recurrent state.
+func (e *batchEngine) finishSlotHybrid(ctx context.Context, s *slot, slotID int, seqID llama.SeqId, trimPos llama.Pos) {
+	switch {
+	case len(s.imcSavedState) > 0:
+		e.model.decodeMu.Lock()
+		llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+		nRead := llama.StateSeqSetData(e.model.lctx, s.imcSavedState, s.seqID)
+		e.model.decodeMu.Unlock()
+
+		switch {
+		case nRead == 0:
+			e.model.log(ctx, "finish-slot", "status", "imc-hybrid-restore-failed",
+				"slot", slotID, "seq", seqID, "trim_pos", trimPos,
+				"snapshot_bytes", len(s.imcSavedState))
+
+			// Guardrail: clear IMC metadata so the slot isn't
+			// reused with a corrupt sequence.
+			e.model.cacheMu.Lock()
+			if slotID < len(e.model.imcSlots) {
+				imcSlot := e.model.imcSlots[slotID]
+				imcSlot.cachedMsgsHash = ""
+				imcSlot.totalTokensCached = 0
+				imcSlot.cachedMsgCount = 0
+			}
+			e.model.cacheMu.Unlock()
+
+		default:
+			e.model.log(ctx, "finish-slot", "status", "imc-hybrid-restore",
+				"slot", slotID, "seq", seqID, "trim_pos", trimPos,
+				"snapshot_bytes", len(s.imcSavedState), "restored_bytes", nRead)
+		}
+
+	default:
+		// No snapshot available: full clear + invalidate metadata
+		// to prevent reuse with corrupted recurrent state.
+		e.model.log(ctx, "finish-slot", "status", "imc-hybrid-no-snapshot",
+			"slot", slotID, "seq", seqID, "trim_pos", trimPos)
+
+		llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+
+		e.model.cacheMu.Lock()
+		if slotID < len(e.model.imcSlots) {
+			imcSlot := e.model.imcSlots[slotID]
+			imcSlot.cachedMsgsHash = ""
+			imcSlot.totalTokensCached = 0
+			imcSlot.cachedMsgCount = 0
+		}
+		e.model.cacheMu.Unlock()
+	}
+}
+
 // failJob fails a job that was dequeued but never assigned to a slot. It sends
 // an error response, ends the queue-wait span, closes the channel, clears any
 // pending IMC reservation, and decrements activeStreams.
@@ -259,13 +275,7 @@ func (e *batchEngine) failJob(job *chatJob, err error) {
 
 	// Clear IMC pending reservation if this job reserved a slot.
 	if job.imcCacheHit && len(job.imcNewCacheTokens) > 0 {
-		slotID := job.imcSlotID
-		e.model.cacheMu.Lock()
-		if slotID < len(e.model.imcSlots) {
-			e.model.imcSlots[slotID].pending = false
-		}
-		e.model.cacheMu.Unlock()
-		e.model.notifyIMCSlotAvailable()
+		e.model.imcClearPending(job.imcSlotID)
 	}
 
 	close(job.ch)
