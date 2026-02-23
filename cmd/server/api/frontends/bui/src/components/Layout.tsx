@@ -2,6 +2,7 @@ import { useState, useEffect, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { type Page, routeMap, pathToPage } from '../App';
 import { useDownload } from '../contexts/DownloadContext';
+import { useAutoTestRunner } from '../contexts/AutoTestRunnerContext';
 
 interface LayoutProps {
   children: ReactNode;
@@ -154,6 +155,43 @@ export default function Layout({ children }: LayoutProps) {
   const currentPage = pathToPage[location.pathname] || 'home';
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const { download, isDownloading } = useDownload();
+  const { run, isRunning: isAutoTesting, stopRun } = useAutoTestRunner();
+
+  const autoTestTitle = (() => {
+    if (!run) return '';
+    if (isAutoTesting) return 'Testing...';
+    switch (run.status) {
+      case 'completed': return 'Completed';
+      case 'cancelled': return 'Cancelled';
+      case 'error': return 'Failed';
+      default: return 'Testing';
+    }
+  })();
+
+  const autoTestSubtitle = (() => {
+    if (!run) return undefined;
+    if (run.status === 'error' && run.errorMessage) return run.errorMessage;
+    if (isAutoTesting && run.totalTrials === 0) {
+      return run.calibrationStatus ?? run.templateRepairStatus ?? 'Preparing...';
+    }
+    if (run.totalTrials > 0) {
+      return `Trial ${Math.min(run.currentTrialIndex + (isAutoTesting ? 1 : 0), run.totalTrials)}/${run.totalTrials}`;
+    }
+    return undefined;
+  })();
+
+  const autoTestLogLine = (() => {
+    if (!run || !isAutoTesting) return undefined;
+    const runningTrial = run.trials.find(t => t?.status === 'running');
+    const entries = runningTrial?.logEntries;
+    if (entries && entries.length > 0) return entries[entries.length - 1].message;
+    return undefined;
+  })();
+
+  const isPlaygroundPath = location.pathname === routeMap['playground']
+    || location.pathname.startsWith(routeMap['playground'] + '/');
+  const showAutoTestIndicator = !!run && !isPlaygroundPath;
+  const showDownloadIndicator = !!download;
 
   // Auto-expand categories that contain the current page
   useEffect(() => {
@@ -276,25 +314,62 @@ export default function Layout({ children }: LayoutProps) {
           </Link>
         </div>
         <nav>{menuStructure.map((category) => renderCategory(category))}</nav>
-        {download && (
-          <div className="download-indicator">
-            <Link to={routeMap['model-pull']} className="download-indicator-link">
-              <div className="download-indicator-header">
-                {isDownloading ? (
-                  <span className="download-indicator-spinner" />
-                ) : download.status === 'complete' ? (
-                  <span className="download-indicator-icon success">✓</span>
-                ) : (
-                  <span className="download-indicator-icon error">✗</span>
-                )}
-                <span className="download-indicator-title">
-                  {isDownloading ? 'Downloading...' : download.status === 'complete' ? 'Complete' : 'Failed'}
-                </span>
+        {(showAutoTestIndicator || showDownloadIndicator) && (
+          <div className="sidebar-indicators">
+            {showAutoTestIndicator && (
+              <div className="download-indicator">
+                <div className="download-indicator-link autotest-indicator-link">
+                  <Link to={routeMap['playground']} className="autotest-indicator-top">
+                    <div className="download-indicator-header">
+                      {isAutoTesting ? (
+                        <span className="download-indicator-spinner" />
+                      ) : run.status === 'completed' ? (
+                        <span className="download-indicator-icon success">✓</span>
+                      ) : (
+                        <span className="download-indicator-icon error">✗</span>
+                      )}
+                      <span className="download-indicator-title">{autoTestTitle}</span>
+                    </div>
+                    {autoTestSubtitle && (
+                      <div className="download-indicator-url" title={autoTestSubtitle} aria-live="polite">
+                        {autoTestSubtitle}
+                      </div>
+                    )}
+                    {autoTestLogLine && (
+                      <div className="autotest-indicator-log" title={autoTestLogLine}>
+                        {autoTestLogLine}
+                      </div>
+                    )}
+                  </Link>
+                  {isAutoTesting && (
+                    <button type="button" className="autotest-indicator-stop" onClick={stopRun} aria-label="Stop automated testing" title="Stop automated testing">
+                      ■
+                    </button>
+                  )}
+                </div>
               </div>
-              <div className="download-indicator-url" title={download.modelUrl}>
-                {download.modelUrl.split('/').pop()}
+            )}
+            {showDownloadIndicator && (
+              <div className="download-indicator">
+                <Link to={routeMap['model-pull']} className="download-indicator-link">
+                  <div className="download-indicator-header">
+                    {isDownloading ? (
+                      <span className="download-indicator-spinner" />
+                    ) : download.status === 'complete' ? (
+                      <span className="download-indicator-icon success">✓</span>
+                    ) : (
+                      <span className="download-indicator-icon error">✗</span>
+                    )}
+                    <span className="download-indicator-title">
+                      {isDownloading ? 'Downloading...' : download.status === 'complete' ? 'Complete' : 'Failed'}
+                    </span>
+                  </div>
+                  <div className="download-indicator-url" title={download.modelUrl}>
+                    {download.modelUrl.split('/').pop()}
+                  </div>
+                </Link>
               </div>
-            </Link>
+            )}
           </div>
         )}
       </aside>

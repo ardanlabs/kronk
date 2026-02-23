@@ -982,6 +982,18 @@ tr.selected:hover td {
     margin: 16px 0 8px 0;
 }
 
+/* Sidebar Indicator Stack (downloads + automated testing) */
+.sidebar-indicators {
+    margin-top: auto;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+}
+
+.sidebar-indicators .download-indicator {
+    margin-top: 0;
+}
+
 /* Download Indicator */
 .download-indicator {
     margin-top: auto;
@@ -1043,6 +1055,53 @@ tr.selected:hover td {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+/* Autotest Indicator */
+.autotest-indicator-link {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.autotest-indicator-top {
+    flex: 1;
+    min-width: 0;
+    text-decoration: none;
+    color: var(--color-white);
+}
+
+.autotest-indicator-top:hover .download-indicator-header {
+    opacity: 0.85;
+}
+
+.autotest-indicator-stop {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+    color: var(--color-error);
+    font-size: 10px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.autotest-indicator-stop:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.autotest-indicator-log {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.4);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 2px;
 }
 
 /* Chat Styles */
@@ -3053,6 +3112,75 @@ tr.selected:hover td {
     font-style: italic;
 }
 
+.autotest-detail-log {
+    border: 1px solid var(--color-gray-200);
+    border-radius: 6px;
+    padding: 8px 10px;
+    background: var(--color-gray-50);
+    font-family: monospace;
+    font-size: 11px;
+    margin-bottom: 8px;
+}
+
+.autotest-detail-log-body {
+    max-height: 160px;
+    overflow-y: auto;
+}
+
+button.autotest-detail-log-header {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    text-align: left;
+}
+
+button.autotest-detail-log-header:focus-visible {
+    outline: 2px solid rgba(240, 181, 49, 0.55);
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+
+.autotest-detail-log-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-gray-600);
+    margin-bottom: 4px;
+    font-family: var(--font-sans, system-ui, sans-serif);
+}
+
+.autotest-detail-scenarios-section {
+    border: 1px solid var(--color-gray-200);
+    border-radius: 6px;
+    padding: 8px 10px;
+    background: var(--color-gray-50);
+}
+
+.autotest-detail-scenarios-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.autotest-detail-log-entry {
+    display: flex;
+    gap: 8px;
+    padding: 1px 0;
+    line-height: 1.5;
+}
+
+.autotest-detail-log-time {
+    color: var(--color-gray-400);
+    flex-shrink: 0;
+}
+
+.autotest-detail-log-msg {
+    color: var(--color-gray-700);
+}
+
 .autotest-detail-active {
     border: 1px solid #1565c0;
     border-radius: 6px;
@@ -3143,11 +3271,44 @@ tr.selected:hover td {
     border-bottom: none;
 }
 
+.autotest-detail-prompt.collapsed .autotest-detail-prompt-header {
+    margin-bottom: 0;
+}
+
+.autotest-detail-prompt-header--clickable {
+    cursor: pointer;
+    user-select: none;
+}
+
+.autotest-detail-prompt-header--clickable:focus-visible {
+    outline: 2px solid rgba(240, 181, 49, 0.55);
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+
+.autotest-detail-prompt-summary {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    flex: 1;
+}
+
+.autotest-detail-prompt-toggle {
+    width: 12px;
+    flex: 0 0 12px;
+    font-size: 10px;
+    color: var(--color-gray-600);
+    line-height: 1;
+}
+
 .autotest-detail-prompt-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     margin-bottom: 8px;
+    gap: 12px;
+    min-width: 0;
 }
 
 .autotest-detail-prompt-id {
@@ -3155,11 +3316,36 @@ tr.selected:hover td {
     font-weight: 600;
     color: var(--color-gray-600);
     font-family: monospace;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.autotest-detail-prompt-duration {
+    font-size: 11px;
+    color: var(--color-gray-600);
+    font-family: monospace;
+    white-space: nowrap;
+}
+
+.autotest-detail-prompt-usage-inline {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 11px;
+    color: var(--color-gray-700);
+    font-family: monospace;
+    white-space: nowrap;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .autotest-detail-prompt-score {
     font-size: 12px;
     font-weight: 700;
+    white-space: nowrap;
 }
 
 .autotest-detail-prompt-grid {

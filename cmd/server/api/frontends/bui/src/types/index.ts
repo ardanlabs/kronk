@@ -534,7 +534,7 @@ export type AutoTestTrialStatus = 'queued' | 'running' | 'completed' | 'failed' 
 
 export type AutoTestRunnerState = 'idle' | 'repairing_template' | 'running_trials' | 'completed' | 'cancelled' | 'error';
 
-export type ContextFillRatio = '20%' | '50%' | '80%';
+export type ContextFillRatio = '0%' | '20%' | '50%' | '80%';
 
 export interface AutoTestPromptDef {
   id: string;
@@ -607,6 +607,11 @@ export interface AutoTestActivePrompt {
   startedAt?: string;
 }
 
+export interface AutoTestLogEntry {
+  timestamp: string;
+  message: string;
+}
+
 export interface AutoTestTrialResult {
   id: string;
   status: AutoTestTrialStatus;
@@ -618,7 +623,9 @@ export interface AutoTestTrialResult {
   avgTPS?: number;
   avgTTFT?: number;
   avgTPSByFill?: Record<ContextFillRatio, number>;
+  avgTTFTByFill?: Record<ContextFillRatio, number>;
   activePrompts?: AutoTestActivePrompt[];
+  logEntries?: AutoTestLogEntry[];
 }
 
 // Config Sweep Types
@@ -672,6 +679,14 @@ export interface BestConfigWeights {
   totalScore: number;
   avgTPS: number;
   avgTTFT: number;
+  tps0: number;
+  tps20: number;
+  tps50: number;
+  tps80: number;
+  ttft0: number;
+  ttft20: number;
+  ttft50: number;
+  ttft80: number;
 }
 
 export interface ConfigCandidate {
