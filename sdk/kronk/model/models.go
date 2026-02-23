@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -190,9 +191,7 @@ func (d D) Clone() D {
 // copy-on-write when mutation is needed.
 func (d D) ShallowClone() D {
 	clone := make(D, len(d))
-	for k, v := range d {
-		clone[k] = v
-	}
+	maps.Copy(clone, d)
 	return clone
 }
 
