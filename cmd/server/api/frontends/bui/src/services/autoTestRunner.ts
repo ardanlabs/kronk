@@ -21,6 +21,22 @@ import type {
   ContextFillRatio,
 } from '../types'
 
+/** Pause duration in milliseconds between scenario runs within a trial. */
+export const SCENARIO_PAUSE_MS = 3_000
+
+/** Pause duration in milliseconds between trial runs. */
+export const TRIAL_PAUSE_MS = 10_000
+
+/** Sleep that respects an AbortSignal. */
+function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) { reject(new DOMException('Aborted', 'AbortError')); return }
+    const timer = setTimeout(() => { signal.removeEventListener('abort', onAbort); resolve() }, ms)
+    function onAbort() { clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')) }
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
 /** Standard tool definitions used for automated testing. */
 export const autoTestTools: ChatToolDefinition[] = [
   {
@@ -382,8 +398,9 @@ const contextFillQuestions = [
 
 /**
  * Builds a context-fill prompt whose conversation history targets a specific
- * fraction of the context window. The fill is achieved by including multiple
- * "background note" user/assistant message pairs.
+ * fraction of the context window. Background content is packed into a single
+ * user message to avoid the per-message overhead of chat template markers and
+ * eliminate unnecessary assistant "acknowledgement" tokens.
  *
  * @param ratio - Target fill ratio (0.2, 0.5, or 0.8)
  * @param label - Human-readable label ('20%', '50%', '80%')
@@ -395,53 +412,65 @@ export function buildContextFillPrompt(
   label: ContextFillRatio,
   targetTokens: number,
   charMultiplier: number = 3.5,
+  maxTokens: number = 64,
 ): AutoTestPromptDef {
   const targetChars = Math.floor(targetTokens * charMultiplier);
 
-  // Reserve chars for system prompt + final question + overhead
   const systemText = `${cacheSystemPrompt} Use the background notes provided in the conversation to inform your answer.`;
   const questionIdx = ratio <= 0.25 ? 0 : ratio <= 0.55 ? 1 : 2;
   const finalQuestion = contextFillQuestions[questionIdx];
-  const overhead = systemText.length + finalQuestion.length + 500; // 500 for role tags, formatting
-  const fillChars = Math.max(200, targetChars - overhead);
+  // Overhead: system message + question message + role markers
+  const overhead = systemText.length + finalQuestion.length + 200;
+  const fillChars = ratio === 0 ? 0 : Math.max(200, targetChars - overhead);
 
-  // Build background message pairs from the block pool
   const messages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [
     { role: 'system', content: systemText },
   ];
 
-  let charsAdded = 0;
-  let blockIdx = 0;
-  const totalBlocks = contextFillBlocks.length;
+  if (fillChars > 0) {
+    // Build one consolidated background block instead of hundreds of
+    // user/assistant pairs. This avoids per-message template marker overhead
+    // (~10+ tokens per message × hundreds of messages) and removes the
+    // assistant ACK text that inflated token counts by ~15%.
+    const parts: string[] = [];
+    let charsAdded = 0;
+    let blockIdx = 0;
+    const totalBlocks = contextFillBlocks.length;
+    const joinLen = 2; // '\n\n' between parts
 
-  while (charsAdded < fillChars) {
-    const block = contextFillBlocks[blockIdx % totalBlocks];
-    const remaining = fillChars - charsAdded;
+    while (charsAdded < fillChars) {
+      const block = contextFillBlocks[blockIdx % totalBlocks];
+      const header = `--- Section ${blockIdx + 1} ---\n`;
+      const remaining = fillChars - charsAdded;
+      const partOverhead = header.length + (parts.length > 0 ? joinLen : 0);
 
-    // If the full block fits, add it whole; otherwise trim
-    const text = remaining >= block.length
-      ? block
-      : block.slice(0, remaining);
+      if (remaining <= partOverhead) break;
 
-    messages.push(
-      { role: 'user', content: `Background notes section ${blockIdx + 1}:\n${text}` },
-      { role: 'assistant', content: 'Acknowledged. I have processed these background notes. Please continue or ask your question.' },
-    );
+      const availForText = remaining - partOverhead;
+      const text = availForText >= block.length
+        ? block
+        : block.slice(0, availForText);
 
-    charsAdded += text.length;
-    blockIdx++;
+      const part = `${header}${text}`;
+      parts.push(part);
+      charsAdded += part.length + (parts.length > 1 ? joinLen : 0);
+      blockIdx++;
 
-    // Safety: cap based on target size to avoid infinite loops
-    if (blockIdx > Math.ceil(fillChars / 200) + totalBlocks) break;
+      if (blockIdx > Math.ceil(fillChars / 200) + totalBlocks) break;
+    }
+
+    messages.push({
+      role: 'user',
+      content: `BACKGROUND NOTES:\n\n${parts.join('\n\n')}`,
+    });
   }
 
-  // Final user question
   messages.push({ role: 'user', content: finalQuestion });
 
   return {
     id: `ctxfill-${label.replace('%', '')}`,
     messages,
-    max_tokens: 512,
+    max_tokens: maxTokens,
     expected: undefined,
     contextFill: { ratio, label },
     includeInScore: false,
@@ -459,6 +488,7 @@ export async function calibrateContextFillPrompts(
   signal?: AbortSignal,
 ): Promise<AutoTestPromptDef[]> {
   const ratios: Array<{ ratio: number; label: ContextFillRatio }> = [
+    { ratio: 0, label: '0%' },
     { ratio: 0.20, label: '20%' },
     { ratio: 0.50, label: '50%' },
     { ratio: 0.80, label: '80%' },
@@ -466,50 +496,49 @@ export async function calibrateContextFillPrompts(
 
   const calibrated: AutoTestPromptDef[] = [];
   const safetyMargin = 256;
+  // Use a small max_tokens for fill tests: we only need enough output tokens
+  // to get a reliable TPS measurement, not a full response. This avoids
+  // spending minutes on unnecessary decode at high fill levels.
+  const fillMaxTokens = 64;
+
+  // Calibrate the chars-per-token multiplier once using a small probe (~1K
+  // target tokens) instead of probing each ratio individually. The multiplier
+  // is a tokenizer property and doesn't change with prompt size, so a single
+  // lightweight request is sufficient.
+  let charMultiplier = 3.5; // Initial estimate
+  const probeTargetTokens = 1024;
+  const probePrompt = buildContextFillPrompt(0.5, '50%', probeTargetTokens, charMultiplier, 1);
+
+  try {
+    if (!signal?.aborted) {
+      const probeResult = await runSinglePrompt(
+        sessionId,
+        { ...probePrompt, max_tokens: 1 },
+        {},
+        signal,
+      );
+      const actualTokens = probeResult.usage?.prompt_tokens;
+      if (actualTokens && actualTokens > 0) {
+        charMultiplier = charMultiplier * (probeTargetTokens / actualTokens);
+      }
+    }
+  } catch {
+    // Use default multiplier
+  }
 
   for (const { ratio, label } of ratios) {
-    const targetTokens = Math.floor(contextWindow * ratio) - safetyMargin;
-    if (targetTokens < 100) {
-      // Context window too small for this ratio
+    if (ratio === 0) {
+      // 0% fill: baseline prompt with no background content
+      calibrated.push(buildContextFillPrompt(0, label, 0, charMultiplier, fillMaxTokens));
       continue;
     }
 
-    let charMultiplier = 3.5; // Initial estimate: ~3.5 chars per token
-    let bestPrompt = buildContextFillPrompt(ratio, label, targetTokens, charMultiplier);
-
-    // Up to 3 calibration iterations
-    for (let iter = 0; iter < 3; iter++) {
-      if (signal?.aborted) break;
-
-      try {
-        const result = await runSinglePrompt(
-          sessionId,
-          { ...bestPrompt, max_tokens: 1 },
-          {},
-          signal,
-        );
-
-        const actualPromptTokens = result.usage?.prompt_tokens;
-        if (!actualPromptTokens || actualPromptTokens <= 0) break;
-
-        const actualFill = actualPromptTokens / contextWindow;
-        const tolerance = 0.03; // ±3%
-
-        if (Math.abs(actualFill - ratio) <= tolerance) {
-          break; // Close enough
-        }
-
-        // Adjust multiplier proportionally
-        charMultiplier = charMultiplier * (targetTokens / actualPromptTokens);
-        bestPrompt = buildContextFillPrompt(ratio, label, targetTokens, charMultiplier);
-      } catch {
-        break; // Use best effort
-      }
+    const targetTokens = Math.floor(contextWindow * ratio) - safetyMargin;
+    if (targetTokens < 100) {
+      continue;
     }
 
-    // Restore the real max_tokens
-    bestPrompt.max_tokens = 512;
-    calibrated.push(bestPrompt);
+    calibrated.push(buildContextFillPrompt(ratio, label, targetTokens, charMultiplier, fillMaxTokens));
   }
 
   return calibrated;
@@ -1838,6 +1867,64 @@ export const configChatScenario: AutoTestScenario = {
 }
 
 /**
+ * Config sweep performance scenario — uses codegen prompts that produce
+ * longer structured output to get stable TPS measurements. Context fill
+ * prompts (0/20/50/80%) are appended dynamically by calibration.
+ * All prompts are excluded from quality scoring.
+ */
+export const configPerfScenario: AutoTestScenario = {
+  id: 'chat',
+  name: 'Performance',
+  prompts: [
+    {
+      id: 'codegen-python-fn',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Write a Python function called `fizzbuzz` that takes an integer n and returns a list of strings from 1 to n where multiples of 3 are "Fizz", multiples of 5 are "Buzz", and multiples of both are "FizzBuzz".' },
+      ],
+      max_tokens: 512,
+      includeInScore: false,
+    },
+    {
+      id: 'codegen-js-class',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Write a JavaScript class called `Stack` with push, pop, peek, and isEmpty methods. Include JSDoc comments for each method.' },
+      ],
+      max_tokens: 512,
+      includeInScore: false,
+    },
+    {
+      id: 'codegen-go-struct',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Write a Go struct called `Config` with fields for Host (string), Port (int), and Timeout (time.Duration). Include a NewConfig constructor function and a String() method that formats it as "host:port".' },
+      ],
+      max_tokens: 512,
+      includeInScore: false,
+    },
+    {
+      id: 'codegen-python-sort',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Write a Python implementation of merge sort. Include a main function that sorts the list [38, 27, 43, 3, 9, 82, 10] and prints the result.' },
+      ],
+      max_tokens: 512,
+      includeInScore: false,
+    },
+    {
+      id: 'codegen-rust-enum',
+      messages: [
+        { role: 'system', content: cacheSystemPrompt },
+        { role: 'user', content: 'Write a Rust enum called `Shape` with variants Circle(f64), Rectangle(f64, f64), and Triangle(f64, f64, f64). Implement a method `area()` that returns the area for each variant.' },
+      ],
+      max_tokens: 512,
+      includeInScore: false,
+    },
+  ],
+}
+
+/**
  * Config sweep tool call scenario — uses a subset of tool call prompts
  * that any model should handle. The multi-turn prompts use the same
  * scripted pattern but avoid factual follow-ups.
@@ -2314,11 +2401,11 @@ export const defaultSamplingSweepDef: SamplingSweepDefinition = {
 
 /** Default config sweep grids for each parameter. */
 export const defaultConfigSweepDef: ConfigSweepDefinition = {
-  nbatch: { enabled: true, values: [512, 1024, 2048, 4096] },
-  nubatch: { enabled: true, values: [128, 256, 512, 1024, 2048] },
-  contextWindow: { enabled: true, values: [2048, 4096, 8192, 16384, 32768] },
+  nbatch: { enabled: true, values: [128, 256, 512, 1024, 2048, 4096] },
+  nubatch: { enabled: true, values: [128, 256, 512, 1024, 2048, 4096] },
+  contextWindow: { enabled: true, values: [2048, 4096, 8192, 16384, 32768, 65536, 131072] },
   nSeqMax: { enabled: true, values: [1, 2, 4, 8] },
-  flashAttention: { enabled: true, values: ['auto', 'enabled', 'disabled'] },
+  flashAttention: { enabled: true, values: ['enabled', 'disabled'] },
   cacheType: { enabled: true, values: ['f16', 'q8_0', 'q4_0'] },
   cacheMode: { enabled: true, values: ['none', 'spc', 'imc'] },
 }
@@ -2690,6 +2777,30 @@ export const defaultBestConfigWeights: BestConfigWeights = {
   totalScore: 0,
   avgTPS: 0,
   avgTTFT: 0,
+  tps0: 0,
+  tps20: 0,
+  tps50: 0,
+  tps80: 0,
+  ttft0: 0,
+  ttft20: 0,
+  ttft50: 0,
+  ttft80: 0,
+}
+
+export const defaultConfigBestWeights: BestConfigWeights = {
+  chatScore: 0,
+  toolScore: 0,
+  totalScore: 0,
+  avgTPS: 1,
+  avgTTFT: 0.5,
+  tps0: 0.8,
+  tps20: 0.6,
+  tps50: 0.4,
+  tps80: 0.2,
+  ttft0: 0,
+  ttft20: 0,
+  ttft50: 0,
+  ttft80: 0,
 }
 
 /**
@@ -2713,6 +2824,30 @@ export function computeCompositeScore(trial: AutoTestTrialResult, weights: BestC
   if (total !== undefined) parts.push({ w: weights.totalScore, v: total })
   if (avgTPS !== undefined) parts.push({ w: weights.avgTPS, v: Math.min(100, Math.max(0, avgTPS)) })
   if (avgTTFT !== undefined) parts.push({ w: weights.avgTTFT, v: Math.max(0, 100 - avgTTFT / 10) })
+
+  // Per-fill TPS weights — normalize TPS to a 0-100 scale (cap at 100 TPS)
+  const fillWeights: Array<{ key: ContextFillRatio; w: number }> = [
+    { key: '0%', w: weights.tps0 },
+    { key: '20%', w: weights.tps20 },
+    { key: '50%', w: weights.tps50 },
+    { key: '80%', w: weights.tps80 },
+  ]
+  for (const { key, w } of fillWeights) {
+    const fillTPS = trial.avgTPSByFill?.[key]
+    if (fillTPS !== undefined) parts.push({ w, v: Math.min(100, Math.max(0, fillTPS)) })
+  }
+
+  // Per-fill TTFT weights — lower is better, invert like avgTTFT
+  const fillTTFTWeights: Array<{ key: ContextFillRatio; w: number }> = [
+    { key: '0%', w: weights.ttft0 },
+    { key: '20%', w: weights.ttft20 },
+    { key: '50%', w: weights.ttft50 },
+    { key: '80%', w: weights.ttft80 },
+  ]
+  for (const { key, w } of fillTTFTWeights) {
+    const fillTTFT = trial.avgTTFTByFill?.[key]
+    if (fillTTFT !== undefined) parts.push({ w, v: Math.max(0, 100 - fillTTFT / 10) })
+  }
 
   const denom = parts.reduce((s, p) => s + p.w, 0)
   if (denom <= 0) return total ?? chat ?? tool ?? 0
@@ -2773,18 +2908,18 @@ function buildScenarioResult(
   const avgTPSByFill: Record<string, number> = {}
   const avgTTFTByFill: Record<string, number> = {}
   const promptTokensByFill: Record<string, number> = {}
-  for (const label of ['20%', '50%', '80%'] as ContextFillRatio[]) {
+  for (const label of ['0%', '20%', '50%', '80%'] as ContextFillRatio[]) {
     const gt = fillGenTokens[label]
     const gs = fillGenSeconds[label]
-    if (gt && gs && gs > 0) {
+    if (gt !== undefined && gs !== undefined && gs > 0) {
       avgTPSByFill[label] = gt / gs
     }
     const ft = fillTTFT[label]
     const fc = fillTTFTCount[label]
-    if (ft && fc && fc > 0) {
+    if (ft !== undefined && fc !== undefined && fc > 0) {
       avgTTFTByFill[label] = ft / fc
     }
-    if (actualFills[label]) {
+    if (actualFills[label] !== undefined) {
       promptTokensByFill[label] = actualFills[label]!
     }
   }
@@ -2867,6 +3002,11 @@ function accumulateMetrics(
 }
 
 /** Extracts a short preview string from a prompt definition. */
+function trialLog(result: AutoTestTrialResult, message: string) {
+  if (!result.logEntries) result.logEntries = []
+  result.logEntries.push({ timestamp: new Date().toISOString(), message })
+}
+
 function promptPreview(prompt: AutoTestPromptDef): string | undefined {
   const lastUser = [...prompt.messages].reverse().find(m => m.role === 'user')
   if (!lastUser) return undefined
@@ -2904,6 +3044,9 @@ async function runScenarioSequential(
   const fillTTFTCount: Partial<Record<ContextFillRatio, number>> = {}
   const actualFills: Partial<Record<ContextFillRatio, number>> = {}
 
+  trialLog(result, `Starting scenario: ${scenario.name} (${scenario.prompts.length} prompts, ${safeRepeats}x repeats)`)
+  onUpdate({ ...result })
+
   for (let pi = 0; pi < scenario.prompts.length; pi++) {
     const prompt = scenario.prompts[pi]
     if (signal.aborted) {
@@ -2913,18 +3056,23 @@ async function runScenarioSequential(
       return
     }
 
+    const effectiveRepeats = prompt.contextFill != null ? 1 : safeRepeats;
+    const isWarmup = pi === 0
+    const promptLabel = prompt.contextFill
+      ? `context fill @${prompt.contextFill.label}`
+      : isWarmup ? `${prompt.id} (warmup)` : prompt.id
+    trialLog(result, `Prompt ${pi + 1}/${scenario.prompts.length}: ${promptLabel}${effectiveRepeats > 1 ? ` (${effectiveRepeats}x)` : ''}`)
+
     result.activePrompts = [{
       scenarioId: scenario.id,
       promptId: prompt.id,
       promptIndex: pi,
-      repeats: safeRepeats,
+      repeats: effectiveRepeats,
       repeatIndex: 1,
       preview: promptPreview(prompt),
       startedAt: new Date().toISOString(),
     }]
     onUpdate({ ...result })
-
-    const isWarmup = pi === 0
 
     const repeatScores: number[] = []
     const repeatNotes: string[] = []
@@ -2939,13 +3087,13 @@ async function runScenarioSequential(
     let hadError = false
     let errorMessage = ''
 
-    for (let r = 0; r < safeRepeats; r++) {
+    for (let r = 0; r < effectiveRepeats; r++) {
       if (signal.aborted) {
         hadAbort = true
         break
       }
 
-      if (safeRepeats > 1 && r > 0) {
+      if (effectiveRepeats > 1 && r > 0) {
         result.activePrompts = [{ ...result.activePrompts![0], repeatIndex: r + 1 }]
         onUpdate({ ...result })
       }
@@ -3071,6 +3219,9 @@ async function runScenarioConcurrent(
     actualFills: {} as Partial<Record<ContextFillRatio, number>>,
   }
 
+  trialLog(result, `Starting scenario: ${scenario.name} (${scenario.prompts.length} prompts, concurrency=${concurrency}, ${safeRepeats}x repeats)`)
+  onUpdate({ ...result })
+
   const batchStartMs = performance.now()
 
   const inflight = new Map<number, AutoTestActivePrompt>()
@@ -3085,11 +3236,13 @@ async function runScenarioConcurrent(
     async (prompt, pi) => {
       if (signal.aborted) return
 
+      const effectiveRepeats = prompt.contextFill != null ? 1 : safeRepeats;
+
       inflight.set(pi, {
         scenarioId: scenario.id,
         promptId: prompt.id,
         promptIndex: pi,
-        repeats: safeRepeats,
+        repeats: effectiveRepeats,
         repeatIndex: 1,
         preview: promptPreview(prompt),
         startedAt: new Date().toISOString(),
@@ -3104,10 +3257,10 @@ async function runScenarioConcurrent(
       let hadError = false
       let errorMessage = ''
 
-      for (let r = 0; r < safeRepeats; r++) {
+      for (let r = 0; r < effectiveRepeats; r++) {
         if (signal.aborted) break
 
-        if (safeRepeats > 1 && r > 0) {
+        if (effectiveRepeats > 1 && r > 0) {
           const cur = inflight.get(pi)
           if (cur) {
             inflight.set(pi, { ...cur, repeatIndex: r + 1 })
@@ -3222,20 +3375,43 @@ export async function runTrial(
     candidate,
     startedAt: new Date().toISOString(),
     scenarioResults: [],
+    logEntries: [],
   }
 
+  trialLog(result, `Trial started (${scenarios.length} scenario${scenarios.length !== 1 ? 's' : ''})`)
   onUpdate({ ...result })
 
-  for (const scenario of scenarios) {
+  for (let si = 0; si < scenarios.length; si++) {
+    const scenario = scenarios[si]
+
     if (signal.aborted) {
       result.status = 'cancelled'
       onUpdate({ ...result })
       return result
     }
 
+    // Pause between scenario runs within the same trial.
+    if (si > 0) {
+      trialLog(result, `Pausing ${SCENARIO_PAUSE_MS / 1000}s before next scenario…`)
+      onUpdate({ ...result })
+      try {
+        await abortableSleep(SCENARIO_PAUSE_MS, signal)
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          result.status = 'cancelled'
+          result.finishedAt = new Date().toISOString()
+          onUpdate({ ...result })
+          return result
+        }
+        throw err
+      }
+    }
+
     // When running concurrently, execute a single warm-up request first so
     // that SPC/IMC caches are primed before the measured batch.
     if (concurrency > 1 && scenario.prompts.length > 0) {
+      trialLog(result, `Warming up cache for concurrent scenario: ${scenario.name}`)
+      onUpdate({ ...result })
       try {
         await runSinglePrompt(sessionId, scenario.prompts[0], { ...candidate, max_tokens: 1 }, signal)
       } catch (err) {
@@ -3287,6 +3463,11 @@ export async function runTrial(
   const chatResult = result.scenarioResults.find(r => r.scenarioId === 'chat')
   if (chatResult?.avgTPSByFill && Object.keys(chatResult.avgTPSByFill).length > 0) {
     result.avgTPSByFill = chatResult.avgTPSByFill
+  }
+
+  // Propagate per-fill TTFT (prefill duration) from chat scenario
+  if (chatResult?.avgTTFTByFill && Object.keys(chatResult.avgTTFTByFill).length > 0) {
+    result.avgTTFTByFill = chatResult.avgTTFTByFill
   }
 
   result.finishedAt = new Date().toISOString()

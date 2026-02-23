@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useCallback, useRef, useEffect, ty
 import type {
   AutoTestRunnerState,
   AutoTestTrialResult,
+  AutoTestLogEntry,
   SamplingCandidate,
   SamplingSweepDefinition,
   AutoTestScenario,
@@ -12,8 +13,9 @@ import type {
   BestConfigWeights,
 } from '../types';
 import {
-  configChatScenario,
-  configToolCallScenario,
+  chatScenario,
+  toolCallScenario,
+  configPerfScenario,
   generateTrialCandidates,
   generateConfigCandidates,
   probeTemplate,
@@ -21,8 +23,33 @@ import {
   computeCompositeScore,
   calibrateContextFillPrompts,
   extractContextWindow,
+  TRIAL_PAUSE_MS,
 } from '../services/autoTestRunner';
 import { api } from '../services/api';
+
+function mergeLogEntries(
+  prevLogs: AutoTestLogEntry[],
+  contextLogs: AutoTestLogEntry[],
+  runnerLogs?: AutoTestLogEntry[],
+): AutoTestLogEntry[] {
+  const all = [...prevLogs, ...contextLogs, ...(runnerLogs ?? [])];
+  const seen = new Set<string>();
+  return all.filter(e => {
+    const k = `${e.timestamp}|${e.message}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) { reject(new DOMException('Aborted', 'AbortError')); return; }
+    const timer = setTimeout(() => { signal.removeEventListener('abort', onAbort); resolve(); }, ms);
+    function onAbort() { clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')); }
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
 
 export interface EnabledScenarios {
   chat: boolean;
@@ -142,8 +169,8 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
     (async () => {
       try {
         const scenarios: AutoTestScenario[] = [];
-        if (enabledScenarios.chat) scenarios.push(configChatScenario);
-        if (enabledScenarios.tool_call) scenarios.push(configToolCallScenario);
+        if (enabledScenarios.chat) scenarios.push(chatScenario);
+        if (enabledScenarios.tool_call) scenarios.push(toolCallScenario);
 
         if (enabledScenarios.tool_call) {
           setRun(prev => prev ? { ...prev, templateRepairStatus: 'Probing template for tool calling compatibility...' } : prev);
@@ -204,6 +231,11 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
         for (let i = 0; i < candidates.length; i++) {
           if (controller.signal.aborted) break;
 
+          // Pause between trial runs.
+          if (i > 0) {
+            await abortableSleep(TRIAL_PAUSE_MS, controller.signal);
+          }
+
           const candidate = candidates[i];
 
           // Eagerly mark trial as running before calling runTrial
@@ -219,7 +251,9 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
             setRun(prev => {
               if (!prev || prev.kind !== 'sampling') return prev;
               const trials = [...prev.trials];
-              trials[i] = { ...trials[i], ...partial };
+              const prevLogs = trials[i].logEntries ?? [];
+              const mergedLogs = mergeLogEntries(prevLogs, [], partial.logEntries);
+              trials[i] = { ...trials[i], ...partial, logEntries: mergedLogs };
               return { ...prev, trials };
             });
           };
@@ -316,9 +350,7 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        const scenarios: AutoTestScenario[] = [];
-        if (enabledScenarios.chat) scenarios.push(configChatScenario);
-        if (enabledScenarios.tool_call) scenarios.push(configToolCallScenario);
+        const scenarios: AutoTestScenario[] = [configPerfScenario];
 
         let bestComposite = -Infinity;
         let bestTPS = -Infinity;
@@ -346,14 +378,31 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
         for (let i = 0; i < configCandidates.length; i++) {
           if (controller.signal.aborted) break;
 
+          // Pause between trial runs.
+          if (i > 0) {
+            await abortableSleep(TRIAL_PAUSE_MS, controller.signal);
+          }
+
           const candidate = configCandidates[i];
 
           // Eagerly mark trial as running
           const trialStartedAt = new Date().toISOString();
+          const trialLogs: AutoTestLogEntry[] = [];
+          const addTrialLog = (message: string) => {
+            const entry: AutoTestLogEntry = { timestamp: new Date().toISOString(), message };
+            trialLogs.push(entry);
+            setRun(prev => {
+              if (!prev || prev.kind !== 'config') return prev;
+              const trials = [...prev.trials];
+              trials[i] = { ...trials[i], logEntries: [...trialLogs] };
+              return { ...prev, trials };
+            });
+          };
+
           setRun(prev => {
             if (!prev || prev.kind !== 'config') return prev;
             const trials = [...prev.trials];
-            trials[i] = { ...trials[i], status: 'running', startedAt: trialStartedAt };
+            trials[i] = { ...trials[i], status: 'running', startedAt: trialStartedAt, logEntries: [] };
             return { ...prev, trials };
           });
 
@@ -369,6 +418,7 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
           let configSessionId: string | null = null;
 
           try {
+            addTrialLog('Creating session with config overrides…');
             const resp = await api.createPlaygroundSession({
               model_id: sessionSeed.model_id,
               template_mode: sessionSeed.template_mode,
@@ -378,16 +428,9 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
             });
             configSessionId = resp.session_id;
             currentConfigSessionRef.current = configSessionId;
+            addTrialLog('Session created ✓');
 
             const activeScenarios = [...scenarios];
-
-            if (enabledScenarios.tool_call) {
-              const probeResult = await probeTemplate(configSessionId, controller.signal);
-              if (!probeResult) {
-                const idx = activeScenarios.indexOf(configToolCallScenario);
-                if (idx !== -1) activeScenarios.splice(idx, 1);
-              }
-            }
 
             if (activeScenarios.length === 0) {
               throw new Error('No runnable scenarios for this config — template probe failed and chat is disabled');
@@ -397,6 +440,7 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
             if (enabledScenarios.chat) {
               const cfgContextWindow = extractContextWindow(resp.effective_config, sessionSeed.base_config);
               if (cfgContextWindow && cfgContextWindow > 0) {
+                addTrialLog(`Calibrating context fill prompts (ctx=${cfgContextWindow})…`);
                 try {
                   const ctxFillPrompts = await calibrateContextFillPrompts(configSessionId, cfgContextWindow, controller.signal);
                   if (ctxFillPrompts.length > 0) {
@@ -407,18 +451,25 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
                         prompts: [...activeScenarios[chatIdx].prompts, ...ctxFillPrompts],
                       };
                     }
+                    addTrialLog(`Calibrated ${ctxFillPrompts.length} fill levels ✓`);
+                  } else {
+                    addTrialLog('Context window too small for fill tests');
                   }
                 } catch {
-                  // Calibration failed; skip fill tests for this config
+                  addTrialLog('Context fill calibration failed — skipping');
                 }
               }
             }
+
+            addTrialLog('Running scenarios…');
 
             const onUpdate = (partial: AutoTestTrialResult) => {
               setRun(prev => {
                 if (!prev || prev.kind !== 'config') return prev;
                 const trials = [...prev.trials];
-                trials[i] = { ...trials[i], ...partial, config: candidate };
+                const prevLogs = trials[i].logEntries ?? [];
+                const mergedLogs = mergeLogEntries(prevLogs, trialLogs, partial.logEntries);
+                trials[i] = { ...trials[i], ...partial, config: candidate, logEntries: mergedLogs };
                 return { ...prev, trials };
               });
             };
@@ -428,7 +479,11 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
               effectiveNSeqMax > 1 ? { concurrency: effectiveNSeqMax } : undefined,
             );
 
-            const configResult: ConfigTrialResult = { ...result, config: candidate };
+            const configResult: ConfigTrialResult = {
+              ...result,
+              config: candidate,
+              logEntries: mergeLogEntries([], trialLogs, result.logEntries),
+            };
             const composite = computeCompositeScore(result, weights);
             const resultTPS = result.avgTPS ?? -Infinity;
             const isBetter = composite > bestComposite + 1e-6
