@@ -9,10 +9,10 @@ models:
     files:
       models:
         - url: mradermacher/Qwen2-Audio-7B-GGUF/Qwen2-Audio-7B.Q8_0.gguf
-          size: 8.25 GiB
+          size: 8.25 GB
       proj:
         url: mradermacher/Qwen2-Audio-7B-GGUF/Qwen2-Audio-7B.mmproj-Q8_0.gguf
-        size: 695 MiB
+        size: 695 MB
     capabilities:
       endpoint: chat_completion
       images: false

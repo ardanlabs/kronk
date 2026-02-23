@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -181,6 +182,16 @@ func (d D) Clone() D {
 			clone[k] = v
 		}
 	}
+	return clone
+}
+
+// ShallowClone creates a copy of the top-level map only. Nested values
+// (including message maps and slices) are shared with the original. Use this
+// when downstream code treats nested values as read-only or performs its own
+// copy-on-write when mutation is needed.
+func (d D) ShallowClone() D {
+	clone := make(D, len(d))
+	maps.Copy(clone, d)
 	return clone
 }
 
@@ -534,11 +545,11 @@ func (c Choice) FinishReason() string {
 
 // Usage provides details usage information for the request.
 type Usage struct {
-	PromptTokens     int     `json:"prompt_tokens"`
-	ReasoningTokens  int     `json:"reasoning_tokens"`
-	CompletionTokens int     `json:"completion_tokens"`
-	OutputTokens     int     `json:"output_tokens"`
-	TotalTokens      int     `json:"total_tokens"`
+	PromptTokens       int     `json:"prompt_tokens"`
+	ReasoningTokens    int     `json:"reasoning_tokens"`
+	CompletionTokens   int     `json:"completion_tokens"`
+	OutputTokens       int     `json:"output_tokens"`
+	TotalTokens        int     `json:"total_tokens"`
 	TokensPerSecond    float64 `json:"tokens_per_second"`
 	TimeToFirstTokenMS float64 `json:"time_to_first_token_ms"`
 }

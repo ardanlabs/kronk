@@ -586,12 +586,13 @@ export default function DocsSDKModel() {
               <h4>Usage</h4>
               <pre className="code-block">
                 <code>{`type Usage struct {
-	PromptTokens     int     \`json:"prompt_tokens"\`
-	ReasoningTokens  int     \`json:"reasoning_tokens"\`
-	CompletionTokens int     \`json:"completion_tokens"\`
-	OutputTokens     int     \`json:"output_tokens"\`
-	TotalTokens      int     \`json:"total_tokens"\`
-	TokensPerSecond  float64 \`json:"tokens_per_second"\`
+	PromptTokens       int     \`json:"prompt_tokens"\`
+	ReasoningTokens    int     \`json:"reasoning_tokens"\`
+	CompletionTokens   int     \`json:"completion_tokens"\`
+	OutputTokens       int     \`json:"output_tokens"\`
+	TotalTokens        int     \`json:"total_tokens"\`
+	TokensPerSecond    float64 \`json:"tokens_per_second"\`
+	TimeToFirstTokenMS float64 \`json:"time_to_first_token_ms"\`
 }`}</code>
               </pre>
               <p className="doc-description">Usage provides details usage information for the request.</p>
@@ -629,6 +630,14 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func (d D) Messages() string</code>
               </pre>
+            </div>
+
+            <div className="doc-section" id="method-d-shallowclone">
+              <h4>D.ShallowClone</h4>
+              <pre className="code-block">
+                <code>func (d D) ShallowClone() D</code>
+              </pre>
+              <p className="doc-description">ShallowClone creates a copy of the top-level map only. Nested values (including message maps and slices) are shared with the original. Use this when downstream code treats nested values as read-only or performs its own copy-on-write when mutation is needed.</p>
             </div>
 
             <div className="doc-section" id="method-d-string">
@@ -1171,6 +1180,7 @@ export default function DocsSDKModel() {
                 <li><a href="#method-config-string">Config.String</a></li>
                 <li><a href="#method-d-clone">D.Clone</a></li>
                 <li><a href="#method-d-messages">D.Messages</a></li>
+                <li><a href="#method-d-shallowclone">D.ShallowClone</a></li>
                 <li><a href="#method-d-string">D.String</a></li>
                 <li><a href="#method-flashattentiontype-marshaljson">FlashAttentionType.MarshalJSON</a></li>
                 <li><a href="#method-flashattentiontype-marshalyaml">FlashAttentionType.MarshalYAML</a></li>

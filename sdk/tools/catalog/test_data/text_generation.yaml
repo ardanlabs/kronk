@@ -9,7 +9,7 @@ models:
     files:
       models:
         - url: Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf
-          size: 8.71 GiB
+          size: 8.71 GB
     capabilities:
       endpoint: chat_completion
       images: false
@@ -34,7 +34,7 @@ models:
     files:
       models:
         - url: unsloth/gpt-oss-20b-GGUF/gpt-oss-20b-Q8_0.gguf
-          size: 12.1 GiB
+          size: 12.1 GB
     capabilities:
       endpoint: chat_completion
       images: false
@@ -59,12 +59,12 @@ models:
     files:
       models:
         - url: unsloth/Llama-3.3-70B-Instruct-GGUF/Llama-3.3-70B-Instruct-Q8_0/Llama-3.3-70B-Instruct-Q8_0-00001-of-00002.gguf
-          size: 39.8 GiB
+          size: 39.8 GB
         - url: unsloth/Llama-3.3-70B-Instruct-GGUF/Llama-3.3-70B-Instruct-Q8_0/Llama-3.3-70B-Instruct-Q8_0-00002-of-00002.gguf
-          size: 35.2 GiB
+          size: 35.2 GB
       proj:
         url: "proj: just for testing"
-        size: 0.0 GiB
+        size: 0.0 GB
     capabilities:
       endpoint: chat_completion
       images: false

@@ -13,31 +13,26 @@ import (
 // =============================================================================
 // Incremental Message Cache (IMC) — Core Algorithm
 //
-// IMC has four operating modes, automatically selected based on model
-// architecture and template behavior:
+// IMC has two matching strategies, automatically selected based on template
+// behavior:
 //
-//   - IMC Deterministic:     Hash-based prefix matching for dense models with
-//     consistent templates (QWEN, Llama). Fastest path.
-//   - IMC Non-Deterministic: Token-level prefix fallback for models with
-//     variable templates (GPT-OSS, GLM). Activated when hash matching fails.
-//   - IMC MoE:               Same algorithm as Deterministic. MoE models
-//     (Qwen3-Coder-30B-A3B, Mixtral) use identical code paths — the
-//     distinction is performance characteristics, not logic.
-//   - IMC Hybrid:            Snapshot/restore for models with recurrent layers
-//     (Qwen3-Coder-Next). Cache cleanup uses full clear + StateSeqSetData
-//     instead of partial MemorySeqRm. Hybrid-specific logic lives in
-//     batch_slot_start.go (snapshot capture, rebuild) and
-//     batch_finish.go (snapshot restore after generation).
+//   - Deterministic:     Hash-based prefix matching for models with consistent
+//     templates (QWEN, Llama, MoE, Hybrid). Fastest path.
+//   - Non-Deterministic: Token-level prefix fallback for models with variable
+//     templates (GPT-OSS, GLM). Activated when hash matching fails.
 //
-// All four modes share the functions in this file: processIMC (slot scan +
-// hash matching), extendIMCCache, buildIMCCacheFromScratch, and
-// rebuildIMCFromPartialPrefix. The mode-specific divergence points are:
+// The matching strategy is independent of the model type (Dense, MoE, Hybrid).
+// All model types use the same caching functions in this file. What changes
+// per model type is how the batch engine manages state between requests:
 //
-//   - Non-Deterministic: processIMC falls back to token prefix matching when
-//     no hash match is found, calling rebuildIMCFromPartialPrefix.
-//   - Hybrid: batch_slot_start.go checks IsHybridModel to use full clear +
-//     re-decode instead of partial MemorySeqRm; batch_finish.go restores
-//     the snapshot instead of trimming generated tokens.
+//   - Dense/MoE: batch_finish.go trims generated tokens via partial range
+//     delete (MemorySeqRm).
+//   - Hybrid: batch_slot_start.go captures a snapshot after cache build;
+//     batch_finish.go restores the snapshot instead of trimming.
+//
+// All functions in this file are shared: processIMC (slot scan + hash
+// matching), extendIMCCache, buildIMCCacheFromScratch, and
+// rebuildIMCFromPartialPrefix.
 // =============================================================================
 
 // imcSlotSnapshot holds a point-in-time copy of an imcSession's metadata.
@@ -58,16 +53,16 @@ type imcSlotSnapshot struct {
 // workflows. It caches all messages except the last one (which triggers
 // generation) and extends the cache incrementally on subsequent requests.
 //
-// This function implements the shared slot selection algorithm used by all
-// four IMC modes (Deterministic, Non-Deterministic, MoE, Hybrid). All
-// NSeqMax slots are available. Each slot independently tracks its own
-// conversation branch (hash, token count, message index). Sub-agents get
-// routed to different slots via hash matching.
+// This function implements the shared slot selection algorithm used by both
+// IMC strategies (Deterministic and Non-Deterministic) across all model
+// types (Dense, MoE, Hybrid). All NSeqMax slots are available. Each slot
+// independently tracks its own conversation branch (hash, token count,
+// message index). Sub-agents get routed to different slots via hash matching.
 //
 // Algorithm:
-//  1. Scan all slots for a prefix hash match (Deterministic / MoE / Hybrid)
+//  1. Scan all slots for a prefix hash match (Deterministic path)
 //  2. On match: extend or reuse the matching slot's cache
-//  3. No hash match: try token prefix fallback (Non-Deterministic mode)
+//  3. No hash match: try token prefix fallback (Non-Deterministic path)
 //  4. No match at all: pick an empty slot or evict the LRU slot, rebuild
 func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cacheResult {
 	messages, ok := d["messages"].([]D)
@@ -109,7 +104,7 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 	m.cacheMu.RUnlock()
 
 	// -------------------------------------------------------------------------
-	// Step 1: Hash-based slot scan (Deterministic / MoE / Hybrid path).
+	// Step 1: Hash-based slot scan (Deterministic path, all model types).
 
 	var bestSlot *imcSession
 	var bestCachedMsgsHash string

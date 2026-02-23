@@ -791,7 +791,7 @@ export default function CatalogEditor() {
             </div>
             <div style={{ flex: 1 }}>
               {idx === 0 && <label style={{ fontSize: '12px', color: 'var(--color-gray-500)' }}>Size</label>}
-              <input type="text" value={file.size} onChange={(e) => updateFile(idx, 'size', e.target.value)} style={inputStyle} placeholder="8.71 GiB" />
+              <input type="text" value={file.size} onChange={(e) => updateFile(idx, 'size', e.target.value)} style={inputStyle} placeholder="8.71 GB" />
             </div>
             <button className="btn btn-danger" onClick={() => removeFile(idx)} disabled={form.files.length <= 1} style={{ padding: '8px 12px' }} title="Remove this file entry">
               ✕

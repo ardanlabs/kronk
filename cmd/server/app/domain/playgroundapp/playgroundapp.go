@@ -344,7 +344,3 @@ func (a *app) cleanupLoop() {
 		}
 	}
 }
-
-func (a *app) stop() {
-	close(a.done)
-}

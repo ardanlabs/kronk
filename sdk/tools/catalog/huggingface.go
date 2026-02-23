@@ -319,10 +319,10 @@ func formatFileSize(bytes int64) string {
 	switch {
 	case bytes >= gib:
 		val := float64(bytes) / float64(gib)
-		return fmt.Sprintf("%.1f GiB", math.Round(val*10)/10)
+		return fmt.Sprintf("%.1f GB", math.Round(val*10)/10)
 	case bytes >= mib:
 		val := float64(bytes) / float64(mib)
-		return fmt.Sprintf("%.1f MiB", math.Round(val*10)/10)
+		return fmt.Sprintf("%.1f MB", math.Round(val*10)/10)
 	default:
 		val := float64(bytes) / float64(kib)
 		return fmt.Sprintf("%.1f KiB", math.Round(val*10)/10)

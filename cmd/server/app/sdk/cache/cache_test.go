@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"math/rand"
 	"sync"
 	"testing"
 	"time"
@@ -15,7 +14,6 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
-	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
 var log model.Logger
@@ -367,35 +365,24 @@ func initKronk(t *testing.T) model.Logger {
 	return log.Info
 }
 
+// cacheTestModels are the smallest models available in CI for cache
+// lifecycle tests (acquire, eviction, shutdown). These tests load real
+// models but never run inference, so small is better.
+var cacheTestModels = []string{
+	"embeddinggemma-300m-qat-Q8_0",
+	"bge-reranker-v2-m3-Q8_0",
+}
+
 func findAvailableModel(t *testing.T, notModelID string) string {
-	models, err := models.New()
-	if err != nil {
-		t.Fatalf("creating models system: %s", err)
-	}
+	t.Helper()
 
-	modelFiles, err := models.Files()
-	if err != nil {
-		t.Skip("no models available for testing - skipping")
-	}
-
-	var modelID string
-	for range len(modelFiles) {
-		idx := rand.Intn(len(modelFiles))
-		if modelFiles[idx].ID != notModelID {
-			modelID = modelFiles[idx].ID
-			break
+	for _, id := range cacheTestModels {
+		if id != notModelID {
+			t.Logf("using model: %s", id)
+			return id
 		}
 	}
 
-	if modelID == "" {
-		for _, mf := range modelFiles {
-			if mf.ID != notModelID {
-				modelID = mf.ID
-				break
-			}
-		}
-	}
-
-	t.Logf("using model: %s", modelID)
-	return modelID
+	t.Fatal("no suitable test model found")
+	return ""
 }

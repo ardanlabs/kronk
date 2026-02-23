@@ -1,61 +1,68 @@
 🟢 Better   🔴 Worse   ⚪ Neutral
 
+Benchmark Matrix:
 
-Mode                    Benchmark                      Model
---------------------------------------------------------------------------------
-Non Caching             BenchmarkNonCaching            Qwen3-8B-Q8_0
+    Model Type | Cache Mode | IMC Strategy      | Speculative | Benchmark Name
+    -----------|------------|-------------------|-------------|----------------------------------------------
+    Dense      | NonCaching | —                 | No          | BenchmarkDense_NonCaching
+    Dense      | SPC        | —                 | No          | BenchmarkDense_SPC
+    Dense      | IMC        | Deterministic     | No          | BenchmarkDense_IMCDeterministic
+    Dense      | IMC        | Deterministic     | Yes         | BenchmarkDense_IMCDeterministic_Speculative
+    Dense      | IMC        | Non-Deterministic | No          | BenchmarkDense_IMCNonDeterministic
+    MoE        | IMC        | Deterministic     | No          | BenchmarkMoE_IMCDeterministic
+    MoE        | IMC        | Deterministic     | Yes         | BenchmarkMoE_IMCDeterministic_Speculative
+    Hybrid     | IMC        | Deterministic     | No          | BenchmarkHybrid_IMCDeterministic
 
-SPC                     BenchmarkSPC                   Qwen3-8B-Q8_0
+Benchmark Configuration:
 
-IMC Deterministic       BenchmarkIMCDeterministic      Qwen3-8B-Q8_0
-IMC Non-Deterministic   BenchmarkIMCNonDeterministic   GPT-OSS / GLM
-IMC MoE                 BenchmarkIMCMoE                Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
-IMC Hybrid              BenchmarkIMCHybrid             Qwen3-Coder-Next-UD-Q4_K_XL
+    Dense              : Qwen3-8B-Q8_0 (draft: Qwen3-0.6B-Q8_0)
+    Dense              : GPT-OSS-20B-Q8_0 (non-deterministic template)
+    MoE                : Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL (draft: Q4_K_XL)
+    Hybrid             : Qwen3-Coder-Next-UD-Q6_K_XL
+    ContextWindow      : 32768
+    NBatch             : 2048,
+    NUBatch            : 2048,
+    CacheTypeK         : model.GGMLTypeF16,
+    CacheTypeV         : model.GGMLTypeF16,
+    System prompt      : 8241 tokens (39322 chars)
+    Total conversation : 23440 tokens (107768 chars, 38 messages)
 
-SPEC IMC Deterministic  BenchmarkSPECIMCDeterministic  Qwen3-8B-Q8_0, Qwen3-0.6B-Q8_0
-SPEC IMC MoE            BenchmarkSPECIMCMoE            Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL, Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL
+Benchmarks:
 
-================================================================================
-Feb 21st, 2026 : v1.19.4
-Model          : Qwen3-8B-Q8_0, Draft Qwen3-0.6B-Q8_0
-Moe Model      : Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL, Draft: Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL
-Hybrid Model   : Qwen3-Coder-Next-UD-Q4_K_XL
-ContextWindow  : 32768
-NBatch         : 2048,
-NUBatch        : 2048,
-CacheTypeK     : model.GGMLTypeF16,
-CacheTypeV     : model.GGMLTypeF16,
-llamap.cpp     : b8121
+Feb 22nd, 2026 : v1.19.5
+llamap.cpp     : b8131
 --------------------------------------------------------------------------------
 goos: darwin
 goarch: arm64
 pkg: github.com/ardanlabs/kronk/sdk/kronk/model
 cpu: Apple M4 Max
 
-NonCaching-16              1537464556 ns/op ⚪ 1163656 B/op ⚪  9055 allocs/op ⚪
+Dense_NonCaching-16                   : 62303576347 ns/op ⚪  1153056 B/op ⚪  8984 allocs/op ⚪
+Dense_SPC-16                          : 38671077500 ns/op ⚪   976456 B/op ⚪  8857 allocs/op ⚪
+Dense_IMCDeterministic-16             :  3429996181 ns/op ⚪   126146 B/op ⚪  3869 allocs/op ⚪
+Dense_IMCNonDeterministic-16 (GPT)    :  1632504195 ns/op ⚪   141002 B/op ⚪  4019 allocs/op ⚪
+Dense_IMCDeterministic_Speculative-16 :  6279658986 ns/op ⚪   446050 B/op ⚪  8676 allocs/op ⚪
 
-SPC-16                     9379392320 ns/op ⚪  976741 B/op ⚪  8943 allocs/op ⚪
+MoE_IMCDeterministic                  :  2658917833 ns/op ⚪   129250 B/op ⚪  3558 allocs/op ⚪
+MoE_IMCDeterministic_Speculative-16   :  4847674222 ns/op ⚪   392200 B/op ⚪  5991 allocs/op ⚪
 
-IMC-Deterministic-16       3492279236 ns/op ⚪  151818 B/op ⚪  3938 allocs/op ⚪
-IMC-NonDeterministic-16    1619060542 ns/op ⚪  144410 B/op ⚪  4072 allocs/op ⚪
-IMC-MoE                    2448039958 ns/op ⚪  151568 B/op ⚪  3394 allocs/op ⚪
-IMC-Hybrid                 3994944597 ns/op ⚪  163146 B/op ⚪  3903 allocs/op ⚪
-
-SPEC-IMC-Deterministic-16  5759106472 ns/op ⚪  485818 B/op ⚪  8607 allocs/op ⚪
-SPEC-IMC-MoE-16            4882891583 ns/op ⚪  396138 B/op ⚪  6293 allocs/op ⚪
+Hybrid_IMCDeterministic               :  4273119917 ns/op ⚪   138541 B/op ⚪  3842 allocs/op ⚪
 
 --------------------------------------------------------------------------------
-No Caching          SPC
-38.20 tok/s    ⚪   38.05 tok/s    ⚪
-46907 ttft-ms  ⚪   35728 ttft-ms  ⚪
-50179 total-ms ⚪   39013 total-ms ⚪
+Dense NonCaching    Dense SPC          Dense IMC-Det       Dense IMC-NonDet (GPT)   Dense IMC-Det+Spec                
+31.31 tok/s    ⚪   37.19 tok/s    ⚪   38.15 tok/s    ⚪   86.10 tok/s    ⚪        19.35 tok/s    ⚪                
+61785 ttft-ms  ⚪   37010 ttft-ms  ⚪     166 ttft-ms  ⚪     190 ttft-ms  ⚪          248 ttft-ms  ⚪                 
+65785 total-ms ⚪   40371 total-ms ⚪    3442 total-ms ⚪    1630 total-ms ⚪         6669 total-ms ⚪                 
 
-IMC-Determ          IMC-Non-Determ     IMC-MoE             IMC-Hybrid
-37.16 tok/s    ⚪   85.51 tok/s    ⚪   46.89 tok/s    ⚪   32.90 tok/s    ⚪
-  161 ttft-ms  ⚪     186 ttft-ms  ⚪     174 ttft-ms  ⚪     132 ttft-ms  ⚪
- 3525 total-ms ⚪    1639 total-ms ⚪    2286 total-ms ⚪    4006 total-ms ⚪
+MoE IMC-Det         MoE IMC-Det+Spec
+47.38 tok/s    ⚪    23.77 tok/s    ⚪
+  170 ttft-ms  ⚪      171 ttft-ms  ⚪
+ 2851 total-ms ⚪     4293 total-ms ⚪
 
-SPEC-IMC-Determ                        SPEC-IMC-MoE
-26.11 tok/s    ⚪                       24.83 tok/s    ⚪
-  240 ttft-ms  ⚪                         170 ttft-ms  ⚪
- 4973 total-ms ⚪                        5285 total-ms ⚪
+Hybrid IMC-Det
+30.78 tok/s    ⚪
+  141 ttft-ms  ⚪
+ 4280 total-ms ⚪
+
+================================================================================
+

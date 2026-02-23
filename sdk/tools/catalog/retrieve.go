@@ -25,11 +25,9 @@ func (c *Catalog) ModelList(filterCategory string) ([]ModelDetails, error) {
 		return nil, fmt.Errorf("catalog-model-list: retrieve-model-files: %w", err)
 	}
 
-	pulledModels := make(map[string]struct{})
 	validatedModels := make(map[string]struct{})
 
 	for _, mf := range modelFiles {
-		pulledModels[mf.ID] = struct{}{}
 		if mf.Validated {
 			validatedModels[mf.ID] = struct{}{}
 		}
@@ -42,10 +40,8 @@ func (c *Catalog) ModelList(filterCategory string) ([]ModelDetails, error) {
 		}
 
 		for _, model := range cat.Models {
-			_, downloaded := pulledModels[model.ID]
-			model.Downloaded = downloaded
-
 			_, validated := validatedModels[model.ID]
+			model.Downloaded = validated
 			model.Validated = validated
 
 			list = append(list, model)
@@ -87,7 +83,8 @@ func (c *Catalog) Details(modelID string) (ModelDetails, error) {
 			}
 
 			for _, mf := range modelFiles {
-				if mf.ID == model.ID {
+				if mf.ID == model.ID && mf.Validated {
+					model.Downloaded = true
 					model.Validated = true
 				}
 			}

@@ -54,7 +54,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 	active := m.activeStreams.Add(1)
 
 	go func() {
-		id := fmt.Sprintf("chatcmpl-%s", uuid.New().String())
+		id := "chatcmpl-" + uuid.NewString()
 
 		m.log(ctx, "chat-streaming", "status", "started", "id", id, "active_streams", active)
 
@@ -155,8 +155,10 @@ func (m *Model) wrapChannelForLogging(ctx context.Context, returnCh chan ChatRes
 	return ch
 }
 
-// validateAndCloneDocument validates the request document and returns a clone
-// to avoid mutating the caller's data.
+// validateAndCloneDocument validates the request document and returns a
+// shallow clone to avoid mutating the caller's top-level map. Downstream
+// functions (prepareTextContext, gptInjectToolCallNames) use copy-on-write
+// when they need to modify individual message maps.
 func (m *Model) validateAndCloneDocument(ctx context.Context, d D) (Params, D, error) {
 	params, err := m.validateDocument(d)
 	if err != nil {
@@ -165,7 +167,7 @@ func (m *Model) validateAndCloneDocument(ctx context.Context, d D) (Params, D, e
 
 	m.log(ctx, "chat-streaming", "FINAL-PARAMS", params.String())
 
-	return params, d.Clone(), nil
+	return params, d.ShallowClone(), nil
 }
 
 // prepareContext prepares the document for inference, handling both text-only
@@ -289,13 +291,15 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 
 // prepareTextContext converts messages using the OpenAI array format
 // for content ([]D with type:"text") to simple string content. This is used
-// for text-only inference paths.
+// for text-only inference paths. Uses copy-on-write: only allocates a new
+// messages slice and message maps when array-format content is found.
 func (*Model) prepareTextContext(d D) D {
 	messages, ok := d["messages"].([]D)
 	if !ok {
 		return d
 	}
 
+	var copied bool
 	for i, msg := range messages {
 		content, ok := msg["content"].([]D)
 		if !ok {
@@ -305,7 +309,16 @@ func (*Model) prepareTextContext(d D) D {
 		for _, part := range content {
 			if part["type"] == "text" {
 				if text, ok := part["text"].(string); ok {
-					messages[i]["content"] = text
+					if !copied {
+						newMsgs := make([]D, len(messages))
+						copy(newMsgs, messages)
+						messages = newMsgs
+						d["messages"] = messages
+						copied = true
+					}
+					newMsg := msg.ShallowClone()
+					newMsg["content"] = text
+					messages[i] = newMsg
 					break
 				}
 			}
@@ -451,8 +464,11 @@ func (m *Model) gptInjectToolCallNames(ctx context.Context, d D) D {
 		return d
 	}
 
-	// Inject tool_call_name into tool response messages.
-	for _, msg := range messages {
+	// Inject tool_call_name into tool response messages using copy-on-write.
+	// Only allocate a new messages slice and message maps for tools that need
+	// the injected name.
+	var copied bool
+	for i, msg := range messages {
 		role, _ := msg["role"].(string)
 		if role != "tool" {
 			continue
@@ -465,7 +481,16 @@ func (m *Model) gptInjectToolCallNames(ctx context.Context, d D) D {
 
 		if name, exists := toolCallIDToName[toolCallID]; exists {
 			m.log(ctx, "gpt-inject-tool-call-names", "status", "injecting name", "tool-call-id", toolCallID, "name", name)
-			msg["tool_call_name"] = name
+			if !copied {
+				newMsgs := make([]D, len(messages))
+				copy(newMsgs, messages)
+				messages = newMsgs
+				d["messages"] = messages
+				copied = true
+			}
+			newMsg := msg.ShallowClone()
+			newMsg["tool_call_name"] = name
+			messages[i] = newMsg
 		}
 	}
 

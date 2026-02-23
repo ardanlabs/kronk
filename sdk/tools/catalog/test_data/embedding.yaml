@@ -9,7 +9,7 @@ models:
     files:
       models:
         - url: ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/embeddinggemma-300m-qat-Q8_0.gguf
-          size: 329 MiB
+          size: 329 MB
     capabilities:
       endpoint: embeddings
       images: false
