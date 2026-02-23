@@ -67,6 +67,8 @@ interface AutoTestRunBase {
   currentTrialIndex: number;
   totalTrials: number;
   runStartedAt?: string;
+  repeats: number;
+  weights: BestConfigWeights;
 }
 
 export interface SamplingRun extends AutoTestRunBase {
@@ -164,6 +166,8 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
       sweepDef,
       maxTrials,
       trials: [],
+      repeats,
+      weights,
     });
 
     (async () => {
@@ -316,6 +320,8 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
       sessionSeed,
       configSweepDef,
       trials: [],
+      repeats,
+      weights,
     });
 
     (async () => {
