@@ -153,6 +153,19 @@ function deriveSweepInputs(def: SamplingSweepDefinition): Record<SamplingNumeric
   return out;
 }
 
+function formatMs(ms: number): string {
+  if (!Number.isFinite(ms)) return '—';
+  const total = Math.max(0, Math.round(ms));
+  if (total < 1000) return `${total}ms`;
+  const hours = Math.floor(total / 3600000);
+  const minutes = Math.floor((total % 3600000) / 60000);
+  const seconds = Math.floor((total % 60000) / 1000);
+  const millis = total % 1000;
+  if (hours > 0) return `${hours}h ${minutes}m ${seconds}s ${millis}ms`;
+  if (minutes > 0) return `${minutes}m ${seconds}s ${millis}ms`;
+  return `${seconds}s ${millis}ms`;
+}
+
 function scoreColor(score: number): string {
   if (score >= 80) return '#2e7d32';
   if (score >= 50) return '#f9a825';
@@ -164,15 +177,6 @@ function getScenarioScore(trial: AutoTestTrialResult, id: 'chat' | 'tool_call'):
   return s?.score;
 }
 
-function formatDuration(ms: number): string {
-  const totalSec = Math.max(0, Math.ceil(ms / 1000));
-  const hrs = Math.floor(totalSec / 3600);
-  const mins = Math.floor((totalSec % 3600) / 60);
-  const secs = totalSec % 60;
-  if (hrs > 0) return `${hrs}h ${mins}m ${secs}s`;
-  if (mins > 0) return `${mins}m ${secs}s`;
-  return `${secs}s`;
-}
 
 function estimatePromptDurationMs(usage: AutoTestPromptResult['usage']): number | undefined {
   if (!usage) return undefined;
@@ -214,7 +218,7 @@ function useRunTiming(runStartedAt: string | undefined, trials: AutoTestTrialRes
     .filter(Number.isFinite) as number[];
   const startMs = Number.isFinite(runStartMs) ? runStartMs : (trialStartTimes.length ? Math.min(...trialStartTimes) : NaN);
   const elapsedMs = Number.isFinite(startMs) ? Math.max(0, Date.now() - startMs) : 0;
-  const elapsed = Number.isFinite(startMs) ? formatDuration(elapsedMs) : null;
+  const elapsed = Number.isFinite(startMs) ? formatMs(elapsedMs) : null;
 
   let estimate: string | null = null;
   let estimatedCompletion: string | null = null;
@@ -228,7 +232,7 @@ function useRunTiming(runStartedAt: string | undefined, trials: AutoTestTrialRes
       const remaining = Math.max(0, totalCount - completed);
       const remainingPauses = completed > 0 ? remaining : Math.max(0, remaining - 1);
       const estimatedRemainingMs = avgMs * remaining + TRIAL_PAUSE_MS * remainingPauses;
-      estimate = formatDuration(estimatedRemainingMs);
+      estimate = formatMs(estimatedRemainingMs);
       if (completed >= 3) {
         estimatedCompletion = formatCompletionTime(new Date(Date.now() + estimatedRemainingMs));
       }
@@ -390,7 +394,7 @@ function TrialDetails({ trial, scenarioLookup, hideScores }: TrialDetailsProps) 
                       </span>
                     )}
                     {sr.avgTPS !== undefined && <span>TPS: {sr.avgTPS.toFixed(1)}</span>}
-                    {sr.avgTTFT !== undefined && <span>TTFT: {sr.avgTTFT.toFixed(0)}ms</span>}
+                    {sr.avgTTFT !== undefined && <span>TTFT: {formatMs(sr.avgTTFT)}</span>}
                     {sr.avgTPSByFill && Object.keys(sr.avgTPSByFill).length > 0 && (
                       <span style={{ marginLeft: 8, opacity: 0.85 }}>
                         Context Fill TPS:
@@ -403,10 +407,10 @@ function TrialDetails({ trial, scenarioLookup, hideScores }: TrialDetailsProps) 
                     {sr.avgTTFTByFill && Object.keys(sr.avgTTFTByFill).length > 0 && (
                       <span style={{ marginLeft: 8, opacity: 0.85 }}>
                         Context Fill TTFT:
-                        {sr.avgTTFTByFill['0%'] !== undefined && ` @0%: ${sr.avgTTFTByFill['0%'].toFixed(0)}ms`}
-                        {sr.avgTTFTByFill['20%'] !== undefined && ` @20%: ${sr.avgTTFTByFill['20%'].toFixed(0)}ms`}
-                        {sr.avgTTFTByFill['50%'] !== undefined && ` @50%: ${sr.avgTTFTByFill['50%'].toFixed(0)}ms`}
-                        {sr.avgTTFTByFill['80%'] !== undefined && ` @80%: ${sr.avgTTFTByFill['80%'].toFixed(0)}ms`}
+                        {sr.avgTTFTByFill['0%'] !== undefined && ` @0%: ${formatMs(sr.avgTTFTByFill['0%'])}`}
+                        {sr.avgTTFTByFill['20%'] !== undefined && ` @20%: ${formatMs(sr.avgTTFTByFill['20%'])}`}
+                        {sr.avgTTFTByFill['50%'] !== undefined && ` @50%: ${formatMs(sr.avgTTFTByFill['50%'])}`}
+                        {sr.avgTTFTByFill['80%'] !== undefined && ` @80%: ${formatMs(sr.avgTTFTByFill['80%'])}`}
                       </span>
                     )}
                   </div>
@@ -426,7 +430,7 @@ function TrialDetails({ trial, scenarioLookup, hideScores }: TrialDetailsProps) 
                       </span>
                     )}
                     {sr.avgTPS !== undefined && <span>TPS: {sr.avgTPS.toFixed(1)}</span>}
-                    {sr.avgTTFT !== undefined && <span>TTFT: {sr.avgTTFT.toFixed(0)}ms</span>}
+                    {sr.avgTTFT !== undefined && <span>TTFT: {formatMs(sr.avgTTFT)}</span>}
                     {sr.avgTPSByFill && Object.keys(sr.avgTPSByFill).length > 0 && (
                       <span style={{ marginLeft: 8, opacity: 0.85 }}>
                         Context Fill TPS:
@@ -439,10 +443,10 @@ function TrialDetails({ trial, scenarioLookup, hideScores }: TrialDetailsProps) 
                     {sr.avgTTFTByFill && Object.keys(sr.avgTTFTByFill).length > 0 && (
                       <span style={{ marginLeft: 8, opacity: 0.85 }}>
                         Context Fill TTFT:
-                        {sr.avgTTFTByFill['0%'] !== undefined && ` @0%: ${sr.avgTTFTByFill['0%'].toFixed(0)}ms`}
-                        {sr.avgTTFTByFill['20%'] !== undefined && ` @20%: ${sr.avgTTFTByFill['20%'].toFixed(0)}ms`}
-                        {sr.avgTTFTByFill['50%'] !== undefined && ` @50%: ${sr.avgTTFTByFill['50%'].toFixed(0)}ms`}
-                        {sr.avgTTFTByFill['80%'] !== undefined && ` @80%: ${sr.avgTTFTByFill['80%'].toFixed(0)}ms`}
+                        {sr.avgTTFTByFill['0%'] !== undefined && ` @0%: ${formatMs(sr.avgTTFTByFill['0%'])}`}
+                        {sr.avgTTFTByFill['20%'] !== undefined && ` @20%: ${formatMs(sr.avgTTFTByFill['20%'])}`}
+                        {sr.avgTTFTByFill['50%'] !== undefined && ` @50%: ${formatMs(sr.avgTTFTByFill['50%'])}`}
+                        {sr.avgTTFTByFill['80%'] !== undefined && ` @80%: ${formatMs(sr.avgTTFTByFill['80%'])}`}
                       </span>
                     )}
                   </div>
@@ -472,7 +476,7 @@ function TrialDetails({ trial, scenarioLookup, hideScores }: TrialDetailsProps) 
                                 : `Regex: ${promptDef.expected.value}`
                           : '—';
                       const durMs = estimatePromptDurationMs(pr.usage);
-                      const durationLabel = durMs !== undefined ? formatDuration(durMs) : '—';
+                      const durationLabel = durMs !== undefined ? formatMs(durMs) : '—';
 
                       return (
                         <div key={pr.promptId} className={`autotest-detail-prompt ${isPromptExpanded ? 'expanded' : 'collapsed'}`}>
@@ -535,7 +539,7 @@ function TrialDetails({ trial, scenarioLookup, hideScores }: TrialDetailsProps) 
                                   <span>Out: {pr.usage.output_tokens}</span>
                                   <span>TPS: {pr.usage.tokens_per_second.toFixed(1)}</span>
                                   {pr.usage.time_to_first_token_ms !== undefined && (
-                                    <span>TTFT: {pr.usage.time_to_first_token_ms.toFixed(0)}ms</span>
+                                    <span>TTFT: {formatMs(pr.usage.time_to_first_token_ms)}</span>
                                   )}
                                 </div>
                               </div>
@@ -1427,7 +1431,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
                     </>
                   )}
                   <div><strong>Avg TPS:</strong> {best.avgTPS?.toFixed(1)}</div>
-                  <div><strong>Avg TTFT:</strong> {best.avgTTFT !== undefined ? `${best.avgTTFT.toFixed(0)}ms` : '—'}</div>
+                  <div><strong>Avg TTFT:</strong> {best.avgTTFT !== undefined ? formatMs(best.avgTTFT) : '—'}</div>
                   {best.avgTPSByFill && (
                     <>
                       <div><strong>TPS @0%:</strong> {best.avgTPSByFill['0%']?.toFixed(1) ?? '—'}</div>
@@ -1438,10 +1442,10 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
                   )}
                   {best.avgTTFTByFill && (
                     <>
-                      <div><strong>TTFT @0%:</strong> {best.avgTTFTByFill['0%'] !== undefined ? `${best.avgTTFTByFill['0%'].toFixed(0)}ms` : '—'}</div>
-                      <div><strong>TTFT @20%:</strong> {best.avgTTFTByFill['20%'] !== undefined ? `${best.avgTTFTByFill['20%'].toFixed(0)}ms` : '—'}</div>
-                      <div><strong>TTFT @50%:</strong> {best.avgTTFTByFill['50%'] !== undefined ? `${best.avgTTFTByFill['50%'].toFixed(0)}ms` : '—'}</div>
-                      <div><strong>TTFT @80%:</strong> {best.avgTTFTByFill['80%'] !== undefined ? `${best.avgTTFTByFill['80%'].toFixed(0)}ms` : '—'}</div>
+                      <div><strong>TTFT @0%:</strong> {best.avgTTFTByFill['0%'] !== undefined ? formatMs(best.avgTTFTByFill['0%']) : '—'}</div>
+                      <div><strong>TTFT @20%:</strong> {best.avgTTFTByFill['20%'] !== undefined ? formatMs(best.avgTTFTByFill['20%']) : '—'}</div>
+                      <div><strong>TTFT @50%:</strong> {best.avgTTFTByFill['50%'] !== undefined ? formatMs(best.avgTTFTByFill['50%']) : '—'}</div>
+                      <div><strong>TTFT @80%:</strong> {best.avgTTFTByFill['80%'] !== undefined ? formatMs(best.avgTTFTByFill['80%']) : '—'}</div>
                     </>
                   )}
                 </>
@@ -1587,19 +1591,19 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
                               const startMs = trial.startedAt ? Date.parse(trial.startedAt) : NaN;
                               if (!Number.isFinite(startMs)) return '—';
                               const endMs = trial.finishedAt ? Date.parse(trial.finishedAt) : Date.now();
-                              return formatDuration(endMs - startMs);
+                              return formatMs(endMs - startMs);
                             })()}
                           </td>
                           <td>{isPending ? (partialTPS !== undefined ? `~${partialTPS.toFixed(1)}` : '…') : trial.avgTPS?.toFixed(1)}</td>
-                          <td>{isPending ? '…' : trial.avgTTFT !== undefined ? `${trial.avgTTFT.toFixed(0)}ms` : '—'}</td>
+                          <td>{isPending ? '…' : trial.avgTTFT !== undefined ? formatMs(trial.avgTTFT) : '—'}</td>
                           <td>{isPending ? '…' : trial.avgTPSByFill?.['0%']?.toFixed(1) ?? '—'}</td>
                           <td>{isPending ? '…' : trial.avgTPSByFill?.['20%']?.toFixed(1) ?? '—'}</td>
                           <td>{isPending ? '…' : trial.avgTPSByFill?.['50%']?.toFixed(1) ?? '—'}</td>
                           <td>{isPending ? '…' : trial.avgTPSByFill?.['80%']?.toFixed(1) ?? '—'}</td>
-                          <td>{isPending ? '…' : trial.avgTTFTByFill?.['0%'] !== undefined ? `${trial.avgTTFTByFill['0%'].toFixed(0)}ms` : '—'}</td>
-                          <td>{isPending ? '…' : trial.avgTTFTByFill?.['20%'] !== undefined ? `${trial.avgTTFTByFill['20%'].toFixed(0)}ms` : '—'}</td>
-                          <td>{isPending ? '…' : trial.avgTTFTByFill?.['50%'] !== undefined ? `${trial.avgTTFTByFill['50%'].toFixed(0)}ms` : '—'}</td>
-                          <td>{isPending ? '…' : trial.avgTTFTByFill?.['80%'] !== undefined ? `${trial.avgTTFTByFill['80%'].toFixed(0)}ms` : '—'}</td>
+                          <td>{isPending ? '…' : trial.avgTTFTByFill?.['0%'] !== undefined ? formatMs(trial.avgTTFTByFill['0%']) : '—'}</td>
+                          <td>{isPending ? '…' : trial.avgTTFTByFill?.['20%'] !== undefined ? formatMs(trial.avgTTFTByFill['20%']) : '—'}</td>
+                          <td>{isPending ? '…' : trial.avgTTFTByFill?.['50%'] !== undefined ? formatMs(trial.avgTTFTByFill['50%']) : '—'}</td>
+                          <td>{isPending ? '…' : trial.avgTTFTByFill?.['80%'] !== undefined ? formatMs(trial.avgTTFTByFill['80%']) : '—'}</td>
                         </tr>
                         {isExpanded && (
                           <tr className="autotest-detail-row">
@@ -1639,7 +1643,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
                               const startMs = trial.startedAt ? Date.parse(trial.startedAt) : NaN;
                               if (!Number.isFinite(startMs)) return '—';
                               const endMs = trial.finishedAt ? Date.parse(trial.finishedAt) : Date.now();
-                              return formatDuration(endMs - startMs);
+                              return formatMs(endMs - startMs);
                             })()}
                           </td>
                           <td style={partialChat !== undefined ? { color: scoreColor(partialChat), opacity: 0.7 } : !isPending ? { color: scoreColor(getScenarioScore(trial, 'chat') ?? 0) } : undefined}>
@@ -1652,15 +1656,15 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
                             {isPending ? '…' : trial.totalScore}
                           </td>
                           <td>{isPending ? (partialTPS !== undefined ? `~${partialTPS.toFixed(1)}` : '…') : trial.avgTPS?.toFixed(1)}</td>
-                          <td>{isPending ? '…' : trial.avgTTFT !== undefined ? `${trial.avgTTFT.toFixed(0)}ms` : '—'}</td>
+                          <td>{isPending ? '…' : trial.avgTTFT !== undefined ? formatMs(trial.avgTTFT) : '—'}</td>
                           <td>{isPending ? '…' : trial.avgTPSByFill?.['0%']?.toFixed(1) ?? '—'}</td>
                           <td>{isPending ? '…' : trial.avgTPSByFill?.['20%']?.toFixed(1) ?? '—'}</td>
                           <td>{isPending ? '…' : trial.avgTPSByFill?.['50%']?.toFixed(1) ?? '—'}</td>
                           <td>{isPending ? '…' : trial.avgTPSByFill?.['80%']?.toFixed(1) ?? '—'}</td>
-                          <td>{isPending ? '…' : trial.avgTTFTByFill?.['0%'] !== undefined ? `${trial.avgTTFTByFill['0%'].toFixed(0)}ms` : '—'}</td>
-                          <td>{isPending ? '…' : trial.avgTTFTByFill?.['20%'] !== undefined ? `${trial.avgTTFTByFill['20%'].toFixed(0)}ms` : '—'}</td>
-                          <td>{isPending ? '…' : trial.avgTTFTByFill?.['50%'] !== undefined ? `${trial.avgTTFTByFill['50%'].toFixed(0)}ms` : '—'}</td>
-                          <td>{isPending ? '…' : trial.avgTTFTByFill?.['80%'] !== undefined ? `${trial.avgTTFTByFill['80%'].toFixed(0)}ms` : '—'}</td>
+                          <td>{isPending ? '…' : trial.avgTTFTByFill?.['0%'] !== undefined ? formatMs(trial.avgTTFTByFill['0%']) : '—'}</td>
+                          <td>{isPending ? '…' : trial.avgTTFTByFill?.['20%'] !== undefined ? formatMs(trial.avgTTFTByFill['20%']) : '—'}</td>
+                          <td>{isPending ? '…' : trial.avgTTFTByFill?.['50%'] !== undefined ? formatMs(trial.avgTTFTByFill['50%']) : '—'}</td>
+                          <td>{isPending ? '…' : trial.avgTTFTByFill?.['80%'] !== undefined ? formatMs(trial.avgTTFTByFill['80%']) : '—'}</td>
                         </tr>
                         {isExpanded && (
                           <tr className="autotest-detail-row">
