@@ -3517,6 +3517,32 @@ button.autotest-detail-log-header:focus-visible {
     cursor: not-allowed;
 }
 
+.autotest-drag-handle {
+    cursor: grab;
+    font-size: 14px;
+    color: var(--color-gray-500);
+    user-select: none;
+    padding: 0 4px;
+    line-height: 1;
+}
+
+.autotest-drag-handle:hover {
+    color: var(--color-gray-800);
+}
+
+.autotest-drag-handle.disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.autotest-dragging-row {
+    opacity: 0.4;
+}
+
+.autotest-dragover-row {
+    box-shadow: 0 -2px 0 0 var(--color-primary, #2563eb) inset;
+}
+
 .autotest-skip-btn {
     padding: 2px 8px !important;
     font-size: 10px !important;

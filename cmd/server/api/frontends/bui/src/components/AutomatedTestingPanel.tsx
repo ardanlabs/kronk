@@ -505,7 +505,7 @@ function TrialDetails({ trial, scenarioLookup, hideScores }: TrialDetailsProps) 
 }
 
 export default function AutomatedTestingPanel({ session, sessionSeed, catalogSampling }: AutomatedTestingPanelProps) {
-  const { run, isRunning, startSamplingRun, startConfigRun, stopRun, clearRun, reevaluateBestTrial, moveQueuedTrial, skipTrial, unskipTrial } = useAutoTestRunner();
+  const { run, isRunning, startSamplingRun, startConfigRun, stopRun, clearRun, reevaluateBestTrial, reorderQueuedTrial, skipTrial, unskipTrial } = useAutoTestRunner();
 
   // Compute initial values from the run (if any) so that remounting
   // after navigation restores the sweep parameters instead of resetting.
@@ -539,6 +539,40 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
   const [repeats, setRepeats] = useState(() => run?.repeats ?? 1);
   const [sort, setSort] = useState<SortState>({ column: null, direction: null });
   const canReorder = isRunning && run?.status === 'running_trials' && sort.column === null;
+
+  const [dragTrialId, setDragTrialId] = useState<string | null>(null);
+  const [dragOverTrialId, setDragOverTrialId] = useState<string | null>(null);
+
+  const handleDragStart = useCallback((e: React.DragEvent<HTMLTableRowElement>, trialId: string) => {
+    setDragTrialId(trialId);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', trialId);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLTableRowElement>, trialId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverTrialId(trialId);
+  }, []);
+
+  const handleDragLeave = useCallback(() => {
+    setDragOverTrialId(null);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent<HTMLTableRowElement>, targetId: string) => {
+    e.preventDefault();
+    const sourceId = e.dataTransfer.getData('text/plain');
+    if (sourceId && sourceId !== targetId) {
+      reorderQueuedTrial({ trialId: sourceId, targetId });
+    }
+    setDragTrialId(null);
+    setDragOverTrialId(null);
+  }, [reorderQueuedTrial]);
+
+  const handleDragEnd = useCallback(() => {
+    setDragTrialId(null);
+    setDragOverTrialId(null);
+  }, []);
 
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -1056,35 +1090,34 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
                   const bestTrialForMode = displayMode === 'config' ? bestConfigTrial : bestTrial;
                   const isBest = bestTrialForMode && trial === bestTrialForMode && runnerState === 'completed';
                   const isExpanded = expandedTrials.has(trial.id);
+                  const isDragging = dragTrialId === trial.id;
+                  const isDragOver = dragOverTrialId === trial.id && dragTrialId !== trial.id;
+                  const isDraggable = canReorder && trial.status === 'queued';
                   const meta: CellMeta = { isPending, isInProgress, isBest: !!isBest, index: i };
                   return (
                     <React.Fragment key={trial.id}>
                       <tr
-                        className={`autotest-trial-row${isBest ? ' autotest-best-row' : ''}${isInProgress ? ' autotest-running-row' : ''}${trial.status === 'skipped' ? ' autotest-skipped-row' : ''}`}
+                        className={`autotest-trial-row${isBest ? ' autotest-best-row' : ''}${isInProgress ? ' autotest-running-row' : ''}${trial.status === 'skipped' ? ' autotest-skipped-row' : ''}${isDragging ? ' autotest-dragging-row' : ''}${isDragOver ? ' autotest-dragover-row' : ''}`}
                         style={{ cursor: 'pointer' }}
                         onClick={() => toggleTrialExpanded(trial.id)}
+                        draggable={isDraggable}
+                        onDragStart={isDraggable ? (e) => handleDragStart(e, trial.id) : undefined}
+                        onDragOver={isDraggable ? (e) => handleDragOver(e, trial.id) : undefined}
+                        onDragLeave={isDraggable ? handleDragLeave : undefined}
+                        onDrop={isDraggable ? (e) => handleDrop(e, trial.id) : undefined}
+                        onDragEnd={isDraggable ? handleDragEnd : undefined}
                       >
                         <td>{isExpanded ? '▾' : '▸'} {isInProgress && <span className="playground-autotest-spinner-inline" />}{i + 1}</td>
                         {isRunning && (
                           <td className="autotest-actions-cell" onClick={(e) => e.stopPropagation()}>
                             {trial.status === 'queued' && (
                               <span className="autotest-queue-controls">
-                                <button
-                                  className="btn btn-small autotest-queue-btn"
-                                  onClick={() => moveQueuedTrial({ trialId: trial.id, direction: 'up' })}
-                                  disabled={!canReorder}
-                                  title={canReorder ? 'Move up' : 'Clear column sorting to reorder'}
+                                <span
+                                  className={`autotest-drag-handle${!canReorder ? ' disabled' : ''}`}
+                                  title={canReorder ? 'Drag to reorder' : 'Clear column sorting to reorder'}
                                 >
-                                  ▲
-                                </button>
-                                <button
-                                  className="btn btn-small autotest-queue-btn"
-                                  onClick={() => moveQueuedTrial({ trialId: trial.id, direction: 'down' })}
-                                  disabled={!canReorder}
-                                  title={canReorder ? 'Move down' : 'Clear column sorting to reorder'}
-                                >
-                                  ▼
-                                </button>
+                                  ☰
+                                </span>
                                 <button
                                   className="btn btn-small autotest-skip-btn"
                                   onClick={() => skipTrial({ trialId: trial.id })}
