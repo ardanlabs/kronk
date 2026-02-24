@@ -4,6 +4,7 @@ package build
 import (
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/chatapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/checkapp"
+	"github.com/ardanlabs/kronk/cmd/server/app/domain/downapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/embedapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/msgsapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/playgroundapp"
@@ -81,4 +82,11 @@ func (all) Add(app *web.App, cfg mux.Config) {
 		Cache:      cfg.Cache,
 		Catalog:    cfg.Catalog,
 	})
+
+	if cfg.DownloadEnabled {
+		downapp.Routes(app, downapp.Config{
+			Log:        cfg.Log,
+			ModelsPath: cfg.Models.Path(),
+		})
+	}
 }

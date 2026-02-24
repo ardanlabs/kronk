@@ -53,13 +53,14 @@ func WithFileServer(react bool, static embed.FS, dir string, path string, apiPre
 
 // Config contains all the mandatory systems required by handlers.
 type Config struct {
-	Build      string
-	Log        *logger.Logger
-	AuthClient *authclient.Client
-	Cache      *cache.Cache
-	Libs       *libs.Libs
-	Models     *models.Models
-	Catalog    *catalog.Catalog
+	Build           string
+	Log             *logger.Logger
+	AuthClient      *authclient.Client
+	Cache           *cache.Cache
+	Libs            *libs.Libs
+	Models          *models.Models
+	Catalog         *catalog.Catalog
+	DownloadEnabled bool
 }
 
 // RouteAdder defines behavior that sets the routes to bind for an instance

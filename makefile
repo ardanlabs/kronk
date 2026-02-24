@@ -664,6 +664,40 @@ curl-mcp-web-search:
 	}'
 
 # ==============================================================================
+# Download Service
+#
+# Start the server with download enabled:
+#   make kronk-server-download
+#
+# Test downloading a model file (HEAD to check, GET to download):
+#   make curl-download-head
+#   make curl-download-get
+
+kronk-server-download: kronk-build
+	source .env 2>/dev/null || true && \
+	export KRONK_DOWNLOAD_ENABLED=true && \
+	export KRONK_INSECURE_LOGGING=true && \
+	export KRONK_CATALOG_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
+	export KRONK_CATALOG_REPO_PATH=$$HOME/code/go/src/github.com/ardanlabs/kronk_catalogs && \
+	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
+
+# Check a model file exists and get its size.
+# make curl-download-head FILE="bartowski/cerebras_Qwen3-Coder-REAP-25B-A3B-GGUF/resolve/main/cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0.gguf"
+curl-download-head:
+	curl -I http://localhost:8080/download/$(FILE)
+
+# Download a model file.
+# make curl-download-get FILE="bartowski/cerebras_Qwen3-Coder-REAP-25B-A3B-GGUF/resolve/main/cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0.gguf"
+curl-download-get:
+	curl -o /dev/null -w "HTTP %{http_code} - %{size_download} bytes\n" \
+		http://localhost:8080/download/$(FILE)
+
+# Download a sha file.
+# make curl-download-sha FILE="bartowski/cerebras_Qwen3-Coder-REAP-25B-A3B-GGUF/raw/main/cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0.gguf"
+curl-download-sha:
+	curl http://localhost:8080/download/$(FILE)
+
+# ==============================================================================
 # Running OpenWebUI 
 
 owu-up:

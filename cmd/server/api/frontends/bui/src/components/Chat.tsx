@@ -563,7 +563,7 @@ export default function Chat() {
       <div className="chat-container">
       <div className="chat-header">
         <div className="chat-header-left">
-          <h2>Apps</h2>
+          <h2>Chat</h2>
           <select
             value={selectedModel}
             onChange={(e) => {
