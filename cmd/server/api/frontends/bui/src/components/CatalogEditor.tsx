@@ -914,6 +914,7 @@ export default function CatalogEditor() {
                   <option value="cuda">cuda</option>
                   <option value="metal">metal</option>
                   <option value="vulkan">vulkan</option>
+                  <option value="rocm">rocm</option>
                 </select>
               </div>
               <TriStateSelect label="Direct I/O" value={form.config.useDirectIO} onChange={(v) => setConfig({ useDirectIO: v })} />

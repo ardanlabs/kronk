@@ -75,7 +75,7 @@ func OS(override string) (download.OS, error) {
 }
 
 // Processor will check the KRONK_PROCESSOR env var first and check it's value
-// against the proper set of processor values (cpu, cuda, metal, vulkan). If
+// against the proper set of processor values (cpu, cuda, metal, rocm, vulkan). If
 // that variable is not set, then cpu is used as the default.
 func Processor(override string) (download.Processor, error) {
 	if override != "" {

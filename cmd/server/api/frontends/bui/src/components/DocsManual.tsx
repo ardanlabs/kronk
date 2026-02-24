@@ -446,7 +446,7 @@ Available Commands:
           <p>This downloads libraries to <code>~/.kronk/libraries/</code> using auto-detected settings.</p>
           <p><strong>Environment Variables for Library Installation</strong></p>
           <pre className="code-block"><code>{`KRONK_LIB_PATH  - Library directory (default: \`~/.kronk/libraries\`)
-KRONK_PROCESSOR - \`cpu\`, \`cuda\`, \`metal\`, or \`vulkan\` (default: \`cpu\`)
+KRONK_PROCESSOR - \`cpu\`, \`cuda\`, \`metal\`, \`rocm\`, or \`vulkan\` (default: \`cpu\`)
 KRONK_ARCH      - Architecture override: \`amd64\`, \`arm64\`
 KRONK_OS        - OS override: \`linux\`, \`darwin\`, \`windows\``}</code></pre>
           <p><strong>Example: Install CUDA Libraries</strong></p>
@@ -2612,7 +2612,7 @@ kronk libs --local`}</code></pre>
                 <td><code>--processor</code></td>
                 <td><code>KRONK_PROCESSOR</code></td>
                 <td><em>(auto)</em></td>
-                <td>Processor type (<code>cpu</code>, <code>metal</code>, <code>cuda</code>, <code>vulkan</code>)</td>
+                <td>Processor type (<code>cpu</code>, <code>metal</code>, <code>cuda</code>, <code>rocm</code>, <code>vulkan</code>)</td>
               </tr>
               <tr>
                 <td><code>--hf-token</code></td>
@@ -2732,6 +2732,7 @@ Text-Generation      Llama-3.3-70B-Instruct-Q8_0      no      chat_completion`}<
           <pre className="code-block"><code className="language-shell">{`kronk server start --processor=cuda    # NVIDIA GPU
 kronk server start --processor=metal   # Apple Silicon
 kronk server start --processor=vulkan  # Cross-platform GPU
+kronk server start --processor=rocm    # AMD GPU (ROCm/HIP)
 kronk server start --processor=cpu     # CPU only`}</code></pre>
           <p><strong>Library Path</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start \\
@@ -4216,7 +4217,7 @@ response = client.chat.completions.create(
           <p><strong>Override Detection:</strong></p>
           <p>If auto-detection is incorrect, you can specify:</p>
           <ul>
-            <li>Processor type (CPU, CUDA, Metal, Vulkan)</li>
+            <li>Processor type (CPU, CUDA, Metal, ROCm, Vulkan)</li>
             <li>Architecture (amd64, arm64)</li>
             <li>Operating system</li>
           </ul>
