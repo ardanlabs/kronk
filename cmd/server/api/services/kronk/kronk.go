@@ -96,6 +96,9 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			Host        string // Leave empty to run the local MCP service.
 			BraveAPIKey string `conf:"mask"`
 		}
+		Download struct {
+			Enabled bool `conf:"default:false"`
+		}
 		Tempo struct {
 			Host        string  `conf:"default:localhost:4317"`
 			ServiceName string  `conf:"default:kronk"`
@@ -402,13 +405,14 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
 
 	cfgMux := mux.Config{
-		Build:      tag,
-		Log:        log,
-		AuthClient: authClient,
-		Cache:      cache,
-		Libs:       libs,
-		Models:     models,
-		Catalog:    ctlg,
+		Build:           tag,
+		Log:             log,
+		AuthClient:      authClient,
+		Cache:           cache,
+		Libs:            libs,
+		Models:          models,
+		Catalog:         ctlg,
+		DownloadEnabled: cfg.Download.Enabled,
 	}
 
 	webAPI := mux.WebAPI(cfgMux,

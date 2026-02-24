@@ -148,3 +148,26 @@ The instructor will provide everything you need to follow along and be able to r
 - **Grammar-Constrained SQL Generation** — Use GBNF grammars to guarantee the model's output is syntactically valid SQL. No post-processing, no regex cleanup — every response is executable.
 - **Executing Generated Queries** — Take the model's SQL output and run it against a real database. Handle results, format responses, and close the loop from natural language question to data answer.
 - **Safety and Validation** — Restrict the model to SELECT queries, validate table and column names against your schema, and implement guardrails that prevent destructive operations — because the model generates the SQL, but your code decides what runs.
+
+---
+
+Classroom WiFi router choice
+
+**Plug the GL-AXT1800 into the venue's ethernet** (most training venues have a wired drop or you can ask for one). The router creates your private WiFi network. Everyone — you and the 30 students — connects to it.
+
+The setup gives you both things:
+
+1. **Internet access** through the wired uplink — students can pull the catalog, libs, and anything else they need from the internet
+2. **Fast local network** — model downloads from your machine stay on the private WiFi (LAN traffic never touches the internet uplink), so all 30 students can pull multi-GB models at full WiFi 6 speed
+
+The key insight is that LAN-to-LAN traffic on the router never hits the WAN uplink. When a student curls `http://<your-ip>:8080/download/...`, that traffic stays entirely on the local network.
+
+**Steps:**
+
+1. Plug the router's WAN port into the venue's ethernet
+2. Connect everyone to the router's WiFi
+3. Run Kronk with `KRONK_DOWNLOAD_ENABLED=true` on your machine
+4. Give students your LAN IP (e.g., `192.168.8.100`) — check it with `ifconfig en0`
+5. Students use `http://192.168.8.100:8080/download/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf` in their BUI download screen
+
+**No venue ethernet?** You can also set the router in repeater mode — it connects to the public WiFi as its uplink and creates your private network on top. Same result, just the internet path is slightly slower (WiFi-to-WiFi), but the local model downloads are still LAN-speed.

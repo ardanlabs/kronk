@@ -72,8 +72,8 @@ func (m *Models) DownloadSplits(ctx context.Context, log Logger, modelURLs []str
 		log(ctx, fmt.Sprintf("download-model: model-url[%s] proj-url[%s] model-id[%s]", modelURL, projURL, modelID))
 		log(ctx, "download-model: waiting to check model status...")
 
-		progress := func(src string, currentSize int64, totalSize int64, mibPerSec float64, complete bool) {
-			log(ctx, fmt.Sprintf("\r\x1b[Kdownload-model: Downloading %s... %d MB of %d MB (%.2f MB/s)", src, currentSize/(1024*1024), totalSize/(1024*1024), mibPerSec))
+		progress := func(src string, currentSize int64, totalSize int64, mbPerSec float64, complete bool) {
+			log(ctx, fmt.Sprintf("\r\x1b[Kdownload-model: Downloading %s... %d MB of %d MB (%.2f MB/s)", src, currentSize/(1000*1000), totalSize/(1000*1000), mbPerSec))
 		}
 
 		mp, errOrg := m.downloadModel(ctx, log, modelURL, projURL, progress)
@@ -314,7 +314,7 @@ func (m *Models) pullFile(ctx context.Context, fileURL string, progress download
 		return "", false, fmt.Errorf("pull-sha-file: unable to extract file-path: %w", err)
 	}
 
-	downloaded, err := downloader.Download(ctx, fileURL, modelFilePath, progress, downloader.SizeIntervalMIB100)
+	downloaded, err := downloader.Download(ctx, fileURL, modelFilePath, progress, downloader.SizeIntervalMB100)
 	if err != nil {
 		return "", false, fmt.Errorf("pull-sha-file: unable to download model: %w", err)
 	}

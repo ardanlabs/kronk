@@ -146,7 +146,7 @@ Qwen3-Coder-Next-UD-Q8_K_XL/IMC-Cline:
   incremental-cache: true
 
 Qwen3-Coder-Next-UD-Q8_K_XL/IMC-Kilo:
-  nseq-max: 2
+  nseq-max: 3
   incremental-cache: true
 
 Qwen3-Coder-Next-UD-Q8_K_XL/SPC:
@@ -160,7 +160,7 @@ Qwen3-Coder-Next-UD-Q6_K_XL/IMC-Cline:
   incremental-cache: true
 
 Qwen3-Coder-Next-UD-Q6_K_XL/IMC-Kilo:
-  nseq-max: 2
+  nseq-max: 3
   incremental-cache: true
 
 Qwen3-Coder-Next-UD-Q6_K_XL/SPC:
@@ -174,7 +174,7 @@ Qwen3-Coder-Next-UD-Q5_K_XL/IMC-Cline:
   incremental-cache: true
 
 Qwen3-Coder-Next-UD-Q5_K_XL/IMC-Kilo:
-  nseq-max: 2
+  nseq-max: 3
   incremental-cache: true
 
 Qwen3-Coder-Next-UD-Q5_K_XL/SPC:
@@ -188,7 +188,7 @@ Qwen3-Coder-Next-UD-Q4_K_XL/IMC-Cline:
   incremental-cache: true
 
 Qwen3-Coder-Next-UD-Q4_K_XL/IMC-Kilo:
-  nseq-max: 2
+  nseq-max: 3
   incremental-cache: true
 
 Qwen3-Coder-Next-UD-Q4_K_XL/SPC:
@@ -202,7 +202,7 @@ Qwen3-Coder-Next-UD-Q2_K_XL/IMC-Cline:
   incremental-cache: true
 
 Qwen3-Coder-Next-UD-Q2_K_XL/IMC-Kilo:
-  nseq-max: 2
+  nseq-max: 3
   incremental-cache: true
 
 Qwen3-Coder-Next-UD-Q2_K_XL/SPC:
@@ -216,7 +216,7 @@ Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMC-Cline:
   incremental-cache: true
 
 Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMC-Kilo:
-  nseq-max: 2
+  nseq-max: 3
   incremental-cache: true
   sampling-parameters:
     grammar: hermestoolcalling.grm
@@ -228,7 +228,7 @@ Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/SPC:
 # ------------------------------------------------------------------------------
 
 gpt-oss-120b-F16/IMC-Kilo:
-  nseq-max: 2
+  nseq-max: 3
   incremental-cache: true
 
 gpt-oss-120b-F16/SPC:

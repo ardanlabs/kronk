@@ -7,9 +7,9 @@ import type { CatalogModelResponse, CatalogModelsResponse } from '../types';
 type DetailTab = 'details' | 'pull';
 
 function formatBytes(bytes: number): string {
-  const KB = 1024;
-  const MB = KB * 1024;
-  const GB = MB * 1024;
+  const KB = 1000;
+  const MB = KB * 1000;
+  const GB = MB * 1000;
 
   if (bytes >= GB) {
     return `${(bytes / GB).toFixed(2)} GB`;
