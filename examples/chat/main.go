@@ -27,14 +27,8 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-// const modelURL = "https://huggingface.co/bartowski/cerebras_Qwen3-Coder-REAP-25B-A3B-GGUF/resolve/main/cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0.gguf"
-// const modelURL = "https://huggingface.co/unsloth/gpt-oss-120b-GGUF/resolve/main/gpt-oss-120b-F16.gguf"
-// const modelURL = "https://huggingface.co/unsloth/GLM-4.7-Flash-GGUF/resolve/main/GLM-4.7-Flash-UD-Q8_K_XL.gguf"
-// const modelURL = "https://huggingface.co/unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF/resolve/main/Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL.gguf"
-// const modelURL = "https://huggingface.co/unsloth/Ministral-3-14B-Instruct-2512-GGUF/resolve/main/Ministral-3-14B-Instruct-2512-Q4_0.gguf"
-// const modelURL = "https://huggingface.co/Edge-Quant/Nanbeige4.1-3B-Q8_0-GGUF/resolve/main/nanbeige4.1-3b-q8_0.gguf"
-// const modelURL = "https://huggingface.co/unsloth/rnj-1-instruct-GGUF/resolve/main/rnj-1-instruct-Q6_K.gguf"
-// const modelURL = "https://huggingface.co/unsloth/Qwen3-Coder-Next-GGUF/resolve/main/Qwen3-Coder-Next-UD-Q6_K_XL.gguf"
+//const modelURL = "https://huggingface.co/unsloth/Qwen3.5-35B-A3B-GGUF/resolve/main/Qwen3.5-35B-A3B-UD-Q8_K_XL.gguf"
+
 const modelURL = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
 
 func main() {

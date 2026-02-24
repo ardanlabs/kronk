@@ -284,9 +284,9 @@ func formatMetadataValue(value string) string {
 
 func formatBytes(b int64) string {
 	const (
-		kb int64 = 1024
-		mb       = kb * 1024
-		gb       = mb * 1024
+		kb int64 = 1000
+		mb       = kb * 1000
+		gb       = mb * 1000
 	)
 
 	switch {

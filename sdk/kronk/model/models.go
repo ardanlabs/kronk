@@ -110,7 +110,7 @@ func (mi ModelInfo) String() string {
 		flagStr = strings.Join(flags, ", ")
 	}
 
-	sizeGB := float64(mi.Size) / (1024 * 1024 * 1024)
+	sizeGB := float64(mi.Size) / (1000 * 1000 * 1000)
 
 	return fmt.Sprintf("\nID[%s]\nDesc[%s]\nSize[%.2fGB]\nTemplate[%s]\nType[%s]\nFlags[%s]\n", mi.ID, mi.Desc, sizeGB, mi.Template.FileName, mi.Type, flagStr)
 }
