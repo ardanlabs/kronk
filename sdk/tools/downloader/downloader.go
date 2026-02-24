@@ -15,13 +15,13 @@ import (
 
 // SizeInterval are pre-calculated size interval values.
 const (
-	SizeIntervalMIB    = 1024 * 1024
-	SizeIntervalMIB10  = SizeIntervalMIB * 10
-	SizeIntervalMIB100 = SizeIntervalMIB * 100
+	SizeIntervalMB    = 1000 * 1000
+	SizeIntervalMB10  = SizeIntervalMB * 10
+	SizeIntervalMB100 = SizeIntervalMB * 100
 )
 
 // ProgressFunc provides feedback on the progress of a file download.
-type ProgressFunc func(src string, currentSize int64, totalSize int64, mibPerSec float64, complete bool)
+type ProgressFunc func(src string, currentSize int64, totalSize int64, mbPerSec float64, complete bool)
 
 // Download pulls down a single file from a url to a specified destination.
 func Download(ctx context.Context, src string, dest string, progress ProgressFunc, sizeInterval int64) (bool, error) {
@@ -114,7 +114,7 @@ func (pr *ProgressReader) Read(p []byte) (int, error) {
 
 	if pr.progress != nil && pr.currentSize-pr.lastReported >= pr.sizeInterval {
 		pr.lastReported = pr.currentSize
-		pr.progress(pr.src, pr.currentSize, pr.totalSize, pr.mibPerSec(), false)
+		pr.progress(pr.src, pr.currentSize, pr.totalSize, pr.mbPerSec(), false)
 	}
 
 	return n, err
@@ -123,7 +123,7 @@ func (pr *ProgressReader) Read(p []byte) (int, error) {
 // Close closes the reader once the download is complete.
 func (pr *ProgressReader) Close() error {
 	if pr.progress != nil {
-		pr.progress(pr.src, pr.currentSize, pr.totalSize, pr.mibPerSec(), true)
+		pr.progress(pr.src, pr.currentSize, pr.totalSize, pr.mbPerSec(), true)
 	}
 
 	return pr.reader.Close()
@@ -131,13 +131,13 @@ func (pr *ProgressReader) Close() error {
 
 // =============================================================================
 
-func (pr *ProgressReader) mibPerSec() float64 {
+func (pr *ProgressReader) mbPerSec() float64 {
 	elapsed := time.Since(pr.startTime).Seconds()
 	if elapsed == 0 {
 		return 0
 	}
 
-	return float64(pr.currentSize) / SizeIntervalMIB / elapsed
+	return float64(pr.currentSize) / SizeIntervalMB / elapsed
 }
 
 // =============================================================================

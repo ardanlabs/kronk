@@ -280,11 +280,11 @@ func (lib *Libs) VersionInformation() (VersionTag, error) {
 func (lib *Libs) DownloadVersion(ctx context.Context, log Logger, version string) (VersionTag, error) {
 	tempPath := filepath.Join(lib.path, "temp")
 
-	progress := func(src string, currentSize int64, totalSize int64, mibPerSec float64, complete bool) {
-		log(ctx, fmt.Sprintf("\r\x1b[Kdownload-libraries: Downloading %s... %d MB of %d MB (%.2f MB/s)", src, currentSize/(1024*1024), totalSize/(1024*1024), mibPerSec))
+	progress := func(src string, currentSize int64, totalSize int64, mbPerSec float64, complete bool) {
+		log(ctx, fmt.Sprintf("\r\x1b[Kdownload-libraries: Downloading %s... %d MB of %d MB (%.2f MB/s)", src, currentSize/(1000*1000), totalSize/(1000*1000), mbPerSec))
 	}
 
-	pr := downloader.NewProgressReader(progress, downloader.SizeIntervalMIB10)
+	pr := downloader.NewProgressReader(progress, downloader.SizeIntervalMB10)
 
 	err := download.GetWithContext(ctx, lib.arch.String(), lib.os.String(), lib.processor.String(), version, tempPath, pr)
 	if err != nil {
