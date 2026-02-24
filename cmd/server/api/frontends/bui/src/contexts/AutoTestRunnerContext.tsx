@@ -183,6 +183,7 @@ interface AutoTestRunnerContextType {
   clearRun(): void;
   reevaluateBestTrial(weights: BestConfigWeights): void;
   moveQueuedTrial(args: { trialId: string; direction: 'up' | 'down' }): void;
+  reorderQueuedTrial(args: { trialId: string; targetId: string }): void;
   skipTrial(args: { trialId: string }): void;
   unskipTrial(args: { trialId: string }): void;
 }
@@ -777,6 +778,21 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const reorderQueuedTrial = useCallback(({ trialId, targetId }: { trialId: string; targetId: string }) => {
+    if (trialId === targetId) return;
+    setRun(prev => {
+      if (!prev || prev.status !== 'running_trials') return prev;
+      const fromIdx = prev.trials.findIndex(t => t.id === trialId);
+      const toIdx = prev.trials.findIndex(t => t.id === targetId);
+      if (fromIdx < 0 || toIdx < 0) return prev;
+      if (prev.trials[fromIdx].status !== 'queued') return prev;
+      const trials = [...prev.trials];
+      const [moved] = trials.splice(fromIdx, 1);
+      trials.splice(toIdx, 0, moved);
+      return { ...prev, trials };
+    });
+  }, []);
+
   const skipTrial = useCallback(({ trialId }: { trialId: string }) => {
     setRun(prev => {
       if (!prev || prev.status !== 'running_trials') return prev;
@@ -800,7 +816,7 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AutoTestRunnerContext.Provider value={{ run, isRunning, startSamplingRun, startConfigRun, stopRun, clearRun, reevaluateBestTrial, moveQueuedTrial, skipTrial, unskipTrial }}>
+    <AutoTestRunnerContext.Provider value={{ run, isRunning, startSamplingRun, startConfigRun, stopRun, clearRun, reevaluateBestTrial, moveQueuedTrial, reorderQueuedTrial, skipTrial, unskipTrial }}>
       {children}
     </AutoTestRunnerContext.Provider>
   );
