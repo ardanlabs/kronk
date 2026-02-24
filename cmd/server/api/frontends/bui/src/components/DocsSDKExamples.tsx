@@ -275,8 +275,6 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-//const modelURL = "https://huggingface.co/unsloth/Qwen3.5-35B-A3B-GGUF/resolve/main/Qwen3.5-35B-A3B-UD-Q8_K_XL.gguf"
-
 const modelURL = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
 
 func main() {
@@ -356,7 +354,7 @@ func installSystem() (models.Path, error) {
 	// -------------------------------------------------------------------------
 
 	// You could also download this model using the catalog system.
-	// mp, err := ctlg.DownloadModel(ctx, kronk.FmtLogger, "Qwen3-8B-Q8_0")
+	// mp, err := ctlg.DownloadModel(ctx, kronk.FmtLogger, "Qwen3.5-122B-A10B-UD-Q5_K_XL")
 	// if err != nil {
 	// 	return models.Path{}, fmt.Errorf("unable to download model: %w", err)
 	// }
