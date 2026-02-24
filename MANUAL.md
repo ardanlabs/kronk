@@ -366,7 +366,7 @@ This downloads libraries to `~/.kronk/libraries/` using auto-detected settings.
 
 ```
 KRONK_LIB_PATH  - Library directory (default: `~/.kronk/libraries`)
-KRONK_PROCESSOR - `cpu`, `cuda`, `metal`, or `vulkan` (default: `cpu`)
+KRONK_PROCESSOR - `cpu`, `cuda`, `metal`, `rocm`, or `vulkan` (default: `cpu`)
 KRONK_ARCH      - Architecture override: `amd64`, `arm64`
 KRONK_OS        - OS override: `linux`, `darwin`, `windows`
 ```
@@ -2777,7 +2777,7 @@ underscores replacing hyphens.
 | `--lib-version`      | `KRONK_LIB_VERSION`      | _(empty)_  | Specific llama library version                    |
 | `--arch`             | `KRONK_ARCH`             | _(auto)_   | Architecture override (`amd64`, `arm64`)          |
 | `--os`               | `KRONK_OS`               | _(auto)_   | OS override (`linux`, `darwin`, `windows`)        |
-| `--processor`        | `KRONK_PROCESSOR`        | _(auto)_   | Processor type (`cpu`, `metal`, `cuda`, `vulkan`) |
+| `--processor`        | `KRONK_PROCESSOR`        | _(auto)_   | Processor type (`cpu`, `metal`, `cuda`, `rocm`, `vulkan`) |
 | `--hf-token`         | `KRONK_HF_TOKEN`         | _(empty)_  | Hugging Face API token for gated models           |
 | `--allow-upgrade`    | `KRONK_ALLOW_UPGRADE`    | `true`     | Allow automatic library upgrades                  |
 | `--llama-log`        | `KRONK_LLAMA_LOG`        | `1`        | Llama log level (0=off, 1=on)                     |
@@ -2953,6 +2953,7 @@ Templates are cached in `~/.kronk/templates/` by default.
 kronk server start --processor=cuda    # NVIDIA GPU
 kronk server start --processor=metal   # Apple Silicon
 kronk server start --processor=vulkan  # Cross-platform GPU
+kronk server start --processor=rocm    # AMD GPU (ROCm/HIP)
 kronk server start --processor=cpu     # CPU only
 ```
 
@@ -4413,7 +4414,7 @@ the appropriate binaries to `~/.kronk/libraries/`.
 
 If auto-detection is incorrect, you can specify:
 
-- Processor type (CPU, CUDA, Metal, Vulkan)
+- Processor type (CPU, CUDA, Metal, ROCm, Vulkan)
 - Architecture (amd64, arm64)
 - Operating system
 
@@ -5392,6 +5393,9 @@ KRONK_PROCESSOR=cuda kronk libs --local
 
 # For CPU only
 KRONK_PROCESSOR=cpu kronk libs --local
+
+# For AMD GPU (ROCm)
+KRONK_PROCESSOR=rocm kronk libs --local
 ```
 
 ### 16.2 Model Loading Failures

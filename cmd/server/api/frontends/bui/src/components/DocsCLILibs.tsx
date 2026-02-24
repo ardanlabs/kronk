@@ -93,7 +93,7 @@ export default function DocsCLILibs() {
                   <tr>
                     <td><code>KRONK_PROCESSOR</code></td>
                     <td>cpu</td>
-                    <td>Options: cpu, cuda, metal, vulkan (local mode)</td>
+                    <td>Options: cpu, cuda, metal, rocm, vulkan (local mode)</td>
                   </tr>
                 </tbody>
               </table>

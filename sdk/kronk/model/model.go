@@ -141,7 +141,7 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 	mParams := llama.ModelDefaultParams()
 
 	if cfg.Device != "" {
-		dev := llama.GGMLBackendDeviceByName(cfg.Device)
+		dev := resolveBackendDevice(cfg.Device)
 		if dev == 0 {
 			return nil, fmt.Errorf("ggml-backend-device-by-name: unknown device: %s", cfg.Device)
 		}
@@ -340,7 +340,7 @@ func loadDraftModel(ctx context.Context, log Logger, cfg Config, targetModel lla
 	}
 
 	if dCfg.Device != "" {
-		dev := llama.GGMLBackendDeviceByName(dCfg.Device)
+		dev := resolveBackendDevice(dCfg.Device)
 		if dev == 0 {
 			return nil, fmt.Errorf("ggml-backend-device-by-name: unknown device: %s", dCfg.Device)
 		}
@@ -769,4 +769,23 @@ func ggmlBytes(t GGMLType) int64 {
 	default:
 		return 2
 	}
+}
+
+// resolveBackendDevice maps a user-facing device name to the ggml backend
+// device handle. ROCm libraries register under the "hip" backend name in
+// llama.cpp, so "rocm" is treated as an alias for "hip".
+func resolveBackendDevice(name string) llama.GGMLBackendDevice {
+	candidates := []string{name}
+
+	if strings.EqualFold(name, "rocm") {
+		candidates = []string{"hip", "HIP", name}
+	}
+
+	for _, c := range candidates {
+		if dev := llama.GGMLBackendDeviceByName(c); dev != 0 {
+			return dev
+		}
+	}
+
+	return 0
 }

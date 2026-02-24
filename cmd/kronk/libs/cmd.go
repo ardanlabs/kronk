@@ -20,7 +20,7 @@ Environment Variables (--local mode):
       KRONK_ARCH       (default: runtime.GOARCH)          The architecture to install.
       KRONK_LIB_PATH   (default: $HOME/.kronk/libraries)  The path to the libraries directory,
       KRONK_OS         (default: runtime.GOOS)            The operating system to install.
-      KRONK_PROCESSOR  (default: cpu)                     Options: cpu, cuda, metal, vulkan
+      KRONK_PROCESSOR  (default: cpu)                     Options: cpu, cuda, metal, rocm, vulkan
 
 Flags:
       --local        Run without the model server

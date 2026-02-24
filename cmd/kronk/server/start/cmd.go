@@ -50,13 +50,13 @@ func init() {
 	Cmd.Flags().Bool("ignore-integrity-check", false, "Ignore model integrity check")
 
 	// Runtime settings
-	Cmd.Flags().String("device", "", "Device to use for inference (e.g., cuda, metal)")
+	Cmd.Flags().String("device", "", "Device to use for inference (e.g., cuda, metal, rocm)")
 	Cmd.Flags().String("base-path", "", "Base path for kronk data")
 	Cmd.Flags().String("lib-path", "", "Path to llama library")
 	Cmd.Flags().String("lib-version", "", "Version of llama library")
 	Cmd.Flags().String("arch", "", "Architecture override")
 	Cmd.Flags().String("os", "", "OS override")
-	Cmd.Flags().String("processor", "", "Processor type (e.g., vulkan, metal, cuda)")
+	Cmd.Flags().String("processor", "", "Processor type (e.g., vulkan, metal, cuda, rocm)")
 	Cmd.Flags().String("hf-token", "", "Hugging Face API token")
 	Cmd.Flags().Bool("allow-upgrade", true, "Allow automatic upgrades")
 	Cmd.Flags().Int("llama-log", -1, "Llama log level (0=off, 1=on)")

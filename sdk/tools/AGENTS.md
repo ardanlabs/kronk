@@ -92,7 +92,7 @@ Platform detection and default value resolution.
 - `BaseDir(override)` - Returns base path (`~/.kronk/` or override)
 - `Arch(override)` - Detects CPU architecture (checks `KRONK_ARCH` env var)
 - `OS(override)` - Detects operating system (checks `KRONK_OS` env var)
-- `Processor(override)` - Returns processor type: cpu, cuda, metal, vulkan (checks `KRONK_PROCESSOR`)
+- `Processor(override)` - Returns processor type: cpu, cuda, metal, rocm, vulkan (checks `KRONK_PROCESSOR`)
 - `LibVersion(override)` - Returns library version (checks `KRONK_LIB_VERSION`)
 
 ## downloader Package
@@ -131,7 +131,7 @@ type VersionTag struct {
     Version   string  // Installed version
     Arch      string  // Architecture (arm64, amd64)
     OS        string  // Operating system (darwin, linux, windows)
-    Processor string  // Hardware (cpu, cuda, metal, vulkan)
+    Processor string  // Hardware (cpu, cuda, metal, rocm, vulkan)
     Latest    string  // Latest available version
 }
 ```
@@ -185,6 +185,6 @@ Templates package embeds a `Catalog` instance for model lookups. Access via `tem
 | ------------------- | ------------------------------------------------- |
 | `KRONK_ARCH`        | Override CPU architecture detection               |
 | `KRONK_OS`          | Override OS detection                             |
-| `KRONK_PROCESSOR`   | Set processor type (cpu/cuda/metal/vulkan)        |
+| `KRONK_PROCESSOR`   | Set processor type (cpu/cuda/metal/rocm/vulkan)        |
 | `KRONK_LIB_VERSION` | Pin llama.cpp library version                     |
 | `KRONK_HF_TOKEN`    | HuggingFace authentication token for gated models |
