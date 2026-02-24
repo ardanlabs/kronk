@@ -3,6 +3,7 @@ import type {
   PlaygroundSessionResponse,
   AutoTestTrialResult,
   AutoTestPromptResult,
+  AutoTestScenarioResult,
   SamplingSweepDefinition,
   AutoTestSweepMode,
   ConfigSweepDefinition,
@@ -14,7 +15,12 @@ import { defaultSamplingSweepDef, defaultConfigSweepDef, defaultBestConfigWeight
 import type { AutoTestScenario } from '../types';
 import { useAutoTestRunner } from '../contexts/AutoTestRunnerContext';
 import type { ConfigTrialResult } from '../contexts/AutoTestRunnerContext';
-import { PARAM_TOOLTIPS, ParamTooltip } from './ParamTooltips';
+import { formatMs, scoreColorSafe, formatScore, getScenarioScore, buildSamplingColumns, buildConfigColumns, SWEEP_MODES, FILL_LEVELS } from '../services/sweepModeColumns';
+import type { ColumnDef, CellMeta } from '../services/sweepModeColumns';
+import SamplingSweepParams from './SamplingSweepParams';
+import { SWEEP_PARAM_RANGES } from './SamplingSweepParams';
+import type { SamplingNumericKey, SweepInputTriple } from './SamplingSweepParams';
+import ConfigSweepParams from './ConfigSweepParams';
 
 type SortDirection = 'asc' | 'desc' | null;
 
@@ -59,41 +65,6 @@ interface AutomatedTestingPanelProps {
   sessionSeed: AutoTestSessionSeed | null;
   catalogSampling?: SamplingConfig | null;
 }
-
-type SamplingNumericKey = 'temperature' | 'top_p' | 'top_k' | 'min_p' | 'repeat_penalty' | 'repeat_last_n' |
-  'frequency_penalty' | 'presence_penalty' | 'dry_multiplier' | 'dry_base' | 'dry_allowed_length' |
-  'dry_penalty_last_n' | 'xtc_probability' | 'xtc_threshold' | 'xtc_min_keep' | 'max_tokens';
-
-interface SweepParamRange {
-  validMin: number;
-  validMax: number;
-  defaultStep: number;
-}
-
-interface SweepInputTriple {
-  min: string;
-  max: string;
-  step: string;
-}
-
-const SWEEP_PARAM_RANGES: Record<SamplingNumericKey, SweepParamRange> = {
-  temperature: { validMin: 0, validMax: 2, defaultStep: 0.1 },
-  top_p: { validMin: 0, validMax: 1, defaultStep: 0.1 },
-  top_k: { validMin: 0, validMax: 200, defaultStep: 10 },
-  min_p: { validMin: 0, validMax: 1, defaultStep: 0.05 },
-  repeat_penalty: { validMin: 0, validMax: 3, defaultStep: 0.1 },
-  repeat_last_n: { validMin: 0, validMax: 2048, defaultStep: 64 },
-  frequency_penalty: { validMin: -2, validMax: 2, defaultStep: 0.1 },
-  presence_penalty: { validMin: -2, validMax: 2, defaultStep: 0.1 },
-  dry_multiplier: { validMin: 0, validMax: 5, defaultStep: 0.1 },
-  dry_base: { validMin: 1, validMax: 3, defaultStep: 0.25 },
-  dry_allowed_length: { validMin: 0, validMax: 100, defaultStep: 1 },
-  dry_penalty_last_n: { validMin: 0, validMax: 2048, defaultStep: 64 },
-  xtc_probability: { validMin: 0, validMax: 1, defaultStep: 0.1 },
-  xtc_threshold: { validMin: 0, validMax: 1, defaultStep: 0.1 },
-  xtc_min_keep: { validMin: 1, validMax: 100, defaultStep: 1 },
-  max_tokens: { validMin: 1, validMax: 131072, defaultStep: 512 },
-};
 
 function clampNum(n: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, n));
@@ -152,31 +123,6 @@ function deriveSweepInputs(def: SamplingSweepDefinition): Record<SamplingNumeric
   }
   return out;
 }
-
-function formatMs(ms: number): string {
-  if (!Number.isFinite(ms)) return '—';
-  const total = Math.max(0, Math.round(ms));
-  if (total < 1000) return `${total}ms`;
-  const hours = Math.floor(total / 3600000);
-  const minutes = Math.floor((total % 3600000) / 60000);
-  const seconds = Math.floor((total % 60000) / 1000);
-  const millis = total % 1000;
-  if (hours > 0) return `${hours}h ${minutes}m ${seconds}s ${millis}ms`;
-  if (minutes > 0) return `${minutes}m ${seconds}s ${millis}ms`;
-  return `${seconds}s ${millis}ms`;
-}
-
-function scoreColor(score: number): string {
-  if (score >= 80) return '#2e7d32';
-  if (score >= 50) return '#f9a825';
-  return '#c62828';
-}
-
-function getScenarioScore(trial: AutoTestTrialResult, id: 'chat' | 'tool_call'): number | undefined {
-  const s = trial.scenarioResults.find((r) => r.scenarioId === id);
-  return s?.score;
-}
-
 
 function estimatePromptDurationMs(usage: AutoTestPromptResult['usage']): number | undefined {
   if (!usage) return undefined;
@@ -287,11 +233,25 @@ function TrialProgressBar({ totalTrials, trials, running, runStartedAt }: TrialP
   );
 }
 
-function TrialCountInfo({ count }: { count: number }) {
+function BestTrialMetrics({ trial, showScores }: { trial: AutoTestTrialResult; showScores: boolean }) {
   return (
-    <p style={{ fontSize: 12, color: 'var(--color-gray-600)', marginTop: 8 }}>
-      Trials: {count}
-    </p>
+    <>
+      {showScores && (
+        <>
+          <div><strong>Chat Score:</strong> {formatScore(getScenarioScore(trial, 'chat'))}</div>
+          <div><strong>Tool Score:</strong> {formatScore(getScenarioScore(trial, 'tool_call'))}</div>
+          <div><strong>Total Score:</strong> {formatScore(trial.totalScore)}</div>
+        </>
+      )}
+      <div><strong>Avg TPS:</strong> {trial.avgTPS?.toFixed(1) ?? '—'}</div>
+      <div><strong>Avg TTFT:</strong> {trial.avgTTFT !== undefined ? formatMs(trial.avgTTFT) : '—'}</div>
+      {trial.avgTPSByFill && FILL_LEVELS.map(level => (
+        <div key={`tps-${level}`}><strong>TPS @{level}:</strong> {trial.avgTPSByFill![level]?.toFixed(1) ?? '—'}</div>
+      ))}
+      {trial.avgTTFTByFill && FILL_LEVELS.map(level => (
+        <div key={`ttft-${level}`}><strong>TTFT @{level}:</strong> {trial.avgTTFTByFill![level] !== undefined ? formatMs(trial.avgTTFTByFill![level]) : '—'}</div>
+      ))}
+    </>
   );
 }
 
@@ -299,6 +259,39 @@ interface TrialDetailsProps {
   trial: AutoTestTrialResult;
   scenarioLookup: Record<string, AutoTestScenario>;
   hideScores?: boolean;
+}
+
+interface ScenarioHeaderProps {
+  sr: AutoTestScenarioResult;
+  scenarioName: string;
+  hideScores?: boolean;
+}
+
+function ScenarioHeader({ sr, scenarioName, hideScores }: ScenarioHeaderProps) {
+  return (
+    <div className="autotest-detail-scenario-header">
+      <span className="autotest-detail-scenario-name">{scenarioName}</span>
+      {!hideScores && (
+        <span className="autotest-detail-scenario-score" style={{ color: scoreColorSafe(sr.score) }}>
+          Score: {formatScore(sr.score)}
+        </span>
+      )}
+      {sr.avgTPS !== undefined && <span>TPS: {sr.avgTPS.toFixed(1)}</span>}
+      {sr.avgTTFT !== undefined && <span>TTFT: {formatMs(sr.avgTTFT)}</span>}
+      {sr.avgTPSByFill && Object.keys(sr.avgTPSByFill).length > 0 && (
+        <span style={{ marginLeft: 8, opacity: 0.85 }}>
+          Context Fill TPS:
+          {FILL_LEVELS.map(level => sr.avgTPSByFill![level] !== undefined ? ` @${level}: ${sr.avgTPSByFill![level].toFixed(1)}` : null)}
+        </span>
+      )}
+      {sr.avgTTFTByFill && Object.keys(sr.avgTTFTByFill).length > 0 && (
+        <span style={{ marginLeft: 8, opacity: 0.85 }}>
+          Context Fill TTFT:
+          {FILL_LEVELS.map(level => sr.avgTTFTByFill![level] !== undefined ? ` @${level}: ${formatMs(sr.avgTTFTByFill![level])}` : null)}
+        </span>
+      )}
+    </div>
+  );
 }
 
 function formatLogTime(iso: string): string {
@@ -383,73 +376,16 @@ function TrialDetails({ trial, scenarioLookup, hideScores }: TrialDetailsProps) 
           </button>
           {!scenariosExpanded ? (
             <div className="autotest-detail-scenarios-summary">
-              {trial.scenarioResults.map((sr) => {
-                const scenario = scenarioLookup[sr.scenarioId];
-                return (
-                  <div key={sr.scenarioId} className="autotest-detail-scenario-header">
-                    <span className="autotest-detail-scenario-name">{scenario?.name ?? sr.scenarioId}</span>
-                    {!hideScores && (
-                      <span className="autotest-detail-scenario-score" style={{ color: scoreColor(sr.score) }}>
-                        Score: {sr.score.toFixed(1)}
-                      </span>
-                    )}
-                    {sr.avgTPS !== undefined && <span>TPS: {sr.avgTPS.toFixed(1)}</span>}
-                    {sr.avgTTFT !== undefined && <span>TTFT: {formatMs(sr.avgTTFT)}</span>}
-                    {sr.avgTPSByFill && Object.keys(sr.avgTPSByFill).length > 0 && (
-                      <span style={{ marginLeft: 8, opacity: 0.85 }}>
-                        Context Fill TPS:
-                        {sr.avgTPSByFill['0%'] !== undefined && ` @0%: ${sr.avgTPSByFill['0%'].toFixed(1)}`}
-                        {sr.avgTPSByFill['20%'] !== undefined && ` @20%: ${sr.avgTPSByFill['20%'].toFixed(1)}`}
-                        {sr.avgTPSByFill['50%'] !== undefined && ` @50%: ${sr.avgTPSByFill['50%'].toFixed(1)}`}
-                        {sr.avgTPSByFill['80%'] !== undefined && ` @80%: ${sr.avgTPSByFill['80%'].toFixed(1)}`}
-                      </span>
-                    )}
-                    {sr.avgTTFTByFill && Object.keys(sr.avgTTFTByFill).length > 0 && (
-                      <span style={{ marginLeft: 8, opacity: 0.85 }}>
-                        Context Fill TTFT:
-                        {sr.avgTTFTByFill['0%'] !== undefined && ` @0%: ${formatMs(sr.avgTTFTByFill['0%'])}`}
-                        {sr.avgTTFTByFill['20%'] !== undefined && ` @20%: ${formatMs(sr.avgTTFTByFill['20%'])}`}
-                        {sr.avgTTFTByFill['50%'] !== undefined && ` @50%: ${formatMs(sr.avgTTFTByFill['50%'])}`}
-                        {sr.avgTTFTByFill['80%'] !== undefined && ` @80%: ${formatMs(sr.avgTTFTByFill['80%'])}`}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
+              {trial.scenarioResults.map((sr) => (
+                <ScenarioHeader key={sr.scenarioId} sr={sr} scenarioName={scenarioLookup[sr.scenarioId]?.name ?? sr.scenarioId} hideScores={hideScores} />
+              ))}
             </div>
           ) : (
             trial.scenarioResults.map((sr) => {
               const scenario = scenarioLookup[sr.scenarioId];
               return (
                 <div key={sr.scenarioId} className="autotest-detail-scenario">
-                  <div className="autotest-detail-scenario-header">
-                    <span className="autotest-detail-scenario-name">{scenario?.name ?? sr.scenarioId}</span>
-                    {!hideScores && (
-                      <span className="autotest-detail-scenario-score" style={{ color: scoreColor(sr.score) }}>
-                        Score: {sr.score.toFixed(1)}
-                      </span>
-                    )}
-                    {sr.avgTPS !== undefined && <span>TPS: {sr.avgTPS.toFixed(1)}</span>}
-                    {sr.avgTTFT !== undefined && <span>TTFT: {formatMs(sr.avgTTFT)}</span>}
-                    {sr.avgTPSByFill && Object.keys(sr.avgTPSByFill).length > 0 && (
-                      <span style={{ marginLeft: 8, opacity: 0.85 }}>
-                        Context Fill TPS:
-                        {sr.avgTPSByFill['0%'] !== undefined && ` @0%: ${sr.avgTPSByFill['0%'].toFixed(1)}`}
-                        {sr.avgTPSByFill['20%'] !== undefined && ` @20%: ${sr.avgTPSByFill['20%'].toFixed(1)}`}
-                        {sr.avgTPSByFill['50%'] !== undefined && ` @50%: ${sr.avgTPSByFill['50%'].toFixed(1)}`}
-                        {sr.avgTPSByFill['80%'] !== undefined && ` @80%: ${sr.avgTPSByFill['80%'].toFixed(1)}`}
-                      </span>
-                    )}
-                    {sr.avgTTFTByFill && Object.keys(sr.avgTTFTByFill).length > 0 && (
-                      <span style={{ marginLeft: 8, opacity: 0.85 }}>
-                        Context Fill TTFT:
-                        {sr.avgTTFTByFill['0%'] !== undefined && ` @0%: ${formatMs(sr.avgTTFTByFill['0%'])}`}
-                        {sr.avgTTFTByFill['20%'] !== undefined && ` @20%: ${formatMs(sr.avgTTFTByFill['20%'])}`}
-                        {sr.avgTTFTByFill['50%'] !== undefined && ` @50%: ${formatMs(sr.avgTTFTByFill['50%'])}`}
-                        {sr.avgTTFTByFill['80%'] !== undefined && ` @80%: ${formatMs(sr.avgTTFTByFill['80%'])}`}
-                      </span>
-                    )}
-                  </div>
+                  <ScenarioHeader sr={sr} scenarioName={scenario?.name ?? sr.scenarioId} hideScores={hideScores} />
                   <div className="autotest-detail-prompts">
                     {sr.promptResults.map((pr) => {
                       const promptKey = `${sr.scenarioId}:${pr.promptId}`;
@@ -504,8 +440,8 @@ function TrialDetails({ trial, scenarioLookup, hideScores }: TrialDetailsProps) 
                               </span>
                             </div>
                             {!hideScores && (
-                              <span className="autotest-detail-prompt-score" style={{ color: scoreColor(pr.score) }}>
-                                {pr.score.toFixed(1)}
+                              <span className="autotest-detail-prompt-score" style={{ color: scoreColorSafe(pr.score) }}>
+                                {formatScore(pr.score)}
                               </span>
                             )}
                           </div>
@@ -569,7 +505,7 @@ function TrialDetails({ trial, scenarioLookup, hideScores }: TrialDetailsProps) 
 }
 
 export default function AutomatedTestingPanel({ session, sessionSeed, catalogSampling }: AutomatedTestingPanelProps) {
-  const { run, isRunning, startSamplingRun, startConfigRun, stopRun, clearRun, reevaluateBestTrial } = useAutoTestRunner();
+  const { run, isRunning, startSamplingRun, startConfigRun, stopRun, clearRun, reevaluateBestTrial, moveQueuedTrial, skipTrial, unskipTrial } = useAutoTestRunner();
 
   // Compute initial values from the run (if any) so that remounting
   // after navigation restores the sweep parameters instead of resetting.
@@ -602,6 +538,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
   const [expandedTrials, setExpandedTrials] = useState<Set<string>>(new Set());
   const [repeats, setRepeats] = useState(() => run?.repeats ?? 1);
   const [sort, setSort] = useState<SortState>({ column: null, direction: null });
+  const canReorder = isRunning && run?.status === 'running_trials' && sort.column === null;
 
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -621,67 +558,6 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
       column: prev.column === column && nextSortDirection(prev.direction) === null ? null : column,
       direction: prev.column === column ? nextSortDirection(prev.direction) : 'asc',
     }));
-  }, []);
-
-  const getSamplingValue = useCallback((row: AutoTestTrialResult, col: string): number | string | undefined => {
-    switch (col) {
-      case 'temperature': return row.candidate.temperature;
-      case 'top_p': return row.candidate.top_p;
-      case 'top_k': return row.candidate.top_k;
-      case 'min_p': return row.candidate.min_p;
-      case 'chat_score': return getScenarioScore(row, 'chat');
-      case 'tool_score': return getScenarioScore(row, 'tool_call');
-      case 'total_score': return row.totalScore;
-      case 'status': return row.status === 'failed' ? 'Failed' : (row.totalScore !== undefined && row.totalScore !== null) ? 'OK' : '...';
-      case 'avg_tps': return row.avgTPS;
-      case 'avg_ttft': return row.avgTTFT;
-      case 'tps_0': return row.avgTPSByFill?.['0%'];
-      case 'tps_20': return row.avgTPSByFill?.['20%'];
-      case 'tps_50': return row.avgTPSByFill?.['50%'];
-      case 'tps_80': return row.avgTPSByFill?.['80%'];
-      case 'ttft_0': return row.avgTTFTByFill?.['0%'];
-      case 'ttft_20': return row.avgTTFTByFill?.['20%'];
-      case 'ttft_50': return row.avgTTFTByFill?.['50%'];
-      case 'ttft_80': return row.avgTTFTByFill?.['80%'];
-      case 'duration': {
-        if (!row.startedAt) return undefined;
-        const endMs = row.finishedAt ? Date.parse(row.finishedAt) : Date.now();
-        return endMs - Date.parse(row.startedAt);
-      }
-      default: return undefined;
-    }
-  }, []);
-
-  const getConfigValue = useCallback((row: ConfigTrialResult, col: string): number | string | undefined => {
-    switch (col) {
-      case 'context_window': return row.config?.['context_window'];
-      case 'nbatch': return row.config?.nbatch;
-      case 'nubatch': return row.config?.nubatch;
-      case 'nseq_max': return row.config?.['nseq_max'];
-      case 'flash_attention': return row.config?.['flash_attention'];
-      case 'cache_type': return row.config?.['cache_type'];
-      case 'cache_mode': return row.config?.['cache_mode'];
-      case 'status': return row.error ? `Error: ${row.error}` : (row.totalScore !== undefined && row.totalScore !== null) ? 'OK' : '...';
-      case 'chat_score': return getScenarioScore(row, 'chat');
-      case 'tool_score': return getScenarioScore(row, 'tool_call');
-      case 'total_score': return row.totalScore;
-      case 'avg_tps': return row.avgTPS;
-      case 'avg_ttft': return row.avgTTFT;
-      case 'tps_0': return row.avgTPSByFill?.['0%'];
-      case 'tps_20': return row.avgTPSByFill?.['20%'];
-      case 'tps_50': return row.avgTPSByFill?.['50%'];
-      case 'tps_80': return row.avgTPSByFill?.['80%'];
-      case 'ttft_0': return row.avgTTFTByFill?.['0%'];
-      case 'ttft_20': return row.avgTTFTByFill?.['20%'];
-      case 'ttft_50': return row.avgTTFTByFill?.['50%'];
-      case 'ttft_80': return row.avgTTFTByFill?.['80%'];
-      case 'duration': {
-        if (!row.startedAt) return undefined;
-        const endMs = row.finishedAt ? Date.parse(row.finishedAt) : Date.now();
-        return endMs - Date.parse(row.startedAt);
-      }
-      default: return undefined;
-    }
   }, []);
 
   const toggleTrialExpanded = useCallback((id: string) => {
@@ -816,19 +692,42 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
     if (runKind) setSweepMode(runKind);
   }, [runKind]);
 
-  const sortedTrials = useMemo(() => sortRows(trials, sort, getSamplingValue), [trials, sort, getSamplingValue]);
-  const sortedConfigTrials = useMemo(() => sortRows(configTrials, sort, getConfigValue), [configTrials, sort, getConfigValue]);
+  const activeTrials = displayMode === 'config' ? configTrials : trials;
+
+  const columns = useMemo<ColumnDef<any>[]>(() =>
+    displayMode === 'config' ? buildConfigColumns() : buildSamplingColumns(),
+  [displayMode]);
+
+  const columnById = useMemo(() =>
+    Object.fromEntries(columns.map(c => [c.id, c])) as Record<string, ColumnDef<any>>,
+  [columns]);
+
+  const getColumnValue = useCallback((row: AutoTestTrialResult, col: string): number | string | undefined =>
+    columnById[col]?.getValue(row),
+  [columnById]);
+
+  const sortedActiveTrials = useMemo(() => sortRows(activeTrials, sort, getColumnValue), [activeTrials, sort, getColumnValue]);
 
   const hasEnabledScenario = enabledScenarios.chat || enabledScenarios.tool_call;
 
-  const samplingTrialCount = useMemo(() => generateTrialCandidates(sweepDef, maxTrials).length, [sweepDef, maxTrials]);
+  const effectiveSweepDef = useMemo<SamplingSweepDefinition>(() => {
+    const numericKeys = Object.keys(SWEEP_PARAM_RANGES) as SamplingNumericKey[];
+    const numericExpanded = Object.fromEntries(
+      numericKeys.map((key) => {
+        const { min, max, step } = normalizeTriple(key, sweepInputs[key]);
+        return [key, expandSweep(min, max, step)];
+      }),
+    ) as Pick<SamplingSweepDefinition, SamplingNumericKey>;
+    return { ...sweepDef, ...numericExpanded };
+  }, [sweepInputs, sweepDef]);
+
+  const samplingTrialCount = useMemo(() => generateTrialCandidates(effectiveSweepDef, maxTrials).length, [effectiveSweepDef, maxTrials]);
   const configTrialCount = useMemo(
     () => sessionSeed ? generateConfigCandidates(sessionSeed.base_config, configSweepDef).length : 1,
     [sessionSeed, configSweepDef],
   );
 
   // Auto-expand results when first trial data arrives
-  const activeTrials = displayMode === 'config' ? configTrials : trials;
   const prevTrialCountRef = useRef(0);
   useEffect(() => {
     if (activeTrials.length > 0 && prevTrialCountRef.current === 0 && !resultsExpanded) {
@@ -839,15 +738,16 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
 
   const handleRun = useCallback(() => {
     if (sweepMode === 'sampling') {
-      if (!session) return;
+      if (!session && !sessionSeed?.model_id) return;
       startSamplingRun({
-        sessionId: session.session_id,
+        sessionId: session?.session_id,
+        sessionSeed: session ? undefined : sessionSeed ?? undefined,
         enabledScenarios,
-        sweepDef,
+        sweepDef: effectiveSweepDef,
         maxTrials,
         weights,
         repeats,
-        effectiveConfig: session.effective_config,
+        effectiveConfig: session?.effective_config,
       });
     } else {
       if (!sessionSeed?.model_id || session) return;
@@ -861,7 +761,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
     }
     appliedWeightsRef.current = { ...weights };
     setWeightsChanged(false);
-  }, [sweepMode, session, sessionSeed, enabledScenarios, sweepDef, maxTrials, configSweepDef, weights, repeats, startSamplingRun, startConfigRun]);
+  }, [sweepMode, session, sessionSeed, enabledScenarios, effectiveSweepDef, maxTrials, configSweepDef, weights, repeats, startSamplingRun, startConfigRun]);
 
   const handleWeightChange = useCallback((key: keyof BestConfigWeights, value: number) => {
     setWeights(w => {
@@ -888,7 +788,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
   }, [clearRun]);
 
   const canRun = sweepMode === 'sampling'
-    ? !!(session && !isRunning && hasEnabledScenario)
+    ? !!((session || sessionSeed?.model_id) && !isRunning && hasEnabledScenario)
     : !!(sessionSeed?.model_id && !session && !isRunning && hasEnabledScenario);
 
   return (
@@ -898,28 +798,19 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
         <div style={{ width: '50%' }}>
           <h4>Sweep Mode</h4>
           <div className="playground-inline-options" style={{ paddingBottom: '20px' }}>
-            <label className="playground-inline-option">
-              <input
-                type="radio"
-                name="sweepMode"
-                value="sampling"
-                checked={sweepMode === 'sampling'}
-                onChange={() => setSweepMode('sampling')}
-                disabled={isRunning}
-              />
-              Sampling Sweep
-            </label>
-            <label className="playground-inline-option">
-              <input
-                type="radio"
-                name="sweepMode"
-                value="config"
-                checked={sweepMode === 'config'}
-                onChange={() => setSweepMode('config')}
-                disabled={isRunning}
-              />
-              Config Sweep
-            </label>
+            {SWEEP_MODES.map(m => (
+              <label key={m.kind} className="playground-inline-option">
+                <input
+                  type="radio"
+                  name="sweepMode"
+                  value={m.kind}
+                  checked={sweepMode === m.kind}
+                  onChange={() => setSweepMode(m.kind as AutoTestSweepMode)}
+                  disabled={isRunning}
+                />
+                {m.label}
+              </label>
+            ))}
           </div>
 
           {/* Scenario Selection (sampling mode only) */}
@@ -968,378 +859,36 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
 
       {/* Config Parameters (config mode only) */}
       {sweepMode === 'config' && (
-        <div className="playground-autotest-section">
-          <h4>Config Parameters</h4>
-          <p style={{ fontSize: 12, color: '#6d4c00', marginBottom: 8 }}>
-            ⚠ Each candidate reloads the model. This is slower than sampling sweeps.
-          </p>
-          <div className="playground-sweep-params">
-            <div className="playground-sweep-param">
-              <label className="playground-sweep-param-toggle">NBatch{PARAM_TOOLTIPS.nbatch && <ParamTooltip text={PARAM_TOOLTIPS.nbatch} />}</label>
-              <input
-                type="text"
-                className="playground-sweep-param-values"
-                value={rawNBatch}
-                onChange={(e) => setRawNBatch(e.target.value)}
-                onBlur={() => commitNumericSweep(rawNBatch, 'nbatch', setRawNBatch)}
-                onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-                placeholder="512, 1024, 2048, 4096"
-                disabled={isRunning}
-              />
-            </div>
-
-            <div className="playground-sweep-param">
-              <label className="playground-sweep-param-toggle">NUBatch{PARAM_TOOLTIPS.nubatch && <ParamTooltip text={PARAM_TOOLTIPS.nubatch} />}</label>
-              <input
-                type="text"
-                className="playground-sweep-param-values"
-                value={rawNUBatch}
-                onChange={(e) => setRawNUBatch(e.target.value)}
-                onBlur={() => commitNumericSweep(rawNUBatch, 'nubatch', setRawNUBatch)}
-                onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-                placeholder="128, 256, 512, 1024, 2048"
-                disabled={isRunning}
-              />
-            </div>
-
-            <div className="playground-sweep-param">
-              <label className="playground-sweep-param-toggle">Context Window{PARAM_TOOLTIPS.contextWindow && <ParamTooltip text={PARAM_TOOLTIPS.contextWindow} />}</label>
-              <input
-                type="text"
-                className="playground-sweep-param-values"
-                value={rawContextWindow}
-                onChange={(e) => setRawContextWindow(e.target.value)}
-                onBlur={() => commitNumericSweep(rawContextWindow, 'contextWindow', setRawContextWindow)}
-                onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-                placeholder="2048, 4096, 8192, 16384, 32768"
-                disabled={isRunning}
-              />
-            </div>
-
-            <div className="playground-sweep-param">
-              <label className="playground-sweep-param-toggle">NSeqMax{PARAM_TOOLTIPS.nSeqMax && <ParamTooltip text={PARAM_TOOLTIPS.nSeqMax} />}</label>
-              <input
-                type="text"
-                className="playground-sweep-param-values"
-                value={rawNSeqMax}
-                onChange={(e) => setRawNSeqMax(e.target.value)}
-                onBlur={() => commitNumericSweep(rawNSeqMax, 'nSeqMax', setRawNSeqMax)}
-                onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-                placeholder="1, 2, 4, 8"
-                disabled={isRunning}
-              />
-            </div>
-
-            <div className="playground-sweep-param">
-              <label className="playground-sweep-param-toggle">Flash Attention{PARAM_TOOLTIPS.flashAttention && <ParamTooltip text={PARAM_TOOLTIPS.flashAttention} />}</label>
-              <div className="playground-sweep-option-checks">
-                {['enabled', 'disabled'].map((val) => (
-                  <label key={val} className="playground-sweep-option-label">
-                    <input
-                      type="checkbox"
-                      checked={configSweepDef.flashAttention.values.includes(val)}
-                      onChange={(e) => {
-                        setConfigSweepDef(d => {
-                          const prev = d.flashAttention.values;
-                          const next = e.target.checked ? [...prev, val] : prev.filter(v => v !== val);
-                          return { ...d, flashAttention: { ...d.flashAttention, values: next } };
-                        });
-                      }}
-                      disabled={isRunning}
-                    />
-                    {val}
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <div className="playground-sweep-param">
-              <label className="playground-sweep-param-toggle">Cache Type{PARAM_TOOLTIPS.cacheType && <ParamTooltip text={PARAM_TOOLTIPS.cacheType} />}</label>
-              <div className="playground-sweep-option-checks">
-                {['f16', 'q8_0', 'q4_0'].map((val) => (
-                  <label key={val} className="playground-sweep-option-label">
-                    <input
-                      type="checkbox"
-                      checked={configSweepDef.cacheType.values.includes(val)}
-                      onChange={(e) => {
-                        setConfigSweepDef(d => {
-                          const prev = d.cacheType.values;
-                          const next = e.target.checked ? [...prev, val] : prev.filter(v => v !== val);
-                          return { ...d, cacheType: { ...d.cacheType, values: next } };
-                        });
-                      }}
-                      disabled={isRunning}
-                    />
-                    {val}
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <div className="playground-sweep-param">
-              <label className="playground-sweep-param-toggle">Cache Mode{PARAM_TOOLTIPS.cacheMode && <ParamTooltip text={PARAM_TOOLTIPS.cacheMode} />}</label>
-              <div className="playground-sweep-option-checks">
-                {['none', 'spc', 'imc'].map((val) => (
-                  <label key={val} className="playground-sweep-option-label">
-                    <input
-                      type="checkbox"
-                      checked={configSweepDef.cacheMode.values.includes(val)}
-                      onChange={(e) => {
-                        setConfigSweepDef(d => {
-                          const prev = d.cacheMode.values;
-                          const next = e.target.checked ? [...prev, val] : prev.filter(v => v !== val);
-                          return { ...d, cacheMode: { ...d.cacheMode, values: next } };
-                        });
-                      }}
-                      disabled={isRunning}
-                    />
-                    {val === 'none' ? 'None' : val.toUpperCase()}
-                  </label>
-                ))}
-              </div>
-            </div>
-          </div>
-          <TrialCountInfo count={configTrialCount} />
-        </div>
+        <ConfigSweepParams
+          configSweepDef={configSweepDef}
+          setConfigSweepDef={setConfigSweepDef}
+          rawNBatch={rawNBatch}
+          setRawNBatch={setRawNBatch}
+          rawNUBatch={rawNUBatch}
+          setRawNUBatch={setRawNUBatch}
+          rawContextWindow={rawContextWindow}
+          setRawContextWindow={setRawContextWindow}
+          rawNSeqMax={rawNSeqMax}
+          setRawNSeqMax={setRawNSeqMax}
+          commitNumericSweep={commitNumericSweep}
+          isRunning={isRunning}
+          trialCount={configTrialCount}
+        />
       )}
 
       {/* Sampling Sweep Parameters (sampling mode only) */}
       {sweepMode === 'sampling' && (
-        <div className="playground-autotest-section">
-          <h4>Sampling Sweep Parameters</h4>
-          <p style={{ fontSize: 12, color: 'var(--color-gray-600)', marginBottom: 8 }}>
-            Set min, max, and step values to define the sweep range. Set min = max for no sweep.
-          </p>
-          <div className="playground-sweep-params">
-            <div className="playground-sweep-group-title">Generation</div>
-            {([
-              ['temperature', 'Temperature'],
-              ['top_p', 'Top P'],
-              ['top_k', 'Top K'],
-              ['min_p', 'Min P'],
-            ] as [SamplingNumericKey & keyof SamplingConfig, string][]).map(([key, label]) => {
-              const r = SWEEP_PARAM_RANGES[key];
-              const triple = sweepInputs[key];
-              return (
-                <div className="playground-sweep-param" key={key}>
-                  <label className="playground-sweep-param-toggle">
-                    {label}
-                    {PARAM_TOOLTIPS[key] && <ParamTooltip text={PARAM_TOOLTIPS[key]} />}
-                    {catalogSampling && catalogSampling[key] !== undefined && (
-                      <span className="sweep-catalog-hint" title="Default catalog value">(default: {catalogSampling[key]})</span>
-                    )}
-                  </label>
-                  <div className="playground-sweep-param-range">
-                    <div className="playground-sweep-param-range-field">
-                      <span className="playground-sweep-param-range-label">Min ({r.validMin})</span>
-                      <input type="number" value={triple.min} min={r.validMin} max={r.validMax} step={r.defaultStep}
-                        onChange={(e) => setSweepInputs(prev => ({ ...prev, [key]: { ...prev[key], min: e.target.value } }))}
-                        onBlur={() => commitTriple(key)} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} disabled={isRunning} />
-                    </div>
-                    <div className="playground-sweep-param-range-field">
-                      <span className="playground-sweep-param-range-label">Max ({r.validMax})</span>
-                      <input type="number" value={triple.max} min={r.validMin} max={r.validMax} step={r.defaultStep}
-                        onChange={(e) => setSweepInputs(prev => ({ ...prev, [key]: { ...prev[key], max: e.target.value } }))}
-                        onBlur={() => commitTriple(key)} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} disabled={isRunning} />
-                    </div>
-                    <div className="playground-sweep-param-range-field">
-                      <span className="playground-sweep-param-range-label">Step ({r.defaultStep})</span>
-                      <input type="number" value={triple.step} min={0} step={r.defaultStep}
-                        onChange={(e) => setSweepInputs(prev => ({ ...prev, [key]: { ...prev[key], step: e.target.value } }))}
-                        onBlur={() => commitTriple(key)} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} disabled={isRunning} />
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-
-            <div className="playground-sweep-group-title">Repetition Control</div>
-            {([
-              ['repeat_penalty', 'Repeat Penalty'],
-              ['repeat_last_n', 'Repeat Last N'],
-              ['frequency_penalty', 'Frequency Penalty'],
-              ['presence_penalty', 'Presence Penalty'],
-            ] as [SamplingNumericKey & keyof SamplingConfig, string][]).map(([key, label]) => {
-              const r = SWEEP_PARAM_RANGES[key];
-              const triple = sweepInputs[key];
-              return (
-                <div className="playground-sweep-param" key={key}>
-                  <label className="playground-sweep-param-toggle">
-                    {label}
-                    {PARAM_TOOLTIPS[key] && <ParamTooltip text={PARAM_TOOLTIPS[key]} />}
-                    {catalogSampling && catalogSampling[key] !== undefined && (
-                      <span className="sweep-catalog-hint" title="Default catalog value">(default: {catalogSampling[key]})</span>
-                    )}
-                  </label>
-                  <div className="playground-sweep-param-range">
-                    <div className="playground-sweep-param-range-field">
-                      <span className="playground-sweep-param-range-label">Min ({r.validMin})</span>
-                      <input type="number" value={triple.min} min={r.validMin} max={r.validMax} step={r.defaultStep}
-                        onChange={(e) => setSweepInputs(prev => ({ ...prev, [key]: { ...prev[key], min: e.target.value } }))}
-                        onBlur={() => commitTriple(key)} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} disabled={isRunning} />
-                    </div>
-                    <div className="playground-sweep-param-range-field">
-                      <span className="playground-sweep-param-range-label">Max ({r.validMax})</span>
-                      <input type="number" value={triple.max} min={r.validMin} max={r.validMax} step={r.defaultStep}
-                        onChange={(e) => setSweepInputs(prev => ({ ...prev, [key]: { ...prev[key], max: e.target.value } }))}
-                        onBlur={() => commitTriple(key)} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} disabled={isRunning} />
-                    </div>
-                    <div className="playground-sweep-param-range-field">
-                      <span className="playground-sweep-param-range-label">Step ({r.defaultStep})</span>
-                      <input type="number" value={triple.step} min={0} step={r.defaultStep}
-                        onChange={(e) => setSweepInputs(prev => ({ ...prev, [key]: { ...prev[key], step: e.target.value } }))}
-                        onBlur={() => commitTriple(key)} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} disabled={isRunning} />
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-
-            <div className="playground-sweep-group-title">DRY Sampler</div>
-            {([
-              ['dry_multiplier', 'DRY Multiplier'],
-              ['dry_base', 'DRY Base'],
-              ['dry_allowed_length', 'DRY Allowed Length'],
-              ['dry_penalty_last_n', 'DRY Penalty Last N'],
-            ] as [SamplingNumericKey & keyof SamplingConfig, string][]).map(([key, label]) => {
-              const r = SWEEP_PARAM_RANGES[key];
-              const triple = sweepInputs[key];
-              return (
-                <div className="playground-sweep-param" key={key}>
-                  <label className="playground-sweep-param-toggle">
-                    {label}
-                    {PARAM_TOOLTIPS[key] && <ParamTooltip text={PARAM_TOOLTIPS[key]} />}
-                    {catalogSampling && catalogSampling[key] !== undefined && (
-                      <span className="sweep-catalog-hint" title="Default catalog value">(default: {catalogSampling[key]})</span>
-                    )}
-                  </label>
-                  <div className="playground-sweep-param-range">
-                    <div className="playground-sweep-param-range-field">
-                      <span className="playground-sweep-param-range-label">Min ({r.validMin})</span>
-                      <input type="number" value={triple.min} min={r.validMin} max={r.validMax} step={r.defaultStep}
-                        onChange={(e) => setSweepInputs(prev => ({ ...prev, [key]: { ...prev[key], min: e.target.value } }))}
-                        onBlur={() => commitTriple(key)} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} disabled={isRunning} />
-                    </div>
-                    <div className="playground-sweep-param-range-field">
-                      <span className="playground-sweep-param-range-label">Max ({r.validMax})</span>
-                      <input type="number" value={triple.max} min={r.validMin} max={r.validMax} step={r.defaultStep}
-                        onChange={(e) => setSweepInputs(prev => ({ ...prev, [key]: { ...prev[key], max: e.target.value } }))}
-                        onBlur={() => commitTriple(key)} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} disabled={isRunning} />
-                    </div>
-                    <div className="playground-sweep-param-range-field">
-                      <span className="playground-sweep-param-range-label">Step ({r.defaultStep})</span>
-                      <input type="number" value={triple.step} min={0} step={r.defaultStep}
-                        onChange={(e) => setSweepInputs(prev => ({ ...prev, [key]: { ...prev[key], step: e.target.value } }))}
-                        onBlur={() => commitTriple(key)} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} disabled={isRunning} />
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-
-            <div className="playground-sweep-group-title">XTC Sampler</div>
-            {([
-              ['xtc_probability', 'XTC Probability'],
-              ['xtc_threshold', 'XTC Threshold'],
-              ['xtc_min_keep', 'XTC Min Keep'],
-            ] as [SamplingNumericKey & keyof SamplingConfig, string][]).map(([key, label]) => {
-              const r = SWEEP_PARAM_RANGES[key];
-              const triple = sweepInputs[key];
-              return (
-                <div className="playground-sweep-param" key={key}>
-                  <label className="playground-sweep-param-toggle">
-                    {label}
-                    {PARAM_TOOLTIPS[key] && <ParamTooltip text={PARAM_TOOLTIPS[key]} />}
-                    {catalogSampling && catalogSampling[key] !== undefined && (
-                      <span className="sweep-catalog-hint" title="Default catalog value">(default: {catalogSampling[key]})</span>
-                    )}
-                  </label>
-                  <div className="playground-sweep-param-range">
-                    <div className="playground-sweep-param-range-field">
-                      <span className="playground-sweep-param-range-label">Min ({r.validMin})</span>
-                      <input type="number" value={triple.min} min={r.validMin} max={r.validMax} step={r.defaultStep}
-                        onChange={(e) => setSweepInputs(prev => ({ ...prev, [key]: { ...prev[key], min: e.target.value } }))}
-                        onBlur={() => commitTriple(key)} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} disabled={isRunning} />
-                    </div>
-                    <div className="playground-sweep-param-range-field">
-                      <span className="playground-sweep-param-range-label">Max ({r.validMax})</span>
-                      <input type="number" value={triple.max} min={r.validMin} max={r.validMax} step={r.defaultStep}
-                        onChange={(e) => setSweepInputs(prev => ({ ...prev, [key]: { ...prev[key], max: e.target.value } }))}
-                        onBlur={() => commitTriple(key)} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} disabled={isRunning} />
-                    </div>
-                    <div className="playground-sweep-param-range-field">
-                      <span className="playground-sweep-param-range-label">Step ({r.defaultStep})</span>
-                      <input type="number" value={triple.step} min={0} step={r.defaultStep}
-                        onChange={(e) => setSweepInputs(prev => ({ ...prev, [key]: { ...prev[key], step: e.target.value } }))}
-                        onBlur={() => commitTriple(key)} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} disabled={isRunning} />
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-
-            <div className="playground-sweep-group-title">Reasoning</div>
-            <div className="playground-sweep-param">
-              <label className="playground-sweep-param-toggle">
-                Enable Thinking
-                {PARAM_TOOLTIPS.enable_thinking && <ParamTooltip text={PARAM_TOOLTIPS.enable_thinking} />}
-                {catalogSampling?.enable_thinking && (
-                  <span className="sweep-catalog-hint" title="Default catalog value">— {catalogSampling.enable_thinking === 'true' ? 'Enabled' : 'Disabled'}</span>
-                )}
-              </label>
-              <div className="playground-sweep-option-checks">
-                {(['true', 'false'] as const).map((val) => (
-                  <label key={val} className="playground-sweep-option-label">
-                    <input
-                      type="checkbox"
-                      checked={sweepDef.enable_thinking.includes(val)}
-                      onChange={(e) => {
-                        setSweepDef(d => {
-                          const prev = d.enable_thinking;
-                          const next = e.target.checked ? [...prev, val] : prev.filter(v => v !== val);
-                          return { ...d, enable_thinking: next.length > 0 ? next : prev };
-                        });
-                        setSweepDirty(true);
-                      }}
-                      disabled={isRunning}
-                    />
-                    {val === 'true' ? 'Enabled' : 'Disabled'}
-                  </label>
-                ))}
-              </div>
-            </div>
-            <div className="playground-sweep-param">
-              <label className="playground-sweep-param-toggle">
-                Reasoning Effort
-                {PARAM_TOOLTIPS.reasoning_effort && <ParamTooltip text={PARAM_TOOLTIPS.reasoning_effort} />}
-                {catalogSampling?.reasoning_effort && (
-                  <span className="sweep-catalog-hint" title="Default catalog value">— {catalogSampling.reasoning_effort}</span>
-                )}
-              </label>
-              <div className="playground-sweep-option-checks">
-                {(['none', 'minimal', 'low', 'medium', 'high'] as const).map((val) => (
-                  <label key={val} className="playground-sweep-option-label">
-                    <input
-                      type="checkbox"
-                      checked={sweepDef.reasoning_effort.includes(val)}
-                      onChange={(e) => {
-                        setSweepDef(d => {
-                          const prev = d.reasoning_effort;
-                          const next = e.target.checked ? [...prev, val] : prev.filter(v => v !== val);
-                          return { ...d, reasoning_effort: next.length > 0 ? next : prev };
-                        });
-                        setSweepDirty(true);
-                      }}
-                      disabled={isRunning}
-                    />
-                    {val.charAt(0).toUpperCase() + val.slice(1)}
-                  </label>
-                ))}
-              </div>
-            </div>
-          </div>
-          <TrialCountInfo count={samplingTrialCount} />
-        </div>
+        <SamplingSweepParams
+          sweepDef={sweepDef}
+          setSweepDef={setSweepDef}
+          sweepInputs={sweepInputs}
+          setSweepInputs={setSweepInputs}
+          commitTriple={commitTriple}
+          setSweepDirty={setSweepDirty}
+          catalogSampling={catalogSampling}
+          isRunning={isRunning}
+          trialCount={samplingTrialCount}
+        />
       )}
 
       {/* Action Buttons */}
@@ -1356,7 +905,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
             Stop
           </button>
         )}
-        {(displayMode === 'config' ? configTrials : trials).length > 0 && !isRunning && (
+        {activeTrials.length > 0 && !isRunning && (
           <button className="btn btn-secondary btn-small" onClick={handleClear}>
             Clear Results
           </button>
@@ -1369,14 +918,14 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
       )}
 
       {/* Template Repair Status */}
-      {templateRepairStatus && isRunning && (
+      {templateRepairStatus && isRunning && runnerState !== 'running_trials' && (
         <div className="playground-autotest-status">
           <span className="playground-autotest-spinner" /> {templateRepairStatus}
         </div>
       )}
 
       {/* Calibration Status */}
-      {calibrationStatus && isRunning && (
+      {calibrationStatus && isRunning && runnerState !== 'running_trials' && (
         <div className="playground-autotest-status">
           <span className="playground-autotest-spinner" /> {calibrationStatus}
         </div>
@@ -1389,7 +938,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
       {runnerState === 'running_trials' && (
         <TrialProgressBar
           totalTrials={totalTrials}
-          trials={displayMode === 'config' ? configTrials : trials}
+          trials={activeTrials}
           running={isRunning}
           runStartedAt={run?.runStartedAt}
         />
@@ -1421,35 +970,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
             {(() => {
               const best = displayMode === 'config' ? bestConfigTrial : bestTrial;
               if (!best) return null;
-              return (
-                <>
-                  {displayMode !== 'config' && (
-                    <>
-                      <div><strong>Chat Score:</strong> {getScenarioScore(best, 'chat') ?? '—'}</div>
-                      <div><strong>Tool Score:</strong> {getScenarioScore(best, 'tool_call') ?? '—'}</div>
-                      <div><strong>Total Score:</strong> {best.totalScore}</div>
-                    </>
-                  )}
-                  <div><strong>Avg TPS:</strong> {best.avgTPS?.toFixed(1)}</div>
-                  <div><strong>Avg TTFT:</strong> {best.avgTTFT !== undefined ? formatMs(best.avgTTFT) : '—'}</div>
-                  {best.avgTPSByFill && (
-                    <>
-                      <div><strong>TPS @0%:</strong> {best.avgTPSByFill['0%']?.toFixed(1) ?? '—'}</div>
-                      <div><strong>TPS @20%:</strong> {best.avgTPSByFill['20%']?.toFixed(1) ?? '—'}</div>
-                      <div><strong>TPS @50%:</strong> {best.avgTPSByFill['50%']?.toFixed(1) ?? '—'}</div>
-                      <div><strong>TPS @80%:</strong> {best.avgTPSByFill['80%']?.toFixed(1) ?? '—'}</div>
-                    </>
-                  )}
-                  {best.avgTTFTByFill && (
-                    <>
-                      <div><strong>TTFT @0%:</strong> {best.avgTTFTByFill['0%'] !== undefined ? formatMs(best.avgTTFTByFill['0%']) : '—'}</div>
-                      <div><strong>TTFT @20%:</strong> {best.avgTTFTByFill['20%'] !== undefined ? formatMs(best.avgTTFTByFill['20%']) : '—'}</div>
-                      <div><strong>TTFT @50%:</strong> {best.avgTTFTByFill['50%'] !== undefined ? formatMs(best.avgTTFTByFill['50%']) : '—'}</div>
-                      <div><strong>TTFT @80%:</strong> {best.avgTTFTByFill['80%'] !== undefined ? formatMs(best.avgTTFTByFill['80%']) : '—'}</div>
-                    </>
-                  )}
-                </>
-              );
+              return <BestTrialMetrics trial={best} showScores={displayMode !== 'config'} />;
             })()}
           </div>
 
@@ -1510,174 +1031,97 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
       )}
 
       {/* Results Table (collapsed by default) */}
-      {(displayMode === 'config' ? configTrials : trials).length > 0 && (
+      {activeTrials.length > 0 && (
         <details className="playground-autotest-results" open={resultsExpanded} onToggle={(e) => setResultsExpanded((e.currentTarget as HTMLDetailsElement).open)}>
           <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: 13, color: 'var(--color-gray-700)', marginBottom: 8 }}>
-            Results ({(displayMode === 'config' ? configTrials : trials).length} trials)
+            Results ({activeTrials.length} trials)
           </summary>
-          <table className="playground-autotest-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                {displayMode === 'config' ? (
-                  <>
-                    <th className="sortable-th" onClick={() => handleSort('context_window')}>Context Window{sortIndicator('context_window', sort)}</th>
-                    <th className="sortable-th" onClick={() => handleSort('nbatch')}>NBatch{sortIndicator('nbatch', sort)}</th>
-                    <th className="sortable-th" onClick={() => handleSort('nubatch')}>NUBatch{sortIndicator('nubatch', sort)}</th>
-                    <th className="sortable-th" onClick={() => handleSort('nseq_max')}>NSeqMax{sortIndicator('nseq_max', sort)}</th>
-                    <th className="sortable-th" onClick={() => handleSort('flash_attention')}>Flash Attn{sortIndicator('flash_attention', sort)}</th>
-                    <th className="sortable-th" onClick={() => handleSort('cache_type')}>KV Cache{sortIndicator('cache_type', sort)}</th>
-                    <th className="sortable-th" onClick={() => handleSort('cache_mode')}>Cache{sortIndicator('cache_mode', sort)}</th>
-                    <th className="sortable-th" onClick={() => handleSort('status')}>Status{sortIndicator('status', sort)}</th>
-                    <th className="sortable-th" onClick={() => handleSort('duration')}>Duration{sortIndicator('duration', sort)}</th>
-                  </>
-                ) : (
-                  <>
-                    <th className="sortable-th" onClick={() => handleSort('temperature')}>Temperature{sortIndicator('temperature', sort)}</th>
-                    <th className="sortable-th" onClick={() => handleSort('top_p')}>Top P{sortIndicator('top_p', sort)}</th>
-                    <th className="sortable-th" onClick={() => handleSort('top_k')}>Top K{sortIndicator('top_k', sort)}</th>
-                    <th className="sortable-th" onClick={() => handleSort('min_p')}>Min P{sortIndicator('min_p', sort)}</th>
-                    <th className="sortable-th" onClick={() => handleSort('status')}>Status{sortIndicator('status', sort)}</th>
-                    <th className="sortable-th" onClick={() => handleSort('duration')}>Duration{sortIndicator('duration', sort)}</th>
-                  </>
-                )}
-                {displayMode !== 'config' && (
-                  <>
-                    <th className="sortable-th" onClick={() => handleSort('chat_score')}>Chat Score{sortIndicator('chat_score', sort)}</th>
-                    <th className="sortable-th" onClick={() => handleSort('tool_score')}>Tool Score{sortIndicator('tool_score', sort)}</th>
-                    <th className="sortable-th" onClick={() => handleSort('total_score')}>Total Score{sortIndicator('total_score', sort)}</th>
-                  </>
-                )}
-                <th className="sortable-th" onClick={() => handleSort('avg_tps')}>Avg TPS{sortIndicator('avg_tps', sort)}</th>
-                <th className="sortable-th" onClick={() => handleSort('avg_ttft')}>Avg TTFT{sortIndicator('avg_ttft', sort)}</th>
-                <th className="sortable-th" onClick={() => handleSort('tps_0')}>TPS @0%{sortIndicator('tps_0', sort)}</th>
-                <th className="sortable-th" onClick={() => handleSort('tps_20')}>TPS @20%{sortIndicator('tps_20', sort)}</th>
-                <th className="sortable-th" onClick={() => handleSort('tps_50')}>TPS @50%{sortIndicator('tps_50', sort)}</th>
-                <th className="sortable-th" onClick={() => handleSort('tps_80')}>TPS @80%{sortIndicator('tps_80', sort)}</th>
-                <th className="sortable-th" onClick={() => handleSort('ttft_0')}>TTFT @0%{sortIndicator('ttft_0', sort)}</th>
-                <th className="sortable-th" onClick={() => handleSort('ttft_20')}>TTFT @20%{sortIndicator('ttft_20', sort)}</th>
-                <th className="sortable-th" onClick={() => handleSort('ttft_50')}>TTFT @50%{sortIndicator('ttft_50', sort)}</th>
-                <th className="sortable-th" onClick={() => handleSort('ttft_80')}>TTFT @80%{sortIndicator('ttft_80', sort)}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {displayMode === 'config'
-                ? sortedConfigTrials.map((trial, i) => {
-                    const isBest = bestConfigTrial && trial === bestConfigTrial && runnerState === 'completed';
-                    const isPending = trial.totalScore === undefined || trial.totalScore === null;
-                    const isInProgress = isPending && trial.status === 'running';
-                    const partialTPS = isInProgress ? trial.scenarioResults.find(r => r.avgTPS !== undefined)?.avgTPS : undefined;
-                    const isExpanded = expandedTrials.has(trial.id);
-                    return (
-                      <React.Fragment key={trial.id}>
-                        <tr
-                          className={`autotest-trial-row${isBest ? ' autotest-best-row' : ''}${isInProgress ? ' autotest-running-row' : ''}`}
-                          style={{ cursor: 'pointer' }}
-                          onClick={() => toggleTrialExpanded(trial.id)}
-                        >
-                          <td>{isExpanded ? '▾' : '▸'} {isInProgress && <span className="playground-autotest-spinner-inline" />}{i + 1}</td>
-                          <td>{trial.config?.['context_window'] ?? '—'}</td>
-                          <td>{trial.config?.nbatch ?? '—'}</td>
-                          <td>{trial.config?.nubatch ?? '—'}</td>
-                          <td>{trial.config?.['nseq_max'] ?? '—'}</td>
-                          <td>{trial.config?.['flash_attention'] ?? '—'}</td>
-                          <td>{trial.config?.['cache_type'] ?? '—'}</td>
-                          <td>{trial.config?.['cache_mode'] ? (trial.config['cache_mode'] === 'none' ? 'None' : trial.config['cache_mode'].toUpperCase()) : '—'}</td>
-                          <td style={trial.error ? { color: '#c62828', fontSize: '0.85em' } : isInProgress ? { color: '#1565c0' } : trial.status === 'queued' ? { color: '#999' } : isPending ? { color: '#666' } : { color: '#2e7d32' }}>
-                            {trial.error ? `Error: ${trial.error}` : isInProgress ? 'Running…' : trial.status === 'queued' ? 'Queued' : isPending ? '…' : 'OK'}
+          <div className="playground-autotest-table-scroll">
+            <table className="playground-autotest-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  {isRunning && <th>Actions</th>}
+                  {columns.map(c => (
+                    <th key={c.id} className={c.sortable !== false ? 'sortable-th' : undefined} onClick={c.sortable !== false ? () => handleSort(c.id) : undefined}>
+                      {c.title}{sortIndicator(c.id, sort)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {sortedActiveTrials.map((trial, i) => {
+                  const isPending = (trial.totalScore === undefined || trial.totalScore === null) && trial.status !== 'skipped';
+                  const isInProgress = isPending && trial.status === 'running';
+                  const bestTrialForMode = displayMode === 'config' ? bestConfigTrial : bestTrial;
+                  const isBest = bestTrialForMode && trial === bestTrialForMode && runnerState === 'completed';
+                  const isExpanded = expandedTrials.has(trial.id);
+                  const meta: CellMeta = { isPending, isInProgress, isBest: !!isBest, index: i };
+                  return (
+                    <React.Fragment key={trial.id}>
+                      <tr
+                        className={`autotest-trial-row${isBest ? ' autotest-best-row' : ''}${isInProgress ? ' autotest-running-row' : ''}${trial.status === 'skipped' ? ' autotest-skipped-row' : ''}`}
+                        style={{ cursor: 'pointer' }}
+                        onClick={() => toggleTrialExpanded(trial.id)}
+                      >
+                        <td>{isExpanded ? '▾' : '▸'} {isInProgress && <span className="playground-autotest-spinner-inline" />}{i + 1}</td>
+                        {isRunning && (
+                          <td className="autotest-actions-cell" onClick={(e) => e.stopPropagation()}>
+                            {trial.status === 'queued' && (
+                              <span className="autotest-queue-controls">
+                                <button
+                                  className="btn btn-small autotest-queue-btn"
+                                  onClick={() => moveQueuedTrial({ trialId: trial.id, direction: 'up' })}
+                                  disabled={!canReorder}
+                                  title={canReorder ? 'Move up' : 'Clear column sorting to reorder'}
+                                >
+                                  ▲
+                                </button>
+                                <button
+                                  className="btn btn-small autotest-queue-btn"
+                                  onClick={() => moveQueuedTrial({ trialId: trial.id, direction: 'down' })}
+                                  disabled={!canReorder}
+                                  title={canReorder ? 'Move down' : 'Clear column sorting to reorder'}
+                                >
+                                  ▼
+                                </button>
+                                <button
+                                  className="btn btn-small autotest-skip-btn"
+                                  onClick={() => skipTrial({ trialId: trial.id })}
+                                  title="Skip this trial"
+                                >
+                                  Skip
+                                </button>
+                              </span>
+                            )}
+                            {trial.status === 'skipped' && (
+                              <button
+                                className="btn btn-small autotest-unskip-btn"
+                                onClick={() => unskipTrial({ trialId: trial.id })}
+                                title="Restore this trial to the queue"
+                              >
+                                Unskip
+                              </button>
+                            )}
                           </td>
-                          <td>
-                            {(() => {
-                              const startMs = trial.startedAt ? Date.parse(trial.startedAt) : NaN;
-                              if (!Number.isFinite(startMs)) return '—';
-                              const endMs = trial.finishedAt ? Date.parse(trial.finishedAt) : Date.now();
-                              return formatMs(endMs - startMs);
-                            })()}
-                          </td>
-                          <td>{isPending ? (partialTPS !== undefined ? `~${partialTPS.toFixed(1)}` : '…') : trial.avgTPS?.toFixed(1)}</td>
-                          <td>{isPending ? '…' : trial.avgTTFT !== undefined ? formatMs(trial.avgTTFT) : '—'}</td>
-                          <td>{isPending ? '…' : trial.avgTPSByFill?.['0%']?.toFixed(1) ?? '—'}</td>
-                          <td>{isPending ? '…' : trial.avgTPSByFill?.['20%']?.toFixed(1) ?? '—'}</td>
-                          <td>{isPending ? '…' : trial.avgTPSByFill?.['50%']?.toFixed(1) ?? '—'}</td>
-                          <td>{isPending ? '…' : trial.avgTPSByFill?.['80%']?.toFixed(1) ?? '—'}</td>
-                          <td>{isPending ? '…' : trial.avgTTFTByFill?.['0%'] !== undefined ? formatMs(trial.avgTTFTByFill['0%']) : '—'}</td>
-                          <td>{isPending ? '…' : trial.avgTTFTByFill?.['20%'] !== undefined ? formatMs(trial.avgTTFTByFill['20%']) : '—'}</td>
-                          <td>{isPending ? '…' : trial.avgTTFTByFill?.['50%'] !== undefined ? formatMs(trial.avgTTFTByFill['50%']) : '—'}</td>
-                          <td>{isPending ? '…' : trial.avgTTFTByFill?.['80%'] !== undefined ? formatMs(trial.avgTTFTByFill['80%']) : '—'}</td>
-                        </tr>
-                        {isExpanded && (
-                          <tr className="autotest-detail-row">
-                            <td colSpan={20}>
-                              <TrialDetails trial={trial} scenarioLookup={scenarioLookup} hideScores />
-                            </td>
-                          </tr>
                         )}
-                      </React.Fragment>
-                    );
-                  })
-                : sortedTrials.map((trial, i) => {
-                    const isBest = bestTrial && trial === bestTrial && runnerState === 'completed';
-                    const isPending = trial.totalScore === undefined || trial.totalScore === null;
-                    const isInProgress = isPending && trial.status === 'running';
-                    const partialChat = isInProgress ? getScenarioScore(trial, 'chat') : undefined;
-                    const partialTool = isInProgress ? getScenarioScore(trial, 'tool_call') : undefined;
-                    const partialTPS = isInProgress ? trial.scenarioResults.find(r => r.avgTPS !== undefined)?.avgTPS : undefined;
-                    const isExpanded = expandedTrials.has(trial.id);
-                    return (
-                      <React.Fragment key={trial.id}>
-                        <tr
-                          className={`autotest-trial-row${isBest ? ' autotest-best-row' : ''}${isInProgress ? ' autotest-running-row' : ''}`}
-                          style={{ cursor: 'pointer' }}
-                          onClick={() => toggleTrialExpanded(trial.id)}
-                        >
-                          <td>{isExpanded ? '▾' : '▸'} {isInProgress && <span className="playground-autotest-spinner-inline" />}{i + 1}</td>
-                          <td>{trial.candidate.temperature}</td>
-                          <td>{trial.candidate.top_p}</td>
-                          <td>{trial.candidate.top_k}</td>
-                          <td>{trial.candidate.min_p}</td>
-                          <td style={trial.status === 'failed' ? { color: '#c62828', fontSize: '0.85em' } : isInProgress ? { color: '#1565c0' } : trial.status === 'queued' ? { color: '#999' } : isPending ? { color: '#666' } : { color: '#2e7d32' }}>
-                            {trial.status === 'failed' ? 'Failed' : isInProgress ? 'Running…' : trial.status === 'queued' ? 'Queued' : isPending ? '…' : 'OK'}
+                        {columns.map(c => (
+                          <td key={c.id}>{c.renderCell(trial, meta)}</td>
+                        ))}
+                      </tr>
+                      {isExpanded && (
+                        <tr className="autotest-detail-row">
+                          <td colSpan={columns.length + (isRunning ? 2 : 1)}>
+                            <TrialDetails trial={trial} scenarioLookup={scenarioLookup} hideScores={displayMode === 'config'} />
                           </td>
-                          <td>
-                            {(() => {
-                              const startMs = trial.startedAt ? Date.parse(trial.startedAt) : NaN;
-                              if (!Number.isFinite(startMs)) return '—';
-                              const endMs = trial.finishedAt ? Date.parse(trial.finishedAt) : Date.now();
-                              return formatMs(endMs - startMs);
-                            })()}
-                          </td>
-                          <td style={partialChat !== undefined ? { color: scoreColor(partialChat), opacity: 0.7 } : !isPending ? { color: scoreColor(getScenarioScore(trial, 'chat') ?? 0) } : undefined}>
-                            {isPending ? (partialChat !== undefined ? `~${partialChat}` : '…') : getScenarioScore(trial, 'chat') ?? '—'}
-                          </td>
-                          <td style={partialTool !== undefined ? { color: scoreColor(partialTool), opacity: 0.7 } : !isPending ? { color: scoreColor(getScenarioScore(trial, 'tool_call') ?? 0) } : undefined}>
-                            {isPending ? (partialTool !== undefined ? `~${partialTool}` : '…') : getScenarioScore(trial, 'tool_call') ?? '—'}
-                          </td>
-                          <td style={!isPending ? { color: scoreColor(trial.totalScore ?? 0) } : undefined}>
-                            {isPending ? '…' : trial.totalScore}
-                          </td>
-                          <td>{isPending ? (partialTPS !== undefined ? `~${partialTPS.toFixed(1)}` : '…') : trial.avgTPS?.toFixed(1)}</td>
-                          <td>{isPending ? '…' : trial.avgTTFT !== undefined ? formatMs(trial.avgTTFT) : '—'}</td>
-                          <td>{isPending ? '…' : trial.avgTPSByFill?.['0%']?.toFixed(1) ?? '—'}</td>
-                          <td>{isPending ? '…' : trial.avgTPSByFill?.['20%']?.toFixed(1) ?? '—'}</td>
-                          <td>{isPending ? '…' : trial.avgTPSByFill?.['50%']?.toFixed(1) ?? '—'}</td>
-                          <td>{isPending ? '…' : trial.avgTPSByFill?.['80%']?.toFixed(1) ?? '—'}</td>
-                          <td>{isPending ? '…' : trial.avgTTFTByFill?.['0%'] !== undefined ? formatMs(trial.avgTTFTByFill['0%']) : '—'}</td>
-                          <td>{isPending ? '…' : trial.avgTTFTByFill?.['20%'] !== undefined ? formatMs(trial.avgTTFTByFill['20%']) : '—'}</td>
-                          <td>{isPending ? '…' : trial.avgTTFTByFill?.['50%'] !== undefined ? formatMs(trial.avgTTFTByFill['50%']) : '—'}</td>
-                          <td>{isPending ? '…' : trial.avgTTFTByFill?.['80%'] !== undefined ? formatMs(trial.avgTTFTByFill['80%']) : '—'}</td>
                         </tr>
-                        {isExpanded && (
-                          <tr className="autotest-detail-row">
-                            <td colSpan={20}>
-                              <TrialDetails trial={trial} scenarioLookup={scenarioLookup} />
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
-                    );
-                  })}
-            </tbody>
-          </table>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </details>
       )}
     </div>

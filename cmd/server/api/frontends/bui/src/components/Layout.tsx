@@ -188,9 +188,7 @@ export default function Layout({ children }: LayoutProps) {
     return undefined;
   })();
 
-  const isPlaygroundPath = location.pathname === routeMap['playground']
-    || location.pathname.startsWith(routeMap['playground'] + '/');
-  const showAutoTestIndicator = !!run && !isPlaygroundPath;
+  const showAutoTestIndicator = !!run;
   const showDownloadIndicator = !!download;
 
   // Auto-expand categories that contain the current page
