@@ -530,7 +530,7 @@ export interface PlaygroundChatRequest {
 
 export type AutoTestScenarioID = 'chat' | 'tool_call';
 
-export type AutoTestTrialStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type AutoTestTrialStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'skipped';
 
 export type AutoTestRunnerState = 'idle' | 'repairing_template' | 'running_trials' | 'completed' | 'cancelled' | 'error';
 

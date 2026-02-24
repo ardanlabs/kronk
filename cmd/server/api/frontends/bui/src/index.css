@@ -2628,6 +2628,8 @@ tr.selected:hover td {
     border-radius: 8px;
     border: 1px solid var(--color-gray-200);
     overflow: hidden;
+    min-height: 0;
+    min-width: 0;
 }
 
 .playground-tabs {
@@ -2846,7 +2848,16 @@ tr.selected:hover td {
     font-size: 12px;
 }
 
-/* Automated Testing Panel */
+/* Automated Testing Panel – flex chain for viewport containment */
+.playground-tab-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
+}
+
 .playground-autotest {
     display: flex;
     flex-direction: column;
@@ -2923,12 +2934,24 @@ tr.selected:hover td {
     margin-top: 4px;
 }
 
+/* Scroll wrapper for the results table – constrained height, both-axis scroll */
+.playground-autotest-table-scroll {
+    overflow: auto;
+    max-height: 60vh;
+    border: 1px solid var(--color-gray-200);
+    border-radius: 4px;
+    overscroll-behavior: contain;
+}
+
 .playground-autotest-results table {
-    width: 100%;
-    border-collapse: collapse;
+    width: max-content;
+    min-width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
     font-size: 12px;
 }
 
+/* Sticky header row */
 .playground-autotest-results th {
     text-align: left;
     padding: 6px 8px;
@@ -2938,6 +2961,9 @@ tr.selected:hover td {
     color: var(--color-gray-700);
     font-size: 11px;
     white-space: nowrap;
+    position: sticky;
+    top: 0;
+    z-index: 20;
 }
 
 .playground-autotest-results th.sortable-th {
@@ -2955,24 +2981,63 @@ tr.selected:hover td {
     white-space: nowrap;
 }
 
+/* Sticky first column (run #) */
+.playground-autotest-results th:first-child,
+.playground-autotest-results td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 10;
+}
+
+.playground-autotest-results td:first-child {
+    box-shadow: 1px 0 0 var(--color-gray-200);
+}
+
+/* Top-left corner: sticky in both directions */
+.playground-autotest-results th:first-child {
+    z-index: 30;
+    box-shadow: 1px 0 0 var(--color-gray-200);
+}
+
+/* Row backgrounds — drive ALL cell backgrounds via --row-bg so sticky cells
+   never show transparent gaps and global tr:hover td is fully neutralised. */
+.playground-autotest-results tbody tr {
+    --row-bg: var(--color-white);
+}
+
 .playground-autotest-results tbody tr:nth-child(even) {
-    background: var(--color-gray-50);
+    --row-bg: var(--color-gray-50);
 }
 
 .playground-autotest-results tr:hover {
-    background: var(--color-gray-100);
+    --row-bg: var(--color-gray-100);
 }
 
 .playground-autotest-results tr.autotest-best-row {
-    background: #e8f5e9;
+    --row-bg: #e8f5e9;
 }
 
 .playground-autotest-results tr.autotest-best-row:hover {
-    background: #c8e6c9;
+    --row-bg: #c8e6c9;
 }
 
 .playground-autotest-results tr.autotest-running-row {
-    background: #e3f2fd;
+    --row-bg: #e3f2fd;
+}
+
+/* Apply --row-bg to every cell (overrides global tr:hover td too) */
+.playground-autotest-results tbody td,
+.playground-autotest-results tr:hover td {
+    background: var(--row-bg);
+}
+
+/* Detail/expansion rows: disable sticky first-column (they use colspan) */
+.playground-autotest-results tr.autotest-detail-row > td {
+    position: static;
+    left: auto;
+    z-index: auto;
+    box-shadow: none;
+    background: var(--color-gray-50);
 }
 
 .playground-autotest-best {
@@ -3416,6 +3481,90 @@ button.autotest-detail-log-header:focus-visible {
     margin-bottom: 8px;
 }
 
+/* Reorder / Skip controls for queued trials */
+.autotest-actions-cell {
+    cursor: default;
+    white-space: nowrap;
+    padding: 4px 6px !important;
+}
+
+.autotest-queue-controls {
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
+}
+
+.autotest-queue-btn {
+    padding: 2px 6px !important;
+    font-size: 10px !important;
+    line-height: 1.2 !important;
+    min-width: 0 !important;
+    border: 1px solid var(--color-gray-300) !important;
+    background: var(--color-white) !important;
+    color: var(--color-gray-600) !important;
+    border-radius: 3px !important;
+    cursor: pointer;
+}
+
+.autotest-queue-btn:hover:not(:disabled) {
+    background: var(--color-gray-100) !important;
+    border-color: var(--color-gray-400) !important;
+    color: var(--color-gray-800) !important;
+}
+
+.autotest-queue-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.autotest-skip-btn {
+    padding: 2px 8px !important;
+    font-size: 10px !important;
+    line-height: 1.2 !important;
+    min-width: 0 !important;
+    border: 1px solid var(--color-gray-300) !important;
+    background: var(--color-white) !important;
+    color: var(--color-gray-600) !important;
+    border-radius: 3px !important;
+    cursor: pointer;
+    margin-left: 2px;
+}
+
+.autotest-skip-btn:hover {
+    background: #fff3e0 !important;
+    border-color: #ffb74d !important;
+    color: #e65100 !important;
+}
+
+.autotest-unskip-btn {
+    padding: 2px 8px !important;
+    font-size: 10px !important;
+    line-height: 1.2 !important;
+    min-width: 0 !important;
+    border: 1px solid var(--color-gray-300) !important;
+    background: var(--color-white) !important;
+    color: var(--color-gray-600) !important;
+    border-radius: 3px !important;
+    cursor: pointer;
+}
+
+.autotest-unskip-btn:hover {
+    background: #e8f5e9 !important;
+    border-color: #66bb6a !important;
+    color: #2e7d32 !important;
+}
+
+/* Skipped trial row styling */
+.playground-autotest-results tr.autotest-skipped-row {
+    --row-bg: var(--color-gray-50);
+    opacity: 0.6;
+}
+
+.playground-autotest-results tr.autotest-skipped-row:hover {
+    --row-bg: var(--color-gray-100);
+    opacity: 0.8;
+}
+
 /* Fluid grid for playground config/sampling fields — 1 to 4 columns */
 .playground-config-grid-fluid {
     display: grid;
@@ -3507,6 +3656,9 @@ button.autotest-detail-log-header:focus-visible {
     display: flex;
     flex-direction: column;
     gap: 12px;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
 }
 
 .playground-autotest-status {
