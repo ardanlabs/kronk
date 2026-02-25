@@ -1062,11 +1062,9 @@ export default function DocsSDKModel() {
 	// distribution of possible next tokens.
 	DefTemp = 0.8
 
-	// DefTopK limits the pool of possible next tokens to the K number of most probable
-	// tokens. If a model predicts 10,000 possible next tokens, setting top_k to 50
-	// means only the 50 tokens with the highest probabilities are considered for
-	// selection (after temperature scaling). The rest are ignored.
-	DefTopK = 40
+	// DefTopK limits the pool of possible next tokens to the K number of most
+	// probable tokens. A value of 0 means no limit (all tokens are considered).
+	DefTopK = 0
 
 	// DefTopLogprobs specifies how many of the most likely tokens to return at each
 	// position, along with their log probabilities. Must be between 0 and 5.

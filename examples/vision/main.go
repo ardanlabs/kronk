@@ -22,15 +22,28 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-const (
-	modelURL = "https://huggingface.co/google/gemma-3-4b-it-qat-q4_0-gguf/resolve/main/gemma-3-4b-it-q4_0.gguf"
-	projURL  = "https://huggingface.co/google/gemma-3-4b-it-qat-q4_0-gguf/resolve/main/mmproj-model-f16-4B.gguf"
+// modelSpec defines how to obtain the model to download.
+// - SourceURL: Download the model file directly from a HuggingFace URL
+// - ProjURL  : Download the projection file directly from a HuggingFace URL
+// - SourceID : Download the model from the catalog by model ID
+//
+// To use a catalog model, comment out SourceURL and set SourceID.
+// To use a direct URL, comment out SourceID and set SourceURL/ProjURL.
+type modelSpec struct {
+	SourceURL string
+	ProjURL   string
+	SourceID  string
+}
 
-	//modelURL = "https://huggingface.co/unsloth/Qwen3-VL-30B-A3B-Instruct-GGUF/resolve/main/Qwen3-VL-30B-A3B-Instruct-Q8_0.gguf"
-	//projURL  = "https://huggingface.co/unsloth/Qwen3-VL-30B-A3B-Instruct-GGUF/resolve/main/mmproj-F16.gguf"
+// Configure this to switch between URL and catalog downloads.
+// Set either SourceURL (with ProjURL) or SourceID, not both.
+var modelSpecConfig = modelSpec{
+	SourceURL: "https://huggingface.co/google/gemma-3-4b-it-qat-q4_0-gguf/resolve/main/gemma-3-4b-it-q4_0.gguf",
+	ProjURL:   "https://huggingface.co/google/gemma-3-4b-it-qat-q4_0-gguf/resolve/main/mmproj-model-f16-4B.gguf",
+	// SourceID: "google/gemma-3-4b-it-Q4_K_M",
+}
 
-	imageFile = "examples/samples/giraffe.jpg"
-)
+const imageFile = "examples/samples/giraffe.jpg"
 
 func main() {
 	if err := run(); err != nil {
@@ -97,17 +110,26 @@ func installSystem() (models.Path, error) {
 		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
-	mp, err := mdls.Download(ctx, kronk.FmtLogger, modelURL, projURL)
+	// Download model based on spec config using switch/case
+	var mp models.Path
+
+	switch {
+	case modelSpecConfig.SourceURL != "":
+		fmt.Println("Downloading model from URL:", modelSpecConfig.SourceURL)
+		fmt.Println("Downloading projection file:", modelSpecConfig.ProjURL)
+		mp, err = mdls.Download(ctx, kronk.FmtLogger, modelSpecConfig.SourceURL, modelSpecConfig.ProjURL)
+
+	case modelSpecConfig.SourceID != "":
+		fmt.Println("Downloading model from catalog:", modelSpecConfig.SourceID)
+		mp, err = ctlg.DownloadModel(ctx, kronk.FmtLogger, modelSpecConfig.SourceID)
+
+	default:
+		return models.Path{}, fmt.Errorf("modelSpecConfig requires either (SourceURL and ProjURL) or SourceID to be set")
+	}
+
 	if err != nil {
 		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
 	}
-
-	// -------------------------------------------------------------------------
-	// You could also download this model using the catalog system.
-	// mp, err := templates.Catalog().DownloadModel(ctx, kronk.FmtLogger, "Qwen2.5-VL-3B-Instruct-Q8_0")
-	// if err != nil {
-	// 	return models.Path{}, fmt.Errorf("unable to download model: %w", err)
-	// }
 
 	return mp, nil
 }

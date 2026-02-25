@@ -22,7 +22,23 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-const modelURL = "https://huggingface.co/gpustack/bge-reranker-v2-m3-GGUF/resolve/main/bge-reranker-v2-m3-Q8_0.gguf"
+// modelSpec defines how to obtain the model to download.
+// - SourceURL: Download the model file directly from a HuggingFace URL
+// - SourceID : Download the model from the catalog by model ID
+//
+// To use a catalog model, comment out SourceURL and set SourceID.
+// To use a direct URL, comment out SourceID and set SourceURL.
+type modelSpec struct {
+	SourceURL string
+	SourceID  string
+}
+
+// Configure this to switch between URL and catalog downloads.
+// Set either SourceURL or SourceID, not both.
+var modelSpecConfig = modelSpec{
+	SourceURL: "https://huggingface.co/gpustack/bge-reranker-v2-m3-GGUF/resolve/main/bge-reranker-v2-m3-Q8_0.gguf",
+	// SourceID: "bge-reranker-v2-m3-Q8_0",
+}
 
 func main() {
 	if err := run(); err != nil {
@@ -89,7 +105,22 @@ func installSystem() (models.Path, error) {
 		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
-	mp, err := mdls.Download(ctx, kronk.FmtLogger, modelURL, "")
+	// Download model based on spec config using switch/case
+	var mp models.Path
+
+	switch {
+	case modelSpecConfig.SourceURL != "":
+		fmt.Println("Downloading model from URL:", modelSpecConfig.SourceURL)
+		mp, err = mdls.Download(ctx, kronk.FmtLogger, modelSpecConfig.SourceURL, "")
+
+	case modelSpecConfig.SourceID != "":
+		fmt.Println("Downloading model from catalog:", modelSpecConfig.SourceID)
+		mp, err = ctlg.DownloadModel(ctx, kronk.FmtLogger, modelSpecConfig.SourceID)
+
+	default:
+		return models.Path{}, fmt.Errorf("modelSpecConfig requires either SourceURL or SourceID to be set")
+	}
+
 	if err != nil {
 		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
 	}
