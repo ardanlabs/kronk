@@ -31,19 +31,21 @@ var rootCmd = &cobra.Command{
 		"Kronk provides hardware-accelerated inference for text, vision, audio, embeddings,\n" +
 		"and reranking.\n\n" +
 		"Key Features:\n" +
-		"  • Model Types: Text generation, vision, audio, embeddings, and reranking\n" +
-		"  • Hardware: Metal (macOS), CUDA, ROCm, Vulkan across Linux, macOS, and Windows\n" +
+		"  • Model Types: Text, vision, audio, embeddings, and reranking\n" +
+		"  • Hardware: Metal (macOS), CUDA (NVIDIA), ROCm (AMD), Vulkan (cross-platform)\n" +
 		"  • Batch Processing: Process multiple requests concurrently\n" +
 		"  • Message Caching: System prompt and incremental message caching\n" +
 		"  • Extended Context: YaRN support for 2-4x context window extension\n" +
-		"  • Model Pooling: Keep models loaded in memory with configurable TTL\n\n" +
-		"The Kronk Model Server is built on top of the SDK — everything it can do is\n" +
-		"available to you programmatically. Use the CLI for model management, or embed\n" +
-		"Kronk directly into your Go applications.\n\n" +
+		"  • Model Pooling: Keep models loaded in memory with configurable TTL\n" +
+		"  • Browser UI: Web interface for model management and testing\n\n" +
+		"Use Kronk two ways:\n" +
+		"  • As a library: Embed local LLM inference directly into your Go app\n" +
+		"  • As a server: OpenAI-compatible REST API with authentication\n\n" +
 		"Quick Start:\n" +
-		"  • kronk server start      - Start the model server\n" +
-		"  • kronk catalog pull      - Download models from the catalog\n" +
-		"  • kronk libs              - Install llama.cpp libraries",
+		"  • kronk server start        - Start the model server\n" +
+		"  • kronk catalog pull <model> - Download a model from the catalog\n" +
+		"  • kronk catalog list        - List available models\n" +
+		"  • kronk libs                - Install llama.cpp libraries",
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Help()
 	},
