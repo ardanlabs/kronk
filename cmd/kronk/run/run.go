@@ -176,6 +176,46 @@ func newKronk(mp models.Path, runCfg Config) (*kronk.Kronk, error) {
 	fmt.Println("- isGPT        :", krn.ModelInfo().IsGPTModel)
 	fmt.Println("- template     :", krn.ModelInfo().Template.FileName)
 
+	if runCfg.JinjaFile != "" {
+		fmt.Println("- jinjaFile    :", runCfg.JinjaFile)
+	}
+	if runCfg.FlashAttention != "" {
+		fmt.Println("- flashAttn    :", runCfg.FlashAttention)
+	}
+	if runCfg.NGpuLayers != 0 {
+		fmt.Println("- ngpuLayers   :", runCfg.NGpuLayers)
+	}
+	if runCfg.MaxTokens != 0 {
+		fmt.Println("- maxTokens    :", runCfg.MaxTokens)
+	}
+	if runCfg.Temperature != 0 {
+		fmt.Println("- temperature  :", runCfg.Temperature)
+	}
+	if runCfg.TopP != 0 {
+		fmt.Println("- topP         :", runCfg.TopP)
+	}
+	if runCfg.TopK != 0 {
+		fmt.Println("- topK         :", runCfg.TopK)
+	}
+	if runCfg.MinP != 0 {
+		fmt.Println("- minP         :", runCfg.MinP)
+	}
+	if runCfg.RepeatPenalty != 0 {
+		fmt.Println("- repeatPen    :", runCfg.RepeatPenalty)
+	}
+	if runCfg.FrequencyPenalty != 0 {
+		fmt.Println("- freqPen      :", runCfg.FrequencyPenalty)
+	}
+	if runCfg.PresencePenalty != 0 {
+		fmt.Println("- presPen      :", runCfg.PresencePenalty)
+	}
+	if runCfg.EnableThinking != "" {
+		fmt.Println("- thinking     :", runCfg.EnableThinking)
+	}
+	if runCfg.ReasoningEffort != "" {
+		fmt.Println("- reasonEffort :", runCfg.ReasoningEffort)
+	}
+
 	return krn, nil
 }
 
