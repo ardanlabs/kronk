@@ -25,10 +25,25 @@ func main() {
 
 var rootCmd = &cobra.Command{
 	Use:   "kronk",
-	Short: "Go for hardware accelerated local inference",
-	Long: "Go for hardware accelerated local inference with llama.cpp directly integrated\n" +
-		"into your applications via the yzma.\n" +
-		"Kronk provides a high-level API that feels similar to using an OpenAI compatible API.",
+	Short: "Local LLM inference with hardware acceleration",
+	Long: "Kronk is a Go SDK and Model Server for running local inference with open-source\n" +
+		"GGUF models. Built on llama.cpp via the yzma Go bindings (a non-CGO FFI layer),\n" +
+		"Kronk provides hardware-accelerated inference for text, vision, audio, embeddings,\n" +
+		"and reranking.\n\n" +
+		"Key Features:\n" +
+		"  • Model Types: Text generation, vision, audio, embeddings, and reranking\n" +
+		"  • Hardware: Metal (macOS), CUDA, ROCm, Vulkan across Linux, macOS, and Windows\n" +
+		"  • Batch Processing: Process multiple requests concurrently\n" +
+		"  • Message Caching: System prompt and incremental message caching\n" +
+		"  • Extended Context: YaRN support for 2-4x context window extension\n" +
+		"  • Model Pooling: Keep models loaded in memory with configurable TTL\n\n" +
+		"The Kronk Model Server is built on top of the SDK — everything it can do is\n" +
+		"available to you programmatically. Use the CLI for model management, or embed\n" +
+		"Kronk directly into your Go applications.\n\n" +
+		"Quick Start:\n" +
+		"  • kronk server start      - Start the model server\n" +
+		"  • kronk catalog pull      - Download models from the catalog\n" +
+		"  • kronk libs              - Install llama.cpp libraries",
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Help()
 	},

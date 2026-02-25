@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
@@ -321,22 +322,27 @@ func (*Model) prepareTextContext(d D) D {
 			continue
 		}
 
+		var text strings.Builder
 		for _, part := range content {
 			if part["type"] == "text" {
-				if text, ok := part["text"].(string); ok {
-					if !copied {
-						newMsgs := make([]D, len(messages))
-						copy(newMsgs, messages)
-						messages = newMsgs
-						d["messages"] = messages
-						copied = true
-					}
-					newMsg := msg.ShallowClone()
-					newMsg["content"] = text
-					messages[i] = newMsg
-					break
+				if s, ok := part["text"].(string); ok {
+					text.WriteString(s)
 				}
 			}
+		}
+
+		if text.Len() > 0 {
+			if !copied {
+				newMsgs := make([]D, len(messages))
+				copy(newMsgs, messages)
+				messages = newMsgs
+				d["messages"] = messages
+				copied = true
+			}
+
+			newMsg := msg.ShallowClone()
+			newMsg["content"] = text.String()
+			messages[i] = newMsg
 		}
 	}
 
