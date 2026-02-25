@@ -18,12 +18,30 @@ import (
 )
 
 type Config struct {
-	ModelName   string
-	MaxTokens   int
-	Temperature float64
-	TopP        float64
-	TopK        int
-	BasePath    string
+	ModelName string
+	BasePath  string
+
+	// Model configuration.
+	JinjaFile      string
+	ContextWindow  int
+	FlashAttention string
+	NGpuLayers     int
+	CacheTypeK     string
+	CacheTypeV     string
+	NBatch         int
+	NUBatch        int
+
+	// Sampling parameters.
+	MaxTokens        int
+	Temperature      float64
+	TopP             float64
+	TopK             int
+	MinP             float64
+	RepeatPenalty    float64
+	FrequencyPenalty float64
+	PresencePenalty  float64
+	EnableThinking   string
+	ReasoningEffort  string
 }
 
 func runChat(cfg Config) error {
@@ -32,7 +50,7 @@ func runChat(cfg Config) error {
 		return fmt.Errorf("run: unable to install system: %w", err)
 	}
 
-	krn, err := newKronk(mp)
+	krn, err := newKronk(mp, cfg)
 	if err != nil {
 		return fmt.Errorf("unable to init kronk: %w", err)
 	}
@@ -84,13 +102,56 @@ func installSystem(cfg Config) (models.Path, error) {
 	return mp, nil
 }
 
-func newKronk(mp models.Path) (*kronk.Kronk, error) {
+func newKronk(mp models.Path, runCfg Config) (*kronk.Kronk, error) {
 	if err := kronk.Init(); err != nil {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
 	cfg := model.Config{
 		ModelFiles: mp.ModelFiles,
+		JinjaFile:  runCfg.JinjaFile,
+	}
+
+	if runCfg.ContextWindow > 0 {
+		cfg.ContextWindow = runCfg.ContextWindow
+	}
+
+	if runCfg.NBatch > 0 {
+		cfg.NBatch = runCfg.NBatch
+	}
+
+	if runCfg.NUBatch > 0 {
+		cfg.NUBatch = runCfg.NUBatch
+	}
+
+	if runCfg.NGpuLayers != 0 {
+		v := runCfg.NGpuLayers
+		cfg.NGpuLayers = &v
+	}
+
+	if runCfg.CacheTypeK != "" {
+		ct, err := model.ParseGGMLType(runCfg.CacheTypeK)
+		if err != nil {
+			return nil, fmt.Errorf("invalid cache-type-k: %w", err)
+		}
+		cfg.CacheTypeK = ct
+	}
+
+	if runCfg.CacheTypeV != "" {
+		ct, err := model.ParseGGMLType(runCfg.CacheTypeV)
+		if err != nil {
+			return nil, fmt.Errorf("invalid cache-type-v: %w", err)
+		}
+		cfg.CacheTypeV = ct
+	}
+
+	switch runCfg.FlashAttention {
+	case "on":
+		cfg.FlashAttention = model.FlashAttentionEnabled
+	case "off":
+		cfg.FlashAttention = model.FlashAttentionDisabled
+	case "auto":
+		cfg.FlashAttention = model.FlashAttentionAuto
 	}
 
 	krn, err := kronk.New(cfg)
@@ -151,11 +212,17 @@ func chat(krn *kronk.Kronk, cfg Config) error {
 			defer cancel()
 
 			d := model.D{
-				"messages":    messages,
-				"max_tokens":  cfg.MaxTokens,
-				"temperature": cfg.Temperature,
-				"top_p":       cfg.TopP,
-				"top_k":       cfg.TopK,
+				"messages":          messages,
+				"max_tokens":        cfg.MaxTokens,
+				"temperature":       cfg.Temperature,
+				"top_p":             cfg.TopP,
+				"top_k":             cfg.TopK,
+				"min_p":             cfg.MinP,
+				"repeat_penalty":    cfg.RepeatPenalty,
+				"frequency_penalty": cfg.FrequencyPenalty,
+				"presence_penalty":  cfg.PresencePenalty,
+				"enable_thinking":   cfg.EnableThinking,
+				"reasoning_effort":  cfg.ReasoningEffort,
 			}
 
 			ch, err := performChat(ctx, krn, d)
