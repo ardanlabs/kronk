@@ -15,6 +15,7 @@ interface CatalogFormData {
   newCatalogFile: string;
   ownedBy: string;
   modelFamily: string;
+  architecture: string;
   webPage: string;
   template: string;
   gatedModel: boolean;
@@ -109,6 +110,7 @@ const defaultForm: CatalogFormData = {
   newCatalogFile: '',
   ownedBy: '',
   modelFamily: '',
+  architecture: '',
   webPage: '',
   template: '',
   gatedModel: false,
@@ -233,6 +235,7 @@ function populateFromResponse(resp: CatalogModelResponse): CatalogFormData {
     newCatalogFile: '',
     ownedBy: resp.owned_by || '',
     modelFamily: resp.model_family || '',
+    architecture: resp.architecture || '',
     webPage: resp.web_page || '',
     template: resp.template || '',
     gatedModel: resp.gated_model || false,
@@ -498,6 +501,7 @@ export default function CatalogEditor() {
         category: form.category,
         owned_by: form.ownedBy,
         model_family: form.modelFamily,
+        architecture: form.architecture,
         web_page: form.webPage,
         gated_model: form.gatedModel,
         template: form.template,
@@ -753,6 +757,15 @@ export default function CatalogEditor() {
           <div>
             <label style={labelStyle}>Model Family</label>
             <input type="text" value={form.modelFamily} onChange={(e) => setForm({ ...form, modelFamily: e.target.value })} style={inputStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Architecture</label>
+            <select value={form.architecture} onChange={(e) => setForm({ ...form, architecture: e.target.value })} style={inputStyle}>
+              <option value="">not set</option>
+              <option value="Dense">Dense</option>
+              <option value="MoE">MoE</option>
+              <option value="Hybrid">Hybrid</option>
+            </select>
           </div>
           <div>
             <label style={labelStyle}>Web Page</label>

@@ -468,6 +468,7 @@ type CatalogModelResponse struct {
 	Category      string              `json:"category"`
 	OwnedBy       string              `json:"owned_by"`
 	ModelFamily   string              `json:"model_family"`
+	Architecture  string              `json:"architecture"`
 	WebPage       string              `json:"web_page"`
 	GatedModel    bool                `json:"gated_model"`
 	Template      string              `json:"template"`
@@ -518,13 +519,14 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 	catDetails.Files.Proj.URL = models.NormalizeHuggingFaceDownloadURL(catDetails.Files.Proj.URL)
 
 	resp := CatalogModelResponse{
-		ID:          catDetails.ID,
-		Category:    catDetails.Category,
-		OwnedBy:     catDetails.OwnedBy,
-		ModelFamily: catDetails.ModelFamily,
-		WebPage:     models.NormalizeHuggingFaceURL(catDetails.WebPage),
-		GatedModel:  catDetails.GatedModel,
-		Template:    catDetails.Template,
+		ID:           catDetails.ID,
+		Category:     catDetails.Category,
+		OwnedBy:      catDetails.OwnedBy,
+		ModelFamily:  catDetails.ModelFamily,
+		Architecture: catDetails.Architecture,
+		WebPage:      models.NormalizeHuggingFaceURL(catDetails.WebPage),
+		GatedModel:   catDetails.GatedModel,
+		Template:     catDetails.Template,
 		Files: CatalogFiles{
 			Models: mdls,
 			Proj:   CatalogFile(catDetails.Files.Proj),

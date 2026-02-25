@@ -331,6 +331,7 @@ type ModelDetails struct {
 	Category        string       `yaml:"category"`
 	OwnedBy         string       `yaml:"owned_by,omitempty"`
 	ModelFamily     string       `yaml:"model_family,omitempty"`
+	Architecture    string       `yaml:"architecture,omitempty"`
 	WebPage         string       `yaml:"web_page,omitempty"`
 	GatedModel      bool         `yaml:"gated_model,omitempty"`
 	Template        string       `yaml:"template,omitempty"`

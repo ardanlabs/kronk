@@ -30,6 +30,7 @@ function getCatalogSortValue(model: CatalogModelResponse, column: string): strin
     case 'category': return (model.category || '').toLowerCase();
     case 'owner': return (model.owned_by || '').toLowerCase();
     case 'family': return (model.model_family || '').toLowerCase();
+    case 'architecture': return (model.architecture || '').toLowerCase();
     case 'downloaded': return model.downloaded ? 1 : 0;
     default: return '';
   }
@@ -165,6 +166,7 @@ export default function CatalogList() {
                     <th className="sortable-th" onClick={() => handleSort('category')}>Category{sortIndicator('category', sort)}</th>
                     <th className="sortable-th" onClick={() => handleSort('owner')}>Owner{sortIndicator('owner', sort)}</th>
                     <th className="sortable-th" onClick={() => handleSort('family')}>Family{sortIndicator('family', sort)}</th>
+                    <th className="sortable-th" onClick={() => handleSort('architecture')}>Arch{sortIndicator('architecture', sort)}</th>
                     <th className="sortable-th" onClick={() => handleSort('downloaded')}>Downloaded{sortIndicator('downloaded', sort)}</th>
                     <th>Capabilities</th>
                   </tr>
@@ -191,6 +193,7 @@ export default function CatalogList() {
                       <td>{model.category}</td>
                       <td>{model.owned_by}</td>
                       <td>{model.model_family}</td>
+                      <td>{model.architecture || '-'}</td>
                       <td>
                         <span className={`badge ${model.downloaded ? 'badge-yes' : 'badge-no'}`}>
                           {model.downloaded ? 'Yes' : 'No'}
@@ -335,6 +338,10 @@ export default function CatalogList() {
                 <div className="model-meta-item">
                   <label>Family</label>
                   <span>{modelInfo.model_family}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>Architecture</label>
+                  <span>{modelInfo.architecture || '-'}</span>
                 </div>
                 <div className="model-meta-item">
                   <label>Downloaded</label>
