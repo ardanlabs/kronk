@@ -1,10 +1,10 @@
-// This example shows you how to execute a simple prompt against a vision model.
+// This example shows you how to execute a simple prompt against an audio model.
 //
 // The first time you run this program the system will download and install
 // the model and libraries.
 //
 // Run the example like this from the root of the project:
-// $ make example-vision
+// $ make example-audio
 
 package main
 
@@ -22,11 +22,28 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-const (
-	modelURL  = "https://huggingface.co/mradermacher/Qwen2-Audio-7B-GGUF/resolve/main/Qwen2-Audio-7B.Q8_0.gguf"
-	projURL   = "https://huggingface.co/mradermacher/Qwen2-Audio-7B-GGUF/resolve/main/Qwen2-Audio-7B.mmproj-Q8_0.gguf"
-	audioFile = "examples/samples/jfk.wav"
-)
+// modelSpec defines how to obtain the model to download.
+// - SourceURL: Download the model file directly from a HuggingFace URL
+// - ProjURL  : Download the projection file directly from a HuggingFace URL
+// - SourceID : Download the model from the catalog by model ID
+//
+// To use a catalog model, comment out SourceURL/ProjURL and set SourceID.
+// To use direct URLs, comment out SourceID and set SourceURL/ProjURL.
+type modelSpec struct {
+	SourceURL string
+	ProjURL   string
+	SourceID  string
+}
+
+// Configure this to switch between URL and catalog downloads.
+// Set either (SourceURL and ProjURL) or SourceID, not both.
+var modelSpecConfig = modelSpec{
+	SourceURL: "https://huggingface.co/mradermacher/Qwen2-Audio-7B-GGUF/resolve/main/Qwen2-Audio-7B.Q8_0.gguf",
+	ProjURL:   "https://huggingface.co/mradermacher/Qwen2-Audio-7B-GGUF/resolve/main/Qwen2-Audio-7B.mmproj-Q8_0.gguf",
+	// SourceID: "Qwen2-Audio-7B-Q8_0",
+}
+
+const audioFile = "examples/samples/jfk.wav"
 
 func main() {
 	if err := run(); err != nil {
@@ -36,12 +53,12 @@ func main() {
 }
 
 func run() error {
-	mp, err := installSystem()
+	info, err := installSystem()
 	if err != nil {
 		return fmt.Errorf("unable to install system: %w", err)
 	}
 
-	krn, err := newKronk(mp)
+	krn, err := newKronk(info)
 	if err != nil {
 		return fmt.Errorf("unable to init kronk: %w", err)
 	}
@@ -93,17 +110,26 @@ func installSystem() (models.Path, error) {
 		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
-	mp, err := mdls.Download(ctx, kronk.FmtLogger, modelURL, projURL)
+	// Download model based on spec config using switch/case
+	var mp models.Path
+
+	switch {
+	case modelSpecConfig.SourceURL != "":
+		fmt.Println("Downloading model from URL:", modelSpecConfig.SourceURL)
+		fmt.Println("Downloading projection file:", modelSpecConfig.ProjURL)
+		mp, err = mdls.Download(ctx, kronk.FmtLogger, modelSpecConfig.SourceURL, modelSpecConfig.ProjURL)
+
+	case modelSpecConfig.SourceID != "":
+		fmt.Println("Downloading model from catalog:", modelSpecConfig.SourceID)
+		mp, err = ctlg.DownloadModel(ctx, kronk.FmtLogger, modelSpecConfig.SourceID)
+
+	default:
+		return models.Path{}, fmt.Errorf("modelSpecConfig requires either (SourceURL and ProjURL) or SourceID to be set")
+	}
+
 	if err != nil {
 		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
 	}
-
-	// -------------------------------------------------------------------------
-	// You could also download this model using the catalog system.
-	// mp, err := templates.Catalog().DownloadModel(ctx, kronk.FmtLogger, "Qwen2-Audio-7B.Q8_0")
-	// if err != nil {
-	// 	return models.Path{}, fmt.Errorf("unable to download model: %w", err)
-	// }
 
 	return mp, nil
 }
