@@ -718,7 +718,7 @@ perform significantly better with `f16` precision:
 ```yaml
 models:
   # MoE models benefit from f16 cache for routing accuracy
-  Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL:
+  Qwen3.5-35B-A3B-UD-Q8_K_XL:
     context_window: 32768
     cache_type_k: f16 # Preserve routing precision
     cache_type_v: f16
@@ -1066,7 +1066,7 @@ sequence IS the cache. No separate cache sequences.
 #### Example: Real Model Calculation
 
 ```
-Model                   : Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
+Model                   : Qwen3.5-35B-A3B-UD-Q8_K_XL
 Model Weights           : 36.0 GB
 Context Window (n_ctx)  : 131,072 (128K)
 Bytes Per Element       : 1 (q8_0)
@@ -1187,8 +1187,8 @@ f16 KV cache.
 ```yaml
 models:
   Qwen3-Coder-Next-UD-Q4_K_XL:
-    cache_type_k: f16   # Required for hybrid models
-    cache_type_v: f16   # Required for hybrid models
+    cache_type_k: f16 # Required for hybrid models
+    cache_type_v: f16 # Required for hybrid models
     incremental_cache: true
 ```
 
@@ -1291,10 +1291,10 @@ Qwen3-8B-Q8_0:
 Choose a draft model that shares the same tokenizer family as the target.
 A quantized version of the same architecture at lower precision works well:
 
-| Target Model                            | Recommended Draft                       |
-| --------------------------------------- | --------------------------------------- |
-| Qwen3-8B-Q8_0                           | Qwen3-0.6B-Q8_0                         |
-| Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL | Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL |
+| Target Model               | Recommended Draft                       |
+| -------------------------- | --------------------------------------- |
+| Qwen3-8B-Q8_0              | Qwen3-0.6B-Q8_0                         |
+| Qwen3.5-35B-A3B-UD-Q8_K_XL | Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL |
 
 The second example uses the same MoE architecture at lower quantization,
 which shares more of the target's weight structure and produces higher
@@ -1834,11 +1834,11 @@ sequence state between requests when IMC is enabled. The caching system
 unaffected by model type. The difference is in the batch engine's slot
 lifecycle code (`batch_slot_start.go` and `batch_finish.go`).
 
-| Model Type | Architecture                         | State Management     | Detection                  |
-| ---------- | ------------------------------------ | -------------------- | -------------------------- |
+| Model Type | Architecture                         | State Management     | Detection                     |
+| ---------- | ------------------------------------ | -------------------- | ----------------------------- |
 | Dense      | Standard transformer                 | Partial range delete | Default (not MoE, not Hybrid) |
-| MoE        | Mixture of Experts                   | Partial range delete | GGUF `expert_count` metadata |
-| Hybrid     | Attention + Recurrent (DeltaNet/SSM) | Snapshot/Restore     | `llama.ModelIsHybrid`      |
+| MoE        | Mixture of Experts                   | Partial range delete | GGUF `expert_count` metadata  |
+| Hybrid     | Attention + Recurrent (DeltaNet/SSM) | Snapshot/Restore     | `llama.ModelIsHybrid`         |
 
 **Partial Range Delete (Dense and MoE)**
 
@@ -1916,15 +1916,15 @@ a full cache rebuild from scratch.
 
 **Debugging State Management:**
 
-| Log Message                    | Meaning                                                         |
-| ------------------------------ | --------------------------------------------------------------- |
-| `imc-hybrid-snapshot`          | State captured after cache build (shows snapshot_bytes)          |
-| `imc-hybrid-snapshot-failed`   | StateSeqGetData returned 0 bytes                                |
-| `imc-hybrid-restore`           | Snapshot restored after request (shows restored_bytes)           |
-| `imc-hybrid-restore-failed`    | StateSeqSetData failed, slot metadata cleared                   |
-| `imc-hybrid-no-snapshot`       | No snapshot available, full clear + metadata invalidation        |
-| `imc-hybrid-rebuild`           | Partial prefix: full clear + re-decode from position 0          |
-| `imc-hybrid-trim-rebuild`      | Trim-only prefix: full clear + re-decode truncated sequence     |
+| Log Message                  | Meaning                                                     |
+| ---------------------------- | ----------------------------------------------------------- |
+| `imc-hybrid-snapshot`        | State captured after cache build (shows snapshot_bytes)     |
+| `imc-hybrid-snapshot-failed` | StateSeqGetData returned 0 bytes                            |
+| `imc-hybrid-restore`         | Snapshot restored after request (shows restored_bytes)      |
+| `imc-hybrid-restore-failed`  | StateSeqSetData failed, slot metadata cleared               |
+| `imc-hybrid-no-snapshot`     | No snapshot available, full clear + metadata invalidation   |
+| `imc-hybrid-rebuild`         | Partial prefix: full clear + re-decode from position 0      |
+| `imc-hybrid-trim-rebuild`    | Trim-only prefix: full clear + re-decode truncated sequence |
 
 ---
 
@@ -2029,10 +2029,10 @@ IMC has two matching strategies, automatically selected based on the model's
 template behavior. You don't choose a strategy — Kronk detects the template
 type and uses the right one automatically.
 
-| Strategy          | When Used                           | How It Matches          | Example Models    |
-| ----------------- | ----------------------------------- | ----------------------- | ----------------- |
-| Deterministic     | Template produces consistent tokens | Hash-based              | QWEN, Llama, MoE  |
-| Non-Deterministic | Template produces variable tokens   | Token prefix fallback   | GPT-OSS, GLM      |
+| Strategy          | When Used                           | How It Matches        | Example Models   |
+| ----------------- | ----------------------------------- | --------------------- | ---------------- |
+| Deterministic     | Template produces consistent tokens | Hash-based            | QWEN, Llama, MoE |
+| Non-Deterministic | Template produces variable tokens   | Token prefix fallback | GPT-OSS, GLM     |
 
 The matching strategy is independent of the model type (Dense, MoE, Hybrid).
 Any model type can use either strategy. What changes per model type is how
@@ -2241,11 +2241,11 @@ for all model types — only the batch engine's state management differs. See
 [Section 4.9](#49-model-types-and-state-management) for how each model type
 manages state between requests.
 
-| Model Type | Matching Strategy        | State Management    | Configuration Notes            |
-| ---------- | ------------------------ | ------------------- | ------------------------------ |
-| Dense      | Deterministic or Non-Det | Partial range delete| No special requirements        |
-| MoE        | Deterministic or Non-Det | Partial range delete| f16 cache, split_mode: row     |
-| Hybrid     | Deterministic or Non-Det | Snapshot/Restore    | f16 cache required, no flash attn |
+| Model Type | Matching Strategy        | State Management     | Configuration Notes               |
+| ---------- | ------------------------ | -------------------- | --------------------------------- |
+| Dense      | Deterministic or Non-Det | Partial range delete | No special requirements           |
+| MoE        | Deterministic or Non-Det | Partial range delete | f16 cache, split_mode: row        |
+| Hybrid     | Deterministic or Non-Det | Snapshot/Restore     | f16 cache required, no flash attn |
 
 **MoE Configuration:**
 
@@ -2253,8 +2253,8 @@ manages state between requests.
 models:
   Qwen3-Coder-30B-A3B-Q8_0:
     incremental_cache: true
-    split_mode: row       # Best for MoE architecture
-    cache_type_k: f16     # Safer for MoE routing accuracy
+    split_mode: row # Best for MoE architecture
+    cache_type_k: f16 # Safer for MoE routing accuracy
     cache_type_v: f16
 ```
 
@@ -2264,8 +2264,8 @@ models:
 models:
   Qwen3-Coder-Next-UD-Q4_K_XL:
     incremental_cache: true
-    cache_type_k: f16   # Required for hybrid models
-    cache_type_v: f16   # Required for hybrid models
+    cache_type_k: f16 # Required for hybrid models
+    cache_type_v: f16 # Required for hybrid models
 ```
 
 ### 5.4 Single-User Caching
@@ -2408,14 +2408,39 @@ comparison. This is typically fast (< 5ms for most conversations). The
 savings from salvaging 70-80% of the cached tokens far outweigh this cost
 compared to a full rebuild.
 
+**IMC with Vision/Audio Models:**
+
+IMC works with vision and audio models (models configured with a projection
+file). Text-only requests are cached normally. When a message containing media
+(image, video, or audio) appears in the conversation history, IMC caches all
+text messages up to — but not including — the first media message. Everything
+from the media message onward is processed fresh on each request, since media
+embeddings are produced by the projection model and cannot be reproduced from
+text tokenization alone.
+
+For example, in a conversation like:
+
+```
+[system]  →  cached by IMC
+[user]    →  cached by IMC
+[assistant] → cached by IMC
+[user + image] → processed fresh (media boundary)
+[assistant]    → processed fresh
+[user]         → processed fresh (generation target)
+```
+
+This means agentic workflows that occasionally include screenshots or images
+still benefit from IMC for the text prefix of the conversation.
+
 **IMC Limitations:**
 
-- Text-only requests (IMC for vision/audio is not currently supported)
 - Conversations must grow monotonically (append-only)
 - Editing earlier messages triggers full cache rebuild
 - Designed for single-user use
 - Max concurrent conversation branches = NSeqMax; when all slots are
   occupied, the least-recently-used slot is evicted
+- Media messages in the conversation history limit how far IMC can cache;
+  all messages from the first media message onward are re-processed each request
 
 ---
 
@@ -4014,7 +4039,9 @@ Total:             ~9.4 GB
 
 ### 10.7 Limitations
 
-- Message caching (SPC/IMC) is not currently supported for vision/audio requests
+- SPC is not supported for vision/audio requests
+- IMC caches text messages up to the first media message; messages from the
+  media boundary onward are re-processed each request (see [§5.8](#58-performance-and-limitations))
 - Processing time varies with image resolution and audio duration
 
 ### 10.8 Example: Image Analysis
@@ -4699,7 +4726,7 @@ Cline is a VS Code extension for AI-assisted coding.
 ```
 Base URL: http://localhost:8080/v1
 API Key: <your-kronk-token> or 123 for anything
-Model: Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMC
+Model: Qwen3.5-35B-A3B-UD-Q8_K_XL/IMC
 ```
 
 **Recommended Model Settings:**
@@ -4708,8 +4735,8 @@ For coding tasks, configure your model with:
 
 ```yaml
 models:
-    Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL:
-    &base_Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
+    Qwen3.5-35B-A3B-UD-Q8_K_XL:
+    &base_Qwen3.5-35B-A3B-UD-Q8_K_XL
     context-window: 131072
     nbatch: 2048
     nubatch: 512
@@ -4723,8 +4750,8 @@ models:
         top_p: 0.8
         top_k: 20
 
-    Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMC:
-    <<: *base_Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
+    Qwen3.5-35B-A3B-UD-Q8_K_XL/IMC:
+    <<: *base_Qwen3.5-35B-A3B-UD-Q8_K_XL
     nseq-max: 1
     incremental-cache: true
 ```
@@ -4754,7 +4781,7 @@ client = OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMC",
+    model="Qwen3.5-35B-A3B-UD-Q8_K_XL/IMC",
     messages=[
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "Hello!"}
@@ -4778,7 +4805,7 @@ curl http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $KRONK_TOKEN" \
   -d '{
-    "model": "Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL",
+    "model": "Qwen3.5-35B-A3B-UD-Q8_K_XL",
     "messages": [{"role": "user", "content": "Hello"}],
     "stream": true
   }'
@@ -4814,7 +4841,7 @@ from langchain_openai import ChatOpenAI
 llm = ChatOpenAI(
     base_url="http://localhost:8080/v1",
     api_key="your-kronk-token",
-    model="Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL",
+    model="Qwen3.5-35B-A3B-UD-Q8_K_XL",
     streaming=True
 )
 

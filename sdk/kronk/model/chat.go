@@ -188,6 +188,13 @@ func (m *Model) prepareContext(ctx context.Context, d D) (D, mtmd.Context, strin
 		return m.prepareTextContext(d), 0, ObjectChatText, nil
 	}
 
+	// If the model supports media but this request has no media content,
+	// treat it as text so caching (IMC/SPC) can operate.
+	mediaType, _, _, _ := detectMediaContent(d)
+	if mediaType == MediaTypeNone {
+		return m.prepareTextContext(d), 0, ObjectChatText, nil
+	}
+
 	d, mtmdCtx, err := m.prepareMediaContext(ctx, d)
 	if err != nil {
 		return nil, 0, ObjectChatUnknown, err
@@ -208,7 +215,11 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, r
 		d = m.gptInjectToolCallNames(ctx, d)
 	}
 
-	cachingEnabled := (m.cfg.SystemPromptCache || m.cfg.IncrementalCache) && object == ObjectChatText
+	// IMC can operate on media requests because processIMC caps the cache
+	// boundary at the first media message — only the text prefix is cached.
+	// SPC does not support media requests.
+	cachingEnabled := (m.cfg.SystemPromptCache && object == ObjectChatText) ||
+		(m.cfg.IncrementalCache && (object == ObjectChatText || (object == ObjectChatMedia && m.projFile != "")))
 
 	switch {
 	case !cachingEnabled:

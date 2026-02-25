@@ -77,8 +77,8 @@ func TestMain(m *testing.M) {
 			mpHybridChat = dp
 		}
 
-		if dp, err := models.FullPath("Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL"); err == nil {
-			fmt.Println("RetrieveModel Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL...")
+		if dp, err := models.FullPath("Qwen3.5-35B-A3B-UD-Q8_K_XL"); err == nil {
+			fmt.Println("RetrieveModel Qwen3.5-35B-A3B-UD-Q8_K_XL...")
 			mpMoEChat = dp
 		}
 	}

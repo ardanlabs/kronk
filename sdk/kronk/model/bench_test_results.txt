@@ -17,7 +17,7 @@ Benchmark Configuration:
 
     Dense              : Qwen3-8B-Q8_0 (draft: Qwen3-0.6B-Q8_0)
     Dense              : GPT-OSS-20B-Q8_0 (non-deterministic template)
-    MoE                : Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL (draft: Q4_K_XL)
+    MoE                : Qwen3.5-35B-A3B-UD-Q8_K_XL (draft: Q2_K_XL)
     Hybrid             : Qwen3-Coder-Next-UD-Q6_K_XL
     ContextWindow      : 32768
     NBatch             : 2048,

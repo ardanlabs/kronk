@@ -735,7 +735,7 @@ each slot's sequence IS the cache. No separate cache sequences.
 
 EXAMPLE
 
-Model                   : Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
+Model                   : Qwen3.5-35B-A3B-UD-Q8_K_XL
 Model Weights           : 36.0 GB
 Context Window (n_ctx)  : 131,072 (128K)
 cache-type-k / v        : q8_0 (1 byte per element)

@@ -122,11 +122,11 @@ func TestMain(m *testing.M) {
 		benchDraftModelPath = dp
 	}
 
-	// MoE target + Q4 draft — only needed for BenchmarkMoE_* benchmarks.
-	if dp, err := mdls.FullPath("Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL"); err == nil {
+	// MoE target + Q2 draft — only needed for BenchmarkMoE_* benchmarks.
+	if dp, err := mdls.FullPath("Qwen3.5-35B-A3B-UD-Q8_K_XL"); err == nil {
 		benchMoEModelPath = dp
 	}
-	if dp, err := mdls.FullPath("Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL"); err == nil {
+	if dp, err := mdls.FullPath("Qwen3.5-35B-A3B-UD-Q2_K_XL"); err == nil {
 		benchMoEDraftModelPath = dp
 	}
 
@@ -1748,7 +1748,7 @@ func cfgMoEIMCDeterministic() model.Config {
 
 func BenchmarkMoE_IMCDeterministic(b *testing.B) {
 	if len(benchMoEModelPath.ModelFiles) == 0 {
-		b.Skip("model Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL not downloaded")
+		b.Skip("model Qwen3.5-35B-A3B-UD-Q8_K_XL not downloaded")
 	}
 	krn := withBenchModel(b, cfgMoEIMCDeterministic())
 	benchChat(b, krn, benchDoc())
@@ -1774,7 +1774,7 @@ func cfgMoEIMCDeterministicSpeculative() model.Config {
 
 func BenchmarkMoE_IMCDeterministic_Speculative(b *testing.B) {
 	if len(benchMoEModelPath.ModelFiles) == 0 {
-		b.Skip("model Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL not downloaded")
+		b.Skip("model Qwen3.5-35B-A3B-UD-Q8_K_XL not downloaded")
 	}
 	if len(benchMoEDraftModelPath.ModelFiles) == 0 {
 		b.Skip("draft model Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL not downloaded")

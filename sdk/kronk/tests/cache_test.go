@@ -481,16 +481,16 @@ func Test_CacheIMCMoE(t *testing.T) {
 	}
 
 	if len(mpMoEChat.ModelFiles) == 0 {
-		t.Skip("model Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL not downloaded")
+		t.Skip("model Qwen3.5-35B-A3B-UD-Q8_K_XL not downloaded")
 	}
 
 	cfg := model.Config{
 		ModelFiles:       mpMoEChat.ModelFiles,
 		ContextWindow:    8192,
 		NBatch:           2048,
-		NUBatch:          512,
-		CacheTypeK:       model.GGMLTypeQ8_0,
-		CacheTypeV:       model.GGMLTypeQ8_0,
+		NUBatch:          2048,
+		CacheTypeK:       model.GGMLTypeF16,
+		CacheTypeV:       model.GGMLTypeF16,
 		NSeqMax:          1,
 		IncrementalCache: true,
 	}
