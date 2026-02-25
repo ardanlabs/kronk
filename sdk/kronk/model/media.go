@@ -3,6 +3,7 @@ package model
 import (
 	"encoding/base64"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -133,6 +134,61 @@ func tryDecodeMedia(s string) []byte {
 	}
 
 	return nil
+}
+
+// messageHasMedia checks if a single message D contains media content.
+// Handles both OpenAI structured format (image_url, video_url, input_audio)
+// and plain base64 encoded media strings.
+func messageHasMedia(msg D) bool {
+	content, ok := msg["content"]
+	if !ok {
+		return false
+	}
+
+	switch c := content.(type) {
+	case []byte:
+		return true
+
+	case []any:
+		if slices.ContainsFunc(c, partHasMediaType) {
+			return true
+		}
+
+	case []D:
+		for _, part := range c {
+			if partHasMediaType(part) {
+				return true
+			}
+		}
+
+	case string:
+		if detectMediaType(c) != MediaTypeNone {
+			return true
+		}
+	}
+
+	return false
+}
+
+// partHasMediaType checks if a content part has a media type field.
+func partHasMediaType(part any) bool {
+	var m map[string]any
+
+	switch v := part.(type) {
+	case map[string]any:
+		m = v
+	case D:
+		m = v
+	default:
+		return false
+	}
+
+	switch m["type"] {
+	case "image_url", "video_url", "input_audio":
+		return true
+	}
+
+	return false
 }
 
 func detectMediaType(s string) MediaType {

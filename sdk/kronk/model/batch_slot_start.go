@@ -423,30 +423,47 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 
 	// Store full prompt tokens for draft model prefill if speculative decoding
 	// is enabled. The draft model needs all tokens (cached + new suffix) to
-	// build its KV cache after the target's prefill completes.
+	// build its KV cache after the target's prefill completes. Reuses the
+	// pre-allocated promptBuf to avoid per-request allocations.
 	if e.model.draft != nil {
+		draft := e.model.draft
+		var needed int
+		var cachedLen int
+
 		switch {
 		case job.imcCacheHit && s.id < len(e.model.imcSlots):
 			e.model.cacheMu.RLock()
 			cached := e.model.imcSlots[s.id].cachedTokens
 			e.model.cacheMu.RUnlock()
 
-			s.draftPromptTokens = make([]llama.Token, len(cached)+len(tokens))
-			copy(s.draftPromptTokens, cached)
-			copy(s.draftPromptTokens[len(cached):], tokens)
+			cachedLen = len(cached)
+			needed = cachedLen + len(tokens)
 
-			e.model.log(job.ctx, "speculative", "status", "draft-prompt-assembled",
-				"slot", s.id, "imc_cached", len(cached), "new_suffix", len(tokens),
-				"total_draft_tokens", len(s.draftPromptTokens))
+			if cap(draft.promptBuf) >= needed {
+				draft.promptBuf = draft.promptBuf[:needed]
+			} else {
+				draft.promptBuf = make([]llama.Token, needed)
+			}
+			copy(draft.promptBuf, cached)
+			copy(draft.promptBuf[cachedLen:], tokens)
 
 		default:
-			s.draftPromptTokens = make([]llama.Token, len(tokens))
-			copy(s.draftPromptTokens, tokens)
+			needed = len(tokens)
 
-			e.model.log(job.ctx, "speculative", "status", "draft-prompt-assembled",
-				"slot", s.id, "imc_cached", 0, "new_suffix", len(tokens),
-				"total_draft_tokens", len(s.draftPromptTokens))
+			if cap(draft.promptBuf) >= needed {
+				draft.promptBuf = draft.promptBuf[:needed]
+			} else {
+				draft.promptBuf = make([]llama.Token, needed)
+			}
+			copy(draft.promptBuf, tokens)
 		}
+
+		s.draftPromptTokens = draft.promptBuf
+
+		e.model.log(job.ctx, "speculative", "status", "draft-prompt-assembled",
+			"slot", s.id, "imc_cached", cachedLen, "new_suffix", len(tokens),
+			"total_draft_tokens", len(s.draftPromptTokens))
+
 		s.draftPrefillNeeded = true
 	}
 

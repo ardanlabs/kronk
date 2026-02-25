@@ -6,6 +6,35 @@ import type { CatalogModelResponse, CatalogModelsResponse } from '../types';
 
 type DetailTab = 'details' | 'pull';
 
+type SortDirection = 'asc' | 'desc' | null;
+
+interface SortState {
+  column: string | null;
+  direction: SortDirection;
+}
+
+function nextSortDirection(current: SortDirection): SortDirection {
+  if (current === null) return 'asc';
+  if (current === 'asc') return 'desc';
+  return null;
+}
+
+function sortIndicator(column: string, sort: SortState): string {
+  if (sort.column !== column || sort.direction === null) return '';
+  return sort.direction === 'asc' ? ' ▲' : ' ▼';
+}
+
+function getCatalogSortValue(model: CatalogModelResponse, column: string): string | number {
+  switch (column) {
+    case 'id': return model.id.toLowerCase();
+    case 'category': return (model.category || '').toLowerCase();
+    case 'owner': return (model.owned_by || '').toLowerCase();
+    case 'family': return (model.model_family || '').toLowerCase();
+    case 'downloaded': return model.downloaded ? 1 : 0;
+    default: return '';
+  }
+}
+
 function formatBytes(bytes: number): string {
   const KB = 1000;
   const MB = KB * 1000;
@@ -33,6 +62,15 @@ export default function CatalogList() {
   const [infoError, setInfoError] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState<DetailTab>('details');
+
+  const [sort, setSort] = useState<SortState>({ column: null, direction: null });
+
+  const handleSort = (column: string) => {
+    setSort((prev) => ({
+      column,
+      direction: prev.column === column ? nextSortDirection(prev.direction) : 'asc',
+    }));
+  };
 
   const isCatalogDownload = download?.kind === 'catalog' && download.catalogId === selectedId;
   const pulling = isCatalogDownload ? download.status === 'downloading' : false;
@@ -123,16 +161,25 @@ export default function CatalogList() {
                 <thead>
                   <tr>
                     <th style={{ width: '40px', textAlign: 'center' }} title="Validated">✓</th>
-                    <th>ID</th>
-                    <th>Category</th>
-                    <th>Owner</th>
-                    <th>Family</th>
-                    <th>Downloaded</th>
+                    <th className="sortable-th" onClick={() => handleSort('id')}>ID{sortIndicator('id', sort)}</th>
+                    <th className="sortable-th" onClick={() => handleSort('category')}>Category{sortIndicator('category', sort)}</th>
+                    <th className="sortable-th" onClick={() => handleSort('owner')}>Owner{sortIndicator('owner', sort)}</th>
+                    <th className="sortable-th" onClick={() => handleSort('family')}>Family{sortIndicator('family', sort)}</th>
+                    <th className="sortable-th" onClick={() => handleSort('downloaded')}>Downloaded{sortIndicator('downloaded', sort)}</th>
                     <th>Capabilities</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.map((model) => (
+                  {(sort.column && sort.direction
+                    ? [...data].sort((a, b) => {
+                        const va = getCatalogSortValue(a, sort.column!);
+                        const vb = getCatalogSortValue(b, sort.column!);
+                        const dir = sort.direction === 'asc' ? 1 : -1;
+                        if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
+                        return String(va).localeCompare(String(vb)) * dir;
+                      })
+                    : data
+                  ).map((model) => (
                     <tr
                       key={model.id}
                       onClick={() => handleRowClick(model.id)}

@@ -23,15 +23,16 @@ Cache Modes Tested:
 Benchmark Matrix:
 
 	Model Type | Cache Mode          | IMC Strategy      | Speculative | Benchmark Name
-	-----------|---------------------|-------------------|-------------|--------------------------------------
+	-----------|---------------------|-------------------|-------------|----------------------------------------------
 	Dense      | NonCaching          | —                 | No          | BenchmarkDense_NonCaching
 	Dense      | SPC                 | —                 | No          | BenchmarkDense_SPC
 	Dense      | IMC                 | Deterministic     | No          | BenchmarkDense_IMCDeterministic
 	Dense      | IMC                 | Deterministic     | Yes         | BenchmarkDense_IMCDeterministic_Speculative
 	Dense      | IMC                 | Non-Deterministic | No          | BenchmarkDense_IMCNonDeterministic
 	MoE        | IMC                 | Deterministic     | No          | BenchmarkMoE_IMCDeterministic
-	MoE        | IMC                 | Deterministic     | Yes         | BenchmarkMoE_IMCDeterministic_Speculative
 	Hybrid     | IMC                 | Deterministic     | No          | BenchmarkHybrid_IMCDeterministic
+	MoE        | IMC                 | Deterministic     | No          | BenchmarkMoE_Speculative_Baseline
+	MoE        | IMC                 | Deterministic     | Yes         | BenchmarkMoE_Speculative_WithDraft
 
 Conversation Structure (~30k of 32k tokens):
   - System prompt (~10k tokens): Large system prompt simulating a real-world
@@ -86,7 +87,7 @@ import (
 var benchModelPath models.Path
 var benchDraftModelPath models.Path
 var benchMoEModelPath models.Path
-var benchMoEDraftModelPath models.Path
+var benchSpecModelPath models.Path
 var benchHybridModelPath models.Path
 var benchNonDetModelPath models.Path
 var benchLog model.Logger
@@ -122,12 +123,14 @@ func TestMain(m *testing.M) {
 		benchDraftModelPath = dp
 	}
 
-	// MoE target + Q4 draft — only needed for BenchmarkMoE_* benchmarks.
-	if dp, err := mdls.FullPath("Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL"); err == nil {
+	// MoE target — only needed for BenchmarkMoE_IMCDeterministic.
+	if dp, err := mdls.FullPath("Qwen3.5-35B-A3B-UD-Q8_K_XL"); err == nil {
 		benchMoEModelPath = dp
 	}
-	if dp, err := mdls.FullPath("Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL"); err == nil {
-		benchMoEDraftModelPath = dp
+
+	// Speculative target — only needed for BenchmarkMoE_Speculative_*.
+	if dp, err := mdls.FullPath("cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0"); err == nil {
+		benchSpecModelPath = dp
 	}
 
 	// Hybrid target — only needed for BenchmarkHybrid_* benchmarks.
@@ -1726,11 +1729,10 @@ func BenchmarkDense_IMCNonDeterministic(b *testing.B) {
 }
 
 // =============================================================================
-// MoE Model Benchmarks (Qwen3-Coder-30B-A3B)
+// MoE Model Benchmarks (Qwen3.5-35B-A3B)
 //
 // Mixture of Experts architecture. Same IMC algorithm as Dense, different
-// performance profile (scattered memory access, expert routing). The
-// speculative variant uses the same model at Q4 quantization as the draft.
+// performance profile (scattered memory access, expert routing).
 
 func cfgMoEIMCDeterministic() model.Config {
 	return model.Config{
@@ -1748,38 +1750,9 @@ func cfgMoEIMCDeterministic() model.Config {
 
 func BenchmarkMoE_IMCDeterministic(b *testing.B) {
 	if len(benchMoEModelPath.ModelFiles) == 0 {
-		b.Skip("model Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL not downloaded")
+		b.Skip("model Qwen3.5-35B-A3B-UD-Q8_K_XL not downloaded")
 	}
 	krn := withBenchModel(b, cfgMoEIMCDeterministic())
-	benchChat(b, krn, benchDoc())
-}
-
-func cfgMoEIMCDeterministicSpeculative() model.Config {
-	return model.Config{
-		Log:              benchLog,
-		ModelFiles:       benchMoEModelPath.ModelFiles,
-		ContextWindow:    32768,
-		NBatch:           2048,
-		NUBatch:          2048,
-		CacheTypeK:       model.GGMLTypeF16,
-		CacheTypeV:       model.GGMLTypeF16,
-		NSeqMax:          1,
-		IncrementalCache: true,
-		DraftModel: &model.DraftModelConfig{
-			ModelFiles: benchMoEDraftModelPath.ModelFiles,
-			NDraft:     5,
-		},
-	}
-}
-
-func BenchmarkMoE_IMCDeterministic_Speculative(b *testing.B) {
-	if len(benchMoEModelPath.ModelFiles) == 0 {
-		b.Skip("model Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL not downloaded")
-	}
-	if len(benchMoEDraftModelPath.ModelFiles) == 0 {
-		b.Skip("draft model Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL not downloaded")
-	}
-	krn := withBenchModel(b, cfgMoEIMCDeterministicSpeculative())
 	benchChat(b, krn, benchDoc())
 }
 
@@ -1809,5 +1782,63 @@ func BenchmarkHybrid_IMCDeterministic(b *testing.B) {
 		b.Skip("model Qwen3-Coder-Next-UD-Q6_K_XL not downloaded")
 	}
 	krn := withBenchModel(b, cfgHybridIMCDeterministic())
+	benchChat(b, krn, benchDoc())
+}
+
+// =============================================================================
+// MoE Speculative Decoding Benchmarks (cerebras Qwen3-Coder-REAP-25B-A3B)
+//
+// Compares the same MoE model with and without a small Qwen3-0.6B draft model
+// for speculative decoding. Both share the Qwen3 vocabulary (151936 tokens).
+// Run both benchmarks to measure the speed-up from speculative decoding.
+
+func cfgMoESpecBaseline() model.Config {
+	return model.Config{
+		Log:              benchLog,
+		ModelFiles:       benchSpecModelPath.ModelFiles,
+		ContextWindow:    32768,
+		NBatch:           2048,
+		NUBatch:          2048,
+		CacheTypeK:       model.GGMLTypeF16,
+		CacheTypeV:       model.GGMLTypeF16,
+		NSeqMax:          1,
+		IncrementalCache: true,
+	}
+}
+
+func cfgMoESpecWithDraft() model.Config {
+	return model.Config{
+		Log:              benchLog,
+		ModelFiles:       benchSpecModelPath.ModelFiles,
+		ContextWindow:    32768,
+		NBatch:           2048,
+		NUBatch:          2048,
+		CacheTypeK:       model.GGMLTypeF16,
+		CacheTypeV:       model.GGMLTypeF16,
+		NSeqMax:          1,
+		IncrementalCache: true,
+		DraftModel: &model.DraftModelConfig{
+			ModelFiles: benchDraftModelPath.ModelFiles,
+			NDraft:     5,
+		},
+	}
+}
+
+func BenchmarkMoE_Speculative_Baseline(b *testing.B) {
+	if len(benchSpecModelPath.ModelFiles) == 0 {
+		b.Skip("model cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0 not downloaded")
+	}
+	krn := withBenchModel(b, cfgMoESpecBaseline())
+	benchChat(b, krn, benchDoc())
+}
+
+func BenchmarkMoE_Speculative_WithDraft(b *testing.B) {
+	if len(benchSpecModelPath.ModelFiles) == 0 {
+		b.Skip("model cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0 not downloaded")
+	}
+	if len(benchDraftModelPath.ModelFiles) == 0 {
+		b.Skip("draft model Qwen3-0.6B-Q8_0 not downloaded")
+	}
+	krn := withBenchModel(b, cfgMoESpecWithDraft())
 	benchChat(b, krn, benchDoc())
 }

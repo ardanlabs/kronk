@@ -79,6 +79,21 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 	// We will cache all messages but the last one.
 	lastMsgIdxToCache := totalMsgs - 1
 
+	// For vision/audio models, stop caching before the first message that
+	// contains media. Media messages require projection model processing
+	// that can't be reproduced from text tokenization alone.
+	if m.projFile != "" {
+		for i := 0; i < lastMsgIdxToCache; i++ {
+			if messageHasMedia(messages[i]) {
+				lastMsgIdxToCache = i
+				break
+			}
+		}
+		if lastMsgIdxToCache < 1 {
+			return cacheResult{modifiedD: d}
+		}
+	}
+
 	// -------------------------------------------------------------------------
 	// Snapshot slot metadata under RLock, then release before hashing.
 

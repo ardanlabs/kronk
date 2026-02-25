@@ -311,20 +311,20 @@ func mapEndpoint(tag string) string {
 
 func formatFileSize(bytes int64) string {
 	const (
-		kib = 1024
-		mib = kib * 1024
-		gib = mib * 1024
+		kb = 1000
+		mb = kb * 1000
+		gb = mb * 1000
 	)
 
 	switch {
-	case bytes >= gib:
-		val := float64(bytes) / float64(gib)
+	case bytes >= gb:
+		val := float64(bytes) / float64(gb)
 		return fmt.Sprintf("%.1f GB", math.Round(val*10)/10)
-	case bytes >= mib:
-		val := float64(bytes) / float64(mib)
+	case bytes >= mb:
+		val := float64(bytes) / float64(mb)
 		return fmt.Sprintf("%.1f MB", math.Round(val*10)/10)
 	default:
-		val := float64(bytes) / float64(kib)
-		return fmt.Sprintf("%.1f KiB", math.Round(val*10)/10)
+		val := float64(bytes) / float64(kb)
+		return fmt.Sprintf("%.1f KB", math.Round(val*10)/10)
 	}
 }

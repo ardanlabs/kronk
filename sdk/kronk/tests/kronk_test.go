@@ -77,8 +77,8 @@ func TestMain(m *testing.M) {
 			mpHybridChat = dp
 		}
 
-		if dp, err := models.FullPath("Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL"); err == nil {
-			fmt.Println("RetrieveModel Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL...")
+		if dp, err := models.FullPath("Qwen3.5-35B-A3B-UD-Q8_K_XL"); err == nil {
+			fmt.Println("RetrieveModel Qwen3.5-35B-A3B-UD-Q8_K_XL...")
 			mpMoEChat = dp
 		}
 	}
@@ -192,6 +192,14 @@ func (sa *streamAccumulator) accumulate(resp model.ChatResponse) {
 	}
 }
 
+// hasReasoningField reports whether the model populates the Reasoning field.
+// MoE and Hybrid models are reasoning models but they emit reasoning tokens
+// inline in Content rather than in a separate Reasoning field.
+func hasReasoningField(krn *kronk.Kronk) bool {
+	mt := krn.ModelInfo().Type
+	return mt != model.ModelTypeMoE && mt != model.ModelTypeHybrid
+}
+
 func testChatBasics(resp model.ChatResponse, modelName string, object string, reasoning bool, streaming bool) error {
 	if resp.ID == "" {
 		return fmt.Errorf("expected id")
@@ -257,8 +265,8 @@ type testResult struct {
 	Warnings []string
 }
 
-func testChatResponse(resp model.ChatResponse, modelName string, object string, find string, funct string, arg string, streaming bool) testResult {
-	if err := testChatBasics(resp, modelName, object, object == model.ObjectChatText || object == model.ObjectChatTextFinal, streaming); err != nil {
+func testChatResponse(resp model.ChatResponse, modelName string, object string, find string, funct string, arg string, streaming bool, reasoning bool) testResult {
+	if err := testChatBasics(resp, modelName, object, reasoning, streaming); err != nil {
 		return testResult{Err: err}
 	}
 
@@ -276,7 +284,7 @@ func testChatResponse(resp model.ChatResponse, modelName string, object string, 
 	}
 
 	// Reasoning checks are warnings (LLM output is non-deterministic).
-	if object == model.ObjectChatText || object == model.ObjectChatTextFinal {
+	if reasoning {
 		if len(msg.Reasoning) == 0 {
 			result.Err = fmt.Errorf("content: expected some reasoning")
 		}

@@ -83,9 +83,9 @@ func printLocal(files []models.File) {
 
 func formatSize(bytes int64) string {
 	const (
-		KB = 1024
-		MB = KB * 1024
-		GB = MB * 1024
+		KB = 1000
+		MB = KB * 1000
+		GB = MB * 1000
 	)
 
 	switch {

@@ -123,8 +123,9 @@ test: test-only lint vuln-check diff
 # Dense      | IMC        | Deterministic     | Yes         | benchmark-dense-imc-det-spec
 # Dense      | IMC        | Non-Deterministic | No          | benchmark-dense-imc-nondet
 # MoE        | IMC        | Deterministic     | No          | benchmark-moe-imc-det
-# MoE        | IMC        | Deterministic     | Yes         | benchmark-moe-imc-det-spec
 # Hybrid     | IMC        | Deterministic     | No          | benchmark-hybrid-imc-det
+# MoE        | IMC        | Deterministic     | No          | benchmark-moe-spec-baseline
+# MoE        | IMC        | Deterministic     | Yes         | benchmark-moe-spec-draft
 
 benchmark-dense-nc:
 	CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_NonCaching -benchtime=3x -timeout=30m ./sdk/kronk/model/
@@ -144,12 +145,14 @@ benchmark-dense-imc-det-spec:
 benchmark-moe-imc-det:
 	CGO_ENABLED=0 go test -run=none -bench=BenchmarkMoE_IMCDeterministic$$ -benchtime=3x -timeout=30m ./sdk/kronk/model/
 
-benchmark-moe-imc-det-spec:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkMoE_IMCDeterministic_Speculative -benchtime=3x -timeout=30m ./sdk/kronk/model/
+benchmark-moe-spec-baseline:
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkMoE_Speculative_Baseline -benchtime=3x -timeout=30m ./sdk/kronk/model/
+
+benchmark-moe-spec-draft:
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkMoE_Speculative_WithDraft -benchtime=3x -timeout=30m ./sdk/kronk/model/
 
 benchmark-hybrid-imc-det:
 	CGO_ENABLED=0 go test -run=none -bench=BenchmarkHybrid_IMCDeterministic -benchtime=3x -timeout=30m ./sdk/kronk/model/
-
 
 # ==============================================================================
 # Kronk BUI
@@ -186,13 +189,16 @@ kronk-server:
 	export KRONK_CATALOG_REPO_PATH=$$HOME/code/go/src/github.com/ardanlabs/kronk_catalogs && \
 	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
 
-kronk-server-race:
-	export KRONK_CATALOG_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
-	export KRONK_CATALOG_REPO_PATH=$$HOME/code/go/src/github.com/ardanlabs/kronk_catalogs && \
-	go run -race cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
-
 kronk-server-build: kronk-build    
 	source .env 2>/dev/null || true && \
+	export KRONK_INSECURE_LOGGING=true && \
+	export KRONK_CATALOG_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
+	export KRONK_CATALOG_REPO_PATH=$$HOME/code/go/src/github.com/ardanlabs/kronk_catalogs && \
+	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
+
+kronk-server-download: kronk-build
+	source .env 2>/dev/null || true && \
+	export KRONK_DOWNLOAD_ENABLED=true && \
 	export KRONK_INSECURE_LOGGING=true && \
 	export KRONK_CATALOG_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
 	export KRONK_CATALOG_REPO_PATH=$$HOME/code/go/src/github.com/ardanlabs/kronk_catalogs && \
@@ -672,14 +678,6 @@ curl-mcp-web-search:
 # Test downloading a model file (HEAD to check, GET to download):
 #   make curl-download-head
 #   make curl-download-get
-
-kronk-server-download: kronk-build
-	source .env 2>/dev/null || true && \
-	export KRONK_DOWNLOAD_ENABLED=true && \
-	export KRONK_INSECURE_LOGGING=true && \
-	export KRONK_CATALOG_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
-	export KRONK_CATALOG_REPO_PATH=$$HOME/code/go/src/github.com/ardanlabs/kronk_catalogs && \
-	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
 
 # Check a model file exists and get its size.
 # make curl-download-head FILE="bartowski/cerebras_Qwen3-Coder-REAP-25B-A3B-GGUF/resolve/main/cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0.gguf"

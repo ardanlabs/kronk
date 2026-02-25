@@ -29,35 +29,6 @@
 #   yarn-beta-slow: 1.0                  # YaRN high correction dimension (nil = default 1.0)
 
 # ==============================================================================
-# MODEL SELECTION NOTES
-#
-# These suffixes define how a Large Language Model (LLM) is quantized—compressed
-# from its original size to fit into computer memory (RAM/VRAM). The primary
-# difference lies in the balance between model size, inference speed, and output
-# accuracy (intelligence).
-#
-# - F16 (FP16): Unquantized, maximum quality, largest size.
-# - Q8_0: 8-bit, near-lossless compression, very high quality. (Best for local)
-# - K_XL: K-quant (smart) method, high efficiency, better accuracy than
-#         standard _0 at similar sizes.
-#
-# Also, the FP8/F16 or even FP4 are more for modern nvidia cards,are all the
-# precision of the floating point numbers. All operations are accelerated by
-# the GPU.
-#
-# Most of the modern GPUs have the hardware for FP16, and other formats, like FP8
-# (Q8) or FP4 are emulated.
-#
-# If you have hardware support for FP8, it will be roughly double the speed of FP16.
-#
-# There are also INT4/INT8 models, but that's already weird. They take the
-# floating point numbers and convert them to the int in the given precision.
-#
-# For us, on Apple M4 chips, there's still some performance to be gained.
-# See: https://github.com/ggml-org/llama.cpp/discussions/336
-# However, llama.cpp doesn't currently support the MLX framework.
-
-# ==============================================================================
 # ROPE AND YARN NOTES
 #
 # YaRN (Yet another RoPE extensioN) enables extended context windows beyond a
@@ -110,26 +81,12 @@
 # needs prefilling, making long multi-turn conversations dramatically faster.
 #
 # Choose IMC when:
-#   - Models with consistent templates (QWEN, Llama) — fastest hash-based path
-#   - Models with non-deterministic templates (GPT-OSS, GLM) — token prefix fallback
 #   - AI coding agents
 #   - Long-running agent conversations
 #   - Any workflow where messages are appended, not edited
 #   - Sub-agent architectures with multiple concurrent agents
 #
 #   incremental-cache: true
-#
-# KV CACHE PARTITIONING
-# ---------------------------------------
-# llama.cpp internally partitions the KV cache across sequences. Each
-# slot gets context-window / nseq-max tokens of capacity. The difference
-# between cache modes is how cached state is managed:
-#
-#   No caching: Slots cleared after each request.
-#   SPC:        System prompt decoded once into a dedicated KV cache sequence,
-#               copied to slot via MemorySeqCp (instant). Adds +1 sequence
-#               to VRAM (NSeqMax + 1).
-#   IMC:        Full conversation cached in KV, slots persist across requests.
 #
 # MISCELLANEOUS NOTES
 # -------------------------------
@@ -141,94 +98,27 @@
 
 # ------------------------------------------------------------------------------
 
-Qwen3-Coder-Next-UD-Q8_K_XL/IMC-Cline:
+Qwen3.5-35B-A3B-UD-Q8_K_XL/CLINE:
   nseq-max: 1
   incremental-cache: true
 
-Qwen3-Coder-Next-UD-Q8_K_XL/IMC-Kilo:
-  nseq-max: 2
+Qwen3.5-35B-A3B-UD-Q8_K_XL/KILO:
+  nseq-max: 3
   incremental-cache: true
+  grammar: hermestoolcalling.grm
 
-Qwen3-Coder-Next-UD-Q8_K_XL/SPC:
-  nseq-max: 1
-  system-prompt-cache: true
-
-# ------------------------------------------------------------------------------
-
-Qwen3-Coder-Next-UD-Q6_K_XL/IMC-Cline:
-  nseq-max: 1
-  incremental-cache: true
-
-Qwen3-Coder-Next-UD-Q6_K_XL/IMC-Kilo:
-  nseq-max: 2
-  incremental-cache: true
-
-Qwen3-Coder-Next-UD-Q6_K_XL/SPC:
+Qwen3.5-35B-A3B-UD-Q8_K_XL/SPC:
   nseq-max: 1
   system-prompt-cache: true
 
 # ------------------------------------------------------------------------------
 
-Qwen3-Coder-Next-UD-Q5_K_XL/IMC-Cline:
+gpt-oss-120b-F16/CLINE:
   nseq-max: 1
   incremental-cache: true
 
-Qwen3-Coder-Next-UD-Q5_K_XL/IMC-Kilo:
-  nseq-max: 2
-  incremental-cache: true
-
-Qwen3-Coder-Next-UD-Q5_K_XL/SPC:
-  nseq-max: 1
-  system-prompt-cache: true
-
-# ------------------------------------------------------------------------------
-
-Qwen3-Coder-Next-UD-Q4_K_XL/IMC-Cline:
-  nseq-max: 1
-  incremental-cache: true
-
-Qwen3-Coder-Next-UD-Q4_K_XL/IMC-Kilo:
-  nseq-max: 2
-  incremental-cache: true
-
-Qwen3-Coder-Next-UD-Q4_K_XL/SPC:
-  nseq-max: 1
-  system-prompt-cache: true
-
-# ------------------------------------------------------------------------------
-
-Qwen3-Coder-Next-UD-Q2_K_XL/IMC-Cline:
-  nseq-max: 1
-  incremental-cache: true
-
-Qwen3-Coder-Next-UD-Q2_K_XL/IMC-Kilo:
-  nseq-max: 2
-  incremental-cache: true
-
-Qwen3-Coder-Next-UD-Q2_K_XL/SPC:
-  nseq-max: 1
-  system-prompt-cache: true
-
-# ------------------------------------------------------------------------------
-
-Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMC-Cline:
-  nseq-max: 1
-  incremental-cache: true
-
-Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMC-Kilo:
-  nseq-max: 2
-  incremental-cache: true
-  sampling-parameters:
-    grammar: hermestoolcalling.grm
-
-Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/SPC:
-  nseq-max: 1
-  system-prompt-cache: true
-
-# ------------------------------------------------------------------------------
-
-gpt-oss-120b-F16/IMC-Kilo:
-  nseq-max: 2
+gpt-oss-120b-F16/KILO:
+  nseq-max: 3
   incremental-cache: true
 
 gpt-oss-120b-F16/SPC:
@@ -240,10 +130,6 @@ gpt-oss-120b-F16/SPC:
 cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0/IMC:
   nseq-max: 1
   incremental-cache: true
-
-GLM-4.7-Flash-UD-Q8_K_XL/SPC:
-  nseq-max: 1
-  system-prompt-cache: true
 
 # ------------------------------------------------------------------------------
 

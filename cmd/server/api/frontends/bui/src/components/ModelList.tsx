@@ -1,7 +1,36 @@
 import { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { useModelList } from '../contexts/ModelListContext';
-import type { ModelInfoResponse } from '../types';
+import type { ModelInfoResponse, ListModelDetail } from '../types';
+
+type SortDirection = 'asc' | 'desc' | null;
+
+interface SortState {
+  column: string | null;
+  direction: SortDirection;
+}
+
+function nextSortDirection(current: SortDirection): SortDirection {
+  if (current === null) return 'asc';
+  if (current === 'asc') return 'desc';
+  return null;
+}
+
+function sortIndicator(column: string, sort: SortState): string {
+  if (sort.column !== column || sort.direction === null) return '';
+  return sort.direction === 'asc' ? ' ▲' : ' ▼';
+}
+
+function getSortValue(model: ListModelDetail, column: string): string | number {
+  switch (column) {
+    case 'id': return model.id.toLowerCase();
+    case 'owner': return (model.owned_by || '').toLowerCase();
+    case 'family': return (model.model_family || '').toLowerCase();
+    case 'size': return model.size;
+    case 'modified': return new Date(model.modified).getTime();
+    default: return '';
+  }
+}
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -29,6 +58,15 @@ export default function ModelList() {
   const [removing, setRemoving] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
   const [removeSuccess, setRemoveSuccess] = useState<string | null>(null);
+
+  const [sort, setSort] = useState<SortState>({ column: null, direction: null });
+
+  const handleSort = (column: string) => {
+    setSort((prev) => ({
+      column,
+      direction: prev.column === column ? nextSortDirection(prev.direction) : 'asc',
+    }));
+  };
 
   const handleRebuildIndex = async () => {
     setRebuildingIndex(true);
@@ -132,11 +170,11 @@ export default function ModelList() {
                 <thead>
                   <tr>
                     <th style={{ width: '40px', textAlign: 'center' }} title="Validated">✓</th>
-                    <th>ID</th>
-                    <th>Owner</th>
-                    <th>Family</th>
-                    <th>Size</th>
-                    <th>Modified</th>
+                    <th className="sortable-th" onClick={() => handleSort('id')}>ID{sortIndicator('id', sort)}</th>
+                    <th className="sortable-th" onClick={() => handleSort('owner')}>Owner{sortIndicator('owner', sort)}</th>
+                    <th className="sortable-th" onClick={() => handleSort('family')}>Family{sortIndicator('family', sort)}</th>
+                    <th className="sortable-th" onClick={() => handleSort('size')}>Size{sortIndicator('size', sort)}</th>
+                    <th className="sortable-th" onClick={() => handleSort('modified')}>Modified{sortIndicator('modified', sort)}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -144,7 +182,17 @@ export default function ModelList() {
                     const mainModels = models.data.filter((m) => !m.id.includes('/'));
                     const extensionModels = models.data.filter((m) => m.id.includes('/'));
 
-                    return mainModels.map((model) => {
+                    const sorted = sort.column && sort.direction
+                      ? [...mainModels].sort((a, b) => {
+                          const va = getSortValue(a, sort.column!);
+                          const vb = getSortValue(b, sort.column!);
+                          const dir = sort.direction === 'asc' ? 1 : -1;
+                          if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
+                          return String(va).localeCompare(String(vb)) * dir;
+                        })
+                      : mainModels;
+
+                    return sorted.map((model) => {
                       const extensions = extensionModels.filter((ext) => ext.id.startsWith(model.id + '/'));
                       const isParentSelected = selectedModelId === model.id;
                       const isExtensionSelected = selectedModelId?.startsWith(model.id + '/');

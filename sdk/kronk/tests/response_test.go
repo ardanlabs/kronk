@@ -147,7 +147,7 @@ func testResponseStreaming(t *testing.T, krn *kronk.Kronk, d model.D, tooling bo
 			return fmt.Errorf("expected output_text.delta events")
 		}
 
-		if !hasReasoningDelta {
+		if hasReasoningField(krn) && !hasReasoningDelta {
 			return fmt.Errorf("expected reasoning_summary_text.delta events")
 		}
 

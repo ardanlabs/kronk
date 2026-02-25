@@ -682,7 +682,7 @@ cache_type_v: q8_0 # Value cache precision`}</code></pre>
           <p><strong>Example: MoE Model with F16 Cache</strong></p>
           <pre className="code-block"><code className="language-yaml">{`models:
   # MoE models benefit from f16 cache for routing accuracy
-  Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL:
+  Qwen3.5-35B-A3B-UD-Q8_K_XL:
     context_window: 32768
     cache_type_k: f16 # Preserve routing precision
     cache_type_v: f16
@@ -1076,7 +1076,7 @@ Total_VRAM  = Model_Weights + Slot_Memory`}</code></pre>
             </tbody>
           </table>
           <h4 id="example:-real-model-calculation">Example: Real Model Calculation</h4>
-          <pre className="code-block"><code>{`Model                   : Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
+          <pre className="code-block"><code>{`Model                   : Qwen3.5-35B-A3B-UD-Q8_K_XL
 Model Weights           : 36.0 GB
 Context Window (n_ctx)  : 131,072 (128K)
 Bytes Per Element       : 1 (q8_0)
@@ -1140,8 +1140,8 @@ Step 4 — Total VRAM:
           <p>When choosing between a hybrid model and an MoE model for Apple Silicon, consider: the hybrid model's sequential memory access pattern and dense activation give it both better quality per token and better bandwidth utilization. The trade-off is total model size — hybrid models use all parameters, so you need enough unified memory to hold them plus the larger f16 KV cache.</p>
           <pre className="code-block"><code className="language-yaml">{`models:
   Qwen3-Coder-Next-UD-Q4_K_XL:
-    cache_type_k: f16   # Required for hybrid models
-    cache_type_v: f16   # Required for hybrid models
+    cache_type_k: f16 # Required for hybrid models
+    cache_type_v: f16 # Required for hybrid models
     incremental_cache: true`}</code></pre>
           <p><strong>Embedding Models</strong></p>
           <p>Embedding models process complete inputs in a single pass, so larger <code>n_batch</code> values improve throughput.</p>
@@ -1264,7 +1264,7 @@ Qwen3-8B-Q8_0:
                 <td>Qwen3-0.6B-Q8_0</td>
               </tr>
               <tr>
-                <td>Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL</td>
+                <td>Qwen3.5-35B-A3B-UD-Q8_K_XL</td>
                 <td>Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL</td>
               </tr>
             </tbody>
@@ -2018,15 +2018,15 @@ New decode:    7 tokens (T5-T12, from divergence point forward)`}</code></pre>
           <pre className="code-block"><code className="language-yaml">{`models:
   Qwen3-Coder-30B-A3B-Q8_0:
     incremental_cache: true
-    split_mode: row       # Best for MoE architecture
-    cache_type_k: f16     # Safer for MoE routing accuracy
+    split_mode: row # Best for MoE architecture
+    cache_type_k: f16 # Safer for MoE routing accuracy
     cache_type_v: f16`}</code></pre>
           <p><strong>Hybrid Configuration:</strong></p>
           <pre className="code-block"><code className="language-yaml">{`models:
   Qwen3-Coder-Next-UD-Q4_K_XL:
     incremental_cache: true
-    cache_type_k: f16   # Required for hybrid models
-    cache_type_v: f16   # Required for hybrid models`}</code></pre>
+    cache_type_k: f16 # Required for hybrid models
+    cache_type_v: f16 # Required for hybrid models`}</code></pre>
           <h3 id="54-single-user-caching">5.4 Single-User Caching</h3>
           <p>IMC is designed for single-user use. All <code>NSeqMax</code> slots are available, with each slot independently tracking its own conversation branch via hash matching. This design is optimized for agentic workflows where multiple sub-agents send independent conversations (different system prompts, different message histories).</p>
           <p><strong>SPC:</strong> All requests share the same externalized KV state buffer. The cached KV state is restored into each slot via StateSeqSetData. If the system prompt changes, the cache is rebuilt automatically.</p>
@@ -2144,15 +2144,28 @@ New decode:    7 tokens (T5-T12, from divergence point forward)`}</code></pre>
   Total KV cache: 4 × 200 MB = ~800 MB`}</code></pre>
           <p><strong>IMC Token Prefix Fallback Performance:</strong></p>
           <p>When IMC falls back to token-level prefix matching (non-deterministic templates), there is a one-time cost to tokenize the incoming messages for comparison. This is typically fast (&lt; 5ms for most conversations). The savings from salvaging 70-80% of the cached tokens far outweigh this cost compared to a full rebuild.</p>
+          <p><strong>IMC with Vision/Audio Models:</strong></p>
+          <p>IMC works with vision and audio models (models configured with a projection file). Text-only requests are cached normally. When a message containing media (image, video, or audio) appears in the conversation history, IMC caches all text messages up to — but not including — the first media message. Everything from the media message onward is processed fresh on each request, since media embeddings are produced by the projection model and cannot be reproduced from text tokenization alone.</p>
+          <p>For example, in a conversation like:</p>
+          <pre className="code-block"><code>{`[system]  →  cached by IMC
+[user]    →  cached by IMC
+[assistant] → cached by IMC
+[user + image] → processed fresh (media boundary)
+[assistant]    → processed fresh
+[user]         → processed fresh (generation target)`}</code></pre>
+          <p>This means agentic workflows that occasionally include screenshots or images still benefit from IMC for the text prefix of the conversation.</p>
           <p><strong>IMC Limitations:</strong></p>
           <ul>
-            <li>Text-only requests (IMC for vision/audio is not currently supported)</li>
             <li>Conversations must grow monotonically (append-only)</li>
             <li>Editing earlier messages triggers full cache rebuild</li>
             <li>Designed for single-user use</li>
             <li>Max concurrent conversation branches = NSeqMax; when all slots are</li>
           </ul>
           <p>occupied, the least-recently-used slot is evicted</p>
+          <ul>
+            <li>Media messages in the conversation history limit how far IMC can cache;</li>
+          </ul>
+          <p>all messages from the first media message onward are re-processed each request</p>
           <hr />
           <h2 id="chapter-6:-yarn-extended-context">Chapter 6: YaRN Extended Context</h2>
           <p>YaRN (Yet another RoPE extensioN) allows models to handle context windows beyond their native training length. This is essential for long documents, extended conversations, and complex agentic workflows.</p>
@@ -3944,7 +3957,11 @@ KV cache (8K):     ~0.6 GB
 Total:             ~9.4 GB`}</code></pre>
           <h3 id="107-limitations">10.7 Limitations</h3>
           <ul>
-            <li>Message caching (SPC/IMC) is not currently supported for vision/audio requests</li>
+            <li>SPC is not supported for vision/audio requests</li>
+            <li>IMC caches text messages up to the first media message; messages from the</li>
+          </ul>
+          <p>media boundary onward are re-processed each request (see <a href="#58-performance-and-limitations">§5.8</a>)</p>
+          <ul>
             <li>Processing time varies with image resolution and audio duration</li>
           </ul>
           <h3 id="108-example:-image-analysis">10.8 Example: Image Analysis</h3>
@@ -4441,12 +4458,12 @@ response = client.chat.completions.create(
           </ol>
           <pre className="code-block"><code>{`Base URL: http://localhost:8080/v1
 API Key: <your-kronk-token> or 123 for anything
-Model: Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMC`}</code></pre>
+Model: Qwen3.5-35B-A3B-UD-Q8_K_XL/IMC`}</code></pre>
           <p><strong>Recommended Model Settings:</strong></p>
           <p>For coding tasks, configure your model with:</p>
           <pre className="code-block"><code className="language-yaml">{`models:
-    Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL:
-    &base_Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
+    Qwen3.5-35B-A3B-UD-Q8_K_XL:
+    &base_Qwen3.5-35B-A3B-UD-Q8_K_XL
     context-window: 131072
     nbatch: 2048
     nubatch: 512
@@ -4460,8 +4477,8 @@ Model: Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMC`}</code></pre>
         top_p: 0.8
         top_k: 20
 
-    Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMC:
-    <<: *base_Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
+    Qwen3.5-35B-A3B-UD-Q8_K_XL/IMC:
+    <<: *base_Qwen3.5-35B-A3B-UD-Q8_K_XL
     nseq-max: 1
     incremental-cache: true`}</code></pre>
           <p>IMC is especially beneficial for Cline's iterative coding workflow.</p>
@@ -4479,7 +4496,7 @@ client = OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMC",
+    model="Qwen3.5-35B-A3B-UD-Q8_K_XL/IMC",
     messages=[
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "Hello!"}
@@ -4497,7 +4514,7 @@ for chunk in response:
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -d '{
-    "model": "Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL",
+    "model": "Qwen3.5-35B-A3B-UD-Q8_K_XL",
     "messages": [{"role": "user", "content": "Hello"}],
     "stream": true
   }'`}</code></pre>
@@ -4518,7 +4535,7 @@ data: [DONE]`}</code></pre>
 llm = ChatOpenAI(
     base_url="http://localhost:8080/v1",
     api_key="your-kronk-token",
-    model="Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL",
+    model="Qwen3.5-35B-A3B-UD-Q8_K_XL",
     streaming=True
 )
 
@@ -4929,7 +4946,10 @@ KRONK_PROCESSOR=metal kronk libs --local
 KRONK_PROCESSOR=cuda kronk libs --local
 
 # For CPU only
-KRONK_PROCESSOR=cpu kronk libs --local`}</code></pre>
+KRONK_PROCESSOR=cpu kronk libs --local
+
+# For AMD GPU (ROCm)
+KRONK_PROCESSOR=rocm kronk libs --local`}</code></pre>
           <h3 id="162-model-loading-failures">16.2 Model Loading Failures</h3>
           <p><strong>Error: "unable to load model"</strong></p>
           <p>The model file is missing, corrupted, or incompatible.</p>

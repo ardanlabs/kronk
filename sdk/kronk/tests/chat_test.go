@@ -33,12 +33,14 @@ func testChat(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
 			return fmt.Errorf("chat streaming: %w", err)
 		}
 
+		reasoning := hasReasoningField(krn)
+
 		var result testResult
 		switch tooling {
 		case true:
-			result = testChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatTextFinal, "London", "get_weather", "location", false)
+			result = testChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatTextFinal, "London", "get_weather", "location", false, reasoning)
 		case false:
-			result = testChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatTextFinal, "Gorilla", "", "", false)
+			result = testChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatTextFinal, "Gorilla", "", "", false, reasoning)
 		}
 
 		for _, w := range result.Warnings {
@@ -84,13 +86,15 @@ func testChatStreaming(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) 
 			return fmt.Errorf("chat streaming: %w", err)
 		}
 
+		reasoning := hasReasoningField(krn)
+
 		var acc streamAccumulator
 		var lastResp model.ChatResponse
 		for resp := range ch {
 			acc.accumulate(resp)
 			lastResp = resp
 
-			if err := testChatBasics(resp, krn.ModelInfo().ID, model.ObjectChatText, true, true); err != nil {
+			if err := testChatBasics(resp, krn.ModelInfo().ID, model.ObjectChatText, reasoning, true); err != nil {
 				t.Logf("%#v", resp)
 				return err
 			}

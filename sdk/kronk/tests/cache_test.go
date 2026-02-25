@@ -481,16 +481,16 @@ func Test_CacheIMCMoE(t *testing.T) {
 	}
 
 	if len(mpMoEChat.ModelFiles) == 0 {
-		t.Skip("model Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL not downloaded")
+		t.Skip("model Qwen3.5-35B-A3B-UD-Q8_K_XL not downloaded")
 	}
 
 	cfg := model.Config{
 		ModelFiles:       mpMoEChat.ModelFiles,
 		ContextWindow:    8192,
 		NBatch:           2048,
-		NUBatch:          512,
-		CacheTypeK:       model.GGMLTypeQ8_0,
-		CacheTypeV:       model.GGMLTypeQ8_0,
+		NUBatch:          2048,
+		CacheTypeK:       model.GGMLTypeF16,
+		CacheTypeV:       model.GGMLTypeF16,
 		NSeqMax:          1,
 		IncrementalCache: true,
 	}
@@ -786,6 +786,240 @@ func Test_CacheIMCHybrid(t *testing.T) {
 			prompt3 = resp3.Usage.PromptTokens
 		}
 		t.Logf("turn 3: prompt_tokens=%d content=%q", prompt3, content3)
+	})
+}
+
+func Test_CacheIMCMoEMultiSlot(t *testing.T) {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("Skipping cache test in GitHub Actions (requires more resources)")
+	}
+
+	if len(mpMoEChat.ModelFiles) == 0 {
+		t.Skip("model Qwen3.5-35B-A3B-UD-Q8_K_XL not downloaded")
+	}
+
+	cfg := model.Config{
+		ModelFiles:       mpMoEChat.ModelFiles,
+		ContextWindow:    8192,
+		NBatch:           2048,
+		NUBatch:          2048,
+		CacheTypeK:       model.GGMLTypeF16,
+		CacheTypeV:       model.GGMLTypeF16,
+		NSeqMax:          2,
+		IncrementalCache: true,
+	}
+
+	withModel(t, cfg, func(t *testing.T, krn *kronk.Kronk) {
+		ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+		defer cancel()
+
+		dA := model.D{
+			"messages": []model.D{
+				{
+					"role":    "system",
+					"content": "You are a math tutor.",
+				},
+				{
+					"role":    "user",
+					"content": "What is 2+2?",
+				},
+			},
+			"max_tokens": 256,
+		}
+
+		dB := model.D{
+			"messages": []model.D{
+				{
+					"role":    "system",
+					"content": "You are a poet.",
+				},
+				{
+					"role":    "user",
+					"content": "Write one line about the sea.",
+				},
+			},
+			"max_tokens": 256,
+		}
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		startBarrier := make(chan struct{})
+		contents := make([]string, 2)
+		errors := make([]error, 2)
+
+		go func() {
+			defer wg.Done()
+			<-startBarrier
+
+			ch, err := krn.ChatStreaming(ctx, dA)
+			if err != nil {
+				errors[0] = fmt.Errorf("conversation A: chat streaming: %w", err)
+				return
+			}
+
+			_, content, err := drainChat(ctx, ch)
+			if err != nil {
+				errors[0] = fmt.Errorf("conversation A: %w", err)
+				return
+			}
+			contents[0] = content
+		}()
+
+		go func() {
+			defer wg.Done()
+			<-startBarrier
+
+			ch, err := krn.ChatStreaming(ctx, dB)
+			if err != nil {
+				errors[1] = fmt.Errorf("conversation B: chat streaming: %w", err)
+				return
+			}
+
+			_, content, err := drainChat(ctx, ch)
+			if err != nil {
+				errors[1] = fmt.Errorf("conversation B: %w", err)
+				return
+			}
+			contents[1] = content
+		}()
+
+		close(startBarrier)
+		wg.Wait()
+
+		for i, err := range errors {
+			if err != nil {
+				t.Errorf("slot %d: %v", i, err)
+			}
+		}
+
+		if t.Failed() {
+			return
+		}
+
+		for i, content := range contents {
+			if content == "" {
+				t.Errorf("slot %d: expected non-empty content", i)
+			}
+			t.Logf("slot %d: content=%q", i, content)
+		}
+	})
+}
+
+func Test_CacheIMCHybridMultiSlot(t *testing.T) {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("Skipping cache test in GitHub Actions (requires more resources)")
+	}
+
+	if len(mpHybridChat.ModelFiles) == 0 {
+		t.Skip("model Qwen3-Coder-Next-UD-Q6_K_XL not downloaded")
+	}
+
+	cfg := model.Config{
+		ModelFiles:       mpHybridChat.ModelFiles,
+		ContextWindow:    8192,
+		NBatch:           2048,
+		NUBatch:          512,
+		CacheTypeK:       model.GGMLTypeF16,
+		CacheTypeV:       model.GGMLTypeF16,
+		NSeqMax:          2,
+		IncrementalCache: true,
+	}
+
+	withModel(t, cfg, func(t *testing.T, krn *kronk.Kronk) {
+		ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+		defer cancel()
+
+		dA := model.D{
+			"messages": []model.D{
+				{
+					"role":    "system",
+					"content": "You are a math tutor.",
+				},
+				{
+					"role":    "user",
+					"content": "What is 2+2?",
+				},
+			},
+			"max_tokens": 256,
+		}
+
+		dB := model.D{
+			"messages": []model.D{
+				{
+					"role":    "system",
+					"content": "You are a poet.",
+				},
+				{
+					"role":    "user",
+					"content": "Write one line about the sea.",
+				},
+			},
+			"max_tokens": 256,
+		}
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		startBarrier := make(chan struct{})
+		contents := make([]string, 2)
+		errors := make([]error, 2)
+
+		go func() {
+			defer wg.Done()
+			<-startBarrier
+
+			ch, err := krn.ChatStreaming(ctx, dA)
+			if err != nil {
+				errors[0] = fmt.Errorf("conversation A: chat streaming: %w", err)
+				return
+			}
+
+			_, content, err := drainChat(ctx, ch)
+			if err != nil {
+				errors[0] = fmt.Errorf("conversation A: %w", err)
+				return
+			}
+			contents[0] = content
+		}()
+
+		go func() {
+			defer wg.Done()
+			<-startBarrier
+
+			ch, err := krn.ChatStreaming(ctx, dB)
+			if err != nil {
+				errors[1] = fmt.Errorf("conversation B: chat streaming: %w", err)
+				return
+			}
+
+			_, content, err := drainChat(ctx, ch)
+			if err != nil {
+				errors[1] = fmt.Errorf("conversation B: %w", err)
+				return
+			}
+			contents[1] = content
+		}()
+
+		close(startBarrier)
+		wg.Wait()
+
+		for i, err := range errors {
+			if err != nil {
+				t.Errorf("slot %d: %v", i, err)
+			}
+		}
+
+		if t.Failed() {
+			return
+		}
+
+		for i, content := range contents {
+			if content == "" {
+				t.Errorf("slot %d: expected non-empty content", i)
+			}
+			t.Logf("slot %d: content=%q", i, content)
+		}
 	})
 }
 
