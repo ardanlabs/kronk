@@ -109,7 +109,10 @@ func newKronk(mp models.Path, runCfg Config) (*kronk.Kronk, error) {
 
 	cfg := model.Config{
 		ModelFiles: mp.ModelFiles,
-		JinjaFile:  runCfg.JinjaFile,
+	}
+
+	if runCfg.JinjaFile != "" {
+		cfg.JinjaFile = runCfg.JinjaFile
 	}
 
 	if runCfg.ContextWindow > 0 {
@@ -212,17 +215,38 @@ func chat(krn *kronk.Kronk, cfg Config) error {
 			defer cancel()
 
 			d := model.D{
-				"messages":          messages,
-				"max_tokens":        cfg.MaxTokens,
-				"temperature":       cfg.Temperature,
-				"top_p":             cfg.TopP,
-				"top_k":             cfg.TopK,
-				"min_p":             cfg.MinP,
-				"repeat_penalty":    cfg.RepeatPenalty,
-				"frequency_penalty": cfg.FrequencyPenalty,
-				"presence_penalty":  cfg.PresencePenalty,
-				"enable_thinking":   cfg.EnableThinking,
-				"reasoning_effort":  cfg.ReasoningEffort,
+				"messages": messages,
+			}
+
+			if cfg.MaxTokens != 0 {
+				d["max_tokens"] = cfg.MaxTokens
+			}
+			if cfg.Temperature != 0 {
+				d["temperature"] = cfg.Temperature
+			}
+			if cfg.TopP != 0 {
+				d["top_p"] = cfg.TopP
+			}
+			if cfg.TopK != 0 {
+				d["top_k"] = cfg.TopK
+			}
+			if cfg.MinP != 0 {
+				d["min_p"] = cfg.MinP
+			}
+			if cfg.RepeatPenalty != 0 {
+				d["repeat_penalty"] = cfg.RepeatPenalty
+			}
+			if cfg.FrequencyPenalty != 0 {
+				d["frequency_penalty"] = cfg.FrequencyPenalty
+			}
+			if cfg.PresencePenalty != 0 {
+				d["presence_penalty"] = cfg.PresencePenalty
+			}
+			if cfg.EnableThinking != "" {
+				d["enable_thinking"] = cfg.EnableThinking
+			}
+			if cfg.ReasoningEffort != "" {
+				d["reasoning_effort"] = cfg.ReasoningEffort
 			}
 
 			ch, err := performChat(ctx, krn, d)
