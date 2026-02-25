@@ -42,7 +42,7 @@ func testMediaWithInput(t *testing.T, krn *kronk.Kronk, d model.D) {
 			return fmt.Errorf("chat streaming: %w", err)
 		}
 
-		result := testChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatMedia, "giraffes", "", "", false)
+		result := testChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatMedia, "giraffes", "", "", false, false)
 
 		for _, w := range result.Warnings {
 			t.Logf("WARNING: %s", w)
@@ -322,7 +322,7 @@ func testAudio(t *testing.T, krn *kronk.Kronk) {
 				return fmt.Errorf("chat: %w", err)
 			}
 
-			result := testChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatMedia, "speech", "", "", false)
+			result := testChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatMedia, "speech", "", "", false, false)
 
 			for _, w := range result.Warnings {
 				t.Logf("WARNING: %s", w)

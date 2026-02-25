@@ -2,6 +2,7 @@ package kronk_test
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -421,6 +422,52 @@ func TestUsageDeltaNil(t *testing.T) {
 		case finalResp.Usage.OutputTokens == 0:
 			t.Errorf("Expected final response to have OutputTokens > 0")
 		}
+	})
+}
+
+// TestUsageCountingMoE validates usage token counts for MoE models.
+func TestUsageCountingMoE(t *testing.T) {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("Skipping MoE usage test in GitHub Actions (requires more resources)")
+	}
+
+	if len(mpMoEChat.ModelFiles) == 0 {
+		t.Skip("model Qwen3.5-35B-A3B-UD-Q8_K_XL not downloaded")
+	}
+
+	withModel(t, cfgMoEChat(), func(t *testing.T, krn *kronk.Kronk) {
+		t.Run("StreamingUsage", func(t *testing.T) {
+			testStreamingUsage(t, krn)
+		})
+		t.Run("NonStreamingUsage", func(t *testing.T) {
+			testNonStreamingUsage(t, krn)
+		})
+		t.Run("UsageOnlyInFinal", func(t *testing.T) {
+			testUsageOnlyInFinal(t, krn)
+		})
+	})
+}
+
+// TestUsageCountingHybrid validates usage token counts for Hybrid models.
+func TestUsageCountingHybrid(t *testing.T) {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("Skipping Hybrid usage test in GitHub Actions (requires more resources)")
+	}
+
+	if len(mpHybridChat.ModelFiles) == 0 {
+		t.Skip("model Qwen3-Coder-Next-UD-Q6_K_XL not downloaded")
+	}
+
+	withModel(t, cfgHybridChat(), func(t *testing.T, krn *kronk.Kronk) {
+		t.Run("StreamingUsage", func(t *testing.T) {
+			testStreamingUsage(t, krn)
+		})
+		t.Run("NonStreamingUsage", func(t *testing.T) {
+			testNonStreamingUsage(t, krn)
+		})
+		t.Run("UsageOnlyInFinal", func(t *testing.T) {
+			testUsageOnlyInFinal(t, krn)
+		})
 	})
 }
 

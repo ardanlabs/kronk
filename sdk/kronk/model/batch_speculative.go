@@ -63,15 +63,10 @@ func (e *batchEngine) prefillDraft(ctx context.Context, s *slot) error {
 			"slot", s.id, "reused", commonLen)
 	}
 
-	// Decode new suffix tokens into draft model in chunks.
+	// Decode new suffix tokens into draft model in chunks using the
+	// pre-allocated prefill batch.
 	if len(newTokens) > 0 {
-		batchSize := int32(min(nBatch, len(newTokens)))
-		if batchSize <= 0 {
-			batchSize = 1
-		}
-		batch := llama.BatchInit(batchSize, 0, 1)
-		defer llama.BatchFree(batch)
-
+		batch := draft.prefillBatch
 		seqIDs := []llama.SeqId{s.seqID}
 
 		for i := 0; i < len(newTokens); i += nBatch {
@@ -87,7 +82,7 @@ func (e *batchEngine) prefillDraft(ctx context.Context, s *slot) error {
 			ret, err := llama.Decode(draft.lctx, batch)
 			if err != nil || ret != 0 {
 				// On failure, invalidate the cache to avoid stale state.
-				draft.cachedTokens = nil
+				draft.cachedTokens = draft.cachedTokens[:0]
 				return fmt.Errorf("draft prefill failed at pos %d: %w", commonLen+i, decodeError(ret, err))
 			}
 		}
@@ -97,8 +92,13 @@ func (e *batchEngine) prefillDraft(ctx context.Context, s *slot) error {
 	s.draftPromptTokens = nil
 	s.draftPrefillNeeded = false
 
-	// Store a copy of the prompt tokens for the next request's prefix comparison.
-	draft.cachedTokens = make([]llama.Token, len(tokens))
+	// Store prompt tokens for the next request's prefix comparison,
+	// reusing the existing buffer when capacity is sufficient.
+	if cap(draft.cachedTokens) >= len(tokens) {
+		draft.cachedTokens = draft.cachedTokens[:len(tokens)]
+	} else {
+		draft.cachedTokens = make([]llama.Token, len(tokens))
+	}
 	copy(draft.cachedTokens, tokens)
 
 	e.model.log(ctx, "speculative", "status", "draft-prefill-done",
@@ -119,7 +119,7 @@ func (e *batchEngine) prefillDraft(ctx context.Context, s *slot) error {
 func (e *batchEngine) generateDraftTokens(s *slot) []llama.Token {
 	draft := e.model.draft
 	nVocab := int(llama.VocabNTokens(e.model.vocab))
-	draftTokens := make([]llama.Token, 0, draft.nDraft)
+	draftTokens := draft.draftBuf[:0]
 	temperature := s.job.params.Temperature
 
 	lastToken := s.sampled

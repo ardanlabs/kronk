@@ -123,8 +123,9 @@ test: test-only lint vuln-check diff
 # Dense      | IMC        | Deterministic     | Yes         | benchmark-dense-imc-det-spec
 # Dense      | IMC        | Non-Deterministic | No          | benchmark-dense-imc-nondet
 # MoE        | IMC        | Deterministic     | No          | benchmark-moe-imc-det
-# MoE        | IMC        | Deterministic     | Yes         | benchmark-moe-imc-det-spec
 # Hybrid     | IMC        | Deterministic     | No          | benchmark-hybrid-imc-det
+# MoE        | IMC        | Deterministic     | No          | benchmark-moe-spec-baseline
+# MoE        | IMC        | Deterministic     | Yes         | benchmark-moe-spec-draft
 
 benchmark-dense-nc:
 	CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_NonCaching -benchtime=3x -timeout=30m ./sdk/kronk/model/
@@ -144,12 +145,14 @@ benchmark-dense-imc-det-spec:
 benchmark-moe-imc-det:
 	CGO_ENABLED=0 go test -run=none -bench=BenchmarkMoE_IMCDeterministic$$ -benchtime=3x -timeout=30m ./sdk/kronk/model/
 
-benchmark-moe-imc-det-spec:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkMoE_IMCDeterministic_Speculative -benchtime=3x -timeout=30m ./sdk/kronk/model/
+benchmark-moe-spec-baseline:
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkMoE_Speculative_Baseline -benchtime=3x -timeout=30m ./sdk/kronk/model/
+
+benchmark-moe-spec-draft:
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkMoE_Speculative_WithDraft -benchtime=3x -timeout=30m ./sdk/kronk/model/
 
 benchmark-hybrid-imc-det:
 	CGO_ENABLED=0 go test -run=none -bench=BenchmarkHybrid_IMCDeterministic -benchtime=3x -timeout=30m ./sdk/kronk/model/
-
 
 # ==============================================================================
 # Kronk BUI

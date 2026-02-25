@@ -61,8 +61,11 @@ type draftModel struct {
 	mem          llama.Memory
 	sampler      llama.Sampler
 	batch        llama.Batch
+	prefillBatch llama.Batch // Reusable batch for prefill decoding (sized to nBatch)
 	nDraft       int
 	cachedTokens []llama.Token // Prompt tokens currently in draft KV cache (for incremental prefill)
+	promptBuf    []llama.Token // Reusable buffer for assembling draft prompt tokens
+	draftBuf     []llama.Token // Reusable buffer for generateDraftTokens output
 
 	// Pre-allocated buffers for speculative sampling to avoid per-round
 	// allocations of vocab-sized slices (~600KB each for 152k vocab).
@@ -405,6 +408,9 @@ func loadDraftModel(ctx context.Context, log Logger, cfg Config, targetModel lla
 	// Create reusable batch for drafting (1 token at a time).
 	batch := llama.BatchInit(1, 0, 1)
 
+	// Create reusable batch for prefill decoding (sized to nBatch).
+	prefillBatch := llama.BatchInit(int32(dCtxParams.NBatch), 0, 1)
+
 	// Pre-allocate reusable buffers for speculative sampling.
 	nVocab := int(llama.VocabNTokens(dVocab))
 	draftProbs := make([][]float32, dCfg.NDraft)
@@ -413,16 +419,18 @@ func loadDraftModel(ctx context.Context, log Logger, cfg Config, targetModel lla
 	}
 
 	return &draftModel{
-		model:       dModel,
-		vocab:       dVocab,
-		lctx:        dLctx,
-		mem:         dMem,
-		sampler:     sampler,
-		batch:       batch,
-		nDraft:      dCfg.NDraft,
-		draftProbs:  draftProbs,
-		targetProbs: make([]float32, nVocab),
-		adjusted:    make([]float32, nVocab),
+		model:        dModel,
+		vocab:        dVocab,
+		lctx:         dLctx,
+		mem:          dMem,
+		sampler:      sampler,
+		batch:        batch,
+		prefillBatch: prefillBatch,
+		nDraft:       dCfg.NDraft,
+		draftBuf:     make([]llama.Token, 0, dCfg.NDraft),
+		draftProbs:   draftProbs,
+		targetProbs:  make([]float32, nVocab),
+		adjusted:     make([]float32, nVocab),
 	}, nil
 }
 
@@ -557,6 +565,7 @@ func (m *Model) Unload(ctx context.Context) error {
 	if m.draft != nil {
 		llama.SamplerFree(m.draft.sampler)
 		llama.BatchFree(m.draft.batch)
+		llama.BatchFree(m.draft.prefillBatch)
 		llama.Free(m.draft.lctx)
 		llama.ModelFree(m.draft.model)
 		m.draft = nil

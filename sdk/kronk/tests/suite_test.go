@@ -120,6 +120,60 @@ func TestSuite(t *testing.T) {
 			t.Run("GrammarJSONStreaming", func(t *testing.T) { testGrammarJSONStreaming(t, krn) })
 		})
 	})
+
+	t.Run("Chat/MoE", func(t *testing.T) {
+		if os.Getenv("GITHUB_ACTIONS") == "true" {
+			t.Skip("Skipping MoE tests in GitHub Actions (requires more resources)")
+		}
+
+		if len(mpMoEChat.ModelFiles) == 0 {
+			t.Skip("model Qwen3.5-35B-A3B-UD-Q8_K_XL not downloaded")
+		}
+
+		if runInParallel {
+			t.Parallel()
+		}
+
+		withModel(t, cfgMoEChat(), func(t *testing.T, krn *kronk.Kronk) {
+			t.Run("ThinkChat", func(t *testing.T) { testChat(t, krn, dChatNoTool, false) })
+			t.Run("ThinkStreamingChat", func(t *testing.T) { testChatStreaming(t, krn, dChatNoTool, false) })
+			t.Run("ToolChat", func(t *testing.T) { testChat(t, krn, dChatTool, true) })
+			t.Run("ToolStreamingChat", func(t *testing.T) { testChatStreaming(t, krn, dChatTool, true) })
+			t.Run("ThinkResponse", func(t *testing.T) { testResponse(t, krn, dResponseNoTool, false) })
+			t.Run("ThinkStreamingResponse", func(t *testing.T) { testResponseStreaming(t, krn, dResponseNoTool, false) })
+			t.Run("ToolResponse", func(t *testing.T) { testResponse(t, krn, dResponseTool, true) })
+			t.Run("ToolStreamingResponse", func(t *testing.T) { testResponseStreaming(t, krn, dResponseTool, true) })
+			t.Run("GrammarJSON", func(t *testing.T) { testGrammarJSON(t, krn) })
+			t.Run("GrammarJSONStreaming", func(t *testing.T) { testGrammarJSONStreaming(t, krn) })
+		})
+	})
+
+	t.Run("Chat/Hybrid", func(t *testing.T) {
+		if os.Getenv("GITHUB_ACTIONS") == "true" {
+			t.Skip("Skipping Hybrid tests in GitHub Actions (requires more resources)")
+		}
+
+		if len(mpHybridChat.ModelFiles) == 0 {
+			t.Skip("model Qwen3-Coder-Next-UD-Q6_K_XL not downloaded")
+		}
+
+		if runInParallel {
+			t.Parallel()
+		}
+
+		withModel(t, cfgHybridChat(), func(t *testing.T, krn *kronk.Kronk) {
+			t.Run("ThinkChat", func(t *testing.T) { testChat(t, krn, dChatNoTool, false) })
+			t.Run("ThinkStreamingChat", func(t *testing.T) { testChatStreaming(t, krn, dChatNoTool, false) })
+			t.Run("ToolChat", func(t *testing.T) { testChat(t, krn, dChatTool, true) })
+			t.Run("ToolStreamingChat", func(t *testing.T) { testChatStreaming(t, krn, dChatTool, true) })
+			t.Run("ThinkResponse", func(t *testing.T) { testResponse(t, krn, dResponseNoTool, false) })
+			t.Run("ThinkStreamingResponse", func(t *testing.T) { testResponseStreaming(t, krn, dResponseNoTool, false) })
+			t.Run("ToolResponse", func(t *testing.T) { testResponse(t, krn, dResponseTool, true) })
+			t.Run("ToolStreamingResponse", func(t *testing.T) { testResponseStreaming(t, krn, dResponseTool, true) })
+			t.Run("GrammarJSON", func(t *testing.T) { testGrammarJSON(t, krn) })
+			t.Run("GrammarJSONStreaming", func(t *testing.T) { testGrammarJSONStreaming(t, krn) })
+		})
+	})
 }
 
 // =============================================================================
@@ -216,5 +270,29 @@ func cfgAudio() model.Config {
 		NUBatch:       2048,
 		CacheTypeK:    model.GGMLTypeQ8_0,
 		CacheTypeV:    model.GGMLTypeQ8_0,
+	}
+}
+
+func cfgMoEChat() model.Config {
+	return model.Config{
+		ModelFiles:    mpMoEChat.ModelFiles,
+		ContextWindow: 8192,
+		NBatch:        2048,
+		NUBatch:       2048,
+		CacheTypeK:    model.GGMLTypeF16,
+		CacheTypeV:    model.GGMLTypeF16,
+		NSeqMax:       2,
+	}
+}
+
+func cfgHybridChat() model.Config {
+	return model.Config{
+		ModelFiles:    mpHybridChat.ModelFiles,
+		ContextWindow: 8192,
+		NBatch:        2048,
+		NUBatch:       512,
+		CacheTypeK:    model.GGMLTypeF16,
+		CacheTypeV:    model.GGMLTypeF16,
+		NSeqMax:       2,
 	}
 }
