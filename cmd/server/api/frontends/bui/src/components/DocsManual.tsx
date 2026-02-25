@@ -4946,7 +4946,10 @@ KRONK_PROCESSOR=metal kronk libs --local
 KRONK_PROCESSOR=cuda kronk libs --local
 
 # For CPU only
-KRONK_PROCESSOR=cpu kronk libs --local`}</code></pre>
+KRONK_PROCESSOR=cpu kronk libs --local
+
+# For AMD GPU (ROCm)
+KRONK_PROCESSOR=rocm kronk libs --local`}</code></pre>
           <h3 id="162-model-loading-failures">16.2 Model Loading Failures</h3>
           <p><strong>Error: "unable to load model"</strong></p>
           <p>The model file is missing, corrupted, or incompatible.</p>
