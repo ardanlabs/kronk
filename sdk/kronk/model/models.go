@@ -352,12 +352,32 @@ func (d D) Messages() string {
 			switch v := m["content"].(type) {
 			case []byte:
 				fmt.Fprintf(&b, "Message[%d] Content: BYTES (%d bytes)\n", i, len(v))
+			case []D:
+				content := contentPartsText(v)
+				fmt.Fprintf(&b, "Message[%d] Content (%d parts, 400 bytes): %.400s\n", i, len(v), content)
 			default:
 				fmt.Fprintf(&b, "Message[%d] Content (400 bytes): %.400v\n", i, v)
 			}
 		}
 	}
 
+	return b.String()
+}
+
+// contentPartsText extracts and concatenates text from OpenAI-style content
+// part arrays ([{"type":"text","text":"..."},...]).
+func contentPartsText(parts []D) string {
+	var b strings.Builder
+	for _, part := range parts {
+		if t, _ := part["type"].(string); t == "text" {
+			if text, _ := part["text"].(string); text != "" {
+				if b.Len() > 0 {
+					b.WriteString(" ")
+				}
+				b.WriteString(text)
+			}
+		}
+	}
 	return b.String()
 }
 
