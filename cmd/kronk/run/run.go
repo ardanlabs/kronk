@@ -109,7 +109,10 @@ func newKronk(mp models.Path, runCfg Config) (*kronk.Kronk, error) {
 
 	cfg := model.Config{
 		ModelFiles: mp.ModelFiles,
-		JinjaFile:  runCfg.JinjaFile,
+	}
+
+	if runCfg.JinjaFile != "" {
+		cfg.JinjaFile = runCfg.JinjaFile
 	}
 
 	if runCfg.ContextWindow > 0 {
@@ -173,6 +176,46 @@ func newKronk(mp models.Path, runCfg Config) (*kronk.Kronk, error) {
 	fmt.Println("- isGPT        :", krn.ModelInfo().IsGPTModel)
 	fmt.Println("- template     :", krn.ModelInfo().Template.FileName)
 
+	if runCfg.JinjaFile != "" {
+		fmt.Println("- jinjaFile    :", runCfg.JinjaFile)
+	}
+	if runCfg.FlashAttention != "" {
+		fmt.Println("- flashAttn    :", runCfg.FlashAttention)
+	}
+	if runCfg.NGpuLayers != 0 {
+		fmt.Println("- ngpuLayers   :", runCfg.NGpuLayers)
+	}
+	if runCfg.MaxTokens != 0 {
+		fmt.Println("- maxTokens    :", runCfg.MaxTokens)
+	}
+	if runCfg.Temperature != 0 {
+		fmt.Println("- temperature  :", runCfg.Temperature)
+	}
+	if runCfg.TopP != 0 {
+		fmt.Println("- topP         :", runCfg.TopP)
+	}
+	if runCfg.TopK != 0 {
+		fmt.Println("- topK         :", runCfg.TopK)
+	}
+	if runCfg.MinP != 0 {
+		fmt.Println("- minP         :", runCfg.MinP)
+	}
+	if runCfg.RepeatPenalty != 0 {
+		fmt.Println("- repeatPen    :", runCfg.RepeatPenalty)
+	}
+	if runCfg.FrequencyPenalty != 0 {
+		fmt.Println("- freqPen      :", runCfg.FrequencyPenalty)
+	}
+	if runCfg.PresencePenalty != 0 {
+		fmt.Println("- presPen      :", runCfg.PresencePenalty)
+	}
+	if runCfg.EnableThinking != "" {
+		fmt.Println("- thinking     :", runCfg.EnableThinking)
+	}
+	if runCfg.ReasoningEffort != "" {
+		fmt.Println("- reasonEffort :", runCfg.ReasoningEffort)
+	}
+
 	return krn, nil
 }
 
@@ -212,17 +255,38 @@ func chat(krn *kronk.Kronk, cfg Config) error {
 			defer cancel()
 
 			d := model.D{
-				"messages":          messages,
-				"max_tokens":        cfg.MaxTokens,
-				"temperature":       cfg.Temperature,
-				"top_p":             cfg.TopP,
-				"top_k":             cfg.TopK,
-				"min_p":             cfg.MinP,
-				"repeat_penalty":    cfg.RepeatPenalty,
-				"frequency_penalty": cfg.FrequencyPenalty,
-				"presence_penalty":  cfg.PresencePenalty,
-				"enable_thinking":   cfg.EnableThinking,
-				"reasoning_effort":  cfg.ReasoningEffort,
+				"messages": messages,
+			}
+
+			if cfg.MaxTokens != 0 {
+				d["max_tokens"] = cfg.MaxTokens
+			}
+			if cfg.Temperature != 0 {
+				d["temperature"] = cfg.Temperature
+			}
+			if cfg.TopP != 0 {
+				d["top_p"] = cfg.TopP
+			}
+			if cfg.TopK != 0 {
+				d["top_k"] = cfg.TopK
+			}
+			if cfg.MinP != 0 {
+				d["min_p"] = cfg.MinP
+			}
+			if cfg.RepeatPenalty != 0 {
+				d["repeat_penalty"] = cfg.RepeatPenalty
+			}
+			if cfg.FrequencyPenalty != 0 {
+				d["frequency_penalty"] = cfg.FrequencyPenalty
+			}
+			if cfg.PresencePenalty != 0 {
+				d["presence_penalty"] = cfg.PresencePenalty
+			}
+			if cfg.EnableThinking != "" {
+				d["enable_thinking"] = cfg.EnableThinking
+			}
+			if cfg.ReasoningEffort != "" {
+				d["reasoning_effort"] = cfg.ReasoningEffort
 			}
 
 			ch, err := performChat(ctx, krn, d)
