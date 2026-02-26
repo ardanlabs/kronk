@@ -199,7 +199,7 @@ function TrialProgressBar({ totalTrials, trials, running, runStartedAt }: TrialP
   const { elapsed, estimate, estimatedCompletion } = useRunTiming(runStartedAt, trials, totalTrials, running);
 
   const completedCount = trials.filter(t => t?.finishedAt).length;
-  const hasActive = running && completedCount < totalTrials;
+  const hasActive = !!trials.find(t => t?.status === 'running');
   const pct = Math.min(100, totalTrials > 0 ? ((completedCount + (hasActive ? 0.5 : 0)) / totalTrials) * 100 : 0);
 
   const runningTrial = trials.find(t => t?.status === 'running');
@@ -505,7 +505,7 @@ function TrialDetails({ trial, scenarioLookup, hideScores }: TrialDetailsProps) 
 }
 
 export default function AutomatedTestingPanel({ session, sessionSeed, catalogSampling }: AutomatedTestingPanelProps) {
-  const { run, isRunning, startSamplingRun, startConfigRun, stopRun, clearRun, reevaluateBestTrial, reorderQueuedTrial, skipTrial, unskipTrial } = useAutoTestRunner();
+  const { run, isRunning, startSamplingRun, startConfigRun, stopRun, clearRun, reevaluateBestTrial, reorderQueuedTrial, skipTrial, unskipTrial, stopTrial, rerunTrial } = useAutoTestRunner();
 
   // Compute initial values from the run (if any) so that remounting
   // after navigation restores the sweep parameters instead of resetting.
@@ -968,6 +968,13 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
       {/* Error Display */}
       {errorMessage && <div className="playground-error">{errorMessage}</div>}
 
+      {/* Initial Delay Countdown */}
+      {runnerState === 'running_trials' && run?.initialDelayUntil && (
+        <div className="playground-autotest-status">
+          <span className="playground-autotest-spinner" /> Starting first test in {Math.max(0, Math.ceil((Date.parse(run.initialDelayUntil) - Date.now()) / 1000))}s…
+        </div>
+      )}
+
       {/* Progress */}
       {runnerState === 'running_trials' && (
         <TrialProgressBar
@@ -1134,6 +1141,24 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
                                 title="Restore this trial to the queue"
                               >
                                 Unskip
+                              </button>
+                            )}
+                            {trial.status === 'running' && (
+                              <button
+                                className="btn btn-small btn-danger"
+                                onClick={() => stopTrial()}
+                                title="Stop this trial"
+                              >
+                                Stop
+                              </button>
+                            )}
+                            {(trial.status === 'completed' || trial.status === 'cancelled' || trial.status === 'failed') && (
+                              <button
+                                className="btn btn-small"
+                                onClick={() => rerunTrial({ trialId: trial.id })}
+                                title="Rerun this trial (moves to top of queue)"
+                              >
+                                Rerun
                               </button>
                             )}
                           </td>

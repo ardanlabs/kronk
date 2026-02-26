@@ -27,6 +27,9 @@ export const SCENARIO_PAUSE_MS = 3_000
 /** Pause duration in milliseconds between trial runs. */
 export const TRIAL_PAUSE_MS = 10_000
 
+/** Pause duration in milliseconds before running the first test. */
+export const INITIAL_DELAY_MS = 10_000
+
 /** Sleep that respects an AbortSignal. */
 function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
