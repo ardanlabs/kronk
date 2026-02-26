@@ -23,19 +23,20 @@ SHELL := $(if $(wildcard /bin/ash),/bin/ash,$(shell which bash 2>/dev/null || ec
 #	Navigate to Apps/Chat to go to the chat application. Make sure you clear
 #	the session when trying different models.
 #
-#	Choose the `rnj-1-instruct-Q6_K` model first since it's the smallest. Ask it
+#	Choose the `LFM2-700M-Q8_0` model first since it's the smallest. Ask it
 #	a simple question like, write a hello world program in Go. If that works try
-#	the other 2 models (`Qwen3-8B-Q8_0` and `gpt-oss-20b-Q8_0`) and ask the same
-#	question. Do not be alarmed if the model server panics. It just means you
-#	can run that model. Just make a note of the models that work and don't.
+#	the other 3 models (`LFM2-700M-UD-Q8_K_XL`, `Qwen3-8B-Q8_0` and `gpt-oss-20b-Q8_0`)
+#	and ask the same question. Do not be alarmed if the model server panics. It
+#	just means you can run that model. Just make a note of the models that work
+#	and don't.
 #
-#	Now try the smallest vision model `gemma-3-4b-it-q4_0`. There is an image
-#	of a giraffe under the zarf folder (examples/samples/giraffe.jpg). Select
+#	Now try the smallest vision model `LFM2.5-VL-1.6B-Q8_0`. There is an image
+#	of a giraffe under the examples folder (examples/samples/giraffe.jpg). Select
 #	that image and ask the model what it sees. If that works try the larger
 #	vision model `Qwen2.5-VL-3B-Instruct-Q8_0`.
 #
 #	Now try the audio model `Qwen2-Audio-7B.Q8_0`. There is a wav file under the
-#	zarf folder (examples/samples/jfk.wav). Select that wav file and ask the
+#	examples folder (examples/samples/jfk.wav). Select that wav file and ask the
 #	model what it hears.
 #
 #	Hopefully all the models work for you, but again don't worry if the model
@@ -45,16 +46,16 @@ SHELL := $(if $(wildcard /bin/ash),/bin/ash,$(shell which bash 2>/dev/null || ec
 # Memory
 #	This is going to your first biggest obstacle. You basically won't be able to
 #	use a model that is larger than 80% of the total memory you have on the
-#	machine. As an example, the smallest model we will try is `rnj-1-instruct-Q6_K`
-#	at 6.4 GB. That means you need at least 7.68 GB of memory on the machine to
+#	machine. As an example, the smallest model we will try is `LFM2-700M-Q8_0`
+#	at 639 MB. That means you need at least 767 MB of memory on the machine to
 #	run this model. The largest model we will use is `gpt-oss-20b-Q8_0` and that
 #	model is 12.1 GB. That means you need at least 15 GB on the machine to run
 #	this model.
 #
-#	rnj-1-instruct-Q6_K
-#	Model Size: 6.4 GB
-#	Overhead (20%): 6.4 GBx 0.20 = 1.28 GB
-#	Total Required: 6.4 GB + 1.28 GB = 7.68 GB
+#	LFM2-700M-Q8_0
+#	Model Size: 639 MB
+#	Overhead (20%): 639 MB x 0.20 = 128 MB
+#	Total Required: 639 MB + 128 MB = 767 MB
 #
 #	gpt-oss-20b-Q8_0
 #	Model Size: 12.1 GB
@@ -136,15 +137,22 @@ install-test-models: install-kronk
 # Use this to install models. Needed to run tests locally.
 install-class-models: install-kronk
 	@echo ========== INSTALL MODELS ==========
-	kronk model pull --local "mradermacher/Qwen2-Audio-7B-GGUF/Qwen2-Audio-7B.Q8_0.gguf" "mradermacher/Qwen2-Audio-7B-GGUF/Qwen2-Audio-7B.mmproj-Q8_0.gguf"
+	kronk model pull --local "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
 	@echo
-	kronk model pull --local "ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/embeddinggemma-300m-qat-Q8_0.gguf"
+	kronk model pull --local "unsloth/gpt-oss-20b-GGUF/gpt-oss-20b-Q8_0.gguf"
 	@echo
-	kronk model pull --local "gpustack/bge-reranker-v2-m3-GGUF/bge-reranker-v2-m3-Q8_0.gguf"
+
+	kronk model pull --local "unsloth/LFM2.5-VL-1.6B-GGUF/LFM2.5-VL-1.6B-Q8_0.gguf" "LFM2.5-VL-1.6B-GGUF/mmproj-F16.gguf"
 	@echo
 	kronk model pull --local "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/Qwen2.5-VL-3B-Instruct-Q8_0.gguf" "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
 	@echo
-	kronk model pull --local "unsloth/rnj-1-instruct-GGUF/rnj-1-instruct-Q6_K.gguf"
+
+	kronk model pull --local "mradermacher/Qwen2-Audio-7B-GGUF/Qwen2-Audio-7B.Q8_0.gguf" "mradermacher/Qwen2-Audio-7B-GGUF/Qwen2-Audio-7B.mmproj-Q8_0.gguf"
+	@echo
+
+	kronk model pull --local "unsloth/LFM2-700M-GGUF/LFM2-700M-Q8_0.gguf"
+	@echo
+	kronk model pull --local "unsloth/LFM2-700M-GGUF/LFM2-700M-UD-Q8_K_XL.gguf"
 	@echo
 	kronk model pull --local "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
 	@echo
