@@ -27,7 +27,7 @@ SHELL := $(if $(wildcard /bin/ash),/bin/ash,$(shell which bash 2>/dev/null || ec
 #	a simple question like, write a hello world program in Go. If that works try
 #	the other 3 models (`LFM2-700M-UD-Q8_K_XL`, `Qwen3-8B-Q8_0` and `gpt-oss-20b-Q8_0`)
 #	and ask the same question. Do not be alarmed if the model server panics. It
-#	just means you can run that model. Just make a note of the models that work
+#	just means you can't run that model. Just make a note of the models that work
 #	and don't.
 #
 #	Now try the smallest vision model `LFM2.5-VL-1.6B-Q8_0`. There is an image
@@ -77,7 +77,7 @@ SHELL := $(if $(wildcard /bin/ash),/bin/ash,$(shell which bash 2>/dev/null || ec
 #	your GPU. You need to talk to me before you come to class so I can try to
 #	help you.
 #
-#	If you are on windows, we have tested the code will run but not extensively.
+#	If you are on Windows, we have tested the code will run but not extensively.
 #	We will have to learn in class as we go.
 #
 # Having Problems
@@ -134,14 +134,9 @@ install-test-models: install-kronk
 	kronk model pull --local "gpustack/bge-reranker-v2-m3-GGUF/bge-reranker-v2-m3-Q8_0.gguf"
 	@echo
 
-# Use this to install models. Needed to run tests locally.
+# Use this to install models for the class.
 install-class-models: install-kronk
 	@echo ========== INSTALL MODELS ==========
-	kronk model pull --local "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
-	@echo
-	kronk model pull --local "unsloth/gpt-oss-20b-GGUF/gpt-oss-20b-Q8_0.gguf"
-	@echo
-
 	kronk model pull --local "unsloth/LFM2.5-VL-1.6B-GGUF/LFM2.5-VL-1.6B-Q8_0.gguf" "unsloth/LFM2.5-VL-1.6B-GGUF/mmproj-F16.gguf"
 	@echo
 	kronk model pull --local "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/Qwen2.5-VL-3B-Instruct-Q8_0.gguf" "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
@@ -157,6 +152,11 @@ install-class-models: install-kronk
 	kronk model pull --local "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
 	@echo
 	kronk model pull --local "unsloth/gpt-oss-20b-GGUF/gpt-oss-20b-Q8_0.gguf"
+	@echo
+
+	kronk model pull --local "ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/embeddinggemma-300m-qat-Q8_0.gguf"
+	@echo
+	kronk model pull --local "gpustack/bge-reranker-v2-m3-GGUF/bge-reranker-v2-m3-Q8_0.gguf"
 	@echo
 
 OPENWEBUI  := ghcr.io/open-webui/open-webui:v0.7.2
@@ -183,7 +183,7 @@ install-docker:
 # install llama first.
 llama-bench:
 	$$HOME/.kronk/libraries/llama-bench --list-devices
-	
+
 # ==============================================================================
 # Protobuf support
 
