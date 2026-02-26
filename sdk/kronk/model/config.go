@@ -605,6 +605,12 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 	switch {
 	case mi.Type == ModelTypeHybrid:
 		ctxParams.FlashAttentionType = llama.FlashAttentionTypeDisabled
+
+		// Hybrid models (Attention + Recurrent) don't support flash attention,
+		// and quantized KV caches require flash attention. Force f16 KV cache
+		// to prevent "V cache quantization requires flash_attn" errors.
+		ctxParams.TypeK = GGMLTypeF16.ToYZMAType()
+		ctxParams.TypeV = GGMLTypeF16.ToYZMAType()
 	case cfg.FlashAttention == FlashAttentionDisabled:
 		ctxParams.FlashAttentionType = llama.FlashAttentionTypeDisabled
 	case cfg.FlashAttention == FlashAttentionAuto:
