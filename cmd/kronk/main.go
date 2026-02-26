@@ -26,30 +26,30 @@ func main() {
 var rootCmd = &cobra.Command{
 	Use:   "kronk",
 	Short: "Local LLM inference with hardware acceleration",
-	Long: `Kronk is a Go SDK and Model Server for running local inference with open-source GGUF models. 
-Built on llama.cpp via the yzma Go bindings (a non-CGO FFI layer), Kronk provides hardware-accelerated 
+	Long: `Kronk is a Go SDK and Model Server for running local inference with open-source GGUF models.
+Built on llama.cpp via the yzma Go bindings (a non-CGO FFI layer), Kronk provides hardware-accelerated
 inference for text generation, vision, audio, embeddings, and reranking.
 
-The SDK is the foundation—Kronk's Model Server is built entirely on top of it. You can embed local 
+The SDK is the foundation—Kronk's Model Server is built entirely on top of it. You can embed local
 LLM inference directly into your Go applications, or run the Model Server for OpenAI-compatible REST APIs,
 OpenWebUI integration, and agent tool support.
 
 FEATURES
 
-  • Model Types: Text generation, vision (image analysis), audio (speech-to-text), 
+  • Model Types: Text generation, vision (image analysis), audio (speech-to-text),
     embeddings (vector search), and reranking (document relevance)
 
-  • Hardware Acceleration: Metal (macOS), CUDA (NVIDIA), ROCm (AMD GPU), Vulkan 
+  • Hardware Acceleration: Metal (macOS), CUDA (NVIDIA), ROCm (AMD GPU), Vulkan
     (cross-platform), or CPU fallback
 
-  • Performance: Batch processing for concurrent requests, system prompt and 
+  • Performance: Batch processing for concurrent requests, system prompt and
     incremental message caching, YaRN context extension (2-4x native window)
 
   • Model Pooling: Keep models loaded in memory with configurable TTL for faster responses
 
   • Catalog System: Curated collection of verified GGUF models with one-command downloads
 
-  • Browser UI (BUI): Web interface for model management, downloads, configuration, 
+  • Browser UI (BUI): Web interface for model management, downloads, configuration,
     and interactive testing
 
   • MCP Service: Built-in Model Context Protocol support for AI agent tool integration
@@ -63,7 +63,7 @@ USAGE
 
   Run as a library in your Go code:
     import "github.com/ardanlabs/kronk/sdk/kronk"
-    
+
     krn, _ := kronk.New(cfg)
     defer krn.Unload(ctx)
 

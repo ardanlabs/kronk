@@ -14,7 +14,7 @@ var Cmd = &cobra.Command{
 	Short: "Manage model catalogs (list, pull, show, update)",
 	Long: `Manage model catalogs - list, pull, show, and update available models.
 
-The catalog system provides a curated collection of verified GGUF models with 
+The catalog system provides a curated collection of verified GGUF models with
 preconfigured settings for optimal performance. Models are organized by type:
   • Text-Generation - For chat and text completion tasks
   • Image-Text-to-Text - Vision models for image analysis
