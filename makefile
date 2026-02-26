@@ -142,7 +142,7 @@ install-class-models: install-kronk
 	kronk model pull --local "unsloth/gpt-oss-20b-GGUF/gpt-oss-20b-Q8_0.gguf"
 	@echo
 
-	kronk model pull --local "unsloth/LFM2.5-VL-1.6B-GGUF/LFM2.5-VL-1.6B-Q8_0.gguf" "LFM2.5-VL-1.6B-GGUF/mmproj-F16.gguf"
+	kronk model pull --local "unsloth/LFM2.5-VL-1.6B-GGUF/LFM2.5-VL-1.6B-Q8_0.gguf" "unsloth/LFM2.5-VL-1.6B-GGUF/mmproj-F16.gguf"
 	@echo
 	kronk model pull --local "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/Qwen2.5-VL-3B-Instruct-Q8_0.gguf" "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
 	@echo
