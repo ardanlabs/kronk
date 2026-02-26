@@ -64,6 +64,19 @@ export default function CatalogList() {
 
   const [activeTab, setActiveTab] = useState<DetailTab>('details');
 
+  const [downloadServer, setDownloadServer] = useState<string>(() => {
+    return localStorage.getItem('kronk_download_server') || '';
+  });
+
+  const handleDownloadServerChange = (value: string) => {
+    setDownloadServer(value);
+    if (value) {
+      localStorage.setItem('kronk_download_server', value);
+    } else {
+      localStorage.removeItem('kronk_download_server');
+    }
+  };
+
   const [sort, setSort] = useState<SortState>({ column: null, direction: null });
 
   const handleSort = (column: string) => {
@@ -133,7 +146,7 @@ export default function CatalogList() {
 
   const handlePull = () => {
     if (!selectedId) return;
-    startCatalogDownload(selectedId);
+    startCatalogDownload(selectedId, downloadServer || undefined);
     setActiveTab('pull');
   };
 
@@ -251,6 +264,21 @@ export default function CatalogList() {
                 <p>The catalog is empty</p>
               </div>
             )}
+          </div>
+        )}
+
+        {selectedId && (
+          <div className="form-group" style={{ marginTop: '16px' }}>
+            <label htmlFor="download-server">Kronk Download Server</label>
+            <input
+              id="download-server"
+              type="text"
+              className="form-control"
+              placeholder="192.168.0.246:8080"
+              value={downloadServer}
+              onChange={(e) => handleDownloadServerChange(e.target.value)}
+              disabled={pulling}
+            />
           </div>
         )}
 

@@ -5,7 +5,6 @@ package downapp
 
 import (
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -114,13 +113,7 @@ func (a *app) handle(w http.ResponseWriter, r *http.Request) {
 
 	a.log.Info(r.Context(), "download", "status", "serving file", "org", org, "repo", repo, "file", fileName, "size", info.Size())
 
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size()))
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filepath.Base(fileName)))
 
-	if r.Method == http.MethodHead {
-		return
-	}
-
-	io.Copy(w, f)
+	http.ServeContent(w, r, fileName, info.ModTime(), f)
 }

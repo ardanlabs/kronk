@@ -148,6 +148,16 @@ func (app *PullRequest) Decode(data []byte) error {
 	return json.Unmarshal(data, app)
 }
 
+// PullCatalogRequest represents the request to pull a catalog model.
+type PullCatalogRequest struct {
+	DownloadServer string `json:"download_server"`
+}
+
+// Decode implements the decoder interface.
+func (app *PullCatalogRequest) Decode(data []byte) error {
+	return json.Unmarshal(data, app)
+}
+
 // PullResponse returns information about a model being downloaded.
 type PullResponse struct {
 	Status     string   `json:"status"`

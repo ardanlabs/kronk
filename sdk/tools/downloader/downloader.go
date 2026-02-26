@@ -38,19 +38,17 @@ func Download(ctx context.Context, src string, dest string, progress ProgressFun
 		}
 	}
 
-	var getters map[string]getter.Getter
+	httpGetter := &getter.HttpGetter{}
 
 	if os.Getenv("KRONK_HF_TOKEN") != "" {
-		httpGetter := &getter.HttpGetter{
-			Header: map[string][]string{
-				"Authorization": {"Bearer " + os.Getenv("KRONK_HF_TOKEN")},
-			},
+		httpGetter.Header = map[string][]string{
+			"Authorization": {"Bearer " + os.Getenv("KRONK_HF_TOKEN")},
 		}
+	}
 
-		getters = map[string]getter.Getter{
-			"https": httpGetter,
-			"http":  httpGetter,
-		}
+	getters := map[string]getter.Getter{
+		"https": httpGetter,
+		"http":  httpGetter,
 	}
 
 	client := getter.Client{
