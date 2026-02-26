@@ -142,8 +142,6 @@ install-class-models: install-kronk
 	@echo
 	kronk model pull --local "gpustack/bge-reranker-v2-m3-GGUF/bge-reranker-v2-m3-Q8_0.gguf"
 	@echo
-	kronk model pull --local "google/gemma-3-4b-it-qat-q4_0-gguf/gemma-3-4b-it-q4_0.gguf" "google/gemma-3-4b-it-qat-q4_0-gguf/mmproj-model-f16-4B.gguf"
-	@echo
 	kronk model pull --local "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/Qwen2.5-VL-3B-Instruct-Q8_0.gguf" "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
 	@echo
 	kronk model pull --local "unsloth/rnj-1-instruct-GGUF/rnj-1-instruct-Q6_K.gguf"

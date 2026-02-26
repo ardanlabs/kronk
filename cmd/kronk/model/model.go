@@ -13,8 +13,40 @@ import (
 
 var Cmd = &cobra.Command{
 	Use:   "model",
-	Short: "Manage models",
-	Long:  `Manage models - list, pull, remove, show, and check running models`,
+	Short: "Manage local models (index, list, pull, remove, show, ps)",
+	Long: `Manage local models - index, list, pull, remove, show, and check running models.
+
+This command manages GGUF model files stored locally on your system. It provides
+operations for building indexes, listing available models, downloading from catalogs,
+removing unused models, and querying which models are currently loaded in memory.
+
+COMMANDS
+
+  index   Build or rebuild the local model index
+  list    List all downloaded models
+  pull    Download a model from the catalog
+  remove  Remove a model from the local system
+  show    Display detailed information about a model
+  ps      Show models currently loaded in server memory
+
+MODES
+
+  Web Mode (default): Communicates with running server at localhost:8080.
+  Local Mode (--local): Direct file access without requiring a server.
+
+EXAMPLES
+
+  # List all downloaded models
+  kronk model list
+
+  # Download a model via catalog
+  kronk model pull Qwen3-8B-Q8_0
+
+  # Show model details
+  kronk model show Qwen3-8B-Q8_0
+
+  # Check which models are loaded in memory
+  kronk model ps`,
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Help()
 	},

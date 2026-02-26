@@ -10,22 +10,44 @@ import (
 var Cmd = &cobra.Command{
 	Use:   "libs",
 	Short: "Install or upgrade llama.cpp libraries",
-	Long: `Install or upgrade llama.cpp libraries
+	Long: `Install or upgrade llama.cpp libraries.
 
-Environment Variables (web mode - default):
-      KRONK_TOKEN         (required when auth enabled)  Authentication token for the kronk server.
-      KRONK_WEB_API_HOST  (default localhost:8080)  IP Address for the kronk server.
+Kronk requires llama.cpp shared libraries for runtime inference. This command
+downloads and installs the appropriate library version for your hardware platform.
 
-Environment Variables (--local mode):
-      KRONK_ARCH       (default: runtime.GOARCH)          The architecture to install.
-      KRONK_LIB_PATH   (default: $HOME/.kronk/libraries)  The path to the libraries directory,
-      KRONK_OS         (default: runtime.GOOS)            The operating system to install.
-      KRONK_PROCESSOR  (default: cpu)                     Options: cpu, cuda, metal, rocm, vulkan
+The command auto-detects your system architecture (amd64/arm64), operating system
+(linux/darwin/windows), and processor type (cpu/metal/cuda/rocm/vulkan).
 
-Flags:
-      --local        Run without the model server
-      --no-upgrade   Don't upgrade if libraries are already installed
-      --version      Download a specific llama.cpp version instead of latest`,
+HARDWARE BACKENDS
+
+  cpu   - CPU-only inference (works on all systems)
+  metal - Apple Silicon GPU acceleration (macOS)
+  cuda  - NVIDIA GPU acceleration
+  rocm  - AMD GPU acceleration
+  vulkan- Cross-platform GPU acceleration
+
+MODES
+
+  Web Mode (default): Installs via the running server at localhost:8080.
+  Local Mode (--local): Direct download without requiring a server.
+
+EXAMPLES
+
+  # Install libraries for current platform
+  kronk libs --local
+
+  # Install CUDA libraries explicitly
+  KRONK_PROCESSOR=cuda kronk libs --local
+
+  # Download specific version
+  kronk libs --local --version=b7406
+
+ENVIRONMENT VARIABLES (Local Mode)
+
+  KRONK_ARCH       - Architecture: amd64, arm64
+  KRONK_LIB_PATH   - Library directory path
+  KRONK_OS         - Operating system: linux, darwin, windows
+  KRONK_PROCESSOR  - Hardware backend: cpu, cuda, metal, rocm, vulkan`,
 	Args: cobra.NoArgs,
 	Run:  main,
 }
