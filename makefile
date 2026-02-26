@@ -3,6 +3,86 @@ SHELL_PATH = /bin/ash
 SHELL = $(if $(wildcard $(SHELL_PATH)),/bin/ash,/bin/bash)
 
 # ==============================================================================
+# Class Notes
+#
+# At this point you have cloned the project so we need to install a few things.
+# 	make install-gotooling
+#	make install-tooling
+#
+# Now let's get the frontend system initalized.
+#	make bui-install
+#
+# Next we need to download the models for the class.
+#	make install-class-models
+#
+# Let's test if these models are working by starting model server.
+#	make kronk-server-build
+#	Open browser to: http://localhost:8080
+#
+#	Navigate to Apps/Chat to go to the chat application. Make sure you clear
+#	the session when trying different models.
+#
+#	Choose the `rnj-1-instruct-Q6_K` model first since it's the smallest. Ask it
+#	a simple question like, write a hello world program in Go. If that works try
+#	the other 2 models (`Qwen3-8B-Q8_0` and `gpt-oss-20b-Q8_0`) and ask the same
+#	question. Do not be alarmed if the model server panics. It just means you
+#	can run that model. Just make a note of the models that work and don't.
+#
+#	Now try the smallest vision model `gemma-3-4b-it-q4_0`. There is an image
+#	of a giraffe under the zarf folder (examples/samples/giraffe.jpg). Select
+#	that image and ask the model what it sees. If that works try the larger
+#	vision model `Qwen2.5-VL-3B-Instruct-Q8_0`.
+#
+#	Now try the audio model `Qwen2-Audio-7B.Q8_0`. There is a wav file under the
+#	zarf folder (examples/samples/jfk.wav). Select that wav file and ask the
+#	model what it hears.
+#
+#	Hopefully all the models work for you, but again don't worry if the model
+#	server panics. Just send me an email (bill@ardanlabs.com) and I will try
+#	to help you.
+#
+# Memory
+#	This is going to your first biggest obstacle. You basically won't be able to
+#	use a model that is larger than 80% of the total memory you have on the
+#	machine. As an example, the smallest model we will try is `rnj-1-instruct-Q6_K`
+#	at 6.4 GB. That means you need at least 7.68 GB of memory on the machine to
+#	run this model. The largest model we will use is `gpt-oss-20b-Q8_0` and that
+#	model is 12.1 GB. That means you need at least 15 GB on the machine to run
+#	this model.
+#
+#	rnj-1-instruct-Q6_K
+#	Model Size: 6.4 GB
+#	Overhead (20%): 6.4 GBx 0.20 = 1.28 GB
+#	Total Required: 6.4 GB + 1.28 GB = 7.68 GB
+#
+#	gpt-oss-20b-Q8_0
+#	Model Size: 12.1 GB
+#	Overhead (20%): 12.1 GBx 0.20 = 2.42 GB
+#	Total Required: 12.1 GB + 2.42 GB = 14.52 GB
+#
+# GPU
+#	This is going to be your second biggest obstacle. These models are not
+#	designed to run at any level of performance on CPU alone. Without a GPU,
+#	I'm not sure how things will run. Don't stress if you can run everything in
+#	the class, you will still learn a lot.
+#
+# Operating Systems
+#	I've been testing mostly on a MacBook Pro M4. If you have a Mac I feel pretty
+#	good things should work. Llama.cpp is good at recognizing the Max and the
+#	GPU that exists.
+#
+#	If you are running Linux, you most likely will need to download drivers for
+#	your GPU. You need to talk to me before you come to class so I can try to
+#	help you.
+#
+#	If you are on windows, we have tested the code will run but not extensively.
+#	we will have to learn in class as we go.
+#
+# Having Problems
+#	You need to email me (bill@ardanlabs.com) if you are running into problems
+#	and need help.
+
+# ==============================================================================
 # Setup
 
 # Configure git to use project hooks so pre-commit runs for all developers.
@@ -11,6 +91,17 @@ setup:
 
 # ==============================================================================
 # Install
+
+install-gotooling:
+	go install honnef.co/go/tools/cmd/staticcheck@latest
+	go install golang.org/x/vuln/cmd/govulncheck@latest
+	go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+install-tooling:
+	brew list protobuf || brew install protobuf
+	brew list grpcurl || brew install grpcurl
+	brew list node || brew install node
 
 # Install the kronk cli.
 install-kronk:
@@ -25,8 +116,8 @@ install-libraries:
 	go run cmd/kronk/main.go libs --local
 	@echo
 
-# Use this to install models. Needed to run tests locally.
-install-models: install-kronk
+# Use this to install the test models.
+install-test-models: install-kronk
 	@echo ========== INSTALL MODELS ==========
 	kronk model pull --local "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/Qwen2.5-VL-3B-Instruct-Q8_0.gguf" "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
 	@echo
@@ -41,21 +132,25 @@ install-models: install-kronk
 	kronk model pull --local "gpustack/bge-reranker-v2-m3-GGUF/bge-reranker-v2-m3-Q8_0.gguf"
 	@echo
 
-# Use this to see what devices are available on your machine. You need to
-# install llama first.
-llama-bench:
-	$$HOME/.kronk/libraries/llama-bench --list-devices
-
-# Use this to rebuild tooling when https://files.slack.com/files-pri/T032G0ZL4-F0A8991CEJV/download/chat-export-1767998185593.json?origin_team=T032G0ZL4new versions of Go are released.
-install-gotooling:
-	go install honnef.co/go/tools/cmd/staticcheck@latest
-	go install golang.org/x/vuln/cmd/govulncheck@latest
-	go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
-
-install-tooling:
-	brew list protobuf || brew install protobuf
-	brew list grpcurl || brew install grpcurl
+# Use this to install models. Needed to run tests locally.
+install-class-models: install-kronk
+	@echo ========== INSTALL MODELS ==========
+	kronk model pull --local "mradermacher/Qwen2-Audio-7B-GGUF/Qwen2-Audio-7B.Q8_0.gguf" "mradermacher/Qwen2-Audio-7B-GGUF/Qwen2-Audio-7B.mmproj-Q8_0.gguf"
+	@echo
+	kronk model pull --local "ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/embeddinggemma-300m-qat-Q8_0.gguf"
+	@echo
+	kronk model pull --local "gpustack/bge-reranker-v2-m3-GGUF/bge-reranker-v2-m3-Q8_0.gguf"
+	@echo
+	kronk model pull --local "google/gemma-3-4b-it-qat-q4_0-gguf/gemma-3-4b-it-q4_0.gguf" "google/gemma-3-4b-it-qat-q4_0-gguf/mmproj-model-f16-4B.gguf"
+	@echo
+	kronk model pull --local "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/Qwen2.5-VL-3B-Instruct-Q8_0.gguf" "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
+	@echo
+	kronk model pull --local "unsloth/rnj-1-instruct-GGUF/rnj-1-instruct-Q6_K.gguf"
+	@echo
+	kronk model pull --local "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
+	@echo
+	kronk model pull --local "unsloth/gpt-oss-20b-GGUF/gpt-oss-20b-Q8_0.gguf"
+	@echo
 
 OPENWEBUI  := ghcr.io/open-webui/open-webui:v0.7.2
 GRAFANA    := grafana/grafana:12.3.0
@@ -74,6 +169,14 @@ install-docker:
 	docker pull docker.io/$(PROMTAIL) & \
 	wait;
 
+# ==============================================================================
+# Llama.cpp programs
+
+# Use this to see what devices are available on your machine. You need to
+# install llama first.
+llama-bench:
+	$$HOME/.kronk/libraries/llama-bench --list-devices
+	
 # ==============================================================================
 # Protobuf support
 
@@ -99,7 +202,7 @@ diff:
 # Don't change the order of these tests. This order is solving a test
 # build issue with time it takes to build the test binary due to building
 # the binary with the libraries.
-test-only: install-models
+test-only: install-test-models
 	@echo ========== RUN TESTS ==========
 	export RUN_IN_PARALLEL=yes && \
 	export GITHUB_WORKSPACE=$(shell pwd) && \
