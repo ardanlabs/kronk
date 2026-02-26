@@ -1,5 +1,5 @@
 import React from 'react';
-import type { AutoTestTrialResult } from '../types';
+import type { AutoTestTrialResult, ContextFillRatio } from '../types';
 import type { ConfigTrialResult } from '../contexts/AutoTestRunnerContext';
 
 // ---------------------------------------------------------------------------
@@ -74,6 +74,18 @@ function partialTPS(row: AutoTestTrialResult): number | undefined {
   return row.scenarioResults.find(r => r.avgTPS !== undefined)?.avgTPS;
 }
 
+function partialTTFT(row: AutoTestTrialResult): number | undefined {
+  return row.scenarioResults.find(r => r.avgTTFT !== undefined)?.avgTTFT;
+}
+
+function partialTPSByFill(row: AutoTestTrialResult, level: ContextFillRatio): number | undefined {
+  return row.scenarioResults.find(r => r.avgTPSByFill?.[level] !== undefined)?.avgTPSByFill?.[level];
+}
+
+function partialTTFTByFill(row: AutoTestTrialResult, level: ContextFillRatio): number | undefined {
+  return row.scenarioResults.find(r => r.avgTTFTByFill?.[level] !== undefined)?.avgTTFTByFill?.[level];
+}
+
 function durationMs(row: AutoTestTrialResult): number | undefined {
   const startMs = row.startedAt ? Date.parse(row.startedAt) : NaN;
   if (!Number.isFinite(startMs)) return undefined;
@@ -113,7 +125,7 @@ export function sharedMetricColumns<R extends AutoTestTrialResult>(): ColumnDef<
     id: `tps_${level.replace('%', '')}`,
     title: `TPS @${level}`,
     sortable: true,
-    getValue: (row) => row.avgTPSByFill?.[level],
+    getValue: (row) => row.avgTPSByFill?.[level] ?? partialTPSByFill(row, level),
     renderCell: (row, meta) => {
       if (meta.isPending) return '…';
       return row.avgTPSByFill?.[level]?.toFixed(1) ?? '—';
@@ -124,7 +136,7 @@ export function sharedMetricColumns<R extends AutoTestTrialResult>(): ColumnDef<
     id: `ttft_${level.replace('%', '')}`,
     title: `TTFT @${level}`,
     sortable: true,
-    getValue: (row) => row.avgTTFTByFill?.[level],
+    getValue: (row) => row.avgTTFTByFill?.[level] ?? partialTTFTByFill(row, level),
     renderCell: (row, meta) => {
       if (meta.isPending) return '…';
       return row.avgTTFTByFill?.[level] !== undefined ? formatMs(row.avgTTFTByFill[level]) : '—';
@@ -136,7 +148,7 @@ export function sharedMetricColumns<R extends AutoTestTrialResult>(): ColumnDef<
       id: 'avg_tps',
       title: 'Avg TPS',
       sortable: true,
-      getValue: (row) => row.avgTPS,
+      getValue: (row) => row.avgTPS ?? partialTPS(row),
       renderCell: (row, meta) => {
         if (meta.isPending) {
           const p = partialTPS(row);
@@ -149,7 +161,7 @@ export function sharedMetricColumns<R extends AutoTestTrialResult>(): ColumnDef<
       id: 'avg_ttft',
       title: 'Avg TTFT',
       sortable: true,
-      getValue: (row) => row.avgTTFT,
+      getValue: (row) => row.avgTTFT ?? partialTTFT(row),
       renderCell: (row, meta) => {
         if (meta.isPending) return '…';
         return row.avgTTFT !== undefined ? formatMs(row.avgTTFT) : '—';
