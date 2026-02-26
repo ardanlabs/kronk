@@ -413,7 +413,7 @@ func AddParams(params Params, d D) {
 		d["temperature"] = params.Temperature
 	}
 	if params.Thinking != "" {
-		d["enable_thinking"] = params.Thinking
+		d["enable_thinking"] = params.Thinking == "true"
 	}
 	if params.TopK != 0 {
 		d["top_k"] = params.TopK
