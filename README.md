@@ -27,7 +27,7 @@ $ go install github.com/ardanlabs/kronk/cmd/kronk@latest
 $ kronk server start
 ```
 
-Read the [Manual](./MANUAL.md) to learn more about running the Kronk Model Server.
+Read the [Manual](./manual) to learn more about running the Kronk Model Server.
 
 ## Project Status
 
