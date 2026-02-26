@@ -151,6 +151,58 @@ const menuStructure: MenuCategory[] = [
   },
 ];
 
+const categoryIcons: Record<string, JSX.Element> = {
+  settings: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <line x1="4" y1="6" x2="20" y2="6" />
+      <line x1="4" y1="12" x2="20" y2="12" />
+      <line x1="4" y1="18" x2="20" y2="18" />
+      <circle cx="8" cy="6" r="2" fill="currentColor" stroke="none" />
+      <circle cx="16" cy="12" r="2" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="18" r="2" fill="currentColor" stroke="none" />
+    </svg>
+  ),
+  model: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2l9 5v10l-9 5-9-5V7z" />
+      <path d="M12 22V12" />
+      <path d="M3 7l9 5 9-5" />
+    </svg>
+  ),
+  catalog: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="8" y="2" width="8" height="4" rx="1" />
+      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+    </svg>
+  ),
+  libs: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  ),
+  security: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    </svg>
+  ),
+  docs: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+      <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+    </svg>
+  ),
+  apps: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="7" />
+      <rect x="14" y="3" width="7" height="7" />
+      <rect x="14" y="14" width="7" height="7" />
+      <rect x="3" y="14" width="7" height="7" />
+    </svg>
+  ),
+};
+
 export default function Layout({ children }: LayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -158,6 +210,35 @@ export default function Layout({ children }: LayoutProps) {
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const { download, isDownloading } = useDownload();
   const { run, isRunning: isAutoTesting, stopRun } = useAutoTestRunner();
+
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('sidebar-collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed(prev => {
+      const next = !prev;
+      try { localStorage.setItem('sidebar-collapsed', String(next)); } catch {}
+      return next;
+    });
+  };
+
+  const getFirstPage = (category: MenuCategory): string | null => {
+    if (category.items && category.items.length > 0) {
+      return routeMap[category.items[0].page];
+    }
+    if (category.subcategories) {
+      for (const sub of category.subcategories) {
+        const page = getFirstPage(sub);
+        if (page) return page;
+      }
+    }
+    return null;
+  };
 
   const autoTestTitle = (() => {
     if (!run) return '';
@@ -287,16 +368,31 @@ export default function Layout({ children }: LayoutProps) {
     const isExpanded = expandedCategories.has(category.id);
     const isActive = isCategoryActive(category);
 
+    const handleHeaderClick = () => {
+      if (sidebarCollapsed && !isSubmenu) {
+        const firstPage = getFirstPage(category);
+        if (firstPage) navigate(firstPage);
+      } else {
+        toggleCategory(category.id);
+      }
+    };
+
     return (
       <div key={category.id} className={`menu-category ${isSubmenu ? 'submenu' : ''}`}>
         <div
           className={`menu-category-header ${isActive ? 'active' : ''}`}
-          onClick={() => toggleCategory(category.id)}
+          onClick={handleHeaderClick}
+          title={sidebarCollapsed ? category.label : undefined}
         >
-          <span>{category.label}</span>
+          {!isSubmenu && categoryIcons[category.id] && (
+            <span className="menu-category-icon" aria-hidden="true">
+              {categoryIcons[category.id]}
+            </span>
+          )}
+          <span className="menu-category-label">{category.label}</span>
           <span className={`menu-category-arrow ${isExpanded ? 'expanded' : ''}`}>▶</span>
         </div>
-        <div className={`menu-items ${isExpanded ? 'expanded' : ''}`}>
+        <div className={`menu-items ${isExpanded ? 'expanded' : ''}`} {...(!isSubmenu && { 'data-label': category.label })}>
           {category.subcategories?.map((sub) => renderCategory(sub, true))}
           {category.items?.map(renderMenuItem)}
         </div>
@@ -306,7 +402,7 @@ export default function Layout({ children }: LayoutProps) {
 
   return (
     <div className="app">
-      <aside className="sidebar">
+      <aside className={`sidebar ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
         <div className="sidebar-header">
           <Link to="/" style={{ textDecoration: 'none', color: 'inherit' }} className="sidebar-brand">
             <img src="/kronk-logo.png" alt="Kronk Logo" className="sidebar-logo" />
@@ -372,6 +468,23 @@ export default function Layout({ children }: LayoutProps) {
             )}
           </div>
         )}
+        <button
+          className="sidebar-toggle"
+          onClick={toggleSidebar}
+          aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-expanded={!sidebarCollapsed}
+          title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {sidebarCollapsed ? (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+          )}
+        </button>
       </aside>
       <main className="main-content">{children}</main>
     </div>

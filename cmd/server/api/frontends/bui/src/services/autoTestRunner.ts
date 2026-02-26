@@ -2403,8 +2403,8 @@ export const defaultSamplingSweepDef: SamplingSweepDefinition = {
 export const defaultConfigSweepDef: ConfigSweepDefinition = {
   nbatch: { enabled: true, values: [128, 256, 512, 1024, 2048, 4096] },
   nubatch: { enabled: true, values: [128, 256, 512, 1024, 2048, 4096] },
-  contextWindow: { enabled: true, values: [2048, 4096, 8192, 16384, 32768, 65536, 131072] },
-  nSeqMax: { enabled: true, values: [1, 2, 4, 8] },
+  contextWindow: { enabled: true, values: [2048, 4096, 8192, 16384, 32768, 65536, 98304, 131072] },
+  nSeqMax: { enabled: true, values: [1, 2] },
   flashAttention: { enabled: true, values: ['enabled', 'disabled'] },
   cacheType: { enabled: true, values: ['f16', 'q8_0', 'q4_0'] },
   cacheMode: { enabled: true, values: ['none', 'spc', 'imc'] },

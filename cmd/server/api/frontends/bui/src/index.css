@@ -40,20 +40,158 @@ body {
     width: 260px;
     background: var(--color-blue);
     color: var(--color-white);
-    padding: 20px 0;
+    padding: 20px 0 0 0;
     flex-shrink: 0;
     height: 100vh;
     overflow-y: auto;
+    overflow-x: hidden;
     position: sticky;
     top: 0;
     display: flex;
     flex-direction: column;
+    transition: width 0.2s ease;
+}
+
+.sidebar-collapsed {
+    width: 60px;
+}
+
+.sidebar-collapsed .sidebar-header h1 {
+    display: none;
+}
+
+.sidebar-collapsed .sidebar-brand {
+    justify-content: center;
+}
+
+.sidebar-collapsed .sidebar-logo {
+    width: 40px;
+    margin-right: 0;
+}
+
+/* Sidebar toggle button (bottom) */
+.sidebar-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 12px;
+    background: none;
+    border: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.5);
+    cursor: pointer;
+    transition: color 0.2s, background 0.2s;
+    flex-shrink: 0;
+}
+
+.sidebar-toggle:hover {
+    color: var(--color-white);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+/* Collapsed: top-level icons only */
+.sidebar-collapsed .menu-category {
+    margin-bottom: 2px;
+    position: relative;
+}
+
+.sidebar-collapsed > nav > .menu-category > .menu-category-header > .menu-category-label,
+.sidebar-collapsed > nav > .menu-category > .menu-category-header > .menu-category-arrow {
+    display: none;
+}
+
+.sidebar-collapsed > nav > .menu-category > .menu-category-header {
+    padding: 10px;
+    justify-content: center;
+}
+
+/* Flyout menu for collapsed sidebar */
+.sidebar-collapsed > nav > .menu-category > .menu-items {
+    position: absolute;
+    left: 60px;
+    top: 0;
+    min-width: 220px;
+    max-height: 70vh;
+    overflow-y: auto;
+    background: var(--color-blue);
+    border-radius: 0 8px 8px 0;
+    box-shadow: 4px 4px 12px rgba(0, 0, 0, 0.3);
+    padding: 8px 0;
+    z-index: 100;
+    visibility: hidden;
+    opacity: 0;
+    transition: opacity 0.15s, visibility 0.15s;
+}
+
+.sidebar-collapsed > nav > .menu-category:hover > .menu-items {
+    visibility: visible;
+    opacity: 1;
+}
+
+/* Flyout title */
+.sidebar-collapsed > nav > .menu-category > .menu-items::before {
+    content: attr(data-label);
+    display: block;
+    padding: 8px 16px;
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--color-orange);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    margin-bottom: 4px;
+}
+
+/* Reset flyout submenu padding */
+.sidebar-collapsed > nav > .menu-category > .menu-items .submenu {
+    padding-left: 0;
+}
+
+.sidebar-collapsed > nav > .menu-category > .menu-items .menu-category-header {
+    padding: 8px 16px;
+    justify-content: flex-start;
+}
+
+.sidebar-collapsed > nav > .menu-category > .menu-items .menu-item {
+    padding: 8px 16px 8px 24px;
+}
+
+.sidebar-collapsed > nav > .menu-category > .menu-items .submenu .menu-item {
+    padding-left: 32px;
+}
+
+/* Collapsed indicator styles */
+.sidebar-collapsed .download-indicator {
+    padding: 8px;
+}
+
+.sidebar-collapsed .download-indicator-link {
+    padding: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.sidebar-collapsed .download-indicator-header {
+    margin-bottom: 0;
+    justify-content: center;
+}
+
+.sidebar-collapsed .download-indicator-title,
+.sidebar-collapsed .download-indicator-url,
+.sidebar-collapsed .autotest-indicator-log {
+    display: none;
 }
 
 .sidebar-header {
-    padding: 0 20px 20px;
+    padding: 0 16px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    overflow: hidden;
 }
 
 .sidebar-brand {
@@ -65,8 +203,11 @@ body {
 .sidebar-logo {
     width: 100px;
     height: auto;
+    max-height: 50px;
+    object-fit: contain;
     border-radius: 8px;
     margin-right: 8px;
+    flex-shrink: 0;
 }
 
 .sidebar-header h1 {
@@ -88,7 +229,7 @@ body {
 .menu-category-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 10px;
     padding: 10px 20px;
     cursor: pointer;
     font-weight: 600;
@@ -96,6 +237,24 @@ body {
     text-transform: uppercase;
     letter-spacing: 0.5px;
     transition: background 0.2s;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.menu-category-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+}
+
+.menu-category-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .menu-category-header:hover {
@@ -107,8 +266,10 @@ body {
 }
 
 .menu-category-arrow {
+    margin-left: auto;
     font-size: 10px;
     transition: transform 0.2s;
+    flex-shrink: 0;
 }
 
 .menu-category-arrow.expanded {
