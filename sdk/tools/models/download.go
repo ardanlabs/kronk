@@ -328,7 +328,10 @@ func (m *Models) modelFilePathAndName(modelFileURL string) (string, string, erro
 		return "", "", fmt.Errorf("model-file-path-and-name: unable to parse fileURL: %w", err)
 	}
 
-	parts := strings.Split(mURL.Path, "/")
+	// Strip the /download prefix used by Kronk download server URLs.
+	urlPath := strings.TrimPrefix(mURL.Path, "/download")
+
+	parts := strings.Split(urlPath, "/")
 	if len(parts) < 3 {
 		return "", "", fmt.Errorf("model-file-path-and-name: invalid huggingface url: %q", mURL.Path)
 	}

@@ -86,6 +86,16 @@ func (a *app) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// If the exact file doesn't exist and the request is for a projection file,
+	// look for the Kronk-renamed mmproj file in the same directory.
+	if _, err := os.Stat(filePath); os.IsNotExist(err) && strings.Contains(fileName, "mmproj") {
+		if found := findMmproj(filepath.Dir(filePath)); found != "" {
+			filePath = found
+		}
+	}
+
+	a.log.Info(r.Context(), "download", "status", "resolved path", "org", org, "repo", repo, "action", action, "file", fileName, "filePath", filePath)
+
 	// Open and serve the file.
 	f, err := os.Open(filePath)
 	if err != nil {
@@ -116,4 +126,22 @@ func (a *app) handle(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filepath.Base(fileName)))
 
 	http.ServeContent(w, r, fileName, info.ModTime(), f)
+}
+
+// findMmproj searches a directory for a file whose name starts with "mmproj".
+// This handles the case where Kronk renamed the projection file from its
+// original HuggingFace name to the Kronk naming convention.
+func findMmproj(dir string) string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasPrefix(e.Name(), "mmproj") {
+			return filepath.Join(dir, e.Name())
+		}
+	}
+
+	return ""
 }
