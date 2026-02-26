@@ -5,7 +5,6 @@ package downapp
 
 import (
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -87,6 +86,16 @@ func (a *app) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// If the exact file doesn't exist and the request is for a projection file,
+	// look for the Kronk-renamed mmproj file in the same directory.
+	if _, err := os.Stat(filePath); os.IsNotExist(err) && strings.Contains(fileName, "mmproj") {
+		if found := findMmproj(filepath.Dir(filePath)); found != "" {
+			filePath = found
+		}
+	}
+
+	a.log.Info(r.Context(), "download", "status", "resolved path", "org", org, "repo", repo, "action", action, "file", fileName, "filePath", filePath)
+
 	// Open and serve the file.
 	f, err := os.Open(filePath)
 	if err != nil {
@@ -114,13 +123,25 @@ func (a *app) handle(w http.ResponseWriter, r *http.Request) {
 
 	a.log.Info(r.Context(), "download", "status", "serving file", "org", org, "repo", repo, "file", fileName, "size", info.Size())
 
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size()))
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filepath.Base(fileName)))
 
-	if r.Method == http.MethodHead {
-		return
+	http.ServeContent(w, r, fileName, info.ModTime(), f)
+}
+
+// findMmproj searches a directory for a file whose name starts with "mmproj".
+// This handles the case where Kronk renamed the projection file from its
+// original HuggingFace name to the Kronk naming convention.
+func findMmproj(dir string) string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
 	}
 
-	io.Copy(w, f)
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasPrefix(e.Name(), "mmproj") {
+			return filepath.Join(dir, e.Name())
+		}
+	}
+
+	return ""
 }

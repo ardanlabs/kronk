@@ -187,8 +187,14 @@ export default function ModelList() {
                           const va = getSortValue(a, sort.column!);
                           const vb = getSortValue(b, sort.column!);
                           const dir = sort.direction === 'asc' ? 1 : -1;
-                          if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
-                          return String(va).localeCompare(String(vb)) * dir;
+                          let result: number;
+                          if (typeof va === 'number' && typeof vb === 'number') {
+                            result = (va - vb) * dir;
+                          } else {
+                            result = String(va).localeCompare(String(vb)) * dir;
+                          }
+                          if (result !== 0 || sort.column === 'size') return result;
+                          return (a.size - b.size);
                         })
                       : mainModels;
 

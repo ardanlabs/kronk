@@ -82,6 +82,7 @@ func printWeb(model toolapp.CatalogModelResponse) {
 	fmt.Printf("Category:     %s\n", model.Category)
 	fmt.Printf("Owned By:     %s\n", model.OwnedBy)
 	fmt.Printf("Model Family: %s\n", model.ModelFamily)
+	fmt.Printf("Architecture: %s\n", model.Architecture)
 	fmt.Printf("Web Page:     %s\n", models.NormalizeHuggingFaceURL(model.WebPage))
 	fmt.Printf("Gated Model:  %t\n", model.GatedModel)
 	fmt.Println()
@@ -179,6 +180,7 @@ func printLocal(catDetails catalog.ModelDetails, rmc catalog.ModelConfig, mi *mo
 	fmt.Printf("Category:     %s\n", catDetails.Category)
 	fmt.Printf("Owned By:     %s\n", catDetails.OwnedBy)
 	fmt.Printf("Model Family: %s\n", catDetails.ModelFamily)
+	fmt.Printf("Architecture: %s\n", catDetails.Architecture)
 	fmt.Printf("Web Page:     %s\n", models.NormalizeHuggingFaceURL(catDetails.WebPage))
 	fmt.Println()
 

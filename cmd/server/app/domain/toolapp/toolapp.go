@@ -378,12 +378,15 @@ func (a *app) listCatalog(ctx context.Context, r *http.Request) web.Encoder {
 func (a *app) pullCatalog(ctx context.Context, r *http.Request) web.Encoder {
 	modelID := web.Param(r, "model")
 
+	var req PullCatalogRequest
+	web.Decode(r, &req)
+
 	model, err := a.catalog.Details(modelID)
 	if err != nil {
 		return errs.New(errs.Internal, err)
 	}
 
-	if model.GatedModel {
+	if model.GatedModel && req.DownloadServer == "" {
 		if os.Getenv("KRONK_HF_TOKEN") == "" {
 			return errs.Errorf(errs.FailedPrecondition, "gated model requires KRONK_HF_TOKEN to be set with HF token")
 		}
@@ -422,8 +425,18 @@ func (a *app) pullCatalog(ctx context.Context, r *http.Request) web.Encoder {
 	}
 
 	modelURLs := model.Files.ToModelURLS()
+	projURL := model.Files.Proj.URL
 
-	mp, err := a.models.DownloadSplits(ctx, logger, modelURLs, model.Files.Proj.URL)
+	if req.DownloadServer != "" {
+		for i, u := range modelURLs {
+			modelURLs[i] = toDownloadServerURL(req.DownloadServer, u)
+		}
+		if projURL != "" {
+			projURL = toDownloadServerURL(req.DownloadServer, projURL)
+		}
+	}
+
+	mp, err := a.models.DownloadSplits(ctx, logger, modelURLs, projURL)
 	if err != nil {
 		ver := toAppPull(err.Error(), models.Path{})
 
@@ -636,4 +649,19 @@ func (a *app) removeKey(ctx context.Context, r *http.Request) web.Encoder {
 	}
 
 	return nil
+}
+
+// toDownloadServerURL rewrites a catalog URL (short-form or full HuggingFace
+// URL) to point at the given download server.
+//
+// Short form: Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf
+// Full form:  https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf
+// Output:     http://192.168.0.246:8080/download/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf
+func toDownloadServerURL(server string, rawURL string) string {
+	if after, ok := strings.CutPrefix(rawURL, "https://huggingface.co/"); ok {
+		path := after
+		return fmt.Sprintf("http://%s/download/%s", server, path)
+	}
+
+	return fmt.Sprintf("http://%s/download/%s", server, models.NormalizeHuggingFaceDownloadURL(rawURL)[len("https://huggingface.co/"):])
 }

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { useDownload } from '../contexts/DownloadContext';
 import type { CatalogModelResponse, CatalogModelsResponse } from '../types';
+import { ParamTooltip } from './ParamTooltips';
 
 type DetailTab = 'details' | 'pull';
 
@@ -29,7 +30,8 @@ function getCatalogSortValue(model: CatalogModelResponse, column: string): strin
     case 'id': return model.id.toLowerCase();
     case 'category': return (model.category || '').toLowerCase();
     case 'owner': return (model.owned_by || '').toLowerCase();
-    case 'family': return (model.model_family || '').toLowerCase();
+    case 'architecture': return (model.architecture || '').toLowerCase();
+    case 'size': return model.total_size_bytes;
     case 'downloaded': return model.downloaded ? 1 : 0;
     default: return '';
   }
@@ -62,6 +64,19 @@ export default function CatalogList() {
   const [infoError, setInfoError] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState<DetailTab>('details');
+
+  const [downloadServer, setDownloadServer] = useState<string>(() => {
+    return localStorage.getItem('kronk_download_server') || '';
+  });
+
+  const handleDownloadServerChange = (value: string) => {
+    setDownloadServer(value);
+    if (value) {
+      localStorage.setItem('kronk_download_server', value);
+    } else {
+      localStorage.removeItem('kronk_download_server');
+    }
+  };
 
   const [sort, setSort] = useState<SortState>({ column: null, direction: null });
 
@@ -132,7 +147,7 @@ export default function CatalogList() {
 
   const handlePull = () => {
     if (!selectedId) return;
-    startCatalogDownload(selectedId);
+    startCatalogDownload(selectedId, downloadServer || undefined);
     setActiveTab('pull');
   };
 
@@ -164,7 +179,8 @@ export default function CatalogList() {
                     <th className="sortable-th" onClick={() => handleSort('id')}>ID{sortIndicator('id', sort)}</th>
                     <th className="sortable-th" onClick={() => handleSort('category')}>Category{sortIndicator('category', sort)}</th>
                     <th className="sortable-th" onClick={() => handleSort('owner')}>Owner{sortIndicator('owner', sort)}</th>
-                    <th className="sortable-th" onClick={() => handleSort('family')}>Family{sortIndicator('family', sort)}</th>
+                    <th className="sortable-th" onClick={() => handleSort('architecture')}>Arch{sortIndicator('architecture', sort)}</th>
+                    <th className="sortable-th" onClick={() => handleSort('size')}>Size{sortIndicator('size', sort)}</th>
                     <th className="sortable-th" onClick={() => handleSort('downloaded')}>Downloaded{sortIndicator('downloaded', sort)}</th>
                     <th>Capabilities</th>
                   </tr>
@@ -175,8 +191,14 @@ export default function CatalogList() {
                         const va = getCatalogSortValue(a, sort.column!);
                         const vb = getCatalogSortValue(b, sort.column!);
                         const dir = sort.direction === 'asc' ? 1 : -1;
-                        if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
-                        return String(va).localeCompare(String(vb)) * dir;
+                        let result: number;
+                        if (typeof va === 'number' && typeof vb === 'number') {
+                          result = (va - vb) * dir;
+                        } else {
+                          result = String(va).localeCompare(String(vb)) * dir;
+                        }
+                        if (result !== 0 || sort.column === 'size') return result;
+                        return (a.total_size_bytes - b.total_size_bytes);
                       })
                     : data
                   ).map((model) => (
@@ -190,7 +212,8 @@ export default function CatalogList() {
                       <td>{model.id}</td>
                       <td>{model.category}</td>
                       <td>{model.owned_by}</td>
-                      <td>{model.model_family}</td>
+                      <td>{model.architecture || '-'}</td>
+                      <td>{model.total_size || '-'}</td>
                       <td>
                         <span className={`badge ${model.downloaded ? 'badge-yes' : 'badge-no'}`}>
                           {model.downloaded ? 'Yes' : 'No'}
@@ -248,6 +271,24 @@ export default function CatalogList() {
                 <p>The catalog is empty</p>
               </div>
             )}
+          </div>
+        )}
+
+        {selectedId && (
+          <div className="form-group" style={{ marginTop: '16px' }}>
+            <label htmlFor="download-server" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              Kronk Download Server
+              <ParamTooltip text="Optional: specify a Kronk server on your local network that already has the model files. The pull will download from that server instead of HuggingFace, which is much faster." />
+            </label>
+            <input
+              id="download-server"
+              type="text"
+              className="form-control"
+              placeholder="192.168.0.246:8080"
+              value={downloadServer}
+              onChange={(e) => handleDownloadServerChange(e.target.value)}
+              disabled={pulling}
+            />
           </div>
         )}
 
@@ -335,6 +376,10 @@ export default function CatalogList() {
                 <div className="model-meta-item">
                   <label>Family</label>
                   <span>{modelInfo.model_family}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>Architecture</label>
+                  <span>{modelInfo.architecture || '-'}</span>
                 </div>
                 <div className="model-meta-item">
                   <label>Downloaded</label>

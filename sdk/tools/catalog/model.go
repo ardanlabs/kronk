@@ -1,6 +1,10 @@
 package catalog
 
 import (
+	"fmt"
+	"math"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
@@ -325,12 +329,96 @@ func (f Files) ToModelURLS() []string {
 	return models
 }
 
+// TotalSizeBytes returns the total size of all model files in bytes by
+// parsing the human-readable size strings (e.g. "8.71 GB"). This handles
+// split models by summing all file parts.
+func (f Files) TotalSizeBytes() int64 {
+	var total int64
+	for _, file := range f.Models {
+		total += parseSizeToBytes(file.Size)
+	}
+	return total
+}
+
+// TotalSize returns a formatted string of the total size of all model files.
+func (f Files) TotalSize() string {
+	return formatTotalSize(f.TotalSizeBytes())
+}
+
+// parseSizeToBytes parses a human-readable size string like "8.71 GB"
+// or "695 MB" into bytes.
+func parseSizeToBytes(s string) int64 {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0
+	}
+
+	const (
+		kb = 1000
+		mb = kb * 1000
+		gb = mb * 1000
+	)
+
+	upper := strings.ToUpper(s)
+
+	var multiplier float64
+	var numStr string
+
+	switch {
+	case strings.HasSuffix(upper, " GB"):
+		multiplier = gb
+		numStr = strings.TrimSuffix(upper, " GB")
+	case strings.HasSuffix(upper, " MB"):
+		multiplier = mb
+		numStr = strings.TrimSuffix(upper, " MB")
+	case strings.HasSuffix(upper, " KB"):
+		multiplier = kb
+		numStr = strings.TrimSuffix(upper, " KB")
+	case strings.HasSuffix(upper, " B"):
+		multiplier = 1
+		numStr = strings.TrimSuffix(upper, " B")
+	default:
+		return 0
+	}
+
+	val, err := strconv.ParseFloat(strings.TrimSpace(numStr), 64)
+	if err != nil {
+		return 0
+	}
+
+	return int64(val * multiplier)
+}
+
+// formatTotalSize formats bytes into a human-readable size string.
+func formatTotalSize(bytes int64) string {
+	const (
+		kb = 1000
+		mb = kb * 1000
+		gb = mb * 1000
+	)
+
+	switch {
+	case bytes >= gb:
+		val := float64(bytes) / float64(gb)
+		return fmt.Sprintf("%.1f GB", math.Round(val*10)/10)
+	case bytes >= mb:
+		val := float64(bytes) / float64(mb)
+		return fmt.Sprintf("%.1f MB", math.Round(val*10)/10)
+	case bytes >= kb:
+		val := float64(bytes) / float64(kb)
+		return fmt.Sprintf("%.1f KB", math.Round(val*10)/10)
+	default:
+		return fmt.Sprintf("%d B", bytes)
+	}
+}
+
 // ModelDetails represents information for a model.
 type ModelDetails struct {
 	ID              string       `yaml:"id"`
 	Category        string       `yaml:"category"`
 	OwnedBy         string       `yaml:"owned_by,omitempty"`
 	ModelFamily     string       `yaml:"model_family,omitempty"`
+	Architecture    string       `yaml:"architecture,omitempty"`
 	WebPage         string       `yaml:"web_page,omitempty"`
 	GatedModel      bool         `yaml:"gated_model,omitempty"`
 	Template        string       `yaml:"template,omitempty"`

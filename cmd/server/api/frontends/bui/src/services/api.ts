@@ -274,12 +274,20 @@ class ApiService {
     id: string,
     onMessage: (data: PullResponse) => void,
     onError: (error: string) => void,
-    onComplete: () => void
+    onComplete: () => void,
+    downloadServer?: string
   ): () => void {
     const controller = new AbortController();
 
+    const body: { download_server?: string } = {};
+    if (downloadServer) {
+      body.download_server = downloadServer;
+    }
+
     fetch(`${this.baseUrl}/catalog/pull/${encodeURIComponent(id)}`, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
       signal: controller.signal,
     })
       .then(async (response) => {

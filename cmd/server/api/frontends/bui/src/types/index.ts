@@ -157,8 +157,11 @@ export interface CatalogModelResponse {
   category: string;
   owned_by: string;
   model_family: string;
+  architecture: string;
   web_page: string;
   template: string;
+  total_size: string;
+  total_size_bytes: number;
   files: CatalogFiles;
   capabilities: CatalogCapabilities;
   metadata: CatalogMetadata;
@@ -343,6 +346,7 @@ export interface SaveCatalogRequest {
   category: string;
   owned_by: string;
   model_family: string;
+  architecture: string;
   web_page: string;
   gated_model: boolean;
   template: string;
@@ -398,6 +402,7 @@ export interface SaveCatalogRequest {
   category: string;
   owned_by: string;
   model_family: string;
+  architecture: string;
   web_page: string;
   gated_model: boolean;
   template: string;

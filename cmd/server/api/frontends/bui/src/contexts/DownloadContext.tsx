@@ -25,7 +25,7 @@ interface DownloadContextType {
   isDownloading: boolean;
   startDownload: (modelUrl: string, projUrl?: string) => void;
   startBatchDownload: (modelUrls: string[], projUrl?: string) => void;
-  startCatalogDownload: (catalogId: string) => void;
+  startCatalogDownload: (catalogId: string, downloadServer?: string) => void;
   cancelDownload: () => void;
   clearDownload: () => void;
 }
@@ -142,7 +142,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     pullNext(0);
   }, [pullOne, addMessage, invalidate]);
 
-  const startCatalogDownload = useCallback((catalogId: string) => {
+  const startCatalogDownload = useCallback((catalogId: string, downloadServer?: string) => {
     if (abortRef.current) {
       return;
     }
@@ -180,7 +180,8 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
         setDownload((prev) => (prev ? { ...prev, status: 'complete' } : prev));
         abortRef.current = null;
         invalidate();
-      }
+      },
+      downloadServer
     );
   }, [addMessage, updateLastMessage, invalidate]);
 
