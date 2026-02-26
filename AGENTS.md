@@ -75,7 +75,7 @@ Kronk has an MCP service and these are settings:
 | [2.5 Starting the Server](MANUAL.md#25-starting-the-server)                       | Server startup, basic config                   |
 | [2.6 Verifying the Installation](MANUAL.md#26-verifying-the-installation)         | Health check, test requests                    |
 | [2.7 Quick Start Summary](MANUAL.md#27-quick-start-summary)                       | Step-by-step recap                             |
-| [2.8 NixOS Setup](MANUAL.md#28-nixos-setup)                                       | Nix flake, dev shell, Vulkan, troubleshooting  |
+| [2.8 NixOS Setup](MANUAL.md#28-nixos-setup)                                       | Nix flake, dev shell, nix build, Vulkan, troubleshooting  |
 
 ### Chapter 3 Sub-sections
 

@@ -500,7 +500,7 @@ curl http://localhost:8080/v1/chat/completions \\
   -d '{"model": "Qwen3-8B-Q8_0", "messages": [{"role": "user", "content": "Hello!"}]}'`}</code></pre>
           <h3 id="28-nixos-setup">2.8 NixOS Setup</h3>
           <p>NixOS does not follow the Filesystem Hierarchy Standard (FHS), so shared libraries and binaries cannot be found in standard paths like <code>/usr/lib</code>. Kronk requires llama.cpp shared libraries at runtime, which means on NixOS you need to provide them through Nix rather than using the built-in <code>kronk libs</code> downloader.</p>
-          <p>A <code>flake.nix</code> is provided in <code>zarf/nix/</code> with dev shells for each supported GPU backend.</p>
+          <p>A <code>flake.nix</code> is provided in <code>zarf/nix/</code> with dev shells for development and build packages for producing a standalone <code>kronk</code> binary, each per GPU backend.</p>
           <p><strong>Prerequisites</strong></p>
           <ul>
             <li>NixOS or Nix package manager with flakes enabled</li>
@@ -539,17 +539,43 @@ curl http://localhost:8080/v1/chat/completions \\
               </tr>
             </tbody>
           </table>
-          <p>The default shell uses CPU. From the repository root:</p>
-          <pre className="code-block"><code className="language-shell">{`# CPU (default)
-nix develop ./zarf/nix
-
-# Vulkan GPU acceleration
-nix develop ./zarf/nix#vulkan
-
-# NVIDIA CUDA GPU acceleration
-nix develop ./zarf/nix#cuda`}</code></pre>
+          <p><strong>Building the Kronk CLI</strong></p>
+          <p>The flake also provides build packages that produce a wrapped <code>kronk</code> binary with the correct llama.cpp backend and runtime libraries baked in:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Command</th>
+                <th>Backend</th>
+                <th>GPU Required</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>nix build ./zarf/nix</code></td>
+                <td>CPU</td>
+                <td>None</td>
+              </tr>
+              <tr>
+                <td><code>nix build ./zarf/nix#cpu</code></td>
+                <td>CPU</td>
+                <td>None</td>
+              </tr>
+              <tr>
+                <td><code>nix build ./zarf/nix#vulkan</code></td>
+                <td>Vulkan</td>
+                <td>Vulkan-capable GPU</td>
+              </tr>
+              <tr>
+                <td><code>nix build ./zarf/nix#cuda</code></td>
+                <td>CUDA</td>
+                <td>NVIDIA GPU with CUDA</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>The Go binary is built once with <code>CGO_ENABLED=0</code>, then wrapped per backend so that <code>KRONK_LIB_PATH</code>, <code>KRONK_ALLOW_UPGRADE</code>, and <code>LD_LIBRARY_PATH</code> are set automatically. No dev shell is required to run the resulting binary.</p>
+          <p><strong>Note:</strong> The <code>vendorHash</code> in the flake must be updated whenever <code>go.mod</code> or <code>go.sum</code> changes. Build with a fake hash and Nix will report the correct one.</p>
           <p><strong>Environment Variables</strong></p>
-          <p>All shells automatically set the following:</p>
+          <p>All shells and built packages automatically set the following:</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -579,9 +605,9 @@ nix develop ./zarf/nix#cuda`}</code></pre>
           <p><strong>Important:</strong> Because <code>KRONK_ALLOW_UPGRADE</code> is set to <code>false</code>, the <code>kronk libs</code> command will not attempt to download or overwrite libraries. Library updates are managed through <code>nix flake update</code> instead.</p>
           <p><strong>Troubleshooting</strong></p>
           <ul>
-            <li><strong>Library not found errors:</strong> Ensure you are inside the <code>nix develop</code> shell.</li>
+            <li><strong>Library not found errors:</strong> Ensure you are inside the <code>nix develop</code> shell</li>
           </ul>
-          <p>The required <code>LD_LIBRARY_PATH</code> and <code>KRONK_LIB_PATH</code> are only set within the shell environment.</p>
+          <p>or using a <code>nix build</code> output. The required <code>LD_LIBRARY_PATH</code> and <code>KRONK_LIB_PATH</code> are only set within the shell or the wrapped binary.</p>
           <ul>
             <li><strong>Vulkan not detected:</strong> Verify your GPU drivers are installed at the NixOS</li>
           </ul>
@@ -589,7 +615,11 @@ nix develop ./zarf/nix#cuda`}</code></pre>
           <ul>
             <li><strong>Go version mismatch:</strong> The flake pins a specific Go version. If Kronk</li>
           </ul>
-          <p>requires a newer version, update the <code>go_1_25</code> package reference in <code>flake.nix</code>.</p>
+          <p>requires a newer version, update the <code>go_1_26</code> package reference in <code>flake.nix</code>.</p>
+          <ul>
+            <li><strong>vendorHash mismatch:</strong> After updating Go dependencies, rebuild with a fake</li>
+          </ul>
+          <p>hash (e.g. <code>lib.fakeHash</code>) and Nix will print the correct <code>vendorHash</code>.</p>
           <hr />
           <h2 id="chapter-3:-model-configuration">Chapter 3: Model Configuration</h2>
           <p>Model configuration controls how Kronk configures models to run inference. Configuration can be set via model config files, catalog templates, or programmatically through the SDK.</p>
