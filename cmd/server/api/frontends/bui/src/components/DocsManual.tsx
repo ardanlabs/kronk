@@ -43,218 +43,7 @@ export default function DocsManual() {
 
       <div className="doc-layout">
         <div className="doc-content manual-content">
-          <h1 id="kronk-user-manual">Kronk User Manual</h1>
-          <h2 id="table-of-contents">Table of Contents</h2>
-          <ol>
-            <li><a href="#chapter-1-introduction">Introduction</a>
-              <ul>
-                <li><a href="#11-what-is-kronk">1.1 What is Kronk</a></li>
-                <li><a href="#12-key-features">1.2 Key Features</a></li>
-                <li><a href="#13-supported-platforms-and-hardware">1.3 Supported Platforms and Hardware</a></li>
-                <li><a href="#14-architecture-overview">1.4 Architecture Overview</a></li>
-              </ul>
-            </li>
-            <li><a href="#chapter-2-installation--quick-start">Installation & Quick Start</a>
-              <ul>
-                <li><a href="#21-prerequisites">2.1 Prerequisites</a></li>
-                <li><a href="#22-installing-the-cli">2.2 Installing the CLI</a></li>
-                <li><a href="#23-installing-libraries">2.3 Installing Libraries</a></li>
-                <li><a href="#24-downloading-your-first-model">2.4 Downloading Your First Model</a></li>
-                <li><a href="#25-starting-the-server">2.5 Starting the Server</a></li>
-                <li><a href="#26-verifying-the-installation">2.6 Verifying the Installation</a></li>
-                <li><a href="#27-quick-start-summary">2.7 Quick Start Summary</a></li>
-                <li><a href="#28-nixos-setup">2.8 NixOS Setup</a></li>
-              </ul>
-            </li>
-          </ol>
-          <p>3. <a href="#chapter-3-model-configuration">Model Configuration</a> - <a href="#31-basic-configuration">3.1 Basic Configuration</a> - <a href="#32-gpu-configuration">3.2 GPU Configuration</a> - <a href="#33-kv-cache-quantization">3.3 KV Cache Quantization</a> - <a href="#34-flash-attention">3.4 Flash Attention</a> - <a href="#35-parallel-inference-nseqmax">3.5 Parallel Inference (NSeqMax)</a> - <a href="#36-understanding-gguf-quantization">3.6 Understanding GGUF Quantization</a> - <a href="#37-vram-estimation">3.7 VRAM Estimation</a> - <a href="#38-model-specific-tuning">3.8 Model-Specific Tuning</a> - <a href="#39-speculative-decoding">3.9 Speculative Decoding</a> - <a href="#310-sampling-parameters">3.10 Sampling Parameters</a> - <a href="#311-model-config-file-example">3.11 Model Config File Example</a></p>
-          <ol>
-            <li><a href="#chapter-4-batch-processing">Batch Processing</a>
-              <ul>
-                <li><a href="#41-architecture-overview">4.1 Architecture Overview</a></li>
-                <li><a href="#42-slots-and-sequences">4.2 Slots and Sequences</a></li>
-                <li><a href="#43-request-flow">4.3 Request Flow</a></li>
-                <li><a href="#44-configuring-batch-processing">4.4 Configuring Batch Processing</a></li>
-                <li><a href="#45-concurrency-by-model-type">4.5 Concurrency by Model Type</a></li>
-                <li><a href="#46-performance-tuning">4.6 Performance Tuning</a></li>
-                <li><a href="#47-example-configuration">4.7 Example Configuration</a></li>
-                <li><a href="#48-imc-slot-scheduling">4.8 IMC Slot Scheduling</a></li>
-                <li><a href="#49-model-types-and-state-management">4.9 Model Types and State Management</a></li>
-              </ul>
-            </li>
-            <li><a href="#chapter-5-message-caching">Message Caching</a>
-              <ul>
-                <li><a href="#51-overview">5.1 Overview</a></li>
-                <li><a href="#52-system-prompt-cache-spc">5.2 System Prompt Cache (SPC)</a></li>
-                <li><a href="#53-incremental-message-cache-imc">5.3 Incremental Message Cache (IMC)</a></li>
-                <li><a href="#imc-deterministic">IMC Deterministic</a></li>
-                <li><a href="#imc-non-deterministic">IMC Non-Deterministic</a></li>
-                <li><a href="#model-type-interactions">Model Type Interactions</a></li>
-                <li><a href="#54-single-user-caching">5.4 Single-User Caching</a></li>
-                <li><a href="#55-spc-vs-imc">5.5 SPC vs IMC</a></li>
-                <li><a href="#56-cache-invalidation">5.6 Cache Invalidation</a></li>
-                <li><a href="#57-configuration-reference">5.7 Configuration Reference</a></li>
-                <li><a href="#58-performance-and-limitations">5.8 Performance and Limitations</a></li>
-              </ul>
-            </li>
-            <li><a href="#chapter-6-yarn-extended-context">YaRN Extended Context</a>
-              <ul>
-                <li><a href="#61-understanding-context-extension">6.1 Understanding Context Extension</a></li>
-                <li><a href="#62-when-to-use-yarn">6.2 When to Use YaRN</a></li>
-                <li><a href="#63-configuration">6.3 Configuration</a></li>
-                <li><a href="#64-scaling-types">6.4 Scaling Types</a></li>
-                <li><a href="#65-parameter-reference">6.5 Parameter Reference</a></li>
-                <li><a href="#66-model-specific-examples">6.6 Model-Specific Examples</a></li>
-                <li><a href="#67-memory-impact">6.7 Memory Impact</a></li>
-                <li><a href="#68-quality-considerations">6.8 Quality Considerations</a></li>
-                <li><a href="#69-example-long-document-processing">6.9 Example: Long Document Processing</a></li>
-              </ul>
-            </li>
-            <li><a href="#chapter-7-model-server">Model Server</a>
-              <ul>
-                <li><a href="#71-starting-the-server">7.1 Starting the Server</a></li>
-                <li><a href="#72-stopping-the-server">7.2 Stopping the Server</a></li>
-                <li><a href="#73-server-configuration">7.3 Server Configuration</a></li>
-                <li><a href="#74-model-caching">7.4 Model Caching</a></li>
-                <li><a href="#75-model-config-files">7.5 Model Config Files</a></li>
-                <li><a href="#76-catalog-system">7.6 Catalog System</a></li>
-                <li><a href="#77-custom-catalog-repository">7.7 Custom Catalog Repository</a></li>
-                <li><a href="#78-templates">7.8 Templates</a></li>
-                <li><a href="#79-runtime-settings">7.9 Runtime Settings</a></li>
-                <li><a href="#710-logging">7.10 Logging</a></li>
-                <li><a href="#711-data-paths">7.11 Data Paths</a></li>
-                <li><a href="#712-complete-example">7.12 Complete Example</a></li>
-              </ul>
-            </li>
-            <li><a href="#chapter-8-api-endpoints">API Endpoints</a>
-              <ul>
-                <li><a href="#81-endpoint-overview">8.1 Endpoint Overview</a></li>
-                <li><a href="#82-chat-completions">8.2 Chat Completions</a></li>
-                <li><a href="#83-responses-api">8.3 Responses API</a></li>
-                <li><a href="#84-embeddings">8.4 Embeddings</a></li>
-                <li><a href="#85-reranking">8.5 Reranking</a></li>
-                <li><a href="#86-tokenize">8.6 Tokenize</a></li>
-                <li><a href="#87-tool-calling-function-calling">8.7 Tool Calling (Function Calling)</a></li>
-                <li><a href="#88-models-list">8.8 Models List</a></li>
-                <li><a href="#89-authentication">8.9 Authentication</a></li>
-                <li><a href="#810-error-responses">8.10 Error Responses</a></li>
-              </ul>
-            </li>
-            <li><a href="#chapter-9-request-parameters">Request Parameters</a>
-              <ul>
-                <li><a href="#91-sampling-parameters">9.1 Sampling Parameters</a></li>
-                <li><a href="#92-repetition-control">9.2 Repetition Control</a></li>
-                <li><a href="#93-advanced-sampling">9.3 Advanced Sampling</a></li>
-                <li><a href="#94-generation-control">9.4 Generation Control</a></li>
-                <li><a href="#95-grammar-constrained-output">9.5 Grammar Constrained Output</a></li>
-                <li><a href="#96-logprobs-token-probabilities">9.6 Logprobs (Token Probabilities)</a></li>
-                <li><a href="#97-parameter-reference">9.7 Parameter Reference</a></li>
-              </ul>
-            </li>
-            <li><a href="#chapter-10-multi-modal-models">Multi-Modal Models</a>
-              <ul>
-                <li><a href="#101-overview">10.1 Overview</a></li>
-                <li><a href="#102-vision-models">10.2 Vision Models</a></li>
-                <li><a href="#103-audio-models">10.3 Audio Models</a></li>
-                <li><a href="#104-plain-base64-format">10.4 Plain Base64 Format</a></li>
-                <li><a href="#105-configuration-for-multi-modal-models">10.5 Configuration for Multi-Modal Models</a></li>
-                <li><a href="#106-memory-requirements">10.6 Memory Requirements</a></li>
-                <li><a href="#107-limitations">10.7 Limitations</a></li>
-                <li><a href="#108-example-image-analysis">10.8 Example: Image Analysis</a></li>
-                <li><a href="#109-example-audio-transcription">10.9 Example: Audio Transcription</a></li>
-              </ul>
-            </li>
-            <li><a href="#chapter-11-security--authentication">Security & Authentication</a>
-              <ul>
-                <li><a href="#111-enabling-authentication">11.1 Enabling Authentication</a></li>
-                <li><a href="#112-using-the-admin-token">11.2 Using the Admin Token</a></li>
-                <li><a href="#113-key-management">11.3 Key Management</a></li>
-                <li><a href="#114-creating-user-tokens">11.4 Creating User Tokens</a></li>
-                <li><a href="#115-token-examples">11.5 Token Examples</a></li>
-                <li><a href="#116-using-tokens-in-api-requests">11.6 Using Tokens in API Requests</a></li>
-                <li><a href="#117-authorization-flow">11.7 Authorization Flow</a></li>
-                <li><a href="#118-rate-limiting">11.8 Rate Limiting</a></li>
-                <li><a href="#119-configuration-reference">11.9 Configuration Reference</a></li>
-                <li><a href="#1110-security-best-practices">11.10 Security Best Practices</a></li>
-              </ul>
-            </li>
-            <li><a href="#chapter-12-browser-ui-bui">Browser UI (BUI)</a>
-              <ul>
-                <li><a href="#121-accessing-the-bui">12.1 Accessing the BUI</a></li>
-                <li><a href="#122-downloading-libraries">12.2 Downloading Libraries</a></li>
-                <li><a href="#123-downloading-models">12.3 Downloading Models</a></li>
-                <li><a href="#124-managing-keys-and-tokens">12.4 Managing Keys and Tokens</a></li>
-                <li><a href="#125-other-screens">12.5 Other Screens</a></li>
-                <li><a href="#126-model-playground">12.6 Model Playground</a></li>
-              </ul>
-            </li>
-            <li><a href="#chapter-13-client-integration">Client Integration</a>
-              <ul>
-                <li><a href="#131-openwebui">13.1 OpenWebUI</a></li>
-                <li><a href="#132-cline">13.2 Cline</a></li>
-                <li><a href="#134-python-openai-sdk">13.4 Python OpenAI SDK</a></li>
-                <li><a href="#135-curl-and-http-clients">13.5 curl and HTTP Clients</a></li>
-                <li><a href="#136-langchain">13.6 LangChain</a></li>
-              </ul>
-            </li>
-            <li><a href="#chapter-14-observability">Observability</a>
-              <ul>
-                <li><a href="#141-debug-server">14.1 Debug Server</a></li>
-                <li><a href="#142-debug-endpoints">14.2 Debug Endpoints</a></li>
-                <li><a href="#143-health-check-endpoints">14.3 Health Check Endpoints</a></li>
-                <li><a href="#144-prometheus-metrics">14.4 Prometheus Metrics</a></li>
-                <li><a href="#145-prometheus-integration">14.5 Prometheus Integration</a></li>
-                <li><a href="#146-distributed-tracing-with-tempo">14.6 Distributed Tracing with Tempo</a></li>
-                <li><a href="#147-tracing-architecture">14.7 Tracing Architecture</a></li>
-                <li><a href="#148-tempo-setup-with-docker">14.8 Tempo Setup with Docker</a></li>
-                <li><a href="#149-pprof-profiling">14.9 pprof Profiling</a></li>
-                <li><a href="#1410-statsviz-real-time-monitoring">14.10 Statsviz Real-Time Monitoring</a></li>
-                <li><a href="#1411-logging">14.11 Logging</a></li>
-                <li><a href="#1412-configuration-reference">14.12 Configuration Reference</a></li>
-              </ul>
-            </li>
-            <li><a href="#chapter-15-mcp-service">MCP Service</a>
-              <ul>
-                <li><a href="#151-architecture">15.1 Architecture</a></li>
-                <li><a href="#152-prerequisites">15.2 Prerequisites</a></li>
-                <li><a href="#153-configuration">15.3 Configuration</a></li>
-                <li><a href="#154-available-tools">15.4 Available Tools</a></li>
-                <li><a href="#155-client-configuration">15.5 Client Configuration</a></li>
-                <li><a href="#156-testing-with-curl">15.6 Testing with curl</a></li>
-              </ul>
-            </li>
-            <li><a href="#chapter-16-troubleshooting">Troubleshooting</a>
-              <ul>
-                <li><a href="#161-library-issues">16.1 Library Issues</a></li>
-                <li><a href="#162-model-loading-failures">16.2 Model Loading Failures</a></li>
-                <li><a href="#163-memory-errors">16.3 Memory Errors</a></li>
-                <li><a href="#164-request-timeouts">16.4 Request Timeouts</a></li>
-                <li><a href="#165-authentication-errors">16.5 Authentication Errors</a></li>
-                <li><a href="#166-streaming-issues">16.6 Streaming Issues</a></li>
-                <li><a href="#167-performance-issues">16.7 Performance Issues</a></li>
-                <li><a href="#168-viewing-logs">16.8 Viewing Logs</a></li>
-                <li><a href="#169-common-error-messages">16.9 Common Error Messages</a></li>
-                <li><a href="#1610-getting-help">16.10 Getting Help</a></li>
-              </ul>
-            </li>
-            <li><a href="#chapter-17-developer-guide">Developer Guide</a>
-              <ul>
-                <li><a href="#171-quick-reference">17.1 Quick Reference</a></li>
-                <li><a href="#172-build--test-commands">17.2 Build & Test Commands</a></li>
-                <li><a href="#173-developer-setup">17.3 Developer Setup</a></li>
-                <li><a href="#174-project-architecture">17.4 Project Architecture</a></li>
-                <li><a href="#175-bui-frontend-development">17.5 BUI Frontend Development</a></li>
-                <li><a href="#176-code-style-guidelines">17.6 Code Style Guidelines</a></li>
-                <li><a href="#177-sdk-internals">17.7 SDK Internals</a></li>
-                <li><a href="#178-api-handler-notes">17.8 API Handler Notes</a></li>
-                <li><a href="#179-goroutine-budget">17.9 Goroutine Budget</a></li>
-                <li><a href="#1710-request-tracing-spans">17.10 Request Tracing Spans</a></li>
-                <li><a href="#1711-reference-threads">17.11 Reference Threads</a></li>
-              </ul>
-            </li>
-          </ol>
-          <hr />
-          <h2 id="chapter-1:-introduction">Chapter 1: Introduction</h2>
+          <h2 id="chapter-1-introduction">Chapter 1: Introduction</h2>
           <h3 id="11-what-is-kronk">1.1 What is Kronk</h3>
           <p>Kronk is a Go SDK and Model Server for running local inference with open-source GGUF models. Built on top of llama.cpp via the <a href="https://github.com/hybridgroup/yzma">yzma</a> Go bindings (a non-CGO FFI layer), Kronk provides hardware-accelerated inference for text generation, vision, audio, embeddings, and reranking.</p>
           <p><strong>The SDK is the foundation.</strong> The Kronk Model Server is built entirely on top of the SDK — we "dog food" our own library. Everything the model server can do is available to you as a SDK developer to help you write your own applications.</p>
@@ -393,7 +182,7 @@ for resp := range ch {
 kronk server start
 curl http://localhost:8080/v1/chat/completions -d '{"model":"Qwen3-8B-Q8_0","messages":[...]}'`}</code></pre>
           <hr />
-          <h2 id="chapter-2:-installation-quick-start">Chapter 2: Installation &amp; Quick Start</h2>
+          <h2 id="chapter-2-installation-quick-start">Chapter 2: Installation &amp; Quick Start</h2>
           <h3 id="21-prerequisites">2.1 Prerequisites</h3>
           <p><strong>Required</strong></p>
           <ul>
@@ -621,7 +410,7 @@ curl http://localhost:8080/v1/chat/completions \\
           </ul>
           <p>hash (e.g. <code>lib.fakeHash</code>) and Nix will print the correct <code>vendorHash</code>.</p>
           <hr />
-          <h2 id="chapter-3:-model-configuration">Chapter 3: Model Configuration</h2>
+          <h2 id="chapter-3-model-configuration">Chapter 3: Model Configuration</h2>
           <p>Model configuration controls how Kronk configures models to run inference. Configuration can be set via model config files, catalog templates, or programmatically through the SDK.</p>
           <h3 id="31-basic-configuration">3.1 Basic Configuration</h3>
           <p>For most models you will want to touch these basic settings. There are many more which will be presented later. Each model has GGUF metadata that Kronk can read for defaults like setting the context window size when not provided. Kronk also has default settings for things like temperature and top_p when not provided.</p>
@@ -1186,7 +975,7 @@ Total_VRAM  = Model_Weights + Slot_Memory`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <h4 id="example:-real-model-calculation">Example: Real Model Calculation</h4>
+          <h4 id="example-real-model-calculation">Example: Real Model Calculation</h4>
           <pre className="code-block"><code>{`Model                   : Qwen3.5-35B-A3B-UD-Q8_K_XL
 Model Weights           : 36.0 GB
 Context Window (n_ctx)  : 131,072 (128K)
@@ -1451,7 +1240,7 @@ models:
           <p>Start the server with custom config:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --model-config-file=model-config.yaml`}</code></pre>
           <hr />
-          <h2 id="chapter-4:-batch-processing">Chapter 4: Batch Processing</h2>
+          <h2 id="chapter-4-batch-processing">Chapter 4: Batch Processing</h2>
           <p>Batch processing allows Kronk to handle multiple concurrent requests efficiently by sharing model resources. This chapter explains the architecture and how to optimize for your workload.</p>
           <h3 id="41-architecture-overview">4.1 Architecture Overview</h3>
           <p>For text inference models (including vision/audio), Kronk always creates a batch engine with <code>NSeqMax</code> slots (defaulting to 1). <code>NSeqMax</code> controls how many sequences are processed in parallel within a single model instance.</p>
@@ -1865,7 +1654,7 @@ Hybrid:                Full clear → Restore snapshot (memory copy)`}</code></p
             </tbody>
           </table>
           <hr />
-          <h2 id="chapter-5:-message-caching">Chapter 5: Message Caching</h2>
+          <h2 id="chapter-5-message-caching">Chapter 5: Message Caching</h2>
           <p>Message caching reduces redundant computation by storing and reusing KV cache state from previous requests. Kronk provides two caching modes (SPC and IMC) optimized for different use cases.</p>
           <h3 id="51-overview">5.1 Overview</h3>
           <p>When processing a chat request, the model must compute attention for every token in the conversation. Without caching, the entire prompt is prefilled on every request — even tokens the model has already seen.</p>
@@ -2278,7 +2067,7 @@ New decode:    7 tokens (T5-T12, from divergence point forward)`}</code></pre>
           </ul>
           <p>all messages from the first media message onward are re-processed each request</p>
           <hr />
-          <h2 id="chapter-6:-yarn-extended-context">Chapter 6: YaRN Extended Context</h2>
+          <h2 id="chapter-6-yarn-extended-context">Chapter 6: YaRN Extended Context</h2>
           <p>YaRN (Yet another RoPE extensioN) allows models to handle context windows beyond their native training length. This is essential for long documents, extended conversations, and complex agentic workflows.</p>
           <h3 id="61-understanding-context-extension">6.1 Understanding Context Extension</h3>
           <p>Language models are trained with a fixed context length (e.g., 8K, 32K tokens). RoPE (Rotary Position Embedding) encodes position information, but naive extension beyond training length causes quality degradation.</p>
@@ -2430,7 +2219,7 @@ cache_type_v: q8_0`}</code></pre>
             <li>Compare output quality</li>
             <li>Adjust if needed (reduce extension or try different parameters)</li>
           </ol>
-          <h3 id="69-example:-long-document-processing">6.9 Example: Long Document Processing</h3>
+          <h3 id="69-example-long-document-processing">6.9 Example: Long Document Processing</h3>
           <p>Configuration for processing long documents:</p>
           <pre className="code-block"><code className="language-yaml">{`models:
   Qwen3-8B-Q8_0:
@@ -2443,7 +2232,7 @@ cache_type_v: q8_0`}</code></pre>
     n_seq_max: 1 # Single request (memory intensive)`}</code></pre>
           <p>This configuration can process documents up to ~50K tokens while leaving room for generation.</p>
           <hr />
-          <h2 id="chapter-7:-model-server">Chapter 7: Model Server</h2>
+          <h2 id="chapter-7-model-server">Chapter 7: Model Server</h2>
           <p>The Kronk Model Server provides an OpenAI-compatible REST API for inference. This chapter covers server configuration, management, and the catalog system.</p>
           <p><strong>CLI Modes: Web vs Local</strong></p>
           <p>Most CLI commands communicate with a running server by default:</p>
@@ -2907,7 +2696,7 @@ models:
     cache_type_v: q8_0
     incremental_cache: true`}</code></pre>
           <hr />
-          <h2 id="chapter-8:-api-endpoints">Chapter 8: API Endpoints</h2>
+          <h2 id="chapter-8-api-endpoints">Chapter 8: API Endpoints</h2>
           <p>Kronk provides an OpenAI-compatible REST API. This chapter documents the available endpoints and their usage.</p>
           <h3 id="81-endpoint-overview">8.1 Endpoint Overview</h3>
           <table className="flags-table">
@@ -3326,7 +3115,7 @@ data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":" \
             <li><code>unauthenticated</code> - Missing or invalid authentication token</li>
           </ul>
           <hr />
-          <h2 id="chapter-9:-request-parameters">Chapter 9: Request Parameters</h2>
+          <h2 id="chapter-9-request-parameters">Chapter 9: Request Parameters</h2>
           <p>This chapter documents the request parameters available for controlling model output through both the SDK and REST API.</p>
           <h3 id="91-sampling-parameters">9.1 Sampling Parameters</h3>
           <p>These parameters control the randomness and diversity of generated text.</p>
@@ -3928,7 +3717,7 @@ d := model.D{
             </tbody>
           </table>
           <hr />
-          <h2 id="chapter-10:-multi-modal-models">Chapter 10: Multi-Modal Models</h2>
+          <h2 id="chapter-10-multi-modal-models">Chapter 10: Multi-Modal Models</h2>
           <p>Kronk supports vision and audio models that can process images, video frames, and audio alongside text. This chapter covers how to use these models.</p>
           <h3 id="101-overview">10.1 Overview</h3>
           <p>Multi-modal models combine a language model with a media projector that converts images or audio into tokens the model can understand.</p>
@@ -4075,7 +3864,7 @@ Total:             ~9.4 GB`}</code></pre>
           <ul>
             <li>Processing time varies with image resolution and audio duration</li>
           </ul>
-          <h3 id="108-example:-image-analysis">10.8 Example: Image Analysis</h3>
+          <h3 id="108-example-image-analysis">10.8 Example: Image Analysis</h3>
           <p>Complete example analyzing an image:</p>
           <pre className="code-block"><code className="language-shell">{`# Encode image to base64
 IMAGE_B64=$(base64 -i photo.jpg)
@@ -4099,7 +3888,7 @@ curl http://localhost:8080/v1/chat/completions \\
     ],
     "max_tokens": 1024
   }'`}</code></pre>
-          <h3 id="109-example:-audio-transcription">10.9 Example: Audio Transcription</h3>
+          <h3 id="109-example-audio-transcription">10.9 Example: Audio Transcription</h3>
           <p>Complete example transcribing audio:</p>
           <pre className="code-block"><code className="language-shell">{`# Encode audio to base64
 AUDIO_B64=$(base64 -i recording.wav)
@@ -4125,7 +3914,7 @@ curl http://localhost:8080/v1/chat/completions \\
   }'`}</code></pre>
           <hr />
           <p><em>Next: &lt;a href="#chapter-11-security--authentication"&gt;Chapter 11: Security & Authentication&lt;/a&gt;</em></p>
-          <h2 id="chapter-11:-security-authentication">Chapter 11: Security &amp; Authentication</h2>
+          <h2 id="chapter-11-security-authentication">Chapter 11: Security &amp; Authentication</h2>
           <p>Kronk provides JWT-based authentication and authorization with per-endpoint rate limiting. When enabled, all API requests require a valid token.</p>
           <h3 id="111-enabling-authentication">11.1 Enabling Authentication</h3>
           <p><strong>Start Server with Auth Enabled:</strong></p>
@@ -4326,7 +4115,7 @@ response = client.chat.completions.create(
           </ul>
           <hr />
           <p><em>Next: &lt;a href="#chapter-12-browser-ui-bui"&gt;Chapter 12: Browser UI (BUI)&lt;/a&gt;</em></p>
-          <h2 id="chapter-12:-browser-ui-bui">Chapter 12: Browser UI (BUI)</h2>
+          <h2 id="chapter-12-browser-ui-bui">Chapter 12: Browser UI (BUI)</h2>
           <p>Kronk includes a web-based interface for managing models, libraries, security, and server configuration without using the command line.</p>
           <h3 id="121-accessing-the-bui">12.1 Accessing the BUI</h3>
           <p>The BUI is served from the same port as the API.</p>
@@ -4536,7 +4325,7 @@ response = client.chat.completions.create(
           <p>Click <strong>Export to Catalog Editor</strong> (in the header) to pre-fill a catalog entry with the playground's current model, template, and configuration settings.</p>
           <hr />
           <p><em>Next: &lt;a href="#chapter-13-client-integration"&gt;Chapter 13: Client Integration&lt;/a&gt;</em></p>
-          <h2 id="chapter-13:-client-integration">Chapter 13: Client Integration</h2>
+          <h2 id="chapter-13-client-integration">Chapter 13: Client Integration</h2>
           <p>Kronk's OpenAI-compatible API works with popular AI clients and tools.</p>
           <h3 id="131-openwebui">13.1 OpenWebUI</h3>
           <p>OpenWebUI is a self-hosted chat interface that works with Kronk.</p>
@@ -4654,7 +4443,7 @@ response = llm.invoke("Explain quantum computing briefly.")
 print(response.content)`}</code></pre>
           <hr />
           <p><em>Next: &lt;a href="#chapter-14-observability"&gt;Chapter 14: Observability&lt;/a&gt;</em></p>
-          <h2 id="chapter-14:-observability">Chapter 14: Observability</h2>
+          <h2 id="chapter-14-observability">Chapter 14: Observability</h2>
           <p>Kronk provides comprehensive observability through distributed tracing, Prometheus metrics, pprof profiling, and real-time visualizations.</p>
           <h3 id="141-debug-server">14.1 Debug Server</h3>
           <p>Kronk runs a separate debug server for observability endpoints, isolated from the main API for security.</p>
@@ -4894,7 +4683,7 @@ kronk server start`}</code></pre>
           <p>(env: <code>KRONK_LLAMA_LOG</code>, default: <code>1</code>)</p>
           <hr />
           <p><em>Next: &lt;a href="#chapter-15-mcp-service"&gt;Chapter 15: MCP Service&lt;/a&gt;</em></p>
-          <h2 id="chapter-15:-mcp-service">Chapter 15: MCP Service</h2>
+          <h2 id="chapter-15-mcp-service">Chapter 15: MCP Service</h2>
           <p>Kronk includes a built-in <a href="https://modelcontextprotocol.io/">Model Context Protocol (MCP)</a> service that exposes tools to MCP-compatible clients. The initial tool provided is <code>web_search</code>, powered by the <a href="https://brave.com/search/api/">Brave Search API</a>.</p>
           <p>MCP is an open standard that lets AI agents call external tools over a simple JSON-RPC protocol. By running the MCP service, any MCP-compatible client (Cline, Kilo Code, Cursor, etc.) can discover and invoke tools served by Kronk.</p>
           <h3 id="151-architecture">15.1 Architecture</h3>
@@ -5032,7 +4821,7 @@ make mcp-server`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`make curl-mcp-web-search SESSIONID=<session-id>`}</code></pre>
           <hr />
           <p><em>Next: &lt;a href="#chapter-16-troubleshooting"&gt;Chapter 16: Troubleshooting&lt;/a&gt;</em></p>
-          <h2 id="chapter-16:-troubleshooting">Chapter 16: Troubleshooting</h2>
+          <h2 id="chapter-16-troubleshooting">Chapter 16: Troubleshooting</h2>
           <p>This chapter covers common issues, their causes, and solutions.</p>
           <h3 id="161-library-issues">16.1 Library Issues</h3>
           <p><strong>Error: "unable to load library"</strong></p>
@@ -5296,7 +5085,7 @@ nvidia-smi`}</code></pre>
           </ul>
           <hr />
           <p><em>Next: &lt;a href="#chapter-17-developer-guide"&gt;Chapter 17: Developer Guide&lt;/a&gt;</em></p>
-          <h2 id="chapter-17:-developer-guide">Chapter 17: Developer Guide</h2>
+          <h2 id="chapter-17-developer-guide">Chapter 17: Developer Guide</h2>
           <p>This chapter covers development workflows, build commands, and code conventions for contributors to the Kronk project.</p>
           <h3 id="171-quick-reference">17.1 Quick Reference</h3>
           <p>Here is a quick chart of some of the more imporant make commands.</p>
@@ -5955,10 +5744,7 @@ batching = true`}</code></pre>
         <nav className="doc-sidebar">
           <div className="doc-sidebar-content">
             <div className="doc-index-section">
-              <a href="#table-of-contents" className={`doc-index-header ${activeSection === 'table-of-contents' ? 'active' : ''}`}>Table of Contents</a>
-            </div>
-            <div className="doc-index-section">
-              <a href="#chapter-1:-introduction" className={`doc-index-header ${activeSection === 'chapter-1:-introduction' ? 'active' : ''}`}>Chapter 1: Introduction</a>
+              <a href="#chapter-1-introduction" className={`doc-index-header ${activeSection === 'chapter-1-introduction' ? 'active' : ''}`}>Chapter 1: Introduction</a>
               <ul>
                 <li><a href="#11-what-is-kronk" className={activeSection === '11-what-is-kronk' ? 'active' : ''}>1.1 What is Kronk</a></li>
                 <li><a href="#12-key-features" className={activeSection === '12-key-features' ? 'active' : ''}>1.2 Key Features</a></li>
@@ -5967,7 +5753,7 @@ batching = true`}</code></pre>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-2:-installation-quick-start" className={`doc-index-header ${activeSection === 'chapter-2:-installation-quick-start' ? 'active' : ''}`}>Chapter 2: Installation &amp; Quick Start</a>
+              <a href="#chapter-2-installation-quick-start" className={`doc-index-header ${activeSection === 'chapter-2-installation-quick-start' ? 'active' : ''}`}>Chapter 2: Installation &amp; Quick Start</a>
               <ul>
                 <li><a href="#21-prerequisites" className={activeSection === '21-prerequisites' ? 'active' : ''}>2.1 Prerequisites</a></li>
                 <li><a href="#22-installing-the-cli" className={activeSection === '22-installing-the-cli' ? 'active' : ''}>2.2 Installing the CLI</a></li>
@@ -5980,7 +5766,7 @@ batching = true`}</code></pre>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-3:-model-configuration" className={`doc-index-header ${activeSection === 'chapter-3:-model-configuration' ? 'active' : ''}`}>Chapter 3: Model Configuration</a>
+              <a href="#chapter-3-model-configuration" className={`doc-index-header ${activeSection === 'chapter-3-model-configuration' ? 'active' : ''}`}>Chapter 3: Model Configuration</a>
               <ul>
                 <li><a href="#31-basic-configuration" className={activeSection === '31-basic-configuration' ? 'active' : ''}>3.1 Basic Configuration</a></li>
                 <li><a href="#32-gpu-configuration" className={activeSection === '32-gpu-configuration' ? 'active' : ''}>3.2 GPU Configuration</a></li>
@@ -5996,7 +5782,7 @@ batching = true`}</code></pre>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-4:-batch-processing" className={`doc-index-header ${activeSection === 'chapter-4:-batch-processing' ? 'active' : ''}`}>Chapter 4: Batch Processing</a>
+              <a href="#chapter-4-batch-processing" className={`doc-index-header ${activeSection === 'chapter-4-batch-processing' ? 'active' : ''}`}>Chapter 4: Batch Processing</a>
               <ul>
                 <li><a href="#41-architecture-overview" className={activeSection === '41-architecture-overview' ? 'active' : ''}>4.1 Architecture Overview</a></li>
                 <li><a href="#42-slots-and-sequences" className={activeSection === '42-slots-and-sequences' ? 'active' : ''}>4.2 Slots and Sequences</a></li>
@@ -6010,7 +5796,7 @@ batching = true`}</code></pre>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-5:-message-caching" className={`doc-index-header ${activeSection === 'chapter-5:-message-caching' ? 'active' : ''}`}>Chapter 5: Message Caching</a>
+              <a href="#chapter-5-message-caching" className={`doc-index-header ${activeSection === 'chapter-5-message-caching' ? 'active' : ''}`}>Chapter 5: Message Caching</a>
               <ul>
                 <li><a href="#51-overview" className={activeSection === '51-overview' ? 'active' : ''}>5.1 Overview</a></li>
                 <li><a href="#52-system-prompt-cache-spc" className={activeSection === '52-system-prompt-cache-spc' ? 'active' : ''}>5.2 System Prompt Cache (SPC)</a></li>
@@ -6023,7 +5809,7 @@ batching = true`}</code></pre>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-6:-yarn-extended-context" className={`doc-index-header ${activeSection === 'chapter-6:-yarn-extended-context' ? 'active' : ''}`}>Chapter 6: YaRN Extended Context</a>
+              <a href="#chapter-6-yarn-extended-context" className={`doc-index-header ${activeSection === 'chapter-6-yarn-extended-context' ? 'active' : ''}`}>Chapter 6: YaRN Extended Context</a>
               <ul>
                 <li><a href="#61-understanding-context-extension" className={activeSection === '61-understanding-context-extension' ? 'active' : ''}>6.1 Understanding Context Extension</a></li>
                 <li><a href="#62-when-to-use-yarn" className={activeSection === '62-when-to-use-yarn' ? 'active' : ''}>6.2 When to Use YaRN</a></li>
@@ -6033,11 +5819,11 @@ batching = true`}</code></pre>
                 <li><a href="#66-model-specific-examples" className={activeSection === '66-model-specific-examples' ? 'active' : ''}>6.6 Model-Specific Examples</a></li>
                 <li><a href="#67-memory-impact" className={activeSection === '67-memory-impact' ? 'active' : ''}>6.7 Memory Impact</a></li>
                 <li><a href="#68-quality-considerations" className={activeSection === '68-quality-considerations' ? 'active' : ''}>6.8 Quality Considerations</a></li>
-                <li><a href="#69-example:-long-document-processing" className={activeSection === '69-example:-long-document-processing' ? 'active' : ''}>6.9 Example: Long Document Processing</a></li>
+                <li><a href="#69-example-long-document-processing" className={activeSection === '69-example-long-document-processing' ? 'active' : ''}>6.9 Example: Long Document Processing</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-7:-model-server" className={`doc-index-header ${activeSection === 'chapter-7:-model-server' ? 'active' : ''}`}>Chapter 7: Model Server</a>
+              <a href="#chapter-7-model-server" className={`doc-index-header ${activeSection === 'chapter-7-model-server' ? 'active' : ''}`}>Chapter 7: Model Server</a>
               <ul>
                 <li><a href="#71-starting-the-server" className={activeSection === '71-starting-the-server' ? 'active' : ''}>7.1 Starting the Server</a></li>
                 <li><a href="#72-stopping-the-server" className={activeSection === '72-stopping-the-server' ? 'active' : ''}>7.2 Stopping the Server</a></li>
@@ -6054,7 +5840,7 @@ batching = true`}</code></pre>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-8:-api-endpoints" className={`doc-index-header ${activeSection === 'chapter-8:-api-endpoints' ? 'active' : ''}`}>Chapter 8: API Endpoints</a>
+              <a href="#chapter-8-api-endpoints" className={`doc-index-header ${activeSection === 'chapter-8-api-endpoints' ? 'active' : ''}`}>Chapter 8: API Endpoints</a>
               <ul>
                 <li><a href="#81-endpoint-overview" className={activeSection === '81-endpoint-overview' ? 'active' : ''}>8.1 Endpoint Overview</a></li>
                 <li><a href="#82-chat-completions" className={activeSection === '82-chat-completions' ? 'active' : ''}>8.2 Chat Completions</a></li>
@@ -6069,7 +5855,7 @@ batching = true`}</code></pre>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-9:-request-parameters" className={`doc-index-header ${activeSection === 'chapter-9:-request-parameters' ? 'active' : ''}`}>Chapter 9: Request Parameters</a>
+              <a href="#chapter-9-request-parameters" className={`doc-index-header ${activeSection === 'chapter-9-request-parameters' ? 'active' : ''}`}>Chapter 9: Request Parameters</a>
               <ul>
                 <li><a href="#91-sampling-parameters" className={activeSection === '91-sampling-parameters' ? 'active' : ''}>9.1 Sampling Parameters</a></li>
                 <li><a href="#92-repetition-control" className={activeSection === '92-repetition-control' ? 'active' : ''}>9.2 Repetition Control</a></li>
@@ -6081,7 +5867,7 @@ batching = true`}</code></pre>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-10:-multi-modal-models" className={`doc-index-header ${activeSection === 'chapter-10:-multi-modal-models' ? 'active' : ''}`}>Chapter 10: Multi-Modal Models</a>
+              <a href="#chapter-10-multi-modal-models" className={`doc-index-header ${activeSection === 'chapter-10-multi-modal-models' ? 'active' : ''}`}>Chapter 10: Multi-Modal Models</a>
               <ul>
                 <li><a href="#101-overview" className={activeSection === '101-overview' ? 'active' : ''}>10.1 Overview</a></li>
                 <li><a href="#102-vision-models" className={activeSection === '102-vision-models' ? 'active' : ''}>10.2 Vision Models</a></li>
@@ -6090,12 +5876,12 @@ batching = true`}</code></pre>
                 <li><a href="#105-configuration-for-multi-modal-models" className={activeSection === '105-configuration-for-multi-modal-models' ? 'active' : ''}>10.5 Configuration for Multi-Modal Models</a></li>
                 <li><a href="#106-memory-requirements" className={activeSection === '106-memory-requirements' ? 'active' : ''}>10.6 Memory Requirements</a></li>
                 <li><a href="#107-limitations" className={activeSection === '107-limitations' ? 'active' : ''}>10.7 Limitations</a></li>
-                <li><a href="#108-example:-image-analysis" className={activeSection === '108-example:-image-analysis' ? 'active' : ''}>10.8 Example: Image Analysis</a></li>
-                <li><a href="#109-example:-audio-transcription" className={activeSection === '109-example:-audio-transcription' ? 'active' : ''}>10.9 Example: Audio Transcription</a></li>
+                <li><a href="#108-example-image-analysis" className={activeSection === '108-example-image-analysis' ? 'active' : ''}>10.8 Example: Image Analysis</a></li>
+                <li><a href="#109-example-audio-transcription" className={activeSection === '109-example-audio-transcription' ? 'active' : ''}>10.9 Example: Audio Transcription</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-11:-security-authentication" className={`doc-index-header ${activeSection === 'chapter-11:-security-authentication' ? 'active' : ''}`}>Chapter 11: Security &amp; Authentication</a>
+              <a href="#chapter-11-security-authentication" className={`doc-index-header ${activeSection === 'chapter-11-security-authentication' ? 'active' : ''}`}>Chapter 11: Security &amp; Authentication</a>
               <ul>
                 <li><a href="#111-enabling-authentication" className={activeSection === '111-enabling-authentication' ? 'active' : ''}>11.1 Enabling Authentication</a></li>
                 <li><a href="#112-using-the-admin-token" className={activeSection === '112-using-the-admin-token' ? 'active' : ''}>11.2 Using the Admin Token</a></li>
@@ -6110,7 +5896,7 @@ batching = true`}</code></pre>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-12:-browser-ui-bui" className={`doc-index-header ${activeSection === 'chapter-12:-browser-ui-bui' ? 'active' : ''}`}>Chapter 12: Browser UI (BUI)</a>
+              <a href="#chapter-12-browser-ui-bui" className={`doc-index-header ${activeSection === 'chapter-12-browser-ui-bui' ? 'active' : ''}`}>Chapter 12: Browser UI (BUI)</a>
               <ul>
                 <li><a href="#121-accessing-the-bui" className={activeSection === '121-accessing-the-bui' ? 'active' : ''}>12.1 Accessing the BUI</a></li>
                 <li><a href="#122-downloading-libraries" className={activeSection === '122-downloading-libraries' ? 'active' : ''}>12.2 Downloading Libraries</a></li>
@@ -6121,7 +5907,7 @@ batching = true`}</code></pre>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-13:-client-integration" className={`doc-index-header ${activeSection === 'chapter-13:-client-integration' ? 'active' : ''}`}>Chapter 13: Client Integration</a>
+              <a href="#chapter-13-client-integration" className={`doc-index-header ${activeSection === 'chapter-13-client-integration' ? 'active' : ''}`}>Chapter 13: Client Integration</a>
               <ul>
                 <li><a href="#131-openwebui" className={activeSection === '131-openwebui' ? 'active' : ''}>13.1 OpenWebUI</a></li>
                 <li><a href="#132-cline" className={activeSection === '132-cline' ? 'active' : ''}>13.2 Cline</a></li>
@@ -6131,7 +5917,7 @@ batching = true`}</code></pre>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-14:-observability" className={`doc-index-header ${activeSection === 'chapter-14:-observability' ? 'active' : ''}`}>Chapter 14: Observability</a>
+              <a href="#chapter-14-observability" className={`doc-index-header ${activeSection === 'chapter-14-observability' ? 'active' : ''}`}>Chapter 14: Observability</a>
               <ul>
                 <li><a href="#141-debug-server" className={activeSection === '141-debug-server' ? 'active' : ''}>14.1 Debug Server</a></li>
                 <li><a href="#142-debug-endpoints" className={activeSection === '142-debug-endpoints' ? 'active' : ''}>14.2 Debug Endpoints</a></li>
@@ -6148,7 +5934,7 @@ batching = true`}</code></pre>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-15:-mcp-service" className={`doc-index-header ${activeSection === 'chapter-15:-mcp-service' ? 'active' : ''}`}>Chapter 15: MCP Service</a>
+              <a href="#chapter-15-mcp-service" className={`doc-index-header ${activeSection === 'chapter-15-mcp-service' ? 'active' : ''}`}>Chapter 15: MCP Service</a>
               <ul>
                 <li><a href="#151-architecture" className={activeSection === '151-architecture' ? 'active' : ''}>15.1 Architecture</a></li>
                 <li><a href="#152-prerequisites" className={activeSection === '152-prerequisites' ? 'active' : ''}>15.2 Prerequisites</a></li>
@@ -6159,7 +5945,7 @@ batching = true`}</code></pre>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-16:-troubleshooting" className={`doc-index-header ${activeSection === 'chapter-16:-troubleshooting' ? 'active' : ''}`}>Chapter 16: Troubleshooting</a>
+              <a href="#chapter-16-troubleshooting" className={`doc-index-header ${activeSection === 'chapter-16-troubleshooting' ? 'active' : ''}`}>Chapter 16: Troubleshooting</a>
               <ul>
                 <li><a href="#161-library-issues" className={activeSection === '161-library-issues' ? 'active' : ''}>16.1 Library Issues</a></li>
                 <li><a href="#162-model-loading-failures" className={activeSection === '162-model-loading-failures' ? 'active' : ''}>16.2 Model Loading Failures</a></li>
@@ -6174,7 +5960,7 @@ batching = true`}</code></pre>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-17:-developer-guide" className={`doc-index-header ${activeSection === 'chapter-17:-developer-guide' ? 'active' : ''}`}>Chapter 17: Developer Guide</a>
+              <a href="#chapter-17-developer-guide" className={`doc-index-header ${activeSection === 'chapter-17-developer-guide' ? 'active' : ''}`}>Chapter 17: Developer Guide</a>
               <ul>
                 <li><a href="#171-quick-reference" className={activeSection === '171-quick-reference' ? 'active' : ''}>17.1 Quick Reference</a></li>
                 <li><a href="#172-build-test-commands" className={activeSection === '172-build-test-commands' ? 'active' : ''}>17.2 Build &amp; Test Commands</a></li>
