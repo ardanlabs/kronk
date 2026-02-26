@@ -44,7 +44,7 @@ type modelSpec struct {
 // Set either SourceURL or ModelID, not both.
 var modelSpecConfig = modelSpec{
 	SourceURL: "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf",
-	// ModelID: "Qwen3-8B-A10B-UD-Q5_K_XL",
+	// ModelID: "Qwen3-8B-Q8_0",
 }
 
 func main() {
