@@ -1,0 +1,20 @@
+package vision_test
+
+import (
+	"fmt"
+	"os"
+	"testing"
+
+	"github.com/ardanlabs/kronk/sdk/kronk/tests/testlib"
+)
+
+func TestMain(m *testing.M) {
+	testlib.Setup()
+
+	if len(testlib.MPSimpleVision.ModelFiles) == 0 {
+		fmt.Println("model Qwen2.5-VL-3B-Instruct-Q8_0 not downloaded, skipping vision tests")
+		os.Exit(0)
+	}
+
+	os.Exit(m.Run())
+}

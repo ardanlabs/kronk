@@ -1,23 +1,17 @@
-package kronk_test
+package qwen3_test
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/kronk/tests/testlib"
 )
 
-// TestUsageCounting validates that usage token counts are correct in streaming responses.
-// This test checks:
-// 1. Final usage matches the sum of tokens generated
-// 2. Deltas have no usage (per OpenAI spec)
-// 3. OutputTokens = ReasoningTokens + CompletionTokens
-// 4. TotalTokens = PromptTokens + OutputTokens
 func TestUsageCounting(t *testing.T) {
-	withModel(t, cfgThinkToolChat(), func(t *testing.T, krn *kronk.Kronk) {
+	testlib.WithModel(t, testlib.CfgThinkToolChat(), func(t *testing.T, krn *kronk.Kronk) {
 		t.Run("StreamingUsage", func(t *testing.T) {
 			testStreamingUsage(t, krn)
 		})
@@ -30,10 +24,8 @@ func TestUsageCounting(t *testing.T) {
 	})
 }
 
-// testStreamingUsage validates usage in streaming mode by counting delta tokens
-// and comparing to final reported usage.
 func testStreamingUsage(t *testing.T, krn *kronk.Kronk) {
-	ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+	ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 	defer cancel()
 
 	d := model.D{
@@ -78,7 +70,6 @@ func testStreamingUsage(t *testing.T, krn *kronk.Kronk) {
 		}
 	}
 
-	// Validate final response has usage
 	if finalResp.Usage == nil {
 		t.Fatalf("final response has nil Usage")
 	}
@@ -87,7 +78,6 @@ func testStreamingUsage(t *testing.T, krn *kronk.Kronk) {
 		t.Errorf("final PromptTokens should be > 0, got %d", finalResp.Usage.PromptTokens)
 	}
 
-	// Validate OutputTokens = ReasoningTokens + CompletionTokens
 	expectedOutput := finalResp.Usage.ReasoningTokens + finalResp.Usage.CompletionTokens
 	if finalResp.Usage.OutputTokens != expectedOutput {
 		t.Errorf("OutputTokens mismatch: got %d, expected %d (reasoning=%d + completion=%d)",
@@ -95,7 +85,6 @@ func testStreamingUsage(t *testing.T, krn *kronk.Kronk) {
 			finalResp.Usage.ReasoningTokens, finalResp.Usage.CompletionTokens)
 	}
 
-	// Validate TotalTokens = PromptTokens + OutputTokens
 	expectedTotal := finalResp.Usage.PromptTokens + finalResp.Usage.OutputTokens
 	if finalResp.Usage.TotalTokens != expectedTotal {
 		t.Errorf("TotalTokens mismatch: got %d, expected %d (prompt=%d + output=%d)",
@@ -103,13 +92,11 @@ func testStreamingUsage(t *testing.T, krn *kronk.Kronk) {
 			finalResp.Usage.PromptTokens, finalResp.Usage.OutputTokens)
 	}
 
-	// Log for debugging
 	t.Logf("Deltas received: %d (reasoning=%d, content=%d)", deltaCount, reasoningDeltas, contentDeltas)
 	t.Logf("Final usage: prompt=%d, reasoning=%d, completion=%d, output=%d, total=%d",
 		finalResp.Usage.PromptTokens, finalResp.Usage.ReasoningTokens,
 		finalResp.Usage.CompletionTokens, finalResp.Usage.OutputTokens, finalResp.Usage.TotalTokens)
 
-	// Check that delta count roughly matches output tokens
 	outputTokens := finalResp.Usage.OutputTokens
 	if outputTokens > 0 {
 		ratio := float64(deltaCount) / float64(outputTokens)
@@ -120,9 +107,8 @@ func testStreamingUsage(t *testing.T, krn *kronk.Kronk) {
 	}
 }
 
-// testNonStreamingUsage validates usage in non-streaming (Chat) mode.
 func testNonStreamingUsage(t *testing.T, krn *kronk.Kronk) {
-	ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+	ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 	defer cancel()
 
 	d := model.D{
@@ -144,12 +130,10 @@ func testNonStreamingUsage(t *testing.T, krn *kronk.Kronk) {
 		t.Fatalf("response has nil Usage")
 	}
 
-	// Validate usage fields
 	if resp.Usage.PromptTokens == 0 {
 		t.Errorf("PromptTokens should be > 0, got %d", resp.Usage.PromptTokens)
 	}
 
-	// OutputTokens = ReasoningTokens + CompletionTokens
 	expectedOutput := resp.Usage.ReasoningTokens + resp.Usage.CompletionTokens
 	if resp.Usage.OutputTokens != expectedOutput {
 		t.Errorf("OutputTokens mismatch: got %d, expected %d (reasoning=%d + completion=%d)",
@@ -157,7 +141,6 @@ func testNonStreamingUsage(t *testing.T, krn *kronk.Kronk) {
 			resp.Usage.ReasoningTokens, resp.Usage.CompletionTokens)
 	}
 
-	// TotalTokens = PromptTokens + OutputTokens
 	expectedTotal := resp.Usage.PromptTokens + resp.Usage.OutputTokens
 	if resp.Usage.TotalTokens != expectedTotal {
 		t.Errorf("TotalTokens mismatch: got %d, expected %d (prompt=%d + output=%d)",
@@ -165,7 +148,6 @@ func testNonStreamingUsage(t *testing.T, krn *kronk.Kronk) {
 			resp.Usage.PromptTokens, resp.Usage.OutputTokens)
 	}
 
-	// Should have some output
 	if resp.Usage.OutputTokens == 0 {
 		t.Errorf("OutputTokens should be > 0, got %d", resp.Usage.OutputTokens)
 	}
@@ -175,10 +157,8 @@ func testNonStreamingUsage(t *testing.T, krn *kronk.Kronk) {
 		resp.Usage.CompletionTokens, resp.Usage.OutputTokens, resp.Usage.TotalTokens)
 }
 
-// testUsageOnlyInFinal validates that usage is only present in the final response.
-// Per OpenAI spec, delta chunks should have usage: null (nil in Go).
 func testUsageOnlyInFinal(t *testing.T, krn *kronk.Kronk) {
-	ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+	ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 	defer cancel()
 
 	d := model.D{
@@ -206,21 +186,17 @@ func testUsageOnlyInFinal(t *testing.T, krn *kronk.Kronk) {
 		deltaNum++
 		finalResp = resp
 
-		// Check if this is a delta (not final)
 		if len(resp.Choice) > 0 && resp.Choice[0].FinishReason() == "" {
-			// Delta should have nil usage per OpenAI spec
 			if resp.Usage != nil {
 				deltasWithUsage++
 			}
 		}
 	}
 
-	// Per OpenAI spec, deltas should have usage: null (nil)
 	if deltasWithUsage > 0 {
 		t.Errorf("Found %d deltas with non-nil usage (should be nil per OpenAI spec)", deltasWithUsage)
 	}
 
-	// Final response SHOULD have usage
 	if finalResp.Usage == nil {
 		t.Fatalf("Final response missing Usage")
 	}
@@ -239,11 +215,9 @@ func testUsageOnlyInFinal(t *testing.T, krn *kronk.Kronk) {
 		finalResp.Usage.PromptTokens, finalResp.Usage.OutputTokens, finalResp.Usage.TotalTokens)
 }
 
-// TestUsageAccumulation validates that accumulated usage in streaming matches
-// the final reported values by counting content tokens manually.
 func TestUsageAccumulation(t *testing.T) {
-	withModel(t, cfgThinkToolChat(), func(t *testing.T, krn *kronk.Kronk) {
-		ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+	testlib.WithModel(t, testlib.CfgThinkToolChat(), func(t *testing.T, krn *kronk.Kronk) {
+		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
 
 		d := model.D{
@@ -309,13 +283,12 @@ func TestUsageAccumulation(t *testing.T) {
 	})
 }
 
-// TestUsageWithToolCalls validates usage counting when tool calls are made.
 func TestUsageWithToolCalls(t *testing.T) {
-	withModel(t, cfgThinkToolChat(), func(t *testing.T, krn *kronk.Kronk) {
-		ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+	testlib.WithModel(t, testlib.CfgThinkToolChat(), func(t *testing.T, krn *kronk.Kronk) {
+		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
 
-		ch, err := krn.ChatStreaming(ctx, dChatTool)
+		ch, err := krn.ChatStreaming(ctx, testlib.DChatTool)
 		if err != nil {
 			t.Fatalf("chat streaming: %v", err)
 		}
@@ -357,10 +330,9 @@ func TestUsageWithToolCalls(t *testing.T) {
 	})
 }
 
-// TestUsageDeltaNil validates that delta chunks have nil usage per OpenAI spec.
 func TestUsageDeltaNil(t *testing.T) {
-	withModel(t, cfgThinkToolChat(), func(t *testing.T, krn *kronk.Kronk) {
-		ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+	testlib.WithModel(t, testlib.CfgThinkToolChat(), func(t *testing.T, krn *kronk.Kronk) {
+		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
 
 		d := model.D{
@@ -394,7 +366,6 @@ func TestUsageDeltaNil(t *testing.T) {
 			choice := resp.Choice[0]
 			if choice.FinishReason() == "" {
 				deltaCount++
-				// Per OpenAI spec, deltas should have usage: null (nil in Go)
 				if resp.Usage != nil {
 					deltasWithUsage++
 				}
@@ -409,12 +380,10 @@ func TestUsageDeltaNil(t *testing.T) {
 				finalResp.Usage.OutputTokens, finalResp.Usage.ReasoningTokens, finalResp.Usage.CompletionTokens)
 		}
 
-		// All deltas should have nil usage
 		if deltasWithUsage > 0 {
 			t.Errorf("Expected all deltas to have nil usage, but %d had non-nil values", deltasWithUsage)
 		}
 
-		// Final should have usage
 		switch {
 		case finalResp.Usage == nil:
 			t.Errorf("Expected final response to have Usage")
@@ -425,56 +394,8 @@ func TestUsageDeltaNil(t *testing.T) {
 	})
 }
 
-// TestUsageCountingMoE validates usage token counts for MoE models.
-func TestUsageCountingMoE(t *testing.T) {
-	if os.Getenv("GITHUB_ACTIONS") == "true" {
-		t.Skip("Skipping MoE usage test in GitHub Actions (requires more resources)")
-	}
-
-	if len(mpMoEChat.ModelFiles) == 0 {
-		t.Skip("model Qwen3.5-35B-A3B-UD-Q8_K_XL not downloaded")
-	}
-
-	withModel(t, cfgMoEChat(), func(t *testing.T, krn *kronk.Kronk) {
-		t.Run("StreamingUsage", func(t *testing.T) {
-			testStreamingUsage(t, krn)
-		})
-		t.Run("NonStreamingUsage", func(t *testing.T) {
-			testNonStreamingUsage(t, krn)
-		})
-		t.Run("UsageOnlyInFinal", func(t *testing.T) {
-			testUsageOnlyInFinal(t, krn)
-		})
-	})
-}
-
-// TestUsageCountingHybrid validates usage token counts for Hybrid models.
-func TestUsageCountingHybrid(t *testing.T) {
-	if os.Getenv("GITHUB_ACTIONS") == "true" {
-		t.Skip("Skipping Hybrid usage test in GitHub Actions (requires more resources)")
-	}
-
-	if len(mpHybridChat.ModelFiles) == 0 {
-		t.Skip("model Qwen3-Coder-Next-UD-Q6_K_XL not downloaded")
-	}
-
-	withModel(t, cfgHybridChat(), func(t *testing.T, krn *kronk.Kronk) {
-		t.Run("StreamingUsage", func(t *testing.T) {
-			testStreamingUsage(t, krn)
-		})
-		t.Run("NonStreamingUsage", func(t *testing.T) {
-			testNonStreamingUsage(t, krn)
-		})
-		t.Run("UsageOnlyInFinal", func(t *testing.T) {
-			testUsageOnlyInFinal(t, krn)
-		})
-	})
-}
-
-// TestUsageConsistencyAcrossRequests validates that usage reporting is consistent
-// across multiple requests to the same model.
 func TestUsageConsistencyAcrossRequests(t *testing.T) {
-	withModel(t, cfgThinkToolChat(), func(t *testing.T, krn *kronk.Kronk) {
+	testlib.WithModel(t, testlib.CfgThinkToolChat(), func(t *testing.T, krn *kronk.Kronk) {
 		prompt := model.D{
 			"messages": []model.D{
 				{
@@ -487,7 +408,7 @@ func TestUsageConsistencyAcrossRequests(t *testing.T) {
 
 		var promptTokens []int
 		for i := range 3 {
-			ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+			ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 
 			resp, err := krn.Chat(ctx, prompt)
 			cancel()
@@ -505,7 +426,6 @@ func TestUsageConsistencyAcrossRequests(t *testing.T) {
 			time.Sleep(100 * time.Millisecond)
 		}
 
-		// PromptTokens should be identical for same prompt
 		for i := 1; i < len(promptTokens); i++ {
 			if promptTokens[i] != promptTokens[0] {
 				t.Errorf("PromptTokens inconsistent: request 0=%d, request %d=%d",

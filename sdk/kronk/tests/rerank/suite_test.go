@@ -1,4 +1,4 @@
-package kronk_test
+package rerank_test
 
 import (
 	"context"
@@ -9,12 +9,19 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/kronk/tests/testlib"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
 
+func TestSuite(t *testing.T) {
+	testlib.WithModel(t, testlib.CfgRerank(), func(t *testing.T, krn *kronk.Kronk) {
+		t.Run("Rerank", func(t *testing.T) { testRerank(t, krn) })
+	})
+}
+
 func testRerank(t *testing.T, krn *kronk.Kronk) {
-	if runInParallel {
+	if testlib.RunInParallel {
 		t.Parallel()
 	}
 
@@ -28,7 +35,7 @@ func testRerank(t *testing.T, krn *kronk.Kronk) {
 	}
 
 	f := func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
 
 		id := uuid.New().String()
@@ -68,7 +75,6 @@ func testRerank(t *testing.T, krn *kronk.Kronk) {
 			return fmt.Errorf("expected top_n=3 to limit results: got %d", len(rerank.Data))
 		}
 
-		// Check that results are sorted by relevance (descending).
 		for i := 1; i < len(rerank.Data); i++ {
 			if rerank.Data[i].RelevanceScore > rerank.Data[i-1].RelevanceScore {
 				return fmt.Errorf("results not sorted by relevance: index %d (%.4f) > index %d (%.4f)",
@@ -76,21 +82,18 @@ func testRerank(t *testing.T, krn *kronk.Kronk) {
 			}
 		}
 
-		// Check that scores are in valid range [0, 1].
 		for i, result := range rerank.Data {
 			if result.RelevanceScore < 0 || result.RelevanceScore > 1 {
 				return fmt.Errorf("score out of range [0,1]: index %d, score %.4f", i, result.RelevanceScore)
 			}
 		}
 
-		// Check that return_documents works.
 		for i, result := range rerank.Data {
 			if result.Document == "" {
 				return fmt.Errorf("expected document to be returned: index %d", i)
 			}
 		}
 
-		// The top result should be about Paris/France (index 0 or 2 in original docs).
 		topResult := rerank.Data[0]
 		if !strings.Contains(strings.ToLower(topResult.Document), "paris") &&
 			!strings.Contains(strings.ToLower(topResult.Document), "france") {
@@ -109,7 +112,7 @@ func testRerank(t *testing.T, krn *kronk.Kronk) {
 	}
 
 	var g errgroup.Group
-	for range goroutines {
+	for range testlib.Goroutines {
 		g.Go(f)
 	}
 

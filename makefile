@@ -213,7 +213,7 @@ test-only: install-test-models
 	@echo ========== RUN TESTS ==========
 	export RUN_IN_PARALLEL=yes && \
 	export GITHUB_WORKSPACE=$(shell pwd) && \
-	CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/tests && \
+	CGO_ENABLED=0 go test -v -count=1 -p 1 ./sdk/kronk/tests/... && \
 	CGO_ENABLED=0 go test -v -count=1 ./cmd/server/api/services/kronk/tests && \
 	CGO_ENABLED=0 go test -v -count=1 ./cmd/server/app/sdk/cache && \
 	CGO_ENABLED=0 go test -v -count=1 ./cmd/server/app/sdk/security/... && \
