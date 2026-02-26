@@ -85,6 +85,16 @@ func (m *Model) applyJinjaTemplate(ctx context.Context, d map[string]any) (strin
 		d["add_generation_prompt"] = true
 	}
 
+	// Normalize enable_thinking to a bool so Jinja "is false" / "is true" tests
+	// work correctly. The value may arrive as a string ("true"/"false") from the
+	// CLI or catalog config, but templates require a real boolean.
+	if v, ok := d["enable_thinking"]; ok {
+		switch val := v.(type) {
+		case string:
+			d["enable_thinking"] = val == "true"
+		}
+	}
+
 	data := exec.NewContext(d)
 
 	s, err := m.compiledTmpl.tmpl.ExecuteToString(data)

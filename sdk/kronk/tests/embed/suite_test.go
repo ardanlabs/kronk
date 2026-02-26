@@ -1,4 +1,4 @@
-package kronk_test
+package embed_test
 
 import (
 	"context"
@@ -8,17 +8,24 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/kronk/tests/testlib"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
 
+func TestSuite(t *testing.T) {
+	testlib.WithModel(t, testlib.CfgEmbed(), func(t *testing.T, krn *kronk.Kronk) {
+		t.Run("Embedding", func(t *testing.T) { testEmbedding(t, krn) })
+	})
+}
+
 func testEmbedding(t *testing.T, krn *kronk.Kronk) {
-	if runInParallel {
+	if testlib.RunInParallel {
 		t.Parallel()
 	}
 
 	f := func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
 
 		id := uuid.New().String()
@@ -78,7 +85,7 @@ func testEmbedding(t *testing.T, krn *kronk.Kronk) {
 	}
 
 	var g errgroup.Group
-	for range goroutines {
+	for range testlib.Goroutines {
 		g.Go(f)
 	}
 

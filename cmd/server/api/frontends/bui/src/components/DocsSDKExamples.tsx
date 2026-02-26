@@ -316,7 +316,7 @@ type modelSpec struct {
 // Set either SourceURL or ModelID, not both.
 var modelSpecConfig = modelSpec{
 	SourceURL: "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf",
-	// ModelID: "Qwen3-8B-A10B-UD-Q5_K_XL",
+	// ModelID: "Qwen3-8B-Q8_0",
 }
 
 func main() {
@@ -876,7 +876,7 @@ type modelSpec struct {
 // Set either SourceURL or ModelID, not both.
 var modelSpecConfig = modelSpec{
 	SourceURL: "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf",
-	// ModelID: "Qwen3-8B-A10B-UD-Q5_K_XL",
+	// ModelID: "Qwen3-8B-Q8_0",
 }
 
 func main() {
@@ -1618,7 +1618,7 @@ type modelSpec struct {
 // Set either SourceURL or ModelID, not both.
 var modelSpecConfig = modelSpec{
 	SourceURL: "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf",
-	// ModelID: "Qwen3-8B-A10B-UD-Q5_K_XL",
+	// ModelID: "Qwen3-8B-Q8_0",
 }
 
 func main() {
@@ -1967,7 +1967,7 @@ type modelSpec struct {
 var modelSpecConfig = modelSpec{
 	SourceURL: "https://huggingface.co/unsloth/LFM2.5-VL-1.6B-GGUF/resolve/main/LFM2.5-VL-1.6B-Q8_0.gguf",
 	ProjURL:   "https://huggingface.co/unsloth/LFM2.5-VL-1.6B-GGUF/resolve/main/mmproj-F16.gguf",
-	// ModelID: "LFM2.5-VL-1.6B-UD-Q8_K_XL",
+	// ModelID: "LFM2.5-VL-1.6B-Q8_0",
 }
 
 const imageFile = "examples/samples/giraffe.jpg"

@@ -1,4 +1,4 @@
-package kronk_test
+package gpt_test
 
 import (
 	"context"
@@ -8,17 +8,27 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/kronk/tests/testlib"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
 
+func TestSuite(t *testing.T) {
+	testlib.WithModel(t, testlib.CfgGPTChat(), func(t *testing.T, krn *kronk.Kronk) {
+		t.Run("GPTChat", func(t *testing.T) { testChat(t, krn, testlib.DChatNoTool, false) })
+		t.Run("GPTStreamingChat", func(t *testing.T) { testChatStreaming(t, krn, testlib.DChatNoTool, false) })
+		t.Run("ToolGPTChat", func(t *testing.T) { testChat(t, krn, testlib.DChatToolGPT, true) })
+		t.Run("ToolGPTStreamingChat", func(t *testing.T) { testChatStreaming(t, krn, testlib.DChatToolGPT, true) })
+	})
+}
+
 func testChat(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
-	if runInParallel {
+	if testlib.RunInParallel {
 		t.Parallel()
 	}
 
 	f := func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
 
 		id := uuid.New().String()
@@ -33,14 +43,14 @@ func testChat(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
 			return fmt.Errorf("chat streaming: %w", err)
 		}
 
-		reasoning := hasReasoningField(krn)
+		reasoning := testlib.HasReasoningField(krn)
 
-		var result testResult
+		var result testlib.TestResult
 		switch tooling {
 		case true:
-			result = testChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatTextFinal, "London", "get_weather", "location", false, reasoning)
+			result = testlib.TestChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatTextFinal, "London", "get_weather", "location", false, reasoning)
 		case false:
-			result = testChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatTextFinal, "Gorilla", "", "", false, reasoning)
+			result = testlib.TestChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatTextFinal, "Gorilla", "", "", false, reasoning)
 		}
 
 		for _, w := range result.Warnings {
@@ -56,7 +66,7 @@ func testChat(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
 	}
 
 	var g errgroup.Group
-	for range goroutines {
+	for range testlib.Goroutines {
 		g.Go(f)
 	}
 
@@ -66,12 +76,12 @@ func testChat(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
 }
 
 func testChatStreaming(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
-	if runInParallel {
+	if testlib.RunInParallel {
 		t.Parallel()
 	}
 
 	f := func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
 
 		id := uuid.New().String()
@@ -86,26 +96,26 @@ func testChatStreaming(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) 
 			return fmt.Errorf("chat streaming: %w", err)
 		}
 
-		reasoning := hasReasoningField(krn)
+		reasoning := testlib.HasReasoningField(krn)
 
-		var acc streamAccumulator
+		var acc testlib.StreamAccumulator
 		var lastResp model.ChatResponse
 		for resp := range ch {
-			acc.accumulate(resp)
+			acc.Accumulate(resp)
 			lastResp = resp
 
-			if err := testChatBasics(resp, krn.ModelInfo().ID, model.ObjectChatText, reasoning, true); err != nil {
+			if err := testlib.TestChatBasics(resp, krn.ModelInfo().ID, model.ObjectChatText, reasoning, true); err != nil {
 				t.Logf("%#v", resp)
 				return err
 			}
 		}
 
-		var result testResult
+		var result testlib.TestResult
 		switch tooling {
 		case true:
-			result = testStreamingToolCall(&acc, lastResp, "London", "get_weather", "location")
+			result = testlib.TestStreamingToolCall(&acc, lastResp, "London", "get_weather", "location")
 		case false:
-			result = testStreamingContent(&acc, lastResp, "Gorilla")
+			result = testlib.TestStreamingContent(&acc, lastResp, "Gorilla")
 		}
 
 		for _, w := range result.Warnings {
@@ -122,7 +132,7 @@ func testChatStreaming(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) 
 	}
 
 	var g errgroup.Group
-	for range goroutines {
+	for range testlib.Goroutines {
 		g.Go(f)
 	}
 

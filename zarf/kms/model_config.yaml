@@ -162,3 +162,12 @@ Qwen3-8B-Q8_0/SPC:
 Qwen3-8B-Q8_0/IMC:
   nseq-max: 1
   incremental-cache: true
+
+Qwen3-8B-Q8_0/CLINE:
+  context-window: 131072
+  rope-scaling-type: yarn
+  yarn-orig-ctx: 32768
+  nseq-max: 1
+  incremental-cache: true
+  sampling-parameters:
+    enable_thinking: false

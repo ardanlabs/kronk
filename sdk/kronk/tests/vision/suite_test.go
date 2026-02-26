@@ -1,4 +1,4 @@
-package kronk_test
+package vision_test
 
 import (
 	"context"
@@ -9,25 +9,37 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/kronk/tests/testlib"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
 
+func TestSuite(t *testing.T) {
+	testlib.WithModel(t, testlib.CfgSimpleVision(), func(t *testing.T, krn *kronk.Kronk) {
+		t.Run("SimpleMedia", func(t *testing.T) { testMedia(t, krn) })
+		t.Run("SimpleMediaStreaming", func(t *testing.T) { testMediaStreaming(t, krn) })
+		t.Run("SimpleMediaResponse", func(t *testing.T) { testMediaResponse(t, krn) })
+		t.Run("SimpleMediaResponseStreaming", func(t *testing.T) { testMediaResponseStreaming(t, krn) })
+		t.Run("ArrayFormatMedia", func(t *testing.T) { testMediaArray(t, krn) })
+		t.Run("ArrayFormatMediaStreaming", func(t *testing.T) { testMediaArrayStreaming(t, krn) })
+	})
+}
+
 func testMedia(t *testing.T, krn *kronk.Kronk) {
-	testMediaWithInput(t, krn, dMedia)
+	testMediaWithInput(t, krn, testlib.DMedia)
 }
 
 func testMediaArray(t *testing.T, krn *kronk.Kronk) {
-	testMediaWithInput(t, krn, dMediaArray)
+	testMediaWithInput(t, krn, testlib.DMediaArray)
 }
 
 func testMediaWithInput(t *testing.T, krn *kronk.Kronk, d model.D) {
-	if runInParallel {
+	if testlib.RunInParallel {
 		t.Parallel()
 	}
 
 	f := func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
 
 		id := uuid.New().String()
@@ -42,7 +54,7 @@ func testMediaWithInput(t *testing.T, krn *kronk.Kronk, d model.D) {
 			return fmt.Errorf("chat streaming: %w", err)
 		}
 
-		result := testChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatMedia, "giraffes", "", "", false, false)
+		result := testlib.TestChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatMedia, "giraffes", "", "", false, false)
 
 		for _, w := range result.Warnings {
 			t.Logf("WARNING: %s", w)
@@ -57,7 +69,7 @@ func testMediaWithInput(t *testing.T, krn *kronk.Kronk, d model.D) {
 	}
 
 	var g errgroup.Group
-	for range goroutines {
+	for range testlib.Goroutines {
 		g.Go(f)
 	}
 
@@ -67,20 +79,20 @@ func testMediaWithInput(t *testing.T, krn *kronk.Kronk, d model.D) {
 }
 
 func testMediaStreaming(t *testing.T, krn *kronk.Kronk) {
-	testMediaStreamingWithInput(t, krn, dMedia)
+	testMediaStreamingWithInput(t, krn, testlib.DMedia)
 }
 
 func testMediaArrayStreaming(t *testing.T, krn *kronk.Kronk) {
-	testMediaStreamingWithInput(t, krn, dMediaArray)
+	testMediaStreamingWithInput(t, krn, testlib.DMediaArray)
 }
 
 func testMediaStreamingWithInput(t *testing.T, krn *kronk.Kronk, d model.D) {
-	if runInParallel {
+	if testlib.RunInParallel {
 		t.Parallel()
 	}
 
 	f := func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
 
 		id := uuid.New().String()
@@ -95,19 +107,19 @@ func testMediaStreamingWithInput(t *testing.T, krn *kronk.Kronk, d model.D) {
 			return fmt.Errorf("chat streaming: %w", err)
 		}
 
-		var acc streamAccumulator
+		var acc testlib.StreamAccumulator
 		var lastResp model.ChatResponse
 		for resp := range ch {
-			acc.accumulate(resp)
+			acc.Accumulate(resp)
 			lastResp = resp
 
-			if err := testChatBasics(resp, krn.ModelInfo().ID, model.ObjectChatMedia, false, true); err != nil {
+			if err := testlib.TestChatBasics(resp, krn.ModelInfo().ID, model.ObjectChatMedia, false, true); err != nil {
 				t.Logf("%#v", resp)
 				return err
 			}
 		}
 
-		result := testStreamingContent(&acc, lastResp, "giraffes")
+		result := testlib.TestStreamingContent(&acc, lastResp, "giraffes")
 
 		for _, w := range result.Warnings {
 			t.Logf("WARNING: %s", w)
@@ -123,7 +135,7 @@ func testMediaStreamingWithInput(t *testing.T, krn *kronk.Kronk, d model.D) {
 	}
 
 	var g errgroup.Group
-	for range goroutines {
+	for range testlib.Goroutines {
 		g.Go(f)
 	}
 
@@ -133,12 +145,12 @@ func testMediaStreamingWithInput(t *testing.T, krn *kronk.Kronk, d model.D) {
 }
 
 func testMediaResponse(t *testing.T, krn *kronk.Kronk) {
-	if runInParallel {
+	if testlib.RunInParallel {
 		t.Parallel()
 	}
 
 	f := func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
 
 		id := uuid.New().String()
@@ -148,12 +160,12 @@ func testMediaResponse(t *testing.T, krn *kronk.Kronk) {
 			t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, krn.ModelInfo().ID, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
 		}()
 
-		resp, err := krn.Response(ctx, dMedia)
+		resp, err := krn.Response(ctx, testlib.DMedia)
 		if err != nil {
 			return fmt.Errorf("response: %w", err)
 		}
 
-		if err := testMediaResponseResponse(resp, krn.ModelInfo().ID, "giraffes"); err != nil {
+		if err := testlib.TestMediaResponseResponse(resp, krn.ModelInfo().ID, "giraffes"); err != nil {
 			t.Logf("%#v", resp)
 			return err
 		}
@@ -162,7 +174,7 @@ func testMediaResponse(t *testing.T, krn *kronk.Kronk) {
 	}
 
 	var g errgroup.Group
-	for range goroutines {
+	for range testlib.Goroutines {
 		g.Go(f)
 	}
 
@@ -172,12 +184,12 @@ func testMediaResponse(t *testing.T, krn *kronk.Kronk) {
 }
 
 func testMediaResponseStreaming(t *testing.T, krn *kronk.Kronk) {
-	if runInParallel {
+	if testlib.RunInParallel {
 		t.Parallel()
 	}
 
 	f := func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
 
 		id := uuid.New().String()
@@ -187,7 +199,7 @@ func testMediaResponseStreaming(t *testing.T, krn *kronk.Kronk) {
 			t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, krn.ModelInfo().ID, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
 		}()
 
-		ch, err := krn.ResponseStreaming(ctx, dMedia)
+		ch, err := krn.ResponseStreaming(ctx, testlib.DMedia)
 		if err != nil {
 			return fmt.Errorf("response streaming: %w", err)
 		}
@@ -239,7 +251,7 @@ func testMediaResponseStreaming(t *testing.T, krn *kronk.Kronk) {
 	}
 
 	var g errgroup.Group
-	for range goroutines {
+	for range testlib.Goroutines {
 		g.Go(f)
 	}
 
@@ -289,148 +301,4 @@ func testMediaResponseResponse(resp kronk.ResponseResponse, modelName string, fi
 	}
 
 	return fmt.Errorf("expected to find %q in output", find)
-}
-
-// =============================================================================
-// Audio Tests
-
-func testAudio(t *testing.T, krn *kronk.Kronk) {
-	if runInParallel {
-		t.Parallel()
-	}
-
-	f := func() error {
-		id := uuid.New().String()
-
-		const maxRetries = 3
-		for attempt := 1; attempt <= maxRetries; attempt++ {
-			ctx, cancel := context.WithTimeout(context.Background(), testDuration)
-
-			now := time.Now()
-			resp, err := krn.Chat(ctx, dAudio)
-			done := time.Now()
-			cancel()
-
-			t.Logf("%s: %s, st: %v, en: %v, Duration: %s (attempt %d/%d)", id, krn.ModelInfo().ID, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now), attempt, maxRetries)
-
-			if err != nil {
-				if attempt < maxRetries {
-					t.Logf("%s: retrying after error: %v", id, err)
-					time.Sleep(250 * time.Millisecond)
-					continue
-				}
-				return fmt.Errorf("chat: %w", err)
-			}
-
-			result := testChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatMedia, "speech", "", "", false, false)
-
-			for _, w := range result.Warnings {
-				t.Logf("WARNING: %s", w)
-			}
-
-			if result.Err != nil {
-				if attempt < maxRetries {
-					t.Logf("%s: retrying after empty content", id)
-					continue
-				}
-				t.Logf("%#v", resp)
-				return result.Err
-			}
-
-			return nil
-		}
-
-		return nil
-	}
-
-	var g errgroup.Group
-	for range goroutines {
-		g.Go(f)
-	}
-
-	if err := g.Wait(); err != nil {
-		t.Errorf("error: %v", err)
-	}
-}
-
-func testAudioStreaming(t *testing.T, krn *kronk.Kronk) {
-	if runInParallel {
-		t.Parallel()
-	}
-
-	f := func() error {
-		id := uuid.New().String()
-
-		const maxRetries = 2
-		for attempt := 1; attempt <= maxRetries; attempt++ {
-			ctx, cancel := context.WithTimeout(context.Background(), testDuration)
-
-			now := time.Now()
-			ch, err := krn.ChatStreaming(ctx, dAudio)
-			if err != nil {
-				cancel()
-				if attempt < maxRetries {
-					t.Logf("%s: retrying after error: %v", id, err)
-					continue
-				}
-				return fmt.Errorf("chat streaming: %w", err)
-			}
-
-			var acc streamAccumulator
-			var lastResp model.ChatResponse
-			var basicErr error
-			for resp := range ch {
-				acc.accumulate(resp)
-				lastResp = resp
-
-				if err := testChatBasics(resp, krn.ModelInfo().ID, model.ObjectChatMedia, false, true); err != nil {
-					t.Logf("%#v", resp)
-					basicErr = err
-					break
-				}
-			}
-
-			done := time.Now()
-			cancel()
-
-			t.Logf("%s: %s, st: %v, en: %v, Duration: %s (attempt %d/%d)", id, krn.ModelInfo().ID, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now), attempt, maxRetries)
-
-			if basicErr != nil {
-				if attempt < maxRetries {
-					t.Logf("%s: retrying after basics error: %v", id, basicErr)
-					continue
-				}
-				return fmt.Errorf("basics: %w", basicErr)
-			}
-
-			result := testStreamingContent(&acc, lastResp, "speech")
-
-			for _, w := range result.Warnings {
-				t.Logf("WARNING: %s", w)
-			}
-
-			if result.Err != nil {
-				if attempt < maxRetries {
-					t.Logf("%s: retrying after empty content", id)
-					continue
-				}
-				t.Logf("accumulated content: %q", acc.Content.String())
-				t.Logf("%#v", lastResp)
-				return result.Err
-			}
-
-			return nil
-		}
-
-		return nil
-	}
-
-	var g errgroup.Group
-	for range goroutines {
-		g.Go(f)
-	}
-
-	if err := g.Wait(); err != nil {
-		t.Errorf("error: %v", err)
-	}
 }
