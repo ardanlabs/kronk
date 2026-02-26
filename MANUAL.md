@@ -15,7 +15,8 @@
    - [2.5 Starting the Server](#25-starting-the-server)
    - [2.6 Verifying the Installation](#26-verifying-the-installation)
    - [2.7 Quick Start Summary](#27-quick-start-summary)
-3. [Model Configuration](#chapter-3-model-configuration)
+   - [2.8 NixOS Setup](#28-nixos-setup)
+   3. [Model Configuration](#chapter-3-model-configuration)
    - [3.1 Basic Configuration](#31-basic-configuration)
    - [3.2 GPU Configuration](#32-gpu-configuration)
    - [3.3 KV Cache Quantization](#33-kv-cache-quantization)
@@ -484,6 +485,110 @@ curl http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model": "Qwen3-8B-Q8_0", "messages": [{"role": "user", "content": "Hello!"}]}'
 ```
+
+### 2.8 NixOS Setup
+
+NixOS does not follow the Filesystem Hierarchy Standard (FHS), so shared
+libraries and binaries cannot be found in standard paths like `/usr/lib`. Kronk
+requires llama.cpp shared libraries at runtime, which means on NixOS you need to
+provide them through Nix rather than using the built-in `kronk libs` downloader.
+
+A `flake.nix` is provided in `zarf/nix/` with dev shells for each supported
+GPU backend.
+
+**Prerequisites**
+
+- NixOS or Nix package manager with flakes enabled
+- A supported GPU (Vulkan or CUDA), or CPU-only mode
+
+**Available Dev Shells**
+
+The flake provides multiple shells, one per GPU backend:
+
+| Command                       | Backend | GPU Required           |
+| ----------------------------- | ------- | ---------------------- |
+| `nix develop ./zarf/nix`          | CPU     | None                   |
+| `nix develop ./zarf/nix#cpu`      | CPU     | None                   |
+| `nix develop ./zarf/nix#vulkan`   | Vulkan  | Vulkan-capable GPU     |
+| `nix develop ./zarf/nix#cuda`     | CUDA    | NVIDIA GPU with CUDA   |
+
+The default shell uses CPU. From the repository root:
+
+```shell
+# CPU (default)
+nix develop ./zarf/nix
+
+# Vulkan GPU acceleration
+nix develop ./zarf/nix#vulkan
+
+# NVIDIA CUDA GPU acceleration
+nix develop ./zarf/nix#cuda
+```
+
+**Environment Variables**
+
+All shells automatically set the following:
+
+| Variable              | Value                                      | Purpose                                              |
+| --------------------- | ------------------------------------------ | ---------------------------------------------------- |
+| `KRONK_LIB_PATH`     | Nix store path to the selected llama.cpp   | Points Kronk to the Nix-managed llama.cpp libraries  |
+| `KRONK_ALLOW_UPGRADE` | `false`                                    | Prevents Kronk from attempting to download libraries |
+| `LD_LIBRARY_PATH`    | Includes `libffi` and `libstdc++`          | Required for FFI runtime linking                     |
+
+**Important:** Because `KRONK_ALLOW_UPGRADE` is set to `false`, the `kronk libs`
+command will not attempt to download or overwrite libraries. Library updates are
+managed through `nix flake update` instead.
+
+**Building and Running**
+
+Inside the dev shell, the standard workflow applies:
+
+```shell
+# Install the CLI
+go install ./cmd/kronk
+
+# Start the server
+kronk server start
+
+# Download a model and test
+kronk catalog pull Qwen3-8B-Q8_0 --local
+curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "Qwen3-8B-Q8_0", "messages": [{"role": "user", "content": "Hello!"}]}'
+```
+
+**Flake Reference**
+
+All dev shells share a common set of packages:
+
+| Package                | Purpose                              |
+| ---------------------- | ------------------------------------ |
+| `go_1_25`              | Go compiler                          |
+| `gopls`, `gotools`     | Go language server and tools         |
+| `libffi`               | FFI library for llama.cpp binding    |
+| `pkg-config`           | Build dependency resolution          |
+| `nodejs`, `vite`       | BUI frontend development             |
+| `typescript`           | TypeScript compiler for BUI          |
+
+Each shell adds backend-specific packages:
+
+| Shell   | llama.cpp Package                              | Extra Packages                   |
+| ------- | ---------------------------------------------- | -------------------------------- |
+| vulkan  | `llama-cpp-vulkan`                             | `vulkan-headers`, `vulkan-loader`|
+| cuda    | `llama-cpp` (with `cudaSupport = true`)        | —                                |
+| cpu     | `llama-cpp`                                    | —                                |
+
+**Troubleshooting**
+
+- **Library not found errors:** Ensure you are inside the `nix develop` shell.
+  The required `LD_LIBRARY_PATH` and `KRONK_LIB_PATH` are only set within the
+  shell environment.
+- **Vulkan not detected:** Verify your GPU drivers are installed at the NixOS
+  system level (`hardware.opengl.enable = true` and appropriate driver packages
+  in your NixOS configuration).
+- **Go version mismatch:** The flake pins a specific Go version. If Kronk
+  requires a newer version, update the `go_1_25` package reference in
+  `flake.nix`.
 
 ---
 

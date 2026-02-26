@@ -63,23 +63,12 @@ export default function DocsManual() {
                 <li><a href="#25-starting-the-server">2.5 Starting the Server</a></li>
                 <li><a href="#26-verifying-the-installation">2.6 Verifying the Installation</a></li>
                 <li><a href="#27-quick-start-summary">2.7 Quick Start Summary</a></li>
+                <li><a href="#28-nixos-setup">2.8 NixOS Setup</a></li>
               </ul>
             </li>
-            <li><a href="#chapter-3-model-configuration">Model Configuration</a>
-              <ul>
-                <li><a href="#31-basic-configuration">3.1 Basic Configuration</a></li>
-                <li><a href="#32-gpu-configuration">3.2 GPU Configuration</a></li>
-                <li><a href="#33-kv-cache-quantization">3.3 KV Cache Quantization</a></li>
-                <li><a href="#34-flash-attention">3.4 Flash Attention</a></li>
-                <li><a href="#35-parallel-inference-nseqmax">3.5 Parallel Inference (NSeqMax)</a></li>
-                <li><a href="#36-understanding-gguf-quantization">3.6 Understanding GGUF Quantization</a></li>
-                <li><a href="#37-vram-estimation">3.7 VRAM Estimation</a></li>
-                <li><a href="#38-model-specific-tuning">3.8 Model-Specific Tuning</a></li>
-                <li><a href="#39-speculative-decoding">3.9 Speculative Decoding</a></li>
-                <li><a href="#310-sampling-parameters">3.10 Sampling Parameters</a></li>
-                <li><a href="#311-model-config-file-example">3.11 Model Config File Example</a></li>
-              </ul>
-            </li>
+          </ol>
+          <p>3. <a href="#chapter-3-model-configuration">Model Configuration</a> - <a href="#31-basic-configuration">3.1 Basic Configuration</a> - <a href="#32-gpu-configuration">3.2 GPU Configuration</a> - <a href="#33-kv-cache-quantization">3.3 KV Cache Quantization</a> - <a href="#34-flash-attention">3.4 Flash Attention</a> - <a href="#35-parallel-inference-nseqmax">3.5 Parallel Inference (NSeqMax)</a> - <a href="#36-understanding-gguf-quantization">3.6 Understanding GGUF Quantization</a> - <a href="#37-vram-estimation">3.7 VRAM Estimation</a> - <a href="#38-model-specific-tuning">3.8 Model-Specific Tuning</a> - <a href="#39-speculative-decoding">3.9 Speculative Decoding</a> - <a href="#310-sampling-parameters">3.10 Sampling Parameters</a> - <a href="#311-model-config-file-example">3.11 Model Config File Example</a></p>
+          <ol>
             <li><a href="#chapter-4-batch-processing">Batch Processing</a>
               <ul>
                 <li><a href="#41-architecture-overview">4.1 Architecture Overview</a></li>
@@ -509,6 +498,174 @@ kronk catalog pull Qwen3-8B-Q8_0 --local
 curl http://localhost:8080/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{"model": "Qwen3-8B-Q8_0", "messages": [{"role": "user", "content": "Hello!"}]}'`}</code></pre>
+          <h3 id="28-nixos-setup">2.8 NixOS Setup</h3>
+          <p>NixOS does not follow the Filesystem Hierarchy Standard (FHS), so shared libraries and binaries cannot be found in standard paths like <code>/usr/lib</code>. Kronk requires llama.cpp shared libraries at runtime, which means on NixOS you need to provide them through Nix rather than using the built-in <code>kronk libs</code> downloader.</p>
+          <p>A <code>flake.nix</code> is provided in <code>zarf/nix/</code> with dev shells for each supported GPU backend.</p>
+          <p><strong>Prerequisites</strong></p>
+          <ul>
+            <li>NixOS or Nix package manager with flakes enabled</li>
+            <li>A supported GPU (Vulkan or CUDA), or CPU-only mode</li>
+          </ul>
+          <p><strong>Available Dev Shells</strong></p>
+          <p>The flake provides multiple shells, one per GPU backend:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Command</th>
+                <th>Backend</th>
+                <th>GPU Required</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>nix develop ./zarf/nix</code></td>
+                <td>CPU</td>
+                <td>None</td>
+              </tr>
+              <tr>
+                <td><code>nix develop ./zarf/nix#cpu</code></td>
+                <td>CPU</td>
+                <td>None</td>
+              </tr>
+              <tr>
+                <td><code>nix develop ./zarf/nix#vulkan</code></td>
+                <td>Vulkan</td>
+                <td>Vulkan-capable GPU</td>
+              </tr>
+              <tr>
+                <td><code>nix develop ./zarf/nix#cuda</code></td>
+                <td>CUDA</td>
+                <td>NVIDIA GPU with CUDA</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>The default shell uses CPU. From the repository root:</p>
+          <pre className="code-block"><code className="language-shell">{`# CPU (default)
+nix develop ./zarf/nix
+
+# Vulkan GPU acceleration
+nix develop ./zarf/nix#vulkan
+
+# NVIDIA CUDA GPU acceleration
+nix develop ./zarf/nix#cuda`}</code></pre>
+          <p><strong>Environment Variables</strong></p>
+          <p>All shells automatically set the following:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Variable</th>
+                <th>Value</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>KRONK_LIB_PATH</code></td>
+                <td>Nix store path to the selected llama.cpp</td>
+                <td>Points Kronk to the Nix-managed llama.cpp libraries</td>
+              </tr>
+              <tr>
+                <td><code>KRONK_ALLOW_UPGRADE</code></td>
+                <td><code>false</code></td>
+                <td>Prevents Kronk from attempting to download libraries</td>
+              </tr>
+              <tr>
+                <td><code>LD_LIBRARY_PATH</code></td>
+                <td>Includes <code>libffi</code> and <code>libstdc++</code></td>
+                <td>Required for FFI runtime linking</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><strong>Important:</strong> Because <code>KRONK_ALLOW_UPGRADE</code> is set to <code>false</code>, the <code>kronk libs</code> command will not attempt to download or overwrite libraries. Library updates are managed through <code>nix flake update</code> instead.</p>
+          <p><strong>Building and Running</strong></p>
+          <p>Inside the dev shell, the standard workflow applies:</p>
+          <pre className="code-block"><code className="language-shell">{`# Install the CLI
+go install ./cmd/kronk
+
+# Start the server
+kronk server start
+
+# Download a model and test
+kronk catalog pull Qwen3-8B-Q8_0 --local
+curl http://localhost:8080/v1/chat/completions \\
+  -H "Content-Type: application/json" \\
+  -d '{"model": "Qwen3-8B-Q8_0", "messages": [{"role": "user", "content": "Hello!"}]}'`}</code></pre>
+          <p><strong>Flake Reference</strong></p>
+          <p>All dev shells share a common set of packages:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Package</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>go_1_25</code></td>
+                <td>Go compiler</td>
+              </tr>
+              <tr>
+                <td><code>gopls</code>, <code>gotools</code></td>
+                <td>Go language server and tools</td>
+              </tr>
+              <tr>
+                <td><code>libffi</code></td>
+                <td>FFI library for llama.cpp binding</td>
+              </tr>
+              <tr>
+                <td><code>pkg-config</code></td>
+                <td>Build dependency resolution</td>
+              </tr>
+              <tr>
+                <td><code>nodejs</code>, <code>vite</code></td>
+                <td>BUI frontend development</td>
+              </tr>
+              <tr>
+                <td><code>typescript</code></td>
+                <td>TypeScript compiler for BUI</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>Each shell adds backend-specific packages:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Shell</th>
+                <th>llama.cpp Package</th>
+                <th>Extra Packages</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>vulkan</td>
+                <td><code>llama-cpp-vulkan</code></td>
+                <td><code>vulkan-headers</code>, <code>vulkan-loader</code></td>
+              </tr>
+              <tr>
+                <td>cuda</td>
+                <td><code>llama-cpp</code> (with <code>cudaSupport = true</code>)</td>
+                <td>—</td>
+              </tr>
+              <tr>
+                <td>cpu</td>
+                <td><code>llama-cpp</code></td>
+                <td>—</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><strong>Troubleshooting</strong></p>
+          <ul>
+            <li><strong>Library not found errors:</strong> Ensure you are inside the <code>nix develop</code> shell.</li>
+          </ul>
+          <p>The required <code>LD_LIBRARY_PATH</code> and <code>KRONK_LIB_PATH</code> are only set within the shell environment.</p>
+          <ul>
+            <li><strong>Vulkan not detected:</strong> Verify your GPU drivers are installed at the NixOS</li>
+          </ul>
+          <p>system level (<code>hardware.opengl.enable = true</code> and appropriate driver packages in your NixOS configuration).</p>
+          <ul>
+            <li><strong>Go version mismatch:</strong> The flake pins a specific Go version. If Kronk</li>
+          </ul>
+          <p>requires a newer version, update the <code>go_1_25</code> package reference in <code>flake.nix</code>.</p>
           <hr />
           <h2 id="chapter-3:-model-configuration">Chapter 3: Model Configuration</h2>
           <p>Model configuration controls how Kronk configures models to run inference. Configuration can be set via model config files, catalog templates, or programmatically through the SDK.</p>
@@ -5865,6 +6022,7 @@ batching = true`}</code></pre>
                 <li><a href="#25-starting-the-server" className={activeSection === '25-starting-the-server' ? 'active' : ''}>2.5 Starting the Server</a></li>
                 <li><a href="#26-verifying-the-installation" className={activeSection === '26-verifying-the-installation' ? 'active' : ''}>2.6 Verifying the Installation</a></li>
                 <li><a href="#27-quick-start-summary" className={activeSection === '27-quick-start-summary' ? 'active' : ''}>2.7 Quick Start Summary</a></li>
+                <li><a href="#28-nixos-setup" className={activeSection === '28-nixos-setup' ? 'active' : ''}>2.8 NixOS Setup</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
