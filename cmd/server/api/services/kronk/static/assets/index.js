@@ -2421,9 +2421,9 @@ type modelSpec struct {
 // Configure this to switch between URL and catalog downloads.
 // Set either SourceURL (with ProjURL) or SourceID, not both.
 var modelSpecConfig = modelSpec{
-	SourceURL: "https://huggingface.co/google/gemma-3-4b-it-qat-q4_0-gguf/resolve/main/gemma-3-4b-it-q4_0.gguf",
-	ProjURL:   "https://huggingface.co/google/gemma-3-4b-it-qat-q4_0-gguf/resolve/main/mmproj-model-f16-4B.gguf",
-	// SourceID: "google/gemma-3-4b-it-Q4_K_M",
+	SourceURL: "https://huggingface.co/unsloth/LFM2.5-VL-1.6B-GGUF/resolve/main/LFM2.5-VL-1.6B-Q8_0.gguf",
+	ProjURL:   "https://huggingface.co/unsloth/LFM2.5-VL-1.6B-GGUF/resolve/main/mmproj-F16.gguf",
+	// SourceID: "LFM2.5-VL-1.6B-UD-Q8_K_XL",
 }
 
 const imageFile = "examples/samples/giraffe.jpg"
