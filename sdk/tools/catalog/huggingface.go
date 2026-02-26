@@ -253,12 +253,13 @@ func buildModelDetails(owner, repo, filename string, meta hfModelMeta, ggufFiles
 	contextWindow := meta.GGUF.ContextLength
 
 	md := ModelDetails{
-		ID:          id,
-		Category:    category,
-		OwnedBy:     owner,
-		ModelFamily: repo,
-		WebPage:     fmt.Sprintf("https://huggingface.co/%s/%s", owner, repo),
-		GatedModel:  meta.isGated(),
+		ID:           id,
+		Category:     category,
+		OwnedBy:      owner,
+		ModelFamily:  repo,
+		Architecture: classifyArchitecture(meta.GGUF.Architecture),
+		WebPage:      fmt.Sprintf("https://huggingface.co/%s/%s", owner, repo),
+		GatedModel:   meta.isGated(),
 		Files: Files{
 			Models: modelFiles,
 		},
@@ -307,6 +308,38 @@ func mapEndpoint(tag string) string {
 	default:
 		return "chat_completion"
 	}
+}
+
+// classifyArchitecture maps a GGUF general.architecture value (returned by
+// the HuggingFace API) to one of the three model types used by the catalog:
+// Dense, MoE, or Hybrid. An empty string is returned for unrecognised
+// architectures so the user can set the value manually.
+func classifyArchitecture(arch string) string {
+	switch strings.ToLower(arch) {
+
+	// MoE — models with expert routing.
+	case "qwen2moe", "qwen3moe", "mixtral", "dbrx", "deepseek2", "arctic", "olmoe":
+		return "MoE"
+
+	// Hybrid — models mixing attention with recurrent/SSM/convolution layers.
+	case "jamba", "falcon-h1", "bamba", "lfm2", "plamo2", "rwkv6qwen2":
+		return "Hybrid"
+
+	// Dense — standard transformer models. We list the common ones explicitly
+	// and fall through to a default of "Dense" for any other recognised value
+	// so that only a truly empty/unknown architecture returns "".
+	case "llama", "qwen2", "qwen3", "phi3", "phi4", "gemma", "gemma2", "gemma3",
+		"starcoder2", "command-r", "cohere2", "gpt2", "bloom", "falcon",
+		"mpt", "refact", "stablelm", "internlm2", "minicpm", "minicpm3",
+		"olmo", "olmo2", "granite", "exaone", "nemotron", "glm4", "chatglm":
+		return "Dense"
+	}
+
+	if arch != "" {
+		return "Dense"
+	}
+
+	return ""
 }
 
 func formatFileSize(bytes int64) string {

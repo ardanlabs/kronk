@@ -852,6 +852,7 @@ type SaveCatalogRequest struct {
 	Category     string              `json:"category"`
 	OwnedBy      string              `json:"owned_by"`
 	ModelFamily  string              `json:"model_family"`
+	Architecture string              `json:"architecture"`
 	WebPage      string              `json:"web_page"`
 	GatedModel   bool                `json:"gated_model"`
 	Template     string              `json:"template"`
@@ -874,13 +875,14 @@ func (app SaveCatalogRequest) toModelDetails() catalog.ModelDetails {
 	}
 
 	md := catalog.ModelDetails{
-		ID:          app.ID,
-		Category:    app.Category,
-		OwnedBy:     app.OwnedBy,
-		ModelFamily: app.ModelFamily,
-		WebPage:     app.WebPage,
-		GatedModel:  app.GatedModel,
-		Template:    app.Template,
+		ID:           app.ID,
+		Category:     app.Category,
+		OwnedBy:      app.OwnedBy,
+		ModelFamily:  app.ModelFamily,
+		Architecture: app.Architecture,
+		WebPage:      app.WebPage,
+		GatedModel:   app.GatedModel,
+		Template:     app.Template,
 		Files: catalog.Files{
 			Models: modelFiles,
 			Proj:   catalog.File{URL: app.Files.Proj.URL, Size: app.Files.Proj.Size},
