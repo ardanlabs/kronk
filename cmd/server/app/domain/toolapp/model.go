@@ -474,24 +474,26 @@ type CatalogFiles struct {
 
 // CatalogModelResponse represents information for a model.
 type CatalogModelResponse struct {
-	ID            string              `json:"id"`
-	Category      string              `json:"category"`
-	OwnedBy       string              `json:"owned_by"`
-	ModelFamily   string              `json:"model_family"`
-	Architecture  string              `json:"architecture"`
-	WebPage       string              `json:"web_page"`
-	GatedModel    bool                `json:"gated_model"`
-	Template      string              `json:"template"`
-	Files         CatalogFiles        `json:"files"`
-	Capabilities  CatalogCapabilities `json:"capabilities"`
-	Metadata      CatalogMetadata     `json:"metadata"`
-	ModelConfig   *ModelConfig        `json:"model_config,omitempty"`
-	BaseConfig    *ModelConfig        `json:"base_config,omitempty"`
-	ModelMetadata map[string]string   `json:"model_metadata,omitempty"`
-	VRAM          *VRAM               `json:"vram,omitempty"`
-	Downloaded    bool                `json:"downloaded"`
-	Validated     bool                `json:"validated"`
-	CatalogFile   string              `json:"catalog_file,omitempty"`
+	ID             string              `json:"id"`
+	Category       string              `json:"category"`
+	OwnedBy        string              `json:"owned_by"`
+	ModelFamily    string              `json:"model_family"`
+	Architecture   string              `json:"architecture"`
+	WebPage        string              `json:"web_page"`
+	GatedModel     bool                `json:"gated_model"`
+	Template       string              `json:"template"`
+	TotalSize      string              `json:"total_size"`
+	TotalSizeBytes int64               `json:"total_size_bytes"`
+	Files          CatalogFiles        `json:"files"`
+	Capabilities   CatalogCapabilities `json:"capabilities"`
+	Metadata       CatalogMetadata     `json:"metadata"`
+	ModelConfig    *ModelConfig        `json:"model_config,omitempty"`
+	BaseConfig     *ModelConfig        `json:"base_config,omitempty"`
+	ModelMetadata  map[string]string   `json:"model_metadata,omitempty"`
+	VRAM           *VRAM               `json:"vram,omitempty"`
+	Downloaded     bool                `json:"downloaded"`
+	Validated      bool                `json:"validated"`
+	CatalogFile    string              `json:"catalog_file,omitempty"`
 }
 
 // Encode implements the encoder interface.
@@ -529,14 +531,16 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 	catDetails.Files.Proj.URL = models.NormalizeHuggingFaceDownloadURL(catDetails.Files.Proj.URL)
 
 	resp := CatalogModelResponse{
-		ID:           catDetails.ID,
-		Category:     catDetails.Category,
-		OwnedBy:      catDetails.OwnedBy,
-		ModelFamily:  catDetails.ModelFamily,
-		Architecture: catDetails.Architecture,
-		WebPage:      models.NormalizeHuggingFaceURL(catDetails.WebPage),
-		GatedModel:   catDetails.GatedModel,
-		Template:     catDetails.Template,
+		ID:             catDetails.ID,
+		Category:       catDetails.Category,
+		OwnedBy:        catDetails.OwnedBy,
+		ModelFamily:    catDetails.ModelFamily,
+		Architecture:   catDetails.Architecture,
+		WebPage:        models.NormalizeHuggingFaceURL(catDetails.WebPage),
+		GatedModel:     catDetails.GatedModel,
+		Template:       catDetails.Template,
+		TotalSize:      catDetails.Files.TotalSize(),
+		TotalSizeBytes: catDetails.Files.TotalSizeBytes(),
 		Files: CatalogFiles{
 			Models: mdls,
 			Proj:   CatalogFile(catDetails.Files.Proj),

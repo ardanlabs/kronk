@@ -160,6 +160,8 @@ export interface CatalogModelResponse {
   architecture: string;
   web_page: string;
   template: string;
+  total_size: string;
+  total_size_bytes: number;
   files: CatalogFiles;
   capabilities: CatalogCapabilities;
   metadata: CatalogMetadata;

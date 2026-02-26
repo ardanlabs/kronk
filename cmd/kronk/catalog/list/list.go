@@ -64,13 +64,14 @@ func runLocal(catalog *catalog.Catalog, args []string) error {
 
 func printWeb(list []toolapp.CatalogModelResponse) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "CATALOG\tMODEL ID\tARCH\tPULLED\tENDPOINT\tIMAGES\tAUDIO\tVIDEO\tSTREAMING\tREASONING\tTOOLING\tEMBEDDING\tRERANK\tVAL")
+	fmt.Fprintln(w, "CATALOG\tMODEL ID\tARCH\tSIZE\tPULLED\tENDPOINT\tIMAGES\tAUDIO\tVIDEO\tSTREAMING\tREASONING\tTOOLING\tEMBEDDING\tRERANK\tVAL")
 
 	for _, m := range list {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%v\n",
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%v\n",
 			m.Category,
 			m.ID,
 			m.Architecture,
+			m.TotalSize,
 			boolToStr(m.Downloaded),
 			m.Capabilities.Endpoint,
 			boolToStr(m.Capabilities.Images),
@@ -90,13 +91,14 @@ func printWeb(list []toolapp.CatalogModelResponse) {
 
 func print(list []catalog.ModelDetails) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "CATALOG\tMODEL ID\tARCH\tPULLED\tENDPOINT\tIMAGES\tAUDIO\tVIDEO\tSTREAMING\tREASONING\tTOOLING\tEMBEDDING\tRERANK\tVAL")
+	fmt.Fprintln(w, "CATALOG\tMODEL ID\tARCH\tSIZE\tPULLED\tENDPOINT\tIMAGES\tAUDIO\tVIDEO\tSTREAMING\tREASONING\tTOOLING\tEMBEDDING\tRERANK\tVAL")
 
 	for _, m := range list {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%v\n",
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%v\n",
 			m.Category,
 			m.ID,
 			m.Architecture,
+			m.Files.TotalSize(),
 			boolToStr(m.Downloaded),
 			m.Capabilities.Endpoint,
 			boolToStr(m.Capabilities.Images),
