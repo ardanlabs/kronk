@@ -14,17 +14,58 @@ var Cmd = &cobra.Command{
 	Short: "Run an interactive chat session with a model",
 	Long: `Run an interactive chat session with a local model (REPL mode).
 
-This command provides a simple interactive interface for chatting with a model.
-Type your messages and press Enter to get responses. Type 'quit' to exit.
+This command provides a simple interactive interface for chatting directly with
+a GGUF model without starting the full Model Server. It loads the model, applies
+the chat template, and enters a REPL loop for conversation.
 
-Example:
+FEATURES
+
+  • Interactive chat with streaming responses
+  • Customizable Jinja chat templates
+  • Fine-grained control over inference parameters
+  • No server required - runs directly on your machine
+
+COMMAND LINE OPTIONS
+
+Model Configuration:
+  --jinja-file          Path to custom Jinja template file
+  --context-window      Context window size in tokens
+  --flash-attention     Flash attention mode (on, off, auto)
+  --ngpu-layers         GPU layers to offload (-1 = CPU only)
+  --cache-type-k        KV cache type for keys (f16, q8_0, etc.)
+  --cache-type-v        KV cache type for values (f16, q8_0, etc.)
+  --nbatch              Logical batch size for processing
+  --nubatch             Physical micro-batch size
+
+Sampling Parameters:
+  --max-tokens          Maximum tokens for response
+  --temperature         Temperature for sampling (0.0-2.0)
+  --top-p               Top-p nucleus sampling parameter
+  --top-k               Top-k sampling parameter
+  --min-p               Minimum probability threshold
+  --repeat-penalty      Repetition penalty
+  --frequency-penalty   Frequency penalty
+  --presence-penalty    Presence penalty
+
+Model-Specific:
+  --enable-thinking     Enable thinking/reasoning mode (true, false)
+  --reasoning-effort    Reasoning effort level (low, medium, high)
+
+EXAMPLES
+
+  # Start chat with a model
   kronk run Qwen3-8B-Q8_0
-  kronk run Qwen3-8B-Q8_0 --jinja-file /path/to/template.jinja
-  kronk run Qwen3-8B-Q8_0 --context-window 16384 --flash-attention auto
 
-Environment Variables:
-      KRONK_BASE_PATH  Base path for kronk data (models, templates, catalog)
-      KRONK_MODELS     (default: $HOME/.kronk/models)  The path to the models directory`,
+  # Use custom template and context window
+  kronk run Llama-3.3-70B-Instruct-Q8_0 --jinja-file=/tmp/template.j2 --context-window=32764
+
+  # Run with GPU offloading
+  kronk run Qwen3-8B-Q8_0 --ngpu-layers=35 --temperature=0.7
+
+ENVIRONMENT VARIABLES
+
+  KRONK_BASE_PATH    Base directory for kronk data (models, templates, catalog)
+  KRONK_MODELS       Path to the models directory (default: $HOME/.kronk/models)`,
 	Args: cobra.ExactArgs(1),
 	Run:  main,
 }

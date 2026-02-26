@@ -95,10 +95,20 @@ COMMANDS
 
   server    Start, stop, and manage the Kronk model server
   catalog   Manage model catalogs (list, pull, show, update)
-  model     Manage local models (index, list, pull, remove, show)
+  model     Manage local models (index, list, pull, remove, show, ps)
   libs      Install or upgrade llama.cpp libraries
   security  Manage API keys and JWT tokens
-  run       Run a model directly for quick testing without a server
+  run       Run a model directly for interactive chat without a server
+
+MODES OF OPERATION
+
+  Web Mode (default): Most commands communicate with a running server at localhost:8080.
+    This mode requires an active server and enables progress streaming in the BUI.
+
+  Local Mode (--local flag): Run commands directly without a server for:
+    - Initial setup when no server is running
+    - Same-machine operations with direct file access
+    - Offline model and library management
 
 ENVIRONMENT VARIABLES
 
@@ -107,6 +117,7 @@ ENVIRONMENT VARIABLES
   KRONK_LIB_VERSION      - Pin llama.cpp library version
   KRONK_HF_TOKEN         - Hugging Face API token for gated models
   KRONK_WEB_API_HOST     - Model server API address (default: localhost:8080)
+  KRONK_TOKEN            - Admin token for security commands
 
 See "kronk <command> --help" for more information on each command.`,
 	Run: func(cmd *cobra.Command, args []string) {
