@@ -4,6 +4,7 @@ package manual
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -21,15 +22,15 @@ type section struct {
 }
 
 func Run() error {
-	manualPath := "MANUAL.md"
+	manualDir := ".manual"
 	outputDir := "cmd/server/api/frontends/bui/src/components"
 
-	content, err := os.ReadFile(manualPath)
+	content, err := loadManualContent(manualDir)
 	if err != nil {
-		return fmt.Errorf("reading MANUAL.md: %w", err)
+		return fmt.Errorf("reading manual chapters: %w", err)
 	}
 
-	tsx := generateManualTSX(string(content))
+	tsx := generateManualTSX(content)
 
 	outputPath := outputDir + "/DocsManual.tsx"
 	if err := os.WriteFile(outputPath, []byte(tsx), 0644); err != nil {
@@ -38,6 +39,58 @@ func Run() error {
 
 	fmt.Printf("Generated %s\n", outputPath)
 	return nil
+}
+
+func loadManualContent(dir string) (string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", fmt.Errorf("reading directory %s: %w", dir, err)
+	}
+
+	var combined strings.Builder
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasPrefix(entry.Name(), "chapter-") || !strings.HasSuffix(entry.Name(), ".md") {
+			continue
+		}
+
+		data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			return "", fmt.Errorf("reading %s: %w", entry.Name(), err)
+		}
+
+		combined.WriteString(processChapterFile(string(data)))
+		combined.WriteString("\n")
+	}
+
+	return combined.String(), nil
+}
+
+func processChapterFile(content string) string {
+	lines := strings.Split(content, "\n")
+	var result []string
+	inTOC := false
+
+	for _, line := range lines {
+		if line == "## Table of Contents" {
+			inTOC = true
+			continue
+		}
+		if inTOC {
+			if line == "---" {
+				inTOC = false
+			}
+			continue
+		}
+
+		if strings.HasPrefix(line, "# Chapter ") {
+			line = "#" + line
+		}
+
+		result = append(result, line)
+	}
+
+	return strings.Join(result, "\n")
 }
 
 func generateManualTSX(markdown string) string {
@@ -563,6 +616,7 @@ func toAnchor(s string) string {
 	s = strings.ReplaceAll(s, ")", "")
 	s = strings.ReplaceAll(s, "&", "")
 	s = strings.ReplaceAll(s, "/", "")
+	s = strings.ReplaceAll(s, ":", "")
 	re := regexp.MustCompile(`-+`)
 	s = re.ReplaceAllString(s, "-")
 	s = strings.Trim(s, "-")
