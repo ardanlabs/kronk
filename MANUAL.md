@@ -539,45 +539,6 @@ All shells automatically set the following:
 command will not attempt to download or overwrite libraries. Library updates are
 managed through `nix flake update` instead.
 
-**Building and Running**
-
-Inside the dev shell, the standard workflow applies:
-
-```shell
-# Install the CLI
-go install ./cmd/kronk
-
-# Start the server
-kronk server start
-
-# Download a model and test
-kronk catalog pull Qwen3-8B-Q8_0 --local
-curl http://localhost:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model": "Qwen3-8B-Q8_0", "messages": [{"role": "user", "content": "Hello!"}]}'
-```
-
-**Flake Reference**
-
-All dev shells share a common set of packages:
-
-| Package                | Purpose                              |
-| ---------------------- | ------------------------------------ |
-| `go_1_25`              | Go compiler                          |
-| `gopls`, `gotools`     | Go language server and tools         |
-| `libffi`               | FFI library for llama.cpp binding    |
-| `pkg-config`           | Build dependency resolution          |
-| `nodejs`, `vite`       | BUI frontend development             |
-| `typescript`           | TypeScript compiler for BUI          |
-
-Each shell adds backend-specific packages:
-
-| Shell   | llama.cpp Package                              | Extra Packages                   |
-| ------- | ---------------------------------------------- | -------------------------------- |
-| vulkan  | `llama-cpp-vulkan`                             | `vulkan-headers`, `vulkan-loader`|
-| cuda    | `llama-cpp` (with `cudaSupport = true`)        | —                                |
-| cpu     | `llama-cpp`                                    | —                                |
-
 **Troubleshooting**
 
 - **Library not found errors:** Ensure you are inside the `nix develop` shell.
