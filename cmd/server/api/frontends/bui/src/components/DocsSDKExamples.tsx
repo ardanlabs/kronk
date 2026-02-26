@@ -863,20 +863,20 @@ ws ::= [ \\t\\n\\r]*\`
 
 // modelSpec defines how to obtain the model to download.
 // - SourceURL: Download the model file directly from a HuggingFace URL
-// - SourceID : Download the model from the catalog by model ID
+// - ModelID  : Download the model from the catalog by model ID
 //
-// To use a catalog model, comment out SourceURL and set SourceID.
-// To use a direct URL, comment out SourceID and set SourceURL.
+// To use a catalog model, comment out SourceURL and set ModelID.
+// To use a direct URL, comment out ModelID and set SourceURL.
 type modelSpec struct {
 	SourceURL string
-	SourceID  string
+	ModelID   string
 }
 
 // Configure this to switch between URL and catalog downloads.
-// Set either SourceURL or SourceID, not both.
+// Set either SourceURL or ModelID, not both.
 var modelSpecConfig = modelSpec{
 	SourceURL: "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf",
-	// SourceID: "Qwen3-8B-A10B-UD-Q5_K_XL",
+	// ModelID: "Qwen3-8B-A10B-UD-Q5_K_XL",
 }
 
 func main() {
@@ -970,12 +970,12 @@ func installSystem() (models.Path, error) {
 		fmt.Println("Downloading model from URL:", modelSpecConfig.SourceURL)
 		mp, err = mdls.Download(ctx, kronk.FmtLogger, modelSpecConfig.SourceURL, "")
 
-	case modelSpecConfig.SourceID != "":
-		fmt.Println("Downloading model from catalog:", modelSpecConfig.SourceID)
-		mp, err = ctlg.DownloadModel(ctx, kronk.FmtLogger, modelSpecConfig.SourceID)
+	case modelSpecConfig.ModelID != "":
+		fmt.Println("Downloading model from catalog:", modelSpecConfig.ModelID)
+		mp, err = ctlg.DownloadModel(ctx, kronk.FmtLogger, modelSpecConfig.ModelID)
 
 	default:
-		return models.Path{}, fmt.Errorf("modelSpecConfig requires either SourceURL or SourceID to be set")
+		return models.Path{}, fmt.Errorf("modelSpecConfig requires either SourceURL or ModelID to be set")
 	}
 
 	if err != nil {
@@ -1395,20 +1395,20 @@ import (
 
 // modelSpec defines how to obtain the model to download.
 // - SourceURL: Download the model file directly from a HuggingFace URL
-// - SourceID : Download the model from the catalog by model ID
+// - ModelID  : Download the model from the catalog by model ID
 //
-// To use a catalog model, comment out SourceURL and set SourceID.
-// To use a direct URL, comment out SourceID and set SourceURL.
+// To use a catalog model, comment out SourceURL and set ModelID.
+// To use a direct URL, comment out ModelID and set SourceURL.
 type modelSpec struct {
 	SourceURL string
-	SourceID  string
+	ModelID   string
 }
 
 // Configure this to switch between URL and catalog downloads.
-// Set either SourceURL or SourceID, not both.
+// Set either SourceURL or ModelID, not both.
 var modelSpecConfig = modelSpec{
 	SourceURL: "https://huggingface.co/gpustack/bge-reranker-v2-m3-GGUF/resolve/main/bge-reranker-v2-m3-Q8_0.gguf",
-	// SourceID: "bge-reranker-v2-m3-Q8_0",
+	// ModelID: "bge-reranker-v2-m3-Q8_0",
 }
 
 func main() {
@@ -1484,12 +1484,12 @@ func installSystem() (models.Path, error) {
 		fmt.Println("Downloading model from URL:", modelSpecConfig.SourceURL)
 		mp, err = mdls.Download(ctx, kronk.FmtLogger, modelSpecConfig.SourceURL, "")
 
-	case modelSpecConfig.SourceID != "":
-		fmt.Println("Downloading model from catalog:", modelSpecConfig.SourceID)
-		mp, err = ctlg.DownloadModel(ctx, kronk.FmtLogger, modelSpecConfig.SourceID)
+	case modelSpecConfig.ModelID != "":
+		fmt.Println("Downloading model from catalog:", modelSpecConfig.ModelID)
+		mp, err = ctlg.DownloadModel(ctx, kronk.FmtLogger, modelSpecConfig.ModelID)
 
 	default:
-		return models.Path{}, fmt.Errorf("modelSpecConfig requires either SourceURL or SourceID to be set")
+		return models.Path{}, fmt.Errorf("modelSpecConfig requires either SourceURL or ModelID to be set")
 	}
 
 	if err != nil {
@@ -1605,20 +1605,20 @@ import (
 
 // modelSpec defines how to obtain the model to download.
 // - SourceURL: Download the model file directly from a HuggingFace URL
-// - SourceID : Download the model from the catalog by model ID
+// - ModelID  : Download the model from the catalog by model ID
 //
-// To use a catalog model, comment out SourceURL and set SourceID.
-// To use a direct URL, comment out SourceID and set SourceURL.
+// To use a catalog model, comment out SourceURL and set ModelID.
+// To use a direct URL, comment out ModelID and set SourceURL.
 type modelSpec struct {
 	SourceURL string
-	SourceID  string
+	ModelID   string
 }
 
 // Configure this to switch between URL and catalog downloads.
-// Set either SourceURL or SourceID, not both.
+// Set either SourceURL or ModelID, not both.
 var modelSpecConfig = modelSpec{
 	SourceURL: "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf",
-	// SourceID: "Qwen3-8B-A10B-UD-Q5_K_XL",
+	// ModelID: "Qwen3-8B-A10B-UD-Q5_K_XL",
 }
 
 func main() {
@@ -1698,12 +1698,12 @@ func installSystem() (models.Path, error) {
 		fmt.Println("Downloading model from URL:", modelSpecConfig.SourceURL)
 		mp, err = mdls.Download(ctx, kronk.FmtLogger, modelSpecConfig.SourceURL, "")
 
-	case modelSpecConfig.SourceID != "":
-		fmt.Println("Downloading model from catalog:", modelSpecConfig.SourceID)
-		mp, err = ctlg.DownloadModel(ctx, kronk.FmtLogger, modelSpecConfig.SourceID)
+	case modelSpecConfig.ModelID != "":
+		fmt.Println("Downloading model from catalog:", modelSpecConfig.ModelID)
+		mp, err = ctlg.DownloadModel(ctx, kronk.FmtLogger, modelSpecConfig.ModelID)
 
 	default:
-		return models.Path{}, fmt.Errorf("modelSpecConfig requires either SourceURL or SourceID to be set")
+		return models.Path{}, fmt.Errorf("modelSpecConfig requires either SourceURL or ModelID to be set")
 	}
 
 	if err != nil {
@@ -1952,22 +1952,22 @@ import (
 // modelSpec defines how to obtain the model to download.
 // - SourceURL: Download the model file directly from a HuggingFace URL
 // - ProjURL  : Download the projection file directly from a HuggingFace URL
-// - SourceID : Download the model from the catalog by model ID
+// - ModelID  : Download the model from the catalog by model ID
 //
-// To use a catalog model, comment out SourceURL and set SourceID.
-// To use a direct URL, comment out SourceID and set SourceURL/ProjURL.
+// To use a catalog model, comment out SourceURL and set ModelID.
+// To use a direct URL, comment out ModelID and set SourceURL/ProjURL.
 type modelSpec struct {
 	SourceURL string
 	ProjURL   string
-	SourceID  string
+	ModelID   string
 }
 
 // Configure this to switch between URL and catalog downloads.
-// Set either SourceURL (with ProjURL) or SourceID, not both.
+// Set either SourceURL (with ProjURL) or ModelID, not both.
 var modelSpecConfig = modelSpec{
 	SourceURL: "https://huggingface.co/unsloth/LFM2.5-VL-1.6B-GGUF/resolve/main/LFM2.5-VL-1.6B-Q8_0.gguf",
 	ProjURL:   "https://huggingface.co/unsloth/LFM2.5-VL-1.6B-GGUF/resolve/main/mmproj-F16.gguf",
-	// SourceID: "LFM2.5-VL-1.6B-UD-Q8_K_XL",
+	// ModelID: "LFM2.5-VL-1.6B-UD-Q8_K_XL",
 }
 
 const imageFile = "examples/samples/giraffe.jpg"
@@ -2046,12 +2046,12 @@ func installSystem() (models.Path, error) {
 		fmt.Println("Downloading projection file:", modelSpecConfig.ProjURL)
 		mp, err = mdls.Download(ctx, kronk.FmtLogger, modelSpecConfig.SourceURL, modelSpecConfig.ProjURL)
 
-	case modelSpecConfig.SourceID != "":
-		fmt.Println("Downloading model from catalog:", modelSpecConfig.SourceID)
-		mp, err = ctlg.DownloadModel(ctx, kronk.FmtLogger, modelSpecConfig.SourceID)
+	case modelSpecConfig.ModelID != "":
+		fmt.Println("Downloading model from catalog:", modelSpecConfig.ModelID)
+		mp, err = ctlg.DownloadModel(ctx, kronk.FmtLogger, modelSpecConfig.ModelID)
 
 	default:
-		return models.Path{}, fmt.Errorf("modelSpecConfig requires either (SourceURL and ProjURL) or SourceID to be set")
+		return models.Path{}, fmt.Errorf("modelSpecConfig requires either (SourceURL and ProjURL) or ModelID to be set")
 	}
 
 	if err != nil {
