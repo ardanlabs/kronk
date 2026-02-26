@@ -63,7 +63,7 @@ jobs:
         timeout-minutes: 30
         run: |
           export RUN_IN_PARALLEL=no
-          CGO_ENABLED=0 go test -v -count=1 -timeout 30m ./sdk/kronk/tests
+          CGO_ENABLED=0 go test -v -count=1 -p 1 -timeout 30m ./sdk/kronk/tests/...
       - name: Run sdk/cache tests
         run: |
           export RUN_IN_PARALLEL=no
