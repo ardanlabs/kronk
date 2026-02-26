@@ -10,7 +10,7 @@ SHELL := $(if $(wildcard /bin/ash),/bin/ash,$(shell which bash 2>/dev/null || ec
 # 	make install-gotooling
 #	make install-tooling
 #
-# Now let's get the frontend system initalized.
+# Now let's get the frontend system initialized.
 #	make bui-install
 #
 # Next we need to download the models for the class.
@@ -44,8 +44,8 @@ SHELL := $(if $(wildcard /bin/ash),/bin/ash,$(shell which bash 2>/dev/null || ec
 #	to help you.
 #
 # Memory
-#	This is going to your first biggest obstacle. You basically won't be able to
-#	use a model that is larger than 80% of the total memory you have on the
+#	This is going to be your first biggest obstacle. You basically won't be able
+#	to use a model that is larger than 80% of the total memory you have on the
 #	machine. As an example, the smallest model we will try is `LFM2-700M-Q8_0`
 #	at 639 MB. That means you need at least 767 MB of memory on the machine to
 #	run this model. The largest model we will use is `gpt-oss-20b-Q8_0` and that
@@ -59,7 +59,7 @@ SHELL := $(if $(wildcard /bin/ash),/bin/ash,$(shell which bash 2>/dev/null || ec
 #
 #	gpt-oss-20b-Q8_0
 #	Model Size: 12.1 GB
-#	Overhead (20%): 12.1 GBx 0.20 = 2.42 GB
+#	Overhead (20%): 12.1 GB x 0.20 = 2.42 GB
 #	Total Required: 12.1 GB + 2.42 GB = 14.52 GB
 #
 # GPU
@@ -70,7 +70,7 @@ SHELL := $(if $(wildcard /bin/ash),/bin/ash,$(shell which bash 2>/dev/null || ec
 #
 # Operating Systems
 #	I've been testing mostly on a MacBook Pro M4. If you have a Mac I feel pretty
-#	good things should work. Llama.cpp is good at recognizing the Max and the
+#	good things should work. Llama.cpp is good at recognizing the Mac and the
 #	GPU that exists.
 #
 #	If you are running Linux, you most likely will need to download drivers for
@@ -78,7 +78,7 @@ SHELL := $(if $(wildcard /bin/ash),/bin/ash,$(shell which bash 2>/dev/null || ec
 #	help you.
 #
 #	If you are on windows, we have tested the code will run but not extensively.
-#	we will have to learn in class as we go.
+#	We will have to learn in class as we go.
 #
 # Having Problems
 #	You need to email me (bill@ardanlabs.com) if you are running into problems
@@ -299,7 +299,7 @@ kronk-server:
 	export KRONK_CATALOG_REPO_PATH=$$HOME/code/go/src/github.com/ardanlabs/kronk_catalogs && \
 	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
 
-kronk-server-build: kronk-build    
+kronk-server-build: kronk-build
 	source .env 2>/dev/null || true && \
 	export KRONK_INSECURE_LOGGING=true && \
 	export KRONK_CATALOG_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
