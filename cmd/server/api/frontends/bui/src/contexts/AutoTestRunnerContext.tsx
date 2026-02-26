@@ -189,6 +189,7 @@ interface AutoTestRunBase {
 export interface SamplingRun extends AutoTestRunBase {
   kind: 'sampling';
   sessionId: string;
+  sessionSeed?: AutoTestSessionSeed;
   sweepDef: SamplingSweepDefinition;
   maxTrials: number;
   trials: AutoTestTrialResult[];
@@ -278,6 +279,7 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
   // Mutual-exclusion lock: prevents a new run from starting until the
   // previous run's async work (including cleanup) has fully completed.
   const runLockRef = useRef<{ runId: string; done: Promise<void> } | null>(null);
+  const resumeTrialLoopRef = useRef<(() => void) | null>(null);
   const [isRunning, setIsRunning] = useState(false);
 
   useEffect(() => {
@@ -325,6 +327,7 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
       currentTrialIndex: 0,
       totalTrials: 0,
       sessionId: sessionId ?? '',
+      sessionSeed,
       sweepDef,
       maxTrials,
       trials: [],
@@ -477,11 +480,13 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
                 const trials = [...prev.trials];
                 const prevLogs = trials[ti].logEntries ?? [];
                 const mergedLogs = mergeLogEntries(prevLogs, [], partial.logEntries);
-                trials[ti] = { ...trials[ti], ...partial, logEntries: mergedLogs };
+                const { id: _ignoreId, ...partialNoId } = partial;
+                trials[ti] = { ...trials[ti], ...partialNoId, id: trialId, logEntries: mergedLogs };
                 return { ...prev, trials };
               });
             };
-            return await runTrial(activeSessionId, candidate, scenarios, onUpdate, trialSignal, weights, repeats);
+            const result = await runTrial(activeSessionId, candidate, scenarios, onUpdate, trialSignal, weights, repeats);
+            return { ...result, id: trialId };
           },
           onTrialResult: (trialId, _idx, result, bestTrialId) => {
             setRun(prev => {
@@ -739,7 +744,8 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
                   const trials = [...prev.trials];
                   const prevLogs = trials[ti].logEntries ?? [];
                   const mergedLogs = mergeLogEntries(prevLogs, trialLogs, partial.logEntries);
-                  trials[ti] = { ...trials[ti], ...partial, config: candidate, logEntries: mergedLogs };
+                  const { id: _ignoreId, ...partialNoId } = partial;
+                  trials[ti] = { ...trials[ti], ...partialNoId, id: trialId, config: candidate, logEntries: mergedLogs };
                   return { ...prev, trials };
                 });
               };
@@ -751,6 +757,7 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
 
               return {
                 ...result,
+                id: trialId,
                 config: candidate,
                 logEntries: mergeLogEntries([], trialLogs, result.logEntries),
               } as ConfigTrialResult;
@@ -828,6 +835,317 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
       }
     })();
   }, []);
+
+  const resumeTrialLoop = useCallback(() => {
+    const currentRun = runRef.current;
+    if (!currentRun) return;
+    if (runLockRef.current) return;
+    const hasQueued = currentRun.trials.some(t => t.status === 'queued');
+    if (!hasQueued) return;
+
+    const token = ++runTokenRef.current;
+    const isStale = () => runTokenRef.current !== token;
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    let resolveDone!: () => void;
+    const done = new Promise<void>(r => { resolveDone = r; });
+    runLockRef.current = { runId: currentRun.runId, done };
+    setIsRunning(true);
+
+    setRun(prev => prev ? { ...prev, status: 'running_trials', initialDelayUntil: undefined } : prev);
+
+    (async () => {
+      try {
+        if (currentRun.kind === 'sampling') {
+          const samplingRun = currentRun as SamplingRun;
+          let activeSessionId = samplingRun.sessionId;
+
+          // Recreate session if it was deleted (normal cleanup after initial run).
+          if (samplingRun.sessionSeed?.model_id) {
+            try {
+              const resp = await api.createPlaygroundSession({
+                model_id: samplingRun.sessionSeed.model_id,
+                template_mode: samplingRun.sessionSeed.template_mode,
+                template_name: samplingRun.sessionSeed.template_name,
+                template_script: samplingRun.sessionSeed.template_script,
+                config: samplingRun.sessionSeed.base_config ?? {},
+              });
+              activeSessionId = resp.session_id;
+              currentSamplingSessionRef.current = activeSessionId;
+              setRun(prev => prev && prev.kind === 'sampling' ? { ...prev, sessionId: activeSessionId } : prev);
+            } catch {
+              setRun(prev => prev ? { ...prev, status: 'error', errorMessage: 'Failed to recreate session for rerun' } : prev);
+              return;
+            }
+          }
+
+          if (!activeSessionId) {
+            setRun(prev => prev ? { ...prev, status: 'error', errorMessage: 'No session available for rerun' } : prev);
+            return;
+          }
+
+          // Rebuild scenarios from enabled scenarios
+          const scenarios: AutoTestScenario[] = [];
+          if (samplingRun.enabledScenarios.chat) scenarios.push(chatScenario);
+          if (samplingRun.enabledScenarios.tool_call) scenarios.push(toolCallScenario);
+
+          await runTrialLoop<AutoTestTrialResult>({
+            signal: controller.signal,
+            weights: samplingRun.weights,
+            isStale,
+            trialAbortRef,
+            onTrialStopped: (trialId) => {
+              setRun(prev => {
+                if (!prev || prev.kind !== 'sampling' || isStale()) return prev;
+                const i = prev.trials.findIndex(t => t.id === trialId);
+                if (i < 0) return prev;
+                const trials = [...prev.trials];
+                trials[i] = { ...trials[i], status: 'cancelled', finishedAt: new Date().toISOString() };
+                return { ...prev, trials };
+              });
+            },
+            getNextQueuedTrialId: () => {
+              const r = runRef.current;
+              if (!r || r.status !== 'running_trials') return undefined;
+              return r.trials.find(t => t.status === 'queued')?.id;
+            },
+            claimTrial: (trialId) => {
+              const trialStartedAt = new Date().toISOString();
+              let claimedIndex = -1;
+              setRun(prev => {
+                if (!prev || prev.kind !== 'sampling' || isStale()) return prev;
+                const i = prev.trials.findIndex(t => t.id === trialId);
+                if (i < 0 || prev.trials[i].status !== 'queued') return prev;
+                const trials = [...prev.trials];
+                trials[i] = { ...trials[i], status: 'running', startedAt: trialStartedAt };
+                claimedIndex = i;
+                return { ...prev, trials };
+              });
+              return claimedIndex;
+            },
+            executeTrial: async (trialId, _idx, trialSignal) => {
+              const r = runRef.current;
+              const trial = r?.trials.find(t => t.id === trialId);
+              if (!trial) return null;
+              const candidate = trial.candidate;
+              const onUpdate = (partial: AutoTestTrialResult) => {
+                setRun(prev => {
+                  if (!prev || prev.kind !== 'sampling' || isStale()) return prev;
+                  const ti = prev.trials.findIndex(t => t.id === trialId);
+                  if (ti < 0) return prev;
+                  const trials = [...prev.trials];
+                  const prevLogs = trials[ti].logEntries ?? [];
+                  const mergedLogs = mergeLogEntries(prevLogs, [], partial.logEntries);
+                  const { id: _ignoreId, ...partialNoId } = partial;
+                  trials[ti] = { ...trials[ti], ...partialNoId, id: trialId, logEntries: mergedLogs };
+                  return { ...prev, trials };
+                });
+              };
+              const result = await runTrial(activeSessionId, candidate, scenarios, onUpdate, trialSignal, samplingRun.weights, samplingRun.repeats);
+              return { ...result, id: trialId };
+            },
+            onTrialResult: (trialId, _idx, result, bestTrialId) => {
+              setRun(prev => {
+                if (!prev || prev.kind !== 'sampling' || isStale()) return prev;
+                const i = prev.trials.findIndex(t => t.id === trialId);
+                if (i < 0) return prev;
+                const trials = [...prev.trials];
+                trials[i] = result;
+                return { ...prev, trials, currentTrialIndex: i + 1, bestTrialId };
+              });
+            },
+          });
+        } else {
+          // Config run resume
+          const configRun = currentRun as ConfigRun;
+          const sessionSeed = configRun.sessionSeed;
+
+          // Rebuild scenarios
+          const scenarios: AutoTestScenario[] = [configPerfScenario];
+
+          await runTrialLoop<ConfigTrialResult>({
+            signal: controller.signal,
+            weights: configRun.weights,
+            isStale,
+            trialAbortRef,
+            onTrialStopped: (trialId) => {
+              setRun(prev => {
+                if (!prev || prev.kind !== 'config' || isStale()) return prev;
+                const i = prev.trials.findIndex(t => t.id === trialId);
+                if (i < 0) return prev;
+                const trials = [...prev.trials];
+                trials[i] = { ...trials[i], status: 'cancelled', finishedAt: new Date().toISOString() };
+                return { ...prev, trials };
+              });
+            },
+            getNextQueuedTrialId: () => {
+              const r = runRef.current;
+              if (!r || r.status !== 'running_trials') return undefined;
+              return r.trials.find(t => t.status === 'queued')?.id;
+            },
+            claimTrial: (trialId) => {
+              const trialStartedAt = new Date().toISOString();
+              let claimedIndex = -1;
+              setRun(prev => {
+                if (!prev || prev.kind !== 'config' || isStale()) return prev;
+                const i = prev.trials.findIndex(t => t.id === trialId);
+                if (i < 0 || prev.trials[i].status !== 'queued') return prev;
+                const trials = [...prev.trials];
+                trials[i] = { ...trials[i], status: 'running', startedAt: trialStartedAt };
+                claimedIndex = i;
+                return { ...prev, trials };
+              });
+              return claimedIndex;
+            },
+            executeTrial: async (trialId, _idx, trialSignal) => {
+              const r = runRef.current;
+              if (!r || r.kind !== 'config') return null;
+              const trial = r.trials.find(t => t.id === trialId) as ConfigTrialResult | undefined;
+              if (!trial) return null;
+              const candidate = trial.config;
+              if (!candidate) return null;
+
+              let configSessionId = '';
+              const trialLogs: AutoTestLogEntry[] = [];
+              const activeBaseline: SamplingCandidate = {
+                temperature: 0,
+                top_p: 1,
+                top_k: 1,
+                min_p: 0,
+                repeat_penalty: 1,
+                frequency_penalty: 0,
+                presence_penalty: 0,
+              };
+              const activeScenarios = scenarios;
+              const repeats = configRun.repeats;
+              const weights = configRun.weights;
+
+              try {
+                const merged: Record<string, unknown> = { ...activeBaseline, ...candidate };
+                const resp = await api.createPlaygroundSession({
+                  model_id: sessionSeed.model_id,
+                  template_mode: sessionSeed.template_mode,
+                  template_name: sessionSeed.template_name,
+                  template_script: sessionSeed.template_script,
+                  config: merged,
+                });
+                configSessionId = resp.session_id;
+                currentConfigSessionRef.current = configSessionId;
+
+                if (controller.signal.aborted || isStale()) {
+                  await api.deletePlaygroundSession(configSessionId).catch(() => {});
+                  currentConfigSessionRef.current = null;
+                  return null;
+                }
+
+                const onUpdate = (partial: AutoTestTrialResult) => {
+                  setRun(prev => {
+                    if (!prev || prev.kind !== 'config' || isStale()) return prev;
+                    const ti = prev.trials.findIndex(t => t.id === trialId);
+                    if (ti < 0) return prev;
+                    const trials = [...prev.trials];
+                    const prevLogs = trials[ti].logEntries ?? [];
+                    const mergedLogs = mergeLogEntries(prevLogs, trialLogs, partial.logEntries);
+                    const { id: _ignoreId, ...partialNoId } = partial;
+                    trials[ti] = { ...trials[ti], ...partialNoId, id: trialId, config: candidate, logEntries: mergedLogs };
+                    return { ...prev, trials };
+                  });
+                };
+
+                const effectiveNSeqMax = (candidate['nseq_max'] as number | undefined) ?? sessionSeed.base_config['nseq_max'] ?? 1;
+                const result = await runTrial(configSessionId, activeBaseline, activeScenarios, onUpdate, trialSignal, weights, repeats,
+                  effectiveNSeqMax > 1 ? { concurrency: effectiveNSeqMax } : undefined,
+                );
+
+                return {
+                  ...result,
+                  id: trialId,
+                  config: candidate,
+                  logEntries: mergeLogEntries([], trialLogs, result.logEntries),
+                } as ConfigTrialResult;
+              } catch (innerErr: any) {
+                if (innerErr instanceof DOMException && innerErr.name === 'AbortError') {
+                  throw innerErr;
+                }
+
+                const errorMessage = innerErr instanceof Error ? innerErr.message : String(innerErr);
+                if (!isStale()) {
+                  setRun(prev => {
+                    if (!prev || prev.kind !== 'config') return prev;
+                    const ti = prev.trials.findIndex(t => t.id === trialId);
+                    if (ti < 0) return prev;
+                    const trials = [...prev.trials];
+                    const prevTrial = trials[ti];
+                    trials[ti] = {
+                      ...prevTrial,
+                      id: prevTrial?.id ?? trialId,
+                      status: 'failed',
+                      startedAt: prevTrial?.startedAt ?? new Date().toISOString(),
+                      finishedAt: new Date().toISOString(),
+                      scenarioResults: [],
+                      totalScore: undefined,
+                      avgTPS: undefined,
+                      config: candidate,
+                      error: errorMessage,
+                    };
+                    return { ...prev, trials, currentTrialIndex: ti + 1 };
+                  });
+                }
+                return null;
+              } finally {
+                if (configSessionId) {
+                  await api.deletePlaygroundSession(configSessionId).catch(() => {});
+                  if (currentConfigSessionRef.current === configSessionId) {
+                    currentConfigSessionRef.current = null;
+                  }
+                }
+              }
+            },
+            onTrialResult: (trialId, _idx, result, bestTrialId) => {
+              setRun(prev => {
+                if (!prev || prev.kind !== 'config' || isStale()) return prev;
+                const i = prev.trials.findIndex(t => t.id === trialId);
+                if (i < 0) return prev;
+                const trials = [...prev.trials];
+                trials[i] = result;
+                return { ...prev, trials, currentTrialIndex: i + 1, bestTrialId };
+              });
+            },
+          });
+        }
+
+        if (!isStale()) {
+          setRun(prev => prev ? { ...prev, status: controller.signal.aborted ? 'cancelled' : 'completed' } : prev);
+        }
+      } catch (err: any) {
+        if (isStale()) return;
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          setRun(prev => prev ? { ...prev, status: 'cancelled' } : prev);
+        } else {
+          setRun(prev => prev ? { ...prev, errorMessage: err.message || 'Rerun failed', status: 'error' } : prev);
+        }
+      } finally {
+        const sampSid = currentSamplingSessionRef.current;
+        if (sampSid) {
+          await api.deletePlaygroundSession(sampSid).catch(() => {});
+          currentSamplingSessionRef.current = null;
+        }
+        const cfgSid = currentConfigSessionRef.current;
+        if (cfgSid) {
+          await api.deletePlaygroundSession(cfgSid).catch(() => {});
+          currentConfigSessionRef.current = null;
+        }
+        abortControllerRef.current = null;
+        runLockRef.current = null;
+        setIsRunning(false);
+        resolveDone();
+      }
+    })();
+  }, []);
+
+  resumeTrialLoopRef.current = resumeTrialLoop;
 
   const stopRun = useCallback(() => {
     ++runTokenRef.current;
@@ -930,8 +1248,10 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const rerunTrial = useCallback(({ trialId }: { trialId: string }) => {
+    let needResume = false;
     setRun(prev => {
-      if (!prev || prev.status !== 'running_trials') return prev;
+      if (!prev) return prev;
+      if (prev.status !== 'running_trials' && prev.status !== 'completed' && prev.status !== 'cancelled') return prev;
       const idx = prev.trials.findIndex(t => t.id === trialId);
       if (idx < 0) return prev;
       const trial = prev.trials[idx];
@@ -966,9 +1286,18 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
       }
 
       const nextBestTrialId = prev.bestTrialId === trialId ? undefined : prev.bestTrialId;
+
+      if (prev.status === 'completed' || prev.status === 'cancelled') {
+        needResume = true;
+      }
+
       return { ...prev, trials, bestTrialId: nextBestTrialId };
     });
-  }, []);
+
+    if (needResume) {
+      setTimeout(() => resumeTrialLoop(), 0);
+    }
+  }, [resumeTrialLoop]);
 
   return (
     <AutoTestRunnerContext.Provider value={{ run, isRunning, startSamplingRun, startConfigRun, stopRun, clearRun, reevaluateBestTrial, moveQueuedTrial, reorderQueuedTrial, skipTrial, unskipTrial, stopTrial, rerunTrial }}>

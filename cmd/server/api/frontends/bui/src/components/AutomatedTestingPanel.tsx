@@ -12,7 +12,7 @@ import type {
   SamplingConfig,
 } from '../types';
 import { defaultSamplingSweepDef, defaultConfigSweepDef, defaultBestConfigWeights, defaultConfigBestWeights, chatScenario, toolCallScenario, configPerfScenario, generateConfigCandidates, generateTrialCandidates, TRIAL_PAUSE_MS } from '../services/autoTestRunner';
-import type { AutoTestScenario } from '../types';
+import type { AutoTestScenario, AutoTestActivePrompt, AutoTestScenarioID } from '../types';
 import { useAutoTestRunner } from '../contexts/AutoTestRunnerContext';
 import type { ConfigTrialResult } from '../contexts/AutoTestRunnerContext';
 import { formatMs, scoreColorSafe, formatScore, getScenarioScore, buildSamplingColumns, buildConfigColumns, SWEEP_MODES, FILL_LEVELS } from '../services/sweepModeColumns';
@@ -299,6 +299,16 @@ function formatLogTime(iso: string): string {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
+function formatRunningLabel(ap: AutoTestActivePrompt, scenarioLookup: Record<string, AutoTestScenario>): string {
+  const scenarioName = scenarioLookup[ap.scenarioId]?.name ?? ap.scenarioId;
+  const totalPrompts = scenarioLookup[ap.scenarioId]?.prompts?.length;
+  let label = `${scenarioName} · Prompt ${ap.promptIndex + 1}${totalPrompts ? `/${totalPrompts}` : ''}`;
+  if (ap.repeats && ap.repeats > 1 && ap.repeatIndex != null) {
+    label += ` · Repeat ${ap.repeatIndex}/${ap.repeats}`;
+  }
+  return label;
+}
+
 function TrialDetails({ trial, scenarioLookup, hideScores }: TrialDetailsProps) {
   const [expandedPrompts, setExpandedPrompts] = useState<Set<string>>(() => new Set());
   const togglePromptExpanded = useCallback((key: string) => {
@@ -369,134 +379,175 @@ function TrialDetails({ trial, scenarioLookup, hideScores }: TrialDetailsProps) 
           </div>
         </div>
       )}
-      {trial.scenarioResults.length > 0 && (
+      {(trial.scenarioResults.length > 0 || (trial.status === 'running' && trial.activePrompts && trial.activePrompts.length > 0)) && (
         <div className="autotest-detail-scenarios-section">
           <button type="button" className="autotest-detail-log-header" aria-expanded={scenariosExpanded} onClick={e => { e.stopPropagation(); setScenariosExpanded(v => !v); }}>
             <span>{scenariosExpanded ? '▾' : '▸'} Performance</span>
           </button>
           {!scenariosExpanded ? (
             <div className="autotest-detail-scenarios-summary">
+              {trial.status === 'running' && trial.activePrompts && trial.activePrompts.length > 0 && (
+                <div className="autotest-detail-running-indicator">
+                  <span className="playground-autotest-spinner-inline" />{' '}
+                  Running: {formatRunningLabel(trial.activePrompts[0], scenarioLookup)}
+                </div>
+              )}
               {trial.scenarioResults.map((sr) => (
                 <ScenarioHeader key={sr.scenarioId} sr={sr} scenarioName={scenarioLookup[sr.scenarioId]?.name ?? sr.scenarioId} hideScores={hideScores} />
               ))}
             </div>
           ) : (
-            trial.scenarioResults.map((sr) => {
-              const scenario = scenarioLookup[sr.scenarioId];
-              return (
-                <div key={sr.scenarioId} className="autotest-detail-scenario">
-                  <ScenarioHeader sr={sr} scenarioName={scenario?.name ?? sr.scenarioId} hideScores={hideScores} />
-                  <div className="autotest-detail-prompts">
-                    {sr.promptResults.map((pr) => {
-                      const promptKey = `${sr.scenarioId}:${pr.promptId}`;
-                      const isPromptExpanded = expandedPrompts.has(promptKey);
-                      const isCtxFill = pr.promptId.startsWith('ctxfill-');
-                      const promptDef = scenario?.prompts.find(p => p.id === pr.promptId);
-                      const lastUserMsg = promptDef?.messages
-                        .filter(m => m.role === 'user')
-                        .pop();
-                      const inputText = isCtxFill
-                        ? `Context fill test (${pr.promptId.replace('ctxfill-', '')}% fill) — ${pr.usage?.prompt_tokens ?? '?'} prompt tokens`
-                        : typeof lastUserMsg?.content === 'string'
-                          ? lastUserMsg.content
-                          : lastUserMsg?.content?.map(p => ('text' in p ? p.text : '')).join('') ?? '';
-                      const expectedLabel = isCtxFill
-                        ? 'Performance metric only'
-                        : promptDef?.expected
-                          ? promptDef.expected.type === 'tool_call'
-                            ? 'Tool call'
-                            : promptDef.expected.type === 'no_tool_call'
-                              ? 'No tool call' + (promptDef.expected.value ? ` (text: ${promptDef.expected.value})` : '')
-                              : promptDef.expected.type === 'exact'
-                                ? `Exact: "${promptDef.expected.value}"`
-                                : `Regex: ${promptDef.expected.value}`
-                          : '—';
-                      const durMs = estimatePromptDurationMs(pr.usage);
-                      const durationLabel = durMs !== undefined ? formatMs(durMs) : '—';
+            (() => {
+              const renderedIds = new Set(trial.scenarioResults.map(sr => sr.scenarioId));
+              const activeByScenario: Record<string, AutoTestActivePrompt[]> = {};
+              if (trial.status === 'running' && trial.activePrompts) {
+                for (const ap of trial.activePrompts) {
+                  if (!activeByScenario[ap.scenarioId]) activeByScenario[ap.scenarioId] = [];
+                  activeByScenario[ap.scenarioId].push(ap);
+                }
+              }
+              const scenarioIds = [...renderedIds];
+              for (const sid of Object.keys(activeByScenario)) {
+                const id = sid as AutoTestScenarioID;
+                if (!renderedIds.has(id)) scenarioIds.push(id);
+              }
 
-                      return (
-                        <div key={pr.promptId} className={`autotest-detail-prompt ${isPromptExpanded ? 'expanded' : 'collapsed'}`}>
-                          <div
-                            className="autotest-detail-prompt-header autotest-detail-prompt-header--clickable"
-                            role="button"
-                            tabIndex={0}
-                            aria-expanded={isPromptExpanded}
-                            onClick={() => togglePromptExpanded(promptKey)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault();
-                                togglePromptExpanded(promptKey);
-                              }
-                            }}
-                          >
-                            <div className="autotest-detail-prompt-summary">
-                              <span className="autotest-detail-prompt-toggle">{isPromptExpanded ? '▼' : '▶'}</span>
-                              <span className="autotest-detail-prompt-id">{isCtxFill ? `Context Fill @${pr.promptId.replace('ctxfill-', '')}%` : pr.promptId}</span>
-                              <span className="autotest-detail-prompt-duration">Duration: {durationLabel}</span>
-                              <span className="autotest-detail-prompt-usage-inline">
-                                <span>In: {pr.usage?.prompt_tokens ?? '—'}</span>
-                                <span>Out: {pr.usage?.output_tokens ?? '—'}</span>
-                                <span>TPS: {pr.usage?.tokens_per_second !== undefined ? pr.usage.tokens_per_second.toFixed(1) : '—'}</span>
-                              </span>
-                            </div>
-                            {!hideScores && (
-                              <span className="autotest-detail-prompt-score" style={{ color: scoreColorSafe(pr.score) }}>
-                                {formatScore(pr.score)}
-                              </span>
-                            )}
-                          </div>
-                          {isPromptExpanded && (
-                          <div className="autotest-detail-prompt-grid">
-                            <div className="autotest-detail-field">
-                              <div className="autotest-detail-label">Input</div>
-                              <div className="autotest-detail-value">{inputText || '—'}</div>
-                            </div>
-                            <div className="autotest-detail-field">
-                              <div className="autotest-detail-label">Expected</div>
-                              <div className="autotest-detail-value">{expectedLabel}</div>
-                            </div>
-                            <div className="autotest-detail-field">
-                              <div className="autotest-detail-label">Output</div>
-                              <div className="autotest-detail-value">
-                                {pr.toolCalls.length > 0
-                                  ? pr.toolCalls.map((tc, ti) => (
-                                      <div key={ti} className="autotest-detail-toolcall">
-                                        <code>{tc.function.name}({tc.function.arguments})</code>
-                                      </div>
-                                    ))
-                                  : pr.assistantText || '(empty)'}
-                              </div>
-                            </div>
-                            {pr.usage && (
-                              <div className="autotest-detail-field">
-                                <div className="autotest-detail-label">Usage</div>
-                                <div className="autotest-detail-value autotest-detail-usage">
-                                  <span>In: {pr.usage.prompt_tokens}</span>
-                                  <span>Out: {pr.usage.output_tokens}</span>
-                                  <span>TPS: {pr.usage.tokens_per_second.toFixed(1)}</span>
-                                  {pr.usage.time_to_first_token_ms !== undefined && (
-                                    <span>TTFT: {formatMs(pr.usage.time_to_first_token_ms)}</span>
-                                  )}
+              return scenarioIds.map((scenarioId) => {
+                const sr = trial.scenarioResults.find(s => s.scenarioId === scenarioId);
+                const scenario = scenarioLookup[scenarioId];
+                const activeForScenario = activeByScenario[scenarioId] ?? [];
+
+                if (!sr && activeForScenario.length === 0) return null;
+
+                return (
+                  <div key={scenarioId} className="autotest-detail-scenario">
+                    {sr ? (
+                      <ScenarioHeader sr={sr} scenarioName={scenario?.name ?? scenarioId} hideScores={hideScores} />
+                    ) : (
+                      <div className="autotest-detail-scenario-header">
+                        <span className="autotest-detail-scenario-name">{scenario?.name ?? scenarioId}</span>
+                      </div>
+                    )}
+                    {activeForScenario.length > 0 && (
+                      <div className="autotest-detail-running-indicator autotest-detail-running-indicator--expanded">
+                        <span className="playground-autotest-spinner-inline" />{' '}
+                        Running: {formatRunningLabel(activeForScenario[0], scenarioLookup)}
+                      </div>
+                    )}
+                    {sr && (
+                      <div className="autotest-detail-prompts">
+                        {sr.promptResults.map((pr) => {
+                          const promptKey = `${sr.scenarioId}:${pr.promptId}`;
+                          const isPromptExpanded = expandedPrompts.has(promptKey);
+                          const isCtxFill = pr.promptId.startsWith('ctxfill-');
+                          const promptDef = scenario?.prompts.find(p => p.id === pr.promptId);
+                          const lastUserMsg = promptDef?.messages
+                            .filter(m => m.role === 'user')
+                            .pop();
+                          const inputText = isCtxFill
+                            ? `Context fill test (${pr.promptId.replace('ctxfill-', '')}% fill) — ${pr.usage?.prompt_tokens ?? '?'} prompt tokens`
+                            : typeof lastUserMsg?.content === 'string'
+                              ? lastUserMsg.content
+                              : lastUserMsg?.content?.map(p => ('text' in p ? p.text : '')).join('') ?? '';
+                          const expectedLabel = isCtxFill
+                            ? 'Performance metric only'
+                            : promptDef?.expected
+                              ? promptDef.expected.type === 'tool_call'
+                                ? 'Tool call'
+                                : promptDef.expected.type === 'no_tool_call'
+                                  ? 'No tool call' + (promptDef.expected.value ? ` (text: ${promptDef.expected.value})` : '')
+                                  : promptDef.expected.type === 'exact'
+                                    ? `Exact: "${promptDef.expected.value}"`
+                                    : `Regex: ${promptDef.expected.value}`
+                              : '—';
+                          const durMs = estimatePromptDurationMs(pr.usage);
+                          const durationLabel = durMs !== undefined ? formatMs(durMs) : '—';
+
+                          return (
+                            <div key={pr.promptId} className={`autotest-detail-prompt ${isPromptExpanded ? 'expanded' : 'collapsed'}`}>
+                              <div
+                                className="autotest-detail-prompt-header autotest-detail-prompt-header--clickable"
+                                role="button"
+                                tabIndex={0}
+                                aria-expanded={isPromptExpanded}
+                                onClick={() => togglePromptExpanded(promptKey)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault();
+                                    togglePromptExpanded(promptKey);
+                                  }
+                                }}
+                              >
+                                <div className="autotest-detail-prompt-summary">
+                                  <span className="autotest-detail-prompt-toggle">{isPromptExpanded ? '▼' : '▶'}</span>
+                                  <span className="autotest-detail-prompt-id">{isCtxFill ? `Context Fill @${pr.promptId.replace('ctxfill-', '')}%` : pr.promptId}</span>
+                                  <span className="autotest-detail-prompt-duration">Duration: {durationLabel}</span>
+                                  <span className="autotest-detail-prompt-usage-inline">
+                                    <span>In: {pr.usage?.prompt_tokens ?? '—'}</span>
+                                    <span>Out: {pr.usage?.output_tokens ?? '—'}</span>
+                                    <span>TPS: {pr.usage?.tokens_per_second !== undefined ? pr.usage.tokens_per_second.toFixed(1) : '—'}</span>
+                                  </span>
                                 </div>
+                                {!hideScores && (
+                                  <span className="autotest-detail-prompt-score" style={{ color: scoreColorSafe(pr.score) }}>
+                                    {formatScore(pr.score)}
+                                  </span>
+                                )}
                               </div>
-                            )}
-                            {pr.notes && pr.notes.length > 0 && (
-                              <div className="autotest-detail-field">
-                                <div className="autotest-detail-label">Notes</div>
-                                <div className="autotest-detail-value autotest-detail-notes">
-                                  {pr.notes.map((n, ni) => <div key={ni}>{n}</div>)}
+                              {isPromptExpanded && (
+                              <div className="autotest-detail-prompt-grid">
+                                <div className="autotest-detail-field">
+                                  <div className="autotest-detail-label">Input</div>
+                                  <div className="autotest-detail-value">{inputText || '—'}</div>
                                 </div>
+                                <div className="autotest-detail-field">
+                                  <div className="autotest-detail-label">Expected</div>
+                                  <div className="autotest-detail-value">{expectedLabel}</div>
+                                </div>
+                                <div className="autotest-detail-field">
+                                  <div className="autotest-detail-label">Output</div>
+                                  <div className="autotest-detail-value">
+                                    {pr.toolCalls.length > 0
+                                      ? pr.toolCalls.map((tc, ti) => (
+                                          <div key={ti} className="autotest-detail-toolcall">
+                                            <code>{tc.function.name}({tc.function.arguments})</code>
+                                          </div>
+                                        ))
+                                      : pr.assistantText || '(empty)'}
+                                  </div>
+                                </div>
+                                {pr.usage && (
+                                  <div className="autotest-detail-field">
+                                    <div className="autotest-detail-label">Usage</div>
+                                    <div className="autotest-detail-value autotest-detail-usage">
+                                      <span>In: {pr.usage.prompt_tokens}</span>
+                                      <span>Out: {pr.usage.output_tokens}</span>
+                                      <span>TPS: {pr.usage.tokens_per_second.toFixed(1)}</span>
+                                      {pr.usage.time_to_first_token_ms !== undefined && (
+                                        <span>TTFT: {formatMs(pr.usage.time_to_first_token_ms)}</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                                {pr.notes && pr.notes.length > 0 && (
+                                  <div className="autotest-detail-field">
+                                    <div className="autotest-detail-label">Notes</div>
+                                    <div className="autotest-detail-value autotest-detail-notes">
+                                      {pr.notes.map((n, ni) => <div key={ni}>{n}</div>)}
+                                    </div>
+                                  </div>
+                                )}
                               </div>
-                            )}
-                          </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                </div>
-              );
-            })
+                );
+              });
+            })()
           )}
         </div>
       )}
@@ -1082,7 +1133,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
               <thead>
                 <tr>
                   <th>#</th>
-                  {isRunning && <th>Actions</th>}
+                  {(isRunning || run) && <th>Actions</th>}
                   {columns.map(c => (
                     <th key={c.id} className={c.sortable !== false ? 'sortable-th' : undefined} onClick={c.sortable !== false ? () => handleSort(c.id) : undefined}>
                       {c.title}{sortIndicator(c.id, sort)}
@@ -1115,7 +1166,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
                         onDragEnd={isDraggable ? handleDragEnd : undefined}
                       >
                         <td>{isExpanded ? '▾' : '▸'} {isInProgress && <span className="playground-autotest-spinner-inline" />}{i + 1}</td>
-                        {isRunning && (
+                        {(isRunning || run) && (
                           <td className="autotest-actions-cell" onClick={(e) => e.stopPropagation()}>
                             {trial.status === 'queued' && (
                               <span className="autotest-queue-controls">
@@ -1169,7 +1220,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
                       </tr>
                       {isExpanded && (
                         <tr className="autotest-detail-row">
-                          <td colSpan={columns.length + (isRunning ? 2 : 1)}>
+                          <td colSpan={columns.length + ((isRunning || run) ? 2 : 1)}>
                             <TrialDetails trial={trial} scenarioLookup={scenarioLookup} hideScores={displayMode === 'config'} />
                           </td>
                         </tr>

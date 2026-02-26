@@ -2722,6 +2722,7 @@ export function runSinglePrompt(
         if (settled) return
         settled = true
         signal?.removeEventListener('abort', onAbort)
+        abortStream()
         reject(new Error(error))
       },
       () => {
@@ -2939,6 +2940,25 @@ function buildScenarioResult(
   }
 }
 
+/** Lifts scenario-level headline metrics onto the trial for table display.
+ *  Prefers the 'chat' scenario; falls back to 'tool_call'. */
+function liftScenarioMetrics(result: AutoTestTrialResult) {
+  const chat = result.scenarioResults.find(r => r.scenarioId === 'chat')
+  const tool = result.scenarioResults.find(r => r.scenarioId === 'tool_call')
+  const src = chat ?? tool
+
+  if (src?.avgTPS !== undefined) result.avgTPS = src.avgTPS
+  if (src?.avgTTFT !== undefined) result.avgTTFT = src.avgTTFT
+
+  const fillSrc = chat ?? tool
+  if (fillSrc?.avgTPSByFill && Object.keys(fillSrc.avgTPSByFill).length > 0) {
+    result.avgTPSByFill = fillSrc.avgTPSByFill
+  }
+  if (fillSrc?.avgTTFTByFill && Object.keys(fillSrc.avgTTFTByFill).length > 0) {
+    result.avgTTFTByFill = fillSrc.avgTTFTByFill
+  }
+}
+
 /** Updates (or appends) a scenario result on the trial and fires onUpdate. */
 function upsertScenarioResult(
   result: AutoTestTrialResult,
@@ -2951,6 +2971,7 @@ function upsertScenarioResult(
   } else {
     result.scenarioResults.push(scenarioResult)
   }
+  liftScenarioMetrics(result)
   onUpdate({ ...result, scenarioResults: [...result.scenarioResults] })
 }
 
@@ -3151,8 +3172,22 @@ async function runScenarioSequential(
           hadAbort = true
           break
         }
+
+        const msg = err instanceof Error ? err.message : String(err)
+
+        // Stream terminated means the server closed the connection (timeout
+        // or model unload). Fail the entire scenario immediately so the
+        // trial is marked failed and the runner moves on.
+        if (msg.includes('Stream terminated')) {
+          trialLog(result, `Prompt ${promptLabel} failed: ${msg}`)
+          result.activePrompts = undefined
+          result.status = 'failed'
+          onUpdate({ ...result })
+          return
+        }
+
         repeatScores.push(0)
-        errorMessage = `Error: ${err instanceof Error ? err.message : String(err)}`
+        errorMessage = `Error: ${msg}`
         hadError = true
       }
     }
@@ -3225,6 +3260,14 @@ async function runScenarioConcurrent(
   trialLog(result, `Starting scenario: ${scenario.name} (${scenario.prompts.length} prompts, concurrency=${concurrency}, ${safeRepeats}x repeats)`)
   onUpdate({ ...result })
 
+  // Per-scenario abort controller: when one prompt hits a fatal error (e.g.
+  // "Stream terminated"), we abort ALL in-flight prompts so their SSE streams
+  // are cancelled immediately instead of continuing in the background.
+  const scenarioController = new AbortController()
+  const scenarioSignal = scenarioController.signal
+  const cascadeAbort = () => scenarioController.abort()
+  signal.addEventListener('abort', cascadeAbort, { once: true })
+
   const batchStartMs = performance.now()
 
   const inflight = new Map<number, AutoTestActivePrompt>()
@@ -3233,97 +3276,122 @@ async function runScenarioConcurrent(
     onUpdate({ ...result })
   }
 
-  await mapLimit(
-    scenario.prompts,
-    concurrency,
-    async (prompt, pi) => {
-      if (signal.aborted) return
+  try {
+    await mapLimit(
+      scenario.prompts,
+      concurrency,
+      async (prompt, pi) => {
+        if (scenarioSignal.aborted) return
 
-      const effectiveRepeats = prompt.contextFill != null ? 1 : safeRepeats;
+        const effectiveRepeats = prompt.contextFill != null ? 1 : safeRepeats;
 
-      inflight.set(pi, {
-        scenarioId: scenario.id,
-        promptId: prompt.id,
-        promptIndex: pi,
-        repeats: effectiveRepeats,
-        repeatIndex: 1,
-        preview: promptPreview(prompt),
-        startedAt: new Date().toISOString(),
-      })
-      emitInflight()
+        inflight.set(pi, {
+          scenarioId: scenario.id,
+          promptId: prompt.id,
+          promptIndex: pi,
+          repeats: effectiveRepeats,
+          repeatIndex: 1,
+          preview: promptPreview(prompt),
+          startedAt: new Date().toISOString(),
+        })
+        emitInflight()
 
-      const repeatScores: number[] = []
-      const repeatNotes: string[] = []
-      let bestAssistantText = ''
-      let bestToolCalls: ChatToolCall[] = []
-      let lastUsage: ChatUsage | undefined
-      let hadError = false
-      let errorMessage = ''
+        const repeatScores: number[] = []
+        const repeatNotes: string[] = []
+        let bestAssistantText = ''
+        let bestToolCalls: ChatToolCall[] = []
+        let lastUsage: ChatUsage | undefined
+        let hadError = false
+        let errorMessage = ''
 
-      for (let r = 0; r < effectiveRepeats; r++) {
-        if (signal.aborted) break
+        for (let r = 0; r < effectiveRepeats; r++) {
+          if (scenarioSignal.aborted) break
 
-        if (effectiveRepeats > 1 && r > 0) {
-          const cur = inflight.get(pi)
-          if (cur) {
-            inflight.set(pi, { ...cur, repeatIndex: r + 1 })
-            emitInflight()
+          if (effectiveRepeats > 1 && r > 0) {
+            const cur = inflight.get(pi)
+            if (cur) {
+              inflight.set(pi, { ...cur, repeatIndex: r + 1 })
+              emitInflight()
+            }
+          }
+
+          try {
+            const pr = await runSinglePrompt(sessionId, prompt, candidate, scenarioSignal)
+            repeatScores.push(pr.score)
+            if (pr.notes) repeatNotes.push(...pr.notes)
+            if (r === 0) {
+              bestAssistantText = pr.assistantText
+              bestToolCalls = pr.toolCalls
+            }
+            lastUsage = pr.usage
+
+            const includeInOverall = pi !== 0 && !prompt.contextFill
+            accumulateMetrics(pr, prompt, acc, includeInOverall)
+          } catch (err) {
+            if (err instanceof DOMException && err.name === 'AbortError') break
+
+            const msg = err instanceof Error ? err.message : String(err)
+
+            if (msg.includes('Stream terminated')) {
+              trialLog(result, `Prompt ${prompt.id} failed: ${msg}`)
+              result.activePrompts = undefined
+              result.status = 'failed'
+              onUpdate({ ...result })
+              scenarioController.abort()
+              return
+            }
+
+            repeatScores.push(0)
+            errorMessage = `Error: ${msg}`
+            hadError = true
           }
         }
 
-        try {
-          const pr = await runSinglePrompt(sessionId, prompt, candidate, signal)
-          repeatScores.push(pr.score)
-          if (pr.notes) repeatNotes.push(...pr.notes)
-          if (r === 0) {
-            bestAssistantText = pr.assistantText
-            bestToolCalls = pr.toolCalls
-          }
-          lastUsage = pr.usage
-
-          const includeInOverall = pi !== 0 && !prompt.contextFill
-          accumulateMetrics(pr, prompt, acc, includeInOverall)
-        } catch (err) {
-          if (err instanceof DOMException && err.name === 'AbortError') break
-          repeatScores.push(0)
-          errorMessage = `Error: ${err instanceof Error ? err.message : String(err)}`
-          hadError = true
+        if (scenarioSignal.aborted) {
+          inflight.delete(pi)
+          return
         }
-      }
 
-      const avgScore = repeatScores.length > 0
-        ? repeatScores.reduce((s, v) => s + v, 0) / repeatScores.length
-        : 0
+        const avgScore = repeatScores.length > 0
+          ? repeatScores.reduce((s, v) => s + v, 0) / repeatScores.length
+          : 0
 
-      const dedupNotes = repeatNotes.length > 0 ? [...new Set(repeatNotes)] : undefined
+        const dedupNotes = repeatNotes.length > 0 ? [...new Set(repeatNotes)] : undefined
 
-      promptResults[pi] = {
-        promptId: prompt.id,
-        assistantText: bestAssistantText,
-        toolCalls: bestToolCalls,
-        usage: lastUsage,
-        score: avgScore,
-        notes: hadError && !dedupNotes ? [errorMessage] : dedupNotes,
-      }
+        promptResults[pi] = {
+          promptId: prompt.id,
+          assistantText: bestAssistantText,
+          toolCalls: bestToolCalls,
+          usage: lastUsage,
+          score: avgScore,
+          notes: hadError && !dedupNotes ? [errorMessage] : dedupNotes,
+        }
 
-      inflight.delete(pi)
+        inflight.delete(pi)
 
-      // Update UI as each prompt completes
-      const completedResults = promptResults.filter(Boolean)
-      const partialScenario = buildScenarioResult(
-        scenario.id, scenario.prompts, completedResults,
-        acc.genTokens, acc.genSeconds, acc.ttft, acc.ttftCount,
-        acc.fillGenTokens, acc.fillGenSeconds, acc.fillTTFT, acc.fillTTFTCount, acc.actualFills,
-      )
-      result.activePrompts = [...inflight.values()]
-      upsertScenarioResult(result, partialScenario, onUpdate)
-    },
-    signal,
-  )
+        // Update UI as each prompt completes
+        const completedResults = promptResults.filter(Boolean)
+        const partialScenario = buildScenarioResult(
+          scenario.id, scenario.prompts, completedResults,
+          acc.genTokens, acc.genSeconds, acc.ttft, acc.ttftCount,
+          acc.fillGenTokens, acc.fillGenSeconds, acc.fillTTFT, acc.fillTTFTCount, acc.actualFills,
+        )
+        result.activePrompts = [...inflight.values()]
+        upsertScenarioResult(result, partialScenario, onUpdate)
+      },
+      scenarioSignal,
+    )
+  } finally {
+    signal.removeEventListener('abort', cascadeAbort)
+  }
 
   result.activePrompts = undefined
 
-  if (signal.aborted) {
+  if (result.status === 'failed') {
+    return
+  }
+
+  if (scenarioSignal.aborted) {
     result.status = 'cancelled'
     onUpdate({ ...result })
     return
@@ -3432,7 +3500,7 @@ export async function runTrial(
       await runScenarioSequential(sessionId, candidate, scenario, safeRepeats, result, onUpdate, signal)
     }
 
-    if (result.status === 'cancelled') return result
+    if (result.status === 'cancelled' || result.status === 'failed') return result
   }
 
   const metricsByScenario = new Map<AutoTestScenarioID, { score: number; avgTPS?: number; avgTTFT?: number }>()

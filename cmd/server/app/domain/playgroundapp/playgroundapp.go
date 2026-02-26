@@ -266,12 +266,35 @@ func (a *app) chatCompletions(ctx context.Context, r *http.Request) web.Encoder 
 		return errs.Errorf(errs.NotFound, "session expired: %s", sessionID)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, 29*time.Minute)
 	defer cancel()
 
 	d := model.MapToModelD(raw)
 
 	if _, err := krn.ChatStreamingHTTP(ctx, web.GetWriter(ctx), d); err != nil {
+
+		// Request exceeded the 29-minute deadline. Clean up the session
+		// so the next automated-test trial starts with a clean slate.
+		// Only invalidate the cache entry for custom (session-scoped)
+		// models; shared models (cacheKey == modelID) may be serving
+		// other sessions and must not be unloaded.
+		if ctx.Err() == context.DeadlineExceeded {
+			a.log.Info(ctx, "playground-chat-timeout", "session-id", sessionID, "cache-key", entry.cacheKey)
+			if entry.custom {
+				a.cache.Invalidate(entry.cacheKey)
+			}
+			a.mu.Lock()
+			delete(a.sessions, sessionID)
+			a.mu.Unlock()
+			return web.NewNoResponse()
+		}
+
+		// Client disconnected — streaming headers are already committed
+		// so we cannot write an HTTP error response.
+		if ctx.Err() != nil {
+			return web.NewNoResponse()
+		}
+
 		return errs.New(errs.Internal, err)
 	}
 

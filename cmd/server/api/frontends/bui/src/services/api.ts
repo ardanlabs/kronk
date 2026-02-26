@@ -634,6 +634,22 @@ class ApiService {
 
         const decoder = new TextDecoder();
         let buffer = '';
+        let receivedDone = false;
+
+        const processLine = (raw: string) => {
+          const trimmed = raw.trim();
+          if (!trimmed) return;
+          if (trimmed.startsWith('event:')) return;
+          if (trimmed.startsWith(':')) return; // SSE comment / keep-alive
+          const jsonStr = trimmed.startsWith('data:') ? trimmed.slice(5).trim() : trimmed;
+          if (!jsonStr) return;
+          if (jsonStr === '[DONE]') { receivedDone = true; return; }
+          try {
+            onMessage(JSON.parse(jsonStr) as ChatStreamResponse);
+          } catch {
+            // Skip malformed JSON
+          }
+        };
 
         while (true) {
           const { done, value } = await reader.read();
@@ -644,20 +660,18 @@ class ApiService {
           buffer = lines.pop() || '';
 
           for (const line of lines) {
-            if (!line.trim() || line === 'data: [DONE]') continue;
-            if (line.startsWith('event:')) continue;
-            const jsonStr = line.startsWith('data: ') ? line.slice(6) : line;
-            if (!jsonStr.trim()) continue;
-            try {
-              const data = JSON.parse(jsonStr) as ChatStreamResponse;
-              onMessage(data);
-            } catch {
-              // Skip malformed JSON
-            }
+            processLine(line);
           }
         }
 
-        onComplete();
+        buffer += decoder.decode(); // flush remaining multi-byte sequence
+        if (buffer) processLine(buffer);
+
+        if (receivedDone) {
+          onComplete();
+        } else {
+          onError('Stream terminated: server closed connection before completion');
+        }
       })
       .catch((err) => {
         if (err.name !== 'AbortError') {
