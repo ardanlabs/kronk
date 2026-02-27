@@ -197,6 +197,24 @@ func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.New(errs.InvalidArgument, err)
 	}
 
+	// Resolve HuggingFace shorthand references like "owner/repo:Q4_K_M"
+	// or "hf.co/owner/repo:Q4_K_M@revision" into concrete file URLs.
+	resolved, isShorthand, err := catalog.ResolveHuggingFaceShorthand(ctx, req.ModelURL)
+	if err != nil {
+		return errs.New(errs.Internal, err)
+	}
+	if isShorthand {
+		if len(resolved.ModelFiles) == 0 {
+			return errs.Errorf(errs.Internal, "resolved shorthand but no model files found for %q", req.ModelURL)
+		}
+		a.log.Info(ctx, "pull-models", "resolved-shorthand", req.ModelURL, "files", len(resolved.ModelFiles), "proj", resolved.ProjFile)
+		req.ModelURL = resolved.ModelFiles[0]
+		req.SplitURLs = resolved.ModelFiles
+		if req.ProjURL == "" {
+			req.ProjURL = resolved.ProjFile
+		}
+	}
+
 	a.log.Info(ctx, "pull-models", "model", req.ModelURL, "proj", req.ProjURL)
 
 	w := web.GetWriter(ctx)
@@ -229,15 +247,21 @@ func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
 		f.Flush()
 	}
 
-	mp, err := a.models.Download(ctx, logger, req.ModelURL, req.ProjURL)
-	if err != nil {
-		ver := toAppPull(err.Error(), models.Path{})
+	var mp models.Path
+	var dlErr error
+	if len(req.SplitURLs) > 1 {
+		mp, dlErr = a.models.DownloadSplits(ctx, logger, req.SplitURLs, req.ProjURL)
+	} else {
+		mp, dlErr = a.models.Download(ctx, logger, req.ModelURL, req.ProjURL)
+	}
+	if dlErr != nil {
+		ver := toAppPull(dlErr.Error(), models.Path{})
 
 		a.log.Info(ctx, "pull-model", "info", ver[:len(ver)-1])
 		fmt.Fprint(w, ver)
 		f.Flush()
 
-		return errs.Errorf(errs.Internal, "unable to install model: %s", err)
+		return errs.Errorf(errs.Internal, "unable to install model: %s", dlErr)
 	}
 
 	ver := toAppPull("downloaded", mp)

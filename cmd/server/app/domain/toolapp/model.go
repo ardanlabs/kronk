@@ -139,8 +139,9 @@ func toListModelsInfo(modelFiles []models.File, modelConfigs map[string]catalog.
 
 // PullRequest represents the input for the pull command.
 type PullRequest struct {
-	ModelURL string `json:"model_url"`
-	ProjURL  string `json:"proj_url"`
+	ModelURL  string   `json:"model_url"`
+	ProjURL   string   `json:"proj_url"`
+	SplitURLs []string `json:"-"`
 }
 
 // Decode implements the decoder interface.

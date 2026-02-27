@@ -11,6 +11,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/toolapp"
 	"github.com/ardanlabs/kronk/sdk/kronk"
+	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
@@ -54,7 +55,7 @@ func runWeb(args []string) error {
 	return nil
 }
 
-func runLocal(models *models.Models, args []string) error {
+func runLocal(mdls *models.Models, args []string) error {
 	modelURL := args[0]
 
 	var projURL string
@@ -65,7 +66,22 @@ func runLocal(models *models.Models, args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
-	_, err := models.Download(ctx, kronk.FmtLogger, modelURL, projURL)
+	// Resolve HuggingFace shorthand references like "owner/repo:Q4_K_M".
+	resolved, isShorthand, err := catalog.ResolveHuggingFaceShorthand(ctx, modelURL)
+	if err != nil {
+		return fmt.Errorf("resolve-shorthand: %w", err)
+	}
+
+	if isShorthand {
+		fmt.Printf("Resolved %s → %d file(s)\n", modelURL, len(resolved.ModelFiles))
+		if projURL == "" {
+			projURL = resolved.ProjFile
+		}
+		_, err = mdls.DownloadSplits(ctx, kronk.FmtLogger, resolved.ModelFiles, projURL)
+	} else {
+		_, err = mdls.Download(ctx, kronk.FmtLogger, modelURL, projURL)
+	}
+
 	if err != nil {
 		return fmt.Errorf("download-model: %w", err)
 	}
