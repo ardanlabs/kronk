@@ -229,12 +229,14 @@ func isDirEffectivelyEmpty(entries []os.DirEntry) bool {
 // NormalizeHuggingFaceDownloadURL converts short format to full HuggingFace download URLs.
 // Input:  mradermacher/Qwen2-Audio-7B-GGUF/Qwen2-Audio-7B.Q8_0.gguf
 // Output: https://huggingface.co/mradermacher/Qwen2-Audio-7B-GGUF/resolve/main/Qwen2-Audio-7B.Q8_0.gguf
-func NormalizeHuggingFaceDownloadURL(url string) string {
-	if strings.HasPrefix(url, "https://") || strings.HasPrefix(url, "http://") {
-		return url
+func NormalizeHuggingFaceDownloadURL(rawURL string) string {
+	if strings.HasPrefix(rawURL, "https://") || strings.HasPrefix(rawURL, "http://") {
+		return rawURL
 	}
 
-	parts := strings.Split(url, "/")
+	rawURL = stripHFHostPrefix(rawURL)
+
+	parts := strings.Split(rawURL, "/")
 	if len(parts) >= 3 {
 		org := parts[0]
 		repo := parts[1]
@@ -242,7 +244,7 @@ func NormalizeHuggingFaceDownloadURL(url string) string {
 		return fmt.Sprintf("https://huggingface.co/%s/%s/resolve/main/%s", org, repo, filename)
 	}
 
-	return url
+	return rawURL
 }
 
 // NormalizeHuggingFaceURL converts short format URLs to full HuggingFace URLs.
@@ -254,12 +256,14 @@ func NormalizeHuggingFaceDownloadURL(url string) string {
 //
 // Input:  unsloth/Llama-3.3-70B-Instruct-GGUF/Llama-3.3-70B-Instruct-Q8_0/Llama-3.3-70B-Instruct-Q8_0-00001-of-00002.gguf
 // Output: https://huggingface.co/unsloth/Llama-3.3-70B-Instruct-GGUF/blob/main/Llama-3.3-70B-Instruct-Q8_0/Llama-3.3-70B-Instruct-Q8_0-00001-of-00002.gguf
-func NormalizeHuggingFaceURL(url string) string {
-	if strings.HasPrefix(url, "https://") || strings.HasPrefix(url, "http://") {
-		return url
+func NormalizeHuggingFaceURL(rawURL string) string {
+	if strings.HasPrefix(rawURL, "https://") || strings.HasPrefix(rawURL, "http://") {
+		return rawURL
 	}
 
-	parts := strings.Split(url, "/")
+	rawURL = stripHFHostPrefix(rawURL)
+
+	parts := strings.Split(rawURL, "/")
 	if len(parts) >= 3 {
 		org := parts[0]
 		repo := parts[1]
@@ -268,8 +272,19 @@ func NormalizeHuggingFaceURL(url string) string {
 	}
 
 	if len(parts) == 2 {
-		return fmt.Sprintf("https://huggingface.co/%s", url)
+		return fmt.Sprintf("https://huggingface.co/%s", rawURL)
 	}
 
-	return url
+	return rawURL
+}
+
+// stripHFHostPrefix removes bare host prefixes (without scheme) from URLs.
+func stripHFHostPrefix(s string) string {
+	lower := strings.ToLower(s)
+	for _, prefix := range []string{"huggingface.co/", "hf.co/"} {
+		if strings.HasPrefix(lower, prefix) {
+			return s[len(prefix):]
+		}
+	}
+	return s
 }

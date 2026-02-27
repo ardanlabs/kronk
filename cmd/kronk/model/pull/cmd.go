@@ -10,9 +10,19 @@ import (
 )
 
 var Cmd = &cobra.Command{
-	Use:   "pull <MODEL_URL> [MMPROJ_URL]",
+	Use:   "pull <MODEL_URL|SHORTHAND> [MMPROJ_URL]",
 	Short: "Pull a model from the web",
-	Long: `Pull a model from the web, the mmproj file is optional
+	Long: `Pull a model from the web, the mmproj file is optional.
+
+The model can be specified as:
+  - A full HuggingFace URL: https://huggingface.co/org/repo/resolve/main/model.gguf
+  - A short form: org/repo/model.gguf
+  - A shorthand: owner/repo:Q4_K_M (auto-resolves files via HuggingFace API)
+  - With hf.co prefix: hf.co/owner/repo:Q4_K_M
+  - With revision: owner/repo:Q4_K_M@revision
+
+Shorthand references automatically resolve multi-file (split) models and
+projection files for vision/audio models.
 
 Environment Variables (web mode - default):
       KRONK_TOKEN         (required when auth enabled)  Authentication token for the kronk server.

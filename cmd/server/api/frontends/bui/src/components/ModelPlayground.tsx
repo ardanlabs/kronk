@@ -702,12 +702,12 @@ export default function ModelPlayground() {
             {showPullForm && !session && (
               <div className="playground-pull-form">
                 <div className="form-group">
-                  <label>HuggingFace Model URL</label>
+                  <label>HuggingFace Model URL or Shorthand</label>
                   <input
                     type="text"
                     value={hfModelUrl}
                     onChange={(e) => setHfModelUrl(e.target.value)}
-                    placeholder="org/repo/model.gguf"
+                    placeholder="owner/repo:Q4_K_M or org/repo/model.gguf"
                     disabled={isDownloading}
                   />
                 </div>

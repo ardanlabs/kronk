@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"net/url"
+	"os"
 	"strings"
 	"time"
 )
@@ -29,21 +31,33 @@ type HFRepoFile struct {
 //   - A full URL: https://huggingface.co/owner/repo/resolve/main/file.gguf
 //   - A full URL: https://huggingface.co/owner/repo/blob/main/file.gguf
 //   - A short form: owner/repo/file.gguf
+//   - A shorthand: owner/repo:Q4_K_M or hf.co/owner/repo:Q4_K_M
+//   - A shorthand with revision: owner/repo:Q4_K_M@revision
 //
 // If filename is empty (only owner/repo provided), the result includes
 // RepoFiles listing all available GGUF files in the repository.
 func LookupHuggingFace(ctx context.Context, input string) (HFLookupResult, error) {
+
+	// Try shorthand resolution first (e.g. "owner/repo:Q4_K_M").
+	resolved, meta, isShorthand, err := resolveHFShorthandInternal(ctx, input)
+	if err != nil {
+		return HFLookupResult{}, fmt.Errorf("lookup-huggingface: %w", err)
+	}
+	if isShorthand {
+		return lookupFromResolved(ctx, resolved, meta)
+	}
+
 	owner, repo, filename, err := parseHFInput(input)
 	if err != nil {
 		return HFLookupResult{}, fmt.Errorf("lookup-huggingface: %w", err)
 	}
 
-	modelMeta, err := fetchHFModelMeta(ctx, owner, repo)
+	modelMeta, err := fetchHFModelMeta(ctx, owner, repo, "main")
 	if err != nil {
 		return HFLookupResult{}, fmt.Errorf("lookup-huggingface: %w", err)
 	}
 
-	repoFiles, err := fetchHFRepoFiles(ctx, owner, repo)
+	repoFiles, err := fetchHFRepoFiles(ctx, owner, repo, "main")
 	if err != nil {
 		return HFLookupResult{}, fmt.Errorf("lookup-huggingface: %w", err)
 	}
@@ -63,14 +77,75 @@ func LookupHuggingFace(ctx context.Context, input string) (HFLookupResult, error
 	}, nil
 }
 
+// lookupFromResolved builds an HFLookupResult from shorthand-resolved files.
+// It reuses the model metadata already fetched by the resolver to avoid a
+// redundant API call, and fetches a recursive file listing for sizes.
+func lookupFromResolved(ctx context.Context, resolved HFResolvedFiles, modelMeta hfModelMeta) (HFLookupResult, error) {
+	repoFiles, err := fetchHFRepoFiles(ctx, resolved.Owner, resolved.Repo, resolved.Revision)
+	if err != nil {
+		return HFLookupResult{}, fmt.Errorf("lookup-from-resolved: %w", err)
+	}
+
+	var ggufFiles []HFRepoFile
+	for _, f := range repoFiles {
+		if strings.HasSuffix(strings.ToLower(f.Filename), ".gguf") {
+			ggufFiles = append(ggufFiles, f)
+		}
+	}
+
+	// Build a size lookup using the full repo-relative path so we can
+	// match files in subdirectories (the recursive tree listing returns
+	// paths like "subdir/file.gguf").
+	sizeByPath := make(map[string]string, len(ggufFiles))
+	for _, f := range ggufFiles {
+		sizeByPath[f.Filename] = f.SizeStr
+	}
+
+	if len(resolved.ModelFiles) == 0 {
+		return HFLookupResult{}, fmt.Errorf("lookup-from-resolved: no resolved model files")
+	}
+
+	// Use the first resolved model file as the primary filename for details.
+	filename := baseName(resolved.ModelFiles[0])
+
+	md := buildModelDetails(resolved.Owner, resolved.Repo, filename, modelMeta, ggufFiles)
+
+	// Override Files to include all resolved model files and projection.
+	modelFiles := make([]File, len(resolved.ModelFiles))
+	for i, mf := range resolved.ModelFiles {
+		relPath := repoRelativePath(mf, resolved.Owner, resolved.Repo)
+		modelFiles[i] = File{URL: mf, Size: sizeByPath[relPath]}
+	}
+	md.Files.Models = modelFiles
+
+	if resolved.ProjFile != "" {
+		relPath := repoRelativePath(resolved.ProjFile, resolved.Owner, resolved.Repo)
+		md.Files.Proj = File{URL: resolved.ProjFile, Size: sizeByPath[relPath]}
+	}
+
+	return HFLookupResult{
+		ModelDetails: md,
+		RepoFiles:    ggufFiles,
+	}, nil
+}
+
 // =============================================================================
 
 func parseHFInput(input string) (owner, repo, filename string, err error) {
 	input = strings.TrimSpace(input)
 
-	if strings.HasPrefix(input, "https://huggingface.co/") || strings.HasPrefix(input, "http://huggingface.co/") {
-		input = strings.TrimPrefix(input, "https://huggingface.co/")
-		input = strings.TrimPrefix(input, "http://huggingface.co/")
+	for _, prefix := range []string{
+		"https://huggingface.co/",
+		"http://huggingface.co/",
+		"https://hf.co/",
+		"http://hf.co/",
+		"huggingface.co/",
+		"hf.co/",
+	} {
+		if strings.HasPrefix(strings.ToLower(input), prefix) {
+			input = input[len(prefix):]
+			break
+		}
 	}
 
 	parts := strings.Split(input, "/")
@@ -121,12 +196,19 @@ func (m hfModelMeta) isGated() bool {
 	}
 }
 
-func fetchHFModelMeta(ctx context.Context, owner, repo string) (hfModelMeta, error) {
-	url := fmt.Sprintf("https://huggingface.co/api/models/%s/%s", owner, repo)
+func fetchHFModelMeta(ctx context.Context, owner, repo, revision string) (hfModelMeta, error) {
+	apiURL := fmt.Sprintf("https://huggingface.co/api/models/%s/%s", url.PathEscape(owner), url.PathEscape(repo))
+	if revision != "" && revision != "main" {
+		apiURL += "?revision=" + url.QueryEscape(revision)
+	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return hfModelMeta{}, fmt.Errorf("fetch-hf-model-meta: creating request: %w", err)
+	}
+
+	if token := os.Getenv("KRONK_HF_TOKEN"); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
 	resp, err := http.DefaultClient.Do(req)
@@ -156,12 +238,19 @@ type hfTreeFile struct {
 	} `json:"lfs"`
 }
 
-func fetchHFRepoFiles(ctx context.Context, owner, repo string) ([]HFRepoFile, error) {
-	url := fmt.Sprintf("https://huggingface.co/api/models/%s/%s/tree/main", owner, repo)
+func fetchHFRepoFiles(ctx context.Context, owner, repo, revision string) ([]HFRepoFile, error) {
+	if revision == "" {
+		revision = "main"
+	}
+	apiURL := fmt.Sprintf("https://huggingface.co/api/models/%s/%s/tree/%s?recursive=true", url.PathEscape(owner), url.PathEscape(repo), url.PathEscape(revision))
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("fetch-hf-repo-files: creating request: %w", err)
+	}
+
+	if token := os.Getenv("KRONK_HF_TOKEN"); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
 	resp, err := http.DefaultClient.Do(req)

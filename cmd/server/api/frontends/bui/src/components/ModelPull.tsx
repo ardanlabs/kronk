@@ -42,8 +42,10 @@ export default function ModelPull() {
     <div>
       <div className="page-header">
         <h2>Pull Model</h2>
-              <p>Download a model from a URL. For split models, add multiple URLs and they will be pulled sequentially.</p>
-              <p>Example: https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf</p>
+              <p>Download a model from a URL or shorthand reference. For split models, add multiple URLs and they will be pulled sequentially.</p>
+              <p>Shorthand: <code>bartowski/Qwen3-8B-GGUF:Q4_K_M</code> or <code>hf.co/bartowski/Qwen3-8B-GGUF:Q4_K_M</code></p>
+              <p>With revision: <code>bartowski/Qwen3-8B-GGUF:Q4_K_M@main</code></p>
+              <p>Full URL: <code>https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf</code></p>
       </div>
 
       <div className="card">
@@ -59,7 +61,7 @@ export default function ModelPull() {
                   id={`modelUrl-${index}`}
                   value={url}
                   onChange={(e) => updateUrl(index, e.target.value)}
-                  placeholder="https://huggingface.co/org/repo/resolve/main/model.gguf"
+                  placeholder="owner/repo:Q4_K_M or https://huggingface.co/org/repo/resolve/main/model.gguf"
                   disabled={isDownloading}
                   style={{ flex: 1 }}
                 />
