@@ -73,6 +73,8 @@ function renderContent(content: string): JSX.Element {
   );
 }
 
+const HISTORY_ENABLED_KEY = 'kronk_chat_history_enabled';
+
 export default function Chat() {
   const { models, loading: modelsLoading, loadModels } = useModelList();
   const { messages, setMessages, clearMessages } = useChatMessages();
@@ -93,6 +95,10 @@ export default function Chat() {
   const [grammarFiles, setGrammarFiles] = useState<string[]>([]);
   const [grammarMode, setGrammarMode] = useState<'none' | 'preset' | 'custom'>('none');
   const [selectedPreset, setSelectedPreset] = useState('');
+  const [historyEnabled, setHistoryEnabled] = useState<boolean>(() => {
+    const stored = localStorage.getItem(HISTORY_ENABLED_KEY);
+    return stored === null ? true : stored === 'true';
+  });
 
   // Extended model configs with sampling parameters
   const [extendedModels, setExtendedModels] = useState<ListModelDetail[]>([]);
@@ -112,6 +118,14 @@ export default function Chat() {
   const programmaticScrollRef = useRef(false);
   const userInteractedRef = useRef(false);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
+
+  const toggleHistoryEnabled = useCallback(() => {
+    setHistoryEnabled((prev) => {
+      const next = !prev;
+      try { localStorage.setItem(HISTORY_ENABLED_KEY, String(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
 
   // Convert API sampling config to SamplingParams
   const toSamplingParams = useCallback((modelSampling: SamplingConfig): SamplingParams => {
@@ -501,7 +515,7 @@ export default function Chat() {
   };
 
   const handleClear = () => {
-    if (messages.length > 0 && window.confirm('Save this chat to history before clearing?')) {
+    if (historyEnabled && messages.length > 0) {
       saveChat(selectedModel, messages);
     }
     clearMessages();
@@ -569,16 +583,14 @@ export default function Chat() {
             onChange={(e) => {
               const newModel = e.target.value;
               if (messages.length > 0) {
-                if (window.confirm('Save this chat to history before switching?')) {
+                if (historyEnabled) {
                   saveChat(selectedModel, messages);
                 }
                 clearMessages();
                 setError(null);
                 setAttachedFiles([]);
-                setSelectedModel(newModel);
-              } else {
-                setSelectedModel(newModel);
               }
+              setSelectedModel(newModel);
             }}
             disabled={modelsLoading || isStreaming}
             className="chat-model-select"
@@ -600,6 +612,14 @@ export default function Chat() {
           </select>
         </div>
         <div className="chat-header-right">
+          <button
+            type="button"
+            className={`chat-history-toggle ${historyEnabled ? 'chat-history-toggle-on' : 'chat-history-toggle-off'}`}
+            onClick={toggleHistoryEnabled}
+            title={historyEnabled ? 'Chat history auto-save is on' : 'Chat history auto-save is off'}
+          >
+            Chat History: {historyEnabled ? 'ON' : 'OFF'}
+          </button>
           <button
             className="btn btn-secondary btn-sm"
             onClick={() => setShowHistory(!showHistory)}

@@ -27,6 +27,7 @@ import {
   INITIAL_DELAY_MS,
 } from '../services/autoTestRunner';
 import { api } from '../services/api';
+import { saveCompletedRun } from '../services/autoTestHistory';
 
 function mergeLogEntries(
   prevLogs: AutoTestLogEntry[],
@@ -281,6 +282,17 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
   const runLockRef = useRef<{ runId: string; done: Promise<void> } | null>(null);
   const resumeTrialLoopRef = useRef<(() => void) | null>(null);
   const [isRunning, setIsRunning] = useState(false);
+
+  // Auto-save completed runs to history
+  const savedRunIdsRef = useRef(new Set<string>());
+
+  useEffect(() => {
+    if (!run) return;
+    if (run.status !== 'completed') return;
+    if (savedRunIdsRef.current.has(run.runId)) return;
+    savedRunIdsRef.current.add(run.runId);
+    void saveCompletedRun(run);
+  }, [run?.runId, run?.status]);
 
   useEffect(() => {
     return () => {

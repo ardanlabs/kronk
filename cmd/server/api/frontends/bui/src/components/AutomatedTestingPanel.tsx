@@ -2,8 +2,6 @@ import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import type {
   PlaygroundSessionResponse,
   AutoTestTrialResult,
-  AutoTestPromptResult,
-  AutoTestScenarioResult,
   SamplingSweepDefinition,
   AutoTestSweepMode,
   ConfigSweepDefinition,
@@ -11,54 +9,19 @@ import type {
   BestConfigWeights,
   SamplingConfig,
 } from '../types';
-import { defaultSamplingSweepDef, defaultConfigSweepDef, defaultBestConfigWeights, defaultConfigBestWeights, chatScenario, toolCallScenario, configPerfScenario, generateConfigCandidates, generateTrialCandidates, TRIAL_PAUSE_MS } from '../services/autoTestRunner';
-import type { AutoTestScenario, AutoTestActivePrompt, AutoTestScenarioID } from '../types';
+import { defaultSamplingSweepDef, defaultConfigSweepDef, defaultBestConfigWeights, defaultConfigBestWeights, chatScenario, toolCallScenario, configPerfScenario, generateConfigCandidates, generateTrialCandidates, TRIAL_PAUSE_MS, presetWeights } from '../services/autoTestRunner';
+import type { PresetName } from '../services/autoTestRunner';
+import type { AutoTestScenario } from '../types';
 import { useAutoTestRunner } from '../contexts/AutoTestRunnerContext';
 import type { ConfigTrialResult } from '../contexts/AutoTestRunnerContext';
-import { formatMs, scoreColorSafe, formatScore, getScenarioScore, buildSamplingColumns, buildConfigColumns, SWEEP_MODES, FILL_LEVELS } from '../services/sweepModeColumns';
+import { formatMs, buildSamplingColumns, buildConfigColumns, SWEEP_MODES } from '../services/sweepModeColumns';
 import type { ColumnDef, CellMeta } from '../services/sweepModeColumns';
 import SamplingSweepParams from './SamplingSweepParams';
 import { SWEEP_PARAM_RANGES } from './SamplingSweepParams';
 import type { SamplingNumericKey, SweepInputTriple } from './SamplingSweepParams';
 import ConfigSweepParams from './ConfigSweepParams';
-
-type SortDirection = 'asc' | 'desc' | null;
-
-interface SortState {
-  column: string | null;
-  direction: SortDirection;
-}
-
-function nextSortDirection(current: SortDirection): SortDirection {
-  if (current === null) return 'asc';
-  if (current === 'asc') return 'desc';
-  return null;
-}
-
-function sortIndicator(column: string, sort: SortState): string {
-  if (sort.column !== column || sort.direction === null) return '';
-  return sort.direction === 'asc' ? ' ▲' : ' ▼';
-}
-
-function sortRows<T extends AutoTestTrialResult>(
-  rows: T[],
-  sort: SortState,
-  getValue: (row: T, col: string) => number | string | undefined,
-): T[] {
-  if (!sort.column || !sort.direction) return rows;
-  const dir = sort.direction === 'asc' ? 1 : -1;
-  return [...rows].sort((a, b) => {
-    const va = getValue(a, sort.column!);
-    const vb = getValue(b, sort.column!);
-    const na = va == null ? undefined : va;
-    const nb = vb == null ? undefined : vb;
-    if (na === undefined && nb === undefined) return 0;
-    if (na === undefined) return 1;
-    if (nb === undefined) return -1;
-    if (typeof na === 'number' && typeof nb === 'number') return (na - nb) * dir;
-    return String(na).localeCompare(String(nb)) * dir;
-  });
-}
+import { sortRows, sortIndicator, nextSortDirection, BestTrialMetrics, TrialDetails } from './autoTestShared';
+import type { SortState } from './autoTestShared';
 
 interface AutomatedTestingPanelProps {
   session: PlaygroundSessionResponse | null;
@@ -122,18 +85,6 @@ function deriveSweepInputs(def: SamplingSweepDefinition): Record<SamplingNumeric
     out[key] = deriveTripleFromValues(key, def[key] as number[]);
   }
   return out;
-}
-
-function estimatePromptDurationMs(usage: AutoTestPromptResult['usage']): number | undefined {
-  if (!usage) return undefined;
-  const out = usage.output_tokens;
-  const tps = usage.tokens_per_second;
-  if (!Number.isFinite(out) || !Number.isFinite(tps) || tps <= 0) return undefined;
-  const ttftMs = usage.time_to_first_token_ms ?? 0;
-  const genMs = (out / tps) * 1000;
-  const total = genMs + ttftMs;
-  if (!Number.isFinite(total) || total < 0) return undefined;
-  return total;
 }
 
 function formatCompletionTime(date: Date): string {
@@ -229,328 +180,6 @@ function TrialProgressBar({ totalTrials, trials, running, runStartedAt }: TrialP
         </div>
         {!showInside && <span className="playground-autotest-progress-label-outside">{label}</span>}
       </div>
-    </div>
-  );
-}
-
-function BestTrialMetrics({ trial, showScores }: { trial: AutoTestTrialResult; showScores: boolean }) {
-  return (
-    <>
-      {showScores && (
-        <>
-          <div><strong>Chat Score:</strong> {formatScore(getScenarioScore(trial, 'chat'))}</div>
-          <div><strong>Tool Score:</strong> {formatScore(getScenarioScore(trial, 'tool_call'))}</div>
-          <div><strong>Total Score:</strong> {formatScore(trial.totalScore)}</div>
-        </>
-      )}
-      <div><strong>Avg TPS:</strong> {trial.avgTPS?.toFixed(1) ?? '—'}</div>
-      <div><strong>Avg TTFT:</strong> {trial.avgTTFT !== undefined ? formatMs(trial.avgTTFT) : '—'}</div>
-      {trial.avgTPSByFill && FILL_LEVELS.map(level => (
-        <div key={`tps-${level}`}><strong>TPS @{level}:</strong> {trial.avgTPSByFill![level]?.toFixed(1) ?? '—'}</div>
-      ))}
-      {trial.avgTTFTByFill && FILL_LEVELS.map(level => (
-        <div key={`ttft-${level}`}><strong>TTFT @{level}:</strong> {trial.avgTTFTByFill![level] !== undefined ? formatMs(trial.avgTTFTByFill![level]) : '—'}</div>
-      ))}
-    </>
-  );
-}
-
-interface TrialDetailsProps {
-  trial: AutoTestTrialResult;
-  scenarioLookup: Record<string, AutoTestScenario>;
-  hideScores?: boolean;
-}
-
-interface ScenarioHeaderProps {
-  sr: AutoTestScenarioResult;
-  scenarioName: string;
-  hideScores?: boolean;
-}
-
-function ScenarioHeader({ sr, scenarioName, hideScores }: ScenarioHeaderProps) {
-  return (
-    <div className="autotest-detail-scenario-header">
-      <span className="autotest-detail-scenario-name">{scenarioName}</span>
-      {!hideScores && (
-        <span className="autotest-detail-scenario-score" style={{ color: scoreColorSafe(sr.score) }}>
-          Score: {formatScore(sr.score)}
-        </span>
-      )}
-      {sr.avgTPS !== undefined && <span>TPS: {sr.avgTPS.toFixed(1)}</span>}
-      {sr.avgTTFT !== undefined && <span>TTFT: {formatMs(sr.avgTTFT)}</span>}
-      {sr.avgTPSByFill && Object.keys(sr.avgTPSByFill).length > 0 && (
-        <span style={{ marginLeft: 8, opacity: 0.85 }}>
-          Context Fill TPS:
-          {FILL_LEVELS.map(level => sr.avgTPSByFill![level] !== undefined ? ` @${level}: ${sr.avgTPSByFill![level].toFixed(1)}` : null)}
-        </span>
-      )}
-      {sr.avgTTFTByFill && Object.keys(sr.avgTTFTByFill).length > 0 && (
-        <span style={{ marginLeft: 8, opacity: 0.85 }}>
-          Context Fill TTFT:
-          {FILL_LEVELS.map(level => sr.avgTTFTByFill![level] !== undefined ? ` @${level}: ${formatMs(sr.avgTTFTByFill![level])}` : null)}
-        </span>
-      )}
-    </div>
-  );
-}
-
-function formatLogTime(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-}
-
-function formatRunningLabel(ap: AutoTestActivePrompt, scenarioLookup: Record<string, AutoTestScenario>): string {
-  const scenarioName = scenarioLookup[ap.scenarioId]?.name ?? ap.scenarioId;
-  const totalPrompts = scenarioLookup[ap.scenarioId]?.prompts?.length;
-  let label = `${scenarioName} · Prompt ${ap.promptIndex + 1}${totalPrompts ? `/${totalPrompts}` : ''}`;
-  if (ap.repeats && ap.repeats > 1 && ap.repeatIndex != null) {
-    label += ` · Repeat ${ap.repeatIndex}/${ap.repeats}`;
-  }
-  return label;
-}
-
-function TrialDetails({ trial, scenarioLookup, hideScores }: TrialDetailsProps) {
-  const [expandedPrompts, setExpandedPrompts] = useState<Set<string>>(() => new Set());
-  const togglePromptExpanded = useCallback((key: string) => {
-    setExpandedPrompts(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }, []);
-  const logBodyRef = useRef<HTMLDivElement>(null);
-  const [logExpanded, setLogExpanded] = useState(false);
-  const [scenariosExpanded, setScenariosExpanded] = useState(false);
-  const hasActive = trial.status === 'running' && trial.activePrompts && trial.activePrompts.length > 0;
-  const hasLogs = trial.logEntries && trial.logEntries.length > 0;
-
-  useEffect(() => {
-    const el = logBodyRef.current;
-    if (!el || !logExpanded || trial.status !== 'running') return;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-    if (nearBottom) el.scrollTop = el.scrollHeight;
-  }, [trial.logEntries?.length, trial.status, logExpanded]);
-
-  if (trial.scenarioResults.length === 0 && !hasActive && !hasLogs) {
-    return <div className="autotest-detail-empty">No scenario results yet.</div>;
-  }
-
-  return (
-    <div className="autotest-detail-content">
-      {hasActive && (
-          <div className="autotest-detail-active">
-            <div className="autotest-detail-active-header">
-              <span className="playground-autotest-spinner-inline" /> Currently Running
-            </div>
-            {trial.activePrompts!.map((ap) => (
-                <div key={`${ap.scenarioId}-${ap.promptIndex}`} className="autotest-detail-active-prompt">
-                  <span className="autotest-detail-active-scenario">{scenarioLookup[ap.scenarioId]?.name ?? ap.scenarioId}</span>
-                  <span className="autotest-detail-active-id">{ap.promptId}</span>
-                  {ap.repeats && ap.repeats > 1 && ap.repeatIndex && (
-                      <span className="autotest-detail-active-repeat">Repeat {ap.repeatIndex}/{ap.repeats}</span>
-                  )}
-                  {ap.preview && <div className="autotest-detail-active-preview">{ap.preview}</div>}
-                </div>
-            ))}
-          </div>
-      )}
-      {hasLogs && (
-        <div className="autotest-detail-log">
-          <button type="button" className="autotest-detail-log-header" aria-expanded={logExpanded} onClick={e => { e.stopPropagation(); setLogExpanded(v => !v); }}>
-            {trial.status === 'running' && <span className="playground-autotest-spinner-inline" />}
-            <span>{logExpanded ? '▾' : '▸'} Activity Log</span>
-          </button>
-          <div className="autotest-detail-log-body" ref={logBodyRef}>
-            {logExpanded
-              ? trial.logEntries!.map((entry, idx) => (
-                  <div key={idx} className="autotest-detail-log-entry">
-                    <span className="autotest-detail-log-time">{formatLogTime(entry.timestamp)}</span>
-                    <span className="autotest-detail-log-msg">{entry.message}</span>
-                  </div>
-                ))
-              : (() => { const last = trial.logEntries![trial.logEntries!.length - 1]; return (
-                  <div className="autotest-detail-log-entry">
-                    <span className="autotest-detail-log-time">{formatLogTime(last.timestamp)}</span>
-                    <span className="autotest-detail-log-msg">{last.message}</span>
-                  </div>
-                ); })()
-            }
-          </div>
-        </div>
-      )}
-      {(trial.scenarioResults.length > 0 || (trial.status === 'running' && trial.activePrompts && trial.activePrompts.length > 0)) && (
-        <div className="autotest-detail-scenarios-section">
-          <button type="button" className="autotest-detail-log-header" aria-expanded={scenariosExpanded} onClick={e => { e.stopPropagation(); setScenariosExpanded(v => !v); }}>
-            <span>{scenariosExpanded ? '▾' : '▸'} Performance</span>
-          </button>
-          {!scenariosExpanded ? (
-            <div className="autotest-detail-scenarios-summary">
-              {trial.status === 'running' && trial.activePrompts && trial.activePrompts.length > 0 && (
-                <div className="autotest-detail-running-indicator">
-                  <span className="playground-autotest-spinner-inline" />{' '}
-                  Running: {formatRunningLabel(trial.activePrompts[0], scenarioLookup)}
-                </div>
-              )}
-              {trial.scenarioResults.map((sr) => (
-                <ScenarioHeader key={sr.scenarioId} sr={sr} scenarioName={scenarioLookup[sr.scenarioId]?.name ?? sr.scenarioId} hideScores={hideScores} />
-              ))}
-            </div>
-          ) : (
-            (() => {
-              const renderedIds = new Set(trial.scenarioResults.map(sr => sr.scenarioId));
-              const activeByScenario: Record<string, AutoTestActivePrompt[]> = {};
-              if (trial.status === 'running' && trial.activePrompts) {
-                for (const ap of trial.activePrompts) {
-                  if (!activeByScenario[ap.scenarioId]) activeByScenario[ap.scenarioId] = [];
-                  activeByScenario[ap.scenarioId].push(ap);
-                }
-              }
-              const scenarioIds = [...renderedIds];
-              for (const sid of Object.keys(activeByScenario)) {
-                const id = sid as AutoTestScenarioID;
-                if (!renderedIds.has(id)) scenarioIds.push(id);
-              }
-
-              return scenarioIds.map((scenarioId) => {
-                const sr = trial.scenarioResults.find(s => s.scenarioId === scenarioId);
-                const scenario = scenarioLookup[scenarioId];
-                const activeForScenario = activeByScenario[scenarioId] ?? [];
-
-                if (!sr && activeForScenario.length === 0) return null;
-
-                return (
-                  <div key={scenarioId} className="autotest-detail-scenario">
-                    {sr ? (
-                      <ScenarioHeader sr={sr} scenarioName={scenario?.name ?? scenarioId} hideScores={hideScores} />
-                    ) : (
-                      <div className="autotest-detail-scenario-header">
-                        <span className="autotest-detail-scenario-name">{scenario?.name ?? scenarioId}</span>
-                      </div>
-                    )}
-                    {activeForScenario.length > 0 && (
-                      <div className="autotest-detail-running-indicator autotest-detail-running-indicator--expanded">
-                        <span className="playground-autotest-spinner-inline" />{' '}
-                        Running: {formatRunningLabel(activeForScenario[0], scenarioLookup)}
-                      </div>
-                    )}
-                    {sr && (
-                      <div className="autotest-detail-prompts">
-                        {sr.promptResults.map((pr) => {
-                          const promptKey = `${sr.scenarioId}:${pr.promptId}`;
-                          const isPromptExpanded = expandedPrompts.has(promptKey);
-                          const isCtxFill = pr.promptId.startsWith('ctxfill-');
-                          const promptDef = scenario?.prompts.find(p => p.id === pr.promptId);
-                          const lastUserMsg = promptDef?.messages
-                            .filter(m => m.role === 'user')
-                            .pop();
-                          const inputText = isCtxFill
-                            ? `Context fill test (${pr.promptId.replace('ctxfill-', '')}% fill) — ${pr.usage?.prompt_tokens ?? '?'} prompt tokens`
-                            : typeof lastUserMsg?.content === 'string'
-                              ? lastUserMsg.content
-                              : lastUserMsg?.content?.map(p => ('text' in p ? p.text : '')).join('') ?? '';
-                          const expectedLabel = isCtxFill
-                            ? 'Performance metric only'
-                            : promptDef?.expected
-                              ? promptDef.expected.type === 'tool_call'
-                                ? 'Tool call'
-                                : promptDef.expected.type === 'no_tool_call'
-                                  ? 'No tool call' + (promptDef.expected.value ? ` (text: ${promptDef.expected.value})` : '')
-                                  : promptDef.expected.type === 'exact'
-                                    ? `Exact: "${promptDef.expected.value}"`
-                                    : `Regex: ${promptDef.expected.value}`
-                              : '—';
-                          const durMs = estimatePromptDurationMs(pr.usage);
-                          const durationLabel = durMs !== undefined ? formatMs(durMs) : '—';
-
-                          return (
-                            <div key={pr.promptId} className={`autotest-detail-prompt ${isPromptExpanded ? 'expanded' : 'collapsed'}`}>
-                              <div
-                                className="autotest-detail-prompt-header autotest-detail-prompt-header--clickable"
-                                role="button"
-                                tabIndex={0}
-                                aria-expanded={isPromptExpanded}
-                                onClick={() => togglePromptExpanded(promptKey)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter' || e.key === ' ') {
-                                    e.preventDefault();
-                                    togglePromptExpanded(promptKey);
-                                  }
-                                }}
-                              >
-                                <div className="autotest-detail-prompt-summary">
-                                  <span className="autotest-detail-prompt-toggle">{isPromptExpanded ? '▼' : '▶'}</span>
-                                  <span className="autotest-detail-prompt-id">{isCtxFill ? `Context Fill @${pr.promptId.replace('ctxfill-', '')}%` : pr.promptId}</span>
-                                  <span className="autotest-detail-prompt-duration">Duration: {durationLabel}</span>
-                                  <span className="autotest-detail-prompt-usage-inline">
-                                    <span>In: {pr.usage?.prompt_tokens ?? '—'}</span>
-                                    <span>Out: {pr.usage?.output_tokens ?? '—'}</span>
-                                    <span>TPS: {pr.usage?.tokens_per_second !== undefined ? pr.usage.tokens_per_second.toFixed(1) : '—'}</span>
-                                  </span>
-                                </div>
-                                {!hideScores && (
-                                  <span className="autotest-detail-prompt-score" style={{ color: scoreColorSafe(pr.score) }}>
-                                    {formatScore(pr.score)}
-                                  </span>
-                                )}
-                              </div>
-                              {isPromptExpanded && (
-                              <div className="autotest-detail-prompt-grid">
-                                <div className="autotest-detail-field">
-                                  <div className="autotest-detail-label">Input</div>
-                                  <div className="autotest-detail-value">{inputText || '—'}</div>
-                                </div>
-                                <div className="autotest-detail-field">
-                                  <div className="autotest-detail-label">Expected</div>
-                                  <div className="autotest-detail-value">{expectedLabel}</div>
-                                </div>
-                                <div className="autotest-detail-field">
-                                  <div className="autotest-detail-label">Output</div>
-                                  <div className="autotest-detail-value">
-                                    {pr.toolCalls.length > 0
-                                      ? pr.toolCalls.map((tc, ti) => (
-                                          <div key={ti} className="autotest-detail-toolcall">
-                                            <code>{tc.function.name}({tc.function.arguments})</code>
-                                          </div>
-                                        ))
-                                      : pr.assistantText || '(empty)'}
-                                  </div>
-                                </div>
-                                {pr.usage && (
-                                  <div className="autotest-detail-field">
-                                    <div className="autotest-detail-label">Usage</div>
-                                    <div className="autotest-detail-value autotest-detail-usage">
-                                      <span>In: {pr.usage.prompt_tokens}</span>
-                                      <span>Out: {pr.usage.output_tokens}</span>
-                                      <span>TPS: {pr.usage.tokens_per_second.toFixed(1)}</span>
-                                      {pr.usage.time_to_first_token_ms !== undefined && (
-                                        <span>TTFT: {formatMs(pr.usage.time_to_first_token_ms)}</span>
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
-                                {pr.notes && pr.notes.length > 0 && (
-                                  <div className="autotest-detail-field">
-                                    <div className="autotest-detail-label">Notes</div>
-                                    <div className="autotest-detail-value autotest-detail-notes">
-                                      {pr.notes.map((n, ni) => <div key={ni}>{n}</div>)}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              });
-            })()
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -864,6 +493,15 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
     setWeightsChanged(false);
   }, [weights, reevaluateBestTrial]);
 
+  const applyPreset = useCallback((preset: PresetName) => {
+    const mode = run?.kind ?? sweepMode;
+    const next = presetWeights(preset, mode);
+    setWeights(next);
+    appliedWeightsRef.current = { ...next };
+    setWeightsChanged(false);
+    reevaluateBestTrial(next);
+  }, [run, sweepMode, reevaluateBestTrial]);
+
   const handleStop = useCallback(() => {
     stopRun();
   }, [stopRun]);
@@ -1037,41 +675,56 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
       )}
 
       {/* Best Configuration Found (shown after run completes, before results) */}
-      {runnerState === 'completed' && (displayMode === 'config' ? bestConfigTrial : bestTrial) && (
+      {runnerState === 'completed' && (() => {
+        const hasBest = !!(displayMode === 'config' ? bestConfigTrial : bestTrial);
+        return (
         <div className="playground-autotest-best">
-          <h4>Best Configuration Found</h4>
-          <div className="playground-autotest-best-details">
-            {displayMode === 'config' && bestConfigTrial ? (
-              <>
-                <div><strong>Context Window:</strong> {bestConfigTrial.config?.['context_window'] ?? '—'}</div>
-                <div><strong>NBatch:</strong> {bestConfigTrial.config?.nbatch ?? '—'}</div>
-                <div><strong>NUBatch:</strong> {bestConfigTrial.config?.nubatch ?? '—'}</div>
-                <div><strong>NSeqMax:</strong> {bestConfigTrial.config?.['nseq_max'] ?? '—'}</div>
-                <div><strong>Flash Attention:</strong> {bestConfigTrial.config?.['flash_attention'] ?? '—'}</div>
-                <div><strong>KV Cache Type:</strong> {bestConfigTrial.config?.['cache_type'] ?? '—'}</div>
-                <div><strong>Cache Mode:</strong> {bestConfigTrial.config?.['cache_mode'] ? (bestConfigTrial.config['cache_mode'] === 'none' ? 'None' : bestConfigTrial.config['cache_mode'].toUpperCase()) : '—'}</div>
-              </>
-            ) : bestTrial ? (
-              <>
-                <div><strong>Temperature:</strong> {bestTrial.candidate.temperature}</div>
-                <div><strong>Top P:</strong> {bestTrial.candidate.top_p}</div>
-                <div><strong>Top K:</strong> {bestTrial.candidate.top_k}</div>
-                <div><strong>Min P:</strong> {bestTrial.candidate.min_p}</div>
-              </>
-            ) : null}
-            {(() => {
-              const best = displayMode === 'config' ? bestConfigTrial : bestTrial;
-              if (!best) return null;
-              return <BestTrialMetrics trial={best} showScores={displayMode !== 'config'} />;
-            })()}
-          </div>
+          {hasBest ? (
+            <>
+              <h4>Best Configuration Found</h4>
+              <div className="playground-autotest-best-details">
+                {displayMode === 'config' && bestConfigTrial ? (
+                  <>
+                    <div><strong>Context Window:</strong> {bestConfigTrial.config?.['context_window'] ?? '—'}</div>
+                    <div><strong>NBatch:</strong> {bestConfigTrial.config?.nbatch ?? '—'}</div>
+                    <div><strong>NUBatch:</strong> {bestConfigTrial.config?.nubatch ?? '—'}</div>
+                    <div><strong>NSeqMax:</strong> {bestConfigTrial.config?.['nseq_max'] ?? '—'}</div>
+                    <div><strong>Flash Attention:</strong> {bestConfigTrial.config?.['flash_attention'] ?? '—'}</div>
+                    <div><strong>KV Cache Type:</strong> {bestConfigTrial.config?.['cache_type'] ?? '—'}</div>
+                    <div><strong>Cache Mode:</strong> {bestConfigTrial.config?.['cache_mode'] ? (bestConfigTrial.config['cache_mode'] === 'none' ? 'None' : bestConfigTrial.config['cache_mode'].toUpperCase()) : '—'}</div>
+                  </>
+                ) : bestTrial ? (
+                  <>
+                    <div><strong>Temperature:</strong> {bestTrial.candidate.temperature}</div>
+                    <div><strong>Top P:</strong> {bestTrial.candidate.top_p}</div>
+                    <div><strong>Top K:</strong> {bestTrial.candidate.top_k}</div>
+                    <div><strong>Min P:</strong> {bestTrial.candidate.min_p}</div>
+                  </>
+                ) : null}
+                {(() => {
+                  const best = displayMode === 'config' ? bestConfigTrial : bestTrial;
+                  if (!best) return null;
+                  return <BestTrialMetrics trial={best} showScores={displayMode !== 'config'} />;
+                })()}
+              </div>
+            </>
+          ) : (
+            <div style={{ fontSize: 12, color: 'var(--color-gray-700)' }}>
+              No best configuration could be selected. Adjust weights and reevaluate.
+            </div>
+          )}
 
           {/* Best Configuration Criteria (collapsible inside best box) */}
-          <details className="playground-sampling-params" style={{ marginTop: 12 }}>
+          <details className="playground-sampling-params" style={{ marginTop: hasBest ? 12 : 0 }}>
             <summary>Best Configuration Criteria</summary>
             <p style={{ fontSize: 12, color: 'var(--color-gray-600)', marginBottom: 8 }}>
               Weights control how the best configuration is chosen. Higher weight = more influence.
             </p>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+              <button type="button" className="btn btn-small" onClick={() => applyPreset('overall')}>Best overall</button>
+              <button type="button" className="btn btn-small" onClick={() => applyPreset('0pct')}>Best at 0% context</button>
+              <button type="button" className="btn btn-small" onClick={() => applyPreset('80pct')}>Best at 80% context</button>
+            </div>
             <div className="playground-sweep-params">
               {([
                 ...(displayMode !== 'config' ? [
@@ -1109,24 +762,41 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
                 ⚠ Total Score is derived from Chat/Tool weights. Weighting Total Score alongside Chat or Tool Score will double-count quality.
               </p>
             )}
-            {weightsChanged && (
-              <button
-                className="btn btn-primary btn-small"
-                style={{ marginTop: 8 }}
-                onClick={handleReevaluate}
-              >
-                Reevaluate
-              </button>
-            )}
+            <button
+              className="btn btn-primary btn-small"
+              style={{ marginTop: 8 }}
+              onClick={handleReevaluate}
+              disabled={!weightsChanged}
+            >
+              Reevaluate
+            </button>
           </details>
         </div>
-      )}
+        );
+      })()}
 
       {/* Results Table (collapsed by default) */}
       {activeTrials.length > 0 && (
         <details className="playground-autotest-results" open={resultsExpanded} onToggle={(e) => setResultsExpanded((e.currentTarget as HTMLDetailsElement).open)}>
           <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: 13, color: 'var(--color-gray-700)', marginBottom: 8 }}>
             Results ({activeTrials.length} trials)
+            {(runnerState === 'completed' || runnerState === 'cancelled') && (() => {
+              const startMs = run?.runStartedAt ? Date.parse(run.runStartedAt) : NaN;
+              const finishTimes = activeTrials
+                .map(t => t?.finishedAt ? Date.parse(t.finishedAt) : NaN)
+                .filter(Number.isFinite) as number[];
+              const endMs = finishTimes.length > 0 ? Math.max(...finishTimes) : NaN;
+              if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return null;
+              const totalRuntime = formatMs(Math.max(0, endMs - startMs));
+              const finishedDate = new Date(endMs);
+              const finishedStr = finishedDate.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) +
+                ', ' + finishedDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+              return (
+                <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--color-gray-500)', marginLeft: 8 }}>
+                  — {totalRuntime} total · finished {finishedStr}
+                </span>
+              );
+            })()}
           </summary>
           <div className="playground-autotest-table-scroll">
             <table className="playground-autotest-table">

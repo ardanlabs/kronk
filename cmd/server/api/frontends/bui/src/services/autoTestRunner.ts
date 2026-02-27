@@ -19,6 +19,7 @@ import type {
   PlaygroundModelConfig,
   BestConfigWeights,
   ContextFillRatio,
+  AutoTestSweepMode,
 } from '../types'
 
 /** Pause duration in milliseconds between scenario runs within a trial. */
@@ -2807,6 +2808,63 @@ export const defaultConfigBestWeights: BestConfigWeights = {
   ttft80: 0,
 }
 
+export type PresetName = 'overall' | '0pct' | '80pct';
+
+/** Return a preset weight profile for the given sweep mode. */
+export function presetWeights(preset: PresetName, mode: AutoTestSweepMode): BestConfigWeights {
+  const isSampling = mode !== 'config';
+  switch (preset) {
+    case 'overall':
+      return {
+        chatScore: isSampling ? 0.4 : 0,
+        toolScore: isSampling ? 0.6 : 0,
+        totalScore: 0,
+        avgTPS: 0.5,
+        avgTTFT: 0.3,
+        tps0: 0.2,
+        tps20: 0.2,
+        tps50: 0.2,
+        tps80: 0.2,
+        ttft0: 0.1,
+        ttft20: 0.1,
+        ttft50: 0.1,
+        ttft80: 0.1,
+      };
+    case '0pct':
+      return {
+        chatScore: isSampling ? 0.2 : 0,
+        toolScore: isSampling ? 0.3 : 0,
+        totalScore: 0,
+        avgTPS: 0.2,
+        avgTTFT: 0.1,
+        tps0: 1,
+        tps20: 0,
+        tps50: 0,
+        tps80: 0,
+        ttft0: 0.8,
+        ttft20: 0,
+        ttft50: 0,
+        ttft80: 0,
+      };
+    case '80pct':
+      return {
+        chatScore: isSampling ? 0.2 : 0,
+        toolScore: isSampling ? 0.3 : 0,
+        totalScore: 0,
+        avgTPS: 0.2,
+        avgTTFT: 0.1,
+        tps0: 0,
+        tps20: 0,
+        tps50: 0,
+        tps80: 1,
+        ttft0: 0,
+        ttft20: 0,
+        ttft50: 0,
+        ttft80: 0.8,
+      };
+  }
+}
+
 /**
  * Compute a composite score for a trial using the provided weights.
  * Only metrics that are actually present on the trial contribute; missing
@@ -2823,18 +2881,18 @@ export function computeCompositeScore(trial: AutoTestTrialResult, weights: BestC
 
   const parts: Array<{ w: number; v: number }> = []
 
-  if (chat !== undefined) parts.push({ w: weights.chatScore, v: chat })
-  if (tool !== undefined) parts.push({ w: weights.toolScore, v: tool })
-  if (total !== undefined) parts.push({ w: weights.totalScore, v: total })
-  if (avgTPS !== undefined) parts.push({ w: weights.avgTPS, v: Math.min(100, Math.max(0, avgTPS)) })
-  if (avgTTFT !== undefined) parts.push({ w: weights.avgTTFT, v: Math.max(0, 100 - avgTTFT / 10) })
+  if (chat !== undefined) parts.push({ w: weights.chatScore ?? 0, v: chat })
+  if (tool !== undefined) parts.push({ w: weights.toolScore ?? 0, v: tool })
+  if (total !== undefined) parts.push({ w: weights.totalScore ?? 0, v: total })
+  if (avgTPS !== undefined) parts.push({ w: weights.avgTPS ?? 0, v: Math.min(100, Math.max(0, avgTPS)) })
+  if (avgTTFT !== undefined) parts.push({ w: weights.avgTTFT ?? 0, v: Math.max(0, 100 - avgTTFT / 10) })
 
   // Per-fill TPS weights — normalize TPS to a 0-100 scale (cap at 100 TPS)
   const fillWeights: Array<{ key: ContextFillRatio; w: number }> = [
-    { key: '0%', w: weights.tps0 },
-    { key: '20%', w: weights.tps20 },
-    { key: '50%', w: weights.tps50 },
-    { key: '80%', w: weights.tps80 },
+    { key: '0%', w: weights.tps0 ?? 0 },
+    { key: '20%', w: weights.tps20 ?? 0 },
+    { key: '50%', w: weights.tps50 ?? 0 },
+    { key: '80%', w: weights.tps80 ?? 0 },
   ]
   for (const { key, w } of fillWeights) {
     const fillTPS = trial.avgTPSByFill?.[key]
@@ -2843,10 +2901,10 @@ export function computeCompositeScore(trial: AutoTestTrialResult, weights: BestC
 
   // Per-fill TTFT weights — lower is better, invert like avgTTFT
   const fillTTFTWeights: Array<{ key: ContextFillRatio; w: number }> = [
-    { key: '0%', w: weights.ttft0 },
-    { key: '20%', w: weights.ttft20 },
-    { key: '50%', w: weights.ttft50 },
-    { key: '80%', w: weights.ttft80 },
+    { key: '0%', w: weights.ttft0 ?? 0 },
+    { key: '20%', w: weights.ttft20 ?? 0 },
+    { key: '50%', w: weights.ttft50 ?? 0 },
+    { key: '80%', w: weights.ttft80 ?? 0 },
   ]
   for (const { key, w } of fillTTFTWeights) {
     const fillTTFT = trial.avgTTFTByFill?.[key]

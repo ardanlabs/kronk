@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useChatHistory, type SavedChat, type HistoryMessage } from '../contexts/ChatHistoryContext';
+import ConfirmDialog from './ConfirmDialog';
 
 interface ChatHistoryPanelProps {
   isOpen: boolean;
@@ -43,6 +44,7 @@ function formatChatForClipboard(messages: HistoryMessage[]): string {
 export default function ChatHistoryPanel({ isOpen, onClose, onLoadChat }: ChatHistoryPanelProps) {
   const { history, deleteChats } = useChatHistory();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
   // History is already sorted newest first from the context.
   const sortedChats = useMemo(
@@ -73,12 +75,14 @@ export default function ChatHistoryPanel({ isOpen, onClose, onLoadChat }: ChatHi
   }, [allSelected, sortedChats]);
 
   const handleDeleteSelected = useCallback(() => {
-    const count = selectedIds.size;
-    if (count === 0) return;
-    if (!window.confirm(`Delete ${count} selected chat(s)?`)) return;
+    if (selectedIds.size === 0) return;
+    setConfirmDeleteOpen(true);
+  }, [selectedIds]);
 
+  const handleConfirmDelete = useCallback(() => {
     deleteChats(Array.from(selectedIds));
     setSelectedIds(new Set());
+    setConfirmDeleteOpen(false);
   }, [selectedIds, deleteChats]);
 
   const handleLoadChat = useCallback(
@@ -174,6 +178,15 @@ export default function ChatHistoryPanel({ isOpen, onClose, onLoadChat }: ChatHi
           })}
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={confirmDeleteOpen}
+        message={`Delete ${selectedIds.size} selected chat(s)?`}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setConfirmDeleteOpen(false)}
+      />
     </div>
   );
 }

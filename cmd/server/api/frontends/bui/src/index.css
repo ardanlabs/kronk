@@ -43,8 +43,7 @@ body {
     padding: 20px 0 0 0;
     flex-shrink: 0;
     height: 100vh;
-    overflow-y: auto;
-    overflow-x: hidden;
+    overflow: hidden;
     position: sticky;
     top: 0;
     display: flex;
@@ -161,15 +160,20 @@ body {
     padding-left: 32px;
 }
 
-/* Collapsed indicator styles */
+/* Collapsed: icon-only indicators – hide text and stop button to
+   prevent overflow in the narrow 60 px column. */
+.sidebar-collapsed .sidebar-indicators {
+    align-items: center;
+    padding: 8px 0;
+}
+
 .sidebar-collapsed .download-indicator {
-    padding: 8px;
+    padding: 4px 0;
 }
 
 .sidebar-collapsed .download-indicator-link {
-    padding: 8px;
+    padding: 6px 0;
     display: flex;
-    align-items: center;
     justify-content: center;
 }
 
@@ -180,7 +184,8 @@ body {
 
 .sidebar-collapsed .download-indicator-title,
 .sidebar-collapsed .download-indicator-url,
-.sidebar-collapsed .autotest-indicator-log {
+.sidebar-collapsed .autotest-indicator-log,
+.sidebar-collapsed .autotest-indicator-stop {
     display: none;
 }
 
@@ -2460,6 +2465,50 @@ tr.selected:hover td {
     flex: 1;
 }
 
+/* Confirm Dialog */
+.confirm-dialog {
+    max-width: 400px;
+}
+
+.confirm-dialog-body {
+    padding: 24px;
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--color-gray-800);
+}
+
+.confirm-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px 24px 20px;
+}
+
+/* Chat History Toggle */
+.chat-history-toggle {
+    border: 1px solid var(--color-gray-300);
+    background: var(--color-white);
+    color: var(--color-gray-700);
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s;
+}
+
+.chat-history-toggle-on {
+    border-color: rgba(68, 187, 68, 0.6);
+    color: var(--color-success);
+}
+
+.chat-history-toggle-off {
+    border-color: rgba(255, 68, 68, 0.6);
+    color: var(--color-error);
+}
+
 /* Manual content styling */
 .manual-content h1,
 .manual-content h2,
@@ -4086,4 +4135,106 @@ button.autotest-detail-log-header:focus-visible {
     font-size: 13px;
     cursor: pointer;
     color: var(--color-gray-700);
+}
+
+/* ---- Playground History ---- */
+
+.playground-history-container {
+    padding: 16px;
+}
+
+.playground-history-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+
+.playground-history-header h3 {
+    margin: 0;
+    font-size: 16px;
+    color: var(--color-gray-800);
+}
+
+.playground-history-empty {
+    padding: 24px;
+    text-align: center;
+    color: var(--color-gray-500);
+    font-size: 13px;
+    border: 1px dashed var(--color-gray-300);
+    border-radius: 8px;
+}
+
+.playground-history-item {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 16px;
+    border: 1px solid var(--color-gray-200);
+    border-radius: 6px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+    background: var(--color-white);
+}
+
+.playground-history-item > input[type="checkbox"] {
+    margin-top: 3px;
+    flex-shrink: 0;
+}
+
+.playground-history-item-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.playground-history-item:hover {
+    border-color: var(--color-blue);
+    background: var(--color-gray-50);
+}
+
+.playground-history-item.active {
+    border-color: var(--color-blue);
+    background: #eff6ff;
+}
+
+.playground-history-item-model {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--color-gray-800);
+    margin-bottom: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.playground-history-item-meta {
+    display: flex;
+    gap: 12px;
+    font-size: 12px;
+    color: var(--color-gray-500);
+}
+
+.playground-history-item-mode {
+    font-weight: 500;
+    color: var(--color-gray-600);
+}
+
+.playground-history-item-stats {
+    font-size: 11px;
+    color: var(--color-gray-400);
+    margin-top: 2px;
+}
+
+.playground-history-delete {
+    flex-shrink: 0;
+    align-self: center;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.playground-history-item:hover .playground-history-delete {
+    opacity: 1;
 }
