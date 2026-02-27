@@ -20,8 +20,8 @@ interface PlaygroundState {
   setSelectedModel: React.Dispatch<React.SetStateAction<string>>;
 
   // Playground mode (top-level section)
-  playgroundMode: 'automated' | 'manual';
-  setPlaygroundMode: React.Dispatch<React.SetStateAction<'automated' | 'manual'>>;
+  playgroundMode: 'automated' | 'manual' | 'history';
+  setPlaygroundMode: React.Dispatch<React.SetStateAction<'automated' | 'manual' | 'history'>>;
 
   // Active tab (within manual mode)
   activeTab: 'chat' | 'tools' | 'inspector';
@@ -69,7 +69,7 @@ export function PlaygroundProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<PlaygroundSessionResponse | null>(null);
   const [chatMessages, setChatMessages] = useState<PlaygroundMessage[]>([]);
   const [selectedModel, setSelectedModel] = useState('');
-  const [playgroundMode, setPlaygroundMode] = useState<'automated' | 'manual'>('automated');
+  const [playgroundMode, setPlaygroundMode] = useState<'automated' | 'manual' | 'history'>('automated');
   const [activeTab, setActiveTab] = useState<'chat' | 'tools' | 'inspector'>('chat');
   const [systemPrompt, setSystemPrompt] = useState('You are a helpful assistant.');
   const [lastTPS, setLastTPS] = useState<number | null>(null);

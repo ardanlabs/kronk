@@ -12,6 +12,7 @@ import type {
   ModelConfig,
 } from '../types';
 import AutomatedTestingPanel from './AutomatedTestingPanel';
+import PlaygroundHistory from './PlaygroundHistory';
 import { autoTestTools } from '../services/autoTestRunner';
 import { PARAM_TOOLTIPS, ParamTooltip } from './ParamTooltips';
 
@@ -824,6 +825,12 @@ export default function ModelPlayground() {
           >
             Manual Mode
           </button>
+          <button
+            className={`playground-mode-btn ${playgroundMode === 'history' ? 'active' : ''}`}
+            onClick={() => setPlaygroundMode('history')}
+          >
+            History
+          </button>
         </div>
 
         {playgroundMode === 'automated' && (
@@ -850,6 +857,14 @@ export default function ModelPlayground() {
                   },
                 }}
               />
+            </div>
+          </div>
+        )}
+
+        {playgroundMode === 'history' && (
+          <div className="playground-test" style={{ flex: 1 }}>
+            <div className="playground-tab-content">
+              <PlaygroundHistory />
             </div>
           </div>
         )}

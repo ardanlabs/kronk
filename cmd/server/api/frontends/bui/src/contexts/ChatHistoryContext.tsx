@@ -1,7 +1,6 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useRef, useEffect, type ReactNode } from 'react';
 import type { DisplayMessage } from '../contexts/ChatContext';
-
-const HISTORY_STORAGE_KEY = 'kronk_chat_history';
+import * as chatDb from '../services/chatDb';
 
 export interface HistoryAttachment {
   type: 'image' | 'audio';
@@ -32,27 +31,6 @@ interface ChatHistoryContextType {
 }
 
 const ChatHistoryContext = createContext<ChatHistoryContextType | null>(null);
-
-function loadHistory(): SavedChat[] {
-  try {
-    const stored = localStorage.getItem(HISTORY_STORAGE_KEY);
-    return stored ? JSON.parse(stored) : [];
-  } catch {
-    return [];
-  }
-}
-
-function persistHistory(chats: SavedChat[]): void {
-  try {
-    if (chats.length > 0) {
-      localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(chats));
-    } else {
-      localStorage.removeItem(HISTORY_STORAGE_KEY);
-    }
-  } catch {
-    // Ignore storage errors
-  }
-}
 
 function generateId(): string {
   const timePart = Date.now().toString(36);
@@ -97,10 +75,18 @@ function stripMessages(messages: DisplayMessage[]): HistoryMessage[] {
 }
 
 export function ChatHistoryProvider({ children }: { children: ReactNode }) {
-  const [history, setHistory] = useState<SavedChat[]>(() => {
-    const loaded = loadHistory();
-    return loaded.sort((a, b) => b.savedAt - a.savedAt);
-  });
+  const [history, setHistory] = useState<SavedChat[]>([]);
+  const hydratedRef = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    chatDb.getAllHistory().then((loaded) => {
+      if (cancelled) return;
+      setHistory(loaded);
+      hydratedRef.current = true;
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   const saveChat = useCallback((model: string, messages: DisplayMessage[]) => {
     if (messages.length === 0) {
@@ -115,20 +101,14 @@ export function ChatHistoryProvider({ children }: { children: ReactNode }) {
       messages: stripMessages(messages),
     };
 
-    setHistory((prev) => {
-      const updated = [chat, ...prev];
-      persistHistory(updated);
-      return updated;
-    });
+    setHistory((prev) => [chat, ...prev]);
+    void chatDb.putHistoryChat(chat);
   }, []);
 
   const deleteChats = useCallback((ids: string[]) => {
     const idSet = new Set(ids);
-    setHistory((prev) => {
-      const updated = prev.filter((c) => !idSet.has(c.id));
-      persistHistory(updated);
-      return updated;
-    });
+    setHistory((prev) => prev.filter((c) => !idSet.has(c.id)));
+    void chatDb.deleteHistoryChats(ids);
   }, []);
 
   const getChat = useCallback((id: string): SavedChat | undefined => {
@@ -137,7 +117,7 @@ export function ChatHistoryProvider({ children }: { children: ReactNode }) {
 
   const clearHistory = useCallback(() => {
     setHistory([]);
-    localStorage.removeItem(HISTORY_STORAGE_KEY);
+    void chatDb.clearAllHistory();
   }, []);
 
   return (
