@@ -192,6 +192,7 @@ func (m *Model) prepareContext(ctx context.Context, d D) (D, mtmd.Context, strin
 	// If the model supports media but this request has no media content,
 	// treat it as text so caching (IMC/SPC) can operate.
 	mediaType, _, _, _ := detectMediaContent(d)
+
 	if mediaType == MediaTypeNone {
 		return m.prepareTextContext(d), 0, ObjectChatText, nil
 	}
@@ -216,8 +217,8 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, r
 		d = m.gptInjectToolCallNames(ctx, d)
 	}
 
-	// IMC can operate on media requests because processIMC caps the cache
-	// boundary at the first media message — only the text prefix is cached.
+	// IMC now caches through media messages using the mtmd pipeline —
+	// images and audio remain in the KV cache across requests.
 	// SPC does not support media requests.
 	cachingEnabled := (m.cfg.SystemPromptCache && object == ObjectChatText) ||
 		(m.cfg.IncrementalCache && (object == ObjectChatText || (object == ObjectChatMedia && m.projFile != "")))
@@ -252,7 +253,7 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, r
 // Returns true if the job was submitted (caller should set batching=true),
 // false if batch engine is not available or not applicable.
 func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, id string, d D, object string, prompt string, media [][]byte, params Params, mtmdCtx mtmd.Context, cache cacheResult, requestStart time.Time) bool {
-	imcCacheHit := m.cfg.IncrementalCache && (cache.cacheIdx > 0 || len(cache.imcNewCacheTokens) > 0)
+	imcCacheHit := m.cfg.IncrementalCache && (cache.cacheIdx > 0 || len(cache.imcNewCacheTokens) > 0 || cache.imcMediaBuild)
 
 	_, queueSpan := otel.AddSpan(ctx, "queue-wait")
 
@@ -286,6 +287,9 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		imcClearSeq:          cache.imcClearSeq,
 		imcNewCachedTokens:   cache.imcNewCachedTokens,
 		imcTrimPos:           cache.imcTrimPos,
+		imcMediaBuild:        cache.imcMediaBuild,
+		imcMediaCacheD:       cache.imcMediaCacheD,
+		imcMediaKVCounts:     cache.imcMediaKVCounts,
 	}
 
 	if err := m.batch.submit(&job); err != nil {
@@ -294,7 +298,7 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		// Clear IMC pending reservation if this job reserved a slot.
 		// pending is set during extendIMCCache/buildIMCCacheFromScratch
 		// and normally cleared in startSlot after decode.
-		if len(cache.imcNewCacheTokens) > 0 {
+		if len(cache.imcNewCacheTokens) > 0 || cache.imcMediaBuild || len(cache.imcMediaKVCounts) > 0 {
 			m.imcClearPending(cache.imcSlotID)
 		}
 

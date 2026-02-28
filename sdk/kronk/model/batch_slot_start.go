@@ -69,7 +69,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 		//
 		// Pure hits never set pending=true, so we must NOT clear pending here.
 		// Another goroutine may own the reservation on this slot.
-		if job.imcExpectedHash != "" && currentHash != job.imcExpectedHash && len(job.imcNewCacheTokens) == 0 && job.imcTrimPos == 0 {
+		if job.imcExpectedHash != "" && currentHash != job.imcExpectedHash && len(job.imcNewCacheTokens) == 0 && job.imcTrimPos == 0 && !job.imcMediaBuild {
 			e.model.log(job.ctx, "start-slot", "status", "imc-stale",
 				"slot", s.id, "seq", s.seqID, "imc_slot", job.imcSlotID,
 				"expected_hash", job.imcExpectedHash[:8], "current_hash", currentHash)
@@ -80,6 +80,38 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 
 		// Decode new cache extension tokens into the slot's sequence if any.
 		switch {
+		case job.imcMediaBuild:
+			// Media cache build: clear sequence and decode all cached messages
+			// through the mtmd pipeline (text + image/audio embeddings).
+			e.model.log(job.ctx, "start-slot", "status", "imc-media-build", "slot", s.id, "seq", s.seqID)
+
+			e.model.decodeMu.Lock()
+			llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+			e.model.decodeMu.Unlock()
+
+			imcDecodeStart := time.Now()
+
+			totalCached, mediaKVCounts, err := e.model.decodeMediaIntoCache(job.ctx, job.imcMediaCacheD, s.seqID, job.mtmdCtx)
+			if err != nil {
+				e.model.decodeMu.Lock()
+				llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+				e.model.decodeMu.Unlock()
+
+				e.model.imcClearPending(s.id)
+
+				e.finishSlot(s, fmt.Errorf("start-slot: imc media build: %w", err))
+				return
+			}
+
+			metrics.AddPrefillTime(e.model.modelInfo.ID, time.Since(imcDecodeStart))
+
+			cacheIdx = llama.Pos(totalCached)
+
+			e.model.imcCommitSession(s.id, job.imcNewMsgsHash, totalCached, job.imcNewCachedMsgCount, nil, true, mediaKVCounts)
+
+			e.model.log(job.ctx, "start-slot", "status", "imc-media-built", "slot", s.id, "seq", s.seqID,
+				"total_cached", totalCached)
+
 		case len(job.imcNewCacheTokens) > 0:
 			// Detect stale extension: if another request extended this slot
 			// between our scan and now, cacheIdx won't match the position
@@ -161,7 +193,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 					cacheIdx = llama.Pos(job.imcNewTotalCached)
 
 					// Update session state and skip the shared decode path below.
-					e.model.imcCommitSession(s.id, job.imcNewMsgsHash, job.imcNewTotalCached, job.imcNewCachedMsgCount, job.imcNewCachedTokens)
+					e.model.imcCommitSession(s.id, job.imcNewMsgsHash, job.imcNewTotalCached, job.imcNewCachedMsgCount, job.imcNewCachedTokens, false, nil)
 
 					pct := int(job.imcTrimPos) * 100 / job.imcNewTotalCached
 					e.model.log(job.ctx, "start-slot", "status", "imc-hybrid-rebuilt", "slot", s.id, "seq", s.seqID,
@@ -219,7 +251,9 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 				cacheIdx = llama.Pos(job.imcNewTotalCached)
 
 				// Update session state now that tokens are decoded.
-				e.model.imcCommitSession(s.id, job.imcNewMsgsHash, job.imcNewTotalCached, job.imcNewCachedMsgCount, job.imcNewCachedTokens)
+				// Preserve media state for text-only extensions of media slots.
+				hasMedia := len(job.imcMediaKVCounts) > 0
+				e.model.imcCommitSession(s.id, job.imcNewMsgsHash, job.imcNewTotalCached, job.imcNewCachedMsgCount, job.imcNewCachedTokens, hasMedia, job.imcMediaKVCounts)
 
 				switch {
 				case job.imcClearSeq:
@@ -286,7 +320,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 
 			cacheIdx = llama.Pos(job.imcNewTotalCached)
 
-			e.model.imcCommitSession(s.id, job.imcNewMsgsHash, job.imcNewTotalCached, job.imcNewCachedMsgCount, job.imcNewCachedTokens)
+			e.model.imcCommitSession(s.id, job.imcNewMsgsHash, job.imcNewTotalCached, job.imcNewCachedMsgCount, job.imcNewCachedTokens, false, nil)
 
 			e.model.log(job.ctx, "start-slot", "status", "imc-trimmed", "slot", s.id, "seq", s.seqID,
 				"total_cached", job.imcNewTotalCached)
@@ -361,8 +395,11 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 	}
 
 	// Branch based on request type: media vs text-only.
-	switch job.object {
-	case ObjectChatMedia:
+	// Use len(job.media) to distinguish: after an IMC media cache build the
+	// suffix is text-only (images are already in KV cache), so route to
+	// startSlotText even though job.object may be ObjectChatMedia.
+	switch {
+	case job.object == ObjectChatMedia && len(job.media) > 0:
 		if !e.startSlotMedia(s, job, cacheIdx) {
 			return
 		}
@@ -425,7 +462,15 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 	// is enabled. The draft model needs all tokens (cached + new suffix) to
 	// build its KV cache after the target's prefill completes. Reuses the
 	// pre-allocated promptBuf to avoid per-request allocations.
-	if e.model.draft != nil {
+	// Skip when the slot has media cached — cachedTokens can't represent
+	// image/audio embeddings, so the draft model can't reconstruct the prompt.
+	slotHasMedia := false
+	if job.imcCacheHit && s.id < len(e.model.imcSlots) {
+		e.model.cacheMu.RLock()
+		slotHasMedia = e.model.imcSlots[s.id].hasMedia
+		e.model.cacheMu.RUnlock()
+	}
+	if e.model.draft != nil && !slotHasMedia {
 		draft := e.model.draft
 		var needed int
 		var cachedLen int

@@ -14,7 +14,7 @@ import (
 // cacheResult contains the results of cache processing.
 type cacheResult struct {
 	modifiedD       D           // D with cached messages removed if cache was used
-	cacheIdx        llama.Pos   // Token position where cached content ends; new tokens start here
+	cacheIdx        llama.Pos   // KV position where cached content ends; new tokens start here
 	cachedMsgCount  int         // Number of messages cached (for IMC removal)
 	err             error       // Any error that occurred
 	cacheSeqID      llama.SeqId // Cache session's sequence ID
@@ -23,13 +23,19 @@ type cacheResult struct {
 
 	// IMC dedicated slot fields — tokens to decode into slot's sequence.
 	imcNewCacheTokens    []llama.Token // New tokens to extend the cache (decoded at startSlot)
-	imcNewTotalCached    int           // Total cached tokens after extension
+	imcNewTotalCached    int           // Total cached KV positions after extension
 	imcNewCachedMsgCount int           // New cachedMsgCount after extension
 	imcNewMsgsHash       string        // New cachedMsgsHash after extension
 	imcClearSeq          bool          // True if sequence must be cleared before decoding (rebuild from scratch)
 	imcNewCachedTokens   []llama.Token // Full token sequence to store in session after decode
 	imcTrimPos           llama.Pos     // Position to trim KV cache from (for partial prefix rebuild)
 	imcPending           bool          // True if the target slot was pending (caller should retry another slot)
+
+	// IMC media cache build — deferred to startSlot because media decoding
+	// requires the mtmd pipeline (projection model + embedding decode).
+	imcMediaBuild    bool  // True if cache build requires the mtmd pipeline (images/audio in cached messages)
+	imcMediaCacheD   D     // Document with cacheable messages + tools for media cache build
+	imcMediaKVCounts []int // Media KV position counts to preserve during text-only media extend
 }
 
 // processCache checks if the system prompt or incremental messages are
@@ -68,6 +74,8 @@ func (m *Model) clearCaches() {
 		slot.cachedMsgCount = 0
 		slot.lastUsed = time.Time{}
 		slot.pending = false
+		slot.hasMedia = false
+		slot.mediaKVCounts = nil
 	}
 
 	// Clear SPC session. The KV sequence is already freed after extraction,
@@ -96,6 +104,8 @@ func hashMessage(cm cacheableMessage) string {
 
 // hashMessages computes a SHA-256 hash of a slice of messages.
 // Used by IMC to validate that the cached prefix matches the current request.
+// Includes raw media bytes (images/audio) in the hash so that different images
+// produce different hashes, enabling cache validation for media content.
 func hashMessages(messages []D) string {
 	h := sha256.New()
 
@@ -103,6 +113,13 @@ func hashMessages(messages []D) string {
 		role, _ := msg["role"].(string)
 		content := extractMessageContent(msg)
 		fmt.Fprintf(h, "%d:%s:%s|", i, role, content)
+
+		// Include raw media bytes in hash for vision/audio models.
+		// After prepareMediaContext, media content is stored as []byte.
+		if b, ok := msg["content"].([]byte); ok {
+			fmt.Fprintf(h, "media:%d:", len(b))
+			h.Write(b)
+		}
 	}
 
 	return hex.EncodeToString(h.Sum(nil))

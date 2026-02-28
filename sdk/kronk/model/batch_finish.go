@@ -235,6 +235,7 @@ func (e *batchEngine) finishSlotHybrid(ctx context.Context, s *slot, slotID int,
 				imcSlot.cachedMsgsHash = ""
 				imcSlot.totalTokensCached = 0
 				imcSlot.cachedMsgCount = 0
+				imcSlot.hasMedia = false
 			}
 			e.model.cacheMu.Unlock()
 
@@ -258,6 +259,7 @@ func (e *batchEngine) finishSlotHybrid(ctx context.Context, s *slot, slotID int,
 			imcSlot.cachedMsgsHash = ""
 			imcSlot.totalTokensCached = 0
 			imcSlot.cachedMsgCount = 0
+			imcSlot.hasMedia = false
 		}
 		e.model.cacheMu.Unlock()
 	}
@@ -274,7 +276,7 @@ func (e *batchEngine) failJob(job *chatJob, err error) {
 	}
 
 	// Clear IMC pending reservation if this job reserved a slot.
-	if job.imcCacheHit && len(job.imcNewCacheTokens) > 0 {
+	if job.imcCacheHit && (len(job.imcNewCacheTokens) > 0 || job.imcMediaBuild) {
 		e.model.imcClearPending(job.imcSlotID)
 	}
 

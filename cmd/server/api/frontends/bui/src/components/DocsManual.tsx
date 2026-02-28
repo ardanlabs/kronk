@@ -2045,15 +2045,61 @@ New decode:    7 tokens (T5-T12, from divergence point forward)`}</code></pre>
           <p><strong>IMC Token Prefix Fallback Performance:</strong></p>
           <p>When IMC falls back to token-level prefix matching (non-deterministic templates), there is a one-time cost to tokenize the incoming messages for comparison. This is typically fast (&lt; 5ms for most conversations). The savings from salvaging 70-80% of the cached tokens far outweigh this cost compared to a full rebuild.</p>
           <p><strong>IMC with Vision/Audio Models:</strong></p>
-          <p>IMC works with vision and audio models (models configured with a projection file). Text-only requests are cached normally. When a message containing media (image, video, or audio) appears in the conversation history, IMC caches all text messages up to — but not including — the first media message. Everything from the media message onward is processed fresh on each request, since media embeddings are produced by the projection model and cannot be reproduced from text tokenization alone.</p>
+          <p>IMC fully supports vision and audio models (models configured with a projection file). Text-only requests are cached normally. When a message containing media (image, video, or audio) appears in the conversation history, IMC caches the entire conversation — including the media embeddings — in the KV cache. The image or audio is encoded through the projection model once and remains in the KV cache across subsequent requests. Text-only follow-up messages extend the cache without re-encoding the media.</p>
           <p>For example, in a conversation like:</p>
-          <pre className="code-block"><code>{`[system]  →  cached by IMC
-[user]    →  cached by IMC
-[assistant] → cached by IMC
-[user + image] → processed fresh (media boundary)
-[assistant]    → processed fresh
-[user]         → processed fresh (generation target)`}</code></pre>
-          <p>This means agentic workflows that occasionally include screenshots or images still benefit from IMC for the text prefix of the conversation.</p>
+          <pre className="code-block"><code>{`Request 1 (image request):
+[system]       →  cached by IMC (text tokens)
+[user + image] →  cached by IMC (text + image embeddings via mtmd pipeline)
+[user]         →  prefill (generation target)
+
+Request 2 (text follow-up about the image):
+[system]       →  cached (KV cache hit)
+[user + image] →  cached (image stays in KV cache, no re-encode)
+[assistant]    →  extended (new text tokens decoded into cache)
+[user]         →  prefill (generation target)
+
+Request 3 (unrelated text question):
+[system]       →  cached (KV cache hit)
+[user + image] →  cached (image stays in KV cache)
+[assistant]    →  cached (KV cache hit)
+[user]         →  extended (new text tokens decoded into cache)
+[assistant]    →  extended
+[user]         →  prefill (generation target)
+
+Request 4 (back to asking about the image):
+[system]       →  cached (KV cache hit)
+[user + image] →  cached (image STILL in KV cache, no re-encode)
+[assistant]    →  cached (KV cache hit)
+[user]         →  cached (KV cache hit)
+[assistant]    →  cached (KV cache hit)
+[user]         →  extended (new text tokens decoded into cache)
+[assistant]    →  extended
+[user]         →  prefill (generation target)`}</code></pre>
+          <p><strong>How media caching works internally:</strong></p>
+          <ol>
+            <li>When <code>buildIMCCacheFromScratch</code> detects media content, it defers the build</li>
+          </ol>
+          <p>to <code>startSlot</code> where the mtmd pipeline (projection model) is available. The cache result carries <code>imcMediaBuild: true</code>.</p>
+          <ol>
+            <li><code>decodeMediaIntoCache</code> processes the full prompt as interleaved chunks —</li>
+          </ol>
+          <p>text chunks are tokenized and decoded normally, while image/audio chunks are encoded through the projection model and their embeddings are decoded into the KV cache. For models using M-RoPE (e.g., Qwen2.5-VL), 2D spatial positions are assigned to image tokens.</p>
+          <ol>
+            <li>The slot tracks <code>mediaKVCounts</code> — the number of KV positions consumed by</li>
+          </ol>
+          <p>each media chunk. This is needed because media embeddings occupy a different number of KV positions than the text marker tokens they replace in the tokenized prompt.</p>
+          <ol>
+            <li>On text-only follow-ups, <code>extendIMCMediaSlotWithText</code> uses the</li>
+          </ol>
+          <p><code>mediaKVCounts</code> to compute the correct offset between text token indices and KV positions, then decodes only the new text tokens at the right position — no image re-encoding occurs.</p>
+          <ol>
+            <li>If a new message being added contains media (a second image, for example),</li>
+          </ol>
+          <p><code>rebuildIMCWithMedia</code> triggers a full rebuild through the mtmd pipeline.</p>
+          <ol>
+            <li>Token prefix matching is skipped when the incoming request contains media</li>
+          </ol>
+          <p>messages, since the tokenization path would mutate media content and corrupt downstream processing.</p>
           <p><strong>IMC Limitations:</strong></p>
           <ul>
             <li>Conversations must grow monotonically (append-only)</li>
@@ -2062,10 +2108,6 @@ New decode:    7 tokens (T5-T12, from divergence point forward)`}</code></pre>
             <li>Max concurrent conversation branches = NSeqMax; when all slots are</li>
           </ul>
           <p>occupied, the least-recently-used slot is evicted</p>
-          <ul>
-            <li>Media messages in the conversation history limit how far IMC can cache;</li>
-          </ul>
-          <p>all messages from the first media message onward are re-processed each request</p>
           <hr />
           <h2 id="chapter-6-yarn-extended-context">Chapter 6: YaRN Extended Context</h2>
           <p>YaRN (Yet another RoPE extensioN) allows models to handle context windows beyond their native training length. This is essential for long documents, extended conversations, and complex agentic workflows.</p>
@@ -3858,9 +3900,9 @@ Total:             ~9.4 GB`}</code></pre>
           <h3 id="107-limitations">10.7 Limitations</h3>
           <ul>
             <li>SPC is not supported for vision/audio requests</li>
-            <li>IMC caches text messages up to the first media message; messages from the</li>
+            <li>IMC fully caches media (images/audio) in the KV cache; text-only follow-ups</li>
           </ul>
-          <p>media boundary onward are re-processed each request (see <a href="#58-performance-and-limitations">§5.8</a>)</p>
+          <p>extend the cache without re-encoding media (see <a href="#58-performance-and-limitations">§5.8</a>)</p>
           <ul>
             <li>Processing time varies with image resolution and audio duration</li>
           </ul>
