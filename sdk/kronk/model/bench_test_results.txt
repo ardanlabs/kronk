@@ -31,6 +31,44 @@ Benchmark Configuration:
 
 Benchmarks:
 
+Feb 27th, 2026 : v1.20.3
+llamap.cpp     : b8179
+--------------------------------------------------------------------------------
+goos: darwin
+goarch: arm64
+pkg: github.com/ardanlabs/kronk/sdk/kronk/model
+cpu: Apple M4 Max
+
+Dense_NonCaching-16                   : 54776238528 ns/op 🔴 +3.87%   1164581 B/op 🔴 +0.07%   9048 allocs/op 🟢 -0.08%
+Dense_SPC-16                          : 39435859625 ns/op 🟢 -6.26%   989146 B/op 🟢 -0.11%    8934 allocs/op 🟢 -0.15%
+Dense_IMCDeterministic-16             :  3559777861 ns/op 🟢 -4.10%   152152 B/op 🔴 +22.94%   3944 allocs/op 🔴 +0.25%
+Dense_IMCNonDeterministic-16 (GPT)    :  1678763347 ns/op 🟢 -4.87%   139893 B/op 🟢 -10.57%   4046 allocs/op 🔴 +1.20%
+Dense_IMCDeterministic_Speculative-16 :  5970091472 ns/op 🟢 -11.27%  263965 B/op 🟢 -5.36%    8807 allocs/op 🟢 -0.53%
+
+MoE_IMCDeterministic                  :  3177663347 ns/op 🔴 +1.50%   119322 B/op 🟢 -1.61%    3261 allocs/op 🟢 -2.48%
+MoE_Speculative_Baseline-16           :  2684493111 ns/op 🔴 +8.68%   140189 B/op 🔴 +10.82%   3486 allocs/op 🟢 -1.47%
+MoE_Speculative-16                    :  7190495847 ns/op 🔴 +5.44%   284586 B/op 🔴 +10.86%   9606 allocs/op 🔴 +12.75%
+
+Hybrid_IMCDeterministic               :  4062253375 ns/op 🔴 +1.67%   145133 B/op 🟢 -3.64%    3731 allocs/op 🟢 -4.60%
+
+--------------------------------------------------------------------------------
+Dense NonCaching            Dense SPC                  Dense IMC-Det              Dense IMC-NonDet (GPT)     Dense IMC-Det+Spec                
+30.50 tok/s    🔴 -21.77%   38.02 tok/s    🔴 +0.16%    35.19 tok/s    🔴 -2.58%   86.07 tok/s    🟢 +7.05%    22.68 tok/s   🟢 +24.27%
+53984 ttft-ms  🔴 -9.59%    35872 ttft-ms  🟢 +5.01%      163 ttft-ms  🟢 +22.01%    189 ttft-ms  🟢 +14.86%    237 ttft-ms  🟢 +13.19%
+58092 total-ms 🔴 -10.72%   39160 total-ms 🟢 +4.62%     3719 total-ms 🔴 -1.39%    1630 total-ms 🟢 +7.75%    5707 total-ms 🟢 +24.56%
+
+MoE IMC-Det                 MoE Spec-Baseline          MoE Spec
+33.58 tok/s    🔴 -5.25%    44.42 tok/s    🔴 -11.41%    13.69 tok/s    🟢 +12.58%
+  189 ttft-ms  🔴 -2.72%      204 ttft-ms  🔴 -10.27%      178 ttft-ms  🟢 +11.00%
+ 3058 total-ms 🔴 -2.34%     1983 total-ms 🟢 +27.00%     7631 total-ms 🔴 -7.37%
+
+Hybrid IMC-Det
+30.86 tok/s    🔴 -6.68%
+  141 ttft-ms  🔴 -1.44%
+ 4269 total-ms 🔴 -6.91%
+
+================================================================================
+
 Feb 24th, 2026 : v1.19.9
 llamap.cpp     : b8147
 --------------------------------------------------------------------------------
@@ -52,15 +90,15 @@ MoE_Speculative-16                    :  6819784583 ns/op ⚪ 0.00%     256690 B
 Hybrid_IMCDeterministic               :  3995410750 ns/op 🟢 -3.72%    150597 B/op 🟢 -7.78%   3911 allocs/op ⚪ 0.00%
 
 --------------------------------------------------------------------------------
-Dense NonCaching            Dense SPC                 Dense IMC-Det              Dense IMC-NonDet (GPT)     Dense IMC-Det+Spec                
-38.99 tok/s    🟢 +6.24%    37.96 tok/s    🔴 -0.73%   36.12 tok/s    🔴 -5.57%   80.40 tok/s    🔴 -10.62%  18.25 tok/s    🔴 -16.55%
-49261 ttft-ms  🟢 -1.61%    37763 ttft-ms  🔴 +14.18%    209 ttft-ms  🔴 +29.01%    222 ttft-ms  🔴 +17.46%    273 ttft-ms  🔴 +11.89%
-52466 total-ms 🟢 -1.88%    41055 total-ms 🔴 +12.97%   3668 total-ms 🔴 +6.97%    1767 total-ms 🔴 +12.76%   7088 total-ms 🔴 +19.85%
+Dense NonCaching            Dense SPC                  Dense IMC-Det              Dense IMC-NonDet (GPT)     Dense IMC-Det+Spec                
+38.99 tok/s    🟢 +6.24%    37.96 tok/s    🔴 -0.73%    36.12 tok/s    🔴 -5.57%   80.40 tok/s    🔴 -10.62%  18.25 tok/s    🔴 -16.55%
+49261 ttft-ms  🟢 -1.61%    37763 ttft-ms  🔴 +14.18%     209 ttft-ms  🔴 +29.01%    222 ttft-ms  🔴 +17.46%    273 ttft-ms  🔴 +11.89%
+52466 total-ms 🟢 -1.88%    41055 total-ms 🔴 +12.97%    3668 total-ms 🔴 +6.97%    1767 total-ms 🔴 +12.76%   7088 total-ms 🔴 +19.85%
 
-MoE IMC-Det                 MoE Spec-Baseline         MoE Spec
-35.44 tok/s    🔴 -26.20%   50.14 tok/s    ⚪ 0.00%    12.16 tok/s    ⚪ 0.00%
-  184 ttft-ms  🔴 +6.98%      185 ttft-ms  ⚪ 0.00%      200 ttft-ms  ⚪ 0.00%
- 2988 total-ms 🔴 +33.75%    2718 total-ms ⚪ 0.00%     7109 total-ms ⚪ 0.00%
+MoE IMC-Det                 MoE Spec-Baseline          MoE Spec
+35.44 tok/s    🔴 -26.20%   50.14 tok/s    ⚪ 0.00%     12.16 tok/s    ⚪ 0.00%
+  184 ttft-ms  🔴 +6.98%      185 ttft-ms  ⚪ 0.00%       200 ttft-ms  ⚪ 0.00%
+ 2988 total-ms 🔴 +33.75%    2718 total-ms ⚪ 0.00%      7109 total-ms ⚪ 0.00%
 
 Hybrid IMC-Det
 33.07 tok/s    🟢 +3.80%
@@ -89,10 +127,10 @@ MoE_Speculative_Baseline-16           :  5234612736 ns/op 🔴 +7.98%    413101 
 Hybrid_IMCDeterministic               :  4149727264 ns/op 🟢 -2.89%    163306 B/op 🔴 +17.87%  3911 allocs/op 🔴 +1.80%
 
 --------------------------------------------------------------------------------
-Dense NonCaching            Dense SPC                 Dense IMC-Det              Dense IMC-NonDet (GPT)     Dense IMC-Det+Spec                
-36.70 tok/s    🟢 +17.22%   38.24 tok/s    🟢 +2.82%   38.25 tok/s    🔴 +0.26%   89.95 tok/s    🟢 +4.47%   21.87 tok/s    🔴 +13.02%
-50066 ttft-ms  🟢 -18.97%   33073 ttft-ms  🟢 -10.64%    162 ttft-ms  🟢 -2.41%     189 ttft-ms  🔴 -0.53%     244 ttft-ms  🟢 -1.61%
-53474 total-ms 🟢 -18.71%   36342 total-ms 🟢 -9.98%    3429 total-ms 🟢 -0.38%    1567 total-ms 🟢 -3.87%    5914 total-ms 🟢 -11.32%
+Dense NonCaching            Dense SPC                  Dense IMC-Det              Dense IMC-NonDet (GPT)     Dense IMC-Det+Spec                
+36.70 tok/s    🟢 +17.22%   38.24 tok/s    🟢 +2.82%    38.25 tok/s    🔴 +0.26%   89.95 tok/s    🟢 +4.47%   21.87 tok/s    🔴 +13.02%
+50066 ttft-ms  🟢 -18.97%   33073 ttft-ms  🟢 -10.64%     162 ttft-ms  🟢 -2.41%     189 ttft-ms  🔴 -0.53%     244 ttft-ms  🟢 -1.61%
+53474 total-ms 🟢 -18.71%   36342 total-ms 🟢 -9.98%     3429 total-ms 🟢 -0.38%    1567 total-ms 🟢 -3.87%    5914 total-ms 🟢 -11.32%
 
 MoE IMC-Det                 MoE Spec-Baseline
 48.02 tok/s    🔴 +1.35%    22.27 tok/s    🔴 -6.31%

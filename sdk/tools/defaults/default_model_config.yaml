@@ -96,6 +96,18 @@
 # ==============================================================================
 # TEXT INFERENCE MODELS
 
+Qwen3-Coder-Next-Q8_0/CLINE:
+  nseq-max: 1
+  incremental-cache: true
+
+Qwen3-Coder-Next-Q8_0/KILO:
+  nseq-max: 3
+  incremental-cache: true
+
+Qwen3-Coder-Next-Q8_0/SPC:
+  nseq-max: 1
+  system-prompt-cache: true
+
 # ------------------------------------------------------------------------------
 
 Qwen3.5-35B-A3B-UD-Q8_K_XL/CLINE:
@@ -162,3 +174,12 @@ Qwen3-8B-Q8_0/SPC:
 Qwen3-8B-Q8_0/IMC:
   nseq-max: 1
   incremental-cache: true
+
+Qwen3-8B-Q8_0/CLINE:
+  context-window: 131072
+  rope-scaling-type: yarn
+  yarn-orig-ctx: 32768
+  nseq-max: 1
+  incremental-cache: true
+  sampling-parameters:
+    enable_thinking: false
