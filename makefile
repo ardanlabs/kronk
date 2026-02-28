@@ -225,17 +225,17 @@ test: test-only lint vuln-check diff
 # ==============================================================================
 # Benchmarks
 #
-# Model Type | Cache Mode | IMC Strategy      | Speculative | Target
-# -----------|------------|-------------------|-------------|-------
-# Dense      | NonCaching | —                 | No          | benchmark-dense-nc
-# Dense      | SPC        | —                 | No          | benchmark-dense-spc
-# Dense      | IMC        | Deterministic     | No          | benchmark-dense-imc-det
-# Dense      | IMC        | Deterministic     | Yes         | benchmark-dense-imc-det-spec
-# Dense      | IMC        | Non-Deterministic | No          | benchmark-dense-imc-nondet
-# MoE        | IMC        | Deterministic     | No          | benchmark-moe-imc-det
-# Hybrid     | IMC        | Deterministic     | No          | benchmark-hybrid-imc-det
-# MoE        | IMC        | Deterministic     | No          | benchmark-moe-spec-baseline
-# MoE        | IMC        | Deterministic     | Yes         | benchmark-moe-spec-draft
+# Model Type | Cache Mode | IMC Strategy      | Speculative | Target| Model                                                    
+# -----------|------------|-------------------|-------------|------------------------------|----------------------------------------------------------
+# Dense      | NonCaching | —                 | No          | benchmark-dense-nc           | Qwen3-8B-Q8_0                                            
+# Dense      | SPC        | —                 | No          | benchmark-dense-spc          | Qwen3-8B-Q8_0                                            
+# Dense      | IMC        | Deterministic     | No          | benchmark-dense-imc-det      | Qwen3-8B-Q8_0                                            
+# Dense      | IMC        | Non-Deterministic | No          | benchmark-dense-imc-nondet   | gpt-oss-20b-Q8_0                                         
+# Dense      | IMC        | Deterministic     | Yes         | benchmark-dense-imc-det-spec | Qwen3-8B-Q8_0 + Qwen3-0.6B-Q8_0                          
+# MoE        | IMC        | Deterministic     | No          | benchmark-moe-imc-det        | Qwen3.5-35B-A3B-UD-Q8_K_XL                               
+# MoE        | IMC        | Deterministic     | No          | benchmark-moe-spec-baseline  | cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0                   
+# MoE        | IMC        | Deterministic     | Yes         | benchmark-moe-spec-draft     | cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0 + Qwen3-0.6B-Q8_0 
+# Hybrid     | IMC        | Deterministic     | No          | benchmark-hybrid-imc-det     | Qwen3-Coder-Next-UD-Q6_K_XL                              
 
 benchmark-dense-nc:
 	CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_NonCaching -benchtime=3x -timeout=30m ./sdk/kronk/model/

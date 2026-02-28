@@ -31,6 +31,44 @@ Benchmark Configuration:
 
 Benchmarks:
 
+Feb 27th, 2026 : v1.20.3
+llamap.cpp     : b8179
+--------------------------------------------------------------------------------
+goos: darwin
+goarch: arm64
+pkg: github.com/ardanlabs/kronk/sdk/kronk/model
+cpu: Apple M4 Max
+
+Dense_NonCaching-16                   : 54776238528 ns/op 🔴 ????  1164581 B/op 🔴 ????  9048 allocs/op 🟢 ????
+Dense_SPC-16                          : 39435859625 ns/op 🟢 ????   989146 B/op 🟢 ????  8934 allocs/op 🟢 ????
+Dense_IMCDeterministic-16             :  3559777861 ns/op 🟢 ????   152152 B/op 🔴 ????  3944 allocs/op 🔴 ????
+Dense_IMCNonDeterministic-16 (GPT)    :  1678763347 ns/op 🟢 ????   139893 B/op 🟢 ????  4046 allocs/op 🔴 ????
+Dense_IMCDeterministic_Speculative-16 :  5970091472 ns/op 🟢 ????   263965 B/op 🟢 ????  8807 allocs/op 🟢 ????
+
+MoE_IMCDeterministic                  :  3177663347 ns/op 🟢 ????   119322 B/op 🟢 ????  3261 allocs/op 🟢 ????
+MoE_Speculative_Baseline-16           :  2684493111 ns/op 🔴 ????   140189 B/op 🔴 ????  3486 allocs/op 🟢 ????
+MoE_Speculative-16                    :  7190495847 ns/op 🔴 ????   284586 B/op 🔴 ????  9606 allocs/op 🔴 ????
+
+Hybrid_IMCDeterministic               :  4062253375 ns/op 🔴 ????   145133 B/op 🟢 ????  3731 allocs/op 🟢 ????
+
+--------------------------------------------------------------------------------
+Dense NonCaching         Dense SPC              Dense IMC-Det           Dense IMC-NonDet (GPT)  Dense IMC-Det+Spec                
+30.50 tok/s    🔴 ????   38.02 tok/s    🟢 ????  35.19 tok/s    🔴 ????  86.07 tok/s    🟢 ????  22.68 tok/s    🟢 ????
+53984 ttft-ms  🔴 ????   35872 ttft-ms  🟢 ????    163 ttft-ms  🟢 ????    189 ttft-ms  🟢 ????    237 ttft-ms  🟢 ????
+58092 total-ms 🔴 ????   39160 total-ms 🟢 ????   3719 total-ms 🔴 ????   1630 total-ms 🟢 ????   5707 total-ms 🟢 ????
+
+MoE IMC-Det              MoE Spec-Baseline       MoE Spec
+33.58 tok/s    🔴 ????   44.42 tok/s    🔴 ????   13.69 tok/s    🔴 ????
+  189 ttft-ms  🔴 ????     204 ttft-ms  🔴 ????     178 ttft-ms  🟢 ????
+ 3058 total-ms 🔴 ????    1983 total-ms 🟢 ????    7631 total-ms 🔴 ????
+
+Hybrid IMC-Det
+30.86 tok/s    🔴 ????
+  141 ttft-ms  🔴 ????
+ 4269 total-ms 🔴 ????
+
+================================================================================
+
 Feb 24th, 2026 : v1.19.9
 llamap.cpp     : b8147
 --------------------------------------------------------------------------------
