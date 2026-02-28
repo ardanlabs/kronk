@@ -203,7 +203,7 @@ func (e *batchEngine) handleSampledToken(s *slot, token llama.Token, iBatch int3
 	// Stream response if not tooling.
 	if s.toolFlag == 0 {
 		// Skip unnecessary CRLF at mode transitions.
-		if e.model.isUnncessaryCRLF(s.reasonFlag, s.completionFlag, resp.content) {
+		if e.model.isUnnecessaryCRLF(s.reasonFlag, s.completionFlag, resp.content) {
 			s.iBatch = -1
 			return
 		}

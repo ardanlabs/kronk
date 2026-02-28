@@ -373,11 +373,15 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, session *
 	m.cacheMu.Lock()
 
 	if session.cachedMsgCount != currentCachedMsgCount || session.totalTokensCached != currentTotalTokensCached {
+		m.log(ctx, "imc", "status", "extend fallback (state changed)", "slot", session.slotID,
+			"expected-msgs", currentCachedMsgCount, "actual-msgs", session.cachedMsgCount,
+			"expected-tokens", currentTotalTokensCached, "actual-tokens", session.totalTokensCached)
 		m.cacheMu.Unlock()
 		return m.buildIMCCacheFromScratch(ctx, d, messages, session, lastMsgIdxToCache)
 	}
 
 	if session.pending {
+		m.log(ctx, "imc", "status", "extend fallback (slot pending)", "slot", session.slotID)
 		m.cacheMu.Unlock()
 		return m.buildIMCCacheFromScratch(ctx, d, messages, session, lastMsgIdxToCache)
 	}
@@ -425,7 +429,7 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, session *
 
 	// If we don't have more tokens than what's cached, nothing to extend.
 	if totalTokens <= currentTotalTokensCached {
-		m.log(ctx, "imc", "status", "extend (no new tokens)", "cached", currentTotalTokensCached, "total", totalTokens)
+		m.log(ctx, "imc", "status", "extend (no new tokens)", "slot", slotID, "cached", currentTotalTokensCached, "total", totalTokens)
 
 		m.imcClearPending(slotID)
 
@@ -625,6 +629,7 @@ func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D,
 	}
 
 	if session.pending {
+		m.log(ctx, "imc", "status", "build-from-scratch skipped (slot pending)", "slot", session.slotID)
 		m.cacheMu.Unlock()
 
 		return cacheResult{modifiedD: d, imcPending: true, err: fmt.Errorf("imc: slot %d pending, retry request", session.slotID)}

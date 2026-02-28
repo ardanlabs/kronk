@@ -65,7 +65,6 @@ type draftModel struct {
 	batch        llama.Batch
 	prefillBatch llama.Batch // Reusable batch for prefill decoding (sized to nBatch)
 	nDraft       int
-	cachedTokens []llama.Token // Prompt tokens currently in draft KV cache (for incremental prefill)
 	promptBuf    []llama.Token // Reusable buffer for assembling draft prompt tokens
 	draftBuf     []llama.Token // Reusable buffer for generateDraftTokens output
 
@@ -616,7 +615,7 @@ func (m *Model) resetContext() {
 	m.clearCaches()
 }
 
-func (m *Model) isUnncessaryCRLF(reasonFlag int, completionFlag int, content string) bool {
+func (m *Model) isUnnecessaryCRLF(reasonFlag int, completionFlag int, content string) bool {
 	// We just started reasoning or tool calling so remove leading CR.
 	if reasonFlag == 1 && content == "\x0A" {
 		return true

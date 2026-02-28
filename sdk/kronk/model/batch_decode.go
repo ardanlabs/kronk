@@ -19,17 +19,14 @@ func (e *batchEngine) decodeTextMRoPE(s *slot, tokens []llama.Token) error {
 		return nil
 	}
 
-	batch := llama.BatchInit(n, 0, 1)
-
-	// Save original pos pointer so BatchFree doesn't free Go memory.
-	origPos := batch.Pos
+	batch := e.mropeBatch
 
 	// Copy tokens to batch.
 	tokenSlice := unsafeSlice(batch.Token, int(n))
 	copy(tokenSlice, tokens)
 
-	// Allocate 4D position array for M-RoPE.
-	posData := make([]llama.Pos, n*4)
+	// Fill 4D position array for M-RoPE using pre-allocated buffer.
+	posData := e.mropePosData[:n*4]
 	pos0 := s.nPast
 	for i := range n {
 		posData[i] = pos0 + llama.Pos(i) // dim 0: linear position
@@ -58,10 +55,6 @@ func (e *batchEngine) decodeTextMRoPE(s *slot, tokens []llama.Token) error {
 	e.model.decodeMu.Lock()
 	ret, err := llama.Decode(e.model.lctx, batch)
 	e.model.decodeMu.Unlock()
-
-	// Restore and free.
-	batch.Pos = origPos
-	llama.BatchFree(batch)
 
 	if err != nil || ret != 0 {
 		return decodeError(ret, err)

@@ -30,6 +30,14 @@ type batchEngine struct {
 	// processBatch iteration, before any tokens are added to the batch.
 	pendingPreempt    *slot
 	pendingPreemptErr error
+
+	// Pre-allocated M-RoPE batch and position buffer for vision model text
+	// chunks. Avoids per-call BatchInit/BatchFree and posData allocation in
+	// decodeTextMRoPE.
+	mropeBatch    llama.Batch
+	mropeOrigPos  *llama.Pos
+	mropePosData  []llama.Pos
+	mropeHasBatch bool
 }
 
 // newBatchEngine creates a new batch engine for parallel inference.
@@ -50,7 +58,7 @@ func newBatchEngine(m *Model, nSlots int) *batchEngine {
 		}
 	}
 
-	return &batchEngine{
+	e := &batchEngine{
 		model:      m,
 		nSlots:     nSlots,
 		slots:      slots,
@@ -59,6 +67,18 @@ func newBatchEngine(m *Model, nSlots int) *batchEngine {
 		wakeCh:     make(chan struct{}, 1),
 		shutdownCh: make(chan struct{}),
 	}
+
+	// Pre-allocate M-RoPE batch for vision model text chunk decoding.
+	nBatch := m.cfg.NBatch
+	if nBatch > 0 {
+		e.mropeBatch = llama.BatchInit(int32(nBatch), 0, 1)
+		e.mropeOrigPos = e.mropeBatch.Pos
+		e.mropePosData = make([]llama.Pos, nBatch*4)
+		e.mropeHasBatch = true
+		m.log(context.Background(), "batch-engine", "status", "mrope-batch-alloc", "nbatch", nBatch)
+	}
+
+	return e
 }
 
 // start begins the batch processing loop.
@@ -92,6 +112,12 @@ func (e *batchEngine) stop(ctx context.Context) {
 // freeBatch frees the batch buffer. Called from Model.Unload.
 func (e *batchEngine) freeBatch() {
 	llama.BatchFree(e.batch)
+
+	if e.mropeHasBatch {
+		e.mropeBatch.Pos = e.mropeOrigPos
+		llama.BatchFree(e.mropeBatch)
+		e.mropeHasBatch = false
+	}
 }
 
 // submit adds a job to the processing queue.
@@ -289,7 +315,7 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	}
 
 	// Fill empty slots from queue.
-	e.fillSlots()
+	e.fillSlots(buf)
 
 	// Nothing to process.
 	if e.batch.NTokens == 0 {

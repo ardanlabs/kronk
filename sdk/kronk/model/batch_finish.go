@@ -21,6 +21,9 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	jobID := s.job.id
 	slotID := s.id
 	seqID := s.seqID
+	nPrompt := s.nPrompt
+
+	var elapsed time.Duration
 
 	defer func() {
 		close(s.job.ch)
@@ -38,6 +41,8 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 			s.tokenGenSpan = nil
 		}
 
+		outputTokens := s.reasonTokens + s.completionTokens
+
 		s.span.End()
 		e.freeSlotResources(s)
 		s.reset()
@@ -49,11 +54,13 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 			"slot", slotID,
 			"seq", seqID,
 			"id", jobID,
+			"total_prompt", nPrompt,
+			"output_tokens", outputTokens,
+			"time", elapsed.String(),
 			"active_streams", remaining,
 		)
 	}()
 
-	var elapsed time.Duration
 	if !s.startTime.IsZero() {
 		elapsed = time.Since(s.startTime)
 	}
@@ -61,7 +68,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	// Trim generated tokens from draft KV, keeping the cached prompt prefix
 	// for incremental reuse on the next request.
 	if e.model.draft != nil {
-		trimPos := llama.Pos(len(e.model.draft.cachedTokens))
+		trimPos := llama.Pos(len(s.draftCachedTokens))
 		switch {
 		case trimPos > 0:
 			llama.MemorySeqRm(e.model.draft.mem, s.seqID, trimPos, -1)
@@ -99,13 +106,18 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 				// Partial range delete removes only the generated tokens,
 				// keeping the cached conversation prefix intact for the
 				// next request.
+				e.model.decodeMu.Lock()
 				llama.MemorySeqRm(e.model.mem, s.seqID, trimPos, -1)
+				e.model.decodeMu.Unlock()
 				e.model.log(ctx, "finish-slot", "status", "imc-trim", "slot", slotID, "seq", seqID, "trim_pos", trimPos)
 			}
 		}
 
 	default:
+		e.model.decodeMu.Lock()
 		llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+		e.model.decodeMu.Unlock()
+		e.model.log(ctx, "finish-slot", "status", "seq-cleared", "slot", slotID, "seq", seqID)
 	}
 
 	// Handle error case.
@@ -206,9 +218,6 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 
 	e.model.sendFinalResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, returnPrompt,
 		&s.finalContent, &s.finalReasoning, s.respToolCalls, s.logprobsData, s.job.params.Stream, usage)
-
-	e.model.log(ctx, "batch-engine", "status", "slot-finished", "slot", s.id, "id", s.job.id,
-		"total_prompt", s.nPrompt, "output_tokens", outputTokens, "time", elapsed.String())
 }
 
 // finishSlotHybrid handles IMC state restore for Hybrid models. Full clear +
@@ -251,7 +260,9 @@ func (e *batchEngine) finishSlotHybrid(ctx context.Context, s *slot, slotID int,
 		e.model.log(ctx, "finish-slot", "status", "imc-hybrid-no-snapshot",
 			"slot", slotID, "seq", seqID, "trim_pos", trimPos)
 
+		e.model.decodeMu.Lock()
 		llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+		e.model.decodeMu.Unlock()
 
 		e.model.cacheMu.Lock()
 		if slotID < len(e.model.imcSlots) {

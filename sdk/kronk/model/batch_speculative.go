@@ -26,9 +26,9 @@ func (e *batchEngine) prefillDraft(ctx context.Context, s *slot) error {
 
 	prefillStart := time.Now()
 
-	// Find common prefix between cached tokens and new prompt.
+	// Find common prefix between this slot's cached tokens and new prompt.
 	commonLen := 0
-	cached := draft.cachedTokens
+	cached := s.draftCachedTokens
 	limit := min(len(cached), len(tokens))
 	for commonLen < limit && cached[commonLen] == tokens[commonLen] {
 		commonLen++
@@ -81,8 +81,8 @@ func (e *batchEngine) prefillDraft(ctx context.Context, s *slot) error {
 
 			ret, err := llama.Decode(draft.lctx, batch)
 			if err != nil || ret != 0 {
-				// On failure, invalidate the cache to avoid stale state.
-				draft.cachedTokens = draft.cachedTokens[:0]
+				// On failure, invalidate the slot's cache to avoid stale state.
+				s.draftCachedTokens = s.draftCachedTokens[:0]
 				return fmt.Errorf("draft prefill failed at pos %d: %w", commonLen+i, decodeError(ret, err))
 			}
 		}
@@ -92,14 +92,14 @@ func (e *batchEngine) prefillDraft(ctx context.Context, s *slot) error {
 	s.draftPromptTokens = nil
 	s.draftPrefillNeeded = false
 
-	// Store prompt tokens for the next request's prefix comparison,
-	// reusing the existing buffer when capacity is sufficient.
-	if cap(draft.cachedTokens) >= len(tokens) {
-		draft.cachedTokens = draft.cachedTokens[:len(tokens)]
+	// Store prompt tokens in the slot for the next request's prefix
+	// comparison, reusing the existing buffer when capacity is sufficient.
+	if cap(s.draftCachedTokens) >= len(tokens) {
+		s.draftCachedTokens = s.draftCachedTokens[:len(tokens)]
 	} else {
-		draft.cachedTokens = make([]llama.Token, len(tokens))
+		s.draftCachedTokens = make([]llama.Token, len(tokens))
 	}
-	copy(draft.cachedTokens, tokens)
+	copy(s.draftCachedTokens, tokens)
 
 	e.model.log(ctx, "speculative", "status", "draft-prefill-done",
 		"slot", s.id, "draft_nPast", s.draftNPast,
@@ -122,6 +122,16 @@ func (e *batchEngine) generateDraftTokens(s *slot) []llama.Token {
 	draftTokens := draft.draftBuf[:0]
 	temperature := s.job.params.Temperature
 
+	// Lazy init per-slot probability buffers on first use.
+	if s.draftProbsBuf == nil {
+		s.draftProbsBuf = make([][]float32, draft.nDraft)
+		for i := range s.draftProbsBuf {
+			s.draftProbsBuf[i] = make([]float32, nVocab)
+		}
+		e.model.log(s.job.ctx, "speculative", "status", "draft-probs-alloc",
+			"slot", s.id, "nDraft", draft.nDraft, "nVocab", nVocab)
+	}
+
 	lastToken := s.sampled
 	draftStartPast := s.draftNPast
 	drafted := 0
@@ -138,14 +148,14 @@ func (e *batchEngine) generateDraftTokens(s *slot) []llama.Token {
 
 		s.draftNPast++
 
-		// Capture draft probability distribution into pre-allocated buffer.
+		// Capture draft probability distribution into per-slot buffer.
 		// Apply temperature scaling so q(x) matches the actual sampling distribution.
 		logits, err := llama.GetLogitsIth(draft.lctx, -1, nVocab)
 		if err != nil {
 			break
 		}
 
-		softmaxTempInto(logits, draft.draftProbs[drafted], temperature)
+		softmaxTempInto(logits, s.draftProbsBuf[drafted], temperature)
 
 		// Greedy sample from draft model.
 		token := llama.SamplerSample(draft.sampler, draft.lctx, -1)
@@ -160,13 +170,22 @@ func (e *batchEngine) generateDraftTokens(s *slot) []llama.Token {
 		lastToken = token
 	}
 
-	s.specDraftProbs = draft.draftProbs[:drafted]
+	// Copy draft tokens into slot-owned buffer to avoid shared buffer
+	// corruption when multiple slots draft in the same processBatch.
+	if cap(s.draftTokensBuf) >= len(draftTokens) {
+		s.draftTokensBuf = s.draftTokensBuf[:len(draftTokens)]
+	} else {
+		s.draftTokensBuf = make([]llama.Token, len(draftTokens))
+	}
+	copy(s.draftTokensBuf, draftTokens)
+
+	s.specDraftProbs = s.draftProbsBuf[:drafted]
 
 	e.model.log(s.job.ctx, "speculative", "status", "draft-generated",
-		"slot", s.id, "drafted", len(draftTokens), "target_nDraft", draft.nDraft,
+		"slot", s.id, "drafted", len(s.draftTokensBuf), "target_nDraft", draft.nDraft,
 		"draft_nPast_before", draftStartPast, "draft_nPast_after", s.draftNPast)
 
-	return draftTokens
+	return s.draftTokensBuf
 }
 
 // verifySpeculativeTokens implements the speculative sampling algorithm

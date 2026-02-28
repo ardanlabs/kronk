@@ -146,6 +146,13 @@ type slot struct {
 	specBasePast       llama.Pos     // Target nPast before speculative tokens were added
 	specBaseBatch      int32         // Batch index where speculative tokens start
 
+	// Per-slot owned buffers for speculative decoding. Avoids shared buffer
+	// corruption when multiple slots generate draft tokens in the same
+	// processBatch iteration.
+	draftTokensBuf    []llama.Token // Owned copy of generated draft tokens
+	draftProbsBuf     [][]float32   // Owned probability distributions per drafted token
+	draftCachedTokens []llama.Token // Prompt tokens in this slot's draft KV cache (persists across requests)
+
 	// -------------------------------------------------------------------------
 	// IMC Hybrid State
 
@@ -194,6 +201,9 @@ func (s *slot) reset() {
 	s.specDraftProbs = nil
 	s.specBasePast = 0
 	s.specBaseBatch = 0
+	s.draftTokensBuf = s.draftTokensBuf[:0]
+	// Note: draftProbsBuf inner slices are reused across requests (lazy init).
+	// Note: draftCachedTokens persists across requests for incremental draft KV reuse.
 	s.imcSavedState = s.imcSavedState[:0]
 	s.grammarSampler = nil
 	s.prefillStart = time.Time{}
