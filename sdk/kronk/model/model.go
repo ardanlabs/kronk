@@ -107,7 +107,8 @@ type Model struct {
 	spcSession        *spcSession   // SPC session (single dedicated cache sequence)
 	spcCacheSeqID     llama.SeqId   // Dedicated SPC cache sequence ID
 	addBOSToken       bool          // Whether to add BOS token (from model metadata)
-	mediaMarkerTokens int           // Token count for the media marker string; computed lazily for media extend math
+	mediaMarkerTokens int           // Token count for the media marker string; computed once via mediaMarkerOnce
+	mediaMarkerOnce   sync.Once     // Guards one-time computation of mediaMarkerTokens
 	pool              *contextPool  // Context pool for parallel embed/rerank
 	draft             *draftModel   // Draft model for speculative decoding
 }

@@ -388,6 +388,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 				"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx,
 				"snapshot_bytes", nExtracted, "kv_alloc", kvSize)
 		default:
+			s.imcSavedState = s.imcSavedState[:0]
 			e.model.log(job.ctx, "start-slot", "status", "imc-hybrid-snapshot-failed",
 				"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx,
 				"kv_alloc", kvSize)

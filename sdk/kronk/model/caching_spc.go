@@ -178,7 +178,7 @@ func (m *Model) performSPC(ctx context.Context, d D, messages []D, msgInfo cache
 		sysPromptLen:    contentLen,
 		seqID:           m.spcCacheSeqID,
 		lastUsed:        time.Now(),
-		kvState:         kvState,
+		kvState:         kvState[:nExtracted],
 	}
 
 	m.log(ctx, "spc", "tokens", nTokens, "hash", newHash[:8], "kv_bytes", nExtracted, "status", "tokens saved (externalized)")

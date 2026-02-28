@@ -495,13 +495,13 @@ func (m *Model) extendIMCMediaSlotWithText(ctx context.Context, d D, messages []
 
 	m.log(ctx, "imc", "status", "slot marked pending (media text extend)", "slot", slotID, "seq", seqID)
 
-	// Compute the marker token count lazily (once per model lifetime).
-	if m.mediaMarkerTokens == 0 {
+	// Compute the marker token count once per model lifetime.
+	m.mediaMarkerOnce.Do(func() {
 		marker := fmt.Sprintf("%s\n", mtmd.DefaultMarker())
 		markerTokens := llama.Tokenize(m.vocab, marker, false, false)
 		m.mediaMarkerTokens = len(markerTokens)
 		m.log(ctx, "imc", "status", "computed media marker tokens", "marker", marker, "tokens", m.mediaMarkerTokens)
-	}
+	})
 
 	// Compute the KV-to-token offset. Each media chunk occupies mediaKVCounts[i]
 	// KV positions but only mediaMarkerTokens text tokens in the tokenized prompt.
