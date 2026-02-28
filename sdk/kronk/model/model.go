@@ -703,7 +703,7 @@ func calculateVRAM(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory int64)
 		return int64(mi.Size), 0
 	}
 
-	headCountKV, err := strconv.ParseInt(mi.Metadata[arch+".attention.head_count_kv"], 10, 64)
+	headCountKV, err := parseMetadataInt64OrArrayAvg(mi.Metadata, arch+".attention.head_count_kv")
 	if err != nil {
 		return int64(mi.Size), 0
 	}
@@ -753,6 +753,44 @@ func (m *Model) restoreSPCToSeq(dstSeqID llama.SeqId) error {
 	}
 
 	return nil
+}
+
+// parseMetadataInt64OrArrayAvg parses a metadata value that may be either a
+// single integer (e.g. "8") or a per-layer array (e.g. "[0 0 8 0 0 8 ...]").
+// For arrays, the average of all elements is returned. This handles hybrid
+// architectures like LFM2 where head_count_kv varies per layer.
+func parseMetadataInt64OrArrayAvg(metadata map[string]string, key string) (int64, error) {
+	val, ok := metadata[key]
+	if !ok {
+		return 0, fmt.Errorf("parse-metadata-int64: metadata key %q not found", key)
+	}
+
+	if n, err := strconv.ParseInt(val, 10, 64); err == nil {
+		return n, nil
+	}
+
+	trimmed := strings.TrimSpace(val)
+	if !strings.HasPrefix(trimmed, "[") || !strings.HasSuffix(trimmed, "]") {
+		return 0, fmt.Errorf("parse-metadata-int64: unable to parse %q for key %q", val, key)
+	}
+
+	inner := strings.TrimSpace(trimmed[1 : len(trimmed)-1])
+	if inner == "" {
+		return 0, fmt.Errorf("parse-metadata-int64: empty array for key %q", key)
+	}
+
+	fields := strings.Fields(inner)
+
+	var sum int64
+	for _, f := range fields {
+		n, err := strconv.ParseInt(f, 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("parse-metadata-int64: unable to parse array element %q for key %q: %w", f, key, err)
+		}
+		sum += n
+	}
+
+	return sum / int64(len(fields)), nil
 }
 
 func ggmlTypeToBytes(typeK, typeV GGMLType) int64 {

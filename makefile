@@ -147,8 +147,6 @@ install-class-models: install-kronk
 
 	kronk model pull --local "unsloth/LFM2-700M-GGUF/LFM2-700M-Q8_0.gguf"
 	@echo
-	kronk model pull --local "unsloth/LFM2-700M-GGUF/LFM2-700M-UD-Q8_K_XL.gguf"
-	@echo
 	kronk model pull --local "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
 	@echo
 	kronk model pull --local "unsloth/gpt-oss-20b-GGUF/gpt-oss-20b-Q8_0.gguf"
@@ -235,7 +233,7 @@ test: test-only lint vuln-check diff
 # MoE        | IMC        | Deterministic     | No          | benchmark-moe-imc-det        | Qwen3.5-35B-A3B-UD-Q8_K_XL                               
 # MoE        | IMC        | Deterministic     | No          | benchmark-moe-spec-baseline  | cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0                   
 # MoE        | IMC        | Deterministic     | Yes         | benchmark-moe-spec-draft     | cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0 + Qwen3-0.6B-Q8_0 
-# Hybrid     | IMC        | Deterministic     | No          | benchmark-hybrid-imc-det     | Qwen3-Coder-Next-UD-Q6_K_XL                              
+# Hybrid     | IMC        | Deterministic     | No          | benchmark-hybrid-imc-det     | Qwen3-Coder-Next-Q4_0                              
 
 benchmark-dense-nc:
 	CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_NonCaching -benchtime=3x -timeout=30m ./sdk/kronk/model/

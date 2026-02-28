@@ -134,7 +134,7 @@ func TestMain(m *testing.M) {
 	}
 
 	// Hybrid target — only needed for BenchmarkHybrid_* benchmarks.
-	if dp, err := mdls.FullPath("Qwen3-Coder-Next-UD-Q6_K_XL"); err == nil {
+	if dp, err := mdls.FullPath("Qwen3-Coder-Next-Q4_0"); err == nil {
 		benchHybridModelPath = dp
 	}
 
@@ -1779,7 +1779,7 @@ func cfgHybridIMCDeterministic() model.Config {
 
 func BenchmarkHybrid_IMCDeterministic(b *testing.B) {
 	if len(benchHybridModelPath.ModelFiles) == 0 {
-		b.Skip("model Qwen3-Coder-Next-UD-Q6_K_XL not downloaded")
+		b.Skip("model Qwen3-Coder-Next-Q4_0 not downloaded")
 	}
 	krn := withBenchModel(b, cfgHybridIMCDeterministic())
 	benchChat(b, krn, benchDoc())
