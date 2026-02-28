@@ -287,6 +287,8 @@ bui-upgrade-latest:
 # ==============================================================================
 # Kronk CLI
 
+# CGO_ENABLED=1 go run -ldflags='-linkmode=external -extldflags "-Wl,-platform_version,macos,26.0,26.3"' examples/chat/main.go
+
 kronk-build: kronk-docs bui-build
 
 kronk-docs:
