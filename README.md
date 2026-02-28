@@ -1,6 +1,7 @@
 ![kronk logo](./images/project/kronk_banner.jpg?v5)
 
-Copyright 2025-2026 Ardan Labs : https://kronkai.com  
+Copyright 2025-2026 Ardan Labs : https://kronkai.com
+
 hello@ardanlabs.com
 
 # Kronk
