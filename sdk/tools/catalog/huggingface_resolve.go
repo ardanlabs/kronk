@@ -163,12 +163,12 @@ func parseShorthand(input string) (owner, repo, tag, revision string, ok bool) {
 
 	// After stripping, we expect "owner/repo:TAG" or "owner/repo:TAG@revision".
 	// More than 2 path segments means it's not shorthand.
-	colonIdx := strings.Index(input, ":")
-	if colonIdx < 0 {
+	before, after, ok0 := strings.Cut(input, ":")
+	if !ok0 {
 		return "", "", "", "", false
 	}
 
-	pathPart := input[:colonIdx]
+	pathPart := before
 	segments := strings.Split(pathPart, "/")
 	if len(segments) != 2 {
 		return "", "", "", "", false
@@ -180,7 +180,7 @@ func parseShorthand(input string) (owner, repo, tag, revision string, ok bool) {
 		return "", "", "", "", false
 	}
 
-	tagRevision := input[colonIdx+1:]
+	tagRevision := after
 	if tagRevision == "" {
 		return "", "", "", "", false
 	}
@@ -434,10 +434,10 @@ func dirName(path string) string {
 // "owner/repo/". For full URLs it extracts the path after "/resolve/<rev>/".
 func repoRelativePath(ref, owner, repo string) string {
 	if strings.HasPrefix(ref, "https://") || strings.HasPrefix(ref, "http://") {
-		if idx := strings.Index(ref, "/resolve/"); idx >= 0 {
-			rest := ref[idx+len("/resolve/"):]
-			if slashIdx := strings.Index(rest, "/"); slashIdx >= 0 {
-				return rest[slashIdx+1:]
+		if _, after, ok := strings.Cut(ref, "/resolve/"); ok {
+			rest := after
+			if _, after, ok := strings.Cut(rest, "/"); ok {
+				return after
 			}
 		}
 		return baseName(ref)
