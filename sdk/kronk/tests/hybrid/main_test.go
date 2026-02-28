@@ -12,7 +12,7 @@ func TestMain(m *testing.M) {
 	testlib.Setup()
 
 	if len(testlib.MPHybridChat.ModelFiles) == 0 {
-		fmt.Println("model Qwen3-Coder-Next-UD-Q6_K_XL not downloaded, skipping hybrid tests")
+		fmt.Println("model Qwen3-Coder-Next-Q4_0 not downloaded, skipping hybrid tests")
 		os.Exit(0)
 	}
 

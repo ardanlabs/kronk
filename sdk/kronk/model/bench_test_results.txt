@@ -20,7 +20,7 @@ Benchmark Configuration:
     Dense              : GPT-OSS-20B-Q8_0 (non-deterministic template)
     MoE                : Qwen3.5-35B-A3B-UD-Q8_K_XL
     MoE (Speculative)  : cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0 (draft: Qwen3-0.6B-Q8_0)
-    Hybrid             : Qwen3-Coder-Next-UD-Q6_K_XL
+    Hybrid             : Qwen3-Coder-Next-Q4_0
     ContextWindow      : 32768
     NBatch             : 2048
     NUBatch            : 2048

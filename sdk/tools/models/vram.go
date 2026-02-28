@@ -89,7 +89,7 @@ func (m *Models) CalculateVRAM(modelID string, cfg VRAMConfig) (VRAM, error) {
 		return VRAM{}, fmt.Errorf("calculate-vram: failed to parse block_count: %w", err)
 	}
 
-	headCountKV, err := parseMetadataInt64(info.Metadata, arch+".attention.head_count_kv")
+	headCountKV, err := parseMetadataInt64OrArrayAvg(info.Metadata, arch+".attention.head_count_kv")
 	if err != nil {
 		return VRAM{}, fmt.Errorf("calculate-vram: failed to parse head_count_kv: %w", err)
 	}
@@ -225,7 +225,7 @@ func buildVRAMFromMetadata(metadata map[string]string, modelSizeBytes int64, cfg
 		return VRAM{}, fmt.Errorf("calculate-vram-hg: failed to parse block_count: %w", err)
 	}
 
-	headCountKV, err := parseMetadataInt64(metadata, arch+".attention.head_count_kv")
+	headCountKV, err := parseMetadataInt64OrArrayAvg(metadata, arch+".attention.head_count_kv")
 	if err != nil {
 		return VRAM{}, fmt.Errorf("calculate-vram-hg: failed to parse head_count_kv: %w", err)
 	}
@@ -401,6 +401,46 @@ func parseMetadataInt64(metadata map[string]string, key string) (int64, error) {
 		return 0, fmt.Errorf("parse-metadata-int64: metadata key %q not found", key)
 	}
 	return strconv.ParseInt(val, 10, 64)
+}
+
+// parseMetadataInt64OrArrayAvg parses a metadata value that may be either a
+// single integer (e.g. "8") or a per-layer array (e.g. "[0 0 8 0 0 8 ...]").
+// For arrays, the average of all elements is returned. This handles hybrid
+// architectures like LFM2 where head_count_kv varies per layer.
+func parseMetadataInt64OrArrayAvg(metadata map[string]string, key string) (int64, error) {
+	val, ok := metadata[key]
+	if !ok {
+		return 0, fmt.Errorf("parse-metadata-int64: metadata key %q not found", key)
+	}
+
+	// Try scalar first.
+	if n, err := strconv.ParseInt(val, 10, 64); err == nil {
+		return n, nil
+	}
+
+	// Try array format: "[v1 v2 v3 ...]" produced by fmt.Sprintf("%v", []any{...}).
+	trimmed := strings.TrimSpace(val)
+	if !strings.HasPrefix(trimmed, "[") || !strings.HasSuffix(trimmed, "]") {
+		return 0, fmt.Errorf("parse-metadata-int64: unable to parse %q for key %q", val, key)
+	}
+
+	inner := strings.TrimSpace(trimmed[1 : len(trimmed)-1])
+	if inner == "" {
+		return 0, fmt.Errorf("parse-metadata-int64: empty array for key %q", key)
+	}
+
+	fields := strings.Fields(inner)
+
+	var sum int64
+	for _, f := range fields {
+		n, err := strconv.ParseInt(f, 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("parse-metadata-int64: unable to parse array element %q for key %q: %w", f, key, err)
+		}
+		sum += n
+	}
+
+	return sum / int64(len(fields)), nil
 }
 
 func parseMetadataInt64WithFallback(metadata map[string]string, key string, suffix string) (int64, error) {
