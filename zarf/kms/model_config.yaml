@@ -137,6 +137,33 @@ Qwen3.5-35B-A3B-UD-Q8_K_XL/SPC:
 
 # ------------------------------------------------------------------------------
 
+Qwen_Qwen3.5-35B-A3B-Q8_0/CLINE:
+  nseq-max: 1
+  incremental-cache: true
+  sampling-parameters:
+    temperature: 0.6
+    top_k: 20
+    top_p: 0.95
+    dry_multiplier: 2.0
+    presence_penalty: 1.5
+
+Qwen_Qwen3.5-35B-A3B-Q8_0/KILO:
+  nseq-max: 3
+  incremental-cache: true
+  sampling-parameters:
+    temperature: 0.6
+    top_k: 20
+    top_p: 0.95
+    dry_multiplier: 2.0
+    presence_penalty: 1.5
+    grammar: hermestoolcalling.grm
+
+Qwen_Qwen3.5-35B-A3B-Q8_0/SPC:
+  nseq-max: 1
+  system-prompt-cache: true
+
+# ------------------------------------------------------------------------------
+
 gpt-oss-120b-F16/CLINE:
   nseq-max: 1
   incremental-cache: true
