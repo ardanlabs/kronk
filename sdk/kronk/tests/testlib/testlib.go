@@ -267,6 +267,20 @@ func CfgSimpleVision() model.Config {
 	}
 }
 
+func CfgSimpleVisionIMC() model.Config {
+	return model.Config{
+		ModelFiles:       MPSimpleVision.ModelFiles,
+		ProjFile:         MPSimpleVision.ProjFile,
+		ContextWindow:    8192,
+		NBatch:           2048,
+		NUBatch:          2048,
+		CacheTypeK:       model.GGMLTypeQ8_0,
+		CacheTypeV:       model.GGMLTypeQ8_0,
+		IncrementalCache: true,
+		NSeqMax:          1,
+	}
+}
+
 func CfgEmbed() model.Config {
 	return model.Config{
 		ModelFiles:     MPEmbed.ModelFiles,

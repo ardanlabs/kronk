@@ -498,27 +498,75 @@ compared to a full rebuild.
 
 **IMC with Vision/Audio Models:**
 
-IMC works with vision and audio models (models configured with a projection
+IMC fully supports vision and audio models (models configured with a projection
 file). Text-only requests are cached normally. When a message containing media
-(image, video, or audio) appears in the conversation history, IMC caches all
-text messages up to — but not including — the first media message. Everything
-from the media message onward is processed fresh on each request, since media
-embeddings are produced by the projection model and cannot be reproduced from
-text tokenization alone.
+(image, video, or audio) appears in the conversation history, IMC caches the
+entire conversation — including the media embeddings — in the KV cache. The
+image or audio is encoded through the projection model once and remains in the
+KV cache across subsequent requests. Text-only follow-up messages extend the
+cache without re-encoding the media.
 
 For example, in a conversation like:
 
 ```
-[system]  →  cached by IMC
-[user]    →  cached by IMC
-[assistant] → cached by IMC
-[user + image] → processed fresh (media boundary)
-[assistant]    → processed fresh
-[user]         → processed fresh (generation target)
+Request 1 (image request):
+[system]       →  cached by IMC (text tokens)
+[user + image] →  cached by IMC (text + image embeddings via mtmd pipeline)
+[user]         →  prefill (generation target)
+
+Request 2 (text follow-up about the image):
+[system]       →  cached (KV cache hit)
+[user + image] →  cached (image stays in KV cache, no re-encode)
+[assistant]    →  extended (new text tokens decoded into cache)
+[user]         →  prefill (generation target)
+
+Request 3 (unrelated text question):
+[system]       →  cached (KV cache hit)
+[user + image] →  cached (image stays in KV cache)
+[assistant]    →  cached (KV cache hit)
+[user]         →  extended (new text tokens decoded into cache)
+[assistant]    →  extended
+[user]         →  prefill (generation target)
+
+Request 4 (back to asking about the image):
+[system]       →  cached (KV cache hit)
+[user + image] →  cached (image STILL in KV cache, no re-encode)
+[assistant]    →  cached (KV cache hit)
+[user]         →  cached (KV cache hit)
+[assistant]    →  cached (KV cache hit)
+[user]         →  extended (new text tokens decoded into cache)
+[assistant]    →  extended
+[user]         →  prefill (generation target)
 ```
 
-This means agentic workflows that occasionally include screenshots or images
-still benefit from IMC for the text prefix of the conversation.
+**How media caching works internally:**
+
+1. When `buildIMCCacheFromScratch` detects media content, it defers the build
+   to `startSlot` where the mtmd pipeline (projection model) is available. The
+   cache result carries `imcMediaBuild: true`.
+
+2. `decodeMediaIntoCache` processes the full prompt as interleaved chunks —
+   text chunks are tokenized and decoded normally, while image/audio chunks
+   are encoded through the projection model and their embeddings are decoded
+   into the KV cache. For models using M-RoPE (e.g., Qwen2.5-VL), 2D spatial
+   positions are assigned to image tokens.
+
+3. The slot tracks `mediaKVCounts` — the number of KV positions consumed by
+   each media chunk. This is needed because media embeddings occupy a different
+   number of KV positions than the text marker tokens they replace in the
+   tokenized prompt.
+
+4. On text-only follow-ups, `extendIMCMediaSlotWithText` uses the
+   `mediaKVCounts` to compute the correct offset between text token indices
+   and KV positions, then decodes only the new text tokens at the right
+   position — no image re-encoding occurs.
+
+5. If a new message being added contains media (a second image, for example),
+   `rebuildIMCWithMedia` triggers a full rebuild through the mtmd pipeline.
+
+6. Token prefix matching is skipped when the incoming request contains media
+   messages, since the tokenization path would mutate media content and corrupt
+   downstream processing.
 
 **IMC Limitations:**
 
@@ -527,7 +575,5 @@ still benefit from IMC for the text prefix of the conversation.
 - Designed for single-user use
 - Max concurrent conversation branches = NSeqMax; when all slots are
   occupied, the least-recently-used slot is evicted
-- Media messages in the conversation history limit how far IMC can cache;
-  all messages from the first media message onward are re-processed each request
 
 ---

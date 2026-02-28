@@ -3,10 +3,12 @@ package model
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/hybridgroup/yzma/pkg/llama"
+	"github.com/hybridgroup/yzma/pkg/mtmd"
 	"go.opentelemetry.io/otel/attribute"
 )
 
@@ -47,6 +49,7 @@ type imcSlotSnapshot struct {
 	lastUsed          time.Time
 	pending           bool
 	empty             bool
+	hasMedia          bool
 }
 
 // processIMC implements incremental multi-turn caching (IMC) for agentic
@@ -79,21 +82,6 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 	// We will cache all messages but the last one.
 	lastMsgIdxToCache := totalMsgs - 1
 
-	// For vision/audio models, stop caching before the first message that
-	// contains media. Media messages require projection model processing
-	// that can't be reproduced from text tokenization alone.
-	if m.projFile != "" {
-		for i := 0; i < lastMsgIdxToCache; i++ {
-			if messageHasMedia(messages[i]) {
-				lastMsgIdxToCache = i
-				break
-			}
-		}
-		if lastMsgIdxToCache < 1 {
-			return cacheResult{modifiedD: d}
-		}
-	}
-
 	// -------------------------------------------------------------------------
 	// Snapshot slot metadata under RLock, then release before hashing.
 
@@ -113,6 +101,7 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 			lastUsed:          slot.lastUsed,
 			pending:           slot.pending,
 			empty:             slot.totalTokensCached == 0,
+			hasMedia:          slot.hasMedia,
 		}
 	}
 
@@ -218,10 +207,21 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 	// must have at least as many messages as the slot cached. When the request
 	// has fewer messages (e.g., 2 vs 11), it's a new conversation and sharing
 	// system prompt tokens from an unrelated conversation is not useful.
+	// Skip slots with media: token prefix matching can't compare image
+	// embeddings at the token level — only hash matching works for media.
+	//
+	// Also skip entirely when the incoming request contains media messages.
+	// createPrompt/applyRequestJinjaTemplate mutates []byte content to string
+	// markers in-place, which would destroy media detection for downstream
+	// functions (buildIMCCacheFromScratch) that share the same message maps.
+	requestHasMedia := slices.ContainsFunc(messages[:lastMsgIdxToCache], messageHasMedia)
+
 	var tokenMatchCandidates []int
-	for i, snap := range snapshots {
-		if !snap.pending && !snap.empty && len(snap.cachedTokens) > 0 && totalMsgs > snap.cachedMsgCount {
-			tokenMatchCandidates = append(tokenMatchCandidates, i)
+	if !requestHasMedia {
+		for i, snap := range snapshots {
+			if !snap.pending && !snap.empty && !snap.hasMedia && len(snap.cachedTokens) > 0 && totalMsgs > snap.cachedMsgCount {
+				tokenMatchCandidates = append(tokenMatchCandidates, i)
+			}
 		}
 	}
 
@@ -332,6 +332,42 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 // messages[currentCachedMsgCount:lastMsgIdxToCache].
 func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, session *imcSession, currentCachedMsgCount, lastMsgIdxToCache, currentTotalTokensCached int) cacheResult {
 
+	// When the slot has media cached or any extension messages contain media,
+	// determine the appropriate extension strategy.
+	if m.projFile != "" {
+		// Check if any of the NEW messages being added contain media.
+		newMsgsHaveMedia := false
+		for i := currentCachedMsgCount; i < lastMsgIdxToCache; i++ {
+			if messageHasMedia(messages[i]) {
+				newMsgsHaveMedia = true
+				break
+			}
+		}
+
+		// New messages contain media — full rebuild required to re-encode
+		// through the mtmd pipeline.
+		if newMsgsHaveMedia {
+			m.log(ctx, "imc", "status", "extend requires media rebuild (new media)",
+				"slot", session.slotID, "cached-msgs", currentCachedMsgCount,
+				"target-msgs", lastMsgIdxToCache)
+
+			return m.rebuildIMCWithMedia(ctx, d, messages, session, lastMsgIdxToCache)
+		}
+
+		// Slot has media but new messages are text-only — extend with text
+		// tokens using mediaKVCounts to compute the correct token offset.
+		m.cacheMu.RLock()
+		slotHasMedia := session.hasMedia
+		slotMediaKVCounts := session.mediaKVCounts
+		m.cacheMu.RUnlock()
+
+		if slotHasMedia {
+			return m.extendIMCMediaSlotWithText(ctx, d, messages, session,
+				currentCachedMsgCount, lastMsgIdxToCache, currentTotalTokensCached,
+				slotMediaKVCounts)
+		}
+	}
+
 	// Reserve the slot under lock. Validate state hasn't changed and mark
 	// pending so concurrent scanners skip this slot during the heavy work.
 	m.cacheMu.Lock()
@@ -431,6 +467,130 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, session *
 	}
 }
 
+// extendIMCMediaSlotWithText extends a media-cached slot with text-only
+// messages. The image/audio embeddings remain in the KV cache; only new text
+// tokens are decoded. Uses mediaKVCounts to compute the offset between text
+// token counts (from tokenization, which sees markers) and KV positions
+// (which include image/audio embeddings instead of markers).
+func (m *Model) extendIMCMediaSlotWithText(ctx context.Context, d D, messages []D, session *imcSession, currentCachedMsgCount, lastMsgIdxToCache, currentTotalTokensCached int, mediaKVCounts []int) cacheResult {
+
+	// Reserve the slot under lock.
+	m.cacheMu.Lock()
+
+	if session.cachedMsgCount != currentCachedMsgCount || session.totalTokensCached != currentTotalTokensCached {
+		m.cacheMu.Unlock()
+		return m.buildIMCCacheFromScratch(ctx, d, messages, session, lastMsgIdxToCache)
+	}
+
+	if session.pending {
+		m.cacheMu.Unlock()
+		return m.buildIMCCacheFromScratch(ctx, d, messages, session, lastMsgIdxToCache)
+	}
+
+	session.pending = true
+	seqID := session.seqID
+	slotID := session.slotID
+
+	m.cacheMu.Unlock()
+
+	m.log(ctx, "imc", "status", "slot marked pending (media text extend)", "slot", slotID, "seq", seqID)
+
+	// Compute the marker token count lazily (once per model lifetime).
+	if m.mediaMarkerTokens == 0 {
+		marker := fmt.Sprintf("%s\n", mtmd.DefaultMarker())
+		markerTokens := llama.Tokenize(m.vocab, marker, false, false)
+		m.mediaMarkerTokens = len(markerTokens)
+		m.log(ctx, "imc", "status", "computed media marker tokens", "marker", marker, "tokens", m.mediaMarkerTokens)
+	}
+
+	// Compute the KV-to-token offset. Each media chunk occupies mediaKVCounts[i]
+	// KV positions but only mediaMarkerTokens text tokens in the tokenized prompt.
+	// The delta tells us how to map between token indices and KV positions.
+	var totalMediaKV int
+	for _, kv := range mediaKVCounts {
+		totalMediaKV += kv
+	}
+	totalMarkerTokens := len(mediaKVCounts) * m.mediaMarkerTokens
+	kvTokenDelta := totalMediaKV - totalMarkerTokens
+
+	// cachedTextTokens is the number of text tokens (with markers) that
+	// correspond to the cached KV positions.
+	cachedTextTokens := currentTotalTokensCached - kvTokenDelta
+
+	// Template and tokenize the full prefix (all messages to cache).
+	msgs := messages[:lastMsgIdxToCache]
+
+	// Hash before createPrompt which mutates []byte media content to string
+	// markers in-place. Hashing after would exclude raw media bytes, causing
+	// mismatches when processIMC hashes fresh []byte content on the next request.
+	newHash := hashMessages(msgs)
+
+	msgsToCache := D{
+		"messages":              msgs,
+		"add_generation_prompt": false,
+	}
+	if tools, ok := d["tools"]; ok {
+		msgsToCache["tools"] = tools
+	}
+
+	promptToCache, _, err := m.createPrompt(ctx, msgsToCache)
+	if err != nil {
+		m.imcClearPending(slotID)
+		return cacheResult{modifiedD: d, err: fmt.Errorf("imc: failed to template prefix (media text extend): %w", err)}
+	}
+
+	_, tokenSpan := otel.AddSpan(ctx, "cache-tokenize-imc-media-text-extend",
+		attribute.String("cache-type", "imc-media-text-extend"),
+	)
+
+	allTokens := llama.Tokenize(m.vocab, promptToCache, m.addBOSToken, true)
+	totalTextTokens := len(allTokens)
+
+	tokenSpan.SetAttributes(attribute.Int("tokens", totalTextTokens))
+	tokenSpan.End()
+
+	// Extract the extension tokens: everything after the cached text token count.
+	if totalTextTokens <= cachedTextTokens {
+		m.log(ctx, "imc", "status", "media text extend (no new tokens)",
+			"slot", slotID, "cached_text_tokens", cachedTextTokens, "total_text_tokens", totalTextTokens)
+
+		m.imcClearPending(slotID)
+
+		return cacheResult{
+			modifiedD:       removeFirstNMessages(d, currentCachedMsgCount),
+			cacheIdx:        llama.Pos(currentTotalTokensCached),
+			cachedMsgCount:  currentCachedMsgCount,
+			cacheSeqID:      seqID,
+			imcSlotID:       slotID,
+			imcExpectedHash: session.cachedMsgsHash,
+		}
+	}
+
+	extensionTokens := allTokens[cachedTextTokens:]
+
+	// The new total KV positions = current cached + extension tokens.
+	newTotalCached := currentTotalTokensCached + len(extensionTokens)
+
+	m.log(ctx, "imc", "status", "media text extend prepared", "slot", slotID, "seq", seqID,
+		"cached_kv", currentTotalTokensCached, "cached_text_tokens", cachedTextTokens,
+		"kv_token_delta", kvTokenDelta, "extension_tokens", len(extensionTokens),
+		"new_total_kv", newTotalCached)
+
+	return cacheResult{
+		modifiedD:            removeFirstNMessages(d, lastMsgIdxToCache),
+		cacheIdx:             llama.Pos(currentTotalTokensCached),
+		cachedMsgCount:       lastMsgIdxToCache,
+		cacheSeqID:           seqID,
+		imcSlotID:            slotID,
+		imcExpectedHash:      newHash,
+		imcNewCacheTokens:    extensionTokens,
+		imcNewTotalCached:    newTotalCached,
+		imcNewCachedMsgCount: lastMsgIdxToCache,
+		imcNewMsgsHash:       newHash,
+		imcMediaKVCounts:     mediaKVCounts,
+	}
+}
+
 // buildIMCCacheFromScratch builds the cache from scratch for messages[0:lastMsgIdxToCache].
 func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D, session *imcSession, lastMsgIdxToCache int) cacheResult {
 
@@ -497,6 +657,31 @@ func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D,
 		prefixD["tools"] = tools
 	}
 
+	// If any cacheable message contains media, defer the build to startSlot
+	// where the mtmd pipeline (projection model + embedding decode) is available.
+	if m.projFile != "" {
+		if slices.ContainsFunc(msgsToCache, messageHasMedia) {
+			newHash := hashMessages(msgsToCache)
+
+			m.log(ctx, "imc", "status", "media cache build prepared", "slot", slotID, "seq", seqID,
+				"msgs", lastMsgIdxToCache, "hash", newHash[:8])
+
+			return cacheResult{
+				modifiedD:            removeFirstNMessages(d, lastMsgIdxToCache),
+				cacheIdx:             0,
+				cachedMsgCount:       lastMsgIdxToCache,
+				cacheSeqID:           seqID,
+				imcSlotID:            slotID,
+				imcExpectedHash:      newHash,
+				imcNewCachedMsgCount: lastMsgIdxToCache,
+				imcNewMsgsHash:       newHash,
+				imcClearSeq:          true,
+				imcMediaBuild:        true,
+				imcMediaCacheD:       prefixD,
+			}
+		}
+	}
+
 	dataToCache, _, err := m.createPrompt(ctx, prefixD)
 	if err != nil {
 		m.imcClearPending(slotID)
@@ -546,6 +731,61 @@ func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D,
 		imcNewMsgsHash:       newHash,
 		imcClearSeq:          true,
 		imcNewCachedTokens:   tokens,
+	}
+}
+
+// rebuildIMCWithMedia handles cache builds/extends that involve media content.
+// When a slot has media cached or extension messages contain media, we can't do
+// text-only extension because text tokenization can't account for image/audio
+// token positions. This function prepares a full media rebuild by marking the
+// slot pending and returning a cacheResult with imcMediaBuild=true for deferred
+// media decode in startSlot.
+func (m *Model) rebuildIMCWithMedia(ctx context.Context, d D, messages []D, session *imcSession, lastMsgIdxToCache int) cacheResult {
+	m.cacheMu.Lock()
+
+	if session.pending {
+		m.cacheMu.Unlock()
+		return cacheResult{modifiedD: d, err: fmt.Errorf("imc: slot %d pending, retry request", session.slotID)}
+	}
+
+	session.pending = true
+	session.totalTokensCached = 0
+	session.cachedMsgCount = 0
+	session.cachedMsgsHash = ""
+	session.hasMedia = false
+	seqID := session.seqID
+	slotID := session.slotID
+
+	m.cacheMu.Unlock()
+
+	m.log(ctx, "imc", "status", "slot marked pending (media rebuild)", "slot", slotID, "seq", seqID)
+
+	msgsToCache := messages[:lastMsgIdxToCache]
+	newHash := hashMessages(msgsToCache)
+
+	prefixD := D{
+		"messages":              msgsToCache,
+		"add_generation_prompt": false,
+	}
+	if tools, ok := d["tools"]; ok {
+		prefixD["tools"] = tools
+	}
+
+	m.log(ctx, "imc", "status", "media rebuild prepared", "slot", slotID, "seq", seqID,
+		"msgs", lastMsgIdxToCache, "hash", newHash[:8])
+
+	return cacheResult{
+		modifiedD:            removeFirstNMessages(d, lastMsgIdxToCache),
+		cacheIdx:             0,
+		cachedMsgCount:       lastMsgIdxToCache,
+		cacheSeqID:           seqID,
+		imcSlotID:            slotID,
+		imcExpectedHash:      newHash,
+		imcNewCachedMsgCount: lastMsgIdxToCache,
+		imcNewMsgsHash:       newHash,
+		imcClearSeq:          true,
+		imcMediaBuild:        true,
+		imcMediaCacheD:       prefixD,
 	}
 }
 
@@ -732,8 +972,11 @@ func (m *Model) imcClearPending(slotID int) {
 }
 
 // imcCommitSession updates a slot's session metadata after a successful
-// cache build/extend/rebuild and clears the pending flag.
-func (m *Model) imcCommitSession(slotID int, hash string, totalCached int, cachedMsgCount int, cachedTokens []llama.Token) {
+// cache build/extend/rebuild and clears the pending flag. When hasMedia is
+// true, cachedTokens is cleared since token-level operations (prefix matching,
+// speculative decoding) are not valid for media-cached slots. mediaKVCounts
+// records the KV positions consumed per media chunk for text-only extend math.
+func (m *Model) imcCommitSession(slotID int, hash string, totalCached int, cachedMsgCount int, cachedTokens []llama.Token, hasMedia bool, mediaKVCounts []int) {
 	m.cacheMu.Lock()
 	if slotID < len(m.imcSlots) {
 		slot := m.imcSlots[slotID]
@@ -742,7 +985,12 @@ func (m *Model) imcCommitSession(slotID int, hash string, totalCached int, cache
 		slot.cachedMsgCount = cachedMsgCount
 		slot.lastUsed = time.Now()
 		slot.pending = false
-		if len(cachedTokens) > 0 {
+		slot.hasMedia = hasMedia
+		slot.mediaKVCounts = mediaKVCounts
+		switch {
+		case hasMedia:
+			slot.cachedTokens = nil
+		case len(cachedTokens) > 0:
 			slot.cachedTokens = cachedTokens
 		}
 	}

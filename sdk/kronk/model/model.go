@@ -29,12 +29,14 @@ type compiledTemplate struct {
 type imcSession struct {
 	cachedMsgsHash    string        // Hash of all cached messages
 	cachedTokens      []llama.Token // Full token sequence in KV cache (immutable; replaced, never mutated)
-	totalTokensCached int           // Total tokens in cache
+	totalTokensCached int           // Total KV positions cached (includes text + media tokens)
 	cachedMsgCount    int           // Number of messages cached
 	seqID             llama.SeqId   // Assigned cache sequence ID
 	slotID            int           // Dedicated slot ID bound to this session
 	lastUsed          time.Time     // Last access time (for eviction)
 	pending           bool          // True while a build/rebuild is in-flight (deferred decode)
+	hasMedia          bool          // True if the cached content includes media tokens (image/audio)
+	mediaKVCounts     []int         // KV positions consumed per media chunk (image/audio); used for text-only extend math
 }
 
 // spcSession holds the state for a single SPC (System Prompt Cache) session.
@@ -83,30 +85,31 @@ type Cataloger interface {
 
 // Model represents a model and provides a low-level API for working with it.
 type Model struct {
-	cfg           Config
-	log           Logger
-	model         llama.Model
-	vocab         llama.Vocab
-	ctxParams     llama.ContextParams
-	lctx          llama.Context
-	mem           llama.Memory
-	batch         *batchEngine
-	template      Template
-	compiledTmpl  *compiledTemplate
-	templateOnce  sync.Once
-	projFile      string
-	modelInfo     ModelInfo
-	activeStreams atomic.Int32
-	unloaded      atomic.Bool
-	decodeMu      sync.Mutex
-	cacheMu       sync.RWMutex
-	cacheCond     *sync.Cond    // Broadcast when any IMC slot's pending flag is cleared
-	imcSlots      []*imcSession // Per-slot branch state, len = NSeqMax
-	spcSession    *spcSession   // SPC session (single dedicated cache sequence)
-	spcCacheSeqID llama.SeqId   // Dedicated SPC cache sequence ID
-	addBOSToken   bool          // Whether to add BOS token (from model metadata)
-	pool          *contextPool  // Context pool for parallel embed/rerank
-	draft         *draftModel   // Draft model for speculative decoding
+	cfg               Config
+	log               Logger
+	model             llama.Model
+	vocab             llama.Vocab
+	ctxParams         llama.ContextParams
+	lctx              llama.Context
+	mem               llama.Memory
+	batch             *batchEngine
+	template          Template
+	compiledTmpl      *compiledTemplate
+	templateOnce      sync.Once
+	projFile          string
+	modelInfo         ModelInfo
+	activeStreams     atomic.Int32
+	unloaded          atomic.Bool
+	decodeMu          sync.Mutex
+	cacheMu           sync.RWMutex
+	cacheCond         *sync.Cond    // Broadcast when any IMC slot's pending flag is cleared
+	imcSlots          []*imcSession // Per-slot branch state, len = NSeqMax
+	spcSession        *spcSession   // SPC session (single dedicated cache sequence)
+	spcCacheSeqID     llama.SeqId   // Dedicated SPC cache sequence ID
+	addBOSToken       bool          // Whether to add BOS token (from model metadata)
+	mediaMarkerTokens int           // Token count for the media marker string; computed lazily for media extend math
+	pool              *contextPool  // Context pool for parallel embed/rerank
+	draft             *draftModel   // Draft model for speculative decoding
 }
 
 func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, error) {
