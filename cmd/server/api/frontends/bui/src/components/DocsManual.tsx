@@ -1722,32 +1722,72 @@ IMC (Incremental Message Cache):
           </ul>
           <h3 id="53-incremental-message-cache-imc">5.3 Incremental Message Cache (IMC)</h3>
           <p>Incremental Message Cache is designed for agentic workflows where conversations grow monotonically. It caches all messages except the last one and extends the cache incrementally on each turn.</p>
-          <p>IMC has two matching strategies, automatically selected based on the model's template behavior. You don't choose a strategy — Kronk detects the template type and uses the right one automatically.</p>
+          <p>IMC has two matching strategies. You don't choose a strategy — Kronk always tries hash matching first and automatically falls back to token prefix matching when the hash doesn't match.</p>
           <table className="flags-table">
             <thead>
               <tr>
                 <th>Strategy</th>
-                <th>When Used</th>
+                <th>When It Runs</th>
                 <th>How It Matches</th>
-                <th>Example Models</th>
               </tr>
             </thead>
             <tbody>
               <tr>
                 <td>Deterministic</td>
-                <td>Template produces consistent tokens</td>
+                <td>Hash of cached messages matches</td>
                 <td>Hash-based</td>
-                <td>QWEN, Llama, MoE</td>
               </tr>
               <tr>
                 <td>Non-Deterministic</td>
-                <td>Template produces variable tokens</td>
+                <td>Hash fails, falls back automatically</td>
                 <td>Token prefix fallback</td>
-                <td>GPT-OSS, GLM</td>
               </tr>
             </tbody>
           </table>
-          <p>The matching strategy is independent of the model type (Dense, MoE, Hybrid). Any model type can use either strategy. What changes per model type is how the batch engine manages state between requests — see <a href="#49-model-types-and-state-management">Section 4.9</a>.</p>
+          <p>The matching strategy is independent of the model type (Dense, MoE, Hybrid). Any model type can use either strategy — it depends on the template, not the architecture. What changes per model type is how the batch engine manages state between requests — see <a href="#49-model-types-and-state-management">Section 4.9</a>.</p>
+          <p>The table below shows the real models and which strategy their templates produce. Note that MoE appears in both columns — Qwen3-VL (MoE) has a deterministic template, while GPT-OSS (also MoE) has a non-deterministic one.</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Model</th>
+                <th>Architecture</th>
+                <th>Template</th>
+                <th>Modality</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Qwen3-8B-Q8_0</td>
+                <td>Dense</td>
+                <td>Deterministic</td>
+                <td>Text</td>
+              </tr>
+              <tr>
+                <td>Qwen2.5-VL-3B-Instruct-Q8_0</td>
+                <td>Dense</td>
+                <td>Deterministic</td>
+                <td>Vision</td>
+              </tr>
+              <tr>
+                <td>Qwen3-VL-30B-A3B-Instruct-Q8_0</td>
+                <td>MoE</td>
+                <td>Deterministic</td>
+                <td>Vision</td>
+              </tr>
+              <tr>
+                <td>Qwen3.5-35B-A3B-Q8_0</td>
+                <td>Hybrid</td>
+                <td>Deterministic</td>
+                <td>Vision</td>
+              </tr>
+              <tr>
+                <td>gpt-oss-20b-Q8_0</td>
+                <td>MoE</td>
+                <td>Non-Deterministic</td>
+                <td>Text</td>
+              </tr>
+            </tbody>
+          </table>
           <ul>
             <li><strong>Deterministic</strong> is the fastest path — hash matching finds the right slot</li>
           </ul>
@@ -1814,7 +1854,7 @@ Prefill:  [user3 + gen_prompt]`}</code></pre>
           <p>When two requests arrive simultaneously and both need to build a cache from scratch, a race condition could cause both to pick the same empty slot. IMC prevents this with a pending flag: when a slot begins a deferred cache build, it is marked pending. Concurrent scanners skip pending slots, so the second request picks a different slot. The pending flag is cleared after the cache decode completes (or on error).</p>
           <h4 id="imc-deterministic">IMC Deterministic</h4>
           <p>The default and fastest matching strategy. Used automatically for models with consistent templates — where the same messages always produce identical token sequences regardless of conversation length.</p>
-          <p><strong>Why this strategy exists:</strong> Most models (QWEN, Llama, MoE, Hybrid, and similar architectures) have deterministic templates. When the template is consistent, a simple hash of the message prefix is enough to identify a matching slot. This avoids tokenization overhead entirely.</p>
+          <p><strong>Why this strategy exists:</strong> Most models have deterministic templates (see the model table above). When the template is consistent, a simple hash of the message prefix is enough to identify a matching slot. This avoids tokenization overhead entirely.</p>
           <p><strong>When it's used:</strong> Automatically when <code>incremental_cache: true</code> and the template produces consistent token sequences. This is the default path.</p>
           <p><strong>How it works:</strong></p>
           <ol>
@@ -1836,7 +1876,7 @@ Incoming tokens: [T1, T2, T3, T4, T5, T9, T10, T11, T12]
 
 Common prefix: 5 tokens (salvaged from KV cache)
 Trimmed:       3 tokens (T6-T8 removed via MemorySeqRm)
-New decode:    7 tokens (T5-T12, from divergence point forward)`}</code></pre>
+New decode:    4 tokens (T9-T12, from divergence point forward)`}</code></pre>
           <p>If the common prefix meets the <code>cache_min_tokens</code> threshold, IMC:</p>
           <ol>
             <li>Reserves the matching slot (marks it pending)</li>
@@ -1846,7 +1886,7 @@ New decode:    7 tokens (T5-T12, from divergence point forward)`}</code></pre>
           </ol>
           <p>Once the partial rebuild completes, subsequent requests in the same conversation use normal hash-based extending. The token prefix path is only triggered at conversation boundaries — when the template non-determinism causes the initial mismatch.</p>
           <p>Real-world testing with GPT-OSS showed 77-80% cache salvage rates when switching conversations. Instead of decoding ~8400 tokens from scratch, the system kept ~6800 cached and only decoded ~1600.</p>
-          <p><strong>Models:</strong> GPT-OSS, GLM, and any model whose template produces variable token sequences for identical messages.</p>
+          <p><strong>Models:</strong> GPT-OSS, GLM, and any model whose template produces variable token sequences for identical messages (see the model table above).</p>
           <p><strong>Debugging Non-Deterministic IMC:</strong></p>
           <table className="flags-table">
             <thead>
@@ -1980,9 +2020,9 @@ New decode:    7 tokens (T5-T12, from divergence point forward)`}</code></pre>
           </table>
           <p><strong>Important:</strong> SPC and IMC are mutually exclusive. Choose based on your workload:</p>
           <ul>
-            <li><strong>Agentic workflows:</strong> Use IMC — works with all templates. Deterministic</li>
+            <li><strong>Agentic workflows:</strong> Use IMC — works with all templates. Most models get</li>
           </ul>
-          <p>templates (QWEN, Llama) get the fastest hash-based path. Non-deterministic templates (GPT-OSS, GLM) use token prefix fallback with 70-80% cache salvage.</p>
+          <p>the fastest hash-based path. Non-deterministic templates (GPT-OSS, GLM) use token prefix fallback with 70-80% cache salvage.</p>
           <ul>
             <li><strong>Chat UIs / multi-client:</strong> Use SPC — simpler model, no slot dedication</li>
           </ul>
