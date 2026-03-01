@@ -81,20 +81,35 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 		// Decode new cache extension tokens into the slot's sequence if any.
 		switch {
 		case job.imcMediaBuild:
-			// Media cache build: clear sequence and decode all cached messages
-			// through the mtmd pipeline (text + image/audio embeddings).
-			e.model.log(job.ctx, "start-slot", "status", "imc-media-build", "slot", s.id, "seq", s.seqID)
+			skipTokens := job.imcMediaSkipTextTokens
 
-			e.model.decodeMu.Lock()
-			llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
-			e.model.decodeMu.Unlock()
+			if skipTokens > 0 {
+				// Partial media extend: keep existing text cache, only decode
+				// new content (text suffix + media + post-media text).
+				e.model.log(job.ctx, "start-slot", "status", "imc-media-extend", "slot", s.id, "seq", s.seqID,
+					"skip_text_tokens", skipTokens)
+			} else {
+				// Full media rebuild: clear sequence and decode all cached
+				// messages through the mtmd pipeline.
+				e.model.log(job.ctx, "start-slot", "status", "imc-media-build", "slot", s.id, "seq", s.seqID)
+
+				e.model.decodeMu.Lock()
+				llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+				e.model.decodeMu.Unlock()
+			}
 
 			imcDecodeStart := time.Now()
 
-			totalCached, mediaKVCounts, err := e.model.decodeMediaIntoCache(job.ctx, job.imcMediaCacheD, s.seqID, job.mtmdCtx)
+			totalCached, mediaKVCounts, err := e.model.decodeMediaIntoCache(job.ctx, job.imcMediaCacheD, s.seqID, job.mtmdCtx, skipTokens)
 			if err != nil {
 				e.model.decodeMu.Lock()
-				llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+				if skipTokens > 0 {
+					// Partial extend failed: remove only the newly decoded
+					// content, preserving the original text cache.
+					llama.MemorySeqRm(e.model.mem, s.seqID, llama.Pos(skipTokens), -1)
+				} else {
+					llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+				}
 				e.model.decodeMu.Unlock()
 
 				e.model.imcClearPending(s.id)
@@ -109,8 +124,13 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 			e.model.imcCommitSession(s.id, job.imcNewMsgsHash, totalCached, job.imcNewCachedMsgCount, nil, true, mediaKVCounts)
 
-			e.model.log(job.ctx, "start-slot", "status", "imc-media-built", "slot", s.id, "seq", s.seqID,
-				"total_cached", totalCached)
+			if skipTokens > 0 {
+				e.model.log(job.ctx, "start-slot", "status", "imc-media-extended", "slot", s.id, "seq", s.seqID,
+					"total_cached", totalCached, "skipped_text_tokens", skipTokens)
+			} else {
+				e.model.log(job.ctx, "start-slot", "status", "imc-media-built", "slot", s.id, "seq", s.seqID,
+					"total_cached", totalCached)
+			}
 
 		case len(job.imcNewCacheTokens) > 0:
 			// Detect stale extension: if another request extended this slot

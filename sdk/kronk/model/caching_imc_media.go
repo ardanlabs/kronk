@@ -15,10 +15,15 @@ import (
 // into a KV cache sequence using the mtmd pipeline. This is used by IMC media
 // cache builds to populate the slot's KV cache with the full multi-modal prefix.
 //
+// When skipTextTokens > 0, the first skipTextTokens text tokens are assumed to
+// already be decoded in the KV cache and are skipped. This enables partial media
+// extends where a text-only cache prefix is preserved and only the new content
+// (remaining text + media + post-media text) is decoded.
+//
 // The passed-in mtmdCtx is reused from job.mtmdCtx to avoid loading the
 // projection file twice. Returns the total number of KV positions cached and
 // the KV positions consumed per media chunk.
-func (m *Model) decodeMediaIntoCache(ctx context.Context, cacheD D, seqID llama.SeqId, mtmdCtx mtmd.Context) (int, []int, error) {
+func (m *Model) decodeMediaIntoCache(ctx context.Context, cacheD D, seqID llama.SeqId, mtmdCtx mtmd.Context, skipTextTokens int) (int, []int, error) {
 	ctx, span := otel.AddSpan(ctx, "imc-media-cache-build",
 		attribute.Int("seq", int(seqID)),
 	)
@@ -69,6 +74,7 @@ func (m *Model) decodeMediaIntoCache(ctx context.Context, cacheD D, seqID llama.
 	// Step 4: Process each chunk, decoding into the KV cache sequence.
 	var pos int
 	var mediaKVCounts []int
+	remaining := skipTextTokens
 
 	for i := range numChunks {
 		chunk := mtmd.InputChunksGet(inputChunks, i)
@@ -80,6 +86,23 @@ func (m *Model) decodeMediaIntoCache(ctx context.Context, cacheD D, seqID llama.
 			tokens := mtmd.InputChunkGetTokensText(chunk)
 			if len(tokens) == 0 {
 				continue
+			}
+
+			// Skip text tokens that are already decoded in the KV cache.
+			if remaining > 0 {
+				if remaining >= len(tokens) {
+					m.log(ctx, "imc-media-cache", "status", "skipping-cached-text-chunk", "seq", seqID,
+						"chunk", i, "tokens", len(tokens), "remaining_skip", remaining-len(tokens))
+					pos += len(tokens)
+					remaining -= len(tokens)
+					continue
+				}
+
+				m.log(ctx, "imc-media-cache", "status", "partial-skip-text-chunk", "seq", seqID,
+					"chunk", i, "skip", remaining, "total", len(tokens))
+				pos += remaining
+				tokens = tokens[remaining:]
+				remaining = 0
 			}
 
 			m.log(ctx, "imc-media-cache", "status", "decoding-text-chunk", "seq", seqID,

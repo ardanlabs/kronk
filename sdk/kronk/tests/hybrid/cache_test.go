@@ -13,7 +13,7 @@ import (
 
 func Test_CacheIMCHybrid(t *testing.T) {
 	cfg := model.Config{
-		ModelFiles:       testlib.MPHybridChat.ModelFiles,
+		ModelFiles:       testlib.MPHybridVision.ModelFiles,
 		ContextWindow:    8192,
 		NBatch:           2048,
 		NUBatch:          512,
@@ -162,7 +162,7 @@ func Test_CacheIMCHybrid(t *testing.T) {
 
 func Test_CacheIMCHybridMultiSlot(t *testing.T) {
 	cfg := model.Config{
-		ModelFiles:       testlib.MPHybridChat.ModelFiles,
+		ModelFiles:       testlib.MPHybridVision.ModelFiles,
 		ContextWindow:    8192,
 		NBatch:           2048,
 		NUBatch:          512,

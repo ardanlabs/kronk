@@ -574,10 +574,7 @@ func writePerfGrid(out *strings.Builder, current run, prev *run) {
 
 		// Write in chunks of colsPerRow.
 		for start := 0; start < len(names); start += colsPerRow {
-			end := start + colsPerRow
-			if end > len(names) {
-				end = len(names)
-			}
+			end := min(start+colsPerRow, len(names))
 			chunk := names[start:end]
 
 			// Headers.

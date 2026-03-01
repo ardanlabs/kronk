@@ -63,9 +63,10 @@ type chatJob struct {
 	imcTrimPos           llama.Pos     // Position to trim KV cache from (for partial prefix rebuild)
 
 	// IMC media cache build — deferred media decode using mtmd pipeline.
-	imcMediaBuild    bool  // True if cache build requires the mtmd pipeline (images/audio)
-	imcMediaCacheD   D     // Document with cacheable messages + tools for media cache build
-	imcMediaKVCounts []int // Media KV position counts to preserve during text-only media extend
+	imcMediaBuild          bool  // True if cache build requires the mtmd pipeline (images/audio)
+	imcMediaCacheD         D     // Document with cacheable messages + tools for media cache build
+	imcMediaKVCounts       []int // Media KV position counts to preserve during text-only media extend
+	imcMediaSkipTextTokens int   // Text tokens already in KV cache to skip during partial media extend
 }
 
 // slot represents a processing slot for parallel inference. Each slot can

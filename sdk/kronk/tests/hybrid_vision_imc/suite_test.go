@@ -1,4 +1,4 @@
-package vision_imc_test
+package hybrid_vision_imc_test
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 )
 
 func TestSuite(t *testing.T) {
-	testlib.WithModel(t, testlib.CfgSimpleVisionIMC(), func(t *testing.T, krn *kronk.Kronk) {
+	testlib.WithModel(t, testlib.CfgHybridVisionIMC(), func(t *testing.T, krn *kronk.Kronk) {
 		t.Run("IMCMediaBuild", func(t *testing.T) { testIMCMediaBuild(t, krn) })
 		t.Run("IMCMediaTextExtend", func(t *testing.T) { testIMCMediaTextExtend(t, krn) })
 		t.Run("IMCTextThenMediaExtend", func(t *testing.T) { testIMCTextThenMediaExtend(t, krn) })
@@ -21,7 +21,8 @@ func TestSuite(t *testing.T) {
 
 // testIMCMediaBuild sends an image request and verifies the model responds
 // correctly. This exercises buildIMCCacheFromScratch with media detection
-// and decodeMediaIntoCache in startSlot.
+// and decodeMediaIntoCache in startSlot on a Hybrid architecture using
+// snapshot/restore state management.
 func testIMCMediaBuild(t *testing.T, krn *kronk.Kronk) {
 	ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 	defer cancel()
@@ -45,7 +46,8 @@ func testIMCMediaBuild(t *testing.T, krn *kronk.Kronk) {
 // testIMCMediaTextExtend sends an image request, then a text-only follow-up
 // about the image, then an unrelated text question, then another image
 // follow-up. Each request should get a correct response, proving the image
-// stays in the KV cache through text-only extensions without re-encoding.
+// stays in the KV cache through text-only extensions without re-encoding
+// on a Hybrid architecture with snapshot/restore state management.
 func testIMCMediaTextExtend(t *testing.T, krn *kronk.Kronk) {
 	ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 	defer cancel()
@@ -134,7 +136,8 @@ func testIMCMediaTextExtend(t *testing.T, krn *kronk.Kronk) {
 // text cache, then sends a request that includes an image. This exercises the
 // partial media extend path (extendIMCTextCacheWithMedia) which preserves the
 // existing text KV cache and only decodes the new media content, avoiding a
-// full rebuild of the text prefix.
+// full rebuild of the text prefix. Tests this path on a Hybrid architecture
+// with snapshot/restore state management.
 func testIMCTextThenMediaExtend(t *testing.T, krn *kronk.Kronk) {
 	ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 	defer cancel()

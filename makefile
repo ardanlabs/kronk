@@ -301,6 +301,33 @@ benchmark-fmt-file:
 	go run cmd/server/api/tooling/benchfmt/main.go $(FILE)
 
 # ==============================================================================
+# IMC Diagnostics
+#
+# Run a multi-turn chat conversation against each IMC architecture/template
+# combination with full logging. Logs are written to imc_diag_<name>.log.
+# Feed the log file to an AI for analysis.
+
+imcdiag-dense-vision:
+	IMC_DIAG_LOG=imc_diag_dense_vision.log \
+	GITHUB_WORKSPACE=$(shell pwd) \
+	CGO_ENABLED=0 go test -v -count=1 -run=TestDiag_DenseVision -timeout=30m ./sdk/kronk/tests/imcdiag/
+
+imcdiag-moe-vision:
+	IMC_DIAG_LOG=imc_diag_moe_vision.log \
+	GITHUB_WORKSPACE=$(shell pwd) \
+	CGO_ENABLED=0 go test -v -count=1 -run=TestDiag_MoEVision -timeout=30m ./sdk/kronk/tests/imcdiag/
+
+imcdiag-hybrid-vision:
+	IMC_DIAG_LOG=imc_diag_hybrid_vision.log \
+	GITHUB_WORKSPACE=$(shell pwd) \
+	CGO_ENABLED=0 go test -v -count=1 -run=TestDiag_HybridVision -timeout=30m ./sdk/kronk/tests/imcdiag/
+
+imcdiag-moe-nondet:
+	IMC_DIAG_LOG=imc_diag_moe_nondet.log \
+	GITHUB_WORKSPACE=$(shell pwd) \
+	CGO_ENABLED=0 go test -v -count=1 -run=TestDiag_MoENonDeterministic -timeout=30m ./sdk/kronk/tests/imcdiag/
+
+# ==============================================================================
 # Kronk BUI
 
 BUI_DIR := cmd/server/api/frontends/bui

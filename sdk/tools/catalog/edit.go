@@ -72,6 +72,9 @@ func (c *Catalog) SaveModel(model ModelDetails, catalogFile string) error {
 	replaced := false
 	for i, m := range cat.Models {
 		if strings.EqualFold(m.ID, model.ID) {
+			if m.TestingModel {
+				model.TestingModel = true
+			}
 			cat.Models[i] = model
 			replaced = true
 			break

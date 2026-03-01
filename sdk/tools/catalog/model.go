@@ -422,6 +422,7 @@ type ModelDetails struct {
 	GGUFArch        string       `yaml:"gguf_arch,omitempty"`
 	WebPage         string       `yaml:"web_page,omitempty"`
 	GatedModel      bool         `yaml:"gated_model,omitempty"`
+	TestingModel    bool         `yaml:"testing_model,omitempty"`
 	Template        string       `yaml:"template,omitempty"`
 	Files           Files        `yaml:"files"`
 	Capabilities    Capabilities `yaml:"capabilities,omitempty"`

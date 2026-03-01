@@ -13,7 +13,7 @@ import (
 
 func Test_CacheIMC(t *testing.T) {
 	cfg := model.Config{
-		ModelFiles:       testlib.MPMoEChat.ModelFiles,
+		ModelFiles:       testlib.MPMoEVision.ModelFiles,
 		ContextWindow:    8192,
 		NBatch:           2048,
 		NUBatch:          2048,
@@ -162,7 +162,7 @@ func Test_CacheIMC(t *testing.T) {
 
 func Test_CacheIMCMultiSlot(t *testing.T) {
 	cfg := model.Config{
-		ModelFiles:       testlib.MPMoEChat.ModelFiles,
+		ModelFiles:       testlib.MPMoEVision.ModelFiles,
 		ContextWindow:    8192,
 		NBatch:           2048,
 		NUBatch:          2048,
