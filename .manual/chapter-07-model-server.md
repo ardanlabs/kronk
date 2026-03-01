@@ -63,6 +63,7 @@ replaced by underscores:
 --cache-ttl       →  KRONK_CACHE_TTL
 --processor       →  KRONK_PROCESSOR
 --hf-token        →  KRONK_HF_TOKEN
+                      GITHUB_TOKEN  (not a flag; env var only)
 ```
 
 Environment variables are useful for:
@@ -174,6 +175,7 @@ underscores replacing hyphens.
 | `--os`               | `KRONK_OS`               | _(auto)_   | OS override (`linux`, `darwin`, `windows`)                |
 | `--processor`        | `KRONK_PROCESSOR`        | _(auto)_   | Processor type (`cpu`, `metal`, `cuda`, `rocm`, `vulkan`) |
 | `--hf-token`         | `KRONK_HF_TOKEN`         | _(empty)_  | Hugging Face API token for gated models                   |
+| _(env var only)_     | `GITHUB_TOKEN`           | _(empty)_  | GitHub token for higher catalog sync rate limits          |
 | `--allow-upgrade`    | `KRONK_ALLOW_UPGRADE`    | `true`     | Allow automatic library upgrades                          |
 | `--llama-log`        | `KRONK_LLAMA_LOG`        | `1`        | Llama log level (0=off, 1=on)                             |
 | `--insecure-logging` | `KRONK_INSECURE_LOGGING` | `false`    | Log sensitive data (messages, model config)               |
@@ -374,6 +376,17 @@ Or via environment variable:
 export KRONK_HF_TOKEN=hf_xxxxx
 kronk server start
 ```
+
+For higher GitHub API rate limits during catalog sync:
+
+```shell
+export GITHUB_TOKEN=ghp_xxxxx
+kronk server start
+```
+
+Without a token, GitHub allows 60 requests/hour. With a token, the limit
+increases to 5,000 requests/hour. Kronk degrades gracefully when rate
+limited, falling back to local cache.
 
 ### 7.10 Logging
 

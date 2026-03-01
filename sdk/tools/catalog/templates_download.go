@@ -3,11 +3,14 @@ package catalog
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+
+	"github.com/ardanlabs/kronk/sdk/tools/github"
 )
 
 func (t *templates) download(ctx context.Context, log func(context.Context, string, ...any)) error {
@@ -20,6 +23,9 @@ func (t *templates) download(ctx context.Context, log func(context.Context, stri
 
 	files, err := t.templateListGitHubFolder(ctx)
 	if err != nil {
+		if errors.Is(err, github.ErrRateLimited) {
+			logRateLimit(ctx, log, "template-download", t.ghClient)
+		}
 		log(ctx, "template-download", "WARNING", "unable to retrieve template files, using local cache", "error", err.Error())
 		return nil
 	}
@@ -29,6 +35,11 @@ func (t *templates) download(ctx context.Context, log func(context.Context, stri
 
 		for _, file := range files {
 			if err := t.downloadTemplateFile(ctx, file); err != nil {
+				if errors.Is(err, github.ErrRateLimited) {
+					logRateLimit(ctx, log, "template-download", t.ghClient)
+					log(ctx, "template-download", "WARNING", "github rate limited, using local cache", "error", err.Error())
+					break
+				}
 				return fmt.Errorf("download-template: %w", err)
 			}
 		}
@@ -47,7 +58,7 @@ func (t *templates) downloadTemplateFile(ctx context.Context, url string) error 
 	req.Header.Set("Pragma", "no-cache")
 	req.Header.Set("If-None-Match", "")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := t.ghClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("download-file: fetching file: %w", err)
 	}
@@ -83,7 +94,7 @@ func (t *templates) templateListGitHubFolder(ctx context.Context) ([]string, err
 	req.Header.Set("Pragma", "no-cache")
 	req.Header.Set("If-None-Match", "")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := t.ghClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("list-git-hub-folder: fetching folder listing: %w", err)
 	}

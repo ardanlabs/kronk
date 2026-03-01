@@ -226,7 +226,8 @@ Available Commands:
           <pre className="code-block"><code>{`KRONK_LIB_PATH  - Library directory (default: \`~/.kronk/libraries\`)
 KRONK_PROCESSOR - \`cpu\`, \`cuda\`, \`metal\`, \`rocm\`, or \`vulkan\` (default: \`cpu\`)
 KRONK_ARCH      - Architecture override: \`amd64\`, \`arm64\`
-KRONK_OS        - OS override: \`linux\`, \`darwin\`, \`windows\``}</code></pre>
+KRONK_OS        - OS override: \`linux\`, \`darwin\`, \`windows\`
+GITHUB_TOKEN    - GitHub personal access token for higher API rate limits`}</code></pre>
           <p><strong>Example: Install CUDA Libraries</strong></p>
           <pre className="code-block"><code className="language-shell">{`KRONK_PROCESSOR=cuda kronk libs --local`}</code></pre>
           <h3 id="24-downloading-your-first-model">2.4 Downloading Your First Model</h3>
@@ -2366,7 +2367,8 @@ kronk libs --local`}</code></pre>
 --models-in-cache →  KRONK_MODELS_IN_CACHE
 --cache-ttl       →  KRONK_CACHE_TTL
 --processor       →  KRONK_PROCESSOR
---hf-token        →  KRONK_HF_TOKEN`}</code></pre>
+--hf-token        →  KRONK_HF_TOKEN
+                      GITHUB_TOKEN  (not a flag; env var only)`}</code></pre>
           <p>Environment variables are useful for:</p>
           <ul>
             <li>Configuration in Docker/Kubernetes deployments</li>
@@ -2640,6 +2642,12 @@ kronk libs --local`}</code></pre>
                 <td>Hugging Face API token for gated models</td>
               </tr>
               <tr>
+                <td><em>(env var only)</em></td>
+                <td><code>GITHUB_TOKEN</code></td>
+                <td><em>(empty)</em></td>
+                <td>GitHub token for higher catalog sync rate limits</td>
+              </tr>
+              <tr>
                 <td><code>--allow-upgrade</code></td>
                 <td><code>KRONK_ALLOW_UPGRADE</code></td>
                 <td><code>true</code></td>
@@ -2763,6 +2771,10 @@ kronk server start --processor=cpu     # CPU only`}</code></pre>
           <p>Or via environment variable:</p>
           <pre className="code-block"><code className="language-shell">{`export KRONK_HF_TOKEN=hf_xxxxx
 kronk server start`}</code></pre>
+          <p>For higher GitHub API rate limits during catalog sync:</p>
+          <pre className="code-block"><code className="language-shell">{`export GITHUB_TOKEN=ghp_xxxxx
+kronk server start`}</code></pre>
+          <p>Without a token, GitHub allows 60 requests/hour. With a token, the limit increases to 5,000 requests/hour. Kronk degrades gracefully when rate limited, falling back to local cache.</p>
           <h3 id="710-logging">7.10 Logging</h3>
           <p><strong>llama.cpp Logging</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --llama-log=1    # Enable llama.cpp logs
@@ -5157,6 +5169,11 @@ nvidia-smi`}</code></pre>
                 <td><code>rate limit exceeded</code></td>
                 <td>Quota exhausted</td>
                 <td>Wait or increase limit</td>
+              </tr>
+              <tr>
+                <td><code>github rate limited</code></td>
+                <td>GitHub API 403/429</td>
+                <td>Set <code>GITHUB_TOKEN</code></td>
               </tr>
               <tr>
                 <td><code>context window full</code></td>

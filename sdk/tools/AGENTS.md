@@ -188,3 +188,4 @@ Templates package embeds a `Catalog` instance for model lookups. Access via `tem
 | `KRONK_PROCESSOR`   | Set processor type (cpu/cuda/metal/rocm/vulkan)        |
 | `KRONK_LIB_VERSION` | Pin llama.cpp library version                     |
 | `KRONK_HF_TOKEN`    | HuggingFace authentication token for gated models |
+| `GITHUB_TOKEN`       | GitHub personal access token for higher API rate limits during catalog sync |

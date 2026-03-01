@@ -369,6 +369,7 @@ kronk server start --llama-log 0
 | `unable to load model` | Missing/corrupt model  | Re-download model      |
 | `no authorization`     | Missing token          | Add Bearer token       |
 | `rate limit exceeded`  | Quota exhausted        | Wait or increase limit |
+| `github rate limited`  | GitHub API 403/429     | Set `GITHUB_TOKEN`     |
 | `context window full`  | Input too large        | Reduce input size      |
 | `NBatch overflow`      | Batch too large        | Reduce `n_batch`       |
 

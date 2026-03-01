@@ -88,6 +88,7 @@ KRONK_LIB_PATH  - Library directory (default: `~/.kronk/libraries`)
 KRONK_PROCESSOR - `cpu`, `cuda`, `metal`, `rocm`, or `vulkan` (default: `cpu`)
 KRONK_ARCH      - Architecture override: `amd64`, `arm64`
 KRONK_OS        - OS override: `linux`, `darwin`, `windows`
+GITHUB_TOKEN    - GitHub personal access token for higher API rate limits
 ```
 
 **Example: Install CUDA Libraries**

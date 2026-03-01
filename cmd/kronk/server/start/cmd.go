@@ -11,9 +11,12 @@ import (
 var Cmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start Kronk model server",
-	Long:  `Start Kronk model server. Use --help to get environment settings`,
-	Args:  cobra.NoArgs,
-	Run:   main,
+	Long: `Start Kronk model server. Use --help to get environment settings.
+
+Environment Variable (catalog sync):
+      GITHUB_TOKEN  GitHub personal access token for higher API rate limits`,
+	Args: cobra.NoArgs,
+	Run:  main,
 }
 
 func init() {

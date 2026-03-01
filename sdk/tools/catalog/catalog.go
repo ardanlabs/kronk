@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
+	"github.com/ardanlabs/kronk/sdk/tools/github"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"go.yaml.in/yaml/v2"
 )
@@ -67,6 +68,7 @@ type Catalog struct {
 	catalogPath string
 	repoPath    string
 	githubRepo  string
+	ghClient    *github.Client
 	models      *models.Models
 	templates   *templates
 	grammars    *grammars
@@ -108,18 +110,20 @@ func New(opts ...Option) (*Catalog, error) {
 		return nil, fmt.Errorf("new: creating models system: %w", err)
 	}
 
+	ghClient := github.New()
+
 	// Derive template and grammar GitHub URLs from the catalog repo URL by
 	// replacing the trailing folder name. For example:
 	//   .../contents/catalogs -> .../contents/templates
 	//   .../contents/catalogs -> .../contents/grammars
 	repoBase := strings.TrimSuffix(o.githubRepo, "/catalogs")
 
-	tmpls, err := newTemplates(o.basePath, repoBase+"/templates")
+	tmpls, err := newTemplates(o.basePath, repoBase+"/templates", ghClient)
 	if err != nil {
 		return nil, fmt.Errorf("new: creating templates system: %w", err)
 	}
 
-	grms, err := newGrammars(o.basePath, repoBase+"/grammars")
+	grms, err := newGrammars(o.basePath, repoBase+"/grammars", ghClient)
 	if err != nil {
 		return nil, fmt.Errorf("new: creating grammars system: %w", err)
 	}
@@ -128,6 +132,7 @@ func New(opts ...Option) (*Catalog, error) {
 		catalogPath: catalogPath,
 		repoPath:    o.repoPath,
 		githubRepo:  o.githubRepo,
+		ghClient:    ghClient,
 		models:      models,
 		templates:   tmpls,
 		grammars:    grms,

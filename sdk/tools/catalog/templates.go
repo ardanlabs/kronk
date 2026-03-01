@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/ardanlabs/kronk/sdk/tools/github"
 )
 
 const (
@@ -15,9 +17,10 @@ const (
 type templates struct {
 	templatePath string
 	githubRepo   string
+	ghClient     *github.Client
 }
 
-func newTemplates(basePath string, githubRepo string) (*templates, error) {
+func newTemplates(basePath string, githubRepo string, ghClient *github.Client) (*templates, error) {
 	templatesPath := filepath.Join(basePath, templateLocalFolder)
 
 	if err := os.MkdirAll(templatesPath, 0755); err != nil {
@@ -27,6 +30,7 @@ func newTemplates(basePath string, githubRepo string) (*templates, error) {
 	t := templates{
 		templatePath: templatesPath,
 		githubRepo:   githubRepo,
+		ghClient:     ghClient,
 	}
 
 	return &t, nil

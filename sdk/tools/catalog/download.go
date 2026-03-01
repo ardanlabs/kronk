@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/tools/github"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
@@ -58,6 +60,9 @@ func (c *Catalog) Download(ctx context.Context, opts ...DownloadOption) error {
 
 	files, err := c.listGitHubFolder(ctx)
 	if err != nil {
+		if errors.Is(err, github.ErrRateLimited) {
+			logRateLimit(ctx, log, "catalog-download", c.ghClient)
+		}
 		log(ctx, "catalog-download", "WARNING", "unable to retrieve catalog files, using local cache", "error", err.Error())
 	}
 
@@ -66,6 +71,11 @@ func (c *Catalog) Download(ctx context.Context, opts ...DownloadOption) error {
 
 		for _, file := range files {
 			if err := c.downloadCatalog(ctx, file); err != nil {
+				if errors.Is(err, github.ErrRateLimited) {
+					logRateLimit(ctx, log, "catalog-download", c.ghClient)
+					log(ctx, "catalog-download", "WARNING", "github rate limited, using local cache", "error", err.Error())
+					break
+				}
 				return fmt.Errorf("download-catalog: %w", err)
 			}
 		}
@@ -118,7 +128,7 @@ func (c *Catalog) listGitHubFolder(ctx context.Context) ([]string, error) {
 	req.Header.Set("Pragma", "no-cache")
 	req.Header.Set("If-None-Match", "")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := c.ghClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("list-git-hub-folder: fetching folder listing: %w", err)
 	}
@@ -162,7 +172,7 @@ func (c *Catalog) downloadCatalog(ctx context.Context, url string) error {
 	req.Header.Set("Pragma", "no-cache")
 	req.Header.Set("If-None-Match", "")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := c.ghClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("download-catalog: fetching catalog: %w", err)
 	}
@@ -213,6 +223,19 @@ func (c *Catalog) writeLocalSHAs(items []gitHubFile) error {
 	}
 
 	return os.WriteFile(filepath.Join(c.catalogPath, shaFile), data, 0644)
+}
+
+func logRateLimit(ctx context.Context, log func(context.Context, string, ...any), caller string, ghClient *github.Client) {
+	rl := ghClient.RateLimitState()
+
+	log(ctx, caller,
+		"WARNING", "github rate limit details",
+		"limit", rl.Limit,
+		"remaining", rl.Remaining,
+		"used", rl.Used,
+		"reset", rl.Reset.Format(time.RFC3339),
+		"resource", rl.Resource,
+	)
 }
 
 // =============================================================================

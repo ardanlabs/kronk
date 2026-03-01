@@ -19,7 +19,8 @@ Environment Variables (web mode - default):
       KRONK_WEB_API_HOST  (default localhost:8080)  IP Address for the kronk server.
 
 Environment Variables (--local mode):
-      KRONK_BASE_PATH  Base path for kronk data (models, templates, catalog)`,
+      KRONK_BASE_PATH  Base path for kronk data (models, templates, catalog)
+      GITHUB_TOKEN     GitHub personal access token for higher API rate limits`,
 	Args: cobra.NoArgs,
 	Run:  main,
 }
