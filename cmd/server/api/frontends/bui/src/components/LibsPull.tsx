@@ -128,8 +128,8 @@ export default function LibsPull() {
           </div>
         )}
 
-        <div style={{ marginBottom: '16px' }}>
-          <label htmlFor="version" style={{ fontSize: '14px', display: 'block', marginBottom: '4px' }}>
+        <div className="form-group">
+          <label htmlFor="version">
             Version (leave empty for latest)
           </label>
           <input
@@ -139,7 +139,7 @@ export default function LibsPull() {
             onChange={(e) => setVersion(e.target.value)}
             disabled={pulling}
             placeholder="e.g. b5540"
-            style={{ width: '200px', padding: '6px 8px', fontSize: '14px' }}
+            style={{ maxWidth: '200px' }}
           />
         </div>
 

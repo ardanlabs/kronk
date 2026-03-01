@@ -347,7 +347,7 @@ export default function PlaygroundHistory() {
               ))}
             </div>
             {weights.totalScore > 0 && (weights.chatScore > 0 || weights.toolScore > 0) && (
-              <p style={{ fontSize: 11, color: '#b45309', marginTop: 6 }}>
+              <p style={{ fontSize: 11, color: 'var(--color-warning-text)', marginTop: 6 }}>
                 ⚠ Total Score is derived from Chat/Tool weights. Weighting Total Score alongside Chat or Tool Score will double-count quality.
               </p>
             )}

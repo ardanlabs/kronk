@@ -1080,7 +1080,7 @@ export default function CatalogEditor() {
             {saving ? 'Saving...' : 'Save to Catalog'}
           </button>
           {repoPath && (
-            <button className="btn btn-primary" onClick={handlePublish} disabled={publishing} style={{ background: '#2e7d32' }}>
+            <button className="btn btn-primary" onClick={handlePublish} disabled={publishing} style={{ background: 'var(--color-success-dark)' }}>
               {publishing ? 'Publishing...' : 'Publish to Repo'}
             </button>
           )}
@@ -1091,7 +1091,7 @@ export default function CatalogEditor() {
         {saveMsg && (
           <div
             className={saveMsg.type === 'error' ? 'alert alert-error' : 'alert'}
-            style={saveMsg.type === 'success' ? { marginTop: '8px', background: '#e8f5e9', color: '#2e7d32', padding: '12px', borderRadius: '6px' } : { marginTop: '8px' }}
+            style={saveMsg.type === 'success' ? { marginTop: '8px', background: 'var(--color-success-bg)', color: 'var(--color-success-dark)', padding: '12px', borderRadius: '6px' } : { marginTop: '8px' }}
           >
             {saveMsg.text}
           </div>

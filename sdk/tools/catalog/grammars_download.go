@@ -20,7 +20,8 @@ func (g *grammars) download(ctx context.Context, log func(context.Context, strin
 
 	files, err := g.grammarListGitHubFolder(ctx)
 	if err != nil {
-		return fmt.Errorf("download: listing grammars: %w", err)
+		log(ctx, "grammar-download", "WARNING", "unable to retrieve grammar files, using local cache", "error", err.Error())
+		return nil
 	}
 
 	if len(files) > 0 {

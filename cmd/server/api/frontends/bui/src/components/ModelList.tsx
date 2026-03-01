@@ -211,7 +211,7 @@ export default function ModelList() {
                             className={selectedModelId === model.id ? 'selected' : ''}
                             style={{ cursor: 'pointer' }}
                           >
-                            <td style={{ textAlign: 'center', color: model.validated ? 'inherit' : '#e74c3c' }}>{model.validated ? '✓' : '✗'}</td>
+                            <td style={{ textAlign: 'center', color: model.validated ? 'inherit' : 'var(--color-error)' }}>{model.validated ? '✓' : '✗'}</td>
                             <td>{model.id}</td>
                             <td>{model.owned_by}</td>
                             <td>{model.model_family}</td>

@@ -69,7 +69,7 @@ export default function Settings() {
       {saved && <div className="alert alert-success">Token settings saved</div>}
 
       <div className="card">
-        <h4 style={{ marginBottom: '12px', color: 'var(--color-blue)' }}>Token Status</h4>
+        <h4 style={{ marginBottom: '12px', color: 'var(--color-page-title)' }}>Token Status</h4>
         <p style={{ color: hasToken ? 'var(--color-success)' : 'var(--color-gray-600)' }}>
           {hasToken ? '✓ Token is configured' : '○ No token configured'}
         </p>

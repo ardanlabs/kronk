@@ -1573,7 +1573,7 @@ func cfgDenseIMCDeterministicMultiSlot() model.Config {
 	return model.Config{
 		Log:              benchLog,
 		ModelFiles:       benchModelPath.ModelFiles,
-		ContextWindow:    32768,
+		ContextWindow:    131072, // 4x to give each of the 4 slots ~32k tokens
 		NBatch:           2048,
 		NUBatch:          2048,
 		CacheTypeK:       model.GGMLTypeF16,

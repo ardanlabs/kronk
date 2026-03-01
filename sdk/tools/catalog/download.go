@@ -58,7 +58,7 @@ func (c *Catalog) Download(ctx context.Context, opts ...DownloadOption) error {
 
 	files, err := c.listGitHubFolder(ctx)
 	if err != nil {
-		return fmt.Errorf("listing catalogs: %w", err)
+		log(ctx, "catalog-download", "WARNING", "unable to retrieve catalog files, using local cache", "error", err.Error())
 	}
 
 	if len(files) > 0 {

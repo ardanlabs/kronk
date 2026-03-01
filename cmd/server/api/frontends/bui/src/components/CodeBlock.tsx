@@ -8,7 +8,13 @@ import 'prismjs/components/prism-rust';
 import 'prismjs/components/prism-sql';
 import 'prismjs/components/prism-json';
 import 'prismjs/components/prism-yaml';
+import 'prismjs/components/prism-bash';
 import 'prismjs/themes/prism-tomorrow.css';
+
+// Alias "shell" → "bash" so <code className="language-shell"> gets highlighted.
+if (Prism.languages.bash && !Prism.languages.shell) {
+  Prism.languages.shell = Prism.languages.bash;
+}
 
 interface CodeBlockProps {
   code: string;

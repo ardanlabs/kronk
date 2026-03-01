@@ -259,6 +259,47 @@ benchmark-moe-spec-draft:
 benchmark-hybrid-imc-det:
 	CGO_ENABLED=0 go test -run=none -bench=BenchmarkHybrid_IMCDeterministic -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
+# Run all benchmarks sequentially (each target loads/unloads its own model)
+# and write combined raw output to a single file under runs/.
+# Usage: make benchmark-all BENCH_KRONK=v1.20.4
+BENCH_KRONK ?= dev
+
+benchmark-all:
+	@FILE=sdk/kronk/tests/benchmarks/runs/$$(date +%Y-%m-%d).txt; \
+	mkdir -p sdk/kronk/tests/benchmarks/runs; \
+	echo "# Date: $$(date +%Y-%m-%d)" > $$FILE; \
+	echo "# Kronk: $(BENCH_KRONK)" >> $$FILE; \
+	echo "" >> $$FILE; \
+	for target in \
+		benchmark-dense-nc \
+		benchmark-dense-spc \
+		benchmark-dense-imc-det \
+		benchmark-dense-imc-nondet \
+		benchmark-dense-imc-det-spec \
+		benchmark-dense-imc-multi \
+		benchmark-dense-imc-prefill \
+		benchmark-dense-imc-cold \
+		benchmark-moe-imc-det \
+		benchmark-moe-spec-baseline \
+		benchmark-moe-spec-draft \
+		benchmark-hybrid-imc-det; \
+	do \
+		echo "" >> $$FILE; \
+		echo "## $$target" >> $$FILE; \
+		$(MAKE) $$target 2>&1 | tee -a $$FILE; \
+	done; \
+	echo ""; \
+	echo "Results written to $$FILE"
+
+# Format benchmark results from runs/ into BENCH_RESULTS.txt.
+benchmark-fmt:
+	go run cmd/server/api/tooling/benchfmt/main.go
+
+# Append a single run file to the top of BENCH_RESULTS.txt with diffs.
+# Usage: make benchmark-fmt-file FILE=2026-03-01.txt
+benchmark-fmt-file:
+	go run cmd/server/api/tooling/benchfmt/main.go $(FILE)
+
 # ==============================================================================
 # Kronk BUI
 
