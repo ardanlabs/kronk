@@ -13,8 +13,6 @@
 
 ---
 
-
-
 ### 2.1 Prerequisites
 
 **Required**
@@ -44,26 +42,79 @@ kronk --help
 You should see output listing available commands:
 
 ```
-Kronk CLI - A tool for managing Kronk models
+KRONK
+Local LLM inference with hardware acceleration
+
+USAGE
+  kronk [command]
+
+COMMANDS
+  server    Start/stop the model server
+  catalog   Manage model catalogs (list, pull, show, update)
+  model     Manage local models (list, pull, remove, show, ps)
+  libs      Install/upgrade llama.cpp libraries
+  security  Manage API keys and JWT tokens
+  run       Run a model directly for interactive chat (no server needed)
+
+QUICK START
+  # List available models
+  kronk catalog list --local
+
+  # Download a model (e.g., Qwen3-8B)
+  kronk catalog pull Qwen3-8B-Q8_0 --local
+
+  # Start the server (runs on http://localhost:8080)
+  kronk server start
+
+  # Open the Browser UI
+  open http://localhost:8080
+
+FEATURES
+  • Text, Vision, Audio, Embeddings, Reranking
+  • Metal, CUDA, ROCm, Vulkan, CPU acceleration
+  • Batch processing, message caching, YaRN context extension
+  • Model pooling, catalog system, browser UI
+  • MCP service, security, observability
+
+MODES
+  Web mode (default)  - Communicates with running server at localhost:8080
+  Local mode (--local) - Direct file operations without server
+
+ENVIRONMENT
+  KRONK_BASE_PATH, KRONK_PROCESSOR, KRONK_LIB_VERSION
+  KRONK_HF_TOKEN, KRONK_WEB_API_HOST, KRONK_TOKEN
+
+FOR MORE
+  kronk <command> --help    Get help for a command
+  See AGENTS.md for documentation
 
 Usage:
+  kronk [flags]
   kronk [command]
 
 Available Commands:
-  catalog     Manage model catalog
-  libs        Install or upgrade llama.cpp libraries
-  model       Manage models
-  run         Run a model directly for quick testing
-  security    Manage security keys and tokens
-  server      Manage Kronk model server
+  catalog     Manage model catalogs (list, pull, show, update)
+  completion  Generate the autocompletion script for the specified shell
   help        Help about any command
+  libs        Install or upgrade llama.cpp libraries
+  model       Manage local models (index, list, pull, remove, show, ps)
+  run         Run an interactive chat session with a model
+  security    Manage API security (keys and tokens)
+  server      Start, stop, and manage the Kronk model server
+
+Flags:
+      --base-path string   Base path for kronk data (models, templates, catalog)
+  -h, --help               help for kronk
+  -v, --version            version for kronk
+
+Use "kronk [command] --help" for more information about a command.
 ```
 
 ### 2.3 Installing Libraries
 
 Before running inference, you need the llama.cpp libraries for your machine. Kronk auto-detects your hardware and downloads the appropriate binaries.
 
-**Option A: Via the Server (Recommended)**
+**Option A: Via the Server**
 
 Start the server and use the BUI to download libraries:
 
@@ -88,7 +139,6 @@ KRONK_LIB_PATH  - Library directory (default: `~/.kronk/libraries`)
 KRONK_PROCESSOR - `cpu`, `cuda`, `metal`, `rocm`, or `vulkan` (default: `cpu`)
 KRONK_ARCH      - Architecture override: `amd64`, `arm64`
 KRONK_OS        - OS override: `linux`, `darwin`, `windows`
-GITHUB_TOKEN    - GitHub personal access token for higher API rate limits
 ```
 
 **Example: Install CUDA Libraries**
@@ -108,13 +158,11 @@ kronk catalog list --local
 Output:
 
 ```
-CATALOG              MODEL ID                            PULLED   ENDPOINT
-Audio-Text-to-Text   Qwen2-Audio-7B.Q8_0                 no       chat_completion
-Embedding            embeddinggemma-300m-qat-Q8_0        no       embeddings
-Image-Text-to-Text   gemma-3-4b-it-q4_0                  no       chat_completion
-Text-Generation      Qwen3-8B-Q8_0                       no       chat_completion
-Text-Generation      Llama-3.3-70B-Instruct-Q8_0         no       chat_completion
-...
+CATALOG              MODEL ID                                 ARCH     SIZE       PULLED   ENDPOINT
+Rerank               bge-reranker-v2-m3-Q8_0                  Dense    636.0 MB   yes      rerank
+Text-Generation      cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0   MoE      26.5 GB    yes      chat_completion
+Embedding            embeddinggemma-300m-qat-Q8_0             Dense    329.0 MB   yes      embeddings
+Image-Text-to-Text   GLM-4.6V-UD-Q5_K_XL                      MoE      80.3 GB    yes      chat_completion
 ```
 
 Download a model (recommended starter: Qwen3-8B):
@@ -182,7 +230,7 @@ curl http://localhost:8080/v1/chat/completions \
 
 **Test via BUI**
 
-Open http://localhost:8080 in your browser and navigate to the Apps/Chat app. Select the model you want to try and chat away.
+Open `http://localhost:8080` in your browser and navigate to the `Apps/Chat` app. Select the model you want to try and chat away.
 
 ### 2.7 Quick Start Summary
 
@@ -224,25 +272,24 @@ build packages for producing a standalone `kronk` binary, each per GPU backend.
 
 The flake provides multiple shells, one per GPU backend:
 
-| Command                           | Backend | GPU Required           |
-| --------------------------------- | ------- | ---------------------- |
-| `nix develop ./zarf/nix`          | CPU     | None                   |
-| `nix develop ./zarf/nix#cpu`      | CPU     | None                   |
-| `nix develop ./zarf/nix#vulkan`   | Vulkan  | Vulkan-capable GPU     |
-| `nix develop ./zarf/nix#cuda`     | CUDA    | NVIDIA GPU with CUDA   |
-
+| Command                         | Backend | GPU Required         |
+| ------------------------------- | ------- | -------------------- |
+| `nix develop ./zarf/nix`        | CPU     | None                 |
+| `nix develop ./zarf/nix#cpu`    | CPU     | None                 |
+| `nix develop ./zarf/nix#vulkan` | Vulkan  | Vulkan-capable GPU   |
+| `nix develop ./zarf/nix#cuda`   | CUDA    | NVIDIA GPU with CUDA |
 
 **Building the Kronk CLI**
 
 The flake also provides build packages that produce a wrapped `kronk` binary
 with the correct llama.cpp backend and runtime libraries baked in:
 
-| Command                         | Backend | GPU Required           |
-| ------------------------------- | ------- | ---------------------- |
-| `nix build ./zarf/nix`          | CPU     | None                   |
-| `nix build ./zarf/nix#cpu`      | CPU     | None                   |
-| `nix build ./zarf/nix#vulkan`   | Vulkan  | Vulkan-capable GPU     |
-| `nix build ./zarf/nix#cuda`     | CUDA    | NVIDIA GPU with CUDA   |
+| Command                       | Backend | GPU Required         |
+| ----------------------------- | ------- | -------------------- |
+| `nix build ./zarf/nix`        | CPU     | None                 |
+| `nix build ./zarf/nix#cpu`    | CPU     | None                 |
+| `nix build ./zarf/nix#vulkan` | Vulkan  | Vulkan-capable GPU   |
+| `nix build ./zarf/nix#cuda`   | CUDA    | NVIDIA GPU with CUDA |
 
 The Go binary is built once with `CGO_ENABLED=0`, then wrapped per backend so
 that `KRONK_LIB_PATH`, `KRONK_ALLOW_UPGRADE`, and `LD_LIBRARY_PATH` are set
@@ -255,11 +302,11 @@ automatically. No dev shell is required to run the resulting binary.
 
 All shells and built packages automatically set the following:
 
-| Variable              | Value                                      | Purpose                                              |
-| --------------------- | ------------------------------------------ | ---------------------------------------------------- |
-| `KRONK_LIB_PATH`     | Nix store path to the selected llama.cpp   | Points Kronk to the Nix-managed llama.cpp libraries  |
-| `KRONK_ALLOW_UPGRADE` | `false`                                    | Prevents Kronk from attempting to download libraries |
-| `LD_LIBRARY_PATH`    | Includes `libffi` and `libstdc++`          | Required for FFI runtime linking                     |
+| Variable              | Value                                    | Purpose                                              |
+| --------------------- | ---------------------------------------- | ---------------------------------------------------- |
+| `KRONK_LIB_PATH`      | Nix store path to the selected llama.cpp | Points Kronk to the Nix-managed llama.cpp libraries  |
+| `KRONK_ALLOW_UPGRADE` | `false`                                  | Prevents Kronk from attempting to download libraries |
+| `LD_LIBRARY_PATH`     | Includes `libffi` and `libstdc++`        | Required for FFI runtime linking                     |
 
 **Important:** Because `KRONK_ALLOW_UPGRADE` is set to `false`, the `kronk libs`
 command will not attempt to download or overwrite libraries. Library updates are

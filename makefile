@@ -335,7 +335,7 @@ BUI_DIR := cmd/server/api/frontends/bui
 bui-install:
 	cd $(BUI_DIR) && npm install
 
-bui-run:
+bui-run: kronk-docs
 	cd $(BUI_DIR) && npm run dev
 
 bui-build:

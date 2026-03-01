@@ -1325,7 +1325,7 @@ code[class*="language-"] {
     width: 100%;
     margin: 12px 0;
     border-collapse: collapse;
-    font-size: 14px;
+    font-size: 15px;
 }
 
 .flags-table th {
@@ -1334,7 +1334,7 @@ code[class*="language-"] {
     background: var(--color-gray-100);
     color: var(--color-gray-600);
     font-weight: 600;
-    font-size: 12px;
+    font-size: 13px;
     border-bottom: 1px solid var(--color-gray-200);
 }
 
@@ -2749,10 +2749,15 @@ code[class*="language-"] {
 }
 
 .manual-content h4 {
-    font-size: 17px;
+    font-size: 18px;
     font-weight: 600;
     color: var(--color-gray-700);
     margin: 20px 0 10px 0;
+}
+
+.manual-content h4::before {
+    content: "● ";
+    color: var(--color-orange);
 }
 
 .manual-content h5 {
@@ -2763,6 +2768,7 @@ code[class*="language-"] {
 }
 
 .manual-content p {
+    font-size: 16px;
     margin: 12px 0;
     line-height: 1.7;
 }
@@ -2774,6 +2780,7 @@ code[class*="language-"] {
 }
 
 .manual-content li {
+    font-size: 16px;
     margin: 6px 0;
     line-height: 1.6;
 }
@@ -2807,6 +2814,10 @@ code[class*="language-"] {
 
 .manual-content :not(pre) > code {
     color: var(--color-inline-code-text);
+    background: var(--color-inline-code-bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.9em;
 }
 
 .manual-content pre.code-block {
