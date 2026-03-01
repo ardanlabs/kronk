@@ -19,7 +19,7 @@ import (
 // behavior:
 //
 //   - Deterministic:     Hash-based prefix matching for models with consistent
-//     templates (QWEN, Llama, MoE, Hybrid). Fastest path.
+//     templates. Fastest path. Used by most models.
 //   - Non-Deterministic: Token-level prefix fallback for models with variable
 //     templates (GPT-OSS, GLM). Activated when hash matching fails.
 //

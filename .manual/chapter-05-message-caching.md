@@ -16,8 +16,6 @@
 
 ---
 
-
-
 Message caching reduces redundant computation by storing and reusing KV cache
 state from previous requests. Kronk provides two caching modes (SPC and IMC)
 optimized for different use cases.
@@ -113,19 +111,31 @@ Incremental Message Cache is designed for agentic workflows where
 conversations grow monotonically. It caches all messages except the last
 one and extends the cache incrementally on each turn.
 
-IMC has two matching strategies, automatically selected based on the model's
-template behavior. You don't choose a strategy — Kronk detects the template
-type and uses the right one automatically.
+IMC has two matching strategies. You don't choose a strategy — Kronk always
+tries hash matching first and automatically falls back to token prefix
+matching when the hash doesn't match.
 
-| Strategy          | When Used                           | How It Matches        | Example Models   |
-| ----------------- | ----------------------------------- | --------------------- | ---------------- |
-| Deterministic     | Template produces consistent tokens | Hash-based            | QWEN, Llama, MoE |
-| Non-Deterministic | Template produces variable tokens   | Token prefix fallback | GPT-OSS, GLM     |
+| Strategy          | When It Runs                         | How It Matches        |
+| ----------------- | ------------------------------------ | --------------------- |
+| Deterministic     | Hash of cached messages matches      | Hash-based            |
+| Non-Deterministic | Hash fails, falls back automatically | Token prefix fallback |
 
 The matching strategy is independent of the model type (Dense, MoE, Hybrid).
-Any model type can use either strategy. What changes per model type is how
-the batch engine manages state between requests — see
-[Section 4.9](#49-model-types-and-state-management).
+Any model type can use either strategy — it depends on the template, not the
+architecture. What changes per model type is how the batch engine manages
+state between requests — see [Section 4.9](#49-model-types-and-state-management).
+
+The table below shows the real models and which strategy their templates
+produce. Note that MoE appears in both columns — Qwen3-VL (MoE) has a
+deterministic template, while GPT-OSS (also MoE) has a non-deterministic one.
+
+| Model                          | Architecture | Template          | Modality |
+| ------------------------------ | ------------ | ----------------- | -------- |
+| Qwen3-8B-Q8_0                  | Dense        | Deterministic     | Text     |
+| Qwen2.5-VL-3B-Instruct-Q8_0    | Dense        | Deterministic     | Vision   |
+| Qwen3-VL-30B-A3B-Instruct-Q8_0 | MoE          | Deterministic     | Vision   |
+| Qwen3.5-35B-A3B-Q8_0           | Hybrid       | Deterministic     | Vision   |
+| gpt-oss-20b-Q8_0               | MoE          | Non-Deterministic | Text     |
 
 - **Deterministic** is the fastest path — hash matching finds the right slot
   instantly with no tokenization overhead.
@@ -238,10 +248,10 @@ The default and fastest matching strategy. Used automatically for models with
 consistent templates — where the same messages always produce identical token
 sequences regardless of conversation length.
 
-**Why this strategy exists:** Most models (QWEN, Llama, MoE, Hybrid, and
-similar architectures) have deterministic templates. When the template is
-consistent, a simple hash of the message prefix is enough to identify a
-matching slot. This avoids tokenization overhead entirely.
+**Why this strategy exists:** Most models have deterministic templates (see
+the model table above). When the template is consistent, a simple hash of
+the message prefix is enough to identify a matching slot. This avoids
+tokenization overhead entirely.
 
 **When it's used:** Automatically when `incremental_cache: true` and the
 template produces consistent token sequences. This is the default path.
@@ -288,7 +298,7 @@ Incoming tokens: [T1, T2, T3, T4, T5, T9, T10, T11, T12]
 
 Common prefix: 5 tokens (salvaged from KV cache)
 Trimmed:       3 tokens (T6-T8 removed via MemorySeqRm)
-New decode:    7 tokens (T5-T12, from divergence point forward)
+New decode:    4 tokens (T9-T12, from divergence point forward)
 ```
 
 If the common prefix meets the `cache_min_tokens` threshold, IMC:
@@ -308,7 +318,7 @@ switching conversations. Instead of decoding ~8400 tokens from scratch,
 the system kept ~6800 cached and only decoded ~1600.
 
 **Models:** GPT-OSS, GLM, and any model whose template produces variable
-token sequences for identical messages.
+token sequences for identical messages (see the model table above).
 
 **Debugging Non-Deterministic IMC:**
 
@@ -391,9 +401,9 @@ trade-offs to help you choose.
 **Important:** SPC and IMC are mutually exclusive. Choose based on your
 workload:
 
-- **Agentic workflows:** Use IMC — works with all templates. Deterministic
-  templates (QWEN, Llama) get the fastest hash-based path. Non-deterministic
-  templates (GPT-OSS, GLM) use token prefix fallback with 70-80% cache salvage.
+- **Agentic workflows:** Use IMC — works with all templates. Most models get
+  the fastest hash-based path. Non-deterministic templates (GPT-OSS, GLM) use
+  token prefix fallback with 70-80% cache salvage.
 - **Chat UIs / multi-client:** Use SPC — simpler model, no slot dedication
 
 ### 5.6 Cache Invalidation
