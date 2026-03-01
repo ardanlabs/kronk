@@ -38,30 +38,43 @@ which will be presented later. Each model has GGUF metadata that Kronk can read
 for defaults like setting the context window size when not provided. Kronk also
 has default settings for things like temperature and top_p when not provided.
 
-**Context Window**
+#### Context Window
 
-The context window defines the maximum number of tokens the model can process
-in a single request. This would be the sum of all input tokens being provided
-at any given time.
+The context window is the maximum number of tokens the KV cache can hold, and it's
+consumed by both input tokens (system prompt, user messages) and output tokens
+(model responses). Once the cumulative tokens from all inputs and outputs in a
+session reach the context window limit, the model can't process more without some
+form of truncation, sliding window, or cache eviction.
 
 ```yaml
-context_window: 8192 # 8192 tokens (Kronk default if not specifed by the model and you)
+context_window: 8192 # This represent 8192 tokens.
 ```
 
 _Note: A common rule of thumb is that 1 token ≈ 0.75 words (or roughly 4
 characters in English). So an 8K context window can handle approximately 6,000
 words of combined input and output._
 
-Larger context windows require more VRAM. A rough estimate:
+Larger context windows require more VRAM for the KV cache. The actual cost
+depends on the model's layer count, number of KV heads, head dimension, KV
+cache data type (f16, q8_0, q4_0), and the number of parallel sequences (slots).
 
-- `8K context`: ~2GB additional VRAM
-- `32K context`: ~8GB additional VRAM
-- `128K context`: ~32GB additional VRAM (requires YaRN scaling)
+As a rough guide for a single slot for a given model size:
+
+| Context Size | ~7B (q8_0) | ~7B (f16) | ~70B (q8_0) | ~70B (f16) |
+| ------------ | ---------- | --------- | ----------- | ---------- |
+| 8K           | ~0.5 GB    | ~1 GB     | ~1.25 GB    | ~2.5 GB    |
+| 32K          | ~2 GB      | ~4 GB     | ~5 GB       | ~10 GB     |
+| 128K         | ~8 GB      | ~16 GB    | ~20 GB      | ~40 GB     |
+
+Using q4_0 KV cache quantization can reduce costs further to roughly ¼ of f16.
+
+128K context typically requires YaRN scaling for models not natively trained
+at that length.
 
 _Note: YaRN is a way to extend the natural size of context windows for
 small models. Kronk supports YaRN and talked about in Chapter 6._
 
-**Batch Size Configuration**
+#### Batch Size Configuration
 
 When you send a prompt to a model, the model doesn't process all your input
 tokens at once. It breaks them into smaller chunks and processes each chunk
@@ -76,18 +89,20 @@ willing to look at on the page at once, and `n_ubatch` is how many words you
 actually read in one breath. You might glance at 2048 words, but you read
 them 512 at a time.
 
-For example, if you send a 4096-token prompt with the default settings, the
-model will process it in chunks: it takes up to 2048 tokens per forward pass
-(`n_batch`), and within each pass, it physically processes 512 tokens at a
-time (`n_ubatch`). Larger values mean faster prompt processing but use more
-VRAM. The `n_ubatch` value must always be less than or equal to `n_batch`.
+For example, if you send a 4096-token prompt with `n_batch: 2048` and
+`n_ubatch: 512`, the model will process it in chunks: it takes up to 2048
+tokens per forward pass (`n_batch`), and within each pass, it physically
+processes 512 tokens at a time (`n_ubatch`). So the 4096 tokens are split
+into 2 logical batches of 2048, each processed in 4 physical sub-batches of 512.
+Larger values mean faster prompt processing but use more VRAM. The `n_ubatch` value
+must always be less than or equal to `n_batch`.
 
 ```yaml
 n_batch: 2048 # Logical batch size
 n_ubatch: 512 # Physical batch size (must be ≤ n_batch)
 ```
 
-**Recommended settings by workload:**
+#### Recommended settings by workload
 
 | Workload                           | n_batch   | n_ubatch |
 | ---------------------------------- | --------- | -------- |
@@ -110,7 +125,7 @@ split the work: keep some layers on the GPU for speed and let the rest run on
 the CPU. This section covers how to control that split and other GPU-related
 settings.
 
-**Layer Offloading**
+#### Layer Offloading
 
 A typical model might have anywhere from 28 to 80+ layers depending on its
 size. For example, a 7B parameter model usually has around 32 layers, while a
@@ -130,7 +145,12 @@ n_gpu_layers: -1     # All layers on CPU
 n_gpu_layers: 20     # First 20 layers on GPU
 ```
 
-**KV Cache Location**
+_Note: On Apple Silicon (Metal), the CPU and GPU share the same unified
+memory pool, so there is no separate VRAM. All layers run on the GPU by
+default and this setting does not need to be configured. Layer offloading
+applies to discrete GPU systems (NVIDIA CUDA, Vulkan)._
+
+#### KV Cache Location
 
 As the model processes your conversation, it builds up a cache of intermediate
 calculations called the KV (Key-Value) cache. Think of it as the model's
@@ -150,7 +170,15 @@ offload_kqv: true    # KV cache on GPU (default, faster)
 offload_kqv: false   # KV cache on CPU (saves VRAM, slower)
 ```
 
-**Tensor Operations Offload**
+_Note: On Apple Silicon (Metal), the CPU and GPU share unified memory, so
+this setting has no practical effect. KV cache location applies to discrete GPU
+systems (NVIDIA CUDA, Vulkan)._
+
+#### Tensor Operations Offload
+
+_Note: On Apple Silicon (Metal), the CPU and GPU share unified memory, so
+this setting has no practical effect. The following applies to discrete GPU
+systems (NVIDIA CUDA, Vulkan)._
 
 Beyond the model layers and KV cache, there are additional math operations
 (called tensor operations) that happen during inference — things like
@@ -160,9 +188,6 @@ placed on the GPU or CPU. By default they run on the GPU, but if VRAM is
 tight you can move them to the CPU while still keeping your model layers
 on the GPU.
 
-_Note: Use `op_offload: false` when you need to run the model on CPU but want to
-keep some layers on GPU for memory._
-
 Control where these tensor computations run:
 
 ```yaml
@@ -170,18 +195,22 @@ op_offload: true     # Tensor ops on GPU (default)
 op_offload: false    # Tensor ops on CPU
 ```
 
-**Multi-GPU Split Mode**
+_Note: On Apple Silicon (Metal), the CPU and GPU share unified memory, so
+this setting has no practical effect. Offloading applies to discrete GPU
+systems (NVIDIA CUDA, Vulkan)._
+
+#### Multi-GPU Split Mode
 
 If you have more than one GPU in your system, you can spread a model across
 them. This is useful when a model is too large to fit in a single GPU's VRAM.
-There are two strategies: `layer` mode assigns entire layers to different GPUs
-(simple and works well for most models), while `row` mode splits individual
-tensor operations across GPUs in parallel (better for Mixture of Experts
-models like Qwen3-MoE, Mixtral, or DeepSeek where different "experts" can
-run simultaneously on different GPUs).
+There are two strategies,`layer mode` and `row mode`.
 
-_Note: Use `row` for Mixture of Experts models like Qwen3-MoE, Mixtral, or
-DeepSeek._
+`layer mode` assigns entire layers to different GPUs
+(simple and works well for most models).
+
+`row mode` splits individual tensor operations across GPUs in parallel (better
+for Mixture of Experts models like Qwen3-MoE, Mixtral, or DeepSeek where different
+"experts" can run simultaneously on different GPUs).
 
 Control how the model is distributed across GPUs:
 
@@ -191,7 +220,14 @@ split_mode: layer    # Split layers across GPUs
 split_mode: row      # Tensor parallelism (best for MoE models)
 ```
 
-**Configuration Reference**
+_Note: Use this setting for Mixture of Experts models like Qwen3-MoE, Mixtral, or
+DeepSeek._
+
+#### Configuration Reference
+
+Here is a chart for all these GPU settings. These only apply to discrete GPU systems
+(NVIDIA CUDA, Vulkan). On Apple Silicon, the CPU and GPU share unified memory and
+these settings can be ignored.
 
 | Field      | YAML Key       | Values         | Default | Description                    |
 | ---------- | -------------- | -------------- | ------- | ------------------------------ |
@@ -219,39 +255,29 @@ cache_type_k: q8_0 # Key cache precision
 cache_type_v: q8_0 # Value cache precision
 ```
 
-**Available types:**
+#### Available types
 
 - `f16` - Half precision (default, best quality)
 - `q8_0` - 8-bit quantization (good balance)
 - `q4_0` - 4-bit quantization (aggressive, may affect quality)
 - `bf16` - Brain float 16 (for supported hardware)
 
-**VRAM savings with Q8_0 cache:**
+#### When to use f16 vs q8_0
 
-- 8K context: ~25% reduction
-- 32K context: ~25% reduction
-- Larger contexts benefit proportionally
+| Consideration       | f16 (default)              | q8_0                                                      |
+| ------------------- | -------------------------- | --------------------------------------------------------- |
+| VRAM usage          | Higher                     | ~50% less for KV cache                                    |
+| Output quality      | Best possible              | Nearly identical for most tasks                           |
+| MoE models          | Recommended — routing is   | May degrade expert routing                                |
+|                     | sensitive to precision     | decisions                                                 |
+| Dense models        | Safe but uses more memory  | Recommended — minimal quality loss with good VRAM savings |
+| Long-context (64K+) | Safer — avoids compounding | Small precision errors can                                |
+|                     | precision errors           | accumulate over long sequences                            |
 
-**When to Use F16 Cache (No Quantization):**
+Start with `q8_0` for dense models. Use `f16` for MoE models or if you
+notice quality issues (incoherent outputs, reasoning failures).
 
-Certain model architectures are sensitive to KV cache quantization and
-perform significantly better with `f16` precision:
-
-- **Mixture of Experts (MoE) models** - Models like Qwen3-MoE, DeepSeek-MoE,
-  and Mixtral use sparse expert routing. The routing decisions depend on
-  subtle attention patterns that degrade when the KV cache is quantized.
-
-- **Long-context reasoning** - Tasks requiring attention across many thousands
-  of tokens (legal documents, codebases, multi-turn conversations) accumulate
-  small precision errors that compound over the sequence length.
-
-- **Code generation** - Precise variable tracking and syntax coherence benefit
-  from higher cache precision, especially in larger codebases.
-
-- **Math and logic** - Multi-step reasoning chains are sensitive to accumulated
-  quantization noise in earlier attention states.
-
-**Example: MoE Model with F16 Cache**
+#### Example: MoE Model with F16 Cache
 
 ```yaml
 models:
@@ -299,6 +325,13 @@ flash_attention: disabled  # Disable if causing issues
 flash_attention: auto      # Let llama.cpp decide
 ```
 
+_Note: Hybrid models (those combining attention and recurrent layers, such as
+Qwen3.5-35B-A3B) do not support flash attention. Kronk automatically
+disables it for these models. Additionally, quantized KV caches (`q8_0`, `q4_0`)
+require flash attention to function — so when flash attention is disabled for
+hybrid models, Kronk also forces the KV cache type to f16. These overrides
+happen regardless of your configuration settings._
+
 ### 3.5 Parallel Inference (NSeqMax)
 
 When multiple users (or applications) send requests to the same model at the
@@ -306,14 +339,24 @@ same time, the model needs a way to handle them concurrently. That's what
 `NSeqMax` controls — it determines how many requests the model can process in
 parallel.
 
-Behind the scenes, Kronk creates a processing slot for each concurrent
-request. Each slot gets its own isolated partition in the KV cache (the
-model's short-term memory from earlier sections). All slots share the same
-model weights and GPU, but each one maintains its own conversation state
-independently. When a batch decode runs on the GPU, tokens from all active
-slots are combined into a single operation — so the GPU does one large matrix
-multiply instead of several small ones. This is what makes parallel inference
-efficient.
+Behind the scenes, when a model is loaded, Kronk creates one processing slot
+for each unit of `n_seq_max` (e.g., `n_seq_max: 4` creates four slots).
+Each slot gets its own isolated partition in the KV cache (the model's
+short-term memory from earlier sections). All slots share the same model weights
+and GPU, but each one maintains its own conversation state independently.
+
+Consider what happens when `n_seq_max` is set to 1 and two requests arrive.
+The first request is assigned to the only available slot and begins
+generating tokens. The second request has no slot available, so it waits in
+a queue. Once the first request finishes and the slot is released, the
+second request is assigned to that slot and begins processing. With a single
+slot, requests are handled one at a time.
+
+When `n_seq_max` is set to 4, then four requests can each be assigned a slot
+at the same time and generate tokens simultaneously. Kronk combines the next
+token from each active slot into a single batch and sends that batch through
+the GPU in one forward pass — so the GPU processes all four tokens together
+rather than one at a time. That's where we get some performance optimization.
 
 The trade-off is VRAM. Each slot reserves its full KV cache partition when the
 model loads, whether or not it's actively handling a request. Setting
@@ -327,11 +370,12 @@ Control how many requests can be processed in parallel:
 n_seq_max: 4 # Process up to 4 requests concurrently
 ```
 
-**How Caching Strategy Affects Slot Behavior**
+#### How Caching Strategy Affects Slot Behavior
 
-All three caching strategies allocate the same number of slots with the same VRAM
-cost. The difference is what happens to the cached data in each slot between
-requests:
+Enabling a [caching strategy](#chapter-5-message-caching) does not add any
+extra memory to the system — caching works within the KV cache already
+allocated to each slot. The difference between strategies is what happens to
+the data in the KV cache between requests:
 
 **No Caching** — The simplest mode. When a request finishes, the slot's KV
 cache is cleared. The next request that lands in that slot starts from
@@ -339,29 +383,28 @@ scratch, processing the full prompt from the beginning. Every request pays
 the full cost of prompt processing regardless of how similar it is to a
 previous one.
 
-**SPC (System Prompt Cache)** — In many applications, every request starts with
-the same system prompt (the instructions that tell the model how to behave).
-SPC decodes the system prompt once into a temporary sequence, then externalizes
-the KV state to a byte buffer in RAM and frees the sequence. When a new request
-arrives, the KV state is restored into the slot's working sequence via
-StateSeqSetData before the rest of the prompt is processed. The slot is still
-cleared between requests. No dedicated cache sequence is permanently occupied,
-so SPC does not add any extra sequences to the VRAM allocation.
+**SPC (System Prompt Cache)** — Designed for multi-user scenarios where
+different users share the same system prompt. The first time a system prompt
+is seen (or when a change is detected), SPC processes it through the model
+and saves a copy of the resulting KV cache state in RAM. On every subsequent
+request — regardless of which slot handles it — that saved state is loaded into
+the slot so the system prompt doesn't need to be reprocessed. The slot is still
+cleared between requests, so no slot is dedicated to any particular user.
 
-**IMC (Incremental Message Cache)** — Designed for multi-turn conversations. A
-slot becomes dedicated to a conversation. The entire conversation history stays
-in the slot's KV cache between requests. When the user sends a new message,
-only the new tokens need to be processed — the model doesn't re-read the
-entire conversation. This gives the best performance for chat applications,
-but each active conversation permanently occupies a slot.
+**IMC (Incremental Message Cache)** — Designed for single-user, multi-turn
+conversations. A slot becomes dedicated to a conversation and retains the
+entire conversation history in the KV cache between requests. When the user
+sends a new message, only the new tokens need to be processed — the model
+doesn't re-read the entire conversation. This gives the best performance for
+chat and agentic applications.
 
-| Mode | Slot Lifetime            | Cache Strategy                                                                               |
-| ---- | ------------------------ | -------------------------------------------------------------------------------------------- |
-| Off  | Cleared after request    | None                                                                                         |
-| SPC  | Cleared after request    | System prompt decoded once, KV state stored in RAM, restored per request via StateSeqSetData |
-| IMC  | Persists across requests | Full conversation cached in the slot's KV cache sequence                                     |
+| Mode | Slot Lifetime            | Best For    | Cache Strategy                                                     |
+| ---- | ------------------------ | ----------- | ------------------------------------------------------------------ |
+| Off  | Cleared after request    | Stateless   | None                                                               |
+| SPC  | Cleared after request    | Multi-user  | System prompt decoded once, shared across all slots via RAM buffer |
+| IMC  | Persists across requests | Single-user | Full conversation cached in the slot's KV cache sequence           |
 
-**Embedding and Reranking Models**
+#### Embedding and Reranking Models
 
 Embedding and reranking models work differently. Instead of slots sharing a
 single context, `NSeqMax` creates a pool of independent contexts. When a
@@ -381,7 +424,7 @@ Quantization reduces model precision from the original 16-bit or 32-bit
 floating-point weights to lower bit representations. This dramatically
 decreases:
 
-- **File size** - A 7B model goes from ~14GB (FP16) to ~3GB (Q4)
+- **File size** - A 7B model can go from ~14GB (FP16) to ~3GB (Q4)
 - **VRAM usage** - More aggressive quantization allows larger models on limited hardware
 - **Inference speed** - Smaller models load faster and may run faster on memory-constrained systems
 
@@ -452,9 +495,11 @@ better quality than uniform quantization at similar average bits per weight.
 
 Common UD naming: `UD-Q5_K_XL` means Ultra-Dynamic with Q5 K-quant base, XL quality tier.
 
-#### Choosing the Right Quantization
+### 3.7 Choosing the Right Quantization
 
-**By Available VRAM:**
+The right quantization depends on how much VRAM you have and what quality you need.
+
+#### By Available VRAM
 
 | VRAM   | 7B Model | 13B Model | 30B Model | 70B Model |
 | ------ | -------- | --------- | --------- | --------- |
@@ -466,14 +511,14 @@ Common UD naming: `UD-Q5_K_XL` means Ultra-Dynamic with Q5 K-quant base, XL qual
 | 48 GB  | Q8_0     | Q8_0      | Q8_0      | Q4_K_M    |
 | 64 GB+ | Q8_0     | Q8_0      | Q8_0      | Q6_K/Q8_0 |
 
-**By Use Case:**
+#### By Use Case
 
 - **Production/Quality-Critical**: Q8_0 or Q6_K - Minimal quality loss
 - **General Use**: Q5_K_M - Best balance of quality and efficiency
 - **VRAM-Constrained**: Q4_K_M - Good quality at low VRAM cost
 - **Experimental/Testing**: IQ3_XXS or IQ2_XS - Run larger models on limited hardware
 
-**Quality Guidelines:**
+#### Quality Guidelines
 
 1. **Start with Q5_K_M** - It's the sweet spot for most use cases
 2. **Use Q8_0 for reasoning-heavy tasks** - Math, code, complex logic benefit from higher precision
@@ -481,7 +526,7 @@ Common UD naming: `UD-Q5_K_XL` means Ultra-Dynamic with Q5 K-quant base, XL qual
 4. **IQ formats are specialized** - Great for running models that wouldn't otherwise fit, but expect some quality loss
 5. **Larger models at lower quant often beat smaller models at higher quant** - A 70B Q4 may outperform a 7B Q8
 
-**Example Configuration:**
+#### Example Configuration
 
 ```yaml
 models:
@@ -498,7 +543,7 @@ models:
     n_gpu_layers: 0
 ```
 
-### 3.7 VRAM Estimation
+### 3.8 VRAM Estimation
 
 Before loading a model, you need to know whether it will fit in your GPU's
 memory. VRAM usage comes from two things: the model weights (fixed cost
@@ -509,24 +554,34 @@ VRAM, the model either won't load or will partially fall back to the CPU,
 which significantly slows inference. This section walks through how to
 estimate the total.
 
-**Total VRAM = Model Weights + KV Cache**
+#### Model Weights + KV Cache
 
-Model weights are determined by the GGUF file size (e.g., ~8GB for a 7B Q8_0
-model). The KV cache is the variable cost you control through configuration.
+Model weights are the learned numerical parameters (billions of floating-point values)
+that encode the model's knowledge and reasoning ability — they represent the fixed
+cost of loading a model into memory. Model weights are determined by the GGUF file
+size (e.g., ~8GB for a 7B Q8_0 model). The KV cache is the variable cost you
+control through configuration. Together they determine total VRAM usage:
 
-**Model Weights (Q8_0 quantization)**
+Total VRAM = Model Weights + KV Cache.
 
-- 1-3B parameters: 2-4 GB
-- 7-8B parameters: 8-10 GB
-- 13B parameters: 14-16 GB
-- 30B parameters: 32-36 GB
-- 70B parameters: 72-80 GB
+#### Model Weights (Q8_0 quantization)
+
+The following table provides rough VRAM estimates for model weights at Q8_0
+quantization, grouped by parameter count.
+
+| Parameters | VRAM     |
+| ---------- | -------- |
+| 1-3B       | 2-4 GB   |
+| 7-8B       | 8-10 GB  |
+| 13B        | 14-16 GB |
+| 30B        | 32-36 GB |
+| 70B        | 72-80 GB |
 
 #### Slots and Sequences
 
 A slot is a processing unit that handles one request at a time. Each slot is
 assigned a unique sequence ID that maps to an isolated partition in the shared
-KV cache. The mapping is always 1:1:
+KV cache. The mapping is always 1:1 in Kronk.
 
 ```
 NSeqMax = 4 (set via n_seq_max in model config)
@@ -537,30 +592,23 @@ Slot 2  →  Sequence 2  →  KV cache partition 2
 Slot 3  →  Sequence 3  →  KV cache partition 3
 ```
 
-`NSeqMax` controls how many slots (and sequences) are created. More slots means
-more concurrent requests, but each slot reserves its own KV cache partition in
-VRAM whether or not it is actively used.
+Remember as shared previously, `NSeqMax` controls how many slots (and sequences)
+are created. More slots means more concurrent requests, but each slot reserves
+its own KV cache partition in VRAM whether or not it is actively used.
 
 #### What Affects KV Cache Memory Per Sequence
 
 Each sequence's KV cache partition size is determined by three factors:
 
-1. **Context Window (`n_ctx`)** — The maximum number of tokens the sequence can
-   hold. Larger context windows linearly increase memory. 32K context uses 4×
-   the memory of 8K context.
+| Factor             | Config Key          | Description                                                                                                                                                   |
+| ------------------ | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Context Window     | `n_ctx`             | Maximum tokens the sequence can hold. Memory scales linearly — 32K context uses 4× the memory of 8K.                                                          |
+| Number of Layers   | `block_count`       | Every transformer layer stores its own key and value tensors per token. A 70B model (80 layers) uses ~2.5× more per-token memory than a 7B model (32 layers). |
+| KV Cache Precision | `bytes_per_element` | Data type for cached keys and values: `f16` = 2 bytes/element (default, best quality), `q8_0` = 1 byte/element (50% VRAM savings, good quality).              |
 
-2. **Number of Layers (`block_count`)** — Every transformer layer stores its own
-   key and value tensors per token. More layers means more memory per token. A
-   70B model with 80 layers uses ~2.5× more per-token memory than a 7B model
-   with 32 layers.
-
-3. **KV Cache Precision (`bytes_per_element`)** — The data type used to store
-   cached keys and values:
-   - `f16` = 2 bytes per element (default, best quality)
-   - `q8_0` = 1 byte per element (50% VRAM savings, good quality)
-
-   The head geometry (`head_count_kv`, `key_length`, `value_length`) is fixed by
-   the model architecture and read from the GGUF header.
+The remaining values (`head_count_kv`, `key_length`, `value_length`) are baked
+into the model itself and cannot be changed — Kronk reads them automatically
+from the GGUF file.
 
 The formula:
 
@@ -582,24 +630,6 @@ Total_VRAM  = Model_Weights + Slot_Memory
 Memory is statically allocated upfront when the model loads. All slots reserve
 their full KV cache partition regardless of whether they are actively processing
 a request.
-
-#### Caching Modes (SPC / IMC)
-
-Neither SPC nor IMC adds extra sequences to the VRAM calculation.
-
-SPC (System Prompt Cache) externalizes the decoded system prompt KV state to a
-byte buffer in RAM. On each request, the KV state is restored into the slot's
-sequence via StateSeqSetData. No dedicated cache sequence is permanently
-occupied.
-
-IMC (Incremental Message Cache) uses dedicated slot/seq binding — each slot's
-sequence IS the cache. No separate cache sequences.
-
-| Mode | Slot Lifetime            | Cache Strategy                                                                               |
-| ---- | ------------------------ | -------------------------------------------------------------------------------------------- |
-| off  | Cleared after request    | None                                                                                         |
-| SPC  | Cleared after request    | System prompt decoded once, KV state stored in RAM, restored per request via StateSeqSetData |
-| IMC  | Persists across requests | Full conversation cached in the slot's KV cache sequence                                     |
 
 #### Example: Real Model Calculation
 
@@ -630,122 +660,85 @@ Step 4 — Total VRAM:
   Total_VRAM = 36.0 GB + 12.8 GB = ~48.8 GB
 ```
 
-### 3.8 Model-Specific Tuning
+### 3.9 Model-Specific Tuning
 
 The previous sections covered general configuration that applies to all
-models. However, different model architectures — vision, audio, Mixture of
-Experts (MoE), and embedding models — each have their own characteristics
-that benefit from specific tuning. A vision model processes images as large
-batches of tokens, which needs different batch settings than a text-only chat
-model. An MoE model routes tokens through specialized "expert" sub-networks,
-which affects how you split work across GPUs. This section provides
+models. However, different model architectures — Dense, Mixture of Experts
+(MoE), and Hybrid — each have their own characteristics that benefit from
+specific tuning. Vision and audio models also need adjusted batch settings
+because they process media as large token batches. This section provides
 recommended configurations for each model type so you can get the best
 performance out of the box.
 
-**Vision and Audio Models**
+#### Dense Models
 
-Vision models process image tiles as large token batches. Low `n_ubatch`
-values cause multiple decode passes per image, significantly slowing
-inference.
+Dense models are the most common architecture. Every parameter participates
+in every token, producing sequential memory access patterns that saturate
+bandwidth efficiently. No special configuration is needed — the defaults
+from the previous sections apply directly.
 
-Keep `n_ubatch` high for efficient media token processing:
+| Do                                        | Don't                                           |
+| ----------------------------------------- | ----------------------------------------------- |
+| Use `q8_0` KV cache to save VRAM          | Use `f16` cache unless you need maximum quality |
+| Start with default `n_batch` / `n_ubatch` | Over-tune batch settings without benchmarking   |
+| Use flash attention when available        | Disable flash attention without reason          |
 
-```yaml
-models:
-  Qwen2.5-VL-3B-Instruct-Q8_0:
-    n_batch: 2048
-    n_ubatch: 2048 # High for image/audio token batches
-    n_seq_max: 2 # Process up to 2 requests concurrently
-```
+#### MoE Models
 
-**Mixture of Experts (MoE) Models**
+MoE (Mixture of Experts) models have many total parameters but only activate
+a small subset per token. For example, `Qwen3-Coder-30B-A3B` has 30B total
+parameters but only 3B are active per token (that's what "A3B" means).
 
-MoE models like `Qwen3-Coder-30B-A3B` have many total parameters but only
-activate a small subset per token — the "A3B" means 30B total, 3B active.
-This saves compute on GPU clusters but has important implications for
-Apple Silicon and other memory-bandwidth-bound systems.
+| Do                                                              | Don't                                                 |
+| --------------------------------------------------------------- | ----------------------------------------------------- |
+| Use `split_mode: row` for multi-GPU                             | Use `split_mode: layer` — it doesn't suit MoE routing |
+| Start with `q8_0` KV cache, fall back to `f16` if quality drops | Assume `q8_0` cache works for all MoE models          |
+| Prefer dense Q4 over MoE Q8 on Apple Silicon                    | Assume fewer active parameters means faster inference |
 
-On Apple Silicon (unified memory), inference speed is determined by how many
-**bytes must be read from memory per generated token**, not compute. MoE
-models create **scattered memory access patterns** — the routing layer must
-select which experts to activate, and those expert weights are spread across
-memory. This scattered access underutilizes memory bandwidth compared to the
-sequential access pattern of dense models.
+_Note: On unified memory systems (like Apple Silicon), inference speed depends on
+memory bandwidth, not compute. MoE models create scattered memory access
+patterns (jumping between expert weights) that underutilize bandwidth
+compared to the sequential access of dense models. A dense model at Q4 may
+outperform a larger MoE at Q8 on Apple Silicon — fewer total bytes moved and
+a more efficient access pattern._
 
-A dense model at Q4 quantization may outperform a smaller-active MoE model
-at Q8 quantization on Apple Silicon, even though the MoE activates fewer
-parameters. The dense model reads weights sequentially (ideal for bandwidth
-saturation) at 0.5 bytes per parameter, while the MoE reads scattered expert
-weights at 1 byte per parameter. The total bytes moved per token can be
-comparable — but the dense model's sequential pattern is more efficient.
+#### Hybrid Models
 
-MoE also tends to produce lower quality per-token than a dense model with the
-same number of active parameters, because only a fraction of the model's
-knowledge is engaged per token. A dense model at Q4 with all parameters
-active has far more model capacity per token than an MoE with 3B active,
-even at Q8 precision.
+Hybrid models mix traditional attention layers with recurrent layers
+(DeltaNet or SSM/Mamba). Like dense models, every parameter participates in
+every token. Kronk detects hybrid models automatically at load time.
 
-MoE models can be sensitive to aggressive KV cache quantization. If you
-notice quality degradation, try `f16` cache types.
+| Do                                                    | Don't                                                       |
+| ----------------------------------------------------- | ----------------------------------------------------------- |
+| Use `f16` for both `cache_type_k` and `cache_type_v`  | Use `q8_0` cache — it's incompatible with recurrent layers  |
+| Enable `incremental_cache` for conversation workloads | Manually enable flash attention — Kronk disables it for you |
+| Budget extra VRAM for the larger f16 KV cache         | Expect the same KV cache savings as dense models            |
 
-Use row-based tensor parallelism for multi-GPU setups:
+See [IMC Hybrid](#imc-hybrid) for details on how caching works with
+recurrent state.
 
-```yaml
-models:
-  Qwen3-MoE-30B-A3B-Q8_0:
-    split_mode: row # Best for MoE architecture
-    cache_type_k: q8_0 # Be cautious with aggressive quantization
-    cache_type_v: q8_0
-```
+#### Vision and Audio Models
 
-**Hybrid Models (Attention + Recurrent)**
+Vision and audio models process media (image tiles, audio frames) as large
+token batches. Low `n_ubatch` values force multiple decode passes per image
+or audio clip, significantly slowing inference.
 
-Hybrid models like Qwen3-Coder-Next mix traditional Attention layers with
-recurrent layers (DeltaNet or SSM/Mamba). Unlike MoE models, hybrid models
-are dense — every parameter participates in every token. Kronk detects hybrid
-models automatically at load time.
+| Do                                                      | Don't                                                               |
+| ------------------------------------------------------- | ------------------------------------------------------------------- |
+| Set `n_ubatch` high (2048+) to match media token volume | Leave `n_ubatch` at low defaults — it causes multiple decode passes |
+| Match `n_batch` to `n_ubatch` for media workloads       | Set `n_seq_max` high — media processing is memory-intensive         |
 
-Hybrid models have specific constraints:
+#### Embedding Models
 
-- **KV cache must be f16** — quantized cache types (`q8_0`) are incompatible
-  with the recurrent layers. This doubles KV cache memory compared to models
-  that support `q8_0`.
-- **Flash attention is disabled** — Kronk automatically disables flash
-  attention for hybrid models.
-- **IMC uses snapshot/restore** — see [IMC Hybrid](#imc-hybrid) for details
-  on how caching works with recurrent state.
+Embedding models process complete inputs in a single pass rather than
+generating tokens one at a time.
 
-When choosing between a hybrid model and an MoE model for Apple Silicon,
-consider: the hybrid model's sequential memory access pattern and dense
-activation give it both better quality per token and better bandwidth
-utilization. The trade-off is total model size — hybrid models use all
-parameters, so you need enough unified memory to hold them plus the larger
-f16 KV cache.
+| Do                                               | Don't                                          |
+| ------------------------------------------------ | ---------------------------------------------- |
+| Set `n_batch` high (up to `context_window`)      | Use small `n_batch` — it limits throughput     |
+| Use multiple slots (`n_seq_max`) for concurrency | Over-allocate slots beyond your request volume |
 
-```yaml
-models:
-  Qwen3-Coder-Next-UD-Q4_K_XL:
-    cache_type_k: f16 # Required for hybrid models
-    cache_type_v: f16 # Required for hybrid models
-    incremental_cache: true
-```
-
-**Embedding Models**
-
-Embedding models process complete inputs in a single pass, so larger
-`n_batch` values improve throughput.
-
-Optimize batch size for your typical input lengths:
-
-```yaml
-models:
-  embeddinggemma-300m-qat-Q8_0:
-    n_batch: 8192 # Can equal context_window
-    n_ubatch: 512 # Align with typical sliding window
-    n_seq_max: 4 # 4 model instances for concurrency
-```
-
-### 3.9 Speculative Decoding
+### 3.10 Speculative Decoding
 
 Speculative decoding uses a small, fast "draft" model to predict candidate
 tokens, then verifies them against the full "target" model in a single forward
@@ -754,38 +747,33 @@ are accepted per decode step — improving throughput without changing output
 quality. The output distribution is mathematically guaranteed to match the
 target model exactly, regardless of draft quality (Leviathan et al., 2023).
 
-**How It Works**
+#### How It Works
 
-1. The draft model auto-regressively generates N candidate tokens (default 5)
-2. All candidates plus the last accepted token are added to the target model's
-   batch and decoded in one forward pass
-3. Each candidate is verified using speculative sampling: accepted with
-   probability `min(1, p_target / q_draft)`, where `p_target` is the target's
-   probability and `q_draft` is the draft's probability for that token
-4. On rejection, a corrective token is sampled from `max(0, p_target - q_draft)`
-   normalized, and remaining candidates are discarded
-5. If all candidates are accepted, a bonus token is sampled from the target
+| Step      | What Happens                                                                                       |
+| --------- | -------------------------------------------------------------------------------------------------- |
+| 1. Draft  | The draft model generates N candidate tokens (default 5)                                           |
+| 2. Batch  | All candidates plus the last accepted token are decoded by the target model in one forward pass    |
+| 3. Verify | Each candidate is accepted with probability `min(1, p_target / q_draft)`                           |
+| 4. Reject | On rejection, a corrective token is sampled from the target and remaining candidates are discarded |
+| 5. Bonus  | If all candidates are accepted, a bonus token is sampled from the target                           |
 
 The speedup depends on the draft model's acceptance rate. Higher acceptance
-means more tokens per forward pass. Acceptance rates depend on:
+means more tokens per forward pass.
 
-- **Draft model quality** — A larger, more capable draft produces better
-  predictions. A Q4 quantization of the same architecture tends to outperform
-  a much smaller model.
-- **Temperature** — Lower temperatures (more deterministic) yield higher
-  acceptance rates. At temperature 0.8, expect ~30% of steps to accept zero
-  draft tokens.
-- **Task type** — Predictable text (boilerplate, common patterns) accepts
-  more often than creative or reasoning-heavy output.
+| Factor              | Effect on Acceptance Rate                                                                                                     |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Draft model quality | Larger, more capable drafts produce better predictions. Q4 of the same architecture tends to outperform a much smaller model. |
+| Temperature         | Lower temperatures yield higher acceptance. At 0.8, expect ~30% of steps to accept zero draft tokens.                         |
+| Task type           | Predictable text (boilerplate, common patterns) accepts more often than creative or reasoning-heavy output.                   |
 
-**Requirements**
+#### Requirements
 
 - Draft and target models must share the **same vocabulary** (same tokenizer)
 - `n_seq_max` must be `1` (single-slot mode only)
 - The draft model must be downloaded and available locally
 - Only text generation is supported (not vision/audio)
 
-**Configuration**
+#### Configuration
 
 Speculative decoding is configured via the `draft-model` block in catalog
 YAML or `model_config.yaml`:
@@ -824,7 +812,7 @@ Qwen3-8B-Q8_0:
 | NGpuLayers | `ngpu-layers` | 0 (all) | GPU layers for draft model          |
 | Device     | `device`      | ""      | Pin draft model to a specific GPU   |
 
-**Draft Model Selection**
+#### Draft Model Selection
 
 Choose a draft model that shares the same tokenizer family as the target.
 A quantized version of the same architecture at lower precision works well:
@@ -838,7 +826,7 @@ The second example uses the same MoE architecture at lower quantization,
 which shares more of the target's weight structure and produces higher
 acceptance rates than a smaller dense model.
 
-**Performance Characteristics**
+#### Performance Characteristics
 
 Speculative decoding helps most when the target model is large relative to the
 draft. For dense models where the target is already fast (e.g., 8B at 33+ TPS),
@@ -851,17 +839,21 @@ increase the potential speedup but also increase wasted work when predictions
 are rejected. The default of 5 is a good starting point; tune based on your
 observed acceptance rates.
 
-### 3.10 Sampling Parameters
+### 3.11 Sampling Parameters
 
 Sampling parameters control the randomness and quality of generated text.
 These are set per-request in the API call.
 
 For most models you will want to touch these basic sampling parameters. There
-are many more which will be presented later.
+are [many more](chapter-09-request-parameters.md) which will be presented later.
 
-**Temperature**
+#### Temperature
 
-Controls randomness. Lower values produce more deterministic output.
+Temperature controls how "random" the model's output is. At each step, the
+model produces a probability distribution over all possible next tokens.
+Temperature scales those probabilities — lower values sharpen the
+distribution (making the top choice dominant), higher values flatten it
+(giving lower-ranked tokens a better chance of being selected).
 
 ```json
 {
@@ -869,13 +861,16 @@ Controls randomness. Lower values produce more deterministic output.
 }
 ```
 
-- `0.0-0.3` - Focused, deterministic (good for code, factual Q&A)
-- `0.5-0.8` - Balanced (good for general chat)
-- `0.9-1.2` - Creative (good for storytelling, brainstorming)
+- `0.0 - 0.3` - Focused, deterministic (good for code, factual Q&A)
+- `0.5 - 0.8` - Balanced (good for general chat)
+- `0.9 - 1.2` - Creative (good for storytelling, brainstorming)
 
-**Top-K and Top-P**
+#### Top-K and Top-P
 
-Limit the token selection pool:
+After temperature adjusts the probability distribution, Top-K and Top-P
+narrow the pool of tokens the model can choose from. They work together —
+Top-K sets a hard cap on how many tokens to consider, and Top-P trims that
+pool further by cumulative probability.
 
 ```json
 {
@@ -884,12 +879,14 @@ Limit the token selection pool:
 }
 ```
 
-- `top_k` - Consider only the K most probable tokens (default: 40)
-- `top_p` - Consider tokens until cumulative probability reaches P (default: 0.9)
+- `top_k` - Consider only the K most probable tokens (default: 40). Lower values make output more focused, higher values allow more variety.
+- `top_p` - After Top-K filtering, keep only enough tokens so their combined probability reaches P (default: 0.9). This removes the long tail of unlikely tokens while adapting to how confident the model is at each step.
 
-**Repetition Control**
+#### Repetition Control
 
-Reduce repetitive output:
+Models sometimes get stuck in loops, repeating the same word, phrase, or
+sentence pattern. Repetition penalty discourages this by reducing the
+probability of tokens that have already appeared in recent output.
 
 ```json
 {
@@ -898,12 +895,16 @@ Reduce repetitive output:
 }
 ```
 
-- `repeat_penalty` - Penalty for repeated tokens (1.0 = off, 1.1 = mild)
-- `repeat_last_n` - How many recent tokens to check (default: 64)
+- `repeat_penalty` - How strongly to penalize repeated tokens. `1.0` means no penalty, `1.1` is a mild penalty that works well for most use cases. Values above `1.3` can start to make output sound unnatural.
+- `repeat_last_n` - How many recent tokens to check for repeats (default: 64). A larger window catches longer repeated patterns but may over-penalize common words like "the" or "is."
 
-**DRY Sampler (Don't Repeat Yourself)**
+#### DRY Sampler (Don't Repeat Yourself)
 
-Advanced n-gram repetition penalty:
+DRY is a more targeted approach to repetition than `repeat_penalty`. Instead
+of penalizing individual repeated tokens, it detects repeated n-gram
+sequences (multi-word patterns) and penalizes them with an exponentially
+increasing cost. This catches structural repetition — like repeated
+sentences or paragraphs — while leaving single-word reuse alone.
 
 ```json
 {
@@ -913,9 +914,15 @@ Advanced n-gram repetition penalty:
 }
 ```
 
-**Max Tokens**
+- `dry_multiplier` - Strength of the penalty. `0` disables DRY. Start with `1.05` and increase if you still see repeated patterns.
+- `dry_base` - Controls how fast the penalty grows for longer repeated sequences. Higher values penalize longer repeats more aggressively.
+- `dry_allowed_length` - N-grams up to this length are allowed to repeat without penalty (default: 2). This prevents penalizing common short phrases like "of the" or "it is."
 
-Limit the response length:
+#### Max Tokens
+
+Controls the maximum number of tokens the model will generate in a single
+response. Once the limit is reached, generation stops. This is useful for
+controlling costs, response time, and preventing runaway output.
 
 ```json
 {
@@ -923,7 +930,10 @@ Limit the response length:
 }
 ```
 
-### 3.11 Model Config File Example
+If not set, the model will generate until it produces a stop token or
+reaches the context window limit.
+
+### 3.12 Model Config File Example
 
 Create a YAML config file for custom model settings:
 

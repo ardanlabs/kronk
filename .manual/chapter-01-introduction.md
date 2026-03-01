@@ -9,26 +9,31 @@
 
 ---
 
-
-
 ### 1.1 What is Kronk
 
 Kronk is a Go SDK and Model Server for running local inference with open-source
 GGUF models. Built on top of llama.cpp via the [yzma](https://github.com/hybridgroup/yzma)
 Go bindings (a non-CGO FFI layer), Kronk provides hardware-accelerated inference
-for text generation, vision, audio, embeddings, and reranking.
+for text generation, vision, audio, embeddings, and reranking. Kronk is being
+designed to be your personal engine for running open source models locally.
 
-**The SDK is the foundation.** The Kronk Model Server is built entirely on top
+**The SDK is the foundation.**
+
+The Kronk Model Server is built entirely on top
 of the SDK — we "dog food" our own library. Everything the model server can do
 is available to you as a SDK developer to help you write your own applications.
 
-**You don't need a model server.** The real power of Kronk is that you can embed
+**You don't need a model server.**
+
+The real power of Kronk is that you can embed
 model inference directly into your Go applications. Load models, run inference,
 manage caching, and handle concurrent requests — all without running the models
-in a separate server process. The [examples](examples/) directory demonstrates
+in a separate server process. The [examples](sdk/examples) directory demonstrates
 building standalone applications with the SDK.
 
-**The Model Server is optional.** When you do need an model server (for web UIs,
+**The Model Server is optional.**
+
+When you do need an model server (for web UIs,
 multi-client access, or OpenAI-compatible endpoints), the Kronk Model Server
 provides:
 
@@ -96,10 +101,10 @@ functionality and the Model Server is one application built on top of it.
 | **Engine**      | llama.cpp                            | Hardware-accelerated inference             |
 | **Hardware**    | Metal, CUDA, Vulkan, CPU             | GPU/CPU acceleration                       |
 
-**The Key Insight:** Your application sits at the same level as the Kronk Model
-Server. You have access to the exact same SDK APIs. Whether you're building a
-CLI tool, a web service, an embedded system, or a desktop app — you get the
-full power of local model inference without any server overhead.
+Your application sits at the same level as the Kronk Model Server. You have access
+to the exact same SDK APIs. Whether you're building a CLI tool, a web service,
+an embedded system, or a desktop app — you get the full power of local model
+inference without any server overhead.
 
 **SDK vs Server Usage:**
 

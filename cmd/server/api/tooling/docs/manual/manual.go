@@ -346,6 +346,28 @@ func markdownToJSX(markdown string) string {
 				olSubItems[len(olItems)-1] = append(olSubItems[len(olItems)-1], convertInlineMarkdown(item))
 				continue
 			}
+			// Continuation line: indented, non-empty, not a sub-item.
+			if line != trimmed && trimmed != "" && len(olItems) > 0 {
+				olItems[len(olItems)-1] += " " + convertInlineMarkdown(trimmed)
+				continue
+			}
+			// Blank line between items — skip without flushing.
+			if trimmed == "" {
+				continue
+			}
+		}
+
+		if inUL {
+			trimmed := strings.TrimLeft(line, " \t")
+			// Continuation line: indented, non-empty, not a nested bullet.
+			if line != trimmed && trimmed != "" && !strings.HasPrefix(trimmed, "- ") && !strings.HasPrefix(trimmed, "* ") && len(ulItems) > 0 {
+				ulItems[len(ulItems)-1] += " " + convertInlineMarkdown(trimmed)
+				continue
+			}
+			// Blank line between items — skip without flushing.
+			if trimmed == "" {
+				continue
+			}
 		}
 
 		switch {
