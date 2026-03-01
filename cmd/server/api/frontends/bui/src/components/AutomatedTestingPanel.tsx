@@ -568,15 +568,18 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
           <p style={{ fontSize: 12, color: 'var(--color-gray-600)', marginBottom: 8 }}>
             Each prompt is run this many times and scores are averaged for more stable results.
           </p>
-          <input
-            type="number"
-            value={repeats}
-            onChange={(e) => { const n = Math.floor(Number(e.target.value)); if (Number.isFinite(n) && n >= 1) setRepeats(n); }}
-            min={1}
-            max={20}
-            style={{ width: 60 }}
-            disabled={isRunning}
-          />
+          <div className="playground-sweep-param-range" style={{ maxWidth: 120 }}>
+            <div className="playground-sweep-param-range-field">
+              <input
+                type="number"
+                value={repeats}
+                onChange={(e) => { const n = Math.floor(Number(e.target.value)); if (Number.isFinite(n) && n >= 1) setRepeats(n); }}
+                min={1}
+                max={20}
+                disabled={isRunning}
+              />
+            </div>
+          </div>
         </div>
       </div>
 
