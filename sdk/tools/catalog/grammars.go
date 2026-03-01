@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/ardanlabs/kronk/sdk/tools/github"
 )
 
 const (
@@ -15,9 +17,10 @@ const (
 type grammars struct {
 	grammarPath string
 	githubRepo  string
+	ghClient    *github.Client
 }
 
-func newGrammars(basePath string, githubRepo string) (*grammars, error) {
+func newGrammars(basePath string, githubRepo string, ghClient *github.Client) (*grammars, error) {
 	grammarsPath := filepath.Join(basePath, grammarLocalFolder)
 
 	if err := os.MkdirAll(grammarsPath, 0755); err != nil {
@@ -27,6 +30,7 @@ func newGrammars(basePath string, githubRepo string) (*grammars, error) {
 	g := grammars{
 		grammarPath: grammarsPath,
 		githubRepo:  githubRepo,
+		ghClient:    ghClient,
 	}
 
 	return &g, nil

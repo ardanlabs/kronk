@@ -3,11 +3,14 @@ package catalog
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+
+	"github.com/ardanlabs/kronk/sdk/tools/github"
 )
 
 func (g *grammars) download(ctx context.Context, log func(context.Context, string, ...any)) error {
@@ -20,6 +23,9 @@ func (g *grammars) download(ctx context.Context, log func(context.Context, strin
 
 	files, err := g.grammarListGitHubFolder(ctx)
 	if err != nil {
+		if errors.Is(err, github.ErrRateLimited) {
+			logRateLimit(ctx, log, "grammar-download", g.ghClient)
+		}
 		log(ctx, "grammar-download", "WARNING", "unable to retrieve grammar files, using local cache", "error", err.Error())
 		return nil
 	}
@@ -29,6 +35,11 @@ func (g *grammars) download(ctx context.Context, log func(context.Context, strin
 
 		for _, file := range files {
 			if err := g.downloadGrammarFile(ctx, file); err != nil {
+				if errors.Is(err, github.ErrRateLimited) {
+					logRateLimit(ctx, log, "grammar-download", g.ghClient)
+					log(ctx, "grammar-download", "WARNING", "github rate limited, using local cache", "error", err.Error())
+					break
+				}
 				return fmt.Errorf("download-grammar: %w", err)
 			}
 		}
@@ -47,7 +58,7 @@ func (g *grammars) downloadGrammarFile(ctx context.Context, url string) error {
 	req.Header.Set("Pragma", "no-cache")
 	req.Header.Set("If-None-Match", "")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := g.ghClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("download-file: fetching file: %w", err)
 	}
@@ -83,7 +94,7 @@ func (g *grammars) grammarListGitHubFolder(ctx context.Context) ([]string, error
 	req.Header.Set("Pragma", "no-cache")
 	req.Header.Set("If-None-Match", "")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := g.ghClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("list-git-hub-folder: fetching folder listing: %w", err)
 	}
