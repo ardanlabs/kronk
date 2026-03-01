@@ -1,0 +1,92 @@
+Benchmarks
+================================================================================
+
+Purpose: Detect performance regressions and provide profiling baselines.
+
+Models:
+    Dense              : Qwen3-8B-Q8_0
+    Dense (Non-Det)    : gpt-oss-20b-Q8_0
+    Dense (Draft)      : Qwen3-0.6B-Q8_0
+    MoE                : Qwen_Qwen3.5-35B-A3B-Q8_0
+    MoE (Speculative)  : cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0
+    Hybrid             : Qwen3-Coder-Next-Q4_0
+
+Shared Configuration:
+    ContextWindow      : 32768
+    NBatch             : 2048
+    NUBatch            : 2048
+    CacheTypeK         : F16
+    CacheTypeV         : F16
+    NSeqMax            : 1 (unless noted)
+    max_tokens         : 128
+    temperature        : 0.0
+    System prompt      : ~8k tokens (~39k chars)
+    Total conversation : ~23k tokens (~108k chars, 38 messages)
+
+Benchmark Matrix:
+
+    Model Type | Cache Mode | IMC Strategy      | Speculative | Benchmark Name                               | What It Catches
+    -----------|------------|-------------------|-------------|----------------------------------------------|----------------------------------------
+    Dense      | NonCaching | —                 | No          | BenchmarkDense_NonCaching                    | Full prefill baseline (no caching)
+    Dense      | SPC        | —                 | No          | BenchmarkDense_SPC                           | System prompt cached, rest prefilled
+    Dense      | IMC        | Deterministic     | No          | BenchmarkDense_IMCDeterministic              | All-but-last cached (hash matching)
+    Dense      | IMC        | Non-Deterministic | No          | BenchmarkDense_IMCNonDeterministic           | Token prefix fallback (gpt-oss-20b)
+    Dense      | IMC        | Deterministic     | Yes         | BenchmarkDense_IMCDeterministic_Speculative  | IMC + draft model (Qwen3-0.6B)
+    MoE        | IMC        | Deterministic     | No          | BenchmarkMoE_IMCDeterministic                | MoE expert routing + IMC
+    MoE        | IMC        | Deterministic     | No          | BenchmarkMoE_Speculative_Baseline            | MoE without draft (cerebras REAP)
+    MoE        | IMC        | Deterministic     | Yes         | BenchmarkMoE_Speculative_WithDraft           | MoE with draft (cerebras REAP + 0.6B)
+    Hybrid     | IMC        | Deterministic     | No          | BenchmarkHybrid_IMCDeterministic             | Snapshot/restore state management
+    Dense      | IMC        | Deterministic     | No          | BenchmarkDense_IMCDeterministic_MultiSlot    | NSeqMax=4, 4 concurrent goroutines
+    Dense      | IMC        | Deterministic     | No          | BenchmarkDense_IMC_PrefillOnly               | max_tokens=1, isolates prefill from decode
+    Dense      | IMC        | Deterministic     | No          | BenchmarkDense_IMC_ColdBuild                 | First request without warmup
+
+================================================================================
+
+🟢 Better   🔴 Worse   ⚪ Neutral
+
+2026-02-28     : v1.20.5
+llama.cpp      : b8182
+--------------------------------------------------------------------------------
+goos: darwin
+goarch: arm64
+cpu: Apple M4 Max
+
+Dense NonCaching        :    72243831375 ns/op ⚪  new    1165186 B/op ⚪  new    9051 allocs/op ⚪  new
+Dense SPC               :    46337689306 ns/op ⚪  new     977157 B/op ⚪  new    8948 allocs/op ⚪  new
+Dense IMC-Det           :     3746844667 ns/op ⚪  new     136330 B/op ⚪  new    3923 allocs/op ⚪  new
+Dense IMC-NonDet (GPT)  :     1867268431 ns/op ⚪  new     156914 B/op ⚪  new    4073 allocs/op ⚪  new
+Dense IMC-Det+Spec      :     6877000986 ns/op ⚪  new     255290 B/op ⚪  new    8996 allocs/op ⚪  new
+Dense IMC-Det MultiSlot :    15569891250 ns/op ⚪  new     550530 B/op ⚪  new   15749 allocs/op ⚪  new
+Dense IMC Prefill       :      142438167 ns/op ⚪  new      70290 B/op ⚪  new     623 allocs/op ⚪  new
+Dense IMC Cold          :    56130372222 ns/op ⚪  new    4102754 B/op ⚪  new   30048 allocs/op ⚪  new
+
+MoE IMC-Det             :     2812153833 ns/op ⚪  new     132136 B/op ⚪  new    3202 allocs/op ⚪  new
+MoE Spec-Baseline       :     2268022583 ns/op ⚪  new     103896 B/op ⚪  new    3180 allocs/op ⚪  new
+MoE Spec+Draft          :     6451414278 ns/op ⚪  new     269930 B/op ⚪  new    8483 allocs/op ⚪  new
+
+Hybrid IMC-Det          :     3572737889 ns/op ⚪  new     160530 B/op ⚪  new    3796 allocs/op ⚪  new
+
+--------------------------------------------------------------------------------
+Dense NonCaching          Dense SPC                 Dense IMC-Det             Dense IMC-NonDet (GPT)    
+32.00 tok/s    ⚪  new    34.32 tok/s    ⚪  new    35.50 tok/s    ⚪  new    75.29 tok/s    ⚪  new
+60335 ttft-ms  ⚪  new    41351 ttft-ms  ⚪  new      221 ttft-ms  ⚪  new      233 ttft-ms  ⚪  new
+64245 total-ms ⚪  new    44997 total-ms ⚪  new     3743 total-ms ⚪  new     1882 total-ms ⚪  new
+
+Dense IMC-Det+Spec        Dense IMC-Det MultiSlot   Dense IMC Prefill         Dense IMC Cold            
+21.41 tok/s    ⚪  new    32.48 tok/s    ⚪  new     0.00 tok/s    ⚪  new    37.72 tok/s    ⚪  new
+  271 ttft-ms  ⚪  new     6270 ttft-ms  ⚪  new        0 ttft-ms  ⚪  new    48544 ttft-ms  ⚪  new
+ 6060 total-ms ⚪  new    10123 total-ms ⚪  new      138 total-ms ⚪  new    51858 total-ms ⚪  new
+
+MoE IMC-Det               MoE Spec-Baseline         MoE Spec+Draft            
+37.61 tok/s    ⚪  new    48.07 tok/s    ⚪  new    14.17 tok/s    ⚪  new
+  184 ttft-ms  ⚪  new      199 ttft-ms  ⚪  new      187 ttft-ms  ⚪  new
+ 2853 total-ms ⚪  new     2009 total-ms ⚪  new     6540 total-ms ⚪  new
+
+Hybrid IMC-Det            
+35.36 tok/s    ⚪  new
+  109 ttft-ms  ⚪  new
+ 3365 total-ms ⚪  new
+
+
+================================================================================
+

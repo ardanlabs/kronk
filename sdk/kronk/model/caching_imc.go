@@ -373,11 +373,15 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, session *
 	m.cacheMu.Lock()
 
 	if session.cachedMsgCount != currentCachedMsgCount || session.totalTokensCached != currentTotalTokensCached {
+		m.log(ctx, "imc", "status", "extend fallback (state changed)", "slot", session.slotID,
+			"expected-msgs", currentCachedMsgCount, "actual-msgs", session.cachedMsgCount,
+			"expected-tokens", currentTotalTokensCached, "actual-tokens", session.totalTokensCached)
 		m.cacheMu.Unlock()
 		return m.buildIMCCacheFromScratch(ctx, d, messages, session, lastMsgIdxToCache)
 	}
 
 	if session.pending {
+		m.log(ctx, "imc", "status", "extend fallback (slot pending)", "slot", session.slotID)
 		m.cacheMu.Unlock()
 		return m.buildIMCCacheFromScratch(ctx, d, messages, session, lastMsgIdxToCache)
 	}
@@ -425,7 +429,7 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, session *
 
 	// If we don't have more tokens than what's cached, nothing to extend.
 	if totalTokens <= currentTotalTokensCached {
-		m.log(ctx, "imc", "status", "extend (no new tokens)", "cached", currentTotalTokensCached, "total", totalTokens)
+		m.log(ctx, "imc", "status", "extend (no new tokens)", "slot", slotID, "cached", currentTotalTokensCached, "total", totalTokens)
 
 		m.imcClearPending(slotID)
 
@@ -495,13 +499,13 @@ func (m *Model) extendIMCMediaSlotWithText(ctx context.Context, d D, messages []
 
 	m.log(ctx, "imc", "status", "slot marked pending (media text extend)", "slot", slotID, "seq", seqID)
 
-	// Compute the marker token count lazily (once per model lifetime).
-	if m.mediaMarkerTokens == 0 {
+	// Compute the marker token count once per model lifetime.
+	m.mediaMarkerOnce.Do(func() {
 		marker := fmt.Sprintf("%s\n", mtmd.DefaultMarker())
 		markerTokens := llama.Tokenize(m.vocab, marker, false, false)
 		m.mediaMarkerTokens = len(markerTokens)
 		m.log(ctx, "imc", "status", "computed media marker tokens", "marker", marker, "tokens", m.mediaMarkerTokens)
-	}
+	})
 
 	// Compute the KV-to-token offset. Each media chunk occupies mediaKVCounts[i]
 	// KV positions but only mediaMarkerTokens text tokens in the tokenized prompt.
@@ -625,6 +629,7 @@ func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D,
 	}
 
 	if session.pending {
+		m.log(ctx, "imc", "status", "build-from-scratch skipped (slot pending)", "slot", session.slotID)
 		m.cacheMu.Unlock()
 
 		return cacheResult{modifiedD: d, imcPending: true, err: fmt.Errorf("imc: slot %d pending, retry request", session.slotID)}

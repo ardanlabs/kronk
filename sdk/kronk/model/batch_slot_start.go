@@ -13,7 +13,7 @@ import (
 )
 
 // startSlot initializes a slot with a new request.
-func (e *batchEngine) startSlot(s *slot, job *chatJob) {
+func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	s.reset()
 	s.active = true
 	s.job = job
@@ -388,6 +388,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 				"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx,
 				"snapshot_bytes", nExtracted, "kv_alloc", kvSize)
 		default:
+			s.imcSavedState = s.imcSavedState[:0]
 			e.model.log(job.ctx, "start-slot", "status", "imc-hybrid-snapshot-failed",
 				"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx,
 				"kv_alloc", kvSize)
@@ -400,7 +401,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 	// startSlotText even though job.object may be ObjectChatMedia.
 	switch {
 	case job.object == ObjectChatMedia && len(job.media) > 0:
-		if !e.startSlotMedia(s, job, cacheIdx) {
+		if !e.startSlotMedia(s, job, cacheIdx, buf) {
 			return
 		}
 
@@ -412,12 +413,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob) {
 
 	// Calculate current KV usage for diagnostics.
 	var kvUsed llama.Pos
-	if sysMax, err := llama.MemorySeqPosMax(e.model.mem, 0); err == nil && sysMax >= 0 {
-		kvUsed += sysMax + 1
-	}
-
 	for _, slot := range e.slots {
-		if slot.active && slot.id != s.id {
+		if slot.active {
 			if posMax, err := llama.MemorySeqPosMax(e.model.mem, slot.seqID); err == nil && posMax >= 0 {
 				kvUsed += posMax + 1
 			}
@@ -526,7 +523,7 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 }
 
 // startSlotMedia initializes a media (vision/audio) slot. Returns true on success.
-func (e *batchEngine) startSlotMedia(s *slot, job *chatJob, cacheIdx llama.Pos) bool {
+func (e *batchEngine) startSlotMedia(s *slot, job *chatJob, cacheIdx llama.Pos, buf []byte) bool {
 	// Convert raw media bytes into bitmap structures for the vision encoder.
 	if len(job.media) > 0 {
 		s.bitmaps = make([]mtmd.Bitmap, len(job.media))
@@ -580,8 +577,6 @@ func (e *batchEngine) startSlotMedia(s *slot, job *chatJob, cacheIdx llama.Pos) 
 	}
 
 	// Process first chunk. Media prefill is handled chunk-by-chunk in processBatch.
-	// Allocate buffer for potential first-token sampling (single-chunk edge case).
-	buf := make([]byte, 32*1024)
 	if !e.addPrefillMediaChunk(s, buf) {
 		e.finishSlot(s, e.slotCancelError(s))
 		return false

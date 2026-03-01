@@ -40,6 +40,7 @@ import { ChatHistoryProvider } from './contexts/ChatHistoryContext';
 import { SamplingProvider } from './contexts/SamplingContext';
 import { AutoTestRunnerProvider } from './contexts/AutoTestRunnerContext';
 import { PlaygroundProvider } from './contexts/PlaygroundContext';
+import { ThemeProvider } from './contexts/ThemeContext';
 
 export type Page =
   | 'home'
@@ -163,6 +164,7 @@ function HomePage() {
 function App() {
   return (
     <BrowserRouter>
+      <ThemeProvider>
       <TokenProvider>
         <ModelListProvider>
           <DownloadProvider>
@@ -216,6 +218,7 @@ function App() {
           </DownloadProvider>
         </ModelListProvider>
       </TokenProvider>
+      </ThemeProvider>
     </BrowserRouter>
   );
 }

@@ -20,7 +20,8 @@ func (t *templates) download(ctx context.Context, log func(context.Context, stri
 
 	files, err := t.templateListGitHubFolder(ctx)
 	if err != nil {
-		return fmt.Errorf("download: listing templates: %w", err)
+		log(ctx, "template-download", "WARNING", "unable to retrieve template files, using local cache", "error", err.Error())
+		return nil
 	}
 
 	if len(files) > 0 {

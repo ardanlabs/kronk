@@ -27,8 +27,6 @@
 
 ---
 
-
-
 Model configuration controls how Kronk configures models to run inference.
 Configuration can be set via model config files, catalog templates, or
 programmatically through the SDK.
@@ -258,7 +256,7 @@ perform significantly better with `f16` precision:
 ```yaml
 models:
   # MoE models benefit from f16 cache for routing accuracy
-  Qwen3.5-35B-A3B-UD-Q8_K_XL:
+  Qwen_Qwen3.5-35B-A3B-Q8_0:
     context_window: 32768
     cache_type_k: f16 # Preserve routing precision
     cache_type_v: f16
@@ -606,7 +604,7 @@ sequence IS the cache. No separate cache sequences.
 #### Example: Real Model Calculation
 
 ```
-Model                   : Qwen3.5-35B-A3B-UD-Q8_K_XL
+Model                   : Qwen_Qwen3.5-35B-A3B-Q8_0
 Model Weights           : 36.0 GB
 Context Window (n_ctx)  : 131,072 (128K)
 Bytes Per Element       : 1 (q8_0)
@@ -831,10 +829,10 @@ Qwen3-8B-Q8_0:
 Choose a draft model that shares the same tokenizer family as the target.
 A quantized version of the same architecture at lower precision works well:
 
-| Target Model               | Recommended Draft                       |
-| -------------------------- | --------------------------------------- |
-| Qwen3-8B-Q8_0              | Qwen3-0.6B-Q8_0                         |
-| Qwen3.5-35B-A3B-UD-Q8_K_XL | Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL |
+| Target Model              | Recommended Draft                       |
+| ------------------------- | --------------------------------------- |
+| Qwen3-8B-Q8_0             | Qwen3-0.6B-Q8_0                         |
+| Qwen_Qwen3.5-35B-A3B-Q8_0 | Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL |
 
 The second example uses the same MoE architecture at lower quantization,
 which shares more of the target's weight structure and produces higher
@@ -956,4 +954,3 @@ kronk server start --model-config-file=model-config.yaml
 ```
 
 ---
-

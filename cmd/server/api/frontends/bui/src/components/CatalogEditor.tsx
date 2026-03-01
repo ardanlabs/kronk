@@ -16,6 +16,7 @@ interface CatalogFormData {
   ownedBy: string;
   modelFamily: string;
   architecture: string;
+  ggufArch: string;
   webPage: string;
   template: string;
   gatedModel: boolean;
@@ -111,6 +112,7 @@ const defaultForm: CatalogFormData = {
   ownedBy: '',
   modelFamily: '',
   architecture: '',
+  ggufArch: '',
   webPage: '',
   template: '',
   gatedModel: false,
@@ -236,6 +238,7 @@ function populateFromResponse(resp: CatalogModelResponse): CatalogFormData {
     ownedBy: resp.owned_by || '',
     modelFamily: resp.model_family || '',
     architecture: resp.architecture || '',
+    ggufArch: resp.gguf_arch || '',
     webPage: resp.web_page || '',
     template: resp.template || '',
     gatedModel: resp.gated_model || false,
@@ -502,6 +505,7 @@ export default function CatalogEditor() {
         owned_by: form.ownedBy,
         model_family: form.modelFamily,
         architecture: form.architecture,
+        gguf_arch: form.ggufArch,
         web_page: form.webPage,
         gated_model: form.gatedModel,
         template: form.template,
@@ -766,6 +770,10 @@ export default function CatalogEditor() {
               <option value="MoE">MoE</option>
               <option value="Hybrid">Hybrid</option>
             </select>
+          </div>
+          <div>
+            <label style={labelStyle}>GGUF Arch</label>
+            <input type="text" value={form.ggufArch} onChange={(e) => setForm({ ...form, ggufArch: e.target.value })} style={inputStyle} placeholder="e.g. llama, qwen2moe" />
           </div>
           <div>
             <label style={labelStyle}>Web Page</label>
@@ -1072,7 +1080,7 @@ export default function CatalogEditor() {
             {saving ? 'Saving...' : 'Save to Catalog'}
           </button>
           {repoPath && (
-            <button className="btn btn-primary" onClick={handlePublish} disabled={publishing} style={{ background: '#2e7d32' }}>
+            <button className="btn btn-primary" onClick={handlePublish} disabled={publishing} style={{ background: 'var(--color-success-dark)' }}>
               {publishing ? 'Publishing...' : 'Publish to Repo'}
             </button>
           )}
@@ -1083,7 +1091,7 @@ export default function CatalogEditor() {
         {saveMsg && (
           <div
             className={saveMsg.type === 'error' ? 'alert alert-error' : 'alert'}
-            style={saveMsg.type === 'success' ? { marginTop: '8px', background: '#e8f5e9', color: '#2e7d32', padding: '12px', borderRadius: '6px' } : { marginTop: '8px' }}
+            style={saveMsg.type === 'success' ? { marginTop: '8px', background: 'var(--color-success-bg)', color: 'var(--color-success-dark)', padding: '12px', borderRadius: '6px' } : { marginTop: '8px' }}
           >
             {saveMsg.text}
           </div>

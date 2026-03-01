@@ -222,45 +222,83 @@ test: test-only lint vuln-check diff
 
 # ==============================================================================
 # Benchmarks
-#
-# Model Type | Cache Mode | IMC Strategy      | Speculative | Target| Model                                                    
-# -----------|------------|-------------------|-------------|------------------------------|----------------------------------------------------------
-# Dense      | NonCaching | —                 | No          | benchmark-dense-nc           | Qwen3-8B-Q8_0                                            
-# Dense      | SPC        | —                 | No          | benchmark-dense-spc          | Qwen3-8B-Q8_0                                            
-# Dense      | IMC        | Deterministic     | No          | benchmark-dense-imc-det      | Qwen3-8B-Q8_0                                            
-# Dense      | IMC        | Non-Deterministic | No          | benchmark-dense-imc-nondet   | gpt-oss-20b-Q8_0                                         
-# Dense      | IMC        | Deterministic     | Yes         | benchmark-dense-imc-det-spec | Qwen3-8B-Q8_0 + Qwen3-0.6B-Q8_0                          
-# MoE        | IMC        | Deterministic     | No          | benchmark-moe-imc-det        | Qwen3.5-35B-A3B-UD-Q8_K_XL                               
-# MoE        | IMC        | Deterministic     | No          | benchmark-moe-spec-baseline  | cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0                   
-# MoE        | IMC        | Deterministic     | Yes         | benchmark-moe-spec-draft     | cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0 + Qwen3-0.6B-Q8_0 
-# Hybrid     | IMC        | Deterministic     | No          | benchmark-hybrid-imc-det     | Qwen3-Coder-Next-Q4_0                              
 
 benchmark-dense-nc:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_NonCaching -benchtime=3x -timeout=30m ./sdk/kronk/model/
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_NonCaching -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 benchmark-dense-spc:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_SPC -benchtime=3x -timeout=30m ./sdk/kronk/model/
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_SPC -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 benchmark-dense-imc-det:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_IMCDeterministic$$ -benchtime=3x -timeout=30m ./sdk/kronk/model/
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_IMCDeterministic$$ -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 benchmark-dense-imc-nondet:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_IMCNonDeterministic -benchtime=3x -timeout=30m ./sdk/kronk/model/
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_IMCNonDeterministic -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 benchmark-dense-imc-det-spec:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_IMCDeterministic_Speculative -benchtime=3x -timeout=30m ./sdk/kronk/model/
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_IMCDeterministic_Speculative -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+
+benchmark-dense-imc-multi:
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_IMCDeterministic_MultiSlot -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+
+benchmark-dense-imc-prefill:
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_IMC_PrefillOnly -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+
+benchmark-dense-imc-cold:
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_IMC_ColdBuild -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 benchmark-moe-imc-det:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkMoE_IMCDeterministic$$ -benchtime=3x -timeout=30m ./sdk/kronk/model/
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkMoE_IMCDeterministic$$ -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 benchmark-moe-spec-baseline:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkMoE_Speculative_Baseline -benchtime=3x -timeout=30m ./sdk/kronk/model/
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkMoE_Speculative_Baseline -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 benchmark-moe-spec-draft:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkMoE_Speculative_WithDraft -benchtime=3x -timeout=30m ./sdk/kronk/model/
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkMoE_Speculative_WithDraft -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 benchmark-hybrid-imc-det:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkHybrid_IMCDeterministic -benchtime=3x -timeout=30m ./sdk/kronk/model/
+	CGO_ENABLED=0 go test -run=none -bench=BenchmarkHybrid_IMCDeterministic -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+
+# Run all benchmarks sequentially (each target loads/unloads its own model)
+# and write combined raw output to a single file under runs/.
+# Usage: make benchmark-all BENCH_KRONK=v1.20.4
+BENCH_KRONK ?= dev
+
+benchmark-all:
+	@FILE=sdk/kronk/tests/benchmarks/runs/$$(date +%Y-%m-%d).txt; \
+	mkdir -p sdk/kronk/tests/benchmarks/runs; \
+	echo "# Date: $$(date +%Y-%m-%d)" > $$FILE; \
+	echo "# Kronk: $(BENCH_KRONK)" >> $$FILE; \
+	echo "" >> $$FILE; \
+	for target in \
+		benchmark-dense-nc \
+		benchmark-dense-spc \
+		benchmark-dense-imc-det \
+		benchmark-dense-imc-nondet \
+		benchmark-dense-imc-det-spec \
+		benchmark-dense-imc-multi \
+		benchmark-dense-imc-prefill \
+		benchmark-dense-imc-cold \
+		benchmark-moe-imc-det \
+		benchmark-moe-spec-baseline \
+		benchmark-moe-spec-draft \
+		benchmark-hybrid-imc-det; \
+	do \
+		echo "" >> $$FILE; \
+		echo "## $$target" >> $$FILE; \
+		$(MAKE) $$target 2>&1 | tee -a $$FILE; \
+	done; \
+	echo ""; \
+	echo "Results written to $$FILE"
+
+# Format benchmark results from runs/ into BENCH_RESULTS.txt.
+benchmark-fmt:
+	go run cmd/server/api/tooling/benchfmt/main.go
+
+# Append a single run file to the top of BENCH_RESULTS.txt with diffs.
+# Usage: make benchmark-fmt-file FILE=2026-03-01.txt
+benchmark-fmt-file:
+	go run cmd/server/api/tooling/benchfmt/main.go $(FILE)
 
 # ==============================================================================
 # Kronk BUI
@@ -418,7 +456,6 @@ kronk-security-key-list:
 kronk-security-key-list-local:
 	go run cmd/kronk/main.go security key list --local
 
-
 # make kronk-security-token-create-local U="bill" D="5m" E="chat-completions"
 kronk-security-token-create-local:
 	go run cmd/kronk/main.go security token create --local --username "$(U)" --duration "$(D)" --endpoints "$(E)"
@@ -428,6 +465,23 @@ kronk-security-token-create-local:
 # make kronk-run ID="Qwen3-8B-Q8_0"
 kronk-run:
 	go run cmd/kronk/main.go run "$(ID)"
+
+# ==============================================================================
+# Catalog Arch Check
+
+# Check architecture types for all downloaded catalog models.
+kronk-catalog-archcheck:
+	CGO_ENABLED=0 go run cmd/server/api/tooling/archcheck/main.go
+
+# make kronk-catalog-archcheck-model ID="Qwen3-8B-Q8_0"
+kronk-catalog-archcheck-model:
+	CGO_ENABLED=0 go run cmd/server/api/tooling/archcheck/main.go -model="$(ID)"
+
+# Check and update catalog files with corrected architecture values.
+kronk-catalog-archcheck-update:
+	CGO_ENABLED=0 go run cmd/server/api/tooling/archcheck/main.go \
+		-update \
+		-catalog-path=$$HOME/code/go/src/github.com/ardanlabs/kronk_catalogs/catalogs
 
 # ==============================================================================
 # Kronk Endpoints

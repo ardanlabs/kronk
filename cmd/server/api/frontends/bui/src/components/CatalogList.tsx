@@ -208,7 +208,7 @@ export default function CatalogList() {
                       className={selectedId === model.id ? 'selected' : ''}
                       style={{ cursor: 'pointer' }}
                     >
-                      <td style={{ textAlign: 'center', color: model.validated ? 'inherit' : '#e74c3c' }}>{model.validated ? '✓' : '✗'}</td>
+                      <td style={{ textAlign: 'center', color: model.validated ? 'inherit' : 'var(--color-error)' }}>{model.validated ? '✓' : '✗'}</td>
                       <td>{model.id}</td>
                       <td>{model.category}</td>
                       <td>{model.owned_by}</td>
@@ -380,6 +380,10 @@ export default function CatalogList() {
                 <div className="model-meta-item">
                   <label>Architecture</label>
                   <span>{modelInfo.architecture || '-'}</span>
+                </div>
+                <div className="model-meta-item">
+                  <label>GGUF Arch</label>
+                  <span>{modelInfo.gguf_arch || '-'}</span>
                 </div>
                 <div className="model-meta-item">
                   <label>Downloaded</label>

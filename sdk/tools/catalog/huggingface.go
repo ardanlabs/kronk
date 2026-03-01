@@ -346,7 +346,8 @@ func buildModelDetails(owner, repo, filename string, meta hfModelMeta, ggufFiles
 		Category:     category,
 		OwnedBy:      owner,
 		ModelFamily:  repo,
-		Architecture: classifyArchitecture(meta.GGUF.Architecture),
+		Architecture: ClassifyArchitecture(meta.GGUF.Architecture),
+		GGUFArch:     meta.GGUF.Architecture,
 		WebPage:      fmt.Sprintf("https://huggingface.co/%s/%s", owner, repo),
 		GatedModel:   meta.isGated(),
 		Files: Files{
@@ -399,11 +400,11 @@ func mapEndpoint(tag string) string {
 	}
 }
 
-// classifyArchitecture maps a GGUF general.architecture value (returned by
+// ClassifyArchitecture maps a GGUF general.architecture value (returned by
 // the HuggingFace API) to one of the three model types used by the catalog:
 // Dense, MoE, or Hybrid. An empty string is returned for unrecognised
 // architectures so the user can set the value manually.
-func classifyArchitecture(arch string) string {
+func ClassifyArchitecture(arch string) string {
 	switch strings.ToLower(arch) {
 
 	// MoE — models with expert routing.

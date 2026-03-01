@@ -16,9 +16,9 @@ func (e *batchEngine) hasActiveSlots() bool {
 }
 
 // fillSlots assigns pending requests to available slots.
-func (e *batchEngine) fillSlots() {
+func (e *batchEngine) fillSlots(buf []byte) {
 	if e.model.cfg.IncrementalCache {
-		e.fillSlotsIMC()
+		e.fillSlotsIMC(buf)
 		return
 	}
 
@@ -30,7 +30,7 @@ func (e *batchEngine) fillSlots() {
 		// Try to get a request from the queue.
 		select {
 		case job := <-e.requestQ:
-			e.startSlot(s, job)
+			e.startSlot(s, job, buf)
 			return // Only prefill one slot per iteration to avoid exceeding NBatch
 
 		default:
@@ -59,7 +59,7 @@ func (e *batchEngine) nextIMCJob() *chatJob {
 // fillSlotsIMC routes IMC jobs to their target slot. processIMC determines
 // which slot to use via hash matching; the target slot index is carried
 // in the job's imcSlotID field.
-func (e *batchEngine) fillSlotsIMC() {
+func (e *batchEngine) fillSlotsIMC(buf []byte) {
 
 	// Don't schedule new work while a preemption is pending. The slot will
 	// be freed at the top of the next processBatch iteration.
@@ -84,7 +84,7 @@ func (e *batchEngine) fillSlotsIMC() {
 	if job.imcCacheHit && targetSlotID < len(e.slots) {
 		s := e.slots[targetSlotID]
 		if !s.active {
-			e.startSlot(s, job)
+			e.startSlot(s, job, buf)
 			return
 		}
 
@@ -105,7 +105,7 @@ func (e *batchEngine) fillSlotsIMC() {
 	// available slot.
 	for _, s := range e.slots {
 		if !s.active {
-			e.startSlot(s, job)
+			e.startSlot(s, job, buf)
 			return
 		}
 	}
