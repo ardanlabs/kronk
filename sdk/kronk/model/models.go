@@ -188,6 +188,59 @@ func modelIDFromFiles(modelFiles []string) string {
 	}
 }
 
+// DetectModelTypeFromFiles loads a model from the given GGUF files, determines
+// the architecture type, and immediately frees the model. It returns the
+// ModelType, the raw general.architecture string from the GGUF metadata, and
+// any error encountered during loading.
+func DetectModelTypeFromFiles(modelFiles []string) (ModelType, string, error) {
+	params := llama.ModelDefaultParams()
+	params.NGpuLayers = 0
+
+	var mdl llama.Model
+	var err error
+
+	switch len(modelFiles) {
+	case 1:
+		mdl, err = llama.ModelLoadFromFile(modelFiles[0], params)
+	default:
+		mdl, err = llama.ModelLoadFromSplits(modelFiles, params)
+	}
+
+	if err != nil {
+		return ModelTypeDense, "", fmt.Errorf("loading model: %w", err)
+	}
+	defer llama.ModelFree(mdl)
+
+	count := llama.ModelMetaCount(mdl)
+	metadata := make(map[string]string)
+
+	for i := range count {
+		func() {
+			defer func() {
+				if rec := recover(); rec != nil {
+					return
+				}
+			}()
+
+			key, ok := llama.ModelMetaKeyByIndex(mdl, i)
+			if !ok {
+				return
+			}
+
+			value, ok := llama.ModelMetaValStrByIndex(mdl, i)
+			if !ok {
+				return
+			}
+
+			metadata[key] = value
+		}()
+	}
+
+	mt := detectModelType(mdl, metadata)
+
+	return mt, metadata["general.architecture"], nil
+}
+
 // detectModelType determines the model architecture from llama.cpp detection
 // and GGUF metadata. Hybrid is detected via llama.ModelIsHybrid (recurrent
 // layers). MoE is detected via GGUF expert_count metadata (value > 0).

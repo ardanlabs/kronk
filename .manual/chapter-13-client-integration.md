@@ -10,8 +10,6 @@
 
 ---
 
-
-
 Kronk's OpenAI-compatible API works with popular AI clients and tools.
 
 ### 13.1 OpenWebUI
@@ -52,7 +50,7 @@ Cline is a VS Code extension for AI-assisted coding.
 ```
 Base URL: http://localhost:8080/v1
 API Key: <your-kronk-token> or 123 for anything
-Model: Qwen3.5-35B-A3B-UD-Q8_K_XL/IMC
+Model: Qwen_Qwen3.5-35B-A3B-Q8_0/IMC
 ```
 
 **Recommended Model Settings:**
@@ -61,8 +59,8 @@ For coding tasks, configure your model with:
 
 ```yaml
 models:
-    Qwen3.5-35B-A3B-UD-Q8_K_XL:
-    &base_Qwen3.5-35B-A3B-UD-Q8_K_XL
+    Qwen_Qwen3.5-35B-A3B-Q8_0:
+    &base_Qwen_Qwen3.5-35B-A3B-Q8_0
     context-window: 131072
     nbatch: 2048
     nubatch: 512
@@ -76,8 +74,8 @@ models:
         top_p: 0.8
         top_k: 20
 
-    Qwen3.5-35B-A3B-UD-Q8_K_XL/IMC:
-    <<: *base_Qwen3.5-35B-A3B-UD-Q8_K_XL
+    Qwen_Qwen3.5-35B-A3B-Q8_0/IMC:
+    <<: *base_Qwen_Qwen3.5-35B-A3B-Q8_0
     nseq-max: 1
     incremental-cache: true
 ```
@@ -107,7 +105,7 @@ client = OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="Qwen3.5-35B-A3B-UD-Q8_K_XL/IMC",
+    model="Qwen_Qwen3.5-35B-A3B-Q8_0/IMC",
     messages=[
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "Hello!"}
@@ -131,7 +129,7 @@ curl http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $KRONK_TOKEN" \
   -d '{
-    "model": "Qwen3.5-35B-A3B-UD-Q8_K_XL",
+    "model": "Qwen_Qwen3.5-35B-A3B-Q8_0",
     "messages": [{"role": "user", "content": "Hello"}],
     "stream": true
   }'
@@ -167,7 +165,7 @@ from langchain_openai import ChatOpenAI
 llm = ChatOpenAI(
     base_url="http://localhost:8080/v1",
     api_key="your-kronk-token",
-    model="Qwen3.5-35B-A3B-UD-Q8_K_XL",
+    model="Qwen_Qwen3.5-35B-A3B-Q8_0",
     streaming=True
 )
 

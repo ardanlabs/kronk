@@ -13,7 +13,7 @@ require (
 	github.com/hybridgroup/yzma v1.10.0
 	github.com/maypok86/otter/v2 v2.3.0
 	github.com/modelcontextprotocol/go-sdk v1.4.0
-	github.com/nikolalohinski/gonja/v2 v2.6.0
+	github.com/nikolalohinski/gonja/v2 v2.7.0
 	github.com/open-policy-agent/opa v1.14.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/spf13/cobra v1.10.2
@@ -147,7 +147,5 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
-replace github.com/nikolalohinski/gonja/v2 => github.com/nikolalohinski/gonja/v2 v2.5.2-0.20260227212943-21cbf040f622
-
-//replace github.com/hybridgroup/yzma => /Users/bill/code/go/src/github.com/hybridgroup/yzma
+// replace github.com/hybridgroup/yzma => /Users/bill/code/go/src/github.com/hybridgroup/yzma
 // replace github.com/nikolalohinski/gonja/v2 => /Users/bill/code/go/src/github.com/ardanlabs/gonja

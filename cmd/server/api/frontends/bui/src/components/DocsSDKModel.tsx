@@ -65,6 +65,14 @@ export default function DocsSDKModel() {
               </pre>
             </div>
 
+            <div className="doc-section" id="func-detectmodeltypefromfiles">
+              <h4>DetectModelTypeFromFiles</h4>
+              <pre className="code-block">
+                <code>func DetectModelTypeFromFiles(modelFiles []string) (ModelType, string, error)</code>
+              </pre>
+              <p className="doc-description">DetectModelTypeFromFiles loads a model from the given GGUF files, determines the architecture type, and immediately frees the model. It returns the ModelType, the raw general.architecture string from the GGUF metadata, and any error encountered during loading.</p>
+            </div>
+
             <div className="doc-section" id="func-parseropescalingtype">
               <h4>ParseRopeScalingType</h4>
               <pre className="code-block">
@@ -1146,6 +1154,7 @@ export default function DocsSDKModel() {
                 <li><a href="#func-newgrammarsampler">NewGrammarSampler</a></li>
                 <li><a href="#func-parseggmltype">ParseGGMLType</a></li>
                 <li><a href="#func-newmodel">NewModel</a></li>
+                <li><a href="#func-detectmodeltypefromfiles">DetectModelTypeFromFiles</a></li>
                 <li><a href="#func-parseropescalingtype">ParseRopeScalingType</a></li>
                 <li><a href="#func-parsesplitmode">ParseSplitMode</a></li>
               </ul>

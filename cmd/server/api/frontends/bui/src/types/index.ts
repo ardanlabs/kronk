@@ -158,6 +158,7 @@ export interface CatalogModelResponse {
   owned_by: string;
   model_family: string;
   architecture: string;
+  gguf_arch: string;
   web_page: string;
   template: string;
   total_size: string;
@@ -403,6 +404,7 @@ export interface SaveCatalogRequest {
   owned_by: string;
   model_family: string;
   architecture: string;
+  gguf_arch: string;
   web_page: string;
   gated_model: boolean;
   template: string;

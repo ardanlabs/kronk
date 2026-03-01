@@ -480,6 +480,7 @@ type CatalogModelResponse struct {
 	OwnedBy        string              `json:"owned_by"`
 	ModelFamily    string              `json:"model_family"`
 	Architecture   string              `json:"architecture"`
+	GGUFArch       string              `json:"gguf_arch"`
 	WebPage        string              `json:"web_page"`
 	GatedModel     bool                `json:"gated_model"`
 	Template       string              `json:"template"`
@@ -537,6 +538,7 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 		OwnedBy:        catDetails.OwnedBy,
 		ModelFamily:    catDetails.ModelFamily,
 		Architecture:   catDetails.Architecture,
+		GGUFArch:       catDetails.GGUFArch,
 		WebPage:        models.NormalizeHuggingFaceURL(catDetails.WebPage),
 		GatedModel:     catDetails.GatedModel,
 		Template:       catDetails.Template,

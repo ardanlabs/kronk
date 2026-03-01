@@ -33,6 +33,7 @@ var (
 	MPHybridChat    models.Path
 	MPMoEChat       models.Path
 	MPSimpleVision  models.Path
+	MPMoEVision     models.Path
 	MPAudio         models.Path
 	MPEmbed         models.Path
 	MPRerank        models.Path
@@ -61,12 +62,13 @@ func Setup() {
 
 	resolveModel(mdls, "Qwen3-8B-Q8_0", &MPThinkToolChat)
 	resolveModel(mdls, "Qwen2.5-VL-3B-Instruct-Q8_0", &MPSimpleVision)
+	resolveModel(mdls, "Qwen3-VL-30B-A3B-Instruct-Q8_0", &MPMoEVision)
 	resolveModel(mdls, "embeddinggemma-300m-qat-Q8_0", &MPEmbed)
 	resolveModel(mdls, "bge-reranker-v2-m3-Q8_0", &MPRerank)
 	resolveModel(mdls, "gpt-oss-20b-Q8_0", &MPGPTChat)
 	resolveModel(mdls, "Qwen2-Audio-7B.Q8_0", &MPAudio)
 	resolveModel(mdls, "Qwen3-Coder-Next-Q4_0", &MPHybridChat)
-	resolveModel(mdls, "Qwen3.5-35B-A3B-UD-Q8_K_XL", &MPMoEChat)
+	resolveModel(mdls, "Qwen_Qwen3.5-35B-A3B-Q8_0", &MPMoEChat)
 
 	printInfo(mdls)
 
@@ -276,6 +278,20 @@ func CfgSimpleVisionIMC() model.Config {
 		NUBatch:          2048,
 		CacheTypeK:       model.GGMLTypeQ8_0,
 		CacheTypeV:       model.GGMLTypeQ8_0,
+		IncrementalCache: true,
+		NSeqMax:          1,
+	}
+}
+
+func CfgMoEVisionIMC() model.Config {
+	return model.Config{
+		ModelFiles:       MPMoEVision.ModelFiles,
+		ProjFile:         MPMoEVision.ProjFile,
+		ContextWindow:    8192,
+		NBatch:           2048,
+		NUBatch:          2048,
+		CacheTypeK:       model.GGMLTypeF16,
+		CacheTypeV:       model.GGMLTypeF16,
 		IncrementalCache: true,
 		NSeqMax:          1,
 	}

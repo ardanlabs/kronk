@@ -382,6 +382,10 @@ export default function CatalogList() {
                   <span>{modelInfo.architecture || '-'}</span>
                 </div>
                 <div className="model-meta-item">
+                  <label>GGUF Arch</label>
+                  <span>{modelInfo.gguf_arch || '-'}</span>
+                </div>
+                <div className="model-meta-item">
                   <label>Downloaded</label>
                   <span className={`badge ${modelInfo.downloaded ? 'badge-yes' : 'badge-no'}`}>
                     {modelInfo.downloaded ? 'Yes' : 'No'}

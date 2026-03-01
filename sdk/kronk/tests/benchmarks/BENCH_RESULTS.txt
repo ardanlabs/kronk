@@ -1,0 +1,83 @@
+Benchmarks
+================================================================================
+
+Purpose: Detect performance regressions and provide profiling baselines.
+
+Models:
+    Dense              : Qwen3-8B-Q8_0
+    Dense (Non-Det)    : gpt-oss-20b-Q8_0
+    Dense (Draft)      : Qwen3-0.6B-Q8_0
+    MoE                : Qwen_Qwen3.5-35B-A3B-Q8_0
+    MoE (Speculative)  : cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0
+    Hybrid             : Qwen3-Coder-Next-Q4_0
+
+Shared Configuration:
+    ContextWindow      : 32768
+    NBatch             : 2048
+    NUBatch            : 2048
+    CacheTypeK         : F16
+    CacheTypeV         : F16
+    NSeqMax            : 1 (unless noted)
+    max_tokens         : 128
+    temperature        : 0.0
+    System prompt      : ~8k tokens (~39k chars)
+    Total conversation : ~23k tokens (~108k chars, 38 messages)
+
+Benchmark Matrix:
+
+    Covered | Model Type | Cache Mode | IMC Strategy      | Speculative | Benchmark Name                               | What It Catches
+    --------|------------|------------|-------------------|-------------|----------------------------------------------|----------------------------------------
+    YES     | Dense      | NonCaching | —                 | No          | BenchmarkDense_NonCaching                    | Full prefill baseline (no caching)
+    YES     | Dense      | SPC        | —                 | No          | BenchmarkDense_SPC                           | System prompt cached, rest prefilled
+    YES     | Dense      | IMC        | Deterministic     | No          | BenchmarkDense_IMCDeterministic              | All-but-last cached (hash matching)
+    YES     | Dense      | IMC        | Non-Deterministic | No          | BenchmarkDense_IMCNonDeterministic           | Token prefix fallback (gpt-oss-20b)
+    YES     | Dense      | IMC        | Deterministic     | Yes         | BenchmarkDense_IMCDeterministic_Speculative  | IMC + draft model (Qwen3-0.6B)
+    YES     | MoE        | IMC        | Deterministic     | No          | BenchmarkMoE_IMCDeterministic                | MoE expert routing + IMC
+    YES     | MoE        | IMC        | Deterministic     | No          | BenchmarkMoE_Speculative_Baseline            | MoE without draft (cerebras REAP)
+    YES     | MoE        | IMC        | Deterministic     | Yes         | BenchmarkMoE_Speculative_WithDraft           | MoE with draft (cerebras REAP + 0.6B)
+    YES     | Hybrid     | IMC        | Deterministic     | No          | BenchmarkHybrid_IMCDeterministic             | Snapshot/restore state management
+    YES     | Dense      | IMC        | Deterministic     | No          | BenchmarkDense_IMCDeterministic_MultiSlot    | NSeqMax=4, 4 concurrent goroutines
+    YES     | Dense      | IMC        | Deterministic     | No          | BenchmarkDense_IMC_PrefillOnly               | max_tokens=1, isolates prefill from decode
+    YES     | Dense      | IMC        | Deterministic     | No          | BenchmarkDense_IMC_ColdBuild                 | First request without warmup
+
+================================================================================
+
+⚪ Better   🔴 Worse   ⚪ Neutral
+
+Benchmarks:
+
+Feb 28th, 2026 : v1.20.4
+llamap.cpp     : b8182
+--------------------------------------------------------------------------------
+goos: darwin
+goarch: arm64
+pkg: github.com/ardanlabs/kronk/sdk/kronk/model
+cpu: Apple M4 Max
+
+Dense_NonCaching-16                   : 54776238528 ns/op ⚪ 0.00%   1164581 B/op ⚪ 0.00%   9048 allocs/op ⚪ 0.00%
+Dense_SPC-16                          : 39435859625 ns/op ⚪ 0.00%    989146 B/op ⚪ 0.00%   8934 allocs/op ⚪ 0.00%
+Dense_IMCDeterministic-16             :  3559777861 ns/op ⚪ 0.00%    152152 B/op ⚪ 0.00%   3944 allocs/op ⚪ 0.00%
+Dense_IMCNonDeterministic-16 (GPT)    :  1678763347 ns/op ⚪ 0.00%    139893 B/op ⚪ 0.00%   4046 allocs/op ⚪ 0.00%
+Dense_IMCDeterministic_Speculative-16 :  5970091472 ns/op ⚪ 0.00%    263965 B/op ⚪ 0.00%   8807 allocs/op ⚪ 0.00%
+
+MoE_IMCDeterministic                  :  3177663347 ns/op ⚪ 0.00%    119322 B/op ⚪ 0.00%   3261 allocs/op ⚪ 0.00%
+MoE_Speculative_Baseline-16           :  2684493111 ns/op ⚪ 0.00%    140189 B/op ⚪ 0.00%   3486 allocs/op ⚪ 0.00%
+MoE_Speculative-16                    :  7190495847 ns/op ⚪ 0.00%    284586 B/op ⚪ 0.00%   9606 allocs/op ⚪ 0.00%
+
+Hybrid_IMCDeterministic               :  4062253375 ns/op ⚪ 0.00%    145133 B/op ⚪ 0.00%   3731 allocs/op ⚪ 0.00%
+
+--------------------------------------------------------------------------------
+Dense NonCaching            Dense SPC                  Dense IMC-Det              Dense IMC-NonDet (GPT)     Dense IMC-Det+Spec                
+30.50 tok/s    ⚪ 0.00%   38.02 tok/s    ⚪ +0.16%    35.19 tok/s    ⚪ -2.58%   86.07 tok/s    ⚪ +7.05%    22.68 tok/s   ⚪ +24.27%
+53984 ttft-ms  ⚪ 0.00%    35872 ttft-ms  ⚪ +5.01%      163 ttft-ms  ⚪ +22.01%    189 ttft-ms  ⚪ +14.86%    237 ttft-ms  ⚪ +13.19%
+58092 total-ms ⚪ 0.00%   39160 total-ms ⚪ +4.62%     3719 total-ms ⚪ -1.39%    1630 total-ms ⚪ +7.75%    5707 total-ms ⚪ +24.56%
+
+MoE IMC-Det           MoE Spec-Baseline          MoE Spec
+33.58 tok/s    ⚪ 0.00    44.42 tok/s    ⚪ -11.41%    13.69 tok/s    ⚪ +12.58%
+  189 ttft-ms  ⚪ 0.00      204 ttft-ms  ⚪ -10.27%      178 ttft-ms  ⚪ +11.00%
+ 3058 total-ms ⚪ 0.00     1983 total-ms ⚪ +27.00%     7631 total-ms ⚪ -7.37%
+
+Hybrid IMC-Det
+30.86 tok/s    ⚪ 0.00
+  141 ttft-ms  ⚪ 0.00
+ 4269 total-ms ⚪ 0.00

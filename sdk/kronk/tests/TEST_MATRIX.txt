@@ -1,0 +1,205 @@
+Test Matrix
+===============================================================================
+
+Maps every test combination across model architecture, cache mode, and
+modality. Each row shows what exists and what is missing.
+
+
+Models
+===============================================================================
+
+ID   Model                              Architecture   Template            Modality
+---  ---------------------------------  -------------  ------------------  --------
+M1   Qwen3-8B-Q8_0                      Dense          Deterministic       Text
+M2   gpt-oss-20b-Q8_0                   MoE            Non-Deterministic   Text
+M3   Qwen3-Coder-Next-Q4_0              Hybrid         Deterministic       Text
+M4   Qwen2.5-VL-3B-Instruct-Q8_0        Dense          Deterministic       Vision
+M5   Qwen3-VL-30B-A3B-Instruct-Q8_0     MoE            Deterministic       Vision
+M6   Qwen2-Audio-7B.Q8_0                Dense          Deterministic       Audio
+M7   embeddinggemma-300m-qat-Q8_0       Dense          —                   Embedding
+M8   bge-reranker-v2-m3-Q8_0            Dense          —                   Rerank
+
+
+IMC Architecture x Template Combinations
+===============================================================================
+
+Only the combinations that exist in the real world and exercise unique code
+paths. Dense+Det and MoE+Det text-only are covered by their vision
+counterparts, which test the same hash-based IMC path with added media
+complexity.
+
+Combination               Model                              IMC Code Path
+------------------------  ---------------------------------  ------------------------------------
+Dense + Vision            M4 Qwen2.5-VL-3B-Instruct-Q8_0     Hash matching + media build/extend
+MoE + Vision              M5 Qwen3-VL-30B-A3B-Instruct-Q8_0  Hash matching + media build/extend
+MoE + Non-Deterministic   M2 gpt-oss-20b-Q8_0                Token prefix fallback
+Hybrid + Deterministic    M3 Qwen3-Coder-Next-Q4_0           Hash matching + snapshot/restore
+
+
+No-Cache Baseline (M1 Qwen3-8B-Q8_0, text)
+===============================================================================
+
+Test                              Package   Covered
+--------------------------------  --------  ------
+ThinkChat                         qwen3/    YES
+ThinkStreamingChat                qwen3/    YES
+ToolChat                          qwen3/    YES
+ToolStreamingChat                 qwen3/    YES
+Tokenize                          qwen3/    YES
+TokenizeWithTemplate              qwen3/    YES
+ArrayFormatChat                   qwen3/    YES
+ArrayFormatStreamingChat          qwen3/    YES
+ThinkResponse                     qwen3/    YES
+ThinkStreamingResponse            qwen3/    YES
+ToolResponse                      qwen3/    YES
+ToolStreamingResponse             qwen3/    YES
+GrammarJSON                       qwen3/    YES
+GrammarJSONStreaming              qwen3/    YES
+BatchChatConcurrent               qwen3/    YES
+UsageCounting                     qwen3/    YES
+UsageAccumulation                 qwen3/    YES
+UsageWithToolCalls                qwen3/    YES
+UsageDeltaNil                     qwen3/    YES
+UsageConsistencyAcrossRequests    qwen3/    YES
+ConTest1 (cancel before loop)     qwen3/    YES
+ConTest2 (cancel inside loop)     qwen3/    YES
+ConTest3 (break + unload)         qwen3/    YES
+
+
+No-Cache Vision (M4 Qwen2.5-VL-3B-Instruct-Q8_0)
+===============================================================================
+
+Test                              Package   Covered
+--------------------------------  --------  ------
+SimpleMedia                       vision/   YES
+SimpleMediaStreaming              vision/   YES
+SimpleMediaResponse               vision/   YES
+SimpleMediaResponseStreaming      vision/   YES
+ArrayFormatMedia                  vision/   YES
+ArrayFormatMediaStreaming         vision/   YES
+PooledVision                      vision/   YES
+
+
+No-Cache Audio (M6 Qwen2-Audio-7B.Q8_0)
+===============================================================================
+
+Test                              Package   Covered
+--------------------------------  --------  ------
+AudioChat                         audio/    YES
+AudioStreamingChat                audio/    YES
+
+
+No-Cache Embedding (M7 embeddinggemma-300m-qat-Q8_0)
+===============================================================================
+
+Test                              Package   Covered
+--------------------------------  --------  ------
+Embedding                         embed/    YES
+PooledEmbeddings                  embed/    YES
+
+
+No-Cache Rerank (M8 bge-reranker-v2-m3-Q8_0)
+===============================================================================
+
+Test                              Package   Covered
+--------------------------------  --------  ------
+Rerank                            rerank/   YES
+PooledRerank                      rerank/   YES
+
+
+SPC Caching (M1 Qwen3-8B-Q8_0)
+===============================================================================
+
+Test                              Package   Covered
+--------------------------------  --------  ------
+CacheSPC (multi-turn)             qwen3/    YES
+
+
+IMC -- Dense + Vision (M4 Qwen2.5-VL-3B-Instruct-Q8_0)
+===============================================================================
+
+Exercises: hash-based slot matching, media build, media text extend.
+
+Test                              Package       Covered
+--------------------------------  ------------  ------
+IMCMediaBuild                     vision_imc/   YES
+IMCMediaTextExtend                vision_imc/   YES
+
+
+IMC -- MoE + Vision (M5 Qwen3-VL-30B-A3B-Instruct-Q8_0)
+===============================================================================
+
+Exercises: hash-based slot matching, media build, media text extend,
+MoE expert routing.
+
+Test                              Package           Covered
+--------------------------------  ----------------  -------
+IMCMediaBuild                     moe_vision_imc/   YES
+IMCMediaTextExtend                moe_vision_imc/   YES
+
+
+IMC -- MoE + Non-Deterministic (M2 gpt-oss-20b-Q8_0)
+===============================================================================
+
+Exercises: token prefix fallback when hash matching fails.
+
+Test                              Package   Covered
+--------------------------------  --------  ------
+CacheIMCNonDeterministic          gpt/      YES
+
+
+IMC -- Hybrid + Deterministic (M3 Qwen3-Coder-Next-Q4_0)
+===============================================================================
+
+Exercises: hash-based slot matching, snapshot/restore state management.
+
+Test                              Package   Covered
+--------------------------------  --------  ------
+CacheIMCHybrid (3-turn)           hybrid/   YES
+CacheIMCHybridMultiSlot           hybrid/   YES
+
+
+IMC -- Redundant (candidates for removal)
+===============================================================================
+
+These test the same hash-based IMC code path already covered by the vision
+IMC tests above, without adding media complexity.
+
+Test                              Package   Model                   Covered By
+--------------------------------  --------  ----------------------- ----------------------------
+CacheIMCDeterministic             qwen3/    M1 Qwen3-8B-Q8_0        Dense + Vision IMC (vision_imc/)
+CacheIMCDeterministicMultiSlot    qwen3/    M1 Qwen3-8B-Q8_0        Dense + Vision IMC (vision_imc/)
+CacheIMC                          moe/      Qwen3.5-35B-A3B-Q8_0    MoE + Vision IMC (once added)
+CacheIMCMultiSlot                 moe/      Qwen3.5-35B-A3B-Q8_0    MoE + Vision IMC (once added)
+
+
+No-Cache -- Additional Model Coverage
+===============================================================================
+
+These suites run without caching on non-Dense architectures. They verify
+basic inference correctness per architecture, not caching.
+
+Package   Model                        Tests
+--------  ---------------------------  -------------------------------------------
+hybrid/   M3 Qwen3-Coder-Next-Q4_0    TestSuite (10), BatchChatConcurrent, UsageCountingHybrid
+moe/      Qwen3.5-35B-A3B-Q8_0        TestSuite (10), BatchChatConcurrent, UsageCounting
+gpt/      M2 gpt-oss-20b-Q8_0         TestSuite (4)
+
+
+Summary
+===============================================================================
+
+Category               Total   Have   Missing
+---------------------  -----   ----   -------
+No-Cache Text             23     23         0
+No-Cache Vision            7      7         0
+No-Cache Audio             2      2         0
+No-Cache Embedding         2      2         0
+No-Cache Rerank            2      2         0
+SPC                        1      1         0
+IMC Dense + Vision         2      2         0
+IMC MoE + Vision           2      2         0
+IMC MoE + Non-Det          1      1         0
+IMC Hybrid + Det           2      2         0
+---------------------  -----   ----   -------
+Total                     44     44         0
