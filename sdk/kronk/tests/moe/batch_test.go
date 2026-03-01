@@ -13,7 +13,7 @@ import (
 )
 
 func Test_BatchChatConcurrent(t *testing.T) {
-	testlib.WithModel(t, testlib.CfgMoEChat(), func(t *testing.T, krn *kronk.Kronk) {
+	testlib.WithModel(t, testlib.CfgMoEVision(), func(t *testing.T, krn *kronk.Kronk) {
 		g := 10
 
 		t.Logf("Testing MoE batch inference with %d concurrent requests", g)

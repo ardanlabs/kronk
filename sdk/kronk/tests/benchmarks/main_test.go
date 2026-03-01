@@ -122,7 +122,7 @@ func TestMain(m *testing.M) {
 	}
 
 	// MoE target — only needed for BenchmarkMoE_IMCDeterministic.
-	if dp, err := mdls.FullPath("Qwen_Qwen3.5-35B-A3B-Q8_0"); err == nil {
+	if dp, err := mdls.FullPath("Qwen3-VL-30B-A3B-Instruct-Q8_0"); err == nil {
 		benchMoEModelPath = dp
 	}
 
@@ -132,7 +132,7 @@ func TestMain(m *testing.M) {
 	}
 
 	// Hybrid target — only needed for BenchmarkHybrid_* benchmarks.
-	if dp, err := mdls.FullPath("Qwen3-Coder-Next-Q4_0"); err == nil {
+	if dp, err := mdls.FullPath("Qwen_Qwen3.5-35B-A3B-Q8_0"); err == nil {
 		benchHybridModelPath = dp
 	}
 

@@ -539,32 +539,68 @@ Request 4 (back to asking about the image):
 [user]         →  prefill (generation target)
 ```
 
+When an image appears mid-conversation (after text-only messages), IMC
+preserves the existing text cache and extends it with media instead of
+rebuilding from scratch:
+
+```
+Text-only conversation, then image appears mid-conversation:
+
+Requests 1–3 (text-only):
+[system]       →  cached by IMC (text tokens)
+[user]         →  cached / extended normally
+[assistant]    →  cached / extended normally
+...            →  conversation grows, all text cached incrementally
+
+Request 4 (image appears mid-conversation):
+[system]       →  cached (text tokens skipped via imcMediaSkipTextTokens)
+[earlier msgs] →  cached (text tokens skipped)
+[asst + user]  →  media extend from text (new text decoded from skip point)
+[user + image] →  media extend from text (image encoded through projection model)
+[user]         →  prefill (generation target)
+
+Request 5 (text follow-up about the image):
+[all prior]    →  cached (KV cache hit, image stays in KV cache)
+[assistant]    →  extended (text tokens only, no image re-encode)
+[user]         →  prefill (generation target)
+```
+
 **How media caching works internally:**
 
 1. When `buildIMCCacheFromScratch` detects media content, it defers the build
    to `startSlot` where the mtmd pipeline (projection model) is available. The
    cache result carries `imcMediaBuild: true`.
 
-2. `decodeMediaIntoCache` processes the full prompt as interleaved chunks —
-   text chunks are tokenized and decoded normally, while image/audio chunks
-   are encoded through the projection model and their embeddings are decoded
-   into the KV cache. For models using M-RoPE (e.g., Qwen2.5-VL), 2D spatial
-   positions are assigned to image tokens.
+2. When media first appears in a conversation that started text-only,
+   `extendIMCTextCacheWithMedia` preserves the existing text prefix in the
+   KV cache. It sets `imcMediaSkipTextTokens` to the number of already-cached
+   text tokens, so `decodeMediaIntoCache` skips them and only decodes the new
+   text plus media embeddings. This avoids re-decoding potentially tens of
+   thousands of cached text tokens when an image is first introduced
+   mid-conversation.
 
-3. The slot tracks `mediaKVCounts` — the number of KV positions consumed by
+3. `decodeMediaIntoCache` processes the prompt as interleaved chunks — text
+   chunks are tokenized and decoded normally, while image/audio chunks are
+   encoded through the projection model and their embeddings are decoded into
+   the KV cache. When `imcMediaSkipTextTokens` is set, the first text chunk
+   is partially skipped (only tokens beyond the skip point are decoded). For
+   models using M-RoPE (e.g., Qwen2.5-VL), 2D spatial positions are assigned
+   to image tokens.
+
+4. The slot tracks `mediaKVCounts` — the number of KV positions consumed by
    each media chunk. This is needed because media embeddings occupy a different
    number of KV positions than the text marker tokens they replace in the
    tokenized prompt.
 
-4. On text-only follow-ups, `extendIMCMediaSlotWithText` uses the
+5. On text-only follow-ups, `extendIMCMediaSlotWithText` uses the
    `mediaKVCounts` to compute the correct offset between text token indices
    and KV positions, then decodes only the new text tokens at the right
    position — no image re-encoding occurs.
 
-5. If a new message being added contains media (a second image, for example),
+6. If a new message being added contains media (a second image, for example),
    `rebuildIMCWithMedia` triggers a full rebuild through the mtmd pipeline.
 
-6. Token prefix matching is skipped when the incoming request contains media
+7. Token prefix matching is skipped when the incoming request contains media
    messages, since the tokenization path would mutate media content and corrupt
    downstream processing.
 

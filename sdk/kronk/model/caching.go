@@ -33,9 +33,10 @@ type cacheResult struct {
 
 	// IMC media cache build — deferred to startSlot because media decoding
 	// requires the mtmd pipeline (projection model + embedding decode).
-	imcMediaBuild    bool  // True if cache build requires the mtmd pipeline (images/audio in cached messages)
-	imcMediaCacheD   D     // Document with cacheable messages + tools for media cache build
-	imcMediaKVCounts []int // Media KV position counts to preserve during text-only media extend
+	imcMediaBuild          bool  // True if cache build requires the mtmd pipeline (images/audio in cached messages)
+	imcMediaCacheD         D     // Document with cacheable messages + tools for media cache build
+	imcMediaKVCounts       []int // Media KV position counts to preserve during text-only media extend
+	imcMediaSkipTextTokens int   // Text tokens already in KV cache to skip during partial media extend
 }
 
 // processCache checks if the system prompt or incremental messages are

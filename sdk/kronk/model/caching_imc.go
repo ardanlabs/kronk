@@ -344,14 +344,26 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, session *
 			}
 		}
 
-		// New messages contain media — full rebuild required to re-encode
-		// through the mtmd pipeline.
+		// New messages contain media — determine extension strategy.
 		if newMsgsHaveMedia {
-			m.log(ctx, "imc", "status", "extend requires media rebuild (new media)",
-				"slot", session.slotID, "cached-msgs", currentCachedMsgCount,
-				"target-msgs", lastMsgIdxToCache)
+			m.cacheMu.RLock()
+			slotHasMedia := session.hasMedia
+			m.cacheMu.RUnlock()
 
-			return m.rebuildIMCWithMedia(ctx, d, messages, session, lastMsgIdxToCache)
+			if slotHasMedia {
+				// Slot already has media cached. Adding more media requires a
+				// full rebuild through the mtmd pipeline to re-encode all media.
+				m.log(ctx, "imc", "status", "extend requires media rebuild (new media, slot has media)",
+					"slot", session.slotID, "cached-msgs", currentCachedMsgCount,
+					"target-msgs", lastMsgIdxToCache)
+
+				return m.rebuildIMCWithMedia(ctx, d, messages, session, lastMsgIdxToCache)
+			}
+
+			// Slot has text-only cache. Use partial media extend to preserve
+			// the cached text prefix and only decode the new content (remaining
+			// text + media + post-media text) through the mtmd pipeline.
+			return m.extendIMCTextCacheWithMedia(ctx, d, messages, session, lastMsgIdxToCache, currentTotalTokensCached)
 		}
 
 		// Slot has media but new messages are text-only — extend with text
@@ -592,6 +604,60 @@ func (m *Model) extendIMCMediaSlotWithText(ctx context.Context, d D, messages []
 		imcNewCachedMsgCount: lastMsgIdxToCache,
 		imcNewMsgsHash:       newHash,
 		imcMediaKVCounts:     mediaKVCounts,
+	}
+}
+
+// extendIMCTextCacheWithMedia extends a text-only cached slot with new messages
+// that contain media. Instead of clearing the KV cache and rebuilding everything
+// through the mtmd pipeline, this preserves the existing text prefix and only
+// decodes the new content (remaining text + media + post-media text).
+//
+// This avoids re-decoding potentially tens of thousands of text tokens that are
+// already in the KV cache, saving significant prefill time when media is first
+// introduced in a conversation that started as text-only.
+func (m *Model) extendIMCTextCacheWithMedia(ctx context.Context, d D, messages []D, session *imcSession, lastMsgIdxToCache, currentTotalTokensCached int) cacheResult {
+	m.cacheMu.Lock()
+
+	if session.pending {
+		m.cacheMu.Unlock()
+		return cacheResult{modifiedD: d, err: fmt.Errorf("imc: slot %d pending, retry request", session.slotID)}
+	}
+
+	session.pending = true
+	seqID := session.seqID
+	slotID := session.slotID
+
+	m.cacheMu.Unlock()
+
+	m.log(ctx, "imc", "status", "slot marked pending (media extend from text)",
+		"slot", slotID, "seq", seqID, "skip_text_tokens", currentTotalTokensCached)
+
+	msgsToCache := messages[:lastMsgIdxToCache]
+	newHash := hashMessages(msgsToCache)
+
+	prefixD := D{
+		"messages":              msgsToCache,
+		"add_generation_prompt": false,
+	}
+	if tools, ok := d["tools"]; ok {
+		prefixD["tools"] = tools
+	}
+
+	m.log(ctx, "imc", "status", "media extend prepared", "slot", slotID, "seq", seqID,
+		"msgs", lastMsgIdxToCache, "hash", newHash[:8], "skip_text_tokens", currentTotalTokensCached)
+
+	return cacheResult{
+		modifiedD:              removeFirstNMessages(d, lastMsgIdxToCache),
+		cacheIdx:               0,
+		cachedMsgCount:         lastMsgIdxToCache,
+		cacheSeqID:             seqID,
+		imcSlotID:              slotID,
+		imcExpectedHash:        newHash,
+		imcNewCachedMsgCount:   lastMsgIdxToCache,
+		imcNewMsgsHash:         newHash,
+		imcMediaBuild:          true,
+		imcMediaCacheD:         prefixD,
+		imcMediaSkipTextTokens: currentTotalTokensCached,
 	}
 }
 

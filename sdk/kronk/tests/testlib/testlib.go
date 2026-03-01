@@ -30,8 +30,7 @@ var (
 var (
 	MPThinkToolChat models.Path
 	MPGPTChat       models.Path
-	MPHybridChat    models.Path
-	MPMoEChat       models.Path
+	MPHybridVision  models.Path
 	MPSimpleVision  models.Path
 	MPMoEVision     models.Path
 	MPAudio         models.Path
@@ -67,8 +66,7 @@ func Setup() {
 	resolveModel(mdls, "bge-reranker-v2-m3-Q8_0", &MPRerank)
 	resolveModel(mdls, "gpt-oss-20b-Q8_0", &MPGPTChat)
 	resolveModel(mdls, "Qwen2-Audio-7B.Q8_0", &MPAudio)
-	resolveModel(mdls, "Qwen3-Coder-Next-Q4_0", &MPHybridChat)
-	resolveModel(mdls, "Qwen_Qwen3.5-35B-A3B-Q8_0", &MPMoEChat)
+	resolveModel(mdls, "Qwen_Qwen3.5-35B-A3B-Q8_0", &MPHybridVision)
 
 	printInfo(mdls)
 
@@ -333,9 +331,9 @@ func CfgAudio() model.Config {
 	}
 }
 
-func CfgMoEChat() model.Config {
+func CfgMoEVision() model.Config {
 	return model.Config{
-		ModelFiles:    MPMoEChat.ModelFiles,
+		ModelFiles:    MPMoEVision.ModelFiles,
 		ContextWindow: 8192,
 		NBatch:        2048,
 		NUBatch:       2048,
@@ -347,12 +345,26 @@ func CfgMoEChat() model.Config {
 
 func CfgHybridChat() model.Config {
 	return model.Config{
-		ModelFiles:    MPHybridChat.ModelFiles,
+		ModelFiles:    MPHybridVision.ModelFiles,
 		ContextWindow: 8192,
 		NBatch:        2048,
 		NUBatch:       512,
 		CacheTypeK:    model.GGMLTypeF16,
 		CacheTypeV:    model.GGMLTypeF16,
 		NSeqMax:       2,
+	}
+}
+
+func CfgHybridVisionIMC() model.Config {
+	return model.Config{
+		ModelFiles:       MPHybridVision.ModelFiles,
+		ProjFile:         MPHybridVision.ProjFile,
+		ContextWindow:    8192,
+		NBatch:           2048,
+		NUBatch:          2048,
+		CacheTypeK:       model.GGMLTypeF16,
+		CacheTypeV:       model.GGMLTypeF16,
+		IncrementalCache: true,
+		NSeqMax:          1,
 	}
 }

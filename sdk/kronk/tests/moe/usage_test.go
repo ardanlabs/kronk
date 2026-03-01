@@ -10,7 +10,7 @@ import (
 )
 
 func TestUsageCounting(t *testing.T) {
-	testlib.WithModel(t, testlib.CfgMoEChat(), func(t *testing.T, krn *kronk.Kronk) {
+	testlib.WithModel(t, testlib.CfgMoEVision(), func(t *testing.T, krn *kronk.Kronk) {
 		t.Run("StreamingUsage", func(t *testing.T) {
 			testStreamingUsage(t, krn)
 		})

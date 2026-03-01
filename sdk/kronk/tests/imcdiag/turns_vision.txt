@@ -1,0 +1,7 @@
+Hello model, let me know when you are ready?
+Write a hello world program in Go.
+Now write one for Rust
+[TOOL] What is the weather in Miami?
+[IMAGE] What do you see in this picture?
+Back to our earlier topic. Using these two coding examples, show how Go and Rust are different.
+Back to the image. Was the image taken during the day or night?

@@ -280,16 +280,17 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		imcCacheHit:     imcCacheHit,
 		imcExpectedHash: cache.imcExpectedHash,
 
-		imcNewCacheTokens:    cache.imcNewCacheTokens,
-		imcNewTotalCached:    cache.imcNewTotalCached,
-		imcNewCachedMsgCount: cache.imcNewCachedMsgCount,
-		imcNewMsgsHash:       cache.imcNewMsgsHash,
-		imcClearSeq:          cache.imcClearSeq,
-		imcNewCachedTokens:   cache.imcNewCachedTokens,
-		imcTrimPos:           cache.imcTrimPos,
-		imcMediaBuild:        cache.imcMediaBuild,
-		imcMediaCacheD:       cache.imcMediaCacheD,
-		imcMediaKVCounts:     cache.imcMediaKVCounts,
+		imcNewCacheTokens:      cache.imcNewCacheTokens,
+		imcNewTotalCached:      cache.imcNewTotalCached,
+		imcNewCachedMsgCount:   cache.imcNewCachedMsgCount,
+		imcNewMsgsHash:         cache.imcNewMsgsHash,
+		imcClearSeq:            cache.imcClearSeq,
+		imcNewCachedTokens:     cache.imcNewCachedTokens,
+		imcTrimPos:             cache.imcTrimPos,
+		imcMediaBuild:          cache.imcMediaBuild,
+		imcMediaCacheD:         cache.imcMediaCacheD,
+		imcMediaKVCounts:       cache.imcMediaKVCounts,
+		imcMediaSkipTextTokens: cache.imcMediaSkipTextTokens,
 	}
 
 	if err := m.batch.submit(&job); err != nil {

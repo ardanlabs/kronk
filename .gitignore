@@ -44,6 +44,9 @@ go.work.sum
 .yzma
 .ollama
 
+# IMC diagnostic logs
+imc_diag_*.log
+
 # Nix
 result
 result-*

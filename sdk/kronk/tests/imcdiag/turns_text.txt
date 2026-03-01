@@ -1,0 +1,15 @@
+Hello model, let me know when you are ready?
+Write a hello world program in Go.
+Now write one for Rust
+Write a hello world program in Python.
+Now write one for JavaScript.
+Show me how to write a simple HTTP server in Go.
+Now show me how to do the same HTTP server in Rust.
+[TOOL] What is the weather in Miami?
+Using all the coding examples above, compare Go and Rust in terms of syntax and error handling.
+Now compare Python and JavaScript from the examples above.
+[TOOL] What is the weather in New York?
+Which of the four languages would you recommend for a beginner and why?
+Write a function in Go that reverses a string.
+Now write the same function in Rust.
+[TOOL] What is the weather in London?

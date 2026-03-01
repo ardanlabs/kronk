@@ -2075,15 +2075,39 @@ Request 4 (back to asking about the image):
 [user]         →  extended (new text tokens decoded into cache)
 [assistant]    →  extended
 [user]         →  prefill (generation target)`}</code></pre>
+          <p>When an image appears mid-conversation (after text-only messages), IMC preserves the existing text cache and extends it with media instead of rebuilding from scratch:</p>
+          <pre className="code-block"><code>{`Text-only conversation, then image appears mid-conversation:
+
+Requests 1–3 (text-only):
+[system]       →  cached by IMC (text tokens)
+[user]         →  cached / extended normally
+[assistant]    →  cached / extended normally
+...            →  conversation grows, all text cached incrementally
+
+Request 4 (image appears mid-conversation):
+[system]       →  cached (text tokens skipped via imcMediaSkipTextTokens)
+[earlier msgs] →  cached (text tokens skipped)
+[asst + user]  →  media extend from text (new text decoded from skip point)
+[user + image] →  media extend from text (image encoded through projection model)
+[user]         →  prefill (generation target)
+
+Request 5 (text follow-up about the image):
+[all prior]    →  cached (KV cache hit, image stays in KV cache)
+[assistant]    →  extended (text tokens only, no image re-encode)
+[user]         →  prefill (generation target)`}</code></pre>
           <p><strong>How media caching works internally:</strong></p>
           <ol>
             <li>When <code>buildIMCCacheFromScratch</code> detects media content, it defers the build</li>
           </ol>
           <p>to <code>startSlot</code> where the mtmd pipeline (projection model) is available. The cache result carries <code>imcMediaBuild: true</code>.</p>
           <ol>
-            <li><code>decodeMediaIntoCache</code> processes the full prompt as interleaved chunks —</li>
+            <li>When media first appears in a conversation that started text-only,</li>
           </ol>
-          <p>text chunks are tokenized and decoded normally, while image/audio chunks are encoded through the projection model and their embeddings are decoded into the KV cache. For models using M-RoPE (e.g., Qwen2.5-VL), 2D spatial positions are assigned to image tokens.</p>
+          <p><code>extendIMCTextCacheWithMedia</code> preserves the existing text prefix in the KV cache. It sets <code>imcMediaSkipTextTokens</code> to the number of already-cached text tokens, so <code>decodeMediaIntoCache</code> skips them and only decodes the new text plus media embeddings. This avoids re-decoding potentially tens of thousands of cached text tokens when an image is first introduced mid-conversation.</p>
+          <ol>
+            <li><code>decodeMediaIntoCache</code> processes the prompt as interleaved chunks — text</li>
+          </ol>
+          <p>chunks are tokenized and decoded normally, while image/audio chunks are encoded through the projection model and their embeddings are decoded into the KV cache. When <code>imcMediaSkipTextTokens</code> is set, the first text chunk is partially skipped (only tokens beyond the skip point are decoded). For models using M-RoPE (e.g., Qwen2.5-VL), 2D spatial positions are assigned to image tokens.</p>
           <ol>
             <li>The slot tracks <code>mediaKVCounts</code> — the number of KV positions consumed by</li>
           </ol>
