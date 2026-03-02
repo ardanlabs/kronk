@@ -278,7 +278,10 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfi
 				ReasoningEffort:  rmc.Sampling.ReasoningEffort,
 			},
 		},
-		VRAM: &VRAM{
+	}
+
+	if vram.TotalVRAM > 0 {
+		mir.VRAM = &VRAM{
 			Input: VRAMInput{
 				ModelSizeBytes:  vram.Input.ModelSizeBytes,
 				ContextWindow:   vram.Input.ContextWindow,
@@ -293,7 +296,7 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfi
 			KVPerSlot:          vram.KVPerSlot,
 			SlotMemory:         vram.SlotMemory,
 			TotalVRAM:          vram.TotalVRAM,
-		},
+		}
 	}
 
 	return mir
