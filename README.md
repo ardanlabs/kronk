@@ -351,27 +351,26 @@ This example can produce the following output:
 $ make example-question
 CGO_ENABLED=0 go run examples/question/main.go
 download-libraries: check libraries version information: arch[arm64] os[darwin] processor[cpu]
-download-libraries: check llama.cpp installation: arch[arm64] os[darwin] processor[cpu] latest[b8162] current[b8162]
-download-libraries: already installed: latest[b8162] current[b8162]
-download-model: model-url[https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf] proj-url[] model-id[Qwen3-8B-Q8_0]:
+download-libraries: check llama.cpp installation: arch[arm64] os[darwin] processor[cpu] latest[b8189] current[b8189]
+download-libraries: already installed: latest[b8189] current[b8189]
+download-model: model-url[https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf] proj-url[] model-id[Qwen3-0.6B-Q8_0]:
 download-model: waiting to check model status...:
 download-model: model already exists:
 loading model...
 - system info:
-	FP16_VA:on, DOTPROD:on, LLAMAFILE:on, ACCELERATE:on, REPACK:on, MTL:EMBED_LIBRARY, CPU:NEON, ARM_FMA:on,
-- contextWindow: 40960
+	ACCELERATE:on, REPACK:on, MTL:EMBED_LIBRARY, CPU:NEON, ARM_FMA:on, FP16_VA:on, DOTPROD:on, LLAMAFILE:on,
+- contextWindow: 8196
 - k/v          : q8_0/q8_0
 - nBatch       : 2048
 - nuBatch      : 512
-- embeddings   : false
 - modelType    : dense
 - isGPT        : false
 - template     : tokenizer.chat_template
 
 QUESTION: Hello model
 
-Okay, the user said "Hello model". I need to respond appropriately. First, I should acknowledge their greeting. Maybe say hello back and offer assistance. Let me check the guidelines to make sure I'm being friendly and helpful. I should keep it simple and open-ended so they feel comfortable asking questions. Also, avoid any markdown formatting. Alright, something like "Hello! How can I assist you today?" That should work.
+Okay, the user just said "Hello model." I need to respond appropriately. Since I'm an AI assistant, my initial response is friendly and helpful. Let me start by acknowledging their greeting. I should make sure to use a friendly tone and offer assistance. Maybe add something about being here to help with anything they need. Keep it simple and conversational. Let me check if there's any additional context needed, but since they just said hello, a basic reply should suffice.
 
-! How can I assist you today?
+! How can I assist you today? 😊
 Unloading Kronk
 ```
