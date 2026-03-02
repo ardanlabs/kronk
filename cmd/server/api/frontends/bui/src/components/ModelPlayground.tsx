@@ -12,6 +12,7 @@ import type {
   ModelConfig,
 } from '../types';
 import AutomatedTestingPanel from './AutomatedTestingPanel';
+import ModelSelector from './ModelSelector';
 import PlaygroundHistory from './PlaygroundHistory';
 import { autoTestTools } from '../services/autoTestRunner';
 import { PARAM_TOOLTIPS, ParamTooltip } from './ParamTooltips';
@@ -673,12 +674,11 @@ export default function ModelPlayground() {
         <div className="playground-mode-selector">
           <div className="playground-model-config">
             <div className="form-group">
-              <label htmlFor="pg-model">Model</label>
-              <select
-                id="pg-model"
-                value={showPullForm ? NEW_MODEL_VALUE : selectedModel}
-                onChange={(e) => {
-                  const val = e.target.value;
+              <label>Model</label>
+              <ModelSelector
+                models={models?.data}
+                selectedModel={showPullForm ? NEW_MODEL_VALUE : selectedModel}
+                onSelect={(val) => {
                   if (val === NEW_MODEL_VALUE) {
                     setSelectedModel('');
                     setShowPullForm(true);
@@ -688,15 +688,8 @@ export default function ModelPlayground() {
                   }
                 }}
                 disabled={!!session}
-              >
-                <option value="">Select a model...</option>
-                {models?.data?.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.id}
-                  </option>
-                ))}
-                <option value={NEW_MODEL_VALUE}>New…</option>
-              </select>
+                extraItems={[{ id: NEW_MODEL_VALUE, label: 'New…' }]}
+              />
             </div>
 
             {showPullForm && !session && (

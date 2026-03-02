@@ -159,6 +159,8 @@ export interface CatalogModelResponse {
   model_family: string;
   architecture: string;
   gguf_arch: string;
+  parameters: string;
+  parameter_count: number;
   web_page: string;
   template: string;
   total_size: string;
@@ -348,6 +350,7 @@ export interface SaveCatalogRequest {
   owned_by: string;
   model_family: string;
   architecture: string;
+  parameters: string;
   web_page: string;
   gated_model: boolean;
   template: string;
@@ -405,6 +408,7 @@ export interface SaveCatalogRequest {
   model_family: string;
   architecture: string;
   gguf_arch: string;
+  parameters: string;
   web_page: string;
   gated_model: boolean;
   template: string;

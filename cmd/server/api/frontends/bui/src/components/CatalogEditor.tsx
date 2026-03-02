@@ -17,6 +17,7 @@ interface CatalogFormData {
   modelFamily: string;
   architecture: string;
   ggufArch: string;
+  parameters: string;
   webPage: string;
   template: string;
   gatedModel: boolean;
@@ -113,6 +114,7 @@ const defaultForm: CatalogFormData = {
   modelFamily: '',
   architecture: '',
   ggufArch: '',
+  parameters: '',
   webPage: '',
   template: '',
   gatedModel: false,
@@ -239,6 +241,7 @@ function populateFromResponse(resp: CatalogModelResponse): CatalogFormData {
     modelFamily: resp.model_family || '',
     architecture: resp.architecture || '',
     ggufArch: resp.gguf_arch || '',
+    parameters: resp.parameters || '',
     webPage: resp.web_page || '',
     template: resp.template || '',
     gatedModel: resp.gated_model || false,
@@ -506,6 +509,7 @@ export default function CatalogEditor() {
         model_family: form.modelFamily,
         architecture: form.architecture,
         gguf_arch: form.ggufArch,
+        parameters: form.parameters,
         web_page: form.webPage,
         gated_model: form.gatedModel,
         template: form.template,
@@ -774,6 +778,10 @@ export default function CatalogEditor() {
           <div>
             <label style={labelStyle}>GGUF Arch</label>
             <input type="text" value={form.ggufArch} onChange={(e) => setForm({ ...form, ggufArch: e.target.value })} style={inputStyle} placeholder="e.g. llama, qwen2moe" />
+          </div>
+          <div>
+            <label style={labelStyle}>Parameters</label>
+            <input type="text" value={form.parameters} onChange={(e) => setForm({ ...form, parameters: e.target.value })} style={inputStyle} placeholder="e.g. 8B, 70B, 0.6B" />
           </div>
           <div>
             <label style={labelStyle}>Web Page</label>

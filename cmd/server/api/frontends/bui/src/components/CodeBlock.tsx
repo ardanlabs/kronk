@@ -9,11 +9,17 @@ import 'prismjs/components/prism-sql';
 import 'prismjs/components/prism-json';
 import 'prismjs/components/prism-yaml';
 import 'prismjs/components/prism-bash';
+import 'prismjs/components/prism-markup-templating';
+import 'prismjs/components/prism-django';
 import 'prismjs/themes/prism-tomorrow.css';
 
 // Alias "shell" → "bash" so <code className="language-shell"> gets highlighted.
 if (Prism.languages.bash && !Prism.languages.shell) {
   Prism.languages.shell = Prism.languages.bash;
+}
+
+if (Prism.languages.django && !Prism.languages.jinja2) {
+  Prism.languages.jinja2 = Prism.languages.django;
 }
 
 interface CodeBlockProps {

@@ -3,6 +3,7 @@ package catalog
 import (
 	"fmt"
 	"math"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -420,6 +421,7 @@ type ModelDetails struct {
 	ModelFamily     string       `yaml:"model_family,omitempty"`
 	Architecture    string       `yaml:"architecture,omitempty"`
 	GGUFArch        string       `yaml:"gguf_arch,omitempty"`
+	Parameters      string       `yaml:"parameters,omitempty"`
 	WebPage         string       `yaml:"web_page,omitempty"`
 	GatedModel      bool         `yaml:"gated_model,omitempty"`
 	TestingModel    bool         `yaml:"testing_model,omitempty"`
@@ -431,6 +433,65 @@ type ModelDetails struct {
 	Downloaded      bool         `yaml:"-"`
 	Validated       bool         `yaml:"-"`
 	CatalogFile     string       `yaml:"-"`
+}
+
+// ExtractParameterLabel extracts a parameter count label (e.g. "8B", "0.6B",
+// "8x7B") from a model ID string. It returns an empty string if no label is found.
+func ExtractParameterLabel(id string) string {
+	// Match patterns like "0.6B", "8B", "70B", "8x7B", "700M" in the model ID.
+	// The label is typically preceded by a "-" or start of string,
+	// and followed by "-" or end of string.
+	re := regexp.MustCompile(`(?i)(?:^|[-_])(\d+x)?(\d+(?:\.\d+)?[BM])(?:[-_]|$)`)
+	match := re.FindStringSubmatch(id)
+	if match == nil {
+		return ""
+	}
+	return match[1] + match[2]
+}
+
+// ParseParameterCount converts a parameter label like "8B" or "0.6B" or "8x7B"
+// into a raw parameter count (e.g. 8_000_000_000). Returns 0 if parsing fails.
+func ParseParameterCount(label string) int64 {
+	if label == "" {
+		return 0
+	}
+
+	label = strings.TrimSpace(label)
+
+	// Handle multiplier prefix like "8x" in "8x7B" or "8X7B".
+	lower := strings.ToLower(label)
+	multiplier := int64(1)
+	if idx := strings.Index(lower, "x"); idx > 0 {
+		m, err := strconv.ParseInt(lower[:idx], 10, 64)
+		if err != nil {
+			return 0
+		}
+		multiplier = m
+		label = label[idx+1:]
+	}
+
+	upper := strings.ToUpper(strings.TrimSpace(label))
+
+	var scale float64
+	var numStr string
+
+	switch {
+	case strings.HasSuffix(upper, "B"):
+		scale = 1e9
+		numStr = strings.TrimSuffix(upper, "B")
+	case strings.HasSuffix(upper, "M"):
+		scale = 1e6
+		numStr = strings.TrimSuffix(upper, "M")
+	default:
+		return 0
+	}
+
+	val, err := strconv.ParseFloat(strings.TrimSpace(numStr), 64)
+	if err != nil {
+		return 0
+	}
+
+	return int64(math.Round(val*scale)) * multiplier
 }
 
 // CatalogModels represents a set of models for a given catalog.

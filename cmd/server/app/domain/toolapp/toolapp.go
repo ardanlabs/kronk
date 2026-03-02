@@ -509,6 +509,10 @@ func (a *app) showCatalogModel(ctx context.Context, r *http.Request) web.Encoder
 		}
 	}
 
+	if tmpl.Script != "" {
+		metadata["tokenizer.chat_template"] = tmpl.Script
+	}
+
 	rmc := a.catalog.ResolvedModelConfig(modelID)
 
 	var vram *models.VRAM

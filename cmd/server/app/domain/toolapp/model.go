@@ -481,6 +481,8 @@ type CatalogModelResponse struct {
 	ModelFamily    string              `json:"model_family"`
 	Architecture   string              `json:"architecture"`
 	GGUFArch       string              `json:"gguf_arch"`
+	Parameters     string              `json:"parameters"`
+	ParameterCount int64               `json:"parameter_count"`
 	WebPage        string              `json:"web_page"`
 	GatedModel     bool                `json:"gated_model"`
 	Template       string              `json:"template"`
@@ -523,11 +525,6 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 	formattedMetadata := make(map[string]string)
 	for k, v := range metadata {
 		formattedMetadata[k] = formatMetadataValue(k, v)
-		if k == "tokenizer.chat_template" {
-			if catDetails.Template != "" {
-				formattedMetadata[k] = catDetails.Template
-			}
-		}
 	}
 
 	catDetails.Files.Proj.URL = models.NormalizeHuggingFaceDownloadURL(catDetails.Files.Proj.URL)
@@ -569,6 +566,13 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 		Validated:     catDetails.Validated,
 		CatalogFile:   catDetails.CatalogFile,
 	}
+
+	params := catDetails.Parameters
+	if params == "" {
+		params = catalog.ExtractParameterLabel(catDetails.ID)
+	}
+	resp.Parameters = params
+	resp.ParameterCount = catalog.ParseParameterCount(params)
 
 	if rmc != nil {
 		resp.ModelConfig = &ModelConfig{
@@ -856,6 +860,7 @@ type SaveCatalogRequest struct {
 	OwnedBy      string              `json:"owned_by"`
 	ModelFamily  string              `json:"model_family"`
 	Architecture string              `json:"architecture"`
+	Parameters   string              `json:"parameters"`
 	WebPage      string              `json:"web_page"`
 	GatedModel   bool                `json:"gated_model"`
 	Template     string              `json:"template"`
@@ -883,6 +888,7 @@ func (app SaveCatalogRequest) toModelDetails() catalog.ModelDetails {
 		OwnedBy:      app.OwnedBy,
 		ModelFamily:  app.ModelFamily,
 		Architecture: app.Architecture,
+		Parameters:   app.Parameters,
 		WebPage:      app.WebPage,
 		GatedModel:   app.GatedModel,
 		Template:     app.Template,
