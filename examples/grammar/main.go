@@ -43,8 +43,8 @@ type modelSpec struct {
 // Configure this to switch between URL and catalog downloads.
 // Set either SourceURL or ModelID, not both.
 var modelSpecConfig = modelSpec{
-	SourceURL: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q8_0.gguf",
-	// ModelID: "Qwen3.5-0.8B-Q8_0",
+	SourceURL: "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf",
+	// ModelID: "Qwen3-0.6B-Q8_0",
 }
 
 func main() {

@@ -20,7 +20,7 @@ const SECTION_LABELS: Record<DetailSection, string> = {
   metadata: 'Metadata',
   template: 'Template',
   vram: 'VRAM Calculator',
-  pull: 'Pull Output',
+  pull: 'Pull',
 };
 
 
@@ -377,14 +377,9 @@ export default function CatalogList() {
   }, []);
 
   useEffect(() => {
-    if (download?.kind === 'catalog' && download.catalogId) {
-      if (download.status === 'downloading') {
-        setSelectedId(download.catalogId);
-        setActiveSection('pull');
-      }
-      if (download.status === 'complete') {
-        refreshCatalog();
-      }
+    if (download?.kind === 'catalog' && download.catalogId && download.status === 'downloading') {
+      setSelectedId(download.catalogId);
+      setActiveSection('pull');
     }
   }, [download?.status]);
 
@@ -402,15 +397,6 @@ export default function CatalogList() {
       setError(err instanceof Error ? err.message : 'Failed to load catalog');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const refreshCatalog = async () => {
-    try {
-      const response = await api.listCatalog();
-      setData(response);
-    } catch {
-      // Silently ignore refresh errors to keep pull output visible.
     }
   };
 
@@ -754,41 +740,11 @@ export default function CatalogList() {
               Refresh
             </button>
             {selectedId && (
-              <>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label htmlFor="download-server" style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: 600, color: 'var(--color-gray-600)', marginBottom: '4px' }}>
-                    Download Server
-                    <ParamTooltip text="Optional: specify a Kronk server on your local network that already has the model files. The pull will download from that server instead of HuggingFace, which is much faster." />
-                  </label>
-                  <input
-                    id="download-server"
-                    type="text"
-                    className="form-control"
-                    placeholder="192.168.0.246:8080"
-                    value={downloadServer}
-                    onChange={(e) => handleDownloadServerChange(e.target.value)}
-                    disabled={pulling}
-                    style={{ width: '100%', padding: '6px 8px', border: '1px solid var(--color-gray-300)', borderRadius: '4px', fontSize: '13px' }}
-                  />
-                </div>
-                <button
-                  className="btn btn-primary"
-                  onClick={handlePull}
-                  disabled={pulling || isDownloaded}
-                >
-                  {pulling ? 'Pulling...' : isDownloaded ? 'Already Downloaded' : 'Pull Model'}
-                </button>
-                <button
-                  className="btn btn-secondary"
-                  onClick={() => navigate(`/catalog/editor?id=${encodeURIComponent(selectedId)}`)}
-                >
-                  Edit
-                </button>
-              </>
-            )}
-            {pulling && (
-              <button className="btn btn-danger" onClick={handleCancelPull}>
-                Cancel
+              <button
+                className="btn btn-secondary"
+                onClick={() => navigate(`/catalog/editor?id=${encodeURIComponent(selectedId)}`)}
+              >
+                Edit
               </button>
             )}
           </div>
@@ -864,7 +820,7 @@ export default function CatalogList() {
                       key={section}
                       className={`tab ${activeSection === section ? 'active' : ''}`}
                       onClick={() => setActiveSection(section)}
-                      disabled={section === 'pull' && pullMessages.length === 0 && !pulling}
+                      disabled={false}
                     >
                       {SECTION_LABELS[section]}
                     </button>
@@ -1103,11 +1059,43 @@ export default function CatalogList() {
                   </div>
                 )}
 
-                {/* Pull Output Section */}
+                {/* Pull Section */}
                 {activeSection === 'pull' && (
                   <div>
-                    <h3 style={{ marginBottom: '16px' }}>Pull Output: {selectedId}</h3>
-                    {pullMessages.length > 0 ? (
+                    <h3 style={{ marginBottom: '16px' }}>Pull: {selectedId}</h3>
+
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: '16px' }}>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label htmlFor="download-server" style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: 600, color: 'var(--color-gray-600)', marginBottom: '4px' }}>
+                          Download Server
+                          <ParamTooltip text="Optional: specify a Kronk server on your local network that already has the model files. The pull will download from that server instead of HuggingFace, which is much faster." />
+                        </label>
+                        <input
+                          id="download-server"
+                          type="text"
+                          className="form-control"
+                          placeholder="192.168.0.246:8080"
+                          value={downloadServer}
+                          onChange={(e) => handleDownloadServerChange(e.target.value)}
+                          disabled={pulling}
+                          style={{ width: '220px', padding: '6px 8px', border: '1px solid var(--color-gray-300)', borderRadius: '4px', fontSize: '13px' }}
+                        />
+                      </div>
+                      <button
+                        className="btn btn-primary"
+                        onClick={handlePull}
+                        disabled={pulling || isDownloaded}
+                      >
+                        {pulling ? 'Pulling...' : isDownloaded ? 'Already Downloaded' : 'Pull Model'}
+                      </button>
+                      {pulling && (
+                        <button className="btn btn-danger" onClick={handleCancelPull}>
+                          Cancel
+                        </button>
+                      )}
+                    </div>
+
+                    {pullMessages.length > 0 && (
                       <div className="status-box">
                         {pullMessages.map((msg, idx) => (
                           <div key={idx} className={`status-line ${msg.type}`}>
@@ -1115,17 +1103,6 @@ export default function CatalogList() {
                           </div>
                         ))}
                       </div>
-                    ) : (
-                      <p>No pull output yet.</p>
-                    )}
-                    {pulling && (
-                      <button
-                        className="btn btn-danger"
-                        onClick={handleCancelPull}
-                        style={{ marginTop: '16px' }}
-                      >
-                        Cancel
-                      </button>
                     )}
                   </div>
                 )}
