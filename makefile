@@ -143,6 +143,8 @@ install-test-models: install-kronk
 # Use this to install models for the class.
 install-class-models: install-kronk
 	@echo ========== INSTALL MODELS ==========
+	kronk model pull --local "unsloth/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-Q8_0.gguf" "unsloth/Qwen3.5-0.8B-GGUF/mmproj-F16.gguf"
+	@echo
 	kronk model pull --local "unsloth/LFM2.5-VL-1.6B-GGUF/LFM2.5-VL-1.6B-Q8_0.gguf" "unsloth/LFM2.5-VL-1.6B-GGUF/mmproj-F16.gguf"
 	@echo
 	kronk model pull --local "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/Qwen2.5-VL-3B-Instruct-Q8_0.gguf" "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf"

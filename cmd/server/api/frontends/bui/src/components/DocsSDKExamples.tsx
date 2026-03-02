@@ -163,7 +163,6 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Printf("- k/v          : %s/%s\\n", krn.ModelConfig().CacheTypeK, krn.ModelConfig().CacheTypeV)
 	fmt.Println("- nBatch       :", krn.ModelConfig().NBatch)
 	fmt.Println("- nuBatch      :", krn.ModelConfig().NUBatch)
-	fmt.Println("- embeddings   :", krn.ModelInfo().IsEmbedModel)
 	fmt.Println("- modelType    :", krn.ModelInfo().Type)
 	fmt.Println("- isGPT        :", krn.ModelInfo().IsGPTModel)
 	fmt.Println("- template     :", krn.ModelInfo().Template.FileName)
@@ -315,8 +314,8 @@ type modelSpec struct {
 // Configure this to switch between URL and catalog downloads.
 // Set either SourceURL or ModelID, not both.
 var modelSpecConfig = modelSpec{
-	SourceURL: "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf",
-	// ModelID: "Qwen3-8B-Q8_0",
+	SourceURL: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q8_0.gguf",
+	// ModelID: "Qwen3.5-0.8B-Q8_0",
 }
 
 func main() {
@@ -437,7 +436,6 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Printf("- k/v          : %s/%s\\n", krn.ModelConfig().CacheTypeK, krn.ModelConfig().CacheTypeV)
 	fmt.Println("- nBatch       :", krn.ModelConfig().NBatch)
 	fmt.Println("- nuBatch      :", krn.ModelConfig().NUBatch)
-	fmt.Println("- embeddings   :", krn.ModelInfo().IsEmbedModel)
 	fmt.Println("- modelType    :", krn.ModelInfo().Type)
 	fmt.Println("- isGPT        :", krn.ModelInfo().IsGPTModel)
 	fmt.Println("- template     :", krn.ModelInfo().Template.FileName)
@@ -875,8 +873,8 @@ type modelSpec struct {
 // Configure this to switch between URL and catalog downloads.
 // Set either SourceURL or ModelID, not both.
 var modelSpecConfig = modelSpec{
-	SourceURL: "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf",
-	// ModelID: "Qwen3-8B-Q8_0",
+	SourceURL: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q8_0.gguf",
+	// ModelID: "Qwen3.5-0.8B-Q8_0",
 }
 
 func main() {
@@ -1011,7 +1009,6 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Printf("- k/v          : %s/%s\\n", krn.ModelConfig().CacheTypeK, krn.ModelConfig().CacheTypeV)
 	fmt.Println("- nBatch       :", krn.ModelConfig().NBatch)
 	fmt.Println("- nuBatch      :", krn.ModelConfig().NUBatch)
-	fmt.Println("- embeddings   :", krn.ModelInfo().IsEmbedModel)
 	fmt.Println("- modelType    :", krn.ModelInfo().Type)
 	fmt.Println("- isGPT        :", krn.ModelInfo().IsGPTModel)
 	fmt.Println("- template     :", krn.ModelInfo().Template.FileName)
@@ -1206,7 +1203,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-const modelURL = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
+const modelURL = "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q8_0.gguf"
 
 func main() {
 	if err := run(); err != nil {
@@ -1303,7 +1300,6 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Printf("- k/v          : %s/%s\\n", krn.ModelConfig().CacheTypeK, krn.ModelConfig().CacheTypeV)
 	fmt.Println("- nBatch       :", krn.ModelConfig().NBatch)
 	fmt.Println("- nuBatch      :", krn.ModelConfig().NUBatch)
-	fmt.Println("- embeddings   :", krn.ModelInfo().IsEmbedModel)
 	fmt.Println("- modelType    :", krn.ModelInfo().Type)
 	fmt.Println("- isGPT        :", krn.ModelInfo().IsGPTModel)
 	fmt.Println("- template     :", krn.ModelInfo().Template.FileName)
@@ -1617,8 +1613,8 @@ type modelSpec struct {
 // Configure this to switch between URL and catalog downloads.
 // Set either SourceURL or ModelID, not both.
 var modelSpecConfig = modelSpec{
-	SourceURL: "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf",
-	// ModelID: "Qwen3-8B-Q8_0",
+	SourceURL: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q8_0.gguf",
+	// ModelID: "Qwen3.5-0.8B-Q8_0",
 }
 
 func main() {
@@ -1739,7 +1735,6 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Printf("- k/v          : %s/%s\\n", krn.ModelConfig().CacheTypeK, krn.ModelConfig().CacheTypeV)
 	fmt.Println("- nBatch       :", krn.ModelConfig().NBatch)
 	fmt.Println("- nuBatch      :", krn.ModelConfig().NUBatch)
-	fmt.Println("- embeddings   :", krn.ModelInfo().IsEmbedModel)
 	fmt.Println("- modelType    :", krn.ModelInfo().Type)
 	fmt.Println("- isGPT        :", krn.ModelInfo().IsGPTModel)
 	fmt.Println("- template     :", krn.ModelInfo().Template.FileName)
@@ -1965,9 +1960,9 @@ type modelSpec struct {
 // Configure this to switch between URL and catalog downloads.
 // Set either SourceURL (with ProjURL) or ModelID, not both.
 var modelSpecConfig = modelSpec{
-	SourceURL: "https://huggingface.co/unsloth/LFM2.5-VL-1.6B-GGUF/resolve/main/LFM2.5-VL-1.6B-Q8_0.gguf",
-	ProjURL:   "https://huggingface.co/unsloth/LFM2.5-VL-1.6B-GGUF/resolve/main/mmproj-F16.gguf",
-	// ModelID: "LFM2.5-VL-1.6B-Q8_0",
+	SourceURL: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q8_0.gguf",
+	ProjURL:   "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/mmproj-F16.gguf",
+	// ModelID: "Qwen3.5-0.8B-Q8_0",
 }
 
 const imageFile = "examples/samples/giraffe.jpg"
@@ -2088,7 +2083,6 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Printf("- k/v          : %s/%s\\n", krn.ModelConfig().CacheTypeK, krn.ModelConfig().CacheTypeV)
 	fmt.Println("- nBatch       :", krn.ModelConfig().NBatch)
 	fmt.Println("- nuBatch      :", krn.ModelConfig().NUBatch)
-	fmt.Println("- embeddings   :", krn.ModelInfo().IsEmbedModel)
 	fmt.Println("- modelType    :", krn.ModelInfo().Type)
 	fmt.Println("- isGPT        :", krn.ModelInfo().IsGPTModel)
 	fmt.Println("- template     :", krn.ModelInfo().Template.FileName)

@@ -383,7 +383,7 @@ export default function CatalogList() {
         setActiveSection('pull');
       }
       if (download.status === 'complete') {
-        loadCatalog();
+        refreshCatalog();
       }
     }
   }, [download?.status]);
@@ -402,6 +402,15 @@ export default function CatalogList() {
       setError(err instanceof Error ? err.message : 'Failed to load catalog');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const refreshCatalog = async () => {
+    try {
+      const response = await api.listCatalog();
+      setData(response);
+    } catch {
+      // Silently ignore refresh errors to keep pull output visible.
     }
   };
 

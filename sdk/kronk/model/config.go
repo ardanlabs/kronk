@@ -389,6 +389,15 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 		cfg.DraftModel.NDraft = defNDraft
 	}
 
+	// Hybrid models (Attention + Recurrent) don't support flash attention,
+	// and quantized KV caches require flash attention. Force f16 KV cache
+	// in the config so downstream code and display reflect the actual values.
+	if llama.ModelIsHybrid(model) {
+		cfg.CacheTypeK = GGMLTypeF16
+		cfg.CacheTypeV = GGMLTypeF16
+		cfg.FlashAttention = FlashAttentionDisabled
+	}
+
 	return cfg
 }
 
@@ -590,7 +599,6 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 		ctxParams.NUbatch = uint32(cfg.NUBatch)
 		ctxParams.NThreads = int32(cfg.NThreads)
 		ctxParams.NThreadsBatch = int32(cfg.NThreadsBatch)
-
 		ctxParams.NCtx = uint32(cfg.ContextWindow)
 	}
 
@@ -603,18 +611,12 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 	}
 
 	switch {
-	case mi.Type == ModelTypeHybrid:
-		ctxParams.FlashAttentionType = llama.FlashAttentionTypeDisabled
-
-		// Hybrid models (Attention + Recurrent) don't support flash attention,
-		// and quantized KV caches require flash attention. Force f16 KV cache
-		// to prevent "V cache quantization requires flash_attn" errors.
-		ctxParams.TypeK = GGMLTypeF16.ToYZMAType()
-		ctxParams.TypeV = GGMLTypeF16.ToYZMAType()
 	case cfg.FlashAttention == FlashAttentionDisabled:
 		ctxParams.FlashAttentionType = llama.FlashAttentionTypeDisabled
+
 	case cfg.FlashAttention == FlashAttentionAuto:
 		ctxParams.FlashAttentionType = llama.FlashAttentionTypeAuto
+
 	default:
 		ctxParams.FlashAttentionType = llama.FlashAttentionTypeEnabled
 	}
