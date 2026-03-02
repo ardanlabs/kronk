@@ -49,7 +49,7 @@ Kronk has an MCP service and these are settings:
 | [Chapter 9: Request Parameters](.manual/chapter-09-request-parameters.md)              | Sampling, repetition control, generation control, grammar, logprobs, cache ID                                                                |
 | [Chapter 10: Multi-Modal Models](.manual/chapter-10-multi-modal-models.md)             | Vision models, audio models, media input formats                                                                                             |
 | [Chapter 11: Security & Authentication](.manual/chapter-11-security-authentication.md) | JWT auth, key management, token creation, rate limiting                                                                                      |
-| [Chapter 12: Browser UI (BUI)](.manual/chapter-12-browser-ui.md)                       | Web interface, downloading libraries/models, key/token management, model playground                                                          |
+| [Chapter 12: Browser UI (BUI)](.manual/chapter-12-browser-ui.md)                       | Web interface, downloading libraries/models, catalog browsing, model management, key/token management, apps, model playground                 |
 | [Chapter 13: Client Integration](.manual/chapter-13-client-integration.md)             | OpenWebUI, Cline, Python SDK, curl, LangChain                                                                                                |
 | [Chapter 14: Observability](.manual/chapter-14-observability.md)                       | Debug server, Prometheus metrics, pprof profiling, tracing                                                                                   |
 | [Chapter 15: MCP Service](.manual/chapter-15-mcp-service.md)                           | Brave Search, MCP configuration, Cline/Kilo client setup, curl testing                                                                       |
@@ -217,10 +217,11 @@ Kronk has an MCP service and these are settings:
 | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | [12.1 Accessing the BUI](.manual/chapter-12-browser-ui.md#121-accessing-the-bui)               | URL, browser access                                                                    |
 | [12.2 Downloading Libraries](.manual/chapter-12-browser-ui.md#122-downloading-libraries)       | BUI library download                                                                   |
-| [12.3 Downloading Models](.manual/chapter-12-browser-ui.md#123-downloading-models)             | BUI model download                                                                     |
-| [12.4 Managing Keys and Tokens](.manual/chapter-12-browser-ui.md#124-managing-keys-and-tokens) | BUI key/token management                                                               |
-| [12.5 Other Screens](.manual/chapter-12-browser-ui.md#125-other-screens)                       | Additional BUI pages                                                                   |
-| [12.6 Model Playground](.manual/chapter-12-browser-ui.md#126-model-playground)                 | Automated testing, sampling/config sweeps, manual chat, tool calling, prompt inspector |
+| [12.3 Browsing the Catalog](.manual/chapter-12-browser-ui.md#123-browsing-the-catalog)         | Catalog filters, detail tabs, pulling models, catalog editor                           |
+| [12.4 Managing Models](.manual/chapter-12-browser-ui.md#124-managing-models)                   | Model list, detail tabs, VRAM calculator, rebuild index, remove models                 |
+| [12.5 Managing Keys and Tokens](.manual/chapter-12-browser-ui.md#125-managing-keys-and-tokens) | BUI key/token management                                                               |
+| [12.6 Other Screens](.manual/chapter-12-browser-ui.md#126-other-screens)                       | Home, docs, settings, apps (Chat, VRAM Calculator)                                     |
+| [12.7 Model Playground](.manual/chapter-12-browser-ui.md#127-model-playground)                 | Automated testing, sampling/config sweeps, manual chat, tool calling, prompt inspector, history |
 
 ### Chapter 13 Sub-sections
 

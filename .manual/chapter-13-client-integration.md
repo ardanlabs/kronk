@@ -55,30 +55,22 @@ Model: Qwen_Qwen3.5-35B-A3B-Q8_0/IMC
 
 **Recommended Model Settings:**
 
-For coding tasks, configure your model with:
+For coding tasks, configure your Qwen_Qwen3.5-35B-A3B model with:
 
 ```yaml
-models:
-    Qwen_Qwen3.5-35B-A3B-Q8_0:
-    &base_Qwen_Qwen3.5-35B-A3B-Q8_0
-    context-window: 131072
-    nbatch: 2048
-    nubatch: 512
-    cache-type-k: q8_0
-    cache-type-v: q8_0
-    flash-attention: enabled
-    nseq-max: 2
-    insecure-logging: true
-    sampling-parameters:
-        temperature: 0.7
-        top_p: 0.8
-        top_k: 20
-
-    Qwen_Qwen3.5-35B-A3B-Q8_0/IMC:
-    <<: *base_Qwen_Qwen3.5-35B-A3B-Q8_0
-    nseq-max: 1
-    incremental-cache: true
+Qwen_Qwen3.5-35B-A3B-Q8_0/CLINE:
+  nseq-max: 1
+  incremental-cache: true
+  sampling-parameters:
+    temperature: 0.6
+    top_k: 20
+    top_p: 0.95
+    dry_multiplier: 2.0
+    presence_penalty: 1.5
 ```
+
+The rest of the settings for this model are in the catalog. A model config is
+provided for this and other models in the catalog pre-configured for CLINE.
 
 IMC is especially beneficial for Cline's iterative coding workflow.
 

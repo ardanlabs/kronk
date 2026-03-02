@@ -4,16 +4,16 @@
 
 - [12.1 Accessing the BUI](#121-accessing-the-bui)
 - [12.2 Downloading Libraries](#122-downloading-libraries)
-- [12.3 Downloading Models](#123-downloading-models)
-- [12.4 Managing Keys and Tokens](#124-managing-keys-and-tokens)
-- [12.5 Other Screens](#125-other-screens)
-- [12.6 Model Playground](#126-model-playground)
-  - [12.6.1 Automated Mode](#1261-automated-mode)
-  - [12.6.2 Manual Mode](#1262-manual-mode)
+- [12.3 Browsing the Catalog](#123-browsing-the-catalog)
+- [12.4 Managing Models](#124-managing-models)
+- [12.5 Managing Keys and Tokens](#125-managing-keys-and-tokens)
+- [12.6 Other Screens](#126-other-screens)
+- [12.7 Model Playground](#127-model-playground)
+  - [12.7.1 Automated Mode](#1271-automated-mode)
+  - [12.7.2 Manual Mode](#1272-manual-mode)
+  - [12.7.3 History Mode](#1273-history-mode)
 
 ---
-
-
 
 Kronk includes a web-based interface for managing models, libraries,
 security, and server configuration without using the command line.
@@ -51,33 +51,91 @@ If auto-detection is incorrect, you can specify:
 - Architecture (amd64, arm64)
 - Operating system
 
-### 12.3 Downloading Models
+### 12.3 Browsing the Catalog
 
-**Browse the Catalog:**
+Navigate to the **Catalog > List** page to browse available models.
 
-1. Navigate to the **Catalog** page
-2. Browse available models by category:
-   - Text-Generation
-   - Image-Text-to-Text (Vision)
-   - Audio-Text-to-Text
-   - Embedding
-   - Reranking
-3. Click **Pull** next to a model to download it
+**Filter Sidebar:**
 
-**Monitor Progress:**
+A resizable filter sidebar on the left lets you narrow results by:
 
-The BUI shows real-time download progress including:
+- **Search** — Free-text search by model ID
+- **Category** — Checkbox filters (Text-Generation, Image-Text-to-Text,
+  Audio-Text-to-Text, Embedding, Reranking)
+- **Owner** — Filter by model publisher
+- **Architecture** — Filter by model architecture (e.g. llama, qwen2)
+- **Family** — Filter by model family
+- **Size** — Min/max range slider with MB/GB/TB units
+- **Parameters** — Min/max range slider with M/B units
+- **Downloaded** — All / Yes / No
+- **Validated** — All / Yes / No
+- **Capabilities** — Filter by capabilities (streaming, tooling, reasoning,
+  images, audio, embedding, rerank)
 
-- Download percentage
-- Transfer speed
-- Estimated time remaining
+A **Clear All Filters** button resets everything.
 
-**View Pulled Models:**
+**Model Details:**
 
-Navigate to the **Models** page to see all downloaded models and their
-status.
+Click a model row to view detail tabs on the right:
 
-### 12.4 Managing Keys and Tokens
+- **Catalog** — Model ID, category, owner, family, architecture, files, and
+  capabilities
+- **Configuration** — Model config parameters (context window, batch sizes,
+  flash attention, cache settings, GPU layers, YaRN, speculative decoding)
+- **Sampling** — Default sampling parameters from the catalog entry
+- **Metadata** — Model metadata and description
+- **Template** — The chat template associated with the model
+- **VRAM Calculator** — Estimate VRAM requirements with adjustable context
+  window, bytes per element, and slot count
+- **Pull Output** — Real-time download progress when pulling a model
+
+**Pulling Models:**
+
+Select a model, then click **Pull** to download it. The pull output tab
+shows real-time download progress. You can optionally specify a download
+server URL.
+
+**Catalog Editor:**
+
+Navigate to **Catalog > Editor** to create or edit catalog entries. The
+editor supports all catalog fields including files, projection URLs,
+capabilities, configuration, and sampling parameters. You can also
+pre-fill the editor from the Playground via **Export to Catalog Editor**.
+
+### 12.4 Managing Models
+
+Navigate to the **Models > List** page to see all downloaded models.
+
+**Model Table:**
+
+The table shows Model ID, Owner, Family, Size, and Modified date with
+sortable columns. A ✓/✗ indicator shows validation status. Models with
+extension files (e.g. projection models) appear as expandable child rows.
+
+**Model Details:**
+
+Click a model to view detail tabs:
+
+- **Model Configuration** — Full configuration including context window,
+  batch sizes, GPU layers, flash attention, cache settings, and YaRN
+  parameters
+- **Sampling Parameters** — Default sampling configuration
+- **Metadata** — Model metadata from the GGUF file
+- **Template** — Associated chat template
+- **VRAM Calculator** — VRAM estimation with adjustable parameters
+
+**Actions:**
+
+- **Rebuild Index** — Re-scan the models directory and rebuild the model
+  index
+- **Remove** — Delete a model with confirmation prompt
+
+**Other Model Pages:**
+
+- **Models > Running** — View currently loaded/running models
+- **Models > Pull** — Pull new models by HuggingFace URL or shorthand
+
+### 12.5 Managing Keys and Tokens
 
 When authentication is enabled, use the BUI to manage security.
 
@@ -98,32 +156,46 @@ When authentication is enabled, use the BUI to manage security.
 **Note:** You must provide an admin token in the BUI settings to access
 security management features.
 
-### 12.5 Other Screens
+### 12.6 Other Screens
 
-**Dashboard:**
+**Home:**
 
-Overview of server status, loaded models, and system information.
+The landing page shows a project banner and feature overview cards. Use
+the sidebar to navigate to other sections.
 
 **Documentation:**
 
-Built-in SDK and CLI documentation accessible from the menu:
+Built-in documentation accessible from the **Docs** menu, organized into:
 
-- SDK API reference
-- CLI command reference
-- Example code
+- **Manual** — Full Kronk manual with chapter navigation
+- **SDK** — Kronk SDK reference, Model API reference, and usage examples
+  (Audio, Chat, Embedding, Grammar, Question, Rerank, Response, Vision)
+- **CLI** — Command reference for catalog, libs, model, run, security,
+  and server commands
+- **Web API** — API reference for Chat, Messages, Responses, Embeddings,
+  Rerank, Tokenize, and Tools endpoints
 
 **Settings:**
 
 Configure BUI preferences:
 
 - API token for authenticated requests
-- Theme preferences
 
-### 12.6 Model Playground
+**Apps:**
+
+The **Apps** section in the sidebar contains:
+
+- **Chat** — A standalone multi-turn chat interface with conversation
+  history, model selection, and full sampling parameter controls
+- **Playground** — The Model Playground (see [12.7](#127-model-playground))
+- **VRAM Calculator** — Standalone VRAM estimation tool for planning
+  hardware requirements
+
+### 12.7 Model Playground
 
 The Model Playground is an interactive testing environment for evaluating
-models directly in the BUI. It supports two operating modes — **Automated**
-and **Manual** — accessible from the sidebar.
+models directly in the BUI. It supports three operating modes —
+**Automated**, **Manual**, and **History** — accessible from the sidebar.
 
 **Steps:**
 
@@ -136,9 +208,9 @@ and **Manual** — accessible from the sidebar.
 4. Configure model parameters: Context Window, NBatch, NUBatch, NSeqMax,
    Flash Attention (auto/enabled/disabled), KV Cache Type (f16/q8_0/q4_0),
    and Cache Mode (None/SPC/IMC)
-5. Select **Automated Mode** or **Manual Mode**
+5. Select **Automated Mode**, **Manual Mode**, or **History**
 
-#### 12.6.1 Automated Mode
+#### 12.7.1 Automated Mode
 
 Automated mode runs structured test suites against a model and scores the
 results. It is designed for benchmarking model quality and finding optimal
@@ -227,7 +299,7 @@ to re-rank results without re-running the tests.
 **Note:** When NSeqMax > 1 in config sweeps, prompts run concurrently to
 measure real parallel throughput.
 
-#### 12.6.2 Manual Mode
+#### 12.7.2 Manual Mode
 
 Manual mode provides hands-on interaction with a loaded model through three
 tabs. A session must be created before using any tab.
@@ -285,6 +357,11 @@ system prompts are rendered correctly for a given template.
 
 Click **Export to Catalog Editor** (in the header) to pre-fill a catalog entry
 with the playground's current model, template, and configuration settings.
+
+#### 12.7.3 History Mode
+
+History mode displays a log of previous playground sessions and test runs,
+allowing you to review past results without re-running tests.
 
 ---
 

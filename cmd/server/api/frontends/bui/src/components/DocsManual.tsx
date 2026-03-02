@@ -4449,31 +4449,62 @@ response = client.chat.completions.create(
             <li>Architecture (amd64, arm64)</li>
             <li>Operating system</li>
           </ul>
-          <h3 id="123-downloading-models">12.3 Downloading Models</h3>
-          <p><strong>Browse the Catalog:</strong></p>
-          <ol>
-            <li>Navigate to the <strong>Catalog</strong> page</li>
-            <li>Browse available models by category:
-              <ul>
-                <li>Text-Generation</li>
-                <li>Image-Text-to-Text (Vision)</li>
-                <li>Audio-Text-to-Text</li>
-                <li>Embedding</li>
-                <li>Reranking</li>
-              </ul>
-            </li>
-            <li>Click <strong>Pull</strong> next to a model to download it</li>
-          </ol>
-          <p><strong>Monitor Progress:</strong></p>
-          <p>The BUI shows real-time download progress including:</p>
+          <h3 id="123-browsing-the-catalog">12.3 Browsing the Catalog</h3>
+          <p>Navigate to the <strong>Catalog &gt; List</strong> page to browse available models.</p>
+          <p><strong>Filter Sidebar:</strong></p>
+          <p>A resizable filter sidebar on the left lets you narrow results by:</p>
           <ul>
-            <li>Download percentage</li>
-            <li>Transfer speed</li>
-            <li>Estimated time remaining</li>
+            <li><strong>Search</strong> — Free-text search by model ID</li>
+            <li><strong>Category</strong> — Checkbox filters (Text-Generation, Image-Text-to-Text, Audio-Text-to-Text, Embedding, Reranking)</li>
+            <li><strong>Owner</strong> — Filter by model publisher</li>
+            <li><strong>Architecture</strong> — Filter by model architecture (e.g. llama, qwen2)</li>
+            <li><strong>Family</strong> — Filter by model family</li>
+            <li><strong>Size</strong> — Min/max range slider with MB/GB/TB units</li>
+            <li><strong>Parameters</strong> — Min/max range slider with M/B units</li>
+            <li><strong>Downloaded</strong> — All / Yes / No</li>
+            <li><strong>Validated</strong> — All / Yes / No</li>
+            <li><strong>Capabilities</strong> — Filter by capabilities (streaming, tooling, reasoning, images, audio, embedding, rerank)</li>
           </ul>
-          <p><strong>View Pulled Models:</strong></p>
-          <p>Navigate to the <strong>Models</strong> page to see all downloaded models and their status.</p>
-          <h3 id="124-managing-keys-and-tokens">12.4 Managing Keys and Tokens</h3>
+          <p>A <strong>Clear All Filters</strong> button resets everything.</p>
+          <p><strong>Model Details:</strong></p>
+          <p>Click a model row to view detail tabs on the right:</p>
+          <ul>
+            <li><strong>Catalog</strong> — Model ID, category, owner, family, architecture, files, and capabilities</li>
+            <li><strong>Configuration</strong> — Model config parameters (context window, batch sizes, flash attention, cache settings, GPU layers, YaRN, speculative decoding)</li>
+            <li><strong>Sampling</strong> — Default sampling parameters from the catalog entry</li>
+            <li><strong>Metadata</strong> — Model metadata and description</li>
+            <li><strong>Template</strong> — The chat template associated with the model</li>
+            <li><strong>VRAM Calculator</strong> — Estimate VRAM requirements with adjustable context window, bytes per element, and slot count</li>
+            <li><strong>Pull Output</strong> — Real-time download progress when pulling a model</li>
+          </ul>
+          <p><strong>Pulling Models:</strong></p>
+          <p>Select a model, then click <strong>Pull</strong> to download it. The pull output tab shows real-time download progress. You can optionally specify a download server URL.</p>
+          <p><strong>Catalog Editor:</strong></p>
+          <p>Navigate to <strong>Catalog &gt; Editor</strong> to create or edit catalog entries. The editor supports all catalog fields including files, projection URLs, capabilities, configuration, and sampling parameters. You can also pre-fill the editor from the Playground via <strong>Export to Catalog Editor</strong>.</p>
+          <h3 id="124-managing-models">12.4 Managing Models</h3>
+          <p>Navigate to the <strong>Models &gt; List</strong> page to see all downloaded models.</p>
+          <p><strong>Model Table:</strong></p>
+          <p>The table shows Model ID, Owner, Family, Size, and Modified date with sortable columns. A ✓/✗ indicator shows validation status. Models with extension files (e.g. projection models) appear as expandable child rows.</p>
+          <p><strong>Model Details:</strong></p>
+          <p>Click a model to view detail tabs:</p>
+          <ul>
+            <li><strong>Model Configuration</strong> — Full configuration including context window, batch sizes, GPU layers, flash attention, cache settings, and YaRN parameters</li>
+            <li><strong>Sampling Parameters</strong> — Default sampling configuration</li>
+            <li><strong>Metadata</strong> — Model metadata from the GGUF file</li>
+            <li><strong>Template</strong> — Associated chat template</li>
+            <li><strong>VRAM Calculator</strong> — VRAM estimation with adjustable parameters</li>
+          </ul>
+          <p><strong>Actions:</strong></p>
+          <ul>
+            <li><strong>Rebuild Index</strong> — Re-scan the models directory and rebuild the model index</li>
+            <li><strong>Remove</strong> — Delete a model with confirmation prompt</li>
+          </ul>
+          <p><strong>Other Model Pages:</strong></p>
+          <ul>
+            <li><strong>Models &gt; Running</strong> — View currently loaded/running models</li>
+            <li><strong>Models &gt; Pull</strong> — Pull new models by HuggingFace URL or shorthand</li>
+          </ul>
+          <h3 id="125-managing-keys-and-tokens">12.5 Managing Keys and Tokens</h3>
           <p>When authentication is enabled, use the BUI to manage security.</p>
           <p><strong>Keys Page:</strong></p>
           <ul>
@@ -4490,24 +4521,31 @@ response = client.chat.completions.create(
             <li>Copy generated tokens to clipboard</li>
           </ul>
           <p><strong>Note:</strong> You must provide an admin token in the BUI settings to access security management features.</p>
-          <h3 id="125-other-screens">12.5 Other Screens</h3>
-          <p><strong>Dashboard:</strong></p>
-          <p>Overview of server status, loaded models, and system information.</p>
+          <h3 id="126-other-screens">12.6 Other Screens</h3>
+          <p><strong>Home:</strong></p>
+          <p>The landing page shows a project banner and feature overview cards. Use the sidebar to navigate to other sections.</p>
           <p><strong>Documentation:</strong></p>
-          <p>Built-in SDK and CLI documentation accessible from the menu:</p>
+          <p>Built-in documentation accessible from the <strong>Docs</strong> menu, organized into:</p>
           <ul>
-            <li>SDK API reference</li>
-            <li>CLI command reference</li>
-            <li>Example code</li>
+            <li><strong>Manual</strong> — Full Kronk manual with chapter navigation</li>
+            <li><strong>SDK</strong> — Kronk SDK reference, Model API reference, and usage examples (Audio, Chat, Embedding, Grammar, Question, Rerank, Response, Vision)</li>
+            <li><strong>CLI</strong> — Command reference for catalog, libs, model, run, security, and server commands</li>
+            <li><strong>Web API</strong> — API reference for Chat, Messages, Responses, Embeddings, Rerank, Tokenize, and Tools endpoints</li>
           </ul>
           <p><strong>Settings:</strong></p>
           <p>Configure BUI preferences:</p>
           <ul>
             <li>API token for authenticated requests</li>
-            <li>Theme preferences</li>
           </ul>
-          <h3 id="126-model-playground">12.6 Model Playground</h3>
-          <p>The Model Playground is an interactive testing environment for evaluating models directly in the BUI. It supports two operating modes — <strong>Automated</strong> and <strong>Manual</strong> — accessible from the sidebar.</p>
+          <p><strong>Apps:</strong></p>
+          <p>The <strong>Apps</strong> section in the sidebar contains:</p>
+          <ul>
+            <li><strong>Chat</strong> — A standalone multi-turn chat interface with conversation history, model selection, and full sampling parameter controls</li>
+            <li><strong>Playground</strong> — The Model Playground (see <a href="#127-model-playground">12.7</a>)</li>
+            <li><strong>VRAM Calculator</strong> — Standalone VRAM estimation tool for planning hardware requirements</li>
+          </ul>
+          <h3 id="127-model-playground">12.7 Model Playground</h3>
+          <p>The Model Playground is an interactive testing environment for evaluating models directly in the BUI. It supports three operating modes — <strong>Automated</strong>, <strong>Manual</strong>, and <strong>History</strong> — accessible from the sidebar.</p>
           <p><strong>Steps:</strong></p>
           <ol>
             <li>Navigate to the <strong>Playground</strong> page from the menu (or go to <code>/playground</code>)</li>
@@ -4519,9 +4557,9 @@ response = client.chat.completions.create(
               </ul>
             </li>
             <li>Configure model parameters: Context Window, NBatch, NUBatch, NSeqMax, Flash Attention (auto/enabled/disabled), KV Cache Type (f16/q8_0/q4_0), and Cache Mode (None/SPC/IMC)</li>
-            <li>Select <strong>Automated Mode</strong> or <strong>Manual Mode</strong></li>
+            <li>Select <strong>Automated Mode</strong>, <strong>Manual Mode</strong>, or <strong>History</strong></li>
           </ol>
-          <h4 id="1261-automated-mode">12.6.1 Automated Mode</h4>
+          <h4 id="1271-automated-mode">12.7.1 Automated Mode</h4>
           <p>Automated mode runs structured test suites against a model and scores the results. It is designed for benchmarking model quality and finding optimal configurations without manual interaction.</p>
           <p><strong>Sweep Modes:</strong></p>
           <ul>
@@ -4559,7 +4597,7 @@ response = client.chat.completions.create(
           <p><strong>Best Configuration Criteria:</strong></p>
           <p>After a run completes, adjust the weights used to rank configurations (Chat Score, Tool Score, Total Score, Avg TPS, Avg TTFT) and click <strong>Reevaluate</strong> to re-rank results without re-running the tests.</p>
           <p><strong>Note:</strong> When NSeqMax &gt; 1 in config sweeps, prompts run concurrently to measure real parallel throughput.</p>
-          <h4 id="1262-manual-mode">12.6.2 Manual Mode</h4>
+          <h4 id="1272-manual-mode">12.7.2 Manual Mode</h4>
           <p>Manual mode provides hands-on interaction with a loaded model through three tabs. A session must be created before using any tab.</p>
           <p><strong>Steps:</strong></p>
           <ol>
@@ -4598,6 +4636,8 @@ response = client.chat.completions.create(
           <p>This is useful for debugging chat template formatting or verifying that system prompts are rendered correctly for a given template.</p>
           <p><strong>Export to Catalog:</strong></p>
           <p>Click <strong>Export to Catalog Editor</strong> (in the header) to pre-fill a catalog entry with the playground's current model, template, and configuration settings.</p>
+          <h4 id="1273-history-mode">12.7.3 History Mode</h4>
+          <p>History mode displays a log of previous playground sessions and test runs, allowing you to review past results without re-running tests.</p>
           <hr />
           <p><em>Next: &lt;a href="#chapter-13-client-integration"&gt;Chapter 13: Client Integration&lt;/a&gt;</em></p>
           <h2 id="chapter-13-client-integration">Chapter 13: Client Integration</h2>
@@ -4635,27 +4675,17 @@ response = client.chat.completions.create(
 API Key: <your-kronk-token> or 123 for anything
 Model: Qwen_Qwen3.5-35B-A3B-Q8_0/IMC`}</code></pre>
           <p><strong>Recommended Model Settings:</strong></p>
-          <p>For coding tasks, configure your model with:</p>
-          <pre className="code-block"><code className="language-yaml">{`models:
-    Qwen_Qwen3.5-35B-A3B-Q8_0:
-    &base_Qwen_Qwen3.5-35B-A3B-Q8_0
-    context-window: 131072
-    nbatch: 2048
-    nubatch: 512
-    cache-type-k: q8_0
-    cache-type-v: q8_0
-    flash-attention: enabled
-    nseq-max: 2
-    insecure-logging: true
-    sampling-parameters:
-        temperature: 0.7
-        top_p: 0.8
-        top_k: 20
-
-    Qwen_Qwen3.5-35B-A3B-Q8_0/IMC:
-    <<: *base_Qwen_Qwen3.5-35B-A3B-Q8_0
-    nseq-max: 1
-    incremental-cache: true`}</code></pre>
+          <p>For coding tasks, configure your Qwen_Qwen3.5-35B-A3B model with:</p>
+          <pre className="code-block"><code className="language-yaml">{`Qwen_Qwen3.5-35B-A3B-Q8_0/CLINE:
+  nseq-max: 1
+  incremental-cache: true
+  sampling-parameters:
+    temperature: 0.6
+    top_k: 20
+    top_p: 0.95
+    dry_multiplier: 2.0
+    presence_penalty: 1.5`}</code></pre>
+          <p>The rest of the settings for this model are in the catalog. A model config is provided for this and other models in the catalog pre-configured for CLINE.</p>
           <p>IMC is especially beneficial for Cline's iterative coding workflow.</p>
           <p><em>Note: Don't use R1 Message formats when using KMS.</em></p>
           <h3 id="134-python-openai-sdk">13.4 Python OpenAI SDK</h3>
@@ -6166,10 +6196,11 @@ batching = true`}</code></pre>
               <ul>
                 <li><a href="#121-accessing-the-bui" className={activeSection === '121-accessing-the-bui' ? 'active' : ''}>12.1 Accessing the BUI</a></li>
                 <li><a href="#122-downloading-libraries" className={activeSection === '122-downloading-libraries' ? 'active' : ''}>12.2 Downloading Libraries</a></li>
-                <li><a href="#123-downloading-models" className={activeSection === '123-downloading-models' ? 'active' : ''}>12.3 Downloading Models</a></li>
-                <li><a href="#124-managing-keys-and-tokens" className={activeSection === '124-managing-keys-and-tokens' ? 'active' : ''}>12.4 Managing Keys and Tokens</a></li>
-                <li><a href="#125-other-screens" className={activeSection === '125-other-screens' ? 'active' : ''}>12.5 Other Screens</a></li>
-                <li><a href="#126-model-playground" className={activeSection === '126-model-playground' ? 'active' : ''}>12.6 Model Playground</a></li>
+                <li><a href="#123-browsing-the-catalog" className={activeSection === '123-browsing-the-catalog' ? 'active' : ''}>12.3 Browsing the Catalog</a></li>
+                <li><a href="#124-managing-models" className={activeSection === '124-managing-models' ? 'active' : ''}>12.4 Managing Models</a></li>
+                <li><a href="#125-managing-keys-and-tokens" className={activeSection === '125-managing-keys-and-tokens' ? 'active' : ''}>12.5 Managing Keys and Tokens</a></li>
+                <li><a href="#126-other-screens" className={activeSection === '126-other-screens' ? 'active' : ''}>12.6 Other Screens</a></li>
+                <li><a href="#127-model-playground" className={activeSection === '127-model-playground' ? 'active' : ''}>12.7 Model Playground</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
