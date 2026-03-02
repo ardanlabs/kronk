@@ -474,13 +474,10 @@ func decodeEmbeddingsNormal(lctx llama.Context, embd []float32, nEmbd, nTokens i
 //	[dim0: n_tokens] [dim1: n_tokens] [dim2: n_tokens] [dim3: n_tokens]
 //
 // For an image grid of nx columns × ny rows:
-//   - dim0 (temporal): pos_0 for all tokens
-//   - dim1 (row/y):    pos_0 + y
-//   - dim2 (col/x):    pos_0 + x
-//   - dim3 (unused):   0
-//
-// CRITICAL: Position advancement after the image must be max(nx, ny), not n_tokens,
-// to avoid position overlap with subsequent text tokens.
+//   - dim0 (linear):  pos_0 + i (unique per token for KV cache placement)
+//   - dim1 (row/y):   pos_0 + y
+//   - dim2 (col/x):   pos_0 + x
+//   - dim3 (unused):  0
 func decodeEmbeddingsMRoPE(lctx llama.Context, embd []float32, nEmbd, nTokens int32, nx, ny int32, nPast *llama.Pos, seqID llama.SeqId, useNonCausal bool) error {
 	// For M-RoPE, we need 4x the position slots (4D positions)
 	nPosPerEmbd := int32(4)
@@ -506,8 +503,8 @@ func decodeEmbeddingsMRoPE(lctx llama.Context, embd []float32, nEmbd, nTokens in
 			if i >= nTokens {
 				break
 			}
-			// dim 0: constant pos_0 (temporal/base position)
-			posData[i] = pos0
+			// dim 0: linear position for unique KV cache placement
+			posData[i] = pos0 + llama.Pos(i)
 			// dim 1: y position (row)
 			posData[i+nTokens] = pos0 + llama.Pos(y)
 			// dim 2: x position (column)
@@ -550,9 +547,7 @@ func decodeEmbeddingsMRoPE(lctx llama.Context, embd []float32, nEmbd, nTokens in
 		llama.SetCausalAttn(lctx, true)
 	}
 
-	// For M-RoPE, n_pos is max(nx, ny) to avoid position overlap
-	nPos := max(ny, nx)
-	*nPast += llama.Pos(nPos)
+	*nPast += llama.Pos(nTokens)
 
 	return nil
 }

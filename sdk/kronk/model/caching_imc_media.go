@@ -233,8 +233,7 @@ func (m *Model) decodeEmbeddingsIntoCache(embd []float32, nEmbd, nTokens int32, 
 }
 
 // decodeEmbeddingsMRoPEIntoCache decodes embeddings with M-RoPE 2D positioning
-// into a KV cache sequence. Returns the number of KV positions consumed, which
-// is max(nx, ny) to avoid position overlap with subsequent tokens.
+// into a KV cache sequence. Returns the number of KV positions consumed.
 func (m *Model) decodeEmbeddingsMRoPEIntoCache(embd []float32, nEmbd, nTokens, nx, ny int32, seqID llama.SeqId, startPos int, useNonCausal bool) (int, error) {
 	batch := llama.BatchInit(nTokens, nEmbd, 1)
 
@@ -253,7 +252,7 @@ func (m *Model) decodeEmbeddingsMRoPEIntoCache(embd []float32, nEmbd, nTokens, n
 			if i >= nTokens {
 				break
 			}
-			posData[i] = pos0
+			posData[i] = pos0 + llama.Pos(i)
 			posData[i+nTokens] = pos0 + llama.Pos(y)
 			posData[i+nTokens*2] = pos0 + llama.Pos(x)
 			posData[i+nTokens*3] = 0
@@ -291,8 +290,7 @@ func (m *Model) decodeEmbeddingsMRoPEIntoCache(embd []float32, nEmbd, nTokens, n
 		return 0, decodeError(ret, err)
 	}
 
-	nPos := max(ny, nx)
-	return int(nPos), nil
+	return int(nTokens), nil
 }
 
 // decodeTextMRoPEIntoCache decodes text tokens with M-RoPE 4D positioning

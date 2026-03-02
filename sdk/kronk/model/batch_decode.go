@@ -115,13 +115,10 @@ func (e *batchEngine) decodeEmbeddingsNormal(s *slot, embd []float32, nEmbd, nTo
 //	[dim0: n_tokens] [dim1: n_tokens] [dim2: n_tokens] [dim3: n_tokens]
 //
 // For an image grid of nx columns × ny rows:
-//   - dim0 (temporal): pos_0 for all tokens
-//   - dim1 (row/y):    pos_0 + y
-//   - dim2 (col/x):    pos_0 + x
-//   - dim3 (unused):   0
-//
-// CRITICAL: Position advancement after the image must be max(nx, ny), not n_tokens,
-// to avoid position overlap with subsequent text tokens.
+//   - dim0 (linear):  pos_0 + i (unique per token for KV cache placement)
+//   - dim1 (row/y):   pos_0 + y
+//   - dim2 (col/x):   pos_0 + x
+//   - dim3 (unused):  0
 func (e *batchEngine) decodeEmbeddingsMRoPE(s *slot, embd []float32, nEmbd, nTokens int32, nx, ny int32) error {
 	// For M-RoPE, we need 4x the position slots (4D positions).
 	nPosPerEmbd := int32(4)
@@ -145,8 +142,8 @@ func (e *batchEngine) decodeEmbeddingsMRoPE(s *slot, embd []float32, nEmbd, nTok
 			if i >= nTokens {
 				break
 			}
-			// dim 0: constant pos_0 (temporal/base position)
-			posData[i] = pos0
+			// dim 0: linear position for unique KV cache placement
+			posData[i] = pos0 + llama.Pos(i)
 			// dim 1: y position (row)
 			posData[i+nTokens] = pos0 + llama.Pos(y)
 			// dim 2: x position (column)
@@ -193,9 +190,7 @@ func (e *batchEngine) decodeEmbeddingsMRoPE(s *slot, embd []float32, nEmbd, nTok
 		return decodeError(ret, err)
 	}
 
-	// For M-RoPE, n_pos is max(nx, ny) to avoid position overlap.
-	nPos := max(ny, nx)
-	s.nPast += llama.Pos(nPos)
+	s.nPast += llama.Pos(nTokens)
 
 	return nil
 }
