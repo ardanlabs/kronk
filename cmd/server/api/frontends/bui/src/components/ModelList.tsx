@@ -7,6 +7,7 @@ import KeyValueTable from './KeyValueTable';
 import MetadataSection from './MetadataSection';
 import CodeBlock from './CodeBlock';
 import ModelSelector from './ModelSelector';
+import ResizablePanel from './ResizablePanel';
 import { VRAMFormulaModal, VRAMControls, VRAMResults, calculateVRAM } from './vram';
 
 type ModelListSection = 'config' | 'sampling' | 'metadata' | 'template' | 'vram';
@@ -173,7 +174,7 @@ export default function ModelList() {
 
       <div className="playground-layout">
         {/* Left Sidebar */}
-        <div className="playground-mode-selector">
+        <ResizablePanel defaultWidth={300} minWidth={200} maxWidth={600} storageKey="modellist-sidebar-width">
           <div className="playground-model-config">
             <div className="form-group">
               <label>Model</label>
@@ -235,7 +236,7 @@ export default function ModelList() {
               </>
             )}
           </div>
-        </div>
+        </ResizablePanel>
 
         {/* Main Content */}
         <div className="playground-test" style={{ flex: 1 }}>

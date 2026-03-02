@@ -3014,6 +3014,10 @@ code[class*="language-"] {
     overflow-y: auto;
 }
 
+.playground-mode-selector-resizable .resizable-panel-content {
+    gap: 8px;
+}
+
 .playground-model-config {
     background: var(--color-white);
     border-radius: 8px;
@@ -4719,13 +4723,8 @@ button.autotest-detail-log-header:focus-visible {
 }
 
 /* ── Catalog Filter Sidebar ── */
-.catalog-filter-sidebar {
-    width: 340px;
-    flex-shrink: 0;
-    display: flex;
-    flex-direction: column;
+.catalog-filter-sidebar-panel .resizable-panel-content {
     gap: 6px;
-    overflow-y: auto;
 }
 
 .catalog-filter-section {
@@ -4964,4 +4963,44 @@ button.autotest-detail-log-header:focus-visible {
 
 .catalog-model-selector .model-selector {
     max-height: none;
+}
+
+/* ── Resizable Panel ── */
+.resizable-panel {
+    position: relative;
+    display: flex;
+}
+
+.resizable-panel-content {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow-y: auto;
+}
+
+.resizable-panel-handle {
+    width: 6px;
+    cursor: col-resize;
+    flex-shrink: 0;
+    position: relative;
+    margin-left: 4px;
+}
+
+.resizable-panel-handle::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 2px;
+    width: 2px;
+    border-radius: 1px;
+    background: var(--color-gray-300);
+    transition: background 0.15s ease;
+}
+
+.resizable-panel-handle:hover::after,
+.resizable-panel-handle:active::after {
+    background: var(--color-primary);
 }

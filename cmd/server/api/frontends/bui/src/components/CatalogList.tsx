@@ -6,6 +6,7 @@ import type { CatalogModelResponse, CatalogModelsResponse, CatalogCapabilities }
 import { ParamTooltip } from './ParamTooltips';
 import { fmtNum, fmtVal } from '../lib/format';
 import ModelSelector from './ModelSelector';
+import ResizablePanel from './ResizablePanel';
 import KeyValueTable from './KeyValueTable';
 import MetadataSection from './MetadataSection';
 import CodeBlock from './CodeBlock';
@@ -423,7 +424,7 @@ export default function CatalogList() {
 
       <div className="playground-layout">
         {/* ── Filter Sidebar ────────────────────────────────────────────── */}
-        <div className="catalog-filter-sidebar">
+        <ResizablePanel defaultWidth={340} minWidth={240} maxWidth={600} storageKey="catalog-sidebar-width" className="catalog-filter-sidebar-panel">
           {/* Search */}
           <div className="catalog-filter-section">
             <input
@@ -738,7 +739,7 @@ export default function CatalogList() {
               </button>
             )}
           </div>
-        </div>
+        </ResizablePanel>
 
         {/* ── Main Content ──────────────────────────────────────────────── */}
         <div className="playground-test" style={{ flex: 1 }}>
