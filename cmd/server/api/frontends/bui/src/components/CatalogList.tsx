@@ -5,7 +5,6 @@ import { useDownload } from '../contexts/DownloadContext';
 import type { CatalogModelResponse, CatalogModelsResponse, CatalogCapabilities } from '../types';
 import { ParamTooltip } from './ParamTooltips';
 import { fmtNum, fmtVal } from '../lib/format';
-import ModelSelector from './ModelSelector';
 import ResizablePanel from './ResizablePanel';
 import KeyValueTable from './KeyValueTable';
 import MetadataSection from './MetadataSection';
@@ -156,6 +155,20 @@ export default function CatalogList() {
 
   const [activeSection, setActiveSection] = useState<DetailSection>('catalog');
 
+  // Sort state for catalog table
+  type SortField = 'id' | 'owned_by' | 'category' | 'architecture' | 'total_size_bytes' | 'validated';
+  const [sortField, setSortField] = useState<SortField>('id');
+  const [sortAsc, setSortAsc] = useState(true);
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortAsc(!sortAsc);
+    } else {
+      setSortField(field);
+      setSortAsc(true);
+    }
+  };
+
   // VRAM calculator state
   const [vramCtx, setVramCtx] = useState(8192);
   const [vramBytes, setVramBytes] = useState(1);
@@ -296,6 +309,23 @@ export default function CatalogList() {
     });
   }, [data, searchText, selectedCategories, selectedOwners, selectedArchitectures, selectedFamilies, sizeMinBytes, sizeMaxBytes, paramMin, paramMax, downloadedFilter, validatedFilter, selectedCapabilities]);
 
+  const sortedData = useMemo(() => {
+    const sorted = [...filteredData];
+    sorted.sort((a, b) => {
+      let cmp = 0;
+      switch (sortField) {
+        case 'id': cmp = a.id.localeCompare(b.id); break;
+        case 'owned_by': cmp = (a.owned_by || '').localeCompare(b.owned_by || ''); break;
+        case 'category': cmp = (a.category || '').localeCompare(b.category || ''); break;
+        case 'architecture': cmp = (a.architecture || '').localeCompare(b.architecture || ''); break;
+        case 'total_size_bytes': cmp = (a.total_size_bytes || 0) - (b.total_size_bytes || 0); break;
+        case 'validated': cmp = (a.validated ? 1 : 0) - (b.validated ? 1 : 0); break;
+      }
+      return sortAsc ? cmp : -cmp;
+    });
+    return sorted;
+  }, [filteredData, sortField, sortAsc]);
+
   const hasActiveFilters = searchText !== '' ||
     selectedCategories.size > 0 || selectedOwners.size > 0 ||
     selectedArchitectures.size > 0 || selectedFamilies.size > 0 ||
@@ -303,6 +333,16 @@ export default function CatalogList() {
     paramMin > 0 || paramMax < PARAM_MAX ||
     downloadedFilter !== 'all' || validatedFilter !== 'all' ||
     selectedCapabilities.size > 0;
+
+  // Clear detail panel when filters change and selected model is no longer visible
+  useEffect(() => {
+    if (selectedId && !filteredData.some(m => m.id === selectedId)) {
+      setSelectedId(null);
+      setModelInfo(null);
+      setInfoError(null);
+      setActiveSection('catalog');
+    }
+  }, [filteredData, selectedId]);
 
   const clearAllFilters = () => {
     setSearchText('');
@@ -351,6 +391,10 @@ export default function CatalogList() {
   const loadCatalog = async () => {
     setLoading(true);
     setError(null);
+    setSelectedId(null);
+    setModelInfo(null);
+    setInfoError(null);
+    setActiveSection('catalog');
     try {
       const response = await api.listCatalog();
       setData(response);
@@ -742,20 +786,50 @@ export default function CatalogList() {
         </ResizablePanel>
 
         {/* ── Main Content ──────────────────────────────────────────────── */}
-        <div className="playground-test" style={{ flex: 1 }}>
-          <div className="playground-tab-content" style={{ overflow: 'auto' }}>
+        <div className="catalog-main-content">
             {loading && <div className="loading">Loading catalog</div>}
 
             {error && <div className="alert alert-error">{error}</div>}
 
             {!loading && !error && data && (
-              <div className="catalog-model-selector">
-                <ModelSelector
-                  models={filteredData}
-                  selectedModel={selectedId}
-                  onSelect={handleRowClick}
-                  disabled={loading}
-                />
+              <div className="catalog-table-wrap">
+                <table className="catalog-table">
+                  <thead>
+                    <tr>
+                      {([
+                        ['id', 'Model ID'],
+                        ['owned_by', 'Owner'],
+                        ['category', 'Category'],
+                        ['architecture', 'Arch'],
+                        ['total_size_bytes', 'Size'],
+                        ['validated', 'Val'],
+                      ] as const).map(([field, label]) => (
+                        <th key={field} onClick={() => handleSort(field)} className="catalog-table-sortable">
+                          {label}
+                          <span className="catalog-table-sort-indicator">
+                            {sortField === field ? (sortAsc ? ' ▲' : ' ▼') : ''}
+                          </span>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedData.map((model) => (
+                      <tr
+                        key={model.id}
+                        className={selectedId === model.id ? 'active' : ''}
+                        onClick={() => handleRowClick(model.id)}
+                      >
+                        <td><span className="catalog-table-cell-ellipsis">{model.id}</span></td>
+                        <td>{model.owned_by || '-'}</td>
+                        <td>{model.category || '-'}</td>
+                        <td>{model.architecture || '-'}</td>
+                        <td>{model.total_size || '-'}</td>
+                        <td>{model.validated ? '✓' : '✗'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
                 {filteredData.length === 0 && (
                   <div className="empty-state">
                     <h3>{hasActiveFilters ? 'No matching models' : 'No catalog entries'}</h3>
@@ -1048,7 +1122,6 @@ export default function CatalogList() {
                 )}
               </div>
             )}
-          </div>
         </div>
       </div>
     </div>

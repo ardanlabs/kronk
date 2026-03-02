@@ -2643,6 +2643,10 @@ code[class*="language-"] {
     margin: 0;
 }
 
+[data-theme="dark"] .meta-section-title {
+    color: var(--color-light-blue);
+}
+
 /* --- Controls row (VRAM dropdowns + reusable) --- */
 .controls-row {
     display: flex;
@@ -4961,10 +4965,6 @@ button.autotest-detail-log-header:focus-visible {
     margin-top: 8px;
 }
 
-.catalog-model-selector .model-selector {
-    max-height: none;
-}
-
 /* ── Resizable Panel ── */
 .resizable-panel {
     position: relative;
@@ -5003,4 +5003,96 @@ button.autotest-detail-log-header:focus-visible {
 .resizable-panel-handle:hover::after,
 .resizable-panel-handle:active::after {
     background: var(--color-primary);
+}
+
+/* ── Catalog Main Content ── */
+.catalog-main-content {
+    flex: 1;
+    min-width: 0;
+    overflow-y: auto;
+    padding: 20px;
+}
+
+/* ── Catalog Table ── */
+.catalog-table-wrap {
+    max-height: 40vh;
+    overflow: auto;
+    border: 1px solid var(--color-gray-300);
+    border-radius: 6px;
+}
+
+.catalog-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.catalog-table th {
+    position: sticky;
+    top: 0;
+    background: var(--color-gray-100);
+    text-align: left;
+    padding: 8px 10px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--color-gray-600);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    border-bottom: 2px solid var(--color-gray-300);
+    white-space: nowrap;
+}
+
+.catalog-table-sortable {
+    cursor: pointer;
+    user-select: none;
+}
+
+.catalog-table-sortable:hover {
+    color: var(--color-gray-800);
+}
+
+.catalog-table-sort-indicator {
+    font-size: 10px;
+}
+
+.catalog-table td {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--color-gray-200);
+    color: var(--color-gray-800);
+    white-space: nowrap;
+}
+
+.catalog-table tbody tr {
+    cursor: pointer;
+    transition: background 0.1s;
+}
+
+.catalog-table tbody tr:not(.active):hover {
+    background: var(--color-gray-100);
+}
+
+.catalog-table tbody tr.active,
+.catalog-table tbody tr.active:hover {
+    background: #1565c0 !important;
+    font-weight: 600;
+}
+
+.catalog-table tbody tr.active td,
+.catalog-table tbody tr.active:hover td {
+    color: #ffffff !important;
+    background: transparent !important;
+}
+
+[data-theme="dark"] .catalog-table tbody tr.active,
+[data-theme="dark"] .catalog-table tbody tr.active:hover {
+    background: #1e5bb8 !important;
+}
+
+.catalog-table-cell-ellipsis {
+    display: inline-block;
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: middle;
 }

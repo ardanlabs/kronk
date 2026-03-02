@@ -1,13 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { api } from '../services/api';
 import { useModelList } from '../contexts/ModelListContext';
-import type { ModelInfoResponse } from '../types';
+import type { ModelInfoResponse, ListModelDetail } from '../types';
 import { formatBytes, fmtNum, fmtVal } from '../lib/format';
 import KeyValueTable from './KeyValueTable';
 import MetadataSection from './MetadataSection';
 import CodeBlock from './CodeBlock';
-import ModelSelector from './ModelSelector';
-import ResizablePanel from './ResizablePanel';
 import { VRAMFormulaModal, VRAMControls, VRAMResults, calculateVRAM } from './vram';
 
 type ModelListSection = 'config' | 'sampling' | 'metadata' | 'template' | 'vram';
@@ -19,6 +17,23 @@ const SECTION_LABELS: Record<ModelListSection, string> = {
   template: 'Template',
   vram: 'VRAM Calculator',
 };
+
+type SortField = 'id' | 'owner' | 'family' | 'size' | 'modified';
+
+function getSortValue(model: ListModelDetail, field: SortField): string | number {
+  switch (field) {
+    case 'id': return model.id.toLowerCase();
+    case 'owner': return (model.owned_by || '').toLowerCase();
+    case 'family': return (model.model_family || '').toLowerCase();
+    case 'size': return model.size;
+    case 'modified': return new Date(model.modified).getTime();
+    default: return '';
+  }
+}
+
+function formatDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleString();
+}
 
 export default function ModelList() {
   const { models, loading, error, loadModels, invalidate } = useModelList();
@@ -36,6 +51,10 @@ export default function ModelList() {
   const [removing, setRemoving] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
   const [removeSuccess, setRemoveSuccess] = useState<string | null>(null);
+
+  // Sort state
+  const [sortField, setSortField] = useState<SortField>('id');
+  const [sortAsc, setSortAsc] = useState(true);
 
   // VRAM calculator local state
   const [vramCtx, setVramCtx] = useState(8192);
@@ -89,8 +108,23 @@ export default function ModelList() {
     }
   }, [vramInputRef]);
 
-  const handleModelSelect = (id: string) => {
-    setSelectedModelId(id || null);
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortAsc(!sortAsc);
+    } else {
+      setSortField(field);
+      setSortAsc(true);
+    }
+  };
+
+  const handleRowClick = (id: string) => {
+    if (selectedModelId === id) {
+      setSelectedModelId(null);
+      setModelInfo(null);
+      setConfirmingRemove(false);
+      return;
+    }
+    setSelectedModelId(id);
     setActiveSection('config');
     setConfirmingRemove(false);
     setRemoveError(null);
@@ -154,16 +188,30 @@ export default function ModelList() {
     ? calculateVRAM({ ...vramInput, context_window: vramCtx, bytes_per_element: vramBytes, slots: vramSlots })
     : null;
 
-  // Look up validated flag from list data
-  const selectedListModel = models?.data?.find((m) => m.id === selectedModelId);
+  // Sort models
+  const allModels = models?.data ?? [];
+  const mainModels = allModels.filter((m) => !m.id.includes('/'));
+  const extensionModels = allModels.filter((m) => m.id.includes('/'));
 
-  const sections = Object.keys(SECTION_LABELS) as ModelListSection[];
+  const sortedModels = [...mainModels].sort((a, b) => {
+    const va = getSortValue(a, sortField);
+    const vb = getSortValue(b, sortField);
+    const dir = sortAsc ? 1 : -1;
+    let result: number;
+    if (typeof va === 'number' && typeof vb === 'number') {
+      result = (va - vb) * dir;
+    } else {
+      result = String(va).localeCompare(String(vb)) * dir;
+    }
+    if (result !== 0 || sortField === 'size') return result;
+    return (a.size - b.size);
+  });
 
   return (
     <div>
       <div className="page-header">
         <h2>Models</h2>
-        <p>Select a model to view its configuration and details.</p>
+        <p>List of all models available in the system. Click a model to view details.</p>
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
@@ -172,94 +220,153 @@ export default function ModelList() {
       {rebuildError && <div className="alert alert-error">{rebuildError}</div>}
       {rebuildSuccess && <div className="alert alert-success">Index rebuilt successfully</div>}
 
-      <div className="playground-layout">
-        {/* Left Sidebar */}
-        <ResizablePanel defaultWidth={300} minWidth={200} maxWidth={600} storageKey="modellist-sidebar-width">
-          <div className="playground-model-config">
-            <div className="form-group">
-              <label>Model</label>
-              <ModelSelector
-                models={models?.data}
-                selectedModel={selectedModelId}
-                onSelect={handleModelSelect}
-                disabled={loading}
-              />
-            </div>
-          </div>
+      <div className="catalog-main-content">
+        {loading && <div className="loading">Loading models</div>}
 
-          {sections.map((section) => (
-            <button
-              key={section}
-              className={`playground-mode-btn ${activeSection === section ? 'active' : ''}`}
-              onClick={() => setActiveSection(section)}
-              disabled={!selectedModelId}
-            >
-              {SECTION_LABELS[section]}
-            </button>
-          ))}
-
-          <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <button
-              className="btn btn-secondary"
-              onClick={() => {
-                invalidate();
-                loadModels();
-              }}
-              disabled={loading}
-            >
-              Refresh
-            </button>
-            <button
-              className="btn btn-secondary"
-              onClick={handleRebuildIndex}
-              disabled={rebuildingIndex || loading}
-            >
-              {rebuildingIndex ? 'Rebuilding...' : 'Rebuild Index'}
-            </button>
-            {selectedModelId && !confirmingRemove && (
-              <button
-                className="btn btn-danger"
-                onClick={handleRemoveClick}
-                disabled={removing}
-              >
-                Remove Model
-              </button>
-            )}
-            {selectedModelId && confirmingRemove && (
-              <>
-                <button className="btn btn-danger" onClick={handleConfirmRemove} disabled={removing}>
-                  {removing ? 'Removing...' : 'Yes, Remove'}
-                </button>
-                <button className="btn btn-secondary" onClick={handleCancelRemove} disabled={removing}>
-                  Cancel
-                </button>
-              </>
-            )}
-          </div>
-        </ResizablePanel>
-
-        {/* Main Content */}
-        <div className="playground-test" style={{ flex: 1 }}>
-          <div className="playground-tab-content" style={{ overflow: 'auto'}}>
-            {loading && <div className="loading">Loading models</div>}
-
-            {!selectedModelId && !loading && (
+        {!loading && !error && models && (
+          <div className="catalog-table-wrap">
+            {allModels.length > 0 ? (
+              <table className="catalog-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: '40px', textAlign: 'center' }} title="Validated">✓</th>
+                    {([
+                      ['id', 'Model ID'],
+                      ['owner', 'Owner'],
+                      ['family', 'Family'],
+                      ['size', 'Size'],
+                      ['modified', 'Modified'],
+                    ] as const).map(([field, label]) => (
+                      <th key={field} onClick={() => handleSort(field)} className="catalog-table-sortable">
+                        {label}
+                        <span className="catalog-table-sort-indicator">
+                          {sortField === field ? (sortAsc ? ' ▲' : ' ▼') : ''}
+                        </span>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedModels.map((model) => {
+                    const extensions = extensionModels.filter((ext) => ext.id.startsWith(model.id + '/'));
+                    const isParentSelected = selectedModelId === model.id;
+                    const isExtensionSelected = selectedModelId?.startsWith(model.id + '/');
+                    const showExtensions = isParentSelected || isExtensionSelected;
+                    return (
+                      <>{/* keyed fragment not needed; keys on tr */}
+                        <tr
+                          key={model.id}
+                          className={selectedModelId === model.id ? 'active' : ''}
+                          onClick={() => handleRowClick(model.id)}
+                        >
+                          <td style={{ textAlign: 'center', color: model.validated ? 'inherit' : 'var(--color-error)' }}>{model.validated ? '✓' : '✗'}</td>
+                          <td><span className="catalog-table-cell-ellipsis">{model.id}</span></td>
+                          <td>{model.owned_by || '-'}</td>
+                          <td>{model.model_family || '-'}</td>
+                          <td>{formatBytes(model.size)}</td>
+                          <td>{formatDate(model.modified)}</td>
+                        </tr>
+                        {showExtensions && extensions.map((ext) => (
+                          <tr
+                            key={ext.id}
+                            className={selectedModelId === ext.id ? 'active' : ''}
+                            onClick={() => handleRowClick(ext.id)}
+                          >
+                            <td></td>
+                            <td style={{ paddingLeft: '24px' }}><span className="catalog-table-cell-ellipsis">↳ {ext.id}</span></td>
+                            <td></td>
+                            <td>Extension Model</td>
+                            <td></td>
+                            <td></td>
+                          </tr>
+                        ))}
+                      </>
+                    );
+                  })}
+                </tbody>
+              </table>
+            ) : (
               <div className="empty-state">
-                <h3>Select a model</h3>
-                <p>Choose a model from the dropdown to view its details.</p>
+                <h3>No models found</h3>
+                <p>Pull a model to get started</p>
               </div>
             )}
+          </div>
+        )}
 
-            {infoLoading && (
-              <div className="loading">Loading model details</div>
-            )}
+        <div style={{ marginTop: '16px', display: 'flex', gap: '8px' }}>
+          <button
+            className="btn btn-secondary"
+            onClick={() => {
+              invalidate();
+              loadModels();
+              setSelectedModelId(null);
+              setModelInfo(null);
+              setConfirmingRemove(false);
+              setRemoveError(null);
+              setRemoveSuccess(null);
+              setInfoError(null);
+              setRebuildError(null);
+              setRebuildSuccess(false);
+            }}
+            disabled={loading}
+          >
+            Refresh
+          </button>
+          <button
+            className="btn btn-secondary"
+            onClick={handleRebuildIndex}
+            disabled={rebuildingIndex || loading}
+          >
+            {rebuildingIndex ? 'Rebuilding...' : 'Rebuild Index'}
+          </button>
+          {selectedModelId && !confirmingRemove && (
+            <button
+              className="btn btn-danger"
+              onClick={handleRemoveClick}
+              disabled={removing}
+            >
+              Remove Model
+            </button>
+          )}
+          {selectedModelId && confirmingRemove && (
+            <>
+              <button className="btn btn-danger" onClick={handleConfirmRemove} disabled={removing}>
+                {removing ? 'Removing...' : 'Yes, Remove'}
+              </button>
+              <button className="btn btn-secondary" onClick={handleCancelRemove} disabled={removing}>
+                Cancel
+              </button>
+            </>
+          )}
+        </div>
 
-            {infoError && <div className="alert alert-error">{infoError}</div>}
+        {infoError && <div className="alert alert-error" style={{ marginTop: '16px' }}>{infoError}</div>}
+
+        {infoLoading && (
+          <div style={{ marginTop: '16px' }}>
+            <div className="loading">Loading model details</div>
+          </div>
+        )}
+
+        {selectedModelId && modelInfo && !infoLoading && (
+          <div style={{ marginTop: '16px', borderTop: '1px solid var(--color-gray-200)', paddingTop: '16px' }}>
+            <div className="tabs">
+              {(Object.keys(SECTION_LABELS) as ModelListSection[]).map(section => (
+                <button
+                  key={section}
+                  className={`tab ${activeSection === section ? 'active' : ''}`}
+                  onClick={() => setActiveSection(section)}
+                >
+                  {SECTION_LABELS[section]}
+                </button>
+              ))}
+            </div>
 
             {/* Model Configuration Section */}
-            {modelInfo && !infoLoading && activeSection === 'config' && (
+            {activeSection === 'config' && (
               <div>
-                <h3 style={{ marginBottom: '16px' }}>{selectedModelId ?? modelInfo.id}</h3>
+                <h3 style={{ marginBottom: '16px' }}>{selectedModelId}</h3>
 
                 {modelInfo.desc && (
                   <div style={{ marginBottom: '16px' }}>
@@ -273,7 +380,7 @@ export default function ModelList() {
                   { key: 'created', label: 'Created', value: new Date(modelInfo.created).toLocaleString() },
                   { key: 'projection', label: 'Has Projection', value: <span className={`badge ${modelInfo.has_projection ? 'badge-yes' : 'badge-no'}`}>{modelInfo.has_projection ? 'Yes' : 'No'}</span> },
                   { key: 'gpt', label: 'Is GPT', value: <span className={`badge ${modelInfo.is_gpt ? 'badge-yes' : 'badge-no'}`}>{modelInfo.is_gpt ? 'Yes' : 'No'}</span> },
-                  ...(selectedListModel ? [{ key: 'validated' as const, label: 'Validated', value: <span style={{ color: selectedListModel.validated ? 'inherit' : 'var(--color-error)' }}>{selectedListModel.validated ? '✓' : '✗'}</span> }] : []),
+                  { key: 'validated', label: 'Validated', value: (() => { const m = allModels.find((m) => m.id === selectedModelId); return m ? <span style={{ color: m.validated ? 'inherit' : 'var(--color-error)' }}>{m.validated ? '✓' : '✗'}</span> : '-'; })() },
                 ]} />
 
                 {modelInfo.model_config && (
@@ -312,7 +419,7 @@ export default function ModelList() {
             )}
 
             {/* Sampling Parameters Section */}
-            {modelInfo && !infoLoading && activeSection === 'sampling' && (
+            {activeSection === 'sampling' && (
               <div>
                 <h3 style={{ marginBottom: '16px' }}>Sampling Parameters</h3>
                 {modelInfo.model_config?.['sampling-parameters'] ? (() => {
@@ -349,7 +456,7 @@ export default function ModelList() {
             )}
 
             {/* Metadata Section */}
-            {modelInfo && !infoLoading && activeSection === 'metadata' && (
+            {activeSection === 'metadata' && (
               <div>
                 <h3 style={{ marginBottom: '16px' }}>Metadata</h3>
                 {modelInfo.metadata && Object.keys(modelInfo.metadata).filter(k => k !== 'tokenizer.chat_template').length > 0 ? (
@@ -366,7 +473,7 @@ export default function ModelList() {
             )}
 
             {/* Template Section */}
-            {modelInfo && !infoLoading && activeSection === 'template' && (
+            {activeSection === 'template' && (
               <div>
                 <h3 style={{ marginBottom: '16px' }}>Chat Template</h3>
                 {modelInfo.metadata?.['tokenizer.chat_template'] ? (
@@ -383,7 +490,7 @@ export default function ModelList() {
             )}
 
             {/* VRAM Calculator Section */}
-            {modelInfo && !infoLoading && activeSection === 'vram' && (
+            {activeSection === 'vram' && (
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                   <h3>VRAM Calculator</h3>
@@ -432,7 +539,7 @@ export default function ModelList() {
               </div>
             )}
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

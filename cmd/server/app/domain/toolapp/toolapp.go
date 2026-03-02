@@ -347,10 +347,7 @@ func (a *app) showModel(ctx context.Context, r *http.Request) web.Encoder {
 
 	rmc := a.catalog.ResolvedModelConfig(modelID)
 
-	vram, err := a.catalog.CalculateVRAM(modelID, rmc)
-	if err != nil {
-		return errs.New(errs.Internal, err)
-	}
+	vram, _ := a.catalog.CalculateVRAM(modelID, rmc)
 
 	return toModelInfo(fi, mi, rmc, vram)
 }

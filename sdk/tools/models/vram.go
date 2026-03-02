@@ -94,14 +94,9 @@ func (m *Models) CalculateVRAM(modelID string, cfg VRAMConfig) (VRAM, error) {
 		return VRAM{}, fmt.Errorf("calculate-vram: failed to parse head_count_kv: %w", err)
 	}
 
-	keyLength, err := parseMetadataInt64(info.Metadata, arch+".attention.key_length")
+	keyLength, valueLength, err := resolveKVLengths(info.Metadata, arch)
 	if err != nil {
-		return VRAM{}, fmt.Errorf("calculate-vram: failed to parse key_length: %w", err)
-	}
-
-	valueLength, err := parseMetadataInt64(info.Metadata, arch+".attention.value_length")
-	if err != nil {
-		return VRAM{}, fmt.Errorf("calculate-vram: failed to parse value_length: %w", err)
+		return VRAM{}, fmt.Errorf("calculate-vram: %w", err)
 	}
 
 	input := VRAMInput{
@@ -230,14 +225,9 @@ func buildVRAMFromMetadata(metadata map[string]string, modelSizeBytes int64, cfg
 		return VRAM{}, fmt.Errorf("calculate-vram-hg: failed to parse head_count_kv: %w", err)
 	}
 
-	keyLength, err := parseMetadataInt64(metadata, arch+".attention.key_length")
+	keyLength, valueLength, err := resolveKVLengths(metadata, arch)
 	if err != nil {
-		return VRAM{}, fmt.Errorf("calculate-vram-hg: failed to parse key_length: %w", err)
-	}
-
-	valueLength, err := parseMetadataInt64(metadata, arch+".attention.value_length")
-	if err != nil {
-		return VRAM{}, fmt.Errorf("calculate-vram-hg: failed to parse value_length: %w", err)
+		return VRAM{}, fmt.Errorf("calculate-vram-hg: %w", err)
 	}
 
 	input := VRAMInput{
@@ -393,6 +383,41 @@ func isVisionEncoder(arch string) bool {
 		return true
 	}
 	return false
+}
+
+// resolveKVLengths returns key_length and value_length for VRAM calculation.
+// It first checks for explicit metadata keys. When those are missing (e.g. LFM2
+// hybrid models), it falls back to embedding_length / head_count which is the
+// same default llama.cpp uses internally.
+func resolveKVLengths(metadata map[string]string, arch string) (keyLen int64, valLen int64, err error) {
+	keyLen, keyErr := parseMetadataInt64(metadata, arch+".attention.key_length")
+	valLen, valErr := parseMetadataInt64(metadata, arch+".attention.value_length")
+
+	if keyErr == nil && valErr == nil {
+		return keyLen, valLen, nil
+	}
+
+	// Fallback: embedding_length / head_count.
+	embLen, err := parseMetadataInt64(metadata, arch+".embedding_length")
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to derive key/value lengths: key_length and embedding_length both missing")
+	}
+
+	headCount, err := parseMetadataInt64(metadata, arch+".attention.head_count")
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to derive key/value lengths: key_length and head_count both missing")
+	}
+
+	derived := embLen / headCount
+
+	if keyErr != nil {
+		keyLen = derived
+	}
+	if valErr != nil {
+		valLen = derived
+	}
+
+	return keyLen, valLen, nil
 }
 
 func parseMetadataInt64(metadata map[string]string, key string) (int64, error) {
