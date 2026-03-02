@@ -2,7 +2,8 @@
 // downloaded model to determine its architecture type (Dense, MoE, or
 // Hybrid) using detectModelType, and compares it against what the catalog
 // says. Use -update to write corrected architecture values back to catalog
-// files.
+// files. When -catalog-path is provided, both the kronk catalog and the
+// repo catalog are checked independently.
 package main
 
 import (
@@ -31,7 +32,7 @@ func run() error {
 	var update bool
 	var modelID string
 
-	flag.StringVar(&catalogRepoPath, "catalog-path", "", "path to the catalog repo catalogs directory (for updates)")
+	flag.StringVar(&catalogRepoPath, "catalog-path", "", "path to the catalog repo catalogs directory")
 	flag.BoolVar(&update, "update", false, "update catalog files with corrected architecture values")
 	flag.StringVar(&modelID, "model", "", "check a single model by ID instead of all models")
 	flag.Parse()
@@ -54,38 +55,158 @@ func run() error {
 		return fmt.Errorf("creating models: %w", err)
 	}
 
-	var allModels []catalog.ModelDetails
+	// Cache GGUF detection results so models are loaded only once across
+	// both catalog locations.
+	cache := make(map[string]detected)
 
-	switch modelID {
-	case "":
-		allModels, err = cat.ModelList("")
-		if err != nil {
-			return fmt.Errorf("listing catalog models: %w", err)
-		}
+	// -------------------------------------------------------------------------
+	// Report 1: kronk catalog (~/.kronk/catalogs/).
 
-	default:
-		md, err := cat.Details(modelID)
-		if err != nil {
-			return fmt.Errorf("model %q not found in catalog: %w", modelID, err)
-		}
-		allModels = []catalog.ModelDetails{md}
+	kronkResults, kronkMismatches, err := checkDir("KRONK CATALOG", cat.CatalogPath(), mdls, modelID, cache)
+	if err != nil {
+		return err
 	}
 
-	type result struct {
-		modelID      string
-		catalogArch  string
-		ggufArch     string
-		detectedType string
-		match        bool
-		downloaded   bool
+	// -------------------------------------------------------------------------
+	// Report 2: repo catalog (-catalog-path).
+
+	var repoResults []result
+	var repoMismatches int
+
+	if catalogRepoPath != "" {
+		repoResults, repoMismatches, err = checkDir("REPO CATALOG", catalogRepoPath, mdls, modelID, cache)
+		if err != nil {
+			return err
+		}
+	}
+
+	// -------------------------------------------------------------------------
+	// Update catalog files if requested.
+
+	totalMismatches := kronkMismatches + repoMismatches
+	if !update || totalMismatches == 0 {
+		return nil
+	}
+
+	fmt.Println()
+	fmt.Println("Updating catalog files...")
+
+	if kronkMismatches > 0 {
+		if err := updateDir("KRONK CATALOG", cat.CatalogPath(), kronkResults); err != nil {
+			return err
+		}
+	}
+
+	if repoMismatches > 0 {
+		if err := updateDir("REPO CATALOG", catalogRepoPath, repoResults); err != nil {
+			return err
+		}
+	}
+
+	fmt.Println("Done.")
+
+	return nil
+}
+
+// =============================================================================
+
+// detected holds cached GGUF detection results for a model.
+type detected struct {
+	modelType  string
+	ggufArch   string
+	downloaded bool
+}
+
+// result holds the comparison between a catalog entry and the detected
+// architecture for a single model.
+type result struct {
+	modelID      string
+	catalogArch  string
+	ggufArch     string
+	detectedType string
+	match        bool
+	downloaded   bool
+}
+
+// checkDir reads all catalog YAML files from dirPath, detects the architecture
+// of each downloaded model, and prints a comparison report.
+func checkDir(label string, dirPath string, mdls *models.Models, modelFilter string, cache map[string]detected) ([]result, int, error) {
+	files, err := os.ReadDir(dirPath)
+	if err != nil {
+		return nil, 0, fmt.Errorf("reading catalog directory %s: %w", dirPath, err)
+	}
+
+	var allModels []catalog.ModelDetails
+
+	for _, f := range files {
+		if f.IsDir() || filepath.Ext(f.Name()) != ".yaml" {
+			continue
+		}
+
+		data, err := os.ReadFile(filepath.Join(dirPath, f.Name()))
+		if err != nil {
+			return nil, 0, fmt.Errorf("reading catalog file %s: %w", f.Name(), err)
+		}
+
+		var cm catalog.CatalogModels
+		if err := yaml.Unmarshal(data, &cm); err != nil {
+			return nil, 0, fmt.Errorf("unmarshaling catalog file %s: %w", f.Name(), err)
+		}
+
+		allModels = append(allModels, cm.Models...)
+	}
+
+	if modelFilter != "" {
+		var filtered []catalog.ModelDetails
+		for _, m := range allModels {
+			if m.ID == modelFilter {
+				filtered = append(filtered, m)
+			}
+		}
+		allModels = filtered
 	}
 
 	var results []result
 	var mismatches int
 
 	for _, m := range allModels {
-		mp, err := mdls.FullPath(m.ID)
-		if err != nil {
+		d, cached := cache[m.ID]
+
+		if !cached {
+			mp, pathErr := mdls.FullPath(m.ID)
+			if pathErr != nil {
+				cache[m.ID] = detected{downloaded: false}
+				results = append(results, result{
+					modelID:     m.ID,
+					catalogArch: m.Architecture,
+					downloaded:  false,
+				})
+				continue
+			}
+
+			fmt.Printf("Loading %s ...\n", m.ID)
+
+			mt, ggufArch, detectErr := model.DetectModelTypeFromFiles(mp.ModelFiles)
+			if detectErr != nil {
+				fmt.Printf("  ERROR: %v\n", detectErr)
+				cache[m.ID] = detected{downloaded: false}
+				results = append(results, result{
+					modelID:     m.ID,
+					catalogArch: m.Architecture,
+					downloaded:  false,
+				})
+				continue
+			}
+
+			d = detected{
+				modelType:  modelTypeToArch(mt),
+				ggufArch:   ggufArch,
+				downloaded: true,
+			}
+			cache[m.ID] = d
+		}
+
+		if !d.downloaded {
 			results = append(results, result{
 				modelID:     m.ID,
 				catalogArch: m.Architecture,
@@ -94,22 +215,7 @@ func run() error {
 			continue
 		}
 
-		fmt.Printf("Loading %s ...\n", m.ID)
-
-		mt, ggufArch, err := model.DetectModelTypeFromFiles(mp.ModelFiles)
-		if err != nil {
-			fmt.Printf("  ERROR: %v\n", err)
-			results = append(results, result{
-				modelID:     m.ID,
-				catalogArch: m.Architecture,
-				downloaded:  false,
-			})
-			continue
-		}
-
-		detectedType := modelTypeToArch(mt)
-
-		match := strings.EqualFold(m.Architecture, detectedType)
+		match := strings.EqualFold(m.Architecture, d.modelType)
 		if !match {
 			mismatches++
 		}
@@ -117,16 +223,17 @@ func run() error {
 		results = append(results, result{
 			modelID:      m.ID,
 			catalogArch:  m.Architecture,
-			ggufArch:     ggufArch,
-			detectedType: detectedType,
+			ggufArch:     d.ggufArch,
+			detectedType: d.modelType,
 			match:        match,
 			downloaded:   true,
 		})
 	}
 
-	// -------------------------------------------------------------------------
 	// Print results.
 
+	fmt.Println()
+	fmt.Printf("=== %s (%s) ===\n", label, dirPath)
 	fmt.Println()
 	fmt.Printf("%-50s %-12s %-15s %-12s %s\n", "MODEL", "CATALOG", "GGUF ARCH", "DETECTED", "STATUS")
 	fmt.Println(strings.Repeat("-", 100))
@@ -148,15 +255,13 @@ func run() error {
 	fmt.Println()
 	fmt.Printf("Total: %d models, %d mismatches\n", len(results), mismatches)
 
-	// -------------------------------------------------------------------------
-	// Update catalog files if requested.
+	return results, mismatches, nil
+}
 
-	if !update || mismatches == 0 {
-		return nil
-	}
-
-	fmt.Println()
-	fmt.Println("Updating catalog files...")
+// updateDir writes corrected architecture and gguf_arch values back to catalog
+// YAML files in the given directory.
+func updateDir(label string, dirPath string, results []result) error {
+	fmt.Printf("\n  Updating %s (%s)...\n", label, dirPath)
 
 	type correction struct {
 		arch     string
@@ -176,7 +281,7 @@ func run() error {
 		corrections[r.modelID] = c
 	}
 
-	files, err := os.ReadDir(catalogRepoPath)
+	files, err := os.ReadDir(dirPath)
 	if err != nil {
 		return fmt.Errorf("reading catalog directory: %w", err)
 	}
@@ -186,7 +291,7 @@ func run() error {
 			continue
 		}
 
-		filePath := filepath.Join(catalogRepoPath, f.Name())
+		filePath := filepath.Join(dirPath, f.Name())
 
 		data, err := os.ReadFile(filePath)
 		if err != nil {
@@ -233,8 +338,6 @@ func run() error {
 			return fmt.Errorf("writing catalog file %s: %w", f.Name(), err)
 		}
 	}
-
-	fmt.Println("Done.")
 
 	return nil
 }

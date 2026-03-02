@@ -512,7 +512,9 @@ kronk-catalog-archcheck:
 
 # make kronk-catalog-archcheck-model ID="Qwen3-8B-Q8_0"
 kronk-catalog-archcheck-model:
-	CGO_ENABLED=0 go run cmd/server/api/tooling/archcheck/main.go -model="$(ID)"
+	CGO_ENABLED=0 go run cmd/server/api/tooling/archcheck/main.go \
+		-model="$(ID)" \
+		-catalog-path=$$HOME/code/go/src/github.com/ardanlabs/kronk_catalogs/catalogs
 
 # Check and update catalog files with corrected architecture values.
 kronk-catalog-archcheck-update:

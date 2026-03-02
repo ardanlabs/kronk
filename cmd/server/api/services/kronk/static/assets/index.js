@@ -2513,8 +2513,8 @@ type modelSpec struct {
 // Configure this to switch between URL and catalog downloads.
 // Set either SourceURL (with ProjURL) or ModelID, not both.
 var modelSpecConfig = modelSpec{
-	SourceURL: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q8_0.gguf",
-	ProjURL:   "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/mmproj-F16.gguf",
+	SourceURL: "https://huggingface.co/unsloth/Qwen3.5-35B-A3B-GGUF/resolve/main/Qwen3.5-35B-A3B-UD-Q8_K_XL.gguf",
+	ProjURL:   "https://huggingface.co/unsloth/Qwen3.5-35B-A3B-GGUF/resolve/main/mmproj-F16.gguf",
 	// ModelID: "Qwen3.5-0.8B-Q8_0",
 }
 
@@ -2619,6 +2619,7 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	cfg := model.Config{
 		ModelFiles: mp.ModelFiles,
 		ProjFile:   mp.ProjFile,
+		JinjaFile:  "/Users/bill/code/go/src/github.com/ardanlabs/kronk_catalogs/templates/qwen3.5.jinja",
 	}
 
 	krn, err := kronk.New(cfg)
