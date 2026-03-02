@@ -1008,6 +1008,15 @@ tr.selected:hover td {
     text-decoration: underline;
 }
 
+.doc-index-header.active {
+    color: var(--color-orange);
+}
+
+.doc-index-section li a.active {
+    color: var(--color-orange);
+    font-weight: 600;
+}
+
 @media (max-width: 900px) {
     .doc-layout {
         flex-direction: column;
@@ -2853,7 +2862,7 @@ code[class*="language-"] {
 .manual-content h3,
 .manual-content h4,
 .manual-content h5 {
-    scroll-margin-top: 24px;
+    scroll-margin-top: 80px;
 }
 
 .manual-content h1 {

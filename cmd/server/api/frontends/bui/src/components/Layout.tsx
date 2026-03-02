@@ -345,7 +345,7 @@ export default function Layout({ children }: LayoutProps) {
         setTimeout(() => {
           const element = document.getElementById(item.hash!);
           if (element) {
-            element.scrollIntoView({ behavior: 'smooth' });
+            element.scrollIntoView({ behavior: 'smooth', block: 'start' });
           }
         }, 100);
       };

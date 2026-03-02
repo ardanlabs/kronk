@@ -18,6 +18,9 @@ export default function DocsManual() {
   }, [location.hash]);
 
   useEffect(() => {
+    const container = document.querySelector('.main-content');
+    if (!container) return;
+
     const handleScroll = () => {
       const sections = document.querySelectorAll('.manual-content h2, .manual-content h3');
       let current = '';
@@ -30,9 +33,24 @@ export default function DocsManual() {
       setActiveSection(current);
     };
 
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
   }, []);
+
+  useEffect(() => {
+    if (activeSection) {
+      const activeLink = document.querySelector('.doc-sidebar a[href="#' + activeSection + '"]');
+      if (activeLink) {
+        const sidebar = document.querySelector('.doc-sidebar');
+        if (sidebar) {
+          const sidebarRect = sidebar.getBoundingClientRect();
+          const linkRect = activeLink.getBoundingClientRect();
+          const offset = linkRect.top - sidebarRect.top - sidebarRect.height / 2;
+          sidebar.scrollBy({ top: offset, behavior: 'smooth' });
+        }
+      }
+    }
+  }, [activeSection]);
 
   return (
     <div>
