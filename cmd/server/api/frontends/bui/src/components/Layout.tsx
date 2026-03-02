@@ -232,7 +232,9 @@ export default function Layout({ children }: LayoutProps) {
 
   const getFirstPage = (category: MenuCategory): string | null => {
     if (category.items && category.items.length > 0) {
-      return routeMap[category.items[0].page];
+      const first = category.items[0];
+      const path = routeMap[first.page];
+      return first.hash ? `${path}#${first.hash}` : path;
     }
     if (category.subcategories) {
       for (const sub of category.subcategories) {
@@ -339,15 +341,7 @@ export default function Layout({ children }: LayoutProps) {
     if (item.hash) {
       const handleClick = (e: React.MouseEvent) => {
         e.preventDefault();
-        // Use React Router navigation to preserve state
         navigate(`${path}#${item.hash}`);
-        // Scroll to the element after navigation
-        setTimeout(() => {
-          const element = document.getElementById(item.hash!);
-          if (element) {
-            element.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }
-        }, 100);
       };
       
       return (
@@ -383,6 +377,10 @@ export default function Layout({ children }: LayoutProps) {
         if (firstPage) navigate(firstPage);
       } else {
         toggleCategory(category.id);
+        if (isSubmenu && !isExpanded) {
+          const firstPage = getFirstPage(category);
+          if (firstPage) navigate(firstPage);
+        }
       }
     };
 

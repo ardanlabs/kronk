@@ -8,14 +8,19 @@ export default function DocsManual() {
   useEffect(() => {
     if (location.hash) {
       const id = location.hash.slice(1);
-      const element = document.getElementById(id);
-      if (element) {
-        setTimeout(() => {
-          element.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }, 100);
-      }
+      const scrollToElement = () => {
+        const element = document.getElementById(id);
+        const container = document.querySelector('.main-content');
+        if (element && container) {
+          const containerRect = container.getBoundingClientRect();
+          const elementRect = element.getBoundingClientRect();
+          const offset = elementRect.top - containerRect.top + container.scrollTop;
+          container.scrollTo({ top: offset - 20, behavior: 'smooth' });
+        }
+      };
+      requestAnimationFrame(scrollToElement);
     }
-  }, [location.hash]);
+  }, [location.key]);
 
   useEffect(() => {
     const container = document.querySelector('.main-content');
@@ -45,8 +50,8 @@ export default function DocsManual() {
         if (sidebar) {
           const sidebarRect = sidebar.getBoundingClientRect();
           const linkRect = activeLink.getBoundingClientRect();
-          const offset = linkRect.top - sidebarRect.top - sidebarRect.height / 2;
-          sidebar.scrollBy({ top: offset, behavior: 'smooth' });
+          const offset = linkRect.top - sidebarRect.top + sidebar.scrollTop - 20;
+          sidebar.scrollTo({ top: offset, behavior: 'smooth' });
         }
       }
     }
