@@ -153,6 +153,8 @@ export default function DocsSDKModel() {
 	Log                  Logger
 	ModelFiles           []string
 	NBatch               int
+	Devices              []string
+	MainGPU              *int
 	NGpuLayers           *int
 	NSeqMax              int
 	NThreads             int
@@ -164,7 +166,10 @@ export default function DocsSDKModel() {
 	RopeFreqBase         *float32
 	RopeFreqScale        *float32
 	RopeScaling          RopeScalingType
-	SplitMode            SplitMode
+	SplitMode            *SplitMode
+	TensorSplit          []float32
+	TensorBuftOverrides  []string
+	AutoFitVRAM          bool
 	SystemPromptCache    bool
 	UseDirectIO          bool
 	YarnAttnFactor       *float32

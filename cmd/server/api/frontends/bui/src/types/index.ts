@@ -66,7 +66,12 @@ export interface ModelConfig {
   'offload-kqv': boolean | null;
   'op-offload': boolean | null;
   'ngpu-layers': number | null;
-  'split-mode': string;
+  'split-mode': string | null;
+  'tensor-split': number[] | null;
+  'tensor-buft-overrides': string[] | null;
+  'main-gpu': number | null;
+  'devices': string[] | null;
+  'auto-fit-vram': boolean;
   'system-prompt-cache': boolean;
   'incremental-cache': boolean;
   'cache-min-tokens': number;
@@ -82,12 +87,25 @@ export interface ModelConfig {
   'yarn-beta-slow': number | null;
   'yarn-orig-ctx': number | null;
 
+  // MoE configuration for expert placement.
+  moe?: {
+    mode: string;
+    'keep-experts-top-n'?: number | null;
+  };
+
+  // NUMA / mmap configuration for multi-socket systems.
+  'use-mmap'?: boolean | null;
+  numa?: string | null;
+
   // Speculative decoding (draft model).
   'draft-model'?: {
     'model-id': string;
     ndraft: number;
     'ngpu-layers': number | null;
     device?: string;
+    devices?: string[];
+    'main-gpu'?: number | null;
+    'tensor-split'?: number[] | null;
   };
 }
 
@@ -142,6 +160,22 @@ export interface VRAMInput {
   value_length: number;
   bytes_per_element: number;
   slots: number;
+  embedding_length?: number;
+  expert_layers_on_gpu?: number;
+}
+
+export interface MoEInfo {
+  is_moe: boolean;
+  expert_count: number;
+  expert_used_count: number;
+  has_shared_experts: boolean;
+}
+
+export interface WeightBreakdown {
+  total_bytes: number;
+  always_active_bytes: number;
+  expert_bytes_total: number;
+  expert_bytes_by_layer: number[];
 }
 
 export interface VRAM {
@@ -150,6 +184,11 @@ export interface VRAM {
   kv_per_slot: number;
   slot_memory: number;
   total_vram: number;
+  moe?: MoEInfo;
+  weights?: WeightBreakdown;
+  model_weights_gpu?: number;
+  model_weights_cpu?: number;
+  compute_buffer_est?: number;
 }
 
 export interface CatalogModelResponse {
@@ -388,6 +427,11 @@ export interface VRAMCalculatorResponse {
   kv_per_slot: number;
   slot_memory: number;
   total_vram: number;
+  moe?: MoEInfo;
+  weights?: WeightBreakdown;
+  model_weights_gpu?: number;
+  model_weights_cpu?: number;
+  compute_buffer_est?: number;
 }
 
 export interface HFRepoFile {
@@ -475,6 +519,10 @@ export interface PlaygroundModelConfig {
   'system_prompt_cache'?: boolean;
   'incremental_cache'?: boolean;
   'split_mode'?: string;
+  'devices'?: string[] | null;
+  'main_gpu'?: number | null;
+  'tensor_split'?: number[] | null;
+  'auto_fit_vram'?: boolean | null;
   'rope_scaling_type'?: string;
   'rope_freq_base'?: number | null;
   'rope_freq_scale'?: number | null;
@@ -483,6 +531,8 @@ export interface PlaygroundModelConfig {
   'yarn_beta_fast'?: number | null;
   'yarn_beta_slow'?: number | null;
   'yarn_orig_ctx'?: number | null;
+  'moe_mode'?: string;
+  'moe_keep_experts_top_n'?: number | null;
 }
 
 export interface PlaygroundSessionResponse {
@@ -661,6 +711,8 @@ export interface ConfigSweepDefinition {
   flashAttention: SweepStringValues;
   cacheType: SweepStringValues;
   cacheMode: SweepStringValues;
+  moeMode?: SweepStringValues;
+  moeKeepExpertsTopN?: SweepParamValues;
 }
 
 export interface SamplingSweepDefinition {
@@ -708,6 +760,8 @@ export interface ConfigCandidate {
   'flash_attention'?: string;
   'cache_type'?: string;
   'cache_mode'?: string;
+  'moe_mode'?: string;
+  'moe_keep_experts_top_n'?: number;
 }
 
 export interface ModelCaps {

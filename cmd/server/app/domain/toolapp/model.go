@@ -238,6 +238,8 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfi
 			CacheTypeK:           rmc.CacheTypeK,
 			CacheTypeV:           rmc.CacheTypeV,
 			UseDirectIO:          rmc.UseDirectIO,
+			UseMMap:              rmc.UseMMap,
+			NUMA:                 rmc.NUMA,
 			FlashAttention:       rmc.FlashAttention,
 			IgnoreIntegrityCheck: rmc.IgnoreIntegrityCheck,
 			NSeqMax:              rmc.NSeqMax,
@@ -245,6 +247,12 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfi
 			OpOffload:            rmc.OpOffload,
 			NGpuLayers:           rmc.NGpuLayers,
 			SplitMode:            rmc.SplitMode,
+			TensorSplit:          rmc.TensorSplit,
+			TensorBuftOverrides:  rmc.TensorBuftOverrides,
+			MainGPU:              rmc.MainGPU,
+			Devices:              rmc.Devices,
+			MoE:                  rmc.MoE,
+			AutoFitVRAM:          rmc.AutoFitVRAM,
 			SystemPromptCache:    rmc.SystemPromptCache,
 			IncrementalCache:     rmc.IncrementalCache,
 			CacheMinTokens:       rmc.CacheMinTokens,
@@ -283,19 +291,28 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfi
 	if vram.TotalVRAM > 0 {
 		mir.VRAM = &VRAM{
 			Input: VRAMInput{
-				ModelSizeBytes:  vram.Input.ModelSizeBytes,
-				ContextWindow:   vram.Input.ContextWindow,
-				BlockCount:      vram.Input.BlockCount,
-				HeadCountKV:     vram.Input.HeadCountKV,
-				KeyLength:       vram.Input.KeyLength,
-				ValueLength:     vram.Input.ValueLength,
-				BytesPerElement: vram.Input.BytesPerElement,
-				Slots:           vram.Input.Slots,
+				ModelSizeBytes:    vram.Input.ModelSizeBytes,
+				ContextWindow:     vram.Input.ContextWindow,
+				BlockCount:        vram.Input.BlockCount,
+				HeadCountKV:       vram.Input.HeadCountKV,
+				KeyLength:         vram.Input.KeyLength,
+				ValueLength:       vram.Input.ValueLength,
+				BytesPerElement:   vram.Input.BytesPerElement,
+				Slots:             vram.Input.Slots,
+				EmbeddingLength:   vram.Input.EmbeddingLength,
+				MoE:               vram.Input.MoE,
+				Weights:           vram.Input.Weights,
+				ExpertLayersOnGPU: vram.Input.ExpertLayersOnGPU,
 			},
 			KVPerTokenPerLayer: vram.KVPerTokenPerLayer,
 			KVPerSlot:          vram.KVPerSlot,
 			SlotMemory:         vram.SlotMemory,
 			TotalVRAM:          vram.TotalVRAM,
+			MoE:                vram.MoE,
+			Weights:            vram.Weights,
+			ModelWeightsGPU:    vram.ModelWeightsGPU,
+			ModelWeightsCPU:    vram.ModelWeightsCPU,
+			ComputeBufferEst:   vram.ComputeBufferEst,
 		}
 	}
 
@@ -369,23 +386,32 @@ func toModelDetails(models []cache.ModelDetail) ModelDetailsResponse {
 
 // VRAMInput contains the input parameters used for VRAM calculation.
 type VRAMInput struct {
-	ModelSizeBytes  int64 `json:"model_size_bytes"`
-	ContextWindow   int64 `json:"context_window"`
-	BlockCount      int64 `json:"block_count"`
-	HeadCountKV     int64 `json:"head_count_kv"`
-	KeyLength       int64 `json:"key_length"`
-	ValueLength     int64 `json:"value_length"`
-	BytesPerElement int64 `json:"bytes_per_element"`
-	Slots           int64 `json:"slots"`
+	ModelSizeBytes    int64                   `json:"model_size_bytes"`
+	ContextWindow     int64                   `json:"context_window"`
+	BlockCount        int64                   `json:"block_count"`
+	HeadCountKV       int64                   `json:"head_count_kv"`
+	KeyLength         int64                   `json:"key_length"`
+	ValueLength       int64                   `json:"value_length"`
+	BytesPerElement   int64                   `json:"bytes_per_element"`
+	Slots             int64                   `json:"slots"`
+	EmbeddingLength   int64                   `json:"embedding_length,omitempty"`
+	MoE               *models.MoEInfo         `json:"moe,omitempty"`
+	Weights           *models.WeightBreakdown `json:"weights,omitempty"`
+	ExpertLayersOnGPU int64                   `json:"expert_layers_on_gpu,omitempty"`
 }
 
 // VRAM contains the calculated VRAM requirements.
 type VRAM struct {
-	Input              VRAMInput `json:"input"`
-	KVPerTokenPerLayer int64     `json:"kv_per_token_per_layer"`
-	KVPerSlot          int64     `json:"kv_per_slot"`
-	SlotMemory         int64     `json:"slot_memory"`
-	TotalVRAM          int64     `json:"total_vram"`
+	Input              VRAMInput               `json:"input"`
+	KVPerTokenPerLayer int64                   `json:"kv_per_token_per_layer"`
+	KVPerSlot          int64                   `json:"kv_per_slot"`
+	SlotMemory         int64                   `json:"slot_memory"`
+	TotalVRAM          int64                   `json:"total_vram"`
+	MoE                *models.MoEInfo         `json:"moe,omitempty"`
+	Weights            *models.WeightBreakdown `json:"weights,omitempty"`
+	ModelWeightsGPU    int64                   `json:"model_weights_gpu"`
+	ModelWeightsCPU    int64                   `json:"model_weights_cpu"`
+	ComputeBufferEst   int64                   `json:"compute_buffer_est"`
 }
 
 // SamplingConfig represents sampling parameters for model inference.
@@ -422,13 +448,21 @@ type ModelConfig struct {
 	CacheTypeK           model.GGMLType           `json:"cache-type-k"`
 	CacheTypeV           model.GGMLType           `json:"cache-type-v"`
 	UseDirectIO          bool                     `json:"use-direct-io"`
+	UseMMap              *bool                    `json:"use-mmap,omitempty"`
+	NUMA                 string                   `json:"numa,omitempty"`
 	FlashAttention       model.FlashAttentionType `json:"flash-attention"`
 	IgnoreIntegrityCheck bool                     `json:"ignore-integrity-check"`
 	NSeqMax              int                      `json:"nseq-max"`
 	OffloadKQV           *bool                    `json:"offload-kqv"`
 	OpOffload            *bool                    `json:"op-offload"`
 	NGpuLayers           *int                     `json:"ngpu-layers"`
-	SplitMode            model.SplitMode          `json:"split-mode"`
+	SplitMode            *model.SplitMode         `json:"split-mode"`
+	TensorSplit          []float32                `json:"tensor-split"`
+	TensorBuftOverrides  []string                 `json:"tensor-buft-overrides"`
+	MainGPU              *int                     `json:"main-gpu"`
+	Devices              []string                 `json:"devices"`
+	MoE                  *model.MoEConfig         `json:"moe,omitempty"`
+	AutoFitVRAM          bool                     `json:"auto-fit-vram"`
 	SystemPromptCache    bool                     `json:"system-prompt-cache"`
 	IncrementalCache     bool                     `json:"incremental-cache"`
 	CacheMinTokens       int                      `json:"cache-min-tokens"`
@@ -588,6 +622,8 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 			CacheTypeK:           rmc.CacheTypeK,
 			CacheTypeV:           rmc.CacheTypeV,
 			UseDirectIO:          rmc.UseDirectIO,
+			UseMMap:              rmc.UseMMap,
+			NUMA:                 rmc.NUMA,
 			FlashAttention:       rmc.FlashAttention,
 			IgnoreIntegrityCheck: rmc.IgnoreIntegrityCheck,
 			NSeqMax:              rmc.NSeqMax,
@@ -595,6 +631,12 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 			OpOffload:            rmc.OpOffload,
 			NGpuLayers:           rmc.NGpuLayers,
 			SplitMode:            rmc.SplitMode,
+			TensorSplit:          rmc.TensorSplit,
+			TensorBuftOverrides:  rmc.TensorBuftOverrides,
+			MainGPU:              rmc.MainGPU,
+			Devices:              rmc.Devices,
+			MoE:                  rmc.MoE,
+			AutoFitVRAM:          rmc.AutoFitVRAM,
 			SystemPromptCache:    rmc.SystemPromptCache,
 			IncrementalCache:     rmc.IncrementalCache,
 			CacheMinTokens:       rmc.CacheMinTokens,
@@ -642,6 +684,8 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 		CacheTypeK:           bmc.CacheTypeK,
 		CacheTypeV:           bmc.CacheTypeV,
 		UseDirectIO:          bmc.UseDirectIO,
+		UseMMap:              bmc.UseMMap,
+		NUMA:                 bmc.NUMA,
 		FlashAttention:       bmc.FlashAttention,
 		IgnoreIntegrityCheck: bmc.IgnoreIntegrityCheck,
 		NSeqMax:              bmc.NSeqMax,
@@ -649,6 +693,12 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 		OpOffload:            bmc.OpOffload,
 		NGpuLayers:           bmc.NGpuLayers,
 		SplitMode:            bmc.SplitMode,
+		TensorSplit:          bmc.TensorSplit,
+		TensorBuftOverrides:  bmc.TensorBuftOverrides,
+		MainGPU:              bmc.MainGPU,
+		Devices:              bmc.Devices,
+		MoE:                  bmc.MoE,
+		AutoFitVRAM:          bmc.AutoFitVRAM,
 		SystemPromptCache:    bmc.SystemPromptCache,
 		IncrementalCache:     bmc.IncrementalCache,
 		CacheMinTokens:       bmc.CacheMinTokens,
@@ -687,19 +737,28 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 	if vram != nil {
 		resp.VRAM = &VRAM{
 			Input: VRAMInput{
-				ModelSizeBytes:  vram.Input.ModelSizeBytes,
-				ContextWindow:   vram.Input.ContextWindow,
-				BlockCount:      vram.Input.BlockCount,
-				HeadCountKV:     vram.Input.HeadCountKV,
-				KeyLength:       vram.Input.KeyLength,
-				ValueLength:     vram.Input.ValueLength,
-				BytesPerElement: vram.Input.BytesPerElement,
-				Slots:           vram.Input.Slots,
+				ModelSizeBytes:    vram.Input.ModelSizeBytes,
+				ContextWindow:     vram.Input.ContextWindow,
+				BlockCount:        vram.Input.BlockCount,
+				HeadCountKV:       vram.Input.HeadCountKV,
+				KeyLength:         vram.Input.KeyLength,
+				ValueLength:       vram.Input.ValueLength,
+				BytesPerElement:   vram.Input.BytesPerElement,
+				Slots:             vram.Input.Slots,
+				EmbeddingLength:   vram.Input.EmbeddingLength,
+				MoE:               vram.Input.MoE,
+				Weights:           vram.Input.Weights,
+				ExpertLayersOnGPU: vram.Input.ExpertLayersOnGPU,
 			},
 			KVPerTokenPerLayer: vram.KVPerTokenPerLayer,
 			KVPerSlot:          vram.KVPerSlot,
 			SlotMemory:         vram.SlotMemory,
 			TotalVRAM:          vram.TotalVRAM,
+			MoE:                vram.MoE,
+			Weights:            vram.Weights,
+			ModelWeightsGPU:    vram.ModelWeightsGPU,
+			ModelWeightsCPU:    vram.ModelWeightsCPU,
+			ComputeBufferEst:   vram.ComputeBufferEst,
 		}
 	}
 
@@ -794,11 +853,16 @@ func (app *VRAMRequest) Decode(data []byte) error {
 
 // VRAMResponse represents the VRAM calculation results.
 type VRAMResponse struct {
-	Input              VRAMInput `json:"input"`
-	KVPerTokenPerLayer int64     `json:"kv_per_token_per_layer"`
-	KVPerSlot          int64     `json:"kv_per_slot"`
-	SlotMemory         int64     `json:"slot_memory"`
-	TotalVRAM          int64     `json:"total_vram"`
+	Input              VRAMInput               `json:"input"`
+	KVPerTokenPerLayer int64                   `json:"kv_per_token_per_layer"`
+	KVPerSlot          int64                   `json:"kv_per_slot"`
+	SlotMemory         int64                   `json:"slot_memory"`
+	TotalVRAM          int64                   `json:"total_vram"`
+	MoE                *models.MoEInfo         `json:"moe,omitempty"`
+	Weights            *models.WeightBreakdown `json:"weights,omitempty"`
+	ModelWeightsGPU    int64                   `json:"model_weights_gpu"`
+	ModelWeightsCPU    int64                   `json:"model_weights_cpu"`
+	ComputeBufferEst   int64                   `json:"compute_buffer_est"`
 }
 
 // Encode implements the encoder interface.
@@ -928,6 +992,8 @@ func (app SaveCatalogRequest) toModelDetails() catalog.ModelDetails {
 			CacheTypeK:           app.Config.CacheTypeK,
 			CacheTypeV:           app.Config.CacheTypeV,
 			UseDirectIO:          app.Config.UseDirectIO,
+			UseMMap:              app.Config.UseMMap,
+			NUMA:                 app.Config.NUMA,
 			FlashAttention:       app.Config.FlashAttention,
 			IgnoreIntegrityCheck: app.Config.IgnoreIntegrityCheck,
 			NSeqMax:              app.Config.NSeqMax,
@@ -935,6 +1001,12 @@ func (app SaveCatalogRequest) toModelDetails() catalog.ModelDetails {
 			OpOffload:            app.Config.OpOffload,
 			NGpuLayers:           app.Config.NGpuLayers,
 			SplitMode:            app.Config.SplitMode,
+			TensorSplit:          app.Config.TensorSplit,
+			TensorBuftOverrides:  app.Config.TensorBuftOverrides,
+			MainGPU:              app.Config.MainGPU,
+			Devices:              app.Config.Devices,
+			MoE:                  app.Config.MoE,
+			AutoFitVRAM:          app.Config.AutoFitVRAM,
 			SystemPromptCache:    app.Config.SystemPromptCache,
 			IncrementalCache:     app.Config.IncrementalCache,
 			CacheMinTokens:       app.Config.CacheMinTokens,

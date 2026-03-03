@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
@@ -26,6 +28,11 @@ type Config struct {
 	ContextWindow  int
 	FlashAttention string
 	NGpuLayers     int
+	Devices        string
+	MainGPU        int
+	TensorSplit    string
+	SplitMode      string
+	AutoFitVRAM    bool
 	CacheTypeK     string
 	CacheTypeV     string
 	NBatch         int
@@ -132,6 +139,39 @@ func newKronk(mp models.Path, runCfg Config) (*kronk.Kronk, error) {
 		cfg.NGpuLayers = &v
 	}
 
+	if runCfg.Devices != "" {
+		cfg.Devices = strings.Split(runCfg.Devices, ",")
+	}
+
+	if runCfg.MainGPU >= 0 {
+		cfg.MainGPU = &runCfg.MainGPU
+	}
+
+	if runCfg.TensorSplit != "" {
+		parts := strings.Split(runCfg.TensorSplit, ",")
+		splits := make([]float32, len(parts))
+		for i, p := range parts {
+			v, err := strconv.ParseFloat(strings.TrimSpace(p), 32)
+			if err != nil {
+				return nil, fmt.Errorf("invalid tensor-split value %q: %w", p, err)
+			}
+			splits[i] = float32(v)
+		}
+		cfg.TensorSplit = splits
+	}
+
+	if runCfg.SplitMode != "" {
+		sm, err := model.ParseSplitMode(runCfg.SplitMode)
+		if err != nil {
+			return nil, fmt.Errorf("invalid split-mode: %w", err)
+		}
+		cfg.SplitMode = &sm
+	}
+
+	if runCfg.AutoFitVRAM {
+		cfg.AutoFitVRAM = true
+	}
+
 	if runCfg.CacheTypeK != "" {
 		ct, err := model.ParseGGMLType(runCfg.CacheTypeK)
 		if err != nil {
@@ -184,6 +224,21 @@ func newKronk(mp models.Path, runCfg Config) (*kronk.Kronk, error) {
 	}
 	if runCfg.NGpuLayers != 0 {
 		fmt.Println("- ngpuLayers   :", runCfg.NGpuLayers)
+	}
+	if runCfg.Devices != "" {
+		fmt.Println("- devices      :", runCfg.Devices)
+	}
+	if runCfg.MainGPU >= 0 {
+		fmt.Println("- mainGPU      :", runCfg.MainGPU)
+	}
+	if runCfg.TensorSplit != "" {
+		fmt.Println("- tensorSplit  :", runCfg.TensorSplit)
+	}
+	if runCfg.SplitMode != "" {
+		fmt.Println("- splitMode    :", runCfg.SplitMode)
+	}
+	if runCfg.AutoFitVRAM {
+		fmt.Println("- autoFitVRAM  : true")
 	}
 	if runCfg.MaxTokens != 0 {
 		fmt.Println("- maxTokens    :", runCfg.MaxTokens)

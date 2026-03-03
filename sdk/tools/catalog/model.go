@@ -209,13 +209,21 @@ type ModelConfig struct {
 	CacheTypeK           model.GGMLType           `yaml:"cache-type-k,omitempty"`
 	CacheTypeV           model.GGMLType           `yaml:"cache-type-v,omitempty"`
 	UseDirectIO          bool                     `yaml:"use-direct-io,omitempty"`
+	UseMMap              *bool                    `yaml:"use-mmap,omitempty"`
+	NUMA                 string                   `yaml:"numa,omitempty"`
 	FlashAttention       model.FlashAttentionType `yaml:"flash-attention,omitempty"`
 	IgnoreIntegrityCheck bool                     `yaml:"ignore-integrity-check,omitempty"`
 	NSeqMax              int                      `yaml:"nseq-max,omitempty"`
 	OffloadKQV           *bool                    `yaml:"offload-kqv,omitempty"`
 	OpOffload            *bool                    `yaml:"op-offload,omitempty"`
 	NGpuLayers           *int                     `yaml:"ngpu-layers,omitempty"`
-	SplitMode            model.SplitMode          `yaml:"split-mode,omitempty"`
+	SplitMode            *model.SplitMode         `yaml:"split-mode,omitempty"`
+	TensorSplit          []float32                `yaml:"tensor-split,omitempty"`
+	TensorBuftOverrides  []string                 `yaml:"tensor-buft-overrides,omitempty"`
+	MainGPU              *int                     `yaml:"main-gpu,omitempty"`
+	Devices              []string                 `yaml:"devices,omitempty"`
+	MoE                  *model.MoEConfig         `yaml:"moe,omitempty"`
+	AutoFitVRAM          bool                     `yaml:"auto-fit-vram,omitempty"`
 	SystemPromptCache    bool                     `yaml:"system-prompt-cache,omitempty"`
 	IncrementalCache     bool                     `yaml:"incremental-cache,omitempty"`
 	CacheMinTokens       int                      `yaml:"cache-min-tokens,omitempty"`
@@ -235,10 +243,13 @@ type ModelConfig struct {
 
 // DraftModelConfig configures a draft model for speculative decoding.
 type DraftModelConfig struct {
-	ModelID    string `yaml:"model-id,omitempty"`
-	NDraft     int    `yaml:"ndraft,omitempty"`
-	NGpuLayers *int   `yaml:"ngpu-layers,omitempty"`
-	Device     string `yaml:"device,omitempty"`
+	ModelID     string    `yaml:"model-id,omitempty"`
+	NDraft      int       `yaml:"ndraft,omitempty"`
+	NGpuLayers  *int      `yaml:"ngpu-layers,omitempty"`
+	Device      string    `yaml:"device,omitempty"`
+	Devices     []string  `yaml:"devices,omitempty"`
+	MainGPU     *int      `yaml:"main-gpu,omitempty"`
+	TensorSplit []float32 `yaml:"tensor-split,omitempty"`
 }
 
 // ToKronkConfig converts a catalog ModelConfig to a model.Config.
@@ -253,6 +264,8 @@ func (mc ModelConfig) ToKronkConfig() model.Config {
 		CacheTypeK:           mc.CacheTypeK,
 		CacheTypeV:           mc.CacheTypeV,
 		UseDirectIO:          mc.UseDirectIO,
+		UseMMap:              mc.UseMMap,
+		NUMA:                 mc.NUMA,
 		FlashAttention:       mc.FlashAttention,
 		IgnoreIntegrityCheck: mc.IgnoreIntegrityCheck,
 		NSeqMax:              mc.NSeqMax,
@@ -260,6 +273,12 @@ func (mc ModelConfig) ToKronkConfig() model.Config {
 		OpOffload:            mc.OpOffload,
 		NGpuLayers:           mc.NGpuLayers,
 		SplitMode:            mc.SplitMode,
+		TensorSplit:          mc.TensorSplit,
+		TensorBuftOverrides:  mc.TensorBuftOverrides,
+		MainGPU:              mc.MainGPU,
+		MoE:                  mc.MoE,
+		Devices:              mc.Devices,
+		AutoFitVRAM:          mc.AutoFitVRAM,
 		SystemPromptCache:    mc.SystemPromptCache,
 		IncrementalCache:     mc.IncrementalCache,
 		CacheMinTokens:       mc.CacheMinTokens,
@@ -278,9 +297,12 @@ func (mc ModelConfig) ToKronkConfig() model.Config {
 
 	if mc.DraftModel != nil {
 		cfg.DraftModel = &model.DraftModelConfig{
-			NDraft:     mc.DraftModel.NDraft,
-			NGpuLayers: mc.DraftModel.NGpuLayers,
-			Device:     mc.DraftModel.Device,
+			NDraft:      mc.DraftModel.NDraft,
+			NGpuLayers:  mc.DraftModel.NGpuLayers,
+			Device:      mc.DraftModel.Device,
+			Devices:     mc.DraftModel.Devices,
+			MainGPU:     mc.DraftModel.MainGPU,
+			TensorSplit: mc.DraftModel.TensorSplit,
 		}
 	}
 

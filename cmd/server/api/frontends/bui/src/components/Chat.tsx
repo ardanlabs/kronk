@@ -9,7 +9,7 @@ import CodeBlock from './CodeBlock';
 import ChatHistoryPanel from './ChatHistoryPanel';
 import { PARAM_TOOLTIPS, ParamTooltip } from './ParamTooltips';
 import { useChatHistory, type HistoryMessage } from '../contexts/ChatHistoryContext';
-import type { ChatMessage, ChatUsage, ChatToolCall, ChatContentPart, SamplingConfig, ListModelDetail } from '../types';
+import type { ChatMessage, ChatUsage, ChatToolCall, ChatContentPart, SamplingConfig, ListModelDetail, VRAM } from '../types';
 
 interface AttachedFile {
   type: 'image' | 'audio';
@@ -102,6 +102,10 @@ export default function Chat() {
 
   // Extended model configs with sampling parameters
   const [extendedModels, setExtendedModels] = useState<ListModelDetail[]>([]);
+
+  // MoE detection from model info
+  const [isMoE, setIsMoE] = useState(false);
+  const [modelVRAM, setModelVRAM] = useState<VRAM | null>(null);
 
   // Baseline sampling config from the selected model's /models endpoint
   const [modelBaseline, setModelBaseline] = useState<SamplingParams | null>(null);
@@ -247,6 +251,41 @@ export default function Chat() {
       prevModelRef.current = selectedModel;
     }
   }, [selectedModel, extendedModels, applySamplingConfig]);
+
+  // Fetch model info for MoE detection and VRAM breakdown.
+  useEffect(() => {
+    if (!selectedModel) {
+      setIsMoE(false);
+      setModelVRAM(null);
+      return;
+    }
+
+    let cancelled = false;
+    api.showModel(selectedModel)
+      .then((info) => {
+        if (cancelled) return;
+        const modelIsMoE = info.vram?.moe?.is_moe === true
+          || (info.metadata && Object.keys(info.metadata).some(k => k.endsWith('.expert_count')));
+        setIsMoE(modelIsMoE);
+        setModelVRAM(info.vram || null);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setIsMoE(false);
+          setModelVRAM(null);
+        }
+      });
+
+    return () => { cancelled = true; };
+  }, [selectedModel]);
+
+  const formatBytes = (bytes: number): string => {
+    if (bytes === 0) return '0 B';
+    const gb = bytes / (1024 * 1024 * 1024);
+    if (gb >= 1) return `${gb.toFixed(1)} GB`;
+    const mb = bytes / (1024 * 1024);
+    return `${mb.toFixed(0)} MB`;
+  };
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     if (e.deltaY < 0) {
@@ -800,6 +839,54 @@ export default function Chat() {
               className="chat-system-prompt-input"
               style={{ fontFamily: 'monospace', fontSize: '12px' }}
             />
+          </div>
+        )}
+        {isMoE && modelVRAM && (
+          <div className="chat-settings" style={{ flexDirection: 'column', gap: '8px', padding: '12px', background: 'var(--color-gray-50)', borderRadius: '6px', margin: '0 0 8px' }}>
+            <div style={{ fontWeight: 600, fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              🧩 MoE Model
+              {modelVRAM.moe && (
+                <span style={{ fontWeight: 400, fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                  ({modelVRAM.moe.expert_count} experts, top-{modelVRAM.moe.expert_used_count} active{modelVRAM.moe.has_shared_experts ? ', shared experts' : ''})
+                </span>
+              )}
+            </div>
+            {modelVRAM.weights && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                <span>Always-active weights (GPU):</span>
+                <span style={{ fontWeight: 500 }}>{formatBytes(modelVRAM.weights.always_active_bytes)}</span>
+                {(modelVRAM.model_weights_gpu ?? 0) > 0 && (
+                  <>
+                    <span>Expert weights (GPU):</span>
+                    <span style={{ fontWeight: 500 }}>{formatBytes((modelVRAM.model_weights_gpu ?? 0) - modelVRAM.weights.always_active_bytes)}</span>
+                  </>
+                )}
+                {(modelVRAM.model_weights_cpu ?? 0) > 0 && (
+                  <>
+                    <span>Expert weights (CPU):</span>
+                    <span style={{ fontWeight: 500 }}>{formatBytes(modelVRAM.model_weights_cpu ?? 0)}</span>
+                  </>
+                )}
+                <span>KV cache:</span>
+                <span style={{ fontWeight: 500 }}>{formatBytes(modelVRAM.slot_memory)}</span>
+                {(modelVRAM.compute_buffer_est ?? 0) > 0 && (
+                  <>
+                    <span>Compute buffer (est.):</span>
+                    <span style={{ fontWeight: 500 }}>~{formatBytes(modelVRAM.compute_buffer_est ?? 0)}</span>
+                  </>
+                )}
+                <span style={{ fontWeight: 600 }}>Total estimated VRAM:</span>
+                <span style={{ fontWeight: 600 }}>{formatBytes(modelVRAM.total_vram)}</span>
+              </div>
+            )}
+            {!modelVRAM.weights && modelVRAM.total_vram > 0 && (
+              <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                Total VRAM: {formatBytes(modelVRAM.total_vram)}
+              </div>
+            )}
+            <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', lineHeight: 1.4, marginTop: '4px' }}>
+              💡 {PARAM_TOOLTIPS.moeTipBatch} {PARAM_TOOLTIPS.moeTipFlashAttention}
+            </div>
           </div>
         )}
         {showAdvanced && (

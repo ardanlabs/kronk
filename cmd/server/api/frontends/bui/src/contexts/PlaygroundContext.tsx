@@ -56,6 +56,10 @@ interface PlaygroundState {
   setCacheType: React.Dispatch<React.SetStateAction<string>>;
   cacheMode: string;
   setCacheMode: React.Dispatch<React.SetStateAction<string>>;
+  moeMode: string;
+  setMoeMode: React.Dispatch<React.SetStateAction<string>>;
+  moeKeepTopN: number;
+  setMoeKeepTopN: React.Dispatch<React.SetStateAction<number>>;
 
   // Tracks which model's catalog config has been applied to avoid
   // re-clobbering user edits on component remount.
@@ -83,6 +87,8 @@ export function PlaygroundProvider({ children }: { children: ReactNode }) {
   const [flashAttention, setFlashAttention] = useState('auto');
   const [cacheType, setCacheType] = useState('');
   const [cacheMode, setCacheMode] = useState('none');
+  const [moeMode, setMoeMode] = useState('');
+  const [moeKeepTopN, setMoeKeepTopN] = useState(0);
   const [hydratedModelId, setHydratedModelId] = useState('');
 
   const value = useMemo<PlaygroundState>(() => ({
@@ -103,11 +109,13 @@ export function PlaygroundProvider({ children }: { children: ReactNode }) {
     flashAttention, setFlashAttention,
     cacheType, setCacheType,
     cacheMode, setCacheMode,
+    moeMode, setMoeMode,
+    moeKeepTopN, setMoeKeepTopN,
     hydratedModelId, setHydratedModelId,
   }), [
     session, chatMessages, selectedModel, playgroundMode, activeTab, systemPrompt, lastTPS,
     templateMode, selectedTemplate, customScript, contextWindow, nBatch, nUBatch,
-    nSeqMax, flashAttention, cacheType, cacheMode, hydratedModelId,
+    nSeqMax, flashAttention, cacheType, cacheMode, moeMode, moeKeepTopN, hydratedModelId,
   ]);
 
   return (

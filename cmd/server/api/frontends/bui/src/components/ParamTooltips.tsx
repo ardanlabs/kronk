@@ -39,6 +39,19 @@ export const PARAM_TOOLTIPS: Record<string, string> = {
   flashAttention: 'Optimized attention algorithm that reduces VRAM usage and can improve speed. "Enabled" forces it on, "Disabled" forces it off, "Auto" lets the server decide based on model compatibility.',
   cacheType: 'KV cache precision. f16 = full precision (best quality), q8_0 = 8-bit quantized (less VRAM, minimal quality loss), q4_0 = 4-bit quantized (most VRAM savings, slight quality trade-off especially at long context).',
   cacheMode: 'Caching strategy. None = clears KV state after each request. SPC (System Prompt Cache) = reuses cached system-prompt state to speed up new conversations. IMC (Incremental Message Cache) = keeps the conversation\'s KV state in a dedicated slot for fast multi-turn follow-ups.',
+
+  // MoE configuration
+  moeMode: 'Expert placement strategy for Mixture-of-Experts models. "auto" uses catalog defaults or AutoFitVRAM. "experts_cpu" places all routed expert tensors on CPU (recommended for VRAM-constrained setups). "experts_gpu" keeps all experts on GPU (requires sufficient VRAM). "keep_top_n" keeps experts on GPU for the top N layers only.',
+  moeKeepExpertsTopN: 'Number of top expert layers (highest-numbered) to keep on GPU. All other expert layers go to CPU. Higher values use more VRAM but improve throughput. 0 means all experts on CPU. Follows llama.cpp convention where "top" means highest-numbered layers.',
+  moeTipBatch: 'For MoE models with CPU experts, NBatch/NUBatch ≥ 4096 is recommended for optimal prompt processing speed.',
+  moeTipFlashAttention: 'Flash Attention is strongly recommended for MoE models — it significantly reduces VRAM usage and improves performance.',
+  moeTipComputeBuffer: 'Larger NUBatch increases compute buffer VRAM usage. Monitor with the VRAM calculator when tuning MoE batch sizes.',
+  availableVRAM: 'Total GPU VRAM available (in GB). When set, config candidates estimated to exceed this are auto-skipped before the sweep runs. Set to 0 or leave empty to disable VRAM filtering.',
+
+  // NUMA / mmap / Op-offload (Phase F2/F3)
+  useMMap: 'Controls whether mmap is used for model loading. Disabling mmap (--no-mmap) is recommended for multi-socket NUMA systems running MoE models with CPU experts — tensor data is directly allocated on the appropriate NUMA node instead of being memory-mapped.',
+  numa: 'NUMA (Non-Uniform Memory Access) strategy for multi-socket systems. "distribute" spreads memory across NUMA nodes (recommended for MoE CPU-expert setups). "isolate" pins to one node. "numactl" defers to system numactl. "mirror" mirrors across nodes. Leave empty to disable.',
+  opOffloadThreshold: 'The GGML_OP_OFFLOAD_MIN_BATCH environment variable controls the minimum batch size for offloading host tensor operations to GPU during prompt processing. Default is 32 tokens. For large MoE models with many CPU weights, values of 200–500+ may improve performance. Set via environment variable before starting the server.',
 };
 
 export function ParamTooltip({ text }: { text: string }) {
