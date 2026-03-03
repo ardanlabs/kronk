@@ -52,21 +52,9 @@ endif
 # Memory
 #	This is going to be your first biggest obstacle. You basically won't be able
 #	to use a model that is larger than 80% of the total memory you have on the
-#	machine. As an example, the smallest model we will try is `Qwen3-0.6B-Q8_0`
-#	at 639 MB. That means you need at least 767 MB of memory on the machine to
-#	run this model. The largest model we will use is `gpt-oss-20b-Q8_0` and that
-#	model is 12.1 GB. That means you need at least 15 GB on the machine to run
-#	this model.
-#
-#	Qwen3-0.6B-Q8_0
-#	Model Size: 639 MB
-#	Overhead (20%): 639 MB x 0.20 = 128 MB
-#	Total Required: 639 MB + 128 MB = 767 MB
-#
-#	gpt-oss-20b-Q8_0
-#	Model Size: 12.1 GB
-#	Overhead (20%): 12.1 GB x 0.20 = 2.42 GB
-#	Total Required: 12.1 GB + 2.42 GB = 14.52 GB
+#	machine if you are using Apple Silicon. For systems that have separate CPU
+#   and GPU memory, you are free to use all of the GPU memory, but if some of the
+#   model will run on CPU, I like the 80% rule again.
 #
 # GPU
 #	This is going to be your second biggest obstacle. These models are not
