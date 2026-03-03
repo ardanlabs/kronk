@@ -295,19 +295,28 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 
 	return VRAMResponse{
 		Input: VRAMInput{
-			ModelSizeBytes:  vram.Input.ModelSizeBytes,
-			ContextWindow:   vram.Input.ContextWindow,
-			BlockCount:      vram.Input.BlockCount,
-			HeadCountKV:     vram.Input.HeadCountKV,
-			KeyLength:       vram.Input.KeyLength,
-			ValueLength:     vram.Input.ValueLength,
-			BytesPerElement: vram.Input.BytesPerElement,
-			Slots:           vram.Input.Slots,
+			ModelSizeBytes:    vram.Input.ModelSizeBytes,
+			ContextWindow:     vram.Input.ContextWindow,
+			BlockCount:        vram.Input.BlockCount,
+			HeadCountKV:       vram.Input.HeadCountKV,
+			KeyLength:         vram.Input.KeyLength,
+			ValueLength:       vram.Input.ValueLength,
+			BytesPerElement:   vram.Input.BytesPerElement,
+			Slots:             vram.Input.Slots,
+			EmbeddingLength:   vram.Input.EmbeddingLength,
+			MoE:               vram.Input.MoE,
+			Weights:           vram.Input.Weights,
+			ExpertLayersOnGPU: vram.Input.ExpertLayersOnGPU,
 		},
 		KVPerTokenPerLayer: vram.KVPerTokenPerLayer,
 		KVPerSlot:          vram.KVPerSlot,
 		SlotMemory:         vram.SlotMemory,
 		TotalVRAM:          vram.TotalVRAM,
+		MoE:                vram.MoE,
+		Weights:            vram.Weights,
+		ModelWeightsGPU:    vram.ModelWeightsGPU,
+		ModelWeightsCPU:    vram.ModelWeightsCPU,
+		ComputeBufferEst:   vram.ComputeBufferEst,
 	}
 }
 

@@ -2414,6 +2414,19 @@ export const defaultConfigSweepDef: ConfigSweepDefinition = {
   cacheMode: { enabled: true, values: ['none', 'spc', 'imc'] },
 }
 
+/** Default config sweep grids optimized for MoE models. */
+export const defaultMoESweepDef: ConfigSweepDefinition = {
+  nbatch: { enabled: true, values: [1024, 2048, 4096] },
+  nubatch: { enabled: true, values: [1024, 2048, 4096] },
+  contextWindow: { enabled: true, values: [4096, 8192, 16384, 32768] },
+  nSeqMax: { enabled: true, values: [1, 2] },
+  flashAttention: { enabled: true, values: ['enabled'] },
+  cacheType: { enabled: true, values: ['q8_0', 'q4_0'] },
+  cacheMode: { enabled: true, values: ['none', 'imc'] },
+  moeMode: { enabled: true, values: ['experts_cpu'] },
+  moeKeepExpertsTopN: { enabled: true, values: [0, 4, 8] },
+}
+
 /** Generates config candidates as a full cross-product of all enabled parameter values. */
 export function generateConfigCandidates(
   baseConfig: PlaygroundModelConfig,
@@ -2455,6 +2468,12 @@ export function generateConfigCandidates(
   if (def.cacheMode.enabled && def.cacheMode.values.length > 0) {
     allAxes.push({ configKey: 'cache_mode', values: def.cacheMode.values });
   }
+  if (def.moeMode?.enabled && def.moeMode.values.length > 0) {
+    allAxes.push({ configKey: 'moe_mode', values: def.moeMode.values });
+  }
+  if (def.moeKeepExpertsTopN?.enabled && def.moeKeepExpertsTopN.values.length > 0) {
+    allAxes.push({ configKey: 'moe_keep_experts_top_n', values: def.moeKeepExpertsTopN.values });
+  }
 
   if (allAxes.length === 0) {
     return [{ ...baseline }]
@@ -2478,7 +2497,7 @@ export function generateConfigCandidates(
   const candidates: ConfigCandidate[] = []
 
   const keyOf = (c: ConfigCandidate) =>
-    `cw=${c['context_window']}|nb=${c.nbatch}|nub=${c.nubatch}|ns=${c['nseq_max']}|fa=${c['flash_attention']}|ct=${c['cache_type']}|cm=${c['cache_mode']}`
+    `cw=${c['context_window']}|nb=${c.nbatch}|nub=${c.nubatch}|ns=${c['nseq_max']}|fa=${c['flash_attention']}|ct=${c['cache_type']}|cm=${c['cache_mode']}|mm=${c['moe_mode']}|mk=${c['moe_keep_experts_top_n']}`
 
   for (const c of combos) {
     const k = keyOf(c)

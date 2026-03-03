@@ -32,6 +32,11 @@ Model Configuration:
   --context-window      Context window size in tokens
   --flash-attention     Flash attention mode (on, off, auto)
   --ngpu-layers         GPU layers to offload (-1 = CPU only)
+  --devices             Comma-separated list of devices (e.g., CUDA0,CUDA1)
+  --main-gpu            Main GPU index for single-GPU mode
+  --tensor-split        Comma-separated tensor split (e.g., 0.6,0.4)
+  --split-mode          GPU split mode (none, layer, row)
+  --auto-fit-vram       Auto-fit model parameters to available VRAM
   --cache-type-k        KV cache type for keys (f16, q8_0, etc.)
   --cache-type-v        KV cache type for values (f16, q8_0, etc.)
   --nbatch              Logical batch size for processing
@@ -77,6 +82,11 @@ func init() {
 	Cmd.Flags().Int("context-window", 0, "Context window size in tokens")
 	Cmd.Flags().String("flash-attention", "", "Flash attention mode (on, off, auto)")
 	Cmd.Flags().Int("ngpu-layers", 0, "Number of layers to offload to GPU (-1 = CPU only)")
+	Cmd.Flags().String("devices", "", "Comma-separated list of devices (e.g., CUDA0,CUDA1)")
+	Cmd.Flags().Int("main-gpu", -1, "Main GPU index for single-GPU mode")
+	Cmd.Flags().String("tensor-split", "", "Comma-separated tensor split ratios (e.g., 0.6,0.4)")
+	Cmd.Flags().String("split-mode", "", "GPU split mode (none, layer, row)")
+	Cmd.Flags().Bool("auto-fit-vram", false, "Auto-fit model parameters to available VRAM")
 	Cmd.Flags().String("cache-type-k", "", "KV cache type for keys (f16, q8_0, q4_0, etc.)")
 	Cmd.Flags().String("cache-type-v", "", "KV cache type for values (f16, q8_0, q4_0, etc.)")
 	Cmd.Flags().Int("nbatch", 0, "Logical batch size for processing")
@@ -110,6 +120,11 @@ func run(cmd *cobra.Command, args []string) error {
 	contextWindow, _ := cmd.Flags().GetInt("context-window")
 	flashAttention, _ := cmd.Flags().GetString("flash-attention")
 	ngpuLayers, _ := cmd.Flags().GetInt("ngpu-layers")
+	devices, _ := cmd.Flags().GetString("devices")
+	mainGPU, _ := cmd.Flags().GetInt("main-gpu")
+	tensorSplit, _ := cmd.Flags().GetString("tensor-split")
+	splitMode, _ := cmd.Flags().GetString("split-mode")
+	autoFitVRAM, _ := cmd.Flags().GetBool("auto-fit-vram")
 	cacheTypeK, _ := cmd.Flags().GetString("cache-type-k")
 	cacheTypeV, _ := cmd.Flags().GetString("cache-type-v")
 	nbatch, _ := cmd.Flags().GetInt("nbatch")
@@ -136,6 +151,11 @@ func run(cmd *cobra.Command, args []string) error {
 		ContextWindow:  contextWindow,
 		FlashAttention: flashAttention,
 		NGpuLayers:     ngpuLayers,
+		Devices:        devices,
+		MainGPU:        mainGPU,
+		TensorSplit:    tensorSplit,
+		SplitMode:      splitMode,
+		AutoFitVRAM:    autoFitVRAM,
 		CacheTypeK:     cacheTypeK,
 		CacheTypeV:     cacheTypeV,
 		NBatch:         nbatch,

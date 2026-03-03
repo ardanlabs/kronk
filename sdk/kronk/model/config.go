@@ -26,6 +26,14 @@ Key principles:
 */
 
 const (
+	NUMADisabled   = ""
+	NUMADistribute = "distribute"
+	NUMAIsolate    = "isolate"
+	NUMANumactl    = "numactl"
+	NUMAMirror     = "mirror"
+)
+
+const (
 	defContextWindow    = 8 * 1024
 	defNBatch           = 2 * 1024
 	defNUBatch          = 512
@@ -86,6 +94,15 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // which will be found where you installed llama.cpp.
 // $ llama-bench --list-devices
 //
+// Deprecated: Use Devices instead. If both Device and Devices are set,
+// a validation error is returned.
+//
+// Devices is a list of device names to use for model execution. When multiple
+// devices are specified, the model is distributed across them according to the
+// SplitMode and TensorSplit configuration. Device names can be obtained from
+// the output of llama-bench --list-devices (e.g., "CUDA0", "CUDA1", "Metal").
+// When empty and Device is also empty, the default device selection is used.
+//
 // FlashAttention controls Flash Attention mode. Flash Attention reduces memory
 // usage and speeds up attention computation, especially for large context windows.
 // When left as zero value, FlashAttentionEnabled is used (default on).
@@ -120,6 +137,9 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // utilizes parallel computation. However, a very high n_batch can lead to
 // out-of-memory errors on systems with limited VRAM.
 // When set to 0, the default value is 2048.
+//
+// MainGPU is the index of the GPU to use as the primary device when SplitMode
+// is SplitModeNone. When nil, the default GPU (usually index 0) is used.
 //
 // NGpuLayers is the number of model layers to offload to the GPU. When set to 0,
 // all layers are offloaded (default). Set to -1 to keep all layers on CPU. Any
@@ -174,7 +194,28 @@ type Logger func(ctx context.Context, msg string, args ...any)
 //   - SplitModeRow (2): split layers and KV across GPUs with tensor parallelism
 //     (recommended for MoE models like Qwen3-MoE, Mixtral, DeepSeek)
 //
-// When not set, defaults to SplitModeRow for optimal MoE performance.
+// When nil (not set), defaults to SplitModeRow for optimal MoE performance.
+//
+// TensorBuftOverrides is a list of tensor buffer type override patterns that
+// force matching tensors to execute on CPU instead of GPU. This is an expert-level
+// configuration useful for MoE models where certain FFN expert tensors don't fit
+// in VRAM. Supported values:
+//   - "all-ffn": offload all FFN expression tensors to CPU
+//   - "block:N": offload FFN tensors for block N to CPU (e.g., "block:12")
+//   - Any regex pattern matching tensor names (e.g., `blk\.12\.ffn_(up|down|gate)`)
+//
+// TensorSplit controls how model layers are proportionally distributed across
+// multiple GPUs. Each element represents the fraction of the model assigned to
+// the corresponding device. For example, [0.6, 0.4] splits 60%/40% across two
+// GPUs. The length must match the number of devices. When empty, the split is
+// determined automatically based on available VRAM.
+//
+// AutoFitVRAM enables automatic parameter fitting to available VRAM. When true,
+// llama.cpp's ModelParamsFit is called before loading the model, and the fitted
+// parameters (including adjusted n_gpu_layers, context window, tensor_split, and
+// tensor_buft_overrides) are applied. This is opt-in (default false). When false,
+// the existing check-only behavior is preserved (parameters are checked but not
+// modified).
 //
 // SystemPromptCache enables caching of system prompt KV state. When enabled,
 // the first message with role="system" is cached. The system prompt is evaluated
@@ -189,6 +230,18 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // and will return a validation error.
 //
 // UseDirectIO enables direct I/O for model loading.
+//
+// UseMMap controls whether mmap is used for model loading. When nil, mmap is
+// enabled by default (llama.cpp default). Set to false to disable mmap, which
+// is recommended for multi-socket NUMA systems running MoE models with CPU
+// experts — without mmap, tensor data is directly allocated and can be placed
+// on the appropriate NUMA node. UseDirectIO takes precedence over UseMMap.
+//
+// NUMA controls the NUMA (Non-Uniform Memory Access) strategy. This matters
+// most when expert tensors are on CPU and the system has multiple NUMA nodes.
+// Valid values: "" (disabled), "distribute", "isolate", "numactl", "mirror".
+// "distribute" is recommended for multi-socket MoE setups; without it,
+// cross-socket memory access can cause significant bandwidth collapse.
 //
 // YarnAttnFactor sets the YaRN attention magnitude scaling factor. When nil,
 // uses default of 1.0.
@@ -215,26 +268,33 @@ type Logger func(ctx context.Context, msg string, args ...any)
 //   - NSeqMax must be 1 (single-slot mode)
 //   - Draft model should be significantly smaller than the target (e.g., 0.6B draft for 8B target)
 type DraftModelConfig struct {
-	ModelFiles []string // Path to the draft model GGUF file(s)
-	NDraft     int      // Number of tokens to draft per step (default 5)
-	NGpuLayers *int     // GPU layers for draft model (nil = all layers on GPU)
-	Device     string   // Device for draft model (e.g., "GPU1") to pin to a specific GPU
+	ModelFiles  []string  // Path to the draft model GGUF file(s)
+	NDraft      int       // Number of tokens to draft per step (default 5)
+	NGpuLayers  *int      // GPU layers for draft model (nil = all layers on GPU)
+	Device      string    // Deprecated: Use Devices instead.
+	Devices     []string  // Devices for draft model (e.g., ["CUDA0"])
+	MainGPU     *int      // Primary GPU index for draft model
+	TensorSplit []float32 // Per-device tensor split for draft model
 }
 
 type Config struct {
+	AutoFitVRAM          bool
 	CacheMinTokens       int
 	CacheSlotTimeout     int
 	CacheTypeK           GGMLType
 	CacheTypeV           GGMLType
 	ContextWindow        int
 	DefaultParams        Params
-	Device               string
+	Device               string   // Deprecated: Use Devices instead.
+	Devices              []string // Device names for model execution (e.g., ["CUDA0", "CUDA1"])
 	FlashAttention       FlashAttentionType
 	IgnoreIntegrityCheck bool
 	IncrementalCache     bool
 	InsecureLogging      bool
 	JinjaFile            string
 	Log                  Logger
+	MainGPU              *int
+	MoE                  *MoEConfig
 	ModelFiles           []string
 	NBatch               int
 	NGpuLayers           *int
@@ -248,9 +308,13 @@ type Config struct {
 	RopeFreqBase         *float32
 	RopeFreqScale        *float32
 	RopeScaling          RopeScalingType
-	SplitMode            SplitMode
+	SplitMode            *SplitMode
 	SystemPromptCache    bool
+	TensorBuftOverrides  []string
+	TensorSplit          []float32
 	UseDirectIO          bool
+	UseMMap              *bool
+	NUMA                 string
 	YarnAttnFactor       *float32
 	YarnBetaFast         *float32
 	YarnBetaSlow         *float32
@@ -281,19 +345,58 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("%d", *p)
 	}
 
-	return fmt.Sprintf("\nCacheMinTokens[%d]\nCacheSlotTimeout[%d]\nCacheTypeK[%d]\nCacheTypeV[%d]\nContextWindow[%d]\nDevice[%s]\nFlashAttention[%d]\nIgnoreIntegrityCheck[%t]\nIncrementalCache[%t]\nInsecureLogging[%t]\nJinjaFile[%s]\nModelFiles[%v]\nNBatch[%d]\nNGpuLayers[%s]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nOffloadKQV[%s]\nOpOffload[%s]\nProjFile[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSplitMode[%d]\nSystemPromptCache[%t]\nUseDirectIO[%t]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
-		cfg.CacheMinTokens, cfg.CacheSlotTimeout, cfg.CacheTypeK, cfg.CacheTypeV, cfg.ContextWindow, cfg.Device, cfg.FlashAttention, cfg.IgnoreIntegrityCheck,
-		cfg.IncrementalCache, cfg.InsecureLogging, cfg.JinjaFile, cfg.ModelFiles, cfg.NBatch,
+	formatSplitModePtr := func(p *SplitMode) string {
+		if p == nil {
+			return "nil"
+		}
+		return p.String()
+	}
+
+	formatMoEPtr := func(m *MoEConfig) string {
+		if m == nil {
+			return "nil"
+		}
+		topN := "nil"
+		if m.KeepExpertsOnGPUForTopNLayers != nil {
+			topN = fmt.Sprintf("%d", *m.KeepExpertsOnGPUForTopNLayers)
+		}
+		return fmt.Sprintf("{mode:%s top_n:%s}", m.Mode, topN)
+	}
+
+	return fmt.Sprintf("\nAutoFitVRAM[%t]\nCacheMinTokens[%d]\nCacheSlotTimeout[%d]\nCacheTypeK[%d]\nCacheTypeV[%d]\nContextWindow[%d]\nDevice[%s]\nDevices[%v]\nFlashAttention[%d]\nIgnoreIntegrityCheck[%t]\nIncrementalCache[%t]\nInsecureLogging[%t]\nJinjaFile[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%d]\nNGpuLayers[%s]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nProjFile[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSplitMode[%s]\nSystemPromptCache[%t]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nUseDirectIO[%t]\nUseMMap[%s]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
+		cfg.AutoFitVRAM, cfg.CacheMinTokens, cfg.CacheSlotTimeout, cfg.CacheTypeK, cfg.CacheTypeV,
+		cfg.ContextWindow, cfg.Device, cfg.Devices, cfg.FlashAttention, cfg.IgnoreIntegrityCheck,
+		cfg.IncrementalCache, cfg.InsecureLogging, cfg.JinjaFile,
+		formatIntPtr(cfg.MainGPU), formatMoEPtr(cfg.MoE), cfg.ModelFiles, cfg.NBatch,
 		formatIntPtr(cfg.NGpuLayers), cfg.NSeqMax, cfg.NThreads, cfg.NThreadsBatch, cfg.NUBatch,
+		cfg.NUMA,
 		formatBoolPtr(cfg.OffloadKQV), formatBoolPtr(cfg.OpOffload), cfg.ProjFile,
-		formatFloat32Ptr(cfg.RopeFreqBase), formatFloat32Ptr(cfg.RopeFreqScale), cfg.RopeScaling, cfg.SplitMode,
-		cfg.SystemPromptCache, cfg.UseDirectIO, formatFloat32Ptr(cfg.YarnAttnFactor),
+		formatFloat32Ptr(cfg.RopeFreqBase), formatFloat32Ptr(cfg.RopeFreqScale), cfg.RopeScaling,
+		formatSplitModePtr(cfg.SplitMode),
+		cfg.SystemPromptCache, cfg.TensorBuftOverrides, cfg.TensorSplit, cfg.UseDirectIO,
+		formatBoolPtr(cfg.UseMMap),
+		formatFloat32Ptr(cfg.YarnAttnFactor),
 		formatFloat32Ptr(cfg.YarnBetaFast), formatFloat32Ptr(cfg.YarnBetaSlow), formatFloat32Ptr(cfg.YarnExtFactor), formatIntPtr(cfg.YarnOrigCtx), cfg.DraftModel)
 }
 
 func validateConfig(ctx context.Context, cfg Config, log Logger) error {
 	if len(cfg.ModelFiles) == 0 {
 		return fmt.Errorf("validate-config: model file is required")
+	}
+
+	if cfg.Device != "" && len(cfg.Devices) > 0 {
+		return fmt.Errorf("validate-config: Device and Devices are mutually exclusive; use Devices only (Device is deprecated)")
+	}
+
+	if len(cfg.TensorSplit) > 0 && len(cfg.Devices) > 0 && len(cfg.TensorSplit) != len(cfg.Devices) {
+		return fmt.Errorf("validate-config: TensorSplit length (%d) must match Devices length (%d)", len(cfg.TensorSplit), len(cfg.Devices))
+	}
+
+	switch cfg.NUMA {
+	case NUMADisabled, NUMADistribute, NUMAIsolate, NUMANumactl, NUMAMirror:
+		// valid
+	default:
+		return fmt.Errorf("validate-config: unknown NUMA strategy: %s (valid: distribute, isolate, numactl, mirror)", cfg.NUMA)
 	}
 
 	if cfg.SystemPromptCache && cfg.IncrementalCache {
@@ -314,6 +417,27 @@ func validateConfig(ctx context.Context, cfg Config, log Logger) error {
 					return fmt.Errorf("validate-config: draft model: %w", err)
 				}
 			}
+		}
+	}
+
+	if cfg.MoE != nil {
+		switch cfg.MoE.Mode {
+		case MoEModeAuto, MoEModeExpertsCPU, MoEModeExpertsGPU, MoEModeKeepTopN, MoEModeCustom, "":
+			// valid
+		default:
+			return fmt.Errorf("validate-config: unknown MoE mode: %s (valid: auto, experts_cpu, experts_gpu, keep_top_n, custom)", cfg.MoE.Mode)
+		}
+
+		if cfg.MoE.Mode == MoEModeKeepTopN && cfg.MoE.KeepExpertsOnGPUForTopNLayers == nil {
+			return fmt.Errorf("validate-config: MoE mode keep_top_n requires KeepExpertsOnGPUForTopNLayers to be set")
+		}
+
+		if cfg.MoE.KeepExpertsOnGPUForTopNLayers != nil && *cfg.MoE.KeepExpertsOnGPUForTopNLayers < 0 {
+			return fmt.Errorf("validate-config: MoE KeepExpertsOnGPUForTopNLayers must be >= 0, got %d", *cfg.MoE.KeepExpertsOnGPUForTopNLayers)
+		}
+
+		if cfg.MoE.Mode != "" && cfg.MoE.Mode != MoEModeAuto && cfg.MoE.Mode != MoEModeCustom && len(cfg.TensorBuftOverrides) > 0 {
+			return fmt.Errorf("validate-config: MoE mode %s and TensorBuftOverrides are mutually exclusive; use MoE mode 'custom' with TensorBuftOverrides", cfg.MoE.Mode)
 		}
 	}
 
@@ -340,6 +464,17 @@ func validateConfig(ctx context.Context, cfg Config, log Logger) error {
 
 func adjustConfig(cfg Config, model llama.Model) Config {
 	cfg = adjustContextWindow(cfg, model)
+
+	// MoE-optimized defaults: larger batch sizes for CPU expert offload.
+	moeExperts := cfg.MoE != nil && (cfg.MoE.Mode == MoEModeExpertsCPU || cfg.MoE.Mode == MoEModeKeepTopN)
+	if moeExperts {
+		if cfg.NBatch <= 0 {
+			cfg.NBatch = 4096
+		}
+		if cfg.NUBatch <= 0 {
+			cfg.NUBatch = 4096
+		}
+	}
 
 	if cfg.NBatch <= 0 {
 		cfg.NBatch = defNBatch
@@ -402,7 +537,8 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 }
 
 func applyCatalogConfig(user Config, cat Config) Config {
-	if user.Device == "" {
+	if len(user.Devices) == 0 && user.Device == "" {
+		user.Devices = cat.Devices
 		user.Device = cat.Device
 	}
 	if user.ContextWindow == 0 {
@@ -432,6 +568,12 @@ func applyCatalogConfig(user Config, cat Config) Config {
 	if !user.UseDirectIO {
 		user.UseDirectIO = cat.UseDirectIO
 	}
+	if user.UseMMap == nil {
+		user.UseMMap = cat.UseMMap
+	}
+	if user.NUMA == NUMADisabled {
+		user.NUMA = cat.NUMA
+	}
 	if !user.IgnoreIntegrityCheck {
 		user.IgnoreIntegrityCheck = cat.IgnoreIntegrityCheck
 	}
@@ -447,8 +589,17 @@ func applyCatalogConfig(user Config, cat Config) Config {
 	if user.NGpuLayers == nil {
 		user.NGpuLayers = cat.NGpuLayers
 	}
-	if user.SplitMode == SplitModeNone {
+	if user.MainGPU == nil {
+		user.MainGPU = cat.MainGPU
+	}
+	if user.SplitMode == nil {
 		user.SplitMode = cat.SplitMode
+	}
+	if len(user.TensorSplit) == 0 {
+		user.TensorSplit = cat.TensorSplit
+	}
+	if len(user.TensorBuftOverrides) == 0 {
+		user.TensorBuftOverrides = cat.TensorBuftOverrides
 	}
 	if !user.SystemPromptCache {
 		user.SystemPromptCache = cat.SystemPromptCache
@@ -488,6 +639,9 @@ func applyCatalogConfig(user Config, cat Config) Config {
 	}
 	if user.YarnOrigCtx == nil {
 		user.YarnOrigCtx = cat.YarnOrigCtx
+	}
+	if user.MoE == nil {
+		user.MoE = cat.MoE
 	}
 	if user.DraftModel == nil {
 		user.DraftModel = cat.DraftModel
@@ -1120,4 +1274,42 @@ func ParseRopeScalingType(s string) (RopeScalingType, error) {
 	default:
 		return RopeScalingNone, fmt.Errorf("parse-rope-scaling-type: unknown type: %s (valid: none, linear, yarn)", s)
 	}
+}
+
+// =============================================================================
+
+// MoEMode controls expert placement strategy for Mixture of Experts models.
+type MoEMode string
+
+const (
+	// MoEModeAuto uses catalog defaults or AutoFitVRAM.
+	MoEModeAuto MoEMode = "auto"
+
+	// MoEModeExpertsCPU places all routed expert tensors on CPU.
+	// Recommended for VRAM-constrained setups.
+	MoEModeExpertsCPU MoEMode = "experts_cpu"
+
+	// MoEModeExpertsGPU keeps all expert tensors on GPU.
+	// Requires sufficient VRAM for the full model.
+	MoEModeExpertsGPU MoEMode = "experts_gpu"
+
+	// MoEModeKeepTopN keeps routed experts on GPU for the top N layers.
+	// All other expert layers go to CPU.
+	MoEModeKeepTopN MoEMode = "keep_top_n"
+
+	// MoEModeCustom defers to TensorBuftOverrides for expert placement.
+	MoEModeCustom MoEMode = "custom"
+)
+
+// MoEConfig configures Mixture of Experts tensor placement.
+// When nil, no MoE-specific behavior is applied.
+type MoEConfig struct {
+	// Mode controls expert placement strategy.
+	Mode MoEMode `json:"mode,omitempty" yaml:"mode,omitempty"`
+
+	// KeepExpertsOnGPUForTopNLayers keeps routed expert tensors on GPU for the
+	// top N layers (highest-index layers). All other expert layers go to CPU.
+	// Only used when Mode is MoEModeKeepTopN. 0 means all experts on CPU.
+	// llama.cpp convention: "top" means highest-numbered layers.
+	KeepExpertsOnGPUForTopNLayers *int `json:"keep_experts_top_n,omitempty" yaml:"keep-experts-top-n,omitempty"`
 }

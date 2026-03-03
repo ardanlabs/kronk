@@ -173,6 +173,7 @@ export default function CatalogList() {
   const [vramCtx, setVramCtx] = useState(8192);
   const [vramBytes, setVramBytes] = useState(1);
   const [vramSlots, setVramSlots] = useState(2);
+  const [vramExpertLayers, setVramExpertLayers] = useState(0);
   const [showLearnMore, setShowLearnMore] = useState(false);
 
   const [downloadServer, setDownloadServer] = useState<string>(() => {
@@ -462,8 +463,16 @@ export default function CatalogList() {
 
   // Compute VRAM locally from model header data
   const vramInput = modelInfo?.vram?.input;
+  const vramMoE = modelInfo?.vram?.moe ?? null;
+  const vramWeights = modelInfo?.vram?.weights ?? null;
+  const isMoE = vramMoE?.is_moe === true && vramWeights != null;
   const vramResult = vramInput
-    ? calculateVRAM({ ...vramInput, context_window: vramCtx, bytes_per_element: vramBytes, slots: vramSlots })
+    ? calculateVRAM(
+        { ...vramInput, context_window: vramCtx, bytes_per_element: vramBytes, slots: vramSlots },
+        vramWeights,
+        vramMoE,
+        vramExpertLayers,
+      )
     : null;
 
   const handlePull = () => {
@@ -1068,6 +1077,10 @@ export default function CatalogList() {
                             slots={vramSlots}
                             onSlotsChange={setVramSlots}
                             variant="compact"
+                            isMoE={isMoE}
+                            blockCount={vramInput?.block_count}
+                            expertLayersOnGPU={vramExpertLayers}
+                            onExpertLayersOnGPUChange={setVramExpertLayers}
                           />
                         </div>
 
@@ -1077,6 +1090,12 @@ export default function CatalogList() {
                           kvPerSlot={vramResult!.kvPerSlot}
                           kvPerTokenPerLayer={vramResult!.kvPerTokenPerLayer}
                           input={{ ...vramInput!, context_window: vramCtx, bytes_per_element: vramBytes, slots: vramSlots }}
+                          moe={vramMoE}
+                          weights={vramWeights}
+                          modelWeightsGPU={vramResult!.modelWeightsGPU}
+                          modelWeightsCPU={vramResult!.modelWeightsCPU}
+                          computeBufferEst={vramResult!.computeBufferEst}
+                          expertLayersOnGPU={vramExpertLayers}
                         />
                       </>
                     ) : (

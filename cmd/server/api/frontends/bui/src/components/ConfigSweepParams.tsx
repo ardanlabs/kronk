@@ -13,7 +13,10 @@ export interface ConfigSweepParamsProps {
   setRawContextWindow: (v: string) => void;
   rawNSeqMax: string;
   setRawNSeqMax: (v: string) => void;
-  commitNumericSweep: (raw: string, field: 'nbatch' | 'nubatch' | 'contextWindow' | 'nSeqMax', setRaw: (v: string) => void) => void;
+  rawMoeKeepExpertsTopN: string;
+  setRawMoeKeepExpertsTopN: (v: string) => void;
+  commitNumericSweep: (raw: string, field: 'nbatch' | 'nubatch' | 'contextWindow' | 'nSeqMax' | 'moeKeepExpertsTopN', setRaw: (v: string) => void) => void;
+  isMoE?: boolean;
   isRunning: boolean;
   trialCount: number;
 }
@@ -29,7 +32,10 @@ export default function ConfigSweepParams({
   setRawContextWindow,
   rawNSeqMax,
   setRawNSeqMax,
+  rawMoeKeepExpertsTopN,
+  setRawMoeKeepExpertsTopN,
   commitNumericSweep,
+  isMoE,
   isRunning,
   trialCount,
 }: ConfigSweepParamsProps) {
@@ -164,6 +170,47 @@ export default function ConfigSweepParams({
             ))}
           </div>
         </div>
+
+        {isMoE && (
+          <>
+            <div className="playground-sweep-param">
+              <label className="playground-sweep-param-toggle">MoE Mode{PARAM_TOOLTIPS.moeMode && <ParamTooltip text={PARAM_TOOLTIPS.moeMode} />}</label>
+              <div className="playground-sweep-option-checks">
+                {['experts_cpu', 'experts_gpu'].map((val) => (
+                  <label key={val} className="playground-sweep-option-label">
+                    <input
+                      type="checkbox"
+                      checked={configSweepDef.moeMode?.values.includes(val) ?? false}
+                      onChange={(e) => {
+                        setConfigSweepDef(d => {
+                          const prev = d.moeMode?.values ?? [];
+                          const next = e.target.checked ? [...prev, val] : prev.filter(v => v !== val);
+                          return { ...d, moeMode: { enabled: next.length > 0, values: next } };
+                        });
+                      }}
+                      disabled={isRunning}
+                    />
+                    {val === 'experts_cpu' ? 'Experts on CPU' : 'Experts on GPU'}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="playground-sweep-param">
+              <label className="playground-sweep-param-toggle">Expert Layers on GPU{PARAM_TOOLTIPS.moeKeepExpertsTopN && <ParamTooltip text={PARAM_TOOLTIPS.moeKeepExpertsTopN} />}</label>
+              <input
+                type="text"
+                className="playground-sweep-param-values"
+                value={rawMoeKeepExpertsTopN}
+                onChange={(e) => setRawMoeKeepExpertsTopN(e.target.value)}
+                onBlur={() => commitNumericSweep(rawMoeKeepExpertsTopN, 'moeKeepExpertsTopN', setRawMoeKeepExpertsTopN)}
+                onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                placeholder="0, 4, 8, 16"
+                disabled={isRunning}
+              />
+            </div>
+          </>
+        )}
       </div>
       <p style={{ fontSize: 12, color: 'var(--color-gray-600)', marginTop: 8 }}>Trials: {trialCount}</p>
     </div>

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../services/api';
 import { useToken } from '../contexts/TokenContext';
 import type { VRAMCalculatorResponse } from '../types';
-import { VRAMFormulaModal, VRAMControls, VRAMResults } from './vram';
+import { VRAMFormulaModal, VRAMControls, VRAMResults, calculateVRAM } from './vram';
 
 export default function VRAMCalculator() {
   const { token } = useToken();
@@ -10,6 +10,7 @@ export default function VRAMCalculator() {
   const [contextWindow, setContextWindow] = useState(8192);
   const [bytesPerElement, setBytesPerElement] = useState(1);
   const [slots, setSlots] = useState(2);
+  const [expertLayersOnGPU, setExpertLayersOnGPU] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<VRAMCalculatorResponse | null>(null);
@@ -57,6 +58,17 @@ export default function VRAMCalculator() {
     e.preventDefault();
     await performCalculation();
   };
+
+  const isMoE = result?.moe?.is_moe === true && result?.weights != null;
+  const vramInput = result?.input;
+  const vramResult = vramInput
+    ? calculateVRAM(
+        { ...vramInput, context_window: contextWindow, bytes_per_element: bytesPerElement, slots },
+        result?.weights ?? null,
+        result?.moe ?? null,
+        expertLayersOnGPU,
+      )
+    : null;
 
   return (
     <div className="page">
@@ -106,6 +118,10 @@ export default function VRAMCalculator() {
           slots={slots}
           onSlotsChange={setSlots}
           variant="form"
+          isMoE={isMoE}
+          blockCount={vramInput?.block_count}
+          expertLayersOnGPU={expertLayersOnGPU}
+          onExpertLayersOnGPUChange={setExpertLayersOnGPU}
         />
 
         <button type="submit" className="btn btn-primary" disabled={loading}>
@@ -115,13 +131,19 @@ export default function VRAMCalculator() {
 
       {error && <div className="alert alert-error">{error}</div>}
 
-      {result && (
+      {vramResult && result && (
         <VRAMResults
-          totalVram={result.total_vram}
-          slotMemory={result.slot_memory}
-          kvPerSlot={result.kv_per_slot}
-          kvPerTokenPerLayer={result.kv_per_token_per_layer}
-          input={result.input}
+          totalVram={vramResult.totalVram}
+          slotMemory={vramResult.slotMemory}
+          kvPerSlot={vramResult.kvPerSlot}
+          kvPerTokenPerLayer={vramResult.kvPerTokenPerLayer}
+          input={{ ...vramInput!, context_window: contextWindow, bytes_per_element: bytesPerElement, slots }}
+          moe={result.moe}
+          weights={result.weights}
+          modelWeightsGPU={vramResult.modelWeightsGPU}
+          modelWeightsCPU={vramResult.modelWeightsCPU}
+          computeBufferEst={vramResult.computeBufferEst}
+          expertLayersOnGPU={expertLayersOnGPU}
         />
       )}
     </div>

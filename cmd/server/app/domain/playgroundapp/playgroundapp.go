@@ -179,7 +179,7 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 		"cache_type_v":        krn.ModelConfig().CacheTypeV.String(),
 		"system_prompt_cache": krn.ModelConfig().SystemPromptCache,
 		"incremental_cache":   krn.ModelConfig().IncrementalCache,
-		"split_mode":          krn.ModelConfig().SplitMode.String(),
+		"split_mode":          formatSplitMode(krn.ModelConfig().SplitMode),
 		"model_type":          krn.ModelInfo().Type.String(),
 		"is_gpt_model":        krn.ModelInfo().IsGPTModel,
 	}
@@ -367,4 +367,11 @@ func (a *app) cleanupLoop() {
 			}
 		}
 	}
+}
+
+func formatSplitMode(sm *model.SplitMode) string {
+	if sm == nil {
+		return "auto"
+	}
+	return sm.String()
 }

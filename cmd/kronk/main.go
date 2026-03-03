@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/ardanlabs/kronk/cmd/kronk/catalog"
+	"github.com/ardanlabs/kronk/cmd/kronk/devices"
 	"github.com/ardanlabs/kronk/cmd/kronk/libs"
 	"github.com/ardanlabs/kronk/cmd/kronk/model"
 	"github.com/ardanlabs/kronk/cmd/kronk/run"
@@ -96,4 +97,5 @@ func init() {
 	rootCmd.AddCommand(catalog.Cmd)
 	rootCmd.AddCommand(security.Cmd)
 	rootCmd.AddCommand(run.Cmd)
+	rootCmd.AddCommand(devices.Cmd)
 }

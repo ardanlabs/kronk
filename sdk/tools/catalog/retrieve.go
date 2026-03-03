@@ -187,7 +187,7 @@ func (c *Catalog) ResolvedModelConfig(modelID string) ModelConfig {
 		if modelConfig.NGpuLayers != nil {
 			cfg.NGpuLayers = modelConfig.NGpuLayers
 		}
-		if modelConfig.SplitMode != 0 {
+		if modelConfig.SplitMode != nil {
 			cfg.SplitMode = modelConfig.SplitMode
 		}
 		if modelConfig.SystemPromptCache {

@@ -9,7 +9,7 @@ import type {
   BestConfigWeights,
   SamplingConfig,
 } from '../types';
-import { defaultSamplingSweepDef, defaultConfigSweepDef, defaultBestConfigWeights, defaultConfigBestWeights, chatScenario, toolCallScenario, configPerfScenario, generateConfigCandidates, generateTrialCandidates, TRIAL_PAUSE_MS, presetWeights } from '../services/autoTestRunner';
+import { defaultSamplingSweepDef, defaultConfigSweepDef, defaultMoESweepDef, defaultBestConfigWeights, defaultConfigBestWeights, chatScenario, toolCallScenario, configPerfScenario, generateConfigCandidates, generateTrialCandidates, TRIAL_PAUSE_MS, presetWeights } from '../services/autoTestRunner';
 import type { PresetName } from '../services/autoTestRunner';
 import type { AutoTestScenario } from '../types';
 import { useAutoTestRunner } from '../contexts/AutoTestRunnerContext';
@@ -20,6 +20,7 @@ import SamplingSweepParams from './SamplingSweepParams';
 import { SWEEP_PARAM_RANGES } from './SamplingSweepParams';
 import type { SamplingNumericKey, SweepInputTriple } from './SamplingSweepParams';
 import ConfigSweepParams from './ConfigSweepParams';
+import { PARAM_TOOLTIPS, ParamTooltip } from './ParamTooltips';
 import { sortRows, sortIndicator, nextSortDirection, BestTrialMetrics, TrialDetails } from './autoTestShared';
 import type { SortState } from './autoTestShared';
 
@@ -289,6 +290,8 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
   const [rawNUBatch, setRawNUBatch] = useState(() => initConfigSweepDef.nubatch.values.join(', '));
   const [rawContextWindow, setRawContextWindow] = useState(() => initConfigSweepDef.contextWindow.values.join(', '));
   const [rawNSeqMax, setRawNSeqMax] = useState(() => initConfigSweepDef.nSeqMax.values.join(', '));
+  const [availableVRAMGB, setAvailableVRAMGB] = useState<number>(0);
+  const [rawMoeKeepExpertsTopN, setRawMoeKeepExpertsTopN] = useState(() => initConfigSweepDef.moeKeepExpertsTopN?.values.join(', ') ?? '0');
 
   // Hydrate local state when a new run appears (e.g. after navigation).
   // Keyed on runId so it fires once per run, not on every trial update.
@@ -312,6 +315,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
       setRawNUBatch(run.configSweepDef.nubatch.values.join(', '));
       setRawContextWindow(run.configSweepDef.contextWindow.values.join(', '));
       setRawNSeqMax(run.configSweepDef.nSeqMax.values.join(', '));
+      setRawMoeKeepExpertsTopN(run.configSweepDef.moeKeepExpertsTopN?.values.join(', ') ?? '0');
     }
   }, [run?.runId]);
 
@@ -327,13 +331,14 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
 
   const commitNumericSweep = useCallback((
     raw: string,
-    field: 'nbatch' | 'nubatch' | 'contextWindow' | 'nSeqMax',
+    field: 'nbatch' | 'nubatch' | 'contextWindow' | 'nSeqMax' | 'moeKeepExpertsTopN',
     setRaw: (v: string) => void,
   ) => {
-    const values = raw.split(',').map(s => Math.floor(Number(s.trim()))).filter(n => Number.isFinite(n) && n > 0);
+    const minVal = field === 'moeKeepExpertsTopN' ? 0 : 1;
+    const values = raw.split(',').map(s => Math.floor(Number(s.trim()))).filter(n => Number.isFinite(n) && n >= minVal);
     if (values.length === 0) {
       setConfigSweepDef(d => {
-        setRaw(d[field].values.join(', '));
+        setRaw(d[field]?.values.join(', ') ?? '0');
         return d;
       });
       return;
@@ -471,11 +476,12 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
         configSweepDef,
         weights,
         repeats,
+        availableVRAMGB,
       });
     }
     appliedWeightsRef.current = { ...weights };
     setWeightsChanged(false);
-  }, [sweepMode, session, sessionSeed, enabledScenarios, effectiveSweepDef, maxTrials, configSweepDef, weights, repeats, startSamplingRun, startConfigRun]);
+  }, [sweepMode, session, sessionSeed, enabledScenarios, effectiveSweepDef, maxTrials, configSweepDef, weights, repeats, availableVRAMGB, startSamplingRun, startConfigRun]);
 
   const handleWeightChange = useCallback((key: keyof BestConfigWeights, value: number) => {
     setWeights(w => {
@@ -585,21 +591,66 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
 
       {/* Config Parameters (config mode only) */}
       {sweepMode === 'config' && (
-        <ConfigSweepParams
-          configSweepDef={configSweepDef}
-          setConfigSweepDef={setConfigSweepDef}
-          rawNBatch={rawNBatch}
-          setRawNBatch={setRawNBatch}
-          rawNUBatch={rawNUBatch}
-          setRawNUBatch={setRawNUBatch}
-          rawContextWindow={rawContextWindow}
-          setRawContextWindow={setRawContextWindow}
-          rawNSeqMax={rawNSeqMax}
-          setRawNSeqMax={setRawNSeqMax}
-          commitNumericSweep={commitNumericSweep}
-          isRunning={isRunning}
-          trialCount={configTrialCount}
-        />
+        <>
+          <ConfigSweepParams
+            configSweepDef={configSweepDef}
+            setConfigSweepDef={setConfigSweepDef}
+            rawNBatch={rawNBatch}
+            setRawNBatch={setRawNBatch}
+            rawNUBatch={rawNUBatch}
+            setRawNUBatch={setRawNUBatch}
+            rawContextWindow={rawContextWindow}
+            setRawContextWindow={setRawContextWindow}
+            rawNSeqMax={rawNSeqMax}
+            setRawNSeqMax={setRawNSeqMax}
+            rawMoeKeepExpertsTopN={rawMoeKeepExpertsTopN}
+            setRawMoeKeepExpertsTopN={setRawMoeKeepExpertsTopN}
+            commitNumericSweep={commitNumericSweep}
+            isMoE={!!sessionSeed?.base_config?.moe_mode}
+            isRunning={isRunning}
+            trialCount={configTrialCount}
+          />
+          <div style={{ display: 'flex', gap: 6, paddingLeft: 4 }}>
+            <button
+              type="button"
+              className="btn btn-small"
+              onClick={() => {
+                const moe = defaultMoESweepDef;
+                setConfigSweepDef(structuredClone(moe));
+                setRawNBatch(moe.nbatch.values.join(', '));
+                setRawNUBatch(moe.nubatch.values.join(', '));
+                setRawContextWindow(moe.contextWindow.values.join(', '));
+                setRawNSeqMax(moe.nSeqMax.values.join(', '));
+                setRawMoeKeepExpertsTopN(moe.moeKeepExpertsTopN?.values.join(', ') ?? '0');
+              }}
+              disabled={isRunning}
+            >
+              MoE Recommended
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* VRAM Filter (config mode only) */}
+      {sweepMode === 'config' && (
+        <div className="playground-autotest-section">
+          <div className="playground-sweep-params">
+            <div className="playground-sweep-param">
+              <label className="playground-sweep-param-toggle">Available GPU VRAM (GB){PARAM_TOOLTIPS.availableVRAM && <ParamTooltip text={PARAM_TOOLTIPS.availableVRAM} />}</label>
+              <input
+                type="number"
+                className="playground-sweep-param-values"
+                value={availableVRAMGB || ''}
+                onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n) && n >= 0) setAvailableVRAMGB(n); }}
+                placeholder="0 = no filtering"
+                min={0}
+                step={1}
+                disabled={isRunning}
+                style={{ maxWidth: 120 }}
+              />
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Sampling Sweep Parameters (sampling mode only) */}
@@ -651,7 +702,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
       )}
 
       {/* Calibration Status */}
-      {calibrationStatus && isRunning && runnerState !== 'running_trials' && (
+      {calibrationStatus && isRunning && (runnerState !== 'running_trials' || activeTrials.length === 0) && (
         <div className="playground-autotest-status">
           <span className="playground-autotest-spinner" /> {calibrationStatus}
         </div>
@@ -695,6 +746,8 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
                     <div><strong>Flash Attention:</strong> {bestConfigTrial.config?.['flash_attention'] ?? '—'}</div>
                     <div><strong>KV Cache Type:</strong> {bestConfigTrial.config?.['cache_type'] ?? '—'}</div>
                     <div><strong>Cache Mode:</strong> {bestConfigTrial.config?.['cache_mode'] ? (bestConfigTrial.config['cache_mode'] === 'none' ? 'None' : bestConfigTrial.config['cache_mode'].toUpperCase()) : '—'}</div>
+                    {bestConfigTrial.config?.['moe_mode'] && <div><strong>MoE Mode:</strong> {bestConfigTrial.config['moe_mode'] === 'experts_cpu' ? 'Experts on CPU' : bestConfigTrial.config['moe_mode'] === 'experts_gpu' ? 'Experts on GPU' : bestConfigTrial.config['moe_mode']}</div>}
+                    {bestConfigTrial.config?.['moe_keep_experts_top_n'] !== undefined && bestConfigTrial.config?.['moe_keep_experts_top_n'] !== null && <div><strong>Expert Layers on GPU:</strong> {bestConfigTrial.config['moe_keep_experts_top_n']}</div>}
                   </>
                 ) : bestTrial ? (
                   <>

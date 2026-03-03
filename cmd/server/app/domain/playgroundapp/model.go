@@ -75,6 +75,10 @@ type SessionConfig struct {
 	YarnBetaSlow      *float32                  `json:"yarn_beta_slow"`
 	YarnOrigCtx       *int                      `json:"yarn_orig_ctx"`
 	SplitMode         *model.SplitMode          `json:"split_mode"`
+	Devices           []string                  `json:"devices"`
+	MainGPU           *int                      `json:"main_gpu"`
+	TensorSplit       []float32                 `json:"tensor_split"`
+	AutoFitVRAM       *bool                     `json:"auto_fit_vram"`
 }
 
 // ApplyTo merges user overrides onto a base model config. Only fields
@@ -135,7 +139,19 @@ func (sc SessionConfig) ApplyTo(cfg model.Config) model.Config {
 		cfg.YarnOrigCtx = sc.YarnOrigCtx
 	}
 	if sc.SplitMode != nil {
-		cfg.SplitMode = *sc.SplitMode
+		cfg.SplitMode = sc.SplitMode
+	}
+	if len(sc.Devices) > 0 {
+		cfg.Devices = sc.Devices
+	}
+	if sc.MainGPU != nil {
+		cfg.MainGPU = sc.MainGPU
+	}
+	if len(sc.TensorSplit) > 0 {
+		cfg.TensorSplit = sc.TensorSplit
+	}
+	if sc.AutoFitVRAM != nil {
+		cfg.AutoFitVRAM = *sc.AutoFitVRAM
 	}
 	return cfg
 }
@@ -161,7 +177,11 @@ func (sc SessionConfig) HasOverrides() bool {
 		sc.YarnBetaFast != nil ||
 		sc.YarnBetaSlow != nil ||
 		sc.YarnOrigCtx != nil ||
-		sc.SplitMode != nil
+		sc.SplitMode != nil ||
+		sc.Devices != nil ||
+		sc.MainGPU != nil ||
+		sc.TensorSplit != nil ||
+		sc.AutoFitVRAM != nil
 }
 
 // HasOverrides reports whether the request contains any config or template

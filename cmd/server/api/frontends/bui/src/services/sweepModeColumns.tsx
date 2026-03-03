@@ -367,6 +367,26 @@ export function configParamColumns(): ColumnDef<ConfigTrialResult>[] {
         return mode.toUpperCase();
       },
     },
+    {
+      id: 'moe_mode',
+      title: 'MoE Mode',
+      sortable: true,
+      getValue: (row) => row.config?.['moe_mode'],
+      renderCell: (row) => {
+        const mode = row.config?.['moe_mode'];
+        if (!mode) return '—';
+        if (mode === 'experts_cpu') return 'CPU';
+        if (mode === 'experts_gpu') return 'GPU';
+        return mode;
+      },
+    },
+    {
+      id: 'moe_keep_experts_top_n',
+      title: 'Expert Layers GPU',
+      sortable: true,
+      getValue: (row) => row.config?.['moe_keep_experts_top_n'],
+      renderCell: (row) => row.config?.['moe_keep_experts_top_n'] ?? '—',
+    },
   ];
 }
 

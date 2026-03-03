@@ -8,6 +8,10 @@ interface VRAMControlsProps {
   slots: number;
   onSlotsChange: (v: number) => void;
   variant?: 'form' | 'compact';
+  isMoE?: boolean;
+  blockCount?: number;
+  expertLayersOnGPU?: number;
+  onExpertLayersOnGPUChange?: (v: number) => void;
 }
 
 export default function VRAMControls({
@@ -15,6 +19,8 @@ export default function VRAMControls({
   bytesPerElement, onBytesPerElementChange,
   slots, onSlotsChange,
   variant = 'form',
+  isMoE, blockCount,
+  expertLayersOnGPU, onExpertLayersOnGPUChange,
 }: VRAMControlsProps) {
   if (variant === 'compact') {
     return (
@@ -62,6 +68,22 @@ export default function VRAMControls({
             ))}
           </select>
         </div>
+        {isMoE && blockCount != null && blockCount > 0 && (
+          <div className="control-field">
+            <label htmlFor="vram-compact-expertLayers">
+              Expert Layers GPU ({expertLayersOnGPU ?? 0}/{blockCount})
+            </label>
+            <input
+              id="vram-compact-expertLayers"
+              type="range"
+              min={0}
+              max={blockCount}
+              value={expertLayersOnGPU ?? 0}
+              onChange={(e) => onExpertLayersOnGPUChange?.(Number(e.target.value))}
+              className="form-range"
+            />
+          </div>
+        )}
       </div>
     );
   }
@@ -111,6 +133,29 @@ export default function VRAMControls({
           ))}
         </select>
       </div>
+      {isMoE && blockCount != null && blockCount > 0 && (
+        <div className="form-group">
+          <label htmlFor="vram-expertLayers">
+            Expert Layers on GPU ({expertLayersOnGPU ?? 0} of {blockCount})
+          </label>
+          <input
+            id="vram-expertLayers"
+            type="range"
+            min={0}
+            max={blockCount}
+            value={expertLayersOnGPU ?? 0}
+            onChange={(e) => onExpertLayersOnGPUChange?.(Number(e.target.value))}
+            className="form-range"
+          />
+          <div style={{ fontSize: '0.85em', opacity: 0.7 }}>
+            {expertLayersOnGPU === 0
+              ? 'All experts on CPU (recommended for limited VRAM)'
+              : expertLayersOnGPU === blockCount
+                ? 'All experts on GPU (requires full VRAM)'
+                : `Top ${expertLayersOnGPU} layers on GPU, rest on CPU`}
+          </div>
+        </div>
+      )}
     </>
   );
 }

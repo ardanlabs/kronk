@@ -51,6 +51,8 @@ export default function ModelPlayground() {
     flashAttention, setFlashAttention,
     cacheType, setCacheType,
     cacheMode, setCacheMode,
+    moeMode, setMoeMode,
+    moeKeepTopN, setMoeKeepTopN,
     hydratedModelId, setHydratedModelId,
   } = usePlayground();
 
@@ -103,6 +105,10 @@ export default function ModelPlayground() {
   const pendingAutoSelectRef = useRef(false);
   const expectedFilenameRef = useRef('');
 
+  // MoE detection: true when the selected model has MoE metadata
+  const [isMoE, setIsMoE] = useState(false);
+  const [moeBlockCount, setMoeBlockCount] = useState(0);
+
   // Tool test state
   const [toolDefs, setToolDefs] = useState(defaultTools);
   const [toolPrompt, setToolPrompt] = useState("What's the weather in Boston? Use the get_weather tool.");
@@ -152,7 +158,21 @@ export default function ModelPlayground() {
           setFlashAttention(mc['flash-attention'] || 'enabled');
           setCacheType(mc['cache-type-k'] || mc['cache-type-v'] || '');
           setCacheMode(mc['incremental-cache'] ? 'imc' : mc['system-prompt-cache'] ? 'spc' : 'none');
+          setMoeMode(mc.moe?.mode || '');
+          setMoeKeepTopN(mc.moe?.['keep-experts-top-n'] ?? 0);
         }
+
+        // Detect MoE from model metadata or VRAM info.
+        const modelIsMoE = info.vram?.moe?.is_moe === true
+          || (info.metadata && Object.keys(info.metadata).some(k => k.endsWith('.expert_count')));
+        setIsMoE(modelIsMoE);
+
+        // Extract block_count for MoE layer slider range.
+        if (info.metadata) {
+          const blockKey = Object.keys(info.metadata).find(k => k.endsWith('.block_count'));
+          setMoeBlockCount(blockKey ? parseInt(info.metadata[blockKey], 10) || 0 : 0);
+        }
+
         setHydratedModelId(selectedModel);
       })
       .catch((err) => {
@@ -260,6 +280,12 @@ export default function ModelPlayground() {
       if (!catalogConfig || cacheMode !== catalogCacheMode) {
         config['system_prompt_cache'] = cacheMode === 'spc';
         config['incremental_cache'] = cacheMode === 'imc';
+      }
+      if (moeMode) {
+        config['moe_mode'] = moeMode;
+        if (moeMode === 'keep_top_n') {
+          config['moe_keep_experts_top_n'] = moeKeepTopN;
+        }
       }
 
       const resp = await api.createPlaygroundSession({
@@ -847,6 +873,8 @@ export default function ModelPlayground() {
                     cache_type_v: cacheType || undefined,
                     system_prompt_cache: cacheMode === 'spc',
                     incremental_cache: cacheMode === 'imc',
+                    moe_mode: moeMode || undefined,
+                    moe_keep_experts_top_n: moeMode === 'keep_top_n' ? moeKeepTopN : undefined,
                   },
                 }}
               />
@@ -950,7 +978,43 @@ export default function ModelPlayground() {
                 <option value="imc">IMC (Incremental)</option>
               </select>
             </div>
+            {isMoE && (
+              <div className="form-group">
+                <label htmlFor="pg-moe-mode">Expert Placement{PARAM_TOOLTIPS.moeMode && <ParamTooltip text={PARAM_TOOLTIPS.moeMode} />}</label>
+                <select
+                  id="pg-moe-mode"
+                  value={moeMode}
+                  onChange={(e) => setMoeMode(e.target.value)}
+                  disabled={!!session}
+                >
+                  <option value="">Auto (catalog default)</option>
+                  <option value="experts_cpu">Experts on CPU (recommended)</option>
+                  <option value="keep_top_n">Keep some expert layers on GPU</option>
+                  <option value="experts_gpu">All experts on GPU</option>
+                  <option value="custom">Custom (tensor overrides)</option>
+                </select>
+              </div>
+            )}
+            {isMoE && moeMode === 'keep_top_n' && (
+              <div className="form-group">
+                <label htmlFor="pg-moe-topn">Expert Layers on GPU{PARAM_TOOLTIPS.moeKeepExpertsTopN && <ParamTooltip text={PARAM_TOOLTIPS.moeKeepExpertsTopN} />}</label>
+                <input
+                  id="pg-moe-topn"
+                  type="number"
+                  value={moeKeepTopN}
+                  onChange={(e) => setMoeKeepTopN(Number(e.target.value))}
+                  min={0}
+                  max={moeBlockCount || 999}
+                  disabled={!!session}
+                />
+              </div>
+            )}
           </div>
+          {isMoE && (moeMode === 'experts_cpu' || moeMode === 'keep_top_n') && (
+            <div className="playground-moe-tips" style={{ fontSize: '0.85em', color: 'var(--color-text-secondary, #aaa)', padding: '0 0 8px', lineHeight: 1.4 }}>
+              💡 {PARAM_TOOLTIPS.moeTipBatch} {PARAM_TOOLTIPS.moeTipFlashAttention}
+            </div>
+          )}
 
           <div className="playground-session-controls">
             {!session ? (

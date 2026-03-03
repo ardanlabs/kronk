@@ -28,6 +28,7 @@ import {
 } from '../services/autoTestRunner';
 import { api } from '../services/api';
 import { saveCompletedRun } from '../services/autoTestHistory';
+import { calculateVRAM } from '../components/vram/calculate';
 
 function mergeLogEntries(
   prevLogs: AutoTestLogEntry[],
@@ -233,6 +234,7 @@ interface AutoTestRunnerContextType {
     configSweepDef: ConfigSweepDefinition;
     weights: BestConfigWeights;
     repeats: number;
+    availableVRAMGB?: number;
   }): void;
 
   stopRun(): void;
@@ -536,12 +538,13 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
     })();
   }, []);
 
-  const startConfigRun = useCallback(({ sessionSeed, enabledScenarios, configSweepDef, weights, repeats }: {
+  const startConfigRun = useCallback(({ sessionSeed, enabledScenarios, configSweepDef, weights, repeats, availableVRAMGB }: {
     sessionSeed: AutoTestSessionSeed;
     enabledScenarios: EnabledScenarios;
     configSweepDef: ConfigSweepDefinition;
     weights: BestConfigWeights;
     repeats: number;
+    availableVRAMGB?: number;
   }) => {
     if (runLockRef.current) return;
 
@@ -604,6 +607,52 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
           return;
         }
 
+        // VRAM validation phase: skip candidates that exceed available VRAM.
+        let filteredCandidates = configCandidates;
+        if (availableVRAMGB && availableVRAMGB > 0) {
+          const availableBytes = availableVRAMGB * 1024 * 1024 * 1024;
+          try {
+            setRun(prev => prev && !isStale() ? { ...prev, calibrationStatus: 'Estimating VRAM per candidate…' } : prev);
+            const modelInfo = await api.showModel(sessionSeed.model_id);
+            const vramInput = modelInfo.vram?.input;
+
+            if (vramInput) {
+              const vramWeights = modelInfo.vram?.weights ?? null;
+              const vramMoE = modelInfo.vram?.moe ?? null;
+
+              filteredCandidates = configCandidates.filter(candidate => {
+                const input = { ...vramInput };
+                if (candidate['context_window'] !== undefined) input.context_window = candidate['context_window'];
+                if (candidate['nseq_max'] !== undefined) input.slots = candidate['nseq_max'];
+                if (candidate['cache_type'] !== undefined) {
+                  if (candidate['cache_type'] === 'q8_0') input.bytes_per_element = 1;
+                  else if (candidate['cache_type'] === 'q4_0') input.bytes_per_element = 0.5625;
+                  else input.bytes_per_element = 2; // f16
+                }
+                const expertLayers = candidate['moe_keep_experts_top_n'] ?? input.expert_layers_on_gpu ?? 0;
+                const result = calculateVRAM(input, vramWeights, vramMoE, expertLayers);
+                return result.totalVram <= availableBytes;
+              });
+
+              const skipped = configCandidates.length - filteredCandidates.length;
+              if (skipped > 0) {
+                setRun(prev => prev && !isStale() ? { ...prev, calibrationStatus: `Skipped ${skipped} of ${configCandidates.length} candidates exceeding ${availableVRAMGB} GB VRAM` } : prev);
+              } else {
+                setRun(prev => prev && !isStale() ? { ...prev, calibrationStatus: undefined } : prev);
+              }
+            }
+          } catch {
+            setRun(prev => prev && !isStale() ? { ...prev, calibrationStatus: 'VRAM estimation failed — running all candidates' } : prev);
+          }
+
+          if (isStale()) return;
+
+          if (filteredCandidates.length === 0) {
+            if (!isStale()) setRun(prev => prev ? { ...prev, errorMessage: `All ${configCandidates.length} candidates exceed ${availableVRAMGB} GB VRAM — lower context window, slots, or increase VRAM limit`, status: 'error' } : prev);
+            return;
+          }
+        }
+
         const scenarios: AutoTestScenario[] = [configPerfScenario];
 
         const activeBaseline: SamplingCandidate = {
@@ -616,14 +665,14 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
           presence_penalty: 0,
         };
 
-        const queuedConfigTrials: ConfigTrialResult[] = configCandidates.map((c, idx) => ({
+        const queuedConfigTrials: ConfigTrialResult[] = filteredCandidates.map((c, idx) => ({
           id: `${runId}-trial-${idx}`,
           status: 'queued' as const,
           candidate: activeBaseline,
           scenarioResults: [],
           config: c,
         }));
-        setRun(prev => prev && !isStale() ? { ...prev, status: 'running_trials', runStartedAt: new Date().toISOString(), totalTrials: configCandidates.length, currentTrialIndex: 0, trials: queuedConfigTrials } : prev);
+        setRun(prev => prev && !isStale() ? { ...prev, status: 'running_trials', runStartedAt: new Date().toISOString(), totalTrials: filteredCandidates.length, currentTrialIndex: 0, trials: queuedConfigTrials } : prev);
 
         await runTrialLoop<ConfigTrialResult>({
           signal: controller.signal,
@@ -685,7 +734,7 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
               });
             };
 
-            const { 'cache_type': cacheType, 'cache_mode': cacheMode, ...cfgRest } = candidate;
+            const { 'cache_type': cacheType, 'cache_mode': cacheMode, 'moe_mode': moeMode, 'moe_keep_experts_top_n': moeKeepExpertsTopN, ...cfgRest } = candidate;
             const apiCfg = {
               ...cfgRest,
               ...(cacheType !== undefined && { 'cache_type_k': cacheType, 'cache_type_v': cacheType }),
@@ -693,6 +742,8 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
                 'system_prompt_cache': cacheMode === 'spc',
                 'incremental_cache': cacheMode === 'imc',
               }),
+              ...(moeMode !== undefined && { 'moe_mode': moeMode }),
+              ...(moeKeepExpertsTopN !== undefined && { 'moe_keep_experts_top_n': moeKeepExpertsTopN }),
             };
             let configSessionId: string | null = null;
 
