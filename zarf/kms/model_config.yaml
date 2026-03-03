@@ -109,6 +109,33 @@ Qwen3-Coder-Next-Q8_0/SPC:
   system-prompt-cache: true
 
 # ------------------------------------------------------------------------------
+# On Apple Silicon you need to use `make kronk-server-mac-bf16-build`
+
+Qwen3.5-35B-A3B-UD-Q8_K_XL/CLINE:
+  nseq-max: 1
+  incremental-cache: true
+  sampling-parameters:
+    temperature: 0.6
+    top_k: 20
+    top_p: 0.95
+    dry_multiplier: 2.0
+    presence_penalty: 1.5
+
+Qwen3.5-35B-A3B-UD-Q8_K_XL/KILO:
+  nseq-max: 3
+  incremental-cache: true
+  sampling-parameters:
+    temperature: 0.6
+    top_k: 20
+    top_p: 0.95
+    dry_multiplier: 2.0
+    presence_penalty: 1.5
+
+Qwen3.5-35B-A3B-UD-Q8_K_XL/SPC:
+  nseq-max: 1
+  system-prompt-cache: true
+
+# ------------------------------------------------------------------------------
 
 Qwen_Qwen3.5-35B-A3B-Q8_0/CLINE:
   nseq-max: 1

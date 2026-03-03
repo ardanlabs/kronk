@@ -377,6 +377,13 @@ kronk-server-download: kronk-build
 	export KRONK_CATALOG_REPO_PATH=$$HOME/code/go/src/github.com/ardanlabs/kronk_catalogs && \
 	CGO_ENABLED=0 go run cmd/kronk/main.go server start | CGO_ENABLED=0 go run cmd/server/api/tooling/logfmt/main.go
 
+kronk-server-mac-bf16-build: kronk-build
+	. .env 2>/dev/null || true && \
+	export KRONK_INSECURE_LOGGING=true && \
+	export KRONK_CATALOG_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
+	export KRONK_CATALOG_REPO_PATH=$$HOME/code/go/src/github.com/ardanlabs/kronk_catalogs && \
+	CGO_ENABLED=1 go run -ldflags='-linkmode=external -extldflags "-Wl,-platform_version,macos,26.0,36.0"' cmd/kronk/main.go server start | CGO_ENABLED=0 go run cmd/server/api/tooling/logfmt/main.go
+
 kronk-server-detach: bui-build
 	CGO_ENABLED=0 go run cmd/kronk/main.go server start --detach
 
@@ -947,6 +954,9 @@ example-audio:
 
 example-chat:
 	CGO_ENABLED=0 go run examples/chat/main.go
+
+example-chat-bug:
+	CGO_ENABLED=1 go run -ldflags='-linkmode=external -extldflags "-Wl,-platform_version,macos,26.0,26.9"' examples/chat/main.go
 
 example-embedding:
 	CGO_ENABLED=0 go run examples/embedding/main.go
