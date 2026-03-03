@@ -34,7 +34,7 @@
             version = "1.20.1";
             src = ../../.;
             subPackages = [ "cmd/kronk" ];
-            vendorHash = "sha256-1sNrS2prNd7DnTU3pRw+IptsP4GISVSe5mKAe4BlytA=";
+            vendorHash = "sha256-khFwlUh3HdEezl3aQCwuXLy6w0id33g2hfx1KEvPhRg=";
 
             env.CGO_ENABLED = 0;
           };
