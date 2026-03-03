@@ -102,14 +102,14 @@ install-tooling:
 # Install the kronk cli.
 install-kronk:
 	@echo ========== INSTALL KRONK ==========
-	go install ./cmd/kronk
+	CGO_ENABLED=0 go install ./cmd/kronk
 	@echo
 
 # Use this to install or update llama.cpp to the latest version. Needed to
 # run tests locally.
 install-libraries:
 	@echo ========== INSTALL LIBRARIES ==========
-	go run cmd/kronk/main.go libs --local
+	CGO_ENABLED=0 go run cmd/kronk/main.go libs --local
 	@echo
 
 # Use this to install the test models.
@@ -291,12 +291,12 @@ benchmark-all:
 
 # Format benchmark results from runs/ into BENCH_RESULTS.txt.
 benchmark-fmt:
-	go run cmd/server/api/tooling/benchfmt/main.go
+	CGO_ENABLED=0 go run cmd/server/api/tooling/benchfmt/main.go
 
 # Append a single run file to the top of BENCH_RESULTS.txt with diffs.
 # Usage: make benchmark-fmt-file FILE=2026-03-01.txt
 benchmark-fmt-file:
-	go run cmd/server/api/tooling/benchfmt/main.go $(FILE)
+	CGO_ENABLED=0 go run cmd/server/api/tooling/benchfmt/main.go $(FILE)
 
 # ==============================================================================
 # IMC Diagnostics
@@ -360,14 +360,14 @@ kronk-server:
 	export KRONK_INSECURE_LOGGING=true && \
 	export KRONK_CATALOG_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
 	export KRONK_CATALOG_REPO_PATH=$$HOME/code/go/src/github.com/ardanlabs/kronk_catalogs && \
-	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
+	CGO_ENABLED=0 go run cmd/kronk/main.go server start | CGO_ENABLED=0 go run cmd/server/api/tooling/logfmt/main.go
 
 kronk-server-build: kronk-build
 	. .env 2>/dev/null || true && \
 	export KRONK_INSECURE_LOGGING=true && \
 	export KRONK_CATALOG_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
 	export KRONK_CATALOG_REPO_PATH=$$HOME/code/go/src/github.com/ardanlabs/kronk_catalogs && \
-	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
+	CGO_ENABLED=0 go run cmd/kronk/main.go server start | CGO_ENABLED=0 go run cmd/server/api/tooling/logfmt/main.go
 
 kronk-server-download: kronk-build
 	. .env 2>/dev/null || true && \
@@ -375,121 +375,121 @@ kronk-server-download: kronk-build
 	export KRONK_INSECURE_LOGGING=true && \
 	export KRONK_CATALOG_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
 	export KRONK_CATALOG_REPO_PATH=$$HOME/code/go/src/github.com/ardanlabs/kronk_catalogs && \
-	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
+	CGO_ENABLED=0 go run cmd/kronk/main.go server start | CGO_ENABLED=0 go run cmd/server/api/tooling/logfmt/main.go
 
 kronk-server-detach: bui-build
-	go run cmd/kronk/main.go server start --detach
+	CGO_ENABLED=0 go run cmd/kronk/main.go server start --detach
 
 kronk-server-logs:
-	go run cmd/kronk/main.go server logs
+	CGO_ENABLED=0 go run cmd/kronk/main.go server logs
 
 kronk-server-stop:
-	go run cmd/kronk/main.go server stop
+	CGO_ENABLED=0 go run cmd/kronk/main.go server stop
 
 # ------------------------------------------------------------------------------
 
 kronk-libs:
-	go run cmd/kronk/main.go libs
+	CGO_ENABLED=0 go run cmd/kronk/main.go libs
 
 kronk-libs-local: install-libraries
 
 # ------------------------------------------------------------------------------
 
 kronk-model-index:
-	go run cmd/kronk/main.go model index
+	CGO_ENABLED=0 go run cmd/kronk/main.go model index
 
 kronk-model-index-local:
-	go run cmd/kronk/main.go model index --local
+	CGO_ENABLED=0 go run cmd/kronk/main.go model index --local
 
 
 kronk-model-list:
-	go run cmd/kronk/main.go model list
+	CGO_ENABLED=0 go run cmd/kronk/main.go model list
 
 kronk-model-list-local:
-	go run cmd/kronk/main.go model list --local
+	CGO_ENABLED=0 go run cmd/kronk/main.go model list --local
 
 
 # make kronk-model-pull URL="Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
 kronk-model-pull:
-	go run cmd/kronk/main.go model pull "$(URL)"
+	CGO_ENABLED=0 go run cmd/kronk/main.go model pull "$(URL)"
 
 # make kronk-model-pull-local URL="Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
 kronk-model-pull-local:
-	go run cmd/kronk/main.go model pull --local "$(URL)"
+	CGO_ENABLED=0 go run cmd/kronk/main.go model pull --local "$(URL)"
 
 
 kronk-model-ps:
-	go run cmd/kronk/main.go model ps
+	CGO_ENABLED=0 go run cmd/kronk/main.go model ps
 
 
 # make kronk-model-remove ID="cerebras_qwen3-coder-reap-25b-a3b-q8_0"
 kronk-model-remove:
-	go run cmd/kronk/main.go model remove "$(ID)"
+	CGO_ENABLED=0 go run cmd/kronk/main.go model remove "$(ID)"
 
 # make kronk-model-remove-local ID="cerebras_qwen3-coder-reap-25b-a3b-q8_0"
 kronk-model-remove-local:
-	go run cmd/kronk/main.go model remove --local "$(ID)"
+	CGO_ENABLED=0 go run cmd/kronk/main.go model remove --local "$(ID)"
 
 
 # make kronk-model-show ID="Qwen3-8B-Q8_0"
 kronk-model-show:
-	go run cmd/kronk/main.go model show "$(ID)"
+	CGO_ENABLED=0 go run cmd/kronk/main.go model show "$(ID)"
 
 # make kronk-model-show-local ID="Qwen3-8B-Q8_0"
 kronk-model-show-local:
-	go run cmd/kronk/main.go model show --local "$(ID)"
+	CGO_ENABLED=0 go run cmd/kronk/main.go model show --local "$(ID)"
 
 # ------------------------------------------------------------------------------
 
 kronk-catalog-update-local:
-	go run cmd/kronk/main.go catalog update --local
+	CGO_ENABLED=0 go run cmd/kronk/main.go catalog update --local
 
 
 kronk-catalog-list:
-	go run cmd/kronk/main.go catalog list
+	CGO_ENABLED=0 go run cmd/kronk/main.go catalog list
 
 kronk-catalog-list-local:
-	go run cmd/kronk/main.go catalog list --local
+	CGO_ENABLED=0 go run cmd/kronk/main.go catalog list --local
 
 
 # make kronk-catalog-show ID="Qwen3-8B-Q8_0"
 kronk-catalog-show:
-	go run cmd/kronk/main.go catalog show "$(ID)"
+	CGO_ENABLED=0 go run cmd/kronk/main.go catalog show "$(ID)"
 
 # make kronk-catalog-show-local ID="Qwen2.5-VL-3B-Instruct-Q8_0"
 kronk-catalog-show-local:
-	go run cmd/kronk/main.go catalog show --local "$(ID)"
+	CGO_ENABLED=0 go run cmd/kronk/main.go catalog show --local "$(ID)"
 
 
 # make kronk-catalog-pull ID="Qwen3-8B-Q8_0"
 kronk-catalog-pull:
-	go run cmd/kronk/main.go catalog pull "$(ID)"
+	CGO_ENABLED=0 go run cmd/kronk/main.go catalog pull "$(ID)"
 
 # make kronk-catalog-pull-local ID="Qwen3-Coder-30B-A3B-Instruct-Q8_0"
 kronk-catalog-pull-local:
-	go run cmd/kronk/main.go catalog pull --local "$(ID)"
+	CGO_ENABLED=0 go run cmd/kronk/main.go catalog pull --local "$(ID)"
 
 # ------------------------------------------------------------------------------
 
 kronk-security-help:
-	go run cmd/kronk/main.go security --help
+	CGO_ENABLED=0 go run cmd/kronk/main.go security --help
 
 
 kronk-security-key-list:
-	go run cmd/kronk/main.go security key list
+	CGO_ENABLED=0 go run cmd/kronk/main.go security key list
 
 kronk-security-key-list-local:
-	go run cmd/kronk/main.go security key list --local
+	CGO_ENABLED=0 go run cmd/kronk/main.go security key list --local
 
 # make kronk-security-token-create-local U="bill" D="5m" E="chat-completions"
 kronk-security-token-create-local:
-	go run cmd/kronk/main.go security token create --local --username "$(U)" --duration "$(D)" --endpoints "$(E)"
+	CGO_ENABLED=0 go run cmd/kronk/main.go security token create --local --username "$(U)" --duration "$(D)" --endpoints "$(E)"
 
 # ------------------------------------------------------------------------------
 
 # make kronk-run ID="Qwen3-8B-Q8_0"
 kronk-run:
-	go run cmd/kronk/main.go run "$(ID)"
+	CGO_ENABLED=0 go run cmd/kronk/main.go run "$(ID)"
 
 # ==============================================================================
 # Catalog Arch Check
