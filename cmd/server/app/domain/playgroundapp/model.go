@@ -56,29 +56,31 @@ func (s *SessionRequest) Validate() error {
 // distinguishing "not set by user" (nil) from an explicit value, so that only
 // user-provided overrides are merged on top of the catalog-resolved base config.
 type SessionConfig struct {
-	ContextWindow     *int                      `json:"context_window"`
-	NBatch            *int                      `json:"nbatch"`
-	NUBatch           *int                      `json:"nubatch"`
-	NSeqMax           *int                      `json:"nseq_max"`
-	FlashAttention    *model.FlashAttentionType `json:"flash_attention"`
-	CacheTypeK        *model.GGMLType           `json:"cache_type_k"`
-	CacheTypeV        *model.GGMLType           `json:"cache_type_v"`
-	NGpuLayers        *int                      `json:"ngpu_layers"`
-	SystemPromptCache *bool                     `json:"system_prompt_cache"`
-	IncrementalCache  *bool                     `json:"incremental_cache"`
-	RopeScaling       *model.RopeScalingType    `json:"rope_scaling_type"`
-	RopeFreqBase      *float32                  `json:"rope_freq_base"`
-	RopeFreqScale     *float32                  `json:"rope_freq_scale"`
-	YarnExtFactor     *float32                  `json:"yarn_ext_factor"`
-	YarnAttnFactor    *float32                  `json:"yarn_attn_factor"`
-	YarnBetaFast      *float32                  `json:"yarn_beta_fast"`
-	YarnBetaSlow      *float32                  `json:"yarn_beta_slow"`
-	YarnOrigCtx       *int                      `json:"yarn_orig_ctx"`
-	SplitMode         *model.SplitMode          `json:"split_mode"`
-	Devices           []string                  `json:"devices"`
-	MainGPU           *int                      `json:"main_gpu"`
-	TensorSplit       []float32                 `json:"tensor_split"`
-	AutoFitVRAM       *bool                     `json:"auto_fit_vram"`
+	ContextWindow       *int                      `json:"context_window"`
+	NBatch              *int                      `json:"nbatch"`
+	NUBatch             *int                      `json:"nubatch"`
+	NSeqMax             *int                      `json:"nseq_max"`
+	FlashAttention      *model.FlashAttentionType `json:"flash_attention"`
+	CacheTypeK          *model.GGMLType           `json:"cache_type_k"`
+	CacheTypeV          *model.GGMLType           `json:"cache_type_v"`
+	NGpuLayers          *int                      `json:"ngpu_layers"`
+	SystemPromptCache   *bool                     `json:"system_prompt_cache"`
+	IncrementalCache    *bool                     `json:"incremental_cache"`
+	RopeScaling         *model.RopeScalingType    `json:"rope_scaling_type"`
+	RopeFreqBase        *float32                  `json:"rope_freq_base"`
+	RopeFreqScale       *float32                  `json:"rope_freq_scale"`
+	YarnExtFactor       *float32                  `json:"yarn_ext_factor"`
+	YarnAttnFactor      *float32                  `json:"yarn_attn_factor"`
+	YarnBetaFast        *float32                  `json:"yarn_beta_fast"`
+	YarnBetaSlow        *float32                  `json:"yarn_beta_slow"`
+	YarnOrigCtx         *int                      `json:"yarn_orig_ctx"`
+	SplitMode           *model.SplitMode          `json:"split_mode"`
+	Devices             []string                  `json:"devices"`
+	MainGPU             *int                      `json:"main_gpu"`
+	TensorSplit         []float32                 `json:"tensor_split"`
+	AutoFitVRAM         *bool                     `json:"auto_fit_vram"`
+	OpOffloadMinBatch   *int                      `json:"op_offload_min_batch"`
+	TensorBuftOverrides []string                  `json:"tensor_buft_overrides"`
 }
 
 // ApplyTo merges user overrides onto a base model config. Only fields
@@ -153,6 +155,12 @@ func (sc SessionConfig) ApplyTo(cfg model.Config) model.Config {
 	if sc.AutoFitVRAM != nil {
 		cfg.AutoFitVRAM = *sc.AutoFitVRAM
 	}
+	if sc.OpOffloadMinBatch != nil {
+		cfg.OpOffloadMinBatch = *sc.OpOffloadMinBatch
+	}
+	if len(sc.TensorBuftOverrides) > 0 {
+		cfg.TensorBuftOverrides = sc.TensorBuftOverrides
+	}
 	return cfg
 }
 
@@ -181,7 +189,9 @@ func (sc SessionConfig) HasOverrides() bool {
 		sc.Devices != nil ||
 		sc.MainGPU != nil ||
 		sc.TensorSplit != nil ||
-		sc.AutoFitVRAM != nil
+		sc.AutoFitVRAM != nil ||
+		sc.OpOffloadMinBatch != nil ||
+		sc.TensorBuftOverrides != nil
 }
 
 // HasOverrides reports whether the request contains any config or template
@@ -209,6 +219,10 @@ func (sc SessionConfig) Validate() error {
 
 	if sc.NSeqMax != nil && (*sc.NSeqMax < 1 || *sc.NSeqMax > 64) {
 		return fmt.Errorf("nseq-max must be between 1 and 64, got %d", *sc.NSeqMax)
+	}
+
+	if sc.OpOffloadMinBatch != nil && *sc.OpOffloadMinBatch < 0 {
+		return fmt.Errorf("op-offload-min-batch must be >= 0, got %d", *sc.OpOffloadMinBatch)
 	}
 
 	return nil

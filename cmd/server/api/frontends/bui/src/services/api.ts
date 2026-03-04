@@ -26,6 +26,7 @@ import type {
   PlaygroundSessionRequest,
   PlaygroundSessionResponse,
   PlaygroundChatRequest,
+  DevicesResponse,
 } from '../types';
 
 class ApiService {
@@ -680,6 +681,10 @@ class ApiService {
       });
 
     return () => controller.abort();
+  }
+
+  async getDevices(): Promise<DevicesResponse> {
+    return this.request<DevicesResponse>('/devices');
   }
 
 }

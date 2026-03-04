@@ -553,13 +553,12 @@ func parseMetadataInt64WithFallback(metadata map[string]string, key string, suff
 func FetchGGUFMetadata(ctx context.Context, url string) (map[string]string, int64, error) {
 	var client http.Client
 
-	initialBytes := 24
-	headerData, fileSize, err := fetchRange(ctx, &client, url, 0, int64(initialBytes-1))
+	data, fileSize, err := fetchRange(ctx, &client, url, 0, ggufHeaderFetchSize-1)
 	if err != nil {
-		return nil, 0, fmt.Errorf("fetch-gguf-metadata: failed to fetch initial header: %w", err)
+		return nil, 0, fmt.Errorf("fetch-gguf-metadata: failed to fetch header data: %w", err)
 	}
 
-	reader := bytes.NewReader(headerData)
+	reader := bytes.NewReader(data)
 
 	var header ggufHeader
 	if err := binary.Read(reader, binary.LittleEndian, &header.Magic); err != nil {
@@ -582,19 +581,9 @@ func FetchGGUFMetadata(ctx context.Context, url string) (map[string]string, int6
 		return nil, 0, fmt.Errorf("fetch-gguf-metadata: failed to read metadata count: %w", err)
 	}
 
-	metadataSize := estimateMetadataSize(header.MetadataKvCount)
-	metadataData, _, err := fetchRange(ctx, &client, url, int64(initialBytes), int64(initialBytes)+metadataSize-1)
-	if err != nil {
-		return nil, 0, fmt.Errorf("fetch-gguf-metadata: failed to fetch metadata: %w", err)
-	}
-
-	allData := append(headerData, metadataData...)
-	fullReader := bytes.NewReader(allData)
-	fullReader.Seek(int64(initialBytes), io.SeekStart)
-
 	metadata := make(map[string]string)
 	for i := uint64(0); i < header.MetadataKvCount; i++ {
-		key, value, err := readMetadataKVFromReader(fullReader)
+		key, value, err := readMetadataKVFromReader(reader)
 		if err != nil {
 			break
 		}
@@ -624,7 +613,7 @@ func fetchRange(ctx context.Context, client *http.Client, url string, start, end
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusPartialContent && resp.StatusCode != http.StatusOK {
-		return nil, 0, fmt.Errorf("fetch-range: unexpected status code: %d", resp.StatusCode)
+		return nil, 0, fmt.Errorf("fetch-range: unexpected status code: %d, url=%s", resp.StatusCode, resp.Request.URL.Host)
 	}
 
 	cr := resp.Header.Get("Content-Range")
@@ -639,17 +628,32 @@ func fetchRange(ctx context.Context, client *http.Client, url string, start, end
 		fileSize = resp.ContentLength
 	}
 
-	data, err := io.ReadAll(resp.Body)
+	// When the server returns 200 OK (full file) instead of 206 Partial
+	// Content, read only the requested range to avoid downloading the
+	// entire file. This happens when HuggingFace redirects to a storage
+	// backend (e.g., Xet) that does not support HTTP Range requests.
+	var reader io.Reader = resp.Body
+	if resp.StatusCode == http.StatusOK {
+		if start > 0 {
+			if _, err := io.CopyN(io.Discard, resp.Body, start); err != nil {
+				return nil, 0, fmt.Errorf("fetch-range: failed to skip to offset %d: %w", start, err)
+			}
+		}
+		reader = io.LimitReader(resp.Body, end-start+1)
+	}
+
+	data, err := io.ReadAll(reader)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, fmt.Errorf("fetch-range: read body failed: status=%d, requested_range=%d-%d, content_range=%q, content_length=%d, host=%s: %w",
+			resp.StatusCode, start, end, cr, resp.ContentLength, resp.Request.URL.Host, err)
+	}
+
+	if resp.StatusCode == http.StatusPartialContent && int64(len(data)) < end-start+1 {
+		return nil, 0, fmt.Errorf("fetch-range: short read: got %d bytes, expected %d, status=%d, content_range=%q, host=%s",
+			len(data), end-start+1, resp.StatusCode, cr, resp.Request.URL.Host)
 	}
 
 	return data, fileSize, nil
-}
-
-// estimateMetadataSize estimates how many bytes to fetch for metadata.
-func estimateMetadataSize(kvCount uint64) int64 {
-	return int64(kvCount * 512)
 }
 
 // readMetadataKVFromReader reads a key-value pair from a bytes.Reader.

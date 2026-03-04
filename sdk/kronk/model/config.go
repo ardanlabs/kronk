@@ -304,6 +304,7 @@ type Config struct {
 	NUBatch              int
 	OffloadKQV           *bool
 	OpOffload            *bool
+	OpOffloadMinBatch    int
 	ProjFile             string
 	RopeFreqBase         *float32
 	RopeFreqScale        *float32
@@ -363,14 +364,14 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("{mode:%s top_n:%s}", m.Mode, topN)
 	}
 
-	return fmt.Sprintf("\nAutoFitVRAM[%t]\nCacheMinTokens[%d]\nCacheSlotTimeout[%d]\nCacheTypeK[%d]\nCacheTypeV[%d]\nContextWindow[%d]\nDevice[%s]\nDevices[%v]\nFlashAttention[%d]\nIgnoreIntegrityCheck[%t]\nIncrementalCache[%t]\nInsecureLogging[%t]\nJinjaFile[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%d]\nNGpuLayers[%s]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nProjFile[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSplitMode[%s]\nSystemPromptCache[%t]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nUseDirectIO[%t]\nUseMMap[%s]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
+	return fmt.Sprintf("\nAutoFitVRAM[%t]\nCacheMinTokens[%d]\nCacheSlotTimeout[%d]\nCacheTypeK[%d]\nCacheTypeV[%d]\nContextWindow[%d]\nDevice[%s]\nDevices[%v]\nFlashAttention[%d]\nIgnoreIntegrityCheck[%t]\nIncrementalCache[%t]\nInsecureLogging[%t]\nJinjaFile[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%d]\nNGpuLayers[%s]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%d]\nProjFile[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSplitMode[%s]\nSystemPromptCache[%t]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nUseDirectIO[%t]\nUseMMap[%s]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
 		cfg.AutoFitVRAM, cfg.CacheMinTokens, cfg.CacheSlotTimeout, cfg.CacheTypeK, cfg.CacheTypeV,
 		cfg.ContextWindow, cfg.Device, cfg.Devices, cfg.FlashAttention, cfg.IgnoreIntegrityCheck,
 		cfg.IncrementalCache, cfg.InsecureLogging, cfg.JinjaFile,
 		formatIntPtr(cfg.MainGPU), formatMoEPtr(cfg.MoE), cfg.ModelFiles, cfg.NBatch,
 		formatIntPtr(cfg.NGpuLayers), cfg.NSeqMax, cfg.NThreads, cfg.NThreadsBatch, cfg.NUBatch,
 		cfg.NUMA,
-		formatBoolPtr(cfg.OffloadKQV), formatBoolPtr(cfg.OpOffload), cfg.ProjFile,
+		formatBoolPtr(cfg.OffloadKQV), formatBoolPtr(cfg.OpOffload), cfg.OpOffloadMinBatch, cfg.ProjFile,
 		formatFloat32Ptr(cfg.RopeFreqBase), formatFloat32Ptr(cfg.RopeFreqScale), cfg.RopeScaling,
 		formatSplitModePtr(cfg.SplitMode),
 		cfg.SystemPromptCache, cfg.TensorBuftOverrides, cfg.TensorSplit, cfg.UseDirectIO,
@@ -439,6 +440,10 @@ func validateConfig(ctx context.Context, cfg Config, log Logger) error {
 		if cfg.MoE.Mode != "" && cfg.MoE.Mode != MoEModeAuto && cfg.MoE.Mode != MoEModeCustom && len(cfg.TensorBuftOverrides) > 0 {
 			return fmt.Errorf("validate-config: MoE mode %s and TensorBuftOverrides are mutually exclusive; use MoE mode 'custom' with TensorBuftOverrides", cfg.MoE.Mode)
 		}
+	}
+
+	if cfg.OpOffloadMinBatch < 0 {
+		return fmt.Errorf("validate-config: OpOffloadMinBatch must be >= 0, got %d", cfg.OpOffloadMinBatch)
 	}
 
 	if !cfg.IgnoreIntegrityCheck {
@@ -585,6 +590,9 @@ func applyCatalogConfig(user Config, cat Config) Config {
 	}
 	if user.OpOffload == nil {
 		user.OpOffload = cat.OpOffload
+	}
+	if user.OpOffloadMinBatch == 0 {
+		user.OpOffloadMinBatch = cat.OpOffloadMinBatch
 	}
 	if user.NGpuLayers == nil {
 		user.NGpuLayers = cat.NGpuLayers

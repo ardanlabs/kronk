@@ -4,6 +4,7 @@ package model
 import (
 	"context"
 	"fmt"
+	"os"
 	"path"
 	"runtime"
 	"strconv"
@@ -18,6 +19,10 @@ import (
 	"github.com/nikolalohinski/gonja/v2/exec"
 	"go.opentelemetry.io/otel/attribute"
 )
+
+// modelLoadMu serializes model loading to prevent concurrent mutation of
+// process-level environment variables (e.g., GGML_OP_OFFLOAD_MIN_BATCH).
+var modelLoadMu sync.Mutex
 
 // compiledTemplate holds a pre-compiled Jinja template for reuse across requests.
 type compiledTemplate struct {
@@ -321,6 +326,21 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 
 	// -------------------------------------------------------------------------
 
+	// Set/unset GGML_OP_OFFLOAD_MIN_BATCH before model load.
+	// This env var is read by the llama.cpp C library at load time.
+	// Use a mutex to prevent concurrent model loads from racing on the env var.
+	// Save and restore the previous value so subsequent loads (e.g., draft model)
+	// are not unintentionally affected.
+	modelLoadMu.Lock()
+
+	prevOffloadMinBatch, hadOffloadMinBatch := os.LookupEnv("GGML_OP_OFFLOAD_MIN_BATCH")
+	if cfg.OpOffloadMinBatch > 0 {
+		os.Setenv("GGML_OP_OFFLOAD_MIN_BATCH", strconv.Itoa(cfg.OpOffloadMinBatch))
+		l(ctx, "OP-OFFLOAD-MIN-BATCH", "value", cfg.OpOffloadMinBatch)
+	} else {
+		os.Unsetenv("GGML_OP_OFFLOAD_MIN_BATCH")
+	}
+
 	loadStart := time.Now()
 
 	mdl, err := loadModelFromFiles(ctx, l, cfg.ModelFiles, mParams)
@@ -329,6 +349,14 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 	runtime.KeepAlive(tensorBuftBuf)
 	runtime.KeepAlive(fitSplitBuf)
 	runtime.KeepAlive(fitOverridesBuf)
+
+	if hadOffloadMinBatch {
+		os.Setenv("GGML_OP_OFFLOAD_MIN_BATCH", prevOffloadMinBatch)
+	} else {
+		os.Unsetenv("GGML_OP_OFFLOAD_MIN_BATCH")
+	}
+	modelLoadMu.Unlock()
+
 	if err != nil {
 		return nil, fmt.Errorf("load-model-from-files: unable to load model: %w", err)
 	}

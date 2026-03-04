@@ -78,6 +78,7 @@ interface CatalogFormData {
     moeKeepTopN: number | null;
     useMMap: boolean | null;
     numa: string;
+    opOffloadMinBatch: number | null;
   };
   sampling: {
     temperature: number | null;
@@ -183,6 +184,7 @@ const defaultForm: CatalogFormData = {
     moeKeepTopN: null,
     useMMap: null,
     numa: '',
+    opOffloadMinBatch: null,
   },
   sampling: {
     temperature: null,
@@ -318,6 +320,7 @@ function populateFromResponse(resp: CatalogModelResponse): CatalogFormData {
       moeKeepTopN: mc?.moe?.['keep-experts-top-n'] ?? null,
       useMMap: mc?.['use-mmap'] ?? null,
       numa: mc?.numa || '',
+      opOffloadMinBatch: mc?.['op-offload-min-batch'] ?? null,
     },
     sampling: {
       temperature: sp?.temperature ?? null,
@@ -598,6 +601,7 @@ export default function CatalogEditor() {
           } : {}),
           'use-mmap': form.config.useMMap,
           numa: form.config.numa || null,
+          'op-offload-min-batch': form.config.opOffloadMinBatch ?? 0,
           'sampling-parameters': {
             temperature: form.sampling.temperature ?? 0,
             top_k: form.sampling.topK ?? 0,
@@ -1077,15 +1081,58 @@ export default function CatalogEditor() {
             {/* MoE Configuration */}
             <div style={{ marginTop: '20px' }}>
               <h4 style={{ marginBottom: '12px', fontSize: '14px', fontWeight: 600, color: 'var(--color-gray-700)' }}>MoE (Expert Placement)</h4>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ fontSize: '0.85em', padding: '6px 12px' }}
+                  title="Experts on CPU, flash attention, large batches — best for GPUs with 24-48GB VRAM"
+                  onClick={() => setConfig({
+                    moeMode: 'experts_cpu',
+                    flashAttention: 'enabled',
+                    nbatch: 4096,
+                    nubatch: 512,
+                  })}
+                >
+                  💾 CPU Experts (24-48GB GPU)
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ fontSize: '0.85em', padding: '6px 12px' }}
+                  title="All experts on GPU with flash attention — requires 80GB+ VRAM"
+                  onClick={() => setConfig({
+                    moeMode: 'experts_gpu',
+                    flashAttention: 'enabled',
+                  })}
+                >
+                  ⚡ Full GPU (80GB+)
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ fontSize: '0.85em', padding: '6px 12px' }}
+                  title="Row split for multi-GPU, experts on CPU, flash attention, large batches"
+                  onClick={() => setConfig({
+                    moeMode: 'experts_cpu',
+                    splitMode: 'row',
+                    flashAttention: 'enabled',
+                    nbatch: 4096,
+                    nubatch: 512,
+                  })}
+                >
+                  🖥️ Multi-GPU
+                </button>
+              </div>
               <div style={gridStyle}>
                 <div>
-                  <label style={labelStyle}>Expert Placement Mode</label>
+                  <label style={labelStyle}>Expert Strategy</label>
                   <select value={form.config.moeMode} onChange={(e) => setConfig({ moeMode: e.target.value })} style={inputStyle}>
                     <option value="">not set (auto)</option>
-                    <option value="experts_cpu">Experts on CPU (recommended)</option>
-                    <option value="keep_top_n">Keep top N layers on GPU</option>
-                    <option value="experts_gpu">All experts on GPU</option>
-                    <option value="custom">Custom (tensor overrides)</option>
+                    <option value="experts_cpu">💾 Save GPU Memory — experts on CPU</option>
+                    <option value="keep_top_n">⚖️ Balanced — keep top N on GPU</option>
+                    <option value="experts_gpu">⚡ Maximum Speed — all on GPU</option>
+                    <option value="custom">🔧 Advanced (tensor overrides)</option>
                   </select>
                 </div>
                 {form.config.moeMode === 'keep_top_n' && (
@@ -1109,6 +1156,21 @@ export default function CatalogEditor() {
                     <option value="mirror">mirror</option>
                   </select>
                 </div>
+                <NullableNumInput label="Op Offload Min Batch" value={form.config.opOffloadMinBatch} defaultValue={rc?.['op-offload-min-batch'] ?? undefined} onChange={(v) => setConfig({ opOffloadMinBatch: v === null ? null : Math.round(v) })} />
+              </div>
+              <div style={{ marginTop: '12px', padding: '12px', background: 'var(--color-gray-100)', borderRadius: '6px', fontSize: '0.85em' }}>
+                <strong>💡 MoE Performance Tips:</strong>
+                <ul style={{ margin: '4px 0 8px', paddingLeft: '20px', lineHeight: '1.6' }}>
+                  <li>For multi-CPU server systems running experts on CPU: set <strong>Use mmap = No</strong> and <strong>NUMA = distribute</strong> for best memory bandwidth</li>
+                  <li>Without <code>numa: distribute</code>, cross-socket memory access can cause significant bandwidth collapse</li>
+                  <li>Without disabling mmap, tensor data is memory-mapped and may not be placed on the optimal NUMA node</li>
+                </ul>
+                <strong>Op-Offload Min Batch:</strong>
+                <p style={{ margin: '4px 0', lineHeight: '1.6' }}>
+                  Controls the minimum batch size for offloading host tensor operations to GPU during prompt processing.
+                  Default is 32 tokens. For large MoE models with many CPU weights, values of 200–500+ may improve prompt ingestion speed.
+                  Configure via the field above or in <code>model_config.yaml</code> as <code>op-offload-min-batch</code>.
+                </p>
               </div>
             </div>
           </>

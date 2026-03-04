@@ -147,6 +147,7 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
-replace github.com/hybridgroup/yzma => github.com/dlsniper/yzma v0.0.0-20260303110342-033cc91a1fe5
+replace github.com/hybridgroup/yzma => ./.extras/yzma
+//replace github.com/hybridgroup/yzma => github.com/dlsniper/yzma v0.0.0-20260303110342-033cc91a1fe5
 
 // replace github.com/nikolalohinski/gonja/v2 => /Users/bill/code/go/src/github.com/ardanlabs/gonja

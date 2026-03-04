@@ -58,6 +58,7 @@ func Routes(app *web.App, cfg Config) {
 	app.HandlerFunc(http.MethodGet, version, "/grammars", api.listGrammars, auth)
 	app.HandlerFunc(http.MethodGet, version, "/grammars/{name}", api.showGrammar, auth)
 	app.HandlerFunc(http.MethodGet, version, "/templates", api.listTemplates, auth)
+	app.HandlerFunc(http.MethodGet, version, "/devices", api.listDevices, auth)
 
 	// Auth is handled by the auth service for these calls.
 	app.HandlerFunc(http.MethodPost, version, "/security/token/create", api.createToken)

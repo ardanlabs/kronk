@@ -72,7 +72,11 @@ var ggmlTypeSizes = map[uint32]ggmlTypeInfo{
 }
 
 // Broad pattern for VRAM accounting: catches all routed expert tensors.
-var expertTensorPattern = regexp.MustCompile(`blk\.\d+\.ffn_.*_exps`)
+// Covers standard (_exps) and channel (_chexps) expert variants as defined
+// in llama.cpp and yzma's MoEExpertTensorPattern. The blk.<n>. prefix is
+// required for per-layer attribution in ExpertBytesByLayer. The suffix
+// boundary (\. or end) prevents accidental matches inside longer names.
+var expertTensorPattern = regexp.MustCompile(`blk\.\d+\.ffn_(up|down|gate|gate_up|norm)_(ch)?exps(\.|$)`)
 
 // blockIndexPattern extracts the block index from a tensor name.
 var blockIndexPattern = regexp.MustCompile(`^blk\.(\d+)\.`)
@@ -217,28 +221,32 @@ func DetectSharedExpertsFromTensors(tensors []GGUFTensorInfo) bool {
 	return false
 }
 
+// ggufHeaderFetchSize is the number of bytes fetched in a single Range
+// request to cover the fixed header, all KV metadata, and all tensor
+// descriptors for any model. 16 MiB covers even MoE models whose
+// metadata embeds large per-layer arrays.
+const ggufHeaderFetchSize = 16 * 1024 * 1024
+
 // FetchGGUFHeaderAndTensors fetches GGUF header, KV metadata, and tensor
 // descriptors from a remote URL using HTTP Range requests. Only the header
 // sections are downloaded, not the actual tensor data.
 func FetchGGUFHeaderAndTensors(ctx context.Context, url string) (metadata map[string]string, tensors []GGUFTensorInfo, fileSize int64, err error) {
 	var client http.Client
 
-	// Fetch the 24-byte fixed header.
-	initialBytes := 24
-	headerData, fileSize, err := fetchRange(ctx, &client, url, 0, int64(initialBytes-1))
+	data, fileSize, err := fetchRange(ctx, &client, url, 0, ggufHeaderFetchSize-1)
 	if err != nil {
-		return nil, nil, 0, fmt.Errorf("fetch-gguf-header-tensors: failed to fetch initial header: %w", err)
+		return nil, nil, 0, fmt.Errorf("fetch-gguf-header-tensors: failed to fetch header data: %w", err)
 	}
 
-	reader := bytes.NewReader(headerData)
+	reader := bytes.NewReader(data)
 
 	var header ggufHeader
 	if err := binary.Read(reader, binary.LittleEndian, &header.Magic); err != nil {
-		return nil, nil, 0, fmt.Errorf("fetch-gguf-header-tensors: failed to read magic: %w", err)
+		return nil, nil, 0, fmt.Errorf("fetch-gguf-header-tensors: failed to read magic (data_len=%d): %w", len(data), err)
 	}
 
 	if header.Magic != ggufMagic {
-		return nil, nil, 0, fmt.Errorf("fetch-gguf-header-tensors: invalid GGUF magic number: got 0x%X", header.Magic)
+		return nil, nil, 0, fmt.Errorf("fetch-gguf-header-tensors: invalid GGUF magic number: got 0x%X, first_16_bytes=%x, data_len=%d", header.Magic, data[:min(16, len(data))], len(data))
 	}
 
 	if err := binary.Read(reader, binary.LittleEndian, &header.Version); err != nil {
@@ -253,58 +261,27 @@ func FetchGGUFHeaderAndTensors(ctx context.Context, url string) (metadata map[st
 		return nil, nil, 0, fmt.Errorf("fetch-gguf-header-tensors: failed to read metadata count: %w", err)
 	}
 
-	// Estimate total size needed for KV metadata + tensor descriptors.
-	metadataSize := estimateMetadataSize(header.MetadataKvCount)
-	tensorDescSize := int64(header.TensorCount) * 128
-	totalNeeded := metadataSize + tensorDescSize
-
-	allData, _, err := fetchRange(ctx, &client, url, int64(initialBytes), int64(initialBytes)+totalNeeded-1)
-	if err != nil {
-		return nil, nil, 0, fmt.Errorf("fetch-gguf-header-tensors: failed to fetch metadata+tensors: %w", err)
-	}
-
-	combined := append(headerData, allData...)
-	fullReader := bytes.NewReader(combined)
-	fullReader.Seek(int64(initialBytes), io.SeekStart)
-
 	// Parse KV metadata.
 	metadata = make(map[string]string)
+	var kvParseErr error
+	var kvParsed uint64
 	for i := uint64(0); i < header.MetadataKvCount; i++ {
-		key, value, kvErr := readMetadataKVFromReader(fullReader)
+		key, value, kvErr := readMetadataKVFromReader(reader)
 		if kvErr != nil {
+			kvParseErr = kvErr
 			break
 		}
+		kvParsed++
 		metadata[key] = fmt.Sprintf("%v", value)
 	}
 
-	// Record position after KV metadata for tensor descriptor parsing.
-	posAfterKV := int64(len(combined)) - int64(fullReader.Len())
+	bytesAfterKV := reader.Len()
 
 	// Parse tensor descriptors from the remaining data.
-	tensors, err = parseTensorTableFromReader(fullReader, header.TensorCount)
+	tensors, err = parseTensorTableFromReader(reader, header.TensorCount)
 	if err != nil {
-		// The initial fetch may not have been large enough. Fetch more data.
-		consumed := posAfterKV - int64(initialBytes)
-		remaining := totalNeeded - consumed
-		extraNeeded := tensorDescSize - remaining
-		if extraNeeded <= 0 {
-			extraNeeded = tensorDescSize
-		}
-
-		fetchStart := int64(initialBytes) + totalNeeded
-		extraData, _, fetchErr := fetchRange(ctx, &client, url, fetchStart, fetchStart+extraNeeded-1)
-		if fetchErr != nil {
-			return nil, nil, 0, fmt.Errorf("fetch-gguf-header-tensors: failed to fetch additional tensor data: %w", fetchErr)
-		}
-
-		combined = append(combined, extraData...)
-		retryReader := bytes.NewReader(combined)
-		retryReader.Seek(posAfterKV, io.SeekStart)
-
-		tensors, err = parseTensorTableFromReader(retryReader, header.TensorCount)
-		if err != nil {
-			return nil, nil, 0, fmt.Errorf("fetch-gguf-header-tensors: failed to parse tensor table: %w", err)
-		}
+		return nil, nil, 0, fmt.Errorf("fetch-gguf-header-tensors: failed to parse tensor table: data_len=%d, file_size=%d, version=%d, tensors=%d, kv_count=%d, kv_parsed=%d, kv_err=%v, bytes_remaining_after_kv=%d: %w",
+			len(data), fileSize, header.Version, header.TensorCount, header.MetadataKvCount, kvParsed, kvParseErr, bytesAfterKV, err)
 	}
 
 	return metadata, tensors, fileSize, nil
