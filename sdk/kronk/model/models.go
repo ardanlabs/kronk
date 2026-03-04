@@ -146,17 +146,17 @@ func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 	modelID := modelIDFromFiles(cfg.ModelFiles)
 
 	var isGPTModel bool
-	if strings.Contains(modelID, "gpt") {
+	if strings.Contains(strings.ToLower(modelID), "gpt") {
 		isGPTModel = true
 	}
 
 	var isEmbedModel bool
-	if strings.Contains(modelID, "embed") {
+	if strings.Contains(strings.ToLower(modelID), "embed") {
 		isEmbedModel = true
 	}
 
 	var isRerankModel bool
-	if strings.Contains(modelID, "rerank") {
+	if strings.Contains(strings.ToLower(modelID), "rerank") || strings.Contains(strings.ToLower(modelID), "embed") {
 		isRerankModel = true
 	}
 
