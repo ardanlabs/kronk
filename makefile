@@ -384,6 +384,9 @@ kronk-server-download: kronk-build
 	export KRONK_CATALOG_REPO_PATH=$$HOME/code/go/src/github.com/ardanlabs/kronk_catalogs && \
 	CGO_ENABLED=0 go run cmd/kronk/main.go server start | CGO_ENABLED=0 go run cmd/server/api/tooling/logfmt/main.go
 
+# The simplest fix is probably just -ldflags=-linkmode=external. The extldflags
+# should not be necessary since the host linker is already going to default to 
+# something new enough unless you are on a very old system or have a very old Xcode installed.
 kronk-server-mac-bf16-build: kronk-build
 	. .env 2>/dev/null || true && \
 	export KRONK_INSECURE_LOGGING=true && \
