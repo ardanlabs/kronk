@@ -26,8 +26,11 @@ func main() {
 var rootCmd = &cobra.Command{
 	Use:   "kronk",
 	Short: "Local LLM inference with hardware acceleration",
-	Long: `KRONK
-Local LLM inference with hardware acceleration
+	Long: `KRONK - Local LLM inference server with hardware acceleration
+
+Kronk provides a complete solution for running large language models locally
+with support for GPU acceleration via Metal (macOS), CUDA (NVIDIA), ROCm (AMD),
+and Vulkan across multiple platforms.
 
 USAGE
   kronk [command]
@@ -42,35 +45,41 @@ COMMANDS
 
 QUICK START
   # List available models
-  kronk catalog list --local
+  $ kronk catalog list --local
 
   # Download a model (e.g., Qwen3-8B)
-  kronk catalog pull Qwen3-8B-Q8_0 --local
+  $ kronk catalog pull Qwen3-8B-Q8_0 --local
 
   # Start the server (runs on http://localhost:8080)
-  kronk server start
+  $ kronk server start
 
-  # Open the Browser UI
-  open http://localhost:8080
+  # Open the Browser UI in your browser
+  $ open http://localhost:8080
 
 FEATURES
-  • Text, Vision, Audio, Embeddings, Reranking
-  • Metal, CUDA, ROCm, Vulkan, CPU acceleration
-  • Batch processing, message caching, YaRN context extension
-  • Model pooling, catalog system, browser UI
-  • MCP service, security, observability
+  - Text generation, Vision, Audio, Embeddings, and Reranking
+  - Hardware acceleration: Metal, CUDA, ROCm, Vulkan, CPU
+  - Batch processing with message caching (SPC/IMC)
+  - YaRN context extension for extended context windows
+  - Model pooling, catalog system, and Browser UI
+  - MCP service integration, authentication, and observability
 
-MODES
-  Web mode (default)  - Communicates with running server at localhost:8080
-  Local mode (--local) - Direct file operations without server
+OPERATING MODES
+  Web mode (default)    - CLI communicates with running server at localhost:8080
+  Local mode (--local)  - Direct file operations without connecting to a server
 
-ENVIRONMENT
-  KRONK_BASE_PATH, KRONK_PROCESSOR, KRONK_LIB_VERSION
-  KRONK_HF_TOKEN, KRONK_WEB_API_HOST, KRONK_TOKEN
+ENVIRONMENT VARIABLES
+  KRONK_BASE_PATH      Base path for kronk data (models, templates, catalogs)
+  KRONK_PROCESSOR      Hardware target: cpu, cuda, metal, rocm, vulkan
+  KRONK_LIB_VERSION    Pin llama.cpp library version
+  KRONK_HF_TOKEN       HuggingFace auth token for gated models
+  KRONK_WEB_API_HOST   Override web API host when server runs elsewhere
+  KRONK_TOKEN          Pre-authenticated JWT token for API calls
 
-FOR MORE
-  kronk <command> --help    Get help for a command
-  See AGENTS.md for documentation`,
+FOR MORE INFORMATION
+  $ kronk <command> --help    Get detailed help for any command
+  $ kronk --help              View this complete help message
+  See .manual/ directory or AGENTS.md for full documentation`,
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Help()
 	},
