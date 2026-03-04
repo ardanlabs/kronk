@@ -116,4 +116,28 @@ Step 3 — Total KV cache (NSeqMax = 2):
 
 Step 4 — Total VRAM:
 
-  Total_VRAM = 36.0 GB + 12.8 GB = ~48.8 GB`;
+  Total_VRAM = 36.0 GB + 12.8 GB = ~48.8 GB
+
+==============================================================================
+MULTI-GPU VRAM DISTRIBUTION
+==============================================================================
+
+When using multiple GPUs, model weights and KV cache are distributed
+across devices according to the tensor split configuration:
+
+  tensor-split: [0.6, 0.4]   # 60% on GPU 0, 40% on GPU 1
+
+Split modes control distribution strategy:
+  - none:  All on single GPU (MainGPU)
+  - layer: Split layers across GPUs
+  - row:   Tensor parallelism (recommended for MoE, expert-parallel)
+
+For MoE with CPU expert offload:
+  - Single GPU + CPU experts: split-mode: row (simpler, good default)
+  - Multi-GPU + CPU experts: split-mode: layer may be simpler;
+    row can interact with CPU expert offload in surprising ways
+
+Compute buffer memory is primarily allocated on the main GPU (GPU 0).
+
+Note: Per-GPU estimates assume proportional distribution based on
+tensor_split. Actual allocation by llama.cpp may differ slightly.`;

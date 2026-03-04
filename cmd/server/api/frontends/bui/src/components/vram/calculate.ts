@@ -1,4 +1,4 @@
-import type { VRAMInput, WeightBreakdown, MoEInfo } from '../../types';
+import type { VRAMInput, WeightBreakdown, MoEInfo, PerDeviceVRAM } from '../../types';
 
 export interface VRAMResult {
   kvPerTokenPerLayer: number;
@@ -59,4 +59,57 @@ export function calculateVRAM(
   const totalVram = modelWeightsGPU + slotMemory + computeBufferEst;
 
   return { kvPerTokenPerLayer, kvPerSlot, slotMemory, totalVram, modelWeightsGPU, modelWeightsCPU, computeBufferEst };
+}
+
+export function calculatePerDeviceVRAM(
+  modelWeightsGPU: number,
+  slotMemory: number,
+  computeBufferEst: number,
+  deviceCount: number,
+  tensorSplit: number[],
+  deviceLabels?: string[],
+  mainGpuIndex = 0,
+): PerDeviceVRAM[] {
+  if (deviceCount <= 1) {
+    return [{
+      label: deviceLabels?.[0] ?? 'GPU 0 (main)',
+      weightsBytes: modelWeightsGPU,
+      kvBytes: slotMemory,
+      computeBytes: computeBufferEst,
+      totalBytes: modelWeightsGPU + slotMemory + computeBufferEst,
+    }];
+  }
+
+  let fractions: number[];
+  if (tensorSplit.length === deviceCount) {
+    const sanitized = tensorSplit.map(v => (Number.isFinite(v) && v >= 0) ? v : 0);
+    const sum = sanitized.reduce((a, b) => a + b, 0);
+    fractions = sum > 0 ? sanitized.map(v => v / sum) : Array(deviceCount).fill(1 / deviceCount);
+  } else {
+    fractions = Array(deviceCount).fill(1 / deviceCount);
+  }
+
+  const out: PerDeviceVRAM[] = [];
+  let wRemaining = modelWeightsGPU;
+  let kvRemaining = slotMemory;
+
+  for (let i = 0; i < deviceCount; i++) {
+    const isLast = i === deviceCount - 1;
+    const w = isLast ? wRemaining : Math.floor(modelWeightsGPU * fractions[i]);
+    const kv = isLast ? kvRemaining : Math.floor(slotMemory * fractions[i]);
+    wRemaining -= w;
+    kvRemaining -= kv;
+
+    const comp = i === mainGpuIndex ? computeBufferEst : 0;
+    const isMain = i === mainGpuIndex;
+    out.push({
+      label: deviceLabels?.[i] ?? `GPU ${i}${isMain ? ' (main)' : ''}`,
+      weightsBytes: w,
+      kvBytes: kv,
+      computeBytes: comp,
+      totalBytes: w + kv + comp,
+    });
+  }
+
+  return out;
 }

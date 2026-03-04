@@ -9,7 +9,7 @@ import ResizablePanel from './ResizablePanel';
 import KeyValueTable from './KeyValueTable';
 import MetadataSection from './MetadataSection';
 import CodeBlock from './CodeBlock';
-import { VRAMFormulaModal, VRAMControls, VRAMResults, calculateVRAM } from './vram';
+import { VRAMFormulaModal, VRAMControls, VRAMResults, calculateVRAM, calculatePerDeviceVRAM } from './vram';
 
 type DetailSection = 'catalog' | 'config' | 'sampling' | 'metadata' | 'template' | 'vram' | 'pull';
 
@@ -174,7 +174,11 @@ export default function CatalogList() {
   const [vramBytes, setVramBytes] = useState(1);
   const [vramSlots, setVramSlots] = useState(2);
   const [vramExpertLayers, setVramExpertLayers] = useState(0);
+  const [vramDeviceCount, setVramDeviceCount] = useState(1);
+  const [vramTensorSplit, setVramTensorSplit] = useState('');
   const [showLearnMore, setShowLearnMore] = useState(false);
+  const [maxGpuCount, setMaxGpuCount] = useState<number | undefined>(undefined);
+  const [systemRAM, setSystemRAM] = useState<number | undefined>(undefined);
 
   const [downloadServer, setDownloadServer] = useState<string>(() => {
     return localStorage.getItem('kronk_download_server') || '';
@@ -188,6 +192,18 @@ export default function CatalogList() {
       localStorage.removeItem('kronk_download_server');
     }
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    api.getDevices()
+      .then((resp) => {
+        if (cancelled) return;
+        setMaxGpuCount(resp.gpu_count);
+        setSystemRAM(resp.system_ram_bytes);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   // ── Filter state ──────────────────────────────────────────────────────────
 
@@ -474,6 +490,13 @@ export default function CatalogList() {
         vramExpertLayers,
       )
     : null;
+
+  const parsedVramTensorSplit = vramTensorSplit
+    ? vramTensorSplit.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n))
+    : [];
+  const vramPerDevice = vramResult && vramDeviceCount > 1
+    ? calculatePerDeviceVRAM(vramResult.modelWeightsGPU, vramResult.slotMemory, vramResult.computeBufferEst, vramDeviceCount, parsedVramTensorSplit)
+    : undefined;
 
   const handlePull = () => {
     if (!selectedId) return;
@@ -1077,10 +1100,15 @@ export default function CatalogList() {
                             slots={vramSlots}
                             onSlotsChange={setVramSlots}
                             variant="compact"
+                            maxDeviceCount={maxGpuCount}
                             isMoE={isMoE}
                             blockCount={vramInput?.block_count}
                             expertLayersOnGPU={vramExpertLayers}
                             onExpertLayersOnGPUChange={setVramExpertLayers}
+                          deviceCount={vramDeviceCount}
+                          onDeviceCountChange={setVramDeviceCount}
+                          tensorSplit={vramTensorSplit}
+                          onTensorSplitChange={setVramTensorSplit}
                           />
                         </div>
 
@@ -1096,6 +1124,9 @@ export default function CatalogList() {
                           modelWeightsCPU={vramResult!.modelWeightsCPU}
                           computeBufferEst={vramResult!.computeBufferEst}
                           expertLayersOnGPU={vramExpertLayers}
+                        perDevice={vramPerDevice}
+                        deviceCount={vramDeviceCount}
+                        systemRAMBytes={systemRAM}
                         />
                       </>
                     ) : (

@@ -65,6 +65,7 @@ export interface ModelConfig {
   'nseq-max': number;
   'offload-kqv': boolean | null;
   'op-offload': boolean | null;
+  'op-offload-min-batch'?: number;
   'ngpu-layers': number | null;
   'split-mode': string | null;
   'tensor-split': number[] | null;
@@ -189,6 +190,14 @@ export interface VRAM {
   model_weights_gpu?: number;
   model_weights_cpu?: number;
   compute_buffer_est?: number;
+}
+
+export interface PerDeviceVRAM {
+  label: string;
+  weightsBytes: number;
+  kvBytes: number;
+  computeBytes: number;
+  totalBytes: number;
 }
 
 export interface CatalogModelResponse {
@@ -533,6 +542,8 @@ export interface PlaygroundModelConfig {
   'yarn_orig_ctx'?: number | null;
   'moe_mode'?: string;
   'moe_keep_experts_top_n'?: number | null;
+  'tensor_buft_overrides'?: string[];
+  'op_offload_min_batch'?: number | null;
 }
 
 export interface PlaygroundSessionResponse {
@@ -713,6 +724,7 @@ export interface ConfigSweepDefinition {
   cacheMode: SweepStringValues;
   moeMode?: SweepStringValues;
   moeKeepExpertsTopN?: SweepParamValues;
+  opOffloadMinBatch?: SweepParamValues;
 }
 
 export interface SamplingSweepDefinition {
@@ -762,6 +774,7 @@ export interface ConfigCandidate {
   'cache_mode'?: string;
   'moe_mode'?: string;
   'moe_keep_experts_top_n'?: number;
+  'op_offload_min_batch'?: number;
 }
 
 export interface ModelCaps {
@@ -775,4 +788,21 @@ export interface AutoTestSessionSeed {
   template_name?: string;
   template_script?: string;
   base_config: PlaygroundModelConfig;
+}
+
+export interface DeviceInfo {
+  index: number;
+  name: string;
+  type: 'cpu' | 'gpu_cuda' | 'gpu_metal' | 'gpu_rocm' | 'gpu_vulkan' | 'unknown';
+  free_bytes: number;
+  total_bytes: number;
+}
+
+export interface DevicesResponse {
+  devices: DeviceInfo[];
+  gpu_count: number;
+  gpu_total_bytes: number;
+  supports_gpu_offload: boolean;
+  max_devices: number;
+  system_ram_bytes: number;
 }

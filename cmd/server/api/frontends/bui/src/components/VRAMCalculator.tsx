@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../services/api';
 import { useToken } from '../contexts/TokenContext';
 import type { VRAMCalculatorResponse } from '../types';
-import { VRAMFormulaModal, VRAMControls, VRAMResults, calculateVRAM } from './vram';
+import { VRAMFormulaModal, VRAMControls, VRAMResults, calculateVRAM, calculatePerDeviceVRAM } from './vram';
 
 export default function VRAMCalculator() {
   const { token } = useToken();
@@ -11,11 +11,29 @@ export default function VRAMCalculator() {
   const [bytesPerElement, setBytesPerElement] = useState(1);
   const [slots, setSlots] = useState(2);
   const [expertLayersOnGPU, setExpertLayersOnGPU] = useState(0);
+  const [deviceCount, setDeviceCount] = useState(1);
+  const [tensorSplit, setTensorSplit] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<VRAMCalculatorResponse | null>(null);
   const [showLearnMore, setShowLearnMore] = useState(false);
+  const [maxGpuCount, setMaxGpuCount] = useState<number | undefined>(undefined);
+  const [systemRAM, setSystemRAM] = useState<number | undefined>(undefined);
   const hasCalculated = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.getDevices()
+      .then((resp) => {
+        if (cancelled) return;
+        setMaxGpuCount(resp.gpu_count);
+        setSystemRAM(resp.system_ram_bytes);
+      })
+      .catch(() => {
+        // Silent fallback to default behavior
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   const performCalculation = useCallback(async (clearResult = true) => {
     if (!modelUrl.trim()) {
@@ -70,6 +88,13 @@ export default function VRAMCalculator() {
       )
     : null;
 
+  const parsedTensorSplit = tensorSplit
+    ? tensorSplit.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n))
+    : [];
+  const perDevice = vramResult && deviceCount > 1
+    ? calculatePerDeviceVRAM(vramResult.modelWeightsGPU, vramResult.slotMemory, vramResult.computeBufferEst, deviceCount, parsedTensorSplit)
+    : undefined;
+
   return (
     <div className="page">
       <div className="page-header-with-action">
@@ -118,16 +143,28 @@ export default function VRAMCalculator() {
           slots={slots}
           onSlotsChange={setSlots}
           variant="form"
+          maxDeviceCount={maxGpuCount}
           isMoE={isMoE}
           blockCount={vramInput?.block_count}
           expertLayersOnGPU={expertLayersOnGPU}
           onExpertLayersOnGPUChange={setExpertLayersOnGPU}
+          deviceCount={deviceCount}
+          onDeviceCountChange={setDeviceCount}
+          tensorSplit={tensorSplit}
+          onTensorSplitChange={setTensorSplit}
         />
 
         <button type="submit" className="btn btn-primary" disabled={loading}>
           {loading ? 'Calculating...' : 'Calculate VRAM'}
         </button>
       </form>
+
+      {loading && (
+        <div className="vram-loading-banner">
+          <span className="vram-loading-spinner" />
+          <span>Fetching model header (up to 16 MB)…</span>
+        </div>
+      )}
 
       {error && <div className="alert alert-error">{error}</div>}
 
@@ -144,6 +181,9 @@ export default function VRAMCalculator() {
           modelWeightsCPU={vramResult.modelWeightsCPU}
           computeBufferEst={vramResult.computeBufferEst}
           expertLayersOnGPU={expertLayersOnGPU}
+          perDevice={perDevice}
+          deviceCount={deviceCount}
+          systemRAMBytes={systemRAM}
         />
       )}
     </div>

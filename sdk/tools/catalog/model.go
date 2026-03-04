@@ -216,6 +216,7 @@ type ModelConfig struct {
 	NSeqMax              int                      `yaml:"nseq-max,omitempty"`
 	OffloadKQV           *bool                    `yaml:"offload-kqv,omitempty"`
 	OpOffload            *bool                    `yaml:"op-offload,omitempty"`
+	OpOffloadMinBatch    int                      `yaml:"op-offload-min-batch,omitempty"`
 	NGpuLayers           *int                     `yaml:"ngpu-layers,omitempty"`
 	SplitMode            *model.SplitMode         `yaml:"split-mode,omitempty"`
 	TensorSplit          []float32                `yaml:"tensor-split,omitempty"`
@@ -271,6 +272,7 @@ func (mc ModelConfig) ToKronkConfig() model.Config {
 		NSeqMax:              mc.NSeqMax,
 		OffloadKQV:           mc.OffloadKQV,
 		OpOffload:            mc.OpOffload,
+		OpOffloadMinBatch:    mc.OpOffloadMinBatch,
 		NGpuLayers:           mc.NGpuLayers,
 		SplitMode:            mc.SplitMode,
 		TensorSplit:          mc.TensorSplit,

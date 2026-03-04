@@ -189,6 +189,7 @@ func TestCategorizeWeights(t *testing.T) {
 	wb := CategorizeWeights(tensors, 2)
 
 	// Expert tensors: blk.0 has 3 expert tensors, blk.1 has 1.
+	// Verify chexps are NOT counted in this standard test (they're tested separately below).
 	expertBlk0 := ggmlTensorSize(8, []int64{4096, 1024, 8})*2 + ggmlTensorSize(8, []int64{1024, 4096, 8})
 	expertBlk1 := ggmlTensorSize(8, []int64{4096, 1024, 8})
 	wantExpertTotal := expertBlk0 + expertBlk1
@@ -221,6 +222,32 @@ func TestCategorizeWeights(t *testing.T) {
 	}
 }
 
+func TestCategorizeWeightsChexps(t *testing.T) {
+	// Simulate a model using channel expert (chexps) tensors.
+	tensors := []GGUFTensorInfo{
+		{Name: "token_embd.weight", GGMLType: 1, Dims: []int64{4096, 32000}, Bytes: ggmlTensorSize(1, []int64{4096, 32000})},
+		{Name: "blk.0.attn_q.weight", GGMLType: 1, Dims: []int64{4096, 4096}, Bytes: ggmlTensorSize(1, []int64{4096, 4096})},
+		{Name: "blk.0.ffn_up_chexps.weight", GGMLType: 8, Dims: []int64{4096, 1024, 8}, Bytes: ggmlTensorSize(8, []int64{4096, 1024, 8})},
+		{Name: "blk.0.ffn_down_chexps.weight", GGMLType: 8, Dims: []int64{1024, 4096, 8}, Bytes: ggmlTensorSize(8, []int64{1024, 4096, 8})},
+		{Name: "blk.0.ffn_gate_chexps.weight", GGMLType: 8, Dims: []int64{4096, 1024, 8}, Bytes: ggmlTensorSize(8, []int64{4096, 1024, 8})},
+	}
+
+	wb := CategorizeWeights(tensors, 1)
+
+	wantExpert := ggmlTensorSize(8, []int64{4096, 1024, 8})*2 + ggmlTensorSize(8, []int64{1024, 4096, 8})
+	wantActive := ggmlTensorSize(1, []int64{4096, 32000}) + ggmlTensorSize(1, []int64{4096, 4096})
+
+	if wb.ExpertBytesTotal != wantExpert {
+		t.Errorf("ExpertBytesTotal = %d, want %d", wb.ExpertBytesTotal, wantExpert)
+	}
+	if wb.AlwaysActiveBytes != wantActive {
+		t.Errorf("AlwaysActiveBytes = %d, want %d", wb.AlwaysActiveBytes, wantActive)
+	}
+	if wb.ExpertBytesByLayer[0] != wantExpert {
+		t.Errorf("ExpertBytesByLayer[0] = %d, want %d", wb.ExpertBytesByLayer[0], wantExpert)
+	}
+}
+
 func TestDetectMoEFromTensors(t *testing.T) {
 	moeTensors := []GGUFTensorInfo{
 		{Name: "blk.0.attn_q.weight"},
@@ -229,6 +256,23 @@ func TestDetectMoEFromTensors(t *testing.T) {
 
 	if !DetectMoEFromTensors(moeTensors) {
 		t.Error("DetectMoEFromTensors should return true for MoE tensors")
+	}
+
+	chexpsTensors := []GGUFTensorInfo{
+		{Name: "blk.0.attn_q.weight"},
+		{Name: "blk.0.ffn_up_chexps.weight"},
+	}
+
+	if !DetectMoEFromTensors(chexpsTensors) {
+		t.Error("DetectMoEFromTensors should return true for chexps tensors")
+	}
+
+	gateUpTensors := []GGUFTensorInfo{
+		{Name: "blk.0.ffn_gate_up_exps.weight"},
+	}
+
+	if !DetectMoEFromTensors(gateUpTensors) {
+		t.Error("DetectMoEFromTensors should return true for gate_up_exps tensors")
 	}
 
 	denseTensors := []GGUFTensorInfo{

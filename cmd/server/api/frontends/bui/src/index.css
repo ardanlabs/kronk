@@ -2534,6 +2534,30 @@ code[class*="language-"] {
     color: var(--color-gray-600);
 }
 
+.vram-loading-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 16px;
+    padding: 14px 18px;
+    background: rgba(255, 165, 0, 0.08);
+    border: 1px solid rgba(255, 165, 0, 0.25);
+    border-radius: 8px;
+    color: var(--color-orange);
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.vram-loading-spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(255, 165, 0, 0.25);
+    border-top-color: var(--color-orange);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    flex-shrink: 0;
+}
+
 .vram-results {
     margin-top: 20px;
 }
@@ -3055,6 +3079,16 @@ code[class*="language-"] {
     border-radius: 4px;
     font-size: 13px;
     background: var(--color-white);
+}
+
+.playground-system-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px 8px;
+    font-size: 0.8em;
+    color: var(--color-gray-500);
+    border-top: 1px solid var(--color-gray-200);
 }
 
 /* ── Model Selector (reusable tree-based selector) ── */
@@ -4366,6 +4400,166 @@ button.autotest-detail-log-header:focus-visible {
     gap: 6px;
     font-size: 12px;
     cursor: pointer;
+}
+
+.playground-moe-custom {
+    padding: 8px 0;
+}
+
+.playground-moe-shortcuts {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.playground-moe-shortcut {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85em;
+    cursor: pointer;
+}
+
+.playground-moe-shortcut-hint {
+    font-size: 0.8em;
+    opacity: 0.5;
+    font-family: monospace;
+}
+
+.playground-moe-overrides-list {
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.playground-moe-override-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    background: var(--color-bg-secondary, #1a1a2e);
+    border-radius: 4px;
+    font-size: 0.85em;
+}
+
+.playground-moe-override-item code {
+    flex: 1;
+    font-size: 0.9em;
+}
+
+.playground-moe-override-remove {
+    background: none;
+    border: none;
+    color: var(--color-text-secondary, #999);
+    cursor: pointer;
+    font-size: 1.2em;
+    padding: 0 4px;
+    line-height: 1;
+}
+
+.playground-moe-override-remove:hover {
+    color: var(--color-danger, #f44336);
+}
+
+/* Phase 1: VRAM Fit Indicator */
+.playground-vram-fit {
+    margin-top: 6px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 0.82em;
+    line-height: 1.4;
+}
+
+.playground-vram-fit--fits {
+    background: rgba(76, 175, 80, 0.12);
+    color: #66bb6a;
+}
+
+.playground-vram-fit--tight {
+    background: rgba(255, 152, 0, 0.12);
+    color: #ffa726;
+}
+
+.playground-vram-fit--wont_fit {
+    background: rgba(244, 67, 54, 0.12);
+    color: #ef5350;
+}
+
+.playground-vram-fit-detail {
+    opacity: 0.7;
+    font-size: 0.9em;
+}
+
+/* Phase 4: MoE Guidance Banner */
+.playground-moe-guide {
+    margin-bottom: 16px;
+    border: 1px solid var(--color-gray-300, #333);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.playground-moe-guide-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    background: var(--color-bg-secondary, #1a1a2e);
+    color: var(--color-gray-900);
+    font-weight: 600;
+    font-size: 0.95em;
+}
+
+.playground-moe-guide-icon {
+    font-size: 1.2em;
+}
+
+.playground-moe-guide-body {
+    padding: 12px 14px;
+    font-size: 0.88em;
+    line-height: 1.6;
+}
+
+.playground-moe-guide-hw {
+    margin-bottom: 10px;
+    opacity: 0.85;
+}
+
+.playground-moe-guide-estimates {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+
+.playground-moe-guide-estimate {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.playground-moe-guide-badge {
+    font-size: 0.78em;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.playground-moe-guide-badge--ok {
+    background: rgba(76, 175, 80, 0.15);
+    color: #66bb6a;
+}
+
+.playground-moe-guide-badge--no {
+    background: rgba(244, 67, 54, 0.15);
+    color: #ef5350;
+}
+
+.playground-moe-guide-apply {
+    margin-top: 4px;
+    font-size: 0.9em;
 }
 
 .playground-param-group-title {

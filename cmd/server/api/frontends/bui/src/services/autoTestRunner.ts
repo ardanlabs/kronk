@@ -2423,8 +2423,9 @@ export const defaultMoESweepDef: ConfigSweepDefinition = {
   flashAttention: { enabled: true, values: ['enabled'] },
   cacheType: { enabled: true, values: ['q8_0', 'q4_0'] },
   cacheMode: { enabled: true, values: ['none', 'imc'] },
-  moeMode: { enabled: true, values: ['experts_cpu'] },
+  moeMode: { enabled: true, values: ['experts_cpu', 'keep_top_n'] },
   moeKeepExpertsTopN: { enabled: true, values: [0, 4, 8] },
+  opOffloadMinBatch: { enabled: true, values: [0, 128, 256, 512] },
 }
 
 /** Generates config candidates as a full cross-product of all enabled parameter values. */
@@ -2468,28 +2469,66 @@ export function generateConfigCandidates(
   if (def.cacheMode.enabled && def.cacheMode.values.length > 0) {
     allAxes.push({ configKey: 'cache_mode', values: def.cacheMode.values });
   }
-  if (def.moeMode?.enabled && def.moeMode.values.length > 0) {
-    allAxes.push({ configKey: 'moe_mode', values: def.moeMode.values });
-  }
-  if (def.moeKeepExpertsTopN?.enabled && def.moeKeepExpertsTopN.values.length > 0) {
-    allAxes.push({ configKey: 'moe_keep_experts_top_n', values: def.moeKeepExpertsTopN.values });
-  }
+  // Collect enabled MoE axes separately for per-mode sub-products.
+  const moeModeEnabled = def.moeMode?.enabled && def.moeMode.values.length > 0
+  const moeKeepTopNValues = (def.moeKeepExpertsTopN?.enabled && def.moeKeepExpertsTopN.values.length > 0)
+    ? def.moeKeepExpertsTopN.values : []
+  const opOffloadValues = (def.opOffloadMinBatch?.enabled && def.opOffloadMinBatch.values.length > 0)
+    ? def.opOffloadMinBatch.values : []
 
-  if (allAxes.length === 0) {
+  if (allAxes.length === 0 && !moeModeEnabled) {
     return [{ ...baseline }]
   }
 
-  // Build the full cross-product of all enabled parameter values.
-  let combos: ConfigCandidate[] = [{ ...baseline }]
+  // Build the cross-product of non-MoE axes.
+  let baseCombos: ConfigCandidate[] = [{ ...baseline }]
 
   for (const axis of allAxes) {
     const next: ConfigCandidate[] = []
-    for (const combo of combos) {
+    for (const combo of baseCombos) {
       for (const v of axis.values) {
         next.push({ ...combo, [axis.configKey]: v })
       }
     }
-    combos = next
+    baseCombos = next
+  }
+
+  // If MoE mode axis is not enabled, we're done with cross-product.
+  let combos: ConfigCandidate[]
+  if (!moeModeEnabled) {
+    combos = baseCombos
+  } else {
+    // For each moe_mode value, generate mode-specific sub-products.
+    combos = []
+    for (const mode of def.moeMode!.values) {
+      let modeAxes: AnyAxis[] = []
+      if (mode === 'keep_top_n') {
+        if (moeKeepTopNValues.length > 0) {
+          modeAxes.push({ configKey: 'moe_keep_experts_top_n', values: moeKeepTopNValues })
+        }
+        if (opOffloadValues.length > 0) {
+          modeAxes.push({ configKey: 'op_offload_min_batch', values: opOffloadValues })
+        }
+      } else if (mode === 'experts_cpu') {
+        if (opOffloadValues.length > 0) {
+          modeAxes.push({ configKey: 'op_offload_min_batch', values: opOffloadValues })
+        }
+      }
+      // experts_gpu: no additional MoE-specific axes
+
+      // Cross base combos with mode-specific axes.
+      let modeCombos: ConfigCandidate[] = baseCombos.map(c => ({ ...c, moe_mode: mode as string }))
+      for (const axis of modeAxes) {
+        const next: ConfigCandidate[] = []
+        for (const combo of modeCombos) {
+          for (const v of axis.values) {
+            next.push({ ...combo, [axis.configKey]: v })
+          }
+        }
+        modeCombos = next
+      }
+      combos.push(...modeCombos)
+    }
   }
 
   // Dedup (in case values arrays contain duplicates).
@@ -2497,7 +2536,7 @@ export function generateConfigCandidates(
   const candidates: ConfigCandidate[] = []
 
   const keyOf = (c: ConfigCandidate) =>
-    `cw=${c['context_window']}|nb=${c.nbatch}|nub=${c.nubatch}|ns=${c['nseq_max']}|fa=${c['flash_attention']}|ct=${c['cache_type']}|cm=${c['cache_mode']}|mm=${c['moe_mode']}|mk=${c['moe_keep_experts_top_n']}`
+    `cw=${c['context_window']}|nb=${c.nbatch}|nub=${c.nubatch}|ns=${c['nseq_max']}|fa=${c['flash_attention']}|ct=${c['cache_type']}|cm=${c['cache_mode']}|mm=${c['moe_mode']}|mk=${c['moe_keep_experts_top_n'] ?? ''}|oomb=${c['op_offload_min_batch']}`
 
   for (const c of combos) {
     const k = keyOf(c)

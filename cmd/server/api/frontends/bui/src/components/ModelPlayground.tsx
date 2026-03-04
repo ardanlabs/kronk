@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { useModelList } from '../contexts/ModelListContext';
@@ -6,16 +6,22 @@ import { useDownload } from '../contexts/DownloadContext';
 import { usePlayground } from '../contexts/PlaygroundContext';
 import type {
   PlaygroundTemplateInfo,
+  PlaygroundChatRequest,
   ChatMessage,
   ChatStreamResponse,
   ChatToolCall,
   ModelConfig,
 } from '../types';
 import AutomatedTestingPanel from './AutomatedTestingPanel';
+import ChatPanel, { type StreamTransport } from './ChatPanel';
 import ModelSelector from './ModelSelector';
 import PlaygroundHistory from './PlaygroundHistory';
 import { autoTestTools } from '../services/autoTestRunner';
+import type { SamplingParams } from '../contexts/SamplingContext';
 import { PARAM_TOOLTIPS, ParamTooltip } from './ParamTooltips';
+import { formatBytes } from '../lib/format';
+import { computeMoeVramFit, parseDevicesInfo, MOE_STRATEGY_OPTIONS, VRAM_FIT_TEXT } from '../lib/moe';
+import type { DevicesInfo } from '../lib/moe';
 
 const NEW_MODEL_VALUE = '__new__';
 
@@ -25,12 +31,6 @@ export default function ModelPlayground() {
   const navigate = useNavigate();
   const { models, loadModels } = useModelList();
   const { download, isDownloading, startDownload, cancelDownload, clearDownload } = useDownload();
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const contentBufferRef = useRef('');
-  const throttleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const sendIdRef = useRef(0);
-  const messageKeyCounterRef = useRef(0);
-  const messageKeysRef = useRef<number[]>([]);
 
   // Persistent state from context (survives navigation)
   const {
@@ -40,7 +40,6 @@ export default function ModelPlayground() {
     playgroundMode, setPlaygroundMode,
     activeTab, setActiveTab,
     systemPrompt, setSystemPrompt,
-    lastTPS, setLastTPS,
     templateMode, setTemplateMode,
     selectedTemplate, setSelectedTemplate,
     customScript, setCustomScript,
@@ -53,6 +52,7 @@ export default function ModelPlayground() {
     cacheMode, setCacheMode,
     moeMode, setMoeMode,
     moeKeepTopN, setMoeKeepTopN,
+    tensorBuftOverrides, setTensorBuftOverrides,
     hydratedModelId, setHydratedModelId,
   } = usePlayground();
 
@@ -87,11 +87,6 @@ export default function ModelPlayground() {
   const [sessionLoading, setSessionLoading] = useState(false);
   const [sessionError, setSessionError] = useState('');
 
-  // Chat input state
-  const [userInput, setUserInput] = useState('');
-  const [streaming, setStreaming] = useState(false);
-  const streamAbortRef = useRef<(() => void) | null>(null);
-  const warmupAbortRef = useRef<(() => void) | null>(null);
   const toolTestAbortRef = useRef<(() => void) | null>(null);
   const sessionRef = useRef(session);
   sessionRef.current = session;
@@ -105,9 +100,18 @@ export default function ModelPlayground() {
   const pendingAutoSelectRef = useRef(false);
   const expectedFilenameRef = useRef('');
 
+  // Device info state
+  const [devicesInfo, setDevicesInfo] = useState<DevicesInfo | null>(null);
+
   // MoE detection: true when the selected model has MoE metadata
   const [isMoE, setIsMoE] = useState(false);
   const [moeBlockCount, setMoeBlockCount] = useState(0);
+  const [vramFitStatus, setVramFitStatus] = useState<'fits' | 'tight' | 'wont_fit' | null>(null);
+  const [vramNeededAllGPU, setVramNeededAllGPU] = useState(0);
+  const [vramNeededCPUExperts, setVramNeededCPUExperts] = useState(0);
+  const [modelVramInfo, setModelVramInfo] = useState<any>(null);
+  const [catalogMoeMode, setCatalogMoeMode] = useState('');
+  const moeModeTouchedRef = useRef(false);
 
   // Tool test state
   const [toolDefs, setToolDefs] = useState(defaultTools);
@@ -134,6 +138,17 @@ export default function ModelPlayground() {
     loadModels();
     loadTemplates();
   }, [loadModels, loadTemplates]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.getDevices()
+      .then((resp) => {
+        if (cancelled) return;
+        setDevicesInfo(parseDevicesInfo(resp));
+      })
+      .catch(() => { /* silent fallback */ });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (!selectedModel || selectedModel === NEW_MODEL_VALUE) {
@@ -167,6 +182,11 @@ export default function ModelPlayground() {
           || (info.metadata && Object.keys(info.metadata).some(k => k.endsWith('.expert_count')));
         setIsMoE(modelIsMoE);
 
+        // Store VRAM info for the separate fit-computation effect.
+        setModelVramInfo(modelIsMoE ? info.vram : null);
+        setCatalogMoeMode(mc?.moe?.mode || '');
+        moeModeTouchedRef.current = false;
+
         // Extract block_count for MoE layer slider range.
         if (info.metadata) {
           const blockKey = Object.keys(info.metadata).find(k => k.endsWith('.block_count'));
@@ -183,18 +203,31 @@ export default function ModelPlayground() {
     return () => { cancelled = true; };
   }, [selectedModel, hydratedModelId]);
 
+  // Compute VRAM fit status in a separate effect so it reacts to devicesInfo
+  // arriving after model hydration (the devices API call is independent).
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: streaming ? 'auto' : 'smooth' });
-  }, [chatMessages, streaming]);
+    if (!isMoE || !modelVramInfo || !devicesInfo) {
+      setVramFitStatus(null);
+      return;
+    }
+
+    const fit = computeMoeVramFit(modelVramInfo, devicesInfo.gpuVramBytes, {
+      contextWindow,
+      slots: nSeqMax,
+    });
+    setVramNeededAllGPU(fit.allGPU);
+    setVramNeededCPUExperts(fit.cpuExperts);
+    setVramFitStatus(fit.status);
+
+    // Auto-suggest only if catalog didn't set a mode AND user hasn't touched it.
+    if (fit.status && fit.status !== 'fits' && !catalogMoeMode && !moeModeTouchedRef.current) {
+      setMoeMode('experts_cpu');
+    }
+  }, [isMoE, modelVramInfo, devicesInfo, catalogMoeMode, contextWindow, nSeqMax]);
 
   useEffect(() => {
     return () => {
-      streamAbortRef.current?.();
-      warmupAbortRef.current?.();
       toolTestAbortRef.current?.();
-      if (throttleTimerRef.current) {
-        clearTimeout(throttleTimerRef.current);
-      }
     };
   }, []);
 
@@ -287,6 +320,9 @@ export default function ModelPlayground() {
           config['moe_keep_experts_top_n'] = moeKeepTopN;
         }
       }
+      if (moeMode === 'custom' && tensorBuftOverrides.length > 0) {
+        config['tensor_buft_overrides'] = tensorBuftOverrides;
+      }
 
       const resp = await api.createPlaygroundSession({
         model_id: selectedModel,
@@ -308,18 +344,9 @@ export default function ModelPlayground() {
     if (!session) return;
 
     // Abort any active streams first
-    streamAbortRef.current?.();
-    streamAbortRef.current = null;
-    warmupAbortRef.current?.();
-    warmupAbortRef.current = null;
     toolTestAbortRef.current?.();
     toolTestAbortRef.current = null;
     setToolTestRunning(false);
-    if (throttleTimerRef.current) {
-      clearTimeout(throttleTimerRef.current);
-      throttleTimerRef.current = null;
-    }
-    setStreaming(false);
 
     try {
       await api.deletePlaygroundSession(session.session_id);
@@ -328,200 +355,6 @@ export default function ModelPlayground() {
     } catch (err: any) {
       setSessionError(err.message || 'Failed to unload session');
     }
-  };
-
-  // Run a silent warmup request that is fully consumed but not displayed.
-  const runWarmup = useCallback((sessionId: string): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      const warmupMessages: ChatMessage[] = [
-        { role: 'user', content: 'hello, model!' },
-      ];
-
-      const abort = api.streamPlaygroundChat(
-        {
-          session_id: sessionId,
-          messages: warmupMessages,
-          stream: true,
-          max_tokens: 32,
-          temperature,
-          top_p: topP,
-          top_k: topK,
-          min_p: minP,
-        },
-        () => {}, // consume tokens silently
-        (error: string) => { warmupAbortRef.current = null; reject(new Error(error)); },
-        () => { warmupAbortRef.current = null; resolve(); },
-      );
-      warmupAbortRef.current = abort;
-    });
-  }, [temperature, topP, topK, minP]);
-
-  const handleSendMessage = useCallback(async () => {
-    if (!session || !userInput.trim() || streaming) return;
-
-    const input = userInput.trim();
-    const prevMessages = chatMessages;
-    const sessionId = session.session_id;
-    const mySendId = ++sendIdRef.current;
-
-    setUserInput('');
-    setStreaming(true);
-    setLastTPS(null);
-
-    // Show the user message and a "warming up" placeholder.
-    setChatMessages(prev => [
-      ...prev,
-      { role: 'user', content: input },
-      { role: 'assistant', content: cacheMode === 'imc' ? '' : '⏳ Warming up model...' },
-    ]);
-
-    // Warmup: send a throwaway message so the model is hot (skip for IMC to avoid cache corruption).
-    if (cacheMode !== 'imc') {
-      warmupAbortRef.current?.();
-      warmupAbortRef.current = null;
-      try {
-        await runWarmup(sessionId);
-      } catch {
-        // Warmup failure is non-fatal; continue with the real request.
-      }
-
-      await new Promise(r => setTimeout(r, 1000));
-    }
-
-    // Guard: if session changed or stop was pressed during warmup, bail out.
-    if (!sessionRef.current || sessionRef.current.session_id !== sessionId || sendIdRef.current !== mySendId) {
-      setStreaming(false);
-      return;
-    }
-
-    // Build the real message list (excluding the warmup placeholder).
-    const messages: ChatMessage[] = [];
-    if (systemPrompt.trim()) {
-      messages.push({ role: 'system', content: systemPrompt });
-    }
-    // Use captured snapshot from before we appended the user+placeholder.
-    for (const msg of prevMessages) {
-      messages.push({ role: msg.role, content: msg.content });
-    }
-    messages.push({ role: 'user', content: input });
-
-    // Replace the warmup placeholder with an empty assistant message.
-    setChatMessages(prev => {
-      const updated = [...prev];
-      updated[updated.length - 1] = { role: 'assistant', content: '' };
-      return updated;
-    });
-
-    contentBufferRef.current = '';
-    if (throttleTimerRef.current) {
-      clearTimeout(throttleTimerRef.current);
-      throttleTimerRef.current = null;
-    }
-
-    let assistantContent = '';
-
-    const abort = api.streamPlaygroundChat(
-      {
-        session_id: sessionId,
-        messages,
-        stream: true,
-        stream_options: { include_usage: true },
-        temperature,
-        top_p: topP,
-        top_k: topK,
-        min_p: minP,
-        max_tokens: maxTokens,
-        repeat_penalty: repeatPenalty,
-        repeat_last_n: repeatLastN,
-        frequency_penalty: frequencyPenalty,
-        presence_penalty: presencePenalty,
-        dry_multiplier: dryMultiplier,
-        dry_base: dryBase,
-        dry_allowed_length: dryAllowedLength,
-        dry_penalty_last_n: dryPenaltyLastN,
-        xtc_probability: xtcProbability,
-        xtc_threshold: xtcThreshold,
-        xtc_min_keep: xtcMinKeep,
-        enable_thinking: enableThinking,
-        reasoning_effort: reasoningEffort,
-      },
-      (data: ChatStreamResponse) => {
-        const delta = data.choices?.[0]?.delta;
-        if (delta?.content) {
-          assistantContent += delta.content;
-          contentBufferRef.current = assistantContent;
-
-          if (!throttleTimerRef.current) {
-            throttleTimerRef.current = setTimeout(() => {
-              throttleTimerRef.current = null;
-              const buffered = contentBufferRef.current;
-              setChatMessages(prev => {
-                const updated = [...prev];
-                updated[updated.length - 1] = { role: 'assistant', content: buffered };
-                return updated;
-              });
-            }, 50);
-          }
-        }
-        if (data.usage?.tokens_per_second) {
-          setLastTPS(data.usage.tokens_per_second);
-        }
-      },
-      (error: string) => {
-        if (throttleTimerRef.current) {
-          clearTimeout(throttleTimerRef.current);
-          throttleTimerRef.current = null;
-        }
-        setChatMessages(prev => {
-          const updated = [...prev];
-          updated[updated.length - 1] = { role: 'assistant', content: `Error: ${error}` };
-          return updated;
-        });
-        streamAbortRef.current = null;
-        setStreaming(false);
-      },
-      () => {
-        if (throttleTimerRef.current) {
-          clearTimeout(throttleTimerRef.current);
-          throttleTimerRef.current = null;
-        }
-        const finalContent = contentBufferRef.current;
-        if (finalContent) {
-          setChatMessages(prev => {
-            const updated = [...prev];
-            updated[updated.length - 1] = { role: 'assistant', content: finalContent };
-            return updated;
-          });
-        }
-        streamAbortRef.current = null;
-        setStreaming(false);
-      }
-    );
-
-    streamAbortRef.current = abort;
-  }, [session, userInput, streaming, systemPrompt, chatMessages, cacheMode, temperature, topP, topK, minP, maxTokens, repeatPenalty, repeatLastN, frequencyPenalty, presencePenalty, dryMultiplier, dryBase, dryAllowedLength, dryPenaltyLastN, xtcProbability, xtcThreshold, xtcMinKeep, enableThinking, reasoningEffort, runWarmup]);
-
-  const handleStopStreaming = () => {
-    sendIdRef.current++;
-    streamAbortRef.current?.();
-    streamAbortRef.current = null;
-    warmupAbortRef.current?.();
-    warmupAbortRef.current = null;
-    if (throttleTimerRef.current) {
-      clearTimeout(throttleTimerRef.current);
-      throttleTimerRef.current = null;
-    }
-    const finalContent = contentBufferRef.current;
-    if (finalContent) {
-      setChatMessages(prev => {
-        const updated = [...prev];
-        if (updated.length > 0) {
-          updated[updated.length - 1] = { role: 'assistant', content: finalContent };
-        }
-        return updated;
-      });
-    }
-    setStreaming(false);
   };
 
   const handleToolTest = useCallback(() => {
@@ -671,18 +504,102 @@ export default function ModelPlayground() {
     navigate('/catalog/editor?source=playground');
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSendMessage();
-    }
-  };
+  // ── ChatPanel bridge for Basic Chat tab ─────────────────────────────
+  const playgroundSampling = useMemo<SamplingParams>(() => ({
+    maxTokens,
+    temperature,
+    topP,
+    topK,
+    minP,
+    presencePenalty,
+    repeatPenalty,
+    repeatLastN,
+    dryMultiplier,
+    dryBase,
+    dryAllowedLen: dryAllowedLength,
+    dryPenaltyLast: dryPenaltyLastN,
+    xtcProbability,
+    xtcThreshold,
+    xtcMinKeep,
+    frequencyPenalty,
+    enableThinking,
+    reasoningEffort,
+    returnPrompt: false,
+    includeUsage: true,
+    logprobs: false,
+    topLogprobs: 0,
+    grammar: '',
+    systemPrompt,
+    cacheId: '',
+  }), [maxTokens, temperature, topP, topK, minP, presencePenalty, repeatPenalty, repeatLastN,
+    dryMultiplier, dryBase, dryAllowedLength, dryPenaltyLastN, xtcProbability, xtcThreshold,
+    xtcMinKeep, frequencyPenalty, enableThinking, reasoningEffort, systemPrompt]);
 
-  // Sync stable keys with message list length (append-only).
-  while (messageKeysRef.current.length < chatMessages.length) {
-    messageKeysRef.current.push(++messageKeyCounterRef.current);
-  }
-  messageKeysRef.current.length = chatMessages.length;
+  const setPlaygroundSampling = useCallback((partial: Partial<SamplingParams>) => {
+    if (partial.maxTokens !== undefined) setMaxTokens(partial.maxTokens);
+    if (partial.temperature !== undefined) setTemperature(partial.temperature);
+    if (partial.topP !== undefined) setTopP(partial.topP);
+    if (partial.topK !== undefined) setTopK(partial.topK);
+    if (partial.minP !== undefined) setMinP(partial.minP);
+    if (partial.presencePenalty !== undefined) setPresencePenalty(partial.presencePenalty);
+    if (partial.repeatPenalty !== undefined) setRepeatPenalty(partial.repeatPenalty);
+    if (partial.repeatLastN !== undefined) setRepeatLastN(partial.repeatLastN);
+    if (partial.dryMultiplier !== undefined) setDryMultiplier(partial.dryMultiplier);
+    if (partial.dryBase !== undefined) setDryBase(partial.dryBase);
+    if (partial.dryAllowedLen !== undefined) setDryAllowedLength(partial.dryAllowedLen);
+    if (partial.dryPenaltyLast !== undefined) setDryPenaltyLastN(partial.dryPenaltyLast);
+    if (partial.xtcProbability !== undefined) setXtcProbability(partial.xtcProbability);
+    if (partial.xtcThreshold !== undefined) setXtcThreshold(partial.xtcThreshold);
+    if (partial.xtcMinKeep !== undefined) setXtcMinKeep(partial.xtcMinKeep);
+    if (partial.frequencyPenalty !== undefined) setFrequencyPenalty(partial.frequencyPenalty);
+    if (partial.enableThinking !== undefined) setEnableThinking(partial.enableThinking as 'true' | 'false');
+    if (partial.reasoningEffort !== undefined) setReasoningEffort(partial.reasoningEffort as typeof reasoningEffort);
+    if (partial.systemPrompt !== undefined) setSystemPrompt(partial.systemPrompt);
+  }, [setSystemPrompt]);
+
+  const playgroundTransport = useCallback<StreamTransport>(({ messages, sampling, onMessage, onError, onComplete }) => {
+    if (!session) {
+      onError('No session');
+      return () => {};
+    }
+    return api.streamPlaygroundChat(
+      {
+        session_id: session.session_id,
+        messages,
+        stream: true,
+        stream_options: { include_usage: sampling.includeUsage },
+        temperature: sampling.temperature,
+        top_p: sampling.topP,
+        top_k: sampling.topK,
+        min_p: sampling.minP,
+        max_tokens: sampling.maxTokens,
+        repeat_penalty: sampling.repeatPenalty,
+        repeat_last_n: sampling.repeatLastN,
+        frequency_penalty: sampling.frequencyPenalty,
+        presence_penalty: sampling.presencePenalty,
+        dry_multiplier: sampling.dryMultiplier,
+        dry_base: sampling.dryBase,
+        dry_allowed_length: sampling.dryAllowedLen,
+        dry_penalty_last_n: sampling.dryPenaltyLast,
+        xtc_probability: sampling.xtcProbability,
+        xtc_threshold: sampling.xtcThreshold,
+        xtc_min_keep: sampling.xtcMinKeep,
+        enable_thinking: (sampling.enableThinking || undefined) as 'true' | 'false' | undefined,
+        reasoning_effort: (sampling.reasoningEffort || undefined) as PlaygroundChatRequest['reasoning_effort'],
+        grammar: sampling.grammar || undefined,
+        return_prompt: sampling.returnPrompt,
+        logprobs: sampling.logprobs,
+        top_logprobs: sampling.topLogprobs,
+      },
+      onMessage,
+      onError,
+      onComplete,
+    );
+  }, [session]);
+
+  const handlePlaygroundClear = useCallback(() => {
+    setChatMessages([]);
+  }, [setChatMessages]);
 
   return (
     <div className="playground-container">
@@ -832,6 +749,22 @@ export default function ModelPlayground() {
             )}
           </div>
 
+          {devicesInfo && (
+            <div className="playground-system-info">
+              {devicesInfo.gpuCount > 0 && (
+                <span>
+                  {devicesInfo.gpuCount} GPU{devicesInfo.gpuCount > 1 ? 's' : ''}{devicesInfo.gpuType ? ` (${devicesInfo.gpuType})` : ''}
+                </span>
+              )}
+              {devicesInfo.gpuVramBytes > 0 && (
+                <span>Total VRAM: {formatBytes(devicesInfo.gpuVramBytes)}</span>
+              )}
+              {devicesInfo.ramBytes > 0 && (
+                <span>System RAM: {formatBytes(devicesInfo.ramBytes)}</span>
+              )}
+            </div>
+          )}
+
           <button
             className={`playground-mode-btn ${playgroundMode === 'automated' ? 'active' : ''}`}
             onClick={() => setPlaygroundMode('automated')}
@@ -858,6 +791,8 @@ export default function ModelPlayground() {
               <AutomatedTestingPanel
                 session={session}
                 catalogSampling={catalogConfig?.['sampling-parameters'] ?? null}
+                isMoE={isMoE}
+                gpuVramBytes={devicesInfo?.gpuVramBytes}
                 sessionSeed={{
                   model_id: selectedModel,
                   template_mode: templateMode,
@@ -875,6 +810,7 @@ export default function ModelPlayground() {
                     incremental_cache: cacheMode === 'imc',
                     moe_mode: moeMode || undefined,
                     moe_keep_experts_top_n: moeMode === 'keep_top_n' ? moeKeepTopN : undefined,
+                    tensor_buft_overrides: moeMode === 'custom' && tensorBuftOverrides.length > 0 ? tensorBuftOverrides : undefined,
                   },
                 }}
               />
@@ -895,6 +831,44 @@ export default function ModelPlayground() {
         {/* Setup Panel */}
         <div className="playground-setup">
           <h3>Setup</h3>
+
+          {isMoE && !session && devicesInfo && (
+            <div className="playground-moe-guide">
+              <div className="playground-moe-guide-header">
+                <span className="playground-moe-guide-icon">🧩</span>
+                <span>Mixture of Experts Model Detected</span>
+              </div>
+              <div className="playground-moe-guide-body">
+                <div className="playground-moe-guide-hw">
+                  <strong>Your Hardware:</strong> {devicesInfo.gpuType || 'GPU'} — {formatBytes(devicesInfo.gpuVramBytes)} VRAM, {formatBytes(devicesInfo.ramBytes)} RAM
+                </div>
+                <div className="playground-moe-guide-estimates">
+                  <div className="playground-moe-guide-estimate">
+                    <span>⚡ All on GPU:</span> <strong>{formatBytes(vramNeededAllGPU)}</strong>
+                    {vramFitStatus === 'fits' ? <span className="playground-moe-guide-badge playground-moe-guide-badge--ok">fits</span> : <span className="playground-moe-guide-badge playground-moe-guide-badge--no">won't fit</span>}
+                  </div>
+                  <div className="playground-moe-guide-estimate">
+                    <span>💾 Experts on CPU:</span> <strong>{formatBytes(vramNeededCPUExperts)}</strong>
+                    {vramNeededCPUExperts <= devicesInfo.gpuVramBytes * 0.95 ? <span className="playground-moe-guide-badge playground-moe-guide-badge--ok">fits</span> : <span className="playground-moe-guide-badge playground-moe-guide-badge--no">tight</span>}
+                  </div>
+                </div>
+                {vramFitStatus && vramFitStatus !== 'fits' && (
+                  <button
+                    className="btn btn-primary playground-moe-guide-apply"
+                    onClick={() => {
+                      setMoeMode('experts_cpu');
+                      setFlashAttention('enabled');
+                      if (nBatch < 4096) setNBatch(4096);
+                      if (nUBatch < 512) setNUBatch(512);
+                    }}
+                    disabled={!!session}
+                  >
+                    Apply Recommended Settings
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
 
           <h4>Configuration</h4>
           <div className="playground-config-grid-fluid">
@@ -980,31 +954,39 @@ export default function ModelPlayground() {
             </div>
             {isMoE && (
               <div className="form-group">
-                <label htmlFor="pg-moe-mode">Expert Placement{PARAM_TOOLTIPS.moeMode && <ParamTooltip text={PARAM_TOOLTIPS.moeMode} />}</label>
+                <label htmlFor="pg-moe-mode">Expert Strategy{PARAM_TOOLTIPS.moeMode && <ParamTooltip text={PARAM_TOOLTIPS.moeMode} />}</label>
                 <select
                   id="pg-moe-mode"
                   value={moeMode}
-                  onChange={(e) => setMoeMode(e.target.value)}
+                  onChange={(e) => { moeModeTouchedRef.current = true; setMoeMode(e.target.value); }}
                   disabled={!!session}
                 >
-                  <option value="">Auto (catalog default)</option>
-                  <option value="experts_cpu">Experts on CPU (recommended)</option>
-                  <option value="keep_top_n">Keep some expert layers on GPU</option>
-                  <option value="experts_gpu">All experts on GPU</option>
-                  <option value="custom">Custom (tensor overrides)</option>
+                  {MOE_STRATEGY_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
                 </select>
+                {vramFitStatus && devicesInfo && (
+                  <div className={`playground-vram-fit playground-vram-fit--${vramFitStatus}`}>
+                    {VRAM_FIT_TEXT[vramFitStatus]}
+                    <span className="playground-vram-fit-detail">
+                      {' '}({formatBytes(devicesInfo.gpuVramBytes)} available
+                      {vramFitStatus !== 'fits' && `, ${formatBytes(vramNeededCPUExperts)} needed with CPU experts`}
+                      {vramFitStatus === 'fits' && `, ${formatBytes(vramNeededAllGPU)} needed`})
+                    </span>
+                  </div>
+                )}
               </div>
             )}
             {isMoE && moeMode === 'keep_top_n' && (
               <div className="form-group">
-                <label htmlFor="pg-moe-topn">Expert Layers on GPU{PARAM_TOOLTIPS.moeKeepExpertsTopN && <ParamTooltip text={PARAM_TOOLTIPS.moeKeepExpertsTopN} />}</label>
+                <label htmlFor="pg-moe-topn">GPU Expert Layers ({moeKeepTopN} of {moeBlockCount || '?'} — more = faster, more VRAM){PARAM_TOOLTIPS.moeKeepExpertsTopN && <ParamTooltip text={PARAM_TOOLTIPS.moeKeepExpertsTopN} />}</label>
                 <input
                   id="pg-moe-topn"
-                  type="number"
+                  type="range"
                   value={moeKeepTopN}
                   onChange={(e) => setMoeKeepTopN(Number(e.target.value))}
                   min={0}
-                  max={moeBlockCount || 999}
+                  max={moeBlockCount || 64}
                   disabled={!!session}
                 />
               </div>
@@ -1013,6 +995,124 @@ export default function ModelPlayground() {
           {isMoE && (moeMode === 'experts_cpu' || moeMode === 'keep_top_n') && (
             <div className="playground-moe-tips" style={{ fontSize: '0.85em', color: 'var(--color-text-secondary, #aaa)', padding: '0 0 8px', lineHeight: 1.4 }}>
               💡 {PARAM_TOOLTIPS.moeTipBatch} {PARAM_TOOLTIPS.moeTipFlashAttention}
+            </div>
+          )}
+
+          {isMoE && moeMode === 'custom' && (
+            <div className="playground-moe-custom">
+              <div className="form-group">
+                <label>Tensor Buffer Overrides</label>
+                <p style={{ fontSize: '0.8em', color: 'var(--color-text-secondary, #aaa)', margin: '0 0 8px' }}>
+                  Select which tensors to offload to CPU. These are applied as tensor-buft-overrides.
+                </p>
+              </div>
+
+              <div className="playground-moe-shortcuts">
+                <label className="playground-moe-shortcut">
+                  <input
+                    type="checkbox"
+                    checked={tensorBuftOverrides.includes('moe-experts')}
+                    onChange={(e) => {
+                      setTensorBuftOverrides(prev =>
+                        e.target.checked
+                          ? [...prev.filter(s => s !== 'moe-experts'), 'moe-experts']
+                          : prev.filter(s => s !== 'moe-experts')
+                      );
+                    }}
+                    disabled={!!session}
+                  />
+                  All expert FFN tensors → CPU
+                  <span className="playground-moe-shortcut-hint">moe-experts</span>
+                </label>
+
+                <label className="playground-moe-shortcut">
+                  <input
+                    type="checkbox"
+                    checked={tensorBuftOverrides.includes('all-ffn')}
+                    onChange={(e) => {
+                      setTensorBuftOverrides(prev =>
+                        e.target.checked
+                          ? [...prev.filter(s => s !== 'all-ffn'), 'all-ffn']
+                          : prev.filter(s => s !== 'all-ffn')
+                      );
+                    }}
+                    disabled={!!session}
+                  />
+                  All FFN tensors → CPU
+                  <span className="playground-moe-shortcut-hint">all-ffn</span>
+                </label>
+              </div>
+
+              {moeBlockCount > 0 && (
+                <div className="form-group" style={{ marginTop: 8 }}>
+                  <label>Block-Specific Overrides</label>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <select
+                      id="pg-moe-block-select"
+                      disabled={!!session}
+                      defaultValue=""
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (!val) return;
+                        setTensorBuftOverrides(prev => prev.includes(val) ? prev : [...prev, val]);
+                        e.target.value = '';
+                      }}
+                    >
+                      <option value="">Add block override…</option>
+                      {Array.from({ length: moeBlockCount }, (_, i) => (
+                        <option key={i} value={`moe-experts:block:${i}`}>
+                          Block {i} expert tensors → CPU
+                        </option>
+                      ))}
+                      {Array.from({ length: moeBlockCount }, (_, i) => (
+                        <option key={`block-${i}`} value={`block:${i}`}>
+                          Block {i} (all tensors) → CPU
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {tensorBuftOverrides.length > 0 && (
+                <div className="playground-moe-overrides-list">
+                  {tensorBuftOverrides.map((override, i) => (
+                    <div key={i} className="playground-moe-override-item">
+                      <code>{override}</code>
+                      <button
+                        type="button"
+                        className="playground-moe-override-remove"
+                        onClick={() => setTensorBuftOverrides(prev => prev.filter((_, j) => j !== i))}
+                        disabled={!!session}
+                        title="Remove"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="form-group" style={{ marginTop: 8 }}>
+                <label htmlFor="pg-moe-raw-override">Custom Pattern (regex)</label>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input
+                    id="pg-moe-raw-override"
+                    type="text"
+                    placeholder="e.g., blk\.5\.ffn_.*"
+                    disabled={!!session}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const val = (e.target as HTMLInputElement).value.trim();
+                        if (val) {
+                          setTensorBuftOverrides(prev => prev.includes(val) ? prev : [...prev, val]);
+                          (e.target as HTMLInputElement).value = '';
+                        }
+                      }
+                    }}
+                  />
+                </div>
+              </div>
             </div>
           )}
 
@@ -1094,160 +1194,24 @@ export default function ModelPlayground() {
           <div className="playground-tab-content">
             {activeTab === 'chat' && (
               <div role="tabpanel" id="tabpanel-chat" aria-labelledby="tab-chat" className="playground-chat">
-                <details className="playground-sampling-params">
-                  <summary>Chat Parameters</summary>
-
-                  <h5 className="playground-param-group-title">System Prompt</h5>
-                  <div className="form-group">
-                    <textarea
-                        value={systemPrompt}
-                        onChange={(e) => setSystemPrompt(e.target.value)}
-                        rows={2}
-                        className="playground-textarea"
-                    />
-                  </div>
-
-                  <h5 className="playground-param-group-title">Generation</h5>
-                  <div className="playground-config-grid-fluid">
-                    <div className="form-group">
-                      <label htmlFor="pg-temperature">Temperature{PARAM_TOOLTIPS.temperature && <ParamTooltip text={PARAM_TOOLTIPS.temperature} />}</label>
-                      <input id="pg-temperature" type="number" value={temperature} onChange={(e) => setTemperature(Number(e.target.value))} step={0.1} min={0} />
-                    </div>
-                    <div className="form-group">
-                      <label htmlFor="pg-top-p">Top P{PARAM_TOOLTIPS.top_p && <ParamTooltip text={PARAM_TOOLTIPS.top_p} />}</label>
-                      <input id="pg-top-p" type="number" value={topP} onChange={(e) => setTopP(Number(e.target.value))} step={0.05} min={0} max={1} />
-                    </div>
-                    <div className="form-group">
-                      <label htmlFor="pg-top-k">Top K{PARAM_TOOLTIPS.top_k && <ParamTooltip text={PARAM_TOOLTIPS.top_k} />}</label>
-                      <input id="pg-top-k" type="number" value={topK} onChange={(e) => setTopK(Math.floor(Number(e.target.value)))} step={1} min={0} />
-                    </div>
-                    <div className="form-group">
-                      <label htmlFor="pg-min-p">Min P{PARAM_TOOLTIPS.min_p && <ParamTooltip text={PARAM_TOOLTIPS.min_p} />}</label>
-                      <input id="pg-min-p" type="number" value={minP} onChange={(e) => setMinP(Number(e.target.value))} step={0.01} min={0} max={1} />
-                    </div>
-                    <div className="form-group">
-                      <label htmlFor="pg-max-tokens">Max Tokens{PARAM_TOOLTIPS.max_tokens && <ParamTooltip text={PARAM_TOOLTIPS.max_tokens} />}</label>
-                      <input id="pg-max-tokens" type="number" value={maxTokens} onChange={(e) => setMaxTokens(Math.floor(Number(e.target.value)))} step={256} min={1} />
-                    </div>
-                  </div>
-
-                  <h5 className="playground-param-group-title">Repetition Control</h5>
-                  <div className="playground-config-grid-fluid">
-                    <div className="form-group">
-                      <label>Repeat Penalty{PARAM_TOOLTIPS.repeat_penalty && <ParamTooltip text={PARAM_TOOLTIPS.repeat_penalty} />}</label>
-                      <input type="number" value={repeatPenalty} onChange={(e) => setRepeatPenalty(Number(e.target.value))} step={0.1} min={0} />
-                    </div>
-                    <div className="form-group">
-                      <label>Repeat Last N{PARAM_TOOLTIPS.repeat_last_n && <ParamTooltip text={PARAM_TOOLTIPS.repeat_last_n} />}</label>
-                      <input type="number" value={repeatLastN} onChange={(e) => setRepeatLastN(Math.floor(Number(e.target.value)))} step={1} min={0} />
-                    </div>
-                    <div className="form-group">
-                      <label>Frequency Penalty{PARAM_TOOLTIPS.frequency_penalty && <ParamTooltip text={PARAM_TOOLTIPS.frequency_penalty} />}</label>
-                      <input type="number" value={frequencyPenalty} onChange={(e) => setFrequencyPenalty(Number(e.target.value))} step={0.1} min={0} />
-                    </div>
-                    <div className="form-group">
-                      <label>Presence Penalty{PARAM_TOOLTIPS.presence_penalty && <ParamTooltip text={PARAM_TOOLTIPS.presence_penalty} />}</label>
-                      <input type="number" value={presencePenalty} onChange={(e) => setPresencePenalty(Number(e.target.value))} step={0.1} min={0} />
-                    </div>
-                  </div>
-
-                  <h5 className="playground-param-group-title">DRY Sampler</h5>
-                  <div className="playground-config-grid-fluid">
-                    <div className="form-group">
-                      <label>DRY Multiplier{PARAM_TOOLTIPS.dry_multiplier && <ParamTooltip text={PARAM_TOOLTIPS.dry_multiplier} />}</label>
-                      <input type="number" value={dryMultiplier} onChange={(e) => setDryMultiplier(Number(e.target.value))} step={0.05} min={0} />
-                    </div>
-                    <div className="form-group">
-                      <label>DRY Base{PARAM_TOOLTIPS.dry_base && <ParamTooltip text={PARAM_TOOLTIPS.dry_base} />}</label>
-                      <input type="number" value={dryBase} onChange={(e) => setDryBase(Number(e.target.value))} step={0.05} min={0} />
-                    </div>
-                    <div className="form-group">
-                      <label>DRY Allowed Length{PARAM_TOOLTIPS.dry_allowed_length && <ParamTooltip text={PARAM_TOOLTIPS.dry_allowed_length} />}</label>
-                      <input type="number" value={dryAllowedLength} onChange={(e) => setDryAllowedLength(Math.floor(Number(e.target.value)))} step={1} min={0} />
-                    </div>
-                    <div className="form-group">
-                      <label>DRY Penalty Last N{PARAM_TOOLTIPS.dry_penalty_last_n && <ParamTooltip text={PARAM_TOOLTIPS.dry_penalty_last_n} />}</label>
-                      <input type="number" value={dryPenaltyLastN} onChange={(e) => setDryPenaltyLastN(Math.floor(Number(e.target.value)))} step={1} min={0} />
-                    </div>
-                  </div>
-
-                  <h5 className="playground-param-group-title">XTC Sampler</h5>
-                  <div className="playground-config-grid-fluid">
-                    <div className="form-group">
-                      <label>XTC Probability{PARAM_TOOLTIPS.xtc_probability && <ParamTooltip text={PARAM_TOOLTIPS.xtc_probability} />}</label>
-                      <input type="number" value={xtcProbability} onChange={(e) => setXtcProbability(Number(e.target.value))} step={0.01} min={0} max={1} />
-                    </div>
-                    <div className="form-group">
-                      <label>XTC Threshold{PARAM_TOOLTIPS.xtc_threshold && <ParamTooltip text={PARAM_TOOLTIPS.xtc_threshold} />}</label>
-                      <input type="number" value={xtcThreshold} onChange={(e) => setXtcThreshold(Number(e.target.value))} step={0.01} min={0} max={1} />
-                    </div>
-                    <div className="form-group">
-                      <label>XTC Min Keep{PARAM_TOOLTIPS.xtc_min_keep && <ParamTooltip text={PARAM_TOOLTIPS.xtc_min_keep} />}</label>
-                      <input type="number" value={xtcMinKeep} onChange={(e) => setXtcMinKeep(Math.floor(Number(e.target.value)))} step={1} min={1} />
-                    </div>
-                  </div>
-
-                  <h5 className="playground-param-group-title">Reasoning</h5>
-                  <div className="playground-config-grid-fluid">
-                    <div className="form-group">
-                      <label htmlFor="pg-enable-thinking">Enable Thinking{PARAM_TOOLTIPS.enable_thinking && <ParamTooltip text={PARAM_TOOLTIPS.enable_thinking} />}</label>
-                      <select id="pg-enable-thinking" value={enableThinking} onChange={(e) => setEnableThinking(e.target.value as 'true' | 'false')}>
-                        <option value="true">Enabled</option>
-                        <option value="false">Disabled</option>
-                      </select>
-                    </div>
-                    <div className="form-group">
-                      <label htmlFor="pg-reasoning-effort">Reasoning Effort{PARAM_TOOLTIPS.reasoning_effort && <ParamTooltip text={PARAM_TOOLTIPS.reasoning_effort} />}</label>
-                      <select id="pg-reasoning-effort" value={reasoningEffort} onChange={(e) => setReasoningEffort(e.target.value as typeof reasoningEffort)}>
-                        <option value="none">None</option>
-                        <option value="minimal">Minimal</option>
-                        <option value="low">Low</option>
-                        <option value="medium">Medium</option>
-                        <option value="high">High</option>
-                      </select>
-                    </div>
-                  </div>
-                </details>
-
-                <div className="playground-messages">
-                  {chatMessages.map((msg, i) => (
-                    <div key={messageKeysRef.current[i]} className={`playground-message playground-message-${msg.role}`}>
-                      <div className="playground-message-role">{msg.role}</div>
-                      <div className="playground-message-content">{msg.content}</div>
-                    </div>
-                  ))}
-                  <div ref={messagesEndRef} />
-                </div>
-
-                <div className="playground-input-row">
-                  <textarea
-                    value={userInput}
-                    onChange={(e) => setUserInput(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder={session ? 'Type a message...' : 'Create a session first'}
-                    disabled={!session || streaming}
-                    rows={2}
-                    className="playground-textarea"
-                  />
-                  {streaming ? (
-                    <button className="btn btn-danger" onClick={handleStopStreaming}>
-                      Stop
-                    </button>
-                  ) : (
-                    <button
-                      className="btn btn-primary"
-                      onClick={handleSendMessage}
-                      disabled={!session || !userInput.trim()}
-                    >
-                      Send
-                    </button>
-                  )}
-                  {lastTPS !== null && (
-                    <span style={{ fontSize: 12, opacity: 0.7, marginLeft: 8, whiteSpace: 'nowrap' }}>
-                      {lastTPS.toFixed(1)} TPS
-                    </span>
-                  )}
-                </div>
+                <ChatPanel
+                  messages={chatMessages}
+                  setMessages={setChatMessages}
+                  onClear={handlePlaygroundClear}
+                  sampling={playgroundSampling}
+                  setSampling={setPlaygroundSampling}
+                  modelBaseline={null}
+                  transport={playgroundTransport}
+                  isMoE={isMoE}
+                  modelVRAM={modelVramInfo}
+                  devicesInfo={devicesInfo}
+                  vramFitStatus={vramFitStatus}
+                  vramNeededAllGPU={vramNeededAllGPU}
+                  vramNeededCPUExperts={vramNeededCPUExperts}
+                  disabled={!session}
+                  disabledPlaceholder="Create a session to start chatting"
+                  headerLeft={<h2>Basic Chat</h2>}
+                />
               </div>
             )}
 

@@ -1,10 +1,6 @@
 import { createContext, useContext, useState, useMemo, type ReactNode } from 'react';
+import type { DisplayMessage } from './ChatContext';
 import type { PlaygroundSessionResponse } from '../types';
-
-interface PlaygroundMessage {
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-}
 
 interface PlaygroundState {
   // Session
@@ -12,8 +8,8 @@ interface PlaygroundState {
   setSession: React.Dispatch<React.SetStateAction<PlaygroundSessionResponse | null>>;
 
   // Chat messages
-  chatMessages: PlaygroundMessage[];
-  setChatMessages: React.Dispatch<React.SetStateAction<PlaygroundMessage[]>>;
+  chatMessages: DisplayMessage[];
+  setChatMessages: React.Dispatch<React.SetStateAction<DisplayMessage[]>>;
 
   // Selected model (needed to know which model the session belongs to)
   selectedModel: string;
@@ -60,6 +56,8 @@ interface PlaygroundState {
   setMoeMode: React.Dispatch<React.SetStateAction<string>>;
   moeKeepTopN: number;
   setMoeKeepTopN: React.Dispatch<React.SetStateAction<number>>;
+  tensorBuftOverrides: string[];
+  setTensorBuftOverrides: React.Dispatch<React.SetStateAction<string[]>>;
 
   // Tracks which model's catalog config has been applied to avoid
   // re-clobbering user edits on component remount.
@@ -71,7 +69,7 @@ const PlaygroundContext = createContext<PlaygroundState | null>(null);
 
 export function PlaygroundProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<PlaygroundSessionResponse | null>(null);
-  const [chatMessages, setChatMessages] = useState<PlaygroundMessage[]>([]);
+  const [chatMessages, setChatMessages] = useState<DisplayMessage[]>([]);
   const [selectedModel, setSelectedModel] = useState('');
   const [playgroundMode, setPlaygroundMode] = useState<'automated' | 'manual' | 'history'>('automated');
   const [activeTab, setActiveTab] = useState<'chat' | 'tools' | 'inspector'>('chat');
@@ -89,6 +87,7 @@ export function PlaygroundProvider({ children }: { children: ReactNode }) {
   const [cacheMode, setCacheMode] = useState('none');
   const [moeMode, setMoeMode] = useState('');
   const [moeKeepTopN, setMoeKeepTopN] = useState(0);
+  const [tensorBuftOverrides, setTensorBuftOverrides] = useState<string[]>([]);
   const [hydratedModelId, setHydratedModelId] = useState('');
 
   const value = useMemo<PlaygroundState>(() => ({
@@ -111,11 +110,12 @@ export function PlaygroundProvider({ children }: { children: ReactNode }) {
     cacheMode, setCacheMode,
     moeMode, setMoeMode,
     moeKeepTopN, setMoeKeepTopN,
+    tensorBuftOverrides, setTensorBuftOverrides,
     hydratedModelId, setHydratedModelId,
   }), [
     session, chatMessages, selectedModel, playgroundMode, activeTab, systemPrompt, lastTPS,
     templateMode, selectedTemplate, customScript, contextWindow, nBatch, nUBatch,
-    nSeqMax, flashAttention, cacheType, cacheMode, moeMode, moeKeepTopN, hydratedModelId,
+    nSeqMax, flashAttention, cacheType, cacheMode, moeMode, moeKeepTopN, tensorBuftOverrides, hydratedModelId,
   ]);
 
   return (
