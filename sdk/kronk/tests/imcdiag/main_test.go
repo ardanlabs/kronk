@@ -11,7 +11,7 @@ Combinations tested:
 	------------------------  ---------------------------------  ------------------------------------
 	Dense + Vision            M3 Qwen2.5-VL-3B-Instruct-Q8_0     Hash matching + media build/extend
 	MoE + Vision              M4 Qwen3-VL-30B-A3B-Instruct-Q8_0  Hash matching + media build/extend
-	Hybrid + Vision           M5 Qwen_Qwen3.5-35B-A3B-Q8_0       Hash matching + media build/extend + snapshot/restore
+	Hybrid + Vision           M5 Qwen3.5-35B-A3B-Q8_0            Hash matching + media build/extend + snapshot/restore
 	MoE + Non-Deterministic   M2 gpt-oss-20b-Q8_0                Token prefix fallback
 
 Conversation script (same for all models, image step skipped for non-vision):

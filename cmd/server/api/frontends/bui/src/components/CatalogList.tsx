@@ -156,7 +156,7 @@ export default function CatalogList() {
   const [activeSection, setActiveSection] = useState<DetailSection>('catalog');
 
   // Sort state for catalog table
-  type SortField = 'id' | 'owned_by' | 'category' | 'architecture' | 'total_size_bytes' | 'validated';
+  type SortField = 'id' | 'owned_by' | 'category' | 'architecture' | 'total_size_bytes' | 'validated' | 'created';
   const [sortField, setSortField] = useState<SortField>('id');
   const [sortAsc, setSortAsc] = useState(true);
 
@@ -320,6 +320,7 @@ export default function CatalogList() {
         case 'architecture': cmp = (a.architecture || '').localeCompare(b.architecture || ''); break;
         case 'total_size_bytes': cmp = (a.total_size_bytes || 0) - (b.total_size_bytes || 0); break;
         case 'validated': cmp = (a.validated ? 1 : 0) - (b.validated ? 1 : 0); break;
+        case 'created': cmp = new Date(a.metadata.created).getTime() - new Date(b.metadata.created).getTime(); break;
       }
       return sortAsc ? cmp : -cmp;
     });
@@ -383,6 +384,25 @@ export default function CatalogList() {
     }
   }, [download?.status]);
 
+  // Refresh catalog list and re-select the model after a pull completes.
+  useEffect(() => {
+    if (download?.kind === 'catalog' && download.status === 'complete' && download.catalogId) {
+      const completedId = download.catalogId;
+      (async () => {
+        try {
+          const response = await api.listCatalog();
+          setData(response);
+          setSelectedId(completedId);
+
+          const info = await api.showCatalogModel(completedId);
+          setModelInfo(info);
+        } catch {
+          // Ignore refresh errors; user can manually refresh.
+        }
+      })();
+    }
+  }, [download?.status]);
+
   const loadCatalog = async () => {
     setLoading(true);
     setError(null);
@@ -393,6 +413,12 @@ export default function CatalogList() {
     try {
       const response = await api.listCatalog();
       setData(response);
+
+      // Restore selection if a catalog download is active or has results.
+      if (download?.kind === 'catalog' && download.catalogId) {
+        setSelectedId(download.catalogId);
+        setActiveSection('pull');
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load catalog');
     } finally {
@@ -767,6 +793,7 @@ export default function CatalogList() {
                         ['category', 'Category'],
                         ['architecture', 'Arch'],
                         ['total_size_bytes', 'Size'],
+                        ['created', 'Created'],
                         ['validated', 'Val'],
                       ] as const).map(([field, label]) => (
                         <th key={field} onClick={() => handleSort(field)} className="catalog-table-sortable">
@@ -790,6 +817,7 @@ export default function CatalogList() {
                         <td>{model.category || '-'}</td>
                         <td>{model.architecture || '-'}</td>
                         <td>{model.total_size || '-'}</td>
+                        <td>{model.metadata.created ? new Date(model.metadata.created).toLocaleDateString() : '-'}</td>
                         <td>{model.validated ? '✓' : '✗'}</td>
                       </tr>
                     ))}

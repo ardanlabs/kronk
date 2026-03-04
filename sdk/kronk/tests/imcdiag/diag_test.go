@@ -82,7 +82,7 @@ func TestDiag_MoENonDeterministic(t *testing.T) {
 
 func TestDiag_HybridVision(t *testing.T) {
 	if len(testlib.MPHybridVision.ModelFiles) == 0 {
-		t.Skip("model Qwen_Qwen3.5-35B-A3B-Q8_0 not downloaded")
+		t.Skip("model Qwen3.5-35B-A3B-Q8_0 not downloaded")
 	}
 
 	cfg := model.Config{

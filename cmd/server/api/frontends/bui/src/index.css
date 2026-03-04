@@ -655,7 +655,8 @@ tr.selected:hover td {
 }
 
 .status-box {
-    background: var(--color-gray-100);
+    background: var(--color-gray-50);
+    border: 1px solid var(--color-gray-300);
     border-radius: 6px;
     padding: 16px;
     margin-top: 16px;

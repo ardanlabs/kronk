@@ -10,8 +10,11 @@ export interface DownloadMessage {
 
 type DownloadKind = 'model' | 'catalog';
 
+export type DownloadOrigin = 'model-pull' | 'catalog';
+
 interface DownloadState {
   kind: DownloadKind;
+  origin: DownloadOrigin;
   modelUrl: string;
   modelUrls?: string[];
   currentIndex?: number;
@@ -91,6 +94,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
 
     setDownload({
       kind: 'model',
+      origin: 'model-pull',
       modelUrl,
       messages: [],
       status: 'downloading',
@@ -113,6 +117,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
 
     setDownload({
       kind: 'model',
+      origin: 'model-pull',
       modelUrl: modelUrls[0],
       modelUrls,
       currentIndex: 0,
@@ -149,6 +154,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
 
     setDownload({
       kind: 'catalog',
+      origin: 'catalog',
       modelUrl: catalogId,
       catalogId,
       messages: [],

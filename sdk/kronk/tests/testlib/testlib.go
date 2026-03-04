@@ -66,7 +66,7 @@ func Setup() {
 	resolveModel(mdls, "bge-reranker-v2-m3-Q8_0", &MPRerank)
 	resolveModel(mdls, "gpt-oss-20b-Q8_0", &MPGPTChat)
 	resolveModel(mdls, "Qwen2-Audio-7B.Q8_0", &MPAudio)
-	resolveModel(mdls, "Qwen_Qwen3.5-35B-A3B-Q8_0", &MPHybridVision)
+	resolveModel(mdls, "Qwen3.5-35B-A3B-Q8_0", &MPHybridVision)
 
 	printInfo(mdls)
 

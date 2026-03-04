@@ -454,7 +454,7 @@ export default function Layout({ children }: LayoutProps) {
             )}
             {showDownloadIndicator && (
               <div className="download-indicator">
-                <Link to={routeMap['model-pull']} className="download-indicator-link">
+                <Link to={download.origin === 'catalog' ? routeMap['catalog-list'] : routeMap['model-pull']} className="download-indicator-link">
                   <div className="download-indicator-header">
                     {isDownloading ? (
                       <span className="download-indicator-spinner" />

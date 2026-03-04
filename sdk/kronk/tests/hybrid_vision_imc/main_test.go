@@ -17,7 +17,7 @@ func TestMain(m *testing.M) {
 	testlib.Setup()
 
 	if len(testlib.MPHybridVision.ModelFiles) == 0 {
-		fmt.Println("model Qwen_Qwen3.5-35B-A3B-Q8_0 not downloaded, skipping hybrid_vision_imc tests")
+		fmt.Println("model Qwen3.5-35B-A3B-Q8_0 not downloaded, skipping hybrid_vision_imc tests")
 		os.Exit(0)
 	}
 

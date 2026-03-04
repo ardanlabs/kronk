@@ -4,7 +4,6 @@
 
 .DS_Store
 node_modules
-.clinerules
 
 # Docker compose data directories
 zarf/docker/openwebui/

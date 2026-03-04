@@ -1201,7 +1201,7 @@ func cfgHybridIMCDeterministic() model.Config {
 
 func BenchmarkHybrid_IMCDeterministic(b *testing.B) {
 	if len(benchHybridModelPath.ModelFiles) == 0 {
-		b.Skip("model Qwen_Qwen3.5-35B-A3B-Q8_0 not downloaded")
+		b.Skip("model Qwen3.5-35B-A3B-Q8_0 not downloaded")
 	}
 	krn := withBenchModel(b, cfgHybridIMCDeterministic())
 	benchChat(b, krn, benchDoc())

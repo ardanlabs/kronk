@@ -1,0 +1,86 @@
+{
+  "globalClineRulesToggles": {},
+  "globalWorkflowToggles": {},
+  "autoApprovalSettings": {
+    "version": 270,
+    "enabled": true,
+    "favorites": [],
+    "maxRequests": 20,
+    "actions": {
+      "readFiles": true,
+      "readFilesExternally": true,
+      "editFiles": true,
+      "editFilesExternally": true,
+      "executeSafeCommands": true,
+      "executeAllCommands": false,
+      "useBrowser": true,
+      "useMcp": true
+    },
+    "enableNotifications": false
+  },
+  "workspaceRoots": [
+    {
+      "path": "/Users/bill/code/go/src/github.com/ardanlabs/kronk",
+      "name": "kronk",
+      "vcs": "git",
+      "commitHash": "d50b2a3656b72a8866b26fa74b08007d5ff1d251"
+    }
+  ],
+  "primaryRootIndex": 0,
+  "actModeThinkingBudgetTokens": 1024,
+  "planModeThinkingBudgetTokens": 1024,
+  "actModeOpenAiModelId": "Qwen3.5-35B-A3B-UD-Q8_K_XL/CLINE",
+  "planModeOpenAiModelId": "Qwen3.5-35B-A3B-UD-Q8_K_XL/CLINE",
+  "actModeApiModelId": "Qwen3.5-35B-A3B-UD-Q8_K_XL/CLINE",
+  "openAiBaseUrl": "http://localhost:8080/v1",
+  "nativeToolCallEnabled": false,
+  "isNewUser": false,
+  "welcomeViewCompleted": true,
+  "remoteRulesToggles": {},
+  "remoteWorkflowToggles": {},
+  "actModeApiProvider": "openai",
+  "planModeApiProvider": "openai",
+  "clineVersion": "3.68.0",
+  "lastShownAnnouncementId": "3.68",
+  "terminalReuseEnabled": false,
+  "vscodeTerminalExecutionMode": "backgroundExec",
+  "mcpDisplayMode": "rich",
+  "openAiHeaders": {},
+  "ollamaBaseUrl": "http://localhost:8080/v1",
+  "ollamaApiOptionsCtxNum": "32768",
+  "azureApiVersion": "",
+  "requestTimeoutMs": 30000,
+  "sapAiCoreUseOrchestrationMode": true,
+  "ocaMode": "internal",
+  "planModeOpenAiModelInfo": {
+    "maxTokens": -1,
+    "contextWindow": 128000,
+    "supportsImages": true,
+    "supportsPromptCache": false,
+    "inputPrice": 0,
+    "outputPrice": 0,
+    "temperature": 0,
+    "isR1FormatRequired": false
+  },
+  "browserSettings": {
+    "viewport": {
+      "width": 900,
+      "height": 600
+    },
+    "remoteBrowserEnabled": false,
+    "remoteBrowserHost": "http://localhost:9222",
+    "chromeExecutablePath": "",
+    "disableToolUse": false,
+    "customArgs": ""
+  },
+  "planActSeparateModelsSetting": false,
+  "shellIntegrationTimeout": 10000,
+  "defaultTerminalProfile": "zsh",
+  "useAutoCondense": true,
+  "subagentsEnabled": false,
+  "mode": "act",
+  "customPrompt": "compact",
+  "enableParallelToolCalling": true,
+  "backgroundEditEnabled": true,
+  "__vscodeMigrationVersion": 1
+}

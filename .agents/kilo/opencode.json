@@ -1,6 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "kronk/gpt-oss-120b-F16/IMC",
+  "model": "Qwen3.5-35B-A3B-UD-Q8_K_XL/KILO",
   "enabled_providers": ["kronk"],
   "permission": "allow",
   "mcp": {
@@ -21,7 +21,7 @@
       },
       "models": {
         "gpt-oss-120b-F16/IMC": {
-          "name": "GPT-OSS 120B F16/IMC",
+          "name": "Qwen3.5-35B-A3B-UD-Q8_K_XL/KILO",
           "limit": {
             "context": 131072,
             "output": 65536

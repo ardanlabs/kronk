@@ -96,21 +96,6 @@
 # ==============================================================================
 # TEXT INFERENCE MODELS
 
-Qwen3-Coder-Next-Q8_0/CLINE:
-  nseq-max: 1
-  incremental-cache: true
-
-Qwen3-Coder-Next-Q8_0/KILO:
-  nseq-max: 3
-  incremental-cache: true
-
-Qwen3-Coder-Next-Q8_0/SPC:
-  nseq-max: 1
-  system-prompt-cache: true
-
-# ------------------------------------------------------------------------------
-# On Apple Silicon you need to use `make kronk-server-mac-bf16-build`
-
 Qwen3.5-35B-A3B-UD-Q8_K_XL/CLINE:
   nseq-max: 1
   incremental-cache: true
@@ -137,7 +122,7 @@ Qwen3.5-35B-A3B-UD-Q8_K_XL/SPC:
 
 # ------------------------------------------------------------------------------
 
-Qwen_Qwen3.5-35B-A3B-Q8_0/CLINE:
+Qwen3.5-35B-A3B-Q8_0/CLINE:
   nseq-max: 1
   incremental-cache: true
   sampling-parameters:
@@ -147,7 +132,7 @@ Qwen_Qwen3.5-35B-A3B-Q8_0/CLINE:
     dry_multiplier: 2.0
     presence_penalty: 1.5
 
-Qwen_Qwen3.5-35B-A3B-Q8_0/KILO:
+Qwen3.5-35B-A3B-Q8_0/KILO:
   nseq-max: 3
   incremental-cache: true
   sampling-parameters:
@@ -156,9 +141,8 @@ Qwen_Qwen3.5-35B-A3B-Q8_0/KILO:
     top_p: 0.95
     dry_multiplier: 2.0
     presence_penalty: 1.5
-    grammar: hermestoolcalling.grm
 
-Qwen_Qwen3.5-35B-A3B-Q8_0/SPC:
+Qwen3.5-35B-A3B-Q8_0/SPC:
   nseq-max: 1
   system-prompt-cache: true
 

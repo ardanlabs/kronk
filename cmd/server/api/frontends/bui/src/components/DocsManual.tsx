@@ -711,7 +711,7 @@ cache_type_v: q8_0 # Value cache precision`}</code></pre>
           <h4 id="example-moe-model-with-f16-cache">Example: MoE Model with F16 Cache</h4>
           <pre className="code-block"><code className="language-yaml">{`models:
   # MoE models benefit from f16 cache for routing accuracy
-  Qwen_Qwen3.5-35B-A3B-Q8_0:
+  Qwen3.5-35B-A3B-Q8_0:
     context_window: 32768
     cache_type_k: f16 # Preserve routing precision
     cache_type_v: f16
@@ -1122,7 +1122,7 @@ KV_Per_Sequence        = n_ctx × n_layers × KV_Per_Token_Per_Layer`}</code></p
 Total_VRAM  = Model_Weights + Slot_Memory`}</code></pre>
           <p>Memory is statically allocated upfront when the model loads. All slots reserve their full KV cache partition regardless of whether they are actively processing a request.</p>
           <h4 id="example-real-model-calculation">Example: Real Model Calculation</h4>
-          <pre className="code-block"><code>{`Model                   : Qwen_Qwen3.5-35B-A3B-Q8_0
+          <pre className="code-block"><code>{`Model                   : Qwen3.5-35B-A3B-Q8_0
 Model Weights           : 36.0 GB
 Context Window (n_ctx)  : 131,072 (128K)
 Bytes Per Element       : 1 (q8_0)
@@ -1399,8 +1399,8 @@ Qwen3-8B-Q8_0:
                 <td>Qwen3-0.6B-Q8_0</td>
               </tr>
               <tr>
-                <td>Qwen_Qwen3.5-35B-A3B-Q8_0</td>
-                <td>Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL</td>
+                <td>Qwen3.5-35B-A3B-Q8_K_XL</td>
+                <td>Qwen3.5-35B-A3B-UD-Q2_K_XL</td>
               </tr>
             </tbody>
           </table>
@@ -4673,10 +4673,10 @@ response = client.chat.completions.create(
           </ol>
           <pre className="code-block"><code>{`Base URL: http://localhost:8080/v1
 API Key: <your-kronk-token> or 123 for anything
-Model: Qwen_Qwen3.5-35B-A3B-Q8_0/IMC`}</code></pre>
+Model: Qwen3.5-35B-A3B-Q8_0/CLINE`}</code></pre>
           <p><strong>Recommended Model Settings:</strong></p>
-          <p>For coding tasks, configure your Qwen_Qwen3.5-35B-A3B model with:</p>
-          <pre className="code-block"><code className="language-yaml">{`Qwen_Qwen3.5-35B-A3B-Q8_0/CLINE:
+          <p>For coding tasks, configure your Qwen3.5-35B-A3B model with:</p>
+          <pre className="code-block"><code className="language-yaml">{`Qwen3.5-35B-A3B-Q8_0/CLINE:
   nseq-max: 1
   incremental-cache: true
   sampling-parameters:
@@ -4701,7 +4701,7 @@ client = OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="Qwen_Qwen3.5-35B-A3B-Q8_0/IMC",
+    model="Qwen3.5-35B-A3B-Q8_0/CLINE",
     messages=[
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "Hello!"}
@@ -4719,7 +4719,7 @@ for chunk in response:
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -d '{
-    "model": "Qwen_Qwen3.5-35B-A3B-Q8_0",
+    "model": "Qwen3.5-35B-A3B-Q8_0",
     "messages": [{"role": "user", "content": "Hello"}],
     "stream": true
   }'`}</code></pre>
@@ -4740,7 +4740,7 @@ data: [DONE]`}</code></pre>
 llm = ChatOpenAI(
     base_url="http://localhost:8080/v1",
     api_key="your-kronk-token",
-    model="Qwen_Qwen3.5-35B-A3B-Q8_0",
+    model="Qwen3.5-35B-A3B-Q8_0",
     streaming=True
 )
 

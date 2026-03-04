@@ -15,7 +15,7 @@ M2   gpt-oss-20b-Q8_0                   MoE            Non-Deterministic   Text
 
 M3   Qwen2.5-VL-3B-Instruct-Q8_0        Dense          Deterministic       Vision
 M4   Qwen3-VL-30B-A3B-Instruct-Q8_0     MoE            Deterministic       Vision
-M5   Qwen_Qwen3.5-35B-A3B-Q8_0          Hybrid         Deterministic       Vision
+M5   Qwen3.5-35B-A3B-Q8_0               Hybrid         Deterministic       Vision
 
 M6   Qwen2-Audio-7B.Q8_0                Dense          Deterministic       Audio
 M7   embeddinggemma-300m-qat-Q8_0       Dense          —                   Embedding
@@ -34,7 +34,7 @@ Combination               Model                              IMC Code Path
 ------------------------  ---------------------------------  ------------------------------------
 Dense + Vision            M3 Qwen2.5-VL-3B-Instruct-Q8_0     Hash matching + media build/extend
 MoE + Vision              M4 Qwen3-VL-30B-A3B-Instruct-Q8_0  Hash matching + media build/extend
-Hybrid + Vision           M5 Qwen_Qwen3.5-35B-A3B-Q8_0       Hash matching + media build/extend + snapshot/restore
+Hybrid + Vision           M5 Qwen3.5-35B-A3B-Q8_0       Hash matching + media build/extend + snapshot/restore
 MoE + Non-Deterministic   M2 gpt-oss-20b-Q8_0                Token prefix fallback
 
 
@@ -151,7 +151,7 @@ Test                              Package
 CacheIMCNonDeterministic          gpt/   
 
 
-IMC -- Hybrid + Vision (M5 Qwen_Qwen3.5-35B-A3B-Q8_0)
+IMC -- Hybrid + Vision (M5 Qwen3.5-35B-A3B-Q8_0)
 ===============================================================================
 
 Exercises: hash-based slot matching, media build, media text extend,
@@ -188,7 +188,7 @@ basic inference correctness per architecture, not caching.
 
 Package   Model                              Tests
 --------  ---------------------------------  -------------------------------------------
-hybrid/   M5 Qwen_Qwen3.5-35B-A3B-Q8_0       TestSuite (10), BatchChatConcurrent, UsageCountingHybrid
+hybrid/   M5 Qwen3.5-35B-A3B-Q8_0       TestSuite (10), BatchChatConcurrent, UsageCountingHybrid
 moe/      M4 Qwen3-VL-30B-A3B-Instruct-Q8_0  TestSuite (10), BatchChatConcurrent, UsageCounting
 gpt/      M2 gpt-oss-20b-Q8_0                TestSuite (4)
 
