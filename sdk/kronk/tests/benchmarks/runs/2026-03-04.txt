@@ -1,0 +1,168 @@
+# Date: 2026-03-04
+# Kronk: dev
+
+
+## benchmark-dense-nc
+CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_NonCaching -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+bench: llama.cpp b8192 (darwin/arm64/cpu)
+goos: darwin
+goarch: arm64
+pkg: github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks
+cpu: Apple M4 Max
+BenchmarkDense_NonCaching-16    	       3	53314319347 ns/op	        36.10 tok/s	     53258 total-ms	     49793 ttft-ms	 1169192 B/op	    9093 allocs/op
+--- BENCH: BenchmarkDense_NonCaching-16
+    bench_test.go:944: System prompt: 8244 tokens (39316 chars)
+    bench_test.go:944: Total conversation: 23443 tokens (107762 chars, 38 messages)
+PASS
+ok  	github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks	219.390s
+
+## benchmark-dense-spc
+CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_SPC -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+bench: llama.cpp b8192 (darwin/arm64/cpu)
+goos: darwin
+goarch: arm64
+pkg: github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks
+cpu: Apple M4 Max
+BenchmarkDense_SPC-16    	       3	40237681875 ns/op	        35.65 tok/s	     40360 total-ms	     36851 ttft-ms	  963882 B/op	    8953 allocs/op
+--- BENCH: BenchmarkDense_SPC-16
+    bench_test.go:949: System prompt: 8244 tokens (39316 chars)
+    bench_test.go:949: Total conversation: 23443 tokens (107762 chars, 38 messages)
+PASS
+ok  	github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks	178.810s
+
+## benchmark-dense-imc-det
+CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_IMCDeterministic$ -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+bench: llama.cpp b8192 (darwin/arm64/cpu)
+goos: darwin
+goarch: arm64
+pkg: github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks
+cpu: Apple M4 Max
+BenchmarkDense_IMCDeterministic-16    	       3	3632815028 ns/op	        37.17 tok/s	      3567 total-ms	       205.0 ttft-ms	  152752 B/op	    3954 allocs/op
+--- BENCH: BenchmarkDense_IMCDeterministic-16
+    bench_test.go:954: System prompt: 8244 tokens (39316 chars)
+    bench_test.go:954: Total conversation: 23443 tokens (107762 chars, 38 messages)
+PASS
+ok  	github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks	68.974s
+
+## benchmark-dense-imc-nondet
+CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_IMCNonDeterministic -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+bench: llama.cpp b8192 (darwin/arm64/cpu)
+goos: darwin
+goarch: arm64
+pkg: github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks
+cpu: Apple M4 Max
+BenchmarkDense_IMCNonDeterministic-16    	       3	2002760472 ns/op	        69.33 tok/s	      2024 total-ms	       233.0 ttft-ms	  155842 B/op	    4067 allocs/op
+--- BENCH: BenchmarkDense_IMCNonDeterministic-16
+    bench_test.go:1008: System prompt: 8068 tokens (39316 chars)
+    bench_test.go:1008: Total conversation: 22862 tokens (107762 chars, 38 messages)
+PASS
+ok  	github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks	37.718s
+
+## benchmark-dense-imc-det-spec
+CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_IMCDeterministic_Speculative -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+bench: llama.cpp b8192 (darwin/arm64/cpu)
+goos: darwin
+goarch: arm64
+pkg: github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks
+cpu: Apple M4 Max
+BenchmarkDense_IMCDeterministic_Speculative-16    	       3	7148982708 ns/op	        17.63 tok/s	      7317 total-ms	       259.0 ttft-ms	  285629 B/op	    9011 allocs/op
+--- BENCH: BenchmarkDense_IMCDeterministic_Speculative-16
+    bench_test.go:982: System prompt: 8244 tokens (39316 chars)
+    bench_test.go:982: Total conversation: 23443 tokens (107762 chars, 38 messages)
+PASS
+ok  	github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks	95.883s
+
+## benchmark-dense-imc-multi
+CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_IMCDeterministic_MultiSlot -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+bench: llama.cpp b8192 (darwin/arm64/cpu)
+goos: darwin
+goarch: arm64
+pkg: github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks
+cpu: Apple M4 Max
+BenchmarkDense_IMCDeterministic_MultiSlot-16    	       3	16800417292 ns/op	        30.09 tok/s	     11001 total-ms	      6843 ttft-ms	  564824 B/op	   15763 allocs/op
+--- BENCH: BenchmarkDense_IMCDeterministic_MultiSlot-16
+    bench_test.go:1039: System prompt: 8244 tokens (39316 chars)
+    bench_test.go:1039: Total conversation: 23443 tokens (107762 chars, 38 messages)
+PASS
+ok  	github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks	123.898s
+
+## benchmark-dense-imc-prefill
+CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_IMC_PrefillOnly -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+bench: llama.cpp b8192 (darwin/arm64/cpu)
+goos: darwin
+goarch: arm64
+pkg: github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks
+cpu: Apple M4 Max
+BenchmarkDense_IMC_PrefillOnly-16    	       3	 167657333 ns/op	         0 tok/s	       161.0 total-ms	         0 ttft-ms	   69669 B/op	     621 allocs/op
+--- BENCH: BenchmarkDense_IMC_PrefillOnly-16
+    bench_test.go:1115: System prompt: 8244 tokens (39316 chars)
+    bench_test.go:1115: Total conversation: 23443 tokens (107762 chars, 38 messages)
+PASS
+ok  	github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks	64.323s
+
+## benchmark-dense-imc-cold
+CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_IMC_ColdBuild -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+bench: llama.cpp b8192 (darwin/arm64/cpu)
+goos: darwin
+goarch: arm64
+pkg: github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks
+cpu: Apple M4 Max
+BenchmarkDense_IMC_ColdBuild-16    	       3	67346169736 ns/op	        29.27 tok/s	     61990 total-ms	     57708 ttft-ms	 4162032 B/op	   31164 allocs/op
+PASS
+ok  	github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks	203.320s
+
+## benchmark-moe-imc-det
+CGO_ENABLED=0 go test -run=none -bench=BenchmarkMoE_IMCDeterministic$ -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+bench: llama.cpp b8192 (darwin/arm64/cpu)
+goos: darwin
+goarch: arm64
+pkg: github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks
+cpu: Apple M4 Max
+BenchmarkMoE_IMCDeterministic-16    	       3	2508586611 ns/op	        44.34 tok/s	      2585 total-ms	       217.0 ttft-ms	  132405 B/op	    3171 allocs/op
+--- BENCH: BenchmarkMoE_IMCDeterministic-16
+    bench_test.go:1178: System prompt: 8244 tokens (39316 chars)
+    bench_test.go:1178: Total conversation: 23443 tokens (107762 chars, 38 messages)
+PASS
+ok  	github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks	76.582s
+
+## benchmark-moe-spec-baseline
+CGO_ENABLED=0 go test -run=none -bench=BenchmarkMoE_Speculative_Baseline -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+bench: llama.cpp b8192 (darwin/arm64/cpu)
+goos: darwin
+goarch: arm64
+pkg: github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks
+cpu: Apple M4 Max
+BenchmarkMoE_Speculative_Baseline-16    	       3	1953854667 ns/op	        46.15 tok/s	      1903 total-ms	       213.0 ttft-ms	  124789 B/op	    2760 allocs/op
+--- BENCH: BenchmarkMoE_Speculative_Baseline-16
+    bench_test.go:1254: System prompt: 8244 tokens (39316 chars)
+    bench_test.go:1254: Total conversation: 23443 tokens (107762 chars, 38 messages)
+PASS
+ok  	github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks	69.257s
+
+## benchmark-moe-spec-draft
+CGO_ENABLED=0 go test -run=none -bench=BenchmarkMoE_Speculative_WithDraft -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+bench: llama.cpp b8192 (darwin/arm64/cpu)
+goos: darwin
+goarch: arm64
+pkg: github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks
+cpu: Apple M4 Max
+BenchmarkMoE_Speculative_WithDraft-16    	       3	6791011653 ns/op	        13.40 tok/s	      6972 total-ms	       179.0 ttft-ms	  236168 B/op	    8240 allocs/op
+--- BENCH: BenchmarkMoE_Speculative_WithDraft-16
+    bench_test.go:1265: System prompt: 8244 tokens (39316 chars)
+    bench_test.go:1265: Total conversation: 23443 tokens (107762 chars, 38 messages)
+PASS
+ok  	github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks	97.465s
+
+## benchmark-hybrid-imc-det
+CGO_ENABLED=0 go test -run=none -bench=BenchmarkHybrid_IMCDeterministic -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+bench: llama.cpp b8192 (darwin/arm64/cpu)
+goos: darwin
+goarch: arm64
+pkg: github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks
+cpu: Apple M4 Max
+BenchmarkHybrid_IMCDeterministic-16    	       3	3018446917 ns/op	        36.55 tok/s	      3300 total-ms	       210.0 ttft-ms	  136013 B/op	    3310 allocs/op
+--- BENCH: BenchmarkHybrid_IMCDeterministic-16
+    bench_test.go:1207: System prompt: 8497 tokens (39316 chars)
+    bench_test.go:1207: Total conversation: 24110 tokens (107762 chars, 38 messages)
+PASS
+ok  	github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks	65.235s
