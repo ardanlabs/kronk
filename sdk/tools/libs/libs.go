@@ -36,6 +36,7 @@ type VersionTag struct {
 
 // Options represents the configuration options for Libs.
 type Options struct {
+	LibraryPath  string
 	BasePath     string
 	Arch         download.Arch
 	OS           download.OS
@@ -47,7 +48,19 @@ type Options struct {
 // Option is a function that configures Options.
 type Option func(*Options)
 
+// WithLibsPath sets the libs path for library installation.
+func WithLibsPath(libsPath string) Option {
+	return func(o *Options) {
+		o.LibraryPath = libsPath
+	}
+}
+
 // WithBasePath sets the base path for library installation.
+// This option expects the same `{basePath}/libraries` folder
+// following the pattern of the default .kronk folder.
+//
+// Deprecated: This option has been deprecated in favour of
+// WithLibsPath.
 func WithBasePath(basePath string) Option {
 	return func(o *Options) {
 		o.BasePath = basePath
@@ -120,6 +133,7 @@ func New(opts ...Option) (*Libs, error) {
 
 	options := Options{
 		BasePath:     "",
+		LibraryPath:  "",
 		Arch:         arch,
 		OS:           opSys,
 		Processor:    processor,
@@ -130,10 +144,15 @@ func New(opts ...Option) (*Libs, error) {
 		opt(&options)
 	}
 
-	basePath := defaults.BaseDir(options.BasePath)
+	// Keeping this for backwards compatibility.
+	// But people should actually use LibraryPath option.
+	libPath := filepath.Join(defaults.BaseDir(options.BasePath), localFolder)
+	if options.LibraryPath != "" {
+		libPath = options.LibraryPath
+	}
 
 	lib := Libs{
-		path:         filepath.Join(basePath, localFolder),
+		path:         libPath,
 		arch:         options.Arch,
 		os:           options.OS,
 		processor:    options.Processor,

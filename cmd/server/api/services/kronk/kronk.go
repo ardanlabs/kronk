@@ -270,7 +270,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	}
 
 	libs, err := libs.New(
-		libs.WithBasePath(cfg.LibPath),
+		libs.WithLibsPath(cfg.LibPath),
 		libs.WithArch(arch),
 		libs.WithOS(opSys),
 		libs.WithProcessor(processor),
