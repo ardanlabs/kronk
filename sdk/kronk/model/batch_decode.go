@@ -1,6 +1,7 @@
 package model
 
 import (
+	"runtime"
 	"unsafe"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
@@ -176,6 +177,7 @@ func (e *batchEngine) decodeEmbeddingsMRoPE(s *slot, embd []float32, nEmbd, nTok
 	}
 
 	ret, err := llama.Decode(e.model.lctx, batch)
+	runtime.KeepAlive(posData)
 	if s.useNonCausal {
 		llama.SetCausalAttn(e.model.lctx, true)
 	}
