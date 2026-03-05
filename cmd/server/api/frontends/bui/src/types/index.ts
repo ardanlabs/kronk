@@ -26,6 +26,7 @@ export interface ListModelDetail {
   created: number;
   owned_by: string;
   model_family: string;
+  tokenizer_fingerprint: string;
   size: number;
   modified: string;
   validated: boolean;
@@ -562,6 +563,8 @@ export interface PlaygroundModelConfig {
   'moe_keep_experts_top_n'?: number | null;
   'tensor_buft_overrides'?: string[];
   'op_offload_min_batch'?: number | null;
+  'draft_model_id'?: string;
+  'draft_ndraft'?: number;
 }
 
 export interface PlaygroundSessionResponse {
