@@ -105,6 +105,7 @@ const menuStructure: MenuCategory[] = [
           { page: 'docs-sdk-kronk', label: 'Kronk' },
           { page: 'docs-sdk-model', label: 'Model' },
           { page: 'docs-sdk-examples', label: 'Examples' },
+          { page: 'docs-sdk-examples', label: 'Agent', hash: 'example-agent' },
           { page: 'docs-sdk-examples', label: 'Audio', hash: 'example-audio' },
           { page: 'docs-sdk-examples', label: 'Chat', hash: 'example-chat' },
           { page: 'docs-sdk-examples', label: 'Embedding', hash: 'example-embedding' },

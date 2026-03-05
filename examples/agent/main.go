@@ -1,0 +1,466 @@
+// This example shows you how introduce "real" tooling into the coding agent
+// from step 3. We will add support for reading, listing, creating, and editing
+// files. We also enhance the agent's UI.
+//
+// # Running the example:
+//
+//	$ make example09-step4
+//
+// # This requires running the following commands:
+//
+//	$ make kronk-up  // This starts the Kronk service.
+
+package main
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"fmt"
+	"log"
+	"os"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/ardanlabs/kronk/sdk/kronk"
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/tools/catalog"
+	"github.com/ardanlabs/kronk/sdk/tools/defaults"
+	"github.com/ardanlabs/kronk/sdk/tools/libs"
+	"github.com/ardanlabs/kronk/sdk/tools/models"
+)
+
+type modelSpec struct {
+	SourceURL string
+	ModelID   string
+}
+
+// Configure this to switch between URL and catalog downloads.
+// Set either SourceURL or ModelID, not both.
+var modelSpecConfig = modelSpec{
+	SourceURL: "https://huggingface.co/unsloth/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-Q8_0.gguf",
+	// ModelID: "gpt-oss-20b-Q8_0",
+}
+
+// =============================================================================
+
+func main() {
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run() error {
+	mp, err := installSystem()
+	if err != nil {
+		return fmt.Errorf("run: unable to installation system: %w", err)
+	}
+
+	// -------------------------------------------------------------------------
+	// Declare a function that can accept user input which the agent will use
+	// when it's the users turn.
+
+	scanner := bufio.NewScanner(os.Stdin)
+	getUserMessage := func() (string, bool) {
+		if !scanner.Scan() {
+			return "", false
+		}
+		return scanner.Text(), true
+	}
+
+	// -------------------------------------------------------------------------
+	// Construct the agent and get it started.
+
+	agent, err := NewAgent(getUserMessage, mp)
+	if err != nil {
+		return fmt.Errorf("failed to create agent: %w", err)
+	}
+
+	return agent.Run(context.TODO())
+}
+
+// =============================================================================
+
+// Tool describes the features which all tools must implement.
+type Tool interface {
+	Call(ctx context.Context, toolCall model.ResponseToolCall) model.D
+}
+
+// =============================================================================
+
+// Agent represents the chat agent that can use tools to perform tasks.
+type Agent struct {
+	krn            *kronk.Kronk
+	getUserMessage func() (string, bool)
+	tools          map[string]Tool
+	toolDocuments  []model.D
+}
+
+// NewAgent creates a new instance of Agent.
+func NewAgent(getUserMessage func() (string, bool), mp models.Path) (*Agent, error) {
+	if err := kronk.Init(); err != nil {
+		return nil, fmt.Errorf("unable to init kronk: %w", err)
+	}
+
+	krn, err := newKronk(mp)
+	if err != nil {
+		return nil, fmt.Errorf("unable to init kronk: %w", err)
+	}
+
+	// -------------------------------------------------------------------------
+	// Construct the agent.
+
+	tools := map[string]Tool{}
+
+	agent := Agent{
+		krn:            krn,
+		getUserMessage: getUserMessage,
+		tools:          tools,
+		toolDocuments: []model.D{
+			// WE NEED TO REGISTER THE NEW TOOLS WE HAVE CREATED.
+			RegisterReadFile(tools),
+			RegisterSearchFiles(tools),
+			RegisterCreateFile(tools),
+			RegisterGoCodeEditor(tools),
+		},
+	}
+
+	return &agent, nil
+}
+
+// The system prompt for the model so it behaves as expected.
+const systemPrompt = `You are a helpful coding assistant that has tools to assist you in coding.
+
+After you request a tool call, you will receive a JSON document with two fields,
+"status" and "data". Always check the "status" field to know if the call "SUCCEED"
+or "FAILED". The information you need to respond will be provided under the "data"
+field. If the called "FAILED", just inform the user and don't try using the tool
+again for the current response.
+
+When reading Go source code always start counting lines of code from the top of
+the source code file.
+
+If you get back results from a tool call, do not verify the results.
+
+Reasoning: high
+`
+
+// Run starts the agent and runs the chat loop.
+func (a *Agent) Run(ctx context.Context) error {
+	var conversation []model.D // History of the conversation
+	var reasonContent []string // Reasoning content per model call
+	var inToolCall bool        // Need to know we are inside a tool call request
+
+	conversation = append(conversation, model.D{
+		"role":    "system",
+		"content": systemPrompt,
+	})
+
+	fmt.Printf("\nChat with %s (use 'ctrl-c' to quit)\n", a.krn.ModelInfo().ID)
+
+	timeForResult := time.NewTicker(100 * time.Millisecond)
+
+	for {
+		// ---------------------------------------------------------------------
+		// If we are not in a tool call then we can ask the user
+		// to provide their next question or request.
+
+		if !inToolCall {
+			fmt.Print("\u001b[94m\nYou\u001b[0m: ")
+			userInput, ok := a.getUserMessage()
+			if !ok {
+				break
+			}
+
+			conversation = append(conversation, model.D{
+				"role":    "user",
+				"content": userInput,
+			})
+		}
+
+		inToolCall = false
+
+		// ---------------------------------------------------------------------
+		// Let's show how long we are waiting for the model response.
+
+		wctx, cancelTimer := context.WithCancel(ctx)
+		timeForResult.Reset(100 * time.Millisecond)
+		start := time.Now()
+
+		var wg sync.WaitGroup
+		wg.Go(func() {
+			for {
+				select {
+				case <-timeForResult.C:
+					m := time.Since(start).Milliseconds()
+					fmt.Printf("\r\u001b[93m%s %d.%03d\u001b[0m: ", a.krn.ModelInfo().ID, m/1000, m%1000)
+
+				case <-wctx.Done():
+					fmt.Print("\n")
+					timeForResult.Stop()
+					cancelTimer()
+					return
+				}
+			}
+		})
+
+		// ---------------------------------------------------------------------
+		// Now we will make a call to the model, we could be responding to a
+		// tool call or providing a user request.
+
+		d := model.D{
+			"messages":       conversation,
+			"temperature":    0.0,
+			"top_p":          0.1,
+			"top_k":          1,
+			"stream":         true,
+			"tools":          a.toolDocuments,
+			"tool_selection": "auto",
+		}
+
+		fmt.Printf("\u001b[93m\n%s\u001b[0m: 0.000", a.krn.ModelInfo().ID)
+
+		ctx, cancelCall := context.WithTimeout(ctx, time.Minute*5)
+
+		ch, err := a.krn.ChatStreaming(ctx, d)
+		if err != nil {
+			cancelCall()
+			return fmt.Errorf("error chat streaming: %w", err)
+		}
+
+		// ---------------------------------------------------------------------
+		// Now we will make a call to the model.
+
+		var chunks []string                           // Store the response chunks since we are streaming.
+		var pendingToolCalls []model.ResponseToolCall // Store tool calls for processing after the loop.
+		reasonThinking := false                       // GPT models provide a Reasoning field.
+		reasonContent = nil                           // Reset the reasoning content for this next call.
+
+		// ---------------------------------------------------------------------
+		// Process the response which comes in as chunks. So we need to process
+		// and save each chunk.
+
+		waitingForResponse := true
+
+	loop:
+		for resp := range ch {
+			if len(resp.Choice) == 0 {
+				continue
+			}
+
+			// Check if this is the first response. If it is, we will shutdown
+			// the G displaying the latency.
+			if waitingForResponse {
+				waitingForResponse = false
+				cancelTimer()
+				wg.Wait()
+			}
+
+			switch resp.Choice[0].FinishReason() {
+			case model.FinishReasonError:
+				cancelCall()
+				return fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
+
+			case model.FinishReasonStop:
+				break loop
+
+			case model.FinishReasonTool:
+				// STORE TOOL CALLS FOR PROCESSING AFTER THE LOOP SO WE DON'T
+				// HOLD THE CONNECTION HOSTAGE.
+				pendingToolCalls = resp.Choice[0].Delta.ToolCalls
+				break loop
+
+			default:
+				switch {
+				case resp.Choice[0].Delta.Reasoning != "":
+					reasonThinking = true
+
+					if len(reasonContent) == 0 {
+						fmt.Print("\n")
+					}
+
+					reasonContent = append(reasonContent, resp.Choice[0].Delta.Reasoning)
+					fmt.Printf("\u001b[91m%s\u001b[0m", resp.Choice[0].Delta.Reasoning)
+
+				case resp.Choice[0].Delta.Content != "":
+					if reasonThinking {
+						reasonThinking = false
+						fmt.Print("\n\n")
+					}
+
+					fmt.Print(resp.Choice[0].Delta.Content)
+					chunks = append(chunks, resp.Choice[0].Delta.Content)
+				}
+			}
+		}
+
+		cancelCall()
+
+		// ---------------------------------------------------------------------
+		// We need to execute the tool calls after the loop so we don't hold
+		// the connection hostage.
+
+		if len(pendingToolCalls) > 0 {
+			fmt.Print("\n\n")
+
+			argsJSON, _ := json.Marshal(pendingToolCalls[0].Function.Arguments)
+			conversation = append(conversation, model.D{
+				"role": "assistant",
+				"tool_calls": []model.D{
+					{
+						"id":   pendingToolCalls[0].ID,
+						"type": "function",
+						"function": model.D{
+							"name":      pendingToolCalls[0].Function.Name,
+							"arguments": string(argsJSON),
+						},
+					},
+				},
+			})
+
+			results := a.callTools(ctx, pendingToolCalls)
+			if len(results) > 0 {
+				conversation = append(conversation, results...)
+				inToolCall = true
+			}
+		}
+
+		// ---------------------------------------------------------------------
+		// We processed all the chunks from the response so we need to add
+		// this to the conversation history.
+
+		if !inToolCall && len(chunks) > 0 {
+			fmt.Print("\n")
+
+			content := strings.Join(chunks, " ")
+			content = strings.TrimLeft(content, "\n")
+
+			if content != "" {
+				conversation = append(conversation, model.D{
+					"role":    "assistant",
+					"content": content,
+				})
+			}
+		}
+	}
+
+	return nil
+}
+
+// callTools will lookup a requested tool by name and call it.
+func (a *Agent) callTools(ctx context.Context, toolCalls []model.ResponseToolCall) []model.D {
+	var resps []model.D
+
+	for _, toolCall := range toolCalls {
+		tool, exists := a.tools[toolCall.Function.Name]
+		if !exists {
+			continue
+		}
+
+		fmt.Printf("\n\u001b[92m%s(%v)\u001b[0m:\n\n", toolCall.Function.Name, toolCall.Function.Arguments)
+
+		resp := tool.Call(ctx, toolCall)
+		resps = append(resps, resp)
+
+		fmt.Printf("%#v\n", resps)
+	}
+
+	return resps
+}
+
+// =============================================================================
+
+func installSystem() (models.Path, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
+	defer cancel()
+
+	libs, err := libs.New(
+		libs.WithVersion(defaults.LibVersion("")),
+	)
+	if err != nil {
+		return models.Path{}, err
+	}
+
+	if _, err := libs.Download(ctx, kronk.FmtLogger); err != nil {
+		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
+	}
+
+	// -------------------------------------------------------------------------
+	// This is not mandatory if you won't be using models from the catalog. That
+	// being said, if you are using a model that is part of the catalog with
+	// a corrected jinja file, having the catalog system up to date will allow
+	// the system to pull that jinja file.
+
+	ctlg, err := catalog.New()
+	if err != nil {
+		return models.Path{}, fmt.Errorf("unable to create catalog system: %w", err)
+	}
+
+	if err := ctlg.Download(ctx); err != nil {
+		return models.Path{}, fmt.Errorf("unable to download catalog: %w", err)
+	}
+
+	// -------------------------------------------------------------------------
+
+	mdls, err := models.New()
+	if err != nil {
+		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
+	}
+
+	// Download model based on spec config using switch/case
+	var mp models.Path
+
+	switch {
+	case modelSpecConfig.SourceURL != "":
+		fmt.Println("Downloading model from URL:", modelSpecConfig.SourceURL)
+		mp, err = mdls.Download(ctx, kronk.FmtLogger, modelSpecConfig.SourceURL, "")
+
+	case modelSpecConfig.ModelID != "":
+		fmt.Println("Downloading model from catalog:", modelSpecConfig.ModelID)
+		mp, err = ctlg.DownloadModel(ctx, kronk.FmtLogger, modelSpecConfig.ModelID)
+
+	default:
+		return models.Path{}, fmt.Errorf("modelSpecConfig requires either SourceURL or ModelID to be set")
+	}
+
+	if err != nil {
+		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
+	}
+
+	return mp, nil
+}
+
+func newKronk(mp models.Path) (*kronk.Kronk, error) {
+	fmt.Println("loading model...")
+
+	if err := kronk.Init(); err != nil {
+		return nil, fmt.Errorf("unable to init kronk: %w", err)
+	}
+
+	cfg := model.Config{
+		ModelFiles: mp.ModelFiles,
+	}
+
+	krn, err := kronk.New(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create inference model: %w", err)
+	}
+
+	fmt.Print("- system info:\n\t")
+	for k, v := range krn.SystemInfo() {
+		fmt.Printf("%s:%v, ", k, v)
+	}
+	fmt.Println()
+
+	fmt.Println("- contextWindow:", krn.ModelConfig().ContextWindow)
+	fmt.Printf("- k/v          : %s/%s\n", krn.ModelConfig().CacheTypeK, krn.ModelConfig().CacheTypeV)
+	fmt.Println("- nBatch       :", krn.ModelConfig().NBatch)
+	fmt.Println("- nuBatch      :", krn.ModelConfig().NUBatch)
+	fmt.Println("- modelType    :", krn.ModelInfo().Type)
+	fmt.Println("- isGPT        :", krn.ModelInfo().IsGPTModel)
+	fmt.Println("- template     :", krn.ModelInfo().Template.FileName)
+	fmt.Println("- grammar      :", krn.ModelConfig().DefaultParams.Grammar != "")
+
+	return krn, nil
+}

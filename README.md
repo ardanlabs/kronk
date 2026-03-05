@@ -109,6 +109,12 @@ There are examples in the examples direction:
 
 _The first time you run these programs the system will download and install the model and libraries._
 
+[AGENT](examples/agent/main.go) - This example shows you how to write a small coding agent.
+
+```shell
+make example-agent
+```
+
 [AUDIO](examples/audio/main.go) - This example shows you how to execute a simple prompt against an audio model.
 
 ```shell

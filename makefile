@@ -959,6 +959,9 @@ gonja-latest:
 # ==============================================================================
 # Examples
 
+example-agent:
+	CGO_ENABLED=0 go run examples/agent/*
+
 example-audio:
 	CGO_ENABLED=0 go run examples/audio/main.go
 
