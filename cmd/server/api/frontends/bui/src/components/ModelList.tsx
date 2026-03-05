@@ -6,7 +6,7 @@ import { formatBytes, fmtNum, fmtVal } from '../lib/format';
 import KeyValueTable from './KeyValueTable';
 import MetadataSection from './MetadataSection';
 import CodeBlock from './CodeBlock';
-import { VRAMFormulaModal, VRAMControls, VRAMResults, calculateVRAM, calculatePerDeviceVRAM } from './vram';
+import { VRAMFormulaModal, VRAMControls, VRAMResults, useVRAMState } from './vram';
 
 type ModelListSection = 'config' | 'sampling' | 'metadata' | 'template' | 'vram';
 
@@ -56,16 +56,14 @@ export default function ModelList() {
   const [sortField, setSortField] = useState<SortField>('id');
   const [sortAsc, setSortAsc] = useState(true);
 
-  // VRAM calculator local state
-  const [vramCtx, setVramCtx] = useState(8192);
-  const [vramBytes, setVramBytes] = useState(1);
-  const [vramSlots, setVramSlots] = useState(2);
-  const [vramExpertLayers, setVramExpertLayers] = useState(0);
-  const [vramDeviceCount, setVramDeviceCount] = useState(1);
-  const [vramTensorSplit, setVramTensorSplit] = useState('');
+  // VRAM calculator state (shared hook)
+  const vramServerResponse = modelInfo?.vram ?? null;
+  const { controlsProps: vramControls, resultsProps: vramResults } = useVRAMState({
+    initialContextWindow: 8192,
+    initialBytesPerElement: 1,
+    serverResponse: vramServerResponse,
+  });
   const [showLearnMore, setShowLearnMore] = useState(false);
-  const [maxGpuCount, setMaxGpuCount] = useState<number | undefined>(undefined);
-  const [systemRAM, setSystemRAM] = useState<number | undefined>(undefined);
 
   // Timeout refs for cleanup
   const rebuildTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -76,18 +74,6 @@ export default function ModelList() {
       if (rebuildTimerRef.current) clearTimeout(rebuildTimerRef.current);
       if (removeTimerRef.current) clearTimeout(removeTimerRef.current);
     };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    api.getDevices()
-      .then((resp) => {
-        if (cancelled) return;
-        setMaxGpuCount(resp.gpu_count);
-        setSystemRAM(resp.system_ram_bytes);
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -114,16 +100,6 @@ export default function ModelList() {
 
     return () => { cancelled = true; };
   }, [selectedModelId]);
-
-  // Seed VRAM calculator from model info
-  const vramInputRef = modelInfo?.vram?.input;
-  useEffect(() => {
-    if (vramInputRef) {
-      setVramCtx(vramInputRef.context_window);
-      setVramBytes(vramInputRef.bytes_per_element);
-      setVramSlots(vramInputRef.slots);
-    }
-  }, [vramInputRef]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -198,27 +174,6 @@ export default function ModelList() {
   const handleCancelRemove = () => {
     setConfirmingRemove(false);
   };
-
-  // Compute VRAM locally from model header data
-  const vramInput = modelInfo?.vram?.input;
-  const vramMoE = modelInfo?.vram?.moe ?? null;
-  const vramWeights = modelInfo?.vram?.weights ?? null;
-  const isMoE = vramMoE?.is_moe === true && vramWeights != null;
-  const vramResult = vramInput
-    ? calculateVRAM(
-        { ...vramInput, context_window: vramCtx, bytes_per_element: vramBytes, slots: vramSlots },
-        vramWeights,
-        vramMoE,
-        vramExpertLayers,
-      )
-    : null;
-
-  const parsedVramTensorSplit = vramTensorSplit
-    ? vramTensorSplit.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n))
-    : [];
-  const vramPerDevice = vramResult && vramDeviceCount > 1
-    ? calculatePerDeviceVRAM(vramResult.modelWeightsGPU, vramResult.slotMemory, vramResult.computeBufferEst, vramDeviceCount, parsedVramTensorSplit)
-    : undefined;
 
   // Sort models
   const allModels = models?.data ?? [];
@@ -537,7 +492,7 @@ export default function ModelList() {
 
                 {showLearnMore && <VRAMFormulaModal onClose={() => setShowLearnMore(false)} />}
 
-                {vramInput ? (
+                {vramResults ? (
                   <>
                     <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '16px' }}>
                       Computed locally from GGUF header. Adjust parameters below to see how they affect VRAM.
@@ -545,40 +500,32 @@ export default function ModelList() {
 
                     <div style={{ marginBottom: '24px' }}>
                       <VRAMControls
-                        contextWindow={vramCtx}
-                        onContextWindowChange={setVramCtx}
-                        bytesPerElement={vramBytes}
-                        onBytesPerElementChange={setVramBytes}
-                        slots={vramSlots}
-                        onSlotsChange={setVramSlots}
+                        {...vramControls}
                         variant="compact"
-                        maxDeviceCount={maxGpuCount}
-                        isMoE={isMoE}
-                        blockCount={vramInput?.block_count}
-                        expertLayersOnGPU={vramExpertLayers}
-                        onExpertLayersOnGPUChange={setVramExpertLayers}
-                        deviceCount={vramDeviceCount}
-                        onDeviceCountChange={setVramDeviceCount}
-                        tensorSplit={vramTensorSplit}
-                        onTensorSplitChange={setVramTensorSplit}
                       />
                     </div>
 
                     <VRAMResults
-                      totalVram={vramResult!.totalVram}
-                      slotMemory={vramResult!.slotMemory}
-                      kvPerSlot={vramResult!.kvPerSlot}
-                      kvPerTokenPerLayer={vramResult!.kvPerTokenPerLayer}
-                      input={{ ...vramInput!, context_window: vramCtx, bytes_per_element: vramBytes, slots: vramSlots }}
-                      moe={vramMoE}
-                      weights={vramWeights}
-                      modelWeightsGPU={vramResult!.modelWeightsGPU}
-                      modelWeightsCPU={vramResult!.modelWeightsCPU}
-                      computeBufferEst={vramResult!.computeBufferEst}
-                      expertLayersOnGPU={vramExpertLayers}
-                      perDevice={vramPerDevice}
-                      deviceCount={vramDeviceCount}
-                      systemRAMBytes={systemRAM}
+                      totalVram={vramResults.vramResult.totalVram}
+                      slotMemory={vramResults.vramResult.slotMemory}
+                      kvPerSlot={vramResults.vramResult.kvPerSlot}
+                      kvPerTokenPerLayer={vramResults.vramResult.kvPerTokenPerLayer}
+                      input={vramResults.input}
+                      moe={vramResults.moe}
+                      weights={vramResults.weights}
+                      modelWeightsGPU={vramResults.vramResult.modelWeightsGPU}
+                      modelWeightsCPU={vramResults.vramResult.modelWeightsCPU}
+                      computeBufferEst={vramResults.vramResult.computeBufferEst}
+                      expertLayersOnGPU={vramResults.expertLayersOnGPU}
+                      kvCacheOnCPU={vramControls.kvCacheOnCPU}
+                      kvCpuBytes={vramResults.vramResult.kvCpuBytes}
+                      totalSystemRamEst={vramResults.vramResult.totalSystemRamEst}
+                      perDevice={vramResults.perDevice}
+                      deviceCount={vramResults.deviceCount}
+                      systemRAMBytes={vramResults.systemRAMBytes}
+                      gpuTotalBytes={vramResults.gpuTotalBytes}
+                      gpuDevices={vramResults.gpuDevices}
+                      tensorSplit={vramResults.tensorSplit}
                     />
                   </>
                 ) : (

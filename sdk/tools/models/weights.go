@@ -225,6 +225,9 @@ func DetectSharedExpertsFromTensors(tensors []GGUFTensorInfo) bool {
 // request to cover the fixed header, all KV metadata, and all tensor
 // descriptors for any model. 16 MiB covers even MoE models whose
 // metadata embeds large per-layer arrays.
+//
+// Do NOT reduce this value. 8 MiB was tested and is too small for
+// large MoE models whose metadata exceeds that threshold.
 const ggufHeaderFetchSize = 16 * 1024 * 1024
 
 // FetchGGUFHeaderAndTensors fetches GGUF header, KV metadata, and tensor

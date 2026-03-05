@@ -2638,6 +2638,7 @@ code[class*="language-"] {
     font-size: 14px;
     font-weight: 600;
     color: var(--color-gray-700);
+    white-space: pre-line;
 }
 
 .kv-value {

@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import KeyValueTable from '../KeyValueTable';
 import { formatBytes } from '../../lib/format';
-import type { VRAMInput, MoEInfo, WeightBreakdown, PerDeviceVRAM } from '../../types';
+import type { VRAMInput, MoEInfo, WeightBreakdown, PerDeviceVRAM, DeviceInfo } from '../../types';
 
 interface VRAMResultsProps {
   totalVram: number;
@@ -14,9 +15,15 @@ interface VRAMResultsProps {
   modelWeightsCPU?: number;
   computeBufferEst?: number;
   expertLayersOnGPU?: number;
+  kvCacheOnCPU?: boolean;
+  kvCpuBytes?: number;
+  totalSystemRamEst?: number;
   perDevice?: PerDeviceVRAM[];
   deviceCount?: number;
   systemRAMBytes?: number;
+  gpuTotalBytes?: number;
+  gpuDevices?: DeviceInfo[];
+  tensorSplit?: string;
 }
 
 export default function VRAMResults({
@@ -31,28 +38,37 @@ export default function VRAMResults({
   modelWeightsCPU,
   computeBufferEst,
   expertLayersOnGPU,
+  kvCacheOnCPU,
+  kvCpuBytes,
+  totalSystemRamEst,
   perDevice,
   deviceCount,
   systemRAMBytes,
+  gpuTotalBytes,
+  gpuDevices,
+  tensorSplit,
 }: VRAMResultsProps) {
   const isMoE = moe?.is_moe === true && weights != null;
+  const kvOnCPU = kvCacheOnCPU ?? false;
+  const kvCacheLocation = kvOnCPU ? 'System RAM' : 'GPU';
 
   const breakdownRows = isMoE
     ? [
         { label: 'Always-Active Weights (GPU)', value: formatBytes(weights!.always_active_bytes) },
         {
-          label: `Expert Weights — GPU (${expertLayersOnGPU ?? 0} layers)`,
+          label: `Expert Weights —\nGPU (${expertLayersOnGPU ?? 0} layers)`,
           value: formatBytes(Math.max(0, (modelWeightsGPU ?? 0) - weights!.always_active_bytes)),
         },
         { label: 'Expert Weights — CPU', value: formatBytes(modelWeightsCPU ?? 0) },
-        { label: 'KV Cache (Slot Memory)', value: formatBytes(slotMemory) },
+        { label: `KV Cache (${kvCacheLocation})`, value: formatBytes(slotMemory) },
         { label: 'Compute Buffer (estimate)', value: `~${formatBytes(computeBufferEst ?? 0)}` },
       ]
     : [
         { label: 'Model Weights', value: formatBytes(input.model_size_bytes) },
-        { label: 'Slot Memory (KV Cache)', value: formatBytes(slotMemory) },
+        { label: `KV Cache (${kvCacheLocation})`, value: formatBytes(slotMemory) },
         { label: 'KV Per Slot', value: formatBytes(kvPerSlot) },
         { label: 'KV Per Token Per Layer', value: formatBytes(kvPerTokenPerLayer) },
+        { label: 'Compute Buffer (estimate)', value: `~${formatBytes(computeBufferEst ?? 0)}` },
       ];
 
   const headerRows = [
@@ -73,48 +89,165 @@ export default function VRAMResults({
     }
   }
 
+  const systemRamUsed = (totalSystemRamEst ?? (modelWeightsCPU ?? 0) + (kvCpuBytes ?? 0));
+  const showSystemRAM = systemRamUsed > 0;
+
   return (
     <div className="vram-results">
-      <div className="vram-hero">
-        <div className="vram-hero-label">Total Estimated VRAM</div>
-        <div className="vram-hero-value">{formatBytes(totalVram)}</div>
-        {isMoE && (
-          <div className="vram-hero-subtitle" style={{ fontSize: '0.85em', opacity: 0.7, marginTop: '4px' }}>
-            {formatBytes(modelWeightsCPU ?? 0)} on CPU
-            {systemRAMBytes != null && systemRAMBytes > 0 && (
-              <span> / {formatBytes(systemRAMBytes)} system RAM</span>
+      <div className="vram-hero" style={{ display: 'flex', gap: '32px', flexWrap: 'wrap' }}>
+        <div style={{ flex: 1, minWidth: '180px' }}>
+          <div className="vram-hero-label">Total Estimated VRAM</div>
+          <div className="vram-hero-value">
+            {formatBytes(totalVram)}
+            {gpuTotalBytes != null && gpuTotalBytes > 0 && (
+              <span style={{ fontSize: '0.55em', opacity: 0.5 }}> / {formatBytes(gpuTotalBytes)}</span>
             )}
+          </div>
+        </div>
+        {showSystemRAM && systemRAMBytes != null && systemRAMBytes > 0 && (
+          <div style={{ minWidth: '180px' }}>
+            <div className="vram-hero-label">Total Estimated System RAM</div>
+            <div className="vram-hero-value">
+              {formatBytes(systemRamUsed)}
+              <span style={{ fontSize: '0.55em', opacity: 0.5 }}> / {formatBytes(systemRAMBytes)}</span>
+            </div>
           </div>
         )}
       </div>
 
-      {isMoE && systemRAMBytes != null && systemRAMBytes > 0 && (modelWeightsCPU ?? 0) > 0 && (
+      {perDevice && perDevice.length > 1 && (() => {
+        return (
+        <div style={{ marginTop: '16px' }}>
+          <h4 className="vram-breakdown-title">Per-GPU VRAM Allocation (estimated)</h4>
+          {perDevice.map((dev, i) => {
+            const gpuCapacity = gpuDevices?.[i]?.total_bytes ?? 0;
+            const barMax = Math.max(1, gpuCapacity > 0 ? gpuCapacity : dev.totalBytes);
+            const freeBytes = Math.max(0, barMax - dev.totalBytes);
+            const overcommit = dev.totalBytes > barMax && gpuCapacity > 0;
+            return (
+              <div key={i} style={{ marginBottom: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85em', marginBottom: '2px' }}>
+                  <span>{dev.label}</span>
+                  <span>
+                    {formatBytes(dev.totalBytes)}
+                    {gpuCapacity > 0 && <span style={{ opacity: 0.6 }}> / {formatBytes(gpuCapacity)}</span>}
+                  </span>
+                </div>
+                <div style={{ background: 'var(--color-gray-200)', borderRadius: '4px', height: '20px', overflow: 'hidden', display: 'flex' }}>
+                  {dev.weightsBytes > 0 && (
+                    <div style={{ width: `${(dev.weightsBytes / barMax) * 100}%`, background: 'var(--color-blue)', height: '100%' }} title={`Weights: ${formatBytes(dev.weightsBytes)}`} />
+                  )}
+                  {dev.kvBytes > 0 && (
+                    <div style={{ width: `${(dev.kvBytes / barMax) * 100}%`, background: 'var(--color-orange)', height: '100%' }} title={`KV Cache: ${formatBytes(dev.kvBytes)}`} />
+                  )}
+                  {dev.computeBytes > 0 && (
+                    <div style={{ width: `${(dev.computeBytes / barMax) * 100}%`, background: '#8b5cf6', height: '100%' }} title={`Compute Buffer: ${formatBytes(dev.computeBytes)}`} />
+                  )}
+                  {freeBytes > 0 && !overcommit && (
+                    <div style={{ flex: 1, background: '#66bb6a', height: '100%' }} title={`Free: ${formatBytes(freeBytes)}`} />
+                  )}
+                </div>
+                {overcommit && (
+                  <div style={{ fontSize: '0.75em', color: '#ef5350', marginTop: '2px' }}>
+                    ⚠ Exceeds GPU capacity by {formatBytes(dev.totalBytes - gpuCapacity)}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          <div style={{ display: 'flex', gap: '12px', fontSize: '0.75em', opacity: 0.7, marginTop: '4px' }}>
+            <span>■ Weights</span>
+            <span style={{ color: 'var(--color-orange)' }}>■ KV Cache</span>
+            <span style={{ color: '#8b5cf6' }}>■ Compute</span>
+            <span style={{ color: '#66bb6a' }}>■ Free</span>
+          </div>
+          <div className="alert alert-info" style={{ marginTop: '8px', fontSize: '0.85em' }}>
+            <strong>Note:</strong> Per-GPU allocation is estimated based on tensor split proportions. Actual distribution may vary depending on llama.cpp split mode behavior.
+          </div>
+        </div>
+        );
+      })()}
+
+      {showSystemRAM && systemRAMBytes != null && systemRAMBytes > 0 && (
         <div style={{ marginTop: '12px', marginBottom: '12px' }}>
           <h4 className="vram-breakdown-title">System RAM Usage (estimated)</h4>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85em', marginBottom: '2px' }}>
-            <span>Expert weights on CPU</span>
-            <span>{formatBytes(modelWeightsCPU ?? 0)} / {formatBytes(systemRAMBytes)}</span>
+            <span>
+              {(modelWeightsCPU ?? 0) > 0 && (kvCpuBytes ?? 0) > 0
+                ? 'Expert weights + KV cache on CPU'
+                : (kvCpuBytes ?? 0) > 0
+                  ? 'KV cache on CPU'
+                  : 'Expert weights on CPU'}
+            </span>
+            <span>{formatBytes(systemRamUsed)} / {formatBytes(systemRAMBytes)}</span>
           </div>
-          <div style={{ background: 'var(--color-gray-200)', borderRadius: '4px', height: '20px', overflow: 'hidden', display: 'flex' }}>
-            <div
-              style={{
-                width: `${Math.min(100, ((modelWeightsCPU ?? 0) / systemRAMBytes) * 100)}%`,
-                background: (modelWeightsCPU ?? 0) > systemRAMBytes ? '#ef5350' : (modelWeightsCPU ?? 0) > systemRAMBytes * 0.8 ? '#ffa726' : '#66bb6a',
-                height: '100%',
-                transition: 'width 0.3s ease',
-              }}
-              title={`CPU expert weights: ${formatBytes(modelWeightsCPU ?? 0)}`}
-            />
-          </div>
+          {(() => {
+            const barMax = Math.max(1, Math.max(systemRAMBytes, systemRamUsed));
+            const overcommit = systemRamUsed > systemRAMBytes;
+            const freeBytes = Math.max(0, systemRAMBytes - systemRamUsed);
+            return (
+              <div style={{ background: 'var(--color-gray-200)', borderRadius: '4px', height: '20px', overflow: 'hidden', display: 'flex' }}>
+                {(modelWeightsCPU ?? 0) > 0 && (
+                  <div
+                    style={{
+                      width: `${((modelWeightsCPU ?? 0) / barMax) * 100}%`,
+                      background: 'var(--color-blue)',
+                      height: '100%',
+                    }}
+                    title={`Expert weights: ${formatBytes(modelWeightsCPU ?? 0)}`}
+                  />
+                )}
+                {(kvCpuBytes ?? 0) > 0 && (
+                  <div
+                    style={{
+                      width: `${((kvCpuBytes ?? 0) / barMax) * 100}%`,
+                      background: 'var(--color-orange)',
+                      height: '100%',
+                    }}
+                    title={`KV cache: ${formatBytes(kvCpuBytes ?? 0)}`}
+                  />
+                )}
+                {freeBytes > 0 && !overcommit && (
+                  <div style={{ flex: 1, background: '#66bb6a', height: '100%' }} title={`Free: ${formatBytes(freeBytes)}`} />
+                )}
+              </div>
+            );
+          })()}
+          {(modelWeightsCPU ?? 0) > 0 && (kvCpuBytes ?? 0) > 0 && (
+            <div style={{ display: 'flex', gap: '12px', fontSize: '0.75em', opacity: 0.7, marginTop: '4px' }}>
+              <span>■ Expert Weights</span>
+              <span style={{ color: 'var(--color-orange)' }}>■ KV Cache</span>
+            </div>
+          )}
           <div style={{ fontSize: '0.75em', opacity: 0.7, marginTop: '4px' }}>
-            {(modelWeightsCPU ?? 0) > systemRAMBytes
-              ? '❌ Exceeds available RAM — increase expert layers on GPU or use smaller quantization'
-              : (modelWeightsCPU ?? 0) > systemRAMBytes * 0.8
+            {systemRamUsed > systemRAMBytes
+              ? '❌ Exceeds available RAM — reduce context window, increase expert layers on GPU, or use smaller quantization'
+              : systemRamUsed > systemRAMBytes * 0.8
                 ? '⚠️ Tight fit — limited headroom for OS and other processes'
                 : '✅ Fits comfortably in system RAM'}
           </div>
         </div>
       )}
+
+      {kvOnCPU && (
+        <div className="alert alert-info" style={{ marginTop: '12px', fontSize: '0.85em' }}>
+          <strong>KV Cache on CPU:</strong>
+          <ul style={{ margin: '4px 0', paddingLeft: '20px' }}>
+            <li><strong>Discrete GPUs (CUDA/ROCm/Vulkan):</strong> Expect significantly lower tokens/sec during generation due to PCIe bandwidth bottleneck — often 2-5× slower</li>
+            <li><strong>Apple Silicon (Metal):</strong> Impact is much smaller due to unified memory — no PCIe transfer needed</li>
+            <li>Consider KV cache quantization (q8_0) as a less costly alternative to reduce VRAM usage</li>
+          </ul>
+        </div>
+      )}
+
+      <CatalogConfigSection
+        input={input}
+        isMoE={isMoE}
+        expertLayersOnGPU={expertLayersOnGPU}
+        kvCacheOnCPU={kvOnCPU}
+        deviceCount={deviceCount}
+        tensorSplit={tensorSplit}
+      />
 
       <div className="vram-breakdown">
         <div>
@@ -129,9 +262,11 @@ export default function VRAMResults({
         </div>
       </div>
 
-      {isMoE && systemRAMBytes != null && systemRAMBytes > 0 && (modelWeightsCPU ?? 0) > systemRAMBytes && (
+      {showSystemRAM && systemRAMBytes != null && systemRAMBytes > 0 && systemRamUsed > systemRAMBytes && (
         <div className="alert alert-error" style={{ marginTop: '12px', fontSize: '0.85em' }}>
-          <strong>Warning:</strong> Expert weights on CPU ({formatBytes(modelWeightsCPU ?? 0)}) exceed available system RAM ({formatBytes(systemRAMBytes)}). Increase expert layers on GPU to move more to VRAM, or use a smaller quantization.
+          <strong>Warning:</strong> Estimated system RAM usage ({formatBytes(systemRamUsed)}) exceeds available RAM ({formatBytes(systemRAMBytes)}).
+          {kvOnCPU && ' Disable KV Cache on CPU, reduce context window, or use KV cache quantization.'}
+          {isMoE && ' Increase expert layers on GPU or use a smaller quantization.'}
         </div>
       )}
 
@@ -146,46 +281,6 @@ export default function VRAMResults({
         </div>
       )}
 
-      {perDevice && perDevice.length > 1 && (() => {
-        const maxBytes = Math.max(...perDevice.map(d => d.totalBytes), 1);
-        return (
-        <div style={{ marginTop: '16px' }}>
-          <h4 className="vram-breakdown-title">Per-GPU VRAM Allocation (estimated)</h4>
-          {perDevice.map((dev, i) => {
-            const barWidth = (dev.totalBytes / maxBytes) * 100;
-            const devTotal = dev.totalBytes || 1;
-            return (
-              <div key={i} style={{ marginBottom: '8px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85em', marginBottom: '2px' }}>
-                  <span>{dev.label}</span>
-                  <span>{formatBytes(dev.totalBytes)}</span>
-                </div>
-                <div style={{ background: 'var(--color-gray-200)', borderRadius: '4px', height: '20px', overflow: 'hidden', display: 'flex', width: `${barWidth}%` }}>
-                  {dev.weightsBytes > 0 && (
-                    <div style={{ width: `${(dev.weightsBytes / devTotal) * 100}%`, background: 'var(--color-blue)', height: '100%' }} title={`Weights: ${formatBytes(dev.weightsBytes)}`} />
-                  )}
-                  {dev.kvBytes > 0 && (
-                    <div style={{ width: `${(dev.kvBytes / devTotal) * 100}%`, background: 'var(--color-orange)', height: '100%' }} title={`KV Cache: ${formatBytes(dev.kvBytes)}`} />
-                  )}
-                  {dev.computeBytes > 0 && (
-                    <div style={{ width: `${(dev.computeBytes / devTotal) * 100}%`, background: '#8b5cf6', height: '100%' }} title={`Compute Buffer: ${formatBytes(dev.computeBytes)}`} />
-                  )}
-                </div>
-              </div>
-            );
-          })}
-          <div style={{ display: 'flex', gap: '12px', fontSize: '0.75em', opacity: 0.7, marginTop: '4px' }}>
-            <span>■ Weights</span>
-            <span style={{ color: 'var(--color-orange)' }}>■ KV Cache</span>
-            <span style={{ color: '#8b5cf6' }}>■ Compute</span>
-          </div>
-          <div className="alert alert-info" style={{ marginTop: '8px', fontSize: '0.85em' }}>
-            <strong>Note:</strong> Per-GPU allocation is estimated based on tensor split proportions. Actual distribution may vary depending on llama.cpp split mode behavior.
-          </div>
-        </div>
-        );
-      })()}
-
       {(deviceCount ?? 1) > 1 && isMoE && (
         <div className="alert alert-info" style={{ marginTop: '12px', fontSize: '0.85em' }}>
           <strong>MoE Multi-GPU Tips:</strong>
@@ -195,6 +290,123 @@ export default function VRAMResults({
             <li>MainGPU should be the GPU with highest PCIe bandwidth for prompt processing offload</li>
           </ul>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ── Catalog Config Section ──────────────────────────────────────────────────
+
+function cacheTypeName(bytesPerElement: number): string {
+  switch (bytesPerElement) {
+    case 4: return 'f32';
+    case 2: return 'f16';
+    case 1: return 'q8_0';
+    default: return 'f16';
+  }
+}
+
+function buildCatalogYAML(
+  input: VRAMInput,
+  isMoE: boolean,
+  expertLayersOnGPU?: number,
+  kvCacheOnCPU?: boolean,
+  deviceCount?: number,
+  tensorSplit?: string,
+): string {
+  const lines: string[] = [];
+  lines.push('model-name/variant:');
+  lines.push(`  context-window: ${input.context_window}`);
+  lines.push(`  nseq-max: ${input.slots}`);
+
+  const cacheType = cacheTypeName(input.bytes_per_element);
+  lines.push(`  cache-type-k: ${cacheType}`);
+  lines.push(`  cache-type-v: ${cacheType}`);
+
+  lines.push('  flash-attention: enabled');
+
+  if (kvCacheOnCPU) {
+    lines.push('  offload-kqv: false');
+  }
+
+  const gpuCount = deviceCount ?? 1;
+
+  if (isMoE) {
+    const layers = expertLayersOnGPU ?? 0;
+    const allOnGPU = layers >= input.block_count;
+    if (!allOnGPU) {
+      lines.push('  moe:');
+      if (layers > 0) {
+        lines.push('    mode: keep_top_n');
+        lines.push(`    keep-experts-top-n: ${layers}`);
+      } else {
+        lines.push('    mode: experts_cpu');
+      }
+    }
+  }
+
+  if (gpuCount > 1) {
+    const nums = tensorSplit
+      ?.split(',')
+      .map(s => parseFloat(s.trim()))
+      .filter(n => !isNaN(n)) ?? [];
+    if (nums.length > 0) {
+      lines.push(`  tensor-split: [${nums.join(', ')}]`);
+    }
+    if (isMoE) {
+      lines.push('  split-mode: row');
+    }
+  }
+
+  return lines.join('\n');
+}
+
+function CatalogConfigSection({ input, isMoE, expertLayersOnGPU, kvCacheOnCPU, deviceCount, tensorSplit }: {
+  input: VRAMInput;
+  isMoE: boolean;
+  expertLayersOnGPU?: number;
+  kvCacheOnCPU?: boolean;
+  deviceCount?: number;
+  tensorSplit?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const yaml = buildCatalogYAML(input, isMoE, expertLayersOnGPU, kvCacheOnCPU, deviceCount, tensorSplit);
+
+  return (
+    <div style={{ marginTop: '0px', padding: '0px 12px 25px 0px', background: 'var(--color-gray-50)', borderRadius: '6px' }}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        aria-controls="computed-catalog-config"
+        style={{
+          background: 'none',
+          border: 'none',
+          padding: 0,
+          cursor: 'pointer',
+          fontSize: '14px',
+          fontWeight: 600,
+          color: 'var(--color-text)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+        }}
+      >
+        <span style={{ display: 'inline-block', transition: 'transform 0.2s', transform: open ? 'rotate(90deg)' : 'rotate(0deg)', fontSize: '12px' }}>▶</span>
+        Computed Catalog Configuration
+      </button>
+      {open && (
+        <pre id="computed-catalog-config" style={{
+          marginTop: '8px',
+          padding: '12px',
+          background: 'var(--color-gray-100)',
+          borderRadius: '6px',
+          fontSize: '0.85em',
+          overflow: 'auto',
+          whiteSpace: 'pre',
+        }}>
+          {yaml}
+        </pre>
       )}
     </div>
   );
