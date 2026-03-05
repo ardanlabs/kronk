@@ -57,10 +57,6 @@ func run() error {
 		return fmt.Errorf("run: unable to installation system: %w", err)
 	}
 
-	// -------------------------------------------------------------------------
-	// Declare a function that can accept user input which the agent will use
-	// when it's the users turn.
-
 	scanner := bufio.NewScanner(os.Stdin)
 	getUserMessage := func() (string, bool) {
 		if !scanner.Scan() {
@@ -68,9 +64,6 @@ func run() error {
 		}
 		return scanner.Text(), true
 	}
-
-	// -------------------------------------------------------------------------
-	// Construct the agent and get it started.
 
 	agent, err := NewAgent(getUserMessage, mp)
 	if err != nil {
@@ -118,7 +111,6 @@ func NewAgent(getUserMessage func() (string, bool), mp models.Path) (*Agent, err
 		getUserMessage: getUserMessage,
 		tools:          tools,
 		toolDocuments: []model.D{
-			// WE NEED TO REGISTER THE NEW TOOLS WE HAVE CREATED.
 			RegisterReadFile(tools),
 			RegisterSearchFiles(tools),
 			RegisterCreateFile(tools),
@@ -148,204 +140,256 @@ Reasoning: high
 
 // Run starts the agent and runs the chat loop.
 func (a *Agent) Run(ctx context.Context) error {
-	var conversation []model.D // History of the conversation
-	var reasonContent []string // Reasoning content per model call
-	var inToolCall bool        // Need to know we are inside a tool call request
-
-	conversation = append(conversation, model.D{
-		"role":    "system",
-		"content": systemPrompt,
-	})
+	conversation := []model.D{
+		{"role": "system", "content": systemPrompt},
+	}
 
 	fmt.Printf("\nChat with %s (use 'ctrl-c' to quit)\n", a.krn.ModelInfo().ID)
 
-	timeForResult := time.NewTicker(100 * time.Millisecond)
+	needUserInput := true
 
 	for {
 		// ---------------------------------------------------------------------
-		// If we are not in a tool call then we can ask the user
-		// to provide their next question or request.
+		// If we need user input, prompt the user for their next question or
+		// request. Otherwise, we are continuing a tool call.
 
-		if !inToolCall {
-			fmt.Print("\u001b[94m\nYou\u001b[0m: ")
-			userInput, ok := a.getUserMessage()
-			if !ok {
-				break
+		if needUserInput {
+			if ok := a.promptUser(&conversation); !ok {
+				return nil
 			}
-
-			conversation = append(conversation, model.D{
-				"role":    "user",
-				"content": userInput,
-			})
 		}
 
-		inToolCall = false
-
 		// ---------------------------------------------------------------------
-		// Let's show how long we are waiting for the model response.
+		// Make a streaming call to the model. This returns the assistant's
+		// text content and any tool calls requested by the model.
 
-		wctx, cancelTimer := context.WithCancel(ctx)
-		timeForResult.Reset(100 * time.Millisecond)
-		start := time.Now()
-
-		var wg sync.WaitGroup
-		wg.Go(func() {
-			for {
-				select {
-				case <-timeForResult.C:
-					m := time.Since(start).Milliseconds()
-					fmt.Printf("\r\u001b[93m%s %d.%03d\u001b[0m: ", a.krn.ModelInfo().ID, m/1000, m%1000)
-
-				case <-wctx.Done():
-					fmt.Print("\n")
-					timeForResult.Stop()
-					cancelTimer()
-					return
-				}
-			}
-		})
-
-		// ---------------------------------------------------------------------
-		// Now we will make a call to the model, we could be responding to a
-		// tool call or providing a user request.
-
-		d := model.D{
-			"messages":       conversation,
-			"temperature":    0.0,
-			"top_p":          0.1,
-			"top_k":          1,
-			"stream":         true,
-			"tools":          a.toolDocuments,
-			"tool_selection": "auto",
-		}
-
-		fmt.Printf("\u001b[93m\n%s\u001b[0m: 0.000", a.krn.ModelInfo().ID)
-
-		ctx, cancelCall := context.WithTimeout(ctx, time.Minute*5)
-
-		ch, err := a.krn.ChatStreaming(ctx, d)
+		content, toolCalls, usage, err := a.streamModelTurn(ctx, conversation)
 		if err != nil {
-			cancelCall()
-			return fmt.Errorf("error chat streaming: %w", err)
+			return err
 		}
 
-		// ---------------------------------------------------------------------
-		// Now we will make a call to the model.
-
-		var chunks []string                           // Store the response chunks since we are streaming.
-		var pendingToolCalls []model.ResponseToolCall // Store tool calls for processing after the loop.
-		reasonThinking := false                       // GPT models provide a Reasoning field.
-		reasonContent = nil                           // Reset the reasoning content for this next call.
+		a.printUsage(usage)
 
 		// ---------------------------------------------------------------------
-		// Process the response which comes in as chunks. So we need to process
-		// and save each chunk.
+		// If the model requested tool calls, execute them and continue the
+		// loop without asking the user for input.
 
-		waitingForResponse := true
+		if len(toolCalls) > 0 {
+			a.appendToolCalls(&conversation, toolCalls)
 
-	loop:
-		for resp := range ch {
-			if len(resp.Choice) == 0 {
-				continue
-			}
-
-			// Check if this is the first response. If it is, we will shutdown
-			// the G displaying the latency.
-			if waitingForResponse {
-				waitingForResponse = false
-				cancelTimer()
-				wg.Wait()
-			}
-
-			switch resp.Choice[0].FinishReason() {
-			case model.FinishReasonError:
-				cancelCall()
-				return fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
-
-			case model.FinishReasonStop:
-				break loop
-
-			case model.FinishReasonTool:
-				// STORE TOOL CALLS FOR PROCESSING AFTER THE LOOP SO WE DON'T
-				// HOLD THE CONNECTION HOSTAGE.
-				pendingToolCalls = resp.Choice[0].Delta.ToolCalls
-				break loop
-
-			default:
-				switch {
-				case resp.Choice[0].Delta.Reasoning != "":
-					reasonThinking = true
-
-					if len(reasonContent) == 0 {
-						fmt.Print("\n")
-					}
-
-					reasonContent = append(reasonContent, resp.Choice[0].Delta.Reasoning)
-					fmt.Printf("\u001b[91m%s\u001b[0m", resp.Choice[0].Delta.Reasoning)
-
-				case resp.Choice[0].Delta.Content != "":
-					if reasonThinking {
-						reasonThinking = false
-						fmt.Print("\n\n")
-					}
-
-					fmt.Print(resp.Choice[0].Delta.Content)
-					chunks = append(chunks, resp.Choice[0].Delta.Content)
-				}
-			}
-		}
-
-		cancelCall()
-
-		// ---------------------------------------------------------------------
-		// We need to execute the tool calls after the loop so we don't hold
-		// the connection hostage.
-
-		if len(pendingToolCalls) > 0 {
-			fmt.Print("\n\n")
-
-			argsJSON, _ := json.Marshal(pendingToolCalls[0].Function.Arguments)
-			conversation = append(conversation, model.D{
-				"role": "assistant",
-				"tool_calls": []model.D{
-					{
-						"id":   pendingToolCalls[0].ID,
-						"type": "function",
-						"function": model.D{
-							"name":      pendingToolCalls[0].Function.Name,
-							"arguments": string(argsJSON),
-						},
-					},
-				},
-			})
-
-			results := a.callTools(ctx, pendingToolCalls)
+			results := a.callTools(ctx, toolCalls)
 			if len(results) > 0 {
 				conversation = append(conversation, results...)
-				inToolCall = true
 			}
+
+			needUserInput = false
+			continue
 		}
 
 		// ---------------------------------------------------------------------
-		// We processed all the chunks from the response so we need to add
-		// this to the conversation history.
+		// The model produced a text response. Add it to the conversation
+		// and go back to asking the user for input.
 
-		if !inToolCall && len(chunks) > 0 {
-			fmt.Print("\n")
+		a.appendAssistant(&conversation, content)
 
-			content := strings.Join(chunks, " ")
-			content = strings.TrimLeft(content, "\n")
+		needUserInput = true
+	}
+}
 
-			if content != "" {
-				conversation = append(conversation, model.D{
-					"role":    "assistant",
-					"content": content,
-				})
+// promptUser asks the user for input and appends it to the conversation.
+func (a *Agent) promptUser(conversation *[]model.D) bool {
+	fmt.Print("\u001b[94m\nYou\u001b[0m: ")
+
+	userInput, ok := a.getUserMessage()
+	if !ok {
+		return false
+	}
+
+	*conversation = append(*conversation, model.D{
+		"role":    "user",
+		"content": userInput,
+	})
+
+	return true
+}
+
+// streamModelTurn sends the conversation to the model and streams back the
+// response. It returns the assembled text content, any tool calls, and usage.
+func (a *Agent) streamModelTurn(ctx context.Context, conversation []model.D) (string, []model.ResponseToolCall, *model.Usage, error) {
+	d := model.D{
+		"messages":       conversation,
+		"temperature":    0.0,
+		"top_p":          0.1,
+		"top_k":          1,
+		"stream":         true,
+		"tools":          a.toolDocuments,
+		"tool_selection": "auto",
+	}
+
+	fmt.Printf("\u001b[93m\n%s\u001b[0m: 0.000", a.krn.ModelInfo().ID)
+
+	callCtx, cancelCall := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancelCall()
+
+	ch, err := a.krn.ChatStreaming(callCtx, d)
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("error chat streaming: %w", err)
+	}
+
+	// Start the latency printer and ensure it stops.
+	stopPrinter := a.startLatencyPrinter(ctx)
+	defer stopPrinter()
+
+	var chunks []string
+	var lastResp model.ChatResponse
+	reasonFirstChunk := true
+	reasonThinking := false
+
+	for resp := range ch {
+		lastResp = resp
+
+		if len(resp.Choice) == 0 {
+			continue
+		}
+
+		// On the first real chunk, stop the latency printer.
+		stopPrinter()
+
+		switch resp.Choice[0].FinishReason() {
+		case model.FinishReasonError:
+			return "", nil, lastResp.Usage, fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
+
+		case model.FinishReasonStop:
+			text := strings.TrimLeft(strings.Join(chunks, " "), "\n")
+			return text, nil, lastResp.Usage, nil
+
+		case model.FinishReasonTool:
+			return "", resp.Choice[0].Delta.ToolCalls, lastResp.Usage, nil
+
+		default:
+			delta := resp.Choice[0].Delta
+
+			switch {
+			case delta.Reasoning != "":
+				reasonThinking = true
+
+				if reasonFirstChunk {
+					reasonFirstChunk = false
+					fmt.Print("\n")
+				}
+
+				fmt.Printf("\u001b[91m%s\u001b[0m", delta.Reasoning)
+
+			case delta.Content != "":
+				if reasonThinking {
+					reasonThinking = false
+					fmt.Print("\n\n")
+				}
+
+				fmt.Print(delta.Content)
+				chunks = append(chunks, delta.Content)
 			}
 		}
 	}
 
-	return nil
+	// Stream ended without an explicit finish reason.
+	text := strings.TrimLeft(strings.Join(chunks, " "), "\n")
+	return text, nil, lastResp.Usage, nil
+}
+
+// startLatencyPrinter starts a goroutine that displays elapsed time while
+// waiting for the model's first response chunk. The returned function stops
+// the printer; it is safe to call multiple times.
+func (a *Agent) startLatencyPrinter(ctx context.Context) (stop func()) {
+	modelID := a.krn.ModelInfo().ID
+	start := time.Now()
+
+	ticker := time.NewTicker(100 * time.Millisecond)
+	done := make(chan struct{})
+	exited := make(chan struct{})
+
+	var once sync.Once
+	stop = func() {
+		once.Do(func() {
+			close(done)
+			<-exited
+		})
+	}
+
+	go func() {
+		defer ticker.Stop()
+		defer close(exited)
+
+		for {
+			select {
+			case <-ticker.C:
+				m := time.Since(start).Milliseconds()
+				fmt.Printf("\r\u001b[93m%s %d.%03d\u001b[0m: ", modelID, m/1000, m%1000)
+
+			case <-done:
+				fmt.Print("\n")
+				return
+
+			case <-ctx.Done():
+				fmt.Print("\n")
+				return
+			}
+		}
+	}()
+
+	return stop
+}
+
+// appendToolCalls adds the assistant's tool call request to the conversation.
+func (a *Agent) appendToolCalls(conversation *[]model.D, toolCalls []model.ResponseToolCall) {
+	fmt.Print("\n\n")
+
+	var toolCallDocs []model.D
+	for _, tc := range toolCalls {
+		argsJSON, _ := json.Marshal(tc.Function.Arguments)
+		toolCallDocs = append(toolCallDocs, model.D{
+			"id":   tc.ID,
+			"type": "function",
+			"function": model.D{
+				"name":      tc.Function.Name,
+				"arguments": string(argsJSON),
+			},
+		})
+	}
+
+	*conversation = append(*conversation, model.D{
+		"role":       "assistant",
+		"tool_calls": toolCallDocs,
+	})
+}
+
+// appendAssistant adds the assistant's text response to the conversation.
+func (a *Agent) appendAssistant(conversation *[]model.D, content string) {
+	if content == "" {
+		return
+	}
+
+	fmt.Print("\n")
+
+	*conversation = append(*conversation, model.D{
+		"role":    "assistant",
+		"content": content,
+	})
+}
+
+// printUsage displays token usage information after each model call.
+func (a *Agent) printUsage(usage *model.Usage) {
+	if usage == nil {
+		return
+	}
+
+	contextTokens := usage.PromptTokens + usage.CompletionTokens
+	contextWindow := a.krn.ModelConfig().ContextWindow
+	percentage := (float64(contextTokens) / float64(contextWindow)) * 100
+	of := float32(contextWindow) / float32(1024)
+
+	fmt.Printf("\n\n\u001b[90mInput: %d  Reasoning: %d  Completion: %d  Output: %d  Window: %d (%.0f%% of %.0fK) TPS: %.2f\u001b[0m",
+		usage.PromptTokens, usage.ReasoningTokens, usage.CompletionTokens, usage.OutputTokens, contextTokens, percentage, of, usage.TokensPerSecond)
 }
 
 // callTools will lookup a requested tool by name and call it.
@@ -358,12 +402,10 @@ func (a *Agent) callTools(ctx context.Context, toolCalls []model.ResponseToolCal
 			continue
 		}
 
-		fmt.Printf("\n\u001b[92m%s(%v)\u001b[0m:\n\n", toolCall.Function.Name, toolCall.Function.Arguments)
+		fmt.Printf("\u001b[92m%s(%v)\u001b[0m:\n", toolCall.Function.Name, toolCall.Function.Arguments)
 
 		resp := tool.Call(ctx, toolCall)
 		resps = append(resps, resp)
-
-		fmt.Printf("%#v\n", resps)
 	}
 
 	return resps
@@ -386,12 +428,6 @@ func installSystem() (models.Path, error) {
 		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
-	// -------------------------------------------------------------------------
-	// This is not mandatory if you won't be using models from the catalog. That
-	// being said, if you are using a model that is part of the catalog with
-	// a corrected jinja file, having the catalog system up to date will allow
-	// the system to pull that jinja file.
-
 	ctlg, err := catalog.New()
 	if err != nil {
 		return models.Path{}, fmt.Errorf("unable to create catalog system: %w", err)
@@ -408,7 +444,6 @@ func installSystem() (models.Path, error) {
 		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
-	// Download model based on spec config using switch/case
 	var mp models.Path
 
 	switch {
