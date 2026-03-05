@@ -12,6 +12,23 @@ type DownloadKind = 'model' | 'catalog';
 
 export type DownloadOrigin = 'model-pull' | 'catalog';
 
+export interface DownloadMeta {
+  model_id?: string;
+  model_urls: string[];
+  proj_url?: string;
+  fileIndex: number;
+  fileTotal: number;
+}
+
+export interface DownloadProgress {
+  src: string;
+  currentBytes: number;
+  totalBytes: number;
+  mbPerSec: number;
+  pct: number;
+  startedAtMs: number;
+}
+
 interface DownloadState {
   kind: DownloadKind;
   origin: DownloadOrigin;
@@ -21,6 +38,8 @@ interface DownloadState {
   catalogId?: string;
   messages: DownloadMessage[];
   status: 'downloading' | 'complete' | 'error';
+  meta?: DownloadMeta;
+  progress?: DownloadProgress;
 }
 
 interface DownloadContextType {
@@ -39,6 +58,8 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   const { invalidate } = useModelList();
   const [download, setDownload] = useState<DownloadState | null>(null);
   const abortRef = useRef<(() => void) | null>(null);
+  const progressStartRef = useRef<{ src: string; startMs: number } | null>(null);
+  const lastProgressUpdateRef = useRef<number>(0);
 
   const ANSI_INLINE = '\r\x1b[K';
 
@@ -61,11 +82,75 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const handleProgress = useCallback((data: PullResponse) => {
+    if (!data.progress) return;
+
+    const now = Date.now();
+    if (now - lastProgressUpdateRef.current < 200) return;
+    lastProgressUpdateRef.current = now;
+
+    const p = data.progress;
+    const src = p.src || '';
+
+    if (!progressStartRef.current || progressStartRef.current.src !== src) {
+      progressStartRef.current = { src, startMs: now };
+    }
+
+    const pct = p.total_bytes && p.total_bytes > 0
+      ? Math.min(100, (p.current_bytes ?? 0) / p.total_bytes * 100)
+      : 0;
+
+    setDownload((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        progress: {
+          src,
+          currentBytes: p.current_bytes ?? 0,
+          totalBytes: p.total_bytes ?? 0,
+          mbPerSec: p.mb_per_sec ?? 0,
+          pct,
+          startedAtMs: progressStartRef.current!.startMs,
+        },
+      };
+    });
+  }, []);
+
   const pullOne = useCallback((modelUrl: string, projUrl: string | undefined, onComplete: () => void) => {
     abortRef.current = api.pullModel(
       modelUrl,
       projUrl,
       (data: PullResponse) => {
+        if (data.meta) {
+          setDownload((prev) => {
+            if (!prev) return prev;
+            const existing = prev.meta;
+            if (existing && existing.model_id === data.meta!.model_id) {
+              const urls = [...existing.model_urls];
+              if (data.meta!.model_url && !urls.includes(data.meta!.model_url)) {
+                urls.push(data.meta!.model_url);
+              }
+              return { ...prev, meta: { ...existing, model_urls: urls, fileIndex: data.meta!.file_index ?? existing.fileIndex, fileTotal: data.meta!.file_total ?? existing.fileTotal } };
+            }
+            return {
+              ...prev,
+              meta: {
+                model_id: data.meta!.model_id,
+                model_urls: data.meta!.model_url ? [data.meta!.model_url] : [],
+                proj_url: data.meta!.proj_url || undefined,
+                fileIndex: data.meta!.file_index ?? 1,
+                fileTotal: data.meta!.file_total ?? 1,
+              },
+            };
+          });
+        }
+        if (data.progress) {
+          handleProgress(data);
+          if (data.status) {
+            updateLastMessage(data.status, 'info');
+          }
+          return;
+        }
         if (data.status) {
           if (data.status.startsWith(ANSI_INLINE)) {
             const cleanText = data.status.slice(ANSI_INLINE.length);
@@ -85,7 +170,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       },
       onComplete
     );
-  }, [addMessage, updateLastMessage]);
+  }, [addMessage, updateLastMessage, handleProgress]);
 
   const startDownload = useCallback((modelUrl: string, projUrl?: string) => {
     if (abortRef.current) {
@@ -99,6 +184,9 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       messages: [],
       status: 'downloading',
     });
+
+    progressStartRef.current = null;
+    lastProgressUpdateRef.current = 0;
 
     pullOne(modelUrl, projUrl, () => {
       addMessage('Pull complete!', 'success');
@@ -124,6 +212,9 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       messages: [{ text: `Starting pull 1 of ${total}: ${modelUrls[0]}`, type: 'info' }],
       status: 'downloading',
     });
+
+    progressStartRef.current = null;
+    lastProgressUpdateRef.current = 0;
 
     const pullNext = (index: number) => {
       const proj = index === 0 ? projUrl : undefined;
@@ -161,9 +252,42 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       status: 'downloading',
     });
 
+    progressStartRef.current = null;
+    lastProgressUpdateRef.current = 0;
+
     abortRef.current = api.pullCatalogModel(
       catalogId,
       (data: PullResponse) => {
+        if (data.meta) {
+          setDownload((prev) => {
+            if (!prev) return prev;
+            const existing = prev.meta;
+            if (existing && existing.model_id === data.meta!.model_id) {
+              const urls = [...existing.model_urls];
+              if (data.meta!.model_url && !urls.includes(data.meta!.model_url)) {
+                urls.push(data.meta!.model_url);
+              }
+              return { ...prev, meta: { ...existing, model_urls: urls, fileIndex: data.meta!.file_index ?? existing.fileIndex, fileTotal: data.meta!.file_total ?? existing.fileTotal } };
+            }
+            return {
+              ...prev,
+              meta: {
+                model_id: data.meta!.model_id,
+                model_urls: data.meta!.model_url ? [data.meta!.model_url] : [],
+                proj_url: data.meta!.proj_url || undefined,
+                fileIndex: data.meta!.file_index ?? 1,
+                fileTotal: data.meta!.file_total ?? 1,
+              },
+            };
+          });
+        }
+        if (data.progress) {
+          handleProgress(data);
+          if (data.status) {
+            updateLastMessage(data.status, 'info');
+          }
+          return;
+        }
         if (data.status) {
           if (data.status.startsWith(ANSI_INLINE)) {
             const cleanText = data.status.slice(ANSI_INLINE.length);
@@ -189,7 +313,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       },
       downloadServer
     );
-  }, [addMessage, updateLastMessage, invalidate]);
+  }, [addMessage, updateLastMessage, handleProgress, invalidate]);
 
   const cancelDownload = useCallback(() => {
     if (abortRef.current) {

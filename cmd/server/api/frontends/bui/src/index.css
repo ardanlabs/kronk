@@ -679,6 +679,17 @@ tr.selected:hover td {
     color: var(--color-success);
 }
 
+.download-progress {
+    margin-top: 16px;
+}
+
+.download-progress-text {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-page-title);
+    margin-bottom: 6px;
+}
+
 .alert {
     padding: 12px 16px;
     border-radius: 6px;

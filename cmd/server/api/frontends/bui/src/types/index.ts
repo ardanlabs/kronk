@@ -235,11 +235,29 @@ export interface KeyResponse {
 
 export type KeysResponse = KeyResponse[];
 
+export interface PullMeta {
+  model_url?: string;
+  proj_url?: string;
+  model_id?: string;
+  file_index?: number;
+  file_total?: number;
+}
+
+export interface PullProgress {
+  src?: string;
+  current_bytes?: number;
+  total_bytes?: number;
+  mb_per_sec?: number;
+  complete?: boolean;
+}
+
 export interface PullResponse {
   status: string;
   model_file?: string;
   model_files?: string[];
   downloaded?: boolean;
+  meta?: PullMeta;
+  progress?: PullProgress;
 }
 
 export interface AsyncPullResponse {

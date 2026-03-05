@@ -1,21 +1,26 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { api } from '../services/api';
-import { useModelList } from '../contexts/ModelListContext';
-import type { CatalogModelsResponse, PullResponse } from '../types';
+import { useDownload } from '../contexts/DownloadContext';
+import type { CatalogModelsResponse } from '../types';
+import DownloadInfoTable from './DownloadInfoTable';
+import DownloadProgressBar from './DownloadProgressBar';
 
 export default function CatalogPull() {
-  const { invalidate } = useModelList();
+  const { download, isDownloading, startCatalogDownload, cancelDownload } = useDownload();
   const [catalogList, setCatalogList] = useState<CatalogModelsResponse | null>(null);
   const [selectedId, setSelectedId] = useState('');
   const [listLoading, setListLoading] = useState(true);
-  const [pulling, setPulling] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [messages, setMessages] = useState<Array<{ text: string; type: 'info' | 'error' | 'success' }>>([]);
-  const closeRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     loadCatalogList();
   }, []);
+
+  useEffect(() => {
+    if (download?.kind === 'catalog' && download.status === 'complete') {
+      loadCatalogList();
+    }
+  }, [download?.status]);
 
   const loadCatalogList = async () => {
     setListLoading(true);
@@ -31,47 +36,13 @@ export default function CatalogPull() {
 
   const handlePull = () => {
     if (!selectedId) return;
-
-    setPulling(true);
-    setMessages([]);
     setError(null);
-
-    const addMessage = (text: string, type: 'info' | 'error' | 'success') => {
-      setMessages((prev) => [...prev, { text, type }]);
-    };
-
-    closeRef.current = api.pullCatalogModel(
-      selectedId,
-      (data: PullResponse) => {
-        if (data.status) {
-          addMessage(data.status, 'info');
-        }
-        if (data.model_file) {
-          addMessage(`Model file: ${data.model_file}`, 'info');
-        }
-
-      },
-      (errorMsg: string) => {
-        addMessage(errorMsg, 'error');
-        setPulling(false);
-      },
-      () => {
-        addMessage('Pull complete!', 'success');
-        setPulling(false);
-        invalidate();
-        loadCatalogList();
-      }
-    );
+    startCatalogDownload(selectedId);
   };
 
-  const handleCancel = () => {
-    if (closeRef.current) {
-      closeRef.current();
-      closeRef.current = null;
-    }
-    setPulling(false);
-    setMessages((prev) => [...prev, { text: 'Cancelled', type: 'error' }]);
-  };
+  const isCatalogDownload = download?.kind === 'catalog' && download.catalogId === selectedId;
+  const pulling = isCatalogDownload ? download.status === 'downloading' : false;
+  const pullMessages = isCatalogDownload ? download.messages : [];
 
   return (
     <div>
@@ -93,7 +64,7 @@ export default function CatalogPull() {
                 id="modelSelect"
                 value={selectedId}
                 onChange={(e) => setSelectedId(e.target.value)}
-                disabled={pulling}
+                disabled={isDownloading}
               >
                 <option value="">-- Select a model --</option>
                 {catalogList?.map((model) => (
@@ -108,12 +79,12 @@ export default function CatalogPull() {
               <button
                 className="btn btn-primary"
                 onClick={handlePull}
-                disabled={!selectedId || pulling}
+                disabled={!selectedId || isDownloading}
               >
                 {pulling ? 'Pulling...' : 'Pull Model'}
               </button>
               {pulling && (
-                <button className="btn btn-danger" onClick={handleCancel}>
+                <button className="btn btn-danger" onClick={cancelDownload}>
                   Cancel
                 </button>
               )}
@@ -121,9 +92,17 @@ export default function CatalogPull() {
           </>
         )}
 
-        {messages.length > 0 && (
+        {isCatalogDownload && download.meta && (
+          <DownloadInfoTable meta={download.meta} />
+        )}
+
+        {isCatalogDownload && download.progress && pulling && (
+          <DownloadProgressBar progress={download.progress} meta={download.meta} />
+        )}
+
+        {pullMessages.length > 0 && (
           <div className="status-box">
-            {messages.map((msg, idx) => (
+            {pullMessages.map((msg, idx) => (
               <div key={idx} className={`status-line ${msg.type}`}>
                 {msg.text}
               </div>
