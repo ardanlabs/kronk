@@ -654,6 +654,23 @@ func loadDraftModel(ctx context.Context, log Logger, cfg Config, targetModel lla
 	}, nil
 }
 
+// buildDraftSampler creates a sampler chain for draft token generation that
+// matches the request's sampling parameters. This ensures the draft model's
+// proposal distribution q(x) is consistent with the request's temperature,
+// top-k, and other settings.
+func buildDraftSampler(params Params) llama.Sampler {
+	chain := llama.SamplerChainInit(llama.SamplerChainDefaultParams())
+
+	// Build chain in the standard order: truncation → temperature → dist.
+	llama.SamplerChainAdd(chain, llama.SamplerInitTopK(params.TopK))
+	llama.SamplerChainAdd(chain, llama.SamplerInitTopP(params.TopP, 0))
+	llama.SamplerChainAdd(chain, llama.SamplerInitMinP(params.MinP, 0))
+	llama.SamplerChainAdd(chain, llama.SamplerInitTempExt(params.Temperature, 0, 1.0))
+	llama.SamplerChainAdd(chain, llama.SamplerInitDist(llama.DefaultSeed))
+
+	return chain
+}
+
 // paramsFitMu serializes calls to checkParamsFit because the underlying
 // llama.ModelParamsFit function modifies global logger state and is not
 // thread safe.

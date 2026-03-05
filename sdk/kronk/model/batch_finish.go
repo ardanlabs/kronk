@@ -137,6 +137,12 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 			TotalTokens:        s.nPrompt + outputTokens,
 			TokensPerSecond:    tokensPerSecond,
 			TimeToFirstTokenMS: float64(s.ttft.Microseconds()) / 1000.0,
+			DraftTokens:        s.specDraftedTotal,
+			AcceptedTokens:     s.specAcceptedTotal,
+		}
+
+		if usage.DraftTokens > 0 {
+			usage.AcceptanceRate = float64(usage.AcceptedTokens) / float64(usage.DraftTokens)
 		}
 
 		e.model.sendErrorResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, "", err, usage)
@@ -195,6 +201,12 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		TotalTokens:        totalTokens,
 		TokensPerSecond:    tokensPerSecond,
 		TimeToFirstTokenMS: float64(s.ttft.Microseconds()) / 1000.0,
+		DraftTokens:        s.specDraftedTotal,
+		AcceptedTokens:     s.specAcceptedTotal,
+	}
+
+	if usage.DraftTokens > 0 {
+		usage.AcceptanceRate = float64(usage.AcceptedTokens) / float64(usage.DraftTokens)
 	}
 
 	// Add span attributes and end span.
@@ -205,6 +217,8 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		attribute.Int("output_tokens", outputTokens),
 		attribute.Int("total_tokens", totalTokens),
 		attribute.Float64("tokens_per_second", tokensPerSecond),
+		attribute.Int("draft_tokens", s.specDraftedTotal),
+		attribute.Int("accepted_tokens", s.specAcceptedTotal),
 	)
 
 	// Add metrics.

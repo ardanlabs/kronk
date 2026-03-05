@@ -25,6 +25,7 @@ export default function Chat() {
     return stored === null ? true : stored === 'true';
   });
 
+
   const [extendedModels, setExtendedModels] = useState<ListModelDetail[]>([]);
   const [isMoE, setIsMoE] = useState(false);
   const [modelVRAM, setModelVRAM] = useState<VRAM | null>(null);

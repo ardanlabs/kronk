@@ -101,36 +101,30 @@ func logSoftmax(logits []float32) []float32 {
 
 // softmaxTempInto computes temperature-scaled softmax: softmax(logits / T).
 // For temperature=0 callers should use argmax instead. The dst slice must be
-// at least len(logits) in length.
+// at least len(logits) in length. logits is read-only; all results are written
+// to dst.
 func softmaxTempInto(logits, dst []float32, temperature float32) {
+	var invT float32 = 1.0
 	if temperature > 0 && temperature != 1.0 {
-		invT := 1.0 / temperature
-		for i := range logits {
-			logits[i] *= invT
-		}
+		invT = 1.0 / temperature
 	}
-	softmaxInto(logits, dst)
-}
 
-// softmaxInto computes softmax of logits and writes the result into dst.
-// The dst slice must be at least len(logits) in length.
-func softmaxInto(logits, dst []float32) {
-	maxLogit := logits[0]
+	maxVal := logits[0] * invT
 	for _, l := range logits[1:] {
-		if l > maxLogit {
-			maxLogit = l
+		if v := l * invT; v > maxVal {
+			maxVal = v
 		}
 	}
 
 	var sum float64
 	for i, l := range logits {
-		p := math.Exp(float64(l - maxLogit))
+		p := math.Exp(float64(l*invT - maxVal))
 		dst[i] = float32(p)
 		sum += p
 	}
 
 	invSum := float32(1.0 / sum)
-	for i := range logits {
+	for i := range dst[:len(logits)] {
 		dst[i] *= invSum
 	}
 }

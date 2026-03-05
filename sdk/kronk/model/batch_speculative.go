@@ -19,6 +19,12 @@ func (e *batchEngine) prefillDraft(ctx context.Context, s *slot) error {
 	tokens := s.draftPromptTokens
 
 	if len(tokens) == 0 {
+		// Clear any stale draft KV from a previous request on this slot.
+		if len(s.draftCachedTokens) > 0 {
+			llama.MemorySeqRm(draft.mem, s.seqID, -1, -1)
+			s.draftCachedTokens = s.draftCachedTokens[:0]
+		}
+		s.draftNPast = 0
 		s.draftPrefillNeeded = false
 		e.model.log(ctx, "speculative", "status", "draft-prefill-skip-empty", "slot", s.id)
 		return nil
@@ -114,22 +120,25 @@ func (e *batchEngine) prefillDraft(ctx context.Context, s *slot) error {
 // but these are fast because the draft model is small.
 //
 // For proper speculative sampling (Leviathan et al., 2023), this also captures
-// the draft model's probability distribution at each step. The distributions
-// are stored in s.specDraftProbs for use during verification.
+// the draft model's probability distribution at each step. Non-greedy mode uses
+// sparse candidate-based probability capture instead of full-vocab softmax.
+// The sparse distributions are stored in s.specDraftDistsSparse for verification.
 func (e *batchEngine) generateDraftTokens(s *slot) []llama.Token {
 	draft := e.model.draft
 	nVocab := int(llama.VocabNTokens(e.model.vocab))
 	draftTokens := draft.draftBuf[:0]
 	temperature := s.job.params.Temperature
+	greedy := temperature == 0
 
-	// Lazy init per-slot probability buffers on first use.
-	if s.draftProbsBuf == nil {
-		s.draftProbsBuf = make([][]float32, draft.nDraft)
-		for i := range s.draftProbsBuf {
-			s.draftProbsBuf[i] = make([]float32, nVocab)
+	// Create or reuse the per-slot draft sampler for non-greedy mode.
+	// Reset on each call so rejected token history from the previous
+	// speculative round doesn't accumulate and skew proposals.
+	if !greedy {
+		if s.draftSampler == 0 {
+			s.draftSampler = buildDraftSampler(s.job.params)
+		} else {
+			llama.SamplerReset(s.draftSampler)
 		}
-		e.model.log(s.job.ctx, "speculative", "status", "draft-probs-alloc",
-			"slot", s.id, "nDraft", draft.nDraft, "nVocab", nVocab)
 	}
 
 	lastToken := s.sampled
@@ -148,17 +157,43 @@ func (e *batchEngine) generateDraftTokens(s *slot) []llama.Token {
 
 		s.draftNPast++
 
-		// Capture draft probability distribution into per-slot buffer.
-		// Apply temperature scaling so q(x) matches the actual sampling distribution.
-		logits, err := llama.GetLogitsIth(draft.lctx, -1, nVocab)
-		if err != nil {
-			break
+		// Sample from draft model. Non-greedy uses the per-slot sampler and
+		// captures sparse candidate probabilities. Greedy uses the shared
+		// draft sampler (argmax) and skips probability capture entirely.
+		var token llama.Token
+		if !greedy {
+			token = llama.SamplerSample(s.draftSampler, draft.lctx, -1)
+
+			// Lazy init sparse dist buffer.
+			if s.draftDistBuf == nil {
+				s.draftDistBuf = make([][]candidateEntry, draft.nDraft)
+				for i := range s.draftDistBuf {
+					s.draftDistBuf[i] = make([]candidateEntry, 0, 128)
+				}
+			}
+
+			// Always clear the buffer for this position to prevent stale data
+			// from a prior speculative step being reused if cnt==0.
+			s.draftDistBuf[drafted] = s.draftDistBuf[drafted][:0]
+
+			cnt, _ := llama.GetSampledCandidatesCountIth(draft.lctx, -1)
+			if cnt > 0 {
+				cands, _ := llama.GetSampledCandidatesIth(draft.lctx, -1, nVocab)
+				probs, _ := llama.GetSampledProbsIth(draft.lctx, -1, nVocab)
+
+				// Copy C-backed views into slot-owned buffer immediately
+				// before the next sampler call can overwrite them.
+				buf := s.draftDistBuf[drafted]
+				for j := range cnt {
+					buf = append(buf, candidateEntry{tok: cands[j], prob: probs[j]})
+				}
+				s.draftDistBuf[drafted] = buf
+			}
+
+			llama.SamplerAccept(s.draftSampler, token)
+		} else {
+			token = llama.SamplerSample(draft.sampler, draft.lctx, -1)
 		}
-
-		softmaxTempInto(logits, s.draftProbsBuf[drafted], temperature)
-
-		// Greedy sample from draft model.
-		token := llama.SamplerSample(draft.sampler, draft.lctx, -1)
 
 		// Check for end of generation.
 		if llama.VocabIsEOG(e.model.vocab, token) {
@@ -179,7 +214,15 @@ func (e *batchEngine) generateDraftTokens(s *slot) []llama.Token {
 	}
 	copy(s.draftTokensBuf, draftTokens)
 
-	s.specDraftProbs = s.draftProbsBuf[:drafted]
+	if greedy {
+		s.specDraftProbs = nil
+		s.specDraftDistsSparse = nil
+	} else {
+		s.specDraftProbs = nil
+		s.specDraftDistsSparse = s.draftDistBuf[:drafted]
+	}
+
+	s.specDraftedTotal += drafted
 
 	e.model.log(s.job.ctx, "speculative", "status", "draft-generated",
 		"slot", s.id, "drafted", len(s.draftTokensBuf), "target_nDraft", draft.nDraft,
@@ -206,6 +249,7 @@ func (e *batchEngine) generateDraftTokens(s *slot) []llama.Token {
 func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 	draftTokens := s.specDraftTokens
 	draftProbs := s.specDraftProbs
+	draftDistsSparse := s.specDraftDistsSparse
 	nDraft := len(draftTokens)
 	baseBatch := s.specBaseBatch
 	basePast := s.specBasePast
@@ -213,27 +257,152 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 	temperature := s.job.params.Temperature
 	greedy := temperature == 0
 
+	// Determine whether to use sparse candidate-based verification.
+	useSparse := !greedy && draftDistsSparse != nil
+
 	// Capture context before handleSampledToken may trigger finishSlot → reset,
 	// which sets s.job to nil.
 	ctx := s.job.ctx
 
 	e.model.log(ctx, "speculative", "status", "verify-start",
 		"slot", s.id, "nDraft", nDraft, "basePast", basePast, "baseBatch", baseBatch,
-		"temperature", temperature)
+		"temperature", temperature, "useSparse", useSparse)
 
 	// Clear speculative state.
 	s.specDraftTokens = nil
 	s.specDraftProbs = nil
+	s.specDraftDistsSparse = nil
 
 	accepted := 0
 	var bonusToken llama.Token
 
+	// Clone the target sampler for sparse verification so we can track
+	// accepted tokens without mutating the slot's sampler state.
+	var verifySampler llama.Sampler
+	if useSparse {
+		verifySampler = llama.SamplerClone(s.sampler)
+		defer func() {
+			if verifySampler != 0 {
+				llama.SamplerFree(verifySampler)
+			}
+		}()
+	}
+
 	for i := range nDraft {
-		// Get target logits at this position.
+		draftToken := draftTokens[i]
+
+		// Greedy verification: accept if draft token matches target's argmax.
+		// No softmax needed — just find the highest logit.
+		if greedy {
+			targetLogits, err := llama.GetLogitsIth(e.model.lctx, baseBatch+int32(i), nVocab)
+			if err != nil {
+				var fallbackToken llama.Token
+				switch {
+				case s.grammarSampler != nil:
+					fallbackToken = s.grammarSampler.SampleWithGrammar(e.model.lctx, s.sampler, baseBatch+int32(i))
+				default:
+					fallbackToken = llama.SamplerSample(s.sampler, e.model.lctx, baseBatch+int32(i))
+				}
+				bonusToken = fallbackToken
+				break
+			}
+
+			targetArgmax := argmax(targetLogits)
+			if draftToken == targetArgmax {
+				accepted++
+				s.specAcceptedTotal++
+				s.nPast = basePast + llama.Pos(1+i)
+				e.handleSampledToken(s, draftToken, baseBatch+int32(i), buf)
+
+				if !s.active {
+					e.model.log(ctx, "speculative", "status", "verify-done-eog",
+						"slot", s.id, "accepted", accepted, "nDraft", nDraft)
+					return
+				}
+				continue
+			}
+
+			bonusToken = targetArgmax
+			break
+		}
+
+		// Sparse candidate-based probabilistic verification.
+		if useSparse {
+			// Check if this position has a valid sparse draft distribution.
+			// Fall through to full-vocab path if missing or empty.
+			if i >= len(draftDistsSparse) || len(draftDistsSparse[i]) == 0 {
+				useSparse = false
+				goto fullVocab
+			}
+
+			qDraft := lookupProb(draftDistsSparse[i], draftToken)
+			if qDraft <= 0 {
+				// Draft token not in sparse candidates — can't compute
+				// acceptance ratio. Fall through to full-vocab for this
+				// and all remaining positions.
+				useSparse = false
+				goto fullVocab
+			}
+
+			llama.SamplerSample(verifySampler, e.model.lctx, baseBatch+int32(i))
+
+			cnt, _ := llama.GetSampledCandidatesCountIth(e.model.lctx, baseBatch+int32(i))
+			if cnt == 0 {
+				// Fallback: can't get target candidates, reject remaining.
+				bonusToken = llama.SamplerSample(s.sampler, e.model.lctx, baseBatch+int32(i))
+				break
+			}
+
+			cands, _ := llama.GetSampledCandidatesIth(e.model.lctx, baseBatch+int32(i), nVocab)
+			probs, _ := llama.GetSampledProbsIth(e.model.lctx, baseBatch+int32(i), nVocab)
+
+			// Copy C-backed views into scratch buffer immediately.
+			if cap(s.targetDistBuf) < int(cnt) {
+				s.targetDistBuf = make([]candidateEntry, 0, cnt)
+			}
+			targetEntries := s.targetDistBuf[:0]
+			for j := range cnt {
+				targetEntries = append(targetEntries, candidateEntry{tok: cands[j], prob: probs[j]})
+			}
+			s.targetDistBuf = targetEntries
+
+			pTarget := lookupProb(targetEntries, draftToken)
+			if pTarget <= 0 {
+				// Draft token not in target top-K — fall through to
+				// full-vocab to avoid forced rejection bias.
+				useSparse = false
+				goto fullVocab
+			}
+
+			// Accept with probability min(1, p_target / q_draft).
+			ratio := float64(pTarget) / float64(qDraft)
+			if ratio >= 1.0 || rand.Float64() < ratio {
+				accepted++
+				s.specAcceptedTotal++
+				llama.SamplerAccept(verifySampler, draftToken)
+				s.nPast = basePast + llama.Pos(1+i)
+				e.handleSampledToken(s, draftToken, baseBatch+int32(i), buf)
+				if !s.active {
+					e.model.log(ctx, "speculative", "status", "verify-done-eog",
+						"slot", s.id, "accepted", accepted, "nDraft", nDraft)
+					return
+				}
+				continue
+			}
+
+			// Rejected: sample from adjusted distribution using sparse candidates.
+			if cap(s.adjustedDistBuf) < len(targetEntries) {
+				s.adjustedDistBuf = make([]candidateEntry, 0, len(targetEntries))
+			}
+			bonusToken = sampleAdjustedSparse(targetEntries, draftDistsSparse[i], s.adjustedDistBuf)
+			break
+		}
+
+	fullVocab:
+
+		// Full-vocab fallback for non-greedy when sparse distributions are unavailable.
 		targetLogits, err := llama.GetLogitsIth(e.model.lctx, baseBatch+int32(i), nVocab)
 		if err != nil {
-			// Fallback: reject all remaining draft tokens. Sample from target
-			// using the sampler at the first position as the bonus token.
 			var fallbackToken llama.Token
 			switch {
 			case s.grammarSampler != nil:
@@ -245,46 +414,28 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 			break
 		}
 
-		draftToken := draftTokens[i]
-
-		// Greedy verification: accept if draft token matches target's argmax.
-		// No softmax needed — just find the highest logit.
-		if greedy {
-			targetArgmax := argmax(targetLogits)
-			if draftToken == targetArgmax {
-				accepted++
-
-				s.nPast = basePast + llama.Pos(1+i)
-				e.handleSampledToken(s, draftToken, baseBatch+int32(i), buf)
-
-				if !s.active {
-					e.model.log(ctx, "speculative", "status", "verify-done-eog",
-						"slot", s.id, "accepted", accepted, "nDraft", nDraft)
-					return
-				}
-
-				continue
-			}
-
-			// Rejected: for greedy, the bonus token is the target's argmax.
-			bonusToken = targetArgmax
-			break
-		}
-
-		// Probabilistic verification with temperature-scaled distributions.
 		draft := e.model.draft
 		softmaxTempInto(targetLogits, draft.targetProbs, temperature)
 
 		pTarget := draft.targetProbs[draftToken]
+
+		// When full draft probabilities are unavailable (sparse mode fell
+		// through to full-vocab), we can't compute the adjusted rejection
+		// distribution max(0, p-q). Sample from target and stop speculating
+		// to preserve the target distribution guarantee.
+		if draftProbs == nil {
+			bonusToken = sampleFromProbs(draft.targetProbs)
+			break
+		}
+
 		qDraft := draftProbs[i][draftToken]
 
 		// Accept with probability min(1, p_target / q_draft).
 		if qDraft > 0 {
 			ratio := float64(pTarget) / float64(qDraft)
 			if ratio >= 1.0 || rand.Float64() < ratio {
-				// Draft token accepted.
 				accepted++
-
+				s.specAcceptedTotal++
 				s.nPast = basePast + llama.Pos(1+i)
 				e.handleSampledToken(s, draftToken, baseBatch+int32(i), buf)
 
@@ -293,7 +444,6 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 						"slot", s.id, "accepted", accepted, "nDraft", nDraft)
 					return
 				}
-
 				continue
 			}
 		}
@@ -305,24 +455,29 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 
 	// If all draft tokens were accepted, sample bonus from target at position nDraft.
 	if accepted == nDraft {
-		targetLogits, err := llama.GetLogitsIth(e.model.lctx, baseBatch+int32(nDraft), nVocab)
 		switch {
-		case err != nil:
-			// Fallback to sampler.
-			switch {
-			case s.grammarSampler != nil:
-				bonusToken = s.grammarSampler.SampleWithGrammar(e.model.lctx, s.sampler, baseBatch+int32(nDraft))
-			default:
-				bonusToken = llama.SamplerSample(s.sampler, e.model.lctx, baseBatch+int32(nDraft))
-			}
-
-		case greedy:
-			bonusToken = argmax(targetLogits)
+		case useSparse:
+			bonusToken = llama.SamplerSample(verifySampler, e.model.lctx, baseBatch+int32(nDraft))
 
 		default:
-			draft := e.model.draft
-			softmaxTempInto(targetLogits, draft.targetProbs, temperature)
-			bonusToken = sampleFromProbs(draft.targetProbs)
+			targetLogits, err := llama.GetLogitsIth(e.model.lctx, baseBatch+int32(nDraft), nVocab)
+			switch {
+			case err != nil:
+				switch {
+				case s.grammarSampler != nil:
+					bonusToken = s.grammarSampler.SampleWithGrammar(e.model.lctx, s.sampler, baseBatch+int32(nDraft))
+				default:
+					bonusToken = llama.SamplerSample(s.sampler, e.model.lctx, baseBatch+int32(nDraft))
+				}
+
+			case greedy:
+				bonusToken = argmax(targetLogits)
+
+			default:
+				draft := e.model.draft
+				softmaxTempInto(targetLogits, draft.targetProbs, temperature)
+				bonusToken = sampleFromProbs(draft.targetProbs)
+			}
 		}
 	}
 
@@ -358,6 +513,10 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 
 // argmax returns the token with the highest logit value.
 func argmax(logits []float32) llama.Token {
+	if len(logits) == 0 {
+		return 0
+	}
+
 	maxIdx := 0
 	maxVal := logits[0]
 	for i := 1; i < len(logits); i++ {
@@ -387,9 +546,9 @@ func sampleAdjustedInto(targetProbs, draftProbs, adjusted []float32) llama.Token
 		}
 	}
 
-	// If the adjusted distribution is empty (shouldn't happen in practice),
+	// If the adjusted distribution is empty or invalid (NaN),
 	// fall back to sampling from the target distribution directly.
-	if sum <= 0 {
+	if !(sum > 0) {
 		return sampleFromProbs(targetProbs)
 	}
 
@@ -405,6 +564,10 @@ func sampleAdjustedInto(targetProbs, draftProbs, adjusted []float32) llama.Token
 // sampleFromProbs samples a token from a probability distribution using
 // inverse transform sampling.
 func sampleFromProbs(probs []float32) llama.Token {
+	if len(probs) == 0 {
+		return 0
+	}
+
 	r := rand.Float32()
 	var cumulative float32
 

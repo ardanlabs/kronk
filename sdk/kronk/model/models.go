@@ -706,6 +706,9 @@ type Usage struct {
 	TotalTokens        int     `json:"total_tokens"`
 	TokensPerSecond    float64 `json:"tokens_per_second"`
 	TimeToFirstTokenMS float64 `json:"time_to_first_token_ms"`
+	DraftTokens        int     `json:"draft_tokens,omitempty"`
+	AcceptedTokens     int     `json:"accepted_tokens,omitempty"`
+	AcceptanceRate     float64 `json:"acceptance_rate,omitempty"`
 }
 
 // TopLogprob represents a single token with its log probability.

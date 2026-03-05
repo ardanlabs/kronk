@@ -70,6 +70,7 @@ type ListModelDetail struct {
 	Modified             time.Time       `json:"modified"`
 	Validated            bool            `json:"validated"`
 	Sampling             *SamplingConfig `json:"sampling,omitempty"`
+	DraftModelID         string          `json:"draft_model_id,omitempty"`
 }
 
 // ListModelInfoResponse contains the list of models loaded in the system.
@@ -124,6 +125,9 @@ func toListModelsInfo(modelFiles []models.File, modelConfigs map[string]catalog.
 					EnableThinking:   rmc.Sampling.EnableThinking,
 					ReasoningEffort:  rmc.Sampling.ReasoningEffort,
 					Grammar:          rmc.Sampling.Grammar,
+				}
+				if rmc.DraftModel != nil && rmc.DraftModel.ModelID != "" {
+					detail.DraftModelID = rmc.DraftModel.ModelID
 				}
 			}
 		}

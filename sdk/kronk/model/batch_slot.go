@@ -146,13 +146,21 @@ type slot struct {
 	specDraftProbs     [][]float32   // Draft probability distributions per drafted token
 	specBasePast       llama.Pos     // Target nPast before speculative tokens were added
 	specBaseBatch      int32         // Batch index where speculative tokens start
+	specDraftedTotal   int           // Total draft tokens generated across all speculative steps
+	specAcceptedTotal  int           // Total draft tokens accepted across all speculative steps
 
 	// Per-slot owned buffers for speculative decoding. Avoids shared buffer
 	// corruption when multiple slots generate draft tokens in the same
 	// processBatch iteration.
 	draftTokensBuf    []llama.Token // Owned copy of generated draft tokens
-	draftProbsBuf     [][]float32   // Owned probability distributions per drafted token
 	draftCachedTokens []llama.Token // Prompt tokens in this slot's draft KV cache (persists across requests)
+
+	// Sparse candidate-based speculative decoding fields.
+	draftSampler         llama.Sampler      // Per-slot sampler for draft model (non-greedy)
+	specDraftDistsSparse [][]candidateEntry // Sparse draft distributions per drafted token
+	draftDistBuf         [][]candidateEntry // Pre-allocated backing for specDraftDistsSparse
+	targetDistBuf        []candidateEntry   // Scratch buffer for target candidates during verify
+	adjustedDistBuf      []candidateEntry   // Scratch buffer for adjusted sampling
 
 	// -------------------------------------------------------------------------
 	// IMC Hybrid State
@@ -202,9 +210,16 @@ func (s *slot) reset() {
 	s.specDraftProbs = nil
 	s.specBasePast = 0
 	s.specBaseBatch = 0
+	s.specDraftedTotal = 0
+	s.specAcceptedTotal = 0
 	s.draftTokensBuf = s.draftTokensBuf[:0]
-	// Note: draftProbsBuf inner slices are reused across requests (lazy init).
 	// Note: draftCachedTokens persists across requests for incremental draft KV reuse.
+	if s.draftSampler != 0 {
+		llama.SamplerFree(s.draftSampler)
+		s.draftSampler = 0
+	}
+	s.specDraftDistsSparse = nil
+	// Note: draftDistBuf, targetDistBuf, adjustedDistBuf are reused across requests
 	s.imcSavedState = s.imcSavedState[:0]
 	s.grammarSampler = nil
 	s.prefillStart = time.Time{}

@@ -175,6 +175,18 @@ func (sc SessionConfig) ApplyTo(cfg model.Config) model.Config {
 	if sc.DraftNDraft != nil && cfg.DraftModel != nil {
 		cfg.DraftModel.NDraft = *sc.DraftNDraft
 	}
+	if sc.DraftModelID != nil {
+		if *sc.DraftModelID == "" {
+			cfg.DraftModel = nil
+		} else {
+			if cfg.DraftModel == nil {
+				cfg.DraftModel = &model.DraftModelConfig{}
+			}
+			if sc.DraftNDraft != nil {
+				cfg.DraftModel.NDraft = *sc.DraftNDraft
+			}
+		}
+	}
 	return cfg
 }
 
@@ -241,8 +253,13 @@ func (sc SessionConfig) Validate() error {
 		return fmt.Errorf("op-offload-min-batch must be >= 0, got %d", *sc.OpOffloadMinBatch)
 	}
 
-	if sc.DraftNDraft != nil && (*sc.DraftNDraft < 1 || *sc.DraftNDraft > 20) {
-		return fmt.Errorf("draft ndraft must be between 1 and 20, got %d", *sc.DraftNDraft)
+	if sc.DraftNDraft != nil {
+		if sc.DraftModelID == nil || *sc.DraftModelID == "" {
+			return fmt.Errorf("draft_ndraft requires draft_model_id")
+		}
+		if *sc.DraftNDraft < 1 || *sc.DraftNDraft > 20 {
+			return fmt.Errorf("draft_ndraft must be between 1 and 20, got %d", *sc.DraftNDraft)
+		}
 	}
 
 	return nil
@@ -253,6 +270,7 @@ func (sc SessionConfig) Validate() error {
 // SessionResponse represents the response from creating a session.
 type SessionResponse struct {
 	SessionID       string         `json:"session_id"`
+	CacheKey        string         `json:"cache_key,omitempty"`
 	Status          string         `json:"status"`
 	EffectiveConfig map[string]any `json:"effective_config"`
 }

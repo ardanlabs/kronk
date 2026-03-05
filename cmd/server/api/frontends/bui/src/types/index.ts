@@ -31,6 +31,8 @@ export interface ListModelDetail {
   modified: string;
   validated: boolean;
   sampling?: SamplingConfig;
+  tokenizer_fingerprint?: string;
+  draft_model_id?: string;
 }
 
 export interface ListModelInfoResponse {
@@ -569,6 +571,7 @@ export interface PlaygroundModelConfig {
 
 export interface PlaygroundSessionResponse {
   session_id: string;
+  cache_key?: string;
   status: string;
   effective_config: Record<string, unknown>;
 }

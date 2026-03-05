@@ -206,6 +206,7 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 
 	return SessionResponse{
 		SessionID:       sessionID,
+		CacheKey:        cacheKey,
 		Status:          "loaded",
 		EffectiveConfig: effectiveConfig,
 	}

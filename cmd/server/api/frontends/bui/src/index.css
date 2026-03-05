@@ -1545,6 +1545,12 @@ code[class*="language-"] {
     background: var(--color-white);
 }
 
+.chat-draft-indicator {
+    font-size: 13px;
+    color: var(--color-amber-600, #d97706);
+    white-space: nowrap;
+}
+
 .chat-system-prompt {
     display: flex;
     flex-direction: column;
