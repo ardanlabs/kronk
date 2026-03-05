@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { useModelList } from '../contexts/ModelListContext';
 import { useDownload } from '../contexts/DownloadContext';
+import DownloadInfoTable from './DownloadInfoTable';
+import DownloadProgressBar from './DownloadProgressBar';
 import { usePlayground } from '../contexts/PlaygroundContext';
 import type {
   PlaygroundTemplateInfo,
@@ -690,6 +692,14 @@ export default function ModelPlayground() {
                     </button>
                   )}
                 </div>
+
+                {download && download.meta && (
+                  <DownloadInfoTable meta={download.meta} />
+                )}
+
+                {download && download.progress && isDownloading && (
+                  <DownloadProgressBar progress={download.progress} meta={download.meta} />
+                )}
 
                 {download && download.messages.length > 0 && (
                   <div className="status-box playground-pull-status">

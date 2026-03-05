@@ -9,6 +9,8 @@ import ResizablePanel from './ResizablePanel';
 import KeyValueTable from './KeyValueTable';
 import MetadataSection from './MetadataSection';
 import CodeBlock from './CodeBlock';
+import DownloadInfoTable from './DownloadInfoTable';
+import DownloadProgressBar from './DownloadProgressBar';
 import { VRAMFormulaModal, VRAMControls, VRAMResults, useVRAMState } from './vram';
 
 type DetailSection = 'catalog' | 'config' | 'sampling' | 'metadata' | 'template' | 'vram' | 'pull';
@@ -1190,6 +1192,14 @@ export default function CatalogList() {
                         </button>
                       )}
                     </div>
+
+                    {isCatalogDownload && download.meta && (
+                      <DownloadInfoTable meta={download.meta} />
+                    )}
+
+                    {isCatalogDownload && download.progress && pulling && (
+                      <DownloadProgressBar progress={download.progress} meta={download.meta} />
+                    )}
 
                     {pullMessages.length > 0 && (
                       <div className="status-box">

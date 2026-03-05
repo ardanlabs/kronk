@@ -160,12 +160,32 @@ func (app *PullCatalogRequest) Decode(data []byte) error {
 	return json.Unmarshal(data, app)
 }
 
+// PullMeta contains metadata about a model download.
+type PullMeta struct {
+	ModelURL  string `json:"model_url,omitempty"`
+	ProjURL   string `json:"proj_url,omitempty"`
+	ModelID   string `json:"model_id,omitempty"`
+	FileIndex int    `json:"file_index,omitempty"`
+	FileTotal int    `json:"file_total,omitempty"`
+}
+
+// PullProgress contains structured progress data for a file download.
+type PullProgress struct {
+	Src          string  `json:"src,omitempty"`
+	CurrentBytes int64   `json:"current_bytes,omitempty"`
+	TotalBytes   int64   `json:"total_bytes,omitempty"`
+	MBPerSec     float64 `json:"mb_per_sec,omitempty"`
+	Complete     bool    `json:"complete,omitempty"`
+}
+
 // PullResponse returns information about a model being downloaded.
 type PullResponse struct {
-	Status     string   `json:"status"`
-	ModelFiles []string `json:"model_files,omitempty"`
-	ProjFile   string   `json:"proj_file,omitempty"`
-	Downloaded bool     `json:"downloaded,omitempty"`
+	Status     string        `json:"status"`
+	ModelFiles []string      `json:"model_files,omitempty"`
+	ProjFile   string        `json:"proj_file,omitempty"`
+	Downloaded bool          `json:"downloaded,omitempty"`
+	Meta       *PullMeta     `json:"meta,omitempty"`
+	Progress   *PullProgress `json:"progress,omitempty"`
 }
 
 // Encode implements the encoder interface.
@@ -187,6 +207,14 @@ func toAppPull(status string, mp models.Path) string {
 		return fmt.Sprintf("data: {\"Status\":%q}\n", err.Error())
 	}
 
+	return fmt.Sprintf("data: %s\n", string(d))
+}
+
+func toAppPullResponse(pr PullResponse) string {
+	d, err := json.Marshal(pr)
+	if err != nil {
+		return fmt.Sprintf("data: {\"status\":%q}\n", err.Error())
+	}
 	return fmt.Sprintf("data: %s\n", string(d))
 }
 

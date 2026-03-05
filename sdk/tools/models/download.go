@@ -69,7 +69,7 @@ func (m *Models) DownloadSplits(ctx context.Context, log Logger, modelURLs []str
 			projURL = ""
 		}
 
-		log(ctx, fmt.Sprintf("download-model: model-url[%s] proj-url[%s] model-id[%s]", modelURL, projURL, modelID))
+		log(ctx, fmt.Sprintf("download-model: model-url[%s] proj-url[%s] model-id[%s] file[%d/%d]", modelURL, projURL, modelID, i+1, len(modelURLs)))
 		log(ctx, "download-model: waiting to check model status...")
 
 		progress := func(src string, currentSize int64, totalSize int64, mbPerSec float64, complete bool) {
