@@ -1,0 +1,34 @@
+version: 2
+
+project_name: kronk
+
+builds:
+  - id: kronk
+    main: ./cmd/kronk
+    binary: kronk
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+before:
+  hooks:
+    - make kronk-docs
+# FIXME: tsc fails on this
+#    - make bui-build
+
+archives:
+  - formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+
+checksum:
+  name_template: "checksums.txt"

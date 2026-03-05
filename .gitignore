@@ -49,3 +49,6 @@ imc_diag_*.log
 # Nix
 result
 result-*
+
+# goreleaser
+dist
