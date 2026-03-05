@@ -1,10 +1,11 @@
 //go:build darwin
 
-package toolapp
+package devices
 
 import "golang.org/x/sys/unix"
 
-func systemRAMBytes() uint64 {
+// SystemRAMBytes returns the total system RAM in bytes on macOS.
+func SystemRAMBytes() uint64 {
 	val, err := unix.SysctlUint64("hw.memsize")
 	if err != nil {
 		return 0

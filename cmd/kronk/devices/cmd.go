@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
-	"github.com/hybridgroup/yzma/pkg/llama"
+	sdkdevices "github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/spf13/cobra"
 )
 
@@ -35,39 +35,36 @@ func run() error {
 		return fmt.Errorf("unable to init kronk: %w", err)
 	}
 
-	count := llama.GGMLBackendDeviceCount()
-	if count == 0 {
+	d := sdkdevices.List()
+	if len(d.Devices) == 0 {
 		fmt.Println("No compute devices found.")
 		return nil
 	}
 
-	fmt.Printf("Available compute devices (%d):\n\n", count)
+	fmt.Printf("Available compute devices (%d):\n\n", len(d.Devices))
 	fmt.Printf("  %-8s  %-20s  %s\n", "INDEX", "NAME", "TYPE")
 	fmt.Printf("  %-8s  %-20s  %s\n", "-----", "----", "----")
 
-	for i := range count {
-		dev := llama.GGMLBackendDeviceGet(i)
-		name := llama.GGMLBackendDeviceName(dev)
-		fmt.Printf("  %-8d  %-20s  %s\n", i, name, deviceType(dev))
+	for _, dev := range d.Devices {
+		fmt.Printf("  %-8d  %-20s  %s\n", dev.Index, dev.Name, deviceType(dev))
 	}
 
-	fmt.Printf("\nGPU offload supported: %t\n", llama.SupportsGpuOffload())
+	fmt.Printf("\nGPU offload supported: %t\n", d.SupportsGPUOffload)
 
 	return nil
 }
 
-func deviceType(dev llama.GGMLBackendDevice) string {
-	name := llama.GGMLBackendDeviceName(dev)
-	switch {
-	case name == "CPU":
+func deviceType(dev sdkdevices.DeviceInfo) string {
+	switch dev.Type {
+	case "cpu":
 		return "CPU"
-	case len(name) >= 4 && name[:4] == "CUDA":
+	case "gpu_cuda":
 		return "GPU (CUDA)"
-	case name == "Metal":
+	case "gpu_metal":
 		return "GPU (Metal)"
-	case len(name) >= 3 && name[:3] == "HIP":
+	case "gpu_rocm":
 		return "GPU (ROCm)"
-	case len(name) >= 6 && name[:6] == "Vulkan":
+	case "gpu_vulkan":
 		return "GPU (Vulkan)"
 	default:
 		return "Unknown"
