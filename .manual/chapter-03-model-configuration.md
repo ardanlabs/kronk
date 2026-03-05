@@ -81,25 +81,37 @@ tokens at once. It breaks them into smaller chunks and processes each chunk
 through the GPU in a series of steps called forward passes. These two
 parameters control the size of those chunks:
 
-- `n_batch` - Maximum tokens in a single forward pass (kronk default: 2048)
-- `n_ubatch` - Physical batch size for prompt processing (kronk default: 512)
+- `n_batch` - Maximum tokens per decode call (kronk default: 2048)
+- `n_ubatch` - GPU compute chunk size within each decode call (kronk default: 512)
 
-Think of it like reading a book aloud. `n_batch` is how many words you're
-willing to look at on the page at once, and `n_ubatch` is how many words you
-actually read in one breath. You might glance at 2048 words, but you read
-them 512 at a time.
+**`n_batch` is the capacity of the work tray** — the maximum number of tokens
+you can load onto the tray before handing it to the GPU. When the batch engine
+is running multiple slots in parallel (NSeqMax > 1), all their tokens share
+this tray. If slot 0 needs to prefill 1000 tokens and slot 1 needs to prefill
+1000 tokens, but `n_batch` is 1500, only 1500 total tokens fit on the tray at
+once — slot 1 has to wait for the next round to process the remaining 500.
+
+**`n_ubatch` is the GPU's bite size** — when the tray arrives at the GPU, it
+doesn't process all the tokens at once. It chews through them in
+`n_ubatch`-sized bites. This is a hardware optimization: different GPUs have
+different optimal bite sizes based on their memory architecture.
+
+The flow works like this:
+
+1. Collect tokens from all active slots onto the tray (capped at `n_batch`)
+2. Hand tray to the GPU
+3. GPU processes the tray in `n_ubatch`-sized bites
 
 For example, if you send a 4096-token prompt with `n_batch: 2048` and
-`n_ubatch: 512`, the model will process it in chunks: it takes up to 2048
-tokens per forward pass (`n_batch`), and within each pass, it physically
-processes 512 tokens at a time (`n_ubatch`). So the 4096 tokens are split
-into 2 logical batches of 2048, each processed in 4 physical sub-batches of 512.
-Larger values mean faster prompt processing but use more VRAM. The `n_ubatch` value
-must always be less than or equal to `n_batch`.
+`n_ubatch: 512`, the prompt is split into 2 decode calls of 2048 tokens each.
+Within each call, the GPU processes 512 tokens at a time — so each call
+runs 4 compute passes internally. Larger values mean faster prompt processing
+but use more VRAM. The `n_ubatch` value must always be less than or equal to
+`n_batch`.
 
 ```yaml
-n_batch: 2048 # Logical batch size
-n_ubatch: 512 # Physical batch size (must be ≤ n_batch)
+n_batch: 2048 # Work tray capacity (must be ≥ n_ubatch)
+n_ubatch: 512 # GPU bite size (must be ≤ n_batch)
 ```
 
 #### Recommended settings by workload

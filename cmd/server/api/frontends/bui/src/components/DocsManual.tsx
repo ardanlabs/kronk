@@ -527,13 +527,20 @@ curl http://localhost:8080/v1/chat/completions \\
           <h4 id="batch-size-configuration">Batch Size Configuration</h4>
           <p>When you send a prompt to a model, the model doesn't process all your input tokens at once. It breaks them into smaller chunks and processes each chunk through the GPU in a series of steps called forward passes. These two parameters control the size of those chunks:</p>
           <ul>
-            <li><code>n_batch</code> - Maximum tokens in a single forward pass (kronk default: 2048)</li>
-            <li><code>n_ubatch</code> - Physical batch size for prompt processing (kronk default: 512)</li>
+            <li><code>n_batch</code> - Maximum tokens per decode call (kronk default: 2048)</li>
+            <li><code>n_ubatch</code> - GPU compute chunk size within each decode call (kronk default: 512)</li>
           </ul>
-          <p>Think of it like reading a book aloud. <code>n_batch</code> is how many words you're willing to look at on the page at once, and <code>n_ubatch</code> is how many words you actually read in one breath. You might glance at 2048 words, but you read them 512 at a time.</p>
-          <p>For example, if you send a 4096-token prompt with <code>n_batch: 2048</code> and <code>n_ubatch: 512</code>, the model will process it in chunks: it takes up to 2048 tokens per forward pass (<code>n_batch</code>), and within each pass, it physically processes 512 tokens at a time (<code>n_ubatch</code>). So the 4096 tokens are split into 2 logical batches of 2048, each processed in 4 physical sub-batches of 512. Larger values mean faster prompt processing but use more VRAM. The <code>n_ubatch</code> value must always be less than or equal to <code>n_batch</code>.</p>
-          <pre className="code-block"><code className="language-yaml">{`n_batch: 2048 # Logical batch size
-n_ubatch: 512 # Physical batch size (must be ≤ n_batch)`}</code></pre>
+          <p><strong>&lt;code&gt;n_batch&lt;/code&gt; is the capacity of the work tray</strong> — the maximum number of tokens you can load onto the tray before handing it to the GPU. When the batch engine is running multiple slots in parallel (NSeqMax &gt; 1), all their tokens share this tray. If slot 0 needs to prefill 1000 tokens and slot 1 needs to prefill 1000 tokens, but <code>n_batch</code> is 1500, only 1500 total tokens fit on the tray at once — slot 1 has to wait for the next round to process the remaining 500.</p>
+          <p><strong>&lt;code&gt;n_ubatch&lt;/code&gt; is the GPU's bite size</strong> — when the tray arrives at the GPU, it doesn't process all the tokens at once. It chews through them in <code>n_ubatch</code>-sized bites. This is a hardware optimization: different GPUs have different optimal bite sizes based on their memory architecture.</p>
+          <p>The flow works like this:</p>
+          <ol>
+            <li>Collect tokens from all active slots onto the tray (capped at <code>n_batch</code>)</li>
+            <li>Hand tray to the GPU</li>
+            <li>GPU processes the tray in <code>n_ubatch</code>-sized bites</li>
+          </ol>
+          <p>For example, if you send a 4096-token prompt with <code>n_batch: 2048</code> and <code>n_ubatch: 512</code>, the prompt is split into 2 decode calls of 2048 tokens each. Within each call, the GPU processes 512 tokens at a time — so each call runs 4 compute passes internally. Larger values mean faster prompt processing but use more VRAM. The <code>n_ubatch</code> value must always be less than or equal to <code>n_batch</code>.</p>
+          <pre className="code-block"><code className="language-yaml">{`n_batch: 2048 # Work tray capacity (must be ≥ n_ubatch)
+n_ubatch: 512 # GPU bite size (must be ≤ n_batch)`}</code></pre>
           <h4 id="recommended-settings-by-workload">Recommended settings by workload</h4>
           <table className="flags-table">
             <thead>

@@ -77,7 +77,7 @@
   "shellIntegrationTimeout": 10000,
   "defaultTerminalProfile": "zsh",
   "useAutoCondense": true,
-  "subagentsEnabled": false,
+  "subagentsEnabled": true,
   "mode": "act",
   "customPrompt": "compact",
   "enableParallelToolCalling": true,

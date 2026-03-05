@@ -97,8 +97,10 @@
 # TEXT INFERENCE MODELS
 
 Qwen3.5-35B-A3B-UD-Q8_K_XL/CLINE:
-  nseq-max: 1
+  nseq-max: 3
   incremental-cache: true
+  nbatch: 4096
+  nubatch: 512
   sampling-parameters:
     temperature: 0.6
     top_k: 20
@@ -109,6 +111,8 @@ Qwen3.5-35B-A3B-UD-Q8_K_XL/CLINE:
 Qwen3.5-35B-A3B-UD-Q8_K_XL/KILO:
   nseq-max: 3
   incremental-cache: true
+  nbatch: 4096
+  nubatch: 512
   sampling-parameters:
     temperature: 0.6
     top_k: 20
@@ -123,8 +127,10 @@ Qwen3.5-35B-A3B-UD-Q8_K_XL/SPC:
 # ------------------------------------------------------------------------------
 
 Qwen3.5-35B-A3B-Q8_0/CLINE:
-  nseq-max: 1
+  nseq-max: 3
   incremental-cache: true
+  nbatch: 4096
+  nubatch: 512
   sampling-parameters:
     temperature: 0.6
     top_k: 20
@@ -135,6 +141,8 @@ Qwen3.5-35B-A3B-Q8_0/CLINE:
 Qwen3.5-35B-A3B-Q8_0/KILO:
   nseq-max: 3
   incremental-cache: true
+  nbatch: 4096
+  nubatch: 512
   sampling-parameters:
     temperature: 0.6
     top_k: 20
@@ -151,10 +159,14 @@ Qwen3.5-35B-A3B-Q8_0/SPC:
 gpt-oss-120b-F16/CLINE:
   nseq-max: 1
   incremental-cache: true
+  nbatch: 4096
+  nubatch: 512
 
 gpt-oss-120b-F16/KILO:
   nseq-max: 3
   incremental-cache: true
+  nbatch: 4096
+  nubatch: 512
 
 gpt-oss-120b-F16/SPC:
   nseq-max: 1
