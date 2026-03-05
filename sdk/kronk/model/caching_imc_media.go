@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"unsafe"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
@@ -314,6 +315,7 @@ func (m *Model) decodeEmbeddingsMRoPEIntoCache(embd []float32, nEmbd, nTokens, n
 		batch.NTokens = batchN
 
 		ret, err := llama.Decode(m.lctx, batch)
+		runtime.KeepAlive(subPosData)
 
 		// Restore original pos pointer before freeing.
 		batch.Pos = origPos
@@ -380,6 +382,7 @@ func (m *Model) decodeTextMRoPEIntoCache(tokens []llama.Token, seqID llama.SeqId
 		batch.NTokens = batchN
 
 		ret, err := llama.Decode(m.lctx, batch)
+		runtime.KeepAlive(posData)
 
 		batch.Pos = origPos
 		llama.BatchFree(batch)
