@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { api } from '../services/api';
 import { useModelList } from '../contexts/ModelListContext';
 import { useChatMessages, type DisplayMessage } from '../contexts/ChatContext';
@@ -6,7 +6,8 @@ import { useSampling, defaultSampling, type SamplingParams } from '../contexts/S
 import ChatHistoryPanel from './ChatHistoryPanel';
 import ChatPanel, { type StreamTransport } from './ChatPanel';
 import { useChatHistory, type HistoryMessage } from '../contexts/ChatHistoryContext';
-import type { SamplingConfig, ListModelDetail, VRAM } from '../types';
+import { useDraftSession } from '../hooks/useDraftSession';
+import type { SamplingConfig, ListModelDetail, VRAM, PlaygroundChatRequest } from '../types';
 
 const HISTORY_ENABLED_KEY = 'kronk_chat_history_enabled';
 
@@ -33,6 +34,39 @@ export default function Chat() {
   const [vramNeededCPUExperts, setVramNeededCPUExperts] = useState(0);
   const [modelBaseline, setModelBaseline] = useState<SamplingParams | null>(null);
   const prevModelRef = useRef<string | null>(null);
+  const [draftModel, setDraftModel] = useState<string>(() => {
+    return localStorage.getItem('kronk_chat_draft_model') || '';
+  });
+  const { sessionId: playgroundSessionId, loading: draftSessionLoading } = useDraftSession(selectedModel, draftModel);
+
+  const eligibleDraftModels = useMemo(() => {
+    if (!selectedModel || extendedModels.length === 0) return [];
+
+    const selected = extendedModels.find((m) => m.id === selectedModel);
+    if (!selected || !selected.tokenizer_fingerprint) return [];
+
+    return extendedModels.filter((m) => {
+      if (m.id === selectedModel) return false;
+      const id = m.id.toLowerCase();
+      if (id.includes('embed') || id.includes('rerank')) return false;
+      if (m.tokenizer_fingerprint !== selected.tokenizer_fingerprint) return false;
+      if (m.size >= selected.size) return false;
+      return true;
+    });
+  }, [selectedModel, extendedModels]);
+
+  useEffect(() => {
+    if (draftModel && eligibleDraftModels.length > 0) {
+      const stillValid = eligibleDraftModels.some((m) => m.id === draftModel);
+      if (!stillValid) {
+        setDraftModel('');
+        localStorage.removeItem('kronk_chat_draft_model');
+      }
+    } else if (draftModel && eligibleDraftModels.length === 0) {
+      setDraftModel('');
+      localStorage.removeItem('kronk_chat_draft_model');
+    }
+  }, [draftModel, eligibleDraftModels]);
 
   const toggleHistoryEnabled = useCallback(() => {
     setHistoryEnabled((prev) => {
@@ -202,6 +236,44 @@ export default function Chat() {
   }, [isMoE, modelVRAM, devicesInfo]);
 
   const transport = useCallback<StreamTransport>(({ messages, sampling, onMessage, onError, onComplete }) => {
+    if (playgroundSessionId) {
+      return api.streamPlaygroundChat(
+        {
+          session_id: playgroundSessionId,
+          messages,
+          stream: true,
+          max_tokens: sampling.maxTokens,
+          temperature: sampling.temperature,
+          top_p: sampling.topP,
+          top_k: sampling.topK,
+          min_p: sampling.minP,
+          presence_penalty: sampling.presencePenalty,
+          repeat_penalty: sampling.repeatPenalty,
+          repeat_last_n: sampling.repeatLastN,
+          dry_multiplier: sampling.dryMultiplier,
+          dry_base: sampling.dryBase,
+          dry_allowed_length: sampling.dryAllowedLen,
+          dry_penalty_last_n: sampling.dryPenaltyLast,
+          xtc_probability: sampling.xtcProbability,
+          xtc_threshold: sampling.xtcThreshold,
+          xtc_min_keep: sampling.xtcMinKeep,
+          frequency_penalty: sampling.frequencyPenalty,
+          enable_thinking: (sampling.enableThinking || undefined) as 'true' | 'false' | undefined,
+          reasoning_effort: (sampling.reasoningEffort || undefined) as PlaygroundChatRequest['reasoning_effort'],
+          return_prompt: sampling.returnPrompt,
+          stream_options: {
+            include_usage: sampling.includeUsage,
+          },
+          logprobs: sampling.logprobs,
+          top_logprobs: sampling.topLogprobs,
+          grammar: sampling.grammar || undefined,
+        },
+        onMessage,
+        onError,
+        onComplete,
+      );
+    }
+
     return api.streamChat(
       {
         model: selectedModel,
@@ -237,7 +309,7 @@ export default function Chat() {
       onComplete,
       sampling.cacheId || undefined,
     );
-  }, [selectedModel]);
+  }, [selectedModel, playgroundSessionId]);
 
   const handleClear = useCallback(() => {
     if (historyEnabled && messages.length > 0) {
@@ -263,8 +335,20 @@ export default function Chat() {
       }
       clearMessages();
     }
+    setDraftModel('');
+    localStorage.removeItem('kronk_chat_draft_model');
     setSelectedModel(newModel);
   }, [messages, historyEnabled, selectedModel, saveChat, clearMessages]);
+
+  const handleDraftModelChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newDraft = e.target.value;
+    setDraftModel(newDraft);
+    if (newDraft) {
+      localStorage.setItem('kronk_chat_draft_model', newDraft);
+    } else {
+      localStorage.removeItem('kronk_chat_draft_model');
+    }
+  }, []);
 
   return (
     <div className="chat-layout">
@@ -287,7 +371,7 @@ export default function Chat() {
         vramFitStatus={vramFitStatus}
         vramNeededAllGPU={vramNeededAllGPU}
         vramNeededCPUExperts={vramNeededCPUExperts}
-        disabled={!selectedModel}
+        disabled={!selectedModel || draftSessionLoading}
         headerLeft={
           <>
             <h2>Chat</h2>
@@ -312,6 +396,22 @@ export default function Chat() {
                 </option>
               ))}
             </select>
+            {eligibleDraftModels.length > 0 && (
+              <select
+                value={draftModel}
+                onChange={handleDraftModelChange}
+                disabled={modelsLoading}
+                className="chat-model-select"
+                title="Draft model for speculative decoding (same model family, smaller size)"
+              >
+                <option value="">No draft model</option>
+                {eligibleDraftModels.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    ⚡ {model.id}
+                  </option>
+                ))}
+              </select>
+            )}
           </>
         }
         headerRight={

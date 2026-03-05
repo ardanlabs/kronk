@@ -81,6 +81,8 @@ type SessionConfig struct {
 	AutoFitVRAM         *bool                     `json:"auto_fit_vram"`
 	OpOffloadMinBatch   *int                      `json:"op_offload_min_batch"`
 	TensorBuftOverrides []string                  `json:"tensor_buft_overrides"`
+	DraftModelID        *string                   `json:"draft_model_id"`
+	DraftNDraft         *int                      `json:"draft_ndraft"`
 }
 
 // ApplyTo merges user overrides onto a base model config. Only fields
@@ -161,6 +163,18 @@ func (sc SessionConfig) ApplyTo(cfg model.Config) model.Config {
 	if len(sc.TensorBuftOverrides) > 0 {
 		cfg.TensorBuftOverrides = sc.TensorBuftOverrides
 	}
+	if sc.DraftModelID != nil {
+		if *sc.DraftModelID == "" {
+			cfg.DraftModel = nil
+		} else {
+			if cfg.DraftModel == nil {
+				cfg.DraftModel = &model.DraftModelConfig{}
+			}
+		}
+	}
+	if sc.DraftNDraft != nil && cfg.DraftModel != nil {
+		cfg.DraftModel.NDraft = *sc.DraftNDraft
+	}
 	return cfg
 }
 
@@ -191,6 +205,8 @@ func (sc SessionConfig) HasOverrides() bool {
 		sc.TensorSplit != nil ||
 		sc.AutoFitVRAM != nil ||
 		sc.OpOffloadMinBatch != nil ||
+		sc.DraftModelID != nil ||
+		sc.DraftNDraft != nil ||
 		sc.TensorBuftOverrides != nil
 }
 
@@ -223,6 +239,10 @@ func (sc SessionConfig) Validate() error {
 
 	if sc.OpOffloadMinBatch != nil && *sc.OpOffloadMinBatch < 0 {
 		return fmt.Errorf("op-offload-min-batch must be >= 0, got %d", *sc.OpOffloadMinBatch)
+	}
+
+	if sc.DraftNDraft != nil && (*sc.DraftNDraft < 1 || *sc.DraftNDraft > 20) {
+		return fmt.Errorf("draft ndraft must be between 1 and 20, got %d", *sc.DraftNDraft)
 	}
 
 	return nil

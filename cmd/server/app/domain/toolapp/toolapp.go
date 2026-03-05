@@ -171,12 +171,13 @@ func (a *app) listModels(ctx context.Context, r *http.Request) web.Encoder {
 
 		// Create a new File entry for the extension model using the base model's info.
 		extModel := models.File{
-			ID:          modelID,
-			OwnedBy:     baseModel.OwnedBy,
-			ModelFamily: baseModel.ModelFamily,
-			Size:        baseModel.Size,
-			Modified:    baseModel.Modified,
-			Validated:   baseModel.Validated,
+			ID:                   modelID,
+			OwnedBy:              baseModel.OwnedBy,
+			ModelFamily:          baseModel.ModelFamily,
+			TokenizerFingerprint: baseModel.TokenizerFingerprint,
+			Size:                 baseModel.Size,
+			Modified:             baseModel.Modified,
+			Validated:            baseModel.Validated,
 		}
 
 		modelFiles = append(modelFiles, extModel)

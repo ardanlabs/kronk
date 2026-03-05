@@ -118,6 +118,21 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 
 	cfg := req.Config.ApplyTo(baseCfg)
 
+	// Resolve draft model file paths when the user specifies a draft model ID.
+	if req.Config.DraftModelID != nil && *req.Config.DraftModelID != "" {
+		draftPath, err := a.catalog.ModelFullPath(*req.Config.DraftModelID)
+		if err != nil {
+			return errs.New(errs.InvalidArgument, fmt.Errorf("resolving draft model: %w", err))
+		}
+		if cfg.DraftModel == nil {
+			cfg.DraftModel = &model.DraftModelConfig{}
+		}
+		cfg.DraftModel.ModelFiles = draftPath.ModelFiles
+
+		// Speculative decoding requires single-slot mode.
+		cfg.NSeqMax = 1
+	}
+
 	if cfg.NUBatch > cfg.NBatch {
 		return errs.Errorf(errs.InvalidArgument, "nubatch (%d) must not exceed nbatch (%d)", cfg.NUBatch, cfg.NBatch)
 	}
@@ -182,6 +197,11 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 		"split_mode":          formatSplitMode(krn.ModelConfig().SplitMode),
 		"model_type":          krn.ModelInfo().Type.String(),
 		"is_gpt_model":        krn.ModelInfo().IsGPTModel,
+	}
+
+	if dm := krn.ModelConfig().DraftModel; dm != nil && len(dm.ModelFiles) > 0 {
+		effectiveConfig["draft_model"] = dm.ModelFiles[0]
+		effectiveConfig["draft_ndraft"] = dm.NDraft
 	}
 
 	return SessionResponse{

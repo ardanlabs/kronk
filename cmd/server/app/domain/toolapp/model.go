@@ -60,15 +60,16 @@ func toAppVersion(status string, vt libs.VersionTag, allowUpgrade bool) string {
 
 // ListModelDetail provides information about a model.
 type ListModelDetail struct {
-	ID          string          `json:"id"`
-	Object      string          `json:"object"`
-	Created     int64           `json:"created"`
-	OwnedBy     string          `json:"owned_by"`
-	ModelFamily string          `json:"model_family"`
-	Size        int64           `json:"size"`
-	Modified    time.Time       `json:"modified"`
-	Validated   bool            `json:"validated"`
-	Sampling    *SamplingConfig `json:"sampling,omitempty"`
+	ID                   string          `json:"id"`
+	Object               string          `json:"object"`
+	Created              int64           `json:"created"`
+	OwnedBy              string          `json:"owned_by"`
+	ModelFamily          string          `json:"model_family"`
+	TokenizerFingerprint string          `json:"tokenizer_fingerprint,omitempty"`
+	Size                 int64           `json:"size"`
+	Modified             time.Time       `json:"modified"`
+	Validated            bool            `json:"validated"`
+	Sampling             *SamplingConfig `json:"sampling,omitempty"`
 }
 
 // ListModelInfoResponse contains the list of models loaded in the system.
@@ -90,14 +91,15 @@ func toListModelsInfo(modelFiles []models.File, modelConfigs map[string]catalog.
 
 	for _, mf := range modelFiles {
 		detail := ListModelDetail{
-			ID:          mf.ID,
-			Object:      "model",
-			Created:     mf.Modified.UnixMilli(),
-			OwnedBy:     mf.OwnedBy,
-			ModelFamily: mf.ModelFamily,
-			Size:        mf.Size,
-			Modified:    mf.Modified,
-			Validated:   mf.Validated,
+			ID:                   mf.ID,
+			Object:               "model",
+			Created:              mf.Modified.UnixMilli(),
+			OwnedBy:              mf.OwnedBy,
+			ModelFamily:          mf.ModelFamily,
+			TokenizerFingerprint: mf.TokenizerFingerprint,
+			Size:                 mf.Size,
+			Modified:             mf.Modified,
+			Validated:            mf.Validated,
 		}
 
 		if extendedConfig {

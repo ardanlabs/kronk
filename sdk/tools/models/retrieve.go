@@ -13,12 +13,13 @@ import (
 
 // File provides information about a model.
 type File struct {
-	ID          string
-	OwnedBy     string
-	ModelFamily string
-	Size        int64
-	Modified    time.Time
-	Validated   bool
+	ID                   string
+	OwnedBy              string
+	ModelFamily          string
+	TokenizerFingerprint string
+	Size                 int64
+	Modified             time.Time
+	Validated            bool
 }
 
 // Files returns all the models in the model directory.
@@ -63,12 +64,13 @@ func (m *Models) Files() ([]File, error) {
 		}
 
 		mf := File{
-			ID:          modelID,
-			OwnedBy:     ownedBy,
-			ModelFamily: modelFamily,
-			Size:        totalSize,
-			Modified:    modified,
-			Validated:   mp.Validated,
+			ID:                   modelID,
+			OwnedBy:              ownedBy,
+			ModelFamily:          modelFamily,
+			TokenizerFingerprint: m.TokenizerFingerprint(modelID),
+			Size:                 totalSize,
+			Modified:             modified,
+			Validated:            mp.Validated,
 		}
 
 		list = append(list, mf)
