@@ -1,14 +1,12 @@
-// This example shows you how introduce "real" tooling into the coding agent
-// from step 3. We will add support for reading, listing, creating, and editing
-// files. We also enhance the agent's UI.
+// This example shows you how to create a simple agent application against an
+// inference model using kronk. Thanks to Kronk and yzma, reasoning and tool
+// calling is enabled.
 //
-// # Running the example:
+// The first time you run this program the system will download and install
+// the model and libraries.
 //
-//	$ make example09-step4
-//
-// # This requires running the following commands:
-//
-//	$ make kronk-up  // This starts the Kronk service.
+// Run the example like this from the root of the project:
+// $ make example-agent
 
 package main
 
