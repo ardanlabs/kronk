@@ -1,10 +1,11 @@
 //go:build linux
 
-package toolapp
+package devices
 
 import "golang.org/x/sys/unix"
 
-func systemRAMBytes() uint64 {
+// SystemRAMBytes returns the total system RAM in bytes on Linux.
+func SystemRAMBytes() uint64 {
 	var info unix.Sysinfo_t
 	if err := unix.Sysinfo(&info); err != nil {
 		return 0

@@ -15,9 +15,9 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
+	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
-	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
 type app struct {
@@ -687,60 +687,7 @@ func (a *app) removeKey(ctx context.Context, r *http.Request) web.Encoder {
 }
 
 func (a *app) listDevices(ctx context.Context, r *http.Request) web.Encoder {
-	count := llama.GGMLBackendDeviceCount()
-
-	var devices []DeviceInfoResponse
-	var gpuCount int
-	var gpuTotalBytes uint64
-
-	for i := range count {
-		dev := llama.GGMLBackendDeviceGet(i)
-		if dev == 0 {
-			continue
-		}
-		name := llama.GGMLBackendDeviceName(dev)
-		devType := classifyDeviceType(name)
-		free, total := llama.GGMLBackendDeviceMemory(dev)
-
-		devices = append(devices, DeviceInfoResponse{
-			Index:      int(i),
-			Name:       name,
-			Type:       devType,
-			FreeBytes:  free,
-			TotalBytes: total,
-		})
-
-		if strings.HasPrefix(devType, "gpu_") {
-			gpuCount++
-			gpuTotalBytes += total
-		}
-	}
-
-	return DevicesResponse{
-		Devices:            devices,
-		GPUCount:           gpuCount,
-		GPUTotalBytes:      gpuTotalBytes,
-		SupportsGPUOffload: llama.SupportsGpuOffload(),
-		MaxDevices:         llama.MaxDevices(),
-		SystemRAMBytes:     systemRAMBytes(),
-	}
-}
-
-func classifyDeviceType(name string) string {
-	switch {
-	case name == "CPU":
-		return "cpu"
-	case strings.HasPrefix(name, "CUDA"):
-		return "gpu_cuda"
-	case name == "Metal":
-		return "gpu_metal"
-	case strings.HasPrefix(name, "HIP"):
-		return "gpu_rocm"
-	case strings.HasPrefix(name, "Vulkan"):
-		return "gpu_vulkan"
-	default:
-		return "unknown"
-	}
+	return DevicesResponse(devices.List())
 }
 
 // toDownloadServerURL rewrites a catalog URL (short-form or full HuggingFace

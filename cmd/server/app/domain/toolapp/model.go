@@ -11,6 +11,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/cache"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
+	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
@@ -1197,24 +1198,8 @@ func (app *UnloadRequest) Validate() error {
 
 // =============================================================================
 
-// DeviceInfoResponse provides information about a single compute device.
-type DeviceInfoResponse struct {
-	Index      int    `json:"index"`
-	Name       string `json:"name"`
-	Type       string `json:"type"`
-	FreeBytes  uint64 `json:"free_bytes"`
-	TotalBytes uint64 `json:"total_bytes"`
-}
-
 // DevicesResponse returns information about available compute devices.
-type DevicesResponse struct {
-	Devices            []DeviceInfoResponse `json:"devices"`
-	GPUCount           int                  `json:"gpu_count"`
-	GPUTotalBytes      uint64               `json:"gpu_total_bytes"`
-	SupportsGPUOffload bool                 `json:"supports_gpu_offload"`
-	MaxDevices         uint64               `json:"max_devices"`
-	SystemRAMBytes     uint64               `json:"system_ram_bytes"`
-}
+type DevicesResponse devices.Devices
 
 // Encode implements the encoder interface.
 func (d DevicesResponse) Encode() ([]byte, string, error) {

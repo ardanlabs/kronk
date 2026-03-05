@@ -59,7 +59,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
   const {
     initialContextWindow = 32768,
     initialBytesPerElement = 2,
-    initialSlots = 2,
+    initialSlots = 1,
     serverResponse,
   } = opts;
 
