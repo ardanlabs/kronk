@@ -43,7 +43,7 @@ func main() {
 			log.Fatalf("Unable to get home dir: %v", err)
 		}
 
-		*modelPath = filepath.Join(home, ".kronk/models/Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf")
+		*modelPath = filepath.Join(home, ".kronk/models/unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q8_0.gguf")
 	}
 
 	// Create batch processor.

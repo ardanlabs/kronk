@@ -47,8 +47,8 @@ func run() error {
 		if err != nil {
 			return fmt.Errorf("unable to get home dir: %w", err)
 		}
-		*modelPath = filepath.Join(home, ".kronk/models/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/Qwen2.5-VL-3B-Instruct-Q8_0.gguf")
-		*projPath = filepath.Join(home, ".kronk/models/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf")
+		*modelPath = filepath.Join(home, ".kronk/models/unsloth/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-Q8_0.gguf")
+		*projPath = filepath.Join(home, ".kronk/models/unsloth/Qwen3.5-0.8B-GGUF/mmproj-Qwen3.5-0.8B-Q8_0.gguf")
 	}
 
 	if *imagePath == "" {
