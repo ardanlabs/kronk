@@ -1,77 +1,13 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { api } from '../services/api';
 import { useModelList } from '../contexts/ModelListContext';
 import { useChatMessages, type DisplayMessage } from '../contexts/ChatContext';
-import { useSampling, defaultSampling, isChangedFrom, formatBaselineValue, hasAnyChange, hasAdvancedChange, type SamplingParams } from '../contexts/SamplingContext';
-import CodeBlock from './CodeBlock';
+import { useSampling, defaultSampling, type SamplingParams } from '../contexts/SamplingContext';
 import ChatHistoryPanel from './ChatHistoryPanel';
-import { PARAM_TOOLTIPS, ParamTooltip } from './ParamTooltips';
+import ChatPanel, { type StreamTransport } from './ChatPanel';
 import { useChatHistory, type HistoryMessage } from '../contexts/ChatHistoryContext';
-import type { ChatMessage, ChatUsage, ChatToolCall, ChatContentPart, SamplingConfig, ListModelDetail } from '../types';
-
-interface AttachedFile {
-  type: 'image' | 'audio';
-  name: string;
-  dataUrl: string; // data:mime;base64,...
-}
-
-// Pre-process content to handle in-progress code blocks during streaming
-function preprocessContent(content: string): string {
-  // Check if there's an unclosed code block at the end
-  const openFences = (content.match(/```/g) || []).length;
-  if (openFences % 2 !== 0) {
-    // Odd number of ```, meaning there's an unclosed block - close it for rendering
-    return content + '\n```';
-  }
-  return content;
-}
-
-// Custom components for ReactMarkdown
-const markdownComponents = {
-  code({ node, className, children, ...props }: any) {
-    const match = /language-(\w+)/.exec(className || '');
-    const isInline = !match && !className;
-    
-    if (isInline) {
-      return <code className="inline-code" {...props}>{children}</code>;
-    }
-    
-    const language = match ? match[1] : 'text';
-    const codeString = String(children).replace(/\n$/, '');
-    
-    return (
-      <div className="chat-code-block-wrapper">
-        <CodeBlock code={codeString} language={language} collapsible={true} />
-      </div>
-    );
-  },
-  // Style other markdown elements
-  h1: ({ children }: any) => <h1 className="markdown-h1">{children}</h1>,
-  h2: ({ children }: any) => <h2 className="markdown-h2">{children}</h2>,
-  h3: ({ children }: any) => <h3 className="markdown-h3">{children}</h3>,
-  ul: ({ children }: any) => <ul className="markdown-list">{children}</ul>,
-  ol: ({ children }: any) => <ol className="markdown-list markdown-list-ordered">{children}</ol>,
-  li: ({ children }: any) => <li className="markdown-list-item">{children}</li>,
-  p: ({ children }: any) => <p className="markdown-paragraph">{children}</p>,
-  strong: ({ children }: any) => <strong className="markdown-bold">{children}</strong>,
-  em: ({ children }: any) => <em className="markdown-italic">{children}</em>,
-  blockquote: ({ children }: any) => <blockquote className="markdown-blockquote">{children}</blockquote>,
-  a: ({ href, children }: any) => <a href={href} className="markdown-link" target="_blank" rel="noopener noreferrer">{children}</a>,
-};
-
-function renderContent(content: string): JSX.Element {
-  const processedContent = preprocessContent(content);
-  return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      components={markdownComponents}
-    >
-      {processedContent}
-    </ReactMarkdown>
-  );
-}
+import { useDraftSession } from '../hooks/useDraftSession';
+import type { SamplingConfig, ListModelDetail, VRAM, PlaygroundChatRequest } from '../types';
 
 const HISTORY_ENABLED_KEY = 'kronk_chat_history_enabled';
 
@@ -83,41 +19,54 @@ export default function Chat() {
   const [selectedModel, setSelectedModel] = useState<string>(() => {
     return localStorage.getItem('kronk_chat_model') || '';
   });
-  const [input, setInput] = useState('');
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [showSettings, setShowSettings] = useState(false);
-  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const [editContent, setEditContent] = useState('');
   const [showHistory, setShowHistory] = useState(false);
-  const [grammarFiles, setGrammarFiles] = useState<string[]>([]);
-  const [grammarMode, setGrammarMode] = useState<'none' | 'preset' | 'custom'>('none');
-  const [selectedPreset, setSelectedPreset] = useState('');
   const [historyEnabled, setHistoryEnabled] = useState<boolean>(() => {
     const stored = localStorage.getItem(HISTORY_ENABLED_KEY);
     return stored === null ? true : stored === 'true';
   });
 
-  // Extended model configs with sampling parameters
   const [extendedModels, setExtendedModels] = useState<ListModelDetail[]>([]);
-
-  // Baseline sampling config from the selected model's /models endpoint
+  const [isMoE, setIsMoE] = useState(false);
+  const [modelVRAM, setModelVRAM] = useState<VRAM | null>(null);
+  const [devicesInfo, setDevicesInfo] = useState<{ gpuCount: number; gpuType: string; gpuVramBytes: number; ramBytes: number } | null>(null);
+  const [vramFitStatus, setVramFitStatus] = useState<'fits' | 'tight' | 'wont_fit' | null>(null);
+  const [vramNeededAllGPU, setVramNeededAllGPU] = useState(0);
+  const [vramNeededCPUExperts, setVramNeededCPUExperts] = useState(0);
   const [modelBaseline, setModelBaseline] = useState<SamplingParams | null>(null);
-  
-  // Track previous model to only apply config on actual model change
   const prevModelRef = useRef<string | null>(null);
+  const [draftModel, setDraftModel] = useState<string>(() => {
+    return localStorage.getItem('kronk_chat_draft_model') || '';
+  });
+  const { sessionId: playgroundSessionId, loading: draftSessionLoading } = useDraftSession(selectedModel, draftModel);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const abortRef = useRef<(() => void) | null>(null);
-  const autoScrollRef = useRef(true);
-  const programmaticScrollRef = useRef(false);
-  const userInteractedRef = useRef(false);
-  const [showScrollBtn, setShowScrollBtn] = useState(false);
+  const eligibleDraftModels = useMemo(() => {
+    if (!selectedModel || extendedModels.length === 0) return [];
+
+    const selected = extendedModels.find((m) => m.id === selectedModel);
+    if (!selected || !selected.tokenizer_fingerprint) return [];
+
+    return extendedModels.filter((m) => {
+      if (m.id === selectedModel) return false;
+      const id = m.id.toLowerCase();
+      if (id.includes('embed') || id.includes('rerank')) return false;
+      if (m.tokenizer_fingerprint !== selected.tokenizer_fingerprint) return false;
+      if (m.size >= selected.size) return false;
+      return true;
+    });
+  }, [selectedModel, extendedModels]);
+
+  useEffect(() => {
+    if (draftModel && eligibleDraftModels.length > 0) {
+      const stillValid = eligibleDraftModels.some((m) => m.id === draftModel);
+      if (!stillValid) {
+        setDraftModel('');
+        localStorage.removeItem('kronk_chat_draft_model');
+      }
+    } else if (draftModel && eligibleDraftModels.length === 0) {
+      setDraftModel('');
+      localStorage.removeItem('kronk_chat_draft_model');
+    }
+  }, [draftModel, eligibleDraftModels]);
 
   const toggleHistoryEnabled = useCallback(() => {
     setHistoryEnabled((prev) => {
@@ -127,7 +76,6 @@ export default function Chat() {
     });
   }, []);
 
-  // Convert API sampling config to SamplingParams
   const toSamplingParams = useCallback((modelSampling: SamplingConfig): SamplingParams => {
     return {
       temperature: modelSampling.temperature ?? defaultSampling.temperature,
@@ -158,15 +106,12 @@ export default function Chat() {
     };
   }, []);
 
-  // Apply sampling config for a model and set baseline for comparison
   const applySamplingConfig = useCallback((modelSampling: SamplingConfig | undefined) => {
     if (modelSampling) {
       const params = toSamplingParams(modelSampling);
       const grammarVal = params.grammar;
 
       if (grammarVal && grammarVal.endsWith('.grm')) {
-        setGrammarMode('preset');
-        setSelectedPreset(grammarVal);
         api.getGrammarContent(grammarVal)
           .then(res => {
             setSampling({ ...params, grammar: res.content });
@@ -177,48 +122,26 @@ export default function Chat() {
             setModelBaseline({ ...params, grammar: '' });
           });
       } else if (grammarVal) {
-        setGrammarMode('custom');
-        setSelectedPreset('');
         setSampling(params);
         setModelBaseline(params);
       } else {
-        setGrammarMode('none');
-        setSelectedPreset('');
         setSampling(params);
         setModelBaseline(params);
       }
     } else {
-      setGrammarMode('none');
-      setSelectedPreset('');
       setModelBaseline(null);
     }
   }, [setSampling, toSamplingParams]);
 
   useEffect(() => {
-    api.listGrammars()
-      .then(res => setGrammarFiles(res.files || []))
-      .catch(() => setGrammarFiles([]));
-  }, []);
-
-  const loadPresetContent = useCallback((name: string) => {
-    setSelectedPreset(name);
-    api.getGrammarContent(name)
-      .then(res => setSampling({ grammar: res.content }))
-      .catch(() => setSampling({ grammar: '' }));
-  }, [setSampling]);
-
-  useEffect(() => {
     loadModels();
-    // Also fetch extended models for sampling configs
     api.listModelsExtended()
       .then((response) => {
         if (response?.data) {
           setExtendedModels(response.data);
         }
       })
-      .catch(() => {
-        // Ignore errors, fall back to defaults
-      });
+      .catch(() => {});
   }, [loadModels]);
 
   useEffect(() => {
@@ -227,7 +150,6 @@ export default function Chat() {
         const id = m.id.toLowerCase();
         return !id.includes('embed') && !id.includes('rerank');
       });
-      // Check if current selection is valid, otherwise pick first available
       const isCurrentValid = chatModels.some((m) => m.id === selectedModel);
       if (!isCurrentValid && chatModels.length > 0) {
         setSelectedModel(chatModels[0].id);
@@ -235,8 +157,6 @@ export default function Chat() {
     }
   }, [models, selectedModel]);
 
-  // Save selected model to localStorage and apply sampling config on model change
-  // or initial load so the settings always reflect the resolved model config.
   useEffect(() => {
     if (selectedModel && extendedModels.length > 0) {
       localStorage.setItem('kronk_chat_model', selectedModel);
@@ -248,108 +168,116 @@ export default function Chat() {
     }
   }, [selectedModel, extendedModels, applySamplingConfig]);
 
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    if (e.deltaY < 0) {
-      const el = messagesContainerRef.current;
-      if (!el) return;
-      const hasOverflow = el.scrollHeight > el.clientHeight;
-      if (hasOverflow) {
-        userInteractedRef.current = true;
-        autoScrollRef.current = false;
-        setShowScrollBtn(true);
-      }
-    }
-  }, []);
-
-  const handleMessagesScroll = useCallback(() => {
-    if (programmaticScrollRef.current || !userInteractedRef.current) return;
-    const el = messagesContainerRef.current;
-    if (!el) return;
-    const threshold = 100;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
-    if (atBottom) {
-      autoScrollRef.current = true;
-      setShowScrollBtn(false);
-    }
-  }, []);
-
-  const scrollToBottom = useCallback(() => {
-    const el = messagesContainerRef.current;
-    if (!el) return;
-    programmaticScrollRef.current = true;
-    el.scrollTop = el.scrollHeight;
-    autoScrollRef.current = true;
-    setShowScrollBtn(false);
-    requestAnimationFrame(() => {
-      programmaticScrollRef.current = false;
-    });
-  }, []);
-
   useEffect(() => {
-    if (autoScrollRef.current) {
-      const el = messagesContainerRef.current;
-      if (!el) return;
-      programmaticScrollRef.current = true;
-      el.scrollTop = el.scrollHeight;
-      requestAnimationFrame(() => {
-        programmaticScrollRef.current = false;
-      });
+    if (!selectedModel) {
+      setIsMoE(false);
+      setModelVRAM(null);
+      return;
     }
-  }, [messages]);
-
-  // Focus input when streaming ends
-  useEffect(() => {
-    if (!isStreaming && selectedModel) {
-      inputRef.current?.focus();
-    }
-  }, [isStreaming, selectedModel]);
-
-  const buildMessageContent = useCallback((text: string, files: AttachedFile[]): string | ChatContentPart[] => {
-    if (files.length === 0) {
-      return text;
-    }
-
-    const parts: ChatContentPart[] = [];
-
-    if (text) {
-      parts.push({ type: 'text', text });
-    }
-
-    for (const file of files) {
-      if (file.type === 'image') {
-        parts.push({
-          type: 'image_url',
-          image_url: { url: file.dataUrl },
-        });
-      } else if (file.type === 'audio') {
-        const match = file.dataUrl.match(/^data:audio\/(\w+);base64,(.+)$/);
-        if (match) {
-          parts.push({
-            type: 'input_audio',
-            input_audio: { data: match[2], format: match[1] },
-          });
+    let cancelled = false;
+    api.showModel(selectedModel)
+      .then((info) => {
+        if (cancelled) return;
+        const modelIsMoE = info.vram?.moe?.is_moe === true
+          || (info.metadata && Object.keys(info.metadata).some(k => k.endsWith('.expert_count')));
+        setIsMoE(modelIsMoE);
+        setModelVRAM(info.vram || null);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setIsMoE(false);
+          setModelVRAM(null);
         }
-      }
-    }
+      });
+    return () => { cancelled = true; };
+  }, [selectedModel]);
 
-    return parts;
+  useEffect(() => {
+    let cancelled = false;
+    api.getDevices()
+      .then((resp) => {
+        if (cancelled) return;
+        const gpuDevices = resp.devices.filter(d => d.type !== 'cpu' && d.type !== 'unknown');
+        const gpuType = gpuDevices.length > 0
+          ? gpuDevices[0].type.replace('gpu_', '').replace('cuda', 'CUDA').replace('metal', 'Metal').replace('rocm', 'ROCm').replace('vulkan', 'Vulkan')
+          : '';
+        setDevicesInfo({ gpuCount: resp.gpu_count, gpuType, gpuVramBytes: resp.gpu_total_bytes, ramBytes: resp.system_ram_bytes });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
   }, []);
 
-  const streamResponse = useCallback((chatMessages: ChatMessage[]) => {
-    setError(null);
-    setIsStreaming(true);
+  useEffect(() => {
+    if (!isMoE || !modelVRAM || !devicesInfo) {
+      setVramFitStatus(null);
+      setVramNeededAllGPU(0);
+      setVramNeededCPUExperts(0);
+      return;
+    }
+    const gpuVram = devicesInfo.gpuVramBytes;
+    const vramInfo = modelVRAM;
+    const kvPerSlot = vramInfo.input.context_window * vramInfo.input.block_count *
+      vramInfo.input.head_count_kv * (vramInfo.input.key_length + vramInfo.input.value_length) * vramInfo.input.bytes_per_element;
+    const slotMem = kvPerSlot * vramInfo.input.slots;
+    const computeEst = vramInfo.compute_buffer_est ?? 300 * 1024 * 1024;
+    const allGPU = vramInfo.input.model_size_bytes + slotMem + computeEst;
+    setVramNeededAllGPU(allGPU);
+    const activeOnly = vramInfo.weights?.always_active_bytes ?? vramInfo.input.model_size_bytes;
+    const cpuExperts = activeOnly + slotMem + computeEst;
+    setVramNeededCPUExperts(cpuExperts);
+    if (gpuVram <= 0) return;
+    if (allGPU <= gpuVram * 0.95) {
+      setVramFitStatus('fits');
+    } else if (cpuExperts <= gpuVram * 0.95) {
+      setVramFitStatus('tight');
+    } else {
+      setVramFitStatus('wont_fit');
+    }
+  }, [isMoE, modelVRAM, devicesInfo]);
 
-    let currentContent = '';
-    let currentReasoning = '';
-    let lastUsage: ChatUsage | undefined;
-    let currentToolCalls: ChatToolCall[] = [];
+  const transport = useCallback<StreamTransport>(({ messages, sampling, onMessage, onError, onComplete }) => {
+    if (playgroundSessionId) {
+      return api.streamPlaygroundChat(
+        {
+          session_id: playgroundSessionId,
+          messages,
+          stream: true,
+          max_tokens: sampling.maxTokens,
+          temperature: sampling.temperature,
+          top_p: sampling.topP,
+          top_k: sampling.topK,
+          min_p: sampling.minP,
+          presence_penalty: sampling.presencePenalty,
+          repeat_penalty: sampling.repeatPenalty,
+          repeat_last_n: sampling.repeatLastN,
+          dry_multiplier: sampling.dryMultiplier,
+          dry_base: sampling.dryBase,
+          dry_allowed_length: sampling.dryAllowedLen,
+          dry_penalty_last_n: sampling.dryPenaltyLast,
+          xtc_probability: sampling.xtcProbability,
+          xtc_threshold: sampling.xtcThreshold,
+          xtc_min_keep: sampling.xtcMinKeep,
+          frequency_penalty: sampling.frequencyPenalty,
+          enable_thinking: (sampling.enableThinking || undefined) as 'true' | 'false' | undefined,
+          reasoning_effort: (sampling.reasoningEffort || undefined) as PlaygroundChatRequest['reasoning_effort'],
+          return_prompt: sampling.returnPrompt,
+          stream_options: {
+            include_usage: sampling.includeUsage,
+          },
+          logprobs: sampling.logprobs,
+          top_logprobs: sampling.topLogprobs,
+          grammar: sampling.grammar || undefined,
+        },
+        onMessage,
+        onError,
+        onComplete,
+      );
+    }
 
-    setMessages(prev => [...prev, { role: 'assistant', content: '', reasoning: '' }]);
-
-    abortRef.current = api.streamChat(
+    return api.streamChat(
       {
         model: selectedModel,
-        messages: chatMessages,
+        messages,
         max_tokens: sampling.maxTokens,
         temperature: sampling.temperature,
         top_p: sampling.topP,
@@ -376,152 +304,19 @@ export default function Chat() {
         top_logprobs: sampling.topLogprobs,
         grammar: sampling.grammar || undefined,
       },
-      (data) => {
-        const choice = data.choices?.[0];
-        if (choice?.delta?.content) {
-          currentContent += choice.delta.content;
-        }
-        if (choice?.delta?.reasoning_content) {
-          currentReasoning += choice.delta.reasoning_content;
-        }
-        if (choice?.delta?.tool_calls && choice.delta.tool_calls.length > 0) {
-          for (const tc of choice.delta.tool_calls) {
-            const idx = tc.index ?? (currentToolCalls.length > 0 ? currentToolCalls[currentToolCalls.length - 1].index : 0);
-            const existing = currentToolCalls.find(c => c.index === idx);
-            if (existing) {
-              if (tc.id && !existing.id) existing.id = tc.id;
-              if (tc.function?.name && !existing.function.name) existing.function.name = tc.function.name;
-              if (tc.function?.arguments) existing.function.arguments += tc.function.arguments;
-            } else {
-              currentToolCalls.push({
-                id: tc.id || '',
-                index: idx,
-                type: tc.type || 'function',
-                function: {
-                  name: tc.function?.name || '',
-                  arguments: tc.function?.arguments || '',
-                },
-              });
-            }
-          }
-        }
-        if (data.usage) {
-          lastUsage = data.usage;
-        }
-
-        setMessages(prev => {
-          const updated = [...prev];
-          updated[updated.length - 1] = {
-            role: 'assistant',
-            content: currentContent,
-            reasoning: currentReasoning,
-            usage: lastUsage,
-            toolCalls: currentToolCalls.length ? currentToolCalls : undefined,
-          };
-          return updated;
-        });
-      },
-      (err) => {
-        setError(err);
-        setIsStreaming(false);
-      },
-      () => {
-        setIsStreaming(false);
-      },
-      sampling.cacheId || undefined
+      onMessage,
+      onError,
+      onComplete,
+      sampling.cacheId || undefined,
     );
-  }, [selectedModel, sampling, setMessages]);
+  }, [selectedModel, playgroundSessionId]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if ((!input.trim() && attachedFiles.length === 0) || !selectedModel || isStreaming) return;
-
-    const userMessage: DisplayMessage = { 
-      role: 'user', 
-      content: input.trim(),
-      attachments: attachedFiles.length > 0 ? [...attachedFiles] : undefined,
-    };
-    setMessages(prev => [...prev, userMessage]);
-    setInput('');
-    setAttachedFiles([]);
-
-    const chatMessages: ChatMessage[] = [
-      ...(sampling.systemPrompt ? [{ role: 'system' as const, content: sampling.systemPrompt }] : []),
-      ...messages.map(m => ({ 
-        role: m.role, 
-        content: m.attachments ? buildMessageContent(m.content, m.attachments) : m.content 
-      })),
-      { role: 'user' as const, content: buildMessageContent(input.trim(), attachedFiles) }
-    ];
-
-    streamResponse(chatMessages);
-  };
-
-  const handleEditStart = (index: number) => {
-    setEditingIndex(index);
-    setEditContent(messages[index].content);
-  };
-
-  const handleEditCancel = () => {
-    setEditingIndex(null);
-    setEditContent('');
-  };
-
-  const handleEditSave = (index: number) => {
-    setMessages(prev => prev.map((m, i) =>
-      i === index ? { ...m, content: editContent, originalContent: m.originalContent ?? m.content } : m
-    ));
-    setEditingIndex(null);
-    setEditContent('');
-  };
-
-  const handleEditUndo = (index: number) => {
-    setMessages(prev => prev.map((m, i) =>
-      i === index && m.originalContent != null ? { ...m, content: m.originalContent, originalContent: undefined } : m
-    ));
-  };
-
-  const handleEditSend = (index: number) => {
-    if (!selectedModel || isStreaming) return;
-
-    const updatedMessages = messages.slice(0, index + 1).map((m, i) => {
-      if (i === index) {
-        return { ...m, content: editContent };
-      }
-      return m;
-    });
-
-    setMessages(updatedMessages);
-    setEditingIndex(null);
-    setEditContent('');
-
-    const chatMessages: ChatMessage[] = [
-      ...(sampling.systemPrompt ? [{ role: 'system' as const, content: sampling.systemPrompt }] : []),
-      ...updatedMessages.map(m => ({
-        role: m.role,
-        content: m.attachments ? buildMessageContent(m.content, m.attachments) : m.content,
-      })),
-    ];
-
-    streamResponse(chatMessages);
-  };
-
-  const handleStop = () => {
-    if (abortRef.current) {
-      abortRef.current();
-      abortRef.current = null;
-      setIsStreaming(false);
-    }
-  };
-
-  const handleClear = () => {
+  const handleClear = useCallback(() => {
     if (historyEnabled && messages.length > 0) {
       saveChat(selectedModel, messages);
     }
     clearMessages();
-    setError(null);
-    setAttachedFiles([]);
-  };
+  }, [historyEnabled, messages, selectedModel, saveChat, clearMessages]);
 
   const handleLoadFromHistory = useCallback((historyMessages: HistoryMessage[]) => {
     const displayMessages: DisplayMessage[] = historyMessages.map((m) => ({
@@ -530,42 +325,30 @@ export default function Chat() {
       reasoning: m.reasoning,
     }));
     setMessages(displayMessages);
-    setError(null);
-    setAttachedFiles([]);
   }, [setMessages]);
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
-
-    Array.from(files).forEach(file => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const dataUrl = reader.result as string;
-        const fileType: 'image' | 'audio' = file.type.startsWith('image/') ? 'image' : 'audio';
-        setAttachedFiles(prev => [...prev, {
-          type: fileType,
-          name: file.name,
-          dataUrl,
-        }]);
-      };
-      reader.readAsDataURL(file);
-    });
-
-    // Reset input so same file can be selected again
-    e.target.value = '';
-  };
-
-  const removeAttachment = (index: number) => {
-    setAttachedFiles(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit(e);
+  const handleModelChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newModel = e.target.value;
+    if (messages.length > 0) {
+      if (historyEnabled) {
+        saveChat(selectedModel, messages);
+      }
+      clearMessages();
     }
-  };
+    setDraftModel('');
+    localStorage.removeItem('kronk_chat_draft_model');
+    setSelectedModel(newModel);
+  }, [messages, historyEnabled, selectedModel, saveChat, clearMessages]);
+
+  const handleDraftModelChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newDraft = e.target.value;
+    setDraftModel(newDraft);
+    if (newDraft) {
+      localStorage.setItem('kronk_chat_draft_model', newDraft);
+    } else {
+      localStorage.removeItem('kronk_chat_draft_model');
+    }
+  }, []);
 
   return (
     <div className="chat-layout">
@@ -574,699 +357,82 @@ export default function Chat() {
         onClose={() => setShowHistory(false)}
         onLoadChat={handleLoadFromHistory}
       />
-      <div className="chat-container">
-      <div className="chat-header">
-        <div className="chat-header-left">
-          <h2>Chat</h2>
-          <select
-            value={selectedModel}
-            onChange={(e) => {
-              const newModel = e.target.value;
-              if (messages.length > 0) {
-                if (historyEnabled) {
-                  saveChat(selectedModel, messages);
-                }
-                clearMessages();
-                setError(null);
-                setAttachedFiles([]);
-              }
-              setSelectedModel(newModel);
-            }}
-            disabled={modelsLoading || isStreaming}
-            className="chat-model-select"
-          >
-            {modelsLoading && <option>Loading models...</option>}
-            {!modelsLoading && models?.data?.length === 0 && (
-              <option>No models available</option>
-            )}
-            {models?.data
-              ?.filter((model) => {
-                const id = model.id.toLowerCase();
-                return !id.includes('embed') && !id.includes('rerank');
-              })
-              .map((model) => (
-              <option key={model.id} value={model.id}>
-                {model.id}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="chat-header-right">
-          <button
-            type="button"
-            className={`chat-history-toggle ${historyEnabled ? 'chat-history-toggle-on' : 'chat-history-toggle-off'}`}
-            onClick={toggleHistoryEnabled}
-            title={historyEnabled ? 'Chat history auto-save is on' : 'Chat history auto-save is off'}
-          >
-            Chat History: {historyEnabled ? 'ON' : 'OFF'}
-          </button>
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={() => setShowHistory(!showHistory)}
-          >
-            History
-          </button>
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={() => setShowSettings(!showSettings)}
-          >
-            Settings
-            {hasAnyChange(sampling, modelBaseline) && (
-              <span className="chat-setting-default">●</span>
-            )}
-          </button>
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={handleClear}
-            disabled={isStreaming || messages.length === 0}
-          >
-            Clear chat
-          </button>
-        </div>
-      </div>
-
-      {showSettings && (
-        <>
-        <div className="chat-system-prompt">
-          <label>System Prompt</label>
-          <textarea
-            value={sampling.systemPrompt}
-            onChange={(e) => setSampling({ systemPrompt: e.target.value })}
-            placeholder="Enter a system prompt to set the model's behavior..."
-            className="chat-system-prompt-input"
-            rows={3}
-          />
-        </div>
-        <div className="chat-settings">
-          <div className={`chat-setting ${isChangedFrom('maxTokens', sampling.maxTokens, modelBaseline) ? 'chat-setting-changed' : ''}`}>
-            <label>
-              Max Tokens{PARAM_TOOLTIPS.max_tokens && <ParamTooltip text={PARAM_TOOLTIPS.max_tokens} />}
-              {isChangedFrom('maxTokens', sampling.maxTokens, modelBaseline) && (
-                <span className="chat-setting-default" title={`Default: ${formatBaselineValue('maxTokens', modelBaseline)}`}>●</span>
-              )}
-            </label>
-            <input
-              type="number"
-              value={sampling.maxTokens}
-              onChange={(e) => setSampling({ maxTokens: Number(e.target.value) })}
-              min={1}
-              max={32768}
-            />
-          </div>
-          <div className={`chat-setting ${isChangedFrom('temperature', sampling.temperature, modelBaseline) ? 'chat-setting-changed' : ''}`}>
-            <label>
-              Temperature{PARAM_TOOLTIPS.temperature && <ParamTooltip text={PARAM_TOOLTIPS.temperature} />}
-              {isChangedFrom('temperature', sampling.temperature, modelBaseline) && (
-                <span className="chat-setting-default" title={`Default: ${formatBaselineValue('temperature', modelBaseline)}`}>●</span>
-              )}
-            </label>
-            <input
-              type="number"
-              value={sampling.temperature}
-              onChange={(e) => setSampling({ temperature: Number(e.target.value) })}
-              min={0}
-              max={2}
-              step={0.1}
-            />
-          </div>
-          <div className={`chat-setting ${isChangedFrom('topP', sampling.topP, modelBaseline) ? 'chat-setting-changed' : ''}`}>
-            <label>
-              Top P{PARAM_TOOLTIPS.top_p && <ParamTooltip text={PARAM_TOOLTIPS.top_p} />}
-              {isChangedFrom('topP', sampling.topP, modelBaseline) && (
-                <span className="chat-setting-default" title={`Default: ${formatBaselineValue('topP', modelBaseline)}`}>●</span>
-              )}
-            </label>
-            <input
-              type="number"
-              value={sampling.topP}
-              onChange={(e) => setSampling({ topP: Number(e.target.value) })}
-              min={0}
-              max={1}
-              step={0.05}
-            />
-          </div>
-          <div className={`chat-setting ${isChangedFrom('topK', sampling.topK, modelBaseline) ? 'chat-setting-changed' : ''}`}>
-            <label>
-              Top K{PARAM_TOOLTIPS.top_k && <ParamTooltip text={PARAM_TOOLTIPS.top_k} />}
-              {isChangedFrom('topK', sampling.topK, modelBaseline) && (
-                <span className="chat-setting-default" title={`Default: ${formatBaselineValue('topK', modelBaseline)}`}>●</span>
-              )}
-            </label>
-            <input
-              type="number"
-              value={sampling.topK}
-              onChange={(e) => setSampling({ topK: Number(e.target.value) })}
-              min={1}
-              max={100}
-            />
-          </div>
-          <div className="chat-setting">
-            <label>Cache ID</label>
-            <input
-              type="text"
-              value={sampling.cacheId}
-              onChange={(e) => setSampling({ cacheId: e.target.value })}
-              placeholder="e.g. user-123"
-            />
-          </div>
-          <div className="chat-setting chat-setting-grammar">
-            <label>Grammar</label>
+      <ChatPanel
+        messages={messages}
+        setMessages={setMessages}
+        onClear={handleClear}
+        sampling={sampling}
+        setSampling={setSampling}
+        modelBaseline={modelBaseline}
+        transport={transport}
+        isMoE={isMoE}
+        modelVRAM={modelVRAM}
+        devicesInfo={devicesInfo}
+        vramFitStatus={vramFitStatus}
+        vramNeededAllGPU={vramNeededAllGPU}
+        vramNeededCPUExperts={vramNeededCPUExperts}
+        disabled={!selectedModel || draftSessionLoading}
+        headerLeft={
+          <>
+            <h2>Chat</h2>
             <select
-              value={grammarMode}
-              onChange={(e) => {
-                const mode = e.target.value as 'none' | 'preset' | 'custom';
-                setGrammarMode(mode);
-                if (mode === 'none') {
-                  setSampling({ grammar: '' });
-                  setSelectedPreset('');
-                } else if (mode === 'preset' && grammarFiles.length > 0) {
-                  loadPresetContent(grammarFiles[0]);
-                } else if (mode === 'custom') {
-                  setSampling({ grammar: '' });
-                  setSelectedPreset('');
-                }
-              }}
+              value={selectedModel}
+              onChange={handleModelChange}
+              disabled={modelsLoading}
+              className="chat-model-select"
             >
-              <option value="none">None</option>
-              <option value="preset">Preset</option>
-              <option value="custom">Custom</option>
+              {modelsLoading && <option>Loading models...</option>}
+              {!modelsLoading && models?.data?.length === 0 && (
+                <option>No models available</option>
+              )}
+              {models?.data
+                ?.filter((model) => {
+                  const id = model.id.toLowerCase();
+                  return !id.includes('embed') && !id.includes('rerank');
+                })
+                .map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.id}
+                </option>
+              ))}
             </select>
-          </div>
-          {grammarMode === 'preset' && (
-            <div className="chat-setting chat-setting-grammar-preset">
-              <label>Preset</label>
+            {eligibleDraftModels.length > 0 && (
               <select
-                value={selectedPreset}
-                onChange={(e) => loadPresetContent(e.target.value)}
+                value={draftModel}
+                onChange={handleDraftModelChange}
+                disabled={modelsLoading}
+                className="chat-model-select"
+                title="Draft model for speculative decoding (should be tokenizer-compatible; typically a smaller variant of the same family)"
               >
-                {grammarFiles.map((f) => (
-                  <option key={f} value={f}>{f.replace('.grm', '')}</option>
+                <option value="">No draft model</option>
+                {eligibleDraftModels.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    ⚡ {model.id}
+                  </option>
                 ))}
               </select>
-            </div>
-          )}
-          <div className="chat-setting chat-setting-button">
+            )}
+          </>
+        }
+        headerRight={
+          <>
             <button
               type="button"
-              className="chat-advanced-toggle"
-              onClick={() => setShowAdvanced(!showAdvanced)}
+              className={`chat-history-toggle ${historyEnabled ? 'chat-history-toggle-on' : 'chat-history-toggle-off'}`}
+              onClick={toggleHistoryEnabled}
+              title={historyEnabled ? 'Chat history auto-save is on' : 'Chat history auto-save is off'}
             >
-              Advanced {showAdvanced ? '▲' : '▼'}
-              {hasAdvancedChange(sampling, modelBaseline) && (
-                <span className="chat-setting-default">●</span>
-              )}
+              Chat History: {historyEnabled ? 'ON' : 'OFF'}
             </button>
-          </div>
-          <div className="chat-setting chat-setting-button">
-            {hasAnyChange(sampling, modelBaseline) && modelBaseline && (
-              <button
-                type="button"
-                className="chat-reset-defaults"
-                onClick={() => setSampling(modelBaseline)}
-                title="Reset all sampling values to model defaults"
-              >
-                Reset to default
-              </button>
-            )}
-          </div>
-        </div>
-        {(grammarMode === 'preset' || grammarMode === 'custom') && (
-          <div className="chat-grammar-editor">
-            <textarea
-              value={sampling.grammar}
-              onChange={(e) => setSampling({ grammar: e.target.value })}
-              rows={4}
-              placeholder="Enter GBNF grammar..."
-              className="chat-system-prompt-input"
-              style={{ fontFamily: 'monospace', fontSize: '12px' }}
-            />
-          </div>
-        )}
-        {showAdvanced && (
-          <div className="chat-settings">
-            <div className="chat-advanced-settings">
-                <div className={`chat-setting ${isChangedFrom('minP', sampling.minP, modelBaseline) ? 'chat-setting-changed' : ''}`}>
-                  <label>
-                    Min P{PARAM_TOOLTIPS.min_p && <ParamTooltip text={PARAM_TOOLTIPS.min_p} />}
-                    {isChangedFrom('minP', sampling.minP, modelBaseline) && (
-                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('minP', modelBaseline)}`}>●</span>
-                    )}
-                  </label>
-                  <input
-                    type="number"
-                    value={sampling.minP}
-                    onChange={(e) => setSampling({ minP: Number(e.target.value) })}
-                    min={0}
-                    max={1}
-                    step={0.01}
-                  />
-                </div>
-                <div className={`chat-setting ${isChangedFrom('repeatPenalty', sampling.repeatPenalty, modelBaseline) ? 'chat-setting-changed' : ''}`}>
-                  <label>
-                    Repeat Penalty{PARAM_TOOLTIPS.repeat_penalty && <ParamTooltip text={PARAM_TOOLTIPS.repeat_penalty} />}
-                    {isChangedFrom('repeatPenalty', sampling.repeatPenalty, modelBaseline) && (
-                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('repeatPenalty', modelBaseline)}`}>●</span>
-                    )}
-                  </label>
-                  <input
-                    type="number"
-                    value={sampling.repeatPenalty}
-                    onChange={(e) => setSampling({ repeatPenalty: Number(e.target.value) })}
-                    min={0}
-                    max={2}
-                    step={0.1}
-                  />
-                </div>
-                <div className={`chat-setting ${isChangedFrom('repeatLastN', sampling.repeatLastN, modelBaseline) ? 'chat-setting-changed' : ''}`}>
-                  <label>
-                    Repeat Last N{PARAM_TOOLTIPS.repeat_last_n && <ParamTooltip text={PARAM_TOOLTIPS.repeat_last_n} />}
-                    {isChangedFrom('repeatLastN', sampling.repeatLastN, modelBaseline) && (
-                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('repeatLastN', modelBaseline)}`}>●</span>
-                    )}
-                  </label>
-                  <input
-                    type="number"
-                    value={sampling.repeatLastN}
-                    onChange={(e) => setSampling({ repeatLastN: Number(e.target.value) })}
-                    min={-1}
-                    max={512}
-                  />
-                </div>
-                <div className={`chat-setting ${isChangedFrom('frequencyPenalty', sampling.frequencyPenalty, modelBaseline) ? 'chat-setting-changed' : ''}`}>
-                  <label>
-                    Frequency Penalty{PARAM_TOOLTIPS.frequency_penalty && <ParamTooltip text={PARAM_TOOLTIPS.frequency_penalty} />}
-                    {isChangedFrom('frequencyPenalty', sampling.frequencyPenalty, modelBaseline) && (
-                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('frequencyPenalty', modelBaseline)}`}>●</span>
-                    )}
-                  </label>
-                  <input
-                    type="number"
-                    value={sampling.frequencyPenalty}
-                    onChange={(e) => setSampling({ frequencyPenalty: Number(e.target.value) })}
-                    min={0}
-                    max={2}
-                    step={0.1}
-                  />
-                </div>
-                <div className={`chat-setting ${isChangedFrom('presencePenalty', sampling.presencePenalty, modelBaseline) ? 'chat-setting-changed' : ''}`}>
-                  <label>
-                    Presence Penalty{PARAM_TOOLTIPS.presence_penalty && <ParamTooltip text={PARAM_TOOLTIPS.presence_penalty} />}
-                    {isChangedFrom('presencePenalty', sampling.presencePenalty, modelBaseline) && (
-                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('presencePenalty', modelBaseline)}`}>●</span>
-                    )}
-                  </label>
-                  <input
-                    type="number"
-                    value={sampling.presencePenalty}
-                    onChange={(e) => setSampling({ presencePenalty: Number(e.target.value) })}
-                    min={0}
-                    max={2}
-                    step={0.1}
-                  />
-                </div>
-                <div className={`chat-setting ${isChangedFrom('dryMultiplier', sampling.dryMultiplier, modelBaseline) ? 'chat-setting-changed' : ''}`}>
-                  <label>
-                    DRY Multiplier{PARAM_TOOLTIPS.dry_multiplier && <ParamTooltip text={PARAM_TOOLTIPS.dry_multiplier} />}
-                    {isChangedFrom('dryMultiplier', sampling.dryMultiplier, modelBaseline) && (
-                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('dryMultiplier', modelBaseline)}`}>●</span>
-                    )}
-                  </label>
-                  <input
-                    type="number"
-                    value={sampling.dryMultiplier}
-                    onChange={(e) => setSampling({ dryMultiplier: Number(e.target.value) })}
-                    min={0}
-                    step={0.1}
-                  />
-                </div>
-                <div className={`chat-setting ${isChangedFrom('dryBase', sampling.dryBase, modelBaseline) ? 'chat-setting-changed' : ''}`}>
-                  <label>
-                    DRY Base{PARAM_TOOLTIPS.dry_base && <ParamTooltip text={PARAM_TOOLTIPS.dry_base} />}
-                    {isChangedFrom('dryBase', sampling.dryBase, modelBaseline) && (
-                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('dryBase', modelBaseline)}`}>●</span>
-                    )}
-                  </label>
-                  <input
-                    type="number"
-                    value={sampling.dryBase}
-                    onChange={(e) => setSampling({ dryBase: Number(e.target.value) })}
-                    min={1}
-                    step={0.05}
-                  />
-                </div>
-                <div className={`chat-setting ${isChangedFrom('dryAllowedLen', sampling.dryAllowedLen, modelBaseline) ? 'chat-setting-changed' : ''}`}>
-                  <label>
-                    DRY Allowed Length{PARAM_TOOLTIPS.dry_allowed_length && <ParamTooltip text={PARAM_TOOLTIPS.dry_allowed_length} />}
-                    {isChangedFrom('dryAllowedLen', sampling.dryAllowedLen, modelBaseline) && (
-                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('dryAllowedLen', modelBaseline)}`}>●</span>
-                    )}
-                  </label>
-                  <input
-                    type="number"
-                    value={sampling.dryAllowedLen}
-                    onChange={(e) => setSampling({ dryAllowedLen: Number(e.target.value) })}
-                    min={0}
-                  />
-                </div>
-                <div className={`chat-setting ${isChangedFrom('dryPenaltyLast', sampling.dryPenaltyLast, modelBaseline) ? 'chat-setting-changed' : ''}`}>
-                  <label>
-                    DRY Penalty Last N{PARAM_TOOLTIPS.dry_penalty_last_n && <ParamTooltip text={PARAM_TOOLTIPS.dry_penalty_last_n} />}
-                    {isChangedFrom('dryPenaltyLast', sampling.dryPenaltyLast, modelBaseline) && (
-                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('dryPenaltyLast', modelBaseline)}`}>●</span>
-                    )}
-                  </label>
-                  <input
-                    type="number"
-                    value={sampling.dryPenaltyLast}
-                    onChange={(e) => setSampling({ dryPenaltyLast: Number(e.target.value) })}
-                    min={-1}
-                  />
-                </div>
-                <div className={`chat-setting ${isChangedFrom('xtcProbability', sampling.xtcProbability, modelBaseline) ? 'chat-setting-changed' : ''}`}>
-                  <label>
-                    XTC Probability{PARAM_TOOLTIPS.xtc_probability && <ParamTooltip text={PARAM_TOOLTIPS.xtc_probability} />}
-                    {isChangedFrom('xtcProbability', sampling.xtcProbability, modelBaseline) && (
-                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('xtcProbability', modelBaseline)}`}>●</span>
-                    )}
-                  </label>
-                  <input
-                    type="number"
-                    value={sampling.xtcProbability}
-                    onChange={(e) => setSampling({ xtcProbability: Number(e.target.value) })}
-                    min={0}
-                    max={1}
-                    step={0.01}
-                  />
-                </div>
-                <div className={`chat-setting ${isChangedFrom('xtcThreshold', sampling.xtcThreshold, modelBaseline) ? 'chat-setting-changed' : ''}`}>
-                  <label>
-                    XTC Threshold{PARAM_TOOLTIPS.xtc_threshold && <ParamTooltip text={PARAM_TOOLTIPS.xtc_threshold} />}
-                    {isChangedFrom('xtcThreshold', sampling.xtcThreshold, modelBaseline) && (
-                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('xtcThreshold', modelBaseline)}`}>●</span>
-                    )}
-                  </label>
-                  <input
-                    type="number"
-                    value={sampling.xtcThreshold}
-                    onChange={(e) => setSampling({ xtcThreshold: Number(e.target.value) })}
-                    min={0}
-                    max={1}
-                    step={0.01}
-                  />
-                </div>
-                <div className={`chat-setting ${isChangedFrom('xtcMinKeep', sampling.xtcMinKeep, modelBaseline) ? 'chat-setting-changed' : ''}`}>
-                  <label>
-                    XTC Min Keep{PARAM_TOOLTIPS.xtc_min_keep && <ParamTooltip text={PARAM_TOOLTIPS.xtc_min_keep} />}
-                    {isChangedFrom('xtcMinKeep', sampling.xtcMinKeep, modelBaseline) && (
-                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('xtcMinKeep', modelBaseline)}`}>●</span>
-                    )}
-                  </label>
-                  <input
-                    type="number"
-                    value={sampling.xtcMinKeep}
-                    onChange={(e) => setSampling({ xtcMinKeep: Number(e.target.value) })}
-                    min={1}
-                  />
-                </div>
-                <div className={`chat-setting ${isChangedFrom('enableThinking', sampling.enableThinking, modelBaseline) ? 'chat-setting-changed' : ''}`}>
-                  <label>
-                    Enable Thinking{PARAM_TOOLTIPS.enable_thinking && <ParamTooltip text={PARAM_TOOLTIPS.enable_thinking} />}
-                    {isChangedFrom('enableThinking', sampling.enableThinking, modelBaseline) && (
-                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('enableThinking', modelBaseline)}`}>●</span>
-                    )}
-                  </label>
-                  <select
-                    value={sampling.enableThinking}
-                    onChange={(e) => setSampling({ enableThinking: e.target.value })}
-                  >
-                    <option value="">Default</option>
-                    <option value="true">Enabled</option>
-                    <option value="false">Disabled</option>
-                  </select>
-                </div>
-                <div className={`chat-setting ${isChangedFrom('reasoningEffort', sampling.reasoningEffort, modelBaseline) ? 'chat-setting-changed' : ''}`}>
-                  <label>
-                    Reasoning Effort{PARAM_TOOLTIPS.reasoning_effort && <ParamTooltip text={PARAM_TOOLTIPS.reasoning_effort} />}
-                    {isChangedFrom('reasoningEffort', sampling.reasoningEffort, modelBaseline) && (
-                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('reasoningEffort', modelBaseline)}`}>●</span>
-                    )}
-                  </label>
-                  <select
-                    value={sampling.reasoningEffort}
-                    onChange={(e) => setSampling({ reasoningEffort: e.target.value })}
-                  >
-                    <option value="">Default</option>
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                  </select>
-                </div>
-                <div className={`chat-setting ${isChangedFrom('topLogprobs', sampling.topLogprobs, modelBaseline) ? 'chat-setting-changed' : ''}`}>
-                  <label>
-                    Top Logprobs
-                    {isChangedFrom('topLogprobs', sampling.topLogprobs, modelBaseline) && (
-                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('topLogprobs', modelBaseline)}`}>●</span>
-                    )}
-                  </label>
-                  <input
-                    type="number"
-                    value={sampling.topLogprobs}
-                    onChange={(e) => setSampling({ topLogprobs: Number(e.target.value) })}
-                    min={0}
-                    max={20}
-                  />
-                </div>
-                <div className={`chat-setting chat-setting-checkbox ${isChangedFrom('returnPrompt', sampling.returnPrompt, modelBaseline) ? 'chat-setting-changed' : ''}`}>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={sampling.returnPrompt}
-                      onChange={(e) => setSampling({ returnPrompt: e.target.checked })}
-                    />
-                    Return Prompt
-                    {isChangedFrom('returnPrompt', sampling.returnPrompt, modelBaseline) && (
-                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('returnPrompt', modelBaseline)}`}>●</span>
-                    )}
-                  </label>
-                </div>
-                <div className={`chat-setting chat-setting-checkbox ${isChangedFrom('includeUsage', sampling.includeUsage, modelBaseline) ? 'chat-setting-changed' : ''}`}>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={sampling.includeUsage}
-                      onChange={(e) => setSampling({ includeUsage: e.target.checked })}
-                    />
-                    Include Usage
-                    {isChangedFrom('includeUsage', sampling.includeUsage, modelBaseline) && (
-                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('includeUsage', modelBaseline)}`}>●</span>
-                    )}
-                  </label>
-                </div>
-                <div className={`chat-setting chat-setting-checkbox ${isChangedFrom('logprobs', sampling.logprobs, modelBaseline) ? 'chat-setting-changed' : ''}`}>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={sampling.logprobs}
-                      onChange={(e) => setSampling({ logprobs: e.target.checked })}
-                    />
-                    Logprobs
-                    {isChangedFrom('logprobs', sampling.logprobs, modelBaseline) && (
-                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('logprobs', modelBaseline)}`}>●</span>
-                    )}
-                  </label>
-                </div>
-            </div>
-          </div>
-        )}
-        </>
-      )}
-
-      {error && <div className="alert alert-error">{error}</div>}
-
-      <div className="chat-messages-wrapper">
-      <div className="chat-messages" ref={messagesContainerRef} onScroll={handleMessagesScroll} onWheel={handleWheel}>
-        {messages.length === 0 && (
-          <div className="chat-empty">
-            <p>Select a model and start chatting</p>
-            <p className="chat-empty-hint">Type a message below to begin</p>
-          </div>
-        )}
-        {messages.map((msg, idx) => (
-          <div key={idx} className={`chat-message chat-message-${msg.role}`}>
-            <div className="chat-message-header">
-              <span>{msg.role === 'user' ? 'USER' : 'MODEL'}</span>
-              {!isStreaming && editingIndex === null && (
-                <span className="chat-header-actions">
-                  {msg.originalContent != null && (
-                    <button
-                      className="chat-edit-btn"
-                      onClick={() => handleEditUndo(idx)}
-                      title="Revert to original message"
-                    >
-                      Undo
-                    </button>
-                  )}
-                  <button
-                    className="chat-edit-btn"
-                    onClick={() => handleEditStart(idx)}
-                    title="Edit message"
-                  >
-                    Edit
-                  </button>
-                </span>
-              )}
-            </div>
-            {msg.attachments && msg.attachments.length > 0 && (
-              <div className="chat-message-attachments">
-                {msg.attachments.map((att, i) => (
-                  <div key={i} className="chat-attachment-preview">
-                    {att.type === 'image' ? (
-                      <img src={att.dataUrl} alt={att.name} className="chat-attachment-image" />
-                    ) : (
-                      <div className="chat-attachment-audio">
-                        <span>🔊 {att.name}</span>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-            {msg.reasoning && (
-              <details className="chat-message-reasoning" open={isStreaming && idx === messages.length - 1}>
-                <summary className="chat-reasoning-summary">
-                  Reasoning ({msg.reasoning.length.toLocaleString()} chars)
-                </summary>
-                <div className="chat-reasoning-content">
-                  {renderContent(msg.reasoning)}
-                </div>
-              </details>
-            )}
-            <div className="chat-message-content">
-              {editingIndex === idx ? (
-                <div className="chat-edit-area">
-                  <textarea
-                    className="chat-edit-textarea"
-                    value={editContent}
-                    onChange={(e) => setEditContent(e.target.value)}
-                    rows={Math.max(4, editContent.split('\n').length)}
-                    autoFocus
-                  />
-                  <div className="chat-edit-actions">
-                    <button
-                      className="btn btn-primary btn-sm"
-                      onClick={() => msg.role === 'assistant' ? handleEditSave(idx) : handleEditSend(idx)}
-                      disabled={!editContent.trim()}
-                    >
-                      {msg.role === 'assistant' ? 'Save' : 'Send'}
-                    </button>
-                    <button
-                      className="btn btn-secondary btn-sm"
-                      onClick={handleEditCancel}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                msg.content ? renderContent(msg.content) : (isStreaming && idx === messages.length - 1 ? '...' : '')
-              )}
-            </div>
-            {msg.toolCalls && msg.toolCalls.length > 0 && (
-              <div className="chat-message-tool-calls">
-                {msg.toolCalls.map((tc) => (
-                  <div key={tc.id} className="chat-tool-call">
-                    Tool call {tc.id}: {tc.function.name}({tc.function.arguments})
-                  </div>
-                ))}
-              </div>
-            )}
-            {msg.usage && (
-              <div className="chat-message-usage">
-                Input: {msg.usage.prompt_tokens} | 
-                Reasoning: {msg.usage.reasoning_tokens} | 
-                Completion: {msg.usage.completion_tokens} | 
-                Output: {msg.usage.output_tokens} | 
-                TPS: {msg.usage.tokens_per_second.toFixed(2)}
-              </div>
-            )}
-          </div>
-        ))}
-        <div ref={messagesEndRef} />
-      </div>
-      {showScrollBtn && (
-        <button className="chat-scroll-bottom-btn" onClick={scrollToBottom} title="Scroll to bottom">
-          ↓
-        </button>
-      )}
-      </div>
-
-      <form onSubmit={handleSubmit} className="chat-input-form">
-        <div className="chat-input-row">
-          {attachedFiles.length > 0 && (
-            <div className="chat-attachments-bar">
-              {attachedFiles.map((file, idx) => (
-                <div key={idx} className="chat-attachment-chip">
-                  {file.type === 'image' ? (
-                    <img src={file.dataUrl} alt={file.name} className="chat-attachment-chip-image" />
-                  ) : (
-                    <span className="chat-attachment-chip-audio">🔊</span>
-                  )}
-                  <span className="chat-attachment-chip-name">{file.name}</span>
-                  <button
-                    type="button"
-                    className="chat-attachment-chip-remove"
-                    onClick={() => removeAttachment(idx)}
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Type your message... (Enter to send, Shift+Enter for new line)"
-            disabled={isStreaming || !selectedModel}
-            className="chat-input"
-            rows={3}
-          />
-          <div className="chat-input-buttons">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*,audio/*"
-              multiple
-              onChange={handleFileSelect}
-              style={{ display: 'none' }}
-            />
             <button
-              type="button"
-              className="btn btn-secondary chat-attach-btn"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isStreaming || !selectedModel}
+              className="btn btn-secondary btn-sm"
+              onClick={() => setShowHistory(!showHistory)}
             >
-              📎
+              History
             </button>
-            {isStreaming ? (
-              <button type="button" className="btn btn-danger" onClick={handleStop}>
-                Stop
-              </button>
-            ) : (
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={(!input.trim() && attachedFiles.length === 0) || !selectedModel}
-              >
-                Send
-              </button>
-            )}
-          </div>
-        </div>
-      </form>
-    </div>
+          </>
+        }
+      />
     </div>
   );
 }

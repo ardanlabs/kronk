@@ -9,6 +9,8 @@ export const CONTEXT_WINDOW_OPTIONS = [
   { value: 98304, label: '96K' },
   { value: 131072, label: '128K' },
   { value: 262144, label: '256K' },
+  { value: 524288, label: '512K' },
+  { value: 1048576, label: '1M' },
 ];
 
 export const BYTES_PER_ELEMENT_OPTIONS = [
@@ -21,11 +23,12 @@ export const SLOT_OPTIONS = [1, 2, 3, 4, 5];
 
 export const VRAM_FORMULA_CONTENT = `VRAM CALCULATION FORMULA
 
-Total VRAM = Model Weights + KV Cache
+Total VRAM ≈ Model Weights (GPU) + KV Cache (if on GPU) + Compute Buffer
 
 Model weights are determined by the GGUF file size (e.g., ~8GB for a
 7B Q8_0 model). The KV cache is the variable cost you control through
-configuration.
+configuration. The compute buffer is a heuristic estimate of scratch
+memory needed during inference.
 
 ==============================================================================
 SLOTS AND SEQUENCES
@@ -90,6 +93,28 @@ reserve their full KV cache partition regardless of whether they are
 actively processing a request.
 
 ==============================================================================
+KV CACHE ON CPU (offload-kqv: false)
+==============================================================================
+
+When "KV Cache on CPU" is enabled, the KV cache is stored in system RAM
+instead of GPU VRAM:
+
+  Total_VRAM       = Model_Weights + Compute_Buffer   (no KV cache)
+  System_RAM_Used  = KV_Cache + CPU_Weights (if any MoE experts on CPU)
+
+Performance implications:
+  - Discrete GPUs (CUDA/ROCm/Vulkan): Every token generation requires
+    reading the entire KV cache across the PCIe bus. Expect 2-5× slower
+    token generation depending on bus bandwidth.
+  - Apple Silicon (Metal): Minimal penalty due to unified memory — CPU
+    and GPU share the same memory pool, so no data transfer is needed.
+  - Prompt processing (prefill) is less affected since it is compute-bound.
+
+Use this when VRAM is insufficient for the KV cache and you need a larger
+context window or more concurrent slots. KV cache quantization (q8_0) is
+often a better first step as it halves KV memory with minimal quality loss.
+
+==============================================================================
 EXAMPLE: REAL MODEL CALCULATION
 ==============================================================================
 
@@ -116,4 +141,28 @@ Step 3 — Total KV cache (NSeqMax = 2):
 
 Step 4 — Total VRAM:
 
-  Total_VRAM = 36.0 GB + 12.8 GB = ~48.8 GB`;
+  Total_VRAM = 36.0 GB + 12.8 GB = ~48.8 GB
+
+==============================================================================
+MULTI-GPU VRAM DISTRIBUTION
+==============================================================================
+
+When using multiple GPUs, model weights and KV cache are distributed
+across devices according to the tensor split configuration:
+
+  tensor-split: [0.6, 0.4]   # 60% on GPU 0, 40% on GPU 1
+
+Split modes control distribution strategy:
+  - none:  All on single GPU (MainGPU)
+  - layer: Split layers across GPUs
+  - row:   Tensor parallelism (recommended for MoE, expert-parallel)
+
+For MoE with CPU expert offload:
+  - Single GPU + CPU experts: split-mode: row (simpler, good default)
+  - Multi-GPU + CPU experts: split-mode: layer may be simpler;
+    row can interact with CPU expert offload in surprising ways
+
+Compute buffer memory is primarily allocated on the main GPU (GPU 0).
+
+Note: Per-GPU estimates assume proportional distribution based on
+tensor_split. Actual allocation by llama.cpp may differ slightly.`;

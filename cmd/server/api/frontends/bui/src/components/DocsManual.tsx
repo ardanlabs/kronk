@@ -656,6 +656,41 @@ split_mode: row      # Tensor parallelism (best for MoE models)`}</code></pre>
                 <td>none</td>
                 <td>Multi-GPU distribution</td>
               </tr>
+              <tr>
+                <td>Devices</td>
+                <td><code>devices: ["CUDA0","CUDA1"]</code></td>
+                <td>string list</td>
+                <td>—</td>
+                <td>Device names for model execution</td>
+              </tr>
+              <tr>
+                <td>MainGPU</td>
+                <td><code>main_gpu: 0</code></td>
+                <td>integer</td>
+                <td>—</td>
+                <td>Primary GPU index</td>
+              </tr>
+              <tr>
+                <td>TensorSplit</td>
+                <td><code>tensor_split: [0.6, 0.4]</code></td>
+                <td>float list</td>
+                <td>—</td>
+                <td>Per-device tensor distribution</td>
+              </tr>
+              <tr>
+                <td>TensorBuftOverrides</td>
+                <td><code>tensor_buft_overrides: ["all-ffn"]</code></td>
+                <td>string list</td>
+                <td>—</td>
+                <td>Expert-level tensor CPU offloading patterns</td>
+              </tr>
+              <tr>
+                <td>AutoFitVRAM</td>
+                <td><code>auto_fit_vram: true</code></td>
+                <td>true/false</td>
+                <td>false</td>
+                <td>Auto-fit model parameters to available VRAM</td>
+              </tr>
             </tbody>
           </table>
           <h3 id="33-kv-cache-quantization">3.3 KV Cache Quantization</h3>

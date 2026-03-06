@@ -4,7 +4,9 @@ package model
 import (
 	"context"
 	"fmt"
+	"os"
 	"path"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,6 +19,10 @@ import (
 	"github.com/nikolalohinski/gonja/v2/exec"
 	"go.opentelemetry.io/otel/attribute"
 )
+
+// modelLoadMu serializes model loading to prevent concurrent mutation of
+// process-level environment variables (e.g., GGML_OP_OFFLOAD_MIN_BATCH).
+var modelLoadMu sync.Mutex
 
 // compiledTemplate holds a pre-compiled Jinja template for reuse across requests.
 type compiledTemplate struct {
@@ -146,12 +152,22 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 
 	mParams := llama.ModelDefaultParams()
 
-	if cfg.Device != "" {
-		dev := resolveBackendDevice(cfg.Device)
-		if dev == 0 {
-			return nil, fmt.Errorf("ggml-backend-device-by-name: unknown device: %s", cfg.Device)
+	// Resolve device list. Devices takes priority; Device is the deprecated fallback.
+	deviceNames := cfg.Devices
+	if len(deviceNames) == 0 && cfg.Device != "" {
+		deviceNames = []string{cfg.Device}
+	}
+
+	var devicesBuf []llama.GGMLBackendDevice
+	if len(deviceNames) > 0 {
+		resolved, err := resolveBackendDevices(deviceNames)
+		if err != nil {
+			return nil, fmt.Errorf("resolve-devices: %w", err)
 		}
-		mParams.SetDevices([]llama.GGMLBackendDevice{dev})
+		if err := mParams.SetDevices(resolved); err != nil {
+			return nil, fmt.Errorf("set-devices: %w", err)
+		}
+		devicesBuf = resolved
 	}
 
 	// llama.cpp has a -1 default for loading all layers into the GPU
@@ -171,18 +187,176 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 	// Set split mode for multi-GPU and tensor parallelism (expert-parallel for MoE).
 	// Default to SplitModeRow (tensor parallelism) when not explicitly configured,
 	// as it provides the best performance for MoE models and works well for dense models.
-	switch cfg.SplitMode == SplitModeNone {
-	case true:
+	switch cfg.SplitMode {
+	case nil:
 		mParams.SplitMode = SplitModeRow.ToYZMAType()
-	case false:
-		mParams.SplitMode = cfg.SplitMode.ToYZMAType()
+	default:
+		mParams.SplitMode = (*cfg.SplitMode).ToYZMAType()
+	}
+
+	if cfg.MainGPU != nil {
+		mParams.MainGpu = int32(*cfg.MainGPU)
+	}
+
+	// TensorSplit: proportional distribution of layers across multiple GPUs.
+	var tensorSplitBuf []float32
+	if len(cfg.TensorSplit) > 0 {
+		tensorSplitBuf = make([]float32, len(cfg.TensorSplit))
+		copy(tensorSplitBuf, cfg.TensorSplit)
+		mParams.TensorSplit = &tensorSplitBuf[0]
+	}
+
+	// Compile MoEConfig into TensorBuftOverrides if applicable.
+	// MoE config takes precedence over AutoFitVRAM for tensor overrides,
+	// but explicit TensorBuftOverrides take highest precedence.
+	if cfg.MoE != nil && len(cfg.TensorBuftOverrides) == 0 {
+		switch cfg.MoE.Mode {
+		case MoEModeExpertsCPU:
+			cfg.TensorBuftOverrides = []string{"moe-experts"}
+		case MoEModeKeepTopN:
+			if cfg.MoE.KeepExpertsOnGPUForTopNLayers != nil {
+				topN := *cfg.MoE.KeepExpertsOnGPUForTopNLayers
+				// To keep top N on GPU, we offload all layers EXCEPT the top N.
+				// We need block_count from model metadata, which isn't available yet.
+				// Use the "moe-experts" shortcut for now; per-layer targeting requires
+				// model metadata which is available after loading.
+				// For initial implementation: offload all experts, then in Phase E
+				// we can add per-layer granularity.
+				if topN == 0 {
+					cfg.TensorBuftOverrides = []string{"moe-experts"}
+				}
+				// topN > 0: we can't generate per-block overrides without knowing
+				// block_count from the model. Leave overrides empty and let AutoFitVRAM
+				// or llama.cpp handle it. Log the intention.
+				if topN > 0 {
+					l(ctx, "MOE-CONFIG", "mode", "keep_top_n", "top_n", topN, "note", "per-layer expert placement requires model metadata; using auto-fit")
+				}
+			}
+		case MoEModeExpertsGPU, MoEModeAuto, MoEModeCustom, "":
+			// No overrides needed
+		}
+	}
+
+	// TensorBuftOverrides: force specific tensors to run on CPU.
+	var tensorBuftBuf []llama.TensorBuftOverride
+	if len(cfg.TensorBuftOverrides) > 0 {
+		overrides, err := parseTensorBuftOverrides(cfg.TensorBuftOverrides)
+		if err != nil {
+			return nil, fmt.Errorf("tensor-buft-overrides: %w", err)
+		}
+		if err := mParams.SetTensorBufOverrides(overrides); err != nil {
+			return nil, fmt.Errorf("set-tensor-buft-overrides: %w", err)
+		}
+		tensorBuftBuf = overrides
+	}
+
+	// UseMMap: controls mmap for model loading.
+	// When nil, use llama.cpp default (mmap enabled). UseDirectIO takes precedence.
+	if cfg.UseMMap != nil {
+		if *cfg.UseMMap {
+			mParams.UseMmap = 1
+		} else {
+			mParams.UseMmap = 0
+		}
+	}
+
+	// AutoFitVRAM: adjust model params to fit available VRAM BEFORE loading.
+	// ModelParamsFit reads model metadata from the file and adjusts mParams
+	// (e.g., NGpuLayers) and fills output buffers (tensorSplit, tensorBuftOverrides).
+	// These must be applied to mParams before loadModelFromFiles.
+	var fitSplitBuf []float32
+	var fitOverridesBuf []llama.TensorBuftOverride
+	if cfg.AutoFitVRAM {
+		// Build preliminary context params for VRAM fitting. These only need
+		// memory-relevant fields; model-type flags (embed/rerank) are not
+		// required since ModelParamsFit works from the GGUF file metadata.
+		fitCtxParams := buildFitCtxParams(cfg)
+
+		fitSplit, fitOverrides, err := applyParamsFit(cfg.ModelFiles[0], &mParams, &fitCtxParams)
+		if err != nil {
+			return nil, fmt.Errorf("auto-fit-vram: %w", err)
+		}
+
+		// Apply fitted tensor split to mParams.
+		if len(fitSplit) > 0 {
+			fitSplitBuf = fitSplit
+			mParams.TensorSplit = &fitSplitBuf[0]
+		}
+
+		// Apply fitted tensor buffer overrides to mParams.
+		// If MoE mode explicitly set expert placement, don't override with auto-fit.
+		moeExplicit := cfg.MoE != nil && cfg.MoE.Mode != "" && cfg.MoE.Mode != MoEModeAuto
+		if !moeExplicit {
+			// trimTensorBuftOverrides strips the sentinel, so re-append it.
+			trimmed := trimTensorBuftOverrides(fitOverrides)
+			if len(trimmed) > 0 {
+				fitOverridesBuf = append(trimmed, llama.TensorBuftOverride{}) // sentinel
+				if err := mParams.SetTensorBufOverrides(fitOverridesBuf); err != nil {
+					return nil, fmt.Errorf("set-fitted-tensor-buft-overrides: %w", err)
+				}
+			}
+		}
+
+		// Reflect fitted context window back into cfg so downstream
+		// calculations (VRAM estimation, metrics) use the actual value.
+		if fitCtxParams.NCtx > 0 {
+			cfg.ContextWindow = int(fitCtxParams.NCtx)
+		}
+
+		l(ctx, "PARAMS-FIT", "mode", "auto-fit", "status", "applied",
+			"fittedNCtx", fitCtxParams.NCtx, "fittedNGpuLayers", mParams.NGpuLayers)
+	}
+
+	// NUMA strategy: must be called once before model loading.
+	if cfg.NUMA != "" {
+		var numaStrategy llama.NumaStrategy
+		switch cfg.NUMA {
+		case NUMADistribute:
+			numaStrategy = llama.NumaStrategyDistribute
+		case NUMAIsolate:
+			numaStrategy = llama.NumaStrategyIsolate
+		case NUMANumactl:
+			numaStrategy = llama.NumaStrategyNumactl
+		case NUMAMirror:
+			numaStrategy = llama.NumaStrategyMirror
+		}
+		llama.NumaInit(numaStrategy)
+		l(ctx, "NUMA", "strategy", cfg.NUMA)
 	}
 
 	// -------------------------------------------------------------------------
 
+	// Set/unset GGML_OP_OFFLOAD_MIN_BATCH before model load.
+	// This env var is read by the llama.cpp C library at load time.
+	// Use a mutex to prevent concurrent model loads from racing on the env var.
+	// Save and restore the previous value so subsequent loads (e.g., draft model)
+	// are not unintentionally affected.
+	modelLoadMu.Lock()
+
+	prevOffloadMinBatch, hadOffloadMinBatch := os.LookupEnv("GGML_OP_OFFLOAD_MIN_BATCH")
+	if cfg.OpOffloadMinBatch > 0 {
+		os.Setenv("GGML_OP_OFFLOAD_MIN_BATCH", strconv.Itoa(cfg.OpOffloadMinBatch))
+		l(ctx, "OP-OFFLOAD-MIN-BATCH", "value", cfg.OpOffloadMinBatch)
+	} else {
+		os.Unsetenv("GGML_OP_OFFLOAD_MIN_BATCH")
+	}
+
 	loadStart := time.Now()
 
 	mdl, err := loadModelFromFiles(ctx, l, cfg.ModelFiles, mParams)
+	runtime.KeepAlive(devicesBuf)
+	runtime.KeepAlive(tensorSplitBuf)
+	runtime.KeepAlive(tensorBuftBuf)
+	runtime.KeepAlive(fitSplitBuf)
+	runtime.KeepAlive(fitOverridesBuf)
+
+	if hadOffloadMinBatch {
+		os.Setenv("GGML_OP_OFFLOAD_MIN_BATCH", prevOffloadMinBatch)
+	} else {
+		os.Unsetenv("GGML_OP_OFFLOAD_MIN_BATCH")
+	}
+	modelLoadMu.Unlock()
+
 	if err != nil {
 		return nil, fmt.Errorf("load-model-from-files: unable to load model: %w", err)
 	}
@@ -218,15 +392,34 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 
 	ctxParams := modelCtxParams(cfg, modelInfo)
 
-	// Check if the current parameters will fit in available VRAM.
-	// Uses copies so the actual parameters are never modified.
-	fitsInVRAM, fitContextWin := checkParamsFit(cfg.ModelFiles[0], mParams, ctxParams)
-
-	l(ctx, "PARAMS-FIT", "fitsInVRAM", fitsInVRAM, "fitContextWin", fitContextWin)
+	// When AutoFitVRAM is disabled, run a check-only VRAM fit diagnostic.
+	if !cfg.AutoFitVRAM {
+		fitsInVRAM, fitContextWin := checkParamsFit(cfg.ModelFiles[0], mParams, ctxParams)
+		l(ctx, "PARAMS-FIT", "mode", "check-only", "fitsInVRAM", fitsInVRAM, "fitContextWin", fitContextWin)
+	}
 
 	l(ctx, "MODEL-INFO", "values", modelInfo.String(), "addBOSToken", addBOSToken)
 
 	l(ctx, "MODEL-CONFIG", "values", cfg.String())
+
+	// Log effective MoE configuration for debugging.
+	if cfg.MoE != nil && cfg.MoE.Mode != "" && cfg.MoE.Mode != MoEModeAuto {
+		topN := 0
+		if cfg.MoE.KeepExpertsOnGPUForTopNLayers != nil {
+			topN = *cfg.MoE.KeepExpertsOnGPUForTopNLayers
+		}
+
+		overrides := cfg.TensorBuftOverrides
+		if overrides == nil {
+			overrides = []string{}
+		}
+
+		l(ctx, "MOE-CONFIG",
+			"mode", string(cfg.MoE.Mode),
+			"experts_on_gpu_layers", topN,
+			"overrides_applied", fmt.Sprintf("%v", overrides),
+		)
+	}
 
 	l(ctx, "LLAMA-CONTEXT-PARAMS", "values", fmt.Sprintf("\nEmbeddings[%d]\nFlashAttentionType[%d]\nNBatch[%d]\nNCtx[%d]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nOffloadKQV[%d]\nOpOffload[%d]\nPoolingType[%d]\nRopeFreqBase[%g]\nRopeFreqScale[%g]\nRopeScalingType[%d]\nTypeK[%d]\nTypeV[%d]\nYarnAttnFactor[%g]\nYarnBetaFast[%g]\nYarnBetaSlow[%g]\nYarnExtFactor[%g]\nYarnOrigCtx[%d]\n",
 		ctxParams.Embeddings, ctxParams.FlashAttentionType, ctxParams.NBatch, ctxParams.NCtx,
@@ -345,21 +538,44 @@ func loadDraftModel(ctx context.Context, log Logger, cfg Config, targetModel lla
 		mParams.NGpuLayers = int32(*dCfg.NGpuLayers)
 	}
 
-	if dCfg.Device != "" {
-		dev := resolveBackendDevice(dCfg.Device)
-		if dev == 0 {
-			return nil, fmt.Errorf("ggml-backend-device-by-name: unknown device: %s", dCfg.Device)
+	// Resolve device list for draft model.
+	draftDeviceNames := dCfg.Devices
+	if len(draftDeviceNames) == 0 && dCfg.Device != "" {
+		draftDeviceNames = []string{dCfg.Device}
+	}
+
+	var draftDevicesBuf []llama.GGMLBackendDevice
+	if len(draftDeviceNames) > 0 {
+		resolved, err := resolveBackendDevices(draftDeviceNames)
+		if err != nil {
+			return nil, fmt.Errorf("draft-resolve-devices: %w", err)
 		}
-		mParams.SetDevices([]llama.GGMLBackendDevice{dev})
+		if err := mParams.SetDevices(resolved); err != nil {
+			return nil, fmt.Errorf("draft-set-devices: %w", err)
+		}
+		draftDevicesBuf = resolved
+	}
+
+	if dCfg.MainGPU != nil {
+		mParams.MainGpu = int32(*dCfg.MainGPU)
+	}
+
+	var draftTensorSplitBuf []float32
+	if len(dCfg.TensorSplit) > 0 {
+		draftTensorSplitBuf = make([]float32, len(dCfg.TensorSplit))
+		copy(draftTensorSplitBuf, dCfg.TensorSplit)
+		mParams.TensorSplit = &draftTensorSplitBuf[0]
 	}
 
 	log(ctx, "draft-model", "status", "loading",
 		"files", fmt.Sprintf("%v", dCfg.ModelFiles),
-		"device", dCfg.Device,
+		"devices", fmt.Sprintf("%v", draftDeviceNames),
 		"nDraft", dCfg.NDraft,
 		"gpu_layers", mParams.NGpuLayers)
 
 	dModel, err := loadModelFromFiles(ctx, log, dCfg.ModelFiles, mParams)
+	runtime.KeepAlive(draftDevicesBuf)
+	runtime.KeepAlive(draftTensorSplitBuf)
 	if err != nil {
 		return nil, fmt.Errorf("unable to load draft model: %w", err)
 	}
@@ -838,4 +1054,124 @@ func resolveBackendDevice(name string) llama.GGMLBackendDevice {
 	}
 
 	return 0
+}
+
+// resolveBackendDevices resolves a list of device names to ggml backend device
+// handles. The returned slice is NULL-terminated as required by llama.cpp.
+// Returns an error if any device name cannot be resolved.
+func resolveBackendDevices(names []string) ([]llama.GGMLBackendDevice, error) {
+	devices := make([]llama.GGMLBackendDevice, 0, len(names)+1)
+	for _, name := range names {
+		dev := resolveBackendDevice(name)
+		if dev == 0 {
+			return nil, fmt.Errorf("unknown device: %s", name)
+		}
+		devices = append(devices, dev)
+	}
+	devices = append(devices, 0) // NULL terminator
+	return devices, nil
+}
+
+// parseTensorBuftOverrides converts config string patterns into yzma
+// TensorBuftOverride values. The returned slice is sentinel-terminated
+// (last element has Pattern == nil) as required by llama.cpp.
+// Supports shortcuts:
+//   - "all-ffn": offload all FFN expression tensors to CPU
+//   - "block:N": offload FFN tensors for block N to CPU
+//   - any other string: treated as a raw regex pattern
+func parseTensorBuftOverrides(patterns []string) ([]llama.TensorBuftOverride, error) {
+	overrides := make([]llama.TensorBuftOverride, 0, len(patterns)+1)
+	for _, p := range patterns {
+		var o llama.TensorBuftOverride
+		switch {
+		case p == "moe-experts":
+			o = llama.NewTensorBuftAllFFNExprsOverride()
+		case strings.HasPrefix(p, "moe-experts:block:"):
+			idx, err := strconv.Atoi(strings.TrimPrefix(p, "moe-experts:block:"))
+			if err != nil {
+				return nil, fmt.Errorf("invalid block index in %q: %w", p, err)
+			}
+			o = llama.NewTensorBuftBlockOverride(idx)
+		case p == "all-ffn":
+			o = llama.NewTensorBuftAllFFNExprsOverride()
+		case strings.HasPrefix(p, "block:"):
+			idx, err := strconv.Atoi(strings.TrimPrefix(p, "block:"))
+			if err != nil {
+				return nil, fmt.Errorf("invalid block index in %q: %w", p, err)
+			}
+			o = llama.NewTensorBuftBlockOverride(idx)
+		default:
+			o = llama.NewTensorBuftOverride(p)
+		}
+		overrides = append(overrides, o)
+	}
+	overrides = append(overrides, llama.TensorBuftOverride{}) // sentinel
+	return overrides, nil
+}
+
+// applyParamsFit calls ModelParamsFit on the actual model/context params,
+// modifying them in place to fit available VRAM. Returns the fitted tensor
+// split and tensor buffer override buffers which must be kept alive until
+// the model load call completes.
+func applyParamsFit(modelFile string, mParams *llama.ModelParams, ctxParams *llama.ContextParams) ([]float32, []llama.TensorBuftOverride, error) {
+	paramsFitMu.Lock()
+	defer paramsFitMu.Unlock()
+
+	nDevices := int(llama.MaxDevices())
+	tensorSplit := make([]float32, nDevices)
+	tensorBuftOverrides := make([]llama.TensorBuftOverride, llama.MaxTensorBuftOverrides())
+	margins := make([]uint64, nDevices)
+
+	status := llama.ModelParamsFit(
+		modelFile,
+		mParams,
+		ctxParams,
+		tensorSplit,
+		tensorBuftOverrides,
+		margins,
+		512,
+		llama.LogLevelWarn,
+	)
+
+	if status != llama.ModelParamsFitStatusSuccess {
+		return nil, nil, fmt.Errorf("model does not fit in available VRAM; reduce context window or GPU layers")
+	}
+
+	return tensorSplit, tensorBuftOverrides, nil
+}
+
+// buildFitCtxParams builds a minimal ContextParams with only the
+// memory-relevant fields needed for ModelParamsFit. Model-type flags
+// (embed/rerank) are not needed since fit works from GGUF file metadata.
+func buildFitCtxParams(cfg Config) llama.ContextParams {
+	p := llama.ContextDefaultParams()
+
+	if cfg.ContextWindow > 0 {
+		p.NCtx = uint32(cfg.ContextWindow)
+		p.NBatch = uint32(cfg.NBatch)
+		p.NUbatch = uint32(cfg.NUBatch)
+	}
+
+	p.NSeqMax = uint32(max(cfg.NSeqMax, 1))
+
+	if cfg.CacheTypeK != GGMLTypeAuto {
+		p.TypeK = cfg.CacheTypeK.ToYZMAType()
+	}
+	if cfg.CacheTypeV != GGMLTypeAuto {
+		p.TypeV = cfg.CacheTypeV.ToYZMAType()
+	}
+
+	return p
+}
+
+// trimTensorBuftOverrides returns the overrides up to (but not including)
+// the first sentinel entry (Pattern == nil). This trims the fixed-size
+// buffer returned by ModelParamsFit to only the meaningful entries.
+func trimTensorBuftOverrides(overrides []llama.TensorBuftOverride) []llama.TensorBuftOverride {
+	for i, o := range overrides {
+		if o.Pattern == nil {
+			return overrides[:i]
+		}
+	}
+	return overrides
 }

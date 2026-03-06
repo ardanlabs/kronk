@@ -58,11 +58,16 @@ type VRAMConfig struct {
 
 // VRAM contains the calculated VRAM requirements.
 type VRAM struct {
-	Input              VRAMInput // Input parameters used for calculation
-	KVPerTokenPerLayer int64     // Bytes per token per layer
-	KVPerSlot          int64     // Bytes per slot
-	SlotMemory         int64     // Total KV cache memory in bytes
-	TotalVRAM          int64     // Model size + slot memory in bytes
+	Input              VRAMInput        // Input parameters used for calculation
+	KVPerTokenPerLayer int64            // Bytes per token per layer
+	KVPerSlot          int64            // Bytes per slot
+	SlotMemory         int64            // Total KV cache memory in bytes
+	TotalVRAM          int64            // Model size + slot memory in bytes
+	MoE                *MoEInfo         `json:"moe,omitempty"`
+	Weights            *WeightBreakdown `json:"weights,omitempty"`
+	ModelWeightsGPU    int64            `json:"model_weights_gpu"`
+	ModelWeightsCPU    int64            `json:"model_weights_cpu"`
+	ComputeBufferEst   int64            `json:"compute_buffer_est"`
 }
 
 // CalculateVRAM retrieves model metadata and computes the VRAM requirements.
@@ -117,38 +122,50 @@ func (m *Models) CalculateVRAM(modelID string, cfg VRAMConfig) (VRAM, error) {
 
 // VRAMInput contains all parameters needed to calculate VRAM requirements.
 type VRAMInput struct {
-	ModelSizeBytes  int64 // Size of model weights in bytes
-	ContextWindow   int64 // n_ctx - context window size (e.g., 8192, 131072)
-	BlockCount      int64 // n_layers - number of transformer layers
-	HeadCountKV     int64 // Number of KV attention heads
-	KeyLength       int64 // K dimension per head (typically 128)
-	ValueLength     int64 // V dimension per head (typically 128)
-	BytesPerElement int64 // Depends on cache type: q8_0=1, f16=2
-	Slots           int64 // n_seq_max - number of concurrent sequences
+	ModelSizeBytes    int64            // Size of model weights in bytes
+	ContextWindow     int64            // n_ctx - context window size (e.g., 8192, 131072)
+	BlockCount        int64            // n_layers - number of transformer layers
+	HeadCountKV       int64            // Number of KV attention heads
+	KeyLength         int64            // K dimension per head (typically 128)
+	ValueLength       int64            // V dimension per head (typically 128)
+	BytesPerElement   int64            // Depends on cache type: q8_0=1, f16=2
+	Slots             int64            // n_seq_max - number of concurrent sequences
+	EmbeddingLength   int64            `json:"embedding_length,omitempty"` // needed for compute buffer estimate
+	MoE               *MoEInfo         `json:"moe,omitempty"`
+	Weights           *WeightBreakdown `json:"weights,omitempty"`
+	ExpertLayersOnGPU int64            `json:"expert_layers_on_gpu,omitempty"` // 0 = all experts on CPU
 }
 
 // CalculateVRAM computes the VRAM requirements for running a model based on
 // the provided input parameters.
 func CalculateVRAM(input VRAMInput) VRAM {
-
-	// Calculate bytes needed per token in each transformer layer.
-	// Formula: head_count_kv × (key_length + value_length) × bytes_per_element
-	// Example: 4 × (128 + 128) × 1 = 1024 bytes
 	kvPerTokenPerLayer := input.HeadCountKV * (input.KeyLength + input.ValueLength) * input.BytesPerElement
-
-	// Calculate total KV cache memory per slot (sequence).
-	// Formula: n_ctx × n_layers × kv_per_token_per_layer
-	// Example: 131072 × 48 × 1024 = ~6.4 GB
 	kvPerSlot := input.ContextWindow * input.BlockCount * kvPerTokenPerLayer
-
-	// Total KV cache memory allocated at model load time.
-	// Formula: slots × kv_per_slot
-	// Example: 2 × 6.4GB = ~12.8 GB
 	slotMemory := input.Slots * kvPerSlot
 
-	// Total VRAM = model weights + KV cache memory.
-	// Example: 36GB + 12.8GB = ~48.8 GB
-	totalVRAM := input.ModelSizeBytes + slotMemory
+	var modelWeightsGPU, modelWeightsCPU int64
+
+	if input.Weights != nil && input.MoE != nil && input.MoE.IsMoE {
+		alwaysActiveGPU := input.Weights.AlwaysActiveBytes
+
+		var expertsGPU int64
+		if input.ExpertLayersOnGPU > 0 && len(input.Weights.ExpertBytesByLayer) > 0 {
+			blockCount := int64(len(input.Weights.ExpertBytesByLayer))
+			startLayer := max(blockCount-input.ExpertLayersOnGPU, 0)
+			for i := startLayer; i < blockCount; i++ {
+				expertsGPU += input.Weights.ExpertBytesByLayer[i]
+			}
+		}
+
+		modelWeightsGPU = alwaysActiveGPU + expertsGPU
+		modelWeightsCPU = max(0, input.Weights.ExpertBytesTotal-expertsGPU)
+	} else {
+		modelWeightsGPU = input.ModelSizeBytes
+		modelWeightsCPU = 0
+	}
+
+	computeBufferEst := estimateComputeBuffer(input)
+	totalVRAM := modelWeightsGPU + slotMemory + computeBufferEst
 
 	return VRAM{
 		Input:              input,
@@ -156,7 +173,38 @@ func CalculateVRAM(input VRAMInput) VRAM {
 		KVPerSlot:          kvPerSlot,
 		SlotMemory:         slotMemory,
 		TotalVRAM:          totalVRAM,
+		MoE:                input.MoE,
+		Weights:            input.Weights,
+		ModelWeightsGPU:    modelWeightsGPU,
+		ModelWeightsCPU:    modelWeightsCPU,
+		ComputeBufferEst:   computeBufferEst,
 	}
+}
+
+// estimateComputeBuffer provides a heuristic estimate of the compute buffer
+// VRAM needed during inference. This is inherently approximate.
+func estimateComputeBuffer(input VRAMInput) int64 {
+	const (
+		baseBufferSmall = 256 * 1024 * 1024 // 256 MiB for models < 100B params
+		baseBufferLarge = 512 * 1024 * 1024 // 512 MiB for models >= 100B params
+		k               = 8                 // empirical multiplier
+	)
+
+	baseBuffer := int64(baseBufferSmall)
+	if input.ModelSizeBytes > 50*1024*1024*1024 {
+		baseBuffer = int64(baseBufferLarge)
+	}
+
+	var embeddingComponent int64
+	if input.EmbeddingLength > 0 {
+		nUBatch := int64(512)
+		embeddingComponent = k * nUBatch * input.EmbeddingLength * 4
+	}
+
+	total := baseBuffer + embeddingComponent
+	total = total + total/10
+
+	return total
 }
 
 // =============================================================================
@@ -175,12 +223,12 @@ func CalculateVRAMFromHuggingFace(ctx context.Context, modelURL string, cfg VRAM
 
 	modelURL = NormalizeHuggingFaceDownloadURL(modelURL)
 
-	metadata, fileSize, err := FetchGGUFMetadata(ctx, modelURL)
+	metadata, tensors, fileSize, err := FetchGGUFHeaderAndTensors(ctx, modelURL)
 	if err != nil {
 		return VRAM{}, fmt.Errorf("calculate-vram-hg: failed to fetch GGUF metadata: %w", err)
 	}
 
-	return buildVRAMFromMetadata(metadata, fileSize, cfg)
+	return buildVRAMFromMetadata(metadata, tensors, fileSize, cfg)
 }
 
 // calculateVRAMFromHuggingFaceFolder handles VRAM calculation for split models
@@ -192,17 +240,18 @@ func calculateVRAMFromHuggingFaceFolder(ctx context.Context, folderURL string, c
 		return VRAM{}, fmt.Errorf("calculate-vram-hg: %w", err)
 	}
 
-	metadata, _, err := FetchGGUFMetadata(ctx, fileURLs[0])
+	metadata, tensors, _, err := FetchGGUFHeaderAndTensors(ctx, fileURLs[0])
 	if err != nil {
 		return VRAM{}, fmt.Errorf("calculate-vram-hg: failed to fetch GGUF metadata from split: %w", err)
 	}
 
-	return buildVRAMFromMetadata(metadata, totalSize, cfg)
+	return buildVRAMFromMetadata(metadata, tensors, totalSize, cfg)
 }
 
 // buildVRAMFromMetadata extracts model parameters from GGUF metadata and
-// computes the VRAM requirements.
-func buildVRAMFromMetadata(metadata map[string]string, modelSizeBytes int64, cfg VRAMConfig) (VRAM, error) {
+// computes the VRAM requirements. When tensors is non-nil, a WeightBreakdown
+// is computed and attached to the result.
+func buildVRAMFromMetadata(metadata map[string]string, tensors []GGUFTensorInfo, modelSizeBytes int64, cfg VRAMConfig) (VRAM, error) {
 	arch := detectArchitecture(metadata)
 	if arch == "" {
 		return VRAM{}, fmt.Errorf("calculate-vram-hg: unable to detect model architecture")
@@ -230,6 +279,20 @@ func buildVRAMFromMetadata(metadata map[string]string, modelSizeBytes int64, cfg
 		return VRAM{}, fmt.Errorf("calculate-vram-hg: %w", err)
 	}
 
+	embeddingLength, _ := parseMetadataInt64WithFallback(metadata, arch+".embedding_length", ".embedding_length")
+
+	moeInfo := DetectMoE(metadata)
+	var moePtr *MoEInfo
+	if moeInfo.IsMoE {
+		moePtr = &moeInfo
+	}
+
+	var weights *WeightBreakdown
+	if len(tensors) > 0 {
+		wb := CategorizeWeights(tensors, blockCount)
+		weights = &wb
+	}
+
 	input := VRAMInput{
 		ModelSizeBytes:  modelSizeBytes,
 		ContextWindow:   cfg.ContextWindow,
@@ -239,6 +302,9 @@ func buildVRAMFromMetadata(metadata map[string]string, modelSizeBytes int64, cfg
 		ValueLength:     valueLength,
 		BytesPerElement: cfg.BytesPerElement,
 		Slots:           cfg.Slots,
+		EmbeddingLength: embeddingLength,
+		MoE:             moePtr,
+		Weights:         weights,
 	}
 
 	return CalculateVRAM(input), nil
@@ -487,13 +553,12 @@ func parseMetadataInt64WithFallback(metadata map[string]string, key string, suff
 func FetchGGUFMetadata(ctx context.Context, url string) (map[string]string, int64, error) {
 	var client http.Client
 
-	initialBytes := 24
-	headerData, fileSize, err := fetchRange(ctx, &client, url, 0, int64(initialBytes-1))
+	data, fileSize, err := fetchRange(ctx, &client, url, 0, ggufHeaderFetchSize-1)
 	if err != nil {
-		return nil, 0, fmt.Errorf("fetch-gguf-metadata: failed to fetch initial header: %w", err)
+		return nil, 0, fmt.Errorf("fetch-gguf-metadata: failed to fetch header data: %w", err)
 	}
 
-	reader := bytes.NewReader(headerData)
+	reader := bytes.NewReader(data)
 
 	var header ggufHeader
 	if err := binary.Read(reader, binary.LittleEndian, &header.Magic); err != nil {
@@ -516,19 +581,9 @@ func FetchGGUFMetadata(ctx context.Context, url string) (map[string]string, int6
 		return nil, 0, fmt.Errorf("fetch-gguf-metadata: failed to read metadata count: %w", err)
 	}
 
-	metadataSize := estimateMetadataSize(header.MetadataKvCount)
-	metadataData, _, err := fetchRange(ctx, &client, url, int64(initialBytes), int64(initialBytes)+metadataSize-1)
-	if err != nil {
-		return nil, 0, fmt.Errorf("fetch-gguf-metadata: failed to fetch metadata: %w", err)
-	}
-
-	allData := append(headerData, metadataData...)
-	fullReader := bytes.NewReader(allData)
-	fullReader.Seek(int64(initialBytes), io.SeekStart)
-
 	metadata := make(map[string]string)
 	for i := uint64(0); i < header.MetadataKvCount; i++ {
-		key, value, err := readMetadataKVFromReader(fullReader)
+		key, value, err := readMetadataKVFromReader(reader)
 		if err != nil {
 			break
 		}
@@ -558,7 +613,7 @@ func fetchRange(ctx context.Context, client *http.Client, url string, start, end
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusPartialContent && resp.StatusCode != http.StatusOK {
-		return nil, 0, fmt.Errorf("fetch-range: unexpected status code: %d", resp.StatusCode)
+		return nil, 0, fmt.Errorf("fetch-range: unexpected status code: %d, url=%s", resp.StatusCode, resp.Request.URL.Host)
 	}
 
 	cr := resp.Header.Get("Content-Range")
@@ -573,17 +628,32 @@ func fetchRange(ctx context.Context, client *http.Client, url string, start, end
 		fileSize = resp.ContentLength
 	}
 
-	data, err := io.ReadAll(resp.Body)
+	// When the server returns 200 OK (full file) instead of 206 Partial
+	// Content, read only the requested range to avoid downloading the
+	// entire file. This happens when HuggingFace redirects to a storage
+	// backend (e.g., Xet) that does not support HTTP Range requests.
+	var reader io.Reader = resp.Body
+	if resp.StatusCode == http.StatusOK {
+		if start > 0 {
+			if _, err := io.CopyN(io.Discard, resp.Body, start); err != nil {
+				return nil, 0, fmt.Errorf("fetch-range: failed to skip to offset %d: %w", start, err)
+			}
+		}
+		reader = io.LimitReader(resp.Body, end-start+1)
+	}
+
+	data, err := io.ReadAll(reader)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, fmt.Errorf("fetch-range: read body failed: status=%d, requested_range=%d-%d, content_range=%q, content_length=%d, host=%s: %w",
+			resp.StatusCode, start, end, cr, resp.ContentLength, resp.Request.URL.Host, err)
+	}
+
+	if resp.StatusCode == http.StatusPartialContent && int64(len(data)) < end-start+1 {
+		return nil, 0, fmt.Errorf("fetch-range: short read: got %d bytes, expected %d, status=%d, content_range=%q, host=%s",
+			len(data), end-start+1, resp.StatusCode, cr, resp.Request.URL.Host)
 	}
 
 	return data, fileSize, nil
-}
-
-// estimateMetadataSize estimates how many bytes to fetch for metadata.
-func estimateMetadataSize(kvCount uint64) int64 {
-	return int64(kvCount * 512)
 }
 
 // readMetadataKVFromReader reads a key-value pair from a bytes.Reader.

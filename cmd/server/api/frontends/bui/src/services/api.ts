@@ -26,6 +26,7 @@ import type {
   PlaygroundSessionRequest,
   PlaygroundSessionResponse,
   PlaygroundChatRequest,
+  DevicesResponse,
 } from '../types';
 
 class ApiService {
@@ -219,6 +220,7 @@ class ApiService {
 
         const decoder = new TextDecoder();
         let buffer = '';
+        let receivedSuccess = false;
 
         while (true) {
           const { done, value } = await reader.read();
@@ -236,6 +238,7 @@ class ApiService {
               const data = JSON.parse(jsonStr) as PullResponse;
               onMessage(data);
               if (data.status === 'complete' || data.downloaded) {
+                receivedSuccess = true;
                 onComplete();
                 return;
               }
@@ -245,7 +248,9 @@ class ApiService {
           }
         }
 
-        onComplete();
+        if (!receivedSuccess && !controller.signal.aborted) {
+          onError('Stream ended before completion');
+        }
       })
       .catch((err) => {
         if (err.name !== 'AbortError') {
@@ -304,6 +309,7 @@ class ApiService {
 
         const decoder = new TextDecoder();
         let buffer = '';
+        let receivedSuccess = false;
 
         while (true) {
           const { done, value } = await reader.read();
@@ -321,6 +327,7 @@ class ApiService {
               const data = JSON.parse(jsonStr) as PullResponse;
               onMessage(data);
               if (data.status === 'complete' || data.downloaded) {
+                receivedSuccess = true;
                 onComplete();
                 return;
               }
@@ -330,7 +337,9 @@ class ApiService {
           }
         }
 
-        onComplete();
+        if (!receivedSuccess && !controller.signal.aborted) {
+          onError('Stream ended before completion');
+        }
       })
       .catch((err) => {
         if (err.name !== 'AbortError') {
@@ -680,6 +689,10 @@ class ApiService {
       });
 
     return () => controller.abort();
+  }
+
+  async getDevices(): Promise<DevicesResponse> {
+    return this.request<DevicesResponse>('/devices');
   }
 
 }

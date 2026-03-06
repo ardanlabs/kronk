@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useDownload } from '../contexts/DownloadContext';
+import DownloadInfoTable from './DownloadInfoTable';
+import DownloadProgressBar from './DownloadProgressBar';
 
 export default function ModelPull() {
   const { download, isDownloading, startDownload, startBatchDownload, cancelDownload, clearDownload } = useDownload();
@@ -123,6 +125,14 @@ export default function ModelPull() {
             )}
           </div>
         </form>
+
+        {download && download.meta && (
+          <DownloadInfoTable meta={download.meta} />
+        )}
+
+        {download && download.progress && isDownloading && (
+          <DownloadProgressBar progress={download.progress} meta={download.meta} />
+        )}
 
         {download && download.messages.length > 0 && (
           <div className="status-box">

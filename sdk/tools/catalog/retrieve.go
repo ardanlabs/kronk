@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"go.yaml.in/yaml/v2"
 )
 
@@ -187,7 +188,7 @@ func (c *Catalog) ResolvedModelConfig(modelID string) ModelConfig {
 		if modelConfig.NGpuLayers != nil {
 			cfg.NGpuLayers = modelConfig.NGpuLayers
 		}
-		if modelConfig.SplitMode != 0 {
+		if modelConfig.SplitMode != nil {
 			cfg.SplitMode = modelConfig.SplitMode
 		}
 		if modelConfig.SystemPromptCache {
@@ -292,6 +293,11 @@ func (c *Catalog) KronkResolvedModelConfig(modelID string) (model.Config, error)
 	}
 
 	return cfg, nil
+}
+
+// ModelFullPath returns the file paths for a model by its ID.
+func (c *Catalog) ModelFullPath(modelID string) (models.Path, error) {
+	return c.models.FullPath(modelID)
 }
 
 // =============================================================================

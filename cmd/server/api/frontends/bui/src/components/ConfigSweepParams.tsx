@@ -1,6 +1,7 @@
 import React from 'react';
 import type { ConfigSweepDefinition } from '../types';
 import { PARAM_TOOLTIPS, ParamTooltip } from './ParamTooltips';
+import { MOE_SWEEP_LABELS } from '../lib/moe';
 
 export interface ConfigSweepParamsProps {
   configSweepDef: ConfigSweepDefinition;
@@ -13,7 +14,12 @@ export interface ConfigSweepParamsProps {
   setRawContextWindow: (v: string) => void;
   rawNSeqMax: string;
   setRawNSeqMax: (v: string) => void;
-  commitNumericSweep: (raw: string, field: 'nbatch' | 'nubatch' | 'contextWindow' | 'nSeqMax', setRaw: (v: string) => void) => void;
+  rawMoeKeepExpertsTopN: string;
+  setRawMoeKeepExpertsTopN: (v: string) => void;
+  rawOpOffloadMinBatch: string;
+  setRawOpOffloadMinBatch: (v: string) => void;
+  commitNumericSweep: (raw: string, field: 'nbatch' | 'nubatch' | 'contextWindow' | 'nSeqMax' | 'moeKeepExpertsTopN' | 'opOffloadMinBatch', setRaw: (v: string) => void) => void;
+  isMoE?: boolean;
   isRunning: boolean;
   trialCount: number;
 }
@@ -29,7 +35,12 @@ export default function ConfigSweepParams({
   setRawContextWindow,
   rawNSeqMax,
   setRawNSeqMax,
+  rawMoeKeepExpertsTopN,
+  setRawMoeKeepExpertsTopN,
+  rawOpOffloadMinBatch,
+  setRawOpOffloadMinBatch,
   commitNumericSweep,
+  isMoE,
   isRunning,
   trialCount,
 }: ConfigSweepParamsProps) {
@@ -164,7 +175,67 @@ export default function ConfigSweepParams({
             ))}
           </div>
         </div>
+
       </div>
+
+      {isMoE && (
+        <>
+          <h4 style={{ marginTop: 16 }}>MoE Parameters</h4>
+          <div className="playground-sweep-params">
+            <div className="playground-sweep-param">
+              <label className="playground-sweep-param-toggle">Expert Strategy{PARAM_TOOLTIPS.moeMode && <ParamTooltip text={PARAM_TOOLTIPS.moeMode} />}</label>
+              <div className="playground-sweep-option-checks">
+                {['experts_cpu', 'keep_top_n', 'experts_gpu'].map((val) => (
+                  <label key={val} className="playground-sweep-option-label">
+                    <input
+                      type="checkbox"
+                      checked={configSweepDef.moeMode?.values.includes(val) ?? false}
+                      onChange={(e) => {
+                        setConfigSweepDef(d => {
+                          const prev = d.moeMode?.values ?? [];
+                          const next = e.target.checked ? [...prev, val] : prev.filter(v => v !== val);
+                          return { ...d, moeMode: { enabled: next.length > 0, values: next } };
+                        });
+                      }}
+                      disabled={isRunning}
+                    />
+                    {MOE_SWEEP_LABELS[val] ?? val}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="playground-sweep-param">
+              <label className="playground-sweep-param-toggle">GPU Expert Layers{PARAM_TOOLTIPS.moeKeepExpertsTopN && <ParamTooltip text={PARAM_TOOLTIPS.moeKeepExpertsTopN} />}</label>
+              <input
+                type="text"
+                className="playground-sweep-param-values"
+                value={rawMoeKeepExpertsTopN}
+                onChange={(e) => setRawMoeKeepExpertsTopN(e.target.value)}
+                onBlur={() => commitNumericSweep(rawMoeKeepExpertsTopN, 'moeKeepExpertsTopN', setRawMoeKeepExpertsTopN)}
+                onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                placeholder="0, 4, 8, 16"
+                disabled={isRunning}
+              />
+            </div>
+
+            <div className="playground-sweep-param">
+              <label className="playground-sweep-param-toggle">Op Offload Min Batch{PARAM_TOOLTIPS.opOffloadMinBatch && <ParamTooltip text={PARAM_TOOLTIPS.opOffloadMinBatch} />}</label>
+              <input
+                type="text"
+                className="playground-sweep-param-values"
+                value={rawOpOffloadMinBatch}
+                onChange={(e) => setRawOpOffloadMinBatch(e.target.value)}
+                onBlur={() => commitNumericSweep(rawOpOffloadMinBatch, 'opOffloadMinBatch', setRawOpOffloadMinBatch)}
+                onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                placeholder="0, 128, 256, 512"
+                disabled={isRunning}
+              />
+            </div>
+          </div>
+        </>
+      )}
+
       <p style={{ fontSize: 12, color: 'var(--color-gray-600)', marginTop: 8 }}>Trials: {trialCount}</p>
     </div>
   );
