@@ -3,23 +3,24 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { useDownload } from '../contexts/DownloadContext';
 import type { CatalogModelResponse, CatalogModelsResponse, CatalogCapabilities, VRAMCalculatorResponse } from '../types';
-import { ParamTooltip } from './ParamTooltips';
+import { ParamTooltip, labelWithTip } from './ParamTooltips';
 import { fmtNum, fmtVal } from '../lib/format';
+import { extractContextInfo } from '../lib/context';
 import ResizablePanel from './ResizablePanel';
 import KeyValueTable from './KeyValueTable';
-import MetadataSection from './MetadataSection';
+import ModelCard from './ModelCard';
 import CodeBlock from './CodeBlock';
 import DownloadInfoTable from './DownloadInfoTable';
 import DownloadProgressBar from './DownloadProgressBar';
 import { VRAMFormulaModal, VRAMControls, VRAMResults, useVRAMState } from './vram';
 
-type DetailSection = 'catalog' | 'config' | 'sampling' | 'metadata' | 'template' | 'vram' | 'pull';
+type DetailSection = 'model-card' | 'catalog' | 'config' | 'sampling' | 'template' | 'vram' | 'pull';
 
 const SECTION_LABELS: Record<DetailSection, string> = {
+  'model-card': 'Model Card',
   catalog: 'Catalog',
   config: 'Configuration',
   sampling: 'Sampling',
-  metadata: 'Metadata',
   template: 'Template',
   vram: 'VRAM Calculator',
   pull: 'Pull',
@@ -155,7 +156,7 @@ export default function CatalogList() {
   const [infoLoading, setInfoLoading] = useState(false);
   const [infoError, setInfoError] = useState<string | null>(null);
 
-  const [activeSection, setActiveSection] = useState<DetailSection>('catalog');
+  const [activeSection, setActiveSection] = useState<DetailSection>('model-card');
 
   // Sort state for catalog table
   type SortField = 'id' | 'owned_by' | 'category' | 'architecture' | 'total_size_bytes' | 'validated' | 'created';
@@ -345,7 +346,7 @@ export default function CatalogList() {
       setSelectedId(null);
       setModelInfo(null);
       setInfoError(null);
-      setActiveSection('catalog');
+      setActiveSection('model-card');
     }
   }, [filteredData, selectedId]);
 
@@ -413,7 +414,7 @@ export default function CatalogList() {
     setSelectedId(null);
     setModelInfo(null);
     setInfoError(null);
-    setActiveSection('catalog');
+    setActiveSection('model-card');
     try {
       const response = await api.listCatalog();
       setData(response);
@@ -434,12 +435,12 @@ export default function CatalogList() {
     if (selectedId === id) {
       setSelectedId(null);
       setModelInfo(null);
-      setActiveSection('catalog');
+      setActiveSection('model-card');
       return;
     }
 
     setSelectedId(id);
-    setActiveSection('catalog');
+    setActiveSection('model-card');
     setInfoLoading(true);
     setInfoError(null);
     setModelInfo(null);
@@ -503,6 +504,7 @@ export default function CatalogList() {
     initialBytesPerElement: 1,
     serverResponse: effectiveVram ?? null,
   });
+  const contextInfo = extractContextInfo(modelInfo?.model_metadata);
 
   const handlePull = () => {
     if (!selectedId) return;
@@ -796,7 +798,7 @@ export default function CatalogList() {
                 loadCatalog();
                 setSelectedId(null);
                 setModelInfo(null);
-                setActiveSection('catalog');
+                setActiveSection('model-card');
                 setInfoError(null);
               }}
               disabled={loading}
@@ -941,7 +943,7 @@ export default function CatalogList() {
                       { key: 'size', label: 'Size', value: modelInfo.total_size || '-' },
                       { key: 'downloaded', label: 'Downloaded', value: <span className={`badge ${modelInfo.downloaded ? 'badge-yes' : 'badge-no'}`}>{modelInfo.downloaded ? 'Yes' : 'No'}</span> },
                       { key: 'gated', label: 'Gated Model', value: <span className={`badge ${modelInfo.gated_model ? 'badge-yes' : 'badge-no'}`}>{modelInfo.gated_model ? 'Yes' : 'No'}</span> },
-                      { key: 'validated', label: 'Validated', value: <span style={{ color: modelInfo.validated ? 'inherit' : 'var(--color-error)' }}>{modelInfo.validated ? '✓' : '✗'}</span> },
+                      { key: 'validated', label: labelWithTip('Validated', 'validated'), value: <span style={{ color: modelInfo.validated ? 'inherit' : 'var(--color-error)' }}>{modelInfo.validated ? '✓' : '✗'}</span> },
                       { key: 'endpoint', label: 'Endpoint', value: modelInfo.capabilities.endpoint },
                       { key: 'template', label: 'Template', value: modelInfo.template || '-' },
                     ]} />
@@ -964,30 +966,30 @@ export default function CatalogList() {
                     <h3 style={{ marginBottom: '16px' }}>Model Configuration</h3>
                     {modelInfo.model_config ? (
                       <KeyValueTable rows={[
-                        { key: 'device', label: 'Device', value: modelInfo.model_config.device || 'default' },
-                        { key: 'ctx', label: 'Context Window', value: fmtVal(modelInfo.model_config['context-window']) },
-                        { key: 'nbatch', label: 'Batch Size', value: fmtVal(modelInfo.model_config.nbatch) },
-                        { key: 'nubatch', label: 'Micro Batch Size', value: fmtVal(modelInfo.model_config.nubatch) },
-                        { key: 'nthreads', label: 'Threads', value: fmtVal(modelInfo.model_config.nthreads) },
-                        { key: 'nthreads-batch', label: 'Batch Threads', value: fmtVal(modelInfo.model_config['nthreads-batch']) },
-                        { key: 'cache-k', label: 'Cache Type K', value: modelInfo.model_config['cache-type-k'] || 'default' },
-                        { key: 'cache-v', label: 'Cache Type V', value: modelInfo.model_config['cache-type-v'] || 'default' },
-                        { key: 'flash', label: 'Flash Attention', value: modelInfo.model_config['flash-attention'] || 'default' },
-                        { key: 'nseq', label: 'Max Sequences', value: fmtVal(modelInfo.model_config['nseq-max']) },
-                        { key: 'ngpu', label: 'GPU Layers', value: fmtVal(modelInfo.model_config['ngpu-layers'] ?? 'auto') },
-                        { key: 'split', label: 'Split Mode', value: modelInfo.model_config['split-mode'] || 'default' },
-                        { key: 'spc', label: 'System Prompt Cache', value: <span className={`badge ${modelInfo.model_config['system-prompt-cache'] ? 'badge-yes' : 'badge-no'}`}>{modelInfo.model_config['system-prompt-cache'] ? 'Yes' : 'No'}</span> },
-                        { key: 'imc', label: 'Incremental Cache', value: <span className={`badge ${modelInfo.model_config['incremental-cache'] ? 'badge-yes' : 'badge-no'}`}>{modelInfo.model_config['incremental-cache'] ? 'Yes' : 'No'}</span> },
+                        { key: 'device', label: labelWithTip('Device', 'device'), value: modelInfo.model_config.device || 'default' },
+                        { key: 'ctx', label: labelWithTip('Context Window', 'contextWindow'), value: fmtVal(modelInfo.model_config['context-window']) },
+                        { key: 'nbatch', label: labelWithTip('Batch Size', 'nbatch'), value: fmtVal(modelInfo.model_config.nbatch) },
+                        { key: 'nubatch', label: labelWithTip('Micro Batch Size', 'nubatch'), value: fmtVal(modelInfo.model_config.nubatch) },
+                        { key: 'nthreads', label: labelWithTip('Threads', 'nthreads'), value: fmtVal(modelInfo.model_config.nthreads) },
+                        { key: 'nthreads-batch', label: labelWithTip('Batch Threads', 'nthreadsBatch'), value: fmtVal(modelInfo.model_config['nthreads-batch']) },
+                        { key: 'cache-k', label: labelWithTip('Cache Type K', 'cacheTypeK'), value: modelInfo.model_config['cache-type-k'] || 'default' },
+                        { key: 'cache-v', label: labelWithTip('Cache Type V', 'cacheTypeV'), value: modelInfo.model_config['cache-type-v'] || 'default' },
+                        { key: 'flash', label: labelWithTip('Flash Attention', 'flashAttention'), value: modelInfo.model_config['flash-attention'] || 'default' },
+                        { key: 'nseq', label: labelWithTip('Max Sequences', 'nSeqMax'), value: fmtVal(modelInfo.model_config['nseq-max']) },
+                        { key: 'ngpu', label: labelWithTip('GPU Layers', 'ngpuLayers'), value: fmtVal(modelInfo.model_config['ngpu-layers'] ?? 'auto') },
+                        { key: 'split', label: labelWithTip('Split Mode', 'splitMode'), value: modelInfo.model_config['split-mode'] || 'default' },
+                        { key: 'spc', label: labelWithTip('System Prompt Cache', 'systemPromptCache'), value: <span className={`badge ${modelInfo.model_config['system-prompt-cache'] ? 'badge-yes' : 'badge-no'}`}>{modelInfo.model_config['system-prompt-cache'] ? 'Yes' : 'No'}</span> },
+                        { key: 'imc', label: labelWithTip('Incremental Cache', 'incrementalCache'), value: <span className={`badge ${modelInfo.model_config['incremental-cache'] ? 'badge-yes' : 'badge-no'}`}>{modelInfo.model_config['incremental-cache'] ? 'Yes' : 'No'}</span> },
                         ...(!!modelInfo.model_config['rope-scaling-type'] && modelInfo.model_config['rope-scaling-type'] !== 'none' ? [
-                          { key: 'rope-scaling', label: 'RoPE Scaling', value: modelInfo.model_config['rope-scaling-type'] },
-                          { key: 'yarn-orig', label: 'YaRN Original Context', value: fmtVal(modelInfo.model_config['yarn-orig-ctx'] ?? 'auto') },
-                          ...(modelInfo.model_config['rope-freq-base'] != null ? [{ key: 'rope-freq', label: 'RoPE Freq Base', value: fmtVal(modelInfo.model_config['rope-freq-base']) }] : []),
-                          ...(modelInfo.model_config['yarn-ext-factor'] != null ? [{ key: 'yarn-ext', label: 'YaRN Ext Factor', value: fmtVal(modelInfo.model_config['yarn-ext-factor']) }] : []),
-                          ...(modelInfo.model_config['yarn-attn-factor'] != null ? [{ key: 'yarn-attn', label: 'YaRN Attn Factor', value: fmtVal(modelInfo.model_config['yarn-attn-factor']) }] : []),
+                          { key: 'rope-scaling', label: labelWithTip('RoPE Scaling', 'ropeScaling'), value: modelInfo.model_config['rope-scaling-type'] },
+                          { key: 'yarn-orig', label: labelWithTip('YaRN Original Context', 'yarnOrigCtx'), value: fmtVal(modelInfo.model_config['yarn-orig-ctx'] ?? 'auto') },
+                          ...(modelInfo.model_config['rope-freq-base'] != null ? [{ key: 'rope-freq', label: labelWithTip('RoPE Freq Base', 'ropeFreqBase'), value: fmtVal(modelInfo.model_config['rope-freq-base']) }] : []),
+                          ...(modelInfo.model_config['yarn-ext-factor'] != null ? [{ key: 'yarn-ext', label: labelWithTip('YaRN Ext Factor', 'yarnExtFactor'), value: fmtVal(modelInfo.model_config['yarn-ext-factor']) }] : []),
+                          ...(modelInfo.model_config['yarn-attn-factor'] != null ? [{ key: 'yarn-attn', label: labelWithTip('YaRN Attn Factor', 'yarnAttnFactor'), value: fmtVal(modelInfo.model_config['yarn-attn-factor']) }] : []),
                         ] : []),
                         ...(modelInfo.model_config['draft-model'] ? [
-                          { key: 'draft-model', label: 'Draft Model', value: modelInfo.model_config['draft-model']['model-id'] },
-                          { key: 'draft-tokens', label: 'Draft Tokens', value: fmtVal(modelInfo.model_config['draft-model'].ndraft) },
+                          { key: 'draft-model', label: labelWithTip('Draft Model', 'draftModel'), value: modelInfo.model_config['draft-model']['model-id'] },
+                          { key: 'draft-tokens', label: labelWithTip('Draft Tokens', 'draftTokens'), value: fmtVal(modelInfo.model_config['draft-model'].ndraft) },
                         ] : []),
                       ]} />
                     ) : (
@@ -1006,24 +1008,24 @@ export default function CatalogList() {
                       const sp = modelInfo.model_config['sampling-parameters'];
                       return (
                         <KeyValueTable rows={[
-                          { key: 'temperature', label: 'Temperature', value: fmtNum(sp.temperature) },
-                          { key: 'top_k', label: 'Top K', value: fmtVal(sp.top_k) },
-                          { key: 'top_p', label: 'Top P', value: fmtNum(sp.top_p) },
-                          { key: 'min_p', label: 'Min P', value: fmtNum(sp.min_p) },
-                          { key: 'max_tokens', label: 'Max Tokens', value: fmtVal(sp.max_tokens) },
-                          { key: 'repeat_penalty', label: 'Repeat Penalty', value: fmtNum(sp.repeat_penalty) },
-                          { key: 'repeat_last_n', label: 'Repeat Last N', value: fmtVal(sp.repeat_last_n) },
-                          { key: 'freq_penalty', label: 'Frequency Penalty', value: fmtNum(sp.frequency_penalty) },
-                          { key: 'pres_penalty', label: 'Presence Penalty', value: fmtNum(sp.presence_penalty) },
-                          { key: 'dry_mult', label: 'DRY Multiplier', value: fmtVal(sp.dry_multiplier) },
-                          { key: 'dry_base', label: 'DRY Base', value: fmtVal(sp.dry_base) },
-                          { key: 'dry_len', label: 'DRY Allowed Length', value: fmtVal(sp.dry_allowed_length) },
-                          { key: 'dry_last', label: 'DRY Penalty Last N', value: fmtVal(sp.dry_penalty_last_n) },
-                          { key: 'xtc_prob', label: 'XTC Probability', value: fmtVal(sp.xtc_probability) },
-                          { key: 'xtc_thresh', label: 'XTC Threshold', value: fmtVal(sp.xtc_threshold) },
-                          { key: 'xtc_keep', label: 'XTC Min Keep', value: fmtVal(sp.xtc_min_keep) },
-                          { key: 'thinking', label: 'Enable Thinking', value: fmtVal(sp.enable_thinking ?? 'default') },
-                          { key: 'reasoning', label: 'Reasoning Effort', value: fmtVal(sp.reasoning_effort ?? 'default') },
+                          { key: 'temperature', label: labelWithTip('Temperature', 'temperature'), value: fmtNum(sp.temperature) },
+                          { key: 'top_k', label: labelWithTip('Top K', 'top_k'), value: fmtVal(sp.top_k) },
+                          { key: 'top_p', label: labelWithTip('Top P', 'top_p'), value: fmtNum(sp.top_p) },
+                          { key: 'min_p', label: labelWithTip('Min P', 'min_p'), value: fmtNum(sp.min_p) },
+                          { key: 'max_tokens', label: labelWithTip('Max Tokens', 'max_tokens'), value: fmtVal(sp.max_tokens) },
+                          { key: 'repeat_penalty', label: labelWithTip('Repeat Penalty', 'repeat_penalty'), value: fmtNum(sp.repeat_penalty) },
+                          { key: 'repeat_last_n', label: labelWithTip('Repeat Last N', 'repeat_last_n'), value: fmtVal(sp.repeat_last_n) },
+                          { key: 'freq_penalty', label: labelWithTip('Frequency Penalty', 'frequency_penalty'), value: fmtNum(sp.frequency_penalty) },
+                          { key: 'pres_penalty', label: labelWithTip('Presence Penalty', 'presence_penalty'), value: fmtNum(sp.presence_penalty) },
+                          { key: 'dry_mult', label: labelWithTip('DRY Multiplier', 'dry_multiplier'), value: fmtVal(sp.dry_multiplier) },
+                          { key: 'dry_base', label: labelWithTip('DRY Base', 'dry_base'), value: fmtVal(sp.dry_base) },
+                          { key: 'dry_len', label: labelWithTip('DRY Allowed Length', 'dry_allowed_length'), value: fmtVal(sp.dry_allowed_length) },
+                          { key: 'dry_last', label: labelWithTip('DRY Penalty Last N', 'dry_penalty_last_n'), value: fmtVal(sp.dry_penalty_last_n) },
+                          { key: 'xtc_prob', label: labelWithTip('XTC Probability', 'xtc_probability'), value: fmtVal(sp.xtc_probability) },
+                          { key: 'xtc_thresh', label: labelWithTip('XTC Threshold', 'xtc_threshold'), value: fmtVal(sp.xtc_threshold) },
+                          { key: 'xtc_keep', label: labelWithTip('XTC Min Keep', 'xtc_min_keep'), value: fmtVal(sp.xtc_min_keep) },
+                          { key: 'thinking', label: labelWithTip('Enable Thinking', 'enable_thinking'), value: fmtVal(sp.enable_thinking ?? 'default') },
+                          { key: 'reasoning', label: labelWithTip('Reasoning Effort', 'reasoning_effort'), value: fmtVal(sp.reasoning_effort ?? 'default') },
                           ...(sp.grammar ? [{ key: 'grammar', label: 'Grammar', value: sp.grammar }] : []),
                         ]} />
                       );
@@ -1035,15 +1037,12 @@ export default function CatalogList() {
                   </div>
                 )}
 
-                {/* Metadata Section */}
-                {activeSection === 'metadata' && modelInfo && (
+                {/* Model Card Section */}
+                {activeSection === 'model-card' && modelInfo && (
                   <div>
-                    <h3 style={{ marginBottom: '16px' }}>Metadata</h3>
+                    <h3 style={{ marginBottom: '16px' }}>Model Card</h3>
                     {modelInfo.model_metadata && Object.keys(modelInfo.model_metadata).filter(k => k !== 'tokenizer.chat_template').length > 0 ? (
-                      <MetadataSection
-                        metadata={modelInfo.model_metadata}
-                        excludeKeys={['tokenizer.chat_template']}
-                      />
+                      <ModelCard metadata={modelInfo.model_metadata} />
                     ) : (
                       <div className="empty-state">
                         <p>No metadata available for this model.</p>
@@ -1123,6 +1122,7 @@ export default function CatalogList() {
                           <VRAMControls
                             {...vramControls}
                             variant="compact"
+                            contextInfo={contextInfo}
                           />
                         </div>
 

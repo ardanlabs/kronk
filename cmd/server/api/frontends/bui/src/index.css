@@ -2627,7 +2627,7 @@ code[class*="language-"] {
 
 .kv-row {
     display: grid;
-    grid-template-columns: minmax(200px, 0.4fr) 1fr;
+    grid-template-columns: minmax(280px, 0.56fr) 1fr;
     gap: 16px;
     padding: 10px 16px;
     border-bottom: 1px solid var(--color-gray-200);
@@ -2682,6 +2682,24 @@ code[class*="language-"] {
 
 [data-theme="dark"] .meta-section-title {
     color: var(--color-light-blue);
+}
+
+/* --- Model card raw metadata toggle --- */
+.model-card-raw-toggle {
+    margin-top: 32px;
+}
+
+.model-card-raw-toggle > summary {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--color-muted);
+    cursor: pointer;
+    list-style: revert;
+    margin-bottom: 16px;
+}
+
+[data-theme="dark"] .model-card-raw-toggle > summary {
+    color: var(--color-muted);
 }
 
 /* --- Controls row (VRAM dropdowns + reusable) --- */

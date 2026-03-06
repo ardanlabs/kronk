@@ -1,5 +1,8 @@
 import { useState } from 'react';
 import { CONTEXT_WINDOW_OPTIONS, BYTES_PER_ELEMENT_OPTIONS, SLOT_OPTIONS } from './constants';
+import { PARAM_TOOLTIPS, ParamTooltip } from '../ParamTooltips';
+import type { ContextInfo } from '../../lib/context';
+import { formatContextHint } from '../../lib/context';
 
 const GPU_COUNT_FALLBACK = [1, 2, 4, 8];
 
@@ -29,6 +32,7 @@ interface VRAMControlsProps {
   onDeviceCountChange?: (v: number) => void;
   tensorSplit?: string;
   onTensorSplitChange?: (v: string) => void;
+  contextInfo?: ContextInfo | null;
 }
 
 export default function VRAMControls({
@@ -42,27 +46,33 @@ export default function VRAMControls({
   kvCacheOnCPU, onKvCacheOnCPUChange,
   deviceCount, onDeviceCountChange,
   tensorSplit, onTensorSplitChange,
+  contextInfo,
 }: VRAMControlsProps) {
   if (variant === 'compact') {
     return (
       <div className="controls-row">
         <div className="control-field">
-          <label htmlFor="vram-compact-ctx">Context Window</label>
+          <label htmlFor="vram-compact-ctx">Context Window<ParamTooltip text={PARAM_TOOLTIPS.contextWindow} /></label>
           <select
             id="vram-compact-ctx"
             value={contextWindow}
             onChange={(e) => onContextWindowChange(Number(e.target.value))}
             className="form-select"
           >
-            {CONTEXT_WINDOW_OPTIONS.map((opt) => (
+            {CONTEXT_WINDOW_OPTIONS.filter(opt => !contextInfo || opt.value <= contextInfo.max).map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label} ({opt.value.toLocaleString()} tokens)
               </option>
             ))}
           </select>
+          {contextInfo && contextInfo.hasRoPE && (
+            <div style={{ fontSize: '11px', color: 'var(--color-gray-500)', marginTop: 2 }}>
+              {formatContextHint(contextInfo)}
+            </div>
+          )}
         </div>
         <div className="control-field">
-          <label htmlFor="vram-compact-bpe">Cache Type</label>
+          <label htmlFor="vram-compact-bpe">Cache Type<ParamTooltip text={PARAM_TOOLTIPS.cacheType} /></label>
           <select
             id="vram-compact-bpe"
             value={bytesPerElement}
@@ -77,7 +87,7 @@ export default function VRAMControls({
           </select>
         </div>
         <div className="control-field">
-          <label htmlFor="vram-compact-slots">Slots</label>
+          <label htmlFor="vram-compact-slots">Slots<ParamTooltip text={PARAM_TOOLTIPS.nSeqMax} /></label>
           <select
             id="vram-compact-slots"
             value={slots}
@@ -109,23 +119,28 @@ export default function VRAMControls({
   return (
     <div className="playground-sweep-params">
       <div className="playground-sweep-param">
-        <label className="playground-sweep-param-toggle" htmlFor="vram-contextWindow">Context Window</label>
+        <label className="playground-sweep-param-toggle" htmlFor="vram-contextWindow">Context Window<ParamTooltip text={PARAM_TOOLTIPS.contextWindow} /></label>
         <select
           id="vram-contextWindow"
           value={contextWindow}
           onChange={(e) => onContextWindowChange(Number(e.target.value))}
           className="playground-sweep-param-values"
         >
-          {CONTEXT_WINDOW_OPTIONS.map((opt) => (
+          {CONTEXT_WINDOW_OPTIONS.filter(opt => !contextInfo || opt.value <= contextInfo.max).map((opt) => (
             <option key={opt.value} value={opt.value}>
               {opt.label} ({opt.value.toLocaleString()} tokens)
             </option>
           ))}
         </select>
+        {contextInfo && contextInfo.hasRoPE && (
+          <div style={{ fontSize: '11px', color: 'var(--color-gray-500)', marginTop: 2 }}>
+            {formatContextHint(contextInfo)}
+          </div>
+        )}
       </div>
 
       <div className="playground-sweep-param">
-        <label className="playground-sweep-param-toggle" htmlFor="vram-bytesPerElement">Cache Type</label>
+        <label className="playground-sweep-param-toggle" htmlFor="vram-bytesPerElement">Cache Type<ParamTooltip text={PARAM_TOOLTIPS.cacheType} /></label>
         <select
           id="vram-bytesPerElement"
           value={bytesPerElement}
@@ -141,7 +156,7 @@ export default function VRAMControls({
       </div>
 
       <div className="playground-sweep-param">
-        <label className="playground-sweep-param-toggle" htmlFor="vram-slots">Slots</label>
+        <label className="playground-sweep-param-toggle" htmlFor="vram-slots">Slots<ParamTooltip text={PARAM_TOOLTIPS.nSeqMax} /></label>
         <select
           id="vram-slots"
           value={slots}
@@ -223,7 +238,7 @@ function AdvancedSection({
                 checked={kvCacheOnCPU ?? false}
                 onChange={(e) => onKvCacheOnCPUChange?.(e.target.checked)}
               />
-              KV Cache on CPU
+              KV Cache on CPU<ParamTooltip text={PARAM_TOOLTIPS.kvCacheOnCPU} />
             </label>
             <div style={{ fontSize: '11px', color: 'var(--color-gray-500)', marginTop: 2 }}>
               Offload KV cache to system RAM to reduce VRAM usage
@@ -231,7 +246,7 @@ function AdvancedSection({
           </div>
 
           <div className="playground-sweep-param">
-            <label className="playground-sweep-param-toggle" htmlFor="vram-deviceCount">GPU Count</label>
+            <label className="playground-sweep-param-toggle" htmlFor="vram-deviceCount">GPU Count<ParamTooltip text={PARAM_TOOLTIPS.gpuCount} /></label>
             <select
               id="vram-deviceCount"
               value={deviceCount ?? 1}
@@ -247,7 +262,7 @@ function AdvancedSection({
           {(deviceCount ?? 1) > 1 && (
             <div className="playground-sweep-param">
               <label className="playground-sweep-param-toggle" htmlFor="vram-tensorSplit">
-                Tensor Split (proportions, e.g. 0.6,0.4)
+                Tensor Split (proportions, e.g. 0.6,0.4)<ParamTooltip text={PARAM_TOOLTIPS.tensorSplit} />
               </label>
               <input
                 id="vram-tensorSplit"
@@ -266,7 +281,7 @@ function AdvancedSection({
           {isMoE && blockCount != null && blockCount > 0 && (
             <div className="playground-sweep-param" style={{ width: '100%' }}>
               <label className="playground-sweep-param-toggle" htmlFor="vram-expertLayers">
-                Expert Layers on GPU ({expertLayersOnGPU ?? 0} of {blockCount})
+                Expert Layers on GPU ({expertLayersOnGPU ?? 0} of {blockCount})<ParamTooltip text={PARAM_TOOLTIPS.expertLayersOnGPU} />
               </label>
               <input
                 id="vram-expertLayers"
@@ -325,7 +340,7 @@ function CompactAdvancedSection({
           {isMoE && blockCount != null && blockCount > 0 && (
             <div className="control-field" style={{ width: '100%' }}>
               <label htmlFor="vram-compact-expertLayers">
-                Expert Layers GPU ({expertLayersOnGPU ?? 0}/{blockCount})
+                Expert Layers GPU ({expertLayersOnGPU ?? 0}/{blockCount})<ParamTooltip text={PARAM_TOOLTIPS.expertLayersOnGPU} />
               </label>
               <input
                 id="vram-compact-expertLayers"
@@ -346,11 +361,11 @@ function CompactAdvancedSection({
                 checked={kvCacheOnCPU ?? false}
                 onChange={(e) => onKvCacheOnCPUChange?.(e.target.checked)}
               />
-              KV Cache on CPU
+              KV Cache on CPU<ParamTooltip text={PARAM_TOOLTIPS.kvCacheOnCPU} />
             </label>
           </div>
           <div className="control-field">
-            <label htmlFor="vram-compact-deviceCount">GPU Count</label>
+            <label htmlFor="vram-compact-deviceCount">GPU Count<ParamTooltip text={PARAM_TOOLTIPS.gpuCount} /></label>
             <select
               id="vram-compact-deviceCount"
               value={deviceCount ?? 1}
@@ -364,7 +379,7 @@ function CompactAdvancedSection({
           </div>
           {(deviceCount ?? 1) > 1 && (
             <div className="control-field">
-              <label htmlFor="vram-compact-tensorSplit">Tensor Split</label>
+              <label htmlFor="vram-compact-tensorSplit">Tensor Split<ParamTooltip text={PARAM_TOOLTIPS.tensorSplit} /></label>
               <input
                 id="vram-compact-tensorSplit"
                 type="text"
