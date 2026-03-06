@@ -799,8 +799,8 @@ func runStreamingBench(ctx context.Context, krn *kronk.Kronk, d model.D) (benchR
 
 	for resp := range ch {
 		if !ttftSet {
-			if len(resp.Choice) > 0 {
-				delta := resp.Choice[0].Delta
+			if len(resp.Choices) > 0 {
+				delta := resp.Choices[0].Delta
 				if delta != nil && (delta.Content != "" || delta.Reasoning != "") {
 					result.ttft = time.Since(start)
 					ttftSet = true
@@ -809,12 +809,12 @@ func runStreamingBench(ctx context.Context, krn *kronk.Kronk, d model.D) (benchR
 		}
 
 		// Check for error responses.
-		if len(resp.Choice) > 0 && resp.Choice[0].FinishReason() == model.FinishReasonError {
+		if len(resp.Choices) > 0 && resp.Choices[0].FinishReason() == model.FinishReasonError {
 			switch {
-			case resp.Choice[0].Message != nil && resp.Choice[0].Message.Content != "":
-				respError = fmt.Errorf("model error: %s", resp.Choice[0].Message.Content)
-			case resp.Choice[0].Delta != nil && resp.Choice[0].Delta.Content != "":
-				respError = fmt.Errorf("model error: %s", resp.Choice[0].Delta.Content)
+			case resp.Choices[0].Message != nil && resp.Choices[0].Message.Content != "":
+				respError = fmt.Errorf("model error: %s", resp.Choices[0].Message.Content)
+			case resp.Choices[0].Delta != nil && resp.Choices[0].Delta.Content != "":
+				respError = fmt.Errorf("model error: %s", resp.Choices[0].Delta.Content)
 			default:
 				respError = fmt.Errorf("model error: unknown error payload")
 			}

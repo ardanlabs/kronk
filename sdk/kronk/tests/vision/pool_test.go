@@ -58,7 +58,7 @@ func Test_PooledVision(t *testing.T) {
 
 			durations[idx] = time.Since(start)
 
-			if len(resp.Choice) == 0 {
+			if len(resp.Choices) == 0 {
 				errors[idx] = fmt.Errorf("goroutine %d: expected response choices, got none", idx)
 			}
 		}(i)

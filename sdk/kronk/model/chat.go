@@ -31,10 +31,10 @@ func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error) {
 
 	// If the response is an error, extract the error message from Delta
 	// (where ChatResponseErr stores it) and return it as a Go error.
-	if len(lastMsg.Choice) > 0 && lastMsg.Choice[0].FinishReason() == FinishReasonError {
+	if len(lastMsg.Choices) > 0 && lastMsg.Choices[0].FinishReason() == FinishReasonError {
 		errMsg := "unknown error"
-		if lastMsg.Choice[0].Delta != nil && lastMsg.Choice[0].Delta.Content != "" {
-			errMsg = lastMsg.Choice[0].Delta.Content
+		if lastMsg.Choices[0].Delta != nil && lastMsg.Choices[0].Delta.Content != "" {
+			errMsg = lastMsg.Choices[0].Delta.Content
 		}
 		return lastMsg, errors.New(errMsg)
 	}
@@ -43,9 +43,9 @@ func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error) {
 		lastMsg.Object = ObjectChatTextFinal
 	}
 
-	if len(lastMsg.Choice) > 0 {
-		lastMsg.Choice[0].Index = 0
-		lastMsg.Choice[0].Delta = nil
+	if len(lastMsg.Choices) > 0 {
+		lastMsg.Choices[0].Index = 0
+		lastMsg.Choices[0].Delta = nil
 	}
 
 	return lastMsg, nil

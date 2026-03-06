@@ -247,26 +247,26 @@ func (a *Agent) streamModelTurn(ctx context.Context, conversation []model.D) (st
 	for resp := range ch {
 		lastResp = resp
 
-		if len(resp.Choice) == 0 {
+		if len(resp.Choices) == 0 {
 			continue
 		}
 
 		// On the first real chunk, stop the latency printer.
 		stopPrinter()
 
-		switch resp.Choice[0].FinishReason() {
+		switch resp.Choices[0].FinishReason() {
 		case model.FinishReasonError:
-			return "", nil, lastResp.Usage, fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
+			return "", nil, lastResp.Usage, fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
 
 		case model.FinishReasonStop:
 			text := strings.TrimLeft(strings.Join(chunks, " "), "\\n")
 			return text, nil, lastResp.Usage, nil
 
 		case model.FinishReasonTool:
-			return "", resp.Choice[0].Delta.ToolCalls, lastResp.Usage, nil
+			return "", resp.Choices[0].Delta.ToolCalls, lastResp.Usage, nil
 
 		default:
-			delta := resp.Choice[0].Delta
+			delta := resp.Choices[0].Delta
 
 			switch {
 			case delta.Reasoning != "":
@@ -704,16 +704,16 @@ loop:
 	for resp := range ch {
 		lr = resp
 
-		switch resp.Choice[0].FinishReason() {
+		switch resp.Choices[0].FinishReason() {
 		case model.FinishReasonStop:
 			break loop
 
 		case model.FinishReasonError:
-			return fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
+			return fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
 		}
 
-		if resp.Choice[0].Delta.Reasoning != "" {
-			fmt.Printf("\\u001b[91m%s\\u001b[0m", resp.Choice[0].Delta.Reasoning)
+		if resp.Choices[0].Delta.Reasoning != "" {
+			fmt.Printf("\\u001b[91m%s\\u001b[0m", resp.Choices[0].Delta.Reasoning)
 			reasoning = true
 			continue
 		}
@@ -723,7 +723,7 @@ loop:
 			fmt.Print("\\n\\n")
 		}
 
-		fmt.Printf("%s", resp.Choice[0].Delta.Content)
+		fmt.Printf("%s", resp.Choices[0].Delta.Content)
 	}
 
 	// -------------------------------------------------------------------------
@@ -1048,13 +1048,13 @@ loop:
 	for resp := range ch {
 		lr = resp
 
-		if len(resp.Choice) == 0 {
+		if len(resp.Choices) == 0 {
 			continue
 		}
 
-		switch resp.Choice[0].FinishReason() {
+		switch resp.Choices[0].FinishReason() {
 		case model.FinishReasonError:
-			return messages, fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
+			return messages, fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
 
 		case model.FinishReasonStop:
 			break loop
@@ -1067,7 +1067,7 @@ loop:
 
 			fmt.Printf("\\u001b[92mModel Asking For Tool Calls:\\n\\u001b[0m")
 
-			for _, tool := range resp.Choice[0].Delta.ToolCalls {
+			for _, tool := range resp.Choices[0].Delta.ToolCalls {
 				fmt.Printf("\\u001b[92mToolID[%s]: %s(%s)\\n\\u001b[0m",
 					tool.ID,
 					tool.Function.Name,
@@ -1086,8 +1086,8 @@ loop:
 			break loop
 
 		default:
-			if resp.Choice[0].Delta.Reasoning != "" {
-				fmt.Printf("\\u001b[91m%s\\u001b[0m", resp.Choice[0].Delta.Reasoning)
+			if resp.Choices[0].Delta.Reasoning != "" {
+				fmt.Printf("\\u001b[91m%s\\u001b[0m", resp.Choices[0].Delta.Reasoning)
 				reasoning = true
 				continue
 			}
@@ -1101,7 +1101,7 @@ loop:
 				}
 			}
 
-			fmt.Printf("%s", resp.Choice[0].Delta.Content)
+			fmt.Printf("%s", resp.Choices[0].Delta.Content)
 		}
 	}
 
@@ -1526,16 +1526,16 @@ func grammarPreset(krn *kronk.Kronk) error {
 	fmt.Print("RESPONSE: ")
 
 	for resp := range ch {
-		switch resp.Choice[0].FinishReason() {
+		switch resp.Choices[0].FinishReason() {
 		case model.FinishReasonError:
-			return fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
+			return fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
 
 		case model.FinishReasonStop:
 			fmt.Println()
 			return nil
 
 		default:
-			fmt.Print(resp.Choice[0].Delta.Content)
+			fmt.Print(resp.Choices[0].Delta.Content)
 		}
 	}
 
@@ -1592,16 +1592,16 @@ func jsonSchema(krn *kronk.Kronk) error {
 	fmt.Print("RESPONSE: ")
 
 	for resp := range ch {
-		switch resp.Choice[0].FinishReason() {
+		switch resp.Choices[0].FinishReason() {
 		case model.FinishReasonError:
-			return fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
+			return fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
 
 		case model.FinishReasonStop:
 			fmt.Println()
 			return nil
 
 		default:
-			fmt.Print(resp.Choice[0].Delta.Content)
+			fmt.Print(resp.Choices[0].Delta.Content)
 		}
 	}
 
@@ -1646,16 +1646,16 @@ Sentiment:\`
 	fmt.Print("RESPONSE: ")
 
 	for resp := range ch {
-		switch resp.Choice[0].FinishReason() {
+		switch resp.Choices[0].FinishReason() {
 		case model.FinishReasonError:
-			return fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
+			return fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
 
 		case model.FinishReasonStop:
 			fmt.Println()
 			return nil
 
 		default:
-			fmt.Print(resp.Choice[0].Delta.Content)
+			fmt.Print(resp.Choices[0].Delta.Content)
 		}
 	}
 
@@ -1820,17 +1820,17 @@ func question(krn *kronk.Kronk) error {
 	var reasoning bool
 
 	for resp := range ch {
-		switch resp.Choice[0].FinishReason() {
+		switch resp.Choices[0].FinishReason() {
 		case model.FinishReasonError:
-			return fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
+			return fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
 
 		case model.FinishReasonStop:
 			return nil
 
 		default:
-			if resp.Choice[0].Delta.Reasoning != "" {
+			if resp.Choices[0].Delta.Reasoning != "" {
 				reasoning = true
-				fmt.Printf("\\u001b[91m%s\\u001b[0m", resp.Choice[0].Delta.Reasoning)
+				fmt.Printf("\\u001b[91m%s\\u001b[0m", resp.Choices[0].Delta.Reasoning)
 				continue
 			}
 
@@ -1840,7 +1840,7 @@ func question(krn *kronk.Kronk) error {
 				continue
 			}
 
-			fmt.Printf("%s", resp.Choice[0].Delta.Content)
+			fmt.Printf("%s", resp.Choices[0].Delta.Content)
 		}
 	}
 
@@ -2631,16 +2631,16 @@ loop:
 	for resp := range ch {
 		lr = resp
 
-		switch resp.Choice[0].FinishReason() {
+		switch resp.Choices[0].FinishReason() {
 		case model.FinishReasonStop:
 			break loop
 
 		case model.FinishReasonError:
-			return fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
+			return fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
 		}
 
-		if resp.Choice[0].Delta.Reasoning != "" {
-			fmt.Printf("\\u001b[91m%s\\u001b[0m", resp.Choice[0].Delta.Reasoning)
+		if resp.Choices[0].Delta.Reasoning != "" {
+			fmt.Printf("\\u001b[91m%s\\u001b[0m", resp.Choices[0].Delta.Reasoning)
 			reasoning = true
 			continue
 		}
@@ -2650,7 +2650,7 @@ loop:
 			fmt.Print("\\n\\n")
 		}
 
-		fmt.Printf("%s", resp.Choice[0].Delta.Content)
+		fmt.Printf("%s", resp.Choices[0].Delta.Content)
 	}
 
 	// -------------------------------------------------------------------------

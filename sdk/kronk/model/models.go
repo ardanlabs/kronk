@@ -734,7 +734,7 @@ type ChatResponse struct {
 	Object  string   `json:"object"`
 	Created int64    `json:"created"`
 	Model   string   `json:"model"`
-	Choice  []Choice `json:"choices"`
+	Choices []Choice `json:"choices"`
 	Usage   *Usage   `json:"usage,omitempty"`
 	Prompt  string   `json:"prompt,omitempty"`
 }
@@ -750,7 +750,7 @@ func chatResponseDelta(id string, object string, model string, index int, conten
 		Object:  object,
 		Created: time.Now().Unix(),
 		Model:   model,
-		Choice: []Choice{
+		Choices: []Choice{
 			{
 				Index: index,
 				Delta: &ResponseMessage{
@@ -808,7 +808,7 @@ func chatResponseFinal(id string, object string, model string, index int, prompt
 		Object:  object,
 		Created: time.Now().Unix(),
 		Model:   model,
-		Choice: []Choice{
+		Choices: []Choice{
 			{
 				Index:           index,
 				Message:         msg,
@@ -829,7 +829,7 @@ func ChatResponseErr(id string, object string, model string, index int, prompt s
 		Object:  object,
 		Created: time.Now().Unix(),
 		Model:   model,
-		Choice: []Choice{
+		Choices: []Choice{
 			{
 				Index: index,
 				Delta: &ResponseMessage{

@@ -224,16 +224,16 @@ loop:
 	for resp := range ch {
 		lr = resp
 
-		switch resp.Choice[0].FinishReason() {
+		switch resp.Choices[0].FinishReason() {
 		case model.FinishReasonStop:
 			break loop
 
 		case model.FinishReasonError:
-			return fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
+			return fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
 		}
 
-		if resp.Choice[0].Delta.Reasoning != "" {
-			fmt.Printf("\u001b[91m%s\u001b[0m", resp.Choice[0].Delta.Reasoning)
+		if resp.Choices[0].Delta.Reasoning != "" {
+			fmt.Printf("\u001b[91m%s\u001b[0m", resp.Choices[0].Delta.Reasoning)
 			reasoning = true
 			continue
 		}
@@ -243,7 +243,7 @@ loop:
 			fmt.Print("\n\n")
 		}
 
-		fmt.Printf("%s", resp.Choice[0].Delta.Content)
+		fmt.Printf("%s", resp.Choices[0].Delta.Content)
 	}
 
 	// -------------------------------------------------------------------------
