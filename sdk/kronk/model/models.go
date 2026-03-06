@@ -150,7 +150,7 @@ func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 		isGPTModel = true
 	}
 
-	isEmbedModel, isRerankModel := detectEmbedRerank(model, metadata, modelID, cfg)
+	isEmbedModel, isRerankModel := detectEmbedRerank(modelID)
 
 	modelType := detectModelType(model, metadata)
 
@@ -268,49 +268,15 @@ func hasExperts(metadata map[string]string) bool {
 	return false
 }
 
-// detectEmbedRerank determines whether the model is an embedding model and/or
-// a reranking model using GGUF metadata and model structure rather than
-// filename conventions.
-//
-// A model is considered an embedding model if its GGUF metadata contains a
-// general.pooling_type key (mean, cls, last, or rank). A reranking model is an
-// embedding model that also has classifier outputs (ModelNClsOut > 0).
-func detectEmbedRerank(model llama.Model, metadata map[string]string, modelID string, cfg Config) (isEmbed bool, isRerank bool) {
+func detectEmbedRerank(modelID string) (isEmbed bool, isRerank bool) {
 	nameLower := strings.ToLower(modelID)
 
-	// Check GGUF metadata for a pooling_type key. Not all GGUF files include
-	// this, so a missing key does not rule out an embedding model.
-	if metadata["general.pooling_type"] != "" {
+	if strings.Contains(nameLower, "embed") {
 		isEmbed = true
 	}
 
-	// Classifier outputs indicate an embedding-class model (embedding or
-	// reranking). NClsOut alone cannot distinguish the two since some
-	// embedding models also have a classifier head.
-	if llama.ModelNClsOut(model) > 0 {
-		isEmbed = true
-	}
-
-	// Fall back to filename conventions when metadata is absent.
-	if !isEmbed && strings.Contains(nameLower, "embed") {
-		isEmbed = true
-	}
-
-	// Rerank detection relies on filename convention. Reranking models
-	// (e.g., bge-reranker) require PoolingTypeRank which is incompatible
-	// with embedding models, so this must not false-positive.
 	if strings.Contains(nameLower, "rerank") {
 		isRerank = true
-		isEmbed = true
-	}
-
-	// Models with projection files are media models (vision/audio), not
-	// embedding or reranking models. The NClsOut and pooling_type metadata
-	// checks can false-positive on media models, which would route them to
-	// the context pool instead of the batch engine.
-	if cfg.ProjFile != "" {
-		isEmbed = false
-		isRerank = false
 	}
 
 	return isEmbed, isRerank
