@@ -189,6 +189,8 @@ func rerank(krn *kronk.Kronk) error {
 	fmt.Println("Object :", resp.Object)
 	fmt.Println("Created:", time.UnixMilli(resp.Created))
 	fmt.Println()
+	fmt.Println("Question: What is the capital of France?")
+	fmt.Println()
 	fmt.Println("Results (sorted by relevance):")
 	for i, result := range resp.Data {
 		fmt.Printf("  %d. Score: %.4f, Index: %d, Doc: %s\n",

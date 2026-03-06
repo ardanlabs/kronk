@@ -1006,6 +1006,9 @@ example-yzma-step4:
 example-yzma-step5:
 	CGO_ENABLED=0 go run examples/yzma/step5/main.go
 
+example-yzma-step6:
+	CGO_ENABLED=0 go run examples/yzma/step6/main.go
+
 example-yzma-parallel-curl1:
 	curl -X POST http://localhost:8090/v1/completions \
 	-H "Content-Type: application/json" \

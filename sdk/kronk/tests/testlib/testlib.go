@@ -297,25 +297,23 @@ func CfgMoEVisionIMC() model.Config {
 
 func CfgEmbed() model.Config {
 	return model.Config{
-		ModelFiles:     MPEmbed.ModelFiles,
-		ContextWindow:  2048,
-		NBatch:         2048,
-		NUBatch:        512,
-		CacheTypeK:     model.GGMLTypeQ8_0,
-		CacheTypeV:     model.GGMLTypeQ8_0,
-		FlashAttention: model.FlashAttentionEnabled,
+		ModelFiles:    MPEmbed.ModelFiles,
+		ContextWindow: 2048,
+		NBatch:        2048,
+		NUBatch:       512,
+		CacheTypeK:    model.GGMLTypeF16,
+		CacheTypeV:    model.GGMLTypeF16,
 	}
 }
 
 func CfgRerank() model.Config {
 	return model.Config{
-		ModelFiles:     MPRerank.ModelFiles,
-		ContextWindow:  2048,
-		NBatch:         2048,
-		NUBatch:        512,
-		CacheTypeK:     model.GGMLTypeQ8_0,
-		CacheTypeV:     model.GGMLTypeQ8_0,
-		FlashAttention: model.FlashAttentionEnabled,
+		ModelFiles:    MPRerank.ModelFiles,
+		ContextWindow: 2048,
+		NBatch:        2048,
+		NUBatch:       512,
+		CacheTypeK:    model.GGMLTypeF16,
+		CacheTypeV:    model.GGMLTypeF16,
 	}
 }
 
