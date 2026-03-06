@@ -1100,7 +1100,7 @@ export default function CatalogEditor() {
                   type="button"
                   className="btn btn-secondary"
                   style={{ fontSize: '0.85em', padding: '6px 12px' }}
-                  title="All experts on GPU with flash attention — requires 80GB+ VRAM"
+                  title="All experts on GPU with flash attention — requires very large VRAM (often 80GB+ for 70B-class MoE at large context)"
                   onClick={() => setConfig({
                     moeMode: 'experts_gpu',
                     flashAttention: 'enabled',

@@ -402,7 +402,7 @@ export default function Chat() {
                 onChange={handleDraftModelChange}
                 disabled={modelsLoading}
                 className="chat-model-select"
-                title="Draft model for speculative decoding (same model family, smaller size)"
+                title="Draft model for speculative decoding (should be tokenizer-compatible; typically a smaller variant of the same family)"
               >
                 <option value="">No draft model</option>
                 {eligibleDraftModels.map((model) => (
