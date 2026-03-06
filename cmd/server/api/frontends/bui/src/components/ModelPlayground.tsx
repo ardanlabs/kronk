@@ -22,6 +22,7 @@ import { autoTestTools } from '../services/autoTestRunner';
 import type { SamplingParams } from '../contexts/SamplingContext';
 import { PARAM_TOOLTIPS, ParamTooltip } from './ParamTooltips';
 import { formatBytes } from '../lib/format';
+import { extractContextInfo, formatContextHint } from '../lib/context';
 import { computeMoeVramFit, parseDevicesInfo, MOE_STRATEGY_OPTIONS, VRAM_FIT_TEXT } from '../lib/moe';
 import type { DevicesInfo } from '../lib/moe';
 
@@ -105,6 +106,10 @@ export default function ModelPlayground() {
   // Device info state
   const [devicesInfo, setDevicesInfo] = useState<DevicesInfo | null>(null);
 
+  // Model metadata (for context info)
+  const [modelMetadata, setModelMetadata] = useState<Record<string, string> | undefined>(undefined);
+  const contextInfo = extractContextInfo(modelMetadata);
+
   // MoE detection: true when the selected model has MoE metadata
   const [isMoE, setIsMoE] = useState(false);
   const [moeBlockCount, setMoeBlockCount] = useState(0);
@@ -178,6 +183,9 @@ export default function ModelPlayground() {
           setMoeMode(mc.moe?.mode || '');
           setMoeKeepTopN(mc.moe?.['keep-experts-top-n'] ?? 0);
         }
+
+        // Store metadata for context info.
+        setModelMetadata(info.metadata);
 
         // Detect MoE from model metadata or VRAM info.
         const modelIsMoE = info.vram?.moe?.is_moe === true
@@ -890,7 +898,13 @@ export default function ModelPlayground() {
                 value={contextWindow}
                 onChange={(e) => setContextWindow(Number(e.target.value))}
                 disabled={!!session}
+                max={contextInfo?.max}
               />
+              {contextInfo && contextInfo.hasRoPE && (
+                <div style={{ fontSize: '11px', color: 'var(--color-gray-500)', marginTop: 2 }}>
+                  {formatContextHint(contextInfo)}
+                </div>
+              )}
             </div>
             <div className="form-group">
               <label htmlFor="pg-nbatch">NBatch{PARAM_TOOLTIPS.nbatch && <ParamTooltip text={PARAM_TOOLTIPS.nbatch} />}</label>

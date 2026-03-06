@@ -9,6 +9,8 @@ export const CONTEXT_WINDOW_OPTIONS = [
   { value: 98304, label: '96K' },
   { value: 131072, label: '128K' },
   { value: 262144, label: '256K' },
+  { value: 524288, label: '512K' },
+  { value: 1048576, label: '1M' },
 ];
 
 export const BYTES_PER_ELEMENT_OPTIONS = [
