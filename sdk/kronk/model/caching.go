@@ -76,6 +76,7 @@ func (m *Model) clearCaches() {
 		slot.lastUsed = time.Time{}
 		slot.pending = false
 		slot.hasMedia = false
+		slot.useMRoPE = false
 		slot.mediaKVCounts = nil
 	}
 

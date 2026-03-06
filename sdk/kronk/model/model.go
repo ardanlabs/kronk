@@ -42,6 +42,7 @@ type imcSession struct {
 	lastUsed          time.Time     // Last access time (for eviction)
 	pending           bool          // True while a build/rebuild is in-flight (deferred decode)
 	hasMedia          bool          // True if the cached content includes media tokens (image/audio)
+	useMRoPE          bool          // True if the cached media used M-RoPE 4D positional encoding
 	mediaKVCounts     []int         // KV positions consumed per media chunk (image/audio); used for text-only extend math
 }
 

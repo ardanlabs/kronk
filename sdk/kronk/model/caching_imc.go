@@ -824,6 +824,7 @@ func (m *Model) rebuildIMCWithMedia(ctx context.Context, d D, messages []D, sess
 	session.cachedMsgCount = 0
 	session.cachedMsgsHash = ""
 	session.hasMedia = false
+	session.useMRoPE = false
 	seqID := session.seqID
 	slotID := session.slotID
 
@@ -1058,6 +1059,9 @@ func (m *Model) imcCommitSession(slotID int, hash string, totalCached int, cache
 		slot.pending = false
 		slot.hasMedia = hasMedia
 		slot.mediaKVCounts = mediaKVCounts
+		if !hasMedia {
+			slot.useMRoPE = false
+		}
 		switch {
 		case hasMedia:
 			slot.cachedTokens = nil

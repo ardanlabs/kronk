@@ -124,6 +124,16 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 			e.model.imcCommitSession(s.id, job.imcNewMsgsHash, totalCached, job.imcNewCachedMsgCount, nil, true, mediaKVCounts)
 
+			// Store whether this media build used M-RoPE so follow-up
+			// text-only requests on this slot can use the correct position format.
+			if job.mtmdCtx != 0 {
+				e.model.cacheMu.Lock()
+				if s.id < len(e.model.imcSlots) {
+					e.model.imcSlots[s.id].useMRoPE = mtmd.DecodeUseMRope(job.mtmdCtx)
+				}
+				e.model.cacheMu.Unlock()
+			}
+
 			if skipTokens > 0 {
 				e.model.log(job.ctx, "start-slot", "status", "imc-media-extended", "slot", s.id, "seq", s.seqID,
 					"total_cached", totalCached, "skipped_text_tokens", skipTokens)
@@ -364,6 +374,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			slot.totalTokensCached = 0
 			slot.cachedMsgCount = 0
 			slot.pending = false
+			slot.hasMedia = false
+			slot.useMRoPE = false
 			e.model.cacheMu.Unlock()
 			e.model.notifyIMCSlotAvailable()
 
@@ -419,9 +431,19 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	// Use len(job.media) to distinguish: after an IMC media cache build the
 	// suffix is text-only (images are already in KV cache), so route to
 	// startSlotText even though job.object may be ObjectChatMedia.
+	//
+	// Special case: if the IMC media cache was built using M-RoPE positions,
+	// the suffix text must also use M-RoPE 4D positions to maintain consistent
+	// positional encoding. Route through startSlotTextMRoPE which decodes via
+	// the M-RoPE text helper instead of the shared batch.
 	switch {
 	case job.object == ObjectChatMedia && len(job.media) > 0:
 		if !e.startSlotMedia(s, job, cacheIdx, buf) {
+			return
+		}
+
+	case e.slotNeedsMRoPE(s, job):
+		if !e.startSlotTextMRoPE(s, job, cacheIdx, buf) {
 			return
 		}
 
@@ -541,6 +563,68 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 	}
 
 	return true
+}
+
+// slotNeedsMRoPE returns true if the slot has cached media that was built with
+// M-RoPE 4D positions, meaning the suffix text must also use M-RoPE decoding.
+func (e *batchEngine) slotNeedsMRoPE(s *slot, job *chatJob) bool {
+	if !job.imcCacheHit {
+		return false
+	}
+
+	// For the initial media build, check the mtmdCtx directly.
+	if job.imcMediaBuild && job.mtmdCtx != 0 {
+		return mtmd.DecodeUseMRope(job.mtmdCtx)
+	}
+
+	// For follow-up requests, check the stored flag on the IMC session.
+	if s.id < len(e.model.imcSlots) {
+		e.model.cacheMu.RLock()
+		needsMRoPE := e.model.imcSlots[s.id].useMRoPE
+		e.model.cacheMu.RUnlock()
+		return needsMRoPE
+	}
+
+	return false
+}
+
+// startSlotTextMRoPE initializes a text-only slot that must use M-RoPE 4D
+// positioning. This is used when the IMC media cache was built with M-RoPE
+// positions (e.g., Qwen vision models) and the suffix text must use the same
+// positional encoding scheme. Decodes the suffix via decodeTextMRoPE instead
+// of the shared batch, then samples the first token. Returns true on success.
+func (e *batchEngine) startSlotTextMRoPE(s *slot, job *chatJob, cacheIdx llama.Pos, buf []byte) bool {
+	addBOS := cacheIdx == 0 && e.model.addBOSToken
+	tokens := llama.Tokenize(e.model.vocab, job.prompt, addBOS, true)
+
+	suffixTokens := len(tokens)
+	totalPrompt := suffixTokens + int(cacheIdx)
+	s.nPrompt = totalPrompt
+
+	e.model.log(job.ctx, "start-slot", "status", "tokenized-mrope-suffix",
+		"slot", s.id,
+		"suffix_tokens", suffixTokens,
+		"cached_tokens", cacheIdx,
+		"total_prompt", totalPrompt)
+
+	if s.nPrompt > e.model.cfg.ContextWindow {
+		err := fmt.Errorf("start-slot: input tokens [%d] exceed context window [%d]", s.nPrompt, e.model.cfg.ContextWindow)
+		e.finishSlot(s, err)
+		return false
+	}
+
+	s.useMRoPE = true
+
+	nBatch := e.model.cfg.NBatch
+	for start := 0; start < len(tokens); start += nBatch {
+		end := min(start+nBatch, len(tokens))
+		if err := e.decodeTextMRoPE(s, tokens[start:end]); err != nil {
+			e.finishSlot(s, fmt.Errorf("decode cached-media suffix (M-RoPE) failed: %w", err))
+			return false
+		}
+	}
+
+	return e.sampleFirstToken(s, buf)
 }
 
 // startSlotMedia initializes a media (vision/audio) slot. Returns true on success.
