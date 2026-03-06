@@ -98,30 +98,29 @@ func NewAgent(getUserMessage func() (string, bool), mp models.Path) (*Agent, err
 
 	krn, err := newKronk(mp)
 	if err != nil {
-		return nil, fmt.Errorf("unable to init kronk: %w", err)
+		return nil, fmt.Errorf("unable to create kronk instance: %w", err)
 	}
 
-	// -------------------------------------------------------------------------
-	// Construct the agent.
-
-	tools := map[string]Tool{}
+	// Build tool documents by registering each tool with its own tools map.
+	toolsMap := make(map[string]Tool)
+	toolDocuments := []model.D{
+		RegisterReadFile(toolsMap),
+		RegisterSearchFiles(toolsMap),
+		RegisterCreateFile(toolsMap),
+		RegisterGoCodeEditor(toolsMap),
+	}
 
 	agent := Agent{
 		krn:            krn,
 		getUserMessage: getUserMessage,
-		tools:          tools,
-		toolDocuments: []model.D{
-			RegisterReadFile(tools),
-			RegisterSearchFiles(tools),
-			RegisterCreateFile(tools),
-			RegisterGoCodeEditor(tools),
-		},
+		tools:          toolsMap,
+		toolDocuments:  toolDocuments,
 	}
 
 	return &agent, nil
 }
 
-// The system prompt for the model so it behaves as expected.
+// systemPrompt defines how the agent should behave when assisting with coding tasks.
 const systemPrompt = \`You are a helpful coding assistant that has tools to assist you in coding.
 
 After you request a tool call, you will receive a JSON document with two fields,
@@ -370,11 +369,7 @@ func (a *Agent) appendAssistant(conversation *[]model.D, content string) {
 	}
 
 	fmt.Print("\\n")
-
-	*conversation = append(*conversation, model.D{
-		"role":    "assistant",
-		"content": content,
-	})
+	*conversation = append(*conversation, model.D{"role": "assistant", "content": content})
 }
 
 // printUsage displays token usage information after each model call.
@@ -392,9 +387,9 @@ func (a *Agent) printUsage(usage *model.Usage) {
 		usage.PromptTokens, usage.ReasoningTokens, usage.CompletionTokens, usage.OutputTokens, contextTokens, percentage, of, usage.TokensPerSecond)
 }
 
-// callTools will lookup a requested tool by name and call it.
+// callTools looks up requested tools by name and executes them.
 func (a *Agent) callTools(ctx context.Context, toolCalls []model.ResponseToolCall) []model.D {
-	var resps []model.D
+	resps := make([]model.D, 0, len(toolCalls))
 
 	for _, toolCall := range toolCalls {
 		tool, exists := a.tools[toolCall.Function.Name]
@@ -403,9 +398,7 @@ func (a *Agent) callTools(ctx context.Context, toolCalls []model.ResponseToolCal
 		}
 
 		fmt.Printf("\\u001b[92m%s(%v)\\u001b[0m:\\n", toolCall.Function.Name, toolCall.Function.Arguments)
-
-		resp := tool.Call(ctx, toolCall)
-		resps = append(resps, resp)
+		resps = append(resps, tool.Call(ctx, toolCall))
 	}
 
 	return resps
@@ -417,35 +410,31 @@ func installSystem() (models.Path, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
 	defer cancel()
 
-	libs, err := libs.New(
-		libs.WithVersion(defaults.LibVersion("")),
-	)
+	// Install llama.cpp libraries.
+	libs, err := libs.New(libs.WithVersion(defaults.LibVersion("")))
 	if err != nil {
 		return models.Path{}, err
 	}
-
 	if _, err := libs.Download(ctx, kronk.FmtLogger); err != nil {
 		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
+	// Download catalog system.
 	ctlg, err := catalog.New()
 	if err != nil {
 		return models.Path{}, fmt.Errorf("unable to create catalog system: %w", err)
 	}
-
 	if err := ctlg.Download(ctx); err != nil {
 		return models.Path{}, fmt.Errorf("unable to download catalog: %w", err)
 	}
 
-	// -------------------------------------------------------------------------
-
+	// Download model.
 	mdls, err := models.New()
 	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
+		return models.Path{}, fmt.Errorf("unable to create models manager: %w", err)
 	}
 
 	var mp models.Path
-
 	switch {
 	case modelSpecConfig.SourceURL != "":
 		fmt.Println("Downloading model from URL:", modelSpecConfig.SourceURL)
@@ -458,7 +447,6 @@ func installSystem() (models.Path, error) {
 	default:
 		return models.Path{}, fmt.Errorf("modelSpecConfig requires either SourceURL or ModelID to be set")
 	}
-
 	if err != nil {
 		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
 	}
@@ -469,14 +457,7 @@ func installSystem() (models.Path, error) {
 func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("loading model...")
 
-	if err := kronk.Init(); err != nil {
-		return nil, fmt.Errorf("unable to init kronk: %w", err)
-	}
-
-	cfg := model.Config{
-		ModelFiles: mp.ModelFiles,
-	}
-
+	cfg := model.Config{ModelFiles: mp.ModelFiles}
 	krn, err := kronk.New(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create inference model: %w", err)

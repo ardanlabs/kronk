@@ -20,8 +20,8 @@ import (
 
 // toolSuccessResponse returns a successful structured tool response.
 func toolSuccessResponse(toolID string, keyValues ...any) model.D {
-	data := make(map[string]any)
-	for i := 0; i < len(keyValues); i = i + 2 {
+	data := make(map[string]any, len(keyValues)/2)
+	for i := 0; i < len(keyValues); i += 2 {
 		data[keyValues[i].(string)] = keyValues[i+1]
 	}
 
@@ -110,12 +110,12 @@ func (rf *ReadFile) Call(ctx context.Context, toolCall model.ResponseToolCall) (
 		}
 	}()
 
-	dir := "."
-	if toolCall.Function.Arguments["path"] != "" {
-		dir = toolCall.Function.Arguments["path"].(string)
+	path, _ := toolCall.Function.Arguments["path"].(string)
+	if path == "" {
+		path = "."
 	}
 
-	content, err := os.ReadFile(dir)
+	content, err := os.ReadFile(path)
 	if err != nil {
 		return toolErrorResponse(toolCall.ID, err)
 	}
@@ -180,20 +180,22 @@ func (sf *SearchFiles) Call(ctx context.Context, toolCall model.ResponseToolCall
 		}
 	}()
 
-	dir := "."
-	if v, exists := toolCall.Function.Arguments["path"]; exists && v != "" {
-		dir = v.(string)
+	arg := func(key string) (string, bool) {
+		v, ok := toolCall.Function.Arguments[key]
+		if !ok {
+			return "", false
+		}
+		s, _ := v.(string)
+		return s, true
 	}
 
-	filter := ""
-	if v, exists := toolCall.Function.Arguments["filter"]; exists {
-		filter = v.(string)
+	dir, _ := arg("path")
+	if dir == "" {
+		dir = "."
 	}
 
-	contains := ""
-	if v, exists := toolCall.Function.Arguments["contains"]; exists {
-		contains = v.(string)
-	}
+	filter, _ := arg("filter")
+	contains, _ := arg("contains")
 
 	var files []string
 	err := filepath.WalkDir(dir, func(path string, info fs.DirEntry, err error) error {
@@ -310,7 +312,7 @@ func (cf *CreateFile) Call(ctx context.Context, toolCall model.ResponseToolCall)
 		}
 	}()
 
-	filePath := toolCall.Function.Arguments["path"].(string)
+	filePath, _ := toolCall.Function.Arguments["path"].(string)
 
 	if _, err := os.Stat(filePath); !os.IsNotExist(err) {
 		return toolErrorResponse(toolCall.ID, errors.New("file already exists"))
@@ -391,10 +393,22 @@ func (gce *GoCodeEditor) Call(ctx context.Context, toolCall model.ResponseToolCa
 		}
 	}()
 
-	path := toolCall.Function.Arguments["path"].(string)
+	arg := func(key string) (string, bool) {
+		v, ok := toolCall.Function.Arguments[key]
+		if !ok {
+			return "", false
+		}
+		s, _ := v.(string)
+		return s, true
+	}
+
+	path, _ := arg("path")
+	typeChange, _ := arg("type_change")
+	lineChange, _ := arg("line_change")
 	lineNumber := int(toolCall.Function.Arguments["line_number"].(float64))
-	typeChange := strings.TrimSpace(toolCall.Function.Arguments["type_change"].(string))
-	lineChange := strings.TrimSpace(toolCall.Function.Arguments["line_change"].(string))
+
+	typeChange = strings.TrimSpace(typeChange)
+	lineChange = strings.TrimSpace(lineChange)
 
 	content, err := os.ReadFile(path)
 	if err != nil {

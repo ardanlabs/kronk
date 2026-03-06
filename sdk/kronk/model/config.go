@@ -623,6 +623,16 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 
 	ctxParams.NSeqMax = uint32(totalSeqs)
 
+	// Enable unified KV cache so each sequence gets the full n_ctx context
+	// window. When kv_unified is false (llama.cpp default), the context is
+	// divided per sequence (n_ctx_seq = n_ctx / n_seq_max), which silently
+	// limits each sequence and causes llama_decode to return 1 when a single
+	// sequence exceeds its partition. With unified mode, all sequences share
+	// the full KV cache and any single sequence can use up to n_ctx tokens.
+	if nSeqMax > 1 {
+		ctxParams.KVUnified = 1
+	}
+
 	// Offload KQV cache to CPU.
 	// llama.cpp has this as default set to true
 	ctxParams.Offload_kqv = 1

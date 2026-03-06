@@ -36,6 +36,7 @@ type VersionTag struct {
 
 // Options represents the configuration options for Libs.
 type Options struct {
+	LibPath      string
 	BasePath     string
 	Arch         download.Arch
 	OS           download.OS
@@ -51,6 +52,13 @@ type Option func(*Options)
 func WithBasePath(basePath string) Option {
 	return func(o *Options) {
 		o.BasePath = basePath
+	}
+}
+
+// WithLibPath sets the path for library installation.
+func WithLibPath(basePath string) Option {
+	return func(o *Options) {
+		o.LibPath = basePath
 	}
 }
 
@@ -119,6 +127,7 @@ func New(opts ...Option) (*Libs, error) {
 	}
 
 	options := Options{
+		LibPath:      "",
 		BasePath:     "",
 		Arch:         arch,
 		OS:           opSys,
@@ -131,9 +140,14 @@ func New(opts ...Option) (*Libs, error) {
 	}
 
 	basePath := defaults.BaseDir(options.BasePath)
+	path := filepath.Join(basePath, localFolder)
+
+	if options.LibPath != "" {
+		path = options.LibPath
+	}
 
 	lib := Libs{
-		path:         filepath.Join(basePath, localFolder),
+		path:         path,
 		arch:         options.Arch,
 		os:           options.OS,
 		processor:    options.Processor,
