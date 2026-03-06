@@ -2,9 +2,9 @@ import { useRef, useCallback, type ReactNode } from 'react';
 
 export const PARAM_TOOLTIPS: Record<string, string> = {
   // Sampling – Generation
-  temperature: 'Scales the probability distribution to control randomness. Lower values (e.g. 0.2) make output more focused and deterministic; higher values (e.g. 1.5) increase variety and creativity. Values ≤ 0 fall back to the model default.',
-  top_p: 'Nucleus sampling — keeps the smallest set of top tokens whose cumulative probability is ≥ this value. Lower values (e.g. 0.5) focus on the most likely tokens; 1.0 effectively disables top-p filtering. Works alongside temperature.',
-  top_k: 'Limits sampling to the top K most probable tokens at each step. Lower values (e.g. 10) make output more predictable; higher values allow more variety. Values ≤ 0 fall back to the model default (use a very large K to effectively disable).',
+  temperature: 'Scales the probability distribution to control randomness. Lower values (e.g. 0.2) make output more focused and deterministic; higher values (e.g. 1.5) increase variety and creativity. Leave empty to use the model default.',
+  top_p: 'Nucleus sampling — samples only from the smallest set of tokens whose cumulative probability reaches this value. Lower values (e.g. 0.5) focus on the most likely tokens; 1.0 effectively disables top-p filtering. Works alongside temperature.',
+  top_k: 'Limits sampling to the top K most probable tokens at each step. Lower values (e.g. 10) make output more predictable; higher values allow more variety. Set very high to approximate no limit. Leave empty to use the model default.',
   min_p: 'Filters out tokens whose probability is below this fraction of the top token\'s probability. For example, 0.05 removes tokens less than 5% as likely as the best choice. Higher = stricter filtering. 0 disables.',
 
   // Sampling – Repetition Control
@@ -14,34 +14,34 @@ export const PARAM_TOOLTIPS: Record<string, string> = {
   presence_penalty: 'Applies a flat penalty to any token that has appeared at all, regardless of how often. Positive values encourage the model to use new tokens; negative values favor staying on existing ones. 0 disables.',
 
   // Sampling – DRY Sampler
-  dry_multiplier: 'Strength of the DRY (Don\'t Repeat Yourself) anti-repetition penalty. Higher values more aggressively penalize repeated n-gram patterns. Values ≤ 0 fall back to the model default.',
+  dry_multiplier: 'Strength of the DRY (Don\'t Repeat Yourself) anti-repetition penalty. Higher values more aggressively penalize repeated n-gram patterns. Leave empty to use the model default.',
   dry_base: 'Base for exponential DRY penalty growth. Higher values make the penalty increase faster for longer repeated sequences. Typical values are 1.5–2.0.',
-  dry_allowed_length: 'Minimum n-gram length before DRY penalties apply — repeated sequences up to this token length are allowed without penalty. Useful for common short phrases. Higher values are more lenient.',
+  dry_allowed_length: 'Minimum n-gram length that DRY penalizes. Repeats of length ≥ this value are penalized; shorter repeats are ignored. Useful for allowing common short phrases. Higher values are more lenient.',
   dry_penalty_last_n: 'How many recent tokens DRY examines when looking for repeated patterns. Larger values detect repetitions from further back. 0 means use the full context.',
 
   // Sampling – XTC Sampler
-  xtc_probability: 'Chance of enabling XTC (eXtreme Token Culling) for a generation step. When active, XTC removes very high-probability ("obvious") tokens to increase variety. 0 disables XTC entirely, 1 always applies it.',
+  xtc_probability: 'Chance of enabling XTC (eXtreme Token Culling) on each token sampling step. When active, XTC removes very high-probability ("obvious") tokens to increase variety. 0 disables XTC entirely, 1 always applies it.',
   xtc_threshold: 'Probability cutoff for XTC culling. When XTC is active, tokens with probability ≥ this threshold are candidates for removal (with safeguards to keep output coherent). Lower thresholds make XTC more aggressive.',
   xtc_min_keep: 'Minimum number of token candidates to keep after XTC culling, preventing over-aggressive filtering. Ensures at least this many choices remain available.',
 
   // Sampling – Generation limit
-  max_tokens: 'Maximum number of tokens (roughly words or word-pieces) to generate. Output may stop earlier on end-of-sequence or when the context window is full. Higher values allow longer answers but take more time.',
+  max_tokens: 'Maximum number of tokens (word-pieces) to generate. Rule of thumb: 1 token ≈ 0.75 words in English. Output may stop earlier on end-of-sequence or when the context window is full. Higher values allow longer answers but take more time.',
 
   // Sampling – Reasoning
-  enable_thinking: 'Toggles "thinking" mode in the prompt template (model-dependent). Some models produce an explicit chain-of-thought section; others may ignore it. Can improve accuracy on complex tasks but increases token usage and latency.',
-  reasoning_effort: 'Requested reasoning level (model/provider dependent). Higher effort may produce more thorough reasoning but uses more tokens and time. Models that don\'t support this setting will ignore it.',
+  enable_thinking: 'Enables reasoning/thinking mode in the prompt template (model-dependent). May improve accuracy on complex tasks but increases token usage and latency. Some models ignore this or keep reasoning internal.',
+  reasoning_effort: 'Requested reasoning level (model/provider dependent): none, minimal, low, medium, high (default: medium). Higher effort may produce more thorough reasoning but uses more tokens and time. Unsupported models ignore this.',
 
   // Config sweep
-  nbatch: 'Batch size capacity — maximum tokens processed per forward pass. Larger values speed up prompt evaluation and multi-request batching but increase VRAM usage. Typically keep ≤ context window size.',
+  nbatch: 'Batch tray capacity — maximum tokens processed per decode call (shared across slots during prefill). Larger values speed up prompt evaluation and multi-request batching but increase VRAM usage. Typically keep ≤ context window size.',
   nubatch: 'Micro-batch size for prompt processing. Controls VRAM usage per batch operation. Must be ≤ NBatch. Smaller values reduce peak VRAM usage at the cost of slightly slower processing.',
   contextWindow: 'Maximum number of tokens (input + output combined) the model can handle at once. Larger windows support longer conversations but increase VRAM usage proportionally via the KV cache. Models with RoPE can extend beyond native context using YaRN (up to ~4× recommended).',
   nSeqMax: 'Maximum number of concurrent request slots. Each slot handles one user request simultaneously. More slots = better concurrency, but each slot reserves memory for its KV cache.',
   flashAttention: 'Optimized attention algorithm that reduces VRAM usage and can improve speed. "Enabled" forces it on, "Disabled" forces it off, "Auto" lets the server decide based on model compatibility.',
   cacheType: 'KV cache precision. f16 = full precision (best quality), q8_0 = 8-bit quantized (less VRAM, minimal quality loss), q4_0 = 4-bit quantized (most VRAM savings, slight quality trade-off especially at long context).',
-  cacheMode: 'Caching strategy. None = clears KV state after each request. SPC (System Prompt Cache) = reuses cached system-prompt state to speed up new conversations. IMC (Incremental Message Cache) = keeps the conversation\'s KV state in a dedicated slot for fast multi-turn follow-ups.',
+  cacheMode: 'Caching strategy (SPC and IMC are mutually exclusive). None = clears KV state after each request. SPC (System Prompt Cache) = reuses cached system-prompt state to speed up new conversations. IMC (Incremental Message Cache) = keeps the conversation\'s KV state in a dedicated slot for fast multi-turn follow-ups.',
 
   // MoE configuration
-  moeMode: 'How to distribute expert weights between GPU and CPU. "Recommended" auto-detects the best option for your hardware. "Save GPU Memory" moves experts to CPU (most common for consumer GPUs). "Maximum Speed" keeps everything on GPU (needs 80GB+ VRAM). "Balanced" lets you choose how many layers stay on GPU.',
+  moeMode: 'How to distribute expert weights between GPU and CPU. "Recommended" auto-detects the best option for your hardware. "Save GPU Memory" moves experts to CPU (most common for consumer GPUs). "Maximum Speed" keeps everything on GPU (requires very large VRAM; exact need depends on model, quantization, context, and slots). "Balanced" lets you choose how many layers stay on GPU.',
   moeKeepExpertsTopN: 'Slide right for more speed (keeps more expert layers on GPU), slide left to save VRAM (offloads to CPU). The highest-numbered layers stay on GPU first. 0 = all experts on CPU.',
   moeTipBatch: 'For MoE models with CPU experts, NBatch/NUBatch ≥ 4096 is recommended for optimal prompt processing speed.',
   moeTipFlashAttention: 'Flash Attention is strongly recommended for MoE models — it significantly reduces VRAM usage and improves performance.',
@@ -51,7 +51,7 @@ export const PARAM_TOOLTIPS: Record<string, string> = {
   // NUMA / mmap / Op-offload (Phase F2/F3)
   useMMap: 'Controls whether mmap is used for model loading. Disabling mmap (--no-mmap) is recommended for multi-socket NUMA systems running MoE models with CPU experts — tensor data is directly allocated on the appropriate NUMA node instead of being memory-mapped.',
   numa: 'NUMA (Non-Uniform Memory Access) strategy for multi-socket systems. "distribute" spreads memory across NUMA nodes (recommended for MoE CPU-expert setups). "isolate" pins to one node. "numactl" defers to system numactl. "mirror" mirrors across nodes. Leave empty to disable.',
-  opOffloadMinBatch: 'Minimum batch size for offloading host tensor operations to GPU during prompt processing. Default is 32 tokens. For large MoE models with many CPU weights, values of 200–500+ may improve prompt ingestion speed. Set to 0 to use the default (32).',
+  opOffloadMinBatch: 'Minimum batch size before enabling GPU offload for certain host-side operations during prompt processing. 0 = use server default. For large MoE models with many CPU weights, values of 200–500+ may improve prompt ingestion speed.',
 
   // ── Shared VRAM / Config tooltips ──────────────────────────────────────────
   // These are used by both the VRAM Calculator and the Model Playground /
@@ -111,12 +111,12 @@ export const PARAM_TOOLTIPS: Record<string, string> = {
   paddingTokenId: 'Padding token ID used to fill sequences to a uniform length in batch processing. Not used during generation.',
 
   // ── Model detail / config tooltips ──────────────────────────────────────────
-  device: 'Hardware accelerator used for inference. "metal" = Apple GPU (macOS), "cuda" = NVIDIA GPU (Linux), "vulkan" = cross-platform GPU. "default" lets the server auto-detect.',
+  device: 'Hardware accelerator used for inference. "metal" = Apple GPU, "cuda" = NVIDIA GPU, "vulkan" = cross-platform GPU. "default" lets the server auto-detect.',
   nthreads: 'Number of CPU threads used for inference operations. More threads can speed up CPU-bound work but may cause contention on busy systems. 0 or empty = auto (typically physical core count).',
   nthreadsBatch: 'Number of CPU threads used during prompt (batch) processing. Can differ from inference threads to optimize throughput during the prefill phase. 0 or empty = same as Threads.',
   cacheTypeK: 'Precision format for the key portion of the KV cache. f16 = full precision (best quality), q8_0 = 8-bit quantized (less VRAM, minimal quality loss), q4_0 = 4-bit (most savings).',
   cacheTypeV: 'Precision format for the value portion of the KV cache. Same options as Cache Type K. Some models benefit from asymmetric K/V quantization.',
-  ngpuLayers: 'Number of model layers offloaded to GPU. "auto" puts all layers on GPU if they fit. Reducing this value keeps some layers on CPU to save VRAM at the cost of speed.',
+  ngpuLayers: 'Number of model layers offloaded to GPU. 0 = all layers on GPU (default). -1 = all layers on CPU. Positive N = first N layers on GPU. Lower values save VRAM but reduce speed.',
   splitMode: 'How model weights are distributed across multiple GPUs. "layer" assigns whole layers per GPU, "row" splits individual tensor rows. "none" uses a single GPU.',
   systemPromptCache: 'Caches the KV state of the system prompt so it can be reused across new conversations without re-processing. Saves prefill time when every request shares the same system prompt.',
   incrementalCache: 'Keeps the full conversation KV state in a dedicated slot between requests. Enables fast multi-turn follow-ups by only processing new tokens instead of the entire history.',
@@ -129,7 +129,7 @@ export const PARAM_TOOLTIPS: Record<string, string> = {
   draftTokens: 'Number of tokens the draft model proposes per speculative decoding step. More tokens = potentially faster generation, but too many reduces acceptance rate.',
   hasProjection: 'Whether the model includes a multi-modal projection file (mmproj). Required for vision or audio input — the projection maps image/audio embeddings into the model\'s token space.',
   isGPT: 'Whether the model uses a GPT-style (causal, decoder-only) architecture. GPT models generate text left-to-right. Non-GPT models may be encoder-decoder or embedding models.',
-  validated: 'Whether the model has been validated against the Kronk catalog. Validated models have confirmed-working configurations and templates.',
+  validated: 'Whether the model has been validated against the Kronk catalog. Validated models have confirmed-working configurations, templates, and recommended settings.',
 };
 
 export function ParamTooltip({ text }: { text: string }) {

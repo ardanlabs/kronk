@@ -219,7 +219,7 @@ export default function ModelList() {
               <table className="catalog-table">
                 <thead>
                   <tr>
-                    <th style={{ width: '40px', textAlign: 'center' }} title="Validated">✓</th>
+                    <th style={{ width: '40px', textAlign: 'center' }} title="Configuration and template confirmed working with the Kronk catalog">✓</th>
                     {([
                       ['id', 'Model ID'],
                       ['owner', 'Owner'],
