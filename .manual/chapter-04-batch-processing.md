@@ -53,9 +53,9 @@ Request 3 (WAIT) ──▶│                                   │
                     │        └───────┬────────┘         │
                     │                ▼                  │
                     │        ┌────────────────┐         │   Tokens from all active slots are
-                    │        │  Decode Loop   │         │   collected into a single batch and
-                    │        │(parallel batch)│         │   decoded together each iteration.
-                    │        └───────┬────────┘         │
+                    │        │  Decode Loop   │         │   collected into a single batch using
+                    │        │(parallel batch)│         │   round-robin n_ubatch-sized chunks
+                    │        └───────┬────────┘         │   and decoded together each iteration.
                     └────────────────┼──────────────────┘
                                      │
                                      ▼
@@ -106,7 +106,8 @@ Each request moves through the batch engine in the following stages:
    - Clear the sequence (no caching)
    - Clear the sequence, then copy cached KV state from dedicated SPC sequence (SPC)
    - Extend or rebuild the conversation cache in place (IMC)
-4. **Prefill**: Tokenize and process remaining prompt tokens
+4. **Prefill**: Tokenize and process remaining prompt tokens (round-robin
+   across slots in `n_ubatch`-sized chunks to prevent starvation)
 5. **Decode**: Generate tokens one at a time, streaming to client
 6. **Complete**: Release the slot:
    - Clear the entire sequence (no caching or SPC)

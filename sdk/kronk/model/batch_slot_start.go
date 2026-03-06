@@ -533,8 +533,9 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 	s.prefillTokens = tokens
 	s.nPrefilled = 0
 
-	// Add first chunk of prompt tokens to batch.
-	if !e.addPrefillChunk(s) {
+	// Add first chunk of prompt tokens to batch. Use NBatch as the limit
+	// since this is the initial fill for a newly assigned slot.
+	if !e.addPrefillChunk(s, e.model.cfg.NBatch) {
 		e.finishSlot(s, e.slotCancelError(s))
 		return false
 	}

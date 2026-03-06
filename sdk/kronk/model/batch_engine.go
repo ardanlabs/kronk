@@ -276,22 +276,33 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 		s.nPast++
 	}
 
-	// Continue prefill for text-only slots.
-	for _, s := range e.slots {
-		if !s.active || s.prefillTokens == nil {
-			continue
+	// Continue prefill for text-only slots using round-robin allocation.
+	// Pull NUBatch tokens from each slot in turn to prevent one slot from
+	// starving others by consuming the entire tray.
+	chunkLimit := e.model.cfg.NUBatch
+	for {
+		before := e.batch.NTokens
+		for _, s := range e.slots {
+			if !s.active || s.prefillTokens == nil {
+				continue
+			}
+
+			// Check if client cancelled.
+			if s.job.ctx.Err() != nil {
+				e.finishSlot(s, s.job.ctx.Err())
+				continue
+			}
+
+			// addPrefillChunk returns false if shutdown or context cancelled.
+			if !e.addPrefillChunk(s, chunkLimit) {
+				e.finishSlot(s, e.slotCancelError(s))
+				continue
+			}
 		}
 
-		// Check if client cancelled.
-		if s.job.ctx.Err() != nil {
-			e.finishSlot(s, s.job.ctx.Err())
-			continue
-		}
-
-		// addPrefillChunk returns false if shutdown or context cancelled.
-		if !e.addPrefillChunk(s) {
-			e.finishSlot(s, e.slotCancelError(s))
-			continue
+		// Stop when no tokens were added (all slots done or tray full).
+		if e.batch.NTokens == before {
+			break
 		}
 	}
 

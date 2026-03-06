@@ -87,20 +87,31 @@ parameters control the size of those chunks:
 **`n_batch` is the capacity of the work tray** — the maximum number of tokens
 you can load onto the tray before handing it to the GPU. When the batch engine
 is running multiple slots in parallel (NSeqMax > 1), all their tokens share
-this tray. If slot 0 needs to prefill 1000 tokens and slot 1 needs to prefill
-1000 tokens, but `n_batch` is 1500, only 1500 total tokens fit on the tray at
-once — slot 1 has to wait for the next round to process the remaining 500.
+this tray.
 
 **`n_ubatch` is the GPU's bite size** — when the tray arrives at the GPU, it
 doesn't process all the tokens at once. It chews through them in
 `n_ubatch`-sized bites. This is a hardware optimization: different GPUs have
 different optimal bite sizes based on their memory architecture.
 
+**`n_ubatch` also controls fair sharing of the tray.** When multiple slots need
+prefill, the batch engine uses `n_ubatch` as the round-robin chunk size. It
+pulls up to `n_ubatch` tokens from slot 0, then up to `n_ubatch` from slot 1,
+then slot 2, and so on — cycling through until the tray is full. This prevents
+one slot's large prefill from starving the others.
+
 The flow works like this:
 
-1. Collect tokens from all active slots onto the tray (capped at `n_batch`)
-2. Hand tray to the GPU
-3. GPU processes the tray in `n_ubatch`-sized bites
+1. Add generation tokens from all active slots (1 token each — always fits)
+2. Round-robin prefill: pull `n_ubatch` tokens from each prefilling slot in
+   turn until the tray reaches `n_batch` capacity
+3. Hand tray to the GPU
+4. GPU processes the tray in `n_ubatch`-sized bites
+
+For example, with 3 prefilling slots, `n_batch: 4096`, and `n_ubatch: 512`,
+each round pulls 512 tokens from S0, then 512 from S1, then 512 from S2,
+then back to S0 — giving each slot ~1365 tokens per tray instead of one slot
+consuming all 4096.
 
 For example, if you send a 4096-token prompt with `n_batch: 2048` and
 `n_ubatch: 512`, the prompt is split into 2 decode calls of 2048 tokens each.

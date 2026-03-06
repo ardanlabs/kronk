@@ -8,8 +8,10 @@ import (
 )
 
 // addPrefillChunk adds the next chunk of prefill tokens to the batch.
+// The chunkLimit parameter caps how many tokens this slot may add in one call,
+// enabling round-robin fair sharing of the tray across slots.
 // Returns false only on shutdown or context cancellation; true otherwise.
-func (e *batchEngine) addPrefillChunk(s *slot) bool {
+func (e *batchEngine) addPrefillChunk(s *slot, chunkLimit int) bool {
 	if s.prefillTokens == nil || s.nPrefilled >= len(s.prefillTokens) {
 		return true
 	}
@@ -38,7 +40,7 @@ func (e *batchEngine) addPrefillChunk(s *slot) bool {
 		return true
 	}
 
-	chunkSize := min(remaining, availableInBatch)
+	chunkSize := min(remaining, availableInBatch, chunkLimit)
 
 	// Add chunk of tokens to batch.
 	for i := range chunkSize {
