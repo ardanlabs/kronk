@@ -51,10 +51,11 @@ func newBatchEngine(m *Model, nSlots int) *batchEngine {
 	for i := range slots {
 		seqID := llama.SeqId(i)
 		slots[i] = &slot{
-			id:     i,
-			seqID:  seqID,
-			seqIDs: []llama.SeqId{seqID}, // Pre-allocate for batchAdd
-			proc:   newProcessor(m),
+			id:         i,
+			seqID:      seqID,
+			seqIDs:     []llama.SeqId{seqID}, // Pre-allocate for batchAdd
+			specAccEMA: 1.0,                  // Start optimistic for adaptive draft sizing
+			proc:       newProcessor(m),
 		}
 	}
 

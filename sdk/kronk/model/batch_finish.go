@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -42,6 +43,8 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		}
 
 		outputTokens := s.reasonTokens + s.completionTokens
+		draftTokens := s.specDraftedTotal
+		acceptedTokens := s.specAcceptedTotal
 
 		s.span.End()
 		e.freeSlotResources(s)
@@ -49,7 +52,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 
 		remaining := e.model.activeStreams.Add(-1)
 
-		e.model.log(ctx, "batch-engine",
+		args := []any{
 			"status", "slot-finished",
 			"slot", slotID,
 			"seq", seqID,
@@ -58,7 +61,18 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 			"output_tokens", outputTokens,
 			"time", elapsed.String(),
 			"active_streams", remaining,
-		)
+		}
+
+		if draftTokens > 0 {
+			rate := float64(acceptedTokens) / float64(draftTokens)
+			args = append(args,
+				"draft_tokens", draftTokens,
+				"accepted_tokens", acceptedTokens,
+				"acceptance_rate", fmt.Sprintf("%.2f", rate),
+			)
+		}
+
+		e.model.log(ctx, "batch-engine", args...)
 	}()
 
 	if !s.startTime.IsZero() {
@@ -317,6 +331,16 @@ func (e *batchEngine) failJob(job *chatJob, err error) {
 }
 
 func (e *batchEngine) freeSlotResources(s *slot) {
+	// Unregister the per-slot draft sampler from the draft context before
+	// freeing it, to prevent a dangling pointer in the context's sampler map.
+	if s.draftSampler != 0 && e.model.draft != nil {
+		draft := e.model.draft
+		if draft.registeredSampler == s.draftSampler {
+			llama.SetSampler(draft.lctx, draft.registeredSeqID, 0)
+			draft.registeredSampler = 0
+		}
+	}
+
 	if s.sampler != 0 {
 		llama.SamplerFree(s.sampler)
 		s.sampler = 0

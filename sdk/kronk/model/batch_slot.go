@@ -148,6 +148,7 @@ type slot struct {
 	specBaseBatch      int32         // Batch index where speculative tokens start
 	specDraftedTotal   int           // Total draft tokens generated across all speculative steps
 	specAcceptedTotal  int           // Total draft tokens accepted across all speculative steps
+	specAccEMA         float64       // Exponential moving average of acceptance rate (persists across requests)
 
 	// Per-slot owned buffers for speculative decoding. Avoids shared buffer
 	// corruption when multiple slots generate draft tokens in the same
@@ -156,11 +157,11 @@ type slot struct {
 	draftCachedTokens []llama.Token // Prompt tokens in this slot's draft KV cache (persists across requests)
 
 	// Sparse candidate-based speculative decoding fields.
-	draftSampler         llama.Sampler      // Per-slot sampler for draft model (non-greedy)
-	specDraftDistsSparse [][]candidateEntry // Sparse draft distributions per drafted token
-	draftDistBuf         [][]candidateEntry // Pre-allocated backing for specDraftDistsSparse
-	targetDistBuf        []candidateEntry   // Scratch buffer for target candidates during verify
-	adjustedDistBuf      []candidateEntry   // Scratch buffer for adjusted sampling
+	draftSampler         llama.Sampler            // Per-slot sampler for draft model (non-greedy)
+	specDraftDistsSparse [][]candidateEntry       // Sparse draft distributions per drafted token
+	draftDistBuf         [][]candidateEntry       // Pre-allocated backing for specDraftDistsSparse
+	draftCandDistBuf     [][]llama.DraftCandidate // Pre-allocated backing for DraftGenerate output
+	adjustedDistBuf      []candidateEntry         // Scratch buffer for adjusted sampling
 
 	// -------------------------------------------------------------------------
 	// IMC Hybrid State

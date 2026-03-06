@@ -25,56 +25,85 @@ func lookupProb(entries []candidateEntry, tok llama.Token) float32 {
 	return 0
 }
 
-// sampleAdjustedSparse samples from the adjusted distribution max(0, p - q)
-// over sparse candidate lists. This is the rejection branch of speculative
-// sampling using sparse (top-K) distributions instead of full-vocab arrays.
+// sampleAdjustedSparseFromFull samples from the adjusted distribution
+// max(0, p_target - q_draft) when the target distribution is full-vocab
+// and the draft distribution is sparse. This is used when the target context
+// doesn't have backend samplers (no sparse target candidates available).
 //
-// pEntries are the target model's candidates, qEntries are the draft model's.
-// scratch is a reusable buffer to avoid allocations.
-func sampleAdjustedSparse(pEntries, qEntries, scratch []candidateEntry) llama.Token {
+// The algorithm:
+//  1. For each draft candidate, compute max(0, p_target[tok] - q_draft)
+//  2. Compute residual mass: probability mass in targetProbs for tokens NOT
+//     in the draft set (these have q=0, so adjusted = p_target directly)
+//  3. Sample: with probability proportional to the adjusted draft entries,
+//     pick from those. Otherwise, sample from the full target distribution
+//     (which correctly favors tokens the draft model missed).
+func sampleAdjustedSparseFromFull(targetProbs []float32, draftEntries, scratch []candidateEntry) llama.Token {
 	scratch = scratch[:0]
-	var sum float64
+	var adjustedSum float64
+	var draftTargetSum float64
 
-	for _, pe := range pEntries {
-		q := lookupProb(qEntries, pe.tok)
-		diff := float64(pe.prob) - float64(q)
+	for _, de := range draftEntries {
+		pTarget := float64(targetProbs[de.tok])
+		draftTargetSum += pTarget
+		diff := pTarget - float64(de.prob)
 		if diff > 0 {
-			scratch = append(scratch, candidateEntry{tok: pe.tok, prob: float32(diff)})
-			sum += diff
+			scratch = append(scratch, candidateEntry{tok: de.tok, prob: float32(diff)})
+			adjustedSum += diff
 		}
 	}
 
-	// If the adjusted distribution is empty, fall back to sampling
-	// from the target distribution directly.
-	if sum <= 0 || len(scratch) == 0 {
-		return sampleFromCandidates(pEntries)
+	// Residual mass: target probability mass for tokens not in draft set.
+	residualMass := 1.0 - draftTargetSum
+	if residualMass < 0 {
+		residualMass = 0
 	}
 
-	// Normalize and sample.
-	invSum := float32(1.0 / sum)
-	for i := range scratch {
-		scratch[i].prob *= invSum
+	totalMass := adjustedSum + residualMass
+
+	if !(totalMass > 0) {
+		return sampleFromProbs(targetProbs)
 	}
 
-	return sampleFromCandidates(scratch)
-}
+	// Sample: pick adjusted draft candidate or fall back to full target.
+	r := rand.Float64() * totalMass
 
-// sampleFromCandidates samples a token from a sparse candidate distribution
-// using inverse transform sampling.
-func sampleFromCandidates(entries []candidateEntry) llama.Token {
-	r := rand.Float32()
-	var cumulative float32
+	if r < adjustedSum && len(scratch) > 0 {
+		// Sample from adjusted draft entries.
+		var cumulative float64
+		for _, e := range scratch {
+			cumulative += float64(e.prob)
+			if r < cumulative {
+				return e.tok
+			}
+		}
+		return scratch[len(scratch)-1].tok
+	}
 
-	for _, e := range entries {
-		cumulative += e.prob
+	// Sample from target distribution restricted to tokens NOT in draft set.
+	// These tokens have q_draft=0, so their adjusted probability equals p_target.
+	r -= adjustedSum // shift r into [0, residualMass) range
+	var cumulative float64
+	for i, p := range targetProbs {
+		if p == 0 {
+			continue
+		}
+		// Skip tokens in the draft set.
+		isDraft := false
+		for _, de := range draftEntries {
+			if de.tok == llama.Token(i) {
+				isDraft = true
+				break
+			}
+		}
+		if isDraft {
+			continue
+		}
+		cumulative += float64(p)
 		if r < cumulative {
-			return e.tok
+			return llama.Token(i)
 		}
 	}
 
-	// Fallback: return last candidate.
-	if len(entries) > 0 {
-		return entries[len(entries)-1].tok
-	}
-	return 0
+	// Fallback: degenerate case, sample from full target distribution.
+	return sampleFromProbs(targetProbs)
 }

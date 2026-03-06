@@ -80,6 +80,14 @@ type draftModel struct {
 	draftProbs  [][]float32 // nDraft reusable buffers for draft probability distributions
 	targetProbs []float32   // Reusable buffer for target probability distribution
 	adjusted    []float32   // Reusable buffer for sampleAdjusted computation
+	sortIndices []int       // Reusable buffer for applySamplerFilters top-K indices
+	filterBuf   filterState // Reusable buffers for applySamplerFilters heap/rawProbs
+
+	// registeredSampler tracks the sampler currently registered on the draft
+	// context via SetSampler for backend (GPU-side) sampling. This avoids
+	// redundant set_sampler calls that trigger scheduler re-reservation.
+	registeredSampler llama.Sampler
+	registeredSeqID   llama.SeqId
 }
 
 // Cataloger provides support to retrieve catalog config and template
@@ -800,6 +808,10 @@ func (m *Model) Unload(ctx context.Context) error {
 
 	// Free draft model resources if loaded.
 	if m.draft != nil {
+		if m.draft.registeredSampler != 0 {
+			llama.SetSampler(m.draft.lctx, m.draft.registeredSeqID, 0)
+			m.draft.registeredSampler = 0
+		}
 		llama.SamplerFree(m.draft.sampler)
 		llama.BatchFree(m.draft.batch)
 		llama.BatchFree(m.draft.prefillBatch)
@@ -884,7 +896,11 @@ func (m *Model) sendDeltaResponse(ctx context.Context, ch chan<- ChatResponse, i
 }
 
 func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, prompt string, finalContent *strings.Builder, finalReasoning *strings.Builder, respToolCalls []ResponseToolCall, logprobsData []ContentLogprob, streaming bool, usage Usage) {
-	m.log(ctx, "chat-completion", "status", "final", "id", id, "tokens", usage.OutputTokens, "object", object, "tooling", len(respToolCalls) > 0, "reasoning", finalReasoning.Len(), "content", finalContent.Len())
+	args := []any{"status", "final", "id", id, "tokens", usage.OutputTokens, "object", object, "tooling", len(respToolCalls) > 0, "reasoning", finalReasoning.Len(), "content", finalContent.Len()}
+	if usage.DraftTokens > 0 {
+		args = append(args, "draft_tokens", usage.DraftTokens, "accepted_tokens", usage.AcceptedTokens, "acceptance_rate", fmt.Sprintf("%.2f", usage.AcceptanceRate))
+	}
+	m.log(ctx, "chat-completion", args...)
 
 	// For streaming responses, logprobs were already sent per-delta chunk.
 	// Only include accumulated logprobs for non-streaming requests.
