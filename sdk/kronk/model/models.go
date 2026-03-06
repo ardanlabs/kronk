@@ -150,7 +150,7 @@ func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 		isGPTModel = true
 	}
 
-	isEmbedModel, isRerankModel := detectEmbedRerank(model, metadata, modelID)
+	isEmbedModel, isRerankModel := detectEmbedRerank(model, metadata, modelID, cfg)
 
 	modelType := detectModelType(model, metadata)
 
@@ -275,7 +275,7 @@ func hasExperts(metadata map[string]string) bool {
 // A model is considered an embedding model if its GGUF metadata contains a
 // general.pooling_type key (mean, cls, last, or rank). A reranking model is an
 // embedding model that also has classifier outputs (ModelNClsOut > 0).
-func detectEmbedRerank(model llama.Model, metadata map[string]string, modelID string) (isEmbed bool, isRerank bool) {
+func detectEmbedRerank(model llama.Model, metadata map[string]string, modelID string, cfg Config) (isEmbed bool, isRerank bool) {
 	nameLower := strings.ToLower(modelID)
 
 	// Check GGUF metadata for a pooling_type key. Not all GGUF files include
@@ -302,6 +302,15 @@ func detectEmbedRerank(model llama.Model, metadata map[string]string, modelID st
 	if strings.Contains(nameLower, "rerank") {
 		isRerank = true
 		isEmbed = true
+	}
+
+	// Models with projection files are media models (vision/audio), not
+	// embedding or reranking models. The NClsOut and pooling_type metadata
+	// checks can false-positive on media models, which would route them to
+	// the context pool instead of the batch engine.
+	if cfg.ProjFile != "" {
+		isEmbed = false
+		isRerank = false
 	}
 
 	return isEmbed, isRerank

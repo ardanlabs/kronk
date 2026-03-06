@@ -137,7 +137,7 @@ func installSystem() (models.Path, error) {
 func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("loading model...")
 
-	if err := kronk.Init(kronk.WithLogLevel(kronk.LogNormal)); err != nil {
+	if err := kronk.Init(); err != nil {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
