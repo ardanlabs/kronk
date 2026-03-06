@@ -52,11 +52,11 @@ func testStreamingUsage(t *testing.T, krn *kronk.Kronk) {
 	for resp := range ch {
 		finalResp = resp
 
-		if len(resp.Choice) == 0 {
+		if len(resp.Choices) == 0 {
 			continue
 		}
 
-		choice := resp.Choice[0]
+		choice := resp.Choices[0]
 		if choice.Delta != nil {
 			if choice.Delta.Reasoning != "" {
 				reasoningDeltas++
@@ -185,7 +185,7 @@ func testUsageOnlyInFinal(t *testing.T, krn *kronk.Kronk) {
 		deltaNum++
 		finalResp = resp
 
-		if len(resp.Choice) > 0 && resp.Choice[0].FinishReason() == "" {
+		if len(resp.Choices) > 0 && resp.Choices[0].FinishReason() == "" {
 			if resp.Usage != nil {
 				deltasWithUsage++
 			}

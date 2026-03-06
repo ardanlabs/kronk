@@ -143,11 +143,11 @@ func (s *streamState) processChunk(resp model.ChatResponse) error {
 		s.started = true
 	}
 
-	if len(resp.Choice) == 0 {
+	if len(resp.Choices) == 0 {
 		return nil
 	}
 
-	choice := resp.Choice[0]
+	choice := resp.Choices[0]
 
 	// Skip delta content on final chunk (FinishReason set) - it duplicates previous content
 	if choice.FinishReason() == "" && choice.Delta != nil && choice.Delta.Content != "" {

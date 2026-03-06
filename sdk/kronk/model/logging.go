@@ -18,17 +18,17 @@ type StreamingResponseLogger struct {
 // Capture captures data from a streaming response. Call this for each response
 // before forwarding it. It only captures from the final response (when FinishReason is set).
 func (l *StreamingResponseLogger) Capture(resp ChatResponse) {
-	if len(resp.Choice) == 0 {
+	if len(resp.Choices) == 0 {
 		return
 	}
 
-	fr := resp.Choice[0].FinishReason()
+	fr := resp.Choices[0].FinishReason()
 	if fr == "" {
 		return
 	}
 
 	l.finishReason = fr
-	if msg := resp.Choice[0].Message; msg != nil {
+	if msg := resp.Choices[0].Message; msg != nil {
 		l.content = msg.Content
 		l.reasoning = msg.Reasoning
 		l.toolCalls = append([]ResponseToolCall(nil), msg.ToolCalls...)

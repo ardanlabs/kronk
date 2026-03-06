@@ -240,11 +240,11 @@ func validateResponse(got any, streaming bool) responseValidator {
 }
 
 func (v responseValidator) getMsg() model.ResponseMessage {
-	if v.streaming && v.resp.Choice[0].FinishReason() == "" && v.resp.Choice[0].Delta != nil {
-		return *v.resp.Choice[0].Delta
+	if v.streaming && v.resp.Choices[0].FinishReason() == "" && v.resp.Choices[0].Delta != nil {
+		return *v.resp.Choices[0].Delta
 	}
-	if v.resp.Choice[0].Message != nil {
-		return *v.resp.Choice[0].Message
+	if v.resp.Choices[0].Message != nil {
+		return *v.resp.Choices[0].Message
 	}
 	return model.ResponseMessage{}
 }
@@ -309,10 +309,10 @@ func (v responseValidator) hasUsage(reasoning bool) responseValidator {
 
 func (v responseValidator) hasValidChoice() responseValidator {
 	switch {
-	case len(v.resp.Choice) == 0:
+	case len(v.resp.Choices) == 0:
 		v.errors = append(v.errors, "expected at least one choice")
 
-	case v.resp.Choice[0].Index != 0:
+	case v.resp.Choices[0].Index != 0:
 		v.errors = append(v.errors, "expected index to be 0")
 	}
 
@@ -320,7 +320,7 @@ func (v responseValidator) hasValidChoice() responseValidator {
 }
 
 func (v responseValidator) hasContent() responseValidator {
-	if len(v.resp.Choice) == 0 {
+	if len(v.resp.Choices) == 0 {
 		v.errors = append(v.errors, "expected at least one choice")
 		return v
 	}
@@ -333,7 +333,7 @@ func (v responseValidator) hasContent() responseValidator {
 }
 
 func (v responseValidator) hasReasoning() responseValidator {
-	if len(v.resp.Choice) == 0 {
+	if len(v.resp.Choices) == 0 {
 		v.errors = append(v.errors, "expected at least one choice")
 		return v
 	}
@@ -346,7 +346,7 @@ func (v responseValidator) hasReasoning() responseValidator {
 }
 
 func (v responseValidator) warnContainsInContent(find string) responseValidator {
-	if len(v.resp.Choice) == 0 {
+	if len(v.resp.Choices) == 0 {
 		return v
 	}
 
@@ -358,7 +358,7 @@ func (v responseValidator) warnContainsInContent(find string) responseValidator 
 }
 
 func (v responseValidator) warnContainsInReasoning(find string) responseValidator {
-	if len(v.resp.Choice) == 0 {
+	if len(v.resp.Choices) == 0 {
 		return v
 	}
 
@@ -370,11 +370,11 @@ func (v responseValidator) warnContainsInReasoning(find string) responseValidato
 }
 
 func (v responseValidator) hasNoLogprobs() responseValidator {
-	if len(v.resp.Choice) == 0 {
+	if len(v.resp.Choices) == 0 {
 		return v
 	}
 
-	if v.resp.Choice[0].Logprobs != nil {
+	if v.resp.Choices[0].Logprobs != nil {
 		v.errors = append(v.errors, "expected logprobs to be nil in final streaming chunk")
 	}
 
@@ -382,12 +382,12 @@ func (v responseValidator) hasNoLogprobs() responseValidator {
 }
 
 func (v responseValidator) hasLogprobs(topLogprobs int) responseValidator {
-	if len(v.resp.Choice) == 0 {
+	if len(v.resp.Choices) == 0 {
 		v.errors = append(v.errors, "expected at least one choice for logprobs check")
 		return v
 	}
 
-	logprobs := v.resp.Choice[0].Logprobs
+	logprobs := v.resp.Choices[0].Logprobs
 	if logprobs == nil {
 		v.errors = append(v.errors, "expected logprobs to be non-nil")
 		return v
@@ -432,7 +432,7 @@ func (v responseValidator) hasNoPrompt() responseValidator {
 }
 
 func (v responseValidator) hasValidJSON() responseValidator {
-	if len(v.resp.Choice) == 0 {
+	if len(v.resp.Choices) == 0 {
 		v.errors = append(v.errors, "expected at least one choice")
 		return v
 	}
@@ -452,12 +452,12 @@ func (v responseValidator) hasValidJSON() responseValidator {
 }
 
 func (v responseValidator) hasToolCalls(funcName string) responseValidator {
-	if len(v.resp.Choice) == 0 {
+	if len(v.resp.Choices) == 0 {
 		v.errors = append(v.errors, "expected at least one choice")
 		return v
 	}
 
-	choice := v.resp.Choice[0]
+	choice := v.resp.Choices[0]
 
 	// Check finish reason is "tool_calls".
 	if choice.FinishReason() != "tool_calls" {

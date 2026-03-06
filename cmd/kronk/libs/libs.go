@@ -67,6 +67,7 @@ func runLocal(noUpgrade bool, version string) error {
 	}
 
 	libs, err := libs.New(
+		libs.WithLibPath(""),
 		libs.WithVersion(v),
 		libs.WithAllowUpgrade(!noUpgrade),
 	)
@@ -78,7 +79,7 @@ func runLocal(noUpgrade bool, version string) error {
 		return fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
-	if err := kronk.Init(); err != nil {
+	if err := kronk.Init(kronk.WithLibPath(libs.LibsPath())); err != nil {
 		return fmt.Errorf("libs:installation invalid: %w", err)
 	}
 

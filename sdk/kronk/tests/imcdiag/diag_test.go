@@ -342,9 +342,9 @@ func chatToolCallTurn(t *testing.T, ctx context.Context, krn *kronk.Kronk, messa
 	var lastResp model.ChatResponse
 	for resp := range ch {
 		lastResp = resp
-		if len(resp.Choice) > 0 && resp.Choice[0].FinishReason() == model.FinishReasonTool {
-			if resp.Choice[0].Delta != nil && len(resp.Choice[0].Delta.ToolCalls) > 0 {
-				toolCalls = resp.Choice[0].Delta.ToolCalls
+		if len(resp.Choices) > 0 && resp.Choices[0].FinishReason() == model.FinishReasonTool {
+			if resp.Choices[0].Delta != nil && len(resp.Choices[0].Delta.ToolCalls) > 0 {
+				toolCalls = resp.Choices[0].Delta.ToolCalls
 			}
 		}
 	}

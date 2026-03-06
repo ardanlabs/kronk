@@ -315,11 +315,11 @@ func (ss *streamState) start() []ResponseStreamEvent {
 }
 
 func (ss *streamState) process(chatResp model.ChatResponse) []ResponseStreamEvent {
-	if len(chatResp.Choice) == 0 {
+	if len(chatResp.Choices) == 0 {
 		return nil
 	}
 
-	choice := chatResp.Choice[0]
+	choice := chatResp.Choices[0]
 
 	var events []ResponseStreamEvent
 
@@ -607,8 +607,8 @@ func toChatResponseToResponses(chatResp model.ChatResponse, d model.D) ResponseR
 	var toolCalls []model.ResponseToolCall
 	var reasoning string
 
-	if len(chatResp.Choice) > 0 {
-		choice := chatResp.Choice[0]
+	if len(chatResp.Choices) > 0 {
+		choice := chatResp.Choices[0]
 		msg := choice.Message
 		if msg == nil && choice.Delta != nil {
 			msg = choice.Delta

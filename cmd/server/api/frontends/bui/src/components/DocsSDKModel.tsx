@@ -112,7 +112,7 @@ export default function DocsSDKModel() {
 	Object  string   \`json:"object"\`
 	Created int64    \`json:"created"\`
 	Model   string   \`json:"model"\`
-	Choice  []Choice \`json:"choices"\`
+	Choices []Choice \`json:"choices"\`
 	Usage   *Usage   \`json:"usage,omitempty"\`
 	Prompt  string   \`json:"prompt,omitempty"\`
 }`}</code>

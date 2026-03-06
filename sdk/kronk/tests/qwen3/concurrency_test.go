@@ -49,26 +49,26 @@ func Test_ConTest1(t *testing.T) {
 
 	var lastResp model.ChatResponse
 	for resp := range ch {
-		if resp.Choice[0].FinishReason() == model.FinishReasonError {
+		if resp.Choices[0].FinishReason() == model.FinishReasonError {
 			lastResp = resp
 		}
 	}
 
 	t.Log("check conditions")
 
-	if len(lastResp.Choice) == 0 {
+	if len(lastResp.Choices) == 0 {
 		t.Log("WARNING: Didn't get any response from the api call, but channel is closed")
 		return
 	}
 
-	if v := lastResp.Choice[0].FinishReason(); v != model.FinishReasonError {
+	if v := lastResp.Choices[0].FinishReason(); v != model.FinishReasonError {
 		t.Errorf("expected error finish reason, got %s", v)
 	}
 
-	if lastResp.Choice[0].Delta == nil || lastResp.Choice[0].Delta.Content != "context canceled" {
+	if lastResp.Choices[0].Delta == nil || lastResp.Choices[0].Delta.Content != "context canceled" {
 		errContent := ""
-		if lastResp.Choice[0].Delta != nil {
-			errContent = lastResp.Choice[0].Delta.Content
+		if lastResp.Choices[0].Delta != nil {
+			errContent = lastResp.Choices[0].Delta.Content
 		}
 		t.Errorf("expected error context canceled, got %s", errContent)
 	}
@@ -108,7 +108,7 @@ func Test_ConTest2(t *testing.T) {
 	var lastResp model.ChatResponse
 	var index int
 	for resp := range ch {
-		if resp.Choice[0].FinishReason() == model.FinishReasonError {
+		if resp.Choices[0].FinishReason() == model.FinishReasonError {
 			lastResp = resp
 		}
 
@@ -121,19 +121,19 @@ func Test_ConTest2(t *testing.T) {
 
 	t.Log("check conditions")
 
-	if len(lastResp.Choice) == 0 {
+	if len(lastResp.Choices) == 0 {
 		t.Log("WARNING: Didn't get any response from the api call, but channel is closed")
 		return
 	}
 
-	if v := lastResp.Choice[0].FinishReason(); v != model.FinishReasonError {
+	if v := lastResp.Choices[0].FinishReason(); v != model.FinishReasonError {
 		t.Errorf("expected error finish reason, got %s", v)
 	}
 
-	if lastResp.Choice[0].Delta == nil || lastResp.Choice[0].Delta.Content != "context canceled" {
+	if lastResp.Choices[0].Delta == nil || lastResp.Choices[0].Delta.Content != "context canceled" {
 		errContent := ""
-		if lastResp.Choice[0].Delta != nil {
-			errContent = lastResp.Choice[0].Delta.Content
+		if lastResp.Choices[0].Delta != nil {
+			errContent = lastResp.Choices[0].Delta.Content
 		}
 		t.Errorf("expected error context canceled, got %s", errContent)
 	}

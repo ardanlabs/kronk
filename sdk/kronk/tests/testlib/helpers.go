@@ -25,11 +25,11 @@ type StreamAccumulator struct {
 
 // Accumulate adds delta content from a streaming response chunk.
 func (sa *StreamAccumulator) Accumulate(resp model.ChatResponse) {
-	if len(resp.Choice) == 0 {
+	if len(resp.Choices) == 0 {
 		return
 	}
 
-	choice := resp.Choice[0]
+	choice := resp.Choices[0]
 
 	if choice.FinishReason() == "" && choice.Delta != nil {
 		sa.Content.WriteString(choice.Delta.Content)
@@ -87,42 +87,42 @@ func TestChatBasics(resp model.ChatResponse, modelName string, object string, re
 		return fmt.Errorf("basics: expected model to be %s, got %s", modelName, resp.Model)
 	}
 
-	if len(resp.Choice) == 0 {
-		return fmt.Errorf("basics: expected choice, got %d", len(resp.Choice))
+	if len(resp.Choices) == 0 {
+		return fmt.Errorf("basics: expected choice, got %d", len(resp.Choices))
 	}
 
-	msg := GetMsg(resp.Choice[0], streaming)
+	msg := GetMsg(resp.Choices[0], streaming)
 
-	if resp.Choice[0].FinishReason() == "" && msg.Content == "" && msg.Reasoning == "" {
+	if resp.Choices[0].FinishReason() == "" && msg.Content == "" && msg.Reasoning == "" {
 		return fmt.Errorf("basics: expected delta content and reasoning to be non-empty")
 	}
 
-	if resp.Choice[0].FinishReason() == "" && msg.Role != "assistant" {
+	if resp.Choices[0].FinishReason() == "" && msg.Role != "assistant" {
 		return fmt.Errorf("basics: expected delta role to be assistant, got %s", msg.Role)
 	}
 
-	if resp.Choice[0].FinishReason() == "stop" && msg.Content == "" {
+	if resp.Choices[0].FinishReason() == "stop" && msg.Content == "" {
 		return fmt.Errorf("basics: expected final content to be non-empty")
 	}
 
-	if resp.Choice[0].FinishReason() == "tool_calls" && len(msg.ToolCalls) == 0 {
+	if resp.Choices[0].FinishReason() == "tool_calls" && len(msg.ToolCalls) == 0 {
 		return fmt.Errorf("basics: expected tool calls to be non-empty")
 	}
 
-	if resp.Choice[0].FinishReason() == "tool_calls" && streaming {
-		if resp.Choice[0].Delta == nil || len(resp.Choice[0].Delta.ToolCalls) == 0 {
+	if resp.Choices[0].FinishReason() == "tool_calls" && streaming {
+		if resp.Choices[0].Delta == nil || len(resp.Choices[0].Delta.ToolCalls) == 0 {
 			return fmt.Errorf("basics: expected tool calls in Delta for streaming compatibility")
 		}
 	}
 
-	if resp.Choice[0].FinishReason() == "tool_calls" && !streaming {
-		if resp.Choice[0].Message == nil || len(resp.Choice[0].Message.ToolCalls) == 0 {
+	if resp.Choices[0].FinishReason() == "tool_calls" && !streaming {
+		if resp.Choices[0].Message == nil || len(resp.Choices[0].Message.ToolCalls) == 0 {
 			return fmt.Errorf("basics: expected tool calls in Message for non-streaming")
 		}
 	}
 
 	if reasoning {
-		if resp.Choice[0].FinishReason() == "stop" && msg.Reasoning == "" {
+		if resp.Choices[0].FinishReason() == "stop" && msg.Reasoning == "" {
 			return fmt.Errorf("basics: expected final reasoning")
 		}
 	}
@@ -138,7 +138,7 @@ func TestChatResponse(resp model.ChatResponse, modelName string, object string, 
 
 	var result TestResult
 
-	msg := GetMsg(resp.Choice[0], streaming)
+	msg := GetMsg(resp.Choices[0], streaming)
 
 	find = strings.ToLower(find)
 	funct = strings.ToLower(funct)
@@ -167,7 +167,7 @@ func TestChatResponse(resp model.ChatResponse, modelName string, object string, 
 		}
 	}
 
-	if resp.Choice[0].FinishReason() == "stop" {
+	if resp.Choices[0].FinishReason() == "stop" {
 		if len(msg.Content) == 0 {
 			result.Err = fmt.Errorf("content: expected some content")
 		}
@@ -178,7 +178,7 @@ func TestChatResponse(resp model.ChatResponse, modelName string, object string, 
 		}
 	}
 
-	if resp.Choice[0].FinishReason() == "tool" {
+	if resp.Choices[0].FinishReason() == "tool" {
 		if !strings.Contains(msg.ToolCalls[0].Function.Name, funct) {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("tooling: expected %q, got %q", funct, msg.ToolCalls[0].Function.Name))
 			return result
@@ -234,8 +234,8 @@ func TestStreamingToolCall(acc *StreamAccumulator, lastResp model.ChatResponse, 
 	var toolCalls []model.ResponseToolCall
 	if len(acc.ToolCalls) > 0 {
 		toolCalls = acc.ToolCalls
-	} else if len(lastResp.Choice) > 0 && lastResp.Choice[0].Message != nil {
-		toolCalls = lastResp.Choice[0].Message.ToolCalls
+	} else if len(lastResp.Choices) > 0 && lastResp.Choices[0].Message != nil {
+		toolCalls = lastResp.Choices[0].Message.ToolCalls
 	}
 
 	if len(toolCalls) == 0 {
@@ -413,12 +413,12 @@ func TestGrammarJSONResponse(resp model.ChatResponse, modelName string) TestResu
 		return result
 	}
 
-	if len(resp.Choice) == 0 {
-		result.Err = fmt.Errorf("expected choice, got %d", len(resp.Choice))
+	if len(resp.Choices) == 0 {
+		result.Err = fmt.Errorf("expected choice, got %d", len(resp.Choices))
 		return result
 	}
 
-	msg := resp.Choice[0].Message
+	msg := resp.Choices[0].Message
 	if msg == nil {
 		result.Err = fmt.Errorf("expected message to be non-nil")
 		return result
@@ -470,16 +470,16 @@ func DrainChat(ctx context.Context, ch <-chan model.ChatResponse) (model.ChatRes
 
 	for resp := range ch {
 		lastResp = resp
-		if len(resp.Choice) > 0 && resp.Choice[0].Delta != nil {
-			reasoning.WriteString(resp.Choice[0].Delta.Reasoning)
-			content.WriteString(resp.Choice[0].Delta.Content)
+		if len(resp.Choices) > 0 && resp.Choices[0].Delta != nil {
+			reasoning.WriteString(resp.Choices[0].Delta.Reasoning)
+			content.WriteString(resp.Choices[0].Delta.Content)
 		}
 	}
 
-	if len(lastResp.Choice) > 0 && lastResp.Choice[0].FinishReason() == model.FinishReasonError {
+	if len(lastResp.Choices) > 0 && lastResp.Choices[0].FinishReason() == model.FinishReasonError {
 		errMsg := ""
-		if lastResp.Choice[0].Delta != nil {
-			errMsg = lastResp.Choice[0].Delta.Content
+		if lastResp.Choices[0].Delta != nil {
+			errMsg = lastResp.Choices[0].Delta.Content
 		}
 		return lastResp, content.String(), fmt.Errorf("model error: %s", errMsg)
 	}

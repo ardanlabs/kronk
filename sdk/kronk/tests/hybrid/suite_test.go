@@ -370,12 +370,12 @@ func testGrammarJSONStreaming(t *testing.T, krn *kronk.Kronk) {
 		for resp := range ch {
 			lastResp = resp
 
-			if resp.Choice[0].FinishReason() == model.FinishReasonStop {
+			if resp.Choices[0].FinishReason() == model.FinishReasonStop {
 				break
 			}
 
-			if len(resp.Choice) > 0 && resp.Choice[0].Delta != nil {
-				content.WriteString(resp.Choice[0].Delta.Content)
+			if len(resp.Choices) > 0 && resp.Choices[0].Delta != nil {
+				content.WriteString(resp.Choices[0].Delta.Content)
 			}
 		}
 

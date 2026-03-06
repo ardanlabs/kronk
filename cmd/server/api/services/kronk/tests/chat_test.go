@@ -37,7 +37,7 @@ func chatNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
-				Choice: []model.Choice{
+				Choices: []model.Choice{
 					{
 						Message: &model.ResponseMessage{
 							Role: "assistant",
@@ -94,7 +94,7 @@ func chatNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
-				Choice: []model.Choice{
+				Choices: []model.Choice{
 					{
 						Message: &model.ResponseMessage{
 							Role: "assistant",
@@ -156,7 +156,7 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
-				Choice: []model.Choice{
+				Choices: []model.Choice{
 					{
 						Message:         nil,
 						FinishReasonPtr: new("stop"),
@@ -207,7 +207,7 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
-				Choice: []model.Choice{
+				Choices: []model.Choice{
 					{
 						Message:         nil,
 						FinishReasonPtr: new("stop"),
@@ -267,7 +267,7 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
-				Choice: []model.Choice{
+				Choices: []model.Choice{
 					{
 						Message:         nil,
 						FinishReasonPtr: new("stop"),
@@ -315,7 +315,7 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
-				Choice: []model.Choice{
+				Choices: []model.Choice{
 					{
 						Message:         nil,
 						FinishReasonPtr: new("stop"),
@@ -361,7 +361,7 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
-				Choice: []model.Choice{
+				Choices: []model.Choice{
 					{
 						Message:         nil,
 						FinishReasonPtr: new("stop"),
@@ -415,7 +415,7 @@ func chatStreamSPCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
-				Choice: []model.Choice{
+				Choices: []model.Choice{
 					{
 						Message:         nil,
 						FinishReasonPtr: new("stop"),
@@ -461,7 +461,7 @@ func chatStreamSPCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
-				Choice: []model.Choice{
+				Choices: []model.Choice{
 					{
 						Message:         nil,
 						FinishReasonPtr: new("stop"),
@@ -506,7 +506,7 @@ func chatStreamSPCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
-				Choice: []model.Choice{
+				Choices: []model.Choice{
 					{
 						Message:         nil,
 						FinishReasonPtr: new("stop"),
@@ -558,7 +558,7 @@ func chatArrayFormatQwen3(t *testing.T, tokens map[string]string) []apitest.Tabl
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
-				Choice: []model.Choice{
+				Choices: []model.Choice{
 					{
 						Message: &model.ResponseMessage{
 							Role: "assistant",
@@ -620,7 +620,7 @@ func chatArrayFormatStreamQwen3(t *testing.T, tokens map[string]string) []apites
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
-				Choice: []model.Choice{
+				Choices: []model.Choice{
 					{
 						Message:         nil,
 						FinishReasonPtr: new("stop"),
@@ -676,7 +676,7 @@ func chatImageQwen25VL(t *testing.T, tokens map[string]string) []apitest.Table {
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
-				Choice: []model.Choice{
+				Choices: []model.Choice{
 					{
 						Message: &model.ResponseMessage{
 							Role: "assistant",
@@ -738,7 +738,7 @@ func chatAudioQwen2Audio(t *testing.T, tokens map[string]string) []apitest.Table
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
-				Choice: []model.Choice{
+				Choices: []model.Choice{
 					{
 						Message: &model.ResponseMessage{
 							Role: "assistant",
@@ -797,7 +797,7 @@ func chatGrammarQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
-				Choice: []model.Choice{
+				Choices: []model.Choice{
 					{
 						Message: &model.ResponseMessage{
 							Role: "assistant",
@@ -855,7 +855,7 @@ func chatGrammarStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Ta
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
-				Choice: []model.Choice{
+				Choices: []model.Choice{
 					{
 						Message:         nil,
 						FinishReasonPtr: new("stop"),
@@ -927,7 +927,7 @@ func chatToolCallQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
-				Choice: []model.Choice{
+				Choices: []model.Choice{
 					{
 						Message: &model.ResponseMessage{
 							Role: "assistant",
@@ -1003,7 +1003,7 @@ func chatToolCallStreamQwen3(t *testing.T, tokens map[string]string) []apitest.T
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
-				Choice: []model.Choice{
+				Choices: []model.Choice{
 					{
 						Delta: &model.ResponseMessage{
 							Role: "assistant",

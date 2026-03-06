@@ -270,7 +270,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	}
 
 	libs, err := libs.New(
-		libs.WithBasePath(cfg.LibPath),
+		libs.WithLibPath(cfg.LibPath),
 		libs.WithArch(arch),
 		libs.WithOS(opSys),
 		libs.WithProcessor(processor),
@@ -332,7 +332,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	log.Info(ctx, "startup", "status", "initializing kronk")
 
-	if err := kronk.Init(); err != nil {
+	if err := kronk.Init(kronk.WithLibPath(libs.LibsPath())); err != nil {
 		return fmt.Errorf("installation invalid: %w", err)
 	}
 

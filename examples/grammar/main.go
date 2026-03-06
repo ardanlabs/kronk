@@ -213,16 +213,16 @@ func grammarPreset(krn *kronk.Kronk) error {
 	fmt.Print("RESPONSE: ")
 
 	for resp := range ch {
-		switch resp.Choice[0].FinishReason() {
+		switch resp.Choices[0].FinishReason() {
 		case model.FinishReasonError:
-			return fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
+			return fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
 
 		case model.FinishReasonStop:
 			fmt.Println()
 			return nil
 
 		default:
-			fmt.Print(resp.Choice[0].Delta.Content)
+			fmt.Print(resp.Choices[0].Delta.Content)
 		}
 	}
 
@@ -279,16 +279,16 @@ func jsonSchema(krn *kronk.Kronk) error {
 	fmt.Print("RESPONSE: ")
 
 	for resp := range ch {
-		switch resp.Choice[0].FinishReason() {
+		switch resp.Choices[0].FinishReason() {
 		case model.FinishReasonError:
-			return fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
+			return fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
 
 		case model.FinishReasonStop:
 			fmt.Println()
 			return nil
 
 		default:
-			fmt.Print(resp.Choice[0].Delta.Content)
+			fmt.Print(resp.Choices[0].Delta.Content)
 		}
 	}
 
@@ -333,16 +333,16 @@ Sentiment:`
 	fmt.Print("RESPONSE: ")
 
 	for resp := range ch {
-		switch resp.Choice[0].FinishReason() {
+		switch resp.Choices[0].FinishReason() {
 		case model.FinishReasonError:
-			return fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
+			return fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
 
 		case model.FinishReasonStop:
 			fmt.Println()
 			return nil
 
 		default:
-			fmt.Print(resp.Choice[0].Delta.Content)
+			fmt.Print(resp.Choices[0].Delta.Content)
 		}
 	}
 

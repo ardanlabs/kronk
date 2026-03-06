@@ -245,26 +245,26 @@ func (a *Agent) streamModelTurn(ctx context.Context, conversation []model.D) (st
 	for resp := range ch {
 		lastResp = resp
 
-		if len(resp.Choice) == 0 {
+		if len(resp.Choices) == 0 {
 			continue
 		}
 
 		// On the first real chunk, stop the latency printer.
 		stopPrinter()
 
-		switch resp.Choice[0].FinishReason() {
+		switch resp.Choices[0].FinishReason() {
 		case model.FinishReasonError:
-			return "", nil, lastResp.Usage, fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
+			return "", nil, lastResp.Usage, fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
 
 		case model.FinishReasonStop:
 			text := strings.TrimLeft(strings.Join(chunks, " "), "\n")
 			return text, nil, lastResp.Usage, nil
 
 		case model.FinishReasonTool:
-			return "", resp.Choice[0].Delta.ToolCalls, lastResp.Usage, nil
+			return "", resp.Choices[0].Delta.ToolCalls, lastResp.Usage, nil
 
 		default:
-			delta := resp.Choice[0].Delta
+			delta := resp.Choices[0].Delta
 
 			switch {
 			case delta.Reasoning != "":

@@ -55,16 +55,16 @@ func Test_BatchChatConcurrent(t *testing.T) {
 				results[idx].duration = time.Since(start)
 				results[idx].id = idx
 
-				if lastResp.Choice[0].FinishReason() == model.FinishReasonError {
+				if lastResp.Choices[0].FinishReason() == model.FinishReasonError {
 					errContent := ""
-					if lastResp.Choice[0].Delta != nil {
-						errContent = lastResp.Choice[0].Delta.Content
+					if lastResp.Choices[0].Delta != nil {
+						errContent = lastResp.Choices[0].Delta.Content
 					}
 					results[idx].err = fmt.Errorf("goroutine %d: got error response: %s", idx, errContent)
 					return
 				}
 
-				msg := testlib.GetMsg(lastResp.Choice[0], true)
+				msg := testlib.GetMsg(lastResp.Choices[0], true)
 				results[idx].content = msg.Content
 			}(i)
 		}

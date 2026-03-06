@@ -244,7 +244,7 @@ ${s}`}).join(`
 }`})}),e.jsx("p",{className:"doc-description",children:"FmtLogger provides a basic logger that writes to stdout."})]})]})]}),e.jsx("nav",{className:"doc-sidebar",children:e.jsxs("div",{className:"doc-sidebar-content",children:[e.jsxs("div",{className:"doc-index-section",children:[e.jsx("a",{href:"#functions",className:"doc-index-header",children:"Functions"}),e.jsxs("ul",{children:[e.jsx("li",{children:e.jsx("a",{href:"#func-init",children:"Init"})}),e.jsx("li",{children:e.jsx("a",{href:"#func-setfmtloggertraceid",children:"SetFmtLoggerTraceID"})}),e.jsx("li",{children:e.jsx("a",{href:"#func-new",children:"New"})})]})]}),e.jsxs("div",{className:"doc-index-section",children:[e.jsx("a",{href:"#types",className:"doc-index-header",children:"Types"}),e.jsxs("ul",{children:[e.jsx("li",{children:e.jsx("a",{href:"#type-incompletedetail",children:"IncompleteDetail"})}),e.jsx("li",{children:e.jsx("a",{href:"#type-initoption",children:"InitOption"})}),e.jsx("li",{children:e.jsx("a",{href:"#type-inputtokensdetails",children:"InputTokensDetails"})}),e.jsx("li",{children:e.jsx("a",{href:"#type-kronk",children:"Kronk"})}),e.jsx("li",{children:e.jsx("a",{href:"#type-loglevel",children:"LogLevel"})}),e.jsx("li",{children:e.jsx("a",{href:"#type-logger",children:"Logger"})}),e.jsx("li",{children:e.jsx("a",{href:"#type-option",children:"Option"})}),e.jsx("li",{children:e.jsx("a",{href:"#type-outputtokensdetails",children:"OutputTokensDetails"})}),e.jsx("li",{children:e.jsx("a",{href:"#type-responsecontentitem",children:"ResponseContentItem"})}),e.jsx("li",{children:e.jsx("a",{href:"#type-responseerror",children:"ResponseError"})}),e.jsx("li",{children:e.jsx("a",{href:"#type-responseformattype",children:"ResponseFormatType"})}),e.jsx("li",{children:e.jsx("a",{href:"#type-responseoutputitem",children:"ResponseOutputItem"})}),e.jsx("li",{children:e.jsx("a",{href:"#type-responsereasoning",children:"ResponseReasoning"})}),e.jsx("li",{children:e.jsx("a",{href:"#type-responseresponse",children:"ResponseResponse"})}),e.jsx("li",{children:e.jsx("a",{href:"#type-responsestreamevent",children:"ResponseStreamEvent"})}),e.jsx("li",{children:e.jsx("a",{href:"#type-responsetextformat",children:"ResponseTextFormat"})}),e.jsx("li",{children:e.jsx("a",{href:"#type-responseusage",children:"ResponseUsage"})})]})]}),e.jsxs("div",{className:"doc-index-section",children:[e.jsx("a",{href:"#methods",className:"doc-index-header",children:"Methods"}),e.jsxs("ul",{children:[e.jsx("li",{children:e.jsx("a",{href:"#method-kronk-activestreams",children:"Kronk.ActiveStreams"})}),e.jsx("li",{children:e.jsx("a",{href:"#method-kronk-chat",children:"Kronk.Chat"})}),e.jsx("li",{children:e.jsx("a",{href:"#method-kronk-chatstreaming",children:"Kronk.ChatStreaming"})}),e.jsx("li",{children:e.jsx("a",{href:"#method-kronk-chatstreaminghttp",children:"Kronk.ChatStreamingHTTP"})}),e.jsx("li",{children:e.jsx("a",{href:"#method-kronk-embeddings",children:"Kronk.Embeddings"})}),e.jsx("li",{children:e.jsx("a",{href:"#method-kronk-embeddingshttp",children:"Kronk.EmbeddingsHTTP"})}),e.jsx("li",{children:e.jsx("a",{href:"#method-kronk-modelconfig",children:"Kronk.ModelConfig"})}),e.jsx("li",{children:e.jsx("a",{href:"#method-kronk-modelinfo",children:"Kronk.ModelInfo"})}),e.jsx("li",{children:e.jsx("a",{href:"#method-kronk-rerank",children:"Kronk.Rerank"})}),e.jsx("li",{children:e.jsx("a",{href:"#method-kronk-rerankhttp",children:"Kronk.RerankHTTP"})}),e.jsx("li",{children:e.jsx("a",{href:"#method-kronk-response",children:"Kronk.Response"})}),e.jsx("li",{children:e.jsx("a",{href:"#method-kronk-responsestreaming",children:"Kronk.ResponseStreaming"})}),e.jsx("li",{children:e.jsx("a",{href:"#method-kronk-responsestreaminghttp",children:"Kronk.ResponseStreamingHTTP"})}),e.jsx("li",{children:e.jsx("a",{href:"#method-kronk-systeminfo",children:"Kronk.SystemInfo"})}),e.jsx("li",{children:e.jsx("a",{href:"#method-kronk-tokenize",children:"Kronk.Tokenize"})}),e.jsx("li",{children:e.jsx("a",{href:"#method-kronk-tokenizehttp",children:"Kronk.TokenizeHTTP"})}),e.jsx("li",{children:e.jsx("a",{href:"#method-kronk-unload",children:"Kronk.Unload"})}),e.jsx("li",{children:e.jsx("a",{href:"#method-loglevel-int",children:"LogLevel.Int"})})]})]}),e.jsxs("div",{className:"doc-index-section",children:[e.jsx("a",{href:"#constants",className:"doc-index-header",children:"Constants"}),e.jsx("ul",{children:e.jsx("li",{children:e.jsx("a",{href:"#const-version",children:"Version"})})})]}),e.jsxs("div",{className:"doc-index-section",children:[e.jsx("a",{href:"#variables",className:"doc-index-header",children:"Variables"}),e.jsxs("ul",{children:[e.jsx("li",{children:e.jsx("a",{href:"#var-discardlogger",children:"DiscardLogger"})}),e.jsx("li",{children:e.jsx("a",{href:"#var-fmtlogger",children:"FmtLogger"})})]})]})]})})]})]})}function iE(){return e.jsxs("div",{children:[e.jsxs("div",{className:"page-header",children:[e.jsx("h2",{children:"Model Package"}),e.jsx("p",{children:"Package model provides the low-level api for working with models."})]}),e.jsxs("div",{className:"doc-layout",children:[e.jsxs("div",{className:"doc-content",children:[e.jsxs("div",{className:"card",children:[e.jsx("h3",{children:"Import"}),e.jsx("pre",{className:"code-block",children:e.jsx("code",{children:'import "github.com/ardanlabs/kronk/sdk/kronk/model"'})})]}),e.jsxs("div",{className:"card",id:"functions",children:[e.jsx("h3",{children:"Functions"}),e.jsxs("div",{className:"doc-section",id:"func-addparams",children:[e.jsx("h4",{children:"AddParams"}),e.jsx("pre",{className:"code-block",children:e.jsx("code",{children:"func AddParams(params Params, d D)"})}),e.jsx("p",{className:"doc-description",children:"AddParams adds the values from the Params struct into the provided D map. Only non-zero values are added."})]}),e.jsxs("div",{className:"doc-section",id:"func-checkmodel",children:[e.jsx("h4",{children:"CheckModel"}),e.jsx("pre",{className:"code-block",children:e.jsx("code",{children:"func CheckModel(modelFile string, checkSHA bool) error"})}),e.jsx("p",{className:"doc-description",children:"CheckModel is check if the downloaded model is valid based on it's sha file. If no sha file exists, this check will return with no error."})]}),e.jsxs("div",{className:"doc-section",id:"func-inityzmaworkarounds",children:[e.jsx("h4",{children:"InitYzmaWorkarounds"}),e.jsx("pre",{className:"code-block",children:e.jsx("code",{children:"func InitYzmaWorkarounds(libPath string) error"})}),e.jsx("p",{className:"doc-description",children:"InitYzmaWorkarounds loads the mtmd library and preps our fixed FFI functions. This is safe to call multiple times; it only initializes once."})]}),e.jsxs("div",{className:"doc-section",id:"func-newgrammarsampler",children:[e.jsx("h4",{children:"NewGrammarSampler"}),e.jsx("pre",{className:"code-block",children:e.jsx("code",{children:"func NewGrammarSampler(vocab llama.Vocab, grammar string) *grammarSampler"})}),e.jsx("p",{className:"doc-description",children:"NewGrammarSampler creates a grammar sampler that will be managed separately from the main sampler chain."})]}),e.jsxs("div",{className:"doc-section",id:"func-parseggmltype",children:[e.jsx("h4",{children:"ParseGGMLType"}),e.jsx("pre",{className:"code-block",children:e.jsx("code",{children:"func ParseGGMLType(s string) (GGMLType, error)"})}),e.jsx("p",{className:"doc-description",children:'ParseGGMLType parses a string into a GGMLType. Supported values: "f32", "f16", "q4_0", "q4_1", "q5_0", "q5_1", "q8_0", "bf16", "auto".'})]}),e.jsxs("div",{className:"doc-section",id:"func-newmodel",children:[e.jsx("h4",{children:"NewModel"}),e.jsx("pre",{className:"code-block",children:e.jsx("code",{children:"func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, error)"})})]}),e.jsxs("div",{className:"doc-section",id:"func-detectmodeltypefromfiles",children:[e.jsx("h4",{children:"DetectModelTypeFromFiles"}),e.jsx("pre",{className:"code-block",children:e.jsx("code",{children:"func DetectModelTypeFromFiles(modelFiles []string) (ModelType, string, error)"})}),e.jsx("p",{className:"doc-description",children:"DetectModelTypeFromFiles loads a model from the given GGUF files, determines the architecture type, and immediately frees the model. It returns the ModelType, the raw general.architecture string from the GGUF metadata, and any error encountered during loading."})]}),e.jsxs("div",{className:"doc-section",id:"func-parseropescalingtype",children:[e.jsx("h4",{children:"ParseRopeScalingType"}),e.jsx("pre",{className:"code-block",children:e.jsx("code",{children:"func ParseRopeScalingType(s string) (RopeScalingType, error)"})}),e.jsx("p",{className:"doc-description",children:'ParseRopeScalingType parses a string into a RopeScalingType. Supported values: "none", "linear", "yarn".'})]}),e.jsxs("div",{className:"doc-section",id:"func-parsesplitmode",children:[e.jsx("h4",{children:"ParseSplitMode"}),e.jsx("pre",{className:"code-block",children:e.jsx("code",{children:"func ParseSplitMode(s string) (SplitMode, error)"})}),e.jsx("p",{className:"doc-description",children:'ParseSplitMode parses a string into a SplitMode. Supported values: "none", "layer", "row", "expert-parallel", "tensor-parallel".'})]})]}),e.jsxs("div",{className:"card",id:"types",children:[e.jsx("h3",{children:"Types"}),e.jsxs("div",{className:"doc-section",id:"type-cataloger",children:[e.jsx("h4",{children:"Cataloger"}),e.jsx("pre",{className:"code-block",children:e.jsx("code",{children:`type Cataloger interface {
 	RetrieveTemplate(modelID string) (Template, error)
 	RetrieveConfig(modelID string) (Config, error)
-}`})}),e.jsx("p",{className:"doc-description",children:"Cataloger provides support to retrieve catalog config and template information."})]}),e.jsxs("div",{className:"doc-section",id:"type-chatresponse",children:[e.jsx("h4",{children:"ChatResponse"}),e.jsx("pre",{className:"code-block",children:e.jsx("code",{children:'type ChatResponse struct {\n	ID      string   `json:"id"`\n	Object  string   `json:"object"`\n	Created int64    `json:"created"`\n	Model   string   `json:"model"`\n	Choice  []Choice `json:"choices"`\n	Usage   *Usage   `json:"usage,omitempty"`\n	Prompt  string   `json:"prompt,omitempty"`\n}'})}),e.jsx("p",{className:"doc-description",children:"ChatResponse represents output for inference models."})]}),e.jsxs("div",{className:"doc-section",id:"type-choice",children:[e.jsx("h4",{children:"Choice"}),e.jsx("pre",{className:"code-block",children:e.jsx("code",{children:'type Choice struct {\n	Index           int              `json:"index"`\n	Message         *ResponseMessage `json:"message,omitempty"`\n	Delta           *ResponseMessage `json:"delta,omitempty"`\n	Logprobs        *Logprobs        `json:"logprobs,omitempty"`\n	FinishReasonPtr *string          `json:"finish_reason"`\n}'})}),e.jsx("p",{className:"doc-description",children:"Choice represents a single choice in a response."})]}),e.jsxs("div",{className:"doc-section",id:"type-config",children:[e.jsx("h4",{children:"Config"}),e.jsx("pre",{className:"code-block",children:e.jsx("code",{children:`type Config struct {
+}`})}),e.jsx("p",{className:"doc-description",children:"Cataloger provides support to retrieve catalog config and template information."})]}),e.jsxs("div",{className:"doc-section",id:"type-chatresponse",children:[e.jsx("h4",{children:"ChatResponse"}),e.jsx("pre",{className:"code-block",children:e.jsx("code",{children:'type ChatResponse struct {\n	ID      string   `json:"id"`\n	Object  string   `json:"object"`\n	Created int64    `json:"created"`\n	Model   string   `json:"model"`\n	Choices []Choice `json:"choices"`\n	Usage   *Usage   `json:"usage,omitempty"`\n	Prompt  string   `json:"prompt,omitempty"`\n}'})}),e.jsx("p",{className:"doc-description",children:"ChatResponse represents output for inference models."})]}),e.jsxs("div",{className:"doc-section",id:"type-choice",children:[e.jsx("h4",{children:"Choice"}),e.jsx("pre",{className:"code-block",children:e.jsx("code",{children:'type Choice struct {\n	Index           int              `json:"index"`\n	Message         *ResponseMessage `json:"message,omitempty"`\n	Delta           *ResponseMessage `json:"delta,omitempty"`\n	Logprobs        *Logprobs        `json:"logprobs,omitempty"`\n	FinishReasonPtr *string          `json:"finish_reason"`\n}'})}),e.jsx("p",{className:"doc-description",children:"Choice represents a single choice in a response."})]}),e.jsxs("div",{className:"doc-section",id:"type-config",children:[e.jsx("h4",{children:"Config"}),e.jsx("pre",{className:"code-block",children:e.jsx("code",{children:`type Config struct {
 	CacheMinTokens       int
 	CacheSlotTimeout     int
 	CacheTypeK           GGMLType
@@ -814,26 +814,26 @@ func (a *Agent) streamModelTurn(ctx context.Context, conversation []model.D) (st
 	for resp := range ch {
 		lastResp = resp
 
-		if len(resp.Choice) == 0 {
+		if len(resp.Choices) == 0 {
 			continue
 		}
 
 		// On the first real chunk, stop the latency printer.
 		stopPrinter()
 
-		switch resp.Choice[0].FinishReason() {
+		switch resp.Choices[0].FinishReason() {
 		case model.FinishReasonError:
-			return "", nil, lastResp.Usage, fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
+			return "", nil, lastResp.Usage, fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
 
 		case model.FinishReasonStop:
 			text := strings.TrimLeft(strings.Join(chunks, " "), "\\n")
 			return text, nil, lastResp.Usage, nil
 
 		case model.FinishReasonTool:
-			return "", resp.Choice[0].Delta.ToolCalls, lastResp.Usage, nil
+			return "", resp.Choices[0].Delta.ToolCalls, lastResp.Usage, nil
 
 		default:
-			delta := resp.Choice[0].Delta
+			delta := resp.Choices[0].Delta
 
 			switch {
 			case delta.Reasoning != "":
@@ -1269,16 +1269,16 @@ loop:
 	for resp := range ch {
 		lr = resp
 
-		switch resp.Choice[0].FinishReason() {
+		switch resp.Choices[0].FinishReason() {
 		case model.FinishReasonStop:
 			break loop
 
 		case model.FinishReasonError:
-			return fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
+			return fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
 		}
 
-		if resp.Choice[0].Delta.Reasoning != "" {
-			fmt.Printf("\\u001b[91m%s\\u001b[0m", resp.Choice[0].Delta.Reasoning)
+		if resp.Choices[0].Delta.Reasoning != "" {
+			fmt.Printf("\\u001b[91m%s\\u001b[0m", resp.Choices[0].Delta.Reasoning)
 			reasoning = true
 			continue
 		}
@@ -1288,7 +1288,7 @@ loop:
 			fmt.Print("\\n\\n")
 		}
 
-		fmt.Printf("%s", resp.Choice[0].Delta.Content)
+		fmt.Printf("%s", resp.Choices[0].Delta.Content)
 	}
 
 	// -------------------------------------------------------------------------
@@ -1611,13 +1611,13 @@ loop:
 	for resp := range ch {
 		lr = resp
 
-		if len(resp.Choice) == 0 {
+		if len(resp.Choices) == 0 {
 			continue
 		}
 
-		switch resp.Choice[0].FinishReason() {
+		switch resp.Choices[0].FinishReason() {
 		case model.FinishReasonError:
-			return messages, fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
+			return messages, fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
 
 		case model.FinishReasonStop:
 			break loop
@@ -1630,7 +1630,7 @@ loop:
 
 			fmt.Printf("\\u001b[92mModel Asking For Tool Calls:\\n\\u001b[0m")
 
-			for _, tool := range resp.Choice[0].Delta.ToolCalls {
+			for _, tool := range resp.Choices[0].Delta.ToolCalls {
 				fmt.Printf("\\u001b[92mToolID[%s]: %s(%s)\\n\\u001b[0m",
 					tool.ID,
 					tool.Function.Name,
@@ -1649,8 +1649,8 @@ loop:
 			break loop
 
 		default:
-			if resp.Choice[0].Delta.Reasoning != "" {
-				fmt.Printf("\\u001b[91m%s\\u001b[0m", resp.Choice[0].Delta.Reasoning)
+			if resp.Choices[0].Delta.Reasoning != "" {
+				fmt.Printf("\\u001b[91m%s\\u001b[0m", resp.Choices[0].Delta.Reasoning)
 				reasoning = true
 				continue
 			}
@@ -1664,7 +1664,7 @@ loop:
 				}
 			}
 
-			fmt.Printf("%s", resp.Choice[0].Delta.Content)
+			fmt.Printf("%s", resp.Choices[0].Delta.Content)
 		}
 	}
 
@@ -2085,16 +2085,16 @@ func grammarPreset(krn *kronk.Kronk) error {
 	fmt.Print("RESPONSE: ")
 
 	for resp := range ch {
-		switch resp.Choice[0].FinishReason() {
+		switch resp.Choices[0].FinishReason() {
 		case model.FinishReasonError:
-			return fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
+			return fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
 
 		case model.FinishReasonStop:
 			fmt.Println()
 			return nil
 
 		default:
-			fmt.Print(resp.Choice[0].Delta.Content)
+			fmt.Print(resp.Choices[0].Delta.Content)
 		}
 	}
 
@@ -2151,16 +2151,16 @@ func jsonSchema(krn *kronk.Kronk) error {
 	fmt.Print("RESPONSE: ")
 
 	for resp := range ch {
-		switch resp.Choice[0].FinishReason() {
+		switch resp.Choices[0].FinishReason() {
 		case model.FinishReasonError:
-			return fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
+			return fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
 
 		case model.FinishReasonStop:
 			fmt.Println()
 			return nil
 
 		default:
-			fmt.Print(resp.Choice[0].Delta.Content)
+			fmt.Print(resp.Choices[0].Delta.Content)
 		}
 	}
 
@@ -2205,16 +2205,16 @@ Sentiment:\`
 	fmt.Print("RESPONSE: ")
 
 	for resp := range ch {
-		switch resp.Choice[0].FinishReason() {
+		switch resp.Choices[0].FinishReason() {
 		case model.FinishReasonError:
-			return fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
+			return fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
 
 		case model.FinishReasonStop:
 			fmt.Println()
 			return nil
 
 		default:
-			fmt.Print(resp.Choice[0].Delta.Content)
+			fmt.Print(resp.Choices[0].Delta.Content)
 		}
 	}
 
@@ -2377,17 +2377,17 @@ func question(krn *kronk.Kronk) error {
 	var reasoning bool
 
 	for resp := range ch {
-		switch resp.Choice[0].FinishReason() {
+		switch resp.Choices[0].FinishReason() {
 		case model.FinishReasonError:
-			return fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
+			return fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
 
 		case model.FinishReasonStop:
 			return nil
 
 		default:
-			if resp.Choice[0].Delta.Reasoning != "" {
+			if resp.Choices[0].Delta.Reasoning != "" {
 				reasoning = true
-				fmt.Printf("\\u001b[91m%s\\u001b[0m", resp.Choice[0].Delta.Reasoning)
+				fmt.Printf("\\u001b[91m%s\\u001b[0m", resp.Choices[0].Delta.Reasoning)
 				continue
 			}
 
@@ -2397,7 +2397,7 @@ func question(krn *kronk.Kronk) error {
 				continue
 			}
 
-			fmt.Printf("%s", resp.Choice[0].Delta.Content)
+			fmt.Printf("%s", resp.Choices[0].Delta.Content)
 		}
 	}
 
@@ -3182,16 +3182,16 @@ loop:
 	for resp := range ch {
 		lr = resp
 
-		switch resp.Choice[0].FinishReason() {
+		switch resp.Choices[0].FinishReason() {
 		case model.FinishReasonStop:
 			break loop
 
 		case model.FinishReasonError:
-			return fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
+			return fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
 		}
 
-		if resp.Choice[0].Delta.Reasoning != "" {
-			fmt.Printf("\\u001b[91m%s\\u001b[0m", resp.Choice[0].Delta.Reasoning)
+		if resp.Choices[0].Delta.Reasoning != "" {
+			fmt.Printf("\\u001b[91m%s\\u001b[0m", resp.Choices[0].Delta.Reasoning)
 			reasoning = true
 			continue
 		}
@@ -3201,7 +3201,7 @@ loop:
 			fmt.Print("\\n\\n")
 		}
 
-		fmt.Printf("%s", resp.Choice[0].Delta.Content)
+		fmt.Printf("%s", resp.Choices[0].Delta.Content)
 	}
 
 	// -------------------------------------------------------------------------

@@ -155,17 +155,17 @@ func question(krn *kronk.Kronk) error {
 	var reasoning bool
 
 	for resp := range ch {
-		switch resp.Choice[0].FinishReason() {
+		switch resp.Choices[0].FinishReason() {
 		case model.FinishReasonError:
-			return fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
+			return fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
 
 		case model.FinishReasonStop:
 			return nil
 
 		default:
-			if resp.Choice[0].Delta.Reasoning != "" {
+			if resp.Choices[0].Delta.Reasoning != "" {
 				reasoning = true
-				fmt.Printf("\u001b[91m%s\u001b[0m", resp.Choice[0].Delta.Reasoning)
+				fmt.Printf("\u001b[91m%s\u001b[0m", resp.Choices[0].Delta.Reasoning)
 				continue
 			}
 
@@ -175,7 +175,7 @@ func question(krn *kronk.Kronk) error {
 				continue
 			}
 
-			fmt.Printf("%s", resp.Choice[0].Delta.Content)
+			fmt.Printf("%s", resp.Choices[0].Delta.Content)
 		}
 	}
 

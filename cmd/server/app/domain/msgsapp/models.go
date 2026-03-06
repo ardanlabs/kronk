@@ -562,8 +562,8 @@ func toMessagesResponse(resp model.ChatResponse) *MessagesResponse {
 	content := make([]ResponseContentBlock, 0)
 
 	switch {
-	case len(resp.Choice) > 0:
-		choice := resp.Choice[0]
+	case len(resp.Choices) > 0:
+		choice := resp.Choices[0]
 		switch {
 		case choice.Message != nil:
 			switch {
@@ -587,8 +587,8 @@ func toMessagesResponse(resp model.ChatResponse) *MessagesResponse {
 
 	stopReason := "end_turn"
 	switch {
-	case len(resp.Choice) > 0:
-		switch resp.Choice[0].FinishReason() {
+	case len(resp.Choices) > 0:
+		switch resp.Choices[0].FinishReason() {
 		case model.FinishReasonTool:
 			stopReason = "tool_use"
 		case model.FinishReasonStop:

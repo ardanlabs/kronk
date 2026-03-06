@@ -79,7 +79,7 @@ func testIMCMediaTextExtend(t *testing.T, krn *kronk.Kronk) {
 		t.Fatalf("step 2 (text follow-up about image): %v", err)
 	}
 
-	if len(resp2.Choice) == 0 || resp2.Choice[0].FinishReason() == "error" {
+	if len(resp2.Choices) == 0 || resp2.Choices[0].FinishReason() == "error" {
 		t.Fatalf("step 2: no valid response")
 	}
 	t.Logf("step 2: text follow-up OK: %s", truncate(contentFromResp(resp2), 100))
@@ -119,7 +119,7 @@ func testIMCMediaTextExtend(t *testing.T, krn *kronk.Kronk) {
 		t.Fatalf("step 4 (back to image): %v", err)
 	}
 
-	if len(resp4.Choice) == 0 || resp4.Choice[0].FinishReason() == "error" {
+	if len(resp4.Choices) == 0 || resp4.Choices[0].FinishReason() == "error" {
 		t.Fatalf("step 4: no valid response")
 	}
 
@@ -131,14 +131,14 @@ func testIMCMediaTextExtend(t *testing.T, krn *kronk.Kronk) {
 }
 
 func contentFromResp(resp model.ChatResponse) string {
-	if len(resp.Choice) == 0 {
+	if len(resp.Choices) == 0 {
 		return ""
 	}
-	if resp.Choice[0].Message != nil {
-		return resp.Choice[0].Message.Content
+	if resp.Choices[0].Message != nil {
+		return resp.Choices[0].Message.Content
 	}
-	if resp.Choice[0].Delta != nil {
-		return resp.Choice[0].Delta.Content
+	if resp.Choices[0].Delta != nil {
+		return resp.Choices[0].Delta.Content
 	}
 	return ""
 }
