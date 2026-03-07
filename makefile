@@ -112,6 +112,20 @@ install-libraries:
 	CGO_ENABLED=0 go run cmd/kronk/main.go libs --local
 	@echo
 
+# Use this to install the test GH models.
+install-test-gh-models: install-kronk
+	@echo ========== INSTALL MODELS ==========
+	kronk model pull --local "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/Qwen2.5-VL-3B-Instruct-Q8_0.gguf" "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
+	@echo
+
+	kronk model pull --local "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
+	@echo
+
+	kronk model pull --local "ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/embeddinggemma-300m-qat-Q8_0.gguf"
+	@echo
+	kronk model pull --local "gpustack/bge-reranker-v2-m3-GGUF/bge-reranker-v2-m3-Q8_0.gguf"
+	@echo
+
 # Use this to install the test models.
 install-test-models: install-kronk
 	@echo ========== INSTALL MODELS ==========
@@ -209,9 +223,6 @@ vuln-check:
 diff:
 	go fix -diff ./...
 
-# Don't change the order of these tests. This order is solving a test
-# build issue with time it takes to build the test binary due to building
-# the binary with the libraries.
 test-only: install-test-models
 	@echo ========== RUN TESTS ==========
 	export RUN_IN_PARALLEL=yes && \
@@ -224,6 +235,19 @@ test-only: install-test-models
 	CGO_ENABLED=0 go test -v -count=1 ./sdk/tools/...
 
 test: test-only lint vuln-check diff
+
+test-gh-only: install-test-gh-models
+	@echo ========== RUN TESTS ==========
+	export RUN_IN_PARALLEL=yes && \
+	export GITHUB_WORKSPACE=$(shell pwd) && \
+	export GITHUB_ACTIONS=true && \
+	CGO_ENABLED=0 go test -v -count=1 ./cmd/server/api/services/kronk/tests && \
+	CGO_ENABLED=0 go test -v -count=1 ./cmd/server/app/sdk/cache && \
+	CGO_ENABLED=0 go test -v -count=1 ./cmd/server/app/sdk/security/... && \
+	CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/model && \
+	CGO_ENABLED=0 go test -v -count=1 ./sdk/tools/...
+
+test-gh: test-gh-only lint vuln-check diff
 
 # ==============================================================================
 # Benchmarks
@@ -364,6 +388,7 @@ kronk-docs:
 
 kronk-server:
 	. .env 2>/dev/null || true && \
+	export KRONK_DOWNLOAD_ENABLED=true && \
 	export KRONK_INSECURE_LOGGING=true && \
 	export KRONK_CATALOG_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
 	export KRONK_CATALOG_REPO_PATH=$$HOME/code/go/src/github.com/ardanlabs/kronk_catalogs && \
@@ -371,14 +396,6 @@ kronk-server:
 
 kronk-server-build: kronk-build
 	. .env 2>/dev/null || true && \
-	export KRONK_INSECURE_LOGGING=true && \
-	export KRONK_CATALOG_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
-	export KRONK_CATALOG_REPO_PATH=$$HOME/code/go/src/github.com/ardanlabs/kronk_catalogs && \
-	CGO_ENABLED=0 go run cmd/kronk/main.go server start | CGO_ENABLED=0 go run cmd/server/api/tooling/logfmt/main.go
-
-kronk-server-download: kronk-build
-	. .env 2>/dev/null || true && \
-	export KRONK_DOWNLOAD_ENABLED=true && \
 	export KRONK_INSECURE_LOGGING=true && \
 	export KRONK_CATALOG_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
 	export KRONK_CATALOG_REPO_PATH=$$HOME/code/go/src/github.com/ardanlabs/kronk_catalogs && \
