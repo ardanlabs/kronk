@@ -76,7 +76,7 @@
   "planActSeparateModelsSetting": false,
   "shellIntegrationTimeout": 10000,
   "defaultTerminalProfile": "zsh",
-  "useAutoCondense": true,
+  "useAutoCondense": false,
   "subagentsEnabled": true,
   "mode": "act",
   "customPrompt": "compact",

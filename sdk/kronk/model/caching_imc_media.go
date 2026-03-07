@@ -195,38 +195,52 @@ func (m *Model) decodeMediaIntoCache(ctx context.Context, cacheD D, seqID llama.
 // decodeEmbeddingsIntoCache decodes embeddings into a KV cache sequence with
 // standard linear positioning. Returns the number of KV positions consumed.
 func (m *Model) decodeEmbeddingsIntoCache(embd []float32, nEmbd, nTokens int32, seqID llama.SeqId, startPos int, useNonCausal bool) (int, error) {
-	batch := llama.BatchInit(nTokens, nEmbd, 1)
-	defer llama.BatchFree(batch)
-
-	embdSlice := unsafeSlice(batch.Embd, int(nTokens*nEmbd))
-	copy(embdSlice, embd)
-
-	posSlice := unsafeSlice(batch.Pos, int(nTokens))
-	nSeqIDSlice := unsafeSlice(batch.NSeqId, int(nTokens))
-	seqIDPtrs := unsafeSlice(batch.SeqId, int(nTokens))
-	logitsSlice := unsafeSlice(batch.Logits, int(nTokens))
-
-	for i := range nTokens {
-		posSlice[i] = llama.Pos(startPos + int(i))
-		nSeqIDSlice[i] = 1
-		*seqIDPtrs[i] = seqID
-		logitsSlice[i] = 0
+	nBatch := int32(m.cfg.NBatch)
+	if nBatch <= 0 {
+		nBatch = 512
 	}
-
-	batch.NTokens = nTokens
 
 	m.decodeMu.Lock()
+	defer m.decodeMu.Unlock()
+
 	if useNonCausal {
 		llama.SetCausalAttn(m.lctx, false)
+		defer llama.SetCausalAttn(m.lctx, true)
 	}
-	ret, err := llama.Decode(m.lctx, batch)
-	if useNonCausal {
-		llama.SetCausalAttn(m.lctx, true)
-	}
-	m.decodeMu.Unlock()
 
-	if err != nil || ret != 0 {
-		return 0, decodeError(ret, err)
+	pos := startPos
+
+	for start := int32(0); start < nTokens; start += nBatch {
+		end := min(start+nBatch, nTokens)
+		batchN := end - start
+
+		batch := llama.BatchInit(batchN, nEmbd, 1)
+
+		embdSlice := unsafeSlice(batch.Embd, int(batchN*nEmbd))
+		copy(embdSlice, embd[start*nEmbd:end*nEmbd])
+
+		posSlice := unsafeSlice(batch.Pos, int(batchN))
+		nSeqIDSlice := unsafeSlice(batch.NSeqId, int(batchN))
+		seqIDPtrs := unsafeSlice(batch.SeqId, int(batchN))
+		logitsSlice := unsafeSlice(batch.Logits, int(batchN))
+
+		for i := range batchN {
+			posSlice[i] = llama.Pos(pos + int(i))
+			nSeqIDSlice[i] = 1
+			*seqIDPtrs[i] = seqID
+			logitsSlice[i] = 0
+		}
+
+		batch.NTokens = batchN
+
+		ret, err := llama.Decode(m.lctx, batch)
+		llama.BatchFree(batch)
+
+		if err != nil || ret != 0 {
+			return 0, decodeError(ret, err)
+		}
+
+		pos += int(batchN)
 	}
 
 	return int(nTokens), nil
@@ -235,16 +249,13 @@ func (m *Model) decodeEmbeddingsIntoCache(embd []float32, nEmbd, nTokens int32, 
 // decodeEmbeddingsMRoPEIntoCache decodes embeddings with M-RoPE 2D positioning
 // into a KV cache sequence. Returns the number of KV positions consumed.
 func (m *Model) decodeEmbeddingsMRoPEIntoCache(embd []float32, nEmbd, nTokens, nx, ny int32, seqID llama.SeqId, startPos int, useNonCausal bool) (int, error) {
-	batch := llama.BatchInit(nTokens, nEmbd, 1)
+	nBatch := int32(m.cfg.NBatch)
+	if nBatch <= 0 {
+		nBatch = 512
+	}
 
-	embdSlice := unsafeSlice(batch.Embd, int(nTokens*nEmbd))
-	copy(embdSlice, embd)
-
-	// Save original pos pointer so BatchFree doesn't free Go memory.
-	origPos := batch.Pos
-
-	// Allocate 4D position array for M-RoPE.
-	posData := make([]llama.Pos, nTokens*4)
+	// Pre-compute the full 4D position array for all tokens.
+	fullPosData := make([]llama.Pos, nTokens*4)
 	pos0 := llama.Pos(startPos)
 	for y := range ny {
 		for x := range nx {
@@ -252,42 +263,65 @@ func (m *Model) decodeEmbeddingsMRoPEIntoCache(embd []float32, nEmbd, nTokens, n
 			if i >= nTokens {
 				break
 			}
-			posData[i] = pos0 + llama.Pos(i)
-			posData[i+nTokens] = pos0 + llama.Pos(y)
-			posData[i+nTokens*2] = pos0 + llama.Pos(x)
-			posData[i+nTokens*3] = 0
+			fullPosData[i] = pos0 + llama.Pos(i)
+			fullPosData[i+nTokens] = pos0 + llama.Pos(y)
+			fullPosData[i+nTokens*2] = pos0 + llama.Pos(x)
+			fullPosData[i+nTokens*3] = 0
 		}
 	}
-	batch.Pos = &posData[0]
-
-	nSeqIDSlice := unsafeSlice(batch.NSeqId, int(nTokens))
-	seqIDPtrs := unsafeSlice(batch.SeqId, int(nTokens))
-	logitsSlice := unsafeSlice(batch.Logits, int(nTokens))
-
-	for i := range nTokens {
-		nSeqIDSlice[i] = 1
-		*seqIDPtrs[i] = seqID
-		logitsSlice[i] = 0
-	}
-
-	batch.NTokens = nTokens
 
 	m.decodeMu.Lock()
+	defer m.decodeMu.Unlock()
+
 	if useNonCausal {
 		llama.SetCausalAttn(m.lctx, false)
+		defer llama.SetCausalAttn(m.lctx, true)
 	}
-	ret, err := llama.Decode(m.lctx, batch)
-	if useNonCausal {
-		llama.SetCausalAttn(m.lctx, true)
-	}
-	m.decodeMu.Unlock()
 
-	// Restore original pos pointer before freeing.
-	batch.Pos = origPos
-	llama.BatchFree(batch)
+	for start := int32(0); start < nTokens; start += nBatch {
+		end := min(start+nBatch, nTokens)
+		batchN := end - start
 
-	if err != nil || ret != 0 {
-		return 0, decodeError(ret, err)
+		batch := llama.BatchInit(batchN, nEmbd, 1)
+
+		embdSlice := unsafeSlice(batch.Embd, int(batchN*nEmbd))
+		copy(embdSlice, embd[start*nEmbd:end*nEmbd])
+
+		// Save original pos pointer so BatchFree doesn't free Go memory.
+		origPos := batch.Pos
+
+		// Build sub-batch position array by gathering from the full array.
+		// llama.cpp expects 4 contiguous planes of batchN positions each.
+		subPosData := make([]llama.Pos, batchN*4)
+		for i := range batchN {
+			subPosData[i] = fullPosData[start+i]
+			subPosData[i+batchN] = fullPosData[start+i+nTokens]
+			subPosData[i+batchN*2] = fullPosData[start+i+nTokens*2]
+			subPosData[i+batchN*3] = fullPosData[start+i+nTokens*3]
+		}
+		batch.Pos = &subPosData[0]
+
+		nSeqIDSlice := unsafeSlice(batch.NSeqId, int(batchN))
+		seqIDPtrs := unsafeSlice(batch.SeqId, int(batchN))
+		logitsSlice := unsafeSlice(batch.Logits, int(batchN))
+
+		for i := range batchN {
+			nSeqIDSlice[i] = 1
+			*seqIDPtrs[i] = seqID
+			logitsSlice[i] = 0
+		}
+
+		batch.NTokens = batchN
+
+		ret, err := llama.Decode(m.lctx, batch)
+
+		// Restore original pos pointer before freeing.
+		batch.Pos = origPos
+		llama.BatchFree(batch)
+
+		if err != nil || ret != 0 {
+			return 0, decodeError(ret, err)
+		}
 	}
 
 	return int(nTokens), nil
