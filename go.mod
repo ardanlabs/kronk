@@ -10,7 +10,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-getter v1.8.4
-	github.com/hybridgroup/yzma v1.10.0
+	github.com/hybridgroup/yzma v1.10.1-0.20260308093636-1875822bb85c
 	github.com/maypok86/otter/v2 v2.3.0
 	github.com/modelcontextprotocol/go-sdk v1.4.0
 	github.com/nikolalohinski/gonja/v2 v2.7.0
@@ -148,6 +148,6 @@ require (
 )
 
 //replace github.com/hybridgroup/yzma => ./.extras/yzma
-replace github.com/hybridgroup/yzma => github.com/dlsniper/yzma v0.0.0-20260305092506-c66179ce4a47
+//replace github.com/hybridgroup/yzma => github.com/dlsniper/yzma v0.0.0-20260305092506-c66179ce4a47
 
 // replace github.com/nikolalohinski/gonja/v2 => /Users/bill/code/go/src/github.com/ardanlabs/gonja
