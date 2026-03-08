@@ -14,6 +14,8 @@ import (
 )
 
 func TestSuite(t *testing.T) {
+	t.Run("CacheIMCNonDeterministic", testCacheIMCNonDeterministic)
+
 	testlib.WithModel(t, testlib.CfgGPTChat(), func(t *testing.T, krn *kronk.Kronk) {
 		t.Run("GPTChat", func(t *testing.T) { testChat(t, krn, testlib.DChatNoTool, false) })
 		t.Run("GPTStreamingChat", func(t *testing.T) { testChatStreaming(t, krn, testlib.DChatNoTool, false) })
