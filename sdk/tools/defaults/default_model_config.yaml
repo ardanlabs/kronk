@@ -10,12 +10,17 @@
 #   cache-type-k: q8_0                   # KV cache key type: f32, f16, q8_0, q4_0, bf16, auto
 #   cache-type-v: q8_0                   # KV cache value type: f32, f16, q8_0, q4_0, bf16, auto
 #   flash-attention: enabled             # Flash Attention: enabled, disabled, auto
-#   device: ""                           # Device to use (run llama-bench --list-devices)
+#   device: ""                           # [Deprecated] Use devices instead
+#   devices: [CUDA0, CUDA1]              # Devices to use (run `kronk devices` to list)
+#   main-gpu: 0                          # Primary GPU index for single-GPU mode
 #   nseq-max: 0                          # Max parallel sequences for batched inference (0 = default)
 #   offload-kqv: true                    # Offload KV cache to GPU (false = keep on CPU)
 #   op-offload: true                     # Offload tensor operations to GPU (false = keep on CPU)
 #   ngpu-layers: 0                       # GPU layers to offload (0 = all, -1 = none, N = specific count)
 #   split-mode: row                      # Multi-GPU split: none, layer, row (row recommended for MoE models)
+#   tensor-split: [0.6, 0.4]             # Per-device tensor distribution (must match device count)
+#   tensor-buft-overrides: [all-ffn]     # Force tensors to CPU: all-ffn, block:N, or regex
+#   auto-fit-vram: false                 # Auto-fit parameters to available VRAM
 #   system-prompt-cache: false           # Cache system prompt KV state for reuse across requests
 #   incremental-cache: false             # Incremental message caching for agentic workflows (Cline, OpenCode)
 #   cache-min-tokens: 100                # Min tokens before caching (default: 100, applies to both cache types)
@@ -92,6 +97,37 @@
 # -------------------------------
 # You will notice with the Qwen3-8B-Q8_0 model a YARN configuration. This is
 # how you can extend the models context window when you need it.
+
+# ==============================================================================
+# MOE (MIXTURE OF EXPERTS) CONFIGURATION
+#
+# MoE models (DeepSeek V3, Qwen3-235B, Qwen3.5-35B-A3B, GLM 4.X, Kimi K2)
+# contain expert tensors that are huge but sparsely used. Offloading them to
+# CPU has much less performance impact than offloading dense weights.
+#
+# Key config options for MoE:
+#
+#   moe:
+#     mode: experts_cpu             # Place all routed experts on CPU
+#     keep-experts-top-n: 0        # 0 = all experts on CPU (recommended)
+#
+# Additional MoE-recommended settings:
+#   nbatch: 4096                   # Larger batches improve CPU expert throughput
+#   nubatch: 4096                  # Match nbatch for optimal prompt processing
+#   flash-attention: enabled       # Strongly recommended for MoE models
+#   split-mode: row                # Best for multi-GPU MoE (expert-parallel)
+#
+# For multi-socket NUMA systems with CPU experts:
+#   use-mmap: false                # Direct allocation for proper NUMA placement
+#   numa: distribute               # Spread memory across NUMA nodes
+#
+# Op-Offload Min Batch:
+#   op-offload-min-batch controls the minimum batch size for offloading host
+#   tensor operations to GPU during prompt processing. Default is 32 tokens.
+#   For large MoE models with many CPU weights, values of 200-500+ may improve
+#   prompt processing performance.
+#
+#   op-offload-min-batch: 256
 
 # ==============================================================================
 # TEXT INFERENCE MODELS
@@ -206,3 +242,28 @@ Qwen3-8B-Q8_0/CLINE:
   incremental-cache: true
   sampling-parameters:
     enable_thinking: false
+
+# ==============================================================================
+# MOE MODELS
+
+# Qwen3.5-35B-A3B (MoE: 128 experts, top-8, 3B active params)
+# Recommended: experts on CPU, high batch sizes, flash attention enabled.
+Qwen_Qwen3.5-35B-A3B-Q8_0/MOE:
+  moe:
+    mode: experts_cpu
+    keep-experts-top-n: 0
+  nbatch: 4096
+  nubatch: 4096
+  flash-attention: enabled
+  nseq-max: 1
+  incremental-cache: true
+
+# For multi-socket NUMA systems:
+# Qwen_Qwen3.5-35B-A3B-Q8_0/MOE-NUMA:
+#   moe:
+#     mode: experts_cpu
+#   nbatch: 4096
+#   nubatch: 4096
+#   flash-attention: enabled
+#   use-mmap: false
+#   numa: distribute

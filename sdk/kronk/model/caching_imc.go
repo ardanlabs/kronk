@@ -824,6 +824,7 @@ func (m *Model) rebuildIMCWithMedia(ctx context.Context, d D, messages []D, sess
 	session.cachedMsgCount = 0
 	session.cachedMsgsHash = ""
 	session.hasMedia = false
+	session.useMRoPE = false
 	seqID := session.seqID
 	slotID := session.slotID
 
@@ -960,6 +961,7 @@ func (m *Model) decodeTokensIntoCache(ctx context.Context, tokens []llama.Token,
 		if _, err := llama.Decode(m.lctx, batch); err != nil {
 			return fmt.Errorf("imc: failed to decode extension tokens at pos %d: %w", i, err)
 		}
+		llama.Synchronize(m.lctx)
 	}
 
 	m.log(ctx, "cache", "status", "finished (decoding tokens into cache)", "seq", seqID, "tokens", nTokens, "nbatch", nBatch)
@@ -1058,6 +1060,9 @@ func (m *Model) imcCommitSession(slotID int, hash string, totalCached int, cache
 		slot.pending = false
 		slot.hasMedia = hasMedia
 		slot.mediaKVCounts = mediaKVCounts
+		if !hasMedia {
+			slot.useMRoPE = false
+		}
 		switch {
 		case hasMedia:
 			slot.cachedTokens = nil

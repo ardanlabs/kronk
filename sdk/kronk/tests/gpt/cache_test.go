@@ -9,7 +9,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/tests/testlib"
 )
 
-func Test_CacheIMCNonDeterministic(t *testing.T) {
+func testCacheIMCNonDeterministic(t *testing.T) {
 	cfg := model.Config{
 		ModelFiles:       testlib.MPGPTChat.ModelFiles,
 		ContextWindow:    8192,

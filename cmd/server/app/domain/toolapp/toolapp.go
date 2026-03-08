@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/authapp"
@@ -15,8 +17,14 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
+	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
+)
+
+var (
+	reDownloadMeta     = regexp.MustCompile(`download-model: model-url\[([^\]]*)\] proj-url\[([^\]]*)\] model-id\[([^\]]*)\] file\[(\d+)/(\d+)\]`)
+	reDownloadProgress = regexp.MustCompile(`download-model: Downloading ([^ ]+)\.\.\. (\d+) MB of (\d+) MB \(([\d.]+) MB/s\)`)
 )
 
 type app struct {
@@ -163,12 +171,13 @@ func (a *app) listModels(ctx context.Context, r *http.Request) web.Encoder {
 
 		// Create a new File entry for the extension model using the base model's info.
 		extModel := models.File{
-			ID:          modelID,
-			OwnedBy:     baseModel.OwnedBy,
-			ModelFamily: baseModel.ModelFamily,
-			Size:        baseModel.Size,
-			Modified:    baseModel.Modified,
-			Validated:   baseModel.Validated,
+			ID:                   modelID,
+			OwnedBy:              baseModel.OwnedBy,
+			ModelFamily:          baseModel.ModelFamily,
+			TokenizerFingerprint: baseModel.TokenizerFingerprint,
+			Size:                 baseModel.Size,
+			Modified:             baseModel.Modified,
+			Validated:            baseModel.Validated,
 		}
 
 		modelFiles = append(modelFiles, extModel)
@@ -239,8 +248,50 @@ func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
 			}
 		}
 
-		status := fmt.Sprintf("%s:%s\n", msg, sb.String())
-		ver := toAppPull(status, models.Path{})
+		cleanMsg := strings.TrimPrefix(msg, "\r\x1b[K")
+
+		clean := cleanMsg
+		if sb.Len() > 0 {
+			clean = fmt.Sprintf("%s:%s", cleanMsg, sb.String())
+		}
+
+		var ver string
+
+		switch {
+		case reDownloadMeta.MatchString(clean):
+			m := reDownloadMeta.FindStringSubmatch(clean)
+			fileIdx, _ := strconv.Atoi(m[4])
+			fileTotal, _ := strconv.Atoi(m[5])
+			ver = toAppPullResponse(PullResponse{
+				Status: clean,
+				Meta: &PullMeta{
+					ModelURL:  m[1],
+					ProjURL:   m[2],
+					ModelID:   m[3],
+					FileIndex: fileIdx,
+					FileTotal: fileTotal,
+				},
+			})
+
+		case reDownloadProgress.MatchString(clean):
+			m := reDownloadProgress.FindStringSubmatch(clean)
+			cur, _ := strconv.ParseInt(m[2], 10, 64)
+			total, _ := strconv.ParseInt(m[3], 10, 64)
+			mbps, _ := strconv.ParseFloat(m[4], 64)
+			ver = toAppPullResponse(PullResponse{
+				Status: clean,
+				Progress: &PullProgress{
+					Src:          m[1],
+					CurrentBytes: cur * 1000 * 1000,
+					TotalBytes:   total * 1000 * 1000,
+					MBPerSec:     mbps,
+					Complete:     total > 0 && cur >= total,
+				},
+			})
+
+		default:
+			ver = toAppPullResponse(PullResponse{Status: clean})
+		}
 
 		a.log.Info(ctx, "pull-model", "info", ver[:len(ver)-1])
 		fmt.Fprint(w, ver)
@@ -295,19 +346,28 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 
 	return VRAMResponse{
 		Input: VRAMInput{
-			ModelSizeBytes:  vram.Input.ModelSizeBytes,
-			ContextWindow:   vram.Input.ContextWindow,
-			BlockCount:      vram.Input.BlockCount,
-			HeadCountKV:     vram.Input.HeadCountKV,
-			KeyLength:       vram.Input.KeyLength,
-			ValueLength:     vram.Input.ValueLength,
-			BytesPerElement: vram.Input.BytesPerElement,
-			Slots:           vram.Input.Slots,
+			ModelSizeBytes:    vram.Input.ModelSizeBytes,
+			ContextWindow:     vram.Input.ContextWindow,
+			BlockCount:        vram.Input.BlockCount,
+			HeadCountKV:       vram.Input.HeadCountKV,
+			KeyLength:         vram.Input.KeyLength,
+			ValueLength:       vram.Input.ValueLength,
+			BytesPerElement:   vram.Input.BytesPerElement,
+			Slots:             vram.Input.Slots,
+			EmbeddingLength:   vram.Input.EmbeddingLength,
+			MoE:               vram.Input.MoE,
+			Weights:           vram.Input.Weights,
+			ExpertLayersOnGPU: vram.Input.ExpertLayersOnGPU,
 		},
 		KVPerTokenPerLayer: vram.KVPerTokenPerLayer,
 		KVPerSlot:          vram.KVPerSlot,
 		SlotMemory:         vram.SlotMemory,
 		TotalVRAM:          vram.TotalVRAM,
+		MoE:                vram.MoE,
+		Weights:            vram.Weights,
+		ModelWeightsGPU:    vram.ModelWeightsGPU,
+		ModelWeightsCPU:    vram.ModelWeightsCPU,
+		ComputeBufferEst:   vram.ComputeBufferEst,
 	}
 }
 
@@ -437,8 +497,50 @@ func (a *app) pullCatalog(ctx context.Context, r *http.Request) web.Encoder {
 			}
 		}
 
-		status := fmt.Sprintf("%s:%s\n", msg, sb.String())
-		ver := toAppPull(status, models.Path{})
+		cleanMsg := strings.TrimPrefix(msg, "\r\x1b[K")
+
+		clean := cleanMsg
+		if sb.Len() > 0 {
+			clean = fmt.Sprintf("%s:%s", cleanMsg, sb.String())
+		}
+
+		var ver string
+
+		switch {
+		case reDownloadMeta.MatchString(clean):
+			m := reDownloadMeta.FindStringSubmatch(clean)
+			fileIdx, _ := strconv.Atoi(m[4])
+			fileTotal, _ := strconv.Atoi(m[5])
+			ver = toAppPullResponse(PullResponse{
+				Status: clean,
+				Meta: &PullMeta{
+					ModelURL:  m[1],
+					ProjURL:   m[2],
+					ModelID:   m[3],
+					FileIndex: fileIdx,
+					FileTotal: fileTotal,
+				},
+			})
+
+		case reDownloadProgress.MatchString(clean):
+			m := reDownloadProgress.FindStringSubmatch(clean)
+			cur, _ := strconv.ParseInt(m[2], 10, 64)
+			total, _ := strconv.ParseInt(m[3], 10, 64)
+			mbps, _ := strconv.ParseFloat(m[4], 64)
+			ver = toAppPullResponse(PullResponse{
+				Status: clean,
+				Progress: &PullProgress{
+					Src:          m[1],
+					CurrentBytes: cur * 1000 * 1000,
+					TotalBytes:   total * 1000 * 1000,
+					MBPerSec:     mbps,
+					Complete:     total > 0 && cur >= total,
+				},
+			})
+
+		default:
+			ver = toAppPullResponse(PullResponse{Status: clean})
+		}
 
 		a.log.Info(ctx, "pull-model", "info", ver[:len(ver)-1])
 		fmt.Fprint(w, ver)
@@ -674,6 +776,10 @@ func (a *app) removeKey(ctx context.Context, r *http.Request) web.Encoder {
 	}
 
 	return nil
+}
+
+func (a *app) listDevices(ctx context.Context, r *http.Request) web.Encoder {
+	return DevicesResponse(devices.List())
 }
 
 // toDownloadServerURL rewrites a catalog URL (short-form or full HuggingFace

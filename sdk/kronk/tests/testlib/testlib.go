@@ -357,11 +357,11 @@ func CfgHybridVisionIMC() model.Config {
 	return model.Config{
 		ModelFiles:       MPHybridVision.ModelFiles,
 		ProjFile:         MPHybridVision.ProjFile,
-		ContextWindow:    8192,
+		ContextWindow:    4096,
 		NBatch:           2048,
-		NUBatch:          2048,
-		CacheTypeK:       model.GGMLTypeF16,
-		CacheTypeV:       model.GGMLTypeF16,
+		NUBatch:          512,
+		CacheTypeK:       model.GGMLTypeQ8_0,
+		CacheTypeV:       model.GGMLTypeQ8_0,
 		IncrementalCache: true,
 		NSeqMax:          1,
 	}

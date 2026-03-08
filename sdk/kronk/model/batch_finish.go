@@ -245,6 +245,7 @@ func (e *batchEngine) finishSlotHybrid(ctx context.Context, s *slot, slotID int,
 				imcSlot.totalTokensCached = 0
 				imcSlot.cachedMsgCount = 0
 				imcSlot.hasMedia = false
+				imcSlot.useMRoPE = false
 			}
 			e.model.cacheMu.Unlock()
 
@@ -271,6 +272,7 @@ func (e *batchEngine) finishSlotHybrid(ctx context.Context, s *slot, slotID int,
 			imcSlot.totalTokensCached = 0
 			imcSlot.cachedMsgCount = 0
 			imcSlot.hasMedia = false
+			imcSlot.useMRoPE = false
 		}
 		e.model.cacheMu.Unlock()
 	}

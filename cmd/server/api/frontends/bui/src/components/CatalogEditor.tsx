@@ -55,6 +55,10 @@ interface CatalogFormData {
     opOffload: boolean | null;
     ngpuLayers: number | null;
     splitMode: string;
+    devices: string;
+    mainGpu: number | null;
+    tensorSplit: string;
+    autoFitVram: boolean;
     systemPromptCache: boolean | null;
     incrementalCache: boolean | null;
     cacheMinTokens: number | null;
@@ -70,6 +74,11 @@ interface CatalogFormData {
     draftNDraft: number | null;
     draftNGpuLayers: number | null;
     draftDevice: string;
+    moeMode: string;
+    moeKeepTopN: number | null;
+    useMMap: boolean | null;
+    numa: string;
+    opOffloadMinBatch: number | null;
   };
   sampling: {
     temperature: number | null;
@@ -152,6 +161,10 @@ const defaultForm: CatalogFormData = {
     opOffload: null,
     ngpuLayers: null,
     splitMode: '',
+    devices: '',
+    mainGpu: null,
+    tensorSplit: '',
+    autoFitVram: false,
     systemPromptCache: null,
     incrementalCache: null,
     cacheMinTokens: null,
@@ -167,6 +180,11 @@ const defaultForm: CatalogFormData = {
     draftNDraft: null,
     draftNGpuLayers: null,
     draftDevice: '',
+    moeMode: '',
+    moeKeepTopN: null,
+    useMMap: null,
+    numa: '',
+    opOffloadMinBatch: null,
   },
   sampling: {
     temperature: null,
@@ -279,6 +297,10 @@ function populateFromResponse(resp: CatalogModelResponse): CatalogFormData {
       opOffload: mc?.['op-offload'] ?? null,
       ngpuLayers: mc?.['ngpu-layers'] ?? null,
       splitMode: mc?.['split-mode'] || '',
+      devices: mc?.['devices']?.join(',') ?? '',
+      mainGpu: mc?.['main-gpu'] ?? null,
+      tensorSplit: mc?.['tensor-split']?.join(',') ?? '',
+      autoFitVram: mc?.['auto-fit-vram'] ?? false,
       systemPromptCache: mc?.['system-prompt-cache'] ?? null,
       incrementalCache: mc?.['incremental-cache'] ?? null,
       cacheMinTokens: mc?.['cache-min-tokens'] ?? null,
@@ -294,6 +316,11 @@ function populateFromResponse(resp: CatalogModelResponse): CatalogFormData {
       draftNDraft: mc?.['draft-model']?.ndraft ?? null,
       draftNGpuLayers: mc?.['draft-model']?.['ngpu-layers'] ?? null,
       draftDevice: mc?.['draft-model']?.device || '',
+      moeMode: mc?.moe?.mode || '',
+      moeKeepTopN: mc?.moe?.['keep-experts-top-n'] ?? null,
+      useMMap: mc?.['use-mmap'] ?? null,
+      numa: mc?.numa || '',
+      opOffloadMinBatch: mc?.['op-offload-min-batch'] ?? null,
     },
     sampling: {
       temperature: sp?.temperature ?? null,
@@ -539,7 +566,12 @@ export default function CatalogEditor() {
           'offload-kqv': form.config.offloadKQV,
           'op-offload': form.config.opOffload,
           'ngpu-layers': form.config.ngpuLayers,
-          'split-mode': form.config.splitMode,
+          'split-mode': form.config.splitMode || null,
+          'devices': form.config.devices ? form.config.devices.split(',').map(s => s.trim()).filter(Boolean) : null,
+          'main-gpu': form.config.mainGpu,
+          'tensor-split': form.config.tensorSplit ? form.config.tensorSplit.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n)) : null,
+          'tensor-buft-overrides': null,
+          'auto-fit-vram': form.config.autoFitVram,
           'system-prompt-cache': form.config.systemPromptCache ?? false,
           'incremental-cache': form.config.incrementalCache ?? false,
           'cache-min-tokens': form.config.cacheMinTokens ?? 0,
@@ -559,6 +591,17 @@ export default function CatalogEditor() {
               device: form.config.draftDevice || undefined,
             },
           } : {}),
+          ...(form.config.moeMode ? {
+            moe: {
+              mode: form.config.moeMode,
+              ...(form.config.moeMode === 'keep_top_n' && form.config.moeKeepTopN != null ? {
+                'keep-experts-top-n': form.config.moeKeepTopN,
+              } : {}),
+            },
+          } : {}),
+          'use-mmap': form.config.useMMap,
+          numa: form.config.numa || null,
+          'op-offload-min-batch': form.config.opOffloadMinBatch ?? 0,
           'sampling-parameters': {
             temperature: form.sampling.temperature ?? 0,
             top_k: form.sampling.topK ?? 0,
@@ -968,6 +1011,19 @@ export default function CatalogEditor() {
                   <option value="row">row</option>
                 </select>
               </div>
+              <NullableNumInput label="Main GPU" value={form.config.mainGpu} onChange={(v) => setConfig({ mainGpu: v === null ? null : Math.round(v) })} />
+              <div>
+                <label style={labelStyle}>Devices</label>
+                <input type="text" value={form.config.devices} onChange={(e) => setConfig({ devices: e.target.value })} style={inputStyle} placeholder="e.g., CUDA0,CUDA1" />
+              </div>
+              <div>
+                <label style={labelStyle}>Tensor Split</label>
+                <input type="text" value={form.config.tensorSplit} onChange={(e) => setConfig({ tensorSplit: e.target.value })} style={inputStyle} placeholder="e.g., 0.6,0.4" />
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', marginTop: '8px' }}>
+                <input type="checkbox" checked={form.config.autoFitVram} onChange={(e) => setConfig({ autoFitVram: e.target.checked })} />
+                <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-gray-700)' }}>Auto-Fit VRAM</span>
+              </label>
               <NullableNumInput label="Threads (nthreads)" value={form.config.nthreads} defaultValue={rc?.nthreads} onChange={(v) => setConfig({ nthreads: v })} />
             </div>
 
@@ -1019,6 +1075,102 @@ export default function CatalogEditor() {
                     placeholder="e.g., GPU1"
                   />
                 </div>
+              </div>
+            </div>
+
+            {/* MoE Configuration */}
+            <div style={{ marginTop: '20px' }}>
+              <h4 style={{ marginBottom: '12px', fontSize: '14px', fontWeight: 600, color: 'var(--color-gray-700)' }}>MoE (Expert Placement)</h4>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ fontSize: '0.85em', padding: '6px 12px' }}
+                  title="Experts on CPU, flash attention, large batches — best for GPUs with 24-48GB VRAM"
+                  onClick={() => setConfig({
+                    moeMode: 'experts_cpu',
+                    flashAttention: 'enabled',
+                    nbatch: 4096,
+                    nubatch: 512,
+                  })}
+                >
+                  💾 CPU Experts (24-48GB GPU)
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ fontSize: '0.85em', padding: '6px 12px' }}
+                  title="All experts on GPU with flash attention — requires very large VRAM (often 80GB+ for 70B-class MoE at large context)"
+                  onClick={() => setConfig({
+                    moeMode: 'experts_gpu',
+                    flashAttention: 'enabled',
+                  })}
+                >
+                  ⚡ Full GPU (80GB+)
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ fontSize: '0.85em', padding: '6px 12px' }}
+                  title="Row split for multi-GPU, experts on CPU, flash attention, large batches"
+                  onClick={() => setConfig({
+                    moeMode: 'experts_cpu',
+                    splitMode: 'row',
+                    flashAttention: 'enabled',
+                    nbatch: 4096,
+                    nubatch: 512,
+                  })}
+                >
+                  🖥️ Multi-GPU
+                </button>
+              </div>
+              <div style={gridStyle}>
+                <div>
+                  <label style={labelStyle}>Expert Strategy</label>
+                  <select value={form.config.moeMode} onChange={(e) => setConfig({ moeMode: e.target.value })} style={inputStyle}>
+                    <option value="">not set (auto)</option>
+                    <option value="experts_cpu">💾 Save GPU Memory — experts on CPU</option>
+                    <option value="keep_top_n">⚖️ Balanced — keep top N on GPU</option>
+                    <option value="experts_gpu">⚡ Maximum Speed — all on GPU</option>
+                    <option value="custom">🔧 Advanced (tensor overrides)</option>
+                  </select>
+                </div>
+                {form.config.moeMode === 'keep_top_n' && (
+                  <NullableNumInput label="Expert Layers on GPU (top N)" value={form.config.moeKeepTopN} onChange={(v) => setConfig({ moeKeepTopN: v === null ? null : Math.round(v) })} />
+                )}
+              </div>
+            </div>
+
+            {/* NUMA / mmap */}
+            <div style={{ marginTop: '20px' }}>
+              <h4 style={{ marginBottom: '12px', fontSize: '14px', fontWeight: 600, color: 'var(--color-gray-700)' }}>Advanced System Tuning</h4>
+              <div style={gridStyle}>
+                <TriStateSelect label="Use mmap" value={form.config.useMMap} onChange={(v) => setConfig({ useMMap: v })} />
+                <div>
+                  <label style={labelStyle}>NUMA Strategy</label>
+                  <select value={form.config.numa} onChange={(e) => setConfig({ numa: e.target.value })} style={inputStyle}>
+                    <option value="">disabled</option>
+                    <option value="distribute">distribute</option>
+                    <option value="isolate">isolate</option>
+                    <option value="numactl">numactl</option>
+                    <option value="mirror">mirror</option>
+                  </select>
+                </div>
+                <NullableNumInput label="Op Offload Min Batch" value={form.config.opOffloadMinBatch} defaultValue={rc?.['op-offload-min-batch'] ?? undefined} onChange={(v) => setConfig({ opOffloadMinBatch: v === null ? null : Math.round(v) })} />
+              </div>
+              <div style={{ marginTop: '12px', padding: '12px', background: 'var(--color-gray-100)', borderRadius: '6px', fontSize: '0.85em' }}>
+                <strong>💡 MoE Performance Tips:</strong>
+                <ul style={{ margin: '4px 0 8px', paddingLeft: '20px', lineHeight: '1.6' }}>
+                  <li>For multi-CPU server systems running experts on CPU: set <strong>Use mmap = No</strong> and <strong>NUMA = distribute</strong> for best memory bandwidth</li>
+                  <li>Without <code>numa: distribute</code>, cross-socket memory access can cause significant bandwidth collapse</li>
+                  <li>Without disabling mmap, tensor data is memory-mapped and may not be placed on the optimal NUMA node</li>
+                </ul>
+                <strong>Op-Offload Min Batch:</strong>
+                <p style={{ margin: '4px 0', lineHeight: '1.6' }}>
+                  Controls the minimum batch size for offloading host tensor operations to GPU during prompt processing.
+                  Default is 32 tokens. For large MoE models with many CPU weights, values of 200–500+ may improve prompt ingestion speed.
+                  Configure via the field above or in <code>model_config.yaml</code> as <code>op-offload-min-batch</code>.
+                </p>
               </div>
             </div>
           </>

@@ -138,19 +138,23 @@ export default function DocsSDKModel() {
               <h4>Config</h4>
               <pre className="code-block">
                 <code>{`type Config struct {
+	AutoFitVRAM          bool
 	CacheMinTokens       int
 	CacheSlotTimeout     int
 	CacheTypeK           GGMLType
 	CacheTypeV           GGMLType
 	ContextWindow        int
 	DefaultParams        Params
-	Device               string
+	Device               string   // Deprecated: Use Devices instead.
+	Devices              []string // Device names for model execution (e.g., ["CUDA0", "CUDA1"])
 	FlashAttention       FlashAttentionType
 	IgnoreIntegrityCheck bool
 	IncrementalCache     bool
 	InsecureLogging      bool
 	JinjaFile            string
 	Log                  Logger
+	MainGPU              *int
+	MoE                  *MoEConfig
 	ModelFiles           []string
 	NBatch               int
 	NGpuLayers           *int
@@ -160,13 +164,18 @@ export default function DocsSDKModel() {
 	NUBatch              int
 	OffloadKQV           *bool
 	OpOffload            *bool
+	OpOffloadMinBatch    int
 	ProjFile             string
 	RopeFreqBase         *float32
 	RopeFreqScale        *float32
 	RopeScaling          RopeScalingType
-	SplitMode            SplitMode
+	SplitMode            *SplitMode
 	SystemPromptCache    bool
+	TensorBuftOverrides  []string
+	TensorSplit          []float32
 	UseDirectIO          bool
+	UseMMap              *bool
+	NUMA                 string
 	YarnAttnFactor       *float32
 	YarnBetaFast         *float32
 	YarnBetaSlow         *float32
@@ -202,10 +211,13 @@ export default function DocsSDKModel() {
               <h4>DraftModelConfig</h4>
               <pre className="code-block">
                 <code>{`type DraftModelConfig struct {
-	ModelFiles []string // Path to the draft model GGUF file(s)
-	NDraft     int      // Number of tokens to draft per step (default 5)
-	NGpuLayers *int     // GPU layers for draft model (nil = all layers on GPU)
-	Device     string   // Device for draft model (e.g., "GPU1") to pin to a specific GPU
+	ModelFiles  []string  // Path to the draft model GGUF file(s)
+	NDraft      int       // Number of tokens to draft per step (default 5)
+	NGpuLayers  *int      // GPU layers for draft model (nil = all layers on GPU)
+	Device      string    // Deprecated: Use Devices instead.
+	Devices     []string  // Devices for draft model (e.g., ["CUDA0"])
+	MainGPU     *int      // Primary GPU index for draft model
+	TensorSplit []float32 // Per-device tensor split for draft model
 }`}</code>
               </pre>
               <p className="doc-description">DraftModelConfig configures a draft model for speculative decoding. A smaller, faster model generates candidate tokens that the target model verifies in a single forward pass. This can improve generation throughput when the draft model's predictions frequently match the target's. Requirements: - Draft and target models must share the same vocabulary (same tokenizer) - NSeqMax must be 1 (single-slot mode) - Draft model should be significantly smaller than the target (e.g., 0.6B draft for 8B target)</p>
@@ -287,6 +299,31 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>{`type MediaType int`}</code>
               </pre>
+            </div>
+
+            <div className="doc-section" id="type-moeconfig">
+              <h4>MoEConfig</h4>
+              <pre className="code-block">
+                <code>{`type MoEConfig struct {
+	// Mode controls expert placement strategy.
+	Mode MoEMode \`json:"mode,omitempty" yaml:"mode,omitempty"\`
+
+	// KeepExpertsOnGPUForTopNLayers keeps routed expert tensors on GPU for the
+	// top N layers (highest-index layers). All other expert layers go to CPU.
+	// Only used when Mode is MoEModeKeepTopN. 0 means all experts on CPU.
+	// llama.cpp convention: "top" means highest-numbered layers.
+	KeepExpertsOnGPUForTopNLayers *int \`json:"keep_experts_top_n,omitempty" yaml:"keep-experts-top-n,omitempty"\`
+}`}</code>
+              </pre>
+              <p className="doc-description">MoEConfig configures Mixture of Experts tensor placement. When nil, no MoE-specific behavior is applied.</p>
+            </div>
+
+            <div className="doc-section" id="type-moemode">
+              <h4>MoEMode</h4>
+              <pre className="code-block">
+                <code>{`type MoEMode string`}</code>
+              </pre>
+              <p className="doc-description">MoEMode controls expert placement strategy for Mixture of Experts models.</p>
             </div>
 
             <div className="doc-section" id="type-model">
@@ -952,6 +989,19 @@ export default function DocsSDKModel() {
           <div className="card" id="constants">
             <h3>Constants</h3>
 
+            <div className="doc-section" id="const-numadisabled">
+              <h4>NUMADisabled</h4>
+              <pre className="code-block">
+                <code>{`const (
+	NUMADisabled   = ""
+	NUMADistribute = "distribute"
+	NUMAIsolate    = "isolate"
+	NUMANumactl    = "numactl"
+	NUMAMirror     = "mirror"
+)`}</code>
+              </pre>
+            </div>
+
             <div className="doc-section" id="const-objectchatunknown">
               <h4>ObjectChatUnknown</h4>
               <pre className="code-block">
@@ -1177,6 +1227,8 @@ export default function DocsSDKModel() {
                 <li><a href="#type-logger">Logger</a></li>
                 <li><a href="#type-logprobs">Logprobs</a></li>
                 <li><a href="#type-mediatype">MediaType</a></li>
+                <li><a href="#type-moeconfig">MoEConfig</a></li>
+                <li><a href="#type-moemode">MoEMode</a></li>
                 <li><a href="#type-model">Model</a></li>
                 <li><a href="#type-modelinfo">ModelInfo</a></li>
                 <li><a href="#type-modeltype">ModelType</a></li>
@@ -1249,6 +1301,7 @@ export default function DocsSDKModel() {
             <div className="doc-index-section">
               <a href="#constants" className="doc-index-header">Constants</a>
               <ul>
+                <li><a href="#const-numadisabled">NUMADisabled</a></li>
                 <li><a href="#const-objectchatunknown">ObjectChatUnknown</a></li>
                 <li><a href="#const-roleuser">RoleUser</a></li>
                 <li><a href="#const-finishreasonstop">FinishReasonStop</a></li>

@@ -142,6 +142,65 @@ func (m *Models) ModelInformation(modelID string) (ModelInfo, error) {
 	return mi, nil
 }
 
+// TokenizerFingerprint reads a model's GGUF file and extracts a fingerprint
+// string that identifies the tokenizer. Models sharing the same fingerprint
+// use compatible tokenizers and can be paired for speculative decoding.
+// The fingerprint format is "<tokenizer_model>:<tokenizer_pre>".
+func (m *Models) TokenizerFingerprint(modelID string) string {
+	modelID, _, _ = strings.Cut(modelID, "/")
+
+	path, err := m.FullPath(modelID)
+	if err != nil || len(path.ModelFiles) == 0 {
+		return ""
+	}
+
+	file, err := os.Open(path.ModelFiles[0])
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+
+	var header ggufHeader
+	if err := binary.Read(file, binary.LittleEndian, &header.Magic); err != nil {
+		return ""
+	}
+	if header.Magic != ggufMagic {
+		return ""
+	}
+	if err := binary.Read(file, binary.LittleEndian, &header.Version); err != nil {
+		return ""
+	}
+	if err := binary.Read(file, binary.LittleEndian, &header.TensorCount); err != nil {
+		return ""
+	}
+	if err := binary.Read(file, binary.LittleEndian, &header.MetadataKvCount); err != nil {
+		return ""
+	}
+
+	var tokenizerModel, tokenizerPre string
+	for i := uint64(0); i < header.MetadataKvCount; i++ {
+		key, value, err := readMetadataKV(file)
+		if err != nil {
+			break
+		}
+		switch key {
+		case "tokenizer.ggml.model":
+			tokenizerModel = fmt.Sprintf("%v", value)
+		case "tokenizer.ggml.pre":
+			tokenizerPre = fmt.Sprintf("%v", value)
+		}
+		if tokenizerModel != "" && tokenizerPre != "" {
+			break
+		}
+	}
+
+	if tokenizerModel == "" {
+		return ""
+	}
+
+	return tokenizerModel + ":" + tokenizerPre
+}
+
 func readMetadataKV(file *os.File) (string, any, error) {
 	var keyLen uint64
 	if err := binary.Read(file, binary.LittleEndian, &keyLen); err != nil {

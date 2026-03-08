@@ -10,7 +10,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-getter v1.8.4
-	github.com/hybridgroup/yzma v1.10.0
+	github.com/hybridgroup/yzma v1.10.1-0.20260308093636-1875822bb85c
 	github.com/maypok86/otter/v2 v2.3.0
 	github.com/modelcontextprotocol/go-sdk v1.4.0
 	github.com/nikolalohinski/gonja/v2 v2.7.0
@@ -25,6 +25,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.40.0
 	go.yaml.in/yaml/v2 v2.4.3
 	golang.org/x/sync v0.19.0
+	golang.org/x/sys v0.41.0
 	golang.org/x/text v0.34.0
 	google.golang.org/grpc v1.79.1
 	google.golang.org/protobuf v1.36.11
@@ -137,7 +138,6 @@ require (
 	golang.org/x/exp v0.0.0-20260218203240-3dfff04db8fa // indirect
 	golang.org/x/net v0.51.0 // indirect
 	golang.org/x/oauth2 v0.35.0 // indirect
-	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 	google.golang.org/api v0.269.0 // indirect
 	google.golang.org/genproto v0.0.0-20260226221140-a57be14db171 // indirect
@@ -147,5 +147,7 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
-// replace github.com/hybridgroup/yzma => /Users/bill/code/go/src/github.com/hybridgroup/yzma
+//replace github.com/hybridgroup/yzma => ./.extras/yzma
+//replace github.com/hybridgroup/yzma => github.com/dlsniper/yzma v0.0.0-20260305092506-c66179ce4a47
+
 // replace github.com/nikolalohinski/gonja/v2 => /Users/bill/code/go/src/github.com/ardanlabs/gonja

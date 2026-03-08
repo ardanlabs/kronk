@@ -6,6 +6,7 @@ CLI tooling support for model, catalog, template, and library management.
 
 - **catalog/** - Catalog system for model metadata, config retrieval, and downloads
 - **defaults/** - Default paths, versions, and platform detection (arch/OS/processor)
+- **devices/** - Compute device enumeration (CPU/GPU) and system RAM detection
 - **downloader/** - HTTP file downloads with progress tracking and HuggingFace auth
 - **libs/** - llama.cpp library installation and version management
 - **models/** - Local model file management, indexing, and validation
