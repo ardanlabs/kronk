@@ -52,3 +52,4 @@ result-*
 
 # goreleaser
 dist
+.extras
