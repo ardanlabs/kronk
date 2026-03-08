@@ -235,6 +235,9 @@ func (m *Model) decodeEmbeddingsIntoCache(embd []float32, nEmbd, nTokens int32, 
 		batch.NTokens = batchN
 
 		ret, err := llama.Decode(m.lctx, batch)
+		if err == nil && ret == 0 {
+			llama.Synchronize(m.lctx)
+		}
 		llama.BatchFree(batch)
 
 		if err != nil || ret != 0 {
@@ -285,11 +288,11 @@ func (m *Model) decodeEmbeddingsMRoPEIntoCache(embd []float32, nEmbd, nTokens, n
 
 		batch := llama.BatchInit(batchN, nEmbd, 1)
 
-		embdSlice := unsafeSlice(batch.Embd, int(batchN*nEmbd))
-		copy(embdSlice, embd[start*nEmbd:end*nEmbd])
-
 		// Save original pos pointer so BatchFree doesn't free Go memory.
 		origPos := batch.Pos
+
+		embdSlice := unsafeSlice(batch.Embd, int(batchN*nEmbd))
+		copy(embdSlice, embd[start*nEmbd:end*nEmbd])
 
 		// Build sub-batch position array by gathering from the full array.
 		// llama.cpp expects 4 contiguous planes of batchN positions each.
@@ -315,9 +318,11 @@ func (m *Model) decodeEmbeddingsMRoPEIntoCache(embd []float32, nEmbd, nTokens, n
 		batch.NTokens = batchN
 
 		ret, err := llama.Decode(m.lctx, batch)
+		if err == nil && ret == 0 {
+			llama.Synchronize(m.lctx)
+		}
 		runtime.KeepAlive(subPosData)
 
-		// Restore original pos pointer before freeing.
 		batch.Pos = origPos
 		llama.BatchFree(batch)
 
@@ -382,6 +387,9 @@ func (m *Model) decodeTextMRoPEIntoCache(tokens []llama.Token, seqID llama.SeqId
 		batch.NTokens = batchN
 
 		ret, err := llama.Decode(m.lctx, batch)
+		if err == nil && ret == 0 {
+			llama.Synchronize(m.lctx)
+		}
 		runtime.KeepAlive(posData)
 
 		batch.Pos = origPos

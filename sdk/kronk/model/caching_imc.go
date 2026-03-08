@@ -961,6 +961,7 @@ func (m *Model) decodeTokensIntoCache(ctx context.Context, tokens []llama.Token,
 		if _, err := llama.Decode(m.lctx, batch); err != nil {
 			return fmt.Errorf("imc: failed to decode extension tokens at pos %d: %w", i, err)
 		}
+		llama.Synchronize(m.lctx)
 	}
 
 	m.log(ctx, "cache", "status", "finished (decoding tokens into cache)", "seq", seqID, "tokens", nTokens, "nbatch", nBatch)

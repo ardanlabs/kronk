@@ -55,6 +55,9 @@ func (e *batchEngine) decodeTextMRoPE(s *slot, tokens []llama.Token) error {
 
 	e.model.decodeMu.Lock()
 	ret, err := llama.Decode(e.model.lctx, batch)
+	if err == nil && ret == 0 {
+		llama.Synchronize(e.model.lctx)
+	}
 	e.model.decodeMu.Unlock()
 
 	if err != nil || ret != 0 {
@@ -100,6 +103,9 @@ func (e *batchEngine) decodeEmbeddingsNormal(s *slot, embd []float32, nEmbd, nTo
 	if s.useNonCausal {
 		llama.SetCausalAttn(e.model.lctx, true)
 	}
+	if err == nil && ret == 0 {
+		llama.Synchronize(e.model.lctx)
+	}
 	e.model.decodeMu.Unlock()
 
 	if err != nil || ret != 0 {
@@ -126,11 +132,15 @@ func (e *batchEngine) decodeEmbeddingsMRoPE(s *slot, embd []float32, nEmbd, nTok
 
 	batch := llama.BatchInit(nTokens, nEmbd, 1)
 
-	embdSlice := unsafeSlice(batch.Embd, int(nTokens*nEmbd))
-	copy(embdSlice, embd)
-
 	// Save original pos pointer so BatchFree doesn't try to free Go memory.
 	origPos := batch.Pos
+	defer func() {
+		batch.Pos = origPos
+		llama.BatchFree(batch)
+	}()
+
+	embdSlice := unsafeSlice(batch.Embd, int(nTokens*nEmbd))
+	copy(embdSlice, embd)
 
 	// Allocate our own position array for M-RoPE (4D).
 	posData := make([]llama.Pos, nTokens*nPosPerEmbd)
@@ -177,16 +187,15 @@ func (e *batchEngine) decodeEmbeddingsMRoPE(s *slot, embd []float32, nEmbd, nTok
 	}
 
 	ret, err := llama.Decode(e.model.lctx, batch)
-	runtime.KeepAlive(posData)
 	if s.useNonCausal {
 		llama.SetCausalAttn(e.model.lctx, true)
 	}
+	if err == nil && ret == 0 {
+		llama.Synchronize(e.model.lctx)
+	}
+	runtime.KeepAlive(posData)
 
 	e.model.decodeMu.Unlock()
-
-	// Restore original pos pointer before freeing to avoid freeing Go memory.
-	batch.Pos = origPos
-	llama.BatchFree(batch)
 
 	if err != nil || ret != 0 {
 		return decodeError(ret, err)

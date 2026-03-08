@@ -234,6 +234,17 @@ test-only: install-test-models
 	CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/model && \
 	CGO_ENABLED=0 go test -v -count=1 ./sdk/tools/...
 
+test-only-florin: install-test-models
+	@echo ========== RUN TESTS ==========
+	export RUN_IN_PARALLEL=false && \
+	export GITHUB_WORKSPACE=$(shell pwd) && \
+	CGO_ENABLED=0 go test -v -count=1 -p 1 -run 'TestSuite/IMCMediaBuild' ./sdk/kronk/tests/hybrid_vision_imc/... # && \
+	#CGO_ENABLED=0 go test -v -count=1 ./cmd/server/api/services/kronk/tests && \
+	#CGO_ENABLED=0 go test -v -count=1 ./cmd/server/app/sdk/cache && \
+	#CGO_ENABLED=0 go test -v -count=1 ./cmd/server/app/sdk/security/... && \
+	#CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/model && \
+	#CGO_ENABLED=0 go test -v -count=1 ./sdk/tools/...
+
 test: test-only lint vuln-check diff
 
 test-gh-only: install-test-gh-models

@@ -245,6 +245,27 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 			continue
 		}
 
+		// M-RoPE slots require 4D positions (dim0=linear, dims1-3=0 for text).
+		// The shared batch only writes 1D positions via batch.Add, so decode
+		// the generation token through the dedicated M-RoPE path and sample
+		// from the last logits position (-1) of the M-RoPE batch.
+		if s.useMRoPE {
+			if err := e.decodeTextMRoPE(s, []llama.Token{s.sampled}); err != nil {
+				e.finishSlot(s, fmt.Errorf("mrope generation decode: %w", err))
+				continue
+			}
+
+			var token llama.Token
+			switch {
+			case s.grammarSampler != nil:
+				token = s.grammarSampler.SampleWithGrammar(e.model.lctx, s.sampler, -1)
+			default:
+				token = llama.SamplerSample(s.sampler, e.model.lctx, -1)
+			}
+			e.handleSampledToken(s, token, -1, buf)
+			continue
+		}
+
 		// Speculative decoding: generate draft tokens and add them all
 		// to the shared batch for verification in a single forward pass.
 		// Only for text slots that completed draft prefill (draftNPast > 0).
@@ -367,6 +388,9 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	// Lock to prevent concurrent decode with cache population.
 	e.model.decodeMu.Lock()
 	ret, err := llama.Decode(e.model.lctx, e.batch)
+	if err == nil && ret == 0 {
+		llama.Synchronize(e.model.lctx)
+	}
 	e.model.decodeMu.Unlock()
 
 	if err != nil || ret != 0 {

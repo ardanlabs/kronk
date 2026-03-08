@@ -403,6 +403,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	// corrupts recurrent state (DeltaNet/SSM layers).
 	if e.model.modelInfo.Type == ModelTypeHybrid && e.model.cfg.IncrementalCache && job.imcCacheHit && cacheIdx > 0 {
 		e.model.decodeMu.Lock()
+		llama.Synchronize(e.model.lctx)
 		kvSize := llama.StateSeqGetSize(e.model.lctx, s.seqID)
 		switch {
 		case cap(s.imcSavedState) >= int(kvSize):
