@@ -82,5 +82,6 @@
   "customPrompt": "compact",
   "enableParallelToolCalling": true,
   "backgroundEditEnabled": true,
-  "__vscodeMigrationVersion": 1
+  "__vscodeMigrationVersion": 1,
+  "telemetrySetting": "disabled"
 }
