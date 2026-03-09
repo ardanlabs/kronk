@@ -250,7 +250,7 @@ export default function ModelList() {
                           onClick={() => handleRowClick(model.id)}
                         >
                           <td style={{ textAlign: 'center', color: model.validated ? 'inherit' : 'var(--color-error)' }}>{model.validated ? '✓' : '✗'}</td>
-                          <td><span className="catalog-table-cell-ellipsis">{model.id}</span></td>
+                          <td><span className="catalog-table-cell-ellipsis">{model.draft_model_id ? '⚡ ' : ''}{model.id}</span></td>
                           <td>{model.owned_by || '-'}</td>
                           <td>{model.model_family || '-'}</td>
                           <td>{formatBytes(model.size)}</td>
@@ -263,7 +263,7 @@ export default function ModelList() {
                             onClick={() => handleRowClick(ext.id)}
                           >
                             <td></td>
-                            <td style={{ paddingLeft: '24px' }}><span className="catalog-table-cell-ellipsis">↳ {ext.id}</span></td>
+                            <td style={{ paddingLeft: '24px' }}><span className="catalog-table-cell-ellipsis">↳ {ext.draft_model_id ? '⚡ ' : ''}{ext.id}</span></td>
                             <td></td>
                             <td>Extension Model</td>
                             <td></td>

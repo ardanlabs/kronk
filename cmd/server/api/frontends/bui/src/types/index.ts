@@ -31,7 +31,6 @@ export interface ListModelDetail {
   modified: string;
   validated: boolean;
   sampling?: SamplingConfig;
-  tokenizer_fingerprint?: string;
   draft_model_id?: string;
 }
 

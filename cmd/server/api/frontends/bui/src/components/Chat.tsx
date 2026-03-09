@@ -393,7 +393,7 @@ export default function Chat() {
                 })
                 .map((model) => (
                 <option key={model.id} value={model.id}>
-                  {model.id}
+                  {model.draft_model_id ? '⚡ ' : ''}{model.id}
                 </option>
               ))}
             </select>

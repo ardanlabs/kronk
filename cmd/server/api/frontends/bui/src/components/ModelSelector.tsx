@@ -7,12 +7,13 @@ export interface ModelSelectorExtraItem {
 }
 
 interface ModelSelectorProps {
-  models: { id: string }[] | undefined;
+  models: { id: string; draft_model_id?: string }[] | undefined;
   selectedModel: string | null;
   onSelect: (id: string) => void;
   disabled?: boolean;
   placeholder?: string;
   extraItems?: ModelSelectorExtraItem[];
+  draftModelIds?: Set<string>;
 }
 
 // ── Grouping types ──
@@ -109,12 +110,22 @@ export default function ModelSelector({
   disabled = false,
   placeholder = 'Select a model...',
   extraItems,
+  draftModelIds: externalDraftIds,
 }: ModelSelectorProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
 
   const items = models ?? [];
   const nodes = useMemo(() => buildGroups(items), [items]);
+
+  const draftModelIds = useMemo(() => {
+    if (externalDraftIds) return externalDraftIds;
+    const ids = new Set<string>();
+    for (const m of items) {
+      if (m.draft_model_id) ids.add(m.id);
+    }
+    return ids;
+  }, [items, externalDraftIds]);
   const hasItems = nodes.length > 0 || (extraItems && extraItems.length > 0);
 
   // Auto-expand the group containing the selected model.
@@ -269,13 +280,14 @@ export default function ModelSelector({
               onKeyDown={handleKeyDown}
               title={node.id}
             >
-              <span className="model-selector-label">{node.id}</span>
+              <span className="model-selector-label">{draftModelIds.has(node.id) ? '⚡ ' : ''}{node.id}</span>
             </div>
           );
         }
 
         const isExpanded = expanded.has(node.base);
         const groupActive = isInGroup(node, selectedModel);
+        const groupHasDraft = node.baseId ? draftModelIds.has(node.baseId) : node.variants.some((v) => draftModelIds.has(v.id));
 
         return (
           <div key={node.base} className="model-selector-group">
@@ -293,7 +305,7 @@ export default function ModelSelector({
               title={node.base}
             >
               <Chevron expanded={isExpanded} />
-              <span className="model-selector-label">{node.base}</span>
+              <span className="model-selector-label">{groupHasDraft ? '⚡ ' : ''}{node.base}</span>
             </div>
             {isExpanded && (
               <div role="group" data-group-container={node.base}>
@@ -310,7 +322,7 @@ export default function ModelSelector({
                     onKeyDown={handleKeyDown}
                     title={v.id}
                   >
-                    <span className="model-selector-label">{v.suffix}</span>
+                    <span className="model-selector-label">{draftModelIds.has(v.id) ? '⚡ ' : ''}{v.suffix}</span>
                   </div>
                 ))}
               </div>

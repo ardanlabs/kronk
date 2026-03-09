@@ -852,7 +852,7 @@ export default function CatalogList() {
                         className={selectedId === model.id ? 'active' : ''}
                         onClick={() => handleRowClick(model.id)}
                       >
-                        <td><span className="catalog-table-cell-ellipsis">{model.id}</span></td>
+                        <td><span className="catalog-table-cell-ellipsis">{model.model_config?.['draft-model'] ? '⚡ ' : ''}{model.id}</span></td>
                         <td>{model.owned_by || '-'}</td>
                         <td>{model.category || '-'}</td>
                         <td>{model.architecture || '-'}</td>

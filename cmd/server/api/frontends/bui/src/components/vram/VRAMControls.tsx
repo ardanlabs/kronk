@@ -48,70 +48,82 @@ export default function VRAMControls({
   tensorSplit, onTensorSplitChange,
   contextInfo,
 }: VRAMControlsProps) {
+  const [compactAdvancedOpen, setCompactAdvancedOpen] = useState(false);
+
   if (variant === 'compact') {
     return (
-      <div className="controls-row">
-        <div className="control-field">
-          <label htmlFor="vram-compact-ctx">Context Window<ParamTooltip text={PARAM_TOOLTIPS.contextWindow} /></label>
-          <select
-            id="vram-compact-ctx"
-            value={contextWindow}
-            onChange={(e) => onContextWindowChange(Number(e.target.value))}
-            className="form-select"
-          >
-            {CONTEXT_WINDOW_OPTIONS.filter(opt => !contextInfo || opt.value <= contextInfo.max).map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label} ({opt.value.toLocaleString()} tokens)
-              </option>
-            ))}
-          </select>
-          {contextInfo && contextInfo.hasRoPE && (
-            <div style={{ fontSize: '11px', color: 'var(--color-gray-500)', marginTop: 2 }}>
-              {formatContextHint(contextInfo)}
-            </div>
-          )}
+      <div>
+        <div className="controls-row">
+          <div className="control-field">
+            <label htmlFor="vram-compact-ctx">
+              Context Window<ParamTooltip text={PARAM_TOOLTIPS.contextWindow} />
+              {contextInfo && contextInfo.hasRoPE && (
+                <span style={{ fontSize: '11px', fontWeight: 400, color: 'var(--color-gray-500)', display: 'block', textTransform: 'none', letterSpacing: 'normal' }}>
+                  {formatContextHint(contextInfo)}
+                </span>
+              )}
+            </label>
+            <select
+              id="vram-compact-ctx"
+              value={contextWindow}
+              onChange={(e) => onContextWindowChange(Number(e.target.value))}
+              className="form-select"
+            >
+              {CONTEXT_WINDOW_OPTIONS.filter(opt => !contextInfo || opt.value <= contextInfo.max).map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label} ({opt.value.toLocaleString()} tokens)
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="control-field">
+            <label htmlFor="vram-compact-bpe">Cache Type<ParamTooltip text={PARAM_TOOLTIPS.cacheType} /></label>
+            <select
+              id="vram-compact-bpe"
+              value={bytesPerElement}
+              onChange={(e) => onBytesPerElementChange(Number(e.target.value))}
+              className="form-select"
+            >
+              {BYTES_PER_ELEMENT_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="control-field">
+            <label htmlFor="vram-compact-slots">Slots<ParamTooltip text={PARAM_TOOLTIPS.nSeqMax} /></label>
+            <select
+              id="vram-compact-slots"
+              value={slots}
+              onChange={(e) => onSlotsChange(Number(e.target.value))}
+              className="form-select"
+            >
+              {SLOT_OPTIONS.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+          <CompactAdvancedToggle
+            open={compactAdvancedOpen}
+            onToggle={() => setCompactAdvancedOpen(!compactAdvancedOpen)}
+          />
         </div>
-        <div className="control-field">
-          <label htmlFor="vram-compact-bpe">Cache Type<ParamTooltip text={PARAM_TOOLTIPS.cacheType} /></label>
-          <select
-            id="vram-compact-bpe"
-            value={bytesPerElement}
-            onChange={(e) => onBytesPerElementChange(Number(e.target.value))}
-            className="form-select"
-          >
-            {BYTES_PER_ELEMENT_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="control-field">
-          <label htmlFor="vram-compact-slots">Slots<ParamTooltip text={PARAM_TOOLTIPS.nSeqMax} /></label>
-          <select
-            id="vram-compact-slots"
-            value={slots}
-            onChange={(e) => onSlotsChange(Number(e.target.value))}
-            className="form-select"
-          >
-            {SLOT_OPTIONS.map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
-        </div>
-        <CompactAdvancedSection
-          isMoE={isMoE}
-          blockCount={blockCount}
-          expertLayersOnGPU={expertLayersOnGPU}
-          onExpertLayersOnGPUChange={onExpertLayersOnGPUChange}
-          kvCacheOnCPU={kvCacheOnCPU}
-          onKvCacheOnCPUChange={onKvCacheOnCPUChange}
-          maxDeviceCount={maxDeviceCount}
-          deviceCount={deviceCount}
-          onDeviceCountChange={onDeviceCountChange}
-          tensorSplit={tensorSplit}
-          onTensorSplitChange={onTensorSplitChange}
-        />
+        {compactAdvancedOpen && (
+          <CompactAdvancedContent
+            isMoE={isMoE}
+            blockCount={blockCount}
+            expertLayersOnGPU={expertLayersOnGPU}
+            onExpertLayersOnGPUChange={onExpertLayersOnGPUChange}
+            kvCacheOnCPU={kvCacheOnCPU}
+            onKvCacheOnCPUChange={onKvCacheOnCPUChange}
+            maxDeviceCount={maxDeviceCount}
+            deviceCount={deviceCount}
+            onDeviceCountChange={onDeviceCountChange}
+            tensorSplit={tensorSplit}
+            onTensorSplitChange={onTensorSplitChange}
+          />
+        )}
       </div>
     );
   }
@@ -307,19 +319,12 @@ function AdvancedSection({
   );
 }
 
-function CompactAdvancedSection({
-  isMoE, blockCount, expertLayersOnGPU, onExpertLayersOnGPUChange,
-  kvCacheOnCPU, onKvCacheOnCPUChange,
-  maxDeviceCount, deviceCount, onDeviceCountChange,
-  tensorSplit, onTensorSplitChange,
-}: AdvancedSectionProps) {
-  const [open, setOpen] = useState(false);
-
+function CompactAdvancedToggle({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   return (
-    <div className="control-field" style={{ gridColumn: '1 / -1' }}>
+    <div style={{ display: 'flex', alignItems: 'flex-end', flexShrink: 0, paddingBottom: '8px' }}>
       <button
         type="button"
-        onClick={() => setOpen(!open)}
+        onClick={onToggle}
         style={{
           background: 'none',
           border: 'none',
@@ -330,66 +335,75 @@ function CompactAdvancedSection({
           display: 'flex',
           alignItems: 'center',
           gap: '4px',
+          whiteSpace: 'nowrap',
         }}
       >
         <span style={{ display: 'inline-block', transition: 'transform 0.2s', transform: open ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
         Advanced
       </button>
-      {open && (
-        <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
-          {isMoE && blockCount != null && blockCount > 0 && (
-            <div className="control-field" style={{ width: '100%' }}>
-              <label htmlFor="vram-compact-expertLayers">
-                Expert Layers GPU ({expertLayersOnGPU ?? 0}/{blockCount})<ParamTooltip text={PARAM_TOOLTIPS.expertLayersOnGPU} />
-              </label>
-              <input
-                id="vram-compact-expertLayers"
-                type="range"
-                min={0}
-                max={blockCount}
-                value={expertLayersOnGPU ?? 0}
-                onChange={(e) => onExpertLayersOnGPUChange?.(Number(e.target.value))}
-                className="form-range"
-              />
-            </div>
-          )}
-          <div className="control-field">
-            <label htmlFor="vram-compact-kvCpu" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <input
-                id="vram-compact-kvCpu"
-                type="checkbox"
-                checked={kvCacheOnCPU ?? false}
-                onChange={(e) => onKvCacheOnCPUChange?.(e.target.checked)}
-              />
-              KV Cache on CPU<ParamTooltip text={PARAM_TOOLTIPS.kvCacheOnCPU} />
-            </label>
-          </div>
-          <div className="control-field">
-            <label htmlFor="vram-compact-deviceCount">GPU Count<ParamTooltip text={PARAM_TOOLTIPS.gpuCount} /></label>
-            <select
-              id="vram-compact-deviceCount"
-              value={deviceCount ?? 1}
-              onChange={(e) => onDeviceCountChange?.(Number(e.target.value))}
-              className="form-select"
-            >
-              {gpuCountOptions(maxDeviceCount).map(n => (
-                <option key={n} value={n}>{n} GPU{n > 1 ? 's' : ''}</option>
-              ))}
-            </select>
-          </div>
-          {(deviceCount ?? 1) > 1 && (
-            <div className="control-field">
-              <label htmlFor="vram-compact-tensorSplit">Tensor Split<ParamTooltip text={PARAM_TOOLTIPS.tensorSplit} /></label>
-              <input
-                id="vram-compact-tensorSplit"
-                type="text"
-                value={tensorSplit ?? ''}
-                onChange={(e) => onTensorSplitChange?.(e.target.value)}
-                className="form-input"
-                placeholder="e.g. 0.6,0.4"
-              />
-            </div>
-          )}
+    </div>
+  );
+}
+
+function CompactAdvancedContent({
+  isMoE, blockCount, expertLayersOnGPU, onExpertLayersOnGPUChange,
+  kvCacheOnCPU, onKvCacheOnCPUChange,
+  maxDeviceCount, deviceCount, onDeviceCountChange,
+  tensorSplit, onTensorSplitChange,
+}: AdvancedSectionProps) {
+  return (
+    <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+      {isMoE && blockCount != null && blockCount > 0 && (
+        <div className="control-field" style={{ width: '100%' }}>
+          <label htmlFor="vram-compact-expertLayers">
+            Expert Layers GPU ({expertLayersOnGPU ?? 0}/{blockCount})<ParamTooltip text={PARAM_TOOLTIPS.expertLayersOnGPU} />
+          </label>
+          <input
+            id="vram-compact-expertLayers"
+            type="range"
+            min={0}
+            max={blockCount}
+            value={expertLayersOnGPU ?? 0}
+            onChange={(e) => onExpertLayersOnGPUChange?.(Number(e.target.value))}
+            className="form-range"
+          />
+        </div>
+      )}
+      <div className="control-field">
+        <label htmlFor="vram-compact-kvCpu" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <input
+            id="vram-compact-kvCpu"
+            type="checkbox"
+            checked={kvCacheOnCPU ?? false}
+            onChange={(e) => onKvCacheOnCPUChange?.(e.target.checked)}
+          />
+          KV Cache on CPU<ParamTooltip text={PARAM_TOOLTIPS.kvCacheOnCPU} />
+        </label>
+      </div>
+      <div className="control-field">
+        <label htmlFor="vram-compact-deviceCount">GPU Count<ParamTooltip text={PARAM_TOOLTIPS.gpuCount} /></label>
+        <select
+          id="vram-compact-deviceCount"
+          value={deviceCount ?? 1}
+          onChange={(e) => onDeviceCountChange?.(Number(e.target.value))}
+          className="form-select"
+        >
+          {gpuCountOptions(maxDeviceCount).map(n => (
+            <option key={n} value={n}>{n} GPU{n > 1 ? 's' : ''}</option>
+          ))}
+        </select>
+      </div>
+      {(deviceCount ?? 1) > 1 && (
+        <div className="control-field">
+          <label htmlFor="vram-compact-tensorSplit">Tensor Split<ParamTooltip text={PARAM_TOOLTIPS.tensorSplit} /></label>
+          <input
+            id="vram-compact-tensorSplit"
+            type="text"
+            value={tensorSplit ?? ''}
+            onChange={(e) => onTensorSplitChange?.(e.target.value)}
+            className="form-input"
+            placeholder="e.g. 0.6,0.4"
+          />
         </div>
       )}
     </div>
