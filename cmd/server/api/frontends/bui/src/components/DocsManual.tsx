@@ -1834,11 +1834,7 @@ After:   [cached prefix tokens]                     ← trimmed`}</code></pre>
           <p>Hybrid models mix Attention layers with recurrent layers (DeltaNet/SSM). Recurrent layers store a hidden state that cannot be "rewound" by partial range delete — a partial delete corrupts the recurrent state, causing decode errors on subsequent requests.</p>
           <p>Instead, the batch engine uses a snapshot/restore approach:</p>
           <ol>
-            <li><strong>Snapshot</strong>: After the IMC cache is built or extended but before suffix tokens are decoded, the engine captures the full sequence state (KV cache
-              <ul>
-                <li>recurrent hidden state) into a byte buffer in RAM.</li>
-              </ul>
-            </li>
+            <li><strong>Snapshot</strong>: After the IMC cache is built or extended but before suffix tokens are decoded, the engine captures the full sequence state (KV cache  recurrent hidden state) into a byte buffer in RAM.</li>
             <li><strong>Restore</strong>: After the request completes, the engine performs a full sequence clear and restores the snapshot from the byte buffer. This returns the sequence to the exact state it was in after the cached prefix, with the recurrent hidden state perfectly preserved.</li>
           </ol>
           <pre className="code-block"><code>{`Standard (Dense/MoE):  Trim generated tokens (partial delete)
