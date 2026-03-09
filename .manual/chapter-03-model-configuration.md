@@ -36,7 +36,7 @@ programmatically through the SDK.
 For most models you will want to touch these basic settings. There are many more
 which will be presented later. Each model has GGUF metadata that Kronk can read
 for defaults like setting the context window size when not provided. Kronk also
-has default settings for things like temperature and top_p when not provided.
+has default settings for things like `temperature` and `top_p` when not provided.
 
 #### Context Window
 
@@ -199,10 +199,6 @@ systems (NVIDIA CUDA, Vulkan)._
 
 #### Tensor Operations Offload
 
-_Note: On Apple Silicon (Metal), the CPU and GPU share unified memory, so
-this setting has no practical effect. The following applies to discrete GPU
-systems (NVIDIA CUDA, Vulkan)._
-
 Beyond the model layers and KV cache, there are additional math operations
 (called tensor operations) that happen during inference — things like
 matrix multiplications and attention score calculations. These operations
@@ -287,15 +283,14 @@ cache_type_v: q8_0 # Value cache precision
 
 #### When to use f16 vs q8_0
 
-| Consideration       | f16 (default)              | q8_0                                                      |
-| ------------------- | -------------------------- | --------------------------------------------------------- |
-| VRAM usage          | Higher                     | ~50% less for KV cache                                    |
-| Output quality      | Best possible              | Nearly identical for most tasks                           |
-| MoE models          | Recommended — routing is   | May degrade expert routing                                |
-|                     | sensitive to precision     | decisions                                                 |
-| Dense models        | Safe but uses more memory  | Recommended — minimal quality loss with good VRAM savings |
-| Long-context (64K+) | Safer — avoids compounding | Small precision errors can                                |
-|                     | precision errors           | accumulate over long sequences                            |
+| Consideration       | f16 (default)                                    | q8_0                                                      |
+| ------------------- | ------------------------------------------------ | --------------------------------------------------------- |
+| VRAM usage          | Higher                                           | ~50% less for KV cache                                    |
+| Output quality      | Best possible                                    | Nearly identical for most tasks                           |
+| MoE models          | Recommended — routing is sensitive to precision  | May degrade expert routing decisions                      |
+| Dense models        | Safe but uses more memory                        | Recommended — minimal quality loss with good VRAM savings |
+| Long-context (64K+) | Safer — avoids compounding                       | Small precision errors can                                |
+|                     | precision errors                                 | accumulate over long sequences                            |
 
 Start with `q8_0` for dense models. Use `f16` for MoE models or if you
 notice quality issues (incoherent outputs, reasoning failures).
@@ -453,7 +448,7 @@ decreases:
 
 The tradeoff is **quality degradation** - lower precision means less accurate
 representations of the original weights, which can affect output coherence,
-reasoning ability, and factual accuracy.
+reasoning ability and factual accuracy.
 
 #### What are K-Quants?
 
