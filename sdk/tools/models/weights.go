@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -15,14 +14,14 @@ import (
 
 // WeightBreakdown provides per-category weight size information.
 type WeightBreakdown struct {
-	TotalBytes         int64   `json:"total_bytes"`
-	AlwaysActiveBytes  int64   `json:"always_active_bytes"`
-	ExpertBytesTotal   int64   `json:"expert_bytes_total"`
-	ExpertBytesByLayer []int64 `json:"expert_bytes_by_layer"`
+	TotalBytes         int64
+	AlwaysActiveBytes  int64
+	ExpertBytesTotal   int64
+	ExpertBytesByLayer []int64
 }
 
-// GGUFTensorInfo holds parsed tensor descriptor information from a GGUF file.
-type GGUFTensorInfo struct {
+// ggufTensorInfo holds parsed tensor descriptor information from a GGUF file.
+type ggufTensorInfo struct {
 	Name     string
 	NDims    uint32
 	Dims     []int64
@@ -108,69 +107,9 @@ func ggmlTensorSize(ggmlType uint32, dims []int64) int64 {
 	return total
 }
 
-// ParseGGUFTensorTable reads tensor descriptors from a GGUF file after KV
-// metadata. The file should be positioned just after all KV pairs have been
-// read.
-func ParseGGUFTensorTable(file *os.File, tensorCount uint64) ([]GGUFTensorInfo, error) {
-	tensors := make([]GGUFTensorInfo, 0, tensorCount)
-
-	for i := range tensorCount {
-		var nameLen uint64
-		if err := binary.Read(file, binary.LittleEndian, &nameLen); err != nil {
-			return nil, fmt.Errorf("parse-tensor-table: reading name length for tensor %d: %w", i, err)
-		}
-
-		if nameLen > 1*1024*1024 {
-			return nil, fmt.Errorf("parse-tensor-table: name length too large: %d", nameLen)
-		}
-
-		nameBytes := make([]byte, nameLen)
-		if _, err := io.ReadFull(file, nameBytes); err != nil {
-			return nil, fmt.Errorf("parse-tensor-table: reading name for tensor %d: %w", i, err)
-		}
-
-		var nDims uint32
-		if err := binary.Read(file, binary.LittleEndian, &nDims); err != nil {
-			return nil, fmt.Errorf("parse-tensor-table: reading n_dims for tensor %d: %w", i, err)
-		}
-
-		dims := make([]int64, nDims)
-		for d := uint32(0); d < nDims; d++ {
-			var dim uint64
-			if err := binary.Read(file, binary.LittleEndian, &dim); err != nil {
-				return nil, fmt.Errorf("parse-tensor-table: reading dim %d for tensor %d: %w", d, i, err)
-			}
-			dims[d] = int64(dim)
-		}
-
-		var ggmlType uint32
-		if err := binary.Read(file, binary.LittleEndian, &ggmlType); err != nil {
-			return nil, fmt.Errorf("parse-tensor-table: reading ggml_type for tensor %d: %w", i, err)
-		}
-
-		var offset uint64
-		if err := binary.Read(file, binary.LittleEndian, &offset); err != nil {
-			return nil, fmt.Errorf("parse-tensor-table: reading offset for tensor %d: %w", i, err)
-		}
-
-		tensorBytes := ggmlTensorSize(ggmlType, dims)
-
-		tensors = append(tensors, GGUFTensorInfo{
-			Name:     string(nameBytes),
-			NDims:    nDims,
-			Dims:     dims,
-			GGMLType: ggmlType,
-			Offset:   offset,
-			Bytes:    tensorBytes,
-		})
-	}
-
-	return tensors, nil
-}
-
-// CategorizeWeights builds a WeightBreakdown from parsed tensor info.
+// categorizeWeights builds a WeightBreakdown from parsed tensor info.
 // blockCount is the number of transformer layers from metadata.
-func CategorizeWeights(tensors []GGUFTensorInfo, blockCount int64) WeightBreakdown {
+func categorizeWeights(tensors []ggufTensorInfo, blockCount int64) WeightBreakdown {
 	wb := WeightBreakdown{
 		ExpertBytesByLayer: make([]int64, blockCount),
 	}
@@ -197,9 +136,9 @@ func CategorizeWeights(tensors []GGUFTensorInfo, blockCount int64) WeightBreakdo
 	return wb
 }
 
-// DetectMoEFromTensors returns true if tensor names contain expert patterns,
+// detectMoEFromTensors returns true if tensor names contain expert patterns,
 // providing a fallback when GGUF metadata keys are missing.
-func DetectMoEFromTensors(tensors []GGUFTensorInfo) bool {
+func detectMoEFromTensors(tensors []ggufTensorInfo) bool {
 	for _, t := range tensors {
 		if expertTensorPattern.MatchString(t.Name) {
 			return true
@@ -209,8 +148,8 @@ func DetectMoEFromTensors(tensors []GGUFTensorInfo) bool {
 	return false
 }
 
-// DetectSharedExpertsFromTensors checks for shared expert tensors in names.
-func DetectSharedExpertsFromTensors(tensors []GGUFTensorInfo) bool {
+// detectSharedExpertsFromTensors checks for shared expert tensors in names.
+func detectSharedExpertsFromTensors(tensors []ggufTensorInfo) bool {
 	for _, t := range tensors {
 		lower := strings.ToLower(t.Name)
 		if strings.Contains(lower, "shared") || strings.Contains(lower, "shexp") {
@@ -230,10 +169,10 @@ func DetectSharedExpertsFromTensors(tensors []GGUFTensorInfo) bool {
 // large MoE models whose metadata exceeds that threshold.
 const ggufHeaderFetchSize = 16 * 1024 * 1024
 
-// FetchGGUFHeaderAndTensors fetches GGUF header, KV metadata, and tensor
+// fetchGGUFHeaderAndTensors fetches GGUF header, KV metadata, and tensor
 // descriptors from a remote URL using HTTP Range requests. Only the header
 // sections are downloaded, not the actual tensor data.
-func FetchGGUFHeaderAndTensors(ctx context.Context, url string) (metadata map[string]string, tensors []GGUFTensorInfo, fileSize int64, err error) {
+func fetchGGUFHeaderAndTensors(ctx context.Context, url string) (metadata map[string]string, tensors []ggufTensorInfo, fileSize int64, err error) {
 	var client http.Client
 
 	data, fileSize, err := fetchRange(ctx, &client, url, 0, ggufHeaderFetchSize-1)
@@ -291,8 +230,8 @@ func FetchGGUFHeaderAndTensors(ctx context.Context, url string) (metadata map[st
 }
 
 // parseTensorTableFromReader reads tensor descriptors from a bytes.Reader.
-func parseTensorTableFromReader(r *bytes.Reader, tensorCount uint64) ([]GGUFTensorInfo, error) {
-	tensors := make([]GGUFTensorInfo, 0, tensorCount)
+func parseTensorTableFromReader(r *bytes.Reader, tensorCount uint64) ([]ggufTensorInfo, error) {
+	tensors := make([]ggufTensorInfo, 0, tensorCount)
 
 	for i := range tensorCount {
 		var nameLen uint64
@@ -335,7 +274,7 @@ func parseTensorTableFromReader(r *bytes.Reader, tensorCount uint64) ([]GGUFTens
 
 		tensorBytes := ggmlTensorSize(ggmlType, dims)
 
-		tensors = append(tensors, GGUFTensorInfo{
+		tensors = append(tensors, ggufTensorInfo{
 			Name:     string(nameBytes),
 			NDims:    nDims,
 			Dims:     dims,

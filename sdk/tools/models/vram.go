@@ -58,16 +58,16 @@ type VRAMConfig struct {
 
 // VRAM contains the calculated VRAM requirements.
 type VRAM struct {
-	Input              VRAMInput        // Input parameters used for calculation
-	KVPerTokenPerLayer int64            // Bytes per token per layer
-	KVPerSlot          int64            // Bytes per slot
-	SlotMemory         int64            // Total KV cache memory in bytes
-	TotalVRAM          int64            // Model size + slot memory in bytes
-	MoE                *MoEInfo         `json:"moe,omitempty"`
-	Weights            *WeightBreakdown `json:"weights,omitempty"`
-	ModelWeightsGPU    int64            `json:"model_weights_gpu"`
-	ModelWeightsCPU    int64            `json:"model_weights_cpu"`
-	ComputeBufferEst   int64            `json:"compute_buffer_est"`
+	Input              VRAMInput // Input parameters used for calculation
+	KVPerTokenPerLayer int64     // Bytes per token per layer
+	KVPerSlot          int64     // Bytes per slot
+	SlotMemory         int64     // Total KV cache memory in bytes
+	TotalVRAM          int64     // Model size + slot memory in bytes
+	MoE                *MoEInfo
+	Weights            *WeightBreakdown
+	ModelWeightsGPU    int64
+	ModelWeightsCPU    int64
+	ComputeBufferEst   int64
 }
 
 // CalculateVRAM retrieves model metadata and computes the VRAM requirements.
@@ -130,10 +130,10 @@ type VRAMInput struct {
 	ValueLength       int64            // V dimension per head (typically 128)
 	BytesPerElement   int64            // Depends on cache type: q8_0=1, f16=2
 	Slots             int64            // n_seq_max - number of concurrent sequences
-	EmbeddingLength   int64            `json:"embedding_length,omitempty"` // needed for compute buffer estimate
-	MoE               *MoEInfo         `json:"moe,omitempty"`
-	Weights           *WeightBreakdown `json:"weights,omitempty"`
-	ExpertLayersOnGPU int64            `json:"expert_layers_on_gpu,omitempty"` // 0 = all experts on CPU
+	EmbeddingLength   int64            // needed for compute buffer estimate
+	MoE               *MoEInfo         //
+	Weights           *WeightBreakdown //
+	ExpertLayersOnGPU int64            // 0 = all experts on CPU
 }
 
 // CalculateVRAM computes the VRAM requirements for running a model based on
@@ -145,7 +145,8 @@ func CalculateVRAM(input VRAMInput) VRAM {
 
 	var modelWeightsGPU, modelWeightsCPU int64
 
-	if input.Weights != nil && input.MoE != nil && input.MoE.IsMoE {
+	switch {
+	case input.Weights != nil && input.MoE != nil && input.MoE.IsMoE:
 		alwaysActiveGPU := input.Weights.AlwaysActiveBytes
 
 		var expertsGPU int64
@@ -159,7 +160,8 @@ func CalculateVRAM(input VRAMInput) VRAM {
 
 		modelWeightsGPU = alwaysActiveGPU + expertsGPU
 		modelWeightsCPU = max(0, input.Weights.ExpertBytesTotal-expertsGPU)
-	} else {
+
+	default:
 		modelWeightsGPU = input.ModelSizeBytes
 		modelWeightsCPU = 0
 	}
@@ -223,7 +225,7 @@ func CalculateVRAMFromHuggingFace(ctx context.Context, modelURL string, cfg VRAM
 
 	modelURL = NormalizeHuggingFaceDownloadURL(modelURL)
 
-	metadata, tensors, fileSize, err := FetchGGUFHeaderAndTensors(ctx, modelURL)
+	metadata, tensors, fileSize, err := fetchGGUFHeaderAndTensors(ctx, modelURL)
 	if err != nil {
 		return VRAM{}, fmt.Errorf("calculate-vram-hg: failed to fetch GGUF metadata: %w", err)
 	}
@@ -240,7 +242,7 @@ func calculateVRAMFromHuggingFaceFolder(ctx context.Context, folderURL string, c
 		return VRAM{}, fmt.Errorf("calculate-vram-hg: %w", err)
 	}
 
-	metadata, tensors, _, err := FetchGGUFHeaderAndTensors(ctx, fileURLs[0])
+	metadata, tensors, _, err := fetchGGUFHeaderAndTensors(ctx, fileURLs[0])
 	if err != nil {
 		return VRAM{}, fmt.Errorf("calculate-vram-hg: failed to fetch GGUF metadata from split: %w", err)
 	}
@@ -251,7 +253,7 @@ func calculateVRAMFromHuggingFaceFolder(ctx context.Context, folderURL string, c
 // buildVRAMFromMetadata extracts model parameters from GGUF metadata and
 // computes the VRAM requirements. When tensors is non-nil, a WeightBreakdown
 // is computed and attached to the result.
-func buildVRAMFromMetadata(metadata map[string]string, tensors []GGUFTensorInfo, modelSizeBytes int64, cfg VRAMConfig) (VRAM, error) {
+func buildVRAMFromMetadata(metadata map[string]string, tensors []ggufTensorInfo, modelSizeBytes int64, cfg VRAMConfig) (VRAM, error) {
 	arch := detectArchitecture(metadata)
 	if arch == "" {
 		return VRAM{}, fmt.Errorf("calculate-vram-hg: unable to detect model architecture")
@@ -281,7 +283,7 @@ func buildVRAMFromMetadata(metadata map[string]string, tensors []GGUFTensorInfo,
 
 	embeddingLength, _ := parseMetadataInt64WithFallback(metadata, arch+".embedding_length", ".embedding_length")
 
-	moeInfo := DetectMoE(metadata)
+	moeInfo := detectMoE(metadata)
 	var moePtr *MoEInfo
 	if moeInfo.IsMoE {
 		moePtr = &moeInfo
@@ -289,7 +291,7 @@ func buildVRAMFromMetadata(metadata map[string]string, tensors []GGUFTensorInfo,
 
 	var weights *WeightBreakdown
 	if len(tensors) > 0 {
-		wb := CategorizeWeights(tensors, blockCount)
+		wb := categorizeWeights(tensors, blockCount)
 		weights = &wb
 	}
 
@@ -323,7 +325,7 @@ func CalculateVRAMFromHuggingFaceFiles(ctx context.Context, modelURLs []string, 
 		normalized[i] = NormalizeHuggingFaceDownloadURL(u)
 	}
 
-	metadata, tensors, firstSize, err := FetchGGUFHeaderAndTensors(ctx, normalized[0])
+	metadata, tensors, firstSize, err := fetchGGUFHeaderAndTensors(ctx, normalized[0])
 	if err != nil {
 		return VRAM{}, fmt.Errorf("calculate-vram-hg-files: failed to fetch GGUF metadata: %w", err)
 	}
@@ -862,80 +864,3 @@ func readMetadataValueFromReader(r *bytes.Reader, valueType uint32) (any, error)
 		return nil, fmt.Errorf("unsupported metadata value type: %d", valueType)
 	}
 }
-
-// =============================================================================
-/*
-VRAM CALCULATION FORMULA
-
-Total VRAM = Model Weights + KV Cache
-
-Model weights are determined by the GGUF file size (e.g., ~8GB for a
-7B Q8_0 model). The KV cache is the variable cost you control through
-configuration.
-
-SLOTS AND SEQUENCES
-
-A slot is a processing unit that handles one request at a time. Each slot
-is assigned a unique sequence ID that maps to an isolated partition in the
-shared KV cache. The mapping is always 1:1:
-
-  NSeqMax = 4 (set via n_seq_max in model config)
-
-  Slot 0  →  Sequence 0  →  KV cache partition 0
-  Slot 1  →  Sequence 1  →  KV cache partition 1
-  Slot 2  →  Sequence 2  →  KV cache partition 2
-  Slot 3  →  Sequence 3  →  KV cache partition 3
-
-NSeqMax controls how many slots (and sequences) are created. More slots
-means more concurrent requests, but each slot reserves its own KV cache
-partition in VRAM whether or not it is actively used.
-
-WHAT AFFECTS KV CACHE MEMORY PER SEQUENCE
-
-Each sequence's KV cache partition size is determined by three factors:
-
-  1. Context Window (n_ctx) — larger context linearly increases memory.
-  2. Number of Layers (block_count) — more layers means more memory per token.
-  3. KV Cache Precision (bytes_per_element) — f16=2 bytes, q8_0=1 byte.
-
-The head geometry (head_count_kv, key_length, value_length) is fixed by
-the model architecture and read from the GGUF header.
-
-  KV_Per_Token_Per_Layer = head_count_kv × (key_length + value_length) × bytes_per_element
-  KV_Per_Sequence        = n_ctx × n_layers × KV_Per_Token_Per_Layer
-
-WHAT AFFECTS TOTAL KV CACHE (SLOT MEMORY)
-
-  Slot_Memory = TotalSequences × KV_Per_Sequence
-  Total_VRAM  = Model_Weights + Slot_Memory
-
-Memory is statically allocated upfront when the model loads.
-
-CACHING MODES (SPC / IMC)
-
-Neither SPC nor IMC adds extra sequences to the VRAM calculation.
-
-SPC (System Prompt Cache) externalizes the decoded system prompt KV
-state to a byte buffer in RAM. On each request, the KV state is
-restored into the slot's sequence via StateSeqSetData. No dedicated
-cache sequence is permanently occupied.
-
-IMC (Incremental Message Cache) uses dedicated slot/seq binding —
-each slot's sequence IS the cache. No separate cache sequences.
-
-EXAMPLE
-
-Model                   : Qwen3.5-35B-A3B-Q8_0
-Model Weights           : 36.0 GB
-Context Window (n_ctx)  : 131,072 (128K)
-cache-type-k / v        : q8_0 (1 byte per element)
-block_count (n_layers)  : 48
-attention.head_count_kv : 4
-attention.key_length    : 128
-attention.value_length  : 128
-
-KV_Per_Token_Per_Layer = 4 × (128 + 128) × 1       = 1,024 bytes
-KV_Per_Sequence        = 131,072 × 48 × 1,024      = ~6.4 GB
-Slot_Memory            = 2 × 6.4 GB                 = ~12.8 GB
-Total_VRAM             = 36.0 GB + 12.8 GB           = ~48.8 GB
-*/

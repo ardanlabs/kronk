@@ -286,7 +286,7 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfi
 			TensorBuftOverrides:  rmc.TensorBuftOverrides,
 			MainGPU:              rmc.MainGPU,
 			Devices:              rmc.Devices,
-			MoE:                  rmc.MoE,
+			MoE:                  toAppMoEConfig(rmc.MoE),
 			AutoFitVRAM:          rmc.AutoFitVRAM,
 			SystemPromptCache:    rmc.SystemPromptCache,
 			IncrementalCache:     rmc.IncrementalCache,
@@ -335,16 +335,16 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfi
 				BytesPerElement:   vram.Input.BytesPerElement,
 				Slots:             vram.Input.Slots,
 				EmbeddingLength:   vram.Input.EmbeddingLength,
-				MoE:               vram.Input.MoE,
-				Weights:           vram.Input.Weights,
+				MoE:               toAppMoEInfo(vram.Input.MoE),
+				Weights:           toAppWeightBreakdown(vram.Input.Weights),
 				ExpertLayersOnGPU: vram.Input.ExpertLayersOnGPU,
 			},
 			KVPerTokenPerLayer: vram.KVPerTokenPerLayer,
 			KVPerSlot:          vram.KVPerSlot,
 			SlotMemory:         vram.SlotMemory,
 			TotalVRAM:          vram.TotalVRAM,
-			MoE:                vram.MoE,
-			Weights:            vram.Weights,
+			MoE:                toAppMoEInfo(vram.MoE),
+			Weights:            toAppWeightBreakdown(vram.Weights),
 			ModelWeightsGPU:    vram.ModelWeightsGPU,
 			ModelWeightsCPU:    vram.ModelWeightsCPU,
 			ComputeBufferEst:   vram.ComputeBufferEst,
@@ -419,34 +419,76 @@ func toModelDetails(models []cache.ModelDetail) ModelDetailsResponse {
 
 // =============================================================================
 
+// MoEInfo contains Mixture of Experts metadata.
+type MoEInfo struct {
+	IsMoE            bool  `json:"is_moe"`
+	ExpertCount      int64 `json:"expert_count"`
+	ExpertUsedCount  int64 `json:"expert_used_count"`
+	HasSharedExperts bool  `json:"has_shared_experts"`
+}
+
+func toAppMoEInfo(m *models.MoEInfo) *MoEInfo {
+	if m == nil {
+		return nil
+	}
+
+	return &MoEInfo{
+		IsMoE:            m.IsMoE,
+		ExpertCount:      m.ExpertCount,
+		ExpertUsedCount:  m.ExpertUsedCount,
+		HasSharedExperts: m.HasSharedExperts,
+	}
+}
+
+// WeightBreakdown provides per-category weight size information.
+type WeightBreakdown struct {
+	TotalBytes         int64   `json:"total_bytes"`
+	AlwaysActiveBytes  int64   `json:"always_active_bytes"`
+	ExpertBytesTotal   int64   `json:"expert_bytes_total"`
+	ExpertBytesByLayer []int64 `json:"expert_bytes_by_layer"`
+}
+
+func toAppWeightBreakdown(w *models.WeightBreakdown) *WeightBreakdown {
+	if w == nil {
+		return nil
+	}
+
+	return &WeightBreakdown{
+		TotalBytes:         w.TotalBytes,
+		AlwaysActiveBytes:  w.AlwaysActiveBytes,
+		ExpertBytesTotal:   w.ExpertBytesTotal,
+		ExpertBytesByLayer: w.ExpertBytesByLayer,
+	}
+}
+
 // VRAMInput contains the input parameters used for VRAM calculation.
 type VRAMInput struct {
-	ModelSizeBytes    int64                   `json:"model_size_bytes"`
-	ContextWindow     int64                   `json:"context_window"`
-	BlockCount        int64                   `json:"block_count"`
-	HeadCountKV       int64                   `json:"head_count_kv"`
-	KeyLength         int64                   `json:"key_length"`
-	ValueLength       int64                   `json:"value_length"`
-	BytesPerElement   int64                   `json:"bytes_per_element"`
-	Slots             int64                   `json:"slots"`
-	EmbeddingLength   int64                   `json:"embedding_length,omitempty"`
-	MoE               *models.MoEInfo         `json:"moe,omitempty"`
-	Weights           *models.WeightBreakdown `json:"weights,omitempty"`
-	ExpertLayersOnGPU int64                   `json:"expert_layers_on_gpu,omitempty"`
+	ModelSizeBytes    int64            `json:"model_size_bytes"`
+	ContextWindow     int64            `json:"context_window"`
+	BlockCount        int64            `json:"block_count"`
+	HeadCountKV       int64            `json:"head_count_kv"`
+	KeyLength         int64            `json:"key_length"`
+	ValueLength       int64            `json:"value_length"`
+	BytesPerElement   int64            `json:"bytes_per_element"`
+	Slots             int64            `json:"slots"`
+	EmbeddingLength   int64            `json:"embedding_length,omitempty"`
+	MoE               *MoEInfo         `json:"moe,omitempty"`
+	Weights           *WeightBreakdown `json:"weights,omitempty"`
+	ExpertLayersOnGPU int64            `json:"expert_layers_on_gpu,omitempty"`
 }
 
 // VRAM contains the calculated VRAM requirements.
 type VRAM struct {
-	Input              VRAMInput               `json:"input"`
-	KVPerTokenPerLayer int64                   `json:"kv_per_token_per_layer"`
-	KVPerSlot          int64                   `json:"kv_per_slot"`
-	SlotMemory         int64                   `json:"slot_memory"`
-	TotalVRAM          int64                   `json:"total_vram"`
-	MoE                *models.MoEInfo         `json:"moe,omitempty"`
-	Weights            *models.WeightBreakdown `json:"weights,omitempty"`
-	ModelWeightsGPU    int64                   `json:"model_weights_gpu"`
-	ModelWeightsCPU    int64                   `json:"model_weights_cpu"`
-	ComputeBufferEst   int64                   `json:"compute_buffer_est"`
+	Input              VRAMInput        `json:"input"`
+	KVPerTokenPerLayer int64            `json:"kv_per_token_per_layer"`
+	KVPerSlot          int64            `json:"kv_per_slot"`
+	SlotMemory         int64            `json:"slot_memory"`
+	TotalVRAM          int64            `json:"total_vram"`
+	MoE                *MoEInfo         `json:"moe,omitempty"`
+	Weights            *WeightBreakdown `json:"weights,omitempty"`
+	ModelWeightsGPU    int64            `json:"model_weights_gpu"`
+	ModelWeightsCPU    int64            `json:"model_weights_cpu"`
+	ComputeBufferEst   int64            `json:"compute_buffer_est"`
 }
 
 // SamplingConfig represents sampling parameters for model inference.
@@ -470,6 +512,34 @@ type SamplingConfig struct {
 	EnableThinking   string  `json:"enable_thinking"`
 	ReasoningEffort  string  `json:"reasoning_effort"`
 	Grammar          string  `json:"grammar"`
+}
+
+// MoEConfig configures Mixture of Experts tensor placement.
+type MoEConfig struct {
+	Mode                          string `json:"mode,omitempty"`
+	KeepExpertsOnGPUForTopNLayers *int   `json:"keep_experts_top_n,omitempty"`
+}
+
+func toAppMoEConfig(m *model.MoEConfig) *MoEConfig {
+	if m == nil {
+		return nil
+	}
+
+	return &MoEConfig{
+		Mode:                          string(m.Mode),
+		KeepExpertsOnGPUForTopNLayers: m.KeepExpertsOnGPUForTopNLayers,
+	}
+}
+
+func fromAppMoEConfig(m *MoEConfig) *model.MoEConfig {
+	if m == nil {
+		return nil
+	}
+
+	return &model.MoEConfig{
+		Mode:                          model.MoEMode(m.Mode),
+		KeepExpertsOnGPUForTopNLayers: m.KeepExpertsOnGPUForTopNLayers,
+	}
 }
 
 // ModelConfig represents the model configuration the model will use by default.
@@ -496,7 +566,7 @@ type ModelConfig struct {
 	TensorBuftOverrides  []string                 `json:"tensor-buft-overrides"`
 	MainGPU              *int                     `json:"main-gpu"`
 	Devices              []string                 `json:"devices"`
-	MoE                  *model.MoEConfig         `json:"moe,omitempty"`
+	MoE                  *MoEConfig               `json:"moe,omitempty"`
 	AutoFitVRAM          bool                     `json:"auto-fit-vram"`
 	SystemPromptCache    bool                     `json:"system-prompt-cache"`
 	IncrementalCache     bool                     `json:"incremental-cache"`
@@ -670,7 +740,7 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 			TensorBuftOverrides:  rmc.TensorBuftOverrides,
 			MainGPU:              rmc.MainGPU,
 			Devices:              rmc.Devices,
-			MoE:                  rmc.MoE,
+			MoE:                  toAppMoEConfig(rmc.MoE),
 			AutoFitVRAM:          rmc.AutoFitVRAM,
 			SystemPromptCache:    rmc.SystemPromptCache,
 			IncrementalCache:     rmc.IncrementalCache,
@@ -732,7 +802,7 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 		TensorBuftOverrides:  bmc.TensorBuftOverrides,
 		MainGPU:              bmc.MainGPU,
 		Devices:              bmc.Devices,
-		MoE:                  bmc.MoE,
+		MoE:                  toAppMoEConfig(bmc.MoE),
 		AutoFitVRAM:          bmc.AutoFitVRAM,
 		SystemPromptCache:    bmc.SystemPromptCache,
 		IncrementalCache:     bmc.IncrementalCache,
@@ -781,16 +851,16 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 				BytesPerElement:   vram.Input.BytesPerElement,
 				Slots:             vram.Input.Slots,
 				EmbeddingLength:   vram.Input.EmbeddingLength,
-				MoE:               vram.Input.MoE,
-				Weights:           vram.Input.Weights,
+				MoE:               toAppMoEInfo(vram.Input.MoE),
+				Weights:           toAppWeightBreakdown(vram.Input.Weights),
 				ExpertLayersOnGPU: vram.Input.ExpertLayersOnGPU,
 			},
 			KVPerTokenPerLayer: vram.KVPerTokenPerLayer,
 			KVPerSlot:          vram.KVPerSlot,
 			SlotMemory:         vram.SlotMemory,
 			TotalVRAM:          vram.TotalVRAM,
-			MoE:                vram.MoE,
-			Weights:            vram.Weights,
+			MoE:                toAppMoEInfo(vram.MoE),
+			Weights:            toAppWeightBreakdown(vram.Weights),
 			ModelWeightsGPU:    vram.ModelWeightsGPU,
 			ModelWeightsCPU:    vram.ModelWeightsCPU,
 			ComputeBufferEst:   vram.ComputeBufferEst,
@@ -888,16 +958,16 @@ func (app *VRAMRequest) Decode(data []byte) error {
 
 // VRAMResponse represents the VRAM calculation results.
 type VRAMResponse struct {
-	Input              VRAMInput               `json:"input"`
-	KVPerTokenPerLayer int64                   `json:"kv_per_token_per_layer"`
-	KVPerSlot          int64                   `json:"kv_per_slot"`
-	SlotMemory         int64                   `json:"slot_memory"`
-	TotalVRAM          int64                   `json:"total_vram"`
-	MoE                *models.MoEInfo         `json:"moe,omitempty"`
-	Weights            *models.WeightBreakdown `json:"weights,omitempty"`
-	ModelWeightsGPU    int64                   `json:"model_weights_gpu"`
-	ModelWeightsCPU    int64                   `json:"model_weights_cpu"`
-	ComputeBufferEst   int64                   `json:"compute_buffer_est"`
+	Input              VRAMInput        `json:"input"`
+	KVPerTokenPerLayer int64            `json:"kv_per_token_per_layer"`
+	KVPerSlot          int64            `json:"kv_per_slot"`
+	SlotMemory         int64            `json:"slot_memory"`
+	TotalVRAM          int64            `json:"total_vram"`
+	MoE                *MoEInfo         `json:"moe,omitempty"`
+	Weights            *WeightBreakdown `json:"weights,omitempty"`
+	ModelWeightsGPU    int64            `json:"model_weights_gpu"`
+	ModelWeightsCPU    int64            `json:"model_weights_cpu"`
+	ComputeBufferEst   int64            `json:"compute_buffer_est"`
 }
 
 // Encode implements the encoder interface.
@@ -1040,7 +1110,7 @@ func (app SaveCatalogRequest) toModelDetails() catalog.ModelDetails {
 			TensorBuftOverrides:  app.Config.TensorBuftOverrides,
 			MainGPU:              app.Config.MainGPU,
 			Devices:              app.Config.Devices,
-			MoE:                  app.Config.MoE,
+			MoE:                  fromAppMoEConfig(app.Config.MoE),
 			AutoFitVRAM:          app.Config.AutoFitVRAM,
 			SystemPromptCache:    app.Config.SystemPromptCache,
 			IncrementalCache:     app.Config.IncrementalCache,

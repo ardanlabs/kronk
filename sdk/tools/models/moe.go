@@ -9,16 +9,16 @@ import (
 
 // MoEInfo contains Mixture of Experts metadata extracted from GGUF files.
 type MoEInfo struct {
-	IsMoE            bool  `json:"is_moe"`
-	ExpertCount      int64 `json:"expert_count"`
-	ExpertUsedCount  int64 `json:"expert_used_count"`
-	HasSharedExperts bool  `json:"has_shared_experts"`
+	IsMoE            bool
+	ExpertCount      int64
+	ExpertUsedCount  int64
+	HasSharedExperts bool
 }
 
 // DetectMoE extracts Mixture of Experts information from GGUF metadata.
 // It checks architecture-prefixed keys first, then falls back to scanning
 // all metadata keys for expert-related suffixes.
-func DetectMoE(metadata map[string]string) MoEInfo {
+func detectMoE(metadata map[string]string) MoEInfo {
 	arch := detectArchitecture(metadata)
 
 	var info MoEInfo

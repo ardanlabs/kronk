@@ -1313,11 +1313,11 @@ const (
 // When nil, no MoE-specific behavior is applied.
 type MoEConfig struct {
 	// Mode controls expert placement strategy.
-	Mode MoEMode `json:"mode,omitempty" yaml:"mode,omitempty"`
+	Mode MoEMode `yaml:"mode,omitempty"`
 
 	// KeepExpertsOnGPUForTopNLayers keeps routed expert tensors on GPU for the
 	// top N layers (highest-index layers). All other expert layers go to CPU.
 	// Only used when Mode is MoEModeKeepTopN. 0 means all experts on CPU.
 	// llama.cpp convention: "top" means highest-numbered layers.
-	KeepExpertsOnGPUForTopNLayers *int `json:"keep_experts_top_n,omitempty" yaml:"keep-experts-top-n,omitempty"`
+	KeepExpertsOnGPUForTopNLayers *int `yaml:"keep-experts-top-n,omitempty"`
 }
