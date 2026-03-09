@@ -1078,6 +1078,9 @@ export default function ChatPanel({
                 {(msg.usage.draft_tokens ?? 0) > 0 && (
                   <> | Draft Model Acceptance Rate: {((msg.usage.draft_acceptance_rate ?? (msg.usage.draft_accepted_tokens ?? 0) / (msg.usage.draft_tokens ?? 1)) * 100).toFixed(2)}%</>
                 )}
+                {(msg.usage.time_to_first_token_ms ?? 0) > 0 && (
+                  <> | TTFT: {msg.usage.time_to_first_token_ms!.toFixed(0)}ms</>
+                )}
               </div>
             )}
           </div>
