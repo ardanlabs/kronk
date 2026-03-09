@@ -480,7 +480,7 @@ curl http://localhost:8080/v1/chat/completions \\
           <h2 id="chapter-3-model-configuration">Chapter 3: Model Configuration</h2>
           <p>Model configuration controls how Kronk configures models to run inference. Configuration can be set via model config files, catalog templates, or programmatically through the SDK.</p>
           <h3 id="31-basic-configuration">3.1 Basic Configuration</h3>
-          <p>For most models you will want to touch these basic settings. There are many more which will be presented later. Each model has GGUF metadata that Kronk can read for defaults like setting the context window size when not provided. Kronk also has default settings for things like temperature and top_p when not provided.</p>
+          <p>For most models you will want to touch these basic settings. There are many more which will be presented later. Each model has GGUF metadata that Kronk can read for defaults like setting the context window size when not provided. Kronk also has default settings for things like <code>temperature</code> and <code>top_p</code> when not provided.</p>
           <h4 id="context-window">Context Window</h4>
           <p>The context window is the maximum number of tokens the KV cache can hold, and it's consumed by both input tokens (system prompt, user messages) and output tokens (model responses). Once the cumulative tokens from all inputs and outputs in a session reach the context window limit, the model can't process more without some form of truncation, sliding window, or cache eviction.</p>
           <pre className="code-block"><code className="language-yaml">{`context_window: 8192 # This represent 8192 tokens.`}</code></pre>
@@ -600,7 +600,6 @@ n_gpu_layers: 20     # First 20 layers on GPU`}</code></pre>
 offload_kqv: false   # KV cache on CPU (saves VRAM, slower)`}</code></pre>
           <p><em>Note: On Apple Silicon (Metal), the CPU and GPU share unified memory, so this setting has no practical effect. KV cache location applies to discrete GPU systems (NVIDIA CUDA, Vulkan).</em></p>
           <h4 id="tensor-operations-offload">Tensor Operations Offload</h4>
-          <p><em>Note: On Apple Silicon (Metal), the CPU and GPU share unified memory, so this setting has no practical effect. The following applies to discrete GPU systems (NVIDIA CUDA, Vulkan).</em></p>
           <p>Beyond the model layers and KV cache, there are additional math operations (called tensor operations) that happen during inference — things like matrix multiplications and attention score calculations. These operations are separate from the layer weights themselves and can independently be placed on the GPU or CPU. By default they run on the GPU, but if VRAM is tight you can move them to the CPU while still keeping your model layers on the GPU.</p>
           <p>Control where these tensor computations run:</p>
           <pre className="code-block"><code className="language-yaml">{`op_offload: true     # Tensor ops on GPU (default)
@@ -692,13 +691,8 @@ cache_type_v: q8_0 # Value cache precision`}</code></pre>
               </tr>
               <tr>
                 <td>MoE models</td>
-                <td>Recommended — routing is</td>
-                <td>May degrade expert routing</td>
-              </tr>
-              <tr>
-                <td></td>
-                <td>sensitive to precision</td>
-                <td>decisions</td>
+                <td>Recommended — routing is sensitive to precision</td>
+                <td>May degrade expert routing decisions</td>
               </tr>
               <tr>
                 <td>Dense models</td>
@@ -795,7 +789,7 @@ flash_attention: auto      # Let llama.cpp decide`}</code></pre>
             <li><strong>VRAM usage</strong> - More aggressive quantization allows larger models on limited hardware</li>
             <li><strong>Inference speed</strong> - Smaller models load faster and may run faster on memory-constrained systems</li>
           </ul>
-          <p>The tradeoff is <strong>quality degradation</strong> - lower precision means less accurate representations of the original weights, which can affect output coherence, reasoning ability, and factual accuracy.</p>
+          <p>The tradeoff is <strong>quality degradation</strong> - lower precision means less accurate representations of the original weights, which can affect output coherence, reasoning ability and factual accuracy.</p>
           <h4 id="what-are-k-quants?">What are K-Quants?</h4>
           <p>K-quants (introduced by llama.cpp) use <strong>per-block scaling</strong> with importance weighting. Instead of applying uniform quantization across all weights, K-quants:</p>
           <ol>
