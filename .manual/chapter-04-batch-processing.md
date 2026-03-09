@@ -465,8 +465,8 @@ errors on subsequent requests.
 Instead, the batch engine uses a snapshot/restore approach:
 
 1. **Snapshot**: After the IMC cache is built or extended but before suffix
-   tokens are decoded, the engine captures the full sequence state (KV cache
-   - recurrent hidden state) into a byte buffer in RAM.
+   tokens are decoded, the engine captures the full sequence state (KV cache 
+   recurrent hidden state) into a byte buffer in RAM.
 
 2. **Restore**: After the request completes, the engine performs a full
    sequence clear and restores the snapshot from the byte buffer. This
