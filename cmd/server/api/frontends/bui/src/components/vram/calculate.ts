@@ -1,5 +1,16 @@
 import type { VRAMInput, WeightBreakdown, MoEInfo, PerDeviceVRAM } from '../../types';
 
+function clampGpuLayers(gpuLayers: number | undefined, blockCount: number): number {
+  if (!Number.isFinite(blockCount) || blockCount <= 0) return 0;
+  return Math.max(0, Math.min(blockCount, gpuLayers ?? blockCount));
+}
+
+function splitByGpuLayers(totalBytes: number, gpuLayers: number, blockCount: number): { gpu: number; cpu: number } {
+  if (blockCount <= 0) return { gpu: totalBytes, cpu: 0 };
+  const gpu = Math.round((gpuLayers / blockCount) * totalBytes);
+  return { gpu, cpu: Math.max(0, totalBytes - gpu) };
+}
+
 export interface VRAMResult {
   kvPerTokenPerLayer: number;
   kvPerSlot: number;
@@ -11,40 +22,74 @@ export interface VRAMResult {
   modelWeightsGPU: number;
   modelWeightsCPU: number;
   computeBufferEst: number;
+  /** For MoE: always-active (non-expert) bytes on GPU. */
+  alwaysActiveGPUBytes: number;
+  /** For MoE: always-active (non-expert) bytes on CPU. */
+  alwaysActiveCPUBytes: number;
+  /** For MoE: expert bytes on GPU. */
+  expertGPUBytes: number;
+  /** For MoE: expert bytes on CPU. */
+  expertCPUBytes: number;
+}
+
+export interface CalculateVRAMOptions {
+  weights?: WeightBreakdown | null;
+  moe?: MoEInfo | null;
+  gpuLayers?: number;
+  expertLayersOnGPU?: number;
+  kvCacheOnCPU?: boolean;
 }
 
 export function calculateVRAM(
   input: VRAMInput,
-  weights?: WeightBreakdown | null,
-  moe?: MoEInfo | null,
-  expertLayersOnGPU?: number,
-  kvCacheOnCPU = false,
+  opts: CalculateVRAMOptions = {},
 ): VRAMResult {
+  const { weights, moe, expertLayersOnGPU, kvCacheOnCPU = false } = opts;
+
   const kvPerTokenPerLayer = input.head_count_kv * (input.key_length + input.value_length) * input.bytes_per_element;
   const kvPerSlot = input.context_window * input.block_count * kvPerTokenPerLayer;
   const slotMemory = input.slots * kvPerSlot;
 
   let modelWeightsGPU: number;
   let modelWeightsCPU: number;
+  let alwaysActiveGPUBytes = 0;
+  let alwaysActiveCPUBytes = 0;
+  let expertGPUBytes = 0;
+  let expertCPUBytes = 0;
 
   if (weights && moe?.is_moe) {
-    const alwaysActiveGPU = weights.always_active_bytes;
-    let expertsGPU = 0;
+    const clamped = clampGpuLayers(opts.gpuLayers, input.block_count);
+    if (clamped >= input.block_count) {
+      alwaysActiveGPUBytes = weights.always_active_bytes;
+      alwaysActiveCPUBytes = 0;
+    } else {
+      const split = splitByGpuLayers(weights.always_active_bytes, clamped, input.block_count);
+      alwaysActiveGPUBytes = split.gpu;
+      alwaysActiveCPUBytes = split.cpu;
+    }
 
     const layersOnGPU = expertLayersOnGPU ?? 0;
     if (layersOnGPU > 0 && weights.expert_bytes_by_layer?.length > 0) {
       const blockCount = weights.expert_bytes_by_layer.length;
       const startLayer = Math.max(0, blockCount - layersOnGPU);
       for (let i = startLayer; i < blockCount; i++) {
-        expertsGPU += weights.expert_bytes_by_layer[i];
+        expertGPUBytes += weights.expert_bytes_by_layer[i];
       }
     }
+    expertCPUBytes = Math.max(0, weights.expert_bytes_total - expertGPUBytes);
 
-    modelWeightsGPU = alwaysActiveGPU + expertsGPU;
-    modelWeightsCPU = Math.max(0, weights.expert_bytes_total - expertsGPU);
+    modelWeightsGPU = alwaysActiveGPUBytes + expertGPUBytes;
+    modelWeightsCPU = alwaysActiveCPUBytes + expertCPUBytes;
   } else {
-    modelWeightsGPU = input.model_size_bytes;
-    modelWeightsCPU = 0;
+    const clamped = clampGpuLayers(opts.gpuLayers, input.block_count);
+    if (clamped >= input.block_count) {
+      modelWeightsGPU = input.model_size_bytes;
+      modelWeightsCPU = 0;
+    } else {
+      const split = splitByGpuLayers(input.model_size_bytes, clamped, input.block_count);
+      modelWeightsGPU = split.gpu;
+      modelWeightsCPU = split.cpu;
+    }
   }
 
   // Compute buffer estimate (heuristic).
@@ -66,7 +111,7 @@ export function calculateVRAM(
   const totalVram = modelWeightsGPU + kvVramBytes + computeBufferEst;
   const totalSystemRamEst = modelWeightsCPU + kvCpuBytes;
 
-  return { kvPerTokenPerLayer, kvPerSlot, slotMemory, kvVramBytes, kvCpuBytes, totalVram, totalSystemRamEst, modelWeightsGPU, modelWeightsCPU, computeBufferEst };
+  return { kvPerTokenPerLayer, kvPerSlot, slotMemory, kvVramBytes, kvCpuBytes, totalVram, totalSystemRamEst, modelWeightsGPU, modelWeightsCPU, computeBufferEst, alwaysActiveGPUBytes, alwaysActiveCPUBytes, expertGPUBytes, expertCPUBytes };
 }
 
 export function calculatePerDeviceVRAM(

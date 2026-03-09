@@ -210,22 +210,15 @@ func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.New(errs.InvalidArgument, err)
 	}
 
-	// Resolve HuggingFace shorthand references like "owner/repo:Q4_K_M"
-	// or "hf.co/owner/repo:Q4_K_M@revision" into concrete file URLs.
-	resolved, isShorthand, err := catalog.ResolveHuggingFaceShorthand(ctx, req.ModelURL)
+	hf, err := resolveHFInput(ctx, req.ModelURL, req.ProjURL)
 	if err != nil {
 		return errs.New(errs.Internal, err)
 	}
-	if isShorthand {
-		if len(resolved.ModelFiles) == 0 {
-			return errs.Errorf(errs.Internal, "resolved shorthand but no model files found for %q", req.ModelURL)
-		}
-		a.log.Info(ctx, "pull-models", "resolved-shorthand", req.ModelURL, "files", len(resolved.ModelFiles), "proj", resolved.ProjFile)
-		req.ModelURL = resolved.ModelFiles[0]
-		req.SplitURLs = resolved.ModelFiles
-		if req.ProjURL == "" {
-			req.ProjURL = resolved.ProjFile
-		}
+	if hf.Shorthand {
+		a.log.Info(ctx, "pull-models", "resolved-shorthand", req.ModelURL, "files", len(hf.SplitURLs), "proj", hf.ProjURL)
+		req.ModelURL = hf.ModelURL
+		req.SplitURLs = hf.SplitURLs
+		req.ProjURL = hf.ProjURL
 	}
 
 	a.log.Info(ctx, "pull-models", "model", req.ModelURL, "proj", req.ProjURL)
@@ -343,7 +336,19 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 		Slots:           slots,
 	}
 
-	vram, err := models.CalculateVRAMFromHuggingFace(ctx, req.ModelURL, cfg)
+	// Resolve HuggingFace shorthand references like "owner/repo:Q4_K_M".
+	hf, err := resolveHFInput(ctx, req.ModelURL, "")
+	if err != nil {
+		return errs.New(errs.Internal, err)
+	}
+
+	var vram models.VRAM
+	if hf.Shorthand {
+		a.log.Info(ctx, "calculate-vram", "resolved-shorthand", req.ModelURL, "files", len(hf.SplitURLs))
+		vram, err = models.CalculateVRAMFromHuggingFaceFiles(ctx, hf.SplitURLs, cfg)
+	} else {
+		vram, err = models.CalculateVRAMFromHuggingFace(ctx, req.ModelURL, cfg)
+	}
 	if err != nil {
 		return errs.New(errs.Internal, err)
 	}
@@ -784,6 +789,48 @@ func (a *app) removeKey(ctx context.Context, r *http.Request) web.Encoder {
 
 func (a *app) listDevices(ctx context.Context, r *http.Request) web.Encoder {
 	return DevicesResponse(devices.List())
+}
+
+// =============================================================================
+
+// resolvedHFInput holds the result of resolving a HuggingFace shorthand
+// reference. When Shorthand is false, ModelURL and ProjURL are unchanged.
+type resolvedHFInput struct {
+	ModelURL  string
+	SplitURLs []string
+	ProjURL   string
+	Shorthand bool
+}
+
+// resolveHFInput resolves a HuggingFace shorthand reference like
+// "owner/repo:Q4_K_M" into concrete file URLs. When the input is not
+// shorthand the returned struct contains the original URLs unchanged.
+func resolveHFInput(ctx context.Context, modelURL, projURL string) (resolvedHFInput, error) {
+	out := resolvedHFInput{
+		ModelURL: modelURL,
+		ProjURL:  projURL,
+	}
+
+	resolved, isShorthand, err := catalog.ResolveHuggingFaceShorthand(ctx, modelURL)
+	if err != nil {
+		return out, err
+	}
+	if !isShorthand {
+		return out, nil
+	}
+
+	if len(resolved.ModelFiles) == 0 {
+		return out, fmt.Errorf("resolved shorthand but no model files found for %q", modelURL)
+	}
+
+	out.Shorthand = true
+	out.ModelURL = resolved.ModelFiles[0]
+	out.SplitURLs = resolved.ModelFiles
+	if out.ProjURL == "" {
+		out.ProjURL = resolved.ProjFile
+	}
+
+	return out, nil
 }
 
 // toDownloadServerURL rewrites a catalog URL (short-form or full HuggingFace

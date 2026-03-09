@@ -208,7 +208,8 @@ class ApiService {
     })
       .then(async (response) => {
         if (!response.ok) {
-          onError(`HTTP ${response.status}`);
+          const msg = await this.parseErrorMessage(response);
+          onError(msg);
           return;
         }
 

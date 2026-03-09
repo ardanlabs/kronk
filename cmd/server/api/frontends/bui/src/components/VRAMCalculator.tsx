@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../services/api';
 import { useToken } from '../contexts/TokenContext';
 import type { VRAMCalculatorResponse } from '../types';
-import { VRAMFormulaModal, VRAMControls, VRAMResults, useVRAMState } from './vram';
+import { VRAMFormulaModal, VRAMCalculatorPanel, useVRAMState } from './vram';
 
 export default function VRAMCalculator() {
   const { token } = useToken();
@@ -80,25 +80,26 @@ export default function VRAMCalculator() {
       <form onSubmit={handleCalculate} className="form-card">
         <div className="form-group">
                   <label htmlFor="modelUrl">                    
-                    Ex. https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf<br/>
-                    Ex. https://huggingface.co/unsloth/Qwen3-Coder-Next-GGUF/tree/main/UD-Q5_K_XL (split models)<br/><br/>
-                    Model URL (download link, org/family/file, or folder for split models)
+                    Ex. <code>bartowski/Qwen3-8B-GGUF:Q4_K_M</code> (shorthand)<br/>
+                    Ex. <code>https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf</code><br/>
+                    Ex. <code>https://huggingface.co/unsloth/Qwen3-Coder-Next-GGUF/tree/main/UD-Q5_K_XL</code> (split models)<br/><br/>
+                    Model URL, shorthand, or folder for split models
                   </label>
           <input
             id="modelUrl"
             type="text"
             value={modelUrl}
             onChange={(e) => setModelUrl(e.target.value)}
-            placeholder="https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
+            placeholder="bartowski/Qwen3-8B-GGUF:Q4_K_M"
             className="form-input"
           />
           <small className="form-hint">
-            Enter a HuggingFace URL to a GGUF model file, or a folder URL for split models
+            Enter a shorthand (owner/repo:TAG), full HuggingFace URL, or folder URL for split models
           </small>
         </div>
 
-        <VRAMControls
-          {...controlsProps}
+        <VRAMCalculatorPanel
+          controlsProps={controlsProps}
           variant="form"
         />
 
@@ -119,27 +120,10 @@ export default function VRAMCalculator() {
       {error && <div className="alert alert-error">{error}</div>}
 
       {resultsProps && (
-        <VRAMResults
-          totalVram={resultsProps.vramResult.totalVram}
-          slotMemory={resultsProps.vramResult.slotMemory}
-          kvPerSlot={resultsProps.vramResult.kvPerSlot}
-          kvPerTokenPerLayer={resultsProps.vramResult.kvPerTokenPerLayer}
-          input={resultsProps.input}
-          moe={resultsProps.moe}
-          weights={resultsProps.weights}
-          modelWeightsGPU={resultsProps.vramResult.modelWeightsGPU}
-          modelWeightsCPU={resultsProps.vramResult.modelWeightsCPU}
-          computeBufferEst={resultsProps.vramResult.computeBufferEst}
-          expertLayersOnGPU={resultsProps.expertLayersOnGPU}
-          kvCacheOnCPU={controlsProps.kvCacheOnCPU}
-          kvCpuBytes={resultsProps.vramResult.kvCpuBytes}
-          totalSystemRamEst={resultsProps.vramResult.totalSystemRamEst}
-          perDevice={resultsProps.perDevice}
-          deviceCount={resultsProps.deviceCount}
-          systemRAMBytes={resultsProps.systemRAMBytes}
-          gpuTotalBytes={resultsProps.gpuTotalBytes}
-          gpuDevices={resultsProps.gpuDevices}
-          tensorSplit={resultsProps.tensorSplit}
+        <VRAMCalculatorPanel
+          controlsProps={controlsProps}
+          resultsProps={resultsProps}
+          hideControls
         />
       )}
     </div>

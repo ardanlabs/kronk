@@ -4,6 +4,138 @@ import { PARAM_TOOLTIPS, ParamTooltip } from '../ParamTooltips';
 import type { ContextInfo } from '../../lib/context';
 import { formatContextHint } from '../../lib/context';
 
+// ── GPU Layers slider ──────────────────────────────────────────────────────
+
+function GpuLayersSlider({
+  blockCount,
+  gpuLayers,
+  onGpuLayersChange,
+  variant = 'form',
+}: {
+  blockCount: number;
+  gpuLayers?: number;
+  onGpuLayersChange?: (v: number) => void;
+  variant?: 'form' | 'compact';
+}) {
+  const layers = gpuLayers ?? blockCount;
+
+  if (variant === 'compact') {
+    return (
+      <div className="control-field" style={{ width: '100%' }}>
+        <label htmlFor="vram-compact-gpuLayers">
+          GPU Layers ({layers}/{blockCount})<ParamTooltip text={PARAM_TOOLTIPS.gpuLayers} />
+        </label>
+        <input
+          id="vram-compact-gpuLayers"
+          type="range"
+          min={0}
+          max={blockCount}
+          value={layers}
+          onChange={(e) => onGpuLayersChange?.(Number(e.target.value))}
+          className="form-range"
+        />
+        <div style={{ fontSize: '11px', color: 'var(--color-gray-500)', marginTop: 2 }}>
+          {layers === 0
+            ? 'All layers on CPU (slowest, saves most VRAM)'
+            : layers >= blockCount
+              ? 'All layers on GPU (fastest)'
+              : `${layers} layers on GPU, ${blockCount - layers} on CPU`}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="playground-sweep-param" style={{ width: '100%' }}>
+      <label className="playground-sweep-param-toggle" htmlFor="vram-gpuLayers">
+        GPU Layers ({layers} of {blockCount})<ParamTooltip text={PARAM_TOOLTIPS.gpuLayers} />
+      </label>
+      <input
+        id="vram-gpuLayers"
+        type="range"
+        min={0}
+        max={blockCount}
+        value={layers}
+        onChange={(e) => onGpuLayersChange?.(Number(e.target.value))}
+        style={{ width: '100%', marginTop: 6 }}
+      />
+      <div style={{ fontSize: '11px', color: 'var(--color-gray-500)', marginTop: 2 }}>
+        {layers === 0
+          ? 'All layers on CPU (slowest, saves most VRAM)'
+          : layers >= blockCount
+            ? 'All layers on GPU (fastest)'
+            : `${layers} layers on GPU, ${blockCount - layers} on CPU`}
+      </div>
+    </div>
+  );
+}
+
+// ── Reusable Expert Layers slider ──────────────────────────────────────────
+
+function ExpertLayersSlider({
+  blockCount,
+  expertLayersOnGPU,
+  onExpertLayersOnGPUChange,
+  variant = 'form',
+}: {
+  blockCount: number;
+  expertLayersOnGPU?: number;
+  onExpertLayersOnGPUChange?: (v: number) => void;
+  variant?: 'form' | 'compact';
+}) {
+  const layers = expertLayersOnGPU ?? 0;
+
+  if (variant === 'compact') {
+    return (
+      <div className="control-field" style={{ width: '100%' }}>
+        <label htmlFor="vram-compact-expertLayers">
+          Expert Layers GPU ({layers}/{blockCount})<ParamTooltip text={PARAM_TOOLTIPS.expertLayersOnGPU} />
+        </label>
+        <input
+          id="vram-compact-expertLayers"
+          type="range"
+          min={0}
+          max={blockCount}
+          value={layers}
+          onChange={(e) => onExpertLayersOnGPUChange?.(Number(e.target.value))}
+          className="form-range"
+        />
+        <div style={{ fontSize: '11px', color: 'var(--color-gray-500)', marginTop: 2 }}>
+          {layers === 0
+            ? 'All experts on CPU (recommended for limited VRAM)'
+            : layers === blockCount
+              ? 'All experts on GPU (requires full VRAM)'
+              : `Top ${layers} layers on GPU, rest on CPU`}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="playground-sweep-param" style={{ width: '100%' }}>
+      <label className="playground-sweep-param-toggle" htmlFor="vram-expertLayers">
+        Expert Layers on GPU ({layers} of {blockCount})<ParamTooltip text={PARAM_TOOLTIPS.expertLayersOnGPU} />
+      </label>
+      <input
+        id="vram-expertLayers"
+        type="range"
+        min={0}
+        max={blockCount}
+        value={layers}
+        onChange={(e) => onExpertLayersOnGPUChange?.(Number(e.target.value))}
+        style={{ width: '100%', marginTop: 6 }}
+      />
+      <div style={{ fontSize: '11px', color: 'var(--color-gray-500)', marginTop: 2 }}>
+        {layers === 0
+          ? 'All experts on CPU (recommended for limited VRAM)'
+          : layers === blockCount
+            ? 'All experts on GPU (requires full VRAM)'
+            : `Top ${layers} layers on GPU, rest on CPU`}
+      </div>
+    </div>
+  );
+}
+
 const GPU_COUNT_FALLBACK = [1, 2, 4, 8];
 
 function gpuCountOptions(maxDeviceCount?: number): number[] {
@@ -24,6 +156,8 @@ interface VRAMControlsProps {
   maxDeviceCount?: number;
   isMoE?: boolean;
   blockCount?: number;
+  gpuLayers?: number;
+  onGpuLayersChange?: (v: number) => void;
   expertLayersOnGPU?: number;
   onExpertLayersOnGPUChange?: (v: number) => void;
   kvCacheOnCPU?: boolean;
@@ -42,6 +176,7 @@ export default function VRAMControls({
   variant = 'form',
   maxDeviceCount,
   isMoE, blockCount,
+  gpuLayers, onGpuLayersChange,
   expertLayersOnGPU, onExpertLayersOnGPUChange,
   kvCacheOnCPU, onKvCacheOnCPUChange,
   deviceCount, onDeviceCountChange,
@@ -109,12 +244,28 @@ export default function VRAMControls({
             onToggle={() => setCompactAdvancedOpen(!compactAdvancedOpen)}
           />
         </div>
+        {blockCount != null && blockCount > 0 && (
+          <div style={{ marginTop: '8px' }}>
+            <GpuLayersSlider
+              blockCount={blockCount}
+              gpuLayers={gpuLayers}
+              onGpuLayersChange={onGpuLayersChange}
+              variant="compact"
+            />
+          </div>
+        )}
+        {isMoE && blockCount != null && blockCount > 0 && (
+          <div style={{ marginTop: '8px' }}>
+            <ExpertLayersSlider
+              blockCount={blockCount}
+              expertLayersOnGPU={expertLayersOnGPU}
+              onExpertLayersOnGPUChange={onExpertLayersOnGPUChange}
+              variant="compact"
+            />
+          </div>
+        )}
         {compactAdvancedOpen && (
           <CompactAdvancedContent
-            isMoE={isMoE}
-            blockCount={blockCount}
-            expertLayersOnGPU={expertLayersOnGPU}
-            onExpertLayersOnGPUChange={onExpertLayersOnGPUChange}
             kvCacheOnCPU={kvCacheOnCPU}
             onKvCacheOnCPUChange={onKvCacheOnCPUChange}
             maxDeviceCount={maxDeviceCount}
@@ -181,11 +332,29 @@ export default function VRAMControls({
         </select>
       </div>
 
+      {blockCount != null && blockCount > 0 && (
+        <div style={{ gridColumn: '1 / -1', padding: '10px' }}>
+          <GpuLayersSlider
+            blockCount={blockCount}
+            gpuLayers={gpuLayers}
+            onGpuLayersChange={onGpuLayersChange}
+            variant="form"
+          />
+        </div>
+      )}
+
+      {isMoE && blockCount != null && blockCount > 0 && (
+        <div style={{ gridColumn: '1 / -1', padding: '10px' }}>
+          <ExpertLayersSlider
+            blockCount={blockCount}
+            expertLayersOnGPU={expertLayersOnGPU}
+            onExpertLayersOnGPUChange={onExpertLayersOnGPUChange}
+            variant="form"
+          />
+        </div>
+      )}
+
       <AdvancedSection
-        isMoE={isMoE}
-        blockCount={blockCount}
-        expertLayersOnGPU={expertLayersOnGPU}
-        onExpertLayersOnGPUChange={onExpertLayersOnGPUChange}
         kvCacheOnCPU={kvCacheOnCPU}
         onKvCacheOnCPUChange={onKvCacheOnCPUChange}
         maxDeviceCount={maxDeviceCount}
@@ -199,10 +368,6 @@ export default function VRAMControls({
 }
 
 interface AdvancedSectionProps {
-  isMoE?: boolean;
-  blockCount?: number;
-  expertLayersOnGPU?: number;
-  onExpertLayersOnGPUChange?: (v: number) => void;
   kvCacheOnCPU?: boolean;
   onKvCacheOnCPUChange?: (v: boolean) => void;
   maxDeviceCount?: number;
@@ -213,7 +378,6 @@ interface AdvancedSectionProps {
 }
 
 function AdvancedSection({
-  isMoE, blockCount, expertLayersOnGPU, onExpertLayersOnGPUChange,
   kvCacheOnCPU, onKvCacheOnCPUChange,
   maxDeviceCount, deviceCount, onDeviceCountChange,
   tensorSplit, onTensorSplitChange,
@@ -289,30 +453,6 @@ function AdvancedSection({
               </div>
             </div>
           )}
-
-          {isMoE && blockCount != null && blockCount > 0 && (
-            <div className="playground-sweep-param" style={{ width: '100%' }}>
-              <label className="playground-sweep-param-toggle" htmlFor="vram-expertLayers">
-                Expert Layers on GPU ({expertLayersOnGPU ?? 0} of {blockCount})<ParamTooltip text={PARAM_TOOLTIPS.expertLayersOnGPU} />
-              </label>
-              <input
-                id="vram-expertLayers"
-                type="range"
-                min={0}
-                max={blockCount}
-                value={expertLayersOnGPU ?? 0}
-                onChange={(e) => onExpertLayersOnGPUChange?.(Number(e.target.value))}
-                style={{ width: '100%', marginTop: 6 }}
-              />
-              <div style={{ fontSize: '11px', color: 'var(--color-gray-500)', marginTop: 2 }}>
-                {expertLayersOnGPU === 0
-                  ? 'All experts on CPU (recommended for limited VRAM)'
-                  : expertLayersOnGPU === blockCount
-                    ? 'All experts on GPU (requires full VRAM)'
-                    : `Top ${expertLayersOnGPU} layers on GPU, rest on CPU`}
-              </div>
-            </div>
-          )}
         </div>
       )}
     </div>
@@ -346,29 +486,12 @@ function CompactAdvancedToggle({ open, onToggle }: { open: boolean; onToggle: ()
 }
 
 function CompactAdvancedContent({
-  isMoE, blockCount, expertLayersOnGPU, onExpertLayersOnGPUChange,
   kvCacheOnCPU, onKvCacheOnCPUChange,
   maxDeviceCount, deviceCount, onDeviceCountChange,
   tensorSplit, onTensorSplitChange,
 }: AdvancedSectionProps) {
   return (
     <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
-      {isMoE && blockCount != null && blockCount > 0 && (
-        <div className="control-field" style={{ width: '100%' }}>
-          <label htmlFor="vram-compact-expertLayers">
-            Expert Layers GPU ({expertLayersOnGPU ?? 0}/{blockCount})<ParamTooltip text={PARAM_TOOLTIPS.expertLayersOnGPU} />
-          </label>
-          <input
-            id="vram-compact-expertLayers"
-            type="range"
-            min={0}
-            max={blockCount}
-            value={expertLayersOnGPU ?? 0}
-            onChange={(e) => onExpertLayersOnGPUChange?.(Number(e.target.value))}
-            className="form-range"
-          />
-        </div>
-      )}
       <div className="control-field">
         <label htmlFor="vram-compact-kvCpu" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <input

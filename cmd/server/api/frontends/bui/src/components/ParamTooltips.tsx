@@ -63,6 +63,7 @@ export const PARAM_TOOLTIPS: Record<string, string> = {
   gpuCount: 'Number of GPUs to distribute the model across. Weights are split between GPUs using tensor parallelism. More GPUs reduce per-GPU VRAM but add inter-GPU communication overhead.',
   tensorSplit: 'Proportional distribution of model weights across GPUs (e.g. "0.6,0.4" puts 60% on GPU 0 and 40% on GPU 1). Leave empty for equal distribution. Useful when GPUs have different VRAM capacities.',
   expertLayersOnGPU: 'For MoE models: how many transformer block expert layers to keep on GPU. More layers on GPU = faster inference but more VRAM. Layers are kept top-down (highest-numbered first). 0 = all experts on CPU.',
+  gpuLayers: 'Number of transformer layers offloaded to GPU (-ngl). All layers on GPU gives maximum speed. Reducing layers saves VRAM by moving weights to system RAM at the cost of inference speed — significant on discrete GPUs (PCIe bottleneck), minimal on Apple Silicon (unified memory).',
 
   // Model header / metadata
   modelSize: 'Total size of the quantized GGUF model file. For dense models this approximates the GPU VRAM needed for weights alone; for MoE models the actual GPU portion depends on how many expert layers are offloaded to CPU.',
