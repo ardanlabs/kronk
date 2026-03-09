@@ -218,7 +218,14 @@ func fetchHFModelMeta(ctx context.Context, owner, repo, revision string) (hfMode
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return hfModelMeta{}, fmt.Errorf("fetch-hf-model-meta: unexpected status %d for %s/%s", resp.StatusCode, owner, repo)
+		switch resp.StatusCode {
+		case http.StatusUnauthorized, http.StatusForbidden:
+			return hfModelMeta{}, fmt.Errorf("fetch-hf-model-meta: authentication required for %s/%s (status %d) — set KRONK_HF_TOKEN", owner, repo, resp.StatusCode)
+		case http.StatusNotFound:
+			return hfModelMeta{}, fmt.Errorf("fetch-hf-model-meta: repository %s/%s not found", owner, repo)
+		default:
+			return hfModelMeta{}, fmt.Errorf("fetch-hf-model-meta: unexpected status %d for %s/%s", resp.StatusCode, owner, repo)
+		}
 	}
 
 	var meta hfModelMeta
