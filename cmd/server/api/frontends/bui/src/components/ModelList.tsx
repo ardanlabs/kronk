@@ -10,10 +10,11 @@ import ModelCard from './ModelCard';
 import CodeBlock from './CodeBlock';
 import { VRAMFormulaModal, VRAMControls, VRAMResults, useVRAMState } from './vram';
 
-type ModelListSection = 'model-card' | 'config' | 'sampling' | 'template' | 'vram';
+type ModelListSection = 'model-card' | 'draft-card' | 'config' | 'sampling' | 'template' | 'vram';
 
 const SECTION_LABELS: Record<ModelListSection, string> = {
   'model-card': 'Model Card',
+  'draft-card': 'Draft Model Card',
   config: 'Model Configuration',
   sampling: 'Sampling Parameters',
   template: 'Template',
@@ -44,6 +45,9 @@ export default function ModelList() {
   const [infoLoading, setInfoLoading] = useState(false);
   const [infoError, setInfoError] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<ModelListSection>('model-card');
+
+  const [draftModelInfo, setDraftModelInfo] = useState<ModelInfoResponse | null>(null);
+  const [draftInfoLoading, setDraftInfoLoading] = useState(false);
 
   const [rebuildingIndex, setRebuildingIndex] = useState(false);
   const [rebuildError, setRebuildError] = useState<string | null>(null);
@@ -103,6 +107,32 @@ export default function ModelList() {
 
     return () => { cancelled = true; };
   }, [selectedModelId]);
+
+  // Derive draft model presence from both detail config and list-level field.
+  const allModels = models?.data ?? [];
+  const draftModelConfig = modelInfo?.model_config?.['draft-model'];
+  const selectedListModel = allModels.find((m) => m.id === selectedModelId);
+  const draftModelId = draftModelConfig?.['model-id'] ?? selectedListModel?.draft_model_id ?? null;
+  const hasDraftModel = !!draftModelConfig || !!selectedListModel?.draft_model_id;
+
+  // Fetch draft model info when draft-card tab is selected
+  useEffect(() => {
+    if (activeSection !== 'draft-card' || !draftModelId) {
+      setDraftModelInfo(null);
+      return;
+    }
+
+    let cancelled = false;
+    setDraftInfoLoading(true);
+    setDraftModelInfo(null);
+
+    api.showModel(draftModelId)
+      .then((resp) => { if (!cancelled) setDraftModelInfo(resp); })
+      .catch(() => { /* draft model info is best-effort */ })
+      .finally(() => { if (!cancelled) setDraftInfoLoading(false); });
+
+    return () => { cancelled = true; };
+  }, [activeSection, draftModelId]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -179,7 +209,6 @@ export default function ModelList() {
   };
 
   // Sort models
-  const allModels = models?.data ?? [];
   const mainModels = allModels.filter((m) => !m.id.includes('/'));
   const extensionModels = allModels.filter((m) => m.id.includes('/'));
 
@@ -342,7 +371,9 @@ export default function ModelList() {
         {selectedModelId && modelInfo && !infoLoading && (
           <div style={{ marginTop: '16px', borderTop: '1px solid var(--color-gray-200)', paddingTop: '16px' }}>
             <div className="tabs">
-              {(Object.keys(SECTION_LABELS) as ModelListSection[]).map(section => (
+              {(Object.keys(SECTION_LABELS) as ModelListSection[]).filter(
+                section => section !== 'draft-card' || hasDraftModel,
+              ).map(section => (
                 <button
                   key={section}
                   className={`tab ${activeSection === section ? 'active' : ''}`}
@@ -455,6 +486,47 @@ export default function ModelList() {
                   <div className="empty-state">
                     <p>No metadata available for this model.</p>
                   </div>
+                )}
+              </div>
+            )}
+
+            {/* Draft Model Card Section */}
+            {activeSection === 'draft-card' && hasDraftModel && (
+              <div>
+                <h3 style={{ marginBottom: '16px' }}>Draft Model Card</h3>
+
+                <div style={{ marginBottom: '24px' }}>
+                  <h4 className="meta-section-title" style={{ marginBottom: '8px' }}>Draft Settings</h4>
+                  <KeyValueTable rows={[
+                    { key: 'draft-id', label: labelWithTip('Model ID', 'draftModel'), value: draftModelId ?? '-' },
+                    ...(draftModelConfig ? [
+                      { key: 'draft-ndraft', label: labelWithTip('Draft Tokens', 'draftTokens'), value: fmtVal(draftModelConfig.ndraft) },
+                      ...(draftModelConfig['ngpu-layers'] != null ? [{ key: 'draft-ngpu', label: labelWithTip('GPU Layers', 'ngpuLayers'), value: fmtVal(draftModelConfig['ngpu-layers']) }] : []),
+                      ...(draftModelConfig.device ? [{ key: 'draft-device', label: labelWithTip('Device', 'device'), value: draftModelConfig.device }] : []),
+                    ] : []),
+                  ]} />
+                </div>
+
+                {draftInfoLoading && <div className="loading">Loading draft model details</div>}
+
+                {draftModelInfo && (
+                  <div style={{ marginBottom: '24px' }}>
+                    <h4 className="meta-section-title" style={{ marginBottom: '8px' }}>Model Details</h4>
+                    <KeyValueTable rows={[
+                      { key: 'draft-owner', label: 'Owner', value: draftModelInfo.owned_by },
+                      { key: 'draft-size', label: 'Size', value: formatBytes(draftModelInfo.size) },
+                    ]} />
+                  </div>
+                )}
+
+                {draftModelInfo?.metadata && Object.keys(draftModelInfo.metadata).filter(k => k !== 'tokenizer.chat_template').length > 0 ? (
+                  <ModelCard metadata={draftModelInfo.metadata} />
+                ) : (
+                  !draftInfoLoading && !draftModelInfo && (
+                    <div className="empty-state">
+                      <p>No metadata available for the draft model.</p>
+                    </div>
+                  )
                 )}
               </div>
             )}

@@ -46,7 +46,6 @@ export default function ConfigSweepParams({
 }: ConfigSweepParamsProps) {
   return (
     <div className="playground-autotest-section">
-      <h4>Config Parameters</h4>
       <p style={{ fontSize: 12, color: 'var(--color-warning-text)', marginBottom: 8 }}>
         ⚠ Each candidate reloads the model. This is slower than sampling sweeps.
       </p>

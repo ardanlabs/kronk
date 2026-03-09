@@ -1545,7 +1545,8 @@ code[class*="language-"] {
     background: var(--color-white);
 }
 
-.chat-draft-indicator {
+.chat-draft-indicator,
+.chat-draft-label {
     font-size: 13px;
     color: var(--color-amber-600, #d97706);
     white-space: nowrap;
@@ -4804,7 +4805,7 @@ button.autotest-detail-log-header:focus-visible {
     display: flex;
     flex-direction: column;
     gap: 2px;
-    min-width: 0;
+    min-width: 60px;
 }
 
 .playground-sweep-param-range-label {
