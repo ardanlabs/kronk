@@ -5,6 +5,7 @@ import { type Page, routeMap, pathToPage } from '../App';
 import { useDownload } from '../contexts/DownloadContext';
 import { useAutoTestRunner } from '../contexts/AutoTestRunnerContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { TRIAL_PAUSE_MS } from '../services/autoTestRunner';
 
 interface LayoutProps {
   children: ReactNode;
@@ -277,6 +278,42 @@ export default function Layout({ children }: LayoutProps) {
     return undefined;
   })();
 
+  const autoTestEta = (() => {
+    if (!run || !isAutoTesting || run.totalTrials === 0) return undefined;
+    const completed = run.trials.filter(t => t?.startedAt && t?.finishedAt).length;
+    if (completed === 0 || completed >= run.totalTrials) return undefined;
+    const durations = run.trials
+      .filter(t => t?.startedAt && t?.finishedAt)
+      .map(t => Date.parse(t.finishedAt!) - Date.parse(t.startedAt!))
+      .filter(ms => Number.isFinite(ms) && ms > 0);
+    if (durations.length === 0) return undefined;
+    const avgMs = durations.reduce((a, b) => a + b, 0) / durations.length;
+    const remaining = Math.max(0, run.totalTrials - completed);
+    const remainingMs = avgMs * remaining + TRIAL_PAUSE_MS * remaining;
+    const sec = Math.round(remainingMs / 1000);
+    if (sec < 60) return `ETA ~${sec}s`;
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    if (m < 60) return `ETA ~${m}m ${s}s`;
+    const h = Math.floor(m / 60);
+    return `ETA ~${h}h ${m % 60}m`;
+  })();
+
+  const downloadEta = (() => {
+    if (!download || !isDownloading || !download.progress) return undefined;
+    const { totalBytes, currentBytes, mbPerSec, startedAtMs } = download.progress;
+    const elapsedSec = (Date.now() - startedAtMs) / 1000;
+    if (elapsedSec < 5 || totalBytes <= 0 || currentBytes >= totalBytes || mbPerSec <= 0) return undefined;
+    const remainingBytes = totalBytes - currentBytes;
+    const etaSec = remainingBytes / (mbPerSec * 1000 * 1000);
+    if (etaSec < 60) return `ETA ~${Math.round(etaSec)}s`;
+    const m = Math.floor(etaSec / 60);
+    const s = Math.round(etaSec % 60);
+    if (m < 60) return `ETA ~${m}m ${s}s`;
+    const h = Math.floor(m / 60);
+    return `ETA ~${h}h ${m % 60}m`;
+  })();
+
   const showAutoTestIndicator = !!run;
   const showDownloadIndicator = !!download;
 
@@ -444,6 +481,11 @@ export default function Layout({ children }: LayoutProps) {
                         {autoTestLogLine}
                       </div>
                     )}
+                    {autoTestEta && (
+                      <div className="download-indicator-url" title={autoTestEta}>
+                        {autoTestEta}
+                      </div>
+                    )}
                   </Link>
                   {isAutoTesting && (
                     <button type="button" className="autotest-indicator-stop" onClick={stopRun} aria-label="Stop automated testing" title="Stop automated testing">
@@ -471,6 +513,11 @@ export default function Layout({ children }: LayoutProps) {
                   <div className="download-indicator-url" title={download.modelUrl}>
                     {download.modelUrl.split('/').pop()}
                   </div>
+                  {downloadEta && (
+                    <div className="download-indicator-url" title={downloadEta}>
+                      {downloadEta}
+                    </div>
+                  )}
                 </Link>
               </div>
             )}
