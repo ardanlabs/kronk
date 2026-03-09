@@ -310,6 +310,39 @@ func buildVRAMFromMetadata(metadata map[string]string, tensors []GGUFTensorInfo,
 	return CalculateVRAM(input), nil
 }
 
+// CalculateVRAMFromHuggingFaceFiles computes VRAM requirements from a set of
+// pre-resolved HuggingFace file URLs (e.g. from shorthand resolution). It reads
+// metadata from the first file and sums sizes across all files for split models.
+func CalculateVRAMFromHuggingFaceFiles(ctx context.Context, modelURLs []string, cfg VRAMConfig) (VRAM, error) {
+	if len(modelURLs) == 0 {
+		return VRAM{}, fmt.Errorf("calculate-vram-hg-files: no model URLs provided")
+	}
+
+	normalized := make([]string, len(modelURLs))
+	for i, u := range modelURLs {
+		normalized[i] = NormalizeHuggingFaceDownloadURL(u)
+	}
+
+	metadata, tensors, firstSize, err := FetchGGUFHeaderAndTensors(ctx, normalized[0])
+	if err != nil {
+		return VRAM{}, fmt.Errorf("calculate-vram-hg-files: failed to fetch GGUF metadata: %w", err)
+	}
+
+	totalSize := firstSize
+	if len(normalized) > 1 {
+		var client http.Client
+		for i := 1; i < len(normalized); i++ {
+			_, splitSize, err := fetchRange(ctx, &client, normalized[i], 0, 0)
+			if err != nil {
+				return VRAM{}, fmt.Errorf("calculate-vram-hg-files: failed to determine size for %s: %w", normalized[i], err)
+			}
+			totalSize += splitSize
+		}
+	}
+
+	return buildVRAMFromMetadata(metadata, tensors, totalSize, cfg)
+}
+
 // isHuggingFaceFolderURL returns true if the URL points to a HuggingFace
 // folder containing split model files rather than a single GGUF file.
 func isHuggingFaceFolderURL(modelURL string) bool {
@@ -318,11 +351,33 @@ func isHuggingFaceFolderURL(modelURL string) bool {
 	}
 
 	lower := strings.ToLower(modelURL)
-	if !strings.HasSuffix(lower, ".gguf") && !strings.Contains(modelURL, "/resolve/") {
-		return true
+	if strings.HasSuffix(lower, ".gguf") || strings.Contains(lower, "/resolve/") || strings.Contains(lower, "/blob/") {
+		return false
 	}
 
-	return false
+	// Strip HF host prefix and scheme for path segment counting.
+	raw := modelURL
+	for _, prefix := range []string{
+		"https://huggingface.co/",
+		"http://huggingface.co/",
+		"https://hf.co/",
+		"http://hf.co/",
+	} {
+		if strings.HasPrefix(strings.ToLower(raw), prefix) {
+			raw = raw[len(prefix):]
+			break
+		}
+	}
+	raw = stripHFHostPrefix(raw)
+
+	// Shorthand like "owner/repo:TAG" has a colon — not a folder URL.
+	if strings.Contains(raw, ":") {
+		return false
+	}
+
+	// 3+ path segments (owner/repo/subfolder) indicates a folder.
+	parts := strings.Split(raw, "/")
+	return len(parts) >= 3
 }
 
 // hfTreeEntry represents a file entry returned by the HuggingFace tree API.

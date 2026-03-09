@@ -629,7 +629,7 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
                 else input.bytes_per_element = 2; // f16
               }
               const expertLayers = candidate['moe_keep_experts_top_n'] ?? input.expert_layers_on_gpu ?? 0;
-              const result = calculateVRAM(input, vramWeights, vramMoE, expertLayers);
+              const result = calculateVRAM(input, { weights: vramWeights, moe: vramMoE, expertLayersOnGPU: expertLayers });
               vramByCandidate.set(candidate, result.totalVram);
             }
           }

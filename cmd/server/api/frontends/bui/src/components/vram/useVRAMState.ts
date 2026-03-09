@@ -22,6 +22,8 @@ export interface VRAMControlsState {
   maxDeviceCount: number | undefined;
   isMoE: boolean;
   blockCount: number | undefined;
+  gpuLayers: number;
+  onGpuLayersChange: (v: number) => void;
   expertLayersOnGPU: number;
   onExpertLayersOnGPUChange: (v: number) => void;
   kvCacheOnCPU: boolean;
@@ -37,7 +39,9 @@ export interface VRAMResultsState {
   input: ReturnType<typeof mergedInput>;
   moe: VRAMCalculatorResponse['moe'];
   weights: VRAMCalculatorResponse['weights'];
+  gpuLayers: number;
   expertLayersOnGPU: number;
+  kvCacheOnCPU: boolean;
   perDevice: ReturnType<typeof calculatePerDeviceVRAM> | undefined;
   deviceCount: number;
   systemRAMBytes: number | undefined;
@@ -67,6 +71,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
   const [contextWindow, setContextWindow] = useState(initialContextWindow);
   const [bytesPerElement, setBytesPerElement] = useState(initialBytesPerElement);
   const [slots, setSlots] = useState(initialSlots);
+  const [gpuLayers, setGpuLayers] = useState(0);
   const [expertLayersOnGPU, setExpertLayersOnGPU] = useState(0);
   const [kvCacheOnCPU, setKvCacheOnCPU] = useState(false);
   const [deviceCount, setDeviceCount] = useState(1);
@@ -105,6 +110,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
       setContextWindow(input.context_window);
       setBytesPerElement(input.bytes_per_element);
       setSlots(input.slots);
+      setGpuLayers(input.block_count ?? 0);
     }
   }, [serverResponse]);
 
@@ -119,14 +125,10 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
     const gpuCount = gpuDevices.length || maxGpuCount || 1;
     setDeviceCount(gpuCount);
 
-    const isMoEResult = serverResponse.moe?.is_moe === true && serverResponse.weights != null;
-    if (!isMoEResult) {
-      setExpertLayersOnGPU(0);
-      return;
-    }
-
     const blockCount = serverResponse.input.block_count;
     if (!blockCount || blockCount <= 0) return;
+
+    const isMoEResult = serverResponse.moe?.is_moe === true && serverResponse.weights != null;
 
     // Determine available capacity per GPU.
     const hasPerGpuInfo = gpuDevices.length > 0;
@@ -134,34 +136,51 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
       ? gpuDevices.reduce((sum, d) => sum + d.free_bytes, 0)
       : gpuTotalBytes;
 
-    if (combinedFreeBytes <= 0) return;
+    if (combinedFreeBytes <= 0) {
+      setGpuLayers(0);
+      setExpertLayersOnGPU(0);
+      return;
+    }
 
     const input = { ...serverResponse.input, context_window: contextWindow, bytes_per_element: bytesPerElement, slots };
-    let bestLayers = 0;
 
-    for (let layers = 0; layers <= blockCount; layers++) {
-      const v = calculateVRAM(input, serverResponse.weights, serverResponse.moe, layers, kvCacheOnCPU);
-
+    const fitsInVRAM = (v: ReturnType<typeof calculateVRAM>) => {
       if (hasPerGpuInfo && gpuCount > 1) {
-        // Per-GPU fit check: compute per-device allocation and verify
-        // every GPU stays within 95% of its free capacity.
         const perDev = calculatePerDeviceVRAM(v.modelWeightsGPU, v.kvVramBytes, v.computeBufferEst, gpuCount, []);
-        const fitsAll = perDev.every((dev, i) => {
+        return perDev.every((dev, i) => {
           const cap = gpuDevices[i]?.free_bytes ?? 0;
           return cap > 0 ? dev.totalBytes <= cap * 0.95 : true;
         });
-        if (fitsAll) {
-          bestLayers = layers;
+      }
+      return v.totalVram <= combinedFreeBytes * 0.95;
+    };
+
+    if (isMoEResult) {
+      // MoE auto-fit: maximize gpuLayers first, then expertLayersOnGPU.
+      let best = { ngl: 0, experts: 0 };
+      for (let ngl = blockCount; ngl >= 0; ngl--) {
+        let bestExperts = -1;
+        for (let experts = 0; experts <= blockCount; experts++) {
+          const v = calculateVRAM(input, { weights: serverResponse.weights, moe: serverResponse.moe, gpuLayers: ngl, expertLayersOnGPU: experts, kvCacheOnCPU });
+          if (fitsInVRAM(v)) bestExperts = experts;
         }
-      } else {
-        // Fallback: combined VRAM check.
-        if (v.totalVram <= combinedFreeBytes * 0.95) {
-          bestLayers = layers;
+        if (bestExperts >= 0) {
+          best = { ngl, experts: bestExperts };
+          break;
         }
       }
+      setGpuLayers(best.ngl);
+      setExpertLayersOnGPU(best.experts);
+    } else {
+      // Dense auto-fit: optimize gpuLayers.
+      let bestGpuLayers = 0;
+      for (let ngl = 0; ngl <= blockCount; ngl++) {
+        const v = calculateVRAM(input, { gpuLayers: ngl, kvCacheOnCPU });
+        if (fitsInVRAM(v)) bestGpuLayers = ngl;
+      }
+      setGpuLayers(bestGpuLayers);
+      setExpertLayersOnGPU(0);
     }
-
-    setExpertLayersOnGPU(bestLayers);
   }, [serverResponse, maxGpuCount, gpuTotalBytes, gpuDevices, contextWindow, bytesPerElement, slots, kvCacheOnCPU]);
 
   // Reset auto-fit when serverResponse identity changes (new model selected).
@@ -177,12 +196,15 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
     if (!vramInput) return null;
     return calculateVRAM(
       { ...vramInput, context_window: contextWindow, bytes_per_element: bytesPerElement, slots },
-      serverResponse?.weights ?? null,
-      serverResponse?.moe ?? null,
-      expertLayersOnGPU,
-      kvCacheOnCPU,
+      {
+        weights: serverResponse?.weights ?? null,
+        moe: serverResponse?.moe ?? null,
+        gpuLayers,
+        expertLayersOnGPU,
+        kvCacheOnCPU,
+      },
     );
-  }, [vramInput, contextWindow, bytesPerElement, slots, expertLayersOnGPU, kvCacheOnCPU, serverResponse?.weights, serverResponse?.moe]);
+  }, [vramInput, contextWindow, bytesPerElement, slots, gpuLayers, expertLayersOnGPU, kvCacheOnCPU, serverResponse?.weights, serverResponse?.moe]);
 
   const parsedTensorSplit = useMemo(() => {
     if (!tensorSplit) return [];
@@ -205,6 +227,8 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
     maxDeviceCount: maxGpuCount,
     isMoE,
     blockCount: vramInput?.block_count,
+    gpuLayers,
+    onGpuLayersChange: setGpuLayers,
     expertLayersOnGPU,
     onExpertLayersOnGPUChange: setExpertLayersOnGPU,
     kvCacheOnCPU,
@@ -220,7 +244,9 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
     input: mergedInput(vramInput, contextWindow, bytesPerElement, slots),
     moe: serverResponse?.moe,
     weights: serverResponse?.weights,
+    gpuLayers,
     expertLayersOnGPU,
+    kvCacheOnCPU,
     perDevice,
     deviceCount,
     systemRAMBytes: systemRAM,

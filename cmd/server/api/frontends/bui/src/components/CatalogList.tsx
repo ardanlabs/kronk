@@ -12,7 +12,7 @@ import ModelCard from './ModelCard';
 import CodeBlock from './CodeBlock';
 import DownloadInfoTable from './DownloadInfoTable';
 import DownloadProgressBar from './DownloadProgressBar';
-import { VRAMFormulaModal, VRAMControls, VRAMResults, useVRAMState } from './vram';
+import { VRAMFormulaModal, VRAMCalculatorPanel, useVRAMState } from './vram';
 
 type DetailSection = 'model-card' | 'catalog' | 'config' | 'sampling' | 'template' | 'vram' | 'pull';
 
@@ -1118,35 +1118,11 @@ export default function CatalogList() {
                             : 'Computed from remote GGUF header. Adjust parameters below to see how they affect VRAM.'}
                         </p>
 
-                        <div style={{ marginBottom: '24px' }}>
-                          <VRAMControls
-                            {...vramControls}
-                            variant="compact"
-                            contextInfo={contextInfo}
-                          />
-                        </div>
-
-                        <VRAMResults
-                          totalVram={vramResults.vramResult.totalVram}
-                          slotMemory={vramResults.vramResult.slotMemory}
-                          kvPerSlot={vramResults.vramResult.kvPerSlot}
-                          kvPerTokenPerLayer={vramResults.vramResult.kvPerTokenPerLayer}
-                          input={vramResults.input}
-                          moe={vramResults.moe}
-                          weights={vramResults.weights}
-                          modelWeightsGPU={vramResults.vramResult.modelWeightsGPU}
-                          modelWeightsCPU={vramResults.vramResult.modelWeightsCPU}
-                          computeBufferEst={vramResults.vramResult.computeBufferEst}
-                          expertLayersOnGPU={vramResults.expertLayersOnGPU}
-                          kvCacheOnCPU={vramControls.kvCacheOnCPU}
-                          kvCpuBytes={vramResults.vramResult.kvCpuBytes}
-                          totalSystemRamEst={vramResults.vramResult.totalSystemRamEst}
-                          perDevice={vramResults.perDevice}
-                          deviceCount={vramResults.deviceCount}
-                          systemRAMBytes={vramResults.systemRAMBytes}
-                          gpuTotalBytes={vramResults.gpuTotalBytes}
-                          gpuDevices={vramResults.gpuDevices}
-                          tensorSplit={vramResults.tensorSplit}
+                        <VRAMCalculatorPanel
+                          controlsProps={vramControls}
+                          resultsProps={vramResults}
+                          variant="compact"
+                          contextInfo={contextInfo}
                         />
                       </>
                     ) : (
