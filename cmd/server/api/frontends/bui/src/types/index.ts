@@ -390,6 +390,9 @@ export interface ChatUsage {
   output_tokens: number;
   tokens_per_second: number;
   time_to_first_token_ms?: number;
+  draft_tokens?: number;
+  draft_accepted_tokens?: number;
+  draft_acceptance_rate?: number;
 }
 
 export interface ChatStreamResponse {

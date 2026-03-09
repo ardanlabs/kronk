@@ -699,16 +699,16 @@ func (c Choice) FinishReason() string {
 
 // Usage provides details usage information for the request.
 type Usage struct {
-	PromptTokens       int     `json:"prompt_tokens"`
-	ReasoningTokens    int     `json:"reasoning_tokens"`
-	CompletionTokens   int     `json:"completion_tokens"`
-	OutputTokens       int     `json:"output_tokens"`
-	TotalTokens        int     `json:"total_tokens"`
-	TokensPerSecond    float64 `json:"tokens_per_second"`
-	TimeToFirstTokenMS float64 `json:"time_to_first_token_ms"`
-	DraftTokens        int     `json:"draft_tokens,omitempty"`
-	AcceptedTokens     int     `json:"accepted_tokens,omitempty"`
-	AcceptanceRate     float64 `json:"acceptance_rate,omitempty"`
+	PromptTokens        int     `json:"prompt_tokens"`
+	ReasoningTokens     int     `json:"reasoning_tokens"`
+	CompletionTokens    int     `json:"completion_tokens"`
+	OutputTokens        int     `json:"output_tokens"`
+	TotalTokens         int     `json:"total_tokens"`
+	TokensPerSecond     float64 `json:"tokens_per_second"`
+	TimeToFirstTokenMS  float64 `json:"time_to_first_token_ms"`
+	DraftTokens         int     `json:"draft_tokens,omitempty"`
+	DraftAcceptedTokens int     `json:"draft_accepted_tokens,omitempty"`
+	DraftAcceptanceRate float64 `json:"draft_acceptance_rate,omitempty"`
 }
 
 // TopLogprob represents a single token with its log probability.

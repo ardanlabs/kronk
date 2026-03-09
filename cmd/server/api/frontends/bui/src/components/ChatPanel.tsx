@@ -1075,6 +1075,9 @@ export default function ChatPanel({
                 Completion: {msg.usage.completion_tokens} | 
                 Output: {msg.usage.output_tokens} | 
                 TPS: {msg.usage.tokens_per_second.toFixed(2)}
+                {(msg.usage.draft_tokens ?? 0) > 0 && (
+                  <> | Draft Model Acceptance Rate: {((msg.usage.draft_acceptance_rate ?? (msg.usage.draft_accepted_tokens ?? 0) / (msg.usage.draft_tokens ?? 1)) * 100).toFixed(2)}%</>
+                )}
               </div>
             )}
           </div>
