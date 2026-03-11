@@ -147,13 +147,14 @@ function OffloadStrategySelector({
 }) {
   const btnStyle = (active: boolean): React.CSSProperties => ({
     flex: 1,
-    padding: '6px 12px',
-    fontSize: '12px',
-    border: '1px solid var(--color-border)',
-    background: active ? 'var(--color-primary)' : 'transparent',
-    color: active ? '#fff' : 'var(--color-text-secondary)',
+    padding: '8px 16px',
+    fontSize: '13px',
+    fontWeight: 500,
+    border: active ? '1px solid var(--color-primary)' : '1px solid var(--color-gray-300)',
+    background: active ? 'var(--color-primary)' : 'var(--color-gray-100)',
+    color: active ? '#fff' : 'var(--color-text)',
     cursor: 'pointer',
-    transition: 'background 0.15s, color 0.15s',
+    transition: 'background 0.15s, color 0.15s, border-color 0.15s',
   });
 
   const description = strategy === 'layer'
@@ -436,7 +437,7 @@ export default function VRAMControls({
       </div>
 
       {blockCount != null && blockCount > 0 && !isMoE && (
-        <div style={{ gridColumn: '1 / -1', padding: '10px' }}>
+        <div style={{ gridColumn: '1 / -1' }}>
           <GpuLayersSlider
             blockCount={blockCount}
             gpuLayers={gpuLayers}
@@ -447,29 +448,32 @@ export default function VRAMControls({
       )}
 
       {isMoE && blockCount != null && blockCount > 0 && (
-        <div style={{ gridColumn: '1 / -1', padding: '10px' }}>
+        <div style={{ gridColumn: '1 / -1' }}>
           <OffloadStrategySelector
             strategy={offloadStrategy}
             onStrategyChange={handleStrategyChange}
             variant="form"
           />
-          <div style={{ marginTop: '12px' }}>
-            {offloadStrategy === 'layer' ? (
-              <GpuLayersSlider
-                blockCount={blockCount}
-                gpuLayers={gpuLayers}
-                onGpuLayersChange={handleLayerOffloadGpuChange}
-                variant="form"
-              />
-            ) : (
-              <ExpertLayersSlider
-                blockCount={blockCount}
-                expertLayersOnGPU={expertLayersOnGPU}
-                onExpertLayersOnGPUChange={onExpertLayersOnGPUChange}
-                variant="form"
-              />
-            )}
-          </div>
+        </div>
+      )}
+
+      {isMoE && blockCount != null && blockCount > 0 && (
+        <div style={{ gridColumn: '1 / -1' }}>
+          {offloadStrategy === 'layer' ? (
+            <GpuLayersSlider
+              blockCount={blockCount}
+              gpuLayers={gpuLayers}
+              onGpuLayersChange={handleLayerOffloadGpuChange}
+              variant="form"
+            />
+          ) : (
+            <ExpertLayersSlider
+              blockCount={blockCount}
+              expertLayersOnGPU={expertLayersOnGPU}
+              onExpertLayersOnGPUChange={onExpertLayersOnGPUChange}
+              variant="form"
+            />
+          )}
         </div>
       )}
 
