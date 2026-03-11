@@ -133,6 +133,7 @@ type VRAMInput struct {
 	EmbeddingLength   int64            // needed for compute buffer estimate
 	MoE               *MoEInfo         //
 	Weights           *WeightBreakdown //
+	GPULayers         int64            // Number of layers on GPU (0 or -1 = all layers)
 	ExpertLayersOnGPU int64            // 0 = all experts on CPU
 }
 
@@ -143,12 +144,23 @@ func CalculateVRAM(input VRAMInput) VRAM {
 	kvPerSlot := input.ContextWindow * input.BlockCount * kvPerTokenPerLayer
 	slotMemory := input.Slots * kvPerSlot
 
+	gpuLayers := clampGPULayers(input.GPULayers, input.BlockCount)
+
 	var modelWeightsGPU, modelWeightsCPU int64
 
 	switch {
 	case input.Weights != nil && input.MoE != nil && input.MoE.IsMoE:
-		alwaysActiveGPU := input.Weights.AlwaysActiveBytes
 
+		// Always-active weights are split proportionally by GPU layers.
+		// When all layers are on GPU, all always-active weights stay on GPU.
+		var alwaysActiveGPU, alwaysActiveCPU int64
+		if gpuLayers >= input.BlockCount {
+			alwaysActiveGPU = input.Weights.AlwaysActiveBytes
+		} else {
+			alwaysActiveGPU, alwaysActiveCPU = splitByGPULayers(input.Weights.AlwaysActiveBytes, gpuLayers, input.BlockCount)
+		}
+
+		// Expert weights are split by ExpertLayersOnGPU (expert offloading).
 		var expertsGPU int64
 		if input.ExpertLayersOnGPU > 0 && len(input.Weights.ExpertBytesByLayer) > 0 {
 			blockCount := int64(len(input.Weights.ExpertBytesByLayer))
@@ -159,11 +171,16 @@ func CalculateVRAM(input VRAMInput) VRAM {
 		}
 
 		modelWeightsGPU = alwaysActiveGPU + expertsGPU
-		modelWeightsCPU = max(0, input.Weights.ExpertBytesTotal-expertsGPU)
+		modelWeightsCPU = alwaysActiveCPU + max(0, input.Weights.ExpertBytesTotal-expertsGPU)
 
 	default:
-		modelWeightsGPU = input.ModelSizeBytes
-		modelWeightsCPU = 0
+
+		// Dense models: split total model weights proportionally by GPU layers.
+		if gpuLayers >= input.BlockCount {
+			modelWeightsGPU = input.ModelSizeBytes
+		} else {
+			modelWeightsGPU, modelWeightsCPU = splitByGPULayers(input.ModelSizeBytes, gpuLayers, input.BlockCount)
+		}
 	}
 
 	computeBufferEst := estimateComputeBuffer(input)
@@ -181,6 +198,30 @@ func CalculateVRAM(input VRAMInput) VRAM {
 		ModelWeightsCPU:    modelWeightsCPU,
 		ComputeBufferEst:   computeBufferEst,
 	}
+}
+
+// clampGPULayers returns the effective number of GPU layers. A zero value
+// (the default) or -1 means all layers on GPU, preserving backward
+// compatibility with callers that don't set GPULayers.
+func clampGPULayers(gpuLayers, blockCount int64) int64 {
+	if gpuLayers <= 0 || gpuLayers > blockCount {
+		return blockCount
+	}
+
+	return gpuLayers
+}
+
+// splitByGPULayers splits totalBytes proportionally between GPU and CPU based
+// on how many layers are offloaded.
+func splitByGPULayers(totalBytes, gpuLayers, blockCount int64) (gpu, cpu int64) {
+	if blockCount <= 0 {
+		return totalBytes, 0
+	}
+
+	gpu = (gpuLayers * totalBytes) / blockCount
+	cpu = max(0, totalBytes-gpu)
+
+	return gpu, cpu
 }
 
 // estimateComputeBuffer provides a heuristic estimate of the compute buffer

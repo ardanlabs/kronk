@@ -137,7 +137,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
       : gpuTotalBytes;
 
     if (combinedFreeBytes <= 0) {
-      setGpuLayers(0);
+      setGpuLayers(blockCount);
       setExpertLayersOnGPU(0);
       return;
     }
@@ -156,19 +156,35 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
     };
 
     if (isMoEResult) {
-      // MoE auto-fit: maximize gpuLayers first, then expertLayersOnGPU.
-      let best = { ngl: 0, experts: 0 };
-      for (let ngl = blockCount; ngl >= 0; ngl--) {
-        let bestExperts = -1;
-        for (let experts = 0; experts <= blockCount; experts++) {
-          const v = calculateVRAM(input, { weights: serverResponse.weights, moe: serverResponse.moe, gpuLayers: ngl, expertLayersOnGPU: experts, kvCacheOnCPU });
-          if (fitsInVRAM(v)) bestExperts = experts;
-        }
-        if (bestExperts >= 0) {
-          best = { ngl, experts: bestExperts };
+      // MoE auto-fit: try expert offloading first (all layers on GPU,
+      // maximize expert layers). Falls back to layer offloading if the
+      // always-active weights alone don't fit.
+      let best = { ngl: blockCount, experts: 0 };
+
+      // Expert offloading: gpuLayers = blockCount, find max expertLayersOnGPU.
+      let bestExperts = -1;
+      for (let experts = blockCount; experts >= 0; experts--) {
+        const v = calculateVRAM(input, { weights: serverResponse.weights, moe: serverResponse.moe, gpuLayers: blockCount, expertLayersOnGPU: experts, kvCacheOnCPU });
+        if (fitsInVRAM(v)) {
+          bestExperts = experts;
           break;
         }
       }
+
+      if (bestExperts >= 0) {
+        best = { ngl: blockCount, experts: bestExperts };
+      } else {
+        // Expert offloading can't fit even with 0 experts — fall back to
+        // layer offloading where expert layers follow GPU layers.
+        for (let ngl = blockCount; ngl >= 0; ngl--) {
+          const v = calculateVRAM(input, { weights: serverResponse.weights, moe: serverResponse.moe, gpuLayers: ngl, expertLayersOnGPU: ngl, kvCacheOnCPU });
+          if (fitsInVRAM(v)) {
+            best = { ngl, experts: ngl };
+            break;
+          }
+        }
+      }
+
       setGpuLayers(best.ngl);
       setExpertLayersOnGPU(best.experts);
     } else {
