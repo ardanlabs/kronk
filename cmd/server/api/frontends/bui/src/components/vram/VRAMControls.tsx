@@ -87,8 +87,8 @@ function ExpertLayersSlider({
   const layers = expertLayersOnGPU ?? 0;
 
   const label = variant === 'compact'
-    ? `Expert Layers on GPU (${layers}/${blockCount})`
-    : `Expert Layers on GPU (${layers} of ${blockCount})`;
+    ? `Experts on GPU (${layers}/${blockCount} layers)`
+    : `Experts on GPU (${layers} of ${blockCount} layers)`;
 
   const hint = layers === 0
     ? 'All expert weights on CPU (always-active weights remain on GPU)'

@@ -349,10 +349,14 @@ function buildCatalogYAML(
 
   const gpuCount = deviceCount ?? 1;
 
-  if (isMoE) {
+  // MoE expert offloading config: only applies when all layers are on GPU
+  // (expert offloading strategy). When gpuLayers < block_count, we're doing
+  // layer offloading and experts move with their layers — no moe: section needed.
+  const allLayersOnGPU = gpuLayers == null || gpuLayers >= input.block_count;
+  if (isMoE && allLayersOnGPU) {
     const layers = expertLayersOnGPU ?? 0;
-    const allOnGPU = layers >= input.block_count;
-    if (!allOnGPU) {
+    const allExpertsOnGPU = layers >= input.block_count;
+    if (!allExpertsOnGPU) {
       lines.push('  moe:');
       if (layers > 0) {
         lines.push('    mode: keep_top_n');
