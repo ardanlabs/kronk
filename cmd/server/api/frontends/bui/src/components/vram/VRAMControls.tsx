@@ -655,7 +655,7 @@ function CpuOffloadBar({
       </div>
       {modelWeightsCPU > 0 && kvCpuBytes > 0 && (
         <div style={{ display: 'flex', gap: '12px', fontSize: '0.75em', opacity: 0.7, marginTop: '4px' }}>
-          <span>■ Weights</span>
+          <span style={{ color: 'var(--color-primary)' }}>■ Weights</span>
           <span style={{ color: 'var(--color-orange)' }}>■ KV Cache</span>
         </div>
       )}

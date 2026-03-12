@@ -64,6 +64,13 @@ export default function VRAMResults({
   const kvCacheLocation = kvOnCPU ? 'System RAM' : 'GPU';
   const isPartialGPU = gpuLayers != null && gpuLayers < input.block_count;
 
+  // On unified memory systems (e.g. Apple Silicon) the GPU may not report
+  // dedicated VRAM. Fall back to system RAM as the capacity indicator since
+  // GPU and system RAM share the same physical memory pool.
+  const effectiveGpuCapacity = (gpuTotalBytes != null && gpuTotalBytes > 0)
+    ? gpuTotalBytes
+    : (systemRAMBytes ?? 0);
+
   let breakdownRows: { label: ReactNode; value: string }[];
   if (isMoE) {
     breakdownRows = [
@@ -124,8 +131,8 @@ export default function VRAMResults({
           <div className="vram-hero-label">Total Estimated VRAM<ParamTooltip text={PARAM_TOOLTIPS.totalEstimatedVRAM} /></div>
           <div className="vram-hero-value">
             {formatBytes(totalVram)}
-            {gpuTotalBytes != null && gpuTotalBytes > 0 && (
-              <span style={{ fontSize: '0.55em', opacity: 0.5 }}> / {formatBytes(gpuTotalBytes)}</span>
+            {effectiveGpuCapacity > 0 && (
+              <span style={{ fontSize: '0.55em', opacity: 0.5 }}> / {formatBytes(effectiveGpuCapacity)}</span>
             )}
           </div>
         </div>
@@ -141,12 +148,12 @@ export default function VRAMResults({
       </div>
 
       {(() => {
-        const hasGpuInfo = gpuTotalBytes != null && gpuTotalBytes > 0;
+        const hasGpuInfo = effectiveGpuCapacity > 0;
         const hasRamInfo = systemRAMBytes != null && systemRAMBytes > 0;
         if (!hasGpuInfo && !hasRamInfo) return null;
 
-        const gpuExceeds = hasGpuInfo && totalVram > gpuTotalBytes;
-        const gpuTight = hasGpuInfo && !gpuExceeds && totalVram > gpuTotalBytes * 0.8;
+        const gpuExceeds = hasGpuInfo && totalVram > effectiveGpuCapacity;
+        const gpuTight = hasGpuInfo && !gpuExceeds && totalVram > effectiveGpuCapacity * 0.8;
         const gpuOk = hasGpuInfo && !gpuExceeds && !gpuTight;
 
         const ramExceeds = hasRamInfo && showSystemRAM && systemRamUsed > systemRAMBytes;
@@ -176,9 +183,9 @@ export default function VRAMResults({
 
         const details: string[] = [];
         if (hasGpuInfo) {
-          if (gpuExceeds) details.push(`GPU VRAM: ${formatBytes(totalVram)} needed, ${formatBytes(gpuTotalBytes)} available`);
-          else if (gpuTight) details.push(`GPU VRAM: limited headroom (${formatBytes(gpuTotalBytes - totalVram)} free)`);
-          else if (gpuOk) details.push(`GPU VRAM: ${formatBytes(gpuTotalBytes - totalVram)} free`);
+          if (gpuExceeds) details.push(`GPU VRAM: ${formatBytes(totalVram)} needed, ${formatBytes(effectiveGpuCapacity)} available`);
+          else if (gpuTight) details.push(`GPU VRAM: limited headroom (${formatBytes(effectiveGpuCapacity - totalVram)} free)`);
+          else if (gpuOk) details.push(`GPU VRAM: ${formatBytes(effectiveGpuCapacity - totalVram)} free`);
         }
         if (hasRamInfo && showSystemRAM) {
           if (ramExceeds) details.push(`System RAM: ${formatBytes(systemRamUsed)} needed, ${formatBytes(systemRAMBytes)} available`);
@@ -222,22 +229,25 @@ export default function VRAMResults({
         <div style={{ marginTop: '16px' }}>
           <h4 className="vram-breakdown-title">Per-GPU VRAM Allocation (estimated)</h4>
           {perDevice.map((dev, i) => {
-            const gpuCapacity = gpuDevices?.[i]?.total_bytes ?? 0;
-            const barMax = Math.max(1, gpuCapacity > 0 ? gpuCapacity : dev.totalBytes);
+            const reportedCapacity = gpuDevices?.[i]?.total_bytes ?? 0;
+            const perDeviceCapacity = reportedCapacity > 0
+              ? reportedCapacity
+              : (perDevice.length === 1 ? effectiveGpuCapacity : Math.floor(effectiveGpuCapacity / perDevice.length));
+            const barMax = Math.max(1, perDeviceCapacity > 0 ? perDeviceCapacity : dev.totalBytes);
             const freeBytes = Math.max(0, barMax - dev.totalBytes);
-            const overcommit = dev.totalBytes > barMax && gpuCapacity > 0;
+            const overcommit = dev.totalBytes > barMax && perDeviceCapacity > 0;
             return (
               <div key={i} style={{ marginBottom: '8px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85em', marginBottom: '2px' }}>
                   <span>{dev.label}</span>
                   <span>
                     {formatBytes(dev.totalBytes)}
-                    {gpuCapacity > 0 && <span style={{ opacity: 0.6 }}> / {formatBytes(gpuCapacity)}</span>}
+                    {perDeviceCapacity > 0 && <span style={{ opacity: 0.6 }}> / {formatBytes(perDeviceCapacity)}</span>}
                   </span>
                 </div>
                 <div style={{ background: 'var(--color-gray-200)', borderRadius: '4px', height: '20px', overflow: 'hidden', display: 'flex' }}>
                   {dev.weightsBytes > 0 && (
-                    <div style={{ width: `${(dev.weightsBytes / barMax) * 100}%`, background: 'var(--color-blue)', height: '100%' }} title={`Weights: ${formatBytes(dev.weightsBytes)}`} />
+                    <div style={{ width: `${(dev.weightsBytes / barMax) * 100}%`, background: 'var(--color-primary)', height: '100%' }} title={`Weights: ${formatBytes(dev.weightsBytes)}`} />
                   )}
                   {dev.kvBytes > 0 && (
                     <div style={{ width: `${(dev.kvBytes / barMax) * 100}%`, background: 'var(--color-orange)', height: '100%' }} title={`KV Cache: ${formatBytes(dev.kvBytes)}`} />
@@ -251,14 +261,14 @@ export default function VRAMResults({
                 </div>
                 {overcommit && (
                   <div style={{ fontSize: '0.75em', color: '#ef5350', marginTop: '2px' }}>
-                    ⚠ Exceeds GPU capacity by {formatBytes(dev.totalBytes - gpuCapacity)}
+                    ⚠ Exceeds GPU capacity by {formatBytes(dev.totalBytes - perDeviceCapacity)}
                   </div>
                 )}
               </div>
             );
           })}
           <div style={{ display: 'flex', gap: '12px', fontSize: '0.75em', opacity: 0.7, marginTop: '4px' }}>
-            <span>■ Weights</span>
+            <span style={{ color: 'var(--color-primary)' }}>■ Weights</span>
             <span style={{ color: 'var(--color-orange)' }}>■ KV Cache</span>
             <span style={{ color: '#8b5cf6' }}>■ Compute</span>
             <span style={{ color: '#66bb6a' }}>■ Free</span>
