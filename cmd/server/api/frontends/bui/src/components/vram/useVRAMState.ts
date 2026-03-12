@@ -62,7 +62,7 @@ function mergedInput(
 export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
   const {
     initialContextWindow = 32768,
-    initialBytesPerElement = 2,
+    initialBytesPerElement = 1,
     initialSlots = 1,
     serverResponse,
   } = opts;
@@ -111,6 +111,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
       setBytesPerElement(input.bytes_per_element);
       setSlots(input.slots);
       setGpuLayers(input.block_count ?? 0);
+      setExpertLayersOnGPU(input.block_count ?? 0);
     }
   }, [serverResponse]);
 
@@ -138,7 +139,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
 
     if (combinedFreeBytes <= 0) {
       setGpuLayers(blockCount);
-      setExpertLayersOnGPU(0);
+      setExpertLayersOnGPU(blockCount);
       return;
     }
 
@@ -228,7 +229,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
   }, [tensorSplit]);
 
   const perDevice = useMemo(() => {
-    if (!vramResult || deviceCount <= 1) return undefined;
+    if (!vramResult) return undefined;
     return calculatePerDeviceVRAM(vramResult.modelWeightsGPU, vramResult.kvVramBytes, vramResult.computeBufferEst, deviceCount, parsedTensorSplit);
   }, [vramResult, deviceCount, parsedTensorSplit]);
 

@@ -140,7 +140,84 @@ export default function VRAMResults({
         )}
       </div>
 
-      {perDevice && perDevice.length > 1 && (() => {
+      {(() => {
+        const hasGpuInfo = gpuTotalBytes != null && gpuTotalBytes > 0;
+        const hasRamInfo = systemRAMBytes != null && systemRAMBytes > 0;
+        if (!hasGpuInfo && !hasRamInfo) return null;
+
+        const gpuExceeds = hasGpuInfo && totalVram > gpuTotalBytes;
+        const gpuTight = hasGpuInfo && !gpuExceeds && totalVram > gpuTotalBytes * 0.8;
+        const gpuOk = hasGpuInfo && !gpuExceeds && !gpuTight;
+
+        const ramExceeds = hasRamInfo && showSystemRAM && systemRamUsed > systemRAMBytes;
+        const ramTight = hasRamInfo && showSystemRAM && !ramExceeds && systemRamUsed > systemRAMBytes * 0.8;
+        const ramOk = !showSystemRAM || (hasRamInfo && !ramExceeds && !ramTight);
+
+        const hasConcerns = gpuTight || ramTight;
+
+        let icon: string;
+        let summary: string;
+        if (gpuExceeds && ramExceeds) {
+          icon = '❌';
+          summary = 'This model will NOT run on this Kronk model server — exceeds both GPU VRAM and system RAM';
+        } else if (gpuExceeds) {
+          icon = '❌';
+          summary = 'This model will NOT run on this Kronk model server — exceeds available GPU VRAM';
+        } else if (ramExceeds) {
+          icon = '❌';
+          summary = 'This model will NOT run on this Kronk model server — exceeds available system RAM';
+        } else if (hasConcerns) {
+          icon = '⚠️';
+          summary = 'This model will run on this Kronk model server but it\'s a tight fit';
+        } else {
+          icon = '✅';
+          summary = 'This model will run on this Kronk model server with these settings';
+        }
+
+        const details: string[] = [];
+        if (hasGpuInfo) {
+          if (gpuExceeds) details.push(`GPU VRAM: ${formatBytes(totalVram)} needed, ${formatBytes(gpuTotalBytes)} available`);
+          else if (gpuTight) details.push(`GPU VRAM: limited headroom (${formatBytes(gpuTotalBytes - totalVram)} free)`);
+          else if (gpuOk) details.push(`GPU VRAM: ${formatBytes(gpuTotalBytes - totalVram)} free`);
+        }
+        if (hasRamInfo && showSystemRAM) {
+          if (ramExceeds) details.push(`System RAM: ${formatBytes(systemRamUsed)} needed, ${formatBytes(systemRAMBytes)} available`);
+          else if (ramTight) details.push(`System RAM: limited headroom (${formatBytes(systemRAMBytes - systemRamUsed)} free)`);
+          else if (ramOk) details.push(`System RAM: ${formatBytes(systemRAMBytes - systemRamUsed)} free`);
+        }
+
+        const bgColor = gpuExceeds || ramExceeds
+          ? 'var(--color-error-bg, rgba(239, 83, 80, 0.1))'
+          : hasConcerns
+            ? 'var(--color-warning-bg, rgba(255, 167, 38, 0.1))'
+            : 'var(--color-success-bg, rgba(102, 187, 106, 0.1))';
+        const borderColor = gpuExceeds || ramExceeds
+          ? 'var(--color-error, #ef5350)'
+          : hasConcerns
+            ? 'var(--color-warning, #ffa726)'
+            : 'var(--color-success, #66bb6a)';
+
+        return (
+          <div style={{
+            marginTop: '12px',
+            marginBottom: '16px',
+            padding: '12px 16px',
+            background: bgColor,
+            borderLeft: `3px solid ${borderColor}`,
+            borderRadius: '4px',
+            fontSize: '0.9em',
+          }}>
+            <div style={{ fontWeight: 600 }}>{icon} {summary}</div>
+            {details.length > 0 && (
+              <div style={{ marginTop: '4px', fontSize: '0.9em', opacity: 0.8 }}>
+                {details.join(' · ')}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {perDevice && perDevice.length >= 1 && (() => {
         return (
         <div style={{ marginTop: '16px' }}>
           <h4 className="vram-breakdown-title">Per-GPU VRAM Allocation (estimated)</h4>
@@ -193,78 +270,6 @@ export default function VRAMResults({
         );
       })()}
 
-      {showSystemRAM && systemRAMBytes != null && systemRAMBytes > 0 && (
-        <div style={{ marginTop: '12px', marginBottom: '12px' }}>
-          <h4 className="vram-breakdown-title">System RAM Usage (estimated)</h4>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85em', marginBottom: '2px' }}>
-            <span>
-              {(modelWeightsCPU ?? 0) > 0 && (kvCpuBytes ?? 0) > 0
-                ? 'Model weights + KV cache on CPU'
-                : (kvCpuBytes ?? 0) > 0
-                  ? 'KV cache on CPU'
-                  : 'Model weights on CPU'}
-            </span>
-            <span>{formatBytes(systemRamUsed)} / {formatBytes(systemRAMBytes)}</span>
-          </div>
-          {(() => {
-            const barMax = Math.max(1, Math.max(systemRAMBytes, systemRamUsed));
-            const overcommit = systemRamUsed > systemRAMBytes;
-            const freeBytes = Math.max(0, systemRAMBytes - systemRamUsed);
-            return (
-              <div style={{ background: 'var(--color-gray-200)', borderRadius: '4px', height: '20px', overflow: 'hidden', display: 'flex' }}>
-                {(modelWeightsCPU ?? 0) > 0 && (
-                  <div
-                    style={{
-                      width: `${((modelWeightsCPU ?? 0) / barMax) * 100}%`,
-                      background: 'var(--color-blue)',
-                      height: '100%',
-                    }}
-                    title={`Model weights: ${formatBytes(modelWeightsCPU ?? 0)}`}
-                  />
-                )}
-                {(kvCpuBytes ?? 0) > 0 && (
-                  <div
-                    style={{
-                      width: `${((kvCpuBytes ?? 0) / barMax) * 100}%`,
-                      background: 'var(--color-orange)',
-                      height: '100%',
-                    }}
-                    title={`KV cache: ${formatBytes(kvCpuBytes ?? 0)}`}
-                  />
-                )}
-                {freeBytes > 0 && !overcommit && (
-                  <div style={{ flex: 1, background: '#66bb6a', height: '100%' }} title={`Free: ${formatBytes(freeBytes)}`} />
-                )}
-              </div>
-            );
-          })()}
-          {(modelWeightsCPU ?? 0) > 0 && (kvCpuBytes ?? 0) > 0 && (
-            <div style={{ display: 'flex', gap: '12px', fontSize: '0.75em', opacity: 0.7, marginTop: '4px' }}>
-              <span>■ Weights</span>
-              <span style={{ color: 'var(--color-orange)' }}>■ KV Cache</span>
-            </div>
-          )}
-          <div style={{ fontSize: '0.75em', opacity: 0.7, marginTop: '4px' }}>
-            {systemRamUsed > systemRAMBytes
-              ? '❌ Exceeds available RAM — reduce context window, increase GPU layers, or use smaller quantization'
-              : systemRamUsed > systemRAMBytes * 0.8
-                ? '⚠️ Tight fit — limited headroom for OS and other processes'
-                : '✅ Fits comfortably in system RAM'}
-          </div>
-        </div>
-      )}
-
-      {kvOnCPU && (
-        <div className="alert alert-info" style={{ marginTop: '12px', fontSize: '0.85em' }}>
-          <strong>KV Cache on CPU:</strong>
-          <ul style={{ margin: '4px 0', paddingLeft: '20px' }}>
-            <li><strong>Discrete GPUs (CUDA/ROCm/Vulkan):</strong> Expect significantly lower tokens/sec during generation due to PCIe bandwidth bottleneck — often 2-5× slower</li>
-            <li><strong>Apple Silicon (Metal):</strong> Impact is much smaller due to unified memory — no PCIe transfer needed</li>
-            <li>Consider KV cache quantization (q8_0) as a less costly alternative to reduce VRAM usage</li>
-          </ul>
-        </div>
-      )}
-
       <CatalogConfigSection
         input={input}
         isMoE={isMoE}
@@ -288,46 +293,6 @@ export default function VRAMResults({
         </div>
       </div>
 
-      {showSystemRAM && systemRAMBytes != null && systemRAMBytes > 0 && systemRamUsed > systemRAMBytes && (
-        <div className="alert alert-error" style={{ marginTop: '12px', fontSize: '0.85em' }}>
-          <strong>Warning:</strong> Estimated system RAM usage ({formatBytes(systemRamUsed)}) exceeds available RAM ({formatBytes(systemRAMBytes)}).
-          {kvOnCPU && ' Disable KV Cache on CPU, reduce context window, or use KV cache quantization.'}
-          {isMoE && ' Increase expert layers on GPU or use a smaller quantization.'}
-        </div>
-      )}
-
-      {isMoE && (
-        <div className="alert alert-info" style={{ marginTop: '12px', fontSize: '0.85em' }}>
-          <strong>MoE Tips:</strong>
-          <ul style={{ margin: '4px 0', paddingLeft: '20px' }}>
-            <li>For MoE with CPU experts, NBatch/NUBatch ≥ 4096 is recommended</li>
-            <li>Flash Attention is strongly recommended for MoE models</li>
-            <li>Larger NUBatch increases compute buffer VRAM usage</li>
-          </ul>
-        </div>
-      )}
-
-      {(deviceCount ?? 1) > 1 && isMoE && (
-        <div className="alert alert-info" style={{ marginTop: '12px', fontSize: '0.85em' }}>
-          <strong>MoE Multi-GPU Tips:</strong>
-          <ul style={{ margin: '4px 0', paddingLeft: '20px' }}>
-            <li>For MoE models, <strong>split-mode: row</strong> (tensor parallelism) is recommended</li>
-            <li>If experts are on CPU with 2+ GPUs, <strong>split-mode: layer</strong> gives simpler behavior unless chasing throughput</li>
-            <li>MainGPU should be the GPU with highest PCIe bandwidth for prompt processing offload</li>
-          </ul>
-        </div>
-      )}
-
-      {isPartialGPU && !isMoE && (
-        <div className="alert alert-info" style={{ marginTop: '12px', fontSize: '0.85em' }}>
-          <strong>Partial GPU Offload Tips:</strong>
-          <ul style={{ margin: '4px 0', paddingLeft: '20px' }}>
-            <li><strong>Discrete GPUs (CUDA/ROCm/Vulkan):</strong> Layers on CPU reduce tokens/sec due to PCIe bandwidth — the fewer layers on GPU, the slower generation</li>
-            <li><strong>Apple Silicon (Metal):</strong> Impact is much smaller due to unified memory</li>
-            <li>Use <code>-b 4096 -ub 4096</code> for better prompt processing with CPU layers</li>
-          </ul>
-        </div>
-      )}
     </div>
   );
 }

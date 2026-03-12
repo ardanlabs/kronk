@@ -10,6 +10,8 @@ interface VRAMCalculatorPanelProps {
   contextInfo?: ContextInfo | null;
   /** When true, only results are rendered (controls are managed externally). */
   hideControls?: boolean;
+  /** When true, only controls are rendered (results are managed externally). */
+  hideResults?: boolean;
 }
 
 export default function VRAMCalculatorPanel({
@@ -18,6 +20,7 @@ export default function VRAMCalculatorPanel({
   variant = 'compact',
   contextInfo,
   hideControls,
+  hideResults,
 }: VRAMCalculatorPanelProps) {
   return (
     <>
@@ -27,11 +30,16 @@ export default function VRAMCalculatorPanel({
             {...controlsProps}
             variant={variant}
             contextInfo={contextInfo}
+            modelSizeBytes={resultsProps?.input.model_size_bytes}
+            modelWeightsCPU={resultsProps?.vramResult.modelWeightsCPU}
+            kvCpuBytes={resultsProps?.vramResult.kvCpuBytes}
+            totalSystemRamEst={resultsProps?.vramResult.totalSystemRamEst}
+            systemRAMBytes={resultsProps?.systemRAMBytes}
           />
         </div>
       )}
 
-      {resultsProps && (
+      {resultsProps && !hideResults && (
         <VRAMResults
           totalVram={resultsProps.vramResult.totalVram}
           slotMemory={resultsProps.vramResult.slotMemory}

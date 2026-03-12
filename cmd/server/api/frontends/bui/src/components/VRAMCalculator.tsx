@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { api } from '../services/api';
 import { useToken } from '../contexts/TokenContext';
 import type { VRAMCalculatorResponse } from '../types';
-import { VRAMFormulaModal, VRAMCalculatorPanel, useVRAMState } from './vram';
+import { VRAMCalculatorPanel, useVRAMState } from './vram';
 
 export default function VRAMCalculator() {
   const { token } = useToken();
@@ -10,27 +10,29 @@ export default function VRAMCalculator() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<VRAMCalculatorResponse | null>(null);
-  const [showLearnMore, setShowLearnMore] = useState(false);
-  const hasCalculated = useRef(false);
+  const cachedUrlRef = useRef('');
 
   const { controlsProps, resultsProps } = useVRAMState({ serverResponse: result });
 
-  const performCalculation = useCallback(async (clearResult = true) => {
-    if (!modelUrl.trim()) {
+  const performCalculation = useCallback(async () => {
+    const trimmed = modelUrl.trim();
+    if (!trimmed) {
       setError('Please enter a model URL');
+      return;
+    }
+
+    if (trimmed === cachedUrlRef.current && result) {
       return;
     }
 
     setLoading(true);
     setError(null);
-    if (clearResult) {
-      setResult(null);
-    }
+    setResult(null);
 
     try {
       const response = await api.calculateVRAM(
         {
-          model_url: modelUrl.trim(),
+          model_url: trimmed,
           context_window: controlsProps.contextWindow,
           bytes_per_element: controlsProps.bytesPerElement,
           slots: controlsProps.slots,
@@ -38,19 +40,14 @@ export default function VRAMCalculator() {
         token || undefined
       );
       setResult(response);
-      hasCalculated.current = true;
+      cachedUrlRef.current = trimmed;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to calculate VRAM');
+      cachedUrlRef.current = '';
     } finally {
       setLoading(false);
     }
   }, [modelUrl, controlsProps.contextWindow, controlsProps.bytesPerElement, controlsProps.slots, token]);
-
-  useEffect(() => {
-    if (hasCalculated.current && modelUrl.trim()) {
-      performCalculation(false);
-    }
-  }, [controlsProps.contextWindow, controlsProps.bytesPerElement, controlsProps.slots]);
 
   const handleCalculate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,23 +63,22 @@ export default function VRAMCalculator() {
             Calculate VRAM requirements for a model from HuggingFace. Only the model header is fetched, not the entire file.
           </p>
         </div>
-        <button
-          type="button"
+        <a
+          href="https://www.kronkai.com/blog/understanding-the-kronk-vram-calculator"
+          target="_blank"
+          rel="noopener noreferrer"
           className="btn btn-secondary"
-          onClick={() => setShowLearnMore(true)}
         >
           Learn More
-        </button>
+        </a>
       </div>
-
-      {showLearnMore && <VRAMFormulaModal onClose={() => setShowLearnMore(false)} />}
 
       <form onSubmit={handleCalculate} className="form-card">
         <div className="form-group">
                   <label htmlFor="modelUrl">                    
                     Ex. <code>bartowski/Qwen3-8B-GGUF:Q4_K_M</code> (shorthand)<br/>
                     Ex. <code>https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf</code><br/>
-                    Ex. <code>https://huggingface.co/unsloth/Qwen3-Coder-Next-GGUF/tree/main/UD-Q5_K_XL</code> (split models)<br/><br/>
+                    Ex. <code>https://huggingface.co/unsloth/Qwen3.5-35B-A3B-GGUF/resolve/main/Qwen3.5-35B-A3B-UD-Q8_K_XL.gguf</code><br/><br/>
                     Model URL, shorthand, or folder for split models
                   </label>
           <input
@@ -100,10 +96,12 @@ export default function VRAMCalculator() {
 
         <VRAMCalculatorPanel
           controlsProps={controlsProps}
+          resultsProps={resultsProps}
           variant="form"
+          hideResults
         />
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
           <button type="submit" className="btn btn-primary" disabled={loading}>
             {loading ? 'Calculating...' : 'Calculate VRAM'}
           </button>

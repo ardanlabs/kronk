@@ -14,9 +14,9 @@ export const CONTEXT_WINDOW_OPTIONS = [
 ];
 
 export const BYTES_PER_ELEMENT_OPTIONS = [
-  { value: 4, label: 'f32 (4 bytes)' },
-  { value: 2, label: 'f16 / bf16 (2 bytes)' },
   { value: 1, label: 'q8_0 / q4_0 / q4_1 / q5_0 / q5_1 (1 byte)' },
+  { value: 2, label: 'f16 / bf16 (2 bytes)' },
+  { value: 4, label: 'f32 (4 bytes)' },
 ];
 
 export const SLOT_OPTIONS = [1, 2, 3, 4, 5];
