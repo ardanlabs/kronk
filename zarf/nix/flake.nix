@@ -31,7 +31,7 @@
           # Base kronk CLI binary (CGO_ENABLED=0, no llama.cpp dependency).
           kronkBase = (pkgs.buildGoModule.override { go = pkgs.go_1_26; }) {
             pname = "kronk";
-            version = "1.21.1";
+            version = "1.21.3";
             src = ../../.;
             subPackages = [ "cmd/kronk" ];
             vendorHash = "sha256-ebKZAZyZLPrmgm4TOkvJJBFpH+un2ELnZHkjFWE9c9k=";
