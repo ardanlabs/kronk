@@ -218,7 +218,7 @@ func (lib *Libs) Download(ctx context.Context, log Logger) (VersionTag, error) {
 			return VersionTag{}, fmt.Errorf("download-libraries: error retrieving version info: %w", err)
 		}
 
-		log(ctx, "download-libraries: unable to check latest verion, using installed version", "arch", lib.arch, "os", lib.os, "processor", lib.processor, "latest", tag.Latest, "current", tag.Version)
+		log(ctx, "download-libraries: unable to check latest version, using installed version", "arch", lib.arch, "os", lib.os, "processor", lib.processor, "latest", tag.Latest, "current", tag.Version)
 		return tag, nil
 	}
 
