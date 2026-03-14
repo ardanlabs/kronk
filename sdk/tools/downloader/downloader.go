@@ -78,6 +78,7 @@ type ProgressReader struct {
 	src          string
 	currentSize  int64
 	totalSize    int64
+	startOffset  int64
 	lastReported int64
 	startTime    time.Time
 	reader       io.ReadCloser
@@ -98,6 +99,7 @@ func (pr *ProgressReader) TrackProgress(src string, currentSize, totalSize int64
 	pr.src = src
 	pr.currentSize = currentSize
 	pr.totalSize = totalSize
+	pr.startOffset = currentSize
 	pr.startTime = time.Now()
 	pr.reader = stream
 
@@ -135,7 +137,7 @@ func (pr *ProgressReader) mbPerSec() float64 {
 		return 0
 	}
 
-	return float64(pr.currentSize) / SizeIntervalMB / elapsed
+	return float64(pr.currentSize-pr.startOffset) / SizeIntervalMB / elapsed
 }
 
 // =============================================================================
