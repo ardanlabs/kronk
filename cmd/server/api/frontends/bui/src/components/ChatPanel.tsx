@@ -8,6 +8,8 @@ import CodeBlock from './CodeBlock';
 import { PARAM_TOOLTIPS, ParamTooltip } from './ParamTooltips';
 import { formatBytes } from '../lib/format';
 import type { ChatMessage, ChatUsage, ChatToolCall, ChatContentPart, ChatStreamResponse, VRAM } from '../types';
+import { VRAM_FIT_TEXT } from './vram';
+import type { DevicesInfo, MoeFitContext } from './vram';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -36,12 +38,9 @@ export interface ChatPanelProps {
 
   transport: StreamTransport;
 
-  isMoE?: boolean;
   modelVRAM?: VRAM | null;
-  devicesInfo?: { gpuCount: number; gpuType: string; gpuVramBytes: number; ramBytes: number } | null;
-  vramFitStatus?: 'fits' | 'tight' | 'wont_fit' | null;
-  vramNeededAllGPU?: number;
-  vramNeededCPUExperts?: number;
+  devicesInfo?: DevicesInfo | null;
+  moeFit?: MoeFitContext;
 
   disabled?: boolean;
   disabledPlaceholder?: string;
@@ -109,12 +108,9 @@ export default function ChatPanel({
   setSampling,
   modelBaseline,
   transport,
-  isMoE = false,
   modelVRAM,
   devicesInfo,
-  vramFitStatus,
-  vramNeededAllGPU = 0,
-  vramNeededCPUExperts = 0,
+  moeFit,
   disabled = false,
   disabledPlaceholder,
   headerLeft,
@@ -630,7 +626,7 @@ export default function ChatPanel({
             />
           </div>
         )}
-        {isMoE && modelVRAM && (
+        {moeFit?.isMoe && modelVRAM && (
           <div className="chat-settings" style={{ flexDirection: 'column', gap: '8px', padding: '12px', background: 'var(--color-gray-50)', borderRadius: '6px', margin: '0 0 8px' }}>
             <div style={{ fontWeight: 600, fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
               🧩 MoE Model
@@ -673,15 +669,13 @@ export default function ChatPanel({
                 Total VRAM: {formatBytes(modelVRAM.total_vram)}
               </div>
             )}
-            {vramFitStatus && devicesInfo && (
-              <div className={`playground-vram-fit playground-vram-fit--${vramFitStatus}`}>
-                {vramFitStatus === 'fits' && '✅ Fits in VRAM'}
-                {vramFitStatus === 'tight' && '⚠️ Experts won\'t fit — CPU offload recommended'}
-                {vramFitStatus === 'wont_fit' && '❌ Tight even with CPU experts'}
+            {moeFit?.fit?.status && devicesInfo && (
+              <div className={`playground-vram-fit playground-vram-fit--${moeFit.fit.status}`}>
+                {VRAM_FIT_TEXT[moeFit.fit.status]}
                 <span className="playground-vram-fit-detail">
                   {' '}({formatBytes(devicesInfo.gpuVramBytes)} available
-                  {vramFitStatus !== 'fits' && `, ${formatBytes(vramNeededCPUExperts)} needed with CPU experts`}
-                  {vramFitStatus === 'fits' && `, ${formatBytes(vramNeededAllGPU)} needed`})
+                  {moeFit.fit.status !== 'fits' && `, ${formatBytes(moeFit.fit.cpuExperts)} needed with CPU experts`}
+                  {moeFit.fit.status === 'fits' && `, ${formatBytes(moeFit.fit.allGPU)} needed`})
                 </span>
               </div>
             )}

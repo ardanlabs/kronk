@@ -233,6 +233,18 @@ interface VRAMControlsProps {
   kvCpuBytes?: number;
   totalSystemRamEst?: number;
   systemRAMBytes?: number;
+  showHardwareOverrides?: boolean;
+  gpuMemoryOverrideGB?: string;
+  onGpuMemoryOverrideGBChange?: (v: string) => void;
+  gpuMemoryOverrideInvalid?: boolean;
+  systemMemoryOverrideGB?: string;
+  onSystemMemoryOverrideGBChange?: (v: string) => void;
+  systemMemoryOverrideInvalid?: boolean;
+  deviceCountOverride?: number | null;
+  onDeviceCountOverrideChange?: (v: number | null) => void;
+  detectedGpuTotalBytes?: number;
+  detectedSystemRAMBytes?: number;
+  detectedDeviceCount?: number;
 }
 
 export default function VRAMControls({
@@ -249,6 +261,11 @@ export default function VRAMControls({
   tensorSplit, onTensorSplitChange,
   contextInfo,
   modelSizeBytes, modelWeightsCPU, kvCpuBytes, totalSystemRamEst, systemRAMBytes,
+  showHardwareOverrides,
+  gpuMemoryOverrideGB, onGpuMemoryOverrideGBChange, gpuMemoryOverrideInvalid,
+  systemMemoryOverrideGB, onSystemMemoryOverrideGBChange, systemMemoryOverrideInvalid,
+  deviceCountOverride, onDeviceCountOverrideChange,
+  detectedGpuTotalBytes, detectedSystemRAMBytes, detectedDeviceCount,
 }: VRAMControlsProps) {
   const [compactAdvancedOpen, setCompactAdvancedOpen] = useState(false);
   const [offloadStrategy, setOffloadStrategy] = useState<OffloadStrategy>('layer');
@@ -426,6 +443,72 @@ export default function VRAMControls({
         </select>
       </div>
 
+      {showHardwareOverrides && (
+        <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--color-gray-200)', paddingTop: '16px', marginTop: '8px' }}>
+          <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 600 }}>Hardware Configuration</h4>
+          <div className="playground-sweep-params" style={{ margin: 0 }}>
+            <div className="playground-sweep-param">
+              <label className="playground-sweep-param-toggle" htmlFor="vram-gpuCountOverride">
+                GPU Count<ParamTooltip text={PARAM_TOOLTIPS.gpuCount} />
+              </label>
+              <select
+                id="vram-gpuCountOverride"
+                value={deviceCountOverride ?? ''}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  onDeviceCountOverrideChange?.(val === '' ? null : Number(val));
+                }}
+                className="playground-sweep-param-values"
+              >
+                <option value="">Auto-detect{detectedDeviceCount != null ? ` (${detectedDeviceCount} GPU${detectedDeviceCount > 1 ? 's' : ''})` : ''}</option>
+                {GPU_COUNT_FALLBACK.map(n => (
+                  <option key={n} value={n}>{n} GPU{n > 1 ? 's' : ''}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="playground-sweep-param">
+              <label className="playground-sweep-param-toggle" htmlFor="vram-gpuMemOverride">
+                Total GPU Memory (GB)<ParamTooltip text="Total GPU memory across all selected GPUs. Leave empty to auto-detect from this server." />
+              </label>
+              <input
+                id="vram-gpuMemOverride"
+                type="text"
+                value={gpuMemoryOverrideGB ?? ''}
+                onChange={(e) => onGpuMemoryOverrideGBChange?.(e.target.value)}
+                className="playground-sweep-param-values"
+                placeholder={detectedGpuTotalBytes ? `Auto-detect (${(detectedGpuTotalBytes / (1024 * 1024 * 1024)).toFixed(1)} GB)` : 'e.g. 24'}
+                style={gpuMemoryOverrideInvalid ? { borderColor: 'var(--color-error, #ef5350)' } : undefined}
+              />
+              {gpuMemoryOverrideInvalid && (
+                <div style={{ fontSize: '11px', color: 'var(--color-error, #ef5350)', marginTop: 2 }}>Enter a positive number in GB</div>
+              )}
+              <div style={{ fontSize: '11px', color: 'var(--color-gray-500)', marginTop: 2 }}>
+                Total across all GPUs — assumes even per-GPU capacity
+              </div>
+            </div>
+
+            <div className="playground-sweep-param">
+              <label className="playground-sweep-param-toggle" htmlFor="vram-sysMemOverride">
+                System Memory (GB)<ParamTooltip text="Total system RAM. Used to check CPU offload feasibility. Leave empty to auto-detect from this server." />
+              </label>
+              <input
+                id="vram-sysMemOverride"
+                type="text"
+                value={systemMemoryOverrideGB ?? ''}
+                onChange={(e) => onSystemMemoryOverrideGBChange?.(e.target.value)}
+                className="playground-sweep-param-values"
+                placeholder={detectedSystemRAMBytes ? `Auto-detect (${(detectedSystemRAMBytes / (1024 * 1024 * 1024)).toFixed(1)} GB)` : 'e.g. 64'}
+                style={systemMemoryOverrideInvalid ? { borderColor: 'var(--color-error, #ef5350)' } : undefined}
+              />
+              {systemMemoryOverrideInvalid && (
+                <div style={{ fontSize: '11px', color: 'var(--color-error, #ef5350)', marginTop: 2 }}>Enter a positive number in GB</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="playground-sweep-param">
         <label className="playground-sweep-param-toggle" htmlFor="vram-kvCpu" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <input
@@ -438,6 +521,7 @@ export default function VRAMControls({
         </label>
       </div>
 
+      {!showHardwareOverrides && (
       <div className="playground-sweep-param">
         <label className="playground-sweep-param-toggle" htmlFor="vram-deviceCount">GPU Count<ParamTooltip text={PARAM_TOOLTIPS.gpuCount} /></label>
         <select
@@ -451,6 +535,7 @@ export default function VRAMControls({
           ))}
         </select>
       </div>
+      )}
 
       {(deviceCount ?? 1) > 1 && (
         <div className="playground-sweep-param">

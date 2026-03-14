@@ -13,6 +13,7 @@ import type {
   ChatStreamResponse,
   ChatToolCall,
   ModelConfig,
+  VRAM,
 } from '../types';
 import AutomatedTestingPanel from './AutomatedTestingPanel';
 import ChatPanel, { type StreamTransport } from './ChatPanel';
@@ -23,8 +24,8 @@ import type { SamplingParams } from '../contexts/SamplingContext';
 import { PARAM_TOOLTIPS, ParamTooltip } from './ParamTooltips';
 import { formatBytes } from '../lib/format';
 import { extractContextInfo, formatContextHint } from '../lib/context';
-import { computeMoeVramFit, parseDevicesInfo, MOE_STRATEGY_OPTIONS, VRAM_FIT_TEXT } from '../lib/moe';
-import type { DevicesInfo } from '../lib/moe';
+import { useDevicesInfo, useMoeFit, MOE_STRATEGY_OPTIONS, VRAM_FIT_TEXT, VRAM_FIT_THRESHOLD } from './vram';
+import type { VramFitStatus } from './vram';
 
 const NEW_MODEL_VALUE = '__new__';
 
@@ -103,22 +104,27 @@ export default function ModelPlayground() {
   const pendingAutoSelectRef = useRef(false);
   const expectedFilenameRef = useRef('');
 
-  // Device info state
-  const [devicesInfo, setDevicesInfo] = useState<DevicesInfo | null>(null);
+  // Device info
+  const devicesInfo = useDevicesInfo();
 
   // Model metadata (for context info)
   const [modelMetadata, setModelMetadata] = useState<Record<string, string> | undefined>(undefined);
   const contextInfo = extractContextInfo(modelMetadata);
 
-  // MoE detection: true when the selected model has MoE metadata
-  const [isMoE, setIsMoE] = useState(false);
+  // MoE state
   const [moeBlockCount, setMoeBlockCount] = useState(0);
-  const [vramFitStatus, setVramFitStatus] = useState<'fits' | 'tight' | 'wont_fit' | null>(null);
-  const [vramNeededAllGPU, setVramNeededAllGPU] = useState(0);
-  const [vramNeededCPUExperts, setVramNeededCPUExperts] = useState(0);
-  const [modelVramInfo, setModelVramInfo] = useState<any>(null);
+  const [modelVramInfo, setModelVramInfo] = useState<VRAM | null>(null);
   const [catalogMoeMode, setCatalogMoeMode] = useState('');
   const moeModeTouchedRef = useRef(false);
+
+  // MoE fit — reacts to contextWindow, nSeqMax, and cache type changes
+  const fitBytesPerElement = cacheType === 'q8_0' ? 1 : cacheType === 'q4_0' ? 0.5625 : 2;
+  const fitOverrides = useMemo(() => ({ contextWindow, slots: nSeqMax, bytesPerElement: fitBytesPerElement }), [contextWindow, nSeqMax, fitBytesPerElement]);
+  const moeFit = useMoeFit(modelVramInfo, modelMetadata, devicesInfo, fitOverrides);
+  const isMoE = moeFit.isMoe;
+  const vramFitStatus: VramFitStatus | null = moeFit.fit?.status ?? null;
+  const vramNeededAllGPU = moeFit.fit?.allGPU ?? 0;
+  const vramNeededCPUExperts = moeFit.fit?.cpuExperts ?? 0;
 
   // Tool test state
   const [toolDefs, setToolDefs] = useState(defaultTools);
@@ -145,17 +151,6 @@ export default function ModelPlayground() {
     loadModels();
     loadTemplates();
   }, [loadModels, loadTemplates]);
-
-  useEffect(() => {
-    let cancelled = false;
-    api.getDevices()
-      .then((resp) => {
-        if (cancelled) return;
-        setDevicesInfo(parseDevicesInfo(resp));
-      })
-      .catch(() => { /* silent fallback */ });
-    return () => { cancelled = true; };
-  }, []);
 
   useEffect(() => {
     if (!selectedModel || selectedModel === NEW_MODEL_VALUE) {
@@ -187,13 +182,8 @@ export default function ModelPlayground() {
         // Store metadata for context info.
         setModelMetadata(info.metadata);
 
-        // Detect MoE from model metadata or VRAM info.
-        const modelIsMoE = info.vram?.moe?.is_moe === true
-          || (info.metadata && Object.keys(info.metadata).some(k => k.endsWith('.expert_count')));
-        setIsMoE(modelIsMoE);
-
-        // Store VRAM info for the separate fit-computation effect.
-        setModelVramInfo(modelIsMoE ? info.vram : null);
+        // Store VRAM info — MoE detection and fit are handled by useMoeFit.
+        setModelVramInfo(info.vram || null);
         setCatalogMoeMode(mc?.moe?.mode || '');
         moeModeTouchedRef.current = false;
 
@@ -213,27 +203,12 @@ export default function ModelPlayground() {
     return () => { cancelled = true; };
   }, [selectedModel, hydratedModelId]);
 
-  // Compute VRAM fit status in a separate effect so it reacts to devicesInfo
-  // arriving after model hydration (the devices API call is independent).
+  // Auto-suggest experts_cpu when fit is tight and user hasn't touched the mode.
   useEffect(() => {
-    if (!isMoE || !modelVramInfo || !devicesInfo) {
-      setVramFitStatus(null);
-      return;
-    }
-
-    const fit = computeMoeVramFit(modelVramInfo, devicesInfo.gpuVramBytes, {
-      contextWindow,
-      slots: nSeqMax,
-    });
-    setVramNeededAllGPU(fit.allGPU);
-    setVramNeededCPUExperts(fit.cpuExperts);
-    setVramFitStatus(fit.status);
-
-    // Auto-suggest only if catalog didn't set a mode AND user hasn't touched it.
-    if (fit.status && fit.status !== 'fits' && !catalogMoeMode && !moeModeTouchedRef.current) {
+    if (vramFitStatus && vramFitStatus !== 'fits' && !catalogMoeMode && !moeModeTouchedRef.current) {
       setMoeMode('experts_cpu');
     }
-  }, [isMoE, modelVramInfo, devicesInfo, catalogMoeMode, contextWindow, nSeqMax]);
+  }, [vramFitStatus, catalogMoeMode]);
 
   useEffect(() => {
     return () => {
@@ -867,7 +842,7 @@ export default function ModelPlayground() {
                   </div>
                   <div className="playground-moe-guide-estimate">
                     <span>💾 Experts on CPU:</span> <strong>{formatBytes(vramNeededCPUExperts)}</strong>
-                    {vramNeededCPUExperts <= devicesInfo.gpuVramBytes * 0.95 ? <span className="playground-moe-guide-badge playground-moe-guide-badge--ok">fits</span> : <span className="playground-moe-guide-badge playground-moe-guide-badge--no">tight</span>}
+                    {vramNeededCPUExperts <= devicesInfo.gpuVramBytes * VRAM_FIT_THRESHOLD ? <span className="playground-moe-guide-badge playground-moe-guide-badge--ok">fits</span> : <span className="playground-moe-guide-badge playground-moe-guide-badge--no">tight</span>}
                   </div>
                 </div>
                 {vramFitStatus && vramFitStatus !== 'fits' && (
@@ -1226,12 +1201,9 @@ export default function ModelPlayground() {
                   setSampling={setPlaygroundSampling}
                   modelBaseline={null}
                   transport={playgroundTransport}
-                  isMoE={isMoE}
                   modelVRAM={modelVramInfo}
                   devicesInfo={devicesInfo}
-                  vramFitStatus={vramFitStatus}
-                  vramNeededAllGPU={vramNeededAllGPU}
-                  vramNeededCPUExperts={vramNeededCPUExperts}
+                  moeFit={moeFit}
                   disabled={!session}
                   disabledPlaceholder="Create a session to start chatting"
                   headerLeft={<h2>Basic Chat</h2>}

@@ -30,6 +30,7 @@ interface VRAMResultsProps {
   gpuTotalBytes?: number;
   gpuDevices?: DeviceInfo[];
   tensorSplit?: string;
+  isHardwareOverridden?: boolean;
 }
 
 export default function VRAMResults({
@@ -58,6 +59,7 @@ export default function VRAMResults({
   gpuTotalBytes,
   gpuDevices,
   tensorSplit,
+  isHardwareOverridden,
 }: VRAMResultsProps) {
   const isMoE = moe?.is_moe === true && weights != null;
   const kvOnCPU = kvCacheOnCPU ?? false;
@@ -162,23 +164,24 @@ export default function VRAMResults({
 
         const hasConcerns = gpuTight || ramTight;
 
+        const hwLabel = isHardwareOverridden ? 'the selected hardware configuration' : 'this Kronk model server';
         let icon: string;
         let summary: string;
         if (gpuExceeds && ramExceeds) {
           icon = '❌';
-          summary = 'This model will NOT run on this Kronk model server — exceeds both GPU VRAM and system RAM';
+          summary = `This model will NOT run on ${hwLabel} — exceeds both GPU VRAM and system RAM`;
         } else if (gpuExceeds) {
           icon = '❌';
-          summary = 'This model will NOT run on this Kronk model server — exceeds available GPU VRAM';
+          summary = `This model will NOT run on ${hwLabel} — exceeds available GPU VRAM`;
         } else if (ramExceeds) {
           icon = '❌';
-          summary = 'This model will NOT run on this Kronk model server — exceeds available system RAM';
+          summary = `This model will NOT run on ${hwLabel} — exceeds available system RAM`;
         } else if (hasConcerns) {
           icon = '⚠️';
-          summary = 'This model will run on this Kronk model server but it\'s a tight fit';
+          summary = `This model will run on ${hwLabel} but it's a tight fit`;
         } else {
           icon = '✅';
-          summary = 'This model will run on this Kronk model server with these settings';
+          summary = `This model will run on ${hwLabel} with these settings`;
         }
 
         const details: string[] = [];

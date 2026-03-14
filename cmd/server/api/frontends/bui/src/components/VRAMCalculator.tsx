@@ -10,9 +10,9 @@ export default function VRAMCalculator() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<VRAMCalculatorResponse | null>(null);
-  const cachedUrlRef = useRef('');
+  const cachedKeyRef = useRef('');
 
-  const { controlsProps, resultsProps } = useVRAMState({ serverResponse: result });
+  const { controlsProps, resultsProps } = useVRAMState({ serverResponse: result, enableHardwareOverrides: true });
 
   const performCalculation = useCallback(async () => {
     const trimmed = modelUrl.trim();
@@ -21,7 +21,18 @@ export default function VRAMCalculator() {
       return;
     }
 
-    if (trimmed === cachedUrlRef.current && result) {
+    const cacheKey = [
+      trimmed,
+      controlsProps.contextWindow,
+      controlsProps.bytesPerElement,
+      controlsProps.slots,
+      controlsProps.gpuLayers,
+      controlsProps.expertLayersOnGPU,
+      controlsProps.kvCacheOnCPU,
+      controlsProps.deviceCount,
+      controlsProps.tensorSplit,
+    ].join('|');
+    if (cacheKey === cachedKeyRef.current && result) {
       return;
     }
 
@@ -40,14 +51,14 @@ export default function VRAMCalculator() {
         token || undefined
       );
       setResult(response);
-      cachedUrlRef.current = trimmed;
+      cachedKeyRef.current = cacheKey;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to calculate VRAM');
-      cachedUrlRef.current = '';
+      cachedKeyRef.current = '';
     } finally {
       setLoading(false);
     }
-  }, [modelUrl, controlsProps.contextWindow, controlsProps.bytesPerElement, controlsProps.slots, token]);
+  }, [modelUrl, controlsProps, token, result]);
 
   const handleCalculate = async (e: React.FormEvent) => {
     e.preventDefault();

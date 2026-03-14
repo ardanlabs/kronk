@@ -1,7 +1,7 @@
 import React from 'react';
 import type { ConfigSweepDefinition } from '../types';
 import { PARAM_TOOLTIPS, ParamTooltip } from './ParamTooltips';
-import { MOE_SWEEP_LABELS } from '../lib/moe';
+import { MOE_SWEEP_LABELS } from './vram';
 
 export interface ConfigSweepParamsProps {
   configSweepDef: ConfigSweepDefinition;

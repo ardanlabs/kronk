@@ -7,6 +7,7 @@ import ChatHistoryPanel from './ChatHistoryPanel';
 import ChatPanel, { type StreamTransport } from './ChatPanel';
 import { useChatHistory, type HistoryMessage } from '../contexts/ChatHistoryContext';
 import type { SamplingConfig, ListModelDetail, VRAM } from '../types';
+import { useDevicesInfo, useMoeFit } from './vram';
 
 const HISTORY_ENABLED_KEY = 'kronk_chat_history_enabled';
 
@@ -26,12 +27,10 @@ export default function Chat() {
 
 
   const [extendedModels, setExtendedModels] = useState<ListModelDetail[]>([]);
-  const [isMoE, setIsMoE] = useState(false);
   const [modelVRAM, setModelVRAM] = useState<VRAM | null>(null);
-  const [devicesInfo, setDevicesInfo] = useState<{ gpuCount: number; gpuType: string; gpuVramBytes: number; ramBytes: number } | null>(null);
-  const [vramFitStatus, setVramFitStatus] = useState<'fits' | 'tight' | 'wont_fit' | null>(null);
-  const [vramNeededAllGPU, setVramNeededAllGPU] = useState(0);
-  const [vramNeededCPUExperts, setVramNeededCPUExperts] = useState(0);
+  const [modelMetadata, setModelMetadata] = useState<Record<string, string> | undefined>(undefined);
+  const devicesInfo = useDevicesInfo();
+  const moeFit = useMoeFit(modelVRAM, modelMetadata, devicesInfo);
   const [modelBaseline, setModelBaseline] = useState<SamplingParams | null>(null);
   const prevModelRef = useRef<string | null>(null);
   const selectedModelDraftId = useMemo(() => {
@@ -142,70 +141,25 @@ export default function Chat() {
 
   useEffect(() => {
     if (!selectedModel) {
-      setIsMoE(false);
       setModelVRAM(null);
+      setModelMetadata(undefined);
       return;
     }
     let cancelled = false;
     api.showModel(selectedModel)
       .then((info) => {
         if (cancelled) return;
-        const modelIsMoE = info.vram?.moe?.is_moe === true
-          || (info.metadata && Object.keys(info.metadata).some(k => k.endsWith('.expert_count')));
-        setIsMoE(modelIsMoE);
         setModelVRAM(info.vram || null);
+        setModelMetadata(info.metadata);
       })
       .catch(() => {
         if (!cancelled) {
-          setIsMoE(false);
           setModelVRAM(null);
+          setModelMetadata(undefined);
         }
       });
     return () => { cancelled = true; };
   }, [selectedModel]);
-
-  useEffect(() => {
-    let cancelled = false;
-    api.getDevices()
-      .then((resp) => {
-        if (cancelled) return;
-        const gpuDevices = resp.devices.filter(d => d.type !== 'cpu' && d.type !== 'unknown');
-        const gpuType = gpuDevices.length > 0
-          ? gpuDevices[0].type.replace('gpu_', '').replace('cuda', 'CUDA').replace('metal', 'Metal').replace('rocm', 'ROCm').replace('vulkan', 'Vulkan')
-          : '';
-        setDevicesInfo({ gpuCount: resp.gpu_count, gpuType, gpuVramBytes: resp.gpu_total_bytes, ramBytes: resp.system_ram_bytes });
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, []);
-
-  useEffect(() => {
-    if (!isMoE || !modelVRAM || !devicesInfo) {
-      setVramFitStatus(null);
-      setVramNeededAllGPU(0);
-      setVramNeededCPUExperts(0);
-      return;
-    }
-    const gpuVram = devicesInfo.gpuVramBytes;
-    const vramInfo = modelVRAM;
-    const kvPerSlot = vramInfo.input.context_window * vramInfo.input.block_count *
-      vramInfo.input.head_count_kv * (vramInfo.input.key_length + vramInfo.input.value_length) * vramInfo.input.bytes_per_element;
-    const slotMem = kvPerSlot * vramInfo.input.slots;
-    const computeEst = vramInfo.compute_buffer_est ?? 300 * 1024 * 1024;
-    const allGPU = vramInfo.input.model_size_bytes + slotMem + computeEst;
-    setVramNeededAllGPU(allGPU);
-    const activeOnly = vramInfo.weights?.always_active_bytes ?? vramInfo.input.model_size_bytes;
-    const cpuExperts = activeOnly + slotMem + computeEst;
-    setVramNeededCPUExperts(cpuExperts);
-    if (gpuVram <= 0) return;
-    if (allGPU <= gpuVram * 0.95) {
-      setVramFitStatus('fits');
-    } else if (cpuExperts <= gpuVram * 0.95) {
-      setVramFitStatus('tight');
-    } else {
-      setVramFitStatus('wont_fit');
-    }
-  }, [isMoE, modelVRAM, devicesInfo]);
 
   const transport = useCallback<StreamTransport>(({ messages, sampling, onMessage, onError, onComplete }) => {
     return api.streamChat(
@@ -287,12 +241,9 @@ export default function Chat() {
         setSampling={setSampling}
         modelBaseline={modelBaseline}
         transport={transport}
-        isMoE={isMoE}
         modelVRAM={modelVRAM}
         devicesInfo={devicesInfo}
-        vramFitStatus={vramFitStatus}
-        vramNeededAllGPU={vramNeededAllGPU}
-        vramNeededCPUExperts={vramNeededCPUExperts}
+        moeFit={moeFit}
         disabled={!selectedModel}
         headerLeft={
           <>

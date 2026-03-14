@@ -66,6 +66,7 @@ export default function VRAMCalculatorPanel({
           gpuTotalBytes={resultsProps.gpuTotalBytes}
           gpuDevices={resultsProps.gpuDevices}
           tensorSplit={resultsProps.tensorSplit}
+          isHardwareOverridden={resultsProps.isHardwareOverridden}
         />
       )}
     </>

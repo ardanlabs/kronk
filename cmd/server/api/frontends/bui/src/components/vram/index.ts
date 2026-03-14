@@ -7,3 +7,7 @@ export type { VRAMResult, CalculateVRAMOptions } from './calculate';
 export { CONTEXT_WINDOW_OPTIONS, BYTES_PER_ELEMENT_OPTIONS, SLOT_OPTIONS, VRAM_FORMULA_CONTENT } from './constants';
 export { default as useVRAMState } from './useVRAMState';
 export type { VRAMControlsState, VRAMResultsState } from './useVRAMState';
+export { parseDevicesInfo, getGpuDevices, formatGpuType, useDevicesInfo } from './devices';
+export type { DevicesInfo } from './devices';
+export { isMoeModel, computeMoeFit, computeMoeFitWithDevices, useMoeFit, VRAM_FIT_TEXT, VRAM_FIT_THRESHOLD, DEFAULT_COMPUTE_BUFFER_EST_BYTES, MOE_STRATEGY_OPTIONS, MOE_SWEEP_LABELS } from './fit';
+export type { VramFitStatus, VramFitResult, VramFitOverrides, MoeFitContext } from './fit';
