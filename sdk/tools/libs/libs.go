@@ -212,18 +212,22 @@ func (lib *Libs) Download(ctx context.Context, log Logger) (VersionTag, error) {
 
 	log(ctx, "download-libraries: check libraries version information", "arch", lib.arch, "os", lib.os, "processor", lib.processor)
 
-	tag, err := lib.VersionInformation()
-	if err != nil {
-		if tag.Version == "" {
-			return VersionTag{}, fmt.Errorf("download-libraries: error retrieving version info: %w", err)
-		}
-
-		log(ctx, "download-libraries: unable to check latest version, using installed version", "arch", lib.arch, "os", lib.os, "processor", lib.processor, "latest", tag.Latest, "current", tag.Version)
-		return tag, nil
-	}
+	var tag VersionTag
 
 	if lib.version != "" {
+		tag, _ = lib.InstalledVersion()
 		tag.Latest = lib.version
+	} else {
+		var err error
+		tag, err = lib.VersionInformation()
+		if err != nil {
+			if tag.Version == "" {
+				return VersionTag{}, fmt.Errorf("download-libraries: error retrieving version info: %w", err)
+			}
+
+			log(ctx, "download-libraries: unable to check latest version, using installed version", "arch", lib.arch, "os", lib.os, "processor", lib.processor, "latest", tag.Latest, "current", tag.Version)
+			return tag, nil
+		}
 	}
 
 	log(ctx, "download-libraries: check llama.cpp installation", "arch", lib.arch, "os", lib.os, "processor", lib.processor, "latest", tag.Latest, "current", tag.Version)
@@ -233,7 +237,7 @@ func (lib *Libs) Download(ctx context.Context, log Logger) (VersionTag, error) {
 		return tag, nil
 	}
 
-	if !lib.AllowUpgrade {
+	if !lib.AllowUpgrade && hasLibraryFiles(lib.path) {
 		log(ctx, "download-libraries: bypassing upgrade", "latest", tag.Latest, "current", tag.Version)
 		return tag, nil
 	}
@@ -315,7 +319,7 @@ func (lib *Libs) DownloadVersion(ctx context.Context, log Logger, version string
 		return VersionTag{}, fmt.Errorf("download-version: unable to create version file: %w", err)
 	}
 
-	return lib.VersionInformation()
+	return lib.InstalledVersion()
 }
 
 // =============================================================================
