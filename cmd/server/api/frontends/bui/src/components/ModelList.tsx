@@ -480,13 +480,7 @@ export default function ModelList() {
             {activeSection === 'model-card' && (
               <div>
                 <h3 style={{ marginBottom: '16px' }}>Model Card</h3>
-                {modelInfo.metadata && Object.keys(modelInfo.metadata).filter(k => k !== 'tokenizer.chat_template').length > 0 ? (
-                  <ModelCard metadata={modelInfo.metadata} />
-                ) : (
-                  <div className="empty-state">
-                    <p>No metadata available for this model.</p>
-                  </div>
-                )}
+                <ModelCard metadata={modelInfo.metadata ?? {}} webPage={modelInfo.web_page} />
               </div>
             )}
 
@@ -519,10 +513,10 @@ export default function ModelList() {
                   </div>
                 )}
 
-                {draftModelInfo?.metadata && Object.keys(draftModelInfo.metadata).filter(k => k !== 'tokenizer.chat_template').length > 0 ? (
-                  <ModelCard metadata={draftModelInfo.metadata} />
+                {draftModelInfo ? (
+                  <ModelCard metadata={draftModelInfo.metadata ?? {}} webPage={draftModelInfo.web_page} />
                 ) : (
-                  !draftInfoLoading && !draftModelInfo && (
+                  !draftInfoLoading && (
                     <div className="empty-state">
                       <p>No metadata available for the draft model.</p>
                     </div>

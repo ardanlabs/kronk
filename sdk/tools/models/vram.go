@@ -649,9 +649,7 @@ func parseMetadataInt64WithFallback(metadata map[string]string, key string, suff
 
 // FetchGGUFMetadata fetches GGUF header and metadata using HTTP Range requests.
 func FetchGGUFMetadata(ctx context.Context, url string) (map[string]string, int64, error) {
-	var client http.Client
-
-	data, fileSize, err := fetchRange(ctx, &client, url, 0, ggufHeaderFetchSize-1)
+	data, fileSize, err := fetchGGUFHeaderBytes(ctx, url)
 	if err != nil {
 		return nil, 0, fmt.Errorf("fetch-gguf-metadata: failed to fetch header data: %w", err)
 	}
@@ -716,13 +714,18 @@ func fetchRange(ctx context.Context, client *http.Client, url string, start, end
 
 	cr := resp.Header.Get("Content-Range")
 
-	var fileSize int64
-	switch {
-	case cr != "":
-		var start, end int64
-		fmt.Sscanf(cr, "bytes %d-%d/%d", &start, &end, &fileSize)
+	var (
+		fileSize  int64
+		respStart int64
+		respEnd   int64
+		haveRange bool
+	)
 
-	case resp.ContentLength > 0 && resp.StatusCode == http.StatusOK:
+	if cr != "" {
+		if n, _ := fmt.Sscanf(cr, "bytes %d-%d/%d", &respStart, &respEnd, &fileSize); n == 3 {
+			haveRange = true
+		}
+	} else if resp.ContentLength > 0 && resp.StatusCode == http.StatusOK {
 		fileSize = resp.ContentLength
 	}
 
@@ -746,9 +749,34 @@ func fetchRange(ctx context.Context, client *http.Client, url string, start, end
 			resp.StatusCode, start, end, cr, resp.ContentLength, resp.Request.URL.Host, err)
 	}
 
-	if resp.StatusCode == http.StatusPartialContent && int64(len(data)) < end-start+1 {
-		return nil, 0, fmt.Errorf("fetch-range: short read: got %d bytes, expected %d, status=%d, content_range=%q, host=%s",
-			len(data), end-start+1, resp.StatusCode, cr, resp.Request.URL.Host)
+	if resp.StatusCode == http.StatusPartialContent {
+		switch {
+		case haveRange:
+			// When the requested range extends past EOF the server returns the
+			// satisfiable subrange. Clamp our expectation to match.
+			expectedEnd := end
+			if fileSize > 0 && expectedEnd >= fileSize {
+				expectedEnd = fileSize - 1
+			}
+
+			if respStart != start || respEnd != expectedEnd {
+				return nil, 0, fmt.Errorf("fetch-range: unexpected content-range: requested=%d-%d, got=%q, host=%s",
+					start, end, cr, resp.Request.URL.Host)
+			}
+
+			expectedLen := respEnd - respStart + 1
+			if int64(len(data)) != expectedLen {
+				return nil, 0, fmt.Errorf("fetch-range: short read: got %d bytes, expected %d, status=%d, content_range=%q, host=%s",
+					len(data), expectedLen, resp.StatusCode, cr, resp.Request.URL.Host)
+			}
+
+		default:
+			// No parseable Content-Range; fall back to the original check.
+			if int64(len(data)) < end-start+1 {
+				return nil, 0, fmt.Errorf("fetch-range: short read: got %d bytes, expected %d, status=%d, content_range=%q, host=%s",
+					len(data), end-start+1, resp.StatusCode, cr, resp.Request.URL.Host)
+			}
+		}
 	}
 
 	return data, fileSize, nil

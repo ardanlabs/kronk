@@ -42,12 +42,15 @@ function fmtFileType(v: string): string {
 interface ModelCardProps {
   metadata: Record<string, string>;
   excludeKeys?: string[];
+  webPage?: string;
 }
 
-export default function ModelCard({ metadata, excludeKeys = [] }: ModelCardProps) {
+export default function ModelCard({ metadata, excludeKeys = [], webPage }: ModelCardProps) {
   const allExclude = [...excludeKeys, 'tokenizer.chat_template'];
 
-  if (Object.keys(metadata).length === 0) {
+  const hasMetadata = Object.keys(metadata).length > 0;
+
+  if (!hasMetadata && !webPage) {
     return (
       <div className="empty-state">
         <p>No metadata available for this model.</p>
@@ -172,23 +175,37 @@ export default function ModelCard({ metadata, excludeKeys = [] }: ModelCardProps
 
   return (
     <>
-      <div className="meta-sections">
-        {sections
-          .filter(s => s.rows.length > 0)
-          .map(s => (
-            <section key={s.title} className="meta-section">
-              <div className="meta-section-header">
-                <h4 className="meta-section-title">{s.title}</h4>
-              </div>
-              <KeyValueTable rows={s.rows} />
-            </section>
-          ))}
-      </div>
+      {webPage && (
+        <div style={{ marginBottom: '16px' }}>
+          <h4 className="meta-section-title" style={{ marginBottom: '8px' }}>Source</h4>
+          <p>
+            <a href={webPage} target="_blank" rel="noopener noreferrer">
+              {webPage}
+            </a>
+          </p>
+        </div>
+      )}
+      {hasMetadata && (
+        <>
+          <div className="meta-sections">
+            {sections
+              .filter(s => s.rows.length > 0)
+              .map(s => (
+                <section key={s.title} className="meta-section">
+                  <div className="meta-section-header">
+                    <h4 className="meta-section-title">{s.title}</h4>
+                  </div>
+                  <KeyValueTable rows={s.rows} />
+                </section>
+              ))}
+          </div>
 
-      <details className="model-card-raw-toggle">
-        <summary>Advanced / Raw Metadata</summary>
-        <MetadataSection metadata={metadata} excludeKeys={allExclude} />
-      </details>
+          <details className="model-card-raw-toggle">
+            <summary>Advanced / Raw Metadata</summary>
+            <MetadataSection metadata={metadata} excludeKeys={allExclude} />
+          </details>
+        </>
+      )}
     </>
   );
 }

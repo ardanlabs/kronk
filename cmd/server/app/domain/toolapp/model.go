@@ -236,6 +236,7 @@ type ModelInfoResponse struct {
 	Size          int64             `json:"size"`
 	HasProjection bool              `json:"has_projection"`
 	IsGPT         bool              `json:"is_gpt"`
+	WebPage       string            `json:"web_page,omitempty"`
 	Metadata      map[string]string `json:"metadata"`
 	VRAM          *VRAM             `json:"vram,omitempty"`
 	ModelConfig   *ModelConfig      `json:"model_config,omitempty"`
@@ -247,7 +248,7 @@ func (app ModelInfoResponse) Encode() ([]byte, string, error) {
 	return data, "application/json", err
 }
 
-func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfig, vram models.VRAM) ModelInfoResponse {
+func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfig, vram models.VRAM, webPage string) ModelInfoResponse {
 	metadata := make(map[string]string, len(mi.Metadata))
 	for k, v := range mi.Metadata {
 		metadata[k] = formatMetadataValue(k, v)
@@ -262,6 +263,7 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfi
 		Size:          fi.Size,
 		HasProjection: mi.HasProjection,
 		IsGPT:         mi.IsGPTModel,
+		WebPage:       webPage,
 		Metadata:      metadata,
 		ModelConfig: &ModelConfig{
 			Device:               rmc.Device,

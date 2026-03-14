@@ -418,7 +418,12 @@ func (a *app) showModel(ctx context.Context, r *http.Request) web.Encoder {
 
 	vram, _ := a.catalog.CalculateVRAM(modelID, rmc)
 
-	return toModelInfo(fi, mi, rmc, vram)
+	var webPage string
+	if catDetails, err := a.catalog.Details(modelID); err == nil {
+		webPage = models.NormalizeHuggingFaceURL(catDetails.WebPage)
+	}
+
+	return toModelInfo(fi, mi, rmc, vram, webPage)
 }
 
 func (a *app) modelPS(ctx context.Context, r *http.Request) web.Encoder {

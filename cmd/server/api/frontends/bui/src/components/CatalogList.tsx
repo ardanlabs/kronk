@@ -1041,13 +1041,7 @@ export default function CatalogList() {
                 {activeSection === 'model-card' && modelInfo && (
                   <div>
                     <h3 style={{ marginBottom: '16px' }}>Model Card</h3>
-                    {modelInfo.model_metadata && Object.keys(modelInfo.model_metadata).filter(k => k !== 'tokenizer.chat_template').length > 0 ? (
-                      <ModelCard metadata={modelInfo.model_metadata} />
-                    ) : (
-                      <div className="empty-state">
-                        <p>No metadata available for this model.</p>
-                      </div>
-                    )}
+                    <ModelCard metadata={modelInfo.model_metadata ?? {}} webPage={modelInfo.web_page} />
                   </div>
                 )}
 

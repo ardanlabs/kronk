@@ -231,7 +231,7 @@ func isDirEffectivelyEmpty(entries []os.DirEntry) bool {
 // Output: https://huggingface.co/mradermacher/Qwen2-Audio-7B-GGUF/resolve/main/Qwen2-Audio-7B.Q8_0.gguf
 func NormalizeHuggingFaceDownloadURL(rawURL string) string {
 	if strings.HasPrefix(rawURL, "https://") || strings.HasPrefix(rawURL, "http://") {
-		return rawURL
+		return strings.Replace(rawURL, "/blob/", "/resolve/", 1)
 	}
 
 	rawURL = stripHFHostPrefix(rawURL)

@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -173,9 +172,7 @@ const ggufHeaderFetchSize = 16 * 1024 * 1024
 // descriptors from a remote URL using HTTP Range requests. Only the header
 // sections are downloaded, not the actual tensor data.
 func fetchGGUFHeaderAndTensors(ctx context.Context, url string) (metadata map[string]string, tensors []ggufTensorInfo, fileSize int64, err error) {
-	var client http.Client
-
-	data, fileSize, err := fetchRange(ctx, &client, url, 0, ggufHeaderFetchSize-1)
+	data, fileSize, err := fetchGGUFHeaderBytes(ctx, url)
 	if err != nil {
 		return nil, nil, 0, fmt.Errorf("fetch-gguf-header-tensors: failed to fetch header data: %w", err)
 	}
