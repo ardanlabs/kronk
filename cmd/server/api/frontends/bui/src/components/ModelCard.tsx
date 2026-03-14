@@ -2,7 +2,7 @@ import KeyValueTable from './KeyValueTable';
 import type { KVRow } from './KeyValueTable';
 import MetadataSection from './MetadataSection';
 import { fmtVal } from '../lib/format';
-import { labelWithTip } from './ParamTooltips';
+import { labelWithTip, type TooltipKey } from './ParamTooltips';
 
 const fileTypeMap: Record<string, string> = {
   '0': 'All F32',
@@ -61,14 +61,16 @@ export default function ModelCard({ metadata, excludeKeys = [], webPage }: Model
   const get = (key: string): string | undefined => metadata[key];
   const arch = get('general.architecture') || '';
 
-  function buildRows(specs: Array<[string, string, string?]>): KVRow[] {
+  type MetadataRowSpec = [label: string, key: string, tooltipKey?: TooltipKey];
+
+  function buildRows(specs: MetadataRowSpec[]): KVRow[] {
     return specs
       .filter(([, key]) => get(key) !== undefined)
       .map(([label, key, tip]) => ({ key, label: tip ? labelWithTip(label, tip) : label, value: fmtVal(get(key)) }));
   }
 
   // --- Identity ---
-  const identitySpecs: Array<[string, string, string?]> = [
+  const identitySpecs: MetadataRowSpec[] = [
     ['Name', 'general.name'],
     ['Architecture', 'general.architecture', 'modelArchitecture'],
     ['Size Label', 'general.size_label', 'sizeLabel'],
@@ -90,7 +92,7 @@ export default function ModelCard({ metadata, excludeKeys = [], webPage }: Model
   }
 
   // --- Architecture ---
-  const archSpecs: Array<[string, string, string?]> = [
+  const archSpecs: MetadataRowSpec[] = [
     ['Layers', `${arch}.block_count`, 'blockCount'],
     ['Context Length', `${arch}.context_length`, 'contextLength'],
     ['Embedding Dimension', `${arch}.embedding_length`, 'embeddingDimension'],

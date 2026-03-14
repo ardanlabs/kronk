@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { CONTEXT_WINDOW_OPTIONS, BYTES_PER_ELEMENT_OPTIONS, SLOT_OPTIONS } from './constants';
-import { PARAM_TOOLTIPS, ParamTooltip } from '../ParamTooltips';
+import { FieldLabel, ParamTooltip } from '../ParamTooltips';
 import { formatBytes } from '../../lib/format';
 import type { ContextInfo } from '../../lib/context';
 import { formatContextHint } from '../../lib/context';
@@ -35,9 +35,9 @@ function GpuLayersSlider({
   if (variant === 'compact') {
     return (
       <div className="control-field" style={{ width: '100%' }}>
-        <label htmlFor="vram-compact-gpuLayers">
-          {label}<ParamTooltip text={PARAM_TOOLTIPS.gpuLayers} />
-        </label>
+        <FieldLabel htmlFor="vram-compact-gpuLayers" tooltipKey="gpuLayers">
+          {label}
+        </FieldLabel>
         <input
           id="vram-compact-gpuLayers"
           type="range"
@@ -54,9 +54,9 @@ function GpuLayersSlider({
 
   return (
     <div className="playground-sweep-param" style={{ width: '100%' }}>
-      <label className="playground-sweep-param-toggle" htmlFor="vram-gpuLayers">
-        {label}<ParamTooltip text={PARAM_TOOLTIPS.gpuLayers} />
-      </label>
+      <FieldLabel className="playground-sweep-param-toggle" htmlFor="vram-gpuLayers" tooltipKey="gpuLayers">
+        {label}
+      </FieldLabel>
       <input
         id="vram-gpuLayers"
         type="range"
@@ -99,9 +99,9 @@ function ExpertLayersSlider({
   if (variant === 'compact') {
     return (
       <div className="control-field" style={{ width: '100%' }}>
-        <label htmlFor="vram-compact-expertLayers">
-          {label}<ParamTooltip text={PARAM_TOOLTIPS.expertLayersOnGPU} />
-        </label>
+        <FieldLabel htmlFor="vram-compact-expertLayers" tooltipKey="expertLayersOnGPU">
+          {label}
+        </FieldLabel>
         <input
           id="vram-compact-expertLayers"
           type="range"
@@ -118,9 +118,9 @@ function ExpertLayersSlider({
 
   return (
     <div className="playground-sweep-param" style={{ width: '100%' }}>
-      <label className="playground-sweep-param-toggle" htmlFor="vram-expertLayers">
-        {label}<ParamTooltip text={PARAM_TOOLTIPS.expertLayersOnGPU} />
-      </label>
+      <FieldLabel className="playground-sweep-param-toggle" htmlFor="vram-expertLayers" tooltipKey="expertLayersOnGPU">
+        {label}
+      </FieldLabel>
       <input
         id="vram-expertLayers"
         type="range"
@@ -294,14 +294,15 @@ export default function VRAMControls({
       <div>
         <div className="controls-row">
           <div className="control-field">
-            <label htmlFor="vram-compact-ctx">
-              Context Window<ParamTooltip text={PARAM_TOOLTIPS.contextWindow} />
-              {contextInfo && contextInfo.hasRoPE && (
+            <FieldLabel htmlFor="vram-compact-ctx" tooltipKey="contextWindow" after={
+              contextInfo && contextInfo.hasRoPE ? (
                 <span style={{ fontSize: '11px', fontWeight: 400, color: 'var(--color-gray-500)', display: 'block', textTransform: 'none', letterSpacing: 'normal' }}>
                   {formatContextHint(contextInfo)}
                 </span>
-              )}
-            </label>
+              ) : undefined
+            }>
+              Context Window
+            </FieldLabel>
             <select
               id="vram-compact-ctx"
               value={contextWindow}
@@ -316,7 +317,7 @@ export default function VRAMControls({
             </select>
           </div>
           <div className="control-field">
-            <label htmlFor="vram-compact-bpe">Cache Type<ParamTooltip text={PARAM_TOOLTIPS.cacheType} /></label>
+            <FieldLabel htmlFor="vram-compact-bpe" tooltipKey="cacheType">Cache Type</FieldLabel>
             <select
               id="vram-compact-bpe"
               value={bytesPerElement}
@@ -331,7 +332,7 @@ export default function VRAMControls({
             </select>
           </div>
           <div className="control-field">
-            <label htmlFor="vram-compact-slots">Slots<ParamTooltip text={PARAM_TOOLTIPS.nSeqMax} /></label>
+            <FieldLabel htmlFor="vram-compact-slots" tooltipKey="nSeqMax">Slots</FieldLabel>
             <select
               id="vram-compact-slots"
               value={slots}
@@ -393,7 +394,7 @@ export default function VRAMControls({
   return (
     <div className="playground-sweep-params">
       <div className="playground-sweep-param">
-        <label className="playground-sweep-param-toggle" htmlFor="vram-contextWindow">Context Window<ParamTooltip text={PARAM_TOOLTIPS.contextWindow} /></label>
+        <FieldLabel className="playground-sweep-param-toggle" htmlFor="vram-contextWindow" tooltipKey="contextWindow">Context Window</FieldLabel>
         <select
           id="vram-contextWindow"
           value={contextWindow}
@@ -414,7 +415,7 @@ export default function VRAMControls({
       </div>
 
       <div className="playground-sweep-param">
-        <label className="playground-sweep-param-toggle" htmlFor="vram-bytesPerElement">Cache Type<ParamTooltip text={PARAM_TOOLTIPS.cacheType} /></label>
+        <FieldLabel className="playground-sweep-param-toggle" htmlFor="vram-bytesPerElement" tooltipKey="cacheType">Cache Type</FieldLabel>
         <select
           id="vram-bytesPerElement"
           value={bytesPerElement}
@@ -430,7 +431,7 @@ export default function VRAMControls({
       </div>
 
       <div className="playground-sweep-param">
-        <label className="playground-sweep-param-toggle" htmlFor="vram-slots">Slots<ParamTooltip text={PARAM_TOOLTIPS.nSeqMax} /></label>
+        <FieldLabel className="playground-sweep-param-toggle" htmlFor="vram-slots" tooltipKey="nSeqMax">Slots</FieldLabel>
         <select
           id="vram-slots"
           value={slots}
@@ -448,9 +449,9 @@ export default function VRAMControls({
           <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 600 }}>Hardware Configuration</h4>
           <div className="playground-sweep-params" style={{ margin: 0 }}>
             <div className="playground-sweep-param">
-              <label className="playground-sweep-param-toggle" htmlFor="vram-gpuCountOverride">
-                GPU Count<ParamTooltip text={PARAM_TOOLTIPS.gpuCount} />
-              </label>
+              <FieldLabel className="playground-sweep-param-toggle" htmlFor="vram-gpuCountOverride" tooltipKey="gpuCount">
+                GPU Count
+              </FieldLabel>
               <select
                 id="vram-gpuCountOverride"
                 value={deviceCountOverride ?? ''}
@@ -510,20 +511,20 @@ export default function VRAMControls({
       )}
 
       <div className="playground-sweep-param">
-        <label className="playground-sweep-param-toggle" htmlFor="vram-kvCpu" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <FieldLabel className="playground-sweep-param-toggle" htmlFor="vram-kvCpu" tooltipKey="kvCacheOnCPU" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <input
             id="vram-kvCpu"
             type="checkbox"
             checked={kvCacheOnCPU ?? false}
             onChange={(e) => onKvCacheOnCPUChange?.(e.target.checked)}
           />
-          KV Cache on CPU<ParamTooltip text={PARAM_TOOLTIPS.kvCacheOnCPU} />
-        </label>
+          KV Cache on CPU
+        </FieldLabel>
       </div>
 
       {!showHardwareOverrides && (
       <div className="playground-sweep-param">
-        <label className="playground-sweep-param-toggle" htmlFor="vram-deviceCount">GPU Count<ParamTooltip text={PARAM_TOOLTIPS.gpuCount} /></label>
+        <FieldLabel className="playground-sweep-param-toggle" htmlFor="vram-deviceCount" tooltipKey="gpuCount">GPU Count</FieldLabel>
         <select
           id="vram-deviceCount"
           value={deviceCount ?? 1}
@@ -539,9 +540,9 @@ export default function VRAMControls({
 
       {(deviceCount ?? 1) > 1 && (
         <div className="playground-sweep-param">
-          <label className="playground-sweep-param-toggle" htmlFor="vram-tensorSplit">
-            Tensor Split (proportions, e.g. 0.6,0.4)<ParamTooltip text={PARAM_TOOLTIPS.tensorSplit} />
-          </label>
+          <FieldLabel className="playground-sweep-param-toggle" htmlFor="vram-tensorSplit" tooltipKey="tensorSplit">
+            Tensor Split (proportions, e.g. 0.6,0.4)
+          </FieldLabel>
           <input
             id="vram-tensorSplit"
             type="text"
@@ -644,18 +645,18 @@ function CompactAdvancedContent({
   return (
     <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
       <div className="control-field">
-        <label htmlFor="vram-compact-kvCpu" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <FieldLabel htmlFor="vram-compact-kvCpu" tooltipKey="kvCacheOnCPU" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <input
             id="vram-compact-kvCpu"
             type="checkbox"
             checked={kvCacheOnCPU ?? false}
             onChange={(e) => onKvCacheOnCPUChange?.(e.target.checked)}
           />
-          KV Cache on CPU<ParamTooltip text={PARAM_TOOLTIPS.kvCacheOnCPU} />
-        </label>
+          KV Cache on CPU
+        </FieldLabel>
       </div>
       <div className="control-field">
-        <label htmlFor="vram-compact-deviceCount">GPU Count<ParamTooltip text={PARAM_TOOLTIPS.gpuCount} /></label>
+        <FieldLabel htmlFor="vram-compact-deviceCount" tooltipKey="gpuCount">GPU Count</FieldLabel>
         <select
           id="vram-compact-deviceCount"
           value={deviceCount ?? 1}
@@ -669,7 +670,7 @@ function CompactAdvancedContent({
       </div>
       {(deviceCount ?? 1) > 1 && (
         <div className="control-field">
-          <label htmlFor="vram-compact-tensorSplit">Tensor Split<ParamTooltip text={PARAM_TOOLTIPS.tensorSplit} /></label>
+          <FieldLabel htmlFor="vram-compact-tensorSplit" tooltipKey="tensorSplit">Tensor Split</FieldLabel>
           <input
             id="vram-compact-tensorSplit"
             type="text"

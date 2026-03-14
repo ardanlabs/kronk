@@ -21,7 +21,7 @@ import ModelSelector from './ModelSelector';
 import PlaygroundHistory from './PlaygroundHistory';
 import { autoTestTools } from '../services/autoTestRunner';
 import type { SamplingParams } from '../contexts/SamplingContext';
-import { PARAM_TOOLTIPS, ParamTooltip } from './ParamTooltips';
+import { PARAM_TOOLTIPS, FieldLabel } from './ParamTooltips';
 import { formatBytes } from '../lib/format';
 import { extractContextInfo, formatContextHint } from '../lib/context';
 import { useDevicesInfo, useMoeFit, MOE_STRATEGY_OPTIONS, VRAM_FIT_TEXT, VRAM_FIT_THRESHOLD } from './vram';
@@ -866,7 +866,7 @@ export default function ModelPlayground() {
           <h4>Configuration</h4>
           <div className="playground-config-grid-fluid">
             <div className="form-group">
-              <label htmlFor="pg-context-window">Context Window{PARAM_TOOLTIPS.contextWindow && <ParamTooltip text={PARAM_TOOLTIPS.contextWindow} />}</label>
+              <FieldLabel htmlFor="pg-context-window" tooltipKey="contextWindow">Context Window</FieldLabel>
               <input
                 id="pg-context-window"
                 type="number"
@@ -882,7 +882,7 @@ export default function ModelPlayground() {
               )}
             </div>
             <div className="form-group">
-              <label htmlFor="pg-nbatch">NBatch{PARAM_TOOLTIPS.nbatch && <ParamTooltip text={PARAM_TOOLTIPS.nbatch} />}</label>
+              <FieldLabel htmlFor="pg-nbatch" tooltipKey="nbatch">NBatch</FieldLabel>
               <input
                 id="pg-nbatch"
                 type="number"
@@ -892,7 +892,7 @@ export default function ModelPlayground() {
               />
             </div>
             <div className="form-group">
-              <label htmlFor="pg-nubatch">NUBatch{PARAM_TOOLTIPS.nubatch && <ParamTooltip text={PARAM_TOOLTIPS.nubatch} />}</label>
+              <FieldLabel htmlFor="pg-nubatch" tooltipKey="nubatch">NUBatch</FieldLabel>
               <input
                 id="pg-nubatch"
                 type="number"
@@ -902,7 +902,7 @@ export default function ModelPlayground() {
               />
             </div>
             <div className="form-group">
-              <label htmlFor="pg-nseqmax">NSeqMax{PARAM_TOOLTIPS.nSeqMax && <ParamTooltip text={PARAM_TOOLTIPS.nSeqMax} />}</label>
+              <FieldLabel htmlFor="pg-nseqmax" tooltipKey="nSeqMax">NSeqMax</FieldLabel>
               <input
                 id="pg-nseqmax"
                 type="number"
@@ -913,7 +913,7 @@ export default function ModelPlayground() {
               />
             </div>
             <div className="form-group">
-              <label htmlFor="pg-flash-attn">Flash Attention{PARAM_TOOLTIPS.flashAttention && <ParamTooltip text={PARAM_TOOLTIPS.flashAttention} />}</label>
+              <FieldLabel htmlFor="pg-flash-attn" tooltipKey="flashAttention">Flash Attention</FieldLabel>
               <select
                 id="pg-flash-attn"
                 value={flashAttention}
@@ -926,7 +926,7 @@ export default function ModelPlayground() {
               </select>
             </div>
             <div className="form-group">
-              <label htmlFor="pg-cache-type">KV Cache Type{PARAM_TOOLTIPS.cacheType && <ParamTooltip text={PARAM_TOOLTIPS.cacheType} />}</label>
+              <FieldLabel htmlFor="pg-cache-type" tooltipKey="cacheType">KV Cache Type</FieldLabel>
               <select
                 id="pg-cache-type"
                 value={cacheType}
@@ -940,7 +940,7 @@ export default function ModelPlayground() {
               </select>
             </div>
             <div className="form-group">
-              <label>Cache Mode{PARAM_TOOLTIPS.cacheMode && <ParamTooltip text={PARAM_TOOLTIPS.cacheMode} />}</label>
+              <FieldLabel tooltipKey="cacheMode">Cache Mode</FieldLabel>
               <select
                 value={cacheMode}
                 onChange={(e) => setCacheMode(e.target.value)}
@@ -953,7 +953,7 @@ export default function ModelPlayground() {
             </div>
             {isMoE && (
               <div className="form-group">
-                <label htmlFor="pg-moe-mode">Expert Strategy{PARAM_TOOLTIPS.moeMode && <ParamTooltip text={PARAM_TOOLTIPS.moeMode} />}</label>
+                <FieldLabel htmlFor="pg-moe-mode" tooltipKey="moeMode">Expert Strategy</FieldLabel>
                 <select
                   id="pg-moe-mode"
                   value={moeMode}
@@ -978,7 +978,7 @@ export default function ModelPlayground() {
             )}
             {isMoE && moeMode === 'keep_top_n' && (
               <div className="form-group">
-                <label htmlFor="pg-moe-topn">GPU Expert Layers ({moeKeepTopN} of {moeBlockCount || '?'} — more = faster, more VRAM){PARAM_TOOLTIPS.moeKeepExpertsTopN && <ParamTooltip text={PARAM_TOOLTIPS.moeKeepExpertsTopN} />}</label>
+                <FieldLabel htmlFor="pg-moe-topn" tooltipKey="moeKeepExpertsTopN">GPU Expert Layers ({moeKeepTopN} of {moeBlockCount || '?'} — more = faster, more VRAM)</FieldLabel>
                 <input
                   id="pg-moe-topn"
                   type="range"

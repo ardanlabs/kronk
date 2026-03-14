@@ -1,6 +1,6 @@
 import React from 'react';
 import type { ConfigSweepDefinition } from '../types';
-import { PARAM_TOOLTIPS, ParamTooltip } from './ParamTooltips';
+import { FieldLabel } from './ParamTooltips';
 import { MOE_SWEEP_LABELS } from './vram';
 
 export interface ConfigSweepParamsProps {
@@ -51,7 +51,7 @@ export default function ConfigSweepParams({
       </p>
       <div className="playground-sweep-params">
         <div className="playground-sweep-param">
-          <label className="playground-sweep-param-toggle">NBatch{PARAM_TOOLTIPS.nbatch && <ParamTooltip text={PARAM_TOOLTIPS.nbatch} />}</label>
+          <FieldLabel className="playground-sweep-param-toggle" tooltipKey="nbatch">NBatch</FieldLabel>
           <input
             type="text"
             className="playground-sweep-param-values"
@@ -65,7 +65,7 @@ export default function ConfigSweepParams({
         </div>
 
         <div className="playground-sweep-param">
-          <label className="playground-sweep-param-toggle">NUBatch{PARAM_TOOLTIPS.nubatch && <ParamTooltip text={PARAM_TOOLTIPS.nubatch} />}</label>
+          <FieldLabel className="playground-sweep-param-toggle" tooltipKey="nubatch">NUBatch</FieldLabel>
           <input
             type="text"
             className="playground-sweep-param-values"
@@ -79,7 +79,7 @@ export default function ConfigSweepParams({
         </div>
 
         <div className="playground-sweep-param">
-          <label className="playground-sweep-param-toggle">Context Window{PARAM_TOOLTIPS.contextWindow && <ParamTooltip text={PARAM_TOOLTIPS.contextWindow} />}</label>
+          <FieldLabel className="playground-sweep-param-toggle" tooltipKey="contextWindow">Context Window</FieldLabel>
           <input
             type="text"
             className="playground-sweep-param-values"
@@ -93,7 +93,7 @@ export default function ConfigSweepParams({
         </div>
 
         <div className="playground-sweep-param">
-          <label className="playground-sweep-param-toggle">NSeqMax{PARAM_TOOLTIPS.nSeqMax && <ParamTooltip text={PARAM_TOOLTIPS.nSeqMax} />}</label>
+          <FieldLabel className="playground-sweep-param-toggle" tooltipKey="nSeqMax">NSeqMax</FieldLabel>
           <input
             type="text"
             className="playground-sweep-param-values"
@@ -107,7 +107,7 @@ export default function ConfigSweepParams({
         </div>
 
         <div className="playground-sweep-param">
-          <label className="playground-sweep-param-toggle">Flash Attention{PARAM_TOOLTIPS.flashAttention && <ParamTooltip text={PARAM_TOOLTIPS.flashAttention} />}</label>
+          <FieldLabel className="playground-sweep-param-toggle" tooltipKey="flashAttention">Flash Attention</FieldLabel>
           <div className="playground-sweep-option-checks">
             {['enabled', 'disabled'].map((val) => (
               <label key={val} className="playground-sweep-option-label">
@@ -130,7 +130,7 @@ export default function ConfigSweepParams({
         </div>
 
         <div className="playground-sweep-param">
-          <label className="playground-sweep-param-toggle">Cache Type{PARAM_TOOLTIPS.cacheType && <ParamTooltip text={PARAM_TOOLTIPS.cacheType} />}</label>
+          <FieldLabel className="playground-sweep-param-toggle" tooltipKey="cacheType">Cache Type</FieldLabel>
           <div className="playground-sweep-option-checks">
             {['f16', 'q8_0', 'q4_0'].map((val) => (
               <label key={val} className="playground-sweep-option-label">
@@ -153,7 +153,7 @@ export default function ConfigSweepParams({
         </div>
 
         <div className="playground-sweep-param">
-          <label className="playground-sweep-param-toggle">Cache Mode{PARAM_TOOLTIPS.cacheMode && <ParamTooltip text={PARAM_TOOLTIPS.cacheMode} />}</label>
+          <FieldLabel className="playground-sweep-param-toggle" tooltipKey="cacheMode">Cache Mode</FieldLabel>
           <div className="playground-sweep-option-checks">
             {['none', 'spc', 'imc'].map((val) => (
               <label key={val} className="playground-sweep-option-label">
@@ -182,7 +182,7 @@ export default function ConfigSweepParams({
           <h4 style={{ marginTop: 16 }}>MoE Parameters</h4>
           <div className="playground-sweep-params">
             <div className="playground-sweep-param">
-              <label className="playground-sweep-param-toggle">Expert Strategy{PARAM_TOOLTIPS.moeMode && <ParamTooltip text={PARAM_TOOLTIPS.moeMode} />}</label>
+              <FieldLabel className="playground-sweep-param-toggle" tooltipKey="moeMode">Expert Strategy</FieldLabel>
               <div className="playground-sweep-option-checks">
                 {['experts_cpu', 'keep_top_n', 'experts_gpu'].map((val) => (
                   <label key={val} className="playground-sweep-option-label">
@@ -205,7 +205,7 @@ export default function ConfigSweepParams({
             </div>
 
             <div className="playground-sweep-param">
-              <label className="playground-sweep-param-toggle">GPU Expert Layers{PARAM_TOOLTIPS.moeKeepExpertsTopN && <ParamTooltip text={PARAM_TOOLTIPS.moeKeepExpertsTopN} />}</label>
+              <FieldLabel className="playground-sweep-param-toggle" tooltipKey="moeKeepExpertsTopN">GPU Expert Layers</FieldLabel>
               <input
                 type="text"
                 className="playground-sweep-param-values"
@@ -219,7 +219,7 @@ export default function ConfigSweepParams({
             </div>
 
             <div className="playground-sweep-param">
-              <label className="playground-sweep-param-toggle">Op Offload Min Batch{PARAM_TOOLTIPS.opOffloadMinBatch && <ParamTooltip text={PARAM_TOOLTIPS.opOffloadMinBatch} />}</label>
+              <FieldLabel className="playground-sweep-param-toggle" tooltipKey="opOffloadMinBatch">Op Offload Min Batch</FieldLabel>
               <input
                 type="text"
                 className="playground-sweep-param-values"

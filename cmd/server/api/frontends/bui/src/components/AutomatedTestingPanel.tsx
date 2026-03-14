@@ -20,7 +20,7 @@ import SamplingSweepParams from './SamplingSweepParams';
 import { SWEEP_PARAM_RANGES } from './SamplingSweepParams';
 import type { SamplingNumericKey, SweepInputTriple } from './SamplingSweepParams';
 import ConfigSweepParams from './ConfigSweepParams';
-import { PARAM_TOOLTIPS, ParamTooltip } from './ParamTooltips';
+import { FieldLabel } from './ParamTooltips';
 import { sortRows, sortIndicator, nextSortDirection, BestTrialMetrics, TrialDetails } from './autoTestShared';
 import type { SortState } from './autoTestShared';
 import { formatBytes } from '../lib/format';
@@ -611,7 +611,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
           <div className="playground-autotest-section">
             <div className="playground-sweep-params">
               <div className="playground-sweep-param">
-                <label className="playground-sweep-param-toggle">Available GPU VRAM (GB){PARAM_TOOLTIPS.availableVRAM && <ParamTooltip text={PARAM_TOOLTIPS.availableVRAM} />}</label>
+                <FieldLabel className="playground-sweep-param-toggle" tooltipKey="availableVRAM">Available GPU VRAM (GB)</FieldLabel>
                 <input
                   type="number"
                   className="playground-sweep-param-values"

@@ -1,6 +1,6 @@
 import { useRef, useCallback, type ReactNode } from 'react';
 
-export const PARAM_TOOLTIPS: Record<string, string> = {
+export const PARAM_TOOLTIPS = {
   // Sampling – Generation
   temperature: 'Scales the probability distribution to control randomness. Lower values (e.g. 0.2) make output more focused and deterministic; higher values (e.g. 1.5) increase variety and creativity. Leave empty to use the model default.',
   top_p: 'Nucleus sampling — samples only from the smallest set of tokens whose cumulative probability reaches this value. Lower values (e.g. 0.5) focus on the most likely tokens; 1.0 effectively disables top-p filtering. Works alongside temperature.',
@@ -117,6 +117,20 @@ export const PARAM_TOOLTIPS: Record<string, string> = {
   nthreadsBatch: 'Number of CPU threads used during prompt (batch) processing. Can differ from inference threads to optimize throughput during the prefill phase. 0 or empty = same as Threads.',
   cacheTypeK: 'Precision format for the key portion of the KV cache. f16 = full precision (best quality), q8_0 = 8-bit quantized (less VRAM, minimal quality loss), q4_0 = 4-bit (most savings).',
   cacheTypeV: 'Precision format for the value portion of the KV cache. Same options as Cache Type K. Some models benefit from asymmetric K/V quantization.',
+  cacheMinTokens: 'Minimum token count required before cache reuse kicks in. Higher values avoid caching very short prompts; lower values maximize reuse but can consume more memory for small requests.',
+  useDirectIO: 'Uses direct I/O for model file reads, bypassing the OS page cache. Can reduce double-buffering and cache pressure for large model loads, but may be slower or unsupported on some filesystems.',
+  ignoreIntegrityCheck: 'Skips model file integrity verification during load. Useful only when you trust the file source and need to bypass a known false positive; otherwise leave disabled to catch corrupted or partial files.',
+  offloadKQV: 'Offloads key/query/value attention operations to GPU. Can improve performance on GPU-backed inference but increases VRAM usage.',
+  opOffload: 'Allows selected host-side tensor operations to be offloaded to GPU during prompt processing. Can improve throughput for large or CPU-heavy workloads.',
+  mainGpu: 'Primary GPU index used in multi-GPU configurations. Relevant when using split mode or explicit device placement. Leave empty on single-GPU systems.',
+  devices: 'Explicit list of devices for inference (e.g. CUDA0,CUDA1). Leave empty to let the runtime auto-select.',
+  autoFitVram: 'Automatically adjusts GPU-related settings to fit available VRAM. Helpful for avoiding out-of-memory errors, though the chosen config may be more conservative than manual tuning.',
+  ropeFreqScale: 'RoPE frequency scale multiplier for context extension. Usually left at the model default unless reproducing a known long-context configuration.',
+  yarnBetaFast: 'YaRN beta-fast parameter for short-range frequency transition behavior. Advanced tuning option; usually leave unset unless matching a known config.',
+  yarnBetaSlow: 'YaRN beta-slow parameter for long-range frequency transition behavior. Advanced tuning option; usually leave unset unless matching a known config.',
+  draftGpuLayers: 'Number of draft-model layers offloaded to GPU. More GPU layers speed up speculative decoding but use more VRAM.',
+  draftDevice: 'Device for running the draft model. Useful in multi-device setups when you want the draft model placed separately from the main model.',
+  grammar: 'Grammar constraint to force output into a specific syntax (e.g. JSON or a custom GBNF grammar). Improves structured output reliability but can over-constrain generation if the grammar is too strict.',
   ngpuLayers: 'Number of model layers offloaded to GPU. 0 = all layers on GPU (default). -1 = all layers on CPU. Positive N = first N layers on GPU. Lower values save VRAM but reduce speed.',
   splitMode: 'How model weights are distributed across multiple GPUs. "layer" assigns whole layers per GPU, "row" splits individual tensor rows. "none" uses a single GPU.',
   systemPromptCache: 'Caches the KV state of the system prompt so it can be reused across new conversations without re-processing. Saves prefill time when every request shares the same system prompt.',
@@ -131,9 +145,16 @@ export const PARAM_TOOLTIPS: Record<string, string> = {
   hasProjection: 'Whether the model includes a multi-modal projection file (mmproj). Required for vision or audio input — the projection maps image/audio embeddings into the model\'s token space.',
   isGPT: 'Whether the model uses a GPT-style (causal, decoder-only) architecture. GPT models generate text left-to-right. Non-GPT models may be encoder-decoder or embedding models.',
   validated: 'Whether the model has been validated against the Kronk catalog. Validated models have confirmed-working configurations, templates, and recommended settings.',
-};
+} as const satisfies Record<string, string>;
 
-export function ParamTooltip({ text }: { text: string }) {
+export type TooltipKey = keyof typeof PARAM_TOOLTIPS;
+
+type ParamTooltipProps =
+  | { tooltipKey: TooltipKey; text?: never }
+  | { text: string; tooltipKey?: never };
+
+export function ParamTooltip(props: ParamTooltipProps) {
+  const text = props.tooltipKey ? PARAM_TOOLTIPS[props.tooltipKey] : props.text!;
   const wrapperRef = useRef<HTMLSpanElement>(null);
   const tipRef = useRef<HTMLSpanElement>(null);
 
@@ -173,8 +194,22 @@ export function ParamTooltip({ text }: { text: string }) {
   );
 }
 
-export function labelWithTip(label: string, tooltipKey: string): ReactNode {
-  const tip = PARAM_TOOLTIPS[tooltipKey];
-  if (!tip) return label;
-  return <>{label} <ParamTooltip text={tip} /></>;
+export function labelWithTip(label: string, tooltipKey: TooltipKey): ReactNode {
+  return <>{label} <ParamTooltip tooltipKey={tooltipKey} /></>;
+}
+
+type FieldLabelProps = React.LabelHTMLAttributes<HTMLLabelElement> & {
+  children: ReactNode;
+  tooltipKey?: TooltipKey;
+  after?: ReactNode;
+};
+
+export function FieldLabel({ children, tooltipKey, after, ...props }: FieldLabelProps) {
+  return (
+    <label {...props}>
+      {children}
+      {tooltipKey && <ParamTooltip tooltipKey={tooltipKey} />}
+      {after}
+    </label>
+  );
 }

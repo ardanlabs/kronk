@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import KeyValueTable from '../KeyValueTable';
 import { formatBytes } from '../../lib/format';
-import { PARAM_TOOLTIPS, ParamTooltip } from '../ParamTooltips';
+import { labelWithTip } from '../ParamTooltips';
 import type { VRAMInput, MoEInfo, WeightBreakdown, PerDeviceVRAM, DeviceInfo } from '../../types';
 
 interface VRAMResultsProps {
@@ -79,50 +79,50 @@ export default function VRAMResults({
   let breakdownRows: { label: ReactNode; value: string }[];
   if (isMoE) {
     breakdownRows = [
-      { label: <>Always-Active Weights (GPU)<ParamTooltip text={PARAM_TOOLTIPS.alwaysActiveWeights} /></>, value: formatBytes(alwaysActiveGPUBytes ?? 0) },
-      ...(alwaysActiveCPUBytes != null && alwaysActiveCPUBytes > 0 ? [{ label: <>Always-Active Weights (CPU)<ParamTooltip text={PARAM_TOOLTIPS.alwaysActiveWeights} /></>, value: formatBytes(alwaysActiveCPUBytes) }] : []),
+      { label: labelWithTip('Always-Active Weights (GPU)', 'alwaysActiveWeights'), value: formatBytes(alwaysActiveGPUBytes ?? 0) },
+      ...(alwaysActiveCPUBytes != null && alwaysActiveCPUBytes > 0 ? [{ label: labelWithTip('Always-Active Weights (CPU)', 'alwaysActiveWeights'), value: formatBytes(alwaysActiveCPUBytes) }] : []),
       {
-        label: <>Expert Weights — GPU ({expertLayersOnGPU ?? 0} layers)<ParamTooltip text={PARAM_TOOLTIPS.expertWeightsGPU} /></>,
+        label: labelWithTip(`Expert Weights — GPU (${expertLayersOnGPU ?? 0} layers)`, 'expertWeightsGPU'),
         value: formatBytes(expertGPUBytes ?? 0),
       },
-      { label: <>Expert Weights — CPU<ParamTooltip text={PARAM_TOOLTIPS.expertWeightsCPU} /></>, value: formatBytes(expertCPUBytes ?? 0) },
-      { label: <>KV Cache ({kvCacheLocation})<ParamTooltip text={PARAM_TOOLTIPS.kvCache} /></>, value: formatBytes(slotMemory) },
-      { label: <>Compute Buffer (estimate)<ParamTooltip text={PARAM_TOOLTIPS.computeBuffer} /></>, value: `~${formatBytes(computeBufferEst ?? 0)}` },
+      { label: labelWithTip('Expert Weights — CPU', 'expertWeightsCPU'), value: formatBytes(expertCPUBytes ?? 0) },
+      { label: labelWithTip(`KV Cache (${kvCacheLocation})`, 'kvCache'), value: formatBytes(slotMemory) },
+      { label: labelWithTip('Compute Buffer (estimate)', 'computeBuffer'), value: `~${formatBytes(computeBufferEst ?? 0)}` },
     ];
   } else if (isPartialGPU) {
     breakdownRows = [
-      { label: <>Weights on GPU ({gpuLayers} of {input.block_count} layers)<ParamTooltip text={PARAM_TOOLTIPS.gpuLayers} /></>, value: formatBytes(modelWeightsGPU ?? 0) },
-      { label: <>Weights on CPU ({input.block_count - gpuLayers!} layers)<ParamTooltip text={PARAM_TOOLTIPS.gpuLayers} /></>, value: formatBytes(modelWeightsCPU ?? 0) },
-      { label: <>KV Cache ({kvCacheLocation})<ParamTooltip text={PARAM_TOOLTIPS.kvCache} /></>, value: formatBytes(slotMemory) },
-      { label: <>KV Per Slot<ParamTooltip text={PARAM_TOOLTIPS.kvPerSlot} /></>, value: formatBytes(kvPerSlot) },
-      { label: <>KV Per Token Per Layer<ParamTooltip text={PARAM_TOOLTIPS.kvPerTokenPerLayer} /></>, value: formatBytes(kvPerTokenPerLayer) },
-      { label: <>Compute Buffer (estimate)<ParamTooltip text={PARAM_TOOLTIPS.computeBuffer} /></>, value: `~${formatBytes(computeBufferEst ?? 0)}` },
+      { label: labelWithTip(`Weights on GPU (${gpuLayers} of ${input.block_count} layers)`, 'gpuLayers'), value: formatBytes(modelWeightsGPU ?? 0) },
+      { label: labelWithTip(`Weights on CPU (${input.block_count - gpuLayers!} layers)`, 'gpuLayers'), value: formatBytes(modelWeightsCPU ?? 0) },
+      { label: labelWithTip(`KV Cache (${kvCacheLocation})`, 'kvCache'), value: formatBytes(slotMemory) },
+      { label: labelWithTip('KV Per Slot', 'kvPerSlot'), value: formatBytes(kvPerSlot) },
+      { label: labelWithTip('KV Per Token Per Layer', 'kvPerTokenPerLayer'), value: formatBytes(kvPerTokenPerLayer) },
+      { label: labelWithTip('Compute Buffer (estimate)', 'computeBuffer'), value: `~${formatBytes(computeBufferEst ?? 0)}` },
     ];
   } else {
     breakdownRows = [
-      { label: <>Model Weights<ParamTooltip text={PARAM_TOOLTIPS.modelWeights} /></>, value: formatBytes(input.model_size_bytes) },
-      { label: <>KV Cache ({kvCacheLocation})<ParamTooltip text={PARAM_TOOLTIPS.kvCache} /></>, value: formatBytes(slotMemory) },
-      { label: <>KV Per Slot<ParamTooltip text={PARAM_TOOLTIPS.kvPerSlot} /></>, value: formatBytes(kvPerSlot) },
-      { label: <>KV Per Token Per Layer<ParamTooltip text={PARAM_TOOLTIPS.kvPerTokenPerLayer} /></>, value: formatBytes(kvPerTokenPerLayer) },
-      { label: <>Compute Buffer (estimate)<ParamTooltip text={PARAM_TOOLTIPS.computeBuffer} /></>, value: `~${formatBytes(computeBufferEst ?? 0)}` },
+      { label: labelWithTip('Model Weights', 'modelWeights'), value: formatBytes(input.model_size_bytes) },
+      { label: labelWithTip(`KV Cache (${kvCacheLocation})`, 'kvCache'), value: formatBytes(slotMemory) },
+      { label: labelWithTip('KV Per Slot', 'kvPerSlot'), value: formatBytes(kvPerSlot) },
+      { label: labelWithTip('KV Per Token Per Layer', 'kvPerTokenPerLayer'), value: formatBytes(kvPerTokenPerLayer) },
+      { label: labelWithTip('Compute Buffer (estimate)', 'computeBuffer'), value: `~${formatBytes(computeBufferEst ?? 0)}` },
     ];
   }
 
   const headerRows: { label: ReactNode; value: string }[] = [
-    { label: <>Model Size<ParamTooltip text={PARAM_TOOLTIPS.modelSize} /></>, value: formatBytes(input.model_size_bytes) },
-    { label: <>Layers (Block Count)<ParamTooltip text={PARAM_TOOLTIPS.blockCount} /></>, value: String(input.block_count) },
-    { label: <>Head Count KV<ParamTooltip text={PARAM_TOOLTIPS.headCountKV} /></>, value: String(input.head_count_kv) },
-    { label: <>Key Length<ParamTooltip text={PARAM_TOOLTIPS.keyLength} /></>, value: String(input.key_length) },
-    { label: <>Value Length<ParamTooltip text={PARAM_TOOLTIPS.valueLength} /></>, value: String(input.value_length) },
+    { label: labelWithTip('Model Size', 'modelSize'), value: formatBytes(input.model_size_bytes) },
+    { label: labelWithTip('Layers (Block Count)', 'blockCount'), value: String(input.block_count) },
+    { label: labelWithTip('Head Count KV', 'headCountKV'), value: String(input.head_count_kv) },
+    { label: labelWithTip('Key Length', 'keyLength'), value: String(input.key_length) },
+    { label: labelWithTip('Value Length', 'valueLength'), value: String(input.value_length) },
   ];
 
   if (isMoE) {
     headerRows.push(
-      { label: <>Expert Count<ParamTooltip text={PARAM_TOOLTIPS.expertCount} /></>, value: String(moe!.expert_count) },
-      { label: <>Active Experts (top-k)<ParamTooltip text={PARAM_TOOLTIPS.activeExperts} /></>, value: String(moe!.expert_used_count) },
+      { label: labelWithTip('Expert Count', 'expertCount'), value: String(moe!.expert_count) },
+      { label: labelWithTip('Active Experts (top-k)', 'activeExperts'), value: String(moe!.expert_used_count) },
     );
     if (moe!.has_shared_experts) {
-      headerRows.push({ label: <>Shared Experts<ParamTooltip text={PARAM_TOOLTIPS.sharedExperts} /></>, value: 'Yes' });
+      headerRows.push({ label: labelWithTip('Shared Experts', 'sharedExperts'), value: 'Yes' });
     }
   }
 
@@ -133,7 +133,7 @@ export default function VRAMResults({
     <div className="vram-results">
       <div className="vram-hero" style={{ display: 'flex', gap: '32px', flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: '180px' }}>
-          <div className="vram-hero-label">Total Estimated VRAM<ParamTooltip text={PARAM_TOOLTIPS.totalEstimatedVRAM} /></div>
+          <div className="vram-hero-label">{labelWithTip('Total Estimated VRAM', 'totalEstimatedVRAM')}</div>
           <div className="vram-hero-value">
             {formatBytes(totalVram)}
             {effectiveGpuCapacity > 0 && (
@@ -143,7 +143,7 @@ export default function VRAMResults({
         </div>
         {showSystemRAM && systemRAMBytes != null && systemRAMBytes > 0 && (
           <div style={{ minWidth: '180px' }}>
-            <div className="vram-hero-label">Total Estimated System RAM<ParamTooltip text={PARAM_TOOLTIPS.totalEstimatedSystemRAM} /></div>
+            <div className="vram-hero-label">{labelWithTip('Total Estimated System RAM', 'totalEstimatedSystemRAM')}</div>
             <div className="vram-hero-value">
               {formatBytes(systemRamUsed)}
               <span style={{ fontSize: '0.55em', opacity: 0.5 }}> / {formatBytes(systemRAMBytes)}</span>

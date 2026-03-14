@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../services/api';
 import type { CatalogModelResponse, ModelConfig, SamplingConfig } from '../types';
+import { labelWithTip, type TooltipKey } from './ParamTooltips';
 
 interface FileEntry {
   url: string;
@@ -351,10 +352,10 @@ function defaultPlaceholder(defaultValue: number | undefined): string {
   return `default: ${defaultValue}`;
 }
 
-function NullableNumInput({ label, value, step, defaultValue, onChange }: { label: string; value: number | null; step?: string; defaultValue?: number; onChange: (v: number | null) => void }) {
+function NullableNumInput({ label, value, step, defaultValue, tooltipKey, onChange }: { label: string; value: number | null; step?: string; defaultValue?: number; tooltipKey?: TooltipKey; onChange: (v: number | null) => void }) {
   return (
     <div>
-      <label style={labelStyle}>{label}</label>
+      <label style={labelStyle}>{tooltipKey ? labelWithTip(label, tooltipKey) : label}</label>
       <input
         type="number"
         step={step}
@@ -367,11 +368,11 @@ function NullableNumInput({ label, value, step, defaultValue, onChange }: { labe
   );
 }
 
-function TriStateSelect({ label, value, onChange }: { label: string; value: boolean | null; onChange: (v: boolean | null) => void }) {
+function TriStateSelect({ label, value, tooltipKey, onChange }: { label: string; value: boolean | null; tooltipKey?: TooltipKey; onChange: (v: boolean | null) => void }) {
   const strVal = value === null ? '' : value ? 'true' : 'false';
   return (
     <div>
-      <label style={labelStyle}>{label}</label>
+      <label style={labelStyle}>{tooltipKey ? labelWithTip(label, tooltipKey) : label}</label>
       <select value={strVal} onChange={(e) => onChange(e.target.value === '' ? null : e.target.value === 'true')} style={inputStyle}>
         <option value="">not set</option>
         <option value="true">Yes</option>
@@ -1130,10 +1131,10 @@ export default function CatalogEditor() {
         {showConfig && (
           <>
             <div style={gridStyle}>
-              <NullableNumInput label="Batch Size (nbatch)" value={form.config.nbatch} defaultValue={rc?.nbatch} onChange={(v) => setConfig({ nbatch: v })} />
-              <NullableNumInput label="Micro Batch Size (nubatch)" value={form.config.nubatch} defaultValue={rc?.nubatch} onChange={(v) => setConfig({ nubatch: v })} />
+              <NullableNumInput label="Batch Size (nbatch)" tooltipKey="nbatch" value={form.config.nbatch} defaultValue={rc?.nbatch} onChange={(v) => setConfig({ nbatch: v })} />
+              <NullableNumInput label="Micro Batch Size (nubatch)" tooltipKey="nubatch" value={form.config.nubatch} defaultValue={rc?.nubatch} onChange={(v) => setConfig({ nubatch: v })} />
               <div>
-                <label style={labelStyle}>Cache Type K</label>
+                <label style={labelStyle}>{labelWithTip('Cache Type K', 'cacheTypeK')}</label>
                 <select value={form.config.cacheTypeK} onChange={(e) => setConfig({ cacheTypeK: e.target.value })} style={inputStyle}>
                   <option value="">not set</option>
                   <option value="f16">f16</option>
@@ -1143,7 +1144,7 @@ export default function CatalogEditor() {
                 </select>
               </div>
               <div>
-                <label style={labelStyle}>Cache Type V</label>
+                <label style={labelStyle}>{labelWithTip('Cache Type V', 'cacheTypeV')}</label>
                 <select value={form.config.cacheTypeV} onChange={(e) => setConfig({ cacheTypeV: e.target.value })} style={inputStyle}>
                   <option value="">not set</option>
                   <option value="f16">f16</option>
@@ -1152,14 +1153,14 @@ export default function CatalogEditor() {
                   <option value="q4_0">q4_0</option>
                 </select>
               </div>
-              <NullableNumInput label="Context Window" value={form.config.contextWindow} defaultValue={rc?.['context-window']} onChange={(v) => setConfig({ contextWindow: v })} />
-              <NullableNumInput label="Max Sequences (nseq-max)" value={form.config.nseqMax} defaultValue={rc?.['nseq-max']} onChange={(v) => setConfig({ nseqMax: v })} />
-              <TriStateSelect label="System Prompt Cache" value={form.config.systemPromptCache} onChange={(v) => setConfig({ systemPromptCache: v })} />
-              <TriStateSelect label="Incremental Cache" value={form.config.incrementalCache} onChange={(v) => setConfig({ incrementalCache: v })} />
-              <NullableNumInput label="Batch Threads (nthreads-batch)" value={form.config.nthreadsBatch} defaultValue={rc?.['nthreads-batch']} onChange={(v) => setConfig({ nthreadsBatch: v })} />
-              <NullableNumInput label="Cache Min Tokens" value={form.config.cacheMinTokens} defaultValue={rc?.['cache-min-tokens']} onChange={(v) => setConfig({ cacheMinTokens: v })} />
+              <NullableNumInput label="Context Window" tooltipKey="contextWindow" value={form.config.contextWindow} defaultValue={rc?.['context-window']} onChange={(v) => setConfig({ contextWindow: v })} />
+              <NullableNumInput label="Max Sequences (nseq-max)" tooltipKey="nSeqMax" value={form.config.nseqMax} defaultValue={rc?.['nseq-max']} onChange={(v) => setConfig({ nseqMax: v })} />
+              <TriStateSelect label="System Prompt Cache" tooltipKey="systemPromptCache" value={form.config.systemPromptCache} onChange={(v) => setConfig({ systemPromptCache: v })} />
+              <TriStateSelect label="Incremental Cache" tooltipKey="incrementalCache" value={form.config.incrementalCache} onChange={(v) => setConfig({ incrementalCache: v })} />
+              <NullableNumInput label="Batch Threads (nthreads-batch)" tooltipKey="nthreadsBatch" value={form.config.nthreadsBatch} defaultValue={rc?.['nthreads-batch']} onChange={(v) => setConfig({ nthreadsBatch: v })} />
+              <NullableNumInput label="Cache Min Tokens" tooltipKey="cacheMinTokens" value={form.config.cacheMinTokens} defaultValue={rc?.['cache-min-tokens']} onChange={(v) => setConfig({ cacheMinTokens: v })} />
               <div>
-                <label style={labelStyle}>Device</label>
+                <label style={labelStyle}>{labelWithTip('Device', 'device')}</label>
                 <select value={form.config.device} onChange={(e) => setConfig({ device: e.target.value })} style={inputStyle}>
                   <option value="">not set</option>
                   <option value="cpu">cpu</option>
@@ -1169,21 +1170,21 @@ export default function CatalogEditor() {
                   <option value="rocm">rocm</option>
                 </select>
               </div>
-              <TriStateSelect label="Direct I/O" value={form.config.useDirectIO} onChange={(v) => setConfig({ useDirectIO: v })} />
+              <TriStateSelect label="Direct I/O" tooltipKey="useDirectIO" value={form.config.useDirectIO} onChange={(v) => setConfig({ useDirectIO: v })} />
               <div>
-                <label style={labelStyle}>Flash Attention</label>
+                <label style={labelStyle}>{labelWithTip('Flash Attention', 'flashAttention')}</label>
                 <select value={form.config.flashAttention} onChange={(e) => setConfig({ flashAttention: e.target.value })} style={inputStyle}>
                   <option value="">not set</option>
                   <option value="enabled">enabled</option>
                   <option value="disabled">disabled</option>
                 </select>
               </div>
-              <NullableNumInput label="GPU Layers (ngpu-layers)" value={form.config.ngpuLayers} defaultValue={rc?.['ngpu-layers'] ?? undefined} onChange={(v) => setConfig({ ngpuLayers: v === null ? null : Math.round(v) })} />
-              <TriStateSelect label="Ignore Integrity Check" value={form.config.ignoreIntegrityCheck} onChange={(v) => setConfig({ ignoreIntegrityCheck: v })} />
-              <TriStateSelect label="Offload KQV" value={form.config.offloadKQV} onChange={(v) => setConfig({ offloadKQV: v })} />
-              <TriStateSelect label="Op Offload" value={form.config.opOffload} onChange={(v) => setConfig({ opOffload: v })} />
+              <NullableNumInput label="GPU Layers (ngpu-layers)" tooltipKey="ngpuLayers" value={form.config.ngpuLayers} defaultValue={rc?.['ngpu-layers'] ?? undefined} onChange={(v) => setConfig({ ngpuLayers: v === null ? null : Math.round(v) })} />
+              <TriStateSelect label="Ignore Integrity Check" tooltipKey="ignoreIntegrityCheck" value={form.config.ignoreIntegrityCheck} onChange={(v) => setConfig({ ignoreIntegrityCheck: v })} />
+              <TriStateSelect label="Offload KQV" tooltipKey="offloadKQV" value={form.config.offloadKQV} onChange={(v) => setConfig({ offloadKQV: v })} />
+              <TriStateSelect label="Op Offload" tooltipKey="opOffload" value={form.config.opOffload} onChange={(v) => setConfig({ opOffload: v })} />
               <div>
-                <label style={labelStyle}>Split Mode</label>
+                <label style={labelStyle}>{labelWithTip('Split Mode', 'splitMode')}</label>
                 <select value={form.config.splitMode} onChange={(e) => setConfig({ splitMode: e.target.value })} style={inputStyle}>
                   <option value="">not set</option>
                   <option value="none">none</option>
@@ -1191,41 +1192,41 @@ export default function CatalogEditor() {
                   <option value="row">row</option>
                 </select>
               </div>
-              <NullableNumInput label="Main GPU" value={form.config.mainGpu} onChange={(v) => setConfig({ mainGpu: v === null ? null : Math.round(v) })} />
+              <NullableNumInput label="Main GPU" tooltipKey="mainGpu" value={form.config.mainGpu} onChange={(v) => setConfig({ mainGpu: v === null ? null : Math.round(v) })} />
               <div>
-                <label style={labelStyle}>Devices</label>
+                <label style={labelStyle}>{labelWithTip('Devices', 'devices')}</label>
                 <input type="text" value={form.config.devices} onChange={(e) => setConfig({ devices: e.target.value })} style={inputStyle} placeholder="e.g., CUDA0,CUDA1" />
               </div>
               <div>
-                <label style={labelStyle}>Tensor Split</label>
+                <label style={labelStyle}>{labelWithTip('Tensor Split', 'tensorSplit')}</label>
                 <input type="text" value={form.config.tensorSplit} onChange={(e) => setConfig({ tensorSplit: e.target.value })} style={inputStyle} placeholder="e.g., 0.6,0.4" />
               </div>
               <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', marginTop: '8px' }}>
                 <input type="checkbox" checked={form.config.autoFitVram} onChange={(e) => setConfig({ autoFitVram: e.target.checked })} />
-                <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-gray-700)' }}>Auto-Fit VRAM</span>
+                <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-gray-700)' }}>{labelWithTip('Auto-Fit VRAM', 'autoFitVram')}</span>
               </label>
-              <NullableNumInput label="Threads (nthreads)" value={form.config.nthreads} defaultValue={rc?.nthreads} onChange={(v) => setConfig({ nthreads: v })} />
+              <NullableNumInput label="Threads (nthreads)" tooltipKey="nthreads" value={form.config.nthreads} defaultValue={rc?.nthreads} onChange={(v) => setConfig({ nthreads: v })} />
             </div>
 
             {/* YaRN / RoPE Scaling */}
             <div style={{ marginTop: '20px' }}>
               <h4 style={{ marginBottom: '12px', fontSize: '14px', fontWeight: 600, color: 'var(--color-gray-700)' }}>RoPE / YaRN Scaling</h4>
               <div style={gridStyle}>
-                <NullableNumInput label="RoPE Freq Base" value={form.config.ropeFreqBase} step="0.01" defaultValue={rc?.['rope-freq-base'] ?? undefined} onChange={(v) => setConfig({ ropeFreqBase: v })} />
-                <NullableNumInput label="RoPE Freq Scale" value={form.config.ropeFreqScale} step="0.01" defaultValue={rc?.['rope-freq-scale'] ?? undefined} onChange={(v) => setConfig({ ropeFreqScale: v })} />
+                <NullableNumInput label="RoPE Freq Base" tooltipKey="ropeFreqBase" value={form.config.ropeFreqBase} step="0.01" defaultValue={rc?.['rope-freq-base'] ?? undefined} onChange={(v) => setConfig({ ropeFreqBase: v })} />
+                <NullableNumInput label="RoPE Freq Scale" tooltipKey="ropeFreqScale" value={form.config.ropeFreqScale} step="0.01" defaultValue={rc?.['rope-freq-scale'] ?? undefined} onChange={(v) => setConfig({ ropeFreqScale: v })} />
                 <div>
-                  <label style={labelStyle}>RoPE Scaling Type</label>
+                  <label style={labelStyle}>{labelWithTip('RoPE Scaling Type', 'ropeScaling')}</label>
                   <select value={form.config.ropeScaling} onChange={(e) => setConfig({ ropeScaling: e.target.value })} style={inputStyle}>
                     <option value="">none</option>
                     <option value="linear">linear</option>
                     <option value="yarn">yarn</option>
                   </select>
                 </div>
-                <NullableNumInput label="YaRN Attn Factor" value={form.config.yarnAttnFactor} step="0.01" defaultValue={rc?.['yarn-attn-factor'] ?? undefined} onChange={(v) => setConfig({ yarnAttnFactor: v })} />
-                <NullableNumInput label="YaRN Beta Fast" value={form.config.yarnBetaFast} step="0.01" defaultValue={rc?.['yarn-beta-fast'] ?? undefined} onChange={(v) => setConfig({ yarnBetaFast: v })} />
-                <NullableNumInput label="YaRN Beta Slow" value={form.config.yarnBetaSlow} step="0.01" defaultValue={rc?.['yarn-beta-slow'] ?? undefined} onChange={(v) => setConfig({ yarnBetaSlow: v })} />
-                <NullableNumInput label="YaRN Ext Factor" value={form.config.yarnExtFactor} step="0.01" defaultValue={rc?.['yarn-ext-factor'] ?? undefined} onChange={(v) => setConfig({ yarnExtFactor: v })} />
-                <NullableNumInput label="YaRN Original Context" value={form.config.yarnOrigCtx} defaultValue={rc?.['yarn-orig-ctx'] ?? undefined} onChange={(v) => setConfig({ yarnOrigCtx: v === null ? null : Math.round(v) })} />
+                <NullableNumInput label="YaRN Attn Factor" tooltipKey="yarnAttnFactor" value={form.config.yarnAttnFactor} step="0.01" defaultValue={rc?.['yarn-attn-factor'] ?? undefined} onChange={(v) => setConfig({ yarnAttnFactor: v })} />
+                <NullableNumInput label="YaRN Beta Fast" tooltipKey="yarnBetaFast" value={form.config.yarnBetaFast} step="0.01" defaultValue={rc?.['yarn-beta-fast'] ?? undefined} onChange={(v) => setConfig({ yarnBetaFast: v })} />
+                <NullableNumInput label="YaRN Beta Slow" tooltipKey="yarnBetaSlow" value={form.config.yarnBetaSlow} step="0.01" defaultValue={rc?.['yarn-beta-slow'] ?? undefined} onChange={(v) => setConfig({ yarnBetaSlow: v })} />
+                <NullableNumInput label="YaRN Ext Factor" tooltipKey="yarnExtFactor" value={form.config.yarnExtFactor} step="0.01" defaultValue={rc?.['yarn-ext-factor'] ?? undefined} onChange={(v) => setConfig({ yarnExtFactor: v })} />
+                <NullableNumInput label="YaRN Original Context" tooltipKey="yarnOrigCtx" value={form.config.yarnOrigCtx} defaultValue={rc?.['yarn-orig-ctx'] ?? undefined} onChange={(v) => setConfig({ yarnOrigCtx: v === null ? null : Math.round(v) })} />
               </div>
             </div>
 
@@ -1234,7 +1235,7 @@ export default function CatalogEditor() {
               <h4 style={{ marginBottom: '12px', fontSize: '14px', fontWeight: 600, color: 'var(--color-gray-700)' }}>Speculative Decoding</h4>
               <div style={gridStyle}>
                 <div>
-                  <label style={labelStyle}>Draft Model ID</label>
+                  <label style={labelStyle}>{labelWithTip('Draft Model ID', 'draftModel')}</label>
                   <input
                     type="text"
                     value={form.config.draftModelId}
@@ -1243,10 +1244,10 @@ export default function CatalogEditor() {
                     placeholder="e.g., Qwen3-0.6B-Q8_0"
                   />
                 </div>
-                <NullableNumInput label="Draft Tokens (ndraft)" value={form.config.draftNDraft} onChange={(v) => setConfig({ draftNDraft: v === null ? null : Math.round(v) })} />
-                <NullableNumInput label="Draft GPU Layers" value={form.config.draftNGpuLayers} onChange={(v) => setConfig({ draftNGpuLayers: v === null ? null : Math.round(v) })} />
+                <NullableNumInput label="Draft Tokens (ndraft)" tooltipKey="draftTokens" value={form.config.draftNDraft} onChange={(v) => setConfig({ draftNDraft: v === null ? null : Math.round(v) })} />
+                <NullableNumInput label="Draft GPU Layers" tooltipKey="draftGpuLayers" value={form.config.draftNGpuLayers} onChange={(v) => setConfig({ draftNGpuLayers: v === null ? null : Math.round(v) })} />
                 <div>
-                  <label style={labelStyle}>Draft Device</label>
+                  <label style={labelStyle}>{labelWithTip('Draft Device', 'draftDevice')}</label>
                   <input
                     type="text"
                     value={form.config.draftDevice}
@@ -1306,7 +1307,7 @@ export default function CatalogEditor() {
               </div>
               <div style={gridStyle}>
                 <div>
-                  <label style={labelStyle}>Expert Strategy</label>
+                  <label style={labelStyle}>{labelWithTip('Expert Strategy', 'moeMode')}</label>
                   <select value={form.config.moeMode} onChange={(e) => setConfig({ moeMode: e.target.value })} style={inputStyle}>
                     <option value="">not set (auto)</option>
                     <option value="experts_cpu">💾 Save GPU Memory — experts on CPU</option>
@@ -1316,7 +1317,7 @@ export default function CatalogEditor() {
                   </select>
                 </div>
                 {form.config.moeMode === 'keep_top_n' && (
-                  <NullableNumInput label="Expert Layers on GPU (top N)" value={form.config.moeKeepTopN} onChange={(v) => setConfig({ moeKeepTopN: v === null ? null : Math.round(v) })} />
+                  <NullableNumInput label="Expert Layers on GPU (top N)" tooltipKey="moeKeepExpertsTopN" value={form.config.moeKeepTopN} onChange={(v) => setConfig({ moeKeepTopN: v === null ? null : Math.round(v) })} />
                 )}
               </div>
             </div>
@@ -1325,9 +1326,9 @@ export default function CatalogEditor() {
             <div style={{ marginTop: '20px' }}>
               <h4 style={{ marginBottom: '12px', fontSize: '14px', fontWeight: 600, color: 'var(--color-gray-700)' }}>Advanced System Tuning</h4>
               <div style={gridStyle}>
-                <TriStateSelect label="Use mmap" value={form.config.useMMap} onChange={(v) => setConfig({ useMMap: v })} />
+                <TriStateSelect label="Use mmap" tooltipKey="useMMap" value={form.config.useMMap} onChange={(v) => setConfig({ useMMap: v })} />
                 <div>
-                  <label style={labelStyle}>NUMA Strategy</label>
+                  <label style={labelStyle}>{labelWithTip('NUMA Strategy', 'numa')}</label>
                   <select value={form.config.numa} onChange={(e) => setConfig({ numa: e.target.value })} style={inputStyle}>
                     <option value="">disabled</option>
                     <option value="distribute">distribute</option>
@@ -1336,7 +1337,7 @@ export default function CatalogEditor() {
                     <option value="mirror">mirror</option>
                   </select>
                 </div>
-                <NullableNumInput label="Op Offload Min Batch" value={form.config.opOffloadMinBatch} defaultValue={rc?.['op-offload-min-batch'] ?? undefined} onChange={(v) => setConfig({ opOffloadMinBatch: v === null ? null : Math.round(v) })} />
+                <NullableNumInput label="Op Offload Min Batch" tooltipKey="opOffloadMinBatch" value={form.config.opOffloadMinBatch} defaultValue={rc?.['op-offload-min-batch'] ?? undefined} onChange={(v) => setConfig({ opOffloadMinBatch: v === null ? null : Math.round(v) })} />
               </div>
               <div style={{ marginTop: '12px', padding: '12px', background: 'var(--color-gray-100)', borderRadius: '6px', fontSize: '0.85em' }}>
                 <strong>💡 MoE Performance Tips:</strong>
@@ -1367,22 +1368,22 @@ export default function CatalogEditor() {
         </h3>
         {showSampling && (
           <div style={gridStyle}>
-            <NullableNumInput label="DRY Allowed Length" value={form.sampling.dryAllowedLen} defaultValue={rsp?.dry_allowed_length} onChange={(v) => setSampling({ dryAllowedLen: v })} />
-            <NullableNumInput label="DRY Base" value={form.sampling.dryBase} step="0.01" defaultValue={rsp?.dry_base} onChange={(v) => setSampling({ dryBase: v })} />
-            <NullableNumInput label="DRY Multiplier" value={form.sampling.dryMultiplier} step="0.01" defaultValue={rsp?.dry_multiplier} onChange={(v) => setSampling({ dryMultiplier: v })} />
-            <NullableNumInput label="DRY Penalty Last N" value={form.sampling.dryPenaltyLast} defaultValue={rsp?.dry_penalty_last_n} onChange={(v) => setSampling({ dryPenaltyLast: v })} />
+            <NullableNumInput label="DRY Allowed Length" tooltipKey="dry_allowed_length" value={form.sampling.dryAllowedLen} defaultValue={rsp?.dry_allowed_length} onChange={(v) => setSampling({ dryAllowedLen: v })} />
+            <NullableNumInput label="DRY Base" tooltipKey="dry_base" value={form.sampling.dryBase} step="0.01" defaultValue={rsp?.dry_base} onChange={(v) => setSampling({ dryBase: v })} />
+            <NullableNumInput label="DRY Multiplier" tooltipKey="dry_multiplier" value={form.sampling.dryMultiplier} step="0.01" defaultValue={rsp?.dry_multiplier} onChange={(v) => setSampling({ dryMultiplier: v })} />
+            <NullableNumInput label="DRY Penalty Last N" tooltipKey="dry_penalty_last_n" value={form.sampling.dryPenaltyLast} defaultValue={rsp?.dry_penalty_last_n} onChange={(v) => setSampling({ dryPenaltyLast: v })} />
             <div>
-              <label style={labelStyle}>Enable Thinking</label>
+              <label style={labelStyle}>{labelWithTip('Enable Thinking', 'enable_thinking')}</label>
               <select value={form.sampling.enableThinking} onChange={(e) => setSampling({ enableThinking: e.target.value })} style={inputStyle}>
                 <option value="">not set</option>
                 <option value="on">on</option>
                 <option value="off">off</option>
               </select>
             </div>
-            <NullableNumInput label="Max Tokens" value={form.sampling.maxTokens} defaultValue={rsp?.max_tokens} onChange={(v) => setSampling({ maxTokens: v })} />
-            <NullableNumInput label="Min P" value={form.sampling.minP} step="0.01" defaultValue={rsp?.min_p} onChange={(v) => setSampling({ minP: v })} />
+            <NullableNumInput label="Max Tokens" tooltipKey="max_tokens" value={form.sampling.maxTokens} defaultValue={rsp?.max_tokens} onChange={(v) => setSampling({ maxTokens: v })} />
+            <NullableNumInput label="Min P" tooltipKey="min_p" value={form.sampling.minP} step="0.01" defaultValue={rsp?.min_p} onChange={(v) => setSampling({ minP: v })} />
             <div>
-              <label style={labelStyle}>Reasoning Effort</label>
+              <label style={labelStyle}>{labelWithTip('Reasoning Effort', 'reasoning_effort')}</label>
               <select value={form.sampling.reasoningEffort} onChange={(e) => setSampling({ reasoningEffort: e.target.value })} style={inputStyle}>
                 <option value="">not set</option>
                 <option value="low">low</option>
@@ -1391,7 +1392,7 @@ export default function CatalogEditor() {
               </select>
             </div>
             <div>
-              <label style={labelStyle}>Grammar</label>
+              <label style={labelStyle}>{labelWithTip('Grammar', 'grammar')}</label>
               <select value={form.sampling.grammar} onChange={(e) => setSampling({ grammar: e.target.value })} style={inputStyle}>
                 <option value="">empty</option>
                 {grammarFiles.map((f) => (
@@ -1399,16 +1400,16 @@ export default function CatalogEditor() {
                 ))}
               </select>
             </div>
-            <NullableNumInput label="Repeat Last N" value={form.sampling.repeatLastN} defaultValue={rsp?.repeat_last_n} onChange={(v) => setSampling({ repeatLastN: v })} />
-            <NullableNumInput label="Repeat Penalty" value={form.sampling.repeatPenalty} step="0.01" defaultValue={rsp?.repeat_penalty} onChange={(v) => setSampling({ repeatPenalty: v })} />
-            <NullableNumInput label="Frequency Penalty" value={form.sampling.frequencyPenalty} step="0.01" defaultValue={rsp?.frequency_penalty} onChange={(v) => setSampling({ frequencyPenalty: v })} />
-            <NullableNumInput label="Presence Penalty" value={form.sampling.presencePenalty} step="0.01" defaultValue={rsp?.presence_penalty} onChange={(v) => setSampling({ presencePenalty: v })} />
-            <NullableNumInput label="Temperature" value={form.sampling.temperature} step="0.01" defaultValue={rsp?.temperature} onChange={(v) => setSampling({ temperature: v })} />
-            <NullableNumInput label="Top K" value={form.sampling.topK} defaultValue={rsp?.top_k} onChange={(v) => setSampling({ topK: v })} />
-            <NullableNumInput label="Top P" value={form.sampling.topP} step="0.01" defaultValue={rsp?.top_p} onChange={(v) => setSampling({ topP: v })} />
-            <NullableNumInput label="XTC Min Keep" value={form.sampling.xtcMinKeep} defaultValue={rsp?.xtc_min_keep} onChange={(v) => setSampling({ xtcMinKeep: v })} />
-            <NullableNumInput label="XTC Probability" value={form.sampling.xtcProbability} step="0.01" defaultValue={rsp?.xtc_probability} onChange={(v) => setSampling({ xtcProbability: v })} />
-            <NullableNumInput label="XTC Threshold" value={form.sampling.xtcThreshold} step="0.01" defaultValue={rsp?.xtc_threshold} onChange={(v) => setSampling({ xtcThreshold: v })} />
+            <NullableNumInput label="Repeat Last N" tooltipKey="repeat_last_n" value={form.sampling.repeatLastN} defaultValue={rsp?.repeat_last_n} onChange={(v) => setSampling({ repeatLastN: v })} />
+            <NullableNumInput label="Repeat Penalty" tooltipKey="repeat_penalty" value={form.sampling.repeatPenalty} step="0.01" defaultValue={rsp?.repeat_penalty} onChange={(v) => setSampling({ repeatPenalty: v })} />
+            <NullableNumInput label="Frequency Penalty" tooltipKey="frequency_penalty" value={form.sampling.frequencyPenalty} step="0.01" defaultValue={rsp?.frequency_penalty} onChange={(v) => setSampling({ frequencyPenalty: v })} />
+            <NullableNumInput label="Presence Penalty" tooltipKey="presence_penalty" value={form.sampling.presencePenalty} step="0.01" defaultValue={rsp?.presence_penalty} onChange={(v) => setSampling({ presencePenalty: v })} />
+            <NullableNumInput label="Temperature" tooltipKey="temperature" value={form.sampling.temperature} step="0.01" defaultValue={rsp?.temperature} onChange={(v) => setSampling({ temperature: v })} />
+            <NullableNumInput label="Top K" tooltipKey="top_k" value={form.sampling.topK} defaultValue={rsp?.top_k} onChange={(v) => setSampling({ topK: v })} />
+            <NullableNumInput label="Top P" tooltipKey="top_p" value={form.sampling.topP} step="0.01" defaultValue={rsp?.top_p} onChange={(v) => setSampling({ topP: v })} />
+            <NullableNumInput label="XTC Min Keep" tooltipKey="xtc_min_keep" value={form.sampling.xtcMinKeep} defaultValue={rsp?.xtc_min_keep} onChange={(v) => setSampling({ xtcMinKeep: v })} />
+            <NullableNumInput label="XTC Probability" tooltipKey="xtc_probability" value={form.sampling.xtcProbability} step="0.01" defaultValue={rsp?.xtc_probability} onChange={(v) => setSampling({ xtcProbability: v })} />
+            <NullableNumInput label="XTC Threshold" tooltipKey="xtc_threshold" value={form.sampling.xtcThreshold} step="0.01" defaultValue={rsp?.xtc_threshold} onChange={(v) => setSampling({ xtcThreshold: v })} />
           </div>
         )}
       </div>

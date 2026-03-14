@@ -1,6 +1,6 @@
 import React from 'react';
 import type { SamplingSweepDefinition, SamplingConfig } from '../types';
-import { PARAM_TOOLTIPS, ParamTooltip } from './ParamTooltips';
+import { FieldLabel, type TooltipKey } from './ParamTooltips';
 
 export type SamplingNumericKey = 'temperature' | 'top_p' | 'top_k' | 'min_p' | 'repeat_penalty' | 'repeat_last_n' |
   'frequency_penalty' | 'presence_penalty' | 'dry_multiplier' | 'dry_base' | 'dry_allowed_length' |
@@ -74,13 +74,13 @@ function SweepParamGroup({
         const triple = sweepInputs[key];
         return (
           <div className="playground-sweep-param" key={key}>
-            <label className="playground-sweep-param-toggle">
-              {label}
-              {PARAM_TOOLTIPS[key] && <ParamTooltip text={PARAM_TOOLTIPS[key]} />}
-              {catalogSampling && catalogSampling[key] !== undefined && (
+            <FieldLabel className="playground-sweep-param-toggle" tooltipKey={key as TooltipKey} after={
+              catalogSampling && catalogSampling[key] !== undefined && (
                 <span className="sweep-catalog-hint" title="Default catalog value">(default: {catalogSampling[key]})</span>
-              )}
-            </label>
+              )
+            }>
+              {label}
+            </FieldLabel>
             <div className="playground-sweep-param-range">
               <div className="playground-sweep-param-range-field">
                 <span className="playground-sweep-param-range-label">Min ({r.validMin})</span>
@@ -146,13 +146,13 @@ export default function SamplingSweepParams({
 
         <div className="playground-sweep-group-title">Reasoning</div>
         <div className="playground-sweep-param">
-          <label className="playground-sweep-param-toggle">
-            Enable Thinking
-            {PARAM_TOOLTIPS.enable_thinking && <ParamTooltip text={PARAM_TOOLTIPS.enable_thinking} />}
-            {catalogSampling?.enable_thinking && (
+          <FieldLabel className="playground-sweep-param-toggle" tooltipKey="enable_thinking" after={
+            catalogSampling?.enable_thinking && (
               <span className="sweep-catalog-hint" title="Default catalog value">— {catalogSampling.enable_thinking === 'true' ? 'Enabled' : 'Disabled'}</span>
-            )}
-          </label>
+            )
+          }>
+            Enable Thinking
+          </FieldLabel>
           <div className="playground-sweep-option-checks">
             {(['true', 'false'] as const).map((val) => (
               <label key={val} className="playground-sweep-option-label">
@@ -175,13 +175,13 @@ export default function SamplingSweepParams({
           </div>
         </div>
         <div className="playground-sweep-param">
-          <label className="playground-sweep-param-toggle">
-            Reasoning Effort
-            {PARAM_TOOLTIPS.reasoning_effort && <ParamTooltip text={PARAM_TOOLTIPS.reasoning_effort} />}
-            {catalogSampling?.reasoning_effort && (
+          <FieldLabel className="playground-sweep-param-toggle" tooltipKey="reasoning_effort" after={
+            catalogSampling?.reasoning_effort && (
               <span className="sweep-catalog-hint" title="Default catalog value">— {catalogSampling.reasoning_effort}</span>
-            )}
-          </label>
+            )
+          }>
+            Reasoning Effort
+          </FieldLabel>
           <div className="playground-sweep-option-checks">
             {(['none', 'minimal', 'low', 'medium', 'high'] as const).map((val) => (
               <label key={val} className="playground-sweep-option-label">
