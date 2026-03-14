@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../services/api';
 import type { CatalogModelResponse, ModelConfig, SamplingConfig } from '../types';
@@ -401,6 +401,7 @@ export default function CatalogEditor() {
   const [publishing, setPublishing] = useState(false);
   const [templateFiles, setTemplateFiles] = useState<string[]>([]);
   const [grammarFiles, setGrammarFiles] = useState<string[]>([]);
+  const pendingVramConfigRef = useRef<Record<string, unknown> | null>(null);
 
   useEffect(() => {
     api.listCatalogFiles().then(setCatalogFiles).catch(() => {});
@@ -458,6 +459,163 @@ export default function CatalogEditor() {
     }
   }, [searchParams]);
 
+  const vramImportedRef = useRef(false);
+  useEffect(() => {
+    if (searchParams.get('source') !== 'vram') return;
+    if (vramImportedRef.current) return;
+
+    const draftStr = sessionStorage.getItem('kronk_catalog_draft');
+    if (!draftStr) return;
+
+    let draft: { source?: string; modelUrl?: string; config?: Record<string, unknown> };
+    try {
+      draft = JSON.parse(draftStr);
+    } catch {
+      return;
+    }
+    if (draft.source !== 'vram' || !draft.modelUrl) return;
+
+    vramImportedRef.current = true;
+
+    const vramConfig = draft.config ?? {};
+    const rawUrl = draft.modelUrl;
+
+    // Parse modelUrl to derive lookup input and file-matching hints.
+    const isUrl = /^https?:\/\//i.test(rawUrl);
+    let lookupInput: string;
+    let selectedFilename: string | undefined;
+    let quantizationHint: string | undefined;
+
+    if (isUrl) {
+      // Full URL: extract owner/repo and optionally the specific .gguf filename.
+      const hfUrlMatch = rawUrl.match(/^https?:\/\/huggingface\.co\/([^/]+\/[^/]+)(?:\/(?:resolve|blob)\/[^/]+\/(.+\.gguf))?/i);
+      if (hfUrlMatch) {
+        lookupInput = hfUrlMatch[1];
+        if (hfUrlMatch[2]) {
+          selectedFilename = hfUrlMatch[2];
+        }
+      } else {
+        // Unrecognized URL format — pass directly to backend which knows how to resolve it.
+        lookupInput = rawUrl;
+      }
+    } else {
+      // Shorthand: owner/repo:TAG → split on colon for quantization hint.
+      const colonIdx = rawUrl.indexOf(':');
+      if (colonIdx > 0) {
+        lookupInput = rawUrl.substring(0, colonIdx);
+        quantizationHint = rawUrl.substring(colonIdx + 1);
+      } else {
+        lookupInput = rawUrl;
+      }
+    }
+
+    setHfInput(lookupInput);
+    setHfLoading(true);
+    setHfError(null);
+    setRepoFiles([]);
+    setShowConfig(true);
+    pendingVramConfigRef.current = vramConfig;
+
+    const mergeVramConfig = (prev: CatalogFormData): CatalogFormData => ({
+      ...prev,
+      config: {
+        ...prev.config,
+        contextWindow: (vramConfig.contextWindow as number) ?? prev.config.contextWindow,
+        nseqMax: (vramConfig.nseqMax as number) ?? prev.config.nseqMax,
+        cacheTypeK: (vramConfig.cacheTypeK as string) || prev.config.cacheTypeK,
+        cacheTypeV: (vramConfig.cacheTypeV as string) || prev.config.cacheTypeV,
+        flashAttention: (vramConfig.flashAttention as string) || prev.config.flashAttention,
+        ngpuLayers: (vramConfig.ngpuLayers as number | null) ?? prev.config.ngpuLayers,
+        offloadKQV: vramConfig.offloadKQV != null ? (vramConfig.offloadKQV as boolean | null) : prev.config.offloadKQV,
+        splitMode: (vramConfig.splitMode as string) || prev.config.splitMode,
+        tensorSplit: (vramConfig.tensorSplit as string) || prev.config.tensorSplit,
+        moeMode: (vramConfig.moeMode as string) || prev.config.moeMode,
+        moeKeepTopN: (vramConfig.moeKeepTopN as number | null) ?? prev.config.moeKeepTopN,
+      },
+    });
+
+    const doFileLookup = async (repoBase: string, filename: string) => {
+      const fullInput = `${repoBase}/${filename}`;
+      setHfInput(fullInput);
+      try {
+        const result = await api.lookupHuggingFace(fullInput);
+        const populated = populateFromResponse(result.model);
+        setForm((prev) => mergeVramConfig({
+          ...prev,
+          ...populated,
+          catalogFile: prev.catalogFile,
+          newCatalogFile: prev.newCatalogFile,
+        }));
+        setRepoFiles([]);
+      } catch (err) {
+        setHfError(err instanceof Error ? err.message : 'File lookup failed');
+      } finally {
+        setHfLoading(false);
+      }
+    };
+
+    (async () => {
+      try {
+        const result = await api.lookupHuggingFace(lookupInput);
+        const populated = populateFromResponse(result.model);
+
+        // Check if repo_files came back (repo-level lookup without specific file).
+        const files: HFRepoFile[] = result.repo_files ?? [];
+
+        if (files.length > 0) {
+          // Try to auto-select the right file.
+          let match: string | undefined;
+
+          if (selectedFilename) {
+            const found = files.find((f) => f.filename === selectedFilename);
+            if (found) match = found.filename;
+          }
+
+          if (!match && quantizationHint) {
+            const hint = quantizationHint.toLowerCase();
+            const candidates = files.filter((f) =>
+              f.filename.toLowerCase().endsWith('.gguf') &&
+              f.filename.toLowerCase().includes(hint.toLowerCase()),
+            );
+            if (candidates.length === 1) {
+              match = candidates[0].filename;
+            }
+          }
+
+          if (match) {
+            await doFileLookup(lookupInput, match);
+            sessionStorage.removeItem('kronk_catalog_draft');
+            return;
+          }
+
+          // No unambiguous match — show repo files for manual selection,
+          // but still apply the VRAM config overlay.
+          setForm((prev) => mergeVramConfig({
+            ...prev,
+            ...populated,
+            catalogFile: prev.catalogFile,
+            newCatalogFile: prev.newCatalogFile,
+          }));
+          setRepoFiles(files);
+          setHfLoading(false);
+        } else {
+          // Direct file match (no repo_files) — apply populated + VRAM config.
+          setForm((prev) => mergeVramConfig({
+            ...prev,
+            ...populated,
+            catalogFile: prev.catalogFile,
+            newCatalogFile: prev.newCatalogFile,
+          }));
+          setHfLoading(false);
+        }
+        sessionStorage.removeItem('kronk_catalog_draft');
+      } catch (err) {
+        setHfError(err instanceof Error ? err.message : 'Lookup failed');
+        setHfLoading(false);
+      }
+    })();
+  }, [searchParams]);
+
   const handleLookup = async () => {
     if (!hfInput.trim()) return;
     setHfLoading(true);
@@ -496,12 +654,34 @@ export default function CatalogEditor() {
     try {
       const result = await api.lookupHuggingFace(fullInput);
       const populated = populateFromResponse(result.model);
-      setForm((prev) => ({
-        ...prev,
-        ...populated,
-        catalogFile: prev.catalogFile,
-        newCatalogFile: prev.newCatalogFile,
-      }));
+      const vc = pendingVramConfigRef.current;
+      setForm((prev) => {
+        const merged = {
+          ...prev,
+          ...populated,
+          catalogFile: prev.catalogFile,
+          newCatalogFile: prev.newCatalogFile,
+        };
+        if (!vc) return merged;
+        return {
+          ...merged,
+          config: {
+            ...merged.config,
+            contextWindow: (vc.contextWindow as number) ?? merged.config.contextWindow,
+            nseqMax: (vc.nseqMax as number) ?? merged.config.nseqMax,
+            cacheTypeK: (vc.cacheTypeK as string) || merged.config.cacheTypeK,
+            cacheTypeV: (vc.cacheTypeV as string) || merged.config.cacheTypeV,
+            flashAttention: (vc.flashAttention as string) || merged.config.flashAttention,
+            ngpuLayers: (vc.ngpuLayers as number | null) ?? merged.config.ngpuLayers,
+            offloadKQV: vc.offloadKQV != null ? (vc.offloadKQV as boolean | null) : merged.config.offloadKQV,
+            splitMode: (vc.splitMode as string) || merged.config.splitMode,
+            tensorSplit: (vc.tensorSplit as string) || merged.config.tensorSplit,
+            moeMode: (vc.moeMode as string) || merged.config.moeMode,
+            moeKeepTopN: (vc.moeKeepTopN as number | null) ?? merged.config.moeKeepTopN,
+          },
+        };
+      });
+      pendingVramConfigRef.current = null;
       setRepoFiles([]);
     } catch (err) {
       setHfError(err instanceof Error ? err.message : 'Lookup failed');

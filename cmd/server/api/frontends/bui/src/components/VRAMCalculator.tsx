@@ -10,6 +10,7 @@ export default function VRAMCalculator() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<VRAMCalculatorResponse | null>(null);
+  const [calculatedModelUrl, setCalculatedModelUrl] = useState('');
   const cachedKeyRef = useRef('');
 
   const { controlsProps, resultsProps } = useVRAMState({ serverResponse: result, enableHardwareOverrides: true });
@@ -51,6 +52,7 @@ export default function VRAMCalculator() {
         token || undefined
       );
       setResult(response);
+      setCalculatedModelUrl(trimmed);
       cachedKeyRef.current = cacheKey;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to calculate VRAM');
@@ -133,6 +135,7 @@ export default function VRAMCalculator() {
           controlsProps={controlsProps}
           resultsProps={resultsProps}
           hideControls
+          modelUrl={calculatedModelUrl}
         />
       )}
     </div>

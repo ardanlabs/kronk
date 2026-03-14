@@ -12,6 +12,8 @@ interface VRAMCalculatorPanelProps {
   hideControls?: boolean;
   /** When true, only controls are rendered (results are managed externally). */
   hideResults?: boolean;
+  /** The model URL/shorthand from the VRAM Calculator input (enables export to catalog editor). */
+  modelUrl?: string;
 }
 
 export default function VRAMCalculatorPanel({
@@ -21,6 +23,7 @@ export default function VRAMCalculatorPanel({
   contextInfo,
   hideControls,
   hideResults,
+  modelUrl,
 }: VRAMCalculatorPanelProps) {
   return (
     <>
@@ -67,6 +70,7 @@ export default function VRAMCalculatorPanel({
           gpuDevices={resultsProps.gpuDevices}
           tensorSplit={resultsProps.tensorSplit}
           isHardwareOverridden={resultsProps.isHardwareOverridden}
+          modelUrl={modelUrl}
         />
       )}
     </>

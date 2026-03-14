@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
 import KeyValueTable from '../KeyValueTable';
 import { formatBytes } from '../../lib/format';
 import { PARAM_TOOLTIPS, ParamTooltip } from '../ParamTooltips';
@@ -31,6 +32,7 @@ interface VRAMResultsProps {
   gpuDevices?: DeviceInfo[];
   tensorSplit?: string;
   isHardwareOverridden?: boolean;
+  modelUrl?: string;
 }
 
 export default function VRAMResults({
@@ -60,6 +62,7 @@ export default function VRAMResults({
   gpuDevices,
   tensorSplit,
   isHardwareOverridden,
+  modelUrl,
 }: VRAMResultsProps) {
   const isMoE = moe?.is_moe === true && weights != null;
   const kvOnCPU = kvCacheOnCPU ?? false;
@@ -291,6 +294,7 @@ export default function VRAMResults({
         kvCacheOnCPU={kvOnCPU}
         deviceCount={deviceCount}
         tensorSplit={tensorSplit}
+        modelUrl={modelUrl}
       />
 
       <div className="vram-breakdown">
@@ -321,7 +325,21 @@ function cacheTypeName(bytesPerElement: number): string {
   }
 }
 
-function buildCatalogYAML(
+export interface VramComputedConfig {
+  contextWindow: number;
+  nseqMax: number;
+  cacheTypeK: string;
+  cacheTypeV: string;
+  flashAttention: string;
+  ngpuLayers: number | null;
+  offloadKQV: boolean | null;
+  splitMode: string;
+  tensorSplit: string;
+  moeMode: string;
+  moeKeepTopN: number | null;
+}
+
+function buildComputedCatalogConfig(
   input: VRAMInput,
   isMoE: boolean,
   gpuLayers?: number,
@@ -329,64 +347,103 @@ function buildCatalogYAML(
   kvCacheOnCPU?: boolean,
   deviceCount?: number,
   tensorSplit?: string,
-): string {
-  const lines: string[] = [];
-  lines.push('model-name/variant:');
-  lines.push(`  context-window: ${input.context_window}`);
-  lines.push(`  nseq-max: ${input.slots}`);
-
+): VramComputedConfig {
   const cacheType = cacheTypeName(input.bytes_per_element);
-  lines.push(`  cache-type-k: ${cacheType}`);
-  lines.push(`  cache-type-v: ${cacheType}`);
-
-  lines.push('  flash-attention: enabled');
-
-  // GPU layers: 0 in config = all on GPU, -1 = none on GPU.
-  if (gpuLayers != null && gpuLayers < input.block_count) {
-    lines.push(`  ngpu-layers: ${gpuLayers === 0 ? -1 : gpuLayers}`);
-  }
-
-  if (kvCacheOnCPU) {
-    lines.push('  offload-kqv: false');
-  }
-
   const gpuCount = deviceCount ?? 1;
-
-  // MoE expert offloading config: only applies when all layers are on GPU
-  // (expert offloading strategy). When gpuLayers < block_count, we're doing
-  // layer offloading and experts move with their layers — no moe: section needed.
   const allLayersOnGPU = gpuLayers == null || gpuLayers >= input.block_count;
+
+  let ngpuLayers: number | null = null;
+  if (gpuLayers != null && gpuLayers < input.block_count) {
+    ngpuLayers = gpuLayers === 0 ? -1 : gpuLayers;
+  }
+
+  let moeMode = '';
+  let moeKeepTopN: number | null = null;
   if (isMoE && allLayersOnGPU) {
     const layers = expertLayersOnGPU ?? 0;
     const allExpertsOnGPU = layers >= input.block_count;
     if (!allExpertsOnGPU) {
-      lines.push('  moe:');
       if (layers > 0) {
-        lines.push('    mode: keep_top_n');
-        lines.push(`    keep-experts-top-n: ${layers}`);
+        moeMode = 'keep_top_n';
+        moeKeepTopN = layers;
       } else {
-        lines.push('    mode: experts_cpu');
+        moeMode = 'experts_cpu';
       }
     }
   }
 
+  let splitMode = '';
+  let effectiveTensorSplit = '';
   if (gpuCount > 1) {
     const nums = tensorSplit
       ?.split(',')
       .map(s => parseFloat(s.trim()))
       .filter(n => !isNaN(n)) ?? [];
     if (nums.length > 0) {
-      lines.push(`  tensor-split: [${nums.join(', ')}]`);
+      effectiveTensorSplit = nums.join(', ');
     }
     if (isMoE) {
-      lines.push('  split-mode: row');
+      splitMode = 'row';
     }
+  }
+
+  return {
+    contextWindow: input.context_window,
+    nseqMax: input.slots,
+    cacheTypeK: cacheType,
+    cacheTypeV: cacheType,
+    flashAttention: 'enabled',
+    ngpuLayers,
+    offloadKQV: kvCacheOnCPU ? false : null,
+    splitMode,
+    tensorSplit: effectiveTensorSplit,
+    moeMode,
+    moeKeepTopN,
+  };
+}
+
+function configToYAML(config: VramComputedConfig): string {
+  const lines: string[] = [];
+  lines.push('model-name/variant:');
+  lines.push(`  context-window: ${config.contextWindow}`);
+  lines.push(`  nseq-max: ${config.nseqMax}`);
+  lines.push(`  cache-type-k: ${config.cacheTypeK}`);
+  lines.push(`  cache-type-v: ${config.cacheTypeV}`);
+  lines.push(`  flash-attention: ${config.flashAttention}`);
+
+  if (config.ngpuLayers != null) {
+    lines.push(`  ngpu-layers: ${config.ngpuLayers}`);
+  }
+
+  if (config.offloadKQV === false) {
+    lines.push('  offload-kqv: false');
+  }
+
+  if (config.moeMode) {
+    lines.push('  moe:');
+    lines.push(`    mode: ${config.moeMode}`);
+    if (config.moeMode === 'keep_top_n' && config.moeKeepTopN != null) {
+      lines.push(`    keep-experts-top-n: ${config.moeKeepTopN}`);
+    }
+  }
+
+  if (config.tensorSplit) {
+    lines.push(`  tensor-split: [${config.tensorSplit}]`);
+  }
+  if (config.splitMode) {
+    lines.push(`  split-mode: ${config.splitMode}`);
   }
 
   return lines.join('\n');
 }
 
-function CatalogConfigSection({ input, isMoE, gpuLayers, expertLayersOnGPU, kvCacheOnCPU, deviceCount, tensorSplit }: {
+export interface VramCatalogDraft {
+  source: 'vram';
+  modelUrl: string;
+  config: VramComputedConfig;
+}
+
+function CatalogConfigSection({ input, isMoE, gpuLayers, expertLayersOnGPU, kvCacheOnCPU, deviceCount, tensorSplit, modelUrl }: {
   input: VRAMInput;
   isMoE: boolean;
   gpuLayers?: number;
@@ -394,33 +451,62 @@ function CatalogConfigSection({ input, isMoE, gpuLayers, expertLayersOnGPU, kvCa
   kvCacheOnCPU?: boolean;
   deviceCount?: number;
   tensorSplit?: string;
+  modelUrl?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const yaml = buildCatalogYAML(input, isMoE, gpuLayers, expertLayersOnGPU, kvCacheOnCPU, deviceCount, tensorSplit);
+  const navigate = useNavigate();
+  const config = buildComputedCatalogConfig(input, isMoE, gpuLayers, expertLayersOnGPU, kvCacheOnCPU, deviceCount, tensorSplit);
+  const yaml = configToYAML(config);
+
+  const handleExport = () => {
+    const url = modelUrl?.trim();
+    if (!url) return;
+
+    const draft: VramCatalogDraft = {
+      source: 'vram',
+      modelUrl: url,
+      config,
+    };
+
+    sessionStorage.setItem('kronk_catalog_draft', JSON.stringify(draft));
+    navigate('/catalog/editor?source=vram');
+  };
 
   return (
     <div style={{ marginTop: '0px', padding: '0px 12px 25px 0px', background: 'var(--color-gray-50)', borderRadius: '6px' }}>
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        aria-expanded={open}
-        aria-controls="computed-catalog-config"
-        style={{
-          background: 'none',
-          border: 'none',
-          padding: 0,
-          cursor: 'pointer',
-          fontSize: '14px',
-          fontWeight: 600,
-          color: 'var(--color-text)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '6px',
-        }}
-      >
-        <span style={{ display: 'inline-block', transition: 'transform 0.2s', transform: open ? 'rotate(90deg)' : 'rotate(0deg)', fontSize: '12px' }}>▶</span>
-        Computed Catalog Configuration
-      </button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          aria-expanded={open}
+          aria-controls="computed-catalog-config"
+          style={{
+            background: 'none',
+            border: 'none',
+            padding: 0,
+            cursor: 'pointer',
+            fontSize: '14px',
+            fontWeight: 600,
+            color: 'var(--color-text)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+          }}
+        >
+          <span style={{ display: 'inline-block', transition: 'transform 0.2s', transform: open ? 'rotate(90deg)' : 'rotate(0deg)', fontSize: '12px' }}>▶</span>
+          Computed Catalog Configuration
+        </button>
+        {modelUrl?.trim() && (
+          <button
+            type="button"
+            className="btn btn-secondary"
+            style={{ fontSize: '0.8em', padding: '4px 10px' }}
+            onClick={handleExport}
+          >
+            Export to Catalog Editor
+          </button>
+        )}
+      </div>
       {open && (
         <pre id="computed-catalog-config" style={{
           marginTop: '8px',
