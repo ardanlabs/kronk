@@ -353,6 +353,10 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.New(errs.Internal, err)
 	}
 
+	// Fetch the list of available GGUF files in the repository so the UI
+	// can offer a model selector.
+	repoFiles := fetchVRAMRepoFiles(ctx, req.ModelURL)
+
 	return VRAMResponse{
 		Input: VRAMInput{
 			ModelSizeBytes:    vram.Input.ModelSizeBytes,
@@ -377,6 +381,7 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 		ModelWeightsGPU:    vram.ModelWeightsGPU,
 		ModelWeightsCPU:    vram.ModelWeightsCPU,
 		ComputeBufferEst:   vram.ComputeBufferEst,
+		RepoFiles:          repoFiles,
 	}
 }
 
@@ -836,6 +841,34 @@ func resolveHFInput(ctx context.Context, modelURL, projURL string) (resolvedHFIn
 	}
 
 	return out, nil
+}
+
+// fetchVRAMRepoFiles extracts the owner/repo from a model URL and fetches
+// the list of GGUF files available in that HuggingFace repository. This is
+// best-effort: if parsing or fetching fails, an empty slice is returned.
+func fetchVRAMRepoFiles(ctx context.Context, modelURL string) []HFRepoFile {
+	owner, repo, _, err := models.ParseHFInput(modelURL)
+	if err != nil || owner == "" || repo == "" {
+		return nil
+	}
+
+	allFiles, err := models.FetchHFRepoFiles(ctx, owner, repo, "main", "", true)
+	if err != nil {
+		return nil
+	}
+
+	var ggufFiles []HFRepoFile
+	for _, f := range allFiles {
+		if strings.HasSuffix(strings.ToLower(f.Filename), ".gguf") {
+			ggufFiles = append(ggufFiles, HFRepoFile{
+				Filename: f.Filename,
+				Size:     f.Size,
+				SizeStr:  f.SizeStr,
+			})
+		}
+	}
+
+	return ggufFiles
 }
 
 // toDownloadServerURL rewrites a catalog URL (short-form or full HuggingFace

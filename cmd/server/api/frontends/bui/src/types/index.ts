@@ -465,6 +465,7 @@ export interface VRAMCalculatorResponse {
   model_weights_gpu?: number;
   model_weights_cpu?: number;
   compute_buffer_est?: number;
+  repo_files?: HFRepoFile[];
 }
 
 export interface HFRepoFile {

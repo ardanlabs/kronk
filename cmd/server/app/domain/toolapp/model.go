@@ -970,6 +970,7 @@ type VRAMResponse struct {
 	ModelWeightsGPU    int64            `json:"model_weights_gpu"`
 	ModelWeightsCPU    int64            `json:"model_weights_cpu"`
 	ComputeBufferEst   int64            `json:"compute_buffer_est"`
+	RepoFiles          []HFRepoFile     `json:"repo_files,omitempty"`
 }
 
 // Encode implements the encoder interface.

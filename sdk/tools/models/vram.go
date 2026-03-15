@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -423,16 +422,6 @@ func isHuggingFaceFolderURL(modelURL string) bool {
 	return len(parts) >= 3
 }
 
-// hfTreeEntry represents a file entry returned by the HuggingFace tree API.
-type hfTreeEntry struct {
-	Type string `json:"type"`
-	Path string `json:"path"`
-	Size int64  `json:"size"`
-	LFS  *struct {
-		Size int64 `json:"size"`
-	} `json:"lfs"`
-}
-
 // fetchHuggingFaceFolderFiles lists GGUF files in a HuggingFace folder and
 // returns their download URLs (sorted) and total size.
 func fetchHuggingFaceFolderFiles(ctx context.Context, folderURL string) ([]string, int64, error) {
@@ -441,51 +430,22 @@ func fetchHuggingFaceFolderFiles(ctx context.Context, folderURL string) ([]strin
 		return nil, 0, err
 	}
 
-	apiURL := fmt.Sprintf("https://huggingface.co/api/models/%s/%s/tree/main/%s", owner, repo, folderPath)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	repoFiles, err := FetchHFRepoFiles(ctx, owner, repo, "main", folderPath, false)
 	if err != nil {
-		return nil, 0, fmt.Errorf("fetch-hf-folder-files: creating request: %w", err)
-	}
-
-	if token := os.Getenv("KRONK_HF_TOKEN"); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, 0, fmt.Errorf("fetch-hf-folder-files: fetching: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, 0, fmt.Errorf("fetch-hf-folder-files: unexpected status %d for %s", resp.StatusCode, apiURL)
-	}
-
-	var entries []hfTreeEntry
-	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
-		return nil, 0, fmt.Errorf("fetch-hf-folder-files: decoding: %w", err)
+		return nil, 0, fmt.Errorf("fetch-hf-folder-files: %w", err)
 	}
 
 	var fileURLs []string
 	var totalSize int64
 
-	for _, entry := range entries {
-		if entry.Type != "file" {
-			continue
-		}
-		if !strings.HasSuffix(strings.ToLower(entry.Path), ".gguf") {
+	for _, f := range repoFiles {
+		if !strings.HasSuffix(strings.ToLower(f.Filename), ".gguf") {
 			continue
 		}
 
-		size := entry.Size
-		if entry.LFS != nil {
-			size = entry.LFS.Size
-		}
-
-		downloadURL := fmt.Sprintf("https://huggingface.co/%s/%s/resolve/main/%s", owner, repo, entry.Path)
+		downloadURL := fmt.Sprintf("https://huggingface.co/%s/%s/resolve/main/%s", owner, repo, f.Filename)
 		fileURLs = append(fileURLs, downloadURL)
-		totalSize += size
+		totalSize += f.Size
 	}
 
 	if len(fileURLs) == 0 {

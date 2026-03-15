@@ -4,26 +4,24 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
+
+// HFRepoFile is an alias for models.HFRepoFile so existing callers that
+// reference catalog.HFRepoFile continue to compile without changes.
+type HFRepoFile = models.HFRepoFile
 
 // HFLookupResult contains the information extracted from HuggingFace for
 // populating a catalog entry.
 type HFLookupResult struct {
 	ModelDetails ModelDetails
 	RepoFiles    []HFRepoFile
-}
-
-// HFRepoFile represents a GGUF file available in a HuggingFace repository.
-type HFRepoFile struct {
-	Filename string `json:"filename"`
-	Size     int64  `json:"size"`
-	SizeStr  string `json:"size_str"`
 }
 
 // LookupHuggingFace queries the HuggingFace API to retrieve model metadata
@@ -47,7 +45,7 @@ func LookupHuggingFace(ctx context.Context, input string) (HFLookupResult, error
 		return lookupFromResolved(ctx, resolved, meta)
 	}
 
-	owner, repo, filename, err := parseHFInput(input)
+	owner, repo, filename, err := models.ParseHFInput(input)
 	if err != nil {
 		return HFLookupResult{}, fmt.Errorf("lookup-huggingface: %w", err)
 	}
@@ -57,7 +55,7 @@ func LookupHuggingFace(ctx context.Context, input string) (HFLookupResult, error
 		return HFLookupResult{}, fmt.Errorf("lookup-huggingface: %w", err)
 	}
 
-	repoFiles, err := fetchHFRepoFiles(ctx, owner, repo, "main")
+	repoFiles, err := models.FetchHFRepoFiles(ctx, owner, repo, "main", "", true)
 	if err != nil {
 		return HFLookupResult{}, fmt.Errorf("lookup-huggingface: %w", err)
 	}
@@ -81,7 +79,7 @@ func LookupHuggingFace(ctx context.Context, input string) (HFLookupResult, error
 // It reuses the model metadata already fetched by the resolver to avoid a
 // redundant API call, and fetches a recursive file listing for sizes.
 func lookupFromResolved(ctx context.Context, resolved HFResolvedFiles, modelMeta hfModelMeta) (HFLookupResult, error) {
-	repoFiles, err := fetchHFRepoFiles(ctx, resolved.Owner, resolved.Repo, resolved.Revision)
+	repoFiles, err := models.FetchHFRepoFiles(ctx, resolved.Owner, resolved.Repo, resolved.Revision, "", true)
 	if err != nil {
 		return HFLookupResult{}, fmt.Errorf("lookup-from-resolved: %w", err)
 	}
@@ -130,40 +128,6 @@ func lookupFromResolved(ctx context.Context, resolved HFResolvedFiles, modelMeta
 }
 
 // =============================================================================
-
-func parseHFInput(input string) (owner, repo, filename string, err error) {
-	input = strings.TrimSpace(input)
-
-	for _, prefix := range []string{
-		"https://huggingface.co/",
-		"http://huggingface.co/",
-		"https://hf.co/",
-		"http://hf.co/",
-		"huggingface.co/",
-		"hf.co/",
-	} {
-		if strings.HasPrefix(strings.ToLower(input), prefix) {
-			input = input[len(prefix):]
-			break
-		}
-	}
-
-	parts := strings.Split(input, "/")
-	if len(parts) < 2 {
-		return "", "", "", fmt.Errorf("parse-hf-input: invalid input %q, expected owner/repo format", input)
-	}
-
-	owner = parts[0]
-	repo = parts[1]
-
-	if len(parts) > 3 && (parts[2] == "resolve" || parts[2] == "blob") {
-		filename = strings.Join(parts[4:], "/")
-	} else if len(parts) > 2 {
-		filename = strings.Join(parts[2:], "/")
-	}
-
-	return owner, repo, filename, nil
-}
 
 type hfModelMeta struct {
 	ID          string   `json:"id"`
@@ -234,66 +198,6 @@ func fetchHFModelMeta(ctx context.Context, owner, repo, revision string) (hfMode
 	}
 
 	return meta, nil
-}
-
-type hfTreeFile struct {
-	Type string `json:"type"`
-	Path string `json:"path"`
-	Size int64  `json:"size"`
-	LFS  *struct {
-		Size int64 `json:"size"`
-	} `json:"lfs"`
-}
-
-func fetchHFRepoFiles(ctx context.Context, owner, repo, revision string) ([]HFRepoFile, error) {
-	if revision == "" {
-		revision = "main"
-	}
-	apiURL := fmt.Sprintf("https://huggingface.co/api/models/%s/%s/tree/%s?recursive=true", url.PathEscape(owner), url.PathEscape(repo), url.PathEscape(revision))
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("fetch-hf-repo-files: creating request: %w", err)
-	}
-
-	if token := os.Getenv("KRONK_HF_TOKEN"); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("fetch-hf-repo-files: fetching: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("fetch-hf-repo-files: unexpected status %d", resp.StatusCode)
-	}
-
-	var treeFiles []hfTreeFile
-	if err := json.NewDecoder(resp.Body).Decode(&treeFiles); err != nil {
-		return nil, fmt.Errorf("fetch-hf-repo-files: decoding: %w", err)
-	}
-
-	var files []HFRepoFile
-	for _, tf := range treeFiles {
-		if tf.Type != "file" {
-			continue
-		}
-
-		size := tf.Size
-		if tf.LFS != nil {
-			size = tf.LFS.Size
-		}
-
-		files = append(files, HFRepoFile{
-			Filename: tf.Path,
-			Size:     size,
-			SizeStr:  formatFileSize(size),
-		})
-	}
-
-	return files, nil
 }
 
 func buildModelDetails(owner, repo, filename string, meta hfModelMeta, ggufFiles []HFRepoFile) ModelDetails {
@@ -437,24 +341,4 @@ func ClassifyArchitecture(arch string) string {
 	}
 
 	return ""
-}
-
-func formatFileSize(bytes int64) string {
-	const (
-		kb = 1000
-		mb = kb * 1000
-		gb = mb * 1000
-	)
-
-	switch {
-	case bytes >= gb:
-		val := float64(bytes) / float64(gb)
-		return fmt.Sprintf("%.1f GB", math.Round(val*10)/10)
-	case bytes >= mb:
-		val := float64(bytes) / float64(mb)
-		return fmt.Sprintf("%.1f MB", math.Round(val*10)/10)
-	default:
-		val := float64(bytes) / float64(kb)
-		return fmt.Sprintf("%.1f KB", math.Round(val*10)/10)
-	}
 }
