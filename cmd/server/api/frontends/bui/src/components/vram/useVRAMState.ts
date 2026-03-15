@@ -225,8 +225,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
       : effectiveGpuTotalBytes;
 
     if (combinedFreeBytes <= 0) {
-      setGpuLayers(0);
-      setExpertLayersOnGPU(0);
+      // No GPU capacity detected — keep everything on GPU (the seeded defaults).
       return;
     }
 

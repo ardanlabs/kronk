@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { CONTEXT_WINDOW_OPTIONS, BYTES_PER_ELEMENT_OPTIONS, SLOT_OPTIONS } from './constants';
 import { FieldLabel, ParamTooltip } from '../ParamTooltips';
 import { formatBytes } from '../../lib/format';
@@ -270,6 +270,15 @@ export default function VRAMControls({
   const [compactAdvancedOpen, setCompactAdvancedOpen] = useState(false);
   const [offloadStrategy, setOffloadStrategy] = useState<OffloadStrategy>('layer');
 
+  // Reset offload strategy when block count changes (new model loaded).
+  const prevBlockCountRef = useRef(blockCount);
+  useEffect(() => {
+    if (blockCount !== prevBlockCountRef.current) {
+      prevBlockCountRef.current = blockCount;
+      setOffloadStrategy('layer');
+    }
+  }, [blockCount]);
+
   // When strategy changes, sync the hidden values so the calculation is correct.
   const handleStrategyChange = (s: OffloadStrategy) => {
     setOffloadStrategy(s);
@@ -278,7 +287,7 @@ export default function VRAMControls({
       // Layer offloading: expert layers follow GPU layers.
       onExpertLayersOnGPUChange?.(gpuLayers ?? blockCount);
     } else {
-      // Expert offloading: all layers stay on GPU.
+      // Expert offloading: all layers stay on GPU, keep current expert layers.
       onGpuLayersChange?.(blockCount);
     }
   };
