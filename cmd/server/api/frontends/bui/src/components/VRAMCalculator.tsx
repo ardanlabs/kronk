@@ -65,6 +65,8 @@ interface DisplayRow {
   isSplit: boolean;
   /** Number of split parts (1 for non-split). */
   parts: number;
+  /** For split models, the folder path within the repo (e.g. "Model-Q8_0"). */
+  folderPath: string;
 }
 
 /** Collapse split model shards into a single folder row, keeping singles as-is. */
@@ -95,15 +97,17 @@ function collapseRepoFiles(files: HFRepoFile[]): DisplayRow[] {
 
   for (const [base, group] of splitGroups) {
     const totalSize = group.files.reduce((sum, f) => sum + f.size, 0);
-    const label = group.dir || base.split('/').pop() || base;
+    // Use the directory if files live in a subfolder, otherwise derive from base name.
+    const folder = group.dir || base.split('/').pop() || base;
     // Sort shards so we always pick the first one as the representative.
     group.files.sort((a, b) => a.filename.localeCompare(b.filename));
     rows.push({
-      label: `📁 ${label} (${group.files.length} parts)`,
+      label: `📁 ${folder} (${group.files.length} parts)`,
       filename: group.files[0].filename,
       sizeStr: formatTotalSize(totalSize),
       isSplit: true,
       parts: group.files.length,
+      folderPath: folder,
     });
   }
 
@@ -114,6 +118,7 @@ function collapseRepoFiles(files: HFRepoFile[]): DisplayRow[] {
       sizeStr: f.size_str,
       isSplit: false,
       parts: 1,
+      folderPath: '',
     });
   }
 
@@ -179,7 +184,21 @@ export default function VRAMCalculator() {
   }, [modelUrl]);
 
   const performCalculation = useCallback(async (urlOverride?: string) => {
-    const calcUrl = urlOverride ?? (selectedFilename ? buildModelUrl(lookupUrl || modelUrl, selectedFilename) : modelUrl.trim());
+    let calcUrl: string;
+    if (urlOverride) {
+      calcUrl = urlOverride;
+    } else if (selectedFilename) {
+      // For split models, send a folder URL so the backend sums all shards.
+      const selectedRow = displayRows.find((r) => r.filename === selectedFilename);
+      if (selectedRow?.isSplit && selectedRow.folderPath) {
+        calcUrl = buildModelUrl(lookupUrl || modelUrl, selectedRow.folderPath);
+      } else {
+        calcUrl = buildModelUrl(lookupUrl || modelUrl, selectedFilename);
+      }
+    } else {
+      calcUrl = modelUrl.trim();
+    }
+
     if (!calcUrl) {
       setError('Please select a model file');
       return;
@@ -223,7 +242,7 @@ export default function VRAMCalculator() {
     } finally {
       setLoading(false);
     }
-  }, [modelUrl, lookupUrl, selectedFilename, controlsProps, token, result]);
+  }, [modelUrl, lookupUrl, selectedFilename, displayRows, controlsProps, token, result]);
 
   const handleCalculate = async (e: React.FormEvent) => {
     e.preventDefault();
