@@ -139,10 +139,14 @@ func (c *Catalog) ResolvedModelConfig(modelID string) ModelConfig {
 	// Apply catalog settings first if found.
 	if catalogFound {
 		cfg = catalog.BaseModelConfig
+		cfg.Template = catalog.Template
 	}
 
 	// Apply model config settings if found (overrides catalog).
 	if modelCfgFound {
+		if modelConfig.Template != "" {
+			cfg.Template = modelConfig.Template
+		}
 		if modelConfig.Device != "" {
 			cfg.Device = modelConfig.Device
 		}

@@ -25,26 +25,21 @@ func (c *Catalog) RetrieveConfig(modelID string) (model.Config, error) {
 
 // RetrieveTemplate implements the model.Cataloger interface.
 func (c *Catalog) RetrieveTemplate(modelID string) (model.Template, error) {
-	m, err := c.Details(modelID)
-	if err != nil {
-		return model.Template{}, fmt.Errorf("retrieve-template: unable to retrieve model details: %w", err)
-	}
+	mc := c.ResolvedModelConfig(modelID)
 
-	if m.Template == "" {
+	if mc.Template == "" {
 		return model.Template{}, errors.New("retrieve-template: no template configured")
 	}
 
-	content, err := c.retrieveScript(m.Template)
+	content, err := c.ReadTemplate(mc.Template)
 	if err != nil {
 		return model.Template{}, fmt.Errorf("retrieve-template: unable to retrieve template: %w", err)
 	}
 
-	mt := model.Template{
-		FileName: m.Template,
+	return model.Template{
+		FileName: mc.Template,
 		Script:   content,
-	}
-
-	return mt, nil
+	}, nil
 }
 
 // TemplateFiles returns a sorted list of available template filenames.
@@ -69,18 +64,6 @@ func (c *Catalog) TemplateFiles() ([]string, error) {
 	}
 
 	return files, nil
-}
-
-// retrieveScript returns the contents of the template file.
-func (c *Catalog) retrieveScript(templateFileName string) (string, error) {
-	filePath := filepath.Join(c.templates.templatePath, templateFileName)
-
-	content, err := os.ReadFile(filePath)
-	if err != nil {
-		return "", fmt.Errorf("retrieve-script: reading template file: %w", err)
-	}
-
-	return string(content), nil
 }
 
 // TemplateFileInfo provides information about a template file.

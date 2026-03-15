@@ -28,6 +28,7 @@ export default function Chat() {
 
   const [extendedModels, setExtendedModels] = useState<ListModelDetail[]>([]);
   const [modelVRAM, setModelVRAM] = useState<VRAM | null>(null);
+  const [modelTemplate, setModelTemplate] = useState<string | null>(null);
   const [modelMetadata, setModelMetadata] = useState<Record<string, string> | undefined>(undefined);
   const devicesInfo = useDevicesInfo();
   const moeFit = useMoeFit(modelVRAM, modelMetadata, devicesInfo);
@@ -142,19 +143,25 @@ export default function Chat() {
   useEffect(() => {
     if (!selectedModel) {
       setModelVRAM(null);
+      setModelTemplate(null);
       setModelMetadata(undefined);
       return;
     }
+    setModelVRAM(null);
+    setModelTemplate(null);
+    setModelMetadata(undefined);
     let cancelled = false;
     api.showModel(selectedModel)
       .then((info) => {
         if (cancelled) return;
         setModelVRAM(info.vram || null);
+        setModelTemplate(info.template ?? '');
         setModelMetadata(info.metadata);
       })
       .catch(() => {
         if (!cancelled) {
           setModelVRAM(null);
+          setModelTemplate(null);
           setModelMetadata(undefined);
         }
       });
@@ -248,32 +255,43 @@ export default function Chat() {
         headerLeft={
           <>
             <h2>Chat</h2>
-            <select
-              value={selectedModel}
-              onChange={handleModelChange}
-              disabled={modelsLoading}
-              className="chat-model-select"
-            >
-              {modelsLoading && <option>Loading models...</option>}
-              {!modelsLoading && models?.data?.length === 0 && (
-                <option>No models available</option>
+            <div className="chat-model-selector-group">
+              <select
+                value={selectedModel}
+                onChange={handleModelChange}
+                disabled={modelsLoading}
+                className="chat-model-select"
+              >
+                {modelsLoading && <option>Loading models...</option>}
+                {!modelsLoading && models?.data?.length === 0 && (
+                  <option>No models available</option>
+                )}
+                {models?.data
+                  ?.filter((model) => {
+                    const id = model.id.toLowerCase();
+                    return !id.includes('embed') && !id.includes('rerank');
+                  })
+                  .map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.draft_model_id ? '⚡ ' : ''}{model.id}
+                  </option>
+                ))}
+              </select>
+              {(selectedModelDraftId || modelTemplate !== null) && (
+                <div className="chat-model-info">
+                  {selectedModelDraftId && (
+                    <span className="chat-draft-label" title="Draft model for speculative decoding">
+                      ⚡ {selectedModelDraftId}
+                    </span>
+                  )}
+                  {modelTemplate !== null && (
+                    <span className="chat-template-label" title="Chat template">
+                      Template: {modelTemplate === '' ? 'builtin' : modelTemplate}
+                    </span>
+                  )}
+                </div>
               )}
-              {models?.data
-                ?.filter((model) => {
-                  const id = model.id.toLowerCase();
-                  return !id.includes('embed') && !id.includes('rerank');
-                })
-                .map((model) => (
-                <option key={model.id} value={model.id}>
-                  {model.draft_model_id ? '⚡ ' : ''}{model.id}
-                </option>
-              ))}
-            </select>
-            {selectedModelDraftId && (
-              <span className="chat-draft-label" title="Draft model for speculative decoding">
-                ⚡ {selectedModelDraftId}
-              </span>
-            )}
+            </div>
           </>
         }
         headerRight={

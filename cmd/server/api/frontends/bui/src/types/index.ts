@@ -122,6 +122,7 @@ export interface ModelInfoResponse {
   has_projection: boolean;
   is_gpt: boolean;
   web_page?: string;
+  template: string;
   metadata: Record<string, string>;
   vram?: VRAM;
   model_config?: ModelConfig;

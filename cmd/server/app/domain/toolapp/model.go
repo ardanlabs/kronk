@@ -237,6 +237,7 @@ type ModelInfoResponse struct {
 	HasProjection bool              `json:"has_projection"`
 	IsGPT         bool              `json:"is_gpt"`
 	WebPage       string            `json:"web_page,omitempty"`
+	Template      string            `json:"template"`
 	Metadata      map[string]string `json:"metadata"`
 	VRAM          *VRAM             `json:"vram,omitempty"`
 	ModelConfig   *ModelConfig      `json:"model_config,omitempty"`
@@ -264,6 +265,7 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfi
 		HasProjection: mi.HasProjection,
 		IsGPT:         mi.IsGPTModel,
 		WebPage:       webPage,
+		Template:      rmc.Template,
 		Metadata:      metadata,
 		ModelConfig: &ModelConfig{
 			Device:               rmc.Device,

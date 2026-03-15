@@ -239,6 +239,7 @@ type ModelConfig struct {
 	YarnBetaSlow         *float32                 `yaml:"yarn-beta-slow,omitempty"`
 	YarnOrigCtx          *int                     `yaml:"yarn-orig-ctx,omitempty"`
 	DraftModel           *DraftModelConfig        `yaml:"draft-model,omitempty"`
+	Template             string                   `yaml:"template,omitempty"`
 	Sampling             SamplingConfig           `yaml:"sampling-parameters,omitempty"`
 }
 

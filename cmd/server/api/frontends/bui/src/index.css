@@ -1536,6 +1536,18 @@ code[class*="language-"] {
     gap: 8px;
 }
 
+.chat-model-selector-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.chat-model-info {
+    display: flex;
+    gap: 12px;
+    padding-left: 2px;
+}
+
 .chat-model-select {
     padding: 8px 12px;
     border: 1px solid var(--color-gray-300);
@@ -1547,8 +1559,14 @@ code[class*="language-"] {
 
 .chat-draft-indicator,
 .chat-draft-label {
-    font-size: 13px;
+    font-size: 12px;
     color: var(--color-amber-600, #d97706);
+    white-space: nowrap;
+}
+
+.chat-template-label {
+    font-size: 12px;
+    color: var(--color-gray-600, #4b5563);
     white-space: nowrap;
 }
 
