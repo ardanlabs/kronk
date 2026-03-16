@@ -26,7 +26,9 @@
               let
                 src = builtins.readFile ../../sdk/kronk/kronk.go;
                 lines = builtins.filter builtins.isString (builtins.split "\n" src);
-                versionLine = builtins.head (builtins.filter (l: builtins.match "const Version = .*" l != null) lines);
+                versionLine = builtins.head (
+                  builtins.filter (l: builtins.match "const Version = .*" l != null) lines
+                );
                 match = builtins.match "const Version = \"([^\"]+)\"" versionLine;
               in
               builtins.head match;
