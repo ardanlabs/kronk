@@ -938,8 +938,10 @@ owu-browse:
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
 	OPEN_CMD := open
+	SED_INPLACE := sed -i ''
 else
 	OPEN_CMD := xdg-open
+	SED_INPLACE := sed -i
 endif
 
 website:
@@ -976,17 +978,30 @@ gonja-latest:
 # ==============================================================================
 # Release
 
-prep-release:
+prep-new-release:
 ifndef VERSION
-	$(error VERSION is required, e.g. make prep-release VERSION=1.2.3)
+	$(error VERSION is required, e.g. make prep-new-release VERSION=1.2.3)
 endif
-	echo $(VERSION) > VERSION
-	git add VERSION
+	@if [ ! -f .release/v$(VERSION).md ]; then \
+		echo "Missing .release/v$(VERSION).md — create the release notes file first."; \
+		exit 1; \
+	fi
+	$(SED_INPLACE) 's/^const Version = "[^"]*"/const Version = "$(VERSION)"/' sdk/kronk/kronk.go
+	git add sdk/kronk/kronk.go zarf/nix/flake.nix .release/v$(VERSION).md
 	@echo ""
-	@echo "Files staged. Now:"
-	@echo "  1. git commit"
-	@echo "  2. git tag v$(VERSION)"
-	@echo "  3. git push origin main v$(VERSION)"
+	@echo "Files staged. Review changes, then run: make push-new-release VERSION=$(VERSION)"
+
+push-new-release:
+ifndef VERSION
+	$(error VERSION is required, e.g. make push-new-release VERSION=1.2.3)
+endif
+	@if [ ! -f .release/v$(VERSION).md ]; then \
+		echo "Missing .release/v$(VERSION).md — run make prep-new-release VERSION=$(VERSION) first."; \
+		exit 1; \
+	fi
+	git commit -F .release/v$(VERSION).md
+	git tag v$(VERSION)
+	git push origin main v$(VERSION)
 
 # ==============================================================================
 # Examples

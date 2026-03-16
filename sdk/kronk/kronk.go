@@ -4,7 +4,6 @@ package kronk
 import (
 	"context"
 	"fmt"
-	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -16,28 +15,7 @@ import (
 )
 
 // Version contains the current version of the kronk package.
-var Version = "dev"
-
-func init() {
-	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		return
-	}
-
-	// Running as the main module (the kronk binary).
-	if info.Main.Path == "github.com/ardanlabs/kronk" && info.Main.Version != "(devel)" {
-		Version = info.Main.Version
-		return
-	}
-
-	// Running as a dependency inside a consumer's binary.
-	for _, dep := range info.Deps {
-		if dep.Path == "github.com/ardanlabs/kronk" {
-			Version = dep.Version
-			return
-		}
-	}
-}
+const Version = "1.21.5"
 
 // =============================================================================
 
