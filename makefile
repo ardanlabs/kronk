@@ -987,7 +987,7 @@ endif
 		exit 1; \
 	fi
 	$(SED_INPLACE) 's/^const Version = "[^"]*"/const Version = "$(VERSION)"/' sdk/kronk/kronk.go
-	git add sdk/kronk/kronk.go zarf/nix/flake.nix .release/v$(VERSION).md
+	git add sdk/kronk/kronk.go .release/v$(VERSION).md
 	@echo ""
 	@echo "Files staged. Review changes, then run: make push-new-release VERSION=$(VERSION)"
 
