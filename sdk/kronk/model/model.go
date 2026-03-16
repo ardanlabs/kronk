@@ -13,9 +13,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/model/caching"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/hybridgroup/yzma/pkg/llama"
+	"github.com/hybridgroup/yzma/pkg/mtmd"
 	"github.com/nikolalohinski/gonja/v2/exec"
 	"go.opentelemetry.io/otel/attribute"
 )
@@ -28,36 +30,6 @@ var modelLoadMu sync.Mutex
 type compiledTemplate struct {
 	tmpl *exec.Template
 	err  error
-}
-
-// imcSession holds the state for a single IMC (Incremental Message Cache) session.
-// Each slot gets its own session with an assigned cache sequence.
-type imcSession struct {
-	cachedMsgsHash    string        // Hash of all cached messages
-	cachedTokens      []llama.Token // Full token sequence in KV cache (immutable; replaced, never mutated)
-	totalTokensCached int           // Total KV positions cached (includes text + media tokens)
-	cachedMsgCount    int           // Number of messages cached
-	seqID             llama.SeqId   // Assigned cache sequence ID
-	slotID            int           // Dedicated slot ID bound to this session
-	lastUsed          time.Time     // Last access time (for eviction)
-	pending           bool          // True while a build/rebuild is in-flight (deferred decode)
-	hasMedia          bool          // True if the cached content includes media tokens (image/audio)
-	useMRoPE          bool          // True if the cached media used M-RoPE 4D positional encoding
-	mediaKVCounts     []int         // KV positions consumed per media chunk (image/audio); used for text-only extend math
-}
-
-// spcSession holds the state for a single SPC (System Prompt Cache) session.
-// The system prompt is decoded once into a temporary cache sequence, the KV
-// state is extracted into an external byte buffer, and the sequence is freed.
-// On each request, the KV state is restored into the slot's working sequence
-// via StateSeqSetData, avoiding a permanently dedicated cache sequence.
-type spcSession struct {
-	sysPromptHash   string      // Hash of the system prompt
-	sysPromptTokens int         // Number of tokens in system prompt cache
-	sysPromptLen    int         // Length of system prompt string
-	seqID           llama.SeqId // Sequence ID used for initial decode
-	lastUsed        time.Time   // Last access time
-	kvState         []byte      // Externalized KV cache state (post-decode tensors)
 }
 
 // draftModel holds resources for the draft model used in speculative decoding.
@@ -115,16 +87,12 @@ type Model struct {
 	activeStreams     atomic.Int32
 	unloaded          atomic.Bool
 	decodeMu          sync.Mutex
-	cacheMu           sync.RWMutex
-	cacheCond         *sync.Cond    // Broadcast when any IMC slot's pending flag is cleared
-	imcSlots          []*imcSession // Per-slot branch state, len = NSeqMax
-	spcSession        *spcSession   // SPC session (single dedicated cache sequence)
-	spcCacheSeqID     llama.SeqId   // Dedicated SPC cache sequence ID
-	addBOSToken       bool          // Whether to add BOS token (from model metadata)
-	mediaMarkerTokens int           // Token count for the media marker string; computed once via mediaMarkerOnce
-	mediaMarkerOnce   sync.Once     // Guards one-time computation of mediaMarkerTokens
-	pool              *contextPool  // Context pool for parallel embed/rerank
-	draft             *draftModel   // Draft model for speculative decoding
+	cache             caching.Cacher // Cache strategy (SPC, IMC, or Noop)
+	addBOSToken       bool           // Whether to add BOS token (from model metadata)
+	mediaMarkerTokens int            // Token count for the media marker string; computed once via mediaMarkerOnce
+	mediaMarkerOnce   sync.Once      // Guards one-time computation of mediaMarkerTokens
+	pool              *contextPool   // Context pool for parallel embed/rerank
+	draft             *draftModel    // Draft model for speculative decoding
 }
 
 func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, error) {
@@ -486,23 +454,26 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 		m.lctx = lctx
 		m.mem = mem
 
-		// Initialize IMC per-slot branch tracking when enabled.
-		if cfg.IncrementalCache {
-			m.cacheCond = sync.NewCond(&m.cacheMu)
-			m.imcSlots = make([]*imcSession, nSlots)
-			for i := range nSlots {
-				m.imcSlots[i] = &imcSession{
-					seqID:  llama.SeqId(i),
-					slotID: i,
-				}
-			}
+		// Initialize cache strategy (SPC, IMC, or Noop).
+		cacheCfg := caching.Config{
+			NumSlots:      nSlots,
+			MinTokens:     cfg.CacheMinTokens,
+			SlotTimeout:   time.Duration(cfg.CacheSlotTimeout) * time.Second,
+			SupportsMedia: m.projFile != "",
 		}
 
-		// Initialize SPC. The last slot's sequence is borrowed temporarily
-		// for the initial decode. The KV state is externalized to a byte
-		// buffer immediately after, so the sequence is freed for normal use.
-		if cfg.SystemPromptCache {
-			m.spcCacheSeqID = llama.SeqId(nSlots - 1)
+		switch {
+		case cfg.IncrementalCache:
+			cacheCfg.Strategy = caching.StrategyIMC
+		case cfg.SystemPromptCache:
+			cacheCfg.Strategy = caching.StrategySPC
+			cacheCfg.SPCSeqID = llama.SeqId(nSlots)
+		}
+
+		if cfg.CacheFactory != nil {
+			m.cache = cfg.CacheFactory(&m, cacheCfg)
+		} else {
+			m.cache = caching.New(&m, cacheCfg)
 		}
 
 		m.batch = newBatchEngine(&m, nSlots)
@@ -858,7 +829,7 @@ func (m *Model) resetContext() {
 		llama.MemoryClear(mem, true)
 	}
 
-	m.clearCaches()
+	m.cache.ClearCaches()
 }
 
 func (m *Model) isUnnecessaryCRLF(reasonFlag int, completionFlag int, content string) bool {
@@ -974,6 +945,9 @@ func calculateVRAM(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory int64)
 	bytesPerElement := ggmlTypeToBytes(cfg.CacheTypeK, cfg.CacheTypeV)
 
 	nSeqMax := int64(max(cfg.NSeqMax, 1))
+	if cfg.SystemPromptCache {
+		nSeqMax++
+	}
 
 	contextWindow := int64(cfg.ContextWindow)
 
@@ -983,29 +957,6 @@ func calculateVRAM(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory int64)
 	vramTotal = int64(mi.Size) + slotMemory
 
 	return vramTotal, slotMemory
-}
-
-// restoreSPCToSeq restores the externalized SPC KV state into the destination
-// sequence via StateSeqSetData. This avoids needing a permanently dedicated
-// cache sequence by restoring from a byte buffer in RAM.
-func (m *Model) restoreSPCToSeq(dstSeqID llama.SeqId) error {
-	m.cacheMu.RLock()
-	session := m.spcSession
-	m.cacheMu.RUnlock()
-
-	if session == nil || len(session.kvState) == 0 {
-		return fmt.Errorf("restore-spc: no cached KV state available")
-	}
-
-	m.decodeMu.Lock()
-	nRead := llama.StateSeqSetData(m.lctx, session.kvState, dstSeqID)
-	m.decodeMu.Unlock()
-
-	if nRead == 0 {
-		return fmt.Errorf("restore-spc: StateSeqSetData failed for seq %d", dstSeqID)
-	}
-
-	return nil
 }
 
 // parseMetadataInt64OrArrayAvg parses a metadata value that may be either a
@@ -1186,7 +1137,14 @@ func buildFitCtxParams(cfg Config) llama.ContextParams {
 		p.NUbatch = uint32(cfg.NUBatch)
 	}
 
-	p.NSeqMax = uint32(max(cfg.NSeqMax, 1))
+	nSeqMax := max(cfg.NSeqMax, 1)
+	if cfg.SystemPromptCache {
+		nSeqMax++
+	}
+	p.NSeqMax = uint32(nSeqMax)
+	if nSeqMax > 1 {
+		p.KVUnified = 1
+	}
 
 	if cfg.CacheTypeK != GGMLTypeAuto {
 		p.TypeK = cfg.CacheTypeK.ToYZMAType()
@@ -1208,4 +1166,63 @@ func trimTensorBuftOverrides(overrides []llama.TensorBuftOverride) []llama.Tenso
 		}
 	}
 	return overrides
+}
+
+// CreatePrompt implements caching.Deps by wrapping the model's createPrompt.
+func (m *Model) CreatePrompt(ctx context.Context, d map[string]any) (string, [][]byte, error) {
+	return m.createPrompt(ctx, D(d))
+}
+
+// TokenizeString implements caching.Deps.
+func (m *Model) TokenizeString(prompt string) []llama.Token {
+	return llama.Tokenize(m.vocab, prompt, m.addBOSToken, true)
+}
+
+// DecodeTokensIntoCache implements caching.Deps.
+func (m *Model) DecodeTokensIntoCache(ctx context.Context, tokens []llama.Token, seqID llama.SeqId, startPos int) error {
+	return m.decodeTokensIntoCache(ctx, tokens, seqID, startPos)
+}
+
+// ClearSequence implements caching.Deps.
+func (m *Model) ClearSequence(seqID llama.SeqId) {
+	m.decodeMu.Lock()
+	llama.MemorySeqRm(m.mem, seqID, -1, -1)
+	m.decodeMu.Unlock()
+}
+
+// ExtractKVState implements caching.Deps.
+func (m *Model) ExtractKVState(seqID llama.SeqId) ([]byte, int, error) {
+	m.decodeMu.Lock()
+	defer m.decodeMu.Unlock()
+
+	kvSize := llama.StateSeqGetSize(m.lctx, seqID)
+	kvState := make([]byte, kvSize)
+	nExtracted := llama.StateSeqGetData(m.lctx, kvState, seqID)
+
+	return kvState, int(nExtracted), nil
+}
+
+// RestoreKVState implements caching.Deps.
+func (m *Model) RestoreKVState(data []byte, dstSeqID llama.SeqId) (int, error) {
+	m.decodeMu.Lock()
+	nRead := llama.StateSeqSetData(m.lctx, data, dstSeqID)
+	m.decodeMu.Unlock()
+
+	return int(nRead), nil
+}
+
+// MediaMarkerTokens implements caching.Deps.
+func (m *Model) MediaMarkerTokens(ctx context.Context) int {
+	m.mediaMarkerOnce.Do(func() {
+		marker := fmt.Sprintf("%s\n", mtmd.DefaultMarker())
+		markerTokens := llama.Tokenize(m.vocab, marker, false, false)
+		m.mediaMarkerTokens = len(markerTokens)
+		m.log(ctx, "imc", "status", "computed media marker tokens", "marker", marker, "tokens", m.mediaMarkerTokens)
+	})
+	return m.mediaMarkerTokens
+}
+
+// Log implements caching.Deps.
+func (m *Model) Log(ctx context.Context, msg string, args ...any) {
+	m.log(ctx, msg, args...)
 }

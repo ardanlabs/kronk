@@ -15,7 +15,7 @@
   - [16.7.4 Model Acquire/Release & Cleanup](#1674-model-acquirerelease-cleanup)
   - [16.7.5 Batch Engine Internals](#1675-batch-engine-internals)
   - [16.7.6 Context Pooling](#1676-context-pooling)
-  - [16.7.7 IMC Implementation Details](#1677-imc-implementation-details)
+  - [16.7.7 Caching Architecture](#1677-caching-architecture)
   - [16.7.8 Tool Call Internals](#1678-tool-call-internals)
   - [16.7.9 Logprobs Implementation](#1679-logprobs-implementation)
 - [17.8 API Handler Notes](#178-api-handler-notes)
@@ -104,7 +104,8 @@ This enables a pre-commit hook that automatically runs:
 | `cmd/server/`                  | OpenAI-compatible model server (gRPC + HTTP) with BUI frontend      |
 | `cmd/server/api/tooling/docs/` | Documentation generator for BUI (SDK and CLI docs)                  |
 | `sdk/kronk/`                   | Core API: model loading, chat, embeddings, cache, metrics           |
-| `sdk/kronk/model/`             | Core inference and caching engine                                   |
+| `sdk/kronk/model/`             | Core inference engine, batch processing                             |
+| `sdk/kronk/model/caching/`     | Cache strategy abstraction (`Cacher` interface, SPC, IMC, Noop)     |
 | `sdk/kronk/observ/`            | Observability packages (metrics/, otel/)                            |
 | `sdk/tools/`                   | Support for libs, models, catalogs, templates, and defaults         |
 
@@ -284,21 +285,34 @@ the Kronk SDK packages.
 
 **sdk/kronk/model/** - Low-level inference:
 
-| File           | Purpose                                               |
-| -------------- | ----------------------------------------------------- |
-| `batch.go`     | Batch engine for parallel text inference              |
-| `caching.go`   | System prompt and IMC cache management                |
-| `chat.go`      | Chat inference loop, batch routing                    |
-| `config.go`    | Model configuration (GPU, cache, batching)            |
-| `embed.go`     | Embedding inference                                   |
-| `logprobs.go`  | Token log probability extraction                      |
-| `media.go`     | Vision/audio media processing                         |
-| `model.go`     | Model type, context management, lifecycle             |
-| `models.go`    | OpenAI-compatible types (ChatMessage, ToolCall, etc.) |
-| `params.go`    | Sampling parameters                                   |
-| `processor.go` | Template-specific token processors                    |
-| `prompts.go`   | Prompt formatting                                     |
-| `rerank.go`    | Reranking inference                                   |
+| File                       | Purpose                                                       |
+| -------------------------- | ------------------------------------------------------------- |
+| `batch.go`                 | Batch engine for parallel text inference                      |
+| `batch_decode_media.go`    | Multi-modal (vision/audio) KV cache decode via mtmd pipeline  |
+| `batch_finish.go`          | Slot completion, KV cleanup, response assembly                |
+| `batch_finish_imc.go`      | Hybrid model IMC state restore after generation               |
+| `batch_slot_start.go`      | Slot initialization, cache restore, prefill dispatch          |
+| `batch_slot_start_imc.go`  | IMC-specific slot start: stale check, text/media/trim builds  |
+| `chat.go`                  | Chat inference loop, batch routing                            |
+| `config.go`                | Model configuration (GPU, cache, batching)                    |
+| `embed.go`                 | Embedding inference                                           |
+| `logprobs.go`              | Token log probability extraction                              |
+| `media.go`                 | Vision/audio media processing                                 |
+| `model.go`                 | Model type, context management, lifecycle, `caching.Deps` impl|
+| `models.go`                | OpenAI-compatible types (ChatMessage, ToolCall, etc.)         |
+| `params.go`                | Sampling parameters                                           |
+| `processor.go`             | Template-specific token processors                            |
+| `prompts.go`               | Prompt formatting                                             |
+| `rerank.go`                | Reranking inference                                           |
+
+**sdk/kronk/model/caching/** - Cache strategy abstraction:
+
+| File          | Purpose                                                        |
+| ------------- | -------------------------------------------------------------- |
+| `caching.go`  | `Cacher` interface, `Deps` interface, `Config`, `Factory`, shared helpers |
+| `imc.go`      | `IMCCache` — Incremental Message Cache implementation          |
+| `spc.go`      | `SPCCache` — System Prompt Cache implementation                |
+| `noop.go`     | `NoopCache` — no-op implementation when caching is disabled    |
 
 #### 17.7.2 Streaming Architecture
 
@@ -366,22 +380,15 @@ default:
 
 **ChatStreaming Decision Logic** (`chat.go`):
 
-The `submitToBatchEngine()` function decides the processing path:
+All chat requests (including vision/audio) are submitted to the batch engine
+via `submitToBatchEngine()`. The function constructs a `chatJob` with cache
+results (`spcJobCache` / `imcJobCache`) and submits it to the engine queue:
 
 ```go
-// submitToBatchEngine returns false if batch not available.
-if m.batch == nil || object != ObjectChatText {
-    return false
+if m.submitToBatchEngine(ctx, ch, id, d, object, prompt, media, params, mtmdCtx, cache, requestStart) {
+    batching = true
+    return
 }
-// Submit job to batch engine...
-return true
-```
-
-All chat requests (including vision/audio) are submitted to the batch engine:
-
-```go
-m.submitToBatchEngine(...)
-batching = true
 ```
 
 **Batch Engine Architecture** (`batch.go`):
@@ -398,9 +405,11 @@ batching = true
 - `slot.seqIDs` = pre-allocated slice for efficient `batchAdd` calls
 
 Sequences are isolated partitions in the shared KV cache memory. Slot seqIDs
-always start at 0 — no sequences are reserved for caching. SPC decodes
-saved tokens directly into slot sequences. IMC binds each slot's sequence
-to a conversation.
+start at 0. IMC binds each slot's sequence to a conversation — no extra
+sequences are needed. SPC allocates one extra sequence (seq ID `NSeqMax`)
+for the initial decode/extract during cache builds — the KV state is
+externalized to a RAM buffer and the sequence is cleared, but VRAM
+estimation still reserves capacity for `NSeqMax + 1` sequences.
 
 #### 16.7.6 Context Pooling
 
@@ -408,15 +417,38 @@ to a conversation.
 - Call `resetContext()` between requests to clear KV cache
 - Avoids Vulkan memory fragmentation from repeated context alloc/dealloc
 
-#### 16.7.7 IMC Implementation Details
+#### 16.7.7 Caching Architecture
 
-**Critical Implementation Details:**
+Caching is implemented as a `Cacher` interface in the `sdk/kronk/model/caching`
+package. The `model.Model` type holds a single `cache caching.Cacher` field and
+implements `caching.Deps` via adapter methods (`CreatePrompt`, `TokenizeString`,
+`DecodeTokensIntoCache`, `ClearSequence`, `ExtractKVState`, `RestoreKVState`,
+`MediaMarkerTokens`, `Log`).
 
-1. **Extension tokenization must use `special=true`**: Use `llama.Tokenize(vocab, extension, false, true)` to ensure ChatML tokens like `<|im_start|>` are recognized.
+Three built-in implementations:
 
-2. **Prefix mismatch detection**: Use `strings.HasPrefix(fullPrompt, prefixPrompt)` to detect Jinja template nondeterminism.
+| Type        | Strategy   | Description                                               |
+| ----------- | ---------- | --------------------------------------------------------- |
+| `NoopCache` | None       | No-op pass-through when caching is disabled               |
+| `SPCCache`  | SPC        | Caches the system prompt, externalizes KV to RAM buffer   |
+| `IMCCache`  | IMC        | Per-slot conversation caching with hash + token matching  |
 
-3. **`add_generation_prompt=false` for cached prefixes**: Creates valid prefix for extension. Generation prompt added only for final suffix.
+SDK consumers can inject a custom caching strategy via the `CacheFactory` field
+in `model.Config`. The factory receives a `caching.Deps` and `caching.Config`
+and returns a `Cacher`.
+
+**Batch engine integration:**
+
+The batch engine interacts with the cache through the `Cacher` interface:
+
+- `ProcessCache` is called in the `ChatStreaming` goroutine before job submission
+- `CommitSession` is called in `startSlot` after a successful cache decode
+- `SnapshotSlot` is called in `finishSlot` to read cached token counts for KV trimming
+- `InvalidateSlot` is called on decode errors or failed hybrid restores
+- `ClearPending` is called to release slot reservations on failure paths
+
+Cache results are carried through the batch engine via `spcJobCache` and
+`imcJobCache` structs on the `chatJob`, replacing the previous flat field layout.
 
 **IMC Algorithm:**
 
@@ -424,18 +456,13 @@ to a conversation.
 2. Subsequent requests (prefix match): Extend cache with `messages[cachedCount:len-1]`
 3. New thread (prefix mismatch): Rebuild cache from scratch
 
-**IMC Session State:**
+**Critical Implementation Details:**
 
-```go
-type imcSession struct {
-    hash      string      // Hash of all cached messages
-    tokens    int         // Total tokens in cache
-    msgCount  int         // Number of messages cached
-    promptLen int         // Length of templated prefix
-    seqID     llama.SeqId // Assigned cache sequence ID
-    lastUsed  time.Time   // For future eviction
-}
-```
+1. **Extension tokenization must use `special=true`**: Use `llama.Tokenize(vocab, extension, false, true)` to ensure ChatML tokens like `<|im_start|>` are recognized.
+
+2. **Prefix mismatch detection**: Use `TokenPrefixMatch(cached, incoming)` for token-level prefix comparison when hash matching fails (Jinja template nondeterminism).
+
+3. **`add_generation_prompt=false` for cached prefixes**: Creates valid prefix for extension. Generation prompt added only for final suffix.
 
 #### 16.7.8 Tool Call Internals
 

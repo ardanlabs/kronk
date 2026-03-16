@@ -90,11 +90,12 @@ Slot 2  →  seqID = 2  →  KV cache partition 2
 Slot 3  →  seqID = 3  →  KV cache partition 3
 ```
 
-How a slot uses its sequence depends on the caching strategy. Without caching,
-the sequence is cleared between requests. With SPC or IMC, the sequence
-retains cached tokens to avoid redundant processing. See
-[Section 3.5](#35-parallel-inference-nseqmax) for details on how each caching
-strategy affects slot behavior.
+How a slot uses its sequence depends on the caching strategy. Without caching
+or with SPC, the sequence is cleared between requests (SPC restores
+externalized KV state from a RAM buffer at the start of each request). With
+IMC, the sequence retains cached tokens across requests to avoid redundant
+processing. See [Section 3.5](#35-parallel-inference-nseqmax) for details on
+how each caching strategy affects slot behavior.
 
 ### 4.3 Request Flow
 
@@ -104,7 +105,7 @@ Each request moves through the batch engine in the following stages:
 2. **Assign**: Available slot picks up the request
 3. **Cache Setup**: Prepare the slot's sequence based on caching strategy:
    - Clear the sequence (no caching)
-   - Clear the sequence, then copy cached KV state from dedicated SPC sequence (SPC)
+   - Clear the sequence, then restore externalized SPC KV state from RAM buffer (SPC)
    - Extend or rebuild the conversation cache in place (IMC)
 4. **Prefill**: Tokenize and process remaining prompt tokens (round-robin
    across slots in `n_ubatch`-sized chunks to prevent starvation)
@@ -162,9 +163,12 @@ Adding slots increases throughput but costs memory. Each additional slot
 allocates its own KV cache partition proportional to the full context window.
 
 Each slot reserves its own KV cache partition, so increasing `NSeqMax`
-increases VRAM usage proportionally. Neither SPC nor IMC adds extra sequences.
-For details on how slot memory is allocated and how to estimate total VRAM, see
-[Section 3.5](#35-parallel-inference-nseqmax) and
+increases VRAM usage proportionally. IMC adds no extra sequences. SPC
+allocates one extra sequence (`NSeqMax + 1` total) for the initial
+decode/extract during cache builds — the sequence is cleared after
+extraction, but VRAM estimation reserves capacity for the extra sequence.
+For details on how slot memory is allocated and how to estimate total VRAM,
+see [Section 3.5](#35-parallel-inference-nseqmax) and
 [Section 3.7](#37-vram-estimation).
 
 ### 4.5 Concurrency by Model Type

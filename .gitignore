@@ -53,4 +53,4 @@ result-*
 # goreleaser
 dist
 .extras
-kronk
+/kronk

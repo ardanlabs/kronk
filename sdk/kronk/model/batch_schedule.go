@@ -15,6 +15,21 @@ func (e *batchEngine) hasActiveSlots() bool {
 	return false
 }
 
+// cacheSlotTimeout returns the configured cache slot timeout duration.
+func (e *batchEngine) cacheSlotTimeout() time.Duration {
+	return time.Duration(e.model.cfg.CacheSlotTimeout) * time.Second
+}
+
+// jobCancelled checks if the job's context has been cancelled and fails it
+// if so. Returns true if the job was cancelled and cleaned up.
+func (e *batchEngine) jobCancelled(job *chatJob) bool {
+	if job.ctx.Err() != nil {
+		e.failJob(job, job.ctx.Err())
+		return true
+	}
+	return false
+}
+
 // fillSlots assigns pending requests to available slots.
 func (e *batchEngine) fillSlots(buf []byte) {
 	if e.model.cfg.IncrementalCache {
@@ -58,7 +73,7 @@ func (e *batchEngine) nextIMCJob() *chatJob {
 
 // fillSlotsIMC routes IMC jobs to their target slot. processIMC determines
 // which slot to use via hash matching; the target slot index is carried
-// in the job's imcSlotID field.
+// in the job's imc.slotID field.
 func (e *batchEngine) fillSlotsIMC(buf []byte) {
 
 	// Don't schedule new work while a preemption is pending. The slot will
@@ -74,15 +89,13 @@ func (e *batchEngine) fillSlotsIMC(buf []byte) {
 
 	// Drop cancelled jobs immediately to avoid preempting a live slot
 	// for a request nobody is waiting for.
-	if job.ctx.Err() != nil {
-		e.failJob(job, job.ctx.Err())
+	if e.jobCancelled(job) {
 		return
 	}
 
 	// Route to the specific slot determined by processIMC.
-	targetSlotID := job.imcSlotID
-	if job.imcCacheHit && targetSlotID < len(e.slots) {
-		s := e.slots[targetSlotID]
+	if job.imc != nil && job.imc.slotID < len(e.slots) {
+		s := e.slots[job.imc.slotID]
 		if !s.active {
 			e.startSlot(s, job, buf)
 			return
@@ -90,7 +103,7 @@ func (e *batchEngine) fillSlotsIMC(buf []byte) {
 
 		// Target slot is busy. Check if the job has waited longer than
 		// CacheSlotTimeout. If so, schedule preemption of the target slot.
-		timeout := time.Duration(e.model.cfg.CacheSlotTimeout) * time.Second
+		timeout := e.cacheSlotTimeout()
 		if time.Since(job.queuedAt) >= timeout {
 			e.schedulePreempt(s, job)
 			return
@@ -112,7 +125,7 @@ func (e *batchEngine) fillSlotsIMC(buf []byte) {
 
 	// All slots busy. Check if the job has waited longer than
 	// CacheSlotTimeout. If so, preempt the longest-running slot.
-	timeout := time.Duration(e.model.cfg.CacheSlotTimeout) * time.Second
+	timeout := e.cacheSlotTimeout()
 	if time.Since(job.queuedAt) >= timeout {
 		victim := e.longestRunningSlot()
 		if victim != nil {

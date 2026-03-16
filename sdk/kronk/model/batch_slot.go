@@ -38,35 +38,44 @@ type chatJob struct {
 	mtmdCtx mtmd.Context // Multi-modal context for vision/audio processing
 
 	// -------------------------------------------------------------------------
-	// System Prompt Cache (SPC)
+	// Cache Results
 
-	spcCacheSeqID llama.SeqId // Dedicated SPC cache sequence ID
-	spcCacheIdx   llama.Pos   // Token count in SPC cache
-	spcCacheHit   bool        // True if SPC cache sequence has cached tokens
+	spc *spcJobCache // nil when SPC not used
+	imc *imcJobCache // nil when IMC not used
+}
 
-	// -------------------------------------------------------------------------
-	// Incremental Message Cache (IMC)
+// spcJobCache holds per-job System Prompt Cache state.
+type spcJobCache struct {
+	cacheIdx llama.Pos // Token count in SPC cache
+}
 
-	imcSlotID       int         // Target slot index for IMC routing
-	imcSeqID        llama.SeqId // Sequence ID containing cached conversation state
-	imcCacheIdx     llama.Pos   // Token position where IMC cache ends
-	imcCacheHit     bool        // True if conversation history was found in cache
-	imcExpectedHash string      // Expected cachedMsgsHash for stale detection at startSlot
+// imcJobCache holds per-job Incremental Message Cache state.
+type imcJobCache struct {
+	slotID       int         // Target slot index for IMC routing
+	seqID        llama.SeqId // Sequence ID containing cached conversation state
+	cacheIdx     llama.Pos   // Token position where IMC cache ends
+	expectedHash string      // Expected cachedMsgsHash for stale detection at startSlot
 
-	// IMC dedicated slot fields.
-	imcNewCacheTokens    []llama.Token // New tokens to extend the cache in the slot's sequence
-	imcNewTotalCached    int           // Total cached KV positions after extension
-	imcNewCachedMsgCount int           // New cachedMsgCount after extension
-	imcNewMsgsHash       string        // New cachedMsgsHash after extension
-	imcClearSeq          bool          // True if sequence must be cleared before decoding (rebuild)
-	imcNewCachedTokens   []llama.Token // Full token sequence to store in session after decode
-	imcTrimPos           llama.Pos     // Position to trim KV cache from (for partial prefix rebuild)
+	// Extension/rebuild work.
+	newCacheTokens    []llama.Token // New tokens to extend the cache in the slot's sequence
+	newTotalCached    int           // Total cached KV positions after extension
+	newCachedMsgCount int           // New cachedMsgCount after extension
+	newMsgsHash       string        // New cachedMsgsHash after extension
+	clearSeq          bool          // True if sequence must be cleared before decoding (rebuild)
+	newCachedTokens   []llama.Token // Full token sequence to store in session after decode
+	trimPos           llama.Pos     // Position to trim KV cache from (for partial prefix rebuild)
 
-	// IMC media cache build — deferred media decode using mtmd pipeline.
-	imcMediaBuild          bool  // True if cache build requires the mtmd pipeline (images/audio)
-	imcMediaCacheD         D     // Document with cacheable messages + tools for media cache build
-	imcMediaKVCounts       []int // Media KV position counts to preserve during text-only media extend
-	imcMediaSkipTextTokens int   // Text tokens already in KV cache to skip during partial media extend
+	// Media cache build (deferred to startSlot).
+	mediaBuild          bool  // True if cache build requires the mtmd pipeline (images/audio)
+	mediaCacheD         D     // Document with cacheable messages + tools for media cache build
+	mediaKVCounts       []int // Media KV position counts to preserve during text-only media extend
+	mediaSkipTextTokens int   // Text tokens already in KV cache to skip during partial media extend
+
+	// Snapshot of IMC slot metadata populated at the start of startSlot.
+	// Decouples startSlotText and slotNeedsMRoPE from the caching package's slot metadata.
+	prefixTokens   []llama.Token // Cached tokens for draft prompt assembly
+	prefixHasMedia bool          // Whether the cached prefix includes media tokens
+	prefixUseMRoPE bool          // Whether the cached prefix used M-RoPE positioning
 }
 
 // slot represents a processing slot for parallel inference. Each slot can
@@ -167,6 +176,7 @@ type slot struct {
 	// IMC Hybrid State
 
 	imcSavedState []byte // Snapshot of KV+recurrent state for IMC Hybrid restore
+	skipKVCleanup bool   // True when finishSlot should skip cleanupSlotKV (pre-mutation stale exits)
 
 	// -------------------------------------------------------------------------
 	// Metrics
@@ -222,6 +232,7 @@ func (s *slot) reset() {
 	s.specDraftDistsSparse = nil
 	// Note: draftDistBuf, targetDistBuf, adjustedDistBuf are reused across requests
 	s.imcSavedState = s.imcSavedState[:0]
+	s.skipKVCleanup = false
 	s.grammarSampler = nil
 	s.prefillStart = time.Time{}
 	s.prefillSpan = nil
@@ -239,4 +250,14 @@ func (s *slot) reset() {
 	if s.proc != nil {
 		s.proc.resetState()
 	}
+}
+
+// imcJobReservedSlot returns true if this IMC job reserved a pending slot
+// that needs cleanup on failure. Covers extend, rebuild, media build, and
+// trim-only partial prefix paths — all of which set pending=true.
+func imcJobReservedSlot(imc *imcJobCache) bool {
+	if imc == nil {
+		return false
+	}
+	return len(imc.newCacheTokens) > 0 || imc.mediaBuild || imc.trimPos > 0
 }

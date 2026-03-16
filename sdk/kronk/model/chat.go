@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/model/caching"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/google/uuid"
@@ -118,7 +119,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 			return
 		}
 
-		d = cache.modifiedD
+		d = cache.ModifiedD
 
 		if m.cfg.InsecureLogging {
 			m.log(ctx, "chat-streaming", "IN-MESSAGAES", d.Messages())
@@ -207,8 +208,8 @@ func (m *Model) prepareContext(ctx context.Context, d D) (D, mtmd.Context, strin
 
 // prepareCacheAndPrompt handles cache processing and prompt creation. Returns
 // the prompt, media bytes, cache result, and any error.
-func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, requestStart time.Time) (string, [][]byte, cacheResult, error) {
-	var cache cacheResult
+func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, requestStart time.Time) (string, [][]byte, caching.Result, error) {
+	var cache caching.Result
 
 	// For GPT models, inject tool_call_name into tool response messages before
 	// caching. This must happen before processCache so both the full prompt and
@@ -225,20 +226,20 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, r
 
 	switch {
 	case !cachingEnabled:
-		cache.modifiedD = d
+		cache.ModifiedD = d
 
 	default:
 		ctx, cacheSpan := otel.AddSpan(ctx, "process-cache")
 
-		cache = m.processCache(ctx, d, requestStart)
+		cache = m.cache.ProcessCache(ctx, d, requestStart)
 
 		cacheSpan.End()
 
-		if cache.err != nil {
-			return "", nil, cache, cache.err
+		if cache.Err != nil {
+			return "", nil, cache, cache.Err
 		}
 
-		d = cache.modifiedD
+		d = cache.ModifiedD
 	}
 
 	prompt, media, err := m.createPrompt(ctx, d)
@@ -252,9 +253,7 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, r
 // submitToBatchEngine attempts to submit the request to the batch engine.
 // Returns true if the job was submitted (caller should set batching=true),
 // false if batch engine is not available or not applicable.
-func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, id string, d D, object string, prompt string, media [][]byte, params Params, mtmdCtx mtmd.Context, cache cacheResult, requestStart time.Time) bool {
-	imcCacheHit := m.cfg.IncrementalCache && (cache.cacheIdx > 0 || len(cache.imcNewCacheTokens) > 0 || cache.imcMediaBuild)
-
+func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, id string, d D, object string, prompt string, media [][]byte, params Params, mtmdCtx mtmd.Context, cache caching.Result, requestStart time.Time) bool {
 	_, queueSpan := otel.AddSpan(ctx, "queue-wait")
 
 	job := chatJob{
@@ -269,38 +268,42 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		params:        params,
 		mtmdCtx:       mtmdCtx,
 		ch:            ch,
+	}
 
-		spcCacheSeqID: cache.cacheSeqID,
-		spcCacheIdx:   cache.cacheIdx,
-		spcCacheHit:   m.cfg.SystemPromptCache && cache.cacheIdx > 0,
+	// Set SPC cache if available.
+	if cache.SPC != nil {
+		job.spc = &spcJobCache{
+			cacheIdx: cache.SPC.CacheIdx,
+		}
+	}
 
-		imcSlotID:       cache.imcSlotID,
-		imcSeqID:        cache.cacheSeqID,
-		imcCacheIdx:     cache.cacheIdx,
-		imcCacheHit:     imcCacheHit,
-		imcExpectedHash: cache.imcExpectedHash,
-
-		imcNewCacheTokens:      cache.imcNewCacheTokens,
-		imcNewTotalCached:      cache.imcNewTotalCached,
-		imcNewCachedMsgCount:   cache.imcNewCachedMsgCount,
-		imcNewMsgsHash:         cache.imcNewMsgsHash,
-		imcClearSeq:            cache.imcClearSeq,
-		imcNewCachedTokens:     cache.imcNewCachedTokens,
-		imcTrimPos:             cache.imcTrimPos,
-		imcMediaBuild:          cache.imcMediaBuild,
-		imcMediaCacheD:         cache.imcMediaCacheD,
-		imcMediaKVCounts:       cache.imcMediaKVCounts,
-		imcMediaSkipTextTokens: cache.imcMediaSkipTextTokens,
+	// Set IMC cache if available.
+	if cache.IMC != nil {
+		job.imc = &imcJobCache{
+			slotID:              cache.IMC.SlotID,
+			seqID:               cache.IMC.SeqID,
+			cacheIdx:            cache.IMC.CacheIdx,
+			expectedHash:        cache.IMC.ExpectedHash,
+			newCacheTokens:      cache.IMC.NewCacheTokens,
+			newTotalCached:      cache.IMC.NewTotalCached,
+			newCachedMsgCount:   cache.IMC.NewCachedMsgCount,
+			newMsgsHash:         cache.IMC.NewMsgsHash,
+			clearSeq:            cache.IMC.ClearSeq,
+			newCachedTokens:     cache.IMC.NewCachedTokens,
+			trimPos:             cache.IMC.TrimPos,
+			mediaBuild:          cache.IMC.MediaBuild,
+			mediaCacheD:         cache.IMC.MediaCacheD,
+			mediaKVCounts:       cache.IMC.MediaKVCounts,
+			mediaSkipTextTokens: cache.IMC.MediaSkipTextTokens,
+		}
 	}
 
 	if err := m.batch.submit(&job); err != nil {
 		queueSpan.End()
 
 		// Clear IMC pending reservation if this job reserved a slot.
-		// pending is set during extendIMCCache/buildIMCCacheFromScratch
-		// and normally cleared in startSlot after decode.
-		if len(cache.imcNewCacheTokens) > 0 || cache.imcMediaBuild || len(cache.imcMediaKVCounts) > 0 {
-			m.imcClearPending(cache.imcSlotID)
+		if imcJobReservedSlot(job.imc) {
+			m.cache.ClearPending(job.imc.slotID)
 		}
 
 		m.sendChatError(ctx, ch, id, err)

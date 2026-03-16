@@ -12,7 +12,8 @@
 - [5.5 SPC vs IMC](#55-spc-vs-imc)
 - [5.6 Cache Invalidation](#56-cache-invalidation)
 - [5.7 Configuration Reference](#57-configuration-reference)
-- [5.8 Performance and Limitations](#58-performance-and-limitations)
+- [5.8 Custom Cache Strategies (SDK)](#58-custom-cache-strategies-sdk)
+- [5.9 Performance and Limitations](#59-performance-and-limitations)
 
 ---
 
@@ -66,18 +67,19 @@ IMC (Incremental Message Cache):
 
 ### 5.2 System Prompt Cache (SPC)
 
-System Prompt Cache decodes the system prompt once into a temporary sequence,
-externalizes the KV state to a byte buffer in RAM, and frees the sequence. On
-each request, the KV state is restored into the slot's working sequence. This
-avoids re-decoding the system prompt on every request. No dedicated cache
-sequence is permanently occupied, so SPC does not add any extra sequences to
-the VRAM allocation.
+System Prompt Cache decodes the system prompt once into a dedicated temporary
+sequence (`NSeqMax`), externalizes the KV state to a byte buffer in RAM, and
+frees the sequence. On each request, the KV state is restored into the slot's
+working sequence. This avoids re-decoding the system prompt on every request.
+SPC allocates one extra sequence beyond `NSeqMax` for the initial
+decode/extract. The sequence is cleared after extraction, but context sizing
+and VRAM estimation still reserve capacity for `NSeqMax + 1` sequences.
 
 **Best for:**
 
 - OpenWebUI and similar chat interfaces
 - Applications with a consistent system prompt
-- Multi-user scenarios with different system prompts
+- Multi-user scenarios where many requests share the same system prompt
 
 **Enable SPC:**
 
@@ -392,10 +394,10 @@ trade-offs to help you choose.
 | ------------ | --------------------------------- | ----------------------------------------- |
 | Caches       | System prompt only                | All messages except last                  |
 | Extends      | No                                | Yes, incrementally                        |
-| Multi-user   | Single shared cache sequence      | Single-user, all slots available          |
-| Sub-agents   | All share same SPC sequence       | Each gets own slot via hash matching      |
+| Multi-user   | Single shared externalized state  | Single-user, all slots available          |
+| Sub-agents   | All restore from same SPC buffer  | Each gets own slot via hash matching      |
 | Best for     | Chat UIs                          | Agentic workflows                         |
-| Memory       | Zero extra VRAM (KV state in RAM) | Zero extra VRAM overhead                  |
+| Memory       | One extra sequence reserved        | Zero extra VRAM overhead                  |
 | Template req | Any                               | Any (hash match or token prefix fallback) |
 
 **Important:** SPC and IMC are mutually exclusive. Choose based on your
@@ -462,7 +464,19 @@ request, the fallback is skipped and the cache is rebuilt from scratch.
 
 Default: 100 tokens
 
-### 5.8 Performance and Limitations
+### 5.8 Custom Cache Strategies (SDK)
+
+SDK consumers can replace the built-in caching strategy by setting
+`CacheFactory` on `model.Config`. The factory receives the model as
+`caching.Deps` (providing `CreatePrompt`, `TokenizeString`,
+`DecodeTokensIntoCache`, `ClearSequence`, `ExtractKVState`,
+`RestoreKVState`, `MediaMarkerTokens`, `Log`) and a `caching.Config`
+(with `Strategy`, `NumSlots`, `SPCSeqID`, `MinTokens`, `SlotTimeout`,
+`SupportsMedia`), and returns a `caching.Cacher`. If unset, Kronk uses the
+built-in `caching.New`, which selects `NoopCache`, `SPCCache`, or `IMCCache`
+based on config.
+
+### 5.9 Performance and Limitations
 
 Caching improves request latency by skipping redundant prefill work, but
 each mode has its own costs and constraints. SPC trades a small per-request
@@ -473,8 +487,10 @@ restrictions on template behavior and session management.
 
 SPC restores the externalized KV state into each slot.
 This is a memory copy from RAM into the KV cache, typically taking 10-30ms
-depending on system prompt size and memory bus load. No extra VRAM is consumed
-since the KV state lives in regular RAM.
+depending on system prompt size and memory bus load. One extra KV cache
+sequence is reserved at context creation time for the decode/extract, so
+VRAM estimation includes `NSeqMax + 1` sequences. The externalized KV state
+itself lives in regular RAM.
 
 **IMC Prefill Savings:**
 
@@ -577,33 +593,34 @@ Request 5 (text follow-up about the image):
 
 **How media caching works internally:**
 
-1. When `buildIMCCacheFromScratch` detects media content, it defers the build
-   to `startSlot` where the mtmd pipeline (projection model) is available. The
-   cache result carries `imcMediaBuild: true`.
+1. When `buildIMCCacheFromScratch` (in `caching/imc.go`) detects media
+   content, it defers the build to `startSlotIMCMediaBuild` (in
+   `batch_slot_start_imc.go`) where the mtmd pipeline (projection model) is
+   available. The cache result carries `MediaBuild: true`.
 
 2. When media first appears in a conversation that started text-only,
-   `extendIMCTextCacheWithMedia` preserves the existing text prefix in the
-   KV cache. It sets `imcMediaSkipTextTokens` to the number of already-cached
-   text tokens, so `decodeMediaIntoCache` skips them and only decodes the new
-   text plus media embeddings. This avoids re-decoding potentially tens of
-   thousands of cached text tokens when an image is first introduced
-   mid-conversation.
+   `extendIMCTextCacheWithMedia` (in `caching/imc.go`) preserves the existing
+   text prefix in the KV cache. It sets `MediaSkipTextTokens` to the number
+   of already-cached text tokens, so `decodeMediaIntoCache` (in
+   `batch_decode_media.go`) skips them and only decodes the new text plus
+   media embeddings. This avoids re-decoding potentially tens of thousands
+   of cached text tokens when an image is first introduced mid-conversation.
 
 3. `decodeMediaIntoCache` processes the prompt as interleaved chunks — text
    chunks are tokenized and decoded normally, while image/audio chunks are
    encoded through the projection model and their embeddings are decoded into
-   the KV cache. When `imcMediaSkipTextTokens` is set, the first text chunk
+   the KV cache. When `MediaSkipTextTokens` is set, the first text chunk
    is partially skipped (only tokens beyond the skip point are decoded). For
    models using M-RoPE (e.g., Qwen2.5-VL), 2D spatial positions are assigned
    to image tokens.
 
-4. The slot tracks `mediaKVCounts` — the number of KV positions consumed by
+4. The slot tracks `MediaKVCounts` — the number of KV positions consumed by
    each media chunk. This is needed because media embeddings occupy a different
    number of KV positions than the text marker tokens they replace in the
    tokenized prompt.
 
 5. On text-only follow-ups, `extendIMCMediaSlotWithText` uses the
-   `mediaKVCounts` to compute the correct offset between text token indices
+   `MediaKVCounts` to compute the correct offset between text token indices
    and KV positions, then decodes only the new text tokens at the right
    position — no image re-encoding occurs.
 

@@ -122,7 +122,8 @@ Kronk has an MCP service and these are settings:
 | [5.5 SPC vs IMC](.manual/chapter-05-message-caching.md#55-spc-vs-imc)                                         | Feature comparison, workload selection                 |
 | [5.6 Cache Invalidation](.manual/chapter-05-message-caching.md#56-cache-invalidation)                         | Hash mismatch, rebuild triggers                        |
 | [5.7 Configuration Reference](.manual/chapter-05-message-caching.md#57-configuration-reference)               | YAML settings, cache_min_tokens                        |
-| [5.8 Performance and Limitations](.manual/chapter-05-message-caching.md#58-performance-and-limitations)       | Prefill savings, memory overhead, constraints          |
+| [5.8 Custom Cache Strategies (SDK)](.manual/chapter-05-message-caching.md#58-custom-cache-strategies-sdk)     | CacheFactory, Cacher interface, Deps interface         |
+| [5.9 Performance and Limitations](.manual/chapter-05-message-caching.md#59-performance-and-limitations)       | Prefill savings, memory overhead, constraints          |
 
 ### Chapter 6 Sub-sections
 
@@ -286,7 +287,7 @@ Kronk has an MCP service and these are settings:
 | [17.4 Project Architecture](.manual/chapter-17-developer-guide.md#174-project-architecture)         | Directory structure, cmd/, sdk/ packages                                   |
 | [17.5 BUI Frontend Development](.manual/chapter-17-developer-guide.md#175-bui-frontend-development) | React structure, routing, adding pages, state management, styling          |
 | [17.6 Code Style Guidelines](.manual/chapter-17-developer-guide.md#176-code-style-guidelines)       | Package comments, error handling, struct design, imports, control flow     |
-| [17.7 SDK Internals](.manual/chapter-17-developer-guide.md#177-sdk-internals)                       | Package structure, streaming, model pool, batch engine, IMC implementation |
+| [17.7 SDK Internals](.manual/chapter-17-developer-guide.md#177-sdk-internals)                       | Package structure, streaming, model pool, batch engine, caching architecture |
 | [17.8 API Handler Notes](.manual/chapter-17-developer-guide.md#178-api-handler-notes)               | Input format conversion for Response APIs                                  |
 | [17.9 Goroutine Budget](.manual/chapter-17-developer-guide.md#179-goroutine-budget)                 | Baseline goroutines, per-request goroutines, expected counts               |
 | [17.10 Request Tracing Spans](.manual/chapter-17-developer-guide.md#1710-request-tracing-spans)     | Span hierarchy, queue wait, prepare-request vs process-request             |

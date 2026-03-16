@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/model/caching"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -281,6 +282,7 @@ type Config struct {
 	AutoFitVRAM          bool
 	CacheMinTokens       int
 	CacheSlotTimeout     int
+	CacheFactory         caching.Factory
 	CacheTypeK           GGMLType
 	CacheTypeV           GGMLType
 	ContextWindow        int
@@ -750,11 +752,15 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 		ctxParams.PoolingType = llama.PoolingTypeRank
 	}
 
-	// SPC externalizes the KV state to a byte buffer after initial decode,
-	// so it does not need an extra sequence. IMC uses dedicated slot/seq
-	// binding — no separate cache sequences either.
+	// IMC uses dedicated slot/seq binding — no separate cache sequences.
+	// SPC needs one extra temporary sequence for decode/extract during
+	// cache builds. The KV state is externalized to a byte buffer after
+	// the initial decode, so the extra sequence is freed immediately.
 	nSeqMax := max(cfg.NSeqMax, 1)
 	totalSeqs := nSeqMax
+	if cfg.SystemPromptCache {
+		totalSeqs++
+	}
 
 	if cfg.ContextWindow > 0 {
 		ctxParams.NBatch = uint32(cfg.NBatch)
@@ -791,7 +797,7 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 	// limits each sequence and causes llama_decode to return 1 when a single
 	// sequence exceeds its partition. With unified mode, all sequences share
 	// the full KV cache and any single sequence can use up to n_ctx tokens.
-	if nSeqMax > 1 {
+	if totalSeqs > 1 {
 		ctxParams.KVUnified = 1
 	}
 

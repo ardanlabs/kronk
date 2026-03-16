@@ -404,3 +404,57 @@ func (m *Model) decodeTextMRoPEIntoCache(tokens []llama.Token, seqID llama.SeqId
 
 	return int(n), nil
 }
+
+// decodeTokensIntoCache decodes tokens into a cache sequence starting at startPos.
+// Unlike addTokensToCache, this does NOT clear the sequence first — the caller
+// is responsible for clearing if needed (e.g., rebuild from scratch).
+func (m *Model) decodeTokensIntoCache(ctx context.Context, tokens []llama.Token, seqID llama.SeqId, startPos int) error {
+	ctx, decodeSpan := otel.AddSpan(ctx, "cache-decode",
+		attribute.Int("tokens", len(tokens)),
+	)
+	defer decodeSpan.End()
+
+	nBatch := int(m.ctxParams.NBatch)
+	nTokens := len(tokens)
+
+	if nBatch <= 0 {
+		nBatch = m.cfg.NBatch
+	}
+
+	m.log(ctx, "cache", "status", "decoding tokens into cache", "seq", seqID, "tokens", nTokens, "start_pos", startPos, "nbatch", nBatch)
+
+	m.decodeMu.Lock()
+	defer m.decodeMu.Unlock()
+
+	// Create batch with explicit sequence ID.
+	// Allocate batch sized to nBatch (not nCtx) to avoid huge allocations for
+	// large context windows that can cause C-side allocation failures.
+	batchSize := int32(min(nBatch, nTokens))
+	if batchSize <= 0 {
+		batchSize = 1
+	}
+	batch := llama.BatchInit(batchSize, 0, 1)
+	defer llama.BatchFree(batch)
+
+	seqIDs := []llama.SeqId{seqID}
+
+	for i := 0; i < nTokens; i += nBatch {
+		batch.Clear()
+
+		end := min(i+nBatch, nTokens)
+
+		for j := i; j < end; j++ {
+			pos := llama.Pos(startPos + j)
+			batch.Add(tokens[j], pos, seqIDs, false)
+		}
+
+		if _, err := llama.Decode(m.lctx, batch); err != nil {
+			return fmt.Errorf("imc: failed to decode extension tokens at pos %d: %w", i, err)
+		}
+		llama.Synchronize(m.lctx)
+	}
+
+	m.log(ctx, "cache", "status", "finished (decoding tokens into cache)", "seq", seqID, "tokens", nTokens, "nbatch", nBatch)
+
+	return nil
+}
