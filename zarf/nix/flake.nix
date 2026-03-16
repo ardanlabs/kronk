@@ -22,7 +22,7 @@
 
           kronkBase = (pkgs.buildGoModule.override { go = pkgs.go_1_26; }) {
             pname = "kronk";
-            version = "1.21.4";
+            version = builtins.replaceStrings ["\n"] [""] (builtins.readFile ../../VERSION);
             src = ../../.;
             subPackages = [ "cmd/kronk" ];
             vendorHash = "sha256-JOtWwAlN24dIxoZxrxEKYMmWq2McD6ihA98gPNptqkw=";

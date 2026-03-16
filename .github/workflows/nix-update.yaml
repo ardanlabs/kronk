@@ -1,0 +1,44 @@
+name: Update Nix flake
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - go.mod
+      - go.sum
+
+jobs:
+  update-nix-flake:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - uses: cachix/install-nix-action@v27
+
+      - name: Update vendorHash in flake.nix
+        run: |
+          go mod vendor
+          HASH=$(nix hash path --sri vendor/)
+          rm -rf vendor/
+          awk -v hash="$HASH" -v updated=0 '
+            /kronkBase/                    { in_block=1 }
+            in_block && /vendorHash = /    { sub(/"[^"]*"/, "\"" hash "\""); in_block=0; updated=1 }
+            { print }
+            END { exit(updated == 0) }
+          ' zarf/nix/flake.nix > flake.nix.tmp && mv flake.nix.tmp zarf/nix/flake.nix
+
+      - name: Commit updated flake.nix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git diff --quiet zarf/nix/flake.nix || \
+            git commit -am "chore: update nix flake" && git push
