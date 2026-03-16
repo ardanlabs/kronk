@@ -8,8 +8,6 @@ builds:
     binary: kronk
     env:
       - CGO_ENABLED=0
-    ldflags:
-      - -X github.com/ardanlabs/kronk/sdk/kronk.Version={{.Version}}
     goos:
       - linux
       - darwin
