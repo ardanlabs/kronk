@@ -20,42 +20,35 @@
         let
           pkgs = nixpkgs.legacyPackages.${system};
 
-          pkgsCuda = import nixpkgs {
-            inherit system;
-            config = {
-              allowUnfree = true;
-              cudaSupport = true;
-            };
-          };
-
-          # Base kronk CLI binary (CGO_ENABLED=0, no llama.cpp dependency).
           kronkBase = (pkgs.buildGoModule.override { go = pkgs.go_1_26; }) {
             pname = "kronk";
             version = "1.21.3";
             src = ../../.;
             subPackages = [ "cmd/kronk" ];
-            vendorHash = "sha256-ebKZAZyZLPrmgm4TOkvJJBFpH+un2ELnZHkjFWE9c9k=";
+            vendorHash = "sha256-EF+wcHqrZV/zE9KdvJv353huhlbuPm7Na6cSizJl/dg=";
 
             env.CGO_ENABLED = 0;
           };
 
-          # Helper to wrap the kronk binary with KRONK_LIB_PATH pointing
-          # to the correct llama.cpp backend and runtime libraries.
+          # Wrap kronk with the runtime libs needed for dynamic library loading.
           mkKronkPackage =
-            { llamaPkg }:
+            {
+              extraLibs ? [ ],
+            }:
             pkgs.symlinkJoin {
               name = "kronk";
               paths = [ kronkBase ];
               nativeBuildInputs = [ pkgs.makeWrapper ];
               postBuild = ''
                 wrapProgram $out/bin/kronk \
-                  --set KRONK_LIB_PATH "${llamaPkg}/lib" \
-                  --set KRONK_ALLOW_UPGRADE "false" \
                   --prefix LD_LIBRARY_PATH : "${
-                    pkgs.lib.makeLibraryPath [
-                      pkgs.libffi
-                      pkgs.stdenv.cc.cc.lib
-                    ]
+                    pkgs.lib.makeLibraryPath (
+                      [
+                        pkgs.libffi
+                        pkgs.stdenv.cc.cc.lib
+                      ]
+                      ++ extraLibs
+                    )
                   }"
               '';
             };
@@ -65,19 +58,13 @@
           default = self.packages.${system}.cpu;
 
           # nix build .#cpu
-          cpu = mkKronkPackage {
-            llamaPkg = pkgs.llama-cpp;
-          };
+          cpu = mkKronkPackage { };
 
           # nix build .#vulkan
-          vulkan = mkKronkPackage {
-            llamaPkg = pkgs.llama-cpp-vulkan;
-          };
+          vulkan = mkKronkPackage { extraLibs = [ pkgs.vulkan-loader ]; };
 
           # nix build .#cuda
-          cuda = mkKronkPackage {
-            llamaPkg = pkgsCuda.llama-cpp;
-          };
+          cuda = mkKronkPackage { };
         }
       );
 
@@ -85,14 +72,6 @@
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
-
-          pkgsCuda = import nixpkgs {
-            inherit system;
-            config = {
-              allowUnfree = true;
-              cudaSupport = true;
-            };
-          };
 
           # Shared packages across all dev shells.
           basePackages = [
@@ -108,26 +87,20 @@
           ];
 
           # Shared environment variables across all dev shells.
-          baseEnv = {
-            LD_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath [
-              pkgs.libffi
-              pkgs.stdenv.cc.cc.lib
-            ]}";
-            KRONK_ALLOW_UPGRADE = "false";
-          };
+          baseLibs = [
+            pkgs.libffi
+            pkgs.stdenv.cc.cc.lib
+          ];
 
-          # Helper to create a dev shell for a given llama.cpp package and
-          # any extra packages it needs (e.g. vulkan headers/loader).
           mkKronkShell =
             {
-              llamaPkg,
               extraPackages ? [ ],
+              extraLibs ? [ ],
             }:
             pkgs.mkShell {
-              buildInputs = basePackages ++ [ llamaPkg ] ++ extraPackages;
+              buildInputs = basePackages ++ extraPackages;
 
-              inherit (baseEnv) LD_LIBRARY_PATH KRONK_ALLOW_UPGRADE;
-              KRONK_LIB_PATH = "${llamaPkg}/lib";
+              LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (baseLibs ++ extraLibs);
             };
         in
         {
@@ -135,23 +108,16 @@
           default = self.devShells.${system}.cpu;
 
           # nix develop .#cpu
-          cpu = mkKronkShell {
-            llamaPkg = pkgs.llama-cpp;
-          };
+          cpu = mkKronkShell { };
 
           # nix develop .#vulkan
           vulkan = mkKronkShell {
-            llamaPkg = pkgs.llama-cpp-vulkan;
-            extraPackages = [
-              pkgs.vulkan-headers
-              pkgs.vulkan-loader
-            ];
+            extraPackages = [ pkgs.vulkan-headers ];
+            extraLibs = [ pkgs.vulkan-loader ];
           };
 
           # nix develop .#cuda
-          cuda = mkKronkShell {
-            llamaPkg = pkgsCuda.llama-cpp;
-          };
+          cuda = mkKronkShell { };
         }
       );
     };
