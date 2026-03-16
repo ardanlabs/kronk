@@ -406,18 +406,6 @@ export default function DocsSDKKronk() {
             </div>
           </div>
 
-          <div className="card" id="constants">
-            <h3>Constants</h3>
-
-            <div className="doc-section" id="const-version">
-              <h4>Version</h4>
-              <pre className="code-block">
-                <code>{`const Version = "1.21.4"`}</code>
-              </pre>
-              <p className="doc-description">Version contains the current version of the kronk package.</p>
-            </div>
-          </div>
-
           <div className="card" id="variables">
             <h3>Variables</h3>
 
@@ -454,6 +442,14 @@ export default function DocsSDKKronk() {
 }`}</code>
               </pre>
               <p className="doc-description">FmtLogger provides a basic logger that writes to stdout.</p>
+            </div>
+
+            <div className="doc-section" id="var-version">
+              <h4>Version</h4>
+              <pre className="code-block">
+                <code>{`var Version = "dev"`}</code>
+              </pre>
+              <p className="doc-description">Version contains the current version of the kronk package.</p>
             </div>
           </div>
         </div>
@@ -514,16 +510,11 @@ export default function DocsSDKKronk() {
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#constants" className="doc-index-header">Constants</a>
-              <ul>
-                <li><a href="#const-version">Version</a></li>
-              </ul>
-            </div>
-            <div className="doc-index-section">
               <a href="#variables" className="doc-index-header">Variables</a>
               <ul>
                 <li><a href="#var-discardlogger">DiscardLogger</a></li>
                 <li><a href="#var-fmtlogger">FmtLogger</a></li>
+                <li><a href="#var-version">Version</a></li>
               </ul>
             </div>
           </div>

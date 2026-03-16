@@ -974,6 +974,21 @@ gonja-latest:
 	GOPROXY=direct go get github.com/nikolalohinski/gonja/v2@master
 
 # ==============================================================================
+# Release
+
+prep-release:
+ifndef VERSION
+	$(error VERSION is required, e.g. make prep-release VERSION=1.2.3)
+endif
+	echo $(VERSION) > VERSION
+	git add VERSION
+	@echo ""
+	@echo "Files staged. Now:"
+	@echo "  1. git commit"
+	@echo "  2. git tag v$(VERSION)"
+	@echo "  3. git push origin main v$(VERSION)"
+
+# ==============================================================================
 # Examples
 
 example-agent:
