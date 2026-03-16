@@ -19,9 +19,8 @@
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
-        in
-        {
-          default = (pkgs.buildGoModule.override { go = pkgs.go_1_26; }) {
+
+          kronkBase = (pkgs.buildGoModule.override { go = pkgs.go_1_26; }) {
             pname = "kronk";
             version = "1.21.3";
             src = ../../.;
@@ -30,6 +29,42 @@
 
             env.CGO_ENABLED = 0;
           };
+
+          # Wrap kronk with the runtime libs needed for dynamic library loading.
+          mkKronkPackage =
+            {
+              extraLibs ? [ ],
+            }:
+            pkgs.symlinkJoin {
+              name = "kronk";
+              paths = [ kronkBase ];
+              nativeBuildInputs = [ pkgs.makeWrapper ];
+              postBuild = ''
+                wrapProgram $out/bin/kronk \
+                  --prefix LD_LIBRARY_PATH : "${
+                    pkgs.lib.makeLibraryPath (
+                      [
+                        pkgs.libffi
+                        pkgs.stdenv.cc.cc.lib
+                      ]
+                      ++ extraLibs
+                    )
+                  }"
+              '';
+            };
+        in
+        {
+          # nix build (defaults to cpu)
+          default = self.packages.${system}.cpu;
+
+          # nix build .#cpu
+          cpu = mkKronkPackage { };
+
+          # nix build .#vulkan
+          vulkan = mkKronkPackage { extraLibs = [ pkgs.vulkan-loader ]; };
+
+          # nix build .#cuda
+          cuda = mkKronkPackage { };
         }
       );
 
@@ -58,7 +93,10 @@
           ];
 
           mkKronkShell =
-            { extraPackages ? [ ], extraLibs ? [ ] }:
+            {
+              extraPackages ? [ ],
+              extraLibs ? [ ],
+            }:
             pkgs.mkShell {
               buildInputs = basePackages ++ extraPackages;
 
