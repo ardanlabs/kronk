@@ -173,8 +173,8 @@ github.com/hashicorp/go-getter v1.8.5 h1:DMPV5CSw5JrNg/IK7kDZt3+l2REKXOi3oAw7uYL
 github.com/hashicorp/go-getter v1.8.5/go.mod h1:WIffejwAyDSJhoVptc3UEshEMkR9O63rw34V7k43O3Q=
 github.com/hashicorp/go-version v1.8.0 h1:KAkNb1HAiZd1ukkxDFGmokVZe1Xy9HG6NUp+bPle2i4=
 github.com/hashicorp/go-version v1.8.0/go.mod h1:fltr4n8CU8Ke44wwGCBoEymUuxUHl09ZGVZPK5anwXA=
-github.com/hybridgroup/yzma v1.10.1-0.20260315075844-51032a079fb6 h1:0F0txG1+ODJ6j2wbx5YSVcDxTD7j252hw/7u7k+7sp0=
-github.com/hybridgroup/yzma v1.10.1-0.20260315075844-51032a079fb6/go.mod h1:zrzMgv/KVQz23+s6l16b+vJ+9uJVBdWtGcGkwRTMeiQ=
+github.com/hybridgroup/yzma v1.11.0 h1:dIAs/GoV8imTB1fsFk1ft0ejI5APhUK6iHBSMudbfZc=
+github.com/hybridgroup/yzma v1.11.0/go.mod h1:zrzMgv/KVQz23+s6l16b+vJ+9uJVBdWtGcGkwRTMeiQ=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
 github.com/json-iterator/go v1.1.12 h1:PV8peI4a0ysnczrg+LtxykD8LfKY9ML6u2jnxaEnrnM=

@@ -48,6 +48,9 @@ func ParseHFInput(input string) (owner, repo, filename string, err error) {
 
 	if len(parts) > 3 && (parts[2] == "resolve" || parts[2] == "blob") {
 		filename = strings.Join(parts[4:], "/")
+	} else if len(parts) > 3 && parts[2] == "tree" {
+		// tree/main URLs point at a folder, not a specific file.
+		filename = strings.Join(parts[4:], "/")
 	} else if len(parts) > 2 {
 		filename = strings.Join(parts[2:], "/")
 	}

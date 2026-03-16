@@ -7,6 +7,64 @@ import { VRAMCalculatorPanel, useVRAMState } from './vram';
 /** Regex matching the "-NNNNN-of-NNNNN" suffix on split GGUF files. */
 const splitSuffixRe = /-\d+-of-\d+\.gguf$/i;
 
+/**
+ * Normalize a user-entered shorthand into a canonical HuggingFace URL.
+ *
+ *   "owner/repo"          → "https://huggingface.co/owner/repo/tree/main"
+ *   "owner/repo:Q4_K_M"   → "https://huggingface.co/owner/repo/tree/main"  (tag used for auto-select only)
+ *
+ * Full URLs (already containing huggingface.co or /resolve/ etc.) are returned as-is.
+ * The optional tag (after the colon) is returned separately so the caller can
+ * use it for pre-selection.
+ */
+function normalizeInput(raw: string): { url: string; tag: string } {
+  const trimmed = raw.trim();
+
+  // Already a full URL — pass through.
+  if (/^https?:\/\//i.test(trimmed)) {
+    return { url: trimmed, tag: '' };
+  }
+
+  // Strip bare host prefixes.
+  let stripped = trimmed;
+  for (const prefix of ['huggingface.co/', 'hf.co/']) {
+    if (stripped.toLowerCase().startsWith(prefix)) {
+      stripped = stripped.slice(prefix.length);
+      break;
+    }
+  }
+
+  // If it already contains markers of a full path, wrap and return.
+  if (stripped.includes('/resolve/') || stripped.includes('/blob/') || stripped.includes('/tree/')) {
+    return { url: 'https://huggingface.co/' + stripped, tag: '' };
+  }
+
+  const parts = stripped.split('/');
+  if (parts.length < 2) {
+    return { url: trimmed, tag: '' };
+  }
+
+  const owner = parts[0];
+  let repo = parts[1];
+  let tag = '';
+
+  // Handle owner/repo:TAG shorthand.
+  const colonIdx = repo.indexOf(':');
+  if (colonIdx >= 0) {
+    tag = repo.slice(colonIdx + 1);
+    repo = repo.slice(0, colonIdx);
+  }
+
+  if (parts.length > 2) {
+    // owner/repo/file.gguf — specific file short form.
+    const filename = parts.slice(2).join('/');
+    return { url: `https://huggingface.co/${owner}/${repo}/resolve/main/${filename}`, tag: '' };
+  }
+
+  // owner/repo or owner/repo:TAG — folder listing.
+  return { url: `https://huggingface.co/${owner}/${repo}/tree/main`, tag };
+}
+
 /** Extract the filename portion from a HuggingFace URL or short-form path. */
 function extractFilename(url: string): string {
   const trimmed = url.trim();
@@ -34,7 +92,7 @@ function buildModelUrl(originalUrl: string, filename: string): string {
   const trimmed = originalUrl.trim();
 
   // If the original was a full HuggingFace URL, reconstruct with the new filename.
-  for (const marker of ['/resolve/main/', '/blob/main/']) {
+  for (const marker of ['/resolve/main/', '/blob/main/', '/tree/main']) {
     const idx = trimmed.indexOf(marker);
     if (idx >= 0) return trimmed.slice(0, idx) + '/resolve/main/' + filename;
   }
@@ -166,15 +224,23 @@ export default function VRAMCalculator() {
     cachedKeyRef.current = '';
 
     try {
-      const lookupResult = await api.lookupHuggingFace(trimmed);
+      const { url: normalized, tag } = normalizeInput(trimmed);
+      const lookupResult = await api.lookupHuggingFace(normalized);
       const files: HFRepoFile[] = lookupResult.repo_files ?? [];
       setRepoFiles(files);
-      setLookupUrl(trimmed);
+      setLookupUrl(normalized);
 
       // Pre-select the file if the URL pointed to a specific model.
-      const inputFilename = extractFilename(trimmed);
+      const inputFilename = extractFilename(normalized);
       if (inputFilename && files.some((f) => f.filename === inputFilename)) {
         setSelectedFilename(inputFilename);
+      } else if (tag) {
+        // Shorthand with tag (e.g. owner/repo:Q4_K_M) — find matching file.
+        const lowerTag = tag.toLowerCase();
+        const match = files.find((f) => f.filename.toLowerCase().includes(lowerTag));
+        if (match) {
+          setSelectedFilename(match.filename);
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Lookup failed');
@@ -259,17 +325,30 @@ export default function VRAMCalculator() {
       setError(null);
 
       try {
-        const lookupResult = await api.lookupHuggingFace(trimmed);
+        const { url: normalized, tag } = normalizeInput(trimmed);
+        const lookupResult = await api.lookupHuggingFace(normalized);
         const files: HFRepoFile[] = lookupResult.repo_files ?? [];
         setRepoFiles(files);
-        setLookupUrl(trimmed);
+        setLookupUrl(normalized);
 
-        const inputFilename = extractFilename(trimmed);
+        const inputFilename = extractFilename(normalized);
         if (inputFilename && files.some((f) => f.filename === inputFilename)) {
           setSelectedFilename(inputFilename);
           setLookingUp(false);
-          await performCalculation(trimmed);
+          await performCalculation(normalized);
           return;
+        }
+
+        // Shorthand with tag — auto-select and calculate if matched.
+        if (tag) {
+          const lowerTag = tag.toLowerCase();
+          const match = files.find((f) => f.filename.toLowerCase().includes(lowerTag));
+          if (match) {
+            setSelectedFilename(match.filename);
+            setLookingUp(false);
+            await performCalculation(buildModelUrl(normalized, match.filename));
+            return;
+          }
         }
 
         // No specific file — show the list for selection.
@@ -280,10 +359,10 @@ export default function VRAMCalculator() {
 
         // No files found, try direct calculation.
         setLookingUp(false);
-        await performCalculation(trimmed);
+        await performCalculation(normalized);
       } catch {
         setLookingUp(false);
-        await performCalculation(trimmed);
+        await performCalculation(normalizeInput(trimmed).url);
       }
       return;
     }
@@ -319,9 +398,10 @@ export default function VRAMCalculator() {
       <form onSubmit={handleCalculate} className="form-card">
         <div className="form-group">
                   <label htmlFor="modelUrl">                    
-                    Ex. <code>bartowski/Qwen3-8B-GGUF:Q4_K_M</code> (shorthand)<br/>
-                    Ex. <code>https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf</code><br/>
-                    Ex. <code>https://huggingface.co/unsloth/Qwen3.5-35B-A3B-GGUF/tree/main</code><br/><br/>
+                    Ex. <code>Qwen/Qwen3-8B-GGUF</code> (shorthand for model folder)<br/>
+                    Ex. <code>Qwen/Qwen3-8B-GGUF:Q4_K_M</code> (shorthand for specific model)<br/>
+                    Ex. <code>https://huggingface.co/unsloth/Qwen3.5-35B-A3B-GGUF/tree/main (folder)</code><br/>
+                    Ex. <code>https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf (specific mode)</code><br/><br/>
                     Model URL, shorthand, or folder for split models
                   </label>
           <div style={{ display: 'flex', gap: '8px' }}>
@@ -339,7 +419,7 @@ export default function VRAMCalculator() {
                   cachedKeyRef.current = '';
                 }
               }}
-              placeholder="bartowski/Qwen3-8B-GGUF:Q4_K_M"
+              placeholder="Qwen/Qwen3-8B-GGUF:Q4_K_M"
               className="form-input"
               style={{ flex: 1 }}
             />
@@ -353,7 +433,7 @@ export default function VRAMCalculator() {
             </button>
           </div>
           <small className="form-hint">
-            Enter a shorthand (owner/repo:TAG), full HuggingFace URL, or folder URL for split models
+            Enter a shorthand (owner/repo or owner/repo:TAG), full HuggingFace URL, or folder URL for split models
           </small>
         </div>
 
