@@ -1041,8 +1041,6 @@ func TestSPCCache_RebuildInvalidatesSessionBeforeDecode(t *testing.T) {
 // =========================================================================
 
 func TestRestoreSPCToSeq_PartialReadShouldFail(t *testing.T) {
-	t.Skip("BUG: partial restore (nRead < len(kvState)) is silently accepted as success")
-
 	deps := &fakeDeps{
 		restoreKVStateFn: func(data []byte, _ llama.SeqId) (int, error) {
 			return 2, nil // Only 2 of 5 bytes read.
@@ -1059,8 +1057,6 @@ func TestRestoreSPCToSeq_PartialReadShouldFail(t *testing.T) {
 }
 
 func TestPerformSPC_ExtractKVStateLengthMismatch(t *testing.T) {
-	t.Skip("BUG: nExtracted > len(kvState) causes panic on kvState[:nExtracted]")
-
 	deps := &fakeDeps{
 		createPromptFn: func(_ context.Context, _ D) (string, [][]byte, error) {
 			return "prompt", nil, nil

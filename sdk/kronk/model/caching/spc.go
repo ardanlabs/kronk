@@ -193,6 +193,10 @@ func (c *SPCCache) performSPC(ctx context.Context, d D, messages []D, msgInfo Ca
 		return Result{ModifiedD: d, Err: fmt.Errorf("spc: failed to extract KV state from seq %d", c.cacheSeqID)}
 	}
 
+	if nExtracted > len(kvState) {
+		return Result{ModifiedD: d, Err: fmt.Errorf("spc: extracted KV byte count (%d) exceeds buffer size (%d)", nExtracted, len(kvState))}
+	}
+
 	c.session = &spcSession{
 		sysPromptHash:   newHash,
 		sysPromptTokens: nTokens,
@@ -251,6 +255,10 @@ func (c *SPCCache) RestoreSPCToSeq(dstSeqID llama.SeqId) error {
 
 	if nRead == 0 {
 		return fmt.Errorf("restore-spc: StateSeqSetData failed for seq %d", dstSeqID)
+	}
+
+	if nRead < len(session.kvState) {
+		return fmt.Errorf("restore-spc: partial restore for seq %d: read %d of %d bytes", dstSeqID, nRead, len(session.kvState))
 	}
 
 	return nil
