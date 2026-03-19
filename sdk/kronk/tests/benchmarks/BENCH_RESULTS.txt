@@ -44,6 +44,52 @@ Benchmark Matrix:
 
 🟢 Better   🔴 Worse   ⚪ Neutral
 
+2026-03-18     : dev
+llama.cpp      : b8412
+--------------------------------------------------------------------------------
+goos: darwin
+goarch: arm64
+cpu: Apple M4 Max
+
+Dense NonCaching        :    50572026083 ns/op 🟢 -5.14%     1171280 B/op ⚪ +0.18%         9477 allocs/op 🔴 +4.22%
+Dense SPC               :    37338449264 ns/op 🟢 -7.21%      970690 B/op ⚪ +0.71%         9356 allocs/op 🔴 +4.50%
+Dense IMC-Det           :     3505799000 ns/op 🟢 -3.50%      156709 B/op 🔴 +2.59%         4315 allocs/op 🔴 +9.13%
+Dense IMC-NonDet (GPT)  :     1661986208 ns/op 🟢 -17.02%     165584 B/op 🔴 +6.25%         4500 allocs/op 🔴 +10.65%
+Dense IMC-Det+Spec      :     3998079472 ns/op 🟢 -44.07%     320466 B/op 🔴 +12.20%        9169 allocs/op ⚪ +1.75%
+Dense IMC-Det MultiSlot :    13845341444 ns/op 🟢 -17.59%     593493 B/op 🔴 +5.08%        17312 allocs/op 🔴 +9.83%
+Dense IMC Prefill       :      138850430 ns/op 🟢 -17.18%      70784 B/op ⚪ +1.60%          632 allocs/op ⚪ +1.77%
+Dense IMC Cold          :    51065600528 ns/op 🟢 -24.17%   65046480 B/op 🔴 +1462.85%   3773870 allocs/op 🔴 +12009.71%
+
+MoE IMC-Det             :     2389578139 ns/op 🟢 -4.74%      141405 B/op 🔴 +6.80%     3694 allocs/op 🔴 +16.49%
+MoE Spec-Baseline       :     2225026514 ns/op 🔴 +13.88%     133528 B/op 🔴 +7.00%     3346 allocs/op 🔴 +21.23%
+MoE Spec+Draft          :     3285698611 ns/op 🟢 -51.62%     275746 B/op 🔴 +16.76%    7515 allocs/op 🟢 -8.80%
+
+Hybrid IMC-Det          :     2398456458 ns/op 🟢 -20.54%     135696 B/op ⚪ -0.23%     3479 allocs/op 🔴 +5.11%
+
+--------------------------------------------------------------------------------
+Dense NonCaching            Dense SPC                    Dense IMC-Det                Dense IMC-NonDet (GPT)    
+37.73 tok/s    🟢 +4.52%     37.13 tok/s    🟢 +4.15%     37.47 tok/s    ⚪ +0.81%      82.91 tok/s    🟢 +19.59%
+47279 ttft-ms  🟢 -5.05%     33611 ttft-ms  🟢 -8.79%       167 ttft-ms  🟢 -18.54%       189 ttft-ms  🟢 -18.88%
+50592 total-ms 🟢 -5.01%     36978 total-ms 🟢 -8.38%      3503 total-ms ⚪ -1.79%       1687 total-ms 🟢 -16.65%
+
+Dense IMC-Det+Spec          Dense IMC-Det MultiSlot      Dense IMC Prefill             Dense IMC Cold            
+32.57 tok/s    🟢 +84.74%    38.00 tok/s    🟢 +26.29%     0.00 tok/s    ⚪  new        38.05 tok/s    🟢 +30.00%
+  223 ttft-ms  🟢 -13.90%     5328 ttft-ms  🟢 -22.14%        0 ttft-ms  ⚪  new        43709 ttft-ms  🟢 -24.26%
+ 4008 total-ms 🟢 -45.22%     8617 total-ms 🟢 -21.67%      131 total-ms 🟢 -18.63%     46994 total-ms 🟢 -24.19%
+
+MoE IMC-Det                 MoE Spec-Baseline            MoE Spec+Draft            
+48.44 tok/s    🟢 +9.25%     49.95 tok/s    🟢 +8.23%     30.59 tok/s    🟢 +128.28%
+  169 ttft-ms  🟢 -22.12%      171 ttft-ms  🟢 -19.72%      175 ttft-ms  🟢 -2.23%
+ 2337 total-ms 🟢 -9.59%      2313 total-ms 🔴 +21.54%     2692 total-ms 🟢 -61.39%
+
+Hybrid IMC-Det            
+43.40 tok/s    🟢 +18.74%
+  156 ttft-ms  🟢 -25.71%
+ 2241 total-ms 🟢 -32.09%
+
+
+================================================================================
+
 2026-03-04     : v1.21.0
 llama.cpp      : b8192
 --------------------------------------------------------------------------------

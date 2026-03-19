@@ -108,10 +108,10 @@ The flow works like this:
 3. Hand tray to the GPU
 4. GPU processes the tray in `n_ubatch`-sized bites
 
-For example, with 3 prefilling slots, `n_batch: 4096`, and `n_ubatch: 512`,
-each round pulls 512 tokens from S0, then 512 from S1, then 512 from S2,
-then back to S0 — giving each slot ~1365 tokens per tray instead of one slot
-consuming all 4096.
+For example, with 4 prefilling slots, `n_batch: 4096`, and `n_ubatch: 512`,
+each round pulls 512 tokens from S0, then S1, then S2, then S3, then back
+to S0 — giving each slot 1024 tokens per tray instead of one slot consuming
+all 4096.
 
 For example, if you send a 4096-token prompt with `n_batch: 2048` and
 `n_ubatch: 512`, the prompt is split into 2 decode calls of 2048 tokens each.

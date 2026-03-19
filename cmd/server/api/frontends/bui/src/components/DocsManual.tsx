@@ -540,7 +540,7 @@ curl http://localhost:11435/v1/chat/completions \\
             <li>Hand tray to the GPU</li>
             <li>GPU processes the tray in <code>n_ubatch</code>-sized bites</li>
           </ol>
-          <p>For example, with 3 prefilling slots, <code>n_batch: 4096</code>, and <code>n_ubatch: 512</code>, each round pulls 512 tokens from S0, then 512 from S1, then 512 from S2, then back to S0 — giving each slot ~1365 tokens per tray instead of one slot consuming all 4096.</p>
+          <p>For example, with 4 prefilling slots, <code>n_batch: 4096</code>, and <code>n_ubatch: 512</code>, each round pulls 512 tokens from S0, then S1, then S2, then S3, then back to S0 — giving each slot 1024 tokens per tray instead of one slot consuming all 4096.</p>
           <p>For example, if you send a 4096-token prompt with <code>n_batch: 2048</code> and <code>n_ubatch: 512</code>, the prompt is split into 2 decode calls of 2048 tokens each. Within each call, the GPU processes 512 tokens at a time — so each call runs 4 compute passes internally. Larger values mean faster prompt processing but use more VRAM. The <code>n_ubatch</code> value must always be less than or equal to <code>n_batch</code>.</p>
           <pre className="code-block"><code className="language-yaml">{`n_batch: 2048 # Work tray capacity (must be ≥ n_ubatch)
 n_ubatch: 512 # GPU bite size (must be ≤ n_batch)`}</code></pre>
