@@ -10,7 +10,7 @@ export default function DocsAPIChat() {
         <div className="doc-content">
           <div className="card" id="overview">
             <h3>Overview</h3>
-            <p>All endpoints are prefixed with <code>/v1</code>. Base URL: <code>http://localhost:8080</code></p>
+            <p>All endpoints are prefixed with <code>/v1</code>. Base URL: <code>http://localhost:11435</code></p>
             <h4>Authentication</h4>
             <p>When authentication is enabled, include the token in the Authorization header:</p>
             <pre className="code-block">
@@ -217,7 +217,7 @@ export default function DocsAPIChat() {
               <h5>Example</h5>
               <p className="example-label"><strong>Simple text message:</strong></p>
               <pre className="code-block">
-                <code>{`curl -X POST http://localhost:8080/v1/chat/completions \\
+                <code>{`curl -X POST http://localhost:11435/v1/chat/completions \\
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -237,7 +237,7 @@ export default function DocsAPIChat() {
               </pre>
               <p className="example-label"><strong>Multi-turn conversation:</strong></p>
               <pre className="code-block">
-                <code>{`curl -X POST http://localhost:8080/v1/chat/completions \\
+                <code>{`curl -X POST http://localhost:11435/v1/chat/completions \\
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -252,7 +252,7 @@ export default function DocsAPIChat() {
               </pre>
               <p className="example-label"><strong>Vision - image from URL (requires vision model):</strong></p>
               <pre className="code-block">
-                <code>{`curl -X POST http://localhost:8080/v1/chat/completions \\
+                <code>{`curl -X POST http://localhost:11435/v1/chat/completions \\
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -271,7 +271,7 @@ export default function DocsAPIChat() {
               </pre>
               <p className="example-label"><strong>Vision - base64 encoded image (requires vision model):</strong></p>
               <pre className="code-block">
-                <code>{`curl -X POST http://localhost:8080/v1/chat/completions \\
+                <code>{`curl -X POST http://localhost:11435/v1/chat/completions \\
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -290,7 +290,7 @@ export default function DocsAPIChat() {
               </pre>
               <p className="example-label"><strong>Audio - base64 encoded audio (requires audio model):</strong></p>
               <pre className="code-block">
-                <code>{`curl -X POST http://localhost:8080/v1/chat/completions \\
+                <code>{`curl -X POST http://localhost:11435/v1/chat/completions \\
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -309,7 +309,7 @@ export default function DocsAPIChat() {
               </pre>
               <p className="example-label"><strong>Tool/Function calling - define tools and let the model call them:</strong></p>
               <pre className="code-block">
-                <code>{`curl -X POST http://localhost:8080/v1/chat/completions \\
+                <code>{`curl -X POST http://localhost:11435/v1/chat/completions \\
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{

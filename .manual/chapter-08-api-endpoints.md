@@ -41,7 +41,7 @@ Generate chat responses using the familiar OpenAI format.
 **Basic Request:**
 
 ```shell
-curl http://localhost:8080/v1/chat/completions \
+curl http://localhost:11435/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "Qwen3-8B-Q8_0",
@@ -140,7 +140,7 @@ OpenAI's newer Responses API format, used by some clients.
 **Request:**
 
 ```shell
-curl http://localhost:8080/v1/responses \
+curl http://localhost:11435/v1/responses \
   -H "Content-Type: application/json" \
   -d '{
     "model": "Qwen3-8B-Q8_0",
@@ -177,7 +177,7 @@ Generate vector embeddings for text.
 **Request:**
 
 ```shell
-curl http://localhost:8080/v1/embeddings \
+curl http://localhost:11435/v1/embeddings \
   -H "Content-Type: application/json" \
   -d '{
     "model": "embeddinggemma-300m-qat-Q8_0",
@@ -227,7 +227,7 @@ Score and reorder documents by relevance to a query.
 **Request:**
 
 ```shell
-curl http://localhost:8080/v1/rerank \
+curl http://localhost:11435/v1/rerank \
   -H "Content-Type: application/json" \
   -d '{
     "model": "bge-reranker-v2-m3-Q8_0",
@@ -285,7 +285,7 @@ Get the token count for a text input. Works with any model type.
 **Request (raw text):**
 
 ```shell
-curl http://localhost:8080/v1/tokenize \
+curl http://localhost:11435/v1/tokenize \
   -H "Authorization: Bearer $KRONK_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -297,7 +297,7 @@ curl http://localhost:8080/v1/tokenize \
 **Request (with template):**
 
 ```shell
-curl http://localhost:8080/v1/tokenize \
+curl http://localhost:11435/v1/tokenize \
   -H "Authorization: Bearer $KRONK_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -330,7 +330,7 @@ function executions that you handle in your application.
 **Request with Tools:**
 
 ```shell
-curl http://localhost:8080/v1/chat/completions \
+curl http://localhost:11435/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "Qwen3-8B-Q8_0",
@@ -447,7 +447,7 @@ Get available models.
 **Request:**
 
 ```shell
-curl http://localhost:8080/v1/models
+curl http://localhost:11435/v1/models
 ```
 
 **Response:**
@@ -475,7 +475,7 @@ curl http://localhost:8080/v1/models
 When authentication is enabled, include the token in requests:
 
 ```shell
-curl http://localhost:8080/v1/chat/completions \
+curl http://localhost:11435/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your-token-here" \
   -d '{...}'

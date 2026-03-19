@@ -38,7 +38,7 @@ export default function DocsCLIServer() {
                   </tr>
                   <tr>
                     <td><code>--api-host &lt;string&gt;</code></td>
-                    <td>API host address (e.g., localhost:8080)</td>
+                    <td>API host address (e.g., localhost:11435)</td>
                   </tr>
                   <tr>
                     <td><code>--debug-host &lt;string&gt;</code></td>

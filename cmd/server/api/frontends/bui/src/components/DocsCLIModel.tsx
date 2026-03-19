@@ -59,7 +59,7 @@ export default function DocsCLIModel() {
                   </tr>
                   <tr>
                     <td><code>KRONK_WEB_API_HOST</code></td>
-                    <td>localhost:8080</td>
+                    <td>localhost:11435</td>
                     <td>IP Address for the kronk server (web mode)</td>
                   </tr>
                   <tr>
@@ -125,7 +125,7 @@ kronk model index --local`}</code>
                   </tr>
                   <tr>
                     <td><code>KRONK_WEB_API_HOST</code></td>
-                    <td>localhost:8080</td>
+                    <td>localhost:11435</td>
                     <td>IP Address for the kronk server (web mode)</td>
                   </tr>
                   <tr>
@@ -173,7 +173,7 @@ kronk model list --local`}</code>
                   </tr>
                   <tr>
                     <td><code>KRONK_WEB_API_HOST</code></td>
-                    <td>localhost:8080</td>
+                    <td>localhost:11435</td>
                     <td>IP Address for the kronk server</td>
                   </tr>
                 </tbody>
@@ -226,7 +226,7 @@ kronk model ps`}</code>
                   </tr>
                   <tr>
                     <td><code>KRONK_WEB_API_HOST</code></td>
-                    <td>localhost:8080</td>
+                    <td>localhost:11435</td>
                     <td>IP Address for the kronk server (web mode)</td>
                   </tr>
                   <tr>
@@ -295,7 +295,7 @@ kronk model pull <MODEL_URL> <MMPROJ_URL>`}</code>
                   </tr>
                   <tr>
                     <td><code>KRONK_WEB_API_HOST</code></td>
-                    <td>localhost:8080</td>
+                    <td>localhost:11435</td>
                     <td>IP Address for the kronk server (web mode)</td>
                   </tr>
                   <tr>
@@ -361,7 +361,7 @@ kronk model remove llama-3.2-1b-q4 --local`}</code>
                   </tr>
                   <tr>
                     <td><code>KRONK_WEB_API_HOST</code></td>
-                    <td>localhost:8080</td>
+                    <td>localhost:11435</td>
                     <td>IP Address for the kronk server (web mode)</td>
                   </tr>
                   <tr>

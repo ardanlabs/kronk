@@ -196,7 +196,7 @@ Pass the token in the `Authorization` header with the `Bearer` prefix.
 **curl Example:**
 
 ```shell
-curl http://localhost:8080/v1/chat/completions \
+curl http://localhost:11435/v1/chat/completions \
   -H "Authorization: Bearer eyJhbGciOiJS..." \
   -H "Content-Type: application/json" \
   -d '{
@@ -210,7 +210,7 @@ curl http://localhost:8080/v1/chat/completions \
 ```shell
 export KRONK_TOKEN="eyJhbGciOiJS..."
 
-curl http://localhost:8080/v1/chat/completions \
+curl http://localhost:11435/v1/chat/completions \
   -H "Authorization: Bearer $KRONK_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{...}'
@@ -222,7 +222,7 @@ curl http://localhost:8080/v1/chat/completions \
 import openai
 
 client = openai.OpenAI(
-    base_url="http://localhost:8080/v1",
+    base_url="http://localhost:11435/v1",
     api_key="eyJhbGciOiJS..."  # Your Kronk token
 )
 
@@ -280,7 +280,7 @@ Admin tokens (like `master.jwt`) bypass all rate limiting.
 
 - `KRONK_TOKEN` - Token for CLI commands and API requests
 - `KRONK_WEB_API_HOST` - Server address for CLI web mode
-  (default: `localhost:8080`)
+  (default: `localhost:11435`)
 
 ### 11.10 Security Best Practices
 

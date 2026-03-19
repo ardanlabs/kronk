@@ -132,7 +132,7 @@ for resp := range ch {
 ```shell
 # Or use the Model Server for OpenAI-compatible API
 kronk server start
-curl http://localhost:8080/v1/chat/completions -d '{"model":"Qwen3-8B-Q8_0","messages":[...]}'
+curl http://localhost:11435/v1/chat/completions -d '{"model":"Qwen3-8B-Q8_0","messages":[...]}'
 ```
 
 ---

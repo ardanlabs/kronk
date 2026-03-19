@@ -25,7 +25,7 @@ The BUI is served from the same port as the API.
 **Open in Browser:**
 
 ```
-http://localhost:8080
+http://localhost:11435
 ```
 
 The BUI automatically loads when you navigate to the server root.

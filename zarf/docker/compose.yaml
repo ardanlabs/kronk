@@ -8,7 +8,7 @@ services:
       - WEBUI_AUTH=false
       - GLOBAL_LOG_LEVEL="DEBUG"
       - ENABLE_PERSISTENT_CONFIG=false
-      - OPENAI_API_BASE_URL=http://host.docker.internal:8080/v1
+      - OPENAI_API_BASE_URL=http://host.docker.internal:11435/v1
       - OFFLINE_MODE=true
       - HF_HUB_OFFLINE=1
       - RAG_EMBEDDING_MODEL_AUTO_UPDATE=false
@@ -17,7 +17,7 @@ services:
     extra_hosts:
       - host.docker.internal:host-gateway
     ports:
-      - "8081:8080"
+      - "8081:11435"
     volumes:
       - ./openwebui:/app/backend/data
 

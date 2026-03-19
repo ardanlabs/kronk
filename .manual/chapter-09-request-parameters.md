@@ -108,7 +108,7 @@ d := model.D{
 **Using Grammar via API:**
 
 ```shell
-curl http://localhost:8080/v1/chat/completions \
+curl http://localhost:11435/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "Qwen3-8B-Q8_0",
@@ -186,7 +186,7 @@ Setting `top_logprobs > 0` implicitly enables `logprobs`.
 **Request:**
 
 ```shell
-curl http://localhost:8080/v1/chat/completions \
+curl http://localhost:11435/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "Qwen3-8B-Q8_0",

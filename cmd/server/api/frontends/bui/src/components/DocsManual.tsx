@@ -206,7 +206,7 @@ for resp := range ch {
 }`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`# Or use the Model Server for OpenAI-compatible API
 kronk server start
-curl http://localhost:8080/v1/chat/completions -d '{"model":"Qwen3-8B-Q8_0","messages":[...]}'`}</code></pre>
+curl http://localhost:11435/v1/chat/completions -d '{"model":"Qwen3-8B-Q8_0","messages":[...]}'`}</code></pre>
           <hr />
           <h2 id="chapter-2-installation-quick-start">Chapter 2: Installation &amp; Quick Start</h2>
           <h3 id="21-prerequisites">2.1 Prerequisites</h3>
@@ -247,11 +247,11 @@ QUICK START
   # Download a model (e.g., Qwen3-8B)
   kronk catalog pull Qwen3-8B-Q8_0 --local
 
-  # Start the server (runs on http://localhost:8080)
+  # Start the server (runs on http://localhost:11435)
   kronk server start
 
   # Open the Browser UI
-  open http://localhost:8080
+  open http://localhost:11435
 
 FEATURES
   • Text, Vision, Audio, Embeddings, Reranking
@@ -261,7 +261,7 @@ FEATURES
   • MCP service, security, observability
 
 MODES
-  Web mode (default)  - Communicates with running server at localhost:8080
+  Web mode (default)  - Communicates with running server at localhost:11435
   Local mode (--local) - Direct file operations without server
 
 ENVIRONMENT
@@ -297,7 +297,7 @@ Use "kronk [command] --help" for more information about a command.`}</code></pre
           <p><strong>Option A: Via the Server</strong></p>
           <p>Start the server and use the BUI to download libraries:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start`}</code></pre>
-          <p>Open http://localhost:8080 in your browser and navigate to the Libraries page.</p>
+          <p>Open http://localhost:11435 in your browser and navigate to the Libraries page.</p>
           <p><strong>Option B: Via CLI</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk libs --local`}</code></pre>
           <p>This downloads libraries to <code>~/.kronk/libraries/</code> using auto-detected settings.</p>
@@ -323,10 +323,10 @@ Image-Text-to-Text   GLM-4.6V-UD-Q5_K_XL                      MoE      80.3 GB  
           <h3 id="25-starting-the-server">2.5 Starting the Server</h3>
           <p>Start the Kronk Model Server:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start`}</code></pre>
-          <p>The server starts on <code>http://localhost:8080</code> by default. You'll see output like:</p>
+          <p>The server starts on <code>http://localhost:11435</code> by default. You'll see output like:</p>
           <pre className="code-block"><code>{`Kronk Model Server started
-API: http://localhost:8080
-BUI: http://localhost:8080`}</code></pre>
+API: http://localhost:11435
+BUI: http://localhost:11435`}</code></pre>
           <p><strong>Running in Background</strong></p>
           <p>To run the server as a background process:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start -d`}</code></pre>
@@ -334,11 +334,11 @@ BUI: http://localhost:8080`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`kronk server stop`}</code></pre>
           <h3 id="26-verifying-the-installation">2.6 Verifying the Installation</h3>
           <p><strong>Test via curl</strong></p>
-          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/models`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/models`}</code></pre>
           <p>You should see a list of available models.</p>
           <p><strong>Test Chat Completion</strong></p>
           <p><em>Note: It might take a few seconds the first time you call this because the model needs to be loaded into memory first.</em></p>
-          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/chat/completions \\
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "Qwen3-8B-Q8_0",
@@ -346,7 +346,7 @@ BUI: http://localhost:8080`}</code></pre>
     "max_tokens": 100
   }'`}</code></pre>
           <p><strong>Test via BUI</strong></p>
-          <p>Open <code>http://localhost:8080</code> in your browser and navigate to the <code>Apps/Chat</code> app. Select the model you want to try and chat away.</p>
+          <p>Open <code>http://localhost:11435</code> in your browser and navigate to the <code>Apps/Chat</code> app. Select the model you want to try and chat away.</p>
           <h3 id="27-quick-start-summary">2.7 Quick Start Summary</h3>
           <pre className="code-block"><code className="language-shell">{`# 1. Install Kronk
 go install github.com/ardanlabs/kronk/cmd/kronk@latest
@@ -355,13 +355,13 @@ go install github.com/ardanlabs/kronk/cmd/kronk@latest
 kronk server start
 
 # 3. Open BUI and download a model
-open http://localhost:8080
+open http://localhost:11435
 
 # 4. Download via the BUI Catalog/List screen or use this CLI call
 kronk catalog pull Qwen3-8B-Q8_0 --local
 
 # 5. Test the API using this curl call or the BUI App/Chat screen
-curl http://localhost:8080/v1/chat/completions \\
+curl http://localhost:11435/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{"model": "Qwen3-8B-Q8_0", "messages": [{"role": "user", "content": "Hello!"}]}'`}</code></pre>
           <h3 id="28-nixos-setup">2.8 NixOS Setup</h3>
@@ -2540,7 +2540,7 @@ cache_type_v: q8_0`}</code></pre>
           <p>The Kronk Model Server provides an OpenAI-compatible REST API for inference. This chapter covers server configuration, management, and the catalog system.</p>
           <p><strong>CLI Modes: Web vs Local</strong></p>
           <p>Most CLI commands communicate with a running server by default:</p>
-          <pre className="code-block"><code className="language-shell">{`kronk catalog list                # Talks to server at localhost:8080
+          <pre className="code-block"><code className="language-shell">{`kronk catalog list                # Talks to server at localhost:11435
 kronk catalog pull Qwen3-8B-Q8_0  # Downloads via server`}</code></pre>
           <p>Add <code>--local</code> to run commands directly without a server:</p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog list --local        # Direct file access
@@ -2577,7 +2577,7 @@ kronk libs --local`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`go install github.com/ardanlabs/kronk/cmd/kronk@latest`}</code></pre>
           <p><strong>Basic Start</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start`}</code></pre>
-          <p>The server starts on <code>http://localhost:8080</code> by default.</p>
+          <p>The server starts on <code>http://localhost:11435</code> by default.</p>
           <p><strong>Background Mode</strong></p>
           <p>Run the server as a background process:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start -d`}</code></pre>
@@ -2601,7 +2601,7 @@ kronk libs --local`}</code></pre>
               <tr>
                 <td><code>--api-host</code></td>
                 <td><code>KRONK_WEB_API_HOST</code></td>
-                <td><code>localhost:8080</code></td>
+                <td><code>localhost:11435</code></td>
                 <td>API host address</td>
               </tr>
               <tr>
@@ -2866,7 +2866,7 @@ kronk libs --local`}</code></pre>
           </table>
           <p><strong>Example</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start \\
-  --api-host=0.0.0.0:8080 \\
+  --api-host=0.0.0.0:11435 \\
   --models-in-cache=5 \\
   --cache-ttl=30m \\
   --model-config-file=model-config.yaml \\
@@ -2994,7 +2994,7 @@ kronk server start --llama-log=0    # Disable (default)`}</code></pre>
           <h3 id="712-complete-example">7.12 Complete Example</h3>
           <p>Production-ready server configuration:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start \\
-  --api-host=0.0.0.0:8080 \\
+  --api-host=0.0.0.0:11435 \\
   --models-in-cache=2 \\
   --cache-ttl=10m \\
   --model-config-file=/etc/kronk/models.yaml \\
@@ -3064,7 +3064,7 @@ models:
           <p>Generate chat responses using the familiar OpenAI format.</p>
           <p><strong>Endpoint:</strong> <code>POST /v1/chat/completions</code></p>
           <p><strong>Basic Request:</strong></p>
-          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/chat/completions \\
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "Qwen3-8B-Q8_0",
@@ -3133,7 +3133,7 @@ data: [DONE]`}</code></pre>
           <p>OpenAI's newer Responses API format, used by some clients.</p>
           <p><strong>Endpoint:</strong> <code>POST /v1/responses</code></p>
           <p><strong>Request:</strong></p>
-          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/responses \\
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/responses \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "Qwen3-8B-Q8_0",
@@ -3157,7 +3157,7 @@ data: {"type":"response.completed",...}`}</code></pre>
           <p>Generate vector embeddings for text.</p>
           <p><strong>Endpoint:</strong> <code>POST /v1/embeddings</code></p>
           <p><strong>Request:</strong></p>
-          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/embeddings \\
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/embeddings \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "embeddinggemma-300m-qat-Q8_0",
@@ -3192,7 +3192,7 @@ data: {"type":"response.completed",...}`}</code></pre>
           <p>Score and reorder documents by relevance to a query.</p>
           <p><strong>Endpoint:</strong> <code>POST /v1/rerank</code></p>
           <p><strong>Request:</strong></p>
-          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/rerank \\
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/rerank \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "bge-reranker-v2-m3-Q8_0",
@@ -3267,7 +3267,7 @@ data: {"type":"response.completed",...}`}</code></pre>
             </tbody>
           </table>
           <p><strong>Request (raw text):</strong></p>
-          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/tokenize \\
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/tokenize \\
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -3275,7 +3275,7 @@ data: {"type":"response.completed",...}`}</code></pre>
     "input": "The quick brown fox jumps over the lazy dog"
   }'`}</code></pre>
           <p><strong>Request (with template):</strong></p>
-          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/tokenize \\
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/tokenize \\
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -3294,7 +3294,7 @@ data: {"type":"response.completed",...}`}</code></pre>
           <h3 id="87-tool-calling-function-calling">8.7 Tool Calling (Function Calling)</h3>
           <p>Kronk supports OpenAI-compatible tool calling, allowing models to request function executions that you handle in your application.</p>
           <p><strong>Request with Tools:</strong></p>
-          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/chat/completions \\
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "Qwen3-8B-Q8_0",
@@ -3390,7 +3390,7 @@ data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":" \
           <p>Get available models.</p>
           <p><strong>Endpoint:</strong> <code>GET /v1/models</code></p>
           <p><strong>Request:</strong></p>
-          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/models`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/models`}</code></pre>
           <p><strong>Response:</strong></p>
           <pre className="code-block"><code className="language-json">{`{
   "object": "list",
@@ -3409,7 +3409,7 @@ data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":" \
 }`}</code></pre>
           <h3 id="89-authentication">8.9 Authentication</h3>
           <p>When authentication is enabled, include the token in requests:</p>
-          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/chat/completions \\
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer your-token-here" \\
   -d '{...}'`}</code></pre>
@@ -3711,7 +3711,7 @@ data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":" \
     "grammar": model.GrammarJSONObject,
 }`}</code></pre>
           <p><strong>Using Grammar via API:</strong></p>
-          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/chat/completions \\
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "Qwen3-8B-Q8_0",
@@ -3786,7 +3786,7 @@ d := model.D{
           </table>
           <p>Setting <code>top_logprobs &gt; 0</code> implicitly enables <code>logprobs</code>.</p>
           <p><strong>Request:</strong></p>
-          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/chat/completions \\
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "Qwen3-8B-Q8_0",
@@ -4055,7 +4055,7 @@ kronk catalog list --filter-category=Audio`}</code></pre>
           <p><strong>Download a Vision Model:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog pull Qwen2.5-VL-3B-Instruct-Q8_0`}</code></pre>
           <p><strong>API Request with Image (OpenAI Format):</strong></p>
-          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/chat/completions \\
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "Qwen2.5-VL-3B-Instruct-Q8_0",
@@ -4098,7 +4098,7 @@ kronk catalog list --filter-category=Audio`}</code></pre>
           <p><strong>Download an Audio Model:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog pull Qwen2-Audio-7B.Q8_0`}</code></pre>
           <p><strong>API Request with Audio:</strong></p>
-          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/chat/completions \\
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "Qwen2-Audio-7B.Q8_0",
@@ -4182,7 +4182,7 @@ Total:             ~9.4 GB`}</code></pre>
 IMAGE_B64=$(base64 -i photo.jpg)
 
 # Send request
-curl http://localhost:8080/v1/chat/completions \\
+curl http://localhost:11435/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "Qwen2.5-VL-3B-Instruct-Q8_0",
@@ -4206,7 +4206,7 @@ curl http://localhost:8080/v1/chat/completions \\
 AUDIO_B64=$(base64 -i recording.wav)
 
 # Send request
-curl http://localhost:8080/v1/chat/completions \\
+curl http://localhost:11435/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "Qwen2-Audio-7B.Q8_0",
@@ -4329,7 +4329,7 @@ eyJhbGciOiJSUzI1NiIsImtpZCI6ImExYjJjM2Q0Li4uIiwidHlwIjoiSldUIn0...`}</code></pre
           <h3 id="116-using-tokens-in-api-requests">11.6 Using Tokens in API Requests</h3>
           <p>Pass the token in the <code>Authorization</code> header with the <code>Bearer</code> prefix.</p>
           <p><strong>curl Example:</strong></p>
-          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/chat/completions \\
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/chat/completions \\
   -H "Authorization: Bearer eyJhbGciOiJS..." \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -4339,7 +4339,7 @@ eyJhbGciOiJSUzI1NiIsImtpZCI6ImExYjJjM2Q0Li4uIiwidHlwIjoiSldUIn0...`}</code></pre
           <p><strong>Environment Variable Pattern:</strong></p>
           <pre className="code-block"><code className="language-shell">{`export KRONK_TOKEN="eyJhbGciOiJS..."
 
-curl http://localhost:8080/v1/chat/completions \\
+curl http://localhost:11435/v1/chat/completions \\
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{...}'`}</code></pre>
@@ -4347,7 +4347,7 @@ curl http://localhost:8080/v1/chat/completions \\
           <pre className="code-block"><code className="language-python">{`import openai
 
 client = openai.OpenAI(
-    base_url="http://localhost:8080/v1",
+    base_url="http://localhost:11435/v1",
     api_key="eyJhbGciOiJS..."  # Your Kronk token
 )
 
@@ -4393,7 +4393,7 @@ response = client.chat.completions.create(
           <p><strong>Environment Variables:</strong></p>
           <ul>
             <li><code>KRONK_TOKEN</code> - Token for CLI commands and API requests</li>
-            <li><code>KRONK_WEB_API_HOST</code> - Server address for CLI web mode (default: <code>localhost:8080</code>)</li>
+            <li><code>KRONK_WEB_API_HOST</code> - Server address for CLI web mode (default: <code>localhost:11435</code>)</li>
           </ul>
           <h3 id="1110-security-best-practices">11.10 Security Best Practices</h3>
           <p><strong>Token Management:</strong></p>
@@ -4431,7 +4431,7 @@ response = client.chat.completions.create(
           <h3 id="121-accessing-the-bui">12.1 Accessing the BUI</h3>
           <p>The BUI is served from the same port as the API.</p>
           <p><strong>Open in Browser:</strong></p>
-          <pre className="code-block"><code>{`http://localhost:8080`}</code></pre>
+          <pre className="code-block"><code>{`http://localhost:11435`}</code></pre>
           <p>The BUI automatically loads when you navigate to the server root.</p>
           <h3 id="122-downloading-libraries">12.2 Downloading Libraries</h3>
           <p>Before running inference, you need the llama.cpp libraries.</p>
@@ -4650,7 +4650,7 @@ response = client.chat.completions.create(
             <li>Navigate to Connections → OpenAI API</li>
             <li>Set the base URL:</li>
           </ol>
-          <pre className="code-block"><code>{`http://localhost:8080/v1`}</code></pre>
+          <pre className="code-block"><code>{`http://localhost:11435/v1`}</code></pre>
           <ol>
             <li>Set API key to your Kronk token (or any value (123) if auth is disabled)</li>
             <li>Save and refresh models</li>
@@ -4671,7 +4671,7 @@ response = client.chat.completions.create(
             <li>Set API Provider to "OpenAI Compatible"</li>
             <li>Configure:</li>
           </ol>
-          <pre className="code-block"><code>{`Base URL: http://localhost:8080/v1
+          <pre className="code-block"><code>{`Base URL: http://localhost:11435/v1
 API Key: <your-kronk-token> or 123 for anything
 Model: Qwen3.5-35B-A3B-Q8_0/CLINE`}</code></pre>
           <p><strong>Recommended Model Settings:</strong></p>
@@ -4696,7 +4696,7 @@ Model: Qwen3.5-35B-A3B-Q8_0/CLINE`}</code></pre>
           <pre className="code-block"><code className="language-python">{`from openai import OpenAI
 
 client = OpenAI(
-    base_url="http://localhost:8080/v1",
+    base_url="http://localhost:11435/v1",
     api_key="your-kronk-token"  # Or any string if auth disabled
 )
 
@@ -4715,7 +4715,7 @@ for chunk in response:
           <h3 id="135-curl-and-http-clients">13.5 curl and HTTP Clients</h3>
           <p>Any HTTP client can call Kronk's REST API directly.</p>
           <p><strong>Basic Request:</strong></p>
-          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/chat/completions \\
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -d '{
@@ -4738,7 +4738,7 @@ data: [DONE]`}</code></pre>
           <pre className="code-block"><code className="language-python">{`from langchain_openai import ChatOpenAI
 
 llm = ChatOpenAI(
-    base_url="http://localhost:8080/v1",
+    base_url="http://localhost:11435/v1",
     api_key="your-kronk-token",
     model="Qwen3.5-35B-A3B-Q8_0",
     streaming=True
@@ -4754,7 +4754,7 @@ print(response.content)`}</code></pre>
           <p>Kronk runs a separate debug server for observability endpoints, isolated from the main API for security.</p>
           <p><strong>Default Ports:</strong></p>
           <ul>
-            <li>Main API: <code>localhost:8080</code></li>
+            <li>Main API: <code>localhost:11435</code></li>
             <li>Debug server: <code>localhost:8090</code></li>
           </ul>
           <p><strong>Configure Debug Host:</strong></p>
@@ -4780,7 +4780,7 @@ kronk server start`}</code></pre>
           <h3 id="143-health-check-endpoints">14.3 Health Check Endpoints</h3>
           <p>Available on the main API port (no authentication required):</p>
           <p><strong>Liveness Check:</strong></p>
-          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/liveness`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/liveness`}</code></pre>
           <p>Response:</p>
           <pre className="code-block"><code className="language-json">{`{
   "status": "up",
@@ -4789,7 +4789,7 @@ kronk server start`}</code></pre>
   "GOMAXPROCS": 8
 }`}</code></pre>
           <p><strong>Readiness Check:</strong></p>
-          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/readiness`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/readiness`}</code></pre>
           <p>Returns 200 OK when the server is ready to accept requests.</p>
           <h3 id="144-prometheus-metrics">14.4 Prometheus Metrics</h3>
           <p>Kronk exposes detailed inference metrics in Prometheus format.</p>
@@ -5211,7 +5211,7 @@ export KRONK_WRITE_TIMEOUT=30m`}</code></pre>
           <p>Authentication is enabled but no token was provided.</p>
           <p><strong>Solution:</strong></p>
           <p>Include the Authorization header:</p>
-          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/chat/completions \\
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/chat/completions \\
   -H "Authorization: Bearer $(cat ~/.kronk/keys/master.jwt)" \\
   -H "Content-Type: application/json" \\
   -d '{...}'`}</code></pre>
@@ -5364,9 +5364,9 @@ nvidia-smi`}</code></pre>
           </table>
           <h3 id="1610-getting-help">16.10 Getting Help</h3>
           <p><strong>Check server status:</strong></p>
-          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/liveness`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/liveness`}</code></pre>
           <p><strong>List loaded models:</strong></p>
-          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8080/v1/models`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/models`}</code></pre>
           <p><strong>Check metrics:</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:8090/metrics`}</code></pre>
           <p><strong>View goroutine stacks (for hangs):</strong></p>

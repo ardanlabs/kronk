@@ -81,7 +81,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			WriteTimeout       time.Duration `conf:"default:30m"`
 			IdleTimeout        time.Duration `conf:"default:1m"`
 			ShutdownTimeout    time.Duration `conf:"default:1m"`
-			APIHost            string        `conf:"default:0.0.0.0:8080"`
+			APIHost            string        `conf:"default:0.0.0.0:11435"`
 			DebugHost          string        `conf:"default:0.0.0.0:8090"`
 			CORSAllowedOrigins []string      `conf:"default:*"`
 		}
