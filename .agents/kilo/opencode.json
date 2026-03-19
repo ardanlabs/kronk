@@ -16,7 +16,7 @@
       "npm": "@ai-sdk/openai-compatible",
       "name": "Kronk (local)",
       "options": {
-        "baseURL": "http://localhost:8080/v1",
+        "baseURL": "http://localhost:11435/v1",
         "apiKey": "123"
       },
       "models": {

@@ -160,7 +160,7 @@ The setup gives you both things:
 1. **Internet access** through the wired uplink — students can pull the catalog, libs, and anything else they need from the internet
 2. **Fast local network** — model downloads from your machine stay on the private WiFi (LAN traffic never touches the internet uplink), so all 30 students can pull multi-GB models at full WiFi 6 speed
 
-The key insight is that LAN-to-LAN traffic on the router never hits the WAN uplink. When a student curls `http://<your-ip>:8080/download/...`, that traffic stays entirely on the local network.
+The key insight is that LAN-to-LAN traffic on the router never hits the WAN uplink. When a student curls `http://<your-ip>:11435/download/...`, that traffic stays entirely on the local network.
 
 **Steps:**
 
@@ -168,6 +168,6 @@ The key insight is that LAN-to-LAN traffic on the router never hits the WAN upli
 2. Connect everyone to the router's WiFi
 3. Run Kronk with `KRONK_DOWNLOAD_ENABLED=true` on your machine
 4. Give students your LAN IP (e.g., `192.168.8.100`) — check it with `ifconfig en0`
-5. Students use `http://192.168.8.100:8080/download/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf` in their BUI download screen
+5. Students use `http://192.168.8.100:11435/download/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf` in their BUI download screen
 
 **No venue ethernet?** You can also set the router in repeater mode — it connects to the public WiFi as its uplink and creates your private network on top. Same result, just the internet path is slightly slower (WiFi-to-WiFi), but the local model downloads are still LAN-speed.

@@ -23,7 +23,7 @@ OpenWebUI is a self-hosted chat interface that works with Kronk.
 3. Set the base URL:
 
 ```
-http://localhost:8080/v1
+http://localhost:11435/v1
 ```
 
 4. Set API key to your Kronk token (or any value (123) if auth is disabled)
@@ -48,7 +48,7 @@ Cline is a VS Code extension for AI-assisted coding.
 4. Configure:
 
 ```
-Base URL: http://localhost:8080/v1
+Base URL: http://localhost:11435/v1
 API Key: <your-kronk-token> or 123 for anything
 Model: Qwen3.5-35B-A3B-Q8_0/CLINE
 ```
@@ -92,7 +92,7 @@ pip install openai
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="http://localhost:8080/v1",
+    base_url="http://localhost:11435/v1",
     api_key="your-kronk-token"  # Or any string if auth disabled
 )
 
@@ -117,7 +117,7 @@ Any HTTP client can call Kronk's REST API directly.
 **Basic Request:**
 
 ```shell
-curl http://localhost:8080/v1/chat/completions \
+curl http://localhost:11435/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $KRONK_TOKEN" \
   -d '{
@@ -155,7 +155,7 @@ pip install langchain-openai
 from langchain_openai import ChatOpenAI
 
 llm = ChatOpenAI(
-    base_url="http://localhost:8080/v1",
+    base_url="http://localhost:11435/v1",
     api_key="your-kronk-token",
     model="Qwen3.5-35B-A3B-Q8_0",
     streaming=True

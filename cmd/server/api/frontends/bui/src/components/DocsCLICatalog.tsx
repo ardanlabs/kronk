@@ -63,7 +63,7 @@ export default function DocsCLICatalog() {
                   </tr>
                   <tr>
                     <td><code>KRONK_WEB_API_HOST</code></td>
-                    <td>localhost:8080</td>
+                    <td>localhost:11435</td>
                     <td>IP Address for the kronk server (web mode)</td>
                   </tr>
                   <tr>
@@ -127,7 +127,7 @@ kronk catalog list --filter-category embedding`}</code>
                   </tr>
                   <tr>
                     <td><code>KRONK_WEB_API_HOST</code></td>
-                    <td>localhost:8080</td>
+                    <td>localhost:11435</td>
                     <td>IP Address for the kronk server (web mode)</td>
                   </tr>
                   <tr>
@@ -188,7 +188,7 @@ kronk catalog pull llama-3.2-1b-q4 --local`}</code>
                   </tr>
                   <tr>
                     <td><code>KRONK_WEB_API_HOST</code></td>
-                    <td>localhost:8080</td>
+                    <td>localhost:11435</td>
                     <td>IP Address for the kronk server (web mode)</td>
                   </tr>
                   <tr>
@@ -249,7 +249,7 @@ kronk catalog show llama-3.2-1b-q4 --local`}</code>
                   </tr>
                   <tr>
                     <td><code>KRONK_WEB_API_HOST</code></td>
-                    <td>localhost:8080</td>
+                    <td>localhost:11435</td>
                     <td>IP Address for the kronk server (web mode)</td>
                   </tr>
                   <tr>

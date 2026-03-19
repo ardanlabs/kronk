@@ -30,7 +30,7 @@ COMMANDS
 
 MODES
 
-  Web Mode (default): Communicates with running server at localhost:8080.
+  Web Mode (default): Communicates with running server at localhost:11435.
   Local Mode (--local): Direct file access without requiring a server.
 
 EXAMPLES

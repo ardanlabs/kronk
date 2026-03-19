@@ -51,11 +51,11 @@ QUICK START
   # Download a model (e.g., Qwen3-8B)
   $ kronk catalog pull Qwen3-8B-Q8_0 --local
 
-  # Start the server (runs on http://localhost:8080)
+  # Start the server (runs on http://localhost:11435)
   $ kronk server start
 
   # Open the Browser UI in your browser
-  $ open http://localhost:8080
+  $ open http://localhost:11435
 
 FEATURES
   - Text generation, Vision, Audio, Embeddings, and Reranking
@@ -66,7 +66,7 @@ FEATURES
   - MCP service integration, authentication, and observability
 
 OPERATING MODES
-  Web mode (default)    - CLI communicates with running server at localhost:8080
+  Web mode (default)    - CLI communicates with running server at localhost:11435
   Local mode (--local)  - Direct file operations without connecting to a server
 
 ENVIRONMENT VARIABLES

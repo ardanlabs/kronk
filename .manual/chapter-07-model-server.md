@@ -27,7 +27,7 @@ This chapter covers server configuration, management, and the catalog system.
 Most CLI commands communicate with a running server by default:
 
 ```shell
-kronk catalog list                # Talks to server at localhost:8080
+kronk catalog list                # Talks to server at localhost:11435
 kronk catalog pull Qwen3-8B-Q8_0  # Downloads via server
 ```
 
@@ -86,7 +86,7 @@ go install github.com/ardanlabs/kronk/cmd/kronk@latest
 kronk server start
 ```
 
-The server starts on `http://localhost:8080` by default.
+The server starts on `http://localhost:11435` by default.
 
 **Background Mode**
 
@@ -118,7 +118,7 @@ underscores replacing hyphens.
 
 | Flag                     | Environment Variable             | Default          | Description                  |
 | ------------------------ | -------------------------------- | ---------------- | ---------------------------- |
-| `--api-host`             | `KRONK_WEB_API_HOST`             | `localhost:8080` | API host address             |
+| `--api-host`             | `KRONK_WEB_API_HOST`             | `localhost:11435` | API host address             |
 | `--debug-host`           | `KRONK_WEB_DEBUG_HOST`           | `localhost:8090` | Debug/pprof host address     |
 | `--read-timeout`         | `KRONK_WEB_READ_TIMEOUT`         | `30s`            | HTTP read timeout            |
 | `--write-timeout`        | `KRONK_WEB_WRITE_TIMEOUT`        | `15m`            | HTTP write timeout           |
@@ -184,7 +184,7 @@ underscores replacing hyphens.
 
 ```shell
 kronk server start \
-  --api-host=0.0.0.0:8080 \
+  --api-host=0.0.0.0:11435 \
   --models-in-cache=5 \
   --cache-ttl=30m \
   --model-config-file=model-config.yaml \
@@ -437,7 +437,7 @@ Production-ready server configuration:
 
 ```shell
 kronk server start \
-  --api-host=0.0.0.0:8080 \
+  --api-host=0.0.0.0:11435 \
   --models-in-cache=2 \
   --cache-ttl=10m \
   --model-config-file=/etc/kronk/models.yaml \

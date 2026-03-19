@@ -28,7 +28,7 @@ HARDWARE BACKENDS
 
 MODES
 
-  Web Mode (default): Installs via the running server at localhost:8080.
+  Web Mode (default): Installs via the running server at localhost:11435.
   Local Mode (--local): Direct download without requiring a server.
 
 EXAMPLES

@@ -10,7 +10,7 @@ export default function DocsAPITools() {
         <div className="doc-content">
           <div className="card" id="overview">
             <h3>Overview</h3>
-            <p>All endpoints are prefixed with <code>/v1</code>. Base URL: <code>http://localhost:8080</code></p>
+            <p>All endpoints are prefixed with <code>/v1</code>. Base URL: <code>http://localhost:11435</code></p>
             <h4>Authentication</h4>
             <p>When authentication is enabled, include the token in the Authorization header:</p>
             <pre className="code-block">
@@ -48,7 +48,7 @@ export default function DocsAPITools() {
               <h5>Example</h5>
               <p className="example-label"><strong>Get library information:</strong></p>
               <pre className="code-block">
-                <code>{`curl -X GET http://localhost:8080/v1/libs`}</code>
+                <code>{`curl -X GET http://localhost:11435/v1/libs`}</code>
               </pre>
             </div>
 
@@ -78,7 +78,7 @@ export default function DocsAPITools() {
               <h5>Example</h5>
               <p className="example-label"><strong>Pull latest libraries:</strong></p>
               <pre className="code-block">
-                <code>{`curl -X POST http://localhost:8080/v1/libs/pull`}</code>
+                <code>{`curl -X POST http://localhost:11435/v1/libs/pull`}</code>
               </pre>
             </div>
           </div>
@@ -113,7 +113,7 @@ export default function DocsAPITools() {
               <h5>Example</h5>
               <p className="example-label"><strong>List all models:</strong></p>
               <pre className="code-block">
-                <code>{`curl -X GET http://localhost:8080/v1/models`}</code>
+                <code>{`curl -X GET http://localhost:11435/v1/models`}</code>
               </pre>
             </div>
 
@@ -143,7 +143,7 @@ export default function DocsAPITools() {
               <h5>Example</h5>
               <p className="example-label"><strong>Show model details:</strong></p>
               <pre className="code-block">
-                <code>{`curl -X GET http://localhost:8080/v1/models/qwen3-8b-q8_0`}</code>
+                <code>{`curl -X GET http://localhost:11435/v1/models/qwen3-8b-q8_0`}</code>
               </pre>
             </div>
 
@@ -173,7 +173,7 @@ export default function DocsAPITools() {
               <h5>Example</h5>
               <p className="example-label"><strong>List running models:</strong></p>
               <pre className="code-block">
-                <code>{`curl -X GET http://localhost:8080/v1/models/ps`}</code>
+                <code>{`curl -X GET http://localhost:11435/v1/models/ps`}</code>
               </pre>
             </div>
 
@@ -203,7 +203,7 @@ export default function DocsAPITools() {
               <h5>Example</h5>
               <p className="example-label"><strong>Rebuild model index:</strong></p>
               <pre className="code-block">
-                <code>{`curl -X POST http://localhost:8080/v1/models/index`}</code>
+                <code>{`curl -X POST http://localhost:11435/v1/models/index`}</code>
               </pre>
             </div>
 
@@ -264,7 +264,7 @@ export default function DocsAPITools() {
               <h5>Example</h5>
               <p className="example-label"><strong>Pull a model from HuggingFace:</strong></p>
               <pre className="code-block">
-                <code>{`curl -X POST http://localhost:8080/v1/models/pull \\
+                <code>{`curl -X POST http://localhost:11435/v1/models/pull \\
   -H "Content-Type: application/json" \\
   -d '{
     "model_url": "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
@@ -298,7 +298,7 @@ export default function DocsAPITools() {
               <h5>Example</h5>
               <p className="example-label"><strong>Remove a model:</strong></p>
               <pre className="code-block">
-                <code>{`curl -X DELETE http://localhost:8080/v1/models/qwen3-8b-q8_0`}</code>
+                <code>{`curl -X DELETE http://localhost:11435/v1/models/qwen3-8b-q8_0`}</code>
               </pre>
             </div>
           </div>
@@ -333,7 +333,7 @@ export default function DocsAPITools() {
               <h5>Example</h5>
               <p className="example-label"><strong>List catalog models:</strong></p>
               <pre className="code-block">
-                <code>{`curl -X GET http://localhost:8080/v1/catalog`}</code>
+                <code>{`curl -X GET http://localhost:11435/v1/catalog`}</code>
               </pre>
             </div>
 
@@ -363,7 +363,7 @@ export default function DocsAPITools() {
               <h5>Example</h5>
               <p className="example-label"><strong>Filter catalog by category:</strong></p>
               <pre className="code-block">
-                <code>{`curl -X GET http://localhost:8080/v1/catalog/filter/embedding`}</code>
+                <code>{`curl -X GET http://localhost:11435/v1/catalog/filter/embedding`}</code>
               </pre>
             </div>
 
@@ -393,7 +393,7 @@ export default function DocsAPITools() {
               <h5>Example</h5>
               <p className="example-label"><strong>Show catalog model details:</strong></p>
               <pre className="code-block">
-                <code>{`curl -X GET http://localhost:8080/v1/catalog/qwen3-8b-q8_0`}</code>
+                <code>{`curl -X GET http://localhost:11435/v1/catalog/qwen3-8b-q8_0`}</code>
               </pre>
             </div>
 
@@ -423,7 +423,7 @@ export default function DocsAPITools() {
               <h5>Example</h5>
               <p className="example-label"><strong>Pull a catalog model:</strong></p>
               <pre className="code-block">
-                <code>{`curl -X POST http://localhost:8080/v1/catalog/pull/qwen3-8b-q8_0`}</code>
+                <code>{`curl -X POST http://localhost:11435/v1/catalog/pull/qwen3-8b-q8_0`}</code>
               </pre>
             </div>
           </div>
@@ -495,7 +495,7 @@ export default function DocsAPITools() {
               <h5>Example</h5>
               <p className="example-label"><strong>Create a token with chat-completions access:</strong></p>
               <pre className="code-block">
-                <code>{`curl -X POST http://localhost:8080/v1/security/token/create \\
+                <code>{`curl -X POST http://localhost:11435/v1/security/token/create \\
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -535,7 +535,7 @@ export default function DocsAPITools() {
               <h5>Example</h5>
               <p className="example-label"><strong>List all keys:</strong></p>
               <pre className="code-block">
-                <code>{`curl -X GET http://localhost:8080/v1/security/keys \\
+                <code>{`curl -X GET http://localhost:11435/v1/security/keys \\
   -H "Authorization: Bearer $KRONK_TOKEN"`}</code>
               </pre>
             </div>
@@ -566,7 +566,7 @@ export default function DocsAPITools() {
               <h5>Example</h5>
               <p className="example-label"><strong>Add a new key:</strong></p>
               <pre className="code-block">
-                <code>{`curl -X POST http://localhost:8080/v1/security/keys/add \\
+                <code>{`curl -X POST http://localhost:11435/v1/security/keys/add \\
   -H "Authorization: Bearer $KRONK_TOKEN"`}</code>
               </pre>
             </div>
@@ -597,7 +597,7 @@ export default function DocsAPITools() {
               <h5>Example</h5>
               <p className="example-label"><strong>Remove a key:</strong></p>
               <pre className="code-block">
-                <code>{`curl -X POST http://localhost:8080/v1/security/keys/remove/abc123 \\
+                <code>{`curl -X POST http://localhost:11435/v1/security/keys/remove/abc123 \\
   -H "Authorization: Bearer $KRONK_TOKEN"`}</code>
               </pre>
             </div>

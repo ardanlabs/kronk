@@ -10,7 +10,7 @@ export default function DocsAPIMessages() {
         <div className="doc-content">
           <div className="card" id="overview">
             <h3>Overview</h3>
-            <p>All endpoints are prefixed with <code>/v1</code>. Base URL: <code>http://localhost:8080</code></p>
+            <p>All endpoints are prefixed with <code>/v1</code>. Base URL: <code>http://localhost:11435</code></p>
             <h4>Authentication</h4>
             <p>When authentication is enabled, include the token in the Authorization header:</p>
             <pre className="code-block">
@@ -132,7 +132,7 @@ export default function DocsAPIMessages() {
               <h5>Example</h5>
               <p className="example-label"><strong>Basic message:</strong></p>
               <pre className="code-block">
-                <code>{`curl -X POST http://localhost:8080/v1/messages \\
+                <code>{`curl -X POST http://localhost:11435/v1/messages \\
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -145,7 +145,7 @@ export default function DocsAPIMessages() {
               </pre>
               <p className="example-label"><strong>With system prompt:</strong></p>
               <pre className="code-block">
-                <code>{`curl -X POST http://localhost:8080/v1/messages \\
+                <code>{`curl -X POST http://localhost:11435/v1/messages \\
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -159,7 +159,7 @@ export default function DocsAPIMessages() {
               </pre>
               <p className="example-label"><strong>Streaming response:</strong></p>
               <pre className="code-block">
-                <code>{`curl -X POST http://localhost:8080/v1/messages \\
+                <code>{`curl -X POST http://localhost:11435/v1/messages \\
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -173,7 +173,7 @@ export default function DocsAPIMessages() {
               </pre>
               <p className="example-label"><strong>Multi-turn conversation:</strong></p>
               <pre className="code-block">
-                <code>{`curl -X POST http://localhost:8080/v1/messages \\
+                <code>{`curl -X POST http://localhost:11435/v1/messages \\
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -188,7 +188,7 @@ export default function DocsAPIMessages() {
               </pre>
               <p className="example-label"><strong>Vision with image URL (requires vision model):</strong></p>
               <pre className="code-block">
-                <code>{`curl -X POST http://localhost:8080/v1/messages \\
+                <code>{`curl -X POST http://localhost:11435/v1/messages \\
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -207,7 +207,7 @@ export default function DocsAPIMessages() {
               </pre>
               <p className="example-label"><strong>Vision with base64 image (requires vision model):</strong></p>
               <pre className="code-block">
-                <code>{`curl -X POST http://localhost:8080/v1/messages \\
+                <code>{`curl -X POST http://localhost:11435/v1/messages \\
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -233,7 +233,7 @@ export default function DocsAPIMessages() {
               </pre>
               <p className="example-label"><strong>Tool calling:</strong></p>
               <pre className="code-block">
-                <code>{`curl -X POST http://localhost:8080/v1/messages \\
+                <code>{`curl -X POST http://localhost:11435/v1/messages \\
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -262,7 +262,7 @@ export default function DocsAPIMessages() {
               </pre>
               <p className="example-label"><strong>Tool result (continue conversation after tool call):</strong></p>
               <pre className="code-block">
-                <code>{`curl -X POST http://localhost:8080/v1/messages \\
+                <code>{`curl -X POST http://localhost:11435/v1/messages \\
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{
