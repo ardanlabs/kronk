@@ -22,10 +22,19 @@
 
           kronkBase = (pkgs.buildGoModule.override { go = pkgs.go_1_26; }) {
             pname = "kronk";
-            version = "1.21.3";
+            version =
+              let
+                src = builtins.readFile ../../sdk/kronk/kronk.go;
+                lines = builtins.filter builtins.isString (builtins.split "\n" src);
+                versionLine = builtins.head (
+                  builtins.filter (l: builtins.match "const Version = .*" l != null) lines
+                );
+                match = builtins.match "const Version = \"([^\"]+)\"" versionLine;
+              in
+              builtins.head match;
             src = ../../.;
             subPackages = [ "cmd/kronk" ];
-            vendorHash = "sha256-EF+wcHqrZV/zE9KdvJv353huhlbuPm7Na6cSizJl/dg=";
+            vendorHash = "sha256-JOtWwAlN24dIxoZxrxEKYMmWq2McD6ihA98gPNptqkw=";
 
             env.CGO_ENABLED = 0;
           };

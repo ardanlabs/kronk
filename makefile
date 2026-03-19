@@ -938,8 +938,10 @@ owu-browse:
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
 	OPEN_CMD := open
+	SED_INPLACE := sed -i ''
 else
 	OPEN_CMD := xdg-open
+	SED_INPLACE := sed -i
 endif
 
 website:
@@ -972,6 +974,34 @@ yzma-latest:
 
 gonja-latest:
 	GOPROXY=direct go get github.com/nikolalohinski/gonja/v2@master
+
+# ==============================================================================
+# Release
+
+prep-new-release:
+ifndef VERSION
+	$(error VERSION is required, e.g. make prep-new-release VERSION=1.2.3)
+endif
+	@if [ ! -f .release/v$(VERSION).md ]; then \
+		echo "Missing .release/v$(VERSION).md — create the release notes file first."; \
+		exit 1; \
+	fi
+	$(SED_INPLACE) 's/^const Version = "[^"]*"/const Version = "$(VERSION)"/' sdk/kronk/kronk.go
+	git add sdk/kronk/kronk.go .release/v$(VERSION).md
+	@echo ""
+	@echo "Files staged. Review changes, then run: make push-new-release VERSION=$(VERSION)"
+
+push-new-release:
+ifndef VERSION
+	$(error VERSION is required, e.g. make push-new-release VERSION=1.2.3)
+endif
+	@if [ ! -f .release/v$(VERSION).md ]; then \
+		echo "Missing .release/v$(VERSION).md — run make prep-new-release VERSION=$(VERSION) first."; \
+		exit 1; \
+	fi
+	git commit -F .release/v$(VERSION).md
+	git tag v$(VERSION)
+	git push origin main v$(VERSION)
 
 # ==============================================================================
 # Examples
