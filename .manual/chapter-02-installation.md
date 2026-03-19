@@ -63,11 +63,11 @@ QUICK START
   # Download a model (e.g., Qwen3-8B)
   kronk catalog pull Qwen3-8B-Q8_0 --local
 
-  # Start the server (runs on http://localhost:8080)
+  # Start the server (runs on http://localhost:11435)
   kronk server start
 
   # Open the Browser UI
-  open http://localhost:8080
+  open http://localhost:11435
 
 FEATURES
   • Text, Vision, Audio, Embeddings, Reranking
@@ -77,7 +77,7 @@ FEATURES
   • MCP service, security, observability
 
 MODES
-  Web mode (default)  - Communicates with running server at localhost:8080
+  Web mode (default)  - Communicates with running server at localhost:11435
   Local mode (--local) - Direct file operations without server
 
 ENVIRONMENT
@@ -122,7 +122,7 @@ Start the server and use the BUI to download libraries:
 kronk server start
 ```
 
-Open http://localhost:8080 in your browser and navigate to the Libraries page.
+Open http://localhost:11435 in your browser and navigate to the Libraries page.
 
 **Option B: Via CLI**
 
@@ -181,12 +181,12 @@ Start the Kronk Model Server:
 kronk server start
 ```
 
-The server starts on `http://localhost:8080` by default. You'll see output like:
+The server starts on `http://localhost:11435` by default. You'll see output like:
 
 ```
 Kronk Model Server started
-API: http://localhost:8080
-BUI: http://localhost:8080
+API: http://localhost:11435
+BUI: http://localhost:11435
 ```
 
 **Running in Background**
@@ -208,7 +208,7 @@ kronk server stop
 **Test via curl**
 
 ```shell
-curl http://localhost:8080/v1/models
+curl http://localhost:11435/v1/models
 ```
 
 You should see a list of available models.
@@ -219,7 +219,7 @@ _Note: It might take a few seconds the first time you call this because the
 model needs to be loaded into memory first._
 
 ```shell
-curl http://localhost:8080/v1/chat/completions \
+curl http://localhost:11435/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "Qwen3-8B-Q8_0",
@@ -230,7 +230,7 @@ curl http://localhost:8080/v1/chat/completions \
 
 **Test via BUI**
 
-Open `http://localhost:8080` in your browser and navigate to the `Apps/Chat` app. Select the model you want to try and chat away.
+Open `http://localhost:11435` in your browser and navigate to the `Apps/Chat` app. Select the model you want to try and chat away.
 
 ### 2.7 Quick Start Summary
 
@@ -242,13 +242,13 @@ go install github.com/ardanlabs/kronk/cmd/kronk@latest
 kronk server start
 
 # 3. Open BUI and download a model
-open http://localhost:8080
+open http://localhost:11435
 
 # 4. Download via the BUI Catalog/List screen or use this CLI call
 kronk catalog pull Qwen3-8B-Q8_0 --local
 
 # 5. Test the API using this curl call or the BUI App/Chat screen
-curl http://localhost:8080/v1/chat/completions \
+curl http://localhost:11435/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model": "Qwen3-8B-Q8_0", "messages": [{"role": "user", "content": "Hello!"}]}'
 ```

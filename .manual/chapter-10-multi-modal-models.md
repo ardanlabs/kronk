@@ -55,7 +55,7 @@ kronk catalog pull Qwen2.5-VL-3B-Instruct-Q8_0
 **API Request with Image (OpenAI Format):**
 
 ```shell
-curl http://localhost:8080/v1/chat/completions \
+curl http://localhost:11435/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "Qwen2.5-VL-3B-Instruct-Q8_0",
@@ -113,7 +113,7 @@ kronk catalog pull Qwen2-Audio-7B.Q8_0
 **API Request with Audio:**
 
 ```shell
-curl http://localhost:8080/v1/chat/completions \
+curl http://localhost:11435/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "Qwen2-Audio-7B.Q8_0",
@@ -224,7 +224,7 @@ Complete example analyzing an image:
 IMAGE_B64=$(base64 -i photo.jpg)
 
 # Send request
-curl http://localhost:8080/v1/chat/completions \
+curl http://localhost:11435/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "Qwen2.5-VL-3B-Instruct-Q8_0",
@@ -253,7 +253,7 @@ Complete example transcribing audio:
 AUDIO_B64=$(base64 -i recording.wav)
 
 # Send request
-curl http://localhost:8080/v1/chat/completions \
+curl http://localhost:11435/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "Qwen2-Audio-7B.Q8_0",

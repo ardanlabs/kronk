@@ -29,7 +29,7 @@ from the main API for security.
 
 **Default Ports:**
 
-- Main API: `localhost:8080`
+- Main API: `localhost:11435`
 - Debug server: `localhost:8090`
 
 **Configure Debug Host:**
@@ -78,7 +78,7 @@ Available on the main API port (no authentication required):
 **Liveness Check:**
 
 ```shell
-curl http://localhost:8080/v1/liveness
+curl http://localhost:11435/v1/liveness
 ```
 
 Response:
@@ -95,7 +95,7 @@ Response:
 **Readiness Check:**
 
 ```shell
-curl http://localhost:8080/v1/readiness
+curl http://localhost:11435/v1/readiness
 ```
 
 Returns 200 OK when the server is ready to accept requests.

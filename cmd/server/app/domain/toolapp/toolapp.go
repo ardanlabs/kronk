@@ -876,7 +876,7 @@ func fetchVRAMRepoFiles(ctx context.Context, modelURL string) []HFRepoFile {
 //
 // Short form: Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf
 // Full form:  https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf
-// Output:     http://192.168.0.246:8080/download/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf
+// Output:     http://192.168.0.246:11435/download/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf
 func toDownloadServerURL(server string, rawURL string) string {
 	if after, ok := strings.CutPrefix(rawURL, "https://huggingface.co/"); ok {
 		path := after

@@ -1142,7 +1142,7 @@ export default function CatalogList() {
                           id="download-server"
                           type="text"
                           className="form-control"
-                          placeholder="192.168.0.246:8080"
+                          placeholder="192.168.0.246:11435"
                           value={downloadServer}
                           onChange={(e) => handleDownloadServerChange(e.target.value)}
                           disabled={pulling}

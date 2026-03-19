@@ -22,7 +22,7 @@ $ make kronk-server
 $ make website
 ```
 
-You can also install Kronk, run the Kronk Model Server, and open the browser to localhost:8080
+You can also install Kronk, run the Kronk Model Server, and open the browser to localhost:11435
 
 ```shell
 $ go install github.com/ardanlabs/kronk/cmd/kronk@latest

@@ -67,7 +67,7 @@ export default function DocsCLILibs() {
                   </tr>
                   <tr>
                     <td><code>KRONK_WEB_API_HOST</code></td>
-                    <td>localhost:8080</td>
+                    <td>localhost:11435</td>
                     <td>IP Address for the kronk server (web mode)</td>
                   </tr>
                   <tr>

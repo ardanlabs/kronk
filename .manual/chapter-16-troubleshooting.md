@@ -188,7 +188,7 @@ Authentication is enabled but no token was provided.
 Include the Authorization header:
 
 ```shell
-curl http://localhost:8080/v1/chat/completions \
+curl http://localhost:11435/v1/chat/completions \
   -H "Authorization: Bearer $(cat ~/.kronk/keys/master.jwt)" \
   -H "Content-Type: application/json" \
   -d '{...}'
@@ -378,13 +378,13 @@ kronk server start --llama-log 0
 **Check server status:**
 
 ```shell
-curl http://localhost:8080/v1/liveness
+curl http://localhost:11435/v1/liveness
 ```
 
 **List loaded models:**
 
 ```shell
-curl http://localhost:8080/v1/models
+curl http://localhost:11435/v1/models
 ```
 
 **Check metrics:**

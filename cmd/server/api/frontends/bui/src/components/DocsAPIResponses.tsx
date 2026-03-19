@@ -10,7 +10,7 @@ export default function DocsAPIResponses() {
         <div className="doc-content">
           <div className="card" id="overview">
             <h3>Overview</h3>
-            <p>All endpoints are prefixed with <code>/v1</code>. Base URL: <code>http://localhost:8080</code></p>
+            <p>All endpoints are prefixed with <code>/v1</code>. Base URL: <code>http://localhost:11435</code></p>
             <h4>Authentication</h4>
             <p>When authentication is enabled, include the token in the Authorization header:</p>
             <pre className="code-block">
@@ -247,7 +247,7 @@ export default function DocsAPIResponses() {
               <h5>Example</h5>
               <p className="example-label"><strong>Basic response:</strong></p>
               <pre className="code-block">
-                <code>{`curl -X POST http://localhost:8080/v1/responses \\
+                <code>{`curl -X POST http://localhost:11435/v1/responses \\
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -259,7 +259,7 @@ export default function DocsAPIResponses() {
               </pre>
               <p className="example-label"><strong>Streaming response:</strong></p>
               <pre className="code-block">
-                <code>{`curl -X POST http://localhost:8080/v1/responses \\
+                <code>{`curl -X POST http://localhost:11435/v1/responses \\
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -272,7 +272,7 @@ export default function DocsAPIResponses() {
               </pre>
               <p className="example-label"><strong>With tools:</strong></p>
               <pre className="code-block">
-                <code>{`curl -X POST http://localhost:8080/v1/responses \\
+                <code>{`curl -X POST http://localhost:11435/v1/responses \\
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{

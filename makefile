@@ -24,7 +24,7 @@ endif
 #
 # Let's test if these models are working by starting model server.
 #	make kronk-server-build
-#	Open browser to: http://localhost:8080
+#	Open browser to: http://localhost:11435
 #
 #	Navigate to Apps/Chat to go to the chat application. Make sure you clear
 #	the session when trying different models.
@@ -548,34 +548,34 @@ kronk-catalog-archcheck-update:
 # Kronk Endpoints
 
 curl-liveness:
-	curl -i -X GET http://localhost:8080/v1/liveness
+	curl -i -X GET http://localhost:11435/v1/liveness
 
 curl-readiness:
-	curl -i -X GET http://localhost:8080/v1/readiness
+	curl -i -X GET http://localhost:11435/v1/readiness
 
 curl-libs:
-	curl -i -X POST http://localhost:8080/v1/libs/pull
+	curl -i -X POST http://localhost:11435/v1/libs/pull
 
 curl-model-list:
-	curl -i -X GET http://localhost:8080/v1/models
+	curl -i -X GET http://localhost:11435/v1/models
 
 curl-kronk-pull:
-	curl -i -X POST http://localhost:8080/v1/models/pull \
+	curl -i -X POST http://localhost:11435/v1/models/pull \
 	-d '{ \
 		"model_url": "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf" \
 	}'
 
 curl-kronk-remove:
-	curl -i -X DELETE http://localhost:8080/v1/models/Qwen3-8B-Q8_0
+	curl -i -X DELETE http://localhost:11435/v1/models/Qwen3-8B-Q8_0
 
 curl-kronk-show:
-	curl -i -X GET http://localhost:8080/v1/models/Qwen3-8B-Q8_0
+	curl -i -X GET http://localhost:11435/v1/models/Qwen3-8B-Q8_0
 
 curl-model-status:
-	curl -i -X GET http://localhost:8080/v1/models/status
+	curl -i -X GET http://localhost:11435/v1/models/status
 
 curl-kronk-chat:
-	curl -i -X POST http://localhost:8080/v1/chat/completions \
+	curl -i -X POST http://localhost:11435/v1/chat/completions \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
      -d '{ \
@@ -591,7 +591,7 @@ curl-kronk-chat:
 
 curl-kronk-chat-load:
 	for i in {1..3}; do \
-		curl -i -X POST http://localhost:8080/v1/chat/completions \
+		curl -i -X POST http://localhost:11435/v1/chat/completions \
 		-H "Authorization: Bearer ${KRONK_TOKEN}" \
 		-H "Content-Type: application/json" \
 		-d '{ \
@@ -609,7 +609,7 @@ curl-kronk-chat-load:
 FILE_GIRAFFE := $(shell base64 < examples/samples/giraffe.jpg)
 
 curl-kronk-chat-image:
-	curl -i -X POST http://localhost:8080/v1/chat/completions \
+	curl -i -X POST http://localhost:11435/v1/chat/completions \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
      -d '{ \
@@ -628,7 +628,7 @@ curl-kronk-chat-image:
     }'
 
 curl-kronk-chat-openai-image:
-	curl -i -X POST http://localhost:8080/v1/chat/completions \
+	curl -i -X POST http://localhost:11435/v1/chat/completions \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
      -d '{ \
@@ -646,7 +646,7 @@ curl-kronk-chat-openai-image:
     }'
 
 curl-kronk-chat-gpt:
-	curl -i -X POST http://localhost:8080/v1/chat/completions \
+	curl -i -X POST http://localhost:11435/v1/chat/completions \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
      -d '{ \
@@ -661,7 +661,7 @@ curl-kronk-chat-gpt:
     }'
 
 curl-kronk-chat-tool:
-	curl -i -X POST http://localhost:8080/v1/chat/completions \
+	curl -i -X POST http://localhost:11435/v1/chat/completions \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
      -d '{ \
@@ -696,7 +696,7 @@ curl-kronk-chat-tool:
     }'
 
 curl-kronk-embeddings:
-	curl -i -X POST http://localhost:8080/v1/embeddings \
+	curl -i -X POST http://localhost:11435/v1/embeddings \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
      -d '{ \
@@ -705,7 +705,7 @@ curl-kronk-embeddings:
     }'
 
 curl-kronk-rerank:
-	curl -i -X POST http://localhost:8080/v1/rerank \
+	curl -i -X POST http://localhost:11435/v1/rerank \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
      -d '{ \
@@ -723,7 +723,7 @@ curl-kronk-rerank:
     }'
 
 curl-kronk-responses:
-	curl -i -X POST http://localhost:8080/v1/responses \
+	curl -i -X POST http://localhost:11435/v1/responses \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
      -d '{ \
@@ -733,7 +733,7 @@ curl-kronk-responses:
     }'
 
 curl-kronk-responses-image:
-	curl -i -X POST http://localhost:8080/v1/responses \
+	curl -i -X POST http://localhost:11435/v1/responses \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
      -d '{ \
@@ -752,7 +752,7 @@ curl-kronk-responses-image:
     }'
 
 curl-kronk-tool-response:
-	curl -i -X POST http://localhost:8080/v1/chat/completions \
+	curl -i -X POST http://localhost:11435/v1/chat/completions \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
      -d '{ \
@@ -808,7 +808,7 @@ curl-kronk-tool-response:
 	}'
 
 curl-tokenize:
-	curl -i -X POST http://localhost:8080/v1/tokenize \
+	curl -i -X POST http://localhost:11435/v1/tokenize \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
      -d '{ \
@@ -817,7 +817,7 @@ curl-tokenize:
     }'
 
 curl-tokenize-template:
-	curl -i -X POST http://localhost:8080/v1/tokenize \
+	curl -i -X POST http://localhost:11435/v1/tokenize \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
      -d '{ \
@@ -907,18 +907,18 @@ curl-mcp-web-search:
 # Check a model file exists and get its size.
 # make curl-download-head FILE="bartowski/cerebras_Qwen3-Coder-REAP-25B-A3B-GGUF/resolve/main/cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0.gguf"
 curl-download-head:
-	curl -I http://localhost:8080/download/$(FILE)
+	curl -I http://localhost:11435/download/$(FILE)
 
 # Download a model file.
 # make curl-download-get FILE="bartowski/cerebras_Qwen3-Coder-REAP-25B-A3B-GGUF/resolve/main/cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0.gguf"
 curl-download-get:
 	curl -o /dev/null -w "HTTP %{http_code} - %{size_download} bytes\n" \
-		http://localhost:8080/download/$(FILE)
+		http://localhost:11435/download/$(FILE)
 
 # Download a sha file.
 # make curl-download-sha FILE="bartowski/cerebras_Qwen3-Coder-REAP-25B-A3B-GGUF/raw/main/cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0.gguf"
 curl-download-sha:
-	curl http://localhost:8080/download/$(FILE)
+	curl http://localhost:11435/download/$(FILE)
 
 # ==============================================================================
 # Running OpenWebUI 
@@ -943,7 +943,7 @@ else
 endif
 
 website:
-	$(OPEN_CMD) http://localhost:8080/
+	$(OPEN_CMD) http://localhost:11435/
 
 statsviz:
 	$(OPEN_CMD) http://localhost:8090/debug/statsviz

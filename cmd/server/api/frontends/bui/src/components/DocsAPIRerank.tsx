@@ -10,7 +10,7 @@ export default function DocsAPIRerank() {
         <div className="doc-content">
           <div className="card" id="overview">
             <h3>Overview</h3>
-            <p>All endpoints are prefixed with <code>/v1</code>. Base URL: <code>http://localhost:8080</code></p>
+            <p>All endpoints are prefixed with <code>/v1</code>. Base URL: <code>http://localhost:11435</code></p>
             <h4>Authentication</h4>
             <p>When authentication is enabled, include the token in the Authorization header:</p>
             <pre className="code-block">
@@ -97,7 +97,7 @@ export default function DocsAPIRerank() {
               <h5>Example</h5>
               <p className="example-label"><strong>Rerank documents for a query:</strong></p>
               <pre className="code-block">
-                <code>{`curl -X POST http://localhost:8080/v1/rerank \\
+                <code>{`curl -X POST http://localhost:11435/v1/rerank \\
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{
