@@ -2,9 +2,22 @@
 
 package devices
 
-import "github.com/hybridgroup/yzma/pkg/download"
+import (
+	"runtime"
 
-// DetectGPU returns Metal on macOS. All supported Macs have Metal-capable GPUs.
+	"github.com/hybridgroup/yzma/pkg/download"
+)
+
+// DetectGPU probes the OS for available GPU hardware without depending on
+// llama.cpp libraries. On macOS ARM64 (Apple Silicon), it returns Metal.
+// On Intel Macs (amd64), it returns CPU because the precompiled Metal
+// libraries are only available for ARM64. The x64 macOS binary already
+// includes Metal support, so Intel Macs still get GPU acceleration via
+// the CPU processor selection.
 func DetectGPU() download.Processor {
-	return download.MustParseProcessor("metal")
+	if runtime.GOARCH == "arm64" {
+		return download.MustParseProcessor("metal")
+	}
+
+	return download.CPU
 }
