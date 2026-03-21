@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/hybridgroup/yzma/pkg/download"
 )
 
@@ -76,7 +77,9 @@ func OS(override string) (download.OS, error) {
 
 // Processor will check the KRONK_PROCESSOR env var first and check it's value
 // against the proper set of processor values (cpu, cuda, metal, rocm, vulkan). If
-// that variable is not set, then cpu is used as the default.
+// that variable is not set, the system probes for available GPU hardware and
+// selects the best processor automatically. CPU is used only when no GPU is
+// detected.
 func Processor(override string) (download.Processor, error) {
 	if override != "" {
 		return download.ParseProcessor(override)
@@ -86,5 +89,5 @@ func Processor(override string) (download.Processor, error) {
 		return download.ParseProcessor(v)
 	}
 
-	return download.CPU, nil
+	return devices.DetectGPU(), nil
 }
