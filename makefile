@@ -1000,7 +1000,7 @@ endif
 		echo "Missing .release/v$(VERSION).md — run make prep-new-release VERSION=$(VERSION) first."; \
 		exit 1; \
 	fi
-	git commit -F .release/v$(VERSION).md
+	git commit -m "Release $(VERSION)" -m "$$(tail -n +2 .release/v$(VERSION).md)"
 	git tag v$(VERSION)
 	git push origin main v$(VERSION)
 
