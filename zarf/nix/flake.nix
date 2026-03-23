@@ -1,10 +1,20 @@
 {
   description = "Go Kronk workspace";
 
-  inputs.nixpkgs.url = "nixpkgs/nixos-unstable";
+  inputs = {
+    nixpkgs.url = "nixpkgs/nixos-unstable";
+    gomod2nix = {
+      url = "github:nix-community/gomod2nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
 
   outputs =
-    { self, nixpkgs }:
+    {
+      self,
+      nixpkgs,
+      gomod2nix,
+    }:
     let
       supportedSystems = [
         "x86_64-linux"
@@ -20,7 +30,7 @@
         let
           pkgs = nixpkgs.legacyPackages.${system};
 
-          kronkBase = (pkgs.buildGoModule.override { go = pkgs.go_1_26; }) {
+          kronkBase = gomod2nix.legacyPackages.${system}.buildGoApplication {
             pname = "kronk";
             version =
               let
@@ -34,9 +44,9 @@
               builtins.head match;
             src = ../../.;
             subPackages = [ "cmd/kronk" ];
-            vendorHash = "sha256-JOtWwAlN24dIxoZxrxEKYMmWq2McD6ihA98gPNptqkw=";
+            modules = ./gomod2nix.toml;
 
-            env.CGO_ENABLED = 0;
+            go = pkgs.go_1_26;
           };
 
           # Wrap kronk with the runtime libs needed for dynamic library loading.
@@ -93,6 +103,7 @@
             pkgs.typescript
             pkgs.vite
             pkgs.nodejs
+            gomod2nix.legacyPackages.${system}.gomod2nix
           ];
 
           # Shared environment variables across all dev shells.
@@ -108,6 +119,9 @@
             }:
             pkgs.mkShell {
               buildInputs = basePackages ++ extraPackages;
+              shellHook = ''
+                gomod2nix import &> /dev/null
+              '';
 
               LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (baseLibs ++ extraLibs);
             };

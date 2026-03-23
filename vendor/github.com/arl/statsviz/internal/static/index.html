@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Statsviz</title>
+  </head>
+  <body>
+    <!-- Top Navbar -->
+    <nav id="top-navbar" class="navbar navbar-expand-lg px-3">
+      <div class="d-flex align-items-center">
+        <span class="navbar-brand mb-0 h1">Statsviz</span>
+      </div>
+
+      <!-- Center controls -->
+      <div
+        class="center-controls d-flex flex-column flex-lg-row align-items-center gap-6 gap-lg-1 w-100"
+      >
+        <!-- Plots tags -->
+        <div class="w-100 w-lg-auto d-flex justify-content-center">
+          <div
+            id="navCategories"
+            class="btn-group navCategories nav-radio"
+            role="group"
+          >
+            <div
+              class="btn-group"
+              role="group"
+              aria-label="Basic checkbox toggle button group"
+            >
+              <input
+                type="checkbox"
+                class="btn-check"
+                id="tag-cpu"
+                data-tag="cpu"
+                autocomplete="off"
+              />
+              <label
+                class="btn btn-sm btn-outline-secondary"
+                for="tag-cpu"
+                title="Alt+Click to show only this category"
+                data-bs-toggle="tooltip"
+                data-bs-delay='{"show":100,"hide":100}'
+                >CPU</label
+              >
+
+              <input
+                type="checkbox"
+                class="btn-check"
+                id="tag-gc"
+                data-tag="gc"
+                autocomplete="off"
+              />
+              <label
+                class="btn btn-sm btn-outline-secondary"
+                for="tag-gc"
+                title="Alt+Click to show only this category"
+                data-bs-toggle="tooltip"
+                data-bs-delay='{"show":100,"hide":100}'
+                >GC</label
+              >
+
+              <input
+                type="checkbox"
+                class="btn-check"
+                id="tag-scheduler"
+                data-tag="scheduler"
+                autocomplete="off"
+                checked
+              />
+              <label
+                class="btn btn-sm btn-outline-secondary"
+                for="tag-scheduler"
+                title="Alt+Click to show only this category"
+                data-bs-toggle="tooltip"
+                data-bs-delay='{"show":100,"hide":100}'
+                >Scheduler</label
+              >
+
+              <input
+                type="checkbox"
+                class="btn-check"
+                id="tag-misc"
+                data-tag="misc"
+                autocomplete="off"
+                checked
+              />
+              <label
+                class="btn btn-sm btn-outline-secondary"
+                for="tag-misc"
+                title="Alt+Click to show only this category"
+                data-bs-toggle="tooltip"
+                data-bs-delay='{"show":100,"hide":100}'
+                >Misc</label
+              >
+            </div>
+          </div>
+        </div>
+
+        <!-- Search by metric name -->
+        <div
+          class="d-flex ms-lg-2 me-lg-2 w-100 w-lg-auto justify-content-center"
+        >
+          <input
+            type="text"
+            id="plot-search"
+            class="form-control form-control-sm"
+            placeholder="Type a metric or plot name..."
+            aria-label="Search by metric or plot name"
+            style="width: 400px; max-width: 100%"
+          />
+        </div>
+
+        <!-- Time range -->
+        <div class="w-100 w-lg-auto d-flex justify-content-center">
+          <div class="btn-group nav-radio" role="group" aria-label="Time range">
+            <input
+              type="radio"
+              class="btn-check"
+              name="range"
+              id="range1"
+              value="1"
+              autocomplete="off"
+              checked
+            />
+            <label
+              class="btn btn-sm btn-outline-secondary"
+              for="range1"
+              data-bs-toggle="tooltip"
+              title="Last 1 minute"
+              >1m</label
+            >
+            <input
+              type="radio"
+              class="btn-check"
+              name="range"
+              id="range5"
+              value="5"
+              autocomplete="off"
+            />
+            <label
+              class="btn btn-sm btn-outline-secondary"
+              for="range5"
+              data-bs-toggle="tooltip"
+              title="Last 5 minutes"
+              >5m</label
+            >
+            <input
+              type="radio"
+              class="btn-check"
+              name="range"
+              id="range10"
+              value="10"
+              autocomplete="off"
+            />
+            <label
+              class="btn btn-sm btn-outline-secondary"
+              for="range10"
+              data-bs-toggle="tooltip"
+              title="Last 10 minutes"
+              >10m</label
+            >
+          </div>
+        </div>
+
+        <div
+          class="w-100 w-lg-auto d-flex justify-content-center align-items-center gap-2"
+        >
+          <!-- GC events -->
+          <input
+            type="checkbox"
+            class="btn-check"
+            id="btn-gc-events"
+            checked
+            autocomplete="off"
+          />
+          <label
+            class="btn btn-sm btn-outline-secondary"
+            for="btn-gc-events"
+            data-bs-toggle="tooltip"
+            title="Show/hide GC events"
+            ><i class="bi bi-trash3-fill"></i
+          ></label>
+          <br />
+
+          <!-- Play/Pause -->
+          <input
+            type="checkbox"
+            class="btn-check"
+            id="btn-play"
+            checked
+            autocomplete="off"
+          />
+          <label
+            class="btn btn-sm btn-outline-secondary"
+            for="btn-play"
+            data-bs-toggle="tooltip"
+            title="Pause/Resume Live Updates"
+            ><i class="bi bi-play-fill"></i
+          ></label>
+          <br />
+        </div>
+      </div>
+
+      <!-- Links and options -->
+      <div class="d-flex align-items-center gap-3">
+        <a
+          href="https://pkg.go.dev/runtime/metrics"
+          target="_blank"
+          class="text-decoration-none"
+          title="runtime/metrics doc"
+        >
+          <i class="bi bi-book"></i>
+        </a>
+        <a
+          href="https://github.com/arl/statsviz"
+          target="_blank"
+          class="text-decoration-none"
+        >
+          <i class="bi bi-github"></i>
+        </a>
+
+        <div class="w-100 w-lg-auto">
+          <input
+            type="checkbox"
+            class="btn-check"
+            id="btn-darkmode"
+            checked
+            autocomplete="off"
+          />
+          <label
+            class="btn btn-sm btn-outline-secondary"
+            for="btn-darkmode"
+            data-bs-toggle="tooltip"
+            title="Light/Dark mode"
+            ><i class="bi bi-moon-fill"></i
+          ></label>
+          <br />
+        </div>
+      </div>
+    </nav>
+
+    <div class="d-flex flex-grow-1">
+      <!-- Main Content -->
+      <main id="main-content" class="w-100">
+        <div class="plots-container" id="plots"></div>
+      </main>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

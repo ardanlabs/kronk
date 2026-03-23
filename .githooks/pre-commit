@@ -4,5 +4,10 @@ set -e
 make kronk-docs
 make bui-build
 
+# Regenerate gomod2nix.toml if gomod2nix is available.
+if command -v gomod2nix &> /dev/null; then
+    gomod2nix --dir . --outdir zarf/nix
+fi
+
 # Stage any generated changes
 git add -A
