@@ -2549,12 +2549,8 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	}
 
 	cfg := model.Config{
-		ModelFiles:    mp.ModelFiles,
-		ProjFile:      mp.ProjFile,
-		ContextWindow: 8196,
-		CacheTypeK:    model.GGMLTypeF16,
-		CacheTypeV:    model.GGMLTypeBF16,
-		JinjaFile:     "/Users/bill/code/go/src/github.com/ardanlabs/kronk_catalogs/templates/qwen3.5.jinja",
+		ModelFiles: mp.ModelFiles,
+		ProjFile:   mp.ProjFile,
 	}
 
 	krn, err := kronk.New(cfg)
