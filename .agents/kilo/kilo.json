@@ -20,7 +20,7 @@
         "apiKey": "123"
       },
       "models": {
-        "gpt-oss-120b-F16/IMC": {
+        "Qwen3.5-35B-A3B-UD-Q8_K_XL/KILO": {
           "name": "Qwen3.5-35B-A3B-UD-Q8_K_XL/KILO",
           "limit": {
             "context": 131072,
