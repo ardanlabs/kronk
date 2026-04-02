@@ -159,9 +159,7 @@
 # TEXT INFERENCE MODELS
 
 # ------------------------------------------------------------------------------
-# Coding Agent Models
 
-# This has been the best with Cline.
 Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL:
   &base_Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
   context-window: 131072
@@ -183,9 +181,6 @@ Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMC:
   incremental-cache: true
   max-cache-sessions: 1
 
-# Working amazingly well with Kilo Code.
-# You can't use IMC with this model because it doesn't have consistent
-# prompt creation
 gpt-oss-120b-F16: &base_gpt-oss-120b-F16
   context-window: 131072
   nbatch: 2048
@@ -205,7 +200,6 @@ gpt-oss-120b-F16/SPC:
   nseq-max: 1
   system-prompt-cache: true
 
-# Smaller version of the 30B model and works ok with Cline.
 cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0:
   &base_cerebras_qwen3-coder-reap-25b-a3b-q8_0
   context-window: 131072
@@ -245,9 +239,6 @@ cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0/Cline:
   incremental-cache: true
   max-cache-sessions: 1
 
-# This model runs too slow on my M4/128GB.
-# You can't use IMC with this model because it doesn't have consistent
-# prompt creation
 GLM-4.7-Flash-UD-Q8_K_XL: &base_GLM_4_7_Flash_UD_Q8_K_XL
   context-window: 131072
   nbatch: 2048
@@ -268,7 +259,6 @@ GLM-4.7-Flash-UD-Q8_K_XL/SPC:
   system-prompt-cache: true
 
 # ------------------------------------------------------------------------------
-# Good Reasoning models, tooling support, don't use with Agents.
 
 Qwen3-Coder-30B-A3B-Instruct-Q8_0:
   context-window: 131072
@@ -298,7 +288,6 @@ gpt-oss-20b-Q8_0:
     top_p: 1.0
     top_k: 50
 
-# Great model but small context-window :(
 Qwen3-8B-Q8_0: &base_Qwen3-8B-Q8_0
   context-window: 32768
   nbatch: 2048
@@ -352,6 +341,8 @@ Qwen3-32B-Q8_0/Draft2:
     model-id: Qwen3-1.7B-Q8_0
     ndraft: 5
 
+# ------------------------------------------------------------------------------
+
 # System Prompt Cache variant for testing.
 # DO NOT REMOVE
 Qwen3-8B-Q8_0/SPC:
@@ -368,9 +359,7 @@ Qwen3-8B-Q8_0/IMC:
   max-cache-sessions: 2
 
 # ------------------------------------------------------------------------------
-# Non-Reasoning models, tooling support, don't use with Agents.
 
-# Model runs slow and haven't tested it too much.
 GLM-4.7-Flash-Q8_0:
   context-window: 131072
   nbatch: 2048
@@ -424,7 +413,8 @@ embeddinggemma-300m-qat-Q8_0:
   flash-attention: enabled
   insecure-logging: true
 
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# VISION MODELS AND CODING
 
 Qwen3.5-35B-A3B-Q8_0/CLINE:
   nseq-max: 1
@@ -479,6 +469,28 @@ Qwen3.5-35B-A3B-UD-Q5_K_XL:
   sampling-parameters:
     temperature: 0.6
     top_k: 20
+    top_p: 0.95
+    dry_multiplier: 2.0
+    presence_penalty: 1.5
+
+# ------------------------------------------------------------------------------
+
+gemma-4-26B-A4B-it-UD-Q8_K_XL/CLINE:
+  nseq-max: 1
+  incremental-cache: true
+  sampling-parameters:
+    temperature: 1.0
+    top_k: 64
+    top_p: 0.95
+    dry_multiplier: 2.0
+    presence_penalty: 1.5
+
+gemma-4-26B-A4B-it-UD-Q8_K_XL/KILO:
+  nseq-max: 3
+  incremental-cache: true
+  sampling-parameters:
+    temperature: 1.0
+    top_k: 64
     top_p: 0.95
     dry_multiplier: 2.0
     presence_penalty: 1.5

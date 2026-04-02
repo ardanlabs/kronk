@@ -5641,7 +5641,7 @@ func New(cfg Config) *Server {
 }`}</code></pre>
           <p><strong>Testing:</strong></p>
           <p>Disable CGO in tests:</p>
-          <pre className="code-block"><code className="language-shell">{`CGO_ENABLED=0 go test ./...`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`go test ./...`}</code></pre>
           <p><strong>Import Order (goimports):</strong></p>
           <ol>
             <li>Standard library</li>

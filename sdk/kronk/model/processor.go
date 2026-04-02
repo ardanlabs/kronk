@@ -176,6 +176,12 @@ func parseToolCall(content string) []ResponseToolCall {
 		return parseMistralToolCallFormat(content)
 	}
 
+	// call:get_weather{location:<|"|>NYC<|"|>}
+	// Gemma4 format with call: prefix and <|"|> escaped quotes
+	if strings.Contains(content, "call:") {
+		return parseGemmaToolCallFormat(content)
+	}
+
 	return nil
 }
 
@@ -427,6 +433,133 @@ func parseMistralToolCallFormat(content string) []ResponseToolCall {
 	return toolCalls
 }
 
+// parseGemmaToolCallFormat parses Gemma4-style tool calls.
+// Format: call:get_weather{location:<|"|>New York City, NY<|"|>}
+// Multiple calls may appear separated by newlines or back-to-back.
+func parseGemmaToolCallFormat(content string) []ResponseToolCall {
+	var toolCalls []ResponseToolCall
+
+	remaining := content
+	for {
+		callIdx := strings.Index(remaining, "call:")
+		if callIdx == -1 {
+			break
+		}
+
+		remaining = remaining[callIdx+5:]
+
+		// Find the opening brace for the arguments.
+		braceIdx := strings.Index(remaining, "{")
+		if braceIdx == -1 {
+			break
+		}
+
+		name := strings.TrimSpace(remaining[:braceIdx])
+		remaining = remaining[braceIdx:]
+
+		// Find the matching closing brace.
+		braceEnd := findGemmaBraceEnd(remaining)
+		if braceEnd == -1 {
+			break
+		}
+
+		argsRaw := remaining[1:braceEnd] // content between { and }
+		remaining = remaining[braceEnd+1:]
+
+		args := parseGemmaArgs(argsRaw)
+
+		toolCalls = append(toolCalls, ResponseToolCall{
+			ID:   uuid.NewString(),
+			Type: "function",
+			Function: ResponseToolCallFunction{
+				Name:      name,
+				Arguments: args,
+			},
+		})
+	}
+
+	return toolCalls
+}
+
+// findGemmaBraceEnd finds the closing brace that matches the opening brace at
+// position 0, accounting for nested braces. Returns the index of the closing
+// brace, or -1 if not found.
+func findGemmaBraceEnd(s string) int {
+	if len(s) == 0 || s[0] != '{' {
+		return -1
+	}
+
+	depth := 0
+	i := 0
+	for i < len(s) {
+		// Skip <|"|> tokens (Gemma4 escaped quotes).
+		if strings.HasPrefix(s[i:], "<|\"|>") {
+			i += len("<|\"|>")
+			continue
+		}
+
+		switch s[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return i
+			}
+		}
+		i++
+	}
+
+	return -1
+}
+
+// parseGemmaArgs parses the key-value pairs inside a Gemma4 tool call argument
+// block. Values are delimited by <|"|> tokens (acting as quotes).
+// Format: key1:<|"|>value1<|"|>, key2:<|"|>value2<|"|>
+func parseGemmaArgs(raw string) map[string]any {
+	args := make(map[string]any)
+
+	remaining := raw
+	for len(remaining) > 0 {
+		// Find the colon that separates key from value.
+		colonIdx := strings.Index(remaining, ":")
+		if colonIdx == -1 {
+			break
+		}
+
+		key := strings.TrimLeft(remaining[:colonIdx], ", \t\n")
+		remaining = remaining[colonIdx+1:]
+
+		// Check if the value is wrapped in <|"|> tokens.
+		if strings.HasPrefix(remaining, "<|\"|>") {
+			remaining = remaining[len("<|\"|>"):]
+
+			endQuote := strings.Index(remaining, "<|\"|>")
+			if endQuote == -1 {
+				// No closing quote, take the rest.
+				args[key] = strings.TrimSpace(remaining)
+				break
+			}
+
+			args[key] = remaining[:endQuote]
+			remaining = remaining[endQuote+len("<|\"|>"):]
+			continue
+		}
+
+		// Value without quote delimiters - take until next comma or end.
+		endIdx := strings.IndexAny(remaining, ",}")
+		if endIdx == -1 {
+			args[key] = strings.TrimSpace(remaining)
+			break
+		}
+
+		args[key] = strings.TrimSpace(remaining[:endIdx])
+		remaining = remaining[endIdx:]
+	}
+
+	return args
+}
+
 // =============================================================================
 // Step methods for batch engine (no llama calls - pure state machine)
 // =============================================================================
@@ -467,11 +600,11 @@ func (p *processor) stepStandard(content string) (response, bool) {
 	// Handle tool call accumulation mode.
 	if p.inToolCall {
 		switch content {
-		case "<tool_call>":
+		case "<tool_call>", "<|tool_call>":
 			// Nested or repeated tag, skip.
 			return response{}, false
 
-		case "</tool_call>":
+		case "</tool_call>", "<tool_call|>":
 			// End of one tool call block. Check if we have accumulated content.
 			toolContent := strings.Trim(p.toolCallBuf.String(), "\n")
 			if toolContent != "" {
@@ -521,20 +654,36 @@ func (p *processor) stepStandard(content string) (response, bool) {
 		}
 	}
 
+	// Handle Gemma4 channel: swallow the channel name token (e.g. "thought")
+	// that follows <|channel>, then stream content as reasoning until <channel|>.
+	if p.awaitingChannel {
+		p.awaitingChannel = false
+		p.status = statusReasoning
+		return response{}, false
+	}
+
 	// Normal token processing.
 	switch content {
 	case "<think>":
 		p.status = statusReasoning
 		return response{}, false
 
-	case "</think>":
+	case "</think>", "<channel|>":
 		p.status = statusCompletion
 		return response{}, false
 
-	case "<tool_call>":
+	case "<|channel>":
+		p.awaitingChannel = true
+		return response{}, false
+
+	case "<tool_call>", "<|tool_call>":
 		p.status = statusTooling
 		p.inToolCall = true
 		p.toolCallBuf.Reset()
+		return response{}, false
+
+	case "<tool_call|>", "<|tool_response>", "<tool_response|>":
+		// Gemma4 structural markers outside of tool call accumulation; skip.
 		return response{}, false
 
 	case "[TOOL_CALLS]":

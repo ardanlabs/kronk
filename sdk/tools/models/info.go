@@ -154,7 +154,14 @@ func (m *Models) TokenizerFingerprint(modelID string) string {
 		return ""
 	}
 
-	file, err := os.Open(path.ModelFiles[0])
+	return tokenizerFingerprintFromFile(path.ModelFiles[0])
+}
+
+// tokenizerFingerprintFromFile reads a GGUF file and extracts a fingerprint
+// string that identifies the tokenizer. The fingerprint format is
+// "<tokenizer_model>:<tokenizer_pre>".
+func tokenizerFingerprintFromFile(filePath string) string {
+	file, err := os.Open(filePath)
 	if err != nil {
 		return ""
 	}

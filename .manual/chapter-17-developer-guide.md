@@ -25,8 +25,6 @@
 
 ---
 
-
-
 This chapter covers development workflows, build commands, and code
 conventions for contributors to the Kronk project.
 
@@ -228,7 +226,7 @@ func New(cfg Config) *Server {
 Disable CGO in tests:
 
 ```shell
-CGO_ENABLED=0 go test ./...
+go test ./...
 ```
 
 **Import Order (goimports):**

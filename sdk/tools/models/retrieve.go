@@ -67,7 +67,7 @@ func (m *Models) Files() ([]File, error) {
 			ID:                   modelID,
 			OwnedBy:              ownedBy,
 			ModelFamily:          modelFamily,
-			TokenizerFingerprint: m.TokenizerFingerprint(modelID),
+			TokenizerFingerprint: mp.TokenizerFingerprint,
 			Size:                 totalSize,
 			Modified:             modified,
 			Validated:            mp.Validated,
@@ -176,10 +176,11 @@ func (m *Models) FileInformation(modelID string) (FileInfo, error) {
 
 // Path returns file path information about a model.
 type Path struct {
-	ModelFiles []string `yaml:"model_files"`
-	ProjFile   string   `yaml:"proj_file"`
-	Downloaded bool     `yaml:"downloaded"`
-	Validated  bool     `yaml:"validated"`
+	ModelFiles           []string `yaml:"model_files"`
+	ProjFile             string   `yaml:"proj_file"`
+	Downloaded           bool     `yaml:"downloaded"`
+	Validated            bool     `yaml:"validated"`
+	TokenizerFingerprint string   `yaml:"tokenizer_fingerprint,omitempty"`
 }
 
 // FullPath locates the physical location on disk and returns the full path.

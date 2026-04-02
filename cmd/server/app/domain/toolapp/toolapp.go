@@ -190,14 +190,10 @@ func (a *app) listModels(ctx context.Context, r *http.Request) web.Encoder {
 	var resolvedConfigs map[string]catalog.ModelConfig
 	if extendedConfig {
 		resolvedConfigs = make(map[string]catalog.ModelConfig, len(modelFiles))
-		for i, mf := range modelFiles {
+		for _, mf := range modelFiles {
 			rmc := a.catalog.ResolvedModelConfig(mf.ID)
 			rmc.Sampling = rmc.Sampling.WithDefaults()
 			resolvedConfigs[mf.ID] = rmc
-
-			if mf.Validated {
-				modelFiles[i].TokenizerFingerprint = a.models.TokenizerFingerprint(mf.ID)
-			}
 		}
 	}
 

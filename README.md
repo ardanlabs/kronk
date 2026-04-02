@@ -355,7 +355,7 @@ This example can produce the following output:
 
 ```shell
 $ make example-question
-CGO_ENABLED=0 go run examples/question/main.go
+go run examples/question/main.go
 download-libraries: check libraries version information: arch[arm64] os[darwin] processor[cpu]
 download-libraries: check llama.cpp installation: arch[arm64] os[darwin] processor[cpu] latest[b8189] current[b8189]
 download-libraries: already installed: latest[b8189] current[b8189]

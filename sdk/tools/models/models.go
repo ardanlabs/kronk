@@ -158,6 +158,7 @@ func (m *Models) BuildIndex(log Logger) error {
 				}
 
 				mp.Validated = validated
+				mp.TokenizerFingerprint = tokenizerFingerprintFromFile(files[0])
 
 				index[modelID] = mp
 			}

@@ -103,14 +103,14 @@ install-tooling:
 # Install the kronk cli.
 install-kronk:
 	@echo ========== INSTALL KRONK ==========
-	CGO_ENABLED=0 go install ./cmd/kronk
+	go install ./cmd/kronk
 	@echo
 
 # Use this to install or update llama.cpp to the latest version. Needed to
 # run tests locally.
 install-libraries:
 	@echo ========== INSTALL LIBRARIES ==========
-	CGO_ENABLED=0 go run cmd/kronk/main.go libs --local
+	go run cmd/kronk/main.go libs --local
 	@echo
 
 # Use this to install the test GH models.
@@ -215,7 +215,7 @@ authapp-proto-gen:
 # Tests
 
 lint:
-	CGO_ENABLED=0 go vet ./...
+	go vet ./...
 	staticcheck -checks=all ./...
 
 vuln-check:
@@ -228,12 +228,12 @@ test-only: install-test-models
 	@echo ========== RUN TESTS ==========
 	export RUN_IN_PARALLEL=yes && \
 	export GITHUB_WORKSPACE=$(shell pwd) && \
-	CGO_ENABLED=0 go test -v -count=1 -p 1 ./sdk/kronk/tests/... && \
-	CGO_ENABLED=0 go test -v -count=1 ./cmd/server/api/services/kronk/tests && \
-	CGO_ENABLED=0 go test -v -count=1 ./cmd/server/app/sdk/cache && \
-	CGO_ENABLED=0 go test -v -count=1 ./cmd/server/app/sdk/security/... && \
-	CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/model && \
-	CGO_ENABLED=0 go test -v -count=1 ./sdk/tools/...
+	go test -v -count=1 -p 1 ./sdk/kronk/tests/... && \
+	go test -v -count=1 ./cmd/server/api/services/kronk/tests && \
+	go test -v -count=1 ./cmd/server/app/sdk/cache && \
+	go test -v -count=1 ./cmd/server/app/sdk/security/... && \
+	go test -v -count=1 ./sdk/kronk/model && \
+	go test -v -count=1 ./sdk/tools/...
 
 test: test-only lint vuln-check diff
 
@@ -242,11 +242,11 @@ test-gh-only: install-test-gh-models
 	export RUN_IN_PARALLEL=yes && \
 	export GITHUB_WORKSPACE=$(shell pwd) && \
 	export GITHUB_ACTIONS=true && \
-	CGO_ENABLED=0 go test -v -count=1 ./cmd/server/api/services/kronk/tests && \
-	CGO_ENABLED=0 go test -v -count=1 ./cmd/server/app/sdk/cache && \
-	CGO_ENABLED=0 go test -v -count=1 ./cmd/server/app/sdk/security/... && \
-	CGO_ENABLED=0 go test -v -count=1 ./sdk/kronk/model && \
-	CGO_ENABLED=0 go test -v -count=1 ./sdk/tools/...
+	go test -v -count=1 ./cmd/server/api/services/kronk/tests && \
+	go test -v -count=1 ./cmd/server/app/sdk/cache && \
+	go test -v -count=1 ./cmd/server/app/sdk/security/... && \
+	go test -v -count=1 ./sdk/kronk/model && \
+	go test -v -count=1 ./sdk/tools/...
 
 test-gh: test-gh-only lint vuln-check diff
 
@@ -254,40 +254,40 @@ test-gh: test-gh-only lint vuln-check diff
 # Benchmarks
 
 benchmark-dense-nc:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_NonCaching -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+	go test -run=none -bench=BenchmarkDense_NonCaching -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 benchmark-dense-spc:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_SPC -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+	go test -run=none -bench=BenchmarkDense_SPC -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 benchmark-dense-imc-det:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_IMCDeterministic$$ -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+	go test -run=none -bench=BenchmarkDense_IMCDeterministic$$ -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 benchmark-dense-imc-nondet:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_IMCNonDeterministic -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+	go test -run=none -bench=BenchmarkDense_IMCNonDeterministic -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 benchmark-dense-imc-det-spec:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_IMCDeterministic_Speculative -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+	go test -run=none -bench=BenchmarkDense_IMCDeterministic_Speculative -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 benchmark-dense-imc-multi:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_IMCDeterministic_MultiSlot -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+	go test -run=none -bench=BenchmarkDense_IMCDeterministic_MultiSlot -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 benchmark-dense-imc-prefill:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_IMC_PrefillOnly -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+	go test -run=none -bench=BenchmarkDense_IMC_PrefillOnly -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 benchmark-dense-imc-cold:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_IMC_ColdBuild -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+	go test -run=none -bench=BenchmarkDense_IMC_ColdBuild -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 benchmark-moe-imc-det:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkMoE_IMCDeterministic$$ -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+	go test -run=none -bench=BenchmarkMoE_IMCDeterministic$$ -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 benchmark-moe-spec-baseline:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkMoE_Speculative_Baseline -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+	go test -run=none -bench=BenchmarkMoE_Speculative_Baseline -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 benchmark-moe-spec-draft:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkMoE_Speculative_WithDraft -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+	go test -run=none -bench=BenchmarkMoE_Speculative_WithDraft -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 benchmark-hybrid-imc-det:
-	CGO_ENABLED=0 go test -run=none -bench=BenchmarkHybrid_IMCDeterministic -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+	go test -run=none -bench=BenchmarkHybrid_IMCDeterministic -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 # Run all benchmarks sequentially (each target loads/unloads its own model)
 # and write combined raw output to a single file under runs/.
@@ -323,12 +323,12 @@ benchmark-all:
 
 # Format benchmark results from runs/ into BENCH_RESULTS.txt.
 benchmark-fmt:
-	CGO_ENABLED=0 go run cmd/server/api/tooling/benchfmt/main.go
+	go run cmd/server/api/tooling/benchfmt/main.go
 
 # Append a single run file to the top of BENCH_RESULTS.txt with diffs.
 # Usage: make benchmark-fmt-file FILE=2026-03-01.txt
 benchmark-fmt-file:
-	CGO_ENABLED=0 go run cmd/server/api/tooling/benchfmt/main.go $(FILE)
+	go run cmd/server/api/tooling/benchfmt/main.go $(FILE)
 
 # ==============================================================================
 # IMC Diagnostics
@@ -340,22 +340,22 @@ benchmark-fmt-file:
 imcdiag-dense-vision:
 	IMC_DIAG_LOG=imc_diag_dense_vision.log \
 	GITHUB_WORKSPACE=$(shell pwd) \
-	CGO_ENABLED=0 go test -v -count=1 -run=TestDiag_DenseVision -timeout=30m ./sdk/kronk/tests/imcdiag/
+	go test -v -count=1 -run=TestDiag_DenseVision -timeout=30m ./sdk/kronk/tests/imcdiag/
 
 imcdiag-moe-vision:
 	IMC_DIAG_LOG=imc_diag_moe_vision.log \
 	GITHUB_WORKSPACE=$(shell pwd) \
-	CGO_ENABLED=0 go test -v -count=1 -run=TestDiag_MoEVision -timeout=30m ./sdk/kronk/tests/imcdiag/
+	go test -v -count=1 -run=TestDiag_MoEVision -timeout=30m ./sdk/kronk/tests/imcdiag/
 
 imcdiag-hybrid-vision:
 	IMC_DIAG_LOG=imc_diag_hybrid_vision.log \
 	GITHUB_WORKSPACE=$(shell pwd) \
-	CGO_ENABLED=0 go test -v -count=1 -run=TestDiag_HybridVision -timeout=30m ./sdk/kronk/tests/imcdiag/
+	go test -v -count=1 -run=TestDiag_HybridVision -timeout=30m ./sdk/kronk/tests/imcdiag/
 
 imcdiag-moe-nondet:
 	IMC_DIAG_LOG=imc_diag_moe_nondet.log \
 	GITHUB_WORKSPACE=$(shell pwd) \
-	CGO_ENABLED=0 go test -v -count=1 -run=TestDiag_MoENonDeterministic -timeout=30m ./sdk/kronk/tests/imcdiag/
+	go test -v -count=1 -run=TestDiag_MoENonDeterministic -timeout=30m ./sdk/kronk/tests/imcdiag/
 
 # ==============================================================================
 # Kronk BUI
@@ -380,8 +380,6 @@ bui-upgrade-latest:
 # ==============================================================================
 # Kronk CLI
 
-# CGO_ENABLED=1 go run -ldflags='-linkmode=external -extldflags "-Wl,-platform_version,macos,26.0,26.3"' examples/chat/main.go
-
 kronk-build: kronk-docs bui-build
 
 kronk-docs:
@@ -393,155 +391,145 @@ kronk-server:
 	export KRONK_INSECURE_LOGGING=true && \
 	export KRONK_CATALOG_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
 	export KRONK_CATALOG_REPO_PATH=$$HOME/code/go/src/github.com/ardanlabs/kronk_catalogs && \
-	CGO_ENABLED=0 go run cmd/kronk/main.go server start | CGO_ENABLED=0 go run cmd/server/api/tooling/logfmt/main.go
+	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
 
 kronk-server-build: kronk-build
 	. .env 2>/dev/null || true && \
 	export KRONK_INSECURE_LOGGING=true && \
 	export KRONK_CATALOG_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
 	export KRONK_CATALOG_REPO_PATH=$$HOME/code/go/src/github.com/ardanlabs/kronk_catalogs && \
-	CGO_ENABLED=0 go run cmd/kronk/main.go server start | CGO_ENABLED=0 go run cmd/server/api/tooling/logfmt/main.go
-
-# The simplest fix is probably just -ldflags=-linkmode=external. The extldflags
-# should not be necessary since the host linker is already going to default to 
-# something new enough unless you are on a very old system or have a very old Xcode installed.
-kronk-server-mac-bf16-build: kronk-build
-	. .env 2>/dev/null || true && \
-	export KRONK_INSECURE_LOGGING=true && \
-	export KRONK_CATALOG_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
-	export KRONK_CATALOG_REPO_PATH=$$HOME/code/go/src/github.com/ardanlabs/kronk_catalogs && \
-	CGO_ENABLED=1 go run -ldflags='-linkmode=external -extldflags "-Wl,-platform_version,macos,26.0,36.0"' cmd/kronk/main.go server start | CGO_ENABLED=0 go run cmd/server/api/tooling/logfmt/main.go
+	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
 
 kronk-server-detach: bui-build
-	CGO_ENABLED=0 go run cmd/kronk/main.go server start --detach
+	go run cmd/kronk/main.go server start --detach
 
 kronk-server-logs:
-	CGO_ENABLED=0 go run cmd/kronk/main.go server logs
+	go run cmd/kronk/main.go server logs
 
 kronk-server-stop:
-	CGO_ENABLED=0 go run cmd/kronk/main.go server stop
+	go run cmd/kronk/main.go server stop
 
 # ------------------------------------------------------------------------------
 
 kronk-libs:
-	CGO_ENABLED=0 go run cmd/kronk/main.go libs
+	go run cmd/kronk/main.go libs
 
 kronk-libs-local: install-libraries
 
 # ------------------------------------------------------------------------------
 
 kronk-model-index:
-	CGO_ENABLED=0 go run cmd/kronk/main.go model index
+	go run cmd/kronk/main.go model index
 
 kronk-model-index-local:
-	CGO_ENABLED=0 go run cmd/kronk/main.go model index --local
+	go run cmd/kronk/main.go model index --local
 
 
 kronk-model-list:
-	CGO_ENABLED=0 go run cmd/kronk/main.go model list
+	go run cmd/kronk/main.go model list
 
 kronk-model-list-local:
-	CGO_ENABLED=0 go run cmd/kronk/main.go model list --local
+	go run cmd/kronk/main.go model list --local
 
 
 # make kronk-model-pull URL="Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
 kronk-model-pull:
-	CGO_ENABLED=0 go run cmd/kronk/main.go model pull "$(URL)"
+	go run cmd/kronk/main.go model pull "$(URL)"
 
 # make kronk-model-pull-local URL="Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
 kronk-model-pull-local:
-	CGO_ENABLED=0 go run cmd/kronk/main.go model pull --local "$(URL)"
+	go run cmd/kronk/main.go model pull --local "$(URL)"
 
 
 kronk-model-ps:
-	CGO_ENABLED=0 go run cmd/kronk/main.go model ps
+	go run cmd/kronk/main.go model ps
 
 
 # make kronk-model-remove ID="cerebras_qwen3-coder-reap-25b-a3b-q8_0"
 kronk-model-remove:
-	CGO_ENABLED=0 go run cmd/kronk/main.go model remove "$(ID)"
+	go run cmd/kronk/main.go model remove "$(ID)"
 
 # make kronk-model-remove-local ID="cerebras_qwen3-coder-reap-25b-a3b-q8_0"
 kronk-model-remove-local:
-	CGO_ENABLED=0 go run cmd/kronk/main.go model remove --local "$(ID)"
+	go run cmd/kronk/main.go model remove --local "$(ID)"
 
 
 # make kronk-model-show ID="Qwen3-8B-Q8_0"
 kronk-model-show:
-	CGO_ENABLED=0 go run cmd/kronk/main.go model show "$(ID)"
+	go run cmd/kronk/main.go model show "$(ID)"
 
 # make kronk-model-show-local ID="Qwen3-8B-Q8_0"
 kronk-model-show-local:
-	CGO_ENABLED=0 go run cmd/kronk/main.go model show --local "$(ID)"
+	go run cmd/kronk/main.go model show --local "$(ID)"
 
 # ------------------------------------------------------------------------------
 
 kronk-catalog-update-local:
-	CGO_ENABLED=0 go run cmd/kronk/main.go catalog update --local
+	go run cmd/kronk/main.go catalog update --local
 
 
 kronk-catalog-list:
-	CGO_ENABLED=0 go run cmd/kronk/main.go catalog list
+	go run cmd/kronk/main.go catalog list
 
 kronk-catalog-list-local:
-	CGO_ENABLED=0 go run cmd/kronk/main.go catalog list --local
+	go run cmd/kronk/main.go catalog list --local
 
 
 # make kronk-catalog-show ID="Qwen3-8B-Q8_0"
 kronk-catalog-show:
-	CGO_ENABLED=0 go run cmd/kronk/main.go catalog show "$(ID)"
+	go run cmd/kronk/main.go catalog show "$(ID)"
 
 # make kronk-catalog-show-local ID="Qwen2.5-VL-3B-Instruct-Q8_0"
 kronk-catalog-show-local:
-	CGO_ENABLED=0 go run cmd/kronk/main.go catalog show --local "$(ID)"
+	go run cmd/kronk/main.go catalog show --local "$(ID)"
 
 
 # make kronk-catalog-pull ID="Qwen3-8B-Q8_0"
 kronk-catalog-pull:
-	CGO_ENABLED=0 go run cmd/kronk/main.go catalog pull "$(ID)"
+	go run cmd/kronk/main.go catalog pull "$(ID)"
 
 # make kronk-catalog-pull-local ID="Qwen3-Coder-30B-A3B-Instruct-Q8_0"
 kronk-catalog-pull-local:
-	CGO_ENABLED=0 go run cmd/kronk/main.go catalog pull --local "$(ID)"
+	go run cmd/kronk/main.go catalog pull --local "$(ID)"
 
 # ------------------------------------------------------------------------------
 
 kronk-security-help:
-	CGO_ENABLED=0 go run cmd/kronk/main.go security --help
+	go run cmd/kronk/main.go security --help
 
 
 kronk-security-key-list:
-	CGO_ENABLED=0 go run cmd/kronk/main.go security key list
+	go run cmd/kronk/main.go security key list
 
 kronk-security-key-list-local:
-	CGO_ENABLED=0 go run cmd/kronk/main.go security key list --local
+	go run cmd/kronk/main.go security key list --local
 
 # make kronk-security-token-create-local U="bill" D="5m" E="chat-completions"
 kronk-security-token-create-local:
-	CGO_ENABLED=0 go run cmd/kronk/main.go security token create --local --username "$(U)" --duration "$(D)" --endpoints "$(E)"
+	go run cmd/kronk/main.go security token create --local --username "$(U)" --duration "$(D)" --endpoints "$(E)"
 
 # ------------------------------------------------------------------------------
 
 # make kronk-run ID="Qwen3-8B-Q8_0"
 kronk-run:
-	CGO_ENABLED=0 go run cmd/kronk/main.go run "$(ID)"
+	go run cmd/kronk/main.go run "$(ID)"
 
 # ==============================================================================
 # Catalog Arch Check
 
 # Check architecture types for all downloaded catalog models.
 kronk-catalog-archcheck:
-	CGO_ENABLED=0 go run cmd/server/api/tooling/archcheck/main.go
+	go run cmd/server/api/tooling/archcheck/main.go
 
 # make kronk-catalog-archcheck-model ID="Qwen3-8B-Q8_0"
 kronk-catalog-archcheck-model:
-	CGO_ENABLED=0 go run cmd/server/api/tooling/archcheck/main.go \
+	go run cmd/server/api/tooling/archcheck/main.go \
 		-model="$(ID)" \
 		-catalog-path=$$HOME/code/go/src/github.com/ardanlabs/kronk_catalogs/catalogs
 
 # Check and update catalog files with corrected architecture values.
 kronk-catalog-archcheck-update:
-	CGO_ENABLED=0 go run cmd/server/api/tooling/archcheck/main.go \
+	go run cmd/server/api/tooling/archcheck/main.go \
 		-update \
 		-catalog-path=$$HOME/code/go/src/github.com/ardanlabs/kronk_catalogs/catalogs
 
@@ -559,6 +547,9 @@ curl-libs:
 
 curl-model-list:
 	curl -i -X GET http://localhost:11435/v1/models
+
+curl-device-list:
+	curl -i -X GET http://localhost:11435/v1/devices
 
 curl-kronk-pull:
 	curl -i -X POST http://localhost:11435/v1/models/pull \
@@ -978,54 +969,54 @@ gonja-latest:
 # Examples
 
 example-agent:
-	CGO_ENABLED=0 go run examples/agent/*
+	go run examples/agent/*
 
 example-audio:
-	CGO_ENABLED=0 go run examples/audio/main.go
+	go run examples/audio/main.go
 
 example-chat:
-	CGO_ENABLED=0 go run examples/chat/main.go
+	go run examples/chat/main.go
 
 example-chat-bug:
 	CGO_ENABLED=1 go run -ldflags='-linkmode=external -extldflags "-Wl,-platform_version,macos,26.0,26.9"' examples/chat/main.go
 
 example-embedding:
-	CGO_ENABLED=0 go run examples/embedding/main.go
+	go run examples/embedding/main.go
 
 example-grammar:
-	CGO_ENABLED=0 go run examples/grammar/main.go
+	go run examples/grammar/main.go
 
 example-rerank:
-	CGO_ENABLED=0 go run examples/rerank/main.go
+	go run examples/rerank/main.go
 
 example-question:
-	CGO_ENABLED=0 go run examples/question/main.go
+	go run examples/question/main.go
 
 example-response:
-	CGO_ENABLED=0 go run examples/response/main.go
+	go run examples/response/main.go
 
 example-vision:
-	CGO_ENABLED=0 go run examples/vision/main.go
+	go run examples/vision/main.go
 
 # ------------------------------------------------------------------------------
 
 example-yzma-step1:
-	CGO_ENABLED=0 go run examples/yzma/step1/main.go
+	go run examples/yzma/step1/main.go
 
 example-yzma-step2:
-	CGO_ENABLED=0 go run examples/yzma/step2/main.go
+	go run examples/yzma/step2/main.go
 
 example-yzma-step3:
-	CGO_ENABLED=0 go run examples/yzma/step3/main.go
+	go run examples/yzma/step3/main.go
 
 example-yzma-step4:
-	CGO_ENABLED=0 go run examples/yzma/step4/main.go
+	go run examples/yzma/step4/main.go
 
 example-yzma-step5:
-	CGO_ENABLED=0 go run examples/yzma/step5/main.go
+	go run examples/yzma/step5/main.go
 
 example-yzma-step6:
-	CGO_ENABLED=0 go run examples/yzma/step6/main.go
+	go run examples/yzma/step6/main.go
 
 example-yzma-parallel-curl1:
 	curl -X POST http://localhost:8090/v1/completions \

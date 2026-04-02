@@ -3,7 +3,7 @@
 
 
 ## benchmark-dense-nc
-CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_NonCaching -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+go test -run=none -bench=BenchmarkDense_NonCaching -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 bench: llama.cpp b8192 (darwin/arm64/cpu)
 goos: darwin
 goarch: arm64
@@ -17,7 +17,7 @@ PASS
 ok  	github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks	219.390s
 
 ## benchmark-dense-spc
-CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_SPC -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+go test -run=none -bench=BenchmarkDense_SPC -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 bench: llama.cpp b8192 (darwin/arm64/cpu)
 goos: darwin
 goarch: arm64
@@ -31,7 +31,7 @@ PASS
 ok  	github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks	178.810s
 
 ## benchmark-dense-imc-det
-CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_IMCDeterministic$ -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+go test -run=none -bench=BenchmarkDense_IMCDeterministic$ -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 bench: llama.cpp b8192 (darwin/arm64/cpu)
 goos: darwin
 goarch: arm64
@@ -45,7 +45,7 @@ PASS
 ok  	github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks	68.974s
 
 ## benchmark-dense-imc-nondet
-CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_IMCNonDeterministic -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+go test -run=none -bench=BenchmarkDense_IMCNonDeterministic -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 bench: llama.cpp b8192 (darwin/arm64/cpu)
 goos: darwin
 goarch: arm64
@@ -59,7 +59,7 @@ PASS
 ok  	github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks	37.718s
 
 ## benchmark-dense-imc-det-spec
-CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_IMCDeterministic_Speculative -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+go test -run=none -bench=BenchmarkDense_IMCDeterministic_Speculative -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 bench: llama.cpp b8192 (darwin/arm64/cpu)
 goos: darwin
 goarch: arm64
@@ -73,7 +73,7 @@ PASS
 ok  	github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks	95.883s
 
 ## benchmark-dense-imc-multi
-CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_IMCDeterministic_MultiSlot -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+go test -run=none -bench=BenchmarkDense_IMCDeterministic_MultiSlot -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 bench: llama.cpp b8192 (darwin/arm64/cpu)
 goos: darwin
 goarch: arm64
@@ -87,7 +87,7 @@ PASS
 ok  	github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks	123.898s
 
 ## benchmark-dense-imc-prefill
-CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_IMC_PrefillOnly -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+go test -run=none -bench=BenchmarkDense_IMC_PrefillOnly -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 bench: llama.cpp b8192 (darwin/arm64/cpu)
 goos: darwin
 goarch: arm64
@@ -101,7 +101,7 @@ PASS
 ok  	github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks	64.323s
 
 ## benchmark-dense-imc-cold
-CGO_ENABLED=0 go test -run=none -bench=BenchmarkDense_IMC_ColdBuild -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+go test -run=none -bench=BenchmarkDense_IMC_ColdBuild -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 bench: llama.cpp b8192 (darwin/arm64/cpu)
 goos: darwin
 goarch: arm64
@@ -112,7 +112,7 @@ PASS
 ok  	github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks	203.320s
 
 ## benchmark-moe-imc-det
-CGO_ENABLED=0 go test -run=none -bench=BenchmarkMoE_IMCDeterministic$ -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+go test -run=none -bench=BenchmarkMoE_IMCDeterministic$ -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 bench: llama.cpp b8192 (darwin/arm64/cpu)
 goos: darwin
 goarch: arm64
@@ -126,7 +126,7 @@ PASS
 ok  	github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks	76.582s
 
 ## benchmark-moe-spec-baseline
-CGO_ENABLED=0 go test -run=none -bench=BenchmarkMoE_Speculative_Baseline -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+go test -run=none -bench=BenchmarkMoE_Speculative_Baseline -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 bench: llama.cpp b8192 (darwin/arm64/cpu)
 goos: darwin
 goarch: arm64
@@ -140,7 +140,7 @@ PASS
 ok  	github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks	69.257s
 
 ## benchmark-moe-spec-draft
-CGO_ENABLED=0 go test -run=none -bench=BenchmarkMoE_Speculative_WithDraft -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+go test -run=none -bench=BenchmarkMoE_Speculative_WithDraft -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 bench: llama.cpp b8192 (darwin/arm64/cpu)
 goos: darwin
 goarch: arm64
@@ -154,7 +154,7 @@ PASS
 ok  	github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks	97.465s
 
 ## benchmark-hybrid-imc-det
-CGO_ENABLED=0 go test -run=none -bench=BenchmarkHybrid_IMCDeterministic -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+go test -run=none -bench=BenchmarkHybrid_IMCDeterministic -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 bench: llama.cpp b8192 (darwin/arm64/cpu)
 goos: darwin
 goarch: arm64
