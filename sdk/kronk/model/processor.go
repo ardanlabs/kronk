@@ -204,12 +204,14 @@ func parseFunctionFormat(content string) []ResponseToolCall {
 
 		name := content[funcStart+10 : funcStart+funcEnd]
 
-		closeFunc := strings.Index(content, "</function>")
+		bodyStart := funcStart + funcEnd + 1
+		closeFunc := strings.Index(content[bodyStart:], "</function>")
 		if closeFunc == -1 {
 			break
 		}
+		closeFunc += bodyStart
 
-		funcBody := content[funcStart+funcEnd+1 : closeFunc]
+		funcBody := content[bodyStart:closeFunc]
 		args := make(map[string]any)
 
 		remaining := funcBody
