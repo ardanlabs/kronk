@@ -42,7 +42,7 @@ type modelSpec struct {
 // Set either SourceURL or ModelID, not both.
 var modelSpecConfig = modelSpec{
 	SourceURL: "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf",
-	// ModelID: "Qwen3-0.6B-Q8_0",
+	//ModelID: "Qwen3-0.6B-Q8_0",
 }
 
 func main() {
@@ -320,11 +320,15 @@ loop:
 				)
 
 				messages = append(messages,
-					model.TextMessage("tool", fmt.Sprintf("Tool call %s: %s(%v)\n",
-						tool.ID,
-						tool.Function.Name,
-						tool.Function.Arguments),
-					),
+					model.D{
+						"role":         "tool",
+						"name":         tool.Function.Name,
+						"tool_call_id": tool.ID,
+						"content": fmt.Sprintf("Tool call %s: %s(%v)\n",
+							tool.ID,
+							tool.Function.Name,
+							tool.Function.Arguments),
+					},
 				)
 			}
 

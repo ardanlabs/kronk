@@ -27,8 +27,9 @@ type processor struct {
 	awaitingChannel bool
 
 	// For accumulating tool call content across tokens (batch engine use).
-	toolCallBuf strings.Builder
-	inToolCall  bool
+	toolCallBuf  strings.Builder
+	inToolCall   bool
+	toolCallDone bool // Set after </tool_call> or <tool_call|>; next non-tool-call token triggers EOG.
 
 	// For GPT models: accumulate channel name tokens and handle <|constrain|>.
 	channelBuf        strings.Builder
@@ -615,9 +616,11 @@ func (p *processor) stepStandard(content string) (response, bool) {
 
 			p.toolCallBuf.Reset()
 			p.inToolCall = false
+			p.toolCallDone = true
 
 			// Stay in tool call mode in case there are more tool calls.
-			// The caller will handle EOG detection separately.
+			// The next token will be checked by the toolCallDone guard:
+			// another <|tool_call> continues, anything else triggers EOG.
 			return response{status: statusTooling, content: toolContent}, false
 
 		case "[TOOL_CALLS]":
@@ -653,6 +656,21 @@ func (p *processor) stepStandard(content string) (response, bool) {
 			}
 
 			return response{}, false
+		}
+	}
+
+	// After a tool call closes, only allow another tool call opener.
+	// Anything else (reasoning, text, etc.) means the model is done.
+	if p.toolCallDone {
+		switch content {
+		case "<tool_call>", "<|tool_call>":
+			p.toolCallDone = false
+			p.inToolCall = true
+			p.toolCallBuf.Reset()
+			return response{}, false
+		default:
+			p.toolCallDone = false
+			return response{}, true // EOG — stop generation after tool call(s).
 		}
 	}
 
@@ -852,6 +870,7 @@ func (p *processor) resetState() {
 	p.awaitingChannel = false
 	p.toolCallBuf.Reset()
 	p.inToolCall = false
+	p.toolCallDone = false
 	p.channelBuf.Reset()
 	p.awaitingConstrain = false
 	p.toolFuncName = ""
