@@ -162,10 +162,10 @@ export default function DocsSDKKronk() {
 	Content   []ResponseContentItem \`json:"content,omitempty"\`
 	CallID    string                \`json:"call_id,omitempty"\`
 	Name      string                \`json:"name,omitempty"\`
-	Arguments string                \`json:"arguments,omitempty"\`
+	Arguments *string               \`json:"arguments,omitempty"\`
 }`}</code>
               </pre>
-              <p className="doc-description">ResponseOutputItem represents an item in the output array. For type="message": ID, Status, Role, Content are used. For type="function_call": ID, Status, CallID, Name, Arguments are used.</p>
+              <p className="doc-description">ResponseOutputItem represents an item in the output array. For type="message": ID, Status, Role, Content are used. For type="function_call": ID, Status, CallID, Name, Arguments are used. Arguments uses *string so function_call items always emit the field (even when empty) while message items omit it entirely.</p>
             </div>
 
             <div className="doc-section" id="type-responsereasoning">

@@ -317,7 +317,11 @@ func TestResponseResponse(resp kronk.ResponseResponse, modelName string, find st
 					return fmt.Errorf("tooling: expected function name %q, got %q", funct, name)
 				}
 
-				args := strings.ToLower(output.Arguments)
+				var argsVal string
+				if output.Arguments != nil {
+					argsVal = *output.Arguments
+				}
+				args := strings.ToLower(argsVal)
 				if !strings.Contains(args, find) {
 					return fmt.Errorf("tooling: expected arguments to contain %q, got %q", find, args)
 				}

@@ -57,6 +57,8 @@ type IncompleteDetail struct {
 // ResponseOutputItem represents an item in the output array.
 // For type="message": ID, Status, Role, Content are used.
 // For type="function_call": ID, Status, CallID, Name, Arguments are used.
+// Arguments uses *string so function_call items always emit the field (even
+// when empty) while message items omit it entirely.
 type ResponseOutputItem struct {
 	Type      string                `json:"type"`
 	ID        string                `json:"id"`
@@ -65,7 +67,7 @@ type ResponseOutputItem struct {
 	Content   []ResponseContentItem `json:"content,omitempty"`
 	CallID    string                `json:"call_id,omitempty"`
 	Name      string                `json:"name,omitempty"`
-	Arguments string                `json:"arguments,omitempty"`
+	Arguments *string               `json:"arguments,omitempty"`
 }
 
 // ResponseContentItem represents a content item within an output message.
@@ -356,9 +358,27 @@ func (ss *streamState) complete(lastResp model.ChatResponse) []ResponseStreamEve
 	finalResp.ID = ss.responseID
 	finalResp.CreatedAt = ss.createdAt
 
-	if len(finalResp.Output) > 0 && ss.msgItemEmitted {
-		finalResp.Output[0].ID = ss.msgID
+	// Rebuild output items from streaming state so IDs and arguments
+	// match what was already streamed to the client.
+	var output []ResponseOutputItem
+	if ss.msgItemEmitted {
+		output = append(output, ResponseOutputItem{
+			Type:   "message",
+			ID:     ss.msgID,
+			Status: "completed",
+			Role:   model.RoleAssistant,
+			Content: []ResponseContentItem{
+				{Type: "output_text", Text: ss.fullText, Annotations: []string{}},
+			},
+		})
 	}
+	for i, fcItem := range ss.fcItems {
+		fcItem.Status = "completed"
+		a := ss.fcArgsAccum[i]
+		fcItem.Arguments = &a
+		output = append(output, fcItem)
+	}
+	finalResp.Output = output
 
 	events = append(events, ResponseStreamEvent{
 		Type:           "response.completed",
@@ -482,12 +502,14 @@ func (ss *streamState) handleToolCalls(toolCalls []model.ResponseToolCall) []Res
 			ss.fcIDs = append(ss.fcIDs, fcID)
 			ss.fcArgsAccum = append(ss.fcArgsAccum, "")
 
+			emptyArgs := ""
 			fcItem := ResponseOutputItem{
-				Type:   "function_call",
-				ID:     fcID,
-				CallID: tc.ID,
-				Name:   tc.Function.Name,
-				Status: "in_progress",
+				Type:      "function_call",
+				ID:        fcID,
+				CallID:    tc.ID,
+				Name:      tc.Function.Name,
+				Status:    "in_progress",
+				Arguments: &emptyArgs,
 			}
 			ss.fcItems = append(ss.fcItems, fcItem)
 
@@ -501,7 +523,7 @@ func (ss *streamState) handleToolCalls(toolCalls []model.ResponseToolCall) []Res
 			ss.seq++
 		}
 
-		args, _ := json.Marshal(tc.Function.Arguments)
+		args, _ := json.Marshal(map[string]any(tc.Function.Arguments))
 		argsDelta := string(args)
 
 		ss.fcArgsAccum[idx] = argsDelta
@@ -584,7 +606,8 @@ func (ss *streamState) finalizeToolCalls() []ResponseStreamEvent {
 		ss.seq++
 
 		fcItem.Status = "completed"
-		fcItem.Arguments = ss.fcArgsAccum[i]
+		a := ss.fcArgsAccum[i]
+		fcItem.Arguments = &a
 		events = append(events, ResponseStreamEvent{
 			Type:           "response.output_item.done",
 			SequenceNumber: ss.seq,
@@ -699,14 +722,18 @@ func buildOutputItems(outputText string, toolCalls []model.ResponseToolCall, sta
 
 	if len(toolCalls) > 0 {
 		for _, tc := range toolCalls {
-			args, _ := json.Marshal(tc.Function.Arguments)
+			// Marshal the underlying map directly to avoid the custom
+			// MarshalJSON on ToolCallArguments which double-encodes
+			// (wraps in an extra JSON string layer for Chat Completions).
+			args, _ := json.Marshal(map[string]any(tc.Function.Arguments))
 
+			argsStr := string(args)
 			outputItems = append(outputItems, ResponseOutputItem{
 				Type:      "function_call",
 				ID:        fmt.Sprintf("call_%s", uuid.New().String()),
 				CallID:    tc.ID,
 				Name:      tc.Function.Name,
-				Arguments: string(args),
+				Arguments: &argsStr,
 				Status:    "completed",
 			})
 		}
@@ -811,19 +838,222 @@ func extractTools(d model.D) []any {
 }
 
 func convertInputToMessages(d model.D) model.D {
-	if _, hasMessages := d["messages"]; hasMessages {
-		return d
+	if _, hasMessages := d["messages"]; !hasMessages {
+		input, hasInput := d["input"]
+		if !hasInput {
+			return d
+		}
+
+		d["messages"] = inputToMessages(input)
+		delete(d, "input")
 	}
 
-	input, hasInput := d["input"]
-	if !hasInput {
-		return d
-	}
-
-	d["messages"] = inputToMessages(input)
-	delete(d, "input")
+	normalizeResponsesItems(d)
+	normalizeResponsesContent(d)
+	normalizeTools(d)
+	injectInstructions(d)
 
 	return d
+}
+
+// normalizeResponsesItems converts Open Responses item types (function_call,
+// function_call_output) in the messages array to Chat Completions messages.
+// Consecutive function_call items are grouped into a single assistant message
+// with multiple tool_calls.
+func normalizeResponsesItems(d model.D) {
+	messages, ok := d["messages"].([]model.D)
+	if !ok {
+		return
+	}
+
+	var result []model.D
+	var modified bool
+
+	for i := 0; i < len(messages); i++ {
+		msg := messages[i]
+		typ, _ := msg["type"].(string)
+
+		switch typ {
+		case "function_call":
+			modified = true
+
+			// Group consecutive function_call items into one assistant
+			// message with multiple tool_calls.
+			var toolCalls []model.D
+			for i < len(messages) {
+				fc := messages[i]
+				ft, _ := fc["type"].(string)
+				if ft != "function_call" {
+					break
+				}
+
+				callID, _ := fc["call_id"].(string)
+				name, _ := fc["name"].(string)
+				args, _ := fc["arguments"].(string)
+
+				toolCalls = append(toolCalls, model.D{
+					"id":   callID,
+					"type": "function",
+					"function": model.D{
+						"name":      name,
+						"arguments": args,
+					},
+				})
+				i++
+			}
+			i-- // outer loop will increment
+
+			result = append(result, model.D{
+				"role":       "assistant",
+				"tool_calls": toolCalls,
+			})
+
+		case "function_call_output":
+			modified = true
+
+			callID, _ := msg["call_id"].(string)
+			output, _ := msg["output"].(string)
+
+			result = append(result, model.D{
+				"role":         "tool",
+				"tool_call_id": callID,
+				"content":      output,
+			})
+
+		default:
+			result = append(result, msg)
+		}
+	}
+
+	if modified {
+		d["messages"] = result
+	}
+}
+
+// normalizeResponsesContent converts Responses API content types to Chat
+// Completions format within existing messages. This handles clients that send
+// "messages" with Responses API content parts (e.g. "input_text" instead of
+// "text", or "output_text" from previous assistant turns).
+func normalizeResponsesContent(d model.D) {
+	messages, ok := d["messages"].([]model.D)
+	if !ok {
+		return
+	}
+
+	for i, msg := range messages {
+		content, ok := msg["content"].([]model.D)
+		if !ok {
+			continue
+		}
+
+		var modified bool
+		for j, part := range content {
+			typ, _ := part["type"].(string)
+
+			switch typ {
+			case "input_text", "output_text":
+				if !modified {
+					newContent := make([]model.D, len(content))
+					copy(newContent, content)
+					content = newContent
+					modified = true
+				}
+				content[j] = model.D{
+					"type": "text",
+					"text": part["text"],
+				}
+			}
+		}
+
+		if modified {
+			newMsg := msg.ShallowClone()
+			newMsg["content"] = content
+			messages[i] = newMsg
+		}
+	}
+}
+
+// normalizeTools converts Open Responses tool definitions to Chat Completions
+// format. Open Responses uses a flat structure with name/description/parameters
+// at the top level, while Chat Completions nests them under a "function" key.
+func normalizeTools(d model.D) {
+	tools, ok := d["tools"].([]model.D)
+	if !ok {
+		return
+	}
+
+	var modified bool
+	for i, tool := range tools {
+		if tool["type"] != "function" {
+			continue
+		}
+
+		// Already in Chat Completions format.
+		if _, hasFunc := tool["function"]; hasFunc {
+			continue
+		}
+
+		// Flat Open Responses format: wrap name/description/parameters
+		// into a "function" sub-object.
+		name, _ := tool["name"].(string)
+		if name == "" {
+			continue
+		}
+
+		if !modified {
+			newTools := make([]model.D, len(tools))
+			copy(newTools, tools)
+			tools = newTools
+			modified = true
+		}
+
+		fn := model.D{
+			"name": name,
+		}
+
+		if desc, ok := tool["description"].(string); ok {
+			fn["description"] = desc
+		}
+
+		if params, ok := tool["parameters"]; ok {
+			fn["parameters"] = params
+		}
+
+		if strict, ok := tool["strict"]; ok {
+			fn["strict"] = strict
+		}
+
+		tools[i] = model.D{
+			"type":     "function",
+			"function": fn,
+		}
+	}
+
+	if modified {
+		d["tools"] = tools
+	}
+}
+
+// injectInstructions converts the Responses API "instructions" field into a
+// system message prepended to the messages slice.
+func injectInstructions(d model.D) {
+	instructions, ok := d["instructions"].(string)
+	if !ok || instructions == "" {
+		return
+	}
+
+	messages, ok := d["messages"].([]model.D)
+	if !ok {
+		return
+	}
+
+	systemMsg := model.D{
+		"role":    "system",
+		"content": instructions,
+	}
+
+	d["messages"] = append([]model.D{systemMsg}, messages...)
+	delete(d, "instructions")
 }
 
 func inputToMessages(input any) []model.D {
