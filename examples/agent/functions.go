@@ -13,30 +13,31 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
 // toolSuccessResponse returns a successful structured tool response.
-func toolSuccessResponse(toolID string, keyValues ...any) model.D {
+func toolSuccessResponse(toolID string, toolName string, keyValues ...any) model.D {
 	data := make(map[string]any, len(keyValues)/2)
 	for i := 0; i < len(keyValues); i += 2 {
 		data[keyValues[i].(string)] = keyValues[i+1]
 	}
 
-	return toolResponse(toolID, data, "SUCCESS")
+	return toolResponse(toolID, toolName, data, "SUCCESS")
 }
 
 // toolErrorResponse returns a failed structured tool response.
-func toolErrorResponse(toolID string, err error) model.D {
+func toolErrorResponse(toolID string, toolName string, err error) model.D {
 	data := map[string]any{"error": err.Error()}
 
-	return toolResponse(toolID, data, "FAILED")
+	return toolResponse(toolID, toolName, data, "FAILED")
 }
 
 // toolResponse creates a structured tool response.
-func toolResponse(toolID string, data map[string]any, status string) model.D {
+func toolResponse(toolID string, toolName string, data map[string]any, status string) model.D {
 	info := struct {
 		Status string         `json:"status"`
 		Data   map[string]any `json:"data"`
@@ -49,6 +50,7 @@ func toolResponse(toolID string, data map[string]any, status string) model.D {
 	if err != nil {
 		return model.D{
 			"role":         "tool",
+			"name":         toolName,
 			"tool_call_id": toolID,
 			"content":      `{"status": "FAILED", "data": "error marshaling tool response"}`,
 		}
@@ -56,6 +58,7 @@ func toolResponse(toolID string, data map[string]any, status string) model.D {
 
 	return model.D{
 		"role":         "tool",
+		"name":         toolName,
 		"tool_call_id": toolID,
 		"content":      string(content),
 	}
@@ -106,7 +109,7 @@ func (rf *ReadFile) toolDocument() model.D {
 func (rf *ReadFile) Call(ctx context.Context, toolCall model.ResponseToolCall) (resp model.D) {
 	defer func() {
 		if r := recover(); r != nil {
-			resp = toolErrorResponse(toolCall.ID, fmt.Errorf("%s", r))
+			resp = toolErrorResponse(toolCall.ID, toolCall.Function.Name, fmt.Errorf("%s", r))
 		}
 	}()
 
@@ -117,10 +120,10 @@ func (rf *ReadFile) Call(ctx context.Context, toolCall model.ResponseToolCall) (
 
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return toolErrorResponse(toolCall.ID, err)
+		return toolErrorResponse(toolCall.ID, toolCall.Function.Name, err)
 	}
 
-	return toolSuccessResponse(toolCall.ID, "file_contents", string(content))
+	return toolSuccessResponse(toolCall.ID, toolCall.Function.Name, "file_contents", string(content))
 }
 
 // =============================================================================
@@ -176,7 +179,7 @@ func (sf *SearchFiles) toolDocument() model.D {
 func (sf *SearchFiles) Call(ctx context.Context, toolCall model.ResponseToolCall) (resp model.D) {
 	defer func() {
 		if r := recover(); r != nil {
-			resp = toolErrorResponse(toolCall.ID, fmt.Errorf("%s", r))
+			resp = toolErrorResponse(toolCall.ID, toolCall.Function.Name, fmt.Errorf("%s", r))
 		}
 	}()
 
@@ -257,10 +260,10 @@ func (sf *SearchFiles) Call(ctx context.Context, toolCall model.ResponseToolCall
 	})
 
 	if err != nil {
-		return toolErrorResponse(toolCall.ID, err)
+		return toolErrorResponse(toolCall.ID, toolCall.Function.Name, err)
 	}
 
-	return toolSuccessResponse(toolCall.ID, "files", files)
+	return toolSuccessResponse(toolCall.ID, toolCall.Function.Name, "files", files)
 }
 
 // =============================================================================
@@ -308,14 +311,14 @@ func (cf *CreateFile) toolDocument() model.D {
 func (cf *CreateFile) Call(ctx context.Context, toolCall model.ResponseToolCall) (resp model.D) {
 	defer func() {
 		if r := recover(); r != nil {
-			resp = toolErrorResponse(toolCall.ID, fmt.Errorf("%s", r))
+			resp = toolErrorResponse(toolCall.ID, toolCall.Function.Name, fmt.Errorf("%s", r))
 		}
 	}()
 
 	filePath, _ := toolCall.Function.Arguments["path"].(string)
 
 	if _, err := os.Stat(filePath); !os.IsNotExist(err) {
-		return toolErrorResponse(toolCall.ID, errors.New("file already exists"))
+		return toolErrorResponse(toolCall.ID, toolCall.Function.Name, errors.New("file already exists"))
 	}
 
 	dir := path.Dir(filePath)
@@ -325,11 +328,11 @@ func (cf *CreateFile) Call(ctx context.Context, toolCall model.ResponseToolCall)
 
 	f, err := os.Create(filePath)
 	if err != nil {
-		return toolErrorResponse(toolCall.ID, err)
+		return toolErrorResponse(toolCall.ID, toolCall.Function.Name, err)
 	}
 	f.Close()
 
-	return toolSuccessResponse(toolCall.ID, "status", "SUCCESS")
+	return toolSuccessResponse(toolCall.ID, toolCall.Function.Name, "status", "SUCCESS")
 }
 
 // =============================================================================
@@ -389,7 +392,7 @@ func (gce *GoCodeEditor) toolDocument() model.D {
 func (gce *GoCodeEditor) Call(ctx context.Context, toolCall model.ResponseToolCall) (resp model.D) {
 	defer func() {
 		if r := recover(); r != nil {
-			resp = toolErrorResponse(toolCall.ID, fmt.Errorf("%s", r))
+			resp = toolErrorResponse(toolCall.ID, toolCall.Function.Name, fmt.Errorf("%s", r))
 		}
 	}()
 
@@ -405,21 +408,28 @@ func (gce *GoCodeEditor) Call(ctx context.Context, toolCall model.ResponseToolCa
 	path, _ := arg("path")
 	typeChange, _ := arg("type_change")
 	lineChange, _ := arg("line_change")
-	lineNumber := int(toolCall.Function.Arguments["line_number"].(float64))
+
+	var lineNumber int
+	switch v := toolCall.Function.Arguments["line_number"].(type) {
+	case float64:
+		lineNumber = int(v)
+	case string:
+		lineNumber, _ = strconv.Atoi(v)
+	}
 
 	typeChange = strings.TrimSpace(typeChange)
 	lineChange = strings.TrimSpace(lineChange)
 
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return toolErrorResponse(toolCall.ID, err)
+		return toolErrorResponse(toolCall.ID, toolCall.Function.Name, err)
 	}
 
 	fset := token.NewFileSet()
 	lines := strings.Split(string(content), "\n")
 
 	if lineNumber < 1 || lineNumber > len(lines) {
-		return toolErrorResponse(toolCall.ID, fmt.Errorf("line number %d is out of range (1-%d)", lineNumber, len(lines)))
+		return toolErrorResponse(toolCall.ID, toolCall.Function.Name, fmt.Errorf("line number %d is out of range (1-%d)", lineNumber, len(lines)))
 	}
 
 	switch typeChange {
@@ -441,14 +451,14 @@ func (gce *GoCodeEditor) Call(ctx context.Context, toolCall model.ResponseToolCa
 		}
 
 	default:
-		return toolErrorResponse(toolCall.ID, fmt.Errorf("unsupported change type: %s, please inform the user", typeChange))
+		return toolErrorResponse(toolCall.ID, toolCall.Function.Name, fmt.Errorf("unsupported change type: %s, please inform the user", typeChange))
 	}
 
 	modifiedContent := strings.Join(lines, "\n")
 
 	_, err = parser.ParseFile(fset, path, modifiedContent, parser.ParseComments)
 	if err != nil {
-		return toolErrorResponse(toolCall.ID, fmt.Errorf("syntax error after modification: %s, please inform the user", err))
+		return toolErrorResponse(toolCall.ID, toolCall.Function.Name, fmt.Errorf("syntax error after modification: %s, please inform the user", err))
 	}
 
 	formattedContent, err := format.Source([]byte(modifiedContent))
@@ -458,7 +468,7 @@ func (gce *GoCodeEditor) Call(ctx context.Context, toolCall model.ResponseToolCa
 
 	err = os.WriteFile(path, formattedContent, 0644)
 	if err != nil {
-		return toolErrorResponse(toolCall.ID, fmt.Errorf("write file: %s", err))
+		return toolErrorResponse(toolCall.ID, toolCall.Function.Name, fmt.Errorf("write file: %s", err))
 	}
 
 	var action string
@@ -471,5 +481,5 @@ func (gce *GoCodeEditor) Call(ctx context.Context, toolCall model.ResponseToolCa
 		action = fmt.Sprintf("Deleted line %d", lineNumber)
 	}
 
-	return toolSuccessResponse(toolCall.ID, "message", action)
+	return toolSuccessResponse(toolCall.ID, toolCall.Function.Name, "message", action)
 }

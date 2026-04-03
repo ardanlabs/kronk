@@ -210,12 +210,10 @@ func (m *Model) prepareContext(ctx context.Context, d D) (D, mtmd.Context, strin
 func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, requestStart time.Time) (string, [][]byte, cacheResult, error) {
 	var cache cacheResult
 
-	// For GPT models, inject tool_call_name into tool response messages before
-	// caching. This must happen before processCache so both the full prompt and
-	// prefix have consistent tool names when templated.
-	if m.modelInfo.IsGPTModel {
-		d = m.gptInjectToolCallNames(ctx, d)
-	}
+	// Inject tool function names into role:"tool" messages before caching.
+	// This adds "name" (for standard templates like Gemma 4) and
+	// "tool_call_name" (for GPT templates) so tool responses render correctly.
+	d = m.injectToolResponseNames(ctx, d)
 
 	// IMC now caches through media messages using the mtmd pipeline —
 	// images and audio remain in the KV cache across requests.
@@ -440,15 +438,11 @@ func (m *Model) createPrompt(ctx context.Context, d D) (string, [][]byte, error)
 	return prompt, media, nil
 }
 
-// gptInjectToolCallNames adds tool_call_name to tool response messages for GPT
-// models. The gpt-oss.jinja template requires this field to render the function
-// name in the output, but OpenAI's standard tool response only includes
-// tool_call_id.
-//
-// This function builds a mapping from tool_call_id to function name by scanning
-// assistant messages with tool_calls, then injects tool_call_name into any
-// subsequent tool role messages.
-func (m *Model) gptInjectToolCallNames(ctx context.Context, d D) D {
+// injectToolResponseNames adds the tool function name to role:"tool" messages
+// by matching tool_call_id against preceding assistant tool_calls. It injects
+// "name" (used by standard templates like Gemma 4) and "tool_call_name" (used
+// by GPT templates). Existing values are not overwritten.
+func (m *Model) injectToolResponseNames(ctx context.Context, d D) D {
 	messages, ok := d["messages"].([]D)
 	if !ok {
 		return d
@@ -490,9 +484,7 @@ func (m *Model) gptInjectToolCallNames(ctx context.Context, d D) D {
 		return d
 	}
 
-	// Inject tool_call_name into tool response messages using copy-on-write.
-	// Only allocate a new messages slice and message maps for tools that need
-	// the injected name.
+	// Inject names into tool response messages using copy-on-write.
 	var copied bool
 	for i, msg := range messages {
 		role, _ := msg["role"].(string)
@@ -505,19 +497,38 @@ func (m *Model) gptInjectToolCallNames(ctx context.Context, d D) D {
 			continue
 		}
 
-		if name, exists := toolCallIDToName[toolCallID]; exists {
-			m.log(ctx, "gpt-inject-tool-call-names", "status", "injecting name", "tool-call-id", toolCallID, "name", name)
-			if !copied {
-				newMsgs := make([]D, len(messages))
-				copy(newMsgs, messages)
-				messages = newMsgs
-				d["messages"] = messages
-				copied = true
-			}
-			newMsg := msg.ShallowClone()
-			newMsg["tool_call_name"] = name
-			messages[i] = newMsg
+		name, exists := toolCallIDToName[toolCallID]
+		if !exists {
+			continue
 		}
+
+		existingName, _ := msg["name"].(string)
+		existingTCName, _ := msg["tool_call_name"].(string)
+
+		if existingName != "" && existingTCName != "" {
+			continue
+		}
+
+		m.log(ctx, "inject-tool-response-names", "status", "injecting", "tool-call-id", toolCallID, "name", name)
+
+		if !copied {
+			newMsgs := make([]D, len(messages))
+			copy(newMsgs, messages)
+			messages = newMsgs
+			d["messages"] = messages
+			copied = true
+		}
+
+		newMsg := msg.ShallowClone()
+
+		if existingName == "" {
+			newMsg["name"] = name
+		}
+		if existingTCName == "" {
+			newMsg["tool_call_name"] = name
+		}
+
+		messages[i] = newMsg
 	}
 
 	return d

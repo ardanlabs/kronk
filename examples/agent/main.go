@@ -37,8 +37,8 @@ type modelSpec struct {
 // Configure this to switch between URL and catalog downloads.
 // Set either SourceURL or ModelID, not both.
 var modelSpecConfig = modelSpec{
-	SourceURL: "https://huggingface.co/unsloth/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-Q8_0.gguf",
-	// ModelID: "gpt-oss-20b-Q8_0",
+	//SourceURL: "https://huggingface.co/unsloth/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-Q8_0.gguf",
+	ModelID: "gpt-oss-20b-Q8_0",
 }
 
 // =============================================================================
@@ -239,7 +239,7 @@ func (a *Agent) streamModelTurn(ctx context.Context, conversation []model.D) (st
 
 	var chunks []string
 	var lastResp model.ChatResponse
-	reasonFirstChunk := true
+	firstChunk := true
 	reasonThinking := false
 
 	for resp := range ch {
@@ -249,8 +249,12 @@ func (a *Agent) streamModelTurn(ctx context.Context, conversation []model.D) (st
 			continue
 		}
 
-		// On the first real chunk, stop the latency printer.
-		stopPrinter()
+		// On the first real chunk, stop the latency printer and add spacing.
+		if firstChunk {
+			firstChunk = false
+			stopPrinter()
+			fmt.Println()
+		}
 
 		switch resp.Choices[0].FinishReason() {
 		case model.FinishReasonError:
@@ -269,11 +273,6 @@ func (a *Agent) streamModelTurn(ctx context.Context, conversation []model.D) (st
 			switch {
 			case delta.Reasoning != "":
 				reasonThinking = true
-
-				if reasonFirstChunk {
-					reasonFirstChunk = false
-					fmt.Print("\n")
-				}
 
 				fmt.Printf("\u001b[91m%s\u001b[0m", delta.Reasoning)
 
@@ -392,11 +391,22 @@ func (a *Agent) callTools(ctx context.Context, toolCalls []model.ResponseToolCal
 	for _, toolCall := range toolCalls {
 		tool, exists := a.tools[toolCall.Function.Name]
 		if !exists {
+			fmt.Printf("\u001b[91mUnknown tool: %s\u001b[0m\n", toolCall.Function.Name)
 			continue
 		}
 
-		fmt.Printf("\u001b[92m%s(%v)\u001b[0m:\n", toolCall.Function.Name, toolCall.Function.Arguments)
-		resps = append(resps, tool.Call(ctx, toolCall))
+		fmt.Printf("\u001b[92m%s(%v)\u001b[0m: ", toolCall.Function.Name, toolCall.Function.Arguments)
+
+		resp := tool.Call(ctx, toolCall)
+
+		content, _ := resp["content"].(string)
+		if strings.Contains(content, `"FAILED"`) {
+			fmt.Printf("\u001b[91m%s\u001b[0m\n", content)
+		} else {
+			fmt.Printf("\u001b[90mok\u001b[0m\n")
+		}
+
+		resps = append(resps, resp)
 	}
 
 	return resps
