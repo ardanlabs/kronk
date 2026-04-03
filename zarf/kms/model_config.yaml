@@ -416,17 +416,7 @@ embeddinggemma-300m-qat-Q8_0:
 # ==============================================================================
 # VISION MODELS AND CODING
 
-Qwen3.5-35B-A3B-Q8_0/CLINE:
-  nseq-max: 1
-  incremental-cache: true
-  sampling-parameters:
-    temperature: 0.6
-    top_k: 20
-    top_p: 0.95
-    dry_multiplier: 2.0
-    presence_penalty: 1.5
-
-Qwen3.5-35B-A3B-Q8_0/KILO:
+Qwen3.5-35B-A3B-Q8_0/AGENT:
   nseq-max: 3
   incremental-cache: true
   sampling-parameters:
@@ -475,15 +465,7 @@ Qwen3.5-35B-A3B-UD-Q5_K_XL:
 
 # ------------------------------------------------------------------------------
 
-gemma-4-26B-A4B-it-UD-Q8_K_XL/CLINE:
-  nseq-max: 1
-  incremental-cache: true
-  sampling-parameters:
-    temperature: 1.0
-    top_k: 64
-    top_p: 0.95
-
-gemma-4-26B-A4B-it-UD-Q8_K_XL/KILO:
+gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
   nseq-max: 3
   incremental-cache: true
   sampling-parameters:
@@ -491,15 +473,7 @@ gemma-4-26B-A4B-it-UD-Q8_K_XL/KILO:
     top_k: 64
     top_p: 0.95
 
-gemma-4-31B-it-UD-Q8_K_XL/CLINE:
-  nseq-max: 1
-  incremental-cache: true
-  sampling-parameters:
-    temperature: 1.0
-    top_k: 64
-    top_p: 0.95
-
-gemma-4-31B-it-UD-Q8_K_XL/KILO:
+gemma-4-31B-it-UD-Q8_K_XL/AGENT:
   nseq-max: 3
   incremental-cache: true
   sampling-parameters:

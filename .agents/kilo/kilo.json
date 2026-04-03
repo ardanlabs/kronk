@@ -1,6 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "Qwen3.5-35B-A3B-UD-Q8_K_XL/KILO",
+  "model": "Qwen3.5-35B-A3B-UD-Q8_K_XL/AGENT",
   "enabled_providers": ["kronk"],
   "permission": "allow",
   "mcp": {
@@ -20,8 +20,8 @@
         "apiKey": "123"
       },
       "models": {
-        "Qwen3.5-35B-A3B-UD-Q8_K_XL/KILO": {
-          "name": "Qwen3.5-35B-A3B-UD-Q8_K_XL/KILO",
+        "Qwen3.5-35B-A3B-UD-Q8_K_XL/AGENT": {
+          "name": "Qwen3.5-35B-A3B-UD-Q8_K_XL/AGENT",
           "limit": {
             "context": 131072,
             "output": 65536
