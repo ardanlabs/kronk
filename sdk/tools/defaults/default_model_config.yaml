@@ -482,8 +482,6 @@ gemma-4-26B-A4B-it-UD-Q8_K_XL/CLINE:
     temperature: 1.0
     top_k: 64
     top_p: 0.95
-    dry_multiplier: 2.0
-    presence_penalty: 1.5
 
 gemma-4-26B-A4B-it-UD-Q8_K_XL/KILO:
   nseq-max: 3
@@ -492,5 +490,3 @@ gemma-4-26B-A4B-it-UD-Q8_K_XL/KILO:
     temperature: 1.0
     top_k: 64
     top_p: 0.95
-    dry_multiplier: 2.0
-    presence_penalty: 1.5
