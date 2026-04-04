@@ -108,13 +108,14 @@ export default function DocsSDKModel() {
               <h4>ChatResponse</h4>
               <pre className="code-block">
                 <code>{`type ChatResponse struct {
-	ID      string   \`json:"id"\`
-	Object  string   \`json:"object"\`
-	Created int64    \`json:"created"\`
-	Model   string   \`json:"model"\`
-	Choices []Choice \`json:"choices"\`
-	Usage   *Usage   \`json:"usage,omitempty"\`
-	Prompt  string   \`json:"prompt,omitempty"\`
+	ID                string   \`json:"id"\`
+	Object            string   \`json:"object"\`
+	Created           int64    \`json:"created"\`
+	Model             string   \`json:"model"\`
+	SystemFingerprint string   \`json:"system_fingerprint"\`
+	Choices           []Choice \`json:"choices"\`
+	Usage             *Usage   \`json:"usage,omitempty"\`
+	Prompt            string   \`json:"prompt,omitempty"\`
 }`}</code>
               </pre>
               <p className="doc-description">ChatResponse represents output for inference models.</p>
@@ -532,7 +533,7 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>{`type ResponseMessage struct {
 	Role      string             \`json:"role,omitempty"\`
-	Content   string             \`json:"content,omitempty"\`
+	Content   string             \`json:"content"\`
 	Reasoning string             \`json:"reasoning_content,omitempty"\`
 	ToolCalls []ResponseToolCall \`json:"tool_calls,omitempty"\`
 }`}</code>

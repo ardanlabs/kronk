@@ -674,7 +674,7 @@ type ResponseToolCall struct {
 // ResponseMessage represents a single message in a response.
 type ResponseMessage struct {
 	Role      string             `json:"role,omitempty"`
-	Content   string             `json:"content,omitempty"`
+	Content   string             `json:"content"`
 	Reasoning string             `json:"reasoning_content,omitempty"`
 	ToolCalls []ResponseToolCall `json:"tool_calls,omitempty"`
 }
@@ -733,13 +733,14 @@ type Logprobs struct {
 
 // ChatResponse represents output for inference models.
 type ChatResponse struct {
-	ID      string   `json:"id"`
-	Object  string   `json:"object"`
-	Created int64    `json:"created"`
-	Model   string   `json:"model"`
-	Choices []Choice `json:"choices"`
-	Usage   *Usage   `json:"usage,omitempty"`
-	Prompt  string   `json:"prompt,omitempty"`
+	ID                string   `json:"id"`
+	Object            string   `json:"object"`
+	Created           int64    `json:"created"`
+	Model             string   `json:"model"`
+	SystemFingerprint string   `json:"system_fingerprint"`
+	Choices           []Choice `json:"choices"`
+	Usage             *Usage   `json:"usage,omitempty"`
+	Prompt            string   `json:"prompt,omitempty"`
 }
 
 func chatResponseDelta(id string, object string, model string, index int, content string, reasoning bool, logprob *ContentLogprob) ChatResponse {
@@ -749,10 +750,11 @@ func chatResponseDelta(id string, object string, model string, index int, conten
 	}
 
 	return ChatResponse{
-		ID:      id,
-		Object:  object,
-		Created: time.Now().Unix(),
-		Model:   model,
+		ID:                id,
+		Object:            object,
+		Created:           time.Now().Unix(),
+		Model:             model,
+		SystemFingerprint: "fp_kronk",
 		Choices: []Choice{
 			{
 				Index: index,
@@ -807,10 +809,11 @@ func chatResponseFinal(id string, object string, model string, index int, prompt
 	}
 
 	return ChatResponse{
-		ID:      id,
-		Object:  object,
-		Created: time.Now().Unix(),
-		Model:   model,
+		ID:                id,
+		Object:            object,
+		Created:           time.Now().Unix(),
+		Model:             model,
+		SystemFingerprint: "fp_kronk",
 		Choices: []Choice{
 			{
 				Index:           index,
@@ -828,10 +831,11 @@ func chatResponseFinal(id string, object string, model string, index int, prompt
 func ChatResponseErr(id string, object string, model string, index int, prompt string, err error, u Usage) ChatResponse {
 	finishReason := FinishReasonError
 	return ChatResponse{
-		ID:      id,
-		Object:  object,
-		Created: time.Now().Unix(),
-		Model:   model,
+		ID:                id,
+		Object:            object,
+		Created:           time.Now().Unix(),
+		Model:             model,
+		SystemFingerprint: "fp_kronk",
 		Choices: []Choice{
 			{
 				Index: index,
