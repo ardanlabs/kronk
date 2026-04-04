@@ -188,6 +188,8 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	if s.toolFlag > 0 {
 		content := strings.TrimSuffix(s.finalTooling.String(), "\n")
 		if len(content) > 0 {
+			// fmt.Printf("[DEBUG] raw finalTooling: %q\n", content)
+
 			switch {
 			case e.model.modelInfo.IsGPTModel:
 				s.respToolCalls = parseGPTToolCall(content)
