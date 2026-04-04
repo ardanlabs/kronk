@@ -473,7 +473,24 @@ func parseGemmaToolCallFormat(content string) []ResponseToolCall {
 		argsRaw := remaining[1:braceEnd] // content between { and }
 		remaining = remaining[braceEnd+1:]
 
-		args := parseGemmaArgs(argsRaw)
+		// Gemma4 outputs double braces: call:func{{"key":"val"}}.
+		// After stripping the outer pair, argsRaw still has {…}.
+		// Try json.Unmarshal first (pure JSON case), then strip
+		// the inner braces and fall back to parseGemmaArgs for
+		// mixed formats that use <|"|> tokens.
+		var args map[string]any
+		trimmed := strings.TrimSpace(argsRaw)
+		if len(trimmed) > 0 && trimmed[0] == '{' {
+			if err := json.Unmarshal([]byte(trimmed), &args); err != nil {
+				inner := trimmed[1:]
+				if idx := strings.LastIndex(inner, "}"); idx >= 0 {
+					inner = inner[:idx]
+				}
+				args = parseGemmaArgs(inner)
+			}
+		} else {
+			args = parseGemmaArgs(argsRaw)
+		}
 
 		toolCalls = append(toolCalls, ResponseToolCall{
 			ID:   newToolCallID(),
@@ -520,6 +537,32 @@ func findGemmaBraceEnd(s string) int {
 	return -1
 }
 
+// findClosingGemmaQuote finds the position of the closing <|"|> token that
+// ends a value. For nested structures (arrays/objects containing their own
+// <|"|> tokens), the correct closing token is the one followed by a comma
+// (next key-value pair) or end of string, not an inner one.
+func findClosingGemmaQuote(s string) int {
+	const token = "<|\"|>"
+	searchFrom := 0
+
+	for {
+		idx := strings.Index(s[searchFrom:], token)
+		if idx == -1 {
+			return -1
+		}
+
+		pos := searchFrom + idx
+		afterQuote := pos + len(token)
+
+		// This is the closing <|"|> if followed by end of string or a comma.
+		if afterQuote >= len(s) || s[afterQuote] == ',' {
+			return pos
+		}
+
+		searchFrom = afterQuote
+	}
+}
+
 // parseGemmaArgs parses the key-value pairs inside a Gemma4 tool call argument
 // block. Values are delimited by <|"|> tokens (acting as quotes).
 // Format: key1:<|"|>value1<|"|>, key2:<|"|>value2<|"|>
@@ -535,21 +578,54 @@ func parseGemmaArgs(raw string) map[string]any {
 		}
 
 		key := strings.TrimLeft(remaining[:colonIdx], ", \t\n")
+		key = strings.Trim(key, "\"")
 		remaining = remaining[colonIdx+1:]
 
 		// Check if the value is wrapped in <|"|> tokens.
 		if strings.HasPrefix(remaining, "<|\"|>") {
 			remaining = remaining[len("<|\"|>"):]
 
-			endQuote := strings.Index(remaining, "<|\"|>")
+			endQuote := findClosingGemmaQuote(remaining)
 			if endQuote == -1 {
 				// No closing quote, take the rest.
 				args[key] = strings.TrimSpace(remaining)
 				break
 			}
 
-			args[key] = remaining[:endQuote]
+			value := remaining[:endQuote]
+
+			// If the value looks like a JSON array or object with inner
+			// <|"|> tokens, replace them with quotes and try to unmarshal
+			// into a proper Go type so arrays/objects aren't flattened to
+			// strings.
+			trimVal := strings.TrimSpace(value)
+			if len(trimVal) > 0 && (trimVal[0] == '[' || trimVal[0] == '{') {
+				jsonVal := strings.ReplaceAll(trimVal, "<|\"|>", "\"")
+				var parsed any
+				if err := json.Unmarshal([]byte(jsonVal), &parsed); err == nil {
+					args[key] = parsed
+					remaining = remaining[endQuote+len("<|\"|>"):]
+					continue
+				}
+			}
+
+			args[key] = value
 			remaining = remaining[endQuote+len("<|\"|>"):]
+			continue
+		}
+
+		// Check if the value is wrapped in standard JSON double quotes.
+		if strings.HasPrefix(remaining, "\"") {
+			remaining = remaining[1:]
+
+			endQuote := strings.Index(remaining, "\"")
+			if endQuote == -1 {
+				args[key] = strings.TrimSpace(remaining)
+				break
+			}
+
+			args[key] = remaining[:endQuote]
+			remaining = remaining[endQuote+1:]
 			continue
 		}
 
