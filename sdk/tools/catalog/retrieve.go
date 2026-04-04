@@ -122,140 +122,46 @@ func (c *Catalog) All() ([]CatalogModels, error) {
 
 // ResolvedModelConfig reads the catalog and model config file for the
 // specified model id and returns a ModelConfig with sampling values.
+//
+// The configuration is resolved through a three-tier priority system:
+//
+//  1. Model Analysis (lowest priority) — hardware-aware defaults derived from
+//     the GGUF file metadata and available system hardware (GPU memory, etc.).
+//     This sets context-window, nbatch, nubatch, cache-type-k/v, flash-attention,
+//     and ngpu-layers. Skipped when the model is not downloaded.
+//
+//  2. Catalog YAML — model-specific settings from catalog files. These override
+//     the analysis defaults for any non-zero fields.
+//
+//  3. model_config.yaml (highest priority) — user overrides that always win.
 func (c *Catalog) ResolvedModelConfig(modelID string) ModelConfig {
 
-	// Look in the catalog config first for the specified model.
+	// Layer 1: Seed config from model analysis if the model is on disk.
+	// This provides hardware-aware defaults for context window, batch sizes,
+	// cache types, flash attention, and GPU layers.
+	cfg := c.analysisDefaults(modelID)
+
+	// Layer 2: Look in the catalog config for the specified model.
 	var catalogFound bool
 	catalog, err := c.Details(modelID)
 	if err == nil {
 		catalogFound = true
 	}
 
-	// Look in the model config for the specified model.
+	// Layer 3: Look in the model config for the specified model.
 	modelConfig, modelCfgFound := c.modelConfig[modelID]
 
-	var cfg ModelConfig
-
-	// Apply catalog settings first if found.
+	// Apply catalog settings over analysis defaults.
 	if catalogFound {
-		cfg = catalog.BaseModelConfig
-		cfg.Template = catalog.Template
+		mergeModelConfig(&cfg, catalog.BaseModelConfig)
+		if catalog.Template != "" {
+			cfg.Template = catalog.Template
+		}
 	}
 
-	// Apply model config settings if found (overrides catalog).
+	// Apply model config settings if found (overrides everything).
 	if modelCfgFound {
-		if modelConfig.Template != "" {
-			cfg.Template = modelConfig.Template
-		}
-		if modelConfig.Device != "" {
-			cfg.Device = modelConfig.Device
-		}
-		if modelConfig.ContextWindow != 0 {
-			cfg.ContextWindow = modelConfig.ContextWindow
-		}
-		if modelConfig.NBatch != 0 {
-			cfg.NBatch = modelConfig.NBatch
-		}
-		if modelConfig.NUBatch != 0 {
-			cfg.NUBatch = modelConfig.NUBatch
-		}
-		if modelConfig.NThreads != 0 {
-			cfg.NThreads = modelConfig.NThreads
-		}
-		if modelConfig.NThreadsBatch != 0 {
-			cfg.NThreadsBatch = modelConfig.NThreadsBatch
-		}
-		if modelConfig.CacheTypeK != 0 {
-			cfg.CacheTypeK = modelConfig.CacheTypeK
-		}
-		if modelConfig.CacheTypeV != 0 {
-			cfg.CacheTypeV = modelConfig.CacheTypeV
-		}
-		if modelConfig.FlashAttention != 0 {
-			cfg.FlashAttention = modelConfig.FlashAttention
-		}
-		if modelConfig.UseDirectIO {
-			cfg.UseDirectIO = modelConfig.UseDirectIO
-		}
-		if modelConfig.IgnoreIntegrityCheck {
-			cfg.IgnoreIntegrityCheck = modelConfig.IgnoreIntegrityCheck
-		}
-		if modelConfig.NSeqMax != 0 {
-			cfg.NSeqMax = modelConfig.NSeqMax
-		}
-		if modelConfig.OffloadKQV != nil {
-			cfg.OffloadKQV = modelConfig.OffloadKQV
-		}
-		if modelConfig.OpOffload != nil {
-			cfg.OpOffload = modelConfig.OpOffload
-		}
-		if modelConfig.NGpuLayers != nil {
-			cfg.NGpuLayers = modelConfig.NGpuLayers
-		}
-		if modelConfig.SplitMode != nil {
-			cfg.SplitMode = modelConfig.SplitMode
-		}
-		if modelConfig.SystemPromptCache {
-			cfg.SystemPromptCache = modelConfig.SystemPromptCache
-		}
-		if modelConfig.IncrementalCache {
-			cfg.IncrementalCache = modelConfig.IncrementalCache
-		}
-		if modelConfig.CacheMinTokens != 0 {
-			cfg.CacheMinTokens = modelConfig.CacheMinTokens
-		}
-		if modelConfig.InsecureLogging {
-			cfg.InsecureLogging = modelConfig.InsecureLogging
-		}
-		if modelConfig.RopeScaling != 0 {
-			cfg.RopeScaling = modelConfig.RopeScaling
-		}
-		if modelConfig.RopeFreqBase != nil {
-			cfg.RopeFreqBase = modelConfig.RopeFreqBase
-		}
-		if modelConfig.RopeFreqScale != nil {
-			cfg.RopeFreqScale = modelConfig.RopeFreqScale
-		}
-		if modelConfig.YarnExtFactor != nil {
-			cfg.YarnExtFactor = modelConfig.YarnExtFactor
-		}
-		if modelConfig.YarnAttnFactor != nil {
-			cfg.YarnAttnFactor = modelConfig.YarnAttnFactor
-		}
-		if modelConfig.YarnBetaFast != nil {
-			cfg.YarnBetaFast = modelConfig.YarnBetaFast
-		}
-		if modelConfig.YarnBetaSlow != nil {
-			cfg.YarnBetaSlow = modelConfig.YarnBetaSlow
-		}
-		if modelConfig.YarnOrigCtx != nil {
-			cfg.YarnOrigCtx = modelConfig.YarnOrigCtx
-		}
-
-		if modelConfig.DraftModel != nil {
-			switch cfg.DraftModel {
-			case nil:
-				cfg.DraftModel = modelConfig.DraftModel
-			default:
-				if modelConfig.DraftModel.ModelID != "" {
-					cfg.DraftModel.ModelID = modelConfig.DraftModel.ModelID
-				}
-				if modelConfig.DraftModel.NDraft != 0 {
-					cfg.DraftModel.NDraft = modelConfig.DraftModel.NDraft
-				}
-				if modelConfig.DraftModel.NGpuLayers != nil {
-					cfg.DraftModel.NGpuLayers = modelConfig.DraftModel.NGpuLayers
-				}
-				if modelConfig.DraftModel.Device != "" {
-					cfg.DraftModel.Device = modelConfig.DraftModel.Device
-				}
-			}
-		}
-
-		// Merge model config sampling over catalog sampling so that
-		// catalog values act as defaults for any fields the model
-		// config doesn't explicitly set.
-		cfg.Sampling = mergeSampling(cfg.Sampling, modelConfig.Sampling)
+		mergeModelConfig(&cfg, modelConfig)
 	}
 
 	return cfg
@@ -375,6 +281,184 @@ func (c *Catalog) buildIndex() error {
 	}
 
 	return nil
+}
+
+// analysisDefaults runs ModelAnalysis on the specified model and converts
+// the balanced recommendation into a ModelConfig. If the model is not
+// downloaded or analysis fails, an empty ModelConfig is returned so that
+// the catalog and model_config.yaml layers provide all values (matching
+// the previous behavior).
+func (c *Catalog) analysisDefaults(modelID string) ModelConfig {
+	analysis, err := c.models.ModelAnalysis(modelID)
+	if err != nil {
+		return ModelConfig{}
+	}
+
+	rec := analysis.Recommended
+
+	var cfg ModelConfig
+
+	cfg.ContextWindow = int(rec.ContextWindow)
+	cfg.NBatch = defAnalysisNBatch
+	cfg.NUBatch = defAnalysisNUBatch
+	cfg.NSeqMax = int(rec.NSeqMax)
+
+	if k, err := model.ParseGGMLType(rec.CacheTypeK); err == nil {
+		cfg.CacheTypeK = k
+	}
+
+	if v, err := model.ParseGGMLType(rec.CacheTypeV); err == nil {
+		cfg.CacheTypeV = v
+	}
+
+	switch rec.FlashAttention {
+	case "auto":
+		cfg.FlashAttention = model.FlashAttentionAuto
+	case "disabled":
+		cfg.FlashAttention = model.FlashAttentionDisabled
+	default:
+		cfg.FlashAttention = model.FlashAttentionEnabled
+	}
+
+	if rec.NGPULayers != 0 {
+		n := int(rec.NGPULayers)
+		cfg.NGpuLayers = &n
+	}
+
+	return cfg
+}
+
+// Default batch sizes used when seeding from analysis.
+const (
+	defAnalysisNBatch  = 2048
+	defAnalysisNUBatch = 512
+)
+
+// mergeModelConfig overlays non-zero fields from src onto dst.
+func mergeModelConfig(dst *ModelConfig, src ModelConfig) {
+	if src.Template != "" {
+		dst.Template = src.Template
+	}
+	if src.Device != "" {
+		dst.Device = src.Device
+	}
+	if src.ContextWindow != 0 {
+		dst.ContextWindow = src.ContextWindow
+	}
+	if src.NBatch != 0 {
+		dst.NBatch = src.NBatch
+	}
+	if src.NUBatch != 0 {
+		dst.NUBatch = src.NUBatch
+	}
+	if src.NThreads != 0 {
+		dst.NThreads = src.NThreads
+	}
+	if src.NThreadsBatch != 0 {
+		dst.NThreadsBatch = src.NThreadsBatch
+	}
+	if src.CacheTypeK != 0 {
+		dst.CacheTypeK = src.CacheTypeK
+	}
+	if src.CacheTypeV != 0 {
+		dst.CacheTypeV = src.CacheTypeV
+	}
+	if src.FlashAttention != 0 {
+		dst.FlashAttention = src.FlashAttention
+	}
+	if src.UseDirectIO {
+		dst.UseDirectIO = src.UseDirectIO
+	}
+	if src.UseMMap != nil {
+		dst.UseMMap = src.UseMMap
+	}
+	if src.NUMA != "" {
+		dst.NUMA = src.NUMA
+	}
+	if src.IgnoreIntegrityCheck {
+		dst.IgnoreIntegrityCheck = src.IgnoreIntegrityCheck
+	}
+	if src.NSeqMax != 0 {
+		dst.NSeqMax = src.NSeqMax
+	}
+	if src.OffloadKQV != nil {
+		dst.OffloadKQV = src.OffloadKQV
+	}
+	if src.OpOffload != nil {
+		dst.OpOffload = src.OpOffload
+	}
+	if src.OpOffloadMinBatch != 0 {
+		dst.OpOffloadMinBatch = src.OpOffloadMinBatch
+	}
+	if src.NGpuLayers != nil {
+		dst.NGpuLayers = src.NGpuLayers
+	}
+	if src.SplitMode != nil {
+		dst.SplitMode = src.SplitMode
+	}
+	if len(src.TensorSplit) > 0 {
+		dst.TensorSplit = src.TensorSplit
+	}
+	if len(src.TensorBuftOverrides) > 0 {
+		dst.TensorBuftOverrides = src.TensorBuftOverrides
+	}
+	if src.MainGPU != nil {
+		dst.MainGPU = src.MainGPU
+	}
+	if len(src.Devices) > 0 {
+		dst.Devices = src.Devices
+	}
+	if src.MoE != nil {
+		dst.MoE = src.MoE
+	}
+	if src.AutoFitVRAM {
+		dst.AutoFitVRAM = src.AutoFitVRAM
+	}
+	if src.SystemPromptCache {
+		dst.SystemPromptCache = src.SystemPromptCache
+	}
+	if src.IncrementalCache {
+		dst.IncrementalCache = src.IncrementalCache
+	}
+	if src.CacheMinTokens != 0 {
+		dst.CacheMinTokens = src.CacheMinTokens
+	}
+	if src.CacheSlotTimeout != 0 {
+		dst.CacheSlotTimeout = src.CacheSlotTimeout
+	}
+	if src.InsecureLogging {
+		dst.InsecureLogging = src.InsecureLogging
+	}
+	if src.RopeScaling != 0 {
+		dst.RopeScaling = src.RopeScaling
+	}
+	if src.RopeFreqBase != nil {
+		dst.RopeFreqBase = src.RopeFreqBase
+	}
+	if src.RopeFreqScale != nil {
+		dst.RopeFreqScale = src.RopeFreqScale
+	}
+	if src.YarnExtFactor != nil {
+		dst.YarnExtFactor = src.YarnExtFactor
+	}
+	if src.YarnAttnFactor != nil {
+		dst.YarnAttnFactor = src.YarnAttnFactor
+	}
+	if src.YarnBetaFast != nil {
+		dst.YarnBetaFast = src.YarnBetaFast
+	}
+	if src.YarnBetaSlow != nil {
+		dst.YarnBetaSlow = src.YarnBetaSlow
+	}
+	if src.YarnOrigCtx != nil {
+		dst.YarnOrigCtx = src.YarnOrigCtx
+	}
+	if src.DraftModel != nil {
+		dst.DraftModel = src.DraftModel
+	}
+
+	// Merge sampling: src overrides non-zero fields in dst.
+	dst.Sampling = mergeSampling(dst.Sampling, src.Sampling)
 }
 
 func (c *Catalog) loadIndex() (map[string]string, error) {
