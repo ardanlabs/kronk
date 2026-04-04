@@ -961,12 +961,7 @@ func calculateVRAM(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory int64)
 		return int64(mi.Size), 0
 	}
 
-	keyLength, err := strconv.ParseInt(mi.Metadata[arch+".attention.key_length"], 10, 64)
-	if err != nil {
-		return int64(mi.Size), 0
-	}
-
-	valueLength, err := strconv.ParseInt(mi.Metadata[arch+".attention.value_length"], 10, 64)
+	keyLength, valueLength, err := resolveKVLengths(mi.Metadata, arch)
 	if err != nil {
 		return int64(mi.Size), 0
 	}
@@ -983,6 +978,40 @@ func calculateVRAM(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory int64)
 	vramTotal = int64(mi.Size) + slotMemory
 
 	return vramTotal, slotMemory
+}
+
+// resolveKVLengths returns key_length and value_length for VRAM calculation.
+// It first checks for explicit metadata keys. When those are missing (e.g.
+// audio models like Qwen2-Audio), it falls back to embedding_length / head_count
+// which is the same default llama.cpp uses internally.
+func resolveKVLengths(metadata map[string]string, arch string) (keyLen int64, valLen int64, err error) {
+	keyLen, keyErr := strconv.ParseInt(metadata[arch+".attention.key_length"], 10, 64)
+	valLen, valErr := strconv.ParseInt(metadata[arch+".attention.value_length"], 10, 64)
+
+	if keyErr == nil && valErr == nil {
+		return keyLen, valLen, nil
+	}
+
+	embLen, err := strconv.ParseInt(metadata[arch+".embedding_length"], 10, 64)
+	if err != nil {
+		return 0, 0, fmt.Errorf("resolve-kv-lengths: key_length and embedding_length both missing")
+	}
+
+	headCount, err := strconv.ParseInt(metadata[arch+".attention.head_count"], 10, 64)
+	if err != nil || headCount == 0 {
+		return 0, 0, fmt.Errorf("resolve-kv-lengths: key_length and head_count both missing")
+	}
+
+	derived := embLen / headCount
+
+	if keyErr != nil {
+		keyLen = derived
+	}
+	if valErr != nil {
+		valLen = derived
+	}
+
+	return keyLen, valLen, nil
 }
 
 // restoreSPCToSeq restores the externalized SPC KV state into the destination

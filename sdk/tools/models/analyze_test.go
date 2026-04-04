@@ -317,8 +317,8 @@ func TestAnalyzeModelNoGPU(t *testing.T) {
 		t.Errorf("FlashAttention = %q, want %q", a.Recommended.FlashAttention, "disabled")
 	}
 
-	if a.Recommended.NGPULayers != 0 {
-		t.Errorf("NGPULayers = %d, want 0", a.Recommended.NGPULayers)
+	if a.Recommended.NGPULayers != -1 {
+		t.Errorf("NGPULayers = %d, want -1 (CPU only)", a.Recommended.NGPULayers)
 	}
 
 	if !a.Memory.FullGPUFit {
@@ -398,7 +398,7 @@ func TestToModelConfig(t *testing.T) {
 		CacheTypeK:     "f16",
 		CacheTypeV:     "f16",
 		FlashAttention: "auto",
-		NGPULayers:     -1,
+		NGPULayers:     0, // 0 = all on GPU in model.Config
 	}
 
 	cfg := rec.ToModelConfig()
@@ -423,8 +423,9 @@ func TestToModelConfig(t *testing.T) {
 		t.Errorf("FlashAttention = %d, want 2 (auto)", cfg.FlashAttention)
 	}
 
-	if cfg.NGpuLayers == nil || *cfg.NGpuLayers != -1 {
-		t.Errorf("NGpuLayers = %v, want -1", cfg.NGpuLayers)
+	// NGPULayers=0 means all on GPU, which is the default (nil).
+	if cfg.NGpuLayers != nil {
+		t.Errorf("NGpuLayers = %v, want nil (all on GPU)", cfg.NGpuLayers)
 	}
 
 	if cfg.NBatch != 2048 {

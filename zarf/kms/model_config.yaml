@@ -417,6 +417,7 @@ embeddinggemma-300m-qat-Q8_0:
 # VISION MODELS AND CODING
 
 Qwen3.5-35B-A3B-Q8_0/AGENT:
+  context-window: 131072
   nseq-max: 3
   incremental-cache: true
   sampling-parameters:
@@ -427,6 +428,7 @@ Qwen3.5-35B-A3B-Q8_0/AGENT:
     presence_penalty: 1.5
 
 Qwen3.5-35B-A3B-Q8_0/SPC:
+  context-window: 131072
   nseq-max: 1
   system-prompt-cache: true
 
@@ -466,6 +468,7 @@ Qwen3.5-35B-A3B-UD-Q5_K_XL:
 # ------------------------------------------------------------------------------
 
 gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
+  context-window: 131072
   nseq-max: 3
   incremental-cache: true
   sampling-parameters:
@@ -474,6 +477,7 @@ gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
     top_p: 0.95
 
 gemma-4-31B-it-UD-Q8_K_XL/AGENT:
+  context-window: 131072
   nseq-max: 3
   incremental-cache: true
   sampling-parameters:

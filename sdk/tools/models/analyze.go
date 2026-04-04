@@ -168,7 +168,9 @@ func (r RuntimeRecommendation) ToModelConfig() model.Config {
 		cfg.FlashAttention = model.FlashAttentionEnabled
 	}
 
-	if r.NGPULayers != 0 {
+	// model.Config: NGpuLayers nil = all on GPU, 0 = all on GPU, -1 = all on CPU.
+	// Only set when we explicitly want CPU-only.
+	if r.NGPULayers < 0 {
 		n := int(r.NGPULayers)
 		cfg.NGpuLayers = &n
 	}
@@ -479,9 +481,11 @@ func buildProfile(name string, p profileInput, overrideSlots int64, overrideConc
 		}
 	}
 
-	// GPU layers.
+	// GPU layers: model.Config uses 0 = all on GPU, -1 = all on CPU.
 	if p.hasGPU {
-		rec.NGPULayers = -1 // all layers
+		rec.NGPULayers = 0
+	} else {
+		rec.NGPULayers = -1
 	}
 
 	// Estimate VRAM for the chosen configuration.

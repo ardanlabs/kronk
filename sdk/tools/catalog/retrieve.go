@@ -320,7 +320,9 @@ func (c *Catalog) analysisDefaults(modelID string) ModelConfig {
 		cfg.FlashAttention = model.FlashAttentionEnabled
 	}
 
-	if rec.NGPULayers != 0 {
+	// model.Config: NGpuLayers nil = all on GPU, 0 = all on GPU, -1 = all on CPU.
+	// Only set when we explicitly want CPU-only.
+	if rec.NGPULayers < 0 {
 		n := int(rec.NGPULayers)
 		cfg.NGpuLayers = &n
 	}
