@@ -50,6 +50,10 @@ func newProcessor(m *Model) *processor {
 	}
 }
 
+func newToolCallID() string {
+	return "call_" + uuid.NewString()
+}
+
 // =============================================================================
 
 func parseGPTToolCall(content string) []ResponseToolCall {
@@ -259,7 +263,7 @@ func parseFunctionFormat(content string) []ResponseToolCall {
 		}
 
 		toolCalls = append(toolCalls, ResponseToolCall{
-			ID:   uuid.NewString(),
+			ID:   newToolCallID(),
 			Type: "function",
 			Function: ResponseToolCallFunction{
 				Name:      name,
@@ -305,7 +309,7 @@ func parseJSONFormat(content string) []ResponseToolCall {
 		remaining = remaining[jsonEnd:]
 
 		toolCall := ResponseToolCall{
-			ID:   uuid.NewString(),
+			ID:   newToolCallID(),
 			Type: "function",
 		}
 
@@ -376,7 +380,7 @@ func parseArgKeyValueFormat(content string) []ResponseToolCall {
 		}
 
 		toolCalls = append(toolCalls, ResponseToolCall{
-			ID:   uuid.NewString(),
+			ID:   newToolCallID(),
 			Type: "function",
 			Function: ResponseToolCallFunction{
 				Name:      name,
@@ -424,7 +428,7 @@ func parseMistralToolCallFormat(content string) []ResponseToolCall {
 		}
 
 		toolCalls = append(toolCalls, ResponseToolCall{
-			ID:   uuid.NewString(),
+			ID:   newToolCallID(),
 			Type: "function",
 			Function: ResponseToolCallFunction{
 				Name:      name,
@@ -472,7 +476,7 @@ func parseGemmaToolCallFormat(content string) []ResponseToolCall {
 		args := parseGemmaArgs(argsRaw)
 
 		toolCalls = append(toolCalls, ResponseToolCall{
-			ID:   uuid.NewString(),
+			ID:   newToolCallID(),
 			Type: "function",
 			Function: ResponseToolCallFunction{
 				Name:      name,
