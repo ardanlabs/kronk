@@ -321,11 +321,6 @@ func TestAnalyzeModelNoGPU(t *testing.T) {
 		t.Errorf("NGPULayers = %d, want -1 (CPU only)", a.Recommended.NGPULayers)
 	}
 
-	if !a.Memory.FullGPUFit {
-		// No GPU, so the fit check should reflect that.
-		// Actually with no GPU budget, fullGPUFit should be false.
-	}
-
 	found := false
 	for _, w := range a.Warnings {
 		if contains(w, "No GPU") {
