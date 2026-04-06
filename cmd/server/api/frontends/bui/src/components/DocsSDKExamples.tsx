@@ -40,7 +40,7 @@ type modelSpec struct {
 // Set either SourceURL or ModelID, not both.
 var modelSpecConfig = modelSpec{
 	//SourceURL: "https://huggingface.co/unsloth/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-Q8_0.gguf",
-	ModelID: "gemma-4-26B-A4B-it-Q8_0",
+	ModelID: "gpt-oss-20b-Q8_0",
 }
 
 // =============================================================================
