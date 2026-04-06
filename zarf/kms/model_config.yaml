@@ -467,7 +467,25 @@ Qwen3.5-35B-A3B-UD-Q5_K_XL:
 
 # ------------------------------------------------------------------------------
 
+gemma-4-26B-A4B-it-f16/AGENT:
+  context-window: 131072
+  nseq-max: 3
+  incremental-cache: true
+  sampling-parameters:
+    temperature: 1.0
+    top_k: 64
+    top_p: 0.95
+
 gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
+  context-window: 131072
+  nseq-max: 3
+  incremental-cache: true
+  sampling-parameters:
+    temperature: 1.0
+    top_k: 64
+    top_p: 0.95
+
+gemma-4-26B-A4B-it-Q8_0/AGENT:
   context-window: 131072
   nseq-max: 3
   incremental-cache: true

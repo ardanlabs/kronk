@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -188,7 +189,15 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	if s.toolFlag > 0 {
 		content := strings.TrimSuffix(s.finalTooling.String(), "\n")
 		if len(content) > 0 {
-			// fmt.Printf("[DEBUG] raw finalTooling: %q\n", content)
+
+			// Log the raw model output before parsing so tool call issues
+			// can be debugged. Truncate to 500 bytes for readability.
+			rawLog := content
+			if len(rawLog) > 500 {
+				rawLog = rawLog[:250] + " ... " + rawLog[len(rawLog)-250:]
+			}
+			e.model.log(ctx, "tool-call", "status", "raw-model-output",
+				"bytes", len(content), "content", rawLog)
 
 			switch {
 			case e.model.modelInfo.IsGPTModel:
@@ -196,6 +205,30 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 
 			default:
 				s.respToolCalls = parseToolCall(content)
+			}
+
+			// Validate parsed tool call arguments produce valid JSON.
+			for i, tc := range s.respToolCalls {
+				if tc.Status != 0 {
+					e.model.log(ctx, "tool-call", "status", "parse-error",
+						"index", i, "func", tc.Function.Name,
+						"error", tc.Error, "raw", tc.Raw)
+					continue
+				}
+
+				argsJSON, err := json.Marshal(map[string]any(tc.Function.Arguments))
+				if err != nil {
+					e.model.log(ctx, "tool-call", "status", "invalid-args",
+						"index", i, "func", tc.Function.Name,
+						"error", err)
+				} else {
+					var check map[string]any
+					if err := json.Unmarshal(argsJSON, &check); err != nil {
+						e.model.log(ctx, "tool-call", "status", "invalid-args-json",
+							"index", i, "func", tc.Function.Name,
+							"error", err, "json", string(argsJSON))
+					}
+				}
 			}
 		}
 	}

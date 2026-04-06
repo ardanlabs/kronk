@@ -115,6 +115,7 @@ Kronk has an MCP service and these are settings:
 | [5.1 Overview](.manual/chapter-05-message-caching.md#51-overview)                                             | SPC vs IMC overview, when to use each                  |
 | [5.2 System Prompt Cache (SPC)](.manual/chapter-05-message-caching.md#52-system-prompt-cache-spc)             | SPC mechanism, externalized KV state                   |
 | [5.3 Incremental Message Cache (IMC)](.manual/chapter-05-message-caching.md#53-incremental-message-cache-imc) | 2 IMC strategies, slot selection, shared algorithm     |
+| — [KV Pressure Eviction](.manual/chapter-05-message-caching.md#kv-pressure-eviction)                          | Unified KV cache overflow, stale slot eviction         |
 | — [IMC Deterministic](.manual/chapter-05-message-caching.md#imc-deterministic)                                | Hash-based matching, consistent templates              |
 | — [IMC Non-Deterministic](.manual/chapter-05-message-caching.md#imc-non-deterministic)                        | Token prefix fallback, variable templates, GPT-OSS/GLM |
 | — [Model Type Interactions](.manual/chapter-05-message-caching.md#model-type-interactions)                    | Dense/MoE/Hybrid config, cross-reference to 4.9        |

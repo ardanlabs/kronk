@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"sort"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
@@ -116,6 +117,7 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 	var bestCachedMsgCount int
 	var emptySlots []*imcSession
 	var lruSlot *imcSession
+	var mismatchSlots []int // Snapshot indices of non-matching slots (eviction candidates).
 
 	for i, snap := range snapshots {
 
@@ -141,6 +143,7 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 		// Skip slots with more cached messages than this request has total.
 		if totalMsgs <= snap.cachedMsgCount {
 			m.log(ctx, "imc", "scan", fmt.Sprintf("slot[%d] skip (cached-msgs[%d] >= total-msgs[%d])", snap.slotID, snap.cachedMsgCount, totalMsgs))
+			mismatchSlots = append(mismatchSlots, i)
 			continue
 		}
 
@@ -149,6 +152,7 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 		if prefixHash != snap.cachedMsgsHash {
 			m.log(ctx, "imc", "scan", fmt.Sprintf("slot[%d] mismatch (cached-msgs[%d] tokens[%d] hash[%s..] != [%s..])",
 				snap.slotID, snap.cachedMsgCount, snap.totalTokensCached, snap.cachedMsgsHash[:8], prefixHash[:8]))
+			mismatchSlots = append(mismatchSlots, i)
 			continue
 		}
 
@@ -162,6 +166,71 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 			bestCachedMsgsHash = snap.cachedMsgsHash
 			bestTotalTokensCached = snap.totalTokensCached
 			bestCachedMsgCount = snap.cachedMsgCount
+		}
+	}
+
+	// -------------------------------------------------------------------------
+	// Step 1b: KV pressure eviction.
+	//
+	// With unified KV cache (KVUnified=1), all sequences share the same n_ctx
+	// pool. Mismatched slots holding stale conversation prefixes consume KV
+	// cells that the active slot may need. Before proceeding to Step 2,
+	// estimate the projected total KV usage and evict mismatched slots
+	// (largest first) until the active request fits within n_ctx.
+
+	if bestSlot != nil && len(mismatchSlots) > 0 && m.cfg.ContextWindow > 0 {
+		nCtx := m.cfg.ContextWindow
+
+		// Sum KV usage across all non-empty, non-pending slots.
+		var projectedKV int
+		for _, snap := range snapshots {
+			if !snap.empty && !snap.pending {
+				projectedKV += snap.totalTokensCached
+			}
+		}
+
+		if projectedKV > nCtx {
+			// Sort mismatched slots by token count descending (evict largest first).
+			sort.Slice(mismatchSlots, func(a, b int) bool {
+				return snapshots[mismatchSlots[a]].totalTokensCached > snapshots[mismatchSlots[b]].totalTokensCached
+			})
+
+			for _, idx := range mismatchSlots {
+				if projectedKV <= nCtx {
+					break
+				}
+
+				snap := snapshots[idx]
+				session := m.imcSlots[idx]
+
+				m.log(ctx, "imc", "status", "kv-pressure-evict",
+					"slot", snap.slotID, "seq", snap.seqID,
+					"evicted-tokens", snap.totalTokensCached,
+					"projected-kv", projectedKV, "n_ctx", nCtx)
+
+				// Clear the KV sequence.
+				m.decodeMu.Lock()
+				llama.MemorySeqRm(m.mem, snap.seqID, -1, -1)
+				m.decodeMu.Unlock()
+
+				// Reset the session metadata.
+				m.cacheMu.Lock()
+				session.cachedMsgsHash = ""
+				session.cachedTokens = nil
+				session.totalTokensCached = 0
+				session.cachedMsgCount = 0
+				session.lastUsed = time.Time{}
+				session.pending = false
+				session.hasMedia = false
+				session.useMRoPE = false
+				session.mediaKVCounts = nil
+				m.cacheMu.Unlock()
+
+				projectedKV -= snap.totalTokensCached
+			}
+
+			m.log(ctx, "imc", "status", "kv-pressure-evict-done",
+				"projected-kv-after", projectedKV, "n_ctx", nCtx)
 		}
 	}
 

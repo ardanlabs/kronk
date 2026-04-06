@@ -22,11 +22,10 @@ func (e *batchEngine) slotCancelError(s *slot) error {
 func (e *batchEngine) logDecodeError(ctx context.Context, ret int32, err error) {
 	nCtx := llama.NCtx(e.model.lctx)
 
-	// Collect per-slot diagnostics.
-	var totalTokens llama.Pos
+	// Collect per-slot diagnostics (active slots only).
+	var activeTokens llama.Pos
 	slotInfo := make([]string, 0, e.nSlots)
 
-	// Check each slot's sequence.
 	for _, s := range e.slots {
 		if !s.active {
 			continue
@@ -35,19 +34,35 @@ func (e *batchEngine) logDecodeError(ctx context.Context, ret int32, err error) 
 		if posErr == nil && posMax >= 0 {
 			tokens := posMax + 1
 			slotInfo = append(slotInfo, fmt.Sprintf("slot[%d,seq=%d]=%d", s.id, s.seqID, tokens))
-			totalTokens += tokens
+			activeTokens += tokens
 		}
 	}
+
+	// Collect total KV usage across all sequences (including idle IMC slots)
+	// to provide accurate diagnostics when the unified KV cache is full.
+	var totalKV int
+	imcInfo := make([]string, 0, len(e.model.imcSlots))
+
+	e.model.cacheMu.RLock()
+	for _, slot := range e.model.imcSlots {
+		if slot.totalTokensCached > 0 {
+			imcInfo = append(imcInfo, fmt.Sprintf("imc[%d,seq=%d]=%d", slot.slotID, slot.seqID, slot.totalTokensCached))
+			totalKV += slot.totalTokensCached
+		}
+	}
+	e.model.cacheMu.RUnlock()
 
 	e.model.log(ctx, "batch-engine",
 		"status", "decode-error",
 		"ret", ret,
 		"err", err,
 		"n_ctx", nCtx,
-		"kv_used", totalTokens,
+		"kv_used_active", activeTokens,
+		"kv_used_total", totalKV,
 		"batch_tokens", e.batch.NTokens,
 		"active_slots", len(slotInfo),
 		"slot_usage", strings.Join(slotInfo, ","),
+		"imc_usage", strings.Join(imcInfo, ","),
 	)
 }
 

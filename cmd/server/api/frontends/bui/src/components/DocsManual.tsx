@@ -2048,7 +2048,7 @@ IMC (Incremental Message Cache):
           <h4 id="multi-slot-architecture">Multi-Slot Architecture</h4>
           <p>All <code>NSeqMax</code> slots are available for IMC. Each slot independently tracks its own conversation branch — its own message hash, token count, and message index. Sub-agents are routed to different slots via hash matching, allowing them to maintain independent caches and run concurrently.</p>
           <p>With <code>n_seq_max: 3</code>, three sub-agents can each have their own cached conversation branch. Without multi-slot IMC, every sub-agent request would cause a prefix mismatch and rebuild the cache from scratch because different sub-agents send different system prompts and conversation content.</p>
-          <p><strong>Important:</strong> Set <code>n_seq_max</code> to at least the number of concurrent sub-agents your agent framework spawns. If <code>n_seq_max</code> is smaller than the number of sub-agents, cache thrashing can occur — each new sub-agent evicts a slot, and when the evicted sub-agent returns, it evicts another. Every request triggers a full rebuild from scratch, eliminating the caching benefit entirely. The trade-off is VRAM — each additional slot reserves its full KV cache partition at model load time.</p>
+          <p><strong>Important:</strong> Set <code>n_seq_max</code> to at least the number of concurrent sub-agents your agent framework spawns. If <code>n_seq_max</code> is smaller than the number of sub-agents, cache thrashing can occur — each new sub-agent evicts a slot, and when the evicted sub-agent returns, it evicts another. Every request triggers a full rebuild from scratch, eliminating the caching benefit entirely. With unified KV cache, all slots share the same <code>n_ctx</code> pool, so adding more slots does not multiply VRAM usage. However, more slots means more concurrent cached conversations competing for the shared pool. KV pressure eviction automatically clears stale slots when space gets tight — see <a href="#kv-pressure-eviction">KV Pressure Eviction</a>.</p>
           <p><strong>How It Works:</strong></p>
           <p>First request (2 messages: system + user):</p>
           <pre className="code-block"><code>{`Messages: [system, user]
@@ -2071,14 +2071,41 @@ Prefill:  [user3 + gen_prompt]`}</code></pre>
                 <li>Skip empty slots (track the first empty slot as a fallback)</li>
                 <li>Skip slots with more cached messages than the request has total</li>
                 <li>Hash <code>messages[:slot.lastMsgIdxCached]</code> and compare to the slot's</li>
+                <li>Track mismatched slots as eviction candidates</li>
               </ul>
             </li>
+            <li><strong>KV pressure eviction</strong> — When a matching slot is found and the total KV usage across all slots exceeds the context window, evict mismatched slots (largest first) to reclaim space. See <a href="#kv-pressure-eviction">KV Pressure Eviction</a> for details.</li>
             <li><strong>On match</strong> — Pick the slot with the best prefix coverage (most cached messages). If the request has new messages to cache, extend the slot's cache. If the messages are identical, it's a pure cache hit.</li>
             <li><strong>No hash match — token prefix fallback (Non-Deterministic mode)</strong> — Tokenize the incoming messages and compare the resulting token sequence element-by-element against each non-empty slot's stored <code>cachedTokens</code>. Pick the slot with the longest common prefix that meets <code>cache_min_tokens</code>. Trim the KV cache from the divergence point and decode only the new tokens from there forward. See <a href="#imc-non-deterministic">IMC Non-Deterministic</a> for details.</li>
             <li><strong>No match at all</strong> — Pick an empty slot if one exists, otherwise evict the least-recently-used (LRU) slot and rebuild from scratch.</li>
           </ol>
           <p><strong>Concurrent Build Protection:</strong></p>
           <p>When two requests arrive simultaneously and both need to build a cache from scratch, a race condition could cause both to pick the same empty slot. IMC prevents this with a pending flag: when a slot begins a deferred cache build, it is marked pending. Concurrent scanners skip pending slots, so the second request picks a different slot. The pending flag is cleared after the cache decode completes (or on error).</p>
+          <h4 id="kv-pressure-eviction">KV Pressure Eviction</h4>
+          <p>With <code>n_seq_max &gt; 1</code>, Kronk enables a unified KV cache (<code>KVUnified=1</code>) so that all sequences share the full <code>n_ctx</code> pool. Any single sequence can grow up to the full context window, but the <strong>total</strong> KV usage across all sequences cannot exceed <code>n_ctx</code>.</p>
+          <p>This matters when an agent framework (like Kilo or Cline) sends multiple concurrent requests for the same conversation. Each request may land on a different slot. As the conversation grows, the active slot accumulates a large cache while older slots hold stale snapshots of earlier conversation states. Those stale slots consume KV cells that the active slot needs.</p>
+          <p><strong>Example:</strong> With <code>n_seq_max: 3</code> and <code>context_window: 131072</code>:</p>
+          <pre className="code-block"><code>{`Slot 0: 854 tokens    (stale — 2 cached messages, hash mismatch)
+Slot 1: 46,541 tokens (stale — 17 cached messages, hash mismatch)
+Slot 2: 86,682 tokens (active — 49 cached messages, hash match)
+Total:  134,077 tokens > 131,072 → context window full!`}</code></pre>
+          <p>Without KV pressure eviction, the next decode would fail with "context window is full" even though the active conversation only uses ~87k of the 131k window.</p>
+          <p><strong>How It Works:</strong></p>
+          <p>After the slot scan finds a matching slot (Step 1), IMC checks whether the projected total KV usage across all slots exceeds the context window. If it does, mismatched slots are evicted largest-first until the total fits:</p>
+          <ol>
+            <li>Sum <code>totalTokensCached</code> across all non-empty, non-pending slots</li>
+            <li>If the sum exceeds <code>context_window</code>, sort mismatched slots by token count (descending)</li>
+            <li>Evict slots one at a time — clear the KV sequence (<code>MemorySeqRm</code>) and reset the session metadata — until the projected total is within bounds</li>
+          </ol>
+          <p>In the example above, evicting Slot 1 (46,541 tokens) brings the total to 87,536 — well within the 131,072 limit. Slot 0 (854 tokens) may or may not need eviction depending on the remaining headroom.</p>
+          <p><strong>Key Points:</strong></p>
+          <ul>
+            <li>Eviction only targets <strong>mismatched</strong> slots — the active slot and any other matching slots are never evicted</li>
+            <li>Pending slots (with a build in-flight) are never evicted</li>
+            <li>Evicted slots become empty and are available for future cache builds</li>
+            <li>The eviction check runs before the extend/hit path, so the active slot always has room to grow</li>
+            <li>No configuration needed — eviction triggers automatically when KV pressure is detected</li>
+          </ul>
           <h4 id="imc-deterministic">IMC Deterministic</h4>
           <p>The default and fastest matching strategy. Used automatically for models with consistent templates — where the same messages always produce identical token sequences regardless of conversation length.</p>
           <p><strong>Why this strategy exists:</strong> Most models have deterministic templates (see the model table above). When the template is consistent, a simple hash of the message prefix is enough to identify a matching slot. This avoids tokenization overhead entirely.</p>
@@ -2296,10 +2323,12 @@ New decode:    4 tokens (T9-T12, from divergence point forward)`}</code></pre>
           </ul>
           <p>Cache extensions (adding new messages to an existing cached prefix) are especially fast because only the delta tokens are decoded. In production logs, sequential extensions typically take ~3ms each.</p>
           <p><strong>IMC Memory Overhead:</strong></p>
-          <p>IMC adds no extra VRAM. llama.cpp partitions the KV cache across sequences, so each slot gets <code>context_window / NSeqMax</code> tokens:</p>
-          <pre className="code-block"><code>{`8K context, n_seq_max=4, IMC:
-  KV cache per slot: ~200 MB (8B model, F16)
-  Total KV cache: 4 × 200 MB = ~800 MB`}</code></pre>
+          <p>IMC adds no extra VRAM beyond what the context window already requires. With <code>n_seq_max &gt; 1</code>, Kronk enables a unified KV cache where all sequences share the full <code>n_ctx</code> pool. The total KV cache size is determined by <code>context_window</code>, not multiplied by the number of slots:</p>
+          <pre className="code-block"><code>{`131K context, n_seq_max=3, IMC (unified KV cache):
+  Total KV cache: ~3.2 GB (8B model, F16)
+  Any single slot can use up to the full 131K tokens
+  Total across all slots cannot exceed 131K tokens`}</code></pre>
+          <p>KV pressure eviction ensures that stale slots are cleared when the shared pool gets tight, so the active conversation always has access to the full context window.</p>
           <p><strong>IMC Token Prefix Fallback Performance:</strong></p>
           <p>When IMC falls back to token-level prefix matching (non-deterministic templates), there is a one-time cost to tokenize the incoming messages for comparison. This is typically fast (&lt; 5ms for most conversations). The savings from salvaging 70-80% of the cached tokens far outweigh this cost compared to a full rebuild.</p>
           <p><strong>IMC with Vision/Audio Models:</strong></p>

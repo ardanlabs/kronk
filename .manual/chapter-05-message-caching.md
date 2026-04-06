@@ -5,6 +5,7 @@
 - [5.1 Overview](#51-overview)
 - [5.2 System Prompt Cache (SPC)](#52-system-prompt-cache-spc)
 - [5.3 Incremental Message Cache (IMC)](#53-incremental-message-cache-imc)
+  - [KV Pressure Eviction](#kv-pressure-eviction)
   - [IMC Deterministic](#imc-deterministic)
   - [IMC Non-Deterministic](#imc-non-deterministic)
   - [Model Type Interactions](#model-type-interactions)
@@ -176,8 +177,11 @@ sub-agents your agent framework spawns. If `n_seq_max` is smaller than
 the number of sub-agents, cache thrashing can occur — each new sub-agent
 evicts a slot, and when the evicted sub-agent returns, it evicts another.
 Every request triggers a full rebuild from scratch, eliminating the
-caching benefit entirely. The trade-off is VRAM — each additional slot
-reserves its full KV cache partition at model load time.
+caching benefit entirely. With unified KV cache, all slots share the same
+`n_ctx` pool, so adding more slots does not multiply VRAM usage. However,
+more slots means more concurrent cached conversations competing for the
+shared pool. KV pressure eviction automatically clears stale slots when
+space gets tight — see [KV Pressure Eviction](#kv-pressure-eviction).
 
 **How It Works:**
 
@@ -217,12 +221,18 @@ Step 4 is the universal last resort.
    - Skip slots with more cached messages than the request has total
    - Hash `messages[:slot.lastMsgIdxCached]` and compare to the slot's
      stored hash
+   - Track mismatched slots as eviction candidates
 
-2. **On match** — Pick the slot with the best prefix coverage (most cached
+2. **KV pressure eviction** — When a matching slot is found and the total
+   KV usage across all slots exceeds the context window, evict mismatched
+   slots (largest first) to reclaim space. See
+   [KV Pressure Eviction](#kv-pressure-eviction) for details.
+
+3. **On match** — Pick the slot with the best prefix coverage (most cached
    messages). If the request has new messages to cache, extend the slot's
    cache. If the messages are identical, it's a pure cache hit.
 
-3. **No hash match — token prefix fallback (Non-Deterministic mode)** —
+4. **No hash match — token prefix fallback (Non-Deterministic mode)** —
    Tokenize the incoming messages and compare the resulting token sequence
    element-by-element against each non-empty slot's stored `cachedTokens`.
    Pick the slot with the longest common prefix that meets `cache_min_tokens`.
@@ -230,7 +240,7 @@ Step 4 is the universal last resort.
    from there forward. See [IMC Non-Deterministic](#imc-non-deterministic)
    for details.
 
-4. **No match at all** — Pick an empty slot if one exists, otherwise evict
+5. **No match at all** — Pick an empty slot if one exists, otherwise evict
    the least-recently-used (LRU) slot and rebuild from scratch.
 
 **Concurrent Build Protection:**
@@ -241,6 +251,58 @@ prevents this with a pending flag: when a slot begins a deferred cache build,
 it is marked pending. Concurrent scanners skip pending slots, so the second
 request picks a different slot. The pending flag is cleared after the cache
 decode completes (or on error).
+
+#### KV Pressure Eviction
+
+With `n_seq_max > 1`, Kronk enables a unified KV cache (`KVUnified=1`) so that
+all sequences share the full `n_ctx` pool. Any single sequence can grow up to the
+full context window, but the **total** KV usage across all sequences cannot exceed
+`n_ctx`.
+
+This matters when an agent framework (like Kilo or Cline) sends multiple
+concurrent requests for the same conversation. Each request may land on a
+different slot. As the conversation grows, the active slot accumulates a large
+cache while older slots hold stale snapshots of earlier conversation states.
+Those stale slots consume KV cells that the active slot needs.
+
+**Example:** With `n_seq_max: 3` and `context_window: 131072`:
+
+```
+Slot 0: 854 tokens    (stale — 2 cached messages, hash mismatch)
+Slot 1: 46,541 tokens (stale — 17 cached messages, hash mismatch)
+Slot 2: 86,682 tokens (active — 49 cached messages, hash match)
+Total:  134,077 tokens > 131,072 → context window full!
+```
+
+Without KV pressure eviction, the next decode would fail with "context window
+is full" even though the active conversation only uses ~87k of the 131k window.
+
+**How It Works:**
+
+After the slot scan finds a matching slot (Step 1), IMC checks whether the
+projected total KV usage across all slots exceeds the context window. If it
+does, mismatched slots are evicted largest-first until the total fits:
+
+1. Sum `totalTokensCached` across all non-empty, non-pending slots
+2. If the sum exceeds `context_window`, sort mismatched slots by token count
+   (descending)
+3. Evict slots one at a time — clear the KV sequence (`MemorySeqRm`) and
+   reset the session metadata — until the projected total is within bounds
+
+In the example above, evicting Slot 1 (46,541 tokens) brings the total to
+87,536 — well within the 131,072 limit. Slot 0 (854 tokens) may or may not
+need eviction depending on the remaining headroom.
+
+**Key Points:**
+
+- Eviction only targets **mismatched** slots — the active slot and any other
+  matching slots are never evicted
+- Pending slots (with a build in-flight) are never evicted
+- Evicted slots become empty and are available for future cache builds
+- The eviction check runs before the extend/hit path, so the active slot
+  always has room to grow
+- No configuration needed — eviction triggers automatically when KV pressure
+  is detected
 
 #### IMC Deterministic
 
@@ -489,14 +551,21 @@ logs, sequential extensions typically take ~3ms each.
 
 **IMC Memory Overhead:**
 
-IMC adds no extra VRAM. llama.cpp partitions the KV cache across
-sequences, so each slot gets `context_window / NSeqMax` tokens:
+IMC adds no extra VRAM beyond what the context window already requires.
+With `n_seq_max > 1`, Kronk enables a unified KV cache where all sequences
+share the full `n_ctx` pool. The total KV cache size is determined by
+`context_window`, not multiplied by the number of slots:
 
 ```
-8K context, n_seq_max=4, IMC:
-  KV cache per slot: ~200 MB (8B model, F16)
-  Total KV cache: 4 × 200 MB = ~800 MB
+131K context, n_seq_max=3, IMC (unified KV cache):
+  Total KV cache: ~3.2 GB (8B model, F16)
+  Any single slot can use up to the full 131K tokens
+  Total across all slots cannot exceed 131K tokens
 ```
+
+KV pressure eviction ensures that stale slots are cleared when the shared
+pool gets tight, so the active conversation always has access to the full
+context window.
 
 **IMC Token Prefix Fallback Performance:**
 

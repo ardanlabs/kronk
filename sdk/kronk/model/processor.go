@@ -314,9 +314,17 @@ func parseJSONFormat(content string) []ResponseToolCall {
 		}
 
 		if err := json.Unmarshal([]byte(call), &toolCall.Function); err != nil {
-			toolCall.Status = 2
-			toolCall.Error = err.Error()
-			toolCall.Raw = call
+			if repaired, ok := repairJSON(call); ok {
+				if err2 := json.Unmarshal([]byte(repaired), &toolCall.Function); err2 != nil {
+					toolCall.Status = 2
+					toolCall.Error = err2.Error()
+					toolCall.Raw = call
+				}
+			} else {
+				toolCall.Status = 2
+				toolCall.Error = err.Error()
+				toolCall.Raw = call
+			}
 		}
 
 		// GPT models prefix function names with a dot (e.g. ".Kronk_web_search").
@@ -424,7 +432,13 @@ func parseMistralToolCallFormat(content string) []ResponseToolCall {
 
 		var args map[string]any
 		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-			args = make(map[string]any)
+			if repaired, ok := repairJSON(argsJSON); ok {
+				if err2 := json.Unmarshal([]byte(repaired), &args); err2 != nil {
+					args = make(map[string]any)
+				}
+			} else {
+				args = make(map[string]any)
+			}
 		}
 
 		toolCalls = append(toolCalls, ResponseToolCall{
@@ -475,21 +489,49 @@ func parseGemmaToolCallFormat(content string) []ResponseToolCall {
 
 		// Gemma4 outputs double braces: call:func{{"key":"val"}}.
 		// After stripping the outer pair, argsRaw still has {…}.
-		// Try json.Unmarshal first (pure JSON case), then strip
-		// the inner braces and fall back to parseGemmaArgs for
-		// mixed formats that use <|"|> tokens.
+		//
+		// The model may mix <|"|> tokens with standard JSON quotes
+		// (e.g., opening a value with <|"|> but closing with ").
+		// Strategy: try normalizing <|"|> → " first, then JSON parse,
+		// then repairJSON, then fall back to parseGemmaArgs.
 		var args map[string]any
 		trimmed := strings.TrimSpace(argsRaw)
-		if len(trimmed) > 0 && trimmed[0] == '{' {
-			if err := json.Unmarshal([]byte(trimmed), &args); err != nil {
-				inner := trimmed[1:]
+
+		// Wrap in braces if the content doesn't already start with {.
+		// This handles cases like: "content:<|"|>text<|"|>,"filePath":"x"
+		// which becomes {"content":"text","filePath":"x"} after wrapping
+		// and <|"|> replacement.
+		jsonCandidate := trimmed
+		if len(jsonCandidate) > 0 && jsonCandidate[0] != '{' {
+			jsonCandidate = "{" + jsonCandidate + "}"
+		}
+
+		// Normalize Gemma4 quoting variations to standard JSON quotes.
+		// The model may use <|"|> or backtick (`) as quote characters,
+		// sometimes mixing them within the same tool call.
+		normalized := strings.ReplaceAll(jsonCandidate, "<|\"|>", "\"")
+		normalized = strings.ReplaceAll(normalized, "`,`", "\",\"")
+		normalized = quoteBareJSONKeys(normalized)
+		parsed := false
+
+		if json.Unmarshal([]byte(normalized), &args) == nil {
+			parsed = true
+		} else if repaired, ok := repairJSON(normalized); ok {
+			if json.Unmarshal([]byte(repaired), &args) == nil {
+				parsed = true
+			}
+		}
+
+		if !parsed {
+			// Fall back to Gemma-specific key:value parsing.
+			inner := trimmed
+			if len(inner) > 0 && inner[0] == '{' {
+				inner = inner[1:]
 				if idx := strings.LastIndex(inner, "}"); idx >= 0 {
 					inner = inner[:idx]
 				}
-				args = parseGemmaArgs(inner)
 			}
-		} else {
-			args = parseGemmaArgs(argsRaw)
+			args = parseGemmaArgs(inner)
 		}
 
 		toolCalls = append(toolCalls, ResponseToolCall{
@@ -539,8 +581,9 @@ func findGemmaBraceEnd(s string) int {
 
 // findClosingGemmaQuote finds the position of the closing <|"|> token that
 // ends a value. For nested structures (arrays/objects containing their own
-// <|"|> tokens), the correct closing token is the one followed by a comma
-// (next key-value pair) or end of string, not an inner one.
+// <|"|> tokens), the correct closing token is the one followed by a
+// structural character (comma, closing brace/bracket, double quote for
+// JSON transition) or end of string, not an inner one.
 func findClosingGemmaQuote(s string) int {
 	const token = "<|\"|>"
 	searchFrom := 0
@@ -554,8 +597,268 @@ func findClosingGemmaQuote(s string) int {
 		pos := searchFrom + idx
 		afterQuote := pos + len(token)
 
-		// This is the closing <|"|> if followed by end of string or a comma.
-		if afterQuote >= len(s) || s[afterQuote] == ',' {
+		if afterQuote >= len(s) {
+			return pos
+		}
+
+		// Closing <|"|> if followed by a structural character.
+		// The model may transition from Gemma format to standard JSON
+		// mid-output (e.g., <|"|>","filePath":"post4.md"), so accept
+		// double-quote as a valid transition character.
+		switch s[afterQuote] {
+		case ',', '}', ']', '"':
+			return pos
+		}
+
+		searchFrom = afterQuote
+	}
+}
+
+// quoteBareJSONKeys adds double quotes around unquoted JSON keys.
+// Gemma4 often emits keys without quotes: {content:"text",priority:"high"}
+// which is not valid JSON. This function converts them to proper JSON:
+// {"content":"text","priority":"high"}.
+func quoteBareJSONKeys(s string) string {
+	var buf strings.Builder
+	buf.Grow(len(s) + 32)
+
+	inString := false
+	escaped := false
+
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+
+		if escaped {
+			buf.WriteByte(c)
+			escaped = false
+			continue
+		}
+
+		if c == '\\' && inString {
+			buf.WriteByte(c)
+			escaped = true
+			continue
+		}
+
+		if c == '"' {
+			inString = !inString
+			buf.WriteByte(c)
+			continue
+		}
+
+		if inString {
+			buf.WriteByte(c)
+			continue
+		}
+
+		// Outside a string: check if this is the start of a bare key.
+		// A bare key follows { , [ or is at the start, and is a word
+		// followed by a colon.
+		if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c == '_' {
+			// Look ahead to find the colon.
+			j := i + 1
+			for j < len(s) && (s[j] >= 'a' && s[j] <= 'z' || s[j] >= 'A' && s[j] <= 'Z' || s[j] >= '0' && s[j] <= '9' || s[j] == '_') {
+				j++
+			}
+
+			if j < len(s) && s[j] == ':' {
+				// This is a bare key — quote it.
+				buf.WriteByte('"')
+				buf.WriteString(s[i:j])
+				buf.WriteByte('"')
+				i = j - 1
+				continue
+			}
+		}
+
+		buf.WriteByte(c)
+	}
+
+	return buf.String()
+}
+
+// repairJSON attempts to fix malformed JSON from model-generated tool calls.
+// The most common issue is unescaped double quotes inside string values — e.g.,
+// when a model outputs markdown content containing "quoted" text. Standard
+// json.Unmarshal fails on these, but the structure is otherwise valid.
+//
+// The repair walks the JSON character by character, tracking whether we're
+// inside a string value. A quote that appears inside a value and is NOT
+// followed by a structural character (comma, colon, closing brace/bracket,
+// or whitespace before one) is escaped with a backslash.
+//
+// Returns the repaired JSON and true if any changes were made, or the
+// original string and false if no repair was needed or possible.
+func repairJSON(s string) (string, bool) {
+	if len(s) == 0 {
+		return s, false
+	}
+
+	// Quick check: if it already parses, no repair needed.
+	var test any
+	if json.Unmarshal([]byte(s), &test) == nil {
+		return s, false
+	}
+
+	// Normalize quoting before repairing.
+	s = strings.ReplaceAll(s, "<|\"|>", "\"")
+	s = quoteBareJSONKeys(s)
+
+	var buf strings.Builder
+	buf.Grow(len(s) + 64)
+
+	inString := false
+	escaped := false
+
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+
+		if escaped {
+			buf.WriteByte(c)
+			escaped = false
+			continue
+		}
+
+		if c == '\\' && inString {
+			buf.WriteByte(c)
+			escaped = true
+			continue
+		}
+
+		if c == '"' {
+			if !inString {
+				// Opening quote — enter string mode.
+				buf.WriteByte(c)
+				inString = true
+				continue
+			}
+
+			// We're inside a string and hit a quote. Decide if this is
+			// the closing quote or an unescaped internal quote.
+			// The closing quote is followed by a JSON structural character
+			// (possibly after whitespace): , : } ]
+			if isClosingQuote(s, i) {
+				buf.WriteByte(c)
+				inString = false
+				continue
+			}
+
+			// Internal quote — escape it.
+			buf.WriteByte('\\')
+			buf.WriteByte('"')
+			continue
+		}
+
+		buf.WriteByte(c)
+	}
+
+	repaired := buf.String()
+
+	// Verify the repair actually produces valid JSON.
+	if json.Unmarshal([]byte(repaired), &test) != nil {
+		return s, false
+	}
+
+	return repaired, true
+}
+
+// isClosingQuote checks whether the quote at position i in s is a closing
+// JSON string quote. A closing quote is followed (after optional whitespace)
+// by a JSON structural character: , : } ] or end of string.
+func isClosingQuote(s string, i int) bool {
+	j := i + 1
+
+	// Skip whitespace.
+	for j < len(s) && (s[j] == ' ' || s[j] == '\t' || s[j] == '\n' || s[j] == '\r') {
+		j++
+	}
+
+	if j >= len(s) {
+		return true
+	}
+
+	switch s[j] {
+	case ',', ':', '}', ']':
+		return true
+	}
+
+	return false
+}
+
+// findGemmaStructEnd finds the end of a JSON array or object in Gemma4 format,
+// accounting for nesting and <|"|> tokens. Returns the index after the closing
+// bracket/brace, or -1 if not found.
+func findGemmaStructEnd(s string) int {
+	if len(s) == 0 {
+		return -1
+	}
+
+	open := s[0]
+	var close byte
+	switch open {
+	case '[':
+		close = ']'
+	case '{':
+		close = '}'
+	default:
+		return -1
+	}
+
+	depth := 0
+	i := 0
+	for i < len(s) {
+		// Skip <|"|> tokens.
+		if strings.HasPrefix(s[i:], "<|\"|>") {
+			i += len("<|\"|>")
+			continue
+		}
+
+		switch s[i] {
+		case open:
+			depth++
+		case close:
+			depth--
+			if depth == 0 {
+				return i + 1
+			}
+		}
+		i++
+	}
+
+	return -1
+}
+
+// findClosingStandardQuote finds the closing " that ends a JSON-like value.
+// When model output contains unescaped quotes inside values (e.g., markdown
+// with "silent" failures), a naive strings.Index finds the wrong quote.
+// The correct closing quote is the one followed by a structural character
+// (comma, closing brace) or end of string — not one embedded in content.
+func findClosingStandardQuote(s string) int {
+	searchFrom := 0
+
+	for {
+		idx := strings.Index(s[searchFrom:], "\"")
+		if idx == -1 {
+			return -1
+		}
+
+		pos := searchFrom + idx
+
+		// Skip escaped quotes.
+		if pos > 0 && s[pos-1] == '\\' {
+			searchFrom = pos + 1
+			continue
+		}
+
+		afterQuote := pos + 1
+
+		// Closing quote if followed by end of string, comma, or closing brace.
+		if afterQuote >= len(s) {
+			return pos
+		}
+
+		next := s[afterQuote]
+		if next == ',' || next == '}' || next == ' ' || next == '\n' || next == '\r' || next == '\t' {
 			return pos
 		}
 
@@ -618,7 +921,7 @@ func parseGemmaArgs(raw string) map[string]any {
 		if strings.HasPrefix(remaining, "\"") {
 			remaining = remaining[1:]
 
-			endQuote := strings.Index(remaining, "\"")
+			endQuote := findClosingStandardQuote(remaining)
 			if endQuote == -1 {
 				args[key] = strings.TrimSpace(remaining)
 				break
@@ -626,6 +929,30 @@ func parseGemmaArgs(raw string) map[string]any {
 
 			args[key] = remaining[:endQuote]
 			remaining = remaining[endQuote+1:]
+			continue
+		}
+
+		// Value is a JSON array or object — find the matching bracket/brace
+		// accounting for nesting and <|"|> tokens so we don't match a
+		// structural character inside the value.
+		if len(remaining) > 0 && (remaining[0] == '[' || remaining[0] == '{') {
+			endIdx := findGemmaStructEnd(remaining)
+			if endIdx == -1 {
+				args[key] = strings.TrimSpace(remaining)
+				break
+			}
+
+			raw := remaining[:endIdx]
+			jsonVal := strings.ReplaceAll(raw, "<|\"|>", "\"")
+
+			var parsed any
+			if err := json.Unmarshal([]byte(jsonVal), &parsed); err == nil {
+				args[key] = parsed
+			} else {
+				args[key] = raw
+			}
+
+			remaining = remaining[endIdx:]
 			continue
 		}
 
