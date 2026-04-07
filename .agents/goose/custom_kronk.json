@@ -1,0 +1,26 @@
+{
+  "name": "kronk",
+  "engine": "openai",
+  "display_name": "Kronk",
+  "description": "Custom Kronk provider",
+  "api_key_env": "",
+  "base_url": "http://localhost:11435/v1",
+  "models": [
+    {
+      "name": "gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT",
+      "context_limit": 128000,
+      "input_token_cost": null,
+      "output_token_cost": null,
+      "currency": null,
+      "supports_cache_control": null
+    }
+  ],
+  "headers": null,
+  "timeout_seconds": null,
+  "supports_streaming": true,
+  "requires_auth": false,
+  "catalog_provider_id": null,
+  "base_path": null,
+  "env_vars": null,
+  "dynamic_models": null
+}
