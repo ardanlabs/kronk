@@ -366,20 +366,25 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 		// If IMC is enabled but this request wasn't cacheable (e.g., <2 messages),
 		// clear the slot's IMC session metadata so it stays consistent with the
-		// now-empty KV sequence.
+		// now-empty KV sequence. Skip if the slot is pending — another request
+		// has reserved this slot for a cache extend/build and clearing would
+		// cause a stale-extend error when that request starts.
 		if e.model.cfg.IncrementalCache && s.id < len(e.model.imcSlots) {
 			e.model.cacheMu.Lock()
 			slot := e.model.imcSlots[s.id]
-			slot.cachedMsgsHash = ""
-			slot.totalTokensCached = 0
-			slot.cachedMsgCount = 0
-			slot.pending = false
-			slot.hasMedia = false
-			slot.useMRoPE = false
-			e.model.cacheMu.Unlock()
-			e.model.notifyIMCSlotAvailable()
+			if !slot.pending {
+				slot.cachedMsgsHash = ""
+				slot.totalTokensCached = 0
+				slot.cachedMsgCount = 0
+				slot.hasMedia = false
+				slot.useMRoPE = false
+				e.model.cacheMu.Unlock()
+				e.model.notifyIMCSlotAvailable()
 
-			e.model.log(job.ctx, "start-slot", "status", "imc-metadata-cleared", "slot", s.id, "seq", s.seqID)
+				e.model.log(job.ctx, "start-slot", "status", "imc-metadata-cleared", "slot", s.id, "seq", s.seqID)
+			} else {
+				e.model.cacheMu.Unlock()
+			}
 		}
 
 		switch {

@@ -102,12 +102,22 @@ func (e *batchEngine) fillSlotsIMC(buf []byte) {
 	}
 
 	// No IMC routing (no cache hit or invalid slot) — assign to any
-	// available slot.
+	// available slot. Skip slots with pending IMC reservations to avoid
+	// destroying cache that another request plans to extend.
 	for _, s := range e.slots {
-		if !s.active {
-			e.startSlot(s, job, buf)
-			return
+		if s.active {
+			continue
 		}
+		if s.id < len(e.model.imcSlots) {
+			e.model.cacheMu.RLock()
+			pending := e.model.imcSlots[s.id].pending
+			e.model.cacheMu.RUnlock()
+			if pending {
+				continue
+			}
+		}
+		e.startSlot(s, job, buf)
+		return
 	}
 
 	// All slots busy. Check if the job has waited longer than
