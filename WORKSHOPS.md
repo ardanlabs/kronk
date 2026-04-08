@@ -1,31 +1,29 @@
-# Ultimate AI Internals
+# Ultimate Local AI
 
 ### Description
 
-Running AI models locally means no API costs, no data leaving your machine, and no vendor lock-in — but integrating local inference into Go applications has traditionally been painful. In this talk, Bill will introduce Kronk, a Go SDK that lets you embed local model inference directly into your applications with full GPU acceleration — no CGO required. Whether it's chat, vision, audio, embeddings, or tool calling, Kronk gives you the same power as a model server without needing one. To prove it, Bill built a Model Server entirely on top of the SDK, complete with caching, batch processing, and agent support. You'll see live demos from writing your first chat app to driving a coding agent with a local model.
+Running inference against LLM models that run on your own local hardware means no API costs, no data leaving your machine, and no vendor lock-in. Having the ability to do this with Go has traditionally been painful. In this workshop, Bill will introduce Kronk, a Go SDK that lets you embed local model inference directly into your Go applications with full GPU acceleration — no CGO required. Whether you are building chat, vision, audio, embedding, or tool calling applications, Kronk gives you the same power as a model server without needing one. To prove it, Bill built a model server using the Kronk SDK, complete with caching, batch processing, and agent support. You'll see live demos from writing your first chat app to driving a coding agent with a local model.
 
-This is a lecture and hands-on full-day workshop where you'll go from zero to running open-source models directly inside your Go applications — no cloud APIs, no external servers, no data leaving your machine.
+This is a lecture and hands-on full-day workshop where you'll go from zero to running open-source models directly inside your Go applications on your own local machine — no cloud APIs, no external servers, no data leaving your machine. Throughout the day, you will learn all the internals of the Kronk SDK which will teach you about model architectures, KV caching, batch processing, token/decoding, prompt caching, token sampling, and more.
 
-You'll start by loading a model and running your first inference with the Kronk SDK. Then you'll learn all the internals of the Kronk SDK which will teach you how model servers work. From this knowledge you will learn how to configure models for your hardware — GPU layers, KV cache placement, batch sizes, and context windows — so you get the best performance out of whatever machine you're running on. With the model tuned, you'll take control of its output through sampling parameters: temperature, top-k, top-p, repetition penalties, and grammar constraints that guarantee structured JSON responses.
+With that solid foundation, you'll build real applications:
 
-Next you'll see how Kronk's caching systems — System Prompt Cache (SPC) and Incremental Message Cache (IMC) — eliminate redundant computation and make multi-turn conversations fast. You'll watch a conversation go from full prefill on every request to only processing the newest message.
+- Retrieval-Augmented Generation (RAG) pipeline that grounds model responses in your own documents using embeddings and vector search.
 
-With the foundation solid, you'll build real applications: a Retrieval-Augmented Generation (RAG) pipeline that grounds model responses in your own documents using embeddings and vector search, and a natural-language-to-SQL system where the model generates database queries from plain English — with grammar constraints ensuring the output is always valid, executable SQL.
+- Natural language to SQL system where the model generates database queries from plain English, with grammar constraints ensuring the output is always valid executable SQL.
 
-Each part builds on the last.
-
-By the end of the day, you won't just understand how AI models works — you'll have built applications that load models, cache intelligently, retrieve context, and generate code, all running locally on your own hardware.
+By the end of the day, you won't just understand how AI model inference works — you'll have built applications that load models, cache intelligently, retrieve context, and generate code, all running locally on your own hardware.
 
 ### What a Student Is Expected to Learn
 
-By the end of this workshop, you'll leave with working code, a deep understanding of local model inference in Go, and hands-on experience across the full stack: model configuration, performance tuning, intelligent caching, retrieval-augmented generation, and structured code generation. 🚀
+By the end of this workshop, you'll leave with working code, a deep understanding of model inference, and hands-on experience across the full stack: model configuration, performance tuning, intelligent caching, retrieval-augmented generation, and structured code generation.
 
 ### Hardware Requirements
 
 Don't worry if you don't have the full hardware required for this.
 The instructor will provide everything you need to follow along and be able to run the examples.
 
-- Mac M1 series with at least 16 GB RAM (pref 32GB+).
+- Mac M1+ series with at least 16 GB RAM.
 - Any Linux/Windows laptop with a dedicated GPU with at least 8GB VRAM (not system RAM) (pref 16GB).
 - Access to a cloud-based instance with a dedicated GPU with at least 8GB VRAM (pref 16GB).
 
@@ -50,21 +48,10 @@ The instructor will provide everything you need to follow along and be able to r
   - Walk through the code, show it running
 - Architecture and Configuration
   - Navigation Hugging Face and Model Types
-    - Model Types
-    - Quantization Formats
   - VRAM Calculations
-    - Understandig the formula
-    - Model Weights, Layer Offering
-    - KV cache
-    - Context window and Batch Sizes
   - Batch Engine Architecure
-    - Work Tray and GPU
-    - Slots and Sequences
   - Caching System Semantics
-    - System Prompt Caching
-    - Incremental Message Caching
   - Sampling parameters
-    - Temperature, top_p, top_k, repetition penalty
 - Tool Calling with a Local Model
   - Use the chat example's get_weather function
   - Show a local model deciding to call tools
@@ -75,18 +62,15 @@ The instructor will provide everything you need to follow along and be able to r
   - Catalog system — kronk catalog pull, verified models
   - Show the BUI and all the tools/apps
   - Chat App with a coding model
-    - SPC (System Prompt Caching) — show performance improvement
-    - IMC (Incremental Message Caching) — show performance improvement
   - Batch processing — concurrent requests with n_seq_max slots
   - Quick flash of observability: Prometheus metrics / Statsviz
 - AI Agent Integration
   - Cline driving real coding work through KMS
   - MCP service with Brave Search — local model doing web searches
   - Mention compatibility: Claude Code, OpenWebUI, any OpenAI client
-- Production Concerns (brief)
-  - JWT authentication
-  - Embeddings + Reranking for the full RAG pipeline
-- Conclusion
-  - Limitations
-  - Future work
-  - How to get involved
+- RAG Application
+  - Take Go Notebook and show how the model can use it to provide
+    specific answers to questions.
+- SQL Application
+  - Create a relational database with data and using natural language
+    query the database.
