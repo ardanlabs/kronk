@@ -136,6 +136,14 @@ func (c *Catalog) All() ([]CatalogModels, error) {
 //  3. model_config.yaml (highest priority) — user overrides that always win.
 func (c *Catalog) ResolvedModelConfig(modelID string) ModelConfig {
 
+	// Check the resolved cache first using a read lock.
+	c.resolvedMu.RLock()
+	if cfg, ok := c.resolvedConfig[modelID]; ok {
+		c.resolvedMu.RUnlock()
+		return cfg
+	}
+	c.resolvedMu.RUnlock()
+
 	// Layer 1: Seed config from model analysis if the model is on disk.
 	// This provides hardware-aware defaults for context window, batch sizes,
 	// cache types, flash attention, and GPU layers.
@@ -163,6 +171,11 @@ func (c *Catalog) ResolvedModelConfig(modelID string) ModelConfig {
 	if modelCfgFound {
 		mergeModelConfig(&cfg, modelConfig)
 	}
+
+	// Store the resolved config in the cache.
+	c.resolvedMu.Lock()
+	c.resolvedConfig[modelID] = cfg
+	c.resolvedMu.Unlock()
 
 	return cfg
 }

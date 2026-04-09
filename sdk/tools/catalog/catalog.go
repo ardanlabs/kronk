@@ -65,15 +65,17 @@ func WithRepoPath(repoPath string) Option {
 
 // Catalog manages the catalog system.
 type Catalog struct {
-	catalogPath string
-	repoPath    string
-	githubRepo  string
-	ghClient    *github.Client
-	models      *models.Models
-	templates   *templates
-	grammars    *grammars
-	biMutex     sync.Mutex
-	modelConfig map[string]ModelConfig
+	catalogPath    string
+	repoPath       string
+	githubRepo     string
+	ghClient       *github.Client
+	models         *models.Models
+	templates      *templates
+	grammars       *grammars
+	biMutex        sync.Mutex
+	modelConfig    map[string]ModelConfig
+	resolvedMu     sync.RWMutex
+	resolvedConfig map[string]ModelConfig
 }
 
 // New constructs the catalog system using defaults paths.
@@ -129,14 +131,15 @@ func New(opts ...Option) (*Catalog, error) {
 	}
 
 	c := Catalog{
-		catalogPath: catalogPath,
-		repoPath:    o.repoPath,
-		githubRepo:  o.githubRepo,
-		ghClient:    ghClient,
-		models:      models,
-		templates:   tmpls,
-		grammars:    grms,
-		modelConfig: modelConfig,
+		catalogPath:    catalogPath,
+		repoPath:       o.repoPath,
+		githubRepo:     o.githubRepo,
+		ghClient:       ghClient,
+		models:         models,
+		templates:      tmpls,
+		grammars:       grms,
+		modelConfig:    modelConfig,
+		resolvedConfig: make(map[string]ModelConfig),
 	}
 
 	return &c, nil

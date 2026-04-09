@@ -191,6 +191,7 @@ func (a *app) listModels(ctx context.Context, r *http.Request) web.Encoder {
 	if extendedConfig {
 		resolvedConfigs = make(map[string]catalog.ModelConfig, len(modelFiles))
 		for _, mf := range modelFiles {
+			a.log.Info(ctx, "resolved-model-config", "id", mf.ID)
 			rmc := a.catalog.ResolvedModelConfig(mf.ID)
 			rmc.Sampling = rmc.Sampling.WithDefaults()
 			resolvedConfigs[mf.ID] = rmc
