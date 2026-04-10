@@ -3,27 +3,32 @@
 ## Table of Contents
 
 - [3.1 Basic Configuration](#31-basic-configuration)
-- [3.2 GPU Configuration](#32-gpu-configuration)
-- [3.3 KV Cache Quantization](#33-kv-cache-quantization)
-- [3.4 Flash Attention](#34-flash-attention)
-- [3.5 Parallel Inference (NSeqMax)](#35-parallel-inference-nseqmax)
-- [3.6 Understanding GGUF Quantization](#36-understanding-gguf-quantization)
+- [3.2 Processor Selection](#32-processor-selection)
+  - [How Processor Selection Works](#how-processor-selection-works)
+  - [Platform Detection Details](#platform-detection-details)
+  - [Supported Processors](#supported-processors)
+  - [Integrated GPUs (iGPUs)](#integrated-gpus-igpus)
+- [3.3 GPU Configuration](#33-gpu-configuration)
+- [3.4 KV Cache Quantization](#34-kv-cache-quantization)
+- [3.5 Flash Attention](#35-flash-attention)
+- [3.6 Parallel Inference (NSeqMax)](#36-parallel-inference-nseqmax)
+- [3.7 Understanding GGUF Quantization](#37-understanding-gguf-quantization)
   - [What is Quantization?](#what-is-quantization)
   - [What are K-Quants?](#what-are-k-quants)
   - [Standard Quantization Formats](#standard-quantization-formats)
   - [IQ (Importance Matrix) Quantization](#iq-importance-matrix-quantization)
   - [UD (Ultra-Dynamic) Quantization](#ud-ultra-dynamic-quantization)
   - [Choosing the Right Quantization](#choosing-the-right-quantization)
-- [3.7 VRAM Estimation](#37-vram-estimation)
+- [3.8 VRAM Estimation](#38-vram-estimation)
   - [Slots and Sequences](#slots-and-sequences)
   - [What Affects KV Cache Memory Per Sequence](#what-affects-kv-cache-memory-per-sequence)
   - [What Affects Total KV Cache (Slot Memory)](#what-affects-total-kv-cache-slot-memory)
   - [Caching Modes (SPC / IMC)](#caching-modes-spc-imc)
   - [Example: Real Model Calculation](#example-real-model-calculation)
-- [3.8 Model-Specific Tuning](#38-model-specific-tuning)
-- [3.9 Speculative Decoding](#39-speculative-decoding)
-- [3.10 Sampling Parameters](#310-sampling-parameters)
-- [3.11 Model Config File Example](#311-model-config-file-example)
+- [3.9 Model-Specific Tuning](#39-model-specific-tuning)
+- [3.10 Speculative Decoding](#310-speculative-decoding)
+- [3.11 Sampling Parameters](#311-sampling-parameters)
+- [3.12 Model Config File Example](#312-model-config-file-example)
 
 ---
 
@@ -135,7 +140,113 @@ n_ubatch: 512 # GPU bite size (must be ≤ n_batch)
 | Low VRAM (<8GB)                    | 512       | 256-512  |
 | High VRAM (24GB+)                  | 4096+     | 1024+    |
 
-### 3.2 GPU Configuration
+### 3.2 Processor Selection
+
+The **processor** determines which hardware backend Kronk uses for inference:
+CPU, CUDA, Metal, ROCm, or Vulkan. Each processor corresponds to a different
+build of the llama.cpp shared libraries, so the processor must be resolved
+**before** libraries are downloaded. Once the wrong libraries are installed,
+switching processors requires re-downloading them.
+
+This means processor selection happens early — before `libs.New()` in the SDK,
+and before `kronk libs install` or any server startup on the CLI. Everything
+downstream (model loading, layer offloading, KV cache placement) depends on
+having the correct libraries for your hardware.
+
+#### How Processor Selection Works
+
+Kronk resolves the processor through a two-step priority:
+
+1. **Environment variable** — If `KRONK_PROCESSOR` is set (e.g., `cpu`, `cuda`,
+   `metal`, `vulkan`, `rocm`), that value is used directly. This gives you
+   explicit control and overrides all auto-detection.
+
+2. **Auto-detection** — If `KRONK_PROCESSOR` is not set, Kronk calls
+   `DetectGPU()` to probe your system for available GPU hardware and selects
+   the best processor automatically.
+
+```
+KRONK_PROCESSOR set?
+  ├─ Yes → Use that value
+  └─ No  → DetectGPU()
+              ├─ CUDA found?   → cuda
+              ├─ ROCm found?   → rocm   (Linux only)
+              ├─ Vulkan found? → vulkan
+              └─ Nothing found → cpu
+```
+
+Auto-detection was introduced in release v1.21.5
+so that Kronk selects the best available GPU automatically rather than silently
+defaulting to CPU. Because hardware configurations vary widely, auto-detection
+ensures GPU acceleration is enabled when supported — users who need a specific
+backend can always override via `KRONK_PROCESSOR`.
+
+For SDK users, `defaults.Processor("")` calls `DetectGPU()` internally. This
+must be called before library initialization:
+
+```go
+lbs, err := libs.New(
+    libs.WithVersion(defaults.LibVersion("")),
+    libs.WithProcessor(defaults.Processor("")),
+)
+```
+
+#### Platform Detection Details
+
+Detection varies by platform because each operating system exposes GPU
+information differently.
+
+**macOS (Darwin)**
+
+| Architecture | Result | Reason |
+| ------------ | ------ | ------ |
+| ARM64 (Apple Silicon) | `metal` | Native Metal support via unified memory |
+| AMD64 (Intel Mac) | `cpu` | The x64 macOS `cpu` binary already includes Metal support |
+
+On macOS, GPU detection is straightforward. Apple Silicon machines always use
+Metal. Intel Macs return `cpu` because yzma's precompiled Metal libraries are
+ARM64-only — but the x64 `cpu` binary already includes Metal acceleration, so
+Intel Macs still get GPU support through the CPU processor selection.
+
+**Windows**
+
+| Priority | Check | Processor |
+| -------- | ----- | --------- |
+| 1 | `nvidia-smi` found | `cuda` |
+| 2 | `vulkaninfo` or `vulkan-1.dll` present | `vulkan` |
+| 3 | None | `cpu` |
+
+**Linux**
+
+| Priority | Check | Processor |
+| -------- | ----- | --------- |
+| 1 | `nvidia-smi` found | `cuda` |
+| 2 | `rocminfo` found | `rocm` |
+| 3 | `vulkaninfo --summary` succeeds | `vulkan` |
+| 4 | None | `cpu` |
+
+#### Supported Processors
+
+| Processor | Hardware | Platforms | Notes |
+| --------- | -------- | --------- | ----- |
+| `metal` | Apple Silicon (M1/M2/M3/M4) | macOS | Unified memory — CPU and GPU share RAM |
+| `cuda` | NVIDIA discrete GPUs | Windows, Linux | Requires NVIDIA drivers with `nvidia-smi` |
+| `rocm` | AMD discrete GPUs | Linux | Requires ROCm runtime with `rocminfo` |
+| `vulkan` | Cross-platform GPUs | Windows, Linux | Intel, AMD, NVIDIA — including integrated GPUs |
+| `cpu` | Any | All | No GPU acceleration, uses system RAM only |
+
+#### Integrated GPUs (iGPUs)
+
+Machines without a discrete GPU but with an integrated GPU (Intel UHD/Iris, AMD
+APU) will auto-detect as `vulkan` if Vulkan drivers are installed.
+
+_**Warning:** On systems with low RAM (8GB or less) or older integrated GPUs,
+Vulkan may perform worse than CPU-only inference. Integrated GPUs share system
+RAM with the CPU, and the overhead of GPU dispatch may outweigh any acceleration
+benefit. If you suspect this applies to your hardware, benchmark both options
+and override with `KRONK_PROCESSOR=cpu` if CPU performs better._
+
+### 3.3 GPU Configuration
 
 A model is made up of layers, and each layer contains the weights (numbers)
 the model learned during training. When you run inference, the model processes
@@ -255,7 +366,7 @@ these settings can be ignored.
 | OpOffload  | `op_offload`   | true/false     | true    | Tensor ops on GPU              |
 | SplitMode  | `split_mode`   | none/layer/row | none    | Multi-GPU distribution         |
 
-### 3.3 KV Cache Quantization
+### 3.4 KV Cache Quantization
 
 As discussed in the previous section, the KV cache is the model's short-term
 memory of your conversation. By default it stores values in half precision
@@ -319,7 +430,7 @@ before adjusting other parameters. The VRAM cost is typically 25-50% more
 for the cache, but the quality improvement for sensitive workloads is
 substantial.
 
-### 3.4 Flash Attention
+### 3.5 Flash Attention
 
 Attention is the core mechanism that lets a model figure out which parts of
 your input are relevant to each other. For example, in the sentence "The cat
@@ -350,7 +461,7 @@ require flash attention to function — so when flash attention is disabled for
 hybrid models, Kronk also forces the KV cache type to f16. These overrides
 happen regardless of your configuration settings._
 
-### 3.5 Parallel Inference (NSeqMax)
+### 3.6 Parallel Inference (NSeqMax)
 
 When multiple users (or applications) send requests to the same model at the
 same time, the model needs a way to handle them concurrently. That's what
@@ -430,7 +541,7 @@ request contains multiple inputs (for example, 100 sentences to embed), those
 inputs are spread across the pool contexts and processed in parallel. Model
 weights are shared, but each context has its own KV cache memory.
 
-### 3.6 Understanding GGUF Quantization
+### 3.7 Understanding GGUF Quantization
 
 GGUF models come in various quantization formats that trade off between file
 size, VRAM usage, and output quality. Understanding these formats helps you
@@ -513,7 +624,7 @@ better quality than uniform quantization at similar average bits per weight.
 
 Common UD naming: `UD-Q5_K_XL` means Ultra-Dynamic with Q5 K-quant base, XL quality tier.
 
-### 3.7 Choosing the Right Quantization
+### 3.8 Choosing the Right Quantization
 
 The right quantization depends on how much VRAM you have and what quality you need.
 
@@ -561,7 +672,7 @@ models:
     n_gpu_layers: 0
 ```
 
-### 3.8 VRAM Estimation
+### 3.9 VRAM Estimation
 
 Before loading a model, you need to know whether it will fit in your GPU's
 memory. VRAM usage comes from two things: the model weights (fixed cost
@@ -678,7 +789,7 @@ Step 4 — Total VRAM:
   Total_VRAM = 36.0 GB + 12.8 GB = ~48.8 GB
 ```
 
-### 3.9 Model-Specific Tuning
+### 3.10 Model-Specific Tuning
 
 The previous sections covered general configuration that applies to all
 models. However, different model architectures — Dense, Mixture of Experts
@@ -756,7 +867,7 @@ generating tokens one at a time.
 | Set `n_batch` high (up to `context_window`)      | Use small `n_batch` — it limits throughput     |
 | Use multiple slots (`n_seq_max`) for concurrency | Over-allocate slots beyond your request volume |
 
-### 3.10 Speculative Decoding
+### 3.11 Speculative Decoding
 
 Speculative decoding uses a small, fast "draft" model to predict candidate
 tokens, then verifies them against the full "target" model in a single forward
@@ -857,7 +968,7 @@ increase the potential speedup but also increase wasted work when predictions
 are rejected. The default of 5 is a good starting point; tune based on your
 observed acceptance rates.
 
-### 3.11 Sampling Parameters
+### 3.12 Sampling Parameters
 
 Sampling parameters control the randomness and quality of generated text.
 These are set per-request in the API call.
@@ -951,7 +1062,7 @@ controlling costs, response time, and preventing runaway output.
 If not set, the model will generate until it produces a stop token or
 reaches the context window limit.
 
-### 3.12 Model Config File Example
+### 3.13 Model Config File Example
 
 Create a YAML config file for custom model settings:
 

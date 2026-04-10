@@ -83,16 +83,17 @@ Kronk has an MCP service and these are settings:
 | Section                                                                                                             | Topics                                                                 |
 | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | [3.1 Basic Configuration](.manual/chapter-03-model-configuration.md#31-basic-configuration)                         | Context window, batch size, basic model settings                       |
-| [3.2 GPU Configuration](.manual/chapter-03-model-configuration.md#32-gpu-configuration)                             | GPU layers, processor selection, multi-GPU                             |
-| [3.3 KV Cache Quantization](.manual/chapter-03-model-configuration.md#33-kv-cache-quantization)                     | f16, q8_0, cache type selection                                        |
-| [3.4 Flash Attention](.manual/chapter-03-model-configuration.md#34-flash-attention)                                 | Flash attention modes, auto-detection                                  |
-| [3.5 Parallel Inference (NSeqMax)](.manual/chapter-03-model-configuration.md#35-parallel-inference-nseqmax)         | Slots, concurrent requests, NSeqMax tuning                             |
-| [3.6 Understanding GGUF Quantization](.manual/chapter-03-model-configuration.md#36-understanding-gguf-quantization) | K-quants, IQ, UD formats, choosing quantization                        |
-| [3.7 VRAM Estimation](.manual/chapter-03-model-configuration.md#37-vram-estimation)                                 | VRAM formula, model weights + KV cache                                 |
-| [3.8 Model-Specific Tuning](.manual/chapter-03-model-configuration.md#38-model-specific-tuning)                     | Vision, MoE, hybrid, embedding model configs, MoE vs dense performance |
-| [3.9 Speculative Decoding](.manual/chapter-03-model-configuration.md#39-speculative-decoding)                       | Draft models, acceptance rates, configuration                          |
-| [3.10 Sampling Parameters](.manual/chapter-03-model-configuration.md#310-sampling-parameters)                       | Temperature, top-p, top-k, min-p                                       |
-| [3.11 Model Config File Example](.manual/chapter-03-model-configuration.md#311-model-config-file-example)           | Complete YAML config example                                           |
+| [3.2 Processor Selection](.manual/chapter-03-model-configuration.md#32-processor-selection)                         | DetectGPU, auto-detection, KRONK_PROCESSOR, iGPU considerations        |
+| [3.3 GPU Configuration](.manual/chapter-03-model-configuration.md#33-gpu-configuration)                             | GPU layers, processor selection, multi-GPU                             |
+| [3.4 KV Cache Quantization](.manual/chapter-03-model-configuration.md#34-kv-cache-quantization)                     | f16, q8_0, cache type selection                                        |
+| [3.5 Flash Attention](.manual/chapter-03-model-configuration.md#35-flash-attention)                                 | Flash attention modes, auto-detection                                  |
+| [3.6 Parallel Inference (NSeqMax)](.manual/chapter-03-model-configuration.md#36-parallel-inference-nseqmax)         | Slots, concurrent requests, NSeqMax tuning                             |
+| [3.7 Understanding GGUF Quantization](.manual/chapter-03-model-configuration.md#37-understanding-gguf-quantization) | K-quants, IQ, UD formats, choosing quantization                        |
+| [3.8 VRAM Estimation](.manual/chapter-03-model-configuration.md#38-vram-estimation)                                 | VRAM formula, model weights + KV cache                                 |
+| [3.9 Model-Specific Tuning](.manual/chapter-03-model-configuration.md#39-model-specific-tuning)                     | Vision, MoE, hybrid, embedding model configs, MoE vs dense performance |
+| [3.10 Speculative Decoding](.manual/chapter-03-model-configuration.md#310-speculative-decoding)                     | Draft models, acceptance rates, configuration                          |
+| [3.11 Sampling Parameters](.manual/chapter-03-model-configuration.md#311-sampling-parameters)                       | Temperature, top-p, top-k, min-p                                       |
+| [3.12 Model Config File Example](.manual/chapter-03-model-configuration.md#312-model-config-file-example)           | Complete YAML config example                                           |
 
 ### Chapter 4 Sub-sections
 
