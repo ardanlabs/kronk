@@ -64,24 +64,16 @@ func runLocal(catalog *catalog.Catalog, args []string) error {
 
 func printWeb(list []toolapp.CatalogModelResponse) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "CATALOG\tMODEL ID\tARCH\tSIZE\tPULLED\tENDPOINT\tIMAGES\tAUDIO\tVIDEO\tSTREAMING\tREASONING\tTOOLING\tEMBEDDING\tRERANK\tVAL")
+	fmt.Fprintln(w, "MODEL ID\tOWNER\tCATALOG\tARCH\tSIZE\tCREATED\tVAL")
 
 	for _, m := range list {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%v\n",
-			m.Category,
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%v\n",
 			m.ID,
+			m.OwnedBy,
+			m.Category,
 			m.Architecture,
 			m.TotalSize,
-			boolToStr(m.Downloaded),
-			m.Capabilities.Endpoint,
-			boolToStr(m.Capabilities.Images),
-			boolToStr(m.Capabilities.Audio),
-			boolToStr(m.Capabilities.Video),
-			boolToStr(m.Capabilities.Streaming),
-			boolToStr(m.Capabilities.Reasoning),
-			boolToStr(m.Capabilities.Tooling),
-			boolToStr(m.Capabilities.Embedding),
-			boolToStr(m.Capabilities.Rerank),
+			m.Metadata.Created.Format(time.DateOnly),
 			m.Validated,
 		)
 	}
@@ -91,34 +83,19 @@ func printWeb(list []toolapp.CatalogModelResponse) {
 
 func print(list []catalog.ModelDetails) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "CATALOG\tMODEL ID\tARCH\tSIZE\tPULLED\tENDPOINT\tIMAGES\tAUDIO\tVIDEO\tSTREAMING\tREASONING\tTOOLING\tEMBEDDING\tRERANK\tVAL")
+	fmt.Fprintln(w, "MODEL ID\tOWNER\tCATALOG\tARCH\tSIZE\tCREATED\tVAL")
 
 	for _, m := range list {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%v\n",
-			m.Category,
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%v\n",
 			m.ID,
+			m.OwnedBy,
+			m.Category,
 			m.Architecture,
 			m.Files.TotalSize(),
-			boolToStr(m.Downloaded),
-			m.Capabilities.Endpoint,
-			boolToStr(m.Capabilities.Images),
-			boolToStr(m.Capabilities.Audio),
-			boolToStr(m.Capabilities.Video),
-			boolToStr(m.Capabilities.Streaming),
-			boolToStr(m.Capabilities.Reasoning),
-			boolToStr(m.Capabilities.Tooling),
-			boolToStr(m.Capabilities.Embedding),
-			boolToStr(m.Capabilities.Rerank),
+			m.Metadata.Created.Format(time.DateOnly),
 			m.Validated,
 		)
 	}
 
 	w.Flush()
-}
-
-func boolToStr(b bool) string {
-	if b {
-		return "yes"
-	}
-	return "no"
 }
