@@ -206,7 +206,7 @@ for resp := range ch {
 }`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`# Or use the Model Server for OpenAI-compatible API
 kronk server start
-curl http://localhost:11435/v1/chat/completions -d '{"model":"Qwen3-8B-Q8_0","messages":[...]}'`}</code></pre>
+curl http://localhost:11435/v1/chat/completions -d '{"model":"Qwen3-0.6B-Q8_0","messages":[...]}'`}</code></pre>
           <hr />
           <h2 id="chapter-2-installation-quick-start">Chapter 2: Installation &amp; Quick Start</h2>
           <h3 id="21-prerequisites">2.1 Prerequisites</h3>
@@ -245,7 +245,7 @@ QUICK START
   kronk catalog list --local
 
   # Download a model (e.g., Qwen3-8B)
-  kronk catalog pull Qwen3-8B-Q8_0 --local
+  kronk catalog pull Qwen3-0.6B-Q8_0 --local
 
   # Start the server (runs on http://localhost:11435)
   kronk server start
@@ -318,7 +318,7 @@ Text-Generation      cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0   MoE      26.5 GB  
 Embedding            embeddinggemma-300m-qat-Q8_0             Dense    329.0 MB   yes      embeddings
 Image-Text-to-Text   GLM-4.6V-UD-Q5_K_XL                      MoE      80.3 GB    yes      chat_completion`}</code></pre>
           <p>Download a model (recommended starter: Qwen3-8B):</p>
-          <pre className="code-block"><code className="language-shell">{`kronk catalog pull Qwen3-8B-Q8_0 --local`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`kronk catalog pull Qwen3-0.6B-Q8_0 --local`}</code></pre>
           <p>Models are stored in <code>~/.kronk/models/</code> by default.</p>
           <h3 id="25-starting-the-server">2.5 Starting the Server</h3>
           <p>Start the Kronk Model Server:</p>
@@ -341,7 +341,7 @@ BUI: http://localhost:11435`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "Qwen3-8B-Q8_0",
+    "model": "Qwen3-0.6B-Q8_0",
     "messages": [{"role": "user", "content": "Hello!"}],
     "max_tokens": 100
   }'`}</code></pre>
@@ -358,12 +358,12 @@ kronk server start
 open http://localhost:11435
 
 # 4. Download via the BUI Catalog/List screen or use this CLI call
-kronk catalog pull Qwen3-8B-Q8_0 --local
+kronk catalog pull Qwen3-0.6B-Q8_0 --local
 
 # 5. Test the API using this curl call or the BUI App/Chat screen
 curl http://localhost:11435/v1/chat/completions \\
   -H "Content-Type: application/json" \\
-  -d '{"model": "Qwen3-8B-Q8_0", "messages": [{"role": "user", "content": "Hello!"}]}'`}</code></pre>
+  -d '{"model": "Qwen3-0.6B-Q8_0", "messages": [{"role": "user", "content": "Hello!"}]}'`}</code></pre>
           <h3 id="28-nixos-setup">2.8 NixOS Setup</h3>
           <p>NixOS does not follow the Filesystem Hierarchy Standard (FHS), so shared libraries and binaries cannot be found in standard paths like <code>/usr/lib</code>. Kronk requires llama.cpp shared libraries at runtime, which means on NixOS you need to provide them through Nix rather than using the built-in <code>kronk libs</code> downloader.</p>
           <p>A <code>flake.nix</code> is provided in <code>zarf/nix/</code> with dev shells for development and build packages for producing a standalone <code>kronk</code> binary, each per GPU backend.</p>
@@ -581,7 +581,159 @@ n_ubatch: 512 # GPU bite size (must be ≤ n_batch)`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <h3 id="32-gpu-configuration">3.2 GPU Configuration</h3>
+          <h3 id="32-processor-selection">3.2 Processor Selection</h3>
+          <p>The <strong>processor</strong> determines which hardware backend Kronk uses for inference: CPU, CUDA, Metal, ROCm, or Vulkan. Each processor corresponds to a different build of the llama.cpp shared libraries, so the processor must be resolved <strong>before</strong> libraries are downloaded. Once the wrong libraries are installed, switching processors requires re-downloading them.</p>
+          <p>This means processor selection happens early — before <code>libs.New()</code> in the SDK, and before <code>kronk libs install</code> or any server startup on the CLI. Everything downstream (model loading, layer offloading, KV cache placement) depends on having the correct libraries for your hardware.</p>
+          <h4 id="how-processor-selection-works">How Processor Selection Works</h4>
+          <p>Kronk resolves the processor through a two-step priority:</p>
+          <ol>
+            <li><strong>Environment variable</strong> — If <code>KRONK_PROCESSOR</code> is set (e.g., <code>cpu</code>, <code>cuda</code>, <code>metal</code>, <code>vulkan</code>, <code>rocm</code>), that value is used directly. This gives you explicit control and overrides all auto-detection.</li>
+            <li><strong>Auto-detection</strong> — If <code>KRONK_PROCESSOR</code> is not set, Kronk calls <code>DetectGPU()</code> to probe your system for available GPU hardware and selects the best processor automatically.</li>
+          </ol>
+          <pre className="code-block"><code>{`KRONK_PROCESSOR set?
+  ├─ Yes → Use that value
+  └─ No  → DetectGPU()
+              ├─ CUDA found?   → cuda
+              ├─ ROCm found?   → rocm   (Linux only)
+              ├─ Vulkan found? → vulkan
+              └─ Nothing found → cpu`}</code></pre>
+          <p>Auto-detection was introduced in release v1.21.5 so that Kronk selects the best available GPU automatically rather than silently defaulting to CPU. Because hardware configurations vary widely, auto-detection ensures GPU acceleration is enabled when supported — users who need a specific backend can always override via <code>KRONK_PROCESSOR</code>.</p>
+          <p>For SDK users, <code>defaults.Processor("")</code> calls <code>DetectGPU()</code> internally. This must be called before library initialization:</p>
+          <pre className="code-block"><code className="language-go">{`lbs, err := libs.New(
+    libs.WithVersion(defaults.LibVersion("")),
+    libs.WithProcessor(defaults.Processor("")),
+)`}</code></pre>
+          <h4 id="platform-detection-details">Platform Detection Details</h4>
+          <p>Detection varies by platform because each operating system exposes GPU information differently.</p>
+          <p><strong>macOS (Darwin)</strong></p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Architecture</th>
+                <th>Result</th>
+                <th>Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>ARM64 (Apple Silicon)</td>
+                <td><code>metal</code></td>
+                <td>Native Metal support via unified memory</td>
+              </tr>
+              <tr>
+                <td>AMD64 (Intel Mac)</td>
+                <td><code>cpu</code></td>
+                <td>The x64 macOS <code>cpu</code> binary already includes Metal support</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>On macOS, GPU detection is straightforward. Apple Silicon machines always use Metal. Intel Macs return <code>cpu</code> because yzma's precompiled Metal libraries are ARM64-only — but the x64 <code>cpu</code> binary already includes Metal acceleration, so Intel Macs still get GPU support through the CPU processor selection.</p>
+          <p><strong>Windows</strong></p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Priority</th>
+                <th>Check</th>
+                <th>Processor</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>1</td>
+                <td><code>nvidia-smi</code> found</td>
+                <td><code>cuda</code></td>
+              </tr>
+              <tr>
+                <td>2</td>
+                <td><code>vulkaninfo</code> or <code>vulkan-1.dll</code> present</td>
+                <td><code>vulkan</code></td>
+              </tr>
+              <tr>
+                <td>3</td>
+                <td>None</td>
+                <td><code>cpu</code></td>
+              </tr>
+            </tbody>
+          </table>
+          <p><strong>Linux</strong></p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Priority</th>
+                <th>Check</th>
+                <th>Processor</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>1</td>
+                <td><code>nvidia-smi</code> found</td>
+                <td><code>cuda</code></td>
+              </tr>
+              <tr>
+                <td>2</td>
+                <td><code>rocminfo</code> found</td>
+                <td><code>rocm</code></td>
+              </tr>
+              <tr>
+                <td>3</td>
+                <td><code>vulkaninfo --summary</code> succeeds</td>
+                <td><code>vulkan</code></td>
+              </tr>
+              <tr>
+                <td>4</td>
+                <td>None</td>
+                <td><code>cpu</code></td>
+              </tr>
+            </tbody>
+          </table>
+          <h4 id="supported-processors">Supported Processors</h4>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Processor</th>
+                <th>Hardware</th>
+                <th>Platforms</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>metal</code></td>
+                <td>Apple Silicon (M1/M2/M3/M4)</td>
+                <td>macOS</td>
+                <td>Unified memory — CPU and GPU share RAM</td>
+              </tr>
+              <tr>
+                <td><code>cuda</code></td>
+                <td>NVIDIA discrete GPUs</td>
+                <td>Windows, Linux</td>
+                <td>Requires NVIDIA drivers with <code>nvidia-smi</code></td>
+              </tr>
+              <tr>
+                <td><code>rocm</code></td>
+                <td>AMD discrete GPUs</td>
+                <td>Linux</td>
+                <td>Requires ROCm runtime with <code>rocminfo</code></td>
+              </tr>
+              <tr>
+                <td><code>vulkan</code></td>
+                <td>Cross-platform GPUs</td>
+                <td>Windows, Linux</td>
+                <td>Intel, AMD, NVIDIA — including integrated GPUs</td>
+              </tr>
+              <tr>
+                <td><code>cpu</code></td>
+                <td>Any</td>
+                <td>All</td>
+                <td>No GPU acceleration, uses system RAM only</td>
+              </tr>
+            </tbody>
+          </table>
+          <h4 id="integrated-gpus-igpus">Integrated GPUs (iGPUs)</h4>
+          <p>Machines without a discrete GPU but with an integrated GPU (Intel UHD/Iris, AMD APU) will auto-detect as <code>vulkan</code> if Vulkan drivers are installed.</p>
+          <p>_<strong>Warning:</strong> On systems with low RAM (8GB or less) or older integrated GPUs, Vulkan may perform worse than CPU-only inference. Integrated GPUs share system RAM with the CPU, and the overhead of GPU dispatch may outweigh any acceleration benefit. If you suspect this applies to your hardware, benchmark both options and override with <code>KRONK_PROCESSOR=cpu</code> if CPU performs better._</p>
+          <h3 id="33-gpu-configuration">3.3 GPU Configuration</h3>
           <p>A model is made up of layers, and each layer contains the weights (numbers) the model learned during training. When you run inference, the model processes your input through these layers one at a time. The key performance question is: where do those layers live — on the GPU or the CPU?</p>
           <p>GPUs are dramatically faster at the math required for inference, but they have limited memory (VRAM). If your model doesn't fit entirely in VRAM, you can split the work: keep some layers on the GPU for speed and let the rest run on the CPU. This section covers how to control that split and other GPU-related settings.</p>
           <h4 id="layer-offloading">Layer Offloading</h4>
@@ -657,7 +809,7 @@ split_mode: row      # Tensor parallelism (best for MoE models)`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <h3 id="33-kv-cache-quantization">3.3 KV Cache Quantization</h3>
+          <h3 id="34-kv-cache-quantization">3.4 KV Cache Quantization</h3>
           <p>As discussed in the previous section, the KV cache is the model's short-term memory of your conversation. By default it stores values in half precision (f16), which gives the best accuracy but uses the most VRAM. Quantization reduces the precision of those stored values — using fewer bits to represent each number. It's a trade-off: you lose a small amount of accuracy in exchange for meaningful VRAM savings. For most use cases, <code>q8_0</code> (8-bit) gives nearly identical output quality while cutting KV cache memory by about 25%. More aggressive options like <code>q4_0</code> save even more but can start to affect generation quality.</p>
           <p>Control the precision of the key and value caches independently:</p>
           <pre className="code-block"><code className="language-yaml">{`cache_type_k: q8_0 # Key cache precision
@@ -727,7 +879,7 @@ cache_type_v: q8_0 # Value cache precision`}</code></pre>
     cache_type_k: q8_0
     cache_type_v: q8_0`}</code></pre>
           <p><strong>Recommendation:</strong> If you notice quality degradation (incoherent outputs, reasoning failures, or code bugs) with quantized cache, try <code>f16</code> first before adjusting other parameters. The VRAM cost is typically 25-50% more for the cache, but the quality improvement for sensitive workloads is substantial.</p>
-          <h3 id="34-flash-attention">3.4 Flash Attention</h3>
+          <h3 id="35-flash-attention">3.5 Flash Attention</h3>
           <p>Attention is the core mechanism that lets a model figure out which parts of your input are relevant to each other. For example, in the sentence "The cat sat on the mat because it was tired," attention is how the model connects "it" back to "the cat." The standard attention algorithm needs to hold a large matrix of scores in memory — one score for every pair of tokens in your input. As context windows grow, this matrix grows quadratically and can become both slow and memory-hungry.</p>
           <p>Flash Attention is an optimized implementation that computes the same result but processes the matrix in small tiles that fit in the GPU's fast on-chip memory (SRAM) instead of slower VRAM. The result is lower memory usage and faster computation — especially noticeable with large context windows (32K+). It's enabled by default and should rarely need to be changed.</p>
           <p>Control whether Flash Attention is used:</p>
@@ -735,7 +887,7 @@ cache_type_v: q8_0 # Value cache precision`}</code></pre>
 flash_attention: disabled  # Disable if causing issues
 flash_attention: auto      # Let llama.cpp decide`}</code></pre>
           <p>_Note: Hybrid models (those combining attention and recurrent layers, such as Qwen3.5-35B-A3B) do not support flash attention. Kronk automatically disables it for these models. Additionally, quantized KV caches (<code>q8_0</code>, <code>q4_0</code>) require flash attention to function — so when flash attention is disabled for hybrid models, Kronk also forces the KV cache type to f16. These overrides happen regardless of your configuration settings._</p>
-          <h3 id="35-parallel-inference-nseqmax">3.5 Parallel Inference (NSeqMax)</h3>
+          <h3 id="36-parallel-inference-nseqmax">3.6 Parallel Inference (NSeqMax)</h3>
           <p>When multiple users (or applications) send requests to the same model at the same time, the model needs a way to handle them concurrently. That's what <code>NSeqMax</code> controls — it determines how many requests the model can process in parallel.</p>
           <p>Behind the scenes, when a model is loaded, Kronk creates one processing slot for each unit of <code>n_seq_max</code> (e.g., <code>n_seq_max: 4</code> creates four slots). Each slot gets its own isolated partition in the KV cache (the model's short-term memory from earlier sections). All slots share the same model weights and GPU, but each one maintains its own conversation state independently.</p>
           <p>Consider what happens when <code>n_seq_max</code> is set to 1 and two requests arrive. The first request is assigned to the only available slot and begins generating tokens. The second request has no slot available, so it waits in a queue. Once the first request finishes and the slot is released, the second request is assigned to that slot and begins processing. With a single slot, requests are handled one at a time.</p>
@@ -780,7 +932,7 @@ flash_attention: auto      # Let llama.cpp decide`}</code></pre>
           </table>
           <h4 id="embedding-and-reranking-models">Embedding and Reranking Models</h4>
           <p>Embedding and reranking models work differently. Instead of slots sharing a single context, <code>NSeqMax</code> creates a pool of independent contexts. When a request contains multiple inputs (for example, 100 sentences to embed), those inputs are spread across the pool contexts and processed in parallel. Model weights are shared, but each context has its own KV cache memory.</p>
-          <h3 id="36-understanding-gguf-quantization">3.6 Understanding GGUF Quantization</h3>
+          <h3 id="37-understanding-gguf-quantization">3.7 Understanding GGUF Quantization</h3>
           <p>GGUF models come in various quantization formats that trade off between file size, VRAM usage, and output quality. Understanding these formats helps you choose the right model variant for your hardware and use case.</p>
           <h4 id="what-is-quantization?">What is Quantization?</h4>
           <p>Quantization reduces model precision from the original 16-bit or 32-bit floating-point weights to lower bit representations. This dramatically decreases:</p>
@@ -949,7 +1101,7 @@ flash_attention: auto      # Let llama.cpp decide`}</code></pre>
           </ul>
           <p>UD variants analyze each layer and assign optimal bit depths, achieving better quality than uniform quantization at similar average bits per weight.</p>
           <p>Common UD naming: <code>UD-Q5_K_XL</code> means Ultra-Dynamic with Q5 K-quant base, XL quality tier.</p>
-          <h3 id="37-choosing-the-right-quantization">3.7 Choosing the Right Quantization</h3>
+          <h3 id="38-choosing-the-right-quantization">3.8 Choosing the Right Quantization</h3>
           <p>The right quantization depends on how much VRAM you have and what quality you need.</p>
           <h4 id="by-available-vram">By Available VRAM</h4>
           <table className="flags-table">
@@ -1042,7 +1194,7 @@ flash_attention: auto      # Let llama.cpp decide`}</code></pre>
     context_window: 8192
     split_mode: row
     n_gpu_layers: 0`}</code></pre>
-          <h3 id="38-vram-estimation">3.8 VRAM Estimation</h3>
+          <h3 id="39-vram-estimation">3.9 VRAM Estimation</h3>
           <p>Before loading a model, you need to know whether it will fit in your GPU's memory. VRAM usage comes from two things: the model weights (fixed cost determined by the model you chose) and the KV cache (variable cost determined by your configuration choices from the previous sections — context window size, number of slots, and cache precision). If the total exceeds your available VRAM, the model either won't load or will partially fall back to the CPU, which significantly slows inference. This section walks through how to estimate the total.</p>
           <h4 id="model-weights-+-kv-cache">Model Weights + KV Cache</h4>
           <p>Model weights are the learned numerical parameters (billions of floating-point values) that encode the model's knowledge and reasoning ability — they represent the fixed cost of loading a model into memory. Model weights are determined by the GGUF file size (e.g., ~8GB for a 7B Q8_0 model). The KV cache is the variable cost you control through configuration. Together they determine total VRAM usage:</p>
@@ -1150,7 +1302,7 @@ Step 3 — Total KV cache (NSeqMax = 2):
 Step 4 — Total VRAM:
 
   Total_VRAM = 36.0 GB + 12.8 GB = ~48.8 GB`}</code></pre>
-          <h3 id="39-model-specific-tuning">3.9 Model-Specific Tuning</h3>
+          <h3 id="310-model-specific-tuning">3.10 Model-Specific Tuning</h3>
           <p>The previous sections covered general configuration that applies to all models. However, different model architectures — Dense, Mixture of Experts (MoE), and Hybrid — each have their own characteristics that benefit from specific tuning. Vision and audio models also need adjusted batch settings because they process media as large token batches. This section provides recommended configurations for each model type so you can get the best performance out of the box.</p>
           <h4 id="dense-models">Dense Models</h4>
           <p>Dense models are the most common architecture. Every parameter participates in every token, producing sequential memory access patterns that saturate bandwidth efficiently. No special configuration is needed — the defaults from the previous sections apply directly.</p>
@@ -1266,7 +1418,7 @@ Step 4 — Total VRAM:
               </tr>
             </tbody>
           </table>
-          <h3 id="310-speculative-decoding">3.10 Speculative Decoding</h3>
+          <h3 id="311-speculative-decoding">3.11 Speculative Decoding</h3>
           <p>Speculative decoding uses a small, fast "draft" model to predict candidate tokens, then verifies them against the full "target" model in a single forward pass. When the draft model's predictions match the target's, multiple tokens are accepted per decode step — improving throughput without changing output quality. The output distribution is mathematically guaranteed to match the target model exactly, regardless of draft quality (Leviathan et al., 2023).</p>
           <h4 id="how-it-works">How It Works</h4>
           <table className="flags-table">
@@ -1412,7 +1564,7 @@ Qwen3-8B-Q8_0:
           <h4 id="performance-characteristics">Performance Characteristics</h4>
           <p>Speculative decoding helps most when the target model is large relative to the draft. For dense models where the target is already fast (e.g., 8B at 33+ TPS), the overhead of running a draft model may not provide a net speedup. MoE models with large parameter counts but sparse activation (e.g., 30B-A3B) are better candidates, but only when using a high-quality draft.</p>
           <p>The <code>ndraft</code> parameter controls how many candidates to generate. Higher values increase the potential speedup but also increase wasted work when predictions are rejected. The default of 5 is a good starting point; tune based on your observed acceptance rates.</p>
-          <h3 id="311-sampling-parameters">3.11 Sampling Parameters</h3>
+          <h3 id="312-sampling-parameters">3.12 Sampling Parameters</h3>
           <p>Sampling parameters control the randomness and quality of generated text. These are set per-request in the API call.</p>
           <p>For most models you will want to touch these basic sampling parameters. There are <a href="chapter-09-request-parameters.md">many more</a> which will be presented later.</p>
           <h4 id="temperature">Temperature</h4>
@@ -1463,7 +1615,7 @@ Qwen3-8B-Q8_0:
   "max_tokens": 2048
 }`}</code></pre>
           <p>If not set, the model will generate until it produces a stop token or reaches the context window limit.</p>
-          <h3 id="312-model-config-file-example">3.12 Model Config File Example</h3>
+          <h3 id="313-model-config-file-example">3.13 Model Config File Example</h3>
           <p>Create a YAML config file for custom model settings:</p>
           <pre className="code-block"><code className="language-yaml">{`# model-config.yaml
 models:
@@ -2570,10 +2722,10 @@ cache_type_v: q8_0`}</code></pre>
           <p><strong>CLI Modes: Web vs Local</strong></p>
           <p>Most CLI commands communicate with a running server by default:</p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog list                # Talks to server at localhost:11435
-kronk catalog pull Qwen3-8B-Q8_0  # Downloads via server`}</code></pre>
+kronk catalog pull Qwen3-0.6B-Q8_0  # Downloads via server`}</code></pre>
           <p>Add <code>--local</code> to run commands directly without a server:</p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog list --local        # Direct file access
-kronk catalog pull Qwen3-8B-Q8_0 --local
+kronk catalog pull Qwen3-0.6B-Q8_0 --local
 kronk libs --local`}</code></pre>
           <p>Use <code>--local</code> when:</p>
           <ul>
@@ -2916,7 +3068,7 @@ kronk libs --local`}</code></pre>
           <p>Create a YAML file to configure model-specific settings:</p>
           <pre className="code-block"><code className="language-yaml">{`# model-config.yaml
 models:
-  Qwen3-8B-Q8_0:
+  Qwen3-0.6B-Q8_0:
     context_window: 32768
     n_seq_max: 4
     cache_type_k: q8_0
@@ -2957,14 +3109,14 @@ kronk server start`}</code></pre>
 Audio-Text-to-Text   Qwen2-Audio-7B.Q8_0              no      chat_completion
 Embedding            embeddinggemma-300m-qat-Q8_0     no      embeddings
 Image-Text-to-Text   gemma-3-4b-it-q4_0               no      chat_completion
-Text-Generation      Qwen3-8B-Q8_0                    yes     chat_completion
+Text-Generation      Qwen3-0.6B-Q8_0                    yes     chat_completion
 Text-Generation      Llama-3.3-70B-Instruct-Q8_0      no      chat_completion`}</code></pre>
           <p><strong>Filter by Category</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog list --filter-category=Embedding`}</code></pre>
           <p><strong>Pull a Model</strong></p>
-          <pre className="code-block"><code className="language-shell">{`kronk catalog pull Qwen3-8B-Q8_0`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`kronk catalog pull Qwen3-0.6B-Q8_0`}</code></pre>
           <p><strong>Show Model Details</strong></p>
-          <pre className="code-block"><code className="language-shell">{`kronk catalog show Qwen3-8B-Q8_0`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`kronk catalog show Qwen3-0.6B-Q8_0`}</code></pre>
           <p><strong>Update Catalog</strong></p>
           <p><em>Note: We don't have a server version of this yet.</em></p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog update --local`}</code></pre>
@@ -3033,7 +3185,7 @@ kronk server start --llama-log=0    # Disable (default)`}</code></pre>
           <p>With model config:</p>
           <pre className="code-block"><code className="language-yaml">{`# /etc/kronk/models.yaml
 models:
-  Qwen3-8B-Q8_0:
+  Qwen3-0.6B-Q8_0:
     context_window: 32768
     n_seq_max: 4
     cache_type_k: q8_0
@@ -6092,17 +6244,18 @@ batching = true`}</code></pre>
               <a href="#chapter-3-model-configuration" className={`doc-index-header ${activeSection === 'chapter-3-model-configuration' ? 'active' : ''}`}>Chapter 3: Model Configuration</a>
               <ul>
                 <li><a href="#31-basic-configuration" className={activeSection === '31-basic-configuration' ? 'active' : ''}>3.1 Basic Configuration</a></li>
-                <li><a href="#32-gpu-configuration" className={activeSection === '32-gpu-configuration' ? 'active' : ''}>3.2 GPU Configuration</a></li>
-                <li><a href="#33-kv-cache-quantization" className={activeSection === '33-kv-cache-quantization' ? 'active' : ''}>3.3 KV Cache Quantization</a></li>
-                <li><a href="#34-flash-attention" className={activeSection === '34-flash-attention' ? 'active' : ''}>3.4 Flash Attention</a></li>
-                <li><a href="#35-parallel-inference-nseqmax" className={activeSection === '35-parallel-inference-nseqmax' ? 'active' : ''}>3.5 Parallel Inference (NSeqMax)</a></li>
-                <li><a href="#36-understanding-gguf-quantization" className={activeSection === '36-understanding-gguf-quantization' ? 'active' : ''}>3.6 Understanding GGUF Quantization</a></li>
-                <li><a href="#37-choosing-the-right-quantization" className={activeSection === '37-choosing-the-right-quantization' ? 'active' : ''}>3.7 Choosing the Right Quantization</a></li>
-                <li><a href="#38-vram-estimation" className={activeSection === '38-vram-estimation' ? 'active' : ''}>3.8 VRAM Estimation</a></li>
-                <li><a href="#39-model-specific-tuning" className={activeSection === '39-model-specific-tuning' ? 'active' : ''}>3.9 Model-Specific Tuning</a></li>
-                <li><a href="#310-speculative-decoding" className={activeSection === '310-speculative-decoding' ? 'active' : ''}>3.10 Speculative Decoding</a></li>
-                <li><a href="#311-sampling-parameters" className={activeSection === '311-sampling-parameters' ? 'active' : ''}>3.11 Sampling Parameters</a></li>
-                <li><a href="#312-model-config-file-example" className={activeSection === '312-model-config-file-example' ? 'active' : ''}>3.12 Model Config File Example</a></li>
+                <li><a href="#32-processor-selection" className={activeSection === '32-processor-selection' ? 'active' : ''}>3.2 Processor Selection</a></li>
+                <li><a href="#33-gpu-configuration" className={activeSection === '33-gpu-configuration' ? 'active' : ''}>3.3 GPU Configuration</a></li>
+                <li><a href="#34-kv-cache-quantization" className={activeSection === '34-kv-cache-quantization' ? 'active' : ''}>3.4 KV Cache Quantization</a></li>
+                <li><a href="#35-flash-attention" className={activeSection === '35-flash-attention' ? 'active' : ''}>3.5 Flash Attention</a></li>
+                <li><a href="#36-parallel-inference-nseqmax" className={activeSection === '36-parallel-inference-nseqmax' ? 'active' : ''}>3.6 Parallel Inference (NSeqMax)</a></li>
+                <li><a href="#37-understanding-gguf-quantization" className={activeSection === '37-understanding-gguf-quantization' ? 'active' : ''}>3.7 Understanding GGUF Quantization</a></li>
+                <li><a href="#38-choosing-the-right-quantization" className={activeSection === '38-choosing-the-right-quantization' ? 'active' : ''}>3.8 Choosing the Right Quantization</a></li>
+                <li><a href="#39-vram-estimation" className={activeSection === '39-vram-estimation' ? 'active' : ''}>3.9 VRAM Estimation</a></li>
+                <li><a href="#310-model-specific-tuning" className={activeSection === '310-model-specific-tuning' ? 'active' : ''}>3.10 Model-Specific Tuning</a></li>
+                <li><a href="#311-speculative-decoding" className={activeSection === '311-speculative-decoding' ? 'active' : ''}>3.11 Speculative Decoding</a></li>
+                <li><a href="#312-sampling-parameters" className={activeSection === '312-sampling-parameters' ? 'active' : ''}>3.12 Sampling Parameters</a></li>
+                <li><a href="#313-model-config-file-example" className={activeSection === '313-model-config-file-example' ? 'active' : ''}>3.13 Model Config File Example</a></li>
               </ul>
             </div>
             <div className="doc-index-section">

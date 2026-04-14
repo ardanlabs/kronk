@@ -61,7 +61,7 @@ QUICK START
   kronk catalog list --local
 
   # Download a model (e.g., Qwen3-8B)
-  kronk catalog pull Qwen3-8B-Q8_0 --local
+  kronk catalog pull Qwen3-0.6B-Q8_0 --local
 
   # Start the server (runs on http://localhost:11435)
   kronk server start
@@ -168,7 +168,7 @@ Image-Text-to-Text   GLM-4.6V-UD-Q5_K_XL                      MoE      80.3 GB  
 Download a model (recommended starter: Qwen3-8B):
 
 ```shell
-kronk catalog pull Qwen3-8B-Q8_0 --local
+kronk catalog pull Qwen3-0.6B-Q8_0 --local
 ```
 
 Models are stored in `~/.kronk/models/` by default.
@@ -222,7 +222,7 @@ model needs to be loaded into memory first._
 curl http://localhost:11435/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "Qwen3-8B-Q8_0",
+    "model": "Qwen3-0.6B-Q8_0",
     "messages": [{"role": "user", "content": "Hello!"}],
     "max_tokens": 100
   }'
@@ -245,12 +245,12 @@ kronk server start
 open http://localhost:11435
 
 # 4. Download via the BUI Catalog/List screen or use this CLI call
-kronk catalog pull Qwen3-8B-Q8_0 --local
+kronk catalog pull Qwen3-0.6B-Q8_0 --local
 
 # 5. Test the API using this curl call or the BUI App/Chat screen
 curl http://localhost:11435/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"model": "Qwen3-8B-Q8_0", "messages": [{"role": "user", "content": "Hello!"}]}'
+  -d '{"model": "Qwen3-0.6B-Q8_0", "messages": [{"role": "user", "content": "Hello!"}]}'
 ```
 
 ### 2.8 NixOS Setup
