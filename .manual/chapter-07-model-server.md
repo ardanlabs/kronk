@@ -17,8 +17,6 @@
 
 ---
 
-
-
 The Kronk Model Server provides an OpenAI-compatible REST API for inference.
 This chapter covers server configuration, management, and the catalog system.
 
@@ -28,14 +26,14 @@ Most CLI commands communicate with a running server by default:
 
 ```shell
 kronk catalog list                # Talks to server at localhost:11435
-kronk catalog pull Qwen3-8B-Q8_0  # Downloads via server
+kronk catalog pull Qwen3-0.6B-Q8_0  # Downloads via server
 ```
 
 Add `--local` to run commands directly without a server:
 
 ```shell
 kronk catalog list --local        # Direct file access
-kronk catalog pull Qwen3-8B-Q8_0 --local
+kronk catalog pull Qwen3-0.6B-Q8_0 --local
 kronk libs --local
 ```
 
@@ -116,15 +114,15 @@ underscores replacing hyphens.
 
 **Web Settings**
 
-| Flag                     | Environment Variable             | Default          | Description                  |
-| ------------------------ | -------------------------------- | ---------------- | ---------------------------- |
+| Flag                     | Environment Variable             | Default           | Description                  |
+| ------------------------ | -------------------------------- | ----------------- | ---------------------------- |
 | `--api-host`             | `KRONK_WEB_API_HOST`             | `localhost:11435` | API host address             |
-| `--debug-host`           | `KRONK_WEB_DEBUG_HOST`           | `localhost:8090` | Debug/pprof host address     |
-| `--read-timeout`         | `KRONK_WEB_READ_TIMEOUT`         | `30s`            | HTTP read timeout            |
-| `--write-timeout`        | `KRONK_WEB_WRITE_TIMEOUT`        | `15m`            | HTTP write timeout           |
-| `--idle-timeout`         | `KRONK_WEB_IDLE_TIMEOUT`         | `1m`             | HTTP idle timeout            |
-| `--shutdown-timeout`     | `KRONK_WEB_SHUTDOWN_TIMEOUT`     | `1m`             | Graceful shutdown timeout    |
-| `--cors-allowed-origins` | `KRONK_WEB_CORS_ALLOWED_ORIGINS` | `*`              | Comma-separated CORS origins |
+| `--debug-host`           | `KRONK_WEB_DEBUG_HOST`           | `localhost:8090`  | Debug/pprof host address     |
+| `--read-timeout`         | `KRONK_WEB_READ_TIMEOUT`         | `30s`             | HTTP read timeout            |
+| `--write-timeout`        | `KRONK_WEB_WRITE_TIMEOUT`        | `15m`             | HTTP write timeout           |
+| `--idle-timeout`         | `KRONK_WEB_IDLE_TIMEOUT`         | `1m`              | HTTP idle timeout            |
+| `--shutdown-timeout`     | `KRONK_WEB_SHUTDOWN_TIMEOUT`     | `1m`              | Graceful shutdown timeout    |
+| `--cors-allowed-origins` | `KRONK_WEB_CORS_ALLOWED_ORIGINS` | `*`               | Comma-separated CORS origins |
 
 **Authentication Settings**
 
@@ -217,7 +215,7 @@ Create a YAML file to configure model-specific settings:
 ```yaml
 # model-config.yaml
 models:
-  Qwen3-8B-Q8_0:
+  Qwen3-0.6B-Q8_0:
     context_window: 32768
     n_seq_max: 4
     cache_type_k: q8_0
@@ -285,7 +283,7 @@ CATALOG              MODEL ID                         PULLED  ENDPOINT
 Audio-Text-to-Text   Qwen2-Audio-7B.Q8_0              no      chat_completion
 Embedding            embeddinggemma-300m-qat-Q8_0     no      embeddings
 Image-Text-to-Text   gemma-3-4b-it-q4_0               no      chat_completion
-Text-Generation      Qwen3-8B-Q8_0                    yes     chat_completion
+Text-Generation      Qwen3-0.6B-Q8_0                    yes     chat_completion
 Text-Generation      Llama-3.3-70B-Instruct-Q8_0      no      chat_completion
 ```
 
@@ -298,13 +296,13 @@ kronk catalog list --filter-category=Embedding
 **Pull a Model**
 
 ```shell
-kronk catalog pull Qwen3-8B-Q8_0
+kronk catalog pull Qwen3-0.6B-Q8_0
 ```
 
 **Show Model Details**
 
 ```shell
-kronk catalog show Qwen3-8B-Q8_0
+kronk catalog show Qwen3-0.6B-Q8_0
 ```
 
 **Update Catalog**
@@ -451,7 +449,7 @@ With model config:
 ```yaml
 # /etc/kronk/models.yaml
 models:
-  Qwen3-8B-Q8_0:
+  Qwen3-0.6B-Q8_0:
     context_window: 32768
     n_seq_max: 4
     cache_type_k: q8_0
@@ -460,4 +458,3 @@ models:
 ```
 
 ---
-
