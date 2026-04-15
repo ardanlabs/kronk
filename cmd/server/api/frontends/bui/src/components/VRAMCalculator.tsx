@@ -88,13 +88,14 @@ function extractFilename(url: string): string {
 }
 
 /** Build a model URL from owner/repo extracted from the original URL plus a filename. */
-function buildModelUrl(originalUrl: string, filename: string): string {
+function buildModelUrl(originalUrl: string, filename: string, isFolder = false): string {
   const trimmed = originalUrl.trim();
+  const pathPrefix = isFolder ? '/tree/main/' : '/resolve/main/';
 
   // If the original was a full HuggingFace URL, reconstruct with the new filename.
   for (const marker of ['/resolve/main/', '/blob/main/', '/tree/main']) {
     const idx = trimmed.indexOf(marker);
-    if (idx >= 0) return trimmed.slice(0, idx) + '/resolve/main/' + filename;
+    if (idx >= 0) return trimmed.slice(0, idx) + pathPrefix + filename;
   }
 
   // Strip any known prefixes to get owner/repo.
@@ -257,7 +258,7 @@ export default function VRAMCalculator() {
       // For split models, send a folder URL so the backend sums all shards.
       const selectedRow = displayRows.find((r) => r.filename === selectedFilename);
       if (selectedRow?.isSplit && selectedRow.folderPath) {
-        calcUrl = buildModelUrl(lookupUrl || modelUrl, selectedRow.folderPath);
+        calcUrl = buildModelUrl(lookupUrl || modelUrl, selectedRow.folderPath, true);
       } else {
         calcUrl = buildModelUrl(lookupUrl || modelUrl, selectedFilename);
       }
