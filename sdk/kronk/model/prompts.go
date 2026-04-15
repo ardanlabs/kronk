@@ -16,11 +16,11 @@ import (
 	"sort"
 	"time"
 
+	"github.com/ardanlabs/gonja"
+	"github.com/ardanlabs/gonja/builtins"
+	"github.com/ardanlabs/gonja/exec"
+	"github.com/ardanlabs/gonja/loaders"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
-	"github.com/nikolalohinski/gonja/v2"
-	"github.com/nikolalohinski/gonja/v2/builtins"
-	"github.com/nikolalohinski/gonja/v2/exec"
-	"github.com/nikolalohinski/gonja/v2/loaders"
 )
 
 func (m *Model) applyRequestJinjaTemplate(ctx context.Context, d D) (string, [][]byte, error) {

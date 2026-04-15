@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	github.com/ardanlabs/conf/v3 v3.11.0
+	github.com/ardanlabs/gonja v1.0.1
 	github.com/arl/statsviz v0.8.0
 	github.com/dgraph-io/badger/v4 v4.9.1
 	github.com/golang-jwt/jwt/v4 v4.5.2
@@ -13,7 +14,6 @@ require (
 	github.com/hybridgroup/yzma v1.11.1
 	github.com/maypok86/otter/v2 v2.3.0
 	github.com/modelcontextprotocol/go-sdk v1.5.0
-	github.com/nikolalohinski/gonja/v2 v2.7.0
 	github.com/open-policy-agent/opa v1.15.2
 	github.com/prometheus/client_golang v1.23.2
 	github.com/spf13/cobra v1.10.2
@@ -26,7 +26,7 @@ require (
 	go.yaml.in/yaml/v2 v2.4.4
 	golang.org/x/sync v0.20.0
 	golang.org/x/sys v0.43.0
-	golang.org/x/text v0.35.0
+	golang.org/x/text v0.36.0
 	google.golang.org/grpc v1.80.0
 	google.golang.org/protobuf v1.36.11
 )
@@ -134,9 +134,9 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.43.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/crypto v0.49.0 // indirect
-	golang.org/x/exp v0.0.0-20260312153236-7ab1446f8b90 // indirect
-	golang.org/x/net v0.52.0 // indirect
+	golang.org/x/crypto v0.50.0 // indirect
+	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
+	golang.org/x/net v0.53.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/api v0.275.0 // indirect
@@ -149,4 +149,4 @@ require (
 
 //replace github.com/hybridgroup/yzma => ./.extras/yzma
 //replace github.com/hybridgroup/yzma => github.com/dlsniper/yzma v0.0.0-20260305092506-c66179ce4a47
-// replace github.com/nikolalohinski/gonja/v2 => /Users/bill/code/go/src/github.com/ardanlabs/gonja
+// replace github.com/ardanlabs/gonja => /Users/bill/code/go/src/github.com/ardanlabs/gonja

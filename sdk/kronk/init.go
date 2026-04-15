@@ -8,11 +8,11 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/ardanlabs/gonja"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
-	"github.com/nikolalohinski/gonja/v2"
 )
 
 var (

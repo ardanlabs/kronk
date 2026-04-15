@@ -253,9 +253,9 @@ schema = 3
   [mod."github.com/munnerz/goautoneg"]
     version = "v0.0.0-20191010083416-a7dc8b61c822"
     hash = "sha256-79URDDFenmGc9JZu+5AXHToMrtTREHb3BC84b/gym9Q="
-  [mod."github.com/nikolalohinski/gonja/v2"]
-    version = "v2.7.0"
-    hash = "sha256-ego5VX/72VPBL+Tmz+rH5rM+ZzLaEt+pVTo+oOioMmI="
+  [mod."github.com/ardanlabs/gonja"]
+    version = "v1.0.1"
+    hash = ""
   [mod."github.com/open-policy-agent/opa"]
     version = "v1.15.1"
     hash = "sha256-laaRgKevNqdbn7hr36iRy5WmshCKR9gTNdVoWoGcd8Q="
