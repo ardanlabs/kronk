@@ -4,7 +4,6 @@ go 1.26.0
 
 require (
 	github.com/ardanlabs/conf/v3 v3.11.0
-	github.com/ardanlabs/gonja v1.0.1
 	github.com/arl/statsviz v0.8.0
 	github.com/dgraph-io/badger/v4 v4.9.1
 	github.com/golang-jwt/jwt/v4 v4.5.2
@@ -92,7 +91,6 @@ require (
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-version v1.9.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/jupiterrider/ffi v0.6.0 // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.4 // indirect
@@ -103,10 +101,7 @@ require (
 	github.com/lestrrat-go/jwx/v3 v3.0.13 // indirect
 	github.com/lestrrat-go/option/v2 v2.0.0 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
-	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
-	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
@@ -135,10 +130,10 @@ require (
 	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/crypto v0.50.0 // indirect
-	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
 	golang.org/x/net v0.53.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
+	golang.org/x/tools v0.44.0 // indirect
 	google.golang.org/api v0.275.0 // indirect
 	google.golang.org/genproto v0.0.0-20260406210006-6f92a3bedf2d // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260406210006-6f92a3bedf2d // indirect
