@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ardanlabs/gonja/exec"
+	"github.com/ardanlabs/kronk/sdk/kronk/jinja"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/hybridgroup/yzma/pkg/llama"
@@ -26,7 +26,7 @@ var modelLoadMu sync.Mutex
 
 // compiledTemplate holds a pre-compiled Jinja template for reuse across requests.
 type compiledTemplate struct {
-	tmpl *exec.Template
+	tmpl *jinja.Template
 	err  error
 }
 
@@ -758,12 +758,12 @@ func retrieveTemplate(cataloger Cataloger, cfg Config, mdl llama.Model, modelInf
 		}, nil
 	}
 
-	if cataloger != nil {
-		template, err := cataloger.RetrieveTemplate(modelInfo.ID)
-		if err == nil {
-			return template, nil
-		}
-	}
+	// if cataloger != nil {
+	// 	template, err := cataloger.RetrieveTemplate(modelInfo.ID)
+	// 	if err == nil {
+	// 		return template, nil
+	// 	}
+	// }
 
 	data := llama.ModelChatTemplate(mdl, "")
 	if data == "" {

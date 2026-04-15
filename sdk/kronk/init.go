@@ -2,13 +2,11 @@ package kronk
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"runtime"
 	"strings"
 	"sync"
 
-	"github.com/ardanlabs/gonja"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/hybridgroup/yzma/pkg/llama"
@@ -98,7 +96,6 @@ func Init(opts ...InitOption) error {
 			mtmd.LogSet(llama.LogNormal)
 		}
 
-		gonja.SetLoggerOutput(io.Discard)
 	})
 
 	return initErr
