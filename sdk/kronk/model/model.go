@@ -758,12 +758,12 @@ func retrieveTemplate(cataloger Cataloger, cfg Config, mdl llama.Model, modelInf
 		}, nil
 	}
 
-	// if cataloger != nil {
-	// 	template, err := cataloger.RetrieveTemplate(modelInfo.ID)
-	// 	if err == nil {
-	// 		return template, nil
-	// 	}
-	// }
+	if cataloger != nil {
+		template, err := cataloger.RetrieveTemplate(modelInfo.ID)
+		if err == nil {
+			return template, nil
+		}
+	}
 
 	data := llama.ModelChatTemplate(mdl, "")
 	if data == "" {

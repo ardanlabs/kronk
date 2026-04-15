@@ -65,6 +65,14 @@ type setNode struct {
 
 func (n *setNode) nodeType() string { return "set" }
 
+// setBlockNode represents a block set assignment: {% set var %}body{% endset %}.
+type setBlockNode struct {
+	target string
+	body   []node
+}
+
+func (n *setBlockNode) nodeType() string { return "setBlock" }
+
 // macroParam holds a single macro parameter definition.
 type macroParam struct {
 	name       string

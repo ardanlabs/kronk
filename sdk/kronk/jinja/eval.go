@@ -81,6 +81,9 @@ func (e *evaluator) execNode(n node) error {
 	case *setNode:
 		return e.execSet(nd)
 
+	case *setBlockNode:
+		return e.execSetBlock(nd)
+
 	case *macroNode:
 		return e.execMacro(nd)
 
@@ -256,6 +259,18 @@ func (e *evaluator) execSet(n *setNode) error {
 	}
 
 	e.scope.set(n.target, val)
+	return nil
+}
+
+func (e *evaluator) execSetBlock(n *setBlockNode) error {
+	bodyEval := evaluator{
+		scope:    e.scope,
+		builtins: e.builtins,
+	}
+	if err := bodyEval.execNodes(n.body); err != nil {
+		return err
+	}
+	e.scope.set(n.target, NewString(bodyEval.output.String()))
 	return nil
 }
 

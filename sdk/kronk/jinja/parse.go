@@ -996,6 +996,19 @@ func (p *templateParser) parseUntil(stopKeywords ...string) ([]node, error) {
 				p.advance()
 				nodes = append(nodes, &continueNode{})
 
+			case "generation":
+				// generation/endgeneration are tokenizer hints; treat as no-op.
+				p.advance()
+				body, err := p.parseUntil("endgeneration")
+				if err != nil {
+					return nil, err
+				}
+				if p.done() || stmtKeyword(p.peek().text) != "endgeneration" {
+					return nil, fmt.Errorf("line %d: unclosed generation block", seg.line)
+				}
+				p.advance()
+				nodes = append(nodes, body...)
+
 			default:
 				return nil, fmt.Errorf("line %d: unknown statement %q", seg.line, keyword)
 			}
@@ -1146,12 +1159,26 @@ func (p *templateParser) parseFor() (*forNode, error) {
 	return n, nil
 }
 
-func (p *templateParser) parseSet() (*setNode, error) {
+func (p *templateParser) parseSet() (node, error) {
 	seg := p.advance()
 	setExpr := strings.TrimPrefix(strings.TrimSpace(seg.text), "set")
 	setExpr = strings.TrimSpace(setExpr)
 
-	// Find the = sign
+	// Block set assignment: {% set var %}body{% endset %}
+	if !strings.Contains(setExpr, "=") {
+		target := strings.TrimSpace(setExpr)
+		body, err := p.parseUntil("endset")
+		if err != nil {
+			return nil, err
+		}
+		if p.done() || stmtKeyword(p.peek().text) != "endset" {
+			return nil, fmt.Errorf("line %d: unclosed set block", seg.line)
+		}
+		p.advance()
+		return &setBlockNode{target: target, body: body}, nil
+	}
+
+	// Inline set: {% set var = expr %}
 	before, after, ok := strings.Cut(setExpr, "=")
 	if !ok {
 		return nil, fmt.Errorf("line %d: set statement missing '='", seg.line)
