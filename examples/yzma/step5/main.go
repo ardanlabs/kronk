@@ -109,7 +109,7 @@ func run() error {
 
 	fmt.Println("Vision support: enabled")
 	fmt.Printf("Uses M-RoPE: %v\n", mtmd.DecodeUseMRope(mtmdCtx))
-	fmt.Printf("Uses NonCausal: %v\n", mtmd.DecodeUseNonCausal(mtmdCtx))
+	fmt.Printf("Uses NonCausal: %v\n", mtmd.DecodeUseNonCausal(mtmdCtx, 0))
 
 	// -------------------------------------------------------------------------
 	// Load and prepare the image.
@@ -330,7 +330,7 @@ func processChunksManually(mtmdCtx mtmd.Context, lctx llama.Context, mdl llama.M
 			}
 
 			// Step 3: Decode embeddings into the LLM's KV cache
-			useNonCausal := mtmd.DecodeUseNonCausal(mtmdCtx)
+			useNonCausal := mtmd.DecodeUseNonCausal(mtmdCtx, 0)
 
 			switch useMRoPE {
 			case true:
