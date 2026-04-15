@@ -1471,7 +1471,7 @@ type modelSpec struct {
 // Set either SourceURL or ModelID, not both.
 var modelSpecConfig = modelSpec{
 	//SourceURL: "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf",
-	ModelID: "rnj-1-instruct-Q6_K",
+	ModelID: "Qwen3-0.6B-Q8_0",
 }
 
 func main() {
