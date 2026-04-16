@@ -134,7 +134,7 @@ install-test-models: install-kronk
 	@echo
 	kronk model pull --local "unsloth/Qwen3-VL-30B-A3B-Instruct-GGUF/Qwen3-VL-30B-A3B-Instruct-Q8_0.gguf" "unsloth/Qwen3-VL-30B-A3B-Instruct-GGUF/mmproj-F16.gguf"
 	@echo
-	kronk model pull --local "unsloth/Qwen3.5-35B-A3B-GGUF/Qwen3.5-35B-A3B-Q8_0.gguf" "unsloth/Qwen3.5-35B-A3B-GGUF/mmproj-F16.gguf"
+	kronk model pull --local "unsloth/Qwen3.6-35B-A3B-GGUF/Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf" "unsloth/Qwen3.6-35B-A3B-GGUF/mmproj-F16.gguf"
 	@echo
 
 	kronk model pull --local "mradermacher/Qwen2-Audio-7B-GGUF/Qwen2-Audio-7B.Q8_0.gguf" "mradermacher/Qwen2-Audio-7B-GGUF/Qwen2-Audio-7B.mmproj-Q8_0.gguf"
@@ -143,6 +143,8 @@ install-test-models: install-kronk
 	kronk model pull --local "unsloth/gpt-oss-20b-GGUF/gpt-oss-20b-Q8_0.gguf"
 	@echo
 	kronk model pull --local "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
+	@echo
+	kronk model pull --local "bartowski/cerebras_Qwen3-Coder-REAP-25B-A3B-GGUF/cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0.gguf"
 	@echo
 
 	kronk model pull --local "ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/embeddinggemma-300m-qat-Q8_0.gguf"
