@@ -417,7 +417,8 @@ embeddinggemma-300m-qat-Q8_0:
 # VISION MODELS AND CODING
 
 Qwen3.5-35B-A3B-Q8_0/AGENT:
-  nseq-max: 3
+  context-window: 131072
+  nseq-max: 2
   incremental-cache: true
   sampling-parameters:
     temperature: 0.6
@@ -427,6 +428,7 @@ Qwen3.5-35B-A3B-Q8_0/AGENT:
     presence_penalty: 1.5
 
 Qwen3.5-35B-A3B-Q8_0/SPC:
+  context-window: 131072
   nseq-max: 1
   system-prompt-cache: true
 
@@ -465,8 +467,27 @@ Qwen3.5-35B-A3B-UD-Q5_K_XL:
 
 # ------------------------------------------------------------------------------
 
+gemma-4-26B-A4B-it-f16/AGENT:
+  context-window: 131072
+  nseq-max: 2
+  incremental-cache: true
+  sampling-parameters:
+    temperature: 1.0
+    top_k: 64
+    top_p: 0.95
+
 gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
-  nseq-max: 3
+  context-window: 131072
+  nseq-max: 2
+  incremental-cache: true
+  sampling-parameters:
+    temperature: 1.0
+    top_k: 64
+    top_p: 0.95
+
+gemma-4-26B-A4B-it-Q8_0/AGENT:
+  context-window: 131072
+  nseq-max: 2
   incremental-cache: true
   sampling-parameters:
     temperature: 1.0
@@ -474,7 +495,8 @@ gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
     top_p: 0.95
 
 gemma-4-31B-it-UD-Q8_K_XL/AGENT:
-  nseq-max: 3
+  context-window: 131072
+  nseq-max: 2
   incremental-cache: true
   sampling-parameters:
     temperature: 1.0
