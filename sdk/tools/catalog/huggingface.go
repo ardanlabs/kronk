@@ -241,7 +241,7 @@ func buildModelDetails(owner, repo, filename string, meta hfModelMeta, ggufFiles
 		isTooling = true
 	}
 
-	isStreaming := category == "Text-Generation" || category == "Image-Text-to-Text" || category == "Audio-Text-to-Text"
+	isStreaming := category == "Text-Generation" || category == "Image-Text-to-Text" || category == "Audio-Text-to-Text" || category == "Any-to-Any"
 
 	var created time.Time
 	if meta.CreatedAt != "" {
@@ -293,6 +293,8 @@ func mapPipelineTag(tag string) string {
 		return "Image-Text-to-Text"
 	case "audio-text-to-text", "automatic-speech-recognition":
 		return "Audio-Text-to-Text"
+	case "any-to-any":
+		return "Any-to-Any"
 	case "text-classification":
 		return "Rerank"
 	default:
