@@ -468,7 +468,7 @@ Qwen3.5-35B-A3B-UD-Q5_K_XL:
 # ------------------------------------------------------------------------------
 
 gemma-4-26B-A4B-it-f16/AGENT:
-  context-window: 131072
+  context-window: 262144
   nseq-max: 2
   incremental-cache: true
   sampling-parameters:
@@ -477,7 +477,7 @@ gemma-4-26B-A4B-it-f16/AGENT:
     top_p: 0.95
 
 gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
-  context-window: 131072
+  context-window: 262144
   nseq-max: 2
   incremental-cache: true
   sampling-parameters:
@@ -486,7 +486,7 @@ gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
     top_p: 0.95
 
 gemma-4-26B-A4B-it-Q8_0/AGENT:
-  context-window: 131072
+  context-window: 262144
   nseq-max: 2
   incremental-cache: true
   sampling-parameters:

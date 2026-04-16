@@ -23,7 +23,7 @@
         "gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT": {
           "name": "gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT",
           "limit": {
-            "context": 131072,
+            "context": 262144,
             "output": 65536
           },
           "reasoning": true,
