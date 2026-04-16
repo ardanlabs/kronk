@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/ardanlabs/kronk/sdk/kronk/jinja"
+	"github.com/ardanlabs/jinja"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
 )

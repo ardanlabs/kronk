@@ -227,7 +227,7 @@ func TestUsageAccumulation(t *testing.T) {
 					"content": "List three colors: red, blue, green.",
 				},
 			},
-			"max_tokens": 256,
+			"max_tokens": 1024,
 		}
 
 		ch, err := krn.ChatStreaming(ctx, d)
