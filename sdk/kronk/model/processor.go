@@ -507,9 +507,10 @@ func parseGemmaToolCallFormat(content string) []ResponseToolCall {
 		}
 
 		// Normalize Gemma4 quoting variations to standard JSON quotes.
-		// The model may use <|"|> or backtick (`) as quote characters,
-		// sometimes mixing them within the same tool call.
-		normalized := strings.ReplaceAll(jsonCandidate, "<|\"|>", "\"")
+		// The model uses <|"|> as quote delimiters when the value contains
+		// standard " characters (e.g., code with import "fmt"). Escape
+		// any " inside <|"|> pairs first, then replace the delimiters.
+		normalized := normalizeGemmaQuotes(jsonCandidate)
 		normalized = strings.ReplaceAll(normalized, "`,`", "\",\"")
 		normalized = quoteBareJSONKeys(normalized)
 		parsed := false
@@ -549,18 +550,56 @@ func parseGemmaToolCallFormat(content string) []ResponseToolCall {
 
 // findGemmaBraceEnd finds the closing brace that matches the opening brace at
 // position 0, accounting for nested braces. Returns the index of the closing
-// brace, or -1 if not found.
+// brace, or -1 if not found. Braces inside quoted strings are ignored so that
+// code snippets like `board[move-1] != 0 {` don't break the match.
+//
+// Two quoting modes are supported:
+//   - Gemma4 <|"|> tokens: paired as open/close delimiters; everything
+//     between them (including standard " and braces) is skipped.
+//   - Standard JSON " quotes: used only when no <|"|> tokens are present
+//     in the input, since <|"|> contains a literal " that would confuse
+//     JSON-style string scanning.
 func findGemmaBraceEnd(s string) int {
 	if len(s) == 0 || s[0] != '{' {
 		return -1
 	}
 
+	// When <|"|> tokens are present, the model uses Gemma-style quoting.
+	// Standard " characters inside <|"|>-delimited values (e.g., Go import
+	// paths like "fmt") must NOT be treated as JSON string boundaries.
+	useJSONQuotes := !strings.Contains(s, "<|\"|>")
+
 	depth := 0
 	i := 0
 	for i < len(s) {
-		// Skip <|"|> tokens (Gemma4 escaped quotes).
+		// Pair <|"|> tokens — skip everything between open and close.
 		if strings.HasPrefix(s[i:], "<|\"|>") {
 			i += len("<|\"|>")
+			for i < len(s) {
+				if strings.HasPrefix(s[i:], "<|\"|>") {
+					i += len("<|\"|>")
+					break
+				}
+				i++
+			}
+			continue
+		}
+
+		// Skip standard JSON quoted strings only when the model is using
+		// pure JSON format (no <|"|> tokens anywhere in the tool call).
+		if useJSONQuotes && s[i] == '"' {
+			i++
+			for i < len(s) {
+				if s[i] == '\\' {
+					i += 2 // skip escaped character
+					continue
+				}
+				if s[i] == '"' {
+					i++
+					break
+				}
+				i++
+			}
 			continue
 		}
 
@@ -577,6 +616,69 @@ func findGemmaBraceEnd(s string) int {
 	}
 
 	return -1
+}
+
+// normalizeGemmaQuotes converts <|"|> delimited values to standard JSON
+// quoted strings. The model uses <|"|> when the value contains literal "
+// characters (e.g., source code with import "fmt"). This function finds
+// each <|"|>...<|"|> pair, escapes any " inside the value to \", then
+// replaces the <|"|> delimiters with standard ".
+func normalizeGemmaQuotes(s string) string {
+	const token = "<|\"|>"
+	tokenLen := len(token)
+
+	if !strings.Contains(s, token) {
+		return s
+	}
+
+	var b strings.Builder
+	b.Grow(len(s))
+	i := 0
+
+	for i < len(s) {
+		openIdx := strings.Index(s[i:], token)
+		if openIdx == -1 {
+			b.WriteString(s[i:])
+			break
+		}
+
+		// Write everything before the opening <|"|>.
+		b.WriteString(s[i : i+openIdx])
+		i += openIdx + tokenLen
+
+		// Find the closing <|"|>.
+		closeIdx := strings.Index(s[i:], token)
+		if closeIdx == -1 {
+			// No closing token — write " and the rest as-is.
+			b.WriteByte('"')
+			b.WriteString(s[i:])
+			break
+		}
+
+		// Extract the value between the <|"|> pair, escape inner quotes,
+		// and wrap with standard ".
+		inner := s[i : i+closeIdx]
+		b.WriteByte('"')
+		for j := 0; j < len(inner); j++ {
+			switch {
+			case inner[j] == '"':
+				b.WriteString(`\"`)
+			case inner[j] == '\\':
+				// Preserve existing escape sequences.
+				b.WriteByte('\\')
+				if j+1 < len(inner) {
+					j++
+					b.WriteByte(inner[j])
+				}
+			default:
+				b.WriteByte(inner[j])
+			}
+		}
+		b.WriteByte('"')
+		i += closeIdx + tokenLen
+	}
+
+	return b.String()
 }
 
 // findClosingGemmaQuote finds the position of the closing <|"|> token that

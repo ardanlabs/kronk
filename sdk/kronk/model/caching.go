@@ -192,12 +192,10 @@ func removeFirstNMessages(d D, n int) D {
 	newMessages := make([]D, len(messages)-n)
 	copy(newMessages, messages[n:])
 
-	// If the remaining suffix has no user message (e.g., only a tool response
-	// after IMC cached through the assistant tool_calls), Jinja templates that
-	// require a user query will fail. Prepend a minimal user message so the
-	// template can render the suffix correctly. This is ephemeral — it only
-	// affects the current request's prompt rendering, not the cached prefix,
-	// hash, or any persisted IMC state.
+	// Some Jinja templates (e.g., Qwen3) require at least one user message
+	// to render correctly. If no user message exists in the remaining
+	// messages, inject an empty one. Place it after the system message if
+	// one leads, otherwise at position 0.
 	hasUser := false
 	for _, msg := range newMessages {
 		if r, _ := msg["role"].(string); r == RoleUser {
@@ -205,8 +203,13 @@ func removeFirstNMessages(d D, n int) D {
 			break
 		}
 	}
-	if !hasUser {
-		newMessages = append([]D{{"role": RoleUser, "content": ""}}, newMessages...)
+	if !hasUser && len(newMessages) > 0 {
+		firstRole, _ := newMessages[0]["role"].(string)
+		if firstRole == RoleSystem {
+			newMessages = append(newMessages[:1], append([]D{{"role": RoleUser, "content": ""}}, newMessages[1:]...)...)
+		} else {
+			newMessages = append([]D{{"role": RoleUser, "content": ""}}, newMessages...)
+		}
 	}
 
 	d["messages"] = newMessages
