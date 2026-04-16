@@ -12,19 +12,17 @@ To dog food the SDK, Bill wrote a model server (KMS) that is optimized to run yo
   - Who am I and why I built Kronk
   - What is Kronk
   - How local inference is the future
-- Angentic Use
-  - Running KMS and Kilo Code
-  - Ask for code summaries and git summaries
-- Build Tic-Tac-Toe App
-  - Go service with TUI front end
-  - Use local model for player 2
+- Build Tic-Tac-Toe App Using Kronk
+  - Go TUI app that can perform basic game play
+  - Integrate Kronk API and Initalize System
+  - Have Gemma4 be Player 2
 
-### Initial Game Prompt
+### Basic Game Play Prompt
 
 - I want to write a basic tic-tac-toe game only using the Go standard library.
 - The game play can be in the terminal.
 - For this first version allow 2 players to play against each other. Add the code
-  to a file name `examples/tictactoe/main.go`
+  to a file name `.talks/tictactoe/step1/main.go`
 
 - Paint the board like this:
 
@@ -74,3 +72,5 @@ Player X's turn. Enter a number (1-9):
   vertical, or diagonal line.
 - When a game is over announce the winner and give the user an option to play
   again for quit the game.
+- I need functions called playerX and playerO that is used when it's that
+  player's turn to choose a space. I need to encapsulate that functionality.

@@ -481,14 +481,20 @@ func parseGemmaToolCallFormat(content string) []ResponseToolCall {
 		name := strings.TrimSpace(remaining[:braceIdx])
 		remaining = remaining[braceIdx:]
 
-		// Find the matching closing brace.
+		// Find the matching closing brace. When the model uses mixed
+		// quoting (e.g., opens with <|"|> but closes with `) the brace
+		// matcher can fail. In that case, take everything remaining as
+		// the raw args so the tool call still reaches the client.
 		braceEnd := findGemmaBraceEnd(remaining)
-		if braceEnd == -1 {
-			break
-		}
 
-		argsRaw := remaining[1:braceEnd] // content between { and }
-		remaining = remaining[braceEnd+1:]
+		var argsRaw string
+		if braceEnd == -1 {
+			argsRaw = remaining[1:]
+			remaining = ""
+		} else {
+			argsRaw = remaining[1:braceEnd] // content between { and }
+			remaining = remaining[braceEnd+1:]
+		}
 
 		// Gemma4 outputs double braces: call:func{{"key":"val"}}.
 		// After stripping the outer pair, argsRaw still has {…}.
