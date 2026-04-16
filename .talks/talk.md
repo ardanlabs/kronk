@@ -18,3 +18,59 @@ To dog food the SDK, Bill wrote a model server (KMS) that is optimized to run yo
 - Build Tic-Tac-Toe App
   - Go service with TUI front end
   - Use local model for player 2
+
+### Initial Game Prompt
+
+- I want to write a basic tic-tac-toe game only using the Go standard library.
+- The game play can be in the terminal.
+- For this first version allow 2 players to play against each other. Add the code
+  to a file name `examples/tictactoe/main.go`
+
+- Paint the board like this:
+
+```
+1 | 2 | 3
+----------
+4 | 5 | 6
+----------
+7 | 8 | 9
+
+Player X's turn. Enter a number (1-9):
+```
+
+- Ask Player1 to go first. The player will choose a number that corresponds to
+  a place on the board.
+
+- The first player uses `X`. The following board shows the first player selecting
+  space number 5.
+
+```
+1 | 2 | 3
+----------
+4 | X | 6
+----------
+7 | 8 | 9
+
+Player O's turn. Enter a number (1-9):
+```
+
+- The second player uses `O`. The following board shows the second player selecting
+  space number 1.
+
+```
+O | 2 | 3
+----------
+4 | X | 6
+----------
+7 | 8 | 9
+
+Player X's turn. Enter a number (1-9):
+```
+
+- If the board is showing a number for that space, then that number is a valid move.
+- Always check for a winner or a draw after every move.
+- A draw would be all spaces having an `X` or an `O`.
+- There is a winner when there are 3 `X`'s or 3 `O`'s in a straight horizontal,
+  vertical, or diagonal line.
+- When a game is over announce the winner and give the user an option to play
+  again for quit the game.

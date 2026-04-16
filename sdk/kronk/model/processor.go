@@ -193,8 +193,11 @@ func parseToolCall(content string) []ResponseToolCall {
 func parseFunctionFormat(content string) []ResponseToolCall {
 	var toolCalls []ResponseToolCall
 
-	// Handle escaped newlines (literal \n) by converting to actual newlines
-	content = strings.ReplaceAll(content, "\\n", "\n")
+	// NOTE: We intentionally do NOT convert literal \n to actual newlines here.
+	// The model uses real newlines to delimit parameters in the XML format.
+	// Literal \n sequences inside parameter values (e.g., Go source code like
+	// fmt.Printf("hello\n")) must be preserved as-is so that the content
+	// written to files retains the correct escape sequences.
 
 	for {
 		funcStart := strings.Index(content, "<function=")
