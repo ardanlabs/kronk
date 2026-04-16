@@ -13,10 +13,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ardanlabs/jinja"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/hybridgroup/yzma/pkg/llama"
-	"github.com/nikolalohinski/gonja/v2/exec"
 	"go.opentelemetry.io/otel/attribute"
 )
 
@@ -26,7 +26,7 @@ var modelLoadMu sync.Mutex
 
 // compiledTemplate holds a pre-compiled Jinja template for reuse across requests.
 type compiledTemplate struct {
-	tmpl *exec.Template
+	tmpl *jinja.Template
 	err  error
 }
 

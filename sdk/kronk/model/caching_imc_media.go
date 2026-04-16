@@ -65,7 +65,7 @@ func (m *Model) decodeMediaIntoCache(ctx context.Context, cacheD D, seqID llama.
 	}
 
 	useMRoPE := mtmd.DecodeUseMRope(mtmdCtx)
-	useNonCausal := mtmd.DecodeUseNonCausal(mtmdCtx)
+	useNonCausal := mtmd.DecodeUseNonCausal(mtmdCtx, 0)
 
 	numChunks := mtmd.InputChunksSize(inputChunks)
 

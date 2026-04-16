@@ -1445,6 +1445,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
@@ -1728,6 +1729,7 @@ func modelResponse(krn *kronk.Kronk, messages []model.D, ch <-chan model.ChatRes
 
 	var reasoning bool
 	var lr model.ChatResponse
+	var content strings.Builder
 
 loop:
 	for resp := range ch {
@@ -1790,8 +1792,14 @@ loop:
 				}
 			}
 
+			content.WriteString(resp.Choices[0].Delta.Content)
 			fmt.Printf("%s", resp.Choices[0].Delta.Content)
 		}
+	}
+
+	// Append the assistant's response to conversation history.
+	if content.Len() > 0 {
+		messages = append(messages, model.TextMessage(model.RoleAssistant, content.String()))
 	}
 
 	// -------------------------------------------------------------------------

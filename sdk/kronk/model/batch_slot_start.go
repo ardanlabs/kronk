@@ -659,7 +659,7 @@ func (e *batchEngine) startSlotMedia(s *slot, job *chatJob, cacheIdx llama.Pos, 
 
 	// Set model-specific flags for positioning and attention.
 	s.useMRoPE = mtmd.DecodeUseMRope(job.mtmdCtx)
-	s.useNonCausal = mtmd.DecodeUseNonCausal(job.mtmdCtx)
+	s.useNonCausal = mtmd.DecodeUseNonCausal(job.mtmdCtx, 0)
 
 	// Count total tokens across all chunks.
 	numChunks := mtmd.InputChunksSize(s.inputChunks)
