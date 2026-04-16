@@ -1,0 +1,29 @@
+catalog: Any-to-Any
+models:
+  - id: Gemma3n-E4B-it-Q8_0
+    category: Any-to-Any
+    owned_by: ggml-org
+    model_family: gemma3n-E4B-it-GGUF
+    web_page: ggml-org/gemma3n-E4B-it-GGUF
+    template:
+    files:
+      models:
+        - url: ggml-org/gemma3n-E4B-it-GGUF/gemma3n-E4B-it-Q8_0.gguf
+          size: 5.42 GB
+      proj:
+        url: ggml-org/gemma3n-E4B-it-GGUF/mmproj-gemma3n-E4B-it-Q8_0.gguf
+        size: 845 MB
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      audio: true
+      video: true
+      streaming: true
+      reasoning: false
+      tooling: true
+      embedding: false
+      rerank: false
+    metadata:
+      created: 2025-07-10T0:00:00Z
+      collections: collections/ggml-org
+      description: Gemma3n is Google's any-to-any multimodal model capable of processing text, images, audio, and video inputs and generating text responses across all modalities.

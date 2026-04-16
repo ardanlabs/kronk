@@ -132,8 +132,8 @@ func Test_RetrieveCatalogs(t *testing.T) {
 		t.Fatalf("retrieve catalogs: %v", err)
 	}
 
-	if len(catalogs) != 5 {
-		t.Errorf("expected 5 catalogs, got %d", len(catalogs))
+	if len(catalogs) != 6 {
+		t.Errorf("expected 6 catalogs, got %d", len(catalogs))
 	}
 
 	catalogNames := make(map[string]bool)
@@ -141,7 +141,7 @@ func Test_RetrieveCatalogs(t *testing.T) {
 		catalogNames[cat.Name] = true
 	}
 
-	expectedNames := []string{"Text-Generation", "Embedding", "Audio-Text-to-Text", "Image-Text-to-Text"}
+	expectedNames := []string{"Text-Generation", "Embedding", "Audio-Text-to-Text", "Image-Text-to-Text", "Any-to-Any"}
 	for _, name := range expectedNames {
 		if !catalogNames[name] {
 			t.Errorf("expected catalog %q not found", name)

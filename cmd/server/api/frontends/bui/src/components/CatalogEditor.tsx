@@ -953,6 +953,7 @@ export default function CatalogEditor() {
               <option value="Embedding">Embedding</option>
               <option value="Image-Text-to-Text">Image-Text-to-Text</option>
               <option value="Audio-Text-to-Text">Audio-Text-to-Text</option>
+              <option value="Any-to-Any">Any-to-Any</option>
               <option value="Rerank">Rerank</option>
             </select>
           </div>
