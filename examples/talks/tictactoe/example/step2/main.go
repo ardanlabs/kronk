@@ -391,6 +391,7 @@ done:
 	return content.String(), nil
 }
 
+//lint:ignore U1000 kept for reference/demo usage
 func modelNonStreaming(ctx context.Context, krn *kronk.Kronk, finalPrompt string) (string, error) {
 	d := model.D{
 		"messages": model.DocumentArray(
