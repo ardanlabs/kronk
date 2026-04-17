@@ -316,6 +316,7 @@ func PickSpace(b *board, krn *kronk.Kronk) (string, error) {
 
 	d := model.D{
 		"messages": model.DocumentArray(
+			model.TextMessage(model.RoleSystem, systemPrompt),
 			model.TextMessage(model.RoleUser, finalPrompt),
 		),
 		"json_schema":     schema,
@@ -364,6 +365,18 @@ done:
 	return fmt.Sprintf("%d", resp.Space), nil
 }
 
+const systemPrompt = `
+Direct answer only. Include only the absolute minimum reasoning necessary to
+justify your response. Avoid all preamble, postamble, and non-essential explanation.
+
+This is the JSON document you will be returning:
+
+{"space","CHOSEN_SPACE"}
+
+Only return a JSON document as your answer. Do not send anything else but the
+JSON document.
+`
+
 const prompt = `
 You are playing a game of Tic-Tac-Toe. You need to pick a space by selecting
 a number from 1 through 9. This is what the game board looks like.
@@ -384,9 +397,6 @@ spaces %v. The available spaces are %v.
 Please choose a space from the available spaces list that you think gives you
 the best chance to win.
 
-You will return the space number you select using this JSON document format.
-
-{"space","CHOSEN_SPACE"}
-
-Do not overthink your next move and try to select a space quickly.
+You will return the space number you select using this JSON document format
+provided in the system prompt.
 `
