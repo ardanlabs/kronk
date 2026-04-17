@@ -261,6 +261,7 @@ func playerX(b *board, reader *bufio.Reader) (int, error) {
 func playerO(b *board, krn *kronk.Kronk) (int, error) {
 	for {
 		fmt.Print("\nPlayer O's turn. Enter a number (1-9): ")
+
 		input, err := PickSpace(b, krn)
 		if err != nil {
 			return 0, err
@@ -304,6 +305,40 @@ func PickSpace(b *board, krn *kronk.Kronk) (string, error) {
 
 	finalPrompt := fmt.Sprintf(prompt, xSpaces, oSpaces, aSpaces)
 
+	// -------------------------------------------------------------------------
+
+	final, err := modelStreaming(ctx, krn, finalPrompt)
+	if err != nil {
+		return "", err
+	}
+
+	// final, err := modelNonStreaming(ctx, krn, finalPrompt)
+	// if err != nil {
+	// 	return "", err
+	// }
+
+	// -------------------------------------------------------------------------
+	// Since a basic prompt doesn't really control the model well,
+	// we will sometimes have this response cleanup code.
+
+	final = strings.ReplaceAll(final, "json", "")
+	final = strings.ReplaceAll(final, "`", "")
+	final = strings.ReplaceAll(final, "\n", "")
+
+	// -------------------------------------------------------------------------
+
+	var resp struct {
+		Space int `json:"space"`
+	}
+
+	if err := json.Unmarshal([]byte(final), &resp); err != nil {
+		return "", fmt.Errorf("unmarshal: %s: %w", final, err)
+	}
+
+	return fmt.Sprintf("%d", resp.Space), nil
+}
+
+func modelStreaming(ctx context.Context, krn *kronk.Kronk, finalPrompt string) (string, error) {
 	d := model.D{
 		"messages": model.DocumentArray(
 			model.TextMessage(model.RoleSystem, systemPrompt),
@@ -353,28 +388,31 @@ done:
 		}
 	}
 
-	fmt.Println()
+	return content.String(), nil
+}
 
-	// -------------------------------------------------------------------------
-	// Since a basic prompt doesn't really control the model well,
-	// we will sometimes have this response cleanup code.
-
-	final := content.String()
-	final = strings.ReplaceAll(final, "json", "")
-	final = strings.ReplaceAll(final, "`", "")
-	final = strings.ReplaceAll(final, "\n", "")
-
-	// -------------------------------------------------------------------------
-
-	var resp struct {
-		Space int `json:"space"`
+func modelNonStreaming(ctx context.Context, krn *kronk.Kronk, finalPrompt string) (string, error) {
+	d := model.D{
+		"messages": model.DocumentArray(
+			model.TextMessage(model.RoleSystem, systemPrompt),
+			model.TextMessage(model.RoleUser, finalPrompt),
+		),
+		"enable_thinking": false,
+		"temperature":     1.0,
+		"top_p":           0.95,
+		"top_k":           64,
 	}
 
-	if err := json.Unmarshal([]byte(final), &resp); err != nil {
-		return "", fmt.Errorf("unmarshal: %s: %w", final, err)
+	fmt.Println("\n\nModel thinking...")
+
+	mdlResp, err := krn.Chat(ctx, d)
+	if err != nil {
+		return "", fmt.Errorf("chat streaming: %w", err)
 	}
 
-	return fmt.Sprintf("%d", resp.Space), nil
+	fmt.Printf("Model response:\n%s\n", mdlResp.Choices[0].Message.Content)
+
+	return mdlResp.Choices[0].Message.Content, nil
 }
 
 const systemPrompt = `

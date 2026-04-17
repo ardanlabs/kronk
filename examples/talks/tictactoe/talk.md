@@ -14,8 +14,9 @@ To dog food the SDK, Bill wrote a model server (KMS) that is optimized to run yo
   - How local inference is the future
 - Build Tic-Tac-Toe App Using Kronk
   - Go TUI app that can perform basic game play
-  - Integrate Kronk API and Initalize System
-  - Have Gemma4 be Player 2
+  - Integrate Kronk SDK
+  - Use Kronk to be Player2
+  - Show JSON Schema capabilities
 
 ### Basic Game Play Prompt
 

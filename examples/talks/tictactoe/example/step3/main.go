@@ -304,6 +304,27 @@ func PickSpace(b *board, krn *kronk.Kronk) (string, error) {
 
 	finalPrompt := fmt.Sprintf(prompt, xSpaces, oSpaces, aSpaces)
 
+	// -------------------------------------------------------------------------
+
+	final, err := modelNonStreaming(ctx, krn, finalPrompt)
+	if err != nil {
+		return "", err
+	}
+
+	// -------------------------------------------------------------------------
+
+	var resp struct {
+		Space int `json:"space"`
+	}
+
+	if err := json.Unmarshal([]byte(final), &resp); err != nil {
+		return "", fmt.Errorf("unmarshal: %s: %w", final, err)
+	}
+
+	return fmt.Sprintf("%d", resp.Space), nil
+}
+
+func modelNonStreaming(ctx context.Context, krn *kronk.Kronk, finalPrompt string) (string, error) {
 	schema := model.D{
 		"type": "object",
 		"properties": model.D{
@@ -319,50 +340,23 @@ func PickSpace(b *board, krn *kronk.Kronk) (string, error) {
 			model.TextMessage(model.RoleSystem, systemPrompt),
 			model.TextMessage(model.RoleUser, finalPrompt),
 		),
-		"json_schema":     schema,
 		"enable_thinking": false,
+		"json_schema":     schema,
 		"temperature":     1.0,
 		"top_p":           0.95,
 		"top_k":           64,
 	}
 
-	ch, err := krn.ChatStreaming(ctx, d)
+	fmt.Println("\n\nModel thinking...")
+
+	mdlResp, err := krn.Chat(ctx, d)
 	if err != nil {
 		return "", fmt.Errorf("chat streaming: %w", err)
 	}
 
-	// -------------------------------------------------------------------------
+	fmt.Printf("Model response:\n%s\n", mdlResp.Choices[0].Message.Content)
 
-	var content strings.Builder
-
-	fmt.Print("\n\nCONTENT:\n")
-
-done:
-	for resp := range ch {
-		switch resp.Choices[0].FinishReason() {
-		case model.FinishReasonError:
-			return "", fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
-
-		case model.FinishReasonStop:
-			break done
-
-		default:
-			fmt.Printf("%s", resp.Choices[0].Delta.Content)
-			content.WriteString(resp.Choices[0].Delta.Content)
-		}
-	}
-
-	fmt.Println()
-
-	var resp struct {
-		Space int `json:"space"`
-	}
-
-	if err := json.Unmarshal([]byte(content.String()), &resp); err != nil {
-		return "", fmt.Errorf("unmarshal: [%s]: %w", content.String(), err)
-	}
-
-	return fmt.Sprintf("%d", resp.Space), nil
+	return mdlResp.Choices[0].Message.Content, nil
 }
 
 const systemPrompt = `
