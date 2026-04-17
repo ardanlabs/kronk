@@ -390,7 +390,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 		switch {
 		case job.spcCacheHit:
 			e.model.log(job.ctx, "start-slot", "status", "spc-restore", "dst_seq", s.seqID, "cached_tokens", job.spcCacheIdx)
-			if err := e.model.restoreSPCToSeq(s.seqID); err != nil {
+			if err := e.model.restoreSPCToSeq(s.seqID, job.spcSession); err != nil {
 				e.finishSlot(s, fmt.Errorf("start-slot: %w", err))
 				return
 			}

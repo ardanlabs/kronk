@@ -18,6 +18,7 @@ type cacheResult struct {
 	cachedMsgCount  int         // Number of messages cached (for IMC removal)
 	err             error       // Any error that occurred
 	cacheSeqID      llama.SeqId // Cache session's sequence ID
+	spcSession      *spcSession // Resolved SPC session for restore (carried on the job)
 	imcSlotID       int         // IMC slot index for routing (distinct from seqID for clarity)
 	imcExpectedHash string      // Expected cachedMsgsHash at startSlot time (for stale detection)
 
@@ -80,9 +81,11 @@ func (m *Model) clearCaches() {
 		slot.mediaKVCounts = nil
 	}
 
-	// Clear SPC session. The KV sequence is already freed after extraction,
-	// so only the in-memory session state needs clearing.
-	m.spcSession = nil
+	// Clear all SPC sessions. The KV sequences are already freed after
+	// extraction, so only the in-memory session state needs clearing.
+	for k := range m.spcSessions {
+		delete(m.spcSessions, k)
+	}
 	m.cacheMu.Unlock()
 	m.notifyIMCSlotAvailable()
 }

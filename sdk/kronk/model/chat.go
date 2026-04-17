@@ -271,6 +271,7 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		spcCacheSeqID: cache.cacheSeqID,
 		spcCacheIdx:   cache.cacheIdx,
 		spcCacheHit:   m.cfg.SystemPromptCache && cache.cacheIdx > 0,
+		spcSession:    cache.spcSession,
 
 		imcSlotID:       cache.imcSlotID,
 		imcSeqID:        cache.cacheSeqID,

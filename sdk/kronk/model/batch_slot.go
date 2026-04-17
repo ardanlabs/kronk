@@ -43,6 +43,7 @@ type chatJob struct {
 	spcCacheSeqID llama.SeqId // Dedicated SPC cache sequence ID
 	spcCacheIdx   llama.Pos   // Token count in SPC cache
 	spcCacheHit   bool        // True if SPC cache sequence has cached tokens
+	spcSession    *spcSession // Resolved SPC session with KV state to restore
 
 	// -------------------------------------------------------------------------
 	// Incremental Message Cache (IMC)

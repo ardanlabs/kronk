@@ -51,13 +51,16 @@ type imcSession struct {
 // state is extracted into an external byte buffer, and the sequence is freed.
 // On each request, the KV state is restored into the slot's working sequence
 // via StateSeqSetData, avoiding a permanently dedicated cache sequence.
+//
+// Multiple sessions are stored in a map keyed by sysPromptHash so that
+// concurrent requests with different system prompts (e.g., title generation
+// vs chat) each get their own cached KV state without colliding.
 type spcSession struct {
-	sysPromptHash   string      // Hash of the system prompt
-	sysPromptTokens int         // Number of tokens in system prompt cache
-	sysPromptLen    int         // Length of system prompt string
-	seqID           llama.SeqId // Sequence ID used for initial decode
-	lastUsed        time.Time   // Last access time
-	kvState         []byte      // Externalized KV cache state (post-decode tensors)
+	sysPromptHash   string    // Hash of the system prompt
+	sysPromptTokens int       // Number of tokens in system prompt cache
+	sysPromptLen    int       // Length of system prompt string
+	lastUsed        time.Time // Last access time (for LRU eviction)
+	kvState         []byte    // Externalized KV cache state (post-decode tensors); immutable after insertion
 }
 
 // draftModel holds resources for the draft model used in speculative decoding.
@@ -116,15 +119,16 @@ type Model struct {
 	unloaded          atomic.Bool
 	decodeMu          sync.Mutex
 	cacheMu           sync.RWMutex
-	cacheCond         *sync.Cond    // Broadcast when any IMC slot's pending flag is cleared
-	imcSlots          []*imcSession // Per-slot branch state, len = NSeqMax
-	spcSession        *spcSession   // SPC session (single dedicated cache sequence)
-	spcCacheSeqID     llama.SeqId   // Dedicated SPC cache sequence ID
-	addBOSToken       bool          // Whether to add BOS token (from model metadata)
-	mediaMarkerTokens int           // Token count for the media marker string; computed once via mediaMarkerOnce
-	mediaMarkerOnce   sync.Once     // Guards one-time computation of mediaMarkerTokens
-	pool              *contextPool  // Context pool for parallel embed/rerank
-	draft             *draftModel   // Draft model for speculative decoding
+	cacheCond         *sync.Cond             // Broadcast when any IMC slot's pending flag is cleared
+	imcSlots          []*imcSession          // Per-slot branch state, len = NSeqMax
+	spcSessions       map[string]*spcSession // SPC sessions keyed by sysPromptHash (LRU eviction at NSeqMax)
+	spcMaxSessions    int                    // Max SPC sessions to retain (set to NSeqMax)
+	spcCacheSeqID     llama.SeqId            // Dedicated SPC cache sequence ID
+	addBOSToken       bool                   // Whether to add BOS token (from model metadata)
+	mediaMarkerTokens int                    // Token count for the media marker string; computed once via mediaMarkerOnce
+	mediaMarkerOnce   sync.Once              // Guards one-time computation of mediaMarkerTokens
+	pool              *contextPool           // Context pool for parallel embed/rerank
+	draft             *draftModel            // Draft model for speculative decoding
 }
 
 func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, error) {
@@ -501,8 +505,12 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 		// Initialize SPC. The last slot's sequence is borrowed temporarily
 		// for the initial decode. The KV state is externalized to a byte
 		// buffer immediately after, so the sequence is freed for normal use.
+		// Multiple sessions are supported (keyed by system prompt hash)
+		// with LRU eviction capped at NSeqMax entries.
 		if cfg.SystemPromptCache {
 			m.spcCacheSeqID = llama.SeqId(nSlots - 1)
+			m.spcSessions = make(map[string]*spcSession)
+			m.spcMaxSessions = nSlots
 		}
 
 		m.batch = newBatchEngine(&m, nSlots)
@@ -1015,13 +1023,10 @@ func resolveKVLengths(metadata map[string]string, arch string) (keyLen int64, va
 }
 
 // restoreSPCToSeq restores the externalized SPC KV state into the destination
-// sequence via StateSeqSetData. This avoids needing a permanently dedicated
-// cache sequence by restoring from a byte buffer in RAM.
-func (m *Model) restoreSPCToSeq(dstSeqID llama.SeqId) error {
-	m.cacheMu.RLock()
-	session := m.spcSession
-	m.cacheMu.RUnlock()
-
+// sequence via StateSeqSetData. The session is passed directly from the job
+// so that already-queued requests can restore even if their session has been
+// evicted from the LRU map by the time they execute.
+func (m *Model) restoreSPCToSeq(dstSeqID llama.SeqId, session *spcSession) error {
 	if session == nil || len(session.kvState) == 0 {
 		return fmt.Errorf("restore-spc: no cached KV state available")
 	}

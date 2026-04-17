@@ -35,7 +35,7 @@ input tokens._
 
 Kronk provides two caching modes that reduce redundant prefill work:
 
-- SPC (System Prompt Cache) decodes the system prompt once, externalizes the KV state to a byte buffer in RAM, and restores it into each slot per request.
+- SPC (System Prompt Cache) decodes each unique system prompt once, externalizes the KV state to a byte buffer in RAM, and restores it into the slot per request. Multiple system prompts are cached concurrently (up to NSeqMax sessions) with LRU eviction.
 
 - IMC (Incremental Message Cache) dedicates each slot to a user and caches the full conversation in the slot's KV cache sequence, so only the new message needs to be prefilled.
 
@@ -74,11 +74,27 @@ avoids re-decoding the system prompt on every request. No dedicated cache
 sequence is permanently occupied, so SPC does not add any extra sequences to
 the VRAM allocation.
 
+**Multi-Session Support:**
+
+SPC maintains multiple cached sessions keyed by system prompt hash, capped at
+`NSeqMax` entries. This allows concurrent requests with different system
+prompts (e.g., an AI agent sending a title generation request alongside a chat
+completion request) to each have their own cached KV state without colliding.
+When the session map is full, the least recently used (LRU) session is evicted
+to make room for new system prompts.
+
+When a request omits the system prompt (follow-up request), SPC will reuse the
+cached session only if exactly one session exists (unambiguous). If multiple
+sessions are cached, the request proceeds without SPC since there is no way to
+determine which system prompt the client intended.
+
 **Best for:**
 
 - OpenWebUI and similar chat interfaces
 - Applications with a consistent system prompt
 - Multi-user scenarios with different system prompts
+- AI agent frameworks that send concurrent requests with different system
+  prompts (e.g., title generation + chat completion)
 
 **Enable SPC:**
 
@@ -93,18 +109,33 @@ models:
 1. First request: System prompt is templated, tokenized, and decoded into a
    temporary sequence.
 2. The KV state is extracted into a byte buffer in RAM and the sequence is freed.
-3. The KV state is restored into the slot's working sequence.
-4. Remaining messages are prefilled after the cached system prompt tokens.
-5. Subsequent requests: KV state is restored from the RAM buffer (no
-   re-decoding needed).
+3. The session is stored in a map keyed by the system prompt hash.
+4. The KV state is restored into the slot's working sequence.
+5. Remaining messages are prefilled after the cached system prompt tokens.
+6. Subsequent requests with the same system prompt: KV state is restored from
+   the RAM buffer (no re-decoding needed).
+7. Requests with a different system prompt: A new session is built and stored
+   alongside existing sessions. If at capacity (NSeqMax sessions), the LRU
+   session is evicted first.
 
 **Cache Invalidation:**
 
 The cache is automatically invalidated when:
 
-- The system prompt content changes (detected by hash comparison).
-- The system prompt role changes.
-- The server restarts.
+- The system prompt content changes (detected by hash comparison) and a new
+  session is built. Existing sessions for other system prompts are preserved.
+- The session map reaches capacity — the LRU session is evicted.
+- The server restarts (all sessions are cleared).
+
+**RAM Overhead:**
+
+Each cached session stores the externalized KV state in RAM. The size depends
+on the model and system prompt length. For example, with Gemma 4 26B:
+
+- A short system prompt (~850 tokens) uses ~192 MB of RAM
+- A large system prompt (~11,000 tokens) uses ~2.5 GB of RAM
+
+With `NSeqMax=2`, up to 2 sessions can be cached simultaneously.
 
 ### 5.3 Incremental Message Cache (IMC)
 
@@ -450,15 +481,15 @@ templates (deterministic templates use fast hash matching, non-deterministic
 templates fall back to token prefix matching). The table below summarizes the
 trade-offs to help you choose.
 
-| Feature      | System Prompt Cache               | Incremental Message Cache                 |
-| ------------ | --------------------------------- | ----------------------------------------- |
-| Caches       | System prompt only                | All messages except last                  |
-| Extends      | No                                | Yes, incrementally                        |
-| Multi-user   | Single shared cache sequence      | Single-user, all slots available          |
-| Sub-agents   | All share same SPC sequence       | Each gets own slot via hash matching      |
-| Best for     | Chat UIs                          | Agentic workflows                         |
-| Memory       | Zero extra VRAM (KV state in RAM) | Zero extra VRAM overhead                  |
-| Template req | Any                               | Any (hash match or token prefix fallback) |
+| Feature      | System Prompt Cache                          | Incremental Message Cache                 |
+| ------------ | -------------------------------------------- | ----------------------------------------- |
+| Caches       | System prompt only                           | All messages except last                  |
+| Extends      | No                                           | Yes, incrementally                        |
+| Multi-user   | Multi-session (up to NSeqMax system prompts)  | Single-user, all slots available          |
+| Sub-agents   | Each system prompt gets own cached session    | Each gets own slot via hash matching      |
+| Best for     | Chat UIs, multi-agent frameworks              | Agentic workflows                         |
+| Memory       | Zero extra VRAM (KV state in RAM per session) | Zero extra VRAM overhead                  |
+| Template req | Any                                          | Any (hash match or token prefix fallback) |
 
 **Important:** SPC and IMC are mutually exclusive. Choose based on your
 workload:
@@ -477,8 +508,8 @@ invalidation helps you avoid unexpected prefill costs.
 
 **SPC Invalidation:**
 
-- System prompt content changes → cache rebuilt
-- System prompt hash mismatch → cache rebuilt
+- System prompt content changes → new session built (existing sessions preserved)
+- Session map at capacity (NSeqMax) → LRU session evicted before new build
 
 **IMC Invalidation:**
 
@@ -536,7 +567,9 @@ restrictions on template behavior and session management.
 SPC restores the externalized KV state into each slot.
 This is a memory copy from RAM into the KV cache, typically taking 10-30ms
 depending on system prompt size and memory bus load. No extra VRAM is consumed
-since the KV state lives in regular RAM.
+since the KV state lives in regular RAM. With multi-session support, each
+unique system prompt incurs a one-time decode cost on the first request; all
+subsequent requests with the same hash restore from RAM instantly.
 
 **IMC Prefill Savings:**
 

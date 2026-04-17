@@ -21,8 +21,8 @@ To dog food the SDK, Bill wrote a model server (KMS) that is optimized to run yo
 
 - I want to write a basic tic-tac-toe game only using the Go standard library.
 - The game play can be in the terminal.
-- For this first version allow 2 players to play against each other. Add the code
-  to a file name `.talks/tictactoe/step1/main.go`
+- Allow 2 players to play against each other.
+- Add the code to a file name `.talks/tictactoe/step1/main.go`
 
 - Paint the board like this:
 
@@ -36,11 +36,12 @@ To dog food the SDK, Bill wrote a model server (KMS) that is optimized to run yo
 Player X's turn. Enter a number (1-9):
 ```
 
-- Ask Player1 to go first. The player will choose a number that corresponds to
-  a place on the board.
+- Make sure there is a line space before rendering a new board.
+- Ask Player1 to go first.
+- Each player will choose a number that corresponds to a place on the board.
+- The first player uses `X` and the second player uses `O`.
 
-- The first player uses `X`. The following board shows the first player selecting
-  space number 5.
+- The following board shows the first player selecting space number 5.
 
 ```
 1 | 2 | 3
@@ -52,8 +53,7 @@ Player X's turn. Enter a number (1-9):
 Player O's turn. Enter a number (1-9):
 ```
 
-- The second player uses `O`. The following board shows the second player selecting
-  space number 1.
+- The following board shows the second player selecting space number 1.
 
 ```
 O | 2 | 3

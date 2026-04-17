@@ -15,6 +15,12 @@ import (
 // an existing cache (if the client omitted the system message on a follow-up
 // request). The system message is always removed from d after processing.
 //
+// Multiple sessions are maintained in a map keyed by system prompt hash so
+// that concurrent requests with different system prompts (e.g., title
+// generation vs chat) each get their own cached KV state. When a request
+// omits the system prompt, it is only reused if exactly one session exists
+// (unambiguous). Otherwise the request proceeds without SPC.
+//
 // The system prompt is decoded once into a temporary sequence, the KV state
 // is extracted into an external byte buffer, and the sequence is freed. At
 // startSlot time, the KV state is restored into the slot's working sequence
@@ -57,8 +63,15 @@ func (m *Model) processSPC(ctx context.Context, d D) cacheResult {
 		return cacheResult{modifiedD: d}
 
 	default:
+		// Client omitted the system prompt on a follow-up request.
+		// Only reuse a cached session if exactly one exists (unambiguous).
 		m.cacheMu.RLock()
-		session := m.spcSession
+		var session *spcSession
+		if len(m.spcSessions) == 1 {
+			for _, s := range m.spcSessions {
+				session = s
+			}
+		}
 		m.cacheMu.RUnlock()
 
 		if session != nil && session.sysPromptTokens > 0 {
@@ -67,6 +80,7 @@ func (m *Model) processSPC(ctx context.Context, d D) cacheResult {
 				modifiedD:  d,
 				cacheIdx:   llama.Pos(session.sysPromptTokens),
 				cacheSeqID: m.spcCacheSeqID,
+				spcSession: session,
 			}
 		}
 	}
@@ -78,6 +92,9 @@ func (m *Model) processSPC(ctx context.Context, d D) cacheResult {
 // templates, tokenizes, and decodes the system prompt into the dedicated
 // cache sequence. On a hit, it returns the cached position and sequence ID
 // so that startSlot can copy the KV state into the slot's working sequence.
+//
+// When the session map is at capacity (spcMaxSessions), the least recently
+// used session is evicted before the new session is inserted.
 func (m *Model) performSPC(ctx context.Context, d D, messages []D, msgInfo cacheableMessage) cacheResult {
 	if msgInfo.role != RoleSystem {
 		m.log(ctx, "spc", "status", "no system prompt message provided", "role", msgInfo.role)
@@ -85,19 +102,23 @@ func (m *Model) performSPC(ctx context.Context, d D, messages []D, msgInfo cache
 	}
 
 	contentLen := len(msgInfo.content)
+	newHash := hashMessage(msgInfo)
 
 	// Check for cache hit (fast path with read lock).
 	m.cacheMu.RLock()
-	session := m.spcSession
+	session := m.spcSessions[newHash]
 	m.cacheMu.RUnlock()
 
-	newHash := hashMessage(msgInfo)
+	if session != nil && session.sysPromptLen == contentLen && session.sysPromptTokens > 0 {
+		m.cacheMu.Lock()
+		session.lastUsed = time.Now()
+		m.cacheMu.Unlock()
 
-	if session != nil && session.sysPromptLen == contentLen && session.sysPromptHash == newHash && session.sysPromptTokens > 0 {
-		m.log(ctx, "spc", "status", "cache hit", "tokens", session.sysPromptTokens)
+		m.log(ctx, "spc", "status", "cache hit", "tokens", session.sysPromptTokens, "sessions", len(m.spcSessions))
 		return cacheResult{
 			cacheIdx:   llama.Pos(session.sysPromptTokens),
 			cacheSeqID: m.spcCacheSeqID,
+			spcSession: session,
 		}
 	}
 
@@ -106,12 +127,14 @@ func (m *Model) performSPC(ctx context.Context, d D, messages []D, msgInfo cache
 	defer m.cacheMu.Unlock()
 
 	// Double-check in case another goroutine cached while we waited.
-	session = m.spcSession
-	if session != nil && session.sysPromptLen == contentLen && session.sysPromptHash == newHash && session.sysPromptTokens > 0 {
-		m.log(ctx, "spc", "status", "cache hit (after lock)", "tokens", session.sysPromptTokens)
+	session = m.spcSessions[newHash]
+	if session != nil && session.sysPromptLen == contentLen && session.sysPromptTokens > 0 {
+		session.lastUsed = time.Now()
+		m.log(ctx, "spc", "status", "cache hit (after lock)", "tokens", session.sysPromptTokens, "sessions", len(m.spcSessions))
 		return cacheResult{
 			cacheIdx:   llama.Pos(session.sysPromptTokens),
 			cacheSeqID: m.spcCacheSeqID,
+			spcSession: session,
 		}
 	}
 
@@ -144,10 +167,6 @@ func (m *Model) performSPC(ctx context.Context, d D, messages []D, msgInfo cache
 		return cacheResult{modifiedD: d}
 	}
 
-	// Invalidate session before clearing KV so a failed rebuild can't serve
-	// stale metadata pointing at an empty/partial sequence.
-	m.spcSession = nil
-
 	// Clear any existing cache in the dedicated sequence.
 	llama.MemorySeqRm(m.mem, m.spcCacheSeqID, -1, -1)
 
@@ -172,20 +191,46 @@ func (m *Model) performSPC(ctx context.Context, d D, messages []D, msgInfo cache
 		return cacheResult{modifiedD: d, err: fmt.Errorf("spc: failed to extract KV state from seq %d", m.spcCacheSeqID)}
 	}
 
-	m.spcSession = &spcSession{
+	// Evict the least recently used session if at capacity.
+	if len(m.spcSessions) >= m.spcMaxSessions {
+		m.evictLRUSPCSession(ctx)
+	}
+
+	newSession := &spcSession{
 		sysPromptHash:   newHash,
 		sysPromptTokens: nTokens,
 		sysPromptLen:    contentLen,
-		seqID:           m.spcCacheSeqID,
 		lastUsed:        time.Now(),
 		kvState:         kvState[:nExtracted],
 	}
 
-	m.log(ctx, "spc", "tokens", nTokens, "hash", newHash[:8], "kv_bytes", nExtracted, "status", "tokens saved (externalized)")
+	m.spcSessions[newHash] = newSession
+
+	m.log(ctx, "spc", "tokens", nTokens, "hash", newHash[:8], "kv_bytes", nExtracted, "sessions", len(m.spcSessions), "status", "tokens saved (externalized)")
 
 	return cacheResult{
-		modifiedD:  d,
 		cacheIdx:   llama.Pos(nTokens),
 		cacheSeqID: m.spcCacheSeqID,
+		spcSession: newSession,
+	}
+}
+
+// evictLRUSPCSession removes the least recently used SPC session from the map.
+// Must be called with cacheMu held.
+func (m *Model) evictLRUSPCSession(ctx context.Context) {
+	var oldestHash string
+	var oldestTime time.Time
+
+	for hash, session := range m.spcSessions {
+		if oldestHash == "" || session.lastUsed.Before(oldestTime) {
+			oldestHash = hash
+			oldestTime = session.lastUsed
+		}
+	}
+
+	if oldestHash != "" {
+		evicted := m.spcSessions[oldestHash]
+		delete(m.spcSessions, oldestHash)
+		m.log(ctx, "spc", "status", "session evicted (LRU)", "hash", oldestHash[:8], "tokens", evicted.sysPromptTokens)
 	}
 }

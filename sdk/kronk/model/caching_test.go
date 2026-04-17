@@ -338,11 +338,12 @@ func TestClearCaches(t *testing.T) {
 			SystemPromptCache: true,
 		},
 		imcSlots: make([]*imcSession, 2),
-		spcSession: &spcSession{
-			sysPromptHash:   "testhash",
-			sysPromptTokens: 100,
-			sysPromptLen:    50,
-			seqID:           llama.SeqId(2),
+		spcSessions: map[string]*spcSession{
+			"testhash": {
+				sysPromptHash:   "testhash",
+				sysPromptTokens: 100,
+				sysPromptLen:    50,
+			},
 		},
 		log: func(ctx context.Context, msg string, args ...any) {},
 	}
@@ -357,8 +358,8 @@ func TestClearCaches(t *testing.T) {
 		}
 	}
 
-	if m.spcSession == nil {
-		t.Fatal("expected spcSession to be set before clearing")
+	if len(m.spcSessions) == 0 {
+		t.Fatal("expected spcSessions to be set before clearing")
 	}
 
 	// Clear caches.
@@ -377,9 +378,9 @@ func TestClearCaches(t *testing.T) {
 		}
 	}
 
-	// Verify SPC session cleared.
-	if m.spcSession != nil {
-		t.Errorf("spcSession not cleared, got %+v", m.spcSession)
+	// Verify SPC sessions cleared.
+	if len(m.spcSessions) != 0 {
+		t.Errorf("spcSessions not cleared, got %d entries", len(m.spcSessions))
 	}
 }
 
