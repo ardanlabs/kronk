@@ -221,6 +221,7 @@ type ModelConfig struct {
 	Devices              []string                 `yaml:"devices,omitempty"`
 	MoE                  *model.MoEConfig         `yaml:"moe,omitempty"`
 	AutoFitVRAM          bool                     `yaml:"auto-fit-vram,omitempty"`
+	SWAFull              bool                     `yaml:"swa-full,omitempty"`
 	SystemPromptCache    bool                     `yaml:"system-prompt-cache,omitempty"`
 	IncrementalCache     bool                     `yaml:"incremental-cache,omitempty"`
 	CacheMinTokens       int                      `yaml:"cache-min-tokens,omitempty"`
@@ -278,6 +279,7 @@ func (mc ModelConfig) ToKronkConfig() model.Config {
 		MoE:                  mc.MoE,
 		Devices:              mc.Devices,
 		AutoFitVRAM:          mc.AutoFitVRAM,
+		SWAFull:              mc.SWAFull,
 		SystemPromptCache:    mc.SystemPromptCache,
 		IncrementalCache:     mc.IncrementalCache,
 		CacheMinTokens:       mc.CacheMinTokens,

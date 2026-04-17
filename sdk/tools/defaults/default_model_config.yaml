@@ -21,6 +21,7 @@
 #   tensor-split: [0.6, 0.4]             # Per-device tensor distribution (must match device count)
 #   tensor-buft-overrides: [all-ffn]     # Force tensors to CPU: all-ffn, block:N, or regex
 #   auto-fit-vram: false                 # Auto-fit parameters to available VRAM
+#   swa-full: false                      # Use full-size KV cache for sliding window attention layers
 #   system-prompt-cache: false           # Cache system prompt KV state for reuse across requests
 #   incremental-cache: false             # Incremental message caching for agentic workflows (Cline, OpenCode)
 #   max-cache-sessions: 1                  # Max concurrent IMC sessions/users (default: 1, each gets own cache)

@@ -133,6 +133,7 @@ export const PARAM_TOOLTIPS = {
   grammar: 'Grammar constraint to force output into a specific syntax (e.g. JSON or a custom GBNF grammar). Improves structured output reliability but can over-constrain generation if the grammar is too strict.',
   ngpuLayers: 'Number of model layers offloaded to GPU. 0 = all layers on GPU (default). -1 = all layers on CPU. Positive N = first N layers on GPU. Lower values save VRAM but reduce speed.',
   splitMode: 'How model weights are distributed across multiple GPUs. "layer" assigns whole layers per GPU, "row" splits individual tensor rows. "none" uses a single GPU.',
+  swaFull: 'Use full-size KV cache for sliding window attention (SWA) layers instead of the compact n_swa-sized cache. Increases VRAM usage but preserves accuracy for models like Gemma 4.',
   systemPromptCache: 'Caches the KV state of the system prompt so it can be reused across new conversations without re-processing. Saves prefill time when every request shares the same system prompt.',
   incrementalCache: 'Keeps the full conversation KV state in a dedicated slot between requests. Enables fast multi-turn follow-ups by only processing new tokens instead of the entire history.',
   ropeScaling: 'Type of RoPE (Rotary Position Embedding) scaling used to extend the model\'s context window beyond its native training length. "yarn" is the most common method.',

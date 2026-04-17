@@ -13,7 +13,7 @@ func main() {
 
 	for {
 		var b board
-		for i := 0; i < 9; i++ {
+		for i := range 9 {
 			b[i] = strconv.Itoa(i + 1)
 		}
 

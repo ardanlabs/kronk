@@ -166,6 +166,7 @@ gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
   context-window: 262144
   nseq-max: 2
   incremental-cache: true
+  swa-full: true
   sampling-parameters:
     temperature: 1.0
     top_k: 64

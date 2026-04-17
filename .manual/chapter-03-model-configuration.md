@@ -11,24 +11,25 @@
 - [3.3 GPU Configuration](#33-gpu-configuration)
 - [3.4 KV Cache Quantization](#34-kv-cache-quantization)
 - [3.5 Flash Attention](#35-flash-attention)
-- [3.6 Parallel Inference (NSeqMax)](#36-parallel-inference-nseqmax)
-- [3.7 Understanding GGUF Quantization](#37-understanding-gguf-quantization)
+- [3.6 Sliding Window Attention (SWA)](#36-sliding-window-attention-swa)
+- [3.7 Parallel Inference (NSeqMax)](#37-parallel-inference-nseqmax)
+- [3.8 Understanding GGUF Quantization](#38-understanding-gguf-quantization)
   - [What is Quantization?](#what-is-quantization)
   - [What are K-Quants?](#what-are-k-quants)
   - [Standard Quantization Formats](#standard-quantization-formats)
   - [IQ (Importance Matrix) Quantization](#iq-importance-matrix-quantization)
   - [UD (Ultra-Dynamic) Quantization](#ud-ultra-dynamic-quantization)
   - [Choosing the Right Quantization](#choosing-the-right-quantization)
-- [3.8 VRAM Estimation](#38-vram-estimation)
+- [3.9 VRAM Estimation](#39-vram-estimation)
   - [Slots and Sequences](#slots-and-sequences)
   - [What Affects KV Cache Memory Per Sequence](#what-affects-kv-cache-memory-per-sequence)
   - [What Affects Total KV Cache (Slot Memory)](#what-affects-total-kv-cache-slot-memory)
   - [Caching Modes (SPC / IMC)](#caching-modes-spc-imc)
   - [Example: Real Model Calculation](#example-real-model-calculation)
-- [3.9 Model-Specific Tuning](#39-model-specific-tuning)
-- [3.10 Speculative Decoding](#310-speculative-decoding)
-- [3.11 Sampling Parameters](#311-sampling-parameters)
-- [3.12 Model Config File Example](#312-model-config-file-example)
+- [3.10 Model-Specific Tuning](#310-model-specific-tuning)
+- [3.11 Speculative Decoding](#311-speculative-decoding)
+- [3.12 Sampling Parameters](#312-sampling-parameters)
+- [3.13 Model Config File Example](#313-model-config-file-example)
 
 ---
 
@@ -461,7 +462,63 @@ require flash attention to function — so when flash attention is disabled for
 hybrid models, Kronk also forces the KV cache type to f16. These overrides
 happen regardless of your configuration settings._
 
-### 3.6 Parallel Inference (NSeqMax)
+### 3.6 Sliding Window Attention (SWA)
+
+Some models use a hybrid attention pattern that interleaves sliding window
+attention (SWA) layers with full global attention layers. In SWA layers, each
+token only attends to a small local window of recent tokens (e.g., 1024
+tokens) rather than the entire context. The global attention layers still see
+everything, which keeps the model coherent over long contexts while the SWA
+layers provide efficient local processing.
+
+Models that use sliding window attention include:
+
+| Model                | SWA Window | Architecture |
+| -------------------- | ---------- | ------------ |
+| Gemma 4 26B-A4B      | 1024       | MoE          |
+| Gemma 4 31B          | 1024       | Dense        |
+| Gemma 4 E2B / E4B    | 512        | Dense        |
+| Gemma 3 (all sizes)  | 1024       | Dense        |
+
+Kronk automatically detects sliding window metadata from the GGUF file —
+you don't need to configure the window size. By default, llama.cpp allocates
+a compact KV cache for SWA layers (sized to the window), which saves
+significant VRAM compared to allocating the full context window for every
+layer. However, this compact cache prevents advanced operations like context
+shifting and full prefix caching on SWA layers.
+
+#### SWA Full Cache Mode
+
+When accuracy is more important than memory savings, you can force SWA layers
+to use the full context window for their KV cache:
+
+```yaml
+swa_full: true    # Full-size KV cache for SWA layers (more VRAM, better accuracy)
+swa_full: false   # Compact SWA cache (default, less VRAM)
+```
+
+When `swa_full` is enabled, SWA layers allocate the same KV cache size as
+global attention layers. This preserves all cached context for SWA layers
+and enables full context shifting and prefix caching, but increases VRAM
+usage proportionally.
+
+#### VRAM Impact
+
+The VRAM difference depends on what fraction of layers use SWA. For example,
+Gemma 4 26B-A4B has 30 layers with a pattern where roughly 5/6 of attention
+layers are SWA. With a 32K context window and f16 KV cache:
+
+| Setting            | SWA Layer Cache | Approximate KV Savings |
+| ------------------ | --------------- | ---------------------- |
+| `swa_full: false`  | 1024 tokens     | ~40-50% less KV VRAM   |
+| `swa_full: true`   | 32768 tokens    | None (full allocation) |
+
+_Note: Not all models use sliding window attention. Dense models (Llama,
+Qwen3, Mistral-large), hybrid models (Qwen3.5/3.6), and most MoE models
+(Qwen3-MoE, DeepSeek) use full attention on all layers. The `swa_full`
+setting has no effect on these models._
+
+### 3.7 Parallel Inference (NSeqMax)
 
 When multiple users (or applications) send requests to the same model at the
 same time, the model needs a way to handle them concurrently. That's what
@@ -541,7 +598,7 @@ request contains multiple inputs (for example, 100 sentences to embed), those
 inputs are spread across the pool contexts and processed in parallel. Model
 weights are shared, but each context has its own KV cache memory.
 
-### 3.7 Understanding GGUF Quantization
+### 3.8 Understanding GGUF Quantization
 
 GGUF models come in various quantization formats that trade off between file
 size, VRAM usage, and output quality. Understanding these formats helps you
@@ -624,7 +681,7 @@ better quality than uniform quantization at similar average bits per weight.
 
 Common UD naming: `UD-Q5_K_XL` means Ultra-Dynamic with Q5 K-quant base, XL quality tier.
 
-### 3.8 Choosing the Right Quantization
+### 3.9 Choosing the Right Quantization
 
 The right quantization depends on how much VRAM you have and what quality you need.
 
@@ -672,7 +729,7 @@ models:
     n_gpu_layers: 0
 ```
 
-### 3.9 VRAM Estimation
+### 3.10 VRAM Estimation
 
 Before loading a model, you need to know whether it will fit in your GPU's
 memory. VRAM usage comes from two things: the model weights (fixed cost
@@ -789,7 +846,7 @@ Step 4 — Total VRAM:
   Total_VRAM = 36.0 GB + 12.8 GB = ~48.8 GB
 ```
 
-### 3.10 Model-Specific Tuning
+### 3.11 Model-Specific Tuning
 
 The previous sections covered general configuration that applies to all
 models. However, different model architectures — Dense, Mixture of Experts
@@ -867,7 +924,28 @@ generating tokens one at a time.
 | Set `n_batch` high (up to `context_window`)      | Use small `n_batch` — it limits throughput     |
 | Use multiple slots (`n_seq_max`) for concurrency | Over-allocate slots beyond your request volume |
 
-### 3.11 Speculative Decoding
+#### SWA Models
+
+Models with sliding window attention (Gemma 4, Gemma 3) interleave local
+SWA layers with global attention layers. By default, SWA layers use a compact
+KV cache sized to the sliding window (e.g., 1024 tokens), which saves
+significant VRAM. Enable `swa_full` when accuracy matters more than memory.
+
+| Do                                                        | Don't                                                          |
+| --------------------------------------------------------- | -------------------------------------------------------------- |
+| Enable `swa_full: true` when accuracy is the priority     | Enable `swa_full` on models without SWA — it has no effect     |
+| Use `f16` KV cache for MoE SWA models (e.g., Gemma 4)    | Assume `swa_full` is needed — test without it first            |
+| Budget extra VRAM when `swa_full` is enabled              | Use large context windows + `swa_full` without checking VRAM   |
+
+```yaml
+# Example: Gemma 4 26B-A4B with full SWA cache
+gemma-4-26B-A4B-it-UD-Q8_K_XL:
+  context-window: 32768
+  swa-full: true
+  incremental-cache: true
+```
+
+### 3.12 Speculative Decoding
 
 Speculative decoding uses a small, fast "draft" model to predict candidate
 tokens, then verifies them against the full "target" model in a single forward
@@ -968,7 +1046,7 @@ increase the potential speedup but also increase wasted work when predictions
 are rejected. The default of 5 is a good starting point; tune based on your
 observed acceptance rates.
 
-### 3.12 Sampling Parameters
+### 3.13 Sampling Parameters
 
 Sampling parameters control the randomness and quality of generated text.
 These are set per-request in the API call.
@@ -1062,7 +1140,7 @@ controlling costs, response time, and preventing runaway output.
 If not set, the model will generate until it produces a stop token or
 reaches the context window limit.
 
-### 3.13 Model Config File Example
+### 3.14 Model Config File Example
 
 Create a YAML config file for custom model settings:
 

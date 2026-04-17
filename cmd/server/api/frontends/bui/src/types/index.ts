@@ -75,6 +75,7 @@ export interface ModelConfig {
   'main-gpu': number | null;
   'devices': string[] | null;
   'auto-fit-vram': boolean;
+  'swa-full': boolean;
   'system-prompt-cache': boolean;
   'incremental-cache': boolean;
   'cache-min-tokens': number;

@@ -420,6 +420,7 @@ export default function ModelList() {
                       { key: 'nseq', label: labelWithTip('Max Sequences', 'nSeqMax'), value: fmtVal(modelInfo.model_config['nseq-max']) },
                       { key: 'ngpu', label: labelWithTip('GPU Layers', 'ngpuLayers'), value: fmtVal(modelInfo.model_config['ngpu-layers'] ?? 'auto') },
                       { key: 'split', label: labelWithTip('Split Mode', 'splitMode'), value: modelInfo.model_config['split-mode'] || 'default' },
+                      { key: 'swa-full', label: labelWithTip('SWA Full Cache', 'swaFull'), value: <span className={`badge ${modelInfo.model_config['swa-full'] ? 'badge-yes' : 'badge-no'}`}>{modelInfo.model_config['swa-full'] ? 'Yes' : 'No'}</span> },
                       { key: 'spc', label: labelWithTip('System Prompt Cache', 'systemPromptCache'), value: <span className={`badge ${modelInfo.model_config['system-prompt-cache'] ? 'badge-yes' : 'badge-no'}`}>{modelInfo.model_config['system-prompt-cache'] ? 'Yes' : 'No'}</span> },
                       { key: 'imc', label: labelWithTip('Incremental Cache', 'incrementalCache'), value: <span className={`badge ${modelInfo.model_config['incremental-cache'] ? 'badge-yes' : 'badge-no'}`}>{modelInfo.model_config['incremental-cache'] ? 'Yes' : 'No'}</span> },
                       ...(!!modelInfo.model_config['rope-scaling-type'] && modelInfo.model_config['rope-scaling-type'] !== 'none' ? [
