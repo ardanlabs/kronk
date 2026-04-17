@@ -171,6 +171,7 @@ export default function DocsSDKModel() {
 	RopeFreqScale        *float32
 	RopeScaling          RopeScalingType
 	SplitMode            *SplitMode
+	SWAFull              bool
 	SystemPromptCache    bool
 	TensorBuftOverrides  []string
 	TensorSplit          []float32

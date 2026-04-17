@@ -87,13 +87,14 @@ Kronk has an MCP service and these are settings:
 | [3.3 GPU Configuration](.manual/chapter-03-model-configuration.md#33-gpu-configuration)                             | GPU layers, processor selection, multi-GPU                             |
 | [3.4 KV Cache Quantization](.manual/chapter-03-model-configuration.md#34-kv-cache-quantization)                     | f16, q8_0, cache type selection                                        |
 | [3.5 Flash Attention](.manual/chapter-03-model-configuration.md#35-flash-attention)                                 | Flash attention modes, auto-detection                                  |
-| [3.6 Parallel Inference (NSeqMax)](.manual/chapter-03-model-configuration.md#36-parallel-inference-nseqmax)         | Slots, concurrent requests, NSeqMax tuning                             |
-| [3.7 Understanding GGUF Quantization](.manual/chapter-03-model-configuration.md#37-understanding-gguf-quantization) | K-quants, IQ, UD formats, choosing quantization                        |
-| [3.8 VRAM Estimation](.manual/chapter-03-model-configuration.md#38-vram-estimation)                                 | VRAM formula, model weights + KV cache                                 |
-| [3.9 Model-Specific Tuning](.manual/chapter-03-model-configuration.md#39-model-specific-tuning)                     | Vision, MoE, hybrid, embedding model configs, MoE vs dense performance |
-| [3.10 Speculative Decoding](.manual/chapter-03-model-configuration.md#310-speculative-decoding)                     | Draft models, acceptance rates, configuration                          |
-| [3.11 Sampling Parameters](.manual/chapter-03-model-configuration.md#311-sampling-parameters)                       | Temperature, top-p, top-k, min-p                                       |
-| [3.12 Model Config File Example](.manual/chapter-03-model-configuration.md#312-model-config-file-example)           | Complete YAML config example                                           |
+| [3.6 Sliding Window Attention (SWA)](.manual/chapter-03-model-configuration.md#36-sliding-window-attention-swa)     | SWA models, swa_full, VRAM impact, Gemma 4                            |
+| [3.7 Parallel Inference (NSeqMax)](.manual/chapter-03-model-configuration.md#37-parallel-inference-nseqmax)         | Slots, concurrent requests, NSeqMax tuning                             |
+| [3.8 Understanding GGUF Quantization](.manual/chapter-03-model-configuration.md#38-understanding-gguf-quantization) | K-quants, IQ, UD formats, choosing quantization                        |
+| [3.9 VRAM Estimation](.manual/chapter-03-model-configuration.md#39-vram-estimation)                                 | VRAM formula, model weights + KV cache                                 |
+| [3.10 Model-Specific Tuning](.manual/chapter-03-model-configuration.md#310-model-specific-tuning)                   | Vision, MoE, hybrid, SWA, embedding model configs, MoE vs dense perf   |
+| [3.11 Speculative Decoding](.manual/chapter-03-model-configuration.md#311-speculative-decoding)                     | Draft models, acceptance rates, configuration                          |
+| [3.12 Sampling Parameters](.manual/chapter-03-model-configuration.md#312-sampling-parameters)                       | Temperature, top-p, top-k, min-p                                       |
+| [3.13 Model Config File Example](.manual/chapter-03-model-configuration.md#313-model-config-file-example)           | Complete YAML config example                                           |
 
 ### Chapter 4 Sub-sections
 

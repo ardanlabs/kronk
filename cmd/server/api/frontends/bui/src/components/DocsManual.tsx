@@ -887,7 +887,71 @@ cache_type_v: q8_0 # Value cache precision`}</code></pre>
 flash_attention: disabled  # Disable if causing issues
 flash_attention: auto      # Let llama.cpp decide`}</code></pre>
           <p>_Note: Hybrid models (those combining attention and recurrent layers, such as Qwen3.5-35B-A3B) do not support flash attention. Kronk automatically disables it for these models. Additionally, quantized KV caches (<code>q8_0</code>, <code>q4_0</code>) require flash attention to function — so when flash attention is disabled for hybrid models, Kronk also forces the KV cache type to f16. These overrides happen regardless of your configuration settings._</p>
-          <h3 id="36-parallel-inference-nseqmax">3.6 Parallel Inference (NSeqMax)</h3>
+          <h3 id="36-sliding-window-attention-swa">3.6 Sliding Window Attention (SWA)</h3>
+          <p>Some models use a hybrid attention pattern that interleaves sliding window attention (SWA) layers with full global attention layers. In SWA layers, each token only attends to a small local window of recent tokens (e.g., 1024 tokens) rather than the entire context. The global attention layers still see everything, which keeps the model coherent over long contexts while the SWA layers provide efficient local processing.</p>
+          <p>Models that use sliding window attention include:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Model</th>
+                <th>SWA Window</th>
+                <th>Architecture</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Gemma 4 26B-A4B</td>
+                <td>1024</td>
+                <td>MoE</td>
+              </tr>
+              <tr>
+                <td>Gemma 4 31B</td>
+                <td>1024</td>
+                <td>Dense</td>
+              </tr>
+              <tr>
+                <td>Gemma 4 E2B / E4B</td>
+                <td>512</td>
+                <td>Dense</td>
+              </tr>
+              <tr>
+                <td>Gemma 3 (all sizes)</td>
+                <td>1024</td>
+                <td>Dense</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>Kronk automatically detects sliding window metadata from the GGUF file — you don't need to configure the window size. By default, llama.cpp allocates a compact KV cache for SWA layers (sized to the window), which saves significant VRAM compared to allocating the full context window for every layer. However, this compact cache prevents advanced operations like context shifting and full prefix caching on SWA layers.</p>
+          <h4 id="swa-full-cache-mode">SWA Full Cache Mode</h4>
+          <p>When accuracy is more important than memory savings, you can force SWA layers to use the full context window for their KV cache:</p>
+          <pre className="code-block"><code className="language-yaml">{`swa_full: true    # Full-size KV cache for SWA layers (more VRAM, better accuracy)
+swa_full: false   # Compact SWA cache (default, less VRAM)`}</code></pre>
+          <p>When <code>swa_full</code> is enabled, SWA layers allocate the same KV cache size as global attention layers. This preserves all cached context for SWA layers and enables full context shifting and prefix caching, but increases VRAM usage proportionally.</p>
+          <h4 id="vram-impact">VRAM Impact</h4>
+          <p>The VRAM difference depends on what fraction of layers use SWA. For example, Gemma 4 26B-A4B has 30 layers with a pattern where roughly 5/6 of attention layers are SWA. With a 32K context window and f16 KV cache:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Setting</th>
+                <th>SWA Layer Cache</th>
+                <th>Approximate KV Savings</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>swa_full: false</code></td>
+                <td>1024 tokens</td>
+                <td>~40-50% less KV VRAM</td>
+              </tr>
+              <tr>
+                <td><code>swa_full: true</code></td>
+                <td>32768 tokens</td>
+                <td>None (full allocation)</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>_Note: Not all models use sliding window attention. Dense models (Llama, Qwen3, Mistral-large), hybrid models (Qwen3.5/3.6), and most MoE models (Qwen3-MoE, DeepSeek) use full attention on all layers. The <code>swa_full</code> setting has no effect on these models._</p>
+          <h3 id="37-parallel-inference-nseqmax">3.7 Parallel Inference (NSeqMax)</h3>
           <p>When multiple users (or applications) send requests to the same model at the same time, the model needs a way to handle them concurrently. That's what <code>NSeqMax</code> controls — it determines how many requests the model can process in parallel.</p>
           <p>Behind the scenes, when a model is loaded, Kronk creates one processing slot for each unit of <code>n_seq_max</code> (e.g., <code>n_seq_max: 4</code> creates four slots). Each slot gets its own isolated partition in the KV cache (the model's short-term memory from earlier sections). All slots share the same model weights and GPU, but each one maintains its own conversation state independently.</p>
           <p>Consider what happens when <code>n_seq_max</code> is set to 1 and two requests arrive. The first request is assigned to the only available slot and begins generating tokens. The second request has no slot available, so it waits in a queue. Once the first request finishes and the slot is released, the second request is assigned to that slot and begins processing. With a single slot, requests are handled one at a time.</p>
@@ -932,7 +996,7 @@ flash_attention: auto      # Let llama.cpp decide`}</code></pre>
           </table>
           <h4 id="embedding-and-reranking-models">Embedding and Reranking Models</h4>
           <p>Embedding and reranking models work differently. Instead of slots sharing a single context, <code>NSeqMax</code> creates a pool of independent contexts. When a request contains multiple inputs (for example, 100 sentences to embed), those inputs are spread across the pool contexts and processed in parallel. Model weights are shared, but each context has its own KV cache memory.</p>
-          <h3 id="37-understanding-gguf-quantization">3.7 Understanding GGUF Quantization</h3>
+          <h3 id="38-understanding-gguf-quantization">3.8 Understanding GGUF Quantization</h3>
           <p>GGUF models come in various quantization formats that trade off between file size, VRAM usage, and output quality. Understanding these formats helps you choose the right model variant for your hardware and use case.</p>
           <h4 id="what-is-quantization?">What is Quantization?</h4>
           <p>Quantization reduces model precision from the original 16-bit or 32-bit floating-point weights to lower bit representations. This dramatically decreases:</p>
@@ -1101,7 +1165,7 @@ flash_attention: auto      # Let llama.cpp decide`}</code></pre>
           </ul>
           <p>UD variants analyze each layer and assign optimal bit depths, achieving better quality than uniform quantization at similar average bits per weight.</p>
           <p>Common UD naming: <code>UD-Q5_K_XL</code> means Ultra-Dynamic with Q5 K-quant base, XL quality tier.</p>
-          <h3 id="38-choosing-the-right-quantization">3.8 Choosing the Right Quantization</h3>
+          <h3 id="39-choosing-the-right-quantization">3.9 Choosing the Right Quantization</h3>
           <p>The right quantization depends on how much VRAM you have and what quality you need.</p>
           <h4 id="by-available-vram">By Available VRAM</h4>
           <table className="flags-table">
@@ -1194,7 +1258,7 @@ flash_attention: auto      # Let llama.cpp decide`}</code></pre>
     context_window: 8192
     split_mode: row
     n_gpu_layers: 0`}</code></pre>
-          <h3 id="39-vram-estimation">3.9 VRAM Estimation</h3>
+          <h3 id="310-vram-estimation">3.10 VRAM Estimation</h3>
           <p>Before loading a model, you need to know whether it will fit in your GPU's memory. VRAM usage comes from two things: the model weights (fixed cost determined by the model you chose) and the KV cache (variable cost determined by your configuration choices from the previous sections — context window size, number of slots, and cache precision). If the total exceeds your available VRAM, the model either won't load or will partially fall back to the CPU, which significantly slows inference. This section walks through how to estimate the total.</p>
           <h4 id="model-weights-+-kv-cache">Model Weights + KV Cache</h4>
           <p>Model weights are the learned numerical parameters (billions of floating-point values) that encode the model's knowledge and reasoning ability — they represent the fixed cost of loading a model into memory. Model weights are determined by the GGUF file size (e.g., ~8GB for a 7B Q8_0 model). The KV cache is the variable cost you control through configuration. Together they determine total VRAM usage:</p>
@@ -1302,7 +1366,7 @@ Step 3 — Total KV cache (NSeqMax = 2):
 Step 4 — Total VRAM:
 
   Total_VRAM = 36.0 GB + 12.8 GB = ~48.8 GB`}</code></pre>
-          <h3 id="310-model-specific-tuning">3.10 Model-Specific Tuning</h3>
+          <h3 id="311-model-specific-tuning">3.11 Model-Specific Tuning</h3>
           <p>The previous sections covered general configuration that applies to all models. However, different model architectures — Dense, Mixture of Experts (MoE), and Hybrid — each have their own characteristics that benefit from specific tuning. Vision and audio models also need adjusted batch settings because they process media as large token batches. This section provides recommended configurations for each model type so you can get the best performance out of the box.</p>
           <h4 id="dense-models">Dense Models</h4>
           <p>Dense models are the most common architecture. Every parameter participates in every token, producing sequential memory access patterns that saturate bandwidth efficiently. No special configuration is needed — the defaults from the previous sections apply directly.</p>
@@ -1418,7 +1482,36 @@ Step 4 — Total VRAM:
               </tr>
             </tbody>
           </table>
-          <h3 id="311-speculative-decoding">3.11 Speculative Decoding</h3>
+          <h4 id="swa-models">SWA Models</h4>
+          <p>Models with sliding window attention (Gemma 4, Gemma 3) interleave local SWA layers with global attention layers. By default, SWA layers use a compact KV cache sized to the sliding window (e.g., 1024 tokens), which saves significant VRAM. Enable <code>swa_full</code> when accuracy matters more than memory.</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Do</th>
+                <th>Don't</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Enable <code>swa_full: true</code> when accuracy is the priority</td>
+                <td>Enable <code>swa_full</code> on models without SWA — it has no effect</td>
+              </tr>
+              <tr>
+                <td>Use <code>f16</code> KV cache for MoE SWA models (e.g., Gemma 4)</td>
+                <td>Assume <code>swa_full</code> is needed — test without it first</td>
+              </tr>
+              <tr>
+                <td>Budget extra VRAM when <code>swa_full</code> is enabled</td>
+                <td>Use large context windows + <code>swa_full</code> without checking VRAM</td>
+              </tr>
+            </tbody>
+          </table>
+          <pre className="code-block"><code className="language-yaml">{`# Example: Gemma 4 26B-A4B with full SWA cache
+gemma-4-26B-A4B-it-UD-Q8_K_XL:
+  context-window: 32768
+  swa-full: true
+  incremental-cache: true`}</code></pre>
+          <h3 id="312-speculative-decoding">3.12 Speculative Decoding</h3>
           <p>Speculative decoding uses a small, fast "draft" model to predict candidate tokens, then verifies them against the full "target" model in a single forward pass. When the draft model's predictions match the target's, multiple tokens are accepted per decode step — improving throughput without changing output quality. The output distribution is mathematically guaranteed to match the target model exactly, regardless of draft quality (Leviathan et al., 2023).</p>
           <h4 id="how-it-works">How It Works</h4>
           <table className="flags-table">
@@ -1564,7 +1657,7 @@ Qwen3-8B-Q8_0:
           <h4 id="performance-characteristics">Performance Characteristics</h4>
           <p>Speculative decoding helps most when the target model is large relative to the draft. For dense models where the target is already fast (e.g., 8B at 33+ TPS), the overhead of running a draft model may not provide a net speedup. MoE models with large parameter counts but sparse activation (e.g., 30B-A3B) are better candidates, but only when using a high-quality draft.</p>
           <p>The <code>ndraft</code> parameter controls how many candidates to generate. Higher values increase the potential speedup but also increase wasted work when predictions are rejected. The default of 5 is a good starting point; tune based on your observed acceptance rates.</p>
-          <h3 id="312-sampling-parameters">3.12 Sampling Parameters</h3>
+          <h3 id="313-sampling-parameters">3.13 Sampling Parameters</h3>
           <p>Sampling parameters control the randomness and quality of generated text. These are set per-request in the API call.</p>
           <p>For most models you will want to touch these basic sampling parameters. There are <a href="chapter-09-request-parameters.md">many more</a> which will be presented later.</p>
           <h4 id="temperature">Temperature</h4>
@@ -1615,7 +1708,7 @@ Qwen3-8B-Q8_0:
   "max_tokens": 2048
 }`}</code></pre>
           <p>If not set, the model will generate until it produces a stop token or reaches the context window limit.</p>
-          <h3 id="313-model-config-file-example">3.13 Model Config File Example</h3>
+          <h3 id="314-model-config-file-example">3.14 Model Config File Example</h3>
           <p>Create a YAML config file for custom model settings:</p>
           <pre className="code-block"><code className="language-yaml">{`# model-config.yaml
 models:
@@ -6261,14 +6354,15 @@ batching = true`}</code></pre>
                 <li><a href="#33-gpu-configuration" className={activeSection === '33-gpu-configuration' ? 'active' : ''}>3.3 GPU Configuration</a></li>
                 <li><a href="#34-kv-cache-quantization" className={activeSection === '34-kv-cache-quantization' ? 'active' : ''}>3.4 KV Cache Quantization</a></li>
                 <li><a href="#35-flash-attention" className={activeSection === '35-flash-attention' ? 'active' : ''}>3.5 Flash Attention</a></li>
-                <li><a href="#36-parallel-inference-nseqmax" className={activeSection === '36-parallel-inference-nseqmax' ? 'active' : ''}>3.6 Parallel Inference (NSeqMax)</a></li>
-                <li><a href="#37-understanding-gguf-quantization" className={activeSection === '37-understanding-gguf-quantization' ? 'active' : ''}>3.7 Understanding GGUF Quantization</a></li>
-                <li><a href="#38-choosing-the-right-quantization" className={activeSection === '38-choosing-the-right-quantization' ? 'active' : ''}>3.8 Choosing the Right Quantization</a></li>
-                <li><a href="#39-vram-estimation" className={activeSection === '39-vram-estimation' ? 'active' : ''}>3.9 VRAM Estimation</a></li>
-                <li><a href="#310-model-specific-tuning" className={activeSection === '310-model-specific-tuning' ? 'active' : ''}>3.10 Model-Specific Tuning</a></li>
-                <li><a href="#311-speculative-decoding" className={activeSection === '311-speculative-decoding' ? 'active' : ''}>3.11 Speculative Decoding</a></li>
-                <li><a href="#312-sampling-parameters" className={activeSection === '312-sampling-parameters' ? 'active' : ''}>3.12 Sampling Parameters</a></li>
-                <li><a href="#313-model-config-file-example" className={activeSection === '313-model-config-file-example' ? 'active' : ''}>3.13 Model Config File Example</a></li>
+                <li><a href="#36-sliding-window-attention-swa" className={activeSection === '36-sliding-window-attention-swa' ? 'active' : ''}>3.6 Sliding Window Attention (SWA)</a></li>
+                <li><a href="#37-parallel-inference-nseqmax" className={activeSection === '37-parallel-inference-nseqmax' ? 'active' : ''}>3.7 Parallel Inference (NSeqMax)</a></li>
+                <li><a href="#38-understanding-gguf-quantization" className={activeSection === '38-understanding-gguf-quantization' ? 'active' : ''}>3.8 Understanding GGUF Quantization</a></li>
+                <li><a href="#39-choosing-the-right-quantization" className={activeSection === '39-choosing-the-right-quantization' ? 'active' : ''}>3.9 Choosing the Right Quantization</a></li>
+                <li><a href="#310-vram-estimation" className={activeSection === '310-vram-estimation' ? 'active' : ''}>3.10 VRAM Estimation</a></li>
+                <li><a href="#311-model-specific-tuning" className={activeSection === '311-model-specific-tuning' ? 'active' : ''}>3.11 Model-Specific Tuning</a></li>
+                <li><a href="#312-speculative-decoding" className={activeSection === '312-speculative-decoding' ? 'active' : ''}>3.12 Speculative Decoding</a></li>
+                <li><a href="#313-sampling-parameters" className={activeSection === '313-sampling-parameters' ? 'active' : ''}>3.13 Sampling Parameters</a></li>
+                <li><a href="#314-model-config-file-example" className={activeSection === '314-model-config-file-example' ? 'active' : ''}>3.14 Model Config File Example</a></li>
               </ul>
             </div>
             <div className="doc-index-section">

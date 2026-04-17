@@ -188,6 +188,14 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // Set to RopeScalingYaRN to enable YaRN scaling for models like Qwen3 that
 // support extended context (e.g., 32k training → 131k with YaRN).
 //
+// SWAFull controls whether models with sliding window attention (SWA) use a
+// full-size KV cache for SWA layers instead of the memory-efficient small
+// cache. When false (default), SWA layers only cache the last n_swa tokens,
+// saving significant VRAM but limiting context caching and shifting. When
+// true, SWA layers use the full context window for their KV cache, preserving
+// accuracy at the cost of higher memory usage. This is recommended for models
+// like Gemma 4 when accuracy is prioritized over memory savings.
+//
 // SplitMode controls how the model is split across multiple GPUs:
 //   - SplitModeNone (0): single GPU
 //   - SplitModeLayer (1): split layers and KV across GPUs
@@ -310,6 +318,7 @@ type Config struct {
 	RopeFreqScale        *float32
 	RopeScaling          RopeScalingType
 	SplitMode            *SplitMode
+	SWAFull              bool
 	SystemPromptCache    bool
 	TensorBuftOverrides  []string
 	TensorSplit          []float32
@@ -364,7 +373,7 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("{mode:%s top_n:%s}", m.Mode, topN)
 	}
 
-	return fmt.Sprintf("\nAutoFitVRAM[%t]\nCacheMinTokens[%d]\nCacheSlotTimeout[%d]\nCacheTypeK[%d]\nCacheTypeV[%d]\nContextWindow[%d]\nDevice[%s]\nDevices[%v]\nFlashAttention[%d]\nIgnoreIntegrityCheck[%t]\nIncrementalCache[%t]\nInsecureLogging[%t]\nJinjaFile[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%d]\nNGpuLayers[%s]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%d]\nProjFile[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSplitMode[%s]\nSystemPromptCache[%t]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nUseDirectIO[%t]\nUseMMap[%s]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
+	return fmt.Sprintf("\nAutoFitVRAM[%t]\nCacheMinTokens[%d]\nCacheSlotTimeout[%d]\nCacheTypeK[%d]\nCacheTypeV[%d]\nContextWindow[%d]\nDevice[%s]\nDevices[%v]\nFlashAttention[%d]\nIgnoreIntegrityCheck[%t]\nIncrementalCache[%t]\nInsecureLogging[%t]\nJinjaFile[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%d]\nNGpuLayers[%s]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%d]\nProjFile[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSplitMode[%s]\nSWAFull[%t]\nSystemPromptCache[%t]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nUseDirectIO[%t]\nUseMMap[%s]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
 		cfg.AutoFitVRAM, cfg.CacheMinTokens, cfg.CacheSlotTimeout, cfg.CacheTypeK, cfg.CacheTypeV,
 		cfg.ContextWindow, cfg.Device, cfg.Devices, cfg.FlashAttention, cfg.IgnoreIntegrityCheck,
 		cfg.IncrementalCache, cfg.InsecureLogging, cfg.JinjaFile,
@@ -374,7 +383,7 @@ func (cfg Config) String() string {
 		formatBoolPtr(cfg.OffloadKQV), formatBoolPtr(cfg.OpOffload), cfg.OpOffloadMinBatch, cfg.ProjFile,
 		formatFloat32Ptr(cfg.RopeFreqBase), formatFloat32Ptr(cfg.RopeFreqScale), cfg.RopeScaling,
 		formatSplitModePtr(cfg.SplitMode),
-		cfg.SystemPromptCache, cfg.TensorBuftOverrides, cfg.TensorSplit, cfg.UseDirectIO,
+		cfg.SWAFull, cfg.SystemPromptCache, cfg.TensorBuftOverrides, cfg.TensorSplit, cfg.UseDirectIO,
 		formatBoolPtr(cfg.UseMMap),
 		formatFloat32Ptr(cfg.YarnAttnFactor),
 		formatFloat32Ptr(cfg.YarnBetaFast), formatFloat32Ptr(cfg.YarnBetaSlow), formatFloat32Ptr(cfg.YarnExtFactor), formatIntPtr(cfg.YarnOrigCtx), cfg.DraftModel)
@@ -609,6 +618,9 @@ func applyCatalogConfig(user Config, cat Config) Config {
 	if len(user.TensorBuftOverrides) == 0 {
 		user.TensorBuftOverrides = cat.TensorBuftOverrides
 	}
+	if !user.SWAFull {
+		user.SWAFull = cat.SWAFull
+	}
 	if !user.SystemPromptCache {
 		user.SystemPromptCache = cat.SystemPromptCache
 	}
@@ -805,6 +817,14 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 	ctxParams.OpOffload = 1
 	if cfg.OpOffload != nil && !*cfg.OpOffload {
 		ctxParams.OpOffload = 0
+	}
+
+	// Use full-size SWA cache for sliding window attention models.
+	// When enabled, SWA layers use the full context window for their KV
+	// cache instead of the compact n_swa-sized cache, preserving accuracy
+	// at the cost of higher memory usage.
+	if cfg.SWAFull {
+		ctxParams.SwaFull = 1
 	}
 
 	// YaRN RoPE scaling for extended context windows.

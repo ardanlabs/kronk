@@ -60,6 +60,7 @@ interface CatalogFormData {
     mainGpu: number | null;
     tensorSplit: string;
     autoFitVram: boolean;
+    swaFull: boolean | null;
     systemPromptCache: boolean | null;
     incrementalCache: boolean | null;
     cacheMinTokens: number | null;
@@ -166,6 +167,7 @@ const defaultForm: CatalogFormData = {
     mainGpu: null,
     tensorSplit: '',
     autoFitVram: false,
+    swaFull: null,
     systemPromptCache: null,
     incrementalCache: null,
     cacheMinTokens: null,
@@ -302,6 +304,7 @@ function populateFromResponse(resp: CatalogModelResponse): CatalogFormData {
       mainGpu: mc?.['main-gpu'] ?? null,
       tensorSplit: mc?.['tensor-split']?.join(',') ?? '',
       autoFitVram: mc?.['auto-fit-vram'] ?? false,
+      swaFull: mc?.['swa-full'] ?? null,
       systemPromptCache: mc?.['system-prompt-cache'] ?? null,
       incrementalCache: mc?.['incremental-cache'] ?? null,
       cacheMinTokens: mc?.['cache-min-tokens'] ?? null,
@@ -753,6 +756,7 @@ export default function CatalogEditor() {
           'tensor-split': form.config.tensorSplit ? form.config.tensorSplit.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n)) : null,
           'tensor-buft-overrides': null,
           'auto-fit-vram': form.config.autoFitVram,
+          'swa-full': form.config.swaFull ?? false,
           'system-prompt-cache': form.config.systemPromptCache ?? false,
           'incremental-cache': form.config.incrementalCache ?? false,
           'cache-min-tokens': form.config.cacheMinTokens ?? 0,
@@ -1156,6 +1160,7 @@ export default function CatalogEditor() {
               </div>
               <NullableNumInput label="Context Window" tooltipKey="contextWindow" value={form.config.contextWindow} defaultValue={rc?.['context-window']} onChange={(v) => setConfig({ contextWindow: v })} />
               <NullableNumInput label="Max Sequences (nseq-max)" tooltipKey="nSeqMax" value={form.config.nseqMax} defaultValue={rc?.['nseq-max']} onChange={(v) => setConfig({ nseqMax: v })} />
+              <TriStateSelect label="SWA Full Cache" tooltipKey="swaFull" value={form.config.swaFull} onChange={(v) => setConfig({ swaFull: v })} />
               <TriStateSelect label="System Prompt Cache" tooltipKey="systemPromptCache" value={form.config.systemPromptCache} onChange={(v) => setConfig({ systemPromptCache: v })} />
               <TriStateSelect label="Incremental Cache" tooltipKey="incrementalCache" value={form.config.incrementalCache} onChange={(v) => setConfig({ incrementalCache: v })} />
               <NullableNumInput label="Batch Threads (nthreads-batch)" tooltipKey="nthreadsBatch" value={form.config.nthreadsBatch} defaultValue={rc?.['nthreads-batch']} onChange={(v) => setConfig({ nthreadsBatch: v })} />
