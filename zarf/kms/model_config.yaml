@@ -93,48 +93,42 @@
 # ==============================================================================
 # CONFIGURATION NOTES
 #
-# SPC and IMC are mutually exclusive - choose one based on your model's template.
+# SPC and IMC are mutually exclusive - choose based on your workload.
 #
 # SYSTEM PROMPT CACHE (SPC)
 # -------------------------
-# Use SPC for models with inconsistent templates (GPT-OSS, GLM) or for simple
-# chat applications. SPC caches only the system prompt.
+# Use SPC for chat UIs and multi-client scenarios. SPC caches only the system
+# prompt KV state in RAM and restores it per request. Multiple system prompts
+# are cached concurrently (up to NSeqMax sessions) with LRU eviction.
 #
-# The client should pass the KRONK_CACHE_ID header with a unique session/user ID.
-# Each unique ID gets its own dedicated cache sequence (up to max-cache-sessions).
-# If no header is passed, the "default" id is used which causes problems on
-#   nseq-max: 1
 #   system-prompt-cache: true
 #
 # INCREMENTAL MESSAGE CACHE (IMC)
 # -------------------------------
-# Use IMC for models with consistent templates (QWEN, Llama) where the template
-# produces identical output for the same messages regardless of conversation
-# length. IMC caches all messages except the last one and extends incrementally.
+# Use IMC for agentic workflows (Cline, Kilo Code, etc). IMC caches all
+# messages except the last one and extends incrementally. Works with any
+# model template — deterministic templates use fast hash matching, non-
+# deterministic templates (GPT-OSS, GLM) fall back to token prefix matching.
 #
-# The client should pass the KRONK_CACHE_ID header with a unique session/user ID.
-# Each unique ID gets its own dedicated cache sequence (up to max-cache-sessions).
-# If no header is passed, the "default" id is used which causes problems on
-# multi-user systems.
-#   nseq-max: 1
+# Set nseq-max to at least the number of concurrent sub-agents your framework
+# spawns. Each slot independently tracks its own conversation branch.
+#
+#   nseq-max: 2
 #   incremental-cache: true
-#   max-cache-sessions: 5      # Support up to 5 concurrent users (default 1)
 #
-# CONTEXT WINDOW AUTO-SCALING (IMC ONLY)
-# ---------------------------------------
-# When IMC is enabled, Kronk automatically scales the internal context window
-# so each slot gets the full configured context-window size. IMC caches the
-# full conversation, so without scaling you'd get reduced effective context
-# per slot. This does not apply to SPC (system prompt is typically small).
-#
-# Formula: Internal NCtx = context-window × (nseq-max + max-cache-sessions)
+# UNIFIED KV CACHE (nseq-max > 1)
+# --------------------------------
+# When nseq-max > 1, Kronk enables a unified KV cache where all slots share
+# the full context-window pool. Any single slot can use up to the full context
+# window, but the total across all slots cannot exceed it. KV pressure eviction
+# automatically clears stale slots when the shared pool gets tight.
 #
 # Example:
-#   context-window: 128k, nseq-max: 1, max-cache-sessions: 1
-#   → Internal NCtx = 128k × 2 = 256k
-#   → Each slot gets full 128k context
+#   context-window: 131072, nseq-max: 3
+#   → Total KV cache sized for 131k tokens (shared by all 3 slots)
+#   → Any single slot can use up to the full 131k tokens
 #
-# This means IMC increases VRAM usage proportionally. Plan accordingly.
+# This means IMC adds no extra VRAM beyond what the context window requires.
 #
 # AGENT CLIENT NOTES
 # -------------------------------
