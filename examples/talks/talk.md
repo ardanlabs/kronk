@@ -22,7 +22,7 @@ To dog food the SDK, Bill wrote a model server (KMS) that is optimized to run yo
 - I want to write a basic tic-tac-toe game only using the Go standard library.
 - The game play can be in the terminal.
 - Allow 2 players to play against each other.
-- Add the code to a file name `.talks/tictactoe/step1/main.go`
+- Add the code to a file name `examples/talks/step1/main.go`
 
 - Paint the board like this:
 
