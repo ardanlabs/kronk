@@ -160,6 +160,7 @@ Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
     temperature: 0.6
     top_k: 20
     top_p: 0.95
+    presence_penalty: 1.5
 
 gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
   context-window: 262144
