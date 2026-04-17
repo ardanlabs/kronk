@@ -42,7 +42,6 @@ func (s SamplingConfig) WithDefaults() SamplingConfig {
 		TopK:            model.DefTopK,
 		TopP:            model.DefTopP,
 		MinP:            model.DefMinP,
-		MaxTokens:       model.DefMaxTokens,
 		RepeatPenalty:   model.DefRepeatPenalty,
 		RepeatLastN:     model.DefRepeatLastN,
 		DryMultiplier:   model.DefDryMultiplier,
@@ -67,9 +66,6 @@ func (s SamplingConfig) WithDefaults() SamplingConfig {
 	}
 	if s.MinP == 0 {
 		s.MinP = defaults.MinP
-	}
-	if s.MaxTokens == 0 {
-		s.MaxTokens = defaults.MaxTokens
 	}
 	if s.RepeatPenalty == 0 {
 		s.RepeatPenalty = defaults.RepeatPenalty

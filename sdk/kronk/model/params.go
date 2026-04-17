@@ -49,8 +49,9 @@ const (
 	// When enabled, the response includes probability data for each generated token.
 	DefLogprobs = false
 
-	// DefMaxTokens is the default maximum tokens for generation when not
-	// derived from the model's context window.
+	// DefMaxTokens exists for backward compatibility. When max_tokens is
+	// not specified in a request, adjustParams defaults to the model's
+	// context window size.
 	DefMaxTokens = 4096
 
 	// DefMaxTopLogprobs defines the number of maximum logprobs to use.
@@ -192,7 +193,7 @@ type Params struct {
 	Logprobs bool `json:"logprobs"`
 
 	// MaxTokens is the maximum tokens for generation when not derived from the
-	// model's context window. Default is 4096.
+	// model's context window the default is 4096.
 	MaxTokens int `json:"max_tokens"`
 
 	// MinP is a dynamic sampling threshold that helps balance the coherence

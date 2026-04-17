@@ -673,9 +673,6 @@ func applyCatalogSamplingParams(user Params, cat Params) Params {
 	if user.MinP == 0 {
 		user.MinP = cat.MinP
 	}
-	if user.MaxTokens == 0 {
-		user.MaxTokens = cat.MaxTokens
-	}
 	if user.RepeatPenalty == 0 {
 		user.RepeatPenalty = cat.RepeatPenalty
 	}
