@@ -1,0 +1,28 @@
+{
+    "$schema": "https://opencode.ai/config.json",
+    "provider": {
+        "kronk": {
+            "npm": "@ai-sdk/openai-compatible",
+            "name": "Kronk (local)",
+            "options": {
+                "baseURL": "http://127.0.0.1:11435/v1"
+            },
+            "models": {
+                "gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT": {
+                    "name": "Gemma 4 26B Agent",
+                    "limit": {
+                        "context": 131072,
+                        "output": 65536
+                    }
+                }
+            }
+        }
+    },
+    "model": "kronk/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT",
+    "mcp": {
+        "kronk": {
+            "type": "remote",
+            "url": "http://localhost:9000/mcp"
+        }
+    }
+}
