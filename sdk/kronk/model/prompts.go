@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/ardanlabs/jinja"
 	"github.com/hybridgroup/yzma/pkg/llama"
@@ -110,25 +109,6 @@ func (m *Model) applyJinjaTemplate(ctx context.Context, d map[string]any) (strin
 
 	s, err := m.compiledTmpl.tmpl.Render(d)
 	if err != nil {
-
-		// Some Jinja templates (e.g., Qwen3) require at least one user message
-		// to render correctly. If the error mentions "user", inject a minimal
-		// user message and retry. This avoids proactively injecting empty user
-		// turns which can corrupt tool-call flows for other models (e.g., Gemma 4).
-		if strings.Contains(strings.ToLower(err.Error()), "user") {
-			if msgs, ok := d["messages"].([]D); ok {
-				m.log(ctx, "applyJinjaTemplate", "status", "retrying with injected user message", "error", err.Error())
-
-				injected := append([]D{{"role": "user", "content": "continue"}}, msgs...)
-				d["messages"] = injected
-
-				s, err = m.compiledTmpl.tmpl.Render(d)
-				if err == nil {
-					return s, nil
-				}
-			}
-		}
-
 		return "", fmt.Errorf("apply-jinja-template: failed to execute template: %w", err)
 	}
 
