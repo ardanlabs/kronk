@@ -181,9 +181,62 @@ func normalizeGemmaQuotes(s string) string {
 		}
 		b.WriteByte('"')
 		i += closeIdx + tokenLen
+
+		// After the closing <|"|>, the model may write the next key with
+		// a missing opening quote: ,filePath":  instead of ,"filePath":.
+		// The <|"|> token boundary swallows the opening " of the key.
+		// Splice the fix into s so the remainder is parsed correctly.
+		if i < len(s) {
+			tail := s[i:]
+			if fixed := fixMissingKeyOpenQuote(tail); fixed != tail {
+				s = s[:i] + fixed
+			}
+		}
 	}
 
 	return b.String()
+}
+
+// fixMissingKeyOpenQuote fixes the pattern ,key": that appears after a
+// closing <|"|>. The model sometimes writes ,filePath": instead of
+// ,"filePath": because the opening " of the key name gets swallowed by
+// the adjacent <|"|> token boundary. This function inserts the missing "
+// before the key identifier.
+func fixMissingKeyOpenQuote(suffix string) string {
+	// Must start with comma (optionally whitespace) then identifier then ":
+	j := 0
+	if j >= len(suffix) || suffix[j] != ',' {
+		return suffix
+	}
+	j++
+
+	// Skip whitespace after comma.
+	for j < len(suffix) && isWhitespace(suffix[j]) {
+		j++
+	}
+
+	// Must NOT start with " (already quoted).
+	if j >= len(suffix) || suffix[j] == '"' {
+		return suffix
+	}
+
+	// Scan identifier.
+	keyStart := j
+	for j < len(suffix) && isIdentChar(suffix[j]) {
+		j++
+	}
+	keyLen := j - keyStart
+	if keyLen == 0 || keyLen > 40 {
+		return suffix
+	}
+
+	// Must be followed by ":
+	if j+1 < len(suffix) && suffix[j] == '"' && suffix[j+1] == ':' {
+		// Pattern matched: ,identifier": → ,"identifier":
+		return suffix[:keyStart] + `"` + suffix[keyStart:]
+	}
+
+	return suffix
 }
 
 // fixMissingKeyQuote fixes the pattern "key: that appears before <|"|>.

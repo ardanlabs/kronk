@@ -20,6 +20,9 @@ To dog food the SDK, Bill wrote a model server (KMS) that is optimized to run yo
 
 ### Basic Game Play Prompt
 
+- Think efficiently and concisely, prioritizing speed. Use short, direct reasoning steps.
+- Summarize your reasoning in 50 words or less.
+
 - I want to write a basic tic-tac-toe game only using the Go standard library.
 - The game play can be in the terminal.
 - Allow 2 players to play against each other.

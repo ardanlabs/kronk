@@ -87,6 +87,16 @@ func TestRepair(t *testing.T) {
 			keys:  map[string]string{"content": "package main", "filePath": "examples/talks/tictactoe/main.go"},
 		},
 
+		{
+			// Reproduces production failure: model uses <|"|> for content value
+			// but standard quotes for filePath. The closing <|"|> token boundary
+			// swallows the opening " of filePath, producing ,filePath": instead
+			// of ,"filePath":.
+			name:  "gemma token value then bare key missing open quote",
+			input: "{\"content:<|\"|>package main\n\nimport (\n\t\"fmt\"\n)\n\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n<|\"|>,filePath\":\"/Users/bill/test/main.go\"}",
+			keys:  map[string]string{"content": "package main", "filePath": "/Users/bill/test/main.go"},
+		},
+
 		// =================================================================
 		// Mixed delimiters — model opens with " but closes with <|"|>
 		// =================================================================
