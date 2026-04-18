@@ -79,4 +79,5 @@ Player X's turn. Enter a number (1-9):
 - I need functions called playerX and playerO that is used when it's that
   player's turn to choose a space. I need to encapsulate that functionality.
 - Do not attempt to run the game yourself.
-- Don't worry if the code compiles, I will accept your first version.
+- Compile the program to validate it compiles. Do not try to fix an errors, just
+  report them and I will give you instructions.

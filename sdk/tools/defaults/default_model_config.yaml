@@ -153,7 +153,7 @@
 # CODING MODELS
 
 Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
-  context-window: 262144
+  context-window: 131072
   nseq-max: 2
   incremental-cache: true
   sampling-parameters:
@@ -163,7 +163,7 @@ Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
     presence_penalty: 1.5
 
 gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
-  context-window: 262144
+  context-window: 131072
   nseq-max: 2
   incremental-cache: true
   sampling-parameters:
