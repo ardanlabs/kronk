@@ -3,6 +3,7 @@ package model
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -526,6 +527,15 @@ func parseGemmaToolCallFormat(content string) []ResponseToolCall {
 
 		if json.Unmarshal([]byte(normalized), &args) == nil {
 			parsed = true
+		} else if strings.Contains(trimmed, "<|\"|>") {
+			// The model used <|"|> tokens in this tool call. Use the
+			// key-aware Gemma repair which replaces <|"|> with " and
+			// then identifies structural vs content quotes.
+			if repaired, ok := repairGemmaJSON(jsonCandidate); ok {
+				if json.Unmarshal([]byte(repaired), &args) == nil {
+					parsed = true
+				}
+			}
 		} else if repaired, ok := repairJSON(normalized); ok {
 			if json.Unmarshal([]byte(repaired), &args) == nil {
 				parsed = true
@@ -688,6 +698,129 @@ func normalizeGemmaQuotes(s string) string {
 	}
 
 	return b.String()
+}
+
+// repairGemmaJSON repairs tool call JSON that contains <|"|> tokens. The model
+// uses <|"|> to delimit values whose content contains literal " characters
+// (e.g., source code with import "fmt"). The token may appear at value
+// boundaries in any combination with standard " quotes.
+//
+// Strategy: replace all <|"|> with ", then walk through the result using
+// key-value structure awareness to determine which " are structural delimiters
+// and which are content that needs escaping.
+//
+// Keys are always short identifiers (content, filePath, oldString) and never
+// contain " characters, so they're unambiguous anchors for finding structure.
+func repairGemmaJSON(s string) (string, bool) {
+	const token = "<|\"|>"
+
+	if !strings.Contains(s, token) {
+		return s, false
+	}
+
+	// Replace all <|"|> with " and fix bare keys.
+	s = strings.ReplaceAll(s, token, "\"")
+	s = strings.ReplaceAll(s, "`,`", "\",\"")
+	s = quoteBareJSONKeys(s)
+
+	// Quick check: if it already parses after simple replacement, done.
+	var test any
+	if json.Unmarshal([]byte(s), &test) == nil {
+		return s, true
+	}
+
+	// Walk through the JSON with key-value awareness.
+	// After {, expect keys. After :, expect values.
+	// Keys never contain " so their boundaries are unambiguous.
+	// For string values, the closing " is identified by isClosingQuote.
+	// All other " between open and close are content → escape them.
+	var buf strings.Builder
+	buf.Grow(len(s) + 64)
+
+	i := 0
+	for i < len(s) {
+		c := s[i]
+
+		switch c {
+		case '{', '}', '[', ']', ',':
+			buf.WriteByte(c)
+			i++
+
+		case ':':
+			buf.WriteByte(c)
+			i++
+
+			// Skip whitespace after colon.
+			for i < len(s) && (s[i] == ' ' || s[i] == '\t' || s[i] == '\n' || s[i] == '\r') {
+				buf.WriteByte(s[i])
+				i++
+			}
+
+			if i >= len(s) {
+				break
+			}
+
+			// Value starts here. If it's a string, repair inner quotes.
+			if s[i] == '"' {
+				i++ // skip opening quote
+
+				// Find the closing quote using structural analysis.
+				closePos := -1
+				for k := i; k < len(s); k++ {
+					if s[k] == '\\' {
+						k++ // skip escaped character
+						continue
+					}
+					if s[k] == '"' && isClosingQuote(s, k) {
+						closePos = k
+						break
+					}
+				}
+
+				if closePos == -1 {
+					// No valid closing quote found. Write what we have.
+					buf.WriteByte('"')
+					buf.WriteString(s[i:])
+					i = len(s)
+					break
+				}
+
+				// Write the opening quote, escape all inner " chars,
+				// then write the closing quote.
+				inner := s[i:closePos]
+				buf.WriteByte('"')
+				for j := 0; j < len(inner); j++ {
+					switch {
+					case inner[j] == '\\' && j+1 < len(inner):
+						buf.WriteByte('\\')
+						j++
+						buf.WriteByte(inner[j])
+					case inner[j] == '"':
+						buf.WriteString(`\"`)
+					default:
+						buf.WriteByte(inner[j])
+					}
+				}
+				buf.WriteByte('"')
+				i = closePos + 1
+			}
+
+			// Non-string values (numbers, booleans, null, objects, arrays)
+			// are written as-is by the outer loop.
+
+		default:
+			buf.WriteByte(c)
+			i++
+		}
+	}
+
+	repaired := buf.String()
+
+	if json.Unmarshal([]byte(repaired), &test) != nil {
+		return s, false
+	}
+
+	return repaired, true
 }
 
 // findClosingGemmaQuote finds the position of the closing <|"|> token that
@@ -1069,16 +1202,44 @@ func parseGemmaArgs(raw string) map[string]any {
 
 		// Value without quote delimiters - take until next comma or end.
 		endIdx := strings.IndexAny(remaining, ",}")
+		var rawVal string
 		if endIdx == -1 {
-			args[key] = strings.TrimSpace(remaining)
-			break
+			rawVal = strings.TrimSpace(remaining)
+		} else {
+			rawVal = strings.TrimSpace(remaining[:endIdx])
 		}
 
-		args[key] = strings.TrimSpace(remaining[:endIdx])
+		// Preserve boolean and numeric types instead of storing as strings.
+		args[key] = parseGemmaBareValue(rawVal)
+
+		if endIdx == -1 {
+			break
+		}
 		remaining = remaining[endIdx:]
 	}
 
 	return args
+}
+
+// parseGemmaBareValue converts a bare (unquoted) value string to the
+// appropriate Go type. Booleans and null are converted to their native types;
+// numeric strings are converted to float64 (matching json.Unmarshal behavior).
+// Everything else is returned as a string.
+func parseGemmaBareValue(s string) any {
+	switch s {
+	case "true":
+		return true
+	case "false":
+		return false
+	case "null":
+		return nil
+	}
+
+	if n, err := strconv.ParseFloat(s, 64); err == nil {
+		return n
+	}
+
+	return s
 }
 
 // =============================================================================
