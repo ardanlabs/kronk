@@ -165,11 +165,7 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 
 	mParams := llama.ModelDefaultParams()
 
-	// Resolve device list. Devices takes priority; Device is the deprecated fallback.
 	deviceNames := cfg.Devices
-	if len(deviceNames) == 0 && cfg.Device != "" {
-		deviceNames = []string{cfg.Device}
-	}
 
 	var devicesBuf []llama.GGMLBackendDevice
 	if len(deviceNames) > 0 {
@@ -528,7 +524,7 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 			}
 			m.draft = draft
 			l(ctx, "draft-model", "status", "loaded",
-				"nDraft", draft.nDraft, "device", cfg.DraftModel.Device,
+				"nDraft", draft.nDraft, "devices", cfg.DraftModel.Devices,
 				"nCtx", llama.NCtx(draft.lctx))
 		}
 	}
@@ -555,15 +551,9 @@ func loadDraftModel(ctx context.Context, log Logger, cfg Config, targetModel lla
 		mParams.NGpuLayers = int32(*dCfg.NGpuLayers)
 	}
 
-	// Resolve device list for draft model.
-	draftDeviceNames := dCfg.Devices
-	if len(draftDeviceNames) == 0 && dCfg.Device != "" {
-		draftDeviceNames = []string{dCfg.Device}
-	}
-
 	var draftDevicesBuf []llama.GGMLBackendDevice
-	if len(draftDeviceNames) > 0 {
-		resolved, err := resolveBackendDevices(draftDeviceNames)
+	if len(dCfg.Devices) > 0 {
+		resolved, err := resolveBackendDevices(dCfg.Devices)
 		if err != nil {
 			return nil, fmt.Errorf("draft-resolve-devices: %w", err)
 		}
@@ -586,7 +576,7 @@ func loadDraftModel(ctx context.Context, log Logger, cfg Config, targetModel lla
 
 	log(ctx, "draft-model", "status", "loading",
 		"files", fmt.Sprintf("%v", dCfg.ModelFiles),
-		"devices", fmt.Sprintf("%v", draftDeviceNames),
+		"devices", fmt.Sprintf("%v", dCfg.Devices),
 		"nDraft", dCfg.NDraft,
 		"gpu_layers", mParams.NGpuLayers)
 

@@ -268,7 +268,6 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfi
 		Template:      rmc.Template,
 		Metadata:      metadata,
 		ModelConfig: &ModelConfig{
-			Device:               rmc.Device,
 			ContextWindow:        rmc.ContextWindow,
 			NBatch:               rmc.NBatch,
 			NUBatch:              rmc.NUBatch,
@@ -549,7 +548,6 @@ func fromAppMoEConfig(m *MoEConfig) *model.MoEConfig {
 
 // ModelConfig represents the model configuration the model will use by default.
 type ModelConfig struct {
-	Device               string                   `json:"device"`
 	ContextWindow        int                      `json:"context-window"`
 	NBatch               int                      `json:"nbatch"`
 	NUBatch              int                      `json:"nubatch"`
@@ -724,7 +722,6 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 
 	if rmc != nil {
 		resp.ModelConfig = &ModelConfig{
-			Device:               rmc.Device,
 			ContextWindow:        rmc.ContextWindow,
 			NBatch:               rmc.NBatch,
 			NUBatch:              rmc.NUBatch,
@@ -787,7 +784,6 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 
 	bmc := catDetails.BaseModelConfig
 	resp.BaseConfig = &ModelConfig{
-		Device:               bmc.Device,
 		ContextWindow:        bmc.ContextWindow,
 		NBatch:               bmc.NBatch,
 		NUBatch:              bmc.NUBatch,
@@ -1097,7 +1093,6 @@ func (app SaveCatalogRequest) toModelDetails() catalog.ModelDetails {
 
 	if app.Config != nil {
 		md.BaseModelConfig = catalog.ModelConfig{
-			Device:               app.Config.Device,
 			ContextWindow:        app.Config.ContextWindow,
 			NBatch:               app.Config.NBatch,
 			NUBatch:              app.Config.NUBatch,

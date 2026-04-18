@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../services/api';
 import { useModelList } from '../contexts/ModelListContext';
 import { useChatMessages, type DisplayMessage } from '../contexts/ChatContext';
@@ -6,7 +6,7 @@ import { useSampling, defaultSampling, type SamplingParams } from '../contexts/S
 import ChatHistoryPanel from './ChatHistoryPanel';
 import ChatPanel, { type StreamTransport } from './ChatPanel';
 import { useChatHistory, type HistoryMessage } from '../contexts/ChatHistoryContext';
-import type { SamplingConfig, ListModelDetail, VRAM } from '../types';
+import type { SamplingConfig, VRAM } from '../types';
 import { useDevicesInfo, useMoeFit } from './vram';
 
 const HISTORY_ENABLED_KEY = 'kronk_chat_history_enabled';
@@ -26,7 +26,6 @@ export default function Chat() {
   });
 
 
-  const [extendedModels, setExtendedModels] = useState<ListModelDetail[]>([]);
   const [modelVRAM, setModelVRAM] = useState<VRAM | null>(null);
   const [modelTemplate, setModelTemplate] = useState<string | null>(null);
   const [modelMetadata, setModelMetadata] = useState<Record<string, string> | undefined>(undefined);
@@ -34,11 +33,7 @@ export default function Chat() {
   const moeFit = useMoeFit(modelVRAM, modelMetadata, devicesInfo);
   const [modelBaseline, setModelBaseline] = useState<SamplingParams | null>(null);
   const prevModelRef = useRef<string | null>(null);
-  const selectedModelDraftId = useMemo(() => {
-    if (!selectedModel || !models?.data) return undefined;
-    const m = models.data.find((m) => m.id === selectedModel);
-    return m?.draft_model_id;
-  }, [selectedModel, models]);
+  const [selectedModelDraftId, setSelectedModelDraftId] = useState<string | undefined>(undefined);
 
   const toggleHistoryEnabled = useCallback(() => {
     setHistoryEnabled((prev) => {
@@ -107,13 +102,6 @@ export default function Chat() {
 
   useEffect(() => {
     loadModels();
-    api.listModelsExtended()
-      .then((response) => {
-        if (response?.data) {
-          setExtendedModels(response.data);
-        }
-      })
-      .catch(() => {});
   }, [loadModels]);
 
   useEffect(() => {
@@ -130,26 +118,17 @@ export default function Chat() {
   }, [models, selectedModel]);
 
   useEffect(() => {
-    if (selectedModel && extendedModels.length > 0) {
-      localStorage.setItem('kronk_chat_model', selectedModel);
-      if (prevModelRef.current !== selectedModel) {
-        const modelDetail = extendedModels.find((m) => m.id === selectedModel);
-        applySamplingConfig(modelDetail?.sampling);
-      }
-      prevModelRef.current = selectedModel;
-    }
-  }, [selectedModel, extendedModels, applySamplingConfig]);
-
-  useEffect(() => {
     if (!selectedModel) {
       setModelVRAM(null);
       setModelTemplate(null);
       setModelMetadata(undefined);
+      setSelectedModelDraftId(undefined);
       return;
     }
     setModelVRAM(null);
     setModelTemplate(null);
     setModelMetadata(undefined);
+    setSelectedModelDraftId(undefined);
     let cancelled = false;
     api.showModel(selectedModel)
       .then((info) => {
@@ -157,16 +136,24 @@ export default function Chat() {
         setModelVRAM(info.vram || null);
         setModelTemplate(info.template ?? '');
         setModelMetadata(info.metadata);
+        setSelectedModelDraftId(info.model_config?.['draft-model']?.['model-id']);
+
+        if (prevModelRef.current !== selectedModel) {
+          applySamplingConfig(info.model_config?.['sampling-parameters']);
+        }
+        prevModelRef.current = selectedModel;
+        localStorage.setItem('kronk_chat_model', selectedModel);
       })
       .catch(() => {
         if (!cancelled) {
           setModelVRAM(null);
           setModelTemplate(null);
           setModelMetadata(undefined);
+          setSelectedModelDraftId(undefined);
         }
       });
     return () => { cancelled = true; };
-  }, [selectedModel]);
+  }, [selectedModel, applySamplingConfig]);
 
   const transport = useCallback<StreamTransport>(({ messages, sampling, onMessage, onError, onComplete }) => {
     return api.streamChat(
@@ -273,7 +260,7 @@ export default function Chat() {
                   })
                   .map((model) => (
                   <option key={model.id} value={model.id}>
-                    {model.draft_model_id ? '⚡ ' : ''}{model.id}
+                    {model.id}
                   </option>
                 ))}
               </select>
