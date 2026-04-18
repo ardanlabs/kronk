@@ -107,14 +107,6 @@ type DraftModelConfig struct {
 //
 // DefaultParams contains the default sampling parameters for requests.
 //
-// Device is the device to use for the model. If not set, the default device
-// will be used. To see what devices are available, run the following command
-// which will be found where you installed llama.cpp.
-// $ llama-bench --list-devices
-//
-// Deprecated: Use Devices instead. If both Device and Devices are set,
-// a validation error is returned.
-//
 // Devices is a list of device names to use for model execution. When multiple
 // devices are specified, the model is distributed across them according to the
 // SplitMode and TensorSplit configuration. Device names can be obtained from
