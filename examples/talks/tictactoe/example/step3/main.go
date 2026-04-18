@@ -13,26 +13,21 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
-	"github.com/ardanlabs/kronk/sdk/tools/libs"
-	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-const modelURL = "https://huggingface.co/unsloth/gemma-4-26B-A4B-it-GGUF/resolve/main/gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf"
+// go run examples/talks/tictactoe/example/step2/main.go
 
 func main() {
-	if err := run(); err != nil {
+	modelFile := "unsloth/gemma-4-26B-A4B-it-GGUF/gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf"
+
+	if err := run(modelFile); err != nil {
 		fmt.Printf("\nERROR: %s\n", err)
 		os.Exit(1)
 	}
 }
 
-func run() error {
-	mp, err := installSystem()
-	if err != nil {
-		return fmt.Errorf("unable to installation system: %w", err)
-	}
-
-	krn, err := newKronk(mp)
+func run(modelFile string) error {
+	krn, err := newKronk(modelFile)
 	if err != nil {
 		return fmt.Errorf("unable to init kronk: %w", err)
 	}
@@ -47,78 +42,23 @@ func run() error {
 	return runGame(krn)
 }
 
-func installSystem() (models.Path, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-	defer cancel()
-
-	libs, err := libs.New(
-		libs.WithVersion(defaults.LibVersion("")),
-	)
-	if err != nil {
-		return models.Path{}, err
-	}
-
-	if _, err := libs.Download(ctx, kronk.FmtLogger); err != nil {
-		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
-	}
-
-	// -------------------------------------------------------------------------
-
-	mdls, err := models.New()
-	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
-	}
-
-	mp, err := mdls.Download(ctx, kronk.FmtLogger, modelURL, "")
-	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
-	}
-
-	return mp, nil
-}
-
-func newKronk(mp models.Path) (*kronk.Kronk, error) {
+func newKronk(modelFile string) (*kronk.Kronk, error) {
 	fmt.Println("loading model...")
 
 	if err := kronk.Init(); err != nil {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
+	modelFile = fmt.Sprintf("%s/models/%s", defaults.BaseDir(""), modelFile)
+
 	cfg := model.Config{
 		ContextWindow: 131072,
-		ModelFiles:    mp.ModelFiles,
+		ModelFiles:    []string{modelFile},
 	}
 
 	krn, err := kronk.New(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create inference model: %w", err)
-	}
-
-	fmt.Print("- system info:\n\t")
-	for k, v := range krn.SystemInfo() {
-		fmt.Printf("%s:%v, ", k, v)
-	}
-	fmt.Println()
-
-	fmt.Println("- contextWindow  :", krn.ModelConfig().ContextWindow)
-	fmt.Printf("- k/v            : %s/%s\n", krn.ModelConfig().CacheTypeK, krn.ModelConfig().CacheTypeV)
-	fmt.Println("- flashAttention :", krn.ModelConfig().FlashAttention)
-	fmt.Println("- nBatch         :", krn.ModelConfig().NBatch)
-	fmt.Println("- nuBatch        :", krn.ModelConfig().NUBatch)
-	fmt.Println("- modelType      :", krn.ModelInfo().Type)
-	fmt.Println("- isGPT          :", krn.ModelInfo().IsGPTModel)
-	fmt.Println("- template       :", krn.ModelInfo().Template.FileName)
-	fmt.Println("- grammar        :", krn.ModelConfig().DefaultParams.Grammar != "")
-	fmt.Println("- nSeqMax        :", krn.ModelConfig().NSeqMax)
-	fmt.Println("- vramTotal      :", krn.ModelInfo().VRAMTotal/(1024*1024), "MiB")
-	fmt.Println("- slotMemory     :", krn.ModelInfo().SlotMemory/(1024*1024), "MiB")
-	fmt.Println("- modelSize      :", krn.ModelInfo().Size/(1000*1000), "MB")
-	fmt.Println("- spc            :", krn.ModelConfig().SystemPromptCache)
-	fmt.Println("- imc            :", krn.ModelConfig().IncrementalCache)
-	if n := krn.ModelConfig().NGpuLayers; n != nil {
-		fmt.Println("- nGPULayers     :", *n)
-	} else {
-		fmt.Println("- nGPULayers     : all")
 	}
 
 	return krn, nil
@@ -261,6 +201,7 @@ func playerX(b *board, reader *bufio.Reader) (int, error) {
 func playerO(b *board, krn *kronk.Kronk) (int, error) {
 	for {
 		fmt.Print("\nPlayer O's turn. Enter a number (1-9): ")
+
 		input, err := PickSpace(b, krn)
 		if err != nil {
 			return 0, err
