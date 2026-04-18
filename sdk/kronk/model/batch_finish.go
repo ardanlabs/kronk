@@ -201,10 +201,10 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 
 			switch {
 			case e.model.modelInfo.IsGPTModel:
-				s.respToolCalls = parseGPTToolCall(content)
+				s.respToolCalls = s.proc.parseGPTToolCall(content)
 
 			default:
-				s.respToolCalls = parseToolCall(content)
+				s.respToolCalls = s.proc.parseToolCall(content)
 			}
 
 			// Validate parsed tool call arguments produce valid JSON.
