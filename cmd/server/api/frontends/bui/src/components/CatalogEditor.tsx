@@ -752,7 +752,7 @@ export default function CatalogEditor() {
           'tensor-split': form.config.tensorSplit ? form.config.tensorSplit.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n)) : null,
           'tensor-buft-overrides': null,
           'auto-fit-vram': form.config.autoFitVram,
-          'swa-full': form.config.swaFull ?? false,
+          'swa-full': form.config.swaFull,
           'system-prompt-cache': form.config.systemPromptCache ?? false,
           'incremental-cache': form.config.incrementalCache ?? false,
           'cache-min-tokens': form.config.cacheMinTokens ?? 0,

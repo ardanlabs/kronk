@@ -426,7 +426,7 @@ func mergeModelConfig(dst *ModelConfig, src ModelConfig) {
 	if src.AutoFitVRAM {
 		dst.AutoFitVRAM = src.AutoFitVRAM
 	}
-	if src.SWAFull {
+	if src.SWAFull != nil {
 		dst.SWAFull = src.SWAFull
 	}
 	if src.SystemPromptCache {

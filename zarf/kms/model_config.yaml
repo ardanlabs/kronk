@@ -24,7 +24,7 @@
 #   rope-freq-scale: 0.25                # RoPE frequency scale (nil = auto-calculated)
 #   rope-scaling-type: yarn              # RoPE scaling: none, linear, yarn
 #   split-mode: row                      # Multi-GPU split: none, layer, row (row recommended for MoE models)
-#   swa-full: false                      # Full KV cache for SWA layers (recommended for Gemma 4)
+#   swa-full: true                       # Full KV cache for SWA layers (default: llama.cpp decides, currently true)
 #   system-prompt-cache: false           # Cache system prompt KV state for reuse across requests
 #   template: qwen3.jinja                # Jinja template file override (from templates dir)
 #   tensor-buft-overrides: [all-ffn]     # Force tensors to CPU: all-ffn, block:N, or regex
@@ -166,7 +166,6 @@ gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
   context-window: 262144
   nseq-max: 2
   incremental-cache: true
-  swa-full: true
   sampling-parameters:
     temperature: 1.0
     top_k: 64

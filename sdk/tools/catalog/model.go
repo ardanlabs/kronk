@@ -225,7 +225,7 @@ type ModelConfig struct {
 	RopeScaling          model.RopeScalingType    `yaml:"rope-scaling-type,omitempty"`
 	Sampling             SamplingConfig           `yaml:"sampling-parameters,omitempty"`
 	SplitMode            *model.SplitMode         `yaml:"split-mode,omitempty"`
-	SWAFull              bool                     `yaml:"swa-full,omitempty"`
+	SWAFull              *bool                    `yaml:"swa-full,omitempty"`
 	SystemPromptCache    bool                     `yaml:"system-prompt-cache,omitempty"`
 	TensorBuftOverrides  []string                 `yaml:"tensor-buft-overrides,omitempty"`
 	TensorSplit          []float32                `yaml:"tensor-split,omitempty"`

@@ -195,25 +195,13 @@ func removeFirstNMessages(d D, n int) D {
 	newMessages := make([]D, len(messages)-n)
 	copy(newMessages, messages[n:])
 
-	// Some Jinja templates (e.g., Qwen3) require at least one user message
-	// to render correctly. If no user message exists in the remaining
-	// messages, inject an empty one. Place it after the system message if
-	// one leads, otherwise at position 0.
-	hasUser := false
-	for _, msg := range newMessages {
-		if r, _ := msg["role"].(string); r == RoleUser {
-			hasUser = true
-			break
-		}
-	}
-	if !hasUser && len(newMessages) > 0 {
-		firstRole, _ := newMessages[0]["role"].(string)
-		if firstRole == RoleSystem {
-			newMessages = append(newMessages[:1], append([]D{{"role": RoleUser, "content": ""}}, newMessages[1:]...)...)
-		} else {
-			newMessages = append([]D{{"role": RoleUser, "content": ""}}, newMessages...)
-		}
-	}
+	// Remove tools and system-level keys from the suffix document. These
+	// were already rendered in the cached prefix. Re-rendering them in the
+	// suffix causes a duplicate system/tools header mid-conversation, which
+	// corrupts the prompt and causes models (e.g., Gemma 4) to loop on
+	// tool calls or stop generating prematurely.
+	delete(d, "tools")
+	delete(d, "tool_choice")
 
 	d["messages"] = newMessages
 
