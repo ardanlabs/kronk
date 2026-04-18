@@ -1,11 +1,13 @@
 package model
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/jsonrepair"
 	"github.com/google/uuid"
 )
 
@@ -57,7 +59,7 @@ func newToolCallID() string {
 
 // =============================================================================
 
-func parseGPTToolCall(content string) []ResponseToolCall {
+func (p *processor) parseGPTToolCall(content string) []ResponseToolCall {
 	// Format: .FUNC_NAME <|message|>JSON_ARGS
 	// The JSON may span multiple lines, so we can't split by newlines.
 	// Instead, find each ".NAME <|message|>" prefix and extract the JSON that follows.
@@ -104,8 +106,235 @@ func parseGPTToolCall(content string) []ResponseToolCall {
 		jsonCalls = append(jsonCalls, jsonCall)
 	}
 
-	return parseToolCall(strings.Join(jsonCalls, "\n"))
+	return p.parseToolCall(strings.Join(jsonCalls, "\n"))
 }
+
+func (p *processor) parseToolCall(content string) []ResponseToolCall {
+
+	// {"name":"get_weather", "arguments":{"location":"NYC"}
+	if strings.HasPrefix(content, "{\"name\"") {
+		return p.parseJSONFormat(content)
+	}
+
+	// <function=get_weather>\n<parameter=location>\nNYC\n</parameter>\n</function>
+	// <function=invoke_cli_command>\n<parameter=call>\ngo version\n</parameter>\n</function>
+	if strings.HasPrefix(content, "<function=") {
+		return parseFunctionFormat(content)
+	}
+
+	// get_weather<arg_key>location</arg_key><arg_value>NYC</arg_value>
+	// GLM-style format with <arg_key>/<arg_value> tags
+	if strings.Contains(content, "<arg_key>") {
+		return parseArgKeyValueFormat(content)
+	}
+
+	// [TOOL_CALLS]get_weather[ARGS]{"location": "NYC"}
+	// Mistral/Devstral format
+	if strings.Contains(content, "[TOOL_CALLS]") {
+		return p.parseMistralToolCallFormat(content)
+	}
+
+	// call:get_weather{location:<|"|>NYC<|"|>}
+	// Gemma4 format with call: prefix and <|"|> escaped quotes
+	if strings.Contains(content, "call:") {
+		return p.parseGemmaToolCallFormat(content)
+	}
+
+	return nil
+}
+
+func (p *processor) parseJSONFormat(content string) []ResponseToolCall {
+	var toolCalls []ResponseToolCall
+
+	remaining := content
+	for len(remaining) > 0 {
+		// Skip leading whitespace and newlines.
+		remaining = strings.TrimLeft(remaining, " \t\n\r")
+		if len(remaining) == 0 {
+			break
+		}
+
+		// Find the start of a JSON object.
+		if remaining[0] != '{' {
+			// Skip non-JSON content until we find '{' or run out.
+			idx := strings.Index(remaining, "{")
+			if idx == -1 {
+				break
+			}
+			remaining = remaining[idx:]
+		}
+
+		// Find the end of this JSON object.
+		jsonEnd := findJSONObjectEnd(remaining)
+		if jsonEnd == -1 {
+			// Malformed JSON - try to parse what's left.
+			jsonEnd = len(remaining)
+		}
+
+		call := remaining[:jsonEnd]
+		remaining = remaining[jsonEnd:]
+
+		toolCall := ResponseToolCall{
+			ID:   newToolCallID(),
+			Type: "function",
+		}
+
+		if err := jsonrepair.Unmarshal(call, &toolCall.Function); err != nil {
+			p.model.log(context.Background(), "jsonrepair", "status", "unmarshal-failed",
+				"format", "json", "error", err, "json", call)
+			toolCall.Status = 2
+			toolCall.Error = err.Error()
+			toolCall.Raw = call
+		}
+
+		// GPT models prefix function names with a dot (e.g. ".Kronk_web_search").
+		// Strip it so clients can match the name to their registered tools.
+		toolCall.Function.Name = strings.TrimPrefix(toolCall.Function.Name, ".")
+
+		toolCalls = append(toolCalls, toolCall)
+	}
+
+	return toolCalls
+}
+
+func (p *processor) parseMistralToolCallFormat(content string) []ResponseToolCall {
+	var toolCalls []ResponseToolCall
+
+	remaining := content
+	for {
+		callStart := strings.Index(remaining, "[TOOL_CALLS]")
+		if callStart == -1 {
+			break
+		}
+
+		argsStart := strings.Index(remaining[callStart:], "[ARGS]")
+		if argsStart == -1 {
+			break
+		}
+
+		name := remaining[callStart+12 : callStart+argsStart]
+
+		argsContent := remaining[callStart+argsStart+6:]
+
+		endIdx := findJSONObjectEnd(argsContent)
+		var argsJSON string
+		switch endIdx == -1 {
+		case true:
+			argsJSON = argsContent
+			remaining = ""
+		case false:
+			argsJSON = argsContent[:endIdx]
+			remaining = argsContent[endIdx:]
+		}
+
+		var args map[string]any
+		if err := jsonrepair.Unmarshal(argsJSON, &args); err != nil {
+			p.model.log(context.Background(), "jsonrepair", "status", "unmarshal-failed",
+				"format", "mistral", "error", err, "json", argsJSON)
+			args = make(map[string]any)
+		}
+
+		toolCalls = append(toolCalls, ResponseToolCall{
+			ID:   newToolCallID(),
+			Type: "function",
+			Function: ResponseToolCallFunction{
+				Name:      name,
+				Arguments: args,
+			},
+		})
+	}
+
+	return toolCalls
+}
+
+// parseGemmaToolCallFormat parses Gemma4-style tool calls.
+// Format: call:get_weather{location:<|"|>New York City, NY<|"|>}
+// Multiple calls may appear separated by newlines or back-to-back.
+func (p *processor) parseGemmaToolCallFormat(content string) []ResponseToolCall {
+	var toolCalls []ResponseToolCall
+
+	remaining := content
+	for {
+		callIdx := strings.Index(remaining, "call:")
+		if callIdx == -1 {
+			break
+		}
+
+		remaining = remaining[callIdx+5:]
+
+		// Find the opening brace for the arguments.
+		braceIdx := strings.Index(remaining, "{")
+		if braceIdx == -1 {
+			break
+		}
+
+		name := strings.TrimSpace(remaining[:braceIdx])
+		remaining = remaining[braceIdx:]
+
+		// Find the matching closing brace. When the model uses mixed
+		// quoting (e.g., opens with <|"|> but closes with `) the brace
+		// matcher can fail. In that case, take everything remaining as
+		// the raw args so the tool call still reaches the client.
+		braceEnd := findGemmaBraceEnd(remaining)
+
+		var argsRaw string
+		if braceEnd == -1 {
+			argsRaw = remaining[1:]
+			remaining = ""
+		} else {
+			argsRaw = remaining[1:braceEnd] // content between { and }
+			remaining = remaining[braceEnd+1:]
+		}
+
+		// Gemma4 outputs double braces: call:func{{"key":"val"}}.
+		// After stripping the outer pair, argsRaw still has {…}.
+		//
+		// The model may mix <|"|> tokens with standard JSON quotes
+		// (e.g., opening a value with <|"|> but closing with ").
+		// jsonrepair.Repair handles all normalization and repair.
+		var args map[string]any
+		trimmed := strings.TrimSpace(argsRaw)
+
+		// Wrap in braces if the content doesn't already start with {.
+		// This handles cases like: "content:<|"|>text<|"|>,"filePath":"x"
+		// which becomes {"content":"text","filePath":"x"} after wrapping
+		// and <|"|> replacement.
+		jsonCandidate := trimmed
+		if len(jsonCandidate) > 0 && jsonCandidate[0] != '{' {
+			jsonCandidate = "{" + jsonCandidate + "}"
+		}
+
+		if err := jsonrepair.Unmarshal(jsonCandidate, &args); err != nil {
+			p.model.log(context.Background(), "jsonrepair", "status", "unmarshal-failed",
+				"format", "gemma", "error", err, "json", jsonCandidate)
+
+			// Fall back to Gemma-specific key:value parsing.
+			inner := trimmed
+			if len(inner) > 0 && inner[0] == '{' {
+				inner = inner[1:]
+				if idx := strings.LastIndex(inner, "}"); idx >= 0 {
+					inner = inner[:idx]
+				}
+			}
+			args = parseGemmaArgs(inner)
+		}
+
+		toolCalls = append(toolCalls, ResponseToolCall{
+			ID:   newToolCallID(),
+			Type: "function",
+			Function: ResponseToolCallFunction{
+				Name:      name,
+				Arguments: args,
+			},
+		})
+	}
+
+	return toolCalls
+}
+
+// =============================================================================
+// Standalone parse/find functions
+// =============================================================================
 
 // findJSONObjectEnd finds the end of a JSON object starting at the beginning of s.
 // Returns the index after the closing brace, or -1 if not found.
@@ -157,38 +386,67 @@ func findJSONObjectEnd(s string) int {
 	return -1
 }
 
-func parseToolCall(content string) []ResponseToolCall {
+// parseArgKeyValueFormat parses GLM-style tool calls with <arg_key>/<arg_value> tags.
+// Format: get_weather<arg_key>location</arg_key><arg_value>NYC</arg_value>
+func parseArgKeyValueFormat(content string) []ResponseToolCall {
+	var toolCalls []ResponseToolCall
 
-	// {"name":"get_weather", "arguments":{"location":"NYC"}
-	if strings.HasPrefix(content, "{\"name\"") {
-		return parseJSONFormat(content)
+	for call := range strings.SplitSeq(content, "\n") {
+		if call == "" {
+			continue
+		}
+
+		// Find the function name (everything before the first <arg_key>)
+		argKeyIdx := strings.Index(call, "<arg_key>")
+		if argKeyIdx == -1 {
+			continue
+		}
+
+		name := strings.TrimSpace(call[:argKeyIdx])
+		args := make(map[string]any)
+
+		// Parse all <arg_key>...</arg_key><arg_value>...</arg_value> pairs
+		remaining := call[argKeyIdx:]
+		for {
+			keyStart := strings.Index(remaining, "<arg_key>")
+			if keyStart == -1 {
+				break
+			}
+
+			keyEnd := strings.Index(remaining, "</arg_key>")
+			if keyEnd == -1 {
+				break
+			}
+
+			key := remaining[keyStart+9 : keyEnd]
+
+			valStart := strings.Index(remaining, "<arg_value>")
+			if valStart == -1 {
+				break
+			}
+
+			valEnd := strings.Index(remaining, "</arg_value>")
+			if valEnd == -1 {
+				break
+			}
+
+			value := remaining[valStart+11 : valEnd]
+			args[key] = value
+
+			remaining = remaining[valEnd+12:]
+		}
+
+		toolCalls = append(toolCalls, ResponseToolCall{
+			ID:   newToolCallID(),
+			Type: "function",
+			Function: ResponseToolCallFunction{
+				Name:      name,
+				Arguments: args,
+			},
+		})
 	}
 
-	// <function=get_weather>\n<parameter=location>\nNYC\n</parameter>\n</function>
-	// <function=invoke_cli_command>\n<parameter=call>\ngo version\n</parameter>\n</function>
-	if strings.HasPrefix(content, "<function=") {
-		return parseFunctionFormat(content)
-	}
-
-	// get_weather<arg_key>location</arg_key><arg_value>NYC</arg_value>
-	// GLM-style format with <arg_key>/<arg_value> tags
-	if strings.Contains(content, "<arg_key>") {
-		return parseArgKeyValueFormat(content)
-	}
-
-	// [TOOL_CALLS]get_weather[ARGS]{"location": "NYC"}
-	// Mistral/Devstral format
-	if strings.Contains(content, "[TOOL_CALLS]") {
-		return parseMistralToolCallFormat(content)
-	}
-
-	// call:get_weather{location:<|"|>NYC<|"|>}
-	// Gemma4 format with call: prefix and <|"|> escaped quotes
-	if strings.Contains(content, "call:") {
-		return parseGemmaToolCallFormat(content)
-	}
-
-	return nil
+	return toolCalls
 }
 
 func parseFunctionFormat(content string) []ResponseToolCall {
@@ -281,292 +539,6 @@ func parseFunctionFormat(content string) []ResponseToolCall {
 	return toolCalls
 }
 
-func parseJSONFormat(content string) []ResponseToolCall {
-	var toolCalls []ResponseToolCall
-
-	remaining := content
-	for len(remaining) > 0 {
-		// Skip leading whitespace and newlines.
-		remaining = strings.TrimLeft(remaining, " \t\n\r")
-		if len(remaining) == 0 {
-			break
-		}
-
-		// Find the start of a JSON object.
-		if remaining[0] != '{' {
-			// Skip non-JSON content until we find '{' or run out.
-			idx := strings.Index(remaining, "{")
-			if idx == -1 {
-				break
-			}
-			remaining = remaining[idx:]
-		}
-
-		// Find the end of this JSON object.
-		jsonEnd := findJSONObjectEnd(remaining)
-		if jsonEnd == -1 {
-			// Malformed JSON - try to parse what's left.
-			jsonEnd = len(remaining)
-		}
-
-		call := remaining[:jsonEnd]
-		remaining = remaining[jsonEnd:]
-
-		toolCall := ResponseToolCall{
-			ID:   newToolCallID(),
-			Type: "function",
-		}
-
-		if err := json.Unmarshal([]byte(call), &toolCall.Function); err != nil {
-			if repaired, ok := repairJSON(call); ok {
-				if err2 := json.Unmarshal([]byte(repaired), &toolCall.Function); err2 != nil {
-					toolCall.Status = 2
-					toolCall.Error = err2.Error()
-					toolCall.Raw = call
-				}
-			} else {
-				toolCall.Status = 2
-				toolCall.Error = err.Error()
-				toolCall.Raw = call
-			}
-		}
-
-		// GPT models prefix function names with a dot (e.g. ".Kronk_web_search").
-		// Strip it so clients can match the name to their registered tools.
-		toolCall.Function.Name = strings.TrimPrefix(toolCall.Function.Name, ".")
-
-		toolCalls = append(toolCalls, toolCall)
-	}
-
-	return toolCalls
-}
-
-// parseArgKeyValueFormat parses GLM-style tool calls with <arg_key>/<arg_value> tags.
-// Format: get_weather<arg_key>location</arg_key><arg_value>NYC</arg_value>
-func parseArgKeyValueFormat(content string) []ResponseToolCall {
-	var toolCalls []ResponseToolCall
-
-	for call := range strings.SplitSeq(content, "\n") {
-		if call == "" {
-			continue
-		}
-
-		// Find the function name (everything before the first <arg_key>)
-		argKeyIdx := strings.Index(call, "<arg_key>")
-		if argKeyIdx == -1 {
-			continue
-		}
-
-		name := strings.TrimSpace(call[:argKeyIdx])
-		args := make(map[string]any)
-
-		// Parse all <arg_key>...</arg_key><arg_value>...</arg_value> pairs
-		remaining := call[argKeyIdx:]
-		for {
-			keyStart := strings.Index(remaining, "<arg_key>")
-			if keyStart == -1 {
-				break
-			}
-
-			keyEnd := strings.Index(remaining, "</arg_key>")
-			if keyEnd == -1 {
-				break
-			}
-
-			key := remaining[keyStart+9 : keyEnd]
-
-			valStart := strings.Index(remaining, "<arg_value>")
-			if valStart == -1 {
-				break
-			}
-
-			valEnd := strings.Index(remaining, "</arg_value>")
-			if valEnd == -1 {
-				break
-			}
-
-			value := remaining[valStart+11 : valEnd]
-			args[key] = value
-
-			remaining = remaining[valEnd+12:]
-		}
-
-		toolCalls = append(toolCalls, ResponseToolCall{
-			ID:   newToolCallID(),
-			Type: "function",
-			Function: ResponseToolCallFunction{
-				Name:      name,
-				Arguments: args,
-			},
-		})
-	}
-
-	return toolCalls
-}
-
-func parseMistralToolCallFormat(content string) []ResponseToolCall {
-	var toolCalls []ResponseToolCall
-
-	remaining := content
-	for {
-		callStart := strings.Index(remaining, "[TOOL_CALLS]")
-		if callStart == -1 {
-			break
-		}
-
-		argsStart := strings.Index(remaining[callStart:], "[ARGS]")
-		if argsStart == -1 {
-			break
-		}
-
-		name := remaining[callStart+12 : callStart+argsStart]
-
-		argsContent := remaining[callStart+argsStart+6:]
-
-		endIdx := findJSONObjectEnd(argsContent)
-		var argsJSON string
-		switch endIdx == -1 {
-		case true:
-			argsJSON = argsContent
-			remaining = ""
-		case false:
-			argsJSON = argsContent[:endIdx]
-			remaining = argsContent[endIdx:]
-		}
-
-		var args map[string]any
-		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-			if repaired, ok := repairJSON(argsJSON); ok {
-				if err2 := json.Unmarshal([]byte(repaired), &args); err2 != nil {
-					args = make(map[string]any)
-				}
-			} else {
-				args = make(map[string]any)
-			}
-		}
-
-		toolCalls = append(toolCalls, ResponseToolCall{
-			ID:   newToolCallID(),
-			Type: "function",
-			Function: ResponseToolCallFunction{
-				Name:      name,
-				Arguments: args,
-			},
-		})
-	}
-
-	return toolCalls
-}
-
-// parseGemmaToolCallFormat parses Gemma4-style tool calls.
-// Format: call:get_weather{location:<|"|>New York City, NY<|"|>}
-// Multiple calls may appear separated by newlines or back-to-back.
-func parseGemmaToolCallFormat(content string) []ResponseToolCall {
-	var toolCalls []ResponseToolCall
-
-	remaining := content
-	for {
-		callIdx := strings.Index(remaining, "call:")
-		if callIdx == -1 {
-			break
-		}
-
-		remaining = remaining[callIdx+5:]
-
-		// Find the opening brace for the arguments.
-		braceIdx := strings.Index(remaining, "{")
-		if braceIdx == -1 {
-			break
-		}
-
-		name := strings.TrimSpace(remaining[:braceIdx])
-		remaining = remaining[braceIdx:]
-
-		// Find the matching closing brace. When the model uses mixed
-		// quoting (e.g., opens with <|"|> but closes with `) the brace
-		// matcher can fail. In that case, take everything remaining as
-		// the raw args so the tool call still reaches the client.
-		braceEnd := findGemmaBraceEnd(remaining)
-
-		var argsRaw string
-		if braceEnd == -1 {
-			argsRaw = remaining[1:]
-			remaining = ""
-		} else {
-			argsRaw = remaining[1:braceEnd] // content between { and }
-			remaining = remaining[braceEnd+1:]
-		}
-
-		// Gemma4 outputs double braces: call:func{{"key":"val"}}.
-		// After stripping the outer pair, argsRaw still has {…}.
-		//
-		// The model may mix <|"|> tokens with standard JSON quotes
-		// (e.g., opening a value with <|"|> but closing with ").
-		// Strategy: try normalizing <|"|> → " first, then JSON parse,
-		// then repairJSON, then fall back to parseGemmaArgs.
-		var args map[string]any
-		trimmed := strings.TrimSpace(argsRaw)
-
-		// Wrap in braces if the content doesn't already start with {.
-		// This handles cases like: "content:<|"|>text<|"|>,"filePath":"x"
-		// which becomes {"content":"text","filePath":"x"} after wrapping
-		// and <|"|> replacement.
-		jsonCandidate := trimmed
-		if len(jsonCandidate) > 0 && jsonCandidate[0] != '{' {
-			jsonCandidate = "{" + jsonCandidate + "}"
-		}
-
-		// Normalize Gemma4 quoting variations to standard JSON quotes.
-		// The model uses <|"|> as quote delimiters when the value contains
-		// standard " characters (e.g., code with import "fmt"). Escape
-		// any " inside <|"|> pairs first, then replace the delimiters.
-		normalized := normalizeGemmaQuotes(jsonCandidate)
-		normalized = strings.ReplaceAll(normalized, "`,`", "\",\"")
-		normalized = quoteBareJSONKeys(normalized)
-		parsed := false
-
-		if json.Unmarshal([]byte(normalized), &args) == nil {
-			parsed = true
-		} else if strings.Contains(trimmed, "<|\"|>") {
-			// The model used <|"|> tokens in this tool call. Use the
-			// key-aware Gemma repair which replaces <|"|> with " and
-			// then identifies structural vs content quotes.
-			if repaired, ok := repairGemmaJSON(jsonCandidate); ok {
-				if json.Unmarshal([]byte(repaired), &args) == nil {
-					parsed = true
-				}
-			}
-		} else if repaired, ok := repairJSON(normalized); ok {
-			if json.Unmarshal([]byte(repaired), &args) == nil {
-				parsed = true
-			}
-		}
-
-		if !parsed {
-			// Fall back to Gemma-specific key:value parsing.
-			inner := trimmed
-			if len(inner) > 0 && inner[0] == '{' {
-				inner = inner[1:]
-				if idx := strings.LastIndex(inner, "}"); idx >= 0 {
-					inner = inner[:idx]
-				}
-			}
-			args = parseGemmaArgs(inner)
-		}
-
-		toolCalls = append(toolCalls, ResponseToolCall{
-			ID:   newToolCallID(),
-			Type: "function",
-			Function: ResponseToolCallFunction{
-				Name:      name,
-				Arguments: args,
-			},
-		})
-	}
-
-	return toolCalls
-}
-
 // findGemmaBraceEnd finds the closing brace that matches the opening brace at
 // position 0, accounting for nested braces. Returns the index of the closing
 // brace, or -1 if not found. Braces inside quoted strings are ignored so that
@@ -637,192 +609,6 @@ func findGemmaBraceEnd(s string) int {
 	return -1
 }
 
-// normalizeGemmaQuotes converts <|"|> delimited values to standard JSON
-// quoted strings. The model uses <|"|> when the value contains literal "
-// characters (e.g., source code with import "fmt"). This function finds
-// each <|"|>...<|"|> pair, escapes any " inside the value to \", then
-// replaces the <|"|> delimiters with standard ".
-func normalizeGemmaQuotes(s string) string {
-	const token = "<|\"|>"
-	tokenLen := len(token)
-
-	if !strings.Contains(s, token) {
-		return s
-	}
-
-	var b strings.Builder
-	b.Grow(len(s))
-	i := 0
-
-	for i < len(s) {
-		openIdx := strings.Index(s[i:], token)
-		if openIdx == -1 {
-			b.WriteString(s[i:])
-			break
-		}
-
-		// Write everything before the opening <|"|>.
-		b.WriteString(s[i : i+openIdx])
-		i += openIdx + tokenLen
-
-		// Find the closing <|"|>.
-		closeIdx := strings.Index(s[i:], token)
-		if closeIdx == -1 {
-			// No closing token — write " and the rest as-is.
-			b.WriteByte('"')
-			b.WriteString(s[i:])
-			break
-		}
-
-		// Extract the value between the <|"|> pair, escape inner quotes,
-		// and wrap with standard ".
-		inner := s[i : i+closeIdx]
-		b.WriteByte('"')
-		for j := 0; j < len(inner); j++ {
-			switch {
-			case inner[j] == '"':
-				b.WriteString(`\"`)
-			case inner[j] == '\\':
-				// Preserve existing escape sequences.
-				b.WriteByte('\\')
-				if j+1 < len(inner) {
-					j++
-					b.WriteByte(inner[j])
-				}
-			default:
-				b.WriteByte(inner[j])
-			}
-		}
-		b.WriteByte('"')
-		i += closeIdx + tokenLen
-	}
-
-	return b.String()
-}
-
-// repairGemmaJSON repairs tool call JSON that contains <|"|> tokens. The model
-// uses <|"|> to delimit values whose content contains literal " characters
-// (e.g., source code with import "fmt"). The token may appear at value
-// boundaries in any combination with standard " quotes.
-//
-// Strategy: replace all <|"|> with ", then walk through the result using
-// key-value structure awareness to determine which " are structural delimiters
-// and which are content that needs escaping.
-//
-// Keys are always short identifiers (content, filePath, oldString) and never
-// contain " characters, so they're unambiguous anchors for finding structure.
-func repairGemmaJSON(s string) (string, bool) {
-	const token = "<|\"|>"
-
-	if !strings.Contains(s, token) {
-		return s, false
-	}
-
-	// Replace all <|"|> with " and fix bare keys.
-	s = strings.ReplaceAll(s, token, "\"")
-	s = strings.ReplaceAll(s, "`,`", "\",\"")
-	s = quoteBareJSONKeys(s)
-
-	// Quick check: if it already parses after simple replacement, done.
-	var test any
-	if json.Unmarshal([]byte(s), &test) == nil {
-		return s, true
-	}
-
-	// Walk through the JSON with key-value awareness.
-	// After {, expect keys. After :, expect values.
-	// Keys never contain " so their boundaries are unambiguous.
-	// For string values, the closing " is identified by isClosingQuote.
-	// All other " between open and close are content → escape them.
-	var buf strings.Builder
-	buf.Grow(len(s) + 64)
-
-	i := 0
-	for i < len(s) {
-		c := s[i]
-
-		switch c {
-		case '{', '}', '[', ']', ',':
-			buf.WriteByte(c)
-			i++
-
-		case ':':
-			buf.WriteByte(c)
-			i++
-
-			// Skip whitespace after colon.
-			for i < len(s) && (s[i] == ' ' || s[i] == '\t' || s[i] == '\n' || s[i] == '\r') {
-				buf.WriteByte(s[i])
-				i++
-			}
-
-			if i >= len(s) {
-				break
-			}
-
-			// Value starts here. If it's a string, repair inner quotes.
-			if s[i] == '"' {
-				i++ // skip opening quote
-
-				// Find the closing quote using structural analysis.
-				closePos := -1
-				for k := i; k < len(s); k++ {
-					if s[k] == '\\' {
-						k++ // skip escaped character
-						continue
-					}
-					if s[k] == '"' && isClosingQuote(s, k) {
-						closePos = k
-						break
-					}
-				}
-
-				if closePos == -1 {
-					// No valid closing quote found. Write what we have.
-					buf.WriteByte('"')
-					buf.WriteString(s[i:])
-					i = len(s)
-					break
-				}
-
-				// Write the opening quote, escape all inner " chars,
-				// then write the closing quote.
-				inner := s[i:closePos]
-				buf.WriteByte('"')
-				for j := 0; j < len(inner); j++ {
-					switch {
-					case inner[j] == '\\' && j+1 < len(inner):
-						buf.WriteByte('\\')
-						j++
-						buf.WriteByte(inner[j])
-					case inner[j] == '"':
-						buf.WriteString(`\"`)
-					default:
-						buf.WriteByte(inner[j])
-					}
-				}
-				buf.WriteByte('"')
-				i = closePos + 1
-			}
-
-			// Non-string values (numbers, booleans, null, objects, arrays)
-			// are written as-is by the outer loop.
-
-		default:
-			buf.WriteByte(c)
-			i++
-		}
-	}
-
-	repaired := buf.String()
-
-	if json.Unmarshal([]byte(repaired), &test) != nil {
-		return s, false
-	}
-
-	return repaired, true
-}
-
 // findClosingGemmaQuote finds the position of the closing <|"|> token that
 // ends a value. For nested structures (arrays/objects containing their own
 // <|"|> tokens), the correct closing token is the one followed by a
@@ -856,177 +642,6 @@ func findClosingGemmaQuote(s string) int {
 
 		searchFrom = afterQuote
 	}
-}
-
-// quoteBareJSONKeys adds double quotes around unquoted JSON keys.
-// Gemma4 often emits keys without quotes: {content:"text",priority:"high"}
-// which is not valid JSON. This function converts them to proper JSON:
-// {"content":"text","priority":"high"}.
-func quoteBareJSONKeys(s string) string {
-	var buf strings.Builder
-	buf.Grow(len(s) + 32)
-
-	inString := false
-	escaped := false
-
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-
-		if escaped {
-			buf.WriteByte(c)
-			escaped = false
-			continue
-		}
-
-		if c == '\\' && inString {
-			buf.WriteByte(c)
-			escaped = true
-			continue
-		}
-
-		if c == '"' {
-			inString = !inString
-			buf.WriteByte(c)
-			continue
-		}
-
-		if inString {
-			buf.WriteByte(c)
-			continue
-		}
-
-		// Outside a string: check if this is the start of a bare key.
-		// A bare key follows { , [ or is at the start, and is a word
-		// followed by a colon.
-		if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c == '_' {
-			// Look ahead to find the colon.
-			j := i + 1
-			for j < len(s) && (s[j] >= 'a' && s[j] <= 'z' || s[j] >= 'A' && s[j] <= 'Z' || s[j] >= '0' && s[j] <= '9' || s[j] == '_') {
-				j++
-			}
-
-			if j < len(s) && s[j] == ':' {
-				// This is a bare key — quote it.
-				buf.WriteByte('"')
-				buf.WriteString(s[i:j])
-				buf.WriteByte('"')
-				i = j - 1
-				continue
-			}
-		}
-
-		buf.WriteByte(c)
-	}
-
-	return buf.String()
-}
-
-// repairJSON attempts to fix malformed JSON from model-generated tool calls.
-// The most common issue is unescaped double quotes inside string values — e.g.,
-// when a model outputs markdown content containing "quoted" text. Standard
-// json.Unmarshal fails on these, but the structure is otherwise valid.
-//
-// The repair walks the JSON character by character, tracking whether we're
-// inside a string value. A quote that appears inside a value and is NOT
-// followed by a structural character (comma, colon, closing brace/bracket,
-// or whitespace before one) is escaped with a backslash.
-//
-// Returns the repaired JSON and true if any changes were made, or the
-// original string and false if no repair was needed or possible.
-func repairJSON(s string) (string, bool) {
-	if len(s) == 0 {
-		return s, false
-	}
-
-	// Quick check: if it already parses, no repair needed.
-	var test any
-	if json.Unmarshal([]byte(s), &test) == nil {
-		return s, false
-	}
-
-	// Normalize quoting before repairing.
-	s = strings.ReplaceAll(s, "<|\"|>", "\"")
-	s = quoteBareJSONKeys(s)
-
-	var buf strings.Builder
-	buf.Grow(len(s) + 64)
-
-	inString := false
-	escaped := false
-
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-
-		if escaped {
-			buf.WriteByte(c)
-			escaped = false
-			continue
-		}
-
-		if c == '\\' && inString {
-			buf.WriteByte(c)
-			escaped = true
-			continue
-		}
-
-		if c == '"' {
-			if !inString {
-				// Opening quote — enter string mode.
-				buf.WriteByte(c)
-				inString = true
-				continue
-			}
-
-			// We're inside a string and hit a quote. Decide if this is
-			// the closing quote or an unescaped internal quote.
-			// The closing quote is followed by a JSON structural character
-			// (possibly after whitespace): , : } ]
-			if isClosingQuote(s, i) {
-				buf.WriteByte(c)
-				inString = false
-				continue
-			}
-
-			// Internal quote — escape it.
-			buf.WriteByte('\\')
-			buf.WriteByte('"')
-			continue
-		}
-
-		buf.WriteByte(c)
-	}
-
-	repaired := buf.String()
-
-	// Verify the repair actually produces valid JSON.
-	if json.Unmarshal([]byte(repaired), &test) != nil {
-		return s, false
-	}
-
-	return repaired, true
-}
-
-// isClosingQuote checks whether the quote at position i in s is a closing
-// JSON string quote. A closing quote is followed (after optional whitespace)
-// by a JSON structural character: , : } ] or end of string.
-func isClosingQuote(s string, i int) bool {
-	j := i + 1
-
-	// Skip whitespace.
-	for j < len(s) && (s[j] == ' ' || s[j] == '\t' || s[j] == '\n' || s[j] == '\r') {
-		j++
-	}
-
-	if j >= len(s) {
-		return true
-	}
-
-	switch s[j] {
-	case ',', ':', '}', ']':
-		return true
-	}
-
-	return false
 }
 
 // findGemmaStructEnd finds the end of a JSON array or object in Gemma4 format,
