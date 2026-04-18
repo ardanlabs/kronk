@@ -112,7 +112,6 @@ export const PARAM_TOOLTIPS = {
   paddingTokenId: 'Padding token ID used to fill sequences to a uniform length in batch processing. Not used during generation.',
 
   // ── Model detail / config tooltips ──────────────────────────────────────────
-  device: 'Hardware accelerator used for inference. "metal" = Apple GPU, "cuda" = NVIDIA GPU, "vulkan" = cross-platform GPU. "default" lets the server auto-detect.',
   nthreads: 'Number of CPU threads used for inference operations. More threads can speed up CPU-bound work but may cause contention on busy systems. 0 or empty = auto (typically physical core count).',
   nthreadsBatch: 'Number of CPU threads used during prompt (batch) processing. Can differ from inference threads to optimize throughput during the prefill phase. 0 or empty = same as Threads.',
   cacheTypeK: 'Precision format for the key portion of the KV cache. f16 = full precision (best quality), q8_0 = 8-bit quantized (less VRAM, minimal quality loss), q4_0 = 4-bit (most savings).',
@@ -143,6 +142,9 @@ export const PARAM_TOOLTIPS = {
   yarnAttnFactor: 'YaRN attention scaling factor that adjusts attention weight magnitude at extended positions. Fine-tunes quality at long context lengths.',
   draftModel: 'Speculative decoding draft model — a smaller, faster model that proposes candidate tokens which the main model then verifies. Speeds up generation when acceptance rate is high.',
   draftTokens: 'Number of tokens the draft model proposes per speculative decoding step. More tokens = potentially faster generation, but too many reduces acceptance rate.',
+  draftMainGpu: 'Primary GPU index for the draft model in multi-GPU setups. Leave empty to use the same GPU as the main model.',
+  draftTensorSplit: 'Proportional weight distribution for the draft model across GPUs. Same format as the main model tensor-split.',
+  tensorBuftOverrides: 'Manual tensor buffer type overrides for specific layers. Advanced option for fine-grained control of where individual tensors are placed.',
   hasProjection: 'Whether the model includes a multi-modal projection file (mmproj). Required for vision or audio input — the projection maps image/audio embeddings into the model\'s token space.',
   isGPT: 'Whether the model uses a GPT-style (causal, decoder-only) architecture. GPT models generate text left-to-right. Non-GPT models may be encoder-decoder or embedding models.',
   validated: 'Whether the model has been validated against the Kronk catalog. Validated models have confirmed-working configurations, templates, and recommended settings.',

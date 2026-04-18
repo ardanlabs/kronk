@@ -108,12 +108,11 @@ export default function ModelList() {
     return () => { cancelled = true; };
   }, [selectedModelId]);
 
-  // Derive draft model presence from both detail config and list-level field.
+  // Derive draft model presence from the detail config (fetched per-model).
   const allModels = models?.data ?? [];
   const draftModelConfig = modelInfo?.model_config?.['draft-model'];
-  const selectedListModel = allModels.find((m) => m.id === selectedModelId);
-  const draftModelId = draftModelConfig?.['model-id'] ?? selectedListModel?.draft_model_id ?? null;
-  const hasDraftModel = !!draftModelConfig || !!selectedListModel?.draft_model_id;
+  const draftModelId = draftModelConfig?.['model-id'] ?? null;
+  const hasDraftModel = !!draftModelConfig;
 
   // Fetch draft model info when draft-card tab is selected
   useEffect(() => {
@@ -279,7 +278,7 @@ export default function ModelList() {
                           onClick={() => handleRowClick(model.id)}
                         >
                           <td style={{ textAlign: 'center', color: model.validated ? 'inherit' : 'var(--color-error)' }}>{model.validated ? '✓' : '✗'}</td>
-                          <td><span className="catalog-table-cell-ellipsis">{model.draft_model_id ? '⚡ ' : ''}{model.id}</span></td>
+                          <td><span className="catalog-table-cell-ellipsis">{model.id}</span></td>
                           <td>{model.owned_by || '-'}</td>
                           <td>{model.model_family || '-'}</td>
                           <td>{formatBytes(model.size)}</td>
@@ -292,7 +291,7 @@ export default function ModelList() {
                             onClick={() => handleRowClick(ext.id)}
                           >
                             <td></td>
-                            <td style={{ paddingLeft: '24px' }}><span className="catalog-table-cell-ellipsis">↳ {ext.draft_model_id ? '⚡ ' : ''}{ext.id}</span></td>
+                            <td style={{ paddingLeft: '24px' }}><span className="catalog-table-cell-ellipsis">↳ {ext.id}</span></td>
                             <td></td>
                             <td>Extension Model</td>
                             <td></td>
@@ -407,34 +406,55 @@ export default function ModelList() {
                 {modelInfo.model_config && (
                   <div style={{ marginTop: '24px' }}>
                     <h4 className="meta-section-title" style={{ marginBottom: '8px' }}>Configuration</h4>
-                    <KeyValueTable rows={[
-                      { key: 'device', label: labelWithTip('Device', 'device'), value: modelInfo.model_config.device || 'default' },
-                      { key: 'ctx', label: labelWithTip('Context Window', 'contextWindow'), value: fmtVal(modelInfo.model_config['context-window']) },
-                      { key: 'nbatch', label: labelWithTip('Batch Size', 'nbatch'), value: fmtVal(modelInfo.model_config.nbatch) },
-                      { key: 'nubatch', label: labelWithTip('Micro Batch Size', 'nubatch'), value: fmtVal(modelInfo.model_config.nubatch) },
-                      { key: 'nthreads', label: labelWithTip('Threads', 'nthreads'), value: fmtVal(modelInfo.model_config.nthreads) },
-                      { key: 'nthreads-batch', label: labelWithTip('Batch Threads', 'nthreadsBatch'), value: fmtVal(modelInfo.model_config['nthreads-batch']) },
-                      { key: 'cache-k', label: labelWithTip('Cache Type K', 'cacheTypeK'), value: modelInfo.model_config['cache-type-k'] || 'default' },
-                      { key: 'cache-v', label: labelWithTip('Cache Type V', 'cacheTypeV'), value: modelInfo.model_config['cache-type-v'] || 'default' },
-                      { key: 'flash', label: labelWithTip('Flash Attention', 'flashAttention'), value: modelInfo.model_config['flash-attention'] || 'default' },
-                      { key: 'nseq', label: labelWithTip('Max Sequences', 'nSeqMax'), value: fmtVal(modelInfo.model_config['nseq-max']) },
-                      { key: 'ngpu', label: labelWithTip('GPU Layers', 'ngpuLayers'), value: fmtVal(modelInfo.model_config['ngpu-layers'] ?? 'auto') },
-                      { key: 'split', label: labelWithTip('Split Mode', 'splitMode'), value: modelInfo.model_config['split-mode'] || 'default' },
-                      { key: 'swa-full', label: labelWithTip('SWA Full Cache', 'swaFull'), value: <span className={`badge ${modelInfo.model_config['swa-full'] ? 'badge-yes' : 'badge-no'}`}>{modelInfo.model_config['swa-full'] ? 'Yes' : 'No'}</span> },
-                      { key: 'spc', label: labelWithTip('System Prompt Cache', 'systemPromptCache'), value: <span className={`badge ${modelInfo.model_config['system-prompt-cache'] ? 'badge-yes' : 'badge-no'}`}>{modelInfo.model_config['system-prompt-cache'] ? 'Yes' : 'No'}</span> },
-                      { key: 'imc', label: labelWithTip('Incremental Cache', 'incrementalCache'), value: <span className={`badge ${modelInfo.model_config['incremental-cache'] ? 'badge-yes' : 'badge-no'}`}>{modelInfo.model_config['incremental-cache'] ? 'Yes' : 'No'}</span> },
-                      ...(!!modelInfo.model_config['rope-scaling-type'] && modelInfo.model_config['rope-scaling-type'] !== 'none' ? [
-                        { key: 'rope-scaling', label: labelWithTip('RoPE Scaling', 'ropeScaling'), value: modelInfo.model_config['rope-scaling-type'] },
-                        { key: 'yarn-orig', label: labelWithTip('YaRN Original Context', 'yarnOrigCtx'), value: fmtVal(modelInfo.model_config['yarn-orig-ctx'] ?? 'auto') },
-                        ...(modelInfo.model_config['rope-freq-base'] != null ? [{ key: 'rope-freq', label: labelWithTip('RoPE Freq Base', 'ropeFreqBase'), value: fmtVal(modelInfo.model_config['rope-freq-base']) }] : []),
-                        ...(modelInfo.model_config['yarn-ext-factor'] != null ? [{ key: 'yarn-ext', label: labelWithTip('YaRN Ext Factor', 'yarnExtFactor'), value: fmtVal(modelInfo.model_config['yarn-ext-factor']) }] : []),
-                        ...(modelInfo.model_config['yarn-attn-factor'] != null ? [{ key: 'yarn-attn', label: labelWithTip('YaRN Attn Factor', 'yarnAttnFactor'), value: fmtVal(modelInfo.model_config['yarn-attn-factor']) }] : []),
-                      ] : []),
-                      ...(modelInfo.model_config['draft-model'] ? [
-                        { key: 'draft-model', label: labelWithTip('Draft Model', 'draftModel'), value: modelInfo.model_config['draft-model']['model-id'] },
-                        { key: 'draft-tokens', label: labelWithTip('Draft Tokens', 'draftTokens'), value: fmtVal(modelInfo.model_config['draft-model'].ndraft) },
-                      ] : []),
-                    ]} />
+                    <KeyValueTable rows={(() => {
+                      const mc = modelInfo.model_config;
+                      const boolBadge = (v: boolean | null | undefined) => <span className={`badge ${v ? 'badge-yes' : 'badge-no'}`}>{v ? 'Yes' : 'No'}</span>;
+                      return [
+                        { key: 'auto-fit-vram', label: labelWithTip('auto-fit-vram', 'autoFitVram'), value: boolBadge(mc['auto-fit-vram']) },
+                        { key: 'cache-min-tokens', label: labelWithTip('cache-min-tokens', 'cacheMinTokens'), value: fmtVal(mc['cache-min-tokens']) },
+                        { key: 'cache-type-k', label: labelWithTip('cache-type-k', 'cacheTypeK'), value: mc['cache-type-k'] || 'default' },
+                        { key: 'cache-type-v', label: labelWithTip('cache-type-v', 'cacheTypeV'), value: mc['cache-type-v'] || 'default' },
+                        { key: 'context-window', label: labelWithTip('context-window', 'contextWindow'), value: fmtVal(mc['context-window']) },
+                        { key: 'devices', label: labelWithTip('devices', 'devices'), value: mc.devices?.join(', ') || '—' },
+                        { key: 'draft-model.devices', label: labelWithTip('draft-model.devices', 'draftDevice'), value: mc['draft-model']?.devices?.join(', ') || '—' },
+                        { key: 'draft-model.main-gpu', label: labelWithTip('draft-model.main-gpu', 'draftMainGpu'), value: fmtVal(mc['draft-model']?.['main-gpu']) },
+                        { key: 'draft-model.model-id', label: labelWithTip('draft-model.model-id', 'draftModel'), value: mc['draft-model']?.['model-id'] || '—' },
+                        { key: 'draft-model.ndraft', label: labelWithTip('draft-model.ndraft', 'draftTokens'), value: fmtVal(mc['draft-model']?.ndraft) },
+                        { key: 'draft-model.ngpu-layers', label: labelWithTip('draft-model.ngpu-layers', 'draftGpuLayers'), value: fmtVal(mc['draft-model']?.['ngpu-layers']) },
+                        { key: 'draft-model.tensor-split', label: labelWithTip('draft-model.tensor-split', 'draftTensorSplit'), value: mc['draft-model']?.['tensor-split']?.join(', ') || '—' },
+                        { key: 'flash-attention', label: labelWithTip('flash-attention', 'flashAttention'), value: mc['flash-attention'] || 'default' },
+                        { key: 'ignore-integrity-check', label: labelWithTip('ignore-integrity-check', 'ignoreIntegrityCheck'), value: boolBadge(mc['ignore-integrity-check']) },
+                        { key: 'incremental-cache', label: labelWithTip('incremental-cache', 'incrementalCache'), value: boolBadge(mc['incremental-cache']) },
+                        { key: 'main-gpu', label: labelWithTip('main-gpu', 'mainGpu'), value: fmtVal(mc['main-gpu']) },
+                        { key: 'moe.keep-experts-top-n', label: labelWithTip('moe.keep-experts-top-n', 'moeKeepExpertsTopN'), value: fmtVal(mc.moe?.['keep-experts-top-n']) },
+                        { key: 'moe.mode', label: labelWithTip('moe.mode', 'moeMode'), value: mc.moe?.mode || '—' },
+                        { key: 'nbatch', label: labelWithTip('nbatch', 'nbatch'), value: fmtVal(mc.nbatch) },
+                        { key: 'ngpu-layers', label: labelWithTip('ngpu-layers', 'ngpuLayers'), value: fmtVal(mc['ngpu-layers'] ?? 'auto') },
+                        { key: 'nseq-max', label: labelWithTip('nseq-max', 'nSeqMax'), value: fmtVal(mc['nseq-max']) },
+                        { key: 'nthreads', label: labelWithTip('nthreads', 'nthreads'), value: fmtVal(mc.nthreads) },
+                        { key: 'nthreads-batch', label: labelWithTip('nthreads-batch', 'nthreadsBatch'), value: fmtVal(mc['nthreads-batch']) },
+                        { key: 'nubatch', label: labelWithTip('nubatch', 'nubatch'), value: fmtVal(mc.nubatch) },
+                        { key: 'numa', label: labelWithTip('numa', 'numa'), value: mc.numa || '—' },
+                        { key: 'offload-kqv', label: labelWithTip('offload-kqv', 'offloadKQV'), value: fmtVal(mc['offload-kqv']) },
+                        { key: 'op-offload', label: labelWithTip('op-offload', 'opOffload'), value: fmtVal(mc['op-offload']) },
+                        { key: 'op-offload-min-batch', label: labelWithTip('op-offload-min-batch', 'opOffloadMinBatch'), value: fmtVal(mc['op-offload-min-batch']) },
+                        { key: 'rope-freq-base', label: labelWithTip('rope-freq-base', 'ropeFreqBase'), value: fmtVal(mc['rope-freq-base']) },
+                        { key: 'rope-freq-scale', label: labelWithTip('rope-freq-scale', 'ropeFreqScale'), value: fmtVal(mc['rope-freq-scale']) },
+                        { key: 'rope-scaling-type', label: labelWithTip('rope-scaling-type', 'ropeScaling'), value: mc['rope-scaling-type'] || '—' },
+                        { key: 'split-mode', label: labelWithTip('split-mode', 'splitMode'), value: mc['split-mode'] || 'default' },
+                        { key: 'swa-full', label: labelWithTip('swa-full', 'swaFull'), value: boolBadge(mc['swa-full']) },
+                        { key: 'system-prompt-cache', label: labelWithTip('system-prompt-cache', 'systemPromptCache'), value: boolBadge(mc['system-prompt-cache']) },
+                        { key: 'tensor-buft-overrides', label: labelWithTip('tensor-buft-overrides', 'tensorBuftOverrides'), value: mc['tensor-buft-overrides']?.join(', ') || '—' },
+                        { key: 'tensor-split', label: labelWithTip('tensor-split', 'tensorSplit'), value: mc['tensor-split']?.join(', ') || '—' },
+                        { key: 'use-direct-io', label: labelWithTip('use-direct-io', 'useDirectIO'), value: boolBadge(mc['use-direct-io']) },
+                        { key: 'use-mmap', label: labelWithTip('use-mmap', 'useMMap'), value: fmtVal(mc['use-mmap']) },
+                        { key: 'yarn-attn-factor', label: labelWithTip('yarn-attn-factor', 'yarnAttnFactor'), value: fmtVal(mc['yarn-attn-factor']) },
+                        { key: 'yarn-beta-fast', label: labelWithTip('yarn-beta-fast', 'yarnBetaFast'), value: fmtVal(mc['yarn-beta-fast']) },
+                        { key: 'yarn-beta-slow', label: labelWithTip('yarn-beta-slow', 'yarnBetaSlow'), value: fmtVal(mc['yarn-beta-slow']) },
+                        { key: 'yarn-ext-factor', label: labelWithTip('yarn-ext-factor', 'yarnExtFactor'), value: fmtVal(mc['yarn-ext-factor']) },
+                        { key: 'yarn-orig-ctx', label: labelWithTip('yarn-orig-ctx', 'yarnOrigCtx'), value: fmtVal(mc['yarn-orig-ctx']) },
+                      ];
+                    })()} />
                   </div>
                 )}
               </div>
@@ -448,25 +468,25 @@ export default function ModelList() {
                   const sp = modelInfo.model_config['sampling-parameters'];
                   return (
                     <KeyValueTable rows={[
-                      { key: 'temperature', label: labelWithTip('Temperature', 'temperature'), value: fmtNum(sp.temperature) },
-                      { key: 'top_k', label: labelWithTip('Top K', 'top_k'), value: fmtVal(sp.top_k) },
-                      { key: 'top_p', label: labelWithTip('Top P', 'top_p'), value: fmtNum(sp.top_p) },
-                      { key: 'min_p', label: labelWithTip('Min P', 'min_p'), value: fmtNum(sp.min_p) },
-                      { key: 'max_tokens', label: labelWithTip('Max Tokens', 'max_tokens'), value: fmtVal(sp.max_tokens) },
-                      { key: 'repeat_penalty', label: labelWithTip('Repeat Penalty', 'repeat_penalty'), value: fmtNum(sp.repeat_penalty) },
-                      { key: 'repeat_last_n', label: labelWithTip('Repeat Last N', 'repeat_last_n'), value: fmtVal(sp.repeat_last_n) },
-                      { key: 'freq_penalty', label: labelWithTip('Frequency Penalty', 'frequency_penalty'), value: fmtNum(sp.frequency_penalty) },
-                      { key: 'pres_penalty', label: labelWithTip('Presence Penalty', 'presence_penalty'), value: fmtNum(sp.presence_penalty) },
-                      { key: 'dry_mult', label: labelWithTip('DRY Multiplier', 'dry_multiplier'), value: fmtVal(sp.dry_multiplier) },
-                      { key: 'dry_base', label: labelWithTip('DRY Base', 'dry_base'), value: fmtVal(sp.dry_base) },
-                      { key: 'dry_len', label: labelWithTip('DRY Allowed Length', 'dry_allowed_length'), value: fmtVal(sp.dry_allowed_length) },
-                      { key: 'dry_last', label: labelWithTip('DRY Penalty Last N', 'dry_penalty_last_n'), value: fmtVal(sp.dry_penalty_last_n) },
-                      { key: 'xtc_prob', label: labelWithTip('XTC Probability', 'xtc_probability'), value: fmtVal(sp.xtc_probability) },
-                      { key: 'xtc_thresh', label: labelWithTip('XTC Threshold', 'xtc_threshold'), value: fmtVal(sp.xtc_threshold) },
-                      { key: 'xtc_keep', label: labelWithTip('XTC Min Keep', 'xtc_min_keep'), value: fmtVal(sp.xtc_min_keep) },
-                      { key: 'thinking', label: labelWithTip('Enable Thinking', 'enable_thinking'), value: fmtVal(sp.enable_thinking ?? 'default') },
-                      { key: 'reasoning', label: labelWithTip('Reasoning Effort', 'reasoning_effort'), value: fmtVal(sp.reasoning_effort ?? 'default') },
-                      ...(sp.grammar ? [{ key: 'grammar', label: 'Grammar', value: sp.grammar }] : []),
+                      { key: 'dry_allowed_length', label: labelWithTip('dry_allowed_length', 'dry_allowed_length'), value: fmtVal(sp.dry_allowed_length) },
+                      { key: 'dry_base', label: labelWithTip('dry_base', 'dry_base'), value: fmtVal(sp.dry_base) },
+                      { key: 'dry_multiplier', label: labelWithTip('dry_multiplier', 'dry_multiplier'), value: fmtVal(sp.dry_multiplier) },
+                      { key: 'dry_penalty_last_n', label: labelWithTip('dry_penalty_last_n', 'dry_penalty_last_n'), value: fmtVal(sp.dry_penalty_last_n) },
+                      { key: 'enable_thinking', label: labelWithTip('enable_thinking', 'enable_thinking'), value: fmtVal(sp.enable_thinking ?? '—') },
+                      { key: 'frequency_penalty', label: labelWithTip('frequency_penalty', 'frequency_penalty'), value: fmtNum(sp.frequency_penalty) },
+                      { key: 'grammar', label: labelWithTip('grammar', 'grammar'), value: fmtVal(sp.grammar || '—') },
+                      { key: 'max_tokens', label: labelWithTip('max_tokens', 'max_tokens'), value: fmtVal(sp.max_tokens) },
+                      { key: 'min_p', label: labelWithTip('min_p', 'min_p'), value: fmtNum(sp.min_p) },
+                      { key: 'presence_penalty', label: labelWithTip('presence_penalty', 'presence_penalty'), value: fmtNum(sp.presence_penalty) },
+                      { key: 'reasoning_effort', label: labelWithTip('reasoning_effort', 'reasoning_effort'), value: fmtVal(sp.reasoning_effort ?? '—') },
+                      { key: 'repeat_last_n', label: labelWithTip('repeat_last_n', 'repeat_last_n'), value: fmtVal(sp.repeat_last_n) },
+                      { key: 'repeat_penalty', label: labelWithTip('repeat_penalty', 'repeat_penalty'), value: fmtNum(sp.repeat_penalty) },
+                      { key: 'temperature', label: labelWithTip('temperature', 'temperature'), value: fmtNum(sp.temperature) },
+                      { key: 'top_k', label: labelWithTip('top_k', 'top_k'), value: fmtVal(sp.top_k) },
+                      { key: 'top_p', label: labelWithTip('top_p', 'top_p'), value: fmtNum(sp.top_p) },
+                      { key: 'xtc_min_keep', label: labelWithTip('xtc_min_keep', 'xtc_min_keep'), value: fmtVal(sp.xtc_min_keep) },
+                      { key: 'xtc_probability', label: labelWithTip('xtc_probability', 'xtc_probability'), value: fmtVal(sp.xtc_probability) },
+                      { key: 'xtc_threshold', label: labelWithTip('xtc_threshold', 'xtc_threshold'), value: fmtVal(sp.xtc_threshold) },
                     ]} />
                   );
                 })() : (
@@ -497,7 +517,7 @@ export default function ModelList() {
                     ...(draftModelConfig ? [
                       { key: 'draft-ndraft', label: labelWithTip('Draft Tokens', 'draftTokens'), value: fmtVal(draftModelConfig.ndraft) },
                       ...(draftModelConfig['ngpu-layers'] != null ? [{ key: 'draft-ngpu', label: labelWithTip('GPU Layers', 'ngpuLayers'), value: fmtVal(draftModelConfig['ngpu-layers']) }] : []),
-                      ...(draftModelConfig.device ? [{ key: 'draft-device', label: labelWithTip('Device', 'device'), value: draftModelConfig.device }] : []),
+                      ...(draftModelConfig.devices?.length ? [{ key: 'draft-devices', label: labelWithTip('Devices', 'devices'), value: draftModelConfig.devices.join(', ') }] : []),
                     ] : []),
                   ]} />
                 </div>

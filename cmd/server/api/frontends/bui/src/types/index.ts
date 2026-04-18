@@ -53,7 +53,6 @@ export interface ModelDetail {
 export type ModelDetailsResponse = ModelDetail[];
 
 export interface ModelConfig {
-  device: string;
   'context-window': number;
   nbatch: number;
   nubatch: number;
@@ -106,7 +105,6 @@ export interface ModelConfig {
     'model-id': string;
     ndraft: number;
     'ngpu-layers': number | null;
-    device?: string;
     devices?: string[];
     'main-gpu'?: number | null;
     'tensor-split'?: number[] | null;

@@ -2,38 +2,38 @@
 # CONFIG OPTIONS
 #
 # example-model:
-#   context-window: 8192                 # Max tokens model can process (default: 8192)
-#   nbatch: 2048                         # Logical batch size (default: 2048)
-#   nubatch: 512                         # Physical batch size for prompt ingestion (default: 512)
-#   nthreads: 0                          # Threads for generation (0 = llama.cpp default)
-#   nthreads-batch: 0                    # Threads for batch processing (0 = llama.cpp default)
+#   auto-fit-vram: false                 # Auto-fit parameters to available VRAM
+#   cache-min-tokens: 100                # Min tokens before caching (default: 100, applies to both cache types)
 #   cache-type-k: q8_0                   # KV cache key type: f32, f16, q8_0, q4_0, bf16, auto
 #   cache-type-v: q8_0                   # KV cache value type: f32, f16, q8_0, q4_0, bf16, auto
-#   flash-attention: enabled             # Flash Attention: enabled, disabled, auto
-#   device: ""                           # [Deprecated] Use devices instead
+#   context-window: 8192                 # Max tokens model can process (default: 8192)
 #   devices: [CUDA0, CUDA1]              # Devices to use (run `kronk devices` to list)
+#   flash-attention: enabled             # Flash Attention: enabled, disabled, auto
+#   incremental-cache: false             # Incremental message caching for agentic workflows (Cline, OpenCode)
 #   main-gpu: 0                          # Primary GPU index for single-GPU mode
+#   max-cache-sessions: 1               # Max concurrent IMC sessions/users (default: 1, each gets own cache)
+#   nbatch: 2048                         # Logical batch size (default: 2048)
+#   ngpu-layers: 0                       # GPU layers to offload (0 = all, -1 = none, N = specific count)
 #   nseq-max: 0                          # Max parallel sequences for batched inference (0 = default)
+#   nthreads: 0                          # Threads for generation (0 = llama.cpp default)
+#   nthreads-batch: 0                    # Threads for batch processing (0 = llama.cpp default)
+#   nubatch: 512                         # Physical batch size for prompt ingestion (default: 512)
 #   offload-kqv: true                    # Offload KV cache to GPU (false = keep on CPU)
 #   op-offload: true                     # Offload tensor operations to GPU (false = keep on CPU)
-#   ngpu-layers: 0                       # GPU layers to offload (0 = all, -1 = none, N = specific count)
-#   split-mode: row                      # Multi-GPU split: none, layer, row (row recommended for MoE models)
-#   tensor-split: [0.6, 0.4]             # Per-device tensor distribution (must match device count)
-#   tensor-buft-overrides: [all-ffn]     # Force tensors to CPU: all-ffn, block:N, or regex
-#   auto-fit-vram: false                 # Auto-fit parameters to available VRAM
-#   system-prompt-cache: false           # Cache system prompt KV state for reuse across requests
-#   incremental-cache: false             # Incremental message caching for agentic workflows (Cline, OpenCode)
-#   max-cache-sessions: 1                  # Max concurrent IMC sessions/users (default: 1, each gets own cache)
-#   cache-min-tokens: 100                # Min tokens before caching (default: 100, applies to both cache types)
-#   rope-scaling-type: yarn              # RoPE scaling: none, linear, yarn
-#   yarn-orig-ctx: 32768                 # Original training context size (nil = from model)
 #   rope-freq-base: 1000000              # RoPE base frequency (nil = from model, e.g., 10000 Llama, 1000000 Qwen)
 #   rope-freq-scale: 0.25                # RoPE frequency scale (nil = auto-calculated)
-#   yarn-ext-factor: 1.0                 # YaRN extrapolation mix factor (nil = auto, 0 = disable)
+#   rope-scaling-type: yarn              # RoPE scaling: none, linear, yarn
+#   split-mode: row                      # Multi-GPU split: none, layer, row (row recommended for MoE models)
+#   swa-full: false                      # Full KV cache for SWA layers (recommended for Gemma 4)
+#   system-prompt-cache: false           # Cache system prompt KV state for reuse across requests
+#   template: qwen3.jinja                # Jinja template file override (from templates dir)
+#   tensor-buft-overrides: [all-ffn]     # Force tensors to CPU: all-ffn, block:N, or regex
+#   tensor-split: [0.6, 0.4]             # Per-device tensor distribution (must match device count)
 #   yarn-attn-factor: 1.0                # YaRN attention magnitude scaling (nil = default 1.0)
 #   yarn-beta-fast: 32.0                 # YaRN low correction dimension (nil = default 32.0)
 #   yarn-beta-slow: 1.0                  # YaRN high correction dimension (nil = default 1.0)
-#   template: qwen3.jinja                # Jinja template file override (from templates dir)
+#   yarn-ext-factor: 1.0                 # YaRN extrapolation mix factor (nil = auto, 0 = disable)
+#   yarn-orig-ctx: 32768                 # Original training context size (nil = from model)
 
 # ==============================================================================
 # MODEL SELECTION NOTES

@@ -40,7 +40,6 @@ interface CatalogFormData {
   collections: string;
   created: string;
   config: {
-    device: string;
     contextWindow: number | null;
     nbatch: number | null;
     nubatch: number | null;
@@ -147,7 +146,6 @@ const defaultForm: CatalogFormData = {
   collections: '',
   created: new Date().toISOString().split('T')[0],
   config: {
-    device: '',
     contextWindow: null,
     nbatch: null,
     nubatch: null,
@@ -284,7 +282,6 @@ function populateFromResponse(resp: CatalogModelResponse): CatalogFormData {
     collections: resp.metadata?.collections || '',
     created,
     config: {
-      device: mc?.device || '',
       contextWindow: mc?.['context-window'] ?? null,
       nbatch: mc?.nbatch ?? null,
       nubatch: mc?.nubatch ?? null,
@@ -319,7 +316,7 @@ function populateFromResponse(resp: CatalogModelResponse): CatalogFormData {
       draftModelId: mc?.['draft-model']?.['model-id'] || '',
       draftNDraft: mc?.['draft-model']?.ndraft ?? null,
       draftNGpuLayers: mc?.['draft-model']?.['ngpu-layers'] ?? null,
-      draftDevice: mc?.['draft-model']?.device || '',
+      draftDevice: mc?.['draft-model']?.devices?.[0] || '',
       moeMode: mc?.moe?.mode || '',
       moeKeepTopN: mc?.moe?.['keep-experts-top-n'] ?? null,
       useMMap: mc?.['use-mmap'] ?? null,
@@ -735,7 +732,6 @@ export default function CatalogEditor() {
           description: form.description,
         },
         config: {
-          device: form.config.device,
           'context-window': form.config.contextWindow ?? 0,
           nbatch: form.config.nbatch ?? 0,
           nubatch: form.config.nubatch ?? 0,
@@ -773,7 +769,7 @@ export default function CatalogEditor() {
               'model-id': form.config.draftModelId,
               ndraft: form.config.draftNDraft ?? 0,
               'ngpu-layers': form.config.draftNGpuLayers,
-              device: form.config.draftDevice || undefined,
+              devices: form.config.draftDevice ? [form.config.draftDevice] : undefined,
             },
           } : {}),
           ...(form.config.moeMode ? {
@@ -1166,8 +1162,8 @@ export default function CatalogEditor() {
               <NullableNumInput label="Batch Threads (nthreads-batch)" tooltipKey="nthreadsBatch" value={form.config.nthreadsBatch} defaultValue={rc?.['nthreads-batch']} onChange={(v) => setConfig({ nthreadsBatch: v })} />
               <NullableNumInput label="Cache Min Tokens" tooltipKey="cacheMinTokens" value={form.config.cacheMinTokens} defaultValue={rc?.['cache-min-tokens']} onChange={(v) => setConfig({ cacheMinTokens: v })} />
               <div>
-                <label style={labelStyle}>{labelWithTip('Device', 'device')}</label>
-                <select value={form.config.device} onChange={(e) => setConfig({ device: e.target.value })} style={inputStyle}>
+                <label style={labelStyle}>{labelWithTip('Device', 'devices')}</label>
+                <select value={form.config.devices} onChange={(e) => setConfig({ devices: e.target.value })} style={inputStyle}>
                   <option value="">not set</option>
                   <option value="cpu">cpu</option>
                   <option value="cuda">cuda</option>

@@ -50,6 +50,24 @@ type Logger func(ctx context.Context, msg string, args ...any)
 
 // =============================================================================
 
+// DraftModelConfig configures a draft model for speculative decoding. A smaller,
+// faster model generates candidate tokens that the target model verifies in a
+// single forward pass. This can improve generation throughput when the draft
+// model's predictions frequently match the target's.
+//
+// Requirements:
+//   - Draft and target models must share the same vocabulary (same tokenizer)
+//   - NSeqMax must be 1 (single-slot mode)
+//   - Draft model should be significantly smaller than the target (e.g., 0.6B draft for 8B target)
+type DraftModelConfig struct {
+	ModelFiles  []string  // Path to the draft model GGUF file(s)
+	NDraft      int       // Number of tokens to draft per step (default 5)
+	NGpuLayers  *int      // GPU layers for draft model (nil = all layers on GPU)
+	Devices     []string  // Devices for draft model (e.g., ["CUDA0"])
+	MainGPU     *int      // Primary GPU index for draft model
+	TensorSplit []float32 // Per-device tensor split for draft model
+}
+
 // Config represents model level configuration. These values if configured
 // incorrectly can cause the system to panic. The defaults are used when these
 // values are set to 0.
@@ -88,14 +106,6 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // When set to 0, the default value is 4096.
 //
 // DefaultParams contains the default sampling parameters for requests.
-//
-// Device is the device to use for the model. If not set, the default device
-// will be used. To see what devices are available, run the following command
-// which will be found where you installed llama.cpp.
-// $ llama-bench --list-devices
-//
-// Deprecated: Use Devices instead. If both Device and Devices are set,
-// a validation error is returned.
 //
 // Devices is a list of device names to use for model execution. When multiple
 // devices are specified, the model is distributed across them according to the
@@ -265,26 +275,6 @@ type Logger func(ctx context.Context, msg string, args ...any)
 //
 // YarnOrigCtx sets the original training context size for YaRN scaling. When nil
 // or 0, uses the model's native training context length from metadata.
-
-// DraftModelConfig configures a draft model for speculative decoding. A smaller,
-// faster model generates candidate tokens that the target model verifies in a
-// single forward pass. This can improve generation throughput when the draft
-// model's predictions frequently match the target's.
-//
-// Requirements:
-//   - Draft and target models must share the same vocabulary (same tokenizer)
-//   - NSeqMax must be 1 (single-slot mode)
-//   - Draft model should be significantly smaller than the target (e.g., 0.6B draft for 8B target)
-type DraftModelConfig struct {
-	ModelFiles  []string  // Path to the draft model GGUF file(s)
-	NDraft      int       // Number of tokens to draft per step (default 5)
-	NGpuLayers  *int      // GPU layers for draft model (nil = all layers on GPU)
-	Device      string    // Deprecated: Use Devices instead.
-	Devices     []string  // Devices for draft model (e.g., ["CUDA0"])
-	MainGPU     *int      // Primary GPU index for draft model
-	TensorSplit []float32 // Per-device tensor split for draft model
-}
-
 type Config struct {
 	AutoFitVRAM          bool
 	CacheMinTokens       int
@@ -293,7 +283,7 @@ type Config struct {
 	CacheTypeV           GGMLType
 	ContextWindow        int
 	DefaultParams        Params
-	Device               string   // Deprecated: Use Devices instead.
+	DraftModel           *DraftModelConfig
 	Devices              []string // Device names for model execution (e.g., ["CUDA0", "CUDA1"])
 	FlashAttention       FlashAttentionType
 	IgnoreIntegrityCheck bool
@@ -310,6 +300,7 @@ type Config struct {
 	NThreads             int
 	NThreadsBatch        int
 	NUBatch              int
+	NUMA                 string
 	OffloadKQV           *bool
 	OpOffload            *bool
 	OpOffloadMinBatch    int
@@ -324,13 +315,11 @@ type Config struct {
 	TensorSplit          []float32
 	UseDirectIO          bool
 	UseMMap              *bool
-	NUMA                 string
 	YarnAttnFactor       *float32
 	YarnBetaFast         *float32
 	YarnBetaSlow         *float32
 	YarnExtFactor        *float32
 	YarnOrigCtx          *int
-	DraftModel           *DraftModelConfig
 }
 
 func (cfg Config) String() string {
@@ -373,9 +362,9 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("{mode:%s top_n:%s}", m.Mode, topN)
 	}
 
-	return fmt.Sprintf("\nAutoFitVRAM[%t]\nCacheMinTokens[%d]\nCacheSlotTimeout[%d]\nCacheTypeK[%d]\nCacheTypeV[%d]\nContextWindow[%d]\nDevice[%s]\nDevices[%v]\nFlashAttention[%d]\nIgnoreIntegrityCheck[%t]\nIncrementalCache[%t]\nInsecureLogging[%t]\nJinjaFile[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%d]\nNGpuLayers[%s]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%d]\nProjFile[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSplitMode[%s]\nSWAFull[%t]\nSystemPromptCache[%t]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nUseDirectIO[%t]\nUseMMap[%s]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
+	return fmt.Sprintf("\nAutoFitVRAM[%t]\nCacheMinTokens[%d]\nCacheSlotTimeout[%d]\nCacheTypeK[%d]\nCacheTypeV[%d]\nContextWindow[%d]\nDevices[%v]\nFlashAttention[%d]\nIgnoreIntegrityCheck[%t]\nIncrementalCache[%t]\nInsecureLogging[%t]\nJinjaFile[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%d]\nNGpuLayers[%s]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%d]\nProjFile[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSplitMode[%s]\nSWAFull[%t]\nSystemPromptCache[%t]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nUseDirectIO[%t]\nUseMMap[%s]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
 		cfg.AutoFitVRAM, cfg.CacheMinTokens, cfg.CacheSlotTimeout, cfg.CacheTypeK, cfg.CacheTypeV,
-		cfg.ContextWindow, cfg.Device, cfg.Devices, cfg.FlashAttention, cfg.IgnoreIntegrityCheck,
+		cfg.ContextWindow, cfg.Devices, cfg.FlashAttention, cfg.IgnoreIntegrityCheck,
 		cfg.IncrementalCache, cfg.InsecureLogging, cfg.JinjaFile,
 		formatIntPtr(cfg.MainGPU), formatMoEPtr(cfg.MoE), cfg.ModelFiles, cfg.NBatch,
 		formatIntPtr(cfg.NGpuLayers), cfg.NSeqMax, cfg.NThreads, cfg.NThreadsBatch, cfg.NUBatch,
@@ -394,7 +383,7 @@ func validateConfig(ctx context.Context, cfg Config, log Logger) error {
 		return fmt.Errorf("validate-config: model file is required")
 	}
 
-	if cfg.Device != "" && len(cfg.Devices) > 0 {
+	if len(cfg.Devices) > 0 {
 		return fmt.Errorf("validate-config: Device and Devices are mutually exclusive; use Devices only (Device is deprecated)")
 	}
 
@@ -551,9 +540,8 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 }
 
 func applyCatalogConfig(user Config, cat Config) Config {
-	if len(user.Devices) == 0 && user.Device == "" {
+	if len(user.Devices) == 0 {
 		user.Devices = cat.Devices
-		user.Device = cat.Device
 	}
 	if user.ContextWindow == 0 {
 		user.ContextWindow = cat.ContextWindow

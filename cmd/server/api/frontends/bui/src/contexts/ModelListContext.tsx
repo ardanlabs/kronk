@@ -24,7 +24,7 @@ export function ModelListProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     setError(null);
     try {
-      const response = await api.listModelsExtended();
+      const response = await api.listModels();
       setModels(response);
       setLoaded(true);
     } catch (err) {

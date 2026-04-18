@@ -134,7 +134,7 @@ func printWeb(model toolapp.CatalogModelResponse) {
 	if model.ModelConfig != nil {
 		fmt.Println("Model Config")
 		fmt.Println("------------")
-		fmt.Printf("Device:               %s\n", model.ModelConfig.Device)
+		fmt.Printf("Devices:              %s\n", model.ModelConfig.Devices)
 		fmt.Printf("Context Window:       %d\n", model.ModelConfig.ContextWindow)
 		fmt.Printf("NBatch:               %d\n", model.ModelConfig.NBatch)
 		fmt.Printf("NUBatch:              %d\n", model.ModelConfig.NUBatch)
@@ -231,7 +231,7 @@ func printLocal(catDetails catalog.ModelDetails, rmc catalog.ModelConfig, mi *mo
 
 	fmt.Println("Model Config")
 	fmt.Println("------------")
-	fmt.Printf("Device:               %s\n", rmc.Device)
+	fmt.Printf("Devices:              %s\n", rmc.Devices)
 	fmt.Printf("Context Window:       %d\n", rmc.ContextWindow)
 	fmt.Printf("NBatch:               %d\n", rmc.NBatch)
 	fmt.Printf("NUBatch:              %d\n", rmc.NUBatch)

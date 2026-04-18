@@ -354,9 +354,6 @@ func mergeModelConfig(dst *ModelConfig, src ModelConfig) {
 	if src.Template != "" {
 		dst.Template = src.Template
 	}
-	if src.Device != "" {
-		dst.Device = src.Device
-	}
 	if src.ContextWindow != 0 {
 		dst.ContextWindow = src.ContextWindow
 	}
