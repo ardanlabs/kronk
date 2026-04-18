@@ -28,6 +28,7 @@ const (
 	RoleUser      = "user"
 	RoleAssistant = "assistant"
 	RoleSystem    = "system"
+	RoleTool      = "tool"
 )
 
 // FinishReasons represent the different reasons a response can be finished.

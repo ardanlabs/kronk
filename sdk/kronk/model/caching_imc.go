@@ -148,7 +148,7 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 		}
 
 		// Check if this slot's cached prefix matches the incoming messages.
-		prefixHash := hashMessages(imcEnsureUserMessage(messages[:snap.cachedMsgCount]))
+		prefixHash := hashMessages(m.imcEnsureUserMessage(ctx, messages[:snap.cachedMsgCount]))
 		if prefixHash != snap.cachedMsgsHash {
 			m.log(ctx, "imc", "scan", fmt.Sprintf("slot[%d] mismatch (cached-msgs[%d] tokens[%d] hash[%s..] != [%s..])",
 				snap.slotID, snap.cachedMsgCount, snap.totalTokensCached, snap.cachedMsgsHash[:8], prefixHash[:8]))
@@ -296,7 +296,7 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 
 	// If we have candidates, tokenize the current messages and compare.
 	if len(tokenMatchCandidates) > 0 {
-		msgs := imcEnsureUserMessage(messages[:lastMsgIdxToCache])
+		msgs := m.imcEnsureUserMessage(ctx, messages[:lastMsgIdxToCache])
 
 		tokenMatchD := D{
 			"messages":              msgs,
@@ -479,7 +479,7 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, session *
 	// -------------------------------------------------------------------------
 	// Heavy work: template + tokenize outside the lock.
 
-	msgs := imcEnsureUserMessage(messages[:lastMsgIdxToCache])
+	msgs := m.imcEnsureUserMessage(ctx, messages[:lastMsgIdxToCache])
 
 	msgsToCache := D{
 		"messages":              msgs,
@@ -603,7 +603,7 @@ func (m *Model) extendIMCMediaSlotWithText(ctx context.Context, d D, messages []
 	cachedTextTokens := currentTotalTokensCached - kvTokenDelta
 
 	// Template and tokenize the full prefix (all messages to cache).
-	msgs := imcEnsureUserMessage(messages[:lastMsgIdxToCache])
+	msgs := m.imcEnsureUserMessage(ctx, messages[:lastMsgIdxToCache])
 
 	// Hash before createPrompt which mutates []byte media content to string
 	// markers in-place. Hashing after would exclude raw media bytes, causing
@@ -701,7 +701,7 @@ func (m *Model) extendIMCTextCacheWithMedia(ctx context.Context, d D, messages [
 	m.log(ctx, "imc", "status", "slot marked pending (media extend from text)",
 		"slot", slotID, "seq", seqID, "skip_text_tokens", currentTotalTokensCached)
 
-	msgsToCache := imcEnsureUserMessage(messages[:lastMsgIdxToCache])
+	msgsToCache := m.imcEnsureUserMessage(ctx, messages[:lastMsgIdxToCache])
 	newHash := hashMessages(msgsToCache)
 
 	prefixD := D{
@@ -739,7 +739,7 @@ func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D,
 
 	// Double-check in case another goroutine built the cache while we waited.
 	if session.cachedMsgCount > 0 && session.totalTokensCached > 0 && session.cachedMsgCount <= len(messages) {
-		prefixHash := hashMessages(imcEnsureUserMessage(messages[:session.cachedMsgCount]))
+		prefixHash := hashMessages(m.imcEnsureUserMessage(ctx, messages[:session.cachedMsgCount]))
 		if prefixHash == session.cachedMsgsHash {
 			m.log(ctx, "imc", "status", "cache hit (after-lock)", "slot", session.slotID, "seq", session.seqID,
 				"cached-msgs", session.cachedMsgCount, "total-tokens-cached", session.totalTokensCached)
@@ -786,7 +786,7 @@ func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D,
 	// -------------------------------------------------------------------------
 	// Heavy work: template + tokenize outside the lock.
 
-	msgsToCache := imcEnsureUserMessage(messages[:lastMsgIdxToCache])
+	msgsToCache := m.imcEnsureUserMessage(ctx, messages[:lastMsgIdxToCache])
 	prefixD := D{
 		"messages":              msgsToCache,
 		"add_generation_prompt": false,
@@ -901,7 +901,7 @@ func (m *Model) rebuildIMCWithMedia(ctx context.Context, d D, messages []D, sess
 
 	m.log(ctx, "imc", "status", "slot marked pending (media rebuild)", "slot", slotID, "seq", seqID)
 
-	msgsToCache := imcEnsureUserMessage(messages[:lastMsgIdxToCache])
+	msgsToCache := m.imcEnsureUserMessage(ctx, messages[:lastMsgIdxToCache])
 	newHash := hashMessages(msgsToCache)
 
 	prefixD := D{
@@ -961,7 +961,7 @@ func (m *Model) rebuildIMCFromPartialPrefix(ctx context.Context, d D, messages [
 	extensionTokens := allTokens[commonPrefixLen:]
 	totalTokens := len(allTokens)
 
-	msgsToCache := imcEnsureUserMessage(messages[:lastMsgIdxToCache])
+	msgsToCache := m.imcEnsureUserMessage(ctx, messages[:lastMsgIdxToCache])
 	newHash := hashMessages(msgsToCache)
 
 	m.log(ctx, "imc", "status", "partial prefix rebuild prepared", "slot", slotID, "seq", seqID,
@@ -1164,7 +1164,7 @@ func tokenPrefixMatch(cached, incoming []llama.Token) int {
 // IMC renders and hashes (the injection is always in the same position).
 // The original slice is never mutated; a new slice is returned when injection
 // is needed.
-func imcEnsureUserMessage(msgs []D) []D {
+func (m *Model) imcEnsureUserMessage(ctx context.Context, msgs []D) []D {
 	if len(msgs) == 0 {
 		return msgs
 	}
@@ -1180,6 +1180,8 @@ func imcEnsureUserMessage(msgs []D) []D {
 			return msgs
 		}
 	}
+
+	m.log(ctx, "imc", "status", "injecting empty user message", "msgs", len(msgs))
 
 	// Inject empty user message at position 1 (after system).
 	result := make([]D, 0, len(msgs)+1)

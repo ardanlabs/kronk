@@ -571,7 +571,7 @@ type ModelConfig struct {
 	Devices              []string                 `json:"devices"`
 	MoE                  *MoEConfig               `json:"moe,omitempty"`
 	AutoFitVRAM          bool                     `json:"auto-fit-vram"`
-	SWAFull              bool                     `json:"swa-full"`
+	SWAFull              *bool                    `json:"swa-full"`
 	SystemPromptCache    bool                     `json:"system-prompt-cache"`
 	IncrementalCache     bool                     `json:"incremental-cache"`
 	CacheMinTokens       int                      `json:"cache-min-tokens"`
