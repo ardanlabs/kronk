@@ -45,16 +45,15 @@ func Repair(s string) (string, error) {
 	}
 
 	// Step 1: if it already parses, no repair needed.
-	var test any
-	if json.Unmarshal([]byte(s), &test) == nil {
+	if json.Valid([]byte(s)) {
 		return s, nil
 	}
 
 	// Step 2-4: normalize quoting.
-	normalized := normalize(s)
+	normalized, changed := normalize(s)
 
-	// Step 5: check again after normalization.
-	if json.Unmarshal([]byte(normalized), &test) == nil {
+	// Step 5: check again after normalization (skip if nothing changed).
+	if changed && json.Valid([]byte(normalized)) {
 		return normalized, nil
 	}
 
@@ -63,12 +62,12 @@ func Repair(s string) (string, error) {
 
 	// Step 7: verify. If the result has a trailing extra } from Gemma's
 	// double-brace wrapping (call:write{{...}}), try trimming it.
-	if json.Unmarshal([]byte(repaired), &test) == nil {
+	if json.Valid([]byte(repaired)) {
 		return repaired, nil
 	}
 
 	repaired = trimTrailingBrace(repaired)
-	if json.Unmarshal([]byte(repaired), &test) == nil {
+	if json.Valid([]byte(repaired)) {
 		return repaired, nil
 	}
 
@@ -91,12 +90,14 @@ func Unmarshal(s string, v any) error {
 // =============================================================================
 
 // normalize applies all pre-repair transformations: Gemma <|"|> replacement,
-// backtick delimiter normalization, and bare key quoting.
-func normalize(s string) string {
+// backtick delimiter normalization, and bare key quoting. The second return
+// value reports whether any transformation changed the string.
+func normalize(s string) (string, bool) {
+	orig := s
 	s = normalizeGemmaQuotes(s)
 	s = normalizeBacktickDelimiters(s)
 	s = quoteBareKeys(s)
-	return s
+	return s, s != orig
 }
 
 // normalizeGemmaQuotes converts <|"|> delimited values to standard JSON
@@ -346,7 +347,7 @@ func normalizeBacktickDelimiters(s string) string {
 // {"content":"text","priority":"high"}.
 func quoteBareKeys(s string) string {
 	var buf strings.Builder
-	buf.Grow(len(s) + 32)
+	changed := false
 
 	inString := false
 	escaped := false
@@ -355,25 +356,33 @@ func quoteBareKeys(s string) string {
 		c := s[i]
 
 		if escaped {
-			buf.WriteByte(c)
+			if changed {
+				buf.WriteByte(c)
+			}
 			escaped = false
 			continue
 		}
 
 		if c == '\\' && inString {
-			buf.WriteByte(c)
+			if changed {
+				buf.WriteByte(c)
+			}
 			escaped = true
 			continue
 		}
 
 		if c == '"' {
 			inString = !inString
-			buf.WriteByte(c)
+			if changed {
+				buf.WriteByte(c)
+			}
 			continue
 		}
 
 		if inString {
-			buf.WriteByte(c)
+			if changed {
+				buf.WriteByte(c)
+			}
 			continue
 		}
 
@@ -388,7 +397,12 @@ func quoteBareKeys(s string) string {
 			}
 
 			if j < len(s) && s[j] == ':' {
-				// This is a bare key — quote it.
+				// This is a bare key — start the builder on first mutation.
+				if !changed {
+					buf.Grow(len(s) + 32)
+					buf.WriteString(s[:i])
+					changed = true
+				}
 				buf.WriteByte('"')
 				buf.WriteString(s[i:j])
 				buf.WriteByte('"')
@@ -397,7 +411,13 @@ func quoteBareKeys(s string) string {
 			}
 		}
 
-		buf.WriteByte(c)
+		if changed {
+			buf.WriteByte(c)
+		}
+	}
+
+	if !changed {
+		return s
 	}
 
 	return buf.String()
