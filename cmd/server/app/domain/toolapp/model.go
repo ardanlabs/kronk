@@ -1103,7 +1103,7 @@ func (app SaveCatalogRequest) toModelDetails() catalog.ModelDetails {
 			UseDirectIO:          app.Config.UseDirectIO,
 			UseMMap:              app.Config.UseMMap,
 			NUMA:                 app.Config.NUMA,
-			FlashAttention:       model.FlashAttentionPtr(app.Config.FlashAttention),
+			FlashAttention:       new(app.Config.FlashAttention),
 			IgnoreIntegrityCheck: app.Config.IgnoreIntegrityCheck,
 			NSeqMax:              app.Config.NSeqMax,
 			OffloadKQV:           app.Config.OffloadKQV,
