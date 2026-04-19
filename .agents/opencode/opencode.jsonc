@@ -14,11 +14,21 @@
                         "context": 131072,
                         "output": 65536
                     }
+                },
+                "Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT": {
+                    "name": "Qwen3.6 3 35B Agent",
+                    "limit": {
+                        "context": 131072,
+                        "output": 65536
+                    }
                 }
             }
         }
     },
     "model": "kronk/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT",
+    "instructions": [
+        "agent.md"
+    ],
     "mcp": {
         "kronk": {
             "type": "remote",

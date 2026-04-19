@@ -172,6 +172,8 @@ gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
     temperature: 1.0
     top_k: 64
     top_p: 0.95
+    repeat_penalty: 1.1
+    repeat_last_n: 256
 
 cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0/Chat:
   context-window: 131072

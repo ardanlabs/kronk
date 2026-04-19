@@ -20,9 +20,6 @@ To dog food the SDK, Bill wrote a model server (KMS) that is optimized to run yo
 
 ### Basic Game Play Prompt
 
-- Think efficiently and concisely, prioritizing speed. Use short, direct reasoning steps.
-- Summarize your reasoning in 50 words or less.
-
 - I want to write a basic tic-tac-toe game only using the Go standard library.
 - The game play can be in the terminal.
 - Allow 2 players to play against each other.
@@ -79,5 +76,5 @@ Player X's turn. Enter a number (1-9):
 - I need functions called playerX and playerO that is used when it's that
   player's turn to choose a space. I need to encapsulate that functionality.
 - Do not attempt to run the game yourself.
-- Compile the program to validate it compiles. Do not try to fix an errors, just
-  report them and I will give you instructions.
+- Compile the program to validate it compiles. Fix any errors that you find. Then
+  remove the binary you created to validate the code.

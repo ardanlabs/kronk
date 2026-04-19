@@ -161,9 +161,14 @@ func normalizeGemmaQuotes(s string) string {
 						// Double-escape so JSON preserves the literal chars.
 						b.WriteString(`\\`)
 						b.WriteByte(next)
-					default:
-						// Other escapes (\", \\, etc.) — preserve as-is.
+					case '"', '\\', '/', 'u':
+						// Valid JSON escape — preserve as-is.
 						b.WriteByte('\\')
+						b.WriteByte(next)
+					default:
+						// Not a valid JSON escape (e.g., \0 from \033
+						// ANSI codes). Double-escape the backslash.
+						b.WriteString(`\\`)
 						b.WriteByte(next)
 					}
 				} else {
@@ -454,9 +459,24 @@ func repairQuotes(s string) string {
 				for j := 0; j < len(inner); j++ {
 					switch {
 					case inner[j] == '\\' && j+1 < len(inner):
-						buf.WriteByte('\\')
+						next := inner[j+1]
 						j++
-						buf.WriteByte(inner[j])
+
+						switch next {
+						case '"', '\\', '/', 'u':
+							// Valid JSON escape — preserve as-is.
+							buf.WriteByte('\\')
+							buf.WriteByte(next)
+						default:
+							// Source code escape or invalid JSON escape.
+							// \n, \t, \r etc. are Go source escapes (actual
+							// control chars are handled below). \0 from \033
+							// ANSI codes are not valid JSON at all.
+							// Double-escape so the literal backslash
+							// survives JSON parsing.
+							buf.WriteString(`\\`)
+							buf.WriteByte(next)
+						}
 					case inner[j] == '"':
 						buf.WriteString(`\"`)
 					case inner[j] == '\n':
@@ -527,11 +547,12 @@ func findKeyAwareClosingQuote(s string, start int) int {
 		switch s[j] {
 		case '}', ']':
 			// Only treat as structural if this is the outermost closing
-			// brace/bracket — i.e., nothing but whitespace follows it.
+			// brace/bracket — i.e., nothing but whitespace and possibly
+			// extra } from Gemma's double-brace wrapping follows it.
 			// Content like [9]string{"3"} has } inside the value, but
 			// more content follows, so it's not the JSON object end.
 			after := j + 1
-			for after < len(s) && isWhitespace(s[after]) {
+			for after < len(s) && (isWhitespace(s[after]) || s[after] == '}') {
 				after++
 			}
 			if after >= len(s) {
