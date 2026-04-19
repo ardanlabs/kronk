@@ -11,6 +11,7 @@ import (
 
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/toolapp"
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
@@ -142,7 +143,7 @@ func printWeb(model toolapp.CatalogModelResponse) {
 		fmt.Printf("NThreadsBatch:        %d\n", model.ModelConfig.NThreadsBatch)
 		fmt.Printf("CacheTypeK:           %s\n", model.ModelConfig.CacheTypeK)
 		fmt.Printf("CacheTypeV:           %s\n", model.ModelConfig.CacheTypeV)
-		fmt.Printf("FlashAttention:       %v\n", model.ModelConfig.FlashAttention)
+		fmt.Printf("FlashAttention:       %v\n", model.ModelConfig.FlashAttention.String())
 		fmt.Printf("NSeqMax:              %d\n", model.ModelConfig.NSeqMax)
 		fmt.Printf("SystemPromptCache:    %t\n", model.ModelConfig.SystemPromptCache)
 		fmt.Printf("IncrementalCache:     %t\n", model.ModelConfig.IncrementalCache)
@@ -239,7 +240,7 @@ func printLocal(catDetails catalog.ModelDetails, rmc catalog.ModelConfig, mi *mo
 	fmt.Printf("NThreadsBatch:        %d\n", rmc.NThreadsBatch)
 	fmt.Printf("CacheTypeK:           %s\n", rmc.CacheTypeK)
 	fmt.Printf("CacheTypeV:           %s\n", rmc.CacheTypeV)
-	fmt.Printf("FlashAttention:       %v\n", rmc.FlashAttention)
+	fmt.Printf("FlashAttention:       %v\n", model.DerefFlashAttention(rmc.FlashAttention))
 	fmt.Printf("NSeqMax:              %d\n", rmc.NSeqMax)
 	fmt.Printf("SystemPromptCache:    %t\n", rmc.SystemPromptCache)
 	fmt.Printf("IncrementalCache:     %t\n", rmc.IncrementalCache)

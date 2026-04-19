@@ -326,11 +326,11 @@ func (c *Catalog) analysisDefaults(modelID string) ModelConfig {
 
 	switch rec.FlashAttention {
 	case "auto":
-		cfg.FlashAttention = model.FlashAttentionAuto
+		cfg.FlashAttention = model.FlashAttentionPtr(model.FlashAttentionAuto)
 	case "disabled":
-		cfg.FlashAttention = model.FlashAttentionDisabled
+		cfg.FlashAttention = model.FlashAttentionPtr(model.FlashAttentionDisabled)
 	default:
-		cfg.FlashAttention = model.FlashAttentionEnabled
+		cfg.FlashAttention = model.FlashAttentionPtr(model.FlashAttentionEnabled)
 	}
 
 	// model.Config: NGpuLayers nil = all on GPU, 0 = all on GPU, -1 = all on CPU.
@@ -375,7 +375,7 @@ func mergeModelConfig(dst *ModelConfig, src ModelConfig) {
 	if src.CacheTypeV != 0 {
 		dst.CacheTypeV = src.CacheTypeV
 	}
-	if src.FlashAttention != 0 {
+	if src.FlashAttention != nil {
 		dst.FlashAttention = src.FlashAttention
 	}
 	if src.UseDirectIO {

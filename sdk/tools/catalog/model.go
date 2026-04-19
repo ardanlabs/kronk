@@ -196,47 +196,47 @@ func (s SamplingConfig) toParams() model.Params {
 
 // ModelConfig represents default model config settings.
 type ModelConfig struct {
-	AutoFitVRAM          bool                     `yaml:"auto-fit-vram,omitempty"`
-	CacheMinTokens       int                      `yaml:"cache-min-tokens,omitempty"`
-	CacheSlotTimeout     int                      `yaml:"cache-slot-timeout,omitempty"`
-	CacheTypeK           model.GGMLType           `yaml:"cache-type-k,omitempty"`
-	CacheTypeV           model.GGMLType           `yaml:"cache-type-v,omitempty"`
-	ContextWindow        int                      `yaml:"context-window,omitempty"`
-	Devices              []string                 `yaml:"devices,omitempty"`
-	DraftModel           *DraftModelConfig        `yaml:"draft-model,omitempty"`
-	FlashAttention       model.FlashAttentionType `yaml:"flash-attention,omitempty"`
-	IgnoreIntegrityCheck bool                     `yaml:"ignore-integrity-check,omitempty"`
-	IncrementalCache     bool                     `yaml:"incremental-cache,omitempty"`
-	InsecureLogging      bool                     `yaml:"insecure-logging,omitempty"`
-	MainGPU              *int                     `yaml:"main-gpu,omitempty"`
-	MoE                  *model.MoEConfig         `yaml:"moe,omitempty"`
-	NBatch               int                      `yaml:"nbatch,omitempty"`
-	NGpuLayers           *int                     `yaml:"ngpu-layers,omitempty"`
-	NSeqMax              int                      `yaml:"nseq-max,omitempty"`
-	NThreads             int                      `yaml:"nthreads,omitempty"`
-	NThreadsBatch        int                      `yaml:"nthreads-batch,omitempty"`
-	NUBatch              int                      `yaml:"nubatch,omitempty"`
-	NUMA                 string                   `yaml:"numa,omitempty"`
-	OffloadKQV           *bool                    `yaml:"offload-kqv,omitempty"`
-	OpOffload            *bool                    `yaml:"op-offload,omitempty"`
-	OpOffloadMinBatch    int                      `yaml:"op-offload-min-batch,omitempty"`
-	RopeFreqBase         *float32                 `yaml:"rope-freq-base,omitempty"`
-	RopeFreqScale        *float32                 `yaml:"rope-freq-scale,omitempty"`
-	RopeScaling          model.RopeScalingType    `yaml:"rope-scaling-type,omitempty"`
-	Sampling             SamplingConfig           `yaml:"sampling-parameters,omitempty"`
-	SplitMode            *model.SplitMode         `yaml:"split-mode,omitempty"`
-	SWAFull              *bool                    `yaml:"swa-full,omitempty"`
-	SystemPromptCache    bool                     `yaml:"system-prompt-cache,omitempty"`
-	TensorBuftOverrides  []string                 `yaml:"tensor-buft-overrides,omitempty"`
-	TensorSplit          []float32                `yaml:"tensor-split,omitempty"`
-	Template             string                   `yaml:"template,omitempty"`
-	UseDirectIO          bool                     `yaml:"use-direct-io,omitempty"`
-	UseMMap              *bool                    `yaml:"use-mmap,omitempty"`
-	YarnAttnFactor       *float32                 `yaml:"yarn-attn-factor,omitempty"`
-	YarnBetaFast         *float32                 `yaml:"yarn-beta-fast,omitempty"`
-	YarnBetaSlow         *float32                 `yaml:"yarn-beta-slow,omitempty"`
-	YarnExtFactor        *float32                 `yaml:"yarn-ext-factor,omitempty"`
-	YarnOrigCtx          *int                     `yaml:"yarn-orig-ctx,omitempty"`
+	AutoFitVRAM          bool                      `yaml:"auto-fit-vram,omitempty"`
+	CacheMinTokens       int                       `yaml:"cache-min-tokens,omitempty"`
+	CacheSlotTimeout     int                       `yaml:"cache-slot-timeout,omitempty"`
+	CacheTypeK           model.GGMLType            `yaml:"cache-type-k,omitempty"`
+	CacheTypeV           model.GGMLType            `yaml:"cache-type-v,omitempty"`
+	ContextWindow        int                       `yaml:"context-window,omitempty"`
+	Devices              []string                  `yaml:"devices,omitempty"`
+	DraftModel           *DraftModelConfig         `yaml:"draft-model,omitempty"`
+	FlashAttention       *model.FlashAttentionType `yaml:"flash-attention,omitempty"`
+	IgnoreIntegrityCheck bool                      `yaml:"ignore-integrity-check,omitempty"`
+	IncrementalCache     bool                      `yaml:"incremental-cache,omitempty"`
+	InsecureLogging      bool                      `yaml:"insecure-logging,omitempty"`
+	MainGPU              *int                      `yaml:"main-gpu,omitempty"`
+	MoE                  *model.MoEConfig          `yaml:"moe,omitempty"`
+	NBatch               int                       `yaml:"nbatch,omitempty"`
+	NGpuLayers           *int                      `yaml:"ngpu-layers,omitempty"`
+	NSeqMax              int                       `yaml:"nseq-max,omitempty"`
+	NThreads             int                       `yaml:"nthreads,omitempty"`
+	NThreadsBatch        int                       `yaml:"nthreads-batch,omitempty"`
+	NUBatch              int                       `yaml:"nubatch,omitempty"`
+	NUMA                 string                    `yaml:"numa,omitempty"`
+	OffloadKQV           *bool                     `yaml:"offload-kqv,omitempty"`
+	OpOffload            *bool                     `yaml:"op-offload,omitempty"`
+	OpOffloadMinBatch    int                       `yaml:"op-offload-min-batch,omitempty"`
+	RopeFreqBase         *float32                  `yaml:"rope-freq-base,omitempty"`
+	RopeFreqScale        *float32                  `yaml:"rope-freq-scale,omitempty"`
+	RopeScaling          model.RopeScalingType     `yaml:"rope-scaling-type,omitempty"`
+	Sampling             SamplingConfig            `yaml:"sampling-parameters,omitempty"`
+	SplitMode            *model.SplitMode          `yaml:"split-mode,omitempty"`
+	SWAFull              *bool                     `yaml:"swa-full,omitempty"`
+	SystemPromptCache    bool                      `yaml:"system-prompt-cache,omitempty"`
+	TensorBuftOverrides  []string                  `yaml:"tensor-buft-overrides,omitempty"`
+	TensorSplit          []float32                 `yaml:"tensor-split,omitempty"`
+	Template             string                    `yaml:"template,omitempty"`
+	UseDirectIO          bool                      `yaml:"use-direct-io,omitempty"`
+	UseMMap              *bool                     `yaml:"use-mmap,omitempty"`
+	YarnAttnFactor       *float32                  `yaml:"yarn-attn-factor,omitempty"`
+	YarnBetaFast         *float32                  `yaml:"yarn-beta-fast,omitempty"`
+	YarnBetaSlow         *float32                  `yaml:"yarn-beta-slow,omitempty"`
+	YarnExtFactor        *float32                  `yaml:"yarn-ext-factor,omitempty"`
+	YarnOrigCtx          *int                      `yaml:"yarn-orig-ctx,omitempty"`
 }
 
 // DraftModelConfig configures a draft model for speculative decoding.
@@ -260,7 +260,7 @@ func (mc ModelConfig) ToKronkConfig() model.Config {
 		ContextWindow:        mc.ContextWindow,
 		DefaultParams:        mc.Sampling.toParams(),
 		Devices:              mc.Devices,
-		FlashAttention:       mc.FlashAttention,
+		FlashAttention:       model.DerefFlashAttention(mc.FlashAttention),
 		IgnoreIntegrityCheck: mc.IgnoreIntegrityCheck,
 		IncrementalCache:     mc.IncrementalCache,
 		InsecureLogging:      mc.InsecureLogging,

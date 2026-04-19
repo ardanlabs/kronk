@@ -564,9 +564,6 @@ func applyCatalogConfig(user Config, cat Config) Config {
 	if user.CacheTypeV == GGMLTypeAuto {
 		user.CacheTypeV = cat.CacheTypeV
 	}
-	if user.FlashAttention == FlashAttentionEnabled && cat.FlashAttention != FlashAttentionEnabled {
-		user.FlashAttention = cat.FlashAttention
-	}
 	if !user.UseDirectIO {
 		user.UseDirectIO = cat.UseDirectIO
 	}
@@ -1090,6 +1087,22 @@ func (t *FlashAttentionType) UnmarshalYAML(unmarshal func(any) error) error {
 	}
 
 	return nil
+}
+
+// FlashAttentionPtr returns a pointer to a FlashAttentionType value.
+//
+//go:fix inline
+func FlashAttentionPtr(v FlashAttentionType) *FlashAttentionType {
+	return new(v)
+}
+
+// DerefFlashAttention returns the value of a FlashAttentionType pointer,
+// defaulting to FlashAttentionEnabled when nil.
+func DerefFlashAttention(p *FlashAttentionType) FlashAttentionType {
+	if p == nil {
+		return FlashAttentionEnabled
+	}
+	return *p
 }
 
 // =============================================================================

@@ -11,7 +11,7 @@
 #   flash-attention: enabled             # Flash Attention: enabled, disabled, auto
 #   incremental-cache: false             # Incremental message caching for agentic workflows (Cline, OpenCode)
 #   main-gpu: 0                          # Primary GPU index for single-GPU mode
-#   max-cache-sessions: 1               # Max concurrent IMC sessions/users (default: 1, each gets own cache)
+#   max-cache-sessions: 1                # Max concurrent IMC sessions/users (default: 1, each gets own cache)
 #   nbatch: 2048                         # Logical batch size (default: 2048)
 #   ngpu-layers: 0                       # GPU layers to offload (0 = all, -1 = none, N = specific count)
 #   nseq-max: 0                          # Max parallel sequences for batched inference (0 = default)
@@ -156,6 +156,7 @@ Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
   context-window: 131072
   nseq-max: 2
   incremental-cache: true
+  flash-attention: enabled
   sampling-parameters:
     temperature: 0.6
     top_k: 20
@@ -166,6 +167,7 @@ gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
   context-window: 131072
   nseq-max: 2
   incremental-cache: true
+  flash-attention: enabled
   sampling-parameters:
     temperature: 1.0
     top_k: 64
@@ -175,6 +177,7 @@ cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0/Chat:
   context-window: 131072
   insecure-logging: false
   incremental-cache: true
+  flash-attention: enabled
   sampling-parameters:
     temperature: 0.7
     top_p: 0.8
