@@ -469,7 +469,7 @@ func parseFunctionFormat(content string) []ResponseToolCall {
 			break
 		}
 
-		name := content[funcStart+10 : funcStart+funcEnd]
+		name := strings.TrimSpace(content[funcStart+10 : funcStart+funcEnd])
 
 		bodyStart := funcStart + funcEnd + 1
 		closeFunc := strings.Index(content[bodyStart:], "</function>")
@@ -493,14 +493,16 @@ func parseFunctionFormat(content string) []ResponseToolCall {
 				break
 			}
 
-			paramName := remaining[paramStart+11 : paramStart+paramNameEnd]
+			paramName := strings.TrimSpace(remaining[paramStart+11 : paramStart+paramNameEnd])
 
-			paramClose := strings.Index(remaining, "</parameter>")
-			if paramClose == -1 {
+			valueStart := paramStart + paramNameEnd + 1
+			paramCloseRel := strings.Index(remaining[valueStart:], "</parameter>")
+			if paramCloseRel == -1 {
 				break
 			}
+			paramClose := valueStart + paramCloseRel
 
-			paramValue := strings.TrimSpace(remaining[paramStart+paramNameEnd+1 : paramClose])
+			paramValue := strings.TrimSpace(remaining[valueStart:paramClose])
 
 			// Try to parse the value as JSON so that arrays and objects
 			// are stored as proper Go types ([]any, map[string]any) instead
@@ -945,6 +947,7 @@ func (p *processor) stepStandard(content string) (response, bool) {
 
 				p.toolCallBuf.Reset()
 				p.inToolCall = false
+				p.toolCallDone = true
 
 				return response{status: statusTooling, content: toolContent}, false
 			}
@@ -1168,4 +1171,6 @@ func (p *processor) resetState() {
 	p.channelBuf.Reset()
 	p.awaitingConstrain = false
 	p.toolFuncName = ""
+	p.inPendingTag = false
+	p.pendingTagBuf.Reset()
 }
