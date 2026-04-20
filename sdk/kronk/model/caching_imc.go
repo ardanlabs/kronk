@@ -1235,15 +1235,19 @@ func (m *Model) imcSysPromptInfo(ctx context.Context, msgs []D, allTokens []llam
 	}
 
 	sysTokens := llama.Tokenize(m.vocab, sysPrompt, m.addBOSToken, true)
-	nSys := len(sysTokens)
 
-	// Verify the system prompt tokens match the prefix of the full sequence.
+	// Find how many leading tokens match between the system-only render and
+	// the full conversation. When imcEnsureUserMessage injects an empty user
+	// turn (required by some GGUF templates), sysTokens contains extra tokens
+	// after the real system prompt boundary. tokenPrefixMatch returns the
+	// exact position where the two sequences diverge — which is the true
+	// system prompt token boundary.
 	matched := tokenPrefixMatch(sysTokens, allTokens)
-	if matched != nSys {
+	if matched == 0 {
 		return sysHash, 0
 	}
 
-	return sysHash, nSys
+	return sysHash, matched
 }
 
 // tokenPrefixMatch returns the number of tokens that match between two slices,
