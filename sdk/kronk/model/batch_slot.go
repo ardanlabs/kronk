@@ -40,19 +40,16 @@ type chatJob struct {
 	// -------------------------------------------------------------------------
 	// System Prompt Cache (SPC)
 
-	spcCacheSeqID llama.SeqId // Dedicated SPC cache sequence ID
-	spcCacheIdx   llama.Pos   // Token count in SPC cache
-	spcCacheHit   bool        // True if SPC cache sequence has cached tokens
-	spcSession    *spcSession // Resolved SPC session with KV state to restore
+	spcCacheIdx llama.Pos   // Token count in SPC cache
+	spcCacheHit bool        // True if SPC cache sequence has cached tokens
+	spcSession  *spcSession // Resolved SPC session with KV state to restore
 
 	// -------------------------------------------------------------------------
 	// Incremental Message Cache (IMC)
 
-	imcSlotID       int         // Target slot index for IMC routing
-	imcSeqID        llama.SeqId // Sequence ID containing cached conversation state
-	imcCacheIdx     llama.Pos   // Token position where IMC cache ends
-	imcCacheHit     bool        // True if conversation history was found in cache
-	imcExpectedHash string      // Expected cachedMsgsHash for stale detection at startSlot
+	imcSlotID       int    // Target slot index for IMC routing
+	imcCacheHit     bool   // True if conversation history was found in cache
+	imcExpectedHash string // Expected cachedMsgsHash for stale detection at startSlot
 
 	// IMC dedicated slot fields.
 	imcNewCacheTokens    []llama.Token // New tokens to extend the cache in the slot's sequence
@@ -62,6 +59,8 @@ type chatJob struct {
 	imcClearSeq          bool          // True if sequence must be cleared before decoding (rebuild)
 	imcNewCachedTokens   []llama.Token // Full token sequence to store in session after decode
 	imcTrimPos           llama.Pos     // Position to trim KV cache from (for partial prefix rebuild)
+	imcSysPromptHash     string        // Hash of system prompt message for the new cache state
+	imcSysPromptTokens   int           // Token count of the system prompt in the new cache state
 
 	// IMC media cache build — deferred media decode using mtmd pipeline.
 	imcMediaBuild          bool  // True if cache build requires the mtmd pipeline (images/audio)

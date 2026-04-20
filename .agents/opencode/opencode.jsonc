@@ -22,8 +22,8 @@
                         "output": 65536
                     }
                 },
-                "gemma-4-31B-it-UD-Q6_K_XL/AGENT": {
-                    "name": "Gemma 4 31B UD Q6 Agent",
+                "gemma-4-31B-it-UD-Q8_K_XL/AGENT": {
+                    "name": "Gemma 4 31B UD Q8 Agent",
                     "limit": {
                         "context": 65536,
                         "output": 32768
@@ -36,6 +36,12 @@
     "instructions": [
         "agent.md"
     ],
+    "compaction": {
+        "auto": false,
+        "prune": false
+    },
+    "autoupdate": false,
+    "share": "disabled",
     "mcp": {
         "kronk": {
             "type": "remote",

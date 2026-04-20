@@ -15,7 +15,6 @@ import (
 type cacheResult struct {
 	modifiedD       D           // D with cached messages removed if cache was used
 	cacheIdx        llama.Pos   // KV position where cached content ends; new tokens start here
-	cachedMsgCount  int         // Number of messages cached (for IMC removal)
 	err             error       // Any error that occurred
 	cacheSeqID      llama.SeqId // Cache session's sequence ID
 	spcSession      *spcSession // Resolved SPC session for restore (carried on the job)
@@ -31,6 +30,8 @@ type cacheResult struct {
 	imcNewCachedTokens   []llama.Token // Full token sequence to store in session after decode
 	imcTrimPos           llama.Pos     // Position to trim KV cache from (for partial prefix rebuild)
 	imcPending           bool          // True if the target slot was pending (caller should retry another slot)
+	imcSysPromptHash     string        // Hash of system prompt message for the new cache state
+	imcSysPromptTokens   int           // Token count of the system prompt in the new cache state
 
 	// IMC media cache build — deferred to startSlot because media decoding
 	// requires the mtmd pipeline (projection model + embedding decode).
@@ -70,15 +71,7 @@ func (m *Model) clearCaches() {
 
 	// Clear all IMC slot state.
 	for _, slot := range m.imcSlots {
-		slot.cachedMsgsHash = ""
-		slot.cachedTokens = nil
-		slot.totalTokensCached = 0
-		slot.cachedMsgCount = 0
-		slot.lastUsed = time.Time{}
-		slot.pending = false
-		slot.hasMedia = false
-		slot.useMRoPE = false
-		slot.mediaKVCounts = nil
+		imcResetSession(slot)
 	}
 
 	// Clear all SPC sessions. The KV sequences are already freed after

@@ -121,7 +121,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		d = cache.modifiedD
 
 		if m.cfg.InsecureLogging {
-			m.log(ctx, "chat-streaming", "IN-MESSAGAES", d.Messages())
+			m.log(ctx, "chat-streaming", "IN-MESSAGES", d.Messages())
 		}
 
 		prepSpan.End()
@@ -268,14 +268,11 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		mtmdCtx:       mtmdCtx,
 		ch:            ch,
 
-		spcCacheSeqID: cache.cacheSeqID,
-		spcCacheIdx:   cache.cacheIdx,
-		spcCacheHit:   m.cfg.SystemPromptCache && cache.cacheIdx > 0,
-		spcSession:    cache.spcSession,
+		spcCacheIdx: cache.cacheIdx,
+		spcCacheHit: m.cfg.SystemPromptCache && cache.cacheIdx > 0,
+		spcSession:  cache.spcSession,
 
 		imcSlotID:       cache.imcSlotID,
-		imcSeqID:        cache.cacheSeqID,
-		imcCacheIdx:     cache.cacheIdx,
 		imcCacheHit:     imcCacheHit,
 		imcExpectedHash: cache.imcExpectedHash,
 
@@ -286,6 +283,8 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		imcClearSeq:            cache.imcClearSeq,
 		imcNewCachedTokens:     cache.imcNewCachedTokens,
 		imcTrimPos:             cache.imcTrimPos,
+		imcSysPromptHash:       cache.imcSysPromptHash,
+		imcSysPromptTokens:     cache.imcSysPromptTokens,
 		imcMediaBuild:          cache.imcMediaBuild,
 		imcMediaCacheD:         cache.imcMediaCacheD,
 		imcMediaKVCounts:       cache.imcMediaKVCounts,
@@ -298,7 +297,7 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		// Clear IMC pending reservation if this job reserved a slot.
 		// pending is set during extendIMCCache/buildIMCCacheFromScratch
 		// and normally cleared in startSlot after decode.
-		if len(cache.imcNewCacheTokens) > 0 || cache.imcMediaBuild || len(cache.imcMediaKVCounts) > 0 {
+		if len(cache.imcNewCacheTokens) > 0 || cache.imcMediaBuild {
 			m.imcClearPending(cache.imcSlotID)
 		}
 

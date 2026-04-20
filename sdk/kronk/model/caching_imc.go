@@ -83,7 +83,6 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 	// We will cache all messages but the last one.
 	lastMsgIdxToCache := totalMsgs - 1
 
-	// -------------------------------------------------------------------------
 	// Snapshot slot metadata under RLock, then release before hashing.
 
 	m.log(ctx, "imc", "status", "scanning slots", "total-msgs", totalMsgs, "msgs-to-cache", lastMsgIdxToCache, "total-slots", len(m.imcSlots))
@@ -215,15 +214,7 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 
 				// Reset the session metadata.
 				m.cacheMu.Lock()
-				session.cachedMsgsHash = ""
-				session.cachedTokens = nil
-				session.totalTokensCached = 0
-				session.cachedMsgCount = 0
-				session.lastUsed = time.Time{}
-				session.pending = false
-				session.hasMedia = false
-				session.useMRoPE = false
-				session.mediaKVCounts = nil
+				imcResetSession(session)
 				m.cacheMu.Unlock()
 
 				projectedKV -= snap.totalTokensCached
@@ -254,7 +245,6 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 		return cacheResult{
 			modifiedD:       removeFirstNMessages(d, bestCachedMsgCount),
 			cacheIdx:        llama.Pos(bestTotalTokensCached),
-			cachedMsgCount:  bestCachedMsgCount,
 			cacheSeqID:      bestSlot.seqID,
 			imcSlotID:       bestSlot.slotID,
 			imcExpectedHash: bestCachedMsgsHash,
@@ -512,12 +502,58 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, session *
 	if totalTokens <= currentTotalTokensCached {
 		m.log(ctx, "imc", "status", "extend (no new tokens)", "slot", slotID, "cached", currentTotalTokensCached, "total", totalTokens)
 
+		// When the new prompt has fewer tokens than cached (e.g., the client
+		// dropped reasoning blocks or truncated earlier messages), rebuild the
+		// cache from scratch rather than trimming. Trimming preserves stale KV
+		// state that causes the model to lose attention on recent instructions.
+		// A full rebuild ensures the KV cache exactly matches the conversation
+		// the client sent.
+		if totalTokens < currentTotalTokensCached {
+			newHash := hashMessages(msgs)
+			sysHash, sysToks := m.imcSysPromptInfo(ctx, msgs, allTokens)
+
+			// If the system prompt hasn't changed, keep its KV state and
+			// only re-decode the conversation tokens after it. Otherwise
+			// clear the entire sequence and rebuild from scratch.
+			preservePrefix := sysToks > 0 && session.sysPromptHash == sysHash && session.sysPromptTokens == sysToks
+
+			m.log(ctx, "imc", "status", "extend->rebuild", "slot", slotID,
+				"cached", currentTotalTokensCached, "new_total", totalTokens,
+				"sys_prompt_kept", preservePrefix, "sys_prompt_tokens", sysToks)
+
+			rebuildTokens := allTokens
+			var rebuildFromPos llama.Pos
+			clearSeq := true
+
+			if preservePrefix {
+				rebuildTokens = allTokens[sysToks:]
+				rebuildFromPos = llama.Pos(sysToks)
+				clearSeq = false
+			}
+
+			return cacheResult{
+				modifiedD:            removeFirstNMessages(d, lastMsgIdxToCache),
+				cacheIdx:             rebuildFromPos,
+				cacheSeqID:           seqID,
+				imcSlotID:            slotID,
+				imcExpectedHash:      newHash,
+				imcNewCacheTokens:    rebuildTokens,
+				imcNewTotalCached:    totalTokens,
+				imcNewCachedMsgCount: lastMsgIdxToCache,
+				imcNewMsgsHash:       newHash,
+				imcClearSeq:          clearSeq,
+				imcTrimPos:           rebuildFromPos,
+				imcNewCachedTokens:   allTokens,
+				imcSysPromptHash:     sysHash,
+				imcSysPromptTokens:   sysToks,
+			}
+		}
+
 		m.imcClearPending(slotID)
 
 		return cacheResult{
 			modifiedD:       removeFirstNMessages(d, currentCachedMsgCount),
 			cacheIdx:        llama.Pos(currentTotalTokensCached),
-			cachedMsgCount:  currentCachedMsgCount,
 			cacheSeqID:      seqID,
 			imcSlotID:       slotID,
 			imcExpectedHash: currentHash,
@@ -533,6 +569,11 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, session *
 	// Compute new session state to be applied after decode in startSlot.
 	newHash := hashMessages(msgs)
 
+	// Carry forward the system prompt info from the session. On the first
+	// build it was computed; on extends it doesn't change.
+	sysHash := session.sysPromptHash
+	sysToks := session.sysPromptTokens
+
 	m.log(ctx, "imc", "status", "cache extend prepared", "slot", slotID, "seq", seqID,
 		"idx", fmt.Sprintf("cur[%d] -> new[%d]", currentCachedMsgCount, lastMsgIdxToCache),
 		"tokens", fmt.Sprintf("cur[%d] -> new[%d] (+%d)", currentTotalTokensCached, totalTokens, numOfExtTokens))
@@ -540,7 +581,6 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, session *
 	return cacheResult{
 		modifiedD:            removeFirstNMessages(d, lastMsgIdxToCache),
 		cacheIdx:             llama.Pos(currentTotalTokensCached),
-		cachedMsgCount:       lastMsgIdxToCache,
 		cacheSeqID:           seqID,
 		imcSlotID:            slotID,
 		imcExpectedHash:      newHash,
@@ -549,6 +589,8 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, session *
 		imcNewCachedMsgCount: lastMsgIdxToCache,
 		imcNewMsgsHash:       newHash,
 		imcNewCachedTokens:   allTokens,
+		imcSysPromptHash:     sysHash,
+		imcSysPromptTokens:   sysToks,
 	}
 }
 
@@ -639,12 +681,25 @@ func (m *Model) extendIMCMediaSlotWithText(ctx context.Context, d D, messages []
 		m.log(ctx, "imc", "status", "media text extend (no new tokens)",
 			"slot", slotID, "cached_text_tokens", cachedTextTokens, "total_text_tokens", totalTextTokens)
 
+		// When the new prompt has fewer text tokens than cached, the KV cache
+		// contains stale entries. For media slots, a trim-only approach is
+		// unsafe because the KV-to-token mapping is complex (media embeddings
+		// occupy different KV counts than their marker tokens). Fall back to
+		// a full rebuild to ensure correctness.
+		if totalTextTokens < cachedTextTokens {
+			m.imcClearPending(slotID)
+
+			m.log(ctx, "imc", "status", "media text extend shrink (rebuilding)",
+				"slot", slotID, "cached_text_tokens", cachedTextTokens, "total_text_tokens", totalTextTokens)
+
+			return m.buildIMCCacheFromScratch(ctx, d, messages, session, lastMsgIdxToCache)
+		}
+
 		m.imcClearPending(slotID)
 
 		return cacheResult{
 			modifiedD:       removeFirstNMessages(d, currentCachedMsgCount),
 			cacheIdx:        llama.Pos(currentTotalTokensCached),
-			cachedMsgCount:  currentCachedMsgCount,
 			cacheSeqID:      seqID,
 			imcSlotID:       slotID,
 			imcExpectedHash: session.cachedMsgsHash,
@@ -664,7 +719,6 @@ func (m *Model) extendIMCMediaSlotWithText(ctx context.Context, d D, messages []
 	return cacheResult{
 		modifiedD:            removeFirstNMessages(d, lastMsgIdxToCache),
 		cacheIdx:             llama.Pos(currentTotalTokensCached),
-		cachedMsgCount:       lastMsgIdxToCache,
 		cacheSeqID:           seqID,
 		imcSlotID:            slotID,
 		imcExpectedHash:      newHash,
@@ -718,7 +772,6 @@ func (m *Model) extendIMCTextCacheWithMedia(ctx context.Context, d D, messages [
 	return cacheResult{
 		modifiedD:              removeFirstNMessages(d, lastMsgIdxToCache),
 		cacheIdx:               0,
-		cachedMsgCount:         lastMsgIdxToCache,
 		cacheSeqID:             seqID,
 		imcSlotID:              slotID,
 		imcExpectedHash:        newHash,
@@ -755,7 +808,6 @@ func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D,
 			return cacheResult{
 				modifiedD:       removeFirstNMessages(d, lastMsgIdx),
 				cacheIdx:        llama.Pos(totalTokens),
-				cachedMsgCount:  lastMsgIdx,
 				cacheSeqID:      seqID,
 				imcSlotID:       sID,
 				imcExpectedHash: hash,
@@ -772,9 +824,7 @@ func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D,
 
 	// Reset session state and mark pending so concurrent scanners skip this
 	// slot while we do the heavy work outside the lock.
-	session.totalTokensCached = 0
-	session.cachedMsgCount = 0
-	session.cachedMsgsHash = ""
+	imcResetSession(session)
 	session.pending = true
 	seqID := session.seqID
 	slotID := session.slotID
@@ -809,7 +859,6 @@ func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D,
 			return cacheResult{
 				modifiedD:            removeFirstNMessages(d, lastMsgIdxToCache),
 				cacheIdx:             0,
-				cachedMsgCount:       lastMsgIdxToCache,
 				cacheSeqID:           seqID,
 				imcSlotID:            slotID,
 				imcExpectedHash:      newHash,
@@ -855,13 +904,13 @@ func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D,
 
 	// Return tokens for deferred decode in startSlot.
 	newHash := hashMessages(msgsToCache)
+	sysHash, sysToks := m.imcSysPromptInfo(ctx, msgsToCache, tokens)
 
 	m.log(ctx, "imc", "status", "cache build prepared", "slot", slotID, "seq", seqID, "msgs", lastMsgIdxToCache, "tokens", nTokens, "hash", newHash[:8])
 
 	return cacheResult{
 		modifiedD:            removeFirstNMessages(d, lastMsgIdxToCache),
 		cacheIdx:             0,
-		cachedMsgCount:       lastMsgIdxToCache,
 		cacheSeqID:           seqID,
 		imcSlotID:            slotID,
 		imcExpectedHash:      newHash,
@@ -871,6 +920,8 @@ func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D,
 		imcNewMsgsHash:       newHash,
 		imcClearSeq:          true,
 		imcNewCachedTokens:   tokens,
+		imcSysPromptHash:     sysHash,
+		imcSysPromptTokens:   sysToks,
 	}
 }
 
@@ -888,12 +939,8 @@ func (m *Model) rebuildIMCWithMedia(ctx context.Context, d D, messages []D, sess
 		return cacheResult{modifiedD: d, err: fmt.Errorf("imc: slot %d pending, retry request", session.slotID)}
 	}
 
+	imcResetSession(session)
 	session.pending = true
-	session.totalTokensCached = 0
-	session.cachedMsgCount = 0
-	session.cachedMsgsHash = ""
-	session.hasMedia = false
-	session.useMRoPE = false
 	seqID := session.seqID
 	slotID := session.slotID
 
@@ -918,7 +965,6 @@ func (m *Model) rebuildIMCWithMedia(ctx context.Context, d D, messages []D, sess
 	return cacheResult{
 		modifiedD:            removeFirstNMessages(d, lastMsgIdxToCache),
 		cacheIdx:             0,
-		cachedMsgCount:       lastMsgIdxToCache,
 		cacheSeqID:           seqID,
 		imcSlotID:            slotID,
 		imcExpectedHash:      newHash,
@@ -971,7 +1017,6 @@ func (m *Model) rebuildIMCFromPartialPrefix(ctx context.Context, d D, messages [
 	return cacheResult{
 		modifiedD:            removeFirstNMessages(d, lastMsgIdxToCache),
 		cacheIdx:             llama.Pos(commonPrefixLen),
-		cachedMsgCount:       lastMsgIdxToCache,
 		cacheSeqID:           seqID,
 		imcSlotID:            slotID,
 		imcExpectedHash:      newHash,
@@ -1102,6 +1147,22 @@ func (m *Model) notifyIMCSlotAvailable() {
 	}
 }
 
+// imcResetSession clears all metadata on an IMC session, returning it to
+// an empty state. The caller must hold m.cacheMu (write lock).
+func imcResetSession(s *imcSession) {
+	s.cachedMsgsHash = ""
+	s.cachedTokens = nil
+	s.totalTokensCached = 0
+	s.cachedMsgCount = 0
+	s.lastUsed = time.Time{}
+	s.pending = false
+	s.hasMedia = false
+	s.useMRoPE = false
+	s.mediaKVCounts = nil
+	s.sysPromptHash = ""
+	s.sysPromptTokens = 0
+}
+
 // imcClearPending clears a slot's pending flag and notifies waiters.
 // Safe to call even if the slot wasn't pending.
 func (m *Model) imcClearPending(slotID int) {
@@ -1118,7 +1179,7 @@ func (m *Model) imcClearPending(slotID int) {
 // true, cachedTokens is cleared since token-level operations (prefix matching,
 // speculative decoding) are not valid for media-cached slots. mediaKVCounts
 // records the KV positions consumed per media chunk for text-only extend math.
-func (m *Model) imcCommitSession(slotID int, hash string, totalCached int, cachedMsgCount int, cachedTokens []llama.Token, hasMedia bool, mediaKVCounts []int) {
+func (m *Model) imcCommitSession(slotID int, hash string, totalCached int, cachedMsgCount int, cachedTokens []llama.Token, hasMedia bool, mediaKVCounts []int, sysHash string, sysToks int) {
 	m.cacheMu.Lock()
 	if slotID < len(m.imcSlots) {
 		slot := m.imcSlots[slotID]
@@ -1129,6 +1190,8 @@ func (m *Model) imcCommitSession(slotID int, hash string, totalCached int, cache
 		slot.pending = false
 		slot.hasMedia = hasMedia
 		slot.mediaKVCounts = mediaKVCounts
+		slot.sysPromptHash = sysHash
+		slot.sysPromptTokens = sysToks
 		if !hasMedia {
 			slot.useMRoPE = false
 		}
@@ -1141,6 +1204,50 @@ func (m *Model) imcCommitSession(slotID int, hash string, totalCached int, cache
 	}
 	m.cacheMu.Unlock()
 	m.notifyIMCSlotAvailable()
+}
+
+// imcSysPromptInfo computes the system prompt hash and token count for the
+// given message slice and its full tokenization. If the first message has
+// role="system", it hashes just that message and determines its token boundary
+// by tokenizing the system prompt alone through the template and comparing
+// against the full token sequence prefix.
+func (m *Model) imcSysPromptInfo(ctx context.Context, msgs []D, allTokens []llama.Token) (string, int) {
+	if len(msgs) == 0 {
+		return "", 0
+	}
+
+	role, _ := msgs[0]["role"].(string)
+	if role != "system" {
+		return "", 0
+	}
+
+	sysHash := hashMessages(msgs[:1])
+
+	// Tokenize just the system prompt to find its token boundary.
+	sysD := D{
+		"messages":              m.imcEnsureUserMessage(ctx, msgs[:1]),
+		"add_generation_prompt": false,
+	}
+
+	sysPrompt, _, err := m.createPrompt(ctx, sysD)
+	if err != nil {
+		return sysHash, 0
+	}
+
+	sysTokens := llama.Tokenize(m.vocab, sysPrompt, m.addBOSToken, true)
+
+	// Find how many leading tokens match between the system-only render and
+	// the full conversation. When imcEnsureUserMessage injects an empty user
+	// turn (required by some GGUF templates), sysTokens contains extra tokens
+	// after the real system prompt boundary. tokenPrefixMatch returns the
+	// exact position where the two sequences diverge — which is the true
+	// system prompt token boundary.
+	matched := tokenPrefixMatch(sysTokens, allTokens)
+	if matched == 0 {
+		return sysHash, 0
+	}
+
+	return sysHash, matched
 }
 
 // tokenPrefixMatch returns the number of tokens that match between two slices,
