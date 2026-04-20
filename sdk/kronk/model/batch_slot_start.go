@@ -122,7 +122,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 			cacheIdx = llama.Pos(totalCached)
 
-			e.model.imcCommitSession(s.id, job.imcNewMsgsHash, totalCached, job.imcNewCachedMsgCount, nil, true, mediaKVCounts)
+			e.model.imcCommitSession(s.id, job.imcNewMsgsHash, totalCached, job.imcNewCachedMsgCount, nil, true, mediaKVCounts, job.imcSysPromptHash, job.imcSysPromptTokens)
 
 			// Store whether this media build used M-RoPE so follow-up
 			// text-only requests on this slot can use the correct position format.
@@ -223,7 +223,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 					cacheIdx = llama.Pos(job.imcNewTotalCached)
 
 					// Update session state and skip the shared decode path below.
-					e.model.imcCommitSession(s.id, job.imcNewMsgsHash, job.imcNewTotalCached, job.imcNewCachedMsgCount, job.imcNewCachedTokens, false, nil)
+					e.model.imcCommitSession(s.id, job.imcNewMsgsHash, job.imcNewTotalCached, job.imcNewCachedMsgCount, job.imcNewCachedTokens, false, nil, job.imcSysPromptHash, job.imcSysPromptTokens)
 
 					pct := int(job.imcTrimPos) * 100 / job.imcNewTotalCached
 					e.model.log(job.ctx, "start-slot", "status", "imc-hybrid-rebuilt", "slot", s.id, "seq", s.seqID,
@@ -283,77 +283,23 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 				// Update session state now that tokens are decoded.
 				// Preserve media state for text-only extensions of media slots.
 				hasMedia := len(job.imcMediaKVCounts) > 0
-				e.model.imcCommitSession(s.id, job.imcNewMsgsHash, job.imcNewTotalCached, job.imcNewCachedMsgCount, job.imcNewCachedTokens, hasMedia, job.imcMediaKVCounts)
+				e.model.imcCommitSession(s.id, job.imcNewMsgsHash, job.imcNewTotalCached, job.imcNewCachedMsgCount, job.imcNewCachedTokens, hasMedia, job.imcMediaKVCounts, job.imcSysPromptHash, job.imcSysPromptTokens)
 
 				switch {
 				case job.imcClearSeq:
-					e.model.log(job.ctx, "start-slot", "status", "imc-built", "slot", s.id, "seq", s.seqID,
-						"total_cached", job.imcNewTotalCached)
+					e.model.log(job.ctx, "start-slot", "status", "imc-rebuilt", "slot", s.id, "seq", s.seqID,
+						"total_cached", job.imcNewTotalCached, "sys_prompt_kept", false,
+						"sys_prompt_tokens", job.imcSysPromptTokens)
 				case job.imcTrimPos > 0:
-					pct := int(job.imcTrimPos) * 100 / job.imcNewTotalCached
-					e.model.log(job.ctx, "start-slot", "status", "imc-partial-rebuilt", "slot", s.id, "seq", s.seqID,
-						"total_cached", job.imcNewTotalCached, "salvaged_prefix", job.imcTrimPos, "salvaged_pct", pct)
+					e.model.log(job.ctx, "start-slot", "status", "imc-rebuilt", "slot", s.id, "seq", s.seqID,
+						"total_cached", job.imcNewTotalCached, "sys_prompt_kept", true,
+						"sys_prompt_tokens", job.imcSysPromptTokens,
+						"conv_redecoded", len(job.imcNewCacheTokens))
 				default:
 					e.model.log(job.ctx, "start-slot", "status", "imc-extended", "slot", s.id, "seq", s.seqID,
 						"total_cached", job.imcNewTotalCached)
 				}
 			}
-
-		case job.imcTrimPos > 0:
-			// Trim-only partial prefix rebuild: the common prefix equals all
-			// incoming tokens so there are no new tokens to decode. Just trim
-			// the divergent suffix from the KV cache and update metadata.
-			if job.imcTrimPos > cacheIdx {
-				e.model.imcClearPending(s.id)
-
-				e.finishSlot(s, fmt.Errorf("start-slot: imc trim stale (trim_pos %d > cache_idx %d), retry request", job.imcTrimPos, cacheIdx))
-				return
-			}
-
-			switch e.model.modelInfo.Type {
-			case ModelTypeHybrid:
-				// Partial MemorySeqRm corrupts recurrent state. Clear and
-				// re-decode all cached tokens from position 0.
-				e.model.log(job.ctx, "start-slot", "status", "imc-hybrid-trim-rebuild", "slot", s.id, "seq", s.seqID,
-					"cached_tokens", cacheIdx, "trim_pos", job.imcTrimPos,
-					"redecode_tokens", len(job.imcNewCachedTokens))
-
-				e.model.decodeMu.Lock()
-				llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
-				e.model.decodeMu.Unlock()
-
-				if len(job.imcNewCachedTokens) > 0 {
-					imcDecodeStart := time.Now()
-
-					if err := e.model.decodeTokensIntoCache(job.ctx, job.imcNewCachedTokens, s.seqID, 0); err != nil {
-						e.model.decodeMu.Lock()
-						llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
-						e.model.decodeMu.Unlock()
-
-						e.model.imcClearPending(s.id)
-
-						e.finishSlot(s, fmt.Errorf("start-slot: imc hybrid trim rebuild: %w", err))
-						return
-					}
-
-					metrics.AddPrefillTime(e.model.modelInfo.ID, time.Since(imcDecodeStart))
-				}
-
-			case ModelTypeDense, ModelTypeMoE:
-				e.model.log(job.ctx, "start-slot", "status", "imc-trim-only", "slot", s.id, "seq", s.seqID,
-					"cached_tokens", cacheIdx, "trim_pos", job.imcTrimPos)
-
-				e.model.decodeMu.Lock()
-				llama.MemorySeqRm(e.model.mem, s.seqID, job.imcTrimPos, -1)
-				e.model.decodeMu.Unlock()
-			}
-
-			cacheIdx = llama.Pos(job.imcNewTotalCached)
-
-			e.model.imcCommitSession(s.id, job.imcNewMsgsHash, job.imcNewTotalCached, job.imcNewCachedMsgCount, job.imcNewCachedTokens, false, nil)
-
-			e.model.log(job.ctx, "start-slot", "status", "imc-trimmed", "slot", s.id, "seq", s.seqID,
-				"total_cached", job.imcNewTotalCached)
 
 		case cacheIdx > 0:
 			e.model.log(job.ctx, "start-slot", "status", "imc-reuse", "slot", s.id, "seq", s.seqID,
@@ -373,11 +319,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			e.model.cacheMu.Lock()
 			slot := e.model.imcSlots[s.id]
 			if !slot.pending {
-				slot.cachedMsgsHash = ""
-				slot.totalTokensCached = 0
-				slot.cachedMsgCount = 0
-				slot.hasMedia = false
-				slot.useMRoPE = false
+				imcResetSession(slot)
 				e.model.cacheMu.Unlock()
 				e.model.notifyIMCSlotAvailable()
 
@@ -471,7 +413,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 	e.model.log(job.ctx, "batch-engine", "status", "slot-started", "slot", s.id, "seq", s.seqID, "id", job.id,
 		"total_prompt", s.nPrompt, "spc_cache_hit", job.spcCacheHit,
-		"imc_cache_hit", job.imcCacheHit, "imc_slot", job.imcSlotID, "imc_seq", job.imcSeqID, "kv_used", kvUsed)
+		"imc_cache_hit", job.imcCacheHit, "imc_slot", job.imcSlotID, "kv_used", kvUsed)
 }
 
 // startSlotText initializes a text-only slot. Returns true on success.

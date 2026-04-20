@@ -44,6 +44,8 @@ type imcSession struct {
 	hasMedia          bool          // True if the cached content includes media tokens (image/audio)
 	useMRoPE          bool          // True if the cached media used M-RoPE 4D positional encoding
 	mediaKVCounts     []int         // KV positions consumed per media chunk (image/audio); used for text-only extend math
+	sysPromptHash     string        // Hash of the system prompt message (messages[0] when role="system")
+	sysPromptTokens   int           // Token count of the system prompt in the KV cache
 }
 
 // spcSession holds the state for a single SPC (System Prompt Cache) session.
@@ -440,12 +442,15 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 		faName = "enabled"
 	}
 
-	l(ctx, "LLAMA-CONTEXT-PARAMS", "values", fmt.Sprintf("\nEmbeddings[%d]\nFlashAttentionType[%s]\nNBatch[%d]\nNCtx[%d]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nOffloadKQV[%d]\nOpOffload[%d]\nPoolingType[%d]\nRopeFreqBase[%g]\nRopeFreqScale[%g]\nRopeScalingType[%d]\nSwaFull[%d]\nTypeK[%d]\nTypeV[%d]\nYarnAttnFactor[%g]\nYarnBetaFast[%g]\nYarnBetaSlow[%g]\nYarnExtFactor[%g]\nYarnOrigCtx[%d]\n",
+	typeKName := GGMLTypeFromYZMA(ctxParams.TypeK).String()
+	typeVName := GGMLTypeFromYZMA(ctxParams.TypeV).String()
+
+	l(ctx, "LLAMA-CONTEXT-PARAMS", "values", fmt.Sprintf("\nEmbeddings[%d]\nFlashAttentionType[%s]\nNBatch[%d]\nNCtx[%d]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nOffloadKQV[%d]\nOpOffload[%d]\nPoolingType[%d]\nRopeFreqBase[%g]\nRopeFreqScale[%g]\nRopeScalingType[%d]\nSwaFull[%d]\nTypeK[%s]\nTypeV[%s]\nYarnAttnFactor[%g]\nYarnBetaFast[%g]\nYarnBetaSlow[%g]\nYarnExtFactor[%g]\nYarnOrigCtx[%d]\n",
 		ctxParams.Embeddings, faName, ctxParams.NBatch, ctxParams.NCtx,
 		ctxParams.NSeqMax, ctxParams.NThreads, ctxParams.NThreadsBatch, ctxParams.NUbatch,
 		ctxParams.Offload_kqv, ctxParams.OpOffload, ctxParams.PoolingType,
 		ctxParams.RopeFreqBase, ctxParams.RopeFreqScale, ctxParams.RopeScalingType,
-		ctxParams.SwaFull, ctxParams.TypeK, ctxParams.TypeV, ctxParams.YarnAttnFactor, ctxParams.YarnBetaFast,
+		ctxParams.SwaFull, typeKName, typeVName, ctxParams.YarnAttnFactor, ctxParams.YarnBetaFast,
 		ctxParams.YarnBetaSlow, ctxParams.YarnExtFactor, ctxParams.YarnOrigCtx))
 
 	// -------------------------------------------------------------------------

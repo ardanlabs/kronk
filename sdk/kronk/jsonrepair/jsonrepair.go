@@ -135,15 +135,80 @@ func normalizeGemmaQuotes(s string) string {
 		// Find the closing <|"|>.
 		closeIdx := strings.Index(s[i:], gemmaToken)
 		if closeIdx == -1 {
-			// No closing token — this <|"|> acts as the end of the
-			// preceding string value. Write " to close the value, then
-			// handle the remainder.
+			// No closing token — the model may have used a backtick as
+			// the alternate closer. Look for a structural backtick
+			// followed by a comma + key pattern.
+			rest := s[i:]
+			btIdx := findStructuralBacktick(rest)
+
+			if btIdx >= 0 {
+				// Treat the backtick as the closing delimiter. Escape
+				// the inner content the same way paired <|"|> does.
+				inner := rest[:btIdx]
+				hasRealNewlines := strings.Contains(inner, "\n")
+
+				b.WriteByte('"')
+				for j := 0; j < len(inner); j++ {
+					switch {
+					case inner[j] == '"':
+						b.WriteString(`\"`)
+					case inner[j] == '\\':
+						if j+1 < len(inner) {
+							next := inner[j+1]
+							j++
+							switch next {
+							case 'n', 'r', 't', 'b', 'f':
+								if hasRealNewlines {
+									b.WriteString(`\\`)
+									b.WriteByte(next)
+								} else {
+									b.WriteByte('\\')
+									b.WriteByte(next)
+								}
+							case '"', '\\', '/', 'u':
+								b.WriteByte('\\')
+								b.WriteByte(next)
+							default:
+								b.WriteString(`\\`)
+								b.WriteByte(next)
+							}
+						} else {
+							b.WriteByte('\\')
+						}
+					case inner[j] == '\n':
+						b.WriteString(`\n`)
+					case inner[j] == '\r':
+						b.WriteString(`\r`)
+					case inner[j] == '\t':
+						b.WriteString(`\t`)
+					default:
+						b.WriteByte(inner[j])
+					}
+				}
+				b.WriteByte('"')
+
+				// Advance past the backtick and apply tail fixups.
+				i += btIdx + 1
+				if i < len(s) {
+					tail := s[i:]
+					if stripped := stripSpuriousQuoteBeforeComma(tail); stripped != tail {
+						s = s[:i] + stripped
+						tail = s[i:]
+					}
+					if fixed := fixMissingKeyOpenQuote(tail); fixed != tail {
+						s = s[:i] + fixed
+					}
+				}
+				continue
+			}
+
+			// No structural backtick found either. Write " to close
+			// the value, then handle the remainder.
 			//
 			// The model sometimes wraps the remaining keys in an extra
 			// object: ,{"filePath":"path"}} instead of ,"filePath":"path"}.
 			// Unwrap the nested object so all keys end up at the top level.
 			b.WriteByte('"')
-			rest := s[i:]
 			if unwrapped := unwrapNestedObject(rest); unwrapped != rest {
 				b.WriteString(unwrapped)
 			} else {
@@ -222,8 +287,17 @@ func normalizeGemmaQuotes(s string) string {
 		// a missing opening quote: ,filePath":  instead of ,"filePath":.
 		// The <|"|> token boundary swallows the opening " of the key.
 		// Splice the fix into s so the remainder is parsed correctly.
+		//
+		// The model may also emit a spurious " between the closing <|"|>
+		// and the comma separator: <|"|>",filePath: instead of
+		// <|"|>,filePath:. Strip the leading " so the tail starts with
+		// the comma for fixMissingKeyOpenQuote.
 		if i < len(s) {
 			tail := s[i:]
+			if stripped := stripSpuriousQuoteBeforeComma(tail); stripped != tail {
+				s = s[:i] + stripped
+				tail = s[i:]
+			}
 			if fixed := fixMissingKeyOpenQuote(tail); fixed != tail {
 				s = s[:i] + fixed
 			}
@@ -275,6 +349,57 @@ func fixMissingKeyOpenQuote(suffix string) string {
 	return suffix
 }
 
+// stripSpuriousQuoteBeforeComma removes a leading " when it appears before
+// a comma-separated key. The model sometimes writes <|"|>",filePath: instead
+// of <|"|>,filePath: — the " is a spurious artifact from the token boundary.
+// This strips it so the tail starts with , for normal key processing.
+func stripSpuriousQuoteBeforeComma(suffix string) string {
+	if len(suffix) < 2 || suffix[0] != '"' {
+		return suffix
+	}
+
+	// Skip optional whitespace after ".
+	j := 1
+	for j < len(suffix) && isWhitespace(suffix[j]) {
+		j++
+	}
+
+	if j >= len(suffix) || suffix[j] != ',' {
+		return suffix
+	}
+
+	// Check that what follows the comma looks like a key (identifier + : or
+	// identifier + <|"|>). This prevents stripping a " that is actually
+	// part of a JSON value.
+	k := j + 1
+	for k < len(suffix) && isWhitespace(suffix[k]) {
+		k++
+	}
+
+	keyStart := k
+	for k < len(suffix) && isIdentChar(suffix[k]) {
+		k++
+	}
+	keyLen := k - keyStart
+	if keyLen == 0 || keyLen > 40 {
+		return suffix
+	}
+
+	// Key must be followed by : or ": or <|"|>.
+	rest := suffix[k:]
+	if len(rest) > 0 && rest[0] == ':' {
+		return suffix[1:]
+	}
+	if len(rest) > 1 && rest[0] == '"' && rest[1] == ':' {
+		return suffix[1:]
+	}
+	if strings.HasPrefix(rest, gemmaToken) {
+		return suffix[1:]
+	}
+
+	return suffix
+}
+
 // fixMissingKeyQuote fixes the pattern "key: that appears before <|"|>.
 // The model sometimes writes "content:<|"|> instead of "content":<|"|>
 // because the closing " of the key name gets swallowed by the adjacent
@@ -298,6 +423,84 @@ func fixMissingKeyQuote(prefix string) string {
 
 	// Pattern matched: "identifier: → "identifier":
 	return prefix[:n-1] + `":`
+}
+
+// findStructuralBacktick finds the last backtick in s that appears in a
+// structural position — i.e., followed (after optional whitespace) by a
+// comma + key pattern, or by } / ] / end-of-string. This identifies a
+// backtick that the model used as the closing delimiter for a value that
+// was opened with <|"|>. We scan right-to-left and accept the first match
+// so the longest (most inclusive) value wins, matching findKeyAwareClosingQuote
+// semantics.
+//
+// The key pattern includes the malformed variant filePath": (missing opening
+// quote on the key) since fixMissingKeyOpenQuote handles that downstream.
+func findStructuralBacktick(s string) int {
+	for k := len(s) - 1; k >= 0; k-- {
+		if s[k] != '`' {
+			continue
+		}
+
+		// Check what follows the backtick.
+		j := k + 1
+		for j < len(s) && isWhitespace(s[j]) {
+			j++
+		}
+
+		if j >= len(s) {
+			return k
+		}
+
+		switch s[j] {
+		case '}', ']':
+			after := j + 1
+			for after < len(s) && (isWhitespace(s[after]) || s[after] == '}') {
+				after++
+			}
+			if after >= len(s) {
+				return k
+			}
+
+		case ',':
+			// Standard key patterns: ,"key": or ,key:
+			if isFollowedByKey(s, j+1) {
+				return k
+			}
+
+			// Malformed key pattern from Gemma token boundary: ,key":
+			// where the opening " of the key is missing.
+			if isFollowedByMalformedKey(s, j+1) {
+				return k
+			}
+		}
+	}
+
+	return -1
+}
+
+// isFollowedByMalformedKey checks whether position j in s starts with the
+// pattern identifier": (an unquoted key followed by a quote-colon). This
+// is the malformed variant that fixMissingKeyOpenQuote repairs.
+func isFollowedByMalformedKey(s string, j int) bool {
+	for j < len(s) && isWhitespace(s[j]) {
+		j++
+	}
+
+	if j >= len(s) || !isIdentChar(s[j]) {
+		return false
+	}
+
+	keyStart := j
+	for j < len(s) && isIdentChar(s[j]) {
+		j++
+	}
+	keyLen := j - keyStart
+	if keyLen == 0 || keyLen > 40 {
+		return false
+	}
+
+	// Must be followed by ":
+	return j+1 < len(s) && s[j] == '"' && s[j+1] == ':'
 }
 
 // normalizeBacktickDelimiters replaces backticks that appear in JSON structural

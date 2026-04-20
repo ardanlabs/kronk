@@ -214,6 +214,11 @@ func TestRepair(t *testing.T) {
 			keys:  map[string]string{"content": "package main", "filePath": "examples/talks/tictactoe/main.go"},
 		},
 		{
+			name:  "gemma open backtick close with malformed key quote",
+			input: "{content:<|\"|>package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n`,filePath\":\"examples/talks/tictactoe/main.go\"}",
+			keys:  map[string]string{"content": "package main", "filePath": "examples/talks/tictactoe/main.go"},
+		},
+		{
 			name:  "backtick value delimiters",
 			input: "{\"content\":`hello world`,\"filePath\":`main.go`}",
 			keys:  map[string]string{"content": "hello world", "filePath": "main.go"},
@@ -346,6 +351,22 @@ func TestRepair(t *testing.T) {
 			goCode: map[string]string{
 				"newString": "snippet",
 				"oldString": "snippet",
+			},
+		},
+
+		// =================================================================
+		// Spurious " after closing <|"|> before comma separator
+		// =================================================================
+		{
+			// Reproduces production failure: model writes <|"|>",filePath:
+			// instead of <|"|>,filePath: — the " after the closing gemma
+			// token is a spurious artifact from the token boundary. Both
+			// keys use bare (unquoted) identifiers with <|"|> values.
+			name:  "gemma spurious quote after close before comma key",
+			input: "{\"content:<|\"|>package main\n\nimport (\n\t\"bufio\"\n\t\"fmt\"\n\t\"os\"\n\t\"strconv\"\n\t\"strings\"\n)\n\nfunc printBoard(board []string) {\n\tfmt.Println()\n\tfmt.Printf(\"%s | %s | %s\\n\", board[0], board[1], board[2])\n\tfmt.Println(\"----------\")\n\tfmt.Printf(\"%s | %s | %s\\n\", board[3], board[4], board[5])\n\tfmt.Println(\"----------\")\n\tfmt.Printf(\"%s | %s | %s\\n\", board[6], board[7], board[8])\n}\n\nfunc checkWinner(board []string) string {\n\twins := [][]int{\n\t\t{0, 1, 2}, {3, 4, 5}, {6, 7, 8},\n\t\t{0, 3, 6}, {1, 4, 7}, {2, 5, 8},\n\t\t{0, 4, 8}, {2, 4, 6},\n\t}\n\n\tfor _, win := range wins {\n\t\tif board[win[0]] == board[win[1]] && board[win[1]] == board[win[2]] {\n\t\t\tres := board[win[0]]\n\t\t\tif res == \"X\" || res == \"O\" {\n\t\t\t\treturn res\n\t\t\t}\n\t\t}\n\t}\n\treturn \"\"\n}\n\nfunc isDraw(board []string) bool {\n\tfor _, val := range board {\n\t\tif val != \"X\" && val != \"O\" {\n\t\t\treturn false\n\t\t}\n\t}\n\treturn true\n}\n\nfunc getMove(prompt string, board []string) int {\n\treader := bufio.NewReader(os.Stdin)\n\tfor {\n\t\tfmt.Print(prompt)\n\t\tinput, err := reader.ReadString('\\n')\n\t\tif err != nil {\n\t\t\tcontinue\n\t\t}\n\t\tinput = strings.TrimSpace(input)\n\t\tnum, err := strconv.Atoi(input)\n\t\tif err != nil || num < 1 || num > 9 {\n\t\t\tcontinue\n\t\t}\n\t\tidx := num - 1\n\t\tif board[idx] == \"X\" || board[idx] == \"O\" {\n\t\t\tcontinue\n\t\t}\n\t\treturn idx\n\t}\n}\n\nfunc main() {\n\tfor {\n\t\tboard := []string{\"1\", \"2\", \"3\", \"4\", \"5\", \"6\", \"7\", \"8\", \"9\"}\n\t\tcurrentPlayer := \"X\"\n\n\t\tfor {\n\t\t\tprintBoard(board)\n\t\t\tprompt := fmt.Sprintf(\"\\nPlayer %s's turn. Enter a number (1-9): \", currentPlayer)\n\t\t\tidx := getMove(prompt, board)\n\t\t\tboard[idx] = currentPlayer\n\n\t\t\tif w := checkWinner(board); w != \"\" {\n\t\t\t\tprintBoard(board)\n\t\t\t\tfmt.Printf(\"Player %s wins!\\n\", w)\n\t\t\t\tbreak\n\t\t\t}\n\t\t\tif isDraw(board) {\n\t\t\t\tprintBoard(board)\n\t\t\t\tfmt.Println(\"It's a draw!\")\n\t\t\t\tbreak\n\t\t\t}\n\t\t\tif currentPlayer == \"X\" {\n\t\t\t\tcurrentPlayer = \"O\"\n\t\t\t} else {\n\t\t\t\tcurrentPlayer = \"X\"\n\t\t\t}\n\t\t}\n\n\t\tfmt.Print(\"\\nPlay again? (y/n): \")\n\t\tvar answer string\n\t\tfmt.Scanln(&answer)\n\t\tif strings.ToLower(answer) != \"y\" {\n\t\t\tbreak\n\t\t}\n\t}\n}\n<|\"|>\",filePath:<|\"|>examples/talks/tictactoe/main.go<|\"|>}",
+			keys:  map[string]string{"content": "package main", "filePath": "examples/talks/tictactoe/main.go"},
+			goCode: map[string]string{
+				"content": "file",
 			},
 		},
 

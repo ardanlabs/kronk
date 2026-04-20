@@ -191,13 +191,11 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		if len(content) > 0 {
 
 			// Log the raw model output before parsing so tool call issues
-			// can be debugged. Truncate to 500 bytes for readability.
-			rawLog := content
-			if len(rawLog) > 500 {
-				rawLog = rawLog[:250] + " ... " + rawLog[len(rawLog)-250:]
+			// can be debugged. Only logged when insecure logging is enabled.
+			if e.model.cfg.InsecureLogging {
+				e.model.log(ctx, "tool-call", "status", "raw-model-output",
+					"bytes", len(content), "content", content)
 			}
-			e.model.log(ctx, "tool-call", "status", "raw-model-output",
-				"bytes", len(content), "content", rawLog)
 
 			switch {
 			case e.model.modelInfo.IsGPTModel:
@@ -303,12 +301,7 @@ func (e *batchEngine) finishSlotHybrid(ctx context.Context, s *slot, slotID int,
 			// reused with a corrupt sequence.
 			e.model.cacheMu.Lock()
 			if slotID < len(e.model.imcSlots) {
-				imcSlot := e.model.imcSlots[slotID]
-				imcSlot.cachedMsgsHash = ""
-				imcSlot.totalTokensCached = 0
-				imcSlot.cachedMsgCount = 0
-				imcSlot.hasMedia = false
-				imcSlot.useMRoPE = false
+				imcResetSession(e.model.imcSlots[slotID])
 			}
 			e.model.cacheMu.Unlock()
 
@@ -330,12 +323,7 @@ func (e *batchEngine) finishSlotHybrid(ctx context.Context, s *slot, slotID int,
 
 		e.model.cacheMu.Lock()
 		if slotID < len(e.model.imcSlots) {
-			imcSlot := e.model.imcSlots[slotID]
-			imcSlot.cachedMsgsHash = ""
-			imcSlot.totalTokensCached = 0
-			imcSlot.cachedMsgCount = 0
-			imcSlot.hasMedia = false
-			imcSlot.useMRoPE = false
+			imcResetSession(e.model.imcSlots[slotID])
 		}
 		e.model.cacheMu.Unlock()
 	}
@@ -361,7 +349,7 @@ func (e *batchEngine) failJob(job *chatJob, err error) {
 	remaining := e.model.activeStreams.Add(-1)
 
 	e.model.log(job.ctx, "batch-engine", "status", "job-failed", "id", job.id,
-		"imc_slot", job.imcSlotID, "imc_seq", job.imcSeqID, "imc_cache_hit", job.imcCacheHit,
+		"imc_slot", job.imcSlotID, "imc_cache_hit", job.imcCacheHit,
 		"err", err, "active_streams", remaining)
 }
 

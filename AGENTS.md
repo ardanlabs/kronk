@@ -49,7 +49,7 @@ Kronk has an MCP service and these are settings:
 | [Chapter 9: Request Parameters](.manual/chapter-09-request-parameters.md)              | Sampling, repetition control, generation control, grammar, logprobs, cache ID                                                                |
 | [Chapter 10: Multi-Modal Models](.manual/chapter-10-multi-modal-models.md)             | Vision models, audio models, media input formats                                                                                             |
 | [Chapter 11: Security & Authentication](.manual/chapter-11-security-authentication.md) | JWT auth, key management, token creation, rate limiting                                                                                      |
-| [Chapter 12: Browser UI (BUI)](.manual/chapter-12-browser-ui.md)                       | Web interface, downloading libraries/models, catalog browsing, model management, key/token management, apps, model playground                 |
+| [Chapter 12: Browser UI (BUI)](.manual/chapter-12-browser-ui.md)                       | Web interface, downloading libraries/models, catalog browsing, model management, key/token management, apps, model playground                |
 | [Chapter 13: Client Integration](.manual/chapter-13-client-integration.md)             | OpenWebUI, Cline, Python SDK, curl, LangChain                                                                                                |
 | [Chapter 14: Observability](.manual/chapter-14-observability.md)                       | Debug server, Prometheus metrics, pprof profiling, tracing                                                                                   |
 | [Chapter 15: MCP Service](.manual/chapter-15-mcp-service.md)                           | Brave Search, MCP configuration, Cline/Kilo client setup, curl testing                                                                       |
@@ -80,21 +80,21 @@ Kronk has an MCP service and these are settings:
 
 ### Chapter 3 Sub-sections
 
-| Section                                                                                                             | Topics                                                                 |
-| ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| [3.1 Basic Configuration](.manual/chapter-03-model-configuration.md#31-basic-configuration)                         | Context window, batch size, basic model settings                       |
-| [3.2 Processor Selection](.manual/chapter-03-model-configuration.md#32-processor-selection)                         | DetectGPU, auto-detection, KRONK_PROCESSOR, iGPU considerations        |
-| [3.3 GPU Configuration](.manual/chapter-03-model-configuration.md#33-gpu-configuration)                             | GPU layers, processor selection, multi-GPU                             |
-| [3.4 KV Cache Quantization](.manual/chapter-03-model-configuration.md#34-kv-cache-quantization)                     | f16, q8_0, cache type selection                                        |
-| [3.5 Flash Attention](.manual/chapter-03-model-configuration.md#35-flash-attention)                                 | Flash attention modes, auto-detection                                  |
-| [3.6 Sliding Window Attention (SWA)](.manual/chapter-03-model-configuration.md#36-sliding-window-attention-swa)     | SWA models, swa_full, VRAM impact, Gemma 4                            |
-| [3.7 Parallel Inference (NSeqMax)](.manual/chapter-03-model-configuration.md#37-parallel-inference-nseqmax)         | Slots, concurrent requests, NSeqMax tuning                             |
-| [3.8 Understanding GGUF Quantization](.manual/chapter-03-model-configuration.md#38-understanding-gguf-quantization) | K-quants, IQ, UD formats, choosing quantization                        |
-| [3.9 VRAM Estimation](.manual/chapter-03-model-configuration.md#39-vram-estimation)                                 | VRAM formula, model weights + KV cache                                 |
-| [3.10 Model-Specific Tuning](.manual/chapter-03-model-configuration.md#310-model-specific-tuning)                   | Vision, MoE, hybrid, SWA, embedding model configs, MoE vs dense perf   |
-| [3.11 Speculative Decoding](.manual/chapter-03-model-configuration.md#311-speculative-decoding)                     | Draft models, acceptance rates, configuration                          |
-| [3.12 Sampling Parameters](.manual/chapter-03-model-configuration.md#312-sampling-parameters)                       | Temperature, top-p, top-k, min-p                                       |
-| [3.13 Model Config File Example](.manual/chapter-03-model-configuration.md#313-model-config-file-example)           | Complete YAML config example                                           |
+| Section                                                                                                             | Topics                                                               |
+| ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| [3.1 Basic Configuration](.manual/chapter-03-model-configuration.md#31-basic-configuration)                         | Context window, batch size, basic model settings                     |
+| [3.2 Processor Selection](.manual/chapter-03-model-configuration.md#32-processor-selection)                         | DetectGPU, auto-detection, KRONK_PROCESSOR, iGPU considerations      |
+| [3.3 GPU Configuration](.manual/chapter-03-model-configuration.md#33-gpu-configuration)                             | GPU layers, processor selection, multi-GPU                           |
+| [3.4 KV Cache Quantization](.manual/chapter-03-model-configuration.md#34-kv-cache-quantization)                     | f16, q8_0, cache type selection                                      |
+| [3.5 Flash Attention](.manual/chapter-03-model-configuration.md#35-flash-attention)                                 | Flash attention modes, auto-detection                                |
+| [3.6 Sliding Window Attention (SWA)](.manual/chapter-03-model-configuration.md#36-sliding-window-attention-swa)     | SWA models, swa_full, VRAM impact, Gemma 4                           |
+| [3.7 Parallel Inference (NSeqMax)](.manual/chapter-03-model-configuration.md#37-parallel-inference-nseqmax)         | Slots, concurrent requests, NSeqMax tuning                           |
+| [3.8 Understanding GGUF Quantization](.manual/chapter-03-model-configuration.md#38-understanding-gguf-quantization) | K-quants, IQ, UD formats, choosing quantization                      |
+| [3.9 VRAM Estimation](.manual/chapter-03-model-configuration.md#39-vram-estimation)                                 | VRAM formula, model weights + KV cache                               |
+| [3.10 Model-Specific Tuning](.manual/chapter-03-model-configuration.md#310-model-specific-tuning)                   | Vision, MoE, hybrid, SWA, embedding model configs, MoE vs dense perf |
+| [3.11 Speculative Decoding](.manual/chapter-03-model-configuration.md#311-speculative-decoding)                     | Draft models, acceptance rates, configuration                        |
+| [3.12 Sampling Parameters](.manual/chapter-03-model-configuration.md#312-sampling-parameters)                       | Temperature, top-p, top-k, min-p                                     |
+| [3.13 Model Config File Example](.manual/chapter-03-model-configuration.md#313-model-config-file-example)           | Complete YAML config example                                         |
 
 ### Chapter 4 Sub-sections
 
@@ -216,14 +216,14 @@ Kronk has an MCP service and these are settings:
 
 ### Chapter 12 Sub-sections
 
-| Section                                                                                        | Topics                                                                                 |
-| ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| [12.1 Accessing the BUI](.manual/chapter-12-browser-ui.md#121-accessing-the-bui)               | URL, browser access                                                                    |
-| [12.2 Downloading Libraries](.manual/chapter-12-browser-ui.md#122-downloading-libraries)       | BUI library download                                                                   |
-| [12.3 Browsing the Catalog](.manual/chapter-12-browser-ui.md#123-browsing-the-catalog)         | Catalog filters, detail tabs, pulling models, catalog editor                           |
-| [12.4 Managing Models](.manual/chapter-12-browser-ui.md#124-managing-models)                   | Model list, detail tabs, VRAM calculator, rebuild index, remove models                 |
-| [12.5 Managing Keys and Tokens](.manual/chapter-12-browser-ui.md#125-managing-keys-and-tokens) | BUI key/token management                                                               |
-| [12.6 Other Screens](.manual/chapter-12-browser-ui.md#126-other-screens)                       | Home, docs, settings, apps (Chat, VRAM Calculator)                                     |
+| Section                                                                                        | Topics                                                                                          |
+| ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| [12.1 Accessing the BUI](.manual/chapter-12-browser-ui.md#121-accessing-the-bui)               | URL, browser access                                                                             |
+| [12.2 Downloading Libraries](.manual/chapter-12-browser-ui.md#122-downloading-libraries)       | BUI library download                                                                            |
+| [12.3 Browsing the Catalog](.manual/chapter-12-browser-ui.md#123-browsing-the-catalog)         | Catalog filters, detail tabs, pulling models, catalog editor                                    |
+| [12.4 Managing Models](.manual/chapter-12-browser-ui.md#124-managing-models)                   | Model list, detail tabs, VRAM calculator, rebuild index, remove models                          |
+| [12.5 Managing Keys and Tokens](.manual/chapter-12-browser-ui.md#125-managing-keys-and-tokens) | BUI key/token management                                                                        |
+| [12.6 Other Screens](.manual/chapter-12-browser-ui.md#126-other-screens)                       | Home, docs, settings, apps (Chat, VRAM Calculator)                                              |
 | [12.7 Model Playground](.manual/chapter-12-browser-ui.md#127-model-playground)                 | Automated testing, sampling/config sweeps, manual chat, tool calling, prompt inspector, history |
 
 ### Chapter 13 Sub-sections
@@ -294,7 +294,3 @@ Kronk has an MCP service and these are settings:
 | [17.9 Goroutine Budget](.manual/chapter-17-developer-guide.md#179-goroutine-budget)                 | Baseline goroutines, per-request goroutines, expected counts               |
 | [17.10 Request Tracing Spans](.manual/chapter-17-developer-guide.md#1710-request-tracing-spans)     | Span hierarchy, queue wait, prepare-request vs process-request             |
 | [17.11 Reference Threads](.manual/chapter-17-developer-guide.md#1711-reference-threads)             | THREADS.md for past conversations                                          |
-
-## Reference Threads
-
-See `THREADS.md` for important past conversations worth preserving.

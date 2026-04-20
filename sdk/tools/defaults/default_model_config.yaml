@@ -173,7 +173,7 @@ gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
     repeat_penalty: 1.1
     repeat_last_n: 256
 
-gemma-4-31B-it-UD-Q6_K_XL/AGENT:
+gemma-4-31B-it-UD-Q8_K_XL/AGENT:
   context-window: 65536
   nseq-max: 2
   incremental-cache: true
