@@ -135,9 +135,20 @@ func normalizeGemmaQuotes(s string) string {
 		// Find the closing <|"|>.
 		closeIdx := strings.Index(s[i:], gemmaToken)
 		if closeIdx == -1 {
-			// No closing token — write " and the rest as-is.
+			// No closing token — this <|"|> acts as the end of the
+			// preceding string value. Write " to close the value, then
+			// handle the remainder.
+			//
+			// The model sometimes wraps the remaining keys in an extra
+			// object: ,{"filePath":"path"}} instead of ,"filePath":"path"}.
+			// Unwrap the nested object so all keys end up at the top level.
 			b.WriteByte('"')
-			b.WriteString(s[i:])
+			rest := s[i:]
+			if unwrapped := unwrapNestedObject(rest); unwrapped != rest {
+				b.WriteString(unwrapped)
+			} else {
+				b.WriteString(rest)
+			}
 			break
 		}
 
@@ -475,6 +486,17 @@ func repairQuotes(s string) string {
 				// Write the opening quote, escape all inner " chars,
 				// then write the closing quote.
 				inner := s[i:closePos]
+
+				// Determine whether the model did any JSON escaping at
+				// all. If the inner content has unescaped " characters,
+				// the model output raw source code — so \n, \t, etc.
+				// are source-code literals that need double-escaping.
+				// If there are no unescaped quotes, the model did
+				// proper JSON escaping (only raw control chars like
+				// TAB slipped through), so \n, \t are valid JSON
+				// escapes that must be preserved as-is.
+				hasUnescapedQuotes := containsUnescapedQuote(inner)
+
 				buf.WriteByte('"')
 				for j := 0; j < len(inner); j++ {
 					switch {
@@ -484,15 +506,24 @@ func repairQuotes(s string) string {
 
 						switch next {
 						case '"', '\\', '/', 'u':
-							// Valid JSON escape — preserve as-is.
+							// Valid JSON escape — always preserve.
 							buf.WriteByte('\\')
 							buf.WriteByte(next)
+						case 'n', 'r', 't', 'b', 'f':
+							if hasUnescapedQuotes {
+								// Model didn't JSON-escape at all —
+								// these are source-code literals.
+								buf.WriteString(`\\`)
+								buf.WriteByte(next)
+							} else {
+								// Model used proper JSON escaping —
+								// these are valid JSON escapes.
+								buf.WriteByte('\\')
+								buf.WriteByte(next)
+							}
 						default:
-							// Source code escape or invalid JSON escape.
-							// \n, \t, \r etc. are Go source escapes (actual
-							// control chars are handled below). \0 from \033
-							// ANSI codes are not valid JSON at all.
-							// Double-escape so the literal backslash
+							// Invalid JSON escape (e.g., \0 from \033 ANSI
+							// codes). Double-escape so the literal backslash
 							// survives JSON parsing.
 							buf.WriteString(`\\`)
 							buf.WriteByte(next)
@@ -653,6 +684,40 @@ func isFollowedByKey(s string, j int) bool {
 // Structural fixups
 // =============================================================================
 
+// unwrapNestedObject handles the pattern ,{"key":"value"}} that appears after
+// an unpaired <|"|> token. The model wraps the remaining keys in an extra
+// object instead of listing them as flat siblings. This converts:
+//
+//	,{"filePath":"path"}}  →  ,"filePath":"path"}
+//
+// Returns the original string unchanged if the pattern is not detected.
+func unwrapNestedObject(s string) string {
+	// Must start with ,{ (optional whitespace).
+	j := 0
+	for j < len(s) && isWhitespace(s[j]) {
+		j++
+	}
+	if j >= len(s) || s[j] != ',' {
+		return s
+	}
+	j++
+	for j < len(s) && isWhitespace(s[j]) {
+		j++
+	}
+	if j >= len(s) || s[j] != '{' {
+		return s
+	}
+
+	// Must end with }} (optional whitespace).
+	trimmed := strings.TrimRight(s, " \t\n\r")
+	if len(trimmed) < 2 || trimmed[len(trimmed)-1] != '}' || trimmed[len(trimmed)-2] != '}' {
+		return s
+	}
+
+	// Remove the nested { and one trailing }.
+	return s[:j] + s[j+1:len(trimmed)-1]
+}
+
 // trimTrailingBrace removes one trailing } when the JSON has unbalanced braces.
 // This fixes Gemma's double-brace wrapping: call:write{{...}} leaks the outer
 // closing } into the extracted JSON, producing {"key":"val"}}.
@@ -675,4 +740,16 @@ func isWhitespace(c byte) bool {
 
 func isIdentChar(c byte) bool {
 	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'
+}
+
+// containsUnescapedQuote returns true if s contains at least one " that is not
+// preceded by a backslash. This indicates the model produced raw source code
+// without JSON escaping its string values.
+func containsUnescapedQuote(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] == '"' && (i == 0 || s[i-1] != '\\') {
+			return true
+		}
+	}
+	return false
 }

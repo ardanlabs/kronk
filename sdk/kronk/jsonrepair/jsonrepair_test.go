@@ -2,6 +2,9 @@ package jsonrepair
 
 import (
 	"encoding/json"
+	"fmt"
+	"go/parser"
+	"go/token"
 	"strings"
 	"testing"
 )
@@ -13,6 +16,7 @@ func TestRepair(t *testing.T) {
 		fail      bool              // true if repair should fail (irrecoverable)
 		keys      map[string]string // expected key → substring-of-value (empty string = just check key exists)
 		wantExact map[string]string // expected key → exact value (for precise output verification)
+		goCode    map[string]string // key → "file" or "snippet": parse the repaired value as Go source
 	}{
 		// =================================================================
 		// Valid JSON — no repair needed
@@ -103,6 +107,26 @@ func TestRepair(t *testing.T) {
 			name:  "gemma token value then bare key missing open quote",
 			input: "{\"content:<|\"|>package main\n\nimport (\n\t\"fmt\"\n)\n\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n<|\"|>,filePath\":\"/Users/bill/test/main.go\"}",
 			keys:  map[string]string{"content": "package main", "filePath": "/Users/bill/test/main.go"},
+		},
+
+		// =================================================================
+		// repairQuotes must preserve valid JSON escapes (\n, \t, etc.)
+		// =================================================================
+		{
+			// Reproduces production failure: edit tool call has raw tab
+			// characters (invalid JSON) triggering repairQuotes, which
+			// was incorrectly double-escaping the valid \n and \t JSON
+			// escapes between statements.
+			name: "repairQuotes preserves valid json escapes newline tab",
+			// Raw tab chars make the JSON invalid, triggering repairQuotes.
+			// The \n and \t between statements are valid JSON escapes and
+			// must NOT be double-escaped.
+			input: "{\"filePath\":\"main.go\",\"newString\":\"\tfmt.Printf(\\\"%s | %s | %s\\\\n\\\", board[6], board[7], board[8])\\n\\tfmt.Println()\",\"oldString\":\"\tfmt.Printf(\\\"%s | %s | %s\\\\n\\\", board[6], board[7], board[8])\"}",
+			wantExact: map[string]string{
+				"filePath":  "main.go",
+				"oldString": "\tfmt.Printf(\"%s | %s | %s\\n\", board[6], board[7], board[8])",
+				"newString": "\tfmt.Printf(\"%s | %s | %s\\n\", board[6], board[7], board[8])\n\tfmt.Println()",
+			},
 		},
 
 		// =================================================================
@@ -216,6 +240,94 @@ func TestRepair(t *testing.T) {
 		},
 
 		// =================================================================
+		// Mixed JSON quotes + Gemma <|"|> boundary token
+		// =================================================================
+		{
+			// Reproduces production failure: model uses JSON " quotes for
+			// code content but emits a single <|"|> at the boundary between
+			// content and filePath. The content value is a full Go source
+			// file with unescaped { } braces. filePath is in a nested JSON
+			// object: ,"filePath":"path"}.
+			name:  "gemma boundary token between JSON quoted code and filePath",
+			input: "{\"content\":\"package main\n\nimport (\n\t\"fmt\"\n\t\"os\"\n)\n\nvar board = [9]string{\n\t\"1\", \"2\", \"3\",\n\t\"4\", \"5\", \"6\",\n\t\"7\", \"8\", \"9\",\n}\n\nfunc main() {\n\tfor {\n\t\tfmt.Println(\"hello\")\n\t\tos.Exit(0)\n\t}\n}\n<|\"|>,{\"filePath\":\"examples/talks/tictactoe/main.go\"}}",
+			keys:  map[string]string{"content": "package main", "filePath": "examples/talks/tictactoe/main.go"},
+		},
+
+		// =================================================================
+		// Go code verification — repaired values must parse as valid Go
+		// =================================================================
+		{
+			// Full Go source file via Gemma <|"|> tokens.
+			name:  "go code file gemma tokens",
+			input: "{content:<|\"|>package main\n\nimport (\n\t\"bufio\"\n\t\"fmt\"\n\t\"os\"\n)\n\nfunc main() {\n\treader := bufio.NewReader(os.Stdin)\n\tfmt.Print(\"Enter text: \")\n\ttext, _ := reader.ReadString('\\n')\n\tfmt.Println(text)\n}<|\"|>,filePath:<|\"|>main.go<|\"|>}",
+			goCode: map[string]string{
+				"content": "file",
+			},
+		},
+		{
+			// Full Go source file with unescaped quotes.
+			name:  "go code file unescaped quotes",
+			input: "{\"content\":\"package main\n\nimport (\n\t\"fmt\"\n)\n\nfunc main() {\n\tboard := [9]string{\"1\", \"2\", \"3\", \"4\", \"5\", \"6\", \"7\", \"8\", \"9\"}\n\tfmt.Println(board)\n}\n\",\"filePath\":\"main.go\"}",
+			goCode: map[string]string{
+				"content": "file",
+			},
+		},
+		{
+			// Full Go source file with Gemma boundary token.
+			name:  "go code file gemma boundary token",
+			input: "{\"content\":\"package main\n\nimport (\n\t\"fmt\"\n\t\"os\"\n)\n\nvar board = [9]string{\n\t\"1\", \"2\", \"3\",\n\t\"4\", \"5\", \"6\",\n\t\"7\", \"8\", \"9\",\n}\n\nfunc main() {\n\tfor {\n\t\tfmt.Println(\"hello\")\n\t\tos.Exit(0)\n\t}\n}\n<|\"|>,{\"filePath\":\"main.go\"}}",
+			goCode: map[string]string{
+				"content": "file",
+			},
+		},
+		{
+			// Edit snippet: add fmt.Println() after fmt.Printf().
+			// Reproduces the production failure where \n\t was
+			// double-escaped to \\n\\t, producing literal backslash
+			// characters that won't parse as Go.
+			name:  "go code snippet edit add println",
+			input: "{\"filePath\":\"main.go\",\"newString\":\"\tfmt.Printf(\\\"%s | %s | %s\\\\n\\\", board[6], board[7], board[8])\\n\\tfmt.Println()\",\"oldString\":\"\tfmt.Printf(\\\"%s | %s | %s\\\\n\\\", board[6], board[7], board[8])\"}",
+			goCode: map[string]string{
+				"newString": "snippet",
+				"oldString": "snippet",
+			},
+		},
+		{
+			// Edit snippet: multi-statement with if block.
+			name:  "go code snippet edit if block",
+			input: "{\"filePath\":\"main.go\",\"newString\":\"\\t\\tif winner != \\\"\\\" {\\n\\t\\t\\tfmt.Println()\\n\\t\\t\\tfmt.Println(\\\"done\\\")\\n\\t\\t}\",\"oldString\":\"\\t\\tif winner != \\\"\\\" {\\n\\t\\t\\tfmt.Println(\\\"done\\\")\\n\\t\\t}\"}",
+			goCode: map[string]string{
+				"newString": "snippet",
+				"oldString": "snippet",
+			},
+		},
+		{
+			// Edit snippet via Gemma <|"|> tokens with ANSI codes.
+			name:  "go code snippet gemma ansi edit",
+			input: "{\"filePath\":\"main.go\",\"newString:<|\"|>const (\n\tcolorReset = \"\\033[0m\"\n\tcolorRed   = \"\\033[31m\"\n)\n<|\"|>,\"oldString\":\"import (\\n\\t\\\"fmt\\\"\\n)\"}",
+			goCode: map[string]string{
+				"newString": "snippet",
+			},
+		},
+		{
+			// Full file via Gemma with backslash-n in string literals.
+			name:  "go code file gemma preserves format escapes",
+			input: "{content:<|\"|>package main\n\nimport (\n\t\"fmt\"\n)\n\nfunc main() {\n\tfor {\n\t\tplayGame()\n\t\tfmt.Print(\"\\nPlay again? (y/n): \")\n\t\tvar choice string\n\t\tfmt.Scanln(&choice)\n\t}\n}<|\"|>,filePath:<|\"|>main.go<|\"|>}",
+			goCode: map[string]string{
+				"content": "file",
+			},
+		},
+		{
+			// Edit snippet: unescaped quotes in both old and new values.
+			name:  "go code snippet edit unescaped quotes",
+			input: "{\"filePath\":\"main.go\",\"newString\":\"fmt.Printf(\"Player %s wins!\\n\", winner)\n\t\tfmt.Println(\"done\")\",\"oldString\":\"fmt.Printf(\"Player %s wins!\\n\", winner)\"}",
+			goCode: map[string]string{
+				"newString": "snippet",
+				"oldString": "snippet",
+			},
+		},
+
+		// =================================================================
 		// Irrecoverable — should return error
 		// =================================================================
 		{
@@ -285,6 +397,46 @@ func TestRepair(t *testing.T) {
 					t.Errorf("key %q value mismatch\n  got:  %q\n  want: %q", key, str, wantVal)
 				}
 			}
+
+			// Verify Go code values parse as valid Go source.
+			for key, mode := range tt.goCode {
+				val, ok := m[key]
+				if !ok {
+					t.Errorf("missing key %q for Go parse check\n  repaired: %q", key, got)
+					continue
+				}
+
+				src, isStr := val.(string)
+				if !isStr {
+					t.Errorf("key %q is not a string: %T", key, val)
+					continue
+				}
+
+				if err := parseGoSource(src, mode); err != nil {
+					t.Errorf("key %q does not parse as Go (%s):\n  error: %v\n  source:\n%s", key, mode, err, src)
+				}
+			}
 		})
+	}
+}
+
+// parseGoSource parses src as Go source code. When mode is "file", src must
+// be a complete Go source file (with package clause). When mode is "snippet",
+// src is wrapped in a function body before parsing.
+func parseGoSource(src, mode string) error {
+	fset := token.NewFileSet()
+
+	switch mode {
+	case "file":
+		_, err := parser.ParseFile(fset, "test.go", src, parser.AllErrors)
+		return err
+
+	case "snippet":
+		stub := fmt.Sprintf("package main\nfunc _() {\n%s\n}", src)
+		_, err := parser.ParseFile(fset, "test.go", stub, parser.AllErrors)
+		return err
+
+	default:
+		return fmt.Errorf("unknown Go parse mode: %q", mode)
 	}
 }

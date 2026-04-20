@@ -430,8 +430,18 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 		)
 	}
 
-	l(ctx, "LLAMA-CONTEXT-PARAMS", "values", fmt.Sprintf("\nEmbeddings[%d]\nFlashAttentionType[%d]\nNBatch[%d]\nNCtx[%d]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nOffloadKQV[%d]\nOpOffload[%d]\nPoolingType[%d]\nRopeFreqBase[%g]\nRopeFreqScale[%g]\nRopeScalingType[%d]\nSwaFull[%d]\nTypeK[%d]\nTypeV[%d]\nYarnAttnFactor[%g]\nYarnBetaFast[%g]\nYarnBetaSlow[%g]\nYarnExtFactor[%g]\nYarnOrigCtx[%d]\n",
-		ctxParams.Embeddings, ctxParams.FlashAttentionType, ctxParams.NBatch, ctxParams.NCtx,
+	faName := "unknown"
+	switch ctxParams.FlashAttentionType {
+	case llama.FlashAttentionTypeAuto:
+		faName = "auto"
+	case llama.FlashAttentionTypeDisabled:
+		faName = "disabled"
+	case llama.FlashAttentionTypeEnabled:
+		faName = "enabled"
+	}
+
+	l(ctx, "LLAMA-CONTEXT-PARAMS", "values", fmt.Sprintf("\nEmbeddings[%d]\nFlashAttentionType[%s]\nNBatch[%d]\nNCtx[%d]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nOffloadKQV[%d]\nOpOffload[%d]\nPoolingType[%d]\nRopeFreqBase[%g]\nRopeFreqScale[%g]\nRopeScalingType[%d]\nSwaFull[%d]\nTypeK[%d]\nTypeV[%d]\nYarnAttnFactor[%g]\nYarnBetaFast[%g]\nYarnBetaSlow[%g]\nYarnExtFactor[%g]\nYarnOrigCtx[%d]\n",
+		ctxParams.Embeddings, faName, ctxParams.NBatch, ctxParams.NCtx,
 		ctxParams.NSeqMax, ctxParams.NThreads, ctxParams.NThreadsBatch, ctxParams.NUbatch,
 		ctxParams.Offload_kqv, ctxParams.OpOffload, ctxParams.PoolingType,
 		ctxParams.RopeFreqBase, ctxParams.RopeFreqScale, ctxParams.RopeScalingType,

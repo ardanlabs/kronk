@@ -75,11 +75,17 @@ func (m *Model) applyJinjaTemplate(ctx context.Context, d map[string]any) (strin
 		d["add_generation_prompt"] = true
 	}
 
-	// Ensure enable_thinking is set (default true if not specified).
-	// When using the SDK directly, callers may not set this field, but templates
-	// (e.g., gemma-4.jinja) rely on it to control whether reasoning is enabled.
+	// Ensure enable_thinking is set. If the model config specifies a default
+	// (e.g., enable_thinking: false in sampling-parameters), use that. Otherwise
+	// default to true. When using the SDK directly, callers may not set this
+	// field, but templates (e.g., gemma-4.jinja) rely on it to control whether
+	// reasoning is enabled.
 	if _, ok := d["enable_thinking"]; !ok {
-		d["enable_thinking"] = true
+		if m.cfg.DefaultParams.Thinking != "" {
+			d["enable_thinking"] = m.cfg.DefaultParams.Thinking
+		} else {
+			d["enable_thinking"] = true
+		}
 	}
 
 	// Normalize enable_thinking to a bool so Jinja "is false" / "is true" tests
