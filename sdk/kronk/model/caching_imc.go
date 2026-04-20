@@ -83,20 +83,6 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 	// We will cache all messages but the last one.
 	lastMsgIdxToCache := totalMsgs - 1
 
-	// -------------------------------------------------------------------------
-	// DEBUG: Log system prompt presence on every request.
-
-	if role, _ := messages[0]["role"].(string); role == "system" {
-		content := extractMessageContent(messages[0])
-		m.log(ctx, "imc", "status", "DEBUG system-prompt", "role", role, "bytes", len(content))
-		if m.imcSlots[0].totalTokensCached == 0 && m.imcSlots[len(m.imcSlots)-1].totalTokensCached == 0 {
-			m.log(ctx, "imc", "status", "DEBUG system-prompt-content", "content", content)
-		}
-	} else {
-		m.log(ctx, "imc", "status", "DEBUG no-system-prompt", "first-msg-role", role)
-	}
-
-	// -------------------------------------------------------------------------
 	// Snapshot slot metadata under RLock, then release before hashing.
 
 	m.log(ctx, "imc", "status", "scanning slots", "total-msgs", totalMsgs, "msgs-to-cache", lastMsgIdxToCache, "total-slots", len(m.imcSlots))

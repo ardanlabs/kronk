@@ -371,6 +371,20 @@ func TestRepair(t *testing.T) {
 		},
 
 		// =================================================================
+		// Missing closing quote on key — "oldString: instead of "oldString":
+		// =================================================================
+		{
+			// Reproduces production failure: model outputs "oldString: (colon
+			// without closing quote on key) instead of "oldString":" for the
+			// edit tool. The newString key is correct but oldString is malformed,
+			// causing the JSON parser to absorb the key name into the previous
+			// value string, leaving oldString undefined.
+			name:  "missing closing quote on key oldString colon",
+			input: `{"filePath":"examples/talks/tictactoe/main.go","newString":"const (\n\tcolorReset = \"\\033[0m\"\n\tcolorRed   = \"\\033[31m\"\n\tcolorBlue  = \"\\033[34m\"\n)\n\nfunc formatCell(cell string) string {\n\tswitch cell {\n\tcase \"X\":\n\t\treturn colorBlue + cell + colorReset\n\tcase \"O\":\n\t\treturn colorRed + cell + colorReset\n\tdefault:\n\t\treturn cell\n\t}\n}\n\nfunc printBoard(board []string) {\n\tfmt.Println()\n\tfmt.Printf(\"%s | %s | %s\\n\", formatCell(board[0]), formatCell(board[1]), formatCell(board[2]))\n\tfmt.Println(\"----------\")\n\tfmt.Printf(\"%s | %s | %s\\n\", formatCell(board[3]), formatCell(board[4]), formatCell(board[5]))\n\tfmt.Println(\"----------\")\n\tfmt.Printf(\"%s | %s | %s\\n\", formatCell(board[6]), formatCell(board[7]), formatCell(board[8]))\n}","oldString:"func printBoard(board []string) {\n\tfmt.Println()\n\tfmt.Printf(\"%s | %s | %s\\n\", board[0], board[1], board[2])\n\tfmt.Println(\"----------\")\n\tfmt.Printf(\"%s | %s | %s\\n\", board[3], board[4], board[5])\n\tfmt.Println(\"----------\")\n\tfmt.Printf(\"%s | %s | %s\\n\", board[6], board[7], board[8])\n}","replaceAll":true}`,
+			keys: map[string]string{"filePath": "main.go", "newString": "formatCell", "oldString": "printBoard"},
+		},
+
+		// =================================================================
 		// Irrecoverable — should return error
 		// =================================================================
 		{

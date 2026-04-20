@@ -97,6 +97,7 @@ func normalize(s string) (string, bool) {
 	s = normalizeGemmaQuotes(s)
 	s = normalizeBacktickDelimiters(s)
 	s = quoteBareKeys(s)
+	s = fixMissingKeyCloseQuote(s)
 	return s, s != orig
 }
 
@@ -423,6 +424,103 @@ func fixMissingKeyQuote(prefix string) string {
 
 	// Pattern matched: "identifier: → "identifier":
 	return prefix[:n-1] + `":`
+}
+
+// fixMissingKeyCloseQuote scans the entire string for JSON keys that have an
+// opening " but no closing " before the colon. The model sometimes writes
+// ,"oldString:"value" instead of ,"oldString":"value" — the closing " on the
+// key is missing. This function inserts the missing " before each such colon.
+//
+// The scan walks the string tracking string state. When outside a string and
+// a " is followed by an identifier then a : (without a closing " between the
+// identifier and the colon), it inserts the missing quote.
+func fixMissingKeyCloseQuote(s string) string {
+	var buf strings.Builder
+	changed := false
+
+	i := 0
+	for i < len(s) {
+		// Look for a structural position where a key could start:
+		// after { or , (optionally with whitespace).
+		if s[i] != '{' && s[i] != ',' {
+			if changed {
+				buf.WriteByte(s[i])
+			}
+			i++
+			continue
+		}
+
+		// Write the { or , character.
+		if changed {
+			buf.WriteByte(s[i])
+		}
+		i++
+
+		// Skip whitespace.
+		for i < len(s) && isWhitespace(s[i]) {
+			if changed {
+				buf.WriteByte(s[i])
+			}
+			i++
+		}
+
+		// Must start with " (this is the opening quote of the key).
+		if i >= len(s) || s[i] != '"' {
+			continue
+		}
+
+		// Check if this is "identifier: (missing close quote).
+		// Scan past the " and identifier chars.
+		j := i + 1
+		for j < len(s) && isIdentChar(s[j]) {
+			j++
+		}
+
+		keyLen := j - (i + 1)
+		if keyLen == 0 || keyLen > 40 || j >= len(s) {
+			// No identifier or too long — not our pattern.
+			if changed {
+				buf.WriteByte(s[i])
+			}
+			i++
+			continue
+		}
+
+		// If followed by ": — the key is already properly closed.
+		if s[j] == '"' {
+			if changed {
+				buf.WriteByte(s[i])
+			}
+			i++
+			continue
+		}
+
+		// If followed by : directly (no closing ") — this is the bug.
+		if s[j] == ':' {
+			if !changed {
+				buf.Grow(len(s) + 16)
+				buf.WriteString(s[:j])
+				changed = true
+			} else {
+				buf.WriteString(s[i:j])
+			}
+			buf.WriteByte('"')
+			// Don't advance i past j — the : will be written in the next iteration.
+			i = j
+			continue
+		}
+
+		// Some other character after identifier — not our pattern.
+		if changed {
+			buf.WriteByte(s[i])
+		}
+		i++
+	}
+
+	if !changed {
+		return s
+	}
+	return buf.String()
 }
 
 // findStructuralBacktick finds the last backtick in s that appears in a
