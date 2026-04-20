@@ -2,9 +2,9 @@
 
 ### About this Session
 
-In this talk Bill will introduce Kronk, a new SDK that allows you to write AI based apps without the need of a model server. If you have Apple Metal (Mac), CUDA (NVIDIA), or Vulkan, Kronk can tap into that GPU power instead of grinding through the work on the CPU alone.
+In this talk Bill will introduce Kronk, a new SDK that allows you to write AI based Go apps without the need of a model server. If you have Apple Metal (Mac), CUDA (NVIDIA), or Vulkan, Kronk can tap into that GPU power instead of grinding through the work on the CPU alone.
 
-To dog food the SDK, Bill wrote a model server (KMS) that is optimized to run your local AI workloads with performance in mind. During the talk, Bill will show how you can use Agents like Kilo Code to run local agentic workloads to perform basic work.
+To dog food the SDK, Bill wrote a model server (KMS) that is optimized to run your local AI workloads with performance in mind. During the talk, Bill will use KMS, OpenCode, and the Gemma4 model to write a simple tic-tac-toe game. Then bill will refactor that tic-tac-toe game and integrate Kronk to be Player2. After this talk you will know how to leverage Kronk in your own applications.
 
 ### Outline
 
