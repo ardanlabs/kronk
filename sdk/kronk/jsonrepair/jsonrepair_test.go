@@ -3,8 +3,11 @@ package jsonrepair
 import (
 	"encoding/json"
 	"fmt"
+	"go/format"
 	"go/parser"
 	"go/token"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -107,6 +110,25 @@ func TestRepair(t *testing.T) {
 			name:  "gemma token value then bare key missing open quote",
 			input: "{\"content:<|\"|>package main\n\nimport (\n\t\"fmt\"\n)\n\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n<|\"|>,filePath\":\"/Users/bill/test/main.go\"}",
 			keys:  map[string]string{"content": "package main", "filePath": "/Users/bill/test/main.go"},
+		},
+
+		// =================================================================
+		// Gemma <|"|> content then standard JSON filePath — must compile
+		// =================================================================
+		{
+			// Reproduces production failure: after parseGemmaToolCallFormat
+			// strips call:write and outer braces from the double-brace
+			// format call:write{{...}}, jsonrepair receives this input.
+			// The Go source has \n escapes in fmt.Print string literals
+			// that must survive as literal \n in the output so the code
+			// compiles. Real newlines (line breaks) must become actual
+			// newlines, not literal \n.
+			name:  "gemma content with source escapes then json filePath compiles",
+			input: "{\"content:<|\"|>package main\n\nimport (\n\t\"bufio\"\n\t\"fmt\"\n\t\"os\"\n\t\"strconv\"\n\t\"strings\"\n)\n\ntype Game struct {\n\tboard  [9]string\n\treader *bufio.Reader\n}\n\nfunc NewGame() *Game {\n\tg := &Game{\n\t\treader: bufio.NewReader(os.Stdin),\n\t}\n\tfor i := 0; i < 9; i++ {\n\t\tg.board[i] = strconv.Itoa(i + 1)\n\t}\n\treturn g\n}\n\nfunc (g *Game) renderBoard() {\n\tfmt.Println()\n\tfmt.Printf(\"%s | %s | %s\\n\", g.board[0], g.board[1], g.board[2])\n\tfmt.Println(\"----------\")\n\tfmt.Printf(\"%s | %s | %s\\n\", g.board[3], g.board[4], g.board[5])\n\tfmt.Println(\"----------\")\n\tfmt.Printf(\"%s | %s | %s\\n\", g.board[6], g.board[7], g.board[8])\n}\n\nfunc (g *Game) checkWinner() string {\n\twins := [8][3]int{\n\t\t{0, 1, 2}, {3, 4, 5}, {6, 7, 8},\n\t\t{0, 3, 6}, {1, 4, 7}, {2, 5, 8},\n\t\t{0, 4, 8}, {2, 4, 6},\n\t}\n\n\tfor _, combo := range wins {\n\t\tif g.board[combo[0]] == g.board[combo[1]] && g.board[combo[1]] == g.board[combo[2]] {\n\t\t\treturn g.board[combo[0]]\n\t\t}\n\t}\n\n\tfull := true\n\tfor i := 0; i < 9; i++ {\n\t\tcell := g.board[i]\n\t\tif cell != \"X\" && cell != \"O\" {\n\t\t\tfull = false\n\t\t\tbreak\n\t\t}\n\t}\n\tif full {\n\t\treturn \"Draw\"\n\t}\n\n\treturn \"\"\n}\n\nfunc playerX(g *Game) int {\n\tfor {\n\t\tfmt.Print(\"\\nPlayer X's turn. Enter a number (1-9): \")\n\t\tinput, err := g.reader.ReadString('\\n')\n\t\tif err != nil {\n\t\t\tcontinue\n\t\t}\n\t\tinput = strings.TrimSpace(input)\n\t\tval, err := strconv.Atoi(input)\n\t\tif err != nil || val < 1 || val > 9 {\n\t\t\tcontinue\n\t\t}\n\n\t\tidx := val - 1\n\t\tcell := g.board[idx]\n\t\tisNumber := false\n\t\tfor i := 1; i <= 9; i++ {\n\t\t\tif cell == strconv.Itoa(i) {\n\t\t\t\tisNumber = true\n\t\t\t\tbreak\n\t\t\t}\n\t\t}\n\n\t\tif isNumber {\n\t\t\treturn idx\n\t\t}\n\t}\n}\n\nfunc playerO(g *Game) int {\n\tfor {\n\t\tfmt.Print(\"\\nPlayer O's turn. Enter a number (1-9): \")\n\t\tinput, err := g.reader.ReadString('\\n')\n\t\tif err != nil {\n\t\t\tcontinue\n\t\t}\n\t\tinput = strings.TrimSpace(input)\n\t\tval, err := strconv.Atoi(input)\n\t\tif err != nil || val < 1 || val > 9 {\n\t\t\tcontinue\n\t\t}\n\n\t\tidx := val - 1\n\t\tcell := g.board[idx]\n\t\tisNumber := false\n\t\tfor i := 1; i <= 9; i++ {\n\t\t\tif cell == strconv.Itoa(i) {\n\t\t\t\tisNumber = true\n\t\t\t\tbreak\n\t\t\t}\n\t\t}\n\n\t\tif isNumber {\n\t\t\treturn idx\n\t\t}\n\t}\n}\n\nfunc main() {\n\tfor {\n\t\tgame := NewGame()\n\t\tturnX := true\n\n\t\tfor {\n\t\t\tgame.renderBoard()\n\n\t\t\tvar idx int\n\t\t\tif turnX {\n\t\t\t\tidx = playerX(game)\n\t\t\t\tgame.board[idx] = \"X\"\n\t\t\t} else {\n\t\t\t\tidx = playerO(game)\n\t\t\t\tgame.board[idx] = \"O\"\n\t\t\t}\n\n\t\t\tresult := game.checkWinner()\n\t\t\tif result != \"\" {\n\t\t\t\tgame.renderBoard()\n\t\t\t\tif result == \"Draw\" {\n\t\t\t\t\tfmt.Println(\"It's a draw!\")\n\t\t\t\t} else {\n\t\t\t\t\tfmt.Printf(\"Player %s wins!\\n\", result)\n\t\t\t\t}\n\t\t\t\tbreak\n\t\t\t}\n\t\t\tturnX = !turnX\n\t\t}\n\n\t\tfmt.Print(\"\\nPlay again? (y/n): \")\n\t\tinput, err := game.reader.ReadString('\\n')\n\t\tif err != nil {\n\t\t\tbreak\n\t\t}\n\t\tif strings.TrimSpace(strings.ToLower(input)) != \"y\" {\n\t\t\tbreak\n\t\t}\n\t}\n}\n<|\"|>,\"filePath\":\"examples/talks/tictactoe/main.go\"}",
+			keys:  map[string]string{"content": "package main", "filePath": "examples/talks/tictactoe/main.go"},
+			goCode: map[string]string{
+				"content": "file",
+			},
 		},
 
 		// =================================================================
@@ -420,23 +442,74 @@ func TestRepair(t *testing.T) {
 	}
 }
 
-// parseGoSource parses src as Go source code. When mode is "file", src must
-// be a complete Go source file (with package clause). When mode is "snippet",
-// src is wrapped in a function body before parsing.
+func TestRepairWriteAndCompile(t *testing.T) {
+	// Model output literal \n and \t (two-char escape sequences), NOT real
+	// newline/tab bytes, inside the <|"|> delimited value.
+	input := "{\"content:<|\"|>package main\\n\\nimport (\\n\\t\"bufio\"\\n\\t\"fmt\"\\n\\t\"os\"\\n\\t\"strconv\"\\n\\t\"strings\"\\n)\\n\\ntype Game struct {\\n\\tboard  [9]string\\n\\treader *bufio.Reader\\n}\\n\\nfunc NewGame() *Game {\\n\\tg := &Game{\\n\\t\\treader: bufio.NewReader(os.Stdin),\\n\\t}\\n\\tfor i := 0; i < 9; i++ {\\n\\t\\tg.board[i] = strconv.Itoa(i + 1)\\n\\t}\\n\\treturn g\\n}\\n\\nfunc (g *Game) renderBoard() {\\n\\tfmt.Println()\\n\\tfmt.Printf(\"%s | %s | %s\\\\n\", g.board[0], g.board[1], g.board[2])\\n\\tfmt.Println(\"----------\")\\n\\tfmt.Printf(\"%s | %s | %s\\\\n\", g.board[3], g.board[4], g.board[5])\\n\\tfmt.Println(\"----------\")\\n\\tfmt.Printf(\"%s | %s | %s\\\\n\", g.board[6], g.board[7], g.board[8])\\n}\\n\\nfunc (g *Game) checkWinner() string {\\n\\twins := [8][3]int{\\n\\t\\t{0, 1, 2}, {3, 4, 5}, {6, 7, 8},\\n\\t\\t{0, 3, 6}, {1, 4, 7}, {2, 5, 8},\\n\\t\\t{0, 4, 8}, {2, 4, 6},\\n\\t}\\n\\n\\tfor _, combo := range wins {\\n\\t\\tif g.board[combo[0]] == g.board[combo[1]] && g.board[combo[1]] == g.board[combo[2]] {\\n\\t\\t\\treturn g.board[combo[0]]\\n\\t\\t}\\n\\t}\\n\\n\\tfull := true\\n\\tfor i := 0; i < 9; i++ {\\n\\t\\tcell := g.board[i]\\n\\t\\tif cell != \"X\" && cell != \"O\" {\\n\\t\\t\\tfull = false\\n\\t\\t\\tbreak\\n\\t\\t}\\n\\t}\\n\\tif full {\\n\\t\\treturn \"Draw\"\\n\\t}\\n\\n\\treturn \"\"\\n}\\n\\nfunc playerX(g *Game) int {\\n\\tfor {\\n\\t\\tfmt.Print(\"\\\\nPlayer X's turn. Enter a number (1-9): \")\\n\\t\\tinput, err := g.reader.ReadString('\\\\n')\\n\\t\\tif err != nil {\\n\\t\\t\\tcontinue\\n\\t\\t}\\n\\t\\tinput = strings.TrimSpace(input)\\n\\t\\tval, err := strconv.Atoi(input)\\n\\t\\tif err != nil || val < 1 || val > 9 {\\n\\t\\t\\tcontinue\\n\\t\\t}\\n\\n\\t\\tidx := val - 1\\n\\t\\tcell := g.board[idx]\\n\\t\\tisNumber := false\\n\\t\\tfor i := 1; i <= 9; i++ {\\n\\t\\t\\tif cell == strconv.Itoa(i) {\\n\\t\\t\\t\\tisNumber = true\\n\\t\\t\\t\\tbreak\\n\\t\\t\\t}\\n\\t\\t}\\n\\n\\t\\tif isNumber {\\n\\t\\t\\treturn idx\\n\\t\\t}\\n\\t}\\n}\\n\\nfunc main() {\\n\\tfor {\\n\\t\\tgame := NewGame()\\n\\t\\tturnX := true\\n\\n\\t\\tfor {\\n\\t\\t\\tgame.renderBoard()\\n\\n\\t\\t\\tvar idx int\\n\\t\\t\\tif turnX {\\n\\t\\t\\t\\tidx = playerX(game)\\n\\t\\t\\t\\tgame.board[idx] = \"X\"\\n\\t\\t\\t} else {\\n\\t\\t\\t\\tgame.board[idx] = \"O\"\\n\\t\\t\\t}\\n\\n\\t\\t\\tresult := game.checkWinner()\\n\\t\\t\\tif result != \"\" {\\n\\t\\t\\t\\tgame.renderBoard()\\n\\t\\t\\t\\tif result == \"Draw\" {\\n\\t\\t\\t\\t\\tfmt.Println(\"It's a draw!\")\\n\\t\\t\\t\\t} else {\\n\\t\\t\\t\\t\\tfmt.Printf(\"Player %s wins!\\\\n\", result)\\n\\t\\t\\t\\t}\\n\\t\\t\\t\\tbreak\\n\\t\\t\\t}\\n\\t\\t\\tturnX = !turnX\\n\\t\\t}\\n\\n\\t\\tfmt.Print(\"\\\\nPlay again? (y/n): \")\\n\\t\\tinput, err := game.reader.ReadString('\\\\n')\\n\\t\\tif err != nil {\\n\\t\\t\\tbreak\\n\\t\\t}\\n\\t\\tif strings.TrimSpace(strings.ToLower(input)) != \"y\" {\\n\\t\\t\\tbreak\\n\\t\\t}\\n\\t}\\n}\\n<|\"|>,\"filePath\":\"examples/talks/tictactoe/main.go\"}"
+
+	// Step 1: Repair the JSON.
+	repaired, err := Repair(input)
+	if err != nil {
+		t.Fatalf("Repair failed: %v", err)
+	}
+	t.Logf("Repaired JSON:\n%s", repaired)
+
+	// Step 2: Unmarshal and extract content.
+	var m map[string]any
+	if err := json.Unmarshal([]byte(repaired), &m); err != nil {
+		t.Fatalf("Unmarshal failed: %v\n  repaired: %s", err, repaired)
+	}
+
+	content, ok := m["content"].(string)
+	if !ok {
+		t.Fatalf("content key missing or not a string: %v", m["content"])
+	}
+
+	// Step 3: Verify it compiles as Go.
+	if err := parseGoSource(content, "file"); err != nil {
+		t.Errorf("Go parse failed: %v\n  content:\n%s", err, content)
+	}
+
+	// Step 4: Write to file and run gofmt.
+	outFile := t.TempDir() + "/main.go"
+	if err := os.WriteFile(outFile, []byte(content), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+	t.Logf("Wrote %d bytes to %s", len(content), outFile)
+	t.Logf("Content written:\n%s", content)
+
+	out, err := exec.Command("gofmt", "-e", outFile).CombinedOutput()
+	if err != nil {
+		t.Errorf("gofmt failed: %v\n  output: %s", err, out)
+	} else {
+		t.Logf("gofmt output:\n%s", out)
+	}
+}
+
+// parseGoSource parses src as Go source code and verifies it can be formatted
+// by gofmt (format.Source). When mode is "file", src must be a complete Go
+// source file (with package clause). When mode is "snippet", src is wrapped
+// in a function body before parsing.
 func parseGoSource(src, mode string) error {
 	fset := token.NewFileSet()
 
+	var full string
 	switch mode {
 	case "file":
-		_, err := parser.ParseFile(fset, "test.go", src, parser.AllErrors)
-		return err
-
+		full = src
 	case "snippet":
-		stub := fmt.Sprintf("package main\nfunc _() {\n%s\n}", src)
-		_, err := parser.ParseFile(fset, "test.go", stub, parser.AllErrors)
-		return err
-
+		full = fmt.Sprintf("package main\nfunc _() {\n%s\n}", src)
 	default:
 		return fmt.Errorf("unknown Go parse mode: %q", mode)
 	}
+
+	if _, err := parser.ParseFile(fset, "test.go", full, parser.AllErrors); err != nil {
+		return err
+	}
+
+	if _, err := format.Source([]byte(full)); err != nil {
+		return fmt.Errorf("format.Source: %w", err)
+	}
+
+	return nil
 }

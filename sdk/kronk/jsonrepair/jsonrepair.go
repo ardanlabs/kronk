@@ -153,10 +153,19 @@ func normalizeGemmaQuotes(s string) string {
 		}
 
 		// Extract the value between the <|"|> pair and convert to a valid
-		// JSON string: escape inner quotes, convert raw control characters
-		// to JSON escapes, and double-escape source code sequences like \n
-		// so they survive JSON parsing as literal backslash-n.
+		// JSON string: escape inner quotes and convert control characters
+		// to JSON escapes.
+		//
+		// The model may use either real newline bytes (0x0A) or literal
+		// \n escape sequences for line breaks. When real newlines are
+		// present, any literal \n sequences are source code escapes
+		// (e.g., fmt.Print("\n")) that must be double-escaped to survive
+		// JSON parsing. When no real newlines exist, the model used \n
+		// for all line breaks, so they must be treated as JSON \n escapes
+		// (becoming real newlines after unmarshal).
 		inner := s[i : i+closeIdx]
+		hasRealNewlines := strings.Contains(inner, "\n")
+
 		b.WriteByte('"')
 		for j := 0; j < len(inner); j++ {
 			switch {
@@ -169,10 +178,20 @@ func normalizeGemmaQuotes(s string) string {
 
 					switch next {
 					case 'n', 'r', 't', 'b', 'f':
-						// Source code escape (e.g., \n in fmt.Print("\n")).
-						// Double-escape so JSON preserves the literal chars.
-						b.WriteString(`\\`)
-						b.WriteByte(next)
+						if hasRealNewlines {
+							// Content has real newlines for line breaks,
+							// so these are source code escapes (e.g.,
+							// \n in fmt.Print("\n")). Double-escape so
+							// they survive JSON parsing as literal chars.
+							b.WriteString(`\\`)
+							b.WriteByte(next)
+						} else {
+							// No real newlines — model used \n for line
+							// breaks. Treat as JSON escape so they become
+							// real control characters after unmarshal.
+							b.WriteByte('\\')
+							b.WriteByte(next)
+						}
 					case '"', '\\', '/', 'u':
 						// Valid JSON escape — preserve as-is.
 						b.WriteByte('\\')
