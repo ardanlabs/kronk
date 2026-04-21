@@ -179,7 +179,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 					"tokens", len(job.imcNewCacheTokens))
 
 			case job.imcTrimPos > 0:
-				// Non-Deterministic mode: partial prefix rebuild. Trim the
+				// Token prefix fallback: partial prefix rebuild. Trim the
 				// divergent suffix from KV cache, keeping the common prefix,
 				// then decode new tokens from the trim point forward.
 				if job.imcTrimPos > cacheIdx {

@@ -147,12 +147,32 @@ func runGame(krn *kronk.Kronk) error {
 type board [9]string
 
 func (b *board) render() {
+	const (
+		red   = "\x1b[31m"
+		green = "\x1b[32m"
+		blue  = "\x1b[34m"
+		reset = "\x1b[0m"
+	)
+
+	c := func(s string) string {
+		if s == "X" {
+			return red + s + reset
+		}
+		if s == "O" {
+			return blue + s + reset
+		}
+		return s
+	}
+
+	sep := " " + green + "|" + reset + " "
+	line := green + "----------" + reset
+
 	fmt.Println()
-	fmt.Printf("%s | %s | %s\n", b[0], b[1], b[2])
-	fmt.Println("----------")
-	fmt.Printf("%s | %s | %s\n", b[3], b[4], b[5])
-	fmt.Println("----------")
-	fmt.Printf("%s | %s | %s\n", b[6], b[7], b[8])
+	fmt.Printf("%s%s%s%s%s\n", c(b[0]), sep, c(b[1]), sep, c(b[2]))
+	fmt.Println(line)
+	fmt.Printf("%s%s%s%s%s\n", c(b[3]), sep, c(b[4]), sep, c(b[5]))
+	fmt.Println(line)
+	fmt.Printf("%s%s%s%s%s\n", c(b[6]), sep, c(b[7]), sep, c(b[8]))
 }
 
 func (b *board) hasWinner(player string) bool {

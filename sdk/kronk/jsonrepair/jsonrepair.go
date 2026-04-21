@@ -98,7 +98,55 @@ func normalize(s string) (string, bool) {
 	s = normalizeBacktickDelimiters(s)
 	s = quoteBareKeys(s)
 	s = fixMissingKeyCloseQuote(s)
+	s = normalizeBackslashControlChars(s)
 	return s, s != orig
+}
+
+// normalizeBackslashControlChars replaces a backslash followed by a raw
+// control character (TAB 0x09, LF 0x0A, CR 0x0D) with the corresponding
+// two-character JSON escape sequence (\t, \n, \r). Models sometimes emit
+// e.g. \<TAB> (backslash + literal tab byte) when they mean the two-char
+// sequence \t, producing invalid JSON that neither the standard parser nor
+// repairQuotes can recover from.
+func normalizeBackslashControlChars(s string) string {
+	// Quick scan: bail if no backslash + control char pattern exists.
+	found := false
+	for i := 0; i < len(s)-1; i++ {
+		if s[i] == '\\' {
+			next := s[i+1]
+			if next == '\t' || next == '\n' || next == '\r' {
+				found = true
+				break
+			}
+			i++ // skip next char (already examined)
+		}
+	}
+	if !found {
+		return s
+	}
+
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+1 < len(s) {
+			switch s[i+1] {
+			case '\t':
+				b.WriteString(`\t`)
+				i++
+				continue
+			case '\n':
+				b.WriteString(`\n`)
+				i++
+				continue
+			case '\r':
+				b.WriteString(`\r`)
+				i++
+				continue
+			}
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
 }
 
 // normalizeGemmaQuotes converts <|"|> delimited values to standard JSON

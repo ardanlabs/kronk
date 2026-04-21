@@ -486,7 +486,7 @@ on conversation size.
 Partial prefix matches are more expensive for hybrid models because the
 recurrent state must be rebuilt from the beginning.
 
-When a request matches a partial token prefix (the Non-Deterministic fallback
+When a request matches a partial token prefix (the token prefix fallback
 path), Dense/MoE models trim from the divergence point. Hybrid models cannot
 do partial trims, so the engine performs a full sequence clear and re-decodes
 the entire cached token sequence from position 0. This is more expensive but

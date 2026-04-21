@@ -16,17 +16,16 @@ import (
 // =============================================================================
 // Incremental Message Cache (IMC) — Core Algorithm
 //
-// IMC has two matching strategies, automatically selected based on template
-// behavior:
+// IMC uses a cascading match algorithm:
 //
-//   - Deterministic:     Hash-based prefix matching for models with consistent
-//     templates. Fastest path. Used by most models.
-//   - Non-Deterministic: Token-level prefix fallback for models with variable
-//     templates (GPT-OSS, GLM). Activated when hash matching fails.
+//  1. Hash-based prefix matching (fastest path, zero tokenization).
+//  2. System prompt preservation (keep sys prompt KV, rebuild conversation).
+//  3. Token-level prefix fallback (salvage common prefix when hash fails).
+//  4. Full rebuild from scratch (empty slot or LRU eviction).
 //
-// The matching strategy is independent of the model type (Dense, MoE, Hybrid).
-// All model types use the same caching functions in this file. What changes
-// per model type is how the batch engine manages state between requests:
+// The matching algorithm is the same for all model types (Dense, MoE, Hybrid).
+// What changes per model type is how the batch engine manages state between
+// requests:
 //
 //   - Dense/MoE: batch_finish.go trims generated tokens via partial range
 //     delete (MemorySeqRm).
@@ -59,17 +58,17 @@ type imcSlotSnapshot struct {
 // workflows. It caches all messages except the last one (which triggers
 // generation) and extends the cache incrementally on subsequent requests.
 //
-// This function implements the shared slot selection algorithm used by both
-// IMC strategies (Deterministic and Non-Deterministic) across all model
+// This function implements the slot selection algorithm across all model
 // types (Dense, MoE, Hybrid). All NSeqMax slots are available. Each slot
 // independently tracks its own conversation branch (hash, token count,
 // message index). Sub-agents get routed to different slots via hash matching.
 //
 // Algorithm:
-//  1. Scan all slots for a prefix hash match (Deterministic path)
+//  1. Scan all slots for a prefix hash match
 //  2. On match: extend or reuse the matching slot's cache
-//  3. No hash match: try token prefix fallback (Non-Deterministic path)
-//  4. No match at all: pick an empty slot or evict the LRU slot, rebuild
+//  3. System prompt match: preserve sys prompt KV, rebuild conversation body
+//  4. No hash match: try token prefix fallback
+//  5. No match at all: pick an empty slot or evict the LRU slot, rebuild
 func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cacheResult {
 	messages, ok := d["messages"].([]D)
 	if !ok || len(messages) == 0 {
@@ -112,7 +111,7 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 	m.cacheMu.RUnlock()
 
 	// -------------------------------------------------------------------------
-	// Step 1: Hash-based slot scan (Deterministic path, all model types).
+	// Step 1: Hash-based slot scan.
 
 	// Pre-compute the incoming system prompt hash for two-tier matching.
 	// If the first message is a system prompt, hash it once and use it to
@@ -304,12 +303,12 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 	}
 
 	// -------------------------------------------------------------------------
-	// Step 3: Token prefix fallback (Non-Deterministic mode).
+	// Step 3: Token prefix fallback.
 	//
 	// No hash match — try token-level partial prefix matching before falling
-	// back to empty slot or LRU eviction. Non-deterministic templates (e.g.,
-	// GPT-OSS, GLM) may produce different token sequences for identical
-	// messages, but often share a long common prefix that we can salvage.
+	// back to empty slot or LRU eviction. Templates, tool call formatting, or
+	// client behavior may produce different token sequences for logically
+	// identical messages, but often share a long common prefix we can salvage.
 
 	m.log(ctx, "imc", "status", "no slot matched, trying token prefix match", "total-msgs", totalMsgs)
 
@@ -990,11 +989,10 @@ func (m *Model) rebuildIMCWithMedia(ctx context.Context, d D, messages []D, sess
 }
 
 // rebuildIMCFromPartialPrefix rebuilds a slot's cache using a token-level
-// partial prefix match. This is the Non-Deterministic mode path — when a
-// model template produces different tokens for the same messages (e.g.,
-// GPT-OSS, GLM), this function salvages the longest common prefix in the
-// KV cache, trims the divergent suffix, and decodes only the new tokens
-// from the divergence point forward.
+// partial prefix match. When hash matching fails (due to template variation,
+// tool call formatting differences, or client behavior), this function
+// salvages the longest common prefix in the KV cache, trims the divergent
+// suffix, and decodes only the new tokens from the divergence point forward.
 //
 // For Hybrid models, batch_slot_start.go converts the partial trim into a
 // full clear + re-decode since partial MemorySeqRm corrupts recurrent state.
@@ -1093,9 +1091,9 @@ func (m *Model) rebuildIMCPreservingSysPrompt(ctx context.Context, d D, messages
 	sysHash, sysToks := m.imcSysPromptInfo(ctx, msgsToCache, allTokens)
 
 	// Verify the system prompt token boundary is consistent after
-	// re-templating. If the template rendered the system prompt differently
-	// (non-deterministic template), the cached KV state at those positions
-	// is wrong. Fall back to a full rebuild from scratch.
+	// re-templating. If the template rendered the system prompt differently,
+	// the cached KV state at those positions is wrong. Fall back to a full
+	// rebuild from scratch.
 	trimFrom := sysToks
 	if sysToks != cachedSysPromptTokens {
 		m.log(ctx, "imc", "status", "sys-prompt-preserve aborted (token boundary shifted)",
