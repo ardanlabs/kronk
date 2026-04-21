@@ -148,11 +148,13 @@ type board [9]string
 
 func (b *board) render() {
 	const (
+		clear  = "\033[H\033[2J"
 		red   = "\x1b[31m"
 		green = "\x1b[32m"
 		blue  = "\x1b[34m"
 		reset = "\x1b[0m"
 	)
+	fmt.Print(clear)
 
 	c := func(s string) string {
 		if s == "X" {

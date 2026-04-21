@@ -39,6 +39,8 @@ Player X's turn. Enter a number (1-9):
 
 - Make sure there is a line space before and after rendering a new board.
 - Use the color green for the lines, red for X, and blue for O.
+- Clear the screen when rendering a new board.
+- When the game is over, clear the screen, render the final board, and show the outcome of the game.
 - Ask Player1 to go first.
 - Each player will choose a number that corresponds to a place on the board.
 - The first player uses `X` and the second player uses `O`.
@@ -70,12 +72,8 @@ Player X's turn. Enter a number (1-9):
 - If the board is showing a number for that space, then that number is a valid move.
 - Always check for a winner or a draw after every move.
 - A draw would be all spaces having an `X` or an `O`.
-- There is a winner when there are 3 `X`'s or 3 `O`'s in a straight horizontal,
-  vertical, or diagonal line.
-- When a game is over announce the winner and give the user an option to play
-  again for quit the game.
-- I need functions called playerX and playerO that is used when it's that
-  player's turn to choose a space. I need to encapsulate that functionality.
+- There is a winner when there are 3 `X`'s or 3 `O`'s in a straight horizontal, vertical, or diagonal line.
+- When a game is over announce the winner and give the user an option to play again for quit the game.
+- I need functions called playerX and playerO that is used when it's that player's turn to choose a space. I need to encapsulate that functionality.
 - Do not attempt to run the game yourself.
-- Compile the program to validate it compiles. Fix any errors that you find. Then
-  remove the binary you created to validate the code.
+- Compile the program to validate it compiles. Fix any errors that you find. Then remove the binary you created to validate the code.
