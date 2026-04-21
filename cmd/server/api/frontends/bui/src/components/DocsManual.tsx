@@ -2220,7 +2220,44 @@ IMC (Incremental Message Cache):
           </ul>
           <p>With <code>NSeqMax=2</code>, up to 2 sessions can be cached simultaneously.</p>
           <h3 id="53-incremental-message-cache-imc">5.3 Incremental Message Cache (IMC)</h3>
-          <p>Incremental Message Cache is designed for agentic workflows where conversations grow monotonically. It caches all messages except the last one and extends the cache incrementally on each turn.</p>
+          <p>Incremental Message Cache is designed for agentic workflows. It caches all messages except the last one and extends the cache incrementally on each turn. When a client or agent mutates the conversation history, IMC uses a two-tier hash to preserve the system prompt KV state and only rebuild the conversation body.</p>
+          <h4 id="two-tier-hash-design">Two-Tier Hash Design</h4>
+          <p>IMC tracks two independent hashes per slot:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Tier</th>
+                <th>What It Covers</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Tier 1</td>
+                <td>System prompt (<code>messages[0]</code> when role=system)</td>
+                <td>Preserved across conversation edits</td>
+              </tr>
+              <tr>
+                <td>Tier 2</td>
+                <td>All cached messages (<code>messages[0:N]</code>)</td>
+                <td>Detects any change in the conversation</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>When a request arrives, IMC first checks the full prefix hash (Tier 2). If it matches, the cache is extended as normal. If the full hash mismatches but the system prompt hash (Tier 1) still matches, IMC keeps the system prompt KV in place and only re-decodes the conversation body after it. This is the most common mutation scenario — the client edits conversation history while keeping the same system prompt.</p>
+          <pre className="code-block"><code>{`Normal append (full hash match):
+┌────────────────────────────────────────────────────────┐
+│ System Prompt │ Msg 1 │ Msg 2 │ Msg 3 │  New Message  │
+│   (cached)    │(cached)│(cached)│(cached)│  (prefill)   │
+└────────────────────────────────────────────────────────┘
+
+Conversation edit (sys prompt hash match, full hash mismatch):
+┌────────────────────────────────────────────────────────┐
+│ System Prompt │ Msg 1' │ Msg 2' │ Msg 3' │ New Message │
+│   (cached)    │(re-decode)│(re-decode)│(re-decode)│(prefill)│
+└────────────────────────────────────────────────────────┘
+   ↑ kept in KV     ↑ trimmed and rebuilt from sys prompt boundary`}</code></pre>
+          <p><strong>Matching Strategies:</strong></p>
           <p>IMC has two matching strategies. You don't choose a strategy — Kronk always tries hash matching first and automatically falls back to token prefix matching when the hash doesn't match.</p>
           <table className="flags-table">
             <thead>
@@ -2244,7 +2281,7 @@ IMC (Incremental Message Cache):
             </tbody>
           </table>
           <p>The matching strategy is independent of the model type (Dense, MoE, Hybrid). Any model type can use either strategy — it depends on the template, not the architecture. What changes per model type is how the batch engine manages state between requests — see <a href="#49-model-types-and-state-management">Section 4.9</a>.</p>
-          <p>The table below shows real models in the Kronk catalog and the strategy their templates produce. Note that the Qwen3-VL (MoE) model has a deterministic template, while GPT-OSS (also MoE) has a non-deterministic one.</p>
+          <p>The table below shows real models in the Kronk catalog and the strategy their templates produce:</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -2295,7 +2332,7 @@ IMC (Incremental Message Cache):
           <ul>
             <li>AI coding agents</li>
             <li>Long-running agent conversations</li>
-            <li>Any workflow where messages are appended, not edited</li>
+            <li>Agentic workflows where conversations grow or are edited</li>
             <li>Sub-agent architectures with multiple concurrent agents</li>
           </ul>
           <p><strong>Enable IMC:</strong></p>
@@ -2304,7 +2341,7 @@ IMC (Incremental Message Cache):
     incremental_cache: true
     cache_min_tokens: 100 # Minimum tokens before caching (default)`}</code></pre>
           <h4 id="multi-slot-architecture">Multi-Slot Architecture</h4>
-          <p>All <code>NSeqMax</code> slots are available for IMC. Each slot independently tracks its own conversation branch — its own message hash, token count, and message index. Sub-agents are routed to different slots via hash matching, allowing them to maintain independent caches and run concurrently.</p>
+          <p>All <code>NSeqMax</code> slots are available for IMC. Each slot independently tracks its own conversation branch — its own message hash, system prompt hash, token count, and message index. Sub-agents are routed to different slots via hash matching, allowing them to maintain independent caches and run concurrently.</p>
           <p>With <code>n_seq_max: 3</code>, three sub-agents can each have their own cached conversation branch. Without multi-slot IMC, every sub-agent request would cause a prefix mismatch and rebuild the cache from scratch because different sub-agents send different system prompts and conversation content.</p>
           <p><strong>Important:</strong> Set <code>n_seq_max</code> to at least the number of concurrent sub-agents your agent framework spawns. If <code>n_seq_max</code> is smaller than the number of sub-agents, cache thrashing can occur — each new sub-agent evicts a slot, and when the evicted sub-agent returns, it evicts another. Every request triggers a full rebuild from scratch, eliminating the caching benefit entirely. With unified KV cache, all slots share the same <code>n_ctx</code> pool, so adding more slots does not multiply VRAM usage. However, more slots means more concurrent cached conversations competing for the shared pool. KV pressure eviction automatically clears stale slots when space gets tight — see <a href="#kv-pressure-eviction">KV Pressure Eviction</a>.</p>
           <p><strong>How It Works:</strong></p>
@@ -2320,25 +2357,34 @@ Prefill:  [user2 + gen_prompt]`}</code></pre>
           <pre className="code-block"><code>{`Messages: [system, user, assistant, user2, assistant2, user3]
 Cache:    [system, user, assistant, user2, assistant2]  ← Extend
 Prefill:  [user3 + gen_prompt]`}</code></pre>
+          <p>Fourth request (conversation edited — assistant response removed):</p>
+          <pre className="code-block"><code>{`Messages: [system, user, user3]
+Cache:    [system]                   ← System prompt KV preserved
+Rebuild:  [user, user3]              ← Only conversation body re-decoded
+Prefill:  [user3 + gen_prompt]`}</code></pre>
           <h4 id="slot-selection-algorithm">Slot Selection Algorithm</h4>
-          <p>When a request arrives, IMC scans all slots to find the best match. Steps 1-2 apply to both strategies. Step 3 is the Non-Deterministic fallback path. Step 4 is the universal last resort.</p>
+          <p>When a request arrives, IMC scans all slots to find the best match. The algorithm has five steps, tried in order.</p>
           <ol>
-            <li><strong>Scan all slots</strong> — For each slot: stored hash
+            <li><strong>Scan all slots</strong> — For each slot: stored hash Track the slot as a system-prompt-match candidate if it does.
               <ul>
                 <li>Skip slots with a build in-flight (pending flag set)</li>
-                <li>Skip empty slots (track the first empty slot as a fallback)</li>
+                <li>Skip empty slots (track them as fallback candidates)</li>
                 <li>Skip slots with more cached messages than the request has total</li>
-                <li>Hash <code>messages[:slot.lastMsgIdxCached]</code> and compare to the slot's</li>
+                <li>Hash <code>messages[:slot.cachedMsgCount]</code> and compare to the slot's</li>
+                <li>On mismatch: check if the system prompt hash (Tier 1) still matches.</li>
                 <li>Track mismatched slots as eviction candidates</li>
               </ul>
             </li>
             <li><strong>KV pressure eviction</strong> — When a matching slot is found and the total KV usage across all slots exceeds the context window, evict mismatched slots (largest first) to reclaim space. See <a href="#kv-pressure-eviction">KV Pressure Eviction</a> for details.</li>
-            <li><strong>On match</strong> — Pick the slot with the best prefix coverage (most cached messages). If the request has new messages to cache, extend the slot's cache. If the messages are identical, it's a pure cache hit.</li>
-            <li><strong>No hash match — token prefix fallback (Non-Deterministic mode)</strong> — Tokenize the incoming messages and compare the resulting token sequence element-by-element against each non-empty slot's stored <code>cachedTokens</code>. Pick the slot with the longest common prefix that meets <code>cache_min_tokens</code>. Trim the KV cache from the divergence point and decode only the new tokens from there forward. See <a href="#imc-non-deterministic">IMC Non-Deterministic</a> for details.</li>
+            <li><strong>On full match</strong> — Pick the slot with the best prefix coverage (most cached messages). If the request has new messages to cache, extend the slot's cache. If the messages are identical, it's a pure cache hit.</li>
+            <li><strong>System prompt preservation (two-tier hash)</strong> — No full match, but a slot has the same system prompt cached. Keep the system prompt KV in place, trim everything after the system prompt token boundary, and re-template and re-decode only the conversation body. Before preserving, IMC verifies the system prompt token boundary is consistent after re-templating — if the template is non-deterministic and produces a different token count for the system prompt, it falls back to a full rebuild. Media slots are excluded from this path because token-level trim is unsafe for image/audio embeddings.</li>
+            <li><strong>Token prefix fallback (Non-Deterministic mode)</strong> — Tokenize the incoming messages and compare the resulting token sequence element-by-element against each non-empty slot's stored <code>cachedTokens</code>. Pick the slot with the longest common prefix that meets <code>cache_min_tokens</code>. Trim the KV cache from the divergence point and decode only the new tokens from there forward. See <a href="#imc-non-deterministic">IMC Non-Deterministic</a> for details.</li>
             <li><strong>No match at all</strong> — Pick an empty slot if one exists, otherwise evict the least-recently-used (LRU) slot and rebuild from scratch.</li>
           </ol>
           <p><strong>Concurrent Build Protection:</strong></p>
           <p>When two requests arrive simultaneously and both need to build a cache from scratch, a race condition could cause both to pick the same empty slot. IMC prevents this with a pending flag: when a slot begins a deferred cache build, it is marked pending. Concurrent scanners skip pending slots, so the second request picks a different slot. The pending flag is cleared after the cache decode completes (or on error).</p>
+          <p><strong>Decode Failure Recovery:</strong></p>
+          <p>If a cache decode fails at any point (extend, rebuild, trim, or media build), IMC clears the entire KV sequence and resets the session metadata. This ensures the slot never advertises cached content that doesn't exist in the KV cache.</p>
           <h4 id="kv-pressure-eviction">KV Pressure Eviction</h4>
           <p>With <code>n_seq_max &gt; 1</code>, Kronk enables a unified KV cache (<code>KVUnified=1</code>) so that all sequences share the full <code>n_ctx</code> pool. Any single sequence can grow up to the full context window, but the <strong>total</strong> KV usage across all sequences cannot exceed <code>n_ctx</code>.</p>
           <p>This matters when an agent framework (like Kilo or Cline) sends multiple concurrent requests for the same conversation. Each request may land on a different slot. As the conversation grows, the active slot accumulates a large cache while older slots hold stale snapshots of earlier conversation states. Those stale slots consume KV cells that the active slot needs.</p>
@@ -2544,9 +2590,10 @@ New decode:    4 tokens (T9-T12, from divergence point forward)`}</code></pre>
           </ul>
           <p><strong>IMC Invalidation:</strong></p>
           <ul>
-            <li>Message prefix hash mismatch → token prefix fallback attempted first. If a common prefix ≥ <code>cache_min_tokens</code> is found, only the divergent suffix is trimmed and rebuilt. Otherwise, cache is rebuilt from scratch.</li>
-            <li>User starts new conversation → token prefix fallback salvages shared prefix (e.g., system prompt tokens), then extends from there</li>
-            <li>Earlier message edited → cache rebuilt (hash and token prefix both fail)</li>
+            <li>Message prefix hash mismatch with same system prompt → system prompt KV preserved, conversation body trimmed and re-decoded (Step 4 of the slot selection algorithm)</li>
+            <li>Message prefix hash mismatch with no system prompt match → token prefix fallback attempted. If a common prefix ≥ <code>cache_min_tokens</code> is found, only the divergent suffix is trimmed and rebuilt. Otherwise, cache is rebuilt from scratch.</li>
+            <li>System prompt changed → full cache rebuild from scratch</li>
+            <li>Conversation shrinks (client dropped messages or reasoning blocks) → system prompt preserved if unchanged, conversation body re-decoded</li>
           </ul>
           <p><strong>Automatic Invalidation:</strong></p>
           <p>Caches are cleared when:</p>
@@ -2652,10 +2699,11 @@ Request 5 (text follow-up about the image):
           </ol>
           <p><strong>IMC Limitations:</strong></p>
           <ul>
-            <li>Conversations must grow monotonically (append-only)</li>
-            <li>Editing earlier messages triggers full cache rebuild</li>
+            <li>Editing earlier messages requires a partial rebuild (system prompt KV is preserved when the system prompt hasn't changed; conversation body is re-decoded)</li>
+            <li>Changing the system prompt triggers a full cache rebuild</li>
             <li>Designed for single-user use</li>
             <li>Max concurrent conversation branches = NSeqMax; when all slots are occupied, the least-recently-used slot is evicted</li>
+            <li>System prompt preservation is text-only; media slots always use hash matching or full rebuild</li>
           </ul>
           <hr />
           <h2 id="chapter-6-yarn-extended-context">Chapter 6: YaRN Extended Context</h2>
