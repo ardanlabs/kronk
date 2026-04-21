@@ -58,7 +58,7 @@ interface CatalogFormData {
     devices: string;
     mainGpu: number | null;
     tensorSplit: string;
-    autoFitVram: boolean;
+
     swaFull: boolean | null;
     systemPromptCache: boolean | null;
     incrementalCache: boolean | null;
@@ -164,7 +164,7 @@ const defaultForm: CatalogFormData = {
     devices: '',
     mainGpu: null,
     tensorSplit: '',
-    autoFitVram: false,
+
     swaFull: null,
     systemPromptCache: null,
     incrementalCache: null,
@@ -300,7 +300,7 @@ function populateFromResponse(resp: CatalogModelResponse): CatalogFormData {
       devices: mc?.['devices']?.join(',') ?? '',
       mainGpu: mc?.['main-gpu'] ?? null,
       tensorSplit: mc?.['tensor-split']?.join(',') ?? '',
-      autoFitVram: mc?.['auto-fit-vram'] ?? false,
+
       swaFull: mc?.['swa-full'] ?? null,
       systemPromptCache: mc?.['system-prompt-cache'] ?? null,
       incrementalCache: mc?.['incremental-cache'] ?? null,
@@ -751,7 +751,7 @@ export default function CatalogEditor() {
           'main-gpu': form.config.mainGpu,
           'tensor-split': form.config.tensorSplit ? form.config.tensorSplit.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n)) : null,
           'tensor-buft-overrides': null,
-          'auto-fit-vram': form.config.autoFitVram,
+
           'swa-full': form.config.swaFull,
           'system-prompt-cache': form.config.systemPromptCache ?? false,
           'incremental-cache': form.config.incrementalCache ?? false,
@@ -1203,10 +1203,7 @@ export default function CatalogEditor() {
                 <label style={labelStyle}>{labelWithTip('Tensor Split', 'tensorSplit')}</label>
                 <input type="text" value={form.config.tensorSplit} onChange={(e) => setConfig({ tensorSplit: e.target.value })} style={inputStyle} placeholder="e.g., 0.6,0.4" />
               </div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', marginTop: '8px' }}>
-                <input type="checkbox" checked={form.config.autoFitVram} onChange={(e) => setConfig({ autoFitVram: e.target.checked })} />
-                <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-gray-700)' }}>{labelWithTip('Auto-Fit VRAM', 'autoFitVram')}</span>
-              </label>
+
               <NullableNumInput label="Threads (nthreads)" tooltipKey="nthreads" value={form.config.nthreads} defaultValue={rc?.nthreads} onChange={(v) => setConfig({ nthreads: v })} />
             </div>
 

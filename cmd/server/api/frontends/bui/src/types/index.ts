@@ -73,7 +73,7 @@ export interface ModelConfig {
   'tensor-buft-overrides': string[] | null;
   'main-gpu': number | null;
   'devices': string[] | null;
-  'auto-fit-vram': boolean;
+
   'swa-full': boolean | null;
   'system-prompt-cache': boolean;
   'incremental-cache': boolean;
@@ -556,7 +556,6 @@ export interface PlaygroundModelConfig {
   'devices'?: string[] | null;
   'main_gpu'?: number | null;
   'tensor_split'?: number[] | null;
-  'auto_fit_vram'?: boolean | null;
   'rope_scaling_type'?: string;
   'rope_freq_base'?: number | null;
   'rope_freq_scale'?: number | null;

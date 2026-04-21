@@ -410,7 +410,7 @@ export default function ModelList() {
                       const mc = modelInfo.model_config;
                       const boolBadge = (v: boolean | null | undefined) => <span className={`badge ${v ? 'badge-yes' : 'badge-no'}`}>{v ? 'Yes' : 'No'}</span>;
                       return [
-                        { key: 'auto-fit-vram', label: labelWithTip('auto-fit-vram', 'autoFitVram'), value: boolBadge(mc['auto-fit-vram']) },
+
                         { key: 'cache-min-tokens', label: labelWithTip('cache-min-tokens', 'cacheMinTokens'), value: fmtVal(mc['cache-min-tokens']) },
                         { key: 'cache-type-k', label: labelWithTip('cache-type-k', 'cacheTypeK'), value: mc['cache-type-k'] || 'default' },
                         { key: 'cache-type-v', label: labelWithTip('cache-type-v', 'cacheTypeV'), value: mc['cache-type-v'] || 'default' },

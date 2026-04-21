@@ -423,9 +423,6 @@ func mergeModelConfig(dst *ModelConfig, src ModelConfig) {
 	if src.MoE != nil {
 		dst.MoE = src.MoE
 	}
-	if src.AutoFitVRAM {
-		dst.AutoFitVRAM = src.AutoFitVRAM
-	}
 	if src.SWAFull != nil {
 		dst.SWAFull = src.SWAFull
 	}

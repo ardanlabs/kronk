@@ -36,7 +36,6 @@ Model Configuration:
   --main-gpu            Main GPU index for single-GPU mode
   --tensor-split        Comma-separated tensor split (e.g., 0.6,0.4)
   --split-mode          GPU split mode (none, layer, row)
-  --auto-fit-vram       Auto-fit model parameters to available VRAM
   --cache-type-k        KV cache type for keys (f16, q8_0, etc.)
   --cache-type-v        KV cache type for values (f16, q8_0, etc.)
   --nbatch              Logical batch size for processing
@@ -86,7 +85,6 @@ func init() {
 	Cmd.Flags().Int("main-gpu", -1, "Main GPU index for single-GPU mode")
 	Cmd.Flags().String("tensor-split", "", "Comma-separated tensor split ratios (e.g., 0.6,0.4)")
 	Cmd.Flags().String("split-mode", "", "GPU split mode (none, layer, row)")
-	Cmd.Flags().Bool("auto-fit-vram", false, "Auto-fit model parameters to available VRAM")
 	Cmd.Flags().String("cache-type-k", "", "KV cache type for keys (f16, q8_0, q4_0, etc.)")
 	Cmd.Flags().String("cache-type-v", "", "KV cache type for values (f16, q8_0, q4_0, etc.)")
 	Cmd.Flags().Int("nbatch", 0, "Logical batch size for processing")
@@ -124,7 +122,6 @@ func run(cmd *cobra.Command, args []string) error {
 	mainGPU, _ := cmd.Flags().GetInt("main-gpu")
 	tensorSplit, _ := cmd.Flags().GetString("tensor-split")
 	splitMode, _ := cmd.Flags().GetString("split-mode")
-	autoFitVRAM, _ := cmd.Flags().GetBool("auto-fit-vram")
 	cacheTypeK, _ := cmd.Flags().GetString("cache-type-k")
 	cacheTypeV, _ := cmd.Flags().GetString("cache-type-v")
 	nbatch, _ := cmd.Flags().GetInt("nbatch")
@@ -155,7 +152,6 @@ func run(cmd *cobra.Command, args []string) error {
 		MainGPU:        mainGPU,
 		TensorSplit:    tensorSplit,
 		SplitMode:      splitMode,
-		AutoFitVRAM:    autoFitVRAM,
 		CacheTypeK:     cacheTypeK,
 		CacheTypeV:     cacheTypeV,
 		NBatch:         nbatch,

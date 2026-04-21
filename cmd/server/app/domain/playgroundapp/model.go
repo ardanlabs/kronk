@@ -78,7 +78,6 @@ type SessionConfig struct {
 	Devices             []string                  `json:"devices"`
 	MainGPU             *int                      `json:"main_gpu"`
 	TensorSplit         []float32                 `json:"tensor_split"`
-	AutoFitVRAM         *bool                     `json:"auto_fit_vram"`
 	OpOffloadMinBatch   *int                      `json:"op_offload_min_batch"`
 	TensorBuftOverrides []string                  `json:"tensor_buft_overrides"`
 	DraftModelID        *string                   `json:"draft_model_id"`
@@ -154,9 +153,6 @@ func (sc SessionConfig) ApplyTo(cfg model.Config) model.Config {
 	if len(sc.TensorSplit) > 0 {
 		cfg.TensorSplit = sc.TensorSplit
 	}
-	if sc.AutoFitVRAM != nil {
-		cfg.AutoFitVRAM = *sc.AutoFitVRAM
-	}
 	if sc.OpOffloadMinBatch != nil {
 		cfg.OpOffloadMinBatch = *sc.OpOffloadMinBatch
 	}
@@ -215,7 +211,6 @@ func (sc SessionConfig) HasOverrides() bool {
 		sc.Devices != nil ||
 		sc.MainGPU != nil ||
 		sc.TensorSplit != nil ||
-		sc.AutoFitVRAM != nil ||
 		sc.OpOffloadMinBatch != nil ||
 		sc.DraftModelID != nil ||
 		sc.DraftNDraft != nil ||

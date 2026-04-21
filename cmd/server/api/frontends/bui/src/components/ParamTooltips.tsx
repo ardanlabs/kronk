@@ -123,7 +123,7 @@ export const PARAM_TOOLTIPS = {
   opOffload: 'Allows selected host-side tensor operations to be offloaded to GPU during prompt processing. Can improve throughput for large or CPU-heavy workloads.',
   mainGpu: 'Primary GPU index used in multi-GPU configurations. Relevant when using split mode or explicit device placement. Leave empty on single-GPU systems.',
   devices: 'Explicit list of devices for inference (e.g. CUDA0,CUDA1). Leave empty to let the runtime auto-select.',
-  autoFitVram: 'Automatically adjusts GPU-related settings to fit available VRAM. Helpful for avoiding out-of-memory errors, though the chosen config may be more conservative than manual tuning.',
+
   ropeFreqScale: 'RoPE frequency scale multiplier for context extension. Usually left at the model default unless reproducing a known long-context configuration.',
   yarnBetaFast: 'YaRN beta-fast parameter for short-range frequency transition behavior. Advanced tuning option; usually leave unset unless matching a known config.',
   yarnBetaSlow: 'YaRN beta-slow parameter for long-range frequency transition behavior. Advanced tuning option; usually leave unset unless matching a known config.',

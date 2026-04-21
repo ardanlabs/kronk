@@ -196,7 +196,6 @@ func (s SamplingConfig) toParams() model.Params {
 
 // ModelConfig represents default model config settings.
 type ModelConfig struct {
-	AutoFitVRAM          bool                      `yaml:"auto-fit-vram,omitempty"`
 	CacheMinTokens       int                       `yaml:"cache-min-tokens,omitempty"`
 	CacheSlotTimeout     int                       `yaml:"cache-slot-timeout,omitempty"`
 	CacheTypeK           model.GGMLType            `yaml:"cache-type-k,omitempty"`
@@ -252,7 +251,6 @@ type DraftModelConfig struct {
 // ToKronkConfig converts a catalog ModelConfig to a model.Config.
 func (mc ModelConfig) ToKronkConfig() model.Config {
 	cfg := model.Config{
-		AutoFitVRAM:          mc.AutoFitVRAM,
 		CacheMinTokens:       mc.CacheMinTokens,
 		CacheSlotTimeout:     mc.CacheSlotTimeout,
 		CacheTypeK:           mc.CacheTypeK,
