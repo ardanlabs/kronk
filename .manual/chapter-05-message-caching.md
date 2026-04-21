@@ -5,6 +5,7 @@
 - [5.1 Overview](#51-overview)
 - [5.2 System Prompt Cache (SPC)](#52-system-prompt-cache-spc)
 - [5.3 Incremental Message Cache (IMC)](#53-incremental-message-cache-imc)
+  - [Two-Tier Hash Design](#two-tier-hash-design)
   - [KV Pressure Eviction](#kv-pressure-eviction)
   - [IMC Deterministic](#imc-deterministic)
   - [IMC Non-Deterministic](#imc-non-deterministic)
@@ -139,9 +140,44 @@ With `NSeqMax=2`, up to 2 sessions can be cached simultaneously.
 
 ### 5.3 Incremental Message Cache (IMC)
 
-Incremental Message Cache is designed for agentic workflows where
-conversations grow monotonically. It caches all messages except the last
-one and extends the cache incrementally on each turn.
+Incremental Message Cache is designed for agentic workflows. It caches all
+messages except the last one and extends the cache incrementally on each turn.
+When a client or agent mutates the conversation history, IMC uses a two-tier
+hash to preserve the system prompt KV state and only rebuild the conversation
+body.
+
+#### Two-Tier Hash Design
+
+IMC tracks two independent hashes per slot:
+
+| Tier | What It Covers | Purpose |
+| ---- | -------------- | ------- |
+| Tier 1 | System prompt (`messages[0]` when role=system) | Preserved across conversation edits |
+| Tier 2 | All cached messages (`messages[0:N]`) | Detects any change in the conversation |
+
+When a request arrives, IMC first checks the full prefix hash (Tier 2). If it
+matches, the cache is extended as normal. If the full hash mismatches but the
+system prompt hash (Tier 1) still matches, IMC keeps the system prompt KV in
+place and only re-decodes the conversation body after it. This is the most
+common mutation scenario — the client edits conversation history while keeping
+the same system prompt.
+
+```
+Normal append (full hash match):
+┌────────────────────────────────────────────────────────┐
+│ System Prompt │ Msg 1 │ Msg 2 │ Msg 3 │  New Message  │
+│   (cached)    │(cached)│(cached)│(cached)│  (prefill)   │
+└────────────────────────────────────────────────────────┘
+
+Conversation edit (sys prompt hash match, full hash mismatch):
+┌────────────────────────────────────────────────────────┐
+│ System Prompt │ Msg 1' │ Msg 2' │ Msg 3' │ New Message │
+│   (cached)    │(re-decode)│(re-decode)│(re-decode)│(prefill)│
+└────────────────────────────────────────────────────────┘
+   ↑ kept in KV     ↑ trimmed and rebuilt from sys prompt boundary
+```
+
+**Matching Strategies:**
 
 IMC has two matching strategies. You don't choose a strategy — Kronk always
 tries hash matching first and automatically falls back to token prefix
@@ -157,9 +193,8 @@ Any model type can use either strategy — it depends on the template, not the
 architecture. What changes per model type is how the batch engine manages
 state between requests — see [Section 4.9](#49-model-types-and-state-management).
 
-The table below shows real models in the Kronk catalog and the strategy their templates
-produce. Note that the Qwen3-VL (MoE) model has a deterministic template, while
-GPT-OSS (also MoE) has a non-deterministic one.
+The table below shows real models in the Kronk catalog and the strategy their
+templates produce:
 
 | Model                          | Architecture | Template          | Modality |
 | ------------------------------ | ------------ | ----------------- | -------- |
@@ -179,7 +214,7 @@ GPT-OSS (also MoE) has a non-deterministic one.
 
 - AI coding agents
 - Long-running agent conversations
-- Any workflow where messages are appended, not edited
+- Agentic workflows where conversations grow or are edited
 - Sub-agent architectures with multiple concurrent agents
 
 **Enable IMC:**
@@ -194,9 +229,9 @@ models:
 #### Multi-Slot Architecture
 
 All `NSeqMax` slots are available for IMC. Each slot independently tracks its
-own conversation branch — its own message hash, token count, and message
-index. Sub-agents are routed to different slots via hash matching, allowing
-them to maintain independent caches and run concurrently.
+own conversation branch — its own message hash, system prompt hash, token
+count, and message index. Sub-agents are routed to different slots via hash
+matching, allowing them to maintain independent caches and run concurrently.
 
 With `n_seq_max: 3`, three sub-agents can each have their own cached
 conversation branch. Without multi-slot IMC, every sub-agent request would
@@ -240,18 +275,28 @@ Cache:    [system, user, assistant, user2, assistant2]  ← Extend
 Prefill:  [user3 + gen_prompt]
 ```
 
+Fourth request (conversation edited — assistant response removed):
+
+```
+Messages: [system, user, user3]
+Cache:    [system]                   ← System prompt KV preserved
+Rebuild:  [user, user3]              ← Only conversation body re-decoded
+Prefill:  [user3 + gen_prompt]
+```
+
 #### Slot Selection Algorithm
 
-When a request arrives, IMC scans all slots to find the best match. Steps 1-2
-apply to both strategies. Step 3 is the Non-Deterministic fallback path.
-Step 4 is the universal last resort.
+When a request arrives, IMC scans all slots to find the best match. The
+algorithm has five steps, tried in order.
 
 1. **Scan all slots** — For each slot:
    - Skip slots with a build in-flight (pending flag set)
-   - Skip empty slots (track the first empty slot as a fallback)
+   - Skip empty slots (track them as fallback candidates)
    - Skip slots with more cached messages than the request has total
-   - Hash `messages[:slot.lastMsgIdxCached]` and compare to the slot's
+   - Hash `messages[:slot.cachedMsgCount]` and compare to the slot's
      stored hash
+   - On mismatch: check if the system prompt hash (Tier 1) still matches.
+     Track the slot as a system-prompt-match candidate if it does.
    - Track mismatched slots as eviction candidates
 
 2. **KV pressure eviction** — When a matching slot is found and the total
@@ -259,11 +304,21 @@ Step 4 is the universal last resort.
    slots (largest first) to reclaim space. See
    [KV Pressure Eviction](#kv-pressure-eviction) for details.
 
-3. **On match** — Pick the slot with the best prefix coverage (most cached
-   messages). If the request has new messages to cache, extend the slot's
-   cache. If the messages are identical, it's a pure cache hit.
+3. **On full match** — Pick the slot with the best prefix coverage (most
+   cached messages). If the request has new messages to cache, extend the
+   slot's cache. If the messages are identical, it's a pure cache hit.
 
-4. **No hash match — token prefix fallback (Non-Deterministic mode)** —
+4. **System prompt preservation (two-tier hash)** — No full match, but a
+   slot has the same system prompt cached. Keep the system prompt KV in
+   place, trim everything after the system prompt token boundary, and
+   re-template and re-decode only the conversation body. Before preserving,
+   IMC verifies the system prompt token boundary is consistent after
+   re-templating — if the template is non-deterministic and produces a
+   different token count for the system prompt, it falls back to a full
+   rebuild. Media slots are excluded from this path because token-level
+   trim is unsafe for image/audio embeddings.
+
+5. **Token prefix fallback (Non-Deterministic mode)** —
    Tokenize the incoming messages and compare the resulting token sequence
    element-by-element against each non-empty slot's stored `cachedTokens`.
    Pick the slot with the longest common prefix that meets `cache_min_tokens`.
@@ -271,7 +326,7 @@ Step 4 is the universal last resort.
    from there forward. See [IMC Non-Deterministic](#imc-non-deterministic)
    for details.
 
-5. **No match at all** — Pick an empty slot if one exists, otherwise evict
+6. **No match at all** — Pick an empty slot if one exists, otherwise evict
    the least-recently-used (LRU) slot and rebuild from scratch.
 
 **Concurrent Build Protection:**
@@ -282,6 +337,13 @@ prevents this with a pending flag: when a slot begins a deferred cache build,
 it is marked pending. Concurrent scanners skip pending slots, so the second
 request picks a different slot. The pending flag is cleared after the cache
 decode completes (or on error).
+
+**Decode Failure Recovery:**
+
+If a cache decode fails at any point (extend, rebuild, trim, or media build),
+IMC clears the entire KV sequence and resets the session metadata. This
+ensures the slot never advertises cached content that doesn't exist in the
+KV cache.
 
 #### KV Pressure Eviction
 
@@ -513,12 +575,16 @@ invalidation helps you avoid unexpected prefill costs.
 
 **IMC Invalidation:**
 
-- Message prefix hash mismatch → token prefix fallback attempted first. If a
-  common prefix ≥ `cache_min_tokens` is found, only the divergent suffix is
-  trimmed and rebuilt. Otherwise, cache is rebuilt from scratch.
-- User starts new conversation → token prefix fallback salvages shared prefix
-  (e.g., system prompt tokens), then extends from there
-- Earlier message edited → cache rebuilt (hash and token prefix both fail)
+- Message prefix hash mismatch with same system prompt → system prompt KV
+  preserved, conversation body trimmed and re-decoded (Step 4 of the slot
+  selection algorithm)
+- Message prefix hash mismatch with no system prompt match → token prefix
+  fallback attempted. If a common prefix ≥ `cache_min_tokens` is found, only
+  the divergent suffix is trimmed and rebuilt. Otherwise, cache is rebuilt
+  from scratch.
+- System prompt changed → full cache rebuild from scratch
+- Conversation shrinks (client dropped messages or reasoning blocks) → system
+  prompt preserved if unchanged, conversation body re-decoded
 
 **Automatic Invalidation:**
 
@@ -718,10 +784,14 @@ Request 5 (text follow-up about the image):
 
 **IMC Limitations:**
 
-- Conversations must grow monotonically (append-only)
-- Editing earlier messages triggers full cache rebuild
+- Editing earlier messages requires a partial rebuild (system prompt KV is
+  preserved when the system prompt hasn't changed; conversation body is
+  re-decoded)
+- Changing the system prompt triggers a full cache rebuild
 - Designed for single-user use
 - Max concurrent conversation branches = NSeqMax; when all slots are
   occupied, the least-recently-used slot is evicted
+- System prompt preservation is text-only; media slots always use hash
+  matching or full rebuild
 
 ---

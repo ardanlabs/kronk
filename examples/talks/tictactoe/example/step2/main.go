@@ -19,22 +19,24 @@ import (
 // go run examples/talks/tictactoe/example/step2/main.go
 // go run examples/talks/tictactoe/example/step2/main.go -streaming=false
 
-func main() {
-	var streaming = flag.Bool("streaming", true, "enable streaming")
+var streaming *bool
+
+func init() {
+	streaming = flag.Bool("streaming", true, "enable streaming")
 	flag.Parse()
 
 	fmt.Println("streaming:", *streaming)
+}
 
-	modelFile := "unsloth/gemma-4-26B-A4B-it-GGUF/gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf"
-
-	if err := run(*streaming, modelFile); err != nil {
+func main() {
+	if err := run(); err != nil {
 		fmt.Printf("\nERROR: %s\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(streaming bool, modelFile string) error {
-	krn, err := newKronk(modelFile)
+func run() error {
+	krn, err := newKronk()
 	if err != nil {
 		return fmt.Errorf("unable to init kronk: %w", err)
 	}
@@ -46,20 +48,21 @@ func run(streaming bool, modelFile string) error {
 		}
 	}()
 
-	return runGame(krn, streaming)
+	return runGame(krn)
 }
 
-func newKronk(modelFile string) (*kronk.Kronk, error) {
+func newKronk() (*kronk.Kronk, error) {
 	fmt.Println("loading model...")
 
 	if err := kronk.Init(); err != nil {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
+	modelFile := "unsloth/gemma-4-26B-A4B-it-GGUF/gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf"
 	modelFile = fmt.Sprintf("%s/models/%s", defaults.BaseDir(""), modelFile)
 
 	cfg := model.Config{
-		ContextWindow: 131072,
+		ContextWindow: 32768,
 		ModelFiles:    []string{modelFile},
 	}
 
@@ -71,7 +74,7 @@ func newKronk(modelFile string) (*kronk.Kronk, error) {
 	return krn, nil
 }
 
-func runGame(krn *kronk.Kronk, streaming bool) error {
+func runGame(krn *kronk.Kronk) error {
 	reader := bufio.NewReader(os.Stdin)
 
 	for {
@@ -99,7 +102,7 @@ func runGame(krn *kronk.Kronk, streaming bool) error {
 			if xCount <= oCount {
 				idx, err = playerX(&b, reader)
 			} else {
-				idx, err = playerO(&b, krn, streaming)
+				idx, err = playerO(&b, krn)
 			}
 
 			if err != nil {
@@ -205,11 +208,11 @@ func playerX(b *board, reader *bufio.Reader) (int, error) {
 	}
 }
 
-func playerO(b *board, krn *kronk.Kronk, streaming bool) (int, error) {
+func playerO(b *board, krn *kronk.Kronk) (int, error) {
 	for {
 		fmt.Print("\nPlayer O's turn. Enter a number (1-9): ")
 
-		input, err := PickSpace(b, krn, streaming)
+		input, err := PickSpace(b, krn)
 		if err != nil {
 			return 0, err
 		}
@@ -231,7 +234,7 @@ func playerO(b *board, krn *kronk.Kronk, streaming bool) (int, error) {
 	}
 }
 
-func PickSpace(b *board, krn *kronk.Kronk, streaming bool) (string, error) {
+func PickSpace(b *board, krn *kronk.Kronk) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*5*time.Second)
 	defer cancel()
 
@@ -257,7 +260,7 @@ func PickSpace(b *board, krn *kronk.Kronk, streaming bool) (string, error) {
 	var final string
 	var err error
 
-	switch streaming {
+	switch *streaming {
 	case true:
 		final, err = modelStreaming(ctx, krn, finalPrompt)
 

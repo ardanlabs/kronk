@@ -51,6 +51,8 @@ type imcSlotSnapshot struct {
 	pending           bool
 	empty             bool
 	hasMedia          bool
+	sysPromptHash     string
+	sysPromptTokens   int
 }
 
 // processIMC implements incremental multi-turn caching (IMC) for agentic
@@ -102,6 +104,8 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 			pending:           slot.pending,
 			empty:             slot.totalTokensCached == 0,
 			hasMedia:          slot.hasMedia,
+			sysPromptHash:     slot.sysPromptHash,
+			sysPromptTokens:   slot.sysPromptTokens,
 		}
 	}
 
@@ -110,6 +114,16 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 	// -------------------------------------------------------------------------
 	// Step 1: Hash-based slot scan (Deterministic path, all model types).
 
+	// Pre-compute the incoming system prompt hash for two-tier matching.
+	// If the first message is a system prompt, hash it once and use it to
+	// check sys-prompt-only matches when the full prefix hash mismatches.
+	var incomingSysHash string
+	if len(messages) > 0 {
+		if role, _ := messages[0]["role"].(string); role == "system" {
+			incomingSysHash = hashMessages(messages[:1])
+		}
+	}
+
 	var bestSlot *imcSession
 	var bestCachedMsgsHash string
 	var bestTotalTokensCached int
@@ -117,6 +131,10 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 	var emptySlots []*imcSession
 	var lruSlot *imcSession
 	var mismatchSlots []int // Snapshot indices of non-matching slots (eviction candidates).
+
+	// Two-tier: track the best slot where only the system prompt hash matches.
+	var bestSysPromptSlot *imcSession
+	var bestSysPromptSnapIdx int
 
 	for i, snap := range snapshots {
 
@@ -152,6 +170,22 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 			m.log(ctx, "imc", "scan", fmt.Sprintf("slot[%d] mismatch (cached-msgs[%d] tokens[%d] hash[%s..] != [%s..])",
 				snap.slotID, snap.cachedMsgCount, snap.totalTokensCached, snap.cachedMsgsHash[:8], prefixHash[:8]))
 			mismatchSlots = append(mismatchSlots, i)
+
+			// Two-tier: full hash failed, check if system prompt matches.
+			// Skip media slots (token-level trim is unsafe for media KV).
+			if incomingSysHash != "" && !snap.hasMedia &&
+				snap.sysPromptHash == incomingSysHash && snap.sysPromptTokens > 0 {
+
+				// Pick the LRU among sys-prompt matches (least disruptive to evict).
+				if bestSysPromptSlot == nil || snap.lastUsed.Before(snapshots[bestSysPromptSnapIdx].lastUsed) {
+					bestSysPromptSlot = m.imcSlots[i]
+					bestSysPromptSnapIdx = i
+				}
+
+				m.log(ctx, "imc", "scan", fmt.Sprintf("slot[%d] sys-prompt-match (sys-tokens[%d] hash[%s..])",
+					snap.slotID, snap.sysPromptTokens, snap.sysPromptHash[:8]))
+			}
+
 			continue
 		}
 
@@ -249,6 +283,24 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 			imcSlotID:       bestSlot.slotID,
 			imcExpectedHash: bestCachedMsgsHash,
 		}
+	}
+
+	// -------------------------------------------------------------------------
+	// Step 2b: System prompt preservation (two-tier hash match).
+	//
+	// No full hash match, but a slot has the same system prompt cached. Keep
+	// the system prompt KV in place, trim everything after it, and re-decode
+	// only the conversation body. This avoids re-decoding the system prompt
+	// (often thousands of tokens) when the client edits conversation history.
+
+	if bestSysPromptSlot != nil {
+		snap := snapshots[bestSysPromptSnapIdx]
+
+		m.log(ctx, "imc", "status", "sys-prompt-match (preserving system prompt)",
+			"slot", snap.slotID, "seq", snap.seqID,
+			"sys-tokens", snap.sysPromptTokens, "old-total-tokens", snap.totalTokensCached)
+
+		return m.rebuildIMCPreservingSysPrompt(ctx, d, messages, bestSysPromptSlot, lastMsgIdxToCache, snap.sysPromptTokens)
 	}
 
 	// -------------------------------------------------------------------------
@@ -512,41 +564,16 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, session *
 			newHash := hashMessages(msgs)
 			sysHash, sysToks := m.imcSysPromptInfo(ctx, msgs, allTokens)
 
-			// If the system prompt hasn't changed, keep its KV state and
-			// only re-decode the conversation tokens after it. Otherwise
-			// clear the entire sequence and rebuild from scratch.
-			preservePrefix := sysToks > 0 && session.sysPromptHash == sysHash && session.sysPromptTokens == sysToks
+			trimFrom := 0
+			if sysToks > 0 && session.sysPromptHash == sysHash && session.sysPromptTokens == sysToks {
+				trimFrom = sysToks
+			}
 
 			m.log(ctx, "imc", "status", "extend->rebuild", "slot", slotID,
 				"cached", currentTotalTokensCached, "new_total", totalTokens,
-				"sys_prompt_kept", preservePrefix, "sys_prompt_tokens", sysToks)
+				"sys_prompt_kept", trimFrom > 0, "sys_prompt_tokens", sysToks)
 
-			rebuildTokens := allTokens
-			var rebuildFromPos llama.Pos
-			clearSeq := true
-
-			if preservePrefix {
-				rebuildTokens = allTokens[sysToks:]
-				rebuildFromPos = llama.Pos(sysToks)
-				clearSeq = false
-			}
-
-			return cacheResult{
-				modifiedD:            removeFirstNMessages(d, lastMsgIdxToCache),
-				cacheIdx:             rebuildFromPos,
-				cacheSeqID:           seqID,
-				imcSlotID:            slotID,
-				imcExpectedHash:      newHash,
-				imcNewCacheTokens:    rebuildTokens,
-				imcNewTotalCached:    totalTokens,
-				imcNewCachedMsgCount: lastMsgIdxToCache,
-				imcNewMsgsHash:       newHash,
-				imcClearSeq:          clearSeq,
-				imcTrimPos:           rebuildFromPos,
-				imcNewCachedTokens:   allTokens,
-				imcSysPromptHash:     sysHash,
-				imcSysPromptTokens:   sysToks,
-			}
+			return imcRebuildResult(d, seqID, slotID, lastMsgIdxToCache, allTokens, newHash, sysHash, sysToks, trimFrom)
 		}
 
 		m.imcClearPending(slotID)
@@ -908,21 +935,7 @@ func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D,
 
 	m.log(ctx, "imc", "status", "cache build prepared", "slot", slotID, "seq", seqID, "msgs", lastMsgIdxToCache, "tokens", nTokens, "hash", newHash[:8])
 
-	return cacheResult{
-		modifiedD:            removeFirstNMessages(d, lastMsgIdxToCache),
-		cacheIdx:             0,
-		cacheSeqID:           seqID,
-		imcSlotID:            slotID,
-		imcExpectedHash:      newHash,
-		imcNewCacheTokens:    tokens,
-		imcNewTotalCached:    nTokens,
-		imcNewCachedMsgCount: lastMsgIdxToCache,
-		imcNewMsgsHash:       newHash,
-		imcClearSeq:          true,
-		imcNewCachedTokens:   tokens,
-		imcSysPromptHash:     sysHash,
-		imcSysPromptTokens:   sysToks,
-	}
+	return imcRebuildResult(d, seqID, slotID, lastMsgIdxToCache, tokens, newHash, sysHash, sysToks, 0)
 }
 
 // rebuildIMCWithMedia handles cache builds/extends that involve media content.
@@ -1003,29 +1016,120 @@ func (m *Model) rebuildIMCFromPartialPrefix(ctx context.Context, d D, messages [
 
 	m.log(ctx, "imc", "status", "slot marked pending (partial prefix)", "slot", slotID, "seq", seqID)
 
-	// Extract only the tokens beyond the common prefix.
-	extensionTokens := allTokens[commonPrefixLen:]
-	totalTokens := len(allTokens)
-
 	msgsToCache := m.imcEnsureUserMessage(ctx, messages[:lastMsgIdxToCache])
 	newHash := hashMessages(msgsToCache)
+	sysHash, sysToks := m.imcSysPromptInfo(ctx, msgsToCache, allTokens)
 
 	m.log(ctx, "imc", "status", "partial prefix rebuild prepared", "slot", slotID, "seq", seqID,
-		"common-prefix", commonPrefixLen, "extension-tokens", len(extensionTokens),
-		"total-tokens", totalTokens, "hash", newHash[:8])
+		"common-prefix", commonPrefixLen, "extension-tokens", len(allTokens)-commonPrefixLen,
+		"total-tokens", len(allTokens), "hash", newHash[:8])
 
+	return imcRebuildResult(d, seqID, slotID, lastMsgIdxToCache, allTokens, newHash, sysHash, sysToks, commonPrefixLen)
+}
+
+// rebuildIMCPreservingSysPrompt rebuilds a slot's conversation cache while
+// preserving the system prompt KV state. This is the two-tier hash path —
+// when the full prefix hash mismatches but the system prompt hash still
+// matches, the system prompt tokens in the KV cache are kept and only the
+// conversation body (everything after the system prompt) is trimmed and
+// re-decoded.
+//
+// This avoids re-decoding potentially thousands of system prompt tokens when
+// the client edits or removes conversation messages but keeps the same system
+// prompt.
+func (m *Model) rebuildIMCPreservingSysPrompt(ctx context.Context, d D, messages []D, session *imcSession, lastMsgIdxToCache, cachedSysPromptTokens int) cacheResult {
+
+	// Reserve the slot under lock.
+	m.cacheMu.Lock()
+
+	if session.pending {
+		m.cacheMu.Unlock()
+		return cacheResult{modifiedD: d, imcPending: true, err: fmt.Errorf("imc: slot %d pending, retry request", session.slotID)}
+	}
+
+	session.pending = true
+	seqID := session.seqID
+	slotID := session.slotID
+
+	m.cacheMu.Unlock()
+
+	m.log(ctx, "imc", "status", "slot marked pending (sys-prompt-preserve)", "slot", slotID, "seq", seqID)
+
+	// -------------------------------------------------------------------------
+	// Heavy work: template + tokenize outside the lock.
+
+	msgsToCache := m.imcEnsureUserMessage(ctx, messages[:lastMsgIdxToCache])
+	prefixD := D{
+		"messages":              msgsToCache,
+		"add_generation_prompt": false,
+	}
+
+	if tools, ok := d["tools"]; ok {
+		prefixD["tools"] = tools
+	}
+
+	dataToCache, _, err := m.createPrompt(ctx, prefixD)
+	if err != nil {
+		m.imcClearPending(slotID)
+		return cacheResult{modifiedD: d, err: fmt.Errorf("imc: failed to template messages (sys-prompt-preserve): %w", err)}
+	}
+
+	_, tokenSpan := otel.AddSpan(ctx, "cache-tokenize-imc-sysprompt-preserve",
+		attribute.String("cache-type", "imc-sysprompt-preserve"),
+	)
+
+	allTokens := llama.Tokenize(m.vocab, dataToCache, m.addBOSToken, true)
+	totalTokens := len(allTokens)
+
+	tokenSpan.SetAttributes(attribute.Int("tokens", totalTokens))
+	tokenSpan.End()
+
+	if totalTokens == 0 {
+		m.imcClearPending(slotID)
+		return cacheResult{modifiedD: d, err: fmt.Errorf("imc: messages tokenized to zero tokens (sys-prompt-preserve)")}
+	}
+
+	newHash := hashMessages(msgsToCache)
+	sysHash, sysToks := m.imcSysPromptInfo(ctx, msgsToCache, allTokens)
+
+	// Verify the system prompt token boundary is consistent after
+	// re-templating. If the template rendered the system prompt differently
+	// (non-deterministic template), the cached KV state at those positions
+	// is wrong. Fall back to a full rebuild from scratch.
+	trimFrom := sysToks
+	if sysToks != cachedSysPromptTokens {
+		m.log(ctx, "imc", "status", "sys-prompt-preserve aborted (token boundary shifted)",
+			"slot", slotID, "expected-sys-tokens", cachedSysPromptTokens, "actual-sys-tokens", sysToks)
+		trimFrom = 0
+	} else {
+		m.log(ctx, "imc", "status", "sys-prompt-preserve prepared", "slot", slotID, "seq", seqID,
+			"sys-tokens-kept", sysToks, "conv-tokens-to-decode", totalTokens-sysToks,
+			"total-tokens", totalTokens, "hash", newHash[:8])
+	}
+
+	return imcRebuildResult(d, seqID, slotID, lastMsgIdxToCache, allTokens, newHash, sysHash, sysToks, trimFrom)
+}
+
+// imcRebuildResult constructs a cacheResult for any rebuild/trim scenario.
+// trimFrom determines the behavior:
+//   - trimFrom == 0: full rebuild (clear sequence, decode all tokens)
+//   - trimFrom > 0:  partial rebuild (trim KV from trimFrom, decode suffix)
+func imcRebuildResult(d D, seqID llama.SeqId, slotID, lastMsgIdxToCache int, allTokens []llama.Token, newHash, sysHash string, sysToks, trimFrom int) cacheResult {
 	return cacheResult{
 		modifiedD:            removeFirstNMessages(d, lastMsgIdxToCache),
-		cacheIdx:             llama.Pos(commonPrefixLen),
+		cacheIdx:             llama.Pos(trimFrom),
 		cacheSeqID:           seqID,
 		imcSlotID:            slotID,
 		imcExpectedHash:      newHash,
-		imcNewCacheTokens:    extensionTokens,
-		imcNewTotalCached:    totalTokens,
+		imcNewCacheTokens:    allTokens[trimFrom:],
+		imcNewTotalCached:    len(allTokens),
 		imcNewCachedMsgCount: lastMsgIdxToCache,
 		imcNewMsgsHash:       newHash,
-		imcTrimPos:           llama.Pos(commonPrefixLen),
+		imcClearSeq:          trimFrom == 0,
+		imcTrimPos:           llama.Pos(trimFrom),
 		imcNewCachedTokens:   allTokens,
+		imcSysPromptHash:     sysHash,
+		imcSysPromptTokens:   sysToks,
 	}
 }
 

@@ -251,26 +251,20 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 				imcDecodeStart := time.Now()
 
 				if err := e.model.decodeTokensIntoCache(job.ctx, job.imcNewCacheTokens, s.seqID, int(cacheIdx)); err != nil {
-					// Remove any partially decoded tokens so the KV sequence
-					// stays consistent with the session metadata.
+					// Decode failed. Clear the sequence entirely and reset
+					// session metadata to avoid a mismatch between the KV
+					// state (partially trimmed/decoded) and the session
+					// (which still advertises the old cached content).
 					e.model.decodeMu.Lock()
-					switch {
-					case job.imcClearSeq:
-						// Rebuild: sequence was cleared before decode, clear again
-						// to remove any partial tokens.
-						llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
-					case job.imcTrimPos > 0:
-						// Partial prefix: remove from trim point onward to
-						// restore the pre-trim state.
-						llama.MemorySeqRm(e.model.mem, s.seqID, job.imcTrimPos, -1)
-					default:
-						// Extend: remove from the old cache boundary onward to
-						// restore the pre-extend state.
-						llama.MemorySeqRm(e.model.mem, s.seqID, cacheIdx, -1)
-					}
+					llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
 					e.model.decodeMu.Unlock()
 
-					e.model.imcClearPending(s.id)
+					e.model.cacheMu.Lock()
+					if s.id < len(e.model.imcSlots) {
+						imcResetSession(e.model.imcSlots[s.id])
+					}
+					e.model.cacheMu.Unlock()
+					e.model.notifyIMCSlotAvailable()
 
 					e.finishSlot(s, fmt.Errorf("start-slot: imc extend: %w", err))
 					return

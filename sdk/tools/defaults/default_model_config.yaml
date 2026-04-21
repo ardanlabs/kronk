@@ -105,10 +105,21 @@
 #
 # INCREMENTAL MESSAGE CACHE (IMC)
 # -------------------------------
-# Use IMC for agentic workflows (Cline, Kilo Code, etc). IMC caches all
-# messages except the last one and extends incrementally. Works with any
-# model template — deterministic templates use fast hash matching, non-
-# deterministic templates (GPT-OSS, GLM) fall back to token prefix matching.
+# Use IMC for agentic workflows (Cline, Kilo Code, etc). IMC dedicates each
+# slot to a conversation and caches all messages except the last one, so only
+# the new message needs prefilling on each turn.
+#
+# Two-tier hash design: IMC tracks separate hashes for the system prompt
+# (tier 1) and the full conversation (tier 2). When conversation history
+# changes but the system prompt stays the same, IMC keeps the system prompt
+# KV state and only re-decodes the conversation body — saving thousands of
+# tokens of redundant prefill.
+#
+# Works with any model template. Deterministic templates (Qwen, Gemma) use
+# fast hash matching. Non-deterministic templates (GPT-OSS, GLM) fall back
+# to token prefix matching, salvaging the longest common prefix in the KV
+# cache. Non-deterministic templates may also trigger rebuilds when
+# re-templating the same messages produces a different token count.
 #
 # Set nseq-max to at least the number of concurrent sub-agents your framework
 # spawns. Each slot independently tracks its own conversation branch.

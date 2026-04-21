@@ -18,16 +18,14 @@ import (
 // go run examples/talks/tictactoe/example/step2/main.go
 
 func main() {
-	modelFile := "unsloth/gemma-4-26B-A4B-it-GGUF/gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf"
-
-	if err := run(modelFile); err != nil {
+	if err := run(); err != nil {
 		fmt.Printf("\nERROR: %s\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(modelFile string) error {
-	krn, err := newKronk(modelFile)
+func run() error {
+	krn, err := newKronk()
 	if err != nil {
 		return fmt.Errorf("unable to init kronk: %w", err)
 	}
@@ -42,17 +40,18 @@ func run(modelFile string) error {
 	return runGame(krn)
 }
 
-func newKronk(modelFile string) (*kronk.Kronk, error) {
+func newKronk() (*kronk.Kronk, error) {
 	fmt.Println("loading model...")
 
 	if err := kronk.Init(); err != nil {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
+	modelFile := "unsloth/gemma-4-26B-A4B-it-GGUF/gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf"
 	modelFile = fmt.Sprintf("%s/models/%s", defaults.BaseDir(""), modelFile)
 
 	cfg := model.Config{
-		ContextWindow: 131072,
+		ContextWindow: 32768,
 		ModelFiles:    []string{modelFile},
 	}
 
