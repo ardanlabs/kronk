@@ -119,8 +119,7 @@ Kronk has an MCP service and these are settings:
 | [5.3 Incremental Message Cache (IMC)](.manual/chapter-05-message-caching.md#53-incremental-message-cache-imc) | Two-tier hash, slot selection, matching strategies     |
 | — [Two-Tier Hash Design](.manual/chapter-05-message-caching.md#two-tier-hash-design)                          | Sys prompt preservation, conversation body rebuild     |
 | — [KV Pressure Eviction](.manual/chapter-05-message-caching.md#kv-pressure-eviction)                          | Unified KV cache overflow, stale slot eviction         |
-| — [IMC Deterministic](.manual/chapter-05-message-caching.md#imc-deterministic)                                | Hash-based matching, consistent templates              |
-| — [IMC Non-Deterministic](.manual/chapter-05-message-caching.md#imc-non-deterministic)                        | Token prefix fallback, variable templates, GPT-OSS/GLM |
+| — [Token Prefix Fallback](.manual/chapter-05-message-caching.md#token-prefix-fallback)                        | Token-level prefix matching when hash fails            |
 | — [Model Type Interactions](.manual/chapter-05-message-caching.md#model-type-interactions)                    | Dense/MoE/Hybrid config, cross-reference to 4.9        |
 | [5.4 Single-User Caching](.manual/chapter-05-message-caching.md#54-single-user-caching)                       | Single-user design, slot dedication                    |
 | [5.5 SPC vs IMC](.manual/chapter-05-message-caching.md#55-spc-vs-imc)                                         | Feature comparison, workload selection                 |

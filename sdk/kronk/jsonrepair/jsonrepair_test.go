@@ -381,7 +381,20 @@ func TestRepair(t *testing.T) {
 			// value string, leaving oldString undefined.
 			name:  "missing closing quote on key oldString colon",
 			input: `{"filePath":"examples/talks/tictactoe/main.go","newString":"const (\n\tcolorReset = \"\\033[0m\"\n\tcolorRed   = \"\\033[31m\"\n\tcolorBlue  = \"\\033[34m\"\n)\n\nfunc formatCell(cell string) string {\n\tswitch cell {\n\tcase \"X\":\n\t\treturn colorBlue + cell + colorReset\n\tcase \"O\":\n\t\treturn colorRed + cell + colorReset\n\tdefault:\n\t\treturn cell\n\t}\n}\n\nfunc printBoard(board []string) {\n\tfmt.Println()\n\tfmt.Printf(\"%s | %s | %s\\n\", formatCell(board[0]), formatCell(board[1]), formatCell(board[2]))\n\tfmt.Println(\"----------\")\n\tfmt.Printf(\"%s | %s | %s\\n\", formatCell(board[3]), formatCell(board[4]), formatCell(board[5]))\n\tfmt.Println(\"----------\")\n\tfmt.Printf(\"%s | %s | %s\\n\", formatCell(board[6]), formatCell(board[7]), formatCell(board[8]))\n}","oldString:"func printBoard(board []string) {\n\tfmt.Println()\n\tfmt.Printf(\"%s | %s | %s\\n\", board[0], board[1], board[2])\n\tfmt.Println(\"----------\")\n\tfmt.Printf(\"%s | %s | %s\\n\", board[3], board[4], board[5])\n\tfmt.Println(\"----------\")\n\tfmt.Printf(\"%s | %s | %s\\n\", board[6], board[7], board[8])\n}","replaceAll":true}`,
-			keys: map[string]string{"filePath": "main.go", "newString": "formatCell", "oldString": "printBoard"},
+			keys:  map[string]string{"filePath": "main.go", "newString": "formatCell", "oldString": "printBoard"},
+		},
+
+		// =================================================================
+		// Backslash followed by raw control character
+		// =================================================================
+		{
+			// Reproduces production failure: model emits \<TAB> (backslash
+			// followed by a literal tab byte 0x09) instead of the two-char
+			// sequence \t. The jsonrepair default escape handler wrote the
+			// raw tab byte into the output, producing invalid JSON.
+			name:  "backslash followed by raw tab byte in unescaped source",
+			input: "{\"content\":\"func foo() {\n\treturn bar\n\\\t}\",\"filePath\":\"main.go\"}",
+			keys:  map[string]string{"content": "foo", "filePath": "main.go"},
 		},
 
 		// =================================================================

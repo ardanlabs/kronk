@@ -2087,7 +2087,7 @@ Hybrid:                Full clear → Restore snapshot (memory copy)`}</code></p
           <p>The snapshot/restore is a memory copy operation, typically 10-30ms depending on conversation size.</p>
           <h4 id="partial-prefix-rebuilds-hybrid">Partial Prefix Rebuilds (Hybrid)</h4>
           <p>Partial prefix matches are more expensive for hybrid models because the recurrent state must be rebuilt from the beginning.</p>
-          <p>When a request matches a partial token prefix (the Non-Deterministic fallback path), Dense/MoE models trim from the divergence point. Hybrid models cannot do partial trims, so the engine performs a full sequence clear and re-decodes the entire cached token sequence from position 0. This is more expensive but guarantees the recurrent state is built correctly.</p>
+          <p>When a request matches a partial token prefix (the token prefix fallback path), Dense/MoE models trim from the divergence point. Hybrid models cannot do partial trims, so the engine performs a full sequence clear and re-decodes the entire cached token sequence from position 0. This is more expensive but guarantees the recurrent state is built correctly.</p>
           <h4 id="moe-performance-characteristics">MoE Performance Characteristics</h4>
           <p>While MoE models share the same state management as Dense, their architecture introduces unique performance trade-offs worth understanding.</p>
           <p>MoE models use the same state management as Dense (partial range delete), but have different performance profiles that affect configuration:</p>
@@ -2246,88 +2246,26 @@ IMC (Incremental Message Cache):
           </table>
           <p>When a request arrives, IMC first checks the full prefix hash (Tier 2). If it matches, the cache is extended as normal. If the full hash mismatches but the system prompt hash (Tier 1) still matches, IMC keeps the system prompt KV in place and only re-decodes the conversation body after it. This is the most common mutation scenario — the client edits conversation history while keeping the same system prompt.</p>
           <pre className="code-block"><code>{`Normal append (full hash match):
-┌────────────────────────────────────────────────────────┐
-│ System Prompt │ Msg 1 │ Msg 2 │ Msg 3 │  New Message  │
+┌─────────────────────────────────────────────────────────┐
+│ System Prompt │ Msg 1  │ Msg 2  │ Msg 3  │  New Message │
 │   (cached)    │(cached)│(cached)│(cached)│  (prefill)   │
-└────────────────────────────────────────────────────────┘
+└─────────────────────────────────────────────────────────┘
 
 Conversation edit (sys prompt hash match, full hash mismatch):
-┌────────────────────────────────────────────────────────┐
-│ System Prompt │ Msg 1' │ Msg 2' │ Msg 3' │ New Message │
-│   (cached)    │(re-decode)│(re-decode)│(re-decode)│(prefill)│
-└────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│ System Prompt │ Msg 1'    │ Msg 2'    │ Msg 3'    │ New Message │
+│   (cached)    │(re-decode)│(re-decode)│(re-decode)│(prefill)    │
+└─────────────────────────────────────────────────────────────────┘
    ↑ kept in KV     ↑ trimmed and rebuilt from sys prompt boundary`}</code></pre>
-          <p><strong>Matching Strategies:</strong></p>
-          <p>IMC has two matching strategies. You don't choose a strategy — Kronk always tries hash matching first and automatically falls back to token prefix matching when the hash doesn't match.</p>
-          <table className="flags-table">
-            <thead>
-              <tr>
-                <th>Strategy</th>
-                <th>When It Runs</th>
-                <th>How It Matches</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>Deterministic</td>
-                <td>Hash of cached messages matches</td>
-                <td>Hash-based</td>
-              </tr>
-              <tr>
-                <td>Non-Deterministic</td>
-                <td>Hash fails, falls back automatically</td>
-                <td>Token prefix fallback</td>
-              </tr>
-            </tbody>
-          </table>
-          <p>The matching strategy is independent of the model type (Dense, MoE, Hybrid). Any model type can use either strategy — it depends on the template, not the architecture. What changes per model type is how the batch engine manages state between requests — see <a href="#49-model-types-and-state-management">Section 4.9</a>.</p>
-          <p>The table below shows real models in the Kronk catalog and the strategy their templates produce:</p>
-          <table className="flags-table">
-            <thead>
-              <tr>
-                <th>Model</th>
-                <th>Architecture</th>
-                <th>Template</th>
-                <th>Modality</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>Qwen3-8B-Q8_0</td>
-                <td>Dense</td>
-                <td>Deterministic</td>
-                <td>Text</td>
-              </tr>
-              <tr>
-                <td>Qwen2.5-VL-3B-Instruct-Q8_0</td>
-                <td>Dense</td>
-                <td>Deterministic</td>
-                <td>Vision</td>
-              </tr>
-              <tr>
-                <td>Qwen3-VL-30B-A3B-Instruct-Q8_0</td>
-                <td>MoE</td>
-                <td>Deterministic</td>
-                <td>Vision</td>
-              </tr>
-              <tr>
-                <td>Qwen3.5-35B-A3B-Q8_0</td>
-                <td>Hybrid</td>
-                <td>Deterministic</td>
-                <td>Vision</td>
-              </tr>
-              <tr>
-                <td>gpt-oss-20b-Q8_0</td>
-                <td>MoE</td>
-                <td>Non-Deterministic</td>
-                <td>Text</td>
-              </tr>
-            </tbody>
-          </table>
-          <ul>
-            <li><strong>Deterministic</strong> is the fastest path — hash matching finds the right slot instantly with no tokenization overhead.</li>
-            <li><strong>Non-Deterministic</strong> exists because some model templates produce different token sequences for the same messages. Hash matching fails, so IMC falls back to token-level comparison to salvage as much of the cache as possible.</li>
-          </ul>
+          <p><strong>How IMC Detects Changes:</strong></p>
+          <p>IMC uses a cascading match algorithm. It always tries the fastest path first and automatically falls back to slower-but-more-resilient strategies when the fast path fails:</p>
+          <ol>
+            <li><strong>Hash match</strong> — Hash the incoming message prefix and compare against each slot's stored hash. Instant, zero-tokenization overhead. This is the common case when the conversation grows normally (messages appended, nothing edited).</li>
+            <li><strong>System prompt preservation</strong> — If the full hash mismatches but the system prompt hash (Tier 1) still matches, keep the system prompt KV in place and re-decode only the conversation body. This handles the common case where the client edits or drops messages while keeping the same system prompt.</li>
+            <li><strong>Token prefix fallback</strong> — If no hash matches at all, tokenize the incoming messages and compare element-by-element against cached slots to find the longest common prefix. Trim the divergent suffix and decode only the new tokens. This salvages 70-80% of cached tokens when templates, tool call formatting, or client behavior causes token-level differences even though the conversation is logically the same.</li>
+            <li><strong>Full rebuild</strong> — No usable match found. Pick an empty slot or evict the LRU slot and build the cache from scratch.</li>
+          </ol>
+          <p>The matching algorithm is independent of the model type (Dense, MoE, Hybrid). What changes per model type is how the batch engine manages state between requests — see <a href="#49-model-types-and-state-management">Section 4.9</a>.</p>
           <p><strong>IMC is Best for:</strong></p>
           <ul>
             <li>AI coding agents</li>
@@ -2377,8 +2315,8 @@ Prefill:  [user3 + gen_prompt]`}</code></pre>
             </li>
             <li><strong>KV pressure eviction</strong> — When a matching slot is found and the total KV usage across all slots exceeds the context window, evict mismatched slots (largest first) to reclaim space. See <a href="#kv-pressure-eviction">KV Pressure Eviction</a> for details.</li>
             <li><strong>On full match</strong> — Pick the slot with the best prefix coverage (most cached messages). If the request has new messages to cache, extend the slot's cache. If the messages are identical, it's a pure cache hit.</li>
-            <li><strong>System prompt preservation (two-tier hash)</strong> — No full match, but a slot has the same system prompt cached. Keep the system prompt KV in place, trim everything after the system prompt token boundary, and re-template and re-decode only the conversation body. Before preserving, IMC verifies the system prompt token boundary is consistent after re-templating — if the template is non-deterministic and produces a different token count for the system prompt, it falls back to a full rebuild. Media slots are excluded from this path because token-level trim is unsafe for image/audio embeddings.</li>
-            <li><strong>Token prefix fallback (Non-Deterministic mode)</strong> — Tokenize the incoming messages and compare the resulting token sequence element-by-element against each non-empty slot's stored <code>cachedTokens</code>. Pick the slot with the longest common prefix that meets <code>cache_min_tokens</code>. Trim the KV cache from the divergence point and decode only the new tokens from there forward. See <a href="#imc-non-deterministic">IMC Non-Deterministic</a> for details.</li>
+            <li><strong>System prompt preservation (two-tier hash)</strong> — No full match, but a slot has the same system prompt cached. Keep the system prompt KV in place, trim everything after the system prompt token boundary, and re-template and re-decode only the conversation body. Before preserving, IMC verifies the system prompt token boundary is consistent after re-templating — if the template produces a different token count for the system prompt, it falls back to a full rebuild. Media slots are excluded from this path because token-level trim is unsafe for image/audio embeddings.</li>
+            <li><strong>Token prefix fallback</strong> — Tokenize the incoming messages and compare the resulting token sequence element-by-element against each non-empty slot's stored <code>cachedTokens</code>. Pick the slot with the longest common prefix that meets <code>cache_min_tokens</code>. Trim the KV cache from the divergence point and decode only the new tokens from there forward. See <a href="#token-prefix-fallback">Token Prefix Fallback</a> for details.</li>
             <li><strong>No match at all</strong> — Pick an empty slot if one exists, otherwise evict the least-recently-used (LRU) slot and rebuild from scratch.</li>
           </ol>
           <p><strong>Concurrent Build Protection:</strong></p>
@@ -2410,23 +2348,11 @@ Total:  134,077 tokens > 131,072 → context window full!`}</code></pre>
             <li>The eviction check runs before the extend/hit path, so the active slot always has room to grow</li>
             <li>No configuration needed — eviction triggers automatically when KV pressure is detected</li>
           </ul>
-          <h4 id="imc-deterministic">IMC Deterministic</h4>
-          <p>The default and fastest matching strategy. Used automatically for models with consistent templates — where the same messages always produce identical token sequences regardless of conversation length.</p>
-          <p><strong>Why this strategy exists:</strong> Most models have deterministic templates (see the model table above). When the template is consistent, a simple hash of the message prefix is enough to identify a matching slot. This avoids tokenization overhead entirely.</p>
-          <p><strong>When it's used:</strong> Automatically when <code>incremental_cache: true</code> and the template produces consistent token sequences. This is the default path.</p>
+          <h4 id="token-prefix-fallback">Token Prefix Fallback</h4>
+          <p>When hash matching fails — whether because the client edited messages, a template produced slightly different tokens, or the agent didn't send exactly the same conversation — IMC falls back to token-level prefix matching to salvage as much of the cached KV state as possible.</p>
+          <p><strong>When it activates:</strong> Automatically when no hash match and no system prompt match is found during the slot scan (Step 5 of the <a href="#slot-selection-algorithm">Slot Selection Algorithm</a>). IMC compares the actual cached token arrays against the incoming request's tokens. Only candidates with compatible message counts are considered — the request must have at least as many messages as the slot cached.</p>
           <p><strong>How it works:</strong></p>
-          <ol>
-            <li>Hash the incoming message prefix</li>
-            <li>Compare against each slot's stored hash</li>
-            <li>On match: extend the cache with new messages, or return a pure cache hit</li>
-          </ol>
-          <p><strong>Models:</strong> QWEN, Llama, Qwen3-Coder (MoE), Qwen3-Coder-Next (Hybrid), and most model architectures.</p>
-          <h4 id="imc-non-deterministic">IMC Non-Deterministic</h4>
-          <p>A fallback mode that activates automatically when hash matching fails due to template non-determinism. Some model templates produce different token sequences for identical messages across requests — even though the semantic content is the same.</p>
-          <p><strong>Why this mode exists:</strong> GPT-OSS, for example, injects tool call formatting that varies between template invocations. This causes message hash mismatches even though the conversation hasn't changed, which would normally force a full cache rebuild from scratch. The Non-Deterministic mode salvages 70-80% of the cached tokens instead.</p>
-          <p><strong>When it's used:</strong> Automatically when no hash match is found during the slot scan. IMC falls back to comparing the actual cached token arrays against the incoming request's tokens. Only candidates with compatible message counts are considered — the request must have at least as many messages as the slot cached.</p>
-          <p><strong>How it works — Token-Level Partial Prefix Matching:</strong></p>
-          <p>When no hash match is found, IMC tokenizes the incoming messages and compares them element-by-element against each non-empty slot's stored token sequence to find the longest common prefix.</p>
+          <p>IMC tokenizes the incoming messages and compares them element-by-element against each non-empty slot's stored token sequence to find the longest common prefix.</p>
           <pre className="code-block"><code>{`Cached tokens:   [T1, T2, T3, T4, T5, T6, T7, T8]
 Incoming tokens: [T1, T2, T3, T4, T5, T9, T10, T11, T12]
                                        ↑
@@ -2442,10 +2368,9 @@ New decode:    4 tokens (T9-T12, from divergence point forward)`}</code></pre>
             <li>Decodes only the new tokens from the divergence point forward</li>
             <li>Updates the slot's hash and cached token sequence</li>
           </ol>
-          <p>Once the partial rebuild completes, subsequent requests in the same conversation use normal hash-based extending. The token prefix path is only triggered at conversation boundaries — when the template non-determinism causes the initial mismatch.</p>
-          <p>Real-world testing with GPT-OSS showed 77-80% cache salvage rates when switching conversations. Instead of decoding ~8400 tokens from scratch, the system kept ~6800 cached and only decoded ~1600.</p>
-          <p><strong>Models:</strong> GPT-OSS, GLM, and any model whose template produces variable token sequences for identical messages (see the model table above).</p>
-          <p><strong>Debugging Non-Deterministic IMC:</strong></p>
+          <p>Once the partial rebuild completes, subsequent requests in the same conversation use normal hash-based extending.</p>
+          <p>Real-world testing showed 77-80% cache salvage rates. Instead of decoding ~8400 tokens from scratch, the system kept ~6800 cached and only decoded ~1600.</p>
+          <p><strong>Debugging token prefix fallback:</strong></p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -2481,12 +2406,11 @@ New decode:    4 tokens (T9-T12, from divergence point forward)`}</code></pre>
             </tbody>
           </table>
           <h4 id="model-type-interactions">Model Type Interactions</h4>
-          <p>The IMC matching strategy (Deterministic or Non-Deterministic) is independent of the model type (Dense, MoE, Hybrid). The caching system works the same way for all model types — only the batch engine's state management differs. See <a href="#49-model-types-and-state-management">Section 4.9</a> for how each model type manages state between requests.</p>
+          <p>The IMC matching algorithm is the same for all model types (Dense, MoE, Hybrid). Only the batch engine's state management differs. See <a href="#49-model-types-and-state-management">Section 4.9</a> for how each model type manages state between requests.</p>
           <table className="flags-table">
             <thead>
               <tr>
                 <th>Model Type</th>
-                <th>Matching Strategy</th>
                 <th>State Management</th>
                 <th>Configuration Notes</th>
               </tr>
@@ -2494,19 +2418,16 @@ New decode:    4 tokens (T9-T12, from divergence point forward)`}</code></pre>
             <tbody>
               <tr>
                 <td>Dense</td>
-                <td>Deterministic or Non-Det</td>
                 <td>Partial range delete</td>
                 <td>No special requirements</td>
               </tr>
               <tr>
                 <td>MoE</td>
-                <td>Deterministic or Non-Det</td>
                 <td>Partial range delete</td>
                 <td>f16 cache, split_mode: row</td>
               </tr>
               <tr>
                 <td>Hybrid</td>
-                <td>Deterministic or Non-Det</td>
                 <td>Snapshot/Restore</td>
                 <td>f16 cache required, no flash attn</td>
               </tr>
@@ -2529,7 +2450,7 @@ New decode:    4 tokens (T9-T12, from divergence point forward)`}</code></pre>
           <p>IMC is designed for single-user use. All <code>NSeqMax</code> slots are available, with each slot independently tracking its own conversation branch via hash matching. This design is optimized for agentic workflows where multiple sub-agents send independent conversations (different system prompts, different message histories).</p>
           <p><strong>SPC:</strong> All requests share the same externalized KV state buffer. The cached KV state is restored into each slot. If the system prompt changes, the cache is rebuilt automatically.</p>
           <h3 id="55-spc-vs-imc">5.5 SPC vs IMC</h3>
-          <p>Both caching modes eliminate redundant work, but they target different parts of the prompt and suit different workloads. SPC is the simpler option — it caches just the system prompt and works with any model template. IMC is more aggressive — it caches the entire conversation history and works with all templates (deterministic templates use fast hash matching, non-deterministic templates fall back to token prefix matching). The table below summarizes the trade-offs to help you choose.</p>
+          <p>Both caching modes eliminate redundant work, but they target different parts of the prompt and suit different workloads. SPC is the simpler option — it caches just the system prompt and works with any model template. IMC is more aggressive — it caches the entire conversation history and uses hash matching with automatic token prefix fallback when changes are detected. The table below summarizes the trade-offs to help you choose.</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -2572,13 +2493,13 @@ New decode:    4 tokens (T9-T12, from divergence point forward)`}</code></pre>
               <tr>
                 <td>Template req</td>
                 <td>Any</td>
-                <td>Any (hash match or token prefix fallback)</td>
+                <td>Any</td>
               </tr>
             </tbody>
           </table>
           <p><strong>Important:</strong> SPC and IMC are mutually exclusive. Choose based on your workload:</p>
           <ul>
-            <li><strong>Agentic workflows:</strong> Use IMC — works with all templates. Most models get the fastest hash-based path. Non-deterministic templates (GPT-OSS, GLM) use token prefix fallback with 70-80% cache salvage.</li>
+            <li><strong>Agentic workflows:</strong> Use IMC — hash matching handles the common case, and token prefix fallback automatically salvages 70-80% of cached tokens when changes are detected.</li>
             <li><strong>Chat UIs / multi-client:</strong> Use SPC — simpler model, no slot dedication</li>
           </ul>
           <h3 id="56-cache-invalidation">5.6 Cache Invalidation</h3>
@@ -2591,7 +2512,7 @@ New decode:    4 tokens (T9-T12, from divergence point forward)`}</code></pre>
           <p><strong>IMC Invalidation:</strong></p>
           <ul>
             <li>Message prefix hash mismatch with same system prompt → system prompt KV preserved, conversation body trimmed and re-decoded (Step 4 of the slot selection algorithm)</li>
-            <li>Message prefix hash mismatch with no system prompt match → token prefix fallback attempted. If a common prefix ≥ <code>cache_min_tokens</code> is found, only the divergent suffix is trimmed and rebuilt. Otherwise, cache is rebuilt from scratch.</li>
+            <li>Message prefix hash mismatch with no system prompt match → token prefix fallback attempted (see <a href="#token-prefix-fallback">Token Prefix Fallback</a>). If a common prefix ≥ <code>cache_min_tokens</code> is found, only the divergent suffix is trimmed and rebuilt. Otherwise, cache is rebuilt from scratch.</li>
             <li>System prompt changed → full cache rebuild from scratch</li>
             <li>Conversation shrinks (client dropped messages or reasoning blocks) → system prompt preserved if unchanged, conversation body re-decoded</li>
           </ul>
@@ -2635,7 +2556,7 @@ New decode:    4 tokens (T9-T12, from divergence point forward)`}</code></pre>
   Total across all slots cannot exceed 131K tokens`}</code></pre>
           <p>KV pressure eviction ensures that stale slots are cleared when the shared pool gets tight, so the active conversation always has access to the full context window.</p>
           <p><strong>IMC Token Prefix Fallback Performance:</strong></p>
-          <p>When IMC falls back to token-level prefix matching (non-deterministic templates), there is a one-time cost to tokenize the incoming messages for comparison. This is typically fast (&lt; 5ms for most conversations). The savings from salvaging 70-80% of the cached tokens far outweigh this cost compared to a full rebuild.</p>
+          <p>When IMC falls back to token-level prefix matching, there is a one-time cost to tokenize the incoming messages for comparison. This is typically fast (&lt; 5ms for most conversations). The savings from salvaging 70-80% of the cached tokens far outweigh this cost compared to a full rebuild.</p>
           <p><strong>IMC with Vision/Audio Models:</strong></p>
           <p>IMC fully supports vision and audio models (models configured with a projection file). Text-only requests are cached normally. When a message containing media (image, video, or audio) appears in the conversation history, IMC caches the entire conversation — including the media embeddings — in the KV cache. The image or audio is encoded through the projection model once and remains in the KV cache across subsequent requests. Text-only follow-up messages extend the cache without re-encoding the media.</p>
           <p>For example, in a conversation like:</p>

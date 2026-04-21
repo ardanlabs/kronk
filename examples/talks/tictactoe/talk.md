@@ -37,7 +37,8 @@ To dog food the SDK, Bill wrote a model server (KMS) that is optimized to run yo
 Player X's turn. Enter a number (1-9):
 ```
 
-- Make sure there is a line space before rendering a new board.
+- Make sure there is a line space before and after rendering a new board.
+- Use the color green for the lines, red for X, and blue for O.
 - Ask Player1 to go first.
 - Each player will choose a number that corresponds to a place on the board.
 - The first player uses `X` and the second player uses `O`.
