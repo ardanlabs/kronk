@@ -26,14 +26,24 @@
             },
             "models": {
                 "gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT": {
-                    "name": "gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT",
+                    "name": "Gemma 4 26B UD Q8 Agent",
                     "limit": {
-                        "context": 262144,
+                        "context": 131072,
                         "output": 65536
-                    },
-                    "reasoning": true,
-                    "options": {
-                        "reasoningEffort": "medium"
+                    }
+                },
+                "Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT": {
+                    "name": "Qwen3.6 3 35B UD Q8 Agent",
+                    "limit": {
+                        "context": 131072,
+                        "output": 65536
+                    }
+                },
+                "gemma-4-31B-it-UD-Q8_K_XL/AGENT": {
+                    "name": "Gemma 4 31B UD Q8 Agent",
+                    "limit": {
+                        "context": 65536,
+                        "output": 32768
                     }
                 }
             }
