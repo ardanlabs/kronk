@@ -81,8 +81,26 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 		return cacheResult{modifiedD: d}
 	}
 
-	// We will cache all messages but the last one.
+	// We will cache all messages but the last one. However, tool response
+	// messages (role:"tool") cannot be rendered alone by many Jinja templates
+	// (e.g., Gemma 4) — the template expects the preceding assistant message
+	// with tool_calls to forward-scan and consume the tool responses. If the
+	// last uncached message is a tool response, move the cache boundary back
+	// to keep the assistant tool_call message in the suffix alongside its
+	// tool response(s).
 	lastMsgIdxToCache := totalMsgs - 1
+	for lastMsgIdxToCache > 0 {
+		role, _ := messages[lastMsgIdxToCache]["role"].(string)
+		if role != "tool" {
+			break
+		}
+		lastMsgIdxToCache--
+	}
+
+	// If we walked all the way back to 0, there's nothing to cache.
+	if lastMsgIdxToCache < 1 {
+		return cacheResult{modifiedD: d}
+	}
 
 	// Snapshot slot metadata under RLock, then release before hashing.
 

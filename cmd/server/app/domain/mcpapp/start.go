@@ -32,6 +32,11 @@ func Start(ctx context.Context, cfg Config) *App {
 		Description: "Performs a web search for the given query. Returns a list of relevant web pages with titles, URLs, and descriptions. Use this for general information gathering, research, and finding specific web resources.",
 	}, api.webSearch)
 
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "fuzzy_edit",
+		Description: "Edit a file by replacing old_string with new_string. Uses tiered fuzzy matching: exact match, line-ending normalization, then indentation-insensitive matching. Prefer this over the built-in edit tool for more reliable replacements.",
+	}, api.fuzzyEdit)
+
 	handler := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
 		return server
 	}, nil)
