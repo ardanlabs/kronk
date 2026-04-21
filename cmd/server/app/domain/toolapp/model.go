@@ -290,7 +290,6 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfi
 			MainGPU:              rmc.MainGPU,
 			Devices:              rmc.Devices,
 			MoE:                  toAppMoEConfig(rmc.MoE),
-			AutoFitVRAM:          rmc.AutoFitVRAM,
 			SWAFull:              rmc.SWAFull,
 			SystemPromptCache:    rmc.SystemPromptCache,
 			IncrementalCache:     rmc.IncrementalCache,
@@ -570,7 +569,6 @@ type ModelConfig struct {
 	MainGPU              *int                     `json:"main-gpu"`
 	Devices              []string                 `json:"devices"`
 	MoE                  *MoEConfig               `json:"moe,omitempty"`
-	AutoFitVRAM          bool                     `json:"auto-fit-vram"`
 	SWAFull              *bool                    `json:"swa-full"`
 	SystemPromptCache    bool                     `json:"system-prompt-cache"`
 	IncrementalCache     bool                     `json:"incremental-cache"`
@@ -744,7 +742,6 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 			MainGPU:              rmc.MainGPU,
 			Devices:              rmc.Devices,
 			MoE:                  toAppMoEConfig(rmc.MoE),
-			AutoFitVRAM:          rmc.AutoFitVRAM,
 			SWAFull:              rmc.SWAFull,
 			SystemPromptCache:    rmc.SystemPromptCache,
 			IncrementalCache:     rmc.IncrementalCache,
@@ -806,7 +803,6 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 		MainGPU:              bmc.MainGPU,
 		Devices:              bmc.Devices,
 		MoE:                  toAppMoEConfig(bmc.MoE),
-		AutoFitVRAM:          bmc.AutoFitVRAM,
 		SWAFull:              bmc.SWAFull,
 		SystemPromptCache:    bmc.SystemPromptCache,
 		IncrementalCache:     bmc.IncrementalCache,
@@ -1115,7 +1111,6 @@ func (app SaveCatalogRequest) toModelDetails() catalog.ModelDetails {
 			MainGPU:              app.Config.MainGPU,
 			Devices:              app.Config.Devices,
 			MoE:                  fromAppMoEConfig(app.Config.MoE),
-			AutoFitVRAM:          app.Config.AutoFitVRAM,
 			SWAFull:              app.Config.SWAFull,
 			SystemPromptCache:    app.Config.SystemPromptCache,
 			IncrementalCache:     app.Config.IncrementalCache,

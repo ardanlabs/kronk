@@ -218,8 +218,7 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 	}
 
 	// Compile MoEConfig into TensorBuftOverrides if applicable.
-	// MoE config takes precedence over AutoFitVRAM for tensor overrides,
-	// but explicit TensorBuftOverrides take highest precedence.
+	// Explicit TensorBuftOverrides take highest precedence.
 	if cfg.MoE != nil && len(cfg.TensorBuftOverrides) == 0 {
 		switch cfg.MoE.Mode {
 		case MoEModeExpertsCPU:
@@ -237,8 +236,8 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 					cfg.TensorBuftOverrides = []string{"moe-experts"}
 				}
 				// topN > 0: we can't generate per-block overrides without knowing
-				// block_count from the model. Leave overrides empty and let AutoFitVRAM
-				// or llama.cpp handle it. Log the intention.
+				// block_count from the model. Leave overrides empty and let
+				// llama.cpp handle it. Log the intention.
 				if topN > 0 {
 					l(ctx, "MOE-CONFIG", "mode", "keep_top_n", "top_n", topN, "note", "per-layer expert placement requires model metadata; using auto-fit")
 				}
@@ -269,53 +268,6 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 		} else {
 			mParams.UseMmap = 0
 		}
-	}
-
-	// AutoFitVRAM: adjust model params to fit available VRAM BEFORE loading.
-	// ModelParamsFit reads model metadata from the file and adjusts mParams
-	// (e.g., NGpuLayers) and fills output buffers (tensorSplit, tensorBuftOverrides).
-	// These must be applied to mParams before loadModelFromFiles.
-	var fitSplitBuf []float32
-	var fitOverridesBuf []llama.TensorBuftOverride
-	if cfg.AutoFitVRAM {
-		// Build preliminary context params for VRAM fitting. These only need
-		// memory-relevant fields; model-type flags (embed/rerank) are not
-		// required since ModelParamsFit works from the GGUF file metadata.
-		fitCtxParams := buildFitCtxParams(cfg)
-
-		fitSplit, fitOverrides, err := applyParamsFit(cfg.ModelFiles[0], &mParams, &fitCtxParams)
-		if err != nil {
-			return nil, fmt.Errorf("auto-fit-vram: %w", err)
-		}
-
-		// Apply fitted tensor split to mParams.
-		if len(fitSplit) > 0 {
-			fitSplitBuf = fitSplit
-			mParams.TensorSplit = &fitSplitBuf[0]
-		}
-
-		// Apply fitted tensor buffer overrides to mParams.
-		// If MoE mode explicitly set expert placement, don't override with auto-fit.
-		moeExplicit := cfg.MoE != nil && cfg.MoE.Mode != "" && cfg.MoE.Mode != MoEModeAuto
-		if !moeExplicit {
-			// trimTensorBuftOverrides strips the sentinel, so re-append it.
-			trimmed := trimTensorBuftOverrides(fitOverrides)
-			if len(trimmed) > 0 {
-				fitOverridesBuf = append(trimmed, llama.TensorBuftOverride{}) // sentinel
-				if err := mParams.SetTensorBufOverrides(fitOverridesBuf); err != nil {
-					return nil, fmt.Errorf("set-fitted-tensor-buft-overrides: %w", err)
-				}
-			}
-		}
-
-		// Reflect fitted context window back into cfg so downstream
-		// calculations (VRAM estimation, metrics) use the actual value.
-		if fitCtxParams.NCtx > 0 {
-			cfg.ContextWindow = int(fitCtxParams.NCtx)
-		}
-
-		l(ctx, "PARAMS-FIT", "mode", "auto-fit", "status", "applied",
-			"fittedNCtx", fitCtxParams.NCtx, "fittedNGpuLayers", mParams.NGpuLayers)
 	}
 
 	// NUMA strategy: must be called once before model loading.
@@ -358,8 +310,6 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 	runtime.KeepAlive(devicesBuf)
 	runtime.KeepAlive(tensorSplitBuf)
 	runtime.KeepAlive(tensorBuftBuf)
-	runtime.KeepAlive(fitSplitBuf)
-	runtime.KeepAlive(fitOverridesBuf)
 
 	if hadOffloadMinBatch {
 		os.Setenv("GGML_OP_OFFLOAD_MIN_BATCH", prevOffloadMinBatch)
@@ -402,12 +352,6 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 	// -------------------------------------------------------------------------
 
 	ctxParams := modelCtxParams(cfg, modelInfo)
-
-	// When AutoFitVRAM is disabled, run a check-only VRAM fit diagnostic.
-	if !cfg.AutoFitVRAM {
-		fitsInVRAM, fitContextWin := checkParamsFit(cfg.ModelFiles[0], mParams, ctxParams)
-		l(ctx, "PARAMS-FIT", "mode", "check-only", "fitsInVRAM", fitsInVRAM, "fitContextWin", fitContextWin)
-	}
 
 	l(ctx, "MODEL-INFO", "values", modelInfo.String(), "addBOSToken", addBOSToken)
 
@@ -690,37 +634,6 @@ func buildDraftSampler(params Params) llama.Sampler {
 	llama.SamplerChainAdd(chain, llama.SamplerInitDist(llama.DefaultSeed))
 
 	return chain
-}
-
-// paramsFitMu serializes calls to checkParamsFit because the underlying
-// llama.ModelParamsFit function modifies global logger state and is not
-// thread safe.
-var paramsFitMu sync.Mutex
-
-func checkParamsFit(modelFile string, mParams llama.ModelParams, ctxParams llama.ContextParams) (bool, uint32) {
-	paramsFitMu.Lock()
-	defer paramsFitMu.Unlock()
-
-	mTest := mParams
-	cTest := ctxParams
-
-	nDevices := int(llama.MaxDevices())
-	tensorSplit := make([]float32, nDevices)
-	tensorBuftOverrides := make([]llama.TensorBuftOverride, llama.MaxTensorBuftOverrides())
-	margins := make([]uint64, nDevices)
-
-	status := llama.ModelParamsFit(
-		modelFile,
-		&mTest,
-		&cTest,
-		tensorSplit,
-		tensorBuftOverrides,
-		margins,
-		512,
-		llama.LogLevelWarn,
-	)
-
-	return status == llama.ModelParamsFitStatusSuccess, cTest.NCtx
 }
 
 func loadModelFromFiles(ctx context.Context, log Logger, modelFiles []string, params llama.ModelParams) (llama.Model, error) {
@@ -1180,71 +1093,4 @@ func parseTensorBuftOverrides(patterns []string) ([]llama.TensorBuftOverride, er
 	}
 	overrides = append(overrides, llama.TensorBuftOverride{}) // sentinel
 	return overrides, nil
-}
-
-// applyParamsFit calls ModelParamsFit on the actual model/context params,
-// modifying them in place to fit available VRAM. Returns the fitted tensor
-// split and tensor buffer override buffers which must be kept alive until
-// the model load call completes.
-func applyParamsFit(modelFile string, mParams *llama.ModelParams, ctxParams *llama.ContextParams) ([]float32, []llama.TensorBuftOverride, error) {
-	paramsFitMu.Lock()
-	defer paramsFitMu.Unlock()
-
-	nDevices := int(llama.MaxDevices())
-	tensorSplit := make([]float32, nDevices)
-	tensorBuftOverrides := make([]llama.TensorBuftOverride, llama.MaxTensorBuftOverrides())
-	margins := make([]uint64, nDevices)
-
-	status := llama.ModelParamsFit(
-		modelFile,
-		mParams,
-		ctxParams,
-		tensorSplit,
-		tensorBuftOverrides,
-		margins,
-		512,
-		llama.LogLevelWarn,
-	)
-
-	if status != llama.ModelParamsFitStatusSuccess {
-		return nil, nil, fmt.Errorf("model does not fit in available VRAM; reduce context window or GPU layers")
-	}
-
-	return tensorSplit, tensorBuftOverrides, nil
-}
-
-// buildFitCtxParams builds a minimal ContextParams with only the
-// memory-relevant fields needed for ModelParamsFit. Model-type flags
-// (embed/rerank) are not needed since fit works from GGUF file metadata.
-func buildFitCtxParams(cfg Config) llama.ContextParams {
-	p := llama.ContextDefaultParams()
-
-	if cfg.ContextWindow > 0 {
-		p.NCtx = uint32(cfg.ContextWindow)
-		p.NBatch = uint32(cfg.NBatch)
-		p.NUbatch = uint32(cfg.NUBatch)
-	}
-
-	p.NSeqMax = uint32(max(cfg.NSeqMax, 1))
-
-	if cfg.CacheTypeK != GGMLTypeAuto {
-		p.TypeK = cfg.CacheTypeK.ToYZMAType()
-	}
-	if cfg.CacheTypeV != GGMLTypeAuto {
-		p.TypeV = cfg.CacheTypeV.ToYZMAType()
-	}
-
-	return p
-}
-
-// trimTensorBuftOverrides returns the overrides up to (but not including)
-// the first sentinel entry (Pattern == nil). This trims the fixed-size
-// buffer returned by ModelParamsFit to only the meaningful entries.
-func trimTensorBuftOverrides(overrides []llama.TensorBuftOverride) []llama.TensorBuftOverride {
-	for i, o := range overrides {
-		if o.Pattern == nil {
-			return overrides[:i]
-		}
-	}
-	return overrides
 }

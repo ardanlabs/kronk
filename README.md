@@ -41,6 +41,13 @@ Read the [Manual](./manual) to learn more about running the Kronk Model Server.
 
 [![Linux](https://github.com/ardanlabs/kronk/actions/workflows/linux.yml/badge.svg)](https://github.com/ardanlabs/kronk/actions/workflows/linux.yml)
 
+Sometimes there are breaking changes to llama.cpp that require an update to yzma and Kronk. Here are some of the known compatible versions:
+
+| llama.cpp | yzma    | kronk  |
+| --------- | ------- | ------ |
+| b8864     | v1.12.0 | 1.23.1 |
+| b8865+    | v1.13.0 | 1.23.2 |
+
 ## Owner Information
 
 ```

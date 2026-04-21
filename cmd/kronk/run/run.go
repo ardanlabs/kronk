@@ -32,7 +32,6 @@ type Config struct {
 	MainGPU        int
 	TensorSplit    string
 	SplitMode      string
-	AutoFitVRAM    bool
 	CacheTypeK     string
 	CacheTypeV     string
 	NBatch         int
@@ -168,10 +167,6 @@ func newKronk(mp models.Path, runCfg Config) (*kronk.Kronk, error) {
 		cfg.SplitMode = &sm
 	}
 
-	if runCfg.AutoFitVRAM {
-		cfg.AutoFitVRAM = true
-	}
-
 	if runCfg.CacheTypeK != "" {
 		ct, err := model.ParseGGMLType(runCfg.CacheTypeK)
 		if err != nil {
@@ -236,9 +231,6 @@ func newKronk(mp models.Path, runCfg Config) (*kronk.Kronk, error) {
 	}
 	if runCfg.SplitMode != "" {
 		fmt.Println("- splitMode    :", runCfg.SplitMode)
-	}
-	if runCfg.AutoFitVRAM {
-		fmt.Println("- autoFitVRAM  : true")
 	}
 	if runCfg.MaxTokens != 0 {
 		fmt.Println("- maxTokens    :", runCfg.MaxTokens)

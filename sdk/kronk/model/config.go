@@ -228,13 +228,6 @@ type DraftModelConfig struct {
 // GPUs. The length must match the number of devices. When empty, the split is
 // determined automatically based on available VRAM.
 //
-// AutoFitVRAM enables automatic parameter fitting to available VRAM. When true,
-// llama.cpp's ModelParamsFit is called before loading the model, and the fitted
-// parameters (including adjusted n_gpu_layers, context window, tensor_split, and
-// tensor_buft_overrides) are applied. This is opt-in (default false). When false,
-// the existing check-only behavior is preserved (parameters are checked but not
-// modified).
-//
 // SystemPromptCache enables caching of system prompt KV state. When enabled,
 // the first message with role="system" is cached. The system prompt is evaluated
 // once and its KV state is externalized to a byte buffer in RAM. On subsequent
@@ -276,7 +269,6 @@ type DraftModelConfig struct {
 // YarnOrigCtx sets the original training context size for YaRN scaling. When nil
 // or 0, uses the model's native training context length from metadata.
 type Config struct {
-	AutoFitVRAM          bool
 	CacheMinTokens       int
 	CacheSlotTimeout     int
 	CacheTypeK           GGMLType
@@ -362,8 +354,8 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("{mode:%s top_n:%s}", m.Mode, topN)
 	}
 
-	return fmt.Sprintf("\nAutoFitVRAM[%t]\nCacheMinTokens[%d]\nCacheSlotTimeout[%d]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%d]\nDevices[%v]\nFlashAttention[%s]\nIgnoreIntegrityCheck[%t]\nIncrementalCache[%t]\nInsecureLogging[%t]\nJinjaFile[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%d]\nNGpuLayers[%s]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%d]\nProjFile[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSplitMode[%s]\nSWAFull[%s]\nSystemPromptCache[%t]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nUseDirectIO[%t]\nUseMMap[%s]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
-		cfg.AutoFitVRAM, cfg.CacheMinTokens, cfg.CacheSlotTimeout, cfg.CacheTypeK, cfg.CacheTypeV,
+	return fmt.Sprintf("\nCacheMinTokens[%d]\nCacheSlotTimeout[%d]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%d]\nDevices[%v]\nFlashAttention[%s]\nIgnoreIntegrityCheck[%t]\nIncrementalCache[%t]\nInsecureLogging[%t]\nJinjaFile[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%d]\nNGpuLayers[%s]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%d]\nProjFile[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSplitMode[%s]\nSWAFull[%s]\nSystemPromptCache[%t]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nUseDirectIO[%t]\nUseMMap[%s]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
+		cfg.CacheMinTokens, cfg.CacheSlotTimeout, cfg.CacheTypeK, cfg.CacheTypeV,
 		cfg.ContextWindow, cfg.Devices, cfg.FlashAttention, cfg.IgnoreIntegrityCheck,
 		cfg.IncrementalCache, cfg.InsecureLogging, cfg.JinjaFile,
 		formatIntPtr(cfg.MainGPU), formatMoEPtr(cfg.MoE), cfg.ModelFiles, cfg.NBatch,
@@ -1318,7 +1310,7 @@ func ParseRopeScalingType(s string) (RopeScalingType, error) {
 type MoEMode string
 
 const (
-	// MoEModeAuto uses catalog defaults or AutoFitVRAM.
+	// MoEModeAuto uses catalog defaults.
 	MoEModeAuto MoEMode = "auto"
 
 	// MoEModeExpertsCPU places all routed expert tensors on CPU.
