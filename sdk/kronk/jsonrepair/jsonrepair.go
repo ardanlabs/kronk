@@ -95,6 +95,7 @@ func Unmarshal(s string, v any) error {
 func normalize(s string) (string, bool) {
 	orig := s
 	s = normalizeGemmaQuotes(s)
+	s = flattenNestedObject(s)
 	s = normalizeBacktickDelimiters(s)
 	s = quoteBareKeys(s)
 	s = fixMissingKeyCloseQuote(s)
@@ -1051,6 +1052,50 @@ func isFollowedByKey(s string, j int) bool {
 // =============================================================================
 // Structural fixups
 // =============================================================================
+
+// flattenNestedObject handles the pattern where the model wraps one or more
+// trailing key-value pairs in a spurious nested object. After Gemma <|"|>
+// normalization the JSON looks like:
+//
+//	{"command":"ls -a",{"description":"list files"}}
+//
+// This is invalid because the value after the comma is a bare object, not a
+// key-value pair. The function detects ",{" at the top level (outside strings)
+// and removes the inner { plus one trailing } to produce valid flat JSON:
+//
+//	{"command":"ls -a","description":"list files"}
+func flattenNestedObject(s string) string {
+	// Quick check: must contain ,{ and end with }}.
+	if !strings.Contains(s, ",{") {
+		return s
+	}
+	trimmed := strings.TrimRight(s, " \t\n\r")
+	if len(trimmed) < 2 || trimmed[len(trimmed)-1] != '}' || trimmed[len(trimmed)-2] != '}' {
+		return s
+	}
+
+	// Walk the string to find a top-level ",{" that is not inside a string.
+	inString := false
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && inString {
+			i++ // skip escaped char
+			continue
+		}
+		if s[i] == '"' {
+			inString = !inString
+			continue
+		}
+		if inString {
+			continue
+		}
+		if s[i] == ',' && i+1 < len(s) && s[i+1] == '{' {
+			// Found structural ,{ — remove the { and one trailing }.
+			return s[:i+1] + s[i+2:len(trimmed)-1]
+		}
+	}
+
+	return s
+}
 
 // unwrapNestedObject handles the pattern ,{"key":"value"}} that appears after
 // an unpaired <|"|> token. The model wraps the remaining keys in an extra
