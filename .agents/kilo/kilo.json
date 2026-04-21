@@ -1,37 +1,42 @@
 {
-  "$schema": "https://opencode.ai/config.json",
-  "model": "gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT",
-  "enabled_providers": ["kronk"],
-  "permission": "allow",
-  "mcp": {
-    "Kronk": {
-      "type": "remote",
-      "url": "http://localhost:9000/mcp",
-      "enabled": true,
-      "timeout": 60000
-    }
-  },
-  "provider": {
-    "kronk": {
-      "npm": "@ai-sdk/openai-compatible",
-      "name": "Kronk (local)",
-      "options": {
-        "baseURL": "http://localhost:11435/v1",
-        "apiKey": "123"
-      },
-      "models": {
-        "gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT": {
-          "name": "gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT",
-          "limit": {
-            "context": 262144,
-            "output": 65536
-          },
-          "reasoning": true,
-          "options": {
-            "reasoningEffort": "medium"
-          }
+    "$schema": "https://opencode.ai/config.json",
+    "model": "gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT",
+    "enabled_providers": [
+        "kronk"
+    ],
+    "permission": "allow",
+    "instructions": [
+        "agent.md"
+    ],
+    "mcp": {
+        "Kronk": {
+            "type": "remote",
+            "url": "http://localhost:9000/mcp",
+            "enabled": true,
+            "timeout": 60000
         }
-      }
+    },
+    "provider": {
+        "kronk": {
+            "npm": "@ai-sdk/openai-compatible",
+            "name": "Kronk (local)",
+            "options": {
+                "baseURL": "http://localhost:11435/v1",
+                "apiKey": "123"
+            },
+            "models": {
+                "gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT": {
+                    "name": "gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT",
+                    "limit": {
+                        "context": 262144,
+                        "output": 65536
+                    },
+                    "reasoning": true,
+                    "options": {
+                        "reasoningEffort": "medium"
+                    }
+                }
+            }
+        }
     }
-  }
 }
