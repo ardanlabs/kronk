@@ -131,6 +131,18 @@ func TestRepair(t *testing.T) {
 			},
 		},
 
+		{
+			// Reproduces production failure: model wraps the second arg in
+			// a nested object instead of listing it as a flat sibling:
+			//   call:bash{{"command":<|"|>ls -a<|"|>,{"description":<|"|>...<|"|>}}}
+			// After parseGemmaToolCallFormat strips the outer braces, jsonrepair
+			// receives this input. The nested {"description":...} must be unwrapped
+			// so both keys appear at the top level.
+			name:  "gemma nested object wrapping second arg",
+			input: `{"command":<|"|>ls -a<|"|>,{"description":<|"|>list all files including hidden ones in the current directory<|"|>}}`,
+			keys:  map[string]string{"command": "ls -a", "description": "list all files including hidden ones in the current directory"},
+		},
+
 		// =================================================================
 		// repairQuotes must preserve valid JSON escapes (\n, \t, etc.)
 		// =================================================================
