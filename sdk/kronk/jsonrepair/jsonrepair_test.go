@@ -383,6 +383,28 @@ func TestRepair(t *testing.T) {
 		},
 
 		// =================================================================
+		// Spurious " between closing <|"|> and already-quoted next key
+		// =================================================================
+		{
+			// Reproduces production failure: closing <|"|> is followed by
+			// a spurious " before the comma and the next key is already
+			// quoted: <|"|>","filePath":"...". The spurious " must be
+			// stripped so it doesn't corrupt the content value.
+			name:  "gemma paired close token spurious quote before quoted key",
+			input: `{"content:<|"|>hello world<|"|>","filePath":"main.go"}`,
+			wantExact: map[string]string{
+				"content":  "hello world",
+				"filePath": "main.go",
+			},
+		},
+		{
+			// Same pattern but with Go source containing ANSI escape codes.
+			name:  "gemma ansi content paired close then quoted key",
+			input: "{\"content:<|\"|>package main\n\nconst colorRed = \"\\033[31m\"\n<|\"|>\",\"filePath\":\"main.go\"}",
+			keys:  map[string]string{"content": "package main", "filePath": "main.go"},
+		},
+
+		// =================================================================
 		// Missing closing quote on key — "oldString: instead of "oldString":
 		// =================================================================
 		{
