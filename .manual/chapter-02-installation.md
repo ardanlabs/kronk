@@ -132,6 +132,29 @@ kronk libs --local
 
 This downloads libraries to `~/.kronk/libraries/` using auto-detected settings.
 
+**Pinning a Specific Library Version**
+
+Sometimes there are breaking changes to llama.cpp that require a matching version of yzma and Kronk. To ensure stability, you can install a specific library version:
+
+```shell
+kronk libs --lib-version=b8864 --local
+```
+
+Or via environment variable:
+
+```shell
+KRONK_LIB_VERSION=b8864 kronk libs --local
+```
+
+Here are the known compatible versions:
+
+| llama.cpp | yzma    | kronk  |
+| --------- | ------- | ------ |
+| b8864     | v1.12.0 | 1.23.1 |
+| b8865+    | v1.13.0 | 1.23.2 |
+
+If you experience unexpected behavior after a library upgrade, pin the version that matches your installed Kronk release using the table above.
+
 **Environment Variables for Library Installation**
 
 ```

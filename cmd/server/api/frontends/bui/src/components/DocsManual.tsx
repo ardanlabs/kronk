@@ -301,6 +301,34 @@ Use "kronk [command] --help" for more information about a command.`}</code></pre
           <p><strong>Option B: Via CLI</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk libs --local`}</code></pre>
           <p>This downloads libraries to <code>~/.kronk/libraries/</code> using auto-detected settings.</p>
+          <p><strong>Pinning a Specific Library Version</strong></p>
+          <p>Sometimes there are breaking changes to llama.cpp that require a matching version of yzma and Kronk. To ensure stability, you can install a specific library version:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk libs --lib-version=b8864 --local`}</code></pre>
+          <p>Or via environment variable:</p>
+          <pre className="code-block"><code className="language-shell">{`KRONK_LIB_VERSION=b8864 kronk libs --local`}</code></pre>
+          <p>Here are the known compatible versions:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>llama.cpp</th>
+                <th>yzma</th>
+                <th>kronk</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>b8864</td>
+                <td>v1.12.0</td>
+                <td>1.23.1</td>
+              </tr>
+              <tr>
+                <td>b8865+</td>
+                <td>v1.13.0</td>
+                <td>1.23.2</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>If you experience unexpected behavior after a library upgrade, pin the version that matches your installed Kronk release using the table above.</p>
           <p><strong>Environment Variables for Library Installation</strong></p>
           <pre className="code-block"><code>{`KRONK_LIB_PATH  - Library directory (default: \`~/.kronk/libraries\`)
 KRONK_PROCESSOR - \`cpu\`, \`cuda\`, \`metal\`, \`rocm\`, or \`vulkan\` (default: \`cpu\`)
@@ -3214,10 +3242,36 @@ kronk server start --processor=metal   # Apple Silicon
 kronk server start --processor=vulkan  # Cross-platform GPU
 kronk server start --processor=rocm    # AMD GPU (ROCm/HIP)
 kronk server start --processor=cpu     # CPU only`}</code></pre>
-          <p><strong>Library Path</strong></p>
+          <p><strong>Library Path and Version Pinning</strong></p>
+          <p>You can point to a custom library directory and pin a specific llama.cpp version for stability:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start \\
   --lib-path=/custom/path/to/libraries \\
-  --lib-version=b7406`}</code></pre>
+  --lib-version=b8864`}</code></pre>
+          <p>Or via environment variable:</p>
+          <pre className="code-block"><code className="language-shell">{`KRONK_LIB_VERSION=b8864 kronk server start`}</code></pre>
+          <p>Breaking changes in llama.cpp can cause incompatibilities with yzma and Kronk. Use <code>--lib-version</code> (or <code>KRONK_LIB_VERSION</code>) to lock the server to a known-good version:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>llama.cpp</th>
+                <th>yzma</th>
+                <th>kronk</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>b8864</td>
+                <td>v1.12.0</td>
+                <td>1.23.1</td>
+              </tr>
+              <tr>
+                <td>b8865+</td>
+                <td>v1.13.0</td>
+                <td>1.23.2</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>If you set <code>--allow-upgrade=false</code>, automatic library upgrades are disabled and the server will only use the version you have installed.</p>
           <p><strong>Hugging Face Token</strong></p>
           <p>For gated models requiring authentication:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --hf-token=hf_xxxxx`}</code></pre>

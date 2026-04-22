@@ -352,13 +352,30 @@ kronk server start --processor=rocm    # AMD GPU (ROCm/HIP)
 kronk server start --processor=cpu     # CPU only
 ```
 
-**Library Path**
+**Library Path and Version Pinning**
+
+You can point to a custom library directory and pin a specific llama.cpp version for stability:
 
 ```shell
 kronk server start \
   --lib-path=/custom/path/to/libraries \
-  --lib-version=b7406
+  --lib-version=b8864
 ```
+
+Or via environment variable:
+
+```shell
+KRONK_LIB_VERSION=b8864 kronk server start
+```
+
+Breaking changes in llama.cpp can cause incompatibilities with yzma and Kronk. Use `--lib-version` (or `KRONK_LIB_VERSION`) to lock the server to a known-good version:
+
+| llama.cpp | yzma    | kronk  |
+| --------- | ------- | ------ |
+| b8864     | v1.12.0 | 1.23.1 |
+| b8865+    | v1.13.0 | 1.23.2 |
+
+If you set `--allow-upgrade=false`, automatic library upgrades are disabled and the server will only use the version you have installed.
 
 **Hugging Face Token**
 

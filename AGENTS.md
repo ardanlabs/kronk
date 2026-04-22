@@ -71,7 +71,7 @@ Kronk has an MCP service and these are settings:
 | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------- |
 | [2.1 Prerequisites](.manual/chapter-02-installation.md#21-prerequisites)                               | Go, GPU drivers, disk space                              |
 | [2.2 Installing the CLI](.manual/chapter-02-installation.md#22-installing-the-cli)                     | go install, binary setup                                 |
-| [2.3 Installing Libraries](.manual/chapter-02-installation.md#23-installing-libraries)                 | llama.cpp shared libraries, platform-specific            |
+| [2.3 Installing Libraries](.manual/chapter-02-installation.md#23-installing-libraries)                 | llama.cpp shared libraries, platform-specific, version pinning, compatibility matrix |
 | [2.4 Downloading Your First Model](.manual/chapter-02-installation.md#24-downloading-your-first-model) | Model download, GGUF files                               |
 | [2.5 Starting the Server](.manual/chapter-02-installation.md#25-starting-the-server)                   | Server startup, basic config                             |
 | [2.6 Verifying the Installation](.manual/chapter-02-installation.md#26-verifying-the-installation)     | Health check, test requests                              |
