@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -26,7 +27,8 @@ const (
 	// DefDryMultiplier controls the DRY (Don't Repeat Yourself) sampler which penalizes
 	// n-gram pattern repetition. 0.8 - Light repetition penalty,
 	// 1.0–1.5 - Moderate (typical starting point), 2.0–3.0 - Aggressive.
-	DefDryMultiplier = 1.05
+	// Default is 0.0 (disabled) to match Ollama and maximize tool calling stability.
+	DefDryMultiplier = 0.0
 
 	// DefDryPenaltyLast limits how many recent tokens DRY considers.
 	DefDryPenaltyLast = 0.0
@@ -77,6 +79,9 @@ const (
 	// DefRepeatPenalty applies a penalty to tokens that have already appeared in the
 	// output, reducing repetitive text. A value of 1.0 means no penalty. Values
 	// above 1.0 reduce repetition (e.g., 1.1 is a mild penalty, 1.5 is strong).
+	// Default is 1.0 (disabled) because even mild penalties suppress structural
+	// JSON tokens like { in tool call formats (e.g., Gemma's call:func{{...}}),
+	// causing the model to substitute [ for { and producing invalid arguments.
 	DefRepeatPenalty = 1.0
 
 	// DefReturnPrompt determines whether to include the prompt in the final response.
@@ -88,8 +93,9 @@ const (
 	DefTemp = 0.8
 
 	// DefTopK limits the pool of possible next tokens to the K number of most
-	// probable tokens. A value of 0 means no limit (all tokens are considered).
-	DefTopK = 0
+	// probable tokens. Default is 40 to match Ollama and cut off low-probability
+	// tokens that can break structured output like tool calls.
+	DefTopK int32 = 40
 
 	// DefTopLogprobs specifies how many of the most likely tokens to return at each
 	// position, along with their log probabilities. Must be between 0 and 5.
@@ -437,6 +443,8 @@ func AddParams(params Params, d D) {
 }
 
 func (m *Model) parseParams(d D) (Params, error) {
+	m.log(context.Background(), "parse-params", "request", d.String())
+
 	p := m.cfg.DefaultParams
 
 	if val, exists := d["adaptive_p_decay"]; exists {
@@ -720,6 +728,10 @@ func (m *Model) adjustParams(p Params) Params {
 		p.Thinking = DefEnableThinking
 	}
 
+	if p.TopK <= 0 {
+		p.TopK = DefTopK
+	}
+
 	if p.TopP <= 0 {
 		p.TopP = DefTopP
 	}
@@ -739,37 +751,63 @@ func (m *Model) adjustParams(p Params) Params {
 	return p
 }
 
-func (m *Model) toSampler(p Params) llama.Sampler {
+func (m *Model) toSampler(ctx context.Context, p Params) llama.Sampler {
 	sampler := llama.SamplerChainInit(llama.SamplerChainDefaultParams())
-
-	if p.DryMultiplier > 0 {
-		llama.SamplerChainAdd(sampler, llama.SamplerInitDry(m.vocab, int32(m.cfg.ContextWindow), p.DryMultiplier, p.DryBase, p.DryAllowedLen, p.DryPenaltyLast, nil))
-	}
-
-	if p.RepeatPenalty != 1.0 || p.FrequencyPenalty != 0 || p.PresencePenalty != 0 {
-		llama.SamplerChainAdd(sampler, llama.SamplerInitPenalties(p.RepeatLastN, p.RepeatPenalty, p.FrequencyPenalty, p.PresencePenalty))
-	}
-
-	llama.SamplerChainAdd(sampler, llama.SamplerInitTopK(p.TopK))
-	llama.SamplerChainAdd(sampler, llama.SamplerInitTopP(p.TopP, 0))
-	llama.SamplerChainAdd(sampler, llama.SamplerInitMinP(p.MinP, 0))
-
-	if p.XtcProbability > 0 {
-		llama.SamplerChainAdd(sampler, llama.SamplerInitXTC(p.XtcProbability, p.XtcThreshold, p.XtcMinKeep, llama.DefaultSeed))
-	}
-
-	if p.AdaptivePTarget > 0 {
-		llama.SamplerChainAdd(sampler, llama.SamplerInitAdaptiveP(p.AdaptivePTarget, p.AdaptivePDecay, llama.DefaultSeed))
-	}
-
-	llama.SamplerChainAdd(sampler, llama.SamplerInitTempExt(p.Temperature, 0, 1.0))
 
 	// NOTE: Grammar is NOT added to the sampler chain. The grammar sampler's
 	// accept() function crashes in llama.cpp when llama_sampler_chain_accept
 	// iterates through all samplers. Grammar is handled separately in the
 	// batch engine via GrammarSampler.SampleWithGrammar().
 
+	// The sampler order below matches llama.cpp's common_sampler_init default
+	// pipeline: Penalties → DRY → top-k → top-p → min-p → XTC → Temperature → dist.
+	// This ordering is critical for tool calling stability.
+
+	var order int
+
+	if p.RepeatPenalty != 1.0 || p.FrequencyPenalty != 0 || p.PresencePenalty != 0 {
+		order++
+		llama.SamplerChainAdd(sampler, llama.SamplerInitPenalties(p.RepeatLastN, p.RepeatPenalty, p.FrequencyPenalty, p.PresencePenalty))
+		m.log(ctx, "sampler-chain", "order", order, "sampler", "penalties", "repeat_last_n", p.RepeatLastN, "repeat_penalty", fmt.Sprintf("%.2f", p.RepeatPenalty), "frequency_penalty", fmt.Sprintf("%.2f", p.FrequencyPenalty), "presence_penalty", fmt.Sprintf("%.2f", p.PresencePenalty))
+	}
+
+	if p.DryMultiplier > 0 {
+		order++
+		llama.SamplerChainAdd(sampler, llama.SamplerInitDry(m.vocab, int32(m.cfg.ContextWindow), p.DryMultiplier, p.DryBase, p.DryAllowedLen, p.DryPenaltyLast, nil))
+		m.log(ctx, "sampler-chain", "order", order, "sampler", "dry", "multiplier", fmt.Sprintf("%.2f", p.DryMultiplier), "base", fmt.Sprintf("%.2f", p.DryBase), "allowed_len", p.DryAllowedLen, "penalty_last_n", p.DryPenaltyLast)
+	}
+
+	order++
+	llama.SamplerChainAdd(sampler, llama.SamplerInitTopK(p.TopK))
+	m.log(ctx, "sampler-chain", "order", order, "sampler", "top-k", "k", p.TopK)
+
+	order++
+	llama.SamplerChainAdd(sampler, llama.SamplerInitTopP(p.TopP, 0))
+	m.log(ctx, "sampler-chain", "order", order, "sampler", "top-p", "p", fmt.Sprintf("%.2f", p.TopP))
+
+	order++
+	llama.SamplerChainAdd(sampler, llama.SamplerInitMinP(p.MinP, 0))
+	m.log(ctx, "sampler-chain", "order", order, "sampler", "min-p", "p", fmt.Sprintf("%.2f", p.MinP))
+
+	if p.XtcProbability > 0 {
+		order++
+		llama.SamplerChainAdd(sampler, llama.SamplerInitXTC(p.XtcProbability, p.XtcThreshold, p.XtcMinKeep, llama.DefaultSeed))
+		m.log(ctx, "sampler-chain", "order", order, "sampler", "xtc", "probability", fmt.Sprintf("%.2f", p.XtcProbability), "threshold", fmt.Sprintf("%.2f", p.XtcThreshold), "min_keep", p.XtcMinKeep)
+	}
+
+	if p.AdaptivePTarget > 0 {
+		order++
+		llama.SamplerChainAdd(sampler, llama.SamplerInitAdaptiveP(p.AdaptivePTarget, p.AdaptivePDecay, llama.DefaultSeed))
+		m.log(ctx, "sampler-chain", "order", order, "sampler", "adaptive-p", "target", fmt.Sprintf("%.2f", p.AdaptivePTarget), "decay", fmt.Sprintf("%.2f", p.AdaptivePDecay))
+	}
+
+	order++
+	llama.SamplerChainAdd(sampler, llama.SamplerInitTempExt(p.Temperature, 0, 1.0))
+	m.log(ctx, "sampler-chain", "order", order, "sampler", "temperature", "temp", fmt.Sprintf("%.2f", p.Temperature))
+
+	order++
 	llama.SamplerChainAdd(sampler, llama.SamplerInitDist(llama.DefaultSeed))
+	m.log(ctx, "sampler-chain", "order", order, "sampler", "dist")
 
 	return sampler
 }

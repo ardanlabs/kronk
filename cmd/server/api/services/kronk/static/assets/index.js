@@ -528,7 +528,8 @@ ${s}`}).join(`
 	// DefDryMultiplier controls the DRY (Don't Repeat Yourself) sampler which penalizes
 	// n-gram pattern repetition. 0.8 - Light repetition penalty,
 	// 1.0–1.5 - Moderate (typical starting point), 2.0–3.0 - Aggressive.
-	DefDryMultiplier = 1.05
+	// Default is 0.0 (disabled) to match Ollama and maximize tool calling stability.
+	DefDryMultiplier = 0.0
 
 	// DefDryPenaltyLast limits how many recent tokens DRY considers.
 	DefDryPenaltyLast = 0.0
@@ -579,6 +580,9 @@ ${s}`}).join(`
 	// DefRepeatPenalty applies a penalty to tokens that have already appeared in the
 	// output, reducing repetitive text. A value of 1.0 means no penalty. Values
 	// above 1.0 reduce repetition (e.g., 1.1 is a mild penalty, 1.5 is strong).
+	// Default is 1.0 (disabled) because even mild penalties suppress structural
+	// JSON tokens like { in tool call formats (e.g., Gemma's call:func{{...}}),
+	// causing the model to substitute [ for { and producing invalid arguments.
 	DefRepeatPenalty = 1.0
 
 	// DefReturnPrompt determines whether to include the prompt in the final response.
@@ -590,8 +594,9 @@ ${s}`}).join(`
 	DefTemp = 0.8
 
 	// DefTopK limits the pool of possible next tokens to the K number of most
-	// probable tokens. A value of 0 means no limit (all tokens are considered).
-	DefTopK = 0
+	// probable tokens. Default is 40 to match Ollama and cut off low-probability
+	// tokens that can break structured output like tool calls.
+	DefTopK int32 = 40
 
 	// DefTopLogprobs specifies how many of the most likely tokens to return at each
 	// position, along with their log probabilities. Must be between 0 and 5.
