@@ -70,6 +70,10 @@ jobs:
         run: |
           export RUN_IN_PARALLEL=no
           go test -v -count=1 ./cmd/server/app/sdk/security/...
+      - name: Run kronk jsonrepair tests
+        run: |
+          export RUN_IN_PARALLEL=no
+          go test -v -count=1 ./sdk/kronk/jsonrepair
       - name: Run kronk model tests
         run: |
           export RUN_IN_PARALLEL=no

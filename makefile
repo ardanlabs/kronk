@@ -230,10 +230,11 @@ test-only: install-test-models
 	@echo ========== RUN TESTS ==========
 	export RUN_IN_PARALLEL=yes && \
 	export GITHUB_WORKSPACE=$(shell pwd) && \
-	go test -v -count=1 -p 1 ./sdk/kronk/tests/... && \
 	go test -v -count=1 ./cmd/server/api/services/kronk/tests && \
 	go test -v -count=1 ./cmd/server/app/sdk/cache && \
 	go test -v -count=1 ./cmd/server/app/sdk/security/... && \
+	go test -v -count=1 ./sdk/kronk/jsonrepair && \
+	go test -v -count=1 -p 1 ./sdk/kronk/tests/... && \
 	go test -v -count=1 ./sdk/kronk/model && \
 	go test -v -count=1 ./sdk/tools/...
 
@@ -247,6 +248,7 @@ test-gh-only: install-test-gh-models
 	go test -v -count=1 ./cmd/server/api/services/kronk/tests && \
 	go test -v -count=1 ./cmd/server/app/sdk/cache && \
 	go test -v -count=1 ./cmd/server/app/sdk/security/... && \
+	go test -v -count=1 ./sdk/kronk/jsonrepair && \
 	go test -v -count=1 ./sdk/kronk/model && \
 	go test -v -count=1 ./sdk/tools/...
 

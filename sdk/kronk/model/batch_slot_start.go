@@ -41,7 +41,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	s.prefillStart = time.Now()
 
 	// Create sampler for this request.
-	s.sampler = e.model.toSampler(job.params)
+	s.sampler = e.model.toSampler(job.ctx, job.params)
 
 	// Create grammar sampler if grammar is specified (kept separate from chain).
 	if job.params.Grammar != "" {
