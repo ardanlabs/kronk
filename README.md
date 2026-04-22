@@ -387,3 +387,24 @@ Okay, the user just said "Hello model." I need to respond appropriately. Since I
 ! How can I assist you today? 😊
 Unloading Kronk
 ```
+
+## Travel Schedule
+
+Come find me in any of these cities or events this year. I will be giving workshops and talks about Kronk
+
+| Dates           | Event                      | Location              | Comments       |
+| --------------- | -------------------------- | --------------------- | -------------- |
+| Jan 29th - 2nd  | AI Plumbers Fringe, FOSDEM | Brussels, Belgium     | Talk           |
+| Mar 4th - 5th   | Ardan Connect              | São Paulo, Brazil     | Workshop       |
+| Apr 20th - 25th | Gophercamp 2026            | Brno, Czech Republic  | Workshop, Talk |
+| Apr 27th - 29th | AI Dev 26                  | San Francisco, USA    | Attendee       |
+| May 17th - 23rd | Gophercon Signapore        | Singapore             | Workshop, Talk |
+| Jun 1st - 5th   | Crusoe Corporate Training  | San Francisco, USA    | Workshop       |
+| Jun 8th - 12th  | Genetec Corporate Training | Montreal, Canada      | Workshop       |
+| Jun 14th - 19th | GopherCon EU               | Berlin, Germany       | Workshop, Talk |
+| JULY            | Summer Vacation            | Huntsville, AL        | Rest           |
+| Aug 3rd - 6th   | GopherCon USA              | Seattle, Washington   | Workshop, Talk |
+| Aug 11th - 13th | GopherCon UK               | London, England       | Workshop, Talk |
+| Sep 1st - 4th   | GopherCon LATAM            | Florianópolis, Brazil | Workshop, Talk |
+| Oct 12th - 18th | GopherCon Africa           | Kenya, East Africa    | Workshop, Talk |
+| Oct 29th - 4th  | GoLab (GopherCon Italy)    | Bologna, Italy        | Workshop, Talk |
