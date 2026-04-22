@@ -4,7 +4,11 @@
     "enabled_providers": [
         "kronk"
     ],
-    "permission": "allow",
+    "permission": {
+        "*": "ask",
+        "bash": "allow",
+        "edit": "allow"
+    },
     "instructions": [
         "agent.md"
     ],
