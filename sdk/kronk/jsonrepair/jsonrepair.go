@@ -418,14 +418,28 @@ func stripSpuriousQuoteBeforeComma(suffix string) string {
 		return suffix
 	}
 
-	// Check that what follows the comma looks like a key (identifier + : or
-	// identifier + <|"|>). This prevents stripping a " that is actually
-	// part of a JSON value.
+	// Check that what follows the comma looks like a key. This prevents
+	// stripping a " that is actually part of a JSON value.
 	k := j + 1
 	for k < len(suffix) && isWhitespace(suffix[k]) {
 		k++
 	}
 
+	// Already-quoted key: ,"key":
+	if k < len(suffix) && suffix[k] == '"' {
+		k++
+		qkStart := k
+		for k < len(suffix) && isIdentChar(suffix[k]) {
+			k++
+		}
+		qkLen := k - qkStart
+		if qkLen > 0 && qkLen <= 40 && k+1 < len(suffix) && suffix[k] == '"' && suffix[k+1] == ':' {
+			return suffix[1:]
+		}
+		return suffix
+	}
+
+	// Bare key: identifier followed by : or ": or <|"|>.
 	keyStart := k
 	for k < len(suffix) && isIdentChar(suffix[k]) {
 		k++
@@ -435,7 +449,6 @@ func stripSpuriousQuoteBeforeComma(suffix string) string {
 		return suffix
 	}
 
-	// Key must be followed by : or ": or <|"|>.
 	rest := suffix[k:]
 	if len(rest) > 0 && rest[0] == ':' {
 		return suffix[1:]
