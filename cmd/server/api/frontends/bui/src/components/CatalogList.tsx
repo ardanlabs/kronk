@@ -982,7 +982,7 @@ export default function CatalogList() {
                           { key: 'draft-model.ngpu-layers', label: labelWithTip('draft-model.ngpu-layers', 'draftGpuLayers'), value: fmtVal(mc['draft-model']?.['ngpu-layers']) },
                           { key: 'draft-model.tensor-split', label: labelWithTip('draft-model.tensor-split', 'draftTensorSplit'), value: mc['draft-model']?.['tensor-split']?.join(', ') || '—' },
                           { key: 'flash-attention', label: labelWithTip('flash-attention', 'flashAttention'), value: mc['flash-attention'] || 'default' },
-                          { key: 'ignore-integrity-check', label: labelWithTip('ignore-integrity-check', 'ignoreIntegrityCheck'), value: boolBadge(mc['ignore-integrity-check']) },
+
                           { key: 'incremental-cache', label: labelWithTip('incremental-cache', 'incrementalCache'), value: boolBadge(mc['incremental-cache']) },
                           { key: 'main-gpu', label: labelWithTip('main-gpu', 'mainGpu'), value: fmtVal(mc['main-gpu']) },
                           { key: 'moe.keep-experts-top-n', label: labelWithTip('moe.keep-experts-top-n', 'moeKeepExpertsTopN'), value: fmtVal(mc.moe?.['keep-experts-top-n']) },

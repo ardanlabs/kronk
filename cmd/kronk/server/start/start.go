@@ -132,10 +132,6 @@ func buildEnvVars(cmd *cobra.Command) []string {
 	if v, _ := cmd.Flags().GetString("cache-ttl"); v != "" {
 		envVars = append(envVars, "KRONK_CACHE_TTL="+v)
 	}
-	if cmd.Flags().Changed("ignore-integrity-check") {
-		v, _ := cmd.Flags().GetBool("ignore-integrity-check")
-		envVars = append(envVars, "KRONK_CACHE_IGNORE_INTEGRITY_CHECK="+strconv.FormatBool(v))
-	}
 
 	// Runtime settings
 	if v, _ := cmd.Flags().GetString("base-path"); v != "" {

@@ -67,16 +67,16 @@ Kronk has an MCP service and these are settings:
 
 ### Chapter 2 Sub-sections
 
-| Section                                                                                                | Topics                                                   |
-| ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------- |
-| [2.1 Prerequisites](.manual/chapter-02-installation.md#21-prerequisites)                               | Go, GPU drivers, disk space                              |
-| [2.2 Installing the CLI](.manual/chapter-02-installation.md#22-installing-the-cli)                     | go install, binary setup                                 |
+| Section                                                                                                | Topics                                                                               |
+| ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| [2.1 Prerequisites](.manual/chapter-02-installation.md#21-prerequisites)                               | Go, GPU drivers, disk space                                                          |
+| [2.2 Installing the CLI](.manual/chapter-02-installation.md#22-installing-the-cli)                     | go install, binary setup                                                             |
 | [2.3 Installing Libraries](.manual/chapter-02-installation.md#23-installing-libraries)                 | llama.cpp shared libraries, platform-specific, version pinning, compatibility matrix |
-| [2.4 Downloading Your First Model](.manual/chapter-02-installation.md#24-downloading-your-first-model) | Model download, GGUF files                               |
-| [2.5 Starting the Server](.manual/chapter-02-installation.md#25-starting-the-server)                   | Server startup, basic config                             |
-| [2.6 Verifying the Installation](.manual/chapter-02-installation.md#26-verifying-the-installation)     | Health check, test requests                              |
-| [2.7 Quick Start Summary](.manual/chapter-02-installation.md#27-quick-start-summary)                   | Step-by-step recap                                       |
-| [2.8 NixOS Setup](.manual/chapter-02-installation.md#28-nixos-setup)                                   | Nix flake, dev shell, nix build, Vulkan, troubleshooting |
+| [2.4 Downloading Your First Model](.manual/chapter-02-installation.md#24-downloading-your-first-model) | Model download, GGUF files                                                           |
+| [2.5 Starting the Server](.manual/chapter-02-installation.md#25-starting-the-server)                   | Server startup, basic config                                                         |
+| [2.6 Verifying the Installation](.manual/chapter-02-installation.md#26-verifying-the-installation)     | Health check, test requests                                                          |
+| [2.7 Quick Start Summary](.manual/chapter-02-installation.md#27-quick-start-summary)                   | Step-by-step recap                                                                   |
+| [2.8 NixOS Setup](.manual/chapter-02-installation.md#28-nixos-setup)                                   | Nix flake, dev shell, nix build, Vulkan, troubleshooting                             |
 
 ### Chapter 3 Sub-sections
 
@@ -112,20 +112,20 @@ Kronk has an MCP service and these are settings:
 
 ### Chapter 5 Sub-sections
 
-| Section                                                                                                       | Topics                                                 |
-| ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| [5.1 Overview](.manual/chapter-05-message-caching.md#51-overview)                                             | SPC vs IMC overview, when to use each                  |
-| [5.2 System Prompt Cache (SPC)](.manual/chapter-05-message-caching.md#52-system-prompt-cache-spc)             | SPC mechanism, externalized KV state                   |
-| [5.3 Incremental Message Cache (IMC)](.manual/chapter-05-message-caching.md#53-incremental-message-cache-imc) | Two-tier hash, slot selection, matching strategies     |
-| — [Two-Tier Hash Design](.manual/chapter-05-message-caching.md#two-tier-hash-design)                          | Sys prompt preservation, conversation body rebuild     |
-| — [KV Pressure Eviction](.manual/chapter-05-message-caching.md#kv-pressure-eviction)                          | Unified KV cache overflow, stale slot eviction         |
-| — [Token Prefix Fallback](.manual/chapter-05-message-caching.md#token-prefix-fallback)                        | Token-level prefix matching when hash fails            |
-| — [Model Type Interactions](.manual/chapter-05-message-caching.md#model-type-interactions)                    | Dense/MoE/Hybrid config, cross-reference to 4.9        |
-| [5.4 Single-User Caching](.manual/chapter-05-message-caching.md#54-single-user-caching)                       | Single-user design, slot dedication                    |
-| [5.5 SPC vs IMC](.manual/chapter-05-message-caching.md#55-spc-vs-imc)                                         | Feature comparison, workload selection                 |
-| [5.6 Cache Invalidation](.manual/chapter-05-message-caching.md#56-cache-invalidation)                         | Hash mismatch, rebuild triggers                        |
-| [5.7 Configuration Reference](.manual/chapter-05-message-caching.md#57-configuration-reference)               | YAML settings, cache_min_tokens                        |
-| [5.8 Performance and Limitations](.manual/chapter-05-message-caching.md#58-performance-and-limitations)       | Prefill savings, memory overhead, constraints          |
+| Section                                                                                                       | Topics                                             |
+| ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| [5.1 Overview](.manual/chapter-05-message-caching.md#51-overview)                                             | SPC vs IMC overview, when to use each              |
+| [5.2 System Prompt Cache (SPC)](.manual/chapter-05-message-caching.md#52-system-prompt-cache-spc)             | SPC mechanism, externalized KV state               |
+| [5.3 Incremental Message Cache (IMC)](.manual/chapter-05-message-caching.md#53-incremental-message-cache-imc) | Two-tier hash, slot selection, matching strategies |
+| — [Two-Tier Hash Design](.manual/chapter-05-message-caching.md#two-tier-hash-design)                          | Sys prompt preservation, conversation body rebuild |
+| — [KV Pressure Eviction](.manual/chapter-05-message-caching.md#kv-pressure-eviction)                          | Unified KV cache overflow, stale slot eviction     |
+| — [Token Prefix Fallback](.manual/chapter-05-message-caching.md#token-prefix-fallback)                        | Token-level prefix matching when hash fails        |
+| — [Model Type Interactions](.manual/chapter-05-message-caching.md#model-type-interactions)                    | Dense/MoE/Hybrid config, cross-reference to 4.9    |
+| [5.4 Single-User Caching](.manual/chapter-05-message-caching.md#54-single-user-caching)                       | Single-user design, slot dedication                |
+| [5.5 SPC vs IMC](.manual/chapter-05-message-caching.md#55-spc-vs-imc)                                         | Feature comparison, workload selection             |
+| [5.6 Cache Invalidation](.manual/chapter-05-message-caching.md#56-cache-invalidation)                         | Hash mismatch, rebuild triggers                    |
+| [5.7 Configuration Reference](.manual/chapter-05-message-caching.md#57-configuration-reference)               | YAML settings, cache_min_tokens                    |
+| [5.8 Performance and Limitations](.manual/chapter-05-message-caching.md#58-performance-and-limitations)       | Prefill savings, memory overhead, constraints      |
 
 ### Chapter 6 Sub-sections
 
@@ -281,16 +281,17 @@ Kronk has an MCP service and these are settings:
 
 ### Chapter 17 Sub-sections
 
-| Section                                                                                             | Topics                                                                     |
-| --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| [17.1 Quick Reference](.manual/chapter-17-developer-guide.md#171-quick-reference)                   | Command cheat sheet                                                        |
-| [17.2 Build & Test Commands](.manual/chapter-17-developer-guide.md#172-build--test-commands)        | Install CLI, run tests, build server, build BUI, generate docs             |
-| [17.3 Developer Setup](.manual/chapter-17-developer-guide.md#173-developer-setup)                   | Git hooks, pre-commit configuration                                        |
-| [17.4 Project Architecture](.manual/chapter-17-developer-guide.md#174-project-architecture)         | Directory structure, cmd/, sdk/ packages                                   |
-| [17.5 BUI Frontend Development](.manual/chapter-17-developer-guide.md#175-bui-frontend-development) | React structure, routing, adding pages, state management, styling          |
-| [17.6 Code Style Guidelines](.manual/chapter-17-developer-guide.md#176-code-style-guidelines)       | Package comments, error handling, struct design, imports, control flow     |
-| [17.7 SDK Internals](.manual/chapter-17-developer-guide.md#177-sdk-internals)                       | Package structure, streaming, model pool, batch engine, IMC implementation |
-| [17.8 API Handler Notes](.manual/chapter-17-developer-guide.md#178-api-handler-notes)               | Input format conversion for Response APIs                                  |
-| [17.9 Goroutine Budget](.manual/chapter-17-developer-guide.md#179-goroutine-budget)                 | Baseline goroutines, per-request goroutines, expected counts               |
-| [17.10 Request Tracing Spans](.manual/chapter-17-developer-guide.md#1710-request-tracing-spans)     | Span hierarchy, queue wait, prepare-request vs process-request             |
-| [17.11 Reference Threads](.manual/chapter-17-developer-guide.md#1711-reference-threads)             | THREADS.md for past conversations                                          |
+| Section                                                                                                         | Topics                                                                     |
+| --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| [17.1 Quick Reference](.manual/chapter-17-developer-guide.md#171-quick-reference)                               | Command cheat sheet                                                        |
+| [17.2 Build & Test Commands](.manual/chapter-17-developer-guide.md#172-build--test-commands)                    | Install CLI, run tests, build server, build BUI, generate docs             |
+| [17.3 Developer Setup](.manual/chapter-17-developer-guide.md#173-developer-setup)                               | Git hooks, pre-commit configuration                                        |
+| [17.4 Project Architecture](.manual/chapter-17-developer-guide.md#174-project-architecture)                     | Directory structure, cmd/, sdk/ packages                                   |
+| [17.5 BUI Frontend Development](.manual/chapter-17-developer-guide.md#175-bui-frontend-development)             | React structure, routing, adding pages, state management, styling          |
+| [17.6 Code Style Guidelines](.manual/chapter-17-developer-guide.md#176-code-style-guidelines)                   | Package comments, error handling, struct design, imports, control flow     |
+| [17.7 SDK Internals](.manual/chapter-17-developer-guide.md#177-sdk-internals)                                   | Package structure, streaming, model pool, batch engine, IMC implementation |
+| [17.8 API Handler Notes](.manual/chapter-17-developer-guide.md#178-api-handler-notes)                           | Input format conversion for Response APIs                                  |
+| [17.9 Goroutine Budget](.manual/chapter-17-developer-guide.md#179-goroutine-budget)                             | Baseline goroutines, per-request goroutines, expected counts               |
+| [17.10 Request Tracing Spans](.manual/chapter-17-developer-guide.md#1710-request-tracing-spans)                 | Span hierarchy, queue wait, prepare-request vs process-request             |
+| [17.11 Inference Code Path](.manual/chapter-17-developer-guide.md#1711-inference-code-path)                     | High-level semantic steps for processing an inference request              |
+| [17.12 Inference Code Path (Detailed)](.manual/chapter-17-developer-guide.md#1712-inference-code-path-detailed) | Function-level ChatStreaming trace with file locations                     |

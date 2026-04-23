@@ -62,7 +62,6 @@ export interface ModelConfig {
   'cache-type-v': string;
   'use-direct-io': boolean;
   'flash-attention': string;
-  'ignore-integrity-check': boolean;
   'nseq-max': number;
   'offload-kqv': boolean | null;
   'op-offload': boolean | null;

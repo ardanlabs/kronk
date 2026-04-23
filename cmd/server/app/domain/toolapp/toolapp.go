@@ -128,7 +128,7 @@ func (a *app) pullLibs(ctx context.Context, r *http.Request) web.Encoder {
 }
 
 func (a *app) indexModels(ctx context.Context, r *http.Request) web.Encoder {
-	if err := a.models.BuildIndex(a.log.Info); err != nil {
+	if err := a.models.BuildIndex(a.log.Info, true); err != nil {
 		return errs.Errorf(errs.Internal, "unable to build model index: %s", err)
 	}
 

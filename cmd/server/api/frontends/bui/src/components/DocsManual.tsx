@@ -6341,8 +6341,203 @@ batching = true`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <h3 id="1711-reference-threads">17.11 Reference Threads</h3>
-          <p>See <code>THREADS.md</code> for important past conversations and decisions worth preserving.</p>
+          <h3 id="1711-inference-code-path">17.11 Inference Code Path</h3>
+          <p>This section describes the high-level steps that occur when a chat inference request is processed. For the corresponding function-level trace with file locations, see <a href="#1712-inference-code-path-detailed">section 17.12</a>.</p>
+          <h4 id="step-1-receive-the-request">Step 1: Receive the Request</h4>
+          <p>The caller provides a document containing messages and sampling parameters. The system validates that the request includes a timeout deadline to prevent unbounded processing.</p>
+          <h4 id="step-2-acquire-the-model">Step 2: Acquire the Model</h4>
+          <p>A semaphore controls how many requests can be in-flight at once. The request blocks here until a slot in the semaphore opens up, providing backpressure when the system is under load. The model instance is returned once a slot is acquired.</p>
+          <h4 id="step-3-validate-the-document">Step 3: Validate the Document</h4>
+          <p>The request document is validated to ensure it contains properly structured messages. Sampling parameters (temperature, top_p, top_k, min_p, max_tokens, grammar, etc.) are extracted and resolved against model defaults. The document is shallow-cloned so downstream processing can modify it without affecting the caller.</p>
+          <h4 id="step-4-prepare-the-context">Step 4: Prepare the Context</h4>
+          <p>The system determines whether this is a text-only or media (vision/audio) request:</p>
+          <ul>
+            <li><strong>Text</strong>: Multi-part content arrays are flattened into plain strings.</li>
+            <li><strong>Media</strong>: The projection model is loaded, media content (images or audio) is detected and converted into raw bytes for the encoder pipeline.</li>
+          </ul>
+          <h4 id="step-5-process-the-cache">Step 5: Process the Cache</h4>
+          <p>If caching is enabled, the system checks whether any portion of the conversation is already in the KV cache to avoid redundant computation:</p>
+          <ul>
+            <li><strong>System Prompt Cache (SPC)</strong>: Hashes the system message. If a match is found, the saved KV state is prepared for restore and the system message is removed from the document so it won't be re-processed.</li>
+            <li><strong>Incremental Message Cache (IMC)</strong>: Hashes all messages except the last and scans slots for a matching conversation prefix. The best match determines the strategy: pure cache hit (nothing to decode), extend (decode only new messages), partial prefix trim (salvage a common prefix), or rebuild from scratch.</li>
+          </ul>
+          <p>Tool response messages are also enriched with their originating function names so templates can render tool results correctly.</p>
+          <h4 id="step-6-apply-the-chat-template">Step 6: Apply the Chat Template</h4>
+          <p>The remaining (non-cached) messages are run through the model's Jinja2 chat template. This converts the structured message array into the exact prompt string the model expects, including any special tokens, role markers, and tool definitions. For media requests, raw media bytes are returned alongside the text prompt.</p>
+          <h4 id="step-7-submit-to-the-batch-engine">Step 7: Submit to the Batch Engine</h4>
+          <p>The fully prepared request — prompt string, media bytes, sampling parameters, and cache state — is packaged into a job and placed on the batch engine's request queue. A wake signal is sent so the batch engine picks it up immediately rather than waiting for its next poll cycle.</p>
+          <h4 id="step-8-assign-to-a-slot">Step 8: Assign to a Slot</h4>
+          <p>The batch engine's processing loop wakes up and checks for pending work. It dequeues the job and assigns it to an available processing slot. With IMC enabled, jobs are routed to their target slot (the one holding their cached conversation). If the target slot is busy, the job is deferred or the longest-running slot is preempted after a configurable timeout.</p>
+          <h4 id="step-9-initialize-the-slot">Step 9: Initialize the Slot</h4>
+          <p>The assigned slot is prepared for this request:</p>
+          <ol>
+            <li><strong>Restore cached KV state</strong>: For SPC, the saved KV snapshot is loaded into the slot's sequence. For IMC, extension tokens are decoded into the existing sequence, or the sequence is cleared and rebuilt.</li>
+            <li><strong>Build the sampler</strong>: A sampler chain is constructed from the request's sampling parameters (temperature, top_k, top_p, min_p, repetition penalties, etc.). If grammar-constrained output is requested, a separate grammar sampler is also created.</li>
+            <li><strong>Tokenize the prompt</strong>: The prompt string is converted into a sequence of token IDs. Only the non-cached portion of the prompt needs tokenization.</li>
+            <li><strong>Context window check</strong>: The total token count (cached + new) is verified against the model's context window limit.</li>
+          </ol>
+          <h4 id="step-10-prefill-kv-cache-fill">Step 10: Prefill (KV Cache Fill)</h4>
+          <p>The prompt tokens are fed through the model in chunks to build up the KV cache — this is the "prefill" phase. Tokens are added to a batch buffer up to the configured batch size limit, then a GPU forward pass (decode) is executed. When multiple slots are active, tokens are allocated round-robin across slots so no single request can starve others. This repeats until all prompt tokens have been processed.</p>
+          <p>For media requests, image or audio embeddings are interleaved with text tokens and decoded through the model's multimodal pipeline.</p>
+          <h4 id="step-11-token-generation-decode-loop">Step 11: Token Generation (Decode Loop)</h4>
+          <p>Once prefill is complete, the model enters the decode loop — generating one output token per iteration:</p>
+          <ol>
+            <li><strong>Forward pass</strong>: The most recently sampled token is added to the batch and decoded through the model. With multiple active slots, all their tokens are batched together in a single forward pass for efficiency.</li>
+            <li><strong>Sampling</strong>: The model's output logits are processed through the sampler chain to select the next token. If grammar constraints are active, the sampler respects the grammar rules.</li>
+            <li><strong>Speculative decoding</strong> (optional): A smaller draft model generates candidate tokens ahead of the main model. These drafts are verified in a single batch forward pass, accepting correct predictions and rejecting mismatches. This can significantly increase tokens per second.</li>
+          </ol>
+          <h4 id="step-12-process-each-token">Step 12: Process Each Token</h4>
+          <p>Each sampled token goes through a processing pipeline:</p>
+          <ol>
+            <li><strong>Logprobs extraction</strong>: If requested, token log-probabilities are extracted from the model's logits before the sampler state is updated.</li>
+            <li><strong>End-of-generation check</strong>: If the token is an EOG (end-of-generation) token, generation stops and the request moves to the finish phase.</li>
+            <li><strong>UTF-8 assembly</strong>: Tokens are converted to text bytes. Since a single Unicode character can span multiple tokens, partial bytes are buffered until a complete codepoint is available.</li>
+            <li><strong>Content classification</strong>: A state machine categorizes the output into reasoning (think tags), completion (regular response), or tool call content. This determines how the text is accumulated and streamed.</li>
+            <li><strong>Token counting</strong>: Each generated token is counted as either a reasoning token or a completion token for usage reporting.</li>
+            <li><strong>Max tokens check</strong>: If the output token count reaches the requested limit, generation stops.</li>
+            <li><strong>Stream to client</strong>: For non-tool content, each complete text fragment is sent as an SSE delta event through the response channel.</li>
+          </ol>
+          <h4 id="step-13-finish-the-request">Step 13: Finish the Request</h4>
+          <p>When generation ends (EOG token, max tokens, or error), the request is finalized:</p>
+          <ol>
+            <li><strong>Flush remaining text</strong>: Any buffered UTF-8 bytes are flushed into the final response accumulators.</li>
+            <li><strong>Parse tool calls</strong>: If the model generated tool call content, it is parsed into structured function calls with validated JSON arguments.</li>
+            <li><strong>Calculate metrics</strong>: Tokens per second (TPS), time to first token (TTFT), and draft acceptance rates are computed.</li>
+            <li><strong>Send final response</strong>: The complete response — including content, reasoning, tool calls, logprobs, and usage statistics — is sent through the response channel.</li>
+            <li><strong>Clean up the KV cache</strong>: from the KV cache, preserving the cached conversation prefix for the next request. from a snapshot, because partial deletes corrupt recurrent state.
+              <ul>
+                <li>With IMC on Dense/MoE models, only the generated tokens are trimmed</li>
+                <li>With IMC on Hybrid models, the entire sequence is cleared and restored</li>
+                <li>Without caching, the entire sequence is cleared.</li>
+              </ul>
+            </li>
+            <li><strong>Free resources</strong>: The sampler, grammar sampler, and any multimodal resources (bitmaps, projection context) are freed.</li>
+          </ol>
+          <h4 id="step-14-release-the-model">Step 14: Release the Model</h4>
+          <p>The response channel is closed, signaling to the caller that streaming is complete. The semaphore slot is released, allowing the next queued request to begin processing.</p>
+          <h3 id="1712-inference-code-path-detailed">17.12 Inference Code Path (Detailed)</h3>
+          <p>This section traces the function-level code path for a <code>ChatStreaming</code> request. Each step corresponds to the high-level description in <a href="#1711-inference-code-path">section 17.11</a>.</p>
+          <p><strong>1. &lt;code&gt;Kronk.ChatStreaming&lt;/code&gt;</strong> (<code>sdk/kronk/chat.go</code>)</p>
+          <ul>
+            <li>Validates context has a deadline.</li>
+            <li>Wraps <code>Model.ChatStreaming</code> in a closure.</li>
+          </ul>
+          <p><strong>2. &lt;code&gt;streaming()&lt;/code&gt;</strong> (<code>sdk/kronk/concurrency.go</code>)</p>
+          <ul>
+            <li>Calls <code>acquireModel()</code> — checks shutdown flag, increments <code>activeStreams</code>, acquires semaphore slot for backpressure.</li>
+            <li>Spawns goroutine that calls <code>Model.ChatStreaming</code>, relays chunks to caller's channel.</li>
+            <li>Defers <code>releaseModel()</code> (releases semaphore) and <code>close(ch)</code>.</li>
+          </ul>
+          <p><strong>3. &lt;code&gt;Model.ChatStreaming&lt;/code&gt;</strong> (<code>sdk/kronk/model/chat.go</code>)</p>
+          <ul>
+            <li>Creates response channel, wraps with logging if <code>InsecureLogging</code> enabled.</li>
+            <li>Increments <code>activeStreams</code> atomically.</li>
+            <li>Spawns goroutine with <code>prepare-request</code> span.</li>
+          </ul>
+          <p><strong>4. &lt;code&gt;validateAndCloneDocument()&lt;/code&gt;</strong> (<code>model/chat.go</code>)</p>
+          <ul>
+            <li>Validates <code>messages</code> field exists and is <code>[]D</code>.</li>
+            <li>Calls <code>parseParams()</code> — extracts temperature, top_p, top_k, min_p, max_tokens, grammar, etc.</li>
+            <li>Shallow-clones the document.</li>
+          </ul>
+          <p><strong>5. &lt;code&gt;prepareContext()&lt;/code&gt;</strong> (<code>model/chat.go</code>)</p>
+          <ul>
+            <li><strong>Text path</strong>: <code>prepareTextContext()</code> — flattens multi-part content arrays to plain strings.</li>
+            <li><strong>Media path</strong>: <code>prepareMediaContext()</code> — detects vision/audio, loads projection file via <code>mtmd.InitFromFile()</code>, converts OpenAI format to media bytes.</li>
+            <li>Returns object type: <code>ObjectChatText</code> or <code>ObjectChatMedia</code>.</li>
+          </ul>
+          <p><strong>6. &lt;code&gt;prepareCacheAndPrompt()&lt;/code&gt;</strong> (<code>model/chat.go</code>)</p>
+          <ul>
+            <li><strong>6a. &lt;code&gt;injectToolResponseNames()&lt;/code&gt;</strong> — adds <code>name</code>/<code>tool_call_name</code> to <code>role:"tool"</code> messages by matching <code>tool_call_id</code>.</li>
+            <li><strong>6b. &lt;code&gt;processCache()&lt;/code&gt;</strong> (<code>model/caching.go</code>) — mutually exclusive:</li>
+          </ul>
+          <p>- <strong>SPC</strong>: <code>processSPC()</code> — hashes system message, looks up/creates <code>spcSession</code>, extracts KV state via <code>StateSeqGetData</code>, removes system message from document. - <strong>IMC</strong>: <code>processIMC()</code> — two-tier hash scan across slots, finds best match (pure hit, extend, partial prefix trim, or rebuild from scratch), tokenizes extension tokens, sets <code>pending</code> flag on target slot.</p>
+          <ul>
+            <li><strong>6c. &lt;code&gt;createPrompt()&lt;/code&gt;</strong> → <code>applyRequestJinjaTemplate()</code> — applies Jinja2 chat template to remaining messages, returns prompt string + media bytes.</li>
+          </ul>
+          <p><strong>7. &lt;code&gt;submitToBatchEngine()&lt;/code&gt;</strong> (<code>model/chat.go</code>)</p>
+          <ul>
+            <li>Builds <code>chatJob</code> struct with all request data, cache state, IMC/SPC fields.</li>
+            <li>Calls <code>batch.submit()</code> — sends job to <code>requestQ</code> channel, sends wake signal on <code>wakeCh</code>.</li>
+            <li>Starts <code>queue-wait</code> span.</li>
+          </ul>
+          <p><strong>8. &lt;code&gt;processLoop()&lt;/code&gt; wakes</strong> (<code>model/batch_engine.go</code>)</p>
+          <ul>
+            <li>Signal-based: wakes immediately on <code>wakeCh</code>, polls at 100µs when active, 5ms when idle.</li>
+            <li>Calls <code>processBatch()</code>.</li>
+          </ul>
+          <p><strong>9. &lt;code&gt;processBatch()&lt;/code&gt;</strong> (<code>model/batch_engine.go</code>)</p>
+          <ul>
+            <li>Clears batch buffer.</li>
+            <li>Executes any pending slot preemption.</li>
+            <li>Prefills draft model for speculative decoding slots.</li>
+            <li>Adds generation tokens for active slots (1 token per slot).</li>
+            <li>Continues text prefill via round-robin <code>addPrefillChunk()</code> across slots.</li>
+            <li>Continues media prefill via <code>addPrefillMediaChunk()</code>.</li>
+            <li><strong>&lt;code&gt;fillSlots()&lt;/code&gt;</strong> (<code>model/batch_schedule.go</code>) — dequeues job, routes to target slot (IMC-aware routing or first-available).</li>
+          </ul>
+          <p><strong>10. &lt;code&gt;startSlot()&lt;/code&gt;</strong> (<code>model/batch_slot_start.go</code>)</p>
+          <ul>
+            <li>Resets slot, ends <code>queue-wait</code> span, starts <code>process-request</code> and <code>prefill</code> spans.</li>
+            <li><strong>Creates sampler</strong>: <code>toSampler()</code> — builds llama.cpp sampler chain (temperature, top_k, top_p, min_p, repetition penalties, DRY, XTC, mirostat).</li>
+            <li><strong>Creates grammar sampler</strong> if grammar specified.</li>
+            <li><strong>IMC cache restore</strong>: decodes extension tokens into slot's KV sequence via <code>decodeTokensIntoCache()</code>, or clears sequence for rebuild, or trims for partial prefix.</li>
+            <li><strong>SPC cache restore</strong>: <code>StateSeqSetData()</code> — restores saved KV state into slot's sequence.</li>
+            <li><strong>Tokenize prompt</strong>: <code>llama.Tokenize(vocab, prompt, addBOS, special=true)</code> — converts remaining prompt text to tokens.</li>
+            <li>Context window check.</li>
+            <li>Assembles draft prompt tokens for speculative decoding.</li>
+            <li><strong>&lt;code&gt;addPrefillChunk()&lt;/code&gt;</strong> — adds first chunk of tokens to batch.</li>
+          </ul>
+          <p><strong>11. Prefill phase</strong> (<code>model/batch_prefill_text.go</code>)</p>
+          <ul>
+            <li><code>addPrefillChunk()</code> adds tokens to batch in chunks up to <code>NBatch</code> limit.</li>
+            <li>Each token: <code>batch.Add(token, position, seqIDs, isLast)</code>.</li>
+            <li>Round-robin across slots via <code>NUBatch</code> chunk limit.</li>
+            <li><strong>&lt;code&gt;llama.Decode(lctx, batch)&lt;/code&gt;</strong> — GPU forward pass, fills KV cache.</li>
+            <li><strong>&lt;code&gt;llama.Synchronize(lctx)&lt;/code&gt;</strong> — waits for GPU completion.</li>
+            <li>Repeats until all prefill tokens consumed.</li>
+          </ul>
+          <p><strong>12. Token generation loop</strong> (back in <code>processBatch</code>)</p>
+          <ul>
+            <li>For each active slot with <code>prefillDone=true</code>:</li>
+          </ul>
+          <p>- <code>batch.Add(sampled, nPast, seqIDs, true)</code> — add last sampled token. - <code>llama.Decode()</code> — forward pass. - <strong>Speculative path</strong>: <code>generateDraftTokens()</code> → add draft+sampled to batch → <code>verifySpeculativeTokens()</code>.</p>
+          <p><strong>13. &lt;code&gt;processSlotToken()&lt;/code&gt;</strong> (<code>model/batch_tokens.go</code>)</p>
+          <ul>
+            <li><strong>Sample</strong>: <code>llama.SamplerSample(sampler, lctx, iBatch)</code> or grammar-aware <code>SampleWithGrammar()</code>.</li>
+          </ul>
+          <p><strong>14. &lt;code&gt;handleSampledToken()&lt;/code&gt;</strong> (<code>model/batch_tokens.go</code>)</p>
+          <ul>
+            <li><strong>Extract logprobs</strong>: <code>extractLogprobs()</code> via <code>llama.GetLogitsIth()</code> + log-softmax + top-k heap.</li>
+            <li><strong>Accept token</strong>: <code>llama.SamplerAccept()</code> (and grammar accept).</li>
+            <li><strong>EOG check</strong>: <code>llama.VocabIsEOG()</code> → if true, <code>finishSlot()</code>.</li>
+            <li><strong>UTF-8 buffering</strong>: <code>llama.TokenToPiece()</code> → buffer partial multi-byte codepoints → <code>extractCompleteUTF8()</code>.</li>
+            <li><strong>First token</strong>: records <code>prefillDone=true</code>, calculates TTFT, ends prefill span, starts <code>token-generation</code> span.</li>
+            <li><strong>Processor state machine</strong>: <code>stepGPT()</code> or <code>stepStandard()</code> — classifies content as reasoning/completion/tooling, detects think tags, tool call markers.</li>
+            <li><strong>Token counting</strong>: increments <code>reasonTokens</code> or <code>completionTokens</code>.</li>
+            <li><strong>Max tokens check</strong>: if <code>outputTokens &gt;= maxTokens</code>, <code>finishSlot()</code>.</li>
+            <li><strong>Accumulate</strong>: appends to <code>finalContent</code>, <code>finalReasoning</code>, or <code>finalTooling</code> builders.</li>
+            <li><strong>Stream</strong>: <code>sendDeltaResponse()</code> — sends SSE chunk via response channel (skipped for tool content).</li>
+          </ul>
+          <p><strong>15. &lt;code&gt;finishSlot()&lt;/code&gt;</strong> (<code>model/batch_finish.go</code>)</p>
+          <ul>
+            <li><strong>Flush UTF-8 buffer</strong> — emit any remaining complete codepoints.</li>
+            <li><strong>Parse tool calls</strong>: <code>parseGPTToolCall()</code> or <code>parseToolCall()</code> — extracts function name, arguments, validates JSON.</li>
+            <li><strong>Calculate metrics</strong>: TPS = <code>(outputTokens-1) / elapsed</code>, TTFT, draft acceptance rate.</li>
+            <li><strong>Send final response</strong>: <code>sendFinalResponse()</code> with usage, content, reasoning, tool calls, logprobs.</li>
+            <li><strong>KV cache cleanup</strong>:</li>
+          </ul>
+          <p>- IMC Dense/MoE: <code>MemorySeqRm(mem, seqID, trimPos, -1)</code> — partial trim, keeps cached prefix. - IMC Hybrid: full clear + <code>StateSeqSetData()</code> snapshot restore (partial delete corrupts recurrent state). - Non-IMC: <code>MemorySeqRm(mem, seqID, -1, -1)</code> — full clear.</p>
+          <ul>
+            <li><strong>Free resources</strong>: free sampler, grammar sampler, MTMD bitmaps/chunks, mtmdCtx.</li>
+            <li><strong>Close job channel</strong> → <code>streaming()</code> goroutine drains → closes caller channel.</li>
+            <li><strong>Decrement &lt;code&gt;activeStreams&lt;/code&gt;</strong>.</li>
+          </ul>
+          <p><strong>16. &lt;code&gt;releaseModel()&lt;/code&gt;</strong> (<code>sdk/kronk/acquire.go</code>)</p>
+          <ul>
+            <li>Releases semaphore slot (<code>&lt;-krn.sem</code>).</li>
+            <li>Decrements <code>activeStreams</code>.</li>
+          </ul>
         </div>
 
         <nav className="doc-sidebar">
@@ -6581,7 +6776,8 @@ batching = true`}</code></pre>
                 <li><a href="#178-api-handler-notes" className={activeSection === '178-api-handler-notes' ? 'active' : ''}>17.8 API Handler Notes</a></li>
                 <li><a href="#179-goroutine-budget" className={activeSection === '179-goroutine-budget' ? 'active' : ''}>17.9 Goroutine Budget</a></li>
                 <li><a href="#1710-request-tracing-spans" className={activeSection === '1710-request-tracing-spans' ? 'active' : ''}>17.10 Request Tracing Spans</a></li>
-                <li><a href="#1711-reference-threads" className={activeSection === '1711-reference-threads' ? 'active' : ''}>17.11 Reference Threads</a></li>
+                <li><a href="#1711-inference-code-path" className={activeSection === '1711-inference-code-path' ? 'active' : ''}>17.11 Inference Code Path</a></li>
+                <li><a href="#1712-inference-code-path-detailed" className={activeSection === '1712-inference-code-path-detailed' ? 'active' : ''}>17.12 Inference Code Path (Detailed)</a></li>
               </ul>
             </div>
           </div>

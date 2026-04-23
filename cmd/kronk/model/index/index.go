@@ -41,7 +41,7 @@ func runWeb() error {
 func runLocal(models *models.Models) error {
 	fmt.Println("Model Path:", models.Path())
 
-	if err := models.BuildIndex(kronk.FmtLogger); err != nil {
+	if err := models.BuildIndex(kronk.FmtLogger, true); err != nil {
 		return fmt.Errorf("build-index: %w", err)
 	}
 

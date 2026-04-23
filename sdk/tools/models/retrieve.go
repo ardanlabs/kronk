@@ -181,6 +181,7 @@ type Path struct {
 	Downloaded           bool     `yaml:"downloaded"`
 	Validated            bool     `yaml:"validated"`
 	TokenizerFingerprint string   `yaml:"tokenizer_fingerprint,omitempty"`
+	FileSizes            []int64  `yaml:"file_sizes,omitempty"`
 }
 
 // FullPath locates the physical location on disk and returns the full path.

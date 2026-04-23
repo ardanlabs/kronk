@@ -55,8 +55,10 @@ func (m *Models) Path() string {
 	return m.modelsPath
 }
 
-// BuildIndex builds the model index for fast model access.
-func (m *Models) BuildIndex(log Logger) error {
+// BuildIndex builds the model index for fast model access. When checkSHA is
+// true, all models are fully validated with SHA256 checks. When false,
+// previously validated models are trusted (used at KMS startup for speed).
+func (m *Models) BuildIndex(log Logger, checkSHA bool) error {
 	currentIndex := m.loadIndex()
 
 	m.biMutex.Lock()
@@ -125,21 +127,38 @@ func (m *Models) BuildIndex(log Logger) error {
 			ctx := context.Background()
 
 			for modelID, files := range modelfiles {
-				isValidated := currentIndex[modelID].Validated
+				prev := currentIndex[modelID]
+				isValidated := prev.Validated
 
 				slices.Sort(files)
+
+				// Collect current file sizes and invalidate validation
+				// if any size changed (e.g. file was copied/replaced).
+				sizes := make([]int64, len(files))
+				for i, file := range files {
+					if info, err := os.Stat(file); err == nil {
+						sizes[i] = info.Size()
+					}
+				}
+
+				if isValidated && !fileSizesMatch(prev.FileSizes, sizes) {
+					isValidated = false
+				}
 
 				mp := Path{
 					ModelFiles: files,
 					Downloaded: true,
+					FileSizes:  sizes,
 				}
 
 				if projFile, exists := projFiles[modelID]; exists {
 					mp.ProjFile = projFile
 				}
 
-				validated := true
-				if !isValidated {
+				validated := isValidated
+				if checkSHA {
+					validated = true
+
 					for _, file := range files {
 						log(ctx, "running check ", "model", path.Base(file))
 						if err := model.CheckModel(file, true); err != nil {
@@ -214,6 +233,27 @@ func (m *Models) removeEmptyDirs() error {
 	}
 
 	return nil
+}
+
+// fileSizesMatch returns true if both slices have the same length and values.
+// An empty previous slice (legacy index) is treated as a mismatch to force
+// re-validation on first run after upgrade.
+func fileSizesMatch(prev, cur []int64) bool {
+	if len(prev) == 0 {
+		return false
+	}
+
+	if len(prev) != len(cur) {
+		return false
+	}
+
+	for i := range prev {
+		if prev[i] != cur[i] {
+			return false
+		}
+	}
+
+	return true
 }
 
 // isDirEffectivelyEmpty returns true if directory only contains ignorable files like .DS_Store

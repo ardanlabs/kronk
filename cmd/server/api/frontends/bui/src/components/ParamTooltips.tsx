@@ -118,7 +118,7 @@ export const PARAM_TOOLTIPS = {
   cacheTypeV: 'Precision format for the value portion of the KV cache. Same options as Cache Type K. Some models benefit from asymmetric K/V quantization.',
   cacheMinTokens: 'Minimum token count required before cache reuse kicks in. Higher values avoid caching very short prompts; lower values maximize reuse but can consume more memory for small requests.',
   useDirectIO: 'Uses direct I/O for model file reads, bypassing the OS page cache. Can reduce double-buffering and cache pressure for large model loads, but may be slower or unsupported on some filesystems.',
-  ignoreIntegrityCheck: 'Skips model file integrity verification during load. Useful only when you trust the file source and need to bypass a known false positive; otherwise leave disabled to catch corrupted or partial files.',
+
   offloadKQV: 'Offloads key/query/value attention operations to GPU. Can improve performance on GPU-backed inference but increases VRAM usage.',
   opOffload: 'Allows selected host-side tensor operations to be offloaded to GPU during prompt processing. Can improve throughput for large or CPU-heavy workloads.',
   mainGpu: 'Primary GPU index used in multi-GPU configurations. Relevant when using split mode or explicit device placement. Leave empty on single-GPU systems.',

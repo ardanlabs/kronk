@@ -118,9 +118,6 @@ type DraftModelConfig struct {
 // When left as zero value, FlashAttentionEnabled is used (default on).
 // Set to FlashAttentionDisabled to disable, or FlashAttentionAuto to let llama.cpp decide.
 //
-// IgnoreIntegrityCheck is a boolean that determines if the system should ignore
-// a model integrity check before trying to use it.
-//
 // IncrementalCache enables Incremental Message Caching (IMC) for agentic
 // workflows. It caches all messages except the last one (which triggers
 // generation) and extends the cache incrementally on each turn. This is ideal
@@ -269,49 +266,48 @@ type DraftModelConfig struct {
 // YarnOrigCtx sets the original training context size for YaRN scaling. When nil
 // or 0, uses the model's native training context length from metadata.
 type Config struct {
-	CacheMinTokens       int
-	CacheSlotTimeout     int
-	CacheTypeK           GGMLType
-	CacheTypeV           GGMLType
-	ContextWindow        int
-	DefaultParams        Params
-	DraftModel           *DraftModelConfig
-	Devices              []string // Device names for model execution (e.g., ["CUDA0", "CUDA1"])
-	FlashAttention       FlashAttentionType
-	IgnoreIntegrityCheck bool
-	IncrementalCache     bool
-	InsecureLogging      bool
-	JinjaFile            string
-	Log                  Logger
-	MainGPU              *int
-	MoE                  *MoEConfig
-	ModelFiles           []string
-	NBatch               int
-	NGpuLayers           *int
-	NSeqMax              int
-	NThreads             int
-	NThreadsBatch        int
-	NUBatch              int
-	NUMA                 string
-	OffloadKQV           *bool
-	OpOffload            *bool
-	OpOffloadMinBatch    int
-	ProjFile             string
-	RopeFreqBase         *float32
-	RopeFreqScale        *float32
-	RopeScaling          RopeScalingType
-	SplitMode            *SplitMode
-	SWAFull              *bool
-	SystemPromptCache    bool
-	TensorBuftOverrides  []string
-	TensorSplit          []float32
-	UseDirectIO          bool
-	UseMMap              *bool
-	YarnAttnFactor       *float32
-	YarnBetaFast         *float32
-	YarnBetaSlow         *float32
-	YarnExtFactor        *float32
-	YarnOrigCtx          *int
+	CacheMinTokens      int
+	CacheSlotTimeout    int
+	CacheTypeK          GGMLType
+	CacheTypeV          GGMLType
+	ContextWindow       int
+	DefaultParams       Params
+	DraftModel          *DraftModelConfig
+	Devices             []string // Device names for model execution (e.g., ["CUDA0", "CUDA1"])
+	FlashAttention      FlashAttentionType
+	IncrementalCache    bool
+	InsecureLogging     bool
+	JinjaFile           string
+	Log                 Logger
+	MainGPU             *int
+	MoE                 *MoEConfig
+	ModelFiles          []string
+	NBatch              int
+	NGpuLayers          *int
+	NSeqMax             int
+	NThreads            int
+	NThreadsBatch       int
+	NUBatch             int
+	NUMA                string
+	OffloadKQV          *bool
+	OpOffload           *bool
+	OpOffloadMinBatch   int
+	ProjFile            string
+	RopeFreqBase        *float32
+	RopeFreqScale       *float32
+	RopeScaling         RopeScalingType
+	SplitMode           *SplitMode
+	SWAFull             *bool
+	SystemPromptCache   bool
+	TensorBuftOverrides []string
+	TensorSplit         []float32
+	UseDirectIO         bool
+	UseMMap             *bool
+	YarnAttnFactor      *float32
+	YarnBetaFast        *float32
+	YarnBetaSlow        *float32
+	YarnExtFactor       *float32
+	YarnOrigCtx         *int
 }
 
 func (cfg Config) String() string {
@@ -354,9 +350,9 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("{mode:%s top_n:%s}", m.Mode, topN)
 	}
 
-	return fmt.Sprintf("\nCacheMinTokens[%d]\nCacheSlotTimeout[%d]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%d]\nDevices[%v]\nFlashAttention[%s]\nIgnoreIntegrityCheck[%t]\nIncrementalCache[%t]\nInsecureLogging[%t]\nJinjaFile[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%d]\nNGpuLayers[%s]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%d]\nProjFile[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSplitMode[%s]\nSWAFull[%s]\nSystemPromptCache[%t]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nUseDirectIO[%t]\nUseMMap[%s]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
+	return fmt.Sprintf("\nCacheMinTokens[%d]\nCacheSlotTimeout[%d]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%d]\nDevices[%v]\nFlashAttention[%s]\nIncrementalCache[%t]\nInsecureLogging[%t]\nJinjaFile[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%d]\nNGpuLayers[%s]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%d]\nProjFile[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSplitMode[%s]\nSWAFull[%s]\nSystemPromptCache[%t]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nUseDirectIO[%t]\nUseMMap[%s]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
 		cfg.CacheMinTokens, cfg.CacheSlotTimeout, cfg.CacheTypeK, cfg.CacheTypeV,
-		cfg.ContextWindow, cfg.Devices, cfg.FlashAttention, cfg.IgnoreIntegrityCheck,
+		cfg.ContextWindow, cfg.Devices, cfg.FlashAttention,
 		cfg.IncrementalCache, cfg.InsecureLogging, cfg.JinjaFile,
 		formatIntPtr(cfg.MainGPU), formatMoEPtr(cfg.MoE), cfg.ModelFiles, cfg.NBatch,
 		formatIntPtr(cfg.NGpuLayers), cfg.NSeqMax, cfg.NThreads, cfg.NThreadsBatch, cfg.NUBatch,
@@ -401,12 +397,10 @@ func validateConfig(ctx context.Context, cfg Config, log Logger) error {
 		if cfg.NSeqMax > 1 {
 			return fmt.Errorf("validate-config: speculative decoding requires NSeqMax=1, got %d", cfg.NSeqMax)
 		}
-		if !cfg.IgnoreIntegrityCheck {
-			for _, modelFile := range cfg.DraftModel.ModelFiles {
-				log(ctx, "validate-config", "draft-model-file", modelFile)
-				if err := CheckModel(modelFile, true); err != nil {
-					return fmt.Errorf("validate-config: draft model: %w", err)
-				}
+		for _, modelFile := range cfg.DraftModel.ModelFiles {
+			log(ctx, "validate-config", "draft-model-file", modelFile)
+			if err := CheckModel(modelFile, true); err != nil {
+				return fmt.Errorf("validate-config: draft model: %w", err)
 			}
 		}
 	}
@@ -436,21 +430,19 @@ func validateConfig(ctx context.Context, cfg Config, log Logger) error {
 		return fmt.Errorf("validate-config: OpOffloadMinBatch must be >= 0, got %d", cfg.OpOffloadMinBatch)
 	}
 
-	if !cfg.IgnoreIntegrityCheck {
-		for _, modelFile := range cfg.ModelFiles {
-			log(ctx, "validate-config", "model-file", modelFile)
+	for _, modelFile := range cfg.ModelFiles {
+		log(ctx, "validate-config", "model-file", modelFile)
 
-			if err := CheckModel(modelFile, true); err != nil {
-				return fmt.Errorf("validate-config: %w", err)
-			}
+		if err := CheckModel(modelFile, true); err != nil {
+			return fmt.Errorf("validate-config: %w", err)
 		}
+	}
 
-		if cfg.ProjFile != "" {
-			log(ctx, "validate-config", "model-file", cfg.ProjFile)
+	if cfg.ProjFile != "" {
+		log(ctx, "validate-config", "model-file", cfg.ProjFile)
 
-			if err := CheckModel(cfg.ProjFile, true); err != nil {
-				return fmt.Errorf("validate-config: prog-file[%s]: %w", cfg.ProjFile, err)
-			}
+		if err := CheckModel(cfg.ProjFile, true); err != nil {
+			return fmt.Errorf("validate-config: prog-file[%s]: %w", cfg.ProjFile, err)
 		}
 	}
 
@@ -564,9 +556,6 @@ func applyCatalogConfig(user Config, cat Config) Config {
 	}
 	if user.NUMA == NUMADisabled {
 		user.NUMA = cat.NUMA
-	}
-	if !user.IgnoreIntegrityCheck {
-		user.IgnoreIntegrityCheck = cat.IgnoreIntegrityCheck
 	}
 	if user.NSeqMax == 0 {
 		user.NSeqMax = cat.NSeqMax
