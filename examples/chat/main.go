@@ -335,7 +335,7 @@ loop:
 
 				messages = append(messages,
 					model.D{
-						"role":         "tool",
+						"role":         "assistant",
 						"name":         tool.Function.Name,
 						"tool_call_id": tool.ID,
 						"content": fmt.Sprintf("Tool call %s: %s(%v)\n",

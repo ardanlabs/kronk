@@ -182,8 +182,12 @@ func normalizeGemmaQuotes(s string) string {
 		b.WriteString(prefix)
 		i += openIdx + tokenLen
 
-		// Find the closing <|"|>.
-		closeIdx := strings.Index(s[i:], gemmaToken)
+		// Find the closing <|"|>. Use structural analysis: the correct
+		// closing token is followed by a JSON structural character
+		// (, } ] ") or end-of-string. Inner <|"|> tokens (used for
+		// Go string literals like fmt.Println(<|"|>hello<|"|>)) are
+		// followed by code characters like ) and must be skipped.
+		closeIdx := findStructuralGemmaClose(s[i:])
 		if closeIdx == -1 {
 			// No closing token — the model may have used a backtick as
 			// the alternate closer. Look for a structural backtick
@@ -355,6 +359,53 @@ func normalizeGemmaQuotes(s string) string {
 	}
 
 	return b.String()
+}
+
+// findStructuralGemmaClose finds the closing <|"|> token that ends a JSON
+// value. When the model uses <|"|> for ALL quote characters (both JSON
+// delimiters and inner Go string literals), the correct closing token is
+// the one followed by a JSON structural character (, } ] ") or end-of-string.
+// Inner <|"|> tokens (e.g., fmt.Println(<|"|>hello<|"|>)) are followed by
+// code characters like ) and must be skipped.
+//
+// Returns the index of the opening < of the closing <|"|> in s, or -1.
+func findStructuralGemmaClose(s string) int {
+	tokenLen := len(gemmaToken)
+	searchFrom := 0
+
+	for {
+		idx := strings.Index(s[searchFrom:], gemmaToken)
+		if idx == -1 {
+			return -1
+		}
+
+		pos := searchFrom + idx
+		afterToken := pos + tokenLen
+
+		// <|"|> at the end of the string is structural.
+		if afterToken >= len(s) {
+			return pos
+		}
+
+		// Check the character after the token. Structural closers are
+		// followed by JSON punctuation or whitespace-then-punctuation.
+		j := afterToken
+		for j < len(s) && isWhitespace(s[j]) {
+			j++
+		}
+
+		if j >= len(s) {
+			return pos
+		}
+
+		switch s[j] {
+		case ',', '}', ']', '"':
+			return pos
+		}
+
+		// Not structural — skip past this token and continue searching.
+		searchFrom = afterToken
+	}
 }
 
 // fixMissingKeyOpenQuote fixes the pattern ,key": that appears after a

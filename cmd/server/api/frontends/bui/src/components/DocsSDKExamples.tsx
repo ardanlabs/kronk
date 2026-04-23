@@ -220,7 +220,6 @@ func (a *Agent) streamModelTurn(ctx context.Context, conversation []model.D) (st
 		"temperature":    0.0,
 		"top_p":          0.1,
 		"top_k":          1,
-		"stream":         true,
 		"tools":          a.toolDocuments,
 		"tool_selection": "auto",
 	}
@@ -1125,7 +1124,7 @@ loop:
 
 				messages = append(messages,
 					model.D{
-						"role":         "tool",
+						"role":         "assistant",
 						"name":         tool.Function.Name,
 						"tool_call_id": tool.ID,
 						"content": fmt.Sprintf("Tool call %s: %s(%v)\\n",

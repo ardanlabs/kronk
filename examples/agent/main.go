@@ -218,7 +218,6 @@ func (a *Agent) streamModelTurn(ctx context.Context, conversation []model.D) (st
 		"temperature":    0.0,
 		"top_p":          0.1,
 		"top_k":          1,
-		"stream":         true,
 		"tools":          a.toolDocuments,
 		"tool_selection": "auto",
 	}

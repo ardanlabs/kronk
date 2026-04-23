@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
@@ -17,8 +18,14 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	s.reset()
 	s.active = true
 	s.job = job
-	// Note: startTime is set when prefillDone=true (first output token) for accurate TPS
-	// seqID is already set correctly during slot creation in newBatchEngine
+
+	// When the template injects <think> into the prompt (e.g., Qwen3 with
+	// enable_thinking=true), the model starts generating inside the thinking
+	// block. Set the processor to statusReasoning so tokens are routed to the
+	// reasoning field instead of content.
+	if strings.HasSuffix(job.prompt, "<think>\n") {
+		s.proc.status = statusReasoning
+	}
 
 	// End the queue-wait span now that the job has been picked up.
 	if job.queueWaitSpan != nil {

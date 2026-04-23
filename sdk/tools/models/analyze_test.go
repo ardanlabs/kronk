@@ -103,7 +103,7 @@ func TestAnalyzeModelDense(t *testing.T) {
 	}
 
 	if a.Recommended.NSeqMax != 2 {
-		t.Errorf("Recommended.NSeqMax = %d, want %d", a.Recommended.NSeqMax, 2)
+		t.Errorf("Recommended.NSeqMax = %d, want %d", a.Recommended.NSeqMax, 1)
 	}
 
 	if a.Recommended.FlashAttention != "auto" {
