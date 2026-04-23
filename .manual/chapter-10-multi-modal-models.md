@@ -210,7 +210,6 @@ Total:             ~9.4 GB
 
 ### 10.7 Limitations
 
-- SPC is not supported for vision/audio requests
 - IMC fully caches media (images/audio) in the KV cache; text-only follow-ups
   extend the cache without re-encoding media (see [§5.8](#58-performance-and-limitations))
 - Processing time varies with image resolution and audio duration

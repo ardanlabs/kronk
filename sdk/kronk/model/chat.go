@@ -190,7 +190,7 @@ func (m *Model) prepareContext(ctx context.Context, d D) (D, mtmd.Context, strin
 	}
 
 	// If the model supports media but this request has no media content,
-	// treat it as text so caching (IMC/SPC) can operate.
+	// treat it as text so caching (IMC) can operate.
 	mediaType, _, _, _ := detectMediaContent(d)
 
 	if mediaType == MediaTypeNone {
@@ -215,11 +215,9 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, r
 	// "tool_call_name" (for GPT templates) so tool responses render correctly.
 	d = m.injectToolResponseNames(ctx, d)
 
-	// IMC now caches through media messages using the mtmd pipeline —
+	// IMC caches through media messages using the mtmd pipeline —
 	// images and audio remain in the KV cache across requests.
-	// SPC does not support media requests.
-	cachingEnabled := (m.cfg.SystemPromptCache && object == ObjectChatText) ||
-		(m.cfg.IncrementalCache && (object == ObjectChatText || (object == ObjectChatMedia && m.projFile != "")))
+	cachingEnabled := m.cfg.IncrementalCache && (object == ObjectChatText || (object == ObjectChatMedia && m.projFile != ""))
 
 	switch {
 	case !cachingEnabled:
@@ -268,10 +266,8 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		mtmdCtx:       mtmdCtx,
 		ch:            ch,
 
-		spcCacheIdx: cache.cacheIdx,
-		spcCacheHit: m.cfg.SystemPromptCache && cache.cacheIdx > 0,
-		spcSession:  cache.spcSession,
-
+		imcSession:      cache.imcSession,
+		imcSessionMedia: cache.imcSession != nil && (cache.imcSession.hasMedia || cache.imcMediaBuild),
 		imcSlotID:       cache.imcSlotID,
 		imcCacheHit:     imcCacheHit,
 		imcExpectedHash: cache.imcExpectedHash,

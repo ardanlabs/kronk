@@ -443,7 +443,6 @@ export default function ModelList() {
                         { key: 'rope-scaling-type', label: labelWithTip('rope-scaling-type', 'ropeScaling'), value: mc['rope-scaling-type'] || '—' },
                         { key: 'split-mode', label: labelWithTip('split-mode', 'splitMode'), value: mc['split-mode'] || 'default' },
                         { key: 'swa-full', label: labelWithTip('swa-full', 'swaFull'), value: mc['swa-full'] == null ? <span className="badge badge-yes">Yes (default)</span> : boolBadge(mc['swa-full']) },
-                        { key: 'system-prompt-cache', label: labelWithTip('system-prompt-cache', 'systemPromptCache'), value: boolBadge(mc['system-prompt-cache']) },
                         { key: 'tensor-buft-overrides', label: labelWithTip('tensor-buft-overrides', 'tensorBuftOverrides'), value: mc['tensor-buft-overrides']?.join(', ') || '—' },
                         { key: 'tensor-split', label: labelWithTip('tensor-split', 'tensorSplit'), value: mc['tensor-split']?.join(', ') || '—' },
                         { key: 'use-direct-io', label: labelWithTip('use-direct-io', 'useDirectIO'), value: boolBadge(mc['use-direct-io']) },

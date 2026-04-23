@@ -68,13 +68,10 @@ google/gemma-3-4b-it-Q4_K_M:
   context-window: 32768
   nbatch: 2048
   nubatch: 512
-  system-prompt-cache: true
+  incremental-cache: true
   sampling-parameters:
     temperature: 0.7
     top_k: 40
-
-google/gemma-3-4b-it-Q4_K_M/IMC:
-  incremental-cache: true
 ```
 
 Keys are model IDs. The `/IMC` variant allows different configs for the same model.

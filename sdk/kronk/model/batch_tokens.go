@@ -93,6 +93,10 @@ func (e *batchEngine) handleSampledToken(s *slot, token llama.Token, iBatch int3
 		s.ttft = ttft
 		metrics.AddTimeToFirstToken(e.model.modelInfo.ID, ttft)
 
+		e.model.log(s.job.ctx, "batch-engine", "status", "prefill-done",
+			"slot", s.id, "seq", s.seqID, "id", s.job.id,
+			"prompt_tokens", s.nPrompt, "ttft", ttft.String())
+
 		if s.prefillSpan != nil {
 			if s.prefillSpan.IsRecording() {
 				s.prefillSpan.SetAttributes(attribute.String("ttft", ttft.String()))

@@ -185,18 +185,17 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 	a.mu.Unlock()
 
 	effectiveConfig := map[string]any{
-		"context_window":      krn.ModelConfig().ContextWindow,
-		"nbatch":              krn.ModelConfig().NBatch,
-		"nubatch":             krn.ModelConfig().NUBatch,
-		"nseq_max":            krn.ModelConfig().NSeqMax,
-		"flash_attention":     krn.ModelConfig().FlashAttention.String(),
-		"cache_type_k":        krn.ModelConfig().CacheTypeK.String(),
-		"cache_type_v":        krn.ModelConfig().CacheTypeV.String(),
-		"system_prompt_cache": krn.ModelConfig().SystemPromptCache,
-		"incremental_cache":   krn.ModelConfig().IncrementalCache,
-		"split_mode":          formatSplitMode(krn.ModelConfig().SplitMode),
-		"model_type":          krn.ModelInfo().Type.String(),
-		"is_gpt_model":        krn.ModelInfo().IsGPTModel,
+		"context_window":    krn.ModelConfig().ContextWindow,
+		"nbatch":            krn.ModelConfig().NBatch,
+		"nubatch":           krn.ModelConfig().NUBatch,
+		"nseq_max":          krn.ModelConfig().NSeqMax,
+		"flash_attention":   krn.ModelConfig().FlashAttention.String(),
+		"cache_type_k":      krn.ModelConfig().CacheTypeK.String(),
+		"cache_type_v":      krn.ModelConfig().CacheTypeV.String(),
+		"incremental_cache": krn.ModelConfig().IncrementalCache,
+		"split_mode":        formatSplitMode(krn.ModelConfig().SplitMode),
+		"model_type":        krn.ModelInfo().Type.String(),
+		"is_gpt_model":      krn.ModelInfo().IsGPTModel,
 	}
 
 	if dm := krn.ModelConfig().DraftModel; dm != nil && len(dm.ModelFiles) > 0 {

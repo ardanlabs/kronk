@@ -38,7 +38,7 @@ export const PARAM_TOOLTIPS = {
   nSeqMax: 'Maximum number of concurrent request slots. Each slot handles one user request simultaneously. More slots = better concurrency, but each slot reserves memory for its KV cache.',
   flashAttention: 'Optimized attention algorithm that reduces VRAM usage and can improve speed. "Enabled" forces it on, "Disabled" forces it off, "Auto" lets the server decide based on model compatibility.',
   cacheType: 'KV cache precision. f16 = full precision (best quality), q8_0 = 8-bit quantized (less VRAM, minimal quality loss), q4_0 = 4-bit quantized (most VRAM savings, slight quality trade-off especially at long context).',
-  cacheMode: 'Caching strategy (SPC and IMC are mutually exclusive). None = clears KV state after each request. SPC (System Prompt Cache) = reuses cached system-prompt state to speed up new conversations. IMC (Incremental Message Cache) = keeps the conversation\'s KV state in a dedicated slot for fast multi-turn follow-ups.',
+  cacheMode: 'Caching strategy. None = clears KV state after each request. IMC (Incremental Message Cache) = keeps the conversation\'s KV state in a dedicated slot for fast multi-turn follow-ups.',
 
   // MoE configuration
   moeMode: 'How to distribute expert weights between GPU and CPU. "Recommended" auto-detects the best option for your hardware. "Save GPU Memory" moves experts to CPU (most common for consumer GPUs). "Maximum Speed" keeps everything on GPU (requires very large VRAM; exact need depends on model, quantization, context, and slots). "Balanced" lets you choose how many layers stay on GPU.',
@@ -133,7 +133,6 @@ export const PARAM_TOOLTIPS = {
   ngpuLayers: 'Number of model layers offloaded to GPU. 0 = all layers on GPU (default). -1 = all layers on CPU. Positive N = first N layers on GPU. Lower values save VRAM but reduce speed.',
   splitMode: 'How model weights are distributed across multiple GPUs. "layer" assigns whole layers per GPU, "row" splits individual tensor rows. "none" uses a single GPU.',
   swaFull: 'Use full-size KV cache for sliding window attention (SWA) layers instead of the compact n_swa-sized cache. Increases VRAM usage but preserves accuracy for models like Gemma 4. Default: on (llama.cpp default).',
-  systemPromptCache: 'Caches the KV state of the system prompt so it can be reused across new conversations without re-processing. Saves prefill time when every request shares the same system prompt.',
   incrementalCache: 'Keeps the full conversation KV state in a dedicated slot between requests. Enables fast multi-turn follow-ups by only processing new tokens instead of the entire history.',
   ropeScaling: 'Type of RoPE (Rotary Position Embedding) scaling used to extend the model\'s context window beyond its native training length. "yarn" is the most common method.',
   yarnOrigCtx: 'The model\'s original (native) context length before YaRN extension. YaRN uses this as the baseline to calculate scaling factors. "auto" reads it from the model metadata.',

@@ -398,9 +398,8 @@ batching = true
 - `slot.seqIDs` = pre-allocated slice for efficient `batchAdd` calls
 
 Sequences are isolated partitions in the shared KV cache memory. Slot seqIDs
-always start at 0 — no sequences are reserved for caching. SPC decodes
-saved tokens directly into slot sequences. IMC binds each slot's sequence
-to a conversation.
+always start at 0 — no sequences are reserved for caching. IMC binds each
+slot's sequence to a conversation.
 
 #### 16.7.6 Context Pooling
 
@@ -508,8 +507,8 @@ Each chat completion request produces the following trace hierarchy:
 ```
 POST /v1/chat/completions
 ├── prepare-request              Validation, caching, and prompt creation
-│   ├── process-cache            Cache lookup/update (SPC or IMC, when enabled)
-│   │   └── cache-tokenize-*     Tokenization for cache (spc, imc-extend, imc-scratch)
+│   ├── process-cache            Cache lookup/update (IMC, when enabled)
+│   │   └── cache-tokenize-*     Tokenization for cache (imc-extend, imc-scratch)
 │   └── create-prompt            Jinja template application
 │
 │        ← queue wait →          Job sits in requestQ channel until batch engine picks it up
@@ -520,7 +519,7 @@ POST /v1/chat/completions
 ```
 
 **Phase 1: prepare-request** runs in the `ChatStreaming` goroutine. It
-validates the document, processes caches (SPC/IMC), and creates the prompt
+validates the document, processes the IMC cache, and creates the prompt
 via the Jinja template. When caching is enabled, `process-cache` and its
 child `cache-tokenize-*` spans appear here.
 
@@ -584,9 +583,6 @@ request:
 If caching is enabled, the system checks whether any portion of the
 conversation is already in the KV cache to avoid redundant computation:
 
-- **System Prompt Cache (SPC)**: Hashes the system message. If a match is
-  found, the saved KV state is prepared for restore and the system message
-  is removed from the document so it won't be re-processed.
 - **Incremental Message Cache (IMC)**: Hashes all messages except the last
   and scans slots for a matching conversation prefix. The best match
   determines the strategy: pure cache hit (nothing to decode), extend
@@ -623,8 +619,7 @@ longest-running slot is preempted after a configurable timeout.
 
 The assigned slot is prepared for this request:
 
-1. **Restore cached KV state**: For SPC, the saved KV snapshot is loaded into
-   the slot's sequence. For IMC, extension tokens are decoded into the
+1. **Restore cached KV state**: For IMC, extension tokens are decoded into the
    existing sequence, or the sequence is cleared and rebuilt.
 2. **Build the sampler**: A sampler chain is constructed from the request's
    sampling parameters (temperature, top_k, top_p, min_p, repetition
@@ -759,10 +754,7 @@ Each step corresponds to the high-level description in
 
 - **6a. `injectToolResponseNames()`** — adds `name`/`tool_call_name` to
   `role:"tool"` messages by matching `tool_call_id`.
-- **6b. `processCache()`** (`model/caching.go`) — mutually exclusive:
-  - **SPC**: `processSPC()` — hashes system message, looks up/creates
-    `spcSession`, extracts KV state via `StateSeqGetData`, removes system
-    message from document.
+- **6b. `processCache()`** (`model/caching.go`):
   - **IMC**: `processIMC()` — two-tier hash scan across slots, finds best match
     (pure hit, extend, partial prefix trim, or rebuild from scratch), tokenizes
     extension tokens, sets `pending` flag on target slot.
@@ -771,7 +763,7 @@ Each step corresponds to the high-level description in
 
 **7. `submitToBatchEngine()`** (`model/chat.go`)
 
-- Builds `chatJob` struct with all request data, cache state, IMC/SPC fields.
+- Builds `chatJob` struct with all request data, cache state, and IMC fields.
 - Calls `batch.submit()` — sends job to `requestQ` channel, sends wake signal
   on `wakeCh`.
 - Starts `queue-wait` span.
@@ -803,8 +795,6 @@ Each step corresponds to the high-level description in
 - **IMC cache restore**: decodes extension tokens into slot's KV sequence via
   `decodeTokensIntoCache()`, or clears sequence for rebuild, or trims for
   partial prefix.
-- **SPC cache restore**: `StateSeqSetData()` — restores saved KV state into
-  slot's sequence.
 - **Tokenize prompt**: `llama.Tokenize(vocab, prompt, addBOS, special=true)` —
   converts remaining prompt text to tokens.
 - Context window check.

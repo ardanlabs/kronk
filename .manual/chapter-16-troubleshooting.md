@@ -283,15 +283,7 @@ Each event is prefixed with `data: ` and ends with two newlines.
 
 **Solutions:**
 
-Enable system prompt caching:
-
-```yaml
-models:
-  Qwen3-8B-Q8_0:
-    system_prompt_cache: true
-```
-
-Or enable incremental message cache for agents:
+Enable incremental message caching:
 
 ```yaml
 models:

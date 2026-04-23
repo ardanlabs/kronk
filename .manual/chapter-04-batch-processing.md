@@ -91,8 +91,8 @@ Slot 3  →  seqID = 3  →  KV cache partition 3
 ```
 
 How a slot uses its sequence depends on the caching strategy. Without caching,
-the sequence is cleared between requests. With SPC or IMC, the sequence
-retains cached tokens to avoid redundant processing. See
+the sequence is cleared between requests. With IMC, the sequence retains
+cached tokens to avoid redundant processing. See
 [Section 3.5](#35-parallel-inference-nseqmax) for details on how each caching
 strategy affects slot behavior.
 
@@ -104,13 +104,12 @@ Each request moves through the batch engine in the following stages:
 2. **Assign**: Available slot picks up the request
 3. **Cache Setup**: Prepare the slot's sequence based on caching strategy:
    - Clear the sequence (no caching)
-   - Clear the sequence, then copy cached KV state from dedicated SPC sequence (SPC)
    - Extend or rebuild the conversation cache in place (IMC)
 4. **Prefill**: Tokenize and process remaining prompt tokens (round-robin
    across slots in `n_ubatch`-sized chunks to prevent starvation)
 5. **Decode**: Generate tokens one at a time, streaming to client
 6. **Complete**: Release the slot:
-   - Clear the entire sequence (no caching or SPC)
+   - Clear the entire sequence (no caching)
    - Dense/MoE with IMC: Trim generated tokens via partial range delete, keep cached conversation prefix
    - Hybrid with IMC: Full clear + restore snapshot from byte buffer, keep cached conversation prefix (see [Section 4.9](#49-model-types-and-state-management))
 
@@ -162,7 +161,7 @@ Adding slots increases throughput but costs memory. Each additional slot
 allocates its own KV cache partition proportional to the full context window.
 
 Each slot reserves its own KV cache partition, so increasing `NSeqMax`
-increases VRAM usage proportionally. Neither SPC nor IMC adds extra sequences.
+increases VRAM usage proportionally. IMC does not add extra sequences.
 For details on how slot memory is allocated and how to estimate total VRAM, see
 [Section 3.5](#35-parallel-inference-nseqmax) and
 [Section 3.7](#37-vram-estimation).
@@ -276,11 +275,11 @@ models:
     n_ubatch: 512
     cache_type_k: q8_0
     cache_type_v: q8_0
-    system_prompt_cache: true
+    incremental_cache: true
 ```
 
 This configuration handles 8 concurrent requests, uses quantized KV cache to
-reduce memory, and caches the system prompt for faster prefill. Here is the
+reduce memory, and caches conversations incrementally for faster prefill. Here is the
 VRAM estimate (see [Section 3.7](#37-vram-estimation) for the full formula):
 
 ```
@@ -317,7 +316,7 @@ handles the constraint of routing requests to specific slots. This section expla
 how IMC scheduling differs from normal slot assignment and the mechanisms that
 prevent requests from stalling.
 
-#### Normal Scheduling (No Caching / SPC)
+#### Normal Scheduling (No Caching)
 
 Without IMC, the algorithm assigns the next queued request to any available
 slot. If all slots are busy, the request stays in the queue until a slot

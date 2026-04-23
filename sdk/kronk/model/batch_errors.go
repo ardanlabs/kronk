@@ -41,10 +41,10 @@ func (e *batchEngine) logDecodeError(ctx context.Context, ret int32, err error) 
 	// Collect total KV usage across all sequences (including idle IMC slots)
 	// to provide accurate diagnostics when the unified KV cache is full.
 	var totalKV int
-	imcInfo := make([]string, 0, len(e.model.imcSlots))
+	imcInfo := make([]string, 0, len(e.model.imcSessions))
 
 	e.model.cacheMu.RLock()
-	for _, slot := range e.model.imcSlots {
+	for _, slot := range e.model.imcSessions {
 		if slot.totalTokensCached > 0 {
 			imcInfo = append(imcInfo, fmt.Sprintf("imc[%d,seq=%d]=%d", slot.slotID, slot.seqID, slot.totalTokensCached))
 			totalKV += slot.totalTokensCached

@@ -13,15 +13,21 @@ import (
 
 // cacheResult contains the results of cache processing.
 type cacheResult struct {
-	modifiedD       D           // D with cached messages removed if cache was used
-	cacheIdx        llama.Pos   // KV position where cached content ends; new tokens start here
-	err             error       // Any error that occurred
-	cacheSeqID      llama.SeqId // Cache session's sequence ID
-	spcSession      *spcSession // Resolved SPC session for restore (carried on the job)
-	imcSlotID       int         // IMC slot index for routing (distinct from seqID for clarity)
-	imcExpectedHash string      // Expected cachedMsgsHash at startSlot time (for stale detection)
+	modifiedD D         // D with cached messages removed if cache was used
+	cacheIdx  llama.Pos // KV position where cached content ends; new tokens start here
+	err       error     // Any error that occurred
 
-	// IMC dedicated slot fields — tokens to decode into slot's sequence.
+	// Transitional: slot-oriented fields retained until Phase 4/5 remove slot routing.
+	cacheSeqID      llama.SeqId // Sequence ID for the cached content
+	imcSlotID       int         // Target slot index for IMC routing
+	imcExpectedHash string      // Expected cachedMsgsHash for stale detection at startSlot
+	imcPending      bool        // True if the target slot was already pending (caller should retry)
+
+	// IMC session pointer. Carries the session reference alongside the
+	// slot-oriented fields during the transition period.
+	imcSession *imcSession
+
+	// IMC extension fields — tokens to decode on top of the cached KV state.
 	imcNewCacheTokens    []llama.Token // New tokens to extend the cache (decoded at startSlot)
 	imcNewTotalCached    int           // Total cached KV positions after extension
 	imcNewCachedMsgCount int           // New cachedMsgCount after extension
@@ -29,7 +35,6 @@ type cacheResult struct {
 	imcClearSeq          bool          // True if sequence must be cleared before decoding (rebuild from scratch)
 	imcNewCachedTokens   []llama.Token // Full token sequence to store in session after decode
 	imcTrimPos           llama.Pos     // Position to trim KV cache from (for partial prefix rebuild)
-	imcPending           bool          // True if the target slot was pending (caller should retry another slot)
 	imcSysPromptHash     string        // Hash of system prompt message for the new cache state
 	imcSysPromptTokens   int           // Token count of the system prompt in the new cache state
 
@@ -41,24 +46,14 @@ type cacheResult struct {
 	imcMediaSkipTextTokens int   // Text tokens already in KV cache to skip during partial media extend
 }
 
-// processCache checks if the system prompt or incremental messages are
-// being cached and updates to the caches are necessary. The behavior depends
-// on which cache modes are enabled:
-//
-//   - SystemPromptCache (SPC): Caches the first message with role="system".
-//   - IncrementalCache (IMC): Caches all messages except the last one.
-//
-// SPC and IMC are mutually exclusive
-// IMC includes the system prompt in its cache.
+// processCache checks if incremental messages are being cached and updates
+// the caches as necessary. IMC caches all messages except the last one
+// (including the system prompt).
 //
 // This function is thread-safe and handles concurrent requests appropriately.
 func (m *Model) processCache(ctx context.Context, d D, requestStart time.Time) cacheResult {
-	if !m.cfg.SystemPromptCache && !m.cfg.IncrementalCache {
+	if !m.cfg.IncrementalCache {
 		return cacheResult{modifiedD: d}
-	}
-
-	if m.cfg.SystemPromptCache {
-		return m.processSPC(ctx, d)
 	}
 
 	return m.processIMC(ctx, d, requestStart)
@@ -69,25 +64,20 @@ func (m *Model) processCache(ctx context.Context, d D, requestStart time.Time) c
 func (m *Model) clearCaches() {
 	m.cacheMu.Lock()
 
-	// Clear all IMC slot state.
-	for _, slot := range m.imcSlots {
-		imcResetSession(slot)
+	// Reset all IMC sessions in place (preserving slotID/seqID).
+	for _, s := range m.imcSessions {
+		if s != nil {
+			imcResetSession(s)
+		}
 	}
 
-	// Clear all SPC sessions. The KV sequences are already freed after
-	// extraction, so only the in-memory session state needs clearing.
-	for k := range m.spcSessions {
-		delete(m.spcSessions, k)
-	}
 	m.cacheMu.Unlock()
-	m.notifyIMCSlotAvailable()
 }
 
 // =============================================================================
 
 // cacheableMessage contains information about a message that can be cached.
 type cacheableMessage struct {
-	index   int
 	role    string
 	content string
 }

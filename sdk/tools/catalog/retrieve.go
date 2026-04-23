@@ -423,9 +423,6 @@ func mergeModelConfig(dst *ModelConfig, src ModelConfig) {
 	if src.SWAFull != nil {
 		dst.SWAFull = src.SWAFull
 	}
-	if src.SystemPromptCache {
-		dst.SystemPromptCache = src.SystemPromptCache
-	}
 	if src.IncrementalCache {
 		dst.IncrementalCache = src.IncrementalCache
 	}

@@ -220,7 +220,7 @@ models:
     n_seq_max: 4
     cache_type_k: q8_0
     cache_type_v: q8_0
-    system_prompt_cache: true
+    incremental_cache: true
 
   Llama-3.3-70B-Instruct-Q8_0:
     context_window: 8192
@@ -258,7 +258,7 @@ This file includes:
 
 - Optimized configurations for coding agents (Cline, OpenCode)
 - YaRN extended context examples
-- SPC and IMC variants for different caching strategies
+- IMC configuration for message caching
 - Vision and audio model settings
 - Detailed comments explaining each configuration option
 

@@ -74,7 +74,6 @@ export interface ModelConfig {
   'devices': string[] | null;
 
   'swa-full': boolean | null;
-  'system-prompt-cache': boolean;
   'incremental-cache': boolean;
   'cache-min-tokens': number;
   'sampling-parameters': SamplingConfig;
@@ -549,7 +548,6 @@ export interface PlaygroundModelConfig {
   'cache_type_k'?: string;
   'cache_type_v'?: string;
   'ngpu_layers'?: number | null;
-  'system_prompt_cache'?: boolean;
   'incremental_cache'?: boolean;
   'split_mode'?: string;
   'devices'?: string[] | null;

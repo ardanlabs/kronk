@@ -31,38 +31,27 @@ type compiledTemplate struct {
 }
 
 // imcSession holds the state for a single IMC (Incremental Message Cache) session.
-// Each slot gets its own session with an assigned cache sequence.
+// Currently sessions are slot-indexed (one per physical slot). Future phases will
+// externalize KV state to RAM and decouple sessions from slots.
+//
+// Transitional: slotID, seqID, and pending are retained until IMC scheduling
+// no longer uses slot routing (Phase 4/5).
 type imcSession struct {
+	slotID            int           // Slot index this session is bound to (transitional: removed in Phase 4)
+	seqID             llama.SeqId   // KV cache sequence ID (transitional: removed in Phase 4)
 	cachedMsgsHash    string        // Hash of all cached messages
 	cachedTokens      []llama.Token // Full token sequence in KV cache (immutable; replaced, never mutated)
 	totalTokensCached int           // Total KV positions cached (includes text + media tokens)
 	cachedMsgCount    int           // Number of messages cached
-	seqID             llama.SeqId   // Assigned cache sequence ID
-	slotID            int           // Dedicated slot ID bound to this session
+	kvState           []byte        // Externalized KV cache state (RAM buffer); restored into any slot via StateSeqSetData
+	kvStateBytes      int           // Size of kvState in bytes (for byte-budgeted LRU eviction)
 	lastUsed          time.Time     // Last access time (for eviction)
-	pending           bool          // True while a build/rebuild is in-flight (deferred decode)
+	pending           bool          // True when a build/extend is in-flight (transitional: removed in Phase 4)
 	hasMedia          bool          // True if the cached content includes media tokens (image/audio)
 	useMRoPE          bool          // True if the cached media used M-RoPE 4D positional encoding
 	mediaKVCounts     []int         // KV positions consumed per media chunk (image/audio); used for text-only extend math
 	sysPromptHash     string        // Hash of the system prompt message (messages[0] when role="system")
 	sysPromptTokens   int           // Token count of the system prompt in the KV cache
-}
-
-// spcSession holds the state for a single SPC (System Prompt Cache) session.
-// The system prompt is decoded once into a temporary cache sequence, the KV
-// state is extracted into an external byte buffer, and the sequence is freed.
-// On each request, the KV state is restored into the slot's working sequence
-// via StateSeqSetData, avoiding a permanently dedicated cache sequence.
-//
-// Multiple sessions are stored in a map keyed by sysPromptHash so that
-// concurrent requests with different system prompts (e.g., title generation
-// vs chat) each get their own cached KV state without colliding.
-type spcSession struct {
-	sysPromptHash   string    // Hash of the system prompt
-	sysPromptTokens int       // Number of tokens in system prompt cache
-	sysPromptLen    int       // Length of system prompt string
-	lastUsed        time.Time // Last access time (for LRU eviction)
-	kvState         []byte    // Externalized KV cache state (post-decode tensors); immutable after insertion
 }
 
 // draftModel holds resources for the draft model used in speculative decoding.
@@ -121,16 +110,13 @@ type Model struct {
 	unloaded          atomic.Bool
 	decodeMu          sync.Mutex
 	cacheMu           sync.RWMutex
-	cacheCond         *sync.Cond             // Broadcast when any IMC slot's pending flag is cleared
-	imcSlots          []*imcSession          // Per-slot branch state, len = NSeqMax
-	spcSessions       map[string]*spcSession // SPC sessions keyed by sysPromptHash (LRU eviction at NSeqMax)
-	spcMaxSessions    int                    // Max SPC sessions to retain (set to NSeqMax)
-	spcCacheSeqID     llama.SeqId            // Dedicated SPC cache sequence ID
-	addBOSToken       bool                   // Whether to add BOS token (from model metadata)
-	mediaMarkerTokens int                    // Token count for the media marker string; computed once via mediaMarkerOnce
-	mediaMarkerOnce   sync.Once              // Guards one-time computation of mediaMarkerTokens
-	pool              *contextPool           // Context pool for parallel embed/rerank
-	draft             *draftModel            // Draft model for speculative decoding
+	cacheCond         *sync.Cond    // Signaled when an IMC slot becomes available (transitional: removed in Phase 4)
+	imcSessions       []*imcSession // IMC sessions, one per slot (transitional: becomes session pool in Phase 4)
+	addBOSToken       bool          // Whether to add BOS token (from model metadata)
+	mediaMarkerTokens int           // Token count for the media marker string; computed once via mediaMarkerOnce
+	mediaMarkerOnce   sync.Once     // Guards one-time computation of mediaMarkerTokens
+	pool              *contextPool  // Context pool for parallel embed/rerank
+	draft             *draftModel   // Draft model for speculative decoding
 }
 
 func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, error) {
@@ -445,27 +431,17 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 		m.lctx = lctx
 		m.mem = mem
 
-		// Initialize IMC per-slot branch tracking when enabled.
+		// Initialize IMC sessions (one per slot). Transitional: sessions are
+		// currently slot-indexed. Future phases will decouple from slots.
 		if cfg.IncrementalCache {
-			m.cacheCond = sync.NewCond(&m.cacheMu)
-			m.imcSlots = make([]*imcSession, nSlots)
+			m.imcSessions = make([]*imcSession, nSlots)
 			for i := range nSlots {
-				m.imcSlots[i] = &imcSession{
-					seqID:  llama.SeqId(i),
+				m.imcSessions[i] = &imcSession{
 					slotID: i,
+					seqID:  llama.SeqId(i),
 				}
 			}
-		}
-
-		// Initialize SPC. The last slot's sequence is borrowed temporarily
-		// for the initial decode. The KV state is externalized to a byte
-		// buffer immediately after, so the sequence is freed for normal use.
-		// Multiple sessions are supported (keyed by system prompt hash)
-		// with LRU eviction capped at NSeqMax entries.
-		if cfg.SystemPromptCache {
-			m.spcCacheSeqID = llama.SeqId(nSlots - 1)
-			m.spcSessions = make(map[string]*spcSession)
-			m.spcMaxSessions = nSlots
+			m.cacheCond = sync.NewCond(&m.cacheMu)
 		}
 
 		m.batch = newBatchEngine(&m, nSlots)
@@ -938,26 +914,6 @@ func resolveKVLengths(metadata map[string]string, arch string) (keyLen int64, va
 	}
 
 	return keyLen, valLen, nil
-}
-
-// restoreSPCToSeq restores the externalized SPC KV state into the destination
-// sequence via StateSeqSetData. The session is passed directly from the job
-// so that already-queued requests can restore even if their session has been
-// evicted from the LRU map by the time they execute.
-func (m *Model) restoreSPCToSeq(dstSeqID llama.SeqId, session *spcSession) error {
-	if session == nil || len(session.kvState) == 0 {
-		return fmt.Errorf("restore-spc: no cached KV state available")
-	}
-
-	m.decodeMu.Lock()
-	nRead := llama.StateSeqSetData(m.lctx, session.kvState, dstSeqID)
-	m.decodeMu.Unlock()
-
-	if nRead == 0 {
-		return fmt.Errorf("restore-spc: StateSeqSetData failed for seq %d", dstSeqID)
-	}
-
-	return nil
 }
 
 // parseMetadataInt64OrArrayAvg parses a metadata value that may be either a

@@ -990,7 +990,6 @@ swa_full: false   # Compact SWA cache (default, less VRAM)`}</code></pre>
           <h4 id="how-caching-strategy-affects-slot-behavior">How Caching Strategy Affects Slot Behavior</h4>
           <p>Enabling a <a href="#chapter-5-message-caching">caching strategy</a> does not add any extra memory to the system — caching works within the KV cache already allocated to each slot. The difference between strategies is what happens to the data in the KV cache between requests:</p>
           <p><strong>No Caching</strong> — The simplest mode. When a request finishes, the slot's KV cache is cleared. The next request that lands in that slot starts from scratch, processing the full prompt from the beginning. Every request pays the full cost of prompt processing regardless of how similar it is to a previous one.</p>
-          <p><strong>SPC (System Prompt Cache)</strong> — Designed for multi-user scenarios where different users share the same system prompt. The first time a system prompt is seen (or when a change is detected), SPC processes it through the model and saves a copy of the resulting KV cache state in RAM. On every subsequent request — regardless of which slot handles it — that saved state is loaded into the slot so the system prompt doesn't need to be reprocessed. The slot is still cleared between requests, so no slot is dedicated to any particular user.</p>
           <p><strong>IMC (Incremental Message Cache)</strong> — Designed for single-user, multi-turn conversations. A slot becomes dedicated to a conversation and retains the entire conversation history in the KV cache between requests. When the user sends a new message, only the new tokens need to be processed — the model doesn't re-read the entire conversation. This gives the best performance for chat and agentic applications.</p>
           <table className="flags-table">
             <thead>
@@ -1007,12 +1006,6 @@ swa_full: false   # Compact SWA cache (default, less VRAM)`}</code></pre>
                 <td>Cleared after request</td>
                 <td>Stateless</td>
                 <td>None</td>
-              </tr>
-              <tr>
-                <td>SPC</td>
-                <td>Cleared after request</td>
-                <td>Multi-user</td>
-                <td>System prompt decoded once, shared across all slots via RAM buffer</td>
               </tr>
               <tr>
                 <td>IMC</td>
@@ -1748,7 +1741,7 @@ models:
     cache_type_k: q8_0
     cache_type_v: q8_0
     flash_attention: enabled
-    system_prompt_cache: true
+    incremental_cache: true
 
   Llama-3.3-70B-Instruct-Q8_0:
     context_window: 8192
@@ -1811,7 +1804,7 @@ Slot 0  →  seqID = 0  →  KV cache partition 0
 Slot 1  →  seqID = 1  →  KV cache partition 1
 Slot 2  →  seqID = 2  →  KV cache partition 2
 Slot 3  →  seqID = 3  →  KV cache partition 3`}</code></pre>
-          <p>How a slot uses its sequence depends on the caching strategy. Without caching, the sequence is cleared between requests. With SPC or IMC, the sequence retains cached tokens to avoid redundant processing. See <a href="#35-parallel-inference-nseqmax">Section 3.5</a> for details on how each caching strategy affects slot behavior.</p>
+          <p>How a slot uses its sequence depends on the caching strategy. Without caching, the sequence is cleared between requests. With IMC, the sequence retains cached tokens to avoid redundant processing. See <a href="#35-parallel-inference-nseqmax">Section 3.5</a> for details on how each caching strategy affects slot behavior.</p>
           <h3 id="43-request-flow">4.3 Request Flow</h3>
           <p>Each request moves through the batch engine in the following stages:</p>
           <ol>
@@ -1820,7 +1813,6 @@ Slot 3  →  seqID = 3  →  KV cache partition 3`}</code></pre>
             <li><strong>Cache Setup</strong>: Prepare the slot's sequence based on caching strategy:
               <ul>
                 <li>Clear the sequence (no caching)</li>
-                <li>Clear the sequence, then copy cached KV state from dedicated SPC sequence (SPC)</li>
                 <li>Extend or rebuild the conversation cache in place (IMC)</li>
               </ul>
             </li>
@@ -1828,7 +1820,7 @@ Slot 3  →  seqID = 3  →  KV cache partition 3`}</code></pre>
             <li><strong>Decode</strong>: Generate tokens one at a time, streaming to client</li>
             <li><strong>Complete</strong>: Release the slot:
               <ul>
-                <li>Clear the entire sequence (no caching or SPC)</li>
+                <li>Clear the entire sequence (no caching)</li>
                 <li>Dense/MoE with IMC: Trim generated tokens via partial range delete, keep cached conversation prefix</li>
                 <li>Hybrid with IMC: Full clear + restore snapshot from byte buffer, keep cached conversation prefix (see <a href="#49-model-types-and-state-management">Section 4.9</a>)</li>
               </ul>
@@ -1848,7 +1840,7 @@ Slot 3  →  seqID = 3  →  KV cache partition 3`}</code></pre>
           <p>When all slots and queue positions are occupied, new requests block until a slot becomes available or the request's context is cancelled. If a queued request waits longer than <code>CacheSlotTimeout</code> (default: 30 seconds), the engine preempts the longest-running slot — cancelling that in-flight request with a "preempted by queued request" error — and assigns the slot to the waiting request. If the engine is shutting down, queued requests receive an immediate error. This backpressure and preemption mechanism prevents any single request from starving others indefinitely.</p>
           <h4 id="memory-and-caching">Memory and Caching</h4>
           <p>Adding slots increases throughput but costs memory. Each additional slot allocates its own KV cache partition proportional to the full context window.</p>
-          <p>Each slot reserves its own KV cache partition, so increasing <code>NSeqMax</code> increases VRAM usage proportionally. Neither SPC nor IMC adds extra sequences. For details on how slot memory is allocated and how to estimate total VRAM, see <a href="#35-parallel-inference-nseqmax">Section 3.5</a> and <a href="#37-vram-estimation">Section 3.7</a>.</p>
+          <p>Each slot reserves its own KV cache partition, so increasing <code>NSeqMax</code> increases VRAM usage proportionally. IMC does not add extra sequences. For details on how slot memory is allocated and how to estimate total VRAM, see <a href="#35-parallel-inference-nseqmax">Section 3.5</a> and <a href="#37-vram-estimation">Section 3.7</a>.</p>
           <h3 id="45-concurrency-by-model-type">4.5 Concurrency by Model Type</h3>
           <p>Not all model types achieve concurrency the same way. Text inference models (including vision and audio) use the batch engine described in the previous sections, where multiple slots share a single model context and their tokens are combined into one decode call. Embedding and reranking models take a different approach — they create a pool of independent contexts that each process requests separately. The table below summarizes the distinction, and the diagrams that follow show the request flow for each approach.</p>
           <table className="flags-table">
@@ -1946,8 +1938,8 @@ Request 3 (WAIT) ──▶│                                  │
     n_ubatch: 512
     cache_type_k: q8_0
     cache_type_v: q8_0
-    system_prompt_cache: true`}</code></pre>
-          <p>This configuration handles 8 concurrent requests, uses quantized KV cache to reduce memory, and caches the system prompt for faster prefill. Here is the VRAM estimate (see <a href="#37-vram-estimation">Section 3.7</a> for the full formula):</p>
+    incremental_cache: true`}</code></pre>
+          <p>This configuration handles 8 concurrent requests, uses quantized KV cache to reduce memory, and caches conversations incrementally for faster prefill. Here is the VRAM estimate (see <a href="#37-vram-estimation">Section 3.7</a> for the full formula):</p>
           <pre className="code-block"><code>{`Model                   : Qwen3-8B-Q8_0
 Model Weights           : ~9 GB
 Context Window (n_ctx)  : 8,192
@@ -1974,7 +1966,7 @@ Step 4 — Total VRAM:
   Total_VRAM = 9.0 GB + 4.8 GB = ~13.8 GB`}</code></pre>
           <h3 id="48-imc-slot-scheduling">4.8 IMC Slot Scheduling</h3>
           <p>When IMC is enabled, the batch engine uses a specialized scheduling algorithm that handles the constraint of routing requests to specific slots. This section explains how IMC scheduling differs from normal slot assignment and the mechanisms that prevent requests from stalling.</p>
-          <h4 id="normal-scheduling-no-caching-spc">Normal Scheduling (No Caching / SPC)</h4>
+          <h4 id="normal-scheduling-no-caching">Normal Scheduling (No Caching)</h4>
           <p>Without IMC, the algorithm assigns the next queued request to any available slot. If all slots are busy, the request stays in the queue until a slot finishes. This is simple and works well because requests have no slot affinity.</p>
           <h4 id="imc-scheduling">IMC Scheduling</h4>
           <p>IMC routes each request to a specific target slot based on cache matching (see <a href="#53-incremental-message-cache-imc">Section 5.3</a>). This creates a problem: a request's target slot may be busy generating for another request, even though other slots are free. The algorithm handles this with two mechanisms: <strong>deferred jobs</strong> and <strong>slot preemption</strong>.</p>
@@ -2175,27 +2167,15 @@ Hybrid:                Full clear → Restore snapshot (memory copy)`}</code></p
           </table>
           <hr />
           <h2 id="chapter-5-message-caching">Chapter 5: Message Caching</h2>
-          <p>Message caching reduces redundant computation by storing and reusing KV cache state from previous requests. Kronk provides two caching modes (SPC and IMC) optimized for different use cases.</p>
+          <p>Message caching reduces redundant computation by storing and reusing KV cache state from previous requests.</p>
           <h3 id="51-overview">5.1 Overview</h3>
           <p>When processing a chat request, the model must compute attention for every token in the conversation. Without caching, the entire prompt is prefilled on every request — even tokens the model has already seen.</p>
           <p><em>Note: Prefill is the phase where the model processes all input tokens (system prompt, conversation history, and the new message) before it begins generating a response. This is the most computationally expensive part of a request, and its cost grows with the number of input tokens.</em></p>
-          <p>Kronk provides two caching modes that reduce redundant prefill work:</p>
-          <ul>
-            <li>SPC (System Prompt Cache) decodes each unique system prompt once, externalizes the KV state to a byte buffer in RAM, and restores it into the slot per request. Multiple system prompts are cached concurrently (up to NSeqMax sessions) with LRU eviction.</li>
-            <li>IMC (Incremental Message Cache) dedicates each slot to a user and caches the full conversation in the slot's KV cache sequence, so only the new message needs to be prefilled.</li>
-          </ul>
+          <p>Kronk provides the Incremental Message Cache (IMC) to reduce redundant prefill work. IMC dedicates each slot to a conversation and caches the full message history in the slot's KV cache sequence, so only the new message needs to be prefilled.</p>
           <pre className="code-block"><code>{`No Caching:
 ┌─────────────────────────────────────────────────────┐
 │ System Prompt │ Message 1 │ Message 2 │ New Message │
 │   (prefill)   │ (prefill) │ (prefill) │  (prefill)  │
-└─────────────────────────────────────────────────────┘
-                                              ↓
-                                           Generate
-
-SPC (System Prompt Cache):
-┌─────────────────────────────────────────────────────┐
-│ System Prompt │ Message 1 │ Message 2 │ New Message │
-│   (cached)    │ (prefill) │ (prefill) │  (prefill)  │
 └─────────────────────────────────────────────────────┘
                                               ↓
                                            Generate
@@ -2207,47 +2187,7 @@ IMC (Incremental Message Cache):
 └─────────────────────────────────────────────────────┘
                                               ↓
                                            Generate`}</code></pre>
-          <h3 id="52-system-prompt-cache-spc">5.2 System Prompt Cache (SPC)</h3>
-          <p>System Prompt Cache decodes the system prompt once into a temporary sequence, externalizes the KV state to a byte buffer in RAM, and frees the sequence. On each request, the KV state is restored into the slot's working sequence. This avoids re-decoding the system prompt on every request. No dedicated cache sequence is permanently occupied, so SPC does not add any extra sequences to the VRAM allocation.</p>
-          <p><strong>Multi-Session Support:</strong></p>
-          <p>SPC maintains multiple cached sessions keyed by system prompt hash, capped at <code>NSeqMax</code> entries. This allows concurrent requests with different system prompts (e.g., an AI agent sending a title generation request alongside a chat completion request) to each have their own cached KV state without colliding. When the session map is full, the least recently used (LRU) session is evicted to make room for new system prompts.</p>
-          <p>When a request omits the system prompt (follow-up request), SPC will reuse the cached session only if exactly one session exists (unambiguous). If multiple sessions are cached, the request proceeds without SPC since there is no way to determine which system prompt the client intended.</p>
-          <p><strong>Best for:</strong></p>
-          <ul>
-            <li>OpenWebUI and similar chat interfaces</li>
-            <li>Applications with a consistent system prompt</li>
-            <li>Multi-user scenarios with different system prompts</li>
-            <li>AI agent frameworks that send concurrent requests with different system prompts (e.g., title generation + chat completion)</li>
-          </ul>
-          <p><strong>Enable SPC:</strong></p>
-          <pre className="code-block"><code className="language-yaml">{`models:
-  Qwen3-8B-Q8_0:
-    system_prompt_cache: true`}</code></pre>
-          <p><strong>How It Works:</strong></p>
-          <ol>
-            <li>First request: System prompt is templated, tokenized, and decoded into a temporary sequence.</li>
-            <li>The KV state is extracted into a byte buffer in RAM and the sequence is freed.</li>
-            <li>The session is stored in a map keyed by the system prompt hash.</li>
-            <li>The KV state is restored into the slot's working sequence.</li>
-            <li>Remaining messages are prefilled after the cached system prompt tokens.</li>
-            <li>Subsequent requests with the same system prompt: KV state is restored from the RAM buffer (no re-decoding needed).</li>
-            <li>Requests with a different system prompt: A new session is built and stored alongside existing sessions. If at capacity (NSeqMax sessions), the LRU session is evicted first.</li>
-          </ol>
-          <p><strong>Cache Invalidation:</strong></p>
-          <p>The cache is automatically invalidated when:</p>
-          <ul>
-            <li>The system prompt content changes (detected by hash comparison) and a new session is built. Existing sessions for other system prompts are preserved.</li>
-            <li>The session map reaches capacity — the LRU session is evicted.</li>
-            <li>The server restarts (all sessions are cleared).</li>
-          </ul>
-          <p><strong>RAM Overhead:</strong></p>
-          <p>Each cached session stores the externalized KV state in RAM. The size depends on the model and system prompt length. For example, with Gemma 4 26B:</p>
-          <ul>
-            <li>A short system prompt (~850 tokens) uses ~192 MB of RAM</li>
-            <li>A large system prompt (~11,000 tokens) uses ~2.5 GB of RAM</li>
-          </ul>
-          <p>With <code>NSeqMax=2</code>, up to 2 sessions can be cached simultaneously.</p>
-          <h3 id="53-incremental-message-cache-imc">5.3 Incremental Message Cache (IMC)</h3>
+          <h3 id="52-incremental-message-cache-imc">5.2 Incremental Message Cache (IMC)</h3>
           <p>Incremental Message Cache is designed for agentic workflows. It caches all messages except the last one and extends the cache incrementally on each turn. When a client or agent mutates the conversation history, IMC uses a two-tier hash to preserve the system prompt KV state and only rebuild the conversation body.</p>
           <h4 id="two-tier-hash-design">Two-Tier Hash Design</h4>
           <p>IMC tracks two independent hashes per slot:</p>
@@ -2474,69 +2414,51 @@ New decode:    4 tokens (T9-T12, from divergence point forward)`}</code></pre>
     incremental_cache: true
     cache_type_k: f16 # Required for hybrid models
     cache_type_v: f16 # Required for hybrid models`}</code></pre>
-          <h3 id="54-single-user-caching">5.4 Single-User Caching</h3>
+          <h3 id="53-single-user-caching">5.3 Single-User Caching</h3>
           <p>IMC is designed for single-user use. All <code>NSeqMax</code> slots are available, with each slot independently tracking its own conversation branch via hash matching. This design is optimized for agentic workflows where multiple sub-agents send independent conversations (different system prompts, different message histories).</p>
-          <p><strong>SPC:</strong> All requests share the same externalized KV state buffer. The cached KV state is restored into each slot. If the system prompt changes, the cache is rebuilt automatically.</p>
-          <h3 id="55-spc-vs-imc">5.5 SPC vs IMC</h3>
-          <p>Both caching modes eliminate redundant work, but they target different parts of the prompt and suit different workloads. SPC is the simpler option — it caches just the system prompt and works with any model template. IMC is more aggressive — it caches the entire conversation history and uses hash matching with automatic token prefix fallback when changes are detected. The table below summarizes the trade-offs to help you choose.</p>
+          <h3 id="54-when-to-use-imc">5.4 When to Use IMC</h3>
+          <p>IMC caches the entire conversation history and uses hash matching with automatic token prefix fallback when changes are detected. It is best suited for:</p>
+          <ul>
+            <li><strong>Agentic workflows</strong> — hash matching handles the common case, and token prefix fallback automatically salvages 70-80% of cached tokens when changes are detected</li>
+            <li><strong>AI coding agents</strong> — long-running conversations with growing context</li>
+            <li><strong>Sub-agent architectures</strong> — each sub-agent gets its own slot via hash matching, maintaining independent caches</li>
+          </ul>
           <table className="flags-table">
             <thead>
               <tr>
                 <th>Feature</th>
-                <th>System Prompt Cache</th>
-                <th>Incremental Message Cache</th>
+                <th>Behavior</th>
               </tr>
             </thead>
             <tbody>
               <tr>
                 <td>Caches</td>
-                <td>System prompt only</td>
                 <td>All messages except last</td>
               </tr>
               <tr>
                 <td>Extends</td>
-                <td>No</td>
                 <td>Yes, incrementally</td>
               </tr>
               <tr>
-                <td>Multi-user</td>
-                <td>Multi-session (up to NSeqMax system prompts)</td>
-                <td>Single-user, all slots available</td>
+                <td>Slots</td>
+                <td>All slots available, single-user</td>
               </tr>
               <tr>
                 <td>Sub-agents</td>
-                <td>Each system prompt gets own cached session</td>
                 <td>Each gets own slot via hash matching</td>
               </tr>
               <tr>
                 <td>Best for</td>
-                <td>Chat UIs, multi-agent frameworks</td>
                 <td>Agentic workflows</td>
               </tr>
               <tr>
                 <td>Memory</td>
-                <td>Zero extra VRAM (KV state in RAM per session)</td>
                 <td>Zero extra VRAM overhead</td>
-              </tr>
-              <tr>
-                <td>Template req</td>
-                <td>Any</td>
-                <td>Any</td>
               </tr>
             </tbody>
           </table>
-          <p><strong>Important:</strong> SPC and IMC are mutually exclusive. Choose based on your workload:</p>
-          <ul>
-            <li><strong>Agentic workflows:</strong> Use IMC — hash matching handles the common case, and token prefix fallback automatically salvages 70-80% of cached tokens when changes are detected.</li>
-            <li><strong>Chat UIs / multi-client:</strong> Use SPC — simpler model, no slot dedication</li>
-          </ul>
-          <h3 id="56-cache-invalidation">5.6 Cache Invalidation</h3>
+          <h3 id="55-cache-invalidation">5.5 Cache Invalidation</h3>
           <p>Cached state doesn't last forever. Kronk uses hash comparisons to detect when cached tokens no longer match the incoming request, and automatically rebuilds the cache when a mismatch is found. Understanding what triggers invalidation helps you avoid unexpected prefill costs.</p>
-          <p><strong>SPC Invalidation:</strong></p>
-          <ul>
-            <li>System prompt content changes → new session built (existing sessions preserved)</li>
-            <li>Session map at capacity (NSeqMax) → LRU session evicted before new build</li>
-          </ul>
           <p><strong>IMC Invalidation:</strong></p>
           <ul>
             <li>Message prefix hash mismatch with same system prompt → system prompt KV preserved, conversation body trimmed and re-decoded (Step 4 of the slot selection algorithm)</li>
@@ -2550,25 +2472,17 @@ New decode:    4 tokens (T9-T12, from divergence point forward)`}</code></pre>
             <li>Model is unloaded</li>
             <li>Server restarts</li>
           </ul>
-          <h3 id="57-configuration-reference">5.7 Configuration Reference</h3>
-          <p>Both caching modes are enabled through the model configuration. Remember that SPC and IMC are mutually exclusive — enable one or the other, not both.</p>
+          <h3 id="56-configuration-reference">5.6 Configuration Reference</h3>
+          <p>IMC is enabled through the model configuration.</p>
           <pre className="code-block"><code className="language-yaml">{`models:
   Qwen3-8B-Q8_0:
-    # System Prompt Cache
-    system_prompt_cache: true
-
-    # OR Incremental Message Cache (mutually exclusive)
     incremental_cache: true
-
-    # Shared settings
     cache_min_tokens: 100 # Don't cache if < 100 tokens`}</code></pre>
           <p><strong>cache_min_tokens</strong></p>
-          <p>Minimum token count threshold. For SPC, caching doesn't activate if the system prompt is shorter than this. For IMC, this is the minimum common prefix length required for token-level partial prefix matching — if no slot's cached tokens share at least this many tokens with the incoming request, the fallback is skipped and the cache is rebuilt from scratch.</p>
+          <p>Minimum common prefix length required for token-level partial prefix matching. If no slot's cached tokens share at least this many tokens with the incoming request, the fallback is skipped and the cache is rebuilt from scratch.</p>
           <p>Default: 100 tokens</p>
-          <h3 id="58-performance-and-limitations">5.8 Performance and Limitations</h3>
-          <p>Caching improves request latency by skipping redundant prefill work, but each mode has its own costs and constraints. SPC trades a small per-request decode cost for broad compatibility. IMC delivers larger savings but imposes restrictions on template behavior and session management.</p>
-          <p><strong>SPC Performance:</strong></p>
-          <p>SPC restores the externalized KV state into each slot. This is a memory copy from RAM into the KV cache, typically taking 10-30ms depending on system prompt size and memory bus load. No extra VRAM is consumed since the KV state lives in regular RAM. With multi-session support, each unique system prompt incurs a one-time decode cost on the first request; all subsequent requests with the same hash restore from RAM instantly.</p>
+          <h3 id="57-performance-and-limitations">5.7 Performance and Limitations</h3>
+          <p>IMC improves request latency by skipping redundant prefill work. It delivers large savings for multi-turn conversations but imposes restrictions on template behavior and session management.</p>
           <p><strong>IMC Prefill Savings:</strong></p>
           <p>For a 2000-token cached conversation prefix:</p>
           <ul>
@@ -3176,7 +3090,7 @@ models:
     n_seq_max: 4
     cache_type_k: q8_0
     cache_type_v: q8_0
-    system_prompt_cache: true
+    incremental_cache: true
 
   Llama-3.3-70B-Instruct-Q8_0:
     context_window: 8192
@@ -3198,7 +3112,7 @@ kronk server start`}</code></pre>
           <ul>
             <li>Optimized configurations for coding agents (Cline, OpenCode)</li>
             <li>YaRN extended context examples</li>
-            <li>SPC and IMC variants for different caching strategies</li>
+            <li>IMC configuration for message caching</li>
             <li>Vision and audio model settings</li>
             <li>Detailed comments explaining each configuration option</li>
           </ul>
@@ -4482,7 +4396,6 @@ KV cache (8K):     ~0.6 GB
 Total:             ~9.4 GB`}</code></pre>
           <h3 id="107-limitations">10.7 Limitations</h3>
           <ul>
-            <li>SPC is not supported for vision/audio requests</li>
             <li>IMC fully caches media (images/audio) in the KV cache; text-only follow-ups extend the cache without re-encoding media (see <a href="#58-performance-and-limitations">§5.8</a>)</li>
             <li>Processing time varies with image resolution and audio duration</li>
           </ul>
@@ -4866,7 +4779,7 @@ response = client.chat.completions.create(
                 <li><strong>Custom</strong> — paste a Jinja template script</li>
               </ul>
             </li>
-            <li>Configure model parameters: Context Window, NBatch, NUBatch, NSeqMax, Flash Attention (auto/enabled/disabled), KV Cache Type (f16/q8_0/q4_0), and Cache Mode (None/SPC/IMC)</li>
+            <li>Configure model parameters: Context Window, NBatch, NUBatch, NSeqMax, Flash Attention (auto/enabled/disabled), KV Cache Type (f16/q8_0/q4_0), and Cache Mode (None/IMC)</li>
             <li>Select <strong>Automated Mode</strong>, <strong>Manual Mode</strong>, or <strong>History</strong></li>
           </ol>
           <h4 id="1271-automated-mode">12.7.1 Automated Mode</h4>
@@ -5577,11 +5490,7 @@ kronk server start  # Run in foreground to see logs`}</code></pre>
             <li>Cold model load</li>
           </ul>
           <p><strong>Solutions:</strong></p>
-          <p>Enable system prompt caching:</p>
-          <pre className="code-block"><code className="language-yaml">{`models:
-  Qwen3-8B-Q8_0:
-    system_prompt_cache: true`}</code></pre>
-          <p>Or enable incremental message cache for agents:</p>
+          <p>Enable incremental message caching:</p>
           <pre className="code-block"><code className="language-yaml">{`models:
   Qwen3-8B-Q8_0:
     incremental_cache: true`}</code></pre>
@@ -6170,7 +6079,7 @@ batching = true`}</code></pre>
             <li><code>slot.seqID</code> = llama.cpp sequence ID (determines KV cache partition)</li>
             <li><code>slot.seqIDs</code> = pre-allocated slice for efficient <code>batchAdd</code> calls</li>
           </ul>
-          <p>Sequences are isolated partitions in the shared KV cache memory. Slot seqIDs always start at 0 — no sequences are reserved for caching. SPC decodes saved tokens directly into slot sequences. IMC binds each slot's sequence to a conversation.</p>
+          <p>Sequences are isolated partitions in the shared KV cache memory. Slot seqIDs always start at 0 — no sequences are reserved for caching. IMC binds each slot's sequence to a conversation.</p>
           <h4 id="1676-context-pooling">16.7.6 Context Pooling</h4>
           <ul>
             <li><code>llama.Context</code> is created once in <code>NewModel</code> and reused across requests</li>
@@ -6307,8 +6216,8 @@ batching = true`}</code></pre>
           <p>Each chat completion request produces the following trace hierarchy:</p>
           <pre className="code-block"><code>{`POST /v1/chat/completions
 ├── prepare-request              Validation, caching, and prompt creation
-│   ├── process-cache            Cache lookup/update (SPC or IMC, when enabled)
-│   │   └── cache-tokenize-*     Tokenization for cache (spc, imc-extend, imc-scratch)
+│   ├── process-cache            Cache lookup/update (IMC, when enabled)
+│   │   └── cache-tokenize-*     Tokenization for cache (imc-extend, imc-scratch)
 │   └── create-prompt            Jinja template application
 │
 │        ← queue wait →          Job sits in requestQ channel until batch engine picks it up
@@ -6316,7 +6225,7 @@ batching = true`}</code></pre>
 └── process-request              Batch engine slot processing
     ├── prefill                  Tokenization + KV cache fill (ends at first output token)
     └── token-generation         Decode loop producing output tokens`}</code></pre>
-          <p><strong>Phase 1: prepare-request</strong> runs in the <code>ChatStreaming</code> goroutine. It validates the document, processes caches (SPC/IMC), and creates the prompt via the Jinja template. When caching is enabled, <code>process-cache</code> and its child <code>cache-tokenize-*</code> spans appear here.</p>
+          <p><strong>Phase 1: prepare-request</strong> runs in the <code>ChatStreaming</code> goroutine. It validates the document, processes the IMC cache, and creates the prompt via the Jinja template. When caching is enabled, <code>process-cache</code> and its child <code>cache-tokenize-*</code> spans appear here.</p>
           <p><strong>Queue wait</strong> is the gap between <code>prepare-request</code> ending and <code>process-request</code> starting. The job has been submitted to the batch engine's <code>requestQ</code> channel and is waiting for the <code>processLoop</code> goroutine to wake up and assign it to a slot. The exact duration is recorded as a <code>queue-wait</code> attribute on the <code>process-request</code> span.</p>
           <p><strong>Phase 2: process-request</strong> runs in the batch engine's <code>processLoop</code> goroutine. The <code>prefill</code> span covers tokenization and KV cache filling. Time to first token (TTFT) is measured from prefill start to the first output token. The <code>token-generation</code> span covers the decode loop that produces output tokens.</p>
           <p>Additional spans that may appear at the top level:</p>
@@ -6358,7 +6267,6 @@ batching = true`}</code></pre>
           <h4 id="step-5-process-the-cache">Step 5: Process the Cache</h4>
           <p>If caching is enabled, the system checks whether any portion of the conversation is already in the KV cache to avoid redundant computation:</p>
           <ul>
-            <li><strong>System Prompt Cache (SPC)</strong>: Hashes the system message. If a match is found, the saved KV state is prepared for restore and the system message is removed from the document so it won't be re-processed.</li>
             <li><strong>Incremental Message Cache (IMC)</strong>: Hashes all messages except the last and scans slots for a matching conversation prefix. The best match determines the strategy: pure cache hit (nothing to decode), extend (decode only new messages), partial prefix trim (salvage a common prefix), or rebuild from scratch.</li>
           </ul>
           <p>Tool response messages are also enriched with their originating function names so templates can render tool results correctly.</p>
@@ -6371,7 +6279,7 @@ batching = true`}</code></pre>
           <h4 id="step-9-initialize-the-slot">Step 9: Initialize the Slot</h4>
           <p>The assigned slot is prepared for this request:</p>
           <ol>
-            <li><strong>Restore cached KV state</strong>: For SPC, the saved KV snapshot is loaded into the slot's sequence. For IMC, extension tokens are decoded into the existing sequence, or the sequence is cleared and rebuilt.</li>
+            <li><strong>Restore cached KV state</strong>: For IMC, extension tokens are decoded into the existing sequence, or the sequence is cleared and rebuilt.</li>
             <li><strong>Build the sampler</strong>: A sampler chain is constructed from the request's sampling parameters (temperature, top_k, top_p, min_p, repetition penalties, etc.). If grammar-constrained output is requested, a separate grammar sampler is also created.</li>
             <li><strong>Tokenize the prompt</strong>: The prompt string is converted into a sequence of token IDs. Only the non-cached portion of the prompt needs tokenization.</li>
             <li><strong>Context window check</strong>: The total token count (cached + new) is verified against the model's context window limit.</li>
@@ -6449,15 +6357,15 @@ batching = true`}</code></pre>
           <p><strong>6. &lt;code&gt;prepareCacheAndPrompt()&lt;/code&gt;</strong> (<code>model/chat.go</code>)</p>
           <ul>
             <li><strong>6a. &lt;code&gt;injectToolResponseNames()&lt;/code&gt;</strong> — adds <code>name</code>/<code>tool_call_name</code> to <code>role:"tool"</code> messages by matching <code>tool_call_id</code>.</li>
-            <li><strong>6b. &lt;code&gt;processCache()&lt;/code&gt;</strong> (<code>model/caching.go</code>) — mutually exclusive:</li>
+            <li><strong>6b. &lt;code&gt;processCache()&lt;/code&gt;</strong> (<code>model/caching.go</code>):</li>
           </ul>
-          <p>- <strong>SPC</strong>: <code>processSPC()</code> — hashes system message, looks up/creates <code>spcSession</code>, extracts KV state via <code>StateSeqGetData</code>, removes system message from document. - <strong>IMC</strong>: <code>processIMC()</code> — two-tier hash scan across slots, finds best match (pure hit, extend, partial prefix trim, or rebuild from scratch), tokenizes extension tokens, sets <code>pending</code> flag on target slot.</p>
+          <p>- <strong>IMC</strong>: <code>processIMC()</code> — two-tier hash scan across slots, finds best match (pure hit, extend, partial prefix trim, or rebuild from scratch), tokenizes extension tokens, sets <code>pending</code> flag on target slot.</p>
           <ul>
             <li><strong>6c. &lt;code&gt;createPrompt()&lt;/code&gt;</strong> → <code>applyRequestJinjaTemplate()</code> — applies Jinja2 chat template to remaining messages, returns prompt string + media bytes.</li>
           </ul>
           <p><strong>7. &lt;code&gt;submitToBatchEngine()&lt;/code&gt;</strong> (<code>model/chat.go</code>)</p>
           <ul>
-            <li>Builds <code>chatJob</code> struct with all request data, cache state, IMC/SPC fields.</li>
+            <li>Builds <code>chatJob</code> struct with all request data, cache state, and IMC fields.</li>
             <li>Calls <code>batch.submit()</code> — sends job to <code>requestQ</code> channel, sends wake signal on <code>wakeCh</code>.</li>
             <li>Starts <code>queue-wait</code> span.</li>
           </ul>
@@ -6482,7 +6390,6 @@ batching = true`}</code></pre>
             <li><strong>Creates sampler</strong>: <code>toSampler()</code> — builds llama.cpp sampler chain (temperature, top_k, top_p, min_p, repetition penalties, DRY, XTC, mirostat).</li>
             <li><strong>Creates grammar sampler</strong> if grammar specified.</li>
             <li><strong>IMC cache restore</strong>: decodes extension tokens into slot's KV sequence via <code>decodeTokensIntoCache()</code>, or clears sequence for rebuild, or trims for partial prefix.</li>
-            <li><strong>SPC cache restore</strong>: <code>StateSeqSetData()</code> — restores saved KV state into slot's sequence.</li>
             <li><strong>Tokenize prompt</strong>: <code>llama.Tokenize(vocab, prompt, addBOS, special=true)</code> — converts remaining prompt text to tokens.</li>
             <li>Context window check.</li>
             <li>Assembles draft prompt tokens for speculative decoding.</li>
@@ -6602,13 +6509,12 @@ batching = true`}</code></pre>
               <a href="#chapter-5-message-caching" className={`doc-index-header ${activeSection === 'chapter-5-message-caching' ? 'active' : ''}`}>Chapter 5: Message Caching</a>
               <ul>
                 <li><a href="#51-overview" className={activeSection === '51-overview' ? 'active' : ''}>5.1 Overview</a></li>
-                <li><a href="#52-system-prompt-cache-spc" className={activeSection === '52-system-prompt-cache-spc' ? 'active' : ''}>5.2 System Prompt Cache (SPC)</a></li>
-                <li><a href="#53-incremental-message-cache-imc" className={activeSection === '53-incremental-message-cache-imc' ? 'active' : ''}>5.3 Incremental Message Cache (IMC)</a></li>
-                <li><a href="#54-single-user-caching" className={activeSection === '54-single-user-caching' ? 'active' : ''}>5.4 Single-User Caching</a></li>
-                <li><a href="#55-spc-vs-imc" className={activeSection === '55-spc-vs-imc' ? 'active' : ''}>5.5 SPC vs IMC</a></li>
-                <li><a href="#56-cache-invalidation" className={activeSection === '56-cache-invalidation' ? 'active' : ''}>5.6 Cache Invalidation</a></li>
-                <li><a href="#57-configuration-reference" className={activeSection === '57-configuration-reference' ? 'active' : ''}>5.7 Configuration Reference</a></li>
-                <li><a href="#58-performance-and-limitations" className={activeSection === '58-performance-and-limitations' ? 'active' : ''}>5.8 Performance and Limitations</a></li>
+                <li><a href="#52-incremental-message-cache-imc" className={activeSection === '52-incremental-message-cache-imc' ? 'active' : ''}>5.2 Incremental Message Cache (IMC)</a></li>
+                <li><a href="#53-single-user-caching" className={activeSection === '53-single-user-caching' ? 'active' : ''}>5.3 Single-User Caching</a></li>
+                <li><a href="#54-when-to-use-imc" className={activeSection === '54-when-to-use-imc' ? 'active' : ''}>5.4 When to Use IMC</a></li>
+                <li><a href="#55-cache-invalidation" className={activeSection === '55-cache-invalidation' ? 'active' : ''}>5.5 Cache Invalidation</a></li>
+                <li><a href="#56-configuration-reference" className={activeSection === '56-configuration-reference' ? 'active' : ''}>5.6 Configuration Reference</a></li>
+                <li><a href="#57-performance-and-limitations" className={activeSection === '57-performance-and-limitations' ? 'active' : ''}>5.7 Performance and Limitations</a></li>
               </ul>
             </div>
             <div className="doc-index-section">

@@ -110,7 +110,7 @@ func (e *batchEngine) prefillDraft(ctx context.Context, s *slot) error {
 	e.model.log(ctx, "speculative", "status", "draft-prefill-done",
 		"slot", s.id, "draft_nPast", s.draftNPast,
 		"decoded", len(newTokens), "reused", commonLen,
-		"elapsed", time.Since(prefillStart).String())
+		"elapsed", fmtDur(time.Since(prefillStart)))
 
 	return nil
 }

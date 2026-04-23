@@ -64,7 +64,6 @@ type SessionConfig struct {
 	CacheTypeK          *model.GGMLType           `json:"cache_type_k"`
 	CacheTypeV          *model.GGMLType           `json:"cache_type_v"`
 	NGpuLayers          *int                      `json:"ngpu_layers"`
-	SystemPromptCache   *bool                     `json:"system_prompt_cache"`
 	IncrementalCache    *bool                     `json:"incremental_cache"`
 	RopeScaling         *model.RopeScalingType    `json:"rope_scaling_type"`
 	RopeFreqBase        *float32                  `json:"rope_freq_base"`
@@ -110,9 +109,6 @@ func (sc SessionConfig) ApplyTo(cfg model.Config) model.Config {
 	}
 	if sc.NGpuLayers != nil {
 		cfg.NGpuLayers = sc.NGpuLayers
-	}
-	if sc.SystemPromptCache != nil {
-		cfg.SystemPromptCache = *sc.SystemPromptCache
 	}
 	if sc.IncrementalCache != nil {
 		cfg.IncrementalCache = *sc.IncrementalCache
@@ -197,7 +193,6 @@ func (sc SessionConfig) HasOverrides() bool {
 		sc.CacheTypeK != nil ||
 		sc.CacheTypeV != nil ||
 		sc.NGpuLayers != nil ||
-		sc.SystemPromptCache != nil ||
 		sc.IncrementalCache != nil ||
 		sc.RopeScaling != nil ||
 		sc.RopeFreqBase != nil ||

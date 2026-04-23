@@ -207,7 +207,7 @@ models directly in the BUI. It supports three operating modes —
    - **Custom** — paste a Jinja template script
 4. Configure model parameters: Context Window, NBatch, NUBatch, NSeqMax,
    Flash Attention (auto/enabled/disabled), KV Cache Type (f16/q8_0/q4_0),
-   and Cache Mode (None/SPC/IMC)
+   and Cache Mode (None/IMC)
 5. Select **Automated Mode**, **Manual Mode**, or **History**
 
 #### 12.7.1 Automated Mode

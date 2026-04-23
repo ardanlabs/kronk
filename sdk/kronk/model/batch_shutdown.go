@@ -17,19 +17,10 @@ func (e *batchEngine) drainSlots() {
 		}
 	}
 
-	pendingCount := len(e.requestQ)
-	hasDeferredJob := e.deferredJob != nil
+	pendingCount := len(e.requestQ) + len(e.pendingJobs)
 
 	e.model.log(ctx, "batch-engine", "status", "drain-started", "active_slots", activeCount,
-		"pending_jobs", pendingCount, "deferred_job", hasDeferredJob)
-
-	// Execute any pending preemption so the victim slot is properly cleaned
-	// up before we drain it again via the active-slot loop below.
-	if e.pendingPreempt != nil {
-		e.finishSlot(e.pendingPreempt, e.pendingPreemptErr)
-		e.pendingPreempt = nil
-		e.pendingPreemptErr = nil
-	}
+		"pending_jobs", pendingCount)
 
 	for _, s := range e.slots {
 		if s.active {
@@ -37,13 +28,13 @@ func (e *batchEngine) drainSlots() {
 		}
 	}
 
-	// Fail the deferred job that was dequeued but not yet assigned to a slot.
-	if e.deferredJob != nil {
-		e.failJob(e.deferredJob, shutdownErr)
-		e.deferredJob = nil
+	// Fail pending jobs that were dequeued but not yet assigned to a slot.
+	for _, job := range e.pendingJobs {
+		e.failJob(job, shutdownErr)
 	}
+	e.pendingJobs = nil
 
-	// Drain pending jobs that were never assigned to a slot.
+	// Drain pending jobs still in the request queue.
 	drained := 0
 	for {
 		select {

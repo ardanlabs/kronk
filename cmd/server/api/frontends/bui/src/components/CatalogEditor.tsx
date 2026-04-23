@@ -59,7 +59,6 @@ interface CatalogFormData {
     tensorSplit: string;
 
     swaFull: boolean | null;
-    systemPromptCache: boolean | null;
     incrementalCache: boolean | null;
     cacheMinTokens: number | null;
     ropeScaling: string;
@@ -164,7 +163,6 @@ const defaultForm: CatalogFormData = {
     tensorSplit: '',
 
     swaFull: null,
-    systemPromptCache: null,
     incrementalCache: null,
     cacheMinTokens: null,
     ropeScaling: '',
@@ -299,7 +297,6 @@ function populateFromResponse(resp: CatalogModelResponse): CatalogFormData {
       tensorSplit: mc?.['tensor-split']?.join(',') ?? '',
 
       swaFull: mc?.['swa-full'] ?? null,
-      systemPromptCache: mc?.['system-prompt-cache'] ?? null,
       incrementalCache: mc?.['incremental-cache'] ?? null,
       cacheMinTokens: mc?.['cache-min-tokens'] ?? null,
       ropeScaling: mc?.['rope-scaling-type'] || '',
@@ -446,7 +443,6 @@ export default function CatalogEditor() {
               flashAttention: draft.config?.['flash-attention'] ?? prev.config.flashAttention,
               cacheTypeK: draft.config?.['cache-type-k'] ?? prev.config.cacheTypeK,
               cacheTypeV: draft.config?.['cache-type-v'] ?? prev.config.cacheTypeV,
-              systemPromptCache: draft.config?.['system-prompt-cache'] ?? prev.config.systemPromptCache,
             },
           }));
           sessionStorage.removeItem('kronk_catalog_draft');
@@ -749,7 +745,6 @@ export default function CatalogEditor() {
           'tensor-buft-overrides': null,
 
           'swa-full': form.config.swaFull,
-          'system-prompt-cache': form.config.systemPromptCache ?? false,
           'incremental-cache': form.config.incrementalCache ?? false,
           'cache-min-tokens': form.config.cacheMinTokens ?? 0,
           'rope-scaling-type': form.config.ropeScaling,
@@ -1153,7 +1148,6 @@ export default function CatalogEditor() {
               <NullableNumInput label="Context Window" tooltipKey="contextWindow" value={form.config.contextWindow} defaultValue={rc?.['context-window']} onChange={(v) => setConfig({ contextWindow: v })} />
               <NullableNumInput label="Max Sequences (nseq-max)" tooltipKey="nSeqMax" value={form.config.nseqMax} defaultValue={rc?.['nseq-max']} onChange={(v) => setConfig({ nseqMax: v })} />
               <TriStateSelect label="SWA Full Cache" tooltipKey="swaFull" value={form.config.swaFull} onChange={(v) => setConfig({ swaFull: v })} />
-              <TriStateSelect label="System Prompt Cache" tooltipKey="systemPromptCache" value={form.config.systemPromptCache} onChange={(v) => setConfig({ systemPromptCache: v })} />
               <TriStateSelect label="Incremental Cache" tooltipKey="incrementalCache" value={form.config.incrementalCache} onChange={(v) => setConfig({ incrementalCache: v })} />
               <NullableNumInput label="Batch Threads (nthreads-batch)" tooltipKey="nthreadsBatch" value={form.config.nthreadsBatch} defaultValue={rc?.['nthreads-batch']} onChange={(v) => setConfig({ nthreadsBatch: v })} />
               <NullableNumInput label="Cache Min Tokens" tooltipKey="cacheMinTokens" value={form.config.cacheMinTokens} defaultValue={rc?.['cache-min-tokens']} onChange={(v) => setConfig({ cacheMinTokens: v })} />

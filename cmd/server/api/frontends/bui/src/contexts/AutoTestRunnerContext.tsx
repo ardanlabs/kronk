@@ -753,7 +753,6 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
               ...cfgRest,
               ...(cacheType !== undefined && { 'cache_type_k': cacheType, 'cache_type_v': cacheType }),
               ...(cacheMode !== undefined && {
-                'system_prompt_cache': cacheMode === 'spc',
                 'incremental_cache': cacheMode === 'imc',
               }),
               ...(moeMode !== undefined && { 'moe_mode': moeMode }),

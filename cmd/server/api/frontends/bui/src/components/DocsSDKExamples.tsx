@@ -491,7 +491,6 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("- vramTotal      :", krn.ModelInfo().VRAMTotal/(1024*1024), "MiB")
 	fmt.Println("- slotMemory     :", krn.ModelInfo().SlotMemory/(1024*1024), "MiB")
 	fmt.Println("- modelSize      :", krn.ModelInfo().Size/(1000*1000), "MB")
-	fmt.Println("- spc            :", krn.ModelConfig().SystemPromptCache)
 	fmt.Println("- imc            :", krn.ModelConfig().IncrementalCache)
 	if n := krn.ModelConfig().NGpuLayers; n != nil {
 		fmt.Println("- nGPULayers     :", *n)
@@ -675,7 +674,6 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("- vramTotal      :", krn.ModelInfo().VRAMTotal/(1024*1024), "MiB")
 	fmt.Println("- slotMemory     :", krn.ModelInfo().SlotMemory/(1024*1024), "MiB")
 	fmt.Println("- modelSize      :", krn.ModelInfo().Size/(1000*1000), "MB")
-	fmt.Println("- spc            :", krn.ModelConfig().SystemPromptCache)
 	fmt.Println("- imc            :", krn.ModelConfig().IncrementalCache)
 	if n := krn.ModelConfig().NGpuLayers; n != nil {
 		fmt.Println("- nGPULayers     :", *n)
@@ -962,7 +960,6 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("- vramTotal      :", krn.ModelInfo().VRAMTotal/(1024*1024), "MiB")
 	fmt.Println("- slotMemory     :", krn.ModelInfo().SlotMemory/(1024*1024), "MiB")
 	fmt.Println("- modelSize      :", krn.ModelInfo().Size/(1000*1000), "MB")
-	fmt.Println("- spc            :", krn.ModelConfig().SystemPromptCache)
 	fmt.Println("- imc            :", krn.ModelConfig().IncrementalCache)
 	if n := krn.ModelConfig().NGpuLayers; n != nil {
 		fmt.Println("- nGPULayers     :", *n)
@@ -1343,7 +1340,6 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("- vramTotal      :", krn.ModelInfo().VRAMTotal/(1024*1024), "MiB")
 	fmt.Println("- slotMemory     :", krn.ModelInfo().SlotMemory/(1024*1024), "MiB")
 	fmt.Println("- modelSize      :", krn.ModelInfo().Size/(1000*1000), "MB")
-	fmt.Println("- spc            :", krn.ModelConfig().SystemPromptCache)
 	fmt.Println("- imc            :", krn.ModelConfig().IncrementalCache)
 	if n := krn.ModelConfig().NGpuLayers; n != nil {
 		fmt.Println("- nGPULayers     :", *n)
@@ -1572,7 +1568,6 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("- vramTotal      :", krn.ModelInfo().VRAMTotal/(1024*1024), "MiB")
 	fmt.Println("- slotMemory     :", krn.ModelInfo().SlotMemory/(1024*1024), "MiB")
 	fmt.Println("- modelSize      :", krn.ModelInfo().Size/(1000*1000), "MB")
-	fmt.Println("- spc            :", krn.ModelConfig().SystemPromptCache)
 	fmt.Println("- imc            :", krn.ModelConfig().IncrementalCache)
 	if n := krn.ModelConfig().NGpuLayers; n != nil {
 		fmt.Println("- nGPULayers     :", *n)
@@ -1876,7 +1871,6 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("- vramTotal      :", krn.ModelInfo().VRAMTotal/(1024*1024), "MiB")
 	fmt.Println("- slotMemory     :", krn.ModelInfo().SlotMemory/(1024*1024), "MiB")
 	fmt.Println("- modelSize      :", krn.ModelInfo().Size/(1000*1000), "MB")
-	fmt.Println("- spc            :", krn.ModelConfig().SystemPromptCache)
 	fmt.Println("- imc            :", krn.ModelConfig().IncrementalCache)
 	if n := krn.ModelConfig().NGpuLayers; n != nil {
 		fmt.Println("- nGPULayers     :", *n)
@@ -2111,7 +2105,6 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("- vramTotal      :", krn.ModelInfo().VRAMTotal/(1024*1024), "MiB")
 	fmt.Println("- slotMemory     :", krn.ModelInfo().SlotMemory/(1024*1024), "MiB")
 	fmt.Println("- modelSize      :", krn.ModelInfo().Size/(1000*1000), "MB")
-	fmt.Println("- spc            :", krn.ModelConfig().SystemPromptCache)
 	fmt.Println("- imc            :", krn.ModelConfig().IncrementalCache)
 	if n := krn.ModelConfig().NGpuLayers; n != nil {
 		fmt.Println("- nGPULayers     :", *n)
@@ -2339,7 +2332,6 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("- vramTotal      :", krn.ModelInfo().VRAMTotal/(1024*1024), "MiB")
 	fmt.Println("- slotMemory     :", krn.ModelInfo().SlotMemory/(1024*1024), "MiB")
 	fmt.Println("- modelSize      :", krn.ModelInfo().Size/(1000*1000), "MB")
-	fmt.Println("- spc            :", krn.ModelConfig().SystemPromptCache)
 	fmt.Println("- imc            :", krn.ModelConfig().IncrementalCache)
 	if n := krn.ModelConfig().NGpuLayers; n != nil {
 		fmt.Println("- nGPULayers     :", *n)
@@ -2700,7 +2692,6 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("- vramTotal      :", krn.ModelInfo().VRAMTotal/(1024*1024), "MiB")
 	fmt.Println("- slotMemory     :", krn.ModelInfo().SlotMemory/(1024*1024), "MiB")
 	fmt.Println("- modelSize      :", krn.ModelInfo().Size/(1000*1000), "MB")
-	fmt.Println("- spc            :", krn.ModelConfig().SystemPromptCache)
 	fmt.Println("- imc            :", krn.ModelConfig().IncrementalCache)
 	if n := krn.ModelConfig().NGpuLayers; n != nil {
 		fmt.Println("- nGPULayers     :", *n)

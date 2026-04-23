@@ -414,7 +414,6 @@ func displayGroups() []benchGroup {
 			label: "Dense",
 			names: []string{
 				"BenchmarkDense_NonCaching",
-				"BenchmarkDense_SPC",
 				"BenchmarkDense_IMCDeterministic",
 				"BenchmarkDense_IMCNonDeterministic",
 				"BenchmarkDense_IMCDeterministic_Speculative",
@@ -444,7 +443,6 @@ func displayGroups() []benchGroup {
 func shortName(name string) string {
 	m := map[string]string{
 		"BenchmarkDense_NonCaching":                   "Dense NonCaching",
-		"BenchmarkDense_SPC":                          "Dense SPC",
 		"BenchmarkDense_IMCDeterministic":             "Dense IMC-Det",
 		"BenchmarkDense_IMCNonDeterministic":          "Dense IMC-NonDet (GPT)",
 		"BenchmarkDense_IMCDeterministic_Speculative": "Dense IMC-Det+Spec",

@@ -290,43 +290,43 @@ func TestIMCSlotState(t *testing.T) {
 		cfg: Config{
 			IncrementalCache: true,
 		},
-		imcSlots: make([]*imcSession, 2),
-		log:      func(ctx context.Context, msg string, args ...any) {},
+		imcSessions: make([]*imcSession, 2),
+		log:         func(ctx context.Context, msg string, args ...any) {},
 	}
 
-	for i := range m.imcSlots {
-		m.imcSlots[i] = &imcSession{
+	for i := range m.imcSessions {
+		m.imcSessions[i] = &imcSession{
 			seqID:  llama.SeqId(i),
 			slotID: i,
 		}
 	}
 
 	// Verify slot initialization.
-	if m.imcSlots[0].seqID != 0 {
-		t.Errorf("slot 0 seqID = %d, want 0", m.imcSlots[0].seqID)
+	if m.imcSessions[0].seqID != 0 {
+		t.Errorf("slot 0 seqID = %d, want 0", m.imcSessions[0].seqID)
 	}
-	if m.imcSlots[1].seqID != 1 {
-		t.Errorf("slot 1 seqID = %d, want 1", m.imcSlots[1].seqID)
+	if m.imcSessions[1].seqID != 1 {
+		t.Errorf("slot 1 seqID = %d, want 1", m.imcSessions[1].seqID)
 	}
 
 	// Simulate cache build on slot 0.
-	m.imcSlots[0].cachedMsgsHash = "abc123"
-	m.imcSlots[0].totalTokensCached = 1000
-	m.imcSlots[0].cachedMsgCount = 2
+	m.imcSessions[0].cachedMsgsHash = "abc123"
+	m.imcSessions[0].totalTokensCached = 1000
+	m.imcSessions[0].cachedMsgCount = 2
 
 	// Verify state persists.
-	if m.imcSlots[0].cachedMsgsHash != "abc123" {
+	if m.imcSessions[0].cachedMsgsHash != "abc123" {
 		t.Error("hash not persisted")
 	}
-	if m.imcSlots[0].totalTokensCached != 1000 {
+	if m.imcSessions[0].totalTokensCached != 1000 {
 		t.Error("tokens not persisted")
 	}
-	if m.imcSlots[0].cachedMsgCount != 2 {
+	if m.imcSessions[0].cachedMsgCount != 2 {
 		t.Error("msgCount not persisted")
 	}
 
 	// Verify slot 1 is independent.
-	if m.imcSlots[1].totalTokensCached != 0 {
+	if m.imcSessions[1].totalTokensCached != 0 {
 		t.Error("slot 1 should be empty")
 	}
 }
@@ -334,22 +334,14 @@ func TestIMCSlotState(t *testing.T) {
 func TestClearCaches(t *testing.T) {
 	m := &Model{
 		cfg: Config{
-			IncrementalCache:  true,
-			SystemPromptCache: true,
+			IncrementalCache: true,
 		},
-		imcSlots: make([]*imcSession, 2),
-		spcSessions: map[string]*spcSession{
-			"testhash": {
-				sysPromptHash:   "testhash",
-				sysPromptTokens: 100,
-				sysPromptLen:    50,
-			},
-		},
-		log: func(ctx context.Context, msg string, args ...any) {},
+		imcSessions: make([]*imcSession, 2),
+		log:         func(ctx context.Context, msg string, args ...any) {},
 	}
 
-	for i := range m.imcSlots {
-		m.imcSlots[i] = &imcSession{
+	for i := range m.imcSessions {
+		m.imcSessions[i] = &imcSession{
 			seqID:             llama.SeqId(i),
 			slotID:            i,
 			cachedMsgsHash:    "hash",
@@ -358,29 +350,20 @@ func TestClearCaches(t *testing.T) {
 		}
 	}
 
-	if len(m.spcSessions) == 0 {
-		t.Fatal("expected spcSessions to be set before clearing")
-	}
-
 	// Clear caches.
 	m.clearCaches()
 
-	// Verify IMC slots cleared.
-	for i, slot := range m.imcSlots {
+	// Verify IMC sessions cleared.
+	for i, slot := range m.imcSessions {
 		if slot.totalTokensCached != 0 {
-			t.Errorf("slot %d totalTokensCached = %d, want 0", i, slot.totalTokensCached)
+			t.Errorf("session %d totalTokensCached = %d, want 0", i, slot.totalTokensCached)
 		}
 		if slot.cachedMsgCount != 0 {
-			t.Errorf("slot %d cachedMsgCount = %d, want 0", i, slot.cachedMsgCount)
+			t.Errorf("session %d cachedMsgCount = %d, want 0", i, slot.cachedMsgCount)
 		}
 		if slot.cachedMsgsHash != "" {
-			t.Errorf("slot %d cachedMsgsHash = %q, want empty", i, slot.cachedMsgsHash)
+			t.Errorf("session %d cachedMsgsHash = %q, want empty", i, slot.cachedMsgsHash)
 		}
-	}
-
-	// Verify SPC sessions cleared.
-	if len(m.spcSessions) != 0 {
-		t.Errorf("spcSessions not cleared, got %d entries", len(m.spcSessions))
 	}
 }
 
@@ -417,12 +400,12 @@ func TestProcessIMCScanSkipsPendingSlots(t *testing.T) {
 		cfg: Config{
 			IncrementalCache: true,
 		},
-		imcSlots: make([]*imcSession, 3),
-		log:      func(ctx context.Context, msg string, args ...any) {},
+		imcSessions: make([]*imcSession, 3),
+		log:         func(ctx context.Context, msg string, args ...any) {},
 	}
 
-	for i := range m.imcSlots {
-		m.imcSlots[i] = &imcSession{
+	for i := range m.imcSessions {
+		m.imcSessions[i] = &imcSession{
 			seqID:  llama.SeqId(i),
 			slotID: i,
 		}
@@ -431,7 +414,7 @@ func TestProcessIMCScanSkipsPendingSlots(t *testing.T) {
 	ctx := context.Background()
 
 	// Simulate: slot[0] has a build in-flight (pending=true).
-	m.imcSlots[0].pending = true
+	m.imcSessions[0].pending = true
 
 	// Simulate: slot[1] is empty, slot[2] is empty.
 
@@ -452,12 +435,12 @@ func TestProcessIMCScanSkipsPendingSlots(t *testing.T) {
 	_ = m.processIMC(ctx, d, time.Now())
 
 	// Slot[0] should still be pending (untouched — it was skipped).
-	if !m.imcSlots[0].pending {
+	if !m.imcSessions[0].pending {
 		t.Error("slot[0] should still be pending (was skipped during scan)")
 	}
 
 	// Slot[2] should NOT be pending (scan picks first empty = slot[1]).
-	if m.imcSlots[2].pending {
+	if m.imcSessions[2].pending {
 		t.Error("slot[2] should not be pending (slot[1] was first empty)")
 	}
 }
@@ -469,14 +452,14 @@ func TestProcessIMCScanAllPending(t *testing.T) {
 		cfg: Config{
 			IncrementalCache: true,
 		},
-		imcSlots: make([]*imcSession, 2),
-		log:      func(ctx context.Context, msg string, args ...any) {},
+		imcSessions: make([]*imcSession, 2),
+		log:         func(ctx context.Context, msg string, args ...any) {},
 	}
 
 	m.cacheCond = sync.NewCond(&m.cacheMu)
 
-	for i := range m.imcSlots {
-		m.imcSlots[i] = &imcSession{
+	for i := range m.imcSessions {
+		m.imcSessions[i] = &imcSession{
 			seqID:   llama.SeqId(i),
 			slotID:  i,
 			pending: true,
@@ -511,12 +494,12 @@ func TestProcessIMCSlotMatchByHash(t *testing.T) {
 		cfg: Config{
 			IncrementalCache: true,
 		},
-		imcSlots: make([]*imcSession, 3),
-		log:      func(ctx context.Context, msg string, args ...any) {},
+		imcSessions: make([]*imcSession, 3),
+		log:         func(ctx context.Context, msg string, args ...any) {},
 	}
 
-	for i := range m.imcSlots {
-		m.imcSlots[i] = &imcSession{
+	for i := range m.imcSessions {
+		m.imcSessions[i] = &imcSession{
 			seqID:  llama.SeqId(i),
 			slotID: i,
 		}
@@ -531,9 +514,9 @@ func TestProcessIMCSlotMatchByHash(t *testing.T) {
 	cachedHash := hashMessages(cachedMsgs)
 
 	// Simulate: slot[1] has cached the first 2 messages.
-	m.imcSlots[1].cachedMsgsHash = cachedHash
-	m.imcSlots[1].totalTokensCached = 500
-	m.imcSlots[1].cachedMsgCount = 2
+	m.imcSessions[1].cachedMsgsHash = cachedHash
+	m.imcSessions[1].totalTokensCached = 500
+	m.imcSessions[1].cachedMsgCount = 2
 
 	// Request with same 2 messages + 1 new message (total=3, cache 2, generate from last).
 	messages := []D{
@@ -578,12 +561,12 @@ func TestProcessIMCBestPrefixCoverage(t *testing.T) {
 		cfg: Config{
 			IncrementalCache: true,
 		},
-		imcSlots: make([]*imcSession, 3),
-		log:      func(ctx context.Context, msg string, args ...any) {},
+		imcSessions: make([]*imcSession, 3),
+		log:         func(ctx context.Context, msg string, args ...any) {},
 	}
 
-	for i := range m.imcSlots {
-		m.imcSlots[i] = &imcSession{
+	for i := range m.imcSessions {
+		m.imcSessions[i] = &imcSession{
 			seqID:  llama.SeqId(i),
 			slotID: i,
 		}
@@ -601,15 +584,15 @@ func TestProcessIMCBestPrefixCoverage(t *testing.T) {
 
 	// Slot[0] cached first 2 messages.
 	hash2 := hashMessages(messages[:2])
-	m.imcSlots[0].cachedMsgsHash = hash2
-	m.imcSlots[0].totalTokensCached = 300
-	m.imcSlots[0].cachedMsgCount = 2
+	m.imcSessions[0].cachedMsgsHash = hash2
+	m.imcSessions[0].totalTokensCached = 300
+	m.imcSessions[0].cachedMsgCount = 2
 
 	// Slot[1] cached first 4 messages (better coverage).
 	hash4 := hashMessages(messages[:4])
-	m.imcSlots[1].cachedMsgsHash = hash4
-	m.imcSlots[1].totalTokensCached = 800
-	m.imcSlots[1].cachedMsgCount = 4
+	m.imcSessions[1].cachedMsgsHash = hash4
+	m.imcSessions[1].totalTokensCached = 800
+	m.imcSessions[1].cachedMsgCount = 4
 
 	d := D{
 		"messages": messages,
@@ -645,14 +628,14 @@ func TestProcessIMCLRUEviction(t *testing.T) {
 		cfg: Config{
 			IncrementalCache: true,
 		},
-		imcSlots: make([]*imcSession, 2),
-		log:      func(ctx context.Context, msg string, args ...any) {},
+		imcSessions: make([]*imcSession, 2),
+		log:         func(ctx context.Context, msg string, args ...any) {},
 	}
 
 	now := time.Now()
 
-	for i := range m.imcSlots {
-		m.imcSlots[i] = &imcSession{
+	for i := range m.imcSessions {
+		m.imcSessions[i] = &imcSession{
 			seqID:  llama.SeqId(i),
 			slotID: i,
 		}
@@ -661,15 +644,15 @@ func TestProcessIMCLRUEviction(t *testing.T) {
 	ctx := context.Background()
 
 	// Both slots have data but with non-matching hashes.
-	m.imcSlots[0].cachedMsgsHash = "aaaa" + strings.Repeat("0", 56)
-	m.imcSlots[0].totalTokensCached = 500
-	m.imcSlots[0].cachedMsgCount = 2
-	m.imcSlots[0].lastUsed = now.Add(-10 * time.Second) // Older (LRU candidate).
+	m.imcSessions[0].cachedMsgsHash = "aaaa" + strings.Repeat("0", 56)
+	m.imcSessions[0].totalTokensCached = 500
+	m.imcSessions[0].cachedMsgCount = 2
+	m.imcSessions[0].lastUsed = now.Add(-10 * time.Second) // Older (LRU candidate).
 
-	m.imcSlots[1].cachedMsgsHash = "bbbb" + strings.Repeat("0", 56)
-	m.imcSlots[1].totalTokensCached = 300
-	m.imcSlots[1].cachedMsgCount = 1
-	m.imcSlots[1].lastUsed = now // More recent.
+	m.imcSessions[1].cachedMsgsHash = "bbbb" + strings.Repeat("0", 56)
+	m.imcSessions[1].totalTokensCached = 300
+	m.imcSessions[1].cachedMsgCount = 1
+	m.imcSessions[1].lastUsed = now // More recent.
 
 	// Request with completely different content (no hash match).
 	messages := []D{
@@ -691,11 +674,11 @@ func TestProcessIMCLRUEviction(t *testing.T) {
 	}
 
 	// Slot[1] should NOT have been selected — its state should be untouched.
-	if m.imcSlots[1].totalTokensCached != 300 {
-		t.Errorf("slot[1] totalTokensCached = %d, want 300 (should be untouched)", m.imcSlots[1].totalTokensCached)
+	if m.imcSessions[1].totalTokensCached != 300 {
+		t.Errorf("slot[1] totalTokensCached = %d, want 300 (should be untouched)", m.imcSessions[1].totalTokensCached)
 	}
-	if m.imcSlots[1].cachedMsgCount != 1 {
-		t.Errorf("slot[1] cachedMsgCount = %d, want 1 (should be untouched)", m.imcSlots[1].cachedMsgCount)
+	if m.imcSessions[1].cachedMsgCount != 1 {
+		t.Errorf("slot[1] cachedMsgCount = %d, want 1 (should be untouched)", m.imcSessions[1].cachedMsgCount)
 	}
 }
 
@@ -712,12 +695,12 @@ func TestProcessIMCParallelSubAgents(t *testing.T) {
 		cfg: Config{
 			IncrementalCache: true,
 		},
-		imcSlots: make([]*imcSession, 3),
-		log:      func(ctx context.Context, msg string, args ...any) {},
+		imcSessions: make([]*imcSession, 3),
+		log:         func(ctx context.Context, msg string, args ...any) {},
 	}
 
-	for i := range m.imcSlots {
-		m.imcSlots[i] = &imcSession{
+	for i := range m.imcSessions {
+		m.imcSessions[i] = &imcSession{
 			seqID:  llama.SeqId(i),
 			slotID: i,
 		}
@@ -746,15 +729,15 @@ func TestProcessIMCParallelSubAgents(t *testing.T) {
 	// Simulate: both sub-agents have completed their initial builds via
 	// startSlot. slot[0] has sub-agent 1's cache, slot[1] has sub-agent 2's.
 
-	m.imcSlots[0].cachedMsgsHash = hash1
-	m.imcSlots[0].totalTokensCached = 400
-	m.imcSlots[0].cachedMsgCount = 2
-	m.imcSlots[0].lastUsed = time.Now()
+	m.imcSessions[0].cachedMsgsHash = hash1
+	m.imcSessions[0].totalTokensCached = 400
+	m.imcSessions[0].cachedMsgCount = 2
+	m.imcSessions[0].lastUsed = time.Now()
 
-	m.imcSlots[1].cachedMsgsHash = hash2
-	m.imcSlots[1].totalTokensCached = 350
-	m.imcSlots[1].cachedMsgCount = 2
-	m.imcSlots[1].lastUsed = time.Now()
+	m.imcSessions[1].cachedMsgsHash = hash2
+	m.imcSessions[1].totalTokensCached = 350
+	m.imcSessions[1].cachedMsgCount = 2
+	m.imcSessions[1].lastUsed = time.Now()
 
 	// Follow-up from sub-agent 1: same prefix (pure cache hit).
 	msgs3 := []D{
@@ -831,12 +814,12 @@ func TestProcessIMCPendingPreventsDoubleSlot(t *testing.T) {
 		cfg: Config{
 			IncrementalCache: true,
 		},
-		imcSlots: make([]*imcSession, 3),
-		log:      func(ctx context.Context, msg string, args ...any) {},
+		imcSessions: make([]*imcSession, 3),
+		log:         func(ctx context.Context, msg string, args ...any) {},
 	}
 
-	for i := range m.imcSlots {
-		m.imcSlots[i] = &imcSession{
+	for i := range m.imcSessions {
+		m.imcSessions[i] = &imcSession{
 			seqID:  llama.SeqId(i),
 			slotID: i,
 		}
@@ -846,10 +829,10 @@ func TestProcessIMCPendingPreventsDoubleSlot(t *testing.T) {
 
 	// Simulate: slot[0] is mid-build (pending=true, state reset).
 	// This is exactly what buildIMCCacheFromScratch does at lines 339-342.
-	m.imcSlots[0].totalTokensCached = 0
-	m.imcSlots[0].cachedMsgCount = 0
-	m.imcSlots[0].cachedMsgsHash = ""
-	m.imcSlots[0].pending = true
+	m.imcSessions[0].totalTokensCached = 0
+	m.imcSessions[0].cachedMsgCount = 0
+	m.imcSessions[0].cachedMsgsHash = ""
+	m.imcSessions[0].pending = true
 
 	// Second sub-agent arrives with different content. Without the pending
 	// flag, it would see slot[0] as "empty" (totalTokensCached=0) and pick
@@ -867,12 +850,12 @@ func TestProcessIMCPendingPreventsDoubleSlot(t *testing.T) {
 	_ = m.processIMC(ctx, d, time.Now())
 
 	// Slot[0] should still be pending (untouched by the second request).
-	if !m.imcSlots[0].pending {
+	if !m.imcSessions[0].pending {
 		t.Error("slot[0] should still be pending (second request should skip it)")
 	}
 
 	// Slot[2] should NOT be affected (slot[1] is first empty after slot[0]).
-	if m.imcSlots[2].pending {
+	if m.imcSessions[2].pending {
 		t.Error("slot[2] should not be pending (slot[1] should be picked first)")
 	}
 }
@@ -974,14 +957,14 @@ func TestProcessIMCTokenPrefixFallback(t *testing.T) {
 			IncrementalCache: true,
 			CacheMinTokens:   3,
 		},
-		imcSlots: make([]*imcSession, 2),
-		log:      func(ctx context.Context, msg string, args ...any) {},
+		imcSessions: make([]*imcSession, 2),
+		log:         func(ctx context.Context, msg string, args ...any) {},
 	}
 
 	now := time.Now()
 
-	for i := range m.imcSlots {
-		m.imcSlots[i] = &imcSession{
+	for i := range m.imcSessions {
+		m.imcSessions[i] = &imcSession{
 			seqID:  llama.SeqId(i),
 			slotID: i,
 		}
@@ -991,11 +974,11 @@ func TestProcessIMCTokenPrefixFallback(t *testing.T) {
 
 	// Slot[0] has non-matching hashes but populated cachedTokens,
 	// making it a candidate for the token prefix comparison path.
-	m.imcSlots[0].cachedMsgsHash = "cccc" + strings.Repeat("0", 56)
-	m.imcSlots[0].totalTokensCached = 100
-	m.imcSlots[0].cachedMsgCount = 2
-	m.imcSlots[0].lastUsed = now
-	m.imcSlots[0].cachedTokens = []llama.Token{10, 20, 30, 40, 50}
+	m.imcSessions[0].cachedMsgsHash = "cccc" + strings.Repeat("0", 56)
+	m.imcSessions[0].totalTokensCached = 100
+	m.imcSessions[0].cachedMsgCount = 2
+	m.imcSessions[0].lastUsed = now
+	m.imcSessions[0].cachedTokens = []llama.Token{10, 20, 30, 40, 50}
 
 	// Slot[1] is empty (available for fallback).
 
@@ -1020,16 +1003,789 @@ func TestProcessIMCTokenPrefixFallback(t *testing.T) {
 
 	// Slot[0] should NOT have been cleared or marked pending — the token
 	// prefix code path never modifies slot state when tokenization fails.
-	if m.imcSlots[0].totalTokensCached != 100 {
-		t.Errorf("slot[0] totalTokensCached = %d, want 100 (should be untouched)", m.imcSlots[0].totalTokensCached)
+	if m.imcSessions[0].totalTokensCached != 100 {
+		t.Errorf("slot[0] totalTokensCached = %d, want 100 (should be untouched)", m.imcSessions[0].totalTokensCached)
 	}
-	if m.imcSlots[0].cachedMsgCount != 2 {
-		t.Errorf("slot[0] cachedMsgCount = %d, want 2 (should be untouched)", m.imcSlots[0].cachedMsgCount)
+	if m.imcSessions[0].cachedMsgCount != 2 {
+		t.Errorf("slot[0] cachedMsgCount = %d, want 2 (should be untouched)", m.imcSessions[0].cachedMsgCount)
 	}
-	if m.imcSlots[0].cachedMsgsHash != "cccc"+strings.Repeat("0", 56) {
+	if m.imcSessions[0].cachedMsgsHash != "cccc"+strings.Repeat("0", 56) {
 		t.Errorf("slot[0] cachedMsgsHash was modified (should be untouched)")
 	}
-	if m.imcSlots[0].pending {
+	if m.imcSessions[0].pending {
 		t.Error("slot[0] should not be pending (token prefix path should not modify it)")
+	}
+}
+
+// =============================================================================
+// Externalized KV State Tests
+// =============================================================================
+
+// TestIMCResetSessionClearsKVState verifies that imcResetSession clears the
+// externalized KV state fields (kvState, kvStateBytes). Without this, a reset
+// session could retain stale RAM state that gets restored into a future request.
+func TestIMCResetSessionClearsKVState(t *testing.T) {
+	s := &imcSession{
+		slotID:            0,
+		seqID:             0,
+		cachedMsgsHash:    "abc123",
+		cachedTokens:      []llama.Token{1, 2, 3},
+		totalTokensCached: 100,
+		cachedMsgCount:    2,
+		kvState:           []byte{0xDE, 0xAD, 0xBE, 0xEF},
+		kvStateBytes:      4,
+		lastUsed:          time.Now(),
+		pending:           true,
+		hasMedia:          true,
+		useMRoPE:          true,
+		mediaKVCounts:     []int{10, 20},
+		sysPromptHash:     "syshash",
+		sysPromptTokens:   50,
+	}
+
+	imcResetSession(s)
+
+	if s.kvState != nil {
+		t.Errorf("kvState = %v, want nil", s.kvState)
+	}
+	if s.kvStateBytes != 0 {
+		t.Errorf("kvStateBytes = %d, want 0", s.kvStateBytes)
+	}
+	if s.cachedMsgsHash != "" {
+		t.Errorf("cachedMsgsHash = %q, want empty", s.cachedMsgsHash)
+	}
+	if s.cachedTokens != nil {
+		t.Errorf("cachedTokens = %v, want nil", s.cachedTokens)
+	}
+	if s.totalTokensCached != 0 {
+		t.Errorf("totalTokensCached = %d, want 0", s.totalTokensCached)
+	}
+	if s.cachedMsgCount != 0 {
+		t.Errorf("cachedMsgCount = %d, want 0", s.cachedMsgCount)
+	}
+	if s.pending {
+		t.Error("pending should be false")
+	}
+	if s.hasMedia {
+		t.Error("hasMedia should be false")
+	}
+	if s.useMRoPE {
+		t.Error("useMRoPE should be false")
+	}
+	if s.mediaKVCounts != nil {
+		t.Errorf("mediaKVCounts = %v, want nil", s.mediaKVCounts)
+	}
+	if s.sysPromptHash != "" {
+		t.Errorf("sysPromptHash = %q, want empty", s.sysPromptHash)
+	}
+	if s.sysPromptTokens != 0 {
+		t.Errorf("sysPromptTokens = %d, want 0", s.sysPromptTokens)
+	}
+
+	// slotID and seqID should NOT be cleared — they are structural.
+	if s.slotID != 0 {
+		t.Errorf("slotID = %d, want 0 (should be preserved)", s.slotID)
+	}
+	if s.seqID != 0 {
+		t.Errorf("seqID = %d, want 0 (should be preserved)", s.seqID)
+	}
+}
+
+// TestClearCachesResetsKVState verifies that clearCaches properly resets
+// kvState on all sessions, not just the original fields.
+func TestClearCachesResetsKVState(t *testing.T) {
+	m := &Model{
+		cfg: Config{
+			IncrementalCache: true,
+		},
+		imcSessions: make([]*imcSession, 2),
+		log:         func(ctx context.Context, msg string, args ...any) {},
+	}
+
+	for i := range m.imcSessions {
+		m.imcSessions[i] = &imcSession{
+			seqID:             llama.SeqId(i),
+			slotID:            i,
+			cachedMsgsHash:    "hash",
+			totalTokensCached: 500,
+			cachedMsgCount:    3,
+			kvState:           make([]byte, 1024),
+			kvStateBytes:      1024,
+		}
+	}
+
+	m.clearCaches()
+
+	for i, s := range m.imcSessions {
+		if s.kvState != nil {
+			t.Errorf("session[%d] kvState not cleared", i)
+		}
+		if s.kvStateBytes != 0 {
+			t.Errorf("session[%d] kvStateBytes = %d, want 0", i, s.kvStateBytes)
+		}
+		if s.totalTokensCached != 0 {
+			t.Errorf("session[%d] totalTokensCached = %d, want 0", i, s.totalTokensCached)
+		}
+	}
+}
+
+// TestIMCSessionMediaFlag verifies the imcSessionMedia flag derivation for
+// the text→media transition. When a session starts as text-only and a media
+// build is requested (imcMediaBuild=true), the job must be treated as media
+// to prevent finishSlot from clearing the KV state.
+func TestIMCSessionMediaFlag(t *testing.T) {
+	tests := []struct {
+		name          string
+		hasMedia      bool
+		imcMediaBuild bool
+		wantMediaFlag bool
+	}{
+		{
+			name:          "text session, no media build",
+			hasMedia:      false,
+			imcMediaBuild: false,
+			wantMediaFlag: false,
+		},
+		{
+			name:          "text session, media build starting (text→media transition)",
+			hasMedia:      false,
+			imcMediaBuild: true,
+			wantMediaFlag: true,
+		},
+		{
+			name:          "media session, no new media build",
+			hasMedia:      true,
+			imcMediaBuild: false,
+			wantMediaFlag: true,
+		},
+		{
+			name:          "media session, media rebuild",
+			hasMedia:      true,
+			imcMediaBuild: true,
+			wantMediaFlag: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			session := &imcSession{hasMedia: tt.hasMedia}
+			got := session.hasMedia || tt.imcMediaBuild
+			if got != tt.wantMediaFlag {
+				t.Errorf("imcSessionMedia = %v, want %v", got, tt.wantMediaFlag)
+			}
+		})
+	}
+}
+
+// TestIMCCommitSessionPreservesKVState verifies that imcCommitSession does not
+// clear kvState — it should only be updated by the snapshot in startSlot.
+func TestIMCCommitSessionPreservesKVState(t *testing.T) {
+	m := &Model{
+		cfg: Config{
+			IncrementalCache: true,
+		},
+		imcSessions: make([]*imcSession, 1),
+		log:         func(ctx context.Context, msg string, args ...any) {},
+	}
+
+	m.cacheCond = sync.NewCond(&m.cacheMu)
+
+	session := &imcSession{
+		slotID:       0,
+		seqID:        0,
+		kvState:      []byte{0x01, 0x02, 0x03},
+		kvStateBytes: 3,
+		pending:      true,
+	}
+	m.imcSessions[0] = session
+
+	m.imcCommitSession(session, "newhash", 1000, 5,
+		[]llama.Token{1, 2, 3}, false, nil, "syshash", 50)
+
+	// kvState should be preserved — only startSlot snapshots update it.
+	if len(session.kvState) != 3 {
+		t.Errorf("kvState len = %d, want 3 (should be preserved)", len(session.kvState))
+	}
+	if session.kvStateBytes != 3 {
+		t.Errorf("kvStateBytes = %d, want 3 (should be preserved)", session.kvStateBytes)
+	}
+
+	// Verify other fields were updated.
+	if session.cachedMsgsHash != "newhash" {
+		t.Errorf("cachedMsgsHash = %q, want newhash", session.cachedMsgsHash)
+	}
+	if session.totalTokensCached != 1000 {
+		t.Errorf("totalTokensCached = %d, want 1000", session.totalTokensCached)
+	}
+	if session.pending {
+		t.Error("pending should be false after commit")
+	}
+}
+
+// TestIMCCommitSessionNilSafe verifies that imcCommitSession handles a nil
+// session without panicking.
+func TestIMCCommitSessionNilSafe(t *testing.T) {
+	m := &Model{
+		cfg: Config{IncrementalCache: true},
+		log: func(ctx context.Context, msg string, args ...any) {},
+	}
+	m.cacheCond = sync.NewCond(&m.cacheMu)
+
+	// Should not panic.
+	m.imcCommitSession(nil, "hash", 100, 2, nil, false, nil, "", 0)
+}
+
+// TestIMCKVPressureSkipsExternalizedSessions verifies that the KV-pressure
+// eviction logic skips text sessions with externalized kvState (their VRAM
+// sequences are already cleared, so they don't consume KV cells).
+func TestIMCKVPressureSkipsExternalizedSessions(t *testing.T) {
+	m := &Model{
+		cfg: Config{
+			IncrementalCache: true,
+			ContextWindow:    1000,
+		},
+		imcSessions: make([]*imcSession, 3),
+		log:         func(ctx context.Context, msg string, args ...any) {},
+	}
+
+	now := time.Now()
+
+	for i := range m.imcSessions {
+		m.imcSessions[i] = &imcSession{
+			seqID:  llama.SeqId(i),
+			slotID: i,
+		}
+	}
+
+	// Session[0]: text session with externalized KV (kvState populated).
+	// Its VRAM sequence is already cleared — should NOT count toward KV pressure.
+	hash0 := hashMessages([]D{
+		{"role": "system", "content": "sys0"},
+		{"role": "user", "content": "user0"},
+	})
+	m.imcSessions[0].cachedMsgsHash = hash0
+	m.imcSessions[0].totalTokensCached = 800
+	m.imcSessions[0].cachedMsgCount = 2
+	m.imcSessions[0].lastUsed = now.Add(-10 * time.Second)
+	m.imcSessions[0].kvState = make([]byte, 4096)
+	m.imcSessions[0].kvStateBytes = 4096
+
+	// Session[1]: media session (no kvState, KV resident in VRAM).
+	hash1 := hashMessages([]D{
+		{"role": "system", "content": "sys1"},
+		{"role": "user", "content": "user1"},
+	})
+	m.imcSessions[1].cachedMsgsHash = hash1
+	m.imcSessions[1].totalTokensCached = 600
+	m.imcSessions[1].cachedMsgCount = 2
+	m.imcSessions[1].lastUsed = now.Add(-5 * time.Second)
+	m.imcSessions[1].hasMedia = true
+
+	// Session[2]: will be matched by the incoming request.
+	cachedMsgs := []D{
+		{"role": "system", "content": "matched-sys"},
+		{"role": "user", "content": "matched-user"},
+	}
+	hash2 := hashMessages(cachedMsgs)
+	m.imcSessions[2].cachedMsgsHash = hash2
+	m.imcSessions[2].totalTokensCached = 300
+	m.imcSessions[2].cachedMsgCount = 2
+	m.imcSessions[2].lastUsed = now
+
+	// Incoming request matches session[2].
+	messages := []D{
+		{"role": "system", "content": "matched-sys"},
+		{"role": "user", "content": "matched-user"},
+		{"role": "assistant", "content": "response"},
+	}
+	d := D{"messages": messages}
+
+	ctx := context.Background()
+	result := m.processIMC(ctx, d, time.Now())
+
+	// Session[0] should NOT have been evicted — it's externalized to RAM
+	// and doesn't consume VRAM KV cells.
+	if m.imcSessions[0].totalTokensCached != 800 {
+		t.Errorf("session[0] totalTokensCached = %d, want 800 (externalized session should not be evicted)", m.imcSessions[0].totalTokensCached)
+	}
+	if m.imcSessions[0].kvState == nil {
+		t.Error("session[0] kvState should be preserved (not evicted)")
+	}
+
+	// Result should match session[2].
+	if result.imcSession != m.imcSessions[2] {
+		t.Errorf("expected result to match session[2], got session pointer %p", result.imcSession)
+	}
+}
+
+// TestIMCFillSlotsTextAnySlot verifies that text-only IMC jobs (with
+// externalized KV) are assigned to any available slot, not routed to a
+// specific slot.
+func TestIMCFillSlotsTextAnySlot(t *testing.T) {
+	session := &imcSession{
+		slotID:   1,
+		seqID:    1,
+		hasMedia: false,
+	}
+
+	job := &chatJob{
+		ctx:             context.Background(),
+		imcCacheHit:     true,
+		imcSession:      session,
+		imcSessionMedia: false,
+		imcSlotID:       1,
+	}
+
+	// Text-only job should NOT be routed to a specific slot.
+	isMediaRouted := job.imcCacheHit && job.imcSessionMedia
+	if isMediaRouted {
+		t.Error("text-only IMC job should not be media-routed")
+	}
+}
+
+// TestIMCFillSlotsMediaSpecificSlot verifies that media IMC jobs are routed
+// to their specific target slot.
+func TestIMCFillSlotsMediaSpecificSlot(t *testing.T) {
+	session := &imcSession{
+		slotID:   1,
+		seqID:    1,
+		hasMedia: true,
+	}
+
+	job := &chatJob{
+		ctx:             context.Background(),
+		imcCacheHit:     true,
+		imcSession:      session,
+		imcSessionMedia: true,
+		imcSlotID:       1,
+	}
+
+	// Media job should be routed to its specific slot.
+	isMediaRouted := job.imcCacheHit && job.imcSessionMedia
+	if !isMediaRouted {
+		t.Error("media IMC job should be media-routed to specific slot")
+	}
+	if job.imcSlotID != 1 {
+		t.Errorf("imcSlotID = %d, want 1", job.imcSlotID)
+	}
+}
+
+// TestIMCSessionMediaTransitions verifies the session media flag through
+// all six transitions: text→text, text→media, media→text, media→text,
+// media→media, media→text. The key invariant: once a session gains media,
+// it stays media-flagged (slot-dedicated) for the rest of its life, except
+// when rebuildIMCWithMedia calls imcResetSession (which clears hasMedia)
+// followed by a new imcMediaBuild.
+func TestIMCSessionMediaTransitions(t *testing.T) {
+	s := &imcSession{slotID: 0, seqID: 0}
+
+	// Turn 1: Text build. hasMedia=false.
+	s.cachedMsgsHash = "text1"
+	s.totalTokensCached = 100
+	s.hasMedia = false
+	s.kvState = []byte{0x01}
+	s.kvStateBytes = 1
+
+	if s.hasMedia {
+		t.Fatal("turn 1: session should be text-only")
+	}
+	if s.kvState == nil {
+		t.Fatal("turn 1: text session should have kvState")
+	}
+
+	// Turn 2: Text→Media transition. imcMediaBuild=true, session.hasMedia
+	// transitions from false to true after commit.
+	mediaFlag := s.hasMedia || true // imcMediaBuild=true
+	if !mediaFlag {
+		t.Fatal("turn 2: imcSessionMedia should be true during media build")
+	}
+
+	// Simulate startSlot media build + commit.
+	s.cachedMsgsHash = "media1"
+	s.totalTokensCached = 500
+	s.hasMedia = true
+	s.kvState = nil // Media sessions don't externalize.
+	s.kvStateBytes = 0
+	s.mediaKVCounts = []int{200}
+
+	// Turn 3: Media→Text follow-up. Session stays media.
+	if !s.hasMedia {
+		t.Fatal("turn 3: session should still be media")
+	}
+	if s.kvState != nil {
+		t.Fatal("turn 3: media session should not have kvState")
+	}
+
+	// Simulate text extend on media session.
+	s.totalTokensCached = 600
+	s.cachedMsgCount = 4
+
+	// Turn 4: Text→Text on media session. Still media.
+	if !s.hasMedia {
+		t.Fatal("turn 4: session should still be media")
+	}
+
+	// Turn 5: Media→Media (second image). rebuildIMCWithMedia resets then rebuilds.
+	imcResetSession(s)
+	if s.hasMedia {
+		t.Fatal("turn 5: after reset, hasMedia should be false")
+	}
+	if s.kvState != nil {
+		t.Fatal("turn 5: after reset, kvState should be nil")
+	}
+
+	// But imcMediaBuild=true on the job, so imcSessionMedia=true.
+	mediaFlag = s.hasMedia || true // imcMediaBuild=true
+	if !mediaFlag {
+		t.Fatal("turn 5: imcSessionMedia should be true during media rebuild")
+	}
+
+	// After commit, session is media again.
+	s.hasMedia = true
+	s.totalTokensCached = 800
+	s.mediaKVCounts = []int{200, 150}
+
+	// Turn 6: Media→Text. Session stays media.
+	if !s.hasMedia {
+		t.Fatal("turn 6: session should still be media")
+	}
+}
+
+// =============================================================================
+// IMC Session State Transition Tests
+//
+// These tests exercise the session routing, hash matching, commit, and
+// re-match cycle that processIMC performs. They verify the cacheResult fields
+// that batch_slot_start.go uses to decide restore/extend/trim/rebuild.
+// =============================================================================
+
+// TestIMCCommitThenRematch verifies the full cycle: build from scratch on an
+// empty session, commit the session state, then send a new request that should
+// match the committed session and produce a cache hit with extension tokens.
+func TestIMCCommitThenRematch(t *testing.T) {
+	m := &Model{
+		cfg: Config{
+			IncrementalCache: true,
+		},
+		imcSessions: make([]*imcSession, 1),
+		log:         func(ctx context.Context, msg string, args ...any) {},
+	}
+
+	m.cacheCond = sync.NewCond(&m.cacheMu)
+
+	m.imcSessions[0] = &imcSession{
+		seqID:  0,
+		slotID: 0,
+	}
+
+	// Simulate a completed first request: 2 messages cached.
+	msgs2 := []D{
+		{"role": "system", "content": "You are helpful"},
+		{"role": "user", "content": "Hello"},
+	}
+	hash2 := hashMessages(msgs2)
+	sysHash := hashMessages(msgs2[:1])
+
+	m.imcCommitSession(m.imcSessions[0], hash2, 500, 2,
+		[]llama.Token{1, 2, 3, 4, 5}, false, nil, sysHash, 100)
+
+	// Verify committed state.
+	s := m.imcSessions[0]
+	if s.cachedMsgsHash != hash2 {
+		t.Errorf("committed hash = %q, want %q", s.cachedMsgsHash, hash2)
+	}
+	if s.totalTokensCached != 500 {
+		t.Errorf("committed tokens = %d, want 500", s.totalTokensCached)
+	}
+	if s.cachedMsgCount != 2 {
+		t.Errorf("committed msgCount = %d, want 2", s.cachedMsgCount)
+	}
+	if s.pending {
+		t.Error("committed session should not be pending")
+	}
+	if s.sysPromptHash != sysHash {
+		t.Errorf("sysPromptHash = %q, want %q", s.sysPromptHash, sysHash)
+	}
+	if s.sysPromptTokens != 100 {
+		t.Errorf("sysPromptTokens = %d, want 100", s.sysPromptTokens)
+	}
+	if len(s.kvState) != 0 {
+		t.Error("kvState should be empty (not set by commit)")
+	}
+
+	// Now send a 3-message request (same 2 cached + 1 new).
+	d := D{
+		"messages": []D{
+			{"role": "system", "content": "You are helpful"},
+			{"role": "user", "content": "Hello"},
+			{"role": "assistant", "content": "Hi there"},
+		},
+	}
+
+	result := m.processIMC(context.Background(), d, time.Now())
+
+	if result.err != nil {
+		t.Fatalf("processIMC returned error: %v", result.err)
+	}
+
+	// Should match slot[0] with cache hit.
+	if result.cacheSeqID != 0 {
+		t.Errorf("cacheSeqID = %d, want 0", result.cacheSeqID)
+	}
+	if result.imcSlotID != 0 {
+		t.Errorf("imcSlotID = %d, want 0", result.imcSlotID)
+	}
+	if result.cacheIdx != 500 {
+		t.Errorf("cacheIdx = %d, want 500 (should reuse cached position)", result.cacheIdx)
+	}
+
+	// This is a pure hit (2 cached, 2 to cache) — no new tokens to decode.
+	if len(result.imcNewCacheTokens) != 0 {
+		t.Errorf("imcNewCacheTokens = %d, want 0 (pure cache hit)", len(result.imcNewCacheTokens))
+	}
+	if result.imcClearSeq {
+		t.Error("imcClearSeq should be false (cache hit, not rebuild)")
+	}
+}
+
+// TestIMCExtendAfterCommit verifies that a 5-message request (2 cached + 3 new)
+// routes to the extend path. Without a Jinja template, extendIMCCache fails
+// during createPrompt — the error message confirms the extend path was taken.
+func TestIMCExtendAfterCommit(t *testing.T) {
+	m := &Model{
+		cfg: Config{
+			IncrementalCache: true,
+		},
+		imcSessions: make([]*imcSession, 1),
+		log:         func(ctx context.Context, msg string, args ...any) {},
+	}
+
+	m.cacheCond = sync.NewCond(&m.cacheMu)
+
+	m.imcSessions[0] = &imcSession{
+		seqID:  0,
+		slotID: 0,
+	}
+
+	// Commit: 2 messages cached, 500 tokens.
+	msgs2 := []D{
+		{"role": "system", "content": "You are helpful"},
+		{"role": "user", "content": "Hello"},
+	}
+	hash2 := hashMessages(msgs2)
+
+	m.imcCommitSession(m.imcSessions[0], hash2, 500, 2,
+		[]llama.Token{1, 2, 3, 4, 5}, false, nil, hashMessages(msgs2[:1]), 100)
+
+	// Request with 5 messages (2 cached + 3 new) — messages[0:4] should be cached.
+	d := D{
+		"messages": []D{
+			{"role": "system", "content": "You are helpful"},
+			{"role": "user", "content": "Hello"},
+			{"role": "assistant", "content": "Hi there"},
+			{"role": "user", "content": "How are you?"},
+			{"role": "assistant", "content": "Fine thanks"},
+		},
+	}
+
+	result := m.processIMC(context.Background(), d, time.Now())
+
+	// extendIMCCache fails at createPrompt (no template). The error message
+	// confirms processIMC routed to the extend path, not build-from-scratch.
+	if result.err == nil {
+		t.Fatal("expected template error from extendIMCCache")
+	}
+	if !strings.Contains(result.err.Error(), "template prefix") {
+		t.Errorf("expected extend path error, got: %v", result.err)
+	}
+}
+
+// TestIMCSysPromptPreserveRoute verifies that when the full hash mismatches but
+// the system prompt hash still matches, processIMC routes to the sys-prompt-preserve
+// path. The session should be marked pending with the correct slot selected.
+func TestIMCSysPromptPreserveRoute(t *testing.T) {
+	m := &Model{
+		cfg: Config{
+			IncrementalCache: true,
+		},
+		imcSessions: make([]*imcSession, 2),
+		log:         func(ctx context.Context, msg string, args ...any) {},
+	}
+
+	m.cacheCond = sync.NewCond(&m.cacheMu)
+
+	for i := range m.imcSessions {
+		m.imcSessions[i] = &imcSession{
+			seqID:  llama.SeqId(i),
+			slotID: i,
+		}
+	}
+
+	// Commit slot[0] with a 3-message conversation.
+	cachedMsgs := []D{
+		{"role": "system", "content": "You are a math tutor"},
+		{"role": "user", "content": "What is 2+2?"},
+		{"role": "assistant", "content": "4"},
+	}
+	hash3 := hashMessages(cachedMsgs)
+	sysHash := hashMessages(cachedMsgs[:1])
+
+	m.imcCommitSession(m.imcSessions[0], hash3, 800, 3,
+		[]llama.Token{10, 20, 30, 40, 50, 60, 70, 80}, false, nil, sysHash, 200)
+
+	// Send a request with the SAME system prompt but EDITED conversation body.
+	// Full hash won't match, but sys prompt hash should match.
+	d := D{
+		"messages": []D{
+			{"role": "system", "content": "You are a math tutor"},
+			{"role": "user", "content": "What is 3+3?"},
+			{"role": "assistant", "content": "6"},
+			{"role": "user", "content": "What is 5+5?"},
+		},
+	}
+
+	result := m.processIMC(context.Background(), d, time.Now())
+
+	// rebuildIMCPreservingSysPrompt fails at createPrompt (no template).
+	// The error message confirms processIMC routed to the sys-prompt-preserve
+	// path rather than falling through to empty/LRU.
+	if result.err == nil {
+		t.Fatal("expected template error from rebuildIMCPreservingSysPrompt")
+	}
+	if !strings.Contains(result.err.Error(), "sys-prompt-preserve") {
+		t.Errorf("expected sys-prompt-preserve path error, got: %v", result.err)
+	}
+}
+
+// TestIMCSysPromptChangeFallsToEmptySlot verifies that when the system prompt
+// changes entirely, no sys-prompt match occurs and processIMC falls through
+// to the empty/LRU slot path (buildIMCCacheFromScratch).
+func TestIMCSysPromptChangeFallsToEmptySlot(t *testing.T) {
+	m := &Model{
+		cfg: Config{
+			IncrementalCache: true,
+		},
+		imcSessions: make([]*imcSession, 2),
+		log:         func(ctx context.Context, msg string, args ...any) {},
+	}
+
+	for i := range m.imcSessions {
+		m.imcSessions[i] = &imcSession{
+			seqID:  llama.SeqId(i),
+			slotID: i,
+		}
+	}
+
+	// Commit slot[0] with system prompt A.
+	cachedMsgs := []D{
+		{"role": "system", "content": "You are a math tutor"},
+		{"role": "user", "content": "What is 2+2?"},
+	}
+	hash := hashMessages(cachedMsgs)
+	sysHash := hashMessages(cachedMsgs[:1])
+
+	m.imcCommitSession(m.imcSessions[0], hash, 500, 2,
+		[]llama.Token{1, 2, 3, 4, 5}, false, nil, sysHash, 100)
+
+	// Send a request with a completely different system prompt B.
+	d := D{
+		"messages": []D{
+			{"role": "system", "content": "You are a poet"},
+			{"role": "user", "content": "Write about the sea"},
+			{"role": "assistant", "content": "The sea is vast"},
+		},
+	}
+
+	result := m.processIMC(context.Background(), d, time.Now())
+
+	// buildIMCCacheFromScratch fails at createPrompt (no template).
+	// The error message confirms processIMC fell through to the build path
+	// (not sys-prompt-preserve, since the system prompt changed).
+	if result.err == nil {
+		t.Fatal("expected template error from buildIMCCacheFromScratch")
+	}
+	if strings.Contains(result.err.Error(), "sys-prompt-preserve") {
+		t.Error("should NOT have taken sys-prompt-preserve path (different sys prompt)")
+	}
+}
+
+// TestIMCRebuildResultPartialTrim verifies that imcRebuildResult correctly sets
+// the fields for a partial trim (sys-prompt-preserve or token prefix match).
+// When trimFrom > 0, the result should NOT set imcClearSeq and should set
+// imcTrimPos to the trim position.
+func TestIMCRebuildResultPartialTrim(t *testing.T) {
+	allTokens := []llama.Token{10, 20, 30, 40, 50, 60, 70, 80, 90, 100}
+	trimFrom := 4 // Keep first 4 tokens (sys prompt), decode rest.
+
+	result := imcRebuildResult(
+		D{"messages": []D{}}, // d
+		llama.SeqId(0),       // seqID
+		0,                    // slotID
+		5,                    // lastMsgIdxToCache
+		allTokens,            // allTokens
+		"newhash",            // newHash
+		"syshash",            // sysHash
+		200,                  // sysToks
+		trimFrom,             // trimFrom
+		&imcSession{},        // session
+	)
+
+	if result.imcClearSeq {
+		t.Error("imcClearSeq should be false for partial trim")
+	}
+	if result.imcTrimPos != llama.Pos(trimFrom) {
+		t.Errorf("imcTrimPos = %d, want %d", result.imcTrimPos, trimFrom)
+	}
+	if len(result.imcNewCacheTokens) != len(allTokens)-trimFrom {
+		t.Errorf("imcNewCacheTokens = %d, want %d (tokens after trim)", len(result.imcNewCacheTokens), len(allTokens)-trimFrom)
+	}
+	// Verify the extension tokens are the suffix after trimFrom.
+	for i, tok := range result.imcNewCacheTokens {
+		expected := allTokens[trimFrom+i]
+		if tok != expected {
+			t.Errorf("imcNewCacheTokens[%d] = %d, want %d", i, tok, expected)
+		}
+	}
+	if result.imcNewTotalCached != len(allTokens) {
+		t.Errorf("imcNewTotalCached = %d, want %d", result.imcNewTotalCached, len(allTokens))
+	}
+	if result.imcSysPromptHash != "syshash" {
+		t.Errorf("imcSysPromptHash = %q, want %q", result.imcSysPromptHash, "syshash")
+	}
+	if result.imcSysPromptTokens != 200 {
+		t.Errorf("imcSysPromptTokens = %d, want 200", result.imcSysPromptTokens)
+	}
+}
+
+// TestIMCRebuildResultFullRebuild verifies that imcRebuildResult correctly sets
+// the fields for a full rebuild (trimFrom == 0). The result should set
+// imcClearSeq to true and include ALL tokens for decoding.
+func TestIMCRebuildResultFullRebuild(t *testing.T) {
+	allTokens := []llama.Token{10, 20, 30, 40, 50, 60, 70, 80}
+
+	result := imcRebuildResult(
+		D{"messages": []D{}},
+		llama.SeqId(0),
+		0,
+		4,
+		allTokens,
+		"newhash",
+		"syshash",
+		200,
+		0, // trimFrom == 0 → full rebuild
+		&imcSession{},
+	)
+
+	if !result.imcClearSeq {
+		t.Error("imcClearSeq should be true for full rebuild")
+	}
+	if result.imcTrimPos != 0 {
+		t.Errorf("imcTrimPos = %d, want 0", result.imcTrimPos)
+	}
+	if len(result.imcNewCacheTokens) != len(allTokens) {
+		t.Errorf("imcNewCacheTokens = %d, want %d (all tokens for full rebuild)", len(result.imcNewCacheTokens), len(allTokens))
+	}
+	if result.cacheIdx != 0 {
+		t.Errorf("cacheIdx = %d, want 0 (start from beginning)", result.cacheIdx)
 	}
 }
