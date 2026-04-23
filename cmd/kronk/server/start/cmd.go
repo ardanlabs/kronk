@@ -50,7 +50,6 @@ func init() {
 	Cmd.Flags().Int("model-instances", 0, "Maximum model instances")
 	Cmd.Flags().Int("models-in-cache", 0, "Maximum models in cache")
 	Cmd.Flags().String("cache-ttl", "", "Cache TTL duration (e.g., 5m, 1h)")
-	Cmd.Flags().Bool("ignore-integrity-check", false, "Ignore model integrity check")
 
 	// Runtime settings
 	Cmd.Flags().String("device", "", "Device to use for inference (e.g., cuda, metal, rocm)")

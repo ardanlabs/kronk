@@ -9,7 +9,7 @@ import (
 // Remove remove the specified file from the models directory.
 func (m *Models) Remove(mp Path, log Logger) (err error) {
 	defer func() {
-		if errDfr := m.BuildIndex(log); err != nil {
+		if errDfr := m.BuildIndex(log, true); err != nil {
 			err = errDfr
 		}
 	}()

@@ -50,7 +50,7 @@ func (m *Models) DownloadSplits(ctx context.Context, log Logger, modelURLs []str
 	var downloaded bool
 	defer func() {
 		if downloaded {
-			if err := m.BuildIndex(log); err != nil {
+			if err := m.BuildIndex(log, true); err != nil {
 				log(ctx, "download-model: unable to create index", "ERROR", err)
 			}
 		}

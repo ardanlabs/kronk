@@ -387,9 +387,6 @@ func mergeModelConfig(dst *ModelConfig, src ModelConfig) {
 	if src.NUMA != "" {
 		dst.NUMA = src.NUMA
 	}
-	if src.IgnoreIntegrityCheck {
-		dst.IgnoreIntegrityCheck = src.IgnoreIntegrityCheck
-	}
 	if src.NSeqMax != 0 {
 		dst.NSeqMax = src.NSeqMax
 	}

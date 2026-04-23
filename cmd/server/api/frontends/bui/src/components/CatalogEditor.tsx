@@ -49,7 +49,6 @@ interface CatalogFormData {
     cacheTypeV: string;
     useDirectIO: boolean | null;
     flashAttention: string;
-    ignoreIntegrityCheck: boolean | null;
     nseqMax: number | null;
     offloadKQV: boolean | null;
     opOffload: boolean | null;
@@ -155,7 +154,6 @@ const defaultForm: CatalogFormData = {
     cacheTypeV: '',
     useDirectIO: null,
     flashAttention: '',
-    ignoreIntegrityCheck: null,
     nseqMax: null,
     offloadKQV: null,
     opOffload: null,
@@ -291,7 +289,6 @@ function populateFromResponse(resp: CatalogModelResponse): CatalogFormData {
       cacheTypeV: mc?.['cache-type-v'] || '',
       useDirectIO: mc?.['use-direct-io'] ?? null,
       flashAttention: mc?.['flash-attention'] || '',
-      ignoreIntegrityCheck: mc?.['ignore-integrity-check'] ?? null,
       nseqMax: mc?.['nseq-max'] ?? null,
       offloadKQV: mc?.['offload-kqv'] ?? null,
       opOffload: mc?.['op-offload'] ?? null,
@@ -741,7 +738,6 @@ export default function CatalogEditor() {
           'cache-type-v': form.config.cacheTypeV,
           'use-direct-io': form.config.useDirectIO ?? false,
           'flash-attention': form.config.flashAttention,
-          'ignore-integrity-check': form.config.ignoreIntegrityCheck ?? false,
           'nseq-max': form.config.nseqMax ?? 0,
           'offload-kqv': form.config.offloadKQV,
           'op-offload': form.config.opOffload,
@@ -1182,7 +1178,6 @@ export default function CatalogEditor() {
                 </select>
               </div>
               <NullableNumInput label="GPU Layers (ngpu-layers)" tooltipKey="ngpuLayers" value={form.config.ngpuLayers} defaultValue={rc?.['ngpu-layers'] ?? undefined} onChange={(v) => setConfig({ ngpuLayers: v === null ? null : Math.round(v) })} />
-              <TriStateSelect label="Ignore Integrity Check" tooltipKey="ignoreIntegrityCheck" value={form.config.ignoreIntegrityCheck} onChange={(v) => setConfig({ ignoreIntegrityCheck: v })} />
               <TriStateSelect label="Offload KQV" tooltipKey="offloadKQV" value={form.config.offloadKQV} onChange={(v) => setConfig({ offloadKQV: v })} />
               <TriStateSelect label="Op Offload" tooltipKey="opOffload" value={form.config.opOffload} onChange={(v) => setConfig({ opOffload: v })} />
               <div>

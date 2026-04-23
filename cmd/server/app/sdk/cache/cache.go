@@ -47,13 +47,12 @@ var ErrServerBusy = errors.New("server busy: all model slots have active request
 // InsecureLogging: When true, logs potentially sensitive data such as message
 // content and detailed model configuration.
 type Config struct {
-	Log                  model.Logger
-	BasePath             string
-	Catalog              *catalog.Catalog
-	ModelsInCache        int
-	CacheTTL             time.Duration
-	IgnoreIntegrityCheck bool
-	InsecureLogging      bool
+	Log             model.Logger
+	BasePath        string
+	Catalog         *catalog.Catalog
+	ModelsInCache   int
+	CacheTTL        time.Duration
+	InsecureLogging bool
 }
 
 func validateConfig(cfg Config) (Config, error) {
@@ -82,15 +81,14 @@ func validateConfig(cfg Config) (Config, error) {
 // Cache manages a set of Kronk APIs for use. It maintains a cache of these
 // APIs and will unload over time if not in use.
 type Cache struct {
-	log                  model.Logger
-	catalog              *catalog.Catalog
-	cache                *otter.Cache[string, *kronk.Kronk]
-	itemsInCache         atomic.Int32
-	maxModelsInCache     int
-	models               *models.Models
-	ignoreIntegrityCheck bool
-	insecureLogging      bool
-	loadGroup            singleflight.Group
+	log              model.Logger
+	catalog          *catalog.Catalog
+	cache            *otter.Cache[string, *kronk.Kronk]
+	itemsInCache     atomic.Int32
+	maxModelsInCache int
+	models           *models.Models
+	insecureLogging  bool
+	loadGroup        singleflight.Group
 }
 
 // New constructs the manager for use.
@@ -106,12 +104,11 @@ func New(cfg Config) (*Cache, error) {
 	}
 
 	c := Cache{
-		log:                  cfg.Log,
-		catalog:              cfg.Catalog,
-		maxModelsInCache:     cfg.ModelsInCache,
-		models:               models,
-		ignoreIntegrityCheck: cfg.IgnoreIntegrityCheck,
-		insecureLogging:      cfg.InsecureLogging,
+		log:              cfg.Log,
+		catalog:          cfg.Catalog,
+		maxModelsInCache: cfg.ModelsInCache,
+		models:           models,
+		insecureLogging:  cfg.InsecureLogging,
 	}
 
 	opt := otter.Options[string, *kronk.Kronk]{
@@ -219,10 +216,6 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 			return nil, fmt.Errorf("acquire-model: unable to retrieve model config: %w", err)
 		}
 
-		if c.ignoreIntegrityCheck {
-			cfg.IgnoreIntegrityCheck = true
-		}
-
 		if c.insecureLogging {
 			cfg.InsecureLogging = true
 		}
@@ -290,10 +283,6 @@ func (c *Cache) AquireCustom(ctx context.Context, key string, cfg model.Config, 
 	result, err, _ := c.loadGroup.Do(key, func() (any, error) {
 		if krn, exists := c.cache.GetIfPresent(key); exists {
 			return krn, nil
-		}
-
-		if c.ignoreIntegrityCheck {
-			cfg.IgnoreIntegrityCheck = true
 		}
 
 		if c.insecureLogging {

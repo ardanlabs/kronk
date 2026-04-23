@@ -113,9 +113,8 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			RepoPath        string
 		}
 		Cache struct {
-			ModelsInCache        int           `conf:"default:2"`
-			TTL                  time.Duration `conf:"default:20m"`
-			IgnoreIntegrityCheck bool          `conf:"default:true"`
+			ModelsInCache int           `conf:"default:2"`
+			TTL           time.Duration `conf:"default:20m"`
 		}
 		BasePath        string
 		LibPath         string
@@ -300,7 +299,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	log.Info(ctx, "startup", "status", "model integrity checks, may take a few seconds")
 
-	models.BuildIndex(log.Info)
+	models.BuildIndex(log.Info, false)
 
 	// -------------------------------------------------------------------------
 	// Catalog System
@@ -337,13 +336,12 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	}
 
 	cache, err := cache.New(cache.Config{
-		Log:                  log.Info,
-		BasePath:             cfg.BasePath,
-		Catalog:              ctlg,
-		ModelsInCache:        cfg.Cache.ModelsInCache,
-		CacheTTL:             cfg.Cache.TTL,
-		IgnoreIntegrityCheck: cfg.Cache.IgnoreIntegrityCheck,
-		InsecureLogging:      cfg.InsecureLogging,
+		Log:             log.Info,
+		BasePath:        cfg.BasePath,
+		Catalog:         ctlg,
+		ModelsInCache:   cfg.Cache.ModelsInCache,
+		CacheTTL:        cfg.Cache.TTL,
+		InsecureLogging: cfg.InsecureLogging,
 	})
 
 	if err != nil {
