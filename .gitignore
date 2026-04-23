@@ -53,3 +53,7 @@ result-*
 # goreleaser
 dist
 .extras
+
+# DuckDB database files
+*.db
+*.db.wal

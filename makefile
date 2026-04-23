@@ -944,54 +944,57 @@ yzma-latest:
 # Examples
 
 example-agent:
-	go run examples/agent/*
+	cd examples && go run ./agent/...
 
 example-audio:
-	go run examples/audio/main.go
+	cd examples && go run ./audio/main.go
 
 example-chat:
-	go run examples/chat/main.go
+	cd examples && go run ./chat/main.go
 
 example-chat-bug:
-	CGO_ENABLED=1 go run -ldflags='-linkmode=external -extldflags "-Wl,-platform_version,macos,26.0,26.9"' examples/chat/main.go
+	cd examples && CGO_ENABLED=1 go run -ldflags='-linkmode=external -extldflags "-Wl,-platform_version,macos,26.0,26.9"' ./chat/main.go
 
 example-embedding:
-	go run examples/embedding/main.go
+	cd examples && go run ./embedding/main.go
 
 example-grammar:
-	go run examples/grammar/main.go
+	cd examples && go run ./grammar/main.go
+
+example-rag:
+	cd examples && go run ./rag/main.go
 
 example-rerank:
-	go run examples/rerank/main.go
+	cd examples && go run ./rerank/main.go
 
 example-question:
-	go run examples/question/main.go
+	cd examples && go run ./question/main.go
 
 example-response:
-	go run examples/response/main.go
+	cd examples && go run ./response/main.go
 
 example-vision:
-	go run examples/vision/main.go
+	cd examples && go run ./vision/main.go
 
 # ------------------------------------------------------------------------------
 
 example-yzma-step1:
-	go run examples/yzma/step1/main.go
+	cd examples && go run ./yzma/step1/main.go
 
 example-yzma-step2:
-	go run examples/yzma/step2/main.go
+	cd examples && go run ./yzma/step2/main.go
 
 example-yzma-step3:
-	go run examples/yzma/step3/main.go
+	cd examples && go run ./yzma/step3/main.go
 
 example-yzma-step4:
-	go run examples/yzma/step4/main.go
+	cd examples && go run ./yzma/step4/main.go
 
 example-yzma-step5:
-	go run examples/yzma/step5/main.go
+	cd examples && go run ./yzma/step5/main.go
 
 example-yzma-step6:
-	go run examples/yzma/step6/main.go
+	cd examples && go run ./yzma/step6/main.go
 
 example-yzma-parallel-curl1:
 	curl -X POST http://localhost:8090/v1/completions \
