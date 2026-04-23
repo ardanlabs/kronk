@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
@@ -17,6 +18,13 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	s.reset()
 	s.active = true
 	s.job = job
+
+	// If the rendered prompt ends with "<think>\n", the template has already
+	// opened a reasoning block. Prime the processor to start in reasoning
+	// mode so generated tokens are correctly classified until </think>.
+	if strings.HasSuffix(job.prompt, "<think>\n") {
+		s.proc.status = statusReasoning
+	}
 
 	// End the queue-wait span now that the job has been picked up.
 	if job.queueWaitSpan != nil {

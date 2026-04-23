@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path"
@@ -214,6 +215,12 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, r
 	// This adds "name" (for standard templates like Gemma 4) and
 	// "tool_call_name" (for GPT templates) so tool responses render correctly.
 	d = m.injectToolResponseNames(ctx, d)
+
+	// Deserialize tool call arguments from JSON strings to maps so Jinja
+	// templates can iterate over them with |items. The OpenAI API spec
+	// sends arguments as JSON-encoded strings, but templates like Qwen3
+	// need them as mappings to render prior tool calls correctly.
+	d = deserializeToolCallArguments(d)
 
 	// IMC caches through media messages using the mtmd pipeline —
 	// images and audio remain in the KV cache across requests.
@@ -525,6 +532,72 @@ func (m *Model) injectToolResponseNames(ctx context.Context, d D) D {
 		}
 
 		messages[i] = newMsg
+	}
+
+	return d
+}
+
+// deserializeToolCallArguments converts JSON-string arguments in assistant
+// tool_calls to maps so Jinja templates can iterate them with |items.
+func deserializeToolCallArguments(d D) D {
+	messages, ok := d["messages"].([]D)
+	if !ok {
+		return d
+	}
+
+	var copied bool
+	for i, msg := range messages {
+		role, _ := msg["role"].(string)
+		if role != "assistant" {
+			continue
+		}
+
+		toolCalls, ok := msg["tool_calls"].([]D)
+		if !ok {
+			continue
+		}
+
+		for j, tc := range toolCalls {
+			fn, ok := tc["function"].(D)
+			if !ok {
+				continue
+			}
+
+			argsStr, ok := fn["arguments"].(string)
+			if !ok {
+				continue
+			}
+
+			var argsMap map[string]any
+			if err := json.Unmarshal([]byte(argsStr), &argsMap); err != nil {
+				continue
+			}
+
+			if !copied {
+				newMsgs := make([]D, len(messages))
+				copy(newMsgs, messages)
+				messages = newMsgs
+				d["messages"] = messages
+				copied = true
+			}
+
+			newFn := fn.ShallowClone()
+			newFn["arguments"] = argsMap
+
+			newTC := tc.ShallowClone()
+			newTC["function"] = newFn
+
+			newTCs := make([]D, len(toolCalls))
+			copy(newTCs, toolCalls)
+			newTCs[j] = newTC
+
+			newMsg := msg.ShallowClone()
+			newMsg["tool_calls"] = newTCs
+
+			messages[i] = newMsg
+			msg = newMsg
+			toolCalls = newTCs
+		}
 	}
 
 	return d

@@ -78,7 +78,13 @@ func parseQwenToolCall(content string) []ResponseToolCall {
 				}
 
 			default:
-				args[paramName] = paramValue
+				// Try JSON parse for scalars: true, false, null, numbers.
+				var parsed any
+				if err := json.Unmarshal([]byte(paramValue), &parsed); err == nil {
+					args[paramName] = parsed
+				} else {
+					args[paramName] = paramValue
+				}
 			}
 
 			remaining = remaining[paramClose+12:]
