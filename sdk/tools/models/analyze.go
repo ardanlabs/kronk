@@ -391,7 +391,7 @@ func buildProfile(name string, p profileInput, overrideSlots int64, overrideConc
 	case p.class == "embedding" || p.class == "rerank" || p.class == "vision":
 		rec.NSeqMax = 1
 	default:
-		rec.NSeqMax = 2
+		rec.NSeqMax = 1
 	}
 
 	// Determine context window.
