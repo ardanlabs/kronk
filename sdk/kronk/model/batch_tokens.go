@@ -57,6 +57,15 @@ func (e *batchEngine) handleSampledToken(s *slot, token llama.Token, iBatch int3
 		return
 	}
 
+	// Skip unused/reserved tokens (e.g. Gemma4 <unused50>) that are not
+	// handled by the processor state machine. These are padding tokens in
+	// the vocabulary and should never appear in user-visible output.
+	if llama.VocabGetAttr(e.model.vocab, token)&llama.TokenAttrUnused != 0 {
+		s.completionTokens++
+		s.iBatch = -1
+		return
+	}
+
 	// Convert token to text, buffering partial UTF-8 codepoints.
 	l := llama.TokenToPiece(e.model.vocab, token, buf, 0, true)
 
