@@ -19,14 +19,14 @@ func Test_PooledRerank(t *testing.T) {
 	defer cancel()
 
 	krn, err := kronk.New(model.Config{
-		ModelFiles:     testlib.MPRerank.ModelFiles,
-		ContextWindow:  2048,
-		NBatch:         2048,
-		NUBatch:        512,
-		CacheTypeK:     model.GGMLTypeQ8_0,
-		CacheTypeV:     model.GGMLTypeQ8_0,
-		FlashAttention: model.FlashAttentionEnabled,
-		NSeqMax:        numInstances,
+		ModelFiles:       testlib.MPRerank.ModelFiles,
+		PtrContextWindow: new(2048),
+		PtrNBatch:        new(2048),
+		PtrNUBatch:       new(512),
+		CacheTypeK:       model.GGMLTypeQ8_0,
+		CacheTypeV:       model.GGMLTypeQ8_0,
+		FlashAttention:   model.FlashAttentionEnabled,
+		PtrNSeqMax:       new(numInstances),
 	})
 	if err != nil {
 		t.Fatalf("Failed to create rerank model with NSeqMax=%d: %v", numInstances, err)

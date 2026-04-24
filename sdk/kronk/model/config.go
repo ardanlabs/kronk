@@ -50,6 +50,32 @@ type Logger func(ctx context.Context, msg string, args ...any)
 
 // =============================================================================
 
+// intOr returns the value pointed to by p, or def if p is nil.
+func intOr(p *int, def int) int {
+	if p == nil {
+		return def
+	}
+	return *p
+}
+
+// boolOr returns the value pointed to by p, or def if p is nil.
+func boolOr(p *bool, def bool) bool {
+	if p == nil {
+		return def
+	}
+	return *p
+}
+
+// float32Or returns the value pointed to by p, or def if p is nil.
+func float32Or(p *float32, def float32) float32 {
+	if p == nil {
+		return def
+	}
+	return *p
+}
+
+// =============================================================================
+
 // DraftModelConfig configures a draft model for speculative decoding. A smaller,
 // faster model generates candidate tokens that the target model verifies in a
 // single forward pass. This can improve generation throughput when the draft
@@ -60,13 +86,16 @@ type Logger func(ctx context.Context, msg string, args ...any)
 //   - NSeqMax must be 1 (single-slot mode)
 //   - Draft model should be significantly smaller than the target (e.g., 0.6B draft for 8B target)
 type DraftModelConfig struct {
-	ModelFiles  []string  // Path to the draft model GGUF file(s)
-	NDraft      int       // Number of tokens to draft per step (default 5)
-	NGpuLayers  *int      // GPU layers for draft model (nil = all layers on GPU)
-	Devices     []string  // Devices for draft model (e.g., ["CUDA0"])
-	MainGPU     *int      // Primary GPU index for draft model
-	TensorSplit []float32 // Per-device tensor split for draft model
+	ModelFiles    []string  // Path to the draft model GGUF file(s)
+	NDraft        int       // Number of tokens to draft per step (default 5)
+	PtrNGpuLayers *int      // GPU layers for draft model (nil = all layers on GPU)
+	Devices       []string  // Devices for draft model (e.g., ["CUDA0"])
+	PtrMainGPU    *int      // Primary GPU index for draft model
+	TensorSplit   []float32 // Per-device tensor split for draft model
 }
+
+func (d DraftModelConfig) NGpuLayers() int { return intOr(d.PtrNGpuLayers, 0) }
+func (d DraftModelConfig) MainGPU() int    { return intOr(d.PtrMainGPU, 0) }
 
 // Config represents model level configuration. These values if configured
 // incorrectly can cause the system to panic. The defaults are used when these
@@ -254,48 +283,70 @@ type DraftModelConfig struct {
 // YarnOrigCtx sets the original training context size for YaRN scaling. When nil
 // or 0, uses the model's native training context length from metadata.
 type Config struct {
-	CacheMinTokens      int
-	CacheSlotTimeout    int
-	CacheTypeK          GGMLType
-	CacheTypeV          GGMLType
-	ContextWindow       int
-	DefaultParams       Params
-	DraftModel          *DraftModelConfig
-	Devices             []string // Device names for model execution (e.g., ["CUDA0", "CUDA1"])
-	FlashAttention      FlashAttentionType
-	IncrementalCache    bool
-	InsecureLogging     bool
-	JinjaFile           string
-	Log                 Logger
-	MainGPU             *int
-	MoE                 *MoEConfig
-	ModelFiles          []string
-	NBatch              int
-	NGpuLayers          *int
-	NSeqMax             int
-	NThreads            int
-	NThreadsBatch       int
-	NUBatch             int
-	NUMA                string
-	OffloadKQV          *bool
-	OpOffload           *bool
-	OpOffloadMinBatch   int
-	ProjFile            string
-	RopeFreqBase        *float32
-	RopeFreqScale       *float32
-	RopeScaling         RopeScalingType
-	SplitMode           *SplitMode
-	SWAFull             *bool
-	TensorBuftOverrides []string
-	TensorSplit         []float32
-	UseDirectIO         bool
-	UseMMap             *bool
-	YarnAttnFactor      *float32
-	YarnBetaFast        *float32
-	YarnBetaSlow        *float32
-	YarnExtFactor       *float32
-	YarnOrigCtx         *int
+	PtrCacheMinTokens    *int
+	PtrCacheSlotTimeout  *int
+	CacheTypeK           GGMLType
+	CacheTypeV           GGMLType
+	PtrContextWindow     *int
+	DefaultParams        Params
+	DraftModel           *DraftModelConfig
+	Devices              []string // Device names for model execution (e.g., ["CUDA0", "CUDA1"])
+	FlashAttention       FlashAttentionType
+	PtrIncrementalCache  *bool
+	PtrInsecureLogging   *bool
+	JinjaFile            string
+	Log                  Logger
+	PtrMainGPU           *int
+	MoE                  *MoEConfig
+	ModelFiles           []string
+	PtrNBatch            *int
+	PtrNGpuLayers        *int
+	PtrNSeqMax           *int
+	PtrNThreads          *int
+	PtrNThreadsBatch     *int
+	PtrNUBatch           *int
+	NUMA                 string
+	PtrOffloadKQV        *bool
+	PtrOpOffload         *bool
+	PtrOpOffloadMinBatch *int
+	ProjFile             string
+	PtrRopeFreqBase      *float32
+	PtrRopeFreqScale     *float32
+	RopeScaling          RopeScalingType
+	PtrSplitMode         *SplitMode
+	PtrSWAFull           *bool
+	TensorBuftOverrides  []string
+	TensorSplit          []float32
+	PtrUseDirectIO       *bool
+	PtrUseMMap           *bool
+	PtrYarnAttnFactor    *float32
+	PtrYarnBetaFast      *float32
+	PtrYarnBetaSlow      *float32
+	PtrYarnExtFactor     *float32
+	PtrYarnOrigCtx       *int
 }
+
+func (cfg Config) ContextWindow() int      { return intOr(cfg.PtrContextWindow, 0) }
+func (cfg Config) NBatch() int             { return intOr(cfg.PtrNBatch, 0) }
+func (cfg Config) NUBatch() int            { return intOr(cfg.PtrNUBatch, 0) }
+func (cfg Config) NSeqMax() int            { return intOr(cfg.PtrNSeqMax, 0) }
+func (cfg Config) NThreads() int           { return intOr(cfg.PtrNThreads, 0) }
+func (cfg Config) NThreadsBatch() int      { return intOr(cfg.PtrNThreadsBatch, 0) }
+func (cfg Config) CacheMinTokens() int     { return intOr(cfg.PtrCacheMinTokens, 0) }
+func (cfg Config) CacheSlotTimeout() int   { return intOr(cfg.PtrCacheSlotTimeout, 0) }
+func (cfg Config) OpOffloadMinBatch() int  { return intOr(cfg.PtrOpOffloadMinBatch, 0) }
+func (cfg Config) MainGPU() int            { return intOr(cfg.PtrMainGPU, 0) }
+func (cfg Config) NGpuLayers() int         { return intOr(cfg.PtrNGpuLayers, 0) }
+func (cfg Config) RopeFreqBase() float32   { return float32Or(cfg.PtrRopeFreqBase, 0) }
+func (cfg Config) RopeFreqScale() float32  { return float32Or(cfg.PtrRopeFreqScale, 0) }
+func (cfg Config) YarnAttnFactor() float32 { return float32Or(cfg.PtrYarnAttnFactor, 0) }
+func (cfg Config) YarnBetaFast() float32   { return float32Or(cfg.PtrYarnBetaFast, 0) }
+func (cfg Config) YarnBetaSlow() float32   { return float32Or(cfg.PtrYarnBetaSlow, 0) }
+func (cfg Config) YarnExtFactor() float32  { return float32Or(cfg.PtrYarnExtFactor, 0) }
+func (cfg Config) YarnOrigCtx() int        { return intOr(cfg.PtrYarnOrigCtx, 0) }
+func (cfg Config) IncrementalCache() bool  { return boolOr(cfg.PtrIncrementalCache, false) }
+func (cfg Config) InsecureLogging() bool   { return boolOr(cfg.PtrInsecureLogging, false) }
+func (cfg Config) UseDirectIO() bool       { return boolOr(cfg.PtrUseDirectIO, false) }
 
 func (cfg Config) String() string {
 	formatBoolPtr := func(p *bool) string {
@@ -331,26 +382,26 @@ func (cfg Config) String() string {
 			return "nil"
 		}
 		topN := "nil"
-		if m.KeepExpertsOnGPUForTopNLayers != nil {
-			topN = fmt.Sprintf("%d", *m.KeepExpertsOnGPUForTopNLayers)
+		if m.PtrKeepExpertsOnGPUForTopNLayers != nil {
+			topN = fmt.Sprintf("%d", *m.PtrKeepExpertsOnGPUForTopNLayers)
 		}
 		return fmt.Sprintf("{mode:%s top_n:%s}", m.Mode, topN)
 	}
 
-	return fmt.Sprintf("\nCacheMinTokens[%d]\nCacheSlotTimeout[%d]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%d]\nDevices[%v]\nFlashAttention[%s]\nIncrementalCache[%t]\nInsecureLogging[%t]\nJinjaFile[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%d]\nNGpuLayers[%s]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%d]\nProjFile[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nUseDirectIO[%t]\nUseMMap[%s]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
-		cfg.CacheMinTokens, cfg.CacheSlotTimeout, cfg.CacheTypeK, cfg.CacheTypeV,
-		cfg.ContextWindow, cfg.Devices, cfg.FlashAttention,
-		cfg.IncrementalCache, cfg.InsecureLogging, cfg.JinjaFile,
-		formatIntPtr(cfg.MainGPU), formatMoEPtr(cfg.MoE), cfg.ModelFiles, cfg.NBatch,
-		formatIntPtr(cfg.NGpuLayers), cfg.NSeqMax, cfg.NThreads, cfg.NThreadsBatch, cfg.NUBatch,
+	return fmt.Sprintf("\nCacheMinTokens[%s]\nCacheSlotTimeout[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDevices[%v]\nFlashAttention[%s]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%s]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nNUBatch[%s]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%s]\nProjFile[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nUseDirectIO[%s]\nUseMMap[%s]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
+		formatIntPtr(cfg.PtrCacheMinTokens), formatIntPtr(cfg.PtrCacheSlotTimeout), cfg.CacheTypeK, cfg.CacheTypeV,
+		formatIntPtr(cfg.PtrContextWindow), cfg.Devices, cfg.FlashAttention,
+		formatBoolPtr(cfg.PtrIncrementalCache), formatBoolPtr(cfg.PtrInsecureLogging), cfg.JinjaFile,
+		formatIntPtr(cfg.PtrMainGPU), formatMoEPtr(cfg.MoE), cfg.ModelFiles, formatIntPtr(cfg.PtrNBatch),
+		formatIntPtr(cfg.PtrNGpuLayers), formatIntPtr(cfg.PtrNSeqMax), formatIntPtr(cfg.PtrNThreads), formatIntPtr(cfg.PtrNThreadsBatch), formatIntPtr(cfg.PtrNUBatch),
 		cfg.NUMA,
-		formatBoolPtr(cfg.OffloadKQV), formatBoolPtr(cfg.OpOffload), cfg.OpOffloadMinBatch, cfg.ProjFile,
-		formatFloat32Ptr(cfg.RopeFreqBase), formatFloat32Ptr(cfg.RopeFreqScale), cfg.RopeScaling,
-		formatSplitModePtr(cfg.SplitMode),
-		formatBoolPtr(cfg.SWAFull), cfg.TensorBuftOverrides, cfg.TensorSplit, cfg.UseDirectIO,
-		formatBoolPtr(cfg.UseMMap),
-		formatFloat32Ptr(cfg.YarnAttnFactor),
-		formatFloat32Ptr(cfg.YarnBetaFast), formatFloat32Ptr(cfg.YarnBetaSlow), formatFloat32Ptr(cfg.YarnExtFactor), formatIntPtr(cfg.YarnOrigCtx), cfg.DraftModel)
+		formatBoolPtr(cfg.PtrOffloadKQV), formatBoolPtr(cfg.PtrOpOffload), formatIntPtr(cfg.PtrOpOffloadMinBatch), cfg.ProjFile,
+		formatFloat32Ptr(cfg.PtrRopeFreqBase), formatFloat32Ptr(cfg.PtrRopeFreqScale), cfg.RopeScaling,
+		formatSplitModePtr(cfg.PtrSplitMode),
+		formatBoolPtr(cfg.PtrSWAFull), cfg.TensorBuftOverrides, cfg.TensorSplit, formatBoolPtr(cfg.PtrUseDirectIO),
+		formatBoolPtr(cfg.PtrUseMMap),
+		formatFloat32Ptr(cfg.PtrYarnAttnFactor),
+		formatFloat32Ptr(cfg.PtrYarnBetaFast), formatFloat32Ptr(cfg.PtrYarnBetaSlow), formatFloat32Ptr(cfg.PtrYarnExtFactor), formatIntPtr(cfg.PtrYarnOrigCtx), cfg.DraftModel)
 }
 
 func validateConfig(ctx context.Context, cfg Config, log Logger) error {
@@ -377,8 +428,8 @@ func validateConfig(ctx context.Context, cfg Config, log Logger) error {
 		if len(cfg.DraftModel.ModelFiles) == 0 {
 			return fmt.Errorf("validate-config: draft model requires model files")
 		}
-		if cfg.NSeqMax > 1 {
-			return fmt.Errorf("validate-config: speculative decoding requires NSeqMax=1, got %d", cfg.NSeqMax)
+		if cfg.NSeqMax() > 1 {
+			return fmt.Errorf("validate-config: speculative decoding requires NSeqMax=1, got %d", cfg.NSeqMax())
 		}
 		for _, modelFile := range cfg.DraftModel.ModelFiles {
 			log(ctx, "validate-config", "draft-model-file", modelFile)
@@ -396,12 +447,12 @@ func validateConfig(ctx context.Context, cfg Config, log Logger) error {
 			return fmt.Errorf("validate-config: unknown MoE mode: %s (valid: auto, experts_cpu, experts_gpu, keep_top_n, custom)", cfg.MoE.Mode)
 		}
 
-		if cfg.MoE.Mode == MoEModeKeepTopN && cfg.MoE.KeepExpertsOnGPUForTopNLayers == nil {
+		if cfg.MoE.Mode == MoEModeKeepTopN && cfg.MoE.PtrKeepExpertsOnGPUForTopNLayers == nil {
 			return fmt.Errorf("validate-config: MoE mode keep_top_n requires KeepExpertsOnGPUForTopNLayers to be set")
 		}
 
-		if cfg.MoE.KeepExpertsOnGPUForTopNLayers != nil && *cfg.MoE.KeepExpertsOnGPUForTopNLayers < 0 {
-			return fmt.Errorf("validate-config: MoE KeepExpertsOnGPUForTopNLayers must be >= 0, got %d", *cfg.MoE.KeepExpertsOnGPUForTopNLayers)
+		if cfg.MoE.PtrKeepExpertsOnGPUForTopNLayers != nil && *cfg.MoE.PtrKeepExpertsOnGPUForTopNLayers < 0 {
+			return fmt.Errorf("validate-config: MoE KeepExpertsOnGPUForTopNLayers must be >= 0, got %d", *cfg.MoE.PtrKeepExpertsOnGPUForTopNLayers)
 		}
 
 		if cfg.MoE.Mode != "" && cfg.MoE.Mode != MoEModeAuto && cfg.MoE.Mode != MoEModeCustom && len(cfg.TensorBuftOverrides) > 0 {
@@ -409,8 +460,8 @@ func validateConfig(ctx context.Context, cfg Config, log Logger) error {
 		}
 	}
 
-	if cfg.OpOffloadMinBatch < 0 {
-		return fmt.Errorf("validate-config: OpOffloadMinBatch must be >= 0, got %d", cfg.OpOffloadMinBatch)
+	if cfg.OpOffloadMinBatch() < 0 {
+		return fmt.Errorf("validate-config: OpOffloadMinBatch must be >= 0, got %d", cfg.OpOffloadMinBatch())
 	}
 
 	for _, modelFile := range cfg.ModelFiles {
@@ -438,56 +489,73 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 	// MoE-optimized defaults: larger batch sizes for CPU expert offload.
 	moeExperts := cfg.MoE != nil && (cfg.MoE.Mode == MoEModeExpertsCPU || cfg.MoE.Mode == MoEModeKeepTopN)
 	if moeExperts {
-		if cfg.NBatch <= 0 {
-			cfg.NBatch = 4096
+		if cfg.NBatch() <= 0 {
+			cfg.PtrNBatch = new(4096)
 		}
-		if cfg.NUBatch <= 0 {
-			cfg.NUBatch = 4096
+		if cfg.NUBatch() <= 0 {
+			cfg.PtrNUBatch = new(4096)
 		}
 	}
 
-	if cfg.NBatch <= 0 {
-		cfg.NBatch = defNBatch
+	if cfg.NBatch() <= 0 {
+		cfg.PtrNBatch = new(defNBatch)
 	}
 
-	if cfg.NUBatch <= 0 {
+	if cfg.NUBatch() <= 0 {
 		// Vision models require n_ubatch >= n_tokens for the image encoder's
 		// non-causal attention. Use a larger default when ProjFile is set.
 		switch cfg.ProjFile != "" {
 		case true:
-			cfg.NUBatch = defNUBatchVision
+			cfg.PtrNUBatch = new(defNUBatchVision)
 		case false:
-			cfg.NUBatch = defNUBatch
+			cfg.PtrNUBatch = new(defNUBatch)
 		}
 	}
 
-	if cfg.NThreads < 0 {
-		cfg.NThreads = defThreadZero
+	if cfg.NThreads() < 0 {
+		cfg.PtrNThreads = new(defThreadZero)
+	}
+	if cfg.PtrNThreads == nil {
+		cfg.PtrNThreads = new(defThreadZero)
 	}
 
-	if cfg.NThreadsBatch < 0 {
-		cfg.NThreadsBatch = defThreadZero
+	if cfg.NThreadsBatch() < 0 {
+		cfg.PtrNThreadsBatch = new(defThreadZero)
+	}
+	if cfg.PtrNThreadsBatch == nil {
+		cfg.PtrNThreadsBatch = new(defThreadZero)
 	}
 
 	// NBatch is generally greater than or equal to NUBatch. The entire
 	// NUBatch of tokens must fit into a physical batch for processing.
-	if cfg.NUBatch > cfg.NBatch {
-		cfg.NUBatch = cfg.NBatch
+	if cfg.NUBatch() > cfg.NBatch() {
+		cfg.PtrNUBatch = new(cfg.NBatch())
 	}
 
 	// This value must be 1 to properly configure the batch engine.
-	if cfg.NSeqMax <= 0 {
-		cfg.NSeqMax = defNSeqMax
+	if cfg.NSeqMax() <= 0 {
+		cfg.PtrNSeqMax = new(defNSeqMax)
+	}
+
+	// IMC is enabled by default.
+	if cfg.PtrIncrementalCache == nil {
+		cfg.PtrIncrementalCache = new(true)
 	}
 
 	// Default minimum tokens for caching.
-	if cfg.IncrementalCache && cfg.CacheMinTokens <= 0 {
-		cfg.CacheMinTokens = defMinCacheTokens
+	if cfg.IncrementalCache() && cfg.CacheMinTokens() <= 0 {
+		cfg.PtrCacheMinTokens = new(defMinCacheTokens)
+	}
+	if cfg.PtrCacheMinTokens == nil {
+		cfg.PtrCacheMinTokens = new(0)
 	}
 
 	// Default slot wait timeout for IMC.
-	if cfg.IncrementalCache && cfg.CacheSlotTimeout <= 0 {
-		cfg.CacheSlotTimeout = defCacheSlotTimeout
+	if cfg.IncrementalCache() && cfg.CacheSlotTimeout() <= 0 {
+		cfg.PtrCacheSlotTimeout = new(defCacheSlotTimeout)
+	}
+	if cfg.PtrCacheSlotTimeout == nil {
+		cfg.PtrCacheSlotTimeout = new(0)
 	}
 
 	if cfg.DraftModel != nil && cfg.DraftModel.NDraft <= 0 {
@@ -503,6 +571,17 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 		cfg.FlashAttention = FlashAttentionDisabled
 	}
 
+	// Ensure remaining pointer fields are non-nil after adjustment.
+	if cfg.PtrInsecureLogging == nil {
+		cfg.PtrInsecureLogging = new(false)
+	}
+	if cfg.PtrUseDirectIO == nil {
+		cfg.PtrUseDirectIO = new(false)
+	}
+	if cfg.PtrOpOffloadMinBatch == nil {
+		cfg.PtrOpOffloadMinBatch = new(0)
+	}
+
 	return cfg
 }
 
@@ -510,20 +589,20 @@ func applyCatalogConfig(user Config, cat Config) Config {
 	if len(user.Devices) == 0 {
 		user.Devices = cat.Devices
 	}
-	if user.ContextWindow == 0 {
-		user.ContextWindow = cat.ContextWindow
+	if user.PtrContextWindow == nil {
+		user.PtrContextWindow = cat.PtrContextWindow
 	}
-	if user.NBatch == 0 {
-		user.NBatch = cat.NBatch
+	if user.PtrNBatch == nil {
+		user.PtrNBatch = cat.PtrNBatch
 	}
-	if user.NUBatch == 0 {
-		user.NUBatch = cat.NUBatch
+	if user.PtrNUBatch == nil {
+		user.PtrNUBatch = cat.PtrNUBatch
 	}
-	if user.NThreads == 0 {
-		user.NThreads = cat.NThreads
+	if user.PtrNThreads == nil {
+		user.PtrNThreads = cat.PtrNThreads
 	}
-	if user.NThreadsBatch == 0 {
-		user.NThreadsBatch = cat.NThreadsBatch
+	if user.PtrNThreadsBatch == nil {
+		user.PtrNThreadsBatch = cat.PtrNThreadsBatch
 	}
 	if user.CacheTypeK == GGMLTypeAuto {
 		user.CacheTypeK = cat.CacheTypeK
@@ -531,35 +610,35 @@ func applyCatalogConfig(user Config, cat Config) Config {
 	if user.CacheTypeV == GGMLTypeAuto {
 		user.CacheTypeV = cat.CacheTypeV
 	}
-	if !user.UseDirectIO {
-		user.UseDirectIO = cat.UseDirectIO
+	if user.PtrUseDirectIO == nil {
+		user.PtrUseDirectIO = cat.PtrUseDirectIO
 	}
-	if user.UseMMap == nil {
-		user.UseMMap = cat.UseMMap
+	if user.PtrUseMMap == nil {
+		user.PtrUseMMap = cat.PtrUseMMap
 	}
 	if user.NUMA == NUMADisabled {
 		user.NUMA = cat.NUMA
 	}
-	if user.NSeqMax == 0 {
-		user.NSeqMax = cat.NSeqMax
+	if user.PtrNSeqMax == nil {
+		user.PtrNSeqMax = cat.PtrNSeqMax
 	}
-	if user.OffloadKQV == nil {
-		user.OffloadKQV = cat.OffloadKQV
+	if user.PtrOffloadKQV == nil {
+		user.PtrOffloadKQV = cat.PtrOffloadKQV
 	}
-	if user.OpOffload == nil {
-		user.OpOffload = cat.OpOffload
+	if user.PtrOpOffload == nil {
+		user.PtrOpOffload = cat.PtrOpOffload
 	}
-	if user.OpOffloadMinBatch == 0 {
-		user.OpOffloadMinBatch = cat.OpOffloadMinBatch
+	if user.PtrOpOffloadMinBatch == nil {
+		user.PtrOpOffloadMinBatch = cat.PtrOpOffloadMinBatch
 	}
-	if user.NGpuLayers == nil {
-		user.NGpuLayers = cat.NGpuLayers
+	if user.PtrNGpuLayers == nil {
+		user.PtrNGpuLayers = cat.PtrNGpuLayers
 	}
-	if user.MainGPU == nil {
-		user.MainGPU = cat.MainGPU
+	if user.PtrMainGPU == nil {
+		user.PtrMainGPU = cat.PtrMainGPU
 	}
-	if user.SplitMode == nil {
-		user.SplitMode = cat.SplitMode
+	if user.PtrSplitMode == nil {
+		user.PtrSplitMode = cat.PtrSplitMode
 	}
 	if len(user.TensorSplit) == 0 {
 		user.TensorSplit = cat.TensorSplit
@@ -567,44 +646,44 @@ func applyCatalogConfig(user Config, cat Config) Config {
 	if len(user.TensorBuftOverrides) == 0 {
 		user.TensorBuftOverrides = cat.TensorBuftOverrides
 	}
-	if user.SWAFull == nil {
-		user.SWAFull = cat.SWAFull
+	if user.PtrSWAFull == nil {
+		user.PtrSWAFull = cat.PtrSWAFull
 	}
-	if !user.IncrementalCache {
-		user.IncrementalCache = cat.IncrementalCache
+	if user.PtrIncrementalCache == nil {
+		user.PtrIncrementalCache = cat.PtrIncrementalCache
 	}
-	if user.CacheMinTokens == 0 {
-		user.CacheMinTokens = cat.CacheMinTokens
+	if user.PtrCacheMinTokens == nil {
+		user.PtrCacheMinTokens = cat.PtrCacheMinTokens
 	}
-	if user.CacheSlotTimeout == 0 {
-		user.CacheSlotTimeout = cat.CacheSlotTimeout
+	if user.PtrCacheSlotTimeout == nil {
+		user.PtrCacheSlotTimeout = cat.PtrCacheSlotTimeout
 	}
-	if !user.InsecureLogging {
-		user.InsecureLogging = cat.InsecureLogging
+	if user.PtrInsecureLogging == nil {
+		user.PtrInsecureLogging = cat.PtrInsecureLogging
 	}
 	if user.RopeScaling == RopeScalingNone {
 		user.RopeScaling = cat.RopeScaling
 	}
-	if user.RopeFreqBase == nil {
-		user.RopeFreqBase = cat.RopeFreqBase
+	if user.PtrRopeFreqBase == nil {
+		user.PtrRopeFreqBase = cat.PtrRopeFreqBase
 	}
-	if user.RopeFreqScale == nil {
-		user.RopeFreqScale = cat.RopeFreqScale
+	if user.PtrRopeFreqScale == nil {
+		user.PtrRopeFreqScale = cat.PtrRopeFreqScale
 	}
-	if user.YarnExtFactor == nil {
-		user.YarnExtFactor = cat.YarnExtFactor
+	if user.PtrYarnExtFactor == nil {
+		user.PtrYarnExtFactor = cat.PtrYarnExtFactor
 	}
-	if user.YarnAttnFactor == nil {
-		user.YarnAttnFactor = cat.YarnAttnFactor
+	if user.PtrYarnAttnFactor == nil {
+		user.PtrYarnAttnFactor = cat.PtrYarnAttnFactor
 	}
-	if user.YarnBetaFast == nil {
-		user.YarnBetaFast = cat.YarnBetaFast
+	if user.PtrYarnBetaFast == nil {
+		user.PtrYarnBetaFast = cat.PtrYarnBetaFast
 	}
-	if user.YarnBetaSlow == nil {
-		user.YarnBetaSlow = cat.YarnBetaSlow
+	if user.PtrYarnBetaSlow == nil {
+		user.PtrYarnBetaSlow = cat.PtrYarnBetaSlow
 	}
-	if user.YarnOrigCtx == nil {
-		user.YarnOrigCtx = cat.YarnOrigCtx
+	if user.PtrYarnOrigCtx == nil {
+		user.PtrYarnOrigCtx = cat.PtrYarnOrigCtx
 	}
 	if user.MoE == nil {
 		user.MoE = cat.MoE
@@ -687,8 +766,9 @@ func adjustContextWindow(cfg Config, model llama.Model) Config {
 		}
 	}
 
-	if cfg.ContextWindow <= 0 {
-		cfg.ContextWindow = modelCW
+	if cfg.ContextWindow() <= 0 {
+		cw := modelCW
+		cfg.PtrContextWindow = &cw
 	}
 
 	return cfg
@@ -707,15 +787,15 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 
 	// IMC externalizes KV state to RAM after cache build, so it does not
 	// need extra sequences beyond the configured NSeqMax.
-	nSeqMax := max(cfg.NSeqMax, 1)
+	nSeqMax := max(cfg.NSeqMax(), 1)
 	totalSeqs := nSeqMax
 
-	if cfg.ContextWindow > 0 {
-		ctxParams.NBatch = uint32(cfg.NBatch)
-		ctxParams.NUbatch = uint32(cfg.NUBatch)
-		ctxParams.NThreads = int32(cfg.NThreads)
-		ctxParams.NThreadsBatch = int32(cfg.NThreadsBatch)
-		ctxParams.NCtx = uint32(cfg.ContextWindow * nSeqMax)
+	if cfg.ContextWindow() > 0 {
+		ctxParams.NBatch = uint32(cfg.NBatch())
+		ctxParams.NUbatch = uint32(cfg.NUBatch())
+		ctxParams.NThreads = int32(cfg.NThreads())
+		ctxParams.NThreadsBatch = int32(cfg.NThreadsBatch())
+		ctxParams.NCtx = uint32(cfg.ContextWindow() * nSeqMax)
 	}
 
 	if cfg.CacheTypeK != GGMLTypeAuto {
@@ -752,15 +832,15 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 	// Offload KQV cache to CPU.
 	// llama.cpp has this as default set to true
 	ctxParams.Offload_kqv = 1
-	if cfg.OffloadKQV != nil &&
-		!*cfg.OffloadKQV {
+	if cfg.PtrOffloadKQV != nil &&
+		!*cfg.PtrOffloadKQV {
 		ctxParams.Offload_kqv = 0
 	}
 
 	// Offload host tensor operations to device.
 	// llama.cpp has this as default set to true
 	ctxParams.OpOffload = 1
-	if cfg.OpOffload != nil && !*cfg.OpOffload {
+	if cfg.PtrOpOffload != nil && !*cfg.PtrOpOffload {
 		ctxParams.OpOffload = 0
 	}
 
@@ -769,8 +849,8 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 	// cache instead of the compact n_swa-sized cache, preserving accuracy
 	// at the cost of higher memory usage.
 	// When nil, llama.cpp's default (true/on) is used.
-	if cfg.SWAFull != nil {
-		if *cfg.SWAFull {
+	if cfg.PtrSWAFull != nil {
+		if *cfg.PtrSWAFull {
 			ctxParams.SwaFull = 1
 		} else {
 			ctxParams.SwaFull = 0
@@ -783,26 +863,26 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 	if cfg.RopeScaling != RopeScalingNone {
 		ctxParams.RopeScalingType = cfg.RopeScaling.ToYZMAType()
 	}
-	if cfg.RopeFreqBase != nil {
-		ctxParams.RopeFreqBase = *cfg.RopeFreqBase
+	if cfg.PtrRopeFreqBase != nil {
+		ctxParams.RopeFreqBase = *cfg.PtrRopeFreqBase
 	}
-	if cfg.RopeFreqScale != nil {
-		ctxParams.RopeFreqScale = *cfg.RopeFreqScale
+	if cfg.PtrRopeFreqScale != nil {
+		ctxParams.RopeFreqScale = *cfg.PtrRopeFreqScale
 	}
-	if cfg.YarnExtFactor != nil {
-		ctxParams.YarnExtFactor = *cfg.YarnExtFactor
+	if cfg.PtrYarnExtFactor != nil {
+		ctxParams.YarnExtFactor = *cfg.PtrYarnExtFactor
 	}
-	if cfg.YarnAttnFactor != nil {
-		ctxParams.YarnAttnFactor = *cfg.YarnAttnFactor
+	if cfg.PtrYarnAttnFactor != nil {
+		ctxParams.YarnAttnFactor = *cfg.PtrYarnAttnFactor
 	}
-	if cfg.YarnBetaFast != nil {
-		ctxParams.YarnBetaFast = *cfg.YarnBetaFast
+	if cfg.PtrYarnBetaFast != nil {
+		ctxParams.YarnBetaFast = *cfg.PtrYarnBetaFast
 	}
-	if cfg.YarnBetaSlow != nil {
-		ctxParams.YarnBetaSlow = *cfg.YarnBetaSlow
+	if cfg.PtrYarnBetaSlow != nil {
+		ctxParams.YarnBetaSlow = *cfg.PtrYarnBetaSlow
 	}
-	if cfg.YarnOrigCtx != nil {
-		ctxParams.YarnOrigCtx = uint32(*cfg.YarnOrigCtx)
+	if cfg.PtrYarnOrigCtx != nil {
+		ctxParams.YarnOrigCtx = uint32(*cfg.PtrYarnOrigCtx)
 	}
 
 	return ctxParams
@@ -1303,9 +1383,73 @@ type MoEConfig struct {
 	// Mode controls expert placement strategy.
 	Mode MoEMode `yaml:"mode,omitempty"`
 
-	// KeepExpertsOnGPUForTopNLayers keeps routed expert tensors on GPU for the
+	// PtrKeepExpertsOnGPUForTopNLayers keeps routed expert tensors on GPU for the
 	// top N layers (highest-index layers). All other expert layers go to CPU.
 	// Only used when Mode is MoEModeKeepTopN. 0 means all experts on CPU.
 	// llama.cpp convention: "top" means highest-numbered layers.
-	KeepExpertsOnGPUForTopNLayers *int `yaml:"keep-experts-top-n,omitempty"`
+	PtrKeepExpertsOnGPUForTopNLayers *int `yaml:"keep-experts-top-n,omitempty"`
 }
+
+func (m MoEConfig) KeepExpertsOnGPUForTopNLayers() int {
+	return intOr(m.PtrKeepExpertsOnGPUForTopNLayers, 0)
+}
+
+// =============================================================================
+
+// Option represents a functional option for configuring a Config.
+type Option func(*Config)
+
+// NewConfig creates a Config with the provided functional options applied.
+func NewConfig(opts ...Option) Config {
+	var cfg Config
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	return cfg
+}
+
+func WithCacheMinTokens(v int) Option           { return func(c *Config) { c.PtrCacheMinTokens = new(v) } }
+func WithCacheSlotTimeout(v int) Option         { return func(c *Config) { c.PtrCacheSlotTimeout = new(v) } }
+func WithCacheTypeK(v GGMLType) Option          { return func(c *Config) { c.CacheTypeK = v } }
+func WithCacheTypeV(v GGMLType) Option          { return func(c *Config) { c.CacheTypeV = v } }
+func WithContextWindow(v int) Option            { return func(c *Config) { c.PtrContextWindow = new(v) } }
+func WithDefaultParams(v Params) Option         { return func(c *Config) { c.DefaultParams = v } }
+func WithDevices(v []string) Option             { return func(c *Config) { c.Devices = v } }
+func WithDraftModel(v *DraftModelConfig) Option { return func(c *Config) { c.DraftModel = v } }
+func WithFlashAttention(v FlashAttentionType) Option {
+	return func(c *Config) { c.FlashAttention = v }
+}
+func WithIncrementalCache(v bool) Option       { return func(c *Config) { c.PtrIncrementalCache = new(v) } }
+func WithInsecureLogging(v bool) Option        { return func(c *Config) { c.PtrInsecureLogging = new(v) } }
+func WithJinjaFile(v string) Option            { return func(c *Config) { c.JinjaFile = v } }
+func WithLog(v Logger) Option                  { return func(c *Config) { c.Log = v } }
+func WithMainGPU(v int) Option                 { return func(c *Config) { c.PtrMainGPU = new(v) } }
+func WithMoE(v *MoEConfig) Option              { return func(c *Config) { c.MoE = v } }
+func WithModelFiles(v []string) Option         { return func(c *Config) { c.ModelFiles = v } }
+func WithNBatch(v int) Option                  { return func(c *Config) { c.PtrNBatch = new(v) } }
+func WithNGpuLayers(v int) Option              { return func(c *Config) { c.PtrNGpuLayers = new(v) } }
+func WithNSeqMax(v int) Option                 { return func(c *Config) { c.PtrNSeqMax = new(v) } }
+func WithNThreads(v int) Option                { return func(c *Config) { c.PtrNThreads = new(v) } }
+func WithNThreadsBatch(v int) Option           { return func(c *Config) { c.PtrNThreadsBatch = new(v) } }
+func WithNUBatch(v int) Option                 { return func(c *Config) { c.PtrNUBatch = new(v) } }
+func WithNUMA(v string) Option                 { return func(c *Config) { c.NUMA = v } }
+func WithOffloadKQV(v bool) Option             { return func(c *Config) { c.PtrOffloadKQV = new(v) } }
+func WithOpOffload(v bool) Option              { return func(c *Config) { c.PtrOpOffload = new(v) } }
+func WithOpOffloadMinBatch(v int) Option       { return func(c *Config) { c.PtrOpOffloadMinBatch = new(v) } }
+func WithProjFile(v string) Option             { return func(c *Config) { c.ProjFile = v } }
+func WithRopeFreqBase(v float32) Option        { return func(c *Config) { c.PtrRopeFreqBase = new(v) } }
+func WithRopeFreqScale(v float32) Option       { return func(c *Config) { c.PtrRopeFreqScale = new(v) } }
+func WithRopeScaling(v RopeScalingType) Option { return func(c *Config) { c.RopeScaling = v } }
+func WithSplitMode(v SplitMode) Option         { return func(c *Config) { c.PtrSplitMode = new(v) } }
+func WithSWAFull(v bool) Option                { return func(c *Config) { c.PtrSWAFull = new(v) } }
+func WithTensorBuftOverrides(v []string) Option {
+	return func(c *Config) { c.TensorBuftOverrides = v }
+}
+func WithTensorSplit(v []float32) Option  { return func(c *Config) { c.TensorSplit = v } }
+func WithUseDirectIO(v bool) Option       { return func(c *Config) { c.PtrUseDirectIO = new(v) } }
+func WithUseMMap(v bool) Option           { return func(c *Config) { c.PtrUseMMap = new(v) } }
+func WithYarnAttnFactor(v float32) Option { return func(c *Config) { c.PtrYarnAttnFactor = new(v) } }
+func WithYarnBetaFast(v float32) Option   { return func(c *Config) { c.PtrYarnBetaFast = new(v) } }
+func WithYarnBetaSlow(v float32) Option   { return func(c *Config) { c.PtrYarnBetaSlow = new(v) } }
+func WithYarnExtFactor(v float32) Option  { return func(c *Config) { c.PtrYarnExtFactor = new(v) } }
+func WithYarnOrigCtx(v int) Option        { return func(c *Config) { c.PtrYarnOrigCtx = new(v) } }

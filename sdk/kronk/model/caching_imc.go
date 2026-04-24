@@ -225,8 +225,8 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 	// estimate the projected total KV usage and evict mismatched sessions
 	// (largest first) until the active request fits within n_ctx.
 
-	if bestSession != nil && len(mismatchSessions) > 0 && m.cfg.ContextWindow > 0 {
-		nCtx := m.cfg.ContextWindow
+	if bestSession != nil && len(mismatchSessions) > 0 && m.cfg.ContextWindow() > 0 {
+		nCtx := m.cfg.ContextWindow()
 
 		// Sum KV usage across all non-empty, non-pending sessions that
 		// don't have externalized kvState. Sessions with kvState had their
@@ -402,7 +402,7 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 				}
 			}
 
-			if bestPartialLen >= m.cfg.CacheMinTokens {
+			if bestPartialLen >= m.cfg.CacheMinTokens() {
 				partialSession := m.imcSessions[bestPartialSlotIdx]
 				discarded := snapshots[bestPartialSlotIdx].totalTokensCached - bestPartialLen
 				saved := len(incomingTokens) - bestPartialLen
@@ -418,7 +418,7 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 			}
 
 			m.log(ctx, "imc", "status", "no usable token prefix match",
-				"best-prefix", bestPartialLen, "min-required", m.cfg.CacheMinTokens)
+				"best-prefix", bestPartialLen, "min-required", m.cfg.CacheMinTokens())
 		}
 	}
 
@@ -949,8 +949,8 @@ func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D,
 		return cacheResult{modifiedD: d, err: fmt.Errorf("imc: messages tokenized to zero tokens")}
 	}
 
-	if nTokens < m.cfg.CacheMinTokens {
-		m.log(ctx, "imc", "status", "skip (too short)", "last-msg-index-to-cache", lastMsgIdxToCache, "tokens", nTokens, "cache-min-tokens", m.cfg.CacheMinTokens)
+	if nTokens < m.cfg.CacheMinTokens() {
+		m.log(ctx, "imc", "status", "skip (too short)", "last-msg-index-to-cache", lastMsgIdxToCache, "tokens", nTokens, "cache-min-tokens", m.cfg.CacheMinTokens())
 
 		m.imcClearPending(slotID)
 
@@ -1175,7 +1175,7 @@ func (m *Model) decodeTokensIntoCache(ctx context.Context, tokens []llama.Token,
 	nTokens := len(tokens)
 
 	if nBatch <= 0 {
-		nBatch = m.cfg.NBatch
+		nBatch = m.cfg.NBatch()
 	}
 
 	m.log(ctx, "cache", "status", "decoding tokens into cache", "seq", seqID, "tokens", nTokens, "start_pos", startPos, "nbatch", nBatch)
@@ -1222,7 +1222,7 @@ func (m *Model) decodeTokensIntoCache(ctx context.Context, tokens []llama.Token,
 // The timeout is the remaining time from the shared CacheSlotTimeout budget
 // that started at requestStart.
 func (m *Model) waitForIMCSlot(ctx context.Context, requestStart time.Time) error {
-	timeout := time.Duration(m.cfg.CacheSlotTimeout) * time.Second
+	timeout := time.Duration(m.cfg.CacheSlotTimeout()) * time.Second
 	remaining := timeout - time.Since(requestStart)
 
 	if remaining <= 0 {

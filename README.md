@@ -274,9 +274,9 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
-	cfg := model.Config{
-		ModelFiles: mp.ModelFiles,
-	}
+	cfg := model.NewConfig(
+		model.WithModelFiles(mp.ModelFiles),
+	)
 
 	krn, err := kronk.New(cfg)
 	if err != nil {
@@ -289,13 +289,25 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	}
 	fmt.Println()
 
-	fmt.Println("- contextWindow:", krn.ModelConfig().ContextWindow)
-	fmt.Printf("- k/v          : %s/%s\n", krn.ModelConfig().CacheTypeK, krn.ModelConfig().CacheTypeV)
-	fmt.Println("- nBatch       :", krn.ModelConfig().NBatch)
-	fmt.Println("- nuBatch      :", krn.ModelConfig().NUBatch)
-	fmt.Println("- modelType    :", krn.ModelInfo().Type)
-	fmt.Println("- isGPT        :", krn.ModelInfo().IsGPTModel)
-	fmt.Println("- template     :", krn.ModelInfo().Template.FileName)
+	fmt.Println("- contextWindow  :", krn.ModelConfig().ContextWindow())
+	fmt.Printf("- k/v            : %s/%s\n", krn.ModelConfig().CacheTypeK, krn.ModelConfig().CacheTypeV)
+	fmt.Println("- flashAttention :", krn.ModelConfig().FlashAttention)
+	fmt.Println("- nBatch         :", krn.ModelConfig().NBatch())
+	fmt.Println("- nuBatch        :", krn.ModelConfig().NUBatch())
+	fmt.Println("- modelType      :", krn.ModelInfo().Type)
+	fmt.Println("- isGPT          :", krn.ModelInfo().IsGPTModel)
+	fmt.Println("- template       :", krn.ModelInfo().Template.FileName)
+	fmt.Println("- grammar        :", krn.ModelConfig().DefaultParams.Grammar != "")
+	fmt.Println("- nSeqMax        :", krn.ModelConfig().NSeqMax())
+	fmt.Println("- vramTotal      :", krn.ModelInfo().VRAMTotal/(1024*1024), "MiB")
+	fmt.Println("- slotMemory     :", krn.ModelInfo().SlotMemory/(1024*1024), "MiB")
+	fmt.Println("- modelSize      :", krn.ModelInfo().Size/(1000*1000), "MB")
+	fmt.Println("- imc            :", krn.ModelConfig().IncrementalCache())
+	if n := krn.ModelConfig().PtrNGpuLayers; n != nil {
+		fmt.Println("- nGPULayers     :", *n)
+	} else {
+		fmt.Println("- nGPULayers     : all")
+	}
 
 	return krn, nil
 }
@@ -330,17 +342,17 @@ func question(krn *kronk.Kronk) error {
 	var reasoning bool
 
 	for resp := range ch {
-		switch resp.Choice[0].FinishReason() {
+		switch resp.Choices[0].FinishReason() {
 		case model.FinishReasonError:
-			return fmt.Errorf("error from model: %s", resp.Choice[0].Delta.Content)
+			return fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
 
 		case model.FinishReasonStop:
 			return nil
 
 		default:
-			if resp.Choice[0].Delta.Reasoning != "" {
+			if resp.Choices[0].Delta.Reasoning != "" {
 				reasoning = true
-				fmt.Printf("\u001b[91m%s\u001b[0m", resp.Choice[0].Delta.Reasoning)
+				fmt.Printf("\u001b[91m%s\u001b[0m", resp.Choices[0].Delta.Reasoning)
 				continue
 			}
 
@@ -350,7 +362,7 @@ func question(krn *kronk.Kronk) error {
 				continue
 			}
 
-			fmt.Printf("%s", resp.Choice[0].Delta.Content)
+			fmt.Printf("%s", resp.Choices[0].Delta.Content)
 		}
 	}
 

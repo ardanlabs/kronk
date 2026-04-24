@@ -217,7 +217,7 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 		}
 
 		if c.insecureLogging {
-			cfg.InsecureLogging = true
+			cfg.PtrInsecureLogging = new(true)
 		}
 
 		cfg.Log = c.log
@@ -246,7 +246,7 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 		info = append(info, "model-name")
 		info = append(info, modelID)
 		info = append(info, "contextWindow")
-		info = append(info, krn.ModelConfig().ContextWindow)
+		info = append(info, krn.ModelConfig().ContextWindow())
 		info = append(info, "isGPTModel")
 		info = append(info, krn.ModelInfo().IsGPTModel)
 		info = append(info, "isEmbedModel")
@@ -286,7 +286,7 @@ func (c *Cache) AquireCustom(ctx context.Context, key string, cfg model.Config, 
 		}
 
 		if c.insecureLogging {
-			cfg.InsecureLogging = true
+			cfg.PtrInsecureLogging = new(true)
 		}
 
 		cfg.Log = c.log
@@ -303,7 +303,7 @@ func (c *Cache) AquireCustom(ctx context.Context, key string, cfg model.Config, 
 		c.cache.Set(key, krn)
 		c.itemsInCache.Add(1)
 
-		c.log(ctx, "acquire-custom", "status", "load new model", "key", key, "contextWindow", krn.ModelConfig().ContextWindow)
+		c.log(ctx, "acquire-custom", "status", "load new model", "key", key, "contextWindow", krn.ModelConfig().ContextWindow())
 
 		return krn, nil
 	})

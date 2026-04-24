@@ -115,10 +115,10 @@ func New(cfg model.Config, opts ...Option) (*Kronk, error) {
 
 	switch {
 	case mi.IsEmbedModel || mi.IsRerankModel:
-		semCapacity = max(cfg.NSeqMax, 1)
+		semCapacity = max(cfg.NSeqMax(), 1)
 
 	default:
-		semCapacity = max(cfg.NSeqMax, 1) * o.queueDepth
+		semCapacity = max(cfg.NSeqMax(), 1) * o.queueDepth
 	}
 
 	// -------------------------------------------------------------------------

@@ -144,7 +144,6 @@
 Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT:
   context-window: 131072
   nseq-max: 2
-  incremental-cache: true
   sampling-parameters:
     temperature: 0.6
     top_k: 20
@@ -153,7 +152,6 @@ Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT:
 Qwen3.6-27B-Q4_K_M/AGENT:
   context-window: 131072
   nseq-max: 2
-  incremental-cache: true
   sampling-parameters:
     temperature: 1.0
     top_k: 20
@@ -162,7 +160,6 @@ Qwen3.6-27B-Q4_K_M/AGENT:
 gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT:
   context-window: 131072
   nseq-max: 2
-  incremental-cache: true
   sampling-parameters:
     temperature: 1.0
     top_k: 64
@@ -170,9 +167,6 @@ gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT:
 
 cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0/Chat:
   context-window: 131072
-  insecure-logging: false
-  incremental-cache: true
-  flash-attention: enabled
   sampling-parameters:
     temperature: 0.7
     top_p: 0.8

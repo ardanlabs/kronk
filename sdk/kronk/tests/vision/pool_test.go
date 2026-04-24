@@ -19,14 +19,14 @@ func Test_PooledVision(t *testing.T) {
 	defer cancel()
 
 	krn, err := kronk.New(model.Config{
-		ModelFiles:    testlib.MPSimpleVision.ModelFiles,
-		ProjFile:      testlib.MPSimpleVision.ProjFile,
-		ContextWindow: 8192,
-		NBatch:        2048,
-		NUBatch:       2048,
-		CacheTypeK:    model.GGMLTypeQ8_0,
-		CacheTypeV:    model.GGMLTypeQ8_0,
-		NSeqMax:       numInstances,
+		ModelFiles:       testlib.MPSimpleVision.ModelFiles,
+		ProjFile:         testlib.MPSimpleVision.ProjFile,
+		PtrContextWindow: new(8192),
+		PtrNBatch:        new(2048),
+		PtrNUBatch:       new(2048),
+		CacheTypeK:       model.GGMLTypeQ8_0,
+		CacheTypeV:       model.GGMLTypeQ8_0,
+		PtrNSeqMax:       new(numInstances),
 	})
 	if err != nil {
 		t.Fatalf("Failed to create vision model with NSeqMax=%d: %v", numInstances, err)

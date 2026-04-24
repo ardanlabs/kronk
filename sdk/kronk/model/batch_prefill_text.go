@@ -29,7 +29,7 @@ func (e *batchEngine) addPrefillChunk(s *slot, chunkLimit int) bool {
 
 	prefillStart := time.Now()
 
-	nBatch := e.model.cfg.NBatch
+	nBatch := e.model.cfg.NBatch()
 	remaining := len(s.prefillTokens) - s.nPrefilled
 
 	// Limit chunk size to available space in batch (total across all slots

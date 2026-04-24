@@ -288,7 +288,7 @@ func TestHashMessage(t *testing.T) {
 func TestIMCSlotState(t *testing.T) {
 	m := &Model{
 		cfg: Config{
-			IncrementalCache: true,
+			PtrIncrementalCache: new(true),
 		},
 		imcSessions: make([]*imcSession, 2),
 		log:         func(ctx context.Context, msg string, args ...any) {},
@@ -334,7 +334,7 @@ func TestIMCSlotState(t *testing.T) {
 func TestClearCaches(t *testing.T) {
 	m := &Model{
 		cfg: Config{
-			IncrementalCache: true,
+			PtrIncrementalCache: new(true),
 		},
 		imcSessions: make([]*imcSession, 2),
 		log:         func(ctx context.Context, msg string, args ...any) {},
@@ -398,7 +398,7 @@ func TestCacheResultFields(t *testing.T) {
 func TestProcessIMCScanSkipsPendingSlots(t *testing.T) {
 	m := &Model{
 		cfg: Config{
-			IncrementalCache: true,
+			PtrIncrementalCache: new(true),
 		},
 		imcSessions: make([]*imcSession, 3),
 		log:         func(ctx context.Context, msg string, args ...any) {},
@@ -450,7 +450,7 @@ func TestProcessIMCScanSkipsPendingSlots(t *testing.T) {
 func TestProcessIMCScanAllPending(t *testing.T) {
 	m := &Model{
 		cfg: Config{
-			IncrementalCache: true,
+			PtrIncrementalCache: new(true),
 		},
 		imcSessions: make([]*imcSession, 2),
 		log:         func(ctx context.Context, msg string, args ...any) {},
@@ -492,7 +492,7 @@ func TestProcessIMCScanAllPending(t *testing.T) {
 func TestProcessIMCSlotMatchByHash(t *testing.T) {
 	m := &Model{
 		cfg: Config{
-			IncrementalCache: true,
+			PtrIncrementalCache: new(true),
 		},
 		imcSessions: make([]*imcSession, 3),
 		log:         func(ctx context.Context, msg string, args ...any) {},
@@ -559,7 +559,7 @@ func TestProcessIMCSlotMatchByHash(t *testing.T) {
 func TestProcessIMCBestPrefixCoverage(t *testing.T) {
 	m := &Model{
 		cfg: Config{
-			IncrementalCache: true,
+			PtrIncrementalCache: new(true),
 		},
 		imcSessions: make([]*imcSession, 3),
 		log:         func(ctx context.Context, msg string, args ...any) {},
@@ -626,7 +626,7 @@ func TestProcessIMCBestPrefixCoverage(t *testing.T) {
 func TestProcessIMCLRUEviction(t *testing.T) {
 	m := &Model{
 		cfg: Config{
-			IncrementalCache: true,
+			PtrIncrementalCache: new(true),
 		},
 		imcSessions: make([]*imcSession, 2),
 		log:         func(ctx context.Context, msg string, args ...any) {},
@@ -693,7 +693,7 @@ func TestProcessIMCLRUEviction(t *testing.T) {
 func TestProcessIMCParallelSubAgents(t *testing.T) {
 	m := &Model{
 		cfg: Config{
-			IncrementalCache: true,
+			PtrIncrementalCache: new(true),
 		},
 		imcSessions: make([]*imcSession, 3),
 		log:         func(ctx context.Context, msg string, args ...any) {},
@@ -812,7 +812,7 @@ func TestProcessIMCParallelSubAgents(t *testing.T) {
 func TestProcessIMCPendingPreventsDoubleSlot(t *testing.T) {
 	m := &Model{
 		cfg: Config{
-			IncrementalCache: true,
+			PtrIncrementalCache: new(true),
 		},
 		imcSessions: make([]*imcSession, 3),
 		log:         func(ctx context.Context, msg string, args ...any) {},
@@ -954,8 +954,8 @@ func TestTokenPrefixMatch(t *testing.T) {
 func TestProcessIMCTokenPrefixFallback(t *testing.T) {
 	m := &Model{
 		cfg: Config{
-			IncrementalCache: true,
-			CacheMinTokens:   3,
+			PtrIncrementalCache: new(true),
+			PtrCacheMinTokens:   new(3),
 		},
 		imcSessions: make([]*imcSession, 2),
 		log:         func(ctx context.Context, msg string, args ...any) {},
@@ -1096,7 +1096,7 @@ func TestIMCResetSessionClearsKVState(t *testing.T) {
 func TestClearCachesResetsKVState(t *testing.T) {
 	m := &Model{
 		cfg: Config{
-			IncrementalCache: true,
+			PtrIncrementalCache: new(true),
 		},
 		imcSessions: make([]*imcSession, 2),
 		log:         func(ctx context.Context, msg string, args ...any) {},
@@ -1182,7 +1182,7 @@ func TestIMCSessionMediaFlag(t *testing.T) {
 func TestIMCCommitSessionPreservesKVState(t *testing.T) {
 	m := &Model{
 		cfg: Config{
-			IncrementalCache: true,
+			PtrIncrementalCache: new(true),
 		},
 		imcSessions: make([]*imcSession, 1),
 		log:         func(ctx context.Context, msg string, args ...any) {},
@@ -1226,7 +1226,7 @@ func TestIMCCommitSessionPreservesKVState(t *testing.T) {
 // session without panicking.
 func TestIMCCommitSessionNilSafe(t *testing.T) {
 	m := &Model{
-		cfg: Config{IncrementalCache: true},
+		cfg: Config{PtrIncrementalCache: new(true)},
 		log: func(ctx context.Context, msg string, args ...any) {},
 	}
 	m.cacheCond = sync.NewCond(&m.cacheMu)
@@ -1241,8 +1241,8 @@ func TestIMCCommitSessionNilSafe(t *testing.T) {
 func TestIMCKVPressureSkipsExternalizedSessions(t *testing.T) {
 	m := &Model{
 		cfg: Config{
-			IncrementalCache: true,
-			ContextWindow:    1000,
+			PtrIncrementalCache: new(true),
+			PtrContextWindow:    new(1000),
 		},
 		imcSessions: make([]*imcSession, 3),
 		log:         func(ctx context.Context, msg string, args ...any) {},
@@ -1450,7 +1450,7 @@ func TestIMCSessionMediaTransitions(t *testing.T) {
 func TestIMCCommitThenRematch(t *testing.T) {
 	m := &Model{
 		cfg: Config{
-			IncrementalCache: true,
+			PtrIncrementalCache: new(true),
 		},
 		imcSessions: make([]*imcSession, 1),
 		log:         func(ctx context.Context, msg string, args ...any) {},
@@ -1539,7 +1539,7 @@ func TestIMCCommitThenRematch(t *testing.T) {
 func TestIMCExtendAfterCommit(t *testing.T) {
 	m := &Model{
 		cfg: Config{
-			IncrementalCache: true,
+			PtrIncrementalCache: new(true),
 		},
 		imcSessions: make([]*imcSession, 1),
 		log:         func(ctx context.Context, msg string, args ...any) {},
@@ -1591,7 +1591,7 @@ func TestIMCExtendAfterCommit(t *testing.T) {
 func TestIMCSysPromptPreserveRoute(t *testing.T) {
 	m := &Model{
 		cfg: Config{
-			IncrementalCache: true,
+			PtrIncrementalCache: new(true),
 		},
 		imcSessions: make([]*imcSession, 2),
 		log:         func(ctx context.Context, msg string, args ...any) {},
@@ -1648,7 +1648,7 @@ func TestIMCSysPromptPreserveRoute(t *testing.T) {
 func TestIMCSysPromptChangeFallsToEmptySlot(t *testing.T) {
 	m := &Model{
 		cfg: Config{
-			IncrementalCache: true,
+			PtrIncrementalCache: new(true),
 		},
 		imcSessions: make([]*imcSession, 2),
 		log:         func(ctx context.Context, msg string, args ...any) {},

@@ -99,24 +99,24 @@ func printWeb(mi toolapp.ModelInfoResponse) {
 	if mi.ModelConfig != nil {
 		fmt.Println("Model Configuration")
 		fmt.Println("-------------------")
-		fmt.Printf("Context Window:    %d\n", mi.ModelConfig.ContextWindow)
-		fmt.Printf("Batch Size:        %d\n", mi.ModelConfig.NBatch)
-		fmt.Printf("Micro Batch Size:  %d\n", mi.ModelConfig.NUBatch)
-		fmt.Printf("Max Sequences:     %d\n", mi.ModelConfig.NSeqMax)
+		fmt.Printf("Context Window:    %s\n", formatIntPtr(mi.ModelConfig.ContextWindow))
+		fmt.Printf("Batch Size:        %s\n", formatIntPtr(mi.ModelConfig.NBatch))
+		fmt.Printf("Micro Batch Size:  %s\n", formatIntPtr(mi.ModelConfig.NUBatch))
+		fmt.Printf("Max Sequences:     %s\n", formatIntPtr(mi.ModelConfig.NSeqMax))
 		fmt.Printf("Cache Type K:      %s\n", mi.ModelConfig.CacheTypeK)
 		fmt.Printf("Cache Type V:      %s\n", mi.ModelConfig.CacheTypeV)
-		fmt.Printf("Incremental Cache:   %t\n", mi.ModelConfig.IncrementalCache)
+		fmt.Printf("Incremental Cache:   %s\n", formatBoolPtr(mi.ModelConfig.IncrementalCache))
 		if mi.ModelConfig.RopeScaling.String() != "none" {
 			fmt.Printf("RoPE Scaling:      %s\n", mi.ModelConfig.RopeScaling)
-			fmt.Printf("YaRN Orig Ctx:     %v\n", formatIntPtr(mi.ModelConfig.YarnOrigCtx))
-			if mi.ModelConfig.RopeFreqBase != nil {
-				fmt.Printf("RoPE Freq Base:    %g\n", *mi.ModelConfig.RopeFreqBase)
+			fmt.Printf("YaRN Orig Ctx:     %v\n", formatIntPtr(mi.ModelConfig.PtrYarnOrigCtx))
+			if mi.ModelConfig.PtrRopeFreqBase != nil {
+				fmt.Printf("RoPE Freq Base:    %g\n", *mi.ModelConfig.PtrRopeFreqBase)
 			}
-			if mi.ModelConfig.YarnExtFactor != nil {
-				fmt.Printf("YaRN Ext Factor:   %g\n", *mi.ModelConfig.YarnExtFactor)
+			if mi.ModelConfig.PtrYarnExtFactor != nil {
+				fmt.Printf("YaRN Ext Factor:   %g\n", *mi.ModelConfig.PtrYarnExtFactor)
 			}
-			if mi.ModelConfig.YarnAttnFactor != nil {
-				fmt.Printf("YaRN Attn Factor:  %g\n", *mi.ModelConfig.YarnAttnFactor)
+			if mi.ModelConfig.PtrYarnAttnFactor != nil {
+				fmt.Printf("YaRN Attn Factor:  %g\n", *mi.ModelConfig.PtrYarnAttnFactor)
 			}
 		}
 		fmt.Println()
@@ -157,24 +157,24 @@ func printLocal(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfig
 
 	fmt.Println("Model Configuration")
 	fmt.Println("-------------------")
-	fmt.Printf("Context Window:    %d\n", rmc.ContextWindow)
-	fmt.Printf("Batch Size:        %d\n", rmc.NBatch)
-	fmt.Printf("Micro Batch Size:  %d\n", rmc.NUBatch)
-	fmt.Printf("Max Sequences:     %d\n", rmc.NSeqMax)
+	fmt.Printf("Context Window:    %s\n", formatIntPtr(rmc.PtrContextWindow))
+	fmt.Printf("Batch Size:        %s\n", formatIntPtr(rmc.PtrNBatch))
+	fmt.Printf("Micro Batch Size:  %s\n", formatIntPtr(rmc.PtrNUBatch))
+	fmt.Printf("Max Sequences:     %s\n", formatIntPtr(rmc.PtrNSeqMax))
 	fmt.Printf("Cache Type K:      %s\n", rmc.CacheTypeK)
 	fmt.Printf("Cache Type V:      %s\n", rmc.CacheTypeV)
-	fmt.Printf("Incremental Cache:   %t\n", rmc.IncrementalCache)
+	fmt.Printf("Incremental Cache:   %s\n", formatBoolPtr(rmc.PtrIncrementalCache))
 	if rmc.RopeScaling.String() != "none" {
 		fmt.Printf("RoPE Scaling:      %s\n", rmc.RopeScaling)
-		fmt.Printf("YaRN Orig Ctx:     %v\n", formatIntPtr(rmc.YarnOrigCtx))
-		if rmc.RopeFreqBase != nil {
-			fmt.Printf("RoPE Freq Base:    %g\n", *rmc.RopeFreqBase)
+		fmt.Printf("YaRN Orig Ctx:     %v\n", formatIntPtr(rmc.PtrYarnOrigCtx))
+		if rmc.PtrRopeFreqBase != nil {
+			fmt.Printf("RoPE Freq Base:    %g\n", *rmc.PtrRopeFreqBase)
 		}
-		if rmc.YarnExtFactor != nil {
-			fmt.Printf("YaRN Ext Factor:   %g\n", *rmc.YarnExtFactor)
+		if rmc.PtrYarnExtFactor != nil {
+			fmt.Printf("YaRN Ext Factor:   %g\n", *rmc.PtrYarnExtFactor)
 		}
-		if rmc.YarnAttnFactor != nil {
-			fmt.Printf("YaRN Attn Factor:  %g\n", *rmc.YarnAttnFactor)
+		if rmc.PtrYarnAttnFactor != nil {
+			fmt.Printf("YaRN Attn Factor:  %g\n", *rmc.PtrYarnAttnFactor)
 		}
 	}
 	fmt.Println()
@@ -229,4 +229,11 @@ func formatIntPtr(p *int) string {
 		return "auto"
 	}
 	return fmt.Sprintf("%d", *p)
+}
+
+func formatBoolPtr(p *bool) string {
+	if p == nil {
+		return "auto"
+	}
+	return fmt.Sprintf("%t", *p)
 }

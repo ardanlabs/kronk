@@ -311,10 +311,10 @@ func (c *Catalog) analysisDefaults(modelID string) ModelConfig {
 
 	var cfg ModelConfig
 
-	cfg.ContextWindow = int(rec.ContextWindow)
-	cfg.NBatch = defAnalysisNBatch
-	cfg.NUBatch = defAnalysisNUBatch
-	cfg.NSeqMax = int(rec.NSeqMax)
+	cfg.PtrContextWindow = new(int(rec.ContextWindow))
+	cfg.PtrNBatch = new(defAnalysisNBatch)
+	cfg.PtrNUBatch = new(defAnalysisNUBatch)
+	cfg.PtrNSeqMax = new(int(rec.NSeqMax))
 
 	if k, err := model.ParseGGMLType(rec.CacheTypeK); err == nil {
 		cfg.CacheTypeK = k
@@ -333,11 +333,11 @@ func (c *Catalog) analysisDefaults(modelID string) ModelConfig {
 		cfg.FlashAttention = new(model.FlashAttentionEnabled)
 	}
 
-	// model.Config: NGpuLayers nil = all on GPU, 0 = all on GPU, -1 = all on CPU.
+	// model.Config: PtrNGpuLayers nil = all on GPU, 0 = all on GPU, -1 = all on CPU.
 	// Only set when we explicitly want CPU-only.
 	if rec.NGPULayers < 0 {
 		n := int(rec.NGPULayers)
-		cfg.NGpuLayers = &n
+		cfg.PtrNGpuLayers = &n
 	}
 
 	return cfg
@@ -354,20 +354,20 @@ func mergeModelConfig(dst *ModelConfig, src ModelConfig) {
 	if src.Template != "" {
 		dst.Template = src.Template
 	}
-	if src.ContextWindow != 0 {
-		dst.ContextWindow = src.ContextWindow
+	if src.PtrContextWindow != nil {
+		dst.PtrContextWindow = src.PtrContextWindow
 	}
-	if src.NBatch != 0 {
-		dst.NBatch = src.NBatch
+	if src.PtrNBatch != nil {
+		dst.PtrNBatch = src.PtrNBatch
 	}
-	if src.NUBatch != 0 {
-		dst.NUBatch = src.NUBatch
+	if src.PtrNUBatch != nil {
+		dst.PtrNUBatch = src.PtrNUBatch
 	}
-	if src.NThreads != 0 {
-		dst.NThreads = src.NThreads
+	if src.PtrNThreads != nil {
+		dst.PtrNThreads = src.PtrNThreads
 	}
-	if src.NThreadsBatch != 0 {
-		dst.NThreadsBatch = src.NThreadsBatch
+	if src.PtrNThreadsBatch != nil {
+		dst.PtrNThreadsBatch = src.PtrNThreadsBatch
 	}
 	if src.CacheTypeK != 0 {
 		dst.CacheTypeK = src.CacheTypeK
@@ -378,32 +378,32 @@ func mergeModelConfig(dst *ModelConfig, src ModelConfig) {
 	if src.FlashAttention != nil {
 		dst.FlashAttention = src.FlashAttention
 	}
-	if src.UseDirectIO {
-		dst.UseDirectIO = src.UseDirectIO
+	if src.PtrUseDirectIO != nil {
+		dst.PtrUseDirectIO = src.PtrUseDirectIO
 	}
-	if src.UseMMap != nil {
-		dst.UseMMap = src.UseMMap
+	if src.PtrUseMMap != nil {
+		dst.PtrUseMMap = src.PtrUseMMap
 	}
 	if src.NUMA != "" {
 		dst.NUMA = src.NUMA
 	}
-	if src.NSeqMax != 0 {
-		dst.NSeqMax = src.NSeqMax
+	if src.PtrNSeqMax != nil {
+		dst.PtrNSeqMax = src.PtrNSeqMax
 	}
-	if src.OffloadKQV != nil {
-		dst.OffloadKQV = src.OffloadKQV
+	if src.PtrOffloadKQV != nil {
+		dst.PtrOffloadKQV = src.PtrOffloadKQV
 	}
-	if src.OpOffload != nil {
-		dst.OpOffload = src.OpOffload
+	if src.PtrOpOffload != nil {
+		dst.PtrOpOffload = src.PtrOpOffload
 	}
-	if src.OpOffloadMinBatch != 0 {
-		dst.OpOffloadMinBatch = src.OpOffloadMinBatch
+	if src.PtrOpOffloadMinBatch != nil {
+		dst.PtrOpOffloadMinBatch = src.PtrOpOffloadMinBatch
 	}
-	if src.NGpuLayers != nil {
-		dst.NGpuLayers = src.NGpuLayers
+	if src.PtrNGpuLayers != nil {
+		dst.PtrNGpuLayers = src.PtrNGpuLayers
 	}
-	if src.SplitMode != nil {
-		dst.SplitMode = src.SplitMode
+	if src.PtrSplitMode != nil {
+		dst.PtrSplitMode = src.PtrSplitMode
 	}
 	if len(src.TensorSplit) > 0 {
 		dst.TensorSplit = src.TensorSplit
@@ -411,8 +411,8 @@ func mergeModelConfig(dst *ModelConfig, src ModelConfig) {
 	if len(src.TensorBuftOverrides) > 0 {
 		dst.TensorBuftOverrides = src.TensorBuftOverrides
 	}
-	if src.MainGPU != nil {
-		dst.MainGPU = src.MainGPU
+	if src.PtrMainGPU != nil {
+		dst.PtrMainGPU = src.PtrMainGPU
 	}
 	if len(src.Devices) > 0 {
 		dst.Devices = src.Devices
@@ -420,44 +420,44 @@ func mergeModelConfig(dst *ModelConfig, src ModelConfig) {
 	if src.MoE != nil {
 		dst.MoE = src.MoE
 	}
-	if src.SWAFull != nil {
-		dst.SWAFull = src.SWAFull
+	if src.PtrSWAFull != nil {
+		dst.PtrSWAFull = src.PtrSWAFull
 	}
-	if src.IncrementalCache {
-		dst.IncrementalCache = src.IncrementalCache
+	if src.PtrIncrementalCache != nil {
+		dst.PtrIncrementalCache = src.PtrIncrementalCache
 	}
-	if src.CacheMinTokens != 0 {
-		dst.CacheMinTokens = src.CacheMinTokens
+	if src.PtrCacheMinTokens != nil {
+		dst.PtrCacheMinTokens = src.PtrCacheMinTokens
 	}
-	if src.CacheSlotTimeout != 0 {
-		dst.CacheSlotTimeout = src.CacheSlotTimeout
+	if src.PtrCacheSlotTimeout != nil {
+		dst.PtrCacheSlotTimeout = src.PtrCacheSlotTimeout
 	}
-	if src.InsecureLogging {
-		dst.InsecureLogging = src.InsecureLogging
+	if src.PtrInsecureLogging != nil {
+		dst.PtrInsecureLogging = src.PtrInsecureLogging
 	}
 	if src.RopeScaling != 0 {
 		dst.RopeScaling = src.RopeScaling
 	}
-	if src.RopeFreqBase != nil {
-		dst.RopeFreqBase = src.RopeFreqBase
+	if src.PtrRopeFreqBase != nil {
+		dst.PtrRopeFreqBase = src.PtrRopeFreqBase
 	}
-	if src.RopeFreqScale != nil {
-		dst.RopeFreqScale = src.RopeFreqScale
+	if src.PtrRopeFreqScale != nil {
+		dst.PtrRopeFreqScale = src.PtrRopeFreqScale
 	}
-	if src.YarnExtFactor != nil {
-		dst.YarnExtFactor = src.YarnExtFactor
+	if src.PtrYarnExtFactor != nil {
+		dst.PtrYarnExtFactor = src.PtrYarnExtFactor
 	}
-	if src.YarnAttnFactor != nil {
-		dst.YarnAttnFactor = src.YarnAttnFactor
+	if src.PtrYarnAttnFactor != nil {
+		dst.PtrYarnAttnFactor = src.PtrYarnAttnFactor
 	}
-	if src.YarnBetaFast != nil {
-		dst.YarnBetaFast = src.YarnBetaFast
+	if src.PtrYarnBetaFast != nil {
+		dst.PtrYarnBetaFast = src.PtrYarnBetaFast
 	}
-	if src.YarnBetaSlow != nil {
-		dst.YarnBetaSlow = src.YarnBetaSlow
+	if src.PtrYarnBetaSlow != nil {
+		dst.PtrYarnBetaSlow = src.PtrYarnBetaSlow
 	}
-	if src.YarnOrigCtx != nil {
-		dst.YarnOrigCtx = src.YarnOrigCtx
+	if src.PtrYarnOrigCtx != nil {
+		dst.PtrYarnOrigCtx = src.PtrYarnOrigCtx
 	}
 	if src.DraftModel != nil {
 		dst.DraftModel = src.DraftModel

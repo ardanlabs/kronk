@@ -121,7 +121,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 
 		d = cache.modifiedD
 
-		if m.cfg.InsecureLogging {
+		if m.cfg.InsecureLogging() {
 			m.log(ctx, "chat-streaming", "IN-MESSAGES", d.Messages())
 		}
 
@@ -139,7 +139,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 // wrapChannelForLogging wraps the response channel with logging when insecure
 // logging is enabled. Returns the channel to use for sending responses.
 func (m *Model) wrapChannelForLogging(ctx context.Context, returnCh chan ChatResponse) chan ChatResponse {
-	if !m.cfg.InsecureLogging {
+	if !m.cfg.InsecureLogging() {
 		return returnCh
 	}
 
@@ -224,7 +224,7 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, r
 
 	// IMC caches through media messages using the mtmd pipeline —
 	// images and audio remain in the KV cache across requests.
-	cachingEnabled := m.cfg.IncrementalCache && (object == ObjectChatText || (object == ObjectChatMedia && m.projFile != ""))
+	cachingEnabled := m.cfg.IncrementalCache() && (object == ObjectChatText || (object == ObjectChatMedia && m.projFile != ""))
 
 	switch {
 	case !cachingEnabled:
@@ -256,7 +256,7 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, r
 // Returns true if the job was submitted (caller should set batching=true),
 // false if batch engine is not available or not applicable.
 func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, id string, d D, object string, prompt string, media [][]byte, params Params, mtmdCtx mtmd.Context, cache cacheResult) bool {
-	imcCacheHit := m.cfg.IncrementalCache && (cache.cacheIdx > 0 || len(cache.imcNewCacheTokens) > 0 || cache.imcMediaBuild)
+	imcCacheHit := m.cfg.IncrementalCache() && (cache.cacheIdx > 0 || len(cache.imcNewCacheTokens) > 0 || cache.imcMediaBuild)
 
 	_, queueSpan := otel.AddSpan(ctx, "queue-wait")
 

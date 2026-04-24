@@ -87,16 +87,16 @@ type SessionConfig struct {
 // explicitly provided by the user (non-nil pointers) are applied.
 func (sc SessionConfig) ApplyTo(cfg model.Config) model.Config {
 	if sc.ContextWindow != nil {
-		cfg.ContextWindow = *sc.ContextWindow
+		cfg.PtrContextWindow = sc.ContextWindow
 	}
 	if sc.NBatch != nil {
-		cfg.NBatch = *sc.NBatch
+		cfg.PtrNBatch = sc.NBatch
 	}
 	if sc.NUBatch != nil {
-		cfg.NUBatch = *sc.NUBatch
+		cfg.PtrNUBatch = sc.NUBatch
 	}
 	if sc.NSeqMax != nil {
-		cfg.NSeqMax = *sc.NSeqMax
+		cfg.PtrNSeqMax = sc.NSeqMax
 	}
 	if sc.FlashAttention != nil {
 		cfg.FlashAttention = *sc.FlashAttention
@@ -108,49 +108,49 @@ func (sc SessionConfig) ApplyTo(cfg model.Config) model.Config {
 		cfg.CacheTypeV = *sc.CacheTypeV
 	}
 	if sc.NGpuLayers != nil {
-		cfg.NGpuLayers = sc.NGpuLayers
+		cfg.PtrNGpuLayers = sc.NGpuLayers
 	}
 	if sc.IncrementalCache != nil {
-		cfg.IncrementalCache = *sc.IncrementalCache
+		cfg.PtrIncrementalCache = sc.IncrementalCache
 	}
 	if sc.RopeScaling != nil {
 		cfg.RopeScaling = *sc.RopeScaling
 	}
 	if sc.RopeFreqBase != nil {
-		cfg.RopeFreqBase = sc.RopeFreqBase
+		cfg.PtrRopeFreqBase = sc.RopeFreqBase
 	}
 	if sc.RopeFreqScale != nil {
-		cfg.RopeFreqScale = sc.RopeFreqScale
+		cfg.PtrRopeFreqScale = sc.RopeFreqScale
 	}
 	if sc.YarnExtFactor != nil {
-		cfg.YarnExtFactor = sc.YarnExtFactor
+		cfg.PtrYarnExtFactor = sc.YarnExtFactor
 	}
 	if sc.YarnAttnFactor != nil {
-		cfg.YarnAttnFactor = sc.YarnAttnFactor
+		cfg.PtrYarnAttnFactor = sc.YarnAttnFactor
 	}
 	if sc.YarnBetaFast != nil {
-		cfg.YarnBetaFast = sc.YarnBetaFast
+		cfg.PtrYarnBetaFast = sc.YarnBetaFast
 	}
 	if sc.YarnBetaSlow != nil {
-		cfg.YarnBetaSlow = sc.YarnBetaSlow
+		cfg.PtrYarnBetaSlow = sc.YarnBetaSlow
 	}
 	if sc.YarnOrigCtx != nil {
-		cfg.YarnOrigCtx = sc.YarnOrigCtx
+		cfg.PtrYarnOrigCtx = sc.YarnOrigCtx
 	}
 	if sc.SplitMode != nil {
-		cfg.SplitMode = sc.SplitMode
+		cfg.PtrSplitMode = sc.SplitMode
 	}
 	if len(sc.Devices) > 0 {
 		cfg.Devices = sc.Devices
 	}
 	if sc.MainGPU != nil {
-		cfg.MainGPU = sc.MainGPU
+		cfg.PtrMainGPU = sc.MainGPU
 	}
 	if len(sc.TensorSplit) > 0 {
 		cfg.TensorSplit = sc.TensorSplit
 	}
 	if sc.OpOffloadMinBatch != nil {
-		cfg.OpOffloadMinBatch = *sc.OpOffloadMinBatch
+		cfg.PtrOpOffloadMinBatch = sc.OpOffloadMinBatch
 	}
 	if len(sc.TensorBuftOverrides) > 0 {
 		cfg.TensorBuftOverrides = sc.TensorBuftOverrides

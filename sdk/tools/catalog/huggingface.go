@@ -277,7 +277,7 @@ func buildModelDetails(owner, repo, filename string, meta hfModelMeta, ggufFiles
 	}
 
 	if contextWindow > 0 {
-		md.BaseModelConfig.ContextWindow = contextWindow
+		md.BaseModelConfig.PtrContextWindow = &contextWindow
 	}
 
 	return md

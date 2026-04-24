@@ -701,7 +701,7 @@ func (m *Model) adjustParams(p Params) Params {
 	}
 
 	if p.MaxTokens <= 0 {
-		p.MaxTokens = m.cfg.ContextWindow
+		p.MaxTokens = m.cfg.ContextWindow()
 	}
 
 	if p.MinP <= 0 {
@@ -773,7 +773,7 @@ func (m *Model) toSampler(ctx context.Context, p Params) llama.Sampler {
 
 	if p.DryMultiplier > 0 {
 		order++
-		llama.SamplerChainAdd(sampler, llama.SamplerInitDry(m.vocab, int32(m.cfg.ContextWindow), p.DryMultiplier, p.DryBase, p.DryAllowedLen, p.DryPenaltyLast, nil))
+		llama.SamplerChainAdd(sampler, llama.SamplerInitDry(m.vocab, int32(m.cfg.ContextWindow()), p.DryMultiplier, p.DryBase, p.DryAllowedLen, p.DryPenaltyLast, nil))
 		m.log(ctx, "sampler-chain", "order", order, "sampler", "dry", "multiplier", fmt.Sprintf("%.2f", p.DryMultiplier), "base", fmt.Sprintf("%.2f", p.DryBase), "allowed_len", p.DryAllowedLen, "penalty_last_n", p.DryPenaltyLast)
 	}
 

@@ -157,13 +157,13 @@ func WithModel(t *testing.T, cfg model.Config, fn func(t *testing.T, krn *kronk.
 // model lifecycle (e.g., concurrency tests that test unload behavior).
 func InitChatTest(t *testing.T, mp models.Path, tooling bool) (*kronk.Kronk, model.D) {
 	krn, err := kronk.New(model.Config{
-		ModelFiles:    mp.ModelFiles,
-		ContextWindow: 32768,
-		NBatch:        1024,
-		NUBatch:       256,
-		CacheTypeK:    model.GGMLTypeF16,
-		CacheTypeV:    model.GGMLTypeF16,
-		NSeqMax:       2,
+		ModelFiles:       mp.ModelFiles,
+		PtrContextWindow: new(32768),
+		PtrNBatch:        new(1024),
+		PtrNUBatch:       new(256),
+		CacheTypeK:       model.GGMLTypeF16,
+		CacheTypeV:       model.GGMLTypeF16,
+		PtrNSeqMax:       new(2),
 	})
 
 	if err != nil {
@@ -235,136 +235,136 @@ func InitChatTest(t *testing.T, mp models.Path, tooling bool) (*kronk.Kronk, mod
 
 func CfgThinkToolChat() model.Config {
 	return model.Config{
-		ModelFiles:    MPThinkToolChat.ModelFiles,
-		ContextWindow: 8192,
-		NBatch:        2048,
-		NUBatch:       512,
-		CacheTypeK:    model.GGMLTypeQ8_0,
-		CacheTypeV:    model.GGMLTypeQ8_0,
-		NSeqMax:       2,
+		ModelFiles:       MPThinkToolChat.ModelFiles,
+		PtrContextWindow: new(8192),
+		PtrNBatch:        new(2048),
+		PtrNUBatch:       new(512),
+		CacheTypeK:       model.GGMLTypeQ8_0,
+		CacheTypeV:       model.GGMLTypeQ8_0,
+		PtrNSeqMax:       new(2),
 	}
 }
 
 func CfgGPTChat() model.Config {
 	return model.Config{
-		ModelFiles:    MPGPTChat.ModelFiles,
-		ContextWindow: 8192,
-		NBatch:        2048,
-		NUBatch:       512,
-		CacheTypeK:    model.GGMLTypeQ8_0,
-		CacheTypeV:    model.GGMLTypeQ8_0,
-		NSeqMax:       2,
+		ModelFiles:       MPGPTChat.ModelFiles,
+		PtrContextWindow: new(8192),
+		PtrNBatch:        new(2048),
+		PtrNUBatch:       new(512),
+		CacheTypeK:       model.GGMLTypeQ8_0,
+		CacheTypeV:       model.GGMLTypeQ8_0,
+		PtrNSeqMax:       new(2),
 	}
 }
 
 func CfgSimpleVision() model.Config {
 	return model.Config{
-		ModelFiles:    MPSimpleVision.ModelFiles,
-		ProjFile:      MPSimpleVision.ProjFile,
-		ContextWindow: 8192,
-		NBatch:        2048,
-		NUBatch:       2048,
-		CacheTypeK:    model.GGMLTypeQ8_0,
-		CacheTypeV:    model.GGMLTypeQ8_0,
+		ModelFiles:       MPSimpleVision.ModelFiles,
+		ProjFile:         MPSimpleVision.ProjFile,
+		PtrContextWindow: new(8192),
+		PtrNBatch:        new(2048),
+		PtrNUBatch:       new(2048),
+		CacheTypeK:       model.GGMLTypeQ8_0,
+		CacheTypeV:       model.GGMLTypeQ8_0,
 	}
 }
 
 func CfgSimpleVisionIMC() model.Config {
 	return model.Config{
-		ModelFiles:       MPSimpleVision.ModelFiles,
-		ProjFile:         MPSimpleVision.ProjFile,
-		ContextWindow:    8192,
-		NBatch:           2048,
-		NUBatch:          2048,
-		CacheTypeK:       model.GGMLTypeQ8_0,
-		CacheTypeV:       model.GGMLTypeQ8_0,
-		IncrementalCache: true,
-		NSeqMax:          1,
+		ModelFiles:          MPSimpleVision.ModelFiles,
+		ProjFile:            MPSimpleVision.ProjFile,
+		PtrContextWindow:    new(8192),
+		PtrNBatch:           new(2048),
+		PtrNUBatch:          new(2048),
+		CacheTypeK:          model.GGMLTypeQ8_0,
+		CacheTypeV:          model.GGMLTypeQ8_0,
+		PtrIncrementalCache: new(true),
+		PtrNSeqMax:          new(1),
 	}
 }
 
 func CfgMoEVisionIMC() model.Config {
 	return model.Config{
-		ModelFiles:       MPMoEVision.ModelFiles,
-		ProjFile:         MPMoEVision.ProjFile,
-		ContextWindow:    8192,
-		NBatch:           2048,
-		NUBatch:          2048,
-		CacheTypeK:       model.GGMLTypeF16,
-		CacheTypeV:       model.GGMLTypeF16,
-		IncrementalCache: true,
-		NSeqMax:          1,
+		ModelFiles:          MPMoEVision.ModelFiles,
+		ProjFile:            MPMoEVision.ProjFile,
+		PtrContextWindow:    new(8192),
+		PtrNBatch:           new(2048),
+		PtrNUBatch:          new(2048),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrIncrementalCache: new(true),
+		PtrNSeqMax:          new(1),
 	}
 }
 
 func CfgEmbed() model.Config {
 	return model.Config{
-		ModelFiles:    MPEmbed.ModelFiles,
-		ContextWindow: 2048,
-		NBatch:        2048,
-		NUBatch:       512,
-		CacheTypeK:    model.GGMLTypeF16,
-		CacheTypeV:    model.GGMLTypeF16,
+		ModelFiles:       MPEmbed.ModelFiles,
+		PtrContextWindow: new(2048),
+		PtrNBatch:        new(2048),
+		PtrNUBatch:       new(512),
+		CacheTypeK:       model.GGMLTypeF16,
+		CacheTypeV:       model.GGMLTypeF16,
 	}
 }
 
 func CfgRerank() model.Config {
 	return model.Config{
-		ModelFiles:    MPRerank.ModelFiles,
-		ContextWindow: 2048,
-		NBatch:        2048,
-		NUBatch:       512,
-		CacheTypeK:    model.GGMLTypeF16,
-		CacheTypeV:    model.GGMLTypeF16,
+		ModelFiles:       MPRerank.ModelFiles,
+		PtrContextWindow: new(2048),
+		PtrNBatch:        new(2048),
+		PtrNUBatch:       new(512),
+		CacheTypeK:       model.GGMLTypeF16,
+		CacheTypeV:       model.GGMLTypeF16,
 	}
 }
 
 func CfgAudio() model.Config {
 	return model.Config{
-		ModelFiles:    MPAudio.ModelFiles,
-		ProjFile:      MPAudio.ProjFile,
-		ContextWindow: 8192,
-		NBatch:        2048,
-		NUBatch:       2048,
-		CacheTypeK:    model.GGMLTypeQ8_0,
-		CacheTypeV:    model.GGMLTypeQ8_0,
+		ModelFiles:       MPAudio.ModelFiles,
+		ProjFile:         MPAudio.ProjFile,
+		PtrContextWindow: new(8192),
+		PtrNBatch:        new(2048),
+		PtrNUBatch:       new(2048),
+		CacheTypeK:       model.GGMLTypeQ8_0,
+		CacheTypeV:       model.GGMLTypeQ8_0,
 	}
 }
 
 func CfgMoEVision() model.Config {
 	return model.Config{
-		ModelFiles:    MPMoEVision.ModelFiles,
-		ContextWindow: 8192,
-		NBatch:        2048,
-		NUBatch:       2048,
-		CacheTypeK:    model.GGMLTypeF16,
-		CacheTypeV:    model.GGMLTypeF16,
-		NSeqMax:       2,
+		ModelFiles:       MPMoEVision.ModelFiles,
+		PtrContextWindow: new(8192),
+		PtrNBatch:        new(2048),
+		PtrNUBatch:       new(2048),
+		CacheTypeK:       model.GGMLTypeF16,
+		CacheTypeV:       model.GGMLTypeF16,
+		PtrNSeqMax:       new(2),
 	}
 }
 
 func CfgHybridChat() model.Config {
 	return model.Config{
-		ModelFiles:    MPHybridVision.ModelFiles,
-		ContextWindow: 8192,
-		NBatch:        2048,
-		NUBatch:       512,
-		CacheTypeK:    model.GGMLTypeF16,
-		CacheTypeV:    model.GGMLTypeF16,
-		NSeqMax:       2,
+		ModelFiles:       MPHybridVision.ModelFiles,
+		PtrContextWindow: new(8192),
+		PtrNBatch:        new(2048),
+		PtrNUBatch:       new(512),
+		CacheTypeK:       model.GGMLTypeF16,
+		CacheTypeV:       model.GGMLTypeF16,
+		PtrNSeqMax:       new(2),
 	}
 }
 
 func CfgHybridVisionIMC() model.Config {
 	return model.Config{
-		ModelFiles:       MPHybridVision.ModelFiles,
-		ProjFile:         MPHybridVision.ProjFile,
-		ContextWindow:    4096,
-		NBatch:           2048,
-		NUBatch:          512,
-		CacheTypeK:       model.GGMLTypeQ8_0,
-		CacheTypeV:       model.GGMLTypeQ8_0,
-		IncrementalCache: true,
-		NSeqMax:          1,
+		ModelFiles:          MPHybridVision.ModelFiles,
+		ProjFile:            MPHybridVision.ProjFile,
+		PtrContextWindow:    new(4096),
+		PtrNBatch:           new(2048),
+		PtrNUBatch:          new(512),
+		CacheTypeK:          model.GGMLTypeQ8_0,
+		CacheTypeV:          model.GGMLTypeQ8_0,
+		PtrIncrementalCache: new(true),
+		PtrNSeqMax:          new(1),
 	}
 }

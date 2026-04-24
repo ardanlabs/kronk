@@ -9,9 +9,17 @@ import (
 
 // CalculateVRAM retrieves model metadata and computes the VRAM requirements.
 func (c *Catalog) CalculateVRAM(modelID string, mc ModelConfig) (models.VRAM, error) {
-	nSeqMax := int64(max(mc.NSeqMax, 1))
+	var nSeqMaxVal int
+	if mc.PtrNSeqMax != nil {
+		nSeqMaxVal = *mc.PtrNSeqMax
+	}
+	nSeqMax := int64(max(nSeqMaxVal, 1))
 
-	contextWindow := int64(mc.ContextWindow)
+	var ctxWinVal int
+	if mc.PtrContextWindow != nil {
+		ctxWinVal = *mc.PtrContextWindow
+	}
+	contextWindow := int64(ctxWinVal)
 
 	cfg := models.VRAMConfig{
 		ContextWindow:   contextWindow,
