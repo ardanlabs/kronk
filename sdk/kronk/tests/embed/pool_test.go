@@ -18,7 +18,7 @@ func Test_PooledEmbeddings(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 	defer cancel()
 
-	krn, err := kronk.New(model.Config{
+	krn, err := kronk.New(model.WithConfig(model.Config{
 		ModelFiles:       testlib.MPEmbed.ModelFiles,
 		PtrContextWindow: new(2048),
 		PtrNBatch:        new(2048),
@@ -27,7 +27,7 @@ func Test_PooledEmbeddings(t *testing.T) {
 		CacheTypeV:       model.GGMLTypeQ8_0,
 		FlashAttention:   model.FlashAttentionEnabled,
 		PtrNSeqMax:       new(numInstances),
-	})
+	}))
 	if err != nil {
 		t.Fatalf("Failed to create embedding model with NSeqMax=%d: %v", numInstances, err)
 	}

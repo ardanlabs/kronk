@@ -192,7 +192,7 @@ func newKronk(mp models.Path, runCfg Config) (*kronk.Kronk, error) {
 		cfg.FlashAttention = model.FlashAttentionAuto
 	}
 
-	krn, err := kronk.New(cfg)
+	krn, err := kronk.New(model.WithConfig(cfg))
 	if err != nil {
 		return nil, fmt.Errorf("unable to create inference model: %w", err)
 	}
