@@ -28,7 +28,6 @@ Benchmark Matrix:
     Model Type | Cache Mode | IMC Strategy      | Speculative | Benchmark Name                               | What It Catches
     -----------|------------|-------------------|-------------|----------------------------------------------|----------------------------------------
     Dense      | NonCaching | —                 | No          | BenchmarkDense_NonCaching                    | Full prefill baseline (no caching)
-    Dense      | SPC        | —                 | No          | BenchmarkDense_SPC                           | System prompt cached, rest prefilled
     Dense      | IMC        | Deterministic     | No          | BenchmarkDense_IMCDeterministic              | All-but-last cached (hash matching)
     Dense      | IMC        | Non-Deterministic | No          | BenchmarkDense_IMCNonDeterministic           | Token prefix fallback (gpt-oss-20b)
     Dense      | IMC        | Deterministic     | Yes         | BenchmarkDense_IMCDeterministic_Speculative  | IMC + draft model (Qwen3-0.6B)

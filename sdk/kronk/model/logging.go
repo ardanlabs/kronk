@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // StreamingResponseLogger captures the final streaming response for logging.
@@ -60,4 +61,29 @@ func (l *StreamingResponseLogger) String() string {
 	}
 
 	return b.String()
+}
+
+// fmtBytes formats a byte count as a human-readable string (e.g. "6.79 GB").
+func fmtBytes(n uint64) string {
+	const (
+		kb = 1024
+		mb = 1024 * kb
+		gb = 1024 * mb
+	)
+
+	switch {
+	case n >= gb:
+		return fmt.Sprintf("%.2f GB", float64(n)/float64(gb))
+	case n >= mb:
+		return fmt.Sprintf("%.2f MB", float64(n)/float64(mb))
+	case n >= kb:
+		return fmt.Sprintf("%.2f KB", float64(n)/float64(kb))
+	default:
+		return fmt.Sprintf("%d B", n)
+	}
+}
+
+// fmtDur formats a duration as whole milliseconds (e.g. "103ms").
+func fmtDur(d time.Duration) string {
+	return fmt.Sprintf("%dms", d.Milliseconds())
 }

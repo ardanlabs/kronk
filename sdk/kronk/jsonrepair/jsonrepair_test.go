@@ -432,6 +432,26 @@ func TestRepair(t *testing.T) {
 		},
 
 		// =================================================================
+		// Gemma nested <|"|> tokens inside Go source with URL
+		// =================================================================
+		{
+			// Reproduces production failure: model uses <|"|> for ALL quote
+			// characters, including those inside Go string literals. The
+			// source contains fmt.Println("Server starting at http://localhost:8080")
+			// where the " around the Println argument are emitted as <|"|>.
+			// normalizeGemmaQuotes must not mis-pair the inner <|"|> tokens
+			// with the outer content delimiters, which would push URL text
+			// like http://localhost:8080 outside the JSON string, causing
+			// quoteBareKeys to wrap "http" and "localhost" as JSON keys.
+			name:  "gemma nested quote tokens inside go source URL",
+			input: "{\"content:<|\"|>package main\n\nimport (\n\t<|\"|>fmt<|\"|>\n\t<|\"|>net/http<|\"|>\n)\n\nfunc main() {\n\tmux := http.NewServeMux()\n\tmux.HandleFunc(<|\"|>/<|\"|>, func(w http.ResponseWriter, r *http.Request) {\n\t\tfmt.Fprint(w, <|\"|>hello<|\"|>)\n\t})\n\tfmt.Println(<|\"|>Server starting at http://localhost:8080<|\"|>)\n\tif err := http.ListenAndServe(<|\"|>:8080<|\"|>, mux); err != nil {\n\t\tfmt.Printf(<|\"|>Error starting server: %v\\n<|\"|>, err)\n\t}\n}\n<|\"|>,\"filePath\":\"examples/astroids/main.go\"}",
+			keys: map[string]string{
+				"content":  "http://localhost:8080",
+				"filePath": "examples/astroids/main.go",
+			},
+		},
+
+		// =================================================================
 		// Irrecoverable — should return error
 		// =================================================================
 		{

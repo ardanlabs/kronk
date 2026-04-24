@@ -112,6 +112,7 @@ const menuStructure: MenuCategory[] = [
           { page: 'docs-sdk-examples', label: 'Embedding', hash: 'example-embedding' },
           { page: 'docs-sdk-examples', label: 'Grammar', hash: 'example-grammar' },
           { page: 'docs-sdk-examples', label: 'Question', hash: 'example-question' },
+          { page: 'docs-sdk-examples', label: 'Rag', hash: 'example-rag' },
           { page: 'docs-sdk-examples', label: 'Rerank', hash: 'example-rerank' },
           { page: 'docs-sdk-examples', label: 'Response', hash: 'example-response' },
           { page: 'docs-sdk-examples', label: 'Vision', hash: 'example-vision' },

@@ -11,10 +11,13 @@ import (
 
 // processSlotToken samples and processes a token for a slot.
 func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
-	// Sample the next token. If grammar is active, use grammar-aware sampling.
+	// Sample the next token. If grammar is active, use grammar-aware sampling
+	// but only when the processor is in the completion phase. During the
+	// reasoning phase (<think>...</think>), grammar constraints would corrupt
+	// the thinking tokens and prevent the model from closing the think block.
 	var token llama.Token
 	switch {
-	case s.grammarSampler != nil:
+	case s.grammarSampler != nil && s.reasonFlag == 0:
 		token = s.grammarSampler.SampleWithGrammar(e.model.lctx, s.sampler, s.iBatch)
 
 	default:
@@ -44,8 +47,10 @@ func (e *batchEngine) handleSampledToken(s *slot, token llama.Token, iBatch int3
 	}
 
 	// Accept token on both samplers. Grammar sampler is accepted separately
-	// to avoid the crash that occurs when grammar is in the chain.
-	if s.grammarSampler != nil {
+	// to avoid the crash that occurs when grammar is in the chain. Skip
+	// grammar acceptance during reasoning — reasoning tokens are not
+	// grammar-constrained and must not advance the grammar state machine.
+	if s.grammarSampler != nil && s.reasonFlag == 0 {
 		s.grammarSampler.Accept(token)
 	}
 
@@ -92,6 +97,10 @@ func (e *batchEngine) handleSampledToken(s *slot, token llama.Token, iBatch int3
 		}
 		s.ttft = ttft
 		metrics.AddTimeToFirstToken(e.model.modelInfo.ID, ttft)
+
+		e.model.log(s.job.ctx, "batch-engine", "status", "prefill-done",
+			"slot", s.id, "seq", s.seqID, "id", s.job.id,
+			"prompt_tokens", s.nPrompt, "ttft", ttft.String())
 
 		if s.prefillSpan != nil {
 			if s.prefillSpan.IsRecording() {
@@ -226,10 +235,10 @@ func (e *batchEngine) handleSampledToken(s *slot, token llama.Token, iBatch int3
 // or image embeddings) and nothing was added to the shared batch.
 // Returns false if slot finished (EOG or error), true otherwise.
 func (e *batchEngine) sampleFirstToken(s *slot, buf []byte) bool {
-	// Sample from last logits position (-1).
+	// Sample from last logits position (-1). Skip grammar during reasoning.
 	var token llama.Token
 	switch {
-	case s.grammarSampler != nil:
+	case s.grammarSampler != nil && s.reasonFlag == 0:
 		token = s.grammarSampler.SampleWithGrammar(e.model.lctx, s.sampler, -1)
 
 	default:

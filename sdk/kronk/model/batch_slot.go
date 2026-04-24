@@ -38,18 +38,13 @@ type chatJob struct {
 	mtmdCtx mtmd.Context // Multi-modal context for vision/audio processing
 
 	// -------------------------------------------------------------------------
-	// System Prompt Cache (SPC)
-
-	spcCacheIdx llama.Pos   // Token count in SPC cache
-	spcCacheHit bool        // True if SPC cache sequence has cached tokens
-	spcSession  *spcSession // Resolved SPC session with KV state to restore
-
-	// -------------------------------------------------------------------------
 	// Incremental Message Cache (IMC)
 
-	imcSlotID       int    // Target slot index for IMC routing
-	imcCacheHit     bool   // True if conversation history was found in cache
-	imcExpectedHash string // Expected cachedMsgsHash for stale detection at startSlot
+	imcSession      *imcSession // Matched IMC session (transitional: carries session alongside slot fields)
+	imcSessionMedia bool        // True if session has media (snapshot at job creation; safe to read without lock)
+	imcSlotID       int         // Target slot index for IMC routing (transitional: removed in Phase 5)
+	imcCacheHit     bool        // True if conversation history was found in cache
+	imcExpectedHash string      // Expected cachedMsgsHash for stale detection at startSlot (transitional: removed in Phase 5)
 
 	// IMC dedicated slot fields.
 	imcNewCacheTokens    []llama.Token // New tokens to extend the cache in the slot's sequence
@@ -164,11 +159,6 @@ type slot struct {
 	adjustedDistBuf      []candidateEntry         // Scratch buffer for adjusted sampling
 
 	// -------------------------------------------------------------------------
-	// IMC Hybrid State
-
-	imcSavedState []byte // Snapshot of KV+recurrent state for IMC Hybrid restore
-
-	// -------------------------------------------------------------------------
 	// Metrics
 
 	startTime    time.Time     // Start time for TPS calculation (set after prefill)
@@ -221,7 +211,6 @@ func (s *slot) reset() {
 	}
 	s.specDraftDistsSparse = nil
 	// Note: draftDistBuf, targetDistBuf, adjustedDistBuf are reused across requests
-	s.imcSavedState = s.imcSavedState[:0]
 	s.grammarSampler = nil
 	s.prefillStart = time.Time{}
 	s.prefillSpan = nil

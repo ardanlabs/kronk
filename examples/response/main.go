@@ -172,7 +172,6 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("- vramTotal      :", krn.ModelInfo().VRAMTotal/(1024*1024), "MiB")
 	fmt.Println("- slotMemory     :", krn.ModelInfo().SlotMemory/(1024*1024), "MiB")
 	fmt.Println("- modelSize      :", krn.ModelInfo().Size/(1000*1000), "MB")
-	fmt.Println("- spc            :", krn.ModelConfig().SystemPromptCache)
 	fmt.Println("- imc            :", krn.ModelConfig().IncrementalCache)
 	if n := krn.ModelConfig().NGpuLayers; n != nil {
 		fmt.Println("- nGPULayers     :", *n)
@@ -287,6 +286,13 @@ func modelResponse(krn *kronk.Kronk, messages []model.D, ch <-chan kronk.Respons
 	var finalResp *kronk.ResponseResponse
 	var reasoning bool
 
+	type pendingToolCall struct {
+		id        string
+		name      string
+		arguments string
+	}
+	var pendingCalls []pendingToolCall
+
 	for event := range ch {
 		switch event.Type {
 		case "response.reasoning_summary_text.delta":
@@ -319,13 +325,11 @@ func modelResponse(krn *kronk.Kronk, messages []model.D, ch <-chan kronk.Respons
 				event.Arguments,
 			)
 
-			messages = append(messages,
-				model.TextMessage("tool", fmt.Sprintf("Tool call %s: %s(%s)\n",
-					event.ItemID,
-					event.Name,
-					event.Arguments),
-				),
-			)
+			pendingCalls = append(pendingCalls, pendingToolCall{
+				id:        event.ItemID,
+				name:      event.Name,
+				arguments: event.Arguments,
+			})
 
 		case "response.completed":
 			finalResp = event.Response
@@ -336,6 +340,34 @@ func modelResponse(krn *kronk.Kronk, messages []model.D, ch <-chan kronk.Respons
 		messages = append(messages,
 			model.TextMessage("assistant", fullText),
 		)
+	}
+
+	if len(pendingCalls) > 0 {
+		var toolCallDocs []model.D
+		for _, tc := range pendingCalls {
+			toolCallDocs = append(toolCallDocs, model.D{
+				"id":   tc.id,
+				"type": "function",
+				"function": model.D{
+					"name":      tc.name,
+					"arguments": tc.arguments,
+				},
+			})
+		}
+
+		messages = append(messages, model.D{
+			"role":       "assistant",
+			"tool_calls": toolCallDocs,
+		})
+
+		for _, tc := range pendingCalls {
+			messages = append(messages, model.D{
+				"role":         "tool",
+				"tool_call_id": tc.id,
+				"name":         tc.name,
+				"content":      `{"temperature": "72°F", "condition": "sunny"}`,
+			})
+		}
 	}
 
 	// -------------------------------------------------------------------------

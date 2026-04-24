@@ -224,7 +224,6 @@ type ModelConfig struct {
 	Sampling            SamplingConfig            `yaml:"sampling-parameters,omitempty"`
 	SplitMode           *model.SplitMode          `yaml:"split-mode,omitempty"`
 	SWAFull             *bool                     `yaml:"swa-full,omitempty"`
-	SystemPromptCache   bool                      `yaml:"system-prompt-cache,omitempty"`
 	TensorBuftOverrides []string                  `yaml:"tensor-buft-overrides,omitempty"`
 	TensorSplit         []float32                 `yaml:"tensor-split,omitempty"`
 	Template            string                    `yaml:"template,omitempty"`
@@ -277,7 +276,6 @@ func (mc ModelConfig) ToKronkConfig() model.Config {
 		RopeScaling:         mc.RopeScaling,
 		SplitMode:           mc.SplitMode,
 		SWAFull:             mc.SWAFull,
-		SystemPromptCache:   mc.SystemPromptCache,
 		TensorBuftOverrides: mc.TensorBuftOverrides,
 		TensorSplit:         mc.TensorSplit,
 		UseDirectIO:         mc.UseDirectIO,

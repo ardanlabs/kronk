@@ -8,9 +8,10 @@
 - [10.4 Plain Base64 Format](#104-plain-base64-format)
 - [10.5 Configuration for Multi-Modal Models](#105-configuration-for-multi-modal-models)
 - [10.6 Memory Requirements](#106-memory-requirements)
-- [10.7 Limitations](#107-limitations)
-- [10.8 Example: Image Analysis](#108-example-image-analysis)
-- [10.9 Example: Audio Transcription](#109-example-audio-transcription)
+- [10.7 IMC and Multi-Modal Caching](#107-imc-and-multi-modal-caching)
+- [10.8 Limitations](#108-limitations)
+- [10.9 Example: Image Analysis](#109-example-image-analysis)
+- [10.10 Example: Audio Transcription](#1010-example-audio-transcription)
 
 ---
 
@@ -208,14 +209,38 @@ KV cache (8K):     ~0.6 GB
 Total:             ~9.4 GB
 ```
 
-### 10.7 Limitations
+### 10.7 IMC and Multi-Modal Caching
 
-- SPC is not supported for vision/audio requests
-- IMC fully caches media (images/audio) in the KV cache; text-only follow-ups
-  extend the cache without re-encoding media (see [§5.8](#58-performance-and-limitations))
+IMC fully supports vision and audio models. Media embeddings (images, audio)
+are cached in the KV cache alongside text tokens. After each request, the
+entire cached prefix — including media embeddings — is snapshotted to RAM
+via `StateSeqGetData` and the VRAM sequence is cleared. On the next request,
+the cached state is restored from RAM into any available slot, just like
+text-only sessions. Media is never re-encoded through the projection model
+unless the conversation cache is rebuilt from scratch.
+
+For example, in a multi-turn vision conversation:
+
+1. **First request** (image + question): The image is encoded through the
+   projection model and decoded into the KV cache alongside text tokens.
+   After generation, the entire cached prefix (text + media KV) is
+   snapshotted to RAM.
+
+2. **Follow-up requests** (text-only): The cached state is restored from
+   RAM into any available slot. Only new text tokens are decoded — the image
+   embeddings are preserved in the restored KV state without re-encoding.
+
+3. **New image in conversation**: If a new message contains media, IMC
+   triggers a full rebuild through the mtmd pipeline to re-encode all media.
+
+See [Chapter 5: Message Caching](chapter-05-message-caching.md) for full
+details on IMC's caching algorithm.
+
+### 10.8 Limitations
+
 - Processing time varies with image resolution and audio duration
 
-### 10.8 Example: Image Analysis
+### 10.9 Example: Image Analysis
 
 Complete example analyzing an image:
 
@@ -244,7 +269,7 @@ curl http://localhost:11435/v1/chat/completions \
   }'
 ```
 
-### 10.9 Example: Audio Transcription
+### 10.10 Example: Audio Transcription
 
 Complete example transcribing audio:
 

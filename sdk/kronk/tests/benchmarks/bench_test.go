@@ -32,20 +32,6 @@ func cfgDenseNonCaching() model.Config {
 	}
 }
 
-func cfgDenseSPC() model.Config {
-	return model.Config{
-		Log:               benchLog,
-		ModelFiles:        benchModelPath.ModelFiles,
-		ContextWindow:     32768,
-		NBatch:            2048,
-		NUBatch:           2048,
-		CacheTypeK:        model.GGMLTypeF16,
-		CacheTypeV:        model.GGMLTypeF16,
-		NSeqMax:           1,
-		SystemPromptCache: true,
-	}
-}
-
 func cfgDenseIMCDeterministic() model.Config {
 	return model.Config{
 		Log:              benchLog,
@@ -941,11 +927,6 @@ func benchChat(b *testing.B, krn *kronk.Kronk, d model.D) {
 
 func BenchmarkDense_NonCaching(b *testing.B) {
 	krn := withBenchModel(b, cfgDenseNonCaching())
-	benchChat(b, krn, benchDoc())
-}
-
-func BenchmarkDense_SPC(b *testing.B) {
-	krn := withBenchModel(b, cfgDenseSPC())
 	benchChat(b, krn, benchDoc())
 }
 

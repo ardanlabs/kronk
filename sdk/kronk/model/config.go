@@ -225,18 +225,6 @@ type DraftModelConfig struct {
 // GPUs. The length must match the number of devices. When empty, the split is
 // determined automatically based on available VRAM.
 //
-// SystemPromptCache enables caching of system prompt KV state. When enabled,
-// the first message with role="system" is cached. The system prompt is evaluated
-// once and its KV state is externalized to a byte buffer in RAM. On subsequent
-// requests with the same system prompt, the KV state is restored into the
-// slot's sequence via StateSeqSetData, avoiding redundant prefill computation.
-// The cache is automatically invalidated and re-evaluated when the system
-// prompt changes. No dedicated KV cache sequence is permanently occupied.
-//
-// SystemPromptCache and IncrementalCache are mutually exclusive. IncrementalCache
-// includes the system prompt in its cached prefix, so enabling both is redundant
-// and will return a validation error.
-//
 // UseDirectIO enables direct I/O for model loading.
 //
 // UseMMap controls whether mmap is used for model loading. When nil, mmap is
@@ -298,7 +286,6 @@ type Config struct {
 	RopeScaling         RopeScalingType
 	SplitMode           *SplitMode
 	SWAFull             *bool
-	SystemPromptCache   bool
 	TensorBuftOverrides []string
 	TensorSplit         []float32
 	UseDirectIO         bool
@@ -350,7 +337,7 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("{mode:%s top_n:%s}", m.Mode, topN)
 	}
 
-	return fmt.Sprintf("\nCacheMinTokens[%d]\nCacheSlotTimeout[%d]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%d]\nDevices[%v]\nFlashAttention[%s]\nIncrementalCache[%t]\nInsecureLogging[%t]\nJinjaFile[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%d]\nNGpuLayers[%s]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%d]\nProjFile[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSplitMode[%s]\nSWAFull[%s]\nSystemPromptCache[%t]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nUseDirectIO[%t]\nUseMMap[%s]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
+	return fmt.Sprintf("\nCacheMinTokens[%d]\nCacheSlotTimeout[%d]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%d]\nDevices[%v]\nFlashAttention[%s]\nIncrementalCache[%t]\nInsecureLogging[%t]\nJinjaFile[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%d]\nNGpuLayers[%s]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%d]\nProjFile[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nUseDirectIO[%t]\nUseMMap[%s]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
 		cfg.CacheMinTokens, cfg.CacheSlotTimeout, cfg.CacheTypeK, cfg.CacheTypeV,
 		cfg.ContextWindow, cfg.Devices, cfg.FlashAttention,
 		cfg.IncrementalCache, cfg.InsecureLogging, cfg.JinjaFile,
@@ -360,7 +347,7 @@ func (cfg Config) String() string {
 		formatBoolPtr(cfg.OffloadKQV), formatBoolPtr(cfg.OpOffload), cfg.OpOffloadMinBatch, cfg.ProjFile,
 		formatFloat32Ptr(cfg.RopeFreqBase), formatFloat32Ptr(cfg.RopeFreqScale), cfg.RopeScaling,
 		formatSplitModePtr(cfg.SplitMode),
-		formatBoolPtr(cfg.SWAFull), cfg.SystemPromptCache, cfg.TensorBuftOverrides, cfg.TensorSplit, cfg.UseDirectIO,
+		formatBoolPtr(cfg.SWAFull), cfg.TensorBuftOverrides, cfg.TensorSplit, cfg.UseDirectIO,
 		formatBoolPtr(cfg.UseMMap),
 		formatFloat32Ptr(cfg.YarnAttnFactor),
 		formatFloat32Ptr(cfg.YarnBetaFast), formatFloat32Ptr(cfg.YarnBetaSlow), formatFloat32Ptr(cfg.YarnExtFactor), formatIntPtr(cfg.YarnOrigCtx), cfg.DraftModel)
@@ -384,10 +371,6 @@ func validateConfig(ctx context.Context, cfg Config, log Logger) error {
 		// valid
 	default:
 		return fmt.Errorf("validate-config: unknown NUMA strategy: %s (valid: distribute, isolate, numactl, mirror)", cfg.NUMA)
-	}
-
-	if cfg.SystemPromptCache && cfg.IncrementalCache {
-		return fmt.Errorf("validate-config: cannot enable both SystemPromptCache and IncrementalCache; use IncrementalCache alone (it includes the system prompt)")
 	}
 
 	if cfg.DraftModel != nil {
@@ -498,7 +481,7 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 	}
 
 	// Default minimum tokens for caching.
-	if (cfg.SystemPromptCache || cfg.IncrementalCache) && cfg.CacheMinTokens <= 0 {
+	if cfg.IncrementalCache && cfg.CacheMinTokens <= 0 {
 		cfg.CacheMinTokens = defMinCacheTokens
 	}
 
@@ -586,9 +569,6 @@ func applyCatalogConfig(user Config, cat Config) Config {
 	}
 	if user.SWAFull == nil {
 		user.SWAFull = cat.SWAFull
-	}
-	if !user.SystemPromptCache {
-		user.SystemPromptCache = cat.SystemPromptCache
 	}
 	if !user.IncrementalCache {
 		user.IncrementalCache = cat.IncrementalCache
@@ -725,9 +705,8 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 		ctxParams.PoolingType = llama.PoolingTypeRank
 	}
 
-	// SPC externalizes the KV state to a byte buffer after initial decode,
-	// so it does not need an extra sequence. IMC uses dedicated slot/seq
-	// binding — no separate cache sequences either.
+	// IMC externalizes KV state to RAM after cache build, so it does not
+	// need extra sequences beyond the configured NSeqMax.
 	nSeqMax := max(cfg.NSeqMax, 1)
 	totalSeqs := nSeqMax
 
@@ -736,7 +715,7 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 		ctxParams.NUbatch = uint32(cfg.NUBatch)
 		ctxParams.NThreads = int32(cfg.NThreads)
 		ctxParams.NThreadsBatch = int32(cfg.NThreadsBatch)
-		ctxParams.NCtx = uint32(cfg.ContextWindow)
+		ctxParams.NCtx = uint32(cfg.ContextWindow * nSeqMax)
 	}
 
 	if cfg.CacheTypeK != GGMLTypeAuto {
@@ -760,12 +739,12 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 
 	ctxParams.NSeqMax = uint32(totalSeqs)
 
-	// Enable unified KV cache so each sequence gets the full n_ctx context
-	// window. When kv_unified is false (llama.cpp default), the context is
-	// divided per sequence (n_ctx_seq = n_ctx / n_seq_max), which silently
-	// limits each sequence and causes llama_decode to return 1 when a single
-	// sequence exceeds its partition. With unified mode, all sequences share
-	// the full KV cache and any single sequence can use up to n_ctx tokens.
+	// Enable unified KV cache so all sequences share one pool of
+	// ContextWindow * NSeqMax tokens. Each slot is gated to ContextWindow
+	// tokens by the batch engine (startSlotText / startSlotTextMRoPE /
+	// startSlotMedia). With unified mode the pool is flexible: idle slots
+	// don't reserve capacity, and KV pressure eviction can reclaim stale
+	// slots when the shared pool gets tight.
 	if nSeqMax > 1 {
 		ctxParams.KVUnified = 1
 	}

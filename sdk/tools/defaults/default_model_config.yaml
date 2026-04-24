@@ -25,7 +25,6 @@
 #   rope-scaling-type: yarn              # RoPE scaling: none, linear, yarn
 #   split-mode: row                      # Multi-GPU split: none, layer, row (row recommended for MoE models)
 #   swa-full: true                       # Full KV cache for SWA layers (default: llama.cpp decides, currently true)
-#   system-prompt-cache: false           # Cache system prompt KV state for reuse across requests
 #   template: qwen3.jinja                # Jinja template file override (from templates dir)
 #   tensor-buft-overrides: [all-ffn]     # Force tensors to CPU: all-ffn, block:N, or regex
 #   tensor-split: [0.6, 0.4]             # Per-device tensor distribution (must match device count)
@@ -93,27 +92,21 @@
 # ==============================================================================
 # CONFIGURATION NOTES
 #
-# SPC and IMC are mutually exclusive - choose based on your workload.
-#
-# SYSTEM PROMPT CACHE (SPC)
-# -------------------------
-# Use SPC for chat UIs and multi-client scenarios. SPC caches only the system
-# prompt KV state in RAM and restores it per request. Multiple system prompts
-# are cached concurrently (up to NSeqMax sessions) with LRU eviction.
-#
-#   system-prompt-cache: true
-#
 # INCREMENTAL MESSAGE CACHE (IMC)
 # -------------------------------
-# Use IMC for agentic workflows (Cline, Kilo Code, etc). IMC dedicates each
-# slot to a conversation and caches all messages except the last one, so only
-# the new message needs prefilling on each turn.
+# Use IMC for agentic workflows (OpenCode, KiloCode, etc) and multi-client
+# scenarios. IMC caches all messages except the last one, so only the new
+# message needs prefilling on each turn. After cache build, KV state is
+# externalized to RAM and the VRAM slot is released for other requests.
 #
 # Two-tier hash design: IMC tracks separate hashes for the system prompt
 # (tier 1) and the full conversation (tier 2). When conversation history
 # changes but the system prompt stays the same, IMC keeps the system prompt
 # KV state and only re-decodes the conversation body — saving thousands of
-# tokens of redundant prefill.
+# tokens of redundant prefill. This savings only works with Dense and MoE
+# models. For Hybrid models we need to start from scratch because the recurrent
+# layers maintain hidden state that gets corrupted when you delete a range from
+# the middle/end of a sequence.
 #
 # Works with any model template. Deterministic templates (Qwen, Gemma) use
 # fast hash matching. Non-deterministic templates (GPT-OSS, GLM) fall back
@@ -138,22 +131,6 @@
 #   context-window: 131072, nseq-max: 3
 #   → Total KV cache sized for 131k tokens (shared by all 3 slots)
 #   → Any single slot can use up to the full 131k tokens
-#
-# This means IMC adds no extra VRAM beyond what the context window requires.
-#
-# AGENT CLIENT NOTES
-# -------------------------------
-# Cline is working great with Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMC. The
-# settings use a KV Cache type of f16. You need to use f16 to get the accuracy
-# from the model we need.
-#
-# NOTE: The R1 message format in Cline is a specialized prompt structure
-# required for DeepSeek R1 models, which converts system prompts into user
-# messages. Turn that off.
-#
-# Kilo Code is working get with gpt-oss-120b-F16. When the KV Cache type is f16,
-# the model is being accurate with tool calling. Agent clients that use
-# traditional tool calling, use this model.
 #
 # MISCELLANEOUS NOTES
 # -------------------------------
@@ -232,12 +209,6 @@ Qwen3-32B-Q8_0/Draft2:
   draft-model:
     model-id: Qwen3-1.7B-Q8_0
     ndraft: 5
-
-# System Prompt Cache variant for testing.
-# DO NOT REMOVE
-Qwen3-8B-Q8_0/SPC:
-  <<: *base_Qwen3-8B-Q8_0
-  system-prompt-cache: true
 
 # Incremental Message Cache variant for testing.
 # DO NOT REMOVE

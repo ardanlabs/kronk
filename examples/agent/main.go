@@ -218,7 +218,6 @@ func (a *Agent) streamModelTurn(ctx context.Context, conversation []model.D) (st
 		"temperature":    0.0,
 		"top_p":          0.1,
 		"top_k":          1,
-		"stream":         true,
 		"tools":          a.toolDocuments,
 		"tool_selection": "auto",
 	}
@@ -490,7 +489,6 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("- vramTotal      :", krn.ModelInfo().VRAMTotal/(1024*1024), "MiB")
 	fmt.Println("- slotMemory     :", krn.ModelInfo().SlotMemory/(1024*1024), "MiB")
 	fmt.Println("- modelSize      :", krn.ModelInfo().Size/(1000*1000), "MB")
-	fmt.Println("- spc            :", krn.ModelConfig().SystemPromptCache)
 	fmt.Println("- imc            :", krn.ModelConfig().IncrementalCache)
 	if n := krn.ModelConfig().NGpuLayers; n != nil {
 		fmt.Println("- nGPULayers     :", *n)

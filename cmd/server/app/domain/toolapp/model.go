@@ -290,7 +290,6 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfi
 			Devices:             rmc.Devices,
 			MoE:                 toAppMoEConfig(rmc.MoE),
 			SWAFull:             rmc.SWAFull,
-			SystemPromptCache:   rmc.SystemPromptCache,
 			IncrementalCache:    rmc.IncrementalCache,
 			CacheMinTokens:      rmc.CacheMinTokens,
 			CacheSlotTimeout:    rmc.CacheSlotTimeout,
@@ -568,7 +567,6 @@ type ModelConfig struct {
 	Devices             []string                 `json:"devices"`
 	MoE                 *MoEConfig               `json:"moe,omitempty"`
 	SWAFull             *bool                    `json:"swa-full"`
-	SystemPromptCache   bool                     `json:"system-prompt-cache"`
 	IncrementalCache    bool                     `json:"incremental-cache"`
 	CacheMinTokens      int                      `json:"cache-min-tokens"`
 	CacheSlotTimeout    int                      `json:"cache-slot-timeout"`
@@ -740,7 +738,6 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 			Devices:             rmc.Devices,
 			MoE:                 toAppMoEConfig(rmc.MoE),
 			SWAFull:             rmc.SWAFull,
-			SystemPromptCache:   rmc.SystemPromptCache,
 			IncrementalCache:    rmc.IncrementalCache,
 			CacheMinTokens:      rmc.CacheMinTokens,
 			CacheSlotTimeout:    rmc.CacheSlotTimeout,
@@ -800,7 +797,6 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 		Devices:             bmc.Devices,
 		MoE:                 toAppMoEConfig(bmc.MoE),
 		SWAFull:             bmc.SWAFull,
-		SystemPromptCache:   bmc.SystemPromptCache,
 		IncrementalCache:    bmc.IncrementalCache,
 		CacheMinTokens:      bmc.CacheMinTokens,
 		CacheSlotTimeout:    bmc.CacheSlotTimeout,
@@ -1107,7 +1103,6 @@ func (app SaveCatalogRequest) toModelDetails() catalog.ModelDetails {
 			Devices:             app.Config.Devices,
 			MoE:                 fromAppMoEConfig(app.Config.MoE),
 			SWAFull:             app.Config.SWAFull,
-			SystemPromptCache:   app.Config.SystemPromptCache,
 			IncrementalCache:    app.Config.IncrementalCache,
 			CacheMinTokens:      app.Config.CacheMinTokens,
 			CacheSlotTimeout:    app.Config.CacheSlotTimeout,

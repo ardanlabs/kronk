@@ -91,9 +91,10 @@ Slot 3  →  seqID = 3  →  KV cache partition 3
 ```
 
 How a slot uses its sequence depends on the caching strategy. Without caching,
-the sequence is cleared between requests. With SPC or IMC, the sequence
-retains cached tokens to avoid redundant processing. See
-[Section 3.5](#35-parallel-inference-nseqmax) for details on how each caching
+the sequence is cleared between requests. With IMC, all sessions (text and
+media) externalize their cached KV state to RAM after each request and
+restore it into any available slot on the next request. See
+[Section 3.7](#37-parallel-inference-nseqmax) for details on how each caching
 strategy affects slot behavior.
 
 ### 4.3 Request Flow
@@ -104,15 +105,13 @@ Each request moves through the batch engine in the following stages:
 2. **Assign**: Available slot picks up the request
 3. **Cache Setup**: Prepare the slot's sequence based on caching strategy:
    - Clear the sequence (no caching)
-   - Clear the sequence, then copy cached KV state from dedicated SPC sequence (SPC)
-   - Extend or rebuild the conversation cache in place (IMC)
+   - IMC: restore cached KV from RAM, extend or rebuild
 4. **Prefill**: Tokenize and process remaining prompt tokens (round-robin
    across slots in `n_ubatch`-sized chunks to prevent starvation)
 5. **Decode**: Generate tokens one at a time, streaming to client
 6. **Complete**: Release the slot:
-   - Clear the entire sequence (no caching or SPC)
-   - Dense/MoE with IMC: Trim generated tokens via partial range delete, keep cached conversation prefix
-   - Hybrid with IMC: Full clear + restore snapshot from byte buffer, keep cached conversation prefix (see [Section 4.9](#49-model-types-and-state-management))
+   - Clear the entire sequence (no caching)
+   - IMC (all model types): clear the entire VRAM sequence (cached prefix already snapshotted to RAM)
 
 ### 4.4 Configuring Batch Processing
 
@@ -162,7 +161,7 @@ Adding slots increases throughput but costs memory. Each additional slot
 allocates its own KV cache partition proportional to the full context window.
 
 Each slot reserves its own KV cache partition, so increasing `NSeqMax`
-increases VRAM usage proportionally. Neither SPC nor IMC adds extra sequences.
+increases VRAM usage proportionally. IMC does not add extra sequences.
 For details on how slot memory is allocated and how to estimate total VRAM, see
 [Section 3.5](#35-parallel-inference-nseqmax) and
 [Section 3.7](#37-vram-estimation).
@@ -276,11 +275,11 @@ models:
     n_ubatch: 512
     cache_type_k: q8_0
     cache_type_v: q8_0
-    system_prompt_cache: true
+    incremental_cache: true
 ```
 
 This configuration handles 8 concurrent requests, uses quantized KV cache to
-reduce memory, and caches the system prompt for faster prefill. Here is the
+reduce memory, and caches conversations incrementally for faster prefill. Here is the
 VRAM estimate (see [Section 3.7](#37-vram-estimation) for the full formula):
 
 ```
@@ -312,12 +311,11 @@ Step 4 — Total VRAM:
 
 ### 4.8 IMC Slot Scheduling
 
-When IMC is enabled, the batch engine uses a specialized scheduling algorithm that
-handles the constraint of routing requests to specific slots. This section explains
-how IMC scheduling differs from normal slot assignment and the mechanisms that
-prevent requests from stalling.
+When IMC is enabled, the batch engine uses a scheduling algorithm to
+assign requests to slots. This section explains how IMC scheduling works
+and the mechanisms that prevent requests from stalling.
 
-#### Normal Scheduling (No Caching / SPC)
+#### Normal Scheduling (No Caching)
 
 Without IMC, the algorithm assigns the next queued request to any available
 slot. If all slots are busy, the request stays in the queue until a slot
@@ -326,37 +324,16 @@ affinity.
 
 #### IMC Scheduling
 
-IMC routes each request to a specific target slot based on cache matching
-(see [Section 5.3](#53-incremental-message-cache-imc)). This creates a
-problem: a request's target slot may be busy generating for another request,
-even though other slots are free. The algorithm handles this with two
-mechanisms: **deferred jobs** and **slot preemption**.
-
-#### Deferred Jobs
-
-When the algorithm dequeues a request but its target slot is busy, the
-request is held aside as a deferred job instead of being put back on the
-queue. On the next iteration of the processing loop, the algorithm checks
-the deferred job first — if the target slot has finished, the job is
-assigned immediately. This avoids a critical stall: putting a job back on
-the queue could cause the processing loop to go idle (no active slots, empty
-queue) and never wake up until a new external request arrives.
-
-```
-Request dequeued → target slot busy → defer (not requeue)
-                                          │
-Next iteration → target slot free? ──Yes──→ assign to slot
-                                     │
-                                     No → keep deferred, check again next iteration
-```
+All IMC requests have no slot affinity — cached KV state is externalized to
+RAM and can be restored into any available slot. These requests are scheduled
+identically to non-IMC requests (first available slot).
 
 #### Slot Preemption
 
-If a deferred job waits longer than `CacheSlotTimeout` seconds (default: 30)
-for its target slot to finish, the algorithm triggers preemption. This is a
-safety mechanism for pathologically long generations — under normal operation,
-the target slot finishes before the timeout and the deferred job picks it up
-naturally.
+If all slots are busy when a queued job needs to be assigned, and the job
+waits longer than `CacheSlotTimeout` seconds (default: 30), the algorithm
+triggers preemption. This is a safety mechanism for pathologically long
+generations.
 
 Preemption uses a two-phase approach for safety:
 
@@ -370,10 +347,7 @@ Preemption uses a two-phase approach for safety:
    KV state could corrupt a subsequent decode.
 
 The preempted request receives an error response and the client can retry.
-The waiting job is then assigned to the freed slot.
-
-For IMC cache-hit requests, the specific target slot is preempted. For
-requests with no cache hit (assigned to any slot), the longest-running
+The waiting job is then assigned to the freed slot. The longest-running
 slot is preempted.
 
 #### CacheSlotTimeout
@@ -381,10 +355,10 @@ slot is preempted.
 The `cache_slot_timeout` setting (default: 30 seconds) controls two distinct
 timeout scenarios in the IMC scheduling path:
 
-| Scenario                | Phase              | What Happens at Timeout                      |
-| ----------------------- | ------------------ | -------------------------------------------- |
-| Wait for slot available | Before batch queue | Error returned: "server busy"                |
-| Deferred job waiting    | Inside batch queue | Target slot preempted, deferred job assigned |
+| Scenario                | Phase              | What Happens at Timeout                          |
+| ----------------------- | ------------------ | ------------------------------------------------ |
+| Wait for slot available | Before batch queue | Error returned: "server busy"                    |
+| Queued job waiting      | Inside batch queue | Longest-running slot preempted, job assigned     |
 
 ```
                           CacheSlotTimeout (30s)
@@ -393,18 +367,18 @@ timeout scenarios in the IMC scheduling path:
     ┌─────────────────────┼──────────────────┐   ┌───────────────┼──────────────┐
     │  Before Batch Queue │                  │   │ Inside Batch  │              │
     │                     │                  │   │ Queue         │              │
-    │  All slots have     │                  │   │  Target slot  │              │
-    │  cache builds       ▼                  │   │  is busy      ▼              │
+    │  All slots have     │                  │   │  All slots    │              │
+    │  cache builds       ▼                  │   │  are busy     ▼              │
     │  in-flight     ──► Error               │   │  generating ──► Preempt      │
     │                     "server busy"      │   │                victim slot   │
     └────────────────────────────────────────┘   └──────────────────────────────┘
 ```
 
 The first scenario fires before the job enters the batch engine — it blocks
-during cache preparation when all IMC slots have pending cache builds
+during cache preparation when all IMC sessions have pending cache builds
 in-flight. The second scenario fires inside the batch engine — the job is
-already queued but its target slot is actively generating tokens for another
-request.
+already queued but all slots are actively generating tokens for other
+requests.
 
 **Important:** The preemption timeout is measured from when the job enters
 the batch engine queue, not from when the HTTP request arrived. Time spent
@@ -426,57 +400,49 @@ before entering the queue.
 ### 4.9 Model Types and State Management
 
 Kronk supports three model architectures. The model type is detected
-automatically at load time and determines how the batch engine manages
-sequence state between requests when IMC is enabled. The caching system handles
-slot matching and cache building — it is unaffected by model type. The difference
-is in the batch engine's slot lifecycle code.
+automatically at load time and affects how the batch engine manages
+sequence state. The caching system's session matching and cache building
+are the same for all model types — the difference is in the batch engine's
+cleanup behavior after a request completes.
 
-| Model Type | Architecture                         | State Management     | Detection                     |
-| ---------- | ------------------------------------ | -------------------- | ----------------------------- |
-| Dense      | Standard transformer                 | Partial range delete | Default (not MoE, not Hybrid) |
-| MoE        | Mixture of Experts                   | Partial range delete | GGUF `expert_count` metadata  |
-| Hybrid     | Attention + Recurrent (DeltaNet/SSM) | Snapshot/Restore     | `llama.ModelIsHybrid`         |
+**All IMC sessions** (text and media) use the same lifecycle for all model
+types: the cached prefix is snapshotted to RAM (via `StateSeqGetData`)
+during slot initialization, and the entire VRAM sequence is cleared after
+the request completes. The next request restores the cached state from RAM
+into any available slot. `StateSeqGetData` captures raw KV bytes regardless
+of whether they originated from text tokens or media embeddings. For Hybrid
+models, `StateSeqGetData` captures both KV cache and recurrent state
+(DeltaNet/SSM), so the unified snapshot/restore path naturally handles them.
 
-#### Partial Range Delete (Dense and MoE)
+| Model Type | Architecture                         | IMC Cleanup             | Detection                     |
+| ---------- | ------------------------------------ | ----------------------- | ----------------------------- |
+| Dense      | Standard transformer                 | Full clear (snapshot)   | Default (not MoE, not Hybrid) |
+| MoE        | Mixture of Experts                   | Full clear (snapshot)   | GGUF `expert_count` metadata  |
+| Hybrid     | Attention + Recurrent (DeltaNet/SSM) | Full clear (snapshot)   | `llama.ModelIsHybrid`         |
 
-Dense and MoE models use the simplest and fastest cleanup strategy after a
-request completes.
+#### Snapshot to RAM (All Model Types)
 
-After a request completes, the batch engine trims the generated tokens from
-the KV cache. This removes only the tokens produced during generation, leaving
-the cached conversation prefix intact for the next request. This is cheap and
-fast — the cached prefix is never re-decoded.
-
-```
-Before:  [cached prefix tokens] [generated tokens]
-After:   [cached prefix tokens]                     ← trimmed
-```
-
-#### Snapshot/Restore (Hybrid)
-
-Hybrid models require a different approach because their recurrent layers
-maintain hidden state that cannot be partially trimmed like a KV cache.
-
-Hybrid models mix Attention layers with recurrent layers (DeltaNet/SSM).
-Recurrent layers store a hidden state that cannot be "rewound" by partial
-range delete — a partial delete corrupts the recurrent state, causing decode
-errors on subsequent requests.
-
-Instead, the batch engine uses a snapshot/restore approach:
+All IMC sessions use the same snapshot/restore approach regardless of model
+type or content type (text or media):
 
 1. **Snapshot**: After the IMC cache is built or extended but before suffix
-   tokens are decoded, the engine captures the full sequence state (KV cache 
-   recurrent hidden state) into a byte buffer in RAM.
+   tokens are decoded, the engine captures the full sequence state (KV cache
+   and recurrent hidden state for Hybrid models) into a byte buffer in RAM
+   via `StateSeqGetData`.
 
-2. **Restore**: After the request completes, the engine performs a full
-   sequence clear and restores the snapshot from the byte buffer. This
-   returns the sequence to the exact state it was in after the cached
-   prefix, with the recurrent hidden state perfectly preserved.
+2. **Clear**: After the request completes, the entire VRAM sequence is
+   cleared. The cached prefix lives in the session's RAM buffer.
+
+3. **Restore**: On the next request, the cached state is restored from RAM
+   into any available slot via `StateSeqSetData`.
 
 ```
-Standard (Dense/MoE):  Trim generated tokens (partial delete)
-Hybrid:                Full clear → Restore snapshot (memory copy)
+IMC (all types, all content): Snapshot to RAM → Clear VRAM → Restore into any slot
 ```
+
+The only difference is that when a new media message appears in the
+conversation, the cache is rebuilt through the mtmd pipeline (projection
+model encodes image/audio into embeddings).
 
 The snapshot/restore is a memory copy operation, typically 10-30ms depending
 on conversation size.
@@ -487,17 +453,18 @@ Partial prefix matches are more expensive for hybrid models because the
 recurrent state must be rebuilt from the beginning.
 
 When a request matches a partial token prefix (the token prefix fallback
-path), Dense/MoE models trim from the divergence point. Hybrid models cannot
-do partial trims, so the engine performs a full sequence clear and re-decodes
-the entire cached token sequence from position 0. This is more expensive but
-guarantees the recurrent state is built correctly.
+path), Dense/MoE models trim from the divergence point and re-decode only
+the new tokens. Hybrid models cannot do partial trims, so the engine
+performs a full sequence clear and re-decodes the entire cached token
+sequence from position 0. This is more expensive but guarantees the
+recurrent state is built correctly.
 
 #### MoE Performance Characteristics
 
 While MoE models share the same state management as Dense, their architecture
 introduces unique performance trade-offs worth understanding.
 
-MoE models use the same state management as Dense (partial range delete),
+MoE models use the same state management as Dense (snapshot/restore),
 but have different performance profiles that affect configuration:
 
 - Lower tokens/sec than comparably-sized dense models on Apple Silicon
@@ -520,15 +487,16 @@ Hybrid models have hard requirements that Kronk enforces at load time.
 Kronk protects against corrupted state by automatically recovering when
 snapshot operations fail.
 
-If a snapshot restore fails, Kronk clears the slot's IMC metadata so the
-slot is not reused with a corrupted sequence. The next request to that slot
-triggers a full cache rebuild from scratch.
+If a snapshot restore fails, Kronk clears the session's IMC metadata so the
+session is not reused with a corrupted state. The next request for that
+session triggers a full cache rebuild from scratch.
 
 ### 4.10 Debugging State Management
 
 Use these log messages to diagnose how the batch engine is managing KV cache
-state between requests. They are especially useful for hybrid models where
-snapshot/restore failures can trigger expensive full rebuilds.
+state between requests. Snapshot/restore is used by all IMC sessions (to
+externalize KV state to RAM). These messages are especially useful when
+restore failures trigger expensive full rebuilds.
 
 | Log Message                  | Meaning                                                     |
 | ---------------------------- | ----------------------------------------------------------- |

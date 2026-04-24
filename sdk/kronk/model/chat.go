@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path"
@@ -126,7 +127,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 
 		prepSpan.End()
 
-		if m.submitToBatchEngine(ctx, ch, id, d, object, prompt, media, params, mtmdCtx, cache, requestStart) {
+		if m.submitToBatchEngine(ctx, ch, id, d, object, prompt, media, params, mtmdCtx, cache) {
 			batching = true
 			return
 		}
@@ -190,7 +191,7 @@ func (m *Model) prepareContext(ctx context.Context, d D) (D, mtmd.Context, strin
 	}
 
 	// If the model supports media but this request has no media content,
-	// treat it as text so caching (IMC/SPC) can operate.
+	// treat it as text so caching (IMC) can operate.
 	mediaType, _, _, _ := detectMediaContent(d)
 
 	if mediaType == MediaTypeNone {
@@ -215,11 +216,15 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, r
 	// "tool_call_name" (for GPT templates) so tool responses render correctly.
 	d = m.injectToolResponseNames(ctx, d)
 
-	// IMC now caches through media messages using the mtmd pipeline —
+	// Deserialize tool call arguments from JSON strings to maps so Jinja
+	// templates can iterate over them with |items. The OpenAI API spec
+	// sends arguments as JSON-encoded strings, but templates like Qwen3
+	// need them as mappings to render prior tool calls correctly.
+	d = deserializeToolCallArguments(d)
+
+	// IMC caches through media messages using the mtmd pipeline —
 	// images and audio remain in the KV cache across requests.
-	// SPC does not support media requests.
-	cachingEnabled := (m.cfg.SystemPromptCache && object == ObjectChatText) ||
-		(m.cfg.IncrementalCache && (object == ObjectChatText || (object == ObjectChatMedia && m.projFile != "")))
+	cachingEnabled := m.cfg.IncrementalCache && (object == ObjectChatText || (object == ObjectChatMedia && m.projFile != ""))
 
 	switch {
 	case !cachingEnabled:
@@ -250,7 +255,7 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, r
 // submitToBatchEngine attempts to submit the request to the batch engine.
 // Returns true if the job was submitted (caller should set batching=true),
 // false if batch engine is not available or not applicable.
-func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, id string, d D, object string, prompt string, media [][]byte, params Params, mtmdCtx mtmd.Context, cache cacheResult, requestStart time.Time) bool {
+func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, id string, d D, object string, prompt string, media [][]byte, params Params, mtmdCtx mtmd.Context, cache cacheResult) bool {
 	imcCacheHit := m.cfg.IncrementalCache && (cache.cacheIdx > 0 || len(cache.imcNewCacheTokens) > 0 || cache.imcMediaBuild)
 
 	_, queueSpan := otel.AddSpan(ctx, "queue-wait")
@@ -268,10 +273,8 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		mtmdCtx:       mtmdCtx,
 		ch:            ch,
 
-		spcCacheIdx: cache.cacheIdx,
-		spcCacheHit: m.cfg.SystemPromptCache && cache.cacheIdx > 0,
-		spcSession:  cache.spcSession,
-
+		imcSession:      cache.imcSession,
+		imcSessionMedia: cache.imcSession != nil && (cache.imcSession.hasMedia || cache.imcMediaBuild),
 		imcSlotID:       cache.imcSlotID,
 		imcCacheHit:     imcCacheHit,
 		imcExpectedHash: cache.imcExpectedHash,
@@ -529,6 +532,72 @@ func (m *Model) injectToolResponseNames(ctx context.Context, d D) D {
 		}
 
 		messages[i] = newMsg
+	}
+
+	return d
+}
+
+// deserializeToolCallArguments converts JSON-string arguments in assistant
+// tool_calls to maps so Jinja templates can iterate them with |items.
+func deserializeToolCallArguments(d D) D {
+	messages, ok := d["messages"].([]D)
+	if !ok {
+		return d
+	}
+
+	var copied bool
+	for i, msg := range messages {
+		role, _ := msg["role"].(string)
+		if role != "assistant" {
+			continue
+		}
+
+		toolCalls, ok := msg["tool_calls"].([]D)
+		if !ok {
+			continue
+		}
+
+		for j, tc := range toolCalls {
+			fn, ok := tc["function"].(D)
+			if !ok {
+				continue
+			}
+
+			argsStr, ok := fn["arguments"].(string)
+			if !ok {
+				continue
+			}
+
+			var argsMap map[string]any
+			if err := json.Unmarshal([]byte(argsStr), &argsMap); err != nil {
+				continue
+			}
+
+			if !copied {
+				newMsgs := make([]D, len(messages))
+				copy(newMsgs, messages)
+				messages = newMsgs
+				d["messages"] = messages
+				copied = true
+			}
+
+			newFn := fn.ShallowClone()
+			newFn["arguments"] = argsMap
+
+			newTC := tc.ShallowClone()
+			newTC["function"] = newFn
+
+			newTCs := make([]D, len(toolCalls))
+			copy(newTCs, toolCalls)
+			newTCs[j] = newTC
+
+			newMsg := msg.ShallowClone()
+			newMsg["tool_calls"] = newTCs
+
+			messages[i] = newMsg
+			msg = newMsg
+			toolCalls = newTCs
+		}
 	}
 
 	return d

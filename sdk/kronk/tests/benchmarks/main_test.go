@@ -12,20 +12,16 @@ IMC Strategies (template — affects slot matching):
 
 Cache Modes Tested:
   - NonCaching: Baseline with no caching. Full prefill on every request.
-  - SPC (System Prompt Cache): Caches the system prompt KV state. The system
-    prompt is decoded once and its KV state is externalized to a byte buffer
-    in RAM. Subsequent requests restore from the buffer, skipping redundant
-    prefill of the system prompt.
   - IMC (Incremental Message Cache): Caches all messages except the last.
-    The cache extends incrementally on each turn. Ideal for agentic workflows
-    where conversations grow monotonically.
+    The cache extends incrementally on each turn. IMC externalizes KV state
+    to RAM after cache build, freeing the VRAM slot for other requests.
+    Ideal for agentic workflows where conversations grow monotonically.
 
 Benchmark Matrix:
 
 	Model Type | Cache Mode          | IMC Strategy      | Speculative | Benchmark Name
 	-----------|---------------------|-------------------|-------------|----------------------------------------------
 	Dense      | NonCaching          | —                 | No          | BenchmarkDense_NonCaching
-	Dense      | SPC                 | —                 | No          | BenchmarkDense_SPC
 	Dense      | IMC                 | Deterministic     | No          | BenchmarkDense_IMCDeterministic
 	Dense      | IMC                 | Deterministic     | Yes         | BenchmarkDense_IMCDeterministic_Speculative
 	Dense      | IMC                 | Non-Deterministic | No          | BenchmarkDense_IMCNonDeterministic
@@ -38,9 +34,9 @@ Conversation Structure (~30k of 32k tokens):
   - System prompt (~10k tokens): Large system prompt simulating a real-world
     agentic workflow (similar to Cline, Cursor, etc.) with detailed technical
     competencies, code examples, API references, and project context. Must be
-    large enough that SPC's KV state restore is faster than re-prefilling.
+    large enough that IMC's KV state restore is faster than re-prefilling.
     At ~800 tokens the save/restore overhead exceeds re-prefill cost, so we
-    target ~10k tokens where SPC shows clear benefit.
+    target ~10k tokens where IMC shows clear benefit.
   - ~15+ conversation turns (~20k tokens): 6 unique technical Q&A pairs
     (GC tuning, PostgreSQL query optimization, Kafka partitioning, Redis
     caching, observability) cycled ~3 times with turn-number suffixes to
@@ -61,7 +57,6 @@ Metrics Reported Per Iteration:
 Running:
 
 	go test -bench=. -benchtime=3x -timeout=60m ./sdk/kronk/tests/benchmarks/
-	go test -bench=BenchmarkDense_SPC -benchtime=5x -timeout=60m ./sdk/kronk/tests/benchmarks/
 */
 package benchmarks_test
 

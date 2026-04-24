@@ -24,7 +24,7 @@
   - [Slots and Sequences](#slots-and-sequences)
   - [What Affects KV Cache Memory Per Sequence](#what-affects-kv-cache-memory-per-sequence)
   - [What Affects Total KV Cache (Slot Memory)](#what-affects-total-kv-cache-slot-memory)
-  - [Caching Modes (SPC / IMC)](#caching-modes-spc-imc)
+  - [Caching Modes](#caching-modes)
   - [Example: Real Model Calculation](#example-real-model-calculation)
 - [3.10 Model-Specific Tuning](#310-model-specific-tuning)
 - [3.11 Speculative Decoding](#311-speculative-decoding)
@@ -569,26 +569,19 @@ scratch, processing the full prompt from the beginning. Every request pays
 the full cost of prompt processing regardless of how similar it is to a
 previous one.
 
-**SPC (System Prompt Cache)** — Designed for multi-user scenarios where
-different users share the same system prompt. The first time a system prompt
-is seen (or when a change is detected), SPC processes it through the model
-and saves a copy of the resulting KV cache state in RAM. On every subsequent
-request — regardless of which slot handles it — that saved state is loaded into
-the slot so the system prompt doesn't need to be reprocessed. The slot is still
-cleared between requests, so no slot is dedicated to any particular user.
-
 **IMC (Incremental Message Cache)** — Designed for single-user, multi-turn
-conversations. A slot becomes dedicated to a conversation and retains the
-entire conversation history in the KV cache between requests. When the user
-sends a new message, only the new tokens need to be processed — the model
-doesn't re-read the entire conversation. This gives the best performance for
-chat and agentic applications.
+conversations. IMC maintains logical sessions that cache the conversation
+history. All sessions (text and media) externalize their cached KV state to
+RAM after each request and restore it into any available slot on the next
+request — slots are not dedicated to conversations. When the user sends a
+new message, only the new tokens need to be processed — the model doesn't
+re-read the entire conversation. This gives the best performance for chat
+and agentic applications.
 
-| Mode | Slot Lifetime            | Best For    | Cache Strategy                                                     |
-| ---- | ------------------------ | ----------- | ------------------------------------------------------------------ |
-| Off  | Cleared after request    | Stateless   | None                                                               |
-| SPC  | Cleared after request    | Multi-user  | System prompt decoded once, shared across all slots via RAM buffer |
-| IMC  | Persists across requests | Single-user | Full conversation cached in the slot's KV cache sequence           |
+| Mode | Session Lifetime          | Best For    | Cache Strategy                                                           |
+| ---- | ------------------------- | ----------- | ------------------------------------------------------------------------ |
+| Off  | Cleared after request     | Stateless   | None                                                                     |
+| IMC  | Persists across requests  | Single-user | Conversation cached in session; externalizes to RAM between requests      |
 
 #### Embedding and Reranking Models
 
@@ -1155,7 +1148,7 @@ models:
     cache_type_k: q8_0
     cache_type_v: q8_0
     flash_attention: enabled
-    system_prompt_cache: true
+    incremental_cache: true
 
   Llama-3.3-70B-Instruct-Q8_0:
     context_window: 8192

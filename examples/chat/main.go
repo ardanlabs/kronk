@@ -13,6 +13,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -173,7 +174,6 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("- vramTotal      :", krn.ModelInfo().VRAMTotal/(1024*1024), "MiB")
 	fmt.Println("- slotMemory     :", krn.ModelInfo().SlotMemory/(1024*1024), "MiB")
 	fmt.Println("- modelSize      :", krn.ModelInfo().Size/(1000*1000), "MB")
-	fmt.Println("- spc            :", krn.ModelConfig().SystemPromptCache)
 	fmt.Println("- imc            :", krn.ModelConfig().IncrementalCache)
 	if n := krn.ModelConfig().NGpuLayers; n != nil {
 		fmt.Println("- nGPULayers     :", *n)
@@ -326,6 +326,7 @@ loop:
 
 			fmt.Printf("\u001b[92mModel Asking For Tool Calls:\n\u001b[0m")
 
+			var toolCallDocs []model.D
 			for _, tool := range resp.Choices[0].Delta.ToolCalls {
 				fmt.Printf("\u001b[92mToolID[%s]: %s(%s)\n\u001b[0m",
 					tool.ID,
@@ -333,17 +334,29 @@ loop:
 					tool.Function.Arguments,
 				)
 
-				messages = append(messages,
-					model.D{
-						"role":         "tool",
-						"name":         tool.Function.Name,
-						"tool_call_id": tool.ID,
-						"content": fmt.Sprintf("Tool call %s: %s(%v)\n",
-							tool.ID,
-							tool.Function.Name,
-							tool.Function.Arguments),
+				argsJSON, _ := json.Marshal(tool.Function.Arguments)
+				toolCallDocs = append(toolCallDocs, model.D{
+					"id":   tool.ID,
+					"type": "function",
+					"function": model.D{
+						"name":      tool.Function.Name,
+						"arguments": string(argsJSON),
 					},
-				)
+				})
+			}
+
+			messages = append(messages, model.D{
+				"role":       "assistant",
+				"tool_calls": toolCallDocs,
+			})
+
+			for _, tool := range resp.Choices[0].Delta.ToolCalls {
+				messages = append(messages, model.D{
+					"role":         "tool",
+					"tool_call_id": tool.ID,
+					"name":         tool.Function.Name,
+					"content":      `{"temperature": "72°F", "condition": "sunny"}`,
+				})
 			}
 
 			break loop
