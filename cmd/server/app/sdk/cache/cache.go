@@ -222,9 +222,9 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 
 		cfg.Log = c.log
 
-		krn, err := kronk.New(cfg,
-			kronk.WithCataloger(c.catalog),
-			kronk.WithContext(ctx),
+		krn, err := kronk.NewWithContext(ctx,
+			model.WithConfig(cfg),
+			model.WithCataloger(c.catalog),
 		)
 
 		if err != nil {
@@ -291,9 +291,9 @@ func (c *Cache) AquireCustom(ctx context.Context, key string, cfg model.Config, 
 
 		cfg.Log = c.log
 
-		krn, err := kronk.New(cfg,
-			kronk.WithCataloger(cat),
-			kronk.WithContext(ctx),
+		krn, err := kronk.NewWithContext(ctx,
+			model.WithConfig(cfg),
+			model.WithCataloger(cat),
 		)
 
 		if err != nil {

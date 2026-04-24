@@ -137,7 +137,7 @@ func printInfo(mdls *models.Models) {
 func WithModel(t *testing.T, cfg model.Config, fn func(t *testing.T, krn *kronk.Kronk)) {
 	t.Helper()
 
-	krn, err := kronk.New(cfg)
+	krn, err := kronk.New(model.WithConfig(cfg))
 	if err != nil {
 		t.Fatalf("unable to load model %v: %v", cfg.ModelFiles, err)
 	}
@@ -156,7 +156,7 @@ func WithModel(t *testing.T, cfg model.Config, fn func(t *testing.T, krn *kronk.
 // InitChatTest creates a new Kronk instance for tests that need their own
 // model lifecycle (e.g., concurrency tests that test unload behavior).
 func InitChatTest(t *testing.T, mp models.Path, tooling bool) (*kronk.Kronk, model.D) {
-	krn, err := kronk.New(model.Config{
+	krn, err := kronk.New(model.WithConfig(model.Config{
 		ModelFiles:       mp.ModelFiles,
 		PtrContextWindow: new(32768),
 		PtrNBatch:        new(1024),
@@ -164,7 +164,7 @@ func InitChatTest(t *testing.T, mp models.Path, tooling bool) (*kronk.Kronk, mod
 		CacheTypeK:       model.GGMLTypeF16,
 		CacheTypeV:       model.GGMLTypeF16,
 		PtrNSeqMax:       new(2),
-	})
+	}))
 
 	if err != nil {
 		t.Fatalf("unable to load model: %v: %v", mp.ModelFiles, err)

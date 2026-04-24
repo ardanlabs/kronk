@@ -18,7 +18,7 @@ func Test_PooledVision(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 	defer cancel()
 
-	krn, err := kronk.New(model.Config{
+	krn, err := kronk.New(model.WithConfig(model.Config{
 		ModelFiles:       testlib.MPSimpleVision.ModelFiles,
 		ProjFile:         testlib.MPSimpleVision.ProjFile,
 		PtrContextWindow: new(8192),
@@ -27,7 +27,7 @@ func Test_PooledVision(t *testing.T) {
 		CacheTypeK:       model.GGMLTypeQ8_0,
 		CacheTypeV:       model.GGMLTypeQ8_0,
 		PtrNSeqMax:       new(numInstances),
-	})
+	}))
 	if err != nil {
 		t.Fatalf("Failed to create vision model with NSeqMax=%d: %v", numInstances, err)
 	}

@@ -466,10 +466,9 @@ func installSystem() (models.Path, error) {
 func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("loading model...")
 
-	cfg := model.NewConfig(
+	krn, err := kronk.New(
 		model.WithModelFiles(mp.ModelFiles),
 	)
-	krn, err := kronk.New(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create inference model: %w", err)
 	}
@@ -647,12 +646,10 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
-	cfg := model.NewConfig(
+	krn, err := kronk.New(
 		model.WithModelFiles(mp.ModelFiles),
 		model.WithProjFile(mp.ProjFile),
 	)
-
-	krn, err := kronk.New(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create inference model: %w", err)
 	}
@@ -935,11 +932,9 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
-	cfg := model.NewConfig(
+	krn, err := kronk.New(
 		model.WithModelFiles(mp.ModelFiles),
 	)
-
-	krn, err := kronk.New(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create inference model: %w", err)
 	}
@@ -1327,11 +1322,9 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
-	cfg := model.NewConfig(
+	krn, err := kronk.New(
 		model.WithModelFiles(mp.ModelFiles),
 	)
-
-	krn, err := kronk.New(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create inference model: %w", err)
 	}
@@ -1556,11 +1549,9 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
-	cfg := model.NewConfig(
+	krn, err := kronk.New(
 		model.WithModelFiles(mp.ModelFiles),
 	)
-
-	krn, err := kronk.New(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create inference model: %w", err)
 	}
@@ -1859,11 +1850,9 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
-	cfg := model.NewConfig(
+	krn, err := kronk.New(
 		model.WithModelFiles(mp.ModelFiles),
 	)
-
-	krn, err := kronk.New(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create inference model: %w", err)
 	}
@@ -2155,12 +2144,9 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
-	cfg := model.NewConfig(
+	krn, err := kronk.New(
 		model.WithModelFiles(mp.ModelFiles),
 	)
-
-	krn, err := kronk.New(cfg)
-
 	if err != nil {
 		return nil, fmt.Errorf("unable to create inference model: %w", err)
 	}
@@ -2477,11 +2463,9 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
-	cfg := model.NewConfig(
+	krn, err := kronk.New(
 		model.WithModelFiles(mp.ModelFiles),
 	)
-
-	krn, err := kronk.New(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create reranker model: %w", err)
 	}
@@ -2705,11 +2689,9 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
-	cfg := model.NewConfig(
+	krn, err := kronk.New(
 		model.WithModelFiles(mp.ModelFiles),
 	)
-
-	krn, err := kronk.New(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create inference model: %w", err)
 	}
@@ -3097,12 +3079,10 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
-	cfg := model.NewConfig(
+	krn, err := kronk.New(
 		model.WithModelFiles(mp.ModelFiles),
 		model.WithProjFile(mp.ProjFile),
 	)
-
-	krn, err := kronk.New(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create inference model: %w", err)
 	}

@@ -871,7 +871,7 @@ func logTokenCounts(b *testing.B, ctx context.Context, krn *kronk.Kronk, d model
 func withBenchModel(b *testing.B, cfg model.Config) *kronk.Kronk {
 	b.Helper()
 
-	krn, err := kronk.New(cfg)
+	krn, err := kronk.New(model.WithConfig(cfg))
 	if err != nil {
 		b.Fatalf("unable to load model: %v", err)
 	}
@@ -1104,7 +1104,7 @@ func BenchmarkDense_IMC_ColdBuild(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		krn, err := kronk.New(cfgDenseIMCDeterministic())
+		krn, err := kronk.New(model.WithConfig(cfgDenseIMCDeterministic()))
 		if err != nil {
 			b.Fatalf("unable to load model: %v", err)
 		}

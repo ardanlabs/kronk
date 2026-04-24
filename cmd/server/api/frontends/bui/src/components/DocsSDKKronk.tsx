@@ -45,9 +45,17 @@ export default function DocsSDKKronk() {
             <div className="doc-section" id="func-new">
               <h4>New</h4>
               <pre className="code-block">
-                <code>func New(cfg model.Config, opts ...Option) (*Kronk, error)</code>
+                <code>func New(opts ...model.Option) (*Kronk, error)</code>
               </pre>
               <p className="doc-description">New provides the ability to use models in a concurrently safe way.</p>
+            </div>
+
+            <div className="doc-section" id="func-newwithcontext">
+              <h4>NewWithContext</h4>
+              <pre className="code-block">
+                <code>func NewWithContext(ctx context.Context, opts ...model.Option) (*Kronk, error)</code>
+              </pre>
+              <p className="doc-description">NewWithContext provides the ability to use models in a concurrently safe way. The context is used to support logging trace ids during model loading.</p>
             </div>
           </div>
 
@@ -106,14 +114,6 @@ export default function DocsSDKKronk() {
                 <code>{`type Logger func(ctx context.Context, msg string, args ...any)`}</code>
               </pre>
               <p className="doc-description">Logger provides a function for logging messages from different APIs.</p>
-            </div>
-
-            <div className="doc-section" id="type-option">
-              <h4>Option</h4>
-              <pre className="code-block">
-                <code>{`type Option func(*options)`}</code>
-              </pre>
-              <p className="doc-description">Option represents options for configuring Kronk.</p>
             </div>
 
             <div className="doc-section" id="type-outputtokensdetails">
@@ -420,7 +420,7 @@ export default function DocsSDKKronk() {
             <div className="doc-section" id="const-version">
               <h4>Version</h4>
               <pre className="code-block">
-                <code>{`const Version = "1.23.6"`}</code>
+                <code>{`const Version = "1.23.7"`}</code>
               </pre>
               <p className="doc-description">Version contains the current version of the kronk package.</p>
             </div>
@@ -475,6 +475,7 @@ export default function DocsSDKKronk() {
                 <li><a href="#func-initialized">Initialized</a></li>
                 <li><a href="#func-setfmtloggertraceid">SetFmtLoggerTraceID</a></li>
                 <li><a href="#func-new">New</a></li>
+                <li><a href="#func-newwithcontext">NewWithContext</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
@@ -486,7 +487,6 @@ export default function DocsSDKKronk() {
                 <li><a href="#type-kronk">Kronk</a></li>
                 <li><a href="#type-loglevel">LogLevel</a></li>
                 <li><a href="#type-logger">Logger</a></li>
-                <li><a href="#type-option">Option</a></li>
                 <li><a href="#type-outputtokensdetails">OutputTokensDetails</a></li>
                 <li><a href="#type-responsecontentitem">ResponseContentItem</a></li>
                 <li><a href="#type-responseerror">ResponseError</a></li>

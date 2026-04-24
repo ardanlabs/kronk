@@ -15,45 +15,7 @@ import (
 )
 
 // Version contains the current version of the kronk package.
-const Version = "1.23.6"
-
-// =============================================================================
-
-type options struct {
-	cataloger  model.Cataloger
-	ctx        context.Context
-	queueDepth int
-}
-
-// Option represents options for configuring Kronk.
-type Option func(*options)
-
-// WithCataloger sets a custom catalog for model config and template retrieval.
-// If not set, a default catalog will be created.
-func WithCataloger(cataloger model.Cataloger) Option {
-	return func(o *options) {
-		o.cataloger = cataloger
-	}
-}
-
-// WithContext sets a context into the call to support logging trace ids.
-func WithContext(ctx context.Context) Option {
-	return func(o *options) {
-		o.ctx = ctx
-	}
-}
-
-// WithQueueDepth sets the multiplier for semaphore capacity when using the
-// batch engine (NSeqMax > 1). This controls how many requests can queue while
-// the current batch is processing. Default is 2, meaning NSeqMax * 2 requests
-// can be in-flight. Only applies to text inference models.
-func WithQueueDepth(multiplier int) Option {
-	return func(o *options) {
-		if multiplier > 0 {
-			o.queueDepth = multiplier
-		}
-	}
-}
+const Version = "1.23.7"
 
 // =============================================================================
 
@@ -69,38 +31,33 @@ type Kronk struct {
 }
 
 // New provides the ability to use models in a concurrently safe way.
-func New(cfg model.Config, opts ...Option) (*Kronk, error) {
+func New(opts ...model.Option) (*Kronk, error) {
+	return NewWithContext(context.Background(), opts...)
+}
+
+// NewWithContext provides the ability to use models in a concurrently safe way.
+// The context is used to support logging trace ids during model loading.
+func NewWithContext(ctx context.Context, opts ...model.Option) (*Kronk, error) {
 	if libraryLocation == "" {
 		return nil, fmt.Errorf("new: the Init() function has not been called")
 	}
 
 	// -------------------------------------------------------------------------
 
-	o := options{
-		queueDepth: 2,
-	}
+	cfg := model.NewConfig(opts...)
 
-	for _, opt := range opts {
-		opt(&o)
-	}
-
-	if o.cataloger == nil {
+	if cfg.Cataloger == nil {
 		cataloger, err := catalog.New()
 		if err != nil {
 			return nil, fmt.Errorf("new: unable to create cataloger: %w", err)
 		}
 
-		o.cataloger = cataloger
-	}
-
-	ctx := context.Background()
-	if o.ctx != nil {
-		ctx = o.ctx
+		cfg.Cataloger = cataloger
 	}
 
 	// -------------------------------------------------------------------------
 
-	mdl, err := model.NewModel(ctx, o.cataloger, cfg)
+	mdl, err := model.NewModel(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -111,6 +68,11 @@ func New(cfg model.Config, opts ...Option) (*Kronk, error) {
 	// Embed/rerank models use an internal context pool for parallelism.
 	// Text/vision/audio models use the batch engine with queue depth.
 
+	queueDepth := cfg.QueueDepth()
+	if queueDepth == 0 {
+		queueDepth = 2
+	}
+
 	var semCapacity int
 
 	switch {
@@ -118,7 +80,7 @@ func New(cfg model.Config, opts ...Option) (*Kronk, error) {
 		semCapacity = max(cfg.NSeqMax(), 1)
 
 	default:
-		semCapacity = max(cfg.NSeqMax(), 1) * o.queueDepth
+		semCapacity = max(cfg.NSeqMax(), 1) * queueDepth
 	}
 
 	// -------------------------------------------------------------------------

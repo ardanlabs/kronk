@@ -119,12 +119,13 @@ type Model struct {
 	draft             *draftModel   // Draft model for speculative decoding
 }
 
-func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, error) {
+func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	l := cfg.Log
 	if cfg.Log == nil {
 		l = func(ctx context.Context, msg string, args ...any) {}
 	}
 
+	cataloger := cfg.Cataloger
 	if cataloger == nil {
 		return nil, fmt.Errorf("catalog required, use catalog.New()")
 	}
