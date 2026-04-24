@@ -150,6 +150,15 @@ Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT:
     top_k: 20
     top_p: 0.95
 
+Qwen3.6-27B-Q4_K_M/AGENT:
+  context-window: 131072
+  nseq-max: 2
+  incremental-cache: true
+  sampling-parameters:
+    temperature: 1.0
+    top_k: 20
+    top_p: 0.95
+
 gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT:
   context-window: 131072
   nseq-max: 2
