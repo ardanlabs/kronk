@@ -15,8 +15,8 @@ import (
 
 var (
 	libraryLocation string
-	initOnce        sync.Once
-	initErr         error
+	initMu          sync.Mutex
+	initDone        bool
 )
 
 type initOptions struct {
@@ -41,62 +41,78 @@ func WithLogLevel(logLevel LogLevel) InitOption {
 	}
 }
 
-// Init initializes the Kronk backend support.
+// Initialized reports whether the Kronk backend has been successfully
+// initialized. This can be used to determine if the server is running
+// in a degraded state due to missing libraries.
+func Initialized() bool {
+	initMu.Lock()
+	defer initMu.Unlock()
+
+	return initDone
+}
+
+// Init initializes the Kronk backend support. If initialization fails,
+// subsequent calls will retry, allowing libraries to be downloaded and
+// loaded without restarting the server.
 func Init(opts ...InitOption) error {
-	initOnce.Do(func() {
-		var o initOptions
-		for _, opt := range opts {
-			opt(&o)
+	initMu.Lock()
+	defer initMu.Unlock()
+
+	if initDone {
+		return nil
+	}
+
+	var o initOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
+
+	libPath := libs.Path(o.libPath)
+
+	// Windows uses PATH for DLL discovery, Unix uses LD_LIBRARY_PATH.
+	switch runtime.GOOS {
+	case "windows":
+		if v := os.Getenv("PATH"); !strings.Contains(v, libPath) {
+			os.Setenv("PATH", fmt.Sprintf("%s;%s", libPath, v))
 		}
 
-		libPath := libs.Path(o.libPath)
-
-		// Windows uses PATH for DLL discovery, Unix uses LD_LIBRARY_PATH.
-		switch runtime.GOOS {
-		case "windows":
-			if v := os.Getenv("PATH"); !strings.Contains(v, libPath) {
-				os.Setenv("PATH", fmt.Sprintf("%s;%s", libPath, v))
-			}
-
-		default:
-			if v := os.Getenv("LD_LIBRARY_PATH"); !strings.Contains(v, libPath) {
-				os.Setenv("LD_LIBRARY_PATH", fmt.Sprintf("%s:%s", libPath, v))
-			}
+	default:
+		if v := os.Getenv("LD_LIBRARY_PATH"); !strings.Contains(v, libPath) {
+			os.Setenv("LD_LIBRARY_PATH", fmt.Sprintf("%s:%s", libPath, v))
 		}
+	}
 
-		if err := llama.Load(libPath); err != nil {
-			initErr = fmt.Errorf("init: unable to load library: %w", err)
-			return
-		}
+	if err := llama.Load(libPath); err != nil {
+		return fmt.Errorf("init: unable to load library: %w", err)
+	}
 
-		if err := mtmd.Load(libPath); err != nil {
-			initErr = fmt.Errorf("init: unable to load mtmd library: %w", err)
-			return
-		}
+	if err := mtmd.Load(libPath); err != nil {
+		return fmt.Errorf("init: unable to load mtmd library: %w", err)
+	}
 
-		libraryLocation = libPath
-		llama.Init()
+	libraryLocation = libPath
+	llama.Init()
 
-		if err := model.InitYzmaWorkarounds(libPath); err != nil {
-			initErr = fmt.Errorf("unable to init yzma workarounds: %w", err)
-		}
+	if err := model.InitYzmaWorkarounds(libPath); err != nil {
+		return fmt.Errorf("unable to init yzma workarounds: %w", err)
+	}
 
-		// ---------------------------------------------------------------------
+	// ---------------------------------------------------------------------
 
-		if o.logLevel < 1 || o.logLevel > 2 {
-			o.logLevel = LogSilent
-		}
+	if o.logLevel < 1 || o.logLevel > 2 {
+		o.logLevel = LogSilent
+	}
 
-		switch o.logLevel {
-		case LogSilent:
-			llama.LogSet(llama.LogSilent())
-			mtmd.LogSet(llama.LogSilent())
-		default:
-			llama.LogSet(llama.LogNormal)
-			mtmd.LogSet(llama.LogNormal)
-		}
+	switch o.logLevel {
+	case LogSilent:
+		llama.LogSet(llama.LogSilent())
+		mtmd.LogSet(llama.LogSilent())
+	default:
+		llama.LogSet(llama.LogNormal)
+		mtmd.LogSet(llama.LogNormal)
+	}
 
-	})
+	initDone = true
 
-	return initErr
+	return nil
 }

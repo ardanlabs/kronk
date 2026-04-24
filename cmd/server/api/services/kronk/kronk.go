@@ -286,7 +286,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	defer cancel()
 
 	if _, err := libs.Download(ctx, log.Info); err != nil {
-		return fmt.Errorf("unable to install llama.cpp: %w", err)
+		log.Info(ctx, "startup", "WARNING", "unable to install llama.cpp, running in degraded mode", "ERROR", err)
 	}
 
 	// -------------------------------------------------------------------------
@@ -332,7 +332,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	log.Info(ctx, "startup", "status", "initializing kronk")
 
 	if err := kronk.Init(kronk.WithLibPath(libs.LibsPath())); err != nil {
-		return fmt.Errorf("installation invalid: %w", err)
+		log.Info(ctx, "startup", "WARNING", "kronk init failed, running in degraded mode (use BUI to download libraries)", "ERROR", err)
 	}
 
 	cache, err := cache.New(cache.Config{

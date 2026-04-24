@@ -23,7 +23,15 @@ export default function DocsSDKKronk() {
               <pre className="code-block">
                 <code>func Init(opts ...InitOption) error</code>
               </pre>
-              <p className="doc-description">Init initializes the Kronk backend support.</p>
+              <p className="doc-description">Init initializes the Kronk backend support. If initialization fails, subsequent calls will retry, allowing libraries to be downloaded and loaded without restarting the server.</p>
+            </div>
+
+            <div className="doc-section" id="func-initialized">
+              <h4>Initialized</h4>
+              <pre className="code-block">
+                <code>func Initialized() bool</code>
+              </pre>
+              <p className="doc-description">Initialized reports whether the Kronk backend has been successfully initialized. This can be used to determine if the server is running in a degraded state due to missing libraries.</p>
             </div>
 
             <div className="doc-section" id="func-setfmtloggertraceid">
@@ -464,6 +472,7 @@ export default function DocsSDKKronk() {
               <a href="#functions" className="doc-index-header">Functions</a>
               <ul>
                 <li><a href="#func-init">Init</a></li>
+                <li><a href="#func-initialized">Initialized</a></li>
                 <li><a href="#func-setfmtloggertraceid">SetFmtLoggerTraceID</a></li>
                 <li><a href="#func-new">New</a></li>
               </ul>
