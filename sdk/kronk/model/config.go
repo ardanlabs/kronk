@@ -679,7 +679,7 @@ func applyCatalogSamplingParams(user Params, cat Params) Params {
 
 func adjustContextWindow(cfg Config, model llama.Model) Config {
 	modelCW := defContextWindow
-	v, found := searchModelMeta(model, "adjust-context-window: context_length")
+	v, found := searchModelMeta(model, "context_length")
 	if found {
 		ctxLen, err := strconv.Atoi(v)
 		if err == nil {
