@@ -86,7 +86,7 @@ func testEmbedding(t *testing.T, krn *kronk.Kronk) {
 
 	var g errgroup.Group
 	for range testlib.Goroutines {
-		g.Go(f)
+		g.Go(testlib.WithRetry(t, f))
 	}
 
 	if err := g.Wait(); err != nil {

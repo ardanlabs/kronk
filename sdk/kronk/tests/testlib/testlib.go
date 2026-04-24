@@ -21,6 +21,7 @@ import (
 var (
 	TestDuration  = 60 * 5 * time.Second
 	Goroutines    = 2
+	MaxRetries    = 3
 	RunInParallel = false
 	ImageFile     string
 	AudioFile     string
@@ -111,6 +112,7 @@ func printInfo(mdls *models.Models) {
 	fmt.Println("imageFile        :", ImageFile)
 	fmt.Println("processor        :", "cpu")
 	fmt.Println("goroutines       :", Goroutines)
+	fmt.Println("maxRetries       :", MaxRetries)
 	fmt.Println("testDuration     :", TestDuration)
 	fmt.Println("RUN_IN_PARALLEL  :", RunInParallel)
 
