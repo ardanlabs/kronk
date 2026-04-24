@@ -228,15 +228,14 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 	if bestSession != nil && len(mismatchSessions) > 0 && m.cfg.ContextWindow > 0 {
 		nCtx := m.cfg.ContextWindow
 
-		// Sum KV usage across all non-empty, non-pending sessions.
-		// Text sessions with externalized kvState have their VRAM sequences
-		// cleared after each request, so they don't consume KV cells.
-		// Only count sessions whose KV is resident in VRAM (media or no kvState).
+		// Sum KV usage across all non-empty, non-pending sessions that
+		// don't have externalized kvState. Sessions with kvState had their
+		// VRAM sequences cleared in finishSlot and don't consume KV cells.
 		var projectedKV int
 		for i, snap := range snapshots {
 			if !snap.empty && !snap.pending {
 				session := m.imcSessions[i]
-				if session.hasMedia || len(session.kvState) == 0 {
+				if len(session.kvState) == 0 {
 					projectedKV += snap.totalTokensCached
 				}
 			}
@@ -261,9 +260,8 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 					"evicted-tokens", snap.totalTokensCached,
 					"projected-kv", projectedKV, "n_ctx", nCtx)
 
-				// Clear the VRAM KV sequence only for media sessions
-				// (text sessions already have their sequence cleared).
-				if session.hasMedia || len(session.kvState) == 0 {
+				// Clear VRAM KV only if not already externalized.
+				if len(session.kvState) == 0 {
 					m.decodeMu.Lock()
 					llama.MemorySeqRm(m.mem, snap.seqID, -1, -1)
 					m.decodeMu.Unlock()

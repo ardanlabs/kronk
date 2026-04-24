@@ -102,7 +102,7 @@ func TestAnalyzeModelDense(t *testing.T) {
 		t.Errorf("Recommended.Name = %q, want %q", a.Recommended.Name, "balanced")
 	}
 
-	if a.Recommended.NSeqMax != 2 {
+	if a.Recommended.NSeqMax != 1 {
 		t.Errorf("Recommended.NSeqMax = %d, want %d", a.Recommended.NSeqMax, 1)
 	}
 

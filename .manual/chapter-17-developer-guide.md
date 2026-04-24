@@ -12,12 +12,12 @@
   - [17.7.1 Package Structure](#1771-package-structure)
   - [17.7.2 Streaming Architecture](#1772-streaming-architecture)
   - [17.7.3 Concurrency Strategy](#1773-concurrency-strategy)
-  - [16.7.4 Model Acquire/Release & Cleanup](#1674-model-acquirerelease-cleanup)
-  - [16.7.5 Batch Engine Internals](#1675-batch-engine-internals)
-  - [16.7.6 Context Pooling](#1676-context-pooling)
-  - [16.7.7 IMC Implementation Details](#1677-imc-implementation-details)
-  - [16.7.8 Tool Call Internals](#1678-tool-call-internals)
-  - [16.7.9 Logprobs Implementation](#1679-logprobs-implementation)
+  - [17.7.4 Model Acquire/Release & Cleanup](#1774-model-acquirerelease-cleanup)
+  - [17.7.5 Batch Engine Internals](#1775-batch-engine-internals)
+  - [17.7.6 Context Pooling](#1776-context-pooling)
+  - [17.7.7 IMC Implementation Details](#1777-imc-implementation-details)
+  - [17.7.8 Tool Call Internals](#1778-tool-call-internals)
+  - [17.7.9 Logprobs Implementation](#1779-logprobs-implementation)
 - [17.8 API Handler Notes](#178-api-handler-notes)
 - [17.9 Goroutine Budget](#179-goroutine-budget)
 - [17.10 Request Tracing Spans](#1710-request-tracing-spans)
@@ -287,7 +287,12 @@ the Kronk SDK packages.
 | File           | Purpose                                               |
 | -------------- | ----------------------------------------------------- |
 | `batch.go`     | Batch engine for parallel text inference              |
-| `caching.go`   | System prompt and IMC cache management                |
+| `batch_finish.go` | Request completion, KV cleanup per model type      |
+| `batch_schedule.go` | Slot assignment (first-available for all sessions)     |
+| `batch_slot_start.go` | Slot initialization, KV restore from RAM, KV snapshot to RAM |
+| `caching.go`   | Cache orchestration and routing                       |
+| `caching_imc.go` | IMC session matching, hash scanning, and cache operations |
+| `caching_imc_media.go` | IMC media cache build and extend (vision/audio) |
 | `chat.go`      | Chat inference loop, batch routing                    |
 | `config.go`    | Model configuration (GPU, cache, batching)            |
 | `embed.go`     | Embedding inference                                   |
@@ -344,7 +349,7 @@ default:
 }
 ```
 
-#### 16.7.4 Model Acquire/Release & Cleanup
+#### 17.7.4 Model Acquire/Release & Cleanup
 
 **Acquisition** (`acquire.go`):
 
@@ -362,7 +367,7 @@ default:
 
 **Key invariant:** `resetContext()` always runs before model release due to defer ordering.
 
-#### 16.7.5 Batch Engine Internals
+#### 17.7.5 Batch Engine Internals
 
 **ChatStreaming Decision Logic** (`chat.go`):
 
@@ -391,23 +396,27 @@ batching = true
 - Signal-based wake pattern: `wakeCh chan struct{}` (buffered size 1) wakes immediately on new requests
 - Polling intervals: 100µs (active slots generating), 5ms (idle, no active slots)
 
-**Slots vs Sequences:**
+**Slots, Sequences, and Sessions:**
 
-- `slot.id` = slot index (for logging)
-- `slot.seqID` = llama.cpp sequence ID (determines KV cache partition)
+- `slot.id` = slot index (batch-engine execution lane)
+- `slot.seqID` = llama.cpp sequence ID (KV cache partition for the active slot)
 - `slot.seqIDs` = pre-allocated slice for efficient `batchAdd` calls
+- `imcSession` = logical cached conversation branch (hash, tokens, KV state)
 
 Sequences are isolated partitions in the shared KV cache memory. Slot seqIDs
-always start at 0 — no sequences are reserved for caching. IMC binds each
-slot's sequence to a conversation.
+always start at 0. IMC sessions are decoupled from slots: session state is
+externalized to RAM after each request and restored into any available slot
+on the next request via `StateSeqSetData`. `StateSeqGetData` captures raw KV
+bytes regardless of whether they originated from text tokens or media
+embeddings.
 
-#### 16.7.6 Context Pooling
+#### 17.7.6 Context Pooling
 
 - `llama.Context` is created once in `NewModel` and reused across requests
 - Call `resetContext()` between requests to clear KV cache
 - Avoids Vulkan memory fragmentation from repeated context alloc/dealloc
 
-#### 16.7.7 IMC Implementation Details
+#### 17.7.7 IMC Implementation Details
 
 **Critical Implementation Details:**
 
@@ -423,20 +432,38 @@ slot's sequence to a conversation.
 2. Subsequent requests (prefix match): Extend cache with `messages[cachedCount:len-1]`
 3. New thread (prefix mismatch): Rebuild cache from scratch
 
+**IMC Lifecycle (All Sessions):**
+
+1. `processIMC()` scans **sessions** (not slots) for a hash match
+2. `fillSlots()` assigns the job to the **first available slot**
+3. `startSlot()` restores cached KV from RAM via `StateSeqSetData`
+4. Cache is extended/rebuilt as needed, then snapshotted back to RAM via `StateSeqGetData`
+5. Suffix tokens are decoded and generation runs
+6. `finishSlot()` clears the full VRAM sequence (cached prefix already lives in RAM)
+
 **IMC Session State:**
 
 ```go
 type imcSession struct {
-    hash      string      // Hash of all cached messages
-    tokens    int         // Total tokens in cache
-    msgCount  int         // Number of messages cached
-    promptLen int         // Length of templated prefix
-    seqID     llama.SeqId // Assigned cache sequence ID
-    lastUsed  time.Time   // For future eviction
+    slotID            int           // Slot index (transitional)
+    seqID             llama.SeqId   // KV cache sequence ID (transitional)
+    cachedMsgsHash    string        // Hash of all cached messages
+    cachedTokens      []llama.Token // Full token sequence in KV cache
+    totalTokensCached int           // Total KV positions cached
+    cachedMsgCount    int           // Number of messages cached
+    kvState           []byte        // Externalized KV state (RAM buffer)
+    kvStateBytes      int           // Size of kvState in bytes
+    lastUsed          time.Time     // Last access time (for eviction)
+    pending           bool          // True when build/extend in-flight
+    hasMedia          bool          // True if cached content includes media
+    useMRoPE          bool          // True if cached media used M-RoPE
+    mediaKVCounts     []int         // KV positions per media chunk
+    sysPromptHash     string        // Hash of system prompt message
+    sysPromptTokens   int           // Token count of system prompt
 }
 ```
 
-#### 16.7.8 Tool Call Internals
+#### 17.7.8 Tool Call Internals
 
 **chatMessage Unmarshaling** (`models.go`):
 
@@ -448,7 +475,7 @@ type imcSession struct {
 - Custom type that marshals to JSON string (OpenAI spec)
 - Unmarshals from either string or object for non-compliant clients
 
-#### 16.7.9 Logprobs Implementation
+#### 17.7.9 Logprobs Implementation
 
 **Implementation** (`logprobs.go`):
 
@@ -610,24 +637,29 @@ immediately rather than waiting for its next poll cycle.
 #### Step 8: Assign to a Slot
 
 The batch engine's processing loop wakes up and checks for pending work. It
-dequeues the job and assigns it to an available processing slot. With IMC
-enabled, jobs are routed to their target slot (the one holding their cached
-conversation). If the target slot is busy, the job is deferred or the
-longest-running slot is preempted after a configurable timeout.
+dequeues the job and assigns it to the first available processing slot. All
+IMC sessions (text and media) use first-available slot assignment. If all
+slots are busy, the longest-running slot is preempted after a configurable
+timeout.
 
 #### Step 9: Initialize the Slot
 
 The assigned slot is prepared for this request:
 
-1. **Restore cached KV state**: For IMC, extension tokens are decoded into the
-   existing sequence, or the sequence is cleared and rebuilt.
+1. **Restore cached KV state**: For IMC, the session's externalized KV state
+   is restored from RAM into the slot's sequence via `StateSeqSetData`.
+   Extension tokens are then decoded, or the sequence is cleared and rebuilt.
 2. **Build the sampler**: A sampler chain is constructed from the request's
    sampling parameters (temperature, top_k, top_p, min_p, repetition
    penalties, etc.). If grammar-constrained output is requested, a separate
    grammar sampler is also created.
-3. **Tokenize the prompt**: The prompt string is converted into a sequence of
+3. **Snapshot cached prefix**: For IMC, after cache build/extend but before
+   suffix tokens are decoded, the cached prefix KV state is snapshotted to
+   RAM via `StateSeqGetData`. This captures the reusable prefix for the next
+   request.
+4. **Tokenize the prompt**: The prompt string is converted into a sequence of
    token IDs. Only the non-cached portion of the prompt needs tokenization.
-4. **Context window check**: The total token count (cached + new) is verified
+5. **Context window check**: The total token count (cached + new) is verified
    against the model's context window limit.
 
 #### Step 10: Prefill (KV Cache Fill)
@@ -694,11 +726,9 @@ finalized:
    reasoning, tool calls, logprobs, and usage statistics — is sent through
    the response channel.
 5. **Clean up the KV cache**:
-   - With IMC on Dense/MoE models, only the generated tokens are trimmed
-     from the KV cache, preserving the cached conversation prefix for the
-     next request.
-   - With IMC on Hybrid models, the entire sequence is cleared and restored
-     from a snapshot, because partial deletes corrupt recurrent state.
+   - IMC (all model types): the entire VRAM sequence is cleared. The cached
+     conversation prefix was already snapshotted to RAM during slot
+     initialization and will be restored on the next request.
    - Without caching, the entire sequence is cleared.
 6. **Free resources**: The sampler, grammar sampler, and any multimodal
    resources (bitmaps, projection context) are freed.
@@ -755,9 +785,9 @@ Each step corresponds to the high-level description in
 - **6a. `injectToolResponseNames()`** — adds `name`/`tool_call_name` to
   `role:"tool"` messages by matching `tool_call_id`.
 - **6b. `processCache()`** (`model/caching.go`):
-  - **IMC**: `processIMC()` — two-tier hash scan across slots, finds best match
-    (pure hit, extend, partial prefix trim, or rebuild from scratch), tokenizes
-    extension tokens, sets `pending` flag on target slot.
+  - **IMC**: `processIMC()` — two-tier hash scan across sessions, finds best
+    match (pure hit, extend, partial prefix trim, or rebuild from scratch),
+    tokenizes extension tokens, sets `pending` flag on the selected session.
 - **6c. `createPrompt()`** → `applyRequestJinjaTemplate()` — applies Jinja2
   chat template to remaining messages, returns prompt string + media bytes.
 
@@ -782,8 +812,8 @@ Each step corresponds to the high-level description in
 - Adds generation tokens for active slots (1 token per slot).
 - Continues text prefill via round-robin `addPrefillChunk()` across slots.
 - Continues media prefill via `addPrefillMediaChunk()`.
-- **`fillSlots()`** (`model/batch_schedule.go`) — dequeues job, routes to target
-  slot (IMC-aware routing or first-available).
+- **`fillSlots()`** (`model/batch_schedule.go`) — dequeues job, assigns to
+  first-available slot (all IMC sessions use first-available routing).
 
 **10. `startSlot()`** (`model/batch_slot_start.go`)
 
@@ -792,9 +822,13 @@ Each step corresponds to the high-level description in
 - **Creates sampler**: `toSampler()` — builds llama.cpp sampler chain
   (temperature, top_k, top_p, min_p, repetition penalties, DRY, XTC, mirostat).
 - **Creates grammar sampler** if grammar specified.
-- **IMC cache restore**: decodes extension tokens into slot's KV sequence via
-  `decodeTokensIntoCache()`, or clears sequence for rebuild, or trims for
-  partial prefix.
+- **IMC KV restore from RAM**: restores externalized KV state from
+  `session.kvState` into the slot's sequence via `StateSeqSetData`. Then
+  decodes extension tokens via `decodeTokensIntoCache()`, or clears sequence
+  for rebuild, or trims for partial prefix.
+- **IMC KV snapshot to RAM**: after cache build/extend but before suffix
+  decode, snapshots the cached prefix via `StateSeqGetData` into
+  `session.kvState`.
 - **Tokenize prompt**: `llama.Tokenize(vocab, prompt, addBOS, special=true)` —
   converts remaining prompt text to tokens.
 - Context window check.
@@ -853,10 +887,8 @@ Each step corresponds to the high-level description in
 - **Send final response**: `sendFinalResponse()` with usage, content,
   reasoning, tool calls, logprobs.
 - **KV cache cleanup**:
-  - IMC Dense/MoE: `MemorySeqRm(mem, seqID, trimPos, -1)` — partial trim,
-    keeps cached prefix.
-  - IMC Hybrid: full clear + `StateSeqSetData()` snapshot restore (partial
-    delete corrupts recurrent state).
+  - IMC (all model types): `MemorySeqRm(mem, seqID, -1, -1)` — full clear.
+    Cached prefix already snapshotted to RAM in `startSlot`.
   - Non-IMC: `MemorySeqRm(mem, seqID, -1, -1)` — full clear.
 - **Free resources**: free sampler, grammar sampler, MTMD bitmaps/chunks,
   mtmdCtx.

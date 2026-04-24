@@ -50,7 +50,7 @@ Kronk has an MCP service and these are settings:
 | [Chapter 10: Multi-Modal Models](.manual/chapter-10-multi-modal-models.md)             | Vision models, audio models, media input formats                                                                                             |
 | [Chapter 11: Security & Authentication](.manual/chapter-11-security-authentication.md) | JWT auth, key management, token creation, rate limiting                                                                                      |
 | [Chapter 12: Browser UI (BUI)](.manual/chapter-12-browser-ui.md)                       | Web interface, downloading libraries/models, catalog browsing, model management, key/token management, apps, model playground                |
-| [Chapter 13: Client Integration](.manual/chapter-13-client-integration.md)             | OpenWebUI, Cline, Python SDK, curl, LangChain                                                                                                |
+| [Chapter 13: Client Integration](.manual/chapter-13-client-integration.md)             | Coding agent setup (Cline, Kilo, OpenCode, Goose), model config, OpenWebUI, Python SDK, curl, LangChain                                     |
 | [Chapter 14: Observability](.manual/chapter-14-observability.md)                       | Debug server, Prometheus metrics, pprof profiling, tracing                                                                                   |
 | [Chapter 15: MCP Service](.manual/chapter-15-mcp-service.md)                           | Brave Search, MCP configuration, Cline/Kilo client setup, curl testing                                                                       |
 | [Chapter 16: Troubleshooting](.manual/chapter-16-troubleshooting.md)                   | Common issues, error messages, debugging tips                                                                                                |
@@ -120,7 +120,7 @@ Kronk has an MCP service and these are settings:
 | — [KV Pressure Eviction](.manual/chapter-05-message-caching.md#kv-pressure-eviction)                          | Unified KV cache overflow, stale slot eviction     |
 | — [Token Prefix Fallback](.manual/chapter-05-message-caching.md#token-prefix-fallback)                        | Token-level prefix matching when hash fails        |
 | — [Model Type Interactions](.manual/chapter-05-message-caching.md#model-type-interactions)                    | Dense/MoE/Hybrid config, cross-reference to 4.9    |
-| [5.3 Single-User Caching](.manual/chapter-05-message-caching.md#53-single-user-caching)                       | Single-user design, slot dedication                |
+| [5.3 Single-User Caching](.manual/chapter-05-message-caching.md#53-single-user-caching)                       | Single-user design, session-based caching          |
 | [5.4 When to Use IMC](.manual/chapter-05-message-caching.md#54-when-to-use-imc)                               | Workload selection, feature summary                |
 | [5.5 Cache Invalidation](.manual/chapter-05-message-caching.md#55-cache-invalidation)                         | Hash mismatch, rebuild triggers                    |
 | [5.6 Configuration Reference](.manual/chapter-05-message-caching.md#56-configuration-reference)               | YAML settings, cache_min_tokens                    |
@@ -194,9 +194,10 @@ Kronk has an MCP service and these are settings:
 | [10.4 Plain Base64 Format](.manual/chapter-10-multi-modal-models.md#104-plain-base64-format)                                   | Base64 media encoding             |
 | [10.5 Configuration for Multi-Modal Models](.manual/chapter-10-multi-modal-models.md#105-configuration-for-multi-modal-models) | Projection files, batch settings  |
 | [10.6 Memory Requirements](.manual/chapter-10-multi-modal-models.md#106-memory-requirements)                                   | Vision/audio VRAM overhead        |
-| [10.7 Limitations](.manual/chapter-10-multi-modal-models.md#107-limitations)                                                   | Multi-modal constraints           |
-| [10.8 Example: Image Analysis](.manual/chapter-10-multi-modal-models.md#108-example-image-analysis)                            | Vision API example                |
-| [10.9 Example: Audio Transcription](.manual/chapter-10-multi-modal-models.md#109-example-audio-transcription)                  | Audio API example                 |
+| [10.7 IMC and Multi-Modal Caching](.manual/chapter-10-multi-modal-models.md#107-imc-and-multi-modal-caching)                   | Media caching with IMC            |
+| [10.8 Limitations](.manual/chapter-10-multi-modal-models.md#108-limitations)                                                   | Multi-modal constraints           |
+| [10.9 Example: Image Analysis](.manual/chapter-10-multi-modal-models.md#109-example-image-analysis)                            | Vision API example                |
+| [10.10 Example: Audio Transcription](.manual/chapter-10-multi-modal-models.md#1010-example-audio-transcription)                | Audio API example                 |
 
 ### Chapter 11 Sub-sections
 
@@ -227,13 +228,17 @@ Kronk has an MCP service and these are settings:
 
 ### Chapter 13 Sub-sections
 
-| Section                                                                                          | Topics                    |
-| ------------------------------------------------------------------------------------------------ | ------------------------- |
-| [13.1 OpenWebUI](.manual/chapter-13-client-integration.md#131-openwebui)                         | OpenWebUI integration     |
-| [13.2 Cline](.manual/chapter-13-client-integration.md#132-cline)                                 | Cline AI agent setup      |
-| [13.4 Python OpenAI SDK](.manual/chapter-13-client-integration.md#134-python-openai-sdk)         | Python client usage       |
-| [13.5 curl and HTTP Clients](.manual/chapter-13-client-integration.md#135-curl-and-http-clients) | curl examples, HTTP usage |
-| [13.6 LangChain](.manual/chapter-13-client-integration.md#136-langchain)                         | LangChain integration     |
+| Section                                                                                                                              | Topics                              |
+| ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------- |
+| [13.1 Coding Agent Model Configuration](.manual/chapter-13-client-integration.md#131-coding-agent-model-configuration)               | Recommended model settings          |
+| [13.2 Cline](.manual/chapter-13-client-integration.md#132-cline)                                                                     | Cline VS Code extension setup       |
+| [13.3 Kilo Code](.manual/chapter-13-client-integration.md#133-kilo-code)                                                             | Kilo Code VS Code extension setup   |
+| [13.4 OpenCode](.manual/chapter-13-client-integration.md#134-opencode)                                                               | OpenCode TUI agent setup            |
+| [13.5 Goose](.manual/chapter-13-client-integration.md#135-goose)                                                                     | Goose TUI agent setup               |
+| [13.6 OpenWebUI](.manual/chapter-13-client-integration.md#136-openwebui)                                                             | OpenWebUI integration               |
+| [13.7 Python OpenAI SDK](.manual/chapter-13-client-integration.md#137-python-openai-sdk)                                             | Python client usage                 |
+| [13.8 curl and HTTP Clients](.manual/chapter-13-client-integration.md#138-curl-and-http-clients)                                     | curl examples, HTTP usage           |
+| [13.9 LangChain](.manual/chapter-13-client-integration.md#139-langchain)                                                             | LangChain integration               |
 
 ### Chapter 14 Sub-sections
 
@@ -265,18 +270,19 @@ Kronk has an MCP service and these are settings:
 
 ### Chapter 16 Sub-sections
 
-| Section                                                                                         | Topics                   |
-| ----------------------------------------------------------------------------------------------- | ------------------------ |
-| [16.1 Library Issues](.manual/chapter-16-troubleshooting.md#161-library-issues)                 | Shared library problems  |
-| [16.2 Model Loading Failures](.manual/chapter-16-troubleshooting.md#162-model-loading-failures) | Load errors, VRAM issues |
-| [16.3 Memory Errors](.manual/chapter-16-troubleshooting.md#163-memory-errors)                   | OOM, VRAM exhaustion     |
-| [16.4 Request Timeouts](.manual/chapter-16-troubleshooting.md#164-request-timeouts)             | Timeout configuration    |
-| [16.5 Authentication Errors](.manual/chapter-16-troubleshooting.md#165-authentication-errors)   | Auth troubleshooting     |
-| [16.6 Streaming Issues](.manual/chapter-16-troubleshooting.md#166-streaming-issues)             | SSE, streaming problems  |
-| [16.7 Performance Issues](.manual/chapter-16-troubleshooting.md#167-performance-issues)         | Slow inference, TPS      |
-| [16.8 Viewing Logs](.manual/chapter-16-troubleshooting.md#168-viewing-logs)                     | Log access, filtering    |
-| [16.9 Common Error Messages](.manual/chapter-16-troubleshooting.md#169-common-error-messages)   | Error message reference  |
-| [16.10 Getting Help](.manual/chapter-16-troubleshooting.md#1610-getting-help)                   | Support channels         |
+| Section                                                                                         | Topics                        |
+| ----------------------------------------------------------------------------------------------- | ----------------------------- |
+| [16.1 Library Issues](.manual/chapter-16-troubleshooting.md#161-library-issues)                 | Shared library problems       |
+| [16.2 Model Loading Failures](.manual/chapter-16-troubleshooting.md#162-model-loading-failures) | Load errors, VRAM issues      |
+| [16.3 Memory Errors](.manual/chapter-16-troubleshooting.md#163-memory-errors)                   | OOM, VRAM exhaustion          |
+| [16.4 Request Timeouts](.manual/chapter-16-troubleshooting.md#164-request-timeouts)             | Timeout configuration         |
+| [16.5 Authentication Errors](.manual/chapter-16-troubleshooting.md#165-authentication-errors)   | Auth troubleshooting          |
+| [16.6 Streaming Issues](.manual/chapter-16-troubleshooting.md#166-streaming-issues)             | SSE, streaming problems       |
+| [16.7 Performance Issues](.manual/chapter-16-troubleshooting.md#167-performance-issues)         | Slow inference, TPS           |
+| [16.8 IMC Caching Issues](.manual/chapter-16-troubleshooting.md#168-imc-caching-issues)         | Cache rebuilds, restore fails |
+| [16.9 Viewing Logs](.manual/chapter-16-troubleshooting.md#169-viewing-logs)                     | Log access, filtering         |
+| [16.10 Common Error Messages](.manual/chapter-16-troubleshooting.md#1610-common-error-messages) | Error message reference       |
+| [16.11 Getting Help](.manual/chapter-16-troubleshooting.md#1611-getting-help)                   | Support channels              |
 
 ### Chapter 17 Sub-sections
 

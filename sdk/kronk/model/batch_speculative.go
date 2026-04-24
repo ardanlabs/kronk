@@ -320,7 +320,7 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 			if err != nil {
 				var fallbackToken llama.Token
 				switch {
-				case s.grammarSampler != nil:
+				case s.grammarSampler != nil && s.reasonFlag == 0:
 					fallbackToken = s.grammarSampler.SampleWithGrammar(e.model.lctx, s.sampler, baseBatch+int32(i))
 				default:
 					fallbackToken = llama.SamplerSample(s.sampler, e.model.lctx, baseBatch+int32(i))
@@ -412,7 +412,7 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 		if err != nil {
 			var fallbackToken llama.Token
 			switch {
-			case s.grammarSampler != nil:
+			case s.grammarSampler != nil && s.reasonFlag == 0:
 				fallbackToken = s.grammarSampler.SampleWithGrammar(e.model.lctx, s.sampler, baseBatch+int32(i))
 			default:
 				fallbackToken = llama.SamplerSample(s.sampler, e.model.lctx, baseBatch+int32(i))
@@ -466,7 +466,7 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 		switch {
 		case err != nil:
 			switch {
-			case s.grammarSampler != nil:
+			case s.grammarSampler != nil && s.reasonFlag == 0:
 				bonusToken = s.grammarSampler.SampleWithGrammar(e.model.lctx, s.sampler, baseBatch+int32(nDraft))
 			default:
 				bonusToken = llama.SamplerSample(s.sampler, e.model.lctx, baseBatch+int32(nDraft))

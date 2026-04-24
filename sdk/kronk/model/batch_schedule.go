@@ -12,9 +12,9 @@ func (e *batchEngine) hasActiveSlots() bool {
 
 // fillSlots assigns pending requests to available slots.
 //
-// Text-only IMC jobs use first-available slot (KV restored from RAM).
-// Media IMC jobs route to their target slot (KV stays in VRAM, slot-dedicated).
-// Non-IMC jobs use first-available slot.
+// All IMC jobs (text and media) use first-available slot — KV state is
+// restored from RAM via StateSeqSetData. Non-IMC jobs also use
+// first-available.
 //
 // Jobs that can't be assigned yet are held in pendingJobs (engine-local
 // slice) rather than re-queued into requestQ, which would risk deadlocking
@@ -41,27 +41,13 @@ assign:
 
 		assigned := false
 
-		// Media IMC cache hits must go to their specific slot because
-		// the media KV state (image/audio embeddings) stays in VRAM.
-		if job.imcCacheHit && job.imcSessionMedia {
-			targetSlotID := job.imcSlotID
-			if targetSlotID < len(e.slots) {
-				s := e.slots[targetSlotID]
-				if !s.active {
-					e.startSlot(s, job, buf)
-					assigned = true
-				}
+		for _, s := range e.slots {
+			if s.active {
+				continue
 			}
-		} else {
-			// Text-only and non-IMC: assign to any available slot.
-			for _, s := range e.slots {
-				if s.active {
-					continue
-				}
-				e.startSlot(s, job, buf)
-				assigned = true
-				break
-			}
+			e.startSlot(s, job, buf)
+			assigned = true
+			break
 		}
 
 		if !assigned {

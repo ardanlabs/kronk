@@ -132,22 +132,6 @@
 #   → Total KV cache sized for 131k tokens (shared by all 3 slots)
 #   → Any single slot can use up to the full 131k tokens
 #
-# This means IMC adds no extra VRAM beyond what the context window requires.
-#
-# AGENT CLIENT NOTES
-# -------------------------------
-# Cline is working great with Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL/IMC. The
-# settings use a KV Cache type of f16. You need to use f16 to get the accuracy
-# from the model we need.
-#
-# NOTE: The R1 message format in Cline is a specialized prompt structure
-# required for DeepSeek R1 models, which converts system prompts into user
-# messages. Turn that off.
-#
-# Kilo Code is working get with gpt-oss-120b-F16. When the KV Cache type is f16,
-# the model is being accurate with tool calling. Agent clients that use
-# traditional tool calling, use this model.
-#
 # MISCELLANEOUS NOTES
 # -------------------------------
 # You will notice with the Qwen3-8B-Q8_0 model a YARN configuration. This is

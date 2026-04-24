@@ -32,9 +32,13 @@ expensive part of a request, and its cost grows with the number of
 input tokens._
 
 Kronk provides the Incremental Message Cache (IMC) to reduce redundant
-prefill work. IMC dedicates each slot to a conversation and caches the
-full message history in the slot's KV cache sequence, so only the new
-message needs to be prefilled.
+prefill work. IMC maintains logical sessions — one per conversation
+branch — and caches the full message history so only the new message
+needs to be prefilled. All sessions (text and media) externalize their
+cached KV state to RAM after each request and restore it into any
+available slot on the next request. `StateSeqGetData` captures the raw
+KV bytes regardless of whether they originated from text tokens or media
+embeddings.
 
 ```
 No Caching:
@@ -62,9 +66,18 @@ When a client or agent mutates the conversation history, IMC uses a two-tier
 hash to preserve the system prompt KV state and only rebuild the conversation
 body.
 
+**Key Terminology:**
+
+- **Session** — logical IMC conversation branch with its own metadata (hash,
+  token count, message index). Decoupled from physical slots.
+- **Slot** — physical batch-engine execution lane. Any session (text or media)
+  can run on any available slot.
+- **Sequence / seqID** — llama.cpp KV cache partition attached to the active
+  slot during request processing.
+
 #### Two-Tier Hash Design
 
-IMC tracks two independent hashes per slot:
+IMC tracks two independent hashes per session:
 
 | Tier   | What It Covers                                 | Purpose                                |
 | ------ | ---------------------------------------------- | -------------------------------------- |
@@ -100,7 +113,7 @@ and automatically falls back to slower-but-more-resilient strategies when the
 fast path fails:
 
 1. **Hash match** — Hash the incoming message prefix and compare against each
-   slot's stored hash. Instant, zero-tokenization overhead. This is the common
+   session's stored hash. Instant, zero-tokenization overhead. This is the common
    case when the conversation grows normally (messages appended, nothing edited).
 
 2. **System prompt preservation** — If the full hash mismatches but the system
@@ -109,14 +122,14 @@ fast path fails:
    client edits or drops messages while keeping the same system prompt.
 
 3. **Token prefix fallback** — If no hash matches at all, tokenize the incoming
-   messages and compare element-by-element against cached slots to find the
+   messages and compare element-by-element against cached sessions to find the
    longest common prefix. Trim the divergent suffix and decode only the new
    tokens. This salvages 70-80% of cached tokens when templates, tool call
    formatting, or client behavior causes token-level differences even though
    the conversation is logically the same.
 
-4. **Full rebuild** — No usable match found. Pick an empty slot or evict the
-   LRU slot and build the cache from scratch.
+4. **Full rebuild** — No usable match found. Pick an empty session or evict the
+   LRU session and build the cache from scratch.
 
 The matching algorithm is independent of the model type (Dense, MoE, Hybrid).
 What changes per model type is how the batch engine manages state between
@@ -138,27 +151,34 @@ models:
     cache_min_tokens: 100 # Minimum tokens before caching (default)
 ```
 
-#### Multi-Slot Architecture
+#### Multi-Session Architecture
 
-All `NSeqMax` slots are available for IMC. Each slot independently tracks its
-own conversation branch — its own message hash, system prompt hash, token
-count, and message index. Sub-agents are routed to different slots via hash
-matching, allowing them to maintain independent caches and run concurrently.
+All `NSeqMax` sessions are available for IMC. Each session independently
+tracks its own conversation branch — its own message hash, system prompt
+hash, token count, and message index. Sub-agents are routed to different
+sessions via hash matching, allowing them to maintain independent caches.
+
+Each session externalizes its cached KV state to RAM after the request
+completes. On the next request, the cached state is restored into any
+available slot — sessions are not pinned to specific slots. This means
+all slots are equally eligible for any session, maximizing slot
+utilization. `StateSeqGetData` captures raw KV bytes regardless of
+whether they originated from text tokens or media embeddings.
 
 With `n_seq_max: 3`, three sub-agents can each have their own cached
-conversation branch. Without multi-slot IMC, every sub-agent request would
-cause a prefix mismatch and rebuild the cache from scratch because different
-sub-agents send different system prompts and conversation content.
+conversation branch. Without multi-session IMC, every sub-agent request
+would cause a prefix mismatch and rebuild the cache from scratch because
+different sub-agents send different system prompts and conversation content.
 
 **Important:** Set `n_seq_max` to at least the number of concurrent
 sub-agents your agent framework spawns. If `n_seq_max` is smaller than
 the number of sub-agents, cache thrashing can occur — each new sub-agent
-evicts a slot, and when the evicted sub-agent returns, it evicts another.
+evicts a session, and when the evicted sub-agent returns, it evicts another.
 Every request triggers a full rebuild from scratch, eliminating the
 caching benefit entirely. With unified KV cache, all slots share the same
 `n_ctx` pool, so adding more slots does not multiply VRAM usage. However,
-more slots means more concurrent cached conversations competing for the
-shared pool. KV pressure eviction automatically clears stale slots when
+more sessions means more cached conversations competing for the shared
+pool. KV pressure eviction automatically clears stale sessions when
 space gets tight — see [KV Pressure Eviction](#kv-pressure-eviction).
 
 **How It Works:**
@@ -196,58 +216,60 @@ Rebuild:  [user, user3]              ← Only conversation body re-decoded
 Prefill:  [user3 + gen_prompt]
 ```
 
-#### Slot Selection Algorithm
+#### Session Selection Algorithm
 
-When a request arrives, IMC scans all slots to find the best match. The
-algorithm has five steps, tried in order.
+When a request arrives, IMC scans all sessions to find the best match.
+The algorithm has five steps, tried in order. After a session is selected,
+the batch engine assigns the request to the first available slot. The
+session's KV state is restored from RAM into the assigned slot.
 
-1. **Scan all slots** — For each slot:
-   - Skip slots with a build in-flight (pending flag set)
-   - Skip empty slots (track them as fallback candidates)
-   - Skip slots with more cached messages than the request has total
-   - Hash `messages[:slot.cachedMsgCount]` and compare to the slot's
+1. **Scan all sessions** — For each session:
+   - Skip sessions with a build in-flight (pending flag set)
+   - Skip empty sessions (track them as fallback candidates)
+   - Skip sessions with more cached messages than the request has total
+   - Hash `messages[:session.cachedMsgCount]` and compare to the session's
      stored hash
    - On mismatch: check if the system prompt hash (Tier 1) still matches.
-     Track the slot as a system-prompt-match candidate if it does.
-   - Track mismatched slots as eviction candidates
+     Track the session as a system-prompt-match candidate if it does.
+   - Track mismatched sessions as eviction candidates
 
-2. **KV pressure eviction** — When a matching slot is found and the total
-   KV usage across all slots exceeds the context window, evict mismatched
-   slots (largest first) to reclaim space. See
+2. **KV pressure eviction** — When a matching session is found and the total
+   KV usage across all sessions exceeds the context window, evict mismatched
+   sessions (largest first) to reclaim space. Sessions with externalized
+   `kvState` do not count against VRAM KV pressure because their VRAM
+   sequences are already cleared. See
    [KV Pressure Eviction](#kv-pressure-eviction) for details.
 
-3. **On full match** — Pick the slot with the best prefix coverage (most
+3. **On full match** — Pick the session with the best prefix coverage (most
    cached messages). If the request has new messages to cache, extend the
-   slot's cache. If the messages are identical, it's a pure cache hit.
+   session's cache. If the messages are identical, it's a pure cache hit.
 
 4. **System prompt preservation (two-tier hash)** — No full match, but a
-   slot has the same system prompt cached. Keep the system prompt KV in
+   session has the same system prompt cached. Keep the system prompt KV in
    place, trim everything after the system prompt token boundary, and
    re-template and re-decode only the conversation body. Before preserving,
    IMC verifies the system prompt token boundary is consistent after
    re-templating — if the template produces a different token count for the
-   system prompt, it falls back to a full rebuild. Media slots are excluded
-   from this path because token-level trim is unsafe for image/audio
-   embeddings.
+   system prompt, it falls back to a full rebuild.
 
 5. **Token prefix fallback** — Tokenize the incoming messages and compare
    the resulting token sequence element-by-element against each non-empty
-   slot's stored `cachedTokens`. Pick the slot with the longest common
-   prefix that meets `cache_min_tokens`. Trim the KV cache from the
+   session's stored `cachedTokens`. Pick the session with the longest
+   common prefix that meets `cache_min_tokens`. Trim the KV cache from the
    divergence point and decode only the new tokens from there forward. See
    [Token Prefix Fallback](#token-prefix-fallback) for details.
 
-6. **No match at all** — Pick an empty slot if one exists, otherwise evict
-   the least-recently-used (LRU) slot and rebuild from scratch.
+6. **No match at all** — Pick an empty session if one exists, otherwise
+   evict the least-recently-used (LRU) session and rebuild from scratch.
 
 **Concurrent Build Protection:**
 
 When two requests arrive simultaneously and both need to build a cache from
-scratch, a race condition could cause both to pick the same empty slot. IMC
-prevents this with a pending flag: when a slot begins a deferred cache build,
-it is marked pending. Concurrent scanners skip pending slots, so the second
-request picks a different slot. The pending flag is cleared after the cache
-decode completes (or on error).
+scratch, a race condition could cause both to pick the same empty session.
+IMC prevents this with a pending flag: when a session begins a deferred cache
+build, it is marked pending. Concurrent scanners skip pending sessions, so
+the second request picks a different session. The pending flag is cleared
+after the cache decode completes (or on error).
 
 **Decode Failure Recovery:**
 
@@ -263,19 +285,19 @@ all sequences share the full `n_ctx` pool. Any single sequence can grow up to th
 full context window, but the **total** KV usage across all sequences cannot exceed
 `n_ctx`.
 
-This matters when an agent framework (like Kilo or Cline) sends multiple
-concurrent requests for the same conversation. Each request may land on a
-different slot. As the conversation grows, the active slot accumulates a large
-cache while older slots hold stale snapshots of earlier conversation states.
-Those stale slots consume KV cells that the active slot needs.
+All sessions externalize their KV state to RAM after each request and clear
+their VRAM sequence, so they do not contribute to VRAM KV pressure between
+requests. However, during active processing, a session's restored KV does
+consume VRAM cells until the request completes and the state is externalized
+again.
 
 **Example:** With `n_seq_max: 3` and `context_window: 131072`:
 
 ```
-Slot 0: 854 tokens    (stale — 2 cached messages, hash mismatch)
-Slot 1: 46,541 tokens (stale — 17 cached messages, hash mismatch)
-Slot 2: 86,682 tokens (active — 49 cached messages, hash match)
-Total:  134,077 tokens > 131,072 → context window full!
+Session 0: 854 tokens    (stale media — 2 cached messages, hash mismatch)
+Session 1: 46,541 tokens (stale media — 17 cached messages, hash mismatch)
+Session 2: 86,682 tokens (active media — 49 cached messages, hash match)
+Total VRAM-resident: 134,077 tokens > 131,072 → context window full!
 ```
 
 Without KV pressure eviction, the next decode would fail with "context window
@@ -283,27 +305,32 @@ is full" even though the active conversation only uses ~87k of the 131k window.
 
 **How It Works:**
 
-After the slot scan finds a matching slot (Step 1), IMC checks whether the
-projected total KV usage across all slots exceeds the context window. If it
-does, mismatched slots are evicted largest-first until the total fits:
+After the session scan finds a matching session (Step 1), IMC checks whether
+the projected total KV usage across all sessions exceeds the context window.
+If it does, mismatched sessions are evicted largest-first until the total
+fits:
 
-1. Sum `totalTokensCached` across all non-empty, non-pending slots
-2. If the sum exceeds `context_window`, sort mismatched slots by token count
-   (descending)
-3. Evict slots one at a time — clear the KV sequence (`MemorySeqRm`) and
+1. Sum `totalTokensCached` across all non-empty, non-pending sessions
+   (sessions with externalized `kvState` are excluded since their VRAM
+   is already freed)
+2. If the sum exceeds `context_window`, sort mismatched sessions by token
+   count (descending)
+3. Evict sessions one at a time — clear the KV sequence (`MemorySeqRm`) and
    reset the session metadata — until the projected total is within bounds
 
-In the example above, evicting Slot 1 (46,541 tokens) brings the total to
-87,536 — well within the 131,072 limit. Slot 0 (854 tokens) may or may not
+In the example above, evicting Session 1 (46,541 tokens) brings the total to
+87,536 — well within the 131,072 limit. Session 0 (854 tokens) may or may not
 need eviction depending on the remaining headroom.
 
 **Key Points:**
 
-- Eviction only targets **mismatched** slots — the active slot and any other
-  matching slots are never evicted
-- Pending slots (with a build in-flight) are never evicted
-- Evicted slots become empty and are available for future cache builds
-- The eviction check runs before the extend/hit path, so the active slot
+- Eviction only targets **mismatched** sessions — the active session and any
+  other matching sessions are never evicted
+- Pending sessions (with a build in-flight) are never evicted
+- Sessions with externalized `kvState` do not count toward VRAM pressure
+  and are not eviction candidates (their VRAM is already freed)
+- Evicted sessions become empty and are available for future cache builds
+- The eviction check runs before the extend/hit path, so the active session
   always has room to grow
 - No configuration needed — eviction triggers automatically when KV pressure
   is detected
@@ -316,16 +343,16 @@ the same conversation — IMC falls back to token-level prefix matching to
 salvage as much of the cached KV state as possible.
 
 **When it activates:** Automatically when no hash match and no system prompt
-match is found during the slot scan (Step 5 of the
-[Slot Selection Algorithm](#slot-selection-algorithm)). IMC compares the
+match is found during the session scan (Step 5 of the
+[Session Selection Algorithm](#session-selection-algorithm)). IMC compares the
 actual cached token arrays against the incoming request's tokens. Only
 candidates with compatible message counts are considered — the request must
-have at least as many messages as the slot cached.
+have at least as many messages as the session cached.
 
 **How it works:**
 
 IMC tokenizes the incoming messages and compares them element-by-element
-against each non-empty slot's stored token sequence to find the longest
+against each non-empty session's stored token sequence to find the longest
 common prefix.
 
 ```
@@ -341,10 +368,10 @@ New decode:    4 tokens (T9-T12, from divergence point forward)
 
 If the common prefix meets the `cache_min_tokens` threshold, IMC:
 
-1. Reserves the matching slot (marks it pending)
+1. Reserves the matching session (marks it pending)
 2. Trims the divergent suffix from the KV cache
 3. Decodes only the new tokens from the divergence point forward
-4. Updates the slot's hash and cached token sequence
+4. Updates the session's hash and cached token sequence
 
 Once the partial rebuild completes, subsequent requests in the same
 conversation use normal hash-based extending.
@@ -371,11 +398,11 @@ Hybrid). Only the batch engine's state management differs. See
 [Section 4.9](#49-model-types-and-state-management) for how each model type
 manages state between requests.
 
-| Model Type | State Management     | Configuration Notes               |
-| ---------- | -------------------- | --------------------------------- |
-| Dense      | Partial range delete | No special requirements           |
-| MoE        | Partial range delete | f16 cache, split_mode: row        |
-| Hybrid     | Snapshot/Restore     | f16 cache required, no flash attn |
+| Model Type | State Management   | Configuration Notes               |
+| ---------- | ------------------ | --------------------------------- |
+| Dense      | Snapshot/Restore   | No special requirements           |
+| MoE        | Snapshot/Restore   | f16 cache, split_mode: row        |
+| Hybrid     | Snapshot/Restore   | f16 cache required, no flash attn |
 
 **MoE Configuration:**
 
@@ -400,11 +427,12 @@ models:
 
 ### 5.3 Single-User Caching
 
-IMC is designed for single-user use. All `NSeqMax` slots are available, with
-each slot independently tracking its own conversation branch via hash matching.
-This design is optimized for agentic workflows where multiple sub-agents send
-independent conversations (different system prompts, different message
-histories).
+IMC is designed for single-user use. All `NSeqMax` sessions are available,
+with each session independently tracking its own conversation branch via hash
+matching. All sessions can run on any available slot. This design is
+optimized for agentic workflows
+where multiple sub-agents send independent conversations (different system
+prompts, different message histories).
 
 ### 5.4 When to Use IMC
 
@@ -416,17 +444,19 @@ for:
   prefix fallback automatically salvages 70-80% of cached tokens when changes
   are detected
 - **AI coding agents** — long-running conversations with growing context
-- **Sub-agent architectures** — each sub-agent gets its own slot via hash
+- **Sub-agent architectures** — each sub-agent gets its own session via hash
   matching, maintaining independent caches
 
-| Feature      | Behavior                                  |
-| ------------ | ----------------------------------------- |
-| Caches       | All messages except last                  |
-| Extends      | Yes, incrementally                        |
-| Slots        | All slots available, single-user          |
-| Sub-agents   | Each gets own slot via hash matching      |
-| Best for     | Agentic workflows                         |
-| Memory       | Zero extra VRAM overhead                  |
+| Feature      | Behavior                                                        |
+| ------------ | --------------------------------------------------------------- |
+| Caches       | All messages except last                                        |
+| Extends      | Yes, incrementally                                              |
+| Sessions     | All sessions available, single-user                             |
+| Slot routing | Any available slot (all sessions)                               |
+| Sub-agents   | Each gets own session via hash matching                          |
+| Best for     | Agentic workflows                                               |
+| VRAM         | Unified `n_ctx` pool, not multiplied by `n_seq_max`             |
+| RAM          | One externalized KV snapshot per session between requests       |
 
 ### 5.5 Cache Invalidation
 
@@ -438,7 +468,7 @@ invalidation helps you avoid unexpected prefill costs.
 **IMC Invalidation:**
 
 - Message prefix hash mismatch with same system prompt → system prompt KV
-  preserved, conversation body trimmed and re-decoded (Step 4 of the slot
+  preserved, conversation body trimmed and re-decoded (Step 4 of the session
   selection algorithm)
 - Message prefix hash mismatch with no system prompt match → token prefix
   fallback attempted (see [Token Prefix Fallback](#token-prefix-fallback)).
@@ -469,7 +499,7 @@ models:
 **cache_min_tokens**
 
 Minimum common prefix length required for token-level partial prefix
-matching. If no slot's cached tokens share at least this many tokens with
+matching. If no session's cached tokens share at least this many tokens with
 the incoming request, the fallback is skipped and the cache is rebuilt from
 scratch.
 
@@ -497,7 +527,7 @@ logs, sequential extensions typically take ~3ms each.
 IMC adds no extra VRAM beyond what the context window already requires.
 With `n_seq_max > 1`, Kronk enables a unified KV cache where all sequences
 share the full `n_ctx` pool. The total KV cache size is determined by
-`context_window`, not multiplied by the number of slots:
+`context_window`, not multiplied by the number of sessions:
 
 ```
 131K context, n_seq_max=3, IMC (unified KV cache):
@@ -506,9 +536,15 @@ share the full `n_ctx` pool. The total KV cache size is determined by
   Total across all slots cannot exceed 131K tokens
 ```
 
-KV pressure eviction ensures that stale slots are cleared when the shared
-pool gets tight, so the active conversation always has access to the full
-context window.
+Sessions do not pin their prefix KV in VRAM between requests — the
+cached prefix is snapshotted to RAM and the VRAM sequence is cleared.
+This means sessions consume **RAM** (one KV snapshot per session)
+but no VRAM KV cells between requests. The RAM cost varies by
+conversation length and model size.
+
+KV pressure eviction only considers sessions whose cached KV is still
+resident in VRAM (sessions without an externalized `kvState`). Sessions
+with externalized state are excluded from VRAM pressure calculations.
 
 **IMC Token Prefix Fallback Performance:**
 
@@ -523,9 +559,11 @@ IMC fully supports vision and audio models (models configured with a projection
 file). Text-only requests are cached normally. When a message containing media
 (image, video, or audio) appears in the conversation history, IMC caches the
 entire conversation — including the media embeddings — in the KV cache. The
-image or audio is encoded through the projection model once and remains in the
-KV cache across subsequent requests. Text-only follow-up messages extend the
-cache without re-encoding the media.
+image or audio is encoded through the projection model once. After the request,
+the entire cached prefix (text + media KV) is snapshotted to RAM and restored
+on the next request — media is never re-encoded unless the cache is rebuilt
+from scratch. Text-only follow-up messages extend the cache without
+re-encoding the media.
 
 For example, in a conversation like:
 
@@ -536,25 +574,25 @@ Request 1 (image request):
 [user]         →  prefill (generation target)
 
 Request 2 (text follow-up about the image):
-[system]       →  cached (KV cache hit)
-[user + image] →  cached (image stays in KV cache, no re-encode)
+[system]       →  restored from RAM (no re-encode)
+[user + image] →  restored from RAM (image KV preserved, no re-encode)
 [assistant]    →  extended (new text tokens decoded into cache)
 [user]         →  prefill (generation target)
 
 Request 3 (unrelated text question):
-[system]       →  cached (KV cache hit)
-[user + image] →  cached (image stays in KV cache)
-[assistant]    →  cached (KV cache hit)
+[system]       →  restored from RAM
+[user + image] →  restored from RAM (image KV preserved)
+[assistant]    →  restored from RAM
 [user]         →  extended (new text tokens decoded into cache)
 [assistant]    →  extended
 [user]         →  prefill (generation target)
 
 Request 4 (back to asking about the image):
-[system]       →  cached (KV cache hit)
-[user + image] →  cached (image STILL in KV cache, no re-encode)
-[assistant]    →  cached (KV cache hit)
-[user]         →  cached (KV cache hit)
-[assistant]    →  cached (KV cache hit)
+[system]       →  restored from RAM
+[user + image] →  restored from RAM (image KV preserved, no re-encode)
+[assistant]    →  restored from RAM
+[user]         →  restored from RAM
+[assistant]    →  restored from RAM
 [user]         →  extended (new text tokens decoded into cache)
 [assistant]    →  extended
 [user]         →  prefill (generation target)
@@ -581,7 +619,7 @@ Request 4 (image appears mid-conversation):
 [user]         →  prefill (generation target)
 
 Request 5 (text follow-up about the image):
-[all prior]    →  cached (KV cache hit, image stays in KV cache)
+[all prior]    →  restored from RAM (image KV preserved, no re-encode)
 [assistant]    →  extended (text tokens only, no image re-encode)
 [user]         →  prefill (generation target)
 ```
@@ -608,10 +646,10 @@ Request 5 (text follow-up about the image):
    models using M-RoPE (e.g., Qwen2.5-VL), 2D spatial positions are assigned
    to image tokens.
 
-4. The slot tracks `mediaKVCounts` — the number of KV positions consumed by
-   each media chunk. This is needed because media embeddings occupy a different
-   number of KV positions than the text marker tokens they replace in the
-   tokenized prompt.
+4. The session tracks `mediaKVCounts` — the number of KV positions consumed
+   by each media chunk. This is needed because media embeddings occupy a
+   different number of KV positions than the text marker tokens they replace
+   in the tokenized prompt.
 
 5. On text-only follow-ups, `extendIMCMediaSlotWithText` uses the
    `mediaKVCounts` to compute the correct offset between text token indices
@@ -632,9 +670,12 @@ Request 5 (text follow-up about the image):
   re-decoded)
 - Changing the system prompt triggers a full cache rebuild
 - Designed for single-user use
-- Max concurrent conversation branches = NSeqMax; when all slots are
-  occupied, the least-recently-used slot is evicted
-- System prompt preservation is text-only; media slots always use hash
-  matching or full rebuild
+- Max concurrent conversation branches = NSeqMax; when all sessions are
+  occupied, the least-recently-used session is evicted
+- Cache hits include a RAM→VRAM restore step (typically 10-30ms depending
+  on conversation size)
+- When a new media message appears in the conversation, the cache is
+  rebuilt through the mtmd pipeline (projection model encodes image/audio
+  into embeddings)
 
 ---

@@ -570,16 +570,18 @@ the full cost of prompt processing regardless of how similar it is to a
 previous one.
 
 **IMC (Incremental Message Cache)** — Designed for single-user, multi-turn
-conversations. A slot becomes dedicated to a conversation and retains the
-entire conversation history in the KV cache between requests. When the user
-sends a new message, only the new tokens need to be processed — the model
-doesn't re-read the entire conversation. This gives the best performance for
-chat and agentic applications.
+conversations. IMC maintains logical sessions that cache the conversation
+history. All sessions (text and media) externalize their cached KV state to
+RAM after each request and restore it into any available slot on the next
+request — slots are not dedicated to conversations. When the user sends a
+new message, only the new tokens need to be processed — the model doesn't
+re-read the entire conversation. This gives the best performance for chat
+and agentic applications.
 
-| Mode | Slot Lifetime            | Best For    | Cache Strategy                                                     |
-| ---- | ------------------------ | ----------- | ------------------------------------------------------------------ |
-| Off  | Cleared after request    | Stateless   | None                                                               |
-| IMC  | Persists across requests | Single-user | Full conversation cached in the slot's KV cache sequence           |
+| Mode | Session Lifetime          | Best For    | Cache Strategy                                                           |
+| ---- | ------------------------- | ----------- | ------------------------------------------------------------------------ |
+| Off  | Cleared after request     | Stateless   | None                                                                     |
+| IMC  | Persists across requests  | Single-user | Conversation cached in session; externalizes to RAM between requests      |
 
 #### Embedding and Reranking Models
 

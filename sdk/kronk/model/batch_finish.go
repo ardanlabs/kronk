@@ -95,30 +95,14 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		}
 	}
 
-	// Text-only IMC: clear the entire sequence. The cached prefix KV state
-	// was snapshotted into session.kvState in startSlot and will be restored
-	// from RAM on the next request.
-	//
-	// Media IMC: trim generated tokens but keep the cached prefix in VRAM.
-	// Media KV state (image/audio embeddings) can't be externalized to RAM
-	// yet — the mtmd pipeline produces embeddings that StateSeqGetData may
-	// not round-trip correctly. Media sessions remain slot-dedicated for v1.
+	// IMC: clear the entire sequence. The cached prefix KV state was
+	// snapshotted into session.kvState in startSlot and will be restored
+	// from RAM on the next request. This applies to both text-only and
+	// media sessions — StateSeqGetData captures raw KV bytes regardless
+	// of whether they were produced by text tokens or media embeddings.
 	//
 	// Non-IMC: always clear.
 	switch {
-	case e.model.cfg.IncrementalCache && s.job.imcCacheHit && s.job.imcSessionMedia:
-		// Media session: trim generated tokens, keeping the cached prefix.
-		e.model.cacheMu.RLock()
-		trimPos := llama.Pos(s.job.imcSession.totalTokensCached)
-		e.model.cacheMu.RUnlock()
-
-		if trimPos > 0 {
-			e.model.decodeMu.Lock()
-			llama.MemorySeqRm(e.model.mem, s.seqID, trimPos, -1)
-			e.model.decodeMu.Unlock()
-			e.model.log(ctx, "finish-slot", "status", "imc-media-trim", "slot", slotID, "seq", seqID, "trim_pos", trimPos)
-		}
-
 	default:
 		e.model.decodeMu.Lock()
 		llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)

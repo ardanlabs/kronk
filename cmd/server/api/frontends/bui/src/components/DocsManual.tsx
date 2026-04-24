@@ -990,12 +990,12 @@ swa_full: false   # Compact SWA cache (default, less VRAM)`}</code></pre>
           <h4 id="how-caching-strategy-affects-slot-behavior">How Caching Strategy Affects Slot Behavior</h4>
           <p>Enabling a <a href="#chapter-5-message-caching">caching strategy</a> does not add any extra memory to the system — caching works within the KV cache already allocated to each slot. The difference between strategies is what happens to the data in the KV cache between requests:</p>
           <p><strong>No Caching</strong> — The simplest mode. When a request finishes, the slot's KV cache is cleared. The next request that lands in that slot starts from scratch, processing the full prompt from the beginning. Every request pays the full cost of prompt processing regardless of how similar it is to a previous one.</p>
-          <p><strong>IMC (Incremental Message Cache)</strong> — Designed for single-user, multi-turn conversations. A slot becomes dedicated to a conversation and retains the entire conversation history in the KV cache between requests. When the user sends a new message, only the new tokens need to be processed — the model doesn't re-read the entire conversation. This gives the best performance for chat and agentic applications.</p>
+          <p><strong>IMC (Incremental Message Cache)</strong> — Designed for single-user, multi-turn conversations. IMC maintains logical sessions that cache the conversation history. All sessions (text and media) externalize their cached KV state to RAM after each request and restore it into any available slot on the next request — slots are not dedicated to conversations. When the user sends a new message, only the new tokens need to be processed — the model doesn't re-read the entire conversation. This gives the best performance for chat and agentic applications.</p>
           <table className="flags-table">
             <thead>
               <tr>
                 <th>Mode</th>
-                <th>Slot Lifetime</th>
+                <th>Session Lifetime</th>
                 <th>Best For</th>
                 <th>Cache Strategy</th>
               </tr>
@@ -1011,7 +1011,7 @@ swa_full: false   # Compact SWA cache (default, less VRAM)`}</code></pre>
                 <td>IMC</td>
                 <td>Persists across requests</td>
                 <td>Single-user</td>
-                <td>Full conversation cached in the slot's KV cache sequence</td>
+                <td>Conversation cached in session; externalizes to RAM between requests</td>
               </tr>
             </tbody>
           </table>
@@ -1804,7 +1804,7 @@ Slot 0  →  seqID = 0  →  KV cache partition 0
 Slot 1  →  seqID = 1  →  KV cache partition 1
 Slot 2  →  seqID = 2  →  KV cache partition 2
 Slot 3  →  seqID = 3  →  KV cache partition 3`}</code></pre>
-          <p>How a slot uses its sequence depends on the caching strategy. Without caching, the sequence is cleared between requests. With IMC, the sequence retains cached tokens to avoid redundant processing. See <a href="#35-parallel-inference-nseqmax">Section 3.5</a> for details on how each caching strategy affects slot behavior.</p>
+          <p>How a slot uses its sequence depends on the caching strategy. Without caching, the sequence is cleared between requests. With IMC, all sessions (text and media) externalize their cached KV state to RAM after each request and restore it into any available slot on the next request. See <a href="#37-parallel-inference-nseqmax">Section 3.7</a> for details on how each caching strategy affects slot behavior.</p>
           <h3 id="43-request-flow">4.3 Request Flow</h3>
           <p>Each request moves through the batch engine in the following stages:</p>
           <ol>
@@ -1813,7 +1813,7 @@ Slot 3  →  seqID = 3  →  KV cache partition 3`}</code></pre>
             <li><strong>Cache Setup</strong>: Prepare the slot's sequence based on caching strategy:
               <ul>
                 <li>Clear the sequence (no caching)</li>
-                <li>Extend or rebuild the conversation cache in place (IMC)</li>
+                <li>IMC: restore cached KV from RAM, extend or rebuild</li>
               </ul>
             </li>
             <li><strong>Prefill</strong>: Tokenize and process remaining prompt tokens (round-robin across slots in <code>n_ubatch</code>-sized chunks to prevent starvation)</li>
@@ -1821,8 +1821,7 @@ Slot 3  →  seqID = 3  →  KV cache partition 3`}</code></pre>
             <li><strong>Complete</strong>: Release the slot:
               <ul>
                 <li>Clear the entire sequence (no caching)</li>
-                <li>Dense/MoE with IMC: Trim generated tokens via partial range delete, keep cached conversation prefix</li>
-                <li>Hybrid with IMC: Full clear + restore snapshot from byte buffer, keep cached conversation prefix (see <a href="#49-model-types-and-state-management">Section 4.9</a>)</li>
+                <li>IMC (all model types): clear the entire VRAM sequence (cached prefix already snapshotted to RAM)</li>
               </ul>
             </li>
           </ol>
@@ -1965,27 +1964,19 @@ Step 4 — Total VRAM:
 
   Total_VRAM = 9.0 GB + 4.8 GB = ~13.8 GB`}</code></pre>
           <h3 id="48-imc-slot-scheduling">4.8 IMC Slot Scheduling</h3>
-          <p>When IMC is enabled, the batch engine uses a specialized scheduling algorithm that handles the constraint of routing requests to specific slots. This section explains how IMC scheduling differs from normal slot assignment and the mechanisms that prevent requests from stalling.</p>
+          <p>When IMC is enabled, the batch engine uses a scheduling algorithm to assign requests to slots. This section explains how IMC scheduling works and the mechanisms that prevent requests from stalling.</p>
           <h4 id="normal-scheduling-no-caching">Normal Scheduling (No Caching)</h4>
           <p>Without IMC, the algorithm assigns the next queued request to any available slot. If all slots are busy, the request stays in the queue until a slot finishes. This is simple and works well because requests have no slot affinity.</p>
           <h4 id="imc-scheduling">IMC Scheduling</h4>
-          <p>IMC routes each request to a specific target slot based on cache matching (see <a href="#53-incremental-message-cache-imc">Section 5.3</a>). This creates a problem: a request's target slot may be busy generating for another request, even though other slots are free. The algorithm handles this with two mechanisms: <strong>deferred jobs</strong> and <strong>slot preemption</strong>.</p>
-          <h4 id="deferred-jobs">Deferred Jobs</h4>
-          <p>When the algorithm dequeues a request but its target slot is busy, the request is held aside as a deferred job instead of being put back on the queue. On the next iteration of the processing loop, the algorithm checks the deferred job first — if the target slot has finished, the job is assigned immediately. This avoids a critical stall: putting a job back on the queue could cause the processing loop to go idle (no active slots, empty queue) and never wake up until a new external request arrives.</p>
-          <pre className="code-block"><code>{`Request dequeued → target slot busy → defer (not requeue)
-                                          │
-Next iteration → target slot free? ──Yes──→ assign to slot
-                                     │
-                                     No → keep deferred, check again next iteration`}</code></pre>
+          <p>All IMC requests have no slot affinity — cached KV state is externalized to RAM and can be restored into any available slot. These requests are scheduled identically to non-IMC requests (first available slot).</p>
           <h4 id="slot-preemption">Slot Preemption</h4>
-          <p>If a deferred job waits longer than <code>CacheSlotTimeout</code> seconds (default: 30) for its target slot to finish, the algorithm triggers preemption. This is a safety mechanism for pathologically long generations — under normal operation, the target slot finishes before the timeout and the deferred job picks it up naturally.</p>
+          <p>If all slots are busy when a queued job needs to be assigned, and the job waits longer than <code>CacheSlotTimeout</code> seconds (default: 30), the algorithm triggers preemption. This is a safety mechanism for pathologically long generations.</p>
           <p>Preemption uses a two-phase approach for safety:</p>
           <ol>
             <li><strong>Schedule</strong> — The algorithm marks the victim slot for preemption and defers the waiting job. No slot state is modified yet.</li>
             <li><strong>Execute</strong> — At the top of the next processing loop iteration, after the batch is cleared but before any tokens are added, the victim slot is finished with a preemption error. This ordering is critical — the victim slot must have no tokens in the current batch, otherwise cleaning up its KV state could corrupt a subsequent decode.</li>
           </ol>
-          <p>The preempted request receives an error response and the client can retry. The waiting job is then assigned to the freed slot.</p>
-          <p>For IMC cache-hit requests, the specific target slot is preempted. For requests with no cache hit (assigned to any slot), the longest-running slot is preempted.</p>
+          <p>The preempted request receives an error response and the client can retry. The waiting job is then assigned to the freed slot. The longest-running slot is preempted.</p>
           <h4 id="cacheslottimeout">CacheSlotTimeout</h4>
           <p>The <code>cache_slot_timeout</code> setting (default: 30 seconds) controls two distinct timeout scenarios in the IMC scheduling path:</p>
           <table className="flags-table">
@@ -2003,9 +1994,9 @@ Next iteration → target slot free? ──Yes──→ assign to slot
                 <td>Error returned: "server busy"</td>
               </tr>
               <tr>
-                <td>Deferred job waiting</td>
+                <td>Queued job waiting</td>
                 <td>Inside batch queue</td>
-                <td>Target slot preempted, deferred job assigned</td>
+                <td>Longest-running slot preempted, job assigned</td>
               </tr>
             </tbody>
           </table>
@@ -2015,12 +2006,12 @@ Next iteration → target slot free? ──Yes──→ assign to slot
     ┌─────────────────────┼──────────────────┐   ┌───────────────┼──────────────┐
     │  Before Batch Queue │                  │   │ Inside Batch  │              │
     │                     │                  │   │ Queue         │              │
-    │  All slots have     │                  │   │  Target slot  │              │
-    │  cache builds       ▼                  │   │  is busy      ▼              │
+    │  All slots have     │                  │   │  All slots    │              │
+    │  cache builds       ▼                  │   │  are busy     ▼              │
     │  in-flight     ──► Error               │   │  generating ──► Preempt      │
     │                     "server busy"      │   │                victim slot   │
     └────────────────────────────────────────┘   └──────────────────────────────┘`}</code></pre>
-          <p>The first scenario fires before the job enters the batch engine — it blocks during cache preparation when all IMC slots have pending cache builds in-flight. The second scenario fires inside the batch engine — the job is already queued but its target slot is actively generating tokens for another request.</p>
+          <p>The first scenario fires before the job enters the batch engine — it blocks during cache preparation when all IMC sessions have pending cache builds in-flight. The second scenario fires inside the batch engine — the job is already queued but all slots are actively generating tokens for other requests.</p>
           <p><strong>Important:</strong> The preemption timeout is measured from when the job enters the batch engine queue, not from when the HTTP request arrived. Time spent waiting for cache builds does not count against the preemption budget. This prevents false preemptions when a request waits for a long cache build before entering the queue.</p>
           <h4 id="debugging-imc-scheduling">Debugging IMC Scheduling</h4>
           <table className="flags-table">
@@ -2058,13 +2049,14 @@ Next iteration → target slot free? ──Yes──→ assign to slot
             </tbody>
           </table>
           <h3 id="49-model-types-and-state-management">4.9 Model Types and State Management</h3>
-          <p>Kronk supports three model architectures. The model type is detected automatically at load time and determines how the batch engine manages sequence state between requests when IMC is enabled. The caching system handles slot matching and cache building — it is unaffected by model type. The difference is in the batch engine's slot lifecycle code.</p>
+          <p>Kronk supports three model architectures. The model type is detected automatically at load time and affects how the batch engine manages sequence state. The caching system's session matching and cache building are the same for all model types — the difference is in the batch engine's cleanup behavior after a request completes.</p>
+          <p><strong>All IMC sessions</strong> (text and media) use the same lifecycle for all model types: the cached prefix is snapshotted to RAM (via <code>StateSeqGetData</code>) during slot initialization, and the entire VRAM sequence is cleared after the request completes. The next request restores the cached state from RAM into any available slot. <code>StateSeqGetData</code> captures raw KV bytes regardless of whether they originated from text tokens or media embeddings. For Hybrid models, <code>StateSeqGetData</code> captures both KV cache and recurrent state (DeltaNet/SSM), so the unified snapshot/restore path naturally handles them.</p>
           <table className="flags-table">
             <thead>
               <tr>
                 <th>Model Type</th>
                 <th>Architecture</th>
-                <th>State Management</th>
+                <th>IMC Cleanup</th>
                 <th>Detection</th>
               </tr>
             </thead>
@@ -2072,45 +2064,39 @@ Next iteration → target slot free? ──Yes──→ assign to slot
               <tr>
                 <td>Dense</td>
                 <td>Standard transformer</td>
-                <td>Partial range delete</td>
+                <td>Full clear (snapshot)</td>
                 <td>Default (not MoE, not Hybrid)</td>
               </tr>
               <tr>
                 <td>MoE</td>
                 <td>Mixture of Experts</td>
-                <td>Partial range delete</td>
+                <td>Full clear (snapshot)</td>
                 <td>GGUF <code>expert_count</code> metadata</td>
               </tr>
               <tr>
                 <td>Hybrid</td>
                 <td>Attention + Recurrent (DeltaNet/SSM)</td>
-                <td>Snapshot/Restore</td>
+                <td>Full clear (snapshot)</td>
                 <td><code>llama.ModelIsHybrid</code></td>
               </tr>
             </tbody>
           </table>
-          <h4 id="partial-range-delete-dense-and-moe">Partial Range Delete (Dense and MoE)</h4>
-          <p>Dense and MoE models use the simplest and fastest cleanup strategy after a request completes.</p>
-          <p>After a request completes, the batch engine trims the generated tokens from the KV cache. This removes only the tokens produced during generation, leaving the cached conversation prefix intact for the next request. This is cheap and fast — the cached prefix is never re-decoded.</p>
-          <pre className="code-block"><code>{`Before:  [cached prefix tokens] [generated tokens]
-After:   [cached prefix tokens]                     ← trimmed`}</code></pre>
-          <h4 id="snapshotrestore-hybrid">Snapshot/Restore (Hybrid)</h4>
-          <p>Hybrid models require a different approach because their recurrent layers maintain hidden state that cannot be partially trimmed like a KV cache.</p>
-          <p>Hybrid models mix Attention layers with recurrent layers (DeltaNet/SSM). Recurrent layers store a hidden state that cannot be "rewound" by partial range delete — a partial delete corrupts the recurrent state, causing decode errors on subsequent requests.</p>
-          <p>Instead, the batch engine uses a snapshot/restore approach:</p>
+          <h4 id="snapshot-to-ram-all-model-types">Snapshot to RAM (All Model Types)</h4>
+          <p>All IMC sessions use the same snapshot/restore approach regardless of model type or content type (text or media):</p>
           <ol>
-            <li><strong>Snapshot</strong>: After the IMC cache is built or extended but before suffix tokens are decoded, the engine captures the full sequence state (KV cache  recurrent hidden state) into a byte buffer in RAM.</li>
-            <li><strong>Restore</strong>: After the request completes, the engine performs a full sequence clear and restores the snapshot from the byte buffer. This returns the sequence to the exact state it was in after the cached prefix, with the recurrent hidden state perfectly preserved.</li>
+            <li><strong>Snapshot</strong>: After the IMC cache is built or extended but before suffix tokens are decoded, the engine captures the full sequence state (KV cache and recurrent hidden state for Hybrid models) into a byte buffer in RAM via <code>StateSeqGetData</code>.</li>
+            <li><strong>Clear</strong>: After the request completes, the entire VRAM sequence is cleared. The cached prefix lives in the session's RAM buffer.</li>
+            <li><strong>Restore</strong>: On the next request, the cached state is restored from RAM into any available slot via <code>StateSeqSetData</code>.</li>
           </ol>
-          <pre className="code-block"><code>{`Standard (Dense/MoE):  Trim generated tokens (partial delete)
-Hybrid:                Full clear → Restore snapshot (memory copy)`}</code></pre>
+          <pre className="code-block"><code>{`IMC (all types, all content): Snapshot to RAM → Clear VRAM → Restore into any slot`}</code></pre>
+          <p>The only difference is that when a new media message appears in the conversation, the cache is rebuilt through the mtmd pipeline (projection model encodes image/audio into embeddings).</p>
           <p>The snapshot/restore is a memory copy operation, typically 10-30ms depending on conversation size.</p>
           <h4 id="partial-prefix-rebuilds-hybrid">Partial Prefix Rebuilds (Hybrid)</h4>
           <p>Partial prefix matches are more expensive for hybrid models because the recurrent state must be rebuilt from the beginning.</p>
-          <p>When a request matches a partial token prefix (the token prefix fallback path), Dense/MoE models trim from the divergence point. Hybrid models cannot do partial trims, so the engine performs a full sequence clear and re-decodes the entire cached token sequence from position 0. This is more expensive but guarantees the recurrent state is built correctly.</p>
+          <p>When a request matches a partial token prefix (the token prefix fallback path), Dense/MoE models trim from the divergence point and re-decode only the new tokens. Hybrid models cannot do partial trims, so the engine performs a full sequence clear and re-decodes the entire cached token sequence from position 0. This is more expensive but guarantees the recurrent state is built correctly.</p>
           <h4 id="moe-performance-characteristics">MoE Performance Characteristics</h4>
           <p>While MoE models share the same state management as Dense, their architecture introduces unique performance trade-offs worth understanding.</p>
-          <p>MoE models use the same state management as Dense (partial range delete), but have different performance profiles that affect configuration:</p>
+          <p>MoE models use the same state management as Dense (snapshot/restore), but have different performance profiles that affect configuration:</p>
           <ul>
             <li>Lower tokens/sec than comparably-sized dense models on Apple Silicon due to scattered memory access patterns from expert routing</li>
             <li>Sensitive to aggressive KV cache quantization — use <code>f16</code> cache types if quality degrades with <code>q8_0</code></li>
@@ -2124,9 +2110,9 @@ Hybrid:                Full clear → Restore snapshot (memory copy)`}</code></p
           </ul>
           <h4 id="hybrid-guardrails">Hybrid Guardrails</h4>
           <p>Kronk protects against corrupted state by automatically recovering when snapshot operations fail.</p>
-          <p>If a snapshot restore fails, Kronk clears the slot's IMC metadata so the slot is not reused with a corrupted sequence. The next request to that slot triggers a full cache rebuild from scratch.</p>
+          <p>If a snapshot restore fails, Kronk clears the session's IMC metadata so the session is not reused with a corrupted state. The next request for that session triggers a full cache rebuild from scratch.</p>
           <h3 id="410-debugging-state-management">4.10 Debugging State Management</h3>
-          <p>Use these log messages to diagnose how the batch engine is managing KV cache state between requests. They are especially useful for hybrid models where snapshot/restore failures can trigger expensive full rebuilds.</p>
+          <p>Use these log messages to diagnose how the batch engine is managing KV cache state between requests. Snapshot/restore is used by all IMC sessions (to externalize KV state to RAM). These messages are especially useful when restore failures trigger expensive full rebuilds.</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -2171,7 +2157,7 @@ Hybrid:                Full clear → Restore snapshot (memory copy)`}</code></p
           <h3 id="51-overview">5.1 Overview</h3>
           <p>When processing a chat request, the model must compute attention for every token in the conversation. Without caching, the entire prompt is prefilled on every request — even tokens the model has already seen.</p>
           <p><em>Note: Prefill is the phase where the model processes all input tokens (system prompt, conversation history, and the new message) before it begins generating a response. This is the most computationally expensive part of a request, and its cost grows with the number of input tokens.</em></p>
-          <p>Kronk provides the Incremental Message Cache (IMC) to reduce redundant prefill work. IMC dedicates each slot to a conversation and caches the full message history in the slot's KV cache sequence, so only the new message needs to be prefilled.</p>
+          <p>Kronk provides the Incremental Message Cache (IMC) to reduce redundant prefill work. IMC maintains logical sessions — one per conversation branch — and caches the full message history so only the new message needs to be prefilled. All sessions (text and media) externalize their cached KV state to RAM after each request and restore it into any available slot on the next request. <code>StateSeqGetData</code> captures the raw KV bytes regardless of whether they originated from text tokens or media embeddings.</p>
           <pre className="code-block"><code>{`No Caching:
 ┌─────────────────────────────────────────────────────┐
 │ System Prompt │ Message 1 │ Message 2 │ New Message │
@@ -2189,8 +2175,14 @@ IMC (Incremental Message Cache):
                                            Generate`}</code></pre>
           <h3 id="52-incremental-message-cache-imc">5.2 Incremental Message Cache (IMC)</h3>
           <p>Incremental Message Cache is designed for agentic workflows. It caches all messages except the last one and extends the cache incrementally on each turn. When a client or agent mutates the conversation history, IMC uses a two-tier hash to preserve the system prompt KV state and only rebuild the conversation body.</p>
+          <p><strong>Key Terminology:</strong></p>
+          <ul>
+            <li><strong>Session</strong> — logical IMC conversation branch with its own metadata (hash, token count, message index). Decoupled from physical slots.</li>
+            <li><strong>Slot</strong> — physical batch-engine execution lane. Any session (text or media) can run on any available slot.</li>
+            <li><strong>Sequence / seqID</strong> — llama.cpp KV cache partition attached to the active slot during request processing.</li>
+          </ul>
           <h4 id="two-tier-hash-design">Two-Tier Hash Design</h4>
-          <p>IMC tracks two independent hashes per slot:</p>
+          <p>IMC tracks two independent hashes per session:</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -2228,10 +2220,10 @@ Conversation edit (sys prompt hash match, full hash mismatch):
           <p><strong>How IMC Detects Changes:</strong></p>
           <p>IMC uses a cascading match algorithm. It always tries the fastest path first and automatically falls back to slower-but-more-resilient strategies when the fast path fails:</p>
           <ol>
-            <li><strong>Hash match</strong> — Hash the incoming message prefix and compare against each slot's stored hash. Instant, zero-tokenization overhead. This is the common case when the conversation grows normally (messages appended, nothing edited).</li>
+            <li><strong>Hash match</strong> — Hash the incoming message prefix and compare against each session's stored hash. Instant, zero-tokenization overhead. This is the common case when the conversation grows normally (messages appended, nothing edited).</li>
             <li><strong>System prompt preservation</strong> — If the full hash mismatches but the system prompt hash (Tier 1) still matches, keep the system prompt KV in place and re-decode only the conversation body. This handles the common case where the client edits or drops messages while keeping the same system prompt.</li>
-            <li><strong>Token prefix fallback</strong> — If no hash matches at all, tokenize the incoming messages and compare element-by-element against cached slots to find the longest common prefix. Trim the divergent suffix and decode only the new tokens. This salvages 70-80% of cached tokens when templates, tool call formatting, or client behavior causes token-level differences even though the conversation is logically the same.</li>
-            <li><strong>Full rebuild</strong> — No usable match found. Pick an empty slot or evict the LRU slot and build the cache from scratch.</li>
+            <li><strong>Token prefix fallback</strong> — If no hash matches at all, tokenize the incoming messages and compare element-by-element against cached sessions to find the longest common prefix. Trim the divergent suffix and decode only the new tokens. This salvages 70-80% of cached tokens when templates, tool call formatting, or client behavior causes token-level differences even though the conversation is logically the same.</li>
+            <li><strong>Full rebuild</strong> — No usable match found. Pick an empty session or evict the LRU session and build the cache from scratch.</li>
           </ol>
           <p>The matching algorithm is independent of the model type (Dense, MoE, Hybrid). What changes per model type is how the batch engine manages state between requests — see <a href="#49-model-types-and-state-management">Section 4.9</a>.</p>
           <p><strong>IMC is Best for:</strong></p>
@@ -2246,10 +2238,11 @@ Conversation edit (sys prompt hash match, full hash mismatch):
   Qwen3-8B-Q8_0:
     incremental_cache: true
     cache_min_tokens: 100 # Minimum tokens before caching (default)`}</code></pre>
-          <h4 id="multi-slot-architecture">Multi-Slot Architecture</h4>
-          <p>All <code>NSeqMax</code> slots are available for IMC. Each slot independently tracks its own conversation branch — its own message hash, system prompt hash, token count, and message index. Sub-agents are routed to different slots via hash matching, allowing them to maintain independent caches and run concurrently.</p>
-          <p>With <code>n_seq_max: 3</code>, three sub-agents can each have their own cached conversation branch. Without multi-slot IMC, every sub-agent request would cause a prefix mismatch and rebuild the cache from scratch because different sub-agents send different system prompts and conversation content.</p>
-          <p><strong>Important:</strong> Set <code>n_seq_max</code> to at least the number of concurrent sub-agents your agent framework spawns. If <code>n_seq_max</code> is smaller than the number of sub-agents, cache thrashing can occur — each new sub-agent evicts a slot, and when the evicted sub-agent returns, it evicts another. Every request triggers a full rebuild from scratch, eliminating the caching benefit entirely. With unified KV cache, all slots share the same <code>n_ctx</code> pool, so adding more slots does not multiply VRAM usage. However, more slots means more concurrent cached conversations competing for the shared pool. KV pressure eviction automatically clears stale slots when space gets tight — see <a href="#kv-pressure-eviction">KV Pressure Eviction</a>.</p>
+          <h4 id="multi-session-architecture">Multi-Session Architecture</h4>
+          <p>All <code>NSeqMax</code> sessions are available for IMC. Each session independently tracks its own conversation branch — its own message hash, system prompt hash, token count, and message index. Sub-agents are routed to different sessions via hash matching, allowing them to maintain independent caches.</p>
+          <p>Each session externalizes its cached KV state to RAM after the request completes. On the next request, the cached state is restored into any available slot — sessions are not pinned to specific slots. This means all slots are equally eligible for any session, maximizing slot utilization. <code>StateSeqGetData</code> captures raw KV bytes regardless of whether they originated from text tokens or media embeddings.</p>
+          <p>With <code>n_seq_max: 3</code>, three sub-agents can each have their own cached conversation branch. Without multi-session IMC, every sub-agent request would cause a prefix mismatch and rebuild the cache from scratch because different sub-agents send different system prompts and conversation content.</p>
+          <p><strong>Important:</strong> Set <code>n_seq_max</code> to at least the number of concurrent sub-agents your agent framework spawns. If <code>n_seq_max</code> is smaller than the number of sub-agents, cache thrashing can occur — each new sub-agent evicts a session, and when the evicted sub-agent returns, it evicts another. Every request triggers a full rebuild from scratch, eliminating the caching benefit entirely. With unified KV cache, all slots share the same <code>n_ctx</code> pool, so adding more slots does not multiply VRAM usage. However, more sessions means more cached conversations competing for the shared pool. KV pressure eviction automatically clears stale sessions when space gets tight — see <a href="#kv-pressure-eviction">KV Pressure Eviction</a>.</p>
           <p><strong>How It Works:</strong></p>
           <p>First request (2 messages: system + user):</p>
           <pre className="code-block"><code>{`Messages: [system, user]
@@ -2268,59 +2261,60 @@ Prefill:  [user3 + gen_prompt]`}</code></pre>
 Cache:    [system]                   ← System prompt KV preserved
 Rebuild:  [user, user3]              ← Only conversation body re-decoded
 Prefill:  [user3 + gen_prompt]`}</code></pre>
-          <h4 id="slot-selection-algorithm">Slot Selection Algorithm</h4>
-          <p>When a request arrives, IMC scans all slots to find the best match. The algorithm has five steps, tried in order.</p>
+          <h4 id="session-selection-algorithm">Session Selection Algorithm</h4>
+          <p>When a request arrives, IMC scans all sessions to find the best match. The algorithm has five steps, tried in order. After a session is selected, the batch engine assigns the request to the first available slot. The session's KV state is restored from RAM into the assigned slot.</p>
           <ol>
-            <li><strong>Scan all slots</strong> — For each slot: stored hash Track the slot as a system-prompt-match candidate if it does.
+            <li><strong>Scan all sessions</strong> — For each session: stored hash Track the session as a system-prompt-match candidate if it does.
               <ul>
-                <li>Skip slots with a build in-flight (pending flag set)</li>
-                <li>Skip empty slots (track them as fallback candidates)</li>
-                <li>Skip slots with more cached messages than the request has total</li>
-                <li>Hash <code>messages[:slot.cachedMsgCount]</code> and compare to the slot's</li>
+                <li>Skip sessions with a build in-flight (pending flag set)</li>
+                <li>Skip empty sessions (track them as fallback candidates)</li>
+                <li>Skip sessions with more cached messages than the request has total</li>
+                <li>Hash <code>messages[:session.cachedMsgCount]</code> and compare to the session's</li>
                 <li>On mismatch: check if the system prompt hash (Tier 1) still matches.</li>
-                <li>Track mismatched slots as eviction candidates</li>
+                <li>Track mismatched sessions as eviction candidates</li>
               </ul>
             </li>
-            <li><strong>KV pressure eviction</strong> — When a matching slot is found and the total KV usage across all slots exceeds the context window, evict mismatched slots (largest first) to reclaim space. See <a href="#kv-pressure-eviction">KV Pressure Eviction</a> for details.</li>
-            <li><strong>On full match</strong> — Pick the slot with the best prefix coverage (most cached messages). If the request has new messages to cache, extend the slot's cache. If the messages are identical, it's a pure cache hit.</li>
-            <li><strong>System prompt preservation (two-tier hash)</strong> — No full match, but a slot has the same system prompt cached. Keep the system prompt KV in place, trim everything after the system prompt token boundary, and re-template and re-decode only the conversation body. Before preserving, IMC verifies the system prompt token boundary is consistent after re-templating — if the template produces a different token count for the system prompt, it falls back to a full rebuild. Media slots are excluded from this path because token-level trim is unsafe for image/audio embeddings.</li>
-            <li><strong>Token prefix fallback</strong> — Tokenize the incoming messages and compare the resulting token sequence element-by-element against each non-empty slot's stored <code>cachedTokens</code>. Pick the slot with the longest common prefix that meets <code>cache_min_tokens</code>. Trim the KV cache from the divergence point and decode only the new tokens from there forward. See <a href="#token-prefix-fallback">Token Prefix Fallback</a> for details.</li>
-            <li><strong>No match at all</strong> — Pick an empty slot if one exists, otherwise evict the least-recently-used (LRU) slot and rebuild from scratch.</li>
+            <li><strong>KV pressure eviction</strong> — When a matching session is found and the total KV usage across all sessions exceeds the context window, evict mismatched sessions (largest first) to reclaim space. Sessions with externalized <code>kvState</code> do not count against VRAM KV pressure because their VRAM sequences are already cleared. See <a href="#kv-pressure-eviction">KV Pressure Eviction</a> for details.</li>
+            <li><strong>On full match</strong> — Pick the session with the best prefix coverage (most cached messages). If the request has new messages to cache, extend the session's cache. If the messages are identical, it's a pure cache hit.</li>
+            <li><strong>System prompt preservation (two-tier hash)</strong> — No full match, but a session has the same system prompt cached. Keep the system prompt KV in place, trim everything after the system prompt token boundary, and re-template and re-decode only the conversation body. Before preserving, IMC verifies the system prompt token boundary is consistent after re-templating — if the template produces a different token count for the system prompt, it falls back to a full rebuild.</li>
+            <li><strong>Token prefix fallback</strong> — Tokenize the incoming messages and compare the resulting token sequence element-by-element against each non-empty session's stored <code>cachedTokens</code>. Pick the session with the longest common prefix that meets <code>cache_min_tokens</code>. Trim the KV cache from the divergence point and decode only the new tokens from there forward. See <a href="#token-prefix-fallback">Token Prefix Fallback</a> for details.</li>
+            <li><strong>No match at all</strong> — Pick an empty session if one exists, otherwise evict the least-recently-used (LRU) session and rebuild from scratch.</li>
           </ol>
           <p><strong>Concurrent Build Protection:</strong></p>
-          <p>When two requests arrive simultaneously and both need to build a cache from scratch, a race condition could cause both to pick the same empty slot. IMC prevents this with a pending flag: when a slot begins a deferred cache build, it is marked pending. Concurrent scanners skip pending slots, so the second request picks a different slot. The pending flag is cleared after the cache decode completes (or on error).</p>
+          <p>When two requests arrive simultaneously and both need to build a cache from scratch, a race condition could cause both to pick the same empty session. IMC prevents this with a pending flag: when a session begins a deferred cache build, it is marked pending. Concurrent scanners skip pending sessions, so the second request picks a different session. The pending flag is cleared after the cache decode completes (or on error).</p>
           <p><strong>Decode Failure Recovery:</strong></p>
           <p>If a cache decode fails at any point (extend, rebuild, trim, or media build), IMC clears the entire KV sequence and resets the session metadata. This ensures the slot never advertises cached content that doesn't exist in the KV cache.</p>
           <h4 id="kv-pressure-eviction">KV Pressure Eviction</h4>
           <p>With <code>n_seq_max &gt; 1</code>, Kronk enables a unified KV cache (<code>KVUnified=1</code>) so that all sequences share the full <code>n_ctx</code> pool. Any single sequence can grow up to the full context window, but the <strong>total</strong> KV usage across all sequences cannot exceed <code>n_ctx</code>.</p>
-          <p>This matters when an agent framework (like Kilo or Cline) sends multiple concurrent requests for the same conversation. Each request may land on a different slot. As the conversation grows, the active slot accumulates a large cache while older slots hold stale snapshots of earlier conversation states. Those stale slots consume KV cells that the active slot needs.</p>
+          <p>All sessions externalize their KV state to RAM after each request and clear their VRAM sequence, so they do not contribute to VRAM KV pressure between requests. However, during active processing, a session's restored KV does consume VRAM cells until the request completes and the state is externalized again.</p>
           <p><strong>Example:</strong> With <code>n_seq_max: 3</code> and <code>context_window: 131072</code>:</p>
-          <pre className="code-block"><code>{`Slot 0: 854 tokens    (stale — 2 cached messages, hash mismatch)
-Slot 1: 46,541 tokens (stale — 17 cached messages, hash mismatch)
-Slot 2: 86,682 tokens (active — 49 cached messages, hash match)
-Total:  134,077 tokens > 131,072 → context window full!`}</code></pre>
+          <pre className="code-block"><code>{`Session 0: 854 tokens    (stale media — 2 cached messages, hash mismatch)
+Session 1: 46,541 tokens (stale media — 17 cached messages, hash mismatch)
+Session 2: 86,682 tokens (active media — 49 cached messages, hash match)
+Total VRAM-resident: 134,077 tokens > 131,072 → context window full!`}</code></pre>
           <p>Without KV pressure eviction, the next decode would fail with "context window is full" even though the active conversation only uses ~87k of the 131k window.</p>
           <p><strong>How It Works:</strong></p>
-          <p>After the slot scan finds a matching slot (Step 1), IMC checks whether the projected total KV usage across all slots exceeds the context window. If it does, mismatched slots are evicted largest-first until the total fits:</p>
+          <p>After the session scan finds a matching session (Step 1), IMC checks whether the projected total KV usage across all sessions exceeds the context window. If it does, mismatched sessions are evicted largest-first until the total fits:</p>
           <ol>
-            <li>Sum <code>totalTokensCached</code> across all non-empty, non-pending slots</li>
-            <li>If the sum exceeds <code>context_window</code>, sort mismatched slots by token count (descending)</li>
-            <li>Evict slots one at a time — clear the KV sequence (<code>MemorySeqRm</code>) and reset the session metadata — until the projected total is within bounds</li>
+            <li>Sum <code>totalTokensCached</code> across all non-empty, non-pending sessions (sessions with externalized <code>kvState</code> are excluded since their VRAM is already freed)</li>
+            <li>If the sum exceeds <code>context_window</code>, sort mismatched sessions by token count (descending)</li>
+            <li>Evict sessions one at a time — clear the KV sequence (<code>MemorySeqRm</code>) and reset the session metadata — until the projected total is within bounds</li>
           </ol>
-          <p>In the example above, evicting Slot 1 (46,541 tokens) brings the total to 87,536 — well within the 131,072 limit. Slot 0 (854 tokens) may or may not need eviction depending on the remaining headroom.</p>
+          <p>In the example above, evicting Session 1 (46,541 tokens) brings the total to 87,536 — well within the 131,072 limit. Session 0 (854 tokens) may or may not need eviction depending on the remaining headroom.</p>
           <p><strong>Key Points:</strong></p>
           <ul>
-            <li>Eviction only targets <strong>mismatched</strong> slots — the active slot and any other matching slots are never evicted</li>
-            <li>Pending slots (with a build in-flight) are never evicted</li>
-            <li>Evicted slots become empty and are available for future cache builds</li>
-            <li>The eviction check runs before the extend/hit path, so the active slot always has room to grow</li>
+            <li>Eviction only targets <strong>mismatched</strong> sessions — the active session and any other matching sessions are never evicted</li>
+            <li>Pending sessions (with a build in-flight) are never evicted</li>
+            <li>Sessions with externalized <code>kvState</code> do not count toward VRAM pressure and are not eviction candidates (their VRAM is already freed)</li>
+            <li>Evicted sessions become empty and are available for future cache builds</li>
+            <li>The eviction check runs before the extend/hit path, so the active session always has room to grow</li>
             <li>No configuration needed — eviction triggers automatically when KV pressure is detected</li>
           </ul>
           <h4 id="token-prefix-fallback">Token Prefix Fallback</h4>
           <p>When hash matching fails — whether because the client edited messages, a template produced slightly different tokens, or the agent didn't send exactly the same conversation — IMC falls back to token-level prefix matching to salvage as much of the cached KV state as possible.</p>
-          <p><strong>When it activates:</strong> Automatically when no hash match and no system prompt match is found during the slot scan (Step 5 of the <a href="#slot-selection-algorithm">Slot Selection Algorithm</a>). IMC compares the actual cached token arrays against the incoming request's tokens. Only candidates with compatible message counts are considered — the request must have at least as many messages as the slot cached.</p>
+          <p><strong>When it activates:</strong> Automatically when no hash match and no system prompt match is found during the session scan (Step 5 of the <a href="#session-selection-algorithm">Session Selection Algorithm</a>). IMC compares the actual cached token arrays against the incoming request's tokens. Only candidates with compatible message counts are considered — the request must have at least as many messages as the session cached.</p>
           <p><strong>How it works:</strong></p>
-          <p>IMC tokenizes the incoming messages and compares them element-by-element against each non-empty slot's stored token sequence to find the longest common prefix.</p>
+          <p>IMC tokenizes the incoming messages and compares them element-by-element against each non-empty session's stored token sequence to find the longest common prefix.</p>
           <pre className="code-block"><code>{`Cached tokens:   [T1, T2, T3, T4, T5, T6, T7, T8]
 Incoming tokens: [T1, T2, T3, T4, T5, T9, T10, T11, T12]
                                        ↑
@@ -2331,10 +2325,10 @@ Trimmed:       3 tokens (T6-T8 removed from KV cache)
 New decode:    4 tokens (T9-T12, from divergence point forward)`}</code></pre>
           <p>If the common prefix meets the <code>cache_min_tokens</code> threshold, IMC:</p>
           <ol>
-            <li>Reserves the matching slot (marks it pending)</li>
+            <li>Reserves the matching session (marks it pending)</li>
             <li>Trims the divergent suffix from the KV cache</li>
             <li>Decodes only the new tokens from the divergence point forward</li>
-            <li>Updates the slot's hash and cached token sequence</li>
+            <li>Updates the session's hash and cached token sequence</li>
           </ol>
           <p>Once the partial rebuild completes, subsequent requests in the same conversation use normal hash-based extending.</p>
           <p>Real-world testing showed 77-80% cache salvage rates. Instead of decoding ~8400 tokens from scratch, the system kept ~6800 cached and only decoded ~1600.</p>
@@ -2386,12 +2380,12 @@ New decode:    4 tokens (T9-T12, from divergence point forward)`}</code></pre>
             <tbody>
               <tr>
                 <td>Dense</td>
-                <td>Partial range delete</td>
+                <td>Snapshot/Restore</td>
                 <td>No special requirements</td>
               </tr>
               <tr>
                 <td>MoE</td>
-                <td>Partial range delete</td>
+                <td>Snapshot/Restore</td>
                 <td>f16 cache, split_mode: row</td>
               </tr>
               <tr>
@@ -2415,13 +2409,13 @@ New decode:    4 tokens (T9-T12, from divergence point forward)`}</code></pre>
     cache_type_k: f16 # Required for hybrid models
     cache_type_v: f16 # Required for hybrid models`}</code></pre>
           <h3 id="53-single-user-caching">5.3 Single-User Caching</h3>
-          <p>IMC is designed for single-user use. All <code>NSeqMax</code> slots are available, with each slot independently tracking its own conversation branch via hash matching. This design is optimized for agentic workflows where multiple sub-agents send independent conversations (different system prompts, different message histories).</p>
+          <p>IMC is designed for single-user use. All <code>NSeqMax</code> sessions are available, with each session independently tracking its own conversation branch via hash matching. All sessions can run on any available slot. This design is optimized for agentic workflows where multiple sub-agents send independent conversations (different system prompts, different message histories).</p>
           <h3 id="54-when-to-use-imc">5.4 When to Use IMC</h3>
           <p>IMC caches the entire conversation history and uses hash matching with automatic token prefix fallback when changes are detected. It is best suited for:</p>
           <ul>
             <li><strong>Agentic workflows</strong> — hash matching handles the common case, and token prefix fallback automatically salvages 70-80% of cached tokens when changes are detected</li>
             <li><strong>AI coding agents</strong> — long-running conversations with growing context</li>
-            <li><strong>Sub-agent architectures</strong> — each sub-agent gets its own slot via hash matching, maintaining independent caches</li>
+            <li><strong>Sub-agent architectures</strong> — each sub-agent gets its own session via hash matching, maintaining independent caches</li>
           </ul>
           <table className="flags-table">
             <thead>
@@ -2440,20 +2434,28 @@ New decode:    4 tokens (T9-T12, from divergence point forward)`}</code></pre>
                 <td>Yes, incrementally</td>
               </tr>
               <tr>
-                <td>Slots</td>
-                <td>All slots available, single-user</td>
+                <td>Sessions</td>
+                <td>All sessions available, single-user</td>
+              </tr>
+              <tr>
+                <td>Slot routing</td>
+                <td>Any available slot (all sessions)</td>
               </tr>
               <tr>
                 <td>Sub-agents</td>
-                <td>Each gets own slot via hash matching</td>
+                <td>Each gets own session via hash matching</td>
               </tr>
               <tr>
                 <td>Best for</td>
                 <td>Agentic workflows</td>
               </tr>
               <tr>
-                <td>Memory</td>
-                <td>Zero extra VRAM overhead</td>
+                <td>VRAM</td>
+                <td>Unified <code>n_ctx</code> pool, not multiplied by <code>n_seq_max</code></td>
+              </tr>
+              <tr>
+                <td>RAM</td>
+                <td>One externalized KV snapshot per session between requests</td>
               </tr>
             </tbody>
           </table>
@@ -2461,7 +2463,7 @@ New decode:    4 tokens (T9-T12, from divergence point forward)`}</code></pre>
           <p>Cached state doesn't last forever. Kronk uses hash comparisons to detect when cached tokens no longer match the incoming request, and automatically rebuilds the cache when a mismatch is found. Understanding what triggers invalidation helps you avoid unexpected prefill costs.</p>
           <p><strong>IMC Invalidation:</strong></p>
           <ul>
-            <li>Message prefix hash mismatch with same system prompt → system prompt KV preserved, conversation body trimmed and re-decoded (Step 4 of the slot selection algorithm)</li>
+            <li>Message prefix hash mismatch with same system prompt → system prompt KV preserved, conversation body trimmed and re-decoded (Step 4 of the session selection algorithm)</li>
             <li>Message prefix hash mismatch with no system prompt match → token prefix fallback attempted (see <a href="#token-prefix-fallback">Token Prefix Fallback</a>). If a common prefix ≥ <code>cache_min_tokens</code> is found, only the divergent suffix is trimmed and rebuilt. Otherwise, cache is rebuilt from scratch.</li>
             <li>System prompt changed → full cache rebuild from scratch</li>
             <li>Conversation shrinks (client dropped messages or reasoning blocks) → system prompt preserved if unchanged, conversation body re-decoded</li>
@@ -2479,7 +2481,7 @@ New decode:    4 tokens (T9-T12, from divergence point forward)`}</code></pre>
     incremental_cache: true
     cache_min_tokens: 100 # Don't cache if < 100 tokens`}</code></pre>
           <p><strong>cache_min_tokens</strong></p>
-          <p>Minimum common prefix length required for token-level partial prefix matching. If no slot's cached tokens share at least this many tokens with the incoming request, the fallback is skipped and the cache is rebuilt from scratch.</p>
+          <p>Minimum common prefix length required for token-level partial prefix matching. If no session's cached tokens share at least this many tokens with the incoming request, the fallback is skipped and the cache is rebuilt from scratch.</p>
           <p>Default: 100 tokens</p>
           <h3 id="57-performance-and-limitations">5.7 Performance and Limitations</h3>
           <p>IMC improves request latency by skipping redundant prefill work. It delivers large savings for multi-turn conversations but imposes restrictions on template behavior and session management.</p>
@@ -2491,16 +2493,17 @@ New decode:    4 tokens (T9-T12, from divergence point forward)`}</code></pre>
           </ul>
           <p>Cache extensions (adding new messages to an existing cached prefix) are especially fast because only the delta tokens are decoded. In production logs, sequential extensions typically take ~3ms each.</p>
           <p><strong>IMC Memory Overhead:</strong></p>
-          <p>IMC adds no extra VRAM beyond what the context window already requires. With <code>n_seq_max &gt; 1</code>, Kronk enables a unified KV cache where all sequences share the full <code>n_ctx</code> pool. The total KV cache size is determined by <code>context_window</code>, not multiplied by the number of slots:</p>
+          <p>IMC adds no extra VRAM beyond what the context window already requires. With <code>n_seq_max &gt; 1</code>, Kronk enables a unified KV cache where all sequences share the full <code>n_ctx</code> pool. The total KV cache size is determined by <code>context_window</code>, not multiplied by the number of sessions:</p>
           <pre className="code-block"><code>{`131K context, n_seq_max=3, IMC (unified KV cache):
   Total KV cache: ~3.2 GB (8B model, F16)
   Any single slot can use up to the full 131K tokens
   Total across all slots cannot exceed 131K tokens`}</code></pre>
-          <p>KV pressure eviction ensures that stale slots are cleared when the shared pool gets tight, so the active conversation always has access to the full context window.</p>
+          <p>Sessions do not pin their prefix KV in VRAM between requests — the cached prefix is snapshotted to RAM and the VRAM sequence is cleared. This means sessions consume <strong>RAM</strong> (one KV snapshot per session) but no VRAM KV cells between requests. The RAM cost varies by conversation length and model size.</p>
+          <p>KV pressure eviction only considers sessions whose cached KV is still resident in VRAM (sessions without an externalized <code>kvState</code>). Sessions with externalized state are excluded from VRAM pressure calculations.</p>
           <p><strong>IMC Token Prefix Fallback Performance:</strong></p>
           <p>When IMC falls back to token-level prefix matching, there is a one-time cost to tokenize the incoming messages for comparison. This is typically fast (&lt; 5ms for most conversations). The savings from salvaging 70-80% of the cached tokens far outweigh this cost compared to a full rebuild.</p>
           <p><strong>IMC with Vision/Audio Models:</strong></p>
-          <p>IMC fully supports vision and audio models (models configured with a projection file). Text-only requests are cached normally. When a message containing media (image, video, or audio) appears in the conversation history, IMC caches the entire conversation — including the media embeddings — in the KV cache. The image or audio is encoded through the projection model once and remains in the KV cache across subsequent requests. Text-only follow-up messages extend the cache without re-encoding the media.</p>
+          <p>IMC fully supports vision and audio models (models configured with a projection file). Text-only requests are cached normally. When a message containing media (image, video, or audio) appears in the conversation history, IMC caches the entire conversation — including the media embeddings — in the KV cache. The image or audio is encoded through the projection model once. After the request, the entire cached prefix (text + media KV) is snapshotted to RAM and restored on the next request — media is never re-encoded unless the cache is rebuilt from scratch. Text-only follow-up messages extend the cache without re-encoding the media.</p>
           <p>For example, in a conversation like:</p>
           <pre className="code-block"><code>{`Request 1 (image request):
 [system]       →  cached by IMC (text tokens)
@@ -2508,25 +2511,25 @@ New decode:    4 tokens (T9-T12, from divergence point forward)`}</code></pre>
 [user]         →  prefill (generation target)
 
 Request 2 (text follow-up about the image):
-[system]       →  cached (KV cache hit)
-[user + image] →  cached (image stays in KV cache, no re-encode)
+[system]       →  restored from RAM (no re-encode)
+[user + image] →  restored from RAM (image KV preserved, no re-encode)
 [assistant]    →  extended (new text tokens decoded into cache)
 [user]         →  prefill (generation target)
 
 Request 3 (unrelated text question):
-[system]       →  cached (KV cache hit)
-[user + image] →  cached (image stays in KV cache)
-[assistant]    →  cached (KV cache hit)
+[system]       →  restored from RAM
+[user + image] →  restored from RAM (image KV preserved)
+[assistant]    →  restored from RAM
 [user]         →  extended (new text tokens decoded into cache)
 [assistant]    →  extended
 [user]         →  prefill (generation target)
 
 Request 4 (back to asking about the image):
-[system]       →  cached (KV cache hit)
-[user + image] →  cached (image STILL in KV cache, no re-encode)
-[assistant]    →  cached (KV cache hit)
-[user]         →  cached (KV cache hit)
-[assistant]    →  cached (KV cache hit)
+[system]       →  restored from RAM
+[user + image] →  restored from RAM (image KV preserved, no re-encode)
+[assistant]    →  restored from RAM
+[user]         →  restored from RAM
+[assistant]    →  restored from RAM
 [user]         →  extended (new text tokens decoded into cache)
 [assistant]    →  extended
 [user]         →  prefill (generation target)`}</code></pre>
@@ -2547,7 +2550,7 @@ Request 4 (image appears mid-conversation):
 [user]         →  prefill (generation target)
 
 Request 5 (text follow-up about the image):
-[all prior]    →  cached (KV cache hit, image stays in KV cache)
+[all prior]    →  restored from RAM (image KV preserved, no re-encode)
 [assistant]    →  extended (text tokens only, no image re-encode)
 [user]         →  prefill (generation target)`}</code></pre>
           <p><strong>How media caching works internally:</strong></p>
@@ -2555,7 +2558,7 @@ Request 5 (text follow-up about the image):
             <li>When <code>buildIMCCacheFromScratch</code> detects media content, it defers the build to <code>startSlot</code> where the mtmd pipeline (projection model) is available. The cache result carries <code>imcMediaBuild: true</code>.</li>
             <li>When media first appears in a conversation that started text-only, <code>extendIMCTextCacheWithMedia</code> preserves the existing text prefix in the KV cache. It sets <code>imcMediaSkipTextTokens</code> to the number of already-cached text tokens, so <code>decodeMediaIntoCache</code> skips them and only decodes the new text plus media embeddings. This avoids re-decoding potentially tens of thousands of cached text tokens when an image is first introduced mid-conversation.</li>
             <li><code>decodeMediaIntoCache</code> processes the prompt as interleaved chunks — text chunks are tokenized and decoded normally, while image/audio chunks are encoded through the projection model and their embeddings are decoded into the KV cache. When <code>imcMediaSkipTextTokens</code> is set, the first text chunk is partially skipped (only tokens beyond the skip point are decoded). For models using M-RoPE (e.g., Qwen2.5-VL), 2D spatial positions are assigned to image tokens.</li>
-            <li>The slot tracks <code>mediaKVCounts</code> — the number of KV positions consumed by each media chunk. This is needed because media embeddings occupy a different number of KV positions than the text marker tokens they replace in the tokenized prompt.</li>
+            <li>The session tracks <code>mediaKVCounts</code> — the number of KV positions consumed by each media chunk. This is needed because media embeddings occupy a different number of KV positions than the text marker tokens they replace in the tokenized prompt.</li>
             <li>On text-only follow-ups, <code>extendIMCMediaSlotWithText</code> uses the <code>mediaKVCounts</code> to compute the correct offset between text token indices and KV positions, then decodes only the new text tokens at the right position — no image re-encoding occurs.</li>
             <li>If a new message being added contains media (a second image, for example), <code>rebuildIMCWithMedia</code> triggers a full rebuild through the mtmd pipeline.</li>
             <li>Token prefix matching is skipped when the incoming request contains media messages, since the tokenization path would mutate media content and corrupt downstream processing.</li>
@@ -2565,8 +2568,9 @@ Request 5 (text follow-up about the image):
             <li>Editing earlier messages requires a partial rebuild (system prompt KV is preserved when the system prompt hasn't changed; conversation body is re-decoded)</li>
             <li>Changing the system prompt triggers a full cache rebuild</li>
             <li>Designed for single-user use</li>
-            <li>Max concurrent conversation branches = NSeqMax; when all slots are occupied, the least-recently-used slot is evicted</li>
-            <li>System prompt preservation is text-only; media slots always use hash matching or full rebuild</li>
+            <li>Max concurrent conversation branches = NSeqMax; when all sessions are occupied, the least-recently-used session is evicted</li>
+            <li>Cache hits include a RAM→VRAM restore step (typically 10-30ms depending on conversation size)</li>
+            <li>When a new media message appears in the conversation, the cache is rebuilt through the mtmd pipeline (projection model encodes image/audio into embeddings)</li>
           </ul>
           <hr />
           <h2 id="chapter-6-yarn-extended-context">Chapter 6: YaRN Extended Context</h2>
@@ -4394,12 +4398,20 @@ Projector:         ~0.8 GB
 KV cache (8K):     ~0.6 GB
 ─────────────────────────
 Total:             ~9.4 GB`}</code></pre>
-          <h3 id="107-limitations">10.7 Limitations</h3>
+          <h3 id="107-imc-and-multi-modal-caching">10.7 IMC and Multi-Modal Caching</h3>
+          <p>IMC fully supports vision and audio models. Media embeddings (images, audio) are cached in the KV cache alongside text tokens. After each request, the entire cached prefix — including media embeddings — is snapshotted to RAM via <code>StateSeqGetData</code> and the VRAM sequence is cleared. On the next request, the cached state is restored from RAM into any available slot, just like text-only sessions. Media is never re-encoded through the projection model unless the conversation cache is rebuilt from scratch.</p>
+          <p>For example, in a multi-turn vision conversation:</p>
+          <ol>
+            <li><strong>First request</strong> (image + question): The image is encoded through the projection model and decoded into the KV cache alongside text tokens. After generation, the entire cached prefix (text + media KV) is snapshotted to RAM.</li>
+            <li><strong>Follow-up requests</strong> (text-only): The cached state is restored from RAM into any available slot. Only new text tokens are decoded — the image embeddings are preserved in the restored KV state without re-encoding.</li>
+            <li><strong>New image in conversation</strong>: If a new message contains media, IMC triggers a full rebuild through the mtmd pipeline to re-encode all media.</li>
+          </ol>
+          <p>See <a href="chapter-05-message-caching.md">Chapter 5: Message Caching</a> for full details on IMC's caching algorithm.</p>
+          <h3 id="108-limitations">10.8 Limitations</h3>
           <ul>
-            <li>IMC fully caches media (images/audio) in the KV cache; text-only follow-ups extend the cache without re-encoding media (see <a href="#58-performance-and-limitations">§5.8</a>)</li>
             <li>Processing time varies with image resolution and audio duration</li>
           </ul>
-          <h3 id="108-example-image-analysis">10.8 Example: Image Analysis</h3>
+          <h3 id="109-example-image-analysis">10.9 Example: Image Analysis</h3>
           <p>Complete example analyzing an image:</p>
           <pre className="code-block"><code className="language-shell">{`# Encode image to base64
 IMAGE_B64=$(base64 -i photo.jpg)
@@ -4423,7 +4435,7 @@ curl http://localhost:11435/v1/chat/completions \\
     ],
     "max_tokens": 1024
   }'`}</code></pre>
-          <h3 id="109-example-audio-transcription">10.9 Example: Audio Transcription</h3>
+          <h3 id="1010-example-audio-transcription">10.10 Example: Audio Transcription</h3>
           <p>Complete example transcribing audio:</p>
           <pre className="code-block"><code className="language-shell">{`# Encode audio to base64
 AUDIO_B64=$(base64 -i recording.wav)
@@ -4864,8 +4876,145 @@ response = client.chat.completions.create(
           <hr />
           <p><em>Next: &lt;a href="#chapter-13-client-integration"&gt;Chapter 13: Client Integration&lt;/a&gt;</em></p>
           <h2 id="chapter-13-client-integration">Chapter 13: Client Integration</h2>
-          <p>Kronk's OpenAI-compatible API works with popular AI clients and tools.</p>
-          <h3 id="131-openwebui">13.1 OpenWebUI</h3>
+          <p>Kronk's OpenAI-compatible API works with popular AI clients, coding agents, and tools. This chapter covers configuration for coding agents that run in the terminal or VS Code, as well as general-purpose clients.</p>
+          <p>Reference configuration files for each agent are provided in the <code>.agents/</code> directory at the project root. These files are ready to copy into each agent's config directory.</p>
+          <pre className="code-block"><code>{`.agents/
+├── cline/       # Cline VS Code extension
+├── goose/       # Goose TUI agent
+├── kilo/        # Kilo Code VS Code extension
+└── opencode/    # OpenCode TUI agent`}</code></pre>
+          <h3 id="131-coding-agent-model-configuration">13.1 Coding Agent Model Configuration</h3>
+          <p>All coding agents share the same Kronk server and model configuration. The model is configured in <code>model_config.yaml</code> (or the catalog) with an <code>/AGENT</code> suffix that the agent references as its model name.</p>
+          <p><strong>Recommended Configuration:</strong></p>
+          <pre className="code-block"><code className="language-yaml">{`Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
+  context-window: 131072
+  nseq-max: 2
+  incremental-cache: true
+  sampling-parameters:
+    temperature: 0.6
+    top_k: 20
+    top_p: 0.95`}</code></pre>
+          <p>Other models that work well for coding:</p>
+          <pre className="code-block"><code className="language-yaml">{`gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
+  context-window: 131072
+  nseq-max: 2
+  incremental-cache: true
+  sampling-parameters:
+    temperature: 1.0
+    top_k: 64
+    top_p: 0.95
+
+gemma-4-31B-it-UD-Q8_K_XL/AGENT:
+  context-window: 65536
+  nseq-max: 2
+  incremental-cache: true
+  sampling-parameters:
+    temperature: 1.0
+    top_k: 64
+    top_p: 0.95`}</code></pre>
+          <p>See <code>zarf/kms/model_config.yaml</code> for the full set of pre-configured models.</p>
+          <p><strong>Why these settings matter:</strong></p>
+          <ul>
+            <li><strong>&lt;code&gt;incremental-cache: true&lt;/code&gt;</strong> — IMC caches the conversation prefix in RAM between requests, so only the new message needs prefilling on each turn. This is essential for iterative coding workflows where conversations grow to tens of thousands of tokens.</li>
+            <li><strong>&lt;code&gt;nseq-max: 2&lt;/code&gt;</strong> — Two sessions allow the agent's main conversation and a sub-agent to run concurrently without evicting each other's cache.</li>
+            <li><strong>&lt;code&gt;context-window: 131072&lt;/code&gt;</strong> — Large context windows are important for coding agents that accumulate tool results, file contents, and long conversations.</li>
+          </ul>
+          <p><strong>MCP Service:</strong></p>
+          <p>The Kronk MCP service provides tools (like <code>web_search</code>) to coding agents. It starts automatically with the Kronk server on <code>http://localhost:9000/mcp</code>. All agent configs below reference this endpoint.</p>
+          <h3 id="132-cline">13.2 Cline</h3>
+          <p><a href="https://cline.bot">Cline</a> is a VS Code extension for AI-assisted coding.</p>
+          <p><strong>Configure Cline for Kronk:</strong></p>
+          <ol>
+            <li>Open VS Code settings</li>
+            <li>Search for "Cline"</li>
+            <li>Set API Provider to "OpenAI Compatible"</li>
+            <li>Configure:</li>
+          </ol>
+          <pre className="code-block"><code>{`Base URL: http://localhost:11435/v1
+API Key: <your-kronk-token> or 123 if auth is disabled
+Model: Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT`}</code></pre>
+          <p><strong>MCP Configuration:</strong></p>
+          <p>Copy the MCP settings from <code>.agents/cline/</code> to your Cline config:</p>
+          <pre className="code-block"><code className="language-json">{`{
+  "mcpServers": {
+    "Kronk": {
+      "autoApprove": ["web_search"],
+      "disabled": false,
+      "timeout": 60,
+      "type": "streamableHttp",
+      "url": "http://localhost:9000/mcp"
+    }
+  }
+}`}</code></pre>
+          <p>Reference files: <code>.agents/cline/</code></p>
+          <h3 id="133-kilo-code">13.3 Kilo Code</h3>
+          <p><a href="https://kilocode.ai">Kilo Code</a> is a VS Code extension for AI-assisted coding, similar to Cline.</p>
+          <p><strong>Installation:</strong></p>
+          <p>Copy the config files from <code>.agents/kilo/</code> to your Kilo config directory:</p>
+          <pre className="code-block"><code className="language-bash">{`cp .agents/kilo/agent.md  ~/.config/kilo/agent.md
+cp .agents/kilo/kilo.json ~/.config/kilo/kilo.json`}</code></pre>
+          <p>The <code>kilo.json</code> configures Kronk as a custom provider with model definitions and MCP settings. The <code>agent.md</code> file provides custom instructions that tell the model to use Kronk's <code>kronk_fuzzy_edit</code> MCP tool for file edits.</p>
+          <p><strong>Key settings in &lt;code&gt;kilo.json&lt;/code&gt;:</strong></p>
+          <pre className="code-block"><code className="language-json">{`{
+  "model": "gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT",
+  "provider": {
+    "kronk": {
+      "npm": "@ai-sdk/openai-compatible",
+      "options": {
+        "baseURL": "http://localhost:11435/v1",
+        "apiKey": "123"
+      }
+    }
+  },
+  "mcp": {
+    "Kronk": {
+      "type": "remote",
+      "url": "http://localhost:9000/mcp"
+    }
+  }
+}`}</code></pre>
+          <p>_Note: Kilo prefixes MCP tool names with the server name (e.g., <code>Kronk</code> server → <code>Kronk_fuzzy_edit</code>). If you see tool name mismatches, check the MCP server key in <code>kilo.json</code>._</p>
+          <p>Reference files: <code>.agents/kilo/</code></p>
+          <h3 id="134-opencode">13.4 OpenCode</h3>
+          <p><a href="https://opencode.ai">OpenCode</a> is a terminal-based coding agent.</p>
+          <p><strong>Installation:</strong></p>
+          <p>Copy the config files from <code>.agents/opencode/</code> to your OpenCode config directory:</p>
+          <pre className="code-block"><code className="language-bash">{`cp .agents/opencode/agent.md       ~/.config/opencode/agent.md
+cp .agents/opencode/auth.json      ~/.config/opencode/auth.json
+cp .agents/opencode/opencode.jsonc ~/.config/opencode/opencode.jsonc`}</code></pre>
+          <p>The <code>opencode.jsonc</code> configures Kronk as a custom provider. The <code>agent.md</code> file provides custom instructions that tell the model to use Kronk's <code>kronk_fuzzy_edit</code> MCP tool for file edits. The <code>auth.json</code> file provides a placeholder API key for local use.</p>
+          <p><strong>Key settings in &lt;code&gt;opencode.jsonc&lt;/code&gt;:</strong></p>
+          <pre className="code-block"><code className="language-json">{`{
+  "model": "kronk/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT",
+  "provider": {
+    "kronk": {
+      "npm": "@ai-sdk/openai-compatible",
+      "options": {
+        "baseURL": "http://127.0.0.1:11435/v1"
+      }
+    }
+  },
+  "mcp": {
+    "kronk": {
+      "type": "remote",
+      "url": "http://localhost:9000/mcp"
+    }
+  }
+}`}</code></pre>
+          <p>_Note: OpenCode prefixes MCP tool names with the server name in lowercase (e.g., <code>kronk</code> server → <code>kronk_fuzzy_edit</code>)._</p>
+          <p>Reference files: <code>.agents/opencode/</code></p>
+          <h3 id="135-goose">13.5 Goose</h3>
+          <p><a href="https://block.github.io/goose/">Goose</a> is a terminal-based AI agent from Block.</p>
+          <p><strong>Installation:</strong></p>
+          <p>Copy the config from <code>.agents/goose/</code> to your Goose config directory:</p>
+          <pre className="code-block"><code className="language-bash">{`cp .agents/goose/config.yaml       ~/.config/goose/config.yaml
+cp .agents/goose/custom_kronk.json ~/.config/goose/custom_kronk.json`}</code></pre>
+          <p><strong>Key settings in &lt;code&gt;config.yaml&lt;/code&gt;:</strong></p>
+          <pre className="code-block"><code className="language-yaml">{`GOOSE_PROVIDER: kronk
+GOOSE_MODEL: gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT`}</code></pre>
+          <p>The <code>custom_kronk.json</code> file configures the Kronk provider connection.</p>
+          <p>Reference files: <code>.agents/goose/</code></p>
+          <h3 id="136-openwebui">13.6 OpenWebUI</h3>
           <p>OpenWebUI is a self-hosted chat interface that works with Kronk.</p>
           <p><strong>Configure OpenWebUI:</strong></p>
           <ol>
@@ -4875,7 +5024,7 @@ response = client.chat.completions.create(
           </ol>
           <pre className="code-block"><code>{`http://localhost:11435/v1`}</code></pre>
           <ol>
-            <li>Set API key to your Kronk token (or any value (123) if auth is disabled)</li>
+            <li>Set API key to your Kronk token (or any value if auth is disabled)</li>
             <li>Save and refresh models</li>
           </ol>
           <p><strong>Features that work:</strong></p>
@@ -4885,33 +5034,7 @@ response = client.chat.completions.create(
             <li>System prompts</li>
             <li>Conversation history</li>
           </ul>
-          <h3 id="132-cline">13.2 Cline</h3>
-          <p>Cline is a VS Code extension for AI-assisted coding.</p>
-          <p><strong>Configure Cline for Kronk:</strong></p>
-          <ol>
-            <li>Open VS Code settings</li>
-            <li>Search for "Cline"</li>
-            <li>Set API Provider to "OpenAI Compatible"</li>
-            <li>Configure:</li>
-          </ol>
-          <pre className="code-block"><code>{`Base URL: http://localhost:11435/v1
-API Key: <your-kronk-token> or 123 for anything
-Model: Qwen3.5-35B-A3B-Q8_0/CLINE`}</code></pre>
-          <p><strong>Recommended Model Settings:</strong></p>
-          <p>For coding tasks, configure your Qwen3.5-35B-A3B model with:</p>
-          <pre className="code-block"><code className="language-yaml">{`Qwen3.5-35B-A3B-Q8_0/CLINE:
-  nseq-max: 1
-  incremental-cache: true
-  sampling-parameters:
-    temperature: 0.6
-    top_k: 20
-    top_p: 0.95
-    dry_multiplier: 2.0
-    presence_penalty: 1.5`}</code></pre>
-          <p>The rest of the settings for this model are in the catalog. A model config is provided for this and other models in the catalog pre-configured for CLINE.</p>
-          <p>IMC is especially beneficial for Cline's iterative coding workflow.</p>
-          <p><em>Note: Don't use R1 Message formats when using KMS.</em></p>
-          <h3 id="134-python-openai-sdk">13.4 Python OpenAI SDK</h3>
+          <h3 id="137-python-openai-sdk">13.7 Python OpenAI SDK</h3>
           <p>Use the official OpenAI Python library with Kronk.</p>
           <p><strong>Installation:</strong></p>
           <pre className="code-block"><code className="language-shell">{`pip install openai`}</code></pre>
@@ -4924,7 +5047,7 @@ client = OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="Qwen3.5-35B-A3B-Q8_0/CLINE",
+    model="Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT",
     messages=[
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "Hello!"}
@@ -4935,14 +5058,14 @@ response = client.chat.completions.create(
 for chunk in response:
     if chunk.choices[0].delta.content:
         print(chunk.choices[0].delta.content, end="")`}</code></pre>
-          <h3 id="135-curl-and-http-clients">13.5 curl and HTTP Clients</h3>
+          <h3 id="138-curl-and-http-clients">13.8 curl and HTTP Clients</h3>
           <p>Any HTTP client can call Kronk's REST API directly.</p>
           <p><strong>Basic Request:</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -d '{
-    "model": "Qwen3.5-35B-A3B-Q8_0",
+    "model": "Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT",
     "messages": [{"role": "user", "content": "Hello"}],
     "stream": true
   }'`}</code></pre>
@@ -4953,7 +5076,7 @@ for chunk in response:
 data: {"id":"...","choices":[{"delta":{"content":"!"}}],...}
 
 data: [DONE]`}</code></pre>
-          <h3 id="136-langchain">13.6 LangChain</h3>
+          <h3 id="139-langchain">13.9 LangChain</h3>
           <p>Use LangChain with Kronk via the OpenAI integration.</p>
           <p><strong>Installation:</strong></p>
           <pre className="code-block"><code className="language-shell">{`pip install langchain-openai`}</code></pre>
@@ -4963,14 +5086,14 @@ data: [DONE]`}</code></pre>
 llm = ChatOpenAI(
     base_url="http://localhost:11435/v1",
     api_key="your-kronk-token",
-    model="Qwen3.5-35B-A3B-Q8_0",
+    model="Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT",
     streaming=True
 )
 
 response = llm.invoke("Explain quantum computing briefly.")
 print(response.content)`}</code></pre>
           <hr />
-          <p><em>Next: &lt;a href="#chapter-14-observability"&gt;Chapter 14: Observability&lt;/a&gt;</em></p>
+          <p><em>Next: &lt;a href="chapter-14-observability.md"&gt;Chapter 14: Observability&lt;/a&gt;</em></p>
           <h2 id="chapter-14-observability">Chapter 14: Observability</h2>
           <p>Kronk provides comprehensive observability through distributed tracing, Prometheus metrics, pprof profiling, and real-time visualizations.</p>
           <h3 id="141-debug-server">14.1 Debug Server</h3>
@@ -5341,31 +5464,60 @@ make mcp-server`}</code></pre>
           <p>This chapter covers common issues, their causes, and solutions.</p>
           <h3 id="161-library-issues">16.1 Library Issues</h3>
           <p><strong>Error: "unable to load library"</strong></p>
-          <p>The llama.cpp libraries are missing or incompatible.</p>
+          <p>The llama.cpp shared libraries are missing or incompatible with your hardware.</p>
           <p><strong>Solution:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk libs --local`}</code></pre>
           <p>Or download via the BUI Libraries page.</p>
-          <p><strong>Error: "unknown device"</strong></p>
-          <p>The specified GPU device is not available.</p>
-          <p><strong>Causes:</strong></p>
-          <ul>
-            <li>Wrong <code>--device</code> flag (e.g., <code>cuda</code> on a Mac)</li>
-            <li>GPU drivers not installed</li>
-            <li>Library mismatch (CPU library with GPU device setting)</li>
-          </ul>
-          <p><strong>Solution:</strong></p>
-          <p>Check your hardware and install matching libraries:</p>
+          <p>Kronk auto-detects your GPU hardware and selects the correct library variant. If auto-detection fails, set the processor explicitly:</p>
           <pre className="code-block"><code className="language-shell">{`# For Mac with Apple Silicon
 KRONK_PROCESSOR=metal kronk libs --local
 
 # For NVIDIA GPU
 KRONK_PROCESSOR=cuda kronk libs --local
 
-# For CPU only
-KRONK_PROCESSOR=cpu kronk libs --local
+# For AMD GPU (ROCm, Linux only)
+KRONK_PROCESSOR=rocm kronk libs --local
 
-# For AMD GPU (ROCm)
-KRONK_PROCESSOR=rocm kronk libs --local`}</code></pre>
+# For Vulkan (cross-platform, including iGPUs)
+KRONK_PROCESSOR=vulkan kronk libs --local
+
+# For CPU only
+KRONK_PROCESSOR=cpu kronk libs --local`}</code></pre>
+          <p>See <a href="chapter-03-model-configuration.md#32-processor-selection">Chapter 3: Processor Selection</a> for details on how auto-detection works on each platform.</p>
+          <p><strong>Problem: New library version causes crashes or bad output</strong></p>
+          <p>Kronk tracks the latest llama.cpp release and upgrades automatically when you run <code>kronk libs</code>. Occasionally a new llama.cpp release introduces a regression — crashes during model loading, decode errors, or degraded output quality. When this happens, pin the library to a known-good version using <code>KRONK_LIB_VERSION</code>.</p>
+          <p><strong>Pin to a specific version:</strong></p>
+          <pre className="code-block"><code className="language-shell">{`# Install a specific version
+kronk libs --lib-version=b5490 --local
+
+# Or use the environment variable
+KRONK_LIB_VERSION=b5490 kronk libs --local`}</code></pre>
+          <p><strong>Start the server with a pinned version:</strong></p>
+          <pre className="code-block"><code className="language-shell">{`kronk server start --lib-version=b5490`}</code></pre>
+          <p>Or set it globally so both <code>kronk libs</code> and <code>kronk server start</code> use the same version:</p>
+          <pre className="code-block"><code className="language-shell">{`export KRONK_LIB_VERSION=b5490
+kronk libs --local
+kronk server start`}</code></pre>
+          <p><strong>Check your current installed version:</strong></p>
+          <pre className="code-block"><code className="language-shell">{`kronk libs --version`}</code></pre>
+          <p>This shows the installed version, architecture, OS, processor, and the latest available version. If the installed version differs from latest, the next <code>kronk libs</code> will upgrade unless <code>KRONK_LIB_VERSION</code> is set.</p>
+          <p><strong>When to pin:</strong> Pin whenever a new llama.cpp release breaks something you depend on. Unset <code>KRONK_LIB_VERSION</code> once the upstream fix is released to resume tracking latest.</p>
+          <p>See <a href="chapter-02-installation.md#23-installing-libraries">Chapter 2: Installing Libraries</a> for the full compatibility matrix.</p>
+          <p><strong>Error: "unknown device"</strong></p>
+          <p>The specified GPU device is not recognized by the loaded library.</p>
+          <p><strong>Causes:</strong></p>
+          <ul>
+            <li>Wrong processor for your hardware (e.g., <code>cuda</code> library on a Mac)</li>
+            <li>GPU drivers not installed or outdated</li>
+            <li>Library/processor mismatch (CPU library loaded but GPU device requested)</li>
+          </ul>
+          <p><strong>Solution:</strong></p>
+          <p>Verify your processor and re-download libraries:</p>
+          <pre className="code-block"><code className="language-shell">{`# Check what Kronk detects
+kronk devices
+
+# Re-install matching libraries
+kronk libs --local`}</code></pre>
           <h3 id="162-model-loading-failures">16.2 Model Loading Failures</h3>
           <p><strong>Error: "unable to load model"</strong></p>
           <p>The model file is missing, corrupted, or incompatible.</p>
@@ -5374,52 +5526,76 @@ KRONK_PROCESSOR=rocm kronk libs --local`}</code></pre>
           <p><strong>Re-download the model:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog pull <model-name> --local`}</code></pre>
           <p><strong>Verify model integrity:</strong></p>
-          <p>By default, Kronk skips integrity checks. To force verification:</p>
+          <p>By default, Kronk skips integrity checks on startup for speed. To force verification:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --ignore-integrity-check=false`}</code></pre>
+          <p><strong>Problem: Model exists but server says "model not found"</strong></p>
+          <p>The model files are on disk but Kronk can't find them. This happens when the model index (<code>.index.yaml</code>) is out of sync — for example after manually moving model files, a failed download, or removing a model outside of Kronk.</p>
+          <p><strong>Solution — rebuild the model index:</strong></p>
+          <pre className="code-block"><code className="language-shell">{`# With the server running (triggers re-index via API)
+kronk model index
+
+# Without the server (rebuilds index directly on disk)
+kronk model index --local`}</code></pre>
+          <p>This scans <code>~/.kronk/models/</code>, validates each GGUF file, and rebuilds the <code>.index.yaml</code> that Kronk uses for fast model lookups. You can also trigger a rebuild from the BUI Models page.</p>
+          <p><strong>When to rebuild the index:</strong></p>
+          <ul>
+            <li>Model files were moved or renamed manually</li>
+            <li>A download was interrupted and left partial files</li>
+            <li><code>kronk model list</code> doesn't show a model you know is downloaded</li>
+            <li>After deleting model files outside of <code>kronk model remove</code></li>
+          </ul>
           <p><strong>Error: "failed to retrieve model template"</strong></p>
-          <p>The model's chat template is missing.</p>
+          <p>The model's chat template is missing from the templates directory.</p>
           <p><strong>Solution:</strong></p>
-          <p>Ensure templates are downloaded:</p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog pull-templates --local`}</code></pre>
           <h3 id="163-memory-errors">16.3 Memory Errors</h3>
           <p><strong>Error: "unable to init context" or "unable to get memory"</strong></p>
-          <p>Insufficient memory for the model configuration.</p>
+          <p>Insufficient memory for the model plus its KV cache at the configured context window size.</p>
           <p><strong>Causes:</strong></p>
           <ul>
-            <li>Context window too large</li>
-            <li>Too many batch slots</li>
-            <li>Model too large for available RAM/VRAM</li>
+            <li>Context window too large for available VRAM/RAM</li>
+            <li>Too many parallel sequences (<code>n_seq_max</code>)</li>
+            <li>Model weights don't fit in available memory</li>
           </ul>
           <p><strong>Solutions:</strong></p>
           <p>Reduce context window:</p>
           <pre className="code-block"><code className="language-yaml">{`models:
   Qwen3-8B-Q8_0:
     context_window: 8192 # Reduce from 32768`}</code></pre>
-          <p>Reduce batch parallelism:</p>
+          <p>Reduce parallel sequences:</p>
           <pre className="code-block"><code className="language-yaml">{`models:
   Qwen3-8B-Q8_0:
     n_seq_max: 1 # Single request at a time`}</code></pre>
           <p>Use quantized KV cache:</p>
           <pre className="code-block"><code className="language-yaml">{`models:
   Qwen3-8B-Q8_0:
-    cache-type-k: q8_0 # Saves ~50% KV cache memory
-    cache-type-v: q8_0`}</code></pre>
-          <p><strong>Error: "context window is full"</strong></p>
-          <p>The request plus context exceeds the configured context window.</p>
+    cache_type_k: q8_0 # ~50% less KV cache memory vs f16
+    cache_type_v: q8_0`}</code></pre>
+          <p>See <a href="chapter-03-model-configuration.md#39-vram-estimation">Chapter 3: VRAM Estimation</a> for how to calculate whether a model fits in your hardware.</p>
+          <p><strong>Error: "the context window is full"</strong></p>
+          <p>The total token count (input + cached + generated) exceeds the configured context window during inference.</p>
           <p><strong>Solutions:</strong></p>
           <ul>
-            <li>Reduce input size (fewer messages or shorter prompts)</li>
-            <li>Increase <code>context_window</code> in model config</li>
-            <li>Enable YaRN for extended context (see Chapter 6)</li>
+            <li>Reduce input size (fewer messages, shorter prompts)</li>
+            <li>Increase <code>context_window</code> in model config (requires more VRAM)</li>
+            <li>Enable YaRN for extended context (see <a href="chapter-06-yarn-extended-context.md">Chapter 6</a>)</li>
+          </ul>
+          <p><strong>Error: "input tokens [N] exceed context window [M]"</strong></p>
+          <p>The prompt itself (after tokenization) is larger than the context window, before any generation can begin.</p>
+          <p><strong>Solutions:</strong></p>
+          <ul>
+            <li>Shorten the prompt or system message</li>
+            <li>Increase <code>context_window</code></li>
+            <li>If using IMC, the cached prefix counts toward the limit</li>
           </ul>
           <h3 id="164-request-timeouts">16.4 Request Timeouts</h3>
           <p><strong>Error: "context deadline exceeded"</strong></p>
-          <p>The request took longer than the configured timeout.</p>
+          <p>The request took longer than the configured HTTP timeout.</p>
           <p><strong>Causes:</strong></p>
           <ul>
-            <li>Model too slow for the request size</li>
-            <li>Large prefill with many tokens</li>
-            <li>Server under heavy load</li>
+            <li>Large prefill with many input tokens</li>
+            <li>Server under heavy load with all slots busy</li>
+            <li>Model too slow for the requested output length</li>
           </ul>
           <p><strong>Solutions:</strong></p>
           <p>Increase HTTP timeouts:</p>
@@ -5429,6 +5605,19 @@ KRONK_PROCESSOR=rocm kronk libs --local`}</code></pre>
           <p>Or via environment variables:</p>
           <pre className="code-block"><code className="language-shell">{`export KRONK_READ_TIMEOUT=5m
 export KRONK_WRITE_TIMEOUT=30m`}</code></pre>
+          <p><strong>Error: "server busy processing other requests, try again shortly"</strong></p>
+          <p>All IMC sessions have pending cache builds in-flight, or the slot preemption timeout was reached.</p>
+          <p><strong>Causes:</strong></p>
+          <ul>
+            <li>All sessions are busy building caches simultaneously</li>
+            <li>A long-running request is occupying the slot pool</li>
+          </ul>
+          <p><strong>Solutions:</strong></p>
+          <ul>
+            <li>Wait and retry the request — the error is transient</li>
+            <li>Increase <code>n_seq_max</code> to allow more concurrent sessions</li>
+            <li>Increase <code>cache_slot_timeout</code> (default: 30 seconds) if requests need more time</li>
+          </ul>
           <h3 id="165-authentication-errors">16.5 Authentication Errors</h3>
           <p><strong>Error: "unauthorized: no authorization header"</strong></p>
           <p>Authentication is enabled but no token was provided.</p>
@@ -5443,8 +5632,8 @@ export KRONK_WRITE_TIMEOUT=30m`}</code></pre>
           <p><strong>Causes:</strong></p>
           <ul>
             <li>Token has expired (check <code>--duration</code> when created)</li>
-            <li>Signing key was deleted</li>
-            <li>Token is corrupted</li>
+            <li>Signing key was deleted or rotated</li>
+            <li>Token is truncated or corrupted</li>
           </ul>
           <p><strong>Solution:</strong></p>
           <p>Create a new token:</p>
@@ -5453,14 +5642,14 @@ kronk security token create \\
   --duration 720h \\
   --endpoints chat-completions,embeddings`}</code></pre>
           <p><strong>Error: "endpoint not authorized"</strong></p>
-          <p>The token doesn't include the requested endpoint.</p>
+          <p>The token doesn't include the requested endpoint in its allowed list.</p>
           <p><strong>Solution:</strong></p>
           <p>Create a new token with the required endpoints:</p>
           <pre className="code-block"><code className="language-shell">{`kronk security token create \\
   --duration 720h \\
   --endpoints chat-completions,embeddings,rerank,responses,messages`}</code></pre>
           <p><strong>Error: "rate limit exceeded"</strong></p>
-          <p>The token has exceeded its rate limit.</p>
+          <p>The token has exceeded its configured rate limit.</p>
           <p><strong>Solution:</strong></p>
           <p>Wait for the rate limit window to reset, or create a new token with higher limits:</p>
           <pre className="code-block"><code className="language-shell">{`kronk security token create \\
@@ -5470,36 +5659,41 @@ kronk security token create \\
           <p><strong>Problem: Streaming stops mid-response</strong></p>
           <p><strong>Causes:</strong></p>
           <ul>
-            <li>Client disconnected</li>
-            <li>Request timeout</li>
-            <li>Model generated stop token</li>
+            <li>Client disconnected (network timeout, browser tab closed)</li>
+            <li>HTTP write timeout reached on the server</li>
+            <li>Model generated an end-of-generation token (normal completion)</li>
           </ul>
-          <p><strong>Check server logs:</strong></p>
-          <pre className="code-block"><code className="language-shell">{`# Look for errors in server output
-kronk server start  # Run in foreground to see logs`}</code></pre>
+          <p><strong>Solutions:</strong></p>
+          <ul>
+            <li>Check if the response includes a <code>finish_reason</code> — if it does, the model stopped normally</li>
+            <li>Increase <code>--write-timeout</code> if large responses are being cut off</li>
+            <li>Run the server in foreground to see logs:</li>
+          </ul>
+          <pre className="code-block"><code className="language-shell">{`kronk server start  # Logs print to stdout`}</code></pre>
           <p><strong>Problem: SSE events not parsing correctly</strong></p>
-          <p>Ensure your client handles Server-Sent Events format:</p>
-          <pre className="code-block"><code>{`data: {"id":"...","choices":[...]}\\n\\n`}</code></pre>
-          <p>Each event is prefixed with <code>data: </code> and ends with two newlines.</p>
+          <p>Ensure your client handles Server-Sent Events (SSE) format. Each event is prefixed with <code>data: </code> and terminated by two newlines:</p>
+          <pre className="code-block"><code>{`data: {"id":"...","choices":[{"delta":{"content":"Hello"}}],...}\\n\\n
+data: [DONE]\\n\\n`}</code></pre>
           <h3 id="167-performance-issues">16.7 Performance Issues</h3>
           <p><strong>Problem: Slow time to first token (TTFT)</strong></p>
           <p><strong>Causes:</strong></p>
           <ul>
-            <li>Large system prompt not cached</li>
-            <li>No message caching enabled</li>
-            <li>Cold model load</li>
+            <li>Large conversation prefix being re-processed from scratch</li>
+            <li>IMC not enabled (every request re-processes the full prompt)</li>
+            <li>Cold model load on first request</li>
           </ul>
           <p><strong>Solutions:</strong></p>
-          <p>Enable incremental message caching:</p>
+          <p>Enable IMC to cache the conversation prefix:</p>
           <pre className="code-block"><code className="language-yaml">{`models:
-  Qwen3-8B-Q8_0:
+  Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
     incremental_cache: true`}</code></pre>
+          <p>With IMC, only the new message is prefilled — cached tokens are restored from RAM in ~10-30ms regardless of conversation length.</p>
           <p><strong>Problem: Slow token generation (tokens/second)</strong></p>
           <p><strong>Causes:</strong></p>
           <ul>
-            <li>CPU inference instead of GPU</li>
-            <li>Insufficient GPU layers</li>
-            <li>Large model for available hardware</li>
+            <li>Running on CPU instead of GPU</li>
+            <li>Model too large for available VRAM (partial CPU offload)</li>
+            <li>MoE model on Apple Silicon (scattered memory access patterns)</li>
           </ul>
           <p><strong>Solutions:</strong></p>
           <p>Check GPU is being used:</p>
@@ -5508,23 +5702,87 @@ sudo powermetrics --samplers gpu_power
 
 # On Linux with NVIDIA
 nvidia-smi`}</code></pre>
-          <p>Increase GPU layers:</p>
+          <p>Ensure all layers are on GPU (default):</p>
           <pre className="code-block"><code className="language-yaml">{`models:
   Qwen3-8B-Q8_0:
-    gpu_layers: 99 # Offload all layers to GPU`}</code></pre>
-          <h3 id="168-viewing-logs">16.8 Viewing Logs</h3>
+    n_gpu_layers: 0 # 0 = all layers on GPU (default)`}</code></pre>
+          <p>For MoE models on Apple Silicon, consider a dense model at lower quantization — the sequential memory access pattern is faster than MoE's scattered expert routing (see <a href="chapter-03-model-configuration.md#310-model-specific-tuning">Chapter 3: Model-Specific Tuning</a>).</p>
+          <h3 id="168-imc-caching-issues">16.8 IMC Caching Issues</h3>
+          <p><strong>Problem: Every request triggers a full cache rebuild</strong></p>
+          <p><strong>Causes:</strong></p>
+          <ul>
+            <li>Client is modifying earlier messages between requests</li>
+            <li>Non-deterministic Jinja template producing different tokens for the same messages</li>
+            <li><code>n_seq_max</code> too low for the number of concurrent sub-agents (cache thrashing)</li>
+          </ul>
+          <p><strong>Diagnosis:</strong></p>
+          <p>Look for these log patterns:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Log Message</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>session[N] mismatch</code></td>
+                <td>Hash changed — messages were modified</td>
+              </tr>
+              <tr>
+                <td><code>sys-prompt-match</code></td>
+                <td>System prompt preserved, conversation rebuilt</td>
+              </tr>
+              <tr>
+                <td><code>token prefix match found</code></td>
+                <td>Partial prefix salvaged via token comparison</td>
+              </tr>
+              <tr>
+                <td><code>no usable token prefix match</code></td>
+                <td>No salvageable prefix, full rebuild required</td>
+              </tr>
+              <tr>
+                <td><code>kv-pressure-evict</code></td>
+                <td>Stale session evicted to free KV space</td>
+              </tr>
+              <tr>
+                <td><code>all sessions pending, waiting</code></td>
+                <td>All sessions busy, request is waiting</td>
+              </tr>
+              <tr>
+                <td><code>imc-restore-start</code> / <code>imc-restore-done</code></td>
+                <td>KV state being restored from RAM</td>
+              </tr>
+              <tr>
+                <td><code>imc-snapshot-start</code> / <code>imc-snapshot-done</code></td>
+                <td>KV state being snapshotted to RAM</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><strong>Solutions:</strong></p>
+          <ul>
+            <li>Increase <code>n_seq_max</code> to match the number of concurrent sub-agents</li>
+            <li>Check if the client is modifying conversation history between requests</li>
+            <li>If using a non-deterministic template, IMC falls back to token prefix matching automatically — this is expected behavior</li>
+          </ul>
+          <p><strong>Problem: IMC restore fails</strong></p>
+          <p><strong>Error:</strong> <code>imc restore failed for seq N</code></p>
+          <p>The RAM-to-VRAM restore (<code>StateSeqSetData</code>) failed for a session.</p>
+          <p><strong>Cause:</strong> Usually indicates the KV cache memory could not be allocated (VRAM pressure from other sessions or models).</p>
+          <p><strong>Solution:</strong> The session is automatically reset and the next request triggers a full rebuild. If this happens frequently, reduce <code>n_seq_max</code> or <code>context_window</code> to lower VRAM pressure.</p>
+          <h3 id="169-viewing-logs">16.9 Viewing Logs</h3>
           <p><strong>Run server in foreground:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start`}</code></pre>
-          <p>All logs print to stdout with structured JSON format.</p>
+          <p>All logs print to stdout with structured key-value format.</p>
           <p><strong>Enable verbose logging:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --insecure-logging`}</code></pre>
-          <p>This logs full message content (never use in production).</p>
+          <p>This logs full message content including prompts and responses. Never use in production — it exposes sensitive conversation data.</p>
           <p><strong>Enable llama.cpp logging:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --llama-log 1`}</code></pre>
-          <p>Shows low-level inference engine messages.</p>
+          <p>Shows low-level inference engine messages from llama.cpp. Useful for debugging GPU issues, memory allocation failures, and decode errors.</p>
           <p><strong>Disable llama.cpp logging:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --llama-log 0`}</code></pre>
-          <h3 id="169-common-error-messages">16.9 Common Error Messages</h3>
+          <h3 id="1610-common-error-messages">16.10 Common Error Messages</h3>
           <table className="flags-table">
             <thead>
               <tr>
@@ -5535,61 +5793,116 @@ nvidia-smi`}</code></pre>
             </thead>
             <tbody>
               <tr>
-                <td><code>Init() not called</code></td>
-                <td>Missing initialization</td>
-                <td>Call <code>kronk.Init()</code></td>
+                <td><code>unable to load library</code></td>
+                <td>Missing llama.cpp libraries</td>
+                <td><code>kronk libs --local</code></td>
               </tr>
               <tr>
                 <td><code>unknown device</code></td>
-                <td>Invalid GPU setting</td>
-                <td>Check <code>--device</code> flag</td>
-              </tr>
-              <tr>
-                <td><code>context deadline</code></td>
-                <td>Request timeout</td>
-                <td>Increase timeouts</td>
+                <td>Wrong processor for hardware</td>
+                <td>Check <code>kronk devices</code>, re-install libs</td>
               </tr>
               <tr>
                 <td><code>unable to load model</code></td>
-                <td>Missing/corrupt model</td>
-                <td>Re-download model</td>
+                <td>Missing or corrupt model file</td>
+                <td>Re-download with <code>kronk catalog pull</code></td>
               </tr>
               <tr>
-                <td><code>no authorization</code></td>
-                <td>Missing token</td>
-                <td>Add Bearer token</td>
+                <td><code>failed to retrieve model template</code></td>
+                <td>Missing chat template</td>
+                <td><code>kronk catalog pull-templates --local</code></td>
+              </tr>
+              <tr>
+                <td><code>unable to init context</code></td>
+                <td>Insufficient VRAM/RAM</td>
+                <td>Reduce context window or n_seq_max</td>
+              </tr>
+              <tr>
+                <td><code>input tokens [N] exceed context window [M]</code></td>
+                <td>Prompt too large</td>
+                <td>Shorten prompt or increase context</td>
+              </tr>
+              <tr>
+                <td><code>the context window is full</code></td>
+                <td>KV cache exhausted during decode</td>
+                <td>Reduce input size or increase context</td>
+              </tr>
+              <tr>
+                <td><code>context deadline exceeded</code></td>
+                <td>HTTP timeout reached</td>
+                <td>Increase <code>--write-timeout</code></td>
+              </tr>
+              <tr>
+                <td><code>server busy processing other requests</code></td>
+                <td>All IMC sessions busy</td>
+                <td>Retry, or increase n_seq_max</td>
+              </tr>
+              <tr>
+                <td><code>no authorization header</code></td>
+                <td>Missing auth token</td>
+                <td>Add <code>Authorization: Bearer &lt;token&gt;</code></td>
+              </tr>
+              <tr>
+                <td><code>invalid token</code></td>
+                <td>Expired or malformed JWT</td>
+                <td>Create a new token</td>
+              </tr>
+              <tr>
+                <td><code>endpoint not authorized</code></td>
+                <td>Token missing endpoint scope</td>
+                <td>Create token with correct endpoints</td>
               </tr>
               <tr>
                 <td><code>rate limit exceeded</code></td>
                 <td>Quota exhausted</td>
-                <td>Wait or increase limit</td>
+                <td>Wait for reset or increase limit</td>
+              </tr>
+              <tr>
+                <td><code>engine shutting down</code></td>
+                <td>Server is stopping</td>
+                <td>Wait for shutdown, restart server</td>
               </tr>
               <tr>
                 <td><code>github rate limited</code></td>
-                <td>GitHub API 403/429</td>
-                <td>Set <code>GITHUB_TOKEN</code></td>
+                <td>GitHub API 403/429 during pull</td>
+                <td>Set <code>GITHUB_TOKEN</code> env var</td>
               </tr>
               <tr>
-                <td><code>context window full</code></td>
-                <td>Input too large</td>
-                <td>Reduce input size</td>
+                <td><code>model doesn't support embedding</code></td>
+                <td>Wrong model for endpoint</td>
+                <td>Use an embedding model</td>
               </tr>
               <tr>
-                <td><code>NBatch overflow</code></td>
-                <td>Batch too large</td>
-                <td>Reduce <code>n_batch</code></td>
+                <td><code>model doesn't support reranking</code></td>
+                <td>Wrong model for endpoint</td>
+                <td>Use a reranking model</td>
+              </tr>
+              <tr>
+                <td><code>imc restore failed</code></td>
+                <td>RAM→VRAM restore failed</td>
+                <td>Auto-recovers; reduce VRAM pressure</td>
+              </tr>
+              <tr>
+                <td><code>imc extend stale</code></td>
+                <td>Concurrent cache modification</td>
+                <td>Auto-retries; transient</td>
               </tr>
             </tbody>
           </table>
-          <h3 id="1610-getting-help">16.10 Getting Help</h3>
-          <p><strong>Check server status:</strong></p>
+          <h3 id="1611-getting-help">16.11 Getting Help</h3>
+          <p><strong>Check server liveness:</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/liveness`}</code></pre>
+          <p><strong>Check server readiness (model loaded):</strong></p>
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/readyz`}</code></pre>
           <p><strong>List loaded models:</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/models`}</code></pre>
-          <p><strong>Check metrics:</strong></p>
+          <p><strong>Check Prometheus metrics:</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:8090/metrics`}</code></pre>
           <p><strong>View goroutine stacks (for hangs):</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:8090/debug/pprof/goroutine?debug=2`}</code></pre>
+          <p><strong>CPU profile (for slow inference):</strong></p>
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8090/debug/pprof/profile?seconds=30 > cpu.prof
+go tool pprof cpu.prof`}</code></pre>
           <p><strong>Report issues:</strong></p>
           <p>Include the following when reporting bugs:</p>
           <ul>
@@ -5601,7 +5914,7 @@ nvidia-smi`}</code></pre>
             <li>Steps to reproduce</li>
           </ul>
           <hr />
-          <p><em>Next: &lt;a href="#chapter-17-developer-guide"&gt;Chapter 17: Developer Guide&lt;/a&gt;</em></p>
+          <p><em>Next: &lt;a href="chapter-17-developer-guide.md"&gt;Chapter 17: Developer Guide&lt;/a&gt;</em></p>
           <h2 id="chapter-17-developer-guide">Chapter 17: Developer Guide</h2>
           <p>This chapter covers development workflows, build commands, and code conventions for contributors to the Kronk project.</p>
           <h3 id="171-quick-reference">17.1 Quick Reference</h3>
@@ -5949,8 +6262,28 @@ default:
                 <td>Batch engine for parallel text inference</td>
               </tr>
               <tr>
+                <td><code>batch_finish.go</code></td>
+                <td>Request completion, KV cleanup per model type</td>
+              </tr>
+              <tr>
+                <td><code>batch_schedule.go</code></td>
+                <td>Slot assignment (first-available for all sessions)</td>
+              </tr>
+              <tr>
+                <td><code>batch_slot_start.go</code></td>
+                <td>Slot initialization, KV restore from RAM, KV snapshot to RAM</td>
+              </tr>
+              <tr>
                 <td><code>caching.go</code></td>
-                <td>System prompt and IMC cache management</td>
+                <td>Cache orchestration and routing</td>
+              </tr>
+              <tr>
+                <td><code>caching_imc.go</code></td>
+                <td>IMC session matching, hash scanning, and cache operations</td>
+              </tr>
+              <tr>
+                <td><code>caching_imc_media.go</code></td>
+                <td>IMC media cache build and extend (vision/audio)</td>
               </tr>
               <tr>
                 <td><code>chat.go</code></td>
@@ -6035,7 +6368,7 @@ case mi.IsEmbedModel || mi.IsRerankModel:
 default:
     semCapacity = max(cfg.NSeqMax, 1) * o.queueDepth
 }`}</code></pre>
-          <h4 id="1674-model-acquirerelease-cleanup">16.7.4 Model Acquire/Release &amp; Cleanup</h4>
+          <h4 id="1774-model-acquirerelease-cleanup">17.7.4 Model Acquire/Release &amp; Cleanup</h4>
           <p><strong>Acquisition</strong> (<code>acquire.go</code>):</p>
           <ol>
             <li><strong>Backpressure slot</strong>: Acquire semaphore slot (limits total in-flight requests)</li>
@@ -6054,7 +6387,7 @@ default:
             <li>Channel closes, wrapper exits, <code>releaseModel()</code> runs</li>
           </ol>
           <p><strong>Key invariant:</strong> <code>resetContext()</code> always runs before model release due to defer ordering.</p>
-          <h4 id="1675-batch-engine-internals">16.7.5 Batch Engine Internals</h4>
+          <h4 id="1775-batch-engine-internals">17.7.5 Batch Engine Internals</h4>
           <p><strong>ChatStreaming Decision Logic</strong> (<code>chat.go</code>):</p>
           <p>The <code>submitToBatchEngine()</code> function decides the processing path:</p>
           <pre className="code-block"><code className="language-go">{`// submitToBatchEngine returns false if batch not available.
@@ -6073,20 +6406,21 @@ batching = true`}</code></pre>
             <li>Signal-based wake pattern: <code>wakeCh chan struct&#123;&#125;</code> (buffered size 1) wakes immediately on new requests</li>
             <li>Polling intervals: 100µs (active slots generating), 5ms (idle, no active slots)</li>
           </ul>
-          <p><strong>Slots vs Sequences:</strong></p>
+          <p><strong>Slots, Sequences, and Sessions:</strong></p>
           <ul>
-            <li><code>slot.id</code> = slot index (for logging)</li>
-            <li><code>slot.seqID</code> = llama.cpp sequence ID (determines KV cache partition)</li>
+            <li><code>slot.id</code> = slot index (batch-engine execution lane)</li>
+            <li><code>slot.seqID</code> = llama.cpp sequence ID (KV cache partition for the active slot)</li>
             <li><code>slot.seqIDs</code> = pre-allocated slice for efficient <code>batchAdd</code> calls</li>
+            <li><code>imcSession</code> = logical cached conversation branch (hash, tokens, KV state)</li>
           </ul>
-          <p>Sequences are isolated partitions in the shared KV cache memory. Slot seqIDs always start at 0 — no sequences are reserved for caching. IMC binds each slot's sequence to a conversation.</p>
-          <h4 id="1676-context-pooling">16.7.6 Context Pooling</h4>
+          <p>Sequences are isolated partitions in the shared KV cache memory. Slot seqIDs always start at 0. IMC sessions are decoupled from slots: session state is externalized to RAM after each request and restored into any available slot on the next request via <code>StateSeqSetData</code>. <code>StateSeqGetData</code> captures raw KV bytes regardless of whether they originated from text tokens or media embeddings.</p>
+          <h4 id="1776-context-pooling">17.7.6 Context Pooling</h4>
           <ul>
             <li><code>llama.Context</code> is created once in <code>NewModel</code> and reused across requests</li>
             <li>Call <code>resetContext()</code> between requests to clear KV cache</li>
             <li>Avoids Vulkan memory fragmentation from repeated context alloc/dealloc</li>
           </ul>
-          <h4 id="1677-imc-implementation-details">16.7.7 IMC Implementation Details</h4>
+          <h4 id="1777-imc-implementation-details">17.7.7 IMC Implementation Details</h4>
           <p><strong>Critical Implementation Details:</strong></p>
           <ol>
             <li><strong>Extension tokenization must use &lt;code&gt;special=true&lt;/code&gt;</strong>: Use <code>llama.Tokenize(vocab, extension, false, true)</code> to ensure ChatML tokens like <code>&lt;|im_start|&gt;</code> are recognized.</li>
@@ -6099,16 +6433,34 @@ batching = true`}</code></pre>
             <li>Subsequent requests (prefix match): Extend cache with <code>messages[cachedCount:len-1]</code></li>
             <li>New thread (prefix mismatch): Rebuild cache from scratch</li>
           </ol>
+          <p><strong>IMC Lifecycle (All Sessions):</strong></p>
+          <ol>
+            <li><code>processIMC()</code> scans <strong>sessions</strong> (not slots) for a hash match</li>
+            <li><code>fillSlots()</code> assigns the job to the <strong>first available slot</strong></li>
+            <li><code>startSlot()</code> restores cached KV from RAM via <code>StateSeqSetData</code></li>
+            <li>Cache is extended/rebuilt as needed, then snapshotted back to RAM via <code>StateSeqGetData</code></li>
+            <li>Suffix tokens are decoded and generation runs</li>
+            <li><code>finishSlot()</code> clears the full VRAM sequence (cached prefix already lives in RAM)</li>
+          </ol>
           <p><strong>IMC Session State:</strong></p>
           <pre className="code-block"><code className="language-go">{`type imcSession struct {
-    hash      string      // Hash of all cached messages
-    tokens    int         // Total tokens in cache
-    msgCount  int         // Number of messages cached
-    promptLen int         // Length of templated prefix
-    seqID     llama.SeqId // Assigned cache sequence ID
-    lastUsed  time.Time   // For future eviction
+    slotID            int           // Slot index (transitional)
+    seqID             llama.SeqId   // KV cache sequence ID (transitional)
+    cachedMsgsHash    string        // Hash of all cached messages
+    cachedTokens      []llama.Token // Full token sequence in KV cache
+    totalTokensCached int           // Total KV positions cached
+    cachedMsgCount    int           // Number of messages cached
+    kvState           []byte        // Externalized KV state (RAM buffer)
+    kvStateBytes      int           // Size of kvState in bytes
+    lastUsed          time.Time     // Last access time (for eviction)
+    pending           bool          // True when build/extend in-flight
+    hasMedia          bool          // True if cached content includes media
+    useMRoPE          bool          // True if cached media used M-RoPE
+    mediaKVCounts     []int         // KV positions per media chunk
+    sysPromptHash     string        // Hash of system prompt message
+    sysPromptTokens   int           // Token count of system prompt
 }`}</code></pre>
-          <h4 id="1678-tool-call-internals">16.7.8 Tool Call Internals</h4>
+          <h4 id="1778-tool-call-internals">17.7.8 Tool Call Internals</h4>
           <p><strong>chatMessage Unmarshaling</strong> (<code>models.go</code>):</p>
           <ul>
             <li><code>Content</code> can be <code>nil</code> for assistant messages with tool_calls</li>
@@ -6119,7 +6471,7 @@ batching = true`}</code></pre>
             <li>Custom type that marshals to JSON string (OpenAI spec)</li>
             <li>Unmarshals from either string or object for non-compliant clients</li>
           </ul>
-          <h4 id="1679-logprobs-implementation">16.7.9 Logprobs Implementation</h4>
+          <h4 id="1779-logprobs-implementation">17.7.9 Logprobs Implementation</h4>
           <p><strong>Implementation</strong> (<code>logprobs.go</code>):</p>
           <ul>
             <li><code>extractLogprobs()</code>: Retrieves logits via <code>llama.GetLogitsIth()</code></li>
@@ -6275,12 +6627,13 @@ batching = true`}</code></pre>
           <h4 id="step-7-submit-to-the-batch-engine">Step 7: Submit to the Batch Engine</h4>
           <p>The fully prepared request — prompt string, media bytes, sampling parameters, and cache state — is packaged into a job and placed on the batch engine's request queue. A wake signal is sent so the batch engine picks it up immediately rather than waiting for its next poll cycle.</p>
           <h4 id="step-8-assign-to-a-slot">Step 8: Assign to a Slot</h4>
-          <p>The batch engine's processing loop wakes up and checks for pending work. It dequeues the job and assigns it to an available processing slot. With IMC enabled, jobs are routed to their target slot (the one holding their cached conversation). If the target slot is busy, the job is deferred or the longest-running slot is preempted after a configurable timeout.</p>
+          <p>The batch engine's processing loop wakes up and checks for pending work. It dequeues the job and assigns it to the first available processing slot. All IMC sessions (text and media) use first-available slot assignment. If all slots are busy, the longest-running slot is preempted after a configurable timeout.</p>
           <h4 id="step-9-initialize-the-slot">Step 9: Initialize the Slot</h4>
           <p>The assigned slot is prepared for this request:</p>
           <ol>
-            <li><strong>Restore cached KV state</strong>: For IMC, extension tokens are decoded into the existing sequence, or the sequence is cleared and rebuilt.</li>
+            <li><strong>Restore cached KV state</strong>: For IMC, the session's externalized KV state is restored from RAM into the slot's sequence via <code>StateSeqSetData</code>. Extension tokens are then decoded, or the sequence is cleared and rebuilt.</li>
             <li><strong>Build the sampler</strong>: A sampler chain is constructed from the request's sampling parameters (temperature, top_k, top_p, min_p, repetition penalties, etc.). If grammar-constrained output is requested, a separate grammar sampler is also created.</li>
+            <li><strong>Snapshot cached prefix</strong>: For IMC, after cache build/extend but before suffix tokens are decoded, the cached prefix KV state is snapshotted to RAM via <code>StateSeqGetData</code>. This captures the reusable prefix for the next request.</li>
             <li><strong>Tokenize the prompt</strong>: The prompt string is converted into a sequence of token IDs. Only the non-cached portion of the prompt needs tokenization.</li>
             <li><strong>Context window check</strong>: The total token count (cached + new) is verified against the model's context window limit.</li>
           </ol>
@@ -6312,10 +6665,9 @@ batching = true`}</code></pre>
             <li><strong>Parse tool calls</strong>: If the model generated tool call content, it is parsed into structured function calls with validated JSON arguments.</li>
             <li><strong>Calculate metrics</strong>: Tokens per second (TPS), time to first token (TTFT), and draft acceptance rates are computed.</li>
             <li><strong>Send final response</strong>: The complete response — including content, reasoning, tool calls, logprobs, and usage statistics — is sent through the response channel.</li>
-            <li><strong>Clean up the KV cache</strong>: from the KV cache, preserving the cached conversation prefix for the next request. from a snapshot, because partial deletes corrupt recurrent state.
+            <li><strong>Clean up the KV cache</strong>: conversation prefix was already snapshotted to RAM during slot initialization and will be restored on the next request.
               <ul>
-                <li>With IMC on Dense/MoE models, only the generated tokens are trimmed</li>
-                <li>With IMC on Hybrid models, the entire sequence is cleared and restored</li>
+                <li>IMC (all model types): the entire VRAM sequence is cleared. The cached</li>
                 <li>Without caching, the entire sequence is cleared.</li>
               </ul>
             </li>
@@ -6359,7 +6711,7 @@ batching = true`}</code></pre>
             <li><strong>6a. &lt;code&gt;injectToolResponseNames()&lt;/code&gt;</strong> — adds <code>name</code>/<code>tool_call_name</code> to <code>role:"tool"</code> messages by matching <code>tool_call_id</code>.</li>
             <li><strong>6b. &lt;code&gt;processCache()&lt;/code&gt;</strong> (<code>model/caching.go</code>):</li>
           </ul>
-          <p>- <strong>IMC</strong>: <code>processIMC()</code> — two-tier hash scan across slots, finds best match (pure hit, extend, partial prefix trim, or rebuild from scratch), tokenizes extension tokens, sets <code>pending</code> flag on target slot.</p>
+          <p>- <strong>IMC</strong>: <code>processIMC()</code> — two-tier hash scan across sessions, finds best match (pure hit, extend, partial prefix trim, or rebuild from scratch), tokenizes extension tokens, sets <code>pending</code> flag on the selected session.</p>
           <ul>
             <li><strong>6c. &lt;code&gt;createPrompt()&lt;/code&gt;</strong> → <code>applyRequestJinjaTemplate()</code> — applies Jinja2 chat template to remaining messages, returns prompt string + media bytes.</li>
           </ul>
@@ -6382,14 +6734,15 @@ batching = true`}</code></pre>
             <li>Adds generation tokens for active slots (1 token per slot).</li>
             <li>Continues text prefill via round-robin <code>addPrefillChunk()</code> across slots.</li>
             <li>Continues media prefill via <code>addPrefillMediaChunk()</code>.</li>
-            <li><strong>&lt;code&gt;fillSlots()&lt;/code&gt;</strong> (<code>model/batch_schedule.go</code>) — dequeues job, routes to target slot (IMC-aware routing or first-available).</li>
+            <li><strong>&lt;code&gt;fillSlots()&lt;/code&gt;</strong> (<code>model/batch_schedule.go</code>) — dequeues job, assigns to first-available slot (all IMC sessions use first-available routing).</li>
           </ul>
           <p><strong>10. &lt;code&gt;startSlot()&lt;/code&gt;</strong> (<code>model/batch_slot_start.go</code>)</p>
           <ul>
             <li>Resets slot, ends <code>queue-wait</code> span, starts <code>process-request</code> and <code>prefill</code> spans.</li>
             <li><strong>Creates sampler</strong>: <code>toSampler()</code> — builds llama.cpp sampler chain (temperature, top_k, top_p, min_p, repetition penalties, DRY, XTC, mirostat).</li>
             <li><strong>Creates grammar sampler</strong> if grammar specified.</li>
-            <li><strong>IMC cache restore</strong>: decodes extension tokens into slot's KV sequence via <code>decodeTokensIntoCache()</code>, or clears sequence for rebuild, or trims for partial prefix.</li>
+            <li><strong>IMC KV restore from RAM</strong>: restores externalized KV state from <code>session.kvState</code> into the slot's sequence via <code>StateSeqSetData</code>. Then decodes extension tokens via <code>decodeTokensIntoCache()</code>, or clears sequence for rebuild, or trims for partial prefix.</li>
+            <li><strong>IMC KV snapshot to RAM</strong>: after cache build/extend but before suffix decode, snapshots the cached prefix via <code>StateSeqGetData</code> into <code>session.kvState</code>.</li>
             <li><strong>Tokenize prompt</strong>: <code>llama.Tokenize(vocab, prompt, addBOS, special=true)</code> — converts remaining prompt text to tokens.</li>
             <li>Context window check.</li>
             <li>Assembles draft prompt tokens for speculative decoding.</li>
@@ -6434,7 +6787,7 @@ batching = true`}</code></pre>
             <li><strong>Send final response</strong>: <code>sendFinalResponse()</code> with usage, content, reasoning, tool calls, logprobs.</li>
             <li><strong>KV cache cleanup</strong>:</li>
           </ul>
-          <p>- IMC Dense/MoE: <code>MemorySeqRm(mem, seqID, trimPos, -1)</code> — partial trim, keeps cached prefix. - IMC Hybrid: full clear + <code>StateSeqSetData()</code> snapshot restore (partial delete corrupts recurrent state). - Non-IMC: <code>MemorySeqRm(mem, seqID, -1, -1)</code> — full clear.</p>
+          <p>- IMC (all model types): <code>MemorySeqRm(mem, seqID, -1, -1)</code> — full clear. Cached prefix already snapshotted to RAM in <code>startSlot</code>. - Non-IMC: <code>MemorySeqRm(mem, seqID, -1, -1)</code> — full clear.</p>
           <ul>
             <li><strong>Free resources</strong>: free sampler, grammar sampler, MTMD bitmaps/chunks, mtmdCtx.</li>
             <li><strong>Close job channel</strong> → <code>streaming()</code> goroutine drains → closes caller channel.</li>
@@ -6584,9 +6937,10 @@ batching = true`}</code></pre>
                 <li><a href="#104-plain-base64-format" className={activeSection === '104-plain-base64-format' ? 'active' : ''}>10.4 Plain Base64 Format</a></li>
                 <li><a href="#105-configuration-for-multi-modal-models" className={activeSection === '105-configuration-for-multi-modal-models' ? 'active' : ''}>10.5 Configuration for Multi-Modal Models</a></li>
                 <li><a href="#106-memory-requirements" className={activeSection === '106-memory-requirements' ? 'active' : ''}>10.6 Memory Requirements</a></li>
-                <li><a href="#107-limitations" className={activeSection === '107-limitations' ? 'active' : ''}>10.7 Limitations</a></li>
-                <li><a href="#108-example-image-analysis" className={activeSection === '108-example-image-analysis' ? 'active' : ''}>10.8 Example: Image Analysis</a></li>
-                <li><a href="#109-example-audio-transcription" className={activeSection === '109-example-audio-transcription' ? 'active' : ''}>10.9 Example: Audio Transcription</a></li>
+                <li><a href="#107-imc-and-multi-modal-caching" className={activeSection === '107-imc-and-multi-modal-caching' ? 'active' : ''}>10.7 IMC and Multi-Modal Caching</a></li>
+                <li><a href="#108-limitations" className={activeSection === '108-limitations' ? 'active' : ''}>10.8 Limitations</a></li>
+                <li><a href="#109-example-image-analysis" className={activeSection === '109-example-image-analysis' ? 'active' : ''}>10.9 Example: Image Analysis</a></li>
+                <li><a href="#1010-example-audio-transcription" className={activeSection === '1010-example-audio-transcription' ? 'active' : ''}>10.10 Example: Audio Transcription</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
@@ -6619,11 +6973,15 @@ batching = true`}</code></pre>
             <div className="doc-index-section">
               <a href="#chapter-13-client-integration" className={`doc-index-header ${activeSection === 'chapter-13-client-integration' ? 'active' : ''}`}>Chapter 13: Client Integration</a>
               <ul>
-                <li><a href="#131-openwebui" className={activeSection === '131-openwebui' ? 'active' : ''}>13.1 OpenWebUI</a></li>
+                <li><a href="#131-coding-agent-model-configuration" className={activeSection === '131-coding-agent-model-configuration' ? 'active' : ''}>13.1 Coding Agent Model Configuration</a></li>
                 <li><a href="#132-cline" className={activeSection === '132-cline' ? 'active' : ''}>13.2 Cline</a></li>
-                <li><a href="#134-python-openai-sdk" className={activeSection === '134-python-openai-sdk' ? 'active' : ''}>13.4 Python OpenAI SDK</a></li>
-                <li><a href="#135-curl-and-http-clients" className={activeSection === '135-curl-and-http-clients' ? 'active' : ''}>13.5 curl and HTTP Clients</a></li>
-                <li><a href="#136-langchain" className={activeSection === '136-langchain' ? 'active' : ''}>13.6 LangChain</a></li>
+                <li><a href="#133-kilo-code" className={activeSection === '133-kilo-code' ? 'active' : ''}>13.3 Kilo Code</a></li>
+                <li><a href="#134-opencode" className={activeSection === '134-opencode' ? 'active' : ''}>13.4 OpenCode</a></li>
+                <li><a href="#135-goose" className={activeSection === '135-goose' ? 'active' : ''}>13.5 Goose</a></li>
+                <li><a href="#136-openwebui" className={activeSection === '136-openwebui' ? 'active' : ''}>13.6 OpenWebUI</a></li>
+                <li><a href="#137-python-openai-sdk" className={activeSection === '137-python-openai-sdk' ? 'active' : ''}>13.7 Python OpenAI SDK</a></li>
+                <li><a href="#138-curl-and-http-clients" className={activeSection === '138-curl-and-http-clients' ? 'active' : ''}>13.8 curl and HTTP Clients</a></li>
+                <li><a href="#139-langchain" className={activeSection === '139-langchain' ? 'active' : ''}>13.9 LangChain</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
@@ -6664,9 +7022,10 @@ batching = true`}</code></pre>
                 <li><a href="#165-authentication-errors" className={activeSection === '165-authentication-errors' ? 'active' : ''}>16.5 Authentication Errors</a></li>
                 <li><a href="#166-streaming-issues" className={activeSection === '166-streaming-issues' ? 'active' : ''}>16.6 Streaming Issues</a></li>
                 <li><a href="#167-performance-issues" className={activeSection === '167-performance-issues' ? 'active' : ''}>16.7 Performance Issues</a></li>
-                <li><a href="#168-viewing-logs" className={activeSection === '168-viewing-logs' ? 'active' : ''}>16.8 Viewing Logs</a></li>
-                <li><a href="#169-common-error-messages" className={activeSection === '169-common-error-messages' ? 'active' : ''}>16.9 Common Error Messages</a></li>
-                <li><a href="#1610-getting-help" className={activeSection === '1610-getting-help' ? 'active' : ''}>16.10 Getting Help</a></li>
+                <li><a href="#168-imc-caching-issues" className={activeSection === '168-imc-caching-issues' ? 'active' : ''}>16.8 IMC Caching Issues</a></li>
+                <li><a href="#169-viewing-logs" className={activeSection === '169-viewing-logs' ? 'active' : ''}>16.9 Viewing Logs</a></li>
+                <li><a href="#1610-common-error-messages" className={activeSection === '1610-common-error-messages' ? 'active' : ''}>16.10 Common Error Messages</a></li>
+                <li><a href="#1611-getting-help" className={activeSection === '1611-getting-help' ? 'active' : ''}>16.11 Getting Help</a></li>
               </ul>
             </div>
             <div className="doc-index-section">

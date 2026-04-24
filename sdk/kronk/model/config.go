@@ -715,7 +715,7 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 		ctxParams.NUbatch = uint32(cfg.NUBatch)
 		ctxParams.NThreads = int32(cfg.NThreads)
 		ctxParams.NThreadsBatch = int32(cfg.NThreadsBatch)
-		ctxParams.NCtx = uint32(cfg.ContextWindow)
+		ctxParams.NCtx = uint32(cfg.ContextWindow * nSeqMax)
 	}
 
 	if cfg.CacheTypeK != GGMLTypeAuto {
@@ -739,12 +739,12 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 
 	ctxParams.NSeqMax = uint32(totalSeqs)
 
-	// Enable unified KV cache so each sequence gets the full n_ctx context
-	// window. When kv_unified is false (llama.cpp default), the context is
-	// divided per sequence (n_ctx_seq = n_ctx / n_seq_max), which silently
-	// limits each sequence and causes llama_decode to return 1 when a single
-	// sequence exceeds its partition. With unified mode, all sequences share
-	// the full KV cache and any single sequence can use up to n_ctx tokens.
+	// Enable unified KV cache so all sequences share one pool of
+	// ContextWindow * NSeqMax tokens. Each slot is gated to ContextWindow
+	// tokens by the batch engine (startSlotText / startSlotTextMRoPE /
+	// startSlotMedia). With unified mode the pool is flexible: idle slots
+	// don't reserve capacity, and KV pressure eviction can reclaim stale
+	// slots when the shared pool gets tight.
 	if nSeqMax > 1 {
 		ctxParams.KVUnified = 1
 	}

@@ -20,10 +20,17 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	s.job = job
 
 	// If the rendered prompt ends with "<think>\n", the template has already
-	// opened a reasoning block. Prime the processor to start in reasoning
-	// mode so generated tokens are correctly classified until </think>.
-	if strings.HasSuffix(job.prompt, "<think>\n") {
+	// opened a reasoning block. Prime the processor and slot to start in
+	// reasoning mode so generated tokens are correctly classified until
+	// </think>. Setting reasonFlag ensures grammar sampling is skipped
+	// during the thinking phase.
+	//
+	// Skip reasoning mode when grammar is specified — grammar constrains
+	// the output format, so free-form thinking is counterproductive and
+	// would consume max_tokens before producing any constrained content.
+	if strings.HasSuffix(job.prompt, "<think>\n") && job.params.Grammar == "" {
 		s.proc.status = statusReasoning
+		s.reasonFlag = 1
 	}
 
 	// End the queue-wait span now that the job has been picked up.
@@ -279,19 +286,16 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 	s.nPast = cacheIdx
 
-	// Snapshot the cached prefix KV state into session.kvState for text-only
-	// sessions. This externalized state is used to restore the cache into any
-	// available slot on the next request. The snapshot is taken AFTER cache
-	// build/extend but BEFORE suffix tokens are decoded, capturing exactly
-	// the cached conversation prefix.
+	// Snapshot the cached prefix KV state into session.kvState. This
+	// externalized state is used to restore the cache into any available slot
+	// on the next request. The snapshot is taken AFTER cache build/extend but
+	// BEFORE suffix tokens are decoded, capturing exactly the cached
+	// conversation prefix.
 	//
-	// Media sessions are excluded — image/audio embeddings remain in VRAM
-	// (slot-dedicated for v1). StateSeqGetData may not round-trip media
-	// embeddings correctly through the mtmd pipeline.
-	//
-	// For Hybrid models, StateSeqGetData captures both KV and recurrent state
-	// (DeltaNet/SSM), so the unified path naturally handles them.
-	if e.model.cfg.IncrementalCache && job.imcCacheHit && cacheIdx > 0 && job.imcSession != nil && !job.imcSessionMedia {
+	// StateSeqGetData captures raw KV bytes regardless of whether they were
+	// produced by text tokens or media embeddings (image/audio). For Hybrid
+	// models it also captures recurrent state (DeltaNet/SSM).
+	if e.model.cfg.IncrementalCache && job.imcCacheHit && cacheIdx > 0 && job.imcSession != nil {
 		e.model.log(job.ctx, "start-slot", "status", "imc-snapshot-start",
 			"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx)
 
