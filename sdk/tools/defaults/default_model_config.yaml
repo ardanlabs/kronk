@@ -122,15 +122,16 @@
 #
 # UNIFIED KV CACHE (nseq-max > 1)
 # --------------------------------
-# When nseq-max > 1, Kronk enables a unified KV cache where all slots share
-# the full context-window pool. Any single slot can use up to the full context
-# window, but the total across all slots cannot exceed it. KV pressure eviction
-# automatically clears stale slots when the shared pool gets tight.
+# When nseq-max > 1, Kronk allocates a unified KV cache sized to
+# context-window × nseq-max tokens. All slots share this pool, and each
+# slot is gated to context-window tokens by the batch engine. Idle slots
+# don't reserve capacity, and KV pressure eviction automatically clears
+# stale slots when the shared pool gets tight.
 #
 # Example:
 #   context-window: 131072, nseq-max: 3
-#   → Total KV cache sized for 131k tokens (shared by all 3 slots)
-#   → Any single slot can use up to the full 131k tokens
+#   → Total KV cache sized for 393k tokens (131k × 3, shared pool)
+#   → Each slot can use up to the full 131k tokens
 #
 # MISCELLANEOUS NOTES
 # -------------------------------
@@ -140,7 +141,7 @@
 # ==============================================================================
 # CODING MODELS
 
-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
+Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT:
   context-window: 131072
   nseq-max: 2
   incremental-cache: true
@@ -149,17 +150,8 @@ Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
     top_k: 20
     top_p: 0.95
 
-gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
+gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT:
   context-window: 131072
-  nseq-max: 2
-  incremental-cache: true
-  sampling-parameters:
-    temperature: 1.0
-    top_k: 64
-    top_p: 0.95
-
-gemma-4-31B-it-UD-Q8_K_XL/AGENT:
-  context-window: 65536
   nseq-max: 2
   incremental-cache: true
   sampling-parameters:

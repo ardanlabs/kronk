@@ -89,4 +89,4 @@ extensions:
     available_tools: []
 GOOSE_TELEMETRY_ENABLED: false
 GOOSE_PROVIDER: kronk
-GOOSE_MODEL: gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT
+GOOSE_MODEL: gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT

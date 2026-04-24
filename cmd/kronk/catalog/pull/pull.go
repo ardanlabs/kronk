@@ -36,6 +36,7 @@ func runWeb(args []string) error {
 	defer cancel()
 
 	ch := make(chan toolapp.PullResponse)
+
 	if err := cln.Do(ctx, http.MethodPost, url, nil, ch); err != nil {
 		return fmt.Errorf("do: unable to download model: %w", err)
 	}

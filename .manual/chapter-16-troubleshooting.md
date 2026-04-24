@@ -417,7 +417,7 @@ Enable IMC to cache the conversation prefix:
 
 ```yaml
 models:
-  Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
+  Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT:
     incremental_cache: true
 ```
 
@@ -473,16 +473,16 @@ scattered expert routing (see
 
 Look for these log patterns:
 
-| Log Message                              | Meaning                                         |
-| ---------------------------------------- | ----------------------------------------------- |
-| `session[N] mismatch`                    | Hash changed — messages were modified            |
-| `sys-prompt-match`                       | System prompt preserved, conversation rebuilt   |
-| `token prefix match found`              | Partial prefix salvaged via token comparison     |
-| `no usable token prefix match`          | No salvageable prefix, full rebuild required     |
-| `kv-pressure-evict`                      | Stale session evicted to free KV space           |
-| `all sessions pending, waiting`          | All sessions busy, request is waiting            |
-| `imc-restore-start` / `imc-restore-done`| KV state being restored from RAM                |
-| `imc-snapshot-start` / `imc-snapshot-done`| KV state being snapshotted to RAM              |
+| Log Message                                | Meaning                                       |
+| ------------------------------------------ | --------------------------------------------- |
+| `session[N] mismatch`                      | Hash changed — messages were modified         |
+| `sys-prompt-match`                         | System prompt preserved, conversation rebuilt |
+| `token prefix match found`                 | Partial prefix salvaged via token comparison  |
+| `no usable token prefix match`             | No salvageable prefix, full rebuild required  |
+| `kv-pressure-evict`                        | Stale session evicted to free KV space        |
+| `all sessions pending, waiting`            | All sessions busy, request is waiting         |
+| `imc-restore-start` / `imc-restore-done`   | KV state being restored from RAM              |
+| `imc-snapshot-start` / `imc-snapshot-done` | KV state being snapshotted to RAM             |
 
 **Solutions:**
 
@@ -540,27 +540,27 @@ kronk server start --llama-log 0
 
 ### 16.10 Common Error Messages
 
-| Error                                          | Cause                            | Solution                               |
-| ---------------------------------------------- | -------------------------------- | -------------------------------------- |
-| `unable to load library`                       | Missing llama.cpp libraries      | `kronk libs --local`                   |
-| `unknown device`                               | Wrong processor for hardware     | Check `kronk devices`, re-install libs |
-| `unable to load model`                         | Missing or corrupt model file    | Re-download with `kronk catalog pull`  |
-| `failed to retrieve model template`            | Missing chat template            | `kronk catalog pull-templates --local` |
-| `unable to init context`                       | Insufficient VRAM/RAM            | Reduce context window or n_seq_max     |
-| `input tokens [N] exceed context window [M]`   | Prompt too large                 | Shorten prompt or increase context     |
-| `the context window is full`                   | KV cache exhausted during decode | Reduce input size or increase context  |
-| `context deadline exceeded`                    | HTTP timeout reached             | Increase `--write-timeout`             |
-| `server busy processing other requests`        | All IMC sessions busy            | Retry, or increase n_seq_max           |
-| `no authorization header`                      | Missing auth token               | Add `Authorization: Bearer <token>`    |
-| `invalid token`                                | Expired or malformed JWT         | Create a new token                     |
-| `endpoint not authorized`                      | Token missing endpoint scope     | Create token with correct endpoints    |
-| `rate limit exceeded`                          | Quota exhausted                  | Wait for reset or increase limit       |
-| `engine shutting down`                         | Server is stopping               | Wait for shutdown, restart server      |
-| `github rate limited`                          | GitHub API 403/429 during pull   | Set `GITHUB_TOKEN` env var             |
-| `model doesn't support embedding`             | Wrong model for endpoint         | Use an embedding model                 |
-| `model doesn't support reranking`             | Wrong model for endpoint         | Use a reranking model                  |
-| `imc restore failed`                           | RAM→VRAM restore failed          | Auto-recovers; reduce VRAM pressure    |
-| `imc extend stale`                             | Concurrent cache modification    | Auto-retries; transient                |
+| Error                                        | Cause                            | Solution                               |
+| -------------------------------------------- | -------------------------------- | -------------------------------------- |
+| `unable to load library`                     | Missing llama.cpp libraries      | `kronk libs --local`                   |
+| `unknown device`                             | Wrong processor for hardware     | Check `kronk devices`, re-install libs |
+| `unable to load model`                       | Missing or corrupt model file    | Re-download with `kronk catalog pull`  |
+| `failed to retrieve model template`          | Missing chat template            | `kronk catalog pull-templates --local` |
+| `unable to init context`                     | Insufficient VRAM/RAM            | Reduce context window or n_seq_max     |
+| `input tokens [N] exceed context window [M]` | Prompt too large                 | Shorten prompt or increase context     |
+| `the context window is full`                 | KV cache exhausted during decode | Reduce input size or increase context  |
+| `context deadline exceeded`                  | HTTP timeout reached             | Increase `--write-timeout`             |
+| `server busy processing other requests`      | All IMC sessions busy            | Retry, or increase n_seq_max           |
+| `no authorization header`                    | Missing auth token               | Add `Authorization: Bearer <token>`    |
+| `invalid token`                              | Expired or malformed JWT         | Create a new token                     |
+| `endpoint not authorized`                    | Token missing endpoint scope     | Create token with correct endpoints    |
+| `rate limit exceeded`                        | Quota exhausted                  | Wait for reset or increase limit       |
+| `engine shutting down`                       | Server is stopping               | Wait for shutdown, restart server      |
+| `github rate limited`                        | GitHub API 403/429 during pull   | Set `GITHUB_TOKEN` env var             |
+| `model doesn't support embedding`            | Wrong model for endpoint         | Use an embedding model                 |
+| `model doesn't support reranking`            | Wrong model for endpoint         | Use a reranking model                  |
+| `imc restore failed`                         | RAM→VRAM restore failed          | Auto-recovers; reduce VRAM pressure    |
+| `imc extend stale`                           | Concurrent cache modification    | Auto-retries; transient                |
 
 ### 16.11 Getting Help
 

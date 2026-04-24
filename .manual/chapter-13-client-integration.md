@@ -39,7 +39,7 @@ suffix that the agent references as its model name.
 **Recommended Configuration:**
 
 ```yaml
-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
+Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT:
   context-window: 131072
   nseq-max: 2
   incremental-cache: true
@@ -105,7 +105,7 @@ All agent configs below reference this endpoint.
 ```
 Base URL: http://localhost:11435/v1
 API Key: <your-kronk-token> or 123 if auth is disabled
-Model: Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT
+Model: Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT
 ```
 
 **MCP Configuration:**
@@ -292,7 +292,7 @@ client = OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT",
+    model="Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT",
     messages=[
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "Hello!"}
@@ -316,7 +316,7 @@ curl http://localhost:11435/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $KRONK_TOKEN" \
   -d '{
-    "model": "Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT",
+    "model": "Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT",
     "messages": [{"role": "user", "content": "Hello"}],
     "stream": true
   }'
@@ -352,7 +352,7 @@ from langchain_openai import ChatOpenAI
 llm = ChatOpenAI(
     base_url="http://localhost:11435/v1",
     api_key="your-kronk-token",
-    model="Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT",
+    model="Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT",
     streaming=True
 )
 

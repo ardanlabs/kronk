@@ -1153,7 +1153,7 @@ func cfgMoEIMCDeterministic() model.Config {
 
 func BenchmarkMoE_IMCDeterministic(b *testing.B) {
 	if len(benchMoEModelPath.ModelFiles) == 0 {
-		b.Skip("model Qwen3-VL-30B-A3B-Instruct-Q8_0 not downloaded")
+		b.Skip("model Qwen3-VL-30B-A3B-Instruct-Q4_K_M not downloaded")
 	}
 	krn := withBenchModel(b, cfgMoEIMCDeterministic())
 	benchChat(b, krn, benchDoc())
@@ -1182,7 +1182,7 @@ func cfgHybridIMCDeterministic() model.Config {
 
 func BenchmarkHybrid_IMCDeterministic(b *testing.B) {
 	if len(benchHybridModelPath.ModelFiles) == 0 {
-		b.Skip("model Qwen3.6-35B-A3B-UD-Q8_K_XL not downloaded")
+		b.Skip("model Qwen3.6-35B-A3B-UD-Q4_K_M not downloaded")
 	}
 	krn := withBenchModel(b, cfgHybridIMCDeterministic())
 	benchChat(b, krn, benchDoc())

@@ -1,6 +1,21 @@
 {
     "$schema": "https://opencode.ai/config.json",
     "provider": {
+        "ollama": {
+            "models": {
+                "gemma4:26b": {
+                    "name": "gemma4:26b"
+                },
+                "qwen3.6:35b": {
+                    "name": "qwen3.6:35b"
+                }
+            },
+            "name": "Ollama",
+            "npm": "@ai-sdk/openai-compatible",
+            "options": {
+                "baseURL": "http://127.0.0.1:11434/v1"
+            }
+        },
         "kronk": {
             "npm": "@ai-sdk/openai-compatible",
             "name": "Kronk (local)",
@@ -8,31 +23,31 @@
                 "baseURL": "http://127.0.0.1:11435/v1"
             },
             "models": {
-                "gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT": {
-                    "name": "Gemma 4 26B UD Q8 Agent",
+                "gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT": {
+                    "name": "Gemma4 26B-A4B UD-Q4_K_M",
                     "limit": {
                         "context": 131072,
                         "output": 65536
                     }
                 },
-                "Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT": {
-                    "name": "Qwen3.6 3 35B UD Q8 Agent",
+                "Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT": {
+                    "name": "Qwen3.6 35B-A3B UD-Q4_K_M",
                     "limit": {
                         "context": 131072,
                         "output": 65536
                     }
                 },
-                "gemma-4-31B-it-UD-Q8_K_XL/AGENT": {
-                    "name": "Gemma 4 31B UD Q8 Agent",
+                "Qwen3.6-27B-Q4_K_M/AGENT": {
+                    "name": "Qwen3.6 27B Q4_K_M",
                     "limit": {
-                        "context": 65536,
-                        "output": 32768
+                        "context": 131072,
+                        "output": 65536
                     }
                 }
             }
         }
     },
-    "model": "kronk/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT",
+    "model": "kronk/gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT",
     "instructions": [
         "agent.md"
     ],
