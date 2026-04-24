@@ -505,7 +505,6 @@ export default function CatalogList() {
     serverResponse: effectiveVram ?? null,
   });
   const contextInfo = extractContextInfo(modelInfo?.model_metadata);
-
   const handlePull = () => {
     if (!selectedId) return;
     startCatalogDownload(selectedId, downloadServer || undefined);
@@ -827,6 +826,12 @@ export default function CatalogList() {
                 <table className="catalog-table">
                   <thead>
                     <tr>
+                      <th style={{ width: '40px', textAlign: 'center' }} onClick={() => handleSort('validated')} className="catalog-table-sortable" title="Configuration and template confirmed working with the Kronk catalog">
+                        ✓
+                        <span className="catalog-table-sort-indicator">
+                          {sortField === 'validated' ? (sortAsc ? ' ▲' : ' ▼') : ''}
+                        </span>
+                      </th>
                       {([
                         ['id', 'Model ID'],
                         ['owned_by', 'Owner'],
@@ -834,7 +839,6 @@ export default function CatalogList() {
                         ['architecture', 'Arch'],
                         ['total_size_bytes', 'Size'],
                         ['created', 'Created'],
-                        ['validated', 'Val'],
                       ] as const).map(([field, label]) => (
                         <th key={field} onClick={() => handleSort(field)} className="catalog-table-sortable">
                           {label}
@@ -852,13 +856,13 @@ export default function CatalogList() {
                         className={selectedId === model.id ? 'active' : ''}
                         onClick={() => handleRowClick(model.id)}
                       >
+                        <td style={{ textAlign: 'center', color: model.validated ? 'inherit' : 'var(--color-error)' }}>{model.validated ? '✓' : '✗'}</td>
                         <td><span className="catalog-table-cell-ellipsis">{model.model_config?.['draft-model'] ? '⚡ ' : ''}{model.id}</span></td>
                         <td>{model.owned_by || '-'}</td>
                         <td>{model.category || '-'}</td>
                         <td>{model.architecture || '-'}</td>
                         <td>{model.total_size || '-'}</td>
                         <td>{model.metadata.created ? new Date(model.metadata.created).toLocaleDateString() : '-'}</td>
-                        <td>{model.validated ? '✓' : '✗'}</td>
                       </tr>
                     ))}
                   </tbody>

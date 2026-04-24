@@ -132,9 +132,9 @@ install-test-models: install-kronk
 	@echo ========== INSTALL MODELS ==========
 	kronk model pull --local "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/Qwen2.5-VL-3B-Instruct-Q8_0.gguf" "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
 	@echo
-	kronk model pull --local "unsloth/Qwen3-VL-30B-A3B-Instruct-GGUF/Qwen3-VL-30B-A3B-Instruct-Q8_0.gguf" "unsloth/Qwen3-VL-30B-A3B-Instruct-GGUF/mmproj-F16.gguf"
+	kronk model pull --local "unsloth/Qwen3-VL-30B-A3B-Instruct-GGUF/Qwen3-VL-30B-A3B-Instruct-Q4_K_M.gguf" "unsloth/Qwen3-VL-30B-A3B-Instruct-GGUF/mmproj-F16.gguf"
 	@echo
-	kronk model pull --local "unsloth/Qwen3.6-35B-A3B-GGUF/Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf" "unsloth/Qwen3.6-35B-A3B-GGUF/mmproj-F16.gguf"
+	kronk model pull --local "unsloth/Qwen3.6-35B-A3B-GGUF/Qwen3.6-35B-A3B-UD-Q4_K_M.gguf" "unsloth/Qwen3.6-35B-A3B-GGUF/mmproj-F16.gguf"
 	@echo
 
 	kronk model pull --local "mradermacher/Qwen2-Audio-7B-GGUF/Qwen2-Audio-7B.Q8_0.gguf" "mradermacher/Qwen2-Audio-7B-GGUF/Qwen2-Audio-7B.mmproj-Q8_0.gguf"
@@ -195,6 +195,12 @@ install-docker:
 	docker pull docker.io/$(LOKI) & \
 	docker pull docker.io/$(PROMTAIL) & \
 	wait;
+
+copy-agent-configs:
+	cp .agents/opencode/opencode.jsonc $$HOME/.config/opencode/opencode.jsonc
+	cp .agents/opencode/agent.md $$HOME/.config/opencode/agent.md
+	cp .agents/kilo/kilo.json $$HOME/.config/kilo/kilo.json
+	cp .agents/kilo/agent.md $$HOME/.config/kilo/agent.md
 
 # ==============================================================================
 # Llama.cpp programs

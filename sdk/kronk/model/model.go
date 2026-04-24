@@ -171,28 +171,28 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 	// However, we want to make it convenient to write the configuration.
 	// So, we default to invert these two values after loading them.
 	switch {
-	case cfg.NGpuLayers == nil:
+	case cfg.PtrNGpuLayers == nil:
 		mParams.NGpuLayers = -1
-	case *cfg.NGpuLayers == 0:
+	case *cfg.PtrNGpuLayers == 0:
 		mParams.NGpuLayers = -1
-	case *cfg.NGpuLayers == -1:
+	case *cfg.PtrNGpuLayers == -1:
 		mParams.NGpuLayers = 0
 	default:
-		mParams.NGpuLayers = int32(*cfg.NGpuLayers)
+		mParams.NGpuLayers = int32(*cfg.PtrNGpuLayers)
 	}
 
 	// Set split mode for multi-GPU and tensor parallelism (expert-parallel for MoE).
 	// Default to SplitModeRow (tensor parallelism) when not explicitly configured,
 	// as it provides the best performance for MoE models and works well for dense models.
-	switch cfg.SplitMode {
+	switch cfg.PtrSplitMode {
 	case nil:
 		mParams.SplitMode = SplitModeRow.ToYZMAType()
 	default:
-		mParams.SplitMode = (*cfg.SplitMode).ToYZMAType()
+		mParams.SplitMode = (*cfg.PtrSplitMode).ToYZMAType()
 	}
 
-	if cfg.MainGPU != nil {
-		mParams.MainGpu = int32(*cfg.MainGPU)
+	if cfg.PtrMainGPU != nil {
+		mParams.MainGpu = int32(*cfg.PtrMainGPU)
 	}
 
 	// TensorSplit: proportional distribution of layers across multiple GPUs.
@@ -210,8 +210,8 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 		case MoEModeExpertsCPU:
 			cfg.TensorBuftOverrides = []string{"moe-experts"}
 		case MoEModeKeepTopN:
-			if cfg.MoE.KeepExpertsOnGPUForTopNLayers != nil {
-				topN := *cfg.MoE.KeepExpertsOnGPUForTopNLayers
+			if cfg.MoE.PtrKeepExpertsOnGPUForTopNLayers != nil {
+				topN := *cfg.MoE.PtrKeepExpertsOnGPUForTopNLayers
 				// To keep top N on GPU, we offload all layers EXCEPT the top N.
 				// We need block_count from model metadata, which isn't available yet.
 				// Use the "moe-experts" shortcut for now; per-layer targeting requires
@@ -248,8 +248,8 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 
 	// UseMMap: controls mmap for model loading.
 	// When nil, use llama.cpp default (mmap enabled). UseDirectIO takes precedence.
-	if cfg.UseMMap != nil {
-		if *cfg.UseMMap {
+	if cfg.PtrUseMMap != nil {
+		if *cfg.PtrUseMMap {
 			mParams.UseMmap = 1
 		} else {
 			mParams.UseMmap = 0
@@ -283,9 +283,9 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 	modelLoadMu.Lock()
 
 	prevOffloadMinBatch, hadOffloadMinBatch := os.LookupEnv("GGML_OP_OFFLOAD_MIN_BATCH")
-	if cfg.OpOffloadMinBatch > 0 {
-		os.Setenv("GGML_OP_OFFLOAD_MIN_BATCH", strconv.Itoa(cfg.OpOffloadMinBatch))
-		l(ctx, "OP-OFFLOAD-MIN-BATCH", "value", cfg.OpOffloadMinBatch)
+	if cfg.OpOffloadMinBatch() > 0 {
+		os.Setenv("GGML_OP_OFFLOAD_MIN_BATCH", strconv.Itoa(*cfg.PtrOpOffloadMinBatch))
+		l(ctx, "OP-OFFLOAD-MIN-BATCH", "value", *cfg.PtrOpOffloadMinBatch)
 	} else {
 		os.Unsetenv("GGML_OP_OFFLOAD_MIN_BATCH")
 	}
@@ -346,8 +346,8 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 	// Log effective MoE configuration for debugging.
 	if cfg.MoE != nil && cfg.MoE.Mode != "" && cfg.MoE.Mode != MoEModeAuto {
 		topN := 0
-		if cfg.MoE.KeepExpertsOnGPUForTopNLayers != nil {
-			topN = *cfg.MoE.KeepExpertsOnGPUForTopNLayers
+		if cfg.MoE.PtrKeepExpertsOnGPUForTopNLayers != nil {
+			topN = *cfg.MoE.PtrKeepExpertsOnGPUForTopNLayers
 		}
 
 		overrides := cfg.TensorBuftOverrides
@@ -400,7 +400,7 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 	// Initialize either context pool (for embed/rerank) or batch engine (for generation).
 	// Embed/rerank models use a pool of contexts for parallel processing.
 	// Generation models use the batch engine with a primary context.
-	nSlots := max(cfg.NSeqMax, 1)
+	nSlots := max(cfg.NSeqMax(), 1)
 
 	switch {
 	case modelInfo.IsEmbedModel || modelInfo.IsRerankModel:
@@ -433,7 +433,7 @@ func NewModel(ctx context.Context, cataloger Cataloger, cfg Config) (*Model, err
 
 		// Initialize IMC sessions (one per slot). Transitional: sessions are
 		// currently slot-indexed. Future phases will decouple from slots.
-		if cfg.IncrementalCache {
+		if cfg.IncrementalCache() {
 			m.imcSessions = make([]*imcSession, nSlots)
 			for i := range nSlots {
 				m.imcSessions[i] = &imcSession{
@@ -476,14 +476,14 @@ func loadDraftModel(ctx context.Context, log Logger, cfg Config, targetModel lla
 	// Load draft model.
 	mParams := llama.ModelDefaultParams()
 	switch {
-	case dCfg.NGpuLayers == nil:
+	case dCfg.PtrNGpuLayers == nil:
 		mParams.NGpuLayers = -1
-	case *dCfg.NGpuLayers == 0:
+	case *dCfg.PtrNGpuLayers == 0:
 		mParams.NGpuLayers = -1
-	case *dCfg.NGpuLayers == -1:
+	case *dCfg.PtrNGpuLayers == -1:
 		mParams.NGpuLayers = 0
 	default:
-		mParams.NGpuLayers = int32(*dCfg.NGpuLayers)
+		mParams.NGpuLayers = int32(*dCfg.PtrNGpuLayers)
 	}
 
 	var draftDevicesBuf []llama.GGMLBackendDevice
@@ -498,8 +498,8 @@ func loadDraftModel(ctx context.Context, log Logger, cfg Config, targetModel lla
 		draftDevicesBuf = resolved
 	}
 
-	if dCfg.MainGPU != nil {
-		mParams.MainGpu = int32(*dCfg.MainGPU)
+	if dCfg.PtrMainGPU != nil {
+		mParams.MainGpu = int32(*dCfg.PtrMainGPU)
 	}
 
 	var draftTensorSplitBuf []float32
@@ -827,7 +827,7 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 	}
 
 	contextTokens := usage.PromptTokens + usage.CompletionTokens
-	contextWindow := m.cfg.ContextWindow
+	contextWindow := m.cfg.ContextWindow()
 	percentage := (float64(contextTokens) / float64(contextWindow)) * 100
 	of := float32(contextWindow) / float32(1024)
 
@@ -870,9 +870,9 @@ func calculateVRAM(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory int64)
 
 	bytesPerElement := ggmlTypeToBytes(cfg.CacheTypeK, cfg.CacheTypeV)
 
-	nSeqMax := int64(max(cfg.NSeqMax, 1))
+	nSeqMax := int64(max(cfg.NSeqMax(), 1))
 
-	contextWindow := int64(cfg.ContextWindow)
+	contextWindow := int64(cfg.ContextWindow())
 
 	kvPerTokenPerLayer := headCountKV * (keyLength + valueLength) * bytesPerElement
 	kvPerSlot := contextWindow * blockCount * kvPerTokenPerLayer

@@ -21,28 +21,28 @@ import (
 
 func cfgDenseNonCaching() model.Config {
 	return model.Config{
-		Log:           benchLog,
-		ModelFiles:    benchModelPath.ModelFiles,
-		ContextWindow: 32768,
-		NBatch:        2048,
-		NUBatch:       2048,
-		CacheTypeK:    model.GGMLTypeF16,
-		CacheTypeV:    model.GGMLTypeF16,
-		NSeqMax:       1,
+		Log:              benchLog,
+		ModelFiles:       benchModelPath.ModelFiles,
+		PtrContextWindow: new(32768),
+		PtrNBatch:        new(2048),
+		PtrNUBatch:       new(2048),
+		CacheTypeK:       model.GGMLTypeF16,
+		CacheTypeV:       model.GGMLTypeF16,
+		PtrNSeqMax:       new(1),
 	}
 }
 
 func cfgDenseIMCDeterministic() model.Config {
 	return model.Config{
-		Log:              benchLog,
-		ModelFiles:       benchModelPath.ModelFiles,
-		ContextWindow:    32768,
-		NBatch:           2048,
-		NUBatch:          2048,
-		CacheTypeK:       model.GGMLTypeF16,
-		CacheTypeV:       model.GGMLTypeF16,
-		NSeqMax:          1,
-		IncrementalCache: true,
+		Log:                 benchLog,
+		ModelFiles:          benchModelPath.ModelFiles,
+		PtrContextWindow:    new(32768),
+		PtrNBatch:           new(2048),
+		PtrNUBatch:          new(2048),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrNSeqMax:          new(1),
+		PtrIncrementalCache: new(true),
 	}
 }
 
@@ -939,15 +939,15 @@ func cfgDenseIMCDeterministicSpeculative() model.Config {
 	draftPath := benchDraftModelPath.ModelFiles
 
 	return model.Config{
-		Log:              benchLog,
-		ModelFiles:       benchModelPath.ModelFiles,
-		ContextWindow:    32768,
-		NBatch:           2048,
-		NUBatch:          2048,
-		CacheTypeK:       model.GGMLTypeF16,
-		CacheTypeV:       model.GGMLTypeF16,
-		NSeqMax:          1,
-		IncrementalCache: true,
+		Log:                 benchLog,
+		ModelFiles:          benchModelPath.ModelFiles,
+		PtrContextWindow:    new(32768),
+		PtrNBatch:           new(2048),
+		PtrNUBatch:          new(2048),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrNSeqMax:          new(1),
+		PtrIncrementalCache: new(true),
 		DraftModel: &model.DraftModelConfig{
 			ModelFiles: draftPath,
 			NDraft:     5,
@@ -969,15 +969,15 @@ func BenchmarkDense_IMCDeterministic_Speculative(b *testing.B) {
 
 func cfgDenseIMCNonDeterministic() model.Config {
 	return model.Config{
-		Log:              benchLog,
-		ModelFiles:       benchNonDetModelPath.ModelFiles,
-		ContextWindow:    32768,
-		NBatch:           2048,
-		NUBatch:          2048,
-		CacheTypeK:       model.GGMLTypeF16,
-		CacheTypeV:       model.GGMLTypeF16,
-		NSeqMax:          1,
-		IncrementalCache: true,
+		Log:                 benchLog,
+		ModelFiles:          benchNonDetModelPath.ModelFiles,
+		PtrContextWindow:    new(32768),
+		PtrNBatch:           new(2048),
+		PtrNUBatch:          new(2048),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrNSeqMax:          new(1),
+		PtrIncrementalCache: new(true),
 	}
 }
 
@@ -994,15 +994,15 @@ func BenchmarkDense_IMCNonDeterministic(b *testing.B) {
 
 func cfgDenseIMCDeterministicMultiSlot() model.Config {
 	return model.Config{
-		Log:              benchLog,
-		ModelFiles:       benchModelPath.ModelFiles,
-		ContextWindow:    131072, // 4x to give each of the 4 slots ~32k tokens
-		NBatch:           2048,
-		NUBatch:          2048,
-		CacheTypeK:       model.GGMLTypeF16,
-		CacheTypeV:       model.GGMLTypeF16,
-		NSeqMax:          4,
-		IncrementalCache: true,
+		Log:                 benchLog,
+		ModelFiles:          benchModelPath.ModelFiles,
+		PtrContextWindow:    new(131072), // 4x to give each of the 4 slots ~32k tokens
+		PtrNBatch:           new(2048),
+		PtrNUBatch:          new(2048),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrNSeqMax:          new(4),
+		PtrIncrementalCache: new(true),
 	}
 }
 
@@ -1139,21 +1139,21 @@ func BenchmarkDense_IMC_ColdBuild(b *testing.B) {
 
 func cfgMoEIMCDeterministic() model.Config {
 	return model.Config{
-		Log:              benchLog,
-		ModelFiles:       benchMoEModelPath.ModelFiles,
-		ContextWindow:    32768,
-		NBatch:           2048,
-		NUBatch:          2048,
-		CacheTypeK:       model.GGMLTypeF16,
-		CacheTypeV:       model.GGMLTypeF16,
-		NSeqMax:          1,
-		IncrementalCache: true,
+		Log:                 benchLog,
+		ModelFiles:          benchMoEModelPath.ModelFiles,
+		PtrContextWindow:    new(32768),
+		PtrNBatch:           new(2048),
+		PtrNUBatch:          new(2048),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrNSeqMax:          new(1),
+		PtrIncrementalCache: new(true),
 	}
 }
 
 func BenchmarkMoE_IMCDeterministic(b *testing.B) {
 	if len(benchMoEModelPath.ModelFiles) == 0 {
-		b.Skip("model Qwen3-VL-30B-A3B-Instruct-Q8_0 not downloaded")
+		b.Skip("model Qwen3-VL-30B-A3B-Instruct-Q4_K_M not downloaded")
 	}
 	krn := withBenchModel(b, cfgMoEIMCDeterministic())
 	benchChat(b, krn, benchDoc())
@@ -1168,21 +1168,21 @@ func BenchmarkMoE_IMCDeterministic(b *testing.B) {
 
 func cfgHybridIMCDeterministic() model.Config {
 	return model.Config{
-		Log:              benchLog,
-		ModelFiles:       benchHybridModelPath.ModelFiles,
-		ContextWindow:    32768,
-		NBatch:           2048,
-		NUBatch:          2048,
-		CacheTypeK:       model.GGMLTypeF16,
-		CacheTypeV:       model.GGMLTypeF16,
-		NSeqMax:          1,
-		IncrementalCache: true,
+		Log:                 benchLog,
+		ModelFiles:          benchHybridModelPath.ModelFiles,
+		PtrContextWindow:    new(32768),
+		PtrNBatch:           new(2048),
+		PtrNUBatch:          new(2048),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrNSeqMax:          new(1),
+		PtrIncrementalCache: new(true),
 	}
 }
 
 func BenchmarkHybrid_IMCDeterministic(b *testing.B) {
 	if len(benchHybridModelPath.ModelFiles) == 0 {
-		b.Skip("model Qwen3.6-35B-A3B-UD-Q8_K_XL not downloaded")
+		b.Skip("model Qwen3.6-35B-A3B-UD-Q4_K_M not downloaded")
 	}
 	krn := withBenchModel(b, cfgHybridIMCDeterministic())
 	benchChat(b, krn, benchDoc())
@@ -1197,29 +1197,29 @@ func BenchmarkHybrid_IMCDeterministic(b *testing.B) {
 
 func cfgMoESpecBaseline() model.Config {
 	return model.Config{
-		Log:              benchLog,
-		ModelFiles:       benchSpecModelPath.ModelFiles,
-		ContextWindow:    32768,
-		NBatch:           2048,
-		NUBatch:          2048,
-		CacheTypeK:       model.GGMLTypeF16,
-		CacheTypeV:       model.GGMLTypeF16,
-		NSeqMax:          1,
-		IncrementalCache: true,
+		Log:                 benchLog,
+		ModelFiles:          benchSpecModelPath.ModelFiles,
+		PtrContextWindow:    new(32768),
+		PtrNBatch:           new(2048),
+		PtrNUBatch:          new(2048),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrNSeqMax:          new(1),
+		PtrIncrementalCache: new(true),
 	}
 }
 
 func cfgMoESpecWithDraft() model.Config {
 	return model.Config{
-		Log:              benchLog,
-		ModelFiles:       benchSpecModelPath.ModelFiles,
-		ContextWindow:    32768,
-		NBatch:           2048,
-		NUBatch:          2048,
-		CacheTypeK:       model.GGMLTypeF16,
-		CacheTypeV:       model.GGMLTypeF16,
-		NSeqMax:          1,
-		IncrementalCache: true,
+		Log:                 benchLog,
+		ModelFiles:          benchSpecModelPath.ModelFiles,
+		PtrContextWindow:    new(32768),
+		PtrNBatch:           new(2048),
+		PtrNUBatch:          new(2048),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrNSeqMax:          new(1),
+		PtrIncrementalCache: new(true),
 		DraftModel: &model.DraftModelConfig{
 			ModelFiles: benchDraftModelPath.ModelFiles,
 			NDraft:     5,

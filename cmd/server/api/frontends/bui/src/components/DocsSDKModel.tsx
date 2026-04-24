@@ -139,47 +139,47 @@ export default function DocsSDKModel() {
               <h4>Config</h4>
               <pre className="code-block">
                 <code>{`type Config struct {
-	CacheMinTokens      int
-	CacheSlotTimeout    int
-	CacheTypeK          GGMLType
-	CacheTypeV          GGMLType
-	ContextWindow       int
-	DefaultParams       Params
-	DraftModel          *DraftModelConfig
-	Devices             []string // Device names for model execution (e.g., ["CUDA0", "CUDA1"])
-	FlashAttention      FlashAttentionType
-	IncrementalCache    bool
-	InsecureLogging     bool
-	JinjaFile           string
-	Log                 Logger
-	MainGPU             *int
-	MoE                 *MoEConfig
-	ModelFiles          []string
-	NBatch              int
-	NGpuLayers          *int
-	NSeqMax             int
-	NThreads            int
-	NThreadsBatch       int
-	NUBatch             int
-	NUMA                string
-	OffloadKQV          *bool
-	OpOffload           *bool
-	OpOffloadMinBatch   int
-	ProjFile            string
-	RopeFreqBase        *float32
-	RopeFreqScale       *float32
-	RopeScaling         RopeScalingType
-	SplitMode           *SplitMode
-	SWAFull             *bool
-	TensorBuftOverrides []string
-	TensorSplit         []float32
-	UseDirectIO         bool
-	UseMMap             *bool
-	YarnAttnFactor      *float32
-	YarnBetaFast        *float32
-	YarnBetaSlow        *float32
-	YarnExtFactor       *float32
-	YarnOrigCtx         *int
+	PtrCacheMinTokens    *int
+	PtrCacheSlotTimeout  *int
+	CacheTypeK           GGMLType
+	CacheTypeV           GGMLType
+	PtrContextWindow     *int
+	DefaultParams        Params
+	DraftModel           *DraftModelConfig
+	Devices              []string // Device names for model execution (e.g., ["CUDA0", "CUDA1"])
+	FlashAttention       FlashAttentionType
+	PtrIncrementalCache  *bool
+	PtrInsecureLogging   *bool
+	JinjaFile            string
+	Log                  Logger
+	PtrMainGPU           *int
+	MoE                  *MoEConfig
+	ModelFiles           []string
+	PtrNBatch            *int
+	PtrNGpuLayers        *int
+	PtrNSeqMax           *int
+	PtrNThreads          *int
+	PtrNThreadsBatch     *int
+	PtrNUBatch           *int
+	NUMA                 string
+	PtrOffloadKQV        *bool
+	PtrOpOffload         *bool
+	PtrOpOffloadMinBatch *int
+	ProjFile             string
+	PtrRopeFreqBase      *float32
+	PtrRopeFreqScale     *float32
+	RopeScaling          RopeScalingType
+	PtrSplitMode         *SplitMode
+	PtrSWAFull           *bool
+	TensorBuftOverrides  []string
+	TensorSplit          []float32
+	PtrUseDirectIO       *bool
+	PtrUseMMap           *bool
+	PtrYarnAttnFactor    *float32
+	PtrYarnBetaFast      *float32
+	PtrYarnBetaSlow      *float32
+	PtrYarnExtFactor     *float32
+	PtrYarnOrigCtx       *int
 }`}</code>
               </pre>
               <p className="doc-description">Config represents model level configuration. These values if configured incorrectly can cause the system to panic. The defaults are used when these values are set to 0. CacheMinTokens sets the minimum token count required before caching. Messages shorter than this threshold are not cached, as the overhead of cache management may outweigh the prefill savings. When set to 0, defaults to 100 tokens. CacheSlotTimeout sets the maximum number of seconds used for two IMC timeout scenarios: 1. Wait for slot availability: When all IMC slots have cache builds in-flight (pending), incoming requests wait up to this duration for a slot to become available before returning a "server busy" error. 2. Slot preemption: When a request's target slot is busy generating, the request is deferred. If the deferred job waits longer than this duration (measured from batch queue entry, not HTTP arrival), the busy slot is preempted so the waiting request can proceed. When set to 0, defaults to 30 seconds. CacheTypeK is the data type for the K (key) cache. This controls the precision of the key vectors in the KV cache. Lower precision types (like Q8_0 or Q4_0) reduce memory usage but may slightly affect quality. When left as the zero value (GGMLTypeAuto), the default llama.cpp value is used. CacheTypeV is the data type for the V (value) cache. This controls the precision of the value vectors in the KV cache. When left as the zero value (GGMLTypeAuto), the default llama.cpp value is used. ContextWindow (often referred to as context length) is the maximum number of tokens that a large language model can process and consider at one time when generating a response. It defines the model's effective "memory" for a single conversation or text generation task. When set to 0, the default value is 4096. DefaultParams contains the default sampling parameters for requests. Devices is a list of device names to use for model execution. When multiple devices are specified, the model is distributed across them according to the SplitMode and TensorSplit configuration. Device names can be obtained from the output of llama-bench --list-devices (e.g., "CUDA0", "CUDA1", "Metal"). When empty and Device is also empty, the default device selection is used. FlashAttention controls Flash Attention mode. Flash Attention reduces memory usage and speeds up attention computation, especially for large context windows. When left as zero value, FlashAttentionEnabled is used (default on). Set to FlashAttentionDisabled to disable, or FlashAttentionAuto to let llama.cpp decide. IncrementalCache enables Incremental Message Caching (IMC) for agentic workflows. It caches all messages except the last one (which triggers generation) and extends the cache incrementally on each turn. This is ideal for agents like Cline or OpenCode where conversations grow monotonically. The cache is rebuilt from scratch when the message prefix changes (new thread). InsecureLogging enables logging of potentially sensitive data such as message content. This should only be enabled for debugging purposes in non-production environments. JinjaFile is the path to the jinja file. This is not required and can be used if you want to override the templated provided by the model metadata. Log is the logger to use for model operations. ModelFiles is the path to the model files. This is mandatory to provide. NBatch is the logical batch size or the maximum number of tokens that can be in a single forward pass through the model at any given time. It defines the maximum capacity of the processing batch. If you are processing a very long prompt or multiple prompts simultaneously, the total number of tokens processed in one go will not exceed NBatch. Increasing n_batch can improve performance (throughput) if your hardware can handle it, as it better utilizes parallel computation. However, a very high n_batch can lead to out-of-memory errors on systems with limited VRAM. When set to 0, the default value is 2048. MainGPU is the index of the GPU to use as the primary device when SplitMode is SplitModeNone. When nil, the default GPU (usually index 0) is used. NGpuLayers is the number of model layers to offload to the GPU. When set to 0, all layers are offloaded (default). Set to -1 to keep all layers on CPU. Any positive value specifies the exact number of layers to offload. NSeqMax controls concurrency behavior based on model type. For text inference models (including vision/audio), it sets the maximum number of sequences processed in parallel within the batch engine. For embedding and reranking models, it sets the number of contexts in the internal pool for parallel request processing. When set to 0, a default of 1 is used. NThreads is the number of threads to use for generation. When set to 0, the default llama.cpp value is used. NThreadsBatch is the number of threads to use for batch processing. When set to 0, the default llama.cpp value is used. NUBatch is the physical batch size or the maximum number of tokens processed together during the initial prompt processing phase (also called "prompt ingestion") to populate the KV cache. It specifically optimizes the initial loading of prompt tokens into the KV cache. If a prompt is longer than NUBatch, it will be broken down and processed in chunks of n_ubatch tokens sequentially. This parameter is crucial for tuning performance on specific hardware (especially GPUs) because different values might yield better prompt processing times depending on the memory architecture. When set to 0, the default value is 512. OffloadKQV controls whether the KV cache is offloaded to the GPU. When nil or true, the KV cache is stored on the GPU (default behavior). Set to false to keep the KV cache on the CPU, which reduces VRAM usage but may slow inference. OpOffload controls whether host tensor operations are offloaded to the device (GPU). When nil or true, operations are offloaded (default behavior). Set to false to keep operations on the CPU. ProjFile is the path to the projection files. This is mandatory for media based models like vision and audio. RopeFreqBase overrides the RoPE base frequency. When nil, uses model default. Common values: 10000 (Llama), 1000000 (Qwen3). RopeFreqScale overrides the RoPE frequency scaling factor. When nil, uses model default or auto-calculates based on context extension ratio. RopeScaling controls the RoPE scaling method for extended context support. Set to RopeScalingYaRN to enable YaRN scaling for models like Qwen3 that support extended context (e.g., 32k training → 131k with YaRN). SWAFull controls whether models with sliding window attention (SWA) use a full-size KV cache for SWA layers instead of the memory-efficient small cache. When nil (default), llama.cpp's default is used (currently true). When explicitly set to false, SWA layers only cache the last n_swa tokens, saving significant VRAM but limiting context caching and shifting. When true, SWA layers use the full context window for their KV cache, preserving accuracy at the cost of higher memory usage. SplitMode controls how the model is split across multiple GPUs: - SplitModeNone (0): single GPU - SplitModeLayer (1): split layers and KV across GPUs - SplitModeRow (2): split layers and KV across GPUs with tensor parallelism (recommended for MoE models like Qwen3-MoE, Mixtral, DeepSeek) When nil (not set), defaults to SplitModeRow for optimal MoE performance. TensorBuftOverrides is a list of tensor buffer type override patterns that force matching tensors to execute on CPU instead of GPU. This is an expert-level configuration useful for MoE models where certain FFN expert tensors don't fit in VRAM. Supported values: - "all-ffn": offload all FFN expression tensors to CPU - "block:N": offload FFN tensors for block N to CPU (e.g., "block:12") - Any regex pattern matching tensor names (e.g., `blk\.12\.ffn_(up|down|gate)`) TensorSplit controls how model layers are proportionally distributed across multiple GPUs. Each element represents the fraction of the model assigned to the corresponding device. For example, [0.6, 0.4] splits 60%/40% across two GPUs. The length must match the number of devices. When empty, the split is determined automatically based on available VRAM. UseDirectIO enables direct I/O for model loading. UseMMap controls whether mmap is used for model loading. When nil, mmap is enabled by default (llama.cpp default). Set to false to disable mmap, which is recommended for multi-socket NUMA systems running MoE models with CPU experts — without mmap, tensor data is directly allocated and can be placed on the appropriate NUMA node. UseDirectIO takes precedence over UseMMap. NUMA controls the NUMA (Non-Uniform Memory Access) strategy. This matters most when expert tensors are on CPU and the system has multiple NUMA nodes. Valid values: "" (disabled), "distribute", "isolate", "numactl", "mirror". "distribute" is recommended for multi-socket MoE setups; without it, cross-socket memory access can cause significant bandwidth collapse. YarnAttnFactor sets the YaRN attention magnitude scaling factor. When nil, uses default of 1.0. YarnBetaFast sets the YaRN low correction dimension. When nil, uses default of 32.0. YarnBetaSlow sets the YaRN high correction dimension. When nil, uses default of 1.0. YarnExtFactor sets the YaRN extrapolation mix factor. When nil, auto-calculated from context scaling ratio. Set to 0 to disable extrapolation. YarnOrigCtx sets the original training context size for YaRN scaling. When nil or 0, uses the model's native training context length from metadata.</p>
@@ -210,12 +210,12 @@ export default function DocsSDKModel() {
               <h4>DraftModelConfig</h4>
               <pre className="code-block">
                 <code>{`type DraftModelConfig struct {
-	ModelFiles  []string  // Path to the draft model GGUF file(s)
-	NDraft      int       // Number of tokens to draft per step (default 5)
-	NGpuLayers  *int      // GPU layers for draft model (nil = all layers on GPU)
-	Devices     []string  // Devices for draft model (e.g., ["CUDA0"])
-	MainGPU     *int      // Primary GPU index for draft model
-	TensorSplit []float32 // Per-device tensor split for draft model
+	ModelFiles    []string  // Path to the draft model GGUF file(s)
+	NDraft        int       // Number of tokens to draft per step (default 5)
+	PtrNGpuLayers *int      // GPU layers for draft model (nil = all layers on GPU)
+	Devices       []string  // Devices for draft model (e.g., ["CUDA0"])
+	PtrMainGPU    *int      // Primary GPU index for draft model
+	TensorSplit   []float32 // Per-device tensor split for draft model
 }`}</code>
               </pre>
               <p className="doc-description">DraftModelConfig configures a draft model for speculative decoding. A smaller, faster model generates candidate tokens that the target model verifies in a single forward pass. This can improve generation throughput when the draft model's predictions frequently match the target's. Requirements: - Draft and target models must share the same vocabulary (same tokenizer) - NSeqMax must be 1 (single-slot mode) - Draft model should be significantly smaller than the target (e.g., 0.6B draft for 8B target)</p>
@@ -306,11 +306,11 @@ export default function DocsSDKModel() {
 	// Mode controls expert placement strategy.
 	Mode MoEMode \`yaml:"mode,omitempty"\`
 
-	// KeepExpertsOnGPUForTopNLayers keeps routed expert tensors on GPU for the
+	// PtrKeepExpertsOnGPUForTopNLayers keeps routed expert tensors on GPU for the
 	// top N layers (highest-index layers). All other expert layers go to CPU.
 	// Only used when Mode is MoEModeKeepTopN. 0 means all experts on CPU.
 	// llama.cpp convention: "top" means highest-numbered layers.
-	KeepExpertsOnGPUForTopNLayers *int \`yaml:"keep-experts-top-n,omitempty"\`
+	PtrKeepExpertsOnGPUForTopNLayers *int \`yaml:"keep-experts-top-n,omitempty"\`
 }`}</code>
               </pre>
               <p className="doc-description">MoEConfig configures Mixture of Experts tensor placement. When nil, no MoE-specific behavior is applied.</p>
@@ -361,6 +361,14 @@ export default function DocsSDKModel() {
                 <code>{`type ModelType uint8`}</code>
               </pre>
               <p className="doc-description">ModelType represents the model architecture for batch engine state management.</p>
+            </div>
+
+            <div className="doc-section" id="type-option">
+              <h4>Option</h4>
+              <pre className="code-block">
+                <code>{`type Option func(*Config)`}</code>
+              </pre>
+              <p className="doc-description">Option represents a functional option for configuring a Config.</p>
             </div>
 
             <div className="doc-section" id="type-params">
@@ -664,10 +672,157 @@ export default function DocsSDKModel() {
               <p className="doc-description">FinishReason return the finish reason as an empty string if it is nil.</p>
             </div>
 
+            <div className="doc-section" id="method-config-cachemintokens">
+              <h4>Config.CacheMinTokens</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) CacheMinTokens() int</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="method-config-cacheslottimeout">
+              <h4>Config.CacheSlotTimeout</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) CacheSlotTimeout() int</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="method-config-contextwindow">
+              <h4>Config.ContextWindow</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) ContextWindow() int</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="method-config-incrementalcache">
+              <h4>Config.IncrementalCache</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) IncrementalCache() bool</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="method-config-insecurelogging">
+              <h4>Config.InsecureLogging</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) InsecureLogging() bool</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="method-config-maingpu">
+              <h4>Config.MainGPU</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) MainGPU() int</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="method-config-nbatch">
+              <h4>Config.NBatch</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) NBatch() int</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="method-config-ngpulayers">
+              <h4>Config.NGpuLayers</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) NGpuLayers() int</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="method-config-nseqmax">
+              <h4>Config.NSeqMax</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) NSeqMax() int</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="method-config-nthreads">
+              <h4>Config.NThreads</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) NThreads() int</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="method-config-nthreadsbatch">
+              <h4>Config.NThreadsBatch</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) NThreadsBatch() int</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="method-config-nubatch">
+              <h4>Config.NUBatch</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) NUBatch() int</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="method-config-opoffloadminbatch">
+              <h4>Config.OpOffloadMinBatch</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) OpOffloadMinBatch() int</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="method-config-ropefreqbase">
+              <h4>Config.RopeFreqBase</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) RopeFreqBase() float32</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="method-config-ropefreqscale">
+              <h4>Config.RopeFreqScale</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) RopeFreqScale() float32</code>
+              </pre>
+            </div>
+
             <div className="doc-section" id="method-config-string">
               <h4>Config.String</h4>
               <pre className="code-block">
                 <code>func (cfg Config) String() string</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="method-config-usedirectio">
+              <h4>Config.UseDirectIO</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) UseDirectIO() bool</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="method-config-yarnattnfactor">
+              <h4>Config.YarnAttnFactor</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) YarnAttnFactor() float32</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="method-config-yarnbetafast">
+              <h4>Config.YarnBetaFast</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) YarnBetaFast() float32</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="method-config-yarnbetaslow">
+              <h4>Config.YarnBetaSlow</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) YarnBetaSlow() float32</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="method-config-yarnextfactor">
+              <h4>Config.YarnExtFactor</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) YarnExtFactor() float32</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="method-config-yarnorigctx">
+              <h4>Config.YarnOrigCtx</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) YarnOrigCtx() int</code>
               </pre>
             </div>
 
@@ -700,6 +855,20 @@ export default function DocsSDKModel() {
                 <code>func (d D) String() string</code>
               </pre>
               <p className="doc-description">String returns a string representation of the document containing only fields that are safe to log. This excludes sensitive fields like messages and input which may contain private user data.</p>
+            </div>
+
+            <div className="doc-section" id="method-draftmodelconfig-maingpu">
+              <h4>DraftModelConfig.MainGPU</h4>
+              <pre className="code-block">
+                <code>func (d DraftModelConfig) MainGPU() int</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="method-draftmodelconfig-ngpulayers">
+              <h4>DraftModelConfig.NGpuLayers</h4>
+              <pre className="code-block">
+                <code>func (d DraftModelConfig) NGpuLayers() int</code>
+              </pre>
             </div>
 
             <div className="doc-section" id="method-flashattentiontype-marshaljson">
@@ -780,6 +949,13 @@ export default function DocsSDKModel() {
                 <code>func (t *GGMLType) UnmarshalYAML(unmarshal func(any) error) error</code>
               </pre>
               <p className="doc-description">UnmarshalYAML implements yaml.Unmarshaler to parse string values like "f16".</p>
+            </div>
+
+            <div className="doc-section" id="method-moeconfig-keepexpertsongpufortopnlayers">
+              <h4>MoEConfig.KeepExpertsOnGPUForTopNLayers</h4>
+              <pre className="code-block">
+                <code>func (m MoEConfig) KeepExpertsOnGPUForTopNLayers() int</code>
+              </pre>
             </div>
 
             <div className="doc-section" id="method-model-chat">
@@ -1240,6 +1416,7 @@ export default function DocsSDKModel() {
                 <li><a href="#type-model">Model</a></li>
                 <li><a href="#type-modelinfo">ModelInfo</a></li>
                 <li><a href="#type-modeltype">ModelType</a></li>
+                <li><a href="#type-option">Option</a></li>
                 <li><a href="#type-params">Params</a></li>
                 <li><a href="#type-rerankresponse">RerankResponse</a></li>
                 <li><a href="#type-rerankresult">RerankResult</a></li>
@@ -1261,11 +1438,34 @@ export default function DocsSDKModel() {
               <a href="#methods" className="doc-index-header">Methods</a>
               <ul>
                 <li><a href="#method-choice-finishreason">Choice.FinishReason</a></li>
+                <li><a href="#method-config-cachemintokens">Config.CacheMinTokens</a></li>
+                <li><a href="#method-config-cacheslottimeout">Config.CacheSlotTimeout</a></li>
+                <li><a href="#method-config-contextwindow">Config.ContextWindow</a></li>
+                <li><a href="#method-config-incrementalcache">Config.IncrementalCache</a></li>
+                <li><a href="#method-config-insecurelogging">Config.InsecureLogging</a></li>
+                <li><a href="#method-config-maingpu">Config.MainGPU</a></li>
+                <li><a href="#method-config-nbatch">Config.NBatch</a></li>
+                <li><a href="#method-config-ngpulayers">Config.NGpuLayers</a></li>
+                <li><a href="#method-config-nseqmax">Config.NSeqMax</a></li>
+                <li><a href="#method-config-nthreads">Config.NThreads</a></li>
+                <li><a href="#method-config-nthreadsbatch">Config.NThreadsBatch</a></li>
+                <li><a href="#method-config-nubatch">Config.NUBatch</a></li>
+                <li><a href="#method-config-opoffloadminbatch">Config.OpOffloadMinBatch</a></li>
+                <li><a href="#method-config-ropefreqbase">Config.RopeFreqBase</a></li>
+                <li><a href="#method-config-ropefreqscale">Config.RopeFreqScale</a></li>
                 <li><a href="#method-config-string">Config.String</a></li>
+                <li><a href="#method-config-usedirectio">Config.UseDirectIO</a></li>
+                <li><a href="#method-config-yarnattnfactor">Config.YarnAttnFactor</a></li>
+                <li><a href="#method-config-yarnbetafast">Config.YarnBetaFast</a></li>
+                <li><a href="#method-config-yarnbetaslow">Config.YarnBetaSlow</a></li>
+                <li><a href="#method-config-yarnextfactor">Config.YarnExtFactor</a></li>
+                <li><a href="#method-config-yarnorigctx">Config.YarnOrigCtx</a></li>
                 <li><a href="#method-d-clone">D.Clone</a></li>
                 <li><a href="#method-d-messages">D.Messages</a></li>
                 <li><a href="#method-d-shallowclone">D.ShallowClone</a></li>
                 <li><a href="#method-d-string">D.String</a></li>
+                <li><a href="#method-draftmodelconfig-maingpu">DraftModelConfig.MainGPU</a></li>
+                <li><a href="#method-draftmodelconfig-ngpulayers">DraftModelConfig.NGpuLayers</a></li>
                 <li><a href="#method-flashattentiontype-marshaljson">FlashAttentionType.MarshalJSON</a></li>
                 <li><a href="#method-flashattentiontype-marshalyaml">FlashAttentionType.MarshalYAML</a></li>
                 <li><a href="#method-flashattentiontype-string">FlashAttentionType.String</a></li>
@@ -1277,6 +1477,7 @@ export default function DocsSDKModel() {
                 <li><a href="#method-ggmltype-toyzmatype">GGMLType.ToYZMAType</a></li>
                 <li><a href="#method-ggmltype-unmarshaljson">GGMLType.UnmarshalJSON</a></li>
                 <li><a href="#method-ggmltype-unmarshalyaml">GGMLType.UnmarshalYAML</a></li>
+                <li><a href="#method-moeconfig-keepexpertsongpufortopnlayers">MoEConfig.KeepExpertsOnGPUForTopNLayers</a></li>
                 <li><a href="#method-model-chat">Model.Chat</a></li>
                 <li><a href="#method-model-chatstreaming">Model.ChatStreaming</a></li>
                 <li><a href="#method-model-config">Model.Config</a></li>

@@ -50,7 +50,7 @@ func (e *batchEngine) prefillDraft(ctx context.Context, s *slot) error {
 
 	nBatch := int(e.model.ctxParams.NBatch)
 	if nBatch <= 0 {
-		nBatch = e.model.cfg.NBatch
+		nBatch = e.model.cfg.NBatch()
 	}
 
 	// Trim divergent suffix from draft KV if we have a partial cache hit.

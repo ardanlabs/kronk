@@ -398,12 +398,12 @@ func TestToModelConfig(t *testing.T) {
 
 	cfg := rec.ToModelConfig()
 
-	if cfg.ContextWindow != 32768 {
-		t.Errorf("ContextWindow = %d, want 32768", cfg.ContextWindow)
+	if cfg.ContextWindow() != 32768 {
+		t.Errorf("ContextWindow = %d, want 32768", cfg.ContextWindow())
 	}
 
-	if cfg.NSeqMax != 2 {
-		t.Errorf("NSeqMax = %d, want 2", cfg.NSeqMax)
+	if cfg.NSeqMax() != 2 {
+		t.Errorf("NSeqMax = %d, want 2", cfg.NSeqMax())
 	}
 
 	if cfg.CacheTypeK != 1 { // model.GGMLTypeF16
@@ -419,16 +419,16 @@ func TestToModelConfig(t *testing.T) {
 	}
 
 	// NGPULayers=0 means all on GPU, which is the default (nil).
-	if cfg.NGpuLayers != nil {
-		t.Errorf("NGpuLayers = %v, want nil (all on GPU)", cfg.NGpuLayers)
+	if cfg.PtrNGpuLayers != nil {
+		t.Errorf("PtrNGpuLayers = %v, want nil (all on GPU)", cfg.PtrNGpuLayers)
 	}
 
-	if cfg.NBatch != 2048 {
-		t.Errorf("NBatch = %d, want 2048", cfg.NBatch)
+	if cfg.NBatch() != 2048 {
+		t.Errorf("NBatch = %d, want 2048", cfg.NBatch())
 	}
 
-	if cfg.NUBatch != 512 {
-		t.Errorf("NUBatch = %d, want 512", cfg.NUBatch)
+	if cfg.NUBatch() != 512 {
+		t.Errorf("NUBatch = %d, want 512", cfg.NUBatch())
 	}
 }
 
@@ -453,8 +453,8 @@ func TestToModelConfigQ8(t *testing.T) {
 		t.Errorf("FlashAttention = %d, want 1 (disabled)", cfg.FlashAttention)
 	}
 
-	if cfg.NGpuLayers != nil {
-		t.Errorf("NGpuLayers = %v, want nil", cfg.NGpuLayers)
+	if cfg.PtrNGpuLayers != nil {
+		t.Errorf("PtrNGpuLayers = %v, want nil", cfg.PtrNGpuLayers)
 	}
 }
 

@@ -71,7 +71,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	// session index.
 	var cacheIdx llama.Pos
 	switch {
-	case e.model.cfg.IncrementalCache && job.imcCacheHit:
+	case e.model.cfg.IncrementalCache() && job.imcCacheHit:
 		// Snapshot session state under lock. With externalized KV, the
 		// session's kvState slice may be replaced by another goroutine's
 		// snapshot, so we must copy the slice header atomically.
@@ -295,7 +295,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	// StateSeqGetData captures raw KV bytes regardless of whether they were
 	// produced by text tokens or media embeddings (image/audio). For Hybrid
 	// models it also captures recurrent state (DeltaNet/SSM).
-	if e.model.cfg.IncrementalCache && job.imcCacheHit && cacheIdx > 0 && job.imcSession != nil {
+	if e.model.cfg.IncrementalCache() && job.imcCacheHit && cacheIdx > 0 && job.imcSession != nil {
 		e.model.log(job.ctx, "start-slot", "status", "imc-snapshot-start",
 			"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx)
 
@@ -387,12 +387,12 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 		"suffix_tokens", suffixTokens,
 		"cached_tokens", cacheIdx,
 		"total_prompt", totalPrompt,
-		"nbatch", e.model.cfg.NBatch,
+		"nbatch", e.model.cfg.NBatch(),
 		"batch_current", e.batch.NTokens)
 
 	// Check context window.
-	if s.nPrompt > e.model.cfg.ContextWindow {
-		err := fmt.Errorf("start-slot: input tokens [%d] exceed context window [%d]", s.nPrompt, e.model.cfg.ContextWindow)
+	if s.nPrompt > e.model.cfg.ContextWindow() {
+		err := fmt.Errorf("start-slot: input tokens [%d] exceed context window [%d]", s.nPrompt, e.model.cfg.ContextWindow())
 		e.finishSlot(s, err)
 		return false
 	}
@@ -457,7 +457,7 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 
 	// Add first chunk of prompt tokens to batch. Use NBatch as the limit
 	// since this is the initial fill for a newly assigned slot.
-	if !e.addPrefillChunk(s, e.model.cfg.NBatch) {
+	if !e.addPrefillChunk(s, e.model.cfg.NBatch()) {
 		e.finishSlot(s, e.slotCancelError(s))
 		return false
 	}
@@ -507,15 +507,15 @@ func (e *batchEngine) startSlotTextMRoPE(s *slot, job *chatJob, cacheIdx llama.P
 		"cached_tokens", cacheIdx,
 		"total_prompt", totalPrompt)
 
-	if s.nPrompt > e.model.cfg.ContextWindow {
-		err := fmt.Errorf("start-slot: input tokens [%d] exceed context window [%d]", s.nPrompt, e.model.cfg.ContextWindow)
+	if s.nPrompt > e.model.cfg.ContextWindow() {
+		err := fmt.Errorf("start-slot: input tokens [%d] exceed context window [%d]", s.nPrompt, e.model.cfg.ContextWindow())
 		e.finishSlot(s, err)
 		return false
 	}
 
 	s.useMRoPE = true
 
-	nBatch := e.model.cfg.NBatch
+	nBatch := e.model.cfg.NBatch()
 	for start := 0; start < len(tokens); start += nBatch {
 		end := min(start+nBatch, len(tokens))
 		if err := e.decodeTextMRoPE(s, tokens[start:end]); err != nil {
@@ -575,8 +575,8 @@ func (e *batchEngine) startSlotMedia(s *slot, job *chatJob, cacheIdx llama.Pos, 
 		"use_noncausal", s.useNonCausal)
 
 	// Check context window.
-	if s.nPrompt > e.model.cfg.ContextWindow {
-		err := fmt.Errorf("start-slot-media: input tokens [%d] exceed context window [%d]", s.nPrompt, e.model.cfg.ContextWindow)
+	if s.nPrompt > e.model.cfg.ContextWindow() {
+		err := fmt.Errorf("start-slot-media: input tokens [%d] exceed context window [%d]", s.nPrompt, e.model.cfg.ContextWindow())
 		e.finishSlot(s, err)
 		return false
 	}

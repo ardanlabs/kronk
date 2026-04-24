@@ -139,10 +139,10 @@ type RuntimeRecommendation struct {
 // ModelFiles, ProjFile, Log) must be set by the caller.
 func (r RuntimeRecommendation) ToModelConfig() model.Config {
 	cfg := model.Config{
-		ContextWindow: int(r.ContextWindow),
-		NSeqMax:       int(r.NSeqMax),
-		NBatch:        defNBatch,
-		NUBatch:       defNUBatch,
+		PtrContextWindow: new(int(r.ContextWindow)),
+		PtrNSeqMax:       new(int(r.NSeqMax)),
+		PtrNBatch:        new(defNBatch),
+		PtrNUBatch:       new(defNUBatch),
 	}
 
 	switch r.CacheTypeK {
@@ -168,11 +168,11 @@ func (r RuntimeRecommendation) ToModelConfig() model.Config {
 		cfg.FlashAttention = model.FlashAttentionEnabled
 	}
 
-	// model.Config: NGpuLayers nil = all on GPU, 0 = all on GPU, -1 = all on CPU.
+	// model.Config: PtrNGpuLayers nil = all on GPU, 0 = all on GPU, -1 = all on CPU.
 	// Only set when we explicitly want CPU-only.
 	if r.NGPULayers < 0 {
 		n := int(r.NGPULayers)
-		cfg.NGpuLayers = &n
+		cfg.PtrNGpuLayers = &n
 	}
 
 	return cfg

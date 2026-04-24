@@ -167,7 +167,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 
 			// Log the raw model output before parsing so tool call issues
 			// can be debugged. Only logged when insecure logging is enabled.
-			if e.model.cfg.InsecureLogging {
+			if e.model.cfg.InsecureLogging() {
 				e.model.log(ctx, "tool-call", "status", "raw-model-output",
 					"bytes", len(content), "content", content)
 			}

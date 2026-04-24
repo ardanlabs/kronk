@@ -61,10 +61,10 @@ func newKronk() (*kronk.Kronk, error) {
 	modelFile := "unsloth/gemma-4-26B-A4B-it-GGUF/gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf"
 	modelFile = fmt.Sprintf("%s/models/%s", defaults.BaseDir(""), modelFile)
 
-	cfg := model.Config{
-		ContextWindow: 32768,
-		ModelFiles:    []string{modelFile},
-	}
+	cfg := model.NewConfig(
+		model.WithContextWindow(32768),
+		model.WithModelFiles([]string{modelFile}),
+	)
 
 	krn, err := kronk.New(cfg)
 	if err != nil {
@@ -148,7 +148,7 @@ type board [9]string
 
 func (b *board) render() {
 	const (
-		clear  = "\033[H\033[2J"
+		clear = "\033[H\033[2J"
 		red   = "\x1b[31m"
 		green = "\x1b[32m"
 		blue  = "\x1b[34m"

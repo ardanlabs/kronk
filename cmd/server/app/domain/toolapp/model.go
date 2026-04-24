@@ -268,39 +268,39 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfi
 		Template:      rmc.Template,
 		Metadata:      metadata,
 		ModelConfig: &ModelConfig{
-			ContextWindow:       rmc.ContextWindow,
-			NBatch:              rmc.NBatch,
-			NUBatch:             rmc.NUBatch,
-			NThreads:            rmc.NThreads,
-			NThreadsBatch:       rmc.NThreadsBatch,
+			ContextWindow:       rmc.PtrContextWindow,
+			NBatch:              rmc.PtrNBatch,
+			NUBatch:             rmc.PtrNUBatch,
+			NThreads:            rmc.PtrNThreads,
+			NThreadsBatch:       rmc.PtrNThreadsBatch,
 			CacheTypeK:          rmc.CacheTypeK,
 			CacheTypeV:          rmc.CacheTypeV,
-			UseDirectIO:         rmc.UseDirectIO,
-			UseMMap:             rmc.UseMMap,
+			UseDirectIO:         rmc.PtrUseDirectIO,
+			PtrUseMMap:          rmc.PtrUseMMap,
 			NUMA:                rmc.NUMA,
 			FlashAttention:      model.DerefFlashAttention(rmc.FlashAttention),
-			NSeqMax:             rmc.NSeqMax,
-			OffloadKQV:          rmc.OffloadKQV,
-			OpOffload:           rmc.OpOffload,
-			NGpuLayers:          rmc.NGpuLayers,
-			SplitMode:           rmc.SplitMode,
+			NSeqMax:             rmc.PtrNSeqMax,
+			PtrOffloadKQV:       rmc.PtrOffloadKQV,
+			PtrOpOffload:        rmc.PtrOpOffload,
+			PtrNGpuLayers:       rmc.PtrNGpuLayers,
+			PtrSplitMode:        rmc.PtrSplitMode,
 			TensorSplit:         rmc.TensorSplit,
 			TensorBuftOverrides: rmc.TensorBuftOverrides,
-			MainGPU:             rmc.MainGPU,
+			PtrMainGPU:          rmc.PtrMainGPU,
 			Devices:             rmc.Devices,
 			MoE:                 toAppMoEConfig(rmc.MoE),
-			SWAFull:             rmc.SWAFull,
-			IncrementalCache:    rmc.IncrementalCache,
-			CacheMinTokens:      rmc.CacheMinTokens,
-			CacheSlotTimeout:    rmc.CacheSlotTimeout,
+			PtrSWAFull:          rmc.PtrSWAFull,
+			IncrementalCache:    rmc.PtrIncrementalCache,
+			CacheMinTokens:      rmc.PtrCacheMinTokens,
+			CacheSlotTimeout:    rmc.PtrCacheSlotTimeout,
 			RopeScaling:         rmc.RopeScaling,
-			RopeFreqBase:        rmc.RopeFreqBase,
-			RopeFreqScale:       rmc.RopeFreqScale,
-			YarnExtFactor:       rmc.YarnExtFactor,
-			YarnAttnFactor:      rmc.YarnAttnFactor,
-			YarnBetaFast:        rmc.YarnBetaFast,
-			YarnBetaSlow:        rmc.YarnBetaSlow,
-			YarnOrigCtx:         rmc.YarnOrigCtx,
+			PtrRopeFreqBase:     rmc.PtrRopeFreqBase,
+			PtrRopeFreqScale:    rmc.PtrRopeFreqScale,
+			PtrYarnExtFactor:    rmc.PtrYarnExtFactor,
+			PtrYarnAttnFactor:   rmc.PtrYarnAttnFactor,
+			PtrYarnBetaFast:     rmc.PtrYarnBetaFast,
+			PtrYarnBetaSlow:     rmc.PtrYarnBetaSlow,
+			PtrYarnOrigCtx:      rmc.PtrYarnOrigCtx,
 			Sampling: SamplingConfig{
 				Temperature:      rmc.Sampling.Temperature,
 				TopK:             rmc.Sampling.TopK,
@@ -517,8 +517,8 @@ type SamplingConfig struct {
 
 // MoEConfig configures Mixture of Experts tensor placement.
 type MoEConfig struct {
-	Mode                          string `json:"mode,omitempty"`
-	KeepExpertsOnGPUForTopNLayers *int   `json:"keep_experts_top_n,omitempty"`
+	Mode                             string `json:"mode,omitempty"`
+	PtrKeepExpertsOnGPUForTopNLayers *int   `json:"keep_experts_top_n,omitempty"`
 }
 
 func toAppMoEConfig(m *model.MoEConfig) *MoEConfig {
@@ -527,8 +527,8 @@ func toAppMoEConfig(m *model.MoEConfig) *MoEConfig {
 	}
 
 	return &MoEConfig{
-		Mode:                          string(m.Mode),
-		KeepExpertsOnGPUForTopNLayers: m.KeepExpertsOnGPUForTopNLayers,
+		Mode:                             string(m.Mode),
+		PtrKeepExpertsOnGPUForTopNLayers: m.PtrKeepExpertsOnGPUForTopNLayers,
 	}
 }
 
@@ -538,47 +538,47 @@ func fromAppMoEConfig(m *MoEConfig) *model.MoEConfig {
 	}
 
 	return &model.MoEConfig{
-		Mode:                          model.MoEMode(m.Mode),
-		KeepExpertsOnGPUForTopNLayers: m.KeepExpertsOnGPUForTopNLayers,
+		Mode:                             model.MoEMode(m.Mode),
+		PtrKeepExpertsOnGPUForTopNLayers: m.PtrKeepExpertsOnGPUForTopNLayers,
 	}
 }
 
 // ModelConfig represents the model configuration the model will use by default.
 type ModelConfig struct {
-	ContextWindow       int                      `json:"context-window"`
-	NBatch              int                      `json:"nbatch"`
-	NUBatch             int                      `json:"nubatch"`
-	NThreads            int                      `json:"nthreads"`
-	NThreadsBatch       int                      `json:"nthreads-batch"`
+	ContextWindow       *int                     `json:"context-window"`
+	NBatch              *int                     `json:"nbatch"`
+	NUBatch             *int                     `json:"nubatch"`
+	NThreads            *int                     `json:"nthreads"`
+	NThreadsBatch       *int                     `json:"nthreads-batch"`
 	CacheTypeK          model.GGMLType           `json:"cache-type-k"`
 	CacheTypeV          model.GGMLType           `json:"cache-type-v"`
-	UseDirectIO         bool                     `json:"use-direct-io"`
-	UseMMap             *bool                    `json:"use-mmap,omitempty"`
+	UseDirectIO         *bool                    `json:"use-direct-io"`
+	PtrUseMMap          *bool                    `json:"use-mmap,omitempty"`
 	NUMA                string                   `json:"numa,omitempty"`
 	FlashAttention      model.FlashAttentionType `json:"flash-attention"`
-	NSeqMax             int                      `json:"nseq-max"`
-	OffloadKQV          *bool                    `json:"offload-kqv"`
-	OpOffload           *bool                    `json:"op-offload"`
-	NGpuLayers          *int                     `json:"ngpu-layers"`
-	SplitMode           *model.SplitMode         `json:"split-mode"`
+	NSeqMax             *int                     `json:"nseq-max"`
+	PtrOffloadKQV       *bool                    `json:"offload-kqv"`
+	PtrOpOffload        *bool                    `json:"op-offload"`
+	PtrNGpuLayers       *int                     `json:"ngpu-layers"`
+	PtrSplitMode        *model.SplitMode         `json:"split-mode"`
 	TensorSplit         []float32                `json:"tensor-split"`
 	TensorBuftOverrides []string                 `json:"tensor-buft-overrides"`
-	MainGPU             *int                     `json:"main-gpu"`
+	PtrMainGPU          *int                     `json:"main-gpu"`
 	Devices             []string                 `json:"devices"`
 	MoE                 *MoEConfig               `json:"moe,omitempty"`
-	SWAFull             *bool                    `json:"swa-full"`
-	IncrementalCache    bool                     `json:"incremental-cache"`
-	CacheMinTokens      int                      `json:"cache-min-tokens"`
-	CacheSlotTimeout    int                      `json:"cache-slot-timeout"`
+	PtrSWAFull          *bool                    `json:"swa-full"`
+	IncrementalCache    *bool                    `json:"incremental-cache"`
+	CacheMinTokens      *int                     `json:"cache-min-tokens"`
+	CacheSlotTimeout    *int                     `json:"cache-slot-timeout"`
 	Sampling            SamplingConfig           `json:"sampling-parameters"`
 	RopeScaling         model.RopeScalingType    `json:"rope-scaling-type"`
-	RopeFreqBase        *float32                 `json:"rope-freq-base"`
-	RopeFreqScale       *float32                 `json:"rope-freq-scale"`
-	YarnExtFactor       *float32                 `json:"yarn-ext-factor"`
-	YarnAttnFactor      *float32                 `json:"yarn-attn-factor"`
-	YarnBetaFast        *float32                 `json:"yarn-beta-fast"`
-	YarnBetaSlow        *float32                 `json:"yarn-beta-slow"`
-	YarnOrigCtx         *int                     `json:"yarn-orig-ctx"`
+	PtrRopeFreqBase     *float32                 `json:"rope-freq-base"`
+	PtrRopeFreqScale    *float32                 `json:"rope-freq-scale"`
+	PtrYarnExtFactor    *float32                 `json:"yarn-ext-factor"`
+	PtrYarnAttnFactor   *float32                 `json:"yarn-attn-factor"`
+	PtrYarnBetaFast     *float32                 `json:"yarn-beta-fast"`
+	PtrYarnBetaSlow     *float32                 `json:"yarn-beta-slow"`
+	PtrYarnOrigCtx      *int                     `json:"yarn-orig-ctx"`
 }
 
 // CatalogMetadata represents extra information about the model.
@@ -716,39 +716,39 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 
 	if rmc != nil {
 		resp.ModelConfig = &ModelConfig{
-			ContextWindow:       rmc.ContextWindow,
-			NBatch:              rmc.NBatch,
-			NUBatch:             rmc.NUBatch,
-			NThreads:            rmc.NThreads,
-			NThreadsBatch:       rmc.NThreadsBatch,
+			ContextWindow:       rmc.PtrContextWindow,
+			NBatch:              rmc.PtrNBatch,
+			NUBatch:             rmc.PtrNUBatch,
+			NThreads:            rmc.PtrNThreads,
+			NThreadsBatch:       rmc.PtrNThreadsBatch,
 			CacheTypeK:          rmc.CacheTypeK,
 			CacheTypeV:          rmc.CacheTypeV,
-			UseDirectIO:         rmc.UseDirectIO,
-			UseMMap:             rmc.UseMMap,
+			UseDirectIO:         rmc.PtrUseDirectIO,
+			PtrUseMMap:          rmc.PtrUseMMap,
 			NUMA:                rmc.NUMA,
 			FlashAttention:      model.DerefFlashAttention(rmc.FlashAttention),
-			NSeqMax:             rmc.NSeqMax,
-			OffloadKQV:          rmc.OffloadKQV,
-			OpOffload:           rmc.OpOffload,
-			NGpuLayers:          rmc.NGpuLayers,
-			SplitMode:           rmc.SplitMode,
+			NSeqMax:             rmc.PtrNSeqMax,
+			PtrOffloadKQV:       rmc.PtrOffloadKQV,
+			PtrOpOffload:        rmc.PtrOpOffload,
+			PtrNGpuLayers:       rmc.PtrNGpuLayers,
+			PtrSplitMode:        rmc.PtrSplitMode,
 			TensorSplit:         rmc.TensorSplit,
 			TensorBuftOverrides: rmc.TensorBuftOverrides,
-			MainGPU:             rmc.MainGPU,
+			PtrMainGPU:          rmc.PtrMainGPU,
 			Devices:             rmc.Devices,
 			MoE:                 toAppMoEConfig(rmc.MoE),
-			SWAFull:             rmc.SWAFull,
-			IncrementalCache:    rmc.IncrementalCache,
-			CacheMinTokens:      rmc.CacheMinTokens,
-			CacheSlotTimeout:    rmc.CacheSlotTimeout,
+			PtrSWAFull:          rmc.PtrSWAFull,
+			IncrementalCache:    rmc.PtrIncrementalCache,
+			CacheMinTokens:      rmc.PtrCacheMinTokens,
+			CacheSlotTimeout:    rmc.PtrCacheSlotTimeout,
 			RopeScaling:         rmc.RopeScaling,
-			RopeFreqBase:        rmc.RopeFreqBase,
-			RopeFreqScale:       rmc.RopeFreqScale,
-			YarnExtFactor:       rmc.YarnExtFactor,
-			YarnAttnFactor:      rmc.YarnAttnFactor,
-			YarnBetaFast:        rmc.YarnBetaFast,
-			YarnBetaSlow:        rmc.YarnBetaSlow,
-			YarnOrigCtx:         rmc.YarnOrigCtx,
+			PtrRopeFreqBase:     rmc.PtrRopeFreqBase,
+			PtrRopeFreqScale:    rmc.PtrRopeFreqScale,
+			PtrYarnExtFactor:    rmc.PtrYarnExtFactor,
+			PtrYarnAttnFactor:   rmc.PtrYarnAttnFactor,
+			PtrYarnBetaFast:     rmc.PtrYarnBetaFast,
+			PtrYarnBetaSlow:     rmc.PtrYarnBetaSlow,
+			PtrYarnOrigCtx:      rmc.PtrYarnOrigCtx,
 			Sampling: SamplingConfig{
 				Temperature:      rmc.Sampling.Temperature,
 				TopK:             rmc.Sampling.TopK,
@@ -775,39 +775,39 @@ func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelC
 
 	bmc := catDetails.BaseModelConfig
 	resp.BaseConfig = &ModelConfig{
-		ContextWindow:       bmc.ContextWindow,
-		NBatch:              bmc.NBatch,
-		NUBatch:             bmc.NUBatch,
-		NThreads:            bmc.NThreads,
-		NThreadsBatch:       bmc.NThreadsBatch,
+		ContextWindow:       bmc.PtrContextWindow,
+		NBatch:              bmc.PtrNBatch,
+		NUBatch:             bmc.PtrNUBatch,
+		NThreads:            bmc.PtrNThreads,
+		NThreadsBatch:       bmc.PtrNThreadsBatch,
 		CacheTypeK:          bmc.CacheTypeK,
 		CacheTypeV:          bmc.CacheTypeV,
-		UseDirectIO:         bmc.UseDirectIO,
-		UseMMap:             bmc.UseMMap,
+		UseDirectIO:         bmc.PtrUseDirectIO,
+		PtrUseMMap:          bmc.PtrUseMMap,
 		NUMA:                bmc.NUMA,
 		FlashAttention:      model.DerefFlashAttention(bmc.FlashAttention),
-		NSeqMax:             bmc.NSeqMax,
-		OffloadKQV:          bmc.OffloadKQV,
-		OpOffload:           bmc.OpOffload,
-		NGpuLayers:          bmc.NGpuLayers,
-		SplitMode:           bmc.SplitMode,
+		NSeqMax:             bmc.PtrNSeqMax,
+		PtrOffloadKQV:       bmc.PtrOffloadKQV,
+		PtrOpOffload:        bmc.PtrOpOffload,
+		PtrNGpuLayers:       bmc.PtrNGpuLayers,
+		PtrSplitMode:        bmc.PtrSplitMode,
 		TensorSplit:         bmc.TensorSplit,
 		TensorBuftOverrides: bmc.TensorBuftOverrides,
-		MainGPU:             bmc.MainGPU,
+		PtrMainGPU:          bmc.PtrMainGPU,
 		Devices:             bmc.Devices,
 		MoE:                 toAppMoEConfig(bmc.MoE),
-		SWAFull:             bmc.SWAFull,
-		IncrementalCache:    bmc.IncrementalCache,
-		CacheMinTokens:      bmc.CacheMinTokens,
-		CacheSlotTimeout:    bmc.CacheSlotTimeout,
+		PtrSWAFull:          bmc.PtrSWAFull,
+		IncrementalCache:    bmc.PtrIncrementalCache,
+		CacheMinTokens:      bmc.PtrCacheMinTokens,
+		CacheSlotTimeout:    bmc.PtrCacheSlotTimeout,
 		RopeScaling:         bmc.RopeScaling,
-		RopeFreqBase:        bmc.RopeFreqBase,
-		RopeFreqScale:       bmc.RopeFreqScale,
-		YarnExtFactor:       bmc.YarnExtFactor,
-		YarnAttnFactor:      bmc.YarnAttnFactor,
-		YarnBetaFast:        bmc.YarnBetaFast,
-		YarnBetaSlow:        bmc.YarnBetaSlow,
-		YarnOrigCtx:         bmc.YarnOrigCtx,
+		PtrRopeFreqBase:     bmc.PtrRopeFreqBase,
+		PtrRopeFreqScale:    bmc.PtrRopeFreqScale,
+		PtrYarnExtFactor:    bmc.PtrYarnExtFactor,
+		PtrYarnAttnFactor:   bmc.PtrYarnAttnFactor,
+		PtrYarnBetaFast:     bmc.PtrYarnBetaFast,
+		PtrYarnBetaSlow:     bmc.PtrYarnBetaSlow,
+		PtrYarnOrigCtx:      bmc.PtrYarnOrigCtx,
 		Sampling: SamplingConfig{
 			Temperature:      bmc.Sampling.Temperature,
 			TopK:             bmc.Sampling.TopK,
@@ -1081,40 +1081,40 @@ func (app SaveCatalogRequest) toModelDetails() catalog.ModelDetails {
 
 	if app.Config != nil {
 		md.BaseModelConfig = catalog.ModelConfig{
-			ContextWindow:       app.Config.ContextWindow,
-			NBatch:              app.Config.NBatch,
-			NUBatch:             app.Config.NUBatch,
-			NThreads:            app.Config.NThreads,
-			NThreadsBatch:       app.Config.NThreadsBatch,
+			PtrContextWindow:    app.Config.ContextWindow,
+			PtrNBatch:           app.Config.NBatch,
+			PtrNUBatch:          app.Config.NUBatch,
+			PtrNThreads:         app.Config.NThreads,
+			PtrNThreadsBatch:    app.Config.NThreadsBatch,
 			CacheTypeK:          app.Config.CacheTypeK,
 			CacheTypeV:          app.Config.CacheTypeV,
-			UseDirectIO:         app.Config.UseDirectIO,
-			UseMMap:             app.Config.UseMMap,
+			PtrUseDirectIO:      app.Config.UseDirectIO,
+			PtrUseMMap:          app.Config.PtrUseMMap,
 			NUMA:                app.Config.NUMA,
 			FlashAttention:      new(app.Config.FlashAttention),
-			NSeqMax:             app.Config.NSeqMax,
-			OffloadKQV:          app.Config.OffloadKQV,
-			OpOffload:           app.Config.OpOffload,
-			NGpuLayers:          app.Config.NGpuLayers,
-			SplitMode:           app.Config.SplitMode,
+			PtrNSeqMax:          app.Config.NSeqMax,
+			PtrOffloadKQV:       app.Config.PtrOffloadKQV,
+			PtrOpOffload:        app.Config.PtrOpOffload,
+			PtrNGpuLayers:       app.Config.PtrNGpuLayers,
+			PtrSplitMode:        app.Config.PtrSplitMode,
 			TensorSplit:         app.Config.TensorSplit,
 			TensorBuftOverrides: app.Config.TensorBuftOverrides,
-			MainGPU:             app.Config.MainGPU,
+			PtrMainGPU:          app.Config.PtrMainGPU,
 			Devices:             app.Config.Devices,
 			MoE:                 fromAppMoEConfig(app.Config.MoE),
-			SWAFull:             app.Config.SWAFull,
-			IncrementalCache:    app.Config.IncrementalCache,
-			CacheMinTokens:      app.Config.CacheMinTokens,
-			CacheSlotTimeout:    app.Config.CacheSlotTimeout,
-			InsecureLogging:     false,
+			PtrSWAFull:          app.Config.PtrSWAFull,
+			PtrIncrementalCache: app.Config.IncrementalCache,
+			PtrCacheMinTokens:   app.Config.CacheMinTokens,
+			PtrCacheSlotTimeout: app.Config.CacheSlotTimeout,
+			PtrInsecureLogging:  new(false),
 			RopeScaling:         app.Config.RopeScaling,
-			RopeFreqBase:        app.Config.RopeFreqBase,
-			RopeFreqScale:       app.Config.RopeFreqScale,
-			YarnExtFactor:       app.Config.YarnExtFactor,
-			YarnAttnFactor:      app.Config.YarnAttnFactor,
-			YarnBetaFast:        app.Config.YarnBetaFast,
-			YarnBetaSlow:        app.Config.YarnBetaSlow,
-			YarnOrigCtx:         app.Config.YarnOrigCtx,
+			PtrRopeFreqBase:     app.Config.PtrRopeFreqBase,
+			PtrRopeFreqScale:    app.Config.PtrRopeFreqScale,
+			PtrYarnExtFactor:    app.Config.PtrYarnExtFactor,
+			PtrYarnAttnFactor:   app.Config.PtrYarnAttnFactor,
+			PtrYarnBetaFast:     app.Config.PtrYarnBetaFast,
+			PtrYarnBetaSlow:     app.Config.PtrYarnBetaSlow,
+			PtrYarnOrigCtx:      app.Config.PtrYarnOrigCtx,
 			Sampling: catalog.SamplingConfig{
 				Temperature:      app.Config.Sampling.Temperature,
 				TopK:             app.Config.Sampling.TopK,

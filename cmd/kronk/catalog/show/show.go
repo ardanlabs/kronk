@@ -136,28 +136,28 @@ func printWeb(model toolapp.CatalogModelResponse) {
 		fmt.Println("Model Config")
 		fmt.Println("------------")
 		fmt.Printf("Devices:              %s\n", model.ModelConfig.Devices)
-		fmt.Printf("Context Window:       %d\n", model.ModelConfig.ContextWindow)
-		fmt.Printf("NBatch:               %d\n", model.ModelConfig.NBatch)
-		fmt.Printf("NUBatch:              %d\n", model.ModelConfig.NUBatch)
-		fmt.Printf("NThreads:             %d\n", model.ModelConfig.NThreads)
-		fmt.Printf("NThreadsBatch:        %d\n", model.ModelConfig.NThreadsBatch)
+		fmt.Printf("Context Window:       %s\n", formatIntPtr(model.ModelConfig.ContextWindow))
+		fmt.Printf("NBatch:               %s\n", formatIntPtr(model.ModelConfig.NBatch))
+		fmt.Printf("NUBatch:              %s\n", formatIntPtr(model.ModelConfig.NUBatch))
+		fmt.Printf("NThreads:             %s\n", formatIntPtr(model.ModelConfig.NThreads))
+		fmt.Printf("NThreadsBatch:        %s\n", formatIntPtr(model.ModelConfig.NThreadsBatch))
 		fmt.Printf("CacheTypeK:           %s\n", model.ModelConfig.CacheTypeK)
 		fmt.Printf("CacheTypeV:           %s\n", model.ModelConfig.CacheTypeV)
 		fmt.Printf("FlashAttention:       %v\n", model.ModelConfig.FlashAttention.String())
-		fmt.Printf("NSeqMax:              %d\n", model.ModelConfig.NSeqMax)
-		fmt.Printf("IncrementalCache:     %t\n", model.ModelConfig.IncrementalCache)
-		fmt.Printf("CacheMinTokens:       %d\n", model.ModelConfig.CacheMinTokens)
+		fmt.Printf("NSeqMax:              %s\n", formatIntPtr(model.ModelConfig.NSeqMax))
+		fmt.Printf("IncrementalCache:     %s\n", formatBoolPtr(model.ModelConfig.IncrementalCache))
+		fmt.Printf("CacheMinTokens:       %s\n", formatIntPtr(model.ModelConfig.CacheMinTokens))
 		if model.ModelConfig.RopeScaling.String() != "none" {
 			fmt.Printf("RoPE Scaling:         %s\n", model.ModelConfig.RopeScaling)
-			fmt.Printf("YaRN Orig Ctx:        %v\n", formatIntPtr(model.ModelConfig.YarnOrigCtx))
-			if model.ModelConfig.RopeFreqBase != nil {
-				fmt.Printf("RoPE Freq Base:       %g\n", *model.ModelConfig.RopeFreqBase)
+			fmt.Printf("YaRN Orig Ctx:        %v\n", formatIntPtr(model.ModelConfig.PtrYarnOrigCtx))
+			if model.ModelConfig.PtrRopeFreqBase != nil {
+				fmt.Printf("RoPE Freq Base:       %g\n", *model.ModelConfig.PtrRopeFreqBase)
 			}
-			if model.ModelConfig.YarnExtFactor != nil {
-				fmt.Printf("YaRN Ext Factor:      %g\n", *model.ModelConfig.YarnExtFactor)
+			if model.ModelConfig.PtrYarnExtFactor != nil {
+				fmt.Printf("YaRN Ext Factor:      %g\n", *model.ModelConfig.PtrYarnExtFactor)
 			}
-			if model.ModelConfig.YarnAttnFactor != nil {
-				fmt.Printf("YaRN Attn Factor:     %g\n", *model.ModelConfig.YarnAttnFactor)
+			if model.ModelConfig.PtrYarnAttnFactor != nil {
+				fmt.Printf("YaRN Attn Factor:     %g\n", *model.ModelConfig.PtrYarnAttnFactor)
 			}
 		}
 		fmt.Println()
@@ -232,28 +232,28 @@ func printLocal(catDetails catalog.ModelDetails, rmc catalog.ModelConfig, mi *mo
 	fmt.Println("Model Config")
 	fmt.Println("------------")
 	fmt.Printf("Devices:              %s\n", rmc.Devices)
-	fmt.Printf("Context Window:       %d\n", rmc.ContextWindow)
-	fmt.Printf("NBatch:               %d\n", rmc.NBatch)
-	fmt.Printf("NUBatch:              %d\n", rmc.NUBatch)
-	fmt.Printf("NThreads:             %d\n", rmc.NThreads)
-	fmt.Printf("NThreadsBatch:        %d\n", rmc.NThreadsBatch)
+	fmt.Printf("Context Window:       %s\n", formatIntPtr(rmc.PtrContextWindow))
+	fmt.Printf("NBatch:               %s\n", formatIntPtr(rmc.PtrNBatch))
+	fmt.Printf("NUBatch:              %s\n", formatIntPtr(rmc.PtrNUBatch))
+	fmt.Printf("NThreads:             %s\n", formatIntPtr(rmc.PtrNThreads))
+	fmt.Printf("NThreadsBatch:        %s\n", formatIntPtr(rmc.PtrNThreadsBatch))
 	fmt.Printf("CacheTypeK:           %s\n", rmc.CacheTypeK)
 	fmt.Printf("CacheTypeV:           %s\n", rmc.CacheTypeV)
 	fmt.Printf("FlashAttention:       %v\n", model.DerefFlashAttention(rmc.FlashAttention))
-	fmt.Printf("NSeqMax:              %d\n", rmc.NSeqMax)
-	fmt.Printf("IncrementalCache:     %t\n", rmc.IncrementalCache)
-	fmt.Printf("CacheMinTokens:       %d\n", rmc.CacheMinTokens)
+	fmt.Printf("NSeqMax:              %s\n", formatIntPtr(rmc.PtrNSeqMax))
+	fmt.Printf("IncrementalCache:     %s\n", formatBoolPtr(rmc.PtrIncrementalCache))
+	fmt.Printf("CacheMinTokens:       %s\n", formatIntPtr(rmc.PtrCacheMinTokens))
 	if rmc.RopeScaling.String() != "none" {
 		fmt.Printf("RoPE Scaling:         %s\n", rmc.RopeScaling)
-		fmt.Printf("YaRN Orig Ctx:        %v\n", formatIntPtr(rmc.YarnOrigCtx))
-		if rmc.RopeFreqBase != nil {
-			fmt.Printf("RoPE Freq Base:       %g\n", *rmc.RopeFreqBase)
+		fmt.Printf("YaRN Orig Ctx:        %v\n", formatIntPtr(rmc.PtrYarnOrigCtx))
+		if rmc.PtrRopeFreqBase != nil {
+			fmt.Printf("RoPE Freq Base:       %g\n", *rmc.PtrRopeFreqBase)
 		}
-		if rmc.YarnExtFactor != nil {
-			fmt.Printf("YaRN Ext Factor:      %g\n", *rmc.YarnExtFactor)
+		if rmc.PtrYarnExtFactor != nil {
+			fmt.Printf("YaRN Ext Factor:      %g\n", *rmc.PtrYarnExtFactor)
 		}
-		if rmc.YarnAttnFactor != nil {
-			fmt.Printf("YaRN Attn Factor:     %g\n", *rmc.YarnAttnFactor)
+		if rmc.PtrYarnAttnFactor != nil {
+			fmt.Printf("YaRN Attn Factor:     %g\n", *rmc.PtrYarnAttnFactor)
 		}
 	}
 	fmt.Println()
@@ -309,4 +309,11 @@ func formatIntPtr(p *int) string {
 		return "auto"
 	}
 	return fmt.Sprintf("%d", *p)
+}
+
+func formatBoolPtr(p *bool) string {
+	if p == nil {
+		return "auto"
+	}
+	return fmt.Sprintf("%t", *p)
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
+	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
@@ -75,7 +76,7 @@ func (a *app) pullLibs(ctx context.Context, r *http.Request) web.Encoder {
 		var sb strings.Builder
 		for i := 0; i < len(args); i += 2 {
 			if i+1 < len(args) {
-				sb.WriteString(fmt.Sprintf(" %v[%v]", args[i], args[i+1]))
+				fmt.Fprintf(&sb, " %v[%v]", args[i], args[i+1])
 			}
 		}
 
@@ -86,6 +87,8 @@ func (a *app) pullLibs(ctx context.Context, r *http.Request) web.Encoder {
 		fmt.Fprint(w, ver)
 		f.Flush()
 	}
+
+	instVer, _ := a.libs.InstalledVersion()
 
 	// I know this is a hack and a race condition. I expect this situation
 	// to only exist for a few people and in a single tenant mode.
@@ -111,14 +114,29 @@ func (a *app) pullLibs(ctx context.Context, r *http.Request) web.Encoder {
 	if err != nil {
 		ver := toAppVersion(err.Error(), libs.VersionTag{}, a.libs.AllowUpgrade)
 
-		a.log.Info(ctx, "pull-libs", "info", ver[:len(ver)-1])
+		a.log.Info(ctx, "pull-libs", "status", "ERROR", "error", err.Error(), "info", ver[:len(ver)-1])
 		fmt.Fprint(w, ver)
 		f.Flush()
 
-		return errs.Errorf(errs.Internal, "unable to install llama.cpp: %s", err)
+		return web.NewNoResponse()
 	}
 
-	ver := toAppVersion("downloaded", vi, a.libs.AllowUpgrade)
+	// If kronk hasn't been initialized yet, attempt to load the freshly
+	// downloaded libraries. This allows the server to recover from a
+	// degraded state without a restart.
+	if !kronk.Initialized() {
+		if err := kronk.Init(kronk.WithLibPath(a.libs.LibsPath())); err != nil {
+			a.log.Info(ctx, "pull-libs", "WARNING", "libraries downloaded but failed to initialize kronk", "ERROR", err)
+		} else {
+			a.log.Info(ctx, "pull-libs", "status", "kronk initialized successfully after library download")
+		}
+	}
+
+	var ver string
+	ver = toAppVersion("downloaded", vi, a.libs.AllowUpgrade)
+	if instVer.Version == vi.Version {
+		ver = toAppVersion("using installed version", vi, a.libs.AllowUpgrade)
+	}
 
 	a.log.Info(ctx, "pull-libs", "info", ver[:len(ver)-1])
 	fmt.Fprint(w, ver)

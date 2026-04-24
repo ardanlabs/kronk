@@ -20,6 +20,7 @@ To dog food the SDK, Bill wrote a model server (KMS) that is optimized to run yo
 
 ### Basic Game Play Prompt
 
+- You are a senior Go software developer and know how to write efficient and idiomatic Go code.
 - I want to write a basic tic-tac-toe game only using the Go standard library.
 - The game play can be in the terminal.
 - Allow 2 players to play against each other.

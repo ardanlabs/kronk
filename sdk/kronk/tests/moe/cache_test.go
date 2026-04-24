@@ -13,14 +13,14 @@ import (
 
 func Test_CacheIMC(t *testing.T) {
 	cfg := model.Config{
-		ModelFiles:       testlib.MPMoEVision.ModelFiles,
-		ContextWindow:    8192,
-		NBatch:           2048,
-		NUBatch:          2048,
-		CacheTypeK:       model.GGMLTypeF16,
-		CacheTypeV:       model.GGMLTypeF16,
-		NSeqMax:          1,
-		IncrementalCache: true,
+		ModelFiles:          testlib.MPMoEVision.ModelFiles,
+		PtrContextWindow:    new(8192),
+		PtrNBatch:           new(2048),
+		PtrNUBatch:          new(2048),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrNSeqMax:          new(1),
+		PtrIncrementalCache: new(true),
 	}
 
 	testlib.WithModel(t, cfg, func(t *testing.T, krn *kronk.Kronk) {
@@ -162,14 +162,14 @@ func Test_CacheIMC(t *testing.T) {
 
 func Test_CacheIMCMultiSlot(t *testing.T) {
 	cfg := model.Config{
-		ModelFiles:       testlib.MPMoEVision.ModelFiles,
-		ContextWindow:    8192,
-		NBatch:           2048,
-		NUBatch:          2048,
-		CacheTypeK:       model.GGMLTypeF16,
-		CacheTypeV:       model.GGMLTypeF16,
-		NSeqMax:          2,
-		IncrementalCache: true,
+		ModelFiles:          testlib.MPMoEVision.ModelFiles,
+		PtrContextWindow:    new(8192),
+		PtrNBatch:           new(2048),
+		PtrNUBatch:          new(2048),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrNSeqMax:          new(2),
+		PtrIncrementalCache: new(true),
 	}
 
 	testlib.WithModel(t, cfg, func(t *testing.T, krn *kronk.Kronk) {

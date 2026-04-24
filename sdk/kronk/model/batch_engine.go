@@ -66,7 +66,7 @@ func newBatchEngine(m *Model, nSlots int) *batchEngine {
 	}
 
 	// Pre-allocate M-RoPE batch for vision model text chunk decoding.
-	nBatch := m.cfg.NBatch
+	nBatch := m.cfg.NBatch()
 	if nBatch > 0 {
 		e.mropeBatch = llama.BatchInit(int32(nBatch), 0, 1)
 		e.mropeOrigPos = e.mropeBatch.Pos
@@ -280,7 +280,7 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	// Continue prefill for text-only slots using round-robin allocation.
 	// Pull NUBatch tokens from each slot in turn to prevent one slot from
 	// starving others by consuming the entire tray.
-	chunkLimit := e.model.cfg.NUBatch
+	chunkLimit := e.model.cfg.NUBatch()
 	for {
 		before := e.batch.NTokens
 		for _, s := range e.slots {
@@ -335,7 +335,7 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	}
 
 	// Defensive check: batch tokens must not exceed NBatch.
-	nBatch := e.model.cfg.NBatch
+	nBatch := e.model.cfg.NBatch()
 	if int(e.batch.NTokens) > nBatch {
 		e.model.log(ctx, "process-batch", "ERROR", "batch-overflow",
 			"batch_tokens", e.batch.NTokens,

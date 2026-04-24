@@ -122,20 +122,20 @@ func newKronk(mp models.Path, runCfg Config) (*kronk.Kronk, error) {
 	}
 
 	if runCfg.ContextWindow > 0 {
-		cfg.ContextWindow = runCfg.ContextWindow
+		cfg.PtrContextWindow = new(runCfg.ContextWindow)
 	}
 
 	if runCfg.NBatch > 0 {
-		cfg.NBatch = runCfg.NBatch
+		cfg.PtrNBatch = new(runCfg.NBatch)
 	}
 
 	if runCfg.NUBatch > 0 {
-		cfg.NUBatch = runCfg.NUBatch
+		cfg.PtrNUBatch = new(runCfg.NUBatch)
 	}
 
 	if runCfg.NGpuLayers != 0 {
 		v := runCfg.NGpuLayers
-		cfg.NGpuLayers = &v
+		cfg.PtrNGpuLayers = &v
 	}
 
 	if runCfg.Devices != "" {
@@ -143,7 +143,7 @@ func newKronk(mp models.Path, runCfg Config) (*kronk.Kronk, error) {
 	}
 
 	if runCfg.MainGPU >= 0 {
-		cfg.MainGPU = &runCfg.MainGPU
+		cfg.PtrMainGPU = &runCfg.MainGPU
 	}
 
 	if runCfg.TensorSplit != "" {
@@ -164,7 +164,7 @@ func newKronk(mp models.Path, runCfg Config) (*kronk.Kronk, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid split-mode: %w", err)
 		}
-		cfg.SplitMode = &sm
+		cfg.PtrSplitMode = &sm
 	}
 
 	if runCfg.CacheTypeK != "" {
@@ -203,10 +203,10 @@ func newKronk(mp models.Path, runCfg Config) (*kronk.Kronk, error) {
 	}
 	fmt.Println()
 
-	fmt.Println("- contextWindow:", krn.ModelConfig().ContextWindow)
+	fmt.Println("- contextWindow:", krn.ModelConfig().ContextWindow())
 	fmt.Printf("- k/v          : %s/%s\n", krn.ModelConfig().CacheTypeK, krn.ModelConfig().CacheTypeV)
-	fmt.Println("- nBatch       :", krn.ModelConfig().NBatch)
-	fmt.Println("- nuBatch      :", krn.ModelConfig().NUBatch)
+	fmt.Println("- nBatch       :", krn.ModelConfig().NBatch())
+	fmt.Println("- nuBatch      :", krn.ModelConfig().NUBatch())
 	fmt.Println("- embeddings   :", krn.ModelInfo().IsEmbedModel)
 	fmt.Println("- isGPT        :", krn.ModelInfo().IsGPTModel)
 	fmt.Println("- template     :", krn.ModelInfo().Template.FileName)
@@ -449,7 +449,7 @@ loop:
 	}
 
 	contextTokens := lr.Usage.PromptTokens + lr.Usage.CompletionTokens
-	contextWindow := krn.ModelConfig().ContextWindow
+	contextWindow := krn.ModelConfig().ContextWindow()
 	percentage := (float64(contextTokens) / float64(contextWindow)) * 100
 	of := float32(contextWindow) / float32(1024)
 

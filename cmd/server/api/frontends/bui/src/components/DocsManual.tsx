@@ -4886,7 +4886,7 @@ response = client.chat.completions.create(
           <h3 id="131-coding-agent-model-configuration">13.1 Coding Agent Model Configuration</h3>
           <p>All coding agents share the same Kronk server and model configuration. The model is configured in <code>model_config.yaml</code> (or the catalog) with an <code>/AGENT</code> suffix that the agent references as its model name.</p>
           <p><strong>Recommended Configuration:</strong></p>
-          <pre className="code-block"><code className="language-yaml">{`Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
+          <pre className="code-block"><code className="language-yaml">{`Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT:
   context-window: 131072
   nseq-max: 2
   incremental-cache: true
@@ -4932,7 +4932,7 @@ gemma-4-31B-it-UD-Q8_K_XL/AGENT:
           </ol>
           <pre className="code-block"><code>{`Base URL: http://localhost:11435/v1
 API Key: <your-kronk-token> or 123 if auth is disabled
-Model: Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT`}</code></pre>
+Model: Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT`}</code></pre>
           <p><strong>MCP Configuration:</strong></p>
           <p>Copy the MCP settings from <code>.agents/cline/</code> to your Cline config:</p>
           <pre className="code-block"><code className="language-json">{`{
@@ -5047,7 +5047,7 @@ client = OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT",
+    model="Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT",
     messages=[
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "Hello!"}
@@ -5065,7 +5065,7 @@ for chunk in response:
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -d '{
-    "model": "Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT",
+    "model": "Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT",
     "messages": [{"role": "user", "content": "Hello"}],
     "stream": true
   }'`}</code></pre>
@@ -5086,7 +5086,7 @@ data: [DONE]`}</code></pre>
 llm = ChatOpenAI(
     base_url="http://localhost:11435/v1",
     api_key="your-kronk-token",
-    model="Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT",
+    model="Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT",
     streaming=True
 )
 
@@ -5685,7 +5685,7 @@ data: [DONE]\\n\\n`}</code></pre>
           <p><strong>Solutions:</strong></p>
           <p>Enable IMC to cache the conversation prefix:</p>
           <pre className="code-block"><code className="language-yaml">{`models:
-  Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
+  Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT:
     incremental_cache: true`}</code></pre>
           <p>With IMC, only the new message is prefilled — cached tokens are restored from RAM in ~10-30ms regardless of conversation length.</p>
           <p><strong>Problem: Slow token generation (tokens/second)</strong></p>

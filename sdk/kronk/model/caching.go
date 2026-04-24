@@ -52,7 +52,7 @@ type cacheResult struct {
 //
 // This function is thread-safe and handles concurrent requests appropriately.
 func (m *Model) processCache(ctx context.Context, d D, requestStart time.Time) cacheResult {
-	if !m.cfg.IncrementalCache {
+	if !m.cfg.IncrementalCache() {
 		return cacheResult{modifiedD: d}
 	}
 

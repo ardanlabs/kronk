@@ -130,11 +130,11 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 		cfg.DraftModel.ModelFiles = draftPath.ModelFiles
 
 		// Speculative decoding requires single-slot mode.
-		cfg.NSeqMax = 1
+		cfg.PtrNSeqMax = new(1)
 	}
 
-	if cfg.NUBatch > cfg.NBatch {
-		return errs.Errorf(errs.InvalidArgument, "nubatch (%d) must not exceed nbatch (%d)", cfg.NUBatch, cfg.NBatch)
+	if cfg.NUBatch() > cfg.NBatch() {
+		return errs.Errorf(errs.InvalidArgument, "nubatch (%d) must not exceed nbatch (%d)", cfg.NUBatch(), cfg.NBatch())
 	}
 
 	cat := &playgroundCataloger{
@@ -168,13 +168,13 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 		"cache-key", cacheKey,
 		"shared", !req.HasOverrides(),
 		"krn-ptr", fmt.Sprintf("%p", krn),
-		"context-window", krn.ModelConfig().ContextWindow,
-		"nbatch", krn.ModelConfig().NBatch,
-		"nubatch", krn.ModelConfig().NUBatch,
+		"context-window", krn.ModelConfig().ContextWindow(),
+		"nbatch", krn.ModelConfig().NBatch(),
+		"nubatch", krn.ModelConfig().NUBatch(),
 		"flash-attention", krn.ModelConfig().FlashAttention.String(),
 		"cache-type-k", krn.ModelConfig().CacheTypeK.String(),
 		"cache-type-v", krn.ModelConfig().CacheTypeV.String(),
-		"nseq-max", krn.ModelConfig().NSeqMax,
+		"nseq-max", krn.ModelConfig().NSeqMax(),
 	)
 
 	a.mu.Lock()
@@ -185,15 +185,15 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 	a.mu.Unlock()
 
 	effectiveConfig := map[string]any{
-		"context_window":    krn.ModelConfig().ContextWindow,
-		"nbatch":            krn.ModelConfig().NBatch,
-		"nubatch":           krn.ModelConfig().NUBatch,
-		"nseq_max":          krn.ModelConfig().NSeqMax,
+		"context_window":    krn.ModelConfig().ContextWindow(),
+		"nbatch":            krn.ModelConfig().NBatch(),
+		"nubatch":           krn.ModelConfig().NUBatch(),
+		"nseq_max":          krn.ModelConfig().NSeqMax(),
 		"flash_attention":   krn.ModelConfig().FlashAttention.String(),
 		"cache_type_k":      krn.ModelConfig().CacheTypeK.String(),
 		"cache_type_v":      krn.ModelConfig().CacheTypeV.String(),
-		"incremental_cache": krn.ModelConfig().IncrementalCache,
-		"split_mode":        formatSplitMode(krn.ModelConfig().SplitMode),
+		"incremental_cache": krn.ModelConfig().IncrementalCache(),
+		"split_mode":        formatSplitMode(krn.ModelConfig().PtrSplitMode),
 		"model_type":        krn.ModelInfo().Type.String(),
 		"is_gpt_model":      krn.ModelInfo().IsGPTModel,
 	}

@@ -196,104 +196,104 @@ func (s SamplingConfig) toParams() model.Params {
 
 // ModelConfig represents default model config settings.
 type ModelConfig struct {
-	CacheMinTokens      int                       `yaml:"cache-min-tokens,omitempty"`
-	CacheSlotTimeout    int                       `yaml:"cache-slot-timeout,omitempty"`
-	CacheTypeK          model.GGMLType            `yaml:"cache-type-k,omitempty"`
-	CacheTypeV          model.GGMLType            `yaml:"cache-type-v,omitempty"`
-	ContextWindow       int                       `yaml:"context-window,omitempty"`
-	Devices             []string                  `yaml:"devices,omitempty"`
-	DraftModel          *DraftModelConfig         `yaml:"draft-model,omitempty"`
-	FlashAttention      *model.FlashAttentionType `yaml:"flash-attention,omitempty"`
-	IncrementalCache    bool                      `yaml:"incremental-cache,omitempty"`
-	InsecureLogging     bool                      `yaml:"insecure-logging,omitempty"`
-	MainGPU             *int                      `yaml:"main-gpu,omitempty"`
-	MoE                 *model.MoEConfig          `yaml:"moe,omitempty"`
-	NBatch              int                       `yaml:"nbatch,omitempty"`
-	NGpuLayers          *int                      `yaml:"ngpu-layers,omitempty"`
-	NSeqMax             int                       `yaml:"nseq-max,omitempty"`
-	NThreads            int                       `yaml:"nthreads,omitempty"`
-	NThreadsBatch       int                       `yaml:"nthreads-batch,omitempty"`
-	NUBatch             int                       `yaml:"nubatch,omitempty"`
-	NUMA                string                    `yaml:"numa,omitempty"`
-	OffloadKQV          *bool                     `yaml:"offload-kqv,omitempty"`
-	OpOffload           *bool                     `yaml:"op-offload,omitempty"`
-	OpOffloadMinBatch   int                       `yaml:"op-offload-min-batch,omitempty"`
-	RopeFreqBase        *float32                  `yaml:"rope-freq-base,omitempty"`
-	RopeFreqScale       *float32                  `yaml:"rope-freq-scale,omitempty"`
-	RopeScaling         model.RopeScalingType     `yaml:"rope-scaling-type,omitempty"`
-	Sampling            SamplingConfig            `yaml:"sampling-parameters,omitempty"`
-	SplitMode           *model.SplitMode          `yaml:"split-mode,omitempty"`
-	SWAFull             *bool                     `yaml:"swa-full,omitempty"`
-	TensorBuftOverrides []string                  `yaml:"tensor-buft-overrides,omitempty"`
-	TensorSplit         []float32                 `yaml:"tensor-split,omitempty"`
-	Template            string                    `yaml:"template,omitempty"`
-	UseDirectIO         bool                      `yaml:"use-direct-io,omitempty"`
-	UseMMap             *bool                     `yaml:"use-mmap,omitempty"`
-	YarnAttnFactor      *float32                  `yaml:"yarn-attn-factor,omitempty"`
-	YarnBetaFast        *float32                  `yaml:"yarn-beta-fast,omitempty"`
-	YarnBetaSlow        *float32                  `yaml:"yarn-beta-slow,omitempty"`
-	YarnExtFactor       *float32                  `yaml:"yarn-ext-factor,omitempty"`
-	YarnOrigCtx         *int                      `yaml:"yarn-orig-ctx,omitempty"`
+	PtrCacheMinTokens    *int                      `yaml:"cache-min-tokens,omitempty"`
+	PtrCacheSlotTimeout  *int                      `yaml:"cache-slot-timeout,omitempty"`
+	CacheTypeK           model.GGMLType            `yaml:"cache-type-k,omitempty"`
+	CacheTypeV           model.GGMLType            `yaml:"cache-type-v,omitempty"`
+	PtrContextWindow     *int                      `yaml:"context-window,omitempty"`
+	Devices              []string                  `yaml:"devices,omitempty"`
+	DraftModel           *DraftModelConfig         `yaml:"draft-model,omitempty"`
+	FlashAttention       *model.FlashAttentionType `yaml:"flash-attention,omitempty"`
+	PtrIncrementalCache  *bool                     `yaml:"incremental-cache,omitempty"`
+	PtrInsecureLogging   *bool                     `yaml:"insecure-logging,omitempty"`
+	PtrMainGPU           *int                      `yaml:"main-gpu,omitempty"`
+	MoE                  *model.MoEConfig          `yaml:"moe,omitempty"`
+	PtrNBatch            *int                      `yaml:"nbatch,omitempty"`
+	PtrNGpuLayers        *int                      `yaml:"ngpu-layers,omitempty"`
+	PtrNSeqMax           *int                      `yaml:"nseq-max,omitempty"`
+	PtrNThreads          *int                      `yaml:"nthreads,omitempty"`
+	PtrNThreadsBatch     *int                      `yaml:"nthreads-batch,omitempty"`
+	PtrNUBatch           *int                      `yaml:"nubatch,omitempty"`
+	NUMA                 string                    `yaml:"numa,omitempty"`
+	PtrOffloadKQV        *bool                     `yaml:"offload-kqv,omitempty"`
+	PtrOpOffload         *bool                     `yaml:"op-offload,omitempty"`
+	PtrOpOffloadMinBatch *int                      `yaml:"op-offload-min-batch,omitempty"`
+	PtrRopeFreqBase      *float32                  `yaml:"rope-freq-base,omitempty"`
+	PtrRopeFreqScale     *float32                  `yaml:"rope-freq-scale,omitempty"`
+	RopeScaling          model.RopeScalingType     `yaml:"rope-scaling-type,omitempty"`
+	Sampling             SamplingConfig            `yaml:"sampling-parameters,omitempty"`
+	PtrSplitMode         *model.SplitMode          `yaml:"split-mode,omitempty"`
+	PtrSWAFull           *bool                     `yaml:"swa-full,omitempty"`
+	TensorBuftOverrides  []string                  `yaml:"tensor-buft-overrides,omitempty"`
+	TensorSplit          []float32                 `yaml:"tensor-split,omitempty"`
+	Template             string                    `yaml:"template,omitempty"`
+	PtrUseDirectIO       *bool                     `yaml:"use-direct-io,omitempty"`
+	PtrUseMMap           *bool                     `yaml:"use-mmap,omitempty"`
+	PtrYarnAttnFactor    *float32                  `yaml:"yarn-attn-factor,omitempty"`
+	PtrYarnBetaFast      *float32                  `yaml:"yarn-beta-fast,omitempty"`
+	PtrYarnBetaSlow      *float32                  `yaml:"yarn-beta-slow,omitempty"`
+	PtrYarnExtFactor     *float32                  `yaml:"yarn-ext-factor,omitempty"`
+	PtrYarnOrigCtx       *int                      `yaml:"yarn-orig-ctx,omitempty"`
 }
 
 // DraftModelConfig configures a draft model for speculative decoding.
 type DraftModelConfig struct {
-	Devices     []string  `yaml:"devices,omitempty"`
-	MainGPU     *int      `yaml:"main-gpu,omitempty"`
-	ModelID     string    `yaml:"model-id,omitempty"`
-	NDraft      int       `yaml:"ndraft,omitempty"`
-	NGpuLayers  *int      `yaml:"ngpu-layers,omitempty"`
-	TensorSplit []float32 `yaml:"tensor-split,omitempty"`
+	Devices       []string  `yaml:"devices,omitempty"`
+	PtrMainGPU    *int      `yaml:"main-gpu,omitempty"`
+	ModelID       string    `yaml:"model-id,omitempty"`
+	NDraft        int       `yaml:"ndraft,omitempty"`
+	PtrNGpuLayers *int      `yaml:"ngpu-layers,omitempty"`
+	TensorSplit   []float32 `yaml:"tensor-split,omitempty"`
 }
 
 // ToKronkConfig converts a catalog ModelConfig to a model.Config.
 func (mc ModelConfig) ToKronkConfig() model.Config {
 	cfg := model.Config{
-		CacheMinTokens:      mc.CacheMinTokens,
-		CacheSlotTimeout:    mc.CacheSlotTimeout,
-		CacheTypeK:          mc.CacheTypeK,
-		CacheTypeV:          mc.CacheTypeV,
-		ContextWindow:       mc.ContextWindow,
-		DefaultParams:       mc.Sampling.toParams(),
-		Devices:             mc.Devices,
-		FlashAttention:      model.DerefFlashAttention(mc.FlashAttention),
-		IncrementalCache:    mc.IncrementalCache,
-		InsecureLogging:     mc.InsecureLogging,
-		MainGPU:             mc.MainGPU,
-		MoE:                 mc.MoE,
-		NBatch:              mc.NBatch,
-		NGpuLayers:          mc.NGpuLayers,
-		NSeqMax:             mc.NSeqMax,
-		NThreads:            mc.NThreads,
-		NThreadsBatch:       mc.NThreadsBatch,
-		NUBatch:             mc.NUBatch,
-		NUMA:                mc.NUMA,
-		OffloadKQV:          mc.OffloadKQV,
-		OpOffload:           mc.OpOffload,
-		OpOffloadMinBatch:   mc.OpOffloadMinBatch,
-		RopeFreqBase:        mc.RopeFreqBase,
-		RopeFreqScale:       mc.RopeFreqScale,
-		RopeScaling:         mc.RopeScaling,
-		SplitMode:           mc.SplitMode,
-		SWAFull:             mc.SWAFull,
-		TensorBuftOverrides: mc.TensorBuftOverrides,
-		TensorSplit:         mc.TensorSplit,
-		UseDirectIO:         mc.UseDirectIO,
-		UseMMap:             mc.UseMMap,
-		YarnAttnFactor:      mc.YarnAttnFactor,
-		YarnBetaFast:        mc.YarnBetaFast,
-		YarnBetaSlow:        mc.YarnBetaSlow,
-		YarnExtFactor:       mc.YarnExtFactor,
-		YarnOrigCtx:         mc.YarnOrigCtx,
+		PtrCacheMinTokens:    mc.PtrCacheMinTokens,
+		PtrCacheSlotTimeout:  mc.PtrCacheSlotTimeout,
+		CacheTypeK:           mc.CacheTypeK,
+		CacheTypeV:           mc.CacheTypeV,
+		PtrContextWindow:     mc.PtrContextWindow,
+		DefaultParams:        mc.Sampling.toParams(),
+		Devices:              mc.Devices,
+		FlashAttention:       model.DerefFlashAttention(mc.FlashAttention),
+		PtrIncrementalCache:  mc.PtrIncrementalCache,
+		PtrInsecureLogging:   mc.PtrInsecureLogging,
+		PtrMainGPU:           mc.PtrMainGPU,
+		MoE:                  mc.MoE,
+		PtrNBatch:            mc.PtrNBatch,
+		PtrNGpuLayers:        mc.PtrNGpuLayers,
+		PtrNSeqMax:           mc.PtrNSeqMax,
+		PtrNThreads:          mc.PtrNThreads,
+		PtrNThreadsBatch:     mc.PtrNThreadsBatch,
+		PtrNUBatch:           mc.PtrNUBatch,
+		NUMA:                 mc.NUMA,
+		PtrOffloadKQV:        mc.PtrOffloadKQV,
+		PtrOpOffload:         mc.PtrOpOffload,
+		PtrOpOffloadMinBatch: mc.PtrOpOffloadMinBatch,
+		PtrRopeFreqBase:      mc.PtrRopeFreqBase,
+		PtrRopeFreqScale:     mc.PtrRopeFreqScale,
+		RopeScaling:          mc.RopeScaling,
+		PtrSplitMode:         mc.PtrSplitMode,
+		PtrSWAFull:           mc.PtrSWAFull,
+		TensorBuftOverrides:  mc.TensorBuftOverrides,
+		TensorSplit:          mc.TensorSplit,
+		PtrUseDirectIO:       mc.PtrUseDirectIO,
+		PtrUseMMap:           mc.PtrUseMMap,
+		PtrYarnAttnFactor:    mc.PtrYarnAttnFactor,
+		PtrYarnBetaFast:      mc.PtrYarnBetaFast,
+		PtrYarnBetaSlow:      mc.PtrYarnBetaSlow,
+		PtrYarnExtFactor:     mc.PtrYarnExtFactor,
+		PtrYarnOrigCtx:       mc.PtrYarnOrigCtx,
 	}
 
 	if mc.DraftModel != nil {
 		cfg.DraftModel = &model.DraftModelConfig{
-			Devices:     mc.DraftModel.Devices,
-			MainGPU:     mc.DraftModel.MainGPU,
-			NDraft:      mc.DraftModel.NDraft,
-			NGpuLayers:  mc.DraftModel.NGpuLayers,
-			TensorSplit: mc.DraftModel.TensorSplit,
+			Devices:       mc.DraftModel.Devices,
+			PtrMainGPU:    mc.DraftModel.PtrMainGPU,
+			NDraft:        mc.DraftModel.NDraft,
+			PtrNGpuLayers: mc.DraftModel.PtrNGpuLayers,
+			TensorSplit:   mc.DraftModel.TensorSplit,
 		}
 	}
 

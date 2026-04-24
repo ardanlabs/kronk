@@ -11,15 +11,15 @@ import (
 
 func testCacheIMCNonDeterministic(t *testing.T) {
 	cfg := model.Config{
-		ModelFiles:       testlib.MPGPTChat.ModelFiles,
-		ContextWindow:    8192,
-		NBatch:           2048,
-		NUBatch:          512,
-		CacheTypeK:       model.GGMLTypeQ8_0,
-		CacheTypeV:       model.GGMLTypeQ8_0,
-		NSeqMax:          1,
-		IncrementalCache: true,
-		CacheMinTokens:   100,
+		ModelFiles:          testlib.MPGPTChat.ModelFiles,
+		PtrContextWindow:    new(8192),
+		PtrNBatch:           new(2048),
+		PtrNUBatch:          new(512),
+		CacheTypeK:          model.GGMLTypeQ8_0,
+		CacheTypeV:          model.GGMLTypeQ8_0,
+		PtrNSeqMax:          new(1),
+		PtrIncrementalCache: new(true),
+		PtrCacheMinTokens:   new(100),
 	}
 
 	testlib.WithModel(t, cfg, func(t *testing.T, krn *kronk.Kronk) {

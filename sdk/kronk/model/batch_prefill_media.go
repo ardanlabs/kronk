@@ -47,7 +47,7 @@ func (e *batchEngine) addPrefillMediaChunk(s *slot, buf []byte) bool {
 			return true
 		}
 
-		nBatch := e.model.cfg.NBatch
+		nBatch := e.model.cfg.NBatch()
 
 		switch s.useMRoPE {
 		case true:
