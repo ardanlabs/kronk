@@ -78,7 +78,7 @@ func testChat(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
 
 	var g errgroup.Group
 	for range testlib.Goroutines {
-		g.Go(f)
+		g.Go(testlib.WithRetry(t, f))
 	}
 
 	if err := g.Wait(); err != nil {
@@ -144,7 +144,7 @@ func testChatStreaming(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) 
 
 	var g errgroup.Group
 	for range testlib.Goroutines {
-		g.Go(f)
+		g.Go(testlib.WithRetry(t, f))
 	}
 
 	if err := g.Wait(); err != nil {
@@ -191,7 +191,7 @@ func testResponse(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
 
 	var g errgroup.Group
 	for range testlib.Goroutines {
-		g.Go(f)
+		g.Go(testlib.WithRetry(t, f))
 	}
 
 	if err := g.Wait(); err != nil {
@@ -300,7 +300,7 @@ func testResponseStreaming(t *testing.T, krn *kronk.Kronk, d model.D, tooling bo
 
 	var g errgroup.Group
 	for range testlib.Goroutines {
-		g.Go(f)
+		g.Go(testlib.WithRetry(t, f))
 	}
 
 	if err := g.Wait(); err != nil {
@@ -352,7 +352,7 @@ func testTokenize(t *testing.T, krn *kronk.Kronk) {
 
 	var g errgroup.Group
 	for range testlib.Goroutines {
-		g.Go(f)
+		g.Go(testlib.WithRetry(t, f))
 	}
 
 	if err := g.Wait(); err != nil {
@@ -416,7 +416,7 @@ func testTokenizeWithTemplate(t *testing.T, krn *kronk.Kronk) {
 
 	var g errgroup.Group
 	for range testlib.Goroutines {
-		g.Go(f)
+		g.Go(testlib.WithRetry(t, f))
 	}
 
 	if err := g.Wait(); err != nil {

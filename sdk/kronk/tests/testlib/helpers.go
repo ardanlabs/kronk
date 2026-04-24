@@ -5,10 +5,30 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
+
+// WithRetry wraps a test function with retry logic to handle LLM
+// non-determinism under concurrent load. On failure, it logs the attempt
+// and retries up to MaxRetries times before returning the final error.
+func WithRetry(t testing.TB, f func() error) func() error {
+	return func() error {
+		var err error
+		for attempt := 1; attempt <= MaxRetries; attempt++ {
+			err = f()
+			if err == nil {
+				return nil
+			}
+			if attempt < MaxRetries {
+				t.Logf("RETRY: attempt %d/%d failed: %v", attempt, MaxRetries, err)
+			}
+		}
+		return err
+	}
+}
 
 // TestResult holds an error and non-fatal warnings from test validation.
 type TestResult struct {

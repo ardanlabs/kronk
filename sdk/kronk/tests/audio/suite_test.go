@@ -26,44 +26,28 @@ func testAudio(t *testing.T, krn *kronk.Kronk) {
 	}
 
 	f := func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
+		defer cancel()
+
 		id := uuid.New().String()
+		now := time.Now()
+		resp, err := krn.Chat(ctx, testlib.DAudio)
+		done := time.Now()
 
-		const maxRetries = 3
-		for attempt := 1; attempt <= maxRetries; attempt++ {
-			ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
+		t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, krn.ModelInfo().ID, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
 
-			now := time.Now()
-			resp, err := krn.Chat(ctx, testlib.DAudio)
-			done := time.Now()
-			cancel()
+		if err != nil {
+			return fmt.Errorf("chat: %w", err)
+		}
 
-			t.Logf("%s: %s, st: %v, en: %v, Duration: %s (attempt %d/%d)", id, krn.ModelInfo().ID, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now), attempt, maxRetries)
+		result := testlib.TestChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatMedia, "speech", "", "", false, false)
 
-			if err != nil {
-				if attempt < maxRetries {
-					t.Logf("%s: retrying after error: %v", id, err)
-					time.Sleep(250 * time.Millisecond)
-					continue
-				}
-				return fmt.Errorf("chat: %w", err)
-			}
+		for _, w := range result.Warnings {
+			t.Logf("WARNING: %s", w)
+		}
 
-			result := testlib.TestChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatMedia, "speech", "", "", false, false)
-
-			for _, w := range result.Warnings {
-				t.Logf("WARNING: %s", w)
-			}
-
-			if result.Err != nil {
-				if attempt < maxRetries {
-					t.Logf("%s: retrying after empty content", id)
-					continue
-				}
-				t.Logf("%#v", resp)
-				return result.Err
-			}
-
-			return nil
+		if result.Err != nil {
+			return result.Err
 		}
 
 		return nil
@@ -71,7 +55,7 @@ func testAudio(t *testing.T, krn *kronk.Kronk) {
 
 	var g errgroup.Group
 	for range testlib.Goroutines {
-		g.Go(f)
+		g.Go(testlib.WithRetry(t, f))
 	}
 
 	if err := g.Wait(); err != nil {
@@ -85,67 +69,39 @@ func testAudioStreaming(t *testing.T, krn *kronk.Kronk) {
 	}
 
 	f := func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
+		defer cancel()
+
 		id := uuid.New().String()
+		now := time.Now()
+		ch, err := krn.ChatStreaming(ctx, testlib.DAudio)
+		if err != nil {
+			return fmt.Errorf("chat streaming: %w", err)
+		}
 
-		const maxRetries = 2
-		for attempt := 1; attempt <= maxRetries; attempt++ {
-			ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
+		var acc testlib.StreamAccumulator
+		var lastResp model.ChatResponse
+		for resp := range ch {
+			acc.Accumulate(resp)
+			lastResp = resp
 
-			now := time.Now()
-			ch, err := krn.ChatStreaming(ctx, testlib.DAudio)
-			if err != nil {
-				cancel()
-				if attempt < maxRetries {
-					t.Logf("%s: retrying after error: %v", id, err)
-					continue
-				}
-				return fmt.Errorf("chat streaming: %w", err)
+			if err := testlib.TestChatBasics(resp, krn.ModelInfo().ID, model.ObjectChatMedia, false, true); err != nil {
+				return fmt.Errorf("basics: %w", err)
 			}
+		}
 
-			var acc testlib.StreamAccumulator
-			var lastResp model.ChatResponse
-			var basicErr error
-			for resp := range ch {
-				acc.Accumulate(resp)
-				lastResp = resp
+		done := time.Now()
 
-				if err := testlib.TestChatBasics(resp, krn.ModelInfo().ID, model.ObjectChatMedia, false, true); err != nil {
-					t.Logf("%#v", resp)
-					basicErr = err
-					break
-				}
-			}
+		t.Logf("%s: %s, st: %v, en: %v, Duration: %s", id, krn.ModelInfo().ID, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now))
 
-			done := time.Now()
-			cancel()
+		result := testlib.TestStreamingContent(&acc, lastResp, "speech")
 
-			t.Logf("%s: %s, st: %v, en: %v, Duration: %s (attempt %d/%d)", id, krn.ModelInfo().ID, now.Format("15:04:05.000"), done.Format("15:04:05.000"), done.Sub(now), attempt, maxRetries)
+		for _, w := range result.Warnings {
+			t.Logf("WARNING: %s", w)
+		}
 
-			if basicErr != nil {
-				if attempt < maxRetries {
-					t.Logf("%s: retrying after basics error: %v", id, basicErr)
-					continue
-				}
-				return fmt.Errorf("basics: %w", basicErr)
-			}
-
-			result := testlib.TestStreamingContent(&acc, lastResp, "speech")
-
-			for _, w := range result.Warnings {
-				t.Logf("WARNING: %s", w)
-			}
-
-			if result.Err != nil {
-				if attempt < maxRetries {
-					t.Logf("%s: retrying after empty content", id)
-					continue
-				}
-				t.Logf("accumulated content: %q", acc.Content.String())
-				t.Logf("%#v", lastResp)
-				return result.Err
-			}
-
-			return nil
+		if result.Err != nil {
+			return result.Err
 		}
 
 		return nil
@@ -153,7 +109,7 @@ func testAudioStreaming(t *testing.T, krn *kronk.Kronk) {
 
 	var g errgroup.Group
 	for range testlib.Goroutines {
-		g.Go(f)
+		g.Go(testlib.WithRetry(t, f))
 	}
 
 	if err := g.Wait(); err != nil {
