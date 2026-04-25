@@ -300,10 +300,10 @@ Use "kronk [command] --help" for more information about a command.`}</code></pre
           <p>Open http://localhost:11435 in your browser and navigate to the Libraries page.</p>
           <p><strong>Option B: Via CLI</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk libs --local`}</code></pre>
-          <p>This downloads libraries to <code>~/.kronk/libraries/</code> using auto-detected settings.</p>
+          <p>This downloads libraries to <code>~/.kronk/libraries/&lt;os&gt;/&lt;arch&gt;/&lt;processor&gt;/</code> using auto-detected settings (for example <code>~/.kronk/libraries/darwin/arm64/metal/</code>). Each <code>(arch, os, processor)</code> triple lives in its own folder so multiple bundles can coexist on the same machine.</p>
           <p><strong>Pinning a Specific Library Version</strong></p>
           <p>Sometimes there are breaking changes to llama.cpp that require a matching version of yzma and Kronk. To ensure stability, you can install a specific library version:</p>
-          <pre className="code-block"><code className="language-shell">{`kronk libs --lib-version=b8864 --local`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`kronk libs --version=b8864 --local`}</code></pre>
           <p>Or via environment variable:</p>
           <pre className="code-block"><code className="language-shell">{`KRONK_LIB_VERSION=b8864 kronk libs --local`}</code></pre>
           <p>Here are the known compatible versions:</p>
@@ -330,12 +330,34 @@ Use "kronk [command] --help" for more information about a command.`}</code></pre
           </table>
           <p>If you experience unexpected behavior after a library upgrade, pin the version that matches your installed Kronk release using the table above.</p>
           <p><strong>Environment Variables for Library Installation</strong></p>
-          <pre className="code-block"><code>{`KRONK_LIB_PATH  - Library directory (default: \`~/.kronk/libraries\`)
+          <pre className="code-block"><code>{`KRONK_LIB_PATH  - Library directory. See "KRONK_LIB_PATH semantics" below.
 KRONK_PROCESSOR - \`cpu\`, \`cuda\`, \`metal\`, \`rocm\`, or \`vulkan\` (default: \`cpu\`)
 KRONK_ARCH      - Architecture override: \`amd64\`, \`arm64\`
 KRONK_OS        - OS override: \`linux\`, \`darwin\`, \`windows\``}</code></pre>
+          <p><strong>KRONK_LIB_PATH semantics</strong></p>
+          <p><code>KRONK_LIB_PATH</code> is interpreted in one of three ways:</p>
+          <ol>
+            <li><em>Unset</em> — the runtime resolves <code>&lt;base&gt;/libraries/&lt;os&gt;/&lt;arch&gt;/&lt;processor&gt;/</code> based on the detected (or <code>KRONK_*</code>-overridden) triple.</li>
+            <li><em>Points at a directory containing a &lt;code&gt;version.json&lt;/code&gt;</em> — used as-is. This is the form to set when you want to switch the active install to a previously-downloaded triple folder. Example: ```shell export KRONK_LIB_PATH=~/.kronk/libraries/linux/amd64/cuda ```</li>
+            <li><em>Points at a non-empty directory without a &lt;code&gt;version.json&lt;/code&gt;</em> — treated as a user-managed read-only build. Kronk will load libraries from it but never write to it; mutating CLI/HTTP operations against it return an error.</li>
+          </ol>
+          <p>Switching the active install requires a server restart; libraries are not hot-reloaded.</p>
           <p><strong>Example: Install CUDA Libraries</strong></p>
           <pre className="code-block"><code className="language-shell">{`KRONK_PROCESSOR=cuda kronk libs --local`}</code></pre>
+          <p><strong>Installing for Another Triple</strong></p>
+          <p>You can also install a bundle for a triple other than the current machine's detected one — useful for prepping a shared filesystem or a target host. The install lands in its own folder under the libraries root and does not touch the active install:</p>
+          <pre className="code-block"><code className="language-shell">{`# List every supported (arch, os, processor) combination
+kronk libs --list-combinations
+
+# Install the Linux/CUDA bundle alongside whatever is already active
+kronk libs --install --arch=amd64 --os=linux --processor=cuda --local
+
+# List installed bundles
+kronk libs --list-installs
+
+# Remove an install
+kronk libs --remove-install --arch=amd64 --os=linux --processor=cuda --local`}</code></pre>
+          <p>In web mode (the default — no <code>--local</code>) the same commands are dispatched through the running server. Activate any installed bundle by exporting <code>KRONK_LIB_PATH</code> to its folder and restarting the server.</p>
           <h3 id="24-downloading-your-first-model">2.4 Downloading Your First Model</h3>
           <p>Kronk provides a curated catalog of verified models. List available models:</p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog list --local`}</code></pre>
@@ -727,7 +749,7 @@ n_ubatch: 512 # GPU bite size (must be ≤ n_batch)`}</code></pre>
           </table>
           <h3 id="32-processor-selection">3.2 Processor Selection</h3>
           <p>The <strong>processor</strong> determines which hardware backend Kronk uses for inference: CPU, CUDA, Metal, ROCm, or Vulkan. Each processor corresponds to a different build of the llama.cpp shared libraries, so the processor must be resolved <strong>before</strong> libraries are downloaded. Once the wrong libraries are installed, switching processors requires re-downloading them.</p>
-          <p>This means processor selection happens early — before <code>libs.New()</code> in the SDK, and before <code>kronk libs install</code> or any server startup on the CLI. Everything downstream (model loading, layer offloading, KV cache placement) depends on having the correct libraries for your hardware.</p>
+          <p>This means processor selection happens early — before <code>libs.New()</code> in the SDK, and before <code>kronk libs</code> or any server startup on the CLI. Each install lands in its own per-triple folder under the libraries root (<code>&lt;base&gt;/libraries/&lt;os&gt;/&lt;arch&gt;/&lt;processor&gt;/</code>), so multiple processor bundles can coexist; switch active install at runtime by exporting <code>KRONK_LIB_PATH</code> to that folder and restarting the server. Everything downstream (model loading, layer offloading, KV cache placement) depends on having the correct libraries for your hardware.</p>
           <h4 id="how-processor-selection-works">How Processor Selection Works</h4>
           <p>Kronk resolves the processor through a two-step priority:</p>
           <ol>
@@ -3125,7 +3147,7 @@ kronk libs --local`}</code></pre>
                 <td><code>--lib-path</code></td>
                 <td><code>KRONK_LIB_PATH</code></td>
                 <td><em>(empty)</em></td>
-                <td>Path to llama library directory</td>
+                <td>Override path Kronk loads llama.cpp libraries from. Empty resolves the default per-triple folder under the libraries root (<code>&lt;base&gt;/libraries/&lt;os&gt;/&lt;arch&gt;/&lt;processor&gt;/</code>). A directory containing a <code>version.json</code> is used as-is. A non-empty directory without a <code>version.json</code> is treated as a read-only user-managed build. See chapter 2.3 for full semantics.</td>
               </tr>
               <tr>
                 <td><code>--lib-version</code></td>
@@ -3330,10 +3352,14 @@ kronk server start --llama-log=0    # Disable (default)`}</code></pre>
           <h3 id="711-data-paths">7.11 Data Paths</h3>
           <p>Default data locations:</p>
           <pre className="code-block"><code>{`~/.kronk/
-├── libraries/     # llama.cpp libraries
-├── models/        # Downloaded models
-├── templates/     # Chat templates
-└── catalog/       # Catalog cache`}</code></pre>
+├── libraries/                          # llama.cpp libraries (one folder per triple)
+│   └── <os>/<arch>/<processor>/        # e.g. darwin/arm64/metal/, linux/amd64/cuda/
+│       ├── libllama.so / .dylib / .dll
+│       └── version.json
+├── models/                             # Downloaded models
+├── templates/                          # Chat templates
+└── catalog/                            # Catalog cache`}</code></pre>
+          <p>Each <code>(arch, os, processor)</code> install lives in its own folder. The runtime loads the folder for the detected triple by default; set <code>KRONK_LIB_PATH</code> to a different triple folder (and restart) to switch active install. See chapter 2.3 for <code>KRONK_LIB_PATH</code> semantics and the install-management commands.</p>
           <p><strong>Custom Base Path</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --base-path=/data/kronk`}</code></pre>
           <h3 id="712-complete-example">7.12 Complete Example</h3>
@@ -4793,7 +4819,7 @@ response = client.chat.completions.create(
             <li>Click <strong>Pull Libraries</strong></li>
             <li>Wait for the download to complete</li>
           </ol>
-          <p>The BUI auto-detects your platform (OS, architecture, GPU) and downloads the appropriate binaries to <code>~/.kronk/libraries/</code>.</p>
+          <p>The BUI auto-detects your platform (OS, architecture, GPU) and downloads the appropriate binaries to <code>~/.kronk/libraries/&lt;os&gt;/&lt;arch&gt;/&lt;processor&gt;/</code> (for example <code>~/.kronk/libraries/darwin/arm64/metal/</code>). Each <code>(arch, os, processor)</code> triple lives in its own folder.</p>
           <p><strong>Override Detection:</strong></p>
           <p>If auto-detection is incorrect, you can specify:</p>
           <ul>
@@ -4801,6 +4827,12 @@ response = client.chat.completions.create(
             <li>Architecture (amd64, arm64)</li>
             <li>Operating system</li>
           </ul>
+          <p><strong>Library Installs panel:</strong></p>
+          <p>Below the active-install pull controls, the same page exposes a <strong>Library Installs</strong> section. It lets you install bundles for triples other than the current machine's detected one — useful for prepping a shared filesystem or staging a target host. Each install lands in its own folder under the libraries root and does not touch the active install.</p>
+          <p>The panel renders three filtered selectors (OS, Architecture, Processor) populated from the supported <code>(arch, os, processor)</code> matrix returned by <code>GET /v1/libs/combinations</code>, optional version pinning, and a table of currently-installed bundles with a Remove action per row.</p>
+          <p>To make any installed bundle the active one at runtime, export <code>KRONK_LIB_PATH</code> to its triple folder and restart the server. The BUI does not switch the active install in-process; libraries are not hot-reloaded.</p>
+          <pre className="code-block"><code className="language-shell">{`export KRONK_LIB_PATH=~/.kronk/libraries/linux/amd64/cuda
+kronk server start`}</code></pre>
           <h3 id="123-browsing-the-catalog">12.3 Browsing the Catalog</h3>
           <p>Navigate to the <strong>Catalog &gt; List</strong> page to browse available models.</p>
           <p><strong>Filter Sidebar:</strong></p>
@@ -5585,7 +5617,7 @@ make mcp-server`}</code></pre>
           <p><strong>Solution:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk libs --local`}</code></pre>
           <p>Or download via the BUI Libraries page.</p>
-          <p>Kronk auto-detects your GPU hardware and selects the correct library variant. If auto-detection fails, set the processor explicitly:</p>
+          <p>Kronk auto-detects your GPU hardware and selects the correct library bundle. If auto-detection fails, set the processor explicitly:</p>
           <pre className="code-block"><code className="language-shell">{`# For Mac with Apple Silicon
 KRONK_PROCESSOR=metal kronk libs --local
 
@@ -5605,7 +5637,7 @@ KRONK_PROCESSOR=cpu kronk libs --local`}</code></pre>
           <p>Kronk tracks the latest llama.cpp release and upgrades automatically when you run <code>kronk libs</code>. Occasionally a new llama.cpp release introduces a regression — crashes during model loading, decode errors, or degraded output quality. When this happens, pin the library to a known-good version using <code>KRONK_LIB_VERSION</code>.</p>
           <p><strong>Pin to a specific version:</strong></p>
           <pre className="code-block"><code className="language-shell">{`# Install a specific version
-kronk libs --lib-version=b5490 --local
+kronk libs --version=b5490 --local
 
 # Or use the environment variable
 KRONK_LIB_VERSION=b5490 kronk libs --local`}</code></pre>
@@ -5635,6 +5667,19 @@ kronk devices
 
 # Re-install matching libraries
 kronk libs --local`}</code></pre>
+          <p><strong>Problem: "unable to load library" pointing at the wrong folder</strong></p>
+          <p>Library bundles now live at <code>&lt;base&gt;/libraries/&lt;os&gt;/&lt;arch&gt;/&lt;processor&gt;/</code>, one folder per <code>(arch, os, processor)</code> triple. If <code>dlopen</code> reports a path like <code>&lt;base&gt;/libraries/libllama.dylib</code> (libraries directly under the root), you have an installation from before the per-triple layout. The SDK migrates the legacy layout into the correct triple folder automatically on first call to <code>libs.New()</code>/<code>libs.Path()</code>. If migration fails, just re-run:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk libs --local`}</code></pre>
+          <p>The new install lands at <code>&lt;base&gt;/libraries/&lt;os&gt;/&lt;arch&gt;/&lt;processor&gt;/</code> and the runtime resolves to the same folder.</p>
+          <p><strong>Problem: Server is loading the wrong install</strong></p>
+          <p>To switch the active install (for example to a previously downloaded CUDA or CPU bundle), point <code>KRONK_LIB_PATH</code> at its triple folder and restart the server. Libraries are not hot-reloaded.</p>
+          <pre className="code-block"><code className="language-shell">{`# List installed bundles
+kronk libs --list-installs
+
+# Switch active install
+export KRONK_LIB_PATH=~/.kronk/libraries/linux/amd64/cuda
+kronk server start`}</code></pre>
+          <p>If <code>KRONK_LIB_PATH</code> points at a directory containing <code>version.json</code>, Kronk uses it as-is. If it points at a non-empty directory without a <code>version.json</code>, Kronk treats it as a read-only user-managed build and will refuse mutating operations against it (errors will mention <code>read-only</code> or <code>ErrReadOnly</code>).</p>
           <h3 id="162-model-loading-failures">16.2 Model Loading Failures</h3>
           <p><strong>Error: "unable to load model"</strong></p>
           <p>The model file is missing, corrupted, or incompatible.</p>

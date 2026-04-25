@@ -42,6 +42,21 @@ EXAMPLES
   # Download specific version
   kronk libs --local --version=b7406
 
+  # List supported (arch, os, processor) combinations
+  kronk libs --list-combinations
+
+  # Install a Linux/CUDA bundle alongside the active install
+  kronk libs --install --arch=amd64 --os=linux --processor=cuda
+
+  # List installed library bundles
+  kronk libs --list-installs
+
+  # Remove an install
+  kronk libs --remove-install --arch=amd64 --os=linux --processor=cuda
+
+  # Switch to a previously installed bundle by setting KRONK_LIB_PATH
+  export KRONK_LIB_PATH=~/.kronk/libraries/linux/amd64/cuda
+
 ENVIRONMENT VARIABLES (Local Mode)
 
   KRONK_ARCH       - Architecture: amd64, arm64
@@ -56,6 +71,14 @@ func init() {
 	Cmd.Flags().Bool("local", false, "Run without the model server")
 	Cmd.Flags().Bool("no-upgrade", false, "Don't upgrade if libraries are already installed")
 	Cmd.Flags().String("version", "", "Download a specific llama.cpp version instead of latest")
+
+	Cmd.Flags().Bool("install", false, "Install for the supplied --arch/--os/--processor triple (lands in its own folder under the libraries root)")
+	Cmd.Flags().String("arch", "", "Architecture for triple-aware install operations (amd64, arm64)")
+	Cmd.Flags().String("os", "", "Operating system for triple-aware install operations (linux, bookworm, trixie, darwin, windows)")
+	Cmd.Flags().String("processor", "", "Processor for triple-aware install operations (cpu, cuda, metal, rocm, vulkan)")
+	Cmd.Flags().Bool("list-combinations", false, "List supported (arch, os, processor) combinations and exit")
+	Cmd.Flags().Bool("list-installs", false, "List installed library bundles under the libraries root and exit")
+	Cmd.Flags().Bool("remove-install", false, "Remove the install matching --arch/--os/--processor")
 }
 
 func main(cmd *cobra.Command, args []string) {
@@ -70,18 +93,34 @@ func run(cmd *cobra.Command) error {
 	noUpgrade, _ := cmd.Flags().GetBool("no-upgrade")
 	version, _ := cmd.Flags().GetString("version")
 
-	var err error
+	tripleInstall, _ := cmd.Flags().GetBool("install")
+	arch, _ := cmd.Flags().GetString("arch")
+	opSys, _ := cmd.Flags().GetString("os")
+	processor, _ := cmd.Flags().GetString("processor")
+	listCombinations, _ := cmd.Flags().GetBool("list-combinations")
+	listInstalls, _ := cmd.Flags().GetBool("list-installs")
+	removeInstall, _ := cmd.Flags().GetBool("remove-install")
 
-	switch local {
-	case true:
-		err = runLocal(noUpgrade, version)
-	default:
-		err = runWeb(noUpgrade, version)
+	opts := installOpts{
+		arch:      arch,
+		os:        opSys,
+		processor: processor,
+		version:   version,
+		install:   tripleInstall,
+		list:      listInstalls,
+		listCombo: listCombinations,
+		remove:    removeInstall,
 	}
 
-	if err != nil {
-		return err
+	if opts.isInstallOp() {
+		if local {
+			return runInstallLocal(opts)
+		}
+		return runInstallWeb(opts)
 	}
 
-	return nil
+	if local {
+		return runLocal(noUpgrade, version)
+	}
+	return runWeb(noUpgrade, version)
 }

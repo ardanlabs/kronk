@@ -150,9 +150,13 @@ build of the llama.cpp shared libraries, so the processor must be resolved
 switching processors requires re-downloading them.
 
 This means processor selection happens early — before `libs.New()` in the SDK,
-and before `kronk libs install` or any server startup on the CLI. Everything
-downstream (model loading, layer offloading, KV cache placement) depends on
-having the correct libraries for your hardware.
+and before `kronk libs` or any server startup on the CLI. Each install lands
+in its own per-triple folder under the libraries root
+(`<base>/libraries/<os>/<arch>/<processor>/`), so multiple processor bundles
+can coexist; switch active install at runtime by exporting `KRONK_LIB_PATH` to
+that folder and restarting the server. Everything downstream (model loading,
+layer offloading, KV cache placement) depends on having the correct libraries
+for your hardware.
 
 #### How Processor Selection Works
 

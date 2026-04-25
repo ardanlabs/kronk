@@ -131,14 +131,18 @@ Open http://localhost:11435 in your browser and navigate to the Libraries page.
 kronk libs --local
 ```
 
-This downloads libraries to `~/.kronk/libraries/` using auto-detected settings.
+This downloads libraries to `~/.kronk/libraries/<os>/<arch>/<processor>/`
+using auto-detected settings (for example
+`~/.kronk/libraries/darwin/arm64/metal/`). Each `(arch, os, processor)`
+triple lives in its own folder so multiple bundles can coexist on the same
+machine.
 
 **Pinning a Specific Library Version**
 
 Sometimes there are breaking changes to llama.cpp that require a matching version of yzma and Kronk. To ensure stability, you can install a specific library version:
 
 ```shell
-kronk libs --lib-version=b8864 --local
+kronk libs --version=b8864 --local
 ```
 
 Or via environment variable:
@@ -159,17 +163,65 @@ If you experience unexpected behavior after a library upgrade, pin the version t
 **Environment Variables for Library Installation**
 
 ```
-KRONK_LIB_PATH  - Library directory (default: `~/.kronk/libraries`)
+KRONK_LIB_PATH  - Library directory. See "KRONK_LIB_PATH semantics" below.
 KRONK_PROCESSOR - `cpu`, `cuda`, `metal`, `rocm`, or `vulkan` (default: `cpu`)
 KRONK_ARCH      - Architecture override: `amd64`, `arm64`
 KRONK_OS        - OS override: `linux`, `darwin`, `windows`
 ```
+
+**KRONK_LIB_PATH semantics**
+
+`KRONK_LIB_PATH` is interpreted in one of three ways:
+
+1. _Unset_ — the runtime resolves
+   `<base>/libraries/<os>/<arch>/<processor>/` based on the detected (or
+   `KRONK_*`-overridden) triple.
+2. _Points at a directory containing a `version.json`_ — used as-is. This
+   is the form to set when you want to switch the active install to a
+   previously-downloaded triple folder. Example:
+
+   ```shell
+   export KRONK_LIB_PATH=~/.kronk/libraries/linux/amd64/cuda
+   ```
+
+3. _Points at a non-empty directory without a `version.json`_ — treated as
+   a user-managed read-only build. Kronk will load libraries from it but
+   never write to it; mutating CLI/HTTP operations against it return an
+   error.
+
+Switching the active install requires a server restart; libraries are not
+hot-reloaded.
 
 **Example: Install CUDA Libraries**
 
 ```shell
 KRONK_PROCESSOR=cuda kronk libs --local
 ```
+
+**Installing for Another Triple**
+
+You can also install a bundle for a triple other than the current
+machine's detected one — useful for prepping a shared filesystem or a
+target host. The install lands in its own folder under the libraries
+root and does not touch the active install:
+
+```shell
+# List every supported (arch, os, processor) combination
+kronk libs --list-combinations
+
+# Install the Linux/CUDA bundle alongside whatever is already active
+kronk libs --install --arch=amd64 --os=linux --processor=cuda --local
+
+# List installed bundles
+kronk libs --list-installs
+
+# Remove an install
+kronk libs --remove-install --arch=amd64 --os=linux --processor=cuda --local
+```
+
+In web mode (the default — no `--local`) the same commands are dispatched
+through the running server. Activate any installed bundle by exporting
+`KRONK_LIB_PATH` to its folder and restarting the server.
 
 ### 2.4 Downloading Your First Model
 

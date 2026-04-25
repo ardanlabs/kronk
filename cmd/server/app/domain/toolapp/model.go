@@ -1300,3 +1300,89 @@ func (d DevicesResponse) Encode() ([]byte, string, error) {
 	data, err := json.Marshal(d)
 	return data, "application/json", err
 }
+
+// =============================================================================
+
+// CombinationResponse describes a single supported (architecture, operating
+// system, processor) triple that the upstream llama.cpp build matrix
+// publishes. It mirrors libs.Combination so the BUI can populate bundle
+// download selectors without needing a copy of the upstream constants.
+type CombinationResponse struct {
+	Arch      string `json:"arch"`
+	OS        string `json:"os"`
+	Processor string `json:"processor"`
+}
+
+// CombinationsResponse is the list of supported combinations returned by the
+// /v1/libs/combinations endpoint.
+type CombinationsResponse struct {
+	Combinations []CombinationResponse `json:"combinations"`
+}
+
+// Encode implements the encoder interface.
+func (app CombinationsResponse) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(app)
+	return data, "application/json", err
+}
+
+func toAppCombinations(in []libs.Combination) CombinationsResponse {
+	out := CombinationsResponse{
+		Combinations: make([]CombinationResponse, len(in)),
+	}
+
+	for i, c := range in {
+		out.Combinations[i] = CombinationResponse{Arch: c.Arch, OS: c.OS, Processor: c.Processor}
+	}
+
+	return out
+}
+
+// BundleTagResponse describes a single installed library bundle.
+type BundleTagResponse struct {
+	Version   string `json:"version"`
+	Arch      string `json:"arch"`
+	OS        string `json:"os"`
+	Processor string `json:"processor"`
+}
+
+// BundleListResponse is the list of installed bundles returned by the
+// /v1/libs/installs endpoint.
+type BundleListResponse struct {
+	Bundles []BundleTagResponse `json:"bundles"`
+}
+
+// Encode implements the encoder interface.
+func (app BundleListResponse) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(app)
+	return data, "application/json", err
+}
+
+func toAppBundleList(in []libs.VersionTag) BundleListResponse {
+	out := BundleListResponse{Bundles: make([]BundleTagResponse, len(in))}
+
+	for i, t := range in {
+		out.Bundles[i] = BundleTagResponse{
+			Version:   t.Version,
+			Arch:      t.Arch,
+			OS:        t.OS,
+			Processor: t.Processor,
+		}
+	}
+
+	return out
+}
+
+// BundleActionResponse is returned by mutating bundle endpoints (remove)
+// to confirm which bundle was acted upon.
+type BundleActionResponse struct {
+	Status    string `json:"status"`
+	Arch      string `json:"arch"`
+	OS        string `json:"os"`
+	Processor string `json:"processor"`
+}
+
+// Encode implements the encoder interface.
+func (app BundleActionResponse) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(app)
+	return data, "application/json", err
+}

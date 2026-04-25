@@ -50,7 +50,7 @@ const menuStructure: MenuCategory[] = [
   {
     id: 'libs',
     label: 'Libs',
-    items: [{ page: 'libs-pull', label: 'Pull' }],
+    items: [{ page: 'libs-pull', label: 'Manage' }],
   },
   {
     id: 'security',

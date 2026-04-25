@@ -167,7 +167,7 @@ underscores replacing hyphens.
 | Flag                 | Environment Variable     | Default    | Description                                               |
 | -------------------- | ------------------------ | ---------- | --------------------------------------------------------- |
 | `--base-path`        | `KRONK_BASE_PATH`        | `~/.kronk` | Base directory for all Kronk data                         |
-| `--lib-path`         | `KRONK_LIB_PATH`         | _(empty)_  | Path to llama library directory                           |
+| `--lib-path`         | `KRONK_LIB_PATH`         | _(empty)_  | Override path Kronk loads llama.cpp libraries from. Empty resolves the default per-triple folder under the libraries root (`<base>/libraries/<os>/<arch>/<processor>/`). A directory containing a `version.json` is used as-is. A non-empty directory without a `version.json` is treated as a read-only user-managed build. See chapter 2.3 for full semantics. |
 | `--lib-version`      | `KRONK_LIB_VERSION`      | _(empty)_  | Specific llama library version                            |
 | `--arch`             | `KRONK_ARCH`             | _(auto)_   | Architecture override (`amd64`, `arm64`)                  |
 | `--os`               | `KRONK_OS`               | _(auto)_   | OS override (`linux`, `darwin`, `windows`)                |
@@ -434,11 +434,20 @@ Default data locations:
 
 ```
 ~/.kronk/
-├── libraries/     # llama.cpp libraries
-├── models/        # Downloaded models
-├── templates/     # Chat templates
-└── catalog/       # Catalog cache
+├── libraries/                          # llama.cpp libraries (one folder per triple)
+│   └── <os>/<arch>/<processor>/        # e.g. darwin/arm64/metal/, linux/amd64/cuda/
+│       ├── libllama.so / .dylib / .dll
+│       └── version.json
+├── models/                             # Downloaded models
+├── templates/                          # Chat templates
+└── catalog/                            # Catalog cache
 ```
+
+Each `(arch, os, processor)` install lives in its own folder. The runtime
+loads the folder for the detected triple by default; set `KRONK_LIB_PATH`
+to a different triple folder (and restart) to switch active install. See
+chapter 2.3 for `KRONK_LIB_PATH` semantics and the install-management
+commands.
 
 **Custom Base Path**
 
