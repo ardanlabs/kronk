@@ -9,7 +9,7 @@
 #   context-window: 8192                 # Max tokens model can process (default: 8192)
 #   devices: [CUDA0, CUDA1]              # Devices to use (run `kronk devices` to list)
 #   flash-attention: enabled             # Flash Attention: enabled, disabled, auto
-#   incremental-cache: false             # Incremental message caching for agentic workflows (Cline, OpenCode)
+#   incremental-cache: true              # Incremental message caching (default: true, set false to disable)
 #   main-gpu: 0                          # Primary GPU index for single-GPU mode
 #   max-cache-sessions: 1                # Max concurrent IMC sessions/users (default: 1, each gets own cache)
 #   nbatch: 2048                         # Logical batch size (default: 2048)

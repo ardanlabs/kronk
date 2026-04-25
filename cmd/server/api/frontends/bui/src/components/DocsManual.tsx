@@ -360,7 +360,123 @@ BUI: http://localhost:11435`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`kronk server start -d`}</code></pre>
           <p><strong>Stopping the Server</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server stop`}</code></pre>
-          <h3 id="26-verifying-the-installation">2.6 Verifying the Installation</h3>
+          <h3 id="26-model-configuration-file">2.6 Model Configuration File</h3>
+          <p>When Kronk starts the server for the first time, it automatically installs a default <code>model_config.yaml</code> file in the <code>~/.kronk/</code> directory. This file controls how each model behaves when loaded by the server — context window size, batch processing, caching, sampling parameters, and more.</p>
+          <p><strong>How It Works</strong></p>
+          <p>The default configuration is embedded inside the Kronk CLI binary. On first server start, if <code>~/.kronk/model_config.yaml</code> does not already exist, Kronk writes the embedded default to that path. Once the file exists, Kronk never overwrites it — your edits are preserved across upgrades.</p>
+          <p>The server logs the path it's using on startup:</p>
+          <pre className="code-block"><code>{`startup  status=model config  path=/Users/you/.kronk/model_config.yaml`}</code></pre>
+          <p><strong>File Structure</strong></p>
+          <p>The file is a YAML document where each top-level key is a model ID (or a model ID with a config variant suffix). Under each key you set the configuration options for that model. Here's a simplified example:</p>
+          <pre className="code-block"><code className="language-yaml">{`Qwen3-8B-Q8_0:
+  context-window: 32768
+  sampling-parameters:
+    temperature: 0.7
+    top_p: 0.8
+    top_k: 20
+
+gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT:
+  context-window: 131072
+  nseq-max: 2
+  sampling-parameters:
+    temperature: 1.0
+    top_k: 64
+    top_p: 0.95
+
+Qwen3-8B-Q8_0/YARN:
+  context-window: 131072
+  rope-scaling-type: yarn
+  yarn-orig-ctx: 32768`}</code></pre>
+          <p>The <code>/YARN</code> suffix is a <strong>config variant</strong> — it lets you define multiple configurations for the same model. When making an API request, use the full variant name (e.g., <code>Qwen3-8B-Q8_0/YARN</code>) as the <code>model</code> field to select that configuration.</p>
+          <p><strong>Available Options</strong></p>
+          <p>The file includes a commented reference at the top listing every option. Here are the most commonly used:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Option</th>
+                <th>Description</th>
+                <th>Default</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>context-window</code></td>
+                <td>Max tokens the model can process per request</td>
+                <td>8192</td>
+              </tr>
+              <tr>
+                <td><code>ngpu-layers</code></td>
+                <td>GPU layers to offload (0 = all, -1 = none)</td>
+                <td>0</td>
+              </tr>
+              <tr>
+                <td><code>flash-attention</code></td>
+                <td>Flash Attention mode: <code>enabled</code>, <code>disabled</code>, <code>auto</code></td>
+                <td>auto</td>
+              </tr>
+              <tr>
+                <td><code>incremental-cache</code></td>
+                <td>Enable IMC for agentic workflows</td>
+                <td>true</td>
+              </tr>
+              <tr>
+                <td><code>nseq-max</code></td>
+                <td>Max parallel sequences for batched inference</td>
+                <td>0</td>
+              </tr>
+              <tr>
+                <td><code>nbatch</code></td>
+                <td>Logical batch size</td>
+                <td>2048</td>
+              </tr>
+              <tr>
+                <td><code>nubatch</code></td>
+                <td>Physical batch size for prompt ingestion</td>
+                <td>512</td>
+              </tr>
+              <tr>
+                <td><code>cache-type-k</code></td>
+                <td>KV cache key quantization: <code>f16</code>, <code>q8_0</code>, <code>q4_0</code>, etc.</td>
+                <td>—</td>
+              </tr>
+              <tr>
+                <td><code>cache-type-v</code></td>
+                <td>KV cache value quantization</td>
+                <td>—</td>
+              </tr>
+              <tr>
+                <td><code>sampling-parameters</code></td>
+                <td>Nested block for temperature, top_p, top_k, min_p</td>
+                <td>—</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>For the complete list of options and detailed explanations, see <a href="chapter-03-model-configuration.md">Chapter 3: Model Configuration</a>.</p>
+          <p><strong>Editing the File</strong></p>
+          <p>Open the file in any text editor:</p>
+          <pre className="code-block"><code className="language-shell">{`# macOS
+open ~/.kronk/model_config.yaml
+
+# Linux
+nano ~/.kronk/model_config.yaml`}</code></pre>
+          <p>After editing, restart the server to apply changes:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk server stop
+kronk server start`}</code></pre>
+          <p><strong>Configuration Priority</strong></p>
+          <p>When the server loads a model, configuration is resolved through three tiers (highest priority wins):</p>
+          <ol>
+            <li><strong>model_config.yaml</strong> — Your local overrides (highest priority)</li>
+            <li><strong>Catalog defaults</strong> — Settings from the model's catalog entry</li>
+            <li><strong>Built-in defaults</strong> — Fallback values from the model package</li>
+          </ol>
+          <p>This means any option you set in <code>model_config.yaml</code> overrides what the catalog provides for that model.</p>
+          <p><strong>Tips</strong></p>
+          <ul>
+            <li>You can configure models that aren't in the catalog — just use the model's file name (without <code>.gguf</code>) as the key.</li>
+            <li>Use YAML anchors (<code>&name</code> and <code>&lt;&lt;: *name</code>) to share common settings between variants. The default file includes examples of this pattern.</li>
+            <li>The <code>--model-config</code> server flag lets you point to an alternative config file for testing without modifying your main one.</li>
+          </ul>
+          <h3 id="27-verifying-the-installation">2.7 Verifying the Installation</h3>
           <p><strong>Test via curl</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/models`}</code></pre>
           <p>You should see a list of available models.</p>
@@ -375,7 +491,7 @@ BUI: http://localhost:11435`}</code></pre>
   }'`}</code></pre>
           <p><strong>Test via BUI</strong></p>
           <p>Open <code>http://localhost:11435</code> in your browser and navigate to the <code>Apps/Chat</code> app. Select the model you want to try and chat away.</p>
-          <h3 id="27-quick-start-summary">2.7 Quick Start Summary</h3>
+          <h3 id="28-quick-start-summary">2.8 Quick Start Summary</h3>
           <pre className="code-block"><code className="language-shell">{`# 1. Install Kronk
 go install github.com/ardanlabs/kronk/cmd/kronk@latest
 
@@ -392,7 +508,7 @@ kronk catalog pull Qwen3-0.6B-Q8_0 --local
 curl http://localhost:11435/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{"model": "Qwen3-0.6B-Q8_0", "messages": [{"role": "user", "content": "Hello!"}]}'`}</code></pre>
-          <h3 id="28-nixos-setup">2.8 NixOS Setup</h3>
+          <h3 id="29-nixos-setup">2.9 NixOS Setup</h3>
           <p>NixOS does not follow the Filesystem Hierarchy Standard (FHS), so shared libraries and binaries cannot be found in standard paths like <code>/usr/lib</code>. Kronk requires llama.cpp shared libraries at runtime, which means on NixOS you need to provide them through Nix rather than using the built-in <code>kronk libs</code> downloader.</p>
           <p>A <code>flake.nix</code> is provided in <code>zarf/nix/</code> with dev shells for development and build packages for producing a standalone <code>kronk</code> binary, each per GPU backend.</p>
           <p><strong>Prerequisites</strong></p>
@@ -2157,7 +2273,7 @@ Step 4 — Total VRAM:
           <h3 id="51-overview">5.1 Overview</h3>
           <p>When processing a chat request, the model must compute attention for every token in the conversation. Without caching, the entire prompt is prefilled on every request — even tokens the model has already seen.</p>
           <p><em>Note: Prefill is the phase where the model processes all input tokens (system prompt, conversation history, and the new message) before it begins generating a response. This is the most computationally expensive part of a request, and its cost grows with the number of input tokens.</em></p>
-          <p>Kronk provides the Incremental Message Cache (IMC) to reduce redundant prefill work. IMC maintains logical sessions — one per conversation branch — and caches the full message history so only the new message needs to be prefilled. All sessions (text and media) externalize their cached KV state to RAM after each request and restore it into any available slot on the next request. <code>StateSeqGetData</code> captures the raw KV bytes regardless of whether they originated from text tokens or media embeddings.</p>
+          <p>Kronk provides the Incremental Message Cache (IMC) to reduce redundant prefill work. <strong>IMC is enabled by default for all models.</strong> IMC maintains logical sessions — one per conversation branch — and caches the full message history so only the new message needs to be prefilled. All sessions (text and media) externalize their cached KV state to RAM after each request and restore it into any available slot on the next request. <code>StateSeqGetData</code> captures the raw KV bytes regardless of whether they originated from text tokens or media embeddings.</p>
           <pre className="code-block"><code>{`No Caching:
 ┌─────────────────────────────────────────────────────┐
 │ System Prompt │ Message 1 │ Message 2 │ New Message │
@@ -2475,11 +2591,12 @@ New decode:    4 tokens (T9-T12, from divergence point forward)`}</code></pre>
             <li>Server restarts</li>
           </ul>
           <h3 id="56-configuration-reference">5.6 Configuration Reference</h3>
-          <p>IMC is enabled through the model configuration.</p>
-          <pre className="code-block"><code className="language-yaml">{`models:
-  Qwen3-8B-Q8_0:
-    incremental_cache: true
-    cache_min_tokens: 100 # Don't cache if < 100 tokens`}</code></pre>
+          <p>IMC is enabled by default for all models. No configuration is needed to use it. To disable IMC for a specific model, set <code>incremental-cache: false</code> in your <code>model_config.yaml</code>:</p>
+          <pre className="code-block"><code className="language-yaml">{`Qwen3-8B-Q8_0:
+  incremental-cache: false   # Disable IMC for this model`}</code></pre>
+          <p>You can also tune the minimum cache threshold:</p>
+          <pre className="code-block"><code className="language-yaml">{`Qwen3-8B-Q8_0:
+  cache-min-tokens: 100   # Don't cache if < 100 tokens (default: 100)`}</code></pre>
           <p><strong>cache_min_tokens</strong></p>
           <p>Minimum common prefix length required for token-level partial prefix matching. If no session's cached tokens share at least this many tokens with the incoming request, the fallback is skipped and the cache is rebuilt from scratch.</p>
           <p>Default: 100 tokens</p>
@@ -6819,9 +6936,10 @@ batching = true`}</code></pre>
                 <li><a href="#23-installing-libraries" className={activeSection === '23-installing-libraries' ? 'active' : ''}>2.3 Installing Libraries</a></li>
                 <li><a href="#24-downloading-your-first-model" className={activeSection === '24-downloading-your-first-model' ? 'active' : ''}>2.4 Downloading Your First Model</a></li>
                 <li><a href="#25-starting-the-server" className={activeSection === '25-starting-the-server' ? 'active' : ''}>2.5 Starting the Server</a></li>
-                <li><a href="#26-verifying-the-installation" className={activeSection === '26-verifying-the-installation' ? 'active' : ''}>2.6 Verifying the Installation</a></li>
-                <li><a href="#27-quick-start-summary" className={activeSection === '27-quick-start-summary' ? 'active' : ''}>2.7 Quick Start Summary</a></li>
-                <li><a href="#28-nixos-setup" className={activeSection === '28-nixos-setup' ? 'active' : ''}>2.8 NixOS Setup</a></li>
+                <li><a href="#26-model-configuration-file" className={activeSection === '26-model-configuration-file' ? 'active' : ''}>2.6 Model Configuration File</a></li>
+                <li><a href="#27-verifying-the-installation" className={activeSection === '27-verifying-the-installation' ? 'active' : ''}>2.7 Verifying the Installation</a></li>
+                <li><a href="#28-quick-start-summary" className={activeSection === '28-quick-start-summary' ? 'active' : ''}>2.8 Quick Start Summary</a></li>
+                <li><a href="#29-nixos-setup" className={activeSection === '29-nixos-setup' ? 'active' : ''}>2.9 NixOS Setup</a></li>
               </ul>
             </div>
             <div className="doc-index-section">

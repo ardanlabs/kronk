@@ -32,7 +32,7 @@ expensive part of a request, and its cost grows with the number of
 input tokens._
 
 Kronk provides the Incremental Message Cache (IMC) to reduce redundant
-prefill work. IMC maintains logical sessions — one per conversation
+prefill work. **IMC is enabled by default for all models.** IMC maintains logical sessions — one per conversation
 branch — and caches the full message history so only the new message
 needs to be prefilled. All sessions (text and media) externalize their
 cached KV state to RAM after each request and restore it into any
@@ -487,13 +487,18 @@ Caches are cleared when:
 
 ### 5.6 Configuration Reference
 
-IMC is enabled through the model configuration.
+IMC is enabled by default for all models. No configuration is needed to use it. To disable IMC for a specific model, set `incremental-cache: false` in your `model_config.yaml`:
 
 ```yaml
-models:
-  Qwen3-8B-Q8_0:
-    incremental_cache: true
-    cache_min_tokens: 100 # Don't cache if < 100 tokens
+Qwen3-8B-Q8_0:
+  incremental-cache: false   # Disable IMC for this model
+```
+
+You can also tune the minimum cache threshold:
+
+```yaml
+Qwen3-8B-Q8_0:
+  cache-min-tokens: 100   # Don't cache if < 100 tokens (default: 100)
 ```
 
 **cache_min_tokens**
