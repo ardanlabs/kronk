@@ -62,5 +62,8 @@
             "type": "remote",
             "url": "http://localhost:9000/mcp"
         }
-    }
+    },
+    "plugin": [
+        "opencode-session-handoff"
+    ]
 }
