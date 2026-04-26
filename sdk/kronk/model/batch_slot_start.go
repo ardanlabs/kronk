@@ -248,9 +248,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			// Decode extension tokens into the slot's sequence.
 			imcDecodeStart := time.Now()
 
-			// isFinal=true: this is the final decode of the cache build/extend.
-			// The next thing the caller does is snapshot the KV state.
-			if err := e.model.decodeTokensIntoCache(job.ctx, job.imcNewCacheTokens, s.seqID, int(cacheIdx), true); err != nil {
+			if err := e.model.decodeTokensIntoCache(job.ctx, job.imcNewCacheTokens, s.seqID, int(cacheIdx)); err != nil {
 				e.model.decodeMu.Lock()
 				llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
 				e.model.decodeMu.Unlock()

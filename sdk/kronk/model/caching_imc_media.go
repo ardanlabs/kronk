@@ -117,10 +117,7 @@ func (m *Model) decodeMediaIntoCache(ctx context.Context, cacheD D, seqID llama.
 				}
 				pos += nDecoded
 			default:
-				// isFinal=false: more chunks (text or media) may follow in this
-				// media cache build. The media loop drives its own end-of-build
-				// sequencing.
-				if err := m.decodeTokensIntoCache(ctx, tokens, seqID, pos, false); err != nil {
+				if err := m.decodeTokensIntoCache(ctx, tokens, seqID, pos); err != nil {
 					return 0, nil, fmt.Errorf("imc-media-cache: text chunk %d: %w", i, err)
 				}
 				pos += len(tokens)
