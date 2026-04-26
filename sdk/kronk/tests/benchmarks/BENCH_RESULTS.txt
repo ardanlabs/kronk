@@ -35,3 +35,38 @@ Benchmark Matrix:
 
 🟢 Better   🔴 Worse   ⚪ Neutral
 
+2026-04-26     : dev
+llama.cpp      : b8937
+--------------------------------------------------------------------------------
+goos: darwin
+goarch: arm64
+cpu: Apple M5 Max
+
+Dense NonCaching  :    46505497625 ns/op ⚪  new      15410741 B/op ⚪  new   47344 allocs/op ⚪  new
+Dense IMC         :    12729809986 ns/op ⚪  new   22532774578 B/op ⚪  new   50833 allocs/op ⚪  new
+
+MoE NonCaching    :   118138395194 ns/op ⚪  new       8681885 B/op ⚪  new   69421 allocs/op ⚪  new
+MoE IMC           :    27567692833 ns/op ⚪  new   46779733146 B/op ⚪  new   72177 allocs/op ⚪  new
+
+Hybrid NonCaching :   103946375639 ns/op ⚪  new      8984472 B/op  ⚪  new   47756 allocs/op ⚪  new
+Hybrid IMC        :    26467337750 ns/op ⚪  new   5150030317 B/op  ⚪  new   51617 allocs/op ⚪  new
+
+--------------------------------------------------------------------------------
+Dense NonCaching          Dense IMC                 
+181.40 tok/s    ⚪  new   180.00 tok/s    ⚪  new
+  2944 ttft-ms  ⚪  new      488 ttft-ms  ⚪  new
+ 49455 total-ms ⚪  new    12576 total-ms ⚪  new
+
+MoE NonCaching            MoE IMC                   
+ 82.74 tok/s    ⚪  new    80.76 tok/s    ⚪  new
+  7351 ttft-ms  ⚪  new     1023 ttft-ms  ⚪  new
+121863 total-ms ⚪  new    27236 total-ms ⚪  new
+
+Hybrid NonCaching         Hybrid IMC                
+ 62.26 tok/s    ⚪  new    61.59 tok/s    ⚪  new
+  6092 ttft-ms  ⚪  new      726 ttft-ms  ⚪  new
+106804 total-ms ⚪  new    26474 total-ms ⚪  new
+
+
+================================================================================
+
