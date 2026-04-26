@@ -3,7 +3,7 @@
     "enabled_providers": [
         "kronk"
     ],
-    "model": "gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT",
+    "model": "Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT",
     "provider": {
         "kronk": {
             "name": "Kronk (local)",

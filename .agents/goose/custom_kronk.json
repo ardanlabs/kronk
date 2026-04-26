@@ -7,7 +7,7 @@
     "base_url": "http://localhost:11435/v1",
     "models": [
         {
-            "name": "gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT",
+            "name": "Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT",
             "context_limit": 128000,
             "input_token_cost": null,
             "output_token_cost": null,

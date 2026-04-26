@@ -20,6 +20,10 @@ import (
 const (
 	versionFile = "version.json"
 	localFolder = "libraries"
+
+	// defaultVersion is the well-known working version of llama.cpp used
+	// when no explicit version is provided and AllowUpgrade is false.
+	defaultVersion = "b8937"
 )
 
 // ErrReadOnly is returned by mutating operations on a Libs instance whose
@@ -109,7 +113,7 @@ func WithAllowUpgrade(allow bool) Option {
 	}
 }
 
-// WithVersion sets a specific version to download instead of latest.
+// WithVersion sets a specific version to download instead of the default.
 func WithVersion(version string) Option {
 	return func(o *Options) {
 		o.Version = version
@@ -138,6 +142,8 @@ type Libs struct {
 	version      string
 	readOnly     bool
 	AllowUpgrade bool
+	testMode     bool
+	testLatest   string
 }
 
 // New constructs a Libs with system defaults and applies any provided
@@ -148,7 +154,7 @@ type Libs struct {
 // is found.
 func New(opts ...Option) (*Libs, error) {
 	options := Options{
-		AllowUpgrade: true,
+		AllowUpgrade: false,
 	}
 
 	for _, opt := range opts {
@@ -249,13 +255,13 @@ func (lib *Libs) ReadOnly() bool {
 	return lib.readOnly
 }
 
-// SetVersion sets the version to download. An empty string means use latest.
+// SetVersion sets the version to download. An empty string means use the default.
 func (lib *Libs) SetVersion(version string) {
 	lib.version = version
 }
 
 // Download performs a complete workflow for downloading and installing
-// the latest version of llama.cpp. See WithVersion to pin a specific
+// the default version of llama.cpp. See WithVersion to pin a specific
 // version.
 func (lib *Libs) Download(ctx context.Context, log Logger) (VersionTag, error) {
 	if lib.readOnly {
@@ -295,10 +301,12 @@ func (lib *Libs) Download(ctx context.Context, log Logger) (VersionTag, error) {
 
 	var tag VersionTag
 
-	if lib.version != "" {
+	switch {
+	case lib.version != "":
 		tag, _ = lib.InstalledVersion()
 		tag.Latest = lib.version
-	} else {
+
+	case lib.AllowUpgrade:
 		var err error
 		tag, err = lib.VersionInformation()
 		if err != nil {
@@ -309,6 +317,10 @@ func (lib *Libs) Download(ctx context.Context, log Logger) (VersionTag, error) {
 			log(ctx, "download-libraries: unable to check latest version, using installed version", "arch", lib.arch, "os", lib.os, "processor", lib.processor, "latest", tag.Latest, "current", tag.Version)
 			return tag, nil
 		}
+
+	default:
+		tag, _ = lib.InstalledVersion()
+		tag.Latest = defaultVersion
 	}
 
 	log(ctx, "download-libraries: check llama.cpp installation", "arch", lib.arch, "os", lib.os, "processor", lib.processor, "latest", tag.Latest, "current", tag.Version)
@@ -371,6 +383,11 @@ func ReadVersionFile(path string) (VersionTag, error) {
 // published on GitHub and the current installed version.
 func (lib *Libs) VersionInformation() (VersionTag, error) {
 	tag, _ := lib.InstalledVersion()
+
+	if lib.testMode {
+		tag.Latest = lib.testLatest
+		return tag, nil
+	}
 
 	version, err := download.LlamaLatestVersion()
 	if err != nil {
@@ -450,8 +467,8 @@ func (lib *Libs) downloadInto(ctx context.Context, log Logger, path string, arch
 // libraries Root. This is the triple-aware entry point for installing
 // llama.cpp bundles for platforms other than the active one.
 //
-// If version is empty, the latest published version reported by
-// VersionInformation is used. If the supplied triple is not part of
+// If version is empty, the default version is used. If the supplied
+// triple is not part of triple is not part of
 // SupportedCombinations the call returns an error.
 func (lib *Libs) DownloadFor(ctx context.Context, log Logger, arch string, opSys string, processor string, version string) (VersionTag, error) {
 	if lib.readOnly {
@@ -467,11 +484,7 @@ func (lib *Libs) DownloadFor(ctx context.Context, log Logger, arch string, opSys
 	}
 
 	if version == "" {
-		latest, err := download.LlamaLatestVersion()
-		if err != nil {
-			return VersionTag{}, fmt.Errorf("libs: download-for: unable to resolve latest version: %w", err)
-		}
-		version = latest
+		version = defaultVersion
 	}
 
 	return lib.downloadInto(ctx, log, installPathFor(lib.root, a, o, p), a, o, p, version)
