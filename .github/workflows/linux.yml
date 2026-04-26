@@ -50,6 +50,10 @@ jobs:
       - name: Install kronk command
         run: go install ./cmd/kronk
       - name: Install Libs
+        # The default behavior of `kronk libs --local` (no flags) installs
+        # the well-known defaultVersion baked into sdk/tools/libs/libs.go.
+        # Bumping defaultVersion in code rolls CI forward; CI never
+        # silently tracks llama.cpp's latest tag.
         run: |
           mkdir -p $HOME/.kronk/libraries
           kronk libs --local

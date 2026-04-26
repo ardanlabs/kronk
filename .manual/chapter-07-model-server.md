@@ -174,7 +174,7 @@ underscores replacing hyphens.
 | `--processor`        | `KRONK_PROCESSOR`        | _(auto)_   | Processor type (`cpu`, `metal`, `cuda`, `rocm`, `vulkan`) |
 | `--hf-token`         | `KRONK_HF_TOKEN`         | _(empty)_  | Hugging Face API token for gated models                   |
 | _(env var only)_     | `GITHUB_TOKEN`           | _(empty)_  | GitHub token for higher catalog sync rate limits          |
-| `--allow-upgrade`    | `KRONK_ALLOW_UPGRADE`    | `true`     | Allow automatic library upgrades                          |
+| `--allow-upgrade`    | `KRONK_ALLOW_UPGRADE`    | `true`     | Allow automatic library upgrades to the latest llama.cpp release. The server defaults to `true` so a long-running server tracks upstream fixes. The standalone `kronk libs` CLI defaults to `false` (installs the well-known default version) and opts in via `--upgrade`. |
 | `--llama-log`        | `KRONK_LLAMA_LOG`        | `1`        | Llama log level (0=off, 1=on)                             |
 | `--insecure-logging` | `KRONK_INSECURE_LOGGING` | `false`    | Log sensitive data (messages, model config)               |
 

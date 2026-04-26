@@ -16,14 +16,14 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 )
 
-func runWeb(noUpgrade bool, version string) error {
+func runWeb(upgrade bool, version string) error {
 	url, err := client.DefaultURL("/v1/libs/pull")
 	if err != nil {
 		return fmt.Errorf("libs: default: %w", err)
 	}
 
 	q := make(neturl.Values)
-	if !noUpgrade {
+	if upgrade {
 		q.Set("allow-upgrade", "true")
 	}
 	if version != "" {
@@ -57,7 +57,7 @@ func runWeb(noUpgrade bool, version string) error {
 	return nil
 }
 
-func runLocal(noUpgrade bool, version string) error {
+func runLocal(upgrade bool, version string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
@@ -69,7 +69,7 @@ func runLocal(noUpgrade bool, version string) error {
 	libs, err := libs.New(
 		libs.WithLibPath(""),
 		libs.WithVersion(v),
-		libs.WithAllowUpgrade(!noUpgrade),
+		libs.WithAllowUpgrade(upgrade),
 	)
 	if err != nil {
 		return err

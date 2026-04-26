@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { api } from '../services/api';
 import type { VersionResponse, LibsCombination, LibsBundleTag } from '../types';
-import { FieldLabel } from './ParamTooltips';
+import { FieldLabel, ParamTooltip } from './ParamTooltips';
 
 export default function LibsPull() {
   const [pulling, setPulling] = useState(false);
@@ -136,6 +136,7 @@ export default function LibsPull() {
             <label htmlFor="allow-upgrade" style={{ fontSize: '14px', cursor: versionInfo.allow_upgrade ? 'default' : 'pointer' }}>
               Allow Upgrade
             </label>
+            <ParamTooltip text="Controls this server's library upgrade policy. When enabled, the server tracks the latest llama.cpp release; otherwise it stays on the version currently installed. Independent of the standalone `kronk libs` CLI, which has its own --upgrade flag." />
           </div>
         )}
 

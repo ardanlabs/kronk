@@ -20,7 +20,13 @@ export default function DocsCLILibs() {
 
             <div className="doc-section" id="cmd-(default)">
               <h4>(default)</h4>
-              <p className="doc-description">Install or upgrade llama.cpp libraries.</p>
+              <p className="doc-description">
+                Install or upgrade llama.cpp libraries. By default the
+                command installs the <strong>well-known default
+                version</strong> of llama.cpp baked into the SDK; pass{' '}
+                <code>--upgrade</code> to track the latest published
+                release instead.
+              </p>
               <pre className="code-block">
                 <code>kronk libs [flags]</code>
               </pre>
@@ -37,12 +43,12 @@ export default function DocsCLILibs() {
                     <td>Run without the model server</td>
                   </tr>
                   <tr>
-                    <td><code>--no-upgrade</code></td>
-                    <td>Don't upgrade if libraries are already installed</td>
+                    <td><code>--upgrade</code></td>
+                    <td>Track the latest llama.cpp release instead of the well-known default version (default: <code>false</code>)</td>
                   </tr>
                   <tr>
                     <td><code>--version &lt;string&gt;</code></td>
-                    <td>Download a specific llama.cpp version instead of latest (e.g. <code>b5540</code>). See <a href="https://github.com/ggml-org/llama.cpp/releases" target="_blank" rel="noopener noreferrer">available releases</a>.</td>
+                    <td>Download a specific llama.cpp version instead of the default (e.g. <code>b5540</code>). See <a href="https://github.com/ggml-org/llama.cpp/releases" target="_blank" rel="noopener noreferrer">available releases</a>. An explicit version overrides both the default and <code>--upgrade</code>.</td>
                   </tr>
                   <tr>
                     <td><code>--base-path &lt;string&gt;</code></td>
@@ -99,18 +105,18 @@ export default function DocsCLILibs() {
               </table>
               <h5>Example</h5>
               <pre className="code-block">
-                <code>{`# Install libraries using the server
+                <code>{`# Install the default version using the server
 kronk libs
 
-# Install libraries locally
+# Install the default version locally
 kronk libs --local
+
+# Track and install the latest llama.cpp release
+kronk libs --local --upgrade
 
 # Install a specific version
 kronk libs --version b5540
 kronk libs --local --version b5540
-
-# Install without upgrading existing libraries
-kronk libs --local --no-upgrade
 
 # Install with Metal support on macOS
 KRONK_PROCESSOR=metal kronk libs --local`}</code>

@@ -300,7 +300,13 @@ Use "kronk [command] --help" for more information about a command.`}</code></pre
           <p>Open http://localhost:11435 in your browser and navigate to the Libraries page.</p>
           <p><strong>Option B: Via CLI</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk libs --local`}</code></pre>
-          <p>This downloads libraries to <code>~/.kronk/libraries/&lt;os&gt;/&lt;arch&gt;/&lt;processor&gt;/</code> using auto-detected settings (for example <code>~/.kronk/libraries/darwin/arm64/metal/</code>). Each <code>(arch, os, processor)</code> triple lives in its own folder so multiple bundles can coexist on the same machine.</p>
+          <p>This downloads the <strong>well-known default version</strong> of llama.cpp baked into the SDK and installs it under <code>~/.kronk/libraries/&lt;os&gt;/&lt;arch&gt;/&lt;processor&gt;/</code> using auto-detected settings (for example <code>~/.kronk/libraries/darwin/arm64/metal/</code>). Each <code>(arch, os, processor)</code> triple lives in its own folder so multiple bundles can coexist on the same machine.</p>
+          <p>To track and install the <strong>latest</strong> llama.cpp release instead of the default version, opt in with <code>--upgrade</code>:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk libs --local --upgrade`}</code></pre>
+          <blockquote>The standalone CLI defaults to the pinned default version so reinstalls</blockquote>
+          <blockquote>are reproducible. The model server takes the opposite default</blockquote>
+          <blockquote>(<code>--allow-upgrade=true</code>) so a long-running server picks up upstream</blockquote>
+          <blockquote>fixes; see Chapter 7 §7.3 for that flag.</blockquote>
           <p><strong>Pinning a Specific Library Version</strong></p>
           <p>Sometimes there are breaking changes to llama.cpp that require a matching version of yzma and Kronk. To ensure stability, you can install a specific library version:</p>
           <pre className="code-block"><code className="language-shell">{`kronk libs --version=b8864 --local`}</code></pre>
@@ -3189,7 +3195,7 @@ kronk libs --local`}</code></pre>
                 <td><code>--allow-upgrade</code></td>
                 <td><code>KRONK_ALLOW_UPGRADE</code></td>
                 <td><code>true</code></td>
-                <td>Allow automatic library upgrades</td>
+                <td>Allow automatic library upgrades to the latest llama.cpp release. The server defaults to <code>true</code> so a long-running server tracks upstream fixes. The standalone <code>kronk libs</code> CLI defaults to <code>false</code> (installs the well-known default version) and opts in via <code>--upgrade</code>.</td>
               </tr>
               <tr>
                 <td><code>--llama-log</code></td>
@@ -5634,7 +5640,7 @@ KRONK_PROCESSOR=vulkan kronk libs --local
 KRONK_PROCESSOR=cpu kronk libs --local`}</code></pre>
           <p>See <a href="chapter-03-model-configuration.md#32-processor-selection">Chapter 3: Processor Selection</a> for details on how auto-detection works on each platform.</p>
           <p><strong>Problem: New library version causes crashes or bad output</strong></p>
-          <p>Kronk tracks the latest llama.cpp release and upgrades automatically when you run <code>kronk libs</code>. Occasionally a new llama.cpp release introduces a regression — crashes during model loading, decode errors, or degraded output quality. When this happens, pin the library to a known-good version using <code>KRONK_LIB_VERSION</code>.</p>
+          <p>The standalone <code>kronk libs</code> CLI installs the well-known default version of llama.cpp by default, which is conservative and changes only when the Kronk release bumps it. The model server (<code>kronk server start</code>) defaults to <code>--allow-upgrade=true</code> and tracks the latest llama.cpp release, so a long-running server can pick up a regression — crashes during model loading, decode errors, or degraded output quality. When this happens, pin the library to a known-good version using <code>KRONK_LIB_VERSION</code> (or <code>--version</code> on the CLI).</p>
           <p><strong>Pin to a specific version:</strong></p>
           <pre className="code-block"><code className="language-shell">{`# Install a specific version
 kronk libs --version=b5490 --local
@@ -5649,8 +5655,8 @@ kronk libs --local
 kronk server start`}</code></pre>
           <p><strong>Check your current installed version:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk libs --version`}</code></pre>
-          <p>This shows the installed version, architecture, OS, processor, and the latest available version. If the installed version differs from latest, the next <code>kronk libs</code> will upgrade unless <code>KRONK_LIB_VERSION</code> is set.</p>
-          <p><strong>When to pin:</strong> Pin whenever a new llama.cpp release breaks something you depend on. Unset <code>KRONK_LIB_VERSION</code> once the upstream fix is released to resume tracking latest.</p>
+          <p>This shows the installed version, architecture, OS, processor, and the latest available version. The CLI will only upgrade past the installed version when you pass <code>--upgrade</code>; otherwise it sticks to the well-known default version (or whatever is on disk if it is already newer).</p>
+          <p><strong>When to pin:</strong> Pin whenever a new llama.cpp release breaks something you depend on. Unset <code>KRONK_LIB_VERSION</code> once the upstream fix is released to resume tracking either the default version (CLI) or latest (server with <code>--allow-upgrade=true</code>).</p>
           <p>See <a href="chapter-02-installation.md#23-installing-libraries">Chapter 2: Installing Libraries</a> for the full compatibility matrix.</p>
           <p><strong>Error: "unknown device"</strong></p>
           <p>The specified GPU device is not recognized by the loaded library.</p>

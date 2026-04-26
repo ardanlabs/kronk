@@ -33,13 +33,16 @@ MODES
 
 EXAMPLES
 
-  # Install libraries for current platform
+  # Install the well-known default version of the libraries
   kronk libs --local
+
+  # Track and install the latest published llama.cpp release
+  kronk libs --local --upgrade
 
   # Install CUDA libraries explicitly
   KRONK_PROCESSOR=cuda kronk libs --local
 
-  # Download specific version
+  # Download a specific version
   kronk libs --local --version=b7406
 
   # List supported (arch, os, processor) combinations
@@ -69,8 +72,8 @@ ENVIRONMENT VARIABLES (Local Mode)
 
 func init() {
 	Cmd.Flags().Bool("local", false, "Run without the model server")
-	Cmd.Flags().Bool("no-upgrade", false, "Don't upgrade if libraries are already installed")
-	Cmd.Flags().String("version", "", "Download a specific llama.cpp version instead of latest")
+	Cmd.Flags().Bool("upgrade", false, "Track the latest llama.cpp release instead of the well-known default version")
+	Cmd.Flags().String("version", "", "Download a specific llama.cpp version instead of the default")
 
 	Cmd.Flags().Bool("install", false, "Install for the supplied --arch/--os/--processor triple (lands in its own folder under the libraries root)")
 	Cmd.Flags().String("arch", "", "Architecture for triple-aware install operations (amd64, arm64)")
@@ -90,7 +93,7 @@ func main(cmd *cobra.Command, args []string) {
 
 func run(cmd *cobra.Command) error {
 	local, _ := cmd.Flags().GetBool("local")
-	noUpgrade, _ := cmd.Flags().GetBool("no-upgrade")
+	upgrade, _ := cmd.Flags().GetBool("upgrade")
 	version, _ := cmd.Flags().GetString("version")
 
 	tripleInstall, _ := cmd.Flags().GetBool("install")
@@ -120,7 +123,7 @@ func run(cmd *cobra.Command) error {
 	}
 
 	if local {
-		return runLocal(noUpgrade, version)
+		return runLocal(upgrade, version)
 	}
-	return runWeb(noUpgrade, version)
+	return runWeb(upgrade, version)
 }

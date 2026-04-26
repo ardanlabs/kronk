@@ -131,11 +131,24 @@ Open http://localhost:11435 in your browser and navigate to the Libraries page.
 kronk libs --local
 ```
 
-This downloads libraries to `~/.kronk/libraries/<os>/<arch>/<processor>/`
-using auto-detected settings (for example
-`~/.kronk/libraries/darwin/arm64/metal/`). Each `(arch, os, processor)`
-triple lives in its own folder so multiple bundles can coexist on the same
-machine.
+This downloads the **well-known default version** of llama.cpp baked into
+the SDK and installs it under
+`~/.kronk/libraries/<os>/<arch>/<processor>/` using auto-detected settings
+(for example `~/.kronk/libraries/darwin/arm64/metal/`). Each
+`(arch, os, processor)` triple lives in its own folder so multiple
+bundles can coexist on the same machine.
+
+To track and install the **latest** llama.cpp release instead of the
+default version, opt in with `--upgrade`:
+
+```shell
+kronk libs --local --upgrade
+```
+
+> The standalone CLI defaults to the pinned default version so reinstalls
+> are reproducible. The model server takes the opposite default
+> (`--allow-upgrade=true`) so a long-running server picks up upstream
+> fixes; see Chapter 7 §7.3 for that flag.
 
 **Pinning a Specific Library Version**
 

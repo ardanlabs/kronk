@@ -24,7 +24,7 @@ const (
 
 	// defaultVersion is the well-known working version of llama.cpp used
 	// when no explicit version is provided and AllowUpgrade is false.
-	defaultVersion = "b8937"
+	defaultVersion = "b8941"
 )
 
 // ErrReadOnly is returned by mutating operations on a Libs instance whose
@@ -154,10 +154,7 @@ type Libs struct {
 // directly under <libsRoot>) into <libsRoot>/<os>/<arch>/<processor>/ if one
 // is found.
 func New(opts ...Option) (*Libs, error) {
-	options := Options{
-		AllowUpgrade: false,
-	}
-
+	var options Options
 	for _, opt := range opts {
 		opt(&options)
 	}
@@ -262,8 +259,26 @@ func (lib *Libs) SetVersion(version string) {
 }
 
 // Download performs a complete workflow for downloading and installing
-// the default version of llama.cpp. See WithVersion to pin a specific
-// version.
+// llama.cpp. The version that gets installed is selected according to the
+// following matrix, evaluated in order. The first matching row wins:
+//
+//	# | Override (WithVersion) | AllowUpgrade | On-disk version          | Action
+//	--+------------------------+--------------+--------------------------+-----------------------------
+//	1 | set                    | any          | any                      | install the override version
+//	2 | unset                  | true         | any                      | install latest from llama.cpp
+//	3 | unset                  | false        | none                     | install defaultVersion
+//	4 | unset                  | false        | <= defaultVersion        | install defaultVersion
+//	5 | unset                  | false        | >  defaultVersion        | keep on-disk version
+//
+// Additional rules independent of the matrix:
+//   - A read-only install path (user-supplied directory without a
+//     version.json) is always honored as-is; nothing is downloaded or
+//     mutated. See WithLibPath.
+//   - When the network is unreachable the currently installed version is
+//     returned. If nothing is installed and no network is available the
+//     call fails.
+//   - If the desired version is already installed for the active (arch,
+//     os, processor) triple, no download occurs.
 func (lib *Libs) Download(ctx context.Context, log Logger) (VersionTag, error) {
 	if lib.readOnly {
 		tag, err := lib.InstalledVersion()
@@ -274,21 +289,7 @@ func (lib *Libs) Download(ctx context.Context, log Logger) (VersionTag, error) {
 		return tag, nil
 	}
 
-	if !lib.AllowUpgrade && hasLibraryFiles(lib.path) {
-		tag, err := lib.InstalledVersion()
-		if err != nil {
-			tag = VersionTag{
-				Version:   "Unknown",
-				Arch:      "Unknown",
-				OS:        "Unknown",
-				Processor: "Unknown",
-			}
-		}
-		log(ctx, "download-libraries: upgrade not allowed and libraries exist, treating as read-only", "current", tag.Version)
-		return tag, nil
-	}
-
-	if !hasNetwork() {
+	if !lib.testMode && !hasNetwork() {
 		vt, err := lib.InstalledVersion()
 		if err != nil {
 			return VersionTag{}, fmt.Errorf("download: no network available: %w", err)
@@ -300,45 +301,31 @@ func (lib *Libs) Download(ctx context.Context, log Logger) (VersionTag, error) {
 
 	log(ctx, "download-libraries: check libraries version information", "arch", lib.arch, "os", lib.os, "processor", lib.processor)
 
-	var tag VersionTag
+	installed, _ := lib.InstalledVersion()
 
-	switch {
-	case lib.version != "":
-		tag, _ = lib.InstalledVersion()
-		tag.Latest = lib.version
-
-	case lib.AllowUpgrade:
-		var err error
-		tag, err = lib.VersionInformation()
+	// For matrix row 2 we need the latest version published by llama.cpp.
+	// For all other rows the network lookup is unnecessary, so skip it.
+	var latest string
+	if lib.version == "" && lib.AllowUpgrade {
+		info, err := lib.VersionInformation()
 		if err != nil {
-			if tag.Version == "" {
+			if installed.Version == "" {
 				return VersionTag{}, fmt.Errorf("download-libraries: error retrieving version info: %w", err)
 			}
 
-			log(ctx, "download-libraries: unable to check latest version, using installed version", "arch", lib.arch, "os", lib.os, "processor", lib.processor, "latest", tag.Latest, "current", tag.Version)
-			return tag, nil
+			log(ctx, "download-libraries: unable to check latest version, using installed version", "arch", lib.arch, "os", lib.os, "processor", lib.processor, "current", installed.Version)
+			return info, nil
 		}
-
-	default:
-		installed, _ := lib.InstalledVersion()
-		if installed.Version != "" && versionGreater(installed.Version, defaultVersion) {
-			tag = installed
-			tag.Latest = installed.Version
-		} else {
-			tag, _ = lib.InstalledVersion()
-			tag.Latest = defaultVersion
-		}
+		latest = info.Latest
 	}
+
+	tag := installed
+	tag.Latest = chooseVersion(lib.version, lib.AllowUpgrade, installed.Version, latest, defaultVersion)
 
 	log(ctx, "download-libraries: check llama.cpp installation", "arch", lib.arch, "os", lib.os, "processor", lib.processor, "latest", tag.Latest, "current", tag.Version)
 
 	if isTagMatch(tag, lib) {
 		log(ctx, "download-libraries: already installed", "latest", tag.Latest, "current", tag.Version)
-		return tag, nil
-	}
-
-	if !lib.AllowUpgrade && hasLibraryFiles(lib.path) {
-		log(ctx, "download-libraries: bypassing upgrade", "latest", tag.Latest, "current", tag.Version)
 		return tag, nil
 	}
 
@@ -905,34 +892,48 @@ func isTagMatch(tag VersionTag, libs *Libs) bool {
 	return tag.Latest == tag.Version && tag.Arch == libs.arch.String() && tag.OS == libs.os.String() && tag.Processor == libs.processor.String()
 }
 
-func hasLibraryFiles(path string) bool {
-	entries, err := os.ReadDir(path)
-	if err != nil {
-		return false
+// chooseVersion implements the Download policy matrix as a pure function.
+// See Download for the full matrix and exception rules. Inputs:
+//
+//   - override: explicit version pin (lib.version), or "" if unset.
+//   - allowUpgrade: whether to track the latest published version.
+//   - installed: the version currently on disk, or "" if nothing is
+//     installed (or version.json is unreadable).
+//   - latest: the latest version reported by llama.cpp; only consulted
+//     when override is unset and allowUpgrade is true.
+//   - def: the well-known default version baked into Kronk.
+//
+// Returns the version string that should end up installed.
+func chooseVersion(override string, allowUpgrade bool, installed string, latest string, def string) string {
+	switch {
+	case override != "":
+		// Matrix row 1: an explicit override always wins.
+		return override
+	case allowUpgrade:
+		// Matrix row 2: track the latest published version.
+		return latest
+	case installed != "" && versionGreater(installed, def):
+		// Matrix row 5: never downgrade past what is on disk.
+		return installed
+	default:
+		// Matrix rows 3-4: pin to the well-known default version.
+		return def
 	}
-
-	for _, entry := range entries {
-		if entry.Name() == versionFile || entry.Name() == "temp" {
-			continue
-		}
-		return true
-	}
-
-	return false
 }
 
 // versionGreater reports whether v1 is greater than v2.
-// Versions are expected to be git branch tags like "b8937" or plain version
-// strings. It strips a leading "v" or "V" prefix and compares numeric
-// suffixes; when both are purely numeric it does a numeric comparison,
-// otherwise it falls back to lexicographic comparison.
+// Versions are expected to be llama.cpp build tags like "b8937" or plain
+// version strings. It strips a single leading non-digit character (covering
+// both "b<num>" build tags and "v<num>" version tags) and compares the
+// numeric suffixes; when both are purely numeric it does a numeric
+// comparison, otherwise it falls back to lexicographic comparison.
 func versionGreater(v1, v2 string) bool {
 	if v1 == "" || v2 == "" {
 		return false
 	}
 
 	stripPrefix := func(s string) string {
-		if len(s) > 0 && (s[0] == 'v' || s[0] == 'V') {
+		if len(s) > 0 && (s[0] < '0' || s[0] > '9') {
 			return s[1:]
 		}
 		return s

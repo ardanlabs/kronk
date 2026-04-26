@@ -106,11 +106,22 @@ install-kronk:
 	go install ./cmd/kronk
 	@echo
 
-# Use this to install or update llama.cpp to the latest version. Needed to
-# run tests locally.
-install-libraries:
-	@echo ========== INSTALL LIBRARIES ==========
-	go run cmd/kronk/main.go libs --local
+# Use this to install or update llama.cpp to the latest version. Used by
+# the local `make test` target so developers exercise the newest llama.cpp
+# bundle before bumping the well-known defaultVersion in
+# sdk/tools/libs/libs.go for a release.
+install-libraries: install-kronk
+	@echo "========== INSTALL LIBRARIES (latest) =========="
+	kronk libs --local --upgrade
+	@echo
+
+# Use this to install the well-known defaultVersion of llama.cpp baked into
+# the SDK. This mirrors what CI does so `make test-gh` reproduces the GH
+# workflow locally. Bumping defaultVersion in sdk/tools/libs/libs.go is what
+# rolls both this target and the CI workflow forward.
+install-libraries-gh: install-kronk
+	@echo "========== INSTALL LIBRARIES (defaultVersion) =========="
+	kronk libs --local
 	@echo
 
 # Use this to install the test GH models.
@@ -220,7 +231,7 @@ vuln-check:
 diff:
 	go fix -diff ./...
 
-test-only: install-test-models
+test-only: install-libraries install-test-models
 	@echo ========== RUN TESTS ==========
 	export RUN_IN_PARALLEL=yes && \
 	export GITHUB_WORKSPACE=$(shell pwd) && \
@@ -234,7 +245,7 @@ test-only: install-test-models
 
 test: test-only lint vuln-check diff
 
-test-gh-only: install-test-gh-models
+test-gh-only: install-libraries-gh install-test-gh-models
 	@echo ========== RUN TESTS ==========
 	export RUN_IN_PARALLEL=yes && \
 	export GITHUB_WORKSPACE=$(shell pwd) && \

@@ -57,11 +57,14 @@ for details on how auto-detection works on each platform.
 
 **Problem: New library version causes crashes or bad output**
 
-Kronk tracks the latest llama.cpp release and upgrades automatically when
-you run `kronk libs`. Occasionally a new llama.cpp release introduces a
-regression — crashes during model loading, decode errors, or degraded output
-quality. When this happens, pin the library to a known-good version using
-`KRONK_LIB_VERSION`.
+The standalone `kronk libs` CLI installs the well-known default version
+of llama.cpp by default, which is conservative and changes only when the
+Kronk release bumps it. The model server (`kronk server start`) defaults
+to `--allow-upgrade=true` and tracks the latest llama.cpp release, so a
+long-running server can pick up a regression — crashes during model
+loading, decode errors, or degraded output quality. When this happens,
+pin the library to a known-good version using `KRONK_LIB_VERSION` (or
+`--version` on the CLI).
 
 **Pin to a specific version:**
 
@@ -95,12 +98,14 @@ kronk libs --version
 ```
 
 This shows the installed version, architecture, OS, processor, and the
-latest available version. If the installed version differs from latest,
-the next `kronk libs` will upgrade unless `KRONK_LIB_VERSION` is set.
+latest available version. The CLI will only upgrade past the installed
+version when you pass `--upgrade`; otherwise it sticks to the well-known
+default version (or whatever is on disk if it is already newer).
 
 **When to pin:** Pin whenever a new llama.cpp release breaks something
 you depend on. Unset `KRONK_LIB_VERSION` once the upstream fix is released
-to resume tracking latest.
+to resume tracking either the default version (CLI) or latest (server with
+`--allow-upgrade=true`).
 
 See [Chapter 2: Installing Libraries](chapter-02-installation.md#23-installing-libraries)
 for the full compatibility matrix.
