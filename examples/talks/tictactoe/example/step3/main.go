@@ -47,7 +47,7 @@ func newKronk() (*kronk.Kronk, error) {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
-	modelFile := "unsloth/gemma-4-26B-A4B-it-GGUF/gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf"
+	modelFile := "unsloth/gemma-4-26B-A4B-it-GGUF/gemma-4-26B-A4B-it-UD-Q4_K_M.gguf"
 	modelFile = fmt.Sprintf("%s/models/%s", defaults.BaseDir(""), modelFile)
 
 	krn, err := kronk.New(

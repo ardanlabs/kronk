@@ -1,14 +1,10 @@
 /*
-Benchmarks for inference caching across model types and IMC strategies.
+Benchmarks for inference caching across model types.
 
 Model Types (architecture — affects batch slot lifecycle and state management):
   - Dense:  Standard transformer. State cleanup via partial range delete.
   - MoE:    Mixture of Experts. Same cleanup as Dense, different perf profile.
-  - Hybrid: Attention + Recurrent layers (DeltaNet/SSM). Snapshot/Restore.
-
-IMC Strategies (template — affects slot matching):
-  - Deterministic:     Hash-based matching. Consistent templates.
-  - Non-Deterministic: Token prefix fallback. Variable templates.
+  - Hybrid: Attention + Recurrent/linear layers. Snapshot/Restore cleanup.
 
 Cache Modes Tested:
   - NonCaching: Baseline with no caching. Full prefill on every request.
@@ -19,16 +15,14 @@ Cache Modes Tested:
 
 Benchmark Matrix:
 
-	Model Type | Cache Mode          | IMC Strategy      | Speculative | Benchmark Name
-	-----------|---------------------|-------------------|-------------|----------------------------------------------
-	Dense      | NonCaching          | —                 | No          | BenchmarkDense_NonCaching
-	Dense      | IMC                 | Deterministic     | No          | BenchmarkDense_IMCDeterministic
-	Dense      | IMC                 | Deterministic     | Yes         | BenchmarkDense_IMCDeterministic_Speculative
-	Dense      | IMC                 | Non-Deterministic | No          | BenchmarkDense_IMCNonDeterministic
-	MoE        | IMC                 | Deterministic     | No          | BenchmarkMoE_IMCDeterministic
-	Hybrid     | IMC                 | Deterministic     | No          | BenchmarkHybrid_IMCDeterministic
-	MoE        | IMC                 | Deterministic     | No          | BenchmarkMoE_Speculative_Baseline
-	MoE        | IMC                 | Deterministic     | Yes         | BenchmarkMoE_Speculative_WithDraft
+	Model Type | Cache Mode | Model                              | Benchmark Name
+	-----------|------------|------------------------------------|----------------------------
+	Dense      | NonCaching | Qwen3-0.6B-Q8_0                    | BenchmarkDense_NonCaching
+	Dense      | IMC        | Qwen3-0.6B-Q8_0                    | BenchmarkDense_IMC
+	MoE        | NonCaching | gemma-4-26B-A4B-it-UD-Q4_K_M       | BenchmarkMoE_NonCaching
+	MoE        | IMC        | gemma-4-26B-A4B-it-UD-Q4_K_M       | BenchmarkMoE_IMC
+	Hybrid     | NonCaching | Qwen3.6-35B-A3B-UD-Q4_K_M          | BenchmarkHybrid_NonCaching
+	Hybrid     | IMC        | Qwen3.6-35B-A3B-UD-Q4_K_M          | BenchmarkHybrid_IMC
 
 Conversation Structure (~30k of 32k tokens):
   - System prompt (~10k tokens): Large system prompt simulating a real-world
@@ -75,20 +69,19 @@ import (
 )
 
 // =============================================================================
-// Test setup - model path resolved once
+// Test setup - model paths resolved once
 
-var benchModelPath models.Path
-var benchDraftModelPath models.Path
-var benchMoEModelPath models.Path
-var benchSpecModelPath models.Path
-var benchHybridModelPath models.Path
-var benchNonDetModelPath models.Path
-var benchLog model.Logger
-var benchLogFile *os.File
+var (
+	benchDenseModelPath  models.Path
+	benchMoEModelPath    models.Path
+	benchHybridModelPath models.Path
+	benchLog             model.Logger
+	benchLogFile         *os.File
+)
 
 func TestMain(m *testing.M) {
 	// When BENCH_LOG is set, write model logs to that file.
-	// Usage: BENCH_LOG=bench.log go test -bench=BenchmarkDense_IMCDeterministic_Speculative ...
+	// Usage: BENCH_LOG=bench.log go test -bench=BenchmarkDense_IMC ...
 	if logPath := os.Getenv("BENCH_LOG"); logPath != "" {
 		f, err := os.Create(logPath)
 		if err != nil {
@@ -109,31 +102,19 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	benchModelPath = mdls.MustFullPath("Qwen3-8B-Q8_0")
-
-	// Draft model is optional — only needed for BenchmarkDense_IMCDeterministic_Speculative.
+	// Dense target — only needed for BenchmarkDense_* benchmarks.
 	if dp, err := mdls.FullPath("Qwen3-0.6B-Q8_0"); err == nil {
-		benchDraftModelPath = dp
+		benchDenseModelPath = dp
 	}
 
-	// MoE target — only needed for BenchmarkMoE_IMCDeterministic.
-	if dp, err := mdls.FullPath("Qwen3-VL-30B-A3B-Instruct-Q4_K_M"); err == nil {
+	// MoE target — only needed for BenchmarkMoE_* benchmarks.
+	if dp, err := mdls.FullPath("gemma-4-26B-A4B-it-UD-Q4_K_M"); err == nil {
 		benchMoEModelPath = dp
-	}
-
-	// Speculative target — only needed for BenchmarkMoE_Speculative_*.
-	if dp, err := mdls.FullPath("cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0"); err == nil {
-		benchSpecModelPath = dp
 	}
 
 	// Hybrid target — only needed for BenchmarkHybrid_* benchmarks.
 	if dp, err := mdls.FullPath("Qwen3.6-35B-A3B-UD-Q4_K_M"); err == nil {
 		benchHybridModelPath = dp
-	}
-
-	// NonDeterministic target — only needed for BenchmarkDense_IMCNonDeterministic.
-	if dp, err := mdls.FullPath("gpt-oss-20b-Q8_0"); err == nil {
-		benchNonDetModelPath = dp
 	}
 
 	ctlg, err := catalog.New()

@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/authapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
@@ -322,6 +323,13 @@ func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.Errorf(errs.Internal, "streaming not supported")
 	}
 
+	// Extend the per-connection write deadline so large model downloads
+	// are not killed by the server-wide WriteTimeout.
+	rc := http.NewResponseController(w)
+	if err := rc.SetWriteDeadline(time.Now().Add(6 * time.Hour)); err != nil {
+		a.log.Info(ctx, "pull-models", "set-write-deadline", "ERROR", err)
+	}
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Transfer-Encoding", "chunked")
 	w.WriteHeader(http.StatusOK)
@@ -387,22 +395,20 @@ func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
 		f.Flush()
 	}
 
-	var mp models.Path
-	var dlErr error
-	if len(req.SplitURLs) > 1 {
-		mp, dlErr = a.models.DownloadSplits(ctx, logger, req.SplitURLs, req.ProjURL)
-	} else {
-		mp, dlErr = a.models.Download(ctx, logger, req.ModelURL, req.ProjURL)
+	modelURLs := req.SplitURLs
+	if len(modelURLs) == 0 {
+		modelURLs = []string{req.ModelURL}
 	}
 
-	if dlErr != nil {
-		ver := toAppPull(dlErr.Error(), models.Path{})
+	mp, err := a.models.DownloadSplits(ctx, logger, modelURLs, req.ProjURL)
+	if err != nil {
+		ver := toAppPull(err.Error(), models.Path{})
 
 		a.log.Info(ctx, "pull-model", "info", ver[:len(ver)-1])
 		fmt.Fprint(w, ver)
 		f.Flush()
 
-		return errs.Errorf(errs.Internal, "unable to install model: %s", dlErr)
+		return web.NewNoResponse()
 	}
 
 	ver := toAppPull("downloaded", mp)
@@ -595,6 +601,13 @@ func (a *app) pullCatalog(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.Errorf(errs.Internal, "streaming not supported")
 	}
 
+	// Extend the per-connection write deadline so large catalog pulls
+	// are not killed by the server-wide WriteTimeout.
+	rc := http.NewResponseController(w)
+	if err := rc.SetWriteDeadline(time.Now().Add(6 * time.Hour)); err != nil {
+		a.log.Info(ctx, "pull-catalog", "set-write-deadline", "ERROR", err)
+	}
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Transfer-Encoding", "chunked")
 	w.WriteHeader(http.StatusOK)
@@ -606,7 +619,7 @@ func (a *app) pullCatalog(ctx context.Context, r *http.Request) web.Encoder {
 		var sb strings.Builder
 		for i := 0; i < len(args); i += 2 {
 			if i+1 < len(args) {
-				sb.WriteString(fmt.Sprintf(" %v[%v]", args[i], args[i+1]))
+				fmt.Fprintf(&sb, " %v[%v]", args[i], args[i+1])
 			}
 		}
 
@@ -680,7 +693,7 @@ func (a *app) pullCatalog(ctx context.Context, r *http.Request) web.Encoder {
 		fmt.Fprint(w, ver)
 		f.Flush()
 
-		return errs.Errorf(errs.Internal, "unable to install model: %s", err)
+		return web.NewNoResponse()
 	}
 
 	ver := toAppPull("downloaded", mp)

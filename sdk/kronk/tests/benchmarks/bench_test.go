@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -22,7 +21,7 @@ import (
 func cfgDenseNonCaching() model.Config {
 	return model.Config{
 		Log:              benchLog,
-		ModelFiles:       benchModelPath.ModelFiles,
+		ModelFiles:       benchDenseModelPath.ModelFiles,
 		PtrContextWindow: new(32768),
 		PtrNBatch:        new(2048),
 		PtrNUBatch:       new(2048),
@@ -32,10 +31,64 @@ func cfgDenseNonCaching() model.Config {
 	}
 }
 
-func cfgDenseIMCDeterministic() model.Config {
+func cfgDenseIMC() model.Config {
 	return model.Config{
 		Log:                 benchLog,
-		ModelFiles:          benchModelPath.ModelFiles,
+		ModelFiles:          benchDenseModelPath.ModelFiles,
+		PtrContextWindow:    new(32768),
+		PtrNBatch:           new(2048),
+		PtrNUBatch:          new(2048),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrNSeqMax:          new(1),
+		PtrIncrementalCache: new(true),
+	}
+}
+
+func cfgMoENonCaching() model.Config {
+	return model.Config{
+		Log:              benchLog,
+		ModelFiles:       benchMoEModelPath.ModelFiles,
+		PtrContextWindow: new(32768),
+		PtrNBatch:        new(2048),
+		PtrNUBatch:       new(2048),
+		CacheTypeK:       model.GGMLTypeF16,
+		CacheTypeV:       model.GGMLTypeF16,
+		PtrNSeqMax:       new(1),
+	}
+}
+
+func cfgMoEIMC() model.Config {
+	return model.Config{
+		Log:                 benchLog,
+		ModelFiles:          benchMoEModelPath.ModelFiles,
+		PtrContextWindow:    new(32768),
+		PtrNBatch:           new(2048),
+		PtrNUBatch:          new(2048),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrNSeqMax:          new(1),
+		PtrIncrementalCache: new(true),
+	}
+}
+
+func cfgHybridNonCaching() model.Config {
+	return model.Config{
+		Log:              benchLog,
+		ModelFiles:       benchHybridModelPath.ModelFiles,
+		PtrContextWindow: new(32768),
+		PtrNBatch:        new(2048),
+		PtrNUBatch:       new(2048),
+		CacheTypeK:       model.GGMLTypeF16,
+		CacheTypeV:       model.GGMLTypeF16,
+		PtrNSeqMax:       new(1),
+	}
+}
+
+func cfgHybridIMC() model.Config {
+	return model.Config{
+		Log:                 benchLog,
+		ModelFiles:          benchHybridModelPath.ModelFiles,
 		PtrContextWindow:    new(32768),
 		PtrNBatch:           new(2048),
 		PtrNUBatch:          new(2048),
@@ -921,328 +974,68 @@ func benchChat(b *testing.B, krn *kronk.Kronk, d model.D) {
 }
 
 // =============================================================================
-// Dense Model Benchmarks (Qwen3-8B-Q8_0)
+// Dense Model Benchmarks (Qwen3-0.6B-Q8_0)
 //
 // Standard transformer architecture. State cleanup via partial range delete.
 
 func BenchmarkDense_NonCaching(b *testing.B) {
+	if len(benchDenseModelPath.ModelFiles) == 0 {
+		b.Skip("model Qwen3-0.6B-Q8_0 not downloaded")
+	}
 	krn := withBenchModel(b, cfgDenseNonCaching())
 	benchChat(b, krn, benchDoc())
 }
 
-func BenchmarkDense_IMCDeterministic(b *testing.B) {
-	krn := withBenchModel(b, cfgDenseIMCDeterministic())
+func BenchmarkDense_IMC(b *testing.B) {
+	if len(benchDenseModelPath.ModelFiles) == 0 {
+		b.Skip("model Qwen3-0.6B-Q8_0 not downloaded")
+	}
+	krn := withBenchModel(b, cfgDenseIMC())
 	benchChat(b, krn, benchDoc())
-}
-
-func cfgDenseIMCDeterministicSpeculative() model.Config {
-	draftPath := benchDraftModelPath.ModelFiles
-
-	return model.Config{
-		Log:                 benchLog,
-		ModelFiles:          benchModelPath.ModelFiles,
-		PtrContextWindow:    new(32768),
-		PtrNBatch:           new(2048),
-		PtrNUBatch:          new(2048),
-		CacheTypeK:          model.GGMLTypeF16,
-		CacheTypeV:          model.GGMLTypeF16,
-		PtrNSeqMax:          new(1),
-		PtrIncrementalCache: new(true),
-		DraftModel: &model.DraftModelConfig{
-			ModelFiles: draftPath,
-			NDraft:     5,
-		},
-	}
-}
-
-func BenchmarkDense_IMCDeterministic_Speculative(b *testing.B) {
-	if len(benchDraftModelPath.ModelFiles) == 0 {
-		b.Skip("draft model Qwen3-0.6B-Q8_0 not downloaded")
-	}
-	krn := withBenchModel(b, cfgDenseIMCDeterministicSpeculative())
-	benchChat(b, krn, benchDoc())
-}
-
-// Dense model with non-deterministic template (GPT-OSS). Same architecture as
-// Dense, but the template produces variable token sequences for identical
-// messages. IMC falls back to token prefix matching.
-
-func cfgDenseIMCNonDeterministic() model.Config {
-	return model.Config{
-		Log:                 benchLog,
-		ModelFiles:          benchNonDetModelPath.ModelFiles,
-		PtrContextWindow:    new(32768),
-		PtrNBatch:           new(2048),
-		PtrNUBatch:          new(2048),
-		CacheTypeK:          model.GGMLTypeF16,
-		CacheTypeV:          model.GGMLTypeF16,
-		PtrNSeqMax:          new(1),
-		PtrIncrementalCache: new(true),
-	}
-}
-
-func BenchmarkDense_IMCNonDeterministic(b *testing.B) {
-	if len(benchNonDetModelPath.ModelFiles) == 0 {
-		b.Skip("model gpt-oss-20b-Q8_0 not downloaded")
-	}
-	krn := withBenchModel(b, cfgDenseIMCNonDeterministic())
-	benchChat(b, krn, benchDoc())
-}
-
-// Multi-slot concurrency: NSeqMax=4 with 4 goroutines hitting the same model.
-// Exercises batch engine contention, slot scheduling, and IMC slot wait queue.
-
-func cfgDenseIMCDeterministicMultiSlot() model.Config {
-	return model.Config{
-		Log:                 benchLog,
-		ModelFiles:          benchModelPath.ModelFiles,
-		PtrContextWindow:    new(131072), // 4x to give each of the 4 slots ~32k tokens
-		PtrNBatch:           new(2048),
-		PtrNUBatch:          new(2048),
-		CacheTypeK:          model.GGMLTypeF16,
-		CacheTypeV:          model.GGMLTypeF16,
-		PtrNSeqMax:          new(4),
-		PtrIncrementalCache: new(true),
-	}
-}
-
-func BenchmarkDense_IMCDeterministic_MultiSlot(b *testing.B) {
-	const nSlots = 4
-
-	krn := withBenchModel(b, cfgDenseIMCDeterministicMultiSlot())
-	d := benchDoc()
-
-	b.ReportAllocs()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	defer cancel()
-
-	logTokenCounts(b, ctx, krn, d)
-
-	// Warmup all slots.
-	for range nSlots {
-		if _, err := runStreamingBench(ctx, krn, d); err != nil {
-			b.Fatalf("warmup failed: %v", err)
-		}
-	}
-
-	b.ResetTimer()
-
-	for b.Loop() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-
-		var (
-			wg       sync.WaitGroup
-			mu       sync.Mutex
-			results  []benchResult
-			benchErr error
-		)
-
-		for range nSlots {
-			wg.Go(func() {
-
-				result, err := runStreamingBench(ctx, krn, d)
-
-				mu.Lock()
-				defer mu.Unlock()
-
-				if err != nil && benchErr == nil {
-					benchErr = err
-					return
-				}
-
-				results = append(results, result)
-			})
-		}
-
-		wg.Wait()
-		cancel()
-
-		if benchErr != nil {
-			b.Fatalf("benchmark iteration failed: %v", benchErr)
-		}
-
-		// Report averages across all slots.
-		var totalTPS float64
-		var totalTTFT, totalTime time.Duration
-		for _, r := range results {
-			totalTPS += r.tps
-			totalTTFT += r.ttft
-			totalTime += r.totalTime
-		}
-		n := float64(len(results))
-
-		b.ReportMetric(totalTPS/n, "tok/s")
-		b.ReportMetric(float64((totalTTFT / time.Duration(len(results))).Milliseconds()), "ttft-ms")
-		b.ReportMetric(float64((totalTime / time.Duration(len(results))).Milliseconds()), "total-ms")
-	}
-}
-
-// Prefill-only: max_tokens=1 isolates prefill performance from decode
-// throughput. TTFT is the cleanest signal for caching regressions.
-
-func benchDocPrefillOnly() model.D {
-	messages := buildConversation()
-
-	return model.D{
-		"messages":    messages,
-		"max_tokens":  1,
-		"temperature": 0.0,
-	}
-}
-
-func BenchmarkDense_IMC_PrefillOnly(b *testing.B) {
-	krn := withBenchModel(b, cfgDenseIMCDeterministic())
-	benchChat(b, krn, benchDocPrefillOnly())
-}
-
-// Cold build: measures the first-request cost when the IMC cache is empty.
-// No warmup iteration, so each iteration loads a fresh model and sends one
-// request. Catches regressions in the initial cache build path.
-
-func BenchmarkDense_IMC_ColdBuild(b *testing.B) {
-	b.ReportAllocs()
-
-	for b.Loop() {
-		krn, err := kronk.New(model.WithConfig(cfgDenseIMCDeterministic()))
-		if err != nil {
-			b.Fatalf("unable to load model: %v", err)
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-
-		result, err := runStreamingBench(ctx, krn, benchDoc())
-		cancel()
-
-		if err != nil {
-			if uerr := krn.Unload(context.Background()); uerr != nil {
-				b.Errorf("failed to unload model: %v", uerr)
-			}
-			b.Fatalf("benchmark iteration failed: %v", err)
-		}
-
-		b.ReportMetric(result.tps, "tok/s")
-		b.ReportMetric(float64(result.ttft.Milliseconds()), "ttft-ms")
-		b.ReportMetric(float64(result.totalTime.Milliseconds()), "total-ms")
-
-		if err := krn.Unload(context.Background()); err != nil {
-			b.Errorf("failed to unload model: %v", err)
-		}
-	}
 }
 
 // =============================================================================
-// MoE Model Benchmarks (Qwen3-VL-30B-A3B-Instruct)
+// MoE Model Benchmarks (gemma-4-26B-A4B-it-UD-Q4_K_M)
 //
 // Mixture of Experts architecture. Same IMC algorithm as Dense, different
 // performance profile (scattered memory access, expert routing).
 
-func cfgMoEIMCDeterministic() model.Config {
-	return model.Config{
-		Log:                 benchLog,
-		ModelFiles:          benchMoEModelPath.ModelFiles,
-		PtrContextWindow:    new(32768),
-		PtrNBatch:           new(2048),
-		PtrNUBatch:          new(2048),
-		CacheTypeK:          model.GGMLTypeF16,
-		CacheTypeV:          model.GGMLTypeF16,
-		PtrNSeqMax:          new(1),
-		PtrIncrementalCache: new(true),
+func BenchmarkMoE_NonCaching(b *testing.B) {
+	if len(benchMoEModelPath.ModelFiles) == 0 {
+		b.Skip("model gemma-4-26B-A4B-it-UD-Q4_K_M not downloaded")
 	}
+	krn := withBenchModel(b, cfgMoENonCaching())
+	benchChat(b, krn, benchDoc())
 }
 
-func BenchmarkMoE_IMCDeterministic(b *testing.B) {
+func BenchmarkMoE_IMC(b *testing.B) {
 	if len(benchMoEModelPath.ModelFiles) == 0 {
-		b.Skip("model Qwen3-VL-30B-A3B-Instruct-Q4_K_M not downloaded")
+		b.Skip("model gemma-4-26B-A4B-it-UD-Q4_K_M not downloaded")
 	}
-	krn := withBenchModel(b, cfgMoEIMCDeterministic())
+	krn := withBenchModel(b, cfgMoEIMC())
 	benchChat(b, krn, benchDoc())
 }
 
 // =============================================================================
-// Hybrid Model Benchmarks (Qwen_Qwen3.5-35B-A3B)
+// Hybrid Model Benchmarks (Qwen3.6-35B-A3B-UD-Q4_K_M)
 //
-// Attention + Recurrent layers (DeltaNet). State cleanup via snapshot/restore
+// Attention + Recurrent/linear layers. State cleanup via snapshot/restore
 // instead of partial range delete. IMC uses NSeqMax=1 for single-agent
 // (Cline-style) workflows.
 
-func cfgHybridIMCDeterministic() model.Config {
-	return model.Config{
-		Log:                 benchLog,
-		ModelFiles:          benchHybridModelPath.ModelFiles,
-		PtrContextWindow:    new(32768),
-		PtrNBatch:           new(2048),
-		PtrNUBatch:          new(2048),
-		CacheTypeK:          model.GGMLTypeF16,
-		CacheTypeV:          model.GGMLTypeF16,
-		PtrNSeqMax:          new(1),
-		PtrIncrementalCache: new(true),
-	}
-}
-
-func BenchmarkHybrid_IMCDeterministic(b *testing.B) {
+func BenchmarkHybrid_NonCaching(b *testing.B) {
 	if len(benchHybridModelPath.ModelFiles) == 0 {
 		b.Skip("model Qwen3.6-35B-A3B-UD-Q4_K_M not downloaded")
 	}
-	krn := withBenchModel(b, cfgHybridIMCDeterministic())
+	krn := withBenchModel(b, cfgHybridNonCaching())
 	benchChat(b, krn, benchDoc())
 }
 
-// =============================================================================
-// MoE Speculative Decoding Benchmarks (cerebras Qwen3-Coder-REAP-25B-A3B)
-//
-// Compares the same MoE model with and without a small Qwen3-0.6B draft model
-// for speculative decoding. Both share the Qwen3 vocabulary (151936 tokens).
-// Run both benchmarks to measure the speed-up from speculative decoding.
-
-func cfgMoESpecBaseline() model.Config {
-	return model.Config{
-		Log:                 benchLog,
-		ModelFiles:          benchSpecModelPath.ModelFiles,
-		PtrContextWindow:    new(32768),
-		PtrNBatch:           new(2048),
-		PtrNUBatch:          new(2048),
-		CacheTypeK:          model.GGMLTypeF16,
-		CacheTypeV:          model.GGMLTypeF16,
-		PtrNSeqMax:          new(1),
-		PtrIncrementalCache: new(true),
+func BenchmarkHybrid_IMC(b *testing.B) {
+	if len(benchHybridModelPath.ModelFiles) == 0 {
+		b.Skip("model Qwen3.6-35B-A3B-UD-Q4_K_M not downloaded")
 	}
-}
-
-func cfgMoESpecWithDraft() model.Config {
-	return model.Config{
-		Log:                 benchLog,
-		ModelFiles:          benchSpecModelPath.ModelFiles,
-		PtrContextWindow:    new(32768),
-		PtrNBatch:           new(2048),
-		PtrNUBatch:          new(2048),
-		CacheTypeK:          model.GGMLTypeF16,
-		CacheTypeV:          model.GGMLTypeF16,
-		PtrNSeqMax:          new(1),
-		PtrIncrementalCache: new(true),
-		DraftModel: &model.DraftModelConfig{
-			ModelFiles: benchDraftModelPath.ModelFiles,
-			NDraft:     5,
-		},
-	}
-}
-
-func BenchmarkMoE_Speculative_Baseline(b *testing.B) {
-	if len(benchSpecModelPath.ModelFiles) == 0 {
-		b.Skip("model cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0 not downloaded")
-	}
-	krn := withBenchModel(b, cfgMoESpecBaseline())
-	benchChat(b, krn, benchDoc())
-}
-
-func BenchmarkMoE_Speculative_WithDraft(b *testing.B) {
-	if len(benchSpecModelPath.ModelFiles) == 0 {
-		b.Skip("model cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0 not downloaded")
-	}
-	if len(benchDraftModelPath.ModelFiles) == 0 {
-		b.Skip("draft model Qwen3-0.6B-Q8_0 not downloaded")
-	}
-	krn := withBenchModel(b, cfgMoESpecWithDraft())
+	krn := withBenchModel(b, cfgHybridIMC())
 	benchChat(b, krn, benchDoc())
 }
 

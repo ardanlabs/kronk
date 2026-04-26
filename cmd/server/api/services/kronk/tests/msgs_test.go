@@ -104,8 +104,8 @@ func msgsStreamQwen3(_ *testing.T, tokens map[string]string) []apitest.Table {
 	}
 }
 
-// msgsImageQwen25VL returns messages tests for Qwen2.5-VL-3B-Instruct-Q8_0 model (vision).
-func msgsImageQwen25VL(t *testing.T, tokens map[string]string) []apitest.Table {
+// msgsImageQwen35VL returns messages tests for Qwen3.5-0.8B-Q8_0 model (vision).
+func msgsImageQwen35VL(t *testing.T, tokens map[string]string) []apitest.Table {
 	image, err := readFile(imageFile)
 	if err != nil {
 		t.Fatalf("read image: %s", err)
@@ -120,7 +120,7 @@ func msgsImageQwen25VL(t *testing.T, tokens map[string]string) []apitest.Table {
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: msgsapp.MessagesRequest{
-				Model:     "Qwen2.5-VL-3B-Instruct-Q8_0",
+				Model:     "Qwen3.5-0.8B-Q8_0",
 				MaxTokens: 2048,
 				Messages: []msgsapp.Message{
 					{
@@ -148,7 +148,7 @@ func msgsImageQwen25VL(t *testing.T, tokens map[string]string) []apitest.Table {
 			ExpResp: &msgsapp.MessagesResponse{
 				Type:  "message",
 				Role:  "assistant",
-				Model: "Qwen2.5-VL-3B-Instruct-Q8_0",
+				Model: "Qwen3.5-0.8B-Q8_0",
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,

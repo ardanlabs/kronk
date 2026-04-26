@@ -43,7 +43,7 @@ var modelSpecConfig = modelSpec{
 	// ModelID: "Qwen2-Audio-7B-Q8_0",
 }
 
-const audioFile = "examples/samples/jfk.wav"
+const audioFile = "samples/jfk.wav"
 
 func main() {
 	if err := run(); err != nil {

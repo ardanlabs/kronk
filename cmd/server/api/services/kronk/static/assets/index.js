@@ -1194,7 +1194,7 @@ var modelSpecConfig = modelSpec{
 	// ModelID: "Qwen2-Audio-7B-Q8_0",
 }
 
-const audioFile = "examples/samples/jfk.wav"
+const audioFile = "samples/jfk.wav"
 
 func main() {
 	if err := run(); err != nil {
@@ -2073,7 +2073,7 @@ type modelSpec struct {
 // Set either SourceURL or ModelID, not both.
 var modelSpecConfig = modelSpec{
 	SourceURL: "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf",
-	// ModelID: "Qwen3-0.6B-Q8_0",
+	ModelID:   "gemma-4-26B-A4B-it-UD-Q4_K_M",
 }
 
 func main() {
@@ -3611,7 +3611,7 @@ var modelSpecConfig = modelSpec{
 	// ModelID: "Qwen3.5-0.8B-Q8_0",
 }
 
-const imageFile = "examples/samples/giraffe.jpg"
+const imageFile = "samples/giraffe.jpg"
 
 func main() {
 	if err := run(); err != nil {

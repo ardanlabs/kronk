@@ -47,12 +47,17 @@ func (m *Models) DownloadSplits(ctx context.Context, log Logger, modelURLs []str
 		return mp, nil
 	}
 
-	var downloaded bool
 	defer func() {
-		if downloaded {
-			if err := m.BuildIndex(log, false); err != nil {
-				log(ctx, "download-model: unable to create index", "ERROR", err)
-			}
+		if err := m.BuildIndex(log, false); err != nil {
+			log(ctx, "download-model: unable to create index", "ERROR", err)
+			return
+		}
+
+		// downloadModel performs SHA validation on every model and projection
+		// file as it is fetched, so the freshly downloaded entry can be marked
+		// as validated without a full index rebuild.
+		if err := m.MarkValidated(modelID); err != nil {
+			log(ctx, "download-model: unable to mark model validated", "ERROR", err)
 		}
 	}()
 
@@ -99,8 +104,6 @@ func (m *Models) DownloadSplits(ctx context.Context, log Logger, modelURLs []str
 
 			return Path{}, fmt.Errorf("download-model: unable to download model file: %w", errOrg)
 		}
-
-		downloaded = mp.Downloaded
 
 		switch mp.Downloaded {
 		case true:
@@ -163,7 +166,30 @@ func (m *Models) downloadModel(ctx context.Context, log Logger, modelFileURL str
 				break
 			}
 		}
-		if hasFile {
+
+		// Re-verify every recorded file (model splits and any projection) is
+		// still present on disk. A user may have deleted files manually, in
+		// which case we must fall through and re-download instead of trusting
+		// the stale index entry.
+		filesPresent := hasFile
+		if filesPresent {
+			for _, mf := range mp.ModelFiles {
+				if _, err := os.Stat(mf); err != nil {
+					filesPresent = false
+					break
+				}
+			}
+		}
+		if filesPresent && projFileURL != "" && mp.ProjFile != "" {
+			if _, err := os.Stat(mp.ProjFile); err != nil {
+				filesPresent = false
+			}
+		}
+		if filesPresent && projFileURL != "" && mp.ProjFile == "" {
+			filesPresent = false
+		}
+
+		if filesPresent {
 			mp.Downloaded = false
 			return mp, nil
 		}

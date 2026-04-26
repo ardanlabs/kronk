@@ -43,7 +43,7 @@ var modelSpecConfig = modelSpec{
 	// ModelID: "Qwen3.5-0.8B-Q8_0",
 }
 
-const imageFile = "examples/samples/giraffe.jpg"
+const imageFile = "samples/giraffe.jpg"
 
 func main() {
 	if err := run(); err != nil {

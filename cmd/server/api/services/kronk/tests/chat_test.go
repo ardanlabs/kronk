@@ -516,8 +516,8 @@ func chatArrayFormatStreamQwen3(t *testing.T, tokens map[string]string) []apites
 	}
 }
 
-// chatImageQwen25VL returns chat tests for Qwen2.5-VL-3B-Instruct-Q8_0 model (vision).
-func chatImageQwen25VL(t *testing.T, tokens map[string]string) []apitest.Table {
+// chatImageQwen35VL returns chat tests for Qwen3.5-0.8B-Q8_0 model (vision).
+func chatImageQwen35VL(t *testing.T, tokens map[string]string) []apitest.Table {
 	image, err := readFile(imageFile)
 	if err != nil {
 		t.Fatalf("read image: %s", err)
@@ -531,7 +531,7 @@ func chatImageQwen25VL(t *testing.T, tokens map[string]string) []apitest.Table {
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model":       "Qwen2.5-VL-3B-Instruct-Q8_0",
+				"model":       "Qwen3.5-0.8B-Q8_0",
 				"messages":    model.ImageMessage("what's in the picture", image, "jpg"),
 				"max_tokens":  2048,
 				"temperature": 0.7,
@@ -548,7 +548,7 @@ func chatImageQwen25VL(t *testing.T, tokens map[string]string) []apitest.Table {
 						FinishReasonPtr: new("stop"),
 					},
 				},
-				Model:             "Qwen2.5-VL-3B-Instruct-Q8_0",
+				Model:             "Qwen3.5-0.8B-Q8_0",
 				SystemFingerprint: "fp_kronk",
 				Object:            "chat.media",
 			},

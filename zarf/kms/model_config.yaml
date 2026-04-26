@@ -132,11 +132,6 @@
 #   context-window: 131072, nseq-max: 3
 #   → Total KV cache sized for 393k tokens (131k × 3, shared pool)
 #   → Each slot can use up to the full 131k tokens
-#
-# MISCELLANEOUS NOTES
-# -------------------------------
-# You will notice with the Qwen3-8B-Q8_0 model a YARN configuration. This is
-# how you can extend the models context window when you need it.
 
 # ==============================================================================
 # CODING MODELS
@@ -149,14 +144,6 @@ Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT:
     top_k: 20
     top_p: 0.95
 
-Qwen3.6-27B-Q4_K_M/AGENT:
-  context-window: 131072
-  nseq-max: 2
-  sampling-parameters:
-    temperature: 1.0
-    top_k: 20
-    top_p: 0.95
-
 gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT:
   context-window: 131072
   nseq-max: 2
@@ -164,49 +151,3 @@ gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT:
     temperature: 1.0
     top_k: 64
     top_p: 0.95
-
-cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0/Chat:
-  context-window: 131072
-  sampling-parameters:
-    temperature: 0.7
-    top_p: 0.8
-    top_k: 20
-
-# ------------------------------------------------------------------------------
-
-Qwen3-8B-Q8_0: &base_Qwen3-8B-Q8_0
-  context-window: 32768
-  sampling-parameters:
-    temperature: 0.7
-    top_p: 0.8
-    top_k: 20
-
-# Extended context with YaRN scaling (32k training → 131k).
-Qwen3-8B-Q8_0/YARN:
-  <<: *base_Qwen3-8B-Q8_0
-  context-window: 131072
-  rope-scaling-type: yarn
-  yarn-orig-ctx: 32768
-
-Qwen3-8B-Q8_0/Draft:
-  <<: *base_Qwen3-8B-Q8_0
-  draft-model:
-    model-id: Qwen3-0.6B-Q8_0
-    ndraft: 5
-
-Qwen3-8B-Q8_0/Draft2:
-  <<: *base_Qwen3-8B-Q8_0
-  draft-model:
-    model-id: Qwen3-1.7B-Q8_0
-    ndraft: 5
-
-Qwen3-32B-Q8_0/Draft2:
-  draft-model:
-    model-id: Qwen3-1.7B-Q8_0
-    ndraft: 5
-
-# Incremental Message Cache variant for testing.
-# DO NOT REMOVE
-Qwen3-8B-Q8_0/IMC:
-  <<: *base_Qwen3-8B-Q8_0
-  incremental-cache: true

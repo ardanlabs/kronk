@@ -8,34 +8,34 @@ modality. Each row shows what exists and what is missing.
 Models
 ===============================================================================
 
-ID   Model                              Architecture   Template            Modality
----  ---------------------------------  -------------  ------------------  --------
-M1   Qwen3-8B-Q8_0                      Dense          Deterministic       Text
-M2   gpt-oss-20b-Q8_0                   MoE            Non-Deterministic   Text
+ID   Model                              Architecture           Modality
+---  ---------------------------------  ---------------------  --------
+M1   Qwen3-8B-Q8_0                      Dense                  Text
+M2   gpt-oss-20b-Q8_0                   MoE                    Text
 
-M3   Qwen2.5-VL-3B-Instruct-Q8_0        Dense          Deterministic       Vision
-M4   Qwen3-VL-30B-A3B-Instruct-Q4_K_M     MoE            Deterministic       Vision
-M5   Qwen3.6-35B-A3B-UD-Q4_K_M         Hybrid         Deterministic       Vision
+M3   Qwen3.5-0.8B-Q8_0                  Hybrid (lite)          Vision
+M4   gemma-4-26B-A4B-it-UD-Q4_K_M       MoE                    Vision
+M5   Qwen3.6-35B-A3B-UD-Q4_K_M          Hybrid (MoE)           Vision
 
-M6   Qwen2-Audio-7B.Q8_0                Dense          Deterministic       Audio
-M7   embeddinggemma-300m-qat-Q8_0       Dense          —                   Embedding
-M8   bge-reranker-v2-m3-Q8_0            Dense          —                   Rerank
+M6   Qwen2-Audio-7B.Q8_0                Dense                  Audio
+M7   embeddinggemma-300m-qat-Q8_0       Dense                  Embedding
+M8   bge-reranker-v2-m3-Q8_0            Dense                  Rerank
+
+Notes:
+  - Hybrid models interleave linear-attention and full-attention layers
+    (Qwen3.5/3.6 family). IMC uses snapshot/restore for cleanup.
+  - Dense and MoE both use the same IMC range-delete cleanup path.
 
 
-IMC Architecture x Template Combinations
+IMC Code Path Coverage
 ===============================================================================
 
-Only the combinations that exist in the real world and exercise unique code
-paths. Dense+Det and MoE+Det text-only are covered by their vision
-counterparts, which test the same hash-based IMC path with added media
-complexity.
+Two IMC cleanup paths exist; both must be exercised.
 
-Combination               Model                              IMC Code Path
-------------------------  ---------------------------------  ------------------------------------
-Dense + Vision            M3 Qwen2.5-VL-3B-Instruct-Q8_0     Hash matching + media build/extend
-MoE + Vision              M4 Qwen3-VL-30B-A3B-Instruct-Q4_K_M  Hash matching + media build/extend
-Hybrid + Vision           M5 Qwen3.6-35B-A3B-UD-Q4_K_M Hash matching + media build/extend + snapshot/restore
-MoE + Non-Deterministic   M2 gpt-oss-20b-Q8_0                Token prefix fallback
+Cleanup Path        Architectures Covered     Test Models
+------------------  ------------------------  --------------------------------
+Range-delete        Dense, MoE                M2 gpt-oss, M4 gemma-4
+Snapshot/restore    Hybrid (linear-attn)      M3 Qwen3.5-0.8B, M5 Qwen3.6-35B
 
 
 No-Cache Baseline (M1 Qwen3-8B-Q8_0, text)
@@ -68,7 +68,7 @@ ConTest2 (cancel inside loop)     qwen3/
 ConTest3 (break + unload)         qwen3/
 
 
-No-Cache Vision (M3 Qwen2.5-VL-3B-Instruct-Q8_0)
+No-Cache Vision (M3 Qwen3.5-0.8B-Q8_0)
 ===============================================================================
 
 Test                              Package
@@ -87,8 +87,8 @@ No-Cache Audio (M6 Qwen2-Audio-7B.Q8_0)
 
 Test                              Package
 --------------------------------  -------
-AudioChat                         audio/ 
-AudioStreamingChat                audio/ 
+AudioChat                         audio/
+AudioStreamingChat                audio/
 
 
 No-Cache Embedding (M7 embeddinggemma-300m-qat-Q8_0)
@@ -96,8 +96,8 @@ No-Cache Embedding (M7 embeddinggemma-300m-qat-Q8_0)
 
 Test                              Package
 --------------------------------  -------
-Embedding                         embed/ 
-PooledEmbeddings                  embed/ 
+Embedding                         embed/
+PooledEmbeddings                  embed/
 
 
 No-Cache Rerank (M8 bge-reranker-v2-m3-Q8_0)
@@ -114,28 +114,29 @@ SPC Caching (M1 Qwen3-8B-Q8_0)
 
 Test                              Package
 --------------------------------  -------
-CacheSPC (multi-turn)             qwen3/ 
+CacheSPC (multi-turn)             qwen3/
 
 
-IMC -- Dense + Vision (M3 Qwen2.5-VL-3B-Instruct-Q8_0)
+IMC -- Hybrid (lite) + Vision (M3 Qwen3.5-0.8B-Q8_0)
 ===============================================================================
 
-Exercises: hash-based slot matching, media build, media text extend.
+Exercises: hash-based slot matching, media build, media text extend,
+snapshot/restore state management. Small/fast model for CI.
 
-Test                              Package    
+Test                              Package
 --------------------------------  -----------
 IMCMediaBuild                     vision_imc/
 IMCMediaTextExtend                vision_imc/
 IMCTextThenMediaExtend            vision_imc/
 
 
-IMC -- MoE + Vision (M4 Qwen3-VL-30B-A3B-Instruct-Q4_K_M)
+IMC -- MoE + Vision (M4 gemma-4-26B-A4B-it-UD-Q4_K_M)
 ===============================================================================
 
 Exercises: hash-based slot matching, media build, media text extend,
-MoE expert routing.
+MoE expert routing, range-delete cleanup.
 
-Test                              Package        
+Test                              Package
 --------------------------------  ---------------
 IMCMediaBuild                     moe_vision_imc/
 IMCMediaTextExtend                moe_vision_imc/
@@ -144,20 +145,21 @@ IMCMediaTextExtend                moe_vision_imc/
 IMC -- MoE + Non-Deterministic (M2 gpt-oss-20b-Q8_0)
 ===============================================================================
 
-Exercises: token prefix fallback when hash matching fails.
+Exercises: token prefix fallback when hash matching fails,
+range-delete cleanup.
 
 Test                              Package
 --------------------------------  -------
-CacheIMCNonDeterministic          gpt/   
+CacheIMCNonDeterministic          gpt/
 
 
-IMC -- Hybrid + Vision (M5 Qwen3.6-35B-A3B-UD-Q4_K_M)
+IMC -- Hybrid (MoE) + Vision (M5 Qwen3.6-35B-A3B-UD-Q4_K_M)
 ===============================================================================
 
 Exercises: hash-based slot matching, media build, media text extend,
-snapshot/restore state management.
+snapshot/restore state management on a large MoE+Hybrid target.
 
-Test                              Package           
+Test                              Package
 --------------------------------  ------------------
 IMCMediaBuild                     hybrid_vision_imc/
 IMCMediaTextExtend                hybrid_vision_imc/
@@ -169,15 +171,15 @@ CacheIMCHybridMultiSlot           hybrid/
 IMC -- Redundant (candidates for removal)
 ===============================================================================
 
-These test the same hash-based IMC code path already covered by the vision
-IMC tests above, without adding media complexity.
+These test the same IMC code paths already covered above, without adding
+modality complexity. Kept for fast smoke checks during development.
 
-Test                              Package   Model                   Covered By
---------------------------------  --------  ----------------------- ----------------------------
-CacheIMCDeterministic             qwen3/    M1 Qwen3-8B-Q8_0        Dense + Vision IMC (vision_imc/)
-CacheIMCDeterministicMultiSlot    qwen3/    M1 Qwen3-8B-Q8_0        Dense + Vision IMC (vision_imc/)
-CacheIMC                          moe/      M4 Qwen3-VL-30B-A3B     MoE + Vision IMC (moe_vision_imc/)
-CacheIMCMultiSlot                 moe/      M4 Qwen3-VL-30B-A3B     MoE + Vision IMC (moe_vision_imc/)
+Test                              Package   Model                              Covered By
+--------------------------------  --------  ---------------------------------  ----------------------------
+CacheIMCDeterministic             qwen3/    M1 Qwen3-8B-Q8_0                   Hybrid + Vision IMC (vision_imc/)
+CacheIMCDeterministicMultiSlot    qwen3/    M1 Qwen3-8B-Q8_0                   Hybrid + Vision IMC (vision_imc/)
+CacheIMC                          moe/      M4 gemma-4-26B-A4B-it-UD-Q4_K_M    MoE + Vision IMC (moe_vision_imc/)
+CacheIMCMultiSlot                 moe/      M4 gemma-4-26B-A4B-it-UD-Q4_K_M    MoE + Vision IMC (moe_vision_imc/)
 
 
 No-Cache -- Additional Model Coverage
@@ -188,25 +190,25 @@ basic inference correctness per architecture, not caching.
 
 Package   Model                              Tests
 --------  ---------------------------------  -------------------------------------------
-hybrid/   M5 Qwen3.6-35B-A3B-UD-Q4_K_M TestSuite (10), BatchChatConcurrent, UsageCountingHybrid
-moe/      M4 Qwen3-VL-30B-A3B-Instruct-Q4_K_M  TestSuite (10), BatchChatConcurrent, UsageCounting
+hybrid/   M5 Qwen3.6-35B-A3B-UD-Q4_K_M       TestSuite (10), BatchChatConcurrent, UsageCountingHybrid
+moe/      M4 gemma-4-26B-A4B-it-UD-Q4_K_M    TestSuite (10), BatchChatConcurrent, UsageCounting
 gpt/      M2 gpt-oss-20b-Q8_0                TestSuite (4)
 
 
 Summary
 ===============================================================================
 
-Category               Total   Have   Missing
----------------------  -----   ----   -------
-No-Cache Text             23     23         0
-No-Cache Vision            7      7         0
-No-Cache Audio             2      2         0
-No-Cache Embedding         2      2         0
-No-Cache Rerank            2      2         0
-SPC                        1      1         0
-IMC Dense + Vision         3      3         0
-IMC MoE + Vision           2      2         0
-IMC MoE + Non-Det          1      1         0
-IMC Hybrid + Vision        5      5         0
----------------------  -----   ----   -------
-Total                     48     48         0
+Category                  Total   Have   Missing
+-----------------------   -----   ----   -------
+No-Cache Text                23     23         0
+No-Cache Vision               7      7         0
+No-Cache Audio                2      2         0
+No-Cache Embedding            2      2         0
+No-Cache Rerank               2      2         0
+SPC                           1      1         0
+IMC Hybrid (lite) Vision      3      3         0
+IMC MoE + Vision              2      2         0
+IMC MoE + Non-Det             1      1         0
+IMC Hybrid (MoE) Vision       5      5         0
+-----------------------   -----   ----   -------
+Total                        48     48         0

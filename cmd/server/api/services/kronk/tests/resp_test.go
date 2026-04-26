@@ -63,8 +63,8 @@ func respNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 	}
 }
 
-// respImageQwen25VL returns response tests for Qwen2.5-VL-3B-Instruct-Q8_0 model (vision).
-func respImageQwen25VL(t *testing.T, tokens map[string]string) []apitest.Table {
+// respImageQwen35VL returns response tests for Qwen3.5-0.8B-Q8_0 model (vision).
+func respImageQwen35VL(t *testing.T, tokens map[string]string) []apitest.Table {
 	image, err := readFile(imageFile)
 	if err != nil {
 		t.Fatalf("read image: %s", err)
@@ -78,7 +78,7 @@ func respImageQwen25VL(t *testing.T, tokens map[string]string) []apitest.Table {
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model":       "Qwen2.5-VL-3B-Instruct-Q8_0",
+				"model":       "Qwen3.5-0.8B-Q8_0",
 				"input":       model.ImageMessage("what's in the picture", image, "jpg"),
 				"max_tokens":  2048,
 				"temperature": 0.7,
@@ -89,7 +89,7 @@ func respImageQwen25VL(t *testing.T, tokens map[string]string) []apitest.Table {
 			ExpResp: &kronk.ResponseResponse{
 				Object: "response",
 				Status: "completed",
-				Model:  "Qwen2.5-VL-3B-Instruct-Q8_0",
+				Model:  "Qwen3.5-0.8B-Q8_0",
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
