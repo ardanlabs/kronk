@@ -548,7 +548,7 @@ var modelSpecConfig = modelSpec{
 	// ModelID: "Qwen2-Audio-7B-Q8_0",
 }
 
-const audioFile = "examples/samples/jfk.wav"
+const audioFile = "samples/jfk.wav"
 
 func main() {
 	if err := run(); err != nil {
@@ -1432,8 +1432,8 @@ type modelSpec struct {
 // Configure this to switch between URL and catalog downloads.
 // Set either SourceURL or ModelID, not both.
 var modelSpecConfig = modelSpec{
-	SourceURL: "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf",
-	// ModelID: "Qwen3-0.6B-Q8_0",
+	//SourceURL: "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf",
+	ModelID: "Qwen3-0.6B-Q8_0",
 }
 
 func main() {
@@ -1599,9 +1599,10 @@ func grammarPreset(krn *kronk.Kronk) error {
 		"messages": model.DocumentArray(
 			model.TextMessage(model.RoleUser, prompt),
 		),
-		"grammar":     grammarJSONObject,
-		"temperature": 0.7,
-		"max_tokens":  512,
+		"grammar":         grammarJSONObject,
+		"enable_thinking": false, // Grammar requires output to match from first token
+		"temperature":     0.7,
+		"max_tokens":      512,
 	}
 
 	ch, err := krn.ChatStreaming(ctx, d)
@@ -2981,7 +2982,7 @@ var modelSpecConfig = modelSpec{
 	// ModelID: "Qwen3.5-0.8B-Q8_0",
 }
 
-const imageFile = "examples/samples/giraffe.jpg"
+const imageFile = "samples/giraffe.jpg"
 
 func main() {
 	if err := run(); err != nil {

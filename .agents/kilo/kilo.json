@@ -1,32 +1,16 @@
 {
     "$schema": "https://opencode.ai/config.json",
-    "model": "gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT",
     "enabled_providers": [
         "kronk"
     ],
-    "permission": {
-        "*": "ask",
-        "bash": "allow",
-        "edit": "allow"
-    },
-    "instructions": [
-        "agent.md"
-    ],
-    "mcp": {
-        "Kronk": {
-            "type": "remote",
-            "url": "http://localhost:9000/mcp",
-            "enabled": true,
-            "timeout": 60000
-        }
-    },
+    "model": "Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT",
     "provider": {
         "kronk": {
-            "npm": "@ai-sdk/openai-compatible",
             "name": "Kronk (local)",
+            "npm": "@ai-sdk/openai-compatible",
             "options": {
-                "baseURL": "http://localhost:11435/v1",
-                "apiKey": "123"
+                "apiKey": "123",
+                "baseURL": "http://localhost:11435/v1"
             },
             "models": {
                 "gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT": {
@@ -51,6 +35,31 @@
                     }
                 }
             }
+        }
+    },
+    "mcp": {
+        "Kronk": {
+            "type": "remote",
+            "url": "http://localhost:9000/mcp",
+            "enabled": true,
+            "timeout": 60000
+        }
+    },
+    "instructions": [
+        "agent.md"
+    ],
+    "permission": {
+        "*": "ask",
+        "bash": "allow",
+        "edit": "allow",
+        "recall": {
+            "search": "allow"
+        },
+        "glob": {
+            "*": "allow"
+        },
+        "read": {
+            "*": "allow"
         }
     }
 }

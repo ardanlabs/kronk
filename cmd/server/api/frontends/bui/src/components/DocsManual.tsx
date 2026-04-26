@@ -300,10 +300,16 @@ Use "kronk [command] --help" for more information about a command.`}</code></pre
           <p>Open http://localhost:11435 in your browser and navigate to the Libraries page.</p>
           <p><strong>Option B: Via CLI</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk libs --local`}</code></pre>
-          <p>This downloads libraries to <code>~/.kronk/libraries/</code> using auto-detected settings.</p>
+          <p>This downloads the <strong>well-known default version</strong> of llama.cpp baked into the SDK and installs it under <code>~/.kronk/libraries/&lt;os&gt;/&lt;arch&gt;/&lt;processor&gt;/</code> using auto-detected settings (for example <code>~/.kronk/libraries/darwin/arm64/metal/</code>). Each <code>(arch, os, processor)</code> triple lives in its own folder so multiple bundles can coexist on the same machine.</p>
+          <p>To track and install the <strong>latest</strong> llama.cpp release instead of the default version, opt in with <code>--upgrade</code>:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk libs --local --upgrade`}</code></pre>
+          <blockquote>The standalone CLI defaults to the pinned default version so reinstalls</blockquote>
+          <blockquote>are reproducible. The model server takes the opposite default</blockquote>
+          <blockquote>(<code>--allow-upgrade=true</code>) so a long-running server picks up upstream</blockquote>
+          <blockquote>fixes; see Chapter 7 §7.3 for that flag.</blockquote>
           <p><strong>Pinning a Specific Library Version</strong></p>
           <p>Sometimes there are breaking changes to llama.cpp that require a matching version of yzma and Kronk. To ensure stability, you can install a specific library version:</p>
-          <pre className="code-block"><code className="language-shell">{`kronk libs --lib-version=b8864 --local`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`kronk libs --version=b8864 --local`}</code></pre>
           <p>Or via environment variable:</p>
           <pre className="code-block"><code className="language-shell">{`KRONK_LIB_VERSION=b8864 kronk libs --local`}</code></pre>
           <p>Here are the known compatible versions:</p>
@@ -330,12 +336,34 @@ Use "kronk [command] --help" for more information about a command.`}</code></pre
           </table>
           <p>If you experience unexpected behavior after a library upgrade, pin the version that matches your installed Kronk release using the table above.</p>
           <p><strong>Environment Variables for Library Installation</strong></p>
-          <pre className="code-block"><code>{`KRONK_LIB_PATH  - Library directory (default: \`~/.kronk/libraries\`)
+          <pre className="code-block"><code>{`KRONK_LIB_PATH  - Library directory. See "KRONK_LIB_PATH semantics" below.
 KRONK_PROCESSOR - \`cpu\`, \`cuda\`, \`metal\`, \`rocm\`, or \`vulkan\` (default: \`cpu\`)
 KRONK_ARCH      - Architecture override: \`amd64\`, \`arm64\`
 KRONK_OS        - OS override: \`linux\`, \`darwin\`, \`windows\``}</code></pre>
+          <p><strong>KRONK_LIB_PATH semantics</strong></p>
+          <p><code>KRONK_LIB_PATH</code> is interpreted in one of three ways:</p>
+          <ol>
+            <li><em>Unset</em> — the runtime resolves <code>&lt;base&gt;/libraries/&lt;os&gt;/&lt;arch&gt;/&lt;processor&gt;/</code> based on the detected (or <code>KRONK_*</code>-overridden) triple.</li>
+            <li><em>Points at a directory containing a &lt;code&gt;version.json&lt;/code&gt;</em> — used as-is. This is the form to set when you want to switch the active install to a previously-downloaded triple folder. Example: ```shell export KRONK_LIB_PATH=~/.kronk/libraries/linux/amd64/cuda ```</li>
+            <li><em>Points at a non-empty directory without a &lt;code&gt;version.json&lt;/code&gt;</em> — treated as a user-managed read-only build. Kronk will load libraries from it but never write to it; mutating CLI/HTTP operations against it return an error.</li>
+          </ol>
+          <p>Switching the active install requires a server restart; libraries are not hot-reloaded.</p>
           <p><strong>Example: Install CUDA Libraries</strong></p>
           <pre className="code-block"><code className="language-shell">{`KRONK_PROCESSOR=cuda kronk libs --local`}</code></pre>
+          <p><strong>Installing for Another Triple</strong></p>
+          <p>You can also install a bundle for a triple other than the current machine's detected one — useful for prepping a shared filesystem or a target host. The install lands in its own folder under the libraries root and does not touch the active install:</p>
+          <pre className="code-block"><code className="language-shell">{`# List every supported (arch, os, processor) combination
+kronk libs --list-combinations
+
+# Install the Linux/CUDA bundle alongside whatever is already active
+kronk libs --install --arch=amd64 --os=linux --processor=cuda --local
+
+# List installed bundles
+kronk libs --list-installs
+
+# Remove an install
+kronk libs --remove-install --arch=amd64 --os=linux --processor=cuda --local`}</code></pre>
+          <p>In web mode (the default — no <code>--local</code>) the same commands are dispatched through the running server. Activate any installed bundle by exporting <code>KRONK_LIB_PATH</code> to its folder and restarting the server.</p>
           <h3 id="24-downloading-your-first-model">2.4 Downloading Your First Model</h3>
           <p>Kronk provides a curated catalog of verified models. List available models:</p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog list --local`}</code></pre>
@@ -360,7 +388,123 @@ BUI: http://localhost:11435`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`kronk server start -d`}</code></pre>
           <p><strong>Stopping the Server</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server stop`}</code></pre>
-          <h3 id="26-verifying-the-installation">2.6 Verifying the Installation</h3>
+          <h3 id="26-model-configuration-file">2.6 Model Configuration File</h3>
+          <p>When Kronk starts the server for the first time, it automatically installs a default <code>model_config.yaml</code> file in the <code>~/.kronk/</code> directory. This file controls how each model behaves when loaded by the server — context window size, batch processing, caching, sampling parameters, and more.</p>
+          <p><strong>How It Works</strong></p>
+          <p>The default configuration is embedded inside the Kronk CLI binary. On first server start, if <code>~/.kronk/model_config.yaml</code> does not already exist, Kronk writes the embedded default to that path. Once the file exists, Kronk never overwrites it — your edits are preserved across upgrades.</p>
+          <p>The server logs the path it's using on startup:</p>
+          <pre className="code-block"><code>{`startup  status=model config  path=/Users/you/.kronk/model_config.yaml`}</code></pre>
+          <p><strong>File Structure</strong></p>
+          <p>The file is a YAML document where each top-level key is a model ID (or a model ID with a config variant suffix). Under each key you set the configuration options for that model. Here's a simplified example:</p>
+          <pre className="code-block"><code className="language-yaml">{`Qwen3-8B-Q8_0:
+  context-window: 32768
+  sampling-parameters:
+    temperature: 0.7
+    top_p: 0.8
+    top_k: 20
+
+gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT:
+  context-window: 131072
+  nseq-max: 2
+  sampling-parameters:
+    temperature: 1.0
+    top_k: 64
+    top_p: 0.95
+
+Qwen3-8B-Q8_0/YARN:
+  context-window: 131072
+  rope-scaling-type: yarn
+  yarn-orig-ctx: 32768`}</code></pre>
+          <p>The <code>/YARN</code> suffix is a <strong>config variant</strong> — it lets you define multiple configurations for the same model. When making an API request, use the full variant name (e.g., <code>Qwen3-8B-Q8_0/YARN</code>) as the <code>model</code> field to select that configuration.</p>
+          <p><strong>Available Options</strong></p>
+          <p>The file includes a commented reference at the top listing every option. Here are the most commonly used:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Option</th>
+                <th>Description</th>
+                <th>Default</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>context-window</code></td>
+                <td>Max tokens the model can process per request</td>
+                <td>8192</td>
+              </tr>
+              <tr>
+                <td><code>ngpu-layers</code></td>
+                <td>GPU layers to offload (0 = all, -1 = none)</td>
+                <td>0</td>
+              </tr>
+              <tr>
+                <td><code>flash-attention</code></td>
+                <td>Flash Attention mode: <code>enabled</code>, <code>disabled</code>, <code>auto</code></td>
+                <td>auto</td>
+              </tr>
+              <tr>
+                <td><code>incremental-cache</code></td>
+                <td>Enable IMC for agentic workflows</td>
+                <td>true</td>
+              </tr>
+              <tr>
+                <td><code>nseq-max</code></td>
+                <td>Max parallel sequences for batched inference</td>
+                <td>0</td>
+              </tr>
+              <tr>
+                <td><code>nbatch</code></td>
+                <td>Logical batch size</td>
+                <td>2048</td>
+              </tr>
+              <tr>
+                <td><code>nubatch</code></td>
+                <td>Physical batch size for prompt ingestion</td>
+                <td>512</td>
+              </tr>
+              <tr>
+                <td><code>cache-type-k</code></td>
+                <td>KV cache key quantization: <code>f16</code>, <code>q8_0</code>, <code>q4_0</code>, etc.</td>
+                <td>—</td>
+              </tr>
+              <tr>
+                <td><code>cache-type-v</code></td>
+                <td>KV cache value quantization</td>
+                <td>—</td>
+              </tr>
+              <tr>
+                <td><code>sampling-parameters</code></td>
+                <td>Nested block for temperature, top_p, top_k, min_p</td>
+                <td>—</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>For the complete list of options and detailed explanations, see <a href="chapter-03-model-configuration.md">Chapter 3: Model Configuration</a>.</p>
+          <p><strong>Editing the File</strong></p>
+          <p>Open the file in any text editor:</p>
+          <pre className="code-block"><code className="language-shell">{`# macOS
+open ~/.kronk/model_config.yaml
+
+# Linux
+nano ~/.kronk/model_config.yaml`}</code></pre>
+          <p>After editing, restart the server to apply changes:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk server stop
+kronk server start`}</code></pre>
+          <p><strong>Configuration Priority</strong></p>
+          <p>When the server loads a model, configuration is resolved through three tiers (highest priority wins):</p>
+          <ol>
+            <li><strong>model_config.yaml</strong> — Your local overrides (highest priority)</li>
+            <li><strong>Catalog defaults</strong> — Settings from the model's catalog entry</li>
+            <li><strong>Built-in defaults</strong> — Fallback values from the model package</li>
+          </ol>
+          <p>This means any option you set in <code>model_config.yaml</code> overrides what the catalog provides for that model.</p>
+          <p><strong>Tips</strong></p>
+          <ul>
+            <li>You can configure models that aren't in the catalog — just use the model's file name (without <code>.gguf</code>) as the key.</li>
+            <li>Use YAML anchors (<code>&name</code> and <code>&lt;&lt;: *name</code>) to share common settings between variants. The default file includes examples of this pattern.</li>
+            <li>The <code>--model-config</code> server flag lets you point to an alternative config file for testing without modifying your main one.</li>
+          </ul>
+          <h3 id="27-verifying-the-installation">2.7 Verifying the Installation</h3>
           <p><strong>Test via curl</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/models`}</code></pre>
           <p>You should see a list of available models.</p>
@@ -375,7 +519,7 @@ BUI: http://localhost:11435`}</code></pre>
   }'`}</code></pre>
           <p><strong>Test via BUI</strong></p>
           <p>Open <code>http://localhost:11435</code> in your browser and navigate to the <code>Apps/Chat</code> app. Select the model you want to try and chat away.</p>
-          <h3 id="27-quick-start-summary">2.7 Quick Start Summary</h3>
+          <h3 id="28-quick-start-summary">2.8 Quick Start Summary</h3>
           <pre className="code-block"><code className="language-shell">{`# 1. Install Kronk
 go install github.com/ardanlabs/kronk/cmd/kronk@latest
 
@@ -392,7 +536,7 @@ kronk catalog pull Qwen3-0.6B-Q8_0 --local
 curl http://localhost:11435/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{"model": "Qwen3-0.6B-Q8_0", "messages": [{"role": "user", "content": "Hello!"}]}'`}</code></pre>
-          <h3 id="28-nixos-setup">2.8 NixOS Setup</h3>
+          <h3 id="29-nixos-setup">2.9 NixOS Setup</h3>
           <p>NixOS does not follow the Filesystem Hierarchy Standard (FHS), so shared libraries and binaries cannot be found in standard paths like <code>/usr/lib</code>. Kronk requires llama.cpp shared libraries at runtime, which means on NixOS you need to provide them through Nix rather than using the built-in <code>kronk libs</code> downloader.</p>
           <p>A <code>flake.nix</code> is provided in <code>zarf/nix/</code> with dev shells for development and build packages for producing a standalone <code>kronk</code> binary, each per GPU backend.</p>
           <p><strong>Prerequisites</strong></p>
@@ -611,7 +755,7 @@ n_ubatch: 512 # GPU bite size (must be ≤ n_batch)`}</code></pre>
           </table>
           <h3 id="32-processor-selection">3.2 Processor Selection</h3>
           <p>The <strong>processor</strong> determines which hardware backend Kronk uses for inference: CPU, CUDA, Metal, ROCm, or Vulkan. Each processor corresponds to a different build of the llama.cpp shared libraries, so the processor must be resolved <strong>before</strong> libraries are downloaded. Once the wrong libraries are installed, switching processors requires re-downloading them.</p>
-          <p>This means processor selection happens early — before <code>libs.New()</code> in the SDK, and before <code>kronk libs install</code> or any server startup on the CLI. Everything downstream (model loading, layer offloading, KV cache placement) depends on having the correct libraries for your hardware.</p>
+          <p>This means processor selection happens early — before <code>libs.New()</code> in the SDK, and before <code>kronk libs</code> or any server startup on the CLI. Each install lands in its own per-triple folder under the libraries root (<code>&lt;base&gt;/libraries/&lt;os&gt;/&lt;arch&gt;/&lt;processor&gt;/</code>), so multiple processor bundles can coexist; switch active install at runtime by exporting <code>KRONK_LIB_PATH</code> to that folder and restarting the server. Everything downstream (model loading, layer offloading, KV cache placement) depends on having the correct libraries for your hardware.</p>
           <h4 id="how-processor-selection-works">How Processor Selection Works</h4>
           <p>Kronk resolves the processor through a two-step priority:</p>
           <ol>
@@ -2157,7 +2301,7 @@ Step 4 — Total VRAM:
           <h3 id="51-overview">5.1 Overview</h3>
           <p>When processing a chat request, the model must compute attention for every token in the conversation. Without caching, the entire prompt is prefilled on every request — even tokens the model has already seen.</p>
           <p><em>Note: Prefill is the phase where the model processes all input tokens (system prompt, conversation history, and the new message) before it begins generating a response. This is the most computationally expensive part of a request, and its cost grows with the number of input tokens.</em></p>
-          <p>Kronk provides the Incremental Message Cache (IMC) to reduce redundant prefill work. IMC maintains logical sessions — one per conversation branch — and caches the full message history so only the new message needs to be prefilled. All sessions (text and media) externalize their cached KV state to RAM after each request and restore it into any available slot on the next request. <code>StateSeqGetData</code> captures the raw KV bytes regardless of whether they originated from text tokens or media embeddings.</p>
+          <p>Kronk provides the Incremental Message Cache (IMC) to reduce redundant prefill work. <strong>IMC is enabled by default for all models.</strong> IMC maintains logical sessions — one per conversation branch — and caches the full message history so only the new message needs to be prefilled. All sessions (text and media) externalize their cached KV state to RAM after each request and restore it into any available slot on the next request. <code>StateSeqGetData</code> captures the raw KV bytes regardless of whether they originated from text tokens or media embeddings.</p>
           <pre className="code-block"><code>{`No Caching:
 ┌─────────────────────────────────────────────────────┐
 │ System Prompt │ Message 1 │ Message 2 │ New Message │
@@ -2475,11 +2619,12 @@ New decode:    4 tokens (T9-T12, from divergence point forward)`}</code></pre>
             <li>Server restarts</li>
           </ul>
           <h3 id="56-configuration-reference">5.6 Configuration Reference</h3>
-          <p>IMC is enabled through the model configuration.</p>
-          <pre className="code-block"><code className="language-yaml">{`models:
-  Qwen3-8B-Q8_0:
-    incremental_cache: true
-    cache_min_tokens: 100 # Don't cache if < 100 tokens`}</code></pre>
+          <p>IMC is enabled by default for all models. No configuration is needed to use it. To disable IMC for a specific model, set <code>incremental-cache: false</code> in your <code>model_config.yaml</code>:</p>
+          <pre className="code-block"><code className="language-yaml">{`Qwen3-8B-Q8_0:
+  incremental-cache: false   # Disable IMC for this model`}</code></pre>
+          <p>You can also tune the minimum cache threshold:</p>
+          <pre className="code-block"><code className="language-yaml">{`Qwen3-8B-Q8_0:
+  cache-min-tokens: 100   # Don't cache if < 100 tokens (default: 100)`}</code></pre>
           <p><strong>cache_min_tokens</strong></p>
           <p>Minimum common prefix length required for token-level partial prefix matching. If no session's cached tokens share at least this many tokens with the incoming request, the fallback is skipped and the cache is rebuilt from scratch.</p>
           <p>Default: 100 tokens</p>
@@ -3008,7 +3153,7 @@ kronk libs --local`}</code></pre>
                 <td><code>--lib-path</code></td>
                 <td><code>KRONK_LIB_PATH</code></td>
                 <td><em>(empty)</em></td>
-                <td>Path to llama library directory</td>
+                <td>Override path Kronk loads llama.cpp libraries from. Empty resolves the default per-triple folder under the libraries root (<code>&lt;base&gt;/libraries/&lt;os&gt;/&lt;arch&gt;/&lt;processor&gt;/</code>). A directory containing a <code>version.json</code> is used as-is. A non-empty directory without a <code>version.json</code> is treated as a read-only user-managed build. See chapter 2.3 for full semantics.</td>
               </tr>
               <tr>
                 <td><code>--lib-version</code></td>
@@ -3050,7 +3195,7 @@ kronk libs --local`}</code></pre>
                 <td><code>--allow-upgrade</code></td>
                 <td><code>KRONK_ALLOW_UPGRADE</code></td>
                 <td><code>true</code></td>
-                <td>Allow automatic library upgrades</td>
+                <td>Allow automatic library upgrades to the latest llama.cpp release. The server defaults to <code>true</code> so a long-running server tracks upstream fixes. The standalone <code>kronk libs</code> CLI defaults to <code>false</code> (installs the well-known default version) and opts in via <code>--upgrade</code>.</td>
               </tr>
               <tr>
                 <td><code>--llama-log</code></td>
@@ -3213,10 +3358,14 @@ kronk server start --llama-log=0    # Disable (default)`}</code></pre>
           <h3 id="711-data-paths">7.11 Data Paths</h3>
           <p>Default data locations:</p>
           <pre className="code-block"><code>{`~/.kronk/
-├── libraries/     # llama.cpp libraries
-├── models/        # Downloaded models
-├── templates/     # Chat templates
-└── catalog/       # Catalog cache`}</code></pre>
+├── libraries/                          # llama.cpp libraries (one folder per triple)
+│   └── <os>/<arch>/<processor>/        # e.g. darwin/arm64/metal/, linux/amd64/cuda/
+│       ├── libllama.so / .dylib / .dll
+│       └── version.json
+├── models/                             # Downloaded models
+├── templates/                          # Chat templates
+└── catalog/                            # Catalog cache`}</code></pre>
+          <p>Each <code>(arch, os, processor)</code> install lives in its own folder. The runtime loads the folder for the detected triple by default; set <code>KRONK_LIB_PATH</code> to a different triple folder (and restart) to switch active install. See chapter 2.3 for <code>KRONK_LIB_PATH</code> semantics and the install-management commands.</p>
           <p><strong>Custom Base Path</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --base-path=/data/kronk`}</code></pre>
           <h3 id="712-complete-example">7.12 Complete Example</h3>
@@ -4676,7 +4825,7 @@ response = client.chat.completions.create(
             <li>Click <strong>Pull Libraries</strong></li>
             <li>Wait for the download to complete</li>
           </ol>
-          <p>The BUI auto-detects your platform (OS, architecture, GPU) and downloads the appropriate binaries to <code>~/.kronk/libraries/</code>.</p>
+          <p>The BUI auto-detects your platform (OS, architecture, GPU) and downloads the appropriate binaries to <code>~/.kronk/libraries/&lt;os&gt;/&lt;arch&gt;/&lt;processor&gt;/</code> (for example <code>~/.kronk/libraries/darwin/arm64/metal/</code>). Each <code>(arch, os, processor)</code> triple lives in its own folder.</p>
           <p><strong>Override Detection:</strong></p>
           <p>If auto-detection is incorrect, you can specify:</p>
           <ul>
@@ -4684,6 +4833,12 @@ response = client.chat.completions.create(
             <li>Architecture (amd64, arm64)</li>
             <li>Operating system</li>
           </ul>
+          <p><strong>Library Installs panel:</strong></p>
+          <p>Below the active-install pull controls, the same page exposes a <strong>Library Installs</strong> section. It lets you install bundles for triples other than the current machine's detected one — useful for prepping a shared filesystem or staging a target host. Each install lands in its own folder under the libraries root and does not touch the active install.</p>
+          <p>The panel renders three filtered selectors (OS, Architecture, Processor) populated from the supported <code>(arch, os, processor)</code> matrix returned by <code>GET /v1/libs/combinations</code>, optional version pinning, and a table of currently-installed bundles with a Remove action per row.</p>
+          <p>To make any installed bundle the active one at runtime, export <code>KRONK_LIB_PATH</code> to its triple folder and restart the server. The BUI does not switch the active install in-process; libraries are not hot-reloaded.</p>
+          <pre className="code-block"><code className="language-shell">{`export KRONK_LIB_PATH=~/.kronk/libraries/linux/amd64/cuda
+kronk server start`}</code></pre>
           <h3 id="123-browsing-the-catalog">12.3 Browsing the Catalog</h3>
           <p>Navigate to the <strong>Catalog &gt; List</strong> page to browse available models.</p>
           <p><strong>Filter Sidebar:</strong></p>
@@ -5468,7 +5623,7 @@ make mcp-server`}</code></pre>
           <p><strong>Solution:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk libs --local`}</code></pre>
           <p>Or download via the BUI Libraries page.</p>
-          <p>Kronk auto-detects your GPU hardware and selects the correct library variant. If auto-detection fails, set the processor explicitly:</p>
+          <p>Kronk auto-detects your GPU hardware and selects the correct library bundle. If auto-detection fails, set the processor explicitly:</p>
           <pre className="code-block"><code className="language-shell">{`# For Mac with Apple Silicon
 KRONK_PROCESSOR=metal kronk libs --local
 
@@ -5485,10 +5640,10 @@ KRONK_PROCESSOR=vulkan kronk libs --local
 KRONK_PROCESSOR=cpu kronk libs --local`}</code></pre>
           <p>See <a href="chapter-03-model-configuration.md#32-processor-selection">Chapter 3: Processor Selection</a> for details on how auto-detection works on each platform.</p>
           <p><strong>Problem: New library version causes crashes or bad output</strong></p>
-          <p>Kronk tracks the latest llama.cpp release and upgrades automatically when you run <code>kronk libs</code>. Occasionally a new llama.cpp release introduces a regression — crashes during model loading, decode errors, or degraded output quality. When this happens, pin the library to a known-good version using <code>KRONK_LIB_VERSION</code>.</p>
+          <p>The standalone <code>kronk libs</code> CLI installs the well-known default version of llama.cpp by default, which is conservative and changes only when the Kronk release bumps it. The model server (<code>kronk server start</code>) defaults to <code>--allow-upgrade=true</code> and tracks the latest llama.cpp release, so a long-running server can pick up a regression — crashes during model loading, decode errors, or degraded output quality. When this happens, pin the library to a known-good version using <code>KRONK_LIB_VERSION</code> (or <code>--version</code> on the CLI).</p>
           <p><strong>Pin to a specific version:</strong></p>
           <pre className="code-block"><code className="language-shell">{`# Install a specific version
-kronk libs --lib-version=b5490 --local
+kronk libs --version=b5490 --local
 
 # Or use the environment variable
 KRONK_LIB_VERSION=b5490 kronk libs --local`}</code></pre>
@@ -5500,8 +5655,8 @@ kronk libs --local
 kronk server start`}</code></pre>
           <p><strong>Check your current installed version:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk libs --version`}</code></pre>
-          <p>This shows the installed version, architecture, OS, processor, and the latest available version. If the installed version differs from latest, the next <code>kronk libs</code> will upgrade unless <code>KRONK_LIB_VERSION</code> is set.</p>
-          <p><strong>When to pin:</strong> Pin whenever a new llama.cpp release breaks something you depend on. Unset <code>KRONK_LIB_VERSION</code> once the upstream fix is released to resume tracking latest.</p>
+          <p>This shows the installed version, architecture, OS, processor, and the latest available version. The CLI will only upgrade past the installed version when you pass <code>--upgrade</code>; otherwise it sticks to the well-known default version (or whatever is on disk if it is already newer).</p>
+          <p><strong>When to pin:</strong> Pin whenever a new llama.cpp release breaks something you depend on. Unset <code>KRONK_LIB_VERSION</code> once the upstream fix is released to resume tracking either the default version (CLI) or latest (server with <code>--allow-upgrade=true</code>).</p>
           <p>See <a href="chapter-02-installation.md#23-installing-libraries">Chapter 2: Installing Libraries</a> for the full compatibility matrix.</p>
           <p><strong>Error: "unknown device"</strong></p>
           <p>The specified GPU device is not recognized by the loaded library.</p>
@@ -5518,6 +5673,19 @@ kronk devices
 
 # Re-install matching libraries
 kronk libs --local`}</code></pre>
+          <p><strong>Problem: "unable to load library" pointing at the wrong folder</strong></p>
+          <p>Library bundles now live at <code>&lt;base&gt;/libraries/&lt;os&gt;/&lt;arch&gt;/&lt;processor&gt;/</code>, one folder per <code>(arch, os, processor)</code> triple. If <code>dlopen</code> reports a path like <code>&lt;base&gt;/libraries/libllama.dylib</code> (libraries directly under the root), you have an installation from before the per-triple layout. The SDK migrates the legacy layout into the correct triple folder automatically on first call to <code>libs.New()</code>/<code>libs.Path()</code>. If migration fails, just re-run:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk libs --local`}</code></pre>
+          <p>The new install lands at <code>&lt;base&gt;/libraries/&lt;os&gt;/&lt;arch&gt;/&lt;processor&gt;/</code> and the runtime resolves to the same folder.</p>
+          <p><strong>Problem: Server is loading the wrong install</strong></p>
+          <p>To switch the active install (for example to a previously downloaded CUDA or CPU bundle), point <code>KRONK_LIB_PATH</code> at its triple folder and restart the server. Libraries are not hot-reloaded.</p>
+          <pre className="code-block"><code className="language-shell">{`# List installed bundles
+kronk libs --list-installs
+
+# Switch active install
+export KRONK_LIB_PATH=~/.kronk/libraries/linux/amd64/cuda
+kronk server start`}</code></pre>
+          <p>If <code>KRONK_LIB_PATH</code> points at a directory containing <code>version.json</code>, Kronk uses it as-is. If it points at a non-empty directory without a <code>version.json</code>, Kronk treats it as a read-only user-managed build and will refuse mutating operations against it (errors will mention <code>read-only</code> or <code>ErrReadOnly</code>).</p>
           <h3 id="162-model-loading-failures">16.2 Model Loading Failures</h3>
           <p><strong>Error: "unable to load model"</strong></p>
           <p>The model file is missing, corrupted, or incompatible.</p>
@@ -6819,9 +6987,10 @@ batching = true`}</code></pre>
                 <li><a href="#23-installing-libraries" className={activeSection === '23-installing-libraries' ? 'active' : ''}>2.3 Installing Libraries</a></li>
                 <li><a href="#24-downloading-your-first-model" className={activeSection === '24-downloading-your-first-model' ? 'active' : ''}>2.4 Downloading Your First Model</a></li>
                 <li><a href="#25-starting-the-server" className={activeSection === '25-starting-the-server' ? 'active' : ''}>2.5 Starting the Server</a></li>
-                <li><a href="#26-verifying-the-installation" className={activeSection === '26-verifying-the-installation' ? 'active' : ''}>2.6 Verifying the Installation</a></li>
-                <li><a href="#27-quick-start-summary" className={activeSection === '27-quick-start-summary' ? 'active' : ''}>2.7 Quick Start Summary</a></li>
-                <li><a href="#28-nixos-setup" className={activeSection === '28-nixos-setup' ? 'active' : ''}>2.8 NixOS Setup</a></li>
+                <li><a href="#26-model-configuration-file" className={activeSection === '26-model-configuration-file' ? 'active' : ''}>2.6 Model Configuration File</a></li>
+                <li><a href="#27-verifying-the-installation" className={activeSection === '27-verifying-the-installation' ? 'active' : ''}>2.7 Verifying the Installation</a></li>
+                <li><a href="#28-quick-start-summary" className={activeSection === '28-quick-start-summary' ? 'active' : ''}>2.8 Quick Start Summary</a></li>
+                <li><a href="#29-nixos-setup" className={activeSection === '29-nixos-setup' ? 'active' : ''}>2.9 NixOS Setup</a></li>
               </ul>
             </div>
             <div className="doc-index-section">

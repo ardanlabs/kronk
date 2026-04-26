@@ -27,6 +27,9 @@ import type {
   PlaygroundSessionResponse,
   PlaygroundChatRequest,
   DevicesResponse,
+  LibsCombinationsResponse,
+  LibsBundleListResponse,
+  LibsBundleActionResponse,
 } from '../types';
 
 class ApiService {
@@ -351,17 +354,31 @@ class ApiService {
     onMessage: (data: VersionResponse) => void,
     onError: (error: string) => void,
     onComplete: () => void,
-    allowUpgrade?: boolean,
-    version?: string
+    opts?: {
+      allowUpgrade?: boolean;
+      version?: string;
+      arch?: string;
+      os?: string;
+      processor?: string;
+    }
   ): () => void {
     const controller = new AbortController();
 
     const params = new URLSearchParams();
-    if (allowUpgrade) {
+    if (opts?.allowUpgrade) {
       params.set('allow-upgrade', 'true');
     }
-    if (version) {
-      params.set('version', version);
+    if (opts?.version) {
+      params.set('version', opts.version);
+    }
+    if (opts?.arch) {
+      params.set('arch', opts.arch);
+    }
+    if (opts?.os) {
+      params.set('os', opts.os);
+    }
+    if (opts?.processor) {
+      params.set('processor', opts.processor);
     }
     const qs = params.toString();
     const url = qs ? `${this.baseUrl}/libs/pull?${qs}` : `${this.baseUrl}/libs/pull`;
@@ -690,6 +707,19 @@ class ApiService {
 
   async getDevices(): Promise<DevicesResponse> {
     return this.request<DevicesResponse>('/devices');
+  }
+
+  async getLibsCombinations(): Promise<LibsCombinationsResponse> {
+    return this.request<LibsCombinationsResponse>('/libs/combinations');
+  }
+
+  async listLibsInstalls(): Promise<LibsBundleListResponse> {
+    return this.request<LibsBundleListResponse>('/libs/installs');
+  }
+
+  async removeLibsInstall(arch: string, os: string, processor: string): Promise<LibsBundleActionResponse> {
+    const params = new URLSearchParams({ arch, os, processor });
+    return this.request<LibsBundleActionResponse>(`/libs/installs?${params.toString()}`, { method: 'DELETE' });
   }
 
 }

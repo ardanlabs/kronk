@@ -34,6 +34,9 @@ func Routes(app *web.App, cfg Config) {
 
 	app.HandlerFunc(http.MethodGet, version, "/libs", api.listLibs, auth)
 	app.HandlerFunc(http.MethodPost, version, "/libs/pull", api.pullLibs, authAdmin)
+	app.HandlerFunc(http.MethodGet, version, "/libs/combinations", api.listLibsCombinations, auth)
+	app.HandlerFunc(http.MethodGet, version, "/libs/installs", api.listLibsInstalls, auth)
+	app.HandlerFunc(http.MethodDelete, version, "/libs/installs", api.removeLibsInstall, authAdmin)
 
 	app.HandlerFunc(http.MethodGet, version, "/models", api.listModels, auth)
 	app.HandlerFunc(http.MethodGet, version, "/models/", api.missingModel, auth)

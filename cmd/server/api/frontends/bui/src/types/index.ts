@@ -275,6 +275,34 @@ export interface VersionResponse {
   allow_upgrade: boolean;
 }
 
+export interface LibsCombination {
+  arch: string;
+  os: string;
+  processor: string;
+}
+
+export interface LibsCombinationsResponse {
+  combinations: LibsCombination[];
+}
+
+export interface LibsBundleTag {
+  version: string;
+  arch: string;
+  os: string;
+  processor: string;
+}
+
+export interface LibsBundleListResponse {
+  bundles: LibsBundleTag[];
+}
+
+export interface LibsBundleActionResponse {
+  status: string;
+  arch: string;
+  os: string;
+  processor: string;
+}
+
 export type RateWindow = 'day' | 'month' | 'year' | 'unlimited';
 
 export interface RateLimit {

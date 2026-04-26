@@ -41,7 +41,9 @@ Before running inference, you need the llama.cpp libraries.
 3. Wait for the download to complete
 
 The BUI auto-detects your platform (OS, architecture, GPU) and downloads
-the appropriate binaries to `~/.kronk/libraries/`.
+the appropriate binaries to `~/.kronk/libraries/<os>/<arch>/<processor>/`
+(for example `~/.kronk/libraries/darwin/arm64/metal/`). Each
+`(arch, os, processor)` triple lives in its own folder.
 
 **Override Detection:**
 
@@ -50,6 +52,30 @@ If auto-detection is incorrect, you can specify:
 - Processor type (CPU, CUDA, Metal, ROCm, Vulkan)
 - Architecture (amd64, arm64)
 - Operating system
+
+**Library Installs panel:**
+
+Below the active-install pull controls, the same page exposes a
+**Library Installs** section. It lets you install bundles for triples
+other than the current machine's detected one — useful for prepping a
+shared filesystem or staging a target host. Each install lands in its
+own folder under the libraries root and does not touch the active
+install.
+
+The panel renders three filtered selectors (OS, Architecture,
+Processor) populated from the supported `(arch, os, processor)` matrix
+returned by `GET /v1/libs/combinations`, optional version pinning, and
+a table of currently-installed bundles with a Remove action per row.
+
+To make any installed bundle the active one at runtime, export
+`KRONK_LIB_PATH` to its triple folder and restart the server. The BUI
+does not switch the active install in-process; libraries are not
+hot-reloaded.
+
+```shell
+export KRONK_LIB_PATH=~/.kronk/libraries/linux/amd64/cuda
+kronk server start
+```
 
 ### 12.3 Browsing the Catalog
 

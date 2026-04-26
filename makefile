@@ -106,22 +106,31 @@ install-kronk:
 	go install ./cmd/kronk
 	@echo
 
-# Use this to install or update llama.cpp to the latest version. Needed to
-# run tests locally.
-install-libraries:
-	@echo ========== INSTALL LIBRARIES ==========
-	go run cmd/kronk/main.go libs --local
+# Use this to install or update llama.cpp to the latest version. Used by
+# the local `make test` target so developers exercise the newest llama.cpp
+# bundle before bumping the well-known defaultVersion in
+# sdk/tools/libs/libs.go for a release.
+install-libraries: install-kronk
+	@echo "========== INSTALL LIBRARIES (latest) =========="
+	kronk libs --local --upgrade
+	@echo
+
+# Use this to install the well-known defaultVersion of llama.cpp baked into
+# the SDK. This mirrors what CI does so `make test-gh` reproduces the GH
+# workflow locally. Bumping defaultVersion in sdk/tools/libs/libs.go is what
+# rolls both this target and the CI workflow forward.
+install-libraries-gh: install-kronk
+	@echo "========== INSTALL LIBRARIES (defaultVersion) =========="
+	kronk libs --local
 	@echo
 
 # Use this to install the test GH models.
 install-test-gh-models: install-kronk
 	@echo ========== INSTALL MODELS ==========
-	kronk model pull --local "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/Qwen2.5-VL-3B-Instruct-Q8_0.gguf" "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
+	kronk model pull --local "unsloth/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-Q8_0.gguf" "unsloth/Qwen3.5-0.8B-GGUF/mmproj-F16.gguf"
 	@echo
-
 	kronk model pull --local "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
 	@echo
-
 	kronk model pull --local "ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/embeddinggemma-300m-qat-Q8_0.gguf"
 	@echo
 	kronk model pull --local "gpustack/bge-reranker-v2-m3-GGUF/bge-reranker-v2-m3-Q8_0.gguf"
@@ -130,23 +139,18 @@ install-test-gh-models: install-kronk
 # Use this to install the test models.
 install-test-models: install-kronk
 	@echo ========== INSTALL MODELS ==========
-	kronk model pull --local "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/Qwen2.5-VL-3B-Instruct-Q8_0.gguf" "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
+	kronk model pull --local "unsloth/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-Q8_0.gguf" "unsloth/Qwen3.5-0.8B-GGUF/mmproj-F16.gguf"
 	@echo
-	kronk model pull --local "unsloth/Qwen3-VL-30B-A3B-Instruct-GGUF/Qwen3-VL-30B-A3B-Instruct-Q4_K_M.gguf" "unsloth/Qwen3-VL-30B-A3B-Instruct-GGUF/mmproj-F16.gguf"
+	kronk model pull --local "unsloth/gemma-4-26B-A4B-it-GGUF/gemma-4-26B-A4B-it-UD-Q4_K_M.gguf" "unsloth/gemma-4-26B-A4B-it-GGUF/mmproj-BF16.gguf"
 	@echo
 	kronk model pull --local "unsloth/Qwen3.6-35B-A3B-GGUF/Qwen3.6-35B-A3B-UD-Q4_K_M.gguf" "unsloth/Qwen3.6-35B-A3B-GGUF/mmproj-F16.gguf"
 	@echo
-
 	kronk model pull --local "mradermacher/Qwen2-Audio-7B-GGUF/Qwen2-Audio-7B.Q8_0.gguf" "mradermacher/Qwen2-Audio-7B-GGUF/Qwen2-Audio-7B.mmproj-Q8_0.gguf"
 	@echo
-
 	kronk model pull --local "unsloth/gpt-oss-20b-GGUF/gpt-oss-20b-Q8_0.gguf"
 	@echo
 	kronk model pull --local "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
 	@echo
-	kronk model pull --local "bartowski/cerebras_Qwen3-Coder-REAP-25B-A3B-GGUF/cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0.gguf"
-	@echo
-
 	kronk model pull --local "ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/embeddinggemma-300m-qat-Q8_0.gguf"
 	@echo
 	kronk model pull --local "gpustack/bge-reranker-v2-m3-GGUF/bge-reranker-v2-m3-Q8_0.gguf"
@@ -159,12 +163,8 @@ install-class-models: install-kronk
 	@echo
 	kronk model pull --local "unsloth/LFM2.5-VL-1.6B-GGUF/LFM2.5-VL-1.6B-Q8_0.gguf" "unsloth/LFM2.5-VL-1.6B-GGUF/mmproj-F16.gguf"
 	@echo
-	kronk model pull --local "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/Qwen2.5-VL-3B-Instruct-Q8_0.gguf" "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
-	@echo
-
 	kronk model pull --local "mradermacher/Qwen2-Audio-7B-GGUF/Qwen2-Audio-7B.Q8_0.gguf" "mradermacher/Qwen2-Audio-7B-GGUF/Qwen2-Audio-7B.mmproj-Q8_0.gguf"
 	@echo
-
 	kronk model pull --local "unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q8_0.gguf"
 	@echo
 	kronk model pull --local "unsloth/LFM2-700M-GGUF/LFM2-700M-Q8_0.gguf"
@@ -173,7 +173,6 @@ install-class-models: install-kronk
 	@echo
 	kronk model pull --local "unsloth/gpt-oss-20b-GGUF/gpt-oss-20b-Q8_0.gguf"
 	@echo
-
 	kronk model pull --local "ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/embeddinggemma-300m-qat-Q8_0.gguf"
 	@echo
 	kronk model pull --local "gpustack/bge-reranker-v2-m3-GGUF/bge-reranker-v2-m3-Q8_0.gguf"
@@ -232,7 +231,7 @@ vuln-check:
 diff:
 	go fix -diff ./...
 
-test-only: install-test-models
+test-only: install-libraries install-test-models
 	@echo ========== RUN TESTS ==========
 	export RUN_IN_PARALLEL=yes && \
 	export GITHUB_WORKSPACE=$(shell pwd) && \
@@ -246,7 +245,7 @@ test-only: install-test-models
 
 test: test-only lint vuln-check diff
 
-test-gh-only: install-test-gh-models
+test-gh-only: install-libraries-gh install-test-gh-models
 	@echo ========== RUN TESTS ==========
 	export RUN_IN_PARALLEL=yes && \
 	export GITHUB_WORKSPACE=$(shell pwd) && \
@@ -266,38 +265,20 @@ test-gh: test-gh-only lint vuln-check diff
 benchmark-dense-nc:
 	go test -run=none -bench=BenchmarkDense_NonCaching -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
-benchmark-dense-spc:
-	go test -run=none -bench=BenchmarkDense_SPC -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+benchmark-dense-imc:
+	go test -run=none -bench=BenchmarkDense_IMC$$ -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
-benchmark-dense-imc-det:
-	go test -run=none -bench=BenchmarkDense_IMCDeterministic$$ -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+benchmark-moe-nc:
+	go test -run=none -bench=BenchmarkMoE_NonCaching -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
-benchmark-dense-imc-nondet:
-	go test -run=none -bench=BenchmarkDense_IMCNonDeterministic -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+benchmark-moe-imc:
+	go test -run=none -bench=BenchmarkMoE_IMC$$ -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
-benchmark-dense-imc-det-spec:
-	go test -run=none -bench=BenchmarkDense_IMCDeterministic_Speculative -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+benchmark-hybrid-nc:
+	go test -run=none -bench=BenchmarkHybrid_NonCaching -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
-benchmark-dense-imc-multi:
-	go test -run=none -bench=BenchmarkDense_IMCDeterministic_MultiSlot -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
-
-benchmark-dense-imc-prefill:
-	go test -run=none -bench=BenchmarkDense_IMC_PrefillOnly -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
-
-benchmark-dense-imc-cold:
-	go test -run=none -bench=BenchmarkDense_IMC_ColdBuild -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
-
-benchmark-moe-imc-det:
-	go test -run=none -bench=BenchmarkMoE_IMCDeterministic$$ -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
-
-benchmark-moe-spec-baseline:
-	go test -run=none -bench=BenchmarkMoE_Speculative_Baseline -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
-
-benchmark-moe-spec-draft:
-	go test -run=none -bench=BenchmarkMoE_Speculative_WithDraft -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
-
-benchmark-hybrid-imc-det:
-	go test -run=none -bench=BenchmarkHybrid_IMCDeterministic -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+benchmark-hybrid-imc:
+	go test -run=none -bench=BenchmarkHybrid_IMC$$ -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 # Run all benchmarks sequentially (each target loads/unloads its own model)
 # and write combined raw output to a single file under runs/.
@@ -312,17 +293,11 @@ benchmark-all:
 	echo "" >> $$FILE; \
 	for target in \
 		benchmark-dense-nc \
-		benchmark-dense-spc \
-		benchmark-dense-imc-det \
-		benchmark-dense-imc-nondet \
-		benchmark-dense-imc-det-spec \
-		benchmark-dense-imc-multi \
-		benchmark-dense-imc-prefill \
-		benchmark-dense-imc-cold \
-		benchmark-moe-imc-det \
-		benchmark-moe-spec-baseline \
-		benchmark-moe-spec-draft \
-		benchmark-hybrid-imc-det; \
+		benchmark-dense-imc \
+		benchmark-moe-nc \
+		benchmark-moe-imc \
+		benchmark-hybrid-nc \
+		benchmark-hybrid-imc; \
 	do \
 		echo "" >> $$FILE; \
 		echo "## $$target" >> $$FILE; \

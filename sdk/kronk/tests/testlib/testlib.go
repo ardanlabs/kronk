@@ -61,8 +61,8 @@ func Setup() {
 	}
 
 	resolveModel(mdls, "Qwen3-8B-Q8_0", &MPThinkToolChat)
-	resolveModel(mdls, "Qwen2.5-VL-3B-Instruct-Q8_0", &MPSimpleVision)
-	resolveModel(mdls, "Qwen3-VL-30B-A3B-Instruct-Q4_K_M", &MPMoEVision)
+	resolveModel(mdls, "Qwen3.5-0.8B-Q8_0", &MPSimpleVision)
+	resolveModel(mdls, "gemma-4-26B-A4B-it-UD-Q4_K_M", &MPMoEVision)
 	resolveModel(mdls, "embeddinggemma-300m-qat-Q8_0", &MPEmbed)
 	resolveModel(mdls, "bge-reranker-v2-m3-Q8_0", &MPRerank)
 	resolveModel(mdls, "gpt-oss-20b-Q8_0", &MPGPTChat)

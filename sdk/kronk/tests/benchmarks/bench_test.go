@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -21,21 +20,78 @@ import (
 
 func cfgDenseNonCaching() model.Config {
 	return model.Config{
-		Log:              benchLog,
-		ModelFiles:       benchModelPath.ModelFiles,
-		PtrContextWindow: new(32768),
-		PtrNBatch:        new(2048),
-		PtrNUBatch:       new(2048),
-		CacheTypeK:       model.GGMLTypeF16,
-		CacheTypeV:       model.GGMLTypeF16,
-		PtrNSeqMax:       new(1),
+		Log:                 benchLog,
+		ModelFiles:          benchDenseModelPath.ModelFiles,
+		PtrContextWindow:    new(32768),
+		PtrNBatch:           new(2048),
+		PtrNUBatch:          new(2048),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrNSeqMax:          new(1),
+		PtrIncrementalCache: new(false),
 	}
 }
 
-func cfgDenseIMCDeterministic() model.Config {
+func cfgDenseIMC() model.Config {
 	return model.Config{
 		Log:                 benchLog,
-		ModelFiles:          benchModelPath.ModelFiles,
+		ModelFiles:          benchDenseModelPath.ModelFiles,
+		PtrContextWindow:    new(32768),
+		PtrNBatch:           new(2048),
+		PtrNUBatch:          new(2048),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrNSeqMax:          new(1),
+		PtrIncrementalCache: new(true),
+	}
+}
+
+func cfgMoENonCaching() model.Config {
+	return model.Config{
+		Log:                 benchLog,
+		ModelFiles:          benchMoEModelPath.ModelFiles,
+		PtrContextWindow:    new(32768),
+		PtrNBatch:           new(2048),
+		PtrNUBatch:          new(2048),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrNSeqMax:          new(1),
+		PtrIncrementalCache: new(false),
+	}
+}
+
+func cfgMoEIMC() model.Config {
+	return model.Config{
+		Log:                 benchLog,
+		ModelFiles:          benchMoEModelPath.ModelFiles,
+		PtrContextWindow:    new(32768),
+		PtrNBatch:           new(2048),
+		PtrNUBatch:          new(2048),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrNSeqMax:          new(1),
+		PtrIncrementalCache: new(true),
+	}
+}
+
+func cfgHybridNonCaching() model.Config {
+	return model.Config{
+		Log:                 benchLog,
+		ModelFiles:          benchHybridModelPath.ModelFiles,
+		PtrContextWindow:    new(32768),
+		PtrNBatch:           new(2048),
+		PtrNUBatch:          new(2048),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrNSeqMax:          new(1),
+		PtrIncrementalCache: new(false),
+	}
+}
+
+func cfgHybridIMC() model.Config {
+	return model.Config{
+		Log:                 benchLog,
+		ModelFiles:          benchHybridModelPath.ModelFiles,
 		PtrContextWindow:    new(32768),
 		PtrNBatch:           new(2048),
 		PtrNUBatch:          new(2048),
@@ -49,71 +105,99 @@ func cfgDenseIMCDeterministic() model.Config {
 // =============================================================================
 // Benchmark conversation generator
 //
-// Builds a multi-turn conversation that fills ~30k tokens of a 32k context
-// window. Uses a large system prompt (~10k tokens) plus many conversation
-// turns with substantial assistant responses (~20k tokens).
+// Builds a multi-turn agentic session: large system prompt (~10k tokens) plus
+// turnsPerSession sequential user/assistant exchanges. Each call to the model
+// in a session sends [system + accumulated turns + new user message]. Canned
+// assistant replies are appended after each call so the prompt growth is
+// deterministic and identical for both NonCaching and IMC modes.
 //
-// Qwen3-8B tokenizer averages ~3.5 chars per token for English prose.
-// Target: ~105k chars total → ~30k tokens, leaving ~2k tokens for output.
+// In real agentic workflows (Cline, Cursor) the conversation grows
+// monotonically. This is the workload IMC is designed for: NonCaching pays
+// full prefill on every turn while IMC restores the prior KV state and only
+// prefills the new user/assistant tail.
 
-// targetPromptChars is the approximate character count we aim for across all
-// messages. At ~3.5 chars/token this yields ~30k tokens.
-const targetPromptChars = 105_000
+// turnsPerSession is the number of user→assistant exchanges per benchmark
+// iteration. With a ~10k-token system prompt, ~1-2k tokens added per regular
+// turn, and ~3k+ tokens added per tool-call turn (assistant tool_call + tool
+// result + assistant synthesis), 15 turns drives the prompt deep into the
+// 32k context window and exercises IMC across a realistic agentic session.
+const turnsPerSession = 15
 
-func benchDoc() model.D {
-	messages := buildConversation()
+// isToolTurn reports whether the given 1-based turn index should include a
+// tool-call cycle (assistant tool_call + tool response + assistant synthesis)
+// in the canned conversation tail. Every third turn is a tool turn, so 5 of
+// the 15 turns per session exercise tool-call message shapes.
+func isToolTurn(turn int) bool {
+	return turn%3 == 0
+}
 
-	return model.D{
-		"messages":    messages,
-		"max_tokens":  128,
-		"temperature": 0.0,
+// cannedToolTail returns the (assistant w/ tool_call, tool response, assistant
+// final) triple appended to history after a tool-turn request. Provides a
+// realistic tool_calls structure so IMC's hash + Jinja rendering paths see
+// the same message shapes a real agent would produce.
+func cannedToolTail(turn int, suffix string) []model.D {
+	callID := fmt.Sprintf("call_bench_%d", turn)
+
+	return []model.D{
+		{
+			"role":    "assistant",
+			"content": "Let me check that against our internal data.",
+			"tool_calls": []model.D{{
+				"id":   callID,
+				"type": "function",
+				"function": model.D{
+					"name":      "search_docs",
+					"arguments": fmt.Sprintf(`{"query": "operational guidance topic %d", "limit": 5, "min_score": 0.6}`, turn),
+				},
+			}},
+		},
+		{
+			"role":         "tool",
+			"tool_call_id": callID,
+			"name":         "search_docs",
+			"content": "Returned 4 documents. " +
+				"Doc 1 (rank 0.92): postmortem on cascading retry storms in the order pipeline; recommended max-attempts=3 with full-jitter backoff. " +
+				"Doc 2 (rank 0.88): SLO playbook for the payments service; documents the 99.9% target and the 28-day rolling error budget calculation. " +
+				"Doc 3 (rank 0.81): runbook for kafka consumer lag spikes; covers rebalance diagnostics and CooperativeStickyAssignor migration steps. " +
+				"Doc 4 (rank 0.74): architecture decision record on adopting OpenTelemetry head-based sampling at 5% with tail-based override for errors and >2s latencies.",
+		},
+		{
+			"role": "assistant",
+			"content": "Synthesizing those four sources:" +
+				"\n\n1. Retry policy: cap at 3 attempts with full-jitter backoff (per the cascading-storm postmortem)." +
+				"\n2. SLO posture: 99.9% over a 28-day rolling window matches the payments-service playbook; reuse that error-budget math." +
+				"\n3. Consumer-lag mitigation: the CooperativeStickyAssignor migration in Doc 3 is the right fix for your rebalance pauses." +
+				"\n4. Tracing: keep 5% head-based sampling but enable the tail-based override for errors and >2s latencies, matching the existing ADR." +
+				"\n\nWant me to draft a rollout plan, or pull additional context on any of these?" +
+				suffix,
+		},
 	}
 }
 
-func buildConversation() []model.D {
-	var messages []model.D
-	totalChars := 0
+// sessionSysPrompt returns the system prompt with a per-iteration suffix so
+// the IMC two-tier hash misses across iterations and we measure a real
+// rebuild + extend cycle each session rather than a permanent cache hit.
+func sessionSysPrompt(iter int) string {
+	return buildSystemPrompt() + fmt.Sprintf("\n\n[Bench session: %d]", iter)
+}
 
-	// System prompt: detailed instructions (~7k chars ≈ 2k tokens).
-	sys := buildSystemPrompt()
-	messages = append(messages, model.D{"role": "system", "content": sys})
-	totalChars += len(sys)
+// buildSeedConversation returns the system message for a fresh session.
+func buildSeedConversation(iter int) []model.D {
+	return []model.D{{"role": "system", "content": sessionSysPrompt(iter)}}
+}
 
-	// Conversation turns: cycle through Q&A pairs until we approach the target.
-	// Reserve the last user message for the generation prompt.
-	turns := conversationTurns()
-	turnIdx := 0
+// turnRequest builds the request document for a given accumulated history
+// plus the next user question.
+func turnRequest(history []model.D, userMsg string) model.D {
+	messages := make([]model.D, 0, len(history)+1)
+	messages = append(messages, history...)
+	messages = append(messages, model.D{"role": "user", "content": userMsg})
 
-	for totalChars < targetPromptChars {
-		turn := turns[turnIdx%len(turns)]
-		turnIdx++
-
-		// Vary the content slightly per cycle to avoid degenerate tokenization.
-		suffix := fmt.Sprintf(" [Turn %d]", turnIdx)
-
-		userMsg := turn.question + suffix
-		messages = append(messages, model.D{"role": "user", "content": userMsg})
-		totalChars += len(userMsg)
-
-		if totalChars >= targetPromptChars {
-			break
-		}
-
-		assistMsg := turn.answer + suffix
-		messages = append(messages, model.D{"role": "assistant", "content": assistMsg})
-		totalChars += len(assistMsg)
+	return model.D{
+		"messages":    messages,
+		"max_tokens":  64,
+		"temperature": 0.0,
 	}
-
-	// Ensure the final message is a user message to trigger generation.
-	last := messages[len(messages)-1]
-	if role, _ := last["role"].(string); role != "user" {
-		messages = append(messages, model.D{
-			"role":    "user",
-			"content": "Summarize the key points from our conversation in two sentences.",
-		})
-	}
-
-	return messages
 }
 
 type conversationTurn struct {
@@ -824,46 +908,46 @@ func runStreamingBench(ctx context.Context, krn *kronk.Kronk, d model.D) (benchR
 	return result, nil
 }
 
-// logTokenCounts uses the model's tokenizer to log actual token counts for
-// the system prompt and total conversation. This provides exact numbers
-// rather than estimates based on chars-per-token ratios.
-func logTokenCounts(b *testing.B, ctx context.Context, krn *kronk.Kronk, d model.D) {
+// logSessionShape uses the model's tokenizer to log token counts for the
+// system prompt and the FINAL turn of a session (the largest prompt the
+// benchmark will send).
+func logSessionShape(b *testing.B, ctx context.Context, krn *kronk.Kronk) {
 	b.Helper()
 
-	messages, _ := d["messages"].([]model.D)
-	if len(messages) == 0 {
-		return
+	sys := sessionSysPrompt(0)
+	if resp, err := krn.Tokenize(ctx, model.D{"input": sys}); err == nil {
+		b.Logf("System prompt: %d tokens (%d chars)", resp.Tokens, len(sys))
 	}
 
-	// Tokenize the system prompt.
-	if content, _ := messages[0]["content"].(string); content != "" {
-		if role, _ := messages[0]["role"].(string); role == "system" {
-			resp, err := krn.Tokenize(ctx, model.D{"input": content})
-			switch {
-			case err != nil:
-				b.Logf("tokenize system prompt: %v", err)
-			default:
-				b.Logf("System prompt: %d tokens (%d chars)", resp.Tokens, len(content))
-			}
+	// Build the final-turn message list to size it. Mirrors runMultiTurnSession's
+	// growth pattern (regular vs tool-turn tails) so the logged size matches
+	// what the bench actually sends on the last turn.
+	history := buildSeedConversation(0)
+	turns := conversationTurns()
+	for i := range turnsPerSession - 1 {
+		t := turns[i%len(turns)]
+		turn := i + 1
+		suffix := fmt.Sprintf(" [Turn %d]", turn)
+		history = append(history, model.D{"role": "user", "content": t.question + suffix})
+		if isToolTurn(turn) {
+			history = append(history, cannedToolTail(turn, suffix)...)
+		} else {
+			history = append(history, model.D{"role": "assistant", "content": t.answer + suffix})
 		}
 	}
+	finalT := turns[(turnsPerSession-1)%len(turns)]
+	finalUser := finalT.question + fmt.Sprintf(" [Turn %d]", turnsPerSession)
+	history = append(history, model.D{"role": "user", "content": finalUser})
 
-	// Tokenize all message content concatenated for total count.
-	var totalChars int
-	var allContent strings.Builder
-	for _, msg := range messages {
-		if content, _ := msg["content"].(string); content != "" {
-			allContent.WriteString(content)
-			totalChars += len(content)
+	var sb strings.Builder
+	for _, m := range history {
+		if c, _ := m["content"].(string); c != "" {
+			sb.WriteString(c)
 		}
 	}
-
-	resp, err := krn.Tokenize(ctx, model.D{"input": allContent.String()})
-	switch {
-	case err != nil:
-		b.Logf("tokenize conversation: %v", err)
-	default:
-		b.Logf("Total conversation: %d tokens (%d chars, %d messages)", resp.Tokens, totalChars, len(messages))
+	if resp, err := krn.Tokenize(ctx, model.D{"input": sb.String()}); err == nil {
+		b.Logf("Final turn (%d): %d tokens (%d chars, %d messages)",
+			turnsPerSession, resp.Tokens, sb.Len(), len(history))
 	}
 }
 
@@ -885,365 +969,188 @@ func withBenchModel(b *testing.B, cfg model.Config) *kronk.Kronk {
 	return krn
 }
 
-// benchChat runs the core benchmark loop for a given mode and document.
-func benchChat(b *testing.B, krn *kronk.Kronk, d model.D) {
+// sessionResult aggregates per-turn metrics across one full session.
+type sessionResult struct {
+	totalTime    time.Duration
+	ttftSum      time.Duration
+	lastTurnTTFT time.Duration
+	lastTurnTime time.Duration
+	outputTokens int
+	promptTokens int // sum across turns
+	turns        int
+}
+
+// runMultiTurnSession executes turnsPerSession sequential chat requests,
+// growing the conversation by one user/assistant pair per turn. Canned
+// assistant replies are appended after each call so the prompt sequence is
+// deterministic and identical between NonCaching and IMC runs.
+func runMultiTurnSession(ctx context.Context, krn *kronk.Kronk, iter int) (sessionResult, error) {
+	history := buildSeedConversation(iter)
+	turns := conversationTurns()
+
+	var agg sessionResult
+	sessionStart := time.Now()
+
+	for i := range turnsPerSession {
+		t := turns[i%len(turns)]
+		suffix := fmt.Sprintf(" [Turn %d]", i+1)
+		userMsg := t.question + suffix
+
+		d := turnRequest(history, userMsg)
+
+		r, err := runStreamingBench(ctx, krn, d)
+		if err != nil {
+			return agg, fmt.Errorf("turn %d: %w", i+1, err)
+		}
+
+		agg.ttftSum += r.ttft
+		agg.outputTokens += r.outputTokens
+		agg.promptTokens += r.promptTokens
+		agg.turns++
+		agg.lastTurnTTFT = r.ttft
+		agg.lastTurnTime = r.totalTime
+
+		// Append the user message and a canned assistant tail (NOT the model's
+		// actual reply) so the prompt grows deterministically and identically
+		// across NonCaching/IMC runs. Tool turns append a full
+		// (assistant tool_call + tool result + assistant synthesis) triple to
+		// exercise the message shapes a real agent would produce.
+		turn := i + 1
+		history = append(history, model.D{"role": "user", "content": userMsg})
+		if isToolTurn(turn) {
+			history = append(history, cannedToolTail(turn, suffix)...)
+		} else {
+			history = append(history, model.D{"role": "assistant", "content": t.answer + suffix})
+		}
+	}
+
+	agg.totalTime = time.Since(sessionStart)
+
+	return agg, nil
+}
+
+// benchChat runs the core benchmark loop. Each iteration is a fresh
+// turnsPerSession-turn agentic session. The system prompt carries the
+// iteration number so IMC must rebuild its cache per session (and then
+// extend it across the session's turns) — exactly the pattern IMC is
+// designed to optimize.
+func benchChat(b *testing.B, krn *kronk.Kronk) {
 	b.Helper()
 	b.ReportAllocs()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
-	// Log actual token counts for the system prompt and full conversation.
-	logTokenCounts(b, ctx, krn, d)
+	logSessionShape(b, ctx, krn)
 
-	// Warmup: prime caches and JIT paths.
-
-	if _, err := runStreamingBench(ctx, krn, d); err != nil {
+	// Warmup with a tiny throwaway prompt to prime JIT/allocators without
+	// seeding the KV cache with content the timed run will reuse.
+	warm := model.D{
+		"messages":   []model.D{{"role": "user", "content": "ping"}},
+		"max_tokens": 4,
+	}
+	if _, err := runStreamingBench(ctx, krn, warm); err != nil {
 		b.Fatalf("warmup failed: %v", err)
 	}
 
 	b.ResetTimer()
 
+	iter := 0
 	for b.Loop() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		iter++
 
-		result, err := runStreamingBench(ctx, krn, d)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		r, err := runMultiTurnSession(ctx, krn, iter)
 		cancel()
 
 		if err != nil {
-			b.Fatalf("benchmark iteration failed: %v", err)
+			b.Fatalf("session %d failed: %v", iter, err)
 		}
 
-		b.ReportMetric(result.tps, "tok/s")
-		b.ReportMetric(float64(result.ttft.Milliseconds()), "ttft-ms")
-		b.ReportMetric(float64(result.totalTime.Milliseconds()), "total-ms")
+		avgTTFT := float64(r.ttftSum.Milliseconds()) / float64(r.turns)
+
+		// Session decode time = total - sum of TTFT (TTFT covers prefill +
+		// first token; the rest is pure decode). Approximate aggregate tok/s
+		// across all turns.
+		decodeMS := float64(r.totalTime.Milliseconds()) - float64(r.ttftSum.Milliseconds())
+		var tokS float64
+		if decodeMS > 0 {
+			tokS = float64(r.outputTokens) / (decodeMS / 1000.0)
+		}
+
+		// Use the standard names the benchfmt tool understands.
+		b.ReportMetric(tokS, "tok/s")
+		b.ReportMetric(avgTTFT, "ttft-ms")
+		b.ReportMetric(float64(r.totalTime.Milliseconds()), "total-ms")
+		b.ReportMetric(float64(r.lastTurnTTFT.Milliseconds()), "lastT-ttft-ms")
+		b.ReportMetric(float64(r.promptTokens)/float64(r.turns), "avg-prompt-tok")
 	}
 }
 
 // =============================================================================
-// Dense Model Benchmarks (Qwen3-8B-Q8_0)
+// Dense Model Benchmarks (Qwen3-0.6B-Q8_0)
 //
 // Standard transformer architecture. State cleanup via partial range delete.
 
 func BenchmarkDense_NonCaching(b *testing.B) {
+	if len(benchDenseModelPath.ModelFiles) == 0 {
+		b.Skip("model Qwen3-0.6B-Q8_0 not downloaded")
+	}
 	krn := withBenchModel(b, cfgDenseNonCaching())
-	benchChat(b, krn, benchDoc())
+	benchChat(b, krn)
 }
 
-func BenchmarkDense_IMCDeterministic(b *testing.B) {
-	krn := withBenchModel(b, cfgDenseIMCDeterministic())
-	benchChat(b, krn, benchDoc())
-}
-
-func cfgDenseIMCDeterministicSpeculative() model.Config {
-	draftPath := benchDraftModelPath.ModelFiles
-
-	return model.Config{
-		Log:                 benchLog,
-		ModelFiles:          benchModelPath.ModelFiles,
-		PtrContextWindow:    new(32768),
-		PtrNBatch:           new(2048),
-		PtrNUBatch:          new(2048),
-		CacheTypeK:          model.GGMLTypeF16,
-		CacheTypeV:          model.GGMLTypeF16,
-		PtrNSeqMax:          new(1),
-		PtrIncrementalCache: new(true),
-		DraftModel: &model.DraftModelConfig{
-			ModelFiles: draftPath,
-			NDraft:     5,
-		},
+func BenchmarkDense_IMC(b *testing.B) {
+	if len(benchDenseModelPath.ModelFiles) == 0 {
+		b.Skip("model Qwen3-0.6B-Q8_0 not downloaded")
 	}
-}
-
-func BenchmarkDense_IMCDeterministic_Speculative(b *testing.B) {
-	if len(benchDraftModelPath.ModelFiles) == 0 {
-		b.Skip("draft model Qwen3-0.6B-Q8_0 not downloaded")
-	}
-	krn := withBenchModel(b, cfgDenseIMCDeterministicSpeculative())
-	benchChat(b, krn, benchDoc())
-}
-
-// Dense model with non-deterministic template (GPT-OSS). Same architecture as
-// Dense, but the template produces variable token sequences for identical
-// messages. IMC falls back to token prefix matching.
-
-func cfgDenseIMCNonDeterministic() model.Config {
-	return model.Config{
-		Log:                 benchLog,
-		ModelFiles:          benchNonDetModelPath.ModelFiles,
-		PtrContextWindow:    new(32768),
-		PtrNBatch:           new(2048),
-		PtrNUBatch:          new(2048),
-		CacheTypeK:          model.GGMLTypeF16,
-		CacheTypeV:          model.GGMLTypeF16,
-		PtrNSeqMax:          new(1),
-		PtrIncrementalCache: new(true),
-	}
-}
-
-func BenchmarkDense_IMCNonDeterministic(b *testing.B) {
-	if len(benchNonDetModelPath.ModelFiles) == 0 {
-		b.Skip("model gpt-oss-20b-Q8_0 not downloaded")
-	}
-	krn := withBenchModel(b, cfgDenseIMCNonDeterministic())
-	benchChat(b, krn, benchDoc())
-}
-
-// Multi-slot concurrency: NSeqMax=4 with 4 goroutines hitting the same model.
-// Exercises batch engine contention, slot scheduling, and IMC slot wait queue.
-
-func cfgDenseIMCDeterministicMultiSlot() model.Config {
-	return model.Config{
-		Log:                 benchLog,
-		ModelFiles:          benchModelPath.ModelFiles,
-		PtrContextWindow:    new(131072), // 4x to give each of the 4 slots ~32k tokens
-		PtrNBatch:           new(2048),
-		PtrNUBatch:          new(2048),
-		CacheTypeK:          model.GGMLTypeF16,
-		CacheTypeV:          model.GGMLTypeF16,
-		PtrNSeqMax:          new(4),
-		PtrIncrementalCache: new(true),
-	}
-}
-
-func BenchmarkDense_IMCDeterministic_MultiSlot(b *testing.B) {
-	const nSlots = 4
-
-	krn := withBenchModel(b, cfgDenseIMCDeterministicMultiSlot())
-	d := benchDoc()
-
-	b.ReportAllocs()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	defer cancel()
-
-	logTokenCounts(b, ctx, krn, d)
-
-	// Warmup all slots.
-	for range nSlots {
-		if _, err := runStreamingBench(ctx, krn, d); err != nil {
-			b.Fatalf("warmup failed: %v", err)
-		}
-	}
-
-	b.ResetTimer()
-
-	for b.Loop() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-
-		var (
-			wg       sync.WaitGroup
-			mu       sync.Mutex
-			results  []benchResult
-			benchErr error
-		)
-
-		for range nSlots {
-			wg.Go(func() {
-
-				result, err := runStreamingBench(ctx, krn, d)
-
-				mu.Lock()
-				defer mu.Unlock()
-
-				if err != nil && benchErr == nil {
-					benchErr = err
-					return
-				}
-
-				results = append(results, result)
-			})
-		}
-
-		wg.Wait()
-		cancel()
-
-		if benchErr != nil {
-			b.Fatalf("benchmark iteration failed: %v", benchErr)
-		}
-
-		// Report averages across all slots.
-		var totalTPS float64
-		var totalTTFT, totalTime time.Duration
-		for _, r := range results {
-			totalTPS += r.tps
-			totalTTFT += r.ttft
-			totalTime += r.totalTime
-		}
-		n := float64(len(results))
-
-		b.ReportMetric(totalTPS/n, "tok/s")
-		b.ReportMetric(float64((totalTTFT / time.Duration(len(results))).Milliseconds()), "ttft-ms")
-		b.ReportMetric(float64((totalTime / time.Duration(len(results))).Milliseconds()), "total-ms")
-	}
-}
-
-// Prefill-only: max_tokens=1 isolates prefill performance from decode
-// throughput. TTFT is the cleanest signal for caching regressions.
-
-func benchDocPrefillOnly() model.D {
-	messages := buildConversation()
-
-	return model.D{
-		"messages":    messages,
-		"max_tokens":  1,
-		"temperature": 0.0,
-	}
-}
-
-func BenchmarkDense_IMC_PrefillOnly(b *testing.B) {
-	krn := withBenchModel(b, cfgDenseIMCDeterministic())
-	benchChat(b, krn, benchDocPrefillOnly())
-}
-
-// Cold build: measures the first-request cost when the IMC cache is empty.
-// No warmup iteration, so each iteration loads a fresh model and sends one
-// request. Catches regressions in the initial cache build path.
-
-func BenchmarkDense_IMC_ColdBuild(b *testing.B) {
-	b.ReportAllocs()
-
-	for b.Loop() {
-		krn, err := kronk.New(model.WithConfig(cfgDenseIMCDeterministic()))
-		if err != nil {
-			b.Fatalf("unable to load model: %v", err)
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-
-		result, err := runStreamingBench(ctx, krn, benchDoc())
-		cancel()
-
-		if err != nil {
-			if uerr := krn.Unload(context.Background()); uerr != nil {
-				b.Errorf("failed to unload model: %v", uerr)
-			}
-			b.Fatalf("benchmark iteration failed: %v", err)
-		}
-
-		b.ReportMetric(result.tps, "tok/s")
-		b.ReportMetric(float64(result.ttft.Milliseconds()), "ttft-ms")
-		b.ReportMetric(float64(result.totalTime.Milliseconds()), "total-ms")
-
-		if err := krn.Unload(context.Background()); err != nil {
-			b.Errorf("failed to unload model: %v", err)
-		}
-	}
+	krn := withBenchModel(b, cfgDenseIMC())
+	benchChat(b, krn)
 }
 
 // =============================================================================
-// MoE Model Benchmarks (Qwen3-VL-30B-A3B-Instruct)
+// MoE Model Benchmarks (gemma-4-26B-A4B-it-UD-Q4_K_M)
 //
 // Mixture of Experts architecture. Same IMC algorithm as Dense, different
 // performance profile (scattered memory access, expert routing).
 
-func cfgMoEIMCDeterministic() model.Config {
-	return model.Config{
-		Log:                 benchLog,
-		ModelFiles:          benchMoEModelPath.ModelFiles,
-		PtrContextWindow:    new(32768),
-		PtrNBatch:           new(2048),
-		PtrNUBatch:          new(2048),
-		CacheTypeK:          model.GGMLTypeF16,
-		CacheTypeV:          model.GGMLTypeF16,
-		PtrNSeqMax:          new(1),
-		PtrIncrementalCache: new(true),
+func BenchmarkMoE_NonCaching(b *testing.B) {
+	if len(benchMoEModelPath.ModelFiles) == 0 {
+		b.Skip("model gemma-4-26B-A4B-it-UD-Q4_K_M not downloaded")
 	}
+	krn := withBenchModel(b, cfgMoENonCaching())
+	benchChat(b, krn)
 }
 
-func BenchmarkMoE_IMCDeterministic(b *testing.B) {
+func BenchmarkMoE_IMC(b *testing.B) {
 	if len(benchMoEModelPath.ModelFiles) == 0 {
-		b.Skip("model Qwen3-VL-30B-A3B-Instruct-Q4_K_M not downloaded")
+		b.Skip("model gemma-4-26B-A4B-it-UD-Q4_K_M not downloaded")
 	}
-	krn := withBenchModel(b, cfgMoEIMCDeterministic())
-	benchChat(b, krn, benchDoc())
+	krn := withBenchModel(b, cfgMoEIMC())
+	benchChat(b, krn)
 }
 
 // =============================================================================
-// Hybrid Model Benchmarks (Qwen_Qwen3.5-35B-A3B)
+// Hybrid Model Benchmarks (Qwen3.6-35B-A3B-UD-Q4_K_M)
 //
-// Attention + Recurrent layers (DeltaNet). State cleanup via snapshot/restore
+// Attention + Recurrent/linear layers. State cleanup via snapshot/restore
 // instead of partial range delete. IMC uses NSeqMax=1 for single-agent
 // (Cline-style) workflows.
 
-func cfgHybridIMCDeterministic() model.Config {
-	return model.Config{
-		Log:                 benchLog,
-		ModelFiles:          benchHybridModelPath.ModelFiles,
-		PtrContextWindow:    new(32768),
-		PtrNBatch:           new(2048),
-		PtrNUBatch:          new(2048),
-		CacheTypeK:          model.GGMLTypeF16,
-		CacheTypeV:          model.GGMLTypeF16,
-		PtrNSeqMax:          new(1),
-		PtrIncrementalCache: new(true),
-	}
-}
-
-func BenchmarkHybrid_IMCDeterministic(b *testing.B) {
+func BenchmarkHybrid_NonCaching(b *testing.B) {
 	if len(benchHybridModelPath.ModelFiles) == 0 {
 		b.Skip("model Qwen3.6-35B-A3B-UD-Q4_K_M not downloaded")
 	}
-	krn := withBenchModel(b, cfgHybridIMCDeterministic())
-	benchChat(b, krn, benchDoc())
+	krn := withBenchModel(b, cfgHybridNonCaching())
+	benchChat(b, krn)
 }
 
-// =============================================================================
-// MoE Speculative Decoding Benchmarks (cerebras Qwen3-Coder-REAP-25B-A3B)
-//
-// Compares the same MoE model with and without a small Qwen3-0.6B draft model
-// for speculative decoding. Both share the Qwen3 vocabulary (151936 tokens).
-// Run both benchmarks to measure the speed-up from speculative decoding.
-
-func cfgMoESpecBaseline() model.Config {
-	return model.Config{
-		Log:                 benchLog,
-		ModelFiles:          benchSpecModelPath.ModelFiles,
-		PtrContextWindow:    new(32768),
-		PtrNBatch:           new(2048),
-		PtrNUBatch:          new(2048),
-		CacheTypeK:          model.GGMLTypeF16,
-		CacheTypeV:          model.GGMLTypeF16,
-		PtrNSeqMax:          new(1),
-		PtrIncrementalCache: new(true),
+func BenchmarkHybrid_IMC(b *testing.B) {
+	if len(benchHybridModelPath.ModelFiles) == 0 {
+		b.Skip("model Qwen3.6-35B-A3B-UD-Q4_K_M not downloaded")
 	}
-}
-
-func cfgMoESpecWithDraft() model.Config {
-	return model.Config{
-		Log:                 benchLog,
-		ModelFiles:          benchSpecModelPath.ModelFiles,
-		PtrContextWindow:    new(32768),
-		PtrNBatch:           new(2048),
-		PtrNUBatch:          new(2048),
-		CacheTypeK:          model.GGMLTypeF16,
-		CacheTypeV:          model.GGMLTypeF16,
-		PtrNSeqMax:          new(1),
-		PtrIncrementalCache: new(true),
-		DraftModel: &model.DraftModelConfig{
-			ModelFiles: benchDraftModelPath.ModelFiles,
-			NDraft:     5,
-		},
-	}
-}
-
-func BenchmarkMoE_Speculative_Baseline(b *testing.B) {
-	if len(benchSpecModelPath.ModelFiles) == 0 {
-		b.Skip("model cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0 not downloaded")
-	}
-	krn := withBenchModel(b, cfgMoESpecBaseline())
-	benchChat(b, krn, benchDoc())
-}
-
-func BenchmarkMoE_Speculative_WithDraft(b *testing.B) {
-	if len(benchSpecModelPath.ModelFiles) == 0 {
-		b.Skip("model cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0 not downloaded")
-	}
-	if len(benchDraftModelPath.ModelFiles) == 0 {
-		b.Skip("draft model Qwen3-0.6B-Q8_0 not downloaded")
-	}
-	krn := withBenchModel(b, cfgMoESpecWithDraft())
-	benchChat(b, krn, benchDoc())
+	krn := withBenchModel(b, cfgHybridIMC())
+	benchChat(b, krn)
 }
 
 // =============================================================================

@@ -47,7 +47,7 @@
             }
         }
     },
-    "model": "kronk/gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT",
+    "model": "kronk/Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT",
     "instructions": [
         "agent.md"
     ],
@@ -62,5 +62,8 @@
             "type": "remote",
             "url": "http://localhost:9000/mcp"
         }
-    }
+    },
+    "plugin": [
+        "opencode-session-handoff"
+    ]
 }

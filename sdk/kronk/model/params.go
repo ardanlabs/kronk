@@ -680,7 +680,25 @@ func (m *Model) parseParams(d D) (Params, error) {
 		p.XtcThreshold = xtcThreshold
 	}
 
-	return m.adjustParams(p), nil
+	// Grammar/JSON-schema constrained output is incompatible with a thinking
+	// prelude because the first emitted token must satisfy the grammar — a
+	// <think> token would violate it. When grammar is set and the user did
+	// not explicitly provide enable_thinking, force it off.
+	if p.Grammar != "" {
+		if _, set := d["enable_thinking"]; !set {
+			p.Thinking = ThinkingDisabled
+		}
+	}
+
+	p = m.adjustParams(p)
+
+	// Mirror the resolved enable_thinking into d as a normalized bool. The
+	// Jinja chat template reads d["enable_thinking"] directly to decide
+	// whether to inject <think> tokens into the prompt, and Jinja's
+	// "is true"/"is false" tests require a real bool, not a string.
+	d["enable_thinking"] = p.Thinking == ThinkingEnabled
+
+	return p, nil
 }
 
 func (m *Model) adjustParams(p Params) Params {

@@ -39,7 +39,7 @@ Kronk has an MCP service and these are settings:
 | Chapter                                                                                | Topics                                                                                                                                       |
 | -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | [Chapter 1: Introduction](.manual/chapter-01-introduction.md)                          | What is Kronk (SDK + Server), key features, supported platforms, architecture overview                                                       |
-| [Chapter 2: Installation & Quick Start](.manual/chapter-02-installation.md)            | Prerequisites, CLI install, libraries, downloading models, starting server                                                                   |
+| [Chapter 2: Installation & Quick Start](.manual/chapter-02-installation.md)            | Prerequisites, CLI install, libraries, downloading models, starting server, model config file                                                |
 | [Chapter 3: Model Configuration](.manual/chapter-03-model-configuration.md)            | GPU config, KV cache, flash attention, NSeqMax, VRAM estimation, GGUF quantization, MoE vs dense vs hybrid performance, speculative decoding |
 | [Chapter 4: Batch Processing](.manual/chapter-04-batch-processing.md)                  | Slots, sequences, request flow, memory overhead, concurrency by model type                                                                   |
 | [Chapter 5: Message Caching](.manual/chapter-05-message-caching.md)                    | Incremental Message Cache (IMC), hybrid model IMC, multi-user IMC, cache invalidation                                                        |
@@ -74,9 +74,10 @@ Kronk has an MCP service and these are settings:
 | [2.3 Installing Libraries](.manual/chapter-02-installation.md#23-installing-libraries)                 | llama.cpp shared libraries, platform-specific, version pinning, compatibility matrix |
 | [2.4 Downloading Your First Model](.manual/chapter-02-installation.md#24-downloading-your-first-model) | Model download, GGUF files                                                           |
 | [2.5 Starting the Server](.manual/chapter-02-installation.md#25-starting-the-server)                   | Server startup, basic config                                                         |
-| [2.6 Verifying the Installation](.manual/chapter-02-installation.md#26-verifying-the-installation)     | Health check, test requests                                                          |
-| [2.7 Quick Start Summary](.manual/chapter-02-installation.md#27-quick-start-summary)                   | Step-by-step recap                                                                   |
-| [2.8 NixOS Setup](.manual/chapter-02-installation.md#28-nixos-setup)                                   | Nix flake, dev shell, nix build, Vulkan, troubleshooting                             |
+| [2.6 Model Configuration File](.manual/chapter-02-installation.md#26-model-configuration-file)         | model_config.yaml, auto-install, editing, config priority, variants                  |
+| [2.7 Verifying the Installation](.manual/chapter-02-installation.md#27-verifying-the-installation)     | Health check, test requests                                                          |
+| [2.8 Quick Start Summary](.manual/chapter-02-installation.md#28-quick-start-summary)                   | Step-by-step recap                                                                   |
+| [2.9 NixOS Setup](.manual/chapter-02-installation.md#29-nixos-setup)                                   | Nix flake, dev shell, nix build, Vulkan, troubleshooting                             |
 
 ### Chapter 3 Sub-sections
 

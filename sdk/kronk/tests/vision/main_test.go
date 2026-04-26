@@ -12,7 +12,7 @@ func TestMain(m *testing.M) {
 	testlib.Setup()
 
 	if len(testlib.MPSimpleVision.ModelFiles) == 0 {
-		fmt.Println("model Qwen2.5-VL-3B-Instruct-Q8_0 not downloaded, skipping vision tests")
+		fmt.Println("model Qwen3.5-0.8B-Q8_0 not downloaded, skipping vision tests")
 		os.Exit(0)
 	}
 

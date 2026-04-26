@@ -59,11 +59,11 @@ func Test_API(t *testing.T) {
 	test.Run(t, tokenize200(tokens), "tokenize-200")
 
 	// -------------------------------------------------------------------------
-	// Model: Qwen2.5-VL-3B-Instruct-Q8_0 (vision)
+	// Model: Qwen3.5-0.8B-Q8_0 (vision)
 
-	test.Run(t, chatImageQwen25VL(t, tokens), "chat-image-qwen25vl")
-	test.Run(t, respImageQwen25VL(t, tokens), "resp-image-qwen25vl")
-	test.Run(t, msgsImageQwen25VL(t, tokens), "msgs-image-qwen25vl")
+	test.Run(t, chatImageQwen35VL(t, tokens), "chat-image-qwen35vl")
+	test.Run(t, respImageQwen35VL(t, tokens), "resp-image-qwen35vl")
+	test.Run(t, msgsImageQwen35VL(t, tokens), "msgs-image-qwen35vl")
 
 	// -------------------------------------------------------------------------
 	// Model: Qwen2-Audio-7B.Q8_0 (audio)

@@ -197,6 +197,51 @@ func (m *Models) BuildIndex(log Logger, checkSHA bool) error {
 	return nil
 }
 
+// MarkValidated sets Validated=true for the specified model in the index,
+// without performing a full rebuild. The download flow already verifies SHAs
+// for each file via model.CheckModel, so the entry can be trusted as soon as
+// the index has been (re)built. Returns an error if the model is not present
+// in the index or the index cannot be written.
+func (m *Models) MarkValidated(modelID string) error {
+	m.biMutex.Lock()
+	defer m.biMutex.Unlock()
+
+	indexPath := filepath.Join(m.modelsPath, indexFile)
+
+	data, err := os.ReadFile(indexPath)
+	if err != nil {
+		return fmt.Errorf("mark-validated: read index: %w", err)
+	}
+
+	var index map[string]Path
+	if err := yaml.Unmarshal(data, &index); err != nil {
+		return fmt.Errorf("mark-validated: unmarshal index: %w", err)
+	}
+
+	mp, exists := index[modelID]
+	if !exists {
+		return fmt.Errorf("mark-validated: model %q not found in index", modelID)
+	}
+
+	if mp.Validated {
+		return nil
+	}
+
+	mp.Validated = true
+	index[modelID] = mp
+
+	out, err := yaml.Marshal(&index)
+	if err != nil {
+		return fmt.Errorf("mark-validated: marshal index: %w", err)
+	}
+
+	if err := os.WriteFile(indexPath, out, 0644); err != nil {
+		return fmt.Errorf("mark-validated: write index: %w", err)
+	}
+
+	return nil
+}
+
 // =============================================================================
 
 func (m *Models) removeEmptyDirs() error {

@@ -147,6 +147,12 @@ export const PARAM_TOOLTIPS = {
   hasProjection: 'Whether the model includes a multi-modal projection file (mmproj). Required for vision or audio input — the projection maps image/audio embeddings into the model\'s token space.',
   isGPT: 'Whether the model uses a GPT-style (causal, decoder-only) architecture. GPT models generate text left-to-right. Non-GPT models may be encoder-decoder or embedding models.',
   validated: 'Whether the model has been validated against the Kronk catalog. Validated models have confirmed-working configurations, templates, and recommended settings.',
+
+  // Library bundles
+  bundleArch: 'Target CPU architecture for this library bundle download (amd64 or arm64). Each bundle lives in its own folder under the libraries root and does not replace the active install.',
+  bundleOS: 'Target operating system for this library bundle download (linux, bookworm, trixie, darwin, windows). Each bundle lives in its own folder under the libraries root and does not replace the active install.',
+  bundleProcessor: 'Target processor backend for this library bundle download (cpu, cuda, metal, rocm, vulkan). Only combinations published by the upstream llama.cpp build matrix can be selected.',
+  bundleRemove: 'Delete this bundle directory. Does not affect the active install unless this bundle is the active one.',
 } as const satisfies Record<string, string>;
 
 export type TooltipKey = keyof typeof PARAM_TOOLTIPS;

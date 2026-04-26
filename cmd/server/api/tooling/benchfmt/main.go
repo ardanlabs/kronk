@@ -414,26 +414,21 @@ func displayGroups() []benchGroup {
 			label: "Dense",
 			names: []string{
 				"BenchmarkDense_NonCaching",
-				"BenchmarkDense_IMCDeterministic",
-				"BenchmarkDense_IMCNonDeterministic",
-				"BenchmarkDense_IMCDeterministic_Speculative",
-				"BenchmarkDense_IMCDeterministic_MultiSlot",
-				"BenchmarkDense_IMC_PrefillOnly",
-				"BenchmarkDense_IMC_ColdBuild",
+				"BenchmarkDense_IMC",
 			},
 		},
 		{
 			label: "MoE",
 			names: []string{
-				"BenchmarkMoE_IMCDeterministic",
-				"BenchmarkMoE_Speculative_Baseline",
-				"BenchmarkMoE_Speculative_WithDraft",
+				"BenchmarkMoE_NonCaching",
+				"BenchmarkMoE_IMC",
 			},
 		},
 		{
 			label: "Hybrid",
 			names: []string{
-				"BenchmarkHybrid_IMCDeterministic",
+				"BenchmarkHybrid_NonCaching",
+				"BenchmarkHybrid_IMC",
 			},
 		},
 	}
@@ -442,17 +437,12 @@ func displayGroups() []benchGroup {
 // shortName returns the display name for a benchmark.
 func shortName(name string) string {
 	m := map[string]string{
-		"BenchmarkDense_NonCaching":                   "Dense NonCaching",
-		"BenchmarkDense_IMCDeterministic":             "Dense IMC-Det",
-		"BenchmarkDense_IMCNonDeterministic":          "Dense IMC-NonDet (GPT)",
-		"BenchmarkDense_IMCDeterministic_Speculative": "Dense IMC-Det+Spec",
-		"BenchmarkDense_IMCDeterministic_MultiSlot":   "Dense IMC-Det MultiSlot",
-		"BenchmarkDense_IMC_PrefillOnly":              "Dense IMC Prefill",
-		"BenchmarkDense_IMC_ColdBuild":                "Dense IMC Cold",
-		"BenchmarkMoE_IMCDeterministic":               "MoE IMC-Det",
-		"BenchmarkMoE_Speculative_Baseline":           "MoE Spec-Baseline",
-		"BenchmarkMoE_Speculative_WithDraft":          "MoE Spec+Draft",
-		"BenchmarkHybrid_IMCDeterministic":            "Hybrid IMC-Det",
+		"BenchmarkDense_NonCaching":  "Dense NonCaching",
+		"BenchmarkDense_IMC":         "Dense IMC",
+		"BenchmarkMoE_NonCaching":    "MoE NonCaching",
+		"BenchmarkMoE_IMC":           "MoE IMC",
+		"BenchmarkHybrid_NonCaching": "Hybrid NonCaching",
+		"BenchmarkHybrid_IMC":        "Hybrid IMC",
 	}
 	if s, ok := m[name]; ok {
 		return s

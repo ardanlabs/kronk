@@ -167,11 +167,14 @@ func (m *Model) wrapChannelForLogging(ctx context.Context, returnCh chan ChatRes
 	return ch
 }
 
-// validateAndCloneDocument validates the request document and returns a
-// shallow clone to avoid mutating the caller's top-level map. Downstream
-// functions (prepareTextContext, gptInjectToolCallNames) use copy-on-write
-// when they need to modify individual message maps.
+// validateAndCloneDocument clones the request document first to avoid mutating
+// the caller's map (parseParams writes back a normalized enable_thinking), then
+// validates the clone. Downstream functions (prepareTextContext,
+// gptInjectToolCallNames) use copy-on-write when they need to modify individual
+// message maps.
 func (m *Model) validateAndCloneDocument(ctx context.Context, d D) (Params, D, error) {
+	d = d.Clone()
+
 	params, err := m.validateDocument(d)
 	if err != nil {
 		return Params{}, nil, err
@@ -179,7 +182,7 @@ func (m *Model) validateAndCloneDocument(ctx context.Context, d D) (Params, D, e
 
 	m.log(ctx, "chat-streaming", "FINAL-PARAMS", params.String())
 
-	return params, d.Clone(), nil
+	return params, d, nil
 }
 
 // prepareContext prepares the document for inference, handling both text-only
@@ -214,7 +217,7 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, r
 	// Inject tool function names into role:"tool" messages before caching.
 	// This adds "name" (for standard templates like Gemma 4) and
 	// "tool_call_name" (for GPT templates) so tool responses render correctly.
-	d = m.injectToolResponseNames(ctx, d)
+	d = m.injectToolResponseNames(d)
 
 	// Deserialize tool call arguments from JSON strings to maps so Jinja
 	// templates can iterate over them with |items. The OpenAI API spec
@@ -445,7 +448,7 @@ func (m *Model) createPrompt(ctx context.Context, d D) (string, [][]byte, error)
 // by matching tool_call_id against preceding assistant tool_calls. It injects
 // "name" (used by standard templates like Gemma 4) and "tool_call_name" (used
 // by GPT templates). Existing values are not overwritten.
-func (m *Model) injectToolResponseNames(ctx context.Context, d D) D {
+func (m *Model) injectToolResponseNames(d D) D {
 	messages, ok := d["messages"].([]D)
 	if !ok {
 		return d
@@ -511,8 +514,6 @@ func (m *Model) injectToolResponseNames(ctx context.Context, d D) D {
 		if existingName != "" && existingTCName != "" {
 			continue
 		}
-
-		m.log(ctx, "inject-tool-response-names", "status", "injecting", "tool-call-id", toolCallID, "name", name)
 
 		if !copied {
 			newMsgs := make([]D, len(messages))
