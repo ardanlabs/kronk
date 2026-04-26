@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
@@ -319,8 +320,14 @@ func (lib *Libs) Download(ctx context.Context, log Logger) (VersionTag, error) {
 		}
 
 	default:
-		tag, _ = lib.InstalledVersion()
-		tag.Latest = defaultVersion
+		installed, _ := lib.InstalledVersion()
+		if installed.Version != "" && versionGreater(installed.Version, defaultVersion) {
+			tag = installed
+			tag.Latest = installed.Version
+		} else {
+			tag, _ = lib.InstalledVersion()
+			tag.Latest = defaultVersion
+		}
 	}
 
 	log(ctx, "download-libraries: check llama.cpp installation", "arch", lib.arch, "os", lib.os, "processor", lib.processor, "latest", tag.Latest, "current", tag.Version)
@@ -484,7 +491,12 @@ func (lib *Libs) DownloadFor(ctx context.Context, log Logger, arch string, opSys
 	}
 
 	if version == "" {
-		version = defaultVersion
+		installed, _ := lib.InstalledVersion()
+		if installed.Version != "" && versionGreater(installed.Version, defaultVersion) {
+			version = installed.Version
+		} else {
+			version = defaultVersion
+		}
 	}
 
 	return lib.downloadInto(ctx, log, installPathFor(lib.root, a, o, p), a, o, p, version)
@@ -907,6 +919,40 @@ func hasLibraryFiles(path string) bool {
 	}
 
 	return false
+}
+
+// versionGreater reports whether v1 is greater than v2.
+// Versions are expected to be git branch tags like "b8937" or plain version
+// strings. It strips a leading "v" or "V" prefix and compares numeric
+// suffixes; when both are purely numeric it does a numeric comparison,
+// otherwise it falls back to lexicographic comparison.
+func versionGreater(v1, v2 string) bool {
+	if v1 == "" || v2 == "" {
+		return false
+	}
+
+	stripPrefix := func(s string) string {
+		if len(s) > 0 && (s[0] == 'v' || s[0] == 'V') {
+			return s[1:]
+		}
+		return s
+	}
+
+	n1 := stripPrefix(v1)
+	n2 := stripPrefix(v2)
+
+	if n1 == n2 {
+		return false
+	}
+
+	// Try numeric comparison for plain numbers (e.g. "8937" vs "7406").
+	if i1, e1 := strconv.Atoi(n1); e1 == nil {
+		if i2, e2 := strconv.Atoi(n2); e2 == nil {
+			return i1 > i2
+		}
+	}
+
+	return n1 > n2
 }
 
 func hasNetwork() bool {
